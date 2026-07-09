@@ -165,7 +165,9 @@ class AES:
             padded = plaintext + bytes([pad_len] * pad_len)
         else:
             if len(plaintext) % self.BLOCK_SIZE != 0:
-                raise ValueError("Plaintext length must be a multiple of block size when padding is disabled")
+                raise ValueError(
+                    "Plaintext length must be a multiple of block size when padding is disabled"
+                )
             padded = plaintext
 
         ciphertext = bytearray(len(padded))

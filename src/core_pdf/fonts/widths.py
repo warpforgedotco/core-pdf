@@ -43,7 +43,9 @@ def parse_cid_widths(value: Any) -> dict[int, float]:
     return widths
 
 
-def parse_font_widths(font: dict[str, Any], subtype: str | None) -> tuple[dict[int, float], float, bool]:
+def parse_font_widths(
+    font: dict[str, Any], subtype: str | None
+) -> tuple[dict[int, float], float, bool]:
     widths: dict[int, float] = {}
     missing_width = font.get("MissingWidth")
     if missing_width is None:

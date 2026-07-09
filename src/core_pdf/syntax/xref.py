@@ -9,7 +9,7 @@ if typing.TYPE_CHECKING:
     from typing import Any
 
 from core_pdf.syntax.errors import PdfParseError
-from core_pdf.syntax.lexer import PdfLexer, WS_TABLE
+from core_pdf.syntax.lexer import WS_TABLE, PdfLexer
 from core_pdf.syntax.primitives import PdfName, PdfStream, parse_int_strict
 
 STARTXREF_RE = re.compile(b"startxref")
@@ -56,7 +56,9 @@ class XRefScanner:
     """Consolidates cross-reference scanning and parsing logic."""
 
     @staticmethod
-    def lookup_entry(xref: XRefTable, object_number: int, generation_number: int) -> PdfXRefEntry | None:
+    def lookup_entry(
+        xref: XRefTable, object_number: int, generation_number: int
+    ) -> PdfXRefEntry | None:
         if object_number < 0 or generation_number < 0:
             raise ValueError("invalid xref lookup")
         return xref.get((object_number << 16) | generation_number)
@@ -101,7 +103,9 @@ class XRefScanner:
         return memoryview(data[start:end]), pos
 
     @staticmethod
-    def parse_table_section(data: bytes, start_pos: int) -> tuple[XRefTable, dict[Any, Any], int | None]:
+    def parse_table_section(
+        data: bytes, start_pos: int
+    ) -> tuple[XRefTable, dict[Any, Any], int | None]:
         pos = XRefScanner.skip_ws(data, start_pos)
         if data[pos : pos + 4] != b"xref":
             raise PdfParseError("expected xref table")
@@ -144,7 +148,9 @@ class XRefScanner:
                         in_use = False
                     else:
                         raise PdfParseError("invalid xref table entry")
-                    entries[key_for(start_obj + i, generation)] = PdfXRefEntry(offset, generation, in_use)
+                    entries[key_for(start_obj + i, generation)] = PdfXRefEntry(
+                        offset, generation, in_use
+                    )
             else:
                 raise PdfParseError("invalid xref table subsection")
 
@@ -156,7 +162,9 @@ class XRefScanner:
         return entries, trailer_dict, int(prev) if isinstance(prev, int) else None
 
     @staticmethod
-    def load_section_chain(data: bytes, start: int, seen: set[int]) -> tuple[XRefTable, dict[Any, Any]]:
+    def load_section_chain(
+        data: bytes, start: int, seen: set[int]
+    ) -> tuple[XRefTable, dict[Any, Any]]:
         if start in seen:
             raise PdfParseError("xref section loop detected")
         seen.add(start)
@@ -269,6 +277,6 @@ class XRefScanner:
                 offset = match.start()
                 if obj_num < 10000000:
                     entries[key_for(obj_num, gen_num)] = PdfXRefEntry(offset, gen_num, True)
-            except (ValueError, IndexError):
+            except ValueError, IndexError:
                 continue
         return entries

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable, Iterator, Sequence
-from typing import Any, TYPE_CHECKING, Callable, overload
+from typing import TYPE_CHECKING, Any, Callable, overload
 
 from core_pdf.syntax.primitives import MISSING, PdfReference, coerce_value
 
@@ -174,13 +174,17 @@ class StructureElement:
     @property
     def alternate_description(self) -> str | None:
         if self.alternate_description_value is MISSING:
-            self.alternate_description_value = self.document.resolver.resolve_str(self.props.get("Alt"))
+            self.alternate_description_value = self.document.resolver.resolve_str(
+                self.props.get("Alt")
+            )
         return self.alternate_description_value
 
     @property
     def actual_text(self) -> str | None:
         if self.actual_text_value is MISSING:
-            self.actual_text_value = self.document.resolver.resolve_str(self.props.get("ActualText"))
+            self.actual_text_value = self.document.resolver.resolve_str(
+                self.props.get("ActualText")
+            )
         return self.actual_text_value
 
     @property
@@ -249,7 +253,9 @@ class StructureElement:
         self.parent_value = StructureElement(self.document, parent)
         return self.parent_value
 
-    def __iter__(self) -> Iterator[StructureElement | StructureContentItem | StructureContentObject]:
+    def __iter__(
+        self,
+    ) -> Iterator[StructureElement | StructureContentItem | StructureContentObject]:
         if self.kids_value is MISSING:
             self.kids_value = tuple(make_kids(self.props.get("K"), self.page, self.document))
         yield from self.kids_value
@@ -257,11 +263,15 @@ class StructureElement:
     def find_all(
         self, matcher: str | re.Pattern[str] | MatchFunc | None = None
     ) -> Iterator["StructureElement"]:
-        elements: list[StructureElement | StructureContentItem | StructureContentObject] = list(self)
+        elements: list[StructureElement | StructureContentItem | StructureContentObject] = list(
+            self
+        )
         filtered = [el for el in elements if isinstance(el, StructureElement)]
         return find_all(filtered, matcher)
 
-    def find(self, matcher: str | re.Pattern[str] | MatchFunc | None = None) -> StructureElement | None:
+    def find(
+        self, matcher: str | re.Pattern[str] | MatchFunc | None = None
+    ) -> StructureElement | None:
         try:
             return next(self.find_all(matcher))
         except StopIteration:
@@ -271,7 +281,9 @@ class StructureElement:
         return hash((id(self.document), repr(self.props)))
 
 
-def get_kid_page_index(document: PdfDocument, page: PdfPage | None, kid: dict[str, Any]) -> int | None:
+def get_kid_page_index(
+    document: PdfDocument, page: PdfPage | None, kid: dict[str, Any]
+) -> int | None:
     pg = kid.get("Pg")
     if pg is not None:
         page_obj = document.resolver.resolve(pg)
@@ -368,7 +380,9 @@ class StructureTree(Iterable[StructureElement | StructureContentItem | Structure
         if not isinstance(resolved, dict):
             raise ValueError("invalid role map dictionary")
         for key, value in resolved.items():
-            mapped = self.document.resolver.resolve_name(value) or self.document.resolver.resolve_str(value)
+            mapped = self.document.resolver.resolve_name(
+                value
+            ) or self.document.resolver.resolve_str(value)
             if mapped is None:
                 raise ValueError("invalid role map entry")
             role_map[str(key)] = mapped
@@ -414,7 +428,9 @@ class StructureTree(Iterable[StructureElement | StructureContentItem | Structure
         self.parent_tree_value = results
         return results
 
-    def __iter__(self) -> Iterator[StructureElement | StructureContentItem | StructureContentObject]:
+    def __iter__(
+        self,
+    ) -> Iterator[StructureElement | StructureContentItem | StructureContentObject]:
         if self.kids_value is MISSING:
             self.kids_value = tuple(make_kids(self.props.get("K"), None, self.document))
         yield from self.kids_value
@@ -424,7 +440,9 @@ class StructureTree(Iterable[StructureElement | StructureContentItem | Structure
     ) -> Iterator[StructureElement]:
         return find_all([item for item in self if isinstance(item, StructureElement)], matcher)
 
-    def find(self, matcher: str | re.Pattern[str] | MatchFunc | None = None) -> StructureElement | None:
+    def find(
+        self, matcher: str | re.Pattern[str] | MatchFunc | None = None
+    ) -> StructureElement | None:
         try:
             return next(self.find_all(matcher))
         except StopIteration:
@@ -509,7 +527,9 @@ class PageStructure(Sequence[StructureElement | None]):
                     break
                 element = parent
 
-    def find(self, matcher: str | re.Pattern[str] | MatchFunc | None = None) -> StructureElement | None:
+    def find(
+        self, matcher: str | re.Pattern[str] | MatchFunc | None = None
+    ) -> StructureElement | None:
         try:
             return next(self.find_all(matcher))
         except StopIteration:

@@ -108,7 +108,9 @@ CR_TO_G = tuple((-FIX_0_71414 * (i - 128)) for i in range(256))
 ZERO_BLOCK_64 = [0] * 64
 
 IDCT_SCALE = tuple(1 / math.sqrt(2) if i == 0 else 1.0 for i in range(8))
-IDCT_COS = tuple(tuple(math.cos(((2 * x + 1) * u * math.pi) / 16.0) for u in range(8)) for x in range(8))
+IDCT_COS = tuple(
+    tuple(math.cos(((2 * x + 1) * u * math.pi) / 16.0) for u in range(8)) for x in range(8)
+)
 
 
 class JpegBitReader:
@@ -193,8 +195,10 @@ class JpegBitReader:
         return bit
 
 
-def build_huffman_table(lengths: bytes, symbols: bytes) -> tuple[list[int], list[int], list[dict[int, int]]]:
-    huff = [dict() for _ in range(16)]
+def build_huffman_table(
+    lengths: bytes, symbols: bytes
+) -> tuple[list[int], list[int], list[dict[int, int]]]:
+    huff = [{} for _ in range(16)]
     code = 0
     k = 0
     for i, num in enumerate(lengths):
@@ -213,7 +217,8 @@ def build_huffman_table(lengths: bytes, symbols: bytes) -> tuple[list[int], list
 
 
 def read_huffman_value(
-    reader: JpegBitReader, table: list[dict[int, int]] | tuple[list[int], list[int], list[dict[int, int]]]
+    reader: JpegBitReader,
+    table: list[dict[int, int]] | tuple[list[int], list[int], list[dict[int, int]]],
 ) -> int:
     huff = table[2] if isinstance(table, tuple) else table
     code = 0
@@ -235,7 +240,9 @@ class JPEGDecoder:
         self.data = data
         self.pos = 0
         self.quant_tables: dict[int, list[int]] = {}
-        self.huffman_tables: dict[tuple[int, int], tuple[list[int], list[int], list[dict[int, int]]]] = {}
+        self.huffman_tables: dict[
+            tuple[int, int], tuple[list[int], list[int], list[dict[int, int]]]
+        ] = {}
         self.components: list[dict] = []
         self.scans: list[dict] = []
         self.width = 0
@@ -478,7 +485,9 @@ class JPEGDecoder:
         while True:
             pos = data.find(b"\xff", pos)
             if pos < 0:
-                raise PdfUnsupportedError("Unexpected end of JPEG data while skipping progressive scan")
+                raise PdfUnsupportedError(
+                    "Unexpected end of JPEG data while skipping progressive scan"
+                )
             if pos + 1 >= length:
                 raise PdfUnsupportedError("Unexpected end after marker prefix")
             next_byte = data[pos + 1]
@@ -1097,5 +1106,5 @@ class JPEGDecoder:
             decoder = cls(data)
             decoder.parse()
             return decoder.decode()
-        except (PdfUnsupportedError, struct.error, OSError):
+        except PdfUnsupportedError, struct.error, OSError:
             raise PdfUnsupportedError("JPEGDecode failed")

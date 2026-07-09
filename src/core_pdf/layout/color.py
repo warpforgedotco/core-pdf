@@ -153,7 +153,11 @@ def normalize_image_color_spec(image_dict: dict[str, Any]) -> ImageColorSpec:
             )
         if kind == "Indexed":
             raise ValueError("invalid Indexed color space")
-        if kind == "ICCBased" and len(color_space) >= 2 and isinstance(color_space[1], (dict, PdfStream)):
+        if (
+            kind == "ICCBased"
+            and len(color_space) >= 2
+            and isinstance(color_space[1], (dict, PdfStream))
+        ):
             icc_stream = color_space[1]
             icc_dict = icc_stream.dictionary if isinstance(icc_stream, PdfStream) else icc_stream
             alt = normalize_color_space_name(icc_dict.get("Alternate"))
@@ -175,7 +179,9 @@ def normalize_image_color_spec(image_dict: dict[str, Any]) -> ImageColorSpec:
             and len(color_space) >= 2
             and isinstance(color_space[1], dict)
         ):
-            return ImageColorSpec(kind=kind, params=color_space[1], bits_per_component=bits_per_component)
+            return ImageColorSpec(
+                kind=kind, params=color_space[1], bits_per_component=bits_per_component
+            )
         if kind in {"Lab", "CalGray", "CalRGB"}:
             raise ValueError(f"invalid {kind} color space")
         if kind in {"Separation", "DeviceN"}:
@@ -191,14 +197,20 @@ def normalize_image_color_spec(image_dict: dict[str, Any]) -> ImageColorSpec:
                 bits_per_component=bits_per_component,
                 alt=alt,
                 tint_fn=color_space[3] if len(color_space) >= 4 else None,
-                names=list(names) if kind == "DeviceN" and isinstance(names, (list, tuple)) else None,
-                channels=len(names) if kind == "DeviceN" and isinstance(names, (list, tuple)) else 1,
+                names=list(names)
+                if kind == "DeviceN" and isinstance(names, (list, tuple))
+                else None,
+                channels=len(names)
+                if kind == "DeviceN" and isinstance(names, (list, tuple))
+                else 1,
             )
         if kind in {"Separation", "DeviceN"}:
             raise ValueError(f"invalid {kind} color space")
         return ImageColorSpec(kind=kind, params={}, bits_per_component=bits_per_component)
     return ImageColorSpec(
-        kind=normalize_color_space_name(color_space), params={}, bits_per_component=bits_per_component
+        kind=normalize_color_space_name(color_space),
+        params={},
+        bits_per_component=bits_per_component,
     )
 
 
@@ -216,7 +228,11 @@ class ImageColorManager:
         depth = 0
 
         while depth <= 3:
-            spec = current if isinstance(current, ImageColorSpec) else normalize_image_color_spec(current)
+            spec = (
+                current
+                if isinstance(current, ImageColorSpec)
+                else normalize_image_color_spec(current)
+            )
             if spec.bits_per_component != 8:
                 return None
             cs_kind = spec.kind
@@ -291,7 +307,15 @@ class ImageColorManager:
                     components = list(tint_fn)
             else:
                 components = [v]
-            expected = 1 if alt_name == "DeviceGray" else 3 if alt_name == "DeviceRGB" else 4 if alt_name == "DeviceCMYK" else None
+            expected = (
+                1
+                if alt_name == "DeviceGray"
+                else 3
+                if alt_name == "DeviceRGB"
+                else 4
+                if alt_name == "DeviceCMYK"
+                else None
+            )
             if expected is None:
                 raise ValueError("invalid Separation color space")
             if len(components) != expected:
@@ -331,7 +355,15 @@ class ImageColorManager:
                     components = tint_fn[0](*components)
                 except Exception as exc:
                     raise ValueError("invalid DeviceN tint function") from exc
-            expected = 1 if alt_name == "DeviceGray" else 3 if alt_name == "DeviceRGB" else 4 if alt_name == "DeviceCMYK" else None
+            expected = (
+                1
+                if alt_name == "DeviceGray"
+                else 3
+                if alt_name == "DeviceRGB"
+                else 4
+                if alt_name == "DeviceCMYK"
+                else None
+            )
             if expected is None:
                 raise ValueError("invalid DeviceN color space")
             if len(components) != expected:

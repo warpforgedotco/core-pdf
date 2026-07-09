@@ -3,8 +3,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, TypedDict
 
 if TYPE_CHECKING:
-    from core_pdf.syntax.primitives import PdfReference
     from core_pdf.layout.geometry import RectBox
+    from core_pdf.syntax.primitives import PdfReference
 
 
 class TextTraceSpan(TypedDict):

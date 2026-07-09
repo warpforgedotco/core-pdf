@@ -22,7 +22,7 @@ def tt_tables(data: bytes) -> dict[str, tuple[int, int]]:
                 raise ValueError("invalid TrueType table directory")
             tables[tag] = (tbl_off, length)
         return tables
-    except (struct.error, UnicodeDecodeError, IndexError):
+    except struct.error, UnicodeDecodeError, IndexError:
         raise ValueError("invalid TrueType table directory")
 
 
@@ -43,21 +43,26 @@ def tt_loca(data: bytes, tables: dict[str, tuple[int, int]], n_glyphs: int) -> l
         if loca_off + (n_glyphs + 1) * 4 > len(data):
             raise ValueError("invalid TrueType loca table")
         return [
-            struct.unpack(">I", data[loca_off + i * 4 : loca_off + i * 4 + 4])[0] for i in range(n_glyphs + 1)
+            struct.unpack(">I", data[loca_off + i * 4 : loca_off + i * 4 + 4])[0]
+            for i in range(n_glyphs + 1)
         ]
-    except (struct.error, IndexError, KeyError):
+    except struct.error, IndexError, KeyError:
         raise ValueError("invalid TrueType loca table")
 
 
-def tt_glyph_bbox(data: bytes, glyf_off: int, loca: list[int], gid: int) -> tuple[int, int, int, int] | None:
+def tt_glyph_bbox(
+    data: bytes, glyf_off: int, loca: list[int], gid: int
+) -> tuple[int, int, int, int] | None:
     try:
         start = loca[gid]
         end = loca[gid + 1]
         if start >= end or glyf_off + start + 10 > len(data):
             return None
-        xmin, ymin, xmax, ymax = struct.unpack(">hhhh", data[glyf_off + start + 2 : glyf_off + start + 10])
+        xmin, ymin, xmax, ymax = struct.unpack(
+            ">hhhh", data[glyf_off + start + 2 : glyf_off + start + 10]
+        )
         return (xmin, ymin, xmax, ymax)
-    except (struct.error, IndexError):
+    except struct.error, IndexError:
         return None
 
 
@@ -83,22 +88,28 @@ def tt_cmap(data: bytes, tables: dict[str, tuple[int, int]]) -> dict[int, int]:
                     raise ValueError("invalid TrueType cmap")
                 seg_count = struct.unpack(">H", cmap[sub_off + 6 : sub_off + 8])[0] // 2
                 base = sub_off + 14
-                if base + seg_count * 2 + 2 + seg_count * 2 + seg_count * 2 + seg_count * 2 > len(cmap):
+                if base + seg_count * 2 + 2 + seg_count * 2 + seg_count * 2 + seg_count * 2 > len(
+                    cmap
+                ):
                     raise ValueError("invalid TrueType cmap")
                 ends = [
-                    struct.unpack(">H", cmap[base + j * 2 : base + j * 2 + 2])[0] for j in range(seg_count)
+                    struct.unpack(">H", cmap[base + j * 2 : base + j * 2 + 2])[0]
+                    for j in range(seg_count)
                 ]
                 base2 = sub_off + 14 + seg_count * 2 + 2
                 starts = [
-                    struct.unpack(">H", cmap[base2 + j * 2 : base2 + j * 2 + 2])[0] for j in range(seg_count)
+                    struct.unpack(">H", cmap[base2 + j * 2 : base2 + j * 2 + 2])[0]
+                    for j in range(seg_count)
                 ]
                 base3 = base2 + seg_count * 2
                 deltas = [
-                    struct.unpack(">h", cmap[base3 + j * 2 : base3 + j * 2 + 2])[0] for j in range(seg_count)
+                    struct.unpack(">h", cmap[base3 + j * 2 : base3 + j * 2 + 2])[0]
+                    for j in range(seg_count)
                 ]
                 base4 = base3 + seg_count * 2
                 range_offs = [
-                    struct.unpack(">H", cmap[base4 + j * 2 : base4 + j * 2 + 2])[0] for j in range(seg_count)
+                    struct.unpack(">H", cmap[base4 + j * 2 : base4 + j * 2 + 2])[0]
+                    for j in range(seg_count)
                 ]
                 glyph_arr_base = base4 + seg_count * 2
                 for j in range(seg_count):
@@ -129,7 +140,7 @@ def tt_cmap(data: bytes, tables: dict[str, tuple[int, int]]) -> dict[int, int]:
                     if gid:
                         cp_to_gid[first_code + j] = gid
         return cp_to_gid
-    except (struct.error, IndexError, KeyError):
+    except struct.error, IndexError, KeyError:
         raise ValueError("invalid TrueType cmap")
 
 
@@ -172,5 +183,5 @@ def tt_gid_composite_info(
             else:
                 body_bbox = bbox
         return (body_bbox, has_dot)
-    except (struct.error, IndexError, KeyError):
+    except struct.error, IndexError, KeyError:
         return (None, False)

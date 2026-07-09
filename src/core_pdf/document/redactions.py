@@ -182,7 +182,9 @@ class RedactionAnalyzer:
             )
         return spans
 
-    def cluster_paint_spans(self, spans: list[RedactionPaintSpan]) -> list[tuple[RedactionPaintSpan, ...]]:
+    def cluster_paint_spans(
+        self, spans: list[RedactionPaintSpan]
+    ) -> list[tuple[RedactionPaintSpan, ...]]:
         if not spans:
             return []
 
@@ -237,9 +239,7 @@ class RedactionAnalyzer:
         overlap_x, overlap_y, overlap_area = bbox_intersection_lengths(left.bbox, right.bbox)
         if overlap_area <= 0.0:
             return False
-        if overlap_x < 2.0 or overlap_y < 2.0:
-            return False
-        return True
+        return not (overlap_x < 2.0 or overlap_y < 2.0)
 
     def build_candidate(
         self, paint_group: tuple[RedactionPaintSpan, ...], glyphs: list[Glyph]
@@ -289,7 +289,9 @@ class RedactionAnalyzer:
         if not hidden_glyphs:
             return None
 
-        occlusion_ratio = (hidden_text_area / overlapped_text_area) if overlapped_text_area > 0 else 0.0
+        occlusion_ratio = (
+            (hidden_text_area / overlapped_text_area) if overlapped_text_area > 0 else 0.0
+        )
         paint_order_delta = min(paint_order_deltas) if paint_order_deltas else 0
         hidden_text = self.text_from_glyphs(hidden_glyphs)
         visible_text = self.text_from_glyphs(visible_glyphs)
@@ -319,7 +321,9 @@ class RedactionAnalyzer:
         if not glyphs:
             return ""
         lines: list[dict[str, Any]] = []
-        for glyph in sorted(glyphs, key=lambda g: (-(g.bbox[1] + g.bbox[3]) * 0.5, g.bbox[0], g.seqno)):
+        for glyph in sorted(
+            glyphs, key=lambda g: (-(g.bbox[1] + g.bbox[3]) * 0.5, g.bbox[0], g.seqno)
+        ):
             cy = (glyph.bbox[1] + glyph.bbox[3]) * 0.5
             height = glyph.bbox[3] - glyph.bbox[1]
             placed = False
@@ -379,7 +383,8 @@ class RedactionAnalyzer:
             has_year=bool(_YEAR_RE.search(hidden_text)),
             has_date_pattern=bool(_DATE_RE.search(hidden_text)),
             has_filing_stamp_pattern=bool(_FILING_RE.search(hidden_text)),
-            is_all_caps=bool(hidden_text) and all(not ch.islower() for ch in hidden_text if ch.isalpha()),
+            is_all_caps=bool(hidden_text)
+            and all(not ch.islower() for ch in hidden_text if ch.isalpha()),
             is_numeric_only=bool(hidden_text) and not any(ch.isalpha() for ch in hidden_text),
             is_visible_prose=is_visible_prose,
             paint_group_size=len(paint_group),
@@ -456,21 +461,17 @@ class RedactionAnalyzer:
             return True
         if features.repeated_char_ratio >= 0.8:
             return True
-        if features.text_length <= 4 and features.alpha_count <= 1:
-            return True
-        return False
+        return features.text_length <= 4 and features.alpha_count <= 1
 
     def is_redaction_numeric(self, features: RedactionFeatures) -> bool:
         if features.is_numeric_only and features.text_length > 0:
             return True
-        if (
+        return (
             features.text_length >= 20
             and features.digit_count >= 20
             and features.digit_count >= features.text_length // 2
             and features.alpha_count <= 12
-        ):
-            return True
-        return False
+        )
 
 
 def is_dark_color(color: tuple[float, ...] | None) -> bool:

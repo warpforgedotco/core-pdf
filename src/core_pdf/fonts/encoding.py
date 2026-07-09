@@ -6,7 +6,9 @@ from core_pdf.fonts.data.core14 import PDFDOC_ENCODING_OVERRIDES
 
 BYTE_CACHE = [bytes([i]) for i in range(256)]
 CHR_TABLE: list[str] = [chr(i) for i in range(256)]
-PDFDOC_ENCODING_TABLE: list[str] = [PDFDOC_ENCODING_OVERRIDES.get(i, CHR_TABLE[i]) for i in range(256)]
+PDFDOC_ENCODING_TABLE: list[str] = [
+    PDFDOC_ENCODING_OVERRIDES.get(i, CHR_TABLE[i]) for i in range(256)
+]
 
 
 def decode_pdf_text_string(data: bytes) -> str:
@@ -31,12 +33,12 @@ def decode_utf16be(data: bytes) -> str:
     if data.startswith((b"\xfe\xff", b"\xff\xfe")):
         try:
             return data.decode("utf-16")
-        except (UnicodeDecodeError, ValueError):
+        except UnicodeDecodeError, ValueError:
             raise ValueError("invalid UTF-16BE data")
     buf = data if len(data) % 2 == 0 else b"\x00" + data
     try:
         return buf.decode("utf-16-be", "replace")
-    except (UnicodeDecodeError, ValueError):
+    except UnicodeDecodeError, ValueError:
         return data.decode("latin-1", "replace")
 
 

@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 from typing import Any
 
 from core_pdf.layout.geometry import RectBox
@@ -110,4 +111,6 @@ class DrawingTrace:
         x1 = max(rect.x1 for rect in rects)
         y1 = max(rect.y1 for rect in rects)
 
-        return RectBox(x0, y0, x1, y1, seqno=self.seqno, fill=self.fill, fill_opacity=self.fill_opacity)
+        return RectBox(
+            x0, y0, x1, y1, seqno=self.seqno, fill=self.fill, fill_opacity=self.fill_opacity
+        )

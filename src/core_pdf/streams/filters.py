@@ -12,12 +12,12 @@ if typing.TYPE_CHECKING:
 
     FilterFn = Callable[[bytes, Any], bytes]
 
-from core_pdf.syntax.errors import PdfParseError, PdfUnsupportedError
-from core_pdf.syntax.lexer import WS_TABLE
-from core_pdf.syntax.primitives import FilterParams, PdfName, StreamDecodeSpec, normalize_pdf_name
 from core_pdf.streams.ccitt import decode_ccitt_fax as decode_ccitt_impl
 from core_pdf.streams.jbig2 import assemble_embedded_jbig2, decode_embedded_jbig2, parse_jbig2_file
 from core_pdf.streams.jpeg import JPEGDecoder
+from core_pdf.syntax.errors import PdfParseError, PdfUnsupportedError
+from core_pdf.syntax.lexer import WS_TABLE
+from core_pdf.syntax.primitives import FilterParams, PdfName, StreamDecodeSpec, normalize_pdf_name
 
 # Local bindings for hot-path optimization
 PdfParseError = PdfParseError
@@ -150,7 +150,9 @@ class BitReader:
 def apply_lzw(data: bytes | memoryview, parms: Any) -> bytes:
     """Decode LZWDecode with strictly zero-copy table entries."""
     ec = (
-        parms.early_change if isinstance(parms, FilterParams) else FilterParams_from_parms(parms).early_change
+        parms.early_change
+        if isinstance(parms, FilterParams)
+        else FilterParams_from_parms(parms).early_change
     )
 
     code_size = 9

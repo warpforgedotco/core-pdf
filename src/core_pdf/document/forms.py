@@ -36,7 +36,9 @@ class FormsMixin:
             raise ValueError("invalid AcroForm field entry")
 
         title = self.resolver.resolve_str(node.get("T"))
-        current_name = f"{inherited_name}.{title}" if inherited_name and title else title or inherited_name
+        current_name = (
+            f"{inherited_name}.{title}" if inherited_name and title else title or inherited_name
+        )
 
         type_value = node.get("FT")
         field_type = (
@@ -68,9 +70,15 @@ class FormsMixin:
                 or (str(subtype_value) if subtype_value is not None else "")
             )
             if subtype == "Widget":
-                records.append(FieldRecord(current_name, field_type, value, kid, kids=[], widget=kid))
+                records.append(
+                    FieldRecord(current_name, field_type, value, kid, kids=[], widget=kid)
+                )
             else:
-                records.extend(cast(Any, self).collect_field_records(kid, current_name, field_type, value, _depth + 1))
+                records.extend(
+                    cast(Any, self).collect_field_records(
+                        kid, current_name, field_type, value, _depth + 1
+                    )
+                )
         return records
 
     def fields(self: DocumentMixinProtocol) -> list[FieldRecord]:

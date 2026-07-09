@@ -1,6 +1,7 @@
 from __future__ import annotations
-from functools import lru_cache
+
 from collections.abc import Callable
+from functools import lru_cache
 from typing import Any, TypeAlias
 
 """Core PDF primitive object types."""
@@ -42,7 +43,7 @@ def parse_int(value: Any, default: int | None = None) -> int | None:
             return default
     try:
         return int(value)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return default
 
 
@@ -60,7 +61,7 @@ def parse_float(value: Any, default: float = 0.0) -> float:
         return value
     try:
         return float(value)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return default
 
 
@@ -327,7 +328,9 @@ class FilterParams:
             colors=kwargs.get("colors", self.colors),
             bits_per_component=kwargs.get("bits_per_component", self.bits_per_component),
             k=kwargs.get("k", self.k),
-            damaged_rows_before_error=kwargs.get("damaged_rows_before_error", self.damaged_rows_before_error),
+            damaged_rows_before_error=kwargs.get(
+                "damaged_rows_before_error", self.damaged_rows_before_error
+            ),
             rows=kwargs.get("rows", self.rows),
             encoded_byte_align=kwargs.get("encoded_byte_align", self.encoded_byte_align),
             has_columns=kwargs.get("has_columns", self.has_columns),
@@ -419,6 +422,7 @@ class PdfStream:
         self.raw_data = raw_data
         self.spec = spec
         self.decoded_data = decoded_data
+
     def replace(self, **kwargs: Any) -> "PdfStream":
         """Create a new PdfStream with modified fields."""
         spec = kwargs.get("spec", self.spec)
@@ -455,14 +459,21 @@ IDENTITY_MATRIX: Matrix = (1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
 def parse_matrix_operand(operands: Any) -> Matrix:
     if not isinstance(operands, (list, tuple)) or len(operands) < 6:
         raise ValueError("invalid matrix operand")
-    a0, a1, a2, a3, a4, a5 = operands[0], operands[1], operands[2], operands[3], operands[4], operands[5]
+    a0, a1, a2, a3, a4, a5 = (
+        operands[0],
+        operands[1],
+        operands[2],
+        operands[3],
+        operands[4],
+        operands[5],
+    )
     if type(a0) is float:
         return (a0, a1, a2, a3, a4, a5)
     if isinstance(a0, (int, float)):
         return (float(a0), float(a1), float(a2), float(a3), float(a4), float(a5))
     try:
         return (float(a0), float(a1), float(a2), float(a3), float(a4), float(a5))
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         raise ValueError("invalid matrix operand")
 
 
