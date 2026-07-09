@@ -2,12 +2,12 @@ import struct
 from hashlib import md5, sha256, sha384, sha512
 from typing import Any, Callable, Sequence
 
-from core_pdf.syntax.errors import PdfUnsupportedError
-from core_pdf.syntax.primitives import coerce_to_bytes, parse_int, parse_name
 from core_pdf.streams.aes import AES
 from core_pdf.streams.crypto_constants import PDF_PADDING
 from core_pdf.streams.rc4 import CryptRC4
 from core_pdf.streams.saslprep import saslprep
+from core_pdf.syntax.errors import PdfUnsupportedError
+from core_pdf.syntax.primitives import coerce_to_bytes, parse_int, parse_name
 
 
 class PDFEncryptionError(Exception):

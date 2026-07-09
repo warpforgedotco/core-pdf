@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import bisect
 from math import cos, radians, sin
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from core_pdf.layout.models import LayoutBox, LayoutLine, TextRun
 
@@ -191,7 +191,9 @@ class LayoutAnalyzer:
                 max_gap = max(bh, rh, 10.0) * 0.3
                 dy = by_mid - ry_mid
                 if abs(dy) < max_gap:
-                    if not any(max(box.x0, x0) < min(box.x1, x1) for x0, x1 in visual_row_ranges[idx]):
+                    if not any(
+                        max(box.x0, x0) < min(box.x1, x1) for x0, x1 in visual_row_ranges[idx]
+                    ):
                         vrow.append(box)
                         visual_row_mid_sums[idx] += by_mid
                         visual_row_height_sums[idx] += bh
@@ -211,7 +213,9 @@ class LayoutAnalyzer:
 
         # Heuristic: if many rows have multiple boxes, it's likely a table/grid.
         multi_box_rows = sum(1 for r in visual_rows if len(r) > 1)
-        if multi_box_rows >= 3 or (len(visual_rows) > 0 and multi_box_rows > len(visual_rows) * 0.4):
+        if multi_box_rows >= 3 or (
+            len(visual_rows) > 0 and multi_box_rows > len(visual_rows) * 0.4
+        ):
             ordered: list[LayoutBox] = []
             for vrow in visual_rows:
                 ordered.extend(vrow)
@@ -316,9 +320,8 @@ class LayoutAnalyzer:
             return 0.0
 
         # Optimization: if 0.0 is still the clear winner, skip fine pass
-        if best_angle == 0.0:
-            if max_variance > v1 * 1.5 and max_variance > vm1 * 1.5:
-                return 0.0
+        if best_angle == 0.0 and max_variance > v1 * 1.5 and max_variance > vm1 * 1.5:
+            return 0.0
 
         # Confidence check: if 0 is close to best, prefer 0
         if best_angle != 0.0 and max_variance < v0 * 1.05:
@@ -400,10 +403,7 @@ class LayoutAnalyzer:
             dy = abs(line.y1 - line.y0)
 
             # Horizontal
-            if dy < 1.5 and dx > h_threshold:
-                separators.append(line)
-            # Vertical
-            elif dx < 1.5 and dy > v_threshold:
+            if dy < 1.5 and dx > h_threshold or dx < 1.5 and dy > v_threshold:
                 separators.append(line)
 
         return separators
@@ -423,7 +423,9 @@ class LayoutAnalyzer:
                 norm = rect.normalize()
                 if norm.width > 30 and norm.height > 15:
                     # Check if it contains any text
-                    has_text = any(norm.contains_point(r.mid_x, r.mid_y) for r in runs if r.text.strip())
+                    has_text = any(
+                        norm.contains_point(r.mid_x, r.mid_y) for r in runs if r.text.strip()
+                    )
                     if has_text:
                         visual_boxes.append(norm)
 

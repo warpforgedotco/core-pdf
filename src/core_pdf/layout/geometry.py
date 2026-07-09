@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 from typing import Any
 
 BBox = tuple[float, float, float, float]
@@ -124,7 +125,12 @@ class RectBox:
 
     def contains_rect(self, other: RectBox) -> bool:
         """Check if another rectangle is entirely inside this one."""
-        return self.x0 <= other.x0 and self.y0 <= other.y0 and self.x1 >= other.x1 and self.y1 >= other.y1
+        return (
+            self.x0 <= other.x0
+            and self.y0 <= other.y0
+            and self.x1 >= other.x1
+            and self.y1 >= other.y1
+        )
 
     def replace(self, **kwargs: Any) -> RectBox:
         """Create a new RectBox with modified fields."""

@@ -6,8 +6,8 @@ from statistics import median_low
 from typing import Any
 
 if typing.TYPE_CHECKING:
-    from core_pdf.document.page import PdfPage
     from core_pdf.document.models import AnnotationRecord
+    from core_pdf.document.page import PdfPage
 
 from core_pdf.layout.models import LayoutBox, LayoutLine, TextRun
 from core_pdf.layout.ordering import (
@@ -202,7 +202,12 @@ def render_page_text(
         transformed = []
         for run in runs:
             if rotate == 90:
-                new_x0, new_y0, new_x1, new_y1 = run.y0, page_width - run.x1, run.y1, page_width - run.x0
+                new_x0, new_y0, new_x1, new_y1 = (
+                    run.y0,
+                    page_width - run.x1,
+                    run.y1,
+                    page_width - run.x0,
+                )
             elif rotate == 180:
                 new_x0, new_y0, new_x1, new_y1 = (
                     page_width - run.x1,
@@ -211,7 +216,12 @@ def render_page_text(
                     page_height - run.y0,
                 )
             elif rotate == 270:
-                new_x0, new_y0, new_x1, new_y1 = page_height - run.y1, run.x0, page_height - run.y0, run.x1
+                new_x0, new_y0, new_x1, new_y1 = (
+                    page_height - run.y1,
+                    run.x0,
+                    page_height - run.y0,
+                    run.x1,
+                )
             else:
                 new_x0, new_y0, new_x1, new_y1 = run.x0, run.y0, run.x1, run.y1
             transformed.append(
@@ -285,9 +295,12 @@ def render_sorted_runs(
 
             if ox > 0 and oy > 0:
                 box_area = (run.y1 - run.y0) * (run.x1 - run.x0)
-                if box_area > 0 and (ox * oy) / box_area > 0.8:
-                    if text == prev_text or (len(text) == len(prev_text) and len(text) <= 2):
-                        continue
+                if (
+                    box_area > 0
+                    and (ox * oy) / box_area > 0.8
+                    and (text == prev_text or (len(text) == len(prev_text) and len(text) <= 2))
+                ):
+                    continue
 
         if prev_x1 is not None:
             x_gap = run.x0 - prev_x1

@@ -3,13 +3,13 @@ from __future__ import annotations
 from collections import deque
 from typing import TYPE_CHECKING, Any, Iterator, cast
 
+from core_pdf.content.interpreter import TextState
 from core_pdf.document.models import AnnotationRecord, TextTraceSpan
-from core_pdf.syntax.primitives import MISSING, PdfStream, collect_inherited_values
-from core_pdf.layout.tables import TableExtractor
 from core_pdf.layout.geometry import RectBox
 from core_pdf.layout.render import render_page_text
+from core_pdf.layout.tables import TableExtractor
 from core_pdf.layout.traces import CapturedLine
-from core_pdf.content.interpreter import TextState
+from core_pdf.syntax.primitives import MISSING, PdfStream, collect_inherited_values
 
 if TYPE_CHECKING:
     from core_pdf.document.document import PdfDocument
@@ -306,14 +306,18 @@ class PdfPage:
     def get_texttrace(self) -> list[TextTraceSpan]:
         if self.texttrace is None:
             state = (
-                self.state if self.state is not None and self.state.glyphs else self.capture_texttrace_state()
+                self.state
+                if self.state is not None and self.state.glyphs
+                else self.capture_texttrace_state()
             )
             spans: dict[tuple[int, tuple[float, ...] | None, bool], TextTraceSpan] = {}
             for glyph in state.glyphs:
                 key = (glyph.seqno, glyph.fill, glyph.visible)
                 span = spans.get(key)
                 if span is None:
-                    span = TextTraceSpan(seqno=glyph.seqno, color=glyph.fill, bbox=glyph.rect, chars=[])
+                    span = TextTraceSpan(
+                        seqno=glyph.seqno, color=glyph.fill, bbox=glyph.rect, chars=[]
+                    )
                     spans[key] = span
                 else:
                     rect = span["bbox"]
@@ -337,7 +341,9 @@ class PdfPage:
 
         graphics = self.get_graphics()
         new_state = TextState(self.document, self.page_dict)
-        new_state.runs = [r for r in graphics.runs if r.x1 > x0 and r.x0 < x1 and r.y1 > y0 and r.y0 < y1]
+        new_state.runs = [
+            r for r in graphics.runs if r.x1 > x0 and r.x0 < x1 and r.y1 > y0 and r.y0 < y1
+        ]
         new_page.state = new_state
 
         grid_lines = self.get_grid_lines()
@@ -352,13 +358,15 @@ class PdfPage:
         return new_page
 
     def within_bbox(self, bbox: tuple[float, float, float, float]) -> PdfPage:
-        """Return a version of the page with objects entirely within the bounding box (x0, y0, x1, y1)."""
+        """Return a page with objects entirely within the bbox (x0, y0, x1, y1)."""
         x0, y0, x1, y1 = bbox
         new_page = PdfPage(self.document, self.page_dict, self.page_number)
 
         graphics = self.get_graphics()
         new_state = TextState(self.document, self.page_dict)
-        new_state.runs = [r for r in graphics.runs if r.x0 >= x0 and r.x1 <= x1 and r.y0 >= y0 and r.y1 <= y1]
+        new_state.runs = [
+            r for r in graphics.runs if r.x0 >= x0 and r.x1 <= x1 and r.y0 >= y0 and r.y1 <= y1
+        ]
         new_page.state = new_state
 
         grid_lines = self.get_grid_lines()
@@ -377,7 +385,9 @@ class PdfPage:
         if cache is None:
             self.text_cache = cache = {}
         if layout not in cache:
-            cache[layout] = render_page_text(self.chars, rotate=self.rotation, media_box=self.media_box, layout=layout)
+            cache[layout] = render_page_text(
+                self.chars, rotate=self.rotation, media_box=self.media_box, layout=layout
+            )
         return cache[layout]
 
     def to_markdown(self) -> str:
@@ -483,9 +493,12 @@ class PdfPage:
             elif direction == "above":
                 if r.y0 >= y1 and abs(rmid_x - mid_x) < max(r.x1 - r.x0, x1 - x0, 20.0):
                     dist = r.y0 - y1
-            elif direction == "below":
-                if r.y1 <= y0 and abs(rmid_x - mid_x) < max(r.x1 - r.x0, x1 - x0, 20.0):
-                    dist = y0 - r.y1
+            elif (
+                direction == "below"
+                and r.y1 <= y0
+                and abs(rmid_x - mid_x) < max(r.x1 - r.x0, x1 - x0, 20.0)
+            ):
+                dist = y0 - r.y1
 
             if 0 <= dist <= distance:
                 candidates.append((dist, r))
@@ -530,7 +543,9 @@ class PdfPage:
         if grid is not None and grid.is_valid():
             result = TableExtractor.extract_grid(visible_runs, grid, include_span_info)
         else:
-            result = TableExtractor.extract_heuristic(visible_runs, detect_header, include_span_info)
+            result = TableExtractor.extract_heuristic(
+                visible_runs, detect_header, include_span_info
+            )
 
         self.tables[cache_key] = result
         return result

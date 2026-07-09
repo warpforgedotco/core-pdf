@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import array
-import sys
 import re
+import sys
 import typing
 from typing import TYPE_CHECKING
 
@@ -23,6 +23,7 @@ RE_ITEMS = re.compile(b"(<[0-9A-Fa-f]+>|\\([^)]*\\))")
 RE_BFRANGE = re.compile(b"beginbfrange(.*?)endbfrange", re.DOTALL)
 RE_RANGE_ITEMS = re.compile(b"(<[0-9A-Fa-f]+>|\\([^)]*\\)|\\[[^\\]]*\\])")
 RE_DSTS = re.compile(b"(<[0-9A-Fa-f]+>|\\([^)]*\\))")
+
 
 def expand_range(start: int, end: int, source_hex_len: int, base_dst: str) -> dict[bytes, str]:
     mapping: dict[bytes, str] = {}
@@ -60,7 +61,8 @@ class ToUnicodeCMap:
         self.parse_bfrange(data)
 
         self.decode_lengths = sorted(
-            ({len(end) for _, end in self.code_space_ranges} | {len(k) for k in self.mappings}) or {1},
+            ({len(end) for _, end in self.code_space_ranges} | {len(k) for k in self.mappings})
+            or {1},
             reverse=True,
         )
         self.precalculate_fast_tables()
@@ -150,7 +152,9 @@ class ToUnicodeCMap:
                 elif t3.startswith(b"<") or t3.startswith(b"("):
                     try:
                         base_dst = (
-                            decode_utf16be(t3[1:-1].decode()) if t3.startswith(b"<") else decode_utf16be(t3[1:-1])
+                            decode_utf16be(t3[1:-1].decode())
+                            if t3.startswith(b"<")
+                            else decode_utf16be(t3[1:-1])
                         )
                     except (ValueError, UnicodeDecodeError) as exc:
                         raise ValueError("invalid ToUnicode CMap bfrange") from exc
@@ -190,7 +194,9 @@ class ToUnicodeCMap:
             return ""
 
         # FAST PATH: single-byte mappings
-        if self.fast_decode_table is not None and (not self.decode_lengths or self.decode_lengths == [1]):
+        if self.fast_decode_table is not None and (
+            not self.decode_lengths or self.decode_lengths == [1]
+        ):
             table = self.fast_decode_table
             result = "".join(map(table.__getitem__, data))
             return result

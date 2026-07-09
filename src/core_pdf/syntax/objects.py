@@ -11,6 +11,7 @@ from core_pdf.syntax.errors import PdfParseError
 from core_pdf.syntax.lexer import PdfLexer
 from core_pdf.syntax.primitives import PdfReference, PdfStream, parse_int_strict, parse_name
 
+
 class PdfObjectStream:
     """Decoded object stream with lazy parsing of contained objects."""
 

@@ -48,7 +48,11 @@ def glyph_name_to_unicode(name: str) -> str:
     for suffix in ("small", "superior", "inferior", "oldstyle", "fitted"):
         if name.endswith(suffix) and len(name) > len(suffix):
             base = name[: -len(suffix)]
-            for candidate in (base, base.lower(), base[:1].upper() + base[1:].lower() if base else base):
+            for candidate in (
+                base,
+                base.lower(),
+                base[:1].upper() + base[1:].lower() if base else base,
+            ):
                 if len(candidate) > 1 and candidate in FONT_DATA:
                     return FONT_DATA[candidate]
 

@@ -14,36 +14,208 @@ from typing import Any
 
 from core_pdf.syntax.errors import PdfParseError, PdfUnsupportedError
 
-
 # ---------------------------------------------------------------------------
 # MQ Arithmetic Decoder
 # ---------------------------------------------------------------------------
 
 _QE = (
-    0x5601, 0x3401, 0x1801, 0x0AC1, 0x0521, 0x0221, 0x5601, 0x5401,
-    0x4801, 0x3801, 0x3001, 0x2401, 0x1C01, 0x1601, 0x5601, 0x5401,
-    0x5101, 0x4801, 0x3801, 0x3401, 0x3001, 0x2801, 0x2401, 0x2201,
-    0x1C01, 0x1801, 0x1601, 0x1401, 0x1201, 0x1101, 0x0AC1, 0x09C1,
-    0x08A1, 0x0521, 0x0441, 0x02A1, 0x0221, 0x0141, 0x0111, 0x0085,
-    0x0049, 0x0025, 0x0015, 0x0009, 0x0005, 0x0001, 0x5601,
+    0x5601,
+    0x3401,
+    0x1801,
+    0x0AC1,
+    0x0521,
+    0x0221,
+    0x5601,
+    0x5401,
+    0x4801,
+    0x3801,
+    0x3001,
+    0x2401,
+    0x1C01,
+    0x1601,
+    0x5601,
+    0x5401,
+    0x5101,
+    0x4801,
+    0x3801,
+    0x3401,
+    0x3001,
+    0x2801,
+    0x2401,
+    0x2201,
+    0x1C01,
+    0x1801,
+    0x1601,
+    0x1401,
+    0x1201,
+    0x1101,
+    0x0AC1,
+    0x09C1,
+    0x08A1,
+    0x0521,
+    0x0441,
+    0x02A1,
+    0x0221,
+    0x0141,
+    0x0111,
+    0x0085,
+    0x0049,
+    0x0025,
+    0x0015,
+    0x0009,
+    0x0005,
+    0x0001,
+    0x5601,
 )
 
 _NMPS = (
-    1,  2,  3,  4,  5, 38,  7,  8,  9, 10, 11, 12, 13, 29, 15, 16,
-    17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32,
-    33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 45, 46,
+    1,
+    2,
+    3,
+    4,
+    5,
+    38,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    29,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31,
+    32,
+    33,
+    34,
+    35,
+    36,
+    37,
+    38,
+    39,
+    40,
+    41,
+    42,
+    43,
+    44,
+    45,
+    45,
+    46,
 )
 
 _NLPS = (
-    1,  6,  9, 12, 29, 33,  6, 14, 14, 14, 17, 18, 20, 21, 14, 14,
-    15, 16, 17, 18, 19, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29,
-    30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 46,
+    1,
+    6,
+    9,
+    12,
+    29,
+    33,
+    6,
+    14,
+    14,
+    14,
+    17,
+    18,
+    20,
+    21,
+    14,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31,
+    32,
+    33,
+    34,
+    35,
+    36,
+    37,
+    38,
+    39,
+    40,
+    41,
+    42,
+    43,
+    46,
 )
 
 _SWITCH = (
-    1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
 )
 
 # Context labels
@@ -154,10 +326,22 @@ class JpxImage:
     """JPEG 2000 image decoder."""
 
     __slots__ = (
-        "width", "height", "components", "tiles_cols", "tiles_rows",
-        "levels", "codeblock_w", "codeblock_h", "prog_order", "num_layers",
-        "precincts", "quant_steps", "components_data", "tiles",
-        "negate", "swap_bytes",
+        "width",
+        "height",
+        "components",
+        "tiles_cols",
+        "tiles_rows",
+        "levels",
+        "codeblock_w",
+        "codeblock_h",
+        "prog_order",
+        "num_layers",
+        "precincts",
+        "quant_steps",
+        "components_data",
+        "tiles",
+        "negate",
+        "swap_bytes",
     )
 
     def __init__(self) -> None:
@@ -197,14 +381,8 @@ class JpxImage:
                 self.parse_cod(br)
             elif marker == 0xFF5C:
                 self.parse_qcd(br)
-            elif marker == 0xFF90:
-                return True
-            elif marker == 0xFF93:
-                return True
-            elif marker == 0xFFD9:
-                return True
             else:
-                return False
+                return marker == 0xFF90 or marker == 0xFF93 or marker == 0xFFD9
 
     def parse_siz(self, br: BitStream) -> None:
         lsiz = br.read_u16()
@@ -224,12 +402,14 @@ class JpxImage:
             raise ValueError("zero components")
         self.components_data = []
         for _ in range(self.components):
-            self.components_data.append({
-                "precision": br.read_byte() & 0x7F,
-                "is_signed": bool(br.read_byte() & 0x80),
-                "h_sep": br.read_byte(),
-                "v_sep": br.read_byte(),
-            })
+            self.components_data.append(
+                {
+                    "precision": br.read_byte() & 0x7F,
+                    "is_signed": bool(br.read_byte() & 0x80),
+                    "h_sep": br.read_byte(),
+                    "v_sep": br.read_byte(),
+                }
+            )
         self.tiles_cols = (self.width + tile_w - 1) // tile_w if tile_w else 0
         self.tiles_rows = (self.height + tile_h - 1) // tile_h if tile_h else 0
 
@@ -280,8 +460,11 @@ class JpxImage:
                 for c in range(self.components):
                     tile["components"].append(
                         TileComponent(
-                            tile_w, tile_h, self.levels,
-                            self.codeblock_w, self.codeblock_h,
+                            tile_w,
+                            tile_h,
+                            self.levels,
+                            self.codeblock_w,
+                            self.codeblock_h,
                         )
                     )
                 self.tiles.append(tile)
@@ -300,8 +483,12 @@ class JpxImage:
                 br.bit_pos()
                 for comp in tile["components"]:
                     if not self.decode_packets(
-                        br, w, h, self.levels,
-                        self.codeblock_w, self.codeblock_h,
+                        br,
+                        w,
+                        h,
+                        self.levels,
+                        self.codeblock_w,
+                        self.codeblock_h,
                         comp,
                     ):
                         return False
@@ -325,8 +512,14 @@ class JpxImage:
         br.read_byte()
 
     def decode_packets(
-        self, br: BitStream, w: int, h: int, levels: int,
-        cb_w: int, cb_h: int, comp: TileComponent,
+        self,
+        br: BitStream,
+        w: int,
+        h: int,
+        levels: int,
+        cb_w: int,
+        cb_h: int,
+        comp: TileComponent,
     ) -> bool:
         # For a minimal decoder, decode all packets in LRCP order
         for r in range(levels + 1):
@@ -335,8 +528,15 @@ class JpxImage:
         return True
 
     def decode_packet(
-        self, br: BitStream, res: int, comp: TileComponent,
-        w: int, h: int, levels: int, cb_w: int, cb_h: int,
+        self,
+        br: BitStream,
+        res: int,
+        comp: TileComponent,
+        w: int,
+        h: int,
+        levels: int,
+        cb_w: int,
+        cb_h: int,
     ) -> bool:
         subband = comp.resolutions[res]
         for sub in subband.subbands:
@@ -352,8 +552,12 @@ class JpxImage:
         return True
 
     def decode_block(
-        self, br: BitStream, block: CodeBlock,
-        block_w: int, block_h: int, is_ll: bool,
+        self,
+        br: BitStream,
+        block: CodeBlock,
+        block_w: int,
+        block_h: int,
+        is_ll: bool,
     ) -> bool:
         data = block.data
         # Find max bit-plane
@@ -376,16 +580,23 @@ class JpxImage:
             pass_type = first_sig_pass % 3
             # Parse packet header to get pass lengths
             # For now, we assume all data is in one segment
-            if not self.decode_pass(br, block, pass_type, num_bps, first_sig_pass,
-                                     block_w, block_h, is_ll):
+            if not self.decode_pass(
+                br, block, pass_type, num_bps, first_sig_pass, block_w, block_h, is_ll
+            ):
                 return False
             first_sig_pass += 1
 
         return True
 
     def decode_pass(
-        self, br: BitStream, block: CodeBlock, pass_type: int,
-        num_bps: int, pass_num: int, block_w: int, block_h: int,
+        self,
+        br: BitStream,
+        block: CodeBlock,
+        pass_type: int,
+        num_bps: int,
+        pass_num: int,
+        block_w: int,
+        block_h: int,
         is_ll: bool,
     ) -> bool:
         bp = num_bps - 1 - (pass_num // 3)
@@ -396,11 +607,10 @@ class JpxImage:
         if pass_type == 0:
             # Cleanup pass
             for i in range(num):
-                if data[i] == 0 and significance[i] == 0:
+                if data[i] == 0 and significance[i] == 0 and br.read_bit():
+                    data[i] = 1 << bp
                     if br.read_bit():
-                        data[i] = 1 << bp
-                        if br.read_bit():
-                            data[i] = -data[i]
+                        data[i] = -data[i]
         elif pass_type == 1:
             # Significance propagation pass
             for i in range(num):
@@ -514,10 +724,20 @@ def idwt_53(samples: list[int], offset: int, length: int, stride: int) -> None:
 
 
 class SubBand:
-    __slots__ = ("width", "height", "samples", "level", "is_ll", "num_blocks_h", "num_blocks_v", "blocks")
+    __slots__ = (
+        "width",
+        "height",
+        "samples",
+        "level",
+        "is_ll",
+        "num_blocks_h",
+        "num_blocks_v",
+        "blocks",
+    )
 
-    def __init__(self, width: int, height: int, level: int, is_ll: bool,
-                 cb_w: int, cb_h: int) -> None:
+    def __init__(
+        self, width: int, height: int, level: int, is_ll: bool, cb_w: int, cb_h: int
+    ) -> None:
         self.width = width
         self.height = height
         self.samples = [0] * (width * height)
@@ -533,8 +753,7 @@ class SubBand:
 class ResSubBand:
     __slots__ = ("width", "height", "level", "subbands")
 
-    def __init__(self, width: int, height: int, level: int,
-                 cb_w: int, cb_h: int) -> None:
+    def __init__(self, width: int, height: int, level: int, cb_w: int, cb_h: int) -> None:
         self.width = width
         self.height = height
         self.level = level
@@ -552,8 +771,7 @@ class ResSubBand:
 class TileComponent:
     __slots__ = ("width", "height", "resolutions")
 
-    def __init__(self, width: int, height: int, levels: int,
-                 cb_w: int, cb_h: int) -> None:
+    def __init__(self, width: int, height: int, levels: int, cb_w: int, cb_h: int) -> None:
         self.width = width
         self.height = height
         self.resolutions: list[ResSubBand] = []
@@ -576,6 +794,7 @@ class CodeBlock:
 # Bit stream helpers
 # ---------------------------------------------------------------------------
 
+
 class BitStream:
     __slots__ = ("data", "byte", "bitpos")
 
@@ -588,7 +807,12 @@ class BitStream:
         return (self.read_byte() << 8) | self.read_byte()
 
     def read_u32(self) -> int:
-        return (self.read_byte() << 24) | (self.read_byte() << 16) | (self.read_byte() << 8) | self.read_byte()
+        return (
+            (self.read_byte() << 24)
+            | (self.read_byte() << 16)
+            | (self.read_byte() << 8)
+            | self.read_byte()
+        )
 
     def read_byte(self) -> int:
         if self.bitpos >= len(self.data):
@@ -624,6 +848,7 @@ class BitStream:
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def decode_jpx(data: bytes) -> bytes:
     """Decode a JPEG 2000 codestream. Returns raw 8-bit greyscale pixel data."""

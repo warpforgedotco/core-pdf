@@ -20,7 +20,9 @@ class NavigationMixin:
             return []
         return cast(Any, self).walk_outlines(first, 0)
 
-    def walk_outlines(self: DocumentMixinProtocol, item: dict[str, Any], level: int) -> list[OutlineItem]:
+    def walk_outlines(
+        self: DocumentMixinProtocol, item: dict[str, Any], level: int
+    ) -> list[OutlineItem]:
         if level > 200:
             raise ValueError("invalid outline depth")
         if not isinstance(item, dict):
@@ -40,7 +42,10 @@ class NavigationMixin:
             dest = current.get("Dest")
             if dest is None:
                 action = current.get("A")
-                if isinstance(action, dict) and self.resolver.resolve_str(action.get("S")) == "GoTo":
+                if (
+                    isinstance(action, dict)
+                    and self.resolver.resolve_str(action.get("S")) == "GoTo"
+                ):
                     dest = action.get("D")
             result.append(
                 OutlineItem(
@@ -60,11 +65,18 @@ class NavigationMixin:
             current = current.get("Next")
         return result
 
-    def resolve_destination(self: DocumentMixinProtocol, dest: Any, seen: set[str] | None = None) -> int | None:
+    def resolve_destination(
+        self: DocumentMixinProtocol, dest: Any, seen: set[str] | None = None
+    ) -> int | None:
         if dest is None:
             return None
         normalized = cast(Any, self).normalize_destination_value(dest, seen)
-        if normalized.raw is None and normalized.page_index is None and normalized.type is None and not normalized.args:
+        if (
+            normalized.raw is None
+            and normalized.page_index is None
+            and normalized.type is None
+            and not normalized.args
+        ):
             raise ValueError("invalid destination")
         return normalized.page_index
 
@@ -73,7 +85,9 @@ class NavigationMixin:
             cast(Any, self).populate_named_destinations()
         return dict(self.named_destinations_cache or {})
 
-    def resolve_named_destination(self: DocumentMixinProtocol, name: str, seen: set[str] | None = None) -> NamedDestination | None:
+    def resolve_named_destination(
+        self: DocumentMixinProtocol, name: str, seen: set[str] | None = None
+    ) -> NamedDestination | None:
         if seen is None:
             seen = set()
         if name in seen:
@@ -83,10 +97,14 @@ class NavigationMixin:
             cast(Any, self).populate_named_destinations()
         return (self.named_destinations_cache or {}).get(name)
 
-    def resolve_named_destination_value(self: DocumentMixinProtocol, val: Any, seen: set[str] | None = None) -> NamedDestination:
+    def resolve_named_destination_value(
+        self: DocumentMixinProtocol, val: Any, seen: set[str] | None = None
+    ) -> NamedDestination:
         return cast(Any, self).normalize_destination_value(val, seen)
 
-    def destination_from_list(self: DocumentMixinProtocol, resolved_list: list[Any]) -> NamedDestination:
+    def destination_from_list(
+        self: DocumentMixinProtocol, resolved_list: list[Any]
+    ) -> NamedDestination:
         if not resolved_list:
             raise ValueError("invalid destination array")
         page_obj = self.resolver.resolve(resolved_list[0])
@@ -187,7 +205,9 @@ class NavigationMixin:
 
         self.named_destinations_cache = normalized
 
-    def walk_name_tree(self: DocumentMixinProtocol, node: Any, results: dict[str, Any], _depth: int = 0) -> None:
+    def walk_name_tree(
+        self: DocumentMixinProtocol, node: Any, results: dict[str, Any], _depth: int = 0
+    ) -> None:
         if _depth > 100:
             raise ValueError("invalid name tree depth")
         node = self.resolver.resolve(node)

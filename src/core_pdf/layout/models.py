@@ -1,6 +1,7 @@
 from __future__ import annotations
+
 from array import array
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 _COORDS_TEMPLATE = array("d", [0.0] * 8)
 

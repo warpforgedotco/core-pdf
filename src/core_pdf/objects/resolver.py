@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from core_pdf.fonts.encoding import decode_pdf_text_string
 from core_pdf.syntax.lexer import PdfLexer
 from core_pdf.syntax.objects import PdfObjectStream
 from core_pdf.syntax.primitives import (
@@ -15,7 +16,6 @@ from core_pdf.syntax.primitives import (
     parse_name,
 )
 from core_pdf.syntax.xref import PdfXRefEntry
-from core_pdf.fonts.encoding import decode_pdf_text_string
 
 
 class ObjectResolver:
@@ -76,7 +76,10 @@ class ObjectResolver:
         if self.lexer_stack:
             return self.lexer_stack.pop()
         return PdfLexer(
-            self.data, reference_resolver=self.resolve, decipher=self.decipher, kw_cache=self.kw_cache
+            self.data,
+            reference_resolver=self.resolve,
+            decipher=self.decipher,
+            kw_cache=self.kw_cache,
         )
 
     def release_lexer(self, lexer: PdfLexer) -> None:
@@ -93,11 +96,10 @@ class ObjectResolver:
             raise ValueError("invalid PDF reference")
 
         # FAST PATH: O(1) Array Lookup for gen-0
-        if gen_num == 0 and self.objects_gen0 is not None:
-            if obj_num < len(self.objects_gen0):
-                resolved = self.objects_gen0[obj_num]
-                if resolved is not MISSING:
-                    return resolved
+        if gen_num == 0 and self.objects_gen0 is not None and obj_num < len(self.objects_gen0):
+            resolved = self.objects_gen0[obj_num]
+            if resolved is not MISSING:
+                return resolved
 
         cache_key = (obj_num << 16) | gen_num
         resolved = self.objects.get(cache_key, MISSING)
@@ -130,7 +132,9 @@ class ObjectResolver:
                         if type(stream_obj) is PdfStream:
                             container = PdfObjectStream(stream_obj, kw_cache=self.kw_cache)
                             self.object_streams[stream_num] = container
-                    resolved = container.get(obj_num, self.resolve) if container is not None else None
+                    resolved = (
+                        container.get(obj_num, self.resolve) if container is not None else None
+                    )
                 else:
                     # Normal object (Type 1)
                     lexer = self.get_lexer()
@@ -212,8 +216,13 @@ class ObjectResolver:
             return None
         if isinstance(resolved, (list, tuple)) and len(resolved) == 4:
             try:
-                return (float(resolved[0]), float(resolved[1]), float(resolved[2]), float(resolved[3]))
-            except (TypeError, ValueError):
+                return (
+                    float(resolved[0]),
+                    float(resolved[1]),
+                    float(resolved[2]),
+                    float(resolved[3]),
+                )
+            except TypeError, ValueError:
                 raise ValueError("invalid box value")
         raise ValueError("invalid box value")
 

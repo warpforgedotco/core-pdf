@@ -1,12 +1,18 @@
 from __future__ import annotations
-from core_pdf.syntax.primitives import PdfStream, parse_float, parse_name
-from core_pdf.fonts.encoding import split_chunks
-from core_pdf.fonts.helpers import cached_decode_table, decode_chunks_with_table, decode_with_table, parse_differences
-from core_pdf.fonts.cmaps import CMapDecoder, ToUnicodeCMap
-from core_pdf.fonts.data.core14 import FONT_DATA
-from core_pdf.fonts.widths import get_descendant, parse_font_widths
 
 import typing
+
+from core_pdf.fonts.cmaps import CMapDecoder, ToUnicodeCMap
+from core_pdf.fonts.data.core14 import FONT_DATA
+from core_pdf.fonts.encoding import split_chunks
+from core_pdf.fonts.helpers import (
+    cached_decode_table,
+    decode_chunks_with_table,
+    decode_with_table,
+    parse_differences,
+)
+from core_pdf.fonts.widths import get_descendant, parse_font_widths
+from core_pdf.syntax.primitives import PdfStream, parse_float, parse_name
 
 if typing.TYPE_CHECKING:
     from typing import Any
@@ -80,13 +86,17 @@ class FontDecoder:
             subtype = parse_name(subtype) or str(subtype)
 
         to_unicode_obj = font.get("ToUnicode")
-        to_unicode = ToUnicodeCMap(to_unicode_obj) if isinstance(to_unicode_obj, PdfStream) else None
+        to_unicode = (
+            ToUnicodeCMap(to_unicode_obj) if isinstance(to_unicode_obj, PdfStream) else None
+        )
 
         cmap, base_encoding, differences = self.parse_encoding(font)
         widths, default_width, is_vertical = parse_font_widths(font_dict, subtype)
 
         base_font = font_dict.get("BaseFont")
-        base_font_name = parse_name(base_font) or (str(base_font) if base_font is not None else None)
+        base_font_name = parse_name(base_font) or (
+            str(base_font) if base_font is not None else None
+        )
         if base_encoding == "V" or (base_font_name and base_font_name.endswith("-V")):
             is_vertical = True
 
@@ -97,7 +107,7 @@ class FontDecoder:
             widths = self.adjust_type3_widths(font_dict, widths)
 
         byte_decode_table: tuple[str, ...] | None = None
-        if to_unicode is None and not subtype == "Type0":
+        if to_unicode is None and subtype != "Type0":
             key = "Type3" if is_type3 else (base_encoding or "")
             byte_decode_table = cached_decode_table(key, tuple(sorted(differences.items())))
 
@@ -118,7 +128,9 @@ class FontDecoder:
         dw = self.default_width
         dw_pos = dw if dw > 0.0 else 1000.0
         space_w = dw if dw > 0.0 else 250.0
-        self.fast_widths = tuple(self.widths.get(i, space_w if i == 32 else dw_pos) for i in range(256))
+        self.fast_widths = tuple(
+            self.widths.get(i, space_w if i == 32 else dw_pos) for i in range(256)
+        )
 
         # Optimized O(1) array-based cache for all 2-byte CIDs
         if self.is_cid_font:
@@ -144,7 +156,9 @@ class FontDecoder:
         else:
             self.fast_widths_cid = None
 
-    def parse_encoding(self, font: dict[str, Any]) -> tuple[CMapDecoder | None, str | None, dict[int, str]]:
+    def parse_encoding(
+        self, font: dict[str, Any]
+    ) -> tuple[CMapDecoder | None, str | None, dict[int, str]]:
         cmap = None
         base_encoding = None
         differences: dict[int, str] = {}
@@ -192,7 +206,9 @@ class FontDecoder:
             descent = parse_float(descriptor.get("Descent"), descent)
         return ascent, descent
 
-    def adjust_type3_widths(self, font_dict: dict[str, Any], widths: dict[int, float]) -> dict[int, float]:
+    def adjust_type3_widths(
+        self, font_dict: dict[str, Any], widths: dict[int, float]
+    ) -> dict[int, float]:
         font_matrix = font_dict.get("FontMatrix")
         if isinstance(font_matrix, (list, tuple)) and len(font_matrix) >= 1:
             fm_a = parse_float(font_matrix[0], 0.001)
@@ -241,9 +257,8 @@ class FontDecoder:
         return [self.decode(chunk) for chunk in chunks]
 
     def glyph_width(self, code: int) -> float:
-        if self.fast_widths_cid is not None:
-            if 0 <= code < 65536:
-                return self.fast_widths_cid[code]
+        if self.fast_widths_cid is not None and 0 <= code < 65536:
+            return self.fast_widths_cid[code]
         if 0 <= code < 256:
             return self.fast_widths[code]
         return self.widths.get(code, self.default_width)
@@ -267,7 +282,12 @@ class FontDecoder:
         scale = font_size * horizontal_scale / 100000.0
 
         # Common fast path: single-byte encodings (Standard fonts)
-        if chunks is None and not self.is_cid_font and self.to_unicode is None and self.cmap is None:
+        if (
+            chunks is None
+            and not self.is_cid_font
+            and self.to_unicode is None
+            and self.cmap is None
+        ):
             widths = self.fast_widths
             total = 0.0
             space_count = 0

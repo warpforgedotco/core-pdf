@@ -5,9 +5,9 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Any, Callable
 
-from core_pdf.syntax.primitives import parse_name
 from core_pdf.fonts.encoding import PDFDOC_ENCODING_TABLE
 from core_pdf.fonts.glyphs import glyph_name_to_unicode
+from core_pdf.syntax.primitives import parse_name
 
 EncodingFallback = Callable[[int], str]
 
@@ -44,12 +44,16 @@ def build_decode_table(
 
 
 @lru_cache(maxsize=256)
-def cached_decode_table(key: str, differences_items: tuple[tuple[int, str], ...]) -> tuple[str, ...]:
+def cached_decode_table(
+    key: str, differences_items: tuple[tuple[int, str], ...]
+) -> tuple[str, ...]:
     differences = dict(differences_items)
     return build_decode_table(ENCODING_FALLBACKS.get(key, fallback_with_pdfdoc), differences)
 
 
-def parse_differences(value: Any, resolve_name: Callable[[Any], str | None] | None = None) -> dict[int, str]:
+def parse_differences(
+    value: Any, resolve_name: Callable[[Any], str | None] | None = None
+) -> dict[int, str]:
     differences: dict[int, str] = {}
     if not isinstance(value, (list, tuple)):
         raise ValueError("invalid encoding differences array")

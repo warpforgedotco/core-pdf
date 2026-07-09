@@ -5,31 +5,31 @@ import typing
 from functools import lru_cache
 from typing import Any
 
+from core_pdf.fonts.decoder import FontDecoder
+from core_pdf.fonts.encoding import split_chunks
 from core_pdf.fonts.truetype import (
     tt_cmap,
     tt_gid_composite_info,
     tt_loca,
     tt_tables,
 )
+from core_pdf.layout.geometry import RectBox
+from core_pdf.layout.models import TextRun
+from core_pdf.layout.traces import CapturedLine, DrawingTrace, GlyphTrace
 from core_pdf.syntax.lexer import PdfLexer
 from core_pdf.syntax.primitives import (
+    MISSING,
     Matrix,
     PdfReference,
     PdfStream,
     PdfString,
     matrix_multiply,
-    MISSING,
 )
-from core_pdf.layout.geometry import RectBox
-from core_pdf.layout.models import TextRun
-from core_pdf.layout.traces import GlyphTrace, CapturedLine, DrawingTrace
-from core_pdf.fonts.encoding import split_chunks
-from core_pdf.fonts.decoder import FontDecoder
-
 
 if typing.TYPE_CHECKING:
-    from core_pdf.fonts.decoder import FontDecoder
     from typing import Any
+
+    from core_pdf.fonts.decoder import FontDecoder
 
 
 class TextDocument(typing.Protocol):
@@ -108,6 +108,7 @@ class StreamState:
 FILL_OPS = frozenset({"f", "f*", "F"})
 FILL_AND_STROKE_OPS = frozenset({"B", "b", "B*", "b*"})
 PAINT_OPS = FILL_OPS | FILL_AND_STROKE_OPS
+
 
 @lru_cache(maxsize=256)
 def cached_encode_latin1(s: str) -> bytes:
@@ -215,9 +216,23 @@ class TextState:
         # CTM components
         self.ca, self.cb, self.cc, self.cd, self.ce, self.cf = 1.0, 0.0, 0.0, 1.0, 0.0, 0.0
         # Text Matrix components
-        self.tm_a, self.tm_b, self.tm_c, self.tm_d, self.tm_e, self.tm_f = 1.0, 0.0, 0.0, 1.0, 0.0, 0.0
+        self.tm_a, self.tm_b, self.tm_c, self.tm_d, self.tm_e, self.tm_f = (
+            1.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+        )
         # Line Matrix components
-        self.lm_a, self.lm_b, self.lm_c, self.lm_d, self.lm_e, self.lm_f = 1.0, 0.0, 0.0, 1.0, 0.0, 0.0
+        self.lm_a, self.lm_b, self.lm_c, self.lm_d, self.lm_e, self.lm_f = (
+            1.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+        )
 
         self.fill_color = (0.0, 0.0, 0.0)
         self.fill_opacity = 1.0
@@ -660,7 +675,10 @@ class TextState:
                 self.pending_edges.append((x, y + h, x, y))
                 self.pending_rects.append(
                     RectBox(
-                        x, y, x + w, y + h,
+                        x,
+                        y,
+                        x + w,
+                        y + h,
                         seqno=self.sequence,
                         fill=self.fill_color,
                         fill_opacity=self.fill_opacity,
@@ -673,7 +691,12 @@ class TextState:
         if self.current_point is not None and self.subpath_start is not None:
             if self.capture_graphics:
                 self.pending_edges.append(
-                    (self.current_point[0], self.current_point[1], self.subpath_start[0], self.subpath_start[1])
+                    (
+                        self.current_point[0],
+                        self.current_point[1],
+                        self.subpath_start[0],
+                        self.subpath_start[1],
+                    )
                 )
             self.current_point = self.subpath_start
 
@@ -690,9 +713,19 @@ class TextState:
             self.current_point = (float(o[2]), float(o[3]))
 
     def op_paint_stroke(self, o, d):
-        if self.capture_graphics and d == "s" and self.current_point is not None and self.subpath_start is not None:
+        if (
+            self.capture_graphics
+            and d == "s"
+            and self.current_point is not None
+            and self.subpath_start is not None
+        ):
             self.pending_edges.append(
-                (self.current_point[0], self.current_point[1], self.subpath_start[0], self.subpath_start[1])
+                (
+                    self.current_point[0],
+                    self.current_point[1],
+                    self.subpath_start[0],
+                    self.subpath_start[1],
+                )
             )
         self.flush_drawing("stroke")
         self.current_point = None
@@ -704,16 +737,20 @@ class TextState:
         self.subpath_start = None
 
     def op_paint_fillstroke(self, o, d):
-        if self.capture_graphics and (d == "b" or d == "b*"):
-            if self.current_point is not None and self.subpath_start is not None:
-                self.pending_edges.append(
-                    (
-                        self.current_point[0],
-                        self.current_point[1],
-                        self.subpath_start[0],
-                        self.subpath_start[1],
-                    )
+        if (
+            self.capture_graphics
+            and (d == "b" or d == "b*")
+            and self.current_point is not None
+            and self.subpath_start is not None
+        ):
+            self.pending_edges.append(
+                (
+                    self.current_point[0],
+                    self.current_point[1],
+                    self.subpath_start[0],
+                    self.subpath_start[1],
                 )
+            )
         self.flush_drawing("fillstroke")
         self.current_point = None
         self.subpath_start = None
@@ -842,7 +879,7 @@ class TextState:
             stroke_opacity = extgstate.get("CA")
             if stroke_opacity is not None:
                 self.stroke_opacity = max(0.0, min(1.0, float(stroke_opacity)))
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             raise ValueError("invalid graphics state opacity")
 
     def shift_line(self, tx: float = 0.0, ty: float = 0.0, *, set_leading: bool = False) -> None:
@@ -915,7 +952,9 @@ class TextState:
 
         try:
             lexer = PdfLexer(stream.data_view, kw_cache=self.kw_cache)
-            lexer.dispatch_operations(self.op_handlers, self.fast_op_handlers, depth, operands=self.operands)
+            lexer.dispatch_operations(
+                self.op_handlers, self.fast_op_handlers, depth, operands=self.operands
+            )
 
             self.flush_run()
         finally:
@@ -923,7 +962,9 @@ class TextState:
             self.restore_stream_state(old_state)
             self.active_streams.remove(id(stream))
 
-    def lookup_page_resource(self, category: str, name: str, parent_category: str | None = None) -> Any:
+    def lookup_page_resource(
+        self, category: str, name: str, parent_category: str | None = None
+    ) -> Any:
         # Optimized nested cache lookup using pre-calculated resources_id
         cat_cache = self.resource_cache.get(category)
         if cat_cache is None:
@@ -1060,9 +1101,26 @@ class TextState:
         else:
             existing = None
         r = TextRun.reinit(
-            existing, text, x0, y0, x1, y1, tx, ty, font_size, space_width,
-            order, stream_order, xobject_depth, font_name, is_vertical,
-            rotation_angle, visible, line_break_before, seqno, fill_color,
+            existing,
+            text,
+            x0,
+            y0,
+            x1,
+            y1,
+            tx,
+            ty,
+            font_size,
+            space_width,
+            order,
+            stream_order,
+            xobject_depth,
+            font_name,
+            is_vertical,
+            rotation_angle,
+            visible,
+            line_break_before,
+            seqno,
+            fill_color,
         )
         if existing is None:
             self.run_pool.append(r)
@@ -1153,7 +1211,9 @@ class TextState:
         if chunk_texts is None:
             chunk_texts = decoder.decode_chunks(chunks)
 
-        chunk_codes = [chunk[0] if len(chunk) == 1 else int.from_bytes(chunk, "big") for chunk in chunks]
+        chunk_codes = [
+            chunk[0] if len(chunk) == 1 else int.from_bytes(chunk, "big") for chunk in chunks
+        ]
         advances = [self.chunk_advance(code, decoder) for code in chunk_codes]
         total_advance = sum(advances)
         if total_advance <= 0:
@@ -1193,7 +1253,9 @@ class TextState:
             if len(chunk_text) == 1:
                 append_glyph(
                     GlyphTrace(
-                        rect=RectBox(cx0, cy0, cx1, cy1, seqno=seqno, fill=fill, fill_opacity=fill_opacity),
+                        rect=RectBox(
+                            cx0, cy0, cx1, cy1, seqno=seqno, fill=fill, fill_opacity=fill_opacity
+                        ),
                         c=chunk_text,
                         seqno=seqno,
                         fill=fill,
@@ -1256,7 +1318,12 @@ class TextState:
 
         # Inline the single-byte fast path from text_advance_vector to avoid
         # function-call overhead for ~80% of PDF text (standard encodings).
-        if chunks is None and not decoder.is_cid_font and decoder.to_unicode is None and decoder.cmap is None:
+        if (
+            chunks is None
+            and not decoder.is_cid_font
+            and decoder.to_unicode is None
+            and decoder.cmap is None
+        ):
             widths = decoder.fast_widths
             cs = self.char_space * 1000.0 / fs if fs else 0.0
             ws = self.word_space * 1000.0 / fs if fs else 0.0
@@ -1473,7 +1540,9 @@ class TextState:
         if self.current_decoder is not None:
             return self.current_decoder
 
-        font_obj_ref = self.lookup_page_resource("Font", self.current_font) if self.current_font else None
+        font_obj_ref = (
+            self.lookup_page_resource("Font", self.current_font) if self.current_font else None
+        )
         if font_obj_ref is None:
             return FontDecoder({})
 
@@ -1484,7 +1553,11 @@ class TextState:
             return FontDecoder({})
 
         # Document-wide cache key based on font object reference (stable across pages)
-        cache_key = (font_obj_ref.obj_num, font_obj_ref.gen_num) if isinstance(font_obj_ref, PdfReference) else id(font_obj_ref)
+        cache_key = (
+            (font_obj_ref.obj_num, font_obj_ref.gen_num)
+            if isinstance(font_obj_ref, PdfReference)
+            else id(font_obj_ref)
+        )
         doc_cache = self.document.decoder_cache
         cached_decoder = doc_cache.get(cache_key, MISSING)
         if cached_decoder is not MISSING:
@@ -1495,7 +1568,9 @@ class TextState:
         resolved_font = self.document.resolver.resolve_font_dict(font_obj)
         self.current_decoder = FontDecoder(
             resolved_font,
-            ligature_overrides=detect_ligature_overrides(self.document, self.resources, resolved_font),
+            ligature_overrides=detect_ligature_overrides(
+                self.document, self.resources, resolved_font
+            ),
         )
         doc_cache[cache_key] = self.current_decoder
         return self.current_decoder
@@ -1504,7 +1579,9 @@ class TextState:
 MATRIX_TOLERANCE = 0.1
 
 
-def detect_rotation_from_linear(A: float, B: float, C: float, D: float, tolerance: float = MATRIX_TOLERANCE) -> int:
+def detect_rotation_from_linear(
+    A: float, B: float, C: float, D: float, tolerance: float = MATRIX_TOLERANCE
+) -> int:
     from math import sqrt
 
     scale_x = sqrt(A * A + B * B)
@@ -1512,18 +1589,35 @@ def detect_rotation_from_linear(A: float, B: float, C: float, D: float, toleranc
     if scale_x <= 0 or scale_y <= 0:
         return 0
     na, nb, nc, nd = A / scale_x, B / scale_x, C / scale_y, D / scale_y
-    if abs(na - 1.0) < tolerance and abs(nb) < tolerance and abs(nc) < tolerance and abs(nd - 1.0) < tolerance:
+    if (
+        abs(na - 1.0) < tolerance
+        and abs(nb) < tolerance
+        and abs(nc) < tolerance
+        and abs(nd - 1.0) < tolerance
+    ):
         return 0
-    if abs(na) < tolerance and abs(nb - 1.0) < tolerance and abs(nc + 1.0) < tolerance and abs(nd) < tolerance:
+    if (
+        abs(na) < tolerance
+        and abs(nb - 1.0) < tolerance
+        and abs(nc + 1.0) < tolerance
+        and abs(nd) < tolerance
+    ):
         return 90
-    if abs(na + 1.0) < tolerance and abs(nb) < tolerance and abs(nc) < tolerance and abs(nd + 1.0) < tolerance:
+    if (
+        abs(na + 1.0) < tolerance
+        and abs(nb) < tolerance
+        and abs(nc) < tolerance
+        and abs(nd + 1.0) < tolerance
+    ):
         return 180
-    if abs(na) < tolerance and abs(nb + 1.0) < tolerance and abs(nc - 1.0) < tolerance and abs(nd) < tolerance:
+    if (
+        abs(na) < tolerance
+        and abs(nb + 1.0) < tolerance
+        and abs(nc - 1.0) < tolerance
+        and abs(nd) < tolerance
+    ):
         return 270
     return 0
-
-
-
 
 
 def get_font_file(document: Any, font_obj: dict[str, Any]) -> PdfStream | None:
@@ -1608,7 +1702,7 @@ def detect_ligature_overrides(
     try:
         n_glyphs = struct.unpack(">H", tt_data[tables["maxp"][0] + 4 : tables["maxp"][0] + 6])[0]
         loca = tt_loca(tt_data, tables, n_glyphs)
-    except (struct.error, IndexError, KeyError):
+    except struct.error, IndexError, KeyError:
         return {}
     if loca is None:
         return {}
@@ -1633,12 +1727,12 @@ def detect_ligature_overrides(
     if not {"maxp", "glyf", "loca", "head"} <= comp_tables.keys():
         return {}
     try:
-        comp_n = struct.unpack(">H", companion_data[comp_tables["maxp"][0] + 4 : comp_tables["maxp"][0] + 6])[
-            0
-        ]
+        comp_n = struct.unpack(
+            ">H", companion_data[comp_tables["maxp"][0] + 4 : comp_tables["maxp"][0] + 6]
+        )[0]
         if not tt_loca(companion_data, comp_tables, comp_n):
             return {}
-    except (struct.error, IndexError, KeyError):
+    except struct.error, IndexError, KeyError:
         return {}
 
     lig_widths_raw = font_obj.get("Widths")

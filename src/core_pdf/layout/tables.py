@@ -1,10 +1,12 @@
 from __future__ import annotations
+
 import array
+from bisect import bisect_left, bisect_right
 from typing import Any, Iterator
+
 from core_pdf.layout.models import TableGrid, TextRun
 from core_pdf.layout.ordering import cluster_runs_into_lines
 from core_pdf.layout.traces import CapturedLine
-from bisect import bisect_left, bisect_right
 
 GRID_SNAP_TOLERANCE: float = 2.0
 MIN_CELL_WIDTH: float = 4.0
@@ -73,7 +75,9 @@ class TableExtractor:
         if not runs:
             return None
 
-        rows = cluster_runs_into_lines(runs, lookback=1, sort_key=lambda r: (-(r.y0 + r.y1) * 0.5, r.x0))
+        rows = cluster_runs_into_lines(
+            runs, lookback=1, sort_key=lambda r: (-(r.y0 + r.y1) * 0.5, r.x0)
+        )
 
         if len(rows) < 2:
             return None
@@ -128,7 +132,9 @@ class TableExtractor:
 
     @staticmethod
     def iter_rows(visible_runs: list[TextRun]) -> Iterator[list[TextRun]]:
-        clusters = cluster_runs_into_lines(visible_runs, lookback=1, sort_key=lambda r: (-r.mid_y, r.x0))
+        clusters = cluster_runs_into_lines(
+            visible_runs, lookback=1, sort_key=lambda r: (-r.mid_y, r.x0)
+        )
         for row in clusters:
             yield row
 
@@ -155,7 +161,9 @@ class TableExtractor:
                     row_cells.append(text)
                     n_runs = len(runs_in_col)
                     avg_fs = sum(r.font_size for r in runs_in_col) / n_runs
-                    row_info.append({"text": text, "row_span": 1, "col_span": 1, "font_size": avg_fs})
+                    row_info.append(
+                        {"text": text, "row_span": 1, "col_span": 1, "font_size": avg_fs}
+                    )
                     row_run_map[(row_idx, col_idx)] = runs_in_col[0]
                 else:
                     row_cells.append("")
@@ -208,21 +216,20 @@ class TableExtractor:
 
             if 0 <= cy_idx < max_y:
                 row_idx = row_map[cy_idx]
-                if row_idx != -1:
-                    if 0 <= cx_idx < max_x:
-                        col_idx = col_map[cx_idx]
-                        if col_idx != -1:
-                            if text_grid[row_idx][col_idx]:
-                                text_grid[row_idx][col_idx] += " " + run.text
-                            else:
-                                text_grid[row_idx][col_idx] = run.text
+                if row_idx != -1 and 0 <= cx_idx < max_x:
+                    col_idx = col_map[cx_idx]
+                    if col_idx != -1:
+                        if text_grid[row_idx][col_idx]:
+                            text_grid[row_idx][col_idx] += " " + run.text
+                        else:
+                            text_grid[row_idx][col_idx] = run.text
 
-                            span_grid[row_idx][col_idx] = {
-                                "text": run.text,
-                                "row_span": 1,
-                                "col_span": 1,
-                                "font_size": run.font_size,
-                            }
+                        span_grid[row_idx][col_idx] = {
+                            "text": run.text,
+                            "row_span": 1,
+                            "col_span": 1,
+                            "font_size": run.font_size,
+                        }
 
         if include_span_info:
             return ([text_grid], span_grid)

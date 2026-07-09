@@ -218,7 +218,9 @@ class PdfLexer:
                     return pos + match.end()
         return pos
 
-    def scan_word_at(self, position: int, skip_ignored: bool = True) -> tuple[memoryview, int] | None:
+    def scan_word_at(
+        self, position: int, skip_ignored: bool = True
+    ) -> tuple[memoryview, int] | None:
         data = self.raw_data
         pos = self.skip_ignored_at(position) if skip_ignored else position
         if pos >= self.data_len:
@@ -596,8 +598,8 @@ class PdfLexer:
         return self.pos > start
 
     def parse_inline_image(self) -> InlineImage:
-        from core_pdf.streams.filters import decode_stream_data, normalize_stream_decode_spec
         from core_pdf.fonts.data.core14 import INLINE_IMAGE_KEY_MAP
+        from core_pdf.streams.filters import decode_stream_data, normalize_stream_decode_spec
 
         dictionary: dict[Any, Any] = {}
         while True:
@@ -624,7 +626,11 @@ class PdfLexer:
                 raise PdfParseError("unterminated inline image data")
             after = marker + 2
             prev_ok = marker == 0 or data_bytes[marker - 1] in WHITESPACE
-            next_ok = after >= len(data_bytes) or data_bytes[after] in WHITESPACE or data_bytes[after] in b"()<>[]{}/%"
+            next_ok = (
+                after >= len(data_bytes)
+                or data_bytes[after] in WHITESPACE
+                or data_bytes[after] in b"()<>[]{}/%"
+            )
             if prev_ok and next_ok:
                 # Convert slice to bytes for rstrip (inline image data is usually small)
                 image_data = data_bytes[:marker].rstrip(WHITESPACE)
@@ -639,7 +645,9 @@ class PdfLexer:
                 return InlineImage(normalized, decode_stream_data(image_data, stream_spec))
             pos = marker + 1
 
-    def dispatch_operations(self, op_handlers: Any, fast_op_handlers: Any, depth: int, operands: list[Any] | None = None) -> None:
+    def dispatch_operations(
+        self, op_handlers: Any, fast_op_handlers: Any, depth: int, operands: list[Any] | None = None
+    ) -> None:
         if operands is None:
             operands = [None] * 16
         op_count = 0
@@ -719,13 +727,23 @@ class PdfLexer:
                     elif n_raw == 3:
                         b1, b2 = raw[1], raw[2]
                         if 48 <= first <= 57 and 48 <= b1 <= 57 and 48 <= b2 <= 57:
-                            _store_operand(op_count, (first - 48) * 100 + (b1 - 48) * 10 + (b2 - 48))
+                            _store_operand(
+                                op_count, (first - 48) * 100 + (b1 - 48) * 10 + (b2 - 48)
+                            )
                             op_count += 1
                             continue
                     elif n_raw == 4:
                         b1, b2, b3 = raw[1], raw[2], raw[3]
-                        if 48 <= first <= 57 and 48 <= b1 <= 57 and 48 <= b2 <= 57 and 48 <= b3 <= 57:
-                            _store_operand(op_count, (first - 48) * 1000 + (b1 - 48) * 100 + (b2 - 48) * 10 + (b3 - 48))
+                        if (
+                            48 <= first <= 57
+                            and 48 <= b1 <= 57
+                            and 48 <= b2 <= 57
+                            and 48 <= b3 <= 57
+                        ):
+                            _store_operand(
+                                op_count,
+                                (first - 48) * 1000 + (b1 - 48) * 100 + (b2 - 48) * 10 + (b3 - 48),
+                            )
                             op_count += 1
                             continue
 
@@ -788,12 +806,20 @@ class PdfLexer:
                 continue
 
             # 4. Special characters (delimiters)
-            pos, op_count = self.dispatch_delimiter(byte, pos, data_len, raw_data, operands, op_count)
+            pos, op_count = self.dispatch_delimiter(
+                byte, pos, data_len, raw_data, operands, op_count
+            )
 
         self.pos = pos
 
     def dispatch_delimiter(
-        self, byte: int, pos: int, data_len: int, raw_data: memoryview, operands: list[Any], op_count: int
+        self,
+        byte: int,
+        pos: int,
+        data_len: int,
+        raw_data: memoryview,
+        operands: list[Any],
+        op_count: int,
     ) -> tuple[int, int]:
         self.pos = pos
         if byte == 91:  # [

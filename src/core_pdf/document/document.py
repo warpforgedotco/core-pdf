@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import mmap
 import struct
+from contextlib import suppress
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -10,13 +11,13 @@ from core_pdf.document.layers import LayersMixin
 from core_pdf.document.metadata import resolve_metadata
 from core_pdf.document.models import FieldRecord, NamedDestination
 from core_pdf.document.navigation import NavigationMixin
-from core_pdf.document.structure import StructureTree
 from core_pdf.document.page import PdfPage
+from core_pdf.document.structure import StructureTree
 from core_pdf.objects.resolver import ObjectResolver
+from core_pdf.streams.crypto_handlers import SECURITY_HANDLER_REGISTRY
 from core_pdf.syntax.errors import PdfParseError, PdfSourceError, PdfUnsupportedError
 from core_pdf.syntax.primitives import PdfReference, PdfSource, PdfStream
 from core_pdf.syntax.xref import PdfXRefEntry, XRefScanner
-from core_pdf.streams.crypto_handlers import SECURITY_HANDLER_REGISTRY
 
 MAX_PAGE_TREE_DEPTH = 100
 
@@ -117,9 +118,9 @@ class PdfDocument(NavigationMixin, FormsMixin, LayersMixin):
         if isinstance(source, (str, Path)):
             if isinstance(source, str) and source.startswith("%PDF"):
                 return source.encode("latin-1")
-            self.file_handle = open(source, "rb")
             try:
-                return mmap.mmap(self.file_handle.fileno(), 0, access=mmap.ACCESS_READ)
+                with open(source, "rb") as file_handle:
+                    return mmap.mmap(file_handle.fileno(), 0, access=mmap.ACCESS_READ)
             except ValueError:
                 raise PdfSourceError("PDF source is empty")
         if isinstance(source, bytes):
@@ -221,7 +222,7 @@ class PdfDocument(NavigationMixin, FormsMixin, LayersMixin):
                     indent = "  " * item.level
                     md_parts.append(f"{indent}- {item.title}")
                 md_parts.append("")
-        except (ValueError, KeyError, StopIteration):
+        except ValueError, KeyError, StopIteration:
             pass
 
         # 3. Pages
@@ -249,7 +250,9 @@ class PdfDocument(NavigationMixin, FormsMixin, LayersMixin):
     def structure(self) -> StructureTree | None:
         if self.structure_cache is None:
             if self.structure_root_cache is None:
-                self.structure_root_cache = self.resolver.resolve(self.catalog().get("StructTreeRoot"))
+                self.structure_root_cache = self.resolver.resolve(
+                    self.catalog().get("StructTreeRoot")
+                )
             struct_root = self.structure_root_cache
             if struct_root is None:
                 self.structure_cache = None
@@ -324,7 +327,11 @@ class PdfDocument(NavigationMixin, FormsMixin, LayersMixin):
             from core_pdf.fonts.decoder import FontDecoder
 
             for font_ref in fonts.values():
-                cache_key = (font_ref.obj_num, font_ref.gen_num) if isinstance(font_ref, PdfReference) else id(font_ref)
+                cache_key = (
+                    (font_ref.obj_num, font_ref.gen_num)
+                    if isinstance(font_ref, PdfReference)
+                    else id(font_ref)
+                )
                 if cache_key in self.decoder_cache:
                     continue
                 font_obj = self.resolver.resolve(font_ref)
@@ -362,8 +369,6 @@ class PdfDocument(NavigationMixin, FormsMixin, LayersMixin):
 
     def __exit__(self, exc_type, exc, tb) -> None:
         if self.file_handle is not None:
-            try:
+            with suppress(OSError):
                 self.file_handle.close()
-            except OSError:
-                pass
             self.file_handle = None
