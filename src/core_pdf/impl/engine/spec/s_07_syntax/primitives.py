@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import builtins
 from collections.abc import Callable
 from functools import lru_cache
 from typing import Any, TypeAlias
@@ -71,7 +72,7 @@ class PdfName:
     __slots__ = ("_value", "str", "hash")
 
     _value: bytes
-    str: str | None
+    str: builtins.str | None
     hash: int | None
 
     def __init__(self, value: bytes) -> None:
@@ -80,18 +81,23 @@ class PdfName:
         object.__setattr__(self, "hash", hash(self.str))
 
     @property
-    def value(self) -> str:
+    def value(self) -> builtins.str:
+        return self.str or ""
+
+    @property
+    def text(self) -> builtins.str:
         return self.str or ""
 
     @classmethod
-    def of(cls, value: str | bytes | memoryview | "PdfName") -> "PdfName":
+    def of(cls, value: builtins.str | bytes | memoryview | "PdfName") -> "PdfName":
         # Fast-path for already resolved names
         if type(value) is PdfName:
             return value
 
         cache = PDF_NAME_CACHE
         if type(value) is str:
-            b_value = value.encode("latin-1")
+            string_value: builtins.str = value
+            b_value = string_value.encode("latin-1")
             n = cache.get(b_value)
             if n is not None:
                 return n
@@ -99,24 +105,27 @@ class PdfName:
             return n
 
         # memoryview is hashable and can match bytes keys in dict.get()
+        key_bytes: bytes
         if type(value) is memoryview:
             key_bytes = bytes(value)
         elif type(value) is bytes:
             key_bytes = value
         else:
-            key_bytes = value
-            if type(key_bytes) is not str:
-                key_bytes = str(key_bytes)
-            key_bytes = key_bytes.encode("latin-1")
+            key_value: builtins.str
+            if isinstance(value, PdfName):
+                key_bytes = value._value
+            else:
+                key_value = value if type(value) is str else str(value)
+                key_bytes = key_value.encode("latin-1")
         n = cache.get(key_bytes)
         if n is None:
             cache[key_bytes] = n = cls(key_bytes)
         return n
 
-    def __str__(self) -> str:
+    def __str__(self) -> builtins.str:
         return self.str or ""
 
-    def __repr__(self) -> str:
+    def __repr__(self) -> builtins.str:
         return f"PdfName({self._value!r})"
 
     def __hash__(self) -> int:
@@ -138,7 +147,7 @@ class PdfName:
             return self._value == other.encode("latin-1")
         return False
 
-    def __setattr__(self, name: str, value: Any) -> None:
+    def __setattr__(self, name: builtins.str, value: Any) -> None:
         raise AttributeError(f"cannot assign to field {name!r}")
 
 
@@ -242,6 +251,14 @@ class PdfReference:
 
     def __hash__(self) -> int:
         return hash((self.object_number, self.generation_number))
+
+    @property
+    def obj_num(self) -> int:
+        return self.object_number
+
+    @property
+    def gen_num(self) -> int:
+        return self.generation_number
 
 
 class PdfString:
@@ -446,6 +463,10 @@ class PdfStream:
     @property
     def data_view(self) -> memoryview:
         return memoryview(self.data)
+
+    @property
+    def _raw_data(self) -> bytes:
+        return self.raw_data
 
 
 PdfSource: TypeAlias = str | bytes | bytearray | memoryview | Any

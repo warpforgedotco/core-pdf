@@ -198,7 +198,7 @@ class JpegBitReader:
 def build_huffman_table(
     lengths: bytes, symbols: bytes
 ) -> tuple[list[int], list[int], list[dict[int, int]]]:
-    huff = [{} for _ in range(16)]
+    huff: list[dict[int, int]] = [{} for _ in range(16)]
     code = 0
     k = 0
     for i, num in enumerate(lengths):

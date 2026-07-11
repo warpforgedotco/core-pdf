@@ -304,11 +304,11 @@ class FontDecoder:
         # This covers ~90% of high-volume modern PDF text
         n = len(data)
         if chunks is None and self.is_cid_font and self.fast_widths_cid is not None and n % 2 == 0:
-            fwc = self.fast_widths_cid
+            fast_widths = self.fast_widths_cid
             total = 0.0
             for i in range(0, n, 2):
                 code = (data[i] << 8) | data[i + 1]
-                total += fwc[code]
+                total += fast_widths[code]
             total += (n >> 1) * cs
             # space (32) in CID is usually mapped to GID 32, but we checked in init
             # Actually count(32) for CID needs to be per-2-byte.
@@ -324,16 +324,19 @@ class FontDecoder:
         dw_pos = dw if dw > 0.0 else 1000.0
         space_w = dw if dw > 0.0 else 250.0
         total = 0.0
-        fwc = self.fast_widths_cid
+        fwc: list[float] | None = self.fast_widths_cid
 
         for chunk in chunks:
             code = (chunk[0] << 8) | chunk[1] if len(chunk) == 2 else chunk[0]
+            w: float
             if fwc is not None:
                 w = fwc[code] if 0 <= code < 65536 else dw_pos
             else:
-                w = self.widths.get(code)
-                if w is None:
+                width_value = self.widths.get(code)
+                if width_value is None:
                     w = space_w if code == 32 else dw_pos
+                else:
+                    w = width_value
             total += w + cs
             if code == 32:
                 total += ws

@@ -9,6 +9,9 @@ from core_pdf.impl.engine.spec.s_07_document.protocols import DocumentMixinProto
 class FormsMixin:
     __slots__ = ()
 
+    acroform_cache: dict[str, Any] | None
+    fields_cache: list[FieldRecord] | None
+
     @property
     def acroform(self: DocumentMixinProtocol) -> dict | None:
         if self.acroform_cache is None:
@@ -98,4 +101,4 @@ class FormsMixin:
             field_obj = self.resolver.resolve(field)
             records.extend(cast(Any, self).collect_field_records(field_obj))
         self.fields_cache = records
-        return records
+        return self.fields_cache

@@ -9,6 +9,8 @@ from core_pdf.impl.engine.spec.s_07_document.protocols import DocumentMixinProto
 class NavigationMixin:
     __slots__ = ()
 
+    named_destinations_cache: dict[str, NamedDestination] | None
+
     def iter_outlines(self: DocumentMixinProtocol) -> list[OutlineItem]:
         outlines = self.resolver.resolve(self.catalog().get("Outlines"))
         if outlines is None:

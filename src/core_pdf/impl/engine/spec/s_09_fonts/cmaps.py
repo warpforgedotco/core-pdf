@@ -198,8 +198,8 @@ class ToUnicodeCMap:
             not self.decode_lengths or self.decode_lengths == [1]
         ):
             table = self.fast_decode_table
-            result = "".join(map(table.__getitem__, data))
-            return result
+            fast_result = "".join(map(table.__getitem__, data))
+            return fast_result
 
         # FAST PATH: two-byte mappings (Identity-H/V etc)
         n = len(data)
@@ -209,18 +209,18 @@ class ToUnicodeCMap:
                 cids = array.array("H", data)
                 if sys.byteorder == "little":
                     cids.byteswap()
-                result = "".join(map(table.__getitem__, cids))
+                two_byte_result = "".join(map(table.__getitem__, cids))
             else:
                 # Faster manual loop for short strings
                 out_small = []
                 for i in range(0, n, 2):
                     code = (data[i] << 8) | data[i + 1]
                     out_small.append(table[code])
-                result = "".join(out_small)
+                two_byte_result = "".join(out_small)
 
-            if "\x00" in result:
-                return result.replace("\x00", "")
-            return result
+            if "\x00" in two_byte_result:
+                return two_byte_result.replace("\x00", "")
+            return two_byte_result
 
         mappings = self.mappings
         lengths = self.decode_lengths or [1]
@@ -243,9 +243,9 @@ class ToUnicodeCMap:
                 else:
                     chunk = data[pos : pos + length]
 
-                result = mappings_get(chunk)
-                if result is not None:
-                    out_append(result)
+                mapped_value = mappings_get(chunk)
+                if mapped_value is not None:
+                    out_append(mapped_value)
                     pos += length
                     match_found = True
                     break
@@ -255,17 +255,17 @@ class ToUnicodeCMap:
 
             # Fallback 1: match current byte directly
             chunk1 = bc[data[pos]]
-            result = mappings_get(chunk1)
-            if result is not None:
-                out_append(result)
+            mapped_value = mappings_get(chunk1)
+            if mapped_value is not None:
+                out_append(mapped_value)
                 pos += 1
                 continue
 
             # Fallback 2: match b'\x00' + current byte
             chunk01 = b"\x00" + chunk1
-            result = mappings_get(chunk01)
-            if result is not None:
-                out_append(result)
+            mapped_value = mappings_get(chunk01)
+            if mapped_value is not None:
+                out_append(mapped_value)
                 pos += 1
                 continue
 

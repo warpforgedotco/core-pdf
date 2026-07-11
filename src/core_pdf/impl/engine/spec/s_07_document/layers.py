@@ -8,8 +8,11 @@ from core_pdf.impl.engine.spec.s_07_document.protocols import DocumentMixinProto
 class LayersMixin:
     __slots__ = ()
 
+    oc_layers: dict[str, bool] | None
+
     def load_oc_layers(self: DocumentMixinProtocol) -> None:
         self.oc_layers = {}
+        oc_layers = self.oc_layers
         oc = self.resolver.resolve(self.catalog().get("OCProperties"))
         if oc is None:
             return
@@ -60,7 +63,8 @@ class LayersMixin:
             name = self.resolver.resolve_str(ocg_ref.get("Name"))
             if not name:
                 raise ValueError("invalid OCProperties OCG name")
-            self.oc_layers[name] = id(ocg_ref) in on_layers
+            assert oc_layers is not None
+            oc_layers[name] = id(ocg_ref) in on_layers
 
     def oc_hidden_layers(self: DocumentMixinProtocol) -> frozenset[str]:
         if self.oc_layers is None:

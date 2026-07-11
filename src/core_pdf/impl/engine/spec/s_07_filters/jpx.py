@@ -329,6 +329,7 @@ class JpxImage:
         "width",
         "height",
         "components",
+        "capabilities",
         "tiles_cols",
         "tiles_rows",
         "levels",
@@ -336,10 +337,12 @@ class JpxImage:
         "codeblock_h",
         "prog_order",
         "num_layers",
+        "multiple_component_transform",
         "precincts",
         "quant_steps",
         "components_data",
         "tiles",
+        "reversible",
         "negate",
         "swap_bytes",
     )
@@ -348,6 +351,7 @@ class JpxImage:
         self.width = 0
         self.height = 0
         self.components = 0
+        self.capabilities = 0
         self.tiles_cols = 0
         self.tiles_rows = 0
         self.levels = 0
@@ -355,10 +359,12 @@ class JpxImage:
         self.codeblock_h = 0
         self.prog_order = 0
         self.num_layers = 0
+        self.multiple_component_transform = 0
         self.precincts: list[Any] = []
         self.quant_steps: list[list[tuple[int, int]]] = []
         self.components_data: list[dict[str, Any]] = []
         self.tiles: list[dict[str, Any]] = []
+        self.reversible = False
         self.negate = False
         self.swap_bytes = False
 
@@ -436,8 +442,8 @@ class JpxImage:
         guard = br.read_byte()
         style = (guard >> 5) & 7
         self.quant_steps = []
+        steps: list[tuple[int, int]] = []
         if style == 0:
-            steps = []
             for _ in range(3 * self.levels + 1):
                 mantissa = br.read_u16()
                 if mantissa == 0:
@@ -450,7 +456,7 @@ class JpxImage:
         self.tiles = []
         for ty in range(self.tiles_rows):
             for tx in range(self.tiles_cols):
-                tile = {
+                tile: dict[str, Any] = {
                     "x": tx,
                     "y": ty,
                     "components": [],

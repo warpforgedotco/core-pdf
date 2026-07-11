@@ -437,7 +437,7 @@ def decode_2d_row(
             raise PdfParseError("insufficient CCITT data")
 
         bits = reader.peek(3)
-        mode = None
+        mode: str | int | None = None
 
         if bits & 0b100 == 0 and bits & 0b110 == 0b010:
             mode = "P"

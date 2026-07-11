@@ -226,9 +226,9 @@ class RedactionAnalyzer:
             result_groups.setdefault(root, []).append(span)
 
         result: list[tuple[RedactionPaintSpan, ...]] = []
-        for group in result_groups.values():
-            group.sort(key=lambda s: s.seqno)
-            result.append(tuple(group))
+        for spans_group in result_groups.values():
+            spans_group.sort(key=lambda s: s.seqno)
+            result.append(tuple(spans_group))
         result.sort(key=lambda g: g[0].seqno if g else -1)
         return result
 

@@ -209,7 +209,7 @@ class TextState:
         capture_glyphs: bool = False,
         capture_graphics: bool = False,
         decoder_cache: dict[tuple[int, int] | int, "FontDecoder"] | None = None,
-    ):
+    ) -> None:
         self.document = document
         self.page = page
 
@@ -234,25 +234,25 @@ class TextState:
             0.0,
         )
 
-        self.fill_color = (0.0, 0.0, 0.0)
-        self.fill_opacity = 1.0
-        self.stroke_color = (0.0, 0.0, 0.0)
-        self.stroke_opacity = 1.0
+        self.fill_color: tuple[float, ...] | None = (0.0, 0.0, 0.0)
+        self.fill_opacity: float | None = 1.0
+        self.stroke_color: tuple[float, ...] | None = (0.0, 0.0, 0.0)
+        self.stroke_opacity: float | None = 1.0
         self.line_width = 1.0
         self.line_cap = 0
         self.line_join = 0
         self.miter_limit = 10.0
-        self.dash_pattern = ([], 0.0)
-        self.stack = []
+        self.dash_pattern: tuple[list[float], float] = ([], 0.0)
+        self.stack: list[StreamState] = []
         self.capture_runs = capture_runs
         self.capture_glyphs = capture_glyphs
         self.capture_graphics = capture_graphics
-        self.runs = []
-        self.glyphs = []
-        self.lines = []
-        self.drawings = []
-        self.pending_edges = []
-        self.pending_rects = []
+        self.runs: list[TextRun] = []
+        self.glyphs: list[GlyphTrace] = []
+        self.lines: list[CapturedLine] = []
+        self.drawings: list[DrawingTrace] = []
+        self.pending_edges: list[tuple[float, float, float, float]] = []
+        self.pending_rects: list[RectBox] = []
         self.current_point = None
         self.subpath_start = None
         self.font_size = 12.0
@@ -267,14 +267,14 @@ class TextState:
         self.sequence = 0
         self.stream_order = -1
         self.xobject_depth = 0
-        self.marked_content_stack = []
-        self.active_streams = set()
-        self.resources = {}
+        self.marked_content_stack: list[str | None] = []
+        self.active_streams: set[int] = set()
+        self.resources: dict[str, Any] = {}
         self.resources_id = 0
         self.hidden_layers = hidden_layers
-        self.resolved_resource_categories = {}
-        self.resource_cache = {}
-        self.extgstate_cache = {}
+        self.resolved_resource_categories: dict[str, Any] = {}
+        self.resource_cache: dict[str, dict[str, Any]] = {}
+        self.extgstate_cache: dict[Any, dict[str, Any] | None] = {}
         self.decoder_cache = decoder_cache if decoder_cache is not None else {}
         self.kw_cache = getattr(self.document.resolver, "kw_cache", {})
         self.pending_line_break = False

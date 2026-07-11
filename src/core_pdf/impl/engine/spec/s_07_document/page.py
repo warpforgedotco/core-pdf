@@ -63,21 +63,21 @@ class PdfPage:
     document: PdfDocument
     page_dict: dict[str, Any]
     page_number: int
-    inherited_values: dict[str, Any] | None
+    _inherited_values: dict[str, Any] | None
     contents: Any
-    content_streams: tuple[PdfStream, ...] | None
+    _content_streams: tuple[PdfStream, ...] | None
     state: TextState | None
     graphics: TextState | None
     grid_lines: list[CapturedLine] | None
     texttrace: list[TextTraceSpan] | None
     tables: dict[tuple[str, bool, bool], Any]
-    media_box: Any
-    crop_box: Any
-    bleed_box: Any
-    trim_box: Any
-    art_box: Any
-    rotation: Any
-    cached_resources: Any
+    _media_box: object
+    _crop_box: object
+    _bleed_box: object
+    _trim_box: object
+    _art_box: object
+    _rotation: object
+    _cached_resources: object
 
     def __init__(
         self,
@@ -157,7 +157,7 @@ class PdfPage:
     def content_streams(self) -> tuple[PdfStream, ...]:
         if self._content_streams is None:
             self._content_streams = self.collect_content_streams()
-        return self._content_streams
+        return cast(tuple[PdfStream, ...], self._content_streams)
 
     def collect_inherited_values(self) -> dict[str, Any]:
         return collect_inherited_values(
@@ -189,7 +189,7 @@ class PdfPage:
         return resolved
 
     def collect_content_streams(self) -> tuple[PdfStream, ...]:
-        queue = deque()
+        queue: deque[Any] = deque()
         contents = self.contents
         if isinstance(contents, (list, tuple)):
             queue.extend(contents)
@@ -215,9 +215,9 @@ class PdfPage:
     def consume_contents(self, state: TextState) -> None:
         if self.contents is None:
             return
-        resources = self.cached_resources
-        for stream in self.iter_content_streams():
-            state.consume_stream(stream, resources, state.ctm, 0)
+            resources = self.cached_resources
+            for stream in self.iter_content_streams():
+                state.consume_stream(stream, resources, state.ctm, 0)
 
     def get_state(self) -> TextState:
         if self.state is None:
@@ -537,7 +537,7 @@ class PdfPage:
 
         visible_runs = [r for r in self.chars if r.visible]
         if not visible_runs:
-            result = ([], []) if (include_span_info or detect_header) else []
+            result: Any = ([], []) if (include_span_info or detect_header) else []
             self.tables[cache_key] = result
             return result
 

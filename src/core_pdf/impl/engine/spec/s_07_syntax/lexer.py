@@ -114,6 +114,9 @@ class PdfLexer:
         "kw_cache",
     )
 
+    current_obj_num: int | None
+    current_gen_num: int | None
+
     def __init__(
         self,
         data: bytes | bytearray | memoryview,

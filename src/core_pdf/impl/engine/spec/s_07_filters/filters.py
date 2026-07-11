@@ -24,6 +24,7 @@ from core_pdf.impl.engine.spec.s_07_syntax.lexer import WS_TABLE
 from core_pdf.impl.engine.spec.s_07_syntax.primitives import (
     FilterParams,
     PdfName,
+    PdfStream,
     StreamDecodeSpec,
     normalize_pdf_name,
 )
@@ -418,8 +419,8 @@ def decode_jbig2(data: bytes, parms: Any) -> bytes:
         globals_obj = parms.get("JBIG2Globals")
         if isinstance(globals_obj, bytes):
             globals_data = globals_obj
-        elif hasattr(globals_obj, "data"):
-            globals_data = typing.cast(bytes, globals_obj.data)
+        elif isinstance(globals_obj, PdfStream):
+            globals_data = globals_obj.data
     assembled = assemble_embedded_jbig2(globals_data, data)
     decoded = decode_embedded_jbig2(assembled)
     if decoded:
