@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Literal, Protocol, TypedDict
 
+from core_pdf.impl.engine.spec.s_07_content.models import TextRun
+from core_pdf.impl.engine.spec.s_07_document.models import TextTraceSpan
+from core_pdf.impl.engine.spec.s_07_document.page import PageDrawing
 from core_pdf.impl.engine.spec.s_08_graphics.geometry import (
     RectBox,
     bbox_intersection_lengths,
@@ -98,10 +101,26 @@ class Glyph:
     fill: tuple[float, ...] | None
 
 
+class _GlyphLine(TypedDict):
+    cy: float
+    tol: float
+    glyphs: list[Glyph]
+    n: int
+
+
+class RedactionPage(Protocol):
+    @property
+    def chars(self) -> list[TextRun]: ...
+
+    def get_drawings(self) -> list[PageDrawing]: ...
+
+    def get_texttrace(self) -> list[TextTraceSpan]: ...
+
+
 class RedactionAnalyzer:
     """High-level analysis logic for detecting and classifying redactions."""
 
-    def analyze(self, page: Any) -> RedactionAnalysis:
+    def analyze(self, page: RedactionPage) -> RedactionAnalysis:
         """Perform redaction analysis on the page."""
         text_spans = self.iter_text_spans(page)
         glyphs = self.iter_glyphs(page)
@@ -121,13 +140,13 @@ class RedactionAnalyzer:
             paint_groups=tuple(paint_groups),
         )
 
-    def iter_text_spans(self, page: Any) -> list[RedactionTextSpan]:
+    def iter_text_spans(self, page: RedactionPage) -> list[RedactionTextSpan]:
         runs = page.chars
         if runs:
-            return [build_text_span(r) for r in runs if r.text]
-        return [build_text_span(s) for s in page.get_texttrace()]
+            return [build_text_run_span(r) for r in runs if r.text]
+        return [build_text_trace_span(s) for s in page.get_texttrace()]
 
-    def iter_glyphs(self, page: Any) -> list[Glyph]:
+    def iter_glyphs(self, page: RedactionPage) -> list[Glyph]:
         glyphs: list[Glyph] = []
         for span in page.get_texttrace():
             seqno = span["seqno"]
@@ -143,7 +162,7 @@ class RedactionAnalyzer:
                 )
         return glyphs
 
-    def iter_paint_spans(self, drawings: list[dict[str, Any]]) -> list[RedactionPaintSpan]:
+    def iter_paint_spans(self, drawings: list[PageDrawing]) -> list[RedactionPaintSpan]:
         spans: list[RedactionPaintSpan] = []
         for drawing in drawings:
             items = drawing.get("items", ())
@@ -158,7 +177,7 @@ class RedactionAnalyzer:
             has_stroke = stroke_opacity == 1 and is_dark_color(stroke_color)
             if not has_fill and not has_stroke:
                 continue
-            rect = bbox
+            rect: RectBox | tuple[float, float, float, float] | None = bbox
             if rect is None:
                 item_rects = [item_rect for _, item_rect in items if isinstance(item_rect, RectBox)]
                 if item_rects:
@@ -193,7 +212,15 @@ class RedactionAnalyzer:
         if not spans:
             return []
 
-        groups_by_key: dict[tuple[Any, ...], list[tuple[int, RedactionPaintSpan]]] = {}
+        groups_by_key: dict[
+            tuple[
+                tuple[float, ...] | None,
+                float | None,
+                tuple[float, ...] | None,
+                float | None,
+            ],
+            list[tuple[int, RedactionPaintSpan]],
+        ] = {}
         for idx, span in enumerate(spans):
             key = paint_cluster_key(span)
             groups_by_key.setdefault(key, []).append((idx, span))
@@ -325,7 +352,7 @@ class RedactionAnalyzer:
     def text_from_glyphs(self, glyphs: list[Glyph]) -> str:
         if not glyphs:
             return ""
-        lines: list[dict[str, Any]] = []
+        lines: list[_GlyphLine] = []
         for glyph in sorted(
             glyphs, key=lambda g: (-(g.bbox[1] + g.bbox[3]) * 0.5, g.bbox[0], g.seqno)
         ):
@@ -489,26 +516,26 @@ def span_text(chars: list[tuple[int, int, int, RectBox]]) -> str:
     return "".join(chr(char[0]) for char in chars)
 
 
-def build_text_span(span: Any) -> RedactionTextSpan:
-    if isinstance(span, dict):
-        text = span.get("text") or span_text(span["chars"])
-        return RedactionTextSpan(
-            text=text,
-            bbox=bbox_tuple(span["bbox"]),
-            seqno=int(span["seqno"]),
-            fill=span.get("color"),
-            visible=span.get("visible", True),
-        )
-    text = span.text or span_text(getattr(span, "chars", []))
-    bbox_val = getattr(span, "bbox", None)
-    if bbox_val is None:
-        bbox_val = (span.x0, span.y0, span.x1, span.y1)
+def build_text_trace_span(span: TextTraceSpan) -> RedactionTextSpan:
+    text_value = span.get("text")
+    text = text_value if isinstance(text_value, str) and text_value else span_text(span["chars"])
+    visible_value = span.get("visible", True)
     return RedactionTextSpan(
         text=text,
-        bbox=bbox_tuple(bbox_val),
-        seqno=int(getattr(span, "seqno", -1)),
-        fill=getattr(span, "fill_color", None),
-        visible=bool(getattr(span, "visible", True)),
+        bbox=bbox_tuple(span["bbox"]),
+        seqno=int(span["seqno"]),
+        fill=span.get("color"),
+        visible=visible_value if isinstance(visible_value, bool) else True,
+    )
+
+
+def build_text_run_span(span: TextRun) -> RedactionTextSpan:
+    return RedactionTextSpan(
+        text=span.text,
+        bbox=bbox_tuple((span.x0, span.y0, span.x1, span.y1)),
+        seqno=span.seqno,
+        fill=span.fill_color,
+        visible=span.visible,
     )
 
 
@@ -518,7 +545,9 @@ def quantize_color(color: tuple[float, ...] | None) -> tuple[float, ...] | None:
     return tuple(round(c, 3) for c in color[:3])
 
 
-def paint_cluster_key(span: RedactionPaintSpan) -> tuple[Any, ...]:
+def paint_cluster_key(
+    span: RedactionPaintSpan,
+) -> tuple[tuple[float, ...] | None, float | None, tuple[float, ...] | None, float | None]:
     return (
         quantize_color(span.fill),
         span.fill_opacity,

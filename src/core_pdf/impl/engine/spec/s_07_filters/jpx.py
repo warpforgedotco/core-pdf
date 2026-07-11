@@ -10,9 +10,23 @@ References:
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TypedDict
 
 from core_pdf.impl.engine.spec.s_07_syntax.errors import PdfParseError, PdfUnsupportedError
+
+
+class ComponentData(TypedDict):
+    precision: int
+    is_signed: bool
+    h_sep: int
+    v_sep: int
+
+
+class TileData(TypedDict):
+    x: int
+    y: int
+    components: list["TileComponent"]
+
 
 # ---------------------------------------------------------------------------
 # MQ Arithmetic Decoder
@@ -360,10 +374,10 @@ class JpxImage:
         self.prog_order = 0
         self.num_layers = 0
         self.multiple_component_transform = 0
-        self.precincts: list[Any] = []
+        self.precincts: list[object] = []
         self.quant_steps: list[list[tuple[int, int]]] = []
-        self.components_data: list[dict[str, Any]] = []
-        self.tiles: list[dict[str, Any]] = []
+        self.components_data: list[ComponentData] = []
+        self.tiles: list[TileData] = []
         self.reversible = False
         self.negate = False
         self.swap_bytes = False
@@ -456,7 +470,7 @@ class JpxImage:
         self.tiles = []
         for ty in range(self.tiles_rows):
             for tx in range(self.tiles_cols):
-                tile: dict[str, Any] = {
+                tile: TileData = {
                     "x": tx,
                     "y": ty,
                     "components": [],
@@ -480,7 +494,7 @@ class JpxImage:
                     return False
         return True
 
-    def parse_tile(self, br: BitStream, tile: dict[str, Any], w: int, h: int) -> bool:
+    def parse_tile(self, br: BitStream, tile: TileData, w: int, h: int) -> bool:
         while True:
             marker = br.read_u16()
             if marker == 0xFF90:
@@ -660,7 +674,7 @@ class JpxImage:
 
         return True
 
-    def decode_tile(self, tile: dict[str, Any]) -> bool:
+    def decode_tile(self, tile: TileData) -> bool:
         for comp in tile["components"]:
             self.build_image(comp)
         return True
@@ -668,12 +682,13 @@ class JpxImage:
     def build_image(self, comp: TileComponent) -> None:
         # Inverse DWT
         for r in range(len(comp.resolutions)):
-            subband = comp.resolutions[r]
+            resolution = comp.resolutions[r]
             if r == 0:
                 continue
-            self.inverse_dwt_53(subband)
+            for subband in resolution.subbands:
+                self.inverse_dwt_53(subband)
 
-    def inverse_dwt_53(self, subband: Any) -> None:
+    def inverse_dwt_53(self, subband: SubBand) -> None:
         width = subband.width
         height = subband.height
         samples = subband.samples
@@ -689,7 +704,7 @@ class JpxImage:
         if not self.tiles:
             raise PdfUnsupportedError("JPXDecode produced no image tiles")
         comp = self.tiles[0]["components"][0]
-        r0 = comp.resolutions[0]
+        r0 = comp.resolutions[0].subbands[0]
         w = r0.width
         h = r0.height
         out = bytearray(w * h)

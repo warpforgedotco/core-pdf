@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import array
 from bisect import bisect_left, bisect_right
-from typing import Any, Iterator
+from typing import Iterator, TypeAlias, TypedDict
 
 from core_pdf.impl.engine.spec.s_07_content.models import TableGrid, TextRun
 from core_pdf.impl.engine.spec.s_07_content.ordering import cluster_runs_into_lines
@@ -11,6 +11,19 @@ from core_pdf.impl.engine.spec.s_07_content.traces import CapturedLine
 GRID_SNAP_TOLERANCE: float = 2.0
 MIN_CELL_WIDTH: float = 4.0
 MIN_CELL_HEIGHT: float = 4.0
+
+
+class TableCellInfo(TypedDict):
+    text: str
+    row_span: int
+    col_span: int
+    font_size: float
+
+
+SpanInfoGrid: TypeAlias = list[list[TableCellInfo]]
+TableRows: TypeAlias = list[list[str]]
+RenderedTables: TypeAlias = list[TableRows]
+TableExtractionResult: TypeAlias = RenderedTables | tuple[RenderedTables, SpanInfoGrid]
 
 
 class TableExtractor:
@@ -141,7 +154,7 @@ class TableExtractor:
     @staticmethod
     def iter_cells(
         rows_list: list[list[TextRun]], column_positions: list[float]
-    ) -> Iterator[tuple[list[str], list[dict[str, Any]], dict[tuple[int, int], TextRun]]]:
+    ) -> Iterator[tuple[list[str], list[TableCellInfo], dict[tuple[int, int], TextRun]]]:
         row_run_map: dict[tuple[int, int], TextRun] = {}
 
         bl = bisect_left
@@ -150,7 +163,7 @@ class TableExtractor:
         for row_idx, row_runs in enumerate(rows_list):
             row_x0s = [r.x0 for r in row_runs]
             row_cells: list[str] = []
-            row_info: list[dict[str, Any]] = []
+            row_info: list[TableCellInfo] = []
 
             for col_idx, col_x in enumerate(column_positions):
                 left = bl(row_x0s, col_x - 8.0)
@@ -175,14 +188,14 @@ class TableExtractor:
         runs: list[TextRun],
         grid: TableGrid,
         include_span_info: bool,
-    ) -> Any:
+    ) -> TableExtractionResult:
         n_rows = max(0, len(grid.rows) - 1)
         n_cols = max(0, len(grid.cols) - 1)
         if n_rows == 0 or n_cols == 0:
             return ([], []) if (include_span_info) else []
 
         text_grid: list[list[str]] = [[""] * n_cols for _ in range(n_rows)]
-        span_grid: list[list[dict]] = [
+        span_grid: SpanInfoGrid = [
             [{"text": "", "row_span": 1, "col_span": 1, "font_size": 0} for _ in range(n_cols)]
             for _ in range(n_rows)
         ]
@@ -241,7 +254,7 @@ class TableExtractor:
         visible_runs: list[TextRun],
         detect_header: bool,
         include_span_info: bool,
-    ) -> Any:
+    ) -> TableExtractionResult | tuple[list[list[str]], list[list[list[str]]]]:
         rows_list = list(TableExtractor.iter_rows(visible_runs))
 
         all_x0s = [run.x0 for row in rows_list for run in row]
@@ -249,7 +262,7 @@ class TableExtractor:
         column_positions.sort()
 
         rows: list[list[str]] = []
-        span_info_list: list[list[dict[str, Any]]] = []
+        span_info_list: SpanInfoGrid = []
         row_run_map: dict[tuple[int, int], TextRun] = {}
 
         for row_cells, row_info, run_map in TableExtractor.iter_cells(rows_list, column_positions):
@@ -270,11 +283,11 @@ class TableExtractor:
     @staticmethod
     def apply_heuristic_spans(
         rows: list[list[str]],
-        span_info_list: list[list[dict[str, Any]]],
+        span_info_list: SpanInfoGrid,
         rows_list: list[list[TextRun]],
         column_positions: list[float],
         row_run_map: dict[tuple[int, int], TextRun],
-    ) -> tuple[list[list[list[str]]], list[list[dict[str, Any]]]]:
+    ) -> tuple[RenderedTables, SpanInfoGrid]:
         n_rows = len(rows)
         n_cols = len(column_positions)
 

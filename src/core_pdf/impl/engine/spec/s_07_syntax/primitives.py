@@ -3,13 +3,29 @@ from __future__ import annotations
 import builtins
 from collections.abc import Callable
 from functools import lru_cache
-from typing import Any, TypeAlias
+from typing import Protocol, TypeAlias, TypeGuard, TypeVar
 
 """Core PDF primitive object types."""
 
 
 MISSING = object()
 PDF_NAME_CACHE: dict[bytes, "PdfName"] = {}
+PdfScalar: TypeAlias = int | float | str | bytes
+PdfDictLike: TypeAlias = dict[object, "PdfObject"]
+_T = TypeVar("_T")
+
+
+class _UnsetType:
+    pass
+
+
+_UNSET = _UnsetType()
+
+
+def _value_or(value: _T | _UnsetType, default: _T) -> _T:
+    if isinstance(value, _UnsetType):
+        return default
+    return value
 
 
 @lru_cache(maxsize=4096)
@@ -22,7 +38,7 @@ def parse_name_bytes(value: bytes) -> str:
     return value.decode("latin-1")
 
 
-def parse_name(value: Any, default: str | None = None) -> str | None:
+def parse_name(value: PdfObject, default: str | None = None) -> str | None:
     """Coerce value to a PDF name string."""
     if type(value) is PdfName:
         return str(value)
@@ -33,7 +49,7 @@ def parse_name(value: Any, default: str | None = None) -> str | None:
     return default
 
 
-def parse_int(value: Any, default: int | None = None) -> int | None:
+def parse_int(value: PdfObject, default: int | None = None) -> int | None:
     """Coerce value to an integer."""
     if type(value) is int:
         return value
@@ -42,13 +58,15 @@ def parse_int(value: Any, default: int | None = None) -> int | None:
             value = value.decode("ascii")
         except UnicodeDecodeError:
             return default
+    if not isinstance(value, (int, str, bytes)):
+        return default
     try:
         return int(value)
     except TypeError, ValueError:
         return default
 
 
-def parse_int_strict(value: Any) -> int:
+def parse_int_strict(value: PdfObject) -> int:
     """Coerce value to an integer or raise ValueError."""
     parsed = parse_int(value)
     if parsed is None:
@@ -56,10 +74,12 @@ def parse_int_strict(value: Any) -> int:
     return parsed
 
 
-def parse_float(value: Any, default: float = 0.0) -> float:
+def parse_float(value: PdfObject, default: float = 0.0) -> float:
     """Coerce value to a float."""
     if type(value) is float:
         return value
+    if not isinstance(value, (int, float, str, bytes)):
+        return default
     try:
         return float(value)
     except TypeError, ValueError:
@@ -135,7 +155,7 @@ class PdfName:
             object.__setattr__(self, "hash", h)
         return h
 
-    def __eq__(self, other: Any) -> bool:
+    def __eq__(self, other: object) -> bool:
         if isinstance(other, PdfName):
             return self._value == other._value
         if isinstance(other, bytes):
@@ -147,11 +167,11 @@ class PdfName:
             return self._value == other.encode("latin-1")
         return False
 
-    def __setattr__(self, name: builtins.str, value: Any) -> None:
+    def __setattr__(self, name: builtins.str, value: object) -> None:
         raise AttributeError(f"cannot assign to field {name!r}")
 
 
-def lookup_dict_key(value: dict[Any, Any] | None, key: str) -> Any:
+def lookup_dict_key(value: PdfDictLike | None, key: str) -> "PdfObject":
     """Look up ``key`` in a PDF dict, tolerating PdfName and ``/``-prefixed keys."""
     if not isinstance(value, dict):
         return None
@@ -179,16 +199,16 @@ def lookup_dict_key(value: dict[Any, Any] | None, key: str) -> Any:
 
 
 def collect_inherited_values(
-    node: dict[str, Any],
+    node: PdfDictLike,
     keys: tuple[str, ...],
-    deep_resolve: Callable[[Any, set[int]], Any],
-    cache: dict[int, dict[str, Any]] | None = None,
-) -> dict[str, Any]:
+    deep_resolve: Callable[["PdfObject", set[int]], "PdfObject"],
+    cache: dict[int, dict[str, "PdfObject"]] | None = None,
+) -> dict[str, "PdfObject"]:
     """Collect inheritable values from a PDF node and its Parent chain."""
-    values: dict[str, Any] = {}
-    current: Any = node
-    ancestors: list[tuple[int, dict[str, Any]]] = []
-    cached_values: dict[str, Any] | None = None
+    values: dict[str, PdfObject] = {}
+    current: PdfDictLike | PdfObject = node
+    ancestors: list[tuple[int, PdfDictLike]] = []
+    cached_values: dict[str, PdfObject] | None = None
     seen: set[int] = set()
     while isinstance(current, dict):
         marker = id(current)
@@ -241,7 +261,7 @@ class PdfReference:
         self.object_number = object_number
         self.generation_number = generation_number
 
-    def __eq__(self, other: Any) -> bool:
+    def __eq__(self, other: object) -> bool:
         if isinstance(other, PdfReference):
             return (
                 self.object_number == other.object_number
@@ -273,7 +293,7 @@ class PdfString:
             raise ValueError("invalid PDF string")
         self.data = data
 
-    def __eq__(self, other: Any) -> bool:
+    def __eq__(self, other: object) -> bool:
         if isinstance(other, PdfString):
             return self.data == other.data
         return False
@@ -336,25 +356,38 @@ class FilterParams:
         self.encoded_byte_align = encoded_byte_align
         self.has_columns = has_columns
 
-    def replace(self, **kwargs: Any) -> "FilterParams":
+    def replace(
+        self,
+        *,
+        early_change: int | _UnsetType = _UNSET,
+        predictor: int | _UnsetType = _UNSET,
+        columns: int | _UnsetType = _UNSET,
+        colors: int | _UnsetType = _UNSET,
+        bits_per_component: int | _UnsetType = _UNSET,
+        k: int | _UnsetType = _UNSET,
+        damaged_rows_before_error: bool | _UnsetType = _UNSET,
+        rows: int | _UnsetType = _UNSET,
+        encoded_byte_align: bool | _UnsetType = _UNSET,
+        has_columns: bool | _UnsetType = _UNSET,
+    ) -> "FilterParams":
         """Create a new FilterParams with modified fields."""
         return FilterParams(
-            early_change=kwargs.get("early_change", self.early_change),
-            predictor=kwargs.get("predictor", self.predictor),
-            columns=kwargs.get("columns", self.columns),
-            colors=kwargs.get("colors", self.colors),
-            bits_per_component=kwargs.get("bits_per_component", self.bits_per_component),
-            k=kwargs.get("k", self.k),
-            damaged_rows_before_error=kwargs.get(
-                "damaged_rows_before_error", self.damaged_rows_before_error
+            early_change=_value_or(early_change, self.early_change),
+            predictor=_value_or(predictor, self.predictor),
+            columns=_value_or(columns, self.columns),
+            colors=_value_or(colors, self.colors),
+            bits_per_component=_value_or(bits_per_component, self.bits_per_component),
+            k=_value_or(k, self.k),
+            damaged_rows_before_error=_value_or(
+                damaged_rows_before_error, self.damaged_rows_before_error
             ),
-            rows=kwargs.get("rows", self.rows),
-            encoded_byte_align=kwargs.get("encoded_byte_align", self.encoded_byte_align),
-            has_columns=kwargs.get("has_columns", self.has_columns),
+            rows=_value_or(rows, self.rows),
+            encoded_byte_align=_value_or(encoded_byte_align, self.encoded_byte_align),
+            has_columns=_value_or(has_columns, self.has_columns),
         )
 
     @classmethod
-    def from_parms(cls, parms: Any) -> "FilterParams":
+    def from_parms(cls, parms: "PdfObject") -> "FilterParams":
         if not isinstance(parms, dict):
             if parms is None:
                 return cls()
@@ -405,11 +438,16 @@ class StreamDecodeSpec:
         self.filters = filters
         self.params = params
 
-    def replace(self, **kwargs: Any) -> "StreamDecodeSpec":
+    def replace(
+        self,
+        *,
+        filters: list[str] | _UnsetType = _UNSET,
+        params: list[FilterParams] | _UnsetType = _UNSET,
+    ) -> "StreamDecodeSpec":
         """Create a new StreamDecodeSpec with modified fields."""
         return StreamDecodeSpec(
-            filters=kwargs.get("filters", self.filters),
-            params=kwargs.get("params", self.params),
+            filters=_value_or(filters, self.filters),
+            params=_value_or(params, self.params),
         )
 
 
@@ -418,11 +456,11 @@ class PdfStream:
 
     __slots__ = ("dictionary", "raw_data", "spec", "decoded_data")
 
-    dictionary: dict[Any, Any]
+    dictionary: PdfDictLike
 
     def __init__(
         self,
-        dictionary: dict[Any, Any] | None = None,
+        dictionary: PdfDictLike | None = None,
         raw_data: bytes = b"",
         spec: StreamDecodeSpec | None = None,
         decoded_data: bytes | None = None,
@@ -440,16 +478,23 @@ class PdfStream:
         self.spec = spec
         self.decoded_data = decoded_data
 
-    def replace(self, **kwargs: Any) -> "PdfStream":
+    def replace(
+        self,
+        *,
+        dictionary: PdfDictLike | _UnsetType = _UNSET,
+        raw_data: bytes | _UnsetType = _UNSET,
+        spec: StreamDecodeSpec | None | _UnsetType = _UNSET,
+        decoded_data: bytes | None | _UnsetType = _UNSET,
+    ) -> "PdfStream":
         """Create a new PdfStream with modified fields."""
-        spec = kwargs.get("spec", self.spec)
-        if spec is not None and not isinstance(spec, StreamDecodeSpec):
+        resolved_spec = _value_or(spec, self.spec)
+        if resolved_spec is not None and not isinstance(resolved_spec, StreamDecodeSpec):
             raise ValueError("invalid stream decode spec")
         return PdfStream(
-            dictionary=kwargs.get("dictionary", self.dictionary),
-            raw_data=kwargs.get("raw_data", self.raw_data),
-            spec=spec,
-            decoded_data=kwargs.get("decoded_data", self.decoded_data),
+            dictionary=_value_or(dictionary, self.dictionary),
+            raw_data=_value_or(raw_data, self.raw_data),
+            spec=resolved_spec,
+            decoded_data=_value_or(decoded_data, self.decoded_data),
         )
 
     @property
@@ -469,15 +514,46 @@ class PdfStream:
         return self.raw_data
 
 
-PdfSource: TypeAlias = str | bytes | bytearray | memoryview | Any
+class PdfReadableSource(Protocol):
+    def read(self) -> bytes | bytearray | memoryview: ...
+
+
+PdfSource: TypeAlias = str | bytes | bytearray | memoryview | PdfReadableSource
 """PDF matrix helpers."""
+
+PdfPrimitiveObject: TypeAlias = (
+    None | bool | int | float | str | bytes | PdfName | PdfReference | PdfString
+)
+PdfObject: TypeAlias = (
+    PdfPrimitiveObject | PdfStream | list["PdfObject"] | tuple["PdfObject", ...] | PdfDictLike
+)
 
 
 Matrix = tuple[float, float, float, float, float, float]
 IDENTITY_MATRIX: Matrix = (1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
 
 
-def parse_matrix_operand(operands: Any) -> Matrix:
+def is_float_matrix_values(
+    value: object,
+) -> TypeGuard[tuple[float, float, float, float, float, float]]:
+    return (
+        isinstance(value, tuple)
+        and len(value) == 6
+        and all(isinstance(item, float) for item in value)
+    )
+
+
+def is_pdf_scalar_matrix_values(
+    value: object,
+) -> TypeGuard[tuple[PdfScalar, PdfScalar, PdfScalar, PdfScalar, PdfScalar, PdfScalar]]:
+    return (
+        isinstance(value, tuple)
+        and len(value) == 6
+        and all(isinstance(item, (int, float, str, bytes)) for item in value)
+    )
+
+
+def parse_matrix_operand(operands: "PdfObject") -> Matrix:
     if not isinstance(operands, (list, tuple)) or len(operands) < 6:
         raise ValueError("invalid matrix operand")
     a0, a1, a2, a3, a4, a5 = (
@@ -488,12 +564,27 @@ def parse_matrix_operand(operands: Any) -> Matrix:
         operands[4],
         operands[5],
     )
-    if type(a0) is float:
-        return (a0, a1, a2, a3, a4, a5)
-    if isinstance(a0, (int, float)):
-        return (float(a0), float(a1), float(a2), float(a3), float(a4), float(a5))
+    raw_values = (a0, a1, a2, a3, a4, a5)
+    if is_float_matrix_values(raw_values):
+        return (
+            raw_values[0],
+            raw_values[1],
+            raw_values[2],
+            raw_values[3],
+            raw_values[4],
+            raw_values[5],
+        )
+    if not is_pdf_scalar_matrix_values(raw_values):
+        raise ValueError("invalid matrix operand")
     try:
-        return (float(a0), float(a1), float(a2), float(a3), float(a4), float(a5))
+        return (
+            float(raw_values[0]),
+            float(raw_values[1]),
+            float(raw_values[2]),
+            float(raw_values[3]),
+            float(raw_values[4]),
+            float(raw_values[5]),
+        )
     except TypeError, ValueError:
         raise ValueError("invalid matrix operand")
 
@@ -517,14 +608,14 @@ def matrix_multiply(
     )
 
 
-def normalize_pdf_name(value: Any, default: str | None = None) -> str | None:
+def normalize_pdf_name(value: "PdfObject", default: str | None = None) -> str | None:
     name = parse_name(value, default)
     if name is not None and name.startswith("/"):
         return name[1:]
     return name
 
 
-def coerce_to_bytes(value: Any) -> bytes:
+def coerce_to_bytes(value: "PdfObject") -> bytes:
     if isinstance(value, bytes):
         return value
     if isinstance(value, PdfString):
@@ -537,7 +628,10 @@ def coerce_to_bytes(value: Any) -> bytes:
     raise TypeError(f"cannot coerce {type(value).__name__} to bytes")
 
 
-def coerce_value(value: Any, string_decoder: Any = None) -> Any:
+def coerce_value(
+    value: "PdfObject",
+    string_decoder: Callable[[bytes], object] | None = None,
+) -> object:
     if string_decoder is not None:
         if isinstance(value, PdfString):
             return string_decoder(value.data)

@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import Any, Callable
+from typing import Callable
 
-from core_pdf.impl.engine.spec.s_07_syntax.primitives import parse_name
+from core_pdf.impl.engine.spec.s_07_syntax.primitives import PdfObject, parse_name
 from core_pdf.impl.engine.spec.s_09_fonts.encoding import PDFDOC_ENCODING_TABLE
 from core_pdf.impl.engine.spec.s_09_fonts.glyphs import glyph_name_to_unicode
 
@@ -52,7 +52,7 @@ def cached_decode_table(
 
 
 def parse_differences(
-    value: Any, resolve_name: Callable[[Any], str | None] | None = None
+    value: PdfObject, resolve_name: Callable[[PdfObject], str | None] | None = None
 ) -> dict[int, str]:
     differences: dict[int, str] = {}
     if not isinstance(value, (list, tuple)):

@@ -2,18 +2,25 @@
 
 from __future__ import annotations
 
-import typing
-from typing import Any
+from collections.abc import Callable, Sequence
+from typing import TypeAlias, TypeGuard
 
 from core_pdf.impl.engine.spec.s_07_syntax.primitives import (
+    PdfDictLike,
+    PdfObject,
     PdfStream,
     normalize_pdf_name,
     parse_int,
     parse_name,
 )
 
-if typing.TYPE_CHECKING:
-    from collections.abc import Callable
+ColorParams: TypeAlias = PdfDictLike
+ColorComponent: TypeAlias = float
+ColorComponents: TypeAlias = list[ColorComponent]
+TintFn: TypeAlias = Callable[..., ColorComponents]
+TintSequence: TypeAlias = list[PdfObject] | tuple[PdfObject, ...]
+TintValue: TypeAlias = TintSequence | None
+DeviceColorSpace: TypeAlias = "ImageColorSpec | list[PdfObject] | tuple[PdfObject, ...]"
 
 
 def linear_to_srgb(c: float) -> float:
@@ -43,20 +50,34 @@ def lab_to_xyz(
     return xr * wp[0], yr * wp[1], zr * wp[2]
 
 
-def cs_param(params: Any, key: str, default: Any = None) -> Any:
+def cs_param(
+    params: ColorParams, key: str, default: PdfObject | list[float] = None
+) -> PdfObject | list[float]:
     if isinstance(params, dict):
         return params.get(key, default)
     return default
 
 
-def cs_param_floats(params: Any, key: str, count: int, default: list[float]) -> list[float]:
+def cs_param_floats(params: ColorParams, key: str, count: int, default: list[float]) -> list[float]:
     raw = cs_param(params, key, default)
     if isinstance(raw, (list, tuple)) and len(raw) >= count:
-        return [float(v) for v in raw[:count]]
+        values: list[float] = []
+        for value in raw[:count]:
+            if not isinstance(value, (int, float, str, bytes)):
+                return default
+            values.append(float(value))
+        return values
     return default
 
 
-def cs_name(value: Any, default: str | None = None) -> str | None:
+def cs_param_float(params: ColorParams, key: str, default: float) -> float:
+    raw = cs_param(params, key, default)
+    if isinstance(raw, (int, float, str, bytes)):
+        return float(raw)
+    return default
+
+
+def cs_name(value: PdfObject, default: str | None = None) -> str | None:
     return parse_name(value, default)
 
 
@@ -76,6 +97,40 @@ def icc_profile_alt_name(profile: bytes | None, channels: int) -> str | None:
     return {1: "DeviceGray", 3: "DeviceRGB", 4: "DeviceCMYK"}.get(channels)
 
 
+def as_tint_value(value: PdfObject) -> TintValue:
+    if isinstance(value, (list, tuple)):
+        return value
+    return None
+
+
+def is_tint_fn(value: object) -> TypeGuard[TintFn]:
+    return callable(value)
+
+
+def tint_callable(value: TintValue) -> TintFn | None:
+    if (
+        isinstance(value, Sequence)
+        and not isinstance(value, (str, bytes, bytearray))
+        and len(value) >= 1
+        and is_tint_fn(value[0])
+    ):
+        callable_value = value[0]
+
+        def apply_tint(*components: float) -> ColorComponents:
+            result = callable_value(*components)
+            if not isinstance(result, list):
+                raise ValueError("invalid tint function result")
+            converted: ColorComponents = []
+            for item in result:
+                if not isinstance(item, (int, float)):
+                    raise ValueError("invalid tint function result")
+                converted.append(float(item))
+            return converted
+
+        return apply_tint
+    return None
+
+
 class ImageColorSpec:
     __slots__ = (
         "kind",
@@ -91,27 +146,27 @@ class ImageColorSpec:
     )
 
     kind: str | None
-    params: dict[str, Any]
+    params: ColorParams
     bits_per_component: int
     base: str | None
     hival: int
     lookup: bytes | None
     alt: str | None
-    tint_fn: Any
-    names: list[Any] | tuple[Any, ...] | None
+    tint_fn: TintValue
+    names: list[PdfObject] | tuple[PdfObject, ...] | None
     channels: int
 
     def __init__(
         self,
         kind: str | None,
-        params: dict[str, Any],
+        params: ColorParams,
         bits_per_component: int = 8,
         base: str | None = None,
         hival: int = 0,
         lookup: bytes | None = None,
         alt: str | None = None,
-        tint_fn: Any = None,
-        names: list[Any] | tuple[Any, ...] | None = None,
+        tint_fn: TintValue = None,
+        names: list[PdfObject] | tuple[PdfObject, ...] | None = None,
         channels: int = 1,
     ) -> None:
         self.kind = kind
@@ -126,7 +181,7 @@ class ImageColorSpec:
         self.channels = channels
 
 
-def normalize_color_space_name(value: Any) -> str | None:
+def normalize_color_space_name(value: PdfObject) -> str | None:
     result = normalize_pdf_name(value)
     if result is not None:
         return result
@@ -136,7 +191,7 @@ def normalize_color_space_name(value: Any) -> str | None:
     return text[1:] if text.startswith("/") else text
 
 
-def normalize_image_color_spec(image_dict: dict[str, Any]) -> ImageColorSpec:
+def normalize_image_color_spec(image_dict: ColorParams) -> ImageColorSpec:
     bits_per_component = parse_int(image_dict.get("BitsPerComponent", 8), 8) or 8
     color_space = image_dict.get("ColorSpace")
     if isinstance(color_space, (list, tuple)) and color_space:
@@ -185,7 +240,9 @@ def normalize_image_color_spec(image_dict: dict[str, Any]) -> ImageColorSpec:
             and isinstance(color_space[1], dict)
         ):
             return ImageColorSpec(
-                kind=kind, params=color_space[1], bits_per_component=bits_per_component
+                kind=kind,
+                params=color_space[1],
+                bits_per_component=bits_per_component,
             )
         if kind in {"Lab", "CalGray", "CalRGB"}:
             raise ValueError(f"invalid {kind} color space")
@@ -201,7 +258,7 @@ def normalize_image_color_spec(image_dict: dict[str, Any]) -> ImageColorSpec:
                 params={},
                 bits_per_component=bits_per_component,
                 alt=alt,
-                tint_fn=color_space[3] if len(color_space) >= 4 else None,
+                tint_fn=as_tint_value(color_space[3]) if len(color_space) >= 4 else None,
                 names=list(names)
                 if kind == "DeviceN" and isinstance(names, (list, tuple))
                 else None,
@@ -228,8 +285,8 @@ def adapt_d50_to_d65(x: float, y: float, z: float) -> tuple[float, float, float]
 
 class ImageColorManager:
     @staticmethod
-    def convert_image_data(raw: bytes, image_dict: dict[str, Any] | ImageColorSpec) -> bytes | None:
-        current: dict[str, Any] | ImageColorSpec = image_dict
+    def convert_image_data(raw: bytes, image_dict: ColorParams | ImageColorSpec) -> bytes | None:
+        current: ColorParams | ImageColorSpec = image_dict
         depth = 0
 
         while depth <= 3:
@@ -282,9 +339,7 @@ class ImageColorManager:
         return None
 
     @staticmethod
-    def convert_separation(
-        raw: bytes, color_space: ImageColorSpec | list[Any] | tuple[Any, ...]
-    ) -> bytes | None:
+    def convert_separation(raw: bytes, color_space: DeviceColorSpace) -> bytes | None:
         if isinstance(color_space, ImageColorSpec):
             alt_name = color_space.alt or "DeviceGray"
             tint_fn = color_space.tint_fn
@@ -295,21 +350,26 @@ class ImageColorManager:
             if not isinstance(alt_cs, dict):
                 raise ValueError("invalid Separation color space")
             alt_name = cs_name(alt_cs.get("ColorSpace"), "DeviceGray") or "DeviceGray"
-            tint_fn = color_space[3] if len(color_space) > 3 else None
+            tint_fn = as_tint_value(color_space[3]) if len(color_space) > 3 else None
 
         result = bytearray()
         for byte in raw:
             v = byte / 255.0
             if tint_fn is None:
-                components: list[Any] = [v]
-            elif isinstance(tint_fn, (list, tuple)):
-                if len(tint_fn) >= 1 and callable(tint_fn[0]):
+                components: ColorComponents = [v]
+            elif isinstance(tint_fn, Sequence) and not isinstance(tint_fn, (str, bytes, bytearray)):
+                tint_operator = tint_callable(tint_fn)
+                if tint_operator is not None:
                     try:
-                        components = tint_fn[0](v)
+                        components = tint_operator(v)
                     except Exception as exc:
                         raise ValueError("invalid separation tint function") from exc
                 else:
-                    components = list(tint_fn)
+                    components = []
+                    for component in tint_fn:
+                        if not isinstance(component, (int, float, str, bytes)):
+                            raise ValueError("invalid separation tint function")
+                        components.append(float(component))
             else:
                 components = [v]
             expected = (
@@ -331,9 +391,7 @@ class ImageColorManager:
         return bytes(result)
 
     @staticmethod
-    def convert_devicen(
-        raw: bytes, color_space: ImageColorSpec | list[Any] | tuple[Any, ...]
-    ) -> bytes | None:
+    def convert_devicen(raw: bytes, color_space: DeviceColorSpace) -> bytes | None:
         if isinstance(color_space, ImageColorSpec):
             alt_name = color_space.alt or ""
             n = color_space.channels
@@ -345,7 +403,7 @@ class ImageColorManager:
             alt_cs_name = color_space[2]
             alt_name = cs_name(alt_cs_name, "") or ""
             n = len(names) if isinstance(names, (list, tuple)) else 1
-            tint_fn = color_space[3] if len(color_space) > 3 else None
+            tint_fn = as_tint_value(color_space[3]) if len(color_space) > 3 else None
         if n <= 0:
             raise ValueError("invalid DeviceN color space")
         if len(raw) % n != 0:
@@ -354,10 +412,11 @@ class ImageColorManager:
         result = bytearray()
         step = n
         for i in range(0, len(raw), step):
-            components: list[Any] = [raw[i + j] / 255.0 for j in range(step)]
-            if isinstance(tint_fn, (list, tuple)) and len(tint_fn) >= 1 and callable(tint_fn[0]):
+            components: ColorComponents = [raw[i + j] / 255.0 for j in range(step)]
+            tint_operator = tint_callable(tint_fn)
+            if tint_operator is not None:
                 try:
-                    components = tint_fn[0](*components)
+                    components = tint_operator(*components)
                 except Exception as exc:
                     raise ValueError("invalid DeviceN tint function") from exc
             expected = (
@@ -451,10 +510,11 @@ class ImageColorManager:
         return bytes(result)
 
     @staticmethod
-    def convert_calgray(raw: bytes, params: Any) -> bytes:
+    def convert_calgray(raw: bytes, params: ColorParams) -> bytes:
+        params = params if isinstance(params, dict) else {}
         wp = cs_param_floats(params, "WhitePoint", 3, [0.9505, 1.0, 1.089])
         bp = cs_param_floats(params, "BlackPoint", 3, [0.0, 0.0, 0.0])
-        gamma = float(cs_param(params, "Gamma", 1.0))
+        gamma = cs_param_float(params, "Gamma", 1.0)
 
         lut = bytearray(768)
         inv255 = 1.0 / 255.0
@@ -482,7 +542,7 @@ class ImageColorManager:
         return bytes(result)
 
     @staticmethod
-    def convert_calrgb(raw: bytes, params: Any) -> bytes:
+    def convert_calrgb(raw: bytes, params: ColorParams) -> bytes:
         bp = cs_param_floats(params, "BlackPoint", 3, [0.0, 0.0, 0.0])
         gamma = cs_param_floats(params, "Gamma", 3, [1.0, 1.0, 1.0])
         matrix = cs_param_floats(params, "Matrix", 9, [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0])
@@ -500,7 +560,7 @@ class ImageColorManager:
         return ImageColorManager.convert_to_rgb(raw, fn, channels=3)
 
     @staticmethod
-    def convert_lab_raw(raw: bytes, params: Any) -> bytes:
+    def convert_lab_raw(raw: bytes, params: ColorParams) -> bytes:
         wp = cs_param_floats(params, "WhitePoint", 3, [0.9505, 1.0, 1.089])
         range_a = cs_param_floats(params, "Range", 2, [-100.0, 100.0])
 
@@ -515,7 +575,7 @@ class ImageColorManager:
         return ImageColorManager.convert_to_rgb(raw, fn, channels=3)
 
     @staticmethod
-    def apply_alt_color(components: list[Any], alt_name: str) -> bytes | None:
+    def apply_alt_color(components: ColorComponents, alt_name: str) -> bytes | None:
         if alt_name == "DeviceGray":
             v = max(0.0, min(1.0, components[0] if components else 0.0))
             v_byte = max(0, min(255, int(round(v * 255.0))))

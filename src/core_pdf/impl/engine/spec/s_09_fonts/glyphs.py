@@ -6,7 +6,7 @@ from functools import lru_cache
 
 from core_pdf.impl.engine.spec.s_09_fonts.data.core14 import (
     COMMON_GLYPHS,
-    FONT_DATA,
+    GLYPH_FONT_DATA,
     GLYPH_MAP,
     GLYPH_NAME_ALIASES,
     MODIFIER_NAMES,
@@ -22,7 +22,7 @@ def ensure_glyph_map() -> dict[str, str]:
     GLYPH_MAP.update(COMMON_GLYPHS)
     GLYPH_MAP.update(GLYPH_NAME_ALIASES)
     GLYPH_MAP.update(SYMBOL_GLYPH_NAME_ALIASES)
-    GLYPH_MAP.update(FONT_DATA)
+    GLYPH_MAP.update(GLYPH_FONT_DATA)
     return GLYPH_MAP
 
 
@@ -42,8 +42,8 @@ def glyph_name_to_unicode(name: str) -> str:
         name.split(".", 1)[0] if "." in name else None,
         name.replace("_", "") if "_" in name else None,
     ):
-        if base and base != name and base in FONT_DATA:
-            return FONT_DATA[base]
+        if base and base != name and base in GLYPH_FONT_DATA:
+            return GLYPH_FONT_DATA[base]
 
     for suffix in ("small", "superior", "inferior", "oldstyle", "fitted"):
         if name.endswith(suffix) and len(name) > len(suffix):
@@ -53,8 +53,8 @@ def glyph_name_to_unicode(name: str) -> str:
                 base.lower(),
                 base[:1].upper() + base[1:].lower() if base else base,
             ):
-                if len(candidate) > 1 and candidate in FONT_DATA:
-                    return FONT_DATA[candidate]
+                if len(candidate) > 1 and candidate in GLYPH_FONT_DATA:
+                    return GLYPH_FONT_DATA[candidate]
 
     if name.startswith("uni") and len(name) in {7, 11}:
         try:

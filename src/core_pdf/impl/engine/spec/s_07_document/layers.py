@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Any, cast
-
 from core_pdf.impl.engine.spec.s_07_document.protocols import DocumentMixinProtocol
 
 
@@ -68,5 +66,5 @@ class LayersMixin:
 
     def oc_hidden_layers(self: DocumentMixinProtocol) -> frozenset[str]:
         if self.oc_layers is None:
-            cast(Any, self).load_oc_layers()
+            self.load_oc_layers()
         return frozenset(name for name, on in (self.oc_layers or {}).items() if not on)

@@ -1,9 +1,23 @@
 from __future__ import annotations
 
 from array import array
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, TypeVar
 
 _COORDS_TEMPLATE = array("d", [0.0] * 8)
+_T = TypeVar("_T")
+
+
+class _UnsetType:
+    pass
+
+
+_UNSET = _UnsetType()
+
+
+def _value_or(value: _T | _UnsetType, default: _T) -> _T:
+    if isinstance(value, _UnsetType):
+        return default
+    return value
 
 
 if TYPE_CHECKING:
@@ -245,26 +259,49 @@ class TextRun:
         r.fill_color = fill_color
         return r
 
-    def replace(self, **kwargs: Any) -> TextRun:
+    def replace(
+        self,
+        *,
+        text: str | _UnsetType = _UNSET,
+        x0: float | _UnsetType = _UNSET,
+        y0: float | _UnsetType = _UNSET,
+        x1: float | _UnsetType = _UNSET,
+        y1: float | _UnsetType = _UNSET,
+        tx: float | _UnsetType = _UNSET,
+        ty: float | _UnsetType = _UNSET,
+        font_size: float | _UnsetType = _UNSET,
+        space_width: float | _UnsetType = _UNSET,
+        order: int | _UnsetType = _UNSET,
+        stream_order: int | _UnsetType = _UNSET,
+        xobject_depth: int | _UnsetType = _UNSET,
+        font_name: str | None | _UnsetType = _UNSET,
+        is_vertical: bool | _UnsetType = _UNSET,
+        rotation_angle: int | _UnsetType = _UNSET,
+        visible: bool | _UnsetType = _UNSET,
+        line_break_before: bool | _UnsetType = _UNSET,
+        seqno: int | _UnsetType = _UNSET,
+        fill_color: tuple[float, ...] | None | _UnsetType = _UNSET,
+    ) -> TextRun:
         return TextRun(
-            text=kwargs.get("text", self.text),
-            x0=kwargs.get("x0", self.x0),
-            y0=kwargs.get("y0", self.y0),
-            x1=kwargs.get("x1", self.x1),
-            y1=kwargs.get("y1", self.y1),
-            tx=kwargs.get("tx", self.tx),
-            ty=kwargs.get("ty", self.ty),
-            font_size=kwargs.get("font_size", self.font_size),
-            space_width=kwargs.get("space_width", self.space_width),
-            order=kwargs.get("order", self.order),
-            stream_order=kwargs.get("stream_order", self.stream_order),
-            xobject_depth=kwargs.get("xobject_depth", self.xobject_depth),
-            is_vertical=kwargs.get("is_vertical", self.is_vertical),
-            rotation_angle=kwargs.get("rotation_angle", self.rotation_angle),
-            visible=kwargs.get("visible", self.visible),
-            line_break_before=kwargs.get("line_break_before", self.line_break_before),
-            seqno=kwargs.get("seqno", self.seqno),
-            fill_color=kwargs.get("fill_color", self.fill_color),
+            text=_value_or(text, self.text),
+            x0=_value_or(x0, self.x0),
+            y0=_value_or(y0, self.y0),
+            x1=_value_or(x1, self.x1),
+            y1=_value_or(y1, self.y1),
+            tx=_value_or(tx, self.tx),
+            ty=_value_or(ty, self.ty),
+            font_size=_value_or(font_size, self.font_size),
+            space_width=_value_or(space_width, self.space_width),
+            order=_value_or(order, self.order),
+            stream_order=_value_or(stream_order, self.stream_order),
+            xobject_depth=_value_or(xobject_depth, self.xobject_depth),
+            font_name=_value_or(font_name, self.font_name),
+            is_vertical=_value_or(is_vertical, self.is_vertical),
+            rotation_angle=_value_or(rotation_angle, self.rotation_angle),
+            visible=_value_or(visible, self.visible),
+            line_break_before=_value_or(line_break_before, self.line_break_before),
+            seqno=_value_or(seqno, self.seqno),
+            fill_color=_value_or(fill_color, self.fill_color),
         )
 
 
@@ -324,21 +361,36 @@ class LayoutLine:
         self.mid_y = mid_y
         self.height = height
 
-    def replace(self, **kwargs: Any) -> LayoutLine:
+    def replace(
+        self,
+        *,
+        runs: list[TextRun] | _UnsetType = _UNSET,
+        x0: float | _UnsetType = _UNSET,
+        y0: float | _UnsetType = _UNSET,
+        x1: float | _UnsetType = _UNSET,
+        y1: float | _UnsetType = _UNSET,
+        is_vertical: bool | _UnsetType = _UNSET,
+        rotation_angle: int | _UnsetType = _UNSET,
+        max_order: int | _UnsetType = _UNSET,
+        max_depth: int | _UnsetType = _UNSET,
+        min_order: int | _UnsetType = _UNSET,
+        mid_y: float | _UnsetType = _UNSET,
+        height: float | _UnsetType = _UNSET,
+    ) -> LayoutLine:
         """Create a new LayoutLine with modified fields."""
         return LayoutLine(
-            runs=kwargs.get("runs", self.runs),
-            x0=kwargs.get("x0", self.x0),
-            y0=kwargs.get("y0", self.y0),
-            x1=kwargs.get("x1", self.x1),
-            y1=kwargs.get("y1", self.y1),
-            is_vertical=kwargs.get("is_vertical", self.is_vertical),
-            rotation_angle=kwargs.get("rotation_angle", self.rotation_angle),
-            max_order=kwargs.get("max_order", self.max_order),
-            max_depth=kwargs.get("max_depth", self.max_depth),
-            min_order=kwargs.get("min_order", self.min_order),
-            mid_y=kwargs.get("mid_y", self.mid_y),
-            height=kwargs.get("height", self.height),
+            runs=_value_or(runs, self.runs),
+            x0=_value_or(x0, self.x0),
+            y0=_value_or(y0, self.y0),
+            x1=_value_or(x1, self.x1),
+            y1=_value_or(y1, self.y1),
+            is_vertical=_value_or(is_vertical, self.is_vertical),
+            rotation_angle=_value_or(rotation_angle, self.rotation_angle),
+            max_order=_value_or(max_order, self.max_order),
+            max_depth=_value_or(max_depth, self.max_depth),
+            min_order=_value_or(min_order, self.min_order),
+            mid_y=_value_or(mid_y, self.mid_y),
+            height=_value_or(height, self.height),
         )
 
     def add(self, run: TextRun) -> None:
@@ -400,16 +452,26 @@ class LayoutBox:
         self.max_depth = max_depth
         self.mid_y = mid_y
 
-    def replace(self, **kwargs: Any) -> LayoutBox:
+    def replace(
+        self,
+        *,
+        lines: list[LayoutLine] | _UnsetType = _UNSET,
+        x0: float | _UnsetType = _UNSET,
+        y0: float | _UnsetType = _UNSET,
+        x1: float | _UnsetType = _UNSET,
+        y1: float | _UnsetType = _UNSET,
+        max_depth: int | _UnsetType = _UNSET,
+        mid_y: float | _UnsetType = _UNSET,
+    ) -> LayoutBox:
         """Create a new LayoutBox with modified fields."""
         return LayoutBox(
-            lines=kwargs.get("lines", self.lines),
-            x0=kwargs.get("x0", self.x0),
-            y0=kwargs.get("y0", self.y0),
-            x1=kwargs.get("x1", self.x1),
-            y1=kwargs.get("y1", self.y1),
-            max_depth=kwargs.get("max_depth", self.max_depth),
-            mid_y=kwargs.get("mid_y", self.mid_y),
+            lines=_value_or(lines, self.lines),
+            x0=_value_or(x0, self.x0),
+            y0=_value_or(y0, self.y0),
+            x1=_value_or(x1, self.x1),
+            y1=_value_or(y1, self.y1),
+            max_depth=_value_or(max_depth, self.max_depth),
+            mid_y=_value_or(mid_y, self.mid_y),
         )
 
     @property

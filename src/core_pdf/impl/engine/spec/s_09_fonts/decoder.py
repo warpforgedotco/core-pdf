@@ -1,10 +1,13 @@
 from __future__ import annotations
 
-import typing
-
-from core_pdf.impl.engine.spec.s_07_syntax.primitives import PdfStream, parse_float, parse_name
+from core_pdf.impl.engine.spec.s_07_syntax.primitives import (
+    PdfDictLike,
+    PdfStream,
+    parse_float,
+    parse_name,
+)
 from core_pdf.impl.engine.spec.s_09_fonts.cmaps import CMapDecoder, ToUnicodeCMap
-from core_pdf.impl.engine.spec.s_09_fonts.data.core14 import FONT_DATA
+from core_pdf.impl.engine.spec.s_09_fonts.data.core14 import get_font_metrics_props
 from core_pdf.impl.engine.spec.s_09_fonts.encoding import split_chunks
 from core_pdf.impl.engine.spec.s_09_fonts.helpers import (
     cached_decode_table,
@@ -13,9 +16,6 @@ from core_pdf.impl.engine.spec.s_09_fonts.helpers import (
     parse_differences,
 )
 from core_pdf.impl.engine.spec.s_09_fonts.widths import get_descendant, parse_font_widths
-
-if typing.TYPE_CHECKING:
-    from typing import Any
 
 
 class FontDecoder:
@@ -38,7 +38,7 @@ class FontDecoder:
         "fast_widths_cid",
     )
 
-    font: dict[str, Any]
+    font: PdfDictLike
     ligature_overrides: dict[int, str]
     to_unicode: ToUnicodeCMap | None
     cmap: CMapDecoder | None
@@ -57,7 +57,7 @@ class FontDecoder:
 
     def __init__(
         self,
-        font: dict[str, Any],
+        font: PdfDictLike,
         ligature_overrides: dict[int, str] | None = None,
     ) -> None:
         self.font = font
@@ -157,7 +157,7 @@ class FontDecoder:
             self.fast_widths_cid = None
 
     def parse_encoding(
-        self, font: dict[str, Any]
+        self, font: PdfDictLike
     ) -> tuple[CMapDecoder | None, str | None, dict[int, str]]:
         cmap = None
         base_encoding = None
@@ -182,7 +182,7 @@ class FontDecoder:
 
     def parse_metrics(
         self,
-        font_dict: dict[str, Any],
+        font_dict: PdfDictLike,
         subtype: str | None,
         base_font_name: str | None,
         widths: dict[int, float],
@@ -195,11 +195,16 @@ class FontDecoder:
                 desc_descriptor = descendant.get("FontDescriptor")
                 descriptor = desc_descriptor or descriptor
 
-        if base_font_name in FONT_DATA and not widths:
-            entry = FONT_DATA[base_font_name]
-            props = entry["props"]
-            ascent = parse_float(props.get("Ascent"), ascent)
-            descent = parse_float(props.get("Descent"), descent)
+        props = get_font_metrics_props(base_font_name) if base_font_name is not None else None
+        if props is not None and not widths:
+            ascent_value = props.get("Ascent")
+            descent_value = props.get("Descent")
+            if not isinstance(ascent_value, (type(None), bool, int, float, str, bytes)):
+                raise ValueError("invalid core14 ascent value")
+            if not isinstance(descent_value, (type(None), bool, int, float, str, bytes)):
+                raise ValueError("invalid core14 descent value")
+            ascent = parse_float(ascent_value, ascent)
+            descent = parse_float(descent_value, descent)
 
         if isinstance(descriptor, dict):
             ascent = parse_float(descriptor.get("Ascent"), ascent)
@@ -207,7 +212,7 @@ class FontDecoder:
         return ascent, descent
 
     def adjust_type3_widths(
-        self, font_dict: dict[str, Any], widths: dict[int, float]
+        self, font_dict: PdfDictLike, widths: dict[int, float]
     ) -> dict[int, float]:
         font_matrix = font_dict.get("FontMatrix")
         if isinstance(font_matrix, (list, tuple)) and len(font_matrix) >= 1:

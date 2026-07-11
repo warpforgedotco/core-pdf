@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+import mmap
 import re
-import typing
-
-if typing.TYPE_CHECKING:
-    from typing import Any
 
 from core_pdf.impl.engine.spec.s_07_syntax.errors import PdfParseError
 from core_pdf.impl.engine.spec.s_07_syntax.lexer import WS_TABLE, PdfLexer
-from core_pdf.impl.engine.spec.s_07_syntax.primitives import PdfName, PdfStream, parse_int_strict
+from core_pdf.impl.engine.spec.s_07_syntax.primitives import (
+    PdfDictLike,
+    PdfName,
+    PdfStream,
+    parse_int_strict,
+)
 
 STARTXREF_RE = re.compile(b"startxref")
 OBJ_MARKER_RE = re.compile(rb"(\d+)\s+(\d+)\s+obj")
@@ -41,6 +43,7 @@ class PdfXRefEntry:
 
 
 XRefTable = dict[int, PdfXRefEntry]
+ByteSource = bytes | bytearray | memoryview | mmap.mmap
 
 
 def key_for(obj_num: int, gen_num: int = 0) -> int:
@@ -64,7 +67,7 @@ class XRefScanner:
         return xref.get((object_number << 16) | generation_number)
 
     @staticmethod
-    def find_startxref(data: bytes) -> int | None:
+    def find_startxref(data: ByteSource) -> int | None:
         # Use re.finditer for rfind compatibility with memoryview/mmap
         matches = list(STARTXREF_RE.finditer(data))
         if not matches:
@@ -76,7 +79,7 @@ class XRefScanner:
         return parse_int_strict(bytes(number).strip())
 
     @staticmethod
-    def skip_ws(data: bytes, pos: int) -> int:
+    def skip_ws(data: ByteSource, pos: int) -> int:
         ws = WS_TABLE
         n = len(data)
         while pos < n and ws[data[pos]]:
@@ -84,7 +87,7 @@ class XRefScanner:
         return pos
 
     @staticmethod
-    def read_line(data: bytes, pos: int) -> tuple[memoryview, int]:
+    def read_line(data: ByteSource, pos: int) -> tuple[memoryview, int]:
         n = len(data)
         start = pos
         nt = NEWLINE_TABLE
@@ -104,8 +107,8 @@ class XRefScanner:
 
     @staticmethod
     def parse_table_section(
-        data: bytes, start_pos: int
-    ) -> tuple[XRefTable, dict[Any, Any], int | None]:
+        data: ByteSource, start_pos: int
+    ) -> tuple[XRefTable, PdfDictLike, int | None]:
         pos = XRefScanner.skip_ws(data, start_pos)
         if data[pos : pos + 4] != b"xref":
             raise PdfParseError("expected xref table")
@@ -163,8 +166,8 @@ class XRefScanner:
 
     @staticmethod
     def load_section_chain(
-        data: bytes, start: int, seen: set[int]
-    ) -> tuple[XRefTable, dict[Any, Any]]:
+        data: ByteSource, start: int, seen: set[int]
+    ) -> tuple[XRefTable, PdfDictLike]:
         if start in seen:
             raise PdfParseError("xref section loop detected")
         seen.add(start)
@@ -191,10 +194,14 @@ class XRefScanner:
         return entries, trailer
 
     @staticmethod
-    def parse_stream(stream: PdfStream) -> tuple[XRefTable, dict[Any, Any]]:
+    def parse_stream(stream: PdfStream) -> tuple[XRefTable, PdfDictLike]:
         dict_obj = stream.dictionary
         type_value = dict_obj.get(PdfName.of(b"Type"))
-        type_name = PdfName.of(type_value) if type_value is not None else None
+        type_name = (
+            PdfName.of(type_value)
+            if isinstance(type_value, (str, bytes, memoryview, PdfName))
+            else None
+        )
         if type_name is None or type_name.value != "XRef":
             raise PdfParseError("invalid xref stream type")
         size = dict_obj.get(PdfName.of(b"Size"))
@@ -204,9 +211,9 @@ class XRefScanner:
         w_raw = dict_obj.get(PdfName.of(b"W"))
         if not isinstance(w_raw, (list, tuple)) or len(w_raw) != 3:
             raise PdfParseError("invalid xref stream W")
-        if not all(isinstance(x, int) for x in w_raw):
+        if not all(isinstance(x, int) and not isinstance(x, bool) for x in w_raw):
             raise PdfParseError("invalid xref stream W")
-        w = [int(x) for x in w_raw]
+        w = [x for x in w_raw if isinstance(x, int) and not isinstance(x, bool)]
         if any(width < 0 for width in w):
             raise PdfParseError("invalid xref stream W")
 
@@ -215,9 +222,9 @@ class XRefScanner:
             raise PdfParseError("invalid xref stream Index")
         if not isinstance(index_raw, (list, tuple)):
             raise PdfParseError("invalid xref stream Index")
-        if not all(isinstance(x, int) for x in index_raw):
+        if not all(isinstance(x, int) and not isinstance(x, bool) for x in index_raw):
             raise PdfParseError("invalid xref stream Index")
-        index = [int(x) for x in index_raw]
+        index = [x for x in index_raw if isinstance(x, int) and not isinstance(x, bool)]
         if len(index) % 2 != 0:
             raise PdfParseError("invalid xref stream Index")
 

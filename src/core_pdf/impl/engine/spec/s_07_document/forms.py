@@ -1,19 +1,18 @@
 from __future__ import annotations
 
-from typing import Any, cast
-
 from core_pdf.impl.engine.spec.s_07_document.models import FieldRecord
 from core_pdf.impl.engine.spec.s_07_document.protocols import DocumentMixinProtocol
+from core_pdf.impl.engine.spec.s_07_syntax.primitives import PdfDictLike, PdfObject
 
 
 class FormsMixin:
     __slots__ = ()
 
-    acroform_cache: dict[str, Any] | None
+    acroform_cache: PdfDictLike | None
     fields_cache: list[FieldRecord] | None
 
     @property
-    def acroform(self: DocumentMixinProtocol) -> dict | None:
+    def acroform(self: DocumentMixinProtocol) -> PdfDictLike | None:
         if self.acroform_cache is None:
             acroform_val = self.resolver.resolve(self.catalog().get("AcroForm"))
             if acroform_val is None:
@@ -26,10 +25,10 @@ class FormsMixin:
 
     def collect_field_records(
         self: DocumentMixinProtocol,
-        node,
+        node: PdfObject,
         inherited_name: str = "",
         inherited_type: str = "",
-        inherited_value=None,
+        inherited_value: PdfObject = None,
         _depth: int = 0,
     ) -> list[FieldRecord]:
         if _depth > 50:
@@ -60,7 +59,15 @@ class FormsMixin:
             kids = []
         elif not isinstance(kids, list):
             raise ValueError("invalid AcroForm Kids array")
-        records = [FieldRecord(current_name, field_type, value, node, kids=kids)]
+        records = [
+            FieldRecord(
+                current_name,
+                field_type,
+                value,
+                node,
+                kids=kids,
+            )
+        ]
 
         for kid in kids:
             kid = self.resolver.resolve(kid)
@@ -74,20 +81,25 @@ class FormsMixin:
             )
             if subtype == "Widget":
                 records.append(
-                    FieldRecord(current_name, field_type, value, kid, kids=[], widget=kid)
+                    FieldRecord(
+                        current_name,
+                        field_type,
+                        value,
+                        kid,
+                        kids=[],
+                        widget=kid,
+                    )
                 )
             else:
                 records.extend(
-                    cast(Any, self).collect_field_records(
-                        kid, current_name, field_type, value, _depth + 1
-                    )
+                    self.collect_field_records(kid, current_name, field_type, value, _depth + 1)
                 )
         return records
 
     def fields(self: DocumentMixinProtocol) -> list[FieldRecord]:
         if self.fields_cache is not None:
             return self.fields_cache
-        af = cast(Any, self).acroform
+        af = self.acroform
         if af is None:
             self.fields_cache = []
             return self.fields_cache
@@ -99,6 +111,6 @@ class FormsMixin:
         records: list[FieldRecord] = []
         for field in field_list:
             field_obj = self.resolver.resolve(field)
-            records.extend(cast(Any, self).collect_field_records(field_obj))
+            records.extend(self.collect_field_records(field_obj))
         self.fields_cache = records
         return self.fields_cache

@@ -3,7 +3,6 @@ from __future__ import annotations
 import re
 import typing
 from statistics import median_low
-from typing import Any
 
 if typing.TYPE_CHECKING:
     from core_pdf.impl.engine.spec.s_07_document.models import AnnotationRecord
@@ -407,7 +406,7 @@ class MarkdownRenderer:
 
         return "\n\n".join(md_parts)
 
-    def render_table(self, table: list[list[Any]]) -> str | None:
+    def render_table(self, table: list[list[str]]) -> str | None:
         # Optimization: strip entirely empty columns
         if not table or not isinstance(table[0], list):
             raise ValueError("invalid table structure")

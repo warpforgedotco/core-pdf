@@ -5,15 +5,12 @@ from __future__ import annotations
 import array
 import re
 import sys
-import typing
 from typing import TYPE_CHECKING
 
 from core_pdf.impl.engine.spec.s_09_fonts.encoding import BYTE_CACHE, decode_utf16be
 
 if TYPE_CHECKING:
     from core_pdf.impl.engine.spec.s_07_syntax.primitives import PdfStream
-
-from core_pdf.impl.engine.spec.s_07_syntax.primitives import MISSING
 
 # Pre-compiled regex patterns
 RE_CODESPACERANGE = re.compile(b"begincodespacerange(.*?)endcodespacerange", re.DOTALL)
@@ -171,14 +168,14 @@ class ToUnicodeCMap:
 
     def precalculate_fast_tables(self) -> None:
         if 1 in self.decode_lengths:
-            table = [MISSING] * 256
+            table = [""] * 256
             for i in range(256):
                 b = BYTE_CACHE[i]
                 res = self.mappings.get(b)
                 if res is None:
                     res = self.mappings.get(b"\x00" + b)
                 table[i] = res if res is not None else ""
-            self.fast_decode_table = typing.cast("list[str]", table)
+            self.fast_decode_table = table
 
         if 2 in self.decode_lengths:
             table2 = [""] * 65536

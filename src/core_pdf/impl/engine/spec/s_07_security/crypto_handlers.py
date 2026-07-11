@@ -1,13 +1,21 @@
 import struct
+from collections.abc import Callable, Sequence
 from hashlib import md5, sha256, sha384, sha512
-from typing import Any, Callable, Sequence
 
 from core_pdf.impl.engine.spec.s_07_security.aes import AES
 from core_pdf.impl.engine.spec.s_07_security.crypto_constants import PDF_PADDING
 from core_pdf.impl.engine.spec.s_07_security.rc4 import CryptRC4
 from core_pdf.impl.engine.spec.s_07_security.saslprep import saslprep
 from core_pdf.impl.engine.spec.s_07_syntax.errors import PdfUnsupportedError
-from core_pdf.impl.engine.spec.s_07_syntax.primitives import coerce_to_bytes, parse_int, parse_name
+from core_pdf.impl.engine.spec.s_07_syntax.primitives import (
+    PdfDictLike,
+    PdfObject,
+    coerce_to_bytes,
+    parse_int,
+    parse_name,
+)
+
+DecryptFn = Callable[[int, int, bytes], bytes]
 
 
 class PDFEncryptionError(Exception):
@@ -22,21 +30,21 @@ class PDFPasswordIncorrect(PDFEncryptionError):
     pass
 
 
-def get_int(val: Any, default: int = 0) -> int:
+def get_int(val: PdfObject, default: int = 0) -> int:
     parsed = parse_int(val, default if val is None else None)
     if parsed is None:
         raise PDFEncryptionError(f"invalid integer value: {val!r}")
     return parsed
 
 
-def get_uint(val: Any, n_bits: int = 32) -> int:
+def get_uint(val: PdfObject, n_bits: int = 32) -> int:
     v = get_int(val, 0)
     if v >= 0:
         return v
     return v + (1 << n_bits)
 
 
-def get_name(val: Any) -> str:
+def get_name(val: PdfObject) -> str:
     return parse_name(val, "") or ""
 
 
@@ -45,8 +53,8 @@ class PdfStandardSecurityHandler:
 
     def __init__(
         self,
-        docid: Sequence[Any],
-        param: dict[str, Any],
+        docid: Sequence[PdfObject],
+        param: PdfDictLike,
         password: str = "",
     ) -> None:
         self.docid = docid
@@ -159,7 +167,7 @@ class PdfStandardSecurityHandler:
         objid: int,
         genno: int,
         data: bytes,
-        attrs: dict[str, Any] | None = None,
+        attrs: PdfDictLike | None = None,
     ) -> bytes:
         return self.decrypt_rc4(objid, genno, data)
 
@@ -193,12 +201,12 @@ class PdfStandardSecurityHandlerV4(PdfStandardSecurityHandler):
                 raise PDFEncryptionError(f"Invalid crypt filter dictionary: {k!r}")
             f = self.get_cfm(get_name(v.get("CFM", "")))
             if f is None:
-                raise PDFEncryptionError(f"Unknown crypt filter method CFM: {v.get('CFM')}")
+                raise PDFEncryptionError(f"Unknown crypt filter method CFM: {v.get('CFM')!r}")
             self.cfm[k] = f
         if self.strf != "Identity" and self.strf not in self.cfm:
             raise PDFEncryptionError(f"Undefined crypt filter: {self.strf}")
 
-    def get_cfm(self, name: str) -> Callable[[int, int, bytes], bytes] | None:
+    def get_cfm(self, name: str) -> DecryptFn | None:
         if name == "V2":
             return self.decrypt_rc4
         elif name == "AESV2":
@@ -210,7 +218,7 @@ class PdfStandardSecurityHandlerV4(PdfStandardSecurityHandler):
         objid: int,
         genno: int,
         data: bytes,
-        attrs: dict[str, Any] | None = None,
+        attrs: PdfDictLike | None = None,
         name: str | None = None,
     ) -> bytes:
         if not self.encrypt_metadata and attrs is not None:
@@ -252,7 +260,7 @@ class PdfStandardSecurityHandlerV5(PdfStandardSecurityHandlerV4):
         self.u_validation_salt = self.u[32:40]
         self.u_key_salt = self.u[40:]
 
-    def get_cfm(self, name: str) -> Callable[[int, int, bytes], bytes] | None:
+    def get_cfm(self, name: str) -> DecryptFn | None:
         if name == "AESV3":
             return self.decrypt_aes256
         return None

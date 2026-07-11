@@ -2,9 +2,15 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable, Iterator, Sequence
-from typing import TYPE_CHECKING, Any, Callable, overload
+from typing import TYPE_CHECKING, Callable, TypeAlias, TypeGuard, overload
 
-from core_pdf.impl.engine.spec.s_07_syntax.primitives import MISSING, PdfReference, coerce_value
+from core_pdf.impl.engine.spec.s_07_syntax.primitives import (
+    MISSING,
+    PdfDictLike,
+    PdfObject,
+    PdfReference,
+    coerce_value,
+)
 
 if TYPE_CHECKING:
     from core_pdf.impl.engine.spec.s_07_document.document import PdfDocument
@@ -15,6 +21,11 @@ MAX_STRUCTURE_DEPTH = 200
 MAX_PARENT_TREE_DEPTH = 100
 
 MatchFunc = Callable[["StructureElement"], bool]
+PdfDict: TypeAlias = PdfDictLike
+StructureNode: TypeAlias = PdfDictLike
+CoercedValue: TypeAlias = object
+StructureChild: TypeAlias = "StructureElement | StructureContentItem | StructureContentObject"
+ParentTreeEntry: TypeAlias = PdfObject
 
 
 def make_match_func(matcher: str | re.Pattern[str] | MatchFunc | None = None) -> MatchFunc:
@@ -42,7 +53,7 @@ def find_all(
                 elements.append(child)
 
 
-def literal_name(value: Any) -> str | None:
+def literal_name(value: PdfObject) -> str | None:
     if isinstance(value, PdfReference):
         return None
     if value is None:
@@ -51,7 +62,7 @@ def literal_name(value: Any) -> str | None:
     return text[1:] if text.startswith("/") else text
 
 
-def coerce_attr_value(value: Any) -> Any:
+def coerce_attr_value(value: PdfObject) -> CoercedValue:
     return coerce_value(value)
 
 
@@ -60,9 +71,9 @@ class StructureContentItem:
 
     page_index: int | None
     mcid: int
-    stream: Any
+    stream: PdfObject
 
-    def __init__(self, page_index: int | None, mcid: int, stream: Any = None) -> None:
+    def __init__(self, page_index: int | None, mcid: int, stream: PdfObject = None) -> None:
         if page_index is not None and not isinstance(page_index, int):
             raise ValueError("invalid structure content page index")
         if isinstance(page_index, int) and page_index < 0:
@@ -80,9 +91,9 @@ class StructureContentObject:
     __slots__ = ("page_index", "props")
 
     page_index: int | None
-    props: dict[str, Any]
+    props: PdfDict
 
-    def __init__(self, page_index: int | None, props: dict[str, Any]) -> None:
+    def __init__(self, page_index: int | None, props: PdfDict) -> None:
         if page_index is not None and not isinstance(page_index, int):
             raise ValueError("invalid structure content page index")
         if isinstance(page_index, int) and page_index < 0:
@@ -91,6 +102,17 @@ class StructureContentObject:
             raise ValueError("invalid structure content props")
         self.page_index = page_index
         self.props = props
+
+
+def is_attributes_dict(value: object) -> TypeGuard[dict[str, CoercedValue]]:
+    return isinstance(value, dict) and all(isinstance(key, str) for key in value)
+
+
+def is_structure_kids(value: object) -> TypeGuard[tuple[StructureChild, ...]]:
+    return isinstance(value, tuple) and all(
+        isinstance(item, (StructureElement, StructureContentItem, StructureContentObject))
+        for item in value
+    )
 
 
 class StructureElement:
@@ -109,25 +131,28 @@ class StructureElement:
         "parent_value",
     )
 
-    def __init__(self, document: PdfDocument, props: dict[str, Any]) -> None:
+    def __init__(self, document: PdfDocument, props: PdfDict) -> None:
         self.document = document
         self.props = props if isinstance(props, dict) else {}
         self.role_value: str | None = None
-        self.type_value: Any = MISSING
-        self.kids_value: Any = MISSING
-        self.title_value: Any = MISSING
-        self.language_value: Any = MISSING
-        self.alternate_description_value: Any = MISSING
-        self.actual_text_value: Any = MISSING
-        self.attributes_value: Any = MISSING
-        self.class_name_value: Any = MISSING
-        self.parent_value: Any = MISSING
+        self.type_value: str | None | object = MISSING
+        self.kids_value: tuple[StructureChild, ...] | object = MISSING
+        self.title_value: str | None | object = MISSING
+        self.language_value: str | None | object = MISSING
+        self.alternate_description_value: str | None | object = MISSING
+        self.actual_text_value: str | None | object = MISSING
+        self.attributes_value: dict[str, CoercedValue] | None | object = MISSING
+        self.class_name_value: str | None | object = MISSING
+        self.parent_value: StructureElement | StructureTree | None | object = MISSING
 
     @property
     def type(self) -> str | None:
         if self.type_value is MISSING:
             self.type_value = self.document.resolver.resolve_name_like_value(self.props.get("S"))
-        return self.type_value
+        value = self.type_value
+        if value is MISSING or not isinstance(value, (str, type(None))):
+            raise ValueError("structure type not initialized")
+        return value
 
     @property
     def role(self) -> str:
@@ -163,13 +188,19 @@ class StructureElement:
     def title(self) -> str | None:
         if self.title_value is MISSING:
             self.title_value = self.document.resolver.resolve_str(self.props.get("T"))
-        return self.title_value
+        value = self.title_value
+        if value is MISSING or not isinstance(value, (str, type(None))):
+            raise ValueError("structure title not initialized")
+        return value
 
     @property
     def language(self) -> str | None:
         if self.language_value is MISSING:
             self.language_value = self.document.resolver.resolve_str(self.props.get("Lang"))
-        return self.language_value
+        value = self.language_value
+        if value is MISSING or not isinstance(value, (str, type(None))):
+            raise ValueError("structure language not initialized")
+        return value
 
     @property
     def alternate_description(self) -> str | None:
@@ -177,7 +208,10 @@ class StructureElement:
             self.alternate_description_value = self.document.resolver.resolve_str(
                 self.props.get("Alt")
             )
-        return self.alternate_description_value
+        value = self.alternate_description_value
+        if value is MISSING or not isinstance(value, (str, type(None))):
+            raise ValueError("structure alternate description not initialized")
+        return value
 
     @property
     def actual_text(self) -> str | None:
@@ -185,12 +219,20 @@ class StructureElement:
             self.actual_text_value = self.document.resolver.resolve_str(
                 self.props.get("ActualText")
             )
-        return self.actual_text_value
+        value = self.actual_text_value
+        if value is MISSING or not isinstance(value, (str, type(None))):
+            raise ValueError("structure actual text not initialized")
+        return value
 
     @property
-    def attributes(self) -> dict[str, Any] | None:
+    def attributes(self) -> dict[str, CoercedValue] | None:
         if self.attributes_value is not MISSING:
-            return self.attributes_value
+            value = self.attributes_value
+            if value is None:
+                return value
+            if is_attributes_dict(value):
+                return value
+            raise ValueError("structure attributes not initialized")
         attrs = self.props.get("A")
         if isinstance(attrs, dict):
             self.attributes_value = {str(key): coerce_attr_value(val) for key, val in attrs.items()}
@@ -198,7 +240,7 @@ class StructureElement:
         if isinstance(attrs, list):
             if len(attrs) % 2 != 0:
                 raise ValueError("invalid structure attribute array")
-            latest: dict[str, Any] | None = None
+            latest: dict[str, CoercedValue] | None = None
             latest_revision = -1
             for i in range(0, len(attrs), 2):
                 attrdict = self.document.resolver.resolve(attrs[i])
@@ -218,7 +260,10 @@ class StructureElement:
     @property
     def class_name(self) -> str | None:
         if self.class_name_value is not MISSING:
-            return self.class_name_value
+            value = self.class_name_value
+            if value is MISSING or not isinstance(value, (str, type(None))):
+                raise ValueError("structure class name not initialized")
+            return value
         classes = self.document.resolver.resolve(self.props.get("C"))
         if isinstance(classes, list) and classes:
             latest = classes[-2] if len(classes) >= 2 else classes[-1]
@@ -239,7 +284,12 @@ class StructureElement:
     @property
     def parent(self) -> StructureElement | StructureTree | None:
         if self.parent_value is not MISSING:
-            return self.parent_value
+            value = self.parent_value
+            if value is MISSING or not (
+                isinstance(value, (StructureElement, StructureTree)) or value is None
+            ):
+                raise ValueError("structure parent not initialized")
+            return value
         parent = self.document.resolver.resolve(self.props.get("P"))
         if parent is None:
             self.parent_value = None
@@ -255,10 +305,13 @@ class StructureElement:
 
     def __iter__(
         self,
-    ) -> Iterator[StructureElement | StructureContentItem | StructureContentObject]:
+    ) -> Iterator[StructureChild]:
         if self.kids_value is MISSING:
             self.kids_value = tuple(make_kids(self.props.get("K"), self.page, self.document))
-        yield from self.kids_value
+        kids = self.kids_value
+        if not is_structure_kids(kids):
+            raise ValueError("structure kids not initialized")
+        yield from kids
 
     def find_all(
         self, matcher: str | re.Pattern[str] | MatchFunc | None = None
@@ -282,7 +335,7 @@ class StructureElement:
 
 
 def get_kid_page_index(
-    document: PdfDocument, page: PdfPage | None, kid: dict[str, Any]
+    document: PdfDocument, page: PdfPage | None, kid: StructureNode
 ) -> int | None:
     pg = kid.get("Pg")
     if pg is not None:
@@ -297,11 +350,11 @@ def get_kid_page_index(
 
 
 def make_kids(
-    kid: Any,
+    kid: PdfObject,
     page: PdfPage | None,
     document: PdfDocument,
     _depth: int = 0,
-) -> Iterator[StructureElement | StructureContentItem | StructureContentObject]:
+) -> Iterator[StructureChild]:
     if _depth > MAX_STRUCTURE_DEPTH:
         raise ValueError("invalid structure depth")
     if kid is None:
@@ -353,12 +406,12 @@ def make_kids(
 class StructureTree(Iterable[StructureElement | StructureContentItem | StructureContentObject]):
     __slots__ = ("document", "props", "role_map_value", "parent_tree_value", "kids_value")
 
-    def __init__(self, document: PdfDocument, props: dict[str, Any]) -> None:
+    def __init__(self, document: PdfDocument, props: PdfDict) -> None:
         self.document = document
         self.props = props if isinstance(props, dict) else {}
         self.role_map_value: dict[str, str] | None = None
-        self.parent_tree_value: dict[int, Any] | None = None
-        self.kids_value: Any = MISSING
+        self.parent_tree_value: dict[int, ParentTreeEntry] | None = None
+        self.kids_value: tuple[StructureChild, ...] | object = MISSING
 
     @property
     def type(self) -> str:
@@ -390,18 +443,18 @@ class StructureTree(Iterable[StructureElement | StructureContentItem | Structure
         return role_map
 
     @property
-    def parent_tree(self) -> dict[int, Any]:
+    def parent_tree(self) -> dict[int, ParentTreeEntry]:
         if self.parent_tree_value is not None:
             return self.parent_tree_value
         resolved = self.document.resolver.resolve(self.props.get("ParentTree"))
-        results: dict[int, Any] = {}
+        results: dict[int, ParentTreeEntry] = {}
         if resolved is None:
             self.parent_tree_value = results
             return results
         if not isinstance(resolved, dict):
             raise ValueError("invalid parent tree dictionary")
 
-        def walk(node: Any, _depth: int = 0) -> None:
+        def walk(node: PdfObject, _depth: int = 0) -> None:
             if _depth > MAX_PARENT_TREE_DEPTH:
                 raise ValueError("invalid parent tree depth")
             node = self.document.resolver.resolve(node)
@@ -430,10 +483,13 @@ class StructureTree(Iterable[StructureElement | StructureContentItem | Structure
 
     def __iter__(
         self,
-    ) -> Iterator[StructureElement | StructureContentItem | StructureContentObject]:
+    ) -> Iterator[StructureChild]:
         if self.kids_value is MISSING:
             self.kids_value = tuple(make_kids(self.props.get("K"), None, self.document))
-        yield from self.kids_value
+        kids = self.kids_value
+        if not is_structure_kids(kids):
+            raise ValueError("structure tree kids not initialized")
+        yield from kids
 
     def find_all(
         self, matcher: str | re.Pattern[str] | MatchFunc | None = None
@@ -464,7 +520,7 @@ class StructureTree(Iterable[StructureElement | StructureContentItem | Structure
 class PageStructure(Sequence[StructureElement | None]):
     __slots__ = ("page", "parents", "elements")
 
-    def __init__(self, page: PdfPage, parents: Any) -> None:
+    def __init__(self, page: PdfPage, parents: PdfObject) -> None:
         self.page = page
         if isinstance(parents, list):
             self.parents = parents

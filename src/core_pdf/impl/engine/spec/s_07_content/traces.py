@@ -1,8 +1,23 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import TypeVar
 
 from core_pdf.impl.engine.spec.s_08_graphics.geometry import RectBox
+
+_T = TypeVar("_T")
+
+
+class _UnsetType:
+    pass
+
+
+_UNSET = _UnsetType()
+
+
+def _value_or(value: _T | _UnsetType, default: _T) -> _T:
+    if isinstance(value, _UnsetType):
+        return default
+    return value
 
 
 class CapturedLine:
@@ -15,14 +30,22 @@ class CapturedLine:
         self.y1 = y1
         self.line_width = line_width
 
-    def replace(self, **kwargs: Any) -> CapturedLine:
+    def replace(
+        self,
+        *,
+        x0: float | _UnsetType = _UNSET,
+        y0: float | _UnsetType = _UNSET,
+        x1: float | _UnsetType = _UNSET,
+        y1: float | _UnsetType = _UNSET,
+        line_width: float | _UnsetType = _UNSET,
+    ) -> CapturedLine:
         """Create a new CapturedLine with modified fields."""
         return CapturedLine(
-            x0=kwargs.get("x0", self.x0),
-            y0=kwargs.get("y0", self.y0),
-            x1=kwargs.get("x1", self.x1),
-            y1=kwargs.get("y1", self.y1),
-            line_width=kwargs.get("line_width", self.line_width),
+            x0=_value_or(x0, self.x0),
+            y0=_value_or(y0, self.y0),
+            x1=_value_or(x1, self.x1),
+            y1=_value_or(y1, self.y1),
+            line_width=_value_or(line_width, self.line_width),
         )
 
 
@@ -43,14 +66,22 @@ class GlyphTrace:
         self.fill = fill
         self.visible = visible
 
-    def replace(self, **kwargs: Any) -> GlyphTrace:
+    def replace(
+        self,
+        *,
+        rect: RectBox | _UnsetType = _UNSET,
+        c: str | _UnsetType = _UNSET,
+        seqno: int | _UnsetType = _UNSET,
+        fill: tuple[float, ...] | None | _UnsetType = _UNSET,
+        visible: bool | _UnsetType = _UNSET,
+    ) -> GlyphTrace:
         """Create a new GlyphTrace with modified fields."""
         return GlyphTrace(
-            rect=kwargs.get("rect", self.rect),
-            c=kwargs.get("c", self.c),
-            seqno=kwargs.get("seqno", self.seqno),
-            fill=kwargs.get("fill", self.fill),
-            visible=kwargs.get("visible", self.visible),
+            rect=_value_or(rect, self.rect),
+            c=_value_or(c, self.c),
+            seqno=_value_or(seqno, self.seqno),
+            fill=_value_or(fill, self.fill),
+            visible=_value_or(visible, self.visible),
         )
 
 
@@ -86,17 +117,28 @@ class DrawingTrace:
         self.kind = kind
         self.items = items if items is not None else []
 
-    def replace(self, **kwargs: Any) -> DrawingTrace:
+    def replace(
+        self,
+        *,
+        seqno: int | _UnsetType = _UNSET,
+        fill: tuple[float, ...] | None | _UnsetType = _UNSET,
+        fill_opacity: float | None | _UnsetType = _UNSET,
+        stroke_color: tuple[float, ...] | None | _UnsetType = _UNSET,
+        stroke_opacity: float | None | _UnsetType = _UNSET,
+        line_width: float | _UnsetType = _UNSET,
+        kind: str | _UnsetType = _UNSET,
+        items: list[tuple[str, RectBox]] | None | _UnsetType = _UNSET,
+    ) -> DrawingTrace:
         """Create a new DrawingTrace with modified fields."""
         return DrawingTrace(
-            seqno=kwargs.get("seqno", self.seqno),
-            fill=kwargs.get("fill", self.fill),
-            fill_opacity=kwargs.get("fill_opacity", self.fill_opacity),
-            stroke_color=kwargs.get("stroke_color", self.stroke_color),
-            stroke_opacity=kwargs.get("stroke_opacity", self.stroke_opacity),
-            line_width=kwargs.get("line_width", self.line_width),
-            kind=kwargs.get("kind", self.kind),
-            items=kwargs.get("items", self.items),
+            seqno=_value_or(seqno, self.seqno),
+            fill=_value_or(fill, self.fill),
+            fill_opacity=_value_or(fill_opacity, self.fill_opacity),
+            stroke_color=_value_or(stroke_color, self.stroke_color),
+            stroke_opacity=_value_or(stroke_opacity, self.stroke_opacity),
+            line_width=_value_or(line_width, self.line_width),
+            kind=_value_or(kind, self.kind),
+            items=_value_or(items, self.items),
         )
 
     @property

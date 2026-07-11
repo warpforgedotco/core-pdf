@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
 
 from core_pdf.impl.engine.spec.s_07_syntax.errors import PdfParseError, PdfUnsupportedError
 
@@ -394,9 +393,9 @@ class JBIG2ContextCache:
     __slots__ = ("cache",)
 
     def __init__(self) -> None:
-        self.cache: dict[Any, dict[int, tuple[int, int]]] = {}
+        self.cache: dict[object, dict[int, tuple[int, int]]] = {}
 
-    def get_contexts(self, key: Any) -> dict[int, tuple[int, int]]:
+    def get_contexts(self, key: object) -> dict[int, tuple[int, int]]:
         contexts = self.cache.get(key)
         if contexts is None:
             contexts = {}
@@ -428,7 +427,7 @@ class JBIG2DecodingContext:
 
 
 def decode_integer(
-    context_cache: JBIG2ContextCache, procedure: Any, decoder: JBIG2MQDecoder
+    context_cache: JBIG2ContextCache, procedure: object, decoder: JBIG2MQDecoder
 ) -> int | None:
     prev = 1
 

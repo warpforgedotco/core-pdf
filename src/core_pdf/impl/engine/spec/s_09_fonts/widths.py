@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
-from typing import Any
+from core_pdf.impl.engine.spec.s_07_syntax.primitives import (
+    PdfDictLike,
+    PdfObject,
+    parse_float,
+    parse_int,
+)
 
-from core_pdf.impl.engine.spec.s_07_syntax.primitives import parse_float, parse_int
 
-
-def get_descendant(font: dict[str, Any]) -> dict[str, Any] | None:
+def get_descendant(font: PdfDictLike) -> PdfDictLike | None:
     descendant_fonts = font.get("DescendantFonts")
     if isinstance(descendant_fonts, (list, tuple)) and descendant_fonts:
         candidate = descendant_fonts[0]
@@ -16,7 +19,7 @@ def get_descendant(font: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
-def parse_cid_widths(value: Any) -> dict[int, float]:
+def parse_cid_widths(value: PdfObject) -> dict[int, float]:
     widths: dict[int, float] = {}
     if not isinstance(value, (list, tuple)):
         raise ValueError("invalid CID widths array")
@@ -44,7 +47,7 @@ def parse_cid_widths(value: Any) -> dict[int, float]:
 
 
 def parse_font_widths(
-    font: dict[str, Any], subtype: str | None
+    font: PdfDictLike, subtype: str | None
 ) -> tuple[dict[int, float], float, bool]:
     widths: dict[int, float] = {}
     missing_width = font.get("MissingWidth")

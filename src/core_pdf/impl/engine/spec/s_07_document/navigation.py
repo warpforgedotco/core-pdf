@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from typing import Any, cast
-
 from core_pdf.impl.engine.spec.s_07_document.models import NamedDestination, OutlineItem
 from core_pdf.impl.engine.spec.s_07_document.protocols import DocumentMixinProtocol
+from core_pdf.impl.engine.spec.s_07_objects.resolver import is_pdf_object
+from core_pdf.impl.engine.spec.s_07_syntax.primitives import PdfDictLike, PdfObject, PdfReference
 
 
 class NavigationMixin:
@@ -20,22 +20,21 @@ class NavigationMixin:
         first = self.resolver.resolve(outlines.get("First"))
         if first is None:
             return []
-        return cast(Any, self).walk_outlines(first, 0)
+        if not isinstance(first, dict):
+            raise ValueError("invalid outline item")
+        return self.walk_outlines(first, 0)
 
     def walk_outlines(
-        self: DocumentMixinProtocol, item: dict[str, Any], level: int
+        self: DocumentMixinProtocol, item: PdfDictLike, level: int
     ) -> list[OutlineItem]:
         if level > 200:
             raise ValueError("invalid outline depth")
         if not isinstance(item, dict):
             raise ValueError("invalid outline item")
         result: list[OutlineItem] = []
-        current: dict[str, Any] | None = item
+        current: PdfDictLike | None = item
         seen: set[int] = set()
         while current is not None:
-            current = self.resolver.resolve(current)
-            if not isinstance(current, dict):
-                raise ValueError("invalid outline item")
             marker = id(current)
             if marker in seen:
                 raise ValueError("outline cycle detected")
@@ -49,30 +48,31 @@ class NavigationMixin:
                     and self.resolver.resolve_str(action.get("S")) == "GoTo"
                 ):
                     dest = action.get("D")
+            outline_dest = dest if isinstance(dest, (PdfReference, list, str)) else None
             result.append(
                 OutlineItem(
                     title=title or "",
                     level=level,
-                    dest=dest,
-                    page_index=cast(Any, self).resolve_destination(dest),
+                    dest=outline_dest,
+                    page_index=self.resolve_destination(dest),
                     count=self.resolver.resolve_int(current.get("Count")) or 0,
                 )
             )
             first = current.get("First")
             if first is not None:
-                first = self.resolver.resolve(first)
-                if not isinstance(first, dict):
+                resolved_first = self.resolver.resolve_dict(first)
+                if resolved_first is None:
                     raise ValueError("invalid outline child")
-                result.extend(cast(Any, self).walk_outlines(first, level + 1))
-            current = current.get("Next")
+                result.extend(self.walk_outlines(resolved_first, level + 1))
+            current = self.resolver.resolve_dict(current.get("Next"))
         return result
 
     def resolve_destination(
-        self: DocumentMixinProtocol, dest: Any, seen: set[str] | None = None
+        self: DocumentMixinProtocol, dest: PdfObject, seen: set[str] | None = None
     ) -> int | None:
         if dest is None:
             return None
-        normalized = cast(Any, self).normalize_destination_value(dest, seen)
+        normalized = self.normalize_destination_value(dest, seen)
         if (
             normalized.raw is None
             and normalized.page_index is None
@@ -84,7 +84,7 @@ class NavigationMixin:
 
     def named_destinations(self: DocumentMixinProtocol) -> dict[str, NamedDestination]:
         if self.named_destinations_cache is None:
-            cast(Any, self).populate_named_destinations()
+            self.populate_named_destinations()
         return dict(self.named_destinations_cache or {})
 
     def resolve_named_destination(
@@ -96,16 +96,16 @@ class NavigationMixin:
             return None
         seen.add(name)
         if self.named_destinations_cache is None:
-            cast(Any, self).populate_named_destinations()
+            self.populate_named_destinations()
         return (self.named_destinations_cache or {}).get(name)
 
     def resolve_named_destination_value(
-        self: DocumentMixinProtocol, val: Any, seen: set[str] | None = None
+        self: DocumentMixinProtocol, val: PdfObject, seen: set[str] | None = None
     ) -> NamedDestination:
-        return cast(Any, self).normalize_destination_value(val, seen)
+        return self.normalize_destination_value(val, seen)
 
     def destination_from_list(
-        self: DocumentMixinProtocol, resolved_list: list[Any]
+        self: DocumentMixinProtocol, resolved_list: list[PdfObject]
     ) -> NamedDestination:
         if not resolved_list:
             raise ValueError("invalid destination array")
@@ -116,7 +116,7 @@ class NavigationMixin:
         if page_index is None:
             raise ValueError("invalid destination page reference")
         dest_type = None
-        args: list[Any] = []
+        args: list[PdfObject] = []
         if len(resolved_list) >= 2:
             raw_type = resolved_list[1]
             dest_type = self.resolver.resolve_name(raw_type) or self.resolver.resolve_str(raw_type)
@@ -127,9 +127,9 @@ class NavigationMixin:
 
     def normalize_destination_value(
         self: DocumentMixinProtocol,
-        val: Any,
+        val: PdfObject,
         seen: set[str] | None = None,
-        targets: dict[str, Any] | None = None,
+        targets: dict[str, PdfObject] | None = None,
         normalized: dict[str, NamedDestination] | None = None,
         resolving: set[str] | None = None,
     ) -> NamedDestination:
@@ -139,7 +139,7 @@ class NavigationMixin:
         if isinstance(resolved_list, tuple):
             resolved_list = list(resolved_list)
         if isinstance(resolved_list, list) and resolved_list:
-            return cast(Any, self).destination_from_list(resolved_list)
+            return self.destination_from_list(resolved_list)
         if isinstance(resolved_list, list):
             raise ValueError("invalid destination array")
 
@@ -158,7 +158,7 @@ class NavigationMixin:
                     result = (
                         NamedDestination(page_index=None, type=None, args=[], raw=name)
                         if target is None
-                        else cast(Any, self).normalize_destination_value(
+                        else self.normalize_destination_value(
                             target,
                             seen,
                             targets=targets,
@@ -173,7 +173,7 @@ class NavigationMixin:
 
             if name in seen:
                 return NamedDestination(page_index=None, type=None, args=[], raw=name)
-            nested = cast(Any, self).resolve_named_destination(name, seen)
+            nested = self.resolve_named_destination(name, seen)
             if nested is not None:
                 return nested
         raise ValueError("invalid destination")
@@ -181,10 +181,12 @@ class NavigationMixin:
     def populate_named_destinations(self: DocumentMixinProtocol) -> None:
         if self.named_destinations_cache is not None:
             return
-        targets: dict[str, Any] = {}
+        targets: dict[str, PdfObject] = {}
         dests = self.resolver.resolve(self.catalog().get("Dests"))
         if isinstance(dests, dict):
             for name, val in dests.items():
+                if not is_pdf_object(name):
+                    continue
                 resolved_name = self.resolver.resolve_str(name)
                 if resolved_name is not None:
                     targets[resolved_name] = self.resolver.resolve(val)
@@ -192,13 +194,13 @@ class NavigationMixin:
         if isinstance(names, dict):
             dests_tree = self.resolver.resolve(names.get("Dests"))
             if isinstance(dests_tree, dict):
-                cast(Any, self).walk_name_tree(dests_tree, targets)
+                self.walk_name_tree(dests_tree, targets)
 
         normalized: dict[str, NamedDestination] = {}
         resolving: set[str] = set()
 
         for name in targets:
-            cast(Any, self).normalize_destination_value(
+            self.normalize_destination_value(
                 name,
                 targets=targets,
                 normalized=normalized,
@@ -208,7 +210,10 @@ class NavigationMixin:
         self.named_destinations_cache = normalized
 
     def walk_name_tree(
-        self: DocumentMixinProtocol, node: Any, results: dict[str, Any], _depth: int = 0
+        self: DocumentMixinProtocol,
+        node: PdfObject,
+        results: dict[str, PdfObject],
+        _depth: int = 0,
     ) -> None:
         if _depth > 100:
             raise ValueError("invalid name tree depth")
@@ -236,4 +241,4 @@ class NavigationMixin:
         if not isinstance(kids, list):
             raise ValueError("invalid name tree Kids array")
         for kid in kids:
-            cast(Any, self).walk_name_tree(kid, results, _depth + 1)
+            self.walk_name_tree(kid, results, _depth + 1)

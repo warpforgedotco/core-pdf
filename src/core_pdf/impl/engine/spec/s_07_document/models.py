@@ -1,9 +1,13 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, TypedDict
+from typing import TYPE_CHECKING, TypedDict
 
 if TYPE_CHECKING:
-    from core_pdf.impl.engine.spec.s_07_syntax.primitives import PdfReference
+    from core_pdf.impl.engine.spec.s_07_syntax.primitives import (
+        PdfDictLike,
+        PdfObject,
+        PdfReference,
+    )
     from core_pdf.impl.engine.spec.s_08_graphics.geometry import RectBox
 
 
@@ -21,7 +25,7 @@ class OutlineItem:
         self,
         title: str,
         level: int,
-        dest: PdfReference | list[Any] | str | None,
+        dest: PdfReference | list[PdfObject] | str | None,
         page_index: int | None,
         count: int,
     ) -> None:
@@ -39,8 +43,8 @@ class NamedDestination:
         self,
         page_index: int | None,
         type: str | None,
-        args: list[Any],
-        raw: Any,
+        args: list[PdfObject],
+        raw: PdfObject,
     ) -> None:
         self.page_index = page_index
         self.type = type
@@ -56,9 +60,9 @@ class AnnotationRecord:
         subtype: str | None,
         rect: tuple[float, float, float, float] | None,
         contents: str,
-        dict_: dict[str, Any],
-        dest: Any = None,
-        action: dict[str, Any] | None = None,
+        dict_: PdfDictLike,
+        dest: PdfObject = None,
+        action: PdfDictLike | None = None,
     ) -> None:
         self.subtype = subtype
         self.rect = rect
@@ -75,10 +79,10 @@ class FieldRecord:
         self,
         name: str,
         type: str,
-        value: Any,
-        dict_: dict[str, Any],
-        kids: list[Any] | None = None,
-        widget: dict[str, Any] | None = None,
+        value: PdfObject,
+        dict_: PdfDictLike,
+        kids: list[PdfObject] | None = None,
+        widget: PdfDictLike | None = None,
     ) -> None:
         self.name = name
         self.type = type

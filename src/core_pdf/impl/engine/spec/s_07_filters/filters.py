@@ -4,13 +4,8 @@ from __future__ import annotations
 
 import base64
 import binascii
-import typing
 import zlib
-
-if typing.TYPE_CHECKING:
-    from typing import Any, Callable
-
-    FilterFn = Callable[[bytes, Any], bytes]
+from collections.abc import Callable
 
 from core_pdf.impl.engine.spec.s_07_filters.ccitt import decode_ccitt_fax as decode_ccitt_impl
 from core_pdf.impl.engine.spec.s_07_filters.jbig2 import (
@@ -23,11 +18,16 @@ from core_pdf.impl.engine.spec.s_07_syntax.errors import PdfParseError, PdfUnsup
 from core_pdf.impl.engine.spec.s_07_syntax.lexer import WS_TABLE
 from core_pdf.impl.engine.spec.s_07_syntax.primitives import (
     FilterParams,
+    PdfDictLike,
     PdfName,
+    PdfObject,
     PdfStream,
     StreamDecodeSpec,
     normalize_pdf_name,
 )
+
+FilterArg = PdfObject | FilterParams
+FilterFn = Callable[[bytes, FilterArg], bytes]
 
 # Local bindings for hot-path optimization
 PdfParseError = PdfParseError
@@ -38,10 +38,10 @@ PdfName_of = PdfName.of
 normalize_filter_name = normalize_pdf_name
 
 
-def normalize_stream_decode_spec(dictionary: dict[Any, Any]) -> StreamDecodeSpec:
+def normalize_stream_decode_spec(dictionary: PdfDictLike) -> StreamDecodeSpec:
     raw_filters = dictionary.get(PdfName_of(b"Filter"))
     if raw_filters is None:
-        filters: list[Any] = []
+        filters: list[PdfObject] = []
     else:
         filters = list(raw_filters) if isinstance(raw_filters, (list, tuple)) else [raw_filters]
     names: list[str] = []
@@ -53,7 +53,7 @@ def normalize_stream_decode_spec(dictionary: dict[Any, Any]) -> StreamDecodeSpec
 
     parms_raw = dictionary.get(PdfName_of(b"DecodeParms"))
     if parms_raw is None:
-        decode_parms: list[Any] = []
+        decode_parms: list[PdfObject] = []
     elif isinstance(parms_raw, (list, tuple)):
         decode_parms = list(parms_raw)
     else:
@@ -62,7 +62,7 @@ def normalize_stream_decode_spec(dictionary: dict[Any, Any]) -> StreamDecodeSpec
     return StreamDecodeSpec(filters=names, params=params)
 
 
-def apply_ascii_hex(data: bytes, parms: Any) -> bytes:
+def apply_ascii_hex(data: bytes, parms: FilterArg) -> bytes:
     filtered = bytearray()
     ws = WS_TABLE
     for byte in data:
@@ -79,7 +79,7 @@ def apply_ascii_hex(data: bytes, parms: Any) -> bytes:
         raise PdfParseError("invalid ASCIIHexDecode stream") from exc
 
 
-def apply_run_length(data: bytes, parms: Any) -> bytes:
+def apply_run_length(data: bytes, parms: FilterArg) -> bytes:
     out = bytearray()
     n = len(data)
     i = 0
@@ -103,7 +103,7 @@ def apply_run_length(data: bytes, parms: Any) -> bytes:
     return bytes(out)
 
 
-def decode_ccitt_fax(data: bytes, parms: Any) -> bytes:
+def decode_ccitt_fax(data: bytes, parms: FilterArg) -> bytes:
     params = parms if isinstance(parms, FilterParams) else FilterParams_from_parms(parms)
     k = params.k
     return decode_ccitt_impl(
@@ -115,7 +115,7 @@ def decode_ccitt_fax(data: bytes, parms: Any) -> bytes:
     )
 
 
-def decode_jpeg(data: bytes, parms: Any) -> bytes:
+def decode_jpeg(data: bytes, parms: FilterArg) -> bytes:
     return JPEGDecoder.from_data(data)
 
 
@@ -157,7 +157,7 @@ class BitReader:
         return (self.buffer >> self.bits_in_buffer) & ((1 << n) - 1)
 
 
-def apply_lzw(data: bytes | memoryview, parms: Any) -> bytes:
+def apply_lzw(data: bytes, parms: FilterArg) -> bytes:
     """Decode LZWDecode with strictly zero-copy table entries."""
     ec = (
         parms.early_change
@@ -377,7 +377,7 @@ def apply_png_predictor(data: bytes | memoryview, params: FilterParams) -> bytes
     return bytes(out)
 
 
-def apply_predictor(data: bytes | memoryview, parms: Any) -> bytes:
+def apply_predictor(data: bytes | memoryview, parms: FilterArg) -> bytes:
     """Apply predictor filter (PNG or TIFF)."""
     params = parms if isinstance(parms, FilterParams) else FilterParams_from_parms(parms)
     predictor = params.predictor
@@ -390,7 +390,7 @@ def apply_predictor(data: bytes | memoryview, parms: Any) -> bytes:
     raise PdfParseError(f"invalid stream predictor {predictor}")
 
 
-def apply_flate(data: bytes, parms: Any) -> bytes:
+def apply_flate(data: bytes, parms: FilterArg) -> bytes:
     try:
         return zlib.decompress(data)
     except zlib.error:
@@ -400,20 +400,20 @@ def apply_flate(data: bytes, parms: Any) -> bytes:
             raise PdfParseError("invalid FlateDecode stream")
 
 
-def apply_ascii85(data: bytes, parms: Any) -> bytes:
+def apply_ascii85(data: bytes, parms: FilterArg) -> bytes:
     try:
         return base64.a85decode(data, adobe=True)
     except (ValueError, binascii.Error) as exc:
         raise PdfParseError("invalid ASCII85Decode stream") from exc
 
 
-def decode_jpx(data: bytes, parms: Any) -> bytes:
+def decode_jpx(data: bytes, parms: FilterArg) -> bytes:
     from core_pdf.impl.engine.spec.s_07_filters.jpx import decode_jpx as _decode
 
     return _decode(data)
 
 
-def decode_jbig2(data: bytes, parms: Any) -> bytes:
+def decode_jbig2(data: bytes, parms: FilterArg) -> bytes:
     globals_data = b""
     if isinstance(parms, dict):
         globals_obj = parms.get("JBIG2Globals")
@@ -447,7 +447,7 @@ FILTER_MAP: dict[str, FilterFn] = {
 }
 
 
-def decode_stream_data(data: bytes, dictionary: dict[str, Any] | StreamDecodeSpec | None) -> bytes:
+def decode_stream_data(data: bytes, dictionary: PdfDictLike | StreamDecodeSpec | None) -> bytes:
     if dictionary is None:
         return data
     if isinstance(dictionary, StreamDecodeSpec):

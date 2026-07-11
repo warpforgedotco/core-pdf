@@ -3,14 +3,23 @@ from __future__ import annotations
 import struct
 import typing
 from functools import lru_cache
-from typing import Any, TypeAlias
+from typing import TypeAlias
 
 from core_pdf.impl.engine.spec.s_07_content.models import TextRun
 from core_pdf.impl.engine.spec.s_07_content.traces import CapturedLine, DrawingTrace, GlyphTrace
-from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
+from core_pdf.impl.engine.spec.s_07_objects.resolver import ObjectResolver
+from core_pdf.impl.engine.spec.s_07_syntax.lexer import (
+    KeywordCacheValue,
+    OperationHandler,
+    ParsedOperand,
+    PdfLexer,
+)
 from core_pdf.impl.engine.spec.s_07_syntax.primitives import (
     MISSING,
     Matrix,
+    PdfDictLike,
+    PdfName,
+    PdfObject,
     PdfReference,
     PdfStream,
     PdfString,
@@ -26,17 +35,22 @@ from core_pdf.impl.engine.spec.s_09_fonts.truetype import (
     tt_tables,
 )
 
-if typing.TYPE_CHECKING:
-    from typing import Any
-
-    from core_pdf.impl.engine.spec.s_09_fonts.decoder import FontDecoder
-
 
 class TextDocument(typing.Protocol):
     @property
-    def resolver(self) -> Any: ...
+    def resolver(self) -> ObjectResolver: ...
+
     @property
-    def decoder_cache(self) -> dict[tuple[int, int] | int, Any]: ...
+    def decoder_cache(self) -> dict[tuple[int, int] | int, FontDecoder]: ...
+
+    def resolve(self, ref: PdfObject) -> PdfObject: ...
+
+
+DecoderCache: TypeAlias = dict[tuple[int, int] | int, FontDecoder]
+PdfDict: TypeAlias = PdfDictLike
+ResolvedResourceCache: TypeAlias = dict[str, PdfDict | None]
+ResourceLookupCache: TypeAlias = dict[str, dict[str, PdfObject | None]]
+ExtGStateCache: TypeAlias = dict[tuple[int, str], PdfDict | None]
 
 
 GraphicsState: TypeAlias = tuple[
@@ -58,6 +72,25 @@ GraphicsState: TypeAlias = tuple[
 ]
 
 
+def is_pdf_value(value: object) -> typing.TypeGuard[PdfObject | None]:
+    return value is None or isinstance(
+        value,
+        (
+            int,
+            float,
+            str,
+            bytes,
+            PdfName,
+            PdfReference,
+            PdfString,
+            PdfStream,
+            list,
+            tuple,
+            dict,
+        ),
+    )
+
+
 class StreamState:
     __slots__ = (
         "resources",
@@ -76,7 +109,7 @@ class StreamState:
         "xobject_depth",
     )
 
-    resources: dict[str, Any]
+    resources: PdfDict
     resources_id: int
     ctm: Matrix
     text_matrix: Matrix
@@ -93,7 +126,7 @@ class StreamState:
 
     def __init__(
         self,
-        resources: dict[str, Any],
+        resources: PdfDict,
         resources_id: int,
         ctm: Matrix,
         text_matrix: Matrix,
@@ -219,15 +252,27 @@ class TextState:
         "run_pool_idx",
     )
 
+    current_font: str | None
+    current_decoder: FontDecoder | None
+    resources: PdfDict
+    resolved_resource_categories: ResolvedResourceCache
+    resource_cache: ResourceLookupCache
+    extgstate_cache: ExtGStateCache
+    decoder_cache: DecoderCache
+    kw_cache: dict[bytes, KeywordCacheValue]
+    op_handlers: dict[str, OperationHandler]
+    fast_op_handlers: list[OperationHandler | None]
+    operands: list[ParsedOperand]
+
     def __init__(
         self,
         document: TextDocument,
-        page: dict[str, Any],
+        page: PdfDict,
         hidden_layers: frozenset[str] = frozenset(),
         capture_runs: bool = True,
         capture_glyphs: bool = False,
         capture_graphics: bool = False,
-        decoder_cache: dict[tuple[int, int] | int, "FontDecoder"] | None = None,
+        decoder_cache: DecoderCache | None = None,
     ) -> None:
         self.document = document
         self.page = page
@@ -288,13 +333,13 @@ class TextState:
         self.xobject_depth = 0
         self.marked_content_stack: list[str | None] = []
         self.active_streams: set[int] = set()
-        self.resources: dict[str, Any] = {}
+        self.resources: PdfDict = {}
         self.resources_id = 0
         self.hidden_layers = hidden_layers
-        self.resolved_resource_categories: dict[str, Any] = {}
-        self.resource_cache: dict[str, dict[str, Any]] = {}
-        self.extgstate_cache: dict[Any, dict[str, Any] | None] = {}
-        self.decoder_cache = decoder_cache if decoder_cache is not None else {}
+        self.resolved_resource_categories: ResolvedResourceCache = {}
+        self.resource_cache: ResourceLookupCache = {}
+        self.extgstate_cache: ExtGStateCache = {}
+        self.decoder_cache: DecoderCache = decoder_cache if decoder_cache is not None else {}
         self.kw_cache = getattr(self.document.resolver, "kw_cache", {})
         self.pending_line_break = False
         self.pending_run = None
@@ -324,7 +369,7 @@ class TextState:
 
         # Pre-bind hot-path functions
         self.is_garbage = is_garbage_text
-        self.operands: list[Any] = [None] * 16
+        self.operands: list[ParsedOperand] = [None] * 16
         self.run_pool: list[TextRun] = []
         self.run_pool_idx: int = 0
 
@@ -780,10 +825,10 @@ class TextState:
         self.current_point = None
         self.subpath_start = None
 
-    def set_fill_color(self, *components: Any) -> None:
+    def set_fill_color(self, *components: float) -> None:
         self.fill_color = tuple(components)
 
-    def resolve_extgstate(self, name: str) -> dict[str, Any] | None:
+    def resolve_extgstate(self, name: str) -> PdfDict | None:
         cache_key = (self.resources_id, name)
         if cache_key in self.extgstate_cache:
             return self.extgstate_cache[cache_key]
@@ -892,10 +937,10 @@ class TextState:
             raise ValueError("invalid graphics state")
         try:
             fill_opacity = extgstate.get("ca")
-            if fill_opacity is not None:
+            if isinstance(fill_opacity, (int, float, str, bytes)):
                 self.fill_opacity = max(0.0, min(1.0, float(fill_opacity)))
             stroke_opacity = extgstate.get("CA")
-            if stroke_opacity is not None:
+            if isinstance(stroke_opacity, (int, float, str, bytes)):
                 self.stroke_opacity = max(0.0, min(1.0, float(stroke_opacity)))
         except TypeError, ValueError:
             raise ValueError("invalid graphics state opacity")
@@ -908,7 +953,7 @@ class TextState:
         self.lm_e = self.tm_e
         self.lm_f = self.tm_f
 
-    def apply_operation(self, operation: tuple[str, tuple[Any, ...]], depth: int) -> None:
+    def apply_operation(self, operation: tuple[str, tuple[PdfObject, ...]], depth: int) -> None:
         operator, operands = operation
         handler = self.op_handlers.get(operator)
         if handler is not None:
@@ -951,7 +996,7 @@ class TextState:
     def consume_stream(
         self,
         stream: PdfStream,
-        resources: dict[str, Any],
+        resources: PdfDict,
         ctm: Matrix,
         depth: int,
     ) -> None:
@@ -982,7 +1027,7 @@ class TextState:
 
     def lookup_page_resource(
         self, category: str, name: str, parent_category: str | None = None
-    ) -> Any:
+    ) -> PdfObject | None:
         # Optimized nested cache lookup using pre-calculated resources_id
         cat_cache = self.resource_cache.get(category)
         if cat_cache is None:
@@ -990,7 +1035,9 @@ class TextState:
         else:
             res = cat_cache.get(name, MISSING)
             if res is not MISSING:
-                return res
+                if is_pdf_value(res):
+                    return res
+                raise ValueError("invalid cached resource value")
 
         # Resolve category dictionary
         category_res = self.resolved_resource_categories.get(category, MISSING)
@@ -1001,7 +1048,7 @@ class TextState:
 
         if isinstance(category_res, dict):
             res = category_res.get(name)
-            if res is not None:
+            if is_pdf_value(res) and res is not None:
                 resolved = self.resolve(res)
                 cat_cache[name] = resolved
                 return resolved
@@ -1022,7 +1069,7 @@ class TextState:
                             sub_cat = sub_res_dict.get(category)
                             if isinstance(sub_cat, dict):
                                 found = sub_cat.get(name)
-                                if found is not None:
+                                if is_pdf_value(found) and found is not None:
                                     resolved = self.resolve(found)
                                     cat_cache[name] = resolved
                                     return resolved
@@ -1039,7 +1086,7 @@ class TextState:
         return (base + char_extra + word_extra) * scale
 
     def decode_operand(
-        self, operand: Any, decoder: FontDecoder
+        self, operand: PdfObject, decoder: FontDecoder
     ) -> tuple[str, bytes, list[bytes] | None, list[str] | None]:
         if type(operand) is PdfString:
             data = operand.data
@@ -1316,7 +1363,7 @@ class TextState:
                     char_offset += per_char
             offset += advance
 
-    def append_text(self, operand: Any = None, *, _data: bytes | None = None) -> None:
+    def append_text(self, operand: PdfObject = None, *, _data: bytes | None = None) -> None:
         decoder = self.get_decoder()
 
         if _data is not None:
@@ -1485,7 +1532,7 @@ class TextState:
         self.tm_f = tf + adv_x * tb + adv_y * td
         self.pending_line_break = False
 
-    def append_tj_array(self, array: Any) -> None:
+    def append_tj_array(self, array: PdfObject) -> None:
         if not isinstance(array, (list, tuple)):
             return
         pending_bytes = bytearray()
@@ -1500,14 +1547,13 @@ class TextState:
         ta, tb, tc, td = self.tm_a, self.tm_b, self.tm_c, self.tm_d
 
         for item in array:
-            t = type(item)
-            if t is PdfString:
+            if isinstance(item, PdfString):
                 pending_bytes.extend(item.data)
-            elif t is bytes:
+            elif isinstance(item, bytes):
                 pending_bytes.extend(item)
-            elif t is str:
+            elif isinstance(item, str):
                 pending_bytes.extend(item.encode("latin-1"))
-            elif t is int or t is float:
+            elif isinstance(item, (int, float)):
                 if pending_bytes:
                     self.tm_e, self.tm_f = te, tf
                     self.append_text(_data=bytes(pending_bytes))
@@ -1528,7 +1574,7 @@ class TextState:
 
         self.tm_e, self.tm_f = te, tf
 
-    def append_xobject(self, name_obj: Any, depth: int) -> None:
+    def append_xobject(self, name_obj: PdfObject, depth: int) -> None:
         name = self.resolve_name(name_obj)
         if not name:
             return
@@ -1578,8 +1624,8 @@ class TextState:
         )
         doc_cache = self.document.decoder_cache
         cached_decoder = doc_cache.get(cache_key, MISSING)
-        if cached_decoder is not MISSING:
-            self.current_decoder = typing.cast("FontDecoder", cached_decoder)
+        if isinstance(cached_decoder, FontDecoder):
+            self.current_decoder = cached_decoder
             return self.current_decoder
 
         # Resolve full font dict (recursive) only when creating new decoder
@@ -1638,17 +1684,17 @@ def detect_rotation_from_linear(
     return 0
 
 
-def get_font_file(document: Any, font_obj: dict[str, Any]) -> PdfStream | None:
+def get_font_file(document: TextDocument, font_obj: PdfDict) -> PdfStream | None:
     descriptor = font_obj.get("FontDescriptor")
-    if descriptor is None:
+    if not isinstance(descriptor, dict):
         return None
     font_file = document.resolve(descriptor.get("FontFile2"))
     return font_file if isinstance(font_file, PdfStream) else None
 
 
 def find_companion_font(
-    document: Any,
-    resources: dict[str, Any],
+    document: TextDocument,
+    resources: PdfDict,
     base_name: str,
     ligature_starters: set[str],
 ) -> tuple[dict[int, float], dict[str, float], bytes | None]:
@@ -1701,7 +1747,7 @@ def find_companion_font(
 
 
 def detect_ligature_overrides(
-    document: Any, resources: dict[str, Any], font_obj: dict[str, Any]
+    document: TextDocument, resources: PdfDict, font_obj: PdfDict
 ) -> dict[int, str]:
     """Detect Chrome ligature substitutions for small TrueType ligature subset fonts."""
     first_char = font_obj.get("FirstChar")

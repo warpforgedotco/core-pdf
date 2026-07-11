@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import bisect
+from collections.abc import Callable
 from math import cos, radians, sin
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, TypeAlias
 
 from core_pdf.impl.engine.spec.s_07_content.models import LayoutBox, LayoutLine, TextRun
 
@@ -12,6 +13,7 @@ if TYPE_CHECKING:
     from core_pdf.impl.engine.spec.s_08_graphics.geometry import RectBox
 
 SKEW_ANGLE_TOLERANCE: float = 0.5
+SortableKey: TypeAlias = int | float | str | tuple[int | float | str, ...]
 
 
 def cluster_runs_into_lines(
@@ -20,7 +22,7 @@ def cluster_runs_into_lines(
     lookback: int = 10,
     min_height: float = 8.0,
     threshold: float = 0.4,
-    sort_key: Any = None,
+    sort_key: Callable[[TextRun], SortableKey] | None = None,
 ) -> list[list[TextRun]]:
     if not runs:
         return []

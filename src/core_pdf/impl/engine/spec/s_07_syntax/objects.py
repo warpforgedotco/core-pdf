@@ -2,19 +2,19 @@
 
 from __future__ import annotations
 
-import typing
-
-if typing.TYPE_CHECKING:
-    from typing import Any
+from typing import TypeVar, overload
 
 from core_pdf.impl.engine.spec.s_07_syntax.errors import PdfParseError
-from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
+from core_pdf.impl.engine.spec.s_07_syntax.lexer import KeywordCacheValue, PdfLexer
 from core_pdf.impl.engine.spec.s_07_syntax.primitives import (
+    PdfObject,
     PdfReference,
     PdfStream,
     parse_int_strict,
     parse_name,
 )
+
+DefaultT = TypeVar("DefaultT")
 
 
 class PdfObjectStream:
@@ -22,7 +22,9 @@ class PdfObjectStream:
 
     __slots__ = ("stream", "objects", "raw_body", "index", "lexer")
 
-    def __init__(self, stream: PdfStream, kw_cache: dict[bytes, str] | None = None) -> None:
+    def __init__(
+        self, stream: PdfStream, kw_cache: dict[bytes, KeywordCacheValue] | None = None
+    ) -> None:
         type_name = parse_name(stream.dictionary.get("Type"))
         if type_name is not None and type_name != "ObjStm":
             raise PdfParseError("stream is not an object stream")
@@ -41,12 +43,20 @@ class PdfObjectStream:
             raise PdfParseError("invalid object stream header")
         body = stream.data[first:]
         self.stream = stream
-        self.objects: dict[int, Any] = {}
+        self.objects: dict[int, PdfObject] = {}
         self.raw_body = body
         self.index = index_map
         self.lexer = PdfLexer(body, kw_cache=kw_cache)
 
-    def get(self, reference: int | PdfReference, default: Any = None) -> Any:
+    @overload
+    def get(self, reference: int | PdfReference) -> PdfObject | None: ...
+
+    @overload
+    def get(self, reference: int | PdfReference, default: DefaultT) -> PdfObject | DefaultT: ...
+
+    def get(
+        self, reference: int | PdfReference, default: DefaultT | None = None
+    ) -> PdfObject | DefaultT | None:
         obj_num = reference.object_number if isinstance(reference, PdfReference) else reference
         if obj_num < 0:
             raise ValueError("invalid object number")

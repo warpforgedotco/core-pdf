@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Protocol
 
 from core_pdf.impl.engine.spec.s_09_fonts.data.core14 import PDFDOC_ENCODING_OVERRIDES
 
@@ -9,6 +9,10 @@ CHR_TABLE: list[str] = [chr(i) for i in range(256)]
 PDFDOC_ENCODING_TABLE: list[str] = [
     PDFDOC_ENCODING_OVERRIDES.get(i, CHR_TABLE[i]) for i in range(256)
 ]
+
+
+class CMapWithRanges(Protocol):
+    code_space_ranges: list[tuple[bytes, bytes]]
 
 
 def decode_pdf_text_string(data: bytes) -> str:
@@ -86,7 +90,7 @@ def split_data_by_ranges(data: bytes, ranges: list[tuple[bytes, bytes]]) -> list
     return chunks
 
 
-def split_chunks(data: bytes, is_cid: bool, cmap: Any | None) -> list[bytes]:
+def split_chunks(data: bytes, is_cid: bool, cmap: CMapWithRanges | None) -> list[bytes]:
     if not data:
         return []
     ranges = cmap.code_space_ranges if cmap else []

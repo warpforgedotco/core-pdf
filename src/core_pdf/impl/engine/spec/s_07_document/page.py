@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 from collections import deque
-from typing import TYPE_CHECKING, Any, Iterator, cast
+from typing import TYPE_CHECKING, Iterator, TypeAlias, TypedDict, TypeGuard
 
 from core_pdf.impl.engine.spec.s_07_content.interpreter import TextState
 from core_pdf.impl.engine.spec.s_07_content.rendering import render_page_text
-from core_pdf.impl.engine.spec.s_07_content.tables import TableExtractor
+from core_pdf.impl.engine.spec.s_07_content.tables import TableExtractionResult, TableExtractor
 from core_pdf.impl.engine.spec.s_07_content.traces import CapturedLine
 from core_pdf.impl.engine.spec.s_07_document.models import AnnotationRecord, TextTraceSpan
+from core_pdf.impl.engine.spec.s_07_objects.resolver import is_pdf_object
 from core_pdf.impl.engine.spec.s_07_syntax.primitives import (
     MISSING,
+    PdfDictLike,
+    PdfObject,
     PdfStream,
     collect_inherited_values,
 )
@@ -35,6 +38,34 @@ INHERITED_PAGE_KEYS = (
     "Resources",
     "Annots",
 )
+PdfDict: TypeAlias = dict[str, PdfObject]
+PageDict: TypeAlias = PdfDictLike
+BoxValue: TypeAlias = tuple[float, float, float, float] | None
+PageTableResult: TypeAlias = TableExtractionResult | tuple[list[list[str]], list[list[list[str]]]]
+
+
+class PageDrawing(TypedDict):
+    kind: str
+    seqno: int
+    fill: tuple[float, ...] | None
+    fill_opacity: float | None
+    stroke_color: tuple[float, ...] | None
+    stroke_opacity: float | None
+    line_width: float
+    items: list[tuple[str, RectBox]]
+    rect: RectBox | None
+
+
+def is_box_value(value: object) -> TypeGuard[BoxValue]:
+    return value is None or (
+        isinstance(value, tuple)
+        and len(value) == 4
+        and all(isinstance(component, int | float) for component in value)
+    )
+
+
+def is_page_dict(value: object) -> TypeGuard[PageDict]:
+    return isinstance(value, dict) and all(is_pdf_object(item) for item in value.values())
 
 
 class PdfPage:
@@ -61,28 +92,28 @@ class PdfPage:
     )
 
     document: PdfDocument
-    page_dict: dict[str, Any]
+    page_dict: PageDict
     page_number: int
-    _inherited_values: dict[str, Any] | None
-    contents: Any
+    _inherited_values: dict[str, PdfObject] | None
+    contents: PdfObject
     _content_streams: tuple[PdfStream, ...] | None
     state: TextState | None
     graphics: TextState | None
     grid_lines: list[CapturedLine] | None
     texttrace: list[TextTraceSpan] | None
-    tables: dict[tuple[str, bool, bool], Any]
-    _media_box: object
-    _crop_box: object
-    _bleed_box: object
-    _trim_box: object
-    _art_box: object
-    _rotation: object
-    _cached_resources: object
+    tables: dict[tuple[str, bool, bool], PageTableResult]
+    _media_box: BoxValue | object
+    _crop_box: BoxValue | object
+    _bleed_box: BoxValue | object
+    _trim_box: BoxValue | object
+    _art_box: BoxValue | object
+    _rotation: int | object
+    _cached_resources: PageDict | object
 
     def __init__(
         self,
         document: PdfDocument,
-        page_dict: dict[str, Any],
+        page_dict: PageDict,
         page_number: int,
     ) -> None:
         self.document = document
@@ -106,52 +137,73 @@ class PdfPage:
         self.text_cache: dict[bool, str] | None = None
 
     @property
-    def inherited_values(self) -> dict[str, Any]:
+    def inherited_values(self) -> dict[str, PdfObject]:
         if self._inherited_values is None:
             self._inherited_values = self.collect_inherited_values()
         return self._inherited_values
 
     @property
-    def media_box(self) -> tuple[float, float, float, float] | None:
+    def media_box(self) -> BoxValue:
         if self._media_box is MISSING:
             self._media_box = self.resolve_box("MediaBox")
-        return cast(tuple[float, float, float, float] | None, self._media_box)
+        value = self._media_box
+        if is_box_value(value):
+            return value
+        raise ValueError("page MediaBox not initialized")
 
     @property
-    def crop_box(self) -> tuple[float, float, float, float] | None:
+    def crop_box(self) -> BoxValue:
         if self._crop_box is MISSING:
             self._crop_box = self.resolve_box("CropBox")
-        return cast(tuple[float, float, float, float] | None, self._crop_box)
+        value = self._crop_box
+        if is_box_value(value):
+            return value
+        raise ValueError("page CropBox not initialized")
 
     @property
-    def bleed_box(self) -> tuple[float, float, float, float] | None:
+    def bleed_box(self) -> BoxValue:
         if self._bleed_box is MISSING:
             self._bleed_box = self.resolve_box("BleedBox")
-        return cast(tuple[float, float, float, float] | None, self._bleed_box)
+        value = self._bleed_box
+        if is_box_value(value):
+            return value
+        raise ValueError("page BleedBox not initialized")
 
     @property
-    def trim_box(self) -> tuple[float, float, float, float] | None:
+    def trim_box(self) -> BoxValue:
         if self._trim_box is MISSING:
             self._trim_box = self.resolve_box("TrimBox")
-        return cast(tuple[float, float, float, float] | None, self._trim_box)
+        value = self._trim_box
+        if is_box_value(value):
+            return value
+        raise ValueError("page TrimBox not initialized")
 
     @property
-    def art_box(self) -> tuple[float, float, float, float] | None:
+    def art_box(self) -> BoxValue:
         if self._art_box is MISSING:
             self._art_box = self.resolve_box("ArtBox")
-        return cast(tuple[float, float, float, float] | None, self._art_box)
+        value = self._art_box
+        if is_box_value(value):
+            return value
+        raise ValueError("page ArtBox not initialized")
 
     @property
     def rotation(self) -> int:
         if self._rotation is MISSING:
             self._rotation = self.resolve_rotation()
-        return cast(int, self._rotation)
+        value = self._rotation
+        if isinstance(value, int):
+            return value
+        raise ValueError("page rotation not initialized")
 
     @property
-    def cached_resources(self) -> dict[str, Any]:
+    def cached_resources(self) -> PageDict:
         if self._cached_resources is MISSING:
             self._cached_resources = self.resolve_resources()
-        return cast(dict[str, Any], self._cached_resources)
+        value = self._cached_resources
+        if is_page_dict(value):
+            return value
+        raise ValueError("page resources not initialized")
 
     @property
     def content_streams(self) -> tuple[PdfStream, ...]:
@@ -159,7 +211,7 @@ class PdfPage:
             self._content_streams = self.collect_content_streams()
         return self._content_streams
 
-    def collect_inherited_values(self) -> dict[str, Any]:
+    def collect_inherited_values(self) -> dict[str, PdfObject]:
         return collect_inherited_values(
             self.page_dict,
             INHERITED_PAGE_KEYS,
@@ -167,7 +219,7 @@ class PdfPage:
             self.document.inherited_values_cache,
         )
 
-    def resolve_box(self, key: str) -> tuple[float, float, float, float] | None:
+    def resolve_box(self, key: str) -> BoxValue:
         return self.document.resolver.resolve_box(self.inherited_values.get(key))
 
     def resolve_rotation(self) -> int:
@@ -179,7 +231,7 @@ class PdfPage:
             raise ValueError("invalid page Rotate value")
         return rotate
 
-    def resolve_resources(self) -> dict[str, Any]:
+    def resolve_resources(self) -> PageDict:
         resources = self.inherited_values.get("Resources")
         if resources is None:
             return {}
@@ -189,7 +241,7 @@ class PdfPage:
         return resolved
 
     def collect_content_streams(self) -> tuple[PdfStream, ...]:
-        queue: deque[Any] = deque()
+        queue: deque[PdfObject] = deque()
         contents = self.contents
         if isinstance(contents, (list, tuple)):
             queue.extend(contents)
@@ -215,9 +267,9 @@ class PdfPage:
     def consume_contents(self, state: TextState) -> None:
         if self.contents is None:
             return
-            resources = self.cached_resources
-            for stream in self.iter_content_streams():
-                state.consume_stream(stream, resources, state.ctm, 0)
+        resources = self.cached_resources
+        for stream in self.iter_content_streams():
+            state.consume_stream(stream, resources, state.ctm, 0)
 
     def get_state(self) -> TextState:
         if self.state is None:
@@ -293,7 +345,7 @@ class PdfPage:
     def lines(self) -> list[CapturedLine]:
         return self.get_grid_lines()
 
-    def get_drawings(self) -> list[dict[str, Any]]:
+    def get_drawings(self) -> list[PageDrawing]:
         graphics = self.get_graphics()
         return [
             {
@@ -529,7 +581,7 @@ class PdfPage:
         flavor: str = "lattice",
         detect_header: bool = False,
         include_span_info: bool = False,
-    ) -> Any:
+    ) -> PageTableResult:
         """Extract tables from the page."""
         cache_key = (flavor, detect_header, include_span_info)
         if cache_key in self.tables:
@@ -537,7 +589,7 @@ class PdfPage:
 
         visible_runs = [r for r in self.chars if r.visible]
         if not visible_runs:
-            result: Any = ([], []) if (include_span_info or detect_header) else []
+            result: PageTableResult = ([], []) if (include_span_info or detect_header) else []
             self.tables[cache_key] = result
             return result
 

@@ -1,15 +1,16 @@
 from __future__ import annotations
 
 import binascii
+import mmap
 import re
-import typing
-
-if typing.TYPE_CHECKING:
-    from typing import Any, Iterator
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from typing import TypeAlias
 
 from core_pdf.impl.engine.spec.s_07_syntax.errors import PdfParseError
 from core_pdf.impl.engine.spec.s_07_syntax.primitives import (
+    PdfDictLike,
     PdfName,
+    PdfObject,
     PdfReference,
     PdfStream,
     PdfString,
@@ -82,20 +83,27 @@ HEX_VALUE = bytes(
     ]
 )
 
+KeywordValue: TypeAlias = bool | None | str
+KeywordCacheValue: TypeAlias = KeywordValue | object
+ResolvedReference: TypeAlias = Callable[[PdfReference], PdfObject]
+DecipherFn: TypeAlias = Callable[[int, int, bytes, PdfDictLike | None], bytes]
+ParsedOperand: TypeAlias = PdfObject | "InlineImage"
+OperationHandler: TypeAlias = Callable[[Sequence[ParsedOperand], int], None]
+
 
 class InlineImage:
     """Best-effort inline image payload."""
 
     __slots__ = ("dictionary", "data")
 
-    dictionary: dict[str, typing.Any]
+    dictionary: PdfDictLike
     data: bytes
 
-    def __init__(self, dictionary: dict[str, Any], data: bytes) -> None:
+    def __init__(self, dictionary: PdfDictLike, data: bytes) -> None:
         object.__setattr__(self, "dictionary", dictionary)
         object.__setattr__(self, "data", data)
 
-    def __setattr__(self, name: str, value: Any) -> None:
+    def __setattr__(self, name: str, value: object) -> None:
         raise AttributeError(f"cannot assign to field {name!r}")
 
 
@@ -119,11 +127,11 @@ class PdfLexer:
 
     def __init__(
         self,
-        data: bytes | bytearray | memoryview,
+        data: bytes | bytearray | memoryview | mmap.mmap,
         *,
-        reference_resolver: Any | None = None,
-        decipher: Any | None = None,
-        kw_cache: dict[bytes, Any] | None = None,
+        reference_resolver: ResolvedReference | None = None,
+        decipher: DecipherFn | None = None,
+        kw_cache: dict[bytes, KeywordCacheValue] | None = None,
     ) -> None:
         # ZERO-COPY: Accept memoryview directly, never call bytes(data)
         if isinstance(data, memoryview):
@@ -300,14 +308,16 @@ class PdfLexer:
         except ValueError as exc:
             raise PdfParseError(f"invalid number {bytes(value)!r}") from exc
 
-    def parse_keyword(self, value: memoryview | bytes) -> Any:
+    def parse_keyword(self, value: memoryview | bytes) -> KeywordValue:
         key: bytes = value.tobytes() if type(value) is memoryview else value
 
-        cached = self.kw_cache.get(key)
-        if cached is not None:
+        if key in self.kw_cache:
+            cached = self.kw_cache[key]
             if cached is R_SENTINEL:
                 raise PdfParseError("unexpected indirect reference marker")
-            return cached
+            if cached is None or isinstance(cached, (bool, str)):
+                return cached
+            raise PdfParseError(f"invalid cached keyword {key!r}")
 
         decoded = key.decode("latin-1")
         if len(self.kw_cache) < 1024:  # Prevent unbounded growth
@@ -436,17 +446,17 @@ class PdfLexer:
             i += 3
         return memoryview(bytes(out))
 
-    def apply_decipher(self, value: bytes, dictionary: dict[str, Any] | None = None) -> bytes:
+    def apply_decipher(self, value: bytes, dictionary: PdfDictLike | None = None) -> bytes:
         if self.decipher is None or self.current_obj_num is None:
             return value
         return self.decipher(self.current_obj_num, self.current_gen_num or 0, value, dictionary)
 
-    def parse_number_or_keyword(self, raw: bytes) -> Any:
+    def parse_number_or_keyword(self, raw: bytes) -> int | float | KeywordValue:
         if self.is_number_word(raw):
             return self.parse_number(raw)
         return self.parse_keyword(raw)
 
-    def parse_object(self) -> Any:
+    def parse_object(self) -> PdfObject:
         self.skip_ignored()
         data = self.raw_data
         pos = self.pos
@@ -488,11 +498,11 @@ class PdfLexer:
             return int(raw)
         return self.parse_keyword(raw)
 
-    def parse_object_at(self, position: int) -> Any:
+    def parse_object_at(self, position: int) -> PdfObject:
         self.rewind(position)
         return self.parse_object()
 
-    def parse_indirect_object(self) -> Any:
+    def parse_indirect_object(self) -> PdfObject:
         scanned = self.scan_word(skip_ignored=True)
         if scanned is None or not self.is_number_word(scanned[0]):
             raise PdfParseError("expected indirect object header")
@@ -519,8 +529,8 @@ class PdfLexer:
             self.current_obj_num = previous_obj
             self.current_gen_num = previous_gen
 
-    def parse_array(self) -> list[Any]:
-        values: list[Any] = []
+    def parse_array(self) -> list[PdfObject]:
+        values: list[PdfObject] = []
         self.advance(1)
         while True:
             self.skip_ignored()
@@ -531,8 +541,8 @@ class PdfLexer:
                 return values
             values.append(self.parse_object())
 
-    def parse_dictionary(self) -> dict[Any, Any]:
-        values: dict[Any, Any] = {}
+    def parse_dictionary(self) -> PdfDictLike:
+        values: PdfDictLike = {}
         self.advance(2)
         while True:
             self.skip_ignored()
@@ -553,7 +563,7 @@ class PdfLexer:
             key = PdfName_of(key_bytes)
             values[key] = self.parse_object()
 
-    def parse_stream(self, dictionary: dict[Any, Any]) -> PdfStream:
+    def parse_stream(self, dictionary: PdfDictLike) -> PdfStream:
         from core_pdf.impl.engine.spec.s_07_filters.filters import normalize_stream_decode_spec
 
         self.skip_eol()
@@ -578,7 +588,7 @@ class PdfLexer:
         stream_spec = normalize_stream_decode_spec(dictionary)
         return PdfStream(dictionary, raw_data, stream_spec)
 
-    def parse_dictionary_or_stream(self) -> Any:
+    def parse_dictionary_or_stream(self) -> PdfObject:
         dictionary = self.parse_dictionary()
         self.skip_ignored()
         if self.raw_data[self.pos : self.pos + 6] == b"stream":
@@ -612,7 +622,7 @@ class PdfLexer:
         )
         from core_pdf.impl.engine.spec.s_09_fonts.data.core14 import INLINE_IMAGE_KEY_MAP
 
-        dictionary: dict[Any, Any] = {}
+        dictionary: PdfDictLike = {}
         while True:
             self.skip_ignored()
             if self.pos >= self.data_len:
@@ -646,7 +656,7 @@ class PdfLexer:
                 # Convert slice to bytes for rstrip (inline image data is usually small)
                 image_data = data_bytes[:marker].rstrip(WHITESPACE)
                 self.pos = start + after
-                normalized: dict[Any, Any] = {}
+                normalized: PdfDictLike = {}
                 for k, value in dictionary.items():
                     # INLINE_IMAGE_KEY_MAP uses strings, so convert for lookup
                     k_str = str(k)
@@ -657,7 +667,11 @@ class PdfLexer:
             pos = marker + 1
 
     def dispatch_operations(
-        self, op_handlers: Any, fast_op_handlers: Any, depth: int, operands: list[Any] | None = None
+        self,
+        op_handlers: Mapping[str, OperationHandler],
+        fast_op_handlers: Sequence[OperationHandler | None],
+        depth: int,
+        operands: list[ParsedOperand] | None = None,
     ) -> None:
         if operands is None:
             operands = [None] * 16
@@ -808,12 +822,17 @@ class PdfLexer:
                     handler = fast_op_handlers[(raw_data[pos - 2] << 8) | raw_data[pos - 1]]
 
                 if handler is None:
-                    op_name = parse_keyword(raw)
-                    handler = op_get(op_name)
+                    token = parse_keyword(raw)
+                    if isinstance(token, str):
+                        handler = op_get(token)
+                    else:
+                        _store_operand(op_count, token)
+                        op_count += 1
+                        continue
 
                 if handler is not None:
                     handler(operands[:op_count], depth)
-                op_count = 0
+                    op_count = 0
                 continue
 
             # 4. Special characters (delimiters)
@@ -829,7 +848,7 @@ class PdfLexer:
         pos: int,
         data_len: int,
         raw_data: memoryview,
-        operands: list[Any],
+        operands: list[ParsedOperand],
         op_count: int,
     ) -> tuple[int, int]:
         self.pos = pos
@@ -858,32 +877,58 @@ class PdfLexer:
         # Rare other cases
         return pos + 1, op_count
 
-    def iter_content_operations(self) -> Iterator[tuple[str, tuple[Any, ...]]]:
+    def iter_content_operations(self) -> Iterator[tuple[str, tuple[ParsedOperand, ...]]]:
         # This is now a slow-path for diagnostics/testing, the interpreter uses dispatch_operations.
-        results: list[tuple[str, tuple[Any, ...]]] = []
+        operands: list[ParsedOperand] = []
+        while True:
+            self.skip_ignored()
+            if self.pos >= self.data_len:
+                break
 
-        def collector(o, d, op_name):
-            results.append((op_name, tuple(o)))
+            byte = self.raw_data[self.pos]
+            if byte == 37:  # %
+                self.skip_ignored()
+                continue
 
-        class DictAdapter:
-            def __init__(self, callback):
-                self.callback = callback
-
-            def get(self, k):
-                return lambda o, d: self.callback(o, d, k)
-
-        class FastAdapter:
-            def __init__(self, callback):
-                self.callback = callback
-
-            def __getitem__(self, k):
-                if k is None:
-                    return None
-                if k > 255:
-                    s = chr(k >> 8) + chr(k & 0xFF)
+            if byte in (91, 40, 47) or byte == 60:
+                if (
+                    byte == 60
+                    and self.pos + 1 < self.data_len
+                    and self.raw_data[self.pos + 1] == 60
+                ):
+                    value = self.parse_dictionary_or_stream()
+                elif byte == 60:
+                    value = PdfString(self.apply_decipher(self.read_hex_string()))
+                elif byte == 47:
+                    value = PdfName_of(self.read_name())
+                elif byte == 40:
+                    value = PdfString(self.apply_decipher(self.read_string()))
                 else:
-                    s = chr(k)
-                return lambda o, d: self.callback(o, d, s)
+                    value = self.parse_array()
+                operands.append(value)
+                continue
 
-        self.dispatch_operations(DictAdapter(collector), FastAdapter(collector), 0)
-        yield from results
+            scanned = self.scan_word(skip_ignored=False)
+            if scanned is None:
+                break
+            raw, end = scanned
+            start = self.pos
+            self.pos = end
+
+            if raw == b"BI":
+                image = self.parse_inline_image()
+                yield ("BI", (image,))
+                operands.clear()
+                continue
+
+            if self.is_number_word(raw):
+                self.pos = start
+                operands.append(self.parse_object())
+                continue
+
+            token = self.parse_keyword(raw)
+            if isinstance(token, str):
+                yield (token, tuple(operands))
+                operands.clear()
+            else:
+                operands.append(token)

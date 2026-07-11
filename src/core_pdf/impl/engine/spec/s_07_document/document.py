@@ -4,11 +4,11 @@ import mmap
 import struct
 from contextlib import suppress
 from pathlib import Path
-from typing import Any, Iterator
+from typing import TYPE_CHECKING, BinaryIO, Iterator, TypeAlias
 
 from core_pdf.impl.engine.spec.s_07_document.forms import FormsMixin
 from core_pdf.impl.engine.spec.s_07_document.layers import LayersMixin
-from core_pdf.impl.engine.spec.s_07_document.metadata import resolve_metadata
+from core_pdf.impl.engine.spec.s_07_document.metadata import MetadataDict, resolve_metadata
 from core_pdf.impl.engine.spec.s_07_document.models import FieldRecord, NamedDestination
 from core_pdf.impl.engine.spec.s_07_document.navigation import NavigationMixin
 from core_pdf.impl.engine.spec.s_07_document.page import PdfPage
@@ -20,10 +20,24 @@ from core_pdf.impl.engine.spec.s_07_syntax.errors import (
     PdfSourceError,
     PdfUnsupportedError,
 )
-from core_pdf.impl.engine.spec.s_07_syntax.primitives import PdfReference, PdfSource, PdfStream
+from core_pdf.impl.engine.spec.s_07_syntax.lexer import DecipherFn
+from core_pdf.impl.engine.spec.s_07_syntax.primitives import (
+    PdfDictLike,
+    PdfObject,
+    PdfReference,
+    PdfSource,
+    PdfStream,
+)
 from core_pdf.impl.engine.spec.s_07_syntax.xref import PdfXRefEntry, XRefScanner
 
+if TYPE_CHECKING:
+    from core_pdf.impl.engine.spec.s_09_fonts.decoder import FontDecoder
+
+
 MAX_PAGE_TREE_DEPTH = 100
+PdfDict: TypeAlias = PdfDictLike
+DecoderCache: TypeAlias = dict[tuple[int, int] | int, "FontDecoder"]
+PdfDataBuffer: TypeAlias = bytes | mmap.mmap
 
 
 class PdfDocument(NavigationMixin, FormsMixin, LayersMixin):
@@ -54,26 +68,26 @@ class PdfDocument(NavigationMixin, FormsMixin, LayersMixin):
 
     source: PdfSource
     password: str
-    raw_data: bytes
+    raw_data: PdfDataBuffer
     xref: dict[int, PdfXRefEntry]
-    trailer_dict: dict[str, Any]
-    decipher: Any | None
+    trailer_dict: PdfDict
+    decipher: DecipherFn | None
     resolver: ObjectResolver
-    file_handle: Any
-    catalog_cache: dict[str, Any] | None
-    metadata_cache: dict[str, Any] | None
+    file_handle: BinaryIO | None
+    catalog_cache: PdfDict | None
+    metadata_cache: MetadataDict | None
     structure_cache: StructureTree | None
-    structure_root_cache: dict[str, Any] | None
-    mark_info_cache: dict[str, Any] | None
-    page_dicts_cache: list[dict[str, Any]] | None
+    structure_root_cache: PdfDict | None
+    mark_info_cache: PdfDict | None
+    page_dicts_cache: list[PdfDict] | None
     pages_cache: list[PdfPage] | None
     page_index_cache: dict[int, int] | None
     named_destinations_cache: dict[str, NamedDestination] | None
     oc_layers: dict[str, bool] | None
-    acroform_cache: dict[str, Any] | None
+    acroform_cache: PdfDict | None
     fields_cache: list[FieldRecord] | None
-    decoder_cache: dict[tuple[int, int] | int, Any]
-    inherited_values_cache: dict[int, dict[str, Any]]
+    decoder_cache: DecoderCache
+    inherited_values_cache: dict[int, dict[str, PdfObject]]
 
     def __init__(self, source: PdfSource, password: str = "") -> None:
         self.source = source
@@ -111,14 +125,14 @@ class PdfDocument(NavigationMixin, FormsMixin, LayersMixin):
         return cls(source, password=password)
 
     @property
-    def data(self) -> bytes:
+    def data(self) -> PdfDataBuffer:
         return self.raw_data
 
     @property
-    def trailer(self) -> dict[str, Any]:
+    def trailer(self) -> PdfDictLike:
         return self.trailer_dict
 
-    def load_data(self, source: PdfSource) -> Any:
+    def load_data(self, source: PdfSource) -> PdfDataBuffer:
         if isinstance(source, (str, Path)):
             if isinstance(source, str) and source.startswith("%PDF"):
                 return source.encode("latin-1")
@@ -185,10 +199,10 @@ class PdfDocument(NavigationMixin, FormsMixin, LayersMixin):
         handler = handler_cls(docid_list, encrypt_dict, password)
         self.decipher = handler.decrypt
 
-    def resolve(self, ref: Any) -> Any:
+    def resolve(self, ref: PdfObject) -> PdfObject:
         return self.resolver.resolve(ref)
 
-    def catalog(self) -> dict[str, Any]:
+    def catalog(self) -> PdfDict:
         if self.catalog_cache is None:
             root_ref = self.trailer_dict.get("Root")
             if root_ref is None:
@@ -209,10 +223,10 @@ class PdfDocument(NavigationMixin, FormsMixin, LayersMixin):
 
         # 1. Global Metadata
         metadata = self.get_metadata()
-        info = metadata.get("info", {})
-        if info:
+        info_value = metadata.get("info")
+        if isinstance(info_value, dict) and info_value:
             md_parts.append("# Document Metadata")
-            for k, v in info.items():
+            for k, v in info_value.items():
                 if v:
                     md_parts.append(f"- **{k}**: {v}")
             md_parts.append("")
@@ -245,7 +259,7 @@ class PdfDocument(NavigationMixin, FormsMixin, LayersMixin):
             page.texttrace = None
             page.tables = {}
 
-    def get_metadata(self) -> dict[str, Any]:
+    def get_metadata(self) -> MetadataDict:
         if self.metadata_cache is None:
             self.metadata_cache = resolve_metadata(self.resolver, self.trailer_dict)
         return self.metadata_cache
@@ -254,7 +268,7 @@ class PdfDocument(NavigationMixin, FormsMixin, LayersMixin):
     def structure(self) -> StructureTree | None:
         if self.structure_cache is None:
             if self.structure_root_cache is None:
-                self.structure_root_cache = self.resolver.resolve(
+                self.structure_root_cache = self.resolver.resolve_dict(
                     self.catalog().get("StructTreeRoot")
                 )
             struct_root = self.structure_root_cache
@@ -267,9 +281,9 @@ class PdfDocument(NavigationMixin, FormsMixin, LayersMixin):
         return self.structure_cache
 
     @property
-    def mark_info(self) -> dict[str, Any] | None:
+    def mark_info(self) -> PdfDict | None:
         if self.mark_info_cache is None:
-            self.mark_info_cache = self.resolver.resolve(self.catalog().get("MarkInfo"))
+            self.mark_info_cache = self.resolver.resolve_dict(self.catalog().get("MarkInfo"))
         mark_info = self.mark_info_cache
         if mark_info is None:
             return None
@@ -279,13 +293,13 @@ class PdfDocument(NavigationMixin, FormsMixin, LayersMixin):
 
     # --- Page tree ---
 
-    def iter_page_dicts(self) -> Iterator[dict[str, Any]]:
+    def iter_page_dicts(self) -> Iterator[PdfDict]:
         """Yield page dictionaries from the PDF catalog."""
         if self.page_dicts_cache is None:
             self.page_dicts_cache, self.page_index_cache = self.build_page_cache()
         yield from self.page_dicts_cache
 
-    def build_page_cache(self) -> tuple[list[dict[str, Any]], dict[int, int]]:
+    def build_page_cache(self) -> tuple[list[PdfDict], dict[int, int]]:
         catalog = self.catalog()
         pages_ref = catalog.get("Pages")
         if pages_ref is None:
@@ -294,10 +308,10 @@ class PdfDocument(NavigationMixin, FormsMixin, LayersMixin):
         if not isinstance(pages_node, dict):
             raise ValueError("invalid page tree root")
 
-        page_dicts: list[dict[str, Any]] = []
+        page_dicts: list[PdfDict] = []
         page_index_cache: dict[int, int] = {}
 
-        def traverse(node: Any, _depth: int = 0) -> None:
+        def traverse(node: PdfObject, _depth: int = 0) -> None:
             if _depth > MAX_PAGE_TREE_DEPTH:
                 raise ValueError("invalid page tree depth")
             node = self.resolver.resolve(node)
@@ -317,7 +331,7 @@ class PdfDocument(NavigationMixin, FormsMixin, LayersMixin):
                 page_dicts.append(node)
                 prewarm_page_fonts(node)
 
-        def prewarm_page_fonts(page_node: dict[str, Any]) -> None:
+        def prewarm_page_fonts(page_node: PdfDictLike) -> None:
             resources = self.resolver.resolve(page_node.get("Resources"))
             if resources is None:
                 return
@@ -359,7 +373,7 @@ class PdfDocument(NavigationMixin, FormsMixin, LayersMixin):
             ]
         return self.pages_cache
 
-    def page_index_for(self, page_obj: Any) -> int | None:
+    def page_index_for(self, page_obj: PdfObject) -> int | None:
         if isinstance(page_obj, PdfPage):
             return page_obj.page_number - 1
         if not isinstance(page_obj, dict):

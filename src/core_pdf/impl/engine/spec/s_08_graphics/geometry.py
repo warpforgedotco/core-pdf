@@ -1,13 +1,30 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Protocol, TypeGuard, runtime_checkable
 
 BBox = tuple[float, float, float, float]
 
 
-def bbox_tuple(rect: Any) -> BBox:
-    if isinstance(rect, tuple):
+def is_bbox(value: object) -> TypeGuard[BBox]:
+    return (
+        isinstance(value, tuple)
+        and len(value) == 4
+        and all(isinstance(component, int | float) for component in value)
+    )
+
+
+@runtime_checkable
+class BBoxLike(Protocol):
+    x0: float
+    y0: float
+    x1: float
+    y1: float
+
+
+def bbox_tuple(rect: BBox | BBoxLike) -> BBox:
+    if is_bbox(rect):
         return rect
+    assert isinstance(rect, BBoxLike)
     return (rect.x0, rect.y0, rect.x1, rect.y1)
 
 
@@ -47,9 +64,24 @@ class RectBox:
         self.fill_opacity = fill_opacity
 
     @classmethod
-    def from_bbox(cls, bbox: tuple[float, float, float, float], **kwargs: Any) -> RectBox:
+    def from_bbox(
+        cls,
+        bbox: tuple[float, float, float, float],
+        *,
+        seqno: int = -1,
+        fill: tuple[float, ...] | None = None,
+        fill_opacity: float | None = None,
+    ) -> RectBox:
         """Create a RectBox from a (x0, y0, x1, y1) tuple."""
-        return cls(bbox[0], bbox[1], bbox[2], bbox[3], **kwargs)
+        return cls(
+            bbox[0],
+            bbox[1],
+            bbox[2],
+            bbox[3],
+            seqno=seqno,
+            fill=fill,
+            fill_opacity=fill_opacity,
+        )
 
     @property
     def width(self) -> float:
@@ -132,16 +164,26 @@ class RectBox:
             and self.y1 >= other.y1
         )
 
-    def replace(self, **kwargs: Any) -> RectBox:
+    def replace(
+        self,
+        *,
+        x0: float | None = None,
+        y0: float | None = None,
+        x1: float | None = None,
+        y1: float | None = None,
+        seqno: int | None = None,
+        fill: tuple[float, ...] | None = None,
+        fill_opacity: float | None = None,
+    ) -> RectBox:
         """Create a new RectBox with modified fields."""
         return RectBox(
-            x0=kwargs.get("x0", self.x0),
-            y0=kwargs.get("y0", self.y0),
-            x1=kwargs.get("x1", self.x1),
-            y1=kwargs.get("y1", self.y1),
-            seqno=kwargs.get("seqno", self.seqno),
-            fill=kwargs.get("fill", self.fill),
-            fill_opacity=kwargs.get("fill_opacity", self.fill_opacity),
+            x0=self.x0 if x0 is None else x0,
+            y0=self.y0 if y0 is None else y0,
+            x1=self.x1 if x1 is None else x1,
+            y1=self.y1 if y1 is None else y1,
+            seqno=self.seqno if seqno is None else seqno,
+            fill=self.fill if fill is None else fill,
+            fill_opacity=self.fill_opacity if fill_opacity is None else fill_opacity,
         )
 
     def __and__(self, other: RectBox) -> RectBox:
