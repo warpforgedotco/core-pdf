@@ -3,7 +3,7 @@ from __future__ import annotations
 import struct
 import typing
 from functools import lru_cache
-from typing import Any
+from typing import Any, TypeAlias
 
 from core_pdf.impl.engine.spec.s_07_content.models import TextRun
 from core_pdf.impl.engine.spec.s_07_content.traces import CapturedLine, DrawingTrace, GlyphTrace
@@ -37,6 +37,25 @@ class TextDocument(typing.Protocol):
     def resolver(self) -> Any: ...
     @property
     def decoder_cache(self) -> dict[tuple[int, int] | int, Any]: ...
+
+
+GraphicsState: TypeAlias = tuple[
+    float,
+    float,
+    float,
+    float,
+    float,
+    float,
+    tuple[float, ...] | None,
+    float | None,
+    tuple[float, ...] | None,
+    float | None,
+    float,
+    int,
+    int,
+    float,
+    tuple[list[float], float],
+]
 
 
 class StreamState:
@@ -243,7 +262,7 @@ class TextState:
         self.line_join = 0
         self.miter_limit = 10.0
         self.dash_pattern: tuple[list[float], float] = ([], 0.0)
-        self.stack: list[StreamState] = []
+        self.stack: list[GraphicsState] = []
         self.capture_runs = capture_runs
         self.capture_glyphs = capture_glyphs
         self.capture_graphics = capture_graphics
@@ -766,9 +785,8 @@ class TextState:
 
     def resolve_extgstate(self, name: str) -> dict[str, Any] | None:
         cache_key = (self.resources_id, name)
-        cached = self.extgstate_cache.get(cache_key, MISSING)
-        if cached is not MISSING:
-            return cached  # type: ignore[return-value]
+        if cache_key in self.extgstate_cache:
+            return self.extgstate_cache[cache_key]
         extgstate = self.resources.get("ExtGState")
         if not isinstance(extgstate, dict):
             self.extgstate_cache[cache_key] = None

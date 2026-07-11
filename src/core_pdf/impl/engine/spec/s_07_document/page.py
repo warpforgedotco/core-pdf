@@ -157,7 +157,7 @@ class PdfPage:
     def content_streams(self) -> tuple[PdfStream, ...]:
         if self._content_streams is None:
             self._content_streams = self.collect_content_streams()
-        return cast(tuple[PdfStream, ...], self._content_streams)
+        return self._content_streams
 
     def collect_inherited_values(self) -> dict[str, Any]:
         return collect_inherited_values(
