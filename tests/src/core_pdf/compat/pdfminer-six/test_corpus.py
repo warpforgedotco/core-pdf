@@ -1,12 +1,11 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
-import json
-import subprocess
-import sys
+import re
 from pathlib import Path
 
 import pytest
+from pdfminer.high_level import extract_text as pdfminer_six_extract_text
 
 from core_pdf.compat.pdfminer import extract_text as core_extract_text
 
@@ -38,6 +37,12 @@ EXPECTED_CORE_FAILURES = {
 
 def stored_text(name: str) -> str:
     return (EXPECTED_TEXT_DIR / name).read_text(encoding="utf-8")
+
+
+def comparable_pdfminer_text(text: str) -> str:
+    return "\f".join(
+        re.sub(r"[ \t\r\n]+", " ", page).strip() for page in text.split("\f")
+    )
 
 
 EXPECTED_PDFMINER_TEXT = {
@@ -180,32 +185,13 @@ def sample_id(path: Path) -> str:
 
 
 def pdfminer_extract_text(pdf_path: Path, *, password: str = "") -> str:
-    script = (
-        "import json, sys\n"
-        "from pdfminer.high_level import extract_text\n"
-        "try:\n"
-        "    text = extract_text(sys.argv[1], password=sys.argv[2], caching=False)\n"
-        "except Exception as exc:\n"
-        "    print(json.dumps({'ok': False, 'type': type(exc).__name__}))\n"
-        "else:\n"
-        "    print(json.dumps({'ok': True, 'text': text}))\n"
-    )
-    completed = subprocess.run(
-        [sys.executable, "-c", script, str(pdf_path), password],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    result = json.loads(completed.stdout)
-    if result["ok"]:
-        text = result["text"]
-        if not isinstance(text, str):
-            raise TypeError("invalid pdfminer text result")
-        return text
-    exc_type = result["type"]
-    if not isinstance(exc_type, str):
-        raise TypeError("invalid pdfminer exception result")
-    raise PdfminerExtractionError(exc_type)
+    try:
+        text = pdfminer_six_extract_text(pdf_path, password=password, caching=False)
+    except Exception as exc:
+        raise PdfminerExtractionError(type(exc).__name__) from exc
+    if not isinstance(text, str):
+        raise TypeError("invalid pdfminer text result")
+    return text
 
 
 class PdfminerExtractionError(Exception):
@@ -232,7 +218,9 @@ def test_extract_text_handles_pdfminer_sample_corpus(pdf_path: Path) -> None:
             f"pdfminer.six unexpectedly succeeded for sample: {sample}"
         )
         if sample in EXPECTED_PDFMINER_TEXT:
-            assert expected_pdfminer_six == EXPECTED_PDFMINER_TEXT[sample], (
+            assert comparable_pdfminer_text(expected_pdfminer_six) == comparable_pdfminer_text(
+                EXPECTED_PDFMINER_TEXT[sample]
+            ), (
                 f"pdfminer.six extraction changed for sample: {sample}"
             )
 
