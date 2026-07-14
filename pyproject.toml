@@ -12,6 +12,9 @@ license = "AGPL-3.0-only"
 license-files = ["LICENSE.txt"]
 requires-python = ">=3.11"
 classifiers = ["Development Status :: 3 - Alpha"]
+dependencies = [
+    "core-jpeg",
+]
 
 [project.urls]
 Repository = "https://github.com/core-experiments/core-pdf"
@@ -70,3 +73,6 @@ python_version = "3.11"
 files = ["src/core_pdf"]
 mypy_path = "src"
 show_error_codes = true
+
+[tool.uv.sources]
+core-jpeg = { path = "../../core/core-JPEG" }
