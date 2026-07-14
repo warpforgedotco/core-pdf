@@ -15,14 +15,7 @@ from core_pdf.impl.engine.spec.s_07_syntax.primitives import (
 from core_pdf.impl.engine.spec.s_09_fonts.encoding import decode_pdf_text_string
 
 MetadataValue: TypeAlias = (
-    None
-    | bool
-    | int
-    | float
-    | str
-    | PdfName
-    | list["MetadataValue"]
-    | dict[str, "MetadataValue"]
+    None | bool | int | float | str | PdfName | list["MetadataValue"] | dict[str, "MetadataValue"]
 )
 MetadataDict: TypeAlias = dict[str, MetadataValue]
 
