@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """CMap decoding for Unicode and CID fonts."""
 
 from __future__ import annotations

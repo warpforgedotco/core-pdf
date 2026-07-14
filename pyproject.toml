@@ -8,8 +8,18 @@ version = "0.0.0"
 description = "High-performance pure Python PDF parsing engine"
 authors = [{ name = "Kevin Turcios", email = "turcioskevinr@gmail.com" }]
 readme = "README.md"
+license = "AGPL-3.0-only"
+license-files = ["LICENSE.txt"]
 requires-python = ">=3.14"
-classifiers = ["Private :: Do Not Upload", "Development Status :: 3 - Alpha"]
+classifiers = ["Development Status :: 3 - Alpha"]
+
+[project.urls]
+Repository = "https://github.com/core-experiments/core-pdf"
+License = "https://github.com/core-experiments/core-pdf/blob/main/LICENSE.txt"
+"License documentation" = "https://github.com/core-experiments/core-pdf/blob/main/docs/license/README.md"
+"Commercial license terms" = "https://github.com/core-experiments/core-pdf/blob/main/docs/license/LICENSE-COMMERCIAL.txt"
+"Evaluation license terms" = "https://github.com/core-experiments/core-pdf/blob/main/docs/license/LICENSE-EVALUATION.txt"
+"Philanthropy waiver terms" = "https://github.com/core-experiments/core-pdf/blob/main/docs/license/LICENSE-PHILANTHROPY-WAIVER.txt"
 
 [dependency-groups]
 lint = [

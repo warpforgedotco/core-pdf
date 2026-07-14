@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """PDF cross-reference handling."""
 
 from __future__ import annotations

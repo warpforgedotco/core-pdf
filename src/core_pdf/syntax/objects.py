@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """PDF object and stream parsing."""
 
 from __future__ import annotations
