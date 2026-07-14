@@ -4,15 +4,17 @@ from __future__ import annotations
 from collections.abc import Iterator
 from statistics import median
 
-from core_pdf.impl.engine.layout.models import TableGrid, TextRun
 from core_pdf.impl.engine.extraction.common.ordering import cluster_runs_into_lines
-from core_pdf.impl.engine.extraction.tables.grid import MIN_CELL_WIDTH
-from core_pdf.impl.engine.extraction.tables.grid import connected_cell_groups
-from core_pdf.impl.engine.extraction.tables.grid import intersections_to_cells
-from core_pdf.impl.engine.extraction.tables.grid import join_table_edges
-from core_pdf.impl.engine.extraction.tables.grid import snap
-from core_pdf.impl.engine.extraction.tables.grid import snap_table_edges
-from core_pdf.impl.engine.extraction.tables.grid import table_edge_intersections
+from core_pdf.impl.engine.extraction.tables.grid import (
+    MIN_CELL_WIDTH,
+    connected_cell_groups,
+    intersections_to_cells,
+    join_table_edges,
+    snap,
+    snap_table_edges,
+    table_edge_intersections,
+)
+from core_pdf.impl.engine.layout.models import TableGrid, TextRun
 
 DEFAULT_COLUMN_TOLERANCE: float = 8.0
 DEFAULT_ROW_TOLERANCE: float = 2.0
@@ -31,11 +33,7 @@ def split_discontinuous_order_rows(
         current: list[TextRun] = []
         previous_order: int | None = None
         for run in ordered:
-            if (
-                current
-                and previous_order is not None
-                and run.order - previous_order > order_gap
-            ):
+            if current and previous_order is not None and run.order - previous_order > order_gap:
                 split_rows.append(sorted(current, key=lambda item: item.x0))
                 current = []
             current.append(run)
@@ -144,8 +142,7 @@ def split_rows_on_large_gaps(
     if len(row_extents) < 2:
         return [rows] if rows else []
     gaps = [
-        row_extents[index][0] - row_extents[index + 1][1]
-        for index in range(len(row_extents) - 1)
+        row_extents[index][0] - row_extents[index + 1][1] for index in range(len(row_extents) - 1)
     ]
     positive_gaps = [gap for gap in gaps if gap > 0]
     if not positive_gaps:
@@ -214,11 +211,7 @@ def detect_text_edge_grid(
         min_height=max(0.5, row_tolerance),
         sort_by_horizontal_position=True,
     )
-    rows = [
-        sorted(row, key=lambda run: run.x0)
-        for row in rows
-        if len(row) >= min_words_horizontal
-    ]
+    rows = [sorted(row, key=lambda run: run.x0) for row in rows if len(row) >= min_words_horizontal]
     if len(rows) < min_words_vertical:
         return None
     counts = [len(row) for row in rows]
@@ -406,22 +399,17 @@ def infer_stream_columns(
         return []
 
     modal_rows = [
-        sorted(row, key=lambda run: run.x0)
-        for row in populated_rows
-        if len(row) == ncols
+        sorted(row, key=lambda run: run.x0) for row in populated_rows if len(row) == ncols
     ]
     if len(modal_rows) >= 2:
         left_edges = [
-            float(median(row[col_idx].x0 for row in modal_rows))
-            for col_idx in range(ncols)
+            float(median(row[col_idx].x0 for row in modal_rows)) for col_idx in range(ncols)
         ]
         right_edges = [
-            float(median(row[col_idx].x1 for row in modal_rows))
-            for col_idx in range(ncols)
+            float(median(row[col_idx].x1 for row in modal_rows)) for col_idx in range(ncols)
         ]
         boundaries = [
-            (right_edges[col_idx - 1] + left_edges[col_idx]) * 0.5
-            for col_idx in range(1, ncols)
+            (right_edges[col_idx - 1] + left_edges[col_idx]) * 0.5 for col_idx in range(1, ncols)
         ]
         boundaries.insert(0, left_edges[0])
         boundaries.append(right_edges[-1])
@@ -456,9 +444,7 @@ def infer_stream_columns(
                     inner.append((run.x0, run.x1))
         if not inner:
             break
-        merged = merge_column_extents(
-            sorted([*extents, *inner]), column_tolerance=column_tolerance
-        )
+        merged = merge_column_extents(sorted([*extents, *inner]), column_tolerance=column_tolerance)
         if merged == extents:
             break
         extents = merged
@@ -466,9 +452,7 @@ def infer_stream_columns(
     if len(extents) < 2:
         return []
 
-    boundaries = [
-        (extents[i][0] + extents[i - 1][1]) * 0.5 for i in range(1, len(extents))
-    ]
+    boundaries = [(extents[i][0] + extents[i - 1][1]) * 0.5 for i in range(1, len(extents))]
     boundaries.insert(0, min(run.x0 for row in populated_rows for run in row))
     boundaries.append(max(run.x1 for row in populated_rows for run in row))
     return sorted(boundaries)
@@ -513,9 +497,7 @@ def detect_network_grids(
                 continue
             x0 = min(run.x0 for run in row_runs)
             x1 = max(run.x1 for run in row_runs)
-            coord = (
-                x0 if align == "left" else x1 if align == "right" else (x0 + x1) * 0.5
-            )
+            coord = x0 if align == "left" else x1 if align == "right" else (x0 + x1) * 0.5
             values.append((coord, row_runs))
         values.sort(key=lambda item: item[0])
         clusters: list[list[tuple[float, list[TextRun]]]] = []
@@ -584,9 +566,7 @@ def detect_network_grids(
 
 
 def iter_rows(visible_runs: list[TextRun]) -> Iterator[list[TextRun]]:
-    clusters = cluster_runs_into_lines(
-        visible_runs, lookback=1, sort_by_horizontal_position=True
-    )
+    clusters = cluster_runs_into_lines(visible_runs, lookback=1, sort_by_horizontal_position=True)
     for row in clusters:
         yield row
 

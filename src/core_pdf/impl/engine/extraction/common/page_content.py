@@ -4,6 +4,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Protocol, TypeAlias, TypedDict, cast
 
+from core_pdf.impl.engine.extraction.cache import ExtractionCache
 from core_pdf.impl.engine.extraction.common import page_geometry
 from core_pdf.impl.engine.layout.geometry_quality import (
     LayoutGeometryIssueRecord,
@@ -13,7 +14,6 @@ from core_pdf.impl.engine.layout.geometry_quality import (
     page_layout_geometry_summary,
     text_run_geometry_issue_records,
 )
-from core_pdf.impl.engine.extraction.cache import ExtractionCache
 
 if TYPE_CHECKING:
     from core_pdf.impl.engine.layout.glyphs import GlyphCluster
@@ -91,9 +91,7 @@ class PageContentHost(Protocol):
 
     def render(self) -> PageRenderResult: ...
 
-    def extract_lines(
-        self, *, include_words: bool = False
-    ) -> list[PageContentRecord]: ...
+    def extract_lines(self, *, include_words: bool = False) -> list[PageContentRecord]: ...
 
     def extract_images(
         self,
@@ -376,9 +374,7 @@ class PageContentMixin:
         return page_layout_geometry_issue_records(self.get_text_lines())
 
     def extract_geometry_summary(self: PageContentHost) -> LayoutGeometrySummaryRecord:
-        return layout_geometry_summary_record(
-            page_layout_geometry_summary(self.get_text_lines())
-        )
+        return layout_geometry_summary_record(page_layout_geometry_summary(self.get_text_lines()))
 
     def find_text_near(
         self: PageContentHost,
@@ -403,24 +399,16 @@ class PageContentMixin:
             dist = -1.0
 
             if direction == "left":
-                if run.x1 <= x0 and abs(run_mid_y - mid_y) < max(
-                    run.height, y1 - y0, 10.0
-                ):
+                if run.x1 <= x0 and abs(run_mid_y - mid_y) < max(run.height, y1 - y0, 10.0):
                     dist = x0 - run.x1
             elif direction == "right":
-                if run.x0 >= x1 and abs(run_mid_y - mid_y) < max(
-                    run.height, y1 - y0, 10.0
-                ):
+                if run.x0 >= x1 and abs(run_mid_y - mid_y) < max(run.height, y1 - y0, 10.0):
                     dist = run.x0 - x1
             elif direction == "above":
-                if run.y0 >= y1 and abs(run_mid_x - mid_x) < max(
-                    run.x1 - run.x0, x1 - x0, 20.0
-                ):
+                if run.y0 >= y1 and abs(run_mid_x - mid_x) < max(run.x1 - run.x0, x1 - x0, 20.0):
                     dist = run.y0 - y1
             elif direction == "below":
-                if run.y1 <= y0 and abs(run_mid_x - mid_x) < max(
-                    run.x1 - run.x0, x1 - x0, 20.0
-                ):
+                if run.y1 <= y0 and abs(run_mid_x - mid_x) < max(run.x1 - run.x0, x1 - x0, 20.0):
                     dist = y0 - run.y1
 
             if 0 <= dist <= distance:

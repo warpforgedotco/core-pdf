@@ -2,6 +2,9 @@
 CFF dictionary data and Type1/Type2 CharStrings.
 """
 
+import logging
+import struct
+
 from core_pdf.impl.third_party.fontTools.misc.fixedTools import (
     fixedToFloat,
     floatToFixed,
@@ -10,9 +13,6 @@ from core_pdf.impl.third_party.fontTools.misc.fixedTools import (
 )
 from core_pdf.impl.third_party.fontTools.misc.textTools import bytechr, byteord, bytesjoin, strjoin
 from core_pdf.impl.third_party.fontTools.pens.boundsPen import BoundsPen
-import struct
-import logging
-
 
 log = logging.getLogger(__name__)
 
@@ -553,7 +553,6 @@ t1Operators = [
 
 
 class T2StackUseExtractor(SimpleT2Decompiler):
-
     def execute(self, charString):
         maxStackUse = 0
 
@@ -590,9 +589,9 @@ class T2WidthExtractor(SimpleT2Decompiler):
         if not self.gotWidth:
             if evenOdd ^ (len(args) % 2):
                 # For CFF2 charstrings, this should never happen
-                assert (
-                    self.defaultWidthX is not None
-                ), "CFF2 CharStrings must not have an initial width value"
+                assert self.defaultWidthX is not None, (
+                    "CFF2 CharStrings must not have an initial width value"
+                )
                 self.width = self.nominalWidthX + args[0]
                 args = args[1:]
             else:
@@ -722,7 +721,9 @@ class T2OutlineExtractor(T2WidthExtractor):
         self.endPath()
         args = self.popallWidth()
         if args:
-            from core_pdf.impl.third_party.fontTools.encodings.StandardEncoding import StandardEncoding
+            from core_pdf.impl.third_party.fontTools.encodings.StandardEncoding import (
+                StandardEncoding,
+            )
 
             # endchar can do seac accent bulding; The T2 spec says it's deprecated,
             # but recent software that shall remain nameless does output it.
@@ -1465,9 +1466,7 @@ class DictDecompiler(object):
         the delta values. We then convert the default values, the first item in each entry, to an absolute value.
         """
         vsindex = self.dict.get("vsindex", 0)
-        numMasters = (
-            self.parent.getNumRegions(vsindex) + 1
-        )  # only a PrivateDict has blended ops.
+        numMasters = self.parent.getNumRegions(vsindex) + 1  # only a PrivateDict has blended ops.
         numBlends = self.pop()
         args = self.popall()
         numArgs = len(args)

@@ -1,6 +1,6 @@
-from core_pdf.impl.third_party.fontTools.pens.basePen import BasePen
 from reportlab.graphics.shapes import Path
 
+from core_pdf.impl.third_party.fontTools.pens.basePen import BasePen
 
 __all__ = ["ReportLabPen"]
 
@@ -36,20 +36,15 @@ if __name__ == "__main__":
     import sys
 
     if len(sys.argv) < 3:
-        print(
-            "Usage: reportLabPen.py <OTF/TTF font> <glyphname> [<image file to create>]"
-        )
-        print(
-            "  If no image file name is created, by default <glyphname>.png is created."
-        )
+        print("Usage: reportLabPen.py <OTF/TTF font> <glyphname> [<image file to create>]")
+        print("  If no image file name is created, by default <glyphname>.png is created.")
         print("  example: reportLabPen.py Arial.TTF R test.png")
-        print(
-            "  (The file format will be PNG, regardless of the image file name supplied)"
-        )
+        print("  (The file format will be PNG, regardless of the image file name supplied)")
         sys.exit(0)
 
-    from core_pdf.impl.third_party.fontTools.ttLib import TTFont
     from reportlab.lib import colors
+
+    from core_pdf.impl.third_party.fontTools.ttLib import TTFont
 
     path = sys.argv[1]
     glyphName = sys.argv[2]
@@ -66,7 +61,7 @@ if __name__ == "__main__":
 
     w, h = g.width, 1000
     from reportlab.graphics import renderPM
-    from reportlab.graphics.shapes import Group, Drawing, scale
+    from reportlab.graphics.shapes import Drawing, Group
 
     # Everything is wrapped in a group to allow transformations.
     g = Group(pen.path)

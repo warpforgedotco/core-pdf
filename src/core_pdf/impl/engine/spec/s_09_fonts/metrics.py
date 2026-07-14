@@ -3,13 +3,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from core_pdf.impl.third_party.cid.widths import FontWidthMap, scale_font_widths
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_09_fonts.data.core14 import FONT_DATA
 from core_pdf.impl.engine.spec.s_09_fonts.widths import (
     get_descendant,
     require_font_float,
 )
+from core_pdf.impl.third_party.cid.widths import FontWidthMap, scale_font_widths
 
 
 def parse_font_metrics(
@@ -56,9 +56,7 @@ def parse_font_metrics(
     return ascent, descent
 
 
-def adjust_type3_widths(
-    font_dict: dict[str, Any], widths: FontWidthMap
-) -> FontWidthMap:
+def adjust_type3_widths(font_dict: dict[str, Any], widths: FontWidthMap) -> FontWidthMap:
     font_matrix = lookup_dict_key(font_dict, "FontMatrix")
     if isinstance(font_matrix, (list, tuple)) and len(font_matrix) >= 1:
         try:

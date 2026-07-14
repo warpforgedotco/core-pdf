@@ -8,8 +8,14 @@ from typing import Any, Mapping, Protocol
 from core_pdf.impl.engine.extraction.common import page_geometry
 from core_pdf.impl.engine.extraction.ocr import (
     execution as ocr_execution,
+)
+from core_pdf.impl.engine.extraction.ocr import (
     iterator_layout as ocr_iterator_layout,
+)
+from core_pdf.impl.engine.extraction.ocr import (
     layout as ocr_layout,
+)
+from core_pdf.impl.engine.extraction.ocr import (
     selection as ocr_selection,
 )
 from core_pdf.impl.engine.extraction.ocr.candidates import OcrCandidate
@@ -19,14 +25,14 @@ from core_pdf.impl.engine.extraction.ocr.text_analysis import (
     scanned_ocr_artifact_score,
     text_ocr_quality_score,
 )
-from core_pdf.impl.engine.layout.text_lines import is_decorative_leader
 from core_pdf.impl.engine.extraction.ocr.types import (
     OcrImage,
     OcrTextResult,
     leptonica_pix_size_is_supported,
-    ocr_observations_from_rows,
     ocr_int_value,
+    ocr_observations_from_rows,
 )
+from core_pdf.impl.engine.layout.text_lines import is_decorative_leader
 
 OCR_HIGH_DENSITY_IMAGE_DPI = 200
 OCR_HIGH_DENSITY_IMAGE_SCALE = 4
@@ -132,11 +138,7 @@ def should_try_line_art_text_mask_ocr_candidate(
     if not (35 <= tokens <= 260):
         return False
     confidence = base_candidate.result.confidence
-    if (
-        confidence is not None
-        and confidence >= 88
-        and text_ocr_quality_score(text) <= 0.12
-    ):
+    if confidence is not None and confidence >= 88 and text_ocr_quality_score(text) <= 0.12:
         return False
     if (
         ocr_selection.ocr_candidate_score(base_candidate) >= 78.0
@@ -153,9 +155,7 @@ def should_keep_line_art_text_mask_ocr_candidate(candidate: OcrCandidate) -> boo
     tokens = extracted_text_token_count(text)
     if not (8 <= tokens <= 320):
         return False
-    confidence = (
-        candidate.result.confidence if candidate.result.confidence is not None else 0
-    )
+    confidence = candidate.result.confidence if candidate.result.confidence is not None else 0
     if confidence < 35:
         return False
     return text_ocr_quality_score(text) <= 0.38
@@ -280,9 +280,7 @@ def line_art_text_mask_pixel_is_foreground(image: OcrImage, offset: int) -> bool
     if image.bytes_per_pixel == 4 and image.data[offset + 3] <= 16:
         return False
     return (
-        image.data[offset] * 30
-        + image.data[offset + 1] * 59
-        + image.data[offset + 2] * 11
+        image.data[offset] * 30 + image.data[offset + 1] * 59 + image.data[offset + 2] * 11
     ) < 19_000
 
 
@@ -395,9 +393,7 @@ def should_try_rendered_downsampled_page_ocr_candidate(
         return False
     if numeric_token_ratio(text) >= 0.25:
         return False
-    confidence = (
-        candidate.result.confidence if candidate.result.confidence is not None else 50
-    )
+    confidence = candidate.result.confidence if candidate.result.confidence is not None else 50
     if confidence < 68:
         return False
     quality = text_ocr_quality_score(text)
@@ -422,12 +418,8 @@ def should_keep_rendered_downsampled_page_ocr_candidate(
         return False
     if tokens > max(base_tokens + 80, int(base_tokens * 1.15)):
         return False
-    base_confidence = (
-        base.result.confidence if base.result.confidence is not None else 50
-    )
-    confidence = (
-        candidate.result.confidence if candidate.result.confidence is not None else 50
-    )
+    base_confidence = base.result.confidence if base.result.confidence is not None else 50
+    confidence = candidate.result.confidence if candidate.result.confidence is not None else 50
     if confidence + 3 < base_confidence:
         return False
     return True
@@ -478,9 +470,7 @@ def should_try_rendered_sparse_page_ocr_candidate(
         return False
     if numeric_token_ratio(text) >= 0.45:
         return False
-    confidence = (
-        candidate.result.confidence if candidate.result.confidence is not None else 50
-    )
+    confidence = candidate.result.confidence if candidate.result.confidence is not None else 50
     quality = text_ocr_quality_score(text)
     return confidence < 88 or quality >= 0.10 or tokens < 850
 
@@ -503,15 +493,9 @@ def should_keep_rendered_sparse_page_ocr_candidate(
     base_confidence = base_candidate.result.confidence or 0
     sparse_quality = text_ocr_quality_score(sparse_text)
     base_quality = text_ocr_quality_score(base_text)
-    if (
-        sparse_tokens >= int(base_tokens * 1.08)
-        and sparse_quality <= base_quality + 0.12
-    ):
+    if sparse_tokens >= int(base_tokens * 1.08) and sparse_quality <= base_quality + 0.12:
         return True
-    if (
-        sparse_confidence >= base_confidence - 8
-        and sparse_quality + 0.04 < base_quality
-    ):
+    if sparse_confidence >= base_confidence - 8 and sparse_quality + 0.04 < base_quality:
         return True
     return (
         ocr_selection.ocr_candidate_score(sparse_candidate)
@@ -641,8 +625,7 @@ def low_confidence_word_refinement_ocr_candidate(
         word_symbol_rows = tuple(
             symbol_row
             for symbol_row in line_symbol_rows
-            if ocr_int_value(symbol_row.get("word_num", 0))
-            == ocr_int_value(row.get("word_num", 0))
+            if ocr_int_value(symbol_row.get("word_num", 0)) == ocr_int_value(row.get("word_num", 0))
         )
         refinement = refinements.get(word_index)
         if refinement is None:
@@ -664,8 +647,7 @@ def low_confidence_word_refinement_ocr_candidate(
     if not changed_word_indexes:
         return None
     changed_lines = {
-        ocr_iterator_layout.iterator_line_key(word_rows[index])
-        for index in changed_word_indexes
+        ocr_iterator_layout.iterator_line_key(word_rows[index]) for index in changed_word_indexes
     }
     word_rows_by_line = ocr_iterator_layout.iterator_rows_by_line_key(tuple(word_rows))
     refined_line_rows: list[dict[str, Any]] = []
@@ -696,9 +678,7 @@ def low_confidence_word_refinement_ocr_candidate(
             line_rows=tuple(refined_line_rows),
             word_rows=tuple(word_rows),
             symbol_rows=symbol_rows,
-            observations=ocr_observations_from_rows(
-                [*refined_line_rows, *word_rows, *symbol_rows]
-            ),
+            observations=ocr_observations_from_rows([*refined_line_rows, *word_rows, *symbol_rows]),
         )
     )
     if not should_keep_low_confidence_word_refinement_ocr_candidate(
@@ -836,9 +816,7 @@ def should_try_low_confidence_word_refinement_ocr_candidate(
     tokens = extracted_text_token_count(result.text)
     if tokens < 20 or tokens > 2_500:
         return False
-    return any(
-        low_confidence_word_row_should_be_refined(row) for row in result.word_rows
-    )
+    return any(low_confidence_word_row_should_be_refined(row) for row in result.word_rows)
 
 
 def low_confidence_word_row_should_be_refined(row: dict[str, Any]) -> bool:
@@ -853,7 +831,7 @@ def low_confidence_word_row_should_be_refined(row: dict[str, Any]) -> bool:
     try:
         width = int(row["width"])
         height = int(row["height"])
-    except KeyError, TypeError, ValueError:
+    except (KeyError, TypeError, ValueError):
         return False
     return width >= 18 and height >= 8
 
@@ -927,7 +905,7 @@ def word_refinement_rectangle(
         top = int(row["top"])
         width = int(row["width"])
         height = int(row["height"])
-    except KeyError, TypeError, ValueError:
+    except (KeyError, TypeError, ValueError):
         return None
     return (
         left - pad,
@@ -1036,10 +1014,7 @@ def should_keep_low_confidence_word_refinement_ocr_candidate(
 def should_try_word_layout_ocr_candidate(candidate: OcrCandidate) -> bool:
     if not should_generate_layout_variants(candidate):
         return False
-    if (
-        candidate.name != "full_page_image"
-        and candidate.name != "high_density_full_page_image"
-    ):
+    if candidate.name != "full_page_image" and candidate.name != "high_density_full_page_image":
         return False
     text = candidate.result.text
     tokens = extracted_text_token_count(text)
@@ -1077,7 +1052,7 @@ def rebuild_ocr_text_from_word_layout(
             top = float(row["top"])
             width = float(row["width"])
             height = float(row["height"])
-        except KeyError, TypeError, ValueError:
+        except (KeyError, TypeError, ValueError):
             continue
         if width <= 0 or height <= 0:
             continue
@@ -1098,9 +1073,7 @@ def rebuild_ocr_text_from_word_layout(
             continue
         if abs(center - current_center) <= line_threshold:
             current.append(word)
-            current_center = (current_center * (len(current) - 1) + center) / len(
-                current
-            )
+            current_center = (current_center * (len(current) - 1) + center) / len(current)
         else:
             grouped.append(current)
             current = [word]
@@ -1120,9 +1093,7 @@ def rebuild_ocr_text_from_word_layout(
     return "\n".join(lines)
 
 
-def should_keep_word_layout_ocr_candidate(
-    base_candidate: OcrCandidate, text: str
-) -> bool:
+def should_keep_word_layout_ocr_candidate(base_candidate: OcrCandidate, text: str) -> bool:
     if not text:
         return False
     base_text = base_candidate.result.text
@@ -1313,9 +1284,7 @@ def downsample_ocr_image_dark_2x(
         return None
     target_width = image.width // 2
     target_height = image.height // 2
-    required_size = (
-        target_height * 2 - 1
-    ) * image.bytes_per_line + target_width * 2 * 4
+    required_size = (target_height * 2 - 1) * image.bytes_per_line + target_width * 2 * 4
     if target_width <= 0 or target_height <= 0 or len(image.data) < required_size:
         return None
     output = bytearray(target_width * target_height * 4)
@@ -1372,9 +1341,7 @@ def darken_ocr_image_min_3x3(
         return None
     if image.bytes_per_line < image.width * image.bytes_per_pixel:
         return None
-    required_size = (
-        image.height - 1
-    ) * image.bytes_per_line + image.width * image.bytes_per_pixel
+    required_size = (image.height - 1) * image.bytes_per_line + image.width * image.bytes_per_pixel
     if len(image.data) < required_size:
         return None
     data = image.data

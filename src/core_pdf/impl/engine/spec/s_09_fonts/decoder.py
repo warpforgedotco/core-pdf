@@ -1,21 +1,39 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
-from dataclasses import dataclass
 
-from core_pdf.impl.exceptions import PdfParseError
+import typing
+from dataclasses import dataclass
+from typing import Iterable
+
 from core_pdf.impl.engine.spec.s_07_objects.coercion import normalize_pdf_name
-from core_pdf.impl.objects import PdfStream
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
-from core_pdf.impl.engine.spec.s_09_fonts.helpers import (
-    cached_decode_table,
-    parse_differences,
+from core_pdf.impl.engine.spec.s_09_fonts.cff import (
+    build_cff_unicode_repairs,
+    cff_font_for_pdf_font,
 )
+from core_pdf.impl.engine.spec.s_09_fonts.encoding import BYTE_CACHE
+from core_pdf.impl.engine.spec.s_09_fonts.font_names import resolve_base_font_name
 from core_pdf.impl.engine.spec.s_09_fonts.glyph_decode import (
     build_glyph_decode_table,
     replace_unicode_from_glyph_names,
     should_prefer_glyph_name_mapping,
 )
-from core_pdf.impl.engine.spec.s_09_fonts.font_names import resolve_base_font_name
+from core_pdf.impl.engine.spec.s_09_fonts.helpers import (
+    cached_decode_table,
+    parse_differences,
+)
+from core_pdf.impl.engine.spec.s_09_fonts.metrics import (
+    adjust_type3_widths,
+    parse_font_metrics,
+)
+from core_pdf.impl.engine.spec.s_09_fonts.truetype import tt_font_for_pdf_font
+from core_pdf.impl.engine.spec.s_09_fonts.widths import (
+    get_descendant,
+    parse_font_widths,
+)
+from core_pdf.impl.exceptions import PdfParseError
+from core_pdf.impl.objects import PdfStream
+from core_pdf.impl.third_party.cff import CFFFont
 from core_pdf.impl.third_party.cid.cmap import (
     CMapDecoder,
     ToUnicodeCMap,
@@ -24,26 +42,8 @@ from core_pdf.impl.third_party.cid.cmap import (
 from core_pdf.impl.third_party.cid.resource_loader import (
     resolve_cmap_decoder,
 )
-from core_pdf.impl.engine.spec.s_09_fonts.cff import (
-    build_cff_unicode_repairs,
-    cff_font_for_pdf_font,
-)
-from core_pdf.impl.third_party.cff import CFFFont
-from core_pdf.impl.engine.spec.s_09_fonts.truetype import tt_font_for_pdf_font
-from core_pdf.impl.third_party.truetype import TrueTypeFontProgram
-from core_pdf.impl.engine.spec.s_09_fonts.metrics import (
-    adjust_type3_widths,
-    parse_font_metrics,
-)
 from core_pdf.impl.third_party.cid.widths import FontWidthMap
-from core_pdf.impl.engine.spec.s_09_fonts.widths import (
-    get_descendant,
-    parse_font_widths,
-)
-from core_pdf.impl.engine.spec.s_09_fonts.encoding import BYTE_CACHE
-
-import typing
-from typing import Iterable
+from core_pdf.impl.third_party.truetype import TrueTypeFontProgram
 
 if typing.TYPE_CHECKING:
     from typing import Any
@@ -73,9 +73,7 @@ class UnicodeChoice:
     alternates: tuple[str, ...] = ()
 
 
-def split_code_bytes(
-    data: bytes, cmap: CMapDecoder | ToUnicodeCMap | None
-) -> list[bytes]:
+def split_code_bytes(data: bytes, cmap: CMapDecoder | ToUnicodeCMap | None) -> list[bytes]:
     if not data:
         return []
     if cmap is None:
@@ -104,9 +102,7 @@ def split_code_bytes(
     return chunks
 
 
-def uses_fixed_two_byte_codes(
-    cmap: CMapDecoder | ToUnicodeCMap | None, data: bytes
-) -> bool:
+def uses_fixed_two_byte_codes(cmap: CMapDecoder | ToUnicodeCMap | None, data: bytes) -> bool:
     if cmap is None:
         return False
     if getattr(cmap, "decode_lengths", None) == (2,):
@@ -187,9 +183,7 @@ class FontDecoder:
         ligature_overrides: dict[int, str] | None = None,
     ) -> None:
         self.font = font
-        self.ligature_overrides = (
-            ligature_overrides if ligature_overrides is not None else {}
-        )
+        self.ligature_overrides = ligature_overrides if ligature_overrides is not None else {}
         self.decode_cache: dict[bytes, str] = {}
         self.glyphs_cache: dict[bytes, tuple[DecodedGlyph, ...]] = {}
         self.fast_widths_cache = None
@@ -205,9 +199,7 @@ class FontDecoder:
             self.lazy_initialized = True
             self.__post_init__()
             return getattr(self, name)
-        raise AttributeError(
-            f"'{type(self).__name__}' object has no attribute '{name}'"
-        )
+        raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
 
     def __post_init__(self) -> None:
         font = self.font
@@ -220,7 +212,7 @@ class FontDecoder:
         if isinstance(to_unicode_obj, PdfStream):
             try:
                 to_unicode = ToUnicodeCMap(to_unicode_obj.data)
-            except PdfParseError, ValueError:
+            except (PdfParseError, ValueError):
                 to_unicode = None
 
         cmap, base_encoding, differences = self.parse_encoding(font)
@@ -240,9 +232,7 @@ class FontDecoder:
         byte_decode_table: tuple[str, ...] | None = None
         if to_unicode is None and not is_cid_font:
             key = "Type3" if is_type3 else (base_encoding or "")
-            byte_decode_table = cached_decode_table(
-                key, tuple(sorted(differences.items()))
-            )
+            byte_decode_table = cached_decode_table(key, tuple(sorted(differences.items())))
 
         self.to_unicode = to_unicode
         self.cmap = cmap
@@ -262,9 +252,7 @@ class FontDecoder:
             self.glyph_decode_table = None
             self.glyph_decode_table_authoritative = False
         else:
-            self.glyph_decode_table, self.glyph_decode_table_authoritative = (
-                glyph_decode
-            )
+            self.glyph_decode_table, self.glyph_decode_table_authoritative = glyph_decode
         self.cff_font = cff_font_for_pdf_font(font)
         self.tt_font = tt_font_for_pdf_font(font)
         self.cff_unicode_repairs = build_cff_unicode_repairs(font, to_unicode, cmap)
@@ -296,21 +284,15 @@ class FontDecoder:
                     encoding_obj.data,
                     usecmap_resolver=resolve_cmap_decoder,
                 )
-            except PdfParseError, ValueError:
+            except (PdfParseError, ValueError):
                 cmap = None
         elif isinstance(encoding_obj, dict):
-            base_encoding = normalize_pdf_name(
-                lookup_dict_key(encoding_obj, "BaseEncoding")
-            )
+            base_encoding = normalize_pdf_name(lookup_dict_key(encoding_obj, "BaseEncoding"))
             differences_obj = lookup_dict_key(encoding_obj, "Differences")
-            if differences_obj is not None and not isinstance(
-                differences_obj, (list, tuple)
-            ):
+            if differences_obj is not None and not isinstance(differences_obj, (list, tuple)):
                 differences_obj = None
             differences = parse_differences(
-                list(differences_obj)
-                if isinstance(differences_obj, tuple)
-                else differences_obj,
+                list(differences_obj) if isinstance(differences_obj, tuple) else differences_obj,
                 normalize_pdf_name,
             )
         else:
@@ -347,9 +329,7 @@ class FontDecoder:
             decode_cache[data] = result
         return result
 
-    def decode_glyphs(
-        self, data: bytes | bytearray | memoryview
-    ) -> tuple[DecodedGlyph, ...]:
+    def decode_glyphs(self, data: bytes | bytearray | memoryview) -> tuple[DecodedGlyph, ...]:
         data = bytes(data)
         if not data:
             return ()
@@ -403,15 +383,11 @@ class FontDecoder:
                 )
 
         if fallback_code == 0:
-            return UnicodeChoice(
-                "\u0000", "fallback_nul", dedupe_alternates(alternates, "\u0000")
-            )
+            return UnicodeChoice("\u0000", "fallback_nul", dedupe_alternates(alternates, "\u0000"))
         if fallback_code < 0x110000:
             text = chr(fallback_code)
             return UnicodeChoice(text, "identity", dedupe_alternates(alternates, text))
-        return UnicodeChoice(
-            "\ufffd", "replacement", dedupe_alternates(alternates, "\ufffd")
-        )
+        return UnicodeChoice("\ufffd", "replacement", dedupe_alternates(alternates, "\ufffd"))
 
     def _true_type_unicode_for_gid(self, gid: int) -> str:
         tt_font = self.tt_font
@@ -493,10 +469,7 @@ class FontDecoder:
         entries = self.cmap.decode(data) if self.cmap is not None else []
         if not entries:
             chunks = split_code_bytes(data, self.to_unicode)
-            entries = [
-                (chunk, int.from_bytes(chunk, "big") if chunk else 0)
-                for chunk in chunks
-            ]
+            entries = [(chunk, int.from_bytes(chunk, "big") if chunk else 0) for chunk in chunks]
         glyphs: list[DecodedGlyph] = []
         for code_bytes, cid in entries:
             char_code = int.from_bytes(code_bytes, "big") if code_bytes else 0
@@ -573,9 +546,7 @@ class FontDecoder:
             return None
         return (0.0, self.descent, width, self.ascent)
 
-    def glyph_bitmap(
-        self, code: int, *, width: int = 24, height: int = 32
-    ) -> tuple[int, ...]:
+    def glyph_bitmap(self, code: int, *, width: int = 24, height: int = 32) -> tuple[int, ...]:
         if code < 0:
             return ()
         cache_key = (code, width, height)
@@ -666,12 +637,7 @@ class FontDecoder:
         cmap_has_explicit_mapping = bool(
             self.cmap and (self.cmap.cid_mappings or self.cmap.cid_ranges)
         )
-        if (
-            glyphs is None
-            and self.is_cid_font
-            and n % 2 == 0
-            and not cmap_has_explicit_mapping
-        ):
+        if glyphs is None and self.is_cid_font and n % 2 == 0 and not cmap_has_explicit_mapping:
             fwc = self.fast_widths_cid
             if fwc is None:
                 fwc = self.get_fast_widths_cid()

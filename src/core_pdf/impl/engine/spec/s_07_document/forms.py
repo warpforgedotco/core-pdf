@@ -3,16 +3,14 @@ from __future__ import annotations
 
 from typing import Literal, TypeAlias, cast
 
-from core_pdf.impl.models import FieldRecord
 from core_pdf.impl.engine.spec.s_07_document.protocols import FormsDocumentProtocol
-from core_pdf.impl.engine.spec.s_09_fonts.encoding import decode_pdf_text_string
-from core_pdf.impl.objects import PdfName, PdfReference, PdfString
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_09_fonts.encoding import decode_pdf_text_string
+from core_pdf.impl.models import FieldRecord
+from core_pdf.impl.objects import PdfName, PdfReference, PdfString
 from core_pdf.impl.types import PdfDict, PdfObject
 
-FieldTraversalNode: TypeAlias = tuple[
-    Literal["node"], object, str, str, object, int
-]
+FieldTraversalNode: TypeAlias = tuple[Literal["node"], object, str, str, object, int]
 FieldTraversalRecord: TypeAlias = tuple[Literal["record"], FieldRecord]
 FieldTraversalEntry: TypeAlias = FieldTraversalNode | FieldTraversalRecord
 
@@ -31,9 +29,7 @@ def field_value_text(document: FormsDocumentProtocol, value: object) -> str:
     while stack:
         current = stack.pop()
         current = (
-            document.resolver.resolve(current)
-            if isinstance(current, PdfReference)
-            else current
+            document.resolver.resolve(current) if isinstance(current, PdfReference) else current
         )
         if current is None:
             continue
@@ -64,9 +60,7 @@ class FormsMixin:
     @property
     def acroform(self: FormsDocumentProtocol) -> PdfDict | None:
         if self.acroform_cache is None:
-            acroform_val = self.resolver.resolve(
-                lookup_dict_key(self.catalog(), "AcroForm")
-            )
+            acroform_val = self.resolver.resolve(lookup_dict_key(self.catalog(), "AcroForm"))
             recover = self.xref_was_recovered or self.page_tree_was_recovered
             if acroform_val is None:
                 self.acroform_cache = None
@@ -127,9 +121,7 @@ class FormsMixin:
 
             title = self.resolver.resolve_str(lookup_dict_key(current_node, "T"))
             current_name = (
-                f"{parent_name}.{title}"
-                if parent_name and title
-                else title or parent_name
+                f"{parent_name}.{title}" if parent_name and title else title or parent_name
             )
 
             type_value = lookup_dict_key(current_node, "FT")
@@ -165,9 +157,7 @@ class FormsMixin:
                     field_type,
                     cast(PdfObject, value),
                     value_text,
-                    field_widget_rect(
-                        self, current_node if subtype == "Widget" else None
-                    ),
+                    field_widget_rect(self, current_node if subtype == "Widget" else None),
                     current_node,
                     kids=kids,
                     widget=current_node if subtype == "Widget" else None,
@@ -242,9 +232,7 @@ class FormsMixin:
     def discover_widget_field_records(
         self: FormsDocumentProtocol, existing: list[FieldRecord]
     ) -> list[FieldRecord]:
-        seen_widgets = {
-            id(record.widget) for record in existing if isinstance(record.widget, dict)
-        }
+        seen_widgets = {id(record.widget) for record in existing if isinstance(record.widget, dict)}
         records: list[FieldRecord] = []
         for page_dict in self.iter_page_dicts():
             raw_annots = self.resolver.resolve(lookup_dict_key(page_dict, "Annots"))

@@ -5,7 +5,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from core_pdf.impl.engine.extraction.ocr.types import OcrImage, OcrRow, OcrTextResult
+from core_pdf.impl.engine.extraction.ocr.types import OcrImage, OcrTextResult
 
 
 @dataclass(frozen=True)

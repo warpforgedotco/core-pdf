@@ -5,8 +5,8 @@ from __future__ import annotations
 
 from core_pdf.impl.engine.rendering.models import (
     DisplayList,
-    RenderOptions,
     RenderedPage,
+    RenderOptions,
 )
 from core_pdf.impl.engine.rendering.page import compose_page
 

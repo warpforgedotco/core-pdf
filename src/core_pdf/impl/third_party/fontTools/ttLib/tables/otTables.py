@@ -7,41 +7,49 @@ converter objects from otConverters.py.
 """
 
 import copy
-from enum import IntEnum
-from functools import reduce
-from math import radians
-import itertools
-from collections import defaultdict, namedtuple
-from core_pdf.impl.third_party.fontTools.ttLib import OPTIMIZE_FONT_SPEED
-from core_pdf.impl.third_party.fontTools.ttLib.tables.TupleVariation import TupleVariation
-from core_pdf.impl.third_party.fontTools.ttLib.tables.otTraverse import dfs_base_table
-from core_pdf.impl.third_party.fontTools.misc.arrayTools import quantizeRect
-from core_pdf.impl.third_party.fontTools.misc.roundTools import otRound
-from core_pdf.impl.third_party.fontTools.misc.transform import Transform, Identity, DecomposedTransform
-from core_pdf.impl.third_party.fontTools.misc.textTools import bytesjoin, pad, safeEval
-from core_pdf.impl.third_party.fontTools.misc.vector import Vector
-from core_pdf.impl.third_party.fontTools.pens.boundsPen import ControlBoundsPen
-from core_pdf.impl.third_party.fontTools.pens.transformPen import TransformPen
-from .otBase import (
-    BaseTable,
-    FormatSwitchingBaseTable,
-    ValueRecord,
-    CountReference,
-    getFormatSwitchingBaseTableClass,
-)
-from core_pdf.impl.third_party.fontTools.misc.fixedTools import (
-    fixedToFloat as fi2fl,
-    floatToFixed as fl2fi,
-    floatToFixedToStr as fl2str,
-    strToFixedToFloat as str2fl,
-)
-from core_pdf.impl.third_party.fontTools.feaLib.lookupDebugInfo import LookupDebugInfo, LOOKUP_DEBUG_INFO_KEY
 import logging
 import struct
-import array
-import sys
-from enum import IntFlag
-from typing import TYPE_CHECKING, Iterator, List, Optional, Set
+from collections import defaultdict, namedtuple
+from enum import IntEnum, IntFlag
+from functools import reduce
+from math import radians
+from typing import TYPE_CHECKING, Iterator, List, Optional
+
+from core_pdf.impl.third_party.fontTools.feaLib.lookupDebugInfo import (
+    LOOKUP_DEBUG_INFO_KEY,
+    LookupDebugInfo,
+)
+from core_pdf.impl.third_party.fontTools.misc.arrayTools import quantizeRect
+from core_pdf.impl.third_party.fontTools.misc.fixedTools import (
+    fixedToFloat as fi2fl,
+)
+from core_pdf.impl.third_party.fontTools.misc.fixedTools import (
+    floatToFixed as fl2fi,
+)
+from core_pdf.impl.third_party.fontTools.misc.fixedTools import (
+    floatToFixedToStr as fl2str,
+)
+from core_pdf.impl.third_party.fontTools.misc.fixedTools import (
+    strToFixedToFloat as str2fl,
+)
+from core_pdf.impl.third_party.fontTools.misc.textTools import bytesjoin, pad, safeEval
+from core_pdf.impl.third_party.fontTools.misc.transform import (
+    DecomposedTransform,
+    Identity,
+    Transform,
+)
+from core_pdf.impl.third_party.fontTools.pens.boundsPen import ControlBoundsPen
+from core_pdf.impl.third_party.fontTools.pens.transformPen import TransformPen
+from core_pdf.impl.third_party.fontTools.ttLib import OPTIMIZE_FONT_SPEED
+from core_pdf.impl.third_party.fontTools.ttLib.tables.otTraverse import dfs_base_table
+from core_pdf.impl.third_party.fontTools.ttLib.tables.TupleVariation import TupleVariation
+
+from .otBase import (
+    BaseTable,
+    CountReference,
+    FormatSwitchingBaseTable,
+    getFormatSwitchingBaseTableClass,
+)
 
 if TYPE_CHECKING:
     from core_pdf.impl.third_party.fontTools.ttLib.ttGlyphSet import _TTGlyphSet
@@ -83,12 +91,8 @@ VarTransformMappingValues = namedtuple(
 )
 
 VAR_TRANSFORM_MAPPING = {
-    "translateX": VarTransformMappingValues(
-        VarComponentFlags.HAVE_TRANSLATE_X, 0, 1, 0
-    ),
-    "translateY": VarTransformMappingValues(
-        VarComponentFlags.HAVE_TRANSLATE_Y, 0, 1, 0
-    ),
+    "translateX": VarTransformMappingValues(VarComponentFlags.HAVE_TRANSLATE_X, 0, 1, 0),
+    "translateY": VarTransformMappingValues(VarComponentFlags.HAVE_TRANSLATE_Y, 0, 1, 0),
     "rotation": VarTransformMappingValues(VarComponentFlags.HAVE_ROTATION, 12, 180, 0),
     "scaleX": VarTransformMappingValues(VarComponentFlags.HAVE_SCALE_X, 10, 1, 1),
     "scaleY": VarTransformMappingValues(VarComponentFlags.HAVE_SCALE_Y, 10, 1, 1),
@@ -127,13 +131,11 @@ def _read_uint32var(data, i):
     elif b0 < 0xE0:
         return (b0 - 0xC0) << 16 | data[i + 1] << 8 | data[i + 2], i + 3
     elif b0 < 0xF0:
-        return (b0 - 0xE0) << 24 | data[i + 1] << 16 | data[i + 2] << 8 | data[
-            i + 3
-        ], i + 4
+        return (b0 - 0xE0) << 24 | data[i + 1] << 16 | data[i + 2] << 8 | data[i + 3], i + 4
     else:
-        return (b0 - 0xF0) << 32 | data[i + 1] << 24 | data[i + 2] << 16 | data[
-            i + 3
-        ] << 8 | data[i + 4], i + 5
+        return (b0 - 0xF0) << 32 | data[i + 1] << 24 | data[i + 2] << 16 | data[i + 3] << 8 | data[
+            i + 4
+        ], i + 5
 
 
 def _write_uint32var(v):
@@ -213,9 +215,7 @@ class VarComponent:
             nonlocal i
             if flags & values.flag:
                 v = (
-                    fi2fl(
-                        struct.unpack(">h", data[i : i + 2])[0], values.fractionalBits
-                    )
+                    fi2fl(struct.unpack(">h", data[i : i + 2])[0], values.fractionalBits)
                     * values.scale
                 )
                 i += 2
@@ -283,9 +283,7 @@ class VarComponent:
 
         def write_transform_component(value, values):
             if flags & values.flag:
-                return struct.pack(
-                    ">h", fl2fi(value / values.scale, values.fractionalBits)
-                )
+                return struct.pack(">h", fl2fi(value / values.scale, values.fractionalBits))
             else:
                 return b""
 
@@ -383,9 +381,7 @@ class VarComponent:
 
         for attr_name, mapping_values in VAR_TRANSFORM_MAPPING.items():
             value = read_transform_component_delta(mapping_values)
-            setattr(
-                self.transform, attr_name, getattr(self.transform, attr_name) + value
-            )
+            setattr(self.transform, attr_name, getattr(self.transform, attr_name) + value)
 
         if not (self.flags & VarComponentFlags.HAVE_SCALE_Y):
             self.transform.scaleY = self.transform.scaleX
@@ -912,11 +908,12 @@ class InsertionMorphAction(AATAction):
 
 class FeatureParams(BaseTable):
     def compile(self, writer, font):
-        assert (
-            featureParamTypes.get(writer["FeatureTag"]) == self.__class__
-        ), "Wrong FeatureParams type for feature '%s': %s" % (
-            writer["FeatureTag"],
-            self.__class__.__name__,
+        assert featureParamTypes.get(writer["FeatureTag"]) == self.__class__, (
+            "Wrong FeatureParams type for feature '%s': %s"
+            % (
+                writer["FeatureTag"],
+                self.__class__.__name__,
+            )
         )
         BaseTable.compile(self, writer, font)
 
@@ -1194,9 +1191,7 @@ class SingleSubst(FormatSwitchingBaseTable):
             for inp, out in zip(input, outNames):
                 mapping[inp] = out
         elif self.Format == 2:
-            assert (
-                len(input) == rawTable["GlyphCount"]
-            ), "invalid SingleSubstFormat2 table"
+            assert len(input) == rawTable["GlyphCount"], "invalid SingleSubstFormat2 table"
             subst = rawTable["Substitute"]
             for inp, sub in zip(input, subst):
                 mapping[inp] = sub
@@ -1667,9 +1662,7 @@ class COLR(BaseTable):
             except Exception as e:
                 from core_pdf.impl.third_party.fontTools.ttLib import TTLibError
 
-                raise TTLibError(
-                    f"Failed to compute COLR ClipBox for {rec.BaseGlyph!r}"
-                ) from e
+                raise TTLibError(f"Failed to compute COLR ClipBox for {rec.BaseGlyph!r}") from e
 
             if clipBox is not None:
                 clips[rec.BaseGlyph] = clipBox
@@ -1697,11 +1690,7 @@ class LookupList(BaseTable):
         raise ValueError
 
     def toXML2(self, xmlWriter, font):
-        if (
-            not font
-            or "Debg" not in font
-            or LOOKUP_DEBUG_INFO_KEY not in font["Debg"].data
-        ):
+        if not font or "Debg" not in font or LOOKUP_DEBUG_INFO_KEY not in font["Debg"].data:
             return super().toXML2(xmlWriter, font)
         debugData = font["Debg"].data[LOOKUP_DEBUG_INFO_KEY][self.table]
         for conv in self.getConverters():
@@ -1719,9 +1708,7 @@ class LookupList(BaseTable):
                         xmlWriter.comment(tag)
                         xmlWriter.newline()
 
-                    conv.xmlWrite(
-                        xmlWriter, font, item, conv.name, [("index", lookupIndex)]
-                    )
+                    conv.xmlWrite(xmlWriter, font, item, conv.name, [("index", lookupIndex)])
             else:
                 if conv.aux and not eval(conv.aux, None, vars(self)):
                     continue
@@ -1779,8 +1766,7 @@ class ClipList(getFormatSwitchingBaseTableClass("uint8")):
         for i, rec in enumerate(rawTable["ClipRecord"]):
             if rec.StartGlyphID > rec.EndGlyphID:
                 log.debug(
-                    "invalid ClipRecord[%i].StartGlyphID (%i) > "
-                    "EndGlyphID (%i); skipped",
+                    "invalid ClipRecord[%i].StartGlyphID (%i) > EndGlyphID (%i); skipped",
                     i,
                     rec.StartGlyphID,
                     rec.EndGlyphID,
@@ -1809,7 +1795,7 @@ class ClipList(getFormatSwitchingBaseTableClass("uint8")):
                 )
             if missingGlyphs:
                 log.debug(
-                    "ClipRecord[%i] range references missing " "glyph IDs: [%i-%i]",
+                    "ClipRecord[%i] range references missing glyph IDs: [%i-%i]",
                     i,
                     min(missingGlyphs),
                     max(missingGlyphs),
@@ -1824,9 +1810,7 @@ class ClipList(getFormatSwitchingBaseTableClass("uint8")):
             glyphsByClip[key].append(glyphName)
             if key not in uniqueClips:
                 uniqueClips[key] = clipBox
-        return {
-            frozenset(glyphs): uniqueClips[key] for key, glyphs in glyphsByClip.items()
-        }
+        return {frozenset(glyphs): uniqueClips[key] for key, glyphs in glyphsByClip.items()}
 
     def preWrite(self, font):
         if not hasattr(self, "clips"):
@@ -1834,9 +1818,7 @@ class ClipList(getFormatSwitchingBaseTableClass("uint8")):
         clipBoxRanges = {}
         glyphMap = font.getReverseGlyphMap()
         for glyphs, clipBox in self.groups().items():
-            glyphIDs = sorted(
-                glyphMap[glyphName] for glyphName in glyphs if glyphName in glyphMap
-            )
+            glyphIDs = sorted(glyphMap[glyphName] for glyphName in glyphs if glyphName in glyphMap)
             if not glyphIDs:
                 continue
             last = glyphIDs[0]
@@ -1873,9 +1855,7 @@ class ClipList(getFormatSwitchingBaseTableClass("uint8")):
         xmlWriter.begintag(tableName, attrs)
         xmlWriter.newline()
         # sort clips alphabetically to ensure deterministic XML dump
-        for glyphs, clipBox in sorted(
-            self.groups().items(), key=lambda item: min(item[0])
-        ):
+        for glyphs, clipBox in sorted(self.groups().items(), key=lambda item: min(item[0])):
             xmlWriter.begintag("Clip")
             xmlWriter.newline()
             for glyphName in sorted(glyphs):
@@ -2420,9 +2400,7 @@ def splitPairPos(oldSubTable, newSubTable, overflowRecord):
         newGlyphs = set(k for k, v in classDefs.items() if v >= oldCount)
 
         oldSubTable.Coverage.glyphs = [g for g in coverage if g not in newGlyphs]
-        oldSubTable.ClassDef1.classDefs = {
-            k: v for k, v in classDefs.items() if v < oldCount
-        }
+        oldSubTable.ClassDef1.classDefs = {k: v for k, v in classDefs.items() if v < oldCount}
         oldSubTable.Class1Record = records[:oldCount]
 
         newSubTable.Coverage.glyphs = [g for g in coverage if g in newGlyphs]
@@ -2613,6 +2591,7 @@ class EntryIdStringData(BaseTable):
 
 def _buildClasses():
     import re
+
     from .otData import otData
 
     formatPat = re.compile(r"([A-Za-z0-9]+)Format(\d+)$")

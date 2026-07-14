@@ -1,6 +1,14 @@
 import collections.abc
 import re
+import warnings
+from base64 import b64decode, b64encode
+from datetime import datetime
+from functools import singledispatch
+from io import BytesIO
+from numbers import Integral
+from types import SimpleNamespace
 from typing import (
+    IO,
     Any,
     Callable,
     Dict,
@@ -11,20 +19,10 @@ from typing import (
     Sequence,
     Type,
     Union,
-    IO,
 )
-import warnings
-from io import BytesIO
-from datetime import datetime
-from base64 import b64encode, b64decode
-from numbers import Integral
-from types import SimpleNamespace
-from functools import singledispatch
 
 from core_pdf.impl.third_party.fontTools.misc import etree
-
 from core_pdf.impl.third_party.fontTools.misc.textTools import tostr
-
 
 # By default, we
 #  - deserialize <data> elements as bytes and
@@ -109,9 +107,7 @@ class Data:
         return cls(b64decode(data))
 
     def asBase64(self, maxlinelength: int = 76, indent_level: int = 1) -> bytes:
-        return _encode_base64(
-            self.data, maxlinelength=maxlinelength, indent_level=indent_level
-        )
+        return _encode_base64(self.data, maxlinelength=maxlinelength, indent_level=indent_level)
 
     def __eq__(self, other: Any) -> bool:
         if isinstance(other, self.__class__):
@@ -125,9 +121,7 @@ class Data:
         return "%s(%s)" % (self.__class__.__name__, repr(self.data))
 
 
-def _encode_base64(
-    data: bytes, maxlinelength: Optional[int] = 76, indent_level: int = 1
-) -> bytes:
+def _encode_base64(data: bytes, maxlinelength: Optional[int] = 76, indent_level: int = 1) -> bytes:
     data = b64encode(data)
     if data and maxlinelength:
         # split into multiple lines right-justified to 'maxlinelength' chars
@@ -193,8 +187,7 @@ class PlistTarget:
         else:
             if use_builtin_types is False:
                 warnings.warn(
-                    "Setting use_builtin_types to False is deprecated and will be "
-                    "removed soon.",
+                    "Setting use_builtin_types to False is deprecated and will be removed soon.",
                     DeprecationWarning,
                 )
             self._use_builtin_types = use_builtin_types
@@ -353,9 +346,7 @@ def _real_element(value: float, ctx: SimpleNamespace) -> etree.Element:
     return el
 
 
-def _dict_element(
-    d: Mapping[str, PlistEncodable], ctx: SimpleNamespace
-) -> etree.Element:
+def _dict_element(d: Mapping[str, PlistEncodable], ctx: SimpleNamespace) -> etree.Element:
     el = etree.Element("dict")
     items = d.items()
     if ctx.sort_keys:
@@ -373,9 +364,7 @@ def _dict_element(
     return el
 
 
-def _array_element(
-    array: Sequence[PlistEncodable], ctx: SimpleNamespace
-) -> etree.Element:
+def _array_element(array: Sequence[PlistEncodable], ctx: SimpleNamespace) -> etree.Element:
     el = etree.Element("array")
     if len(array) == 0:
         return el
@@ -410,9 +399,7 @@ def _string_or_data_element(raw_bytes: bytes, ctx: SimpleNamespace) -> etree.Ele
         try:
             string = raw_bytes.decode(encoding="ascii", errors="strict")
         except UnicodeDecodeError:
-            raise ValueError(
-                "invalid non-ASCII bytes; use unicode string instead: %r" % raw_bytes
-            )
+            raise ValueError("invalid non-ASCII bytes; use unicode string instead: %r" % raw_bytes)
         return _string_element(string, ctx)
 
 

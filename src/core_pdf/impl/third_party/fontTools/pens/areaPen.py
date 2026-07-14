@@ -2,7 +2,6 @@
 
 from core_pdf.impl.third_party.fontTools.pens.basePen import BasePen
 
-
 __all__ = ["AreaPen"]
 
 

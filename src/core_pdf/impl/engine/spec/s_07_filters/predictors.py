@@ -1,12 +1,14 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
-from core_pdf.impl.exceptions import PdfParseError, PdfUnsupportedError
 from core_pdf.impl.engine.spec.s_07_filters.decode_spec import FilterParams
-from core_pdf.impl.third_party.filters.predictors import PredictorError
-from core_pdf.impl.third_party.filters.predictors import UnsupportedPngFilterError
-from core_pdf.impl.third_party.filters.predictors import png_predict
-from core_pdf.impl.third_party.filters.predictors import tiff_predict
+from core_pdf.impl.exceptions import PdfParseError, PdfUnsupportedError
+from core_pdf.impl.third_party.filters.predictors import (
+    PredictorError,
+    UnsupportedPngFilterError,
+    png_predict,
+    tiff_predict,
+)
 
 
 def apply_tiff_predictor(data: bytes | memoryview, params: FilterParams) -> bytes:

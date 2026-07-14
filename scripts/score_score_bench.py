@@ -11,16 +11,16 @@ from pathlib import Path
 from time import perf_counter
 from typing import Any, Callable
 
-from core_pdf import PdfDocument, PdfParseError
+from rich import box
 from rich.console import Console
 from rich.layout import Layout
 from rich.live import Live
-from rich import box
 from rich.panel import Panel
 from rich.progress import BarColumn, Progress, TaskID, TextColumn, TimeElapsedColumn
 from rich.table import Table
 from rich.text import Text
 
+from core_pdf import PdfDocument, PdfParseError
 
 ROOT = Path(__file__).resolve().parents[1]
 SCORE_BENCH_ROOT = ROOT / "tests" / "fixtures" / "SCORE-Bench"
@@ -274,9 +274,7 @@ class ScoreBenchUI:
             TimeElapsedColumn(),
             console=CONSOLE,
         )
-        self.progress_task_id: TaskID = self.progress.add_task(
-            "score-bench", total=total_cases
-        )
+        self.progress_task_id: TaskID = self.progress.add_task("score-bench", total=total_cases)
 
     def set_case_queue(self, cases: list[ScoreBenchCase]) -> None:
         self.queued_cases = deque(
@@ -289,9 +287,7 @@ class ScoreBenchUI:
         if queued_case is not None and queued_case[0] == case_number:
             self.queued_cases.popleft()
         else:
-            self.queued_cases = deque(
-                item for item in self.queued_cases if item[0] != case_number
-            )
+            self.queued_cases = deque(item for item in self.queued_cases if item[0] != case_number)
         self.running_cases[case_number] = ActiveCase(
             case_number=case_number,
             stem=case.stem,
@@ -380,9 +376,7 @@ class ScoreBenchUI:
 
     def render_error_panel(self) -> Panel | None:
         error_results = [
-            result
-            for result in self.completed_results
-            if result.score.error is not None
+            result for result in self.completed_results if result.score.error is not None
         ]
         if not error_results:
             return None
@@ -614,9 +608,7 @@ class ScoreBenchUI:
         table.add_column("Tokens", justify="right", no_wrap=True)
         table.add_column("Stem", overflow="ellipsis")
         if not self.recent_results:
-            table.add_row(
-                "-", "-", "-", "-", "-", "-", "-", "Waiting for first completed case..."
-            )
+            table.add_row("-", "-", "-", "-", "-", "-", "-", "Waiting for first completed case...")
             return table
         visible_results = list(self.recent_results)[: self._recent_results_visible_limit()]
         for result in visible_results:
@@ -872,22 +864,10 @@ def score_tokens(
     gt_count = len(gt_tokens)
     predicted_count = len(predicted_tokens)
     return (
-        (
-            2 * matched / (gt_count + predicted_count)
-            if gt_count + predicted_count
-            else 1.0
-        ),
+        (2 * matched / (gt_count + predicted_count) if gt_count + predicted_count else 1.0),
         matched / gt_count if gt_count else 1.0,
-        (
-            max(predicted_count - matched, 0) / predicted_count
-            if predicted_count
-            else 0.0
-        ),
-        (
-            matched / predicted_count
-            if predicted_count
-            else (1.0 if gt_count == 0 else 0.0)
-        ),
+        (max(predicted_count - matched, 0) / predicted_count if predicted_count else 0.0),
+        (matched / predicted_count if predicted_count else (1.0 if gt_count == 0 else 0.0)),
         gt_count,
         predicted_count,
         matched,
@@ -957,9 +937,7 @@ def main() -> int:
     cases = iter_score_bench_cases(args.root)
     if args.case:
         filters = [case_filter.casefold() for case_filter in args.case]
-        cases = [
-            case for case in cases if any(f in case.stem.casefold() for f in filters)
-        ]
+        cases = [case for case in cases if any(f in case.stem.casefold() for f in filters)]
     else:
         filters = []
     if args.limit is not None:
@@ -1037,8 +1015,7 @@ def main() -> int:
     if args.json_output is not None:
         args.json_output.parent.mkdir(parents=True, exist_ok=True)
         args.json_output.write_text(
-            json.dumps([asdict(result.score) for result in ranked_scores], indent=2)
-            + "\n",
+            json.dumps([asdict(result.score) for result in ranked_scores], indent=2) + "\n",
             encoding="utf-8",
         )
     if args.live:

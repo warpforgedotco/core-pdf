@@ -4,30 +4,27 @@
 
 __all__ = ["FreeTypePen"]
 
-import os
-import ctypes
-import platform
-import subprocess
 import collections
+import ctypes
 import math
 
 import freetype
-from freetype.raw import FT_Outline_Get_Bitmap, FT_Outline_Get_BBox, FT_Outline_Get_CBox
-from freetype.ft_types import FT_Pos
-from freetype.ft_structs import FT_Vector, FT_BBox, FT_Bitmap, FT_Outline
 from freetype.ft_enums import (
-    FT_OUTLINE_NONE,
-    FT_OUTLINE_EVEN_ODD_FILL,
-    FT_PIXEL_MODE_GRAY,
-    FT_CURVE_TAG_ON,
     FT_CURVE_TAG_CONIC,
     FT_CURVE_TAG_CUBIC,
+    FT_CURVE_TAG_ON,
+    FT_OUTLINE_EVEN_ODD_FILL,
+    FT_OUTLINE_NONE,
+    FT_PIXEL_MODE_GRAY,
 )
 from freetype.ft_errors import FT_Exception
+from freetype.ft_structs import FT_BBox, FT_Bitmap, FT_Outline, FT_Vector
+from freetype.ft_types import FT_Pos
+from freetype.raw import FT_Outline_Get_BBox, FT_Outline_Get_Bitmap, FT_Outline_Get_CBox
 
-from core_pdf.impl.third_party.fontTools.pens.basePen import BasePen, PenError
 from core_pdf.impl.third_party.fontTools.misc.roundTools import otRound
 from core_pdf.impl.third_party.fontTools.misc.transform import Transform
+from core_pdf.impl.third_party.fontTools.pens.basePen import BasePen, PenError
 
 Contour = collections.namedtuple("Contour", ("points", "tags"))
 
@@ -126,15 +123,13 @@ class FreeTypePen(BasePen):
         if not hasattr(transform, "transformPoint"):
             transform = Transform(*transform)
         n_contours = len(self.contours)
-        n_points = sum((len(contour.points) for contour in self.contours))
+        n_points = sum(len(contour.points) for contour in self.contours)
         points = []
         for contour in self.contours:
             for point in contour.points:
                 point = transform.transformPoint(point)
                 points.append(
-                    FT_Vector(
-                        FT_Pos(otRound(point[0] * 64)), FT_Pos(otRound(point[1] * 64))
-                    )
+                    FT_Vector(FT_Pos(otRound(point[0] * 64)), FT_Pos(otRound(point[1] * 64)))
                 )
         tags = []
         for contour in self.contours:
@@ -155,9 +150,7 @@ class FreeTypePen(BasePen):
             (ctypes.c_int)(flags),
         )
 
-    def buffer(
-        self, width=None, height=None, transform=None, contain=False, evenOdd=False
-    ):
+    def buffer(self, width=None, height=None, transform=None, contain=False, evenOdd=False):
         """Renders the current contours within a bitmap buffer.
 
         Args:
@@ -247,9 +240,7 @@ class FreeTypePen(BasePen):
             raise FT_Exception(err)
         return buf.raw, (width, height)
 
-    def array(
-        self, width=None, height=None, transform=None, contain=False, evenOdd=False
-    ):
+    def array(self, width=None, height=None, transform=None, contain=False, evenOdd=False):
         """Returns the rendered contours as a numpy array. Requires `numpy`.
 
         Args:
@@ -301,9 +292,7 @@ class FreeTypePen(BasePen):
         )
         return np.frombuffer(buf, "B").reshape((size[1], size[0])) / 255.0
 
-    def show(
-        self, width=None, height=None, transform=None, contain=False, evenOdd=False
-    ):
+    def show(self, width=None, height=None, transform=None, contain=False, evenOdd=False):
         """Plots the rendered contours with `pyplot`. Requires `numpy` and
         `matplotlib`.
 
@@ -350,9 +339,7 @@ class FreeTypePen(BasePen):
         plt.imshow(a, cmap="gray_r", vmin=0, vmax=1)
         plt.show()
 
-    def image(
-        self, width=None, height=None, transform=None, contain=False, evenOdd=False
-    ):
+    def image(self, width=None, height=None, transform=None, contain=False, evenOdd=False):
         """Returns the rendered contours as a PIL image. Requires `Pillow`.
         Can be used to display a glyph image in Jupyter Notebook.
 

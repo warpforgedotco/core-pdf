@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import typing
 from bisect import bisect_left
 from collections.abc import Mapping
-import typing
 
 if typing.TYPE_CHECKING:
     pass
@@ -334,9 +334,7 @@ class BitReader:
         elif needed == 2:
             word = (data[byte_pos] << 8) | data[byte_pos + 1]
         elif needed == 3:
-            word = (
-                (data[byte_pos] << 16) | (data[byte_pos + 1] << 8) | data[byte_pos + 2]
-            )
+            word = (data[byte_pos] << 16) | (data[byte_pos + 1] << 8) | data[byte_pos + 2]
         else:
             word = 0
             for i in range(needed):
@@ -487,9 +485,7 @@ def find_run_length(reader: BitReader, is_white: bool) -> int | None:
     return None
 
 
-def decode_1d_row(
-    reader: BitReader, writer: BitWriter, columns: int, byte_align: bool
-) -> bool:
+def decode_1d_row(reader: BitReader, writer: BitWriter, columns: int, byte_align: bool) -> bool:
     bits_written = 0
     is_white = True
 
@@ -629,9 +625,7 @@ def decode_2d_row(
     color = 1
     has_black = False
     transition_maps = (
-        reference_transition_maps(ref_line)
-        if ref_transition_maps is None
-        else ref_transition_maps
+        reference_transition_maps(ref_line) if ref_transition_maps is None else ref_transition_maps
     )
 
     while cur_pos < columns - 1:
@@ -641,9 +635,7 @@ def decode_2d_row(
         mode = find_2d_mode(reader)
 
         if mode == "P":
-            x1 = find_reference_pixel(
-                ref_line, cur_pos, color, transition_maps=transition_maps
-            )
+            x1 = find_reference_pixel(ref_line, cur_pos, color, transition_maps=transition_maps)
             x2 = find_reference_pixel(
                 ref_line,
                 x1,
@@ -652,8 +644,7 @@ def decode_2d_row(
                 transition_maps=transition_maps,
             )
             has_black = (
-                set_line_run(cur_line, max(0, cur_pos), min(columns, x2), color)
-                or has_black
+                set_line_run(cur_line, max(0, cur_pos), min(columns, x2), color) or has_black
             )
             cur_pos = x2
         elif mode == "H":
@@ -686,9 +677,7 @@ def decode_2d_row(
             cur_pos = end
             color = 1 - color
         elif type(mode) is int:
-            x1 = find_reference_pixel(
-                ref_line, cur_pos, color, transition_maps=transition_maps
-            )
+            x1 = find_reference_pixel(ref_line, cur_pos, color, transition_maps=transition_maps)
             x1 += mode
             x1 = max(0, min(columns, x1))
             has_black = set_line_run(cur_line, max(0, cur_pos), x1, color) or has_black
@@ -765,9 +754,7 @@ def decode_ccitt_fax(
                     writer.write_repeated(1, columns)
                     writer.flush_byte()
                 ref_line = cur_line
-                ref_transition_maps = (
-                    reference_transition_maps(ref_line) if has_black else ([], [])
-                )
+                ref_transition_maps = reference_transition_maps(ref_line) if has_black else ([], [])
         else:
             cur_line = [1] * columns
             row_ok, has_black = decode_2d_row(
@@ -787,9 +774,7 @@ def decode_ccitt_fax(
                 writer.write_repeated(1, columns)
                 writer.flush_byte()
             ref_line = cur_line
-            ref_transition_maps = (
-                reference_transition_maps(ref_line) if has_black else ([], [])
-            )
+            ref_transition_maps = reference_transition_maps(ref_line) if has_black else ([], [])
 
     return writer.finish()
 

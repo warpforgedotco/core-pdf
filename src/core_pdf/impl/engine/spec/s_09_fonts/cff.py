@@ -7,10 +7,12 @@ from core_pdf.impl.engine.spec.s_07_objects.coercion import normalize_pdf_name
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_09_fonts.widths import get_descendant
 from core_pdf.impl.objects import PdfStream
-from core_pdf.impl.third_party.cff import CFFFont
-from core_pdf.impl.third_party.cff import REPAIRABLE_TO_UNICODE
-from core_pdf.impl.third_party.cff import cff_font_for_data
-from core_pdf.impl.third_party.cff import cff_unicode_repairs_for_data
+from core_pdf.impl.third_party.cff import (
+    REPAIRABLE_TO_UNICODE,
+    CFFFont,
+    cff_font_for_data,
+    cff_unicode_repairs_for_data,
+)
 from core_pdf.impl.third_party.cid.cmap import CMapDecoder, ToUnicodeCMap
 
 
@@ -69,19 +71,12 @@ def build_cff_unicode_repairs(
     if len(font_file.data) > 750_000:
         return {}
     mapping = single_code_mapping(to_unicode, cmap)
-    if not any(
-        value in REPAIRABLE_TO_UNICODE for ignored_cid, value in mapping.values()
-    ):
+    if not any(value in REPAIRABLE_TO_UNICODE for ignored_cid, value in mapping.values()):
         return {}
     try:
         repair_items = cff_unicode_repairs_for_data(
             font_file.data,
-            tuple(
-                sorted(
-                    (code_bytes, cid, value)
-                    for code_bytes, (cid, value) in mapping.items()
-                )
-            ),
+            tuple(sorted((code_bytes, cid, value) for code_bytes, (cid, value) in mapping.items())),
         )
     except ValueError:
         return {}

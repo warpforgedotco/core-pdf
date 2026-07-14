@@ -1,12 +1,15 @@
-from core_pdf.impl.third_party.fontTools.misc import sstruct
-from core_pdf.impl.third_party.fontTools.misc.textTools import safeEval
-from core_pdf.impl.third_party.fontTools.misc.fixedTools import (
-    ensureVersionIsLong as fi2ve,
-    versionToFixed as ve2fi,
-)
-from . import DefaultTable
 import math
 
+from core_pdf.impl.third_party.fontTools.misc import sstruct
+from core_pdf.impl.third_party.fontTools.misc.fixedTools import (
+    ensureVersionIsLong as fi2ve,
+)
+from core_pdf.impl.third_party.fontTools.misc.fixedTools import (
+    versionToFixed as ve2fi,
+)
+from core_pdf.impl.third_party.fontTools.misc.textTools import safeEval
+
+from . import DefaultTable
 
 vheaFormat = """
 		>	# big endian
@@ -52,9 +55,7 @@ class table__v_h_e_a(DefaultTable.DefaultTable):
 
     def compile(self, ttFont):
         if ttFont.recalcBBoxes and (
-            ttFont.isLoaded("glyf")
-            or ttFont.isLoaded("CFF ")
-            or ttFont.isLoaded("CFF2")
+            ttFont.isLoaded("glyf") or ttFont.isLoaded("CFF ") or ttFont.isLoaded("CFF2")
         ):
             self.recalc(ttFont)
         self.tableVersion = fi2ve(self.tableVersion)
@@ -89,9 +90,7 @@ class table__v_h_e_a(DefaultTable.DefaultTable):
                 cs = charStrings[name]
                 bounds = cs.calcBounds(charStrings)
                 if bounds is not None:
-                    boundsHeightDict[name] = int(
-                        math.ceil(bounds[3]) - math.floor(bounds[1])
-                    )
+                    boundsHeightDict[name] = int(math.ceil(bounds[3]) - math.floor(bounds[1]))
 
         if boundsHeightDict:
             minTopSideBearing = float("inf")

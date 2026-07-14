@@ -24,9 +24,7 @@ class MarkedTextLine(Protocol):
     def text(self) -> str: ...
 
 
-FloatCoord: TypeAlias = (
-    str | bytes | bytearray | memoryview | SupportsFloat | SupportsIndex
-)
+FloatCoord: TypeAlias = str | bytes | bytearray | memoryview | SupportsFloat | SupportsIndex
 
 
 def parse_float_coord(value: FloatCoord, *, name: str) -> float:
@@ -214,13 +212,9 @@ def derive_table_areas_from_regions(
     derived: list[tuple[float, float, float, float]] = []
     for region in regions:
         x0, y0, x1, y1 = region
-        candidate_lines = [
-            line for line in ordered_lines if line.x1 > x0 and line.x0 < x1
-        ]
+        candidate_lines = [line for line in ordered_lines if line.x1 > x0 and line.x0 < x1]
         seed_indices = [
-            index
-            for index, line in enumerate(candidate_lines)
-            if line.y1 >= y0 and line.y0 <= y1
+            index for index, line in enumerate(candidate_lines) if line.y1 >= y0 and line.y0 <= y1
         ]
         if not seed_indices:
             derived.append(region)

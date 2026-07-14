@@ -4,7 +4,13 @@ import base64
 from typing import TYPE_CHECKING
 
 from core_pdf.impl.third_party.fontTools.misc import sstruct
-from core_pdf.impl.third_party.fontTools.misc.textTools import bytesjoin, safeEval, strjoin, tobytes, tostr
+from core_pdf.impl.third_party.fontTools.misc.textTools import (
+    bytesjoin,
+    safeEval,
+    strjoin,
+    tobytes,
+    tostr,
+)
 
 from . import DefaultTable
 
@@ -62,23 +68,15 @@ class table_D_S_I_G_(DefaultTable.DefaultTable):
         self.signatureRecords: list[SignatureRecord] = []
         sigrecs = self.signatureRecords
         for n in range(self.usNumSigs):
-            sigrec, newData = sstruct.unpack2(
-                DSIG_SignatureFormat, newData, SignatureRecord()
-            )
-            assert sigrec.ulFormat == 1, (
-                "DSIG signature record #%d ulFormat must be 1" % n
-            )
+            sigrec, newData = sstruct.unpack2(DSIG_SignatureFormat, newData, SignatureRecord())
+            assert sigrec.ulFormat == 1, "DSIG signature record #%d ulFormat must be 1" % n
             sigrecs.append(sigrec)
         for sigrec in sigrecs:
             dummy, newData = sstruct.unpack2(
                 DSIG_SignatureBlockFormat, data[sigrec.ulOffset :], sigrec
             )
-            assert sigrec.usReserved1 == 0, (
-                "DSIG signature record #%d usReserverd1 must be 0" % n
-            )
-            assert sigrec.usReserved2 == 0, (
-                "DSIG signature record #%d usReserverd2 must be 0" % n
-            )
+            assert sigrec.usReserved1 == 0, "DSIG signature record #%d usReserverd1 must be 0" % n
+            assert sigrec.usReserved2 == 0, "DSIG signature record #%d usReserverd2 must be 0" % n
             sigrec.pkcs7 = newData[: sigrec.cbSignature]
 
     def compile(self, ttFont: TTFont) -> bytes:
@@ -103,9 +101,7 @@ class table_D_S_I_G_(DefaultTable.DefaultTable):
         return bytesjoin(headers + data)
 
     def toXML(self, xmlWriter: XMLWriter, ttFont: TTFont) -> None:
-        xmlWriter.comment(
-            "note that the Digital Signature will be invalid after recompilation!"
-        )
+        xmlWriter.comment("note that the Digital Signature will be invalid after recompilation!")
         xmlWriter.newline()
         xmlWriter.simpletag(
             "tableHeader",
@@ -131,11 +127,9 @@ class table_D_S_I_G_(DefaultTable.DefaultTable):
             self.signatureRecords.append(sigrec)
 
 
-pem_spam = lambda l, spam={
-    "-----BEGIN PKCS7-----": True,
-    "-----END PKCS7-----": True,
-    "": True,
-}: not spam.get(l.strip())
+pem_spam = lambda l, spam={"-----BEGIN PKCS7-----": True, "-----END PKCS7-----": True, "": True}: (
+    not spam.get(l.strip())
+)
 
 
 def b64encode(b):
@@ -161,9 +155,7 @@ class SignatureRecord:
         writer.write_noindent("-----END PKCS7-----\n")
         writer.endtag(self.__class__.__name__)
 
-    def fromXML(
-        self, name: str, attrs: dict[str, str], content: str, ttFont: TTFont
-    ) -> None:
+    def fromXML(self, name: str, attrs: dict[str, str], content: str, ttFont: TTFont) -> None:
         self.ulFormat: int = safeEval(attrs["format"])
         self.usReserved1: int = safeEval(attrs.get("reserved1", "0"))
         self.usReserved2: int = safeEval(attrs.get("reserved2", "0"))

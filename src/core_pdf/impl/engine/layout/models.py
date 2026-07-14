@@ -635,9 +635,7 @@ class LayoutLine:
     def reconstructed_text(self) -> LayoutLineText:
         from core_pdf.impl.engine.layout.text_lines import reconstruct_layout_line_text
 
-        return reconstruct_layout_line_text(
-            self.runs, is_all_caps_text=self.is_all_caps_text
-        )
+        return reconstruct_layout_line_text(self.runs, is_all_caps_text=self.is_all_caps_text)
 
     def text(self) -> str:
         return self.reconstructed_text().text
@@ -657,9 +655,7 @@ class LayoutLine:
             nonlocal word, word_x0, word_y0, word_x1, word_y1
             if not word:
                 return
-            append_word(
-                LayoutWord(word, (word_x0, word_y0, word_x1, word_y1), word_start)
-            )
+            append_word(LayoutWord(word, (word_x0, word_y0, word_x1, word_y1), word_start))
             word = ""
 
         def extend_word(char: str, bbox: tuple[float, float, float, float]) -> None:

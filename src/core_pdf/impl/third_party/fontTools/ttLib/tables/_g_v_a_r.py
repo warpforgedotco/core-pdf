@@ -1,17 +1,17 @@
-from collections import deque
-from functools import partial
-from core_pdf.impl.third_party.fontTools.misc import sstruct
-from core_pdf.impl.third_party.fontTools.misc.textTools import safeEval
-from core_pdf.impl.third_party.fontTools.misc.lazyTools import LazyDict
-from core_pdf.impl.third_party.fontTools.ttLib import OPTIMIZE_FONT_SPEED
-from core_pdf.impl.third_party.fontTools.ttLib.tables.TupleVariation import TupleVariation
-from . import DefaultTable
 import array
 import itertools
 import logging
-import struct
 import sys
+from collections import deque
+
 import core_pdf.impl.third_party.fontTools.ttLib.tables.TupleVariation as tv
+from core_pdf.impl.third_party.fontTools.misc import sstruct
+from core_pdf.impl.third_party.fontTools.misc.lazyTools import LazyDict
+from core_pdf.impl.third_party.fontTools.misc.textTools import safeEval
+from core_pdf.impl.third_party.fontTools.ttLib import OPTIMIZE_FONT_SPEED
+from core_pdf.impl.third_party.fontTools.ttLib.tables.TupleVariation import TupleVariation
+
+from . import DefaultTable
 
 log = logging.getLogger(__name__)
 
@@ -65,9 +65,7 @@ class table__g_v_a_r(DefaultTable.DefaultTable):
 
     def compile(self, ttFont):
         axisTags = [axis.axisTag for axis in ttFont["fvar"].axes]
-        sharedTuples = tv.compileSharedTuples(
-            axisTags, itertools.chain(*self.variations.values())
-        )
+        sharedTuples = tv.compileSharedTuples(axisTags, itertools.chain(*self.variations.values()))
         sharedTupleIndices = {coord: i for i, coord in enumerate(sharedTuples)}
         sharedTupleSize = sum([len(c) for c in sharedTuples])
         compiledGlyphs = self.compileGlyphs_(ttFont, axisTags, sharedTupleIndices)
@@ -87,9 +85,7 @@ class table__g_v_a_r(DefaultTable.DefaultTable):
         header["sharedTupleCount"] = len(sharedTuples)
         header["offsetToSharedTuples"] = GVAR_HEADER_SIZE + len(compiledOffsets)
         header["flags"] = tableFormat
-        header["offsetToGlyphVariationData"] = (
-            header["offsetToSharedTuples"] + sharedTupleSize
-        )
+        header["offsetToGlyphVariationData"] = header["offsetToSharedTuples"] + sharedTupleSize
 
         result = [
             sstruct.pack(GVAR_HEADER_FORMAT_HEAD, header),

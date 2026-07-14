@@ -5,8 +5,11 @@ from typing import Any
 
 from core_pdf.impl.engine.extraction.ocr import (
     execution as ocr_execution,
+)
+from core_pdf.impl.engine.extraction.ocr import (
     iterator_layout as ocr_iterator_layout,
 )
+from core_pdf.impl.engine.extraction.ocr.backend import TesseractCtypesBackend
 from core_pdf.impl.engine.extraction.ocr.text_analysis import (
     extracted_text_token_count,
     normalized_text_tokens,
@@ -21,7 +24,6 @@ from core_pdf.impl.engine.extraction.ocr.types import (
     OcrTextResult,
     leptonica_pix_size_is_supported,
 )
-from core_pdf.impl.engine.extraction.ocr.backend import TesseractCtypesBackend
 
 OCR_FALLBACK_DPI = ocr_execution.OCR_DEFAULT_DPI
 OCR_FALLBACK_PAGE_SEGMENTATION_MODE = ocr_execution.OCR_DEFAULT_PAGE_SEGMENTATION_MODE
@@ -46,9 +48,7 @@ def ocr_image_to_text_with_timeout(image: OcrImage, timeout: float | None) -> st
     return ocr_image_to_text_result_with_timeout(image, timeout).text
 
 
-def ocr_image_to_text_result_with_timeout(
-    image: OcrImage, timeout: float | None
-) -> OcrTextResult:
+def ocr_image_to_text_result_with_timeout(image: OcrImage, timeout: float | None) -> OcrTextResult:
     del timeout
     try:
         return ocr_image_worker(image)
@@ -131,9 +131,7 @@ def select_targeted_thresholding_ocr_result(
     if primary_tokens >= 40 and thresholded_tokens < int(primary_tokens * 0.70):
         return primary
     primary_confidence = primary.confidence if primary.confidence is not None else 50
-    thresholded_confidence = (
-        thresholded.confidence if thresholded.confidence is not None else 50
-    )
+    thresholded_confidence = thresholded.confidence if thresholded.confidence is not None else 50
     primary_quality = text_ocr_quality_score(primary.text)
     thresholded_quality = text_ocr_quality_score(thresholded.text)
     if (
@@ -160,12 +158,7 @@ def should_try_iterator_layout_ocr(result: OcrTextResult) -> bool:
     if confidence is not None and confidence < 58 and tokens < 260:
         return True
     quality = text_ocr_quality_score(result.text)
-    if (
-        150 <= tokens <= 280
-        and confidence is not None
-        and confidence >= 60
-        and (quality >= 0.20)
-    ):
+    if 150 <= tokens <= 280 and confidence is not None and confidence >= 60 and (quality >= 0.20):
         return True
     if (
         180 <= tokens <= 320
@@ -258,9 +251,7 @@ def should_try_large_sparse_layout_ocr(result: OcrTextResult) -> bool:
     return text_ocr_quality_score(result.text) >= 0.14
 
 
-def should_try_rendered_sparse_layout_ocr(
-    image: OcrImage, result: OcrTextResult
-) -> bool:
+def should_try_rendered_sparse_layout_ocr(image: OcrImage, result: OcrTextResult) -> bool:
     if not image.source.startswith("rendered_page_"):
         return False
     if "_tile_" in image.source:
@@ -314,9 +305,7 @@ def iterator_ocr_result(
     )
 
 
-def select_ocr_result(
-    primary: OcrTextResult, alternate: OcrTextResult
-) -> OcrTextResult:
+def select_ocr_result(primary: OcrTextResult, alternate: OcrTextResult) -> OcrTextResult:
     primary_text = primary.text
     alternate_text = alternate.text
     if not primary_text:
@@ -328,16 +317,13 @@ def select_ocr_result(
     if (
         primary_confidence is not None
         and alternate_confidence is not None
-        and alternate_confidence
-        >= primary_confidence + OCR_FALLBACK_ALTERNATE_CONFIDENCE_MARGIN
+        and alternate_confidence >= primary_confidence + OCR_FALLBACK_ALTERNATE_CONFIDENCE_MARGIN
     ):
         return alternate
     return primary
 
 
-def select_sparse_ocr_result(
-    primary: OcrTextResult, sparse: OcrTextResult
-) -> OcrTextResult:
+def select_sparse_ocr_result(primary: OcrTextResult, sparse: OcrTextResult) -> OcrTextResult:
     if not sparse.text:
         return primary
     if not primary.text:
@@ -393,14 +379,10 @@ def select_tesseract_table_profile_result(
     primary_quality = text_ocr_quality_score(primary.text)
     table_quality = text_ocr_quality_score(table_profile.text)
     primary_confidence = primary.confidence if primary.confidence is not None else 50
-    table_confidence = (
-        table_profile.confidence if table_profile.confidence is not None else 50
-    )
+    table_confidence = table_profile.confidence if table_profile.confidence is not None else 50
     if table_quality > primary_quality + 0.08:
         return primary
-    if table_confidence >= primary_confidence + 8 and table_tokens >= int(
-        primary_tokens * 0.85
-    ):
+    if table_confidence >= primary_confidence + 8 and table_tokens >= int(primary_tokens * 0.85):
         return table_profile
     if (
         table_tokens >= primary_tokens + 12
@@ -408,9 +390,7 @@ def select_tesseract_table_profile_result(
         and table_quality <= primary_quality + 0.03
     ):
         return table_profile
-    if table_quality <= primary_quality - 0.06 and table_tokens >= int(
-        primary_tokens * 0.90
-    ):
+    if table_quality <= primary_quality - 0.06 and table_tokens >= int(primary_tokens * 0.90):
         return table_profile
     return primary
 
@@ -443,10 +423,7 @@ def select_iterator_layout_result(
         return select_ocr_result(primary, alternate)
     if alternate_confidence < primary_confidence + 5:
         return primary
-    if (
-        text_ocr_quality_score(alternate.text)
-        > text_ocr_quality_score(primary.text) + 0.03
-    ):
+    if text_ocr_quality_score(alternate.text) > text_ocr_quality_score(primary.text) + 0.03:
         return primary
     return alternate
 
@@ -465,12 +442,8 @@ def high_confidence_layout_result(
     )
     candidates = [
         primary_layout,
-        ocr_iterator_layout.iterator_layout_text_result(
-            sparse_layout, min_confidence=50
-        ),
-        ocr_iterator_layout.iterator_layout_text_result(
-            sparse_layout, min_confidence=80
-        ),
+        ocr_iterator_layout.iterator_layout_text_result(sparse_layout, min_confidence=50),
+        ocr_iterator_layout.iterator_layout_text_result(sparse_layout, min_confidence=80),
     ]
     if not primary_layout.text:
         page_layout = backend.image_to_iterator_layout(
@@ -479,9 +452,7 @@ def high_confidence_layout_result(
             resolution=image.resolution or OCR_FALLBACK_DPI,
         )
         candidates.append(
-            ocr_iterator_layout.iterator_layout_text_result(
-                page_layout, min_confidence=80
-            )
+            ocr_iterator_layout.iterator_layout_text_result(page_layout, min_confidence=80)
         )
     best = OcrTextResult("", None)
     best_score = float("-inf")
@@ -525,28 +496,18 @@ def select_high_confidence_layout_result(
         return primary
     primary_confidence = primary.confidence if primary.confidence is not None else 50
     layout_confidence = (
-        high_confidence_layout.confidence
-        if high_confidence_layout.confidence is not None
-        else 50
+        high_confidence_layout.confidence if high_confidence_layout.confidence is not None else 50
     )
     primary_quality = text_ocr_quality_score(primary.text)
     layout_quality = text_ocr_quality_score(high_confidence_layout.text)
-    if (
-        layout_confidence >= primary_confidence + 10
-        and layout_quality <= primary_quality + 0.02
-    ):
+    if layout_confidence >= primary_confidence + 10 and layout_quality <= primary_quality + 0.02:
         return high_confidence_layout
-    if (
-        layout_confidence >= primary_confidence
-        and layout_quality <= primary_quality - 0.04
-    ):
+    if layout_confidence >= primary_confidence and layout_quality <= primary_quality - 0.04:
         return high_confidence_layout
     return primary
 
 
-def select_auto_layout_result(
-    primary: OcrTextResult, auto_layout: OcrTextResult
-) -> OcrTextResult:
+def select_auto_layout_result(primary: OcrTextResult, auto_layout: OcrTextResult) -> OcrTextResult:
     if not auto_layout.text:
         return primary
     primary_tokens = extracted_text_token_count(primary.text)
@@ -554,9 +515,7 @@ def select_auto_layout_result(
     if not (int(primary_tokens * 0.85) <= layout_tokens <= int(primary_tokens * 1.08)):
         return primary
     primary_confidence = primary.confidence if primary.confidence is not None else 50
-    layout_confidence = (
-        auto_layout.confidence if auto_layout.confidence is not None else 50
-    )
+    layout_confidence = auto_layout.confidence if auto_layout.confidence is not None else 50
     if layout_confidence < primary_confidence:
         return primary
     primary_quality = text_ocr_quality_score(primary.text)
@@ -576,9 +535,7 @@ def select_confidence_filtered_layout_result(
     if not (int(primary_tokens * 0.70) <= layout_tokens <= int(primary_tokens * 0.98)):
         return primary
     primary_confidence = primary.confidence if primary.confidence is not None else 50
-    layout_confidence = (
-        filtered_layout.confidence if filtered_layout.confidence is not None else 50
-    )
+    layout_confidence = filtered_layout.confidence if filtered_layout.confidence is not None else 50
     if layout_confidence < primary_confidence + 10:
         return primary
     primary_quality = text_ocr_quality_score(primary.text)
@@ -641,16 +598,11 @@ def select_medium_sparse_layout_result(
         return primary
     primary_confidence = primary.confidence if primary.confidence is not None else 50
     layout_confidence = (
-        medium_sparse_layout.confidence
-        if medium_sparse_layout.confidence is not None
-        else 50
+        medium_sparse_layout.confidence if medium_sparse_layout.confidence is not None else 50
     )
     if layout_confidence < 88:
         return primary
-    if (
-        layout_confidence < primary_confidence + 8
-        and layout_quality > primary_quality - 0.10
-    ):
+    if layout_confidence < primary_confidence + 8 and layout_quality > primary_quality - 0.10:
         return primary
     return medium_sparse_layout
 
@@ -712,16 +664,11 @@ def select_large_sparse_layout_result(
         return primary
     primary_confidence = primary.confidence if primary.confidence is not None else 50
     layout_confidence = (
-        large_sparse_layout.confidence
-        if large_sparse_layout.confidence is not None
-        else 50
+        large_sparse_layout.confidence if large_sparse_layout.confidence is not None else 50
     )
     if layout_confidence < 75:
         return primary
-    if (
-        layout_confidence < primary_confidence + 12
-        and layout_quality > primary_quality - 0.08
-    ):
+    if layout_confidence < primary_confidence + 12 and layout_quality > primary_quality - 0.08:
         return primary
     return large_sparse_layout
 
@@ -736,9 +683,7 @@ def select_large_auto_layout_result(
     if not (int(primary_tokens * 0.75) <= layout_tokens <= int(primary_tokens * 1.20)):
         return primary
     primary_confidence = primary.confidence if primary.confidence is not None else 50
-    layout_confidence = (
-        auto_layout.confidence if auto_layout.confidence is not None else 50
-    )
+    layout_confidence = auto_layout.confidence if auto_layout.confidence is not None else 50
     if layout_confidence < primary_confidence + 8:
         return primary
     primary_quality = text_ocr_quality_score(primary.text)
@@ -757,9 +702,7 @@ def rendered_sparse_layout_result(
         psm=OCR_FALLBACK_SPARSE_OSD_PAGE_SEGMENTATION_MODE,
         resolution=image.resolution or OCR_FALLBACK_DPI,
     )
-    line_result = ocr_iterator_layout.iterator_rows_text_result(
-        iterator_layout.textline_rows
-    )
+    line_result = ocr_iterator_layout.iterator_rows_text_result(iterator_layout.textline_rows)
     if line_result.text:
         candidates.append(line_result)
     symbol_result = ocr_iterator_layout.iterator_symbol_rows_text_result(
@@ -830,9 +773,7 @@ def iterator_symbol_supplement_candidate(
     confidence = symbol_result.confidence
     if confidence is not None:
         comparable_confidences = [
-            result.confidence
-            for result in (line_result, primary)
-            if result.confidence is not None
+            result.confidence for result in (line_result, primary) if result.confidence is not None
         ]
         if comparable_confidences:
             confidence = min(confidence, max(comparable_confidences) + 3)
@@ -848,20 +789,13 @@ def select_rendered_sparse_layout_result(
     layout_tokens = extracted_text_token_count(sparse_layout.text)
     if primary_tokens and layout_tokens < max(40, int(primary_tokens * 0.25)):
         return primary
-    if primary_tokens and layout_tokens > max(
-        primary_tokens + 120, int(primary_tokens * 1.35)
-    ):
+    if primary_tokens and layout_tokens > max(primary_tokens + 120, int(primary_tokens * 1.35)):
         return primary
     primary_confidence = primary.confidence if primary.confidence is not None else 50
-    layout_confidence = (
-        sparse_layout.confidence if sparse_layout.confidence is not None else 50
-    )
+    layout_confidence = sparse_layout.confidence if sparse_layout.confidence is not None else 50
     primary_quality = text_ocr_quality_score(primary.text)
     layout_quality = text_ocr_quality_score(sparse_layout.text)
-    if (
-        sparse_text_looks_noisy(sparse_layout.text)
-        and layout_quality >= primary_quality
-    ):
+    if sparse_text_looks_noisy(sparse_layout.text) and layout_quality >= primary_quality:
         return primary
     coverage_gain = layout_tokens - primary_tokens
     if (
@@ -872,16 +806,9 @@ def select_rendered_sparse_layout_result(
         return sparse_layout
     if layout_confidence >= primary_confidence + 12:
         return sparse_layout
-    if (
-        layout_confidence >= primary_confidence + 6
-        and layout_quality <= primary_quality - 0.04
-    ):
+    if layout_confidence >= primary_confidence + 6 and layout_quality <= primary_quality - 0.04:
         return sparse_layout
-    if (
-        layout_confidence >= 80
-        and primary_quality >= 0.25
-        and layout_quality <= primary_quality
-    ):
+    if layout_confidence >= 80 and primary_quality >= 0.25 and layout_quality <= primary_quality:
         return sparse_layout
     return primary
 

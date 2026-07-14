@@ -1,13 +1,17 @@
-from core_pdf.impl.third_party.fontTools.feaLib.error import FeatureLibError
-from core_pdf.impl.third_party.fontTools.feaLib.lexer import Lexer, IncludingLexer, NonIncludingLexer
-from core_pdf.impl.third_party.fontTools.feaLib.variableScalar import VariableScalar
-from core_pdf.impl.third_party.fontTools.misc.encodingTools import getEncoding
-from core_pdf.impl.third_party.fontTools.misc.textTools import bytechr, tobytes, tostr
-import core_pdf.impl.third_party.fontTools.feaLib.ast as ast
 import logging
 import os
 import re
 
+from core_pdf.impl.third_party.fontTools.feaLib import ast
+from core_pdf.impl.third_party.fontTools.feaLib.error import FeatureLibError
+from core_pdf.impl.third_party.fontTools.feaLib.lexer import (
+    IncludingLexer,
+    Lexer,
+    NonIncludingLexer,
+)
+from core_pdf.impl.third_party.fontTools.feaLib.variableScalar import VariableScalar
+from core_pdf.impl.third_party.fontTools.misc.encodingTools import getEncoding
+from core_pdf.impl.third_party.fontTools.misc.textTools import bytechr, tobytes, tostr
 
 log = logging.getLogger(__name__)
 
@@ -42,17 +46,13 @@ class Parser(object):
     SS_FEATURE_TAGS = {"ss%02d" % i for i in range(1, 20 + 1)}
     CV_FEATURE_TAGS = {"cv%02d" % i for i in range(1, 99 + 1)}
 
-    def __init__(
-        self, featurefile, glyphNames=(), followIncludes=True, includeDir=None, **kwargs
-    ):
+    def __init__(self, featurefile, glyphNames=(), followIncludes=True, includeDir=None, **kwargs):
         if "glyphMap" in kwargs:
             from core_pdf.impl.third_party.fontTools.misc.loggingTools import deprecateArgument
 
             deprecateArgument("glyphMap", "use 'glyphNames' (iterable) instead")
             if glyphNames:
-                raise TypeError(
-                    "'glyphNames' and (deprecated) 'glyphMap' are " "mutually exclusive"
-                )
+                raise TypeError("'glyphNames' and (deprecated) 'glyphMap' are mutually exclusive")
             glyphNames = kwargs.pop("glyphMap")
         if kwargs:
             raise TypeError(
@@ -110,27 +110,19 @@ class Parser(object):
                 statements.append(self.parse_table_())
             elif self.is_cur_keyword_("valueRecordDef"):
                 statements.append(self.parse_valuerecord_definition_(vertical=False))
-            elif (
-                self.cur_token_type_ is Lexer.NAME
-                and self.cur_token_ in self.extensions
-            ):
+            elif self.cur_token_type_ is Lexer.NAME and self.cur_token_ in self.extensions:
                 statements.append(self.extensions[self.cur_token_](self))
             elif self.cur_token_type_ is Lexer.SYMBOL and self.cur_token_ == ";":
                 continue
             else:
                 raise FeatureLibError(
                     "Expected feature, languagesystem, lookup, markClass, "
-                    'table, or glyph class definition, got {} "{}"'.format(
-                        self.cur_token_type_, self.cur_token_
-                    ),
+                    f'table, or glyph class definition, got {self.cur_token_type_} "{self.cur_token_}"',
                     self.cur_token_location_,
                 )
         # Report any missing glyphs at the end of parsing
         if self.missing:
-            error = [
-                " %s (first found at %s)" % (name, loc)
-                for name, loc in self.missing.items()
-            ]
+            error = [" %s (first found at %s)" % (name, loc) for name, loc in self.missing.items()]
             raise FeatureLibError(
                 "The following glyph names are referenced but are missing from the "
                 "glyph set:\n" + ("\n".join(error)),
@@ -154,9 +146,7 @@ class Parser(object):
             name = self.expect_name_()
             anchordef = self.anchors_.resolve(name)
             if anchordef is None:
-                raise FeatureLibError(
-                    'Unknown anchor "%s"' % name, self.cur_token_location_
-                )
+                raise FeatureLibError('Unknown anchor "%s"' % name, self.cur_token_location_)
             self.expect_symbol_(">")
             return self.ast.Anchor(
                 anchordef.x,
@@ -365,17 +355,13 @@ class Parser(object):
                 if "-" in glyph and self.glyphNames_ and glyph not in self.glyphNames_:
                     start, limit = self.split_glyph_range_(glyph, location)
                     self.check_glyph_name_in_glyph_set(start, limit)
-                    glyphs.add_range(
-                        start, limit, self.make_glyph_range_(location, start, limit)
-                    )
+                    glyphs.add_range(start, limit, self.make_glyph_range_(location, start, limit))
                 elif self.next_token_ == "-":
                     start = glyph
                     self.expect_symbol_("-")
                     limit = self.expect_glyph_()
                     self.check_glyph_name_in_glyph_set(start, limit)
-                    glyphs.add_range(
-                        start, limit, self.make_glyph_range_(location, start, limit)
-                    )
+                    glyphs.add_range(start, limit, self.make_glyph_range_(location, start, limit))
                 else:
                     if "-" in glyph and not self.glyphNames_:
                         log.debug(
@@ -529,9 +515,7 @@ class Parser(object):
             vertical=False
         )
         if any(lookups):
-            raise FeatureLibError(
-                f'No lookups can be specified for "ignore {sub}"', location
-            )
+            raise FeatureLibError(f'No lookups can be specified for "ignore {sub}"', location)
         if not hasMarks:
             error = FeatureLibError(
                 f'Ambiguous "ignore {sub}", there should be least one marked glyph',
@@ -562,9 +546,7 @@ class Parser(object):
         if self.cur_token_ in ["position", "pos"]:
             chainContext = self.parse_ignore_context_("pos")
             return self.ast.IgnorePosStatement(chainContext, location=location)
-        raise FeatureLibError(
-            'Expected "substitute" or "position"', self.cur_token_location_
-        )
+        raise FeatureLibError('Expected "substitute" or "position"', self.cur_token_location_)
 
     def parse_include_(self):
         assert self.cur_token_ == "include"
@@ -584,9 +566,7 @@ class Parser(object):
             self.expect_keyword_("required")
             required = True
         self.expect_symbol_(";")
-        return self.ast.LanguageStatement(
-            language, include_default, required, location=location
-        )
+        return self.ast.LanguageStatement(language, include_default, required, location=location)
 
     def parse_ligatureCaretByIndex_(self):
         assert self.is_cur_keyword_("LigatureCaretByIndex")
@@ -617,9 +597,7 @@ class Parser(object):
         if self.next_token_ == ";":
             lookup = self.lookups_.resolve(name)
             if lookup is None:
-                raise FeatureLibError(
-                    'Unknown lookup "%s"' % name, self.cur_token_location_
-                )
+                raise FeatureLibError('Unknown lookup "%s"' % name, self.cur_token_location_)
             self.expect_symbol_(";")
             return self.ast.LookupReferenceStatement(lookup, location=location)
 
@@ -679,9 +657,7 @@ class Parser(object):
         self.expect_symbol_(";")
 
         if not any([value_seen, markAttachment, markFilteringSet]):
-            raise FeatureLibError(
-                "lookupflag must have a value", self.next_token_location_
-            )
+            raise FeatureLibError("lookupflag must have a value", self.next_token_location_)
 
         return self.ast.LookupFlagStatement(
             value,
@@ -695,9 +671,7 @@ class Parser(object):
         location = self.cur_token_location_
         glyphs = self.parse_glyphclass_(accept_glyphname=True)
         if not glyphs.glyphSet():
-            raise FeatureLibError(
-                "Empty glyph class in mark class definition", location
-            )
+            raise FeatureLibError("Empty glyph class in mark class definition", location)
         anchor = self.parse_anchor_()
         name = self.expect_class_name_()
         self.expect_symbol_(";")
@@ -706,9 +680,7 @@ class Parser(object):
             markClass = self.ast.MarkClass(name)
             self.doc_.markClasses[name] = markClass
             self.glyphclasses_.define(name, markClass)
-        mcdef = self.ast.MarkClassDefinition(
-            markClass, anchor, glyphs, location=location
-        )
+        mcdef = self.ast.MarkClassDefinition(markClass, anchor, glyphs, location=location)
         markClass.addDefinition(mcdef)
         return mcdef
 
@@ -724,9 +696,7 @@ class Parser(object):
             return self.parse_position_mark_(enumerated, vertical)
 
         location = self.cur_token_location_
-        prefix, glyphs, lookups, values, suffix, hasMarks = self.parse_glyph_pattern_(
-            vertical
-        )
+        prefix, glyphs, lookups, values, suffix, hasMarks = self.parse_glyph_pattern_(vertical)
         self.expect_symbol_(";")
 
         if any(lookups):
@@ -754,9 +724,7 @@ class Parser(object):
             )
 
         if enumerated:
-            raise FeatureLibError(
-                '"enumerate" is only allowed with pair positionings', location
-            )
+            raise FeatureLibError('"enumerate" is only allowed with pair positionings', location)
         return self.ast.SinglePosStatement(
             list(zip(glyphs, values)),
             prefix,
@@ -770,24 +738,21 @@ class Parser(object):
         self.expect_keyword_("cursive")
         if enumerated:
             raise FeatureLibError(
-                '"enumerate" is not allowed with ' "cursive attachment positioning",
+                '"enumerate" is not allowed with cursive attachment positioning',
                 location,
             )
         glyphclass = self.parse_glyphclass_(accept_glyphname=True)
         entryAnchor = self.parse_anchor_()
         exitAnchor = self.parse_anchor_()
         self.expect_symbol_(";")
-        return self.ast.CursivePosStatement(
-            glyphclass, entryAnchor, exitAnchor, location=location
-        )
+        return self.ast.CursivePosStatement(glyphclass, entryAnchor, exitAnchor, location=location)
 
     def parse_position_base_(self, enumerated, vertical):
         location = self.cur_token_location_
         self.expect_keyword_("base")
         if enumerated:
             raise FeatureLibError(
-                '"enumerate" is not allowed with '
-                "mark-to-base attachment positioning",
+                '"enumerate" is not allowed with mark-to-base attachment positioning',
                 location,
             )
         base = self.parse_glyphclass_(accept_glyphname=True)
@@ -800,8 +765,7 @@ class Parser(object):
         self.expect_keyword_("ligature")
         if enumerated:
             raise FeatureLibError(
-                '"enumerate" is not allowed with '
-                "mark-to-ligature attachment positioning",
+                '"enumerate" is not allowed with mark-to-ligature attachment positioning',
                 location,
             )
         ligatures = self.parse_glyphclass_(accept_glyphname=True)
@@ -817,8 +781,7 @@ class Parser(object):
         self.expect_keyword_("mark")
         if enumerated:
             raise FeatureLibError(
-                '"enumerate" is not allowed with '
-                "mark-to-mark attachment positioning",
+                '"enumerate" is not allowed with mark-to-mark attachment positioning',
                 location,
             )
         baseMarks = self.parse_glyphclass_(accept_glyphname=True)
@@ -845,9 +808,7 @@ class Parser(object):
             hasMarks,
         ) = self.parse_glyph_pattern_(vertical=False)
         if any(values):
-            raise FeatureLibError(
-                "Substitution statements cannot contain values", location
-            )
+            raise FeatureLibError("Substitution statements cannot contain values", location)
         new = []
         if self.next_token_ == "by":
             keyword = self.expect_keyword_("by")
@@ -876,9 +837,7 @@ class Parser(object):
             if len(old) != 1 or len(old[0].glyphSet()) != 1:
                 raise FeatureLibError('Expected a single glyph before "from"', location)
             if len(new) != 1:
-                raise FeatureLibError(
-                    'Expected a single glyphclass after "from"', location
-                )
+                raise FeatureLibError('Expected a single glyphclass after "from"', location)
             return self.ast.AlternateSubstStatement(
                 old_prefix, old[0], old_suffix, new[0], location=location
             )
@@ -907,8 +866,7 @@ class Parser(object):
             if len(glyphs) != len(replacements):
                 raise FeatureLibError(
                     'Expected a glyph class with %d elements after "by", '
-                    "but found a glyph class with %d elements"
-                    % (len(glyphs), len(replacements)),
+                    "but found a glyph class with %d elements" % (len(glyphs), len(replacements)),
                     location,
                 )
             return self.ast.SingleSubstStatement(
@@ -998,8 +956,7 @@ class Parser(object):
             if len(glyphs) != len(replacements):
                 raise FeatureLibError(
                     'Expected a glyph class with %d elements after "by", '
-                    "but found a glyph class with %d elements"
-                    % (len(glyphs), len(replacements)),
+                    "but found a glyph class with %d elements" % (len(glyphs), len(replacements)),
                     location,
                 )
             return self.ast.ReverseChainSingleSubstStatement(
@@ -1008,8 +965,7 @@ class Parser(object):
 
         if len(old) > 1 and len(new) > 1:
             raise FeatureLibError(
-                "Direct substitution of multiple glyphs by multiple glyphs "
-                "is not supported",
+                "Direct substitution of multiple glyphs by multiple glyphs is not supported",
                 location,
             )
 
@@ -1073,15 +1029,11 @@ class Parser(object):
         if handler:
             handler(table)
         else:
-            raise FeatureLibError(
-                '"table %s" is not supported' % name.strip(), location
-            )
+            raise FeatureLibError('"table %s" is not supported' % name.strip(), location)
         self.expect_symbol_("}")
         end_tag = self.expect_tag_()
         if end_tag != name:
-            raise FeatureLibError(
-                'Expected "%s"' % name.strip(), self.cur_token_location_
-            )
+            raise FeatureLibError('Expected "%s"' % name.strip(), self.cur_token_location_)
         self.expect_symbol_(";")
         return table
 
@@ -1105,7 +1057,7 @@ class Parser(object):
                 continue
             else:
                 raise FeatureLibError(
-                    "Expected Attach, LigatureCaretByIndex, " "or LigatureCaretByPos",
+                    "Expected Attach, LigatureCaretByIndex, or LigatureCaretByPos",
                     self.cur_token_location_,
                 )
 
@@ -1136,18 +1088,14 @@ class Parser(object):
             elif self.cur_token_type_ is Lexer.NAME and self.cur_token_ in fields:
                 key = self.cur_token_.lower()
                 value = self.expect_number_()
-                statements.append(
-                    self.ast.HheaField(key, value, location=self.cur_token_location_)
-                )
+                statements.append(self.ast.HheaField(key, value, location=self.cur_token_location_))
                 if self.next_token_ != ";":
-                    raise FeatureLibError(
-                        "Incomplete statement", self.next_token_location_
-                    )
+                    raise FeatureLibError("Incomplete statement", self.next_token_location_)
             elif self.cur_token_ == ";":
                 continue
             else:
                 raise FeatureLibError(
-                    "Expected CaretOffset, Ascender, " "Descender or LineGap",
+                    "Expected CaretOffset, Ascender, Descender or LineGap",
                     self.cur_token_location_,
                 )
 
@@ -1163,19 +1111,14 @@ class Parser(object):
             elif self.cur_token_type_ is Lexer.NAME and self.cur_token_ in fields:
                 key = self.cur_token_.lower()
                 value = self.expect_number_()
-                statements.append(
-                    self.ast.VheaField(key, value, location=self.cur_token_location_)
-                )
+                statements.append(self.ast.VheaField(key, value, location=self.cur_token_location_))
                 if self.next_token_ != ";":
-                    raise FeatureLibError(
-                        "Incomplete statement", self.next_token_location_
-                    )
+                    raise FeatureLibError("Incomplete statement", self.next_token_location_)
             elif self.cur_token_ == ";":
                 continue
             else:
                 raise FeatureLibError(
-                    "Expected VertTypoAscender, "
-                    "VertTypoDescender or VertTypoLineGap",
+                    "Expected VertTypoAscender, VertTypoDescender or VertTypoLineGap",
                     self.cur_token_location_,
                 )
 
@@ -1265,9 +1208,7 @@ class Parser(object):
                 "Name id value cannot be greater than 32767", self.cur_token_location_
             )
         platformID, platEncID, langID, string = self.parse_name_()
-        return self.ast.NameRecord(
-            nameID, platformID, platEncID, langID, string, location=location
-        )
+        return self.ast.NameRecord(nameID, platformID, platEncID, langID, string, location=location)
 
     def unescape_string_(self, string, encoding):
         if encoding == "utf_16_be":
@@ -1403,9 +1344,7 @@ class Parser(object):
                         value.append(self.expect_number_())
                 elif self.is_cur_keyword_("Vendor"):
                     value = self.expect_string_()
-                statements.append(
-                    self.ast.OS2Field(key, value, location=self.cur_token_location_)
-                )
+                statements.append(self.ast.OS2Field(key, value, location=self.cur_token_location_))
             elif self.cur_token_ == ";":
                 continue
 
@@ -1429,7 +1368,7 @@ class Parser(object):
             else:
                 if self.cur_token_ != ";":
                     raise FeatureLibError(
-                        f"Unexpected token {self.cur_token_} " f"in ElidedFallbackName",
+                        f"Unexpected token {self.cur_token_} in ElidedFallbackName",
                         self.cur_token_location_,
                     )
         self.expect_symbol_("}")
@@ -1441,10 +1380,7 @@ class Parser(object):
         assert self.is_cur_keyword_("DesignAxis")
         names = []
         axisTag = self.expect_tag_()
-        if (
-            axisTag not in ("ital", "opsz", "slnt", "wdth", "wght")
-            and not axisTag.isupper()
-        ):
+        if axisTag not in ("ital", "opsz", "slnt", "wdth", "wght") and not axisTag.isupper():
             log.debug(f"Unregistered axis tag {axisTag} should be uppercase.")
         axisOrder = self.expect_number_()
         self.expect_symbol_("{")
@@ -1467,9 +1403,7 @@ class Parser(object):
                 )
 
         self.expect_symbol_("}")
-        return self.ast.STATDesignAxisStatement(
-            axisTag, axisOrder, names, self.cur_token_location_
-        )
+        return self.ast.STATDesignAxisStatement(axisTag, axisOrder, names, self.cur_token_location_)
 
     def parse_STAT_axis_value_(self):
         assert self.is_cur_keyword_("AxisValue")
@@ -1497,7 +1431,7 @@ class Parser(object):
                 continue
             else:
                 raise FeatureLibError(
-                    f"Unexpected token {self.cur_token_} " f"in AxisValue",
+                    f"Unexpected token {self.cur_token_} in AxisValue",
                     self.cur_token_location_,
                 )
         self.expect_symbol_("}")
@@ -1519,20 +1453,18 @@ class Parser(object):
                 tag = location.tag
                 if tag in format4_tags:
                     raise FeatureLibError(
-                        f"Axis tag {tag} already " "defined.", self.cur_token_location_
+                        f"Axis tag {tag} already defined.", self.cur_token_location_
                     )
                 format4_tags.append(tag)
 
-        return self.ast.STATAxisValueStatement(
-            names, locations, flags, self.cur_token_location_
-        )
+        return self.ast.STATAxisValueStatement(names, locations, flags, self.cur_token_location_)
 
     def parse_STAT_location(self):
         values = []
         tag = self.expect_tag_()
         if len(tag.strip()) != 4:
             raise FeatureLibError(
-                f"Axis tag {self.cur_token_} must be 4 " "characters",
+                f"Axis tag {self.cur_token_} must be 4 characters",
                 self.cur_token_location_,
             )
 
@@ -1545,17 +1477,14 @@ class Parser(object):
                 values.append(value)
             else:
                 raise FeatureLibError(
-                    f'Unexpected value "{self.next_token_}". '
-                    "Expected integer or float.",
+                    f'Unexpected value "{self.next_token_}". Expected integer or float.',
                     self.next_token_location_,
                 )
         if len(values) == 3:
             nominal, min_val, max_val = values
             if nominal < min_val or nominal > max_val:
                 raise FeatureLibError(
-                    f"Default value {nominal} is outside "
-                    f"of specified range "
-                    f"{min_val}-{max_val}.",
+                    f"Default value {nominal} is outside of specified range {min_val}-{max_val}.",
                     self.next_token_location_,
                 )
         return self.ast.AxisValueLocationStatement(tag, values)
@@ -1589,7 +1518,7 @@ class Parser(object):
                             # Tag must be defined in a DesignAxis before it
                             # can be referenced
                             raise FeatureLibError(
-                                "DesignAxis not defined for " f"{location.tag}.",
+                                f"DesignAxis not defined for {location.tag}.",
                                 self.cur_token_location_,
                             )
                     statements.append(axisValueRecord)
@@ -1681,13 +1610,9 @@ class Parser(object):
                 self.cur_token_location_,
             )
             if vertical:
-                val = self.ast.ValueRecord(
-                    yAdvance=number, vertical=vertical, location=location
-                )
+                val = self.ast.ValueRecord(yAdvance=number, vertical=vertical, location=location)
             else:
-                val = self.ast.ValueRecord(
-                    xAdvance=number, vertical=vertical, location=location
-                )
+                val = self.ast.ValueRecord(xAdvance=number, vertical=vertical, location=location)
             return val
         self.expect_symbol_("<")
         location = self.cur_token_location_
@@ -1801,9 +1726,7 @@ class Parser(object):
                 tag, conditionset, use_extension=use_extension, location=location
             )
         else:
-            block = self.ast.FeatureBlock(
-                tag, use_extension=use_extension, location=location
-            )
+            block = self.ast.FeatureBlock(tag, use_extension=use_extension, location=location)
         self.parse_block_(block, vertical, stylisticset, size_feature, cv_feature)
         return block
 
@@ -1819,9 +1742,7 @@ class Parser(object):
         See section `8.c <https://adobe-type-tools.github.io/afdko/OpenTypeFeatureFileSpecification.html#8.c>`_.
         """
         assert self.cur_token_ == "featureNames", self.cur_token_
-        block = self.ast.NestedBlock(
-            tag, self.cur_token_, location=self.cur_token_location_
-        )
+        block = self.ast.NestedBlock(tag, self.cur_token_, location=self.cur_token_location_)
         self.expect_symbol_("{")
         for symtab in self.symbol_tables_:
             symtab.enter_scope()
@@ -1853,9 +1774,7 @@ class Parser(object):
         # Parses a ``cvParameters`` block found in Character Variant features.
         # See section `8.d <https://adobe-type-tools.github.io/afdko/OpenTypeFeatureFileSpecification.html#8.d>`_.
         assert self.cur_token_ == "cvParameters", self.cur_token_
-        block = self.ast.NestedBlock(
-            tag, self.cur_token_, location=self.cur_token_location_
-        )
+        block = self.ast.NestedBlock(tag, self.cur_token_, location=self.cur_token_location_)
         self.expect_symbol_("{")
         for symtab in self.symbol_tables_:
             symtab.enter_scope()
@@ -1882,9 +1801,7 @@ class Parser(object):
                 continue
             else:
                 raise FeatureLibError(
-                    "Expected statement: got {} {}".format(
-                        self.cur_token_type_, self.cur_token_
-                    ),
+                    f"Expected statement: got {self.cur_token_type_} {self.cur_token_}",
                     self.cur_token_location_,
                 )
 
@@ -1936,8 +1853,7 @@ class Parser(object):
         self.expect_symbol_(";")
         if not (0xFFFFFF >= character >= 0):
             raise FeatureLibError(
-                "Character value must be between "
-                "{:#x} and {:#x}".format(0, 0xFFFFFF),
+                f"Character value must be between {0:#x} and {0xFFFFFF:#x}",
                 location,
             )
         return self.ast.CharacterStatement(character, tag, location=location)
@@ -1990,9 +1906,7 @@ class Parser(object):
             raise FeatureLibError('Expected "%s"' % name, self.cur_token_location_)
         return self.ast.ConditionsetStatement(name, conditions, location=location)
 
-    def parse_block_(
-        self, block, vertical, stylisticset=None, size_feature=False, cv_feature=None
-    ):
+    def parse_block_(self, block, vertical, stylisticset=None, size_feature=False, cv_feature=None):
         self.expect_symbol_("{")
         for symtab in self.symbol_tables_:
             symtab.enter_scope()
@@ -2023,9 +1937,7 @@ class Parser(object):
             elif self.is_cur_keyword_("markClass"):
                 statements.append(self.parse_markClass_())
             elif self.is_cur_keyword_({"pos", "position"}):
-                statements.append(
-                    self.parse_position_(enumerated=False, vertical=vertical)
-                )
+                statements.append(self.parse_position_(enumerated=False, vertical=vertical))
             elif self.is_cur_keyword_("script"):
                 statements.append(self.parse_script_())
             elif self.is_cur_keyword_({"sub", "substitute", "rsub", "reversesub"}):
@@ -2042,18 +1954,13 @@ class Parser(object):
                 statements.append(self.parse_size_parameters_())
             elif size_feature and self.is_cur_keyword_("sizemenuname"):
                 statements.append(self.parse_size_menuname_())
-            elif (
-                self.cur_token_type_ is Lexer.NAME
-                and self.cur_token_ in self.extensions
-            ):
+            elif self.cur_token_type_ is Lexer.NAME and self.cur_token_ in self.extensions:
                 statements.append(self.extensions[self.cur_token_](self))
             elif self.cur_token_ == ";":
                 continue
             else:
                 raise FeatureLibError(
-                    "Expected glyph class definition or statement: got {} {}".format(
-                        self.cur_token_type_, self.cur_token_
-                    ),
+                    f"Expected glyph class definition or statement: got {self.cur_token_type_} {self.cur_token_}",
                     self.cur_token_location_,
                 )
 
@@ -2063,9 +1970,7 @@ class Parser(object):
 
         name = self.expect_name_()
         if name != block.name.strip():
-            raise FeatureLibError(
-                'Expected "%s"' % block.name.strip(), self.cur_token_location_
-            )
+            raise FeatureLibError('Expected "%s"' % block.name.strip(), self.cur_token_location_)
         self.expect_symbol_(";")
 
     def is_cur_keyword_(self, k):
@@ -2120,13 +2025,9 @@ class Parser(object):
         name = self.expect_class_name_()
         mc = self.glyphclasses_.resolve(name)
         if mc is None:
-            raise FeatureLibError(
-                "Unknown markClass @%s" % name, self.cur_token_location_
-            )
+            raise FeatureLibError("Unknown markClass @%s" % name, self.cur_token_location_)
         if not isinstance(mc, self.ast.MarkClass):
-            raise FeatureLibError(
-                "@%s is not a markClass" % name, self.cur_token_location_
-            )
+            raise FeatureLibError("@%s is not a markClass" % name, self.cur_token_location_)
         return mc
 
     def expect_tag_(self):
@@ -2201,9 +2102,7 @@ class Parser(object):
             axis = self.cur_token_
             self.advance_lexer_()
             if not (self.cur_token_type_ is Lexer.SYMBOL and self.cur_token_ == "="):
-                raise FeatureLibError(
-                    "Expected an equals sign", self.cur_token_location_
-                )
+                raise FeatureLibError("Expected an equals sign", self.cur_token_location_)
             value = self.expect_integer_or_float_()
             location[axis] = value
             if self.next_token_type_ is Lexer.NAME and self.next_token_[0] == ":":
@@ -2232,9 +2131,7 @@ class Parser(object):
         self.advance_lexer_()
         if self.cur_token_type_ is Lexer.FLOAT:
             return self.cur_token_
-        raise FeatureLibError(
-            "Expected a floating-point number", self.cur_token_location_
-        )
+        raise FeatureLibError("Expected a floating-point number", self.cur_token_location_)
 
     def expect_integer_or_float_(self):
         if self.next_token_type_ == Lexer.FLOAT:
@@ -2321,9 +2218,7 @@ class Parser(object):
         """(location, 999, 1001) --> ["cid00999", "cid01000", "cid01001"]"""
         result = list()
         if start > limit:
-            raise FeatureLibError(
-                "Bad range: start should be less than limit", location
-            )
+            raise FeatureLibError("Bad range: start should be less than limit", location)
         for cid in range(start, limit + 1):
             result.append("cid%05d" % cid)
         return result
@@ -2348,9 +2243,7 @@ class Parser(object):
             limit_range = limit[len(prefix) :]
 
         if start_range >= limit_range:
-            raise FeatureLibError(
-                "Start of range must be smaller than its end", location
-            )
+            raise FeatureLibError("Start of range must be smaller than its end", location)
 
         uppercase = re.compile(r"^[A-Z]$")
         if uppercase.match(start_range) and uppercase.match(limit_range):

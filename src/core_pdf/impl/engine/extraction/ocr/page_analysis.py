@@ -1,19 +1,19 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
-from dataclasses import dataclass
 import re
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
 from core_pdf.impl.engine.extraction.common import page_geometry
-from core_pdf.impl.engine.extraction.ocr import text_analysis as ocr_text_analysis
 from core_pdf.impl.engine.extraction.common.ordering import LayoutAnalyzer
+from core_pdf.impl.engine.extraction.ocr import text_analysis as ocr_text_analysis
 from core_pdf.impl.engine.rendering import RenderOptions
+from core_pdf.impl.engine.rendering.models import RenderedPage
 from core_pdf.impl.engine.spec.s_07_objects.coercion import normalize_pdf_name
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_09_fonts.glyphs import glyph_name_to_unicode
 from core_pdf.impl.engine.spec.s_09_fonts.helpers import parse_differences
-from core_pdf.impl.engine.rendering.models import RenderedPage
 from core_pdf.impl.objects import PdfStream
 from core_pdf.impl.types import PdfDict
 
@@ -148,9 +148,7 @@ def native_text_run_looks_symbol_encoded_artifact(run: TextRun) -> bool:
     ascii_punctuation = sum(
         1 for ch in text if 0x21 <= ord(ch) <= 0x7E and not ch.isalnum() and ch != "_"
     )
-    return (
-        punctuation / max(1, nonspace) >= 0.32 and ascii_punctuation >= 6 and alnum >= 4
-    )
+    return punctuation / max(1, nonspace) >= 0.32 and ascii_punctuation >= 6 and alnum >= 4
 
 
 def page_has_symbol_encoded_native_text_artifacts(page: PageExtractionHost) -> bool:
@@ -252,11 +250,7 @@ def scanned_table_native_text_layer_looks_weak(
         return False
     quality = ocr_text_analysis.text_ocr_quality_score(text)
     artifact = ocr_text_analysis.scanned_ocr_artifact_score(text)
-    if (
-        quality < 0.14
-        and artifact < 0.04
-        and not ocr_text_analysis.sparse_text_looks_noisy(text)
-    ):
+    if quality < 0.14 and artifact < 0.04 and not ocr_text_analysis.sparse_text_looks_noisy(text):
         return False
     try:
         if has_dominant_page_image(page) or page_has_large_embedded_image(page):
@@ -472,8 +466,7 @@ def figure_ocr_regions(page: PageExtractionHost) -> tuple[FigureOcrRegion, ...]:
         image_only_full_page_candidate = (
             area_ratio >= 0.85
             and not native_lines
-            and source_pixels / max(area, 1.0)
-            >= OCR_FIGURE_IMAGE_ONLY_MIN_PIXEL_DENSITY
+            and source_pixels / max(area, 1.0) >= OCR_FIGURE_IMAGE_ONLY_MIN_PIXEL_DENSITY
         )
         max_area_ratio = (
             OCR_FIGURE_CAPTIONED_IMAGE_MAX_AREA_RATIO
@@ -491,9 +484,7 @@ def figure_ocr_regions(page: PageExtractionHost) -> tuple[FigureOcrRegion, ...]:
         high_density = pixel_density >= OCR_FIGURE_MIN_PIXEL_DENSITY
         image_only_full_page_region = image_only_full_page_candidate
         legacy_area = area_ratio >= OCR_FIGURE_IMAGE_LEGACY_MIN_AREA_RATIO
-        high_density_region = (
-            area_ratio >= OCR_FIGURE_HIGH_DENSITY_MIN_AREA_RATIO and high_density
-        )
+        high_density_region = area_ratio >= OCR_FIGURE_HIGH_DENSITY_MIN_AREA_RATIO and high_density
         should_keep = native_overlap <= OCR_FIGURE_MAX_NATIVE_OVERLAP_RATIO and (
             legacy_area
             or (has_caption and high_density)

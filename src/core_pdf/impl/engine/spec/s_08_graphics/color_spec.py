@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from typing import TypeAlias, cast
 
-from core_pdf.impl.engine.spec.s_08_graphics.icc_profiles import icc_profile_alt_name
 from core_pdf.impl.engine.spec.s_07_objects.coercion import (
     coerce_to_bytes,
     normalize_pdf_name,
@@ -14,6 +13,7 @@ from core_pdf.impl.engine.spec.s_07_objects.pdfdict import (
     lookup_dict_key,
     lookup_dict_key_default,
 )
+from core_pdf.impl.engine.spec.s_08_graphics.icc_profiles import icc_profile_alt_name
 from core_pdf.impl.objects import (
     MISSING,
     PdfStream,
@@ -30,9 +30,7 @@ def cs_param(params: object, key: str, default: object = None) -> object:
     return default
 
 
-def cs_param_floats(
-    params: object, key: str, count: int, default: list[float]
-) -> list[float]:
+def cs_param_floats(params: object, key: str, count: int, default: list[float]) -> list[float]:
     raw = cs_param(params, key, default)
     if isinstance(raw, (list, tuple)) and len(raw) >= count:
         result: list[float] = []
@@ -117,15 +115,9 @@ def normalize_indexed_base_color_space_name(value: object) -> str | None:
     if not isinstance(value, (list, tuple)) or not value:
         return None
     kind = normalize_color_space_name(value[0])
-    if (
-        kind == "ICCBased"
-        and len(value) >= 2
-        and isinstance(value[1], (dict, PdfStream))
-    ):
+    if kind == "ICCBased" and len(value) >= 2 and isinstance(value[1], (dict, PdfStream)):
         icc_stream = value[1]
-        icc_dict = (
-            icc_stream.dictionary if isinstance(icc_stream, PdfStream) else icc_stream
-        )
+        icc_dict = icc_stream.dictionary if isinstance(icc_stream, PdfStream) else icc_stream
         alt = normalize_color_space_name(lookup_dict_key(icc_dict, "Alternate"))
         if alt is not None:
             return alt
@@ -202,11 +194,7 @@ def normalize_image_color_spec(image_dict: object) -> ImageColorSpec:
             and isinstance(color_space[1], (dict, PdfStream))
         ):
             icc_stream = color_space[1]
-            icc_dict = (
-                icc_stream.dictionary
-                if isinstance(icc_stream, PdfStream)
-                else icc_stream
-            )
+            icc_dict = icc_stream.dictionary if isinstance(icc_stream, PdfStream) else icc_stream
             alt = normalize_color_space_name(lookup_dict_key(icc_dict, "Alternate"))
             n = cs_param(icc_dict, "N", 3)
             channels = parse_channel_count(n)
@@ -228,13 +216,7 @@ def normalize_image_color_spec(image_dict: object) -> ImageColorSpec:
             and len(color_space) >= 2
             and isinstance(color_space[1], dict)
         ):
-            base = (
-                "DeviceGray"
-                if kind == "CalGray"
-                else "DeviceRGB"
-                if kind == "CalRGB"
-                else None
-            )
+            base = "DeviceGray" if kind == "CalGray" else "DeviceRGB" if kind == "CalRGB" else None
             return ImageColorSpec(
                 kind=kind,
                 params=cast(ColorParams, color_space[1]),
@@ -246,9 +228,7 @@ def normalize_image_color_spec(image_dict: object) -> ImageColorSpec:
         if kind in {"Separation", "DeviceN"}:
             if len(color_space) < 4:
                 raise ValueError(f"invalid {kind} color space")
-            names = (
-                color_space[1] if isinstance(color_space[1], (list, tuple)) else None
-            )
+            names = color_space[1] if isinstance(color_space[1], (list, tuple)) else None
             if kind == "DeviceN" and names is None:
                 raise ValueError("invalid DeviceN color space")
             alt = normalize_color_space_name(color_space[2])
@@ -267,9 +247,7 @@ def normalize_image_color_spec(image_dict: object) -> ImageColorSpec:
             )
         if kind in {"Separation", "DeviceN"}:
             raise ValueError(f"invalid {kind} color space")
-        return ImageColorSpec(
-            kind=kind, params={}, bits_per_component=bits_per_component
-        )
+        return ImageColorSpec(kind=kind, params={}, bits_per_component=bits_per_component)
     return ImageColorSpec(
         kind=normalize_color_space_name(color_space),
         params={},

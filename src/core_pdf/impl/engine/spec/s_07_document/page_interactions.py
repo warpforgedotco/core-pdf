@@ -16,8 +16,8 @@ from core_pdf.impl.engine.spec.s_07_document.page_links import (
     pdf_name_direct,
 )
 from core_pdf.impl.engine.spec.s_07_document.protocols import FormsDocumentProtocol
-from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_07_objects.object_cache import InheritedValueMap
+from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.models import AnnotationRecord, LinkRecord
 from core_pdf.impl.objects import MISSING, MissingObject, PdfReference
 from core_pdf.impl.types import PdfDict, PdfObject
@@ -25,6 +25,7 @@ from core_pdf.impl.types import PdfDict, PdfObject
 if TYPE_CHECKING:
     from core_pdf.impl.engine.spec.s_07_document.document import PdfDocument
     from core_pdf.impl.models import FieldRecord
+
 
 class PageInteractionsHost(Protocol):
     document: PdfDocument
@@ -46,9 +47,7 @@ class PageInteractionsMixin:
 
     def has_annotation_subtype(self: PageInteractionsHost, subtype_name: str) -> bool:
         for annot in self.annotation_dicts():
-            subtype = self.document.resolver.resolve_name(
-                lookup_dict_key(annot, "Subtype")
-            )
+            subtype = self.document.resolver.resolve_name(lookup_dict_key(annot, "Subtype"))
             if subtype == subtype_name:
                 return True
         return False
@@ -76,10 +75,7 @@ class PageInteractionsMixin:
                 action = self.document.resolver.resolve(action)
             if not isinstance(action, dict):
                 continue
-            if (
-                self.document.resolver.resolve_name(lookup_dict_key(action, "S"))
-                != "GoTo"
-            ):
+            if self.document.resolver.resolve_name(lookup_dict_key(action, "S")) != "GoTo":
                 continue
             if lookup_dict_key(action, "D") is not None:
                 return True
@@ -107,27 +103,19 @@ class PageInteractionsMixin:
                     continue
                 raise ValueError("invalid page annotation entry")
 
-            subtype = self.document.resolver.resolve_name(
-                lookup_dict_key(annot, "Subtype")
-            )
+            subtype = self.document.resolver.resolve_name(lookup_dict_key(annot, "Subtype"))
             rect = self.document.resolver.resolve_box(lookup_dict_key(annot, "Rect"))
             if rect is None:
                 if recover_annotations:
                     continue
                 raise ValueError("invalid page annotation rectangle")
-            contents = (
-                self.document.resolver.resolve_str(lookup_dict_key(annot, "Contents"))
-                or ""
-            )
+            contents = self.document.resolver.resolve_str(lookup_dict_key(annot, "Contents")) or ""
             dest = lookup_dict_key(annot, "Dest")
             action = lookup_dict_key(annot, "A")
             if isinstance(action, PdfReference):
                 action = self.document.resolver.resolve(action)
             if dest is None and isinstance(action, dict):
-                if (
-                    self.document.resolver.resolve_name(lookup_dict_key(action, "S"))
-                    == "GoTo"
-                ):
+                if self.document.resolver.resolve_name(lookup_dict_key(action, "S")) == "GoTo":
                     dest = lookup_dict_key(action, "D")
 
             results.append(
@@ -168,9 +156,7 @@ class PageInteractionsMixin:
 
             subtype = pdf_name_direct(lookup_pdf_key(annot, "Subtype", PDFKEY_SUBTYPE))
             if subtype is None:
-                subtype = resolver.resolve_name(
-                    lookup_pdf_key(annot, "Subtype", PDFKEY_SUBTYPE)
-                )
+                subtype = resolver.resolve_name(lookup_pdf_key(annot, "Subtype", PDFKEY_SUBTYPE))
             if subtype != "Link":
                 continue
 
@@ -208,16 +194,12 @@ class PageInteractionsMixin:
     def get_fields(self: PageInteractionsHost) -> list[FieldRecord]:
         all_fields = cast(FormsDocumentProtocol, self.document).fields()
         page_fields = []
-        raw_annots = self.document.resolve(
-            lookup_dict_key(self.inherited_values, "Annots")
-        )
+        raw_annots = self.document.resolve(lookup_dict_key(self.inherited_values, "Annots"))
         page_annots = raw_annots if isinstance(raw_annots, list) else [raw_annots]
         page_annot_ids = {
             id(annot)
             for annot in (
-                self.document.resolve(annot)
-                for annot in page_annots
-                if annot is not None
+                self.document.resolve(annot) for annot in page_annots if annot is not None
             )
             if isinstance(annot, dict)
         }
@@ -243,9 +225,7 @@ class PageInteractionsMixin:
                     kid = self.document.resolver.resolve(kid_ref)
                     if (
                         isinstance(kid, dict)
-                        and self.document.resolver.resolve_name(
-                            lookup_dict_key(kid, "Subtype")
-                        )
+                        and self.document.resolver.resolve_name(lookup_dict_key(kid, "Subtype"))
                         == "Widget"
                     ):
                         pg_ref = lookup_dict_key(kid, "P")
@@ -253,8 +233,7 @@ class PageInteractionsMixin:
                             pg_obj = self.document.resolver.resolve(pg_ref)
                             if (
                                 isinstance(pg_obj, dict)
-                                and self.document.page_index_for(pg_obj)
-                                == self.page_number - 1
+                                and self.document.page_index_for(pg_obj) == self.page_number - 1
                             ):
                                 page_fields.append(field)
                                 break

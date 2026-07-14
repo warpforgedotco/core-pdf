@@ -14,7 +14,6 @@ iterwalk.
 
 from core_pdf.impl.third_party.fontTools.misc.textTools import tostr
 
-
 XML_DECLARATION = """<?xml version='1.0' encoding='%s'?>"""
 
 __all__ = [
@@ -139,9 +138,7 @@ except ImportError:
 
             if encoding is not None and encoding.lower() == "unicode":
                 if xml_declaration:
-                    raise ValueError(
-                        "Serialisation to unicode must not request an XML declaration"
-                    )
+                    raise ValueError("Serialisation to unicode must not request an XML declaration")
                 write_declaration = False
                 encoding = "unicode"
             elif xml_declaration is None:
@@ -208,7 +205,7 @@ except ImportError:
     #   Char ::= #x9 | #xA | #xD | [#x20-#xD7FF] | [#xE000-#xFFFD] | [#x10000-#x10FFFF]
     # Here we reversed the pattern to match only the invalid characters.
     _invalid_xml_string = re.compile(
-        "[\u0000-\u0008\u000B-\u000C\u000E-\u001F\uD800-\uDFFF\uFFFE-\uFFFF]"
+        "[\u0000-\u0008\u000b-\u000c\u000e-\u001f\ud800-\udfff\ufffe-\uffff]"
     )
 
     def _tounicode(s):

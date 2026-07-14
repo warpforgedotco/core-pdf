@@ -4,7 +4,6 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 from typing import Protocol, cast
 
-from core_pdf.impl.engine.spec.s_09_fonts.encoding import decode_pdf_text_string
 from core_pdf.impl.engine.spec.s_07_document.metadata_types import (
     InfoMetadataRecord,
     MetadataRecord,
@@ -15,8 +14,9 @@ from core_pdf.impl.engine.spec.s_07_objects.coercion import (
     coerce_value,
     normalize_pdf_name,
 )
-from core_pdf.impl.objects import PdfStream
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_09_fonts.encoding import decode_pdf_text_string
+from core_pdf.impl.objects import PdfStream
 from core_pdf.impl.types import PdfDict
 
 
@@ -85,9 +85,7 @@ def xml_node_to_value(node: ET.Element) -> XmpNodeRecord:
     return root
 
 
-def parse_xmp_metadata(
-    stream: object, *, recover: bool = False
-) -> XmpNodeRecord | None:
+def parse_xmp_metadata(stream: object, *, recover: bool = False) -> XmpNodeRecord | None:
     if not isinstance(stream, PdfStream):
         return None
     raw = stream.data
@@ -102,9 +100,7 @@ def parse_xmp_metadata(
 
     packet: XmpNodeRecord = {
         "tag": local_name(root.tag),
-        "attributes": {
-            str(local_name(key)): value for key, value in root.attrib.items()
-        },
+        "attributes": {str(local_name(key)): value for key, value in root.attrib.items()},
     }
 
     children = list(root)

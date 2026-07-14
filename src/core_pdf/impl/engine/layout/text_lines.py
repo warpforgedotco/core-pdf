@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
+import re
+import unicodedata
 from dataclasses import dataclass
 from functools import lru_cache
-import re
 from statistics import median_low
-import unicodedata
 
 from core_pdf.impl.engine.layout.models import TextRun
 from core_pdf.impl.engine.layout.word_frequencies import word_rank
@@ -71,9 +71,7 @@ def reconstruct_layout_line_text(
     angle = runs[0].rotation_angle
     if angle == 0 and len(runs) <= 3:
         sorted_runs = (
-            runs
-            if runs_are_left_to_right(runs)
-            else sorted(runs, key=lambda r: (r.x0, r.order))
+            runs if runs_are_left_to_right(runs) else sorted(runs, key=lambda r: (r.x0, r.order))
         )
         return GlyphLineBuilder(sorted_runs).build()
 
@@ -128,9 +126,7 @@ def reconstruct_layout_line_text(
     ).build()
 
 
-def render_layout_line_text(
-    runs: list[TextRun], *, is_all_caps_text: bool | None = None
-) -> str:
+def render_layout_line_text(runs: list[TextRun], *, is_all_caps_text: bool | None = None) -> str:
     return reconstruct_layout_line_text(runs, is_all_caps_text=is_all_caps_text).text
 
 
@@ -267,11 +263,9 @@ class GlyphLineBuilder:
             tracked_glyph_word_gap_threshold(runs) if is_tracked_glyph_line else None
         )
         non_space_runs = [run for run in runs if run.has_text]
-        self.explicit_spaces_control_glyph_gaps = (
-            explicit_spaces_should_control_glyph_gaps(
-                non_space_runs,
-                explicit_space_count=sum(1 for run in runs if run.text_is_space),
-            )
+        self.explicit_spaces_control_glyph_gaps = explicit_spaces_should_control_glyph_gaps(
+            non_space_runs,
+            explicit_space_count=sum(1 for run in runs if run.text_is_space),
         )
         self.explicit_space_count = 0
         self.has_large_column_gap = False
@@ -317,9 +311,7 @@ class GlyphLineBuilder:
                 continue
 
             if run.text_is_space and prev_run is not None and prev_run_text:
-                if self.should_drop_explicit_space(
-                    index, run, prev_run, prev_last_char
-                ):
+                if self.should_drop_explicit_space(index, run, prev_run, prev_last_char):
                     continue
 
             emitted_run = False
@@ -457,9 +449,9 @@ class GlyphLineBuilder:
         if is_tiny_page_footer(text) and run.font_size <= 5.0:
             return ""
         first_char = text[:1]
-        if (
-            first_char in LEADER_START_CHARS or first_char.isspace()
-        ) and is_decorative_leader(text):
+        if (first_char in LEADER_START_CHARS or first_char.isspace()) and is_decorative_leader(
+            text
+        ):
             return ""
         if self.is_trademark_marker_run(run, index):
             return "™"
@@ -573,9 +565,7 @@ class GlyphLineBuilder:
         ):
             return False
         previous = self.previous_non_space_run(index)
-        if previous is None or not chemical_subscript_prefix_text(
-            previous.stripped_text
-        ):
+        if previous is None or not chemical_subscript_prefix_text(previous.stripped_text):
             return False
         following = self.next_non_space_run(index)
         context_runs = [
@@ -653,15 +643,9 @@ class GlyphLineBuilder:
         prev_last_char: str,
     ) -> bool:
         next_text = (
-            self.next_non_space_texts[index]
-            if index < len(self.next_non_space_texts)
-            else ""
+            self.next_non_space_texts[index] if index < len(self.next_non_space_texts) else ""
         )
-        next_x0 = (
-            self.next_non_space_x0s[index]
-            if index < len(self.next_non_space_x0s)
-            else 0.0
-        )
+        next_x0 = self.next_non_space_x0s[index] if index < len(self.next_non_space_x0s) else 0.0
         leading_gap = run.x0 - prev_run.x1
         following_gap = next_x0 - run.x1 if next_text else 0.0
         tight_gap = max(run.space_width * 0.55, run.height * 0.35, 2.0)
@@ -711,9 +695,7 @@ class GlyphLineBuilder:
         if self.estimated_char_width is not None and should_use_estimated_word_spacing(
             prev_stripped, stripped
         ):
-            spacing_gap = x0 - (
-                prev_x0 + len(prev_stripped) * self.estimated_char_width
-            )
+            spacing_gap = x0 - (prev_x0 + len(prev_stripped) * self.estimated_char_width)
         threshold = self.word_gap_threshold(run, height)
         baseline_delta = self.atom_baseline_delta(previous, atom)
         if inline_marker_text(text):
@@ -787,11 +769,7 @@ class GlyphLineBuilder:
             and len(prev_stripped) > 1
             and len(stripped) > 1
             and spacing_gap > max(0.55, min(run.space_width, height) * 0.1)
-            and (
-                prev_last_char.isupper()
-                or first_char.isupper()
-                or prev_last_char.isdigit()
-            )
+            and (prev_last_char.isupper() or first_char.isupper() or prev_last_char.isdigit())
         ):
             return " ", "explicit_context_space"
         if (
@@ -1008,9 +986,7 @@ def has_interleaved_horizontal_overlap(runs: list[TextRun]) -> bool:
         x1 = coords[TextRun.X1]
         height = run.height_value
         if previous is not None:
-            overlap = (prev_x1 if prev_x1 < x1 else x1) - (
-                prev_x0 if prev_x0 > x0 else x0
-            )
+            overlap = (prev_x1 if prev_x1 < x1 else x1) - (prev_x0 if prev_x0 > x0 else x0)
             if overlap > (prev_height if prev_height < height else height) * 0.25:
                 return True
         previous = run
@@ -1020,9 +996,7 @@ def has_interleaved_horizontal_overlap(runs: list[TextRun]) -> bool:
     return False
 
 
-def is_tracked_glyph_run_line(
-    non_space_runs: list[TextRun], *, has_explicit_spaces: bool
-) -> bool:
+def is_tracked_glyph_run_line(non_space_runs: list[TextRun], *, has_explicit_spaces: bool) -> bool:
     if len(non_space_runs) < 6:
         return False
 
@@ -1117,10 +1091,7 @@ def estimated_char_width_for_suspect_line(sorted_runs: list[TextRun]) -> float |
     non_space_runs = [
         run
         for run in sorted_runs
-        if run.visible
-        and run.has_text
-        and run.stripped_text
-        and run.stripped_text.isalpha()
+        if run.visible and run.has_text and run.stripped_text and run.stripped_text.isalpha()
     ]
     if len(non_space_runs) < 5:
         return None
@@ -1131,9 +1102,7 @@ def estimated_char_width_for_suspect_line(sorted_runs: list[TextRun]) -> float |
         if width <= 0.0:
             suspect_runs += 1
             continue
-        if abs((width / max(1, text_len)) - run.space_width) <= max(
-            1.0, run.space_width * 0.05
-        ):
+        if abs((width / max(1, text_len)) - run.space_width) <= max(1.0, run.space_width * 0.05):
             suspect_runs += 1
     if suspect_runs < max(3, len(non_space_runs) // 3):
         return None
@@ -1154,9 +1123,7 @@ def estimated_char_width_for_suspect_line(sorted_runs: list[TextRun]) -> float |
         return None
     ratios.sort()
     median_ratio = ratios[len(ratios) // 2]
-    typical_space = median_low(
-        [run.space_width for run in non_space_runs if run.space_width > 0.0]
-    )
+    typical_space = median_low([run.space_width for run in non_space_runs if run.space_width > 0.0])
     if typical_space <= 0.0:
         return median_ratio
     return min(median_ratio, typical_space * 0.48)
@@ -1291,9 +1258,7 @@ def should_insert_tight_word_space(
     if x_gap < -max_overlap:
         return False
 
-    if is_high_frequency_boundary_word(prev) or is_high_frequency_boundary_word(
-        current
-    ):
+    if is_high_frequency_boundary_word(prev) or is_high_frequency_boundary_word(current):
         return True
     if prev.isupper() and current_first.islower() and len(prev) <= 8:
         return True

@@ -1,6 +1,7 @@
 from core_pdf.impl.third_party.fontTools.misc import sstruct
-from core_pdf.impl.third_party.fontTools.misc.textTools import bytesjoin, strjoin, readHex
+from core_pdf.impl.third_party.fontTools.misc.textTools import bytesjoin, readHex, strjoin
 from core_pdf.impl.third_party.fontTools.ttLib import TTLibError
+
 from . import DefaultTable
 
 # Apple's documentation of 'meta':

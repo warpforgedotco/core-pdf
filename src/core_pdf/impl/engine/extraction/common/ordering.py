@@ -264,8 +264,7 @@ class LayoutAnalyzer:
                 dy = by_mid - ry_mid
                 if abs(dy) < max_gap:
                     if not any(
-                        max(box.x0, x0) < min(box.x1, x1)
-                        for x0, x1 in visual_row_ranges[idx]
+                        max(box.x0, x0) < min(box.x1, x1) for x0, x1 in visual_row_ranges[idx]
                     ):
                         vrow.append(box)
                         visual_row_mid_sums[idx] += by_mid
@@ -520,10 +519,7 @@ class LayoutAnalyzer:
             dx = abs(line.x1 - line.x0)
             dy = abs(line.y1 - line.y0)
 
-            if dy < 1.5 and dx > h_threshold:
-                separators.append(line)
-
-            elif dx < 1.5 and dy > v_threshold:
+            if dy < 1.5 and dx > h_threshold or dx < 1.5 and dy > v_threshold:
                 separators.append(line)
 
         return separators
@@ -541,9 +537,7 @@ class LayoutAnalyzer:
                 norm = rect.normalize()
                 if norm.width > 30 and norm.height > 15:
                     has_text = any(
-                        norm.contains_point(r.mid_x, r.mid_y)
-                        for r in runs
-                        if r.text.strip()
+                        norm.contains_point(r.mid_x, r.mid_y) for r in runs if r.text.strip()
                     )
                     if has_text:
                         visual_boxes.append(norm)
@@ -562,9 +556,7 @@ class LayoutAnalyzer:
             if nearby:
                 field_to_label[field.name] = " ".join(r.text for r in nearby[:3])
             else:
-                nearby = page.find_text_near(
-                    field.rect, direction="above", distance=50.0
-                )
+                nearby = page.find_text_near(field.rect, direction="above", distance=50.0)
                 if nearby:
                     field_to_label[field.name] = " ".join(r.text for r in nearby[:3])
         return field_to_label

@@ -1,8 +1,19 @@
-from core_pdf.impl.third_party.fontTools.misc.textTools import bytechr, byteord, bytesjoin, tobytes, tostr
+import logging
+import re
+from collections.abc import Callable
+from string import whitespace
+
 from core_pdf.impl.third_party.fontTools.misc import eexec
+from core_pdf.impl.third_party.fontTools.misc.textTools import (
+    bytechr,
+    byteord,
+    bytesjoin,
+    tobytes,
+    tostr,
+)
+
 from .psOperators import (
     PSOperators,
-    ps_StandardEncoding,
     ps_array,
     ps_boolean,
     ps_dict,
@@ -14,13 +25,9 @@ from .psOperators import (
     ps_procedure,
     ps_procmark,
     ps_real,
+    ps_StandardEncoding,
     ps_string,
 )
-import re
-from collections.abc import Callable
-from string import whitespace
-import logging
-
 
 log = logging.getLogger(__name__)
 
@@ -215,12 +222,7 @@ class PSInterpreter(PSOperators):
         except:
             if self.tokenizer is not None:
                 log.debug(
-                    "ps error:\n"
-                    "- - - - - - -\n"
-                    "%s\n"
-                    ">>>\n"
-                    "%s\n"
-                    "- - - - - - -",
+                    "ps error:\n- - - - - - -\n%s\n>>>\n%s\n- - - - - - -",
                     self.tokenizer.buf[self.tokenizer.pos - 50 : self.tokenizer.pos],
                     self.tokenizer.buf[self.tokenizer.pos : self.tokenizer.pos + 50],
                 )
@@ -333,9 +335,7 @@ class PSInterpreter(PSOperators):
         object = stack[-1]
         if types:
             if object.type not in types:
-                raise PSError(
-                    "typecheck, expected %s, found %s" % (repr(types), object.type)
-                )
+                raise PSError("typecheck, expected %s, found %s" % (repr(types), object.type))
         del stack[-1]
         return object
 
@@ -380,9 +380,7 @@ def suckfont(data, encoding="ascii"):
     else:
         fontName = None
     interpreter = PSInterpreter(encoding=encoding)
-    interpreter.interpret(
-        b"/Helvetica 4 dict dup /Encoding StandardEncoding put definefont pop"
-    )
+    interpreter.interpret(b"/Helvetica 4 dict dup /Encoding StandardEncoding put definefont pop")
     interpreter.interpret(data)
     fontdir = interpreter.dictstack[0]["FontDirectory"].value
     if fontName in fontdir:

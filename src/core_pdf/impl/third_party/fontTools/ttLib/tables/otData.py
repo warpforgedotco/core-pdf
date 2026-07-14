@@ -109,9 +109,7 @@ otData = [
     (
         "FeatureRecord",
         [
-            FieldSpec(
-                "Tag", "FeatureTag", description="4-byte feature identification tag"
-            ),
+            FieldSpec("Tag", "FeatureTag", description="4-byte feature identification tag"),
             FieldSpec(
                 "Offset",
                 "Feature",
@@ -179,9 +177,7 @@ otData = [
         "FeatureParamsCharacterVariants",
         [
             FieldSpec("uint16", "Format", description="Set to 0."),
-            FieldSpec(
-                "NameID", "FeatUILabelNameID", description="Feature UI label NameID."
-            ),
+            FieldSpec("NameID", "FeatUILabelNameID", description="Feature UI label NameID."),
             FieldSpec(
                 "NameID",
                 "FeatUITooltipTextNameID",
@@ -215,9 +211,7 @@ otData = [
     (
         "LookupList",
         [
-            FieldSpec(
-                "uint16", "LookupCount", description="Number of lookups in this table"
-            ),
+            FieldSpec("uint16", "LookupCount", description="Number of lookups in this table"),
             FieldSpec(
                 "Offset",
                 "Lookup",
@@ -259,12 +253,8 @@ otData = [
     (
         "CoverageFormat1",
         [
-            FieldSpec(
-                "uint16", "CoverageFormat", description="Format identifier-format = 1"
-            ),
-            FieldSpec(
-                "uint16", "GlyphCount", description="Number of glyphs in the GlyphArray"
-            ),
+            FieldSpec("uint16", "CoverageFormat", description="Format identifier-format = 1"),
+            FieldSpec("uint16", "GlyphCount", description="Number of glyphs in the GlyphArray"),
             FieldSpec(
                 "GlyphID",
                 "GlyphArray",
@@ -277,9 +267,7 @@ otData = [
     (
         "CoverageFormat2",
         [
-            FieldSpec(
-                "uint16", "CoverageFormat", description="Format identifier-format = 2"
-            ),
+            FieldSpec("uint16", "CoverageFormat", description="Format identifier-format = 2"),
             FieldSpec("uint16", "RangeCount", description="Number of RangeRecords"),
             FieldSpec(
                 "struct",
@@ -305,17 +293,13 @@ otData = [
     (
         "ClassDefFormat1",
         [
-            FieldSpec(
-                "uint16", "ClassFormat", description="Format identifier-format = 1"
-            ),
+            FieldSpec("uint16", "ClassFormat", description="Format identifier-format = 1"),
             FieldSpec(
                 "GlyphID",
                 "StartGlyph",
                 description="First GlyphID of the ClassValueArray",
             ),
-            FieldSpec(
-                "uint16", "GlyphCount", description="Size of the ClassValueArray"
-            ),
+            FieldSpec("uint16", "GlyphCount", description="Size of the ClassValueArray"),
             FieldSpec(
                 "uint16",
                 "ClassValueArray",
@@ -328,12 +312,8 @@ otData = [
     (
         "ClassDefFormat2",
         [
-            FieldSpec(
-                "uint16", "ClassFormat", description="Format identifier-format = 2"
-            ),
-            FieldSpec(
-                "uint16", "ClassRangeCount", description="Number of ClassRangeRecords"
-            ),
+            FieldSpec("uint16", "ClassFormat", description="Format identifier-format = 2"),
+            FieldSpec("uint16", "ClassRangeCount", description="Number of ClassRangeRecords"),
             FieldSpec(
                 "struct",
                 "ClassRangeRecord",
@@ -348,20 +328,14 @@ otData = [
         [
             FieldSpec("GlyphID", "Start", description="First GlyphID in the range"),
             FieldSpec("GlyphID", "End", description="Last GlyphID in the range"),
-            FieldSpec(
-                "uint16", "Class", description="Applied to all glyphs in the range"
-            ),
+            FieldSpec("uint16", "Class", description="Applied to all glyphs in the range"),
         ],
     ),
     (
         "Device",
         [
-            FieldSpec(
-                "uint16", "StartSize", description="Smallest size to correct-in ppem"
-            ),
-            FieldSpec(
-                "uint16", "EndSize", description="Largest size to correct-in ppem"
-            ),
+            FieldSpec("uint16", "StartSize", description="Smallest size to correct-in ppem"),
+            FieldSpec("uint16", "EndSize", description="Largest size to correct-in ppem"),
             FieldSpec(
                 "uint16",
                 "DeltaFormat",
@@ -412,9 +386,7 @@ otData = [
     (
         "SinglePosFormat1",
         [
-            FieldSpec(
-                "uint16", "PosFormat", description="Format identifier-format = 1"
-            ),
+            FieldSpec("uint16", "PosFormat", description="Format identifier-format = 1"),
             FieldSpec(
                 "Offset",
                 "Coverage",
@@ -435,9 +407,7 @@ otData = [
     (
         "SinglePosFormat2",
         [
-            FieldSpec(
-                "uint16", "PosFormat", description="Format identifier-format = 2"
-            ),
+            FieldSpec("uint16", "PosFormat", description="Format identifier-format = 2"),
             FieldSpec(
                 "Offset",
                 "Coverage",
@@ -461,9 +431,7 @@ otData = [
     (
         "PairPosFormat1",
         [
-            FieldSpec(
-                "uint16", "PosFormat", description="Format identifier-format = 1"
-            ),
+            FieldSpec("uint16", "PosFormat", description="Format identifier-format = 1"),
             FieldSpec(
                 "Offset",
                 "Coverage",
@@ -492,9 +460,7 @@ otData = [
     (
         "PairSet",
         [
-            FieldSpec(
-                "uint16", "PairValueCount", description="Number of PairValueRecords"
-            ),
+            FieldSpec("uint16", "PairValueCount", description="Number of PairValueRecords"),
             FieldSpec(
                 "struct",
                 "PairValueRecord",
@@ -527,9 +493,7 @@ otData = [
     (
         "PairPosFormat2",
         [
-            FieldSpec(
-                "uint16", "PosFormat", description="Format identifier-format = 2"
-            ),
+            FieldSpec("uint16", "PosFormat", description="Format identifier-format = 2"),
             FieldSpec(
                 "Offset",
                 "Coverage",
@@ -604,17 +568,13 @@ otData = [
     (
         "CursivePosFormat1",
         [
-            FieldSpec(
-                "uint16", "PosFormat", description="Format identifier-format = 1"
-            ),
+            FieldSpec("uint16", "PosFormat", description="Format identifier-format = 1"),
             FieldSpec(
                 "Offset",
                 "Coverage",
                 description="Offset to Coverage table-from beginning of CursivePos subtable",
             ),
-            FieldSpec(
-                "uint16", "EntryExitCount", description="Number of EntryExit records"
-            ),
+            FieldSpec("uint16", "EntryExitCount", description="Number of EntryExit records"),
             FieldSpec(
                 "struct",
                 "EntryExitRecord",
@@ -642,9 +602,7 @@ otData = [
     (
         "MarkBasePosFormat1",
         [
-            FieldSpec(
-                "uint16", "PosFormat", description="Format identifier-format = 1"
-            ),
+            FieldSpec("uint16", "PosFormat", description="Format identifier-format = 1"),
             FieldSpec(
                 "Offset",
                 "MarkCoverage",
@@ -700,9 +658,7 @@ otData = [
     (
         "MarkLigPosFormat1",
         [
-            FieldSpec(
-                "uint16", "PosFormat", description="Format identifier-format = 1"
-            ),
+            FieldSpec("uint16", "PosFormat", description="Format identifier-format = 1"),
             FieldSpec(
                 "Offset",
                 "MarkCoverage",
@@ -713,9 +669,7 @@ otData = [
                 "LigatureCoverage",
                 description="Offset to Ligature Coverage table-from beginning of MarkLigPos subtable",
             ),
-            FieldSpec(
-                "uint16", "ClassCount", description="Number of defined mark classes"
-            ),
+            FieldSpec("uint16", "ClassCount", description="Number of defined mark classes"),
             FieldSpec(
                 "Offset",
                 "MarkArray",
@@ -777,9 +731,7 @@ otData = [
     (
         "MarkMarkPosFormat1",
         [
-            FieldSpec(
-                "uint16", "PosFormat", description="Format identifier-format = 1"
-            ),
+            FieldSpec("uint16", "PosFormat", description="Format identifier-format = 1"),
             FieldSpec(
                 "Offset",
                 "Mark1Coverage",
@@ -850,17 +802,13 @@ otData = [
     (
         "ContextPosFormat1",
         [
-            FieldSpec(
-                "uint16", "PosFormat", description="Format identifier-format = 1"
-            ),
+            FieldSpec("uint16", "PosFormat", description="Format identifier-format = 1"),
             FieldSpec(
                 "Offset",
                 "Coverage",
                 description="Offset to Coverage table-from beginning of ContextPos subtable",
             ),
-            FieldSpec(
-                "uint16", "PosRuleSetCount", description="Number of PosRuleSet tables"
-            ),
+            FieldSpec("uint16", "PosRuleSetCount", description="Number of PosRuleSet tables"),
             FieldSpec(
                 "Offset",
                 "PosRuleSet",
@@ -911,9 +859,7 @@ otData = [
     (
         "ContextPosFormat2",
         [
-            FieldSpec(
-                "uint16", "PosFormat", description="Format identifier-format = 2"
-            ),
+            FieldSpec("uint16", "PosFormat", description="Format identifier-format = 2"),
             FieldSpec(
                 "Offset",
                 "Coverage",
@@ -924,9 +870,7 @@ otData = [
                 "ClassDef",
                 description="Offset to ClassDef table-from beginning of ContextPos subtable",
             ),
-            FieldSpec(
-                "uint16", "PosClassSetCount", description="Number of PosClassSet tables"
-            ),
+            FieldSpec("uint16", "PosClassSetCount", description="Number of PosClassSet tables"),
             FieldSpec(
                 "Offset",
                 "PosClassSet",
@@ -956,9 +900,7 @@ otData = [
     (
         "PosClassRule",
         [
-            FieldSpec(
-                "uint16", "GlyphCount", description="Number of glyphs to be matched"
-            ),
+            FieldSpec("uint16", "GlyphCount", description="Number of glyphs to be matched"),
             FieldSpec("uint16", "PosCount", description="Number of PosLookupRecords"),
             FieldSpec(
                 "uint16",
@@ -979,9 +921,7 @@ otData = [
     (
         "ContextPosFormat3",
         [
-            FieldSpec(
-                "uint16", "PosFormat", description="Format identifier-format = 3"
-            ),
+            FieldSpec("uint16", "PosFormat", description="Format identifier-format = 3"),
             FieldSpec(
                 "uint16",
                 "GlyphCount",
@@ -1007,9 +947,7 @@ otData = [
     (
         "ChainContextPosFormat1",
         [
-            FieldSpec(
-                "uint16", "PosFormat", description="Format identifier-format = 1"
-            ),
+            FieldSpec("uint16", "PosFormat", description="Format identifier-format = 1"),
             FieldSpec(
                 "Offset",
                 "Coverage",
@@ -1098,9 +1036,7 @@ otData = [
     (
         "ChainContextPosFormat2",
         [
-            FieldSpec(
-                "uint16", "PosFormat", description="Format identifier-format = 2"
-            ),
+            FieldSpec("uint16", "PosFormat", description="Format identifier-format = 2"),
             FieldSpec(
                 "Offset",
                 "Coverage",
@@ -1204,9 +1140,7 @@ otData = [
     (
         "ChainContextPosFormat3",
         [
-            FieldSpec(
-                "uint16", "PosFormat", description="Format identifier-format = 3"
-            ),
+            FieldSpec("uint16", "PosFormat", description="Format identifier-format = 3"),
             FieldSpec(
                 "uint16",
                 "BacktrackGlyphCount",
@@ -1256,9 +1190,7 @@ otData = [
     (
         "ExtensionPosFormat1",
         [
-            FieldSpec(
-                "uint16", "ExtFormat", description="Format identifier. Set to 1."
-            ),
+            FieldSpec("uint16", "ExtFormat", description="Format identifier. Set to 1."),
             FieldSpec(
                 "uint16",
                 "ExtensionLookupType",
@@ -1280,46 +1212,26 @@ otData = [
     (
         "AnchorFormat1",
         [
-            FieldSpec(
-                "uint16", "AnchorFormat", description="Format identifier-format = 1"
-            ),
-            FieldSpec(
-                "int16", "XCoordinate", description="Horizontal value-in design units"
-            ),
-            FieldSpec(
-                "int16", "YCoordinate", description="Vertical value-in design units"
-            ),
+            FieldSpec("uint16", "AnchorFormat", description="Format identifier-format = 1"),
+            FieldSpec("int16", "XCoordinate", description="Horizontal value-in design units"),
+            FieldSpec("int16", "YCoordinate", description="Vertical value-in design units"),
         ],
     ),
     (
         "AnchorFormat2",
         [
-            FieldSpec(
-                "uint16", "AnchorFormat", description="Format identifier-format = 2"
-            ),
-            FieldSpec(
-                "int16", "XCoordinate", description="Horizontal value-in design units"
-            ),
-            FieldSpec(
-                "int16", "YCoordinate", description="Vertical value-in design units"
-            ),
-            FieldSpec(
-                "uint16", "AnchorPoint", description="Index to glyph contour point"
-            ),
+            FieldSpec("uint16", "AnchorFormat", description="Format identifier-format = 2"),
+            FieldSpec("int16", "XCoordinate", description="Horizontal value-in design units"),
+            FieldSpec("int16", "YCoordinate", description="Vertical value-in design units"),
+            FieldSpec("uint16", "AnchorPoint", description="Index to glyph contour point"),
         ],
     ),
     (
         "AnchorFormat3",
         [
-            FieldSpec(
-                "uint16", "AnchorFormat", description="Format identifier-format = 3"
-            ),
-            FieldSpec(
-                "int16", "XCoordinate", description="Horizontal value-in design units"
-            ),
-            FieldSpec(
-                "int16", "YCoordinate", description="Vertical value-in design units"
-            ),
+            FieldSpec("uint16", "AnchorFormat", description="Format identifier-format = 3"),
+            FieldSpec("int16", "XCoordinate", description="Horizontal value-in design units"),
+            FieldSpec("int16", "YCoordinate", description="Vertical value-in design units"),
             FieldSpec(
                 "Offset",
                 "XDeviceTable",
@@ -1393,9 +1305,7 @@ otData = [
     (
         "SingleSubstFormat1",
         [
-            FieldSpec(
-                "uint16", "SubstFormat", description="Format identifier-format = 1"
-            ),
+            FieldSpec("uint16", "SubstFormat", description="Format identifier-format = 1"),
             FieldSpec(
                 "Offset",
                 "Coverage",
@@ -1411,9 +1321,7 @@ otData = [
     (
         "SingleSubstFormat2",
         [
-            FieldSpec(
-                "uint16", "SubstFormat", description="Format identifier-format = 2"
-            ),
+            FieldSpec("uint16", "SubstFormat", description="Format identifier-format = 2"),
             FieldSpec(
                 "Offset",
                 "Coverage",
@@ -1436,9 +1344,7 @@ otData = [
     (
         "MultipleSubstFormat1",
         [
-            FieldSpec(
-                "uint16", "SubstFormat", description="Format identifier-format = 1"
-            ),
+            FieldSpec("uint16", "SubstFormat", description="Format identifier-format = 1"),
             FieldSpec(
                 "Offset",
                 "Coverage",
@@ -1478,9 +1384,7 @@ otData = [
     (
         "AlternateSubstFormat1",
         [
-            FieldSpec(
-                "uint16", "SubstFormat", description="Format identifier-format = 1"
-            ),
+            FieldSpec("uint16", "SubstFormat", description="Format identifier-format = 1"),
             FieldSpec(
                 "Offset",
                 "Coverage",
@@ -1520,17 +1424,13 @@ otData = [
     (
         "LigatureSubstFormat1",
         [
-            FieldSpec(
-                "uint16", "SubstFormat", description="Format identifier-format = 1"
-            ),
+            FieldSpec("uint16", "SubstFormat", description="Format identifier-format = 1"),
             FieldSpec(
                 "Offset",
                 "Coverage",
                 description="Offset to Coverage table-from beginning of Substitution table",
             ),
-            FieldSpec(
-                "uint16", "LigSetCount", description="Number of LigatureSet tables"
-            ),
+            FieldSpec("uint16", "LigSetCount", description="Number of LigatureSet tables"),
             FieldSpec(
                 "Offset",
                 "LigatureSet",
@@ -1543,9 +1443,7 @@ otData = [
     (
         "LigatureSet",
         [
-            FieldSpec(
-                "uint16", "LigatureCount", description="Number of Ligature tables"
-            ),
+            FieldSpec("uint16", "LigatureCount", description="Number of Ligature tables"),
             FieldSpec(
                 "Offset",
                 "Ligature",
@@ -1558,9 +1456,7 @@ otData = [
     (
         "Ligature",
         [
-            FieldSpec(
-                "GlyphID", "LigGlyph", description="GlyphID of ligature to substitute"
-            ),
+            FieldSpec("GlyphID", "LigGlyph", description="GlyphID of ligature to substitute"),
             FieldSpec(
                 "uint16",
                 "CompCount",
@@ -1593,9 +1489,7 @@ otData = [
     (
         "ContextSubstFormat1",
         [
-            FieldSpec(
-                "uint16", "SubstFormat", description="Format identifier-format = 1"
-            ),
+            FieldSpec("uint16", "SubstFormat", description="Format identifier-format = 1"),
             FieldSpec(
                 "Offset",
                 "Coverage",
@@ -1636,9 +1530,7 @@ otData = [
                 "GlyphCount",
                 description="Total number of glyphs in input glyph sequence-includes the first glyph",
             ),
-            FieldSpec(
-                "uint16", "SubstCount", description="Number of SubstLookupRecords"
-            ),
+            FieldSpec("uint16", "SubstCount", description="Number of SubstLookupRecords"),
             FieldSpec(
                 "GlyphID",
                 "Input",
@@ -1658,9 +1550,7 @@ otData = [
     (
         "ContextSubstFormat2",
         [
-            FieldSpec(
-                "uint16", "SubstFormat", description="Format identifier-format = 2"
-            ),
+            FieldSpec("uint16", "SubstFormat", description="Format identifier-format = 2"),
             FieldSpec(
                 "Offset",
                 "Coverage",
@@ -1671,9 +1561,7 @@ otData = [
                 "ClassDef",
                 description="Offset to glyph ClassDef table-from beginning of Substitution table",
             ),
-            FieldSpec(
-                "uint16", "SubClassSetCount", description="Number of SubClassSet tables"
-            ),
+            FieldSpec("uint16", "SubClassSetCount", description="Number of SubClassSet tables"),
             FieldSpec(
                 "Offset",
                 "SubClassSet",
@@ -1708,9 +1596,7 @@ otData = [
                 "GlyphCount",
                 description="Total number of classes specified for the context in the rule-includes the first class",
             ),
-            FieldSpec(
-                "uint16", "SubstCount", description="Number of SubstLookupRecords"
-            ),
+            FieldSpec("uint16", "SubstCount", description="Number of SubstLookupRecords"),
             FieldSpec(
                 "uint16",
                 "Class",
@@ -1730,17 +1616,13 @@ otData = [
     (
         "ContextSubstFormat3",
         [
-            FieldSpec(
-                "uint16", "SubstFormat", description="Format identifier-format = 3"
-            ),
+            FieldSpec("uint16", "SubstFormat", description="Format identifier-format = 3"),
             FieldSpec(
                 "uint16",
                 "GlyphCount",
                 description="Number of glyphs in the input glyph sequence",
             ),
-            FieldSpec(
-                "uint16", "SubstCount", description="Number of SubstLookupRecords"
-            ),
+            FieldSpec("uint16", "SubstCount", description="Number of SubstLookupRecords"),
             FieldSpec(
                 "Offset",
                 "Coverage",
@@ -1760,9 +1642,7 @@ otData = [
     (
         "ChainContextSubstFormat1",
         [
-            FieldSpec(
-                "uint16", "SubstFormat", description="Format identifier-format = 1"
-            ),
+            FieldSpec("uint16", "SubstFormat", description="Format identifier-format = 1"),
             FieldSpec(
                 "Offset",
                 "Coverage",
@@ -1838,9 +1718,7 @@ otData = [
                 aux=0,
                 description="Array of lookahead GlyphID's (to be matched after the input sequence)",
             ),
-            FieldSpec(
-                "uint16", "SubstCount", description="Number of SubstLookupRecords"
-            ),
+            FieldSpec("uint16", "SubstCount", description="Number of SubstLookupRecords"),
             FieldSpec(
                 "struct",
                 "SubstLookupRecord",
@@ -1853,9 +1731,7 @@ otData = [
     (
         "ChainContextSubstFormat2",
         [
-            FieldSpec(
-                "uint16", "SubstFormat", description="Format identifier-format = 2"
-            ),
+            FieldSpec("uint16", "SubstFormat", description="Format identifier-format = 2"),
             FieldSpec(
                 "Offset",
                 "Coverage",
@@ -1946,9 +1822,7 @@ otData = [
                 aux=0,
                 description="Array of lookahead classes(to be matched after the input sequence)",
             ),
-            FieldSpec(
-                "uint16", "SubstCount", description="Number of SubstLookupRecords"
-            ),
+            FieldSpec("uint16", "SubstCount", description="Number of SubstLookupRecords"),
             FieldSpec(
                 "struct",
                 "SubstLookupRecord",
@@ -1961,9 +1835,7 @@ otData = [
     (
         "ChainContextSubstFormat3",
         [
-            FieldSpec(
-                "uint16", "SubstFormat", description="Format identifier-format = 3"
-            ),
+            FieldSpec("uint16", "SubstFormat", description="Format identifier-format = 3"),
             FieldSpec(
                 "uint16",
                 "BacktrackGlyphCount",
@@ -2000,9 +1872,7 @@ otData = [
                 aux=0,
                 description="Array of offsets to coverage tables in lookahead sequence, in glyph sequence order",
             ),
-            FieldSpec(
-                "uint16", "SubstCount", description="Number of SubstLookupRecords"
-            ),
+            FieldSpec("uint16", "SubstCount", description="Number of SubstLookupRecords"),
             FieldSpec(
                 "struct",
                 "SubstLookupRecord",
@@ -2015,9 +1885,7 @@ otData = [
     (
         "ExtensionSubstFormat1",
         [
-            FieldSpec(
-                "uint16", "ExtFormat", description="Format identifier. Set to 1."
-            ),
+            FieldSpec("uint16", "ExtFormat", description="Format identifier. Set to 1."),
             FieldSpec(
                 "uint16",
                 "ExtensionLookupType",
@@ -2033,9 +1901,7 @@ otData = [
     (
         "ReverseChainSingleSubstFormat1",
         [
-            FieldSpec(
-                "uint16", "SubstFormat", description="Format identifier-format = 1"
-            ),
+            FieldSpec("uint16", "SubstFormat", description="Format identifier-format = 1"),
             FieldSpec(
                 "Offset",
                 "Coverage",
@@ -2172,9 +2038,7 @@ otData = [
                 "Coverage",
                 description="Offset to Coverage table - from beginning of LigCaretList table",
             ),
-            FieldSpec(
-                "uint16", "LigGlyphCount", description="Number of ligature glyphs"
-            ),
+            FieldSpec("uint16", "LigGlyphCount", description="Number of ligature glyphs"),
             FieldSpec(
                 "Offset",
                 "LigGlyph",
@@ -2204,34 +2068,22 @@ otData = [
     (
         "CaretValueFormat1",
         [
-            FieldSpec(
-                "uint16", "CaretValueFormat", description="Format identifier-format = 1"
-            ),
-            FieldSpec(
-                "int16", "Coordinate", description="X or Y value, in design units"
-            ),
+            FieldSpec("uint16", "CaretValueFormat", description="Format identifier-format = 1"),
+            FieldSpec("int16", "Coordinate", description="X or Y value, in design units"),
         ],
     ),
     (
         "CaretValueFormat2",
         [
-            FieldSpec(
-                "uint16", "CaretValueFormat", description="Format identifier-format = 2"
-            ),
-            FieldSpec(
-                "uint16", "CaretValuePoint", description="Contour point index on glyph"
-            ),
+            FieldSpec("uint16", "CaretValueFormat", description="Format identifier-format = 2"),
+            FieldSpec("uint16", "CaretValuePoint", description="Contour point index on glyph"),
         ],
     ),
     (
         "CaretValueFormat3",
         [
-            FieldSpec(
-                "uint16", "CaretValueFormat", description="Format identifier-format = 3"
-            ),
-            FieldSpec(
-                "int16", "Coordinate", description="X or Y value, in design units"
-            ),
+            FieldSpec("uint16", "CaretValueFormat", description="Format identifier-format = 3"),
+            FieldSpec("int16", "Coordinate", description="X or Y value, in design units"),
             FieldSpec(
                 "Offset",
                 "DeviceTable",
@@ -2242,12 +2094,8 @@ otData = [
     (
         "MarkGlyphSetsDef",
         [
-            FieldSpec(
-                "uint16", "MarkSetTableFormat", description="Format identifier == 1"
-            ),
-            FieldSpec(
-                "uint16", "MarkSetCount", description="Number of mark sets defined"
-            ),
+            FieldSpec("uint16", "MarkSetTableFormat", description="Format identifier == 1"),
+            FieldSpec("uint16", "MarkSetCount", description="Number of mark sets defined"),
             FieldSpec(
                 "LOffset",
                 "Coverage",
@@ -2338,9 +2186,7 @@ otData = [
     (
         "BaseScriptRecord",
         [
-            FieldSpec(
-                "Tag", "BaseScriptTag", description="4-byte script identification tag"
-            ),
+            FieldSpec("Tag", "BaseScriptTag", description="4-byte script identification tag"),
             FieldSpec(
                 "Offset",
                 "BaseScript",
@@ -2462,26 +2308,16 @@ otData = [
     (
         "BaseCoordFormat1",
         [
-            FieldSpec(
-                "uint16", "BaseCoordFormat", description="Format identifier-format = 1"
-            ),
-            FieldSpec(
-                "int16", "Coordinate", description="X or Y value, in design units"
-            ),
+            FieldSpec("uint16", "BaseCoordFormat", description="Format identifier-format = 1"),
+            FieldSpec("int16", "Coordinate", description="X or Y value, in design units"),
         ],
     ),
     (
         "BaseCoordFormat2",
         [
-            FieldSpec(
-                "uint16", "BaseCoordFormat", description="Format identifier-format = 2"
-            ),
-            FieldSpec(
-                "int16", "Coordinate", description="X or Y value, in design units"
-            ),
-            FieldSpec(
-                "GlyphID", "ReferenceGlyph", description="GlyphID of control glyph"
-            ),
+            FieldSpec("uint16", "BaseCoordFormat", description="Format identifier-format = 2"),
+            FieldSpec("int16", "Coordinate", description="X or Y value, in design units"),
+            FieldSpec("GlyphID", "ReferenceGlyph", description="GlyphID of control glyph"),
             FieldSpec(
                 "uint16",
                 "BaseCoordPoint",
@@ -2492,12 +2328,8 @@ otData = [
     (
         "BaseCoordFormat3",
         [
-            FieldSpec(
-                "uint16", "BaseCoordFormat", description="Format identifier-format = 3"
-            ),
-            FieldSpec(
-                "int16", "Coordinate", description="X or Y value, in design units"
-            ),
+            FieldSpec("uint16", "BaseCoordFormat", description="Format identifier-format = 3"),
+            FieldSpec("int16", "Coordinate", description="X or Y value, in design units"),
             FieldSpec(
                 "Offset",
                 "DeviceTable",
@@ -2533,9 +2365,7 @@ otData = [
     (
         "JstfScriptRecord",
         [
-            FieldSpec(
-                "Tag", "JstfScriptTag", description="4-byte JstfScript identification"
-            ),
+            FieldSpec("Tag", "JstfScriptTag", description="4-byte JstfScript identification"),
             FieldSpec(
                 "Offset",
                 "JstfScript",
@@ -2573,9 +2403,7 @@ otData = [
     (
         "JstfLangSysRecord",
         [
-            FieldSpec(
-                "Tag", "JstfLangSysTag", description="4-byte JstfLangSys identifier"
-            ),
+            FieldSpec("Tag", "JstfLangSysTag", description="4-byte JstfLangSys identifier"),
             FieldSpec(
                 "Offset",
                 "JstfLangSys",
@@ -2739,17 +2567,13 @@ otData = [
                 "DesignAxisRecordSize",
                 description="Size in bytes of each design axis record",
             ),
-            FieldSpec(
-                "uint16", "DesignAxisCount", description="Number of design axis records"
-            ),
+            FieldSpec("uint16", "DesignAxisCount", description="Number of design axis records"),
             FieldSpec(
                 "LOffsetTo(AxisRecordArray)",
                 "DesignAxisRecord",
                 description="Offset in bytes from the beginning of the STAT table to the start of the design axes array",
             ),
-            FieldSpec(
-                "uint16", "AxisValueCount", description="Number of axis value tables"
-            ),
+            FieldSpec("uint16", "AxisValueCount", description="Number of axis value tables"),
             FieldSpec(
                 "LOffsetTo(AxisValueArray)",
                 "AxisValueArray",
@@ -2994,9 +2818,7 @@ otData = [
         "ConditionTableFormat2",
         [
             FieldSpec("uint16", "Format", description="Format, = 2"),
-            FieldSpec(
-                "int16", "DefaultValue", description="Value at default instance."
-            ),
+            FieldSpec("int16", "DefaultValue", description="Value at default instance."),
             FieldSpec(
                 "uint32",
                 "VarIdx",
@@ -3144,9 +2966,7 @@ otData = [
     (
         "DeltaSetIndexMapFormat0",
         [
-            FieldSpec(
-                "uint8", "Format", description="Format of the DeltaSetIndexMap = 0"
-            ),
+            FieldSpec("uint8", "Format", description="Format of the DeltaSetIndexMap = 0"),
             FieldSpec("uint8", "EntryFormat"),  # Automatically computed
             FieldSpec("uint16", "MappingCount"),  # Automatically computed
             FieldSpec(
@@ -3161,9 +2981,7 @@ otData = [
     (
         "DeltaSetIndexMapFormat1",
         [
-            FieldSpec(
-                "uint8", "Format", description="Format of the DeltaSetIndexMap = 1"
-            ),
+            FieldSpec("uint8", "Format", description="Format of the DeltaSetIndexMap = 1"),
             FieldSpec("uint8", "EntryFormat"),  # Automatically computed
             FieldSpec("uint32", "MappingCount"),  # Automatically computed
             FieldSpec(
@@ -3189,18 +3007,14 @@ otData = [
         "SparseVarRegion",
         [
             FieldSpec("uint16", "SparseRegionCount"),
-            FieldSpec(
-                "struct", "SparseVarRegionAxis", repeat="SparseRegionCount", aux=0
-            ),
+            FieldSpec("struct", "SparseVarRegionAxis", repeat="SparseRegionCount", aux=0),
         ],
     ),
     (
         "SparseVarRegionList",
         [
             FieldSpec("uint16", "RegionCount"),
-            FieldSpec(
-                "LOffsetTo(SparseVarRegion)", "Region", repeat="RegionCount", aux=0
-            ),
+            FieldSpec("LOffsetTo(SparseVarRegion)", "Region", repeat="RegionCount", aux=0),
         ],
     ),
     (
@@ -3287,12 +3101,8 @@ otData = [
     (
         "MetricsValueRecord",
         [
-            FieldSpec(
-                "Tag", "ValueTag", description="4-byte font-wide measure identifier"
-            ),
-            FieldSpec(
-                "uint32", "VarIdx", description="Combined outer-inner variation index"
-            ),
+            FieldSpec("Tag", "ValueTag", description="4-byte font-wide measure identifier"),
+            FieldSpec("uint32", "VarIdx", description="Combined outer-inner variation index"),
             FieldSpec(
                 "uint8",
                 "MoreBytes",
@@ -3314,9 +3124,7 @@ otData = [
             FieldSpec("uint16", "ValueRecordSize"),
             FieldSpec("uint16", "ValueRecordCount"),
             FieldSpec("Offset", "VarStore"),
-            FieldSpec(
-                "MetricsValueRecord", "ValueRecord", repeat="ValueRecordCount", aux=0
-            ),
+            FieldSpec("MetricsValueRecord", "ValueRecord", repeat="ValueRecordCount", aux=0),
         ],
     ),
     #
@@ -3350,9 +3158,7 @@ otData = [
     (
         "MathValueRecord",
         [
-            FieldSpec(
-                "int16", "Value", description="The X or Y value in design units."
-            ),
+            FieldSpec("int16", "Value", description="The X or Y value in design units."),
             FieldSpec(
                 "Offset",
                 "DeviceTable",
@@ -3388,9 +3194,7 @@ otData = [
                 "MathLeading",
                 description="White space to be left between math formulas to ensure proper line spacing. For example, for applications that treat line gap as a part of line ascender, formulas with ink  going above (os2.sTypoAscender + os2.sTypoLineGap - MathLeading) or with ink going below os2.sTypoDescender will result in increasing line height.",
             ),
-            FieldSpec(
-                "MathValueRecord", "AxisHeight", description="Axis height of the font."
-            ),
+            FieldSpec("MathValueRecord", "AxisHeight", description="Axis height of the font."),
             FieldSpec(
                 "MathValueRecord",
                 "AccentBaseHeight",
@@ -3720,9 +3524,7 @@ otData = [
                 "MathKernCoverage",
                 description="Offset to Coverage table - from the beginning of the MathKernInfo table.",
             ),
-            FieldSpec(
-                "uint16", "MathKernCount", description="Number of MathKernInfoRecords."
-            ),
+            FieldSpec("uint16", "MathKernCount", description="Number of MathKernInfoRecords."),
             FieldSpec(
                 "MathKernInfoRecord",
                 "MathKernInfoRecords",
@@ -3850,9 +3652,7 @@ otData = [
     (
         "MathGlyphVariantRecord",
         [
-            FieldSpec(
-                "GlyphID", "VariantGlyph", description="Glyph ID for the variant."
-            ),
+            FieldSpec("GlyphID", "VariantGlyph", description="Glyph ID for the variant."),
             FieldSpec(
                 "uint16",
                 "AdvanceMeasurement",
@@ -3868,9 +3668,7 @@ otData = [
                 "ItalicsCorrection",
                 description="Italics correction of this GlyphAssembly. Should not depend on the assembly size.",
             ),
-            FieldSpec(
-                "uint16", "PartCount", description="Number of parts in this assembly."
-            ),
+            FieldSpec("uint16", "PartCount", description="Number of parts in this assembly."),
             FieldSpec(
                 "GlyphPartRecord",
                 "PartRecords",
@@ -3912,12 +3710,8 @@ otData = [
     (
         "AATLookupSegment",
         [
-            FieldSpec(
-                "uint16", "lastGlyph", description="Last glyph index in this segment."
-            ),
-            FieldSpec(
-                "uint16", "firstGlyph", description="First glyph index in this segment."
-            ),
+            FieldSpec("uint16", "lastGlyph", description="Last glyph index in this segment."),
+            FieldSpec("uint16", "firstGlyph", description="First glyph index in this segment."),
             FieldSpec(
                 "uint16",
                 "value",
@@ -3942,9 +3736,7 @@ otData = [
                 "Format",
                 description="Format of the anchor points table, = 0.",
             ),
-            FieldSpec(
-                "uint16", "Flags", description="Flags. Currenty unused, set to zero."
-            ),
+            FieldSpec("uint16", "Flags", description="Flags. Currenty unused, set to zero."),
             FieldSpec(
                 "AATLookupWithDataOffset(AnchorGlyphData)",
                 "Anchors",
@@ -3972,12 +3764,8 @@ otData = [
     (
         "AnchorPoint",
         [
-            FieldSpec(
-                "int16", "XCoordinate", description="X coordinate of this anchor point."
-            ),
-            FieldSpec(
-                "int16", "YCoordinate", description="Y coordinate of this anchor point."
-            ),
+            FieldSpec("int16", "XCoordinate", description="X coordinate of this anchor point."),
+            FieldSpec("int16", "YCoordinate", description="Y coordinate of this anchor point."),
         ],
     ),
     #
@@ -3997,9 +3785,7 @@ otData = [
     (
         "BaselineFormat0",
         [
-            FieldSpec(
-                "uint16", "Format", description="Format of the baseline table, = 0."
-            ),
+            FieldSpec("uint16", "Format", description="Format of the baseline table, = 0."),
             FieldSpec(
                 "uint16",
                 "DefaultBaseline",
@@ -4017,9 +3803,7 @@ otData = [
     (
         "BaselineFormat1",
         [
-            FieldSpec(
-                "uint16", "Format", description="Format of the baseline table, = 1."
-            ),
+            FieldSpec("uint16", "Format", description="Format of the baseline table, = 1."),
             FieldSpec(
                 "uint16",
                 "DefaultBaseline",
@@ -4042,9 +3826,7 @@ otData = [
     (
         "BaselineFormat2",
         [
-            FieldSpec(
-                "uint16", "Format", description="Format of the baseline table, = 1."
-            ),
+            FieldSpec("uint16", "Format", description="Format of the baseline table, = 1."),
             FieldSpec(
                 "uint16",
                 "DefaultBaseline",
@@ -4067,9 +3849,7 @@ otData = [
     (
         "BaselineFormat3",
         [
-            FieldSpec(
-                "uint16", "Format", description="Format of the baseline table, = 1."
-            ),
+            FieldSpec("uint16", "Format", description="Format of the baseline table, = 1."),
             FieldSpec(
                 "uint16",
                 "DefaultBaseline",
@@ -4100,9 +3880,7 @@ otData = [
     (
         "cidg",
         [
-            FieldSpec(
-                "struct", "CIDGlyphMapping", description="CID-to-glyph mapping table."
-            ),
+            FieldSpec("struct", "CIDGlyphMapping", description="CID-to-glyph mapping table."),
         ],
     ),
     (
@@ -4113,12 +3891,8 @@ otData = [
                 "Format",
                 description="Format of the CID-to-glyph mapping table, = 0.",
             ),
-            FieldSpec(
-                "uint16", "DataFormat", description="Currenty unused, set to zero."
-            ),
-            FieldSpec(
-                "uint32", "StructLength", description="Size of the table in bytes."
-            ),
+            FieldSpec("uint16", "DataFormat", description="Currenty unused, set to zero."),
+            FieldSpec("uint32", "StructLength", description="Size of the table in bytes."),
             FieldSpec("uint16", "Registry", description="The registry ID."),
             FieldSpec(
                 "char64",
@@ -4131,9 +3905,7 @@ otData = [
                 "OrderName",
                 description="The order name in ASCII; unused bytes should be set to 0.",
             ),
-            FieldSpec(
-                "uint16", "SupplementVersion", description="The supplement version."
-            ),
+            FieldSpec("uint16", "SupplementVersion", description="The supplement version."),
             FieldSpec(
                 "CIDGlyphMap",
                 "Mapping",
@@ -4229,9 +4001,7 @@ otData = [
     (
         "gcid",
         [
-            FieldSpec(
-                "struct", "GlyphCIDMapping", description="Glyph to CID mapping table."
-            ),
+            FieldSpec("struct", "GlyphCIDMapping", description="Glyph to CID mapping table."),
         ],
     ),
     (
@@ -4242,12 +4012,8 @@ otData = [
                 "Format",
                 description="Format of the glyph-to-CID mapping table, = 0.",
             ),
-            FieldSpec(
-                "uint16", "DataFormat", description="Currenty unused, set to zero."
-            ),
-            FieldSpec(
-                "uint32", "StructLength", description="Size of the table in bytes."
-            ),
+            FieldSpec("uint16", "DataFormat", description="Currenty unused, set to zero."),
+            FieldSpec("uint32", "StructLength", description="Size of the table in bytes."),
             FieldSpec("uint16", "Registry", description="The registry ID."),
             FieldSpec(
                 "char64",
@@ -4260,9 +4026,7 @@ otData = [
                 "OrderName",
                 description="The order name in ASCII; unused bytes should be set to 0.",
             ),
-            FieldSpec(
-                "uint16", "SupplementVersion", description="The supplement version."
-            ),
+            FieldSpec("uint16", "SupplementVersion", description="The supplement version."),
             FieldSpec(
                 "GlyphCIDMap",
                 "Mapping",
@@ -4317,9 +4081,7 @@ otData = [
     (
         "LigCaretDistances",
         [
-            FieldSpec(
-                "uint16", "DivsionPointCount", description="Number of division points."
-            ),
+            FieldSpec("uint16", "DivsionPointCount", description="Number of division points."),
             FieldSpec(
                 "int16",
                 "DivisionPoint",
@@ -4332,9 +4094,7 @@ otData = [
     (
         "LigCaretPoints",
         [
-            FieldSpec(
-                "uint16", "DivsionPointCount", description="Number of division points."
-            ),
+            FieldSpec("uint16", "DivsionPointCount", description="Number of division points."),
             FieldSpec(
                 "int16",
                 "DivisionPoint",
@@ -4716,9 +4476,7 @@ otData = [
                 "Left",
                 description="Delta value for the left-side optical edge.",
             ),
-            FieldSpec(
-                "int16", "Top", description="Delta value for the top-side optical edge."
-            ),
+            FieldSpec("int16", "Top", description="Delta value for the top-side optical edge."),
             FieldSpec(
                 "int16",
                 "Right",
@@ -4797,9 +4555,7 @@ otData = [
     (
         "LocationRecord",
         [
-            FieldSpec(
-                "F2Dot14", "Axis", repeat="AxisCount", aux=0, description="Axis record"
-            ),
+            FieldSpec("F2Dot14", "Axis", repeat="AxisCount", aux=0, description="Axis record"),
         ],
     ),
     (
@@ -4845,9 +4601,7 @@ otData = [
     (
         "COLR",
         [
-            FieldSpec(
-                "uint16", "Version", description="Table version number (starts at 0)."
-            ),
+            FieldSpec("uint16", "Version", description="Table version number (starts at 0)."),
             FieldSpec(
                 "uint16",
                 "BaseGlyphRecordCount",
@@ -4863,9 +4617,7 @@ otData = [
                 "LayerRecordArray",
                 description="Offset (from beginning of COLR table) to Layer Records.",
             ),
-            FieldSpec(
-                "uint16", "LayerRecordCount", description="Number of Layer Records."
-            ),
+            FieldSpec("uint16", "LayerRecordCount", description="Number of Layer Records."),
             FieldSpec(
                 "LOffset",
                 "BaseGlyphList",
@@ -4977,9 +4729,7 @@ otData = [
     (
         "BaseGlyphPaintRecord",
         [
-            FieldSpec(
-                "GlyphID", "BaseGlyph", description="Glyph ID of reference glyph."
-            ),
+            FieldSpec("GlyphID", "BaseGlyph", description="Glyph ID of reference glyph."),
             FieldSpec(
                 "LOffset",
                 "Paint",
@@ -5021,12 +4771,8 @@ otData = [
     (
         "ClipRecord",
         [
-            FieldSpec(
-                "uint16", "StartGlyphID", description="First glyph ID in the range."
-            ),
-            FieldSpec(
-                "uint16", "EndGlyphID", description="Last glyph ID in the range."
-            ),
+            FieldSpec("uint16", "StartGlyphID", description="First glyph ID in the range."),
+            FieldSpec("uint16", "EndGlyphID", description="Last glyph ID in the range."),
             FieldSpec("Offset24", "ClipBox", description="Offset to a ClipBox table."),
         ],
     ),
@@ -5047,21 +4793,11 @@ otData = [
     (
         "ClipBoxFormat2",
         [
-            FieldSpec(
-                "uint8", "Format", description="Format for variable ClipBox: set to 2."
-            ),
-            FieldSpec(
-                "int16", "xMin", description="Minimum x of clip box. VarIndexBase + 0."
-            ),
-            FieldSpec(
-                "int16", "yMin", description="Minimum y of clip box. VarIndexBase + 1."
-            ),
-            FieldSpec(
-                "int16", "xMax", description="Maximum x of clip box. VarIndexBase + 2."
-            ),
-            FieldSpec(
-                "int16", "yMax", description="Maximum y of clip box. VarIndexBase + 3."
-            ),
+            FieldSpec("uint8", "Format", description="Format for variable ClipBox: set to 2."),
+            FieldSpec("int16", "xMin", description="Minimum x of clip box. VarIndexBase + 0."),
+            FieldSpec("int16", "yMin", description="Minimum y of clip box. VarIndexBase + 1."),
+            FieldSpec("int16", "xMax", description="Maximum x of clip box. VarIndexBase + 2."),
+            FieldSpec("int16", "yMax", description="Maximum y of clip box. VarIndexBase + 3."),
             FieldSpec(
                 "VarIndex",
                 "VarIndexBase",
@@ -5092,18 +4828,10 @@ otData = [
     (
         "VarAffine2x3",
         [
-            FieldSpec(
-                "Fixed", "xx", description="x-part of x basis vector. VarIndexBase + 0."
-            ),
-            FieldSpec(
-                "Fixed", "yx", description="y-part of x basis vector. VarIndexBase + 1."
-            ),
-            FieldSpec(
-                "Fixed", "xy", description="x-part of y basis vector. VarIndexBase + 2."
-            ),
-            FieldSpec(
-                "Fixed", "yy", description="y-part of y basis vector. VarIndexBase + 3."
-            ),
+            FieldSpec("Fixed", "xx", description="x-part of x basis vector. VarIndexBase + 0."),
+            FieldSpec("Fixed", "yx", description="y-part of x basis vector. VarIndexBase + 1."),
+            FieldSpec("Fixed", "xy", description="x-part of y basis vector. VarIndexBase + 2."),
+            FieldSpec("Fixed", "yy", description="y-part of y basis vector. VarIndexBase + 3."),
             FieldSpec(
                 "Fixed",
                 "dx",
@@ -5125,21 +4853,15 @@ otData = [
         "ColorStop",
         [
             FieldSpec("F2Dot14", "StopOffset"),
-            FieldSpec(
-                "uint16", "PaletteIndex", description="Index for a CPAL palette entry."
-            ),
-            FieldSpec(
-                "F2Dot14", "Alpha", description="Values outsided [0.,1.] reserved"
-            ),
+            FieldSpec("uint16", "PaletteIndex", description="Index for a CPAL palette entry."),
+            FieldSpec("F2Dot14", "Alpha", description="Values outsided [0.,1.] reserved"),
         ],
     ),
     (
         "VarColorStop",
         [
             FieldSpec("F2Dot14", "StopOffset", description="VarIndexBase + 0."),
-            FieldSpec(
-                "uint16", "PaletteIndex", description="Index for a CPAL palette entry."
-            ),
+            FieldSpec("uint16", "PaletteIndex", description="Index for a CPAL palette entry."),
             FieldSpec(
                 "F2Dot14",
                 "Alpha",
@@ -5192,9 +4914,7 @@ otData = [
     (
         "PaintFormat1",
         [
-            FieldSpec(
-                "uint8", "PaintFormat", description="Format identifier-format = 1"
-            ),
+            FieldSpec("uint8", "PaintFormat", description="Format identifier-format = 1"),
             FieldSpec(
                 "uint8",
                 "NumLayers",
@@ -5207,27 +4927,17 @@ otData = [
     (
         "PaintFormat2",
         [
-            FieldSpec(
-                "uint8", "PaintFormat", description="Format identifier-format = 2"
-            ),
-            FieldSpec(
-                "uint16", "PaletteIndex", description="Index for a CPAL palette entry."
-            ),
-            FieldSpec(
-                "F2Dot14", "Alpha", description="Values outsided [0.,1.] reserved"
-            ),
+            FieldSpec("uint8", "PaintFormat", description="Format identifier-format = 2"),
+            FieldSpec("uint16", "PaletteIndex", description="Index for a CPAL palette entry."),
+            FieldSpec("F2Dot14", "Alpha", description="Values outsided [0.,1.] reserved"),
         ],
     ),
     # PaintVarSolid
     (
         "PaintFormat3",
         [
-            FieldSpec(
-                "uint8", "PaintFormat", description="Format identifier-format = 3"
-            ),
-            FieldSpec(
-                "uint16", "PaletteIndex", description="Index for a CPAL palette entry."
-            ),
+            FieldSpec("uint8", "PaintFormat", description="Format identifier-format = 3"),
+            FieldSpec("uint16", "PaletteIndex", description="Index for a CPAL palette entry."),
             FieldSpec(
                 "F2Dot14",
                 "Alpha",
@@ -5244,9 +4954,7 @@ otData = [
     (
         "PaintFormat4",
         [
-            FieldSpec(
-                "uint8", "PaintFormat", description="Format identifier-format = 4"
-            ),
+            FieldSpec("uint8", "PaintFormat", description="Format identifier-format = 4"),
             FieldSpec(
                 "Offset24",
                 "ColorLine",
@@ -5264,9 +4972,7 @@ otData = [
     (
         "PaintFormat5",
         [
-            FieldSpec(
-                "uint8", "PaintFormat", description="Format identifier-format = 5"
-            ),
+            FieldSpec("uint8", "PaintFormat", description="Format identifier-format = 5"),
             FieldSpec(
                 "LOffset24To(VarColorLine)",
                 "ColorLine",
@@ -5289,9 +4995,7 @@ otData = [
     (
         "PaintFormat6",
         [
-            FieldSpec(
-                "uint8", "PaintFormat", description="Format identifier-format = 6"
-            ),
+            FieldSpec("uint8", "PaintFormat", description="Format identifier-format = 6"),
             FieldSpec(
                 "Offset24",
                 "ColorLine",
@@ -5309,9 +5013,7 @@ otData = [
     (
         "PaintFormat7",
         [
-            FieldSpec(
-                "uint8", "PaintFormat", description="Format identifier-format = 7"
-            ),
+            FieldSpec("uint8", "PaintFormat", description="Format identifier-format = 7"),
             FieldSpec(
                 "LOffset24To(VarColorLine)",
                 "ColorLine",
@@ -5334,9 +5036,7 @@ otData = [
     (
         "PaintFormat8",
         [
-            FieldSpec(
-                "uint8", "PaintFormat", description="Format identifier-format = 8"
-            ),
+            FieldSpec("uint8", "PaintFormat", description="Format identifier-format = 8"),
             FieldSpec(
                 "Offset24",
                 "ColorLine",
@@ -5360,20 +5060,14 @@ otData = [
     (
         "PaintFormat9",
         [
-            FieldSpec(
-                "uint8", "PaintFormat", description="Format identifier-format = 9"
-            ),
+            FieldSpec("uint8", "PaintFormat", description="Format identifier-format = 9"),
             FieldSpec(
                 "LOffset24To(VarColorLine)",
                 "ColorLine",
                 description="Offset (from beginning of PaintVarSweepGradient table) to VarColorLine subtable.",
             ),
-            FieldSpec(
-                "int16", "centerX", description="Center x coordinate. VarIndexBase + 0."
-            ),
-            FieldSpec(
-                "int16", "centerY", description="Center y coordinate. VarIndexBase + 1."
-            ),
+            FieldSpec("int16", "centerX", description="Center x coordinate. VarIndexBase + 0."),
+            FieldSpec("int16", "centerY", description="Center y coordinate. VarIndexBase + 1."),
             FieldSpec(
                 "BiasedAngle",
                 "startAngle",
@@ -5395,26 +5089,20 @@ otData = [
     (
         "PaintFormat10",
         [
-            FieldSpec(
-                "uint8", "PaintFormat", description="Format identifier-format = 10"
-            ),
+            FieldSpec("uint8", "PaintFormat", description="Format identifier-format = 10"),
             FieldSpec(
                 "Offset24",
                 "Paint",
                 description="Offset (from beginning of PaintGlyph table) to Paint subtable.",
             ),
-            FieldSpec(
-                "GlyphID", "Glyph", description="Glyph ID for the source outline."
-            ),
+            FieldSpec("GlyphID", "Glyph", description="Glyph ID for the source outline."),
         ],
     ),
     # PaintColrGlyph
     (
         "PaintFormat11",
         [
-            FieldSpec(
-                "uint8", "PaintFormat", description="Format identifier-format = 11"
-            ),
+            FieldSpec("uint8", "PaintFormat", description="Format identifier-format = 11"),
             FieldSpec(
                 "GlyphID",
                 "Glyph",
@@ -5426,9 +5114,7 @@ otData = [
     (
         "PaintFormat12",
         [
-            FieldSpec(
-                "uint8", "PaintFormat", description="Format identifier-format = 12"
-            ),
+            FieldSpec("uint8", "PaintFormat", description="Format identifier-format = 12"),
             FieldSpec(
                 "Offset24",
                 "Paint",
@@ -5445,9 +5131,7 @@ otData = [
     (
         "PaintFormat13",
         [
-            FieldSpec(
-                "uint8", "PaintFormat", description="Format identifier-format = 13"
-            ),
+            FieldSpec("uint8", "PaintFormat", description="Format identifier-format = 13"),
             FieldSpec(
                 "Offset24",
                 "Paint",
@@ -5464,9 +5148,7 @@ otData = [
     (
         "PaintFormat14",
         [
-            FieldSpec(
-                "uint8", "PaintFormat", description="Format identifier-format = 14"
-            ),
+            FieldSpec("uint8", "PaintFormat", description="Format identifier-format = 14"),
             FieldSpec(
                 "Offset24",
                 "Paint",
@@ -5480,9 +5162,7 @@ otData = [
     (
         "PaintFormat15",
         [
-            FieldSpec(
-                "uint8", "PaintFormat", description="Format identifier-format = 15"
-            ),
+            FieldSpec("uint8", "PaintFormat", description="Format identifier-format = 15"),
             FieldSpec(
                 "Offset24",
                 "Paint",
@@ -5509,9 +5189,7 @@ otData = [
     (
         "PaintFormat16",
         [
-            FieldSpec(
-                "uint8", "PaintFormat", description="Format identifier-format = 16"
-            ),
+            FieldSpec("uint8", "PaintFormat", description="Format identifier-format = 16"),
             FieldSpec(
                 "Offset24",
                 "Paint",
@@ -5525,9 +5203,7 @@ otData = [
     (
         "PaintFormat17",
         [
-            FieldSpec(
-                "uint8", "PaintFormat", description="Format identifier-format = 17"
-            ),
+            FieldSpec("uint8", "PaintFormat", description="Format identifier-format = 17"),
             FieldSpec(
                 "Offset24",
                 "Paint",
@@ -5546,9 +5222,7 @@ otData = [
     (
         "PaintFormat18",
         [
-            FieldSpec(
-                "uint8", "PaintFormat", description="Format identifier-format = 18"
-            ),
+            FieldSpec("uint8", "PaintFormat", description="Format identifier-format = 18"),
             FieldSpec(
                 "Offset24",
                 "Paint",
@@ -5564,9 +5238,7 @@ otData = [
     (
         "PaintFormat19",
         [
-            FieldSpec(
-                "uint8", "PaintFormat", description="Format identifier-format = 19"
-            ),
+            FieldSpec("uint8", "PaintFormat", description="Format identifier-format = 19"),
             FieldSpec(
                 "Offset24",
                 "Paint",
@@ -5587,9 +5259,7 @@ otData = [
     (
         "PaintFormat20",
         [
-            FieldSpec(
-                "uint8", "PaintFormat", description="Format identifier-format = 20"
-            ),
+            FieldSpec("uint8", "PaintFormat", description="Format identifier-format = 20"),
             FieldSpec(
                 "Offset24",
                 "Paint",
@@ -5602,9 +5272,7 @@ otData = [
     (
         "PaintFormat21",
         [
-            FieldSpec(
-                "uint8", "PaintFormat", description="Format identifier-format = 21"
-            ),
+            FieldSpec("uint8", "PaintFormat", description="Format identifier-format = 21"),
             FieldSpec(
                 "Offset24",
                 "Paint",
@@ -5622,9 +5290,7 @@ otData = [
     (
         "PaintFormat22",
         [
-            FieldSpec(
-                "uint8", "PaintFormat", description="Format identifier-format = 22"
-            ),
+            FieldSpec("uint8", "PaintFormat", description="Format identifier-format = 22"),
             FieldSpec(
                 "Offset24",
                 "Paint",
@@ -5639,9 +5305,7 @@ otData = [
     (
         "PaintFormat23",
         [
-            FieldSpec(
-                "uint8", "PaintFormat", description="Format identifier-format = 23"
-            ),
+            FieldSpec("uint8", "PaintFormat", description="Format identifier-format = 23"),
             FieldSpec(
                 "Offset24",
                 "Paint",
@@ -5661,9 +5325,7 @@ otData = [
     (
         "PaintFormat24",
         [
-            FieldSpec(
-                "uint8", "PaintFormat", description="Format identifier-format = 24"
-            ),
+            FieldSpec("uint8", "PaintFormat", description="Format identifier-format = 24"),
             FieldSpec(
                 "Offset24",
                 "Paint",
@@ -5676,9 +5338,7 @@ otData = [
     (
         "PaintFormat25",
         [
-            FieldSpec(
-                "uint8", "PaintFormat", description="Format identifier-format = 25"
-            ),
+            FieldSpec("uint8", "PaintFormat", description="Format identifier-format = 25"),
             FieldSpec(
                 "Offset24",
                 "Paint",
@@ -5696,9 +5356,7 @@ otData = [
     (
         "PaintFormat26",
         [
-            FieldSpec(
-                "uint8", "PaintFormat", description="Format identifier-format = 26"
-            ),
+            FieldSpec("uint8", "PaintFormat", description="Format identifier-format = 26"),
             FieldSpec(
                 "Offset24",
                 "Paint",
@@ -5713,9 +5371,7 @@ otData = [
     (
         "PaintFormat27",
         [
-            FieldSpec(
-                "uint8", "PaintFormat", description="Format identifier-format = 27"
-            ),
+            FieldSpec("uint8", "PaintFormat", description="Format identifier-format = 27"),
             FieldSpec(
                 "Offset24",
                 "Paint",
@@ -5735,9 +5391,7 @@ otData = [
     (
         "PaintFormat28",
         [
-            FieldSpec(
-                "uint8", "PaintFormat", description="Format identifier-format = 28"
-            ),
+            FieldSpec("uint8", "PaintFormat", description="Format identifier-format = 28"),
             FieldSpec(
                 "Offset24",
                 "Paint",
@@ -5751,9 +5405,7 @@ otData = [
     (
         "PaintFormat29",
         [
-            FieldSpec(
-                "uint8", "PaintFormat", description="Format identifier-format = 29"
-            ),
+            FieldSpec("uint8", "PaintFormat", description="Format identifier-format = 29"),
             FieldSpec(
                 "Offset24",
                 "Paint",
@@ -5772,9 +5424,7 @@ otData = [
     (
         "PaintFormat30",
         [
-            FieldSpec(
-                "uint8", "PaintFormat", description="Format identifier-format = 30"
-            ),
+            FieldSpec("uint8", "PaintFormat", description="Format identifier-format = 30"),
             FieldSpec(
                 "Offset24",
                 "Paint",
@@ -5790,9 +5440,7 @@ otData = [
     (
         "PaintFormat31",
         [
-            FieldSpec(
-                "uint8", "PaintFormat", description="Format identifier-format = 31"
-            ),
+            FieldSpec("uint8", "PaintFormat", description="Format identifier-format = 31"),
             FieldSpec(
                 "Offset24",
                 "Paint",
@@ -5813,9 +5461,7 @@ otData = [
     (
         "PaintFormat32",
         [
-            FieldSpec(
-                "uint8", "PaintFormat", description="Format identifier-format = 32"
-            ),
+            FieldSpec("uint8", "PaintFormat", description="Format identifier-format = 32"),
             FieldSpec(
                 "LOffset24To(Paint)",
                 "SourcePaint",
@@ -5876,9 +5522,7 @@ otData = [
                 "Version",
                 description="Version of the avar table- 0x00010000 or 0x00020000",
             ),
-            FieldSpec(
-                "uint16", "Reserved", description="Permanently reserved; set to zero"
-            ),
+            FieldSpec("uint16", "Reserved", description="Permanently reserved; set to zero"),
             FieldSpec(
                 "uint16",
                 "AxisCount",
@@ -5891,9 +5535,7 @@ otData = [
                 aux=0,
                 description='The segment maps array — one segment map for each axis, in the order of axes specified in the "fvar" table',
             ),
-            FieldSpec(
-                "LOffsetTo(DeltaSetIndexMap)", "VarIdxMap", aux="Version >= 0x00020000"
-            ),
+            FieldSpec("LOffsetTo(DeltaSetIndexMap)", "VarIdxMap", aux="Version >= 0x00020000"),
             FieldSpec("LOffset", "VarStore", aux="Version >= 0x00020000"),
         ],
     ),
@@ -5905,9 +5547,7 @@ otData = [
     (
         "PatchMapFormat2",
         [
-            FieldSpec(
-                "uint8", "Format", description="Set to 2, identifies this as format 2."
-            ),
+            FieldSpec("uint8", "Format", description="Set to 2, identifies this as format 2."),
             FieldSpec("uint24", "Reserved", description="Not used, set to 0."),
             FieldSpec(
                 "uint8",

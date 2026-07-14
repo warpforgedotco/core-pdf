@@ -7,9 +7,14 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Iterable, Mapping
 
 from core_pdf.impl.engine.extraction.common import page_geometry
+from core_pdf.impl.engine.extraction.common.ordering import LayoutAnalyzer
 from core_pdf.impl.engine.extraction.ocr import (
     candidates as ocr_candidates,
+)
+from core_pdf.impl.engine.extraction.ocr import (
     iterator_layout as ocr_iterator_layout,
+)
+from core_pdf.impl.engine.extraction.ocr import (
     selection as ocr_selection,
 )
 from core_pdf.impl.engine.extraction.ocr.candidates import OcrCandidate
@@ -24,16 +29,15 @@ from core_pdf.impl.engine.extraction.ocr.text_analysis import (
     token_alnum_count,
     vector_text_supports_schematic_tiled_ocr,
 )
-from core_pdf.impl.engine.extraction.common.ordering import LayoutAnalyzer
-from core_pdf.impl.engine.extraction.ocr.vector_text import VectorStrokeOcrResult
-from core_pdf.impl.engine.rendering.models import RenderedPage
 from core_pdf.impl.engine.extraction.ocr.types import (
+    TESSERACT_RIL_TEXTLINE,
+    TESSERACT_RIL_WORD,
     OcrIteratorLayout,
     OcrObservation,
     OcrTextResult,
-    TESSERACT_RIL_TEXTLINE,
-    TESSERACT_RIL_WORD,
 )
+from core_pdf.impl.engine.extraction.ocr.vector_text import VectorStrokeOcrResult
+from core_pdf.impl.engine.rendering.models import RenderedPage
 
 if TYPE_CHECKING:
     from core_pdf.impl.engine.layout.models import TextRun
@@ -221,9 +225,7 @@ def append_vector_table_symbol_supplement(
 
 
 def vector_table_symbol_text_lines(chars: list[TextRun]) -> list[Any]:
-    return [
-        line for line in LayoutAnalyzer.cluster_into_lines(chars) if line.text().strip()
-    ]
+    return [line for line in LayoutAnalyzer.cluster_into_lines(chars) if line.text().strip()]
 
 
 def vector_table_symbol_text_lines_look_table_like(
@@ -547,9 +549,7 @@ def schematic_ocr_repair_context(
     support_text: str,
 ) -> SchematicOcrRepairContext:
     support_tokens = frozenset(normalized_text_tokens(support_text))
-    support_nonspace_tokens, support_token_display = schematic_support_repair_tokens(
-        support_text
-    )
+    support_nonspace_tokens, support_token_display = schematic_support_repair_tokens(support_text)
     enabled = bool(support_nonspace_tokens) and (
         len(support_tokens) >= OCR_SCHEMATIC_REPAIR_MIN_SUPPORT_TOKENS
         or schematic_layout_signal_count(layout) >= 12
@@ -709,8 +709,7 @@ def schematic_ocr_text_candidates_supplement(
         (
             candidate
             for candidate in candidates
-            if candidate.name.startswith("rendered_page_")
-            and candidate.name.endswith("_tiled")
+            if candidate.name.startswith("rendered_page_") and candidate.name.endswith("_tiled")
         ),
         key=lambda candidate: ocr_selection.ocr_candidate_score(
             candidate, support_text=support_text
@@ -733,9 +732,7 @@ def schematic_ocr_text_candidates_supplement(
     strict_additions = [
         entry for entry in additions if "line" not in entry.evidence_type.split("+")
     ]
-    recall_additions = [
-        entry for entry in additions if "line" in entry.evidence_type.split("+")
-    ]
+    recall_additions = [entry for entry in additions if "line" in entry.evidence_type.split("+")]
     supplemented_text = apply_schematic_supplement_geometry(
         text,
         strict_additions,
@@ -767,9 +764,7 @@ def schematic_token_consensus_graph_candidate(
         confidence,
         line_rows=line_rows,
         word_rows=word_rows,
-        observations=tuple(
-            schematic_observation_graph_observations(list(graph.clusters))
-        ),
+        observations=tuple(schematic_observation_graph_observations(list(graph.clusters))),
     )
     return ocr_candidates.OcrCandidate(
         "schematic_token_consensus_graph",
@@ -789,8 +784,7 @@ def schematic_token_consensus_graph(
     tiled_candidates = tuple(
         candidate
         for candidate in candidate_tuple
-        if candidate.name.startswith("rendered_page_")
-        and candidate.name.endswith("_tiled")
+        if candidate.name.startswith("rendered_page_") and candidate.name.endswith("_tiled")
     )
     if not tiled_candidates:
         return None
@@ -839,9 +833,7 @@ def render_schematic_observation_graph_text(
 def schematic_average_cluster_confidence(
     clusters: list[SchematicSupplementCluster],
 ) -> int | None:
-    confidences = [
-        cluster.confidence for cluster in clusters if cluster.confidence is not None
-    ]
+    confidences = [cluster.confidence for cluster in clusters if cluster.confidence is not None]
     if not confidences:
         return None
     return int(round(sum(confidences) / len(confidences)))
@@ -991,9 +983,7 @@ def apply_schematic_supplement_geometry(
         else:
             merged_lines.append(base_line)
     merged_lines.extend(
-        row.text
-        for index, row in enumerate(rows)
-        if index not in used_rows and row.text
+        row.text for index, row in enumerate(rows) if index not in used_rows and row.text
     )
     return "\n".join(line for line in merged_lines if line.strip())
 
@@ -1254,9 +1244,7 @@ def schematic_select_key_supplement_entries(
     max_tokens: int = OCR_SCHEMATIC_ROW_SUPPLEMENT_MAX_TOKENS,
 ) -> list[SchematicSupplementEntry]:
     additions: list[SchematicSupplementEntry] = []
-    clusters_by_key: defaultdict[str, list[SchematicSupplementCluster]] = defaultdict(
-        list
-    )
+    clusters_by_key: defaultdict[str, list[SchematicSupplementCluster]] = defaultdict(list)
     for cluster in sorted(
         accepted_clusters,
         key=lambda cluster: (-cluster.score, schematic_cluster_order_key(cluster)),
@@ -1266,18 +1254,12 @@ def schematic_select_key_supplement_entries(
         clusters_by_key.items(),
         key=lambda item: (
             schematic_supplement_key_is_untyped(item[1]),
-            -sum(
-                schematic_supplement_cluster_occurrence_count(cluster)
-                for cluster in item[1]
-            ),
+            -sum(schematic_supplement_cluster_occurrence_count(cluster) for cluster in item[1]),
             schematic_cluster_order_key(item[1][0]),
         ),
     ):
         remaining_for_key = min(
-            sum(
-                schematic_supplement_cluster_occurrence_count(cluster)
-                for cluster in key_clusters
-            ),
+            sum(schematic_supplement_cluster_occurrence_count(cluster) for cluster in key_clusters),
             schematic_supplement_cluster_max_per_token(key_clusters),
         )
         if remaining_for_key <= 0:
@@ -1306,9 +1288,7 @@ def schematic_accepted_supplement_clusters(
     clusters: list[SchematicSupplementCluster],
 ) -> list[SchematicSupplementCluster]:
     base_clusters = [
-        cluster
-        for cluster in clusters
-        if schematic_base_supplement_cluster_is_accepted(cluster)
+        cluster for cluster in clusters if schematic_base_supplement_cluster_is_accepted(cluster)
     ]
     context_clusters = [
         cluster
@@ -1443,8 +1423,7 @@ def schematic_entry_boxes_match(
     right_height = max(1.0, page_geometry.observation_height(right_observation))
     return (
         abs(left_center[0] - right_center[0]) <= max(left_width, right_width) * 0.65
-        and abs(left_center[1] - right_center[1])
-        <= max(left_height, right_height) * 0.75
+        and abs(left_center[1] - right_center[1]) <= max(left_height, right_height) * 0.75
     )
 
 
@@ -1461,10 +1440,7 @@ def schematic_supplement_cluster(
         average_confidence = schematic_average_confidence(key_entries) or 0.0
         type_bonus = 3.0 if any(entry.token_type for entry in key_entries) else 0.0
         key_scores[key] = (
-            evidence_count * 10.0
-            + source_count * 5.0
-            + average_confidence / 12.0
-            + type_bonus
+            evidence_count * 10.0 + source_count * 5.0 + average_confidence / 12.0 + type_bonus
         )
     key = max(key_scores, key=lambda item: key_scores[item])
     key_entries = [entry for entry in entries if entry.key == key]
@@ -1627,10 +1603,7 @@ def schematic_cluster_is_covered_by_line(
     x0, y0, x1, y1 = line_observation.bbox
     mid_x, mid_y = cluster_center
     height = max(1.0, page_geometry.observation_height(line_observation))
-    return (
-        x0 - height <= mid_x <= x1 + height
-        and y0 - height * 0.5 <= mid_y <= y1 + height * 0.5
-    )
+    return x0 - height <= mid_x <= x1 + height and y0 - height * 0.5 <= mid_y <= y1 + height * 0.5
 
 
 def schematic_supplement_rows(
@@ -1783,9 +1756,7 @@ def schematic_entry_from_cluster(
 def schematic_average_confidence(
     entries: list[SchematicSupplementEntry],
 ) -> int | None:
-    confidences = [
-        entry.confidence for entry in entries if entry.confidence is not None
-    ]
+    confidences = [entry.confidence for entry in entries if entry.confidence is not None]
     if not confidences:
         return None
     return int(round(sum(confidences) / len(confidences)))
@@ -1883,9 +1854,7 @@ def schematic_row_supplement_entries(
     max_per_token: int | None = None,
 ) -> list[SchematicSupplementEntry]:
     token_limit = (
-        OCR_SCHEMATIC_ROW_SUPPLEMENT_MAX_TOKENS
-        if max_entries is None
-        else max(0, max_entries)
+        OCR_SCHEMATIC_ROW_SUPPLEMENT_MAX_TOKENS if max_entries is None else max(0, max_entries)
     )
     if token_limit <= 0:
         return []
@@ -1915,12 +1884,8 @@ def schematic_row_supplement_entries(
         support_targets,
         support_display,
     )
-    word_counts = Counter(
-        {token: len(entries) for token, entries in word_entries.items()}
-    )
-    symbol_counts = Counter(
-        {token: len(entries) for token, entries in symbol_entries.items()}
-    )
+    word_counts = Counter({token: len(entries) for token, entries in word_entries.items()})
+    symbol_counts = Counter({token: len(entries) for token, entries in symbol_entries.items()})
     current_counts = schematic_supplement_text_counts(text)
     agreed_counts = word_counts + symbol_counts
     additions: list[SchematicSupplementEntry] = []
@@ -2073,9 +2038,7 @@ def schematic_line_token_bbox(
 def render_positioned_schematic_supplement(
     entries: list[SchematicSupplementEntry],
 ) -> str:
-    return "\n".join(
-        row.text for row in positioned_schematic_supplement_rows(entries) if row.text
-    )
+    return "\n".join(row.text for row in positioned_schematic_supplement_rows(entries) if row.text)
 
 
 def positioned_schematic_supplement_rows(
@@ -2086,9 +2049,7 @@ def positioned_schematic_supplement_rows(
     positioned = [entry for entry in entries if entry.bbox is not None]
     if not positioned:
         text = " ".join(entry.token for entry in entries)
-        return (
-            [SchematicRenderedSupplementRow(text, tuple(entries), None)] if text else []
-        )
+        return [SchematicRenderedSupplementRow(text, tuple(entries), None)] if text else []
     lines: list[list[SchematicSupplementEntry]] = []
     for entry in sorted(positioned, key=schematic_supplement_entry_order_key):
         entry_observation = schematic_supplement_entry_observation(entry)
@@ -2163,10 +2124,7 @@ def schematic_row_supplement_counts(
     counts: Counter[str] = Counter()
     display: dict[str, str] = {}
     for raw_text, confidence in rows:
-        if (
-            confidence is None
-            or confidence < OCR_SCHEMATIC_ROW_SUPPLEMENT_MIN_CONFIDENCE
-        ):
+        if confidence is None or confidence < OCR_SCHEMATIC_ROW_SUPPLEMENT_MIN_CONFIDENCE:
             continue
         token = schematic_row_supplement_display_token(
             raw_text,
@@ -2196,9 +2154,7 @@ def schematic_symbol_word_texts(
 def schematic_symbol_word_rows(
     rows: tuple[dict[str, Any], ...],
 ) -> list[dict[str, Any]]:
-    grouped: defaultdict[tuple[int, int, int, int, int], list[dict[str, Any]]] = (
-        defaultdict(list)
-    )
+    grouped: defaultdict[tuple[int, int, int, int, int], list[dict[str, Any]]] = defaultdict(list)
     for row in sorted(rows, key=ocr_iterator_layout.iterator_row_page_order_key):
         key = (
             int(row.get("page_num", 1)),
@@ -2217,16 +2173,13 @@ def schematic_symbol_word_rows(
                 int(row.get("left", 0)),
             ),
         )
-        text = "".join(
-            str(row.get("text", "")).strip() for row in ordered_symbols
-        ).strip()
+        text = "".join(str(row.get("text", "")).strip() for row in ordered_symbols).strip()
         if not text:
             continue
         confidences = [
             confidence
             for row in symbol_rows
-            if (confidence := ocr_iterator_layout.iterator_row_confidence(row))
-            is not None
+            if (confidence := ocr_iterator_layout.iterator_row_confidence(row)) is not None
         ]
         word_row: dict[str, Any] = {
             "text": text,
@@ -2568,9 +2521,7 @@ def schematic_tokens_are_comparable(token: str, target: str) -> bool:
     if length_delta > 1:
         return False
     target_has_digit = any(ch.isdigit() for ch in target)
-    token_has_digit_like = any(
-        ch.isdigit() or ch in SCHEMATIC_CONFUSABLE_DIGITS for ch in token
-    )
+    token_has_digit_like = any(ch.isdigit() or ch in SCHEMATIC_CONFUSABLE_DIGITS for ch in token)
     if target_has_digit:
         return token_has_digit_like
     if schematic_token_is_rail_like(target):
@@ -2629,9 +2580,7 @@ def schematic_token_is_rail_like(token: str) -> bool:
     if body in SCHEMATIC_REPAIR_WORDS:
         return True
     if body.startswith("gnd"):
-        return len(body) == 3 or (
-            len(body) <= 12 and (body[3].isdigit() or body[3] == "_")
-        )
+        return len(body) == 3 or (len(body) <= 12 and (body[3].isdigit() or body[3] == "_"))
     for prefix in ("vcc", "vdd", "vss", "vee", "vref", "vin", "vbat"):
         if body.startswith(prefix) and len(body) <= 12:
             return any(ch.isalpha() for ch in body)
@@ -2654,9 +2603,7 @@ def schematic_voltage_net_label_display(body: str) -> str | None:
 
 
 def schematic_token_is_net_label(token: str) -> bool:
-    return schematic_token_has_net_label_shape(token) and any(
-        ch.isdigit() for ch in token
-    )
+    return schematic_token_has_net_label_shape(token) and any(ch.isdigit() for ch in token)
 
 
 def schematic_net_label_digit_groups_are_compatible(
@@ -2756,11 +2703,7 @@ def canonical_schematic_display_token(token: str) -> str:
         return f"{sign}{body[:-1]}V"
     if body.endswith("k") and any(ch.isdigit() for ch in body[:-1]):
         return f"{sign}{body[:-1]}k"
-    if (
-        len(body) >= 2
-        and body[0] in {"c", "d", "j", "q", "r", "u"}
-        and body[1].isdigit()
-    ):
+    if len(body) >= 2 and body[0] in {"c", "d", "j", "q", "r", "u"} and body[1].isdigit():
         return f"{sign}{body[0].upper()}{body[1:]}"
     return f"{sign}{body}"
 

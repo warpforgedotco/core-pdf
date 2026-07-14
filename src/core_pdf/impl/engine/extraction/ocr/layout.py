@@ -101,9 +101,7 @@ def render_ocr_text_from_geometry(rows: Iterable[OcrRow]) -> str:
     if layout.mode == "table":
         rendered_lines = render_ocr_table_lines(layout.lines, layout.roles)
     else:
-        rendered_lines = [
-            render_ocr_word_line(line, layout.roles) for line in layout.lines
-        ]
+        rendered_lines = [render_ocr_word_line(line, layout.roles) for line in layout.lines]
     return "\n".join(line for line in rendered_lines if line)
 
 
@@ -121,7 +119,7 @@ def ocr_layout_word(
         try:
             x0, y0, x1, y1 = (ocr_float_value(value) for value in page_bbox)
             page_space = True
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             return None
     else:
         try:
@@ -129,18 +127,16 @@ def ocr_layout_word(
             y0 = ocr_float_value(row["top"])
             x1 = x0 + ocr_float_value(row["width"])
             y1 = y0 + ocr_float_value(row["height"])
-        except KeyError, TypeError, ValueError:
+        except (KeyError, TypeError, ValueError):
             return None
     if x1 <= x0 or y1 <= y0:
         return None
     confidence = row.get("conf")
     try:
         confidence_value = (
-            int(round(ocr_float_value(confidence)))
-            if confidence is not None
-            else None
+            int(round(ocr_float_value(confidence))) if confidence is not None else None
         )
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         confidence_value = None
     word_num = ocr_row_word_num(row)
     baseline_y = ocr_row_baseline_y(row, page_space=page_space)
@@ -161,7 +157,7 @@ def ocr_layout_word(
 def ocr_row_word_num(row: OcrRow) -> int:
     try:
         return ocr_int_value(row.get("word_num", 0))
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return 0
 
 
@@ -171,7 +167,7 @@ def ocr_row_baseline_y(row: OcrRow, *, page_space: bool) -> float | None:
         return None
     try:
         return (ocr_float_value(baseline[1]) + ocr_float_value(baseline[3])) * 0.5
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return None
 
 
@@ -204,8 +200,7 @@ def ocr_geometry_word_lines(words: list[OcrLayoutWord]) -> list[list[OcrLayoutWo
         else:
             target.append(word)
     ordered_lines = [
-        sorted(line, key=lambda word: (word.x0, word.word_num, word.row_index))
-        for line in lines
+        sorted(line, key=lambda word: (word.x0, word.word_num, word.row_index)) for line in lines
     ]
     return sorted(ordered_lines, key=ocr_line_visual_key)
 
@@ -251,9 +246,7 @@ def ocr_column_split_points(
     clusters = ocr_cluster_positions(sorted(candidate_centers), tolerance)
     visible_line_count = len([line for line in lines if ocr_visible_words(line, roles)])
     required = max(2, int(visible_line_count * 0.40))
-    split_points = [
-        sum(cluster) / len(cluster) for cluster in clusters if len(cluster) >= required
-    ]
+    split_points = [sum(cluster) / len(cluster) for cluster in clusters if len(cluster) >= required]
     if not split_points:
         return []
     split_points = ocr_filter_usable_split_points(lines, split_points, roles)
@@ -264,9 +257,7 @@ def ocr_split_lines_by_columns(
     lines: list[list[OcrLayoutWord]],
     split_points: list[float],
 ) -> list[list[OcrLayoutWord]]:
-    columns: list[list[list[OcrLayoutWord]]] = [
-        [] for _ in range(len(split_points) + 1)
-    ]
+    columns: list[list[list[OcrLayoutWord]]] = [[] for _ in range(len(split_points) + 1)]
     for line in lines:
         buckets: list[list[OcrLayoutWord]] = [[] for _ in range(len(split_points) + 1)]
         for word in line:
@@ -413,8 +404,7 @@ def ocr_visible_words(
     return [
         word
         for index, word in enumerate(ordered)
-        if ocr_layout_word_role(ordered, index, roles)
-        in {"content", "inline_separator"}
+        if ocr_layout_word_role(ordered, index, roles) in {"content", "inline_separator"}
     ]
 
 
@@ -578,9 +568,7 @@ def ocr_repeated_list_marker_words(
     lines: list[list[OcrLayoutWord]],
 ) -> list[OcrLayoutWord]:
     candidates = [
-        candidate
-        for line in lines
-        for candidate in ocr_line_list_marker_candidates(line)
+        candidate for line in lines for candidate in ocr_line_list_marker_candidates(line)
     ]
     if len(candidates) < 2:
         return []
@@ -660,14 +648,11 @@ def ocr_word_is_orphan_artifact(
     line_heights = [
         item.height
         for item in words
-        if item is not word
-        and item.height > 0
-        and any(ch.isalnum() for ch in item.text)
+        if item is not word and item.height > 0 and any(ch.isalnum() for ch in item.text)
     ]
     line_height = median(line_heights) if line_heights else word.height
     if not (
-        word.height <= max(2.0, line_height * 0.20)
-        or word.width <= max(2.0, line_height * 0.16)
+        word.height <= max(2.0, line_height * 0.20) or word.width <= max(2.0, line_height * 0.16)
     ):
         return False
     neighbors = (
@@ -726,9 +711,7 @@ def ocr_word_is_standalone_decorative_punctuation(
     if gap < -previous.height * 0.10 or gap > max(previous.height * 1.15, 32.0):
         return False
     return (
-        previous.y0 - previous.height * 0.15
-        <= word.mid_y
-        <= (previous.y1 + previous.height * 0.20)
+        previous.y0 - previous.height * 0.15 <= word.mid_y <= (previous.y1 + previous.height * 0.20)
     )
 
 
@@ -765,9 +748,7 @@ def ocr_word_is_large_all_caps_title(
     if not ocr_text_is_all_caps_title(text):
         return False
     content_words = [
-        item
-        for item in words
-        if item.text.strip() and any(ch.isalnum() for ch in item.text)
+        item for item in words if item.text.strip() and any(ch.isalnum() for ch in item.text)
     ]
     if len(content_words) <= 2:
         return True
@@ -812,8 +793,7 @@ def ocr_word_is_recoverable_inline_separator(
     if previous is None and next_word is None:
         return False
     return (
-        previous is not None
-        and ocr_inline_separator_matches_neighbor(word, previous, before=False)
+        previous is not None and ocr_inline_separator_matches_neighbor(word, previous, before=False)
     ) or (
         next_word is not None
         and ocr_inline_separator_matches_neighbor(word, next_word, before=True)
@@ -894,19 +874,15 @@ def geometry_text_is_usable(original: str, rendered: str) -> bool:
     return True
 
 
-def geometry_text_confidence(
-    rows: Iterable[OcrRow], fallback: int | None
-) -> int | None:
+def geometry_text_confidence(rows: Iterable[OcrRow], fallback: int | None) -> int | None:
     confidences: list[int] = []
     for row in rows:
         confidence = row.get("conf")
         if confidence is None:
             continue
         try:
-            confidences.append(
-                max(0, min(100, int(round(ocr_float_value(confidence)))))
-            )
-        except TypeError, ValueError:
+            confidences.append(max(0, min(100, int(round(ocr_float_value(confidence))))))
+        except (TypeError, ValueError):
             pass
     if not confidences:
         return fallback

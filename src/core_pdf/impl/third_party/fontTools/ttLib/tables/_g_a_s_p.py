@@ -1,7 +1,8 @@
-from core_pdf.impl.third_party.fontTools.misc.textTools import safeEval
-from . import DefaultTable
 import struct
 
+from core_pdf.impl.third_party.fontTools.misc.textTools import safeEval
+
+from . import DefaultTable
 
 GASP_SYMMETRIC_GRIDFIT = 0x0004
 GASP_SYMMETRIC_SMOOTHING = 0x0008
@@ -58,6 +59,4 @@ class table__g_a_s_p(DefaultTable.DefaultTable):
             return
         if not hasattr(self, "gaspRange"):
             self.gaspRange = {}
-        self.gaspRange[safeEval(attrs["rangeMaxPPEM"])] = safeEval(
-            attrs["rangeGaspBehavior"]
-        )
+        self.gaspRange[safeEval(attrs["rangeMaxPPEM"])] = safeEval(attrs["rangeGaspBehavior"])

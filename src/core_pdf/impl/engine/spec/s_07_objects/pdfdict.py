@@ -15,9 +15,7 @@ if TYPE_CHECKING:
     from core_pdf.impl.types import PdfDict
 
 
-def lookup_dict_key_default(
-    value: object, key: str, default: object = None
-) -> object:
+def lookup_dict_key_default(value: object, key: str, default: object = None) -> object:
     if not isinstance(value, dict):
         return default
 
@@ -100,9 +98,7 @@ def collect_inherited_values(
             current = None
 
     if cache is not None:
-        running_values: InheritedValueMap = (
-            cached_values if cached_values is not None else {}
-        )
+        running_values: InheritedValueMap = cached_values if cached_values is not None else {}
         for marker, node_dict in reversed(ancestors):
             merged: InheritedValueMap = running_values.copy()
             for key in keys:

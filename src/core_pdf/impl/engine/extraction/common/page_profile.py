@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+from core_pdf.impl.engine.extraction.cache import ExtractionCache
 from core_pdf.impl.engine.spec.s_07_content.operations import (
     content_stream_may_show_text,
 )
@@ -17,7 +18,6 @@ from core_pdf.impl.engine.spec.s_07_objects.coercion import (
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.objects import PdfStream
-from core_pdf.impl.engine.extraction.cache import ExtractionCache
 from core_pdf.impl.types import PdfDict
 
 TEXT_SHOW_OPS = frozenset({"Tj", "TJ", "'", '"'})
@@ -183,16 +183,12 @@ class PageProfile:
 
     @property
     def likely_text_page(self) -> bool:
-        return self.has_text_showing_ops or (
-            self.has_xobject_ops and self.resources.has_forms
-        )
+        return self.has_text_showing_ops or (self.has_xobject_ops and self.resources.has_forms)
 
     @property
     def likely_image_page(self) -> bool:
         return self.has_inline_images or (
-            self.has_xobject_ops
-            and self.resources.has_images
-            and not self.likely_text_page
+            self.has_xobject_ops and self.resources.has_images and not self.likely_text_page
         )
 
     @property
@@ -226,9 +222,7 @@ def get_page_profile(page: PageProfileHost) -> PageProfile:
 
 
 def build_page_profile(page: PageProfileHost) -> PageProfile:
-    content_profiles = tuple(
-        content_stream_profile(stream) for stream in page.content_streams
-    )
+    content_profiles = tuple(content_stream_profile(stream) for stream in page.content_streams)
     resource_profile = page_resource_profile(page)
     return PageProfile(
         content_streams=content_profiles,

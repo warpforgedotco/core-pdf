@@ -254,9 +254,7 @@ class OcrPageSession:
             return cached_variant
         source_pix = self._source_pix_cache.get(source_key)
         if source_pix is None:
-            source_pix = backend.source_pix_from_image(
-                self.source_image_for_preparation(image)
-            )
+            source_pix = backend.source_pix_from_image(self.source_image_for_preparation(image))
             if not source_pix:
                 return None
             self._source_pix_cache[source_key] = source_pix
@@ -373,9 +371,7 @@ class OcrPageSession:
         variables: ocr_execution.OcrVariables,
         rectangle: tuple[int, int, int, int] | None = None,
     ) -> OcrTextResult:
-        if rectangle is not None and not hasattr(
-            backend.tesseract, "TessBaseAPISetRectangle"
-        ):
+        if rectangle is not None and not hasattr(backend.tesseract, "TessBaseAPISetRectangle"):
             return OcrTextResult("", None)
         pix_handle = ctypes.c_void_p(prepared.pix)
         resolution = image.resolution or ocr_execution.OCR_DEFAULT_DPI
@@ -384,9 +380,7 @@ class OcrPageSession:
             backend.apply_variables(variables)
             backend.tesseract.TessBaseAPISetImage2(backend.api, pix_handle)
             if backend.has_set_source_resolution and resolution > 0:
-                backend.tesseract.TessBaseAPISetSourceResolution(
-                    backend.api, resolution
-                )
+                backend.tesseract.TessBaseAPISetSourceResolution(backend.api, resolution)
             if rectangle is not None:
                 clamped = backend.rectangle_for_image(image, rectangle)
                 if clamped is None:

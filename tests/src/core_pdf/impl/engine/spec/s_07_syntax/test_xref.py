@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from core_pdf.impl.engine.spec.s_07_syntax.primitives import PdfName
+
 from core_pdf.impl.engine.spec.s_07_syntax.xref import XRefScanner, key_for
 
 

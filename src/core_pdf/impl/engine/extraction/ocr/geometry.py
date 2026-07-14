@@ -3,8 +3,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from core_pdf.impl.engine.extraction.ocr import page_analysis as ocr_page_analysis
 from core_pdf.impl.engine.extraction.common import page_geometry
+from core_pdf.impl.engine.extraction.ocr import page_analysis as ocr_page_analysis
 from core_pdf.impl.engine.extraction.ocr.text_analysis import normalized_text_tokens
 from core_pdf.impl.engine.extraction.ocr.types import OcrRow, ocr_int_value
 
@@ -63,9 +63,7 @@ def selected_iterator_geometry_rows(
     selected_word_rows = tuple(
         row
         for row in word_rows
-        if selected_tokens.intersection(
-            normalized_text_tokens(str(row.get("text", "")))
-        )
+        if selected_tokens.intersection(normalized_text_tokens(str(row.get("text", ""))))
     )
     selected_symbol_rows = tuple(
         row
@@ -106,7 +104,7 @@ def ocr_row_geometry_line(
         top = ocr_int_value(row["top"])
         right = left + ocr_int_value(row["width"])
         bottom = top + ocr_int_value(row["height"])
-    except KeyError, TypeError, ValueError:
+    except (KeyError, TypeError, ValueError):
         if bbox is None:
             return None
     else:
@@ -120,7 +118,7 @@ def ocr_row_geometry_line(
     confidence = row.get("conf")
     try:
         confidence_int = ocr_int_value(confidence) if confidence is not None else None
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         confidence_int = None
     return ocr_page_analysis.text_geometry_line_from_bbox(
         text,

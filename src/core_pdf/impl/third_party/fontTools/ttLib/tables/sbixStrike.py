@@ -1,7 +1,9 @@
+import struct
+
 from core_pdf.impl.third_party.fontTools.misc import sstruct
 from core_pdf.impl.third_party.fontTools.misc.textTools import safeEval
+
 from .sbixGlyph import Glyph
-import struct
 
 sbixStrikeHeaderFormat = """
 	>
@@ -42,9 +44,7 @@ class Strike(object):
             ) % (sbixStrikeHeaderFormatSize, len(self.data))
 
         # read Strike header from raw data
-        sstruct.unpack(
-            sbixStrikeHeaderFormat, self.data[:sbixStrikeHeaderFormatSize], self
-        )
+        sstruct.unpack(sbixStrikeHeaderFormat, self.data[:sbixStrikeHeaderFormatSize], self)
 
         # calculate number of glyphs
         (firstGlyphDataOffset,) = struct.unpack(
@@ -61,9 +61,7 @@ class Strike(object):
 
         # build offset list for single glyph data offsets
         self.glyphDataOffsets = []
-        for i in range(
-            self.numGlyphs + 1
-        ):  # + 1 because there's one more offset than glyphs
+        for i in range(self.numGlyphs + 1):  # + 1 because there's one more offset than glyphs
             start = i * sbixGlyphDataOffsetFormatSize + sbixStrikeHeaderFormatSize
             (current_offset,) = struct.unpack(
                 ">L", self.data[start : start + sbixGlyphDataOffsetFormatSize]
@@ -73,9 +71,7 @@ class Strike(object):
         # iterate through offset list and slice raw data into glyph data records
         for i in range(self.numGlyphs):
             current_glyph = Glyph(
-                rawdata=self.data[
-                    self.glyphDataOffsets[i] : self.glyphDataOffsets[i + 1]
-                ],
+                rawdata=self.data[self.glyphDataOffsets[i] : self.glyphDataOffsets[i + 1]],
                 gid=i,
             )
             current_glyph.decompile(ttFont)
@@ -91,9 +87,8 @@ class Strike(object):
         glyphOrder = ttFont.getGlyphOrder()
 
         # first glyph starts right after the header
-        currentGlyphDataOffset = (
-            sbixStrikeHeaderFormatSize
-            + sbixGlyphDataOffsetFormatSize * (len(glyphOrder) + 1)
+        currentGlyphDataOffset = sbixStrikeHeaderFormatSize + sbixGlyphDataOffsetFormatSize * (
+            len(glyphOrder) + 1
         )
         for glyphName in glyphOrder:
             if glyphName in self.glyphs:
@@ -106,9 +101,7 @@ class Strike(object):
             current_glyph.glyphDataOffset = currentGlyphDataOffset
             self.bitmapData += current_glyph.rawdata
             currentGlyphDataOffset += len(current_glyph.rawdata)
-            self.glyphDataOffsets += sstruct.pack(
-                sbixGlyphDataOffsetFormat, current_glyph
-            )
+            self.glyphDataOffsets += sstruct.pack(sbixGlyphDataOffsetFormat, current_glyph)
 
         # add last "offset", really the end address of the last glyph data record
         dummy = Glyph()

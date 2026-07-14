@@ -1,16 +1,41 @@
+import logging
+import re
+import struct
+from enum import IntFlag
+from functools import partial
+from itertools import accumulate
+from typing import Optional
+
+from core_pdf.impl.third_party.fontTools.misc.fixedTools import (
+    ensureVersionIsLong as fi2ve,
+)
 from core_pdf.impl.third_party.fontTools.misc.fixedTools import (
     fixedToFloat as fi2fl,
+)
+from core_pdf.impl.third_party.fontTools.misc.fixedTools import (
     floatToFixed as fl2fi,
+)
+from core_pdf.impl.third_party.fontTools.misc.fixedTools import (
     floatToFixedToStr as fl2str,
+)
+from core_pdf.impl.third_party.fontTools.misc.fixedTools import (
     strToFixedToFloat as str2fl,
-    ensureVersionIsLong as fi2ve,
+)
+from core_pdf.impl.third_party.fontTools.misc.fixedTools import (
     versionToFixed as ve2fi,
 )
-from core_pdf.impl.third_party.fontTools.ttLib.tables.TupleVariation import TupleVariation
-from core_pdf.impl.third_party.fontTools.misc.roundTools import nearestMultipleShortestRepr, otRound
-from core_pdf.impl.third_party.fontTools.misc.textTools import bytesjoin, tobytes, tostr, pad, safeEval
 from core_pdf.impl.third_party.fontTools.misc.lazyTools import LazyList
+from core_pdf.impl.third_party.fontTools.misc.roundTools import nearestMultipleShortestRepr, otRound
+from core_pdf.impl.third_party.fontTools.misc.textTools import (
+    bytesjoin,
+    pad,
+    safeEval,
+    tobytes,
+    tostr,
+)
 from core_pdf.impl.third_party.fontTools.ttLib import OPTIMIZE_FONT_SPEED, getSearchRange
+from core_pdf.impl.third_party.fontTools.ttLib.tables.TupleVariation import TupleVariation
+
 from .otBase import (
     CountReference,
     FormatSwitchingBaseTable,
@@ -20,27 +45,23 @@ from .otBase import (
 )
 from .otDataSchema import FieldSpec
 from .otTables import (
-    lookupTypes,
-    VarCompositeGlyph,
-    AATStateTable,
-    AATState,
-    AATAction,
-    ContextualMorphAction,
-    LigatureMorphAction,
-    InsertionMorphAction,
-    MorxSubtable,
-    ExtendMode as _ExtendMode,
-    CompositeMode as _CompositeMode,
     NO_VARIATION_INDEX,
+    AATAction,
+    AATState,
+    AATStateTable,
+    ContextualMorphAction,
+    InsertionMorphAction,
+    LigatureMorphAction,
+    MorxSubtable,
+    VarCompositeGlyph,
+    lookupTypes,
 )
-from itertools import zip_longest, accumulate
-from functools import partial
-from types import SimpleNamespace
-import re
-import struct
-from typing import Optional
-import logging
-from enum import IntFlag
+from .otTables import (
+    CompositeMode as _CompositeMode,
+)
+from .otTables import (
+    ExtendMode as _ExtendMode,
+)
 
 log = logging.getLogger(__name__)
 istuple = lambda t: isinstance(t, tuple)
@@ -74,15 +95,13 @@ def buildConverters(tableSpec: list[FieldSpec], tableNamespace):
         elif spec.name in ("CIDGlyphMapping", "GlyphCIDMapping"):
             converterClass = StructWithLength
         else:
-            if not spec.type in converterMapping and "(" not in spec.type:
+            if spec.type not in converterMapping and "(" not in spec.type:
                 tableName = spec.type
                 converterClass = Struct
             else:
                 converterClass = eval(spec.type, tableNamespace, converterMapping)
 
-        conv = converterClass(
-            spec.name, spec.repeat, spec.aux, description=spec.description
-        )
+        conv = converterClass(spec.name, spec.repeat, spec.aux, description=spec.description)
 
         if conv.tableClass:
             # A "template" such as OffsetTo(AType) knows the table class already
@@ -100,16 +119,12 @@ def buildConverters(tableSpec: list[FieldSpec], tableNamespace):
             # also create reverse mapping
             for t in conv.lookupTypes.values():
                 for cls in t.values():
-                    convertersByName[cls.__name__] = Table(
-                        spec.name, spec.repeat, spec.aux, cls
-                    )
+                    convertersByName[cls.__name__] = Table(spec.name, spec.repeat, spec.aux, cls)
         if spec.name == "FeatureParams":
             conv.featureParamTypes = tableNamespace["featureParamTypes"]
             conv.defaultFeatureParams = tableNamespace["FeatureParams"]
             for cls in conv.featureParamTypes.values():
-                convertersByName[cls.__name__] = Table(
-                    spec.name, spec.repeat, spec.aux, cls
-                )
+                convertersByName[cls.__name__] = Table(spec.name, spec.repeat, spec.aux, cls)
         converters.append(conv)
         assert spec.name not in convertersByName, spec.name
         convertersByName[spec.name] = conv
@@ -413,9 +428,7 @@ class GlyphID(SimpleValue):
     typecode = "H"
 
     def readArray(self, reader, font, tableDict, count):
-        return font.getGlyphNameMany(
-            reader.readArray(self.typecode, self.staticSize, count)
-        )
+        return font.getGlyphNameMany(reader.readArray(self.typecode, self.staticSize, count))
 
     def read(self, reader, font, tableDict):
         return font.getGlyphName(reader.readValue(self.typecode, self.staticSize))
@@ -601,9 +614,7 @@ class Char64(SimpleValue):
         if data != tobytes(value, encoding="ascii", errors="ignore"):
             log.debug('replacing non-ASCII characters in "%s"' % value)
         if len(data) > self.staticSize:
-            log.debug(
-                'truncating overlong "%s" to %d bytes' % (value, self.staticSize)
-            )
+            log.debug('truncating overlong "%s" to %d bytes' % (value, self.staticSize))
         data = (data + b"\0" * self.staticSize)[: self.staticSize]
         writer.writeData(data)
 
@@ -784,7 +795,9 @@ class SubTable(Table):
 
 class ExtSubTable(LTable, SubTable):
     def write(self, writer, font, tableDict, value, repeatIndex=None):
-        writer.Extension = True  # actually, mere presence of the field flags it as an Ext Subtable writer.
+        writer.Extension = (
+            True  # actually, mere presence of the field flags it as an Ext Subtable writer.
+        )
         Table.write(self, writer, font, tableDict, value, repeatIndex)
 
 
@@ -798,9 +811,7 @@ class ValueFormat(IntValue):
     staticSize = 2
 
     def __init__(self, name, repeat, aux, tableClass=None, *, description=""):
-        BaseConverter.__init__(
-            self, name, repeat, aux, tableClass, description=description
-        )
+        BaseConverter.__init__(self, name, repeat, aux, tableClass, description=description)
         self.which = "ValueFormat" + ("2" if name[-1] == "2" else "1")
 
     def read(self, reader, font, tableDict):
@@ -841,15 +852,11 @@ class AATLookup(BaseConverter):
     BIN_SEARCH_HEADER_SIZE = 10
 
     def __init__(self, name, repeat, aux, tableClass, *, description=""):
-        BaseConverter.__init__(
-            self, name, repeat, aux, tableClass, description=description
-        )
+        BaseConverter.__init__(self, name, repeat, aux, tableClass, description=description)
         if issubclass(self.tableClass, SimpleValue):
             self.converter = self.tableClass(name="Value", repeat=None, aux=None)
         else:
-            self.converter = Table(
-                name="Value", repeat=None, aux=None, tableClass=self.tableClass
-            )
+            self.converter = Table(name="Value", repeat=None, aux=None, tableClass=self.tableClass)
 
     def read(self, reader, font, tableDict):
         format = reader.readUShort()
@@ -867,21 +874,17 @@ class AATLookup(BaseConverter):
             assert False, "unsupported lookup format: %d" % format
 
     def write(self, writer, font, tableDict, value, repeatIndex=None):
-        values = list(
-            sorted([(font.getGlyphID(glyph), val) for glyph, val in value.items()])
-        )
+        values = sorted([(font.getGlyphID(glyph), val) for glyph, val in value.items()])
         # TODO: Also implement format 4.
-        formats = list(
-            sorted(
-                filter(
-                    None,
-                    [
-                        self.buildFormat0(writer, font, values),
-                        self.buildFormat2(writer, font, values),
-                        self.buildFormat6(writer, font, values),
-                        self.buildFormat8(writer, font, values),
-                    ],
-                )
+        formats = sorted(
+            filter(
+                None,
+                [
+                    self.buildFormat0(writer, font, values),
+                    self.buildFormat2(writer, font, values),
+                    self.buildFormat6(writer, font, values),
+                    self.buildFormat8(writer, font, values),
+                ],
             )
         )
         # We use the format ID as secondary sort key to make the output
@@ -890,21 +893,20 @@ class AATLookup(BaseConverter):
         pos = writer.getDataLength()
         writeMethod()
         actualSize = writer.getDataLength() - pos
-        assert (
-            actualSize == dataSize
-        ), "AATLookup format %d claimed to write %d bytes, but wrote %d" % (
-            lookupFormat,
-            dataSize,
-            actualSize,
+        assert actualSize == dataSize, (
+            "AATLookup format %d claimed to write %d bytes, but wrote %d"
+            % (
+                lookupFormat,
+                dataSize,
+                actualSize,
+            )
         )
 
     @staticmethod
     def writeBinSearchHeader(writer, numUnits, unitSize):
         writer.writeUShort(unitSize)
         writer.writeUShort(numUnits)
-        searchRange, entrySelector, rangeShift = getSearchRange(
-            n=numUnits, itemSize=unitSize
-        )
+        searchRange, entrySelector, rangeShift = getSearchRange(n=numUnits, itemSize=unitSize)
         writer.writeUShort(searchRange)
         writer.writeUShort(entrySelector)
         writer.writeUShort(rangeShift)
@@ -923,9 +925,7 @@ class AATLookup(BaseConverter):
     def writeFormat0(self, writer, font, values):
         writer.writeUShort(0)
         for glyphID_, value in values:
-            self.converter.write(
-                writer, font, tableDict=None, value=value, repeatIndex=None
-            )
+            self.converter.write(writer, font, tableDict=None, value=value, repeatIndex=None)
 
     def buildFormat2(self, writer, font, values):
         segStart, segValue = values[0]
@@ -955,9 +955,7 @@ class AATLookup(BaseConverter):
         for firstGlyph, lastGlyph, value in segments:
             writer.writeUShort(lastGlyph)
             writer.writeUShort(firstGlyph)
-            self.converter.write(
-                writer, font, tableDict=None, value=value, repeatIndex=None
-            )
+            self.converter.write(writer, font, tableDict=None, value=value, repeatIndex=None)
         writer.writeUShort(0xFFFF)
         writer.writeUShort(0xFFFF)
         writer.writeData(b"\x00" * valueSize)
@@ -978,9 +976,7 @@ class AATLookup(BaseConverter):
         self.writeBinSearchHeader(writer, numUnits, unitSize)
         for glyphID, value in values:
             writer.writeUShort(glyphID)
-            self.converter.write(
-                writer, font, tableDict=None, value=value, repeatIndex=None
-            )
+            self.converter.write(writer, font, tableDict=None, value=value, repeatIndex=None)
         writer.writeUShort(0xFFFF)
         writer.writeData(b"\x00" * valueSize)
 
@@ -1001,9 +997,7 @@ class AATLookup(BaseConverter):
         writer.writeUShort(firstGlyphID)
         writer.writeUShort(len(values))
         for _, value in values:
-            self.converter.write(
-                writer, font, tableDict=None, value=value, repeatIndex=None
-            )
+            self.converter.write(writer, font, tableDict=None, value=value, repeatIndex=None)
 
     def readFormat0(self, reader, font):
         numGlyphs = len(font.getGlyphOrder())
@@ -1122,7 +1116,7 @@ class AATLookupWithDataOffset(BaseConverter):
             subWriter = OTTableWriter()
             value[glyph].compile(subWriter, font)
             data = subWriter.getAllData()
-            offset = offsetByData.get(data, None)
+            offset = offsetByData.get(data)
             if offset == None:
                 offset = dataLen
                 dataLen = dataLen + len(data)
@@ -1162,9 +1156,7 @@ class MorxSubtableConverter(BaseConverter):
     _PROCESSING_ORDERS_REVERSED = {val: key for key, val in _PROCESSING_ORDERS.items()}
 
     def __init__(self, name, repeat, aux, tableClass=None, *, description=""):
-        BaseConverter.__init__(
-            self, name, repeat, aux, tableClass, description=description
-        )
+        BaseConverter.__init__(self, name, repeat, aux, tableClass, description=description)
 
     def _setTextDirectionFromCoverageFlags(self, flags, subtable):
         if (flags & 0x20) != 0:
@@ -1255,9 +1247,7 @@ class MorxSubtableConverter(BaseConverter):
 
     def write(self, writer, font, tableDict, value, repeatIndex=None):
         covFlags = (value.Reserved & 0x000F0000) >> 16
-        reverseOrder, logicalOrder = self._PROCESSING_ORDERS_REVERSED[
-            value.ProcessingOrder
-        ]
+        reverseOrder, logicalOrder = self._PROCESSING_ORDERS_REVERSED[value.ProcessingOrder]
         covFlags |= 0x80 if value.TextDirection == "Vertical" else 0
         covFlags |= 0x40 if reverseOrder else 0
         covFlags |= 0x20 if value.TextDirection == "Any" else 0
@@ -1281,9 +1271,7 @@ class MorxSubtableConverter(BaseConverter):
 # TODO: Untangle the implementation of the various lookup-specific formats.
 class STXHeader(BaseConverter):
     def __init__(self, name, repeat, aux, tableClass, *, description=""):
-        BaseConverter.__init__(
-            self, name, repeat, aux, tableClass, description=description
-        )
+        BaseConverter.__init__(self, name, repeat, aux, tableClass, description=description)
         assert issubclass(self.tableClass, AATAction)
         self.classLookup = AATLookup("GlyphClasses", None, None, UShort)
         if issubclass(self.tableClass, ContextualMorphAction):
@@ -1321,9 +1309,7 @@ class STXHeader(BaseConverter):
             actionReader = reader.getSubReader(0)
             actionReader.seek(pos + reader.readULong())
         table.GlyphClasses = self.classLookup.read(classTableReader, font, tableDict)
-        numStates = int(
-            (entryTableReader.pos - stateArrayReader.pos) / (table.GlyphClassCount * 2)
-        )
+        numStates = int((entryTableReader.pos - stateArrayReader.pos) / (table.GlyphClassCount * 2))
         for stateIndex in range(numStates):
             state = AATState()
             table.States.append(state)
@@ -1333,16 +1319,12 @@ class STXHeader(BaseConverter):
                     entryTableReader, entryIndex, font, actionReader
                 )
         if self.perGlyphLookup is not None:
-            table.PerGlyphLookups = self._readPerGlyphLookups(
-                table, perGlyphTableReader, font
-            )
+            table.PerGlyphLookups = self._readPerGlyphLookups(table, perGlyphTableReader, font)
         return table
 
     def _readTransition(self, reader, entryIndex, font, actionReader):
         transition = self.tableClass()
-        entryReader = reader.getSubReader(
-            reader.pos + entryIndex * transition.staticSize
-        )
+        entryReader = reader.getSubReader(reader.pos + entryIndex * transition.staticSize)
         transition.decompile(entryReader, font, actionReader)
         return transition
 
@@ -1439,12 +1421,14 @@ class STXHeader(BaseConverter):
                 entryWriter = OTTableWriter()
                 transition.compile(entryWriter, font, actionIndex)
                 entryData = entryWriter.getAllData()
-                assert (
-                    len(entryData) == transition.staticSize
-                ), "%s has staticSize %d, " "but actually wrote %d bytes" % (
-                    repr(transition),
-                    transition.staticSize,
-                    len(entryData),
+                assert len(entryData) == transition.staticSize, (
+                    "%s has staticSize %d, "
+                    "but actually wrote %d bytes"
+                    % (
+                        repr(transition),
+                        transition.staticSize,
+                        len(entryData),
+                    )
                 )
                 entryIndex = entryIDs.get(entryData)
                 if entryIndex is None:
@@ -1553,9 +1537,7 @@ class STXHeader(BaseConverter):
                 lookup = self.perGlyphLookup.xmlRead(eltAttrs, eltContent, font)
                 table.PerGlyphLookups.append(lookup)
             elif eltName == "LigComponents":
-                table.LigComponents = self._xmlReadLigComponents(
-                    eltAttrs, eltContent, font
-                )
+                table.LigComponents = self._xmlReadLigComponents(eltAttrs, eltContent, font)
             elif eltName == "Ligatures":
                 table.Ligatures = self._xmlReadLigatures(eltAttrs, eltContent, font)
         table.GlyphClassCount = max(table.GlyphClasses.values()) + 1
@@ -1640,9 +1622,7 @@ class GlyphCIDMap(BaseConverter):
 
     def write(self, writer, font, tableDict, value, repeatIndex=None):
         items = {
-            font.getGlyphID(g): cid
-            for g, cid in value.items()
-            if cid is not None and cid != 0xFFFF
+            font.getGlyphID(g): cid for g, cid in value.items() if cid is not None and cid != 0xFFFF
         }
         count = max(items) + 1 if items else 0
         writer.writeUShort(count)
@@ -1739,8 +1719,7 @@ class VarIdxMapValue(BaseConverter):
         }[entrySize]
 
         return [
-            (((raw & outerMask) << outerShift) | (raw & innerMask))
-            for raw in readArray(nItems)
+            (((raw & outerMask) << outerShift) | (raw & innerMask)) for raw in readArray(nItems)
         ]
 
     def write(self, writer, font, tableDict, value, repeatIndex=None):
@@ -1760,12 +1739,7 @@ class VarIdxMapValue(BaseConverter):
             4: writer.writeULongArray,
         }[entrySize]
 
-        writeArray(
-            [
-                (((idx & 0xFFFF0000) >> outerShift) | (idx & innerMask))
-                for idx in mapping
-            ]
-        )
+        writeArray([(((idx & 0xFFFF0000) >> outerShift) | (idx & innerMask)) for idx in mapping])
 
 
 class VarDataValue(BaseConverter):
@@ -1825,9 +1799,7 @@ class TupleValues:
 
     def write(self, writer, font, tableDict, values, repeatIndex=None):
         optimizeSpeed = font.cfg[OPTIMIZE_FONT_SPEED]
-        return bytes(
-            TupleVariation.compileDeltaValues_(values, optimizeSize=not optimizeSpeed)
-        )
+        return bytes(TupleVariation.compileDeltaValues_(values, optimizeSize=not optimizeSpeed))
 
     def xmlRead(self, attrs, content, font):
         return safeEval(attrs["value"])
@@ -1849,13 +1821,9 @@ class CFF2Index(BaseConverter):
         itemConverterClass=None,
         description="",
     ):
-        BaseConverter.__init__(
-            self, name, repeat, aux, tableClass, description=description
-        )
+        BaseConverter.__init__(self, name, repeat, aux, tableClass, description=description)
         self._itemClass = itemClass
-        self._converter = (
-            itemConverterClass() if itemConverterClass is not None else None
-        )
+        self._converter = itemConverterClass() if itemConverterClass is not None else None
 
     def read(self, reader, font, tableDict):
         count = reader.readULong()
@@ -1947,7 +1915,11 @@ class CFF2Index(BaseConverter):
         offSize = (
             1
             if lastOffset < 0x100
-            else 2 if lastOffset < 0x10000 else 3 if lastOffset < 0x1000000 else 4
+            else 2
+            if lastOffset < 0x10000
+            else 3
+            if lastOffset < 0x1000000
+            else 4
         )
         writer.writeUInt8(offSize)
 
@@ -1978,9 +1950,7 @@ class CFF2Index(BaseConverter):
                 item.toXML(xmlWriter, font, [("index", i)], name)
         elif self._converter is not None:
             for i, item in enumerate(value):
-                self._converter.xmlWrite(
-                    xmlWriter, font, item, name, attrs + [("index", i)]
-                )
+                self._converter.xmlWrite(xmlWriter, font, item, name, attrs + [("index", i)])
         else:
             raise NotImplementedError()
 
@@ -2132,8 +2102,8 @@ class MappingEntriesConverter(BaseConverter):
         return entries
 
     def write(self, writer, font, tableDict, value, repeatIndex=None):
-        from core_pdf.impl.third_party.fontTools.misc.iftSparseBitSet import encode as sbsEncode
         from core_pdf.impl.third_party.fontTools.misc.fixedTools import floatToFixed as fl2fi
+        from core_pdf.impl.third_party.fontTools.misc.iftSparseBitSet import encode as sbsEncode
 
         entries = value
         lastId = -1
@@ -2225,9 +2195,7 @@ class MappingEntriesConverter(BaseConverter):
                 xmlWriter.simpletag("patchFormat", value=entry["patchFormat"])
                 xmlWriter.newline()
             if "codePoints" in entry:
-                xmlWriter.simpletag(
-                    "codePointsBias", value=entry.get("codePointsBias", 0)
-                )
+                xmlWriter.simpletag("codePointsBias", value=entry.get("codePointsBias", 0))
                 xmlWriter.newline()
                 codePointsStr = " ".join(str(c) for c in entry["codePoints"])
                 xmlWriter.simpletag("codePoints", value=codePointsStr)
@@ -2249,9 +2217,7 @@ class MappingEntriesConverter(BaseConverter):
                         continue
                     ename, eattrs, econtent = e_elem
                     if ename == "entryId":
-                        entry.setdefault("entryIds", []).append(
-                            safeEval(eattrs["value"])
-                        )
+                        entry.setdefault("entryIds", []).append(safeEval(eattrs["value"]))
                     elif ename == "featureTag":
                         entry.setdefault("featureTags", []).append(eattrs["value"])
                     elif ename == "designSpaceSegment":
@@ -2265,17 +2231,13 @@ class MappingEntriesConverter(BaseConverter):
                     elif ename == "childEntryConjunctive":
                         entry["childEntryConjunctive"] = bool(safeEval(eattrs["value"]))
                     elif ename == "childEntry":
-                        entry.setdefault("childEntryIndices", []).append(
-                            safeEval(eattrs["index"])
-                        )
+                        entry.setdefault("childEntryIndices", []).append(safeEval(eattrs["index"]))
                     elif ename == "patchFormat":
                         entry["patchFormat"] = safeEval(eattrs["value"])
                     elif ename == "codePointsBias":
                         entry["codePointsBias"] = safeEval(eattrs["value"])
                     elif ename == "codePoints":
-                        entry["codePoints"] = [
-                            int(c) for c in eattrs["value"].split() if c
-                        ]
+                        entry["codePoints"] = [int(c) for c in eattrs["value"].split() if c]
                 entries.append(entry)
         return entries
 

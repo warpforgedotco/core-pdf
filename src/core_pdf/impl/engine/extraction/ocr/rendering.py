@@ -15,13 +15,11 @@ from core_pdf.impl.engine.extraction.ocr.types import (
     LEPTONICA_PIX_MAX_BYTES,
     OcrImage,
     OcrIteratorLayout,
-    OcrRow,
     leptonica_pix_size_is_supported,
     ocr_float_value,
 )
 from core_pdf.impl.engine.rendering import RenderOptions
 from core_pdf.impl.engine.rendering.models import RenderedPage
-
 
 OCR_RENDER_DPI_CANDIDATES = (300, 400)
 OCR_RENDER_MAX_DPI = 400
@@ -258,8 +256,7 @@ def safe_ocr_render_dpi(
         return requested_dpi
     page_area_points = width_points * height_points
     max_scale = math.sqrt(
-        (LEPTONICA_PIX_MAX_BYTES - 1)
-        / (page_area_points * LEPTONICA_PIX_COLOR_BYTES_PER_PIXEL)
+        (LEPTONICA_PIX_MAX_BYTES - 1) / (page_area_points * LEPTONICA_PIX_COLOR_BYTES_PER_PIXEL)
     )
     dpi = min(requested_dpi, int(math.floor(max_scale * 72.0)))
     while dpi > 0:
@@ -314,9 +311,7 @@ def ocr_render_tiles(
     tile_overlap_pixels = max(
         0,
         min(
-            OCR_RENDER_TILE_OVERLAP_PIXELS
-            if overlap_pixels is None
-            else overlap_pixels,
+            OCR_RENDER_TILE_OVERLAP_PIXELS if overlap_pixels is None else overlap_pixels,
             tile_max_side_pixels // 4,
         ),
     )
@@ -392,7 +387,7 @@ def _rect_box_tuple(value: object) -> tuple[float, float, float, float] | None:
                 ocr_float_value(box[2]),
                 ocr_float_value(box[3]),
             )
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             return None
     x0 = getattr(value, "x0", None)
     y0 = getattr(value, "y0", None)
@@ -407,5 +402,5 @@ def _rect_box_tuple(value: object) -> tuple[float, float, float, float] | None:
             ocr_float_value(x1),
             ocr_float_value(y1),
         )
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return None

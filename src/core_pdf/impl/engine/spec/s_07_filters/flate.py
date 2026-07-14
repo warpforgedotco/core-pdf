@@ -6,7 +6,6 @@ import zlib
 from core_pdf.impl.engine.spec.s_07_filters.codecs import PDF_WHITESPACE_TABLE
 from core_pdf.impl.exceptions import PdfParseError
 
-
 PDF_CONTENT_OPERATORS = {
     b"b",
     b"b*",

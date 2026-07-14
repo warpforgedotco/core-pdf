@@ -8,6 +8,7 @@ from typing import Any, Mapping
 from core_pdf.impl.engine.extraction.cache import ExtractionCacheKey
 from core_pdf.impl.engine.extraction.common import page_geometry
 from core_pdf.impl.engine.extraction.ocr import tiling as ocr_tiling
+from core_pdf.impl.engine.extraction.ocr.backend import TesseractCtypesBackend
 from core_pdf.impl.engine.extraction.ocr.text_analysis import (
     extracted_text_token_count,
     text_ocr_quality_score,
@@ -18,7 +19,6 @@ from core_pdf.impl.engine.extraction.ocr.types import (
     OcrIteratorLayout,
     OcrTextResult,
 )
-from core_pdf.impl.engine.extraction.ocr.backend import TesseractCtypesBackend
 
 OCR_DEFAULT_DPI = 300
 OCR_DEFAULT_PAGE_SEGMENTATION_MODE = 6
@@ -60,8 +60,7 @@ def rotate_ocr_image_right_angle(image: OcrImage, *, clockwise: bool) -> OcrImag
             resolution=image.resolution,
             clockwise_quarter_turns=(image.clockwise_quarter_turns + turns) % 4,
             page_bbox=image.page_bbox,
-            page_clockwise_quarter_turns=(image.page_clockwise_quarter_turns + turns)
-            % 4,
+            page_clockwise_quarter_turns=(image.page_clockwise_quarter_turns + turns) % 4,
         )
     row_bytes = rotated_width * bpp
     required_size = (height - 1) * image.bytes_per_line + width * bpp
@@ -74,16 +73,16 @@ def rotate_ocr_image_right_angle(image: OcrImage, *, clockwise: bool) -> OcrImag
             last_row = (height - 1) * image.bytes_per_line
             for x in range(width):
                 dst = x * row_bytes
-                data[dst : dst + row_bytes] = image.data[
-                    last_row + x :: -image.bytes_per_line
-                ][:height]
+                data[dst : dst + row_bytes] = image.data[last_row + x :: -image.bytes_per_line][
+                    :height
+                ]
         else:
             for rotated_y in range(rotated_height):
                 x = width - 1 - rotated_y
                 dst = rotated_y * row_bytes
-                data[dst : dst + row_bytes] = image.data[
-                    x : source_stop : image.bytes_per_line
-                ][:height]
+                data[dst : dst + row_bytes] = image.data[x : source_stop : image.bytes_per_line][
+                    :height
+                ]
     elif bpp == 4 and image.bytes_per_line == width * 4:
         source_pixels = memoryview(image.data)[:required_size].cast("I")
         rotated_pixels = memoryview(data).cast("I")
@@ -526,9 +525,7 @@ def select_vertical_rectangle_ocr_result(
     first_quality = text_ocr_quality_score(first.text)
     second_quality = text_ocr_quality_score(second.text)
     first_score = first_confidence + min(first_tokens, 20) * 1.5 - first_quality * 40.0
-    second_score = (
-        second_confidence + min(second_tokens, 20) * 1.5 - second_quality * 40.0
-    )
+    second_score = second_confidence + min(second_tokens, 20) * 1.5 - second_quality * 40.0
     return second if second_score > first_score else first
 
 

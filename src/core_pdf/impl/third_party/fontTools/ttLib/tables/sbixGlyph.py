@@ -1,7 +1,7 @@
-from core_pdf.impl.third_party.fontTools.misc import sstruct
-from core_pdf.impl.third_party.fontTools.misc.textTools import readHex, safeEval
 import struct
 
+from core_pdf.impl.third_party.fontTools.misc import sstruct
+from core_pdf.impl.third_party.fontTools.misc.textTools import readHex, safeEval
 
 sbixGlyphHeaderFormat = """
 	>
@@ -47,9 +47,7 @@ class Glyph(object):
             if len(self.graphicType) > 4:
                 from core_pdf.impl.third_party.fontTools import ttLib
 
-                raise ttLib.TTLibError(
-                    "Glyph.graphicType must not be longer than 4 characters."
-                )
+                raise ttLib.TTLibError("Glyph.graphicType must not be longer than 4 characters.")
             elif len(self.graphicType) < 4:
                 # pad with spaces
                 self.graphicType += "    "[: (4 - len(self.graphicType))]
@@ -71,9 +69,7 @@ class Glyph(object):
                 # print "Glyph %i header too short: Expected %x, got %x." % (self.gid, sbixGlyphHeaderFormatSize, len(self.rawdata))
                 raise ttLib.TTLibError("Glyph header too short.")
 
-            sstruct.unpack(
-                sbixGlyphHeaderFormat, self.rawdata[:sbixGlyphHeaderFormatSize], self
-            )
+            sstruct.unpack(sbixGlyphHeaderFormat, self.rawdata[:sbixGlyphHeaderFormatSize], self)
 
             if self.is_reference_type():
                 # this glyph is a reference to another glyph's image data

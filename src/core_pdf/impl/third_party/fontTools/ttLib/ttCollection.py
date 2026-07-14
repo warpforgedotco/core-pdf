@@ -1,8 +1,9 @@
-from core_pdf.impl.third_party.fontTools.ttLib.ttFont import TTFont
-from core_pdf.impl.third_party.fontTools.ttLib.sfnt import readTTCHeader, writeTTCHeader
-from io import BytesIO
-import struct
 import logging
+import struct
+from io import BytesIO
+
+from core_pdf.impl.third_party.fontTools.ttLib.sfnt import readTTCHeader, writeTTCHeader
+from core_pdf.impl.third_party.fontTools.ttLib.ttFont import TTFont
 
 log = logging.getLogger(__name__)
 

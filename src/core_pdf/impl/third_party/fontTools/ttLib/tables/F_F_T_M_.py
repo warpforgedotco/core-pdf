@@ -1,6 +1,10 @@
 from core_pdf.impl.third_party.fontTools.misc import sstruct
 from core_pdf.impl.third_party.fontTools.misc.textTools import safeEval
-from core_pdf.impl.third_party.fontTools.misc.timeTools import timestampFromString, timestampToString
+from core_pdf.impl.third_party.fontTools.misc.timeTools import (
+    timestampFromString,
+    timestampToString,
+)
+
 from . import DefaultTable
 
 FFTMFormat = """
@@ -31,9 +35,7 @@ class table_F_F_T_M_(DefaultTable.DefaultTable):
         return data
 
     def toXML(self, writer, ttFont):
-        writer.comment(
-            "FontForge's timestamp, font source creation and modification dates"
-        )
+        writer.comment("FontForge's timestamp, font source creation and modification dates")
         writer.newline()
         formatstring, names, fixes = sstruct.getformat(FFTMFormat)
         for name in names:

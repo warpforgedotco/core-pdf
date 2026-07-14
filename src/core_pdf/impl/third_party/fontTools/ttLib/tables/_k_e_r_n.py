@@ -1,12 +1,18 @@
-from core_pdf.impl.third_party.fontTools.ttLib import getSearchRange
-from core_pdf.impl.third_party.fontTools.misc.textTools import safeEval, readHex
-from core_pdf.impl.third_party.fontTools.misc.fixedTools import fixedToFloat as fi2fl, floatToFixed as fl2fi
-from . import DefaultTable
-import struct
-import sys
 import array
 import logging
+import struct
+import sys
 
+from core_pdf.impl.third_party.fontTools.misc.fixedTools import (
+    fixedToFloat as fi2fl,
+)
+from core_pdf.impl.third_party.fontTools.misc.fixedTools import (
+    floatToFixed as fl2fi,
+)
+from core_pdf.impl.third_party.fontTools.misc.textTools import readHex, safeEval
+from core_pdf.impl.third_party.fontTools.ttLib import getSearchRange
+
+from . import DefaultTable
 
 log = logging.getLogger(__name__)
 
@@ -129,9 +135,7 @@ class KernTable_format_0(object):
             # Should we also assert length == len(data)?
             data = data[6:]
         else:
-            length, coverage, subtableFormat, tupleIndex = struct.unpack(
-                ">LBBH", data[:8]
-            )
+            length, coverage, subtableFormat, tupleIndex = struct.unpack(">LBBH", data[:8])
             data = data[8:]
         assert self.format == subtableFormat, "unsupported format"
         self.coverage = coverage
@@ -139,9 +143,7 @@ class KernTable_format_0(object):
 
         self.kernTable = kernTable = {}
 
-        nPairs, searchRange, entrySelector, rangeShift = struct.unpack(
-            ">HHHH", data[:8]
-        )
+        nPairs, searchRange, entrySelector, rangeShift = struct.unpack(">HHHH", data[:8])
         data = data[8:]
 
         datas = array.array("H", data[: 6 * nPairs])
@@ -158,13 +160,9 @@ class KernTable_format_0(object):
             except IndexError:
                 # Slower, but will not throw an IndexError on an invalid
                 # glyph id.
-                kernTable[(ttFont.getGlyphName(left), ttFont.getGlyphName(right))] = (
-                    value
-                )
+                kernTable[(ttFont.getGlyphName(left), ttFont.getGlyphName(right))] = value
         if len(data) > 6 * nPairs + 4:  # Ignore up to 4 bytes excess
-            log.debug(
-                "excess data in 'kern' subtable: %d bytes", len(data) - 6 * nPairs
-            )
+            log.debug("excess data in 'kern' subtable: %d bytes", len(data) - 6 * nPairs)
 
     def compile(self, ttFont):
         nPairs = min(len(self.kernTable), 0xFFFF)
@@ -197,8 +195,7 @@ class KernTable_format_0(object):
             length = len(data) + 6
             if length >= 0x10000:
                 log.debug(
-                    '"kern" subtable overflow, '
-                    "truncating length value while preserving pairs."
+                    '"kern" subtable overflow, truncating length value while preserving pairs.'
                 )
                 length &= 0xFFFF
             header = struct.pack(">HHBB", version, length, self.format, self.coverage)
@@ -210,9 +207,7 @@ class KernTable_format_0(object):
                 log.debug("'tupleIndex' is None; default to 0")
                 self.tupleIndex = 0
             length = len(data) + 8
-            header = struct.pack(
-                ">LBBH", length, self.coverage, self.format, self.tupleIndex
-            )
+            header = struct.pack(">LBBH", length, self.coverage, self.format, self.tupleIndex)
         return header + data
 
     def toXML(self, writer, ttFont):

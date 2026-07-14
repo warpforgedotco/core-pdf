@@ -6,7 +6,6 @@ from importlib.resources.abc import Traversable
 
 from core_pdf.impl.third_party.cid.cmap import CMapDecoder
 
-
 RESOURCE_PACKAGE = "core_pdf.impl.third_party.cid"
 
 

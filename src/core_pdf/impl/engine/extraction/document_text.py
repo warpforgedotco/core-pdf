@@ -67,14 +67,11 @@ class DocumentTextMixin:
                     indent = "  " * item.level
                     md_parts.append(f"{indent}- {item.title}")
                 md_parts.append("")
-        except ValueError, KeyError, StopIteration:
+        except (ValueError, KeyError, StopIteration):
             pass
 
         md_parts.append(
-            "\f".join(
-                cast(_DocumentTextPage, page_obj).to_markdown()
-                for page_obj in self.pages
-            )
+            "\f".join(cast(_DocumentTextPage, page_obj).to_markdown() for page_obj in self.pages)
         )
 
         return "\n".join(md_parts) + "\f"

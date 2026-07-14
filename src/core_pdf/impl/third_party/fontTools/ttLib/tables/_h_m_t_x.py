@@ -1,12 +1,13 @@
-from core_pdf.impl.third_party.fontTools.misc.roundTools import otRound
-from core_pdf.impl.third_party.fontTools import ttLib
-from core_pdf.impl.third_party.fontTools.misc.textTools import safeEval
-from . import DefaultTable
-import sys
-import struct
 import array
 import logging
+import struct
+import sys
 
+from core_pdf.impl.third_party.fontTools import ttLib
+from core_pdf.impl.third_party.fontTools.misc.roundTools import otRound
+from core_pdf.impl.third_party.fontTools.misc.textTools import safeEval
+
+from . import DefaultTable
 
 log = logging.getLogger(__name__)
 
@@ -36,8 +37,7 @@ class table__h_m_t_x(DefaultTable.DefaultTable):
             numberOfMetrics = numGlyphs
         if numberOfMetrics > numGlyphs:
             log.debug(
-                "The %s.%s exceeds the maxp.numGlyphs"
-                % (self.headerTag, self.numberOfMetricsName)
+                "The %s.%s exceeds the maxp.numGlyphs" % (self.headerTag, self.numberOfMetricsName)
             )
             numberOfMetrics = numGlyphs
         numberOfSideBearings = numGlyphs - numberOfMetrics
@@ -85,9 +85,7 @@ class table__h_m_t_x(DefaultTable.DefaultTable):
         for glyphName in ttFont.getGlyphOrder():
             advanceWidth, sideBearing = self.metrics[glyphName]
             if advanceWidth < 0:
-                log.error(
-                    "Glyph %r has negative advance %s" % (glyphName, self.advanceName)
-                )
+                log.error("Glyph %r has negative advance %s" % (glyphName, self.advanceName))
                 hasNegativeAdvances = True
             metrics.append([advanceWidth, sideBearing])
 

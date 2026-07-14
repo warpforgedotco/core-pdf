@@ -9,7 +9,6 @@ from core_pdf.impl.engine.spec.s_07_security.standard_v5 import (
     PdfStandardSecurityHandlerV5,
 )
 
-
 SECURITY_HANDLER_REGISTRY = {
     1: PdfStandardSecurityHandler,
     2: PdfStandardSecurityHandler,

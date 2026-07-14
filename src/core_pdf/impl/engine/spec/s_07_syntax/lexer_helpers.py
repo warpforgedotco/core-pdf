@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
+
 from typing import Protocol, cast, overload
 
 from core_pdf.impl.engine.spec.s_07_syntax.tokens import WS_TABLE
-
 
 IS_NUMBER_CHAR = bytes([1 if i in b"+-0123456789." else 0 for i in range(256)])
 EMPTY_TRANSLATE_TABLE = bytes.maketrans(b"", b"")
@@ -23,13 +23,7 @@ R_SENTINEL = object()
 STRING_SPECIAL_TABLE = bytes([1 if i in b"()\\\r" else 0 for i in range(256)])
 HEX_VALUE = bytes(
     [
-        i - 48
-        if 48 <= i <= 57
-        else i - 55
-        if 65 <= i <= 70
-        else i - 87
-        if 97 <= i <= 102
-        else 255
+        i - 48 if 48 <= i <= 57 else i - 55 if 65 <= i <= 70 else i - 87 if 97 <= i <= 102 else 255
         for i in range(256)
     ]
 )
@@ -56,9 +50,7 @@ def full_source_buffer(data: memoryview, data_len: int) -> FindableSizedBuffer |
     return None
 
 
-def looks_like_indirect_object_header(
-    data: memoryview, position: int, data_len: int
-) -> bool:
+def looks_like_indirect_object_header(data: memoryview, position: int, data_len: int) -> bool:
     pos = position
     if pos >= data_len or not (48 <= data[pos] <= 57):
         return False
@@ -165,9 +157,7 @@ def is_integer_word(value: memoryview | bytes) -> bool:
     return is_digit_bytes_from(value, 1)
 
 
-def matches_keyword_with_one_substitution(
-    data: memoryview, pos: int, keyword: bytes
-) -> bool:
+def matches_keyword_with_one_substitution(data: memoryview, pos: int, keyword: bytes) -> bool:
     end = pos + len(keyword)
     if end > len(data):
         return False

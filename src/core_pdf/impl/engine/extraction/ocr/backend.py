@@ -26,8 +26,8 @@ from core_pdf.impl.engine.extraction.ocr.types import (
     OcrIteratorLayout,
     OcrTextChoice,
     OcrTextResult,
-    ocr_observations_from_rows,
     leptonica_pix_size_is_supported,
+    ocr_observations_from_rows,
     raw_ocr_image_size_is_supported,
 )
 
@@ -59,12 +59,8 @@ class TesseractCtypesBackend:
         self.configure_symbols(tesseract)
         if leptonica is not None:
             self.configure_leptonica_symbols(leptonica)
-        self.has_box_create = bool(
-            leptonica is not None and hasattr(leptonica, "boxCreate")
-        )
-        self.has_box_destroy = bool(
-            leptonica is not None and hasattr(leptonica, "boxDestroy")
-        )
+        self.has_box_create = bool(leptonica is not None and hasattr(leptonica, "boxCreate"))
+        self.has_box_destroy = bool(leptonica is not None and hasattr(leptonica, "boxDestroy"))
         self.has_pix_clip_rectangle = bool(
             leptonica is not None and hasattr(leptonica, "pixClipRectangle")
         )
@@ -83,9 +79,7 @@ class TesseractCtypesBackend:
         )
         self.has_init2 = hasattr(tesseract, "TessBaseAPIInit2")
         self.has_set_image2 = hasattr(tesseract, "TessBaseAPISetImage2")
-        self.has_set_source_resolution = hasattr(
-            tesseract, "TessBaseAPISetSourceResolution"
-        )
+        self.has_set_source_resolution = hasattr(tesseract, "TessBaseAPISetSourceResolution")
         if self.has_init2:
             init_status = tesseract.TessBaseAPIInit2(
                 api,
@@ -119,7 +113,7 @@ class TesseractCtypesBackend:
         )
         try:
             return cls(ctypes.CDLL(tesseract_path), leptonica)
-        except AttributeError, OSError, RuntimeError:
+        except (AttributeError, OSError, RuntimeError):
             return None
 
     @staticmethod
@@ -773,9 +767,7 @@ class TesseractCtypesBackend:
             if self.has_set_source_resolution and resolution > 0:
                 self.tesseract.TessBaseAPISetSourceResolution(self.api, resolution)
             backend_rectangle = self.rectangle_for_image(image, rectangle)
-            if backend_rectangle is not None and hasattr(
-                self.tesseract, "TessBaseAPISetRectangle"
-            ):
+            if backend_rectangle is not None and hasattr(self.tesseract, "TessBaseAPISetRectangle"):
                 x0, y0, x1, y1 = backend_rectangle
                 self.tesseract.TessBaseAPISetRectangle(
                     self.api,
@@ -892,9 +884,7 @@ class TesseractCtypesBackend:
             if self.has_set_source_resolution and resolution > 0:
                 self.tesseract.TessBaseAPISetSourceResolution(self.api, resolution)
             backend_rectangle = self.rectangle_for_image(image, rectangle)
-            if backend_rectangle is not None and hasattr(
-                self.tesseract, "TessBaseAPISetRectangle"
-            ):
+            if backend_rectangle is not None and hasattr(self.tesseract, "TessBaseAPISetRectangle"):
                 x0, y0, x1, y1 = backend_rectangle
                 self.tesseract.TessBaseAPISetRectangle(
                     self.api,
@@ -906,9 +896,7 @@ class TesseractCtypesBackend:
             if self.tesseract.TessBaseAPIRecognize(self.api, None) < 0:
                 return {}, "", None
             iterator = self.tesseract.TessBaseAPIGetIterator(self.api)
-            rows = (
-                self.result_iterator_rows_by_level(iterator, levels) if iterator else {}
-            )
+            rows = self.result_iterator_rows_by_level(iterator, levels) if iterator else {}
             text, confidence = self.current_native_text_result()
             return rows, text, confidence
         finally:
@@ -1009,9 +997,7 @@ class TesseractCtypesBackend:
             if self.has_set_source_resolution and resolution > 0:
                 self.tesseract.TessBaseAPISetSourceResolution(self.api, resolution)
             backend_rectangle = self.rectangle_for_image(image, rectangle)
-            if backend_rectangle is not None and hasattr(
-                self.tesseract, "TessBaseAPISetRectangle"
-            ):
+            if backend_rectangle is not None and hasattr(self.tesseract, "TessBaseAPISetRectangle"):
                 x0, y0, x1, y1 = backend_rectangle
                 self.tesseract.TessBaseAPISetRectangle(
                     self.api,
@@ -1089,9 +1075,7 @@ class TesseractCtypesBackend:
             if self.has_set_source_resolution and resolution > 0:
                 self.tesseract.TessBaseAPISetSourceResolution(self.api, resolution)
             backend_rectangle = self.rectangle_for_image(image, rectangle)
-            if backend_rectangle is not None and hasattr(
-                self.tesseract, "TessBaseAPISetRectangle"
-            ):
+            if backend_rectangle is not None and hasattr(self.tesseract, "TessBaseAPISetRectangle"):
                 x0, y0, x1, y1 = backend_rectangle
                 self.tesseract.TessBaseAPISetRectangle(
                     self.api,
@@ -1137,9 +1121,7 @@ class TesseractCtypesBackend:
             if self.has_clear:
                 self.tesseract.TessBaseAPIClear(self.api)
 
-    def component_boxes_from_boxa(
-        self, boxa: ctypes.c_void_p, level: int
-    ) -> list[OcrComponentBox]:
+    def component_boxes_from_boxa(self, boxa: ctypes.c_void_p, level: int) -> list[OcrComponentBox]:
         if self.leptonica is None:
             return []
         count = int(self.leptonica.boxaGetCount(boxa))
@@ -1212,33 +1194,25 @@ class TesseractCtypesBackend:
         word_num = 0
         symbol_num = 0
         while True:
-            if self.tesseract.TessPageIteratorIsAtBeginningOf(
-                iterator, TESSERACT_RIL_BLOCK
-            ):
+            if self.tesseract.TessPageIteratorIsAtBeginningOf(iterator, TESSERACT_RIL_BLOCK):
                 block_num += 1
                 par_num = 0
                 line_num = 0
                 word_num = 0
                 symbol_num = 0
-            if self.tesseract.TessPageIteratorIsAtBeginningOf(
-                iterator, TESSERACT_RIL_PARA
-            ):
+            if self.tesseract.TessPageIteratorIsAtBeginningOf(iterator, TESSERACT_RIL_PARA):
                 par_num += 1
                 line_num = 0
                 word_num = 0
                 symbol_num = 0
-            if self.tesseract.TessPageIteratorIsAtBeginningOf(
-                iterator, TESSERACT_RIL_TEXTLINE
-            ):
+            if self.tesseract.TessPageIteratorIsAtBeginningOf(iterator, TESSERACT_RIL_TEXTLINE):
                 line_num += 1
                 word_num = 0
                 symbol_num = 0
             if level == TESSERACT_RIL_WORD:
                 word_num += 1
             elif level == TESSERACT_RIL_SYMBOL:
-                if self.tesseract.TessPageIteratorIsAtBeginningOf(
-                    iterator, TESSERACT_RIL_WORD
-                ):
+                if self.tesseract.TessPageIteratorIsAtBeginningOf(iterator, TESSERACT_RIL_WORD):
                     word_num += 1
                     symbol_num = 0
                 symbol_num += 1
@@ -1313,9 +1287,7 @@ class TesseractCtypesBackend:
         height = max(0, int(bottom.value) - int(top.value))
         if width <= 0 or height <= 0:
             return None
-        confidence = int(
-            round(float(self.tesseract.TessResultIteratorConfidence(iterator, level)))
-        )
+        confidence = int(round(float(self.tesseract.TessResultIteratorConfidence(iterator, level))))
         row: dict[str, Any] = {
             "level": level,
             "page_num": 1,
@@ -1359,9 +1331,7 @@ class TesseractCtypesBackend:
             return None
         return (int(x1.value), int(y1.value), int(x2.value), int(y2.value))
 
-    def result_iterator_choices(
-        self, iterator: int, level: int
-    ) -> tuple[OcrTextChoice, ...]:
+    def result_iterator_choices(self, iterator: int, level: int) -> tuple[OcrTextChoice, ...]:
         if level not in {TESSERACT_RIL_WORD, TESSERACT_RIL_SYMBOL}:
             return ()
         if not all(
@@ -1387,11 +1357,7 @@ class TesseractCtypesBackend:
                     if text:
                         confidence = int(
                             round(
-                                float(
-                                    self.tesseract.TessChoiceIteratorConfidence(
-                                        choice_iterator
-                                    )
-                                )
+                                float(self.tesseract.TessChoiceIteratorConfidence(choice_iterator))
                             )
                         )
                         choices.append(
@@ -1440,9 +1406,7 @@ class TesseractCtypesBackend:
         self,
         variables: Mapping[str, str | int | float | bool] | None,
     ) -> None:
-        effective: dict[str, str | int | float | bool] = dict(
-            TESSERACT_DEFAULT_VARIABLES
-        )
+        effective: dict[str, str | int | float | bool] = dict(TESSERACT_DEFAULT_VARIABLES)
         if variables:
             effective.update(variables)
         for name, value in effective.items():
@@ -1626,9 +1590,7 @@ class TesseractCtypesBackend:
         # ``box outside rectangle`` message.
         pix_width = source_width
         pix_height = source_height
-        if hasattr(self.leptonica, "pixGetWidth") and hasattr(
-            self.leptonica, "pixGetHeight"
-        ):
+        if hasattr(self.leptonica, "pixGetWidth") and hasattr(self.leptonica, "pixGetHeight"):
             pix_width = int(self.leptonica.pixGetWidth(ctypes.c_void_p(source_pix)))
             pix_height = int(self.leptonica.pixGetHeight(ctypes.c_void_p(source_pix)))
             if pix_width <= 0 or pix_height <= 0:

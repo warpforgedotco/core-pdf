@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from core_pdf.impl.engine.spec.s_07_syntax.primitives import PdfStream
+
 from core_pdf.impl.engine.spec.s_09_fonts.decoder import (
     FontDecoder,
     parse_type1_font_program_encoding,

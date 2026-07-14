@@ -299,9 +299,7 @@ class JBIG2Image:
         if width <= 0 or height <= 0:
             raise Jbig2ParseError("invalid JBIG2 image dimensions")
         stride = (width + 7) // 8
-        return cls(
-            width=width, height=height, stride=stride, data=bytearray(stride * height)
-        )
+        return cls(width=width, height=height, stride=stride, data=bytearray(stride * height))
 
     def set_pixel(self, x: int, y: int, value: int) -> None:
         if x < 0 or y < 0 or x >= self.width or y >= self.height:
@@ -341,9 +339,7 @@ class JBIG2BitReader:
         elif needed == 2:
             word = (data[byte_pos] << 8) | data[byte_pos + 1]
         elif needed == 3:
-            word = (
-                (data[byte_pos] << 16) | (data[byte_pos + 1] << 8) | data[byte_pos + 2]
-            )
+            word = (data[byte_pos] << 16) | (data[byte_pos + 1] << 8) | data[byte_pos + 2]
         else:
             word = 0
             for i in range(needed):
@@ -494,11 +490,7 @@ def decode_integer(
         value = 0
         for bit_index in range(length):
             bit = decoder.decode_bit(prev)
-            prev = (
-                prev < 256
-                and ((prev << 1) | bit)
-                or ((((prev << 1) | bit) & 0x1FF) | 0x100)
-            )
+            prev = prev < 256 and ((prev << 1) | bit) or ((((prev << 1) | bit) & 0x1FF) | 0x100)
             value = (value << 1) | bit
         return value
 
@@ -523,9 +515,7 @@ def decode_integer(
     return signed_value
 
 
-def decode_iaid(
-    context_cache: JBIG2ContextCache, decoder: JBIG2MQDecoder, code_length: int
-) -> int:
+def decode_iaid(context_cache: JBIG2ContextCache, decoder: JBIG2MQDecoder, code_length: int) -> int:
     prev = 1
     value = 0
     for ignored in range(code_length):
@@ -544,9 +534,7 @@ def read_u16(data: bytes, pos: int) -> tuple[int, int]:
 
 
 def read_be_u32(data: bytes, pos: int) -> int:
-    return (
-        (data[pos] << 24) | (data[pos + 1] << 16) | (data[pos + 2] << 8) | data[pos + 3]
-    )
+    return (data[pos] << 24) | (data[pos + 1] << 16) | (data[pos + 2] << 8) | data[pos + 3]
 
 
 def read_be_i32(data: bytes, pos: int) -> int:
@@ -622,9 +610,7 @@ def parse_generic_region(data: bytes) -> JBIG2GenericRegion:
     x = read_be_i32(data, 8)
     y = read_be_i32(data, 12)
     flags = data[16]
-    return JBIG2GenericRegion(
-        width=width, height=height, x=x, y=y, flags=flags, raw=data
-    )
+    return JBIG2GenericRegion(width=width, height=height, x=x, y=y, flags=flags, raw=data)
 
 
 def parse_generic_region_header(
@@ -785,9 +771,7 @@ def decode_jbig2_segments(segments: list[JBIG2Segment]) -> bytes:
         for row in range(image.height):
             src = row * image.stride
             dst = row * new_image.stride
-            new_image.data[dst : dst + image.stride] = image.data[
-                src : src + image.stride
-            ]
+            new_image.data[dst : dst + image.stride] = image.data[src : src + image.stride]
         image = new_image
         inferred_width = new_width
         inferred_height = new_height
@@ -864,9 +848,7 @@ def decode_text_region(
 def decode_generic_region(
     data: bytes, image: JBIG2Image, page_info: JBIG2PageInfo | None = None
 ) -> None:
-    region, mmr, template, prediction, at, bitmap_start = parse_generic_region_header(
-        data
-    )
+    region, mmr, template, prediction, at, bitmap_start = parse_generic_region_header(data)
     if region.width <= 0 or region.height <= 0:
         return
     if mmr:
@@ -903,9 +885,7 @@ def decode_arithmetic_generic_bitmap(
     return decode_arithmetic_generic_template0(data, width, height)
 
 
-def decode_arithmetic_generic_template0(
-    data: bytes, width: int, height: int
-) -> list[bytearray]:
+def decode_arithmetic_generic_template0(data: bytes, width: int, height: int) -> list[bytearray]:
     decoder = JBIG2MQDecoder(data)
     contexts: dict[int, int] = {}
     bitmap: list[bytearray] = []
@@ -952,9 +932,7 @@ def compose_packed_bitmap_region(
     for row_index, src in enumerate(rows):
         for col in range(region.width):
             if src[col >> 3] & (0x80 >> (col & 7)):
-                compose_region_pixel(
-                    image, region.x + col, region.y + row_index, operator
-                )
+                compose_region_pixel(image, region.x + col, region.y + row_index, operator)
 
 
 def compose_bitmap_region(
@@ -967,9 +945,7 @@ def compose_bitmap_region(
     for row_index, row in enumerate(bitmap):
         for col, pixel in enumerate(row):
             if pixel:
-                compose_region_pixel(
-                    image, region.x + col, region.y + row_index, operator
-                )
+                compose_region_pixel(image, region.x + col, region.y + row_index, operator)
 
 
 def region_operator(region: JBIG2GenericRegion, page_info: JBIG2PageInfo | None) -> int:

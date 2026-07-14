@@ -15,16 +15,16 @@ a table's length changes you need to rewrite the whole file anyway.
 
 from __future__ import annotations
 
+import logging
+import struct
+from collections import OrderedDict
 from collections.abc import KeysView
 from io import BytesIO
 from types import SimpleNamespace
-from core_pdf.impl.third_party.fontTools.misc.textTools import Tag
-from core_pdf.impl.third_party.fontTools.misc import sstruct
-from core_pdf.impl.third_party.fontTools.ttLib import TTLibError, TTLibFileIsCollectionError
-import struct
-from collections import OrderedDict
-import logging
 
+from core_pdf.impl.third_party.fontTools.misc import sstruct
+from core_pdf.impl.third_party.fontTools.misc.textTools import Tag
+from core_pdf.impl.third_party.fontTools.ttLib import TTLibError, TTLibFileIsCollectionError
 
 log = logging.getLogger(__name__)
 
@@ -62,8 +62,7 @@ class SFNTReader(object):
             numFonts = header.numFonts
             if not 0 <= fontNumber < numFonts:
                 raise TTLibFileIsCollectionError(
-                    "specify a font number between 0 and %d (inclusive)"
-                    % (numFonts - 1)
+                    "specify a font number between 0 and %d (inclusive)" % (numFonts - 1)
                 )
             self.numFonts = numFonts
             self.file.seek(header.offsetTable[fontNumber])
@@ -239,9 +238,7 @@ class SFNTWriter(object):
             self.signature = "wOFF"
 
             # to calculate WOFF checksum adjustment, we also need the original SFNT offsets
-            self.origNextTableOffset = (
-                sfntDirectorySize + numTables * sfntDirectoryEntrySize
-            )
+            self.origNextTableOffset = sfntDirectorySize + numTables * sfntDirectoryEntrySize
         else:
             assert not self.flavor, "Unknown flavor '%s'" % self.flavor
             self.directoryFormat = sfntDirectoryFormat
@@ -250,15 +247,11 @@ class SFNTWriter(object):
 
             from core_pdf.impl.third_party.fontTools.ttLib import getSearchRange
 
-            self.searchRange, self.entrySelector, self.rangeShift = getSearchRange(
-                numTables, 16
-            )
+            self.searchRange, self.entrySelector, self.rangeShift = getSearchRange(numTables, 16)
 
         self.directoryOffset = self.file.tell()
         self.nextTableOffset = (
-            self.directoryOffset
-            + self.directorySize
-            + numTables * self.DirectoryEntry.formatSize
+            self.directoryOffset + self.directorySize + numTables * self.DirectoryEntry.formatSize
         )
         # clear out directory area
         self.file.seek(self.nextTableOffset)
@@ -312,8 +305,7 @@ class SFNTWriter(object):
         tables = sorted(self.tables.items())
         if len(tables) != self.numTables:
             raise TTLibError(
-                "wrong number of tables; expected %d, found %d"
-                % (self.numTables, len(tables))
+                "wrong number of tables; expected %d, found %d" % (self.numTables, len(tables))
             )
 
         if self.flavor == "woff":
@@ -331,9 +323,7 @@ class SFNTWriter(object):
                 self.minorVersion = data.minorVersion
             else:
                 if hasattr(self, "headTable"):
-                    self.majorVersion, self.minorVersion = struct.unpack(
-                        ">HH", self.headTable[4:8]
-                    )
+                    self.majorVersion, self.minorVersion = struct.unpack(">HH", self.headTable[4:8])
                 else:
                     self.majorVersion = self.minorVersion = 0
             if data.metaData:
@@ -637,9 +627,7 @@ def readTTCHeader(file):
     assert self.Version == 0x00010000 or self.Version == 0x00020000, (
         "unrecognized TTC version 0x%08x" % self.Version
     )
-    self.offsetTable = struct.unpack(
-        ">%dL" % self.numFonts, file.read(self.numFonts * 4)
-    )
+    self.offsetTable = struct.unpack(">%dL" % self.numFonts, file.read(self.numFonts * 4))
     if self.Version == 0x00020000:
         pass  # ignoring version 2.0 signatures
     return self
@@ -658,7 +646,7 @@ def writeTTCHeader(file, numFonts):
 
 
 if __name__ == "__main__":
-    import sys
     import doctest
+    import sys
 
     sys.exit(doctest.testmod().failed)

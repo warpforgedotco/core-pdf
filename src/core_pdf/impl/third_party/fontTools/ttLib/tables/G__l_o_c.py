@@ -1,9 +1,10 @@
-from core_pdf.impl.third_party.fontTools.misc import sstruct
-from core_pdf.impl.third_party.fontTools.misc.textTools import safeEval
-from . import DefaultTable
 import array
 import sys
 
+from core_pdf.impl.third_party.fontTools.misc import sstruct
+from core_pdf.impl.third_party.fontTools.misc.textTools import safeEval
+
+from . import DefaultTable
 
 Gloc_header = """
     >        # big endian

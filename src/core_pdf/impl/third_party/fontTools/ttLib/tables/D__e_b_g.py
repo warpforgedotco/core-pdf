@@ -1,8 +1,9 @@
 import json
 from textwrap import indent
 
-from . import DefaultTable
 from core_pdf.impl.third_party.fontTools.misc.textTools import tostr
+
+from . import DefaultTable
 
 
 class table_D__e_b_g(DefaultTable.DefaultTable):

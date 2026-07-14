@@ -41,9 +41,7 @@ class DocumentSecurityMixin:
         if not isinstance(encrypt_dict, dict):
             raise PdfUnsupportedError("Invalid Encrypt dictionary")
 
-        filter_name = self.resolver.resolve_name(
-            lookup_dict_key(encrypt_dict, "Filter")
-        )
+        filter_name = self.resolver.resolve_name(lookup_dict_key(encrypt_dict, "Filter"))
         if filter_name is None:
             raise PdfUnsupportedError("Invalid encryption dictionary")
         if filter_name in {"Adobe.PubSec", "PubSec"}:
@@ -60,9 +58,7 @@ class DocumentSecurityMixin:
         v = v_opt
         handler_cls = SECURITY_HANDLER_REGISTRY.get(v)
         if handler_cls is None:
-            raise PdfUnsupportedError(
-                f"Unsupported standard encryption algorithm V={v}"
-            )
+            raise PdfUnsupportedError(f"Unsupported standard encryption algorithm V={v}")
 
         docid = lookup_dict_key(self.trailer_dict, "ID")
         if docid is None:

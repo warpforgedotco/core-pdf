@@ -83,10 +83,7 @@ class CFFFont:
         if end > len(data):
             raise ValueError("invalid CFF INDEX")
         return (
-            [
-                data[base + offsets[i] - 1 : base + offsets[i + 1] - 1]
-                for i in range(count)
-            ],
+            [data[base + offsets[i] - 1 : base + offsets[i + 1] - 1] for i in range(count)],
             end,
         )
 
@@ -287,15 +284,9 @@ class CFFFont:
             return []
         private_off = int(offset)
         private_size = int(size)
-        if (
-            private_off < 0
-            or private_size <= 0
-            or private_off + private_size > len(self.data)
-        ):
+        if private_off < 0 or private_size <= 0 or private_off + private_size > len(self.data):
             return []
-        private_dict = self._parse_dict(
-            self.data[private_off : private_off + private_size]
-        )
+        private_dict = self._parse_dict(self.data[private_off : private_off + private_size])
         subrs_off = private_dict.get(19, [None])[0]
         if not isinstance(subrs_off, (int, float)):
             return []
@@ -325,9 +316,7 @@ class CFFFont:
     def glyph_feature_for_cid(self, cid: int) -> CFFGlyphFeature:
         return self.glyph_feature(self.glyph_id_for_cid(cid))
 
-    def glyph_bitmap(
-        self, cid: int, width: int = 24, height: int = 32
-    ) -> tuple[int, ...]:
+    def glyph_bitmap(self, cid: int, width: int = 24, height: int = 32) -> tuple[int, ...]:
         try:
             glyph_id = self.glyph_id_for_cid(cid)
             charstring = self.charstrings[glyph_id]
@@ -391,9 +380,7 @@ def type2_glyph_feature(
         for px, py in points
     }
     bitmap = _rasterize_contours(contours, width=18, height=24)
-    return CFFGlyphFeature(
-        tuple(sorted(cells)), round(width / height, 2), len(contours), bitmap
-    )
+    return CFFGlyphFeature(tuple(sorted(cells)), round(width / height, 2), len(contours), bitmap)
 
 
 def type2_glyph_bitmap(
@@ -449,9 +436,7 @@ def _type2_glyph_contours(
         y += dy
         current.append((x, y))
 
-    def curve(
-        dx1: float, dy1: float, dx2: float, dy2: float, dx3: float, dy3: float
-    ) -> None:
+    def curve(dx1: float, dy1: float, dx2: float, dy2: float, dx3: float, dy3: float) -> None:
         nonlocal x, y
         x0, y0 = x, y
         x1, y1 = x + dx1, y + dy1
@@ -556,17 +541,13 @@ def _type2_glyph_contours(
                     if len(stack) % 2:
                         line(stack.pop(0), 0.0)
                     for i in range(0, len(stack) - 3, 4):
-                        curve(
-                            0.0, stack[i], stack[i + 1], stack[i + 2], 0.0, stack[i + 3]
-                        )
+                        curve(0.0, stack[i], stack[i + 1], stack[i + 2], 0.0, stack[i + 3])
                     clear_stack()
                 elif byte == 27:
                     if len(stack) % 2:
                         line(0.0, stack.pop(0))
                     for i in range(0, len(stack) - 3, 4):
-                        curve(
-                            stack[i], 0.0, stack[i + 1], stack[i + 2], stack[i + 3], 0.0
-                        )
+                        curve(stack[i], 0.0, stack[i + 1], stack[i + 2], stack[i + 3], 0.0)
                     clear_stack()
                 elif byte == 29:
                     if stack:
@@ -598,7 +579,7 @@ def _type2_glyph_contours(
                 else:
                     clear_stack()
             return True
-        except IndexError, ValueError:
+        except (IndexError, ValueError):
             return False
 
     if not execute(charstring):

@@ -83,9 +83,7 @@ class DocumentCatalogMixin:
     def mark_info(self) -> PdfDict | None:
         mark_info = self.mark_info_cache
         if mark_info is None:
-            resolved_mark_info = self.resolver.resolve(
-                lookup_dict_key(self.catalog(), "MarkInfo")
-            )
+            resolved_mark_info = self.resolver.resolve(lookup_dict_key(self.catalog(), "MarkInfo"))
             if resolved_mark_info is None:
                 return None
             if not isinstance(resolved_mark_info, dict):

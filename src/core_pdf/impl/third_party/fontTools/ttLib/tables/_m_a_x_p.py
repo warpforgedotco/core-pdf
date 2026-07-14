@@ -1,5 +1,6 @@
 from core_pdf.impl.third_party.fontTools.misc import sstruct
 from core_pdf.impl.third_party.fontTools.misc.textTools import safeEval
+
 from . import DefaultTable
 
 maxpFormat_0_5 = """
@@ -93,9 +94,7 @@ class table__m_a_x_p(DefaultTable.DefaultTable):
                     maxPoints = max(maxPoints, nPoints)
                     maxContours = max(maxContours, nContours)
                 elif g.isComposite():
-                    nPoints, nContours, componentDepth = g.getCompositeMaxpValues(
-                        glyfTable
-                    )
+                    nPoints, nContours, componentDepth = g.getCompositeMaxpValues(glyfTable)
                     maxCompositePoints = max(maxCompositePoints, nPoints)
                     maxCompositeContours = max(maxCompositeContours, nContours)
                     maxComponentElements = max(maxComponentElements, len(g.components))

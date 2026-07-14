@@ -1,4 +1,5 @@
 from io import BytesIO
+
 from core_pdf.impl.third_party.fontTools.ttLib.tables.C_F_F_ import table_C_F_F_
 
 

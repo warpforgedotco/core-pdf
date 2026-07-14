@@ -2,8 +2,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from dataclasses import dataclass
-from dataclasses import replace
+from dataclasses import dataclass, replace
 
 from core_pdf.impl.engine.extraction.common import page_geometry
 from core_pdf.impl.engine.extraction.ocr.text_analysis import normalized_text_tokens
@@ -50,9 +49,7 @@ def resolve_observation_append(
         candidate,
         accepted_observations,
     )
-    text_overlap = (
-        observation_text_overlap(candidate, matched) if matched is not None else 0.0
-    )
+    text_overlap = observation_text_overlap(candidate, matched) if matched is not None else 0.0
     coverage_ratio = observation_coverage_ratio(candidate, accepted_observations)
     useful_new_tokens = observation_useful_new_token_count(candidate, existing_text)
 
@@ -183,9 +180,7 @@ def observation_text_overlap(
     right_tokens = set(normalized_text_tokens(right.text))
     if not left_tokens or not right_tokens:
         return 0.0
-    return len(left_tokens & right_tokens) / max(
-        1, min(len(left_tokens), len(right_tokens))
-    )
+    return len(left_tokens & right_tokens) / max(1, min(len(left_tokens), len(right_tokens)))
 
 
 def observation_has_useful_new_text(

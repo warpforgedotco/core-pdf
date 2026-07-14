@@ -2,9 +2,7 @@
 from __future__ import annotations
 
 
-def find_indirect_object_header(
-    data: memoryview, search_start: int, search_end: int
-) -> int | None:
+def find_indirect_object_header(data: memoryview, search_start: int, search_end: int) -> int | None:
     raw = data[search_start:search_end]
     raw_bytes = raw.tobytes()
     pos = 0

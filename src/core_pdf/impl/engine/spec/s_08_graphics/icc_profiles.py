@@ -93,15 +93,9 @@ def convert_icc_lut_samples(raw: bytes, profile: IccLutProfile) -> bytes | None:
     return bytes(result)
 
 
-def evaluate_icc_lut(
-    profile: IccLutProfile, components: list[float]
-) -> tuple[float, ...]:
+def evaluate_icc_lut(profile: IccLutProfile, components: list[float]) -> tuple[float, ...]:
     values = [max(0.0, min(1.0, component)) for component in components]
-    if (
-        profile.color_space == "XYZ"
-        and profile.input_channels == 3
-        and len(profile.matrix) == 3
-    ):
+    if profile.color_space == "XYZ" and profile.input_channels == 3 and len(profile.matrix) == 3:
         values = apply_icc_matrix(profile.matrix, values)
     table_values = [
         interpolate_1d_table(profile.input_tables[index], values[index])
@@ -219,21 +213,9 @@ def convert_icc_rgb_samples(raw: bytes, profile: IccMatrixProfile) -> bytes:
         red = apply_icc_curve(profile.curves[0], raw[index] / 255.0)
         green = apply_icc_curve(profile.curves[1], raw[index + 1] / 255.0)
         blue = apply_icc_curve(profile.curves[2], raw[index + 2] / 255.0)
-        x = (
-            red * profile.matrix[0][0]
-            + green * profile.matrix[1][0]
-            + blue * profile.matrix[2][0]
-        )
-        y = (
-            red * profile.matrix[0][1]
-            + green * profile.matrix[1][1]
-            + blue * profile.matrix[2][1]
-        )
-        z = (
-            red * profile.matrix[0][2]
-            + green * profile.matrix[1][2]
-            + blue * profile.matrix[2][2]
-        )
+        x = red * profile.matrix[0][0] + green * profile.matrix[1][0] + blue * profile.matrix[2][0]
+        y = red * profile.matrix[0][1] + green * profile.matrix[1][1] + blue * profile.matrix[2][1]
+        z = red * profile.matrix[0][2] + green * profile.matrix[1][2] + blue * profile.matrix[2][2]
         ax, ay, az = adapt_d50_to_d65(x, y, z)
         sr, sg, sb = xyz_to_srgb(ax, ay, az)
         result[index] = max(0, min(255, int(round(sr * 255.0))))
@@ -276,9 +258,7 @@ def apply_icc_curve(curve: IccCurve, value: float) -> float:
             return pow(max(0.0, a * sample + b), g) if sample >= d else c * sample
         if function_type == 4 and len(params) >= 7:
             g, a, b, c, d, e, f = params[:7]
-            return (
-                pow(max(0.0, a * sample + b), g) + e if sample >= d else c * sample + f
-            )
+            return pow(max(0.0, a * sample + b), g) + e if sample >= d else c * sample + f
     return sample
 
 

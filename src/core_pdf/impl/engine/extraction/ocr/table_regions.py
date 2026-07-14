@@ -5,17 +5,15 @@ from collections import defaultdict
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-from core_pdf.impl.engine.extraction.ocr.types import (
-    OcrComponentBox,
-    OcrImage,
-    OcrTextResult,
-    TESSERACT_RIL_TEXTLINE,
-    TESSERACT_RIL_WORD,
-)
+from core_pdf.impl.engine.extraction.cache import ExtractionCache
 from core_pdf.impl.engine.extraction.common import page_geometry
 from core_pdf.impl.engine.extraction.ocr import (
     candidates as ocr_candidates,
+)
+from core_pdf.impl.engine.extraction.ocr import (
     execution as ocr_execution,
+)
+from core_pdf.impl.engine.extraction.ocr import (
     tiling as ocr_tiling,
 )
 from core_pdf.impl.engine.extraction.ocr.candidates import OcrCandidate
@@ -25,11 +23,17 @@ from core_pdf.impl.engine.extraction.ocr.text_analysis import (
     numeric_token_ratio,
     text_ocr_quality_score,
 )
+from core_pdf.impl.engine.extraction.ocr.types import (
+    TESSERACT_RIL_TEXTLINE,
+    TESSERACT_RIL_WORD,
+    OcrComponentBox,
+    OcrImage,
+    OcrTextResult,
+)
 from core_pdf.impl.engine.extraction.tables.grid import detect_grid, merge_grids
 from core_pdf.impl.engine.layout.models import TableGrid
 from core_pdf.impl.engine.spec.s_07_content.capture import CapturedLine
 from core_pdf.impl.engine.spec.s_07_document.page_boxes import rotate_page_lines
-from core_pdf.impl.engine.extraction.cache import ExtractionCache
 
 
 class TableOcrPage(Protocol):
@@ -142,11 +146,7 @@ class TableOcrRegion:
 
 
 def table_ocr_line_anchor_tokens(tokens: list[str]) -> set[str]:
-    return {
-        token
-        for token in tokens
-        if any(ch.isdigit() for ch in token) or len(token) >= 4
-    }
+    return {token for token in tokens if any(ch.isdigit() for ch in token) or len(token) >= 4}
 
 
 def table_ocr_line_has_table_signal(line: str, tokens: list[str]) -> bool:
@@ -218,9 +218,7 @@ def collect_table_rectangle_ocr_candidates(
     return candidates
 
 
-def table_grid_for_ocr(
-    page: TableOcrPage, image: OcrImage | None = None
-) -> TableGrid | None:
+def table_grid_for_ocr(page: TableOcrPage, image: OcrImage | None = None) -> TableGrid | None:
     cache = page.extraction_cache
     vector_cache_key = "ocr_table_vector_grid"
     if cache is not None and vector_cache_key in cache:
@@ -298,9 +296,7 @@ def select_table_grid_for_ocr(
     merged_cells = max(0, len(merged.rows) - 1) * max(0, len(merged.cols) - 1)
     if raster_cells >= max(vector_cells + 2, int(vector_cells * 1.25)):
         return merged if merged_cells >= raster_cells else raster_grid
-    return (
-        merged if merged_cells <= max(vector_cells + raster_cells, 1) else vector_grid
-    )
+    return merged if merged_cells <= max(vector_cells + raster_cells, 1) else vector_grid
 
 
 def raster_table_grid_for_ocr(
@@ -757,10 +753,8 @@ def table_ocr_regions_need_textline_refinement(
     table_height = table_bounds[3] - table_bounds[1]
     if (
         len(row_regions) <= OCR_TABLE_TEXTLINE_REFINEMENT_COARSE_ROW_COUNT
-        and table_height
-        >= image.height * OCR_TABLE_TEXTLINE_REFINEMENT_MIN_TABLE_HEIGHT_RATIO
-        and max_height
-        >= table_height * OCR_TABLE_TEXTLINE_REFINEMENT_COARSE_ROW_HEIGHT_RATIO
+        and table_height >= image.height * OCR_TABLE_TEXTLINE_REFINEMENT_MIN_TABLE_HEIGHT_RATIO
+        and max_height >= table_height * OCR_TABLE_TEXTLINE_REFINEMENT_COARSE_ROW_HEIGHT_RATIO
     ):
         return True
     return False
@@ -835,9 +829,7 @@ def table_textline_box_rect(
     table_left, table_top, table_right, table_bottom = table_bounds
     center_x = (left + right) * 0.5
     center_y = (top + bottom) * 0.5
-    if not (
-        table_left <= center_x <= table_right and table_top <= center_y <= table_bottom
-    ):
+    if not (table_left <= center_x <= table_right and table_top <= center_y <= table_bottom):
         return None
     if bottom - top > max(24, int((table_bottom - table_top) * 0.18)):
         return None
@@ -1060,9 +1052,7 @@ def table_column_boundaries_from_word_boxes(
             if boundary >= table_right - edge_margin:
                 continue
             evidence.append((boundary, row_index, gap))
-    return table_column_boundaries_from_evidence(
-        evidence, len(row_regions), table_width
-    )
+    return table_column_boundaries_from_evidence(evidence, len(row_regions), table_width)
 
 
 def table_word_box_rect(
@@ -1081,9 +1071,7 @@ def table_word_box_rect(
     table_left, table_top, table_right, table_bottom = table_bounds
     center_x = (left + right) * 0.5
     center_y = (top + bottom) * 0.5
-    if not (
-        table_left <= center_x <= table_right and table_top <= center_y <= table_bottom
-    ):
+    if not (table_left <= center_x <= table_right and table_top <= center_y <= table_bottom):
         return None
     table_height = max(1, table_bottom - table_top)
     if bottom - top > max(48, int(table_height * 0.20)):
@@ -1153,10 +1141,7 @@ def table_column_boundaries_from_evidence(
     tolerance = max(6.0, table_width * 0.008)
     groups: list[list[tuple[float, int, float]]] = []
     for item in sorted(evidence, key=lambda value: value[0]):
-        if (
-            groups
-            and abs(item[0] - table_boundary_group_center(groups[-1])) <= tolerance
-        ):
+        if groups and abs(item[0] - table_boundary_group_center(groups[-1])) <= tolerance:
             groups[-1].append(item)
         else:
             groups.append([item])
@@ -1167,9 +1152,7 @@ def table_column_boundaries_from_evidence(
         if len(rows) < min_support:
             continue
         center = table_boundary_group_center(group)
-        average_gap = sum(gap for ignored_boundary, ignored_row, gap in group) / len(
-            group
-        )
+        average_gap = sum(gap for ignored_boundary, ignored_row, gap in group) / len(group)
         accepted.append((center, len(rows), average_gap))
     if len(accepted) > OCR_TABLE_COLUMN_INFERENCE_MAX_SPANS - 1:
         accepted = sorted(
@@ -1285,9 +1268,7 @@ def table_row_ocr_candidate(
             confidences.append(result.confidence)
     if not texts:
         return None
-    confidence = (
-        int(round(sum(confidences) / len(confidences))) if confidences else None
-    )
+    confidence = int(round(sum(confidences) / len(confidences))) if confidences else None
     return ocr_candidates.OcrCandidate(
         "table_rows",
         OcrTextResult("\n".join(texts), confidence),
@@ -1357,13 +1338,9 @@ def table_row_profile_broad_retry_rejection(
     if weak_fraction <= OCR_TABLE_ROW_PROFILE_BROAD_WEAK_FRACTION:
         return None
     confidences = [
-        result.confidence
-        for result in results
-        if result.confidence is not None and result.text
+        result.confidence for result in results if result.confidence is not None and result.text
     ]
-    average_confidence = (
-        int(round(sum(confidences) / len(confidences))) if confidences else None
-    )
+    average_confidence = int(round(sum(confidences) / len(confidences))) if confidences else None
     return {
         "kind": "table_row_profile_retry",
         "reason": "too_many_weak_rows",
@@ -1569,9 +1546,7 @@ def table_cell_ocr_candidate(
     lines = [line for line in lines if line]
     if not lines:
         return None
-    confidence = (
-        int(round(sum(confidences) / len(confidences))) if confidences else None
-    )
+    confidence = int(round(sum(confidences) / len(confidences))) if confidences else None
     name = "table_cells_rotated" if use_rotated_vertical else "table_cells"
     return ocr_candidates.OcrCandidate(
         name,
@@ -1641,10 +1616,7 @@ def table_cell_consensus_candidate(
         if not selected_text:
             continue
         filled_cells += 1
-        if selected_source == "ocr":
-            if result is not None and result.confidence is not None:
-                confidences.append(result.confidence)
-        elif selected_source == "agreement":
+        if selected_source == "ocr" or selected_source == "agreement":
             if result is not None and result.confidence is not None:
                 confidences.append(result.confidence)
         rows[region.row_index].append((region.col_index or 0, selected_text))
@@ -1656,9 +1628,7 @@ def table_cell_consensus_candidate(
     lines = [line for line in lines if line]
     if not lines:
         return None
-    confidence = (
-        int(round(sum(confidences) / len(confidences))) if confidences else None
-    )
+    confidence = int(round(sum(confidences) / len(confidences))) if confidences else None
     return ocr_candidates.OcrCandidate(
         "table_cell_consensus",
         OcrTextResult("\n".join(lines), confidence),
@@ -1798,11 +1768,7 @@ def table_native_runs_to_text(runs: list[Any]) -> str:
         )
         run_height = max(
             1.0,
-            float(
-                getattr(
-                    run, "height", getattr(run, "y1", 0.0) - getattr(run, "y0", 0.0)
-                )
-            ),
+            float(getattr(run, "height", getattr(run, "y1", 0.0) - getattr(run, "y0", 0.0))),
         )
         if line_groups:
             last = line_groups[-1]
@@ -1835,20 +1801,12 @@ def table_native_run_line_text(runs: list[Any]) -> str:
         x1 = float(getattr(run, "x1", x0))
         height = max(
             1.0,
-            float(
-                getattr(
-                    run, "height", getattr(run, "y1", 0.0) - getattr(run, "y0", 0.0)
-                )
-            ),
+            float(getattr(run, "height", getattr(run, "y1", 0.0) - getattr(run, "y0", 0.0))),
         )
         space_width = float(getattr(run, "space_width", 0.0) or 0.0)
         if previous_x1 is not None:
             threshold = max(1.0, previous_space_width * 0.45, height * 0.28)
-            if (
-                x0 - previous_x1 > threshold
-                and text_parts
-                and not text_parts[-1].endswith(" ")
-            ):
+            if x0 - previous_x1 > threshold and text_parts and not text_parts[-1].endswith(" "):
                 text_parts.append(" ")
         text_parts.append(run_text)
         previous_x1 = max(previous_x1 if previous_x1 is not None else x1, x1)
@@ -1922,9 +1880,7 @@ def table_cell_native_preserves_numeric_recall(native_text: str, ocr_text: str) 
 
 
 def table_cell_digit_token_count(text: str) -> int:
-    return sum(
-        1 for token in normalized_text_tokens(text) if any(ch.isdigit() for ch in token)
-    )
+    return sum(1 for token in normalized_text_tokens(text) if any(ch.isdigit() for ch in token))
 
 
 def table_cell_ocr_is_tractable(regions: list[TableOcrRegion]) -> bool:

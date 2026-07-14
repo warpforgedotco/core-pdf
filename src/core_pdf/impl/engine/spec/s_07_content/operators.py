@@ -5,6 +5,7 @@ from functools import lru_cache
 from math import hypot
 from typing import TYPE_CHECKING, Any, cast
 
+from core_pdf.impl.engine.spec.s_07_content.capture import CapturedDrawing
 from core_pdf.impl.engine.spec.s_07_content.inline_images import (
     decode_inline_image_data,
 )
@@ -16,7 +17,6 @@ from core_pdf.impl.engine.spec.s_07_objects.coercion import (
 )
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
-from core_pdf.impl.engine.spec.s_07_content.capture import CapturedDrawing
 from core_pdf.impl.objects import MISSING, PdfStream, PdfString
 from core_pdf.impl.types import PdfDict
 
@@ -243,7 +243,7 @@ class OperatorMixin:
         try:
             tx = self.as_float(o[0])
             ty = self.as_float(o[1])
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             return
         if self.pending_run:
             self.runs.append(self.pending_run)
@@ -268,7 +268,7 @@ class OperatorMixin:
         try:
             tx = self.as_float(o[0])
             ty = self.as_float(o[1])
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             return
         self.leading = -ty
         if self.pending_run:
@@ -292,11 +292,7 @@ class OperatorMixin:
     def op_Tj(self: Any, o, d):
         if not o:
             return
-        decoder = (
-            self.current_decoder
-            if self.current_decoder is not None
-            else self.get_decoder()
-        )
+        decoder = self.current_decoder if self.current_decoder is not None else self.get_decoder()
         operand = o[0]
         if type(operand) is PdfString:
             self.append_text(data=operand.data, decoder=decoder)
@@ -317,7 +313,7 @@ class OperatorMixin:
                 d_ = self.as_float(o[3])
                 e = self.as_float(o[4])
                 f = self.as_float(o[5])
-            except TypeError, ValueError:
+            except (TypeError, ValueError):
                 return
             self.flush_run()
             self.tm_a = self.lm_a = a
@@ -356,7 +352,7 @@ class OperatorMixin:
                 else:
                     try:
                         font_size = self.as_float(font_size_operand)
-                    except TypeError, ValueError:
+                    except (TypeError, ValueError):
                         return
                 if self.font_size != font_size:
                     self.font_size = font_size
@@ -372,7 +368,7 @@ class OperatorMixin:
                 return
             try:
                 font_size = self.as_float(font_size_operand)
-            except TypeError, ValueError:
+            except (TypeError, ValueError):
                 return
             self.font_setting_cache[cache_key] = (font_name, font_size)
         else:
@@ -399,7 +395,7 @@ class OperatorMixin:
             return
         try:
             self.leading = self.as_float(o[0])
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             return
 
     def op_Tc(self: Any, o, d):
@@ -407,7 +403,7 @@ class OperatorMixin:
             return
         try:
             self.char_space = self.as_float(o[0])
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             return
         self.update_char_space_scale()
 
@@ -420,7 +416,7 @@ class OperatorMixin:
             return
         try:
             self.word_space = self.as_float(o[0])
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             return
         self.update_word_space_scale()
 
@@ -435,7 +431,7 @@ class OperatorMixin:
             return
         try:
             self.render_mode = self.as_int(o[0])
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             return
 
     def op_Tz(self: Any, o, d):
@@ -443,7 +439,7 @@ class OperatorMixin:
             return
         try:
             self.horizontal_scale = self.as_float(o[0])
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             return
         self.update_horizontal_text_scale()
 
@@ -452,7 +448,7 @@ class OperatorMixin:
             return
         try:
             self.rise = self.as_float(o[0])
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             return
 
     def op_quote(self: Any, o, d):
@@ -467,11 +463,7 @@ class OperatorMixin:
         self.lm_e = self.tm_e
         self.lm_f = self.tm_f
         self.pending_line_break = True
-        decoder = (
-            self.current_decoder
-            if self.current_decoder is not None
-            else self.get_decoder()
-        )
+        decoder = self.current_decoder if self.current_decoder is not None else self.get_decoder()
         operand = o[0]
         if type(operand) is PdfString:
             self.append_text(data=operand.data, decoder=decoder)
@@ -484,7 +476,7 @@ class OperatorMixin:
         try:
             self.word_space = self.as_float(o[0])
             self.char_space = self.as_float(o[1])
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             return
         if self.pending_run:
             self.runs.append(self.pending_run)
@@ -495,11 +487,7 @@ class OperatorMixin:
         self.lm_e = self.tm_e
         self.lm_f = self.tm_f
         self.pending_line_break = True
-        decoder = (
-            self.current_decoder
-            if self.current_decoder is not None
-            else self.get_decoder()
-        )
+        decoder = self.current_decoder if self.current_decoder is not None else self.get_decoder()
         operand = o[2]
         if type(operand) is PdfString:
             self.append_text(data=operand.data, decoder=decoder)
@@ -546,13 +534,9 @@ class OperatorMixin:
         if tag == "OC":
             layer = self.resolve_marked_content_layer(o[1]) if len(o) >= 2 else None
         actual_text = (
-            self.resolve_marked_content_actual_text(o[1])
-            if tag == "Span" and len(o) >= 2
-            else None
+            self.resolve_marked_content_actual_text(o[1]) if tag == "Span" and len(o) >= 2 else None
         )
-        self.marked_content_stack.append(
-            MarkedContentEntry(layer=layer, actual_text=actual_text)
-        )
+        self.marked_content_stack.append(MarkedContentEntry(layer=layer, actual_text=actual_text))
 
     def op_BMC(self: Any, o, d):
         self.marked_content_stack.append(MarkedContentEntry())
@@ -578,7 +562,7 @@ class OperatorMixin:
         if o:
             try:
                 value = self.as_float(o[0])
-            except TypeError, ValueError:
+            except (TypeError, ValueError):
                 return
             self.line_width = max(0.0, value)
 
@@ -586,21 +570,21 @@ class OperatorMixin:
         if o:
             try:
                 self.line_cap = self.as_int(o[0])
-            except TypeError, ValueError:
+            except (TypeError, ValueError):
                 return
 
     def op_j(self: Any, o, d):
         if o:
             try:
                 self.line_join = self.as_int(o[0])
-            except TypeError, ValueError:
+            except (TypeError, ValueError):
                 return
 
     def op_M(self: Any, o, d):
         if o:
             try:
                 value = self.as_float(o[0])
-            except TypeError, ValueError:
+            except (TypeError, ValueError):
                 return
             self.miter_limit = max(1.0, value)
 
@@ -613,7 +597,7 @@ class OperatorMixin:
                     dash_array = [self.as_float(v) for v in array_obj]
                 else:
                     dash_array = []
-            except TypeError, ValueError:
+            except (TypeError, ValueError):
                 return
             self.dash_pattern = (dash_array, phase)
 
@@ -622,7 +606,7 @@ class OperatorMixin:
             try:
                 x = self.as_float(o[0])
                 y = self.as_float(o[1])
-            except TypeError, ValueError:
+            except (TypeError, ValueError):
                 return
             if (
                 self.capture_clipping
@@ -637,7 +621,7 @@ class OperatorMixin:
         if len(o) >= 2 and self.current_point is not None:
             try:
                 nx, ny = self.as_float(o[0]), self.as_float(o[1])
-            except TypeError, ValueError:
+            except (TypeError, ValueError):
                 return
             if (
                 self.capture_clipping
@@ -652,7 +636,7 @@ class OperatorMixin:
             try:
                 x, y = self.as_float(o[0]), self.as_float(o[1])
                 w, h = self.as_float(o[2]), self.as_float(o[3])
-            except TypeError, ValueError:
+            except (TypeError, ValueError):
                 return
             if (
                 self.capture_clipping
@@ -682,7 +666,7 @@ class OperatorMixin:
                 y2 = self.as_float(o[3])
                 x3 = self.as_float(o[4])
                 y3 = self.as_float(o[5])
-            except TypeError, ValueError:
+            except (TypeError, ValueError):
                 return
             self.append_cubic_curve(x1, y1, x2, y2, x3, y3)
 
@@ -695,7 +679,7 @@ class OperatorMixin:
                     y2 = self.as_float(o[1])
                     x3 = self.as_float(o[2])
                     y3 = self.as_float(o[3])
-                except TypeError, ValueError:
+                except (TypeError, ValueError):
                     return
                 self.append_cubic_curve(x0, y0, x2, y2, x3, y3)
 
@@ -708,7 +692,7 @@ class OperatorMixin:
                     y1 = self.as_float(o[1])
                     x3 = self.as_float(o[2])
                     y3 = self.as_float(o[3])
-                except TypeError, ValueError:
+                except (TypeError, ValueError):
                     return
                 self.append_cubic_curve(x0, y0, x1, y1, x3, y3)
 
@@ -731,11 +715,7 @@ class OperatorMixin:
         self.subpath_start = None
 
     def op_paint_fillstroke(self: Any, o, d):
-        if (
-            self.capture_graphics
-            and self.is_graphics_visible()
-            and (d == "b" or d == "b*")
-        ):
+        if self.capture_graphics and self.is_graphics_visible() and (d == "b" or d == "b*"):
             if self.current_point is not None and self.subpath_start is not None:
                 self.current_path.close()
         self.flush_drawing("fillstroke", "evenodd" if d in {"B*", "b*"} else "nonzero")
@@ -986,9 +966,7 @@ class OperatorMixin:
                     {
                         "kind": drawing.kind,
                         "fill": (
-                            base_color
-                            if drawing.kind in {"fill", "fillstroke"}
-                            else drawing.fill
+                            base_color if drawing.kind in {"fill", "fillstroke"} else drawing.fill
                         ),
                         "fill_pattern": drawing.fill_pattern,
                         "fill_opacity": drawing.fill_opacity,
@@ -1059,9 +1037,7 @@ class OperatorMixin:
         if o:
             name_obj = o[0]
             try:
-                cached = self.color_space_cache.get(
-                    (self.resources_id, name_obj, True), MISSING
-                )
+                cached = self.color_space_cache.get((self.resources_id, name_obj, True), MISSING)
             except TypeError:
                 cached = MISSING
             if cached is not MISSING:
@@ -1076,9 +1052,7 @@ class OperatorMixin:
         if o:
             name_obj = o[0]
             try:
-                cached = self.color_space_cache.get(
-                    (self.resources_id, name_obj, True), MISSING
-                )
+                cached = self.color_space_cache.get((self.resources_id, name_obj, True), MISSING)
             except TypeError:
                 cached = MISSING
             if cached is not MISSING:
@@ -1151,13 +1125,9 @@ class OperatorMixin:
         if tag == "OC" and len(o) >= 2:
             layer = self.resolve_marked_content_layer(o[1])
         actual_text = (
-            self.resolve_marked_content_actual_text(o[1])
-            if tag == "Span" and len(o) >= 2
-            else None
+            self.resolve_marked_content_actual_text(o[1]) if tag == "Span" and len(o) >= 2 else None
         )
-        self.marked_content_stack.append(
-            MarkedContentEntry(layer=layer, actual_text=actual_text)
-        )
+        self.marked_content_stack.append(MarkedContentEntry(layer=layer, actual_text=actual_text))
 
     def resolve_marked_content_actual_text(self: Any, value: Any) -> str | None:
         props = self.resolve_marked_content_properties(value)
@@ -1165,9 +1135,7 @@ class OperatorMixin:
             return None
         return self.resolve_str(lookup_dict_key(props, "ActualText"))
 
-    def resolve_marked_content_properties(
-        self: Any, value: Any
-    ) -> dict[str, Any] | None:
+    def resolve_marked_content_properties(self: Any, value: Any) -> dict[str, Any] | None:
         if value is None:
             return None
         resolved = self.resolve(value)
@@ -1382,7 +1350,7 @@ class OperatorMixin:
                 self.as_float(o[4]),
                 self.as_float(o[5]),
             )
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             return
 
         self.op_cm_values(m_a, m_b, m_c, m_d, m_e, m_f)
@@ -1439,7 +1407,7 @@ class OperatorMixin:
                     blend_mode = blend_mode[0] if blend_mode else None
                 if blend_mode is not None:
                     self.blend_mode = self.resolve_name_like_value(blend_mode)
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             return
 
 

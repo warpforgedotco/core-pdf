@@ -2,13 +2,13 @@
 from __future__ import annotations
 
 import math
-from functools import lru_cache
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, replace
+from functools import lru_cache
 from typing import Any
 
-from core_pdf.impl.engine.layout.geometry import rect_tuple as layout_rect_tuple
 from core_pdf.impl.engine.extraction.ocr.types import OcrImage, OcrObservation
+from core_pdf.impl.engine.layout.geometry import rect_tuple as layout_rect_tuple
 
 Rect = tuple[float, float, float, float]
 PixelRect = tuple[int, int, int, int]
@@ -254,17 +254,13 @@ class PageObservationSet:
     def by_kind(self, *kinds: str) -> tuple[PageObservation, ...]:
         accepted = set(kinds)
         return tuple(
-            observation
-            for observation in self.observations
-            if observation.kind in accepted
+            observation for observation in self.observations if observation.kind in accepted
         )
 
     def by_source(self, *sources: str) -> tuple[PageObservation, ...]:
         accepted = set(sources)
         return tuple(
-            observation
-            for observation in self.observations
-            if observation.source in accepted
+            observation for observation in self.observations if observation.source in accepted
         )
 
 
@@ -308,7 +304,7 @@ def text_run_bbox(run: Any) -> Rect | None:
 def page_rotation_degrees(rotation: Any) -> int:
     try:
         return int(rotation) % 360
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return 0
 
 
@@ -327,12 +323,7 @@ def rendered_image_page_size_points(
         return None
     if image_resolution is None or image_resolution <= 0:
         return None
-    if (
-        image_width is None
-        or image_height is None
-        or image_width <= 0
-        or image_height <= 0
-    ):
+    if image_width is None or image_height is None or image_width <= 0 or image_height <= 0:
         return None
     scale = 72.0 / float(image_resolution)
     return (float(image_width) * scale, float(image_height) * scale)
@@ -577,7 +568,7 @@ def ocr_row_page_bbox(
         top = int(row["top"])
         width = int(row["width"])
         height = int(row["height"])
-    except KeyError, TypeError, ValueError:
+    except (KeyError, TypeError, ValueError):
         return None
     if width <= 0 or height <= 0:
         return None
@@ -593,7 +584,7 @@ def ocr_baseline_to_page(
         return None
     try:
         x1, y1, x2, y2 = (float(value) for value in baseline)
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return None
     return image_segment_to_page_segment((x1, y1), (x2, y2), geometry)
 
@@ -907,9 +898,7 @@ def image_space_from_ocr_candidate(
     image_height = getattr(candidate, "image_height", None)
     if image_width is None or image_height is None:
         return None
-    image_resolution = (
-        getattr(candidate, "image_resolution", None) or fallback_resolution
-    )
+    image_resolution = getattr(candidate, "image_resolution", None) or fallback_resolution
     source = str(getattr(candidate, "name", "") or "")
     page_bbox = normalize_rect(getattr(candidate, "page_bbox", None))
     page_width = getattr(candidate, "page_width", None)
@@ -941,9 +930,7 @@ def image_space_from_ocr_candidate(
         page_width=page_space.width,
         page_height=page_space.height,
         page_bbox=page_space.bbox,
-        clockwise_quarter_turns=page_rotation_to_clockwise_quarter_turns(
-            page_space.rotation
-        ),
+        clockwise_quarter_turns=page_rotation_to_clockwise_quarter_turns(page_space.rotation),
         source=source,
     )
 
@@ -997,7 +984,7 @@ def ocr_row_pixel_bbox(row: Mapping[str, Any]) -> PixelRect | None:
         top = int(row["top"])
         width = int(row["width"])
         height = int(row["height"])
-    except KeyError, TypeError, ValueError:
+    except (KeyError, TypeError, ValueError):
         return None
     return (left, top, left + width, top + height)
 
@@ -1124,9 +1111,7 @@ def page_observation_from_ocr_observation(
         bbox=observation.page_bbox,
         advance_bbox=observation.page_bbox,
         ink_bbox=observation.page_bbox,
-        confidence=float(observation.confidence)
-        if observation.confidence is not None
-        else None,
+        confidence=float(observation.confidence) if observation.confidence is not None else None,
         text=observation.text,
         baseline=observation.page_baseline,
         provenance=observation.provenance,
@@ -1363,7 +1348,7 @@ def line_segment(value: Any) -> Segment | None:
                 float(value["x1"]),
                 float(value["y1"]),
             )
-        except KeyError, TypeError, ValueError:
+        except (KeyError, TypeError, ValueError):
             return None
     segment = normalize_segment(value)
     if segment is not None:
@@ -1375,7 +1360,7 @@ def line_segment(value: Any) -> Segment | None:
             float(getattr(value, "x1")),
             float(getattr(value, "y1")),
         )
-    except AttributeError, TypeError, ValueError:
+    except (AttributeError, TypeError, ValueError):
         return None
 
 
@@ -1424,9 +1409,7 @@ def observation_reading_order_key(observation: PageObservation) -> tuple[float, 
 def observation_union_bbox(
     observations: Iterable[PageObservation],
 ) -> Rect | None:
-    boxes = [
-        observation.bbox for observation in observations if observation.bbox is not None
-    ]
+    boxes = [observation.bbox for observation in observations if observation.bbox is not None]
     if not boxes:
         return None
     return (
@@ -1555,14 +1538,14 @@ def normalize_segment(value: Any) -> Segment | None:
             float(value[2]),
             float(value[3]),
         )
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return None
 
 
 def numeric_confidence(value: Any) -> float | None:
     try:
         return float(value) if value is not None else None
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return None
 
 

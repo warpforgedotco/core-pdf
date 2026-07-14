@@ -1,4 +1,5 @@
 import logging
+
 from core_pdf.impl.third_party.fontTools.misc.loggingTools import configLogger
 
 log = logging.getLogger(__name__)

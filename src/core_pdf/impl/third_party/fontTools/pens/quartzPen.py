@@ -1,9 +1,13 @@
+from Quartz.CoreGraphics import (
+    CGPathAddCurveToPoint,
+    CGPathAddLineToPoint,
+    CGPathAddQuadCurveToPoint,
+    CGPathCloseSubpath,
+    CGPathCreateMutable,
+    CGPathMoveToPoint,
+)
+
 from core_pdf.impl.third_party.fontTools.pens.basePen import BasePen
-
-from Quartz.CoreGraphics import CGPathCreateMutable, CGPathMoveToPoint
-from Quartz.CoreGraphics import CGPathAddLineToPoint, CGPathAddCurveToPoint
-from Quartz.CoreGraphics import CGPathAddQuadCurveToPoint, CGPathCloseSubpath
-
 
 __all__ = ["QuartzPen"]
 

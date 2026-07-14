@@ -44,11 +44,12 @@ when available.
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING
 
-from core_pdf.impl.third_party.fontTools.misc.textTools import tostr, strjoin
+from core_pdf.impl.third_party.fontTools.misc.textTools import strjoin, tostr
+
 from . import DefaultTable
-import json
 
 if TYPE_CHECKING:
     from core_pdf.impl.third_party.fontTools.misc.xmlWriter import XMLWriter
@@ -92,9 +93,7 @@ class table__b_g_c_l(DefaultTable.DefaultTable):
             # fallback to raw bytes if parsing failed earlier
             return getattr(self, "data", b"")
         # use compact representation for binary table
-        return json.dumps(self.json, separators=(",", ":"), ensure_ascii=False).encode(
-            "utf_8"
-        )
+        return json.dumps(self.json, separators=(",", ":"), ensure_ascii=False).encode("utf_8")
 
     def toXML(self, writer: XMLWriter, ttFont: TTFont) -> None:
         """Emit pretty-printed JSON inside a <json> element for human inspection."""
@@ -110,9 +109,7 @@ class table__b_g_c_l(DefaultTable.DefaultTable):
         writer.endtag("json")
         writer.newline()
 
-    def fromXML(
-        self, name: str, attrs: dict[str, str], content, ttFont: TTFont
-    ) -> None:
+    def fromXML(self, name: str, attrs: dict[str, str], content, ttFont: TTFont) -> None:
         """Read JSON from the <json> element. `content` may be a list.
 
         This mirrors SVG/other table `fromXML` handlers which accept a

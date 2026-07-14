@@ -11,11 +11,16 @@ if typing.TYPE_CHECKING:
 
     FilterFn = Callable[[bytes, object], bytes]
 
-from core_pdf.impl.exceptions import PdfParseError, PdfUnsupportedError
 from core_pdf.impl.engine.spec.s_07_filters.codecs import (
     apply_ascii85 as apply_ascii85,
+)
+from core_pdf.impl.engine.spec.s_07_filters.codecs import (
     apply_ascii_hex as apply_ascii_hex,
+)
+from core_pdf.impl.engine.spec.s_07_filters.codecs import (
     apply_lzw as apply_lzw,
+)
+from core_pdf.impl.engine.spec.s_07_filters.codecs import (
     apply_run_length as apply_run_length,
 )
 from core_pdf.impl.engine.spec.s_07_filters.decode_spec import (
@@ -24,18 +29,29 @@ from core_pdf.impl.engine.spec.s_07_filters.decode_spec import (
 )
 from core_pdf.impl.engine.spec.s_07_filters.decoders import (
     decode_ccitt_fax as decode_ccitt_fax,
+)
+from core_pdf.impl.engine.spec.s_07_filters.decoders import (
     decode_crypt as decode_crypt,
+)
+from core_pdf.impl.engine.spec.s_07_filters.decoders import (
     decode_jbig2 as decode_jbig2,
+)
+from core_pdf.impl.engine.spec.s_07_filters.decoders import (
     decode_jpeg as decode_jpeg,
+)
+from core_pdf.impl.engine.spec.s_07_filters.decoders import (
     decode_jpx as decode_jpx,
 )
 from core_pdf.impl.engine.spec.s_07_filters.flate import (
-    looks_like_pdf_content_stream,
     apply_flate as apply_flate,
+)
+from core_pdf.impl.engine.spec.s_07_filters.flate import (
+    looks_like_pdf_content_stream,
 )
 from core_pdf.impl.engine.spec.s_07_filters.predictors import (
     apply_predictor as apply_predictor,
 )
+from core_pdf.impl.exceptions import PdfParseError, PdfUnsupportedError
 
 FILTER_MAP: dict[str, FilterFn] = {
     "FlateDecode": apply_flate,
@@ -69,9 +85,7 @@ EXPENSIVE_DECODE_CACHE_FILTERS = {
 EXPENSIVE_DECODE_CACHE_MAX_BYTES = int(
     os.environ.get("CORE_PDF_EXPENSIVE_DECODE_CACHE_BYTES", str(384 * 1024 * 1024))
 )
-_EXPENSIVE_DECODE_CACHE: OrderedDict[tuple[object, ...], tuple[bytes, bytes]] = (
-    OrderedDict()
-)
+_EXPENSIVE_DECODE_CACHE: OrderedDict[tuple[object, ...], tuple[bytes, bytes]] = OrderedDict()
 _EXPENSIVE_DECODE_CACHE_BYTES = 0
 _EXPENSIVE_DECODE_CACHE_LOCK = threading.Lock()
 
@@ -102,14 +116,9 @@ def cached_expensive_decode(key: tuple[object, ...], data: bytes) -> bytes | Non
         return decoded
 
 
-def store_expensive_decode(
-    key: tuple[object, ...], data: bytes, decoded: bytes
-) -> None:
+def store_expensive_decode(key: tuple[object, ...], data: bytes, decoded: bytes) -> None:
     entry_size = len(data) + len(decoded)
-    if (
-        EXPENSIVE_DECODE_CACHE_MAX_BYTES <= 0
-        or entry_size > EXPENSIVE_DECODE_CACHE_MAX_BYTES
-    ):
+    if EXPENSIVE_DECODE_CACHE_MAX_BYTES <= 0 or entry_size > EXPENSIVE_DECODE_CACHE_MAX_BYTES:
         return
     global _EXPENSIVE_DECODE_CACHE_BYTES
     with _EXPENSIVE_DECODE_CACHE_LOCK:

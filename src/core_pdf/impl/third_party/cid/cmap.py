@@ -14,9 +14,7 @@ from core_pdf.impl.third_party.cid.pdf_string import decode_pdf_literal_string
 CodeSpaceRanges = list[tuple[bytes, bytes]] | tuple[tuple[bytes, bytes], ...]
 
 
-def expand_range(
-    start: int, end: int, source_hex_len: int, base_dst: str
-) -> dict[bytes, str]:
+def expand_range(start: int, end: int, source_hex_len: int, base_dst: str) -> dict[bytes, str]:
     mapping: dict[bytes, str] = {}
     if source_hex_len <= 0 or end >= 1 << (source_hex_len * 8):
         raise ValueError("invalid ToUnicode CMap bfrange")
@@ -31,12 +29,8 @@ def expand_range(
     return mapping
 
 
-HEX_BYTES = bytes(
-    [1 if byte in b"0123456789abcdefABCDEF" else 0 for byte in range(256)]
-)
-PDF_WHITESPACE_BYTES = bytes(
-    [1 if byte in b"\x00\t\n\f\r " else 0 for byte in range(256)]
-)
+HEX_BYTES = bytes([1 if byte in b"0123456789abcdefABCDEF" else 0 for byte in range(256)])
+PDF_WHITESPACE_BYTES = bytes([1 if byte in b"\x00\t\n\f\r " else 0 for byte in range(256)])
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,14 +56,10 @@ class NotdefRange:
         return code_in_range(code, self.start, self.end)
 
 
-CMapResourceResolver = Callable[
-    [str], bytes | bytearray | memoryview | "CMapDecoder" | None
-]
+CMapResourceResolver = Callable[[str], bytes | bytearray | memoryview | "CMapDecoder" | None]
 
 
-def iter_blocks(
-    data: bytes | memoryview, begin: bytes, end: bytes
-) -> typing.Iterator[bytes]:
+def iter_blocks(data: bytes | memoryview, begin: bytes, end: bytes) -> typing.Iterator[bytes]:
     if not isinstance(data, bytes):
         data = bytes(data)
     block_start: int | None = None
@@ -155,11 +145,7 @@ def cmap_word_spans(data: bytes) -> typing.Iterator[tuple[bytes, int, int]]:
             continue
         start = pos
         pos += 1
-        while (
-            pos < n
-            and not PDF_WHITESPACE_BYTES[data[pos]]
-            and data[pos] not in b"[]<>()/%"
-        ):
+        while pos < n and not PDF_WHITESPACE_BYTES[data[pos]] and data[pos] not in b"[]<>()/%":
             pos += 1
         yield data[start:pos], start, pos
 
@@ -244,11 +230,7 @@ def cmap_tokens(
                 continue
         if include_words and not PDF_WHITESPACE_BYTES[byte]:
             end = pos + 1
-            while (
-                end < n
-                and not PDF_WHITESPACE_BYTES[data[end]]
-                and data[end] not in b"[]<>()/%"
-            ):
+            while end < n and not PDF_WHITESPACE_BYTES[data[end]] and data[end] not in b"[]<>()/%":
                 end += 1
             tokens.append(data[pos:end])
             pos = end
@@ -385,9 +367,7 @@ class ToUnicodeCMap:
         self.fast_decode_table_2byte: list[str] | None = None
 
     def parse_codespace_ranges(self, data: bytes) -> None:
-        code_space_ranges = typing.cast(
-            "list[tuple[bytes, bytes]]", self.code_space_ranges
-        )
+        code_space_ranges = typing.cast("list[tuple[bytes, bytes]]", self.code_space_ranges)
         saw_codespace_block = False
         valid_range_count = 0
         for block in iter_blocks(data, b"begincodespacerange", b"endcodespacerange"):
@@ -399,7 +379,7 @@ class ToUnicodeCMap:
                 try:
                     start = decode_cmap_hex_token(tokens[i])
                     end = decode_cmap_hex_token(tokens[i + 1])
-                except ValueError, UnicodeDecodeError:
+                except (ValueError, UnicodeDecodeError):
                     continue
                 code_space_ranges.append((start, end))
                 valid_range_count += 1
@@ -419,7 +399,7 @@ class ToUnicodeCMap:
                 try:
                     src = decode_cmap_token(src_tok)
                     dst = decode_utf16be(decode_cmap_token(dst_tok))
-                except ValueError, UnicodeDecodeError:
+                except (ValueError, UnicodeDecodeError):
                     continue
 
                 self.mappings[src] = dst
@@ -447,7 +427,7 @@ class ToUnicodeCMap:
                     start_code = int.from_bytes(start_bytes, "big")
                     end_code = int.from_bytes(end_bytes, "big")
                     src_len = len(start_bytes)
-                except ValueError, UnicodeDecodeError, IndexError:
+                except (ValueError, UnicodeDecodeError, IndexError):
                     invalid_range_count += 1
                     idx += 3
                     continue
@@ -472,7 +452,7 @@ class ToUnicodeCMap:
                             break
                         try:
                             dst = decode_utf16be(decode_cmap_token(dst_tok))
-                        except ValueError, UnicodeDecodeError:
+                        except (ValueError, UnicodeDecodeError):
                             continue
                         src = (start_code + i).to_bytes(src_len, "big")
                         self.mappings[src] = dst
@@ -486,7 +466,7 @@ class ToUnicodeCMap:
                     try:
                         base_dst = decode_utf16be(decode_cmap_token(t3))
                         m = expand_range(start_code, end_code, src_len, base_dst)
-                    except ValueError, UnicodeDecodeError:
+                    except (ValueError, UnicodeDecodeError):
                         invalid_range_count += 1
                         idx += 3
                         continue
@@ -710,8 +690,7 @@ class CMapDecoder:
                 except (ValueError, UnicodeDecodeError) as exc:
                     raise ValueError("invalid CMap codespacerange") from exc
                 if any(
-                    ranges_overlap((start, end), existing)
-                    for existing in self.code_space_ranges
+                    ranges_overlap((start, end), existing) for existing in self.code_space_ranges
                 ):
                     raise ValueError("overlapping CMap codespacerange")
                 self.code_space_ranges.append((start, end))
@@ -809,7 +788,7 @@ class CMapDecoder:
                 try:
                     code = decode_cmap_hex_token(code_token)
                     cid = int(cid_token)
-                except ValueError, UnicodeDecodeError:
+                except (ValueError, UnicodeDecodeError):
                     continue
                 self.cid_mappings[code] = cid
 
@@ -831,7 +810,7 @@ class CMapDecoder:
                     start_bytes = decode_cmap_hex_token(start_token)
                     end_bytes = decode_cmap_hex_token(end_token)
                     cid = int(cid_token)
-                except ValueError, UnicodeDecodeError:
+                except (ValueError, UnicodeDecodeError):
                     continue
                 if len(start_bytes) != len(end_bytes):
                     continue
@@ -854,7 +833,7 @@ class CMapDecoder:
                 try:
                     code = decode_cmap_hex_token(code_token)
                     cid = int(cid_token)
-                except ValueError, UnicodeDecodeError:
+                except (ValueError, UnicodeDecodeError):
                     continue
                 self.notdef_mappings[code] = cid
 
@@ -877,7 +856,7 @@ class CMapDecoder:
                     end_bytes = decode_cmap_hex_token(end_token)
                     cid = int(cid_token)
                     validate_codespace_range(start_bytes, end_bytes)
-                except ValueError, UnicodeDecodeError:
+                except (ValueError, UnicodeDecodeError):
                     continue
                 remove_codes_in_range(self.notdef_mappings, start_bytes, end_bytes)
                 self.notdef_ranges.append(NotdefRange(start_bytes, end_bytes, cid))
@@ -919,11 +898,7 @@ class CMapDecoder:
                 if cid is None:
                     cid = self.mapped_notdef(chunk)
                 if cid is None:
-                    cid = (
-                        int.from_bytes(chunk, "big")
-                        if self.default_to_identity and chunk
-                        else 0
-                    )
+                    cid = int.from_bytes(chunk, "big") if self.default_to_identity and chunk else 0
                 out.append((chunk, cid))
                 pos += length
                 matched = True

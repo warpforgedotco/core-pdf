@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
-from core_pdf.impl.exceptions import PdfParseError, PdfUnsupportedError
 from core_pdf.impl.engine.spec.s_07_filters.decode_spec import (
     normalize_stream_decode_spec,
 )
@@ -17,6 +16,7 @@ from core_pdf.impl.engine.spec.s_07_syntax.tokens import (
     INLINE_IMAGE_KEY_MAP,
     WHITESPACE,
 )
+from core_pdf.impl.exceptions import PdfParseError, PdfUnsupportedError
 from core_pdf.impl.objects import PdfName
 from core_pdf.impl.types import PdfDict
 
@@ -126,9 +126,7 @@ def parse_inline_image(lexer: InlineImageLexer) -> InlineImage:
     normalized = normalize_inline_image_dictionary(dictionary)
     raw_data = lexer.raw_data
     source = raw_data.obj
-    source_bytes = (
-        source if type(source) is bytes and len(source) == lexer.data_len else None
-    )
+    source_bytes = source if type(source) is bytes and len(source) == lexer.data_len else None
 
     exact_length = inline_image_unfiltered_data_length(normalized)
     if exact_length is not None and start + exact_length <= lexer.data_len:
@@ -220,7 +218,7 @@ def decode_inline_image_data(dictionary: PdfDict, data: bytes) -> bytes:
     stream_spec = normalize_stream_decode_spec(dictionary)
     try:
         return decode_stream_data(data, stream_spec)
-    except PdfParseError, PdfUnsupportedError:
+    except (PdfParseError, PdfUnsupportedError):
         return data
 
 

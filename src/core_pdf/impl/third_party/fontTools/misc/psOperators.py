@@ -443,9 +443,7 @@ class PSOperators(object):
         obj2 = self.pop()
         obj3 = self.pop("arraytype", "dicttype", "stringtype", "proceduretype")
         tp = obj3.type
-        if tp == "arraytype" or tp == "proceduretype":
-            obj3.value[obj2.value] = obj1
-        elif tp == "dicttype":
+        if tp == "arraytype" or tp == "proceduretype" or tp == "dicttype":
             obj3.value[obj2.value] = obj1
         elif tp == "stringtype":
             index = obj2.value
@@ -455,13 +453,9 @@ class PSOperators(object):
         obj1 = self.pop()
         if obj1.value == "Encoding":
             pass
-        obj2 = self.pop(
-            "arraytype", "dicttype", "stringtype", "proceduretype", "fonttype"
-        )
+        obj2 = self.pop("arraytype", "dicttype", "stringtype", "proceduretype", "fonttype")
         tp = obj2.type
-        if tp in ("arraytype", "proceduretype"):
-            self.push(obj2.value[obj1.value])
-        elif tp in ("dicttype", "fonttype"):
+        if tp in ("arraytype", "proceduretype") or tp in ("dicttype", "fonttype"):
             self.push(obj2.value[obj1.value])
         elif tp == "stringtype":
             self.push(ps_integer(ord(obj2.value[obj1.value])))

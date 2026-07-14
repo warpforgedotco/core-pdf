@@ -9,10 +9,20 @@ from typing import TYPE_CHECKING, Any, Iterable
 from core_pdf.impl.engine.extraction.common.ordering import LayoutAnalyzer
 from core_pdf.impl.engine.extraction.ocr import (
     geometry as ocr_geometry,
+)
+from core_pdf.impl.engine.extraction.ocr import (
     layout as ocr_layout,
+)
+from core_pdf.impl.engine.extraction.ocr import (
     page_analysis as ocr_page_analysis,
+)
+from core_pdf.impl.engine.extraction.ocr import (
     schematic as ocr_schematic,
+)
+from core_pdf.impl.engine.extraction.ocr import (
     table_regions as ocr_table_regions,
+)
+from core_pdf.impl.engine.extraction.ocr import (
     text_analysis as ocr_text_analysis,
 )
 from core_pdf.impl.engine.extraction.ocr.text_analysis import (
@@ -26,8 +36,7 @@ from core_pdf.impl.engine.extraction.ocr.text_analysis import (
 from core_pdf.impl.engine.layout.geometry_quality import LayoutGeometrySummary
 
 if TYPE_CHECKING:
-    from core_pdf.impl.engine.extraction.ocr.candidates import OcrPageTextResult
-    from core_pdf.impl.engine.extraction.ocr.candidates import OcrCandidate
+    from core_pdf.impl.engine.extraction.ocr.candidates import OcrCandidate, OcrPageTextResult
     from core_pdf.impl.engine.layout.models import LayoutLine, TextRun
 
 
@@ -129,14 +138,9 @@ def should_replace_text_with_ocr(
             ocr_profile.confidence >= 85
             and ocr_profile.text_quality + 0.08 < text_ocr_quality_score(text)
             and ocr_profile.line_count >= native_profile.native_line_count
-            and ocr_profile.occupied_area_ratio
-            >= native_profile.occupied_area_ratio * 0.9
+            and ocr_profile.occupied_area_ratio >= native_profile.occupied_area_ratio * 0.9
         )
-    if (
-        ocr_profile.confidence < 70
-        and text_tokens <= 120
-        and not native_profile.dominant_image
-    ):
+    if ocr_profile.confidence < 70 and text_tokens <= 120 and not native_profile.dominant_image:
         return False
     if geometry_supports_ocr_replacement(
         text,
@@ -158,8 +162,7 @@ def should_replace_text_with_ocr(
         return False
     return (
         ocr_profile.text_quality <= text_ocr_quality_score(text) + 0.02
-        and ocr_profile.line_count
-        >= max(3, int(native_profile.native_line_count * 0.75))
+        and ocr_profile.line_count >= max(3, int(native_profile.native_line_count * 0.75))
         and ocr_profile.occupied_area_ratio >= native_profile.occupied_area_ratio * 0.75
         and ocr_text_is_cleaner_candidate(
             text,
@@ -235,9 +238,7 @@ def should_preserve_native_text_against_rendered_page_ocr(
             )
         ):
             return ocr_quality + 0.02 >= text_quality
-        return (
-            ocr_quality + 0.02 >= text_quality and ocr_artifact + 0.005 >= text_artifact
-        )
+        return ocr_quality + 0.02 >= text_quality and ocr_artifact + 0.005 >= text_artifact
     if recommended_strategy != "text_table":
         return False
     if text_tokens < 250 or native_profile.native_aligned_column_count < 6:
@@ -296,8 +297,7 @@ def rendered_page_ocr_breaks_dense_native_layout(
     return (native_geometry is None or native_geometry.suspicion_score < 24.0) and (
         native_profile.native_aligned_column_count >= 6
         and native_profile.wide_line_ratio >= 0.45
-        and ocr_profile.line_count
-        >= max(60, int(native_profile.native_line_count * 1.8))
+        and ocr_profile.line_count >= max(60, int(native_profile.native_line_count * 1.8))
         and ocr_profile.wide_line_ratio <= native_profile.wide_line_ratio * 0.35
         and ocr_profile.occupied_area_ratio + 0.04 < native_profile.occupied_area_ratio
     )
@@ -309,8 +309,7 @@ def text_table_like_layout_diverges_in_rendered_ocr(
 ) -> bool:
     return (
         ocr_profile.wide_line_ratio >= max(0.45, native_profile.wide_line_ratio * 1.8)
-        and ocr_profile.aligned_column_count
-        >= native_profile.native_aligned_column_count * 2
+        and ocr_profile.aligned_column_count >= native_profile.native_aligned_column_count * 2
         and ocr_profile.occupied_area_ratio >= native_profile.occupied_area_ratio * 1.15
     )
 
@@ -330,9 +329,7 @@ def tiny_native_text_should_yield_to_ocr(
         3, native_profile.native_line_count + 1
     ):
         return False
-    if ocr_profile.occupied_area_ratio < max(
-        0.02, native_profile.occupied_area_ratio * 1.8
-    ):
+    if ocr_profile.occupied_area_ratio < max(0.02, native_profile.occupied_area_ratio * 1.8):
         return False
     if ocr_profile.text_quality > text_ocr_quality_score(text) + 0.08:
         return False
@@ -343,10 +340,7 @@ def tiny_native_text_should_yield_to_ocr(
         or native_profile.horizontal_rule_count >= 4
         or native_profile.vertical_rule_count >= 3
         or native_profile.drawing_line_count >= 20
-        or (
-            native_profile.native_line_count <= 1
-            and native_profile.occupied_area_ratio <= 0.03
-        )
+        or (native_profile.native_line_count <= 1 and native_profile.occupied_area_ratio <= 0.03)
     )
 
 
@@ -373,10 +367,8 @@ def geometry_supports_ocr_replacement(
         score += 1.0
     else:
         score -= 1.5
-    if (
-        native_profile.native_aligned_column_count >= 3
-        and ocr_profile.aligned_column_count
-        >= max(2, native_profile.native_aligned_column_count - 1)
+    if native_profile.native_aligned_column_count >= 3 and ocr_profile.aligned_column_count >= max(
+        2, native_profile.native_aligned_column_count - 1
     ):
         score += 1.5
     if (
@@ -463,13 +455,9 @@ def should_preserve_dense_numeric_native_text_against_ocr(
         1 for token in normalized_text_tokens(text) if any(ch.isdigit() for ch in token)
     )
     ocr_digit_tokens = sum(
-        1
-        for token in normalized_text_tokens(ocr_text)
-        if any(ch.isdigit() for ch in token)
+        1 for token in normalized_text_tokens(ocr_text) if any(ch.isdigit() for ch in token)
     )
-    return native_digit_tokens >= 100 and ocr_digit_tokens < int(
-        native_digit_tokens * 0.78
-    )
+    return native_digit_tokens >= 100 and ocr_digit_tokens < int(native_digit_tokens * 0.78)
 
 
 def should_replace_dominant_image_native_text_with_ocr(
@@ -580,20 +568,14 @@ def classify_page_region(
     support_targets, _ = ocr_schematic.schematic_support_repair_tokens(vector_text)
     candidate_schematic_signals = geometry.candidate_schematic_signals
     candidate_table_signals = geometry.candidate_table_signals
-    schematic_vector_signal = (
-        ocr_text_analysis.vector_text_supports_schematic_tiled_ocr(vector_text)
+    schematic_vector_signal = ocr_text_analysis.vector_text_supports_schematic_tiled_ocr(
+        vector_text
     )
     dense_table_signal = (
         candidate_table_signals >= 8
         or geometry.native_aligned_column_count >= 4
-        or (
-            geometry.native_aligned_column_count >= 3
-            and geometry.numeric_line_ratio >= 0.22
-        )
-        or (
-            geometry.candidate_aligned_column_count >= 3
-            and geometry.numeric_line_ratio >= 0.18
-        )
+        or (geometry.native_aligned_column_count >= 3 and geometry.numeric_line_ratio >= 0.22)
+        or (geometry.candidate_aligned_column_count >= 3 and geometry.numeric_line_ratio >= 0.18)
         or (
             geometry.horizontal_rule_count >= 6
             and geometry.vertical_rule_count >= 2
@@ -601,8 +583,7 @@ def classify_page_region(
         )
     )
     formula_signal = bool(text) and (
-        ocr_text_analysis.ocr_text_has_dense_formula_notation(text)
-        or formula_heavy_ocr_text(text)
+        ocr_text_analysis.ocr_text_has_dense_formula_notation(text) or formula_heavy_ocr_text(text)
     )
     form_signal = (
         geometry.horizontal_rule_count >= 8
@@ -620,9 +601,7 @@ def classify_page_region(
     )
     invoice_signal = invoice_text_signal_count(text)
     invoice_geometry_signal = (
-        form_signal
-        and geometry.right_anchor_count >= 2
-        and geometry.numeric_line_ratio >= 0.12
+        form_signal and geometry.right_anchor_count >= 2 and geometry.numeric_line_ratio >= 0.12
     ) or (
         geometry.right_anchor_count >= 3
         and geometry.short_line_ratio >= 0.35
@@ -639,8 +618,7 @@ def classify_page_region(
     )
     noisy_schematic_layout_only_signal = (
         not schematic_vector_signal
-        and len(support_targets)
-        < ocr_schematic.OCR_SCHEMATIC_REPAIR_MIN_SUPPORT_TARGETS
+        and len(support_targets) < ocr_schematic.OCR_SCHEMATIC_REPAIR_MIN_SUPPORT_TARGETS
         and candidate_schematic_signals >= 12
         and dense_table_signal
         and geometry.dominant_image
@@ -680,19 +658,13 @@ def classify_page_region(
     }
     if (
         schematic_vector_signal
-        or len(support_targets)
-        >= ocr_schematic.OCR_SCHEMATIC_REPAIR_MIN_SUPPORT_TARGETS
-        or (
-            candidate_schematic_signals >= 12 and not noisy_schematic_layout_only_signal
-        )
+        or len(support_targets) >= ocr_schematic.OCR_SCHEMATIC_REPAIR_MIN_SUPPORT_TARGETS
+        or (candidate_schematic_signals >= 12 and not noisy_schematic_layout_only_signal)
     ):
         confidence = 0.62
         if schematic_vector_signal:
             confidence += 0.2
-        if (
-            len(support_targets)
-            >= ocr_schematic.OCR_SCHEMATIC_REPAIR_MIN_SUPPORT_TARGETS
-        ):
+        if len(support_targets) >= ocr_schematic.OCR_SCHEMATIC_REPAIR_MIN_SUPPORT_TARGETS:
             confidence += 0.1
         if candidate_schematic_signals >= 12:
             confidence += 0.08
@@ -760,15 +732,11 @@ def page_text_geometry_profile(
     horizontal_rule_count, vertical_rule_count = drawing_rule_counts(drawing_lines)
     line_widths = [max(0.0, line.x1 - line.x0) for line in lines if line.x1 > line.x0]
     wide_line_ratio = ratio(
-        sum(
-            1 for width in line_widths if page_width > 0 and width / page_width >= 0.55
-        ),
+        sum(1 for width in line_widths if page_width > 0 and width / page_width >= 0.55),
         len(line_widths),
     )
     short_line_ratio = ratio(
-        sum(
-            1 for width in line_widths if page_width > 0 and width / page_width <= 0.35
-        ),
+        sum(1 for width in line_widths if page_width > 0 and width / page_width <= 0.35),
         len(line_widths),
     )
     centered_line_ratio = ratio(
@@ -784,9 +752,7 @@ def page_text_geometry_profile(
     return PageTextGeometryProfile(
         page_width=page_width,
         page_height=page_height,
-        native_run_count=len(native_runs)
-        if native_runs
-        else sum(len(line.runs) for line in lines),
+        native_run_count=len(native_runs) if native_runs else sum(len(line.runs) for line in lines),
         native_line_count=len(lines),
         wide_line_ratio=wide_line_ratio,
         short_line_ratio=short_line_ratio,
@@ -799,9 +765,7 @@ def page_text_geometry_profile(
         right_anchor_count=right_anchor_count,
         estimated_column_count=estimated_column_count(lines, page_width),
         native_aligned_column_count=native_aligned_column_count(lines),
-        candidate_aligned_column_count=candidate_layout_aligned_column_count(
-            candidates
-        ),
+        candidate_aligned_column_count=candidate_layout_aligned_column_count(candidates),
         candidate_table_signals=table_candidate_layout_signal_count(candidates),
         candidate_schematic_signals=ocr_schematic.schematic_candidate_layout_signal_count(
             candidates
@@ -824,9 +788,7 @@ def ocr_candidate_geometry_profile(
 ) -> OcrCandidateGeometryProfile:
     lines = ocr_geometry.ocr_candidate_textline_geometry_lines(page, candidate)
     page_width, page_height = page_dimensions(page, getattr(page, "media_box", None))
-    line_boxes = [
-        line.observation.bbox for line in lines if line.observation.bbox is not None
-    ]
+    line_boxes = [line.observation.bbox for line in lines if line.observation.bbox is not None]
     line_widths = [max(0.0, float(box[2]) - float(box[0])) for box in line_boxes]
     text = candidate.result.text
     return OcrCandidateGeometryProfile(
@@ -839,19 +801,11 @@ def ocr_candidate_geometry_profile(
             page_height=page_height,
         ),
         wide_line_ratio=ratio(
-            sum(
-                1
-                for width in line_widths
-                if page_width > 0 and width / page_width >= 0.55
-            ),
+            sum(1 for width in line_widths if page_width > 0 and width / page_width >= 0.55),
             len(line_widths),
         ),
         short_line_ratio=ratio(
-            sum(
-                1
-                for width in line_widths
-                if page_width > 0 and width / page_width <= 0.35
-            ),
+            sum(1 for width in line_widths if page_width > 0 and width / page_width <= 0.35),
             len(line_widths),
         ),
         line_coverage_score=ocr_text_analysis.rendered_ocr_line_coverage_score(
@@ -928,11 +882,7 @@ def native_layout_lines(
 ) -> list[LayoutLine]:
     if native_runs:
         return LayoutAnalyzer.cluster_into_lines(
-            [
-                run
-                for run in native_runs
-                if getattr(run, "visible", True) and str(run.text).strip()
-            ]
+            [run for run in native_runs if getattr(run, "visible", True) and str(run.text).strip()]
         )
     if page is None:
         return []
@@ -989,11 +939,7 @@ def native_aligned_column_count(lines: list[LayoutLine]) -> int:
     word_lines = []
     for line in lines:
         text, words = line.text_and_words()
-        if (
-            not text.strip()
-            or len(words) < 3
-            or not native_word_line_has_table_signal(words)
-        ):
+        if not text.strip() or len(words) < 3 or not native_word_line_has_table_signal(words):
             continue
         word_lines.append(words)
     if len(word_lines) < 4:
@@ -1058,7 +1004,7 @@ def drawing_rule_counts(lines: list[Any]) -> tuple[int, int]:
             x0, x1 = sorted((float(line.x0), float(line.x1)))
             y0, y1 = sorted((float(line.y0), float(line.y1)))
             line_width = float(getattr(line, "line_width", 1.0))
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             continue
         width = x1 - x0
         height = y1 - y0
@@ -1094,9 +1040,7 @@ def layout_line_has_numeric_signal(line: LayoutLine) -> bool:
             digit_words += 1
         elif any(ch.isalpha() for ch in token):
             alpha_words += 1
-    return digit_words >= 2 or (
-        digit_words >= 1 and token_count >= 4 and alpha_words <= 2
-    )
+    return digit_words >= 2 or (digit_words >= 1 and token_count >= 4 and alpha_words <= 2)
 
 
 def native_word_line_has_table_signal(words: list[Any]) -> bool:

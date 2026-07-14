@@ -25,6 +25,9 @@ License = "https://github.com/core-experiments/core-pdf/blob/main/LICENSE.txt"
 "Philanthropy waiver terms" = "https://github.com/core-experiments/core-pdf/blob/main/docs/license/LICENSE-PHILANTHROPY-WAIVER.txt"
 
 [dependency-groups]
+benchmark = [
+    "rich>=15.0.0",
+]
 lint = [
     "mypy >=1.16.0, <2.0.0",
     "ruff >=0.11.13, <1.0.0",
@@ -40,6 +43,7 @@ testpaths = ["tests/src"]
 norecursedirs = ["tests/fixtures"]
 
 [tool.ruff]
+extend-exclude = ["tests/fixtures"]
 line-length = 100
 
 [tool.ruff.lint]
@@ -73,6 +77,9 @@ python_version = "3.11"
 files = ["src/core_pdf"]
 mypy_path = "src"
 show_error_codes = true
+
+[tool.ty.src]
+exclude = ["tests/fixtures"]
 
 [tool.uv.sources]
 core-jpeg = { path = "../../core/core-JPEG" }

@@ -68,8 +68,8 @@ class Info:
 
     def __str__(self) -> str:
         if self.is_dir:
-            return "<dir '{}'>".format(self.name)
+            return f"<dir '{self.name}'>"
         else:
-            return "<file '{}'>".format(self.name)
+            return f"<file '{self.name}'>"
 
     __repr__ = __str__

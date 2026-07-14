@@ -1,16 +1,23 @@
+import struct
+from collections.abc import MutableMapping
+
 from core_pdf.impl.third_party.fontTools.misc import sstruct
 from core_pdf.impl.third_party.fontTools.misc.fixedTools import (
     fixedToFloat as fi2fl,
+)
+from core_pdf.impl.third_party.fontTools.misc.fixedTools import (
     floatToFixed as fl2fi,
+)
+from core_pdf.impl.third_party.fontTools.misc.fixedTools import (
     floatToFixedToStr as fl2str,
+)
+from core_pdf.impl.third_party.fontTools.misc.fixedTools import (
     strToFixedToFloat as str2fl,
 )
 from core_pdf.impl.third_party.fontTools.misc.textTools import bytesjoin, safeEval
 from core_pdf.impl.third_party.fontTools.ttLib import TTLibError
-from . import DefaultTable
-import struct
-from collections.abc import MutableMapping
 
+from . import DefaultTable
 
 # Apple's documentation of 'trak':
 # https://developer.apple.com/fonts/TrueType-Reference-Manual/RM06/Chap6trak.html
@@ -157,13 +164,9 @@ class TrackData(MutableMapping):
                 perSizeDataList += [struct.pack(PER_SIZE_VALUE_FORMAT, value)]
             offset += PER_SIZE_VALUE_FORMAT_SIZE * nSizes
         # sort size values
-        sizeDataList = [
-            struct.pack(SIZE_VALUE_FORMAT, fl2fi(sv, 16)) for sv in sorted(sizes)
-        ]
+        sizeDataList = [struct.pack(SIZE_VALUE_FORMAT, fl2fi(sv, 16)) for sv in sorted(sizes)]
 
-        data = bytesjoin(
-            [trackDataHeader] + entryDataList + sizeDataList + perSizeDataList
-        )
+        data = bytesjoin([trackDataHeader] + entryDataList + sizeDataList + perSizeDataList)
         return data
 
     def decompile(self, data, offset):
@@ -178,9 +181,7 @@ class TrackData(MutableMapping):
         sizeTableOffset = self.sizeTableOffset
         sizeTable = []
         for i in range(nSizes):
-            sizeValueData = data[
-                sizeTableOffset : sizeTableOffset + SIZE_VALUE_FORMAT_SIZE
-            ]
+            sizeValueData = data[sizeTableOffset : sizeTableOffset + SIZE_VALUE_FORMAT_SIZE]
             if len(sizeValueData) < SIZE_VALUE_FORMAT_SIZE:
                 raise TTLibError("not enough data to decompile TrackData size subtable")
             (sizeValue,) = struct.unpack(SIZE_VALUE_FORMAT, sizeValueData)
@@ -196,13 +197,9 @@ class TrackData(MutableMapping):
             perSizeOffset = entry.offset
             for j in range(nSizes):
                 size = sizeTable[j]
-                perSizeValueData = data[
-                    perSizeOffset : perSizeOffset + PER_SIZE_VALUE_FORMAT_SIZE
-                ]
+                perSizeValueData = data[perSizeOffset : perSizeOffset + PER_SIZE_VALUE_FORMAT_SIZE]
                 if len(perSizeValueData) < PER_SIZE_VALUE_FORMAT_SIZE:
-                    raise TTLibError(
-                        "not enough data to decompile per-size track values"
-                    )
+                    raise TTLibError("not enough data to decompile per-size track values")
                 (perSizeValue,) = struct.unpack(PER_SIZE_VALUE_FORMAT, perSizeValueData)
                 entry[size] = perSizeValue
                 perSizeOffset += PER_SIZE_VALUE_FORMAT_SIZE
@@ -318,7 +315,7 @@ class TrackTableEntry(MutableMapping):
     sizes = keys
 
     def __repr__(self):
-        return "TrackTableEntry({}, nameIndex={})".format(self._map, self.nameIndex)
+        return f"TrackTableEntry({self._map}, nameIndex={self.nameIndex})"
 
     def __eq__(self, other):
         if not isinstance(other, self.__class__):

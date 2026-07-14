@@ -2,12 +2,14 @@
 #
 # Google Author(s): Behdad Esfahbod
 
-from core_pdf.impl.third_party.fontTools.misc.textTools import bytesjoin, safeEval
-from . import DefaultTable
 import array
-from collections import namedtuple
 import struct
 import sys
+from collections import namedtuple
+
+from core_pdf.impl.third_party.fontTools.misc.textTools import bytesjoin, safeEval
+
+from . import DefaultTable
 
 
 class table_C_P_A_L_(DefaultTable.DefaultTable):
@@ -38,9 +40,7 @@ class table_C_P_A_L_(DefaultTable.DefaultTable):
             numColorRecords,
             goffsetFirstColorRecord,
         ) = struct.unpack(">HHHHL", data[:12])
-        assert (
-            self.version <= 1
-        ), "Version of CPAL table is higher than I know how to handle"
+        assert self.version <= 1, "Version of CPAL table is higher than I know how to handle"
         self.palettes = []
         pos = 12
         for i in range(numPalettes):
@@ -186,14 +186,10 @@ class table_C_P_A_L_(DefaultTable.DefaultTable):
         return result
 
     def _compilePaletteEntryLabels(self):
-        if self.version == 0 or all(
-            l == self.NO_NAME_ID for l in self.paletteEntryLabels
-        ):
+        if self.version == 0 or all(l == self.NO_NAME_ID for l in self.paletteEntryLabels):
             return b""
         assert len(self.paletteEntryLabels) == self.numPaletteEntries
-        result = bytesjoin(
-            [struct.pack(">H", label) for label in self.paletteEntryLabels]
-        )
+        result = bytesjoin([struct.pack(">H", label) for label in self.paletteEntryLabels])
         assert len(result) == 2 * self.numPaletteEntries
         return result
 
@@ -215,12 +211,7 @@ class table_C_P_A_L_(DefaultTable.DefaultTable):
                 attrs["type"] = paletteType
             writer.begintag("palette", **attrs)
             writer.newline()
-            if (
-                self.version > 0
-                and paletteLabel != self.NO_NAME_ID
-                and ttFont
-                and "name" in ttFont
-            ):
+            if self.version > 0 and paletteLabel != self.NO_NAME_ID and ttFont and "name" in ttFont:
                 name = ttFont["name"].getDebugName(paletteLabel)
                 if name is not None:
                     writer.comment(name)
@@ -230,9 +221,7 @@ class table_C_P_A_L_(DefaultTable.DefaultTable):
                 color.toXML(writer, ttFont, cindex)
             writer.endtag("palette")
             writer.newline()
-        if self.version > 0 and not all(
-            l == self.NO_NAME_ID for l in self.paletteEntryLabels
-        ):
+        if self.version > 0 and not all(l == self.NO_NAME_ID for l in self.paletteEntryLabels):
             writer.begintag("paletteEntryLabels")
             writer.newline()
             for index, label in enumerate(self.paletteEntryLabels):
@@ -269,8 +258,7 @@ class table_C_P_A_L_(DefaultTable.DefaultTable):
                     nameID = safeEval(elementAttr["value"])
                     colorLabels[labelIndex] = nameID
             self.paletteEntryLabels = [
-                colorLabels.get(i, self.NO_NAME_ID)
-                for i in range(self.numPaletteEntries)
+                colorLabels.get(i, self.NO_NAME_ID) for i in range(self.numPaletteEntries)
             ]
         elif "value" in attrs:
             value = safeEval(attrs["value"])

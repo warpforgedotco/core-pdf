@@ -1,7 +1,9 @@
-from core_pdf.impl.third_party.fontTools.misc.textTools import safeEval
-from . import DefaultTable
-import sys
 import array
+import sys
+
+from core_pdf.impl.third_party.fontTools.misc.textTools import safeEval
+
+from . import DefaultTable
 
 
 class table__c_v_t(DefaultTable.DefaultTable):

@@ -1,11 +1,19 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
+
 import array
 import re
+from bisect import bisect_right
 from collections.abc import Iterator, Mapping, Sequence
 from statistics import median
-from typing import Any, Literal, overload
-from core_pdf.impl.engine.layout.models import TableGrid, TextRun
+from typing import Literal, overload
+
+from core_pdf.impl.engine.extraction.tables.stream import (
+    DEFAULT_COLUMN_TOLERANCE,
+    DEFAULT_ROW_TOLERANCE,
+    infer_stream_columns,
+    iter_rows,
+)
 from core_pdf.impl.engine.extraction.tables.types import (
     TableBBoxes,
     TableCellSpanRecord,
@@ -19,11 +27,7 @@ from core_pdf.impl.engine.extraction.tables.types import (
     TableSpanResultWithBBoxes,
     TableSpanRows,
 )
-from core_pdf.impl.engine.extraction.tables.stream import DEFAULT_COLUMN_TOLERANCE
-from core_pdf.impl.engine.extraction.tables.stream import DEFAULT_ROW_TOLERANCE
-from core_pdf.impl.engine.extraction.tables.stream import infer_stream_columns
-from core_pdf.impl.engine.extraction.tables.stream import iter_rows
-from bisect import bisect_right
+from core_pdf.impl.engine.layout.models import TableGrid, TextRun
 
 
 def median_font_size(runs: list[TextRun]) -> float:
@@ -93,9 +97,7 @@ def copy_spanning_text(rows: list[list[str]], copy_text: Sequence[str] | None) -
             break
 
 
-def shift_spanning_text(
-    rows: list[list[str]], shift_text: Sequence[str] | None
-) -> None:
+def shift_spanning_text(rows: list[list[str]], shift_text: Sequence[str] | None) -> None:
     if not shift_text:
         return
     if "r" in shift_text:
@@ -107,10 +109,7 @@ def shift_spanning_text(
     if "b" in shift_text:
         for row_idx in range(len(rows) - 1):
             for col_idx in range(len(rows[row_idx])):
-                if (
-                    rows[row_idx + 1][col_idx] == "<vspan>"
-                    and rows[row_idx][col_idx].strip()
-                ):
+                if rows[row_idx + 1][col_idx] == "<vspan>" and rows[row_idx][col_idx].strip():
                     rows[row_idx + 1][col_idx] = rows[row_idx][col_idx]
                     rows[row_idx][col_idx] = ""
 
@@ -196,9 +195,7 @@ def compact_network_rows(
             break
     compact_rows = [row for row, ignored in compact]
     compact_spans = (
-        [span for ignored, span in compact if span is not None]
-        if span_grid is not None
-        else None
+        [span for ignored, span in compact if span is not None] if span_grid is not None else None
     )
     return (compact_rows, compact_spans)
 
@@ -221,19 +218,12 @@ def iter_cells(
     flag_size: bool = False,
     median_font_size: float = 0.0,
     column_tolerance: float = 4.0,
-) -> Iterator[
-    tuple[list[str], list[TableCellSpanRecord], dict[tuple[int, int], TextRun]]
-]:
+) -> Iterator[tuple[list[str], list[TableCellSpanRecord], dict[tuple[int, int], TextRun]]]:
     row_run_map: dict[tuple[int, int], TextRun] = {}
     for row_idx, row_runs in enumerate(rows_list):
         runs_by_column: list[list[TextRun]] = [[] for ignored in column_positions]
         for run in row_runs:
-            col_idx = (
-                bisect_right(
-                    column_positions, run.x0 + max(1.0, column_tolerance * 0.5)
-                )
-                - 1
-            )
+            col_idx = bisect_right(column_positions, run.x0 + max(1.0, column_tolerance * 0.5)) - 1
             if 0 <= col_idx < len(column_positions):
                 runs_by_column[col_idx].append(run)
         row_cells: list[str] = []
@@ -267,9 +257,7 @@ def iter_cells(
                 row_run_map[(row_idx, col_idx)] = runs_in_col[0]
             else:
                 row_cells.append("")
-                row_info.append(
-                    {"text": "", "row_span": 1, "col_span": 1, "font_size": 0}
-                )
+                row_info.append({"text": "", "row_span": 1, "col_span": 1, "font_size": 0})
         yield row_cells, row_info, row_run_map
 
 
@@ -428,9 +416,7 @@ def extract_grid(
         if row_idx == -1:
             continue
         if flag_size:
-            run_text = format_run_text(
-                run, flag_size=True, median_font_size=median_size
-            )
+            run_text = format_run_text(run, flag_size=True, median_font_size=median_size)
         else:
             run_text = run.text
         segments: list[tuple[int, str]]
@@ -457,10 +443,7 @@ def extract_grid(
                 continue
         if split_text and end_col > start_col and run.x1 > run.x0 and len(run_text) > 1:
             glyph_chars = run_chars.get(run.seqno) if run_chars else None
-            if (
-                glyph_chars
-                and "".join(char for char, *ignored in glyph_chars) != run_text
-            ):
+            if glyph_chars and "".join(char for char, *ignored in glyph_chars) != run_text:
                 glyph_chars = None
             if glyph_chars:
                 segments = []
@@ -481,14 +464,11 @@ def extract_grid(
                 if current_chars and current_col != -1:
                     segments.append((current_col, "".join(current_chars)))
             else:
-                padded_groups = [
-                    group for group in re.split(r" {2,}", run_text) if group.strip()
-                ]
+                padded_groups = [group for group in re.split(r" {2,}", run_text) if group.strip()]
                 spanned_cols = end_col - start_col + 1
                 if 1 < len(padded_groups) <= spanned_cols:
                     segments = [
-                        (start_col + offset, group)
-                        for offset, group in enumerate(padded_groups)
+                        (start_col + offset, group) for offset, group in enumerate(padded_groups)
                     ]
                 else:
                     width = run.x1 - run.x0
@@ -777,9 +757,7 @@ def extract_heuristic(
         for table_rows in span_result[0]:
             postprocess_rows(table_rows, copy_text=copy_text, shift_text=shift_text)
         if include_bboxes:
-            return span_result, [heuristic_bbox_for_rows(bbox_rows)] * len(
-                span_result[0]
-            )
+            return span_result, [heuristic_bbox_for_rows(bbox_rows)] * len(span_result[0])
         return span_result
     if not is_plausible_table_rows(rows):
         empty_bboxes: TableBBoxes = []
@@ -790,9 +768,7 @@ def extract_heuristic(
     if detect_header:
         header_result = detect_heuristic_header(rows, visible_runs)
         if include_bboxes:
-            return header_result, [heuristic_bbox_for_rows(bbox_rows)] * len(
-                header_result[1]
-            )
+            return header_result, [heuristic_bbox_for_rows(bbox_rows)] * len(header_result[1])
         return header_result
     postprocess_rows(rows, copy_text=copy_text, shift_text=shift_text)
     tables_result = [rows] if rows else []

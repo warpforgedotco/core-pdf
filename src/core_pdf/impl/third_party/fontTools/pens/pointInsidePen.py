@@ -2,9 +2,8 @@
 for shapes.
 """
 
+from core_pdf.impl.third_party.fontTools.misc.bezierTools import solveCubic, solveQuadratic
 from core_pdf.impl.third_party.fontTools.pens.basePen import BasePen
-from core_pdf.impl.third_party.fontTools.misc.bezierTools import solveQuadratic, solveCubic
-
 
 __all__ = ["PointInsidePen"]
 
@@ -65,7 +64,7 @@ class PointInsidePen(BasePen):
             result = winding % 2
         else:  # non-zero
             result = self.intersectionCount != 0
-        return not not result
+        return bool(result)
 
     def _addIntersection(self, goingUp):
         if self.evenOdd or goingUp:
@@ -175,9 +174,7 @@ class PointInsidePen(BasePen):
         b = (y2 - c) * 2.0
         a = y3 - c - b
         solutions = sorted(solveQuadratic(a, b, c - y))
-        solutions = [
-            t for t in solutions if ZERO_MINUS_EPSILON <= t <= ONE_PLUS_EPSILON
-        ]
+        solutions = [t for t in solutions if ZERO_MINUS_EPSILON <= t <= ONE_PLUS_EPSILON]
         if not solutions:
             return
         # XXX

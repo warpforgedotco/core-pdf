@@ -1,26 +1,27 @@
+import itertools
+import logging
+import os
+import struct
+
 from core_pdf.impl.third_party.fontTools.misc import sstruct
 from core_pdf.impl.third_party.fontTools.misc.textTools import (
     bytechr,
     byteord,
     bytesjoin,
-    strjoin,
-    safeEval,
-    readHex,
-    hexStr,
     deHexStr,
+    hexStr,
+    readHex,
+    safeEval,
+    strjoin,
 )
+
+from . import DefaultTable
 from .BitmapGlyphMetrics import (
     BigGlyphMetrics,
-    bigGlyphMetricsFormat,
     SmallGlyphMetrics,
+    bigGlyphMetricsFormat,
     smallGlyphMetricsFormat,
 )
-from . import DefaultTable
-import itertools
-import os
-import struct
-import logging
-
 
 log = logging.getLogger(__name__)
 
@@ -83,9 +84,7 @@ class table_E_B_D_T_(DefaultTable.DefaultTable):
                         curGlyph = glyphDict[curLoc]
                     else:
                         curGlyphData = data[slice(*curLoc)]
-                        imageFormatClass = self.getImageFormatClass(
-                            indexSubTable.imageFormat
-                        )
+                        imageFormatClass = self.getImageFormatClass(indexSubTable.imageFormat)
                         curGlyph = imageFormatClass(curGlyphData, ttFont)
                         glyphDict[curLoc] = curGlyph
                     bitmapGlyphDict[curName] = curGlyph
@@ -189,8 +188,7 @@ class table_E_B_D_T_(DefaultTable.DefaultTable):
                     curGlyph = imageFormatClass(None, None)
                     curGlyph.fromXML(name, attrs, content, ttFont)
                     assert glyphName not in bitmapGlyphDict, (
-                        "Duplicate glyphs with the same name '%s' in the same strike."
-                        % glyphName
+                        "Duplicate glyphs with the same name '%s' in the same strike." % glyphName
                     )
                     bitmapGlyphDict[glyphName] = curGlyph
                 else:
@@ -200,9 +198,7 @@ class table_E_B_D_T_(DefaultTable.DefaultTable):
             # format allows the strike index value to be out of order.
             if strikeIndex >= len(self.strikeData):
                 self.strikeData += [None] * (strikeIndex + 1 - len(self.strikeData))
-            assert (
-                self.strikeData[strikeIndex] is None
-            ), "Duplicate strike EBDT indices."
+            assert self.strikeData[strikeIndex] is None, "Duplicate strike EBDT indices."
             self.strikeData[strikeIndex] = bitmapGlyphDict
 
 
@@ -315,9 +311,7 @@ def _writeRowImageData(strikeIndex, glyphName, bitmapObject, writer, ttFont):
     bitDepth = bitmapObject.exportBitDepth
     del bitmapObject.exportBitDepth
 
-    writer.begintag(
-        "rowimagedata", bitDepth=bitDepth, width=metrics.width, height=metrics.height
-    )
+    writer.begintag("rowimagedata", bitDepth=bitDepth, width=metrics.width, height=metrics.height)
     writer.newline()
     for curRow in range(metrics.height):
         rowData = bitmapObject.getRow(curRow, bitDepth=bitDepth, metrics=metrics)
@@ -361,9 +355,7 @@ def _writeBitwiseImageData(strikeIndex, glyphName, bitmapObject, writer, ttFont)
     )
     writer.newline()
     for curRow in range(metrics.height):
-        rowData = bitmapObject.getRow(
-            curRow, bitDepth=1, metrics=metrics, reverseBytes=True
-        )
+        rowData = bitmapObject.getRow(curRow, bitDepth=1, metrics=metrics, reverseBytes=True)
         rowData = _data2binary(rowData, metrics.width)
         # Make the output a readable ASCII art form.
         rowData = strjoin(map(binaryConv.get, rowData))
@@ -393,9 +385,7 @@ def _readBitwiseImageData(bitmapObject, name, attrs, content, ttFont):
             rowData = strjoin(itertools.starmap(binaryConv.get, mapParams))
             dataRows.append(_binary2data(rowData))
 
-    bitmapObject.setRows(
-        dataRows, bitDepth=bitDepth, metrics=metrics, reverseBytes=True
-    )
+    bitmapObject.setRows(dataRows, bitDepth=bitDepth, metrics=metrics, reverseBytes=True)
 
 
 def _writeExtFileImageData(strikeIndex, glyphName, bitmapObject, writer, ttFont):
@@ -509,9 +499,7 @@ class BitmapGlyph(object):
 
     def writeData(self, strikeIndex, glyphName, writer, ttFont):
         try:
-            writeFunc, readFunc = self.__class__.xmlDataFunctions[
-                ttFont.bitmapGlyphDataFormat
-            ]
+            writeFunc, readFunc = self.__class__.xmlDataFunctions[ttFont.bitmapGlyphDataFormat]
         except KeyError:
             writeFunc = _writeRawImageData
         writeFunc(strikeIndex, glyphName, self, writer, ttFont)
@@ -573,7 +561,7 @@ class BitAlignedBitmapMixin(object):
     def getRow(self, row, bitDepth=1, metrics=None, reverseBytes=False):
         if metrics is None:
             metrics = self.metrics
-        assert 0 <= row and row < metrics.height, "Illegal row access in bitmap"
+        assert row >= 0 and row < metrics.height, "Illegal row access in bitmap"
 
         # Loop through each byte. This can cover two bytes in the original data or
         # a single byte if things happen to be aligned. The very last entry might
@@ -661,7 +649,7 @@ class ByteAlignedBitmapMixin(object):
     def getRow(self, row, bitDepth=1, metrics=None, reverseBytes=False):
         if metrics is None:
             metrics = self.metrics
-        assert 0 <= row and row < metrics.height, "Illegal row access in bitmap"
+        assert row >= 0 and row < metrics.height, "Illegal row access in bitmap"
         byteRange = self._getByteRange(row, bitDepth, metrics)
         data = self.imageData[slice(*byteRange)]
         if reverseBytes:
@@ -676,9 +664,7 @@ class ByteAlignedBitmapMixin(object):
         self.imageData = bytesjoin(dataRows)
 
 
-class ebdt_bitmap_format_1(
-    ByteAlignedBitmapMixin, BitmapPlusSmallMetricsMixin, BitmapGlyph
-):
+class ebdt_bitmap_format_1(ByteAlignedBitmapMixin, BitmapPlusSmallMetricsMixin, BitmapGlyph):
     def decompile(self):
         self.metrics = SmallGlyphMetrics()
         dummy, data = sstruct.unpack2(smallGlyphMetricsFormat, self.data, self.metrics)
@@ -689,9 +675,7 @@ class ebdt_bitmap_format_1(
         return data + self.imageData
 
 
-class ebdt_bitmap_format_2(
-    BitAlignedBitmapMixin, BitmapPlusSmallMetricsMixin, BitmapGlyph
-):
+class ebdt_bitmap_format_2(BitAlignedBitmapMixin, BitmapPlusSmallMetricsMixin, BitmapGlyph):
     def decompile(self):
         self.metrics = SmallGlyphMetrics()
         dummy, data = sstruct.unpack2(smallGlyphMetricsFormat, self.data, self.metrics)
@@ -710,9 +694,7 @@ class ebdt_bitmap_format_5(BitAlignedBitmapMixin, BitmapGlyph):
         return self.imageData
 
 
-class ebdt_bitmap_format_6(
-    ByteAlignedBitmapMixin, BitmapPlusBigMetricsMixin, BitmapGlyph
-):
+class ebdt_bitmap_format_6(ByteAlignedBitmapMixin, BitmapPlusBigMetricsMixin, BitmapGlyph):
     def decompile(self):
         self.metrics = BigGlyphMetrics()
         dummy, data = sstruct.unpack2(bigGlyphMetricsFormat, self.data, self.metrics)
@@ -723,9 +705,7 @@ class ebdt_bitmap_format_6(
         return data + self.imageData
 
 
-class ebdt_bitmap_format_7(
-    BitAlignedBitmapMixin, BitmapPlusBigMetricsMixin, BitmapGlyph
-):
+class ebdt_bitmap_format_7(BitAlignedBitmapMixin, BitmapPlusBigMetricsMixin, BitmapGlyph):
     def decompile(self):
         self.metrics = BigGlyphMetrics()
         dummy, data = sstruct.unpack2(bigGlyphMetricsFormat, self.data, self.metrics)

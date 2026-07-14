@@ -3,11 +3,12 @@ from __future__ import annotations
 from collections.abc import Sequence
 from math import isclose
 
+from core_pdf.impl.engine.spec.s_07_syntax.primitives import PdfName
+
 from core_pdf.impl.engine.spec.s_07_document.document import PdfDocument
 from core_pdf.impl.engine.spec.s_07_document.metadata import resolve_info_metadata
 from core_pdf.impl.engine.spec.s_07_document.navigation import NavigationMixin
 from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
-from core_pdf.impl.engine.spec.s_07_syntax.primitives import PdfName
 from core_pdf.impl.engine.spec.s_09_fonts.decoder import FontDecoder
 
 

@@ -1,7 +1,9 @@
-from core_pdf.impl.third_party.fontTools.misc.textTools import safeEval
-from . import DefaultTable
-import struct
 import array
+import struct
+
+from core_pdf.impl.third_party.fontTools.misc.textTools import safeEval
+
+from . import DefaultTable
 
 # XXX I've lowered the strictness, to make sure Apple's own Chicago
 # XXX gets through. They're looking into it, I hope to raise the standards

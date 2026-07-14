@@ -5,6 +5,7 @@ from bisect import bisect_left
 from collections import Counter
 from typing import TYPE_CHECKING, Any
 
+from core_pdf.impl.engine.extraction.cache import ExtractionCacheMapping
 from core_pdf.impl.engine.extraction.common import page_profile
 from core_pdf.impl.engine.extraction.common.ordering import LayoutAnalyzer
 from core_pdf.impl.engine.extraction.common.render import (
@@ -14,29 +15,36 @@ from core_pdf.impl.engine.extraction.common.render import (
 )
 from core_pdf.impl.engine.extraction.ocr import (
     page_analysis as ocr_page_analysis,
+)
+from core_pdf.impl.engine.extraction.ocr import (
     postprocess as ocr_postprocess,
+)
+from core_pdf.impl.engine.extraction.ocr import (
     rendering as ocr_rendering,
+)
+from core_pdf.impl.engine.extraction.ocr import (
     schematic as ocr_schematic,
+)
+from core_pdf.impl.engine.extraction.ocr import (
     text_analysis as ocr_text_analysis,
 )
 from core_pdf.impl.engine.extraction.ocr.glyph_recognizer import (
     repair_text_runs_with_glyph_bitmaps,
     text_runs_from_rendered_glyphs,
 )
-from core_pdf.impl.engine.layout.geometry_quality import (
-    LayoutGeometrySummary,
-    layout_geometry_summary_record,
-    page_layout_geometry_summary,
-    text_run_has_repairable_glyph_geometry_issue,
-)
-from core_pdf.impl.engine.extraction.page_text.policy import classify_page_region
 from core_pdf.impl.engine.extraction.ocr.text_analysis import (
     extracted_text_token_count,
     sparse_text_looks_noisy,
     text_ocr_quality_score,
     uninterpretable_char_count,
 )
-from core_pdf.impl.engine.extraction.cache import ExtractionCacheMapping
+from core_pdf.impl.engine.extraction.page_text.policy import classify_page_region
+from core_pdf.impl.engine.layout.geometry_quality import (
+    LayoutGeometrySummary,
+    layout_geometry_summary_record,
+    page_layout_geometry_summary,
+    text_run_has_repairable_glyph_geometry_issue,
+)
 
 if TYPE_CHECKING:
     from core_pdf.impl.engine.layout.models import TextRun
@@ -301,12 +309,8 @@ def native_text_runs_for_extraction(runs: list[TextRun]) -> list[TextRun]:
     invisible = [run for run in extractable if text_run_uses_invisible_render_mode(run)]
     if not invisible:
         return extractable
-    painted = [
-        run for run in extractable if not text_run_uses_invisible_render_mode(run)
-    ]
-    if not painted or not invisible_text_layer_duplicates_painted_text(
-        invisible, painted
-    ):
+    painted = [run for run in extractable if not text_run_uses_invisible_render_mode(run)]
+    if not painted or not invisible_text_layer_duplicates_painted_text(invisible, painted):
         return extractable
     return painted
 
@@ -362,9 +366,7 @@ def text_run_is_inside_active_clip(run: TextRun) -> bool:
     if area <= 0.0:
         return False
     intersection_width = max(0.0, min(run.x1, clip_bbox[2]) - max(run.x0, clip_bbox[0]))
-    intersection_height = max(
-        0.0, min(run.y1, clip_bbox[3]) - max(run.y0, clip_bbox[1])
-    )
+    intersection_height = max(0.0, min(run.y1, clip_bbox[3]) - max(run.y0, clip_bbox[1]))
     return intersection_width * intersection_height / area >= 0.80
 
 
@@ -404,9 +406,7 @@ def native_text_runs_inside_visible_row_bands(
     row_bands = visible_gray_row_bands(page, media_box)
     if len(row_bands) < 2:
         return runs
-    active_candidates = [
-        band for band in row_bands if band[1] <= media_box[3] - page_height * 0.1
-    ]
+    active_candidates = [band for band in row_bands if band[1] <= media_box[3] - page_height * 0.1]
     if len(active_candidates) < 2:
         return runs
     active_top = max(band[1] for band in active_candidates)
@@ -487,8 +487,7 @@ def is_likely_mispositioned_page_number(
     if sum(1 for ch in text if ch.isdigit()) < 1:
         return False
     return all(
-        ch.isdigit() or ch.isalpha() or ch.isspace() or ch in "./-\u2013\u2014"
-        for ch in text
+        ch.isdigit() or ch.isalpha() or ch.isspace() or ch in "./-\u2013\u2014" for ch in text
     )
 
 
@@ -527,10 +526,7 @@ def should_use_rendered_glyph_text(current: str, glyph_text: str) -> bool:
     glyph_fragmentation = ocr_text_analysis.rendered_ocr_fragmentation_score(glyph_text)
     current_garbled_ratio = garbled_alpha_token_ratio(current)
     glyph_garbled_ratio = garbled_alpha_token_ratio(glyph_text)
-    if (
-        glyph_garbled_ratio > current_garbled_ratio + 0.04
-        and glyph_garbled_ratio >= 0.08
-    ):
+    if glyph_garbled_ratio > current_garbled_ratio + 0.04 and glyph_garbled_ratio >= 0.08:
         return False
     if (
         glyph_quality > current_quality + 0.06
@@ -590,24 +586,15 @@ def text_run_geometry_quality_score(runs: list[Any]) -> float:
     avg_line_chars = text_chars / max(1, line_count)
     tiny_runs = 0
     for run in visible_runs:
-        width = max(
-            0.0, float(getattr(run, "x1", 0.0)) - float(getattr(run, "x0", 0.0))
-        )
-        height = max(
-            0.0, float(getattr(run, "y1", 0.0)) - float(getattr(run, "y0", 0.0))
-        )
+        width = max(0.0, float(getattr(run, "x1", 0.0)) - float(getattr(run, "x0", 0.0)))
+        height = max(0.0, float(getattr(run, "y1", 0.0)) - float(getattr(run, "y0", 0.0)))
         if width <= max(0.75, height * 0.12):
             tiny_runs += 1
     tiny_ratio = tiny_runs / len(visible_runs)
     line_coverage = min(1.0, line_count / 24.0)
     char_density = min(1.0, avg_line_chars / 48.0)
     run_density = min(1.0, text_chars / max(1, len(visible_runs)) / 8.0)
-    return (
-        line_coverage * 0.35
-        + char_density * 0.45
-        + run_density * 0.2
-        - tiny_ratio * 0.25
-    )
+    return line_coverage * 0.35 + char_density * 0.45 + run_density * 0.2 - tiny_ratio * 0.25
 
 
 def garbled_alpha_token_ratio(text: str) -> float:
@@ -616,9 +603,7 @@ def garbled_alpha_token_ratio(text: str) -> float:
     if not alpha_tokens:
         return 0.0
     garbled = sum(
-        1
-        for token in alpha_tokens
-        if ocr_text_analysis.alpha_token_looks_ocr_garbled(token)
+        1 for token in alpha_tokens if ocr_text_analysis.alpha_token_looks_ocr_garbled(token)
     )
     return garbled / len(alpha_tokens)
 

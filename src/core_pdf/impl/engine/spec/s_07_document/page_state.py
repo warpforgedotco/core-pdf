@@ -13,8 +13,8 @@ from core_pdf.impl.objects import PdfStream
 from core_pdf.impl.types import PdfDict
 
 if TYPE_CHECKING:
-    from core_pdf.impl.engine.spec.s_07_document.document import PdfDocument
     from core_pdf.impl.engine.spec.s_07_content.capture import CapturedLine
+    from core_pdf.impl.engine.spec.s_07_document.document import PdfDocument
 
 
 class PageStateHost(Protocol):
@@ -85,10 +85,7 @@ class PageStateMixin:
         can_skip_bad_stream = (
             len(content_streams) > 1
             or isinstance(contents_obj, (list, tuple))
-            or (
-                self.document.xref_was_recovered
-                or self.document.page_tree_was_recovered
-            )
+            or (self.document.xref_was_recovered or self.document.page_tree_was_recovered)
         )
         if len(content_streams) > 1:
             try:

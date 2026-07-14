@@ -410,9 +410,7 @@ class TTFont(object):
         tags.pop(0)  # skip GlyphOrder tag
         numTables = len(tags)
         # write to a temporary stream to allow saving to unseekable streams
-        writer = SFNTWriter(
-            file, numTables, self.sfntVersion, self.flavor, self.flavorData
-        )
+        writer = SFNTWriter(file, numTables, self.sfntVersion, self.flavor, self.flavorData)
 
         done = []
         for tag in tags:
@@ -500,9 +498,7 @@ class TTFont(object):
         for tag in tables:
             if splitTables:
                 tablePath = path + "." + tagToIdentifier(tag) + ext
-                tableWriter = xmlWriter.XMLWriter(
-                    tablePath, newlinestr=writer.newlinestr
-                )
+                tableWriter = xmlWriter.XMLWriter(tablePath, newlinestr=writer.newlinestr)
                 tableWriter.begintag("ttFont", ttLibVersion=version)
                 tableWriter.newline()
                 tableWriter.newline()
@@ -584,11 +580,7 @@ class TTFont(object):
 
         As well as this method, ``tag in font`` can also be used to determine the
         presence of the table."""
-        if self.isLoaded(tag):
-            return True
-        elif self.reader and tag in self.reader:
-            return True
-        elif tag == "GlyphOrder":
+        if self.isLoaded(tag) or self.reader and tag in self.reader or tag == "GlyphOrder":
             return True
         else:
             return False
@@ -825,9 +817,7 @@ class TTFont(object):
             if not self.ignoreDecompileErrors:
                 raise
             # fall back to DefaultTable, retaining the binary table data
-            log.exception(
-                "An exception occurred during the decompilation of the '%s' table", tag
-            )
+            log.exception("An exception occurred during the decompilation of the '%s' table", tag)
             from .tables.DefaultTable import DefaultTable
 
             file = StringIO()
@@ -1391,17 +1381,13 @@ class GlyphOrder(object):
 
     def toXML(self, writer: xmlWriter.XMLWriter, ttFont: TTFont) -> None:
         glyphOrder = ttFont.getGlyphOrder()
-        writer.comment(
-            "The 'id' attribute is only for humans; it is ignored when parsed."
-        )
+        writer.comment("The 'id' attribute is only for humans; it is ignored when parsed.")
         writer.newline()
         for i, glyphName in enumerate(glyphOrder):
             writer.simpletag("GlyphID", id=i, name=glyphName)
             writer.newline()
 
-    def fromXML(
-        self, name: str, attrs: dict[str, str], content: list[Any], ttFont: TTFont
-    ) -> None:
+    def fromXML(self, name: str, attrs: dict[str, str], content: list[Any], ttFont: TTFont) -> None:
         if not hasattr(self, "glyphOrder"):
             self.glyphOrder = []
         if name == "GlyphID":
@@ -1595,9 +1581,7 @@ TTFTableOrder = [
 OTFTableOrder = ["head", "hhea", "maxp", "OS/2", "name", "cmap", "post", "CFF "]
 
 
-def sortedTagList(
-    tagList: Sequence[str], tableOrder: Sequence[str] | None = None
-) -> list[str]:
+def sortedTagList(tagList: Sequence[str], tableOrder: Sequence[str] | None = None) -> list[str]:
     """Return a sorted copy of tagList, sorted according to the OpenType
     specification, or according to a custom tableOrder. If given and not
     None, tableOrder needs to be a list of tag names.

@@ -3,25 +3,20 @@ from __future__ import annotations
 
 from typing import Any, Mapping, Sequence, TypedDict, cast
 
-from core_pdf.impl.engine.layout.models import TableGrid, TextRun
-from core_pdf.impl.engine.extraction.tables.extract import extract_grid
-from core_pdf.impl.engine.extraction.tables.extract import extract_heuristic
-from core_pdf.impl.engine.extraction.tables.grid import detect_grids_from_edges
-from core_pdf.impl.engine.extraction.tables.grid import merge_grids
-from core_pdf.impl.engine.extraction.tables.stream import detect_network_grids
-from core_pdf.impl.engine.extraction.tables.stream import detect_stream_grid
-from core_pdf.impl.engine.extraction.tables.stream import detect_stream_grids
+from core_pdf.impl.engine.extraction.tables.extract import extract_grid, extract_heuristic
+from core_pdf.impl.engine.extraction.tables.grid import detect_grids_from_edges, merge_grids
+from core_pdf.impl.engine.extraction.tables.options import table_cache_key
+from core_pdf.impl.engine.extraction.tables.protocols import PageTableHost
 from core_pdf.impl.engine.extraction.tables.quality import (
     bbox_overlap_ratio,
     table_quality_score,
     table_text_length,
 )
-from core_pdf.impl.engine.spec.s_07_document.page_boxes import (
-    rotate_page_lines,
-    rotate_page_runs,
+from core_pdf.impl.engine.extraction.tables.stream import (
+    detect_network_grids,
+    detect_stream_grid,
+    detect_stream_grids,
 )
-from core_pdf.impl.engine.extraction.tables.protocols import PageTableHost
-from core_pdf.impl.engine.extraction.tables.options import table_cache_key
 from core_pdf.impl.engine.extraction.tables.types import (
     Rect,
     TableCellSpanRecord,
@@ -32,6 +27,11 @@ from core_pdf.impl.engine.extraction.tables.types import (
     TableSetWithBBoxes,
     TableSpanResultWithBBoxes,
     TableSpanRows,
+)
+from core_pdf.impl.engine.layout.models import TableGrid, TextRun
+from core_pdf.impl.engine.spec.s_07_document.page_boxes import (
+    rotate_page_lines,
+    rotate_page_runs,
 )
 
 
@@ -114,9 +114,7 @@ class PageTableCoreMixin:
         return [str(cell).strip() for row in table for cell in row if str(cell).strip()]
 
     @classmethod
-    def substantial_table_indexes(
-        cls, tables: Sequence[Sequence[Sequence[object]]]
-    ) -> list[int]:
+    def substantial_table_indexes(cls, tables: Sequence[Sequence[Sequence[object]]]) -> list[int]:
         substantial: list[int] = []
         for index, table in enumerate(tables):
             row_count = len(table)
@@ -129,29 +127,19 @@ class PageTableCoreMixin:
         return substantial
 
     @classmethod
-    def filtered_substantial_result(
-        cls, result: TableExtractionResult
-    ) -> TableExtractionResult:
+    def filtered_substantial_result(cls, result: TableExtractionResult) -> TableExtractionResult:
         indexes = cls.substantial_table_indexes(result.get("tables", []))
         if not indexes:
             return cls.table_result([])
         tables = [result["tables"][index] for index in indexes]
-        spans = (
-            [result.get("spans", [])[index] for index in indexes]
-            if result.get("spans")
-            else []
-        )
+        spans = [result.get("spans", [])[index] for index in indexes] if result.get("spans") else []
         bboxes = (
-            [result.get("bboxes", [])[index] for index in indexes]
-            if result.get("bboxes")
-            else []
+            [result.get("bboxes", [])[index] for index in indexes] if result.get("bboxes") else []
         )
         return cls.table_result(tables, spans=spans, bboxes=bboxes)
 
     @classmethod
-    def prune_trivial_fragments(
-        cls, result: TableExtractionResult
-    ) -> TableExtractionResult:
+    def prune_trivial_fragments(cls, result: TableExtractionResult) -> TableExtractionResult:
         filtered = cls.filtered_substantial_result(result)
         if len(filtered.get("tables", [])) == len(result.get("tables", [])):
             return result
@@ -160,9 +148,7 @@ class PageTableCoreMixin:
         return result
 
     @classmethod
-    def suppress_probable_prose_result(
-        cls, result: TableExtractionResult
-    ) -> TableExtractionResult:
+    def suppress_probable_prose_result(cls, result: TableExtractionResult) -> TableExtractionResult:
         tables = result.get("tables", [])
         if len(tables) != 1:
             return result
@@ -196,9 +182,7 @@ class PageTableCoreMixin:
         return len(table) <= 2 and cls.nonempty_cell_count(table) <= 8
 
     @classmethod
-    def total_nonempty_cells(
-        cls, tables: Sequence[Sequence[Sequence[object]]]
-    ) -> int:
+    def total_nonempty_cells(cls, tables: Sequence[Sequence[Sequence[object]]]) -> int:
         return sum(cls.nonempty_cell_count(table) for table in tables)
 
     @classmethod
@@ -230,16 +214,12 @@ class PageTableCoreMixin:
 
         candidate_nonempty = cls.total_nonempty_cells(candidate_tables)
         ruled_nonempty = cls.total_nonempty_cells(ruled_tables)
-        if (
-            ruled_area >= candidate_area * 0.9
-            and ruled_nonempty >= candidate_nonempty + 8
-        ):
+        if ruled_area >= candidate_area * 0.9 and ruled_nonempty >= candidate_nonempty + 8:
             return True
         if (
             ruled_area >= candidate_area * 0.9
             and ruled_nonempty + 4 >= candidate_nonempty
-            and cls.total_column_count(ruled_tables)
-            >= cls.total_column_count(candidate_tables) + 2
+            and cls.total_column_count(ruled_tables) >= cls.total_column_count(candidate_tables) + 2
         ):
             return True
         return False
@@ -268,13 +248,8 @@ class PageTableCoreMixin:
 
         candidate_nonempty = cls.total_nonempty_cells(candidate_tables)
         richer_nonempty = cls.total_nonempty_cells(richer_tables)
-        if (
-            richer_area >= candidate_area * 0.85
-            and candidate_area >= richer_area * 0.85
-        ):
-            return richer_nonempty >= max(
-                candidate_nonempty + 8, int(candidate_nonempty * 1.5)
-            )
+        if richer_area >= candidate_area * 0.85 and candidate_area >= richer_area * 0.85:
+            return richer_nonempty >= max(candidate_nonempty + 8, int(candidate_nonempty * 1.5))
         return richer_area >= candidate_area * 3.0 and richer_nonempty >= max(
             candidate_nonempty + 8, candidate_nonempty * 2
         )
@@ -302,9 +277,7 @@ class PageTableCoreMixin:
         return split_nonempty >= candidate_nonempty + 8
 
     @classmethod
-    def result_quality_key(
-        cls, result: TableExtractionResult
-    ) -> tuple[int, float, int, int, int]:
+    def result_quality_key(cls, result: TableExtractionResult) -> tuple[int, float, int, int, int]:
         normalized = cls.normalize_result(result)
         score_tuples = [
             table_quality_score(table, text_length=table_text_length(table))
@@ -363,18 +336,13 @@ class PageTableCoreMixin:
             ]
         ] = []
         for candidate in sorted(candidates, key=lambda item: item[0], reverse=True):
-            if any(
-                bbox_overlap_ratio(candidate[1], chosen[1]) >= 0.85
-                for chosen in selected
-            ):
+            if any(bbox_overlap_ratio(candidate[1], chosen[1]) >= 0.85 for chosen in selected):
                 continue
             selected.append(candidate)
 
         selected.sort(key=lambda item: (item[1][1], item[1][0]))
         tables = [item[2] for item in selected]
-        bboxes: list[tuple[float, float, float, float] | None] = [
-            item[1] for item in selected
-        ]
+        bboxes: list[tuple[float, float, float, float] | None] = [item[1] for item in selected]
         spans = [item[3] for item in selected if item[3] is not None]
         return cls.table_result(
             tables,
@@ -382,9 +350,7 @@ class PageTableCoreMixin:
             bboxes=bboxes,
         )
 
-    def extract_tables_core(
-        self: PageTableHost, **kwargs: Any
-    ) -> TableExtractionResult:
+    def extract_tables_core(self: PageTableHost, **kwargs: Any) -> TableExtractionResult:
         flavor: str = kwargs["flavor"]
         canonicalize: bool = kwargs.get("canonicalize", True)
         detect_header: bool = kwargs["detect_header"]
@@ -412,11 +378,7 @@ class PageTableCoreMixin:
             page_height=page_height,
         )
         if flavor in ("lattice", "hybrid", "auto", "stream", "network"):
-            grid_lines = (
-                self.grid_lines
-                if self.grid_lines is not None
-                else self.get_grid_lines()
-            )
+            grid_lines = self.grid_lines if self.grid_lines is not None else self.get_grid_lines()
             grid_lines = rotate_page_lines(
                 grid_lines,
                 rotate=page_rotate,
@@ -521,9 +483,7 @@ class PageTableCoreMixin:
                 **heuristic_options,
             )
             if detect_header:
-                header_result, heuristic_bboxes = cast(
-                    TableHeaderResultWithBBoxes, raw_result
-                )
+                header_result, heuristic_bboxes = cast(TableHeaderResultWithBBoxes, raw_result)
                 header_rows, body_tables = header_result
                 return PageTableCoreMixin.table_result(
                     body_tables,
@@ -531,9 +491,7 @@ class PageTableCoreMixin:
                     header=header_rows,
                 )
             elif include_span_info:
-                span_result, heuristic_bboxes = cast(
-                    TableSpanResultWithBBoxes, raw_result
-                )
+                span_result, heuristic_bboxes = cast(TableSpanResultWithBBoxes, raw_result)
                 tables, spans = span_result
                 return PageTableCoreMixin.table_result(
                     tables,
@@ -542,9 +500,7 @@ class PageTableCoreMixin:
                 )
             else:
                 tables, heuristic_bboxes = cast(TableSetWithBBoxes, raw_result)
-                return PageTableCoreMixin.table_result(
-                    tables, bboxes=heuristic_bboxes
-                )
+                return PageTableCoreMixin.table_result(tables, bboxes=heuristic_bboxes)
 
         def extract_stream_result() -> TableExtractionResult:
             stream_grids = detect_stream_grids(
@@ -598,32 +554,26 @@ class PageTableCoreMixin:
         elif flavor == "network":
             ruled_result = extract_from_grids(grids) if grids else None
             result = extract_network_result()
-            if (
-                ruled_result is not None
-                and PageTableCoreMixin.should_prefer_ruled_result(result, ruled_result)
+            if ruled_result is not None and PageTableCoreMixin.should_prefer_ruled_result(
+                result, ruled_result
             ):
                 result = ruled_result
             else:
                 stream_result = extract_stream_result()
-                if PageTableCoreMixin.should_prefer_richer_result(
-                    result, stream_result
-                ):
+                if PageTableCoreMixin.should_prefer_richer_result(result, stream_result):
                     result = stream_result
             result = PageTableCoreMixin.normalize_result(result)
         elif flavor == "stream":
             ruled_result = extract_from_grids(grids) if grids else None
             result = extract_stream_result()
-            if (
-                ruled_result is not None
-                and PageTableCoreMixin.should_prefer_ruled_result(result, ruled_result)
+            if ruled_result is not None and PageTableCoreMixin.should_prefer_ruled_result(
+                result, ruled_result
             ):
                 result = ruled_result
             else:
                 network_result = extract_network_result()
                 if network_result.get("tables"):
-                    if PageTableCoreMixin.should_prefer_split_result(
-                        result, network_result
-                    ):
+                    if PageTableCoreMixin.should_prefer_split_result(result, network_result):
                         result = network_result
             result = PageTableCoreMixin.normalize_result(result)
         elif flavor in ("auto", "hybrid"):
@@ -670,22 +620,16 @@ class PageTableCoreMixin:
                     result = extract_fallback_heuristic()
             result = PageTableCoreMixin.normalize_result(result)
             stream_result = PageTableCoreMixin.normalize_result(extract_stream_result())
-            network_result = PageTableCoreMixin.normalize_result(
-                extract_network_result()
-            )
+            network_result = PageTableCoreMixin.normalize_result(extract_network_result())
             if not result.get("tables"):
                 if stream_result.get("tables"):
                     result = stream_result
                 elif network_result.get("tables"):
                     result = network_result
             else:
-                if PageTableCoreMixin.should_prefer_richer_result(
-                    result, stream_result
-                ):
+                if PageTableCoreMixin.should_prefer_richer_result(result, stream_result):
                     result = stream_result
-                elif PageTableCoreMixin.should_prefer_richer_result(
-                    result, network_result
-                ):
+                elif PageTableCoreMixin.should_prefer_richer_result(result, network_result):
                     result = network_result
             if PageTableCoreMixin.is_tiny_single_result(result):
                 result = PageTableCoreMixin.table_result([])
@@ -702,15 +646,11 @@ class PageTableCoreMixin:
                     "canonicalize": False,
                 }
                 if not shift_text:
-                    flavor_kwargs["shift_text"] = (
-                        ("l", "t") if current_flavor == "lattice" else ()
-                    )
+                    flavor_kwargs["shift_text"] = ("l", "t") if current_flavor == "lattice" else ()
                 return flavor_kwargs
 
             canonical_results = [
-                self.extract_tables_core(
-                    **canonical_flavor_kwargs(canonical_flavors[0])
-                )
+                self.extract_tables_core(**canonical_flavor_kwargs(canonical_flavors[0]))
             ]
             canonical_results.extend(
                 self.extract_tables_core(**canonical_flavor_kwargs(current_flavor))

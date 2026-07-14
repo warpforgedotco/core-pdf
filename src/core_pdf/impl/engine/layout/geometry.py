@@ -6,7 +6,6 @@ from __future__ import annotations
 from collections.abc import Iterator, Sequence
 from typing import NamedTuple, Protocol, TypeAlias, TypedDict, Unpack, cast
 
-
 RectTuple: TypeAlias = tuple[float, float, float, float]
 
 
@@ -48,7 +47,7 @@ def rect_tuple(value: object) -> RectTuple | None:
                 _float_value(rect[2]),
                 _float_value(rect[3]),
             )
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             return None
     x0 = getattr(value, "x0", None)
     y0 = getattr(value, "y0", None)
@@ -58,7 +57,7 @@ def rect_tuple(value: object) -> RectTuple | None:
         return None
     try:
         return (float(x0), float(y0), float(x1), float(y1))
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return None
 
 
@@ -127,9 +126,7 @@ class RectBox:
         self.fill_opacity = fill_opacity
 
     @classmethod
-    def from_bbox(
-        cls, bbox: RectTuple, **kwargs: Unpack[RectBoxInitKwargs]
-    ) -> RectBox:
+    def from_bbox(cls, bbox: RectTuple, **kwargs: Unpack[RectBoxInitKwargs]) -> RectBox:
         return cls(bbox[0], bbox[1], bbox[2], bbox[3], **kwargs)
 
     @property
@@ -236,7 +233,5 @@ class RectBox:
             y1,
             seqno=max(self.seqno, other.seqno),
             fill=self.fill if self.seqno >= other.seqno else other.fill,
-            fill_opacity=(
-                self.fill_opacity if self.seqno >= other.seqno else other.fill_opacity
-            ),
+            fill_opacity=(self.fill_opacity if self.seqno >= other.seqno else other.fill_opacity),
         )

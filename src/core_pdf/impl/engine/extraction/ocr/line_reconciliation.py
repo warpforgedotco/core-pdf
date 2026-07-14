@@ -8,17 +8,23 @@ from functools import lru_cache
 from typing import Any, Iterable, Literal
 
 from core_pdf.impl.engine.extraction.common import observation_resolver, page_geometry
+from core_pdf.impl.engine.extraction.common.render import render_resolved_text_lines
 from core_pdf.impl.engine.extraction.ocr import (
     postprocess as ocr_postprocess,
+)
+from core_pdf.impl.engine.extraction.ocr import (
     selection as ocr_selection,
+)
+from core_pdf.impl.engine.extraction.ocr import (
     table_regions as ocr_table_regions,
+)
+from core_pdf.impl.engine.extraction.ocr import (
     text_analysis as ocr_text_analysis,
 )
 from core_pdf.impl.engine.extraction.ocr.candidates import (
     OcrCandidate,
     OcrPageTextResult,
 )
-from core_pdf.impl.engine.extraction.common.render import render_resolved_text_lines
 from core_pdf.impl.engine.extraction.ocr.vector_text import VectorStrokeOcrResult
 from core_pdf.impl.engine.layout.word_frequencies import word_rank
 
@@ -154,8 +160,7 @@ def reconcile_page_text_lines(
 ) -> OcrLineSelection:
     resolved_base_lines = ensure_base_lines(base_text, base_lines)
     base_variants = tuple(
-        variant_from_resolved_line(line, index)
-        for index, line in enumerate(resolved_base_lines)
+        variant_from_resolved_line(line, index) for index, line in enumerate(resolved_base_lines)
     )
     if not base_variants:
         return OcrLineSelection(())
@@ -193,9 +198,7 @@ def reconcile_page_text_lines(
         vector_variants(sources.vector_result),
     )
     geometry_context = build_diagram_geometry_context(base_variants, sources)
-    output_lines: list[observation_resolver.ResolvedTextLine] = list(
-        resolved_base_lines
-    )
+    output_lines: list[observation_resolver.ResolvedTextLine] = list(resolved_base_lines)
     seen_tokens = set(ocr_text_analysis.normalized_text_tokens(base_text))
     replaced_indexes: set[int] = set()
     for index, cluster in enumerate(clusters):
@@ -255,9 +258,7 @@ def reconcile_page_text_lines(
         geometry_context,
     )
     seen_tokens = set(
-        ocr_text_analysis.normalized_text_tokens(
-            render_resolved_text_lines(tuple(output_lines))
-        )
+        ocr_text_analysis.normalized_text_tokens(render_resolved_text_lines(tuple(output_lines)))
     )
     supplements = select_supplement_variants(
         clusters,
@@ -280,9 +281,7 @@ def build_diagram_geometry_context(
     base_variants: tuple[OcrLineVariant, ...],
     sources: OcrLineReconciliationSources,
 ) -> DiagramGeometryContext:
-    figure_lines = deduped_figure_context_variants(
-        figure_variants(sources.figure_result)
-    )
+    figure_lines = deduped_figure_context_variants(figure_variants(sources.figure_result))
     figure_observations = tuple(variant.observation for variant in figure_lines)
     region_bbox = page_geometry.observation_union_bbox(figure_observations)
     page_bbox = page_geometry.observation_union_bbox(
@@ -300,9 +299,7 @@ def build_diagram_geometry_context(
     figure_fragment_count = sum(
         1 for variant in figure_lines if figure_variant_is_fragment_like(variant)
     )
-    broad_page_lines = [
-        variant for variant in base_variants if variant.family == "broad_page"
-    ]
+    broad_page_lines = [variant for variant in base_variants if variant.family == "broad_page"]
     broad_page_region_count = sum(
         1
         for variant in broad_page_lines
@@ -313,11 +310,7 @@ def build_diagram_geometry_context(
     )
     diagram_heavy = bool(
         len(figure_lines) >= 3
-        and (
-            figure_area_ratio >= 0.08
-            or figure_cluster_count >= 2
-            or short_figure_line_count >= 3
-        )
+        and (figure_area_ratio >= 0.08 or figure_cluster_count >= 2 or short_figure_line_count >= 3)
     )
     return DiagramGeometryContext(
         figure_variants=figure_lines,
@@ -358,11 +351,7 @@ def figure_variant_contributes_geometry_context(variant: OcrLineVariant) -> bool
         return False
     if variant.bbox is None:
         return False
-    confidence = (
-        float(variant.confidence)
-        if isinstance(variant.confidence, int | float)
-        else 0.0
-    )
+    confidence = float(variant.confidence) if isinstance(variant.confidence, int | float) else 0.0
     if confidence < 55.0:
         return False
     text = variant.text.strip()
@@ -377,9 +366,7 @@ def figure_variant_contributes_geometry_context(variant: OcrLineVariant) -> bool
         return False
     if figure_text_like_noise(variant):
         return False
-    return readable_content_token_count(text) >= 1 or any(
-        token.isdigit() for token in tokens
-    )
+    return readable_content_token_count(text) >= 1 or any(token.isdigit() for token in tokens)
 
 
 def geometry_line_cluster_count(variants: tuple[OcrLineVariant, ...]) -> int:
@@ -389,9 +376,7 @@ def geometry_line_cluster_count(variants: tuple[OcrLineVariant, ...]) -> int:
     for variant in sorted(variants, key=variant_order_key):
         target: list[OcrLineVariant] | None = None
         for cluster in clusters:
-            if any(
-                variants_share_diagram_region(variant, existing) for existing in cluster
-            ):
+            if any(variants_share_diagram_region(variant, existing) for existing in cluster):
                 target = cluster
                 break
         if target is None:
@@ -425,8 +410,7 @@ def variants_share_diagram_region(left: OcrLineVariant, right: OcrLineVariant) -
     right_width = max(1.0, page_geometry.observation_width(right.observation))
     return (
         abs(left_center[0] - right_center[0]) <= max(left_width, right_width) * 2.8
-        and abs(left_center[1] - right_center[1])
-        <= max(left_height, right_height) * 3.0
+        and abs(left_center[1] - right_center[1]) <= max(left_height, right_height) * 3.0
     )
 
 
@@ -576,9 +560,7 @@ def broad_page_variants(result: OcrPageTextResult | None) -> tuple[OcrLineVarian
             continue
         if candidate.name in seen:
             continue
-        variants.extend(
-            candidate_variants(candidate, family="broad_page", kind="ocr_textline")
-        )
+        variants.extend(candidate_variants(candidate, family="broad_page", kind="ocr_textline"))
         seen.add(candidate.name)
     return tuple(variants)
 
@@ -590,9 +572,7 @@ def broad_page_selected_output_variants(
         return ()
     selected = result.candidate
     source_name = (
-        f"{selected.name}:selected_output"
-        if selected is not None
-        else "broad_page:selected_output"
+        f"{selected.name}:selected_output" if selected is not None else "broad_page:selected_output"
     )
     return resolved_line_variants(
         result.selected_output_lines,
@@ -628,18 +608,14 @@ def table_variants(result: OcrPageTextResult | None) -> tuple[OcrLineVariant, ..
             continue
         if not candidate.result.line_rows:
             continue
-        variants.extend(
-            candidate_variants(candidate, family="table", kind="table_ocr_line")
-        )
+        variants.extend(candidate_variants(candidate, family="table", kind="table_ocr_line"))
     return tuple(variants)
 
 
 def figure_variants(result: OcrPageTextResult | None) -> tuple[OcrLineVariant, ...]:
     if result is None or result.candidate is None:
         return ()
-    return candidate_variants(
-        result.candidate, family="figure", kind="figure_text_line"
-    )
+    return candidate_variants(result.candidate, family="figure", kind="figure_text_line")
 
 
 def embedded_image_variants(
@@ -647,9 +623,7 @@ def embedded_image_variants(
 ) -> tuple[OcrLineVariant, ...]:
     if result is None or result.candidate is None:
         return ()
-    return candidate_variants(
-        result.candidate, family="embedded_image", kind="ocr_textline"
-    )
+    return candidate_variants(result.candidate, family="embedded_image", kind="ocr_textline")
 
 
 def vector_variants(result: VectorStrokeOcrResult | None) -> tuple[OcrLineVariant, ...]:
@@ -916,9 +890,7 @@ def choose_cluster_winner(
     support = Counter(consensus_key(variant.text) for variant in variants)
     ranked = sorted(
         variants,
-        key=lambda variant: variant_sort_key(
-            variant, support[consensus_key(variant.text)]
-        ),
+        key=lambda variant: variant_sort_key(variant, support[consensus_key(variant.text)]),
     )
     winner = ranked[0]
     runner_up = ranked[1] if len(ranked) > 1 else None
@@ -953,9 +925,7 @@ def line_type_penalty(line_type: OcrLineType) -> float:
     }[line_type]
 
 
-def source_family_priority(
-    family: OcrLineSourceFamily, line_type: OcrLineType
-) -> float:
+def source_family_priority(family: OcrLineSourceFamily, line_type: OcrLineType) -> float:
     if line_type == "table_row":
         return {
             "table": 6.0,
@@ -1131,17 +1101,11 @@ def evaluate_replacement_decision(
     anchor_score = cluster_signals.anchor_overlap
     token_shape_score = cluster_signals.token_shape
     support_score = cluster_support_score(cluster, selected)
-    plausibility_gain = chemical_plausibility_score(
-        selected
-    ) - chemical_plausibility_score(base)
+    plausibility_gain = chemical_plausibility_score(selected) - chemical_plausibility_score(base)
     artifact_gain = base.artifact - selected.artifact
     quality_gain = base.quality - selected.quality
-    punctuation_gain = (
-        base.token_stats.punctuation_ratio - selected.token_stats.punctuation_ratio
-    )
-    short_token_gain = (
-        base.token_stats.short_token_ratio - selected.token_stats.short_token_ratio
-    )
+    punctuation_gain = base.token_stats.punctuation_ratio - selected.token_stats.punctuation_ratio
+    short_token_gain = base.token_stats.short_token_ratio - selected.token_stats.short_token_ratio
     confusion_gain = float(
         base.token_stats.ocr_confusion_count - selected.token_stats.ocr_confusion_count
     )
@@ -1239,10 +1203,7 @@ def evaluate_replacement_decision(
     ):
         required_confidence -= 0.03
 
-    if (
-        base.line_type in {"chemical_symbolic", "chemical_hybrid"}
-        and plausibility_gain <= 0.0
-    ):
+    if base.line_type in {"chemical_symbolic", "chemical_hybrid"} and plausibility_gain <= 0.0:
         return rejected_replacement(
             "plausibility_not_improved",
             geometry=geometry_score,
@@ -1373,20 +1334,13 @@ def select_merge_replacement_variants(
     if not windows:
         return []
     variants = broad_page_replacement_variants(sources.broad_page_result)
-    proposals: list[
-        tuple[OcrBaseWindow, OcrLineVariant, OcrLineReplacementDecision]
-    ] = []
-    used_variant_keys: set[
-        tuple[str, str, tuple[float, float, float, float] | None]
-    ] = set()
+    proposals: list[tuple[OcrBaseWindow, OcrLineVariant, OcrLineReplacementDecision]] = []
+    used_variant_keys: set[tuple[str, str, tuple[float, float, float, float] | None]] = set()
     for window in windows:
         best_variant: OcrLineVariant | None = None
         best_decision: OcrLineReplacementDecision | None = None
         for variant in variants:
-            if (
-                variant.line_type == "body_prose"
-                and window.variant.line_type != "body_prose"
-            ):
+            if variant.line_type == "body_prose" and window.variant.line_type != "body_prose":
                 continue
             decision = evaluate_replacement_decision(
                 OcrLineCluster(
@@ -1576,13 +1530,9 @@ def merged_variant_from_resolved_lines(
     family = left_variant.family
     line_type = classify_line_type(text, stats, family)
     confidence_values = [
-        value
-        for value in (left_variant.confidence, right_variant.confidence)
-        if value is not None
+        value for value in (left_variant.confidence, right_variant.confidence) if value is not None
     ]
-    confidence = (
-        sum(confidence_values) / len(confidence_values) if confidence_values else None
-    )
+    confidence = sum(confidence_values) / len(confidence_values) if confidence_values else None
     observation = page_geometry.PageObservation(
         kind=left_variant.observation.kind,
         source=f"{left_variant.source_name}:merged_window",
@@ -1622,10 +1572,7 @@ def apply_merge_replacement_variants(
         int, tuple[OcrBaseWindow, OcrLineVariant, OcrLineReplacementDecision]
     ] = {}
     for window, variant, decision in proposals:
-        if (
-            window.start_index in consumed_indexes
-            or window.end_index in consumed_indexes
-        ):
+        if window.start_index in consumed_indexes or window.end_index in consumed_indexes:
             continue
         consumed_indexes.add(window.start_index)
         consumed_indexes.add(window.end_index)
@@ -1715,9 +1662,7 @@ def should_insert_variant(
         return False
     if variant.family == "embedded_image":
         confidence = (
-            int(variant.confidence)
-            if isinstance(variant.confidence, int | float)
-            else None
+            int(variant.confidence) if isinstance(variant.confidence, int | float) else None
         )
         return ocr_postprocess.embedded_image_text_line_should_append(
             variant.text,
@@ -1736,11 +1681,7 @@ def figure_variant_should_insert(
     seen_tokens: set[str],
     geometry_context: DiagramGeometryContext,
 ) -> bool:
-    confidence = (
-        float(variant.confidence)
-        if isinstance(variant.confidence, int | float)
-        else 0.0
-    )
+    confidence = float(variant.confidence) if isinstance(variant.confidence, int | float) else 0.0
     if confidence < 80.0 and not figure_variant_qualifies_for_contextual_insert(
         variant,
         geometry_context,
@@ -1787,9 +1728,7 @@ def figure_variant_is_contextual_compact_label(
     tokens = ocr_text_analysis.normalized_text_tokens(text)
     if not tokens or len(tokens) > 5:
         return False
-    if variant.token_stats.ocr_confusion_count > 0 and not any(
-        ch.isdigit() for ch in text
-    ):
+    if variant.token_stats.ocr_confusion_count > 0 and not any(ch.isdigit() for ch in text):
         return False
     if "vs" not in tokens and not any(ch.isdigit() for ch in text):
         return False
@@ -1846,10 +1785,7 @@ def suppress_geometry_noise_lines(
     if not context.diagram_heavy or not context.figure_observations:
         return output_lines
     kept: list[observation_resolver.ResolvedTextLine] = []
-    variants = [
-        variant_from_resolved_line(line, index)
-        for index, line in enumerate(output_lines)
-    ]
+    variants = [variant_from_resolved_line(line, index) for index, line in enumerate(output_lines)]
     for index, (line, variant) in enumerate(zip(output_lines, variants, strict=True)):
         suppression = geometry_suppression_reason(
             variants,
@@ -1902,9 +1838,7 @@ def upgrade_broad_page_fragments_with_figure_lines(
         base = variant_from_resolved_line(line, index)
         if base.family != "broad_page" or base.bbox is None:
             continue
-        replacement, signals = best_figure_fragment_upgrade(
-            base, figure_candidates, context
-        )
+        replacement, signals = best_figure_fragment_upgrade(base, figure_candidates, context)
         if replacement is None or signals is None:
             continue
         updated[index] = resolved_line_from_variant(
@@ -2023,8 +1957,7 @@ def figure_variant_is_source_priority_candidate(
     if diagram_region_membership_score(variant, context) < 0.10:
         return False
     return readable_content_token_count(variant.text) >= 1 or any(
-        token.isdigit()
-        for token in ocr_text_analysis.normalized_text_tokens(variant.text)
+        token.isdigit() for token in ocr_text_analysis.normalized_text_tokens(variant.text)
     )
 
 
@@ -2094,8 +2027,7 @@ def figure_source_priority_signals(
     readable_gain = max(
         0.0,
         float(
-            readable_content_token_count(candidate.text)
-            - readable_content_token_count(base.text)
+            readable_content_token_count(candidate.text) - readable_content_token_count(base.text)
         ),
     )
     anchor_overlap = anchor_token_overlap_score(base, candidate)
@@ -2271,9 +2203,7 @@ def adjacent_line_continuity(
             abs(neighbor.bbox[1] - current.bbox[3]),
         ),
     )
-    gap_score = max(
-        0.0, 1.0 - vertical_gap / max(current_height, neighbor_height) / 2.5
-    )
+    gap_score = max(0.0, 1.0 - vertical_gap / max(current_height, neighbor_height) / 2.5)
     return min(1.0, x_overlap_ratio * 0.45 + center_alignment * 0.30 + gap_score * 0.25)
 
 
@@ -2400,9 +2330,7 @@ def dominant_figure_page_context(context: DiagramGeometryContext) -> bool:
         return False
     if context.broad_page_region_ratio < 0.62:
         return False
-    descriptive_count = max(
-        0, len(context.figure_variants) - context.figure_fragment_count
-    )
+    descriptive_count = max(0, len(context.figure_variants) - context.figure_fragment_count)
     if descriptive_count < 5:
         return False
     if context.figure_fragment_count > max(
@@ -2438,11 +2366,7 @@ def figure_variant_should_compose(
     variant: OcrLineVariant,
     context: DiagramGeometryContext,
 ) -> bool:
-    confidence = (
-        float(variant.confidence)
-        if isinstance(variant.confidence, int | float)
-        else 0.0
-    )
+    confidence = float(variant.confidence) if isinstance(variant.confidence, int | float) else 0.0
     if confidence < 55.0 or variant.bbox is None:
         return False
     text = variant.text.strip()
@@ -2580,9 +2504,7 @@ def resolved_line_from_variant(
     original: observation_resolver.ResolvedTextLine | None = None,
     contributing_observations: tuple[page_geometry.PageObservation, ...] | None = None,
 ) -> observation_resolver.ResolvedTextLine:
-    break_before = (
-        original.break_before if original is not None else variant.break_before
-    )
+    break_before = original.break_before if original is not None else variant.break_before
     return observation_resolver.ResolvedTextLine(
         variant.text,
         variant.observation,
@@ -2690,12 +2612,9 @@ def classify_line_type(
     if family == "table":
         return "table_row"
     tokens = ocr_text_analysis.normalized_text_tokens(stripped)
-    if (
-        stats.chemical_signal_count >= 3
-        or ocr_text_analysis.line_has_readable_technical_notation(
-            stripped,
-            tokens,
-        )
+    if stats.chemical_signal_count >= 3 or ocr_text_analysis.line_has_readable_technical_notation(
+        stripped,
+        tokens,
     ):
         if stats.short_token_ratio >= 0.40 or stats.punctuation_ratio >= 0.16:
             return "chemical_symbolic"
@@ -2732,9 +2651,7 @@ def compact_diagram_label_line(
     alpha_tokens = [token for token in tokens if token.isalpha()]
     if not alpha_tokens:
         return False
-    readable_alpha = sum(
-        1 for token in alpha_tokens if compact_label_token_is_readable(token)
-    )
+    readable_alpha = sum(1 for token in alpha_tokens if compact_label_token_is_readable(token))
     has_long_alpha = any(len(token) >= 8 for token in alpha_tokens)
     has_numeric = any(any(ch.isdigit() for ch in token) for token in tokens)
     if has_numeric:
@@ -2898,14 +2815,10 @@ def token_shape_agreement_score(left_text: str, right_text: str) -> float:
     return _cached_token_shape_agreement_score(right, left)
 
 
-def token_count_similarity_score(
-    base: OcrLineVariant, variant: OcrLineVariant
-) -> float:
+def token_count_similarity_score(base: OcrLineVariant, variant: OcrLineVariant) -> float:
     base_count = max(1, base.token_stats.token_count)
     variant_count = max(1, variant.token_stats.token_count)
-    return max(
-        0.0, 1.0 - abs(base_count - variant_count) / max(base_count, variant_count)
-    )
+    return max(0.0, 1.0 - abs(base_count - variant_count) / max(base_count, variant_count))
 
 
 def cluster_support_score(cluster: OcrLineCluster, selected: OcrLineVariant) -> float:
@@ -2918,9 +2831,7 @@ def cluster_support_score(cluster: OcrLineCluster, selected: OcrLineVariant) -> 
     if not supporters:
         return 0.0
     family_count = len({variant.family for variant in supporters} | {selected.family})
-    source_count = len(
-        {variant.source_name for variant in supporters} | {selected.source_name}
-    )
+    source_count = len({variant.source_name for variant in supporters} | {selected.source_name})
     return min(1.0, family_count * 0.22 + source_count * 0.16)
 
 

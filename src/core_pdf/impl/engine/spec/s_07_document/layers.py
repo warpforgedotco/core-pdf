@@ -2,8 +2,8 @@
 from __future__ import annotations
 
 from core_pdf.impl.engine.spec.s_07_document.protocols import LayersDocumentProtocol
-from core_pdf.impl.objects import PdfReference
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
+from core_pdf.impl.objects import PdfReference
 
 
 class LayersMixin:

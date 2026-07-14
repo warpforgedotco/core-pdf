@@ -43,9 +43,7 @@ def tiff_predict_16(data: bytes | memoryview, columns: int, colors: int) -> byte
     return bytes(out)
 
 
-def tiff_predict_bits(
-    data: bytes | memoryview, columns: int, colors: int, bits: int
-) -> bytes:
+def tiff_predict_bits(data: bytes | memoryview, columns: int, colors: int, bits: int) -> bytes:
     sample_count = colors * columns
     sample_mask = (1 << bits) - 1
     row_bit_length = sample_count * bits
@@ -145,9 +143,7 @@ def png_predict(
             row_bytes = data[pos : pos + rl]
             pos += rl
             out.extend(row_bytes)
-            previous = (
-                row_bytes if type(row_bytes) is bytearray else bytes(row_bytes)
-            )
+            previous = row_bytes if type(row_bytes) is bytearray else bytes(row_bytes)
             continue
         row = bytearray(data[pos : pos + rl])
         pos += rl
@@ -180,9 +176,7 @@ def png_predict(
         else:
             if damaged_rows_before_error:
                 break
-            raise UnsupportedPngFilterError(
-                f"Unsupported PNG predictor filter {filter_type}"
-            )
+            raise UnsupportedPngFilterError(f"Unsupported PNG predictor filter {filter_type}")
         out.extend(row)
         previous = row
     return bytes(out)

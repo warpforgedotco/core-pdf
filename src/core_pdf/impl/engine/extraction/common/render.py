@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
+import typing
 from bisect import bisect_left, bisect_right
 from dataclasses import replace
-import typing
 from statistics import median_low
 from typing import Any
 
@@ -13,16 +13,15 @@ if typing.TYPE_CHECKING:
     from core_pdf.impl.engine.spec.s_07_document import PdfPage
     from core_pdf.impl.models import AnnotationRecord
 
-from core_pdf.impl.engine.extraction.common import observation_resolver
-from core_pdf.impl.engine.extraction.common import page_geometry
-from core_pdf.impl.engine.layout.models import LayoutBox, LayoutLine, TextRun
-from core_pdf.impl.engine.layout.text_lines import strip_private_use_chars
+from core_pdf.impl.engine.extraction.common import observation_resolver, page_geometry
 from core_pdf.impl.engine.extraction.common.ordering import (
     SKEW_ANGLE_TOLERANCE,
     LayoutAnalyzer,
 )
-from core_pdf.impl.engine.layout.word_frequencies import word_rank
 from core_pdf.impl.engine.extraction.ocr.text_analysis import normalized_text_tokens
+from core_pdf.impl.engine.layout.models import LayoutBox, LayoutLine, TextRun
+from core_pdf.impl.engine.layout.text_lines import strip_private_use_chars
+from core_pdf.impl.engine.layout.word_frequencies import word_rank
 
 
 class LayoutReconstructor:
@@ -52,9 +51,7 @@ class LayoutReconstructor:
 
         boxes = LayoutAnalyzer.order_boxes(LayoutAnalyzer.cluster_into_boxes(lines))
         if not boxes:
-            return observation_resolver.resolve_text_lines(
-                self.render_sorted_rows_lines(lines)
-            )
+            return observation_resolver.resolve_text_lines(self.render_sorted_rows_lines(lines))
         if len(boxes) == 1:
             split_points = self.find_column_splits(lines)
             if split_points and (
@@ -66,9 +63,7 @@ class LayoutReconstructor:
                 )
 
             if self.is_likely_single_column(lines):
-                return observation_resolver.resolve_text_lines(
-                    self.render_sorted_rows_lines(lines)
-                )
+                return observation_resolver.resolve_text_lines(self.render_sorted_rows_lines(lines))
 
             return observation_resolver.resolve_text_lines(self.render_box_lines(lines))
 
@@ -128,8 +123,7 @@ class LayoutReconstructor:
         box_x1 = max(line.x1 for line in lines if line.runs)
         boundaries = [box_x0, *split_points, box_x1]
         column_width = max(
-            boundaries[index + 1] - boundaries[index]
-            for index in range(len(boundaries) - 1)
+            boundaries[index + 1] - boundaries[index] for index in range(len(boundaries) - 1)
         )
         macro_column_anchors = self.macro_column_x0_anchors(
             lines,
@@ -137,9 +131,7 @@ class LayoutReconstructor:
         )
         sorted_rows = sorted(lines, key=lambda ln: (-ln.mid_y, ln.x0))
         output_lines: list[observation_resolver.ResolvedTextLine] = []
-        column_buckets: list[list[LayoutLine]] = [
-            [] for ignored in range(len(boundaries) - 1)
-        ]
+        column_buckets: list[list[LayoutLine]] = [[] for ignored in range(len(boundaries) - 1)]
 
         def append_part(
             part_lines: tuple[observation_resolver.ResolvedTextLine, ...],
@@ -200,9 +192,9 @@ class LayoutReconstructor:
                     macro_column_anchors,
                     column_width=column_width,
                 )
-                column_buckets[
-                    macro_index if macro_index is not None else dominant_index
-                ].append(line)
+                column_buckets[macro_index if macro_index is not None else dominant_index].append(
+                    line
+                )
                 continue
             if len(column_indexes) != 1 or (line.x1 - line.x0) > column_width * 1.35:
                 flush_columns()
@@ -221,9 +213,7 @@ class LayoutReconstructor:
         split_points: list[float],
     ) -> list[LayoutLine] | None:
         groups = [
-            group
-            for group in column_run_groups(line.runs)
-            if run_group_bbox(group) is not None
+            group for group in column_run_groups(line.runs) if run_group_bbox(group) is not None
         ]
         if len(groups) < 4:
             return None
@@ -246,9 +236,7 @@ class LayoutReconstructor:
         if not left_runs or not right_runs:
             return None
         split_lines = [LayoutLine(runs=left_runs), LayoutLine(runs=right_runs)]
-        texts = [
-            split_line.reconstructed_text().text.strip() for split_line in split_lines
-        ]
+        texts = [split_line.reconstructed_text().text.strip() for split_line in split_lines]
         if not stable_multi_column_split_is_safe(
             texts,
             split_lines=split_lines,
@@ -281,8 +269,7 @@ class LayoutReconstructor:
         box_x1 = max(line.x1 for line in lines if line.runs)
         boundaries = [box_x0, *split_points, box_x1]
         column_width = max(
-            boundaries[index + 1] - boundaries[index]
-            for index in range(len(boundaries) - 1)
+            boundaries[index + 1] - boundaries[index] for index in range(len(boundaries) - 1)
         )
         sorted_rows = sorted(lines, key=lambda ln: (-ln.mid_y, ln.x0))
         output_lines: list[observation_resolver.ResolvedTextLine] = []
@@ -303,13 +290,9 @@ class LayoutReconstructor:
         def flush_columns() -> None:
             if not column_block:
                 return
-            column_lines: list[list[LayoutLine]] = [
-                [] for ignored in range(len(split_points) + 1)
-            ]
+            column_lines: list[list[LayoutLine]] = [[] for ignored in range(len(split_points) + 1)]
             for line in column_block:
-                split_runs: list[list[TextRun]] = [
-                    [] for ignored in range(len(split_points) + 1)
-                ]
+                split_runs: list[list[TextRun]] = [[] for ignored in range(len(split_points) + 1)]
                 for group in column_run_groups(line.runs):
                     group_box = run_group_bbox(group)
                     if group_box is None:
@@ -338,9 +321,7 @@ class LayoutReconstructor:
         for line in sorted_rows:
             if not line.runs:
                 continue
-            is_column_line = self.line_has_column_gutter(
-                line, split_points, column_width
-            )
+            is_column_line = self.line_has_column_gutter(line, split_points, column_width)
             if not is_column_line and column_block:
                 is_column_line = (line.x1 - line.x0) <= column_width * 1.15
             if is_column_line:
@@ -433,9 +414,7 @@ class LayoutReconstructor:
         return right_edge - left_edge < 18.0
 
     @staticmethod
-    def column_split_is_stable(
-        lines: list[LayoutLine], split_points: list[float]
-    ) -> bool:
+    def column_split_is_stable(lines: list[LayoutLine], split_points: list[float]) -> bool:
         if len(lines) < 24 or len(split_points) != 1:
             return False
         split_x = split_points[0]
@@ -484,9 +463,7 @@ class LayoutReconstructor:
         return overlap >= min(left_height, right_height) * 0.45
 
     @staticmethod
-    def multi_column_split_is_stable(
-        lines: list[LayoutLine], split_points: list[float]
-    ) -> bool:
+    def multi_column_split_is_stable(lines: list[LayoutLine], split_points: list[float]) -> bool:
         if len(lines) < 24 or len(split_points) < 2:
             return False
         column_counts = [0] * (len(split_points) + 1)
@@ -500,8 +477,7 @@ class LayoutReconstructor:
                 group_mid_x = (group_box[0] + group_box[2]) * 0.5
                 column_index = 0
                 while (
-                    column_index < len(split_points)
-                    and group_mid_x >= split_points[column_index]
+                    column_index < len(split_points) and group_mid_x >= split_points[column_index]
                 ):
                     column_index += 1
                 column_counts[column_index] += 1
@@ -684,10 +660,7 @@ class LayoutReconstructor:
                 continue
             group_mid_x = (group_box[0] + group_box[2]) * 0.5
             column_index = 0
-            while (
-                column_index < len(split_points)
-                and group_mid_x >= split_points[column_index]
-            ):
+            while column_index < len(split_points) and group_mid_x >= split_points[column_index]:
                 column_index += 1
             indexes.add(column_index)
         return tuple(sorted(indexes))
@@ -704,10 +677,7 @@ class LayoutReconstructor:
                 continue
             group_mid_x = (group_box[0] + group_box[2]) * 0.5
             column_index = 0
-            while (
-                column_index < len(split_points)
-                and group_mid_x >= split_points[column_index]
-            ):
+            while column_index < len(split_points) and group_mid_x >= split_points[column_index]:
                 column_index += 1
             weights[column_index] = weights.get(column_index, 0.0) + max(
                 1.0,
@@ -736,10 +706,7 @@ class LayoutReconstructor:
                 continue
             group_mid_x = (group_box[0] + group_box[2]) * 0.5
             column_index = 0
-            while (
-                column_index < len(split_points)
-                and group_mid_x >= split_points[column_index]
-            ):
+            while column_index < len(split_points) and group_mid_x >= split_points[column_index]:
                 column_index += 1
             width = max(1.0, group_box[2] - group_box[0])
             weights[column_index] = weights.get(column_index, 0.0) + width
@@ -758,9 +725,7 @@ class LayoutReconstructor:
         if column_width <= 0:
             return ()
         candidates = sorted(
-            line.x0
-            for line in lines
-            if line.runs and (line.x1 - line.x0) >= column_width * 0.55
+            line.x0 for line in lines if line.runs and (line.x1 - line.x0) >= column_width * 0.55
         )
         if len(candidates) < 8:
             return ()
@@ -771,9 +736,7 @@ class LayoutReconstructor:
                 clusters.append([x0])
             else:
                 clusters[-1].append(x0)
-        anchors = [
-            sum(cluster) / len(cluster) for cluster in clusters if len(cluster) >= 4
-        ]
+        anchors = [sum(cluster) / len(cluster) for cluster in clusters if len(cluster) >= 4]
         return tuple(anchors)
 
     @staticmethod
@@ -831,11 +794,7 @@ def line_starts_new_vertical_band(
     band_x1 = max(line.x1 for line in current_band[-8:])
     current_extends_right = current.x1 > band_x1 + max(line_height * 2.5, 42.0)
     current_resets_left = current.x0 <= band_x0 + max(line_height * 1.5, 18.0)
-    if (
-        current_width > median_width * 1.45
-        and current_extends_right
-        and current_resets_left
-    ):
+    if current_width > median_width * 1.45 and current_extends_right and current_resets_left:
         return True
     return False
 
@@ -852,8 +811,7 @@ def stable_multi_column_split_texts_look_safe(texts: list[str]) -> bool:
     ):
         return False
     if any(
-        len(tokens) <= 3
-        and sum(1 for token in tokens if any(ch.isdigit() for ch in token)) >= 1
+        len(tokens) <= 3 and sum(1 for token in tokens if any(ch.isdigit() for ch in token)) >= 1
         for tokens in token_lists
     ):
         return False
@@ -926,9 +884,7 @@ def stable_multi_column_prose_fragment_looks_safe(text: str) -> bool:
 def render_resolved_text_lines(
     lines: tuple[observation_resolver.ResolvedTextLine, ...],
 ) -> str:
-    return observation_resolver.text_from_resolved_lines(
-        resolved_text_lines_for_output(lines)
-    )
+    return observation_resolver.text_from_resolved_lines(resolved_text_lines_for_output(lines))
 
 
 def resolved_text_lines_for_output(
@@ -967,9 +923,7 @@ def layout_line_to_resolved_text_line(
         return None
     contributing_observation_list: list[page_geometry.PageObservation] = []
     for index, segment in enumerate(reconstructed.segments):
-        segment_observation = layout_segment_observation(
-            segment, segment_index=index
-        )
+        segment_observation = layout_segment_observation(segment, segment_index=index)
         if segment_observation is not None:
             contributing_observation_list.append(segment_observation)
     contributing_observations = tuple(contributing_observation_list)
@@ -978,8 +932,7 @@ def layout_line_to_resolved_text_line(
         source="native_text",
         bbox=(line.x0, line.y0, line.x1, line.y1),
         advance_bbox=(line.x0, line.y0, line.x1, line.y1),
-        ink_bbox=line_ink_bbox(contributing_observations)
-        or (line.x0, line.y0, line.x1, line.y1),
+        ink_bbox=line_ink_bbox(contributing_observations) or (line.x0, line.y0, line.x1, line.y1),
         confidence=line_confidence(contributing_observations),
         text=text,
         provenance=page_geometry.provenance_tuple(
@@ -1039,11 +992,7 @@ def line_ink_bbox(
 ) -> page_geometry.Rect | None:
     boxes: list[page_geometry.Rect] = []
     for observation in observations:
-        box = (
-            observation.ink_bbox
-            if observation.ink_bbox is not None
-            else observation.bbox
-        )
+        box = observation.ink_bbox if observation.ink_bbox is not None else observation.bbox
         if box is not None:
             boxes.append(box)
     if not boxes:
@@ -1060,9 +1009,7 @@ def line_confidence(
     observations: tuple[page_geometry.PageObservation, ...],
 ) -> float | None:
     values = [
-        observation.confidence
-        for observation in observations
-        if observation.confidence is not None
+        observation.confidence for observation in observations if observation.confidence is not None
     ]
     if not values:
         return None
@@ -1344,9 +1291,7 @@ def lines_form_same_column_continuation(
     if vertical_gap > max(line_height * 1.7, 18.0):
         return False
 
-    x_overlap = max(
-        0.0, min(left_box[2], right_box[2]) - max(left_box[0], right_box[0])
-    )
+    x_overlap = max(0.0, min(left_box[2], right_box[2]) - max(left_box[0], right_box[0]))
     narrow_width = max(1.0, min(left_box[2] - left_box[0], right_box[2] - right_box[0]))
     same_indent = abs(left_box[0] - right_box[0]) <= max(line_height * 1.5, 16.0)
     return same_indent or (x_overlap / narrow_width) >= 0.25
@@ -1356,10 +1301,7 @@ def lines_form_same_native_paragraph(
     left: observation_resolver.ResolvedTextLine,
     right: observation_resolver.ResolvedTextLine,
 ) -> bool:
-    if (
-        left.observation.source != "native_text"
-        or right.observation.source != "native_text"
-    ):
+    if left.observation.source != "native_text" or right.observation.source != "native_text":
         return False
     if right.break_before > 2:
         return False
@@ -1381,9 +1323,7 @@ def lines_form_same_native_paragraph(
     right_width = max(1.0, right_box[2] - right_box[0])
     if max(left_width, right_width) / max(1.0, min(left_width, right_width)) > 3.2:
         return False
-    if right.break_before == 2 and not native_paragraph_line_pair_looks_prose(
-        left, right
-    ):
+    if right.break_before == 2 and not native_paragraph_line_pair_looks_prose(left, right):
         return False
     return True
 
@@ -1396,9 +1336,7 @@ def native_paragraph_line_pair_looks_prose(
     right_tokens = normalized_text_tokens(right.text)
     if len(left_tokens) < 3 or len(right_tokens) < 2:
         return False
-    if any(
-        any(ch.isdigit() for ch in token) for token in (*left_tokens, *right_tokens)
-    ):
+    if any(any(ch.isdigit() for ch in token) for token in (*left_tokens, *right_tokens)):
         return False
     return True
 
@@ -1455,13 +1393,9 @@ def merged_resolved_line(
     advance_bbox = union_observation_bbox(observations, "advance_bbox")
     ink_bbox = union_observation_bbox(observations, "ink_bbox") or bbox
     confidence_values = [
-        observation.confidence
-        for observation in observations
-        if observation.confidence is not None
+        observation.confidence for observation in observations if observation.confidence is not None
     ]
-    confidence = (
-        sum(confidence_values) / len(confidence_values) if confidence_values else None
-    )
+    confidence = sum(confidence_values) / len(confidence_values) if confidence_values else None
     observation = replace(
         left.observation,
         text=text,
@@ -1642,10 +1576,7 @@ def column_group_breaks_between(left: TextRun, right: TextRun) -> bool:
         return True
     if not left.has_text or not right.has_text:
         return True
-    if (
-        left.rotation_angle != right.rotation_angle
-        or left.is_vertical != right.is_vertical
-    ):
+    if left.rotation_angle != right.rotation_angle or left.is_vertical != right.is_vertical:
         return True
     if left.text and left.text[-1].isspace():
         return True
@@ -1748,9 +1679,7 @@ class MarkdownRenderer:
         tbls = self.tables_cache
         if tbls is None:
             extract_tables = getattr(self.page, "extract_tables", None)
-            tbls = (
-                extract_tables(flavor="lattice") if callable(extract_tables) else None
-            )
+            tbls = extract_tables(flavor="lattice") if callable(extract_tables) else None
             self.tables_cache = tbls
         return tbls
 
@@ -1824,19 +1753,13 @@ class MarkdownRenderer:
 
         md_table = []
         for row in table:
-            cells = [
-                str(row[c]).replace("\n", " ")
-                for c in range(n_cols)
-                if c not in empty_cols
-            ]
+            cells = [str(row[c]).replace("\n", " ") for c in range(n_cols) if c not in empty_cols]
             md_table.append("| " + " | ".join(cells) + " |")
 
         if not md_table:
             return None
 
-        header_sep = (
-            "|" + "|".join("---" for ignored in range(n_cols - len(empty_cols))) + "|"
-        )
+        header_sep = "|" + "|".join("---" for ignored in range(n_cols - len(empty_cols))) + "|"
         md_table.insert(1, header_sep)
         return "\n" + "\n".join(md_table)
 
@@ -1864,9 +1787,7 @@ class MarkdownRenderer:
             text = "> " + text.replace("\n", "\n> ")
         return text
 
-    def render_annotations(
-        self, md_parts: list[str], annots: list[AnnotationRecord]
-    ) -> None:
+    def render_annotations(self, md_parts: list[str], annots: list[AnnotationRecord]) -> None:
         links = [a for a in annots if a.subtype == "Link"]
         if links:
             md_parts.append("### Links")

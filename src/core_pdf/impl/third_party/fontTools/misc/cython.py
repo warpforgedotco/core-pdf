@@ -1,4 +1,4 @@
-""" Exports a no-op 'cython' namespace similar to
+"""Exports a no-op 'cython' namespace similar to
 https://github.com/cython/cython/blob/master/Cython/Shadow.py
 
 This allows to optionally compile @cython decorated functions
@@ -7,8 +7,6 @@ as pure-python, without runtime dependency on cython module.
 
 We only define the symbols that we use. E.g. see fontTools.cu2qu
 """
-
-from types import SimpleNamespace
 
 
 def _empty_decorator(x):

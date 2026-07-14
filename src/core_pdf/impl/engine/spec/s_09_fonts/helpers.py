@@ -53,9 +53,7 @@ def cached_decode_table(
     key: str, differences_items: tuple[tuple[int, str], ...]
 ) -> tuple[str, ...]:
     differences = dict(differences_items)
-    return build_decode_table(
-        ENCODING_FALLBACKS.get(key, fallback_with_pdfdoc), differences
-    )
+    return build_decode_table(ENCODING_FALLBACKS.get(key, fallback_with_pdfdoc), differences)
 
 
 def parse_differences(
@@ -88,9 +86,7 @@ def parse_differences(
 
 ENCODING_FALLBACKS: dict[str, EncodingFallback] = {
     "Type3": lambda b: "",
-    "WinAnsiEncoding": lambda b: normalize_ligature_text(
-        bytes([b]).decode("cp1252", "replace")
-    ),
+    "WinAnsiEncoding": lambda b: normalize_ligature_text(bytes([b]).decode("cp1252", "replace")),
     "MacRomanEncoding": lambda b: normalize_ligature_text(
         bytes([b]).decode("mac_roman", "replace")
     ),

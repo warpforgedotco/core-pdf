@@ -1,13 +1,14 @@
-from core_pdf.impl.third_party.fontTools.misc.textTools import bytesjoin, safeEval, readHex
-from core_pdf.impl.third_party.fontTools.misc.encodingTools import getEncoding
-from core_pdf.impl.third_party.fontTools.ttLib import getSearchRange
-from core_pdf.impl.third_party.fontTools.unicode import Unicode
-from . import DefaultTable
-import sys
-import struct
 import array
 import logging
+import struct
+import sys
 
+from core_pdf.impl.third_party.fontTools.misc.encodingTools import getEncoding
+from core_pdf.impl.third_party.fontTools.misc.textTools import bytesjoin, readHex, safeEval
+from core_pdf.impl.third_party.fontTools.ttLib import getSearchRange
+from core_pdf.impl.third_party.fontTools.unicode import Unicode
+
+from . import DefaultTable
 
 log = logging.getLogger(__name__)
 
@@ -158,15 +159,11 @@ class table__c_m_a_p(DefaultTable.DefaultTable):
         self.tables = tables = []
         seenOffsets = {}
         for i in range(numSubTables):
-            platformID, platEncID, offset = struct.unpack(
-                ">HHl", data[4 + i * 8 : 4 + (i + 1) * 8]
-            )
+            platformID, platEncID, offset = struct.unpack(">HHl", data[4 + i * 8 : 4 + (i + 1) * 8])
             platformID, platEncID = int(platformID), int(platEncID)
             format, length = struct.unpack(">HH", data[offset : offset + 4])
             if format in [8, 10, 12, 13]:
-                format, reserved, length = struct.unpack(
-                    ">HHL", data[offset : offset + 8]
-                )
+                format, reserved, length = struct.unpack(">HHL", data[offset : offset + 8])
             elif format in [14]:
                 format, length = struct.unpack(">HL", data[offset : offset + 6])
 
@@ -216,21 +213,15 @@ class table__c_m_a_p(DefaultTable.DefaultTable):
         totalOffset = 4 + 8 * numSubTables
         data = struct.pack(">HH", self.tableVersion, numSubTables)
         tableData = b""
-        seen = (
-            {}
-        )  # Some tables are the same object reference. Don't compile them twice.
-        done = (
-            {}
-        )  # Some tables are different objects, but compile to the same data chunk
+        seen = {}  # Some tables are the same object reference. Don't compile them twice.
+        done = {}  # Some tables are different objects, but compile to the same data chunk
         for table in self.tables:
             offset = seen.get(id(table.cmap))
             if offset is None:
                 chunk = table.compile(ttFont)
                 offset = done.get(chunk)
                 if offset is None:
-                    offset = seen[id(table.cmap)] = done[chunk] = totalOffset + len(
-                        tableData
-                    )
+                    offset = seen[id(table.cmap)] = done[chunk] = totalOffset + len(tableData)
                     tableData = tableData + chunk
             data = data + struct.pack(">HHl", table.platformID, table.platEncID, offset)
         return data + tableData
@@ -286,10 +277,10 @@ class CmapSubtable(object):
         self.data = None
         self.ttFont = None
         self.platformID = None  #: The platform ID of this subtable
-        self.platEncID = None  #: The encoding ID of this subtable (interpretation depends on ``platformID``)
-        self.language = (
-            None  #: The language ID of this subtable (Macintosh platform only)
+        self.platEncID = (
+            None  #: The encoding ID of this subtable (interpretation depends on ``platformID``)
         )
+        self.language = None  #: The language ID of this subtable (Macintosh platform only)
 
     def ensureDecompiled(self, recurse=False):
         # The recurse argument is unused, but part of the signature of
@@ -312,12 +303,13 @@ class CmapSubtable(object):
 
     def decompileHeader(self, data, ttFont):
         format, length, language = struct.unpack(">HHH", data[:6])
-        assert (
-            len(data) == length
-        ), "corrupt cmap table format %d (data length: %d, header length: %d)" % (
-            format,
-            len(data),
-            length,
+        assert len(data) == length, (
+            "corrupt cmap table format %d (data length: %d, header length: %d)"
+            % (
+                format,
+                len(data),
+                length,
+            )
         )
         self.format = int(format)
         self.length = int(length)
@@ -354,9 +346,7 @@ class CmapSubtable(object):
 
     def isUnicode(self):
         """Returns true if the characters are interpreted as Unicode codepoints."""
-        return self.platformID == 0 or (
-            self.platformID == 3 and self.platEncID in [0, 1, 10]
-        )
+        return self.platformID == 0 or (self.platformID == 3 and self.platEncID in [0, 1, 10])
 
     def isSymbol(self):
         """Returns true if the subtable is for the Symbol encoding (3,0)"""
@@ -395,13 +385,9 @@ class cmap_format_0(CmapSubtable):
         if data is not None and ttFont is not None:
             self.decompileHeader(data, ttFont)
         else:
-            assert (
-                data is None and ttFont is None
-            ), "Need both data and ttFont arguments"
-        data = (
-            self.data
-        )  # decompileHeader assigns the data after the header to self.data
-        assert 262 == self.length, "Format 0 cmap subtable not 262 bytes"
+            assert data is None and ttFont is None, "Need both data and ttFont arguments"
+        data = self.data  # decompileHeader assigns the data after the header to self.data
+        assert self.length == 262, "Format 0 cmap subtable not 262 bytes"
         gids = array.array("B")
         gids.frombytes(self.data)
         charCodes = range(len(gids))
@@ -482,13 +468,9 @@ class cmap_format_2(CmapSubtable):
         if data is not None and ttFont is not None:
             self.decompileHeader(data, ttFont)
         else:
-            assert (
-                data is None and ttFont is None
-            ), "Need both data and ttFont arguments"
+            assert data is None and ttFont is None, "Need both data and ttFont arguments"
 
-        data = (
-            self.data
-        )  # decompileHeader assigns the data after the header to self.data
+        data = self.data  # decompileHeader assigns the data after the header to self.data
         subHeaderKeys = []
         maxSubHeaderindex = 0
         # get the key array, and determine the number of subHeaders.
@@ -597,9 +579,7 @@ class cmap_format_2(CmapSubtable):
 
     def compile(self, ttFont):
         if self.data:
-            return (
-                struct.pack(">HHH", self.format, self.length, self.language) + self.data
-            )
+            return struct.pack(">HHH", self.format, self.length, self.language) + self.data
         kEmptyTwoCharCodeRange = -1
         notdefGI = 0
 
@@ -676,9 +656,9 @@ class cmap_format_2(CmapSubtable):
                             charCode = subHeader.firstCode + index
                             subHeaderKeys[charCode] = 0
 
-                    assert subHeader.entryCount == len(
-                        subHeader.glyphIndexArray
-                    ), "Error - subhead entry count does not match len of glyphID subrange."
+                    assert subHeader.entryCount == len(subHeader.glyphIndexArray), (
+                        "Error - subhead entry count does not match len of glyphID subrange."
+                    )
                 # init new subheader
                 subHeader = SubHeader()
                 subHeader.firstCode = secondByte
@@ -728,9 +708,7 @@ class cmap_format_2(CmapSubtable):
                 if (
                     prevSubhead.glyphIndexArray == subHeader.glyphIndexArray
                 ):  # use the glyphIndexArray subarray
-                    subHeader.idRangeOffset = (
-                        prevSubhead.idRangeOffset - (index - j) * 8
-                    )
+                    subHeader.idRangeOffset = prevSubhead.idRangeOffset - (index - j) * 8
                     subHeader.glyphIndexArray = []
                     break
             if subHeader.idRangeOffset == 0:  # didn't find one.
@@ -742,9 +720,7 @@ class cmap_format_2(CmapSubtable):
                 idRangeOffset = idRangeOffset - 8  # one less subheader
 
         # Now we can write out the data!
-        length = (
-            6 + 512 + 8 * len(subHeaderList)
-        )  # header, 256 subHeaderKeys, and subheader array.
+        length = 6 + 512 + 8 * len(subHeaderList)  # header, 256 subHeaderKeys, and subheader array.
         for subhead in subHeaderList[:-1]:
             length = (
                 length + len(subhead.glyphIndexArray) * 2
@@ -885,16 +861,10 @@ class cmap_format_4(CmapSubtable):
         if data is not None and ttFont is not None:
             self.decompileHeader(data, ttFont)
         else:
-            assert (
-                data is None and ttFont is None
-            ), "Need both data and ttFont arguments"
+            assert data is None and ttFont is None, "Need both data and ttFont arguments"
 
-        data = (
-            self.data
-        )  # decompileHeader assigns the data after the header to self.data
-        (segCountX2, searchRange, entrySelector, rangeShift) = struct.unpack(
-            ">4H", data[:8]
-        )
+        data = self.data  # decompileHeader assigns the data after the header to self.data
+        (segCountX2, searchRange, entrySelector, rangeShift) = struct.unpack(">4H", data[:8])
         data = data[8:]
         segCount = segCountX2 // 2
 
@@ -928,9 +898,7 @@ class cmap_format_4(CmapSubtable):
             rangeCharCodes = list(range(startCode[i], endCode[i] + 1))
             charCodes.extend(rangeCharCodes)
             if rangeOffset == 0:
-                gids.extend(
-                    [(charCode + delta) & 0xFFFF for charCode in rangeCharCodes]
-                )
+                gids.extend([(charCode + delta) & 0xFFFF for charCode in rangeCharCodes])
             else:
                 for charCode in rangeCharCodes:
                     index = charCode + partial
@@ -948,9 +916,7 @@ class cmap_format_4(CmapSubtable):
 
     def compile(self, ttFont):
         if self.data:
-            return (
-                struct.pack(">HHH", self.format, self.length, self.language) + self.data
-            )
+            return struct.pack(">HHH", self.format, self.length, self.language) + self.data
 
         charCodes = list(self.cmap.keys())
         if not charCodes:
@@ -993,9 +959,7 @@ class cmap_format_4(CmapSubtable):
             lastCode = charCodes[0]
             endCode = []
             startCode = [lastCode]
-            for charCode in charCodes[
-                1:
-            ]:  # skip the first code, it's the first start code
+            for charCode in charCodes[1:]:  # skip the first code, it's the first start code
                 if charCode == lastCode + 1:
                     lastCode = charCode
                     continue
@@ -1079,13 +1043,9 @@ class cmap_format_6(CmapSubtable):
         if data is not None and ttFont is not None:
             self.decompileHeader(data, ttFont)
         else:
-            assert (
-                data is None and ttFont is None
-            ), "Need both data and ttFont arguments"
+            assert data is None and ttFont is None, "Need both data and ttFont arguments"
 
-        data = (
-            self.data
-        )  # decompileHeader assigns the data after the header to self.data
+        data = self.data  # decompileHeader assigns the data after the header to self.data
         firstCode, entryCount = struct.unpack(">HH", data[:4])
         firstCode = int(firstCode)
         data = data[4:]
@@ -1101,17 +1061,13 @@ class cmap_format_6(CmapSubtable):
 
     def compile(self, ttFont):
         if self.data:
-            return (
-                struct.pack(">HHH", self.format, self.length, self.language) + self.data
-            )
+            return struct.pack(">HHH", self.format, self.length, self.language) + self.data
         cmap = self.cmap
         codes = sorted(cmap.keys())
         if codes:  # yes, there are empty cmap tables.
             codes = list(range(codes[0], codes[-1] + 1))
             firstCode = codes[0]
-            valueList = [
-                ttFont.getGlyphID(cmap[code]) if code in cmap else 0 for code in codes
-            ]
+            valueList = [ttFont.getGlyphID(cmap[code]) if code in cmap else 0 for code in codes]
             gids = array.array("H", valueList)
             if sys.byteorder != "big":
                 gids.byteswap()
@@ -1119,9 +1075,7 @@ class cmap_format_6(CmapSubtable):
         else:
             data = b""
             firstCode = 0
-        header = struct.pack(
-            ">HHHHH", 6, len(data) + 10, self.language, firstCode, len(codes)
-        )
+        header = struct.pack(">HHHHH", 6, len(data) + 10, self.language, firstCode, len(codes))
         return header + data
 
     def fromXML(self, name, attrs, content, ttFont):
@@ -1148,12 +1102,13 @@ class cmap_format_12_or_13(CmapSubtable):
 
     def decompileHeader(self, data, ttFont):
         format, reserved, length, language, nGroups = struct.unpack(">HHLLL", data[:16])
-        assert (
-            len(data) == (16 + nGroups * 12) == (length)
-        ), "corrupt cmap table format %d (data length: %d, header length: %d)" % (
-            self.format,
-            len(data),
-            length,
+        assert len(data) == (16 + nGroups * 12) == (length), (
+            "corrupt cmap table format %d (data length: %d, header length: %d)"
+            % (
+                self.format,
+                len(data),
+                length,
+            )
         )
         self.format = format
         self.reserved = reserved
@@ -1169,13 +1124,9 @@ class cmap_format_12_or_13(CmapSubtable):
         if data is not None and ttFont is not None:
             self.decompileHeader(data, ttFont)
         else:
-            assert (
-                data is None and ttFont is None
-            ), "Need both data and ttFont arguments"
+            assert data is None and ttFont is None, "Need both data and ttFont arguments"
 
-        data = (
-            self.data
-        )  # decompileHeader assigns the data after the header to self.data
+        data = self.data  # decompileHeader assigns the data after the header to self.data
         charCodes = []
         gids = []
         pos = 0
@@ -1248,9 +1199,7 @@ class cmap_format_12_or_13(CmapSubtable):
             charCode = charCodes[index]
             glyphID = cmap[charCode]
             if not self._IsInSameRun(glyphID, lastGlyphID, charCode, lastCharCode):
-                dataList.append(
-                    struct.pack(">LLL", startCharCode, lastCharCode, startGlyphID)
-                )
+                dataList.append(struct.pack(">LLL", startCharCode, lastCharCode, startGlyphID))
                 startCharCode = charCode
                 startGlyphID = glyphID
                 nGroups = nGroups + 1
@@ -1362,14 +1311,10 @@ class cmap_format_14(CmapSubtable):
         if data is not None and ttFont is not None:
             self.decompileHeader(data, ttFont)
         else:
-            assert (
-                data is None and ttFont is None
-            ), "Need both data and ttFont arguments"
+            assert data is None and ttFont is None, "Need both data and ttFont arguments"
         data = self.data
 
-        self.cmap = (
-            {}
-        )  # so that clients that expect this to exist in a cmap table won't fail.
+        self.cmap = {}  # so that clients that expect this to exist in a cmap table won't fail.
         uvsDict = {}
         recOffset = 0
         for n in range(self.numVarSelectorRecords):
@@ -1383,9 +1328,7 @@ class cmap_format_14(CmapSubtable):
                 (numValues,) = struct.unpack(">L", data[startOffset : startOffset + 4])
                 startOffset += 4
                 for r in range(numValues):
-                    uv, addtlCnt = struct.unpack(
-                        ">3sB", data[startOffset : startOffset + 4]
-                    )
+                    uv, addtlCnt = struct.unpack(">3sB", data[startOffset : startOffset + 4])
                     startOffset += 4
                     firstBaseUV = cvtToUVS(uv)
                     cnt = addtlCnt + 1
@@ -1441,9 +1384,7 @@ class cmap_format_14(CmapSubtable):
     def fromXML(self, name, attrs, content, ttFont):
         self.language = 0xFF  # provide a value so that CmapSubtable.__lt__() won't fail
         if not hasattr(self, "cmap"):
-            self.cmap = (
-                {}
-            )  # so that clients that expect this to exist in a cmap table won't fail.
+            self.cmap = {}  # so that clients that expect this to exist in a cmap table won't fail.
         if not hasattr(self, "uvsDict"):
             self.uvsDict = {}
             uvsDict = self.uvsDict
@@ -1475,9 +1416,7 @@ class cmap_format_14(CmapSubtable):
     def compile(self, ttFont):
         if self.data:
             return (
-                struct.pack(
-                    ">HLL", self.format, self.length, self.numVarSelectorRecords
-                )
+                struct.pack(">HLL", self.format, self.length, self.numVarSelectorRecords)
                 + self.data
             )
 
@@ -1539,9 +1478,7 @@ class cmap_format_14(CmapSubtable):
 
         data = bytesjoin(varSelectorRecords) + bytesjoin(data)
         self.length = 10 + len(data)
-        headerdata = struct.pack(
-            ">HLL", self.format, self.length, self.numVarSelectorRecords
-        )
+        headerdata = struct.pack(">HLL", self.format, self.length, self.numVarSelectorRecords)
 
         return headerdata + data
 
@@ -1575,9 +1512,7 @@ class cmap_format_unknown(CmapSubtable):
         if data is not None and ttFont is not None:
             self.decompileHeader(data, ttFont)
         else:
-            assert (
-                data is None and ttFont is None
-            ), "Need both data and ttFont arguments"
+            assert data is None and ttFont is None, "Need both data and ttFont arguments"
 
     def compile(self, ttFont):
         if self.data:

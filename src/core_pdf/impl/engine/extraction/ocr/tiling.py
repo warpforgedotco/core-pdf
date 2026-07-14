@@ -92,25 +92,19 @@ def tiled_ocr_candidate_from_rendered_page(
     for tile_ocr in collect_rendered_tile_ocr_results(rendered, tiles, dpi, timeout):
         tile = tile_ocr.tile
         tile_result = tile_ocr.result
-        shifted_layout = offset_tile_iterator_layout(
-            tile_result.layout, tile, rendered.rotate
-        )
+        shifted_layout = offset_tile_iterator_layout(tile_result.layout, tile, rendered.rotate)
         line_rows.extend(shifted_layout.textline_rows)
         word_rows.extend(shifted_layout.word_rows)
         symbol_rows.extend(shifted_layout.symbol_rows)
     layout = ocr_iterator_layout.deduplicate_tile_iterator_layout(
         OcrIteratorLayout(line_rows, word_rows, symbol_rows)
     )
-    layout, removed_rows = (
-        ocr_iterator_layout.filter_unsupported_low_confidence_tile_lines(
-            layout,
-            support_text,
-        )
+    layout, removed_rows = ocr_iterator_layout.filter_unsupported_low_confidence_tile_lines(
+        layout,
+        support_text,
     )
     layout, repaired_rows = (
-        layout_repair(layout, support_text)
-        if layout_repair is not None
-        else (layout, 0)
+        layout_repair(layout, support_text) if layout_repair is not None else (layout, 0)
     )
     result = ocr_iterator_layout.iterator_tile_layout_text_result(layout)
     if not result.text:
@@ -163,7 +157,7 @@ def collect_rendered_tile_ocr_results(
                     full_page_image=full_page_image,
                 )
             )
-        except BaseException as exc:
+        except BaseException:
             results.append(
                 ocr_rendering.RenderedTileOcrResult(
                     tile,
@@ -463,9 +457,7 @@ def offset_tile_iterator_rows(
         shifted_row: OcrRow = dict(row)
         shifted_row["page_num"] = 1
         shifted_row["tile_index"] = tile.index
-        shifted_row["block_num"] = tile.index * 10000 + ocr_int_value(
-            row.get("block_num", 1)
-        )
+        shifted_row["block_num"] = tile.index * 10000 + ocr_int_value(row.get("block_num", 1))
         shifted_row["par_num"] = ocr_int_value(row.get("par_num", 1))
         shifted_row["line_num"] = ocr_int_value(row.get("line_num", len(shifted) + 1))
         if "word_num" in row:

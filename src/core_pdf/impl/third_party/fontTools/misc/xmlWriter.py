@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from typing import BinaryIO, Callable, TextIO
-from core_pdf.impl.third_party.fontTools.misc.textTools import byteord, strjoin, tobytes, tostr
-import sys
+import itertools
+import logging
 import os
 import string
-import logging
-import itertools
+import sys
+from typing import BinaryIO, Callable, TextIO
+
+from core_pdf.impl.third_party.fontTools.misc.textTools import byteord, strjoin, tobytes, tostr
 
 INDENT = "  "
 TTX_LOG = logging.getLogger("fontTools.ttx")

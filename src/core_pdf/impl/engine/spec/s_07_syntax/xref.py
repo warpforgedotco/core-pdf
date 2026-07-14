@@ -4,15 +4,15 @@ from __future__ import annotations
 import typing
 import zlib
 
-from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer, WS_TABLE
 from core_pdf.impl.engine.spec.s_07_objects.coercion import (
     normalize_pdf_name,
     parse_int_strict,
 )
-from core_pdf.impl.engine.spec.s_07_syntax.objects import PdfObjectStream
-from core_pdf.impl.objects import PdfStream
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_07_syntax.lexer import WS_TABLE, PdfLexer
+from core_pdf.impl.engine.spec.s_07_syntax.objects import PdfObjectStream
+from core_pdf.impl.exceptions import PdfParseError
+from core_pdf.impl.objects import PdfStream
 from core_pdf.impl.types import PdfByteBuffer, PdfDict
 
 
@@ -96,11 +96,7 @@ def parse_xref_entry_at(data: PdfByteBuffer, pos: int) -> tuple[int, int, bool, 
     n = len(data)
     if pos + 18 <= n:
         marker = data[pos + 17]
-        if (
-            data[pos + 10] in (9, 32)
-            and data[pos + 16] in (9, 32)
-            and marker in (102, 110)
-        ):
+        if data[pos + 10] in (9, 32) and data[pos + 16] in (9, 32) and marker in (102, 110):
             try:
                 offset = int(data[pos : pos + 10])
                 generation = int(data[pos + 11 : pos + 16])
@@ -175,15 +171,10 @@ class XRefScanner:
             number_bytes = number_parts[0]
             if b"%" in number_bytes:
                 number_bytes = number_bytes.split(b"%", 1)[0]
-            number_end = (
-                pos + startxref_number_bytes.find(number_bytes) + len(number_bytes)
-            )
+            number_end = pos + startxref_number_bytes.find(number_bytes) + len(number_bytes)
             next_pos = XRefScanner.skip_ignored(data, number_end)
             if has_eof:
-                if (
-                    next_pos + 5 > len(data)
-                    or data[next_pos : next_pos + 5] != b"%%EOF"
-                ):
+                if next_pos + 5 > len(data) or data[next_pos : next_pos + 5] != b"%%EOF":
                     continue
             elif next_pos != len(data):
                 continue
@@ -209,9 +200,7 @@ class XRefScanner:
         return None
 
     @staticmethod
-    def find_nearby_section(
-        data: PdfByteBuffer, start: int, window: int = 1024
-    ) -> int | None:
+    def find_nearby_section(data: PdfByteBuffer, start: int, window: int = 1024) -> int | None:
         n = len(data)
         if start < 0:
             return None
@@ -349,15 +338,11 @@ class XRefScanner:
                     if len(parts) != 3 or parts[2] not in (b"f", b"n"):
                         break
                     try:
-                        offset, generation, in_use, pos = parse_xref_entry_at(
-                            data, entry_pos
-                        )
+                        offset, generation, in_use, pos = parse_xref_entry_at(data, entry_pos)
                     except PdfParseError:
                         break
                     obj_num = start_obj + actual_count
-                    entries[(obj_num << 16) | generation] = PdfXRefEntry(
-                        offset, generation, in_use
-                    )
+                    entries[(obj_num << 16) | generation] = PdfXRefEntry(offset, generation, in_use)
                     max_object_number = max(max_object_number, obj_num)
                     actual_count += 1
             else:
@@ -367,11 +352,7 @@ class XRefScanner:
         lexer.pos = XRefScanner.skip_ws(data, pos)
         trailer_dict = lexer.parse_dictionary()
         trailer_size = lookup_dict_key(trailer_dict, "Size")
-        if (
-            type(trailer_size) is not int
-            or trailer_size <= max_object_number
-            or trailer_size <= 0
-        ):
+        if type(trailer_size) is not int or trailer_size <= max_object_number or trailer_size <= 0:
             trailer_dict = dict(trailer_dict)
             trailer_dict["Size"] = max(max_object_number + 1, 1)
         prev = lookup_dict_key(trailer_dict, "Prev")
@@ -474,9 +455,7 @@ class XRefScanner:
         index_raw = lookup_dict_key(dict_obj, "Index")
         if index_raw is None:
             index = [0, size]
-        elif not isinstance(index_raw, (list, tuple)):
-            raise PdfParseError("invalid xref stream Index")
-        elif not all(type(x) is int for x in index_raw):
+        elif not isinstance(index_raw, (list, tuple)) or not all(type(x) is int for x in index_raw):
             raise PdfParseError("invalid xref stream Index")
         else:
             index = [int(x) for x in index_raw]
@@ -577,9 +556,7 @@ class XRefScanner:
             if isinstance(w, list) and isinstance(index, list):
                 row_size = sum(item for item in w if type(item) is int)
                 row_count = sum(
-                    index[i + 1]
-                    for i in range(0, len(index) - 1, 2)
-                    if type(index[i + 1]) is int
+                    index[i + 1] for i in range(0, len(index) - 1, 2) if type(index[i + 1]) is int
                 )
                 if len(decoded_data) != row_size * row_count:
                     decoded_data = None
@@ -593,10 +570,8 @@ class XRefScanner:
                 break
             try:
                 if obj_num < 10000000:
-                    entries[key_for(obj_num, gen_num)] = PdfXRefEntry(
-                        offset, gen_num, True
-                    )
-            except ValueError, IndexError:
+                    entries[key_for(obj_num, gen_num)] = PdfXRefEntry(offset, gen_num, True)
+            except (ValueError, IndexError):
                 continue
         XRefScanner.recover_object_stream_entries(data, entries, max_entries)
         return entries
@@ -669,9 +644,7 @@ def find_eof_marker(data: PdfByteBuffer) -> int:
         if data[marker : marker + 2] != b"%%":
             continue
         token = data[marker + 2 : marker + 5]
-        mismatches = sum(
-            1 for actual, expected in zip(token, b"EOF") if actual != expected
-        )
+        mismatches = sum(1 for actual, expected in zip(token, b"EOF") if actual != expected)
         if mismatches == 1:
             return marker
     return -1
@@ -701,9 +674,7 @@ def find_previous_object_marker(data: PdfByteBuffer, before: int) -> int | None:
     return found
 
 
-def parse_object_marker_prefix(
-    data: PdfByteBuffer, marker: int
-) -> tuple[int, int, int] | None:
+def parse_object_marker_prefix(data: PdfByteBuffer, marker: int) -> tuple[int, int, int] | None:
     if marker + 3 < len(data) and not WS_TABLE[data[marker + 3]]:
         return None
     pos = marker - 1

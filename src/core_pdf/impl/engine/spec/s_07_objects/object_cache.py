@@ -29,9 +29,7 @@ CachedPdfScalar: TypeAlias = (
 CachedPdfArray: TypeAlias = list["CachedPdfObject"]
 CachedPdfTuple: TypeAlias = tuple["CachedPdfObject", ...]
 CachedPdfDict: TypeAlias = dict[PdfObjectKey, "CachedPdfObject"]
-CachedPdfObject: TypeAlias = (
-    CachedPdfScalar | CachedPdfArray | CachedPdfTuple | CachedPdfDict
-)
+CachedPdfObject: TypeAlias = CachedPdfScalar | CachedPdfArray | CachedPdfTuple | CachedPdfDict
 
 ObjectGenerationKey: TypeAlias = tuple[int, int]
 ObjectCache: TypeAlias = dict[int, CachedPdfObject]

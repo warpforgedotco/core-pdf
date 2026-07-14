@@ -12,7 +12,6 @@ __all__ = ["MomentsPen"]
 
 
 class MomentsPen(BasePen):
-
     def __init__(self, glyphset=None):
         BasePen.__init__(self, glyphset)
 
@@ -71,9 +70,7 @@ class MomentsPen(BasePen):
 
         self.area += -r0 / 2 - r1 / 2 + x0 * (y0 + y1) / 2
         self.momentX += -r2 * y0 / 6 - r3 / 3 - r5 * x1 / 6 + r6 * (r7 + y1) / 6
-        self.momentY += (
-            -r0 * y1 / 6 - r8 * x1 / 6 - r9 * x1 / 6 + x0 * (r8 + r9 + y0 * y1) / 6
-        )
+        self.momentY += -r0 * y1 / 6 - r8 * x1 / 6 - r9 * x1 / 6 + x0 * (r8 + r9 + y0 * y1) / 6
         self.momentXX += (
             -r10 * y0 / 12
             - r10 * y1 / 4
@@ -213,13 +210,7 @@ class MomentsPen(BasePen):
         r52 = 10 * y1
         r53 = 12 * y1
 
-        self.area += (
-            -r1 / 6
-            - r3 / 6
-            + x0 * (r0 + r5 + y2) / 6
-            + x1 * y2 / 3
-            - y0 * (r4 + x2) / 6
-        )
+        self.area += -r1 / 6 - r3 / 6 + x0 * (r0 + r5 + y2) / 6 + x1 * y2 / 3 - y0 * (r4 + x2) / 6
         self.momentX += (
             -r11 * (-r10 + y1) / 30
             + r12 * (r13 + r8 + y2) / 30
@@ -247,16 +238,7 @@ class MomentsPen(BasePen):
             - r6 * x2 * (r0 - r32) / 105
             + x0**3 * (r30 + 21 * y0 + y2) / 84
             - x0
-            * (
-                r0 * r7
-                + r15 * r37
-                - r2 * r37
-                - r33 * y2
-                + r38 * y0
-                - r39
-                - r40
-                + r5 * r7
-            )
+            * (r0 * r7 + r15 * r37 - r2 * r37 - r33 * y2 + r38 * y0 - r39 - r40 + r5 * r7)
             / 420
             - y0 * (8 * r27 + 5 * r28 + r31 + r33 * x2) / 420
         )
@@ -269,16 +251,7 @@ class MomentsPen(BasePen):
             - r42 * r7 / 840
             + r6 * y2 * (r32 + r8) / 210
             + x0
-            * (
-                -r15 * r8
-                + r16 * r25
-                + r18
-                + r21 * r47
-                - r24 * r34
-                - r26 * x2
-                + r35 * r46
-                + r48
-            )
+            * (-r15 * r8 + r16 * r25 + r18 + r21 * r47 - r24 * r34 - r26 * x2 + r35 * r46 + r48)
             / 420
             - y0 * (r16 * r2 + r30 * r7 + r35 * r45 + r39 + r40) / 420
         )
@@ -603,17 +576,7 @@ class MomentsPen(BasePen):
             + r29 * (-r23 + r25 + r28) / 840
             - r4 * (10 * r12 + r17 + r22) / 840
             + x0
-            * (
-                12 * r27
-                + r30 * y2
-                + r34
-                - r35 * x1
-                - r37
-                - r38 * y0
-                + r39 * x1
-                - r4 * x3
-                + r45
-            )
+            * (12 * r27 + r30 * y2 + r34 - r35 * x1 - r37 - r38 * y0 + r39 * x1 - r4 * x3 + r45)
             / 840
             - y0 * (r17 + r30 * x2 + r31 * x1 + r32 + r33 + 18 * r9) / 840
         )
@@ -659,16 +622,7 @@ class MomentsPen(BasePen):
             )
             / 9240
             - r29
-            * (
-                r12 * r21
-                + 14 * r13
-                + r44 * r9
-                - r73 * y3
-                + 54 * r86
-                - 84 * r87
-                - r89
-                - r90
-            )
+            * (r12 * r21 + 14 * r13 + r44 * r9 - r73 * y3 + 54 * r86 - 84 * r87 - r89 - r90)
             / 9240
             - r4 * (70 * r12 * x2 + 27 * r67 + 42 * r68 + r74) / 9240
             + 3 * r67 * y3 / 220
@@ -804,9 +758,7 @@ class MomentsPen(BasePen):
             - r4 * (r112 * x3 + r115 - 14 * r119 + 84 * r47) / 9240
             - r52 * r69 / 9240
             - r54 * (r58 + r61 + r75) / 9240
-            - r55
-            * (r100 * y1 + r121 * y2 + r26 * y3 + r79 * y2 + r84 + 210 * x2 * y1)
-            / 9240
+            - r55 * (r100 * y1 + r121 * y2 + r26 * y3 + r79 * y2 + r84 + 210 * x2 * y1) / 9240
             + x0
             * (
                 r108 * y1
@@ -864,7 +816,7 @@ class MomentsPen(BasePen):
 
 
 if __name__ == "__main__":
-    from core_pdf.impl.third_party.fontTools.misc.symfont import x, y, printGreenPen
+    from core_pdf.impl.third_party.fontTools.misc.symfont import printGreenPen, x, y
 
     printGreenPen(
         "MomentsPen",

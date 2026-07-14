@@ -56,12 +56,8 @@ class LazyPageList(list[PdfPage]):
     def ensure(self, index: int) -> None:
         while list.__len__(self) <= index:
             page_dict = self.next_page_dict()
-            page_class = cast(
-                PageFactory, getattr(self.document, "page_class", PdfPage)
-            )
-            list.append(
-                self, page_class(self.document, page_dict, list.__len__(self) + 1)
-            )
+            page_class = cast(PageFactory, getattr(self.document, "page_class", PdfPage))
+            list.append(self, page_class(self.document, page_dict, list.__len__(self) + 1))
 
     def __len__(self) -> int:
         return self.document.page_count()

@@ -1,5 +1,7 @@
 from io import BytesIO
+
 from core_pdf.impl.third_party.fontTools import cffLib
+
 from . import DefaultTable
 
 

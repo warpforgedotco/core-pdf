@@ -4,17 +4,16 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Protocol
 
-from core_pdf.impl.third_party.truetype import TrueTypeFontProgram
-from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.engine.spec.s_07_objects.coercion import normalize_pdf_name
-from core_pdf.impl.objects import PdfStream
-from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.layout.models import TextRun
+from core_pdf.impl.engine.spec.s_07_objects.coercion import normalize_pdf_name
+from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_09_fonts.widths import (
     require_font_float,
     require_font_int,
 )
-
+from core_pdf.impl.exceptions import PdfParseError
+from core_pdf.impl.objects import PdfStream
+from core_pdf.impl.third_party.truetype import TrueTypeFontProgram
 
 FILL_OPS = frozenset({"f", "f*", "F"})
 FILL_AND_STROKE_OPS = frozenset({"B", "b", "B*", "b*"})
@@ -51,9 +50,7 @@ def gap_separator(left: str, right: str, gap: float, run: TextRun) -> str:
 def can_merge_cross_font_word(left: str, right: str) -> bool:
     if not left or not right:
         return False
-    return (left[-1].isalnum() or left[-1] == "_") and (
-        right[0].isalnum() or right[0] == "_"
-    )
+    return (left[-1].isalnum() or left[-1] == "_") and (right[0].isalnum() or right[0] == "_")
 
 
 def get_font_file(document: FontResourceDocument, font_obj: object) -> PdfStream | None:
@@ -156,9 +153,7 @@ def detect_ligature_overrides(
         return {}
 
     base_font_raw = normalize_pdf_name(lookup_dict_key(font_obj, "BaseFont")) or ""
-    base_name = (
-        base_font_raw.split("+", 1)[1] if "+" in base_font_raw else base_font_raw
-    )
+    base_name = base_font_raw.split("+", 1)[1] if "+" in base_font_raw else base_font_raw
     if not base_name:
         return {}
 
@@ -241,9 +236,7 @@ def is_garbage_text(text: str) -> bool:
     return True
 
 
-NORMALIZE_EXTRACTED_TEXT_TABLE = {12: "\ufb01"} | {
-    codepoint: None for codepoint in range(0xD800, 0xE000)
-}
+NORMALIZE_EXTRACTED_TEXT_TABLE = {12: "\ufb01"} | dict.fromkeys(range(55296, 57344))
 
 
 def normalize_extracted_text(text: str) -> str:

@@ -38,10 +38,10 @@ def decode_utf16be(data: bytes | memoryview | str) -> str:
     if data.startswith((b"\xfe\xff", b"\xff\xfe")):
         try:
             return data.decode("utf-16")
-        except UnicodeDecodeError, ValueError:
+        except (UnicodeDecodeError, ValueError):
             raise ValueError("invalid UTF-16BE data")
     buf = data if len(data) % 2 == 0 else b"\x00" + data
     try:
         return buf.decode("utf-16-be", "replace")
-    except UnicodeDecodeError, ValueError:
+    except (UnicodeDecodeError, ValueError):
         return data.decode("latin-1", "replace")

@@ -1,7 +1,8 @@
 """ttLib.macUtils.py -- Various Mac-specific stuff."""
 
 from io import BytesIO
-from core_pdf.impl.third_party.fontTools.misc.macRes import ResourceReader, ResourceError
+
+from core_pdf.impl.third_party.fontTools.misc.macRes import ResourceError, ResourceReader
 
 
 def getSFNTResIndices(path):

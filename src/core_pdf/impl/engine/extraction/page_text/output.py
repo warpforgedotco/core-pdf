@@ -21,9 +21,7 @@ def append_resolved_supplement_lines(
 ) -> tuple[str, tuple[observation_resolver.ResolvedTextLine, ...]]:
     if not supplement_lines:
         return text, current_lines
-    supplemented_text = (
-        text.rstrip() + "\n" + "\n".join(line.text for line in supplement_lines)
-    )
+    supplemented_text = text.rstrip() + "\n" + "\n".join(line.text for line in supplement_lines)
     if current_lines and text == render_resolved_text_lines(current_lines):
         return supplemented_text, (*current_lines, *supplement_lines)
     return supplemented_text, ()

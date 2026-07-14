@@ -24,9 +24,7 @@ if typing.TYPE_CHECKING:
 class ZipFS(FS):
     """Read and write zip files."""
 
-    def __new__(
-        cls, file: str | os.PathLike, write: bool = False, encoding: str = "utf-8"
-    ):
+    def __new__(cls, file: str | os.PathLike, write: bool = False, encoding: str = "utf-8"):
         if write:
             return WriteZipFS(file, encoding)
         else:
@@ -34,9 +32,7 @@ class ZipFS(FS):
 
     if typing.TYPE_CHECKING:
 
-        def __init__(
-            self, file: str | os.PathLike, write: bool = False, encoding: str = "utf-8"
-        ):
+        def __init__(self, file: str | os.PathLike, write: bool = False, encoding: str = "utf-8"):
             pass
 
 
@@ -104,9 +100,7 @@ class ReadZipFS(FS):
                     if "details" in namespaces:
                         raw_info["details"] = {
                             "size": zip_info.file_size,
-                            "type": int(
-                                stat.S_IFDIR if basic_info.is_dir else stat.S_IFREG
-                            ),
+                            "type": int(stat.S_IFDIR if basic_info.is_dir else stat.S_IFREG),
                             "modified": datetime(*zip_info.date_time).timestamp(),
                         }
 

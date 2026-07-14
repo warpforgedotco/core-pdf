@@ -6,24 +6,22 @@ import typing
 if typing.TYPE_CHECKING:
     from typing import Any
 
-from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.engine.spec.s_07_objects.coercion import (
     normalize_pdf_name,
     parse_int,
     parse_int_strict,
 )
 from core_pdf.impl.engine.spec.s_07_objects.object_cache import ObjectCache
-from core_pdf.impl.objects import PdfReference, PdfStream
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
+from core_pdf.impl.exceptions import PdfParseError
+from core_pdf.impl.objects import PdfReference, PdfStream
 
 
 class PdfObjectStream:
     __slots__ = ("stream", "objects", "raw_body", "index", "lexer")
 
-    def __init__(
-        self, stream: PdfStream, kw_cache: dict[bytes, object] | None = None
-    ) -> None:
+    def __init__(self, stream: PdfStream, kw_cache: dict[bytes, object] | None = None) -> None:
         type_name = normalize_pdf_name(lookup_dict_key(stream.dictionary, "Type"))
         if type_name is not None and type_name != "ObjStm":
             raise PdfParseError("stream is not an object stream")
@@ -66,11 +64,7 @@ class PdfObjectStream:
         self.lexer = PdfLexer(body, kw_cache=kw_cache)
 
     def get(self, reference: int | PdfReference, default: Any = None) -> Any:
-        obj_num = (
-            reference.object_number
-            if isinstance(reference, PdfReference)
-            else reference
-        )
+        obj_num = reference.object_number if isinstance(reference, PdfReference) else reference
         if obj_num < 0:
             raise ValueError("invalid object number")
         if obj_num in self.objects:

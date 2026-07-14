@@ -1,12 +1,21 @@
-from core_pdf.impl.third_party.fontTools import ttLib
-from core_pdf.impl.third_party.fontTools.ttLib.standardGlyphOrder import standardGlyphOrder
-from core_pdf.impl.third_party.fontTools.misc import sstruct
-from core_pdf.impl.third_party.fontTools.misc.textTools import bytechr, byteord, tobytes, tostr, safeEval, readHex
-from . import DefaultTable
-import sys
-import struct
 import array
 import logging
+import struct
+import sys
+
+from core_pdf.impl.third_party.fontTools import ttLib
+from core_pdf.impl.third_party.fontTools.misc import sstruct
+from core_pdf.impl.third_party.fontTools.misc.textTools import (
+    bytechr,
+    byteord,
+    readHex,
+    safeEval,
+    tobytes,
+    tostr,
+)
+from core_pdf.impl.third_party.fontTools.ttLib.standardGlyphOrder import standardGlyphOrder
+
+from . import DefaultTable
 
 log = logging.getLogger(__name__)
 
@@ -49,9 +58,7 @@ class table__p_o_s_t(DefaultTable.DefaultTable):
             self.decode_format_4_0(data, ttFont)
         else:
             # supported format
-            raise ttLib.TTLibError(
-                "'post' table format %f not supported" % self.formatType
-            )
+            raise ttLib.TTLibError("'post' table format %f not supported" % self.formatType)
 
     def compile(self, ttFont):
         data = sstruct.pack(postFormat, self)
@@ -65,9 +72,7 @@ class table__p_o_s_t(DefaultTable.DefaultTable):
             data = data + self.encode_format_4_0(ttFont)
         else:
             # supported format
-            raise ttLib.TTLibError(
-                "'post' table format %f not supported" % self.formatType
-            )
+            raise ttLib.TTLibError("'post' table format %f not supported" % self.formatType)
         return data
 
     def getGlyphOrder(self):
@@ -171,9 +176,7 @@ class table__p_o_s_t(DefaultTable.DefaultTable):
         assert len(glyphOrder) == numGlyphs
         indices = array.array("H")
         extraDict = {}
-        extraNames = self.extraNames = [
-            n for n in self.extraNames if n not in standardGlyphOrder
-        ]
+        extraNames = self.extraNames = [n for n in self.extraNames if n not in standardGlyphOrder]
         for i, name in enumerate(extraNames):
             extraDict[name] = i
         for glyphName in glyphOrder:
@@ -192,9 +195,7 @@ class table__p_o_s_t(DefaultTable.DefaultTable):
             indices.append(index)
         if sys.byteorder != "big":
             indices.byteswap()
-        return (
-            struct.pack(">H", numGlyphs) + indices.tobytes() + packPStrings(extraNames)
-        )
+        return struct.pack(">H", numGlyphs) + indices.tobytes() + packPStrings(extraNames)
 
     def encode_format_4_0(self, ttFont):
         from core_pdf.impl.third_party.fontTools import agl

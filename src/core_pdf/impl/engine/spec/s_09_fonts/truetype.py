@@ -29,9 +29,7 @@ def tt_font_for_pdf_font(font: dict[str, Any]) -> TrueTypeFontProgram | None:
         if isinstance(cid_to_gid_obj, PdfStream):
             cid_to_gid = cid_to_gid_obj.data
     try:
-        return _tt_font_for_data(
-            font_file.data, cid_to_gid, use_cmap=descendant is None
-        )
+        return _tt_font_for_data(font_file.data, cid_to_gid, use_cmap=descendant is None)
     except ValueError:
         return None
 

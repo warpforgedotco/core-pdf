@@ -13,12 +13,15 @@
 # limitations under the License.
 
 import operator
+
 from core_pdf.impl.third_party.fontTools.cu2qu import curve_to_quadratic, curves_to_quadratic
 from core_pdf.impl.third_party.fontTools.pens.basePen import decomposeSuperBezierSegment
 from core_pdf.impl.third_party.fontTools.pens.filterPen import FilterPen
+from core_pdf.impl.third_party.fontTools.pens.pointPen import (
+    BasePointToSegmentPen,
+    ReverseContourPointPen,
+)
 from core_pdf.impl.third_party.fontTools.pens.reverseContourPen import ReverseContourPen
-from core_pdf.impl.third_party.fontTools.pens.pointPen import BasePointToSegmentPen
-from core_pdf.impl.third_party.fontTools.pens.pointPen import ReverseContourPointPen
 
 
 class Cu2QuPen(FilterPen):
@@ -190,8 +193,7 @@ class Cu2QuPointPen(BasePointToSegmentPen):
             if segment_type in points_required:
                 n, op = points_required[segment_type]
                 assert op(len(points), n), (
-                    f"illegal {segment_type!r} segment point count: "
-                    f"expected {n}, got {len(points)}"
+                    f"illegal {segment_type!r} segment point count: expected {n}, got {len(points)}"
                 )
                 offcurves = points[:-1]
                 if i == 0:
@@ -245,8 +247,7 @@ class Cu2QuMultiPen:
     def __init__(self, other_pens, max_err, reverse_direction=False):
         if reverse_direction:
             other_pens = [
-                ReverseContourPen(pen, outputImpliedClosingLine=True)
-                for pen in other_pens
+                ReverseContourPen(pen, outputImpliedClosingLine=True) for pen in other_pens
             ]
         self.pens = other_pens
         self.max_err = max_err

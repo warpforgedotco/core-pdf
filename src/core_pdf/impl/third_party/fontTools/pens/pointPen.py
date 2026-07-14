@@ -20,7 +20,11 @@ from typing import Any, Dict, List, Optional, Tuple
 from core_pdf.impl.third_party.fontTools.misc.enumTools import StrEnum
 from core_pdf.impl.third_party.fontTools.misc.loggingTools import LogMixin
 from core_pdf.impl.third_party.fontTools.misc.transform import DecomposedTransform, Identity
-from core_pdf.impl.third_party.fontTools.pens.basePen import AbstractPen, MissingComponentError, PenError
+from core_pdf.impl.third_party.fontTools.pens.basePen import (
+    AbstractPen,
+    MissingComponentError,
+    PenError,
+)
 
 __all__ = [
     "AbstractPointPen",
@@ -197,9 +201,7 @@ class BasePointToSegmentPen(AbstractPointPen):
 
         self._flushContour(segments)
 
-    def addPoint(
-        self, pt, segmentType=None, smooth=False, name=None, identifier=None, **kwargs
-    ):
+    def addPoint(self, pt, segmentType=None, smooth=False, name=None, identifier=None, **kwargs):
         if self.currentPath is None:
             raise PenError("Path not begun")
         self.currentPath.append((pt, segmentType, smooth, name, kwargs))
@@ -263,12 +265,7 @@ class PointToSegmentPen(BasePointToSegmentPen):
                 # 'outputImpliedClosingLine' option) in order to disambiguate this case from
                 # the implied closing 'lineTo', otherwise the duplicate point would be lost.
                 # See https://github.com/googlefonts/fontmake/issues/572.
-                if (
-                    i + 1 != nSegments
-                    or outputImpliedClosingLine
-                    or not closed
-                    or pt == lastPt
-                ):
+                if i + 1 != nSegments or outputImpliedClosingLine or not closed or pt == lastPt:
                     pen.lineTo(pt)
                     lastPt = pt
             elif segmentType == "curve":
@@ -442,9 +439,7 @@ class GuessSmoothPointPen(AbstractPointPen):
         self._outPen.endPath()
         self._points = None
 
-    def addPoint(
-        self, pt, segmentType=None, smooth=False, name=None, identifier=None, **kwargs
-    ):
+    def addPoint(self, pt, segmentType=None, smooth=False, name=None, identifier=None, **kwargs):
         if self._points is None:
             raise PenError("Path not begun")
         if identifier is not None:
@@ -458,9 +453,7 @@ class GuessSmoothPointPen(AbstractPointPen):
             kwargs["identifier"] = identifier
         self._outPen.addComponent(glyphName, transformation, **kwargs)
 
-    def addVarComponent(
-        self, glyphName, transformation, location, identifier=None, **kwargs
-    ):
+    def addVarComponent(self, glyphName, transformation, location, identifier=None, **kwargs):
         if self._points is not None:
             raise PenError("VarComponents must be added before or after contours")
         if identifier is not None:
@@ -528,9 +521,7 @@ class ReverseContourPointPen(AbstractPointPen):
                 lastSegmentType = nextSegmentType
             else:
                 segmentType = None
-            pen.addPoint(
-                pt, segmentType=segmentType, smooth=smooth, name=name, **kwargs
-            )
+            pen.addPoint(pt, segmentType=segmentType, smooth=smooth, name=name, **kwargs)
         pen.endPath()
 
     def beginPath(self, identifier=None, **kwargs):
@@ -546,9 +537,7 @@ class ReverseContourPointPen(AbstractPointPen):
         self._flushContour()
         self.currentContour = None
 
-    def addPoint(
-        self, pt, segmentType=None, smooth=False, name=None, identifier=None, **kwargs
-    ):
+    def addPoint(self, pt, segmentType=None, smooth=False, name=None, identifier=None, **kwargs):
         if self.currentContour is None:
             raise PenError("Path not begun")
         if identifier is not None:
@@ -629,9 +618,7 @@ class DecomposingPointPen(LogMixin, AbstractPointPen):
         except KeyError:
             if not self.skipMissingComponents:
                 raise MissingComponentError(baseGlyphName)
-            self.log.debug(
-                "glyph '%s' is missing from glyphSet; skipped" % baseGlyphName
-            )
+            self.log.debug("glyph '%s' is missing from glyphSet; skipped" % baseGlyphName)
         else:
             pen = self
             if transformation != Identity:
@@ -644,7 +631,9 @@ class DecomposingPointPen(LogMixin, AbstractPointPen):
                     pen = ReverseContourPointPen(pen)
 
                     if self.reverseFlipped == ReverseFlipped.ON_CURVE_FIRST:
-                        from core_pdf.impl.third_party.fontTools.pens.filterPen import OnCurveFirstPointPen
+                        from core_pdf.impl.third_party.fontTools.pens.filterPen import (
+                            OnCurveFirstPointPen,
+                        )
 
                         # Ensure the starting point is an on-curve.
                         # Wrap last so this filter runs first during drawPoints

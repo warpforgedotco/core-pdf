@@ -3,18 +3,14 @@
 AAT and Graphite tables are not supported. CFF/CFF2 fonts
 are de-subroutinized."""
 
-from core_pdf.impl.third_party.fontTools.ttLib.ttVisitor import TTVisitor
-import core_pdf.impl.third_party.fontTools.ttLib as ttLib
-import core_pdf.impl.third_party.fontTools.ttLib.tables.otBase as otBase
-import core_pdf.impl.third_party.fontTools.ttLib.tables.otTables as otTables
-from core_pdf.impl.third_party.fontTools.cffLib import VarStoreData
 import core_pdf.impl.third_party.fontTools.cffLib.specializer as cffSpecializer
-from core_pdf.impl.third_party.fontTools.varLib import builder  # for VarData.calculateNumShorts
-from core_pdf.impl.third_party.fontTools.varLib.multiVarStore import OnlineMultiVarStoreBuilder
-from core_pdf.impl.third_party.fontTools.misc.vector import Vector
+from core_pdf.impl.third_party.fontTools import ttLib
 from core_pdf.impl.third_party.fontTools.misc.fixedTools import otRound
 from core_pdf.impl.third_party.fontTools.misc.iterTools import batched
-
+from core_pdf.impl.third_party.fontTools.misc.vector import Vector
+from core_pdf.impl.third_party.fontTools.ttLib.tables import otTables
+from core_pdf.impl.third_party.fontTools.ttLib.ttVisitor import TTVisitor
+from core_pdf.impl.third_party.fontTools.varLib.multiVarStore import OnlineMultiVarStoreBuilder
 
 __all__ = ["scale_upem", "ScalerVisitor"]
 
@@ -96,9 +92,7 @@ def visit(visitor, obj, attr, value):
     setattr(obj, attr, visitor.scale(value))
 
 
-@ScalerVisitor.register_attr(
-    (ttLib.getTableClass("hmtx"), ttLib.getTableClass("vmtx")), "metrics"
-)
+@ScalerVisitor.register_attr((ttLib.getTableClass("hmtx"), ttLib.getTableClass("vmtx")), "metrics")
 def visit(visitor, obj, attr, metrics):
     for g in metrics:
         advance, lsb = metrics[g]
@@ -253,9 +247,7 @@ def _cff_scale(visitor, args):
             arg[-1] = num_blends
 
 
-@ScalerVisitor.register_attr(
-    (ttLib.getTableClass("CFF "), ttLib.getTableClass("CFF2")), "cff"
-)
+@ScalerVisitor.register_attr((ttLib.getTableClass("CFF "), ttLib.getTableClass("CFF2")), "cff")
 def visit(visitor, obj, attr, cff):
     cff.desubroutinize()
     topDict = cff.topDictIndex[0]
@@ -269,9 +261,7 @@ def visit(visitor, obj, attr, cff):
             c, _ = cs.getItemAndSelector(g)
             privates.add(c.private)
 
-            commands = cffSpecializer.programToCommands(
-                c.program, getNumRegions=getNumRegions
-            )
+            commands = cffSpecializer.programToCommands(c.program, getNumRegions=getNumRegions)
             for op, args in commands:
                 if op == "vsindex":
                     continue
@@ -399,20 +389,17 @@ def main(args=None):
 
         args = sys.argv[1:]
 
-    from core_pdf.impl.third_party.fontTools.ttLib import TTFont
-    from core_pdf.impl.third_party.fontTools.misc.cliTools import makeOutputFileName
     import argparse
+
+    from core_pdf.impl.third_party.fontTools.misc.cliTools import makeOutputFileName
+    from core_pdf.impl.third_party.fontTools.ttLib import TTFont
 
     parser = argparse.ArgumentParser(
         "fonttools ttLib.scaleUpem", description="Change the units-per-EM of fonts"
     )
     parser.add_argument("font", metavar="font", help="Font file.")
-    parser.add_argument(
-        "new_upem", metavar="new-upem", help="New units-per-EM integer value."
-    )
-    parser.add_argument(
-        "--output-file", metavar="path", default=None, help="Output file."
-    )
+    parser.add_argument("new_upem", metavar="new-upem", help="New units-per-EM integer value.")
+    parser.add_argument("--output-file", metavar="path", default=None, help="Output file.")
 
     options = parser.parse_args(args)
 

@@ -2,7 +2,6 @@
 
 # Reference: https://github.com/googlefonts/fontations/blob/main/read-fonts/src/tables/ift.rs
 
-
 from .otBase import BaseTTXConverter
 
 

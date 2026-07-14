@@ -12,9 +12,7 @@ class DocumentSelectionHost(Protocol):
     @property
     def pages(self) -> Sequence[PdfPage]: ...
 
-    def selected_page_indexes(
-        self, pages: PageSelection | None = None
-    ) -> list[int]: ...
+    def selected_page_indexes(self, pages: PageSelection | None = None) -> list[int]: ...
 
 
 class DocumentSelectionMixin:

@@ -7,9 +7,9 @@ from typing import Any, Mapping, TypeAlias, cast
 
 from core_pdf.impl.engine.extraction.common.page_content import PageContentRecord
 from core_pdf.impl.engine.layout.geometry import RectBox
-from core_pdf.impl.exceptions import PdfError
 from core_pdf.impl.engine.spec.s_09_fonts.encoding import decode_pdf_text_string
-from core_pdf.impl.objects import PdfName, PdfReference, PdfString, PdfStream
+from core_pdf.impl.exceptions import PdfError
+from core_pdf.impl.objects import PdfName, PdfReference, PdfStream, PdfString
 from core_pdf.impl.types import PageSelection
 
 JsonScalar: TypeAlias = str | int | float | bool | None
@@ -189,9 +189,7 @@ class DocumentStructuredMixin:
                                 "dict": annotation.dict,
                             },
                         )
-                        for annotation_index, annotation in enumerate(
-                            page.get_annotations()
-                        )
+                        for annotation_index, annotation in enumerate(page.get_annotations())
                     ],
                 ),
             )
@@ -361,10 +359,7 @@ class DocumentStructuredMixin:
         if isinstance(value, (list, tuple)):
             return [cls.json_safe(item) for item in value]
         if isinstance(value, dict):
-            return {
-                str(cls.json_safe(key)): cls.json_safe(item)
-                for key, item in value.items()
-            }
+            return {str(cls.json_safe(key)): cls.json_safe(item) for key, item in value.items()}
         return str(value)
 
     @staticmethod

@@ -1,7 +1,4 @@
-"""fontTools.misc.encodingTools.py -- tools for working with OpenType encodings.
-"""
-
-import core_pdf.impl.third_party.fontTools.encodings.codecs as _codecs
+"""fontTools.misc.encodingTools.py -- tools for working with OpenType encodings."""
 
 # Map keyed by platformID, then platEncID, then possibly langID
 _encodingMap = {

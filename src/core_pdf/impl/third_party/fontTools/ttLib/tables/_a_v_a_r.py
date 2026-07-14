@@ -1,23 +1,28 @@
 from __future__ import annotations
 
-from typing import Mapping, TYPE_CHECKING
-from core_pdf.impl.third_party.fontTools.misc import sstruct
+import logging
+from typing import TYPE_CHECKING, Mapping
+
 from core_pdf.impl.third_party.fontTools.misc.fixedTools import (
     fixedToFloat as fi2fl,
+)
+from core_pdf.impl.third_party.fontTools.misc.fixedTools import (
     floatToFixed as fl2fi,
+)
+from core_pdf.impl.third_party.fontTools.misc.fixedTools import (
     floatToFixedToStr as fl2str,
+)
+from core_pdf.impl.third_party.fontTools.misc.fixedTools import (
     strToFixedToFloat as str2fl,
 )
-from core_pdf.impl.third_party.fontTools.misc.textTools import bytesjoin, safeEval
 from core_pdf.impl.third_party.fontTools.misc.roundTools import otRound
+from core_pdf.impl.third_party.fontTools.misc.textTools import safeEval
 from core_pdf.impl.third_party.fontTools.varLib.models import piecewiseLinearMap
-from core_pdf.impl.third_party.fontTools.varLib.varStore import VarStoreInstancer, NO_VARIATION_INDEX
-from core_pdf.impl.third_party.fontTools.ttLib import TTLibError
-from . import DefaultTable
-from . import otTables
-import struct
-import logging
+from core_pdf.impl.third_party.fontTools.varLib.varStore import (
+    VarStoreInstancer,
+)
 
+from . import otTables
 
 log = logging.getLogger(__name__)
 
@@ -142,9 +147,7 @@ class table__a_v_a_r(BaseTTXConverter):
                         fromValue = str2fl(elementAttrs["from"], 14)
                         toValue = str2fl(elementAttrs["to"], 14)
                         if fromValue in segment:
-                            log.debug(
-                                "duplicate entry for %s in axis '%s'", fromValue, axis
-                            )
+                            log.debug("duplicate entry for %s in axis '%s'", fromValue, axis)
                         segment[fromValue] = toValue
         else:
             super().fromXML(name, attrs, content, ttFont)
@@ -180,7 +183,6 @@ class table__a_v_a_r(BaseTTXConverter):
 
         out = []
         for varIdx, v in enumerate(coords):
-
             if varIdxMap is not None:
                 varIdx = varIdxMap[varIdx]
 
@@ -192,9 +194,7 @@ class table__a_v_a_r(BaseTTXConverter):
             out.append(v)
 
         mappedLocation = {
-            axis.axisTag: fi2fl(v, 14)
-            for v, axis in zip(out, axes)
-            if v != 0 or not dropZeroes
+            axis.axisTag: fi2fl(v, 14) for v, axis in zip(out, axes) if v != 0 or not dropZeroes
         }
 
         return mappedLocation

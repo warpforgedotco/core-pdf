@@ -11,7 +11,6 @@ from core_pdf.impl.types import PdfArray, PdfDict, PdfObject, Rectangle
 
 if TYPE_CHECKING:
     from core_pdf.impl.engine.layout.geometry import RectBox
-    from core_pdf.impl.objects import PdfReference
 
 
 class TextSpan(TypedDict):
@@ -148,8 +147,7 @@ class LinkRecord:
         link_box = BBox.from_rect(link_bbox)
         link_area = link_box.area()
         return bool(
-            link_area
-            and BBox.from_rect(bbox).intersection_area(link_box) / link_area > threshold
+            link_area and BBox.from_rect(bbox).intersection_area(link_box) / link_area > threshold
         )
 
     def text_span(
@@ -160,9 +158,7 @@ class LinkRecord:
             return "", -1
 
         bbox = self.page_bbox(page_height) if page_height is not None else self.bbox
-        bboxes = [
-            word["bbox"] if isinstance(word, dict) else word.bbox for word in word_list
-        ]
+        bboxes = [word["bbox"] if isinstance(word, dict) else word.bbox for word in word_list]
         start_index = min(
             range(len(bboxes)),
             key=lambda i: hypot(bbox[0] - bboxes[i][0], bbox[1] - bboxes[i][1]),
@@ -176,15 +172,12 @@ class LinkRecord:
         else:
             selected_words = [word_list[start_index]]
         text = " ".join(
-            word["text"] if isinstance(word, dict) else word.text
-            for word in selected_words
+            word["text"] if isinstance(word, dict) else word.text for word in selected_words
         )
         first_word = word_list[start_index]
         return (
             text.strip(),
-            first_word["start_index"]
-            if isinstance(first_word, dict)
-            else first_word.start_index,
+            first_word["start_index"] if isinstance(first_word, dict) else first_word.start_index,
         )
 
     def text_metadata(

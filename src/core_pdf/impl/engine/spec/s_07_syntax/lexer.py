@@ -6,26 +6,14 @@ import mmap
 from collections.abc import Callable
 from typing import Any
 
-from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.objects import (
-    PdfName,
-    PdfReference,
-    PdfStream,
-    PdfString,
-)
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
-from core_pdf.impl.engine.spec.s_07_syntax.tokens import (
-    SEPARATOR_TABLE,
-    WHITESPACE,
-    WS_TABLE,
-)
 from core_pdf.impl.engine.spec.s_07_syntax.lexer_helpers import (
     EMPTY_TRANSLATE_TABLE,
-    FindableSizedBuffer,
     HEX_VALUE,
     R_SENTINEL,
     STRING_ESCAPE,
     STRING_SPECIAL_TABLE,
+    FindableSizedBuffer,
     full_source_buffer,
     is_integer_word,
     is_number_word,
@@ -35,8 +23,19 @@ from core_pdf.impl.engine.spec.s_07_syntax.lexer_helpers import (
     parse_float_token,
     parse_int_token,
 )
+from core_pdf.impl.engine.spec.s_07_syntax.tokens import (
+    SEPARATOR_TABLE,
+    WHITESPACE,
+    WS_TABLE,
+)
+from core_pdf.impl.exceptions import PdfParseError
+from core_pdf.impl.objects import (
+    PdfName,
+    PdfReference,
+    PdfStream,
+    PdfString,
+)
 from core_pdf.impl.types import Decipher, PdfDict
-
 
 PdfParseError = PdfParseError
 PdfName_of = PdfName.of
@@ -173,9 +172,7 @@ class PdfLexer:
                     pos += 1
                     if pos < n:
                         next_byte = data[pos]
-                        if (byte == 13 and next_byte == 10) or (
-                            byte == 10 and next_byte == 13
-                        ):
+                        if (byte == 13 and next_byte == 10) or (byte == 10 and next_byte == 13):
                             pos += 1
                     break
                 pos += 1
@@ -323,9 +320,7 @@ class PdfLexer:
                 out.append(10)
                 if self.pos < n:
                     next_byte = data[self.pos]
-                    if (byte == 13 and next_byte == 10) or (
-                        byte == 10 and next_byte == 13
-                    ):
+                    if (byte == 13 and next_byte == 10) or (byte == 10 and next_byte == 13):
                         self.pos += 1
             else:
                 out.append(byte)
@@ -404,9 +399,7 @@ class PdfLexer:
             i += 3
         return memoryview(bytes(out))
 
-    def apply_decipher(
-        self, value: bytes | memoryview, dictionary: PdfDict | None = None
-    ) -> bytes:
+    def apply_decipher(self, value: bytes | memoryview, dictionary: PdfDict | None = None) -> bytes:
         if self.decipher is None or self.current_obj_num is None:
             return value.tobytes() if type(value) is memoryview else value
         if type(value) is memoryview:
@@ -415,9 +408,7 @@ class PdfLexer:
             deciphered = self.decipher(
                 self.current_obj_num, self.current_gen_num or 0, value, dictionary
             )
-            return (
-                deciphered.tobytes() if type(deciphered) is memoryview else deciphered
-            )
+            return deciphered.tobytes() if type(deciphered) is memoryview else deciphered
         except ValueError as exc:
             if str(exc) == "Invalid PKCS7 padding":
                 return value
@@ -537,9 +528,7 @@ class PdfLexer:
             if (
                 keyword is not None
                 and len(keyword[0]) == 6
-                and matches_keyword_with_one_substitution(
-                    self.raw_data, keyword[1] - 6, b"endobj"
-                )
+                and matches_keyword_with_one_substitution(self.raw_data, keyword[1] - 6, b"endobj")
             ):
                 return obj
             if keyword is not None and keyword[0] in {
@@ -550,9 +539,7 @@ class PdfLexer:
                 return obj
             if keyword is not None:
                 marker = keyword[1] - len(keyword[0])
-                if looks_like_indirect_object_header(
-                    self.raw_data, marker, self.data_len
-                ):
+                if looks_like_indirect_object_header(self.raw_data, marker, self.data_len):
                     return obj
             raise PdfParseError("expected keyword 'endobj'")
         self.pos = keyword[1]
@@ -585,8 +572,7 @@ class PdfLexer:
                     except ValueError:
                         try:
                             values = [
-                                float(token) if b"." in token else int(token)
-                                for token in tokens
+                                float(token) if b"." in token else int(token) for token in tokens
                             ]
                         except ValueError:
                             pass
@@ -741,9 +727,14 @@ class PdfLexer:
                     if pos < data_len:
                         newline = data[pos]
                         pos += 1
-                        if newline == 13 and pos < data_len and data[pos] == 10:
-                            pos += 1
-                        elif newline == 10 and pos < data_len and data[pos] == 13:
+                        if (
+                            newline == 13
+                            and pos < data_len
+                            and data[pos] == 10
+                            or newline == 10
+                            and pos < data_len
+                            and data[pos] == 13
+                        ):
                             pos += 1
                     continue
                 break
@@ -944,9 +935,7 @@ class PdfLexer:
         length = lookup_dict_key(dictionary, "Length")
         if type(length) is PdfReference:
             if self.reference_resolver is None:
-                raise PdfParseError(
-                    "stream length reference must be resolved by the caller"
-                )
+                raise PdfParseError("stream length reference must be resolved by the caller")
             length = self.reference_resolver(length)
 
         data_start = self.pos
@@ -957,9 +946,7 @@ class PdfLexer:
                 endobj_pos = self.find_object_end(data_start)
                 if endobj_pos < 0:
                     raise PdfParseError("invalid stream length")
-                raw_data = (
-                    self.raw_data[data_start:endobj_pos].tobytes().rstrip(WHITESPACE)
-                )
+                raw_data = self.raw_data[data_start:endobj_pos].tobytes().rstrip(WHITESPACE)
                 self.rewind(endobj_pos)
             else:
                 raw_data = self.raw_data[data_start:endstream_pos]
@@ -977,20 +964,16 @@ class PdfLexer:
                     raw_data = bytes(raw_data)
                     self.rewind(self.data_len)
                 else:
-                    raw_data = (
-                        self.raw_data[data_start:endobj_pos]
-                        .tobytes()
-                        .rstrip(WHITESPACE)
-                    )
+                    raw_data = self.raw_data[data_start:endobj_pos].tobytes().rstrip(WHITESPACE)
                     self.rewind(endobj_pos)
             else:
                 raw_data = self.raw_data[data_start:endstream_pos]
                 self.rewind(endstream_pos + 9)
         else:
             self.skip_ignored()
-            if self.raw_data[self.pos : self.pos + 9] == b"endstream":
-                self.advance(9)
-            elif matches_keyword_with_one_substitution(
+            if self.raw_data[
+                self.pos : self.pos + 9
+            ] == b"endstream" or matches_keyword_with_one_substitution(
                 self.raw_data, self.pos, b"endstream"
             ):
                 self.advance(9)
@@ -999,9 +982,7 @@ class PdfLexer:
                 if source_buffer is not None:
                     endstream_pos = source_buffer.find(b"endstream", self.pos)
                     if endstream_pos < 0:
-                        endstream_pos = source_buffer.find(
-                            b"endstream", data_start, self.pos
-                        )
+                        endstream_pos = source_buffer.find(b"endstream", data_start, self.pos)
                     if endstream_pos < 0:
                         endstream_pos = source_buffer.find(
                             b"endstream",
@@ -1016,9 +997,7 @@ class PdfLexer:
                         endobj_pos = self.find_object_end(data_start)
                         if endobj_pos >= 0:
                             raw_data = (
-                                self.raw_data[data_start:endobj_pos]
-                                .tobytes()
-                                .rstrip(WHITESPACE)
+                                self.raw_data[data_start:endobj_pos].tobytes().rstrip(WHITESPACE)
                             )
                             self.rewind(endobj_pos)
                         else:
@@ -1026,9 +1005,7 @@ class PdfLexer:
                 else:
                     search_start = max(data_start, self.pos - 64)
                     search_data = self.raw_data[search_start:].tobytes()
-                    endstream_pos = search_data.find(
-                        b"endstream", self.pos - search_start
-                    )
+                    endstream_pos = search_data.find(b"endstream", self.pos - search_start)
                     if endstream_pos < 0:
                         prefix = self.raw_data[data_start : self.pos].tobytes()
                         endstream_pos = prefix.find(b"endstream")
@@ -1050,16 +1027,14 @@ class PdfLexer:
                         endobj_pos = self.find_object_end(data_start)
                         if endobj_pos >= 0:
                             raw_data = (
-                                self.raw_data[data_start:endobj_pos]
-                                .tobytes()
-                                .rstrip(WHITESPACE)
+                                self.raw_data[data_start:endobj_pos].tobytes().rstrip(WHITESPACE)
                             )
                             self.rewind(endobj_pos)
                         else:
                             self.rewind(self.data_len)
-            if self.raw_data[self.pos : self.pos + 9] == b"endstream":
-                self.advance(9)
-            elif matches_keyword_with_one_substitution(
+            if self.raw_data[
+                self.pos : self.pos + 9
+            ] == b"endstream" or matches_keyword_with_one_substitution(
                 self.raw_data, self.pos, b"endstream"
             ):
                 self.advance(9)
@@ -1091,9 +1066,7 @@ class PdfLexer:
         self.skip_ignored()
         if self.raw_data[self.pos : self.pos + 6] == b"stream" or (
             self.pos + 6 <= self.data_len
-            and matches_keyword_with_one_substitution(
-                self.raw_data, self.pos, b"stream"
-            )
+            and matches_keyword_with_one_substitution(self.raw_data, self.pos, b"stream")
         ):
             next_pos = self.pos + 6
             if next_pos < self.data_len:
@@ -1101,9 +1074,12 @@ class PdfLexer:
                 if next_byte not in (10, 13):
                     if next_byte in (0, 9, 12, 32):
                         separator_end = next_pos + 1
-                        while separator_end < self.data_len and self.raw_data[
-                            separator_end
-                        ] in (0, 9, 12, 32):
+                        while separator_end < self.data_len and self.raw_data[separator_end] in (
+                            0,
+                            9,
+                            12,
+                            32,
+                        ):
                             separator_end += 1
                         self.pos = (
                             separator_end

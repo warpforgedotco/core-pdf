@@ -6,22 +6,22 @@ __author__ = "Rod Sheeter"
 # for details.
 
 
-from core_pdf.impl.third_party.fontTools import ttLib
-from core_pdf.impl.third_party.fontTools.ttLib.tables import otBase
-from core_pdf.impl.third_party.fontTools.ttLib.tables import otTables as ot
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
 from collections import deque
+from dataclasses import dataclass
 from typing import (
-    Optional,
     Any,
     Callable,
     Deque,
     Iterable,
     List,
+    Optional,
     Tuple,
 )
 
+from core_pdf.impl.third_party.fontTools import ttLib
+from core_pdf.impl.third_party.fontTools.ttLib.tables import otBase
+from core_pdf.impl.third_party.fontTools.ttLib.tables import otTables as ot
 
 _COVERAGE_ATTR = "Coverage"  # tables that have one coverage use this name
 
@@ -77,18 +77,16 @@ class ReorderCoverage(ReorderRule):
             parallel_list = None
             if self.parallel_list_attr:
                 parallel_list = _get_dotted_attr(value, self.parallel_list_attr)
-                assert (
-                    type(parallel_list) is list
-                ), f"{self.parallel_list_attr} should be a list"
+                assert type(parallel_list) is list, f"{self.parallel_list_attr} should be a list"
                 assert len(parallel_list) == len(coverage.glyphs), "Nothing makes sense"
 
             _sort_by_gid(font.getGlyphID, coverage.glyphs, parallel_list)
 
         else:
             # A few tables have a list of coverage. No parallel list can exist.
-            assert (
-                not self.parallel_list_attr
-            ), f"Can't have multiple coverage AND a parallel list; {self}"
+            assert not self.parallel_list_attr, (
+                f"Can't have multiple coverage AND a parallel list; {self}"
+            )
             for coverage_entry in coverage:
                 _sort_by_gid(font.getGlyphID, coverage_entry.glyphs, None)
 
@@ -121,29 +119,19 @@ _REORDER_RULES = {
     (ot.PairPos, 2): [ReorderCoverage()],
     (ot.CursivePos, 1): [ReorderCoverage(parallel_list_attr="EntryExitRecord")],
     (ot.MarkBasePos, 1): [
-        ReorderCoverage(
-            coverage_attr="MarkCoverage", parallel_list_attr="MarkArray.MarkRecord"
-        ),
-        ReorderCoverage(
-            coverage_attr="BaseCoverage", parallel_list_attr="BaseArray.BaseRecord"
-        ),
+        ReorderCoverage(coverage_attr="MarkCoverage", parallel_list_attr="MarkArray.MarkRecord"),
+        ReorderCoverage(coverage_attr="BaseCoverage", parallel_list_attr="BaseArray.BaseRecord"),
     ],
     (ot.MarkLigPos, 1): [
-        ReorderCoverage(
-            coverage_attr="MarkCoverage", parallel_list_attr="MarkArray.MarkRecord"
-        ),
+        ReorderCoverage(coverage_attr="MarkCoverage", parallel_list_attr="MarkArray.MarkRecord"),
         ReorderCoverage(
             coverage_attr="LigatureCoverage",
             parallel_list_attr="LigatureArray.LigatureAttach",
         ),
     ],
     (ot.MarkMarkPos, 1): [
-        ReorderCoverage(
-            coverage_attr="Mark1Coverage", parallel_list_attr="Mark1Array.MarkRecord"
-        ),
-        ReorderCoverage(
-            coverage_attr="Mark2Coverage", parallel_list_attr="Mark2Array.Mark2Record"
-        ),
+        ReorderCoverage(coverage_attr="Mark1Coverage", parallel_list_attr="Mark1Array.MarkRecord"),
+        ReorderCoverage(coverage_attr="Mark2Coverage", parallel_list_attr="Mark2Array.Mark2Record"),
     ],
     (ot.ContextPos, 1): [ReorderCoverage(parallel_list_attr="PosRuleSet")],
     (ot.ContextPos, 2): [ReorderCoverage()],
@@ -177,18 +165,12 @@ _REORDER_RULES = {
     (ot.MarkGlyphSetsDef, None): [ReorderCoverage()],
     # MATH
     (ot.MathGlyphInfo, None): [ReorderCoverage(coverage_attr="ExtendedShapeCoverage")],
-    (ot.MathItalicsCorrectionInfo, None): [
-        ReorderCoverage(parallel_list_attr="ItalicsCorrection")
-    ],
+    (ot.MathItalicsCorrectionInfo, None): [ReorderCoverage(parallel_list_attr="ItalicsCorrection")],
     (ot.MathTopAccentAttachment, None): [
-        ReorderCoverage(
-            coverage_attr="TopAccentCoverage", parallel_list_attr="TopAccentAttachment"
-        )
+        ReorderCoverage(coverage_attr="TopAccentCoverage", parallel_list_attr="TopAccentAttachment")
     ],
     (ot.MathKernInfo, None): [
-        ReorderCoverage(
-            coverage_attr="MathKernCoverage", parallel_list_attr="MathKernInfoRecords"
-        )
+        ReorderCoverage(coverage_attr="MathKernCoverage", parallel_list_attr="MathKernInfoRecords")
     ],
     (ot.MathVariants, None): [
         ReorderCoverage(
@@ -208,12 +190,8 @@ _REORDER_RULES = {
 SubTablePath = Tuple[otBase.BaseTable.SubTableEntry, ...]
 
 
-def _bfs_base_table(
-    root: otBase.BaseTable, root_accessor: str
-) -> Iterable[SubTablePath]:
-    yield from _traverse_ot_data(
-        root, root_accessor, lambda frontier, new: frontier.extend(new)
-    )
+def _bfs_base_table(root: otBase.BaseTable, root_accessor: str) -> Iterable[SubTablePath]:
+    yield from _traverse_ot_data(root, root_accessor, lambda frontier, new: frontier.extend(new))
 
 
 # Given f(current frontier, new entries) add new entries to frontier

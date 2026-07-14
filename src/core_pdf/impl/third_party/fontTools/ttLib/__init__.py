@@ -1,9 +1,9 @@
 """fontTools.ttLib -- a package for dealing with TrueType fonts."""
 
-from core_pdf.impl.third_party.fontTools.config import OPTIONS
-from core_pdf.impl.third_party.fontTools.misc.loggingTools import deprecateFunction
 import logging
 
+from core_pdf.impl.third_party.fontTools.config import OPTIONS
+from core_pdf.impl.third_party.fontTools.misc.loggingTools import deprecateFunction
 
 log = logging.getLogger(__name__)
 
@@ -26,5 +26,5 @@ def debugmsg(msg):
     print(msg + time.strftime("  (%H:%M:%S)", time.localtime(time.time())))
 
 
-from core_pdf.impl.third_party.fontTools.ttLib.ttFont import *
 from core_pdf.impl.third_party.fontTools.ttLib.ttCollection import TTCollection
+from core_pdf.impl.third_party.fontTools.ttLib.ttFont import *

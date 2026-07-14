@@ -3,13 +3,13 @@ from __future__ import annotations
 
 from typing import Any
 
+from core_pdf.impl.engine.spec.s_07_objects.coercion import parse_float, parse_int
+from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.third_party.cid.widths import (
     FontWidthMap,
     SparseFontWidthMap,
     parse_cid_widths,
 )
-from core_pdf.impl.engine.spec.s_07_objects.coercion import parse_float, parse_int
-from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 
 
 def require_font_int(value: Any, message: str) -> int:
@@ -99,9 +99,7 @@ def parse_font_widths(
             if isinstance(descriptor, dict):
                 desc_missing_width = lookup_dict_key(descriptor, "MissingWidth")
                 if desc_missing_width is not None:
-                    default_width = parse_optional_font_float(
-                        desc_missing_width, default_width
-                    )
+                    default_width = parse_optional_font_float(desc_missing_width, default_width)
 
     if isinstance(descriptor, dict):
         desc_missing_width = lookup_dict_key(descriptor, "MissingWidth")

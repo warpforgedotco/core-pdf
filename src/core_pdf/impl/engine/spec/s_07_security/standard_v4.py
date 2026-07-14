@@ -34,16 +34,10 @@ class PdfStandardSecurityHandlerV4(PdfStandardSecurityHandler):
         else:
             self.cf = cf
         stmf_raw = lookup_dict_key_default(self.param, "StmF", MISSING)
-        self.stmf = (
-            get_name("Identity" if stmf_raw is MISSING else stmf_raw) or "Identity"
-        )
+        self.stmf = get_name("Identity" if stmf_raw is MISSING else stmf_raw) or "Identity"
         strf_raw = lookup_dict_key_default(self.param, "StrF", MISSING)
-        self.strf = (
-            get_name("Identity" if strf_raw is MISSING else strf_raw) or "Identity"
-        )
-        encrypt_metadata = lookup_dict_key_default(
-            self.param, "EncryptMetadata", MISSING
-        )
+        self.strf = get_name("Identity" if strf_raw is MISSING else strf_raw) or "Identity"
+        encrypt_metadata = lookup_dict_key_default(self.param, "EncryptMetadata", MISSING)
         if encrypt_metadata is MISSING:
             encrypt_metadata = True
         if type(encrypt_metadata) is not bool:
@@ -92,12 +86,7 @@ class PdfStandardSecurityHandlerV4(PdfStandardSecurityHandler):
 
     def decrypt_aes128(self, objid: int, genno: int, data: bytes) -> bytes:
         assert self.key is not None
-        key = (
-            self.key
-            + struct.pack("<L", objid)[:3]
-            + struct.pack("<L", genno)[:2]
-            + b"sAlT"
-        )
+        key = self.key + struct.pack("<L", objid)[:3] + struct.pack("<L", genno)[:2] + b"sAlT"
         h = md5(key)
         key = h.digest()[: min(len(key), 16)]
         initialization_vector = data[:16]

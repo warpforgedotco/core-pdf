@@ -4,9 +4,8 @@ from __future__ import annotations
 import binascii
 import struct
 
-from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.engine.spec.s_07_filters.decode_spec import FilterParams
-
+from core_pdf.impl.exceptions import PdfParseError
 
 PDF_WHITESPACE_TABLE = bytes([1 if i in b"\x00\t\n\x0c\r " else 0 for i in range(256)])
 PDF_WHITESPACE_BYTES = b"\x00\t\n\x0c\r "
@@ -216,9 +215,7 @@ def apply_ascii85(data: bytes | memoryview, parms: object) -> bytes:
                     ):
                         for byte in (byte0, byte1, byte2, byte3, byte4):
                             if not 33 <= byte <= 117:
-                                raise ValueError(
-                                    f"Non-Ascii85 digit found: {chr(byte)}"
-                                )
+                                raise ValueError(f"Non-Ascii85 digit found: {chr(byte)}")
                     acc = (
                         (byte0 - 33) * 52200625
                         + (byte1 - 33) * 614125

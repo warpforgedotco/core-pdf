@@ -5,7 +5,6 @@ import re
 from collections.abc import Callable, Iterator
 from typing import Protocol, TypeAlias, TypeVar, cast, overload
 
-from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.engine.spec.s_07_content.inline_images import (
     InlineImage,
     parse_inline_image,
@@ -17,9 +16,9 @@ from core_pdf.impl.engine.spec.s_07_syntax.lexer import (
     PdfLexer,
 )
 from core_pdf.impl.engine.spec.s_07_syntax.tokens import SEPARATOR_TABLE, WS_TABLE
-from core_pdf.impl.objects import PdfName, PdfString
 from core_pdf.impl.engine.spec.s_09_fonts.decoder import FontDecoder
-
+from core_pdf.impl.exceptions import PdfParseError
+from core_pdf.impl.objects import PdfName, PdfString
 
 PdfName_of = PdfName.of
 FONT_DIGIT_NAMES = tuple(PdfName_of(b"F" + bytes((48 + i,))) for i in range(10))
@@ -77,10 +76,7 @@ for op in (b"re", b"W*", b"f*", b"B*", b"b*", b"BX", b"EX", b"MP", b"DP"):
 del op
 
 IS_WORD_START = bytes(
-    [
-        1 if i > 32 and i not in (40, 41, 60, 62, 91, 93, 47, 123, 125, 37) else 0
-        for i in range(256)
-    ]
+    [1 if i > 32 and i not in (40, 41, 60, 62, 91, 93, 47, 123, 125, 37) else 0 for i in range(256)]
 )
 
 SKIP_RE = re.compile(b"(?:[\x00\t\n\f\r ]+|%[^\r\n]*(?:\r\n|\n\r|\r|\n)?)*")
@@ -151,9 +147,7 @@ def content_stream_may_show_text(data: bytes | memoryview) -> bool:
     return False
 
 
-def skip_text_clip_prefix(
-    raw_bytes: bytes | memoryview, pos: int, data_len: int
-) -> int | None:
+def skip_text_clip_prefix(raw_bytes: bytes | memoryview, pos: int, data_len: int) -> int | None:
     match = TEXT_CLIP_PREFIX_RE.match(raw_bytes, pos)
     if match is None:
         return None
@@ -235,9 +229,7 @@ class OperationTarget(Protocol):
 
     def op_Tm(self, operands: OperandWindow, depth: int) -> None: ...
 
-    def op_Tm_values(
-        self, a: float, b: float, c: float, d_: float, e: float, f: float
-    ) -> None: ...
+    def op_Tm_values(self, a: float, b: float, c: float, d_: float, e: float, f: float) -> None: ...
 
     def op_Tw(self, operands: OperandWindow, depth: int) -> None: ...
 
@@ -253,9 +245,7 @@ class OperationTarget(Protocol):
 
     def op_cm(self, operands: OperandWindow, depth: int) -> None: ...
 
-    def op_cm_values(
-        self, a: float, b: float, c: float, d_: float, e: float, f: float
-    ) -> None: ...
+    def op_cm_values(self, a: float, b: float, c: float, d_: float, e: float, f: float) -> None: ...
 
     def op_q(self, operands: OperandWindow, depth: int) -> None: ...
 
@@ -320,15 +310,13 @@ def dispatch_operations(
 
 def dispatch_operations(
     lexer: PdfLexer,
-    op_handlers: StringHandlerMap[StateOperationHandler]
-    | StringHandlerMap[BoundOperationHandler],
+    op_handlers: StringHandlerMap[StateOperationHandler] | StringHandlerMap[BoundOperationHandler],
     op_handlers_bytes: ByteHandlerMap[StateOperationHandler]
     | ByteHandlerMap[BoundOperationHandler]
     | None,
     single_op_handlers: SingleHandlerLookup[StateOperationHandler]
     | SingleHandlerLookup[BoundOperationHandler],
-    double_op_handlers: IntHandlerMap[StateOperationHandler]
-    | IntHandlerMap[BoundOperationHandler],
+    double_op_handlers: IntHandlerMap[StateOperationHandler] | IntHandlerMap[BoundOperationHandler],
     handler_target: OperationTarget | None,
     depth: int,
     operands: list[ContentOperand] | None = None,
@@ -444,16 +432,10 @@ def dispatch_operations(
                         b2 = raw_bytes[start_offset + 2]
                         if 48 <= first <= 57 and 48 <= b1 <= 57 and 48 <= b2 <= 57:
                             if op_count < max_operands:
-                                operands[op_count] = (
-                                    (first - 48) * 100 + (b1 - 48) * 10 + (b2 - 48)
-                                )
+                                operands[op_count] = (first - 48) * 100 + (b1 - 48) * 10 + (b2 - 48)
                             op_count += 1
                             continue
-                        if (
-                            (first == 45 or first == 43)
-                            and 48 <= b1 <= 57
-                            and 48 <= b2 <= 57
-                        ):
+                        if (first == 45 or first == 43) and 48 <= b1 <= 57 and 48 <= b2 <= 57:
                             val = (b1 - 48) * 10 + (b2 - 48)
                             if op_count < max_operands:
                                 operands[op_count] = -val if first == 45 else val
@@ -492,12 +474,7 @@ def dispatch_operations(
                             op_count += 1
                             continue
 
-                        if (
-                            48 <= first <= 57
-                            and b1 == 46
-                            and 48 <= b2 <= 57
-                            and 48 <= b3 <= 57
-                        ):
+                        if 48 <= first <= 57 and b1 == 46 and 48 <= b2 <= 57 and 48 <= b3 <= 57:
                             if op_count < max_operands:
                                 operands[op_count] = (first - 48) + (
                                     ((b2 - 48) * 10 + (b3 - 48)) / 100.0
@@ -624,9 +601,7 @@ def dispatch_operations(
                         raw = raw_bytes[start_offset:pos]
                         raw_number = raw.tobytes() if type(raw) is memoryview else raw
                         if op_count < max_operands:
-                            operands[op_count] = (
-                                float(raw_number) if saw_dot else int(raw_number)
-                            )
+                            operands[op_count] = float(raw_number) if saw_dot else int(raw_number)
                         op_count += 1
                     continue
 
@@ -712,13 +687,9 @@ def dispatch_operations(
                                 )
                                 operand = operands[0]
                                 if type(operand) is PdfString:
-                                    handler_target.append_text(
-                                        data=operand.data, decoder=decoder
-                                    )
+                                    handler_target.append_text(data=operand.data, decoder=decoder)
                                 elif type(operand) is bytes:
-                                    handler_target.append_text(
-                                        data=operand, decoder=decoder
-                                    )
+                                    handler_target.append_text(data=operand, decoder=decoder)
                                 else:
                                     handler_target.append_text(operand, decoder=decoder)
                             op_count = 0
@@ -739,9 +710,7 @@ def dispatch_operations(
                                     and tm_e is not None
                                     and tm_f is not None
                                 ):
-                                    handler_target.op_Tm_values(
-                                        tm_a, tm_b, tm_c, tm_d, tm_e, tm_f
-                                    )
+                                    handler_target.op_Tm_values(tm_a, tm_b, tm_c, tm_d, tm_e, tm_f)
                                 else:
                                     set_operand_count(op_count)
                                     handler_target.op_Tm(operand_window, depth)
@@ -819,9 +788,7 @@ def dispatch_operations(
                     if n_raw == 1:
                         op0 = raw_bytes[pos - 1]
                         if op0 == 113 and op_count == 0:
-                            skipped_pos = skip_text_clip_prefix(
-                                raw_bytes, pos, data_len
-                            )
+                            skipped_pos = skip_text_clip_prefix(raw_bytes, pos, data_len)
                             if skipped_pos is not None:
                                 skipped_clip_q_count += 1
                                 pos = skipped_pos
@@ -855,9 +822,7 @@ def dispatch_operations(
                 if n_raw == 1:
                     handler = single_op_handlers[raw_bytes[pos - 1]]
                 elif n_raw == 2:
-                    handler = double_op_handlers.get(
-                        (raw_bytes[pos - 2] << 8) | raw_bytes[pos - 1]
-                    )
+                    handler = double_op_handlers.get((raw_bytes[pos - 2] << 8) | raw_bytes[pos - 1])
 
                 if handler is None:
                     raw = raw_bytes[pos - n_raw : pos]
@@ -904,9 +869,7 @@ def dispatch_operations(
                     operand_start = pos
                     try:
                         if op_count < max_operands:
-                            operands[op_count] = cast(
-                                ContentOperand, lexer.parse_array()
-                            )
+                            operands[op_count] = cast(ContentOperand, lexer.parse_array())
                         else:
                             lexer.parse_array()
                     except PdfParseError as exc:
@@ -1019,9 +982,7 @@ def dispatch_operations(
             op_count += 1
             continue
         if byte == 62:
-            pos = (
-                pos + 2 if pos + 1 < data_len and raw_bytes[pos + 1] == 62 else pos + 1
-            )
+            pos = pos + 2 if pos + 1 < data_len and raw_bytes[pos + 1] == 62 else pos + 1
             continue
         if byte == 93:
             pos += 1

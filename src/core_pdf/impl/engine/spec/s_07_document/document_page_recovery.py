@@ -7,11 +7,11 @@ from typing import TYPE_CHECKING, Protocol, cast
 from core_pdf.impl.engine.spec.s_07_document.document_labels import (
     infer_page_tree_node_type,
 )
+from core_pdf.impl.engine.spec.s_07_objects.object_cache import InheritedValueMap
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import (
     collect_inherited_values,
     lookup_dict_key,
 )
-from core_pdf.impl.engine.spec.s_07_objects.object_cache import InheritedValueMap
 from core_pdf.impl.objects import PdfReference, PdfStream
 from core_pdf.impl.types import PdfDict, PdfObject
 

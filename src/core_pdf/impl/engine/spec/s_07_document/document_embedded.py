@@ -26,9 +26,7 @@ class DocumentEmbeddedHost(Protocol):
 
     def build_embedded_files(self) -> list[EmbeddedFileRecord]: ...
 
-    def embedded_file_record(
-        self, name: str, value: object
-    ) -> EmbeddedFileRecord | None: ...
+    def embedded_file_record(self, name: str, value: object) -> EmbeddedFileRecord | None: ...
 
 
 class DocumentEmbeddedMixin:
@@ -78,9 +76,7 @@ class DocumentEmbeddedMixin:
         ef = self.resolver.resolve(lookup_dict_key(filespec, "EF"))
         if not isinstance(ef, dict):
             raise ValueError("invalid embedded file stream")
-        stream = self.resolver.resolve(
-            lookup_dict_key(ef, "UF") or lookup_dict_key(ef, "F")
-        )
+        stream = self.resolver.resolve(lookup_dict_key(ef, "UF") or lookup_dict_key(ef, "F"))
         if not isinstance(stream, PdfStream):
             raise ValueError("invalid embedded file stream")
         filename = (

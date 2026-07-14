@@ -1,10 +1,10 @@
-from core_pdf.impl.third_party.fontTools.misc import sstruct
-from core_pdf.impl.third_party.fontTools.misc.roundTools import otRound
-from core_pdf.impl.third_party.fontTools.misc.textTools import safeEval, num2binary, binary2num
-from core_pdf.impl.third_party.fontTools.ttLib.tables import DefaultTable
 import bisect
 import logging
 
+from core_pdf.impl.third_party.fontTools.misc import sstruct
+from core_pdf.impl.third_party.fontTools.misc.roundTools import otRound
+from core_pdf.impl.third_party.fontTools.misc.textTools import binary2num, num2binary, safeEval
+from core_pdf.impl.third_party.fontTools.ttLib.tables import DefaultTable
 
 log = logging.getLogger(__name__)
 
@@ -138,9 +138,7 @@ class table_O_S_2f_2(DefaultTable.DefaultTable):
         elif self.version != 0:
             from core_pdf.impl.third_party.fontTools import ttLib
 
-            raise ttLib.TTLibError(
-                "unknown format for OS/2 table: version %s" % self.version
-            )
+            raise ttLib.TTLibError("unknown format for OS/2 table: version %s" % self.version)
         if len(data):
             log.debug("too much 'OS/2' table data")
 
@@ -152,18 +150,13 @@ class table_O_S_2f_2(DefaultTable.DefaultTable):
         head = ttFont["head"]
         if (self.fsSelection & 1) and not (head.macStyle & 1 << 1):
             log.debug(
-                "fsSelection bit 0 (italic) and "
-                "head table macStyle bit 1 (italic) should match"
+                "fsSelection bit 0 (italic) and head table macStyle bit 1 (italic) should match"
             )
         if (self.fsSelection & 1 << 5) and not (head.macStyle & 1):
-            log.debug(
-                "fsSelection bit 5 (bold) and "
-                "head table macStyle bit 0 (bold) should match"
-            )
+            log.debug("fsSelection bit 5 (bold) and head table macStyle bit 0 (bold) should match")
         if (self.fsSelection & 1 << 6) and (self.fsSelection & 1 + (1 << 5)):
             log.debug(
-                "fsSelection bit 6 (regular) is set, "
-                "bits 0 (italic) and 5 (bold) must be clear"
+                "fsSelection bit 6 (regular) is set, bits 0 (italic) and 5 (bold) must be clear"
             )
         if self.version < 4 and self.fsSelection & 0b1110000000:
             log.debug(
@@ -186,9 +179,7 @@ class table_O_S_2f_2(DefaultTable.DefaultTable):
         else:
             from core_pdf.impl.third_party.fontTools import ttLib
 
-            raise ttLib.TTLibError(
-                "unknown format for OS/2 table: version %s" % self.version
-            )
+            raise ttLib.TTLibError("unknown format for OS/2 table: version %s" % self.version)
         self.panose = panose
         return data
 
@@ -747,6 +738,7 @@ def calcCodePageRanges(unicodes):
 
 
 if __name__ == "__main__":
-    import doctest, sys
+    import doctest
+    import sys
 
     sys.exit(doctest.testmod().failed)

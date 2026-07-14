@@ -1,6 +1,8 @@
-from core_pdf.impl.third_party.fontTools.misc.textTools import bytesjoin, safeEval
-from . import DefaultTable
 import struct
+
+from core_pdf.impl.third_party.fontTools.misc.textTools import bytesjoin, safeEval
+
+from . import DefaultTable
 
 
 class table_V_O_R_G_(DefaultTable.DefaultTable):
@@ -28,9 +30,9 @@ class table_V_O_R_G_(DefaultTable.DefaultTable):
             self.defaultVertOriginY,
             self.numVertOriginYMetrics,
         ) = struct.unpack(">HHhH", data[:8])
-        assert (
-            self.majorVersion <= 1
-        ), "Major version of VORG table is higher than I know how to handle"
+        assert self.majorVersion <= 1, (
+            "Major version of VORG table is higher than I know how to handle"
+        )
         data = data[8:]
         vids = []
         gids = []
@@ -91,9 +93,8 @@ class table_V_O_R_G_(DefaultTable.DefaultTable):
             try:
                 gid = ttFont.getGlyphID(glyphName)
             except:
-                assert 0, (
-                    "VORG table contains a glyph name not in ttFont.getGlyphNames(): "
-                    + str(glyphName)
+                assert 0, "VORG table contains a glyph name not in ttFont.getGlyphNames(): " + str(
+                    glyphName
                 )
             vOriginTable.append([gid, glyphName, self.VOriginRecords[glyphName]])
         vOriginTable.sort()

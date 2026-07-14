@@ -127,8 +127,7 @@ def snap_table_edges(
                 clusters
                 and abs(
                     float(edge["coord"])
-                    - sum(float(item["coord"]) for item in clusters[-1])
-                    / len(clusters[-1])
+                    - sum(float(item["coord"]) for item in clusters[-1]) / len(clusters[-1])
                 )
                 <= tolerance
             ):
@@ -237,16 +236,8 @@ def intersections_to_cells(
     cells: list[tuple[float, float, float, float]] = []
     for point in points:
         x0, top = point
-        rights = [
-            candidate
-            for candidate in points
-            if candidate[1] == top and candidate[0] > x0
-        ]
-        belows = [
-            candidate
-            for candidate in points
-            if candidate[0] == x0 and candidate[1] < top
-        ]
+        rights = [candidate for candidate in points if candidate[1] == top and candidate[0] > x0]
+        belows = [candidate for candidate in points if candidate[0] == x0 and candidate[1] < top]
         for below in belows:
             if not connected(point, below):
                 continue
@@ -366,9 +357,7 @@ def table_grid_from_cells(
     if not cells:
         return None
     cols = sorted({coord for cell in cells for coord in (cell[0], cell[2])})
-    rows = sorted(
-        {coord for cell in cells for coord in (cell[1], cell[3])}, reverse=True
-    )
+    rows = sorted({coord for cell in cells for coord in (cell[1], cell[3])}, reverse=True)
     filtered_cols = [cols[0]]
     for col in cols[1:]:
         if col - filtered_cols[-1] >= MIN_CELL_WIDTH:

@@ -131,9 +131,7 @@ class RedactionAnalyzer:
                 )
         return glyphs
 
-    def iter_paint_spans(
-        self, drawings: list[dict[str, Any]]
-    ) -> list[RedactionPaintSpan]:
+    def iter_paint_spans(self, drawings: list[dict[str, Any]]) -> list[RedactionPaintSpan]:
         spans: list[RedactionPaintSpan] = []
         for drawing in drawings:
             items = drawing.get("items", ())
@@ -151,9 +149,7 @@ class RedactionAnalyzer:
             rect = bbox
             if rect is None:
                 item_rects = [
-                    item_rect
-                    for ignored, item_rect in items
-                    if isinstance(item_rect, RectBox)
+                    item_rect for ignored, item_rect in items if isinstance(item_rect, RectBox)
                 ]
                 if item_rects:
                     rect = item_rects[0]
@@ -226,9 +222,7 @@ class RedactionAnalyzer:
         result.sort(key=lambda g: g[0].seqno if g else -1)
         return result
 
-    def are_paint_spans_adjacent(
-        self, left: RedactionPaintSpan, right: RedactionPaintSpan
-    ) -> bool:
+    def are_paint_spans_adjacent(self, left: RedactionPaintSpan, right: RedactionPaintSpan) -> bool:
         if left.bbox is None or right.bbox is None:
             return False
         if paint_cluster_key(left) != paint_cluster_key(right):
@@ -278,9 +272,7 @@ class RedactionAnalyzer:
 
         paint_order_deltas: list[int] = []
         for glyph in glyphs:
-            text_rect = RectBox.from_bbox(
-                glyph.bbox, seqno=glyph.seqno, fill=glyph.fill
-            )
+            text_rect = RectBox.from_bbox(glyph.bbox, seqno=glyph.seqno, fill=glyph.fill)
             intersection = text_rect.get_intersection_area(group_rect)
             if intersection <= 0:
                 continue
@@ -298,9 +290,7 @@ class RedactionAnalyzer:
             return None
 
         occlusion_ratio = (
-            (hidden_text_area / overlapped_text_area)
-            if overlapped_text_area > 0
-            else 0.0
+            (hidden_text_area / overlapped_text_area) if overlapped_text_area > 0 else 0.0
         )
         paint_order_delta = min(paint_order_deltas) if paint_order_deltas else 0
         hidden_text = self.text_from_glyphs(hidden_glyphs)
@@ -346,15 +336,11 @@ class RedactionAnalyzer:
                     placed = True
                     break
             if not placed:
-                lines.append(
-                    {"cy": cy, "tol": max(1.0, height * 0.6), "glyphs": [glyph], "n": 1}
-                )
+                lines.append({"cy": cy, "tol": max(1.0, height * 0.6), "glyphs": [glyph], "n": 1})
 
         text_parts: list[str] = []
         for line in sorted(lines, key=lambda line: -line["cy"]):
-            line_glyphs = sorted(
-                line["glyphs"], key=lambda glyph: (glyph.bbox[0], glyph.seqno)
-            )
+            line_glyphs = sorted(line["glyphs"], key=lambda glyph: (glyph.bbox[0], glyph.seqno))
             previous: Glyph | None = None
             for glyph in line_glyphs:
                 if previous is not None:
@@ -383,11 +369,7 @@ class RedactionAnalyzer:
         is_visible_prose = bool(
             (token_count >= 4 and alpha_count >= 15)
             or (text_length >= 60 and token_count >= 10)
-            or (
-                text_length >= 20
-                and token_count >= 2
-                and alpha_count >= max(10, text_length // 2)
-            )
+            or (text_length >= 20 and token_count >= 2 and alpha_count >= max(10, text_length // 2))
         )
 
         return RedactionFeatures(
@@ -472,9 +454,7 @@ class RedactionAnalyzer:
         return "unknown", score, tuple(reasons)
 
     def is_redaction_date(self, features: RedactionFeatures) -> bool:
-        return features.has_date_pattern or (
-            features.has_year and features.is_numeric_only
-        )
+        return features.has_date_pattern or (features.has_year and features.is_numeric_only)
 
     def is_redaction_placeholder(self, features: RedactionFeatures) -> bool:
         if features.is_all_caps and features.text_length <= 3:

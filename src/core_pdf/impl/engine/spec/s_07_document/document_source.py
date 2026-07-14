@@ -51,9 +51,7 @@ class DocumentSourceMixin:
 
         read = getattr(source, "read", None)
         if not callable(read):
-            raise PdfSourceError(
-                f"PDF source type {type(source).__name__} is not supported"
-            )
+            raise PdfSourceError(f"PDF source type {type(source).__name__} is not supported")
         reader = cast(BinaryReader, source)
         try:
             raw = reader.read()
@@ -67,7 +65,7 @@ class DocumentSourceMixin:
             return None
         try:
             fd = fileno()
-        except OSError, TypeError, ValueError:
+        except (OSError, TypeError, ValueError):
             return None
         try:
             return mmap.mmap(fd, 0, access=mmap.ACCESS_READ)

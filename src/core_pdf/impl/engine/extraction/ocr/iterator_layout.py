@@ -8,6 +8,8 @@ from typing import cast
 from core_pdf.impl.engine.extraction.common import page_geometry
 from core_pdf.impl.engine.extraction.ocr import (
     layout as ocr_layout,
+)
+from core_pdf.impl.engine.extraction.ocr import (
     rendering as ocr_rendering,
 )
 from core_pdf.impl.engine.extraction.ocr.text_analysis import normalized_text_tokens
@@ -96,7 +98,7 @@ def iterator_row_bbox(row: OcrRow) -> tuple[float, float, float, float] | None:
         top = ocr_float_value(row["top"])
         width = ocr_float_value(row["width"])
         height = ocr_float_value(row["height"])
-    except KeyError, TypeError, ValueError:
+    except (KeyError, TypeError, ValueError):
         return None
     if width <= 0.0 or height <= 0.0:
         return None
@@ -224,9 +226,7 @@ def reconciled_iterator_layout_text_result(layout: OcrIteratorLayout) -> OcrText
         return OcrTextResult("", None)
     word_rows_by_line = iterator_rows_by_line_key(layout.word_rows)
     symbol_rows_by_line = iterator_rows_by_line_key(layout.symbol_rows)
-    word_row_indexes = {
-        id(row): row_index for row_index, row in enumerate(layout.word_rows)
-    }
+    word_row_indexes = {id(row): row_index for row_index, row in enumerate(layout.word_rows)}
     word_roles = iterator_word_row_roles(layout.word_rows)
     reconciled_rows: list[OcrRow] = []
     changed = False
@@ -247,8 +247,7 @@ def reconciled_iterator_layout_text_result(layout: OcrIteratorLayout) -> OcrText
         reconciled_rows.append(alternative.row)
         changed = (
             changed
-            or str(alternative.row.get("text", "")).strip()
-            != str(line_row.get("text", "")).strip()
+            or str(alternative.row.get("text", "")).strip() != str(line_row.get("text", "")).strip()
         )
     if not changed:
         return OcrTextResult("", None)
@@ -272,8 +271,7 @@ def iterator_rows_by_line_key(
     for row in rows:
         grouped.setdefault(iterator_line_key(row), []).append(row)
     return {
-        key: tuple(sorted(value, key=iterator_row_page_order_key))
-        for key, value in grouped.items()
+        key: tuple(sorted(value, key=iterator_row_page_order_key)) for key, value in grouped.items()
     }
 
 
@@ -329,9 +327,7 @@ def best_reconciled_line_alternative(
     if choice_symbol_alternative is not None:
         alternatives.append(choice_symbol_alternative)
     base = alternatives[0]
-    best = max(
-        alternatives, key=lambda item: line_alternative_score(item, alternatives)
-    )
+    best = max(alternatives, key=lambda item: line_alternative_score(item, alternatives))
     if best.source == base.source:
         return None
     if not line_alternative_should_replace(base, best, alternatives):
@@ -341,9 +337,7 @@ def best_reconciled_line_alternative(
 
 def line_alternative_from_textline(row: OcrRow) -> OcrLineAlternative:
     text = str(row.get("text", "")).strip()
-    return OcrLineAlternative(
-        text, iterator_row_confidence(row), "textline", row, (row,)
-    )
+    return OcrLineAlternative(text, iterator_row_confidence(row), "textline", row, (row,))
 
 
 def line_alternative_from_word_rows(
@@ -462,9 +456,7 @@ def line_alternative_from_symbol_choices_with_word_rows(
     text = ocr_layout.render_ocr_word_line(words, word_roles)
     if not text:
         return None
-    confidence = (
-        int(round(sum(confidences) / len(confidences))) if confidences else None
-    )
+    confidence = int(round(sum(confidences) / len(confidences))) if confidences else None
     row = iterator_line_row_with_text(line_row, text, word_rows)
     if confidence is not None:
         row["conf"] = confidence
@@ -484,9 +476,7 @@ def iterator_symbol_rows_by_word_num(
     for row in rows:
         grouped.setdefault(ocr_int_value(row.get("word_num", 0)), []).append(row)
     return {
-        key: tuple(
-            sorted(value, key=lambda row: ocr_int_value(row.get("symbol_num", 0)))
-        )
+        key: tuple(sorted(value, key=lambda row: ocr_int_value(row.get("symbol_num", 0))))
         for key, value in grouped.items()
     }
 
@@ -499,9 +489,7 @@ def iterator_symbol_rows_word_text(
 ) -> str:
     symbols = [
         iterator_symbol_row_text(row, median_width, use_choices)
-        for row in sorted(
-            rows, key=lambda row: ocr_int_value(row.get("symbol_num", 0))
-        )
+        for row in sorted(rows, key=lambda row: ocr_int_value(row.get("symbol_num", 0)))
     ]
     return "".join(symbols).strip()
 
@@ -602,7 +590,7 @@ def iterator_preferred_symbol_choice(
         confidence = getattr(choice, "confidence", None)
         try:
             confidence_value = int(confidence) if confidence is not None else 0
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             confidence_value = 0
         score = iterator_symbol_choice_score(
             text,
@@ -706,9 +694,9 @@ def line_alternative_should_replace(
         return False
     base_tokens = normalized_text_tokens(base.text)
     best_tokens = normalized_text_tokens(best.text)
-    if iterator_compact_text_key(base.text) == iterator_compact_text_key(
-        best.text
-    ) and len(best_tokens) < len(base_tokens):
+    if iterator_compact_text_key(base.text) == iterator_compact_text_key(best.text) and len(
+        best_tokens
+    ) < len(base_tokens):
         return False
     if len(best_tokens) < max(1, int(len(base_tokens) * 0.75)):
         return False
@@ -749,9 +737,7 @@ def iterator_line_agreement_score(
             continue
         other_tokens = set(normalized_text_tokens(other.text))
         if token_set and other_tokens:
-            overlap = len(token_set & other_tokens) / max(
-                len(token_set), len(other_tokens)
-            )
+            overlap = len(token_set & other_tokens) / max(len(token_set), len(other_tokens))
             score += overlap * 8.0
     return min(score, 18.0)
 
@@ -796,9 +782,7 @@ def iterator_line_row_with_text(
 
 def iterator_rows_confidence(rows: tuple[OcrRow, ...]) -> int | None:
     confidences = [
-        confidence
-        for row in rows
-        if (confidence := iterator_row_confidence(row)) is not None
+        confidence for row in rows if (confidence := iterator_row_confidence(row)) is not None
     ]
     if not confidences:
         return None
@@ -808,14 +792,12 @@ def iterator_rows_confidence(rows: tuple[OcrRow, ...]) -> int | None:
 def iterator_row_width(row: OcrRow) -> float:
     try:
         return ocr_float_value(row["width"])
-    except KeyError, TypeError, ValueError:
+    except (KeyError, TypeError, ValueError):
         return 0.0
 
 
 def iterator_median_row_width(rows: tuple[OcrRow, ...]) -> float:
-    widths = sorted(
-        iterator_row_width(row) for row in rows if iterator_row_width(row) > 0
-    )
+    widths = sorted(iterator_row_width(row) for row in rows if iterator_row_width(row) > 0)
     if not widths:
         return 0.0
     return widths[len(widths) // 2]
@@ -856,9 +838,7 @@ def iterator_tile_layout_text_result(
     ordered = sorted(filtered, key=iterator_row_page_order_key)
     result = iterator_rows_text_result(ordered)
     ordered_word_rows = tuple(sorted(layout.word_rows, key=iterator_row_page_order_key))
-    ordered_symbol_rows = tuple(
-        sorted(layout.symbol_rows, key=iterator_row_page_order_key)
-    )
+    ordered_symbol_rows = tuple(sorted(layout.symbol_rows, key=iterator_row_page_order_key))
     return ocr_layout.geometry_rendered_ocr_result(
         OcrTextResult(
             result.text,
@@ -878,15 +858,11 @@ def iterator_tile_layout_text_result(
 
 
 def iterator_rows_text_result(rows: list[OcrRow]) -> OcrTextResult:
-    lines = [
-        str(row["text"]).strip() for row in rows if str(row.get("text", "")).strip()
-    ]
+    lines = [str(row["text"]).strip() for row in rows if str(row.get("text", "")).strip()]
     if not lines:
         return OcrTextResult("", None)
     confidences = [ocr_int_value(row["conf"]) for row in rows if "conf" in row]
-    confidence = (
-        int(round(sum(confidences) / len(confidences))) if confidences else None
-    )
+    confidence = int(round(sum(confidences) / len(confidences))) if confidences else None
     return OcrTextResult(
         "\n".join(lines),
         confidence,
@@ -944,9 +920,7 @@ def iterator_symbol_rows_text_result(rows: list[OcrRow]) -> OcrTextResult:
     flush_line()
     if not lines:
         return OcrTextResult("", None)
-    confidence = (
-        int(round(sum(confidences) / len(confidences))) if confidences else None
-    )
+    confidence = int(round(sum(confidences) / len(confidences))) if confidences else None
     return OcrTextResult(
         "\n".join(lines),
         confidence,
@@ -973,7 +947,7 @@ def iterator_rows_above_confidence(
 def iterator_row_confidence(row: OcrRow) -> int | None:
     try:
         return int(round(ocr_float_value(row["conf"])))
-    except KeyError, TypeError, ValueError:
+    except (KeyError, TypeError, ValueError):
         return None
 
 
@@ -1004,7 +978,7 @@ def iterator_row_page_bbox(
             ocr_float_value(bbox[2]),
             ocr_float_value(bbox[3]),
         )
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return None
 
 

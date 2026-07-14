@@ -12,15 +12,15 @@ from core_pdf.impl.engine.spec.s_07_document.document_page_labels import (
 )
 from core_pdf.impl.engine.spec.s_07_document.document_page_list import LazyPageList
 from core_pdf.impl.engine.spec.s_07_document.document_page_recovery import (
-    DocumentPageRecoveryMixin,
     RECOVERABLE_PAGE_INHERITED_KEYS,
+    DocumentPageRecoveryMixin,
 )
 from core_pdf.impl.engine.spec.s_07_document.page import PdfPage
-from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_07_objects.object_cache import (
     CachedPdfObject,
     InheritedValueMap,
 )
+from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.types import PdfDict, PdfObject
 
@@ -41,6 +41,7 @@ class DocumentPagesMixin(DocumentPageRecoveryMixin, DocumentPageLabelsMixin):
     resolver: DocumentPagesResolver
 
     if TYPE_CHECKING:
+
         def catalog(self) -> PdfDict: ...
 
         def discover_page_dicts(self) -> Iterator[PdfDict]: ...
@@ -135,7 +136,7 @@ class DocumentPagesMixin(DocumentPageRecoveryMixin, DocumentPageLabelsMixin):
                     invalidate()
                 yield from discovered
                 return
-        except PdfParseError, ValueError:
+        except (PdfParseError, ValueError):
             discovered = list(self.discover_page_dicts())
             if discovered:
                 self.page_tree_was_recovered = True
@@ -162,7 +163,7 @@ class DocumentPagesMixin(DocumentPageRecoveryMixin, DocumentPageLabelsMixin):
             count = self.resolver.resolve(lookup_dict_key(pages_node, "Count"))
             if type(count) is int and count >= 0:
                 return count
-        except PdfParseError, ValueError:
+        except (PdfParseError, ValueError):
             return len(self.build_page_dicts())
         return len(self.build_page_dicts())
 
@@ -171,9 +172,7 @@ class DocumentPagesMixin(DocumentPageRecoveryMixin, DocumentPageLabelsMixin):
 
     def build_page_cache(self) -> tuple[list[PdfDict], dict[int, int]]:
         page_dicts = self.build_page_dicts()
-        page_index_cache = {
-            id(page_dict): index for index, page_dict in enumerate(page_dicts)
-        }
+        page_index_cache = {id(page_dict): index for index, page_dict in enumerate(page_dicts)}
         return page_dicts, page_index_cache
 
     @property
@@ -192,8 +191,7 @@ class DocumentPagesMixin(DocumentPageRecoveryMixin, DocumentPageLabelsMixin):
             if self.page_dicts_cache is None:
                 self.page_dicts_cache = self.build_page_dicts()
             self.page_index_cache = {
-                id(page_dict): index
-                for index, page_dict in enumerate(self.page_dicts_cache)
+                id(page_dict): index for index, page_dict in enumerate(self.page_dicts_cache)
             }
         page_index = self.page_index_cache.get(id(page_obj))
         if page_index is not None:

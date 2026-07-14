@@ -26,9 +26,7 @@ class DefaultTable:
     def compile(self, ttFont: TTFont) -> bytes:
         return self.data
 
-    def toXML(
-        self, writer: XMLWriter, ttFont: TTFont, **kwargs: dict[str, Any]
-    ) -> None:
+    def toXML(self, writer: XMLWriter, ttFont: TTFont, **kwargs: dict[str, Any]) -> None:
         if hasattr(self, "ERROR"):
             writer.comment("An error occurred during the decompilation of this table")
             writer.newline()
@@ -40,9 +38,7 @@ class DefaultTable:
         writer.endtag("hexdata")
         writer.newline()
 
-    def fromXML(
-        self, name: str, attrs: dict[str, str], content: str, ttFont: TTFont
-    ) -> None:
+    def fromXML(self, name: str, attrs: dict[str, str], content: str, ttFont: TTFont) -> None:
         from core_pdf.impl.third_party.fontTools import ttLib
         from core_pdf.impl.third_party.fontTools.misc.textTools import readHex
 

@@ -1,13 +1,13 @@
+import struct
+
+# from itertools import *
+from functools import partial
+
 from core_pdf.impl.third_party.fontTools.misc import sstruct
 from core_pdf.impl.third_party.fontTools.misc.fixedTools import floatToFixedToStr
 from core_pdf.impl.third_party.fontTools.misc.textTools import safeEval
 
-# from itertools import *
-from functools import partial
-from . import DefaultTable
-from . import grUtils
-import struct
-
+from . import DefaultTable, grUtils
 
 Glat_format_0 = """
     >        # big endian
@@ -109,9 +109,7 @@ class table_G__l_a_t(DefaultTable.DefaultTable):
             o.subboxes = []
             for b in range(numsub):
                 if len(data) >= 8:
-                    subbox, data = sstruct.unpack2(
-                        Glat_format_3_subbox_entry, data, _Object()
-                    )
+                    subbox, data = sstruct.unpack2(Glat_format_3_subbox_entry, data, _Object())
                     o.subboxes.append(subbox)
         attrs = self.decompileAttributes12(data, Glat_format_23_entry)
         if self.hasOctaboxes:
@@ -120,9 +118,7 @@ class table_G__l_a_t(DefaultTable.DefaultTable):
 
     def compile(self, ttFont):
         data = sstruct.pack(Glat_format_0, self)
-        if self.version <= 1.9:
-            encoder = partial(self.compileAttributes12, fmt=Glat_format_1_entry)
-        elif self.version <= 2.9:
+        if self.version <= 1.9 or self.version <= 2.9:
             encoder = partial(self.compileAttributes12, fmt=Glat_format_1_entry)
         elif self.version >= 3.0:
             self.compression = (self.scheme << 27) + (1 if self.hasOctaboxes else 0)
@@ -162,31 +158,25 @@ class table_G__l_a_t(DefaultTable.DefaultTable):
     def toXML(self, writer, ttFont):
         writer.simpletag("version", version=self.version, compressionScheme=self.scheme)
         writer.newline()
-        for n, a in sorted(
-            self.attributes.items(), key=lambda x: ttFont.getGlyphID(x[0])
-        ):
+        for n, a in sorted(self.attributes.items(), key=lambda x: ttFont.getGlyphID(x[0])):
             writer.begintag("glyph", name=n)
             writer.newline()
             if hasattr(a, "octabox"):
                 o = a.octabox
-                formatstring, names, fixes = sstruct.getformat(
-                    Glat_format_3_octabox_metrics
-                )
+                formatstring, names, fixes = sstruct.getformat(Glat_format_3_octabox_metrics)
                 vals = {}
                 for k in names:
                     if k == "subboxBitmap":
                         continue
-                    vals[k] = "{:.3f}%".format(getattr(o, k) * 100.0 / 255)
-                vals["bitmap"] = "{:0X}".format(o.subboxBitmap)
+                    vals[k] = f"{getattr(o, k) * 100.0 / 255:.3f}%"
+                vals["bitmap"] = f"{o.subboxBitmap:0X}"
                 writer.begintag("octaboxes", **vals)
                 writer.newline()
-                formatstring, names, fixes = sstruct.getformat(
-                    Glat_format_3_subbox_entry
-                )
+                formatstring, names, fixes = sstruct.getformat(Glat_format_3_subbox_entry)
                 for s in o.subboxes:
                     vals = {}
                     for k in names:
-                        vals[k] = "{:.3f}%".format(getattr(s, k) * 100.0 / 255)
+                        vals[k] = f"{getattr(s, k) * 100.0 / 255:.3f}%"
                     writer.simpletag("octabox", **vals)
                     writer.newline()
                 writer.endtag("octaboxes")

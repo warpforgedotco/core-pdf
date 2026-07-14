@@ -20,9 +20,7 @@ PdfStringObject: TypeAlias = PdfTextString | PdfByteString
 PdfKey: TypeAlias = str | bytes | PdfName
 PdfArray: TypeAlias = list["PdfObject"]
 PdfDict: TypeAlias = dict[PdfKey, "PdfObject"]
-PdfPrimitive: TypeAlias = (
-    PdfNull | PdfBoolean | PdfInteger | PdfReal | PdfStringObject | PdfName
-)
+PdfPrimitive: TypeAlias = PdfNull | PdfBoolean | PdfInteger | PdfReal | PdfStringObject | PdfName
 PdfDirectObject: TypeAlias = PdfPrimitive | PdfArray | PdfDict | PdfStream
 PdfObject: TypeAlias = PdfDirectObject | PdfReference
 PdfByteBuffer: TypeAlias = bytes | mmap.mmap

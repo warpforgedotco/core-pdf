@@ -1,13 +1,14 @@
+import os
+import re
+
 from core_pdf.impl.third_party.fontTools.feaLib.error import FeatureLibError, IncludedFeaNotFound
 from core_pdf.impl.third_party.fontTools.feaLib.location import FeatureLibLocation
-import re
-import os
 
 try:
     import cython
 except ImportError:
     # if cython not installed, use mock module with no-op decorators and types
-    from core_pdf.impl.third_party.fontTools.misc import cython
+    pass
 
 
 class Lexer(object):
@@ -182,9 +183,7 @@ class Lexer(object):
         regexp = r"}\s*" + tag + r"\s*;"
         split = re.split(regexp, self.text_[self.pos_ :], maxsplit=1)
         if len(split) != 2:
-            raise FeatureLibError(
-                "Expected '} %s;' to terminate anonymous block" % tag, location
-            )
+            raise FeatureLibError("Expected '} %s;' to terminate anonymous block" % tag, location)
         self.pos_ += len(split[0])
         return (Lexer.ANONYMOUS_BLOCK, split[0], location)
 
@@ -269,7 +268,7 @@ class IncludingLexer(object):
             fileobj, closing = file_or_path, False
         else:
             filename, closing = file_or_path, True
-            fileobj = open(filename, "r", encoding="utf-8-sig")
+            fileobj = open(filename, encoding="utf-8-sig")
         data = fileobj.read()
         filename = getattr(fileobj, "name", None)
         if closing:

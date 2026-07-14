@@ -1,7 +1,8 @@
 """Pen calculating area, center of mass, variance and standard-deviation,
 covariance and correlation, and slant, of glyph shapes."""
 
-from math import sqrt, degrees, atan
+from math import atan, degrees, sqrt
+
 from core_pdf.impl.third_party.fontTools.pens.basePen import BasePen, OpenContourError
 from core_pdf.impl.third_party.fontTools.pens.momentsPen import MomentsPen
 
@@ -46,9 +47,7 @@ class StatisticsBase:
             correlation = max(-1, min(1, correlation))
         self.correlation = correlation if abs(correlation) > 1e-3 else 0
 
-        slant = (
-            self.covariance / self.varianceY if self.varianceY != 0 else float("NaN")
-        )
+        slant = self.covariance / self.varianceY if self.varianceY != 0 else float("NaN")
         self.slant = slant if abs(slant) > 1e-3 else 0
 
 
@@ -154,18 +153,15 @@ class StatisticsControlPen(StatisticsBase, BasePen):
             # Var(X) = (sum[X^2] - sum[X]^2 / n) / (n - 1)
             # https://www.statisticshowto.com/probability-and-statistics/descriptive-statistics/sample-variance/
             self.varianceX = varianceX = (
-                sum(p.real * p.real for p in nodes)
-                - (sumNodes.real * sumNodes.real) / n
+                sum(p.real * p.real for p in nodes) - (sumNodes.real * sumNodes.real) / n
             ) / (n - 1)
             self.varianceY = varianceY = (
-                sum(p.imag * p.imag for p in nodes)
-                - (sumNodes.imag * sumNodes.imag) / n
+                sum(p.imag * p.imag for p in nodes) - (sumNodes.imag * sumNodes.imag) / n
             ) / (n - 1)
 
             # Covariance(X,Y) = (sum[X.Y] - sum[X].sum[Y] / n) / (n - 1)
             self.covariance = covariance = (
-                sum(p.real * p.imag for p in nodes)
-                - (sumNodes.real * sumNodes.imag) / n
+                sum(p.real * p.imag for p in nodes) - (sumNodes.real * sumNodes.imag) / n
             ) / (n - 1)
         else:
             self.varianceX = varianceX = 0
@@ -176,8 +172,8 @@ class StatisticsControlPen(StatisticsBase, BasePen):
 
 
 def _test(glyphset, upem, glyphs, quiet=False, *, control=False):
-    from core_pdf.impl.third_party.fontTools.pens.transformPen import TransformPen
     from core_pdf.impl.third_party.fontTools.misc.transform import Scale
+    from core_pdf.impl.third_party.fontTools.pens.transformPen import TransformPen
 
     wght_sum = 0
     wght_sum_perceptual = 0

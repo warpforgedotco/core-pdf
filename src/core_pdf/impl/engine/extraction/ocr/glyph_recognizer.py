@@ -7,7 +7,6 @@ from typing import Any
 from core_pdf.impl.engine.layout.glyphs import GlyphCluster
 from core_pdf.impl.engine.layout.models import TextRun
 
-
 BITMAP_REPAIR_LABELS = frozenset(
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,-+/()[]{}<>|_~"
 )
@@ -105,9 +104,7 @@ def text_runs_from_rendered_glyphs(rendered_page: Any) -> list[TextRun]:
             continue
         seqno_int = seqno if isinstance(seqno, int) else -1
         run_items.append((x0, y0, x1, y1, ink_bbox, text, seqno_int, item))
-    run_items.sort(
-        key=lambda entry: (-((entry[1] + entry[3]) * 0.5), entry[0], entry[6])
-    )
+    run_items.sort(key=lambda entry: (-((entry[1] + entry[3]) * 0.5), entry[0], entry[6]))
 
     runs: list[TextRun] = []
     for order, (x0, y0, x1, y1, ink_bbox, text, seqno, item) in enumerate(run_items):
@@ -136,9 +133,7 @@ def text_runs_from_rendered_glyphs(rendered_page: Any) -> list[TextRun]:
                 order=order,
                 stream_order=seqno,
                 xobject_depth=0,
-                font_name=item.get("font_name")
-                if isinstance(item.get("font_name"), str)
-                else None,
+                font_name=item.get("font_name") if isinstance(item.get("font_name"), str) else None,
                 visible=True,
                 seqno=seqno,
                 fill_color=item.get("fill_color")
@@ -182,7 +177,7 @@ def numeric_bbox(value: Any) -> tuple[float, float, float, float] | None:
             float(value[2]),
             float(value[3]),
         )
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return None
     return (x0, y0, x1, y1)
 
@@ -193,9 +188,7 @@ def glyph_bitmap_item_repairs(
     repair_contextual_punctuation: bool = False,
 ) -> dict[int, str]:
     code_repairs = glyph_code_repairs(glyph_items)
-    examples: dict[
-        tuple[str | None, int, int], dict[tuple[tuple[int, ...], str], None]
-    ] = {}
+    examples: dict[tuple[str | None, int, int], dict[tuple[tuple[int, ...], str], None]] = {}
     targets: list[dict[str, Any]] = []
     target_bitmaps: dict[int, tuple[int, ...]] = {}
     contextual_targets = (
@@ -225,9 +218,7 @@ def glyph_bitmap_item_repairs(
         return code_repairs
 
     repairs: dict[int, str] = dict(code_repairs)
-    best_label_cache: dict[
-        tuple[tuple[str | None, int, int], tuple[int, ...]], str | None
-    ] = {}
+    best_label_cache: dict[tuple[tuple[str | None, int, int], tuple[int, ...]], str | None] = {}
     for item in targets:
         bitmap = target_bitmaps.get(id(item))
         if bitmap is None:
@@ -260,11 +251,7 @@ def repaired_run_text_from_glyph_items(
     for item in sorted(glyph_items, key=lambda entry: glyph_item_index(entry) or -1):
         glyph_index = glyph_item_index(item)
         glyph_text = item.get("text")
-        if (
-            glyph_index is None
-            or not isinstance(glyph_text, str)
-            or len(glyph_text) != 1
-        ):
+        if glyph_index is None or not isinstance(glyph_text, str) or len(glyph_text) != 1:
             return None
         ordered.append((glyph_index, glyph_text))
     if not any(glyph_index in repairs for glyph_index, ignored_text in ordered):
@@ -363,7 +350,7 @@ def contextual_punctuation_target_indexes(
                 float(bbox[2]),
                 float(bbox[3]),
             )
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             continue
         if x1 <= x0 or y1 <= y0:
             continue
@@ -372,9 +359,7 @@ def contextual_punctuation_target_indexes(
         return set()
 
     lines: list[list[tuple[float, float, float, float, str, int]]] = []
-    for row in sorted(
-        rows, key=lambda entry: (-((entry[1] + entry[3]) * 0.5), entry[0])
-    ):
+    for row in sorted(rows, key=lambda entry: (-((entry[1] + entry[3]) * 0.5), entry[0])):
         mid_y = (row[1] + row[3]) * 0.5
         height = row[3] - row[1]
         for line in lines:
@@ -512,9 +497,7 @@ def glyph_item_index(item: dict[str, Any]) -> int | None:
 def glyph_identity_repair_keys(
     item: dict[str, Any],
 ) -> list[tuple[str | None, str, int]]:
-    font_name = (
-        item.get("font_name") if isinstance(item.get("font_name"), str) else None
-    )
+    font_name = item.get("font_name") if isinstance(item.get("font_name"), str) else None
     keys: list[tuple[str | None, str, int]] = []
     gid = item.get("gid")
     if isinstance(gid, int):

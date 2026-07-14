@@ -1,16 +1,16 @@
-from core_pdf.impl.third_party.fontTools.misc import sstruct
-from core_pdf.impl.third_party.fontTools.misc.fixedTools import floatToFixedToStr, strToFixedToFloat
-from core_pdf.impl.third_party.fontTools.misc.textTools import safeEval, num2binary, binary2num
-from core_pdf.impl.third_party.fontTools.misc.timeTools import (
-    timestampFromString,
-    timestampToString,
-    timestampNow,
-)
-from core_pdf.impl.third_party.fontTools.misc.timeTools import epoch_diff as mac_epoch_diff  # For backward compat
-from core_pdf.impl.third_party.fontTools.misc.arrayTools import intRect, unionRect
-from . import DefaultTable
 import logging
 
+from core_pdf.impl.third_party.fontTools.misc import sstruct
+from core_pdf.impl.third_party.fontTools.misc.arrayTools import intRect, unionRect
+from core_pdf.impl.third_party.fontTools.misc.fixedTools import floatToFixedToStr, strToFixedToFloat
+from core_pdf.impl.third_party.fontTools.misc.textTools import binary2num, num2binary, safeEval
+from core_pdf.impl.third_party.fontTools.misc.timeTools import (
+    timestampFromString,
+    timestampNow,
+    timestampToString,
+)
+
+from . import DefaultTable
 
 log = logging.getLogger(__name__)
 
@@ -65,9 +65,7 @@ class table__h_e_a_d(DefaultTable.DefaultTable):
                 value &= 0xFFFFFFFF
                 setattr(self, stamp, value)
             if value < 0x7C259DC0:  # January 1, 1970 00:00:00
-                log.debug(
-                    "'%s' timestamp seems very low; regarding as unix timestamp", stamp
-                )
+                log.debug("'%s' timestamp seems very low; regarding as unix timestamp", stamp)
                 value += 0x7C259DC0
                 setattr(self, stamp, value)
 

@@ -1,11 +1,10 @@
-import sys
 import logging
+import sys
 import timeit
-from functools import wraps
-from collections.abc import Mapping, Callable
 import warnings
+from collections.abc import Callable, Mapping
+from functools import wraps
 from logging import PercentStyle
-
 
 # default logging level used by Timer class
 TIME_LEVEL = logging.DEBUG
@@ -55,9 +54,7 @@ class LevelFormatter(logging.Formatter):
 
     def __init__(self, fmt=None, datefmt=None, style="%"):
         if style != "%":
-            raise ValueError(
-                "only '%' percent style is supported in both python 2 and 3"
-            )
+            raise ValueError("only '%' percent style is supported in both python 2 and 3")
         if fmt is None:
             fmt = DEFAULT_FORMATS
         if isinstance(fmt, str):
@@ -134,14 +131,11 @@ def configLogger(**kwargs):
     handlers = kwargs.pop("handlers", None)
     if handlers is None:
         if "stream" in kwargs and "filename" in kwargs:
-            raise ValueError(
-                "'stream' and 'filename' should not be " "specified together"
-            )
+            raise ValueError("'stream' and 'filename' should not be specified together")
     else:
         if "stream" in kwargs or "filename" in kwargs:
             raise ValueError(
-                "'stream' or 'filename' should not be "
-                "specified together with 'handlers'"
+                "'stream' or 'filename' should not be specified together with 'handlers'"
             )
     if handlers is None:
         filename = kwargs.pop("filename", None)
@@ -427,9 +421,11 @@ class ChannelsFilter(logging.Filter):
             return True
         for name in self.names:
             nlen = self.lengths[name]
-            if name == record.name:
-                return True
-            elif record.name.find(name, 0, nlen) == 0 and record.name[nlen] == ".":
+            if (
+                name == record.name
+                or record.name.find(name, 0, nlen) == 0
+                and record.name[nlen] == "."
+            ):
                 return True
         return False
 

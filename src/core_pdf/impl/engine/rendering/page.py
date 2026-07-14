@@ -3,12 +3,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from core_pdf.impl.engine.spec.s_07_content import TextState
 from core_pdf.impl.engine.rendering.models import (
     DisplayList,
-    RenderOptions,
     RenderedPage,
+    RenderOptions,
 )
+from core_pdf.impl.engine.spec.s_07_content import TextState
 from core_pdf.impl.engine.spec.s_07_objects.coercion import normalize_pdf_name
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_08_graphics.matrix import (
@@ -248,23 +248,15 @@ def compose_page(page: Any, options: RenderOptions | None = None) -> RenderedPag
                 rect=rect,
                 widget=dict(widget) if isinstance(widget, dict) else {},
                 appearance=appearance,
-                appearance_rendered=append_form_appearance(
-                    appearance, rect, appearance_state
-                )
+                appearance_rendered=append_form_appearance(appearance, rect, appearance_state)
                 if appearance is not None
                 else False,
             )
     if options.include_annotations:
         for annot in page.get_annotations():
-            appearance = (
-                lookup_dict_key(annot.dict, "AP")
-                if isinstance(annot.dict, dict)
-                else None
-            )
+            appearance = lookup_dict_key(annot.dict, "AP") if isinstance(annot.dict, dict) else None
             appearance_state = (
-                lookup_dict_key(annot.dict, "AS")
-                if isinstance(annot.dict, dict)
-                else None
+                lookup_dict_key(annot.dict, "AS") if isinstance(annot.dict, dict) else None
             )
             rendered = False
             if appearance is not None:

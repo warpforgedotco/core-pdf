@@ -39,10 +39,13 @@ def test_iter_unstructured_region_layouts_yields_native_regions() -> None:
     assert page.regions[0].words[0].text == "Hello"
     assert page.regions[0].words[0].start_index == 0
     assert page.regions[0].words[1].text == "World"
-    assert page.regions[0].text[
-        page.regions[0].words[1].start_index : page.regions[0].words[1].start_index
-        + len(page.regions[0].words[1].text)
-    ] == "World"
+    assert (
+        page.regions[0].text[
+            page.regions[0].words[1].start_index : page.regions[0].words[1].start_index
+            + len(page.regions[0].words[1].text)
+        ]
+        == "World"
+    )
 
 
 def test_iter_unstructured_region_layouts_accepts_file_like_object() -> None:
@@ -67,13 +70,9 @@ def test_unstructured_line_render_inserts_missing_gap_space() -> None:
 
 def test_unstructured_line_render_does_not_duplicate_existing_spaces() -> None:
     line = LayoutLine()
-    line.add(
-        TextRun("LayoutParser: ", 0.0, 0.0, 58.0, 10.0, 0.0, 0.0, 10.0, 4.0, 0, 0, 0)
-    )
+    line.add(TextRun("LayoutParser: ", 0.0, 0.0, 58.0, 10.0, 0.0, 0.0, 10.0, 4.0, 0, 0, 0))
     line.add(TextRun("A ", 72.0, 0.0, 80.0, 10.0, 72.0, 0.0, 10.0, 4.0, 1, 1, 0))
-    line.add(
-        TextRun("Unified", 92.0, 0.0, 124.0, 10.0, 92.0, 0.0, 10.0, 4.0, 2, 2, 0)
-    )
+    line.add(TextRun("Unified", 92.0, 0.0, 124.0, 10.0, 92.0, 0.0, 10.0, 4.0, 2, 2, 0))
 
     text, words, visible = _render_line_with_words(line, 0)
 

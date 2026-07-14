@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import typing
+import warnings
 from collections.abc import Mapping
 from dataclasses import dataclass
 
@@ -7,13 +9,10 @@ from core_pdf.impl.third_party.fontTools.designspaceLib import DesignSpaceDocume
 from core_pdf.impl.third_party.fontTools.ttLib.ttFont import TTFont
 from core_pdf.impl.third_party.fontTools.varLib.models import (
     VariationModel,
-    noRound,
     normalizeValue,
+    noRound,
     piecewiseLinearMap,
 )
-
-import typing
-import warnings
 
 if typing.TYPE_CHECKING:
     from typing import Self
@@ -36,8 +35,7 @@ class VariableScalar:
 
     def __init__(self, location_value=None):
         self.values = {
-            Location(location): value
-            for location, value in (location_value or {}).items()
+            Location(location): value for location, value in (location_value or {}).items()
         }
         # Deprecated: only used by the add_to_variation_store() backwards-compat
         # shim. New code should use VariableScalarBuilder instead.
@@ -73,13 +71,11 @@ class VariableScalar:
         )
         if not self.axes:
             raise ValueError(
-                ".axes must be defined on variable scalar before calling "
-                "add_to_variation_store()"
+                ".axes must be defined on variable scalar before calling add_to_variation_store()"
             )
         builder = VariableScalarBuilder(
             axis_triples={
-                ax.axisTag: (ax.minValue, ax.defaultValue, ax.maxValue)
-                for ax in self.axes
+                ax.axisTag: (ax.minValue, ax.defaultValue, ax.maxValue) for ax in self.axes
             },
             axis_mappings=({} if avar is None else dict(avar.segments)),
             model_cache=model_cache if model_cache is not None else {},
@@ -122,8 +118,7 @@ class VariableScalarBuilder:
     def from_designspace(cls, doc: DesignSpaceDocument) -> Self:
         return cls(
             axis_triples={
-                axis.tag: (axis.minimum, axis.default, axis.maximum)
-                for axis in doc.axes
+                axis.tag: (axis.minimum, axis.default, axis.maximum) for axis in doc.axes
             },
             axis_mappings={
                 axis.tag: {
@@ -179,32 +174,23 @@ class VariableScalarBuilder:
 
         return result
 
-    def _full_locations_and_values(
-        self, scalar: VariableScalar
-    ) -> list[tuple[LocationTuple, int]]:
+    def _full_locations_and_values(self, scalar: VariableScalar) -> list[tuple[LocationTuple, int]]:
         """Return a list of (fully-specified user-space location, value) pairs,
         preserving order and length of scalar.values."""
 
-        return [
-            (self._fully_specify_location(loc), val)
-            for loc, val in scalar.values.items()
-        ]
+        return [(self._fully_specify_location(loc), val) for loc, val in scalar.values.items()]
 
     def default_value(self, scalar: VariableScalar) -> int:
         """Get the default value of a variable scalar."""
 
-        default_loc = Location(
-            {tag: default for tag, (_, default, _) in self.axis_triples.items()}
-        )
+        default_loc = Location({tag: default for tag, (_, default, _) in self.axis_triples.items()})
         for location, value in self._full_locations_and_values(scalar):
             if location == default_loc:
                 return value
 
         raise ValueError("Default value could not be found")
 
-    def value_at_location(
-        self, scalar: VariableScalar, location: LocationTuple
-    ) -> float:
+    def value_at_location(self, scalar: VariableScalar, location: LocationTuple) -> float:
         """Interpolate the value of a scalar from a user-location."""
 
         location = self._fully_specify_location(location)
@@ -250,9 +236,7 @@ class VariableScalarBuilder:
         values = list(scalar.values.values())
         return self.model(scalar).getDeltasAndSupports(values, round=round)
 
-    def add_to_variation_store(
-        self, scalar: VariableScalar, store_builder
-    ) -> tuple[int, int]:
+    def add_to_variation_store(self, scalar: VariableScalar, store_builder) -> tuple[int, int]:
         """Serialize this scalar's variation model to a store, returning the
         default value and variation index."""
 

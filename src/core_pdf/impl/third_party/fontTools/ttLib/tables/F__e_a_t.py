@@ -1,9 +1,10 @@
+import struct
+
 from core_pdf.impl.third_party.fontTools.misc import sstruct
 from core_pdf.impl.third_party.fontTools.misc.fixedTools import floatToFixedToStr
 from core_pdf.impl.third_party.fontTools.misc.textTools import safeEval
-from . import DefaultTable
-from . import grUtils
-import struct
+
+from . import DefaultTable, grUtils
 
 Feat_hdr_format = """
     >

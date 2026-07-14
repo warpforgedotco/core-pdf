@@ -17,9 +17,7 @@ if TYPE_CHECKING:
 
 TEXT_TOKEN_RE = re.compile(r"\w+")
 NONSPACE_TOKEN_RE = re.compile(r"\S+")
-UNINTERPRETABLE_TEXT_RE = re.compile(
-    "[\ue000-\uf8ff\ufffd\x00-\x08\x0b\x0c\x0e-\x1f\x7f\xad]"
-)
+UNINTERPRETABLE_TEXT_RE = re.compile("[\ue000-\uf8ff\ufffd\x00-\x08\x0b\x0c\x0e-\x1f\x7f\xad]")
 OCR_ARTIFACT_EDGE_CHARS = "‘’“”`~_=|¦¬^°•·.,;:!?"
 OCR_ARTIFACT_CHARS = frozenset("~_=|¦¬^°•·`“”‘’")
 OCR_FORMULA_CHARS = frozenset("()*+/=")
@@ -117,7 +115,7 @@ def overlapping_ocr_word_penalty(
                 y0 = ocr_float_value(row["top"])
                 x1 = x0 + ocr_float_value(row["width"])
                 y1 = y0 + ocr_float_value(row["height"])
-        except KeyError, TypeError, ValueError:
+        except (KeyError, TypeError, ValueError):
             continue
         if x1 <= x0 or y1 <= y0:
             continue
@@ -224,9 +222,7 @@ def rendered_ocr_fragmentation_score(text: str) -> float:
                 and len(line_tokens) >= 5
                 and token.casefold() not in {"of", "to", "in", "on", "by", "as", "is"}
             ):
-                previous_alpha = index > 0 and any(
-                    ch.isalpha() for ch in line_tokens[index - 1]
-                )
+                previous_alpha = index > 0 and any(ch.isalpha() for ch in line_tokens[index - 1])
                 next_alpha = index + 1 < len(line_tokens) and any(
                     ch.isalpha() for ch in line_tokens[index + 1]
                 )
@@ -300,11 +296,7 @@ def alphabetic_gibberish_line_score(line: str) -> float:
     suspicious_ratio = suspicious / alpha_count
     unknown_ratio = (alpha_count - known - label_like) / alpha_count
     short_unknown_ratio = short_unknown / alpha_count
-    if (
-        suspicious_ratio < 0.45
-        and unknown_ratio < 0.60
-        and not low_information_alpha_run
-    ):
+    if suspicious_ratio < 0.45 and unknown_ratio < 0.60 and not low_information_alpha_run:
         return 0.0
     if label_like / alpha_count >= 0.65 and suspicious_ratio < 0.55:
         return 0.0
@@ -347,9 +339,7 @@ def rendered_ocr_line_coverage_score(
     if not nonempty_lines:
         return 0.0
     useful_lines = sum(
-        1
-        for line in nonempty_lines
-        if extracted_text_token_count(line) >= 2 or len(line) >= 12
+        1 for line in nonempty_lines if extracted_text_token_count(line) >= 2 or len(line) >= 12
     )
     text_line_score = useful_lines / len(nonempty_lines)
     geometry_rows = max(line_rows, word_rows)
@@ -371,9 +361,7 @@ def scanned_ocr_artifact_score(text: str) -> float:
     artifact_weight = 0.0
     for token in tokens:
         alnum = token_alnum_count(token)
-        if alnum == 0:
-            artifact_weight += 1.0
-        elif alnum == 1 and len(token) > 3:
+        if alnum == 0 or alnum == 1 and len(token) > 3:
             artifact_weight += 1.0
         elif alnum <= 2 and any(ch in OCR_ARTIFACT_CHARS for ch in token):
             artifact_weight += 0.5
@@ -394,9 +382,7 @@ def full_page_diagram_mixed_noise_score(text: str) -> float:
         has_digit = any(ch.isdigit() for ch in line)
         has_axis_symbol = any(ch in line for ch in "+-=")
         short_upper = sum(
-            1
-            for token in tokens
-            if 1 <= len(token) <= 5 and token.isalpha() and token.isupper()
+            1 for token in tokens if 1 <= len(token) <= 5 and token.isalpha() and token.isupper()
         )
         common_words = sum(
             1
@@ -453,9 +439,7 @@ def text_has_many_digit_lines(text: str) -> bool:
         if line_looks_tabular_numeric(stripped):
             digit_lines += 1
     return (
-        nonempty_lines >= 12
-        and digit_lines >= 8
-        and digit_lines / max(1, nonempty_lines) >= 0.25
+        nonempty_lines >= 12 and digit_lines >= 8 and digit_lines / max(1, nonempty_lines) >= 0.25
     )
 
 
@@ -528,9 +512,7 @@ def line_has_readable_technical_notation(line: str, tokens: list[str]) -> bool:
             mixed_case_runs += 1
     if mixed_case_runs >= max(2, int(raw_alpha_run_count * 0.15)):
         return False
-    weird_alpha = sum(
-        1 for token in alpha_tokens if alpha_token_looks_ocr_garbled(token)
-    )
+    weird_alpha = sum(1 for token in alpha_tokens if alpha_token_looks_ocr_garbled(token))
     if sum(
         1
         for token in alpha_tokens
@@ -545,9 +527,7 @@ def line_has_readable_technical_notation(line: str, tokens: list[str]) -> bool:
         1
         for token in alpha_tokens
         if len(token) >= 2
-        and (
-            not token.isalpha() or (rank := word_rank(token)) is None or rank > 100_000
-        )
+        and (not token.isalpha() or (rank := word_rank(token)) is None or rank > 100_000)
     )
     if line_has_non_ascii_alnum(line) and unknown_alpha:
         return True
@@ -568,19 +548,13 @@ def line_has_readable_technical_notation(line: str, tokens: list[str]) -> bool:
     math_notation_chars = sum(
         1 for ch in line if ch in OCR_TECHNICAL_FORMULA_CHARS or ch in "\x02\x03"
     )
-    strong_math_notation_chars = sum(
-        1 for ch in line if ch in OCR_STRONG_TECHNICAL_FORMULA_CHARS
-    )
+    strong_math_notation_chars = sum(1 for ch in line if ch in OCR_STRONG_TECHNICAL_FORMULA_CHARS)
     mixed_alnum_tokens = sum(
         1
         for token in tokens
         if any(ch.isalpha() for ch in token) and any(ch.isdigit() for ch in token)
     )
-    if (
-        non_bracket_notation_chars < 2
-        and mixed_alnum_tokens < 2
-        and strong_math_notation_chars < 2
-    ):
+    if non_bracket_notation_chars < 2 and mixed_alnum_tokens < 2 and strong_math_notation_chars < 2:
         return False
     common_alpha = sum(
         1
@@ -599,17 +573,13 @@ def line_has_readable_technical_notation(line: str, tokens: list[str]) -> bool:
         1
         for token in alpha_tokens
         if len(token) >= 5
-        and (
-            not token.isalpha() or (rank := word_rank(token)) is None or rank > 100_000
-        )
+        and (not token.isalpha() or (rank := word_rank(token)) is None or rank > 100_000)
     )
     formula_like_mixed = mixed_alnum_tokens >= 2 and notation_chars >= 3
     if weird_alpha / len(alpha_tokens) > 0.25 and not formula_like_mixed:
         return False
     formula_like_symbols = (
-        math_notation_chars >= 3
-        and strong_math_notation_chars >= 2
-        and notation_chars >= 4
+        math_notation_chars >= 3 and strong_math_notation_chars >= 2 and notation_chars >= 4
     )
     if formula_like_symbols and len(alpha_tokens) >= 2:
         return True
@@ -756,18 +726,14 @@ def alpha_unknown_word_ratio(text: str) -> float | None:
     if numeric_token_ratio(text) >= 0.30:
         return None
     alpha_tokens = [
-        token
-        for token in normalized_text_tokens(text)
-        if len(token) >= 3 and token.isalpha()
+        token for token in normalized_text_tokens(text) if len(token) >= 3 and token.isalpha()
     ]
     if len(alpha_tokens) < 40:
         return None
     if ocr_text_has_dense_formula_notation(text):
         return None
     unknown = sum(
-        1
-        for token in alpha_tokens
-        if (rank := word_rank(token)) is None or rank > 100_000
+        1 for token in alpha_tokens if (rank := word_rank(token)) is None or rank > 100_000
     )
     return unknown / len(alpha_tokens)
 
@@ -874,9 +840,7 @@ def vector_text_supports_schematic_tiled_ocr(vector_text: str) -> bool:
         < ocr_rendering.OCR_SCHEMATIC_VECTOR_RENDER_TILE_MIN_TOKENS
     ):
         return False
-    return len(_schematic_support_tokens(vector_text)) >= (
-        OCR_SCHEMATIC_REPAIR_MIN_SUPPORT_TARGETS
-    )
+    return len(_schematic_support_tokens(vector_text)) >= (OCR_SCHEMATIC_REPAIR_MIN_SUPPORT_TARGETS)
 
 
 def schematic_tiled_ocr_candidate_support_metrics(

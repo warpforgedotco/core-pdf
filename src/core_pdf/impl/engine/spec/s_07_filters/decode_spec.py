@@ -74,9 +74,7 @@ class FilterParams:
             predictor=cast(int, kwargs.get("predictor", self.predictor)),
             columns=cast(int, kwargs.get("columns", self.columns)),
             colors=cast(int, kwargs.get("colors", self.colors)),
-            bits_per_component=cast(
-                int, kwargs.get("bits_per_component", self.bits_per_component)
-            ),
+            bits_per_component=cast(int, kwargs.get("bits_per_component", self.bits_per_component)),
             k=cast(int, kwargs.get("k", self.k)),
             damaged_rows_before_error=cast(
                 bool,
@@ -179,9 +177,7 @@ class StreamDecodeSpec:
     filters: tuple[str, ...]
     params: tuple[DecodeParam, ...]
 
-    def __init__(
-        self, filters: tuple[str, ...], params: tuple[DecodeParam, ...]
-    ) -> None:
+    def __init__(self, filters: tuple[str, ...], params: tuple[DecodeParam, ...]) -> None:
         self.filters = filters
         self.params = params
 
@@ -248,11 +244,7 @@ def normalize_stream_decode_spec(dictionary: object) -> StreamDecodeSpec:
     if is_pdf_null(raw_filters):
         filters: list[object] = []
     else:
-        filters = (
-            list(raw_filters)
-            if isinstance(raw_filters, (list, tuple))
-            else [raw_filters]
-        )
+        filters = list(raw_filters) if isinstance(raw_filters, (list, tuple)) else [raw_filters]
     parms_raw = lookup_dict_key(dictionary, "DecodeParms")
     if is_pdf_null(parms_raw):
         parms_raw = lookup_dict_key(dictionary, "DP")
@@ -281,9 +273,7 @@ def normalize_stream_decode_spec(dictionary: object) -> StreamDecodeSpec:
         ]
         if len(decode_parms) >= len(filters):
             decode_parms = [
-                decode_parms[index]
-                for index in kept_filter_indexes
-                if index < len(decode_parms)
+                decode_parms[index] for index in kept_filter_indexes if index < len(decode_parms)
             ]
     else:
         if len(names) > 1:

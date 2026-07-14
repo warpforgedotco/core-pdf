@@ -3,10 +3,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, cast
 
-from core_pdf.impl.models import NamedDestination, OutlineItem
 from core_pdf.impl.engine.spec.s_07_document.name_trees import iter_name_tree_items
 from core_pdf.impl.engine.spec.s_07_document.protocols import NavigationResolver
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
+from core_pdf.impl.models import NamedDestination, OutlineItem
 from core_pdf.impl.types import PdfArray, PdfDict, PdfObject
 
 
@@ -19,6 +19,7 @@ class NavigationMixin:
     page_tree_was_recovered: bool
 
     if TYPE_CHECKING:
+
         def catalog(self) -> PdfDict: ...
 
         def page_index_for(self, page_obj: object) -> int | None: ...
@@ -34,9 +35,7 @@ class NavigationMixin:
             return []
         return self.walk_outlines(first, 0)
 
-    def walk_outlines(
-        self, item: object, level: int
-    ) -> list[OutlineItem]:
+    def walk_outlines(self, item: object, level: int) -> list[OutlineItem]:
         recover_outlines = self.xref_was_recovered or self.page_tree_was_recovered
         if level > 200:
             raise ValueError("invalid outline depth")
@@ -65,8 +64,7 @@ class NavigationMixin:
                 action = lookup_dict_key(current, "A")
                 if (
                     isinstance(action, dict)
-                    and self.resolver.resolve_name(lookup_dict_key(action, "S"))
-                    == "GoTo"
+                    and self.resolver.resolve_name(lookup_dict_key(action, "S")) == "GoTo"
                 ):
                     dest = lookup_dict_key(action, "D")
             try:
@@ -100,9 +98,7 @@ class NavigationMixin:
             raise ValueError("invalid outline count")
         return value
 
-    def extract_outline_count(
-        self, current: PdfDict
-    ) -> int:
+    def extract_outline_count(self, current: PdfDict) -> int:
         raw_count = lookup_dict_key(current, "Count")
         if raw_count is None:
             return 0
@@ -113,9 +109,7 @@ class NavigationMixin:
             raise ValueError("invalid outline count")
         return self.validate_outline_count(current_count)
 
-    def resolve_destination(
-        self, dest: object, seen: set[str] | None = None
-    ) -> int | None:
+    def resolve_destination(self, dest: object, seen: set[str] | None = None) -> int | None:
         if dest is None:
             return None
         normalized = self.normalize_destination_value(dest, seen)
@@ -152,9 +146,7 @@ class NavigationMixin:
     ) -> NamedDestination:
         return self.normalize_destination_value(val, seen)
 
-    def destination_from_list(
-        self, resolved_list: PdfArray
-    ) -> NamedDestination:
+    def destination_from_list(self, resolved_list: PdfArray) -> NamedDestination:
         if not resolved_list:
             raise ValueError("invalid destination array")
         page_obj = self.resolver.resolve(resolved_list[0])
@@ -167,15 +159,11 @@ class NavigationMixin:
         args: PdfArray = []
         if len(resolved_list) >= 2:
             raw_type = resolved_list[1]
-            dest_type = self.resolver.resolve_name(
-                raw_type
-            ) or self.resolver.resolve_str(raw_type)
+            dest_type = self.resolver.resolve_name(raw_type) or self.resolver.resolve_str(raw_type)
             if dest_type is None:
                 raise ValueError("invalid destination type")
             args = list(resolved_list[2:]) if len(resolved_list) > 2 else []
-        return NamedDestination(
-            page_index=page_index, type=dest_type, args=args, raw=resolved_list
-        )
+        return NamedDestination(page_index=page_index, type=dest_type, args=args, raw=resolved_list)
 
     def normalize_destination_value(
         self,
@@ -213,9 +201,7 @@ class NavigationMixin:
                 if cached is not None:
                     return cached
                 if name in resolving:
-                    return NamedDestination(
-                        page_index=None, type=None, args=[], raw=name
-                    )
+                    return NamedDestination(page_index=None, type=None, args=[], raw=name)
                 resolving.add(name)
                 try:
                     target = targets.get(name)

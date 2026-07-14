@@ -109,9 +109,7 @@ class PageTableMixin(PageTableTextGeometryMixin, PageTableExportMixin, PageTable
         normalized_shift_text = tuple(normalize_text_markers(shift_text))
 
         if (normalized_header_text or normalized_footer_text) and flavor == "lattice":
-            raise ValueError(
-                "header_text and footer_text cannot be used with flavor='lattice'"
-            )
+            raise ValueError("header_text and footer_text cannot be used with flavor='lattice'")
 
         extract_options = dict(
             flavor=flavor,
@@ -128,8 +126,7 @@ class PageTableMixin(PageTableTextGeometryMixin, PageTableExportMixin, PageTable
             strip_text=strip_text,
             replace_text=replace_text,
             copy_text=normalized_copy_text,
-            shift_text=normalized_shift_text
-            or (("l", "t") if flavor == "lattice" else ()),
+            shift_text=normalized_shift_text or (("l", "t") if flavor == "lattice" else ()),
         )
 
         resolved_table_areas: list[tuple[float, float, float, float]] = []
@@ -156,9 +153,7 @@ class PageTableMixin(PageTableTextGeometryMixin, PageTableExportMixin, PageTable
 
         if resolved_table_areas:
             if detect_header:
-                raise ValueError(
-                    "table_areas/table_regions are not supported with detect_header"
-                )
+                raise ValueError("table_areas/table_regions are not supported with detect_header")
 
             tables: TableSet = []
             spans: TableSpanRows = []
@@ -176,9 +171,7 @@ class PageTableMixin(PageTableTextGeometryMixin, PageTableExportMixin, PageTable
                 spans.extend(payload["spans"])
                 payload_bboxes = list(payload.get("bboxes", []))
                 if payload_bboxes:
-                    bboxes.extend(
-                        [bbox if bbox is not None else area for bbox in payload_bboxes]
-                    )
+                    bboxes.extend([bbox if bbox is not None else area for bbox in payload_bboxes])
                 else:
                     bboxes.extend([area] * len(payload["tables"]))
             return PageTableCoreMixin.table_result(tables, spans=spans, bboxes=bboxes)

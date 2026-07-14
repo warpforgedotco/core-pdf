@@ -1,15 +1,15 @@
 # -*- coding: utf-8 -*-
 """Calculate the perimeter of a glyph."""
 
-from core_pdf.impl.third_party.fontTools.pens.basePen import BasePen
-from core_pdf.impl.third_party.fontTools.misc.bezierTools import (
-    approximateQuadraticArcLengthC,
-    calcQuadraticArcLengthC,
-    approximateCubicArcLengthC,
-    calcCubicArcLengthC,
-)
 import math
 
+from core_pdf.impl.third_party.fontTools.misc.bezierTools import (
+    approximateCubicArcLengthC,
+    approximateQuadraticArcLengthC,
+    calcCubicArcLengthC,
+    calcQuadraticArcLengthC,
+)
+from core_pdf.impl.third_party.fontTools.pens.basePen import BasePen
 
 __all__ = ["PerimeterPen"]
 
@@ -31,9 +31,7 @@ class PerimeterPen(BasePen):
             self._addCubicQuadrature if tolerance >= 0.0015 else self._addCubicRecursive
         )
         self._addQuadratic = (
-            self._addQuadraticQuadrature
-            if tolerance >= 0.00075
-            else self._addQuadraticExact
+            self._addQuadraticQuadrature if tolerance >= 0.00075 else self._addQuadraticExact
         )
 
     def _moveTo(self, p0):

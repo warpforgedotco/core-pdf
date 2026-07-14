@@ -16,14 +16,13 @@ from core_pdf.impl.engine.extraction.tables.types import (
 from core_pdf.impl.engine.rendering import RenderOptions
 from core_pdf.impl.types import PageSelection
 
+
 class DocumentTablePage(Protocol):
     def extract_tables(self, **table_options: object) -> object: ...
 
     def extract_table_bboxes(self, **table_options: object) -> list[Rect | None]: ...
 
-    def extract_lines(
-        self, *, include_words: bool = False
-    ) -> list[PageContentRecord]: ...
+    def extract_lines(self, *, include_words: bool = False) -> list[PageContentRecord]: ...
 
 
 class DocumentExtractionMixin:
@@ -59,7 +58,7 @@ class DocumentExtractionMixin:
             y0 = float(value[1])
             x1 = float(value[2])
             y1 = float(value[3])
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             return None
         if x1 <= x0 or y1 <= y0:
             return None
@@ -71,13 +70,9 @@ class DocumentExtractionMixin:
         lines: list[PageContentRecord],
         rows: TableRows,
     ) -> tuple[float, float, float, float] | None:
+        row_specs = [(cls.table_row_text(row), cls.table_row_tokens(row)) for row in rows]
         row_specs = [
-            (cls.table_row_text(row), cls.table_row_tokens(row)) for row in rows
-        ]
-        row_specs = [
-            (row_text, row_tokens)
-            for row_text, row_tokens in row_specs
-            if row_text or row_tokens
+            (row_text, row_tokens) for row_text, row_tokens in row_specs if row_text or row_tokens
         ]
         if not row_specs:
             return None
@@ -101,9 +96,7 @@ class DocumentExtractionMixin:
                 (
                     line_text,
                     bbox,
-                    cast(list[PageContentRecord], words)
-                    if isinstance(words, list)
-                    else None,
+                    cast(list[PageContentRecord], words) if isinstance(words, list) else None,
                 )
             )
         if not line_records:
@@ -142,16 +135,13 @@ class DocumentExtractionMixin:
         if not words or not tokens:
             return None
         normalized_words = [
-            cls.normalized_text(word.get("text"))
-            for word in words
-            if isinstance(word, dict)
+            cls.normalized_text(word.get("text")) for word in words if isinstance(word, dict)
         ]
         for start in range(0, len(normalized_words) - len(tokens) + 1):
             if normalized_words[start : start + len(tokens)] != tokens:
                 continue
             matched_boxes = [
-                cls.record_bbox(words[index])
-                for index in range(start, start + len(tokens))
+                cls.record_bbox(words[index]) for index in range(start, start + len(tokens))
             ]
             usable = [bbox for bbox in matched_boxes if bbox is not None]
             if usable:
@@ -163,9 +153,7 @@ class DocumentExtractionMixin:
                 )
         return None
 
-    def render_page(
-        self: Any, page_index: int, options: RenderOptions | None = None
-    ) -> object:
+    def render_page(self: Any, page_index: int, options: RenderOptions | None = None) -> object:
         if page_index < 0 or page_index >= len(self.pages):
             raise IndexError("page index out of range")
         return self.pages[page_index].render(options)
@@ -247,9 +235,7 @@ class DocumentExtractionMixin:
                 runs.append(self.with_page_metadata(page_index, page, run))
         return runs
 
-    def extract_words(
-        self: Any, *, pages: PageSelection | None = None
-    ) -> list[PageContentRecord]:
+    def extract_words(self: Any, *, pages: PageSelection | None = None) -> list[PageContentRecord]:
         words: list[PageContentRecord] = []
         for page_index, page in self.iter_selected_pages(pages):
             for word in page.extract_words():
@@ -287,9 +273,7 @@ class DocumentExtractionMixin:
         summaries: list[PageContentRecord] = []
         for page_index, page in self.iter_selected_pages(pages):
             summaries.append(
-                self.with_page_metadata(
-                    page_index, page, page.extract_geometry_summary()
-                )
+                self.with_page_metadata(page_index, page, page.extract_geometry_summary())
             )
         return summaries
 
@@ -384,9 +368,7 @@ class DocumentExtractionMixin:
                 annotations.append(self.with_page_metadata(page_index, page, record))
         return annotations
 
-    def extract_fields(
-        self: Any, *, pages: PageSelection | None = None
-    ) -> list[PageContentRecord]:
+    def extract_fields(self: Any, *, pages: PageSelection | None = None) -> list[PageContentRecord]:
         fields: list[PageContentRecord] = []
         field_index = 0
         for page_index, page in self.iter_selected_pages(pages):

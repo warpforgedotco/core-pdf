@@ -9,16 +9,14 @@ from difflib import SequenceMatcher
 from statistics import median
 from typing import TYPE_CHECKING, Any, Callable, Iterable, Mapping
 
+from core_pdf.impl.engine.extraction.common import observation_resolver, page_geometry
+from core_pdf.impl.engine.extraction.ocr import geometry as ocr_geometry
+from core_pdf.impl.engine.extraction.ocr import page_analysis as ocr_page_analysis
+from core_pdf.impl.engine.extraction.ocr import text_analysis as ocr_text_analysis
 from core_pdf.impl.engine.extraction.ocr.vector_text import (
     VectorStrokeOcrResult,
     page_has_vector_stroke_text_candidates,
 )
-from core_pdf.impl.engine.extraction.ocr import geometry as ocr_geometry
-from core_pdf.impl.engine.extraction.ocr import selection as ocr_selection
-from core_pdf.impl.engine.extraction.common import observation_resolver
-from core_pdf.impl.engine.extraction.ocr import page_analysis as ocr_page_analysis
-from core_pdf.impl.engine.extraction.ocr import text_analysis as ocr_text_analysis
-from core_pdf.impl.engine.extraction.common import page_geometry
 from core_pdf.impl.engine.layout.geometry_quality import (
     layout_geometry_should_trigger_ocr,
     layout_geometry_summary_from_record,
@@ -299,9 +297,7 @@ def prune_shadowed_selected_output_lines(
         return lines
     kept: list[observation_resolver.ResolvedTextLine] = []
     changed = False
-    band_split_lines = [
-        line for line in lines if ":band_split" in line.observation.source
-    ]
+    band_split_lines = [line for line in lines if ":band_split" in line.observation.source]
     if not band_split_lines:
         return lines
     for line in lines:
@@ -317,9 +313,7 @@ def prune_shadowed_band_split_suffix_output_lines(
 ) -> tuple[observation_resolver.ResolvedTextLine, ...]:
     if not lines:
         return lines
-    figure_lines = [
-        line for line in lines if line.observation.source == "figure_ocr_regions"
-    ]
+    figure_lines = [line for line in lines if line.observation.source == "figure_ocr_regions"]
     if not figure_lines:
         return lines
     kept: list[observation_resolver.ResolvedTextLine] = []
@@ -463,8 +457,7 @@ def repair_document_local_identifier_text(
 ) -> str:
     context = document_local_token_repair_context((text,), support_texts=support_texts)
     return "\n".join(
-        repair_document_local_identifier_line_text(line, context)
-        for line in text.splitlines()
+        repair_document_local_identifier_line_text(line, context) for line in text.splitlines()
     )
 
 
@@ -498,9 +491,7 @@ def document_local_token_repair_context(
         if spaced.casefold() not in current_text:
             continue
         replacements.append((spaced, display, count))
-    replacements.sort(
-        key=lambda item: (-len(item[0]), -item[2], -len(item[1]), item[0].casefold())
-    )
+    replacements.sort(key=lambda item: (-len(item[0]), -item[2], -len(item[1]), item[0].casefold()))
     return DocumentLocalTokenRepairContext(
         tuple((spaced, display) for spaced, display, _count in replacements)
     )
@@ -558,8 +549,9 @@ def repair_document_local_identifier_line_text(
     repaired = normalize_generic_ocr_line_text(text)
     repaired = intrinsic_identifier_spacing(repaired)
     for spaced, display in context.replacements:
+        spaced_pattern = re.escape(spaced).replace(r"\ ", r"[ \t]+")
         pattern = re.compile(
-            rf"(?<!\w){re.escape(spaced).replace(r'\\ ', r'[ \\t]+')}(?!\w)",
+            rf"(?<!\w){spaced_pattern}(?!\w)",
             re.IGNORECASE,
         )
         repaired = pattern.sub(display, repaired)
@@ -992,11 +984,13 @@ def compact_titlecase_identifier_pair(match: re.Match[str]) -> str:
         return match.group(0)
     if short_titlecase_pair_should_stay_split(left, right):
         return match.group(0)
-    if titlecase_phrase_lead_word(left) and titlecase_compound_common_word(right):
-        return match.group(0)
-    elif not (
-        titlecase_token_fragment_is_uncommon(left)
-        or titlecase_token_fragment_is_uncommon(right)
+    if (
+        titlecase_phrase_lead_word(left)
+        and titlecase_compound_common_word(right)
+        or not (
+            titlecase_token_fragment_is_uncommon(left)
+            or titlecase_token_fragment_is_uncommon(right)
+        )
     ):
         return match.group(0)
     return f"{left}{right}"
@@ -1008,8 +1002,7 @@ def compact_contextual_short_titlecase_pair(match: re.Match[str]) -> str:
     if titlecase_phrase_lead_word(left) and titlecase_compound_common_word(right):
         return match.group(0)
     if not (
-        titlecase_token_fragment_is_uncommon(left)
-        or titlecase_token_fragment_is_uncommon(right)
+        titlecase_token_fragment_is_uncommon(left) or titlecase_token_fragment_is_uncommon(right)
     ):
         return match.group(0)
     return f"{left}{right}"
@@ -1028,9 +1021,7 @@ def split_titlecase_compound_token_match(match: re.Match[str]) -> str:
     parts = split_compound_token_part(token)
     if len(parts) < 2:
         return token
-    if not all(
-        part.isalpha() and part[:1].isupper() and part[1:].islower() for part in parts
-    ):
+    if not all(part.isalpha() and part[:1].isupper() and part[1:].islower() for part in parts):
         return token
     if not titlecase_compound_parts_should_split(parts):
         return token
@@ -1124,9 +1115,7 @@ def single_alpha_numeric_junk_token(tokens: list[str], index: int) -> bool:
     if len(stripped) != 1 or not stripped.isalpha():
         return False
     prev_numeric = index > 0 and word_text_is_numeric_like(tokens[index - 1])
-    next_numeric = index + 1 < len(tokens) and word_text_is_numeric_like(
-        tokens[index + 1]
-    )
+    next_numeric = index + 1 < len(tokens) and word_text_is_numeric_like(tokens[index + 1])
     return prev_numeric or next_numeric
 
 
@@ -1345,9 +1334,7 @@ def reconstruct_row_text_from_gap_words(
     keep_end = trailing_row_content_end(row)
     if keep_start == 0 and keep_end == len(row.words):
         return None
-    return reconstruct_row_text_from_word_span(
-        row, keep_start=keep_start, keep_end=keep_end
-    )
+    return reconstruct_row_text_from_word_span(row, keep_start=keep_start, keep_end=keep_end)
 
 
 def leading_row_content_start(
@@ -1373,9 +1360,7 @@ def leading_row_content_start(
             prefix = row.words[:index]
             if not prefix:
                 continue
-            noisy_prefix = sum(
-                1 for word in prefix if word_is_geometry_prefix_noise(word)
-            )
+            noisy_prefix = sum(1 for word in prefix if word_is_geometry_prefix_noise(word))
             if noisy_prefix < max(2, len(prefix) - 1):
                 continue
             if strong_suffix_counts[index] < 2:
@@ -1430,9 +1415,7 @@ def reconstruct_row_text_from_word_span(
     tokens: list[str] = []
     for index in range(keep_start, keep_end):
         word = row.words[index]
-        if word_should_drop_inside_content(
-            row, index, keep_start=keep_start, keep_end=keep_end
-        ):
+        if word_should_drop_inside_content(row, index, keep_start=keep_start, keep_end=keep_end):
             continue
         tokens.append(word.text)
     replacement = " ".join(tokens).strip()
@@ -1518,9 +1501,7 @@ def reconstruct_band_line_text(
     for index, word in enumerate(row.words):
         if strong_suffix_counts[index] < 2:
             continue
-        if word.bbox[0] + tolerance < band_anchor and not word_text_is_numeric_like(
-            word.text
-        ):
+        if word.bbox[0] + tolerance < band_anchor and not word_text_is_numeric_like(word.text):
             continue
         if keep_start is None:
             keep_start = index
@@ -1538,9 +1519,7 @@ def reconstruct_band_line_text(
     ):
         keep_start -= 1
     keep_end = trailing_row_content_end(row)
-    return reconstruct_row_text_from_word_span(
-        row, keep_start=keep_start, keep_end=keep_end
-    )
+    return reconstruct_row_text_from_word_span(row, keep_start=keep_start, keep_end=keep_end)
 
 
 def geometry_edge_noise_keep_start(
@@ -1630,9 +1609,7 @@ def edge_token_is_strong(token: str) -> bool:
     if any(ch.isdigit() for ch in stripped):
         return ocr_text_analysis.token_alnum_count(stripped) >= 2
     alpha_only = alpha_token_letters(stripped)
-    if not alpha_only or (
-        stripped != alpha_only and not token_uses_only_alpha_joiners(stripped)
-    ):
+    if not alpha_only or (stripped != alpha_only and not token_uses_only_alpha_joiners(stripped)):
         return False
     rank = word_rank(alpha_only.casefold())
     if alpha_only.isupper() and len(alpha_only) >= 4:
@@ -1734,11 +1711,7 @@ def row_word_is_contentful(word: OcrLineWordRow) -> bool:
     confidence = word.confidence if word.confidence is not None else 0.0
     stripped = word.text.strip(OCR_EDGE_NOISE_PUNCTUATION)
     alpha_only = "".join(ch for ch in stripped if ch.isalpha())
-    return (
-        confidence >= 82.0
-        and len(alpha_only) >= 2
-        and not edge_token_is_noise(word.text)
-    )
+    return confidence >= 82.0 and len(alpha_only) >= 2 and not edge_token_is_noise(word.text)
 
 
 def word_text_is_numeric_like(text: str) -> bool:
@@ -1952,9 +1925,7 @@ def ocr_artifact_prunable_line(
     line: observation_resolver.ResolvedTextLine,
 ) -> bool:
     observations = (line.observation, *line.contributing_observations)
-    return any(
-        ocr_artifact_prunable_source(observation.source) for observation in observations
-    )
+    return any(ocr_artifact_prunable_source(observation.source) for observation in observations)
 
 
 def ocr_artifact_prunable_source(source: str) -> bool:
@@ -2021,9 +1992,7 @@ def repeated_short_alpha_noise_line_should_drop(
     line: observation_resolver.ResolvedTextLine,
 ) -> bool:
     normalized_tokens = [
-        alpha_token_letters(token).casefold()
-        for token in raw_tokens
-        if alpha_token_letters(token)
+        alpha_token_letters(token).casefold() for token in raw_tokens if alpha_token_letters(token)
     ]
     if len(normalized_tokens) != len(raw_tokens):
         return False
@@ -2041,9 +2010,7 @@ def short_alpha_fragment_noise_line_should_drop(
     line: observation_resolver.ResolvedTextLine,
 ) -> bool:
     normalized_tokens = [
-        alpha_token_letters(token).casefold()
-        for token in raw_tokens
-        if alpha_token_letters(token)
+        alpha_token_letters(token).casefold() for token in raw_tokens if alpha_token_letters(token)
     ]
     if len(normalized_tokens) != len(raw_tokens) or not normalized_tokens:
         return False
@@ -2215,7 +2182,7 @@ def postprocess_ocr_row_page_bbox(
         return None
     try:
         x0, y0, x1, y1 = (float(value) for value in bbox)
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return None
     if x1 <= x0 or y1 <= y0:
         return None
@@ -2283,9 +2250,7 @@ def figure_region_label_support_rows(
                 {
                     "text": text,
                     "bbox": bbox,
-                    "source": str(
-                        getattr(figure_candidate, "name", "figure_ocr_regions")
-                    ),
+                    "source": str(getattr(figure_candidate, "name", "figure_ocr_regions")),
                     "tokens": ocr_text_analysis.normalized_text_tokens(text),
                 }
             )
@@ -2329,9 +2294,7 @@ def precision_clean_figure_region_label_line_text(
         < 0.18
     ):
         return None
-    raw_tokens = [
-        match.group(0) for match in ocr_text_analysis.TEXT_TOKEN_RE.finditer(line.text)
-    ]
+    raw_tokens = [match.group(0) for match in ocr_text_analysis.TEXT_TOKEN_RE.finditer(line.text)]
     if len(raw_tokens) < 3 or len(raw_tokens) > 6:
         return None
     alpha_tokens = [token for token in raw_tokens if token.isalpha()]
@@ -2405,9 +2368,7 @@ def figure_region_cleaned_label_tokens(
     support: dict[str, dict[str, int]],
 ) -> list[str] | None:
     alpha_kept = [
-        token
-        for token in raw_tokens
-        if token.isalpha() and (len(token) >= 4 or token.isupper())
+        token for token in raw_tokens if token.isalpha() and (len(token) >= 4 or token.isupper())
     ]
     if len(alpha_kept) < 2:
         return None
@@ -2421,9 +2382,7 @@ def figure_region_cleaned_label_tokens(
     for token in raw_tokens:
         normalized = token.casefold()
         if token.isalpha():
-            if token in alpha_kept:
-                cleaned.append(token)
-            elif counts.get(normalized, 0) >= 2 and len(token) >= 4:
+            if token in alpha_kept or counts.get(normalized, 0) >= 2 and len(token) >= 4:
                 cleaned.append(token)
             continue
         if token.isdigit():
@@ -2443,8 +2402,7 @@ def embedded_image_text_band_bboxes(
     boxes = [
         line.observation.bbox
         for line in lines
-        if line.observation.source == "embedded_image_text"
-        and line.observation.bbox is not None
+        if line.observation.source == "embedded_image_text" and line.observation.bbox is not None
     ]
     if not boxes:
         return ()
@@ -2540,17 +2498,11 @@ def trim_geometryless_table_fusion_date_noise_text(
         return None
     if line.observation.bbox is not None or line.observation.ink_bbox is not None:
         return None
-    raw_tokens = [
-        match.group(0) for match in ocr_text_analysis.TEXT_TOKEN_RE.finditer(text)
-    ]
+    raw_tokens = [match.group(0) for match in ocr_text_analysis.TEXT_TOKEN_RE.finditer(text)]
     if len(raw_tokens) < 6:
         return None
     month_index = next(
-        (
-            index
-            for index, token in enumerate(raw_tokens)
-            if token.casefold() in MONTH_NAME_TOKENS
-        ),
+        (index for index, token in enumerate(raw_tokens) if token.casefold() in MONTH_NAME_TOKENS),
         None,
     )
     if month_index is None or month_index < 3:
@@ -2570,9 +2522,7 @@ def geometryless_table_fusion_noise_line_should_drop(
         return False
     if line.observation.bbox is not None or line.observation.ink_bbox is not None:
         return False
-    raw_tokens = [
-        match.group(0) for match in ocr_text_analysis.TEXT_TOKEN_RE.finditer(text)
-    ]
+    raw_tokens = [match.group(0) for match in ocr_text_analysis.TEXT_TOKEN_RE.finditer(text)]
     if len(raw_tokens) < 2 or len(raw_tokens) > 6:
         return False
     if any(any(ch.isdigit() for ch in token) for token in raw_tokens):
@@ -2854,9 +2804,7 @@ def should_try_ocr_supplement(page: PageExtractionHost, text: str) -> bool:
             return False
         if ocr_text_analysis.numeric_token_ratio(text) >= 0.10:
             return False
-        if ocr_page_analysis.native_text_layer_has_substantial_page_coverage(
-            page, text_tokens
-        ):
+        if ocr_page_analysis.native_text_layer_has_substantial_page_coverage(page, text_tokens):
             return False
         try:
             if ocr_page_analysis.page_has_large_embedded_image(
@@ -2992,9 +2940,7 @@ def embedded_image_text_supplement_image_shape_is_eligible(
         return False
     aspect = width / height
     if (
-        OCR_EMBEDDED_IMAGE_TEXT_MIN_PIXELS
-        <= pixels
-        <= OCR_EMBEDDED_IMAGE_TEXT_MAX_PIXELS
+        OCR_EMBEDDED_IMAGE_TEXT_MIN_PIXELS <= pixels <= OCR_EMBEDDED_IMAGE_TEXT_MAX_PIXELS
         and area_ratio <= OCR_EMBEDDED_IMAGE_TEXT_MAX_AREA_RATIO
         and OCR_EMBEDDED_IMAGE_TEXT_MIN_ASPECT_RATIO
         <= aspect
@@ -3002,9 +2948,7 @@ def embedded_image_text_supplement_image_shape_is_eligible(
     ):
         return True
     return (
-        OCR_EMBEDDED_IMAGE_TEXT_MIN_PIXELS
-        <= pixels
-        <= OCR_EMBEDDED_IMAGE_TEXT_WIDE_MAX_PIXELS
+        OCR_EMBEDDED_IMAGE_TEXT_MIN_PIXELS <= pixels <= OCR_EMBEDDED_IMAGE_TEXT_WIDE_MAX_PIXELS
         and area_ratio <= OCR_EMBEDDED_IMAGE_TEXT_WIDE_MAX_AREA_RATIO
         and OCR_EMBEDDED_IMAGE_TEXT_WIDE_MIN_ASPECT_RATIO
         <= aspect
@@ -3242,9 +3186,7 @@ def dense_numeric_ocr_supplement_would_reduce_recall(text: str, ocr_text: str) -
     if text_tokens < 250:
         return False
     native_numeric_ratio = ocr_text_analysis.numeric_token_ratio(text)
-    if native_numeric_ratio < 0.30 and not ocr_text_analysis.text_has_many_digit_lines(
-        text
-    ):
+    if native_numeric_ratio < 0.30 and not ocr_text_analysis.text_has_many_digit_lines(text):
         return False
     ocr_tokens = ocr_text_analysis.extracted_text_token_count(ocr_text)
     native_artifact = ocr_text_analysis.scanned_ocr_artifact_score(text)
@@ -3267,9 +3209,7 @@ def ocr_page_result_resolved_lines(
     candidate_source = source or (candidate.name if candidate is not None else "ocr")
     split_band_lines = candidate_multi_column_band_split_lines(candidate)
     output_lines = getattr(ocr_result, "output_lines", ())
-    if split_band_lines and (
-        not output_lines or len(split_band_lines) >= len(output_lines) + 8
-    ):
+    if split_band_lines and (not output_lines or len(split_band_lines) >= len(output_lines) + 8):
         return resolved_text_lines_from_geometry_lines(
             split_band_lines,
             source=f"{candidate_source}:band_split",
@@ -3314,9 +3254,7 @@ def resolved_text_lines_from_geometry_lines(
                 kind=kind,
                 source=source,
                 text=stripped,
-                confidence=page_geometry.numeric_confidence(
-                    getattr(line, "confidence", None)
-                ),
+                confidence=page_geometry.numeric_confidence(getattr(line, "confidence", None)),
                 provenance=page_geometry.provenance_tuple(line_index=line_index),
             )
         output_lines.append(
@@ -3458,10 +3396,7 @@ def vertical_line_word_groups(
     previous_center_y: float | None = None
     for row in rows:
         center_y = (row.bbox[1] + row.bbox[3]) * 0.5
-        if (
-            previous_center_y is not None
-            and previous_center_y - center_y > gap_threshold
-        ):
+        if previous_center_y is not None and previous_center_y - center_y > gap_threshold:
             if current:
                 groups.append(current)
             current = [row]
@@ -3487,25 +3422,17 @@ def dominant_multi_column_band_segment(
     band_width = band_bbox[2] - band_bbox[0]
     if band_width < page_width * 0.45:
         return None
-    row_splits = [
-        row_column_split_midpoint(row, band_width=band_width) for row in group
-    ]
+    row_splits = [row_column_split_midpoint(row, band_width=band_width) for row in group]
     split_candidates = [split for split in row_splits if split is not None]
     if len(split_candidates) < 6:
         return None
     bucket_width = max(18.0, band_width * 0.04)
-    buckets: Counter[int] = Counter(
-        int(round(split / bucket_width)) for split in split_candidates
-    )
+    buckets: Counter[int] = Counter(int(round(split / bucket_width)) for split in split_candidates)
     band_center_x = (band_bbox[0] + band_bbox[2]) * 0.5
     bucket = max(
         buckets,
         key=lambda key: (
-            sum(
-                count
-                for other_key, count in buckets.items()
-                if abs(other_key - key) <= 1
-            ),
+            sum(count for other_key, count in buckets.items() if abs(other_key - key) <= 1),
             -abs((key * bucket_width) - band_center_x),
         ),
     )
@@ -3529,9 +3456,7 @@ def dominant_multi_column_band_segment(
         return None
     if segment_height / max(1.0, page_height) > 0.24:
         return None
-    clustered = [
-        split for split in row_splits[start_index : end_index + 1] if split is not None
-    ]
+    clustered = [split for split in row_splits[start_index : end_index + 1] if split is not None]
     split_x = median(clustered)
     gutter_half = max(12.0, band_width * 0.025)
     left = 0
@@ -3621,15 +3546,9 @@ def row_has_words_on_both_sides(
     split_x: float,
     gutter_half: float,
 ) -> bool:
-    left_words = tuple(
-        word for word in row.words if word_center_x(word) <= split_x - gutter_half
-    )
-    right_words = tuple(
-        word for word in row.words if word_center_x(word) >= split_x + gutter_half
-    )
-    return row_words_support_column_text(left_words) and row_words_support_column_text(
-        right_words
-    )
+    left_words = tuple(word for word in row.words if word_center_x(word) <= split_x - gutter_half)
+    right_words = tuple(word for word in row.words if word_center_x(word) >= split_x + gutter_half)
+    return row_words_support_column_text(left_words) and row_words_support_column_text(right_words)
 
 
 def split_multi_column_band_group(
@@ -3659,15 +3578,11 @@ def split_row_into_column_synthetic_lines(
     split_x: float,
     gutter_half: float,
 ) -> tuple[OcrSyntheticTextLine, ...]:
-    left_words = tuple(
-        word for word in row.words if word_center_x(word) <= split_x - gutter_half
-    )
-    right_words = tuple(
-        word for word in row.words if word_center_x(word) >= split_x + gutter_half
-    )
-    if not row_words_support_column_text(
-        left_words
-    ) or not row_words_support_column_text(right_words):
+    left_words = tuple(word for word in row.words if word_center_x(word) <= split_x - gutter_half)
+    right_words = tuple(word for word in row.words if word_center_x(word) >= split_x + gutter_half)
+    if not row_words_support_column_text(left_words) or not row_words_support_column_text(
+        right_words
+    ):
         return row_to_synthetic_lines((row,))
     left_line = synthetic_text_line_from_words(left_words, side_local=True)
     right_line = synthetic_text_line_from_words(right_words, side_local=True)
@@ -3741,9 +3656,7 @@ def band_twin_lines_match(
         return False
     left_center_x = (left.bbox[0] + left.bbox[2]) * 0.5
     right_center_x = (right.bbox[0] + right.bbox[2]) * 0.5
-    return (left_center_x < split_x < right_center_x) or (
-        right_center_x < split_x < left_center_x
-    )
+    return (left_center_x < split_x < right_center_x) or (right_center_x < split_x < left_center_x)
 
 
 def row_to_synthetic_lines(
@@ -3816,9 +3729,9 @@ def reconstruct_side_local_text_from_words(
         numeric_tokens = sum(1 for token in tokens if any(ch.isdigit() for ch in token))
         if numeric_tokens >= 2:
             return text
-        if sum(
-            1 for word in words if row_word_is_contentful(word)
-        ) >= 2 and noisy_tokens <= max(1, len(tokens) // 4):
+        if sum(1 for word in words if row_word_is_contentful(word)) >= 2 and noisy_tokens <= max(
+            1, len(tokens) // 4
+        ):
             return text
     clusters = split_words_into_local_clusters(words)
     if not clusters:
@@ -3915,9 +3828,7 @@ def best_side_local_suffix_text(
     best_text: str | None = None
     best_score: tuple[int, int, int, int, int] | None = None
     for index, word in enumerate(words):
-        if not row_word_is_contentful(word) and not word_text_is_numeric_like(
-            word.text
-        ):
+        if not row_word_is_contentful(word) and not word_text_is_numeric_like(word.text):
             continue
         text = reconstruct_row_text_from_word_span(
             row,
@@ -3930,14 +3841,8 @@ def best_side_local_suffix_text(
         cluster_words = words[index:keep_end]
         tokens = ocr_text_analysis.normalized_text_tokens(text)
         noisy_tokens = sum(1 for token in tokens if edge_token_is_noise(token))
-        contentful = sum(
-            1 for candidate in cluster_words if row_word_is_contentful(candidate)
-        )
-        numeric = sum(
-            1
-            for candidate in cluster_words
-            if word_text_is_numeric_like(candidate.text)
-        )
+        contentful = sum(1 for candidate in cluster_words if row_word_is_contentful(candidate))
+        numeric = sum(1 for candidate in cluster_words if word_text_is_numeric_like(candidate.text))
         confidence = int(round(median_word_confidence(cluster_words) or 0.0))
         score = (contentful, numeric, -noisy_tokens, confidence, len(text))
         if best_score is None or score > best_score:
@@ -3952,9 +3857,7 @@ def normalize_prize_ladder_line_text(text: str) -> str:
         return text
     rank_count = sum(1 for token in tokens if prize_rank_token(token) is not None)
     amount_like_count = sum(
-        1
-        for token in tokens
-        if prize_amount_token(token) is not None or token.startswith("$")
+        1 for token in tokens if prize_amount_token(token) is not None or token.startswith("$")
     )
     if rank_count == 0 or amount_like_count == 0:
         return text
@@ -4010,9 +3913,7 @@ def split_words_into_local_clusters(
             continue
         clusters[-1].append(word)
     return tuple(
-        tuple(cluster)
-        for cluster in clusters
-        if cluster_supports_local_text(tuple(cluster))
+        tuple(cluster) for cluster in clusters if cluster_supports_local_text(tuple(cluster))
     )
 
 
@@ -4030,11 +3931,7 @@ def cluster_supports_local_text(
             return True
     if (
         len(contentful) == 1
-        and len(
-            numeric_like := [
-                word for word in words if word_text_is_numeric_like(word.text)
-            ]
-        )
+        and len(numeric_like := [word for word in words if word_text_is_numeric_like(word.text)])
         >= 1
     ):
         return True
@@ -4084,9 +3981,7 @@ def synthetic_split_line_is_usable(
     if not tokens:
         return False
     contentful_words = tuple(word for word in words if row_word_is_contentful(word))
-    numeric_words = tuple(
-        word for word in words if word_text_is_numeric_like(word.text)
-    )
+    numeric_words = tuple(word for word in words if word_text_is_numeric_like(word.text))
     if len(contentful_words) < 2 and len(numeric_words) < 2:
         return False
     prefix_noise = 0
@@ -4096,9 +3991,7 @@ def synthetic_split_line_is_usable(
         prefix_noise += 1
     if prefix_noise >= max(2, len(words) - 1):
         return False
-    numeric_confidence = (
-        median_word_confidence(numeric_words) if numeric_words else None
-    )
+    numeric_confidence = median_word_confidence(numeric_words) if numeric_words else None
     if len(numeric_words) >= 2 and (numeric_confidence or 0.0) >= 55.0:
         return True
     if len(numeric_words) < 3 and split_words_have_multiple_clusters(words):
@@ -4120,14 +4013,10 @@ def synthetic_split_line_has_minimal_value(
     if not tokens:
         return False
     contentful_words = tuple(word for word in words if row_word_is_contentful(word))
-    numeric_words = tuple(
-        word for word in words if word_text_is_numeric_like(word.text)
-    )
+    numeric_words = tuple(word for word in words if word_text_is_numeric_like(word.text))
     if len(contentful_words) < 1 and len(numeric_words) < 2:
         return False
-    numeric_confidence = (
-        median_word_confidence(numeric_words) if numeric_words else None
-    )
+    numeric_confidence = median_word_confidence(numeric_words) if numeric_words else None
     if len(numeric_words) >= 2 and (numeric_confidence or 0.0) >= 50.0:
         return True
     noisy_tokens = sum(1 for token in tokens if edge_token_is_noise(token))
@@ -4160,12 +4049,8 @@ def split_words_have_multiple_clusters(
         right = words[index + 1]
         if not row_word_is_contentful(left) or not row_word_is_contentful(right):
             continue
-        left_contentful = sum(
-            1 for word in words[: index + 1] if row_word_is_contentful(word)
-        )
-        right_contentful = sum(
-            1 for word in words[index + 1 :] if row_word_is_contentful(word)
-        )
+        left_contentful = sum(1 for word in words[: index + 1] if row_word_is_contentful(word))
+        right_contentful = sum(1 for word in words[index + 1 :] if row_word_is_contentful(word))
         if left_contentful < 2 or right_contentful < 2:
             continue
         gap = right.bbox[0] - left.bbox[2]
@@ -4271,9 +4156,7 @@ def line_art_ocr_candidate_supplement_tokens(
         if key is None:
             continue
         core = "".join(ch for ch in token if ch.isalnum())
-        if core.isalpha() and line_art_alpha_key_is_compound_of_seen(
-            key, original_seen
-        ):
+        if core.isalpha() and line_art_alpha_key_is_compound_of_seen(key, original_seen):
             continue
         if line_art_ocr_supplement_row_was_observed(key, row, observed_boxes):
             continue
@@ -4315,7 +4198,7 @@ def line_art_ocr_word_row_is_body(row: dict[str, Any], candidate: Any) -> bool:
         top = float(row.get("top", 0))
         width = float(row.get("width", 0))
         height = float(row.get("height", 0))
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return True
     if top + height < image_height * 0.11:
         return False
@@ -4333,18 +4216,18 @@ def line_art_ocr_word_row_order_key(row: dict[str, Any]) -> tuple[float, float]:
     if isinstance(page_bbox, (list, tuple)) and len(page_bbox) == 4:
         try:
             return (-float(page_bbox[3]), float(page_bbox[0]))
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             pass
     try:
         return (float(row.get("top", 0)), float(row.get("left", 0)))
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return (0.0, 0.0)
 
 
 def line_art_ocr_word_row_confidence(row: dict[str, Any]) -> int:
     try:
         return int(round(float(row.get("conf", 0))))
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return 0
 
 
@@ -4380,9 +4263,9 @@ def line_art_ocr_supplement_boxes_match(
     right_cy = (right[1] + right[3]) * 0.5
     max_width = max(left[2] - left[0], right[2] - right[0], 1.0)
     max_height = max(left[3] - left[1], right[3] - right[1], 1.0)
-    return abs(left_cx - right_cx) <= max(2.0, max_width * 0.35) and abs(
-        left_cy - right_cy
-    ) <= max(2.0, max_height * 0.35)
+    return abs(left_cx - right_cx) <= max(2.0, max_width * 0.35) and abs(left_cy - right_cy) <= max(
+        2.0, max_height * 0.35
+    )
 
 
 def line_art_ocr_supplement_token_key(token: str) -> str | None:
@@ -4414,11 +4297,7 @@ def line_art_ocr_supplement_token_is_useful(
         if len(core) == 1:
             return False
         min_confidence = 80 if repeated else 85
-        return (
-            1 <= len(core) <= 3
-            and token.strip() == core
-            and confidence >= min_confidence
-        )
+        return 1 <= len(core) <= 3 and token.strip() == core and confidence >= min_confidence
     if not core.isalpha():
         return False
     if not (2 <= len(core) <= 8):
@@ -4450,9 +4329,7 @@ def figure_ocr_page_result_looks_useful(ocr_result: OcrPageTextResult) -> bool:
     candidate = ocr_result.candidate
     if candidate is None or not ocr_result.text.strip():
         return False
-    confidence = (
-        candidate.result.confidence if candidate.result.confidence is not None else 0
-    )
+    confidence = candidate.result.confidence if candidate.result.confidence is not None else 0
     if confidence < 58:
         return False
     tokens = ocr_text_analysis.extracted_text_token_count(ocr_result.text)
@@ -4650,9 +4527,7 @@ def reconcile_native_ocr_lines_by_geometry(
             return text, ()
     except Exception:
         pass
-    native_lines = ocr_page_analysis.native_text_geometry_lines(
-        page, include_hidden=True
-    )
+    native_lines = ocr_page_analysis.native_text_geometry_lines(page, include_hidden=True)
     if not native_lines:
         return text, ()
     ocr_lines = ocr_geometry.ocr_candidate_textline_geometry_lines(
@@ -4798,9 +4673,7 @@ def garbled_alpha_token_ratio(text: str) -> float:
     if not alpha_tokens:
         return 0.0
     garbled = sum(
-        1
-        for token in alpha_tokens
-        if ocr_text_analysis.alpha_token_looks_ocr_garbled(token)
+        1 for token in alpha_tokens if ocr_text_analysis.alpha_token_looks_ocr_garbled(token)
     )
     return garbled / len(alpha_tokens)
 
@@ -4835,10 +4708,7 @@ def text_geometry_records_for_lines(
         for geometry_index, geometry_line in enumerate(geometry_lines):
             if geometry_index in used_geometry:
                 continue
-            if (
-                ocr_text_analysis.normalized_text_tokens(str(geometry_line.text))
-                != tokens
-            ):
+            if ocr_text_analysis.normalized_text_tokens(str(geometry_line.text)) != tokens:
                 continue
             used_geometry.add(geometry_index)
             records[text_index] = TextGeometryRecord(
@@ -5101,12 +4971,9 @@ def supplemental_text_line_should_append(
     if len(line_tokens) < 3:
         if allow_short_lines:
             return any(token not in seen_tokens for token in line_tokens)
-        return (
-            table_like
-            and ocr_text_analysis.supplemental_ocr_short_line_looks_tabular(
-                line_tokens,
-                seen_tokens,
-            )
+        return table_like and ocr_text_analysis.supplemental_ocr_short_line_looks_tabular(
+            line_tokens,
+            seen_tokens,
         )
     if ocr_text_analysis.supplemental_ocr_line_looks_fragmentary(
         line_tokens,
@@ -5221,9 +5088,7 @@ def should_keep_spatial_vector_stroke_line(
     tokens = ocr_text_analysis.normalized_text_tokens(text)
     if not tokens:
         return False
-    raw_tokens = [
-        match.group(0) for match in ocr_text_analysis.TEXT_TOKEN_RE.finditer(text)
-    ]
+    raw_tokens = [match.group(0) for match in ocr_text_analysis.TEXT_TOKEN_RE.finditer(text)]
     width = max(0.0, bbox[2] - bbox[0])
     height = max(0.0, bbox[3] - bbox[1])
     if width <= 0.0 or height <= 0.0:
@@ -5288,17 +5153,11 @@ def vector_line_is_covered_by_ocr(vector_line: Any, ocr_lines: list[Any]) -> boo
         if overlap_ratio >= 0.20:
             overlapping_texts.append(ocr_line.text)
     if overlapping_texts:
-        spaced_tokens = set(
-            ocr_text_analysis.normalized_text_tokens(" ".join(overlapping_texts))
-        )
-        joined_tokens = set(
-            ocr_text_analysis.normalized_text_tokens("".join(overlapping_texts))
-        )
+        spaced_tokens = set(ocr_text_analysis.normalized_text_tokens(" ".join(overlapping_texts)))
+        joined_tokens = set(ocr_text_analysis.normalized_text_tokens("".join(overlapping_texts)))
         if vector_tokens.intersection(spaced_tokens | joined_tokens):
             return True
-        compact_text = "".join(
-            ocr_text_analysis.TEXT_TOKEN_RE.findall("".join(overlapping_texts))
-        )
+        compact_text = "".join(ocr_text_analysis.TEXT_TOKEN_RE.findall("".join(overlapping_texts)))
         compact_text = compact_text.casefold()
         if compact_text and any(
             len(token) >= 2 and token in compact_text for token in vector_tokens
@@ -5307,9 +5166,7 @@ def vector_line_is_covered_by_ocr(vector_line: Any, ocr_lines: list[Any]) -> boo
     return False
 
 
-def should_use_merged_vector_stroke_ocr(
-    current: str, ocr_text: str, merged_text: str
-) -> bool:
+def should_use_merged_vector_stroke_ocr(current: str, ocr_text: str, merged_text: str) -> bool:
     merged_tokens = ocr_text_analysis.extracted_text_token_count(merged_text)
     ocr_tokens = ocr_text_analysis.extracted_text_token_count(ocr_text)
     current_tokens = ocr_text_analysis.extracted_text_token_count(current)

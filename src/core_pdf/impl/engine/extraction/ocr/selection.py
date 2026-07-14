@@ -68,95 +68,67 @@ def select_ocr_candidate(
         if best is None:
             best = candidate
             best_score = candidate_score
-        elif prefer_more_complete_short_rendered_candidate(
-            best,
-            candidate,
-            candidate_score=best_score,
-            best_score=candidate_score,
+        elif (
+            prefer_more_complete_short_rendered_candidate(
+                best,
+                candidate,
+                candidate_score=best_score,
+                best_score=candidate_score,
+            )
+            or prefer_sparse_formula_rendered_candidate(
+                best,
+                candidate,
+                candidate_score=best_score,
+                best_score=candidate_score,
+            )
+            or prefer_more_complete_compact_label_rendered_candidate(
+                best,
+                candidate,
+                candidate_score=best_score,
+                best_score=candidate_score,
+            )
+            or prefer_word_layout_same_source_candidate(best, candidate)
+            or prefer_word_refined_same_source_candidate(best, candidate)
+            or prefer_rendered_page_qa_candidate(best, candidate)
+            or prefer_lexically_cleaner_rendered_candidate(best, candidate)
+            or prefer_cleaner_same_render_dpi_candidate(best, candidate)
+            or prefer_cleaner_line_art_candidate(best, candidate)
+            or prefer_plain_rendered_page_candidate(
+                best,
+                candidate,
+            )
+            or prefer_more_complete_page_candidate(best, candidate)
         ):
             continue
-        elif prefer_sparse_formula_rendered_candidate(
-            best,
-            candidate,
-            candidate_score=best_score,
-            best_score=candidate_score,
+        elif (
+            prefer_more_complete_page_candidate(candidate, best)
+            or candidate_score > best_score
+            or prefer_more_complete_short_rendered_candidate(
+                candidate,
+                best,
+                candidate_score=candidate_score,
+                best_score=best_score,
+            )
+            or prefer_sparse_formula_rendered_candidate(
+                candidate,
+                best,
+                candidate_score=candidate_score,
+                best_score=best_score,
+            )
+            or prefer_more_complete_compact_label_rendered_candidate(
+                candidate,
+                best,
+                candidate_score=candidate_score,
+                best_score=best_score,
+            )
+            or prefer_word_layout_same_source_candidate(candidate, best)
+            or prefer_word_refined_same_source_candidate(candidate, best)
+            or prefer_rendered_page_qa_candidate(candidate, best)
+            or prefer_lexically_cleaner_rendered_candidate(candidate, best)
+            or prefer_cleaner_same_render_dpi_candidate(candidate, best)
+            or prefer_cleaner_line_art_candidate(candidate, best)
+            or prefer_plain_rendered_page_candidate(candidate, best)
         ):
-            continue
-        elif prefer_more_complete_compact_label_rendered_candidate(
-            best,
-            candidate,
-            candidate_score=best_score,
-            best_score=candidate_score,
-        ):
-            continue
-        elif prefer_word_layout_same_source_candidate(best, candidate):
-            continue
-        elif prefer_word_refined_same_source_candidate(best, candidate):
-            continue
-        elif prefer_rendered_page_qa_candidate(best, candidate):
-            continue
-        elif prefer_lexically_cleaner_rendered_candidate(best, candidate):
-            continue
-        elif prefer_cleaner_same_render_dpi_candidate(best, candidate):
-            continue
-        elif prefer_cleaner_line_art_candidate(best, candidate):
-            continue
-        elif prefer_plain_rendered_page_candidate(
-            best,
-            candidate,
-        ):
-            continue
-        elif prefer_more_complete_page_candidate(best, candidate):
-            continue
-        elif prefer_more_complete_page_candidate(candidate, best):
-            best = candidate
-            best_score = candidate_score
-        elif candidate_score > best_score:
-            best = candidate
-            best_score = candidate_score
-        elif prefer_more_complete_short_rendered_candidate(
-            candidate,
-            best,
-            candidate_score=candidate_score,
-            best_score=best_score,
-        ):
-            best = candidate
-            best_score = candidate_score
-        elif prefer_sparse_formula_rendered_candidate(
-            candidate,
-            best,
-            candidate_score=candidate_score,
-            best_score=best_score,
-        ):
-            best = candidate
-            best_score = candidate_score
-        elif prefer_more_complete_compact_label_rendered_candidate(
-            candidate,
-            best,
-            candidate_score=candidate_score,
-            best_score=best_score,
-        ):
-            best = candidate
-            best_score = candidate_score
-        elif prefer_word_layout_same_source_candidate(candidate, best):
-            best = candidate
-            best_score = candidate_score
-        elif prefer_word_refined_same_source_candidate(candidate, best):
-            best = candidate
-            best_score = candidate_score
-        elif prefer_rendered_page_qa_candidate(candidate, best):
-            best = candidate
-            best_score = candidate_score
-        elif prefer_lexically_cleaner_rendered_candidate(candidate, best):
-            best = candidate
-            best_score = candidate_score
-        elif prefer_cleaner_same_render_dpi_candidate(candidate, best):
-            best = candidate
-            best_score = candidate_score
-        elif prefer_cleaner_line_art_candidate(candidate, best):
-            best = candidate
-            best_score = candidate_score
-        elif prefer_plain_rendered_page_candidate(candidate, best):
             best = candidate
             best_score = candidate_score
     return best
@@ -211,15 +183,9 @@ def prefer_word_layout_same_source_candidate(
     best_quality = ocr_text_analysis.text_ocr_quality_score(best_text)
     candidate_artifact = ocr_text_analysis.scanned_ocr_artifact_score(candidate_text)
     best_artifact = ocr_text_analysis.scanned_ocr_artifact_score(best_text)
-    if (
-        candidate_quality <= best_quality + 0.02
-        and candidate_artifact + 0.01 < best_artifact
-    ):
+    if candidate_quality <= best_quality + 0.02 and candidate_artifact + 0.01 < best_artifact:
         return True
-    return (
-        candidate_quality + 0.01 < best_quality
-        and candidate_artifact <= best_artifact + 0.02
-    )
+    return candidate_quality + 0.01 < best_quality and candidate_artifact <= best_artifact + 0.02
 
 
 def prefer_word_refined_same_source_candidate(
@@ -274,9 +240,7 @@ def broad_page_candidate_name(name: str) -> bool:
 
 
 def compact_region_candidate_name(name: str) -> bool:
-    return name in {"rectangle_regions", "rendered_regions"} or name.endswith(
-        "_regions"
-    )
+    return name in {"rectangle_regions", "rendered_regions"} or name.endswith("_regions")
 
 
 def prefer_more_complete_short_rendered_candidate(
@@ -399,10 +363,7 @@ def prefer_plain_rendered_page_candidate(
     best_confidence = best.result.confidence or 0
     candidate_quality = ocr_text_analysis.text_ocr_quality_score(candidate_text)
     best_quality = ocr_text_analysis.text_ocr_quality_score(best_text)
-    return (
-        best_confidence <= candidate_confidence
-        and best_quality >= candidate_quality - 0.005
-    )
+    return best_confidence <= candidate_confidence and best_quality >= candidate_quality - 0.005
 
 
 def prefer_cleaner_same_render_dpi_candidate(
@@ -486,9 +447,7 @@ def prefer_rendered_page_qa_candidate(
     best_confidence = best.result.confidence or 0
     if candidate_confidence + 4 < best_confidence:
         return False
-    candidate_fragmentation = ocr_text_analysis.rendered_ocr_fragmentation_score(
-        candidate_text
-    )
+    candidate_fragmentation = ocr_text_analysis.rendered_ocr_fragmentation_score(candidate_text)
     best_fragmentation = ocr_text_analysis.rendered_ocr_fragmentation_score(best_text)
     candidate_artifact = ocr_text_analysis.scanned_ocr_artifact_score(candidate_text)
     best_artifact = ocr_text_analysis.scanned_ocr_artifact_score(best_text)
@@ -641,9 +600,7 @@ def _ocr_candidate_score_from_signature(
         ) and ocr_text_analysis.ocr_text_has_dense_formula_notation(text):
             score += 2.0
     if broad_page_candidate_name(name):
-        support_overlap = ocr_text_analysis.support_text_overlap_score(
-            text, support_text
-        )
+        support_overlap = ocr_text_analysis.support_text_overlap_score(text, support_text)
         if support_overlap is not None:
             # Native text is useful evidence, but not ground truth. Keep the
             # adjustment small enough that clean OCR can still win on damaged
@@ -715,9 +672,7 @@ def ocr_tiled_render_dpi_candidates_for_page(
     return tuple(
         dpi
         for dpi in candidates
-        if not ocr_rendering.ocr_render_pixel_size_is_supported(
-            width_points, height_points, dpi
-        )
+        if not ocr_rendering.ocr_render_pixel_size_is_supported(width_points, height_points, dpi)
         or should_prefer_tiled_rendered_ocr(
             width_points,
             height_points,
@@ -735,9 +690,7 @@ def should_prefer_tiled_rendered_ocr(
 ) -> bool:
     if not vector_text_supports_tiled_rendered_ocr(vector_text):
         return False
-    width, height = ocr_rendering.ocr_render_pixel_dimensions(
-        width_points, height_points, dpi
-    )
+    width, height = ocr_rendering.ocr_render_pixel_dimensions(width_points, height_points, dpi)
     return width * height >= ocr_rendering.OCR_DENSE_VECTOR_RENDER_TILE_MIN_PIXELS
 
 

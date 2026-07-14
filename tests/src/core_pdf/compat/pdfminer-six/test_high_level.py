@@ -12,15 +12,7 @@ SAMPLES_DIR = TESTS_DIR / "fixtures" / "pdfminer.six" / "samples"
 ACROFORM_PDF = SAMPLES_DIR / "acroform" / "AcroForm_TEST.pdf"
 PAGELABELS_PDF = SAMPLES_DIR / "contrib" / "pagelabels.pdf"
 CMAP_OTHER_FONTS_PDF = SAMPLES_DIR / "contrib" / "issue-598-cmap-other-fonts.pdf"
-ACROFORM_TEXT = (
-    "BUTTON\n\n"
-    "CHECKBOX\n\n"
-    "RADIO BUTTON\n\n"
-    "DROPDOWN\n\n"
-    " LIST\n\n"
-    "COMBO LIST\n\n"
-    "TEXT\f"
-)
+ACROFORM_TEXT = "BUTTON\n\nCHECKBOX\n\nRADIO BUTTON\n\nDROPDOWN\n\n LIST\n\nCOMBO LIST\n\nTEXT\f"
 
 
 def test_extract_text_accepts_file_like_object() -> None:

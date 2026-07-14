@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
-from core_pdf.impl.engine.spec.s_07_document.page_boxes import rotate_page_rect
 from core_pdf.impl.engine.extraction.tables.protocols import PageTableHost
+from core_pdf.impl.engine.spec.s_07_document.page_boxes import rotate_page_rect
 
 
 class PageTableTextGeometryMixin:

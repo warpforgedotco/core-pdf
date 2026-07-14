@@ -9,7 +9,6 @@ from core_pdf.impl.engine.spec.s_09_fonts.encoding import decode_pdf_text_string
 from core_pdf.impl.objects import MISSING, PdfName, PdfString
 from core_pdf.impl.types import PdfDict
 
-
 PDFKEY_SUBTYPE = PdfName.of("Subtype")
 PDFKEY_ANNOTS = PdfName.of("Annots")
 PDFKEY_RECT = PdfName.of("Rect")

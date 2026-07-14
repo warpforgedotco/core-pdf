@@ -1,9 +1,10 @@
-from io import BytesIO
 import struct
-from core_pdf.impl.third_party.fontTools.misc import sstruct
-from core_pdf.impl.third_party.fontTools.misc.textTools import bytesjoin, tostr
 from collections import OrderedDict
 from collections.abc import MutableMapping
+from io import BytesIO
+
+from core_pdf.impl.third_party.fontTools.misc import sstruct
+from core_pdf.impl.third_party.fontTools.misc.textTools import bytesjoin, tostr
 
 
 class ResourceError(Exception):
@@ -197,9 +198,7 @@ class Resource(object):
             attr: attributes.
     """
 
-    def __init__(
-        self, resType=None, resData=None, resID=None, resName=None, resAttr=None
-    ):
+    def __init__(self, resType=None, resData=None, resID=None, resName=None, resAttr=None):
         self.type = resType
         self.data = resData
         self.id = resID

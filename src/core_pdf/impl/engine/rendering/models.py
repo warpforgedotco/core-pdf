@@ -1,11 +1,14 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
-from bisect import bisect_left
 import math
+from bisect import bisect_left
 from dataclasses import dataclass, field
 from typing import Any, TypeGuard, cast
 
+from core_pdf.impl.engine.layout.geometry import RectBox, rect_tuple
+from core_pdf.impl.engine.spec.s_07_content.capture import CapturedPath
+from core_pdf.impl.engine.spec.s_07_filters.pipeline import decode_stream_data
 from core_pdf.impl.engine.spec.s_07_objects.coercion import (
     normalize_pdf_name,
     parse_float,
@@ -16,11 +19,7 @@ from core_pdf.impl.engine.spec.s_08_graphics.color import (
     ImageColorManager,
     evaluate_sampled_tint_function,
 )
-from core_pdf.impl.engine.layout.geometry import RectBox, rect_tuple
-from core_pdf.impl.engine.spec.s_07_content.capture import CapturedPath
-from core_pdf.impl.engine.spec.s_07_filters.pipeline import decode_stream_data
 from core_pdf.impl.objects import PdfStream
-
 
 BIT_IMAGE_MASK_ALPHA = tuple(
     bytes(255 if byte & (0x80 >> bit) else 0 for bit in range(8)) for byte in range(256)
@@ -164,9 +163,7 @@ def image_display_metadata(kind: str, data: dict[str, Any]) -> dict[str, Any]:
         "height": height,
         "pixels": width * height if width > 0 and height > 0 else 0,
         "bits_per_component": bpc if bpc > 0 else None,
-        "color_space": image_color_space_name(
-            lookup_dict_key(dictionary, "ColorSpace")
-        ),
+        "color_space": image_color_space_name(lookup_dict_key(dictionary, "ColorSpace")),
         "filters": image_filter_names(lookup_dict_key(dictionary, "Filter")),
         "image_mask": image_mask,
         "has_mask": lookup_dict_key(dictionary, "Mask") is not None,
@@ -383,7 +380,7 @@ class RenderedPage:
                     y0 = float(value[1])
                     x1 = float(value[2])
                     y1 = float(value[3])
-                except TypeError, ValueError:
+                except (TypeError, ValueError):
                     return None
                 return x0, y0, x1, y1
             return None
@@ -469,9 +466,7 @@ class RenderedPage:
             if set(points) != corners:
                 path_rect_cache[cache_key] = None
                 return None
-            for (px0, py0), (px1, py1) in zip(
-                points, points[1:] + points[:1], strict=False
-            ):
+            for (px0, py0), (px1, py1) in zip(points, points[1:] + points[:1], strict=False):
                 if px0 != px1 and py0 != py1:
                     path_rect_cache[cache_key] = None
                     return None
@@ -511,9 +506,7 @@ class RenderedPage:
                 )
             return rect
 
-        def page_x_to_pixel_span(
-            start_x: float, end_x: float
-        ) -> tuple[int, int] | None:
+        def page_x_to_pixel_span(start_x: float, end_x: float) -> tuple[int, int] | None:
             if end_x <= start_x:
                 return None
             start = math.ceil((start_x - crop_x0) * scale - 0.5)
@@ -688,15 +681,9 @@ class RenderedPage:
                 pixels[idx + 2] = 0
                 pixels[idx + 3] = 0
                 return
-            out_r = int(
-                round(((src_r * 255.0) * src_a + dr * dst_a * (1.0 - src_a)) / out_a)
-            )
-            out_g = int(
-                round(((src_g * 255.0) * src_a + dg * dst_a * (1.0 - src_a)) / out_a)
-            )
-            out_b = int(
-                round(((src_b * 255.0) * src_a + db * dst_a * (1.0 - src_a)) / out_a)
-            )
+            out_r = int(round(((src_r * 255.0) * src_a + dr * dst_a * (1.0 - src_a)) / out_a))
+            out_g = int(round(((src_g * 255.0) * src_a + dg * dst_a * (1.0 - src_a)) / out_a))
+            out_b = int(round(((src_b * 255.0) * src_a + db * dst_a * (1.0 - src_a)) / out_a))
             out_a_i = int(round(out_a * 255.0))
             pixels[idx] = max(0, min(255, out_r))
             pixels[idx + 1] = max(0, min(255, out_g))
@@ -746,9 +733,7 @@ class RenderedPage:
             start_offset = row + start * 4
             stop_offset = row + end * 4
             if sa >= 255:
-                pixels[start_offset:stop_offset] = bytes((sr, sg, sb, 255)) * (
-                    end - start
-                )
+                pixels[start_offset:stop_offset] = bytes((sr, sg, sb, 255)) * (end - start)
                 return
             src_a = sa / 255.0
             one_minus_src_a = 1.0 - src_a
@@ -934,14 +919,12 @@ class RenderedPage:
                         if visible_end <= visible_start:
                             continue
                         if simple_opaque:
-                            pixels[row + visible_start * 4 : row + visible_end * 4] = (
-                                bytes(rgba) * (visible_end - visible_start)
-                            )
+                            pixels[row + visible_start * 4 : row + visible_end * 4] = bytes(
+                                rgba
+                            ) * (visible_end - visible_start)
                             continue
                         if rectangular_clip and normal_fast:
-                            blend_normal_solid_span(
-                                row, visible_start, visible_end, rgba
-                            )
+                            blend_normal_solid_span(row, visible_start, visible_end, rgba)
                             continue
                         for px in range(visible_start, visible_end):
                             if normal_fast:
@@ -1020,11 +1003,7 @@ class RenderedPage:
             x0, y0, x1, y1 = box
             if x1 <= x0 or y1 <= y0:
                 return
-            drawable = [
-                char
-                for char in text
-                if char == " " or char.upper() in BITMAP_GLYPHS_5X7
-            ]
+            drawable = [char for char in text if char == " " or char.upper() in BITMAP_GLYPHS_5X7]
             if not drawable:
                 return
             glyph_units = max(1, len(drawable)) * 6 - 1
@@ -1048,9 +1027,7 @@ class RenderedPage:
                             continue
                         cell_x0 = cursor + col_index * unit_w
                         cell_x1 = cursor + (col_index + 1) * unit_w
-                        fill_rect(
-                            (cell_x0, cell_y0, cell_x1, cell_y1), rgba, blend_mode
-                        )
+                        fill_rect((cell_x0, cell_y0, cell_x1, cell_y1), rgba, blend_mode)
                 cursor += unit_w * 6.0
 
         def draw_glyph_bitmap(
@@ -1062,11 +1039,7 @@ class RenderedPage:
             bitmap_height: Any = None,
         ) -> None:
             bitmap_type = type(bitmap)
-            if (
-                box is None
-                or (bitmap_type is not list and bitmap_type is not tuple)
-                or not bitmap
-            ):
+            if box is None or (bitmap_type is not list and bitmap_type is not tuple) or not bitmap:
                 return
             x0, y0, x1, y1 = box
             if x1 <= x0 or y1 <= y0:
@@ -1221,13 +1194,9 @@ class RenderedPage:
                             if dist_x * dist_x + dist_y * dist_y <= half2:
                                 covered += 1
                     if covered:
-                        alpha = max(
-                            1, min(255, round(rgba[3] * covered / sample_total))
-                        )
+                        alpha = max(1, min(255, round(rgba[3] * covered / sample_total)))
                         if normal_fast:
-                            blend_normal_pixel(
-                                row + px * 4, rgba[0], rgba[1], rgba[2], alpha
-                            )
+                            blend_normal_pixel(row + px * 4, rgba[0], rgba[1], rgba[2], alpha)
                         else:
                             blend_px(
                                 row + px * 4,
@@ -1278,9 +1247,7 @@ class RenderedPage:
                 return
             pixel_area = (ix1 - ix0) * (iy1 - iy0)
             if pixel_area >= 50_000:
-                fill_path_scanlines(
-                    edge_segments, pixel_box, rgba, blend_mode, fill_rule
-                )
+                fill_path_scanlines(edge_segments, pixel_box, rgba, blend_mode, fill_rule)
                 return
             samples = 4
             rectangular_clip = clip_paths_are_axis_aligned_rects()
@@ -1315,9 +1282,7 @@ class RenderedPage:
                             min(255, round(rgba[3] * covered / (samples * samples))),
                         )
                         if normal_fast:
-                            blend_normal_pixel(
-                                row + px * 4, rgba[0], rgba[1], rgba[2], alpha
-                            )
+                            blend_normal_pixel(row + px * 4, rgba[0], rgba[1], rgba[2], alpha)
                         else:
                             blend_px(
                                 row + px * 4,
@@ -1479,7 +1444,7 @@ class RenderedPage:
                 return default
             try:
                 return max(0, min(255, int(round(float(value) * 255.0))))
-            except TypeError, ValueError:
+            except (TypeError, ValueError):
                 return default
 
         def color_rgba(color: Any, opacity: Any) -> tuple[int, int, int, int]:
@@ -1518,9 +1483,7 @@ class RenderedPage:
 
         def evaluate_pdf_function(function: Any, value: float) -> list[float]:
             if isinstance(function, PdfStream):
-                function_type = pdf_int(
-                    lookup_dict_key(function.dictionary, "FunctionType"), -1
-                )
+                function_type = pdf_int(lookup_dict_key(function.dictionary, "FunctionType"), -1)
                 if function_type == 0:
                     try:
                         return evaluate_sampled_tint_function(function, value)
@@ -1562,9 +1525,7 @@ class RenderedPage:
                     encoded = enc0
                 else:
                     encoded = enc0 + (value - low) * (enc1 - enc0) / (high - low)
-                return evaluate_pdf_function(
-                    functions[min(index, len(functions) - 1)], encoded
-                )
+                return evaluate_pdf_function(functions[min(index, len(functions) - 1)], encoded)
 
             return [value]
 
@@ -1603,7 +1564,7 @@ class RenderedPage:
                 elif isinstance(raw_box, (list, tuple)) and len(raw_box) == 4:
                     try:
                         box = tuple(float(value) for value in raw_box[:4])
-                    except TypeError, ValueError:
+                    except (TypeError, ValueError):
                         box = None
             if box is None:
                 box = (crop_x0, crop_y0, crop_x0 + width / scale, crop_y1)
@@ -1618,24 +1579,14 @@ class RenderedPage:
             if shading_type not in {2, 3}:
                 return
             coords = number_array(lookup_dict_key(dictionary, "Coords"))
-            if (shading_type == 2 and len(coords) < 4) or (
-                shading_type == 3 and len(coords) < 6
-            ):
+            if (shading_type == 2 and len(coords) < 4) or (shading_type == 3 and len(coords) < 6):
                 return
             domain = number_array(lookup_dict_key(dictionary, "Domain"))
             if len(domain) < 2:
                 domain = [0.0, 1.0]
             extend = lookup_dict_key(dictionary, "Extend")
-            extend0 = (
-                isinstance(extend, (list, tuple))
-                and len(extend) > 0
-                and extend[0] is True
-            )
-            extend1 = (
-                isinstance(extend, (list, tuple))
-                and len(extend) > 1
-                and extend[1] is True
-            )
+            extend0 = isinstance(extend, (list, tuple)) and len(extend) > 0 and extend[0] is True
+            extend1 = isinstance(extend, (list, tuple)) and len(extend) > 1 and extend[1] is True
             function = lookup_dict_key(dictionary, "Function")
             color_space = lookup_dict_key(dictionary, "ColorSpace")
             x0, y0, x1, y1 = shading_box(data)
@@ -1753,7 +1704,7 @@ class RenderedPage:
                 )
                 x_step = abs(float(pattern.get("x_step", 0.0)))
                 y_step = abs(float(pattern.get("y_step", 0.0)))
-            except TypeError, ValueError:
+            except (TypeError, ValueError):
                 return False
             if x_step <= 0.0 or y_step <= 0.0:
                 return False
@@ -1783,7 +1734,7 @@ class RenderedPage:
                 if len(target_box) == 4:
                     try:
                         x0, y0, x1, y1 = (float(value) for value in target_box)
-                    except TypeError, ValueError:
+                    except (TypeError, ValueError):
                         return False
                 else:
                     x0, y0, x1, y1 = (
@@ -1867,9 +1818,7 @@ class RenderedPage:
             kind = drawing.get("kind")
             blend = drawing.get("blend_mode") or parent_blend_mode
             raw_path = drawing.get("path")
-            path = (
-                raw_path.translated(tx, ty) if type(raw_path) is CapturedPath else None
-            )
+            path = raw_path.translated(tx, ty) if type(raw_path) is CapturedPath else None
             if kind == "shading" and isinstance(drawing.get("dictionary"), dict):
                 paint_shading(
                     {
@@ -1894,9 +1843,7 @@ class RenderedPage:
                     drawing.get("fill_rule") or "nonzero",
                 )
             if kind in {"stroke", "fillstroke"}:
-                stroke_rgba = color_rgba(
-                    drawing.get("stroke_color"), drawing.get("stroke_opacity")
-                )
+                stroke_rgba = color_rgba(drawing.get("stroke_color"), drawing.get("stroke_opacity"))
                 stroke_path(
                     path,
                     float(drawing.get("line_width") or 1.0),
@@ -1945,15 +1892,11 @@ class RenderedPage:
         def image_rgba(data: dict[str, Any]) -> tuple[int, int, int, int]:
             raw = data.get("raw_data")
             dictionary = data.get("dictionary")
-            if isinstance(raw, (bytes, bytearray, memoryview)) and isinstance(
-                dictionary, dict
-            ):
+            if isinstance(raw, (bytes, bytearray, memoryview)) and isinstance(dictionary, dict):
                 if lookup_dict_key(dictionary, "ImageMask") is True:
                     width_px = pdf_int(lookup_dict_key(dictionary, "Width"), 0)
                     height_px = pdf_int(lookup_dict_key(dictionary, "Height"), 0)
-                    mask = image_mask_samples(
-                        image_raw_bytes(raw), dictionary, width_px, height_px
-                    )
+                    mask = image_mask_samples(image_raw_bytes(raw), dictionary, width_px, height_px)
                     if mask:
                         level = mask[0]
                         if len(mask) > 1:
@@ -1973,9 +1916,7 @@ class RenderedPage:
                         return converted[0], converted[1], converted[2], 255
                     if len(converted) == 1:
                         return converted[0], converted[0], converted[0], 255
-            return color_rgba(
-                data.get("fill") or data.get("fill_color"), data.get("fill_opacity")
-            )
+            return color_rgba(data.get("fill") or data.get("fill_color"), data.get("fill_opacity"))
 
         def image_samples(
             raw: bytes, dictionary: dict[Any, Any]
@@ -2038,7 +1979,7 @@ class RenderedPage:
                 return False
             try:
                 return float(value[0]) > float(value[1])
-            except TypeError, ValueError:
+            except (TypeError, ValueError):
                 return False
 
         def soft_mask_samples(data: dict[str, Any]) -> tuple[bytes, int, int] | None:
@@ -2077,9 +2018,7 @@ class RenderedPage:
                 return None
             return bytes(converted[:pixel_count]), mask_width, mask_height
 
-        def soft_mask_alpha_at(
-            mask: tuple[bytes, int, int] | None, u: float, v: float
-        ) -> int:
+        def soft_mask_alpha_at(mask: tuple[bytes, int, int] | None, u: float, v: float) -> int:
             if mask is None:
                 return 255
             samples, mask_width, mask_height = mask
@@ -2093,7 +2032,7 @@ class RenderedPage:
             if isinstance(quad, (list, tuple)) and len(quad) >= 3:
                 try:
                     return tuple((float(point[0]), float(point[1])) for point in quad)
-                except TypeError, ValueError, IndexError:
+                except (TypeError, ValueError, IndexError):
                     return None
             items = data.get("items")
             if not isinstance(items, list):
@@ -2105,7 +2044,7 @@ class RenderedPage:
                     return None
                 try:
                     return tuple((float(point[0]), float(point[1])) for point in value)
-                except TypeError, ValueError, IndexError:
+                except (TypeError, ValueError, IndexError):
                     return None
             return None
 
@@ -2129,9 +2068,7 @@ class RenderedPage:
             x1 = max(point[0] for point in quad)
             y1 = max(point[1] for point in quad)
             clip_box = current_clip()
-            rectangular_clip = (
-                clip_box is not None and clip_paths_are_axis_aligned_rects()
-            )
+            rectangular_clip = clip_box is not None and clip_paths_are_axis_aligned_rects()
             if clip_box is not None:
                 clipped = intersect_box((x0, y0, x1, y1), clip_box)
                 if clipped is None:
@@ -2263,9 +2200,7 @@ class RenderedPage:
                     src_x_map = [
                         (
                             max(0, min(width_px - 1, int(u * width_px)))
-                            if 0.0
-                            <= (u := (crop_x0 + (px + 0.5) / scale - p00[0]) * inv_ux)
-                            <= 1.0
+                            if 0.0 <= (u := (crop_x0 + (px + 0.5) / scale - p00[0]) * inv_ux) <= 1.0
                             else -1
                         )
                         for px in range(ix0, ix1)
@@ -2276,9 +2211,7 @@ class RenderedPage:
                                 0,
                                 min(height_px - 1, int((1.0 - v) * height_px)),
                             )
-                            if 0.0
-                            <= (v := (crop_y1 - (py + 0.5) / scale - p00[1]) * inv_vy)
-                            <= 1.0
+                            if 0.0 <= (v := (crop_y1 - (py + 0.5) / scale - p00[1]) * inv_vy) <= 1.0
                             else -1
                         )
                         for py in range(iy0, iy1)
@@ -2333,9 +2266,7 @@ class RenderedPage:
                 src_y_map = [
                     (
                         max(0, min(height_px - 1, int((1.0 - v) * height_px)))
-                        if 0.0
-                        <= (v := (crop_x0 + (px + 0.5) / scale - p00[0]) * inv_vx)
-                        <= 1.0
+                        if 0.0 <= (v := (crop_x0 + (px + 0.5) / scale - p00[0]) * inv_vx) <= 1.0
                         else -1
                     )
                     for px in range(ix0, ix1)
@@ -2461,11 +2392,7 @@ class RenderedPage:
                         elif mask_y >= soft_mask_height:
                             mask_y = soft_mask_height - 1
                         mask_idx = mask_y * soft_mask_width + mask_x
-                        mask_alpha = (
-                            soft_mask_data[mask_idx]
-                            if mask_idx < soft_mask_len
-                            else 255
-                        )
+                        mask_alpha = soft_mask_data[mask_idx] if mask_idx < soft_mask_len else 255
                     if mask_alpha <= 0:
                         continue
                     if alpha != 255:
@@ -2483,9 +2410,7 @@ class RenderedPage:
                             max(0, min(255, int(round(rgba[3] * mask_alpha / 255)))),
                         )
                     if normal_fast:
-                        blend_normal_pixel(
-                            row + px * 4, rgba[0], rgba[1], rgba[2], rgba[3]
-                        )
+                        blend_normal_pixel(row + px * 4, rgba[0], rgba[1], rgba[2], rgba[3])
                     else:
                         blend_px(row + px * 4, rgba, blend_mode)
             return True
@@ -2508,9 +2433,7 @@ class RenderedPage:
                 height_px = pdf_int(lookup_dict_key(dictionary, "Height"), 0)
                 if width_px <= 0 or height_px <= 0:
                     return
-                mask = image_mask_samples(
-                    image_raw_bytes(raw), dictionary, width_px, height_px
-                )
+                mask = image_mask_samples(image_raw_bytes(raw), dictionary, width_px, height_px)
                 if not mask:
                     return
                 x0, y0, x1, y1 = box
@@ -2534,11 +2457,7 @@ class RenderedPage:
                 decode = lookup_dict_key(dictionary, "Decode")
                 invert = image_mask_decode_inverts(decode)
                 target_alpha = buffer_stack[-1][1] if buffer_stack else None
-                if (
-                    not clip_path_stack
-                    and blend_mode is None
-                    and not pdf_number(target_alpha)
-                ):
+                if not clip_path_stack and blend_mode is None and not pdf_number(target_alpha):
                     for dy, py in enumerate(range(iy0, iy1)):
                         src_y = src_y_map[dy]
                         row = py * width * 4
@@ -2609,9 +2528,7 @@ class RenderedPage:
                         sample_dictionary = dictionary
                     else:
                         samples, sample_dictionary = sample_result
-                    converted = ImageColorManager.convert_image_data(
-                        samples, sample_dictionary
-                    )
+                    converted = ImageColorManager.convert_image_data(samples, sample_dictionary)
                     if converted is None:
                         return
                     dictionary[converted_cache_key] = (
@@ -2747,9 +2664,7 @@ class RenderedPage:
                                     rgba[2],
                                     max(
                                         0,
-                                        min(
-                                            255, int(round(rgba[3] * mask_alpha / 255))
-                                        ),
+                                        min(255, int(round(rgba[3] * mask_alpha / 255))),
                                     ),
                                 )
                         if has_constant_alpha:
@@ -2760,9 +2675,7 @@ class RenderedPage:
                                 max(0, min(255, int(round(rgba[3] * constant_alpha)))),
                             )
                         if normal_fast:
-                            blend_normal_pixel(
-                                row + px * 4, rgba[0], rgba[1], rgba[2], rgba[3]
-                            )
+                            blend_normal_pixel(row + px * 4, rgba[0], rgba[1], rgba[2], rgba[3])
                         else:
                             blend_px(row + px * 4, rgba, blend_mode)
 
@@ -2801,9 +2714,7 @@ class RenderedPage:
                     pixels, _parent_alpha, _parent_blend_mode = buffer_stack[-1]
                     composite_group(
                         child,
-                        group_alpha
-                        if pdf_number(group_alpha)
-                        else data.get("fill_opacity"),
+                        group_alpha if pdf_number(group_alpha) else data.get("fill_opacity"),
                         group_blend_mode
                         if type(group_blend_mode) is str
                         else data.get("blend_mode"),
@@ -2865,9 +2776,7 @@ class RenderedPage:
                         data.get("fill_rule") or "nonzero",
                     )
                 if item.kind in {"stroke", "fillstroke"}:
-                    stroke_rgba = color_rgba(
-                        data.get("stroke_color"), data.get("stroke_opacity")
-                    )
+                    stroke_rgba = color_rgba(data.get("stroke_color"), data.get("stroke_opacity"))
                     if pdf_number(soft_mask_alpha):
                         stroke_rgba = (
                             stroke_rgba[0],

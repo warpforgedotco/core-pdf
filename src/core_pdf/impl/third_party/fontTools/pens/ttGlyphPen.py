@@ -1,19 +1,21 @@
 from array import array
 from typing import Any, Callable, Dict, Optional, Tuple
+
 from core_pdf.impl.third_party.fontTools.misc.fixedTools import MAX_F2DOT14, floatToFixedToFloat
 from core_pdf.impl.third_party.fontTools.misc.loggingTools import LogMixin
-from core_pdf.impl.third_party.fontTools.pens.pointPen import AbstractPointPen
 from core_pdf.impl.third_party.fontTools.misc.roundTools import otRound
 from core_pdf.impl.third_party.fontTools.pens.basePen import LoggingPen, PenError
+from core_pdf.impl.third_party.fontTools.pens.pointPen import AbstractPointPen
 from core_pdf.impl.third_party.fontTools.pens.transformPen import TransformPen, TransformPointPen
 from core_pdf.impl.third_party.fontTools.ttLib.tables import ttProgram
-from core_pdf.impl.third_party.fontTools.ttLib.tables._g_l_y_f import flagOnCurve, flagCubic
-from core_pdf.impl.third_party.fontTools.ttLib.tables._g_l_y_f import Glyph
-from core_pdf.impl.third_party.fontTools.ttLib.tables._g_l_y_f import GlyphComponent
-from core_pdf.impl.third_party.fontTools.ttLib.tables._g_l_y_f import GlyphCoordinates
-from core_pdf.impl.third_party.fontTools.ttLib.tables._g_l_y_f import dropImpliedOnCurvePoints
-import math
-
+from core_pdf.impl.third_party.fontTools.ttLib.tables._g_l_y_f import (
+    Glyph,
+    GlyphComponent,
+    GlyphCoordinates,
+    dropImpliedOnCurvePoints,
+    flagCubic,
+    flagOnCurve,
+)
 
 __all__ = ["TTGlyphPen", "TTGlyphPointPen"]
 
@@ -110,17 +112,14 @@ class _TTGlyphBasePen:
             component.x, component.y = (otRound(v) for v in transformation[4:])
             # quantize floats to F2Dot14 so we get same values as when decompiled
             # from a binary glyf table
-            transformation = tuple(
-                floatToFixedToFloat(v, 14) for v in transformation[:4]
-            )
+            transformation = tuple(floatToFixedToFloat(v, 14) for v in transformation[:4])
             if transformation != (1, 0, 0, 1):
                 if self.handleOverflowingTransforms and any(
                     MAX_F2DOT14 < s <= 2 for s in transformation
                 ):
                     # clamp values ~= +2.0 so we can keep the component
                     transformation = tuple(
-                        MAX_F2DOT14 if MAX_F2DOT14 < s <= 2 else s
-                        for s in transformation
+                        MAX_F2DOT14 if MAX_F2DOT14 < s <= 2 else s for s in transformation
                     )
                 component.transform = (transformation[:2], transformation[2:])
             component.flags = componentFlags
@@ -198,9 +197,7 @@ class TTGlyphPen(_TTGlyphBasePen, LoggingPen):
         self.types.pop()
 
     def _isClosed(self) -> bool:
-        return (not self.points) or (
-            self.endPts and self.endPts[-1] == len(self.points) - 1
-        )
+        return (not self.points) or (self.endPts and self.endPts[-1] == len(self.points) - 1)
 
     def lineTo(self, pt: Tuple[float, float]) -> None:
         self._addPoint(pt, flagOnCurve)
@@ -323,9 +320,7 @@ class TTGlyphPointPen(_TTGlyphBasePen, LogMixin, AbstractPointPen):
             raise PenError("Can't add a point to a closed contour.")
         if segmentType is None:
             self.types.append(0)
-        elif segmentType in ("line", "move"):
-            self.types.append(flagOnCurve)
-        elif segmentType == "qcurve":
+        elif segmentType in ("line", "move") or segmentType == "qcurve":
             self.types.append(flagOnCurve)
         elif segmentType == "curve":
             self.types.append("curve")

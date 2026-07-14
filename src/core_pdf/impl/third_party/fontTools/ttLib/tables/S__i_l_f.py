@@ -1,13 +1,15 @@
+import re
+import struct
+import sys
+from array import array
+from functools import reduce
+
 from core_pdf.impl.third_party.fontTools.misc import sstruct
 from core_pdf.impl.third_party.fontTools.misc.fixedTools import floatToFixedToStr
 from core_pdf.impl.third_party.fontTools.misc.textTools import byteord, safeEval
 
 # from itertools import *
-from . import DefaultTable
-from . import grUtils
-from array import array
-from functools import reduce
-import struct, re, sys
+from . import DefaultTable, grUtils
 
 Silf_hdr_format = """
     >
@@ -235,7 +237,7 @@ def assemble(instrs):
     res = b""
     for inst in instrs:
         m = instre.match(inst)
-        if not m or not m.group(1) in aCode_map:
+        if not m or m.group(1) not in aCode_map:
             continue
         opcode, parmfmt = aCode_map[m.group(1)]
         res += struct.pack("B", opcode)
@@ -439,18 +441,14 @@ class Silf(object):
     def decompile(self, data, ttFont, version=2.0):
         if version >= 3.0:
             _, data = sstruct.unpack2(Silf_part1_format_v3, data, self)
-            self.ruleVersion = float(
-                floatToFixedToStr(self.ruleVersion, precisionBits=16)
-            )
+            self.ruleVersion = float(floatToFixedToStr(self.ruleVersion, precisionBits=16))
         _, data = sstruct.unpack2(Silf_part1_format, data, self)
         for jlevel in range(self.numJLevels):
             j, data = sstruct.unpack2(Silf_justify_format, data, _Object())
             self.jLevels.append(j)
         _, data = sstruct.unpack2(Silf_part2_format, data, self)
         if self.numCritFeatures:
-            self.critFeatures = struct.unpack_from(
-                (">%dH" % self.numCritFeatures), data
-            )
+            self.critFeatures = struct.unpack_from((">%dH" % self.numCritFeatures), data)
         data = data[self.numCritFeatures * 2 + 1 :]
         (numScriptTag,) = struct.unpack_from("B", data)
         if numScriptTag:
@@ -530,9 +528,7 @@ class Silf(object):
         currpos = hdroffset + len(data) + 4 * (self.numPasses + 1)
         self.pseudosOffset = currpos + len(data1)
         for u, p in sorted(self.pMap.items()):
-            data1 += struct.pack(
-                (">LH" if version >= 3.0 else ">HH"), u, ttFont.getGlyphID(p)
-            )
+            data1 += struct.pack((">LH" if version >= 3.0 else ">HH"), u, ttFont.getGlyphID(p))
         data1 += self.classes.compile(ttFont, version)
         currpos += len(data1)
         data2 = b""
@@ -680,16 +676,13 @@ class Classes(object):
             )
         for s, e in zip(oClasses[: self.numLinear], oClasses[1 : self.numLinear + 1]):
             self.linear.append(
-                ttFont.getGlyphName(x)
-                for x in struct.unpack((">%dH" % ((e - s) / 2)), data[s:e])
+                ttFont.getGlyphName(x) for x in struct.unpack((">%dH" % ((e - s) / 2)), data[s:e])
             )
         for s, e in zip(
             oClasses[self.numLinear : self.numClass],
             oClasses[self.numLinear + 1 : self.numClass + 1],
         ):
-            nonLinids = [
-                struct.unpack(">HH", data[x : x + 4]) for x in range(s + 8, e, 4)
-            ]
+            nonLinids = [struct.unpack(">HH", data[x : x + 4]) for x in range(s + 8, e, 4)]
             nonLin = dict([(ttFont.getGlyphName(x[0]), x[1]) for x in nonLinids])
             self.nonLinear.append(nonLin)
 
@@ -714,9 +707,7 @@ class Classes(object):
         self.numLinear = len(self.linear)
         return (
             sstruct.pack(Silf_classmap_format, self)
-            + struct.pack(
-                ((">%dL" if version >= 4.0 else ">%dH") % len(oClasses)), *oClasses
-            )
+            + struct.pack(((">%dL" if version >= 4.0 else ">%dH") % len(oClasses)), *oClasses)
             + data
         )
 
@@ -805,19 +796,13 @@ class Pass(object):
             (">%dH" % numStartStates), data[2 : 2 + numStartStates * 2]
         )
         data = data[2 + numStartStates * 2 :]
-        self.ruleSortKeys = struct.unpack(
-            (">%dH" % self.numRules), data[: 2 * self.numRules]
-        )
+        self.ruleSortKeys = struct.unpack((">%dH" % self.numRules), data[: 2 * self.numRules])
         data = data[2 * self.numRules :]
-        self.rulePreContexts = struct.unpack(
-            ("%dB" % self.numRules), data[: self.numRules]
-        )
+        self.rulePreContexts = struct.unpack(("%dB" % self.numRules), data[: self.numRules])
         data = data[self.numRules :]
         (self.collisionThreshold, pConstraint) = struct.unpack(">BH", data[:3])
         oConstraints = list(
-            struct.unpack(
-                (">%dH" % (self.numRules + 1)), data[3 : 5 + self.numRules * 2]
-            )
+            struct.unpack((">%dH" % (self.numRules + 1)), data[3 : 5 + self.numRules * 2])
         )
         data = data[5 + self.numRules * 2 :]
         oActions = list(
@@ -825,9 +810,7 @@ class Pass(object):
         )
         data = data[2 * self.numRules + 2 :]
         for i in range(self.numTransitional):
-            a = array(
-                "H", data[i * self.numColumns * 2 : (i + 1) * self.numColumns * 2]
-            )
+            a = array("H", data[i * self.numColumns * 2 : (i + 1) * self.numColumns * 2])
             if sys.byteorder != "big":
                 a.byteswap()
             self.stateTrans.append(a)
@@ -838,8 +821,7 @@ class Pass(object):
             if oConstraints[i] == 0:
                 oConstraints[i] = oConstraints[i + 1]
         self.ruleConstraints = [
-            (data[s:e] if (e - s > 1) else b"")
-            for (s, e) in zip(oConstraints, oConstraints[1:])
+            (data[s:e] if (e - s > 1) else b"") for (s, e) in zip(oConstraints, oConstraints[1:])
         ]
         data = data[oConstraints[-1] :]
         self.actions = [
@@ -868,9 +850,9 @@ class Pass(object):
                 t.byteswap()
         if not len(transes):
             self.startStates = [0]
-        oRuleMap = reduce(
-            lambda a, x: (a[0] + len(x), a[1] + [a[0]]), self.rules + [[]], (0, [])
-        )[1]
+        oRuleMap = reduce(lambda a, x: (a[0] + len(x), a[1] + [a[0]]), self.rules + [[]], (0, []))[
+            1
+        ]
         passRanges = []
         gidcolmap = dict([(ttFont.getGlyphID(x[0]), x[1]) for x in self.colMap.items()])
         for e in grUtils.entries(gidcolmap, sameval=True):
@@ -890,9 +872,7 @@ class Pass(object):
             + 4 * self.numRules
             + 4
         )
-        self.pcCode = (
-            self.fsmOffset + 2 * self.numTransitional * self.numColumns + 1 + base
-        )
+        self.pcCode = self.fsmOffset + 2 * self.numTransitional * self.numColumns + 1 + base
         self.rcCode = self.pcCode + len(self.passConstraints)
         self.aCode = self.rcCode + len(constraintCode)
         self.oDebug = 0
@@ -928,9 +908,7 @@ class Pass(object):
             writer,
             [
                 "{}={}".format(*x)
-                for x in sorted(
-                    self.colMap.items(), key=lambda x: ttFont.getGlyphID(x[0])
-                )
+                for x in sorted(self.colMap.items(), key=lambda x: ttFont.getGlyphID(x[0]))
             ],
         )
         writer.endtag("colmap")

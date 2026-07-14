@@ -140,18 +140,10 @@ def rotate_page_rect(
     page_height: float,
 ) -> tuple[float, float, float, float]:
     points = [
-        rotate_page_point(
-            x0, y0, rotate=rotate, page_width=page_width, page_height=page_height
-        ),
-        rotate_page_point(
-            x0, y1, rotate=rotate, page_width=page_width, page_height=page_height
-        ),
-        rotate_page_point(
-            x1, y0, rotate=rotate, page_width=page_width, page_height=page_height
-        ),
-        rotate_page_point(
-            x1, y1, rotate=rotate, page_width=page_width, page_height=page_height
-        ),
+        rotate_page_point(x0, y0, rotate=rotate, page_width=page_width, page_height=page_height),
+        rotate_page_point(x0, y1, rotate=rotate, page_width=page_width, page_height=page_height),
+        rotate_page_point(x1, y0, rotate=rotate, page_width=page_width, page_height=page_height),
+        rotate_page_point(x1, y1, rotate=rotate, page_width=page_width, page_height=page_height),
     ]
     xs = [point[0] for point in points]
     ys = [point[1] for point in points]

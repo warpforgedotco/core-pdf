@@ -15,15 +15,15 @@ from core_pdf.impl.engine.spec.s_08_graphics.color_math import (
     lab_to_xyz,
     xyz_to_srgb,
 )
-from core_pdf.impl.engine.spec.s_08_graphics.icc_profiles import (
-    convert_icc_profile_samples,
-)
 from core_pdf.impl.engine.spec.s_08_graphics.color_spec import (
     ImageColorSpec,
     cs_name,
     cs_param,
     cs_param_floats,
     normalize_image_color_spec,
+)
+from core_pdf.impl.engine.spec.s_08_graphics.icc_profiles import (
+    convert_icc_profile_samples,
 )
 from core_pdf.impl.objects import PdfStream
 
@@ -172,11 +172,7 @@ class ImageColorManager:
         max_sample = (1 << bpc) - 1
         if max_sample <= 0:
             return samples
-        decode = (
-            lookup_dict_key(image_dict, "Decode")
-            if isinstance(image_dict, dict)
-            else None
-        )
+        decode = lookup_dict_key(image_dict, "Decode") if isinstance(image_dict, dict) else None
         pairs: list[tuple[float, float]] = []
         if isinstance(decode, (list, tuple)) and len(decode) >= components * 2:
             for i in range(components):
@@ -208,10 +204,7 @@ class ImageColorManager:
             alt_cs = color_space[2]
             if not isinstance(alt_cs, dict):
                 raise ValueError("invalid Separation color space")
-            alt_name = (
-                cs_name(lookup_dict_key(alt_cs, "ColorSpace"), "DeviceGray")
-                or "DeviceGray"
-            )
+            alt_name = cs_name(lookup_dict_key(alt_cs, "ColorSpace"), "DeviceGray") or "DeviceGray"
             tint_fn = color_space[3] if len(color_space) > 3 else None
 
         result = bytearray()
@@ -274,11 +267,7 @@ class ImageColorManager:
         step = n
         for i in range(0, len(raw), step):
             components: ColorComponents = [raw[i + j] / 255.0 for j in range(step)]
-            if (
-                isinstance(tint_fn, (list, tuple))
-                and len(tint_fn) >= 1
-                and callable(tint_fn[0])
-            ):
+            if isinstance(tint_fn, (list, tuple)) and len(tint_fn) >= 1 and callable(tint_fn[0]):
                 try:
                     components = cast(ColorComponents, tint_fn[0](*components))
                 except Exception as exc:
@@ -323,9 +312,7 @@ class ImageColorManager:
             r = int(255 * (1 - c * inv255) * (1 - k * inv255))
             g = int(255 * (1 - m * inv255) * (1 - k * inv255))
             b = int(255 * (1 - y * inv255) * (1 - k * inv255))
-            result.extend(
-                [max(0, min(255, r)), max(0, min(255, g)), max(0, min(255, b))]
-            )
+            result.extend([max(0, min(255, r)), max(0, min(255, g)), max(0, min(255, b))])
         return bytes(result)
 
     @staticmethod
@@ -391,9 +378,7 @@ class ImageColorManager:
     def convert_calrgb(raw: bytes, params: object) -> bytes:
         bp = cs_param_floats(params, "BlackPoint", 3, [0.0, 0.0, 0.0])
         gamma = cs_param_floats(params, "Gamma", 3, [1.0, 1.0, 1.0])
-        matrix = cs_param_floats(
-            params, "Matrix", 9, [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
-        )
+        matrix = cs_param_floats(params, "Matrix", 9, [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0])
 
         def fn(r: float, g: float, b: float) -> tuple[float, float, float]:
             rg = pow(r, gamma[0]) if gamma[0] != 1.0 else r
@@ -412,9 +397,7 @@ class ImageColorManager:
         wp = cs_param_floats(params, "WhitePoint", 3, [0.9505, 1.0, 1.089])
         range_a = cs_param_floats(params, "Range", 2, [-100.0, 100.0])
 
-        def fn(
-            l_byte: float, a_byte: float, b_byte: float
-        ) -> tuple[float, float, float]:
+        def fn(l_byte: float, a_byte: float, b_byte: float) -> tuple[float, float, float]:
             l_star = l_byte * 100.0
             a_star = a_byte * (range_a[1] - range_a[0]) + range_a[0]
             b_star = b_byte * (range_a[1] - range_a[0]) + range_a[0]
@@ -449,9 +432,7 @@ class ImageColorManager:
             r = int(255 * (1 - c) * (1 - k))
             g_ = int(255 * (1 - m) * (1 - k))
             b_ = int(255 * (1 - y) * (1 - k))
-            return bytes(
-                [max(0, min(255, r)), max(0, min(255, g_)), max(0, min(255, b_))]
-            )
+            return bytes([max(0, min(255, r)), max(0, min(255, g_)), max(0, min(255, b_))])
         return None
 
 
@@ -589,9 +570,7 @@ def evaluate_sampled_tint_function(function: PdfStream, *inputs: float) -> list[
                 encode_min = parsed_min
                 encode_max = parsed_max
         encoded = encode_min + normalized * (encode_max - encode_min)
-        encoded_positions.append(
-            max(0, min(sizes[input_index] - 1, int(round(encoded))))
-        )
+        encoded_positions.append(max(0, min(sizes[input_index] - 1, int(round(encoded)))))
 
     sample_index = 0
     stride = 1
@@ -607,9 +586,7 @@ def evaluate_sampled_tint_function(function: PdfStream, *inputs: float) -> list[
         range_max = parse_float(range_obj[output_index * 2 + 1], None)
         if range_min is None or range_max is None:
             raise ValueError("invalid sampled function range")
-        decoded = range_min + (samples[base + output_index] / 255.0) * (
-            range_max - range_min
-        )
+        decoded = range_min + (samples[base + output_index] / 255.0) * (range_max - range_min)
         result.append(max(range_min, min(range_max, decoded)))
     return result
 

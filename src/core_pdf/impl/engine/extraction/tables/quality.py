@@ -40,9 +40,7 @@ def table_column_count(rows: Sequence[Sequence[str]]) -> int:
 
 
 def table_text_length(rows: Sequence[Sequence[str]]) -> int:
-    return sum(
-        len(str(cell).strip()) for row in rows for cell in row if str(cell).strip()
-    )
+    return sum(len(str(cell).strip()) for row in rows for cell in row if str(cell).strip())
 
 
 def table_quality_score(

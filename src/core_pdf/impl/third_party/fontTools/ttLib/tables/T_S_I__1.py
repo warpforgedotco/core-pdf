@@ -1,4 +1,4 @@
-""" TSI{0,1,2,3,5} are private tables used by Microsoft Visual TrueType (VTT)
+"""TSI{0,1,2,3,5} are private tables used by Microsoft Visual TrueType (VTT)
 tool to store its hinting source data.
 
 TSI1 contains the text of the glyph programs in the form of low-level assembly
@@ -7,9 +7,10 @@ code, as well as the 'extra' programs 'fpgm', 'ppgm' (i.e. 'prep'), and 'cvt'.
 See also https://learn.microsoft.com/en-us/typography/tools/vtt/tsi-tables
 """
 
-from . import DefaultTable
 from core_pdf.impl.third_party.fontTools.misc.loggingTools import LogMixin
 from core_pdf.impl.third_party.fontTools.misc.textTools import strjoin, tobytes, tostr
+
+from . import DefaultTable
 
 
 class table_T_S_I__1(LogMixin, DefaultTable.DefaultTable):
@@ -20,9 +21,7 @@ class table_T_S_I__1(LogMixin, DefaultTable.DefaultTable):
     def decompile(self, data, ttFont):
         totalLength = len(data)
         indextable = ttFont[self.indextable]
-        for indices, isExtra in zip(
-            (indextable.indices, indextable.extra_indices), (False, True)
-        ):
+        for indices, isExtra in zip((indextable.indices, indextable.extra_indices), (False, True)):
             programs = {}
             for i, (glyphID, textLength, textOffset) in enumerate(indices):
                 if isExtra:
@@ -61,9 +60,7 @@ class table_T_S_I__1(LogMixin, DefaultTable.DefaultTable):
                         nextTextOffset = indices[i + 1][2]
                     assert nextTextOffset >= textOffset, "entries not sorted by offset"
                     if nextTextOffset > totalLength:
-                        self.log.debug(
-                            "nextTextOffset > totalLength; %r truncated" % name
-                        )
+                        self.log.debug("nextTextOffset > totalLength; %r truncated" % name)
                         nextTextOffset = totalLength
                     textLength = nextTextOffset - textOffset
                 else:
@@ -93,9 +90,7 @@ class table_T_S_I__1(LogMixin, DefaultTable.DefaultTable):
         indices = []
         for i, name in enumerate(glyphNames):
             if len(data) % 2:
-                data = (
-                    data + b"\015"
-                )  # align on 2-byte boundaries, fill with return chars. Yum.
+                data = data + b"\015"  # align on 2-byte boundaries, fill with return chars. Yum.
             if name in self.glyphPrograms:
                 text = tobytes(self.glyphPrograms[name], encoding="utf-8")
             else:
@@ -109,9 +104,7 @@ class table_T_S_I__1(LogMixin, DefaultTable.DefaultTable):
         extra_indices = []
         for code, name in sorted(self.extras.items()):
             if len(data) % 2:
-                data = (
-                    data + b"\015"
-                )  # align on 2-byte boundaries, fill with return chars.
+                data = data + b"\015"  # align on 2-byte boundaries, fill with return chars.
             if name in self.extraPrograms:
                 text = tobytes(self.extraPrograms[name], encoding="utf-8")
             else:

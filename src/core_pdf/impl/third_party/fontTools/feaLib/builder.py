@@ -1,52 +1,54 @@
 from __future__ import annotations
 
-from core_pdf.impl.third_party.fontTools.misc import sstruct
-from core_pdf.impl.third_party.fontTools.misc.textTools import Tag, tostr, binary2num, safeEval
+import copy
+import itertools
+import logging
+import os
+import warnings
+from collections import defaultdict
+from io import StringIO
+
+from core_pdf.impl.third_party.fontTools.feaLib.ast import FeatureFile
 from core_pdf.impl.third_party.fontTools.feaLib.error import FeatureLibError
 from core_pdf.impl.third_party.fontTools.feaLib.lookupDebugInfo import (
-    LookupDebugInfo,
-    LOOKUP_DEBUG_INFO_KEY,
     LOOKUP_DEBUG_ENV_VAR,
+    LOOKUP_DEBUG_INFO_KEY,
+    LookupDebugInfo,
 )
 from core_pdf.impl.third_party.fontTools.feaLib.parser import Parser
-from core_pdf.impl.third_party.fontTools.feaLib.ast import FeatureFile
-from core_pdf.impl.third_party.fontTools.feaLib.variableScalar import VariableScalar, VariableScalarBuilder
+from core_pdf.impl.third_party.fontTools.feaLib.variableScalar import (
+    VariableScalar,
+    VariableScalarBuilder,
+)
+from core_pdf.impl.third_party.fontTools.misc import sstruct
+from core_pdf.impl.third_party.fontTools.misc.textTools import Tag, binary2num, safeEval, tostr
 from core_pdf.impl.third_party.fontTools.otlLib import builder as otl
-from core_pdf.impl.third_party.fontTools.otlLib.maxContextCalc import maxCtxFont
-from core_pdf.impl.third_party.fontTools.ttLib import newTable, getTableModule
-from core_pdf.impl.third_party.fontTools.ttLib.tables import otBase, otTables
 from core_pdf.impl.third_party.fontTools.otlLib.builder import (
     AlternateSubstBuilder,
+    AnySubstBuilder,
     ChainContextPosBuilder,
     ChainContextSubstBuilder,
-    LigatureSubstBuilder,
-    MultipleSubstBuilder,
+    ChainContextualRule,
     CursivePosBuilder,
+    LigatureSubstBuilder,
     MarkBasePosBuilder,
     MarkLigPosBuilder,
     MarkMarkPosBuilder,
-    ReverseChainSingleSubstBuilder,
-    SingleSubstBuilder,
-    ClassPairPosSubtableBuilder,
+    MultipleSubstBuilder,
     PairPosBuilder,
+    ReverseChainSingleSubstBuilder,
     SinglePosBuilder,
-    ChainContextualRule,
-    AnySubstBuilder,
+    SingleSubstBuilder,
 )
 from core_pdf.impl.third_party.fontTools.otlLib.error import OpenTypeLibError
-from core_pdf.impl.third_party.fontTools.varLib.errors import VarLibError
-from core_pdf.impl.third_party.fontTools.varLib.varStore import OnlineVarStoreBuilder
+from core_pdf.impl.third_party.fontTools.otlLib.maxContextCalc import maxCtxFont
+from core_pdf.impl.third_party.fontTools.ttLib import getTableModule, newTable
+from core_pdf.impl.third_party.fontTools.ttLib.tables import otBase, otTables
 from core_pdf.impl.third_party.fontTools.varLib.builder import buildVarDevTable
+from core_pdf.impl.third_party.fontTools.varLib.errors import VarLibError
 from core_pdf.impl.third_party.fontTools.varLib.featureVars import addFeatureVariationsRaw
 from core_pdf.impl.third_party.fontTools.varLib.models import normalizeValue, piecewiseLinearMap
-from collections import defaultdict
-import copy
-import itertools
-from io import StringIO
-import logging
-import warnings
-import os
-
+from core_pdf.impl.third_party.fontTools.varLib.varStore import OnlineVarStoreBuilder
 
 log = logging.getLogger(__name__)
 
@@ -69,9 +71,7 @@ def addOpenTypeFeatures(font, featurefile, tables=None, debug=False):
     builder.build(tables=tables, debug=debug)
 
 
-def addOpenTypeFeaturesFromString(
-    font, features, filename=None, tables=None, debug=False
-):
+def addOpenTypeFeaturesFromString(font, features, filename=None, tables=None, debug=False):
     """Add features from a string to a font. Note that this replaces any
     features currently present.
 
@@ -123,9 +123,7 @@ class Builder(object):
         self.varstorebuilder = None
         if "fvar" in font:
             self.axes = font["fvar"].axes
-            self.varstorebuilder = OnlineVarStoreBuilder(
-                [ax.axisTag for ax in self.axes]
-            )
+            self.varstorebuilder = OnlineVarStoreBuilder([ax.axisTag for ax in self.axes])
             self.scalar_builder = VariableScalarBuilder.from_ttf(font)
         self.default_language_systems_ = set()
         self.script_ = None
@@ -270,8 +268,7 @@ class Builder(object):
             return self.cur_lookup_
         if self.cur_lookup_name_ and self.cur_lookup_:
             raise FeatureLibError(
-                "Within a named lookup block, all rules must be of "
-                "the same lookup type and flag",
+                "Within a named lookup block, all rules must be of the same lookup type and flag",
                 location,
             )
         self.cur_lookup_ = builder_class(self.font, location)
@@ -313,12 +310,8 @@ class Builder(object):
                     for lookup in lookuplist:
                         for glyph, alts in lookup.getAlternateGlyphs().items():
                             alts_for_glyph = alternates.setdefault(glyph, [])
-                            alts_for_glyph.extend(
-                                g for g in alts if g not in alts_for_glyph
-                            )
-        single = {
-            glyph: repl[0] for glyph, repl in alternates.items() if len(repl) == 1
-        }
+                            alts_for_glyph.extend(g for g in alts if g not in alts_for_glyph)
+        single = {glyph: repl[0] for glyph, repl in alternates.items() if len(repl) == 1}
         multi = {glyph: repl for glyph, repl in alternates.items() if len(repl) > 1}
         if not single and not multi:
             return
@@ -584,8 +577,7 @@ class Builder(object):
         # Check for duplicate AxisValueRecords
         for record_ in self.stat_["AxisValueRecords"]:
             if (
-                {n.asFea() for n in record_.names}
-                == {n.asFea() for n in axisValueRecord.names}
+                {n.asFea() for n in record_.names} == {n.asFea() for n in axisValueRecord.names}
                 and {n.asFea() for n in record_.locations}
                 == {n.asFea() for n in axisValueRecord.locations}
                 and record_.flags == axisValueRecord.flags
@@ -756,9 +748,7 @@ class Builder(object):
         axis.BaseScriptList.BaseScriptRecord = []
         axis.BaseScriptList.BaseScriptCount = len(scripts)
         for script in sorted(scripts):
-            minmax_for_script = [
-                record[1:] for record in minmax if record[0] == script[0]
-            ]
+            minmax_for_script = [record[1:] for record in minmax if record[0] == script[0]]
             record = otTables.BaseScriptRecord()
             record.BaseScriptTag = script[0]
             record.BaseScript = otTables.BaseScript()
@@ -782,9 +772,7 @@ class Builder(object):
                     lang_record.BaseLangSysTag = language
                     lang_record.MinMax = minmax_record
                     record.BaseScript.BaseLangSysRecord.append(lang_record)
-            record.BaseScript.BaseLangSysCount = len(
-                record.BaseScript.BaseLangSysRecord
-            )
+            record.BaseScript.BaseLangSysCount = len(record.BaseScript.BaseLangSysRecord)
             axis.BaseScriptList.BaseScriptRecord.append(record)
         return axis
 
@@ -851,9 +839,7 @@ class Builder(object):
 
     def buildGDEFMarkGlyphSetsDef_(self):
         sets = []
-        for glyphs, id_ in sorted(
-            self.markFilterSets_.items(), key=lambda item: item[1]
-        ):
+        for glyphs, id_ in sorted(self.markFilterSets_.items(), key=lambda item: item[1]):
             sets.append(glyphs)
         return otl.buildMarkGlyphSetsDef(sets, self.glyphMap)
 
@@ -925,9 +911,7 @@ class Builder(object):
             # within a given feature:
             # https://github.com/fonttools/fonttools/issues/2946
             lookup_indices = tuple(
-                dict.fromkeys(
-                    l.lookup_index for l in lookups if l.lookup_index is not None
-                )
+                dict.fromkeys(l.lookup_index for l in lookups if l.lookup_index is not None)
             )
             # order doesn't matter, but lookup_indices preserves it.
             # We want to combine identical sets of lookups (order doesn't matter)
@@ -1022,9 +1006,7 @@ class Builder(object):
 
         if has_any_variations:
             for feature_tag, conditions_and_lookups in feature_vars.items():
-                addFeatureVariationsRaw(
-                    self.font, table, conditions_and_lookups, feature_tag
-                )
+                addFeatureVariationsRaw(self.font, table, conditions_and_lookups, feature_tag)
 
     def any_feature_variations(self, feature_tag, table_tag):
         for (_, _, feature), variations in self.feature_variations_.items():
@@ -1105,9 +1087,7 @@ class Builder(object):
 
     def start_lookup_block(self, location, name, use_extension=False):
         if name in self.named_lookups_:
-            raise FeatureLibError(
-                'Lookup "%s" has already been defined' % name, location
-            )
+            raise FeatureLibError('Lookup "%s" has already been defined' % name, location)
         if self.cur_feature_name_ == "aalt":
             raise FeatureLibError(
                 "Lookup blocks cannot be placed inside 'aalt' features; "
@@ -1145,14 +1125,12 @@ class Builder(object):
         assert len(language) == 4
         if self.cur_feature_name_ in ("aalt", "size"):
             raise FeatureLibError(
-                "Language statements are not allowed "
-                'within "feature %s"' % self.cur_feature_name_,
+                'Language statements are not allowed within "feature %s"' % self.cur_feature_name_,
                 location,
             )
         if self.cur_feature_name_ is None:
             raise FeatureLibError(
-                "Language statements are not allowed "
-                "within standalone lookup blocks",
+                "Language statements are not allowed within standalone lookup blocks",
                 location,
             )
         self.cur_lookup_ = None
@@ -1197,8 +1175,7 @@ class Builder(object):
             if glyph in self.markAttach_:
                 _, loc = self.markAttach_[glyph]
                 raise FeatureLibError(
-                    "Glyph %s already has been assigned "
-                    "a MarkAttachmentType at %s" % (glyph, loc),
+                    "Glyph %s already has been assigned a MarkAttachmentType at %s" % (glyph, loc),
                     location,
                 )
             self.markAttach_[glyph] = (id_, location)
@@ -1229,13 +1206,12 @@ class Builder(object):
     def set_script(self, location, script):
         if self.cur_feature_name_ in ("aalt", "size"):
             raise FeatureLibError(
-                "Script statements are not allowed "
-                'within "feature %s"' % self.cur_feature_name_,
+                'Script statements are not allowed within "feature %s"' % self.cur_feature_name_,
                 location,
             )
         if self.cur_feature_name_ is None:
             raise FeatureLibError(
-                "Script statements are not allowed " "within standalone lookup blocks",
+                "Script statements are not allowed within standalone lookup blocks",
                 location,
             )
         if self.language_systems == {(script, "dflt")}:
@@ -1256,9 +1232,7 @@ class Builder(object):
         lookup_builders = []
         for lookuplist in lookups:
             if lookuplist is not None:
-                lookup_builders.append(
-                    [self.named_lookups_.get(l.name) for l in lookuplist]
-                )
+                lookup_builders.append([self.named_lookups_.get(l.name) for l in lookuplist])
             else:
                 lookup_builders.append(None)
         return lookup_builders
@@ -1297,9 +1271,7 @@ class Builder(object):
         else:
             self.base_horiz_axis_ = (bases, scripts, minmax)
 
-    def set_size_parameters(
-        self, location, DesignSize, SubfamilyID, RangeStart, RangeEnd
-    ):
+    def set_size_parameters(self, location, DesignSize, SubfamilyID, RangeStart, RangeEnd):
         if self.cur_feature_name_ != "size":
             raise FeatureLibError(
                 "Parameters statements are not allowed "
@@ -1349,9 +1321,7 @@ class Builder(object):
         )
 
     # GSUB 2
-    def add_multiple_subst(
-        self, location, prefix, glyph, suffix, replacements, forceChain=False
-    ):
+    def add_multiple_subst(self, location, prefix, glyph, suffix, replacements, forceChain=False):
         if prefix or suffix or forceChain:
             self.add_multi_subst_chained_(location, prefix, glyph, suffix, replacements)
             return
@@ -1375,20 +1345,14 @@ class Builder(object):
         else:
             lookup = self.get_lookup_(location, AlternateSubstBuilder)
         if glyph in lookup.alternates:
-            raise FeatureLibError(
-                'Already defined alternates for glyph "%s"' % glyph, location
-            )
+            raise FeatureLibError('Already defined alternates for glyph "%s"' % glyph, location)
         # We allow empty replacement glyphs here.
         lookup.alternates[glyph] = replacement
 
     # GSUB 4
-    def add_ligature_subst(
-        self, location, prefix, glyphs, suffix, replacement, forceChain
-    ):
+    def add_ligature_subst(self, location, prefix, glyphs, suffix, replacement, forceChain):
         if prefix or suffix or forceChain:
-            self.add_ligature_subst_chained_(
-                location, prefix, glyphs, suffix, replacement
-            )
+            self.add_ligature_subst_chained_(location, prefix, glyphs, suffix, replacement)
             return
         if not all(glyphs):
             raise FeatureLibError("Empty glyph class in substitution", location)
@@ -1400,7 +1364,7 @@ class Builder(object):
         # all specific glyph sequences if glyph classes are detected"
         self.add_any_subst_(
             location,
-            {g: (replacement,) for g in itertools.product(*glyphs)},
+            dict.fromkeys(itertools.product(*glyphs), (replacement,)),
         )
 
     @staticmethod
@@ -1428,18 +1392,14 @@ class Builder(object):
     # GSUB 5/6
     def add_chain_context_subst(self, location, prefix, glyphs, suffix, lookups):
         if not all(glyphs) or not all(prefix) or not all(suffix):
-            raise FeatureLibError(
-                "Empty glyph class in contextual substitution", location
-            )
+            raise FeatureLibError("Empty glyph class in contextual substitution", location)
         lookup = self.get_lookup_(location, ChainContextSubstBuilder)
         resolved = self.find_lookup_builders_(lookups)
         self._add_contextual_rule(lookup, prefix, glyphs, suffix, resolved)
 
     def add_single_subst_chained_(self, location, prefix, suffix, mapping):
         if not mapping or not all(prefix) or not all(suffix):
-            raise FeatureLibError(
-                "Empty glyph class in contextual substitution", location
-            )
+            raise FeatureLibError("Empty glyph class in contextual substitution", location)
         # https://github.com/fonttools/fonttools/issues/512
         # https://github.com/fonttools/fonttools/issues/2150
         chain = self.get_lookup_(location, ChainContextSubstBuilder)
@@ -1452,9 +1412,7 @@ class Builder(object):
 
     def add_multi_subst_chained_(self, location, prefix, glyph, suffix, replacements):
         if not all(prefix) or not all(suffix):
-            raise FeatureLibError(
-                "Empty glyph class in contextual substitution", location
-            )
+            raise FeatureLibError("Empty glyph class in contextual substitution", location)
         # https://github.com/fonttools/fonttools/issues/3551
         chain = self.get_lookup_(location, ChainContextSubstBuilder)
         sub = chain.find_chainable_subst({glyph: replacements}, MultipleSubstBuilder)
@@ -1464,14 +1422,10 @@ class Builder(object):
         # https://github.com/fonttools/fonttools/issues/4016
         self._add_contextual_rule(chain, prefix, [{glyph}], suffix, [sub])
 
-    def add_ligature_subst_chained_(
-        self, location, prefix, glyphs, suffix, replacement
-    ):
+    def add_ligature_subst_chained_(self, location, prefix, glyphs, suffix, replacement):
         # https://github.com/fonttools/fonttools/issues/3701
         if not all(prefix) or not all(suffix):
-            raise FeatureLibError(
-                "Empty glyph class in contextual substitution", location
-            )
+            raise FeatureLibError("Empty glyph class in contextual substitution", location)
         chain = self.get_lookup_(location, ChainContextSubstBuilder)
         sub = chain.find_chainable_ligature_subst(glyphs, replacement)
         if sub is None:
@@ -1506,12 +1460,8 @@ class Builder(object):
             lookup = self.get_lookup_(location, SinglePosBuilder)
             for glyphs, value in pos:
                 if not glyphs:
-                    raise FeatureLibError(
-                        "Empty glyph class in positioning rule", location
-                    )
-                otValueRecord = self.makeOpenTypeValueRecord(
-                    location, value, pairPosContext=False
-                )
+                    raise FeatureLibError("Empty glyph class in positioning rule", location)
+                otValueRecord = self.makeOpenTypeValueRecord(location, value, pairPosContext=False)
                 for glyph in glyphs:
                     try:
                         lookup.add_pos(location, glyph, otValueRecord)
@@ -1584,25 +1534,19 @@ class Builder(object):
         for baseAnchor, markClass in marks:
             otBaseAnchor = self.makeOpenTypeAnchor(location, baseAnchor)
             for baseMark in baseMarks:
-                builder.baseMarks.setdefault(baseMark, {})[
-                    markClass.name
-                ] = otBaseAnchor
+                builder.baseMarks.setdefault(baseMark, {})[markClass.name] = otBaseAnchor
 
     # GPOS 7/8
     def add_chain_context_pos(self, location, prefix, glyphs, suffix, lookups):
         if not all(glyphs) or not all(prefix) or not all(suffix):
-            raise FeatureLibError(
-                "Empty glyph class in contextual positioning rule", location
-            )
+            raise FeatureLibError("Empty glyph class in contextual positioning rule", location)
         lookup = self.get_lookup_(location, ChainContextPosBuilder)
         resolved = self.find_lookup_builders_(lookups)
         self._add_contextual_rule(lookup, prefix, glyphs, suffix, resolved)
 
     def add_single_pos_chained_(self, location, prefix, suffix, pos):
         if not pos or not all(prefix) or not all(suffix):
-            raise FeatureLibError(
-                "Empty glyph class in contextual positioning rule", location
-            )
+            raise FeatureLibError("Empty glyph class in contextual positioning rule", location)
         # https://github.com/fonttools/fonttools/issues/514
         chain = self.get_lookup_(location, ChainContextPosBuilder)
         targets = []
@@ -1613,9 +1557,7 @@ class Builder(object):
             if value is None:
                 subs.append(None)
                 continue
-            otValue = self.makeOpenTypeValueRecord(
-                location, value, pairPosContext=False
-            )
+            otValue = self.makeOpenTypeValueRecord(location, value, pairPosContext=False)
             sub = chain.find_chainable_single_pos(targets, glyphs, otValue)
             if sub is None:
                 sub = self.get_chained_lookup_(location, SinglePosBuilder)
@@ -1653,15 +1595,12 @@ class Builder(object):
         oldClass, oldLocation = self.glyphClassDefs_.get(glyph, (None, None))
         if oldClass and oldClass != glyphClass:
             raise FeatureLibError(
-                "Glyph %s was assigned to a different class at %s"
-                % (glyph, oldLocation),
+                "Glyph %s was assigned to a different class at %s" % (glyph, oldLocation),
                 location,
             )
         self.glyphClassDefs_[glyph] = (glyphClass, location)
 
-    def add_glyphClassDef(
-        self, location, baseGlyphs, ligatureGlyphs, markGlyphs, componentGlyphs
-    ):
+    def add_glyphClassDef(self, location, baseGlyphs, ligatureGlyphs, markGlyphs, componentGlyphs):
         for glyph in baseGlyphs:
             self.setGlyphClass_(location, glyph, 1)
         for glyph in ligatureGlyphs:
@@ -1717,8 +1656,7 @@ class Builder(object):
 
         # Normalize
         axisMap = {
-            axis.axisTag: (axis.minValue, axis.defaultValue, axis.maxValue)
-            for axis in self.axes
+            axis.axisTag: (axis.minValue, axis.defaultValue, axis.maxValue) for axis in self.axes
         }
 
         value = {
@@ -1744,17 +1682,13 @@ class Builder(object):
 
         self.conditionsets_[key] = value
 
-    def makeVariablePos(
-        self, location, varscalar: VariableScalar
-    ) -> tuple[int, int | None]:
+    def makeVariablePos(self, location, varscalar: VariableScalar) -> tuple[int, int | None]:
         """Make a pos statement from a VariableScalar, returning the default
         value, and optionally the variation index if the scalar genuinely
         requires variation too."""
 
         if self.varstorebuilder is None or self.scalar_builder is None:
-            raise FeatureLibError(
-                "Can't define a variable scalar in a non-variable font", location
-            )
+            raise FeatureLibError("Can't define a variable scalar in a non-variable font", location)
 
         if not varscalar.does_vary:
             return self.scalar_builder.default_value(varscalar), None
@@ -1764,9 +1698,7 @@ class Builder(object):
                 varscalar, self.varstorebuilder
             )
         except VarLibError as e:
-            raise FeatureLibError(
-                "Failed to compute deltas for variable scalar", location
-            ) from e
+            raise FeatureLibError("Failed to compute deltas for variable scalar", location) from e
 
         device = None
         if index is not None and index != 0xFFFFFFFF:
@@ -1782,9 +1714,7 @@ class Builder(object):
             return varscalar, device
         default, device = self.makeVariablePos(location, varscalar)
         if device is not None and deviceTable is not None:
-            raise FeatureLibError(
-                "Can't define a device coordinate and variable scalar", location
-            )
+            raise FeatureLibError("Can't define a device coordinate and variable scalar", location)
         return default, device
 
     def makeOpenTypeAnchor(self, location, anchor):

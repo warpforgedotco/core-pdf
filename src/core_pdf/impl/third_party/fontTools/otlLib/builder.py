@@ -1,30 +1,30 @@
 from __future__ import annotations
 
-from collections import namedtuple, OrderedDict
+import copy
 import itertools
+import logging
+from collections import OrderedDict, namedtuple
+from functools import reduce
 from typing import Dict, Union
-from core_pdf.impl.third_party.fontTools.misc.fixedTools import fixedToFloat
-from core_pdf.impl.third_party.fontTools.misc.roundTools import otRound
+
 from core_pdf.impl.third_party.fontTools import ttLib
-from core_pdf.impl.third_party.fontTools.ttLib.tables import otTables as ot
-from core_pdf.impl.third_party.fontTools.ttLib.tables.otBase import (
-    ValueRecord,
-    valueRecordFormatDict,
-    OTLOffsetOverflowError,
-    OTTableWriter,
-)
-from core_pdf.impl.third_party.fontTools.ttLib.ttFont import TTFont
 from core_pdf.impl.third_party.fontTools.feaLib.ast import STATNameStatement
+from core_pdf.impl.third_party.fontTools.misc.fixedTools import fixedToFloat
+from core_pdf.impl.third_party.fontTools.misc.loggingTools import deprecateFunction
+from core_pdf.impl.third_party.fontTools.misc.roundTools import otRound
+from core_pdf.impl.third_party.fontTools.otlLib.error import OpenTypeLibError
 from core_pdf.impl.third_party.fontTools.otlLib.optimize.gpos import (
     _compression_level_from_env,
     compact_lookup,
 )
-from core_pdf.impl.third_party.fontTools.otlLib.error import OpenTypeLibError
-from core_pdf.impl.third_party.fontTools.misc.loggingTools import deprecateFunction
-from functools import reduce
-import logging
-import copy
-
+from core_pdf.impl.third_party.fontTools.ttLib.tables import otTables as ot
+from core_pdf.impl.third_party.fontTools.ttLib.tables.otBase import (
+    OTLOffsetOverflowError,
+    OTTableWriter,
+    ValueRecord,
+    valueRecordFormatDict,
+)
+from core_pdf.impl.third_party.fontTools.ttLib.ttFont import TTFont
 
 log = logging.getLogger(__name__)
 
@@ -115,10 +115,9 @@ def buildLookup(subtables, flags=0, markFilterSet=None, table=None, extension=Fa
     subtables = [st for st in subtables if st is not None]
     if not subtables:
         return None
-    assert all(
-        t.LookupType == subtables[0].LookupType for t in subtables
-    ), "all subtables must have the same LookupType; got %s" % repr(
-        [t.LookupType for t in subtables]
+    assert all(t.LookupType == subtables[0].LookupType for t in subtables), (
+        "all subtables must have the same LookupType; got %s"
+        % repr([t.LookupType for t in subtables])
     )
 
     if extension:
@@ -253,11 +252,7 @@ class LookupBuilder(object):
                 original source which produced this break, or ``None`` if
                 no location is provided.
         """
-        log.debug(
-            OpenTypeLibError(
-                'unsupported "subtable" statement for lookup type', location
-            )
-        )
+        log.debug(OpenTypeLibError('unsupported "subtable" statement for lookup type', location))
 
     def can_add_mapping(self, _mapping) -> bool:
         # used by AnySubstBuilder,  below
@@ -301,9 +296,7 @@ class AlternateSubstBuilder(LookupBuilder):
             An ``otTables.Lookup`` object representing the alternate
             substitution lookup.
         """
-        subtables = self.build_subst_subtables(
-            self.alternates, buildAlternateSubstSubtable
-        )
+        subtables = self.build_subst_subtables(self.alternates, buildAlternateSubstSubtable)
         return self.buildLookup_(subtables)
 
     def getAlternateGlyphs(self):
@@ -439,9 +432,7 @@ class ChainContextualBuilder(LookupBuilder):
             # Can we express the whole ruleset as a format 2 subtable?
             classdefs = ruleset.format2ClassDefs()
             if classdefs:
-                candidates[2] = [
-                    self.buildFormat2Subtable(ruleset, classdefs, chaining)
-                ]
+                candidates[2] = [self.buildFormat2Subtable(ruleset, classdefs, chaining)]
 
             if not ruleset.hasAnyGlyphClasses:
                 candidates[1] = [self.buildFormat1Subtable(ruleset, chaining)]
@@ -509,9 +500,7 @@ class ChainContextualBuilder(LookupBuilder):
             ruleSets.append(ruleSet)
 
         setattr(st, self.ruleSetAttr_(format=1, chaining=chaining), ruleSets)
-        setattr(
-            st, self.ruleSetAttr_(format=1, chaining=chaining) + "Count", len(ruleSets)
-        )
+        setattr(st, self.ruleSetAttr_(format=1, chaining=chaining) + "Count", len(ruleSets))
 
         return st
 
@@ -548,8 +537,7 @@ class ChainContextualBuilder(LookupBuilder):
                 # Order is not important anyway because they are guaranteed
                 # to be members of the same class.
                 ruleAsSubtable.Backtrack = [
-                    st.BacktrackClassDef.classDefs[list(x)[0]]
-                    for x in reversed(rule.prefix)
+                    st.BacktrackClassDef.classDefs[list(x)[0]] for x in reversed(rule.prefix)
                 ]
                 ruleAsSubtable.LookAhead = [
                     st.LookAheadClassDef.classDefs[list(x)[0]] for x in rule.suffix
@@ -559,17 +547,13 @@ class ChainContextualBuilder(LookupBuilder):
                 ruleAsSubtable.Input = [
                     st.InputClassDef.classDefs[list(x)[0]] for x in rule.glyphs[1:]
                 ]
-                setForThisRule = classSets[
-                    st.InputClassDef.classDefs[list(rule.glyphs[0])[0]]
-                ]
+                setForThisRule = classSets[st.InputClassDef.classDefs[list(rule.glyphs[0])[0]]]
             else:
                 ruleAsSubtable.GlyphCount = len(rule.glyphs)
                 ruleAsSubtable.Class = [  # The spec calls this InputSequence
                     st.ClassDef.classDefs[list(x)[0]] for x in rule.glyphs[1:]
                 ]
-                setForThisRule = classSets[
-                    st.ClassDef.classDefs[list(rule.glyphs[0])[0]]
-                ]
+                setForThisRule = classSets[st.ClassDef.classDefs[list(rule.glyphs[0])[0]]]
 
             self.buildLookupList(rule, ruleAsSubtable)
             coverage |= set(rule.glyphs[0])
@@ -585,9 +569,7 @@ class ChainContextualBuilder(LookupBuilder):
                 # class sets can be null so replace nop sets with None
                 classSets[i] = None
         setattr(st, self.ruleSetAttr_(format=2, chaining=chaining), classSets)
-        setattr(
-            st, self.ruleSetAttr_(format=2, chaining=chaining) + "Count", len(classSets)
-        )
+        setattr(st, self.ruleSetAttr_(format=2, chaining=chaining) + "Count", len(classSets))
         st.Coverage = buildCoverage(coverage, self.glyphMap)
         return st
 
@@ -616,8 +598,7 @@ class ChainContextualBuilder(LookupBuilder):
                         else:
                             other = "positioning"
                         raise OpenTypeLibError(
-                            "Missing index of the specified "
-                            f"lookup, might be a {other} lookup",
+                            f"Missing index of the specified lookup, might be a {other} lookup",
                             self.location,
                         )
                     rec = self.newLookupRecord_(st)
@@ -841,9 +822,7 @@ class ChainContextSubstBuilder(ChainContextualBuilder):
             if rule.is_subtable_break:
                 return res
             for sub in rule.lookups:
-                if isinstance(sub, AlternateSubstBuilder) and (
-                    glyph not in sub.alternates
-                ):
+                if isinstance(sub, AlternateSubstBuilder) and (glyph not in sub.alternates):
                     res = sub
         return res
 
@@ -901,9 +880,7 @@ class LigatureSubstBuilder(LookupBuilder):
             An ``otTables.Lookup`` object representing the ligature
             substitution lookup.
         """
-        subtables = self.build_subst_subtables(
-            self.ligatures, buildLigatureSubstSubtable
-        )
+        subtables = self.build_subst_subtables(self.ligatures, buildLigatureSubstSubtable)
         return self.buildLookup_(subtables)
 
     def getAlternateGlyphs(self):
@@ -986,9 +963,7 @@ class CursivePosBuilder(LookupBuilder):
         self.attachments = {}
 
     def equals(self, other):
-        return (
-            LookupBuilder.equals(self, other) and self.attachments == other.attachments
-        )
+        return LookupBuilder.equals(self, other) and self.attachments == other.attachments
 
     def add_attachment(self, location, glyphs, entryAnchor, exitAnchor):
         """Adds attachment information to the cursive positioning lookup.
@@ -1070,16 +1045,13 @@ class MarkBasePosBuilder(LookupBuilder):
         return subtables_
 
     def equals(self, other):
-        return (
-            LookupBuilder.equals(self, other)
-            and self.get_subtables_() == other.get_subtables_()
-        )
+        return LookupBuilder.equals(self, other) and self.get_subtables_() == other.get_subtables_()
 
     def inferGlyphClasses(self):
         result = {}
         for marks, bases in self.get_subtables_():
-            result.update({glyph: 1 for glyph in bases})
-            result.update({glyph: 3 for glyph in marks})
+            result.update(dict.fromkeys(bases, 1))
+            result.update(dict.fromkeys(marks, 3))
         return result
 
     def build(self):
@@ -1095,18 +1067,14 @@ class MarkBasePosBuilder(LookupBuilder):
             marks = {}
             for mark, (mc, anchor) in subtable[0].items():
                 if mc not in markClasses:
-                    raise ValueError(
-                        "Mark class %s not found for mark glyph %s" % (mc, mark)
-                    )
+                    raise ValueError("Mark class %s not found for mark glyph %s" % (mc, mark))
                 marks[mark] = (markClasses[mc], anchor)
             bases = {}
             for glyph, anchors in subtable[1].items():
                 bases[glyph] = {}
                 for mc, anchor in anchors.items():
                     if mc not in markClasses:
-                        raise ValueError(
-                            "Mark class %s not found for base glyph %s" % (mc, glyph)
-                        )
+                        raise ValueError("Mark class %s not found for base glyph %s" % (mc, glyph))
                     bases[glyph][markClasses[mc]] = anchor
             subtables.append(buildMarkBasePosSubtable(marks, bases, self.glyphMap))
         return self.buildLookup_(subtables)
@@ -1161,16 +1129,13 @@ class MarkLigPosBuilder(LookupBuilder):
         return subtables_
 
     def equals(self, other):
-        return (
-            LookupBuilder.equals(self, other)
-            and self.get_subtables_() == other.get_subtables_()
-        )
+        return LookupBuilder.equals(self, other) and self.get_subtables_() == other.get_subtables_()
 
     def inferGlyphClasses(self):
         result = {}
         for marks, ligatures in self.get_subtables_():
-            result.update({glyph: 2 for glyph in ligatures})
-            result.update({glyph: 3 for glyph in marks})
+            result.update(dict.fromkeys(ligatures, 2))
+            result.update(dict.fromkeys(marks, 3))
         return result
 
     def build(self):
@@ -1183,10 +1148,7 @@ class MarkLigPosBuilder(LookupBuilder):
         subtables = []
         for subtable in self.get_subtables_():
             markClasses = self.buildMarkClasses_(subtable[0])
-            marks = {
-                mark: (markClasses[mc], anchor)
-                for mark, (mc, anchor) in subtable[0].items()
-            }
+            marks = {mark: (markClasses[mc], anchor) for mark, (mc, anchor) in subtable[0].items()}
             ligs = {}
             for lig, components in subtable[1].items():
                 ligs[lig] = []
@@ -1241,16 +1203,13 @@ class MarkMarkPosBuilder(LookupBuilder):
         return subtables_
 
     def equals(self, other):
-        return (
-            LookupBuilder.equals(self, other)
-            and self.get_subtables_() == other.get_subtables_()
-        )
+        return LookupBuilder.equals(self, other) and self.get_subtables_() == other.get_subtables_()
 
     def inferGlyphClasses(self):
         result = {}
         for marks, baseMarks in self.get_subtables_():
-            result.update({glyph: 3 for glyph in baseMarks})
-            result.update({glyph: 3 for glyph in marks})
+            result.update(dict.fromkeys(baseMarks, 3))
+            result.update(dict.fromkeys(marks, 3))
         return result
 
     def build(self):
@@ -1264,10 +1223,7 @@ class MarkMarkPosBuilder(LookupBuilder):
         for subtable in self.get_subtables_():
             markClasses = self.buildMarkClasses_(subtable[0])
             markClassList = sorted(markClasses.keys(), key=markClasses.get)
-            marks = {
-                mark: (markClasses[mc], anchor)
-                for mark, (mc, anchor) in subtable[0].items()
-            }
+            marks = {mark: (markClasses[mc], anchor) for mark, (mc, anchor) in subtable[0].items()}
 
             st = ot.MarkMarkPos()
             st.Format = 1
@@ -1417,9 +1373,7 @@ class AnySubstBuilder(LookupBuilder):
             if len(v) > 1:
                 has_existing_multi = True
 
-        can_reuse = not (has_existing_multi and is_liga) and not (
-            has_existing_liga and is_multi
-        )
+        can_reuse = not (has_existing_multi and is_liga) and not (has_existing_liga and is_multi)
         return can_reuse
 
     def promote_lookup_type(self, is_named_lookup):
@@ -1480,9 +1434,7 @@ class AnySubstBuilder(LookupBuilder):
             return None
         else:
             curr_builder = None
-            for builder_class, (key, value) in zip(
-                builder_classes, self.mapping.items()
-            ):
+            for builder_class, (key, value) in zip(builder_classes, self.mapping.items()):
                 if curr_builder is None or type(curr_builder) is not builder_class:
                     curr_builder = builder_class(self.font, self.location)
                     ret.append(curr_builder)
@@ -1685,8 +1637,7 @@ class PairPosBuilder(LookupBuilder):
             # by an 'enum' rule to be overridden by preceding single pairs
             otherLoc = self.locations[key]
             log.debug(
-                "Already defined position for pair %s %s at %s; "
-                "choosing the first value",
+                "Already defined position for pair %s %s at %s; choosing the first value",
                 glyph1,
                 glyph2,
                 otherLoc,
@@ -1784,8 +1735,7 @@ class SinglePosBuilder(LookupBuilder):
         if not self.can_add(glyph, otValueRecord):
             otherLoc = self.locations[glyph]
             raise OpenTypeLibError(
-                'Already defined different position for glyph "%s" at %s'
-                % (glyph, otherLoc),
+                'Already defined different position for glyph "%s" at %s' % (glyph, otherLoc),
                 location,
             )
         if otValueRecord:
@@ -1957,9 +1907,7 @@ def buildAnchor(x, y, point=None, deviceX=None, deviceY=None):
         self.AnchorPoint = point
         self.Format = 2
     if deviceX is not None or deviceY is not None:
-        assert (
-            self.Format == 1
-        ), "Either point, or both of deviceX/deviceY, must be None."
+        assert self.Format == 1, "Either point, or both of deviceX/deviceY, must be None."
         self.XDeviceTable = deviceX
         self.YDeviceTable = deviceY
         self.Format = 3
@@ -2096,9 +2044,7 @@ def buildDevice(deltas):
     self.StartSize = startSize = min(keys)
     self.EndSize = endSize = max(keys)
     assert 0 <= startSize <= endSize
-    self.DeltaValue = deltaValues = [
-        deltas.get(size, 0) for size in range(startSize, endSize + 1)
-    ]
+    self.DeltaValue = deltaValues = [deltas.get(size, 0) for size in range(startSize, endSize + 1)]
     maxDelta = max(deltaValues)
     minDelta = min(deltaValues)
     assert minDelta > -129 and maxDelta < 128
@@ -2197,9 +2143,7 @@ def buildMarkArray(marks, glyphMap):
     return self
 
 
-@deprecateFunction(
-    "use buildMarkBasePosSubtable() instead", category=DeprecationWarning
-)
+@deprecateFunction("use buildMarkBasePosSubtable() instead", category=DeprecationWarning)
 def buildMarkBasePos(marks, bases, glyphMap):
     """Build a list of MarkBasePos (GPOS4) subtables.
 
@@ -2400,16 +2344,8 @@ def buildPairPosClassesSubtable(pairs, glyphMap, valueFormat1=None, valueFormat2
         for c2 in classes2:
             rec2 = ot.Class2Record()
             val1, val2 = pairs.get((c1, c2), (None, None))
-            rec2.Value1 = (
-                ValueRecord(src=val1, valueFormat=valueFormat1)
-                if valueFormat1
-                else None
-            )
-            rec2.Value2 = (
-                ValueRecord(src=val2, valueFormat=valueFormat2)
-                if valueFormat2
-                else None
-            )
+            rec2.Value1 = ValueRecord(src=val1, valueFormat=valueFormat1) if valueFormat1 else None
+            rec2.Value2 = ValueRecord(src=val2, valueFormat=valueFormat2) if valueFormat2 else None
             rec1.Class2Record.append(rec2)
     self.Class1Count = len(self.Class1Record)
     self.Class2Count = len(classes2)
@@ -2508,16 +2444,8 @@ def buildPairPosGlyphsSubtable(pairs, glyphMap, valueFormat1=None, valueFormat2=
         for glyph2, val1, val2 in sorted(p[glyph], key=lambda x: glyphMap[x[0]]):
             pvr = ot.PairValueRecord()
             pvr.SecondGlyph = glyph2
-            pvr.Value1 = (
-                ValueRecord(src=val1, valueFormat=valueFormat1)
-                if valueFormat1
-                else None
-            )
-            pvr.Value2 = (
-                ValueRecord(src=val2, valueFormat=valueFormat2)
-                if valueFormat2
-                else None
-            )
+            pvr.Value1 = ValueRecord(src=val1, valueFormat=valueFormat1) if valueFormat1 else None
+            pvr.Value2 = ValueRecord(src=val2, valueFormat=valueFormat2) if valueFormat2 else None
             ps.PairValueRecord.append(pvr)
         ps.PairValueCount = len(ps.PairValueRecord)
     self.PairSetCount = len(self.PairSet)
@@ -2570,7 +2498,7 @@ def buildSinglePos(mapping, glyphMap):
     for key, glyphs in coverages.items():
         # 5 ushorts is the length of introducing another sublookup
         if len(glyphs) * _getSinglePosValueSize(key) > 5:
-            format1Mapping = {g: values[key] for g in glyphs}
+            format1Mapping = dict.fromkeys(glyphs, values[key])
             result.append(buildSinglePosSubtable(format1Mapping, glyphMap))
             handled.add(key)
 
@@ -2638,12 +2566,9 @@ def buildSinglePosSubtable(values, glyphMap):
     """
     self = ot.SinglePos()
     self.Coverage = buildCoverage(values.keys(), glyphMap)
-    valueFormat = self.ValueFormat = reduce(
-        int.__or__, [v.getFormat() for v in values.values()], 0
-    )
+    valueFormat = self.ValueFormat = reduce(int.__or__, [v.getFormat() for v in values.values()], 0)
     valueRecords = [
-        ValueRecord(src=values[g], valueFormat=valueFormat)
-        for g in self.Coverage.glyphs
+        ValueRecord(src=values[g], valueFormat=valueFormat) for g in self.Coverage.glyphs
     ]
     if all(v == valueRecords[0] for v in valueRecords):
         self.Format = 1
@@ -2914,9 +2839,7 @@ class ClassDefBuilder(object):
         self.classes_.add(glyphs)
         for glyph in glyphs:
             if glyph in self.glyphs_:
-                raise OpenTypeLibError(
-                    f"Glyph {glyph} is already present in class.", None
-                )
+                raise OpenTypeLibError(f"Glyph {glyph} is already present in class.", None)
             self.glyphs_[glyph] = glyphs
 
     def classes(self):
@@ -3383,9 +3306,7 @@ def _buildMathGlyphInfo(
                     assert len(correctionHeights) == len(kernValues) - 1
                     kern = ot.MathKern()
                     kern.HeightCount = len(correctionHeights)
-                    kern.CorrectionHeight = [
-                        _mathValueRecord(h) for h in correctionHeights
-                    ]
+                    kern.CorrectionHeight = [_mathValueRecord(h) for h in correctionHeights]
                     kern.KernValue = [_mathValueRecord(v) for v in kernValues]
                     setattr(record, f"{side}MathKern", kern)
             info.MathKernInfo.MathKernInfoRecords.append(record)
@@ -3401,9 +3322,7 @@ def _buildMathVariants(
     vertGlyphAssembly,
     horizGlyphAssembly,
 ):
-    if not any(
-        [vertGlyphVariants, horizGlyphVariants, vertGlyphAssembly, horizGlyphAssembly]
-    ):
+    if not any([vertGlyphVariants, horizGlyphVariants, vertGlyphAssembly, horizGlyphAssembly]):
         return None
 
     variants = ot.MathVariants()
@@ -3412,21 +3331,17 @@ def _buildMathVariants(
     variants.MinConnectorOverlap = minConnectorOverlap
 
     if vertGlyphVariants or vertGlyphAssembly:
-        variants.VertGlyphCoverage, variants.VertGlyphConstruction = (
-            _buildMathGlyphConstruction(
-                glyphMap,
-                vertGlyphVariants,
-                vertGlyphAssembly,
-            )
+        variants.VertGlyphCoverage, variants.VertGlyphConstruction = _buildMathGlyphConstruction(
+            glyphMap,
+            vertGlyphVariants,
+            vertGlyphAssembly,
         )
 
     if horizGlyphVariants or horizGlyphAssembly:
-        variants.HorizGlyphCoverage, variants.HorizGlyphConstruction = (
-            _buildMathGlyphConstruction(
-                glyphMap,
-                horizGlyphVariants,
-                horizGlyphAssembly,
-            )
+        variants.HorizGlyphCoverage, variants.HorizGlyphConstruction = _buildMathGlyphConstruction(
+            glyphMap,
+            horizGlyphVariants,
+            horizGlyphAssembly,
         )
 
     return variants

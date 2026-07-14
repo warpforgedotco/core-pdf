@@ -5,36 +5,36 @@ import mmap
 from types import TracebackType
 from typing import TYPE_CHECKING, BinaryIO
 
+from core_pdf.impl.engine.extraction.cache import ExtractionCache
 from core_pdf.impl.engine.spec.s_07_document.document_catalog import (
     DocumentCatalogMixin,
 )
 from core_pdf.impl.engine.spec.s_07_document.document_embedded import (
     DocumentEmbeddedMixin,
 )
-from core_pdf.impl.engine.spec.s_07_document.forms import FormsMixin
-from core_pdf.impl.engine.spec.s_07_document.layers import LayersMixin
-from core_pdf.impl.models import EmbeddedFileRecord, FieldRecord, NamedDestination
-from core_pdf.impl.engine.spec.s_07_document.navigation import NavigationMixin
 from core_pdf.impl.engine.spec.s_07_document.document_pages import (
     DocumentPagesMixin,
     LazyPageList,
 )
-from core_pdf.impl.engine.spec.s_07_document.document_selection import (
-    DocumentSelectionMixin,
-)
 from core_pdf.impl.engine.spec.s_07_document.document_security import (
     DocumentSecurityMixin,
+)
+from core_pdf.impl.engine.spec.s_07_document.document_selection import (
+    DocumentSelectionMixin,
 )
 from core_pdf.impl.engine.spec.s_07_document.document_source import DocumentSourceMixin
 from core_pdf.impl.engine.spec.s_07_document.document_xref import (
     DocumentXRefMixin,
 )
+from core_pdf.impl.engine.spec.s_07_document.forms import FormsMixin
+from core_pdf.impl.engine.spec.s_07_document.layers import LayersMixin
 from core_pdf.impl.engine.spec.s_07_document.metadata_types import MetadataRecord
-from core_pdf.impl.engine.extraction.cache import ExtractionCache
+from core_pdf.impl.engine.spec.s_07_document.navigation import NavigationMixin
 from core_pdf.impl.engine.spec.s_07_objects.object_cache import InheritedValuesCache
 from core_pdf.impl.engine.spec.s_07_objects.resolver import ObjectResolver
-from core_pdf.impl.engine.spec.s_14_structure.tree import StructureTree
 from core_pdf.impl.engine.spec.s_07_syntax.xref import PdfXRefEntry
+from core_pdf.impl.engine.spec.s_14_structure.tree import StructureTree
+from core_pdf.impl.models import EmbeddedFileRecord, FieldRecord, NamedDestination
 from core_pdf.impl.types import Decipher, PdfDict, PdfSource
 
 if TYPE_CHECKING:

@@ -5,9 +5,8 @@ import re
 from pathlib import Path
 
 import pytest
-from pdfminer.high_level import extract_text as pdfminer_six_extract_text
-
 from core_pdf.compat.pdfminer import extract_text as core_extract_text
+from pdfminer.high_level import extract_text as pdfminer_six_extract_text
 
 TESTS_DIR = Path(__file__).parents[4]
 SAMPLES_DIR = TESTS_DIR / "fixtures" / "pdfminer.six" / "samples"
@@ -40,9 +39,7 @@ def stored_text(name: str) -> str:
 
 
 def comparable_pdfminer_text(text: str) -> str:
-    return "\f".join(
-        re.sub(r"[ \t\r\n]+", " ", page).strip() for page in text.split("\f")
-    )
+    return "\f".join(re.sub(r"[ \t\r\n]+", " ", page).strip() for page in text.split("\f"))
 
 
 EXPECTED_PDFMINER_TEXT = {
@@ -50,46 +47,28 @@ EXPECTED_PDFMINER_TEXT = {
     "acroform/AcroForm_TEST_compiled.pdf": stored_text("acroform.pdfminer.txt"),
     "contrib/2b.pdf": stored_text("2b.pdfminer.txt"),
     "contrib/issue-00369-excel.pdf": stored_text("issue-00369-excel.pdfminer.txt"),
-    "contrib/issue-00352-asw-oct96-p41.pdf": stored_text(
-        "issue-00352-asw-oct96-p41.pdfminer.txt"
-    ),
+    "contrib/issue-00352-asw-oct96-p41.pdf": stored_text("issue-00352-asw-oct96-p41.pdfminer.txt"),
     "contrib/issue-00352-hash-twos-complement.pdf": stored_text(
         "issue-00352-hash-twos-complement.pdfminer.txt"
     ),
-    "contrib/issue-1008-inline-ascii85.pdf": stored_text(
-        "issue-1008-inline-ascii85.pdfminer.txt"
-    ),
-    "contrib/issue-1059-cmap-decode.pdf": stored_text(
-        "issue-1059-cmap-decode.pdfminer.txt"
-    ),
+    "contrib/issue-1008-inline-ascii85.pdf": stored_text("issue-1008-inline-ascii85.pdfminer.txt"),
+    "contrib/issue-1059-cmap-decode.pdf": stored_text("issue-1059-cmap-decode.pdfminer.txt"),
     "contrib/issue-1061-colour-space-stack.pdf": stored_text(
         "issue-1061-colour-space-stack.pdfminer.txt"
     ),
-    "contrib/issue-1062-filters.pdf": stored_text(
-        "issue-1062-filters.pdfminer.txt"
-    ),
-    "contrib/issue-1082-annotations.pdf": stored_text(
-        "issue-1082-annotations.pdfminer.txt"
-    ),
-    "contrib/issue-1113-evil-xobjects.pdf": stored_text(
-        "issue-1113-evil-xobjects.pdfminer.txt"
-    ),
-    "contrib/issue-449-horizontal.pdf": stored_text(
-        "issue-449-horizontal.pdfminer.txt"
-    ),
+    "contrib/issue-1062-filters.pdf": stored_text("issue-1062-filters.pdfminer.txt"),
+    "contrib/issue-1082-annotations.pdf": stored_text("issue-1082-annotations.pdfminer.txt"),
+    "contrib/issue-1113-evil-xobjects.pdf": stored_text("issue-1113-evil-xobjects.pdfminer.txt"),
+    "contrib/issue-449-horizontal.pdf": stored_text("issue-449-horizontal.pdfminer.txt"),
     "contrib/issue-449-vertical.pdf": stored_text("issue-449-vertical.pdfminer.txt"),
-    "contrib/issue-625-identity-cmap.pdf": stored_text(
-        "issue-625-identity-cmap.pdfminer.txt"
-    ),
+    "contrib/issue-625-identity-cmap.pdf": stored_text("issue-625-identity-cmap.pdfminer.txt"),
     "contrib/issue-791-non-unicode-cmap.pdf": stored_text(
         "issue-791-non-unicode-cmap.pdfminer.txt"
     ),
     "contrib/issue-886-xref-stream-widths.pdf": stored_text(
         "issue-886-xref-stream-widths.pdfminer.txt"
     ),
-    "contrib/issue_495_pdfobjref.pdf": stored_text(
-        "issue_495_pdfobjref.pdfminer.txt"
-    ),
+    "contrib/issue_495_pdfobjref.pdf": stored_text("issue_495_pdfobjref.pdfminer.txt"),
     "contrib/issue_566_test_1.pdf": stored_text("issue_566_test_1.pdfminer.txt"),
     "contrib/issue_566_test_2.pdf": stored_text("issue_566_test_2.pdfminer.txt"),
     "contrib/matplotlib.pdf": stored_text("matplotlib.pdfminer.txt"),
@@ -111,37 +90,23 @@ EXPECTED_CORE_TEXT = {
     "acroform/AcroForm_TEST_compiled.pdf": stored_text("acroform.core.txt"),
     "contrib/2b.pdf": stored_text("2b.core.txt"),
     "contrib/issue-00369-excel.pdf": stored_text("issue-00369-excel.core.txt"),
-    "contrib/issue-00352-asw-oct96-p41.pdf": stored_text(
-        "issue-00352-asw-oct96-p41.core.txt"
-    ),
+    "contrib/issue-00352-asw-oct96-p41.pdf": stored_text("issue-00352-asw-oct96-p41.core.txt"),
     "contrib/issue-00352-hash-twos-complement.pdf": stored_text(
         "issue-00352-hash-twos-complement.core.txt"
     ),
-    "contrib/issue-1008-inline-ascii85.pdf": stored_text(
-        "issue-1008-inline-ascii85.core.txt"
-    ),
-    "contrib/issue-1059-cmap-decode.pdf": stored_text(
-        "issue-1059-cmap-decode.core.txt"
-    ),
+    "contrib/issue-1008-inline-ascii85.pdf": stored_text("issue-1008-inline-ascii85.core.txt"),
+    "contrib/issue-1059-cmap-decode.pdf": stored_text("issue-1059-cmap-decode.core.txt"),
     "contrib/issue-1061-colour-space-stack.pdf": stored_text(
         "issue-1061-colour-space-stack.core.txt"
     ),
     "contrib/issue-1062-filters.pdf": stored_text("issue-1062-filters.core.txt"),
     "contrib/issue-1082-annotations.pdf": stored_text("issue-1082-annotations.core.txt"),
-    "contrib/issue-1113-evil-xobjects.pdf": stored_text(
-        "issue-1113-evil-xobjects.core.txt"
-    ),
+    "contrib/issue-1113-evil-xobjects.pdf": stored_text("issue-1113-evil-xobjects.core.txt"),
     "contrib/issue-449-horizontal.pdf": stored_text("issue-449-horizontal.core.txt"),
     "contrib/issue-449-vertical.pdf": stored_text("issue-449-vertical.core.txt"),
-    "contrib/issue-598-cmap-other-fonts.pdf": stored_text(
-        "issue-598-cmap-other-fonts.core.txt"
-    ),
-    "contrib/issue-625-identity-cmap.pdf": stored_text(
-        "issue-625-identity-cmap.core.txt"
-    ),
-    "contrib/issue-791-non-unicode-cmap.pdf": stored_text(
-        "issue-791-non-unicode-cmap.core.txt"
-    ),
+    "contrib/issue-598-cmap-other-fonts.pdf": stored_text("issue-598-cmap-other-fonts.core.txt"),
+    "contrib/issue-625-identity-cmap.pdf": stored_text("issue-625-identity-cmap.core.txt"),
+    "contrib/issue-791-non-unicode-cmap.pdf": stored_text("issue-791-non-unicode-cmap.core.txt"),
     "contrib/issue-886-xref-stream-widths.pdf": stored_text(
         "issue-886-xref-stream-widths.core.txt"
     ),
@@ -169,9 +134,7 @@ EXPECTED_CORE_TEXT = {
     "nonfree/kampo.pdf": stored_text("kampo.core.txt"),
     "nonfree/naacl06-shinyama.pdf": stored_text("naacl06-shinyama.core.txt"),
     "nonfree/nlp2004slides.pdf": stored_text("nlp2004slides.core.txt"),
-    "sampleOneByteIdentityEncode.pdf": stored_text(
-        "sampleOneByteIdentityEncode.core.txt"
-    ),
+    "sampleOneByteIdentityEncode.pdf": stored_text("sampleOneByteIdentityEncode.core.txt"),
     "simple1.pdf": stored_text("simple1.core.txt"),
     "simple3.pdf": stored_text("simple3.core.txt"),
     "simple4.pdf": stored_text("simple4.core.txt"),
@@ -209,9 +172,7 @@ def test_extract_text_handles_pdfminer_sample_corpus(pdf_path: Path) -> None:
         expected_pdfminer_six = pdfminer_extract_text(pdf_path, password=password)
     except PdfminerExtractionError as exc:
         if exc.exc_type != EXPECTED_PDFMINER_FAILURES.get(sample):
-            raise AssertionError(
-                f"Unexpected pdfminer.six failure for sample: {sample}"
-            ) from exc
+            raise AssertionError(f"Unexpected pdfminer.six failure for sample: {sample}") from exc
         expected_pdfminer_six = None
     else:
         assert sample not in EXPECTED_PDFMINER_FAILURES, (
@@ -220,9 +181,7 @@ def test_extract_text_handles_pdfminer_sample_corpus(pdf_path: Path) -> None:
         if sample in EXPECTED_PDFMINER_TEXT:
             assert comparable_pdfminer_text(expected_pdfminer_six) == comparable_pdfminer_text(
                 EXPECTED_PDFMINER_TEXT[sample]
-            ), (
-                f"pdfminer.six extraction changed for sample: {sample}"
-            )
+            ), f"pdfminer.six extraction changed for sample: {sample}"
 
     try:
         result = core_extract_text(pdf_path, password=password)

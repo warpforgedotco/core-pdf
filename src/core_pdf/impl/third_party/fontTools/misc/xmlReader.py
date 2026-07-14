@@ -1,10 +1,10 @@
+import logging
+import os
+import sys
+
 from core_pdf.impl.third_party.fontTools import ttLib
 from core_pdf.impl.third_party.fontTools.misc.textTools import safeEval
 from core_pdf.impl.third_party.fontTools.ttLib.tables.DefaultTable import DefaultTable
-import sys
-import os
-import logging
-
 
 log = logging.getLogger(__name__)
 
@@ -17,9 +17,7 @@ BUFSIZE = 0x4000
 
 
 class XMLReader(object):
-    def __init__(
-        self, fileOrPath, ttFont, progress=None, quiet=None, contentOnly=False
-    ):
+    def __init__(self, fileOrPath, ttFont, progress=None, quiet=None, contentOnly=False):
         if fileOrPath == "-":
             fileOrPath = sys.stdin
         if not hasattr(fileOrPath, "read"):

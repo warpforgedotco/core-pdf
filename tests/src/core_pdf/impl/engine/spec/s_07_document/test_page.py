@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 from core_pdf.impl.engine.spec.s_07_document.models import FieldRecord
-from core_pdf.impl.engine.spec.s_07_document.page import PdfPage
 from core_pdf.impl.engine.spec.s_07_syntax.primitives import PdfName, PdfObject, parse_name
+
+from core_pdf.impl.engine.spec.s_07_document.page import PdfPage
 
 
 class FakeResolver:

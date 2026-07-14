@@ -91,9 +91,7 @@ class FS(ABC):
             factory = SubFS
         return factory(self, path)
 
-    def scandir(
-        self, path: str, namespaces: Collection[str] | None = None
-    ) -> Iterator[Info]:
+    def scandir(self, path: str, namespaces: Collection[str] | None = None) -> Iterator[Info]:
         return (self.getinfo(f"{path}/{p}", namespaces) for p in self.listdir(path))
 
     @property

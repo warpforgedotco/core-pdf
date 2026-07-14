@@ -1,12 +1,11 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
+import gzip
 from bisect import bisect_left, bisect_right
 from dataclasses import dataclass
-import gzip
 from functools import lru_cache
 from importlib.resources import files
-
 
 WORDLIST_PACKAGE = "core_pdf.impl.engine.layout.data.wordlists"
 NORVIG_COUNTS = "norvig_count_1w.txt.gz"

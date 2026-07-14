@@ -88,9 +88,7 @@ class CompactCIDWidthMap(FontWidthMap):
         start = self.start
         end = start + len(self.widths)
         if start >= 256 or end <= 0:
-            return tuple(
-                space_width if code == 32 else default_positive for code in range(256)
-            )
+            return tuple(space_width if code == 32 else default_positive for code in range(256))
         return tuple(
             self.widths[code - start]
             if start <= code < end

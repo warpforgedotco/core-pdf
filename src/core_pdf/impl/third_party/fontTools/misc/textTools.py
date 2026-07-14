@@ -5,7 +5,6 @@ from __future__ import annotations
 import ast
 import string
 
-
 # alias kept for backward compatibility
 safeEval = ast.literal_eval
 
@@ -151,6 +150,7 @@ def bytesjoin(iterable, joiner=b""):
 
 
 if __name__ == "__main__":
-    import doctest, sys
+    import doctest
+    import sys
 
     sys.exit(doctest.testmod().failed)

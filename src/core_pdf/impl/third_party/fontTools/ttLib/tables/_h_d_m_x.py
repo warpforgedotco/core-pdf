@@ -1,8 +1,10 @@
-from core_pdf.impl.third_party.fontTools.misc import sstruct
-from core_pdf.impl.third_party.fontTools.misc.textTools import bytechr, byteord, strjoin
-from . import DefaultTable
 import array
 from collections.abc import Mapping
+
+from core_pdf.impl.third_party.fontTools.misc import sstruct
+from core_pdf.impl.third_party.fontTools.misc.textTools import bytechr, byteord, strjoin
+
+from . import DefaultTable
 
 hdmxHeaderFormat = """
 	>   # big endian!

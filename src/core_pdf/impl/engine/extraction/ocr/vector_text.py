@@ -6,12 +6,11 @@ from math import ceil, floor, hypot
 from statistics import median
 from typing import Any
 
+from core_pdf.impl.engine.extraction.ocr.backend import TesseractCtypesBackend
 from core_pdf.impl.engine.extraction.ocr.types import (
     OcrImage,
     OcrTextResult,
 )
-from core_pdf.impl.engine.extraction.ocr.backend import TesseractCtypesBackend
-
 
 VECTOR_TEXT_DPI = 900
 VECTOR_TEXT_MIN_STROKES = 120
@@ -124,9 +123,7 @@ def page_has_vector_stroke_text_candidates(page: Any) -> bool:
     )
 
 
-def vector_stroke_ocr_text_with_timeout(
-    page: Any, timeout: float | None
-) -> OcrTextResult:
+def vector_stroke_ocr_text_with_timeout(page: Any, timeout: float | None) -> OcrTextResult:
     result = vector_stroke_ocr_result_with_timeout(page, timeout)
     return OcrTextResult(result.text, result.confidence)
 
@@ -186,14 +183,10 @@ def vector_stroke_regions_to_text_result(
                 continue
             seen.add(key)
             lines.append(line)
-            line_results.append(
-                VectorStrokeOcrLine(line, line_result.bbox, line_result.confidence)
-            )
+            line_results.append(VectorStrokeOcrLine(line, line_result.bbox, line_result.confidence))
             if line_result.confidence is not None:
                 confidences.append(line_result.confidence)
-    confidence = (
-        int(round(sum(confidences) / len(confidences))) if confidences else None
-    )
+    confidence = int(round(sum(confidences) / len(confidences))) if confidences else None
     return VectorStrokeOcrResult("\n".join(lines), confidence, tuple(line_results))
 
 
@@ -257,9 +250,7 @@ def vector_stroke_layout_text_result(layout: Any) -> OcrTextResult:
     )
     text = " ".join(str(row.get("text", "")).strip() for row in words).strip()
     confidences = [int(row["conf"]) for row in words if "conf" in row]
-    confidence = (
-        int(round(sum(confidences) / len(confidences))) if confidences else None
-    )
+    confidence = int(round(sum(confidences) / len(confidences))) if confidences else None
     return OcrTextResult(
         text,
         confidence,
@@ -269,15 +260,11 @@ def vector_stroke_layout_text_result(layout: Any) -> OcrTextResult:
 
 
 def vector_stroke_rows_text_result(rows: list[dict[str, Any]]) -> OcrTextResult:
-    lines = [
-        str(row["text"]).strip() for row in rows if str(row.get("text", "")).strip()
-    ]
+    lines = [str(row["text"]).strip() for row in rows if str(row.get("text", "")).strip()]
     if not lines:
         return OcrTextResult("", None)
     confidences = [int(row["conf"]) for row in rows if "conf" in row]
-    confidence = (
-        int(round(sum(confidences) / len(confidences))) if confidences else None
-    )
+    confidence = int(round(sum(confidences) / len(confidences))) if confidences else None
     return OcrTextResult("\n".join(lines), confidence, line_rows=tuple(rows))
 
 
@@ -311,7 +298,7 @@ def vector_stroke_word_row_lines(
                 int(row.get("par_num", 1)),
                 int(row.get("line_num", 1)),
             )
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             continue
         grouped.setdefault(key, []).append(row)
     return [
@@ -348,13 +335,9 @@ def vector_stroke_rows_line(
     if not boxes:
         return None
     confidences = [
-        confidence
-        for row in rows
-        if (confidence := vector_stroke_row_confidence(row)) is not None
+        confidence for row in rows if (confidence := vector_stroke_row_confidence(row)) is not None
     ]
-    confidence = (
-        int(round(sum(confidences) / len(confidences))) if confidences else None
-    )
+    confidence = int(round(sum(confidences) / len(confidences))) if confidences else None
     return VectorStrokeOcrLine(text, union_float_boxes(boxes), confidence)
 
 
@@ -368,7 +351,7 @@ def vector_stroke_row_bbox(
         top = float(row["top"])
         width = float(row["width"])
         height = float(row["height"])
-    except KeyError, TypeError, ValueError:
+    except (KeyError, TypeError, ValueError):
         return None
     if width <= 0 or height <= 0:
         return None
@@ -382,7 +365,7 @@ def vector_stroke_row_bbox(
 def vector_stroke_row_confidence(row: dict[str, Any]) -> int | None:
     try:
         return int(round(float(row["conf"])))
-    except KeyError, TypeError, ValueError:
+    except (KeyError, TypeError, ValueError):
         return None
 
 
@@ -453,9 +436,7 @@ def vector_stroke_ocr_regions(page: Any) -> list[VectorStrokeOcrRegion]:
 
 
 def vector_stroke_candidate_sets(graphics: Any) -> list[list[VectorStroke]]:
-    drawing_sets = vector_stroke_candidate_sets_from_drawings(
-        getattr(graphics, "drawings", ())
-    )
+    drawing_sets = vector_stroke_candidate_sets_from_drawings(getattr(graphics, "drawings", ()))
     if drawing_sets:
         return drawing_sets
     strokes = candidate_vector_strokes(getattr(graphics, "lines", ()))
@@ -528,7 +509,7 @@ def candidate_vector_strokes_from_drawings(
             try:
                 if float(stroke_opacity) <= 0.0:
                     continue
-            except TypeError, ValueError:
+            except (TypeError, ValueError):
                 continue
         path = getattr(drawing, "path", None)
         if path is None:
@@ -542,7 +523,7 @@ def candidate_vector_strokes_from_drawings(
             continue
         try:
             line_width = float(getattr(drawing, "line_width"))
-        except AttributeError, TypeError, ValueError:
+        except (AttributeError, TypeError, ValueError):
             continue
         if not (VECTOR_TEXT_MIN_LINE_WIDTH <= line_width <= VECTOR_TEXT_MAX_LINE_WIDTH):
             continue
@@ -553,11 +534,7 @@ def candidate_vector_strokes_from_drawings(
         for subpath in subpaths:
             for x0, y0, x1, y1 in subpath:
                 length = hypot(x1 - x0, y1 - y0)
-                if not (
-                    VECTOR_TEXT_MIN_SEGMENT_LENGTH
-                    <= length
-                    <= VECTOR_TEXT_MAX_SEGMENT_LENGTH
-                ):
+                if not (VECTOR_TEXT_MIN_SEGMENT_LENGTH <= length <= VECTOR_TEXT_MAX_SEGMENT_LENGTH):
                     continue
                 strokes.append(VectorStroke(x0, y0, x1, y1, line_width, length))
     return strokes
@@ -570,11 +547,7 @@ def vector_drawing_path_is_small_enough(
     max_path_height: float | None,
     max_path_dimension: float | None,
 ) -> bool:
-    if (
-        max_path_width is None
-        and max_path_height is None
-        and max_path_dimension is None
-    ):
+    if max_path_width is None and max_path_height is None and max_path_dimension is None:
         return True
     try:
         bbox = path.bbox()
@@ -600,12 +573,10 @@ def candidate_vector_strokes(lines: Any) -> list[VectorStroke]:
             x1 = float(line.x1)
             y1 = float(line.y1)
             line_width = float(line.line_width)
-        except AttributeError, TypeError, ValueError:
+        except (AttributeError, TypeError, ValueError):
             continue
         length = hypot(x1 - x0, y1 - y0)
-        if not (
-            VECTOR_TEXT_MIN_SEGMENT_LENGTH <= length <= VECTOR_TEXT_MAX_SEGMENT_LENGTH
-        ):
+        if not (VECTOR_TEXT_MIN_SEGMENT_LENGTH <= length <= VECTOR_TEXT_MAX_SEGMENT_LENGTH):
             continue
         if not (VECTOR_TEXT_MIN_LINE_WIDTH <= line_width <= VECTOR_TEXT_MAX_LINE_WIDTH):
             continue
@@ -761,9 +732,7 @@ def append_vector_region(
     y1 = max(component.y1 for component in components)
     width = x1 - x0
     height = y1 - y0
-    stroke_indexes = tuple(
-        index for component in components for index in component.stroke_indexes
-    )
+    stroke_indexes = tuple(index for component in components for index in component.stroke_indexes)
     if len(stroke_indexes) < 3:
         return
     if width < 2.0 or height < 1.0 or height > 28.0:
@@ -895,8 +864,5 @@ def boxes_overlap(
     right: tuple[float, float, float, float],
 ) -> bool:
     return (
-        left[0] <= right[2]
-        and right[0] <= left[2]
-        and left[1] <= right[3]
-        and right[1] <= left[3]
+        left[0] <= right[2] and right[0] <= left[2] and left[1] <= right[3] and right[1] <= left[3]
     )

@@ -1,12 +1,11 @@
-from . import DefaultTable
 from core_pdf.impl.third_party.fontTools.misc import sstruct
-from core_pdf.impl.third_party.fontTools.misc.textTools import bytesjoin
 from core_pdf.impl.third_party.fontTools.ttLib.tables.TupleVariation import (
+    TupleVariation,
     compileTupleVariationStore,
     decompileTupleVariationStore,
-    TupleVariation,
 )
 
+from . import DefaultTable
 
 # https://www.microsoft.com/typography/otspec/cvar.htm
 # https://www.microsoft.com/typography/otspec/otvarcommonformats.htm

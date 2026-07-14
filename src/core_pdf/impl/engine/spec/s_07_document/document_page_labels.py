@@ -72,11 +72,7 @@ class DocumentPageLabelsMixin:
             while spec_pos + 1 < len(specs) and page_index >= specs[spec_pos + 1][0]:
                 spec_pos += 1
                 current_index, current_spec = specs[spec_pos]
-            labels.append(
-                format_page_label(
-                    current_spec, page_index - current_index, self.resolve
-                )
-            )
+            labels.append(format_page_label(current_spec, page_index - current_index, self.resolve))
         return labels
 
 

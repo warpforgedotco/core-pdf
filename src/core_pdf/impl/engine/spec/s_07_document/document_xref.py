@@ -5,7 +5,6 @@ import struct
 from collections.abc import Iterator
 from typing import cast
 
-from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.engine.spec.s_07_document.document_labels import (
     infer_page_tree_node_type,
 )
@@ -16,6 +15,7 @@ from core_pdf.impl.engine.spec.s_07_objects.object_cache import (
 )
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_07_objects.resolver import ObjectResolver
+from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.engine.spec.s_07_syntax.xref import (
     PdfXRefEntry,
     XRefScanner,
@@ -57,9 +57,7 @@ class DocumentXRefMixin:
             raise PdfParseError("invalid xref section")
 
         try:
-            self.xref, self.trailer_dict = XRefScanner.load_section_chain(
-                data, start, set()
-            )
+            self.xref, self.trailer_dict = XRefScanner.load_section_chain(data, start, set())
             self.repair_stale_xref_offsets()
             self.trailer_dict = self.merge_recovered_trailer_metadata(self.trailer_dict)
             root_ref = lookup_dict_key(self.trailer_dict, "Root")
@@ -70,10 +68,8 @@ class DocumentXRefMixin:
                 if catalog_ref is not None:
                     self.trailer_dict = dict(self.trailer_dict)
                     self.trailer_dict["Root"] = catalog_ref
-                self.trailer_dict = self.merge_recovered_trailer_metadata(
-                    self.trailer_dict
-                )
-        except PdfParseError, PdfUnsupportedError, ValueError, struct.error, OSError:
+                self.trailer_dict = self.merge_recovered_trailer_metadata(self.trailer_dict)
+        except (PdfParseError, PdfUnsupportedError, ValueError, struct.error, OSError):
             self.xref = XRefScanner.brute_force_scan(data)
             self.xref_was_recovered = True
             if not self.xref:
@@ -191,9 +187,7 @@ class DocumentXRefMixin:
         object_cache: ResolvedObjectCache = {}
         resolver = ObjectResolver(self.raw_data, self.xref, self.trailer_dict)
         entries_by_ref = {
-            (k >> 16, k & 0xFFFF): entry
-            for k, entry in self.xref.items()
-            if entry.in_use
+            (k >> 16, k & 0xFFFF): entry for k, entry in self.xref.items() if entry.in_use
         }
 
         def resolve_for_inference(value: object, depth: int = 0) -> object:
@@ -225,9 +219,7 @@ class DocumentXRefMixin:
             object_cache[key] = cast(CachedPdfObject, resolved)
             return resolved
 
-        def page_tree_score(
-            node: object, depth: int = 0, seen: set[int] | None = None
-        ) -> int:
+        def page_tree_score(node: object, depth: int = 0, seen: set[int] | None = None) -> int:
             if depth > MAX_PAGE_TREE_DEPTH:
                 return -1000
             if seen is None:
@@ -260,12 +252,8 @@ class DocumentXRefMixin:
                 score += min(count, 20)
             if not isinstance(kids, list) or not kids:
                 return score - 20
-            child_scores = [
-                page_tree_score(kid, depth + 1, seen.copy()) for kid in kids[:32]
-            ]
-            valid_children = [
-                child_score for child_score in child_scores if child_score > 0
-            ]
+            child_scores = [page_tree_score(kid, depth + 1, seen.copy()) for kid in kids[:32]]
+            valid_children = [child_score for child_score in child_scores if child_score > 0]
             if not valid_children:
                 return score - 30
             return score + sum(valid_children)
@@ -336,15 +324,11 @@ class DocumentXRefMixin:
 
     def merge_recovered_trailer_metadata(self, trailer: PdfDict) -> PdfDict:
         missing_keys = [
-            key
-            for key in TRAILER_METADATA_KEYS
-            if lookup_dict_key(trailer, key) is None
+            key for key in TRAILER_METADATA_KEYS if lookup_dict_key(trailer, key) is None
         ]
         if not missing_keys:
             return trailer
-        if missing_keys == ["Encrypt"] and not getattr(
-            self, "xref_was_recovered", False
-        ):
+        if missing_keys == ["Encrypt"] and not getattr(self, "xref_was_recovered", False):
             return trailer
         if missing_keys == ["Encrypt"] and self.raw_data.find(b"Encrypt") < 0:
             return trailer
@@ -369,11 +353,7 @@ class DocumentXRefMixin:
         missing_keys = [key for key in TRAILER_METADATA_KEYS if key not in metadata]
         if not missing_keys:
             return metadata
-        if (
-            missing_keys == ["Encrypt"]
-            and metadata
-            and self.raw_data.find(b"Encrypt") < 0
-        ):
+        if missing_keys == ["Encrypt"] and metadata and self.raw_data.find(b"Encrypt") < 0:
             return metadata
 
         for candidate in self.iter_recoverable_xref_stream_dictionaries():
@@ -415,9 +395,7 @@ class DocumentXRefMixin:
             if not isinstance(obj, PdfStream):
                 continue
             dictionary = obj.dictionary
-            if normalize_pdf_name(lookup_dict_key(dictionary, "Type")) == "XRef":
-                yield cast(PdfDict, dictionary)
-            elif (
+            if normalize_pdf_name(lookup_dict_key(dictionary, "Type")) == "XRef" or (
                 lookup_dict_key(dictionary, "W") is not None
                 and lookup_dict_key(dictionary, "Size") is not None
             ):

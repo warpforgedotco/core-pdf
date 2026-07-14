@@ -185,18 +185,16 @@ def ocr_observation_from_row(
         top = ocr_int_value(row["top"])
         width = ocr_int_value(row["width"])
         height = ocr_int_value(row["height"])
-    except KeyError, TypeError, ValueError:
+    except (KeyError, TypeError, ValueError):
         return None
     if width <= 0 or height <= 0:
         return None
     confidence = row.get("conf")
     try:
         confidence_value = (
-            max(0, min(100, ocr_int_value(confidence)))
-            if confidence is not None
-            else None
+            max(0, min(100, ocr_int_value(confidence))) if confidence is not None else None
         )
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         confidence_value = None
     baseline = row.get("baseline")
     baseline_value: tuple[int, int, int, int] | None = None
@@ -208,7 +206,7 @@ def ocr_observation_from_row(
                 int(baseline[2]),
                 int(baseline[3]),
             )
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             baseline_value = None
     if page_bbox is None:
         row_page_bbox = row.get("page_bbox")
@@ -220,7 +218,7 @@ def ocr_observation_from_row(
                     float(row_page_bbox[2]),
                     float(row_page_bbox[3]),
                 )
-            except TypeError, ValueError:
+            except (TypeError, ValueError):
                 page_bbox = None
     if page_baseline is None:
         row_page_baseline = row.get("page_baseline")
@@ -232,16 +230,14 @@ def ocr_observation_from_row(
                     float(row_page_baseline[2]),
                     float(row_page_baseline[3]),
                 )
-            except TypeError, ValueError:
+            except (TypeError, ValueError):
                 page_baseline = None
     if token_type is None:
         row_token_type = row.get("token_type")
         token_type = str(row_token_type) if row_token_type else None
     raw_choices = row.get("choices", ())
     choice_rows = raw_choices if isinstance(raw_choices, (list, tuple)) else ()
-    choices = tuple(
-        choice for choice in choice_rows if isinstance(choice, OcrTextChoice)
-    )
+    choices = tuple(choice for choice in choice_rows if isinstance(choice, OcrTextChoice))
     return OcrObservation(
         text=text,
         level=ocr_int_value(row.get("level", TESSERACT_RIL_WORD)),

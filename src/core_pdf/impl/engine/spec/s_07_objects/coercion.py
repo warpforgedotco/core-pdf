@@ -8,9 +8,7 @@ from typing import SupportsFloat, SupportsIndex, SupportsInt, TypeAlias, cast, o
 from core_pdf.impl.primitives import PdfName, PdfString
 
 IntCoercible: TypeAlias = str | bytes | bytearray | SupportsInt | SupportsIndex
-FloatCoercible: TypeAlias = (
-    str | bytes | bytearray | SupportsFloat | SupportsIndex
-)
+FloatCoercible: TypeAlias = str | bytes | bytearray | SupportsFloat | SupportsIndex
 CoercedContainer: TypeAlias = dict[object, object] | list[object]
 
 
@@ -129,9 +127,7 @@ def coerce_to_bytes(value: object) -> bytes:
     raise TypeError(f"cannot coerce {type(value).__name__} to bytes")
 
 
-def coerce_value(
-    value: object, string_decoder: Callable[[bytes], object] | None = None
-) -> object:
+def coerce_value(value: object, string_decoder: Callable[[bytes], object] | None = None) -> object:
     def scalar_or_container(item: object) -> object:
         if string_decoder is not None:
             if isinstance(item, PdfString):
@@ -148,9 +144,7 @@ def coerce_value(
     if not isinstance(value, (dict, list, tuple)):
         return root
 
-    stack: list[tuple[CoercedContainer | None, object | None, object]] = [
-        (None, None, value)
-    ]
+    stack: list[tuple[CoercedContainer | None, object | None, object]] = [(None, None, value)]
     results: dict[int, object] = {id(value): root}
     processed: set[int] = set()
     while stack:

@@ -3,21 +3,23 @@
 # Google Author(s): Matt Fontaine
 
 
-from core_pdf.impl.third_party.fontTools.misc.textTools import bytesjoin
+import struct
+
 from core_pdf.impl.third_party.fontTools.misc import sstruct
+from core_pdf.impl.third_party.fontTools.misc.textTools import bytesjoin
+
 from . import E_B_D_T_
 from .BitmapGlyphMetrics import (
     BigGlyphMetrics,
-    bigGlyphMetricsFormat,
     SmallGlyphMetrics,
+    bigGlyphMetricsFormat,
     smallGlyphMetricsFormat,
 )
 from .E_B_D_T_ import (
     BitmapGlyph,
-    BitmapPlusSmallMetricsMixin,
     BitmapPlusBigMetricsMixin,
+    BitmapPlusSmallMetricsMixin,
 )
-import struct
 
 
 class table_C_B_D_T_(E_B_D_T_.table_E_B_D_T_):

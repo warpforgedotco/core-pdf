@@ -92,11 +92,7 @@ class PdfStandardSecurityHandler:
         else:
             h = md5(PDF_PADDING)
             docid_list = self.docid
-            first_id = (
-                coerce_to_bytes(docid_list[0])
-                if docid_list and len(docid_list) > 0
-                else b""
-            )
+            first_id = coerce_to_bytes(docid_list[0]) if docid_list and len(docid_list) > 0 else b""
             h.update(first_id)
             result = CryptRC4(key).encrypt(h.digest())
             for i in range(1, 20):
@@ -111,11 +107,7 @@ class PdfStandardSecurityHandler:
         h.update(self.o)
         h.update(struct.pack("<L", self.p))
         docid_list = self.docid
-        first_id = (
-            coerce_to_bytes(docid_list[0])
-            if docid_list and len(docid_list) > 0
-            else b""
-        )
+        first_id = coerce_to_bytes(docid_list[0]) if docid_list and len(docid_list) > 0 else b""
         h.update(first_id)
         if self.r >= 4 and not self.encrypt_metadata:
             h.update(b"\xff\xff\xff\xff")

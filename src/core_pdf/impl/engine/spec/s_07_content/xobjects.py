@@ -3,14 +3,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.layout.geometry import RectBox
+from core_pdf.impl.engine.spec.s_07_content.capture import CapturedDrawing
+from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_08_graphics.matrix import (
     IDENTITY_MATRIX,
     Matrix,
 )
-from core_pdf.impl.engine.spec.s_07_content.capture import CapturedDrawing
+from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.objects import PdfStream
 
 
@@ -39,17 +39,9 @@ class XObjectMixin:
             return
         if subtype == "Image":
             if self.capture_graphics and self.is_graphics_visible():
-                width = (
-                    self.document.resolver.resolve_int(
-                        lookup_dict_key(xobj_dict, "Width")
-                    )
-                    or 0
-                )
+                width = self.document.resolver.resolve_int(lookup_dict_key(xobj_dict, "Width")) or 0
                 height = (
-                    self.document.resolver.resolve_int(
-                        lookup_dict_key(xobj_dict, "Height")
-                    )
-                    or 0
+                    self.document.resolver.resolve_int(lookup_dict_key(xobj_dict, "Height")) or 0
                 )
                 bbox = None
                 quad = None
@@ -77,16 +69,13 @@ class XObjectMixin:
                     smask_stream = self.document.resolver.resolve(smask)
                     if isinstance(smask_stream, PdfStream):
                         smask_dict = (
-                            self.document.resolver.resolve_dict(smask_stream.dictionary)
-                            or {}
+                            self.document.resolver.resolve_dict(smask_stream.dictionary) or {}
                         )
                         smask_data = getattr(smask_stream, "raw_data", b"")
                         soft_mask_raw_data = smask_data
                         soft_mask_dictionary = dict(smask_dict)
                         width = (
-                            self.document.resolver.resolve_int(
-                                lookup_dict_key(smask_dict, "Width")
-                            )
+                            self.document.resolver.resolve_int(lookup_dict_key(smask_dict, "Width"))
                             or 0
                         )
                         height = (
@@ -115,9 +104,7 @@ class XObjectMixin:
                 self.drawings[-1].raw_data = getattr(xobj, "raw_data", b"")
                 self.drawings[-1].dictionary = dict(xobj_dict)
                 if soft_mask_raw_data is not None:
-                    self.drawings[-1].dictionary["__soft_mask_raw_data__"] = (
-                        soft_mask_raw_data
-                    )
+                    self.drawings[-1].dictionary["__soft_mask_raw_data__"] = soft_mask_raw_data
                     self.drawings[-1].dictionary["__soft_mask_dictionary__"] = (
                         soft_mask_dictionary or {}
                     )
@@ -130,28 +117,21 @@ class XObjectMixin:
             group_dict = self.document.resolver.resolve_dict(group)
             if (
                 isinstance(group_dict, dict)
-                and self.resolve_name(lookup_dict_key(group_dict, "S"))
-                == "Transparency"
+                and self.resolve_name(lookup_dict_key(group_dict, "S")) == "Transparency"
             ):
                 group_alpha_val = self.document.resolver.resolve_float(
                     lookup_dict_key(group_dict, "ca"), default=None
                 )
                 if group_alpha_val is not None:
                     group_alpha = max(0.0, min(1.0, group_alpha_val))
-        resources = (
-            self.resolve_dict(lookup_dict_key(xobj_dict, "Resources")) or self.resources
-        )
+        resources = self.resolve_dict(lookup_dict_key(xobj_dict, "Resources")) or self.resources
         xobj_matrix = lookup_dict_key(xobj_dict, "Matrix")
         if isinstance(xobj_matrix, (list, tuple)) and len(xobj_matrix) > 6:
             xobj_matrix = xobj_matrix[:6]
         nested_ctm = (
-            Matrix.from_operand(xobj_matrix)
-            if xobj_matrix is not None
-            else IDENTITY_MATRIX
+            Matrix.from_operand(xobj_matrix) if xobj_matrix is not None else IDENTITY_MATRIX
         ).multiply(self.ctm)
-        form_bbox = self.document.resolver.resolve_box(
-            lookup_dict_key(xobj_dict, "BBox")
-        )
+        form_bbox = self.document.resolver.resolve_box(lookup_dict_key(xobj_dict, "BBox"))
         transformed_form_bbox = (
             transform_bbox(form_bbox, nested_ctm) if form_bbox is not None else None
         )

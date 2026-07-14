@@ -6,26 +6,33 @@ The XML format is:
 
 .. code-block:: xml
 
-	<SVG>
-		<svgDoc endGlyphID="1" startGlyphID="1">
-			<![CDATA[ <complete SVG doc> ]]
-		</svgDoc>
-	...
-		<svgDoc endGlyphID="n" startGlyphID="m">
-			<![CDATA[ <complete SVG doc> ]]
-		</svgDoc>
-	</SVG>
+        <SVG>
+                <svgDoc endGlyphID="1" startGlyphID="1">
+                        <![CDATA[ <complete SVG doc> ]]
+                </svgDoc>
+        ...
+                <svgDoc endGlyphID="n" startGlyphID="m">
+                        <![CDATA[ <complete SVG doc> ]]
+                </svgDoc>
+        </SVG>
 """
 
-from core_pdf.impl.third_party.fontTools.misc.textTools import bytesjoin, safeEval, strjoin, tobytes, tostr
-from core_pdf.impl.third_party.fontTools.misc import sstruct
-from . import DefaultTable
-from collections.abc import Sequence
-from dataclasses import dataclass, astuple
-from io import BytesIO
-import struct
 import logging
+import struct
+from collections.abc import Sequence
+from dataclasses import astuple, dataclass
+from io import BytesIO
 
+from core_pdf.impl.third_party.fontTools.misc import sstruct
+from core_pdf.impl.third_party.fontTools.misc.textTools import (
+    bytesjoin,
+    safeEval,
+    strjoin,
+    tobytes,
+    tostr,
+)
+
+from . import DefaultTable
 
 log = logging.getLogger(__name__)
 
@@ -79,9 +86,7 @@ class table_S_V_G_(DefaultTable.DefaultTable):
             entries = []
             for i in range(self.numEntries):
                 record_data = data2[
-                    i
-                    * doc_index_entry_format_0Size : (i + 1)
-                    * doc_index_entry_format_0Size
+                    i * doc_index_entry_format_0Size : (i + 1) * doc_index_entry_format_0Size
                 ]
                 docIndexEntry = sstruct.unpack(
                     doc_index_entry_format_0, record_data, DocumentIndexEntry()
@@ -108,9 +113,7 @@ class table_S_V_G_(DefaultTable.DefaultTable):
 
     def compile(self, ttFont):
         version = 0
-        offsetToSVGDocIndex = (
-            SVG_format_0Size  # I start the SVGDocIndex right after the header.
-        )
+        offsetToSVGDocIndex = SVG_format_0Size  # I start the SVGDocIndex right after the header.
         # get SGVDoc info.
         docList = []
         entryList = []
@@ -125,9 +128,7 @@ class table_S_V_G_(DefaultTable.DefaultTable):
                 doc = SVGDocument(*doc)
                 self.docList[i] = doc
             docBytes = tobytes(doc.data, encoding="utf_8")
-            if (allCompressed or doc.compressed) and not docBytes.startswith(
-                b"\x1f\x8b"
-            ):
+            if (allCompressed or doc.compressed) and not docBytes.startswith(b"\x1f\x8b"):
                 import gzip
 
                 bytesIO = BytesIO()
@@ -147,9 +148,7 @@ class table_S_V_G_(DefaultTable.DefaultTable):
                 curOffset += docLength
                 seenDocs[docBytes] = docOffset
                 docList.append(docBytes)
-            entry = struct.pack(
-                ">HHLL", doc.startGlyphID, doc.endGlyphID, docOffset, docLength
-            )
+            entry = struct.pack(">HHLL", doc.startGlyphID, doc.endGlyphID, docOffset, docLength)
             entryList.append(entry)
         entryList.extend(docList)
         svgDocData = bytesjoin(entryList)
@@ -197,9 +196,11 @@ class DocumentIndexEntry(object):
         self.svgDocLength = None  # ULONG
 
     def __repr__(self):
-        return (
-            "startGlyphID: %s, endGlyphID: %s, svgDocOffset: %s, svgDocLength: %s"
-            % (self.startGlyphID, self.endGlyphID, self.svgDocOffset, self.svgDocLength)
+        return "startGlyphID: %s, endGlyphID: %s, svgDocOffset: %s, svgDocLength: %s" % (
+            self.startGlyphID,
+            self.endGlyphID,
+            self.svgDocOffset,
+            self.svgDocLength,
         )
 
 

@@ -1,37 +1,38 @@
 """_g_l_y_f.py -- Converter classes for the 'glyf' table."""
 
-from collections import namedtuple
-from core_pdf.impl.third_party.fontTools.misc import sstruct
-from core_pdf.impl.third_party.fontTools import ttLib
-from core_pdf.impl.third_party.fontTools import version
-from core_pdf.impl.third_party.fontTools.misc.transform import DecomposedTransform
-from core_pdf.impl.third_party.fontTools.misc.textTools import tostr, safeEval, pad
-from core_pdf.impl.third_party.fontTools.misc.arrayTools import updateBounds, pointInRect
-from core_pdf.impl.third_party.fontTools.misc.bezierTools import calcQuadraticBounds
-from core_pdf.impl.third_party.fontTools.misc.fixedTools import (
-    fixedToFloat as fi2fl,
-    floatToFixed as fl2fi,
-    floatToFixedToStr as fl2str,
-    strToFixedToFloat as str2fl,
-)
-from core_pdf.impl.third_party.fontTools.misc.roundTools import noRound, otRound
-from core_pdf.impl.third_party.fontTools.misc.vector import Vector
-from numbers import Number
-from . import DefaultTable
-from . import ttProgram
-import sys
-import struct
 import array
 import logging
-import math
 import os
-from core_pdf.impl.third_party.fontTools.misc import xmlWriter
-from core_pdf.impl.third_party.fontTools.misc.filenames import userNameToFileName
-from core_pdf.impl.third_party.fontTools.misc.loggingTools import deprecateFunction
-from enum import IntFlag
+import struct
+import sys
+from collections import namedtuple
 from functools import partial
+from numbers import Number
 from types import SimpleNamespace
 from typing import Set
+
+from core_pdf.impl.third_party.fontTools import ttLib, version
+from core_pdf.impl.third_party.fontTools.misc import sstruct, xmlWriter
+from core_pdf.impl.third_party.fontTools.misc.arrayTools import updateBounds
+from core_pdf.impl.third_party.fontTools.misc.filenames import userNameToFileName
+from core_pdf.impl.third_party.fontTools.misc.fixedTools import (
+    fixedToFloat as fi2fl,
+)
+from core_pdf.impl.third_party.fontTools.misc.fixedTools import (
+    floatToFixed as fl2fi,
+)
+from core_pdf.impl.third_party.fontTools.misc.fixedTools import (
+    floatToFixedToStr as fl2str,
+)
+from core_pdf.impl.third_party.fontTools.misc.fixedTools import (
+    strToFixedToFloat as str2fl,
+)
+from core_pdf.impl.third_party.fontTools.misc.loggingTools import deprecateFunction
+from core_pdf.impl.third_party.fontTools.misc.roundTools import noRound, otRound
+from core_pdf.impl.third_party.fontTools.misc.textTools import pad, safeEval, tostr
+from core_pdf.impl.third_party.fontTools.misc.vector import Vector
+
+from . import DefaultTable, ttProgram
 
 log = logging.getLogger(__name__)
 
@@ -157,9 +158,7 @@ class table__g_l_y_f(DefaultTable.DefaultTable):
         if padding == 1 and currentLocation < 0x20000:
             # See if we can pad any odd-lengthed glyphs to allow loca
             # table to use the short offsets.
-            indices = [
-                i for i, glyphData in enumerate(dataList) if len(glyphData) % 2 == 1
-            ]
+            indices = [i for i, glyphData in enumerate(dataList) if len(glyphData) % 2 == 1]
             if indices and currentLocation + len(indices) < 0x20000:
                 # It fits.  Do it.
                 for i in indices:
@@ -184,10 +183,7 @@ class table__g_l_y_f(DefaultTable.DefaultTable):
         return data
 
     def toXML(self, writer, ttFont, splitGlyphs=False):
-        notice = (
-            "The xMin, yMin, xMax and yMax values\n"
-            "will be recalculated by the compiler."
-        )
+        notice = "The xMin, yMin, xMax and yMax values\nwill be recalculated by the compiler."
         glyphNames = ttFont.getGlyphNames()
         if not splitGlyphs:
             writer.newline()
@@ -383,9 +379,7 @@ class table__g_l_y_f(DefaultTable.DefaultTable):
             (0, bottomSideY),
         ]
 
-    def _getCoordinatesAndControls(
-        self, glyphName, hMetrics, vMetrics=None, *, round=otRound
-    ):
+    def _getCoordinatesAndControls(self, glyphName, hMetrics, vMetrics=None, *, round=otRound):
         """Return glyph coordinates and controls as expected by "gvar" table.
 
         The coordinates includes four "phantom points" for the glyph metrics,
@@ -417,10 +411,7 @@ class table__g_l_y_f(DefaultTable.DefaultTable):
                 numberOfContours=glyph.numberOfContours,
                 endPts=list(range(len(glyph.components))),
                 flags=None,
-                components=[
-                    (c.glyphName, getattr(c, "transform", None))
-                    for c in glyph.components
-                ],
+                components=[(c.glyphName, getattr(c, "transform", None)) for c in glyph.components],
             )
         else:
             coords, endPts, flags = glyph.getCoordinates(self)
@@ -520,9 +511,7 @@ class table__g_l_y_f(DefaultTable.DefaultTable):
         vMetrics = self._synthesizeVMetrics(glyphName, ttFont, defaultVerticalOrigin)
         return self._getPhantomPoints(glyphName, hMetrics, vMetrics)
 
-    @deprecateFunction(
-        "use '_getCoordinatesAndControls' instead", category=DeprecationWarning
-    )
+    @deprecateFunction("use '_getCoordinatesAndControls' instead", category=DeprecationWarning)
     def getCoordinatesAndControls(self, glyphName, ttFont, defaultVerticalOrigin=None):
         """Old public name for self._getCoordinatesAndControls().
         See: https://github.com/fonttools/fonttools/pull/2266"""
@@ -539,9 +528,7 @@ class table__g_l_y_f(DefaultTable.DefaultTable):
         self._setCoordinates(glyphName, hMetrics, vMetrics)
 
 
-_GlyphControls = namedtuple(
-    "_GlyphControls", "numberOfContours endPts flags components"
-)
+_GlyphControls = namedtuple("_GlyphControls", "numberOfContours endPts flags components")
 
 
 glyphHeaderFormat = """
@@ -646,8 +633,12 @@ WE_HAVE_A_TWO_BY_TWO = 0x0080  # t00, t01, t10, t11
 WE_HAVE_INSTRUCTIONS = 0x0100  # instructions follow
 USE_MY_METRICS = 0x0200  # apply these metrics to parent glyph
 OVERLAP_COMPOUND = 0x0400  # used by Apple in GX fonts
-SCALED_COMPONENT_OFFSET = 0x0800  # composite designed to have the component offset scaled (designed for Apple)
-UNSCALED_COMPONENT_OFFSET = 0x1000  # composite designed not to have the component offset scaled (designed for MS)
+SCALED_COMPONENT_OFFSET = (
+    0x0800  # composite designed to have the component offset scaled (designed for Apple)
+)
+UNSCALED_COMPONENT_OFFSET = (
+    0x1000  # composite designed not to have the component offset scaled (designed for MS)
+)
 
 
 CompositeMaxpValues = namedtuple(
@@ -711,9 +702,7 @@ class Glyph(object):
         else:
             self.decompileCoordinates(data)
 
-    def compile(
-        self, glyfTable, recalcBBoxes=True, *, boundsDone=None, optimizeSize=True
-    ):
+    def compile(self, glyfTable, recalcBBoxes=True, *, boundsDone=None, optimizeSize=True):
         if hasattr(self, "data"):
             if recalcBBoxes:
                 # must unpack glyph in order to recalculate bounding box
@@ -873,9 +862,7 @@ class Glyph(object):
         self.program.fromBytecode(data[pos + 2 : pos + 2 + instructionLength])
         pos += 2 + instructionLength
         nCoordinates = self.endPtsOfContours[-1] + 1
-        flags, xCoordinates, yCoordinates = self.decompileCoordinatesRaw(
-            nCoordinates, data, pos
-        )
+        flags, xCoordinates, yCoordinates = self.decompileCoordinatesRaw(nCoordinates, data, pos)
 
         # fill in repetitions and apply signs
         self.coordinates = coordinates = GlyphCoordinates.zeros(nCoordinates)
@@ -955,9 +942,7 @@ class Glyph(object):
                 len(data) - pos - (xDataLen + yDataLen),
             )
         xCoordinates = struct.unpack(xFormat, data[pos : pos + xDataLen])
-        yCoordinates = struct.unpack(
-            yFormat, data[pos + xDataLen : pos + xDataLen + yDataLen]
-        )
+        yCoordinates = struct.unpack(yFormat, data[pos + xDataLen : pos + xDataLen + yDataLen])
         return flags, xCoordinates, yCoordinates
 
     def compileComponents(self, glyfTable):
@@ -1070,9 +1055,7 @@ class Glyph(object):
                     and (lastFlag < 0xFF00)
                     and flagSupports(lastFlag, flag)
                 ):
-                    if (lastFlag & 0xFF) == (
-                        flag | flagRepeat
-                    ) and lastCost == bestCost + 1:
+                    if (lastFlag & 0xFF) == (flag | flagRepeat) and lastCost == bestCost + 1:
                         continue
                     newCandidates.append(
                         (lastCost + coordBytes, lastTuple, lastFlag + 256, coordBytes)
@@ -1177,9 +1160,7 @@ class Glyph(object):
         recomputed when the ``coordinates`` change. The ``table__g_l_y_f`` bounds
         must be provided to resolve component bounds.
         """
-        if self.isComposite() and self.tryRecalcBoundsComposite(
-            glyfTable, boundsDone=boundsDone
-        ):
+        if self.isComposite() and self.tryRecalcBoundsComposite(glyfTable, boundsDone=boundsDone):
             return
         try:
             coords, endPts, flags = self.getCoordinates(glyfTable, round=otRound)
@@ -1260,13 +1241,10 @@ class Glyph(object):
             for compo in self.components:
                 g = glyfTable[compo.glyphName]
                 try:
-                    coordinates, endPts, flags = g.getCoordinates(
-                        glyfTable, round=round
-                    )
+                    coordinates, endPts, flags = g.getCoordinates(glyfTable, round=round)
                 except RecursionError:
                     raise ttLib.TTLibError(
-                        "glyph '%s' contains a recursive component reference"
-                        % compo.glyphName
+                        "glyph '%s' contains a recursive component reference" % compo.glyphName
                     )
                 coordinates = GlyphCoordinates(coordinates)
                 # if asked to round e.g. while computing bboxes, it's important we
@@ -1530,17 +1508,11 @@ class Glyph(object):
                         assert all(cubicFlags) or not any(cubicFlags)
                         cubic = any(cubicFlags)
                         if cubic:
-                            assert all(
-                                cubicFlags
-                            ), "Mixed cubic and quadratic segment undefined"
+                            assert all(cubicFlags), "Mixed cubic and quadratic segment undefined"
 
                             count = nextOnCurve
-                            assert (
-                                count >= 3
-                            ), "At least two cubic off-curve points required"
-                            assert (
-                                count - 1
-                            ) % 2 == 0, "Odd number of cubic off-curves undefined"
+                            assert count >= 3, "At least two cubic off-curve points required"
+                            assert (count - 1) % 2 == 0, "Odd number of cubic off-curves undefined"
                             for i in range(0, count - 3, 2):
                                 p1 = contour[i]
                                 p2 = contour[i + 1]
@@ -1647,9 +1619,7 @@ def dropImpliedOnCurvePoints(*interpolatable_glyphs: Glyph) -> Set[int]:
     Reference:
     https://developer.apple.com/fonts/TrueType-Reference-Manual/RM01/Chap1.html
     """
-    staticAttributes = SimpleNamespace(
-        numberOfContours=None, flags=None, endPtsOfContours=None
-    )
+    staticAttributes = SimpleNamespace(numberOfContours=None, flags=None, endPtsOfContours=None)
     drop = None
     simple_glyphs = []
     for i, glyph in enumerate(interpolatable_glyphs):
@@ -1699,9 +1669,7 @@ def dropImpliedOnCurvePoints(*interpolatable_glyphs: Glyph) -> Set[int]:
         # Do the actual dropping
         flags = staticAttributes.flags
         assert flags is not None
-        newFlags = array.array(
-            "B", (flags[i] for i in range(len(flags)) if i not in drop)
-        )
+        newFlags = array.array("B", (flags[i] for i in range(len(flags)) if i not in drop))
 
         endPts = staticAttributes.endPtsOfContours
         assert endPts is not None
@@ -1989,9 +1957,7 @@ class GlyphCoordinates(object):
             for k in indices:
                 x = a[2 * k]
                 y = a[2 * k + 1]
-                ret.append(
-                    (int(x) if x.is_integer() else x, int(y) if y.is_integer() else y)
-                )
+                ret.append((int(x) if x.is_integer() else x, int(y) if y.is_integer() else y))
             return ret
         x = a[2 * k]
         y = a[2 * k + 1]
@@ -2297,6 +2263,7 @@ class GlyphCoordinates(object):
 
 
 if __name__ == "__main__":
-    import doctest, sys
+    import doctest
+    import sys
 
     sys.exit(doctest.testmod().failed)

@@ -1,7 +1,6 @@
 from core_pdf.impl.third_party.fontTools.misc.arrayTools import pairwise
 from core_pdf.impl.third_party.fontTools.pens.filterPen import ContourFilterPen
 
-
 __all__ = ["reversedContour", "ReverseContourPen"]
 
 
@@ -39,9 +38,7 @@ def reversedContour(contour, outputImpliedClosingLine=False):
     closed = contourType == "closePath"
 
     firstType, firstPts = contour.pop(0)
-    assert firstType in ("moveTo", "qCurveTo"), (
-        "invalid initial segment type: %r" % firstType
-    )
+    assert firstType in ("moveTo", "qCurveTo"), "invalid initial segment type: %r" % firstType
     firstOnCurve = firstPts[-1]
     if firstType == "qCurveTo":
         # special case for TrueType paths contaning only off-curve points

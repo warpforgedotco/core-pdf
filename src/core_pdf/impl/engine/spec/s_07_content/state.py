@@ -5,7 +5,15 @@ import typing
 from math import ceil, hypot
 from typing import TypeAlias
 
-from core_pdf.impl.exceptions import PdfParseError
+from core_pdf.impl.engine.layout.glyphs import GlyphCluster, GlyphObservation
+from core_pdf.impl.engine.layout.models import TextRun
+from core_pdf.impl.engine.spec.s_07_content.capture import (
+    CapturedDrawing,
+    CapturedLine,
+    CapturedPath,
+    ContentCaptureMixin,
+)
+from core_pdf.impl.engine.spec.s_07_content.marked_content import MarkedContentEntry
 from core_pdf.impl.engine.spec.s_07_content.operations import (
     ContentOperand,
     ContentOperands,
@@ -14,35 +22,27 @@ from core_pdf.impl.engine.spec.s_07_content.operations import (
     content_stream_may_show_text,
     dispatch_operations,
 )
-from core_pdf.impl.engine.spec.s_07_content.marked_content import MarkedContentEntry
 from core_pdf.impl.engine.spec.s_07_content.operators import (
     OperatorMixin,
     detect_rotation_from_linear,
 )
-from core_pdf.impl.engine.layout.glyphs import GlyphCluster, GlyphObservation
-from core_pdf.impl.engine.spec.s_07_content.capture import (
-    CapturedLine,
-    CapturedPath,
-    CapturedDrawing,
-    ContentCaptureMixin,
-)
-from core_pdf.impl.engine.spec.s_07_content.xobjects import XObjectMixin
 from core_pdf.impl.engine.spec.s_07_content.text_helpers import (
     cached_encode_latin1,
     detect_ligature_overrides,
     is_garbage_text,
 )
+from core_pdf.impl.engine.spec.s_07_content.xobjects import XObjectMixin
+from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
+from core_pdf.impl.engine.spec.s_08_graphics.matrix import Matrix
+from core_pdf.impl.engine.spec.s_09_fonts.decoder import DecodedGlyph, FontDecoder
+from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.objects import (
     MISSING,
     PdfReference,
     PdfStream,
     PdfString,
 )
-from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
-from core_pdf.impl.engine.layout.models import TextRun
-from core_pdf.impl.engine.spec.s_08_graphics.matrix import Matrix
-from core_pdf.impl.engine.spec.s_09_fonts.decoder import DecodedGlyph, FontDecoder
 from core_pdf.impl.types import PdfDict
 
 OperationHandler: TypeAlias = StateOperationHandler
@@ -606,9 +606,7 @@ class TextState(XObjectMixin, ContentCaptureMixin, OperatorMixin):
             y_scale = hypot(self.cc, self.cd)
             scale = max(x_scale, y_scale, 1.0)
             control_len = (
-                hypot(x1 - x0, y1 - y0)
-                + hypot(x2 - x1, y2 - y1)
-                + hypot(x3 - x2, y3 - y2)
+                hypot(x1 - x0, y1 - y0) + hypot(x2 - x1, y2 - y1) + hypot(x3 - x2, y3 - y2)
             )
             flatness = max(0.1, float(self.flatness) if self.flatness else 0.25)
             segments = max(4, min(128, ceil(control_len * scale / (flatness * 8.0))))
@@ -616,18 +614,8 @@ class TextState(XObjectMixin, ContentCaptureMixin, OperatorMixin):
         for i in range(1, segments + 1):
             t = i / segments
             mt = 1.0 - t
-            px = (
-                mt * mt * mt * x0
-                + 3.0 * mt * mt * t * x1
-                + 3.0 * mt * t * t * x2
-                + t * t * t * x3
-            )
-            py = (
-                mt * mt * mt * y0
-                + 3.0 * mt * mt * t * y1
-                + 3.0 * mt * t * t * y2
-                + t * t * t * y3
-            )
+            px = mt * mt * mt * x0 + 3.0 * mt * mt * t * x1 + 3.0 * mt * t * t * x2 + t * t * t * x3
+            py = mt * mt * mt * y0 + 3.0 * mt * mt * t * y1 + 3.0 * mt * t * t * y2 + t * t * t * y3
             if (
                 self.capture_clipping
                 or (self.capture_graphics or self.capture_glyphs)
@@ -676,9 +664,7 @@ class TextState(XObjectMixin, ContentCaptureMixin, OperatorMixin):
 
     @staticmethod
     @staticmethod
-    def shift_line(
-        self, tx: float = 0.0, ty: float = 0.0, *, set_leading: bool = False
-    ) -> None:
+    def shift_line(self, tx: float = 0.0, ty: float = 0.0, *, set_leading: bool = False) -> None:
         if set_leading:
             self.leading = -ty
         self.tm_e += tx
@@ -686,9 +672,7 @@ class TextState(XObjectMixin, ContentCaptureMixin, OperatorMixin):
         self.lm_e = self.tm_e
         self.lm_f = self.tm_f
 
-    def apply_operation(
-        self, operation: tuple[str, ContentOperands], depth: int
-    ) -> None:
+    def apply_operation(self, operation: tuple[str, ContentOperands], depth: int) -> None:
         operator, operands = operation
         handler = self.op_handlers.get(operator)
         if handler is not None:
@@ -834,9 +818,7 @@ class TextState(XObjectMixin, ContentCaptureMixin, OperatorMixin):
         category_res = self.resolved_resource_categories.get(cache_key, MISSING)
         if category_res is MISSING:
             raw_category = lookup_dict_key(self.resources, category)
-            category_res = (
-                self.resolve_dict(raw_category) if raw_category is not None else None
-            )
+            category_res = self.resolve_dict(raw_category) if raw_category is not None else None
             self.resolved_resource_categories[cache_key] = category_res
 
         if isinstance(category_res, dict):
@@ -851,9 +833,7 @@ class TextState(XObjectMixin, ContentCaptureMixin, OperatorMixin):
             parent_res = self.resolved_resource_categories.get(parent_key, MISSING)
             if parent_res is MISSING:
                 raw_parent = lookup_dict_key(self.resources, parent_category)
-                parent_res = (
-                    self.resolve_dict(raw_parent) if raw_parent is not None else None
-                )
+                parent_res = self.resolve_dict(raw_parent) if raw_parent is not None else None
                 self.resolved_resource_categories[parent_key] = parent_res
 
             if isinstance(parent_res, dict):
@@ -919,15 +899,9 @@ class TextState(XObjectMixin, ContentCaptureMixin, OperatorMixin):
         if not text:
             return False
         first_code = ord(text[0])
-        if (first_code < 32 or 0xE000 <= first_code <= 0xF8FF) and self.is_garbage(
-            text
-        ):
+        if (first_code < 32 or 0xE000 <= first_code <= 0xF8FF) and self.is_garbage(text):
             return False
-        if (
-            not self.marked_content_stack
-            and self.render_mode != 3
-            and self.font_size >= 0.1
-        ):
+        if not self.marked_content_stack and self.render_mode != 3 and self.font_size >= 0.1:
             return True
 
         if self.render_mode == 3 or self.font_size < 0.1:
@@ -956,9 +930,7 @@ class TextState(XObjectMixin, ContentCaptureMixin, OperatorMixin):
 
         try:
             font_obj_ref = (
-                self.lookup_page_resource("Font", self.current_font)
-                if self.current_font
-                else None
+                self.lookup_page_resource("Font", self.current_font) if self.current_font else None
             )
         except PdfParseError:
             font_obj_ref = None

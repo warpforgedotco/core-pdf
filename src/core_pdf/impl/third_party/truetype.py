@@ -11,7 +11,6 @@ from core_pdf.impl.third_party.fontTools.pens.recordingPen import (
 )
 from core_pdf.impl.third_party.fontTools.ttLib import TTFont, TTLibError
 
-
 Point = tuple[float, float]
 
 
@@ -38,9 +37,7 @@ class TrueTypeFontProgram:
         self.font = _tt_font_from_data(data)
         if not {"maxp", "glyf", "loca", "head"} <= set(self.font.keys()):
             raise ValueError("invalid TrueType glyph tables")
-        self.units_per_em = float(
-            getattr(self.font["head"], "unitsPerEm", 1000) or 1000
-        )
+        self.units_per_em = float(getattr(self.font["head"], "unitsPerEm", 1000) or 1000)
         self.cid_to_gid = cid_to_gid
         self.unicode_cmap = _best_unicode_gid_cmap(self.font)
         self.glyph_to_unicode = _invert_unicode_cmap(self.unicode_cmap)
@@ -50,7 +47,7 @@ class TrueTypeFontProgram:
     def glyph_id_for_code(self, code: int) -> int:
         if self.cid_to_gid is not None:
             pos = code * 2
-            if 0 <= pos and pos + 2 <= len(self.cid_to_gid):
+            if pos >= 0 and pos + 2 <= len(self.cid_to_gid):
                 return struct.unpack(">H", self.cid_to_gid[pos : pos + 2])[0]
         if self.cmap:
             return self.cmap.get(code, code)
@@ -59,9 +56,7 @@ class TrueTypeFontProgram:
     def unicode_for_gid(self, gid: int) -> str:
         return self.glyph_to_unicode.get(gid, "")
 
-    def glyph_bitmap(
-        self, code: int, *, width: int = 24, height: int = 32
-    ) -> tuple[int, ...]:
+    def glyph_bitmap(self, code: int, *, width: int = 24, height: int = 32) -> tuple[int, ...]:
         gid = self.glyph_id_for_code(code)
         cache_key = (gid, width, height)
         cached = self._glyph_bitmap_cache.get(cache_key)
@@ -97,7 +92,7 @@ class TrueTypeFontProgram:
             pen = DecomposingRecordingPen(glyph_set, skipMissingComponents=True)
             glyph.draw(pen)
             return _recording_to_contours(pen.value)
-        except KeyError, TTLibError, AttributeError, IndexError, ValueError:
+        except (KeyError, TTLibError, AttributeError, IndexError, ValueError):
             return []
 
     def composite_body_bbox(
@@ -123,7 +118,7 @@ class TrueTypeFontProgram:
                 else:
                     body_bbox = (xmin, ymin, xmax, ymax)
             return (body_bbox, has_dot)
-        except KeyError, TTLibError, AttributeError, IndexError, ValueError:
+        except (KeyError, TTLibError, AttributeError, IndexError, ValueError):
             return (None, False)
 
 
@@ -137,7 +132,7 @@ def _tt_font_from_data(data: bytes) -> TTFont:
 def _best_unicode_gid_cmap(font: TTFont) -> dict[int, int]:
     try:
         cmap_table = font["cmap"]
-    except KeyError, TTLibError:
+    except (KeyError, TTLibError):
         return {}
     name_cmap = cmap_table.getBestCmap()
     if name_cmap is None:
@@ -149,7 +144,7 @@ def _best_unicode_gid_cmap(font: TTFont) -> dict[int, int]:
             continue
         try:
             gid = font.getGlyphID(glyph_name)
-        except KeyError, TTLibError, AttributeError:
+        except (KeyError, TTLibError, AttributeError):
             continue
         if gid > 0:
             mapping[codepoint] = gid
@@ -295,9 +290,7 @@ def _append_quadratic(
     return end
 
 
-def _append_cubic(
-    contour: list[Point], current: Point, operands: tuple[Any, ...]
-) -> Point:
+def _append_cubic(contour: list[Point], current: Point, operands: tuple[Any, ...]) -> Point:
     if len(operands) % 3:
         return current
     segment_start = current
@@ -316,9 +309,7 @@ def _close_contour(contour: list[Point]) -> list[Point]:
     return contour
 
 
-def _flatten_quadratic(
-    p0: Point, p1: Point, p2: Point, segments: int = 6
-) -> list[Point]:
+def _flatten_quadratic(p0: Point, p1: Point, p2: Point, segments: int = 6) -> list[Point]:
     out: list[Point] = []
     for i in range(1, segments + 1):
         t = i / segments
@@ -332,31 +323,21 @@ def _flatten_quadratic(
     return out
 
 
-def _flatten_cubic(
-    p0: Point, p1: Point, p2: Point, p3: Point, segments: int = 8
-) -> list[Point]:
+def _flatten_cubic(p0: Point, p1: Point, p2: Point, p3: Point, segments: int = 8) -> list[Point]:
     out: list[Point] = []
     for i in range(1, segments + 1):
         t = i / segments
         mt = 1.0 - t
         out.append(
             (
-                mt**3 * p0[0]
-                + 3.0 * mt * mt * t * p1[0]
-                + 3.0 * mt * t * t * p2[0]
-                + t**3 * p3[0],
-                mt**3 * p0[1]
-                + 3.0 * mt * mt * t * p1[1]
-                + 3.0 * mt * t * t * p2[1]
-                + t**3 * p3[1],
+                mt**3 * p0[0] + 3.0 * mt * mt * t * p1[0] + 3.0 * mt * t * t * p2[0] + t**3 * p3[0],
+                mt**3 * p0[1] + 3.0 * mt * mt * t * p1[1] + 3.0 * mt * t * t * p2[1] + t**3 * p3[1],
             )
         )
     return out
 
 
-def rasterize_contours(
-    contours: list[list[Point]], *, width: int, height: int
-) -> tuple[int, ...]:
+def rasterize_contours(contours: list[list[Point]], *, width: int, height: int) -> tuple[int, ...]:
     points = [point for contour in contours for point in contour]
     if not points or width <= 0 or height <= 0:
         return ()

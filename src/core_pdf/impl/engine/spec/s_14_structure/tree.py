@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator, Sequence
-from typing import Any, TYPE_CHECKING, Callable, TypeAlias, overload
+from typing import TYPE_CHECKING, Any, Callable, TypeAlias, overload
 
 from core_pdf.impl.engine.spec.s_07_objects.coercion import (
     coerce_value,
@@ -144,9 +144,7 @@ class StructureElement:
     @property
     def title(self) -> str | None:
         if self.title_value is MISSING:
-            self.title_value = self.document.resolver.resolve_str(
-                lookup_dict_key(self.props, "T")
-            )
+            self.title_value = self.document.resolver.resolve_str(lookup_dict_key(self.props, "T"))
         return self.title_value
 
     @property
@@ -180,8 +178,7 @@ class StructureElement:
         attrs = lookup_dict_key(self.props, "A")
         if isinstance(attrs, dict):
             self.attributes_value = {
-                structure_key_name(key): coerce_attr_value(val)
-                for key, val in attrs.items()
+                structure_key_name(key): coerce_attr_value(val) for key, val in attrs.items()
             }
             return self.attributes_value
         if isinstance(attrs, list):
@@ -236,10 +233,7 @@ class StructureElement:
             return None
         if not isinstance(parent, dict):
             raise ValueError("invalid structure parent entry")
-        if (
-            self.document.resolver.resolve_name(lookup_dict_key(parent, "Type"))
-            == "StructTreeRoot"
-        ):
+        if self.document.resolver.resolve_name(lookup_dict_key(parent, "Type")) == "StructTreeRoot":
             tree = self.document.structure
             self.parent_value = tree
             return tree
@@ -255,9 +249,7 @@ class StructureElement:
             )
         yield from self.kids_value
 
-    def find_all(
-        self, matcher: str | MatchFunc | None = None
-    ) -> Iterator["StructureElement"]:
+    def find_all(self, matcher: str | MatchFunc | None = None) -> Iterator["StructureElement"]:
         elements: list[StructureChild] = list(self)
         filtered = [el for el in elements if isinstance(el, StructureElement)]
         return find_all(filtered, matcher)
@@ -272,9 +264,7 @@ class StructureElement:
         return hash((id(self.document), repr(self.props)))
 
 
-class StructureTree(
-    Iterable[StructureElement | StructureContentItem | StructureContentObject]
-):
+class StructureTree(Iterable[StructureElement | StructureContentItem | StructureContentObject]):
     """Document logical structure tree rooted at StructTreeRoot."""
 
     __slots__ = (
@@ -309,9 +299,7 @@ class StructureTree(
     def role_map(self) -> dict[str, str]:
         if self.role_map_value is not None:
             return self.role_map_value
-        resolved = self.document.resolver.resolve(
-            lookup_dict_key(self.props, "RoleMap")
-        )
+        resolved = self.document.resolver.resolve(lookup_dict_key(self.props, "RoleMap"))
         role_map: dict[str, str] = {}
         if resolved is None:
             self.role_map_value = role_map
@@ -332,9 +320,7 @@ class StructureTree(
     def parent_tree(self) -> ParentTree:
         if self.parent_tree_value is not None:
             return self.parent_tree_value
-        resolved = self.document.resolver.resolve(
-            lookup_dict_key(self.props, "ParentTree")
-        )
+        resolved = self.document.resolver.resolve(lookup_dict_key(self.props, "ParentTree"))
         results: ParentTree = {}
         if resolved is None:
             self.parent_tree_value = results
@@ -385,12 +371,8 @@ class StructureTree(
             )
         yield from self.kids_value
 
-    def find_all(
-        self, matcher: str | MatchFunc | None = None
-    ) -> Iterator[StructureElement]:
-        return find_all(
-            [item for item in self if isinstance(item, StructureElement)], matcher
-        )
+    def find_all(self, matcher: str | MatchFunc | None = None) -> Iterator[StructureElement]:
+        return find_all([item for item in self if isinstance(item, StructureElement)], matcher)
 
     def find(self, matcher: str | MatchFunc | None = None) -> StructureElement | None:
         try:
@@ -399,9 +381,7 @@ class StructureTree(
             return None
 
     def page_structure(self, page: PdfPage) -> "PageStructure":
-        key = self.document.resolver.resolve_int(
-            lookup_dict_key(page.page_dict, "StructParents")
-        )
+        key = self.document.resolver.resolve_int(lookup_dict_key(page.page_dict, "StructParents"))
         if type(key) is not int:
             raise ValueError("invalid page StructParents value")
         parent_tree = self.parent_tree
@@ -459,9 +439,7 @@ class PageStructure(Sequence[StructureElement | None]):
             if isinstance(resolved, dict):
                 marker = id(resolved)
                 if marker not in self.elements:
-                    self.elements[marker] = StructureElement(
-                        self.page.document, resolved
-                    )
+                    self.elements[marker] = StructureElement(self.page.document, resolved)
                 return self.elements[marker]
             raise ValueError("invalid page structure parent entry")
         raise ValueError("invalid page structure parent entry")
@@ -470,9 +448,7 @@ class PageStructure(Sequence[StructureElement | None]):
         for i in range(len(self.parents)):
             yield self[i]
 
-    def find_all(
-        self, matcher: str | MatchFunc | None = None
-    ) -> Iterator[StructureElement]:
+    def find_all(self, matcher: str | MatchFunc | None = None) -> Iterator[StructureElement]:
         seen: set[int] = set()
         match_func = make_match_func(matcher)
         for element in self:
@@ -494,14 +470,10 @@ class PageStructure(Sequence[StructureElement | None]):
             return None
 
 
-StructureChild: TypeAlias = (
-    StructureElement | StructureContentItem | StructureContentObject
-)
+StructureChild: TypeAlias = StructureElement | StructureContentItem | StructureContentObject
 
 
-def get_kid_page_index(
-    document: PdfDocument, page: PdfPage | None, kid: PdfDict
-) -> int | None:
+def get_kid_page_index(document: PdfDocument, page: PdfPage | None, kid: PdfDict) -> int | None:
     pg = lookup_dict_key(kid, "Pg")
     if pg is not None:
         page_obj = document.resolver.resolve(pg)
@@ -553,9 +525,9 @@ def make_kids(
             continue
         if isinstance(current, dict):
             ktype_value = lookup_dict_key(current, "Type")
-            ktype = document.resolver.resolve_name(
+            ktype = document.resolver.resolve_name(ktype_value) or document.resolver.resolve_str(
                 ktype_value
-            ) or document.resolver.resolve_str(ktype_value)
+            )
             if ktype == "MCR":
                 mcid = document.resolver.resolve_int(lookup_dict_key(current, "MCID"))
                 if mcid is None:

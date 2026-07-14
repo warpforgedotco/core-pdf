@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from core_pdf.impl.third_party.fontTools.misc.textTools import byteord, tostr
-
 import re
 from bisect import bisect_right
 from typing import Literal, TypeVar, overload
 
+from core_pdf.impl.third_party.fontTools.misc.textTools import byteord, tostr
 
 try:
     # use unicodedata backport compatible with python2:
@@ -15,7 +14,7 @@ except ImportError:  # pragma: no cover
     # fall back to built-in unicodedata (possibly outdated)
     from unicodedata import *
 
-from . import Blocks, Mirrored, Scripts, ScriptExtensions, OTTags
+from . import Blocks, Mirrored, OTTags, ScriptExtensions, Scripts
 
 __all__ = [
     # names from built-in unicodedata module
@@ -279,7 +278,7 @@ def ot_tag_to_script(tag):
         tag = OTTags.SCRIPT_ALIASES[tag]
 
     while len(tag) != 4:
-        tag += str(" ")  # pad with spaces
+        tag += " "  # pad with spaces
 
     if tag == OTTags.DEFAULT_SCRIPT:
         # it's unclear which Unicode script the "DFLT" OpenType tag maps to,

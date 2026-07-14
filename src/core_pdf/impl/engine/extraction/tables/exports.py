@@ -213,9 +213,7 @@ class PageTableExportMixin:
         **extract_options: object,
     ) -> list[list[str]]:
         flavors = (flavor,) if isinstance(flavor, str) else tuple(flavor)
-        page_level_candidates: list[
-            tuple[int, float, float, int, int, int, list[list[str]]]
-        ] = []
+        page_level_candidates: list[tuple[int, float, float, int, int, int, list[list[str]]]] = []
         for current_flavor in flavors:
             page_tables = cast(
                 TableSet,
@@ -293,9 +291,7 @@ class PageTableExportMixin:
                     coverage = len(table_text) / visible_text_len
                     if coverage < min_text_coverage:
                         continue
-                populated_cells = sum(
-                    1 for row in table for cell in row if str(cell).strip()
-                )
+                populated_cells = sum(1 for row in table for cell in row if str(cell).strip())
                 total_cells = sum(len(row) for row in table)
                 candidates.append((coverage, populated_cells, -total_cells, table))
         if not candidates:

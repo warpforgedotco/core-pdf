@@ -5,7 +5,6 @@ import unicodedata
 
 from core_pdf.impl.engine.spec.s_09_fonts.glyphs import glyph_name_to_unicode
 
-
 TEX_MATH_GLYPH_OVERRIDES: dict[str, dict[str, str]] = {
     "TeX_Times_Math_Italic": {
         "C14": "δ",

@@ -4,7 +4,6 @@ from __future__ import annotations
 import zlib
 
 import pytest
-
 from core_pdf.impl.engine.spec.s_07_filters.filters import apply_ascii85, apply_flate
 from core_pdf.impl.engine.spec.s_07_syntax.errors import PdfParseError
 

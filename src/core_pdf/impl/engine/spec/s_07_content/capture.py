@@ -5,6 +5,7 @@ import typing
 from math import ceil, hypot
 from typing import Any
 
+from core_pdf.impl.engine.layout.geometry import RectBox
 from core_pdf.impl.engine.layout.glyphs import (
     GlyphCluster,
     GlyphObservation,
@@ -23,10 +24,8 @@ from core_pdf.impl.engine.spec.s_07_content.text_helpers import (
     normalize_extracted_text,
 )
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
-from core_pdf.impl.engine.layout.geometry import RectBox
 from core_pdf.impl.engine.spec.s_08_graphics.matrix import Matrix
 from core_pdf.impl.objects import PdfName, PdfStream, PdfString
-
 
 if typing.TYPE_CHECKING:
     from core_pdf.impl.engine.spec.s_09_fonts.decoder import DecodedGlyph, FontDecoder
@@ -225,19 +224,13 @@ def apply_glyph_geometry_to_run(
         run.glyph_clusters = glyph_clusters
     if not glyph_tuple:
         return
-    ink_bbox = union_bboxes(
-        tuple(rectbox_tuple(glyph.ink_rect) for glyph in glyph_tuple)
-    )
-    advance_bbox = union_bboxes(
-        tuple(rectbox_tuple(glyph.advance_rect) for glyph in glyph_tuple)
-    )
+    ink_bbox = union_bboxes(tuple(rectbox_tuple(glyph.ink_rect) for glyph in glyph_tuple))
+    advance_bbox = union_bboxes(tuple(rectbox_tuple(glyph.advance_rect) for glyph in glyph_tuple))
     if advance_bbox is not None:
         run.advance_bbox = advance_bbox
     if ink_bbox is not None:
         run.ink_bbox = ink_bbox
-    confidences = [
-        glyph.confidence for glyph in glyph_tuple if glyph.confidence is not None
-    ]
+    confidences = [glyph.confidence for glyph in glyph_tuple if glyph.confidence is not None]
     if confidences:
         run.confidence = min(confidences)
 
@@ -257,9 +250,7 @@ def type3_font_matrix(font: dict[str, Any]) -> Matrix:
 class CapturedLine:
     __slots__ = ("x0", "y0", "x1", "y1", "line_width")
 
-    def __init__(
-        self, x0: float, y0: float, x1: float, y1: float, line_width: float = 1.0
-    ) -> None:
+    def __init__(self, x0: float, y0: float, x1: float, y1: float, line_width: float = 1.0) -> None:
         self.x0 = x0
         self.y0 = y0
         self.x1 = x1
@@ -323,14 +314,10 @@ class CapturedSubpath:
         ys = [point[1] for point in self.points]
         return min(xs), min(ys), max(xs), max(ys)
 
-    def edges(
-        self, *, close_open: bool = False
-    ) -> list[tuple[float, float, float, float]]:
+    def edges(self, *, close_open: bool = False) -> list[tuple[float, float, float, float]]:
         if len(self.points) < 2:
             return []
-        edges = [
-            (x0, y0, x1, y1) for (x0, y0), (x1, y1) in zip(self.points, self.points[1:])
-        ]
+        edges = [(x0, y0, x1, y1) for (x0, y0), (x1, y1) in zip(self.points, self.points[1:])]
         first = self.points[0]
         last = self.points[-1]
         if (self.closed or close_open) and first != last:
@@ -398,11 +385,7 @@ class CapturedPath:
         return edges
 
     def stroke_subpaths(self) -> list[list[tuple[float, float, float, float]]]:
-        return [
-            edges
-            for subpath in self.subpaths
-            if (edges := subpath.edges(close_open=False))
-        ]
+        return [edges for subpath in self.subpaths if (edges := subpath.edges(close_open=False))]
 
     def derived_lines(self, line_width: float) -> list[CapturedLine]:
         return [
@@ -573,9 +556,7 @@ class ContentCaptureMixin:
             return None
         dash_array, phase = dash_pattern
         scale = self.graphics_scale()
-        return [max(0.0, float(value) * scale) for value in dash_array], float(
-            phase
-        ) * scale
+        return [max(0.0, float(value) * scale) for value in dash_array], float(phase) * scale
 
     def flush_drawing(self: Any, kind: str, fill_rule: str = "nonzero") -> None:
         if not self.capture_graphics or not self.is_graphics_visible():
@@ -889,9 +870,7 @@ class ContentCaptureMixin:
             clusters = []
             self.glyph_clusters = clusters
         cursor = 0
-        for decoded_index, (glyph, advance) in enumerate(
-            zip(glyphs, advances, strict=True)
-        ):
+        for decoded_index, (glyph, advance) in enumerate(zip(glyphs, advances, strict=True)):
             chunk_text = glyph.unicode
             if not chunk_text:
                 chunk_text = text[cursor : cursor + 1]
@@ -906,11 +885,7 @@ class ContentCaptureMixin:
             )
             advance_rect = transformed_text_rect(self, *text_box)
             baseline = transformed_text_line(self, *baseline_text)
-            glyph_bbox = (
-                decoder.glyph_bbox(glyph.bitmap_code)
-                if not decoder.is_vertical
-                else None
-            )
+            glyph_bbox = decoder.glyph_bbox(glyph.bitmap_code) if not decoder.is_vertical else None
             rect = glyph_ink_rect(self, glyph_bbox, offset, advance_rect)
             device_matrix = (
                 self.combined_A,
@@ -999,10 +974,8 @@ class ContentCaptureMixin:
                         visible=visible,
                         alternates=glyph.alternates,
                     )
-                    char_box, char_baseline_text, char_text_matrix = (
-                        glyph_text_space_boxes(
-                            self, char_offset, per_char_advance, decoder
-                        )
+                    char_box, char_baseline_text, char_text_matrix = glyph_text_space_boxes(
+                        self, char_offset, per_char_advance, decoder
                     )
                     char_advance_rect = transformed_text_rect(self, *char_box)
                     char_baseline = transformed_text_line(self, *char_baseline_text)
@@ -1443,9 +1416,7 @@ class ContentCaptureMixin:
         if glyph_names is None:
             encoding = lookup_dict_key(font, "Encoding")
             differences_obj = (
-                lookup_dict_key(encoding, "Differences")
-                if isinstance(encoding, dict)
-                else None
+                lookup_dict_key(encoding, "Differences") if isinstance(encoding, dict) else None
             )
             glyph_names = {}
             if isinstance(differences_obj, (list, tuple)):
@@ -1482,9 +1453,7 @@ class ContentCaptureMixin:
                     self.tm_e * self.ca + self.tm_f * self.cc + self.ce,
                     self.tm_e * self.cb + self.tm_f * self.cd + self.cf,
                 ).multiply(font_matrix)
-                self.consume_stream(
-                    char_proc, resources, glyph_ctm, self.xobject_depth + 1
-                )
+                self.consume_stream(char_proc, resources, glyph_ctm, self.xobject_depth + 1)
 
             total = widths[code] + cs
             if code == 32:
@@ -2204,11 +2173,7 @@ class ContentCaptureMixin:
         pending_bytes = bytearray()
         scale = self.text_advance_scale
 
-        decoder = (
-            self.current_decoder
-            if self.current_decoder is not None
-            else self.get_decoder()
-        )
+        decoder = self.current_decoder if self.current_decoder is not None else self.get_decoder()
         if (
             self.capture_runs
             and not self.capture_glyphs
@@ -2223,9 +2188,7 @@ class ContentCaptureMixin:
             return
         is_vert = decoder.is_vertical
         zero_copy_flush = (
-            not decoder.is_cid_font
-            and decoder.to_unicode is None
-            and decoder.cmap is None
+            not decoder.is_cid_font and decoder.to_unicode is None and decoder.cmap is None
         )
 
         te, tf = self.tm_e, self.tm_f
@@ -2241,9 +2204,7 @@ class ContentCaptureMixin:
                 if pending_bytes:
                     self.tm_e, self.tm_f = te, tf
                     if zero_copy_flush:
-                        self.append_text(
-                            data=memoryview(pending_bytes), decoder=decoder
-                        )
+                        self.append_text(data=memoryview(pending_bytes), decoder=decoder)
                     else:
                         self.append_text(data=bytes(pending_bytes), decoder=decoder)
                     te, tf = self.tm_e, self.tm_f

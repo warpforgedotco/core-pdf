@@ -1,4 +1,5 @@
 from typing import Callable
+
 from core_pdf.impl.third_party.fontTools.pens.basePen import BasePen
 
 
@@ -216,8 +217,9 @@ def main(args=None):
 
         args = sys.argv[1:]
 
-    from core_pdf.impl.third_party.fontTools.ttLib import TTFont
     import argparse
+
+    from core_pdf.impl.third_party.fontTools.ttLib import TTFont
 
     parser = argparse.ArgumentParser(
         "fonttools pens.svgPathPen", description="Generate SVG from text"

@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
+import math
 from collections import Counter
 from dataclasses import dataclass
-import math
 from typing import TYPE_CHECKING, Any, Mapping, TypedDict
 
 from core_pdf.impl.engine.layout.glyphs import glyph_text_has_unsupported_codepoint
@@ -240,15 +240,9 @@ def text_run_geometry_issues(run: TextRun) -> tuple[LayoutGeometryIssue, ...]:
 
     axis = "y" if run.rotation_angle in (90, 270) else "x"
     run_span = bbox_height(run_bbox) if axis == "y" else bbox_width(run_bbox)
-    cluster_span = (
-        bbox_height(cluster_union) if axis == "y" else bbox_width(cluster_union)
-    )
+    cluster_span = bbox_height(cluster_union) if axis == "y" else bbox_width(cluster_union)
     min_reference_span = max(20.0, run.font_size * 2.0)
-    if (
-        cluster_span > 0.0
-        and run_span > min_reference_span
-        and run_span > cluster_span * 2.5
-    ):
+    if cluster_span > 0.0 and run_span > min_reference_span and run_span > cluster_span * 2.5:
         issues.append(
             LayoutGeometryIssue(
                 code="run_bbox_oversized_for_glyph_clusters",
@@ -419,18 +413,13 @@ def layout_geometry_issue_record(
 
 
 def text_run_geometry_issue_records(run: TextRun) -> list[LayoutGeometryIssueRecord]:
-    return [
-        layout_geometry_issue_record(issue) for issue in text_run_geometry_issues(run)
-    ]
+    return [layout_geometry_issue_record(issue) for issue in text_run_geometry_issues(run)]
 
 
 def page_layout_geometry_issue_records(
     lines: list[LayoutLine],
 ) -> list[LayoutGeometryIssueRecord]:
-    return [
-        layout_geometry_issue_record(issue)
-        for issue in page_layout_geometry_issues(lines)
-    ]
+    return [layout_geometry_issue_record(issue) for issue in page_layout_geometry_issues(lines)]
 
 
 def layout_geometry_summary_record(
@@ -472,7 +461,7 @@ def layout_geometry_summary_from_record(
             issue_codes=issue_codes,
             suspicion_score=float_record_value(record.get("suspicion_score", 0.0)),
         )
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return None
 
 
@@ -518,7 +507,7 @@ def numeric_bbox(value: Any) -> BBoxTuple | None:
             float(value[2]),
             float(value[3]),
         )
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return None
     if not all(math.isfinite(coord) for coord in bbox):
         return None

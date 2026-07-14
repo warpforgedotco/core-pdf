@@ -3,41 +3,41 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, cast
 
+from core_pdf.impl.engine.extraction.cache import ExtractionCache
 from core_pdf.impl.engine.extraction.common.page_content import (
     PageContentHost,
     PageContentMixin,
 )
-from core_pdf.impl.objects import (
-    MISSING,
-    MissingObject,
-    PdfStream,
+from core_pdf.impl.engine.extraction.tables.types import (
+    TableCacheKey,
+    TableExtractionResult,
+)
+from core_pdf.impl.engine.spec.s_07_content import TextState
+from core_pdf.impl.engine.spec.s_07_content.capture import CapturedLine
+from core_pdf.impl.engine.spec.s_07_document.page_interactions import (
+    PageInteractionsMixin,
+)
+from core_pdf.impl.engine.spec.s_07_document.page_state import PageStateMixin
+from core_pdf.impl.engine.spec.s_07_objects.object_cache import (
+    CachedPdfObject,
+    InheritedValueMap,
 )
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import (
     collect_inherited_values,
     lookup_dict_key,
 )
-from core_pdf.impl.engine.spec.s_07_objects.object_cache import (
-    CachedPdfObject,
-    InheritedValueMap,
-)
-from core_pdf.impl.engine.spec.s_07_content.capture import CapturedLine
-from core_pdf.impl.engine.spec.s_07_content import TextState
 from core_pdf.impl.engine.spec.s_14_structure.tree import PageStructure
-from core_pdf.impl.engine.spec.s_07_document.page_interactions import (
-    PageInteractionsMixin,
-)
-from core_pdf.impl.engine.spec.s_07_document.page_state import PageStateMixin
-from core_pdf.impl.engine.extraction.cache import ExtractionCache
-from core_pdf.impl.engine.extraction.tables.types import (
-    TableCacheKey,
-    TableExtractionResult,
+from core_pdf.impl.objects import (
+    MISSING,
+    MissingObject,
+    PdfStream,
 )
 from core_pdf.impl.types import PdfDict, Rectangle
 
 if TYPE_CHECKING:
+    from core_pdf.impl.engine.layout.models import LayoutLine, TextRun
     from core_pdf.impl.engine.spec.s_07_document.document import PdfDocument
     from core_pdf.impl.models import LinkRecord, TextSpan
-    from core_pdf.impl.engine.layout.models import LayoutLine, TextRun
 
 
 INHERITED_PAGE_KEYS = (
@@ -111,9 +111,7 @@ class PdfPage(PageInteractionsMixin, PageStateMixin):
         self.page_dict = page_dict
         self.page_number = page_number
         self.inherited_values_cache = None
-        self.contents = cast(
-            CachedPdfObject | None, lookup_dict_key(self.page_dict, "Contents")
-        )
+        self.contents = cast(CachedPdfObject | None, lookup_dict_key(self.page_dict, "Contents"))
         self.content_streams_cache = None
         self.state = None
         self.graphics = None
@@ -223,9 +221,7 @@ class PdfPage(PageInteractionsMixin, PageStateMixin):
 
     def resolve_box(self, key: str) -> tuple[float, float, float, float] | None:
         try:
-            return self.document.resolver.resolve_box(
-                lookup_dict_key(self.inherited_values, key)
-            )
+            return self.document.resolver.resolve_box(lookup_dict_key(self.inherited_values, key))
         except ValueError:
             return None
 
@@ -256,14 +252,9 @@ class PdfPage(PageInteractionsMixin, PageStateMixin):
         group = self.document.resolver.resolve(lookup_dict_key(self.page_dict, "Group"))
         if not isinstance(group, dict):
             return None
-        if (
-            self.document.resolver.resolve_name(lookup_dict_key(group, "S"))
-            != "Transparency"
-        ):
+        if self.document.resolver.resolve_name(lookup_dict_key(group, "S")) != "Transparency":
             return None
-        ca = self.document.resolver.resolve_float(
-            lookup_dict_key(group, "ca"), default=None
-        )
+        ca = self.document.resolver.resolve_float(lookup_dict_key(group, "ca"), default=None)
         if ca is None:
             return None
         return max(0.0, min(1.0, ca))
@@ -304,9 +295,7 @@ class PdfPage(PageInteractionsMixin, PageStateMixin):
         graphics = self.get_graphics()
         new_state = TextState(self.document, self.page_dict)
         new_state.runs = [
-            r
-            for r in graphics.runs
-            if r.x1 > x0 and r.x0 < x1 and r.y1 > y0 and r.y0 < y1
+            r for r in graphics.runs if r.x1 > x0 and r.x0 < x1 and r.y1 > y0 and r.y0 < y1
         ]
         new_page.state = new_state
 
@@ -328,9 +317,7 @@ class PdfPage(PageInteractionsMixin, PageStateMixin):
         graphics = self.get_graphics()
         new_state = TextState(self.document, self.page_dict)
         new_state.runs = [
-            r
-            for r in graphics.runs
-            if r.x0 >= x0 and r.x1 <= x1 and r.y0 >= y0 and r.y1 <= y1
+            r for r in graphics.runs if r.x0 >= x0 and r.x1 <= x1 and r.y0 >= y0 and r.y1 <= y1
         ]
         new_page.state = new_state
 

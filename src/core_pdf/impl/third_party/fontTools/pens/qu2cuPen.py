@@ -13,10 +13,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from core_pdf.impl.third_party.fontTools.qu2cu import quadratic_to_curves
+import math
+
 from core_pdf.impl.third_party.fontTools.pens.filterPen import ContourFilterPen
 from core_pdf.impl.third_party.fontTools.pens.reverseContourPen import ReverseContourPen
-import math
+from core_pdf.impl.third_party.fontTools.qu2cu import quadratic_to_curves
 
 
 class Qu2CuPen(ContourFilterPen):
@@ -65,9 +66,7 @@ class Qu2CuPen(ContourFilterPen):
         currentPt = None
         newContour = []
         for op, args in contour:
-            if op == "qCurveTo" and (
-                self.all_cubic or (len(args) > 2 and args[-1] is not None)
-            ):
+            if op == "qCurveTo" and (self.all_cubic or (len(args) > 2 and args[-1] is not None)):
                 if args[-1] is None:
                     raise NotImplementedError(
                         "oncurve-less contours with all_cubic not implemented"

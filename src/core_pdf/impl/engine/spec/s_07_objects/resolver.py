@@ -4,24 +4,23 @@ from __future__ import annotations
 import mmap
 from typing import cast
 
-from core_pdf.impl.types import Decipher, PdfDict
+from core_pdf.impl.engine.spec.s_07_objects.coercion import normalize_pdf_name
 from core_pdf.impl.engine.spec.s_07_objects.indirect_headers import (
     find_indirect_object_header,
 )
-from core_pdf.impl.engine.spec.s_07_objects.resolver_values import ResolverValueMixin
 from core_pdf.impl.engine.spec.s_07_objects.object_cache import (
     CachedPdfObject,
     DeepObjectCache,
     GenerationZeroObjectCache,
     ObjectCache,
 )
+from core_pdf.impl.engine.spec.s_07_objects.resolver_values import ResolverValueMixin
 from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.engine.spec.s_07_syntax.objects import PdfObjectStream
-from core_pdf.impl.engine.spec.s_07_objects.coercion import normalize_pdf_name
-from core_pdf.impl.objects import MISSING, PdfReference, PdfStream
-from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.engine.spec.s_07_syntax.xref import PdfXRefEntry, key_for
-
+from core_pdf.impl.exceptions import PdfParseError
+from core_pdf.impl.objects import MISSING, PdfReference, PdfStream
+from core_pdf.impl.types import Decipher, PdfDict
 
 COMMON_KEYWORDS: tuple[bytes, ...] = (
     b"BT",
@@ -123,9 +122,7 @@ class ObjectResolver(ResolverValueMixin):
                     max_obj = obj_num
 
         if max_obj < 1000000:
-            self.objects_gen0: GenerationZeroObjectCache | None = [MISSING] * (
-                max_obj + 1
-            )
+            self.objects_gen0: GenerationZeroObjectCache | None = [MISSING] * (max_obj + 1)
             self.xref_gen0: list[PdfXRefEntry | None] | None = [None] * (max_obj + 1)
             for k, entry in self.xref.items():
                 if (k & 0xFFFF) == 0:
@@ -137,9 +134,7 @@ class ObjectResolver(ResolverValueMixin):
         self.object_streams: dict[int, PdfObjectStream] = {}
         self.resolving: set[int] = set()
         self.deep_cache: DeepObjectCache = {}
-        self.kw_cache: dict[bytes, object] = {
-            key: key.decode("latin-1") for key in COMMON_KEYWORDS
-        }
+        self.kw_cache: dict[bytes, object] = {key: key.decode("latin-1") for key in COMMON_KEYWORDS}
         self.lexer_stack: list[PdfLexer] = []
 
     def get_lexer(self) -> PdfLexer:
@@ -203,14 +198,10 @@ class ObjectResolver(ResolverValueMixin):
                     if container is None:
                         stream_obj = self.resolve(PdfReference(stream_num))
                         if type(stream_obj) is PdfStream:
-                            container = PdfObjectStream(
-                                stream_obj, kw_cache=self.kw_cache
-                            )
+                            container = PdfObjectStream(stream_obj, kw_cache=self.kw_cache)
                             self.object_streams[stream_num] = container
                     resolved = (
-                        container.get(obj_num, self.resolve)
-                        if container is not None
-                        else None
+                        container.get(obj_num, self.resolve) if container is not None else None
                     )
                 else:
                     lexer = self.get_lexer()

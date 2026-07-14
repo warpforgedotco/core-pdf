@@ -10,39 +10,86 @@ from functools import lru_cache
 from statistics import median
 from typing import TYPE_CHECKING, Any, Callable, Iterable, Protocol, cast
 
-from core_pdf.impl.engine.extraction.ocr.types import (
-    OcrComponentBox,
-    OcrImage,
-    OcrTextResult,
-    TESSERACT_RIL_BLOCK,
-    TESSERACT_RIL_TEXTLINE,
-    TESSERACT_RIL_WORD,
-    leptonica_pix_size_is_supported,
-    ocr_float_value,
-    ocr_int_value,
+from core_pdf.impl.engine.extraction.cache import (
+    ExtractionCache,
+    ExtractionCacheMapping,
 )
-from core_pdf.impl.engine.extraction.ocr.backend import TesseractCtypesBackend
-from core_pdf.impl.engine.extraction.common.ordering import LayoutAnalyzer
 from core_pdf.impl.engine.extraction.common import (
     observation_resolver,
     page_geometry,
     page_profile,
 )
+from core_pdf.impl.engine.extraction.common.ordering import LayoutAnalyzer
+from core_pdf.impl.engine.extraction.common.page_content import PageContentMixin
+from core_pdf.impl.engine.extraction.common.render import (
+    MarkdownRenderer,
+    render_page_observation_lines,
+    render_resolved_text_lines,
+)
 from core_pdf.impl.engine.extraction.ocr import (
     candidate_generation as ocr_candidate_generation,
+)
+from core_pdf.impl.engine.extraction.ocr import (
     candidates as ocr_candidates,
+)
+from core_pdf.impl.engine.extraction.ocr import (
     execution as ocr_execution,
+)
+from core_pdf.impl.engine.extraction.ocr import (
     full_page as ocr_full_page,
-    line_reconciliation as ocr_line_reconciliation,
+)
+from core_pdf.impl.engine.extraction.ocr import (
     layout as ocr_layout,
+)
+from core_pdf.impl.engine.extraction.ocr import (
+    line_reconciliation as ocr_line_reconciliation,
+)
+from core_pdf.impl.engine.extraction.ocr import (
     page_analysis as ocr_page_analysis,
+)
+from core_pdf.impl.engine.extraction.ocr import (
     postprocess as ocr_postprocess,
+)
+from core_pdf.impl.engine.extraction.ocr import (
     rendering as ocr_rendering,
+)
+from core_pdf.impl.engine.extraction.ocr import (
     schematic as ocr_schematic,
-    session as ocr_session_runtime,
+)
+from core_pdf.impl.engine.extraction.ocr import (
     selection as ocr_selection,
+)
+from core_pdf.impl.engine.extraction.ocr import (
+    session as ocr_session_runtime,
+)
+from core_pdf.impl.engine.extraction.ocr import (
     table_regions as ocr_table_regions,
+)
+from core_pdf.impl.engine.extraction.ocr import (
     text_analysis as ocr_text_analysis,
+)
+from core_pdf.impl.engine.extraction.ocr.backend import TesseractCtypesBackend
+from core_pdf.impl.engine.extraction.ocr.text_analysis import (
+    extracted_text_token_count,
+    normalized_text_tokens,
+    numeric_token_ratio,
+    sparse_text_looks_noisy,
+    text_ocr_quality_score,
+)
+from core_pdf.impl.engine.extraction.ocr.types import (
+    TESSERACT_RIL_BLOCK,
+    TESSERACT_RIL_TEXTLINE,
+    TESSERACT_RIL_WORD,
+    OcrComponentBox,
+    OcrImage,
+    OcrTextResult,
+    leptonica_pix_size_is_supported,
+    ocr_float_value,
+    ocr_int_value,
+)
+from core_pdf.impl.engine.extraction.ocr.vector_text import (
+    VectorStrokeOcrResult,
+    vector_stroke_ocr_result_with_timeout,
 )
 from core_pdf.impl.engine.extraction.page_text.decisions import (
     page_extraction_decision,
@@ -71,28 +118,12 @@ from core_pdf.impl.engine.extraction.page_text.policy import (
     should_replace_symbol_encoded_text_with_ocr,
     should_replace_text_with_ocr,
 )
-from core_pdf.impl.engine.extraction.common.page_content import PageContentMixin
-from core_pdf.impl.engine.extraction.common.render import MarkdownRenderer
+from core_pdf.impl.engine.extraction.tables.grid import detect_grid
+from core_pdf.impl.engine.layout import word_frequencies
+from core_pdf.impl.engine.layout.geometry import RectBox
 from core_pdf.impl.engine.layout.geometry_quality import (
     layout_geometry_summary_record,
     page_layout_geometry_summary,
-)
-from core_pdf.impl.engine.layout import word_frequencies
-from core_pdf.impl.engine.extraction.ocr.text_analysis import (
-    extracted_text_token_count,
-    normalized_text_tokens,
-    numeric_token_ratio,
-    sparse_text_looks_noisy,
-    text_ocr_quality_score,
-)
-from core_pdf.impl.engine.extraction.common.render import (
-    render_page_observation_lines,
-    render_resolved_text_lines,
-)
-from core_pdf.impl.engine.extraction.tables.grid import detect_grid
-from core_pdf.impl.engine.extraction.ocr.vector_text import (
-    VectorStrokeOcrResult,
-    vector_stroke_ocr_result_with_timeout,
 )
 from core_pdf.impl.engine.rendering import RenderOptions, compose_page
 from core_pdf.impl.engine.rendering.models import image_filter_names, pdf_int
@@ -100,20 +131,15 @@ from core_pdf.impl.engine.spec.s_07_filters.flate import apply_flate
 from core_pdf.impl.engine.spec.s_07_filters.pipeline import decode_stream_data
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_08_graphics.color import ImageColorManager
-from core_pdf.impl.engine.layout.geometry import RectBox
 from core_pdf.impl.models import TextSpan
-from core_pdf.impl.engine.extraction.cache import (
-    ExtractionCache,
-    ExtractionCacheMapping,
-)
 from core_pdf.impl.types import PdfDict
 
 if TYPE_CHECKING:
-    from core_pdf.impl.engine.layout.models import LayoutLine, TextRun
     from core_pdf.impl.engine.extraction.ocr.candidates import (
         OcrCandidate,
         OcrPageTextResult,
     )
+    from core_pdf.impl.engine.layout.models import LayoutLine, TextRun
     from core_pdf.impl.objects import PdfStream
 
 OCR_FALLBACK_DPI = ocr_execution.OCR_DEFAULT_DPI
@@ -164,9 +190,7 @@ OCR_FIGURE_SUBREGION_PAGE_SEGMENTATION_MODES = (
     ocr_execution.OCR_DEFAULT_PAGE_SEGMENTATION_MODE,
     ocr_full_page.OCR_FALLBACK_SPARSE_PAGE_SEGMENTATION_MODE,
 )
-OCR_FIGURE_FULL_PAGE_IMAGE_ONLY_WHOLE_IMAGE_PROFILES = (
-    ("base", OCR_FIGURE_BASE_VARIABLES),
-)
+OCR_FIGURE_FULL_PAGE_IMAGE_ONLY_WHOLE_IMAGE_PROFILES = (("base", OCR_FIGURE_BASE_VARIABLES),)
 OCR_FIGURE_FULL_PAGE_IMAGE_ONLY_PAGE_SEGMENTATION_MODES = (
     OCR_FIGURE_AUTO_PAGE_SEGMENTATION_MODE,
     ocr_execution.OCR_DEFAULT_PAGE_SEGMENTATION_MODE,
@@ -270,9 +294,7 @@ NONSPACE_TOKEN_RE = re.compile(r"\S+")
 ALNUM_RE = re.compile(r"[^\W_]")
 NONSPACE_RE = re.compile(r"\S")
 DIGIT_RE = re.compile(r"\d")
-UNINTERPRETABLE_TEXT_RE = re.compile(
-    "[\ue000-\uf8ff\ufffd\x00-\x08\x0b\x0c\x0e-\x1f\x7f\xad]"
-)
+UNINTERPRETABLE_TEXT_RE = re.compile("[\ue000-\uf8ff\ufffd\x00-\x08\x0b\x0c\x0e-\x1f\x7f\xad]")
 OCR_ARTIFACT_CHARS = frozenset("~_=|¦¬^°•·`“”‘’")
 VECTOR_SPATIAL_TEXT_RE = re.compile(r"[A-Za-z0-9_+\-]")
 VECTOR_SPATIAL_ALLOWED_PUNCTUATION = frozenset("+-._/")
@@ -408,13 +430,9 @@ class FigureRegionGeometryEvidence:
 @dataclass(frozen=True)
 class FigureFragmentAnalysis:
     vocabulary: set[str] = field(default_factory=set)
-    raw_clusters: dict[str, tuple[FigureFragmentCluster, ...]] = field(
-        default_factory=dict
-    )
+    raw_clusters: dict[str, tuple[FigureFragmentCluster, ...]] = field(default_factory=dict)
     slot_plan: FigureBandSlotPlan | None = None
-    fusion_support: dict[str, tuple[FigureFragmentFusionSupport, ...]] = field(
-        default_factory=dict
-    )
+    fusion_support: dict[str, tuple[FigureFragmentFusionSupport, ...]] = field(default_factory=dict)
     slot_evidence: tuple[FigureBandSlotEvidence, ...] = ()
 
 
@@ -569,9 +587,7 @@ class PageExtractionMixin(PageContentMixin):
                 cache["resolved_output_lines"] = ()
                 return fast_text
         chars = native_text_runs_for_extraction(self.chars)
-        chars = native_text_runs_inside_page_bounds(
-            chars, self.media_box, rotate=self.rotation
-        )
+        chars = native_text_runs_inside_page_bounds(chars, self.media_box, rotate=self.rotation)
         chars = native_text_runs_inside_visible_row_bands(chars, self.media_box, self)
         rendered = None
         native_output_lines = render_page_observation_lines(
@@ -595,13 +611,11 @@ class PageExtractionMixin(PageContentMixin):
         text = selected_text
         final_output_lines = native_output_lines
         if should_try_rendered_glyph_repair(chars, text):
-            chars, text, native_output_lines = (
-                apply_rendered_glyph_repair_to_native_text(
-                    self,
-                    chars,
-                    text,
-                    native_output_lines,
-                )
+            chars, text, native_output_lines = apply_rendered_glyph_repair_to_native_text(
+                self,
+                chars,
+                text,
+                native_output_lines,
             )
             final_output_lines = native_output_lines
         native_geometry_summary = native_layout_geometry_summary_for_runs(chars)
@@ -642,9 +656,7 @@ class PageExtractionMixin(PageContentMixin):
         pre_reconciliation_text_source = "native"
         schematic_ocr_supplement_candidate: OcrCandidate | None = None
         schematic_ocr_supplement_candidates: tuple[OcrCandidate, ...] = ()
-        trusted_invisible_text_layer = native_invisible_text_layer_is_trustworthy(
-            chars, text
-        )
+        trusted_invisible_text_layer = native_invisible_text_layer_is_trustworthy(chars, text)
         if cache is not None and trusted_invisible_text_layer:
             cache["ocr_skipped_for_trusted_invisible_text_layer"] = True
         if ocr_postprocess.ocr_is_enabled() and not trusted_invisible_text_layer:
@@ -655,19 +667,18 @@ class PageExtractionMixin(PageContentMixin):
                 if ocr_postprocess.should_try_vector_stroke_ocr(self, text):
                     vector_result = extract_vector_stroke_page_result(self)
                     vector_text = vector_result.text
-                    trusted_vector_stroke_text = ocr_postprocess.should_trust_vector_stroke_text_without_full_ocr(
-                        vector_result
-                    )
-                    if trusted_vector_stroke_text:
-                        text = vector_text
-                        final_output_lines = vector_stroke_result_output_lines(
-                            vector_result,
-                            text,
+                    trusted_vector_stroke_text = (
+                        ocr_postprocess.should_trust_vector_stroke_text_without_full_ocr(
+                            vector_result
                         )
-                    elif ocr_postprocess.should_replace_text_with_vector_stroke_ocr(
-                        text,
-                        vector_text,
-                        vector_result.confidence,
+                    )
+                    if (
+                        trusted_vector_stroke_text
+                        or ocr_postprocess.should_replace_text_with_vector_stroke_ocr(
+                            text,
+                            vector_text,
+                            vector_result.confidence,
+                        )
                     ):
                         text = vector_text
                         final_output_lines = vector_stroke_result_output_lines(
@@ -675,8 +686,10 @@ class PageExtractionMixin(PageContentMixin):
                             text,
                         )
                     else:
-                        supplement_lines = ocr_postprocess.vector_stroke_page_result_supplemental_resolved_lines(
-                            self, text, vector_result
+                        supplement_lines = (
+                            ocr_postprocess.vector_stroke_page_result_supplemental_resolved_lines(
+                                self, text, vector_result
+                            )
                         )
                         text, final_output_lines = append_resolved_supplement_lines(
                             text,
@@ -685,9 +698,7 @@ class PageExtractionMixin(PageContentMixin):
                         )
                 if not trusted_vector_stroke_text and (
                     ocr_postprocess.should_ocr_fallback(self, text)
-                    or ocr_postprocess.should_try_full_ocr_after_vector_stroke(
-                        vector_result
-                    )
+                    or ocr_postprocess.should_try_full_ocr_after_vector_stroke(vector_result)
                 ):
                     ocr_result = extract_ocr_page_result(
                         self,
@@ -703,12 +714,10 @@ class PageExtractionMixin(PageContentMixin):
                             cache["ocr_page_result_rejected"] = "garbled_full_page_ocr"
                     else:
                         broad_ocr_result = ocr_result
-                        merged_ocr_text = (
-                            ocr_postprocess.merge_ocr_with_vector_stroke_geometry(
-                                self,
-                                ocr_result,
-                                vector_result,
-                            )
+                        merged_ocr_text = ocr_postprocess.merge_ocr_with_vector_stroke_geometry(
+                            self,
+                            ocr_result,
+                            vector_result,
                         )
                         (
                             reconciled_ocr_text,
@@ -729,9 +738,7 @@ class PageExtractionMixin(PageContentMixin):
                                 text,
                                 ocr_result.output_lines,
                                 ocr_result.selected_output_lines,
-                                vector_stroke_result_output_lines(
-                                    vector_result, vector_text
-                                ),
+                                vector_stroke_result_output_lines(vector_result, vector_text),
                                 final_output_lines,
                             )
                             schematic_ocr_supplement_candidate = ocr_result.candidate
@@ -756,9 +763,7 @@ class PageExtractionMixin(PageContentMixin):
                             ocr_text,
                         ):
                             text = ocr_text
-                            pre_reconciliation_text_source = (
-                                "ocr_replace_symbol_encoded"
-                            )
+                            pre_reconciliation_text_source = "ocr_replace_symbol_encoded"
                             final_output_lines = ocr_result_output_lines(
                                 self,
                                 ocr_result,
@@ -786,9 +791,7 @@ class PageExtractionMixin(PageContentMixin):
                             ocr_text,
                         ):
                             text = ocr_text
-                            pre_reconciliation_text_source = (
-                                "ocr_replace_dominant_image"
-                            )
+                            pre_reconciliation_text_source = "ocr_replace_dominant_image"
                             final_output_lines = ocr_result_output_lines(
                                 self,
                                 ocr_result,
@@ -873,9 +876,7 @@ class PageExtractionMixin(PageContentMixin):
                         self,
                         ocr_session=ocr_session,
                         broad_candidate=(
-                            broad_ocr_result.candidate
-                            if broad_ocr_result is not None
-                            else None
+                            broad_ocr_result.candidate if broad_ocr_result is not None else None
                         ),
                     )
                     figure_ocr_result = ocr_result
@@ -896,11 +897,9 @@ class PageExtractionMixin(PageContentMixin):
                     self,
                     text,
                 ):
-                    embedded_image_text_result = (
-                        extract_embedded_image_text_ocr_page_result(
-                            self,
-                            ocr_session=ocr_session,
-                        )
+                    embedded_image_text_result = extract_embedded_image_text_ocr_page_result(
+                        self,
+                        ocr_session=ocr_session,
                     )
                 if (
                     broad_ocr_result is None
@@ -939,17 +938,13 @@ class PageExtractionMixin(PageContentMixin):
                     final_output_lines,
                     ocr_line_reconciliation.OcrLineReconciliationSources(
                         broad_page_result=broad_ocr_result,
-                        figure_result=None
-                        if replaced_with_figure_ocr
-                        else figure_ocr_result,
+                        figure_result=None if replaced_with_figure_ocr else figure_ocr_result,
                         embedded_image_result=embedded_image_text_result,
                         vector_result=vector_result,
                     ),
                 )
                 if reconciliation.text_lines:
-                    reconciled_text = render_resolved_text_lines(
-                        reconciliation.text_lines
-                    )
+                    reconciled_text = render_resolved_text_lines(reconciliation.text_lines)
                     if reconciled_text and reconciled_text != text:
                         text = reconciled_text
                         final_output_lines = reconciliation.text_lines
@@ -971,31 +966,20 @@ class PageExtractionMixin(PageContentMixin):
                     pruned_output_lines,
                     broad_page_result=broad_ocr_result,
                 )
-                pruned_output_lines = (
-                    ocr_postprocess.prune_weak_ocr_artifact_output_lines(
-                        pruned_output_lines
-                    )
+                pruned_output_lines = ocr_postprocess.prune_weak_ocr_artifact_output_lines(
+                    pruned_output_lines
                 )
-                pruned_output_lines = (
-                    ocr_postprocess.prune_embedded_image_band_noise_output_lines(
-                        pruned_output_lines
-                    )
+                pruned_output_lines = ocr_postprocess.prune_embedded_image_band_noise_output_lines(
+                    pruned_output_lines
                 )
-                pruned_output_lines = (
-                    ocr_postprocess.prune_malformed_edge_url_output_lines(
-                        pruned_output_lines
-                    )
+                pruned_output_lines = ocr_postprocess.prune_malformed_edge_url_output_lines(
+                    pruned_output_lines
                 )
                 pruning_ocr_result = broad_ocr_result
-                if (
-                    pruning_ocr_result is not None
-                    and pruning_ocr_result.candidate is not None
-                ):
-                    pruned_output_lines = (
-                        ocr_postprocess.repair_word_geometry_noise_output_lines(
-                            pruned_output_lines,
-                            pruning_ocr_result.candidate,
-                        )
+                if pruning_ocr_result is not None and pruning_ocr_result.candidate is not None:
+                    pruned_output_lines = ocr_postprocess.repair_word_geometry_noise_output_lines(
+                        pruned_output_lines,
+                        pruning_ocr_result.candidate,
                     )
                 pruned_output_lines = ocr_postprocess.prune_edge_noise_output_lines(
                     pruned_output_lines
@@ -1024,9 +1008,7 @@ class PageExtractionMixin(PageContentMixin):
         )
         if cache is not None:
             cache["page_region_classification"] = region_classification
-        if ocr_schematic.region_classification_supports_schematic_consensus(
-            region_classification
-        ):
+        if ocr_schematic.region_classification_supports_schematic_consensus(region_classification):
             previous_text = text
             schematic_text = ocr_schematic.repair_schematic_ocr_text_with_support(
                 text,
@@ -1048,17 +1030,13 @@ class PageExtractionMixin(PageContentMixin):
         cached_ocr_result = broad_ocr_result
         cached_candidates = tuple(
             candidate
-            for candidate in (
-                cached_ocr_result.candidates if cached_ocr_result is not None else ()
-            )
+            for candidate in (cached_ocr_result.candidates if cached_ocr_result is not None else ())
             if isinstance(candidate, ocr_candidates.OcrCandidate)
         )
         if cached_candidates:
-            supplemented_text = (
-                ocr_postprocess.append_line_art_ocr_candidate_supplement(
-                    text,
-                    tuple(cached_candidates),
-                )
+            supplemented_text = ocr_postprocess.append_line_art_ocr_candidate_supplement(
+                text,
+                tuple(cached_candidates),
             )
             if supplemented_text != text:
                 text = supplemented_text
@@ -1070,15 +1048,11 @@ class PageExtractionMixin(PageContentMixin):
             vector_text,
         ]
         token_repair_support_texts.extend(
-            str(candidate.result.text)
-            for candidate in cached_candidates
-            if candidate.result.text
+            str(candidate.result.text) for candidate in cached_candidates if candidate.result.text
         )
-        repaired_output_lines = (
-            ocr_postprocess.repair_document_local_identifier_output_lines(
-                final_output_lines,
-                support_texts=token_repair_support_texts,
-            )
+        repaired_output_lines = ocr_postprocess.repair_document_local_identifier_output_lines(
+            final_output_lines,
+            support_texts=token_repair_support_texts,
         )
         if repaired_output_lines != final_output_lines:
             final_output_lines = repaired_output_lines
@@ -1094,16 +1068,14 @@ class PageExtractionMixin(PageContentMixin):
             if geometry_repaired_output_lines != final_output_lines:
                 final_output_lines = geometry_repaired_output_lines
                 text = render_resolved_text_lines(final_output_lines)
-        shadow_pruned_output_lines = (
-            ocr_postprocess.prune_shadowed_selected_output_lines(final_output_lines)
+        shadow_pruned_output_lines = ocr_postprocess.prune_shadowed_selected_output_lines(
+            final_output_lines
         )
         if shadow_pruned_output_lines != final_output_lines:
             final_output_lines = shadow_pruned_output_lines
             text = render_resolved_text_lines(final_output_lines)
-        suffix_pruned_output_lines = (
-            ocr_postprocess.prune_shadowed_band_split_suffix_output_lines(
-                final_output_lines
-            )
+        suffix_pruned_output_lines = ocr_postprocess.prune_shadowed_band_split_suffix_output_lines(
+            final_output_lines
         )
         if suffix_pruned_output_lines != final_output_lines:
             final_output_lines = suffix_pruned_output_lines
@@ -1127,9 +1099,7 @@ class PageExtractionMixin(PageContentMixin):
                 text,
                 final_output_lines,
             )
-        compacted_footnote_url_text = ocr_postprocess.compact_footnote_url_markers_text(
-            text
-        )
+        compacted_footnote_url_text = ocr_postprocess.compact_footnote_url_markers_text(text)
         if compacted_footnote_url_text != text:
             text = compacted_footnote_url_text
             final_output_lines = best_effort_resolved_text_lines(
@@ -1208,8 +1178,7 @@ def fuse_table_ocr_candidates(
     raw_table_candidates = [
         candidate
         for candidate in candidates
-        if candidate.name in ocr_table_regions.OCR_TABLE_CANDIDATE_NAMES
-        and candidate.result.text
+        if candidate.name in ocr_table_regions.OCR_TABLE_CANDIDATE_NAMES and candidate.result.text
     ]
     if not raw_table_candidates:
         return TableOcrFusionResult(
@@ -1392,9 +1361,9 @@ def ocr_output_line_repair_candidate_is_less_refined_sibling(
         candidate.name
     ) != ocr_selection.ocr_variant_source_name(selected_candidate.name):
         return False
-    return ocr_candidate_refinement_rank(
-        candidate.name
-    ) < ocr_candidate_refinement_rank(selected_candidate.name)
+    return ocr_candidate_refinement_rank(candidate.name) < ocr_candidate_refinement_rank(
+        selected_candidate.name
+    )
 
 
 def ocr_candidate_refinement_rank(name: str) -> int:
@@ -1425,9 +1394,7 @@ def repair_ocr_output_lines_with_candidate(
         if candidate_index is None:
             continue
         candidate_record = candidate_records[candidate_index]
-        current_confidence = page_geometry.numeric_confidence(
-            current.observation.confidence
-        )
+        current_confidence = page_geometry.numeric_confidence(current.observation.confidence)
         if not should_replace_ocr_output_line_with_alternate(
             current.text,
             candidate_record.text,
@@ -1436,9 +1403,7 @@ def repair_ocr_output_lines_with_candidate(
             geometry_score=geometry_score,
         ):
             continue
-        observation = table_ocr_record_observation(
-            candidate_record, line_index=line_index
-        )
+        observation = table_ocr_record_observation(candidate_record, line_index=line_index)
         repaired[line_index] = replace(
             current,
             text=candidate_record.text,
@@ -1491,9 +1456,7 @@ def should_replace_ocr_output_line_with_alternate(
     candidate_tokens = normalized_text_tokens(candidate)
     if len(candidate_tokens) < max(2, int(len(current_tokens) * 0.55)):
         return False
-    if len(candidate_tokens) > max(
-        len(current_tokens) + 16, int(len(current_tokens) * 1.9)
-    ):
+    if len(candidate_tokens) > max(len(current_tokens) + 16, int(len(current_tokens) * 1.9)):
         return False
     current_quality = text_ocr_quality_score(current)
     candidate_quality = text_ocr_quality_score(candidate)
@@ -1506,9 +1469,7 @@ def should_replace_ocr_output_line_with_alternate(
     ):
         return False
     current_conf = current_confidence if current_confidence is not None else 0.0
-    candidate_conf = (
-        float(candidate_confidence) if candidate_confidence is not None else 0.0
-    )
+    candidate_conf = float(candidate_confidence) if candidate_confidence is not None else 0.0
     if alternate_ocr_line_extends_short_numeric_token(
         current_tokens,
         candidate_tokens,
@@ -1575,8 +1536,7 @@ def alternate_ocr_line_drops_connector_payload(
     if current_counts == candidate_counts:
         return False
     return any(
-        count > candidate_counts[token]
-        and alternate_ocr_line_connector_payload_token(token)
+        count > candidate_counts[token] and alternate_ocr_line_connector_payload_token(token)
         for token, count in current_counts.items()
     )
 
@@ -1612,9 +1572,7 @@ def alternate_ocr_line_extends_short_numeric_token(
         return False
     if len(candidate) <= len(current):
         return False
-    return (
-        current_confidence >= 50.0 or candidate_confidence <= current_confidence + 5.0
-    )
+    return current_confidence >= 50.0 or candidate_confidence <= current_confidence + 5.0
 
 
 def lower_confidence_token_substitution_is_untrusted(
@@ -1754,9 +1712,7 @@ def table_ocr_base_line_records(
             continue
         used_rows.add(row_index)
         row_record = row_records[row_index]
-        records.append(
-            TableOcrFusionLine(line, row_record.observation, row_record.confidence)
-        )
+        records.append(TableOcrFusionLine(line, row_record.observation, row_record.confidence))
     return records
 
 
@@ -1769,11 +1725,7 @@ def table_ocr_candidate_line_records(
     )
     if row_records:
         return row_records
-    return [
-        TableOcrFusionLine(line)
-        for line in candidate.result.text.splitlines()
-        if line.strip()
-    ]
+    return [TableOcrFusionLine(line) for line in candidate.result.text.splitlines() if line.strip()]
 
 
 def table_ocr_row_fusion_lines(
@@ -1827,7 +1779,7 @@ def table_ocr_row_page_bbox(
         return None
     try:
         x0, y0, x1, y1 = (float(value) for value in bbox)
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return None
     if x1 <= x0 or y1 <= y0:
         return None
@@ -1838,7 +1790,7 @@ def table_ocr_row_confidence(row: dict[str, Any]) -> int | None:
     confidence = row.get("conf")
     try:
         return int(confidence) if confidence is not None else None
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return None
 
 
@@ -2062,25 +2014,13 @@ def table_ocr_should_replace_line(
     if match_kind == "geometry" and geometry_score >= 0.72:
         if table_quality > min(0.42, base_quality + 0.16):
             return False
-        if table_ocr_line_looks_weak(base_line) and len(table_tokens) >= len(
-            base_tokens
-        ):
+        if table_ocr_line_looks_weak(base_line) and len(table_tokens) >= len(base_tokens):
             return True
-        if (
-            new_tokens >= max(2, int(len(table_tokens) * 0.35))
-            and table_quality <= 0.28
-        ):
+        if new_tokens >= max(2, int(len(table_tokens) * 0.35)) and table_quality <= 0.28:
             return True
-        if (
-            len(table_tokens) >= len(base_tokens) + 2
-            and table_quality + 0.06 < base_quality
-        ):
+        if len(table_tokens) >= len(base_tokens) + 2 and table_quality + 0.06 < base_quality:
             return True
-    if (
-        match_score >= 0.90
-        and len(table_tokens) >= len(base_tokens) + 2
-        and table_quality <= 0.28
-    ):
+    if match_score >= 0.90 and len(table_tokens) >= len(base_tokens) + 2 and table_quality <= 0.28:
         return True
     if table_quality > min(0.42, base_quality + 0.10):
         return False
@@ -2088,9 +2028,7 @@ def table_ocr_should_replace_line(
         return True
     if match_score >= 0.72 and len(table_tokens) >= len(base_tokens) + 2:
         return True
-    return bool(
-        new_tokens >= 2 and match_score >= 0.55 and table_quality + 0.045 < base_quality
-    )
+    return bool(new_tokens >= 2 and match_score >= 0.55 and table_quality + 0.045 < base_quality)
 
 
 def table_ocr_line_looks_weak(line: str) -> bool:
@@ -2226,9 +2164,7 @@ def form_blank_supplement_text_is_eligible(text: str) -> bool:
     return numeric_token_ratio(text) < 0.35
 
 
-def empty_form_grid_cell_count(
-    page: PageExtractionHost, lines: list[Any]
-) -> tuple[int, int]:
+def empty_form_grid_cell_count(page: PageExtractionHost, lines: list[Any]) -> tuple[int, int]:
     grid = detect_grid(lines)
     if grid is None:
         return 0, 0
@@ -2237,8 +2173,7 @@ def empty_form_grid_cell_count(
     chars = [
         char
         for char in getattr(page, "chars", ())
-        if getattr(char, "text", "").strip()
-        and not getattr(char, "stripped_text", "").isspace()
+        if getattr(char, "text", "").strip() and not getattr(char, "stripped_text", "").isspace()
     ]
     count = 0
     total = 0
@@ -2285,7 +2220,7 @@ def isolated_form_underline_count(lines: list[Any]) -> int:
             x0, x1 = sorted((float(line.x0), float(line.x1)))
             y0, y1 = sorted((float(line.y0), float(line.y1)))
             line_width = float(getattr(line, "line_width", 1.0))
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             continue
         width = x1 - x0
         height = y1 - y0
@@ -2299,15 +2234,10 @@ def isolated_form_underline_count(lines: list[Any]) -> int:
         width = x1 - x0
         if not (24.0 <= width <= 260.0):
             continue
-        if any(
-            abs(y - old_y) <= 1.0 and abs(x0 - old_x0) <= 2.0
-            for old_x0, old_y, _ in seen
-        ):
+        if any(abs(y - old_y) <= 1.0 and abs(x0 - old_x0) <= 2.0 for old_x0, old_y, _ in seen):
             continue
         intersections = sum(
-            1
-            for x, y0, y1 in verticals
-            if x0 - 1.0 <= x <= x1 + 1.0 and y0 - 1.0 <= y <= y1 + 1.0
+            1 for x, y0, y1 in verticals if x0 - 1.0 <= x <= x1 + 1.0 and y0 - 1.0 <= y <= y1 + 1.0
         )
         if intersections == 0:
             seen.append((x0, y, x1))
@@ -2376,19 +2306,14 @@ def extract_figure_ocr_page_result(
                 reused_candidate,
                 region,
             )
-            if (
-                geometry_candidate is not None
-                and figure_geometry_candidate_is_material_improvement(
-                    geometry_candidate,
-                    reused_candidate,
-                )
+            if geometry_candidate is not None and figure_geometry_candidate_is_material_improvement(
+                geometry_candidate,
+                reused_candidate,
             ):
                 candidates.append(geometry_candidate)
                 region_candidates.append(geometry_candidate)
         for image_view_name, image_view in image_views:
-            for profile_name, variables in figure_whole_image_profiles_for_region(
-                region
-            ):
+            for profile_name, variables in figure_whole_image_profiles_for_region(region):
                 profile_candidate_count = len(region_candidates)
                 psms = list(figure_source_page_segmentation_modes_for_region(region))
                 if (
@@ -2437,9 +2362,7 @@ def extract_figure_ocr_page_result(
                         ocr_result,
                         ocr_image_view,
                     )
-                    candidate = figure_candidate_with_layout_text(
-                        candidate, region.bbox
-                    )
+                    candidate = figure_candidate_with_layout_text(candidate, region.bbox)
                     candidates.append(candidate)
                     region_candidates.append(candidate)
                 if (
@@ -2453,10 +2376,7 @@ def extract_figure_ocr_page_result(
                 ):
                     break
 
-        if (
-            figure_region_is_image_only_full_page(region)
-            and broad_candidate is not None
-        ):
+        if figure_region_is_image_only_full_page(region) and broad_candidate is not None:
             geometry_plan = figure_region_geometry_plan(
                 broad_candidate,
                 region_bbox=region.bbox,
@@ -2479,27 +2399,20 @@ def extract_figure_ocr_page_result(
                 for candidate in group_candidates:
                     candidates.append(candidate)
 
-        should_try_full_page_subregions = (
-            figure_should_try_full_page_subregion_recovery(
-                region,
-                region_candidates,
-            )
+        should_try_full_page_subregions = figure_should_try_full_page_subregion_recovery(
+            region,
+            region_candidates,
         )
         include_grid_subregions = figure_should_include_grid_subregions(
             region,
             region_candidates,
         )
-        if (
-            not figure_region_is_image_only_full_page(region)
-            or should_try_full_page_subregions
-        ):
+        if not figure_region_is_image_only_full_page(region) or should_try_full_page_subregions:
             should_try_fixed_grid_subregions = True
             if fixed_grid_subregions:
-                should_try_fixed_grid_subregions = (
-                    figure_fixed_grid_subregion_retry_is_needed(
-                        region,
-                        region_candidates,
-                    )
+                should_try_fixed_grid_subregions = figure_fixed_grid_subregion_retry_is_needed(
+                    region,
+                    region_candidates,
                 )
             subregion_candidates: list[OcrCandidate] = []
             if should_try_fixed_grid_subregions:
@@ -2533,9 +2446,7 @@ def extract_figure_ocr_page_result(
                     candidates.append(candidate)
                     region_candidates.append(candidate)
 
-            if not fixed_grid_subregions and not figure_region_is_image_only_full_page(
-                region
-            ):
+            if not fixed_grid_subregions and not figure_region_is_image_only_full_page(region):
                 pixel_subregion_candidates = figure_pixel_subregion_ocr_candidates(
                     region,
                     image_views,
@@ -2586,8 +2497,7 @@ def extract_embedded_image_text_ocr_page_result(
     text = "\n".join(line.text for line in selected_lines)
     confidence = embedded_image_text_confidence(candidates)
     line_rows = tuple(
-        embedded_image_text_line_row(line, index)
-        for index, line in enumerate(selected_lines)
+        embedded_image_text_line_row(line, index) for index, line in enumerate(selected_lines)
     )
     result_text = OcrTextResult(text, confidence, line_rows=line_rows)
     embedded_candidate = (
@@ -2630,9 +2540,7 @@ def embedded_image_text_regions(
             continue
         pixels = int(metadata.get("pixels") or 0)
         if not (
-            OCR_EMBEDDED_IMAGE_TEXT_MIN_PIXELS
-            <= pixels
-            <= OCR_EMBEDDED_IMAGE_TEXT_WIDE_MAX_PIXELS
+            OCR_EMBEDDED_IMAGE_TEXT_MIN_PIXELS <= pixels <= OCR_EMBEDDED_IMAGE_TEXT_WIDE_MAX_PIXELS
         ):
             continue
         box = page_geometry.normalize_rect(item.data.get("bbox"))
@@ -2667,9 +2575,7 @@ def embedded_image_text_regions(
                 },
             )
         )
-    result = tuple(
-        sorted(regions, key=lambda region: (-region.bbox[3], region.bbox[0]))
-    )
+    result = tuple(sorted(regions, key=lambda region: (-region.bbox[3], region.bbox[0])))
     if cache is not None:
         cache[cache_key] = result
     return result
@@ -2689,9 +2595,7 @@ def embedded_image_text_region_is_eligible(
         return False
     aspect = width / height
     if (
-        OCR_EMBEDDED_IMAGE_TEXT_MIN_PIXELS
-        <= pixels
-        <= OCR_EMBEDDED_IMAGE_TEXT_MAX_PIXELS
+        OCR_EMBEDDED_IMAGE_TEXT_MIN_PIXELS <= pixels <= OCR_EMBEDDED_IMAGE_TEXT_MAX_PIXELS
         and area_ratio <= OCR_EMBEDDED_IMAGE_TEXT_MAX_AREA_RATIO
         and OCR_EMBEDDED_IMAGE_TEXT_MIN_ASPECT_RATIO
         <= aspect
@@ -2699,9 +2603,7 @@ def embedded_image_text_region_is_eligible(
     ):
         return True
     return (
-        OCR_EMBEDDED_IMAGE_TEXT_MIN_PIXELS
-        <= pixels
-        <= OCR_EMBEDDED_IMAGE_TEXT_WIDE_MAX_PIXELS
+        OCR_EMBEDDED_IMAGE_TEXT_MIN_PIXELS <= pixels <= OCR_EMBEDDED_IMAGE_TEXT_WIDE_MAX_PIXELS
         and area_ratio <= OCR_EMBEDDED_IMAGE_TEXT_WIDE_MAX_AREA_RATIO
         and OCR_EMBEDDED_IMAGE_TEXT_WIDE_MIN_ASPECT_RATIO
         <= aspect
@@ -2778,30 +2680,23 @@ def embedded_image_text_region_candidates_are_sufficient(
     for candidate in candidates:
         lines.extend(embedded_image_text_selected_lines(candidate, region))
     selected = embedded_image_text_best_lines(lines)
-    families = {
-        embedded_image_text_candidate_family(line.candidate.name) for line in selected
-    }
+    families = {embedded_image_text_candidate_family(line.candidate.name) for line in selected}
     if not {"top", "bottom"} <= families:
         return False
     top_bottom_lines = [
         line
         for line in selected
-        if embedded_image_text_candidate_family(line.candidate.name)
-        in {"top", "bottom"}
+        if embedded_image_text_candidate_family(line.candidate.name) in {"top", "bottom"}
     ]
     if len(top_bottom_lines) < 2:
         return False
-    return all(
-        embedded_image_text_line_score(line) >= 18.0 for line in top_bottom_lines
-    )
+    return all(embedded_image_text_line_score(line) >= 18.0 for line in top_bottom_lines)
 
 
 def embedded_image_text_view_batches(
     image: OcrImage,
 ) -> list[list[tuple[str, OcrImage]]]:
-    linear_center_views: list[tuple[str, OcrImage]] = embedded_image_text_wide_views(
-        image
-    )
+    linear_center_views: list[tuple[str, OcrImage]] = embedded_image_text_wide_views(image)
     linear_center_views.extend(embedded_image_text_linear_views(image))
     linear_center_views.extend(embedded_image_text_center_views(image))
     top_views: list[tuple[str, OcrImage]] = []
@@ -3013,9 +2908,7 @@ def transform_ocr_image_pixels(
                 source_y = image.height - 1 - y
             else:
                 return None
-            source_offset = (
-                source_y * image.bytes_per_line + source_x * image.bytes_per_pixel
-            )
+            source_offset = source_y * image.bytes_per_line + source_x * image.bytes_per_pixel
             target_offset = y * target_row_bytes + x * image.bytes_per_pixel
             target[target_offset : target_offset + image.bytes_per_pixel] = image.data[
                 source_offset : source_offset + image.bytes_per_pixel
@@ -3059,9 +2952,7 @@ def polar_unwrap_embedded_image_text_ring(
         radius = inner_radius + (outer_radius - inner_radius) * radius_t
         for target_x in range(width):
             angle_t = target_x / max(1, width - 1)
-            angle = math.radians(
-                start_degrees + (end_degrees - start_degrees) * angle_t
-            )
+            angle = math.radians(start_degrees + (end_degrees - start_degrees) * angle_t)
             red, green, blue = embedded_image_sample_rgb(
                 image,
                 center_x + math.cos(angle) * radius,
@@ -3265,9 +3156,7 @@ def embedded_image_flush_span_record(
         return
     confidences = [embedded_image_text_row_confidence(row) for row in rows]
     numeric_confidences = [value for value in confidences if value is not None]
-    confidence = (
-        int(round(median(numeric_confidences))) if numeric_confidences else None
-    )
+    confidence = int(round(median(numeric_confidences))) if numeric_confidences else None
     left, top, right, bottom = bounds
     records.append(
         EmbeddedImageTextSpanRecord(
@@ -3291,7 +3180,7 @@ def embedded_image_text_word_rows_bounds(
             top = int(row.get("top", 0))
             width = int(row.get("width", 0))
             height = int(row.get("height", 0))
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             continue
         if width <= 0 or height <= 0:
             continue
@@ -3309,7 +3198,7 @@ def embedded_image_text_word_rows_bounds(
 def embedded_image_text_row_confidence(row: dict[str, Any]) -> int | None:
     try:
         return int(row.get("conf", 0))
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return None
 
 
@@ -3396,8 +3285,7 @@ def embedded_image_text_best_lines(
         )
         grouped.setdefault(key, []).append(line)
     selected = [
-        max(group, key=embedded_image_text_line_score)
-        for key, group in sorted(grouped.items())
+        max(group, key=embedded_image_text_line_score) for key, group in sorted(grouped.items())
     ]
     selected = embedded_image_text_drop_subset_lines(selected)
     return sorted(
@@ -3550,9 +3438,7 @@ def embedded_image_text_common_prefix_completion(prefix: str) -> str | None:
         return prefix.upper()
     best_word: str | None = None
     best_rank: int | None = None
-    for word, frequency in word_frequencies.english_word_frequency_prefix_items(
-        normalized
-    ):
+    for word, frequency in word_frequencies.english_word_frequency_prefix_items(normalized):
         if frequency.rank > 40_000:
             continue
         if not word.startswith(normalized):
@@ -3572,15 +3458,11 @@ def dominant_image_common_prefix_completion(prefix: str) -> str | None:
     if not prefix.isalpha() or len(prefix) < 3:
         return None
     normalized = prefix.casefold()
-    if len(normalized) >= 5 and word_frequencies.is_common_word(
-        normalized, max_rank=20_000
-    ):
+    if len(normalized) >= 5 and word_frequencies.is_common_word(normalized, max_rank=20_000):
         return prefix.upper()
     best_word: str | None = None
     best_key: tuple[int, int, int] | None = None
-    for word, frequency in word_frequencies.english_word_frequency_prefix_items(
-        normalized
-    ):
+    for word, frequency in word_frequencies.english_word_frequency_prefix_items(normalized):
         if frequency.rank > 20_000:
             continue
         if not word.startswith(normalized):
@@ -3614,7 +3496,7 @@ def embedded_image_text_words(
         return None
     try:
         confidence = int(row.get("conf", 0))
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         confidence = 0
     if confidence < 70:
         return None
@@ -3658,7 +3540,7 @@ def embedded_image_text_short_word_touches_strip_edge(
     try:
         left = int(row.get("left", 0))
         width = int(row.get("width", 0))
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return False
     if width <= 0:
         return False
@@ -3742,8 +3624,7 @@ def embedded_image_text_span_is_useful(
     long_unknown_words = [
         word
         for word in alpha_words
-        if len(word) >= 5
-        and not word_frequencies.is_common_word(word, max_rank=120_000)
+        if len(word) >= 5 and not word_frequencies.is_common_word(word, max_rank=120_000)
     ]
     if long_unknown_words:
         return False
@@ -3882,14 +3763,10 @@ def crop_ocr_image_region(
         return None
     data = bytearray(target_row_bytes * region.height)
     for y in range(region.height):
-        source_start = (
-            region.y0 + y
-        ) * source_row_bytes + region.x0 * image.bytes_per_pixel
+        source_start = (region.y0 + y) * source_row_bytes + region.x0 * image.bytes_per_pixel
         source_stop = source_start + target_row_bytes
         target_start = y * target_row_bytes
-        data[target_start : target_start + target_row_bytes] = image.data[
-            source_start:source_stop
-        ]
+        data[target_start : target_start + target_row_bytes] = image.data[source_start:source_stop]
     return OcrImage(
         bytes(data),
         region.width,
@@ -3988,11 +3865,7 @@ def ocr_image_text_cluster_boxes(
     if not boxes:
         return []
     boxes = ocr_merge_overlapping_image_regions(boxes)
-    boxes = [
-        box
-        for box in boxes
-        if box.area >= OCR_EMBEDDED_IMAGE_TEXT_MIN_LINEAR_REGION_PIXELS
-    ]
+    boxes = [box for box in boxes if box.area >= OCR_EMBEDDED_IMAGE_TEXT_MIN_LINEAR_REGION_PIXELS]
     boxes.sort(key=lambda box: (box.y0, box.x0, -box.area))
     return boxes[:max_regions]
 
@@ -4004,9 +3877,7 @@ def ocr_image_foreground_mask(image: OcrImage) -> bytearray | None:
         return None
     if image.bytes_per_line < image.width * image.bytes_per_pixel:
         return None
-    required = (
-        image.height - 1
-    ) * image.bytes_per_line + image.width * image.bytes_per_pixel
+    required = (image.height - 1) * image.bytes_per_line + image.width * image.bytes_per_pixel
     if len(image.data) < required:
         return None
     data = image.data
@@ -4037,11 +3908,7 @@ def ocr_image_foreground_mask(image: OcrImage) -> bytearray | None:
                 gray = (red * 30 + green * 59 + blue * 11) // 100
                 distance_from_white = max(255 - red, 255 - green, 255 - blue)
                 saturation = max(red, green, blue) - min(red, green, blue)
-                if (
-                    gray <= 238
-                    or distance_from_white >= 38
-                    or (saturation >= 28 and gray <= 248)
-                ):
+                if gray <= 238 or distance_from_white >= 38 or (saturation >= 28 and gray <= 248):
                     mask[index] = 1
             index += 1
             offset += bytes_per_pixel
@@ -4060,9 +3927,7 @@ def embedded_image_pixel_is_foreground(image: OcrImage, offset: int) -> bool:
     gray = (red * 30 + green * 59 + blue * 11) // 100
     distance_from_white = max(255 - red, 255 - green, 255 - blue)
     saturation = max(red, green, blue) - min(red, green, blue)
-    return (
-        gray <= 238 or distance_from_white >= 38 or (saturation >= 28 and gray <= 248)
-    )
+    return gray <= 238 or distance_from_white >= 38 or (saturation >= 28 and gray <= 248)
 
 
 def ocr_foreground_row_counts(
@@ -4071,8 +3936,7 @@ def ocr_foreground_row_counts(
     height: int,
 ) -> list[int]:
     return [
-        sum(mask[row_start : row_start + width])
-        for row_start in range(0, width * height, width)
+        sum(mask[row_start : row_start + width]) for row_start in range(0, width * height, width)
     ]
 
 
@@ -4231,9 +4095,7 @@ def figure_ocr_image_variants(
             source=f"{darkened.source}_scale{OCR_FIGURE_IMAGE_VIEW_SCALE}",
         )
         if scaled_darkened is not None:
-            variants.append(
-                (f"dark_scale{OCR_FIGURE_IMAGE_VIEW_SCALE}", scaled_darkened)
-            )
+            variants.append((f"dark_scale{OCR_FIGURE_IMAGE_VIEW_SCALE}", scaled_darkened))
     return variants
 
 
@@ -4296,9 +4158,7 @@ def figure_subregion_ocr_candidates(
         if image.bytes_per_pixel not in {1, 3, 4} or not image.data:
             continue
         for index, box in enumerate(boxes, start=1):
-            source_name = (
-                f"figure_region_{region.item_index}_{image_view_name}_subregion_{index}"
-            )
+            source_name = f"figure_region_{region.item_index}_{image_view_name}_subregion_{index}"
             scaled_crop, results_by_profile = figure_subregion_text_results(
                 image,
                 box,
@@ -4351,11 +4211,7 @@ def figure_candidate_supports_reduced_subregion_profiles(
     result = candidate.result
     tokens = extracted_text_token_count(result.text)
     confidence = result.confidence if result.confidence is not None else 0
-    return (
-        tokens >= 350
-        and confidence >= 85
-        and text_ocr_quality_score(result.text) <= 0.28
-    )
+    return tokens >= 350 and confidence >= 85 and text_ocr_quality_score(result.text) <= 0.28
 
 
 def figure_callout_cluster_ocr_candidates(
@@ -4379,7 +4235,9 @@ def figure_callout_cluster_ocr_candidates(
         if image.bytes_per_pixel not in {1, 3, 4} or not image.data:
             continue
         for index, box in enumerate(boxes, start=1):
-            source_name = f"figure_region_{region.item_index}_{image_view_name}_callout_cluster_{index}"
+            source_name = (
+                f"figure_region_{region.item_index}_{image_view_name}_callout_cluster_{index}"
+            )
             scaled_crop, results_by_profile = figure_subregion_text_results(
                 image,
                 box,
@@ -4460,9 +4318,7 @@ def figure_rendered_micro_band_ocr_candidates(
         if scaled_crop is None or results_by_profile is None:
             continue
         for profile_name, _variables in profiles:
-            for psm, ocr_result in zip(
-                psms, results_by_profile[profile_name], strict=False
-            ):
+            for psm, ocr_result in zip(psms, results_by_profile[profile_name], strict=False):
                 candidate = ocr_candidate_generation.ocr_candidate_from_image(
                     f"{source_name}_{profile_name}_psm{psm}",
                     ocr_result,
@@ -4524,9 +4380,7 @@ def figure_rendered_micro_fragment_ocr_candidates(
         if scaled_crop is None or results_by_profile is None:
             continue
         for profile_name, _variables in profiles:
-            for psm, ocr_result in zip(
-                psms, results_by_profile[profile_name], strict=False
-            ):
+            for psm, ocr_result in zip(psms, results_by_profile[profile_name], strict=False):
                 candidate = ocr_candidate_generation.ocr_candidate_from_image(
                     f"{source_name}_{profile_name}_psm{psm}",
                     ocr_result,
@@ -4573,9 +4427,7 @@ def figure_rendered_band_slot_ocr_candidates(
     candidates: list[OcrCandidate] = []
     seen_boxes: list[tuple[float, float, float, float]] = []
     for index, slot in enumerate(planned_slots, start=1):
-        if any(
-            dominant_image_label_boxes_match(slot.gap_bbox, seen) for seen in seen_boxes
-        ):
+        if any(dominant_image_label_boxes_match(slot.gap_bbox, seen) for seen in seen_boxes):
             continue
         seen_boxes.append(slot.gap_bbox)
         source_name = f"figure_region_{region.item_index}_band_slot_{index}"
@@ -4592,9 +4444,7 @@ def figure_rendered_band_slot_ocr_candidates(
             )
             if scaled_crop is None or results_by_profile is None:
                 continue
-            for psm, ocr_result in zip(
-                psms, results_by_profile[profile_name], strict=False
-            ):
+            for psm, ocr_result in zip(psms, results_by_profile[profile_name], strict=False):
                 candidate = ocr_candidate_generation.ocr_candidate_from_image(
                     f"{source_name}_{profile_name}_psm{psm}",
                     ocr_result,
@@ -4646,7 +4496,9 @@ def figure_rendered_band_slot_subwindow_ocr_candidates(
             if any(dominant_image_label_boxes_match(box, seen) for seen in seen_boxes):
                 continue
             seen_boxes.append(box)
-            source_name = f"figure_region_{region.item_index}_band_slot_{slot_index}_window_{window_index}"
+            source_name = (
+                f"figure_region_{region.item_index}_band_slot_{slot_index}_window_{window_index}"
+            )
             scaled_crop, results_by_profile = figure_subregion_text_results(
                 image,
                 box,
@@ -4660,9 +4512,7 @@ def figure_rendered_band_slot_subwindow_ocr_candidates(
             if scaled_crop is None or results_by_profile is None:
                 continue
             for profile_name, _variables in profiles:
-                for psm, ocr_result in zip(
-                    psms, results_by_profile[profile_name], strict=False
-                ):
+                for psm, ocr_result in zip(psms, results_by_profile[profile_name], strict=False):
                     candidate = ocr_candidate_generation.ocr_candidate_from_image(
                         f"{source_name}_{profile_name}_psm{psm}",
                         ocr_result,
@@ -4711,25 +4561,19 @@ def figure_broad_candidate_micro_band_boxes(
         target_band: list[ocr_page_analysis.TextGeometryLine] | None = None
         for band in vertical_bands:
             band_boxes = [
-                item.observation.bbox
-                for item in band
-                if item.observation.bbox is not None
+                item.observation.bbox for item in band if item.observation.bbox is not None
             ]
             if not band_boxes:
                 continue
-            band_center_y = sum((box[1] + box[3]) * 0.5 for box in band_boxes) / len(
-                band_boxes
-            )
-            band_height = max(box[3] for box in band_boxes) - min(
-                box[1] for box in band_boxes
-            )
+            band_center_y = sum((box[1] + box[3]) * 0.5 for box in band_boxes) / len(band_boxes)
+            band_height = max(box[3] for box in band_boxes) - min(box[1] for box in band_boxes)
             line_height = bbox[3] - bbox[1]
             new_top = min(bbox[1], min(box[1] for box in band_boxes))
             new_bottom = max(bbox[3], max(box[3] for box in band_boxes))
             new_height = new_bottom - new_top
-            if new_height <= max(72.0, line_height * 6.0) and abs(
-                center_y - band_center_y
-            ) <= max(42.0, max(band_height, line_height) * 1.5):
+            if new_height <= max(72.0, line_height * 6.0) and abs(center_y - band_center_y) <= max(
+                42.0, max(band_height, line_height) * 1.5
+            ):
                 target_band = band
                 break
         if target_band is None:
@@ -4740,18 +4584,14 @@ def figure_broad_candidate_micro_band_boxes(
     for band in vertical_bands:
         ordered = sorted(
             [line for line in band if line.observation.bbox is not None],
-            key=lambda item: cast(
-                tuple[float, float, float, float], item.observation.bbox
-            )[0],
+            key=lambda item: cast(tuple[float, float, float, float], item.observation.bbox)[0],
         )
         if len(ordered) < 4:
             continue
         segments: list[list[ocr_page_analysis.TextGeometryLine]] = []
         current: list[ocr_page_analysis.TextGeometryLine] = [ordered[0]]
         for previous, line in zip(ordered, ordered[1:], strict=False):
-            previous_bbox = cast(
-                tuple[float, float, float, float], previous.observation.bbox
-            )
+            previous_bbox = cast(tuple[float, float, float, float], previous.observation.bbox)
             bbox = cast(tuple[float, float, float, float], line.observation.bbox)
             previous_width = max(1.0, previous_bbox[2] - previous_bbox[0])
             width = max(1.0, bbox[2] - bbox[0])
@@ -4806,9 +4646,7 @@ def figure_broad_candidate_micro_fragment_boxes(
     boxes: list[tuple[float, float, float, float]] = []
     for band_box in resolved_band_boxes:
         band_numeric = [
-            item
-            for item in numeric_evidence
-            if figure_box_lives_inside_band(item.bbox, band_box)
+            item for item in numeric_evidence if figure_box_lives_inside_band(item.bbox, band_box)
         ]
         if len(band_numeric) < 2:
             continue
@@ -4913,8 +4751,7 @@ def figure_band_anchor_interstitial_fragment_boxes(
             for numeric in band_numeric
             if numeric.bbox[0] > item.bbox[2]
             and abs(
-                ((numeric.bbox[1] + numeric.bbox[3]) * 0.5)
-                - ((item.bbox[1] + item.bbox[3]) * 0.5)
+                ((numeric.bbox[1] + numeric.bbox[3]) * 0.5) - ((item.bbox[1] + item.bbox[3]) * 0.5)
             )
             <= max(44.0, (item.bbox[3] - item.bbox[1]) * 5.0)
             and numeric.bbox[0] - item.bbox[2]
@@ -5046,7 +4883,9 @@ def figure_pixel_subregion_ocr_candidates(
         for index, box in enumerate(boxes, start=1):
             if ocr_image_region_is_whole_image(box, image):
                 continue
-            source_name = f"figure_region_{region.item_index}_{image_view_name}_pixel_region_{index}"
+            source_name = (
+                f"figure_region_{region.item_index}_{image_view_name}_pixel_region_{index}"
+            )
             scaled_crop, results_by_profile = figure_pixel_subregion_text_results(
                 image,
                 box,
@@ -5112,9 +4951,7 @@ def figure_column_subregion_boxes(
     for column in columns:
         if len(column) < 4:
             continue
-        column_bbox = page_geometry.observation_union_bbox(
-            line.observation for line in column
-        )
+        column_bbox = page_geometry.observation_union_bbox(line.observation for line in column)
         if column_bbox is None:
             continue
         x0, y0, x1, y1 = column_bbox
@@ -5170,9 +5007,7 @@ def figure_label_cluster_subregion_boxes(
     for line in sorted(label_lines, key=figure_text_line_reading_order_key):
         target: list[ocr_page_analysis.TextGeometryLine] | None = None
         for cluster in clusters:
-            if any(
-                figure_label_lines_share_cluster(line, existing) for existing in cluster
-            ):
+            if any(figure_label_lines_share_cluster(line, existing) for existing in cluster):
                 target = cluster
                 break
         if target is None:
@@ -5204,8 +5039,7 @@ def figure_patent_callout_cluster_subregion_boxes(
         target: list[ocr_page_analysis.TextGeometryLine] | None = None
         for cluster in clusters:
             if any(
-                figure_patent_callout_lines_share_cluster(line, existing)
-                for existing in cluster
+                figure_patent_callout_lines_share_cluster(line, existing) for existing in cluster
             ):
                 target = cluster
                 break
@@ -5220,9 +5054,7 @@ def figure_patent_callout_cluster_subregion_boxes(
         box = expanded_figure_patent_callout_cluster_box(cluster, region_bbox)
         if box is not None:
             boxes.append(box)
-    boxes.extend(
-        figure_patent_callout_neighborhood_subregion_boxes(label_lines, region_bbox)
-    )
+    boxes.extend(figure_patent_callout_neighborhood_subregion_boxes(label_lines, region_bbox))
     return figure_filter_patent_callout_boxes(
         boxes,
         label_lines,
@@ -5503,8 +5335,7 @@ def figure_filter_patent_callout_boxes(
         ranked.append((support, box))
     ranked.sort(key=lambda item: (-item[0], item[1][0], -item[1][3]))
     limit = (
-        OCR_FIGURE_MAX_CALLOUT_CLUSTER_SUBREGIONS
-        + OCR_FIGURE_MAX_CALLOUT_NEIGHBORHOOD_SUBREGIONS
+        OCR_FIGURE_MAX_CALLOUT_CLUSTER_SUBREGIONS + OCR_FIGURE_MAX_CALLOUT_NEIGHBORHOOD_SUBREGIONS
     )
     return [box for _score, box in ranked[:limit]]
 
@@ -5515,19 +5346,13 @@ def figure_patent_callout_box_support_score(
     region_bbox: tuple[float, float, float, float],
     vector_lines: tuple[Any, ...] = (),
 ) -> float | None:
-    local_lines = [
-        line for line in label_lines if figure_line_is_within_callout_box(line, box)
-    ]
+    local_lines = [line for line in label_lines if figure_line_is_within_callout_box(line, box)]
     if not local_lines:
         return None
     descriptive_lines = sum(
-        1
-        for line in local_lines
-        if figure_callout_candidate_line_is_descriptive(line.text)
+        1 for line in local_lines if figure_callout_candidate_line_is_descriptive(line.text)
     )
-    numeric_lines = sum(
-        1 for line in local_lines if any(ch.isdigit() for ch in line.text)
-    )
+    numeric_lines = sum(1 for line in local_lines if any(ch.isdigit() for ch in line.text))
     vector_support = figure_patent_callout_box_vector_support(
         box,
         local_lines,
@@ -5536,12 +5361,7 @@ def figure_patent_callout_box_support_score(
     region_area = max(1.0, page_geometry.rect_area(region_bbox))
     area_ratio = page_geometry.rect_area(box) / region_area
     if len(local_lines) == 1:
-        if (
-            descriptive_lines == 0
-            or numeric_lines == 0
-            or area_ratio > 0.08
-            or vector_support <= 0
-        ):
+        if descriptive_lines == 0 or numeric_lines == 0 or area_ratio > 0.08 or vector_support <= 0:
             return None
     elif len(local_lines) == 2 and (descriptive_lines == 0 or vector_support <= 0):
         return None
@@ -5652,9 +5472,7 @@ def figure_should_use_patent_callout_clusters(
 ) -> bool:
     if len(label_lines) < 4:
         return False
-    label_bbox = page_geometry.observation_union_bbox(
-        line.observation for line in label_lines
-    )
+    label_bbox = page_geometry.observation_union_bbox(line.observation for line in label_lines)
     if label_bbox is None:
         return False
     region_area = page_geometry.rect_area(region_bbox)
@@ -5662,16 +5480,11 @@ def figure_should_use_patent_callout_clusters(
     if region_area <= 0.0 or label_area <= 0.0:
         return False
     label_area_ratio = label_area / region_area
-    digit_lines = sum(
-        1 for line in label_lines if any(ch.isdigit() for ch in line.text)
-    )
+    digit_lines = sum(1 for line in label_lines if any(ch.isdigit() for ch in line.text))
     readable_lines = sum(
         1
         for line in label_lines
-        if any(
-            token.isalpha() and len(token) >= 4
-            for token in normalized_text_tokens(line.text)
-        )
+        if any(token.isalpha() and len(token) >= 4 for token in normalized_text_tokens(line.text))
     )
     region_width = max(1.0, region_bbox[2] - region_bbox[0])
     region_height = max(1.0, region_bbox[3] - region_bbox[1])
@@ -5679,9 +5492,7 @@ def figure_should_use_patent_callout_clusters(
     spread_y = max(0.0, label_bbox[3] - label_bbox[1]) / region_height
     dispersed_labels = spread_x >= 0.42 or (spread_x >= 0.28 and spread_y >= 0.24)
     return (
-        digit_lines >= 3
-        and readable_lines >= 3
-        and (label_area_ratio >= 0.12 or dispersed_labels)
+        digit_lines >= 3 and readable_lines >= 3 and (label_area_ratio >= 0.12 or dispersed_labels)
     )
 
 
@@ -5806,7 +5617,7 @@ def figure_region_signal_float(signals: dict[str, Any], key: str) -> float:
         return 0.0
     try:
         return float(value)
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return 0.0
 
 
@@ -5817,9 +5628,7 @@ def figure_vertical_line_groups(
         lines,
         key=lambda line: -page_geometry.observation_mid_y(line.observation),
     )
-    heights = [
-        page_geometry.observation_height(line.observation) for line in sorted_lines
-    ]
+    heights = [page_geometry.observation_height(line.observation) for line in sorted_lines]
     positive_heights = [height for height in heights if height > 0]
     median_height = median(positive_heights) if positive_heights else 4.0
     split_gap = max(12.0, median_height * 4.0)
@@ -5866,9 +5675,7 @@ def figure_unique_subregion_boxes(
 ) -> list[tuple[float, float, float, float]]:
     unique: list[tuple[float, float, float, float]] = []
     for box in boxes:
-        if any(
-            figure_subregion_boxes_are_equivalent(box, existing) for existing in unique
-        ):
+        if any(figure_subregion_boxes_are_equivalent(box, existing) for existing in unique):
             continue
         unique.append(box)
     return unique
@@ -6374,9 +6181,7 @@ def figure_should_try_band_slot_ocr(
     repeated_short_fragments = {
         token for token, count in short_fragment_counts.items() if count >= 2
     }
-    return (
-        bool(anchor_tokens) and bool(numeric_tokens) and bool(repeated_short_fragments)
-    )
+    return bool(anchor_tokens) and bool(numeric_tokens) and bool(repeated_short_fragments)
 
 
 def figure_should_try_band_slot_subwindows(
@@ -6394,8 +6199,7 @@ def figure_should_try_band_slot_subwindows(
                 return False
         text = candidate.result.text.strip()
         if text and any(
-            token.isalpha() and len(token) >= 3
-            for token in precision_label_candidate_tokens(text)
+            token.isalpha() and len(token) >= 3 for token in precision_label_candidate_tokens(text)
         ):
             return False
     return True
@@ -6453,9 +6257,7 @@ def dominant_image_figure_band_slot_plan(
             continue
         right_numeric = sorted(right_numeric, key=lambda item: item[1][1][0])
         first_numeric_bbox = right_numeric[0][1][1]
-        numeric_bbox = union_page_bboxes(
-            cluster[1] for _token, cluster in right_numeric
-        )
+        numeric_bbox = union_page_bboxes(cluster[1] for _token, cluster in right_numeric)
         if numeric_bbox is None:
             continue
         corridor_top = min(anchor_bbox[1], first_numeric_bbox[1]) - 4.0
@@ -6467,10 +6269,7 @@ def dominant_image_figure_band_slot_plan(
             corridor_bottom,
         )
         normalized_gap_bbox = page_geometry.normalize_rect(gap_bbox)
-        if (
-            normalized_gap_bbox is None
-            or page_geometry.rect_area(normalized_gap_bbox) <= 0.0
-        ):
+        if normalized_gap_bbox is None or page_geometry.rect_area(normalized_gap_bbox) <= 0.0:
             continue
         score = alpha_cluster[0] * 2.0 + len(right_numeric) * 1.5
         slots.append(
@@ -6659,7 +6458,7 @@ def figure_geometry_band_candidate(
                 top = ocr_int_value(row["top"])
                 width = ocr_int_value(row["width"])
                 height = ocr_int_value(row["height"])
-            except KeyError, TypeError, ValueError:
+            except (KeyError, TypeError, ValueError):
                 continue
             key = (left, top, width, height, str(row.get("text", "")))
             if key in seen_rows:
@@ -6681,9 +6480,7 @@ def figure_geometry_band_candidate(
     text = "\n".join(line.text for line in ordered_lines if line.text.strip())
     if not text.strip():
         return None
-    confidence = figure_text_lines_confidence(
-        ordered_lines, candidate.result.confidence
-    )
+    confidence = figure_text_lines_confidence(ordered_lines, candidate.result.confidence)
     line_rows = tuple(figure_text_geometry_line_row(line) for line in ordered_lines)
     return replace(
         candidate,
@@ -6707,29 +6504,15 @@ def figure_geometry_candidate_is_material_improvement(
     baseline_score = figure_ocr_candidate_score(baseline)
     if candidate_score >= baseline_score + 24.0:
         return True
-    candidate_gibberish = ocr_text_analysis.alphabetic_gibberish_score(
-        candidate.result.text
-    )
-    baseline_gibberish = ocr_text_analysis.alphabetic_gibberish_score(
-        baseline.result.text
-    )
+    candidate_gibberish = ocr_text_analysis.alphabetic_gibberish_score(candidate.result.text)
+    baseline_gibberish = ocr_text_analysis.alphabetic_gibberish_score(baseline.result.text)
     if candidate_gibberish > baseline_gibberish - 0.03:
         return False
-    candidate_lines = [
-        line.strip() for line in candidate.result.text.splitlines() if line.strip()
-    ]
-    baseline_lines = [
-        line.strip() for line in baseline.result.text.splitlines() if line.strip()
-    ]
-    candidate_useful = sum(
-        1 for line in candidate_lines if figure_text_line_is_useful(line)
-    )
-    baseline_useful = sum(
-        1 for line in baseline_lines if figure_text_line_is_useful(line)
-    )
-    return (
-        candidate_score >= baseline_score * 0.96 and candidate_useful >= baseline_useful
-    )
+    candidate_lines = [line.strip() for line in candidate.result.text.splitlines() if line.strip()]
+    baseline_lines = [line.strip() for line in baseline.result.text.splitlines() if line.strip()]
+    candidate_useful = sum(1 for line in candidate_lines if figure_text_line_is_useful(line))
+    baseline_useful = sum(1 for line in baseline_lines if figure_text_line_is_useful(line))
+    return candidate_score >= baseline_score * 0.96 and candidate_useful >= baseline_useful
 
 
 def figure_word_row_center_in_region(
@@ -6741,7 +6524,7 @@ def figure_word_row_center_in_region(
         top = int(row["top"])
         width = int(row["width"])
         height = int(row["height"])
-    except KeyError, TypeError, ValueError:
+    except (KeyError, TypeError, ValueError):
         return False
     if width <= 0 or height <= 0:
         return False
@@ -6842,9 +6625,7 @@ def split_figure_word_line(
 ) -> list[list[ocr_layout.OcrLayoutWord]]:
     visible = [
         word
-        for word in sorted(
-            words, key=lambda item: (item.x0, item.word_num, item.row_index)
-        )
+        for word in sorted(words, key=lambda item: (item.x0, item.word_num, item.row_index))
         if figure_ocr_word_is_useful(word)
     ]
     if len(visible) <= 1:
@@ -6879,19 +6660,13 @@ def figure_text_line_is_useful(text: str, confidence: int | None = None) -> bool
     has_connector = "_" in stripped or "+" in stripped
     has_upper = any(ch.isupper() for ch in stripped)
     has_descriptive_token = any(len(token) >= 4 for token in tokens)
-    if not (has_digit or has_connector) and figure_text_line_looks_repeated_artifact(
-        tokens
-    ):
+    if not (has_digit or has_connector) and figure_text_line_looks_repeated_artifact(tokens):
         return False
     if figure_text_line_looks_alpha_noise(stripped, tokens):
         return False
     if len(tokens) <= 2:
         return confidence_value >= 35 and (
-            has_digit
-            or has_assignment
-            or has_connector
-            or has_upper
-            or len(stripped) >= 4
+            has_digit or has_assignment or has_connector or has_upper or len(stripped) >= 4
         )
     if not (has_digit or has_assignment or has_connector or has_descriptive_token):
         return False
@@ -7074,17 +6849,14 @@ def fused_figure_ocr_candidate(
     line_clusters = figure_line_alternative_clusters(usable)
     if not line_clusters:
         return max(usable, key=figure_ocr_candidate_score)
-    selected_lines = [
-        max(cluster, key=figure_text_alternative_score) for cluster in line_clusters
-    ]
+    selected_lines = [max(cluster, key=figure_text_alternative_score) for cluster in line_clusters]
     candidate_boxes = {
         candidate.name: candidate.page_bbox
         for candidate in usable
         if candidate.page_bbox is not None
     }
     candidate_lines = {
-        candidate.name: figure_candidate_text_geometry_lines(candidate)
-        for candidate in usable
+        candidate.name: figure_candidate_text_geometry_lines(candidate) for candidate in usable
     }
     selected_lines = figure_drop_duplicate_selected_lines(selected_lines)
     selected_lines = repair_figure_reference_numeral_lines(selected_lines)
@@ -7115,12 +6887,8 @@ def fused_figure_ocr_candidate(
         text,
         confidence,
         line_rows=line_rows,
-        word_rows=tuple(
-            row for candidate in usable for row in candidate.result.word_rows
-        ),
-        symbol_rows=tuple(
-            row for candidate in usable for row in candidate.result.symbol_rows
-        ),
+        word_rows=tuple(row for candidate in usable for row in candidate.result.word_rows),
+        symbol_rows=tuple(row for candidate in usable for row in candidate.result.symbol_rows),
     )
     page_bbox = union_page_bboxes(
         candidate.page_bbox for candidate in usable if candidate.page_bbox is not None
@@ -7167,11 +6935,9 @@ def figure_candidate_text_geometry_lines(
         confidence = row.get("conf")
         try:
             confidence_value = (
-                int(round(ocr_float_value(confidence)))
-                if confidence is not None
-                else None
+                int(round(ocr_float_value(confidence))) if confidence is not None else None
             )
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             confidence_value = None
         normalized_bbox = page_geometry.normalize_rect(bbox)
         if normalized_bbox is None:
@@ -7194,14 +6960,8 @@ def figure_candidate_token_evidence(
     rows: str = "line_rows",
     token_extractor: Callable[[str], str | None] | None = None,
 ) -> list[FigureTokenEvidence]:
-    extractor = (
-        precision_label_single_token if token_extractor is None else token_extractor
-    )
-    row_items = (
-        candidate.result.word_rows
-        if rows == "word_rows"
-        else candidate.result.line_rows
-    )
+    extractor = precision_label_single_token if token_extractor is None else token_extractor
+    row_items = candidate.result.word_rows if rows == "word_rows" else candidate.result.line_rows
     evidence: list[FigureTokenEvidence] = []
     confidence = page_geometry.numeric_confidence(candidate.result.confidence)
     for row in row_items:
@@ -7245,9 +7005,7 @@ def figure_drop_duplicate_selected_lines(
 ) -> list[ocr_page_analysis.TextGeometryLine]:
     kept: list[ocr_page_analysis.TextGeometryLine] = []
     for line in sorted(lines, key=figure_text_alternative_score, reverse=True):
-        if any(
-            figure_selected_lines_are_duplicates(line, existing) for existing in kept
-        ):
+        if any(figure_selected_lines_are_duplicates(line, existing) for existing in kept):
             continue
         kept.append(line)
     return kept
@@ -7292,9 +7050,7 @@ def figure_lines_use_short_reference_numerals(
     for line in lines:
         if not figure_reference_numeral_context_line_is_eligible(line.text):
             continue
-        lengths.extend(
-            len(token) for token in normalized_text_tokens(line.text) if token.isdigit()
-        )
+        lengths.extend(len(token) for token in normalized_text_tokens(line.text) if token.isdigit())
     if len(lengths) < 8:
         return False
     short_count = sum(1 for length in lengths if length <= 2)
@@ -7361,15 +7117,11 @@ def refine_fused_figure_selected_lines(
 ) -> list[ocr_page_analysis.TextGeometryLine]:
     if len(lines) < 6:
         return lines
-    descriptive_lines = sum(
-        1 for line in lines if figure_fused_line_is_descriptive(line.text)
-    )
+    descriptive_lines = sum(1 for line in lines if figure_fused_line_is_descriptive(line.text))
     if descriptive_lines < 4:
         return lines
     refined = [
-        line
-        for line in lines
-        if not figure_fused_line_is_fragment(line.text, line.confidence)
+        line for line in lines if not figure_fused_line_is_fragment(line.text, line.confidence)
     ]
     return refined or lines
 
@@ -7377,9 +7129,7 @@ def refine_fused_figure_selected_lines(
 def figure_drop_metadata_selected_lines(
     lines: list[ocr_page_analysis.TextGeometryLine],
 ) -> list[ocr_page_analysis.TextGeometryLine]:
-    filtered = [
-        line for line in lines if not figure_selected_line_is_metadata(line.text)
-    ]
+    filtered = [line for line in lines if not figure_selected_line_is_metadata(line.text)]
     return filtered or lines
 
 
@@ -7396,12 +7146,7 @@ def figure_selected_line_is_metadata(text: str) -> bool:
         return True
     if len(tokens) == 2 and tokens[0].isdigit() and tokens[1] == "of":
         return True
-    if (
-        len(tokens) == 3
-        and tokens[0].isdigit()
-        and tokens[1] == "of"
-        and tokens[2].isdigit()
-    ):
+    if len(tokens) == 3 and tokens[0].isdigit() and tokens[1] == "of" and tokens[2].isdigit():
         return True
     if {"oct", "us", "patent"} & set(tokens):
         return True
@@ -7411,9 +7156,7 @@ def figure_selected_line_is_metadata(text: str) -> bool:
 def figure_cleanup_selected_callout_lines(
     lines: list[ocr_page_analysis.TextGeometryLine],
 ) -> list[ocr_page_analysis.TextGeometryLine]:
-    filtered = [
-        line for line in lines if not figure_selected_callout_line_should_drop(line)
-    ]
+    filtered = [line for line in lines if not figure_selected_callout_line_should_drop(line)]
     if not filtered:
         filtered = lines
     return figure_drop_redundant_selected_lines(filtered)
@@ -7438,10 +7181,7 @@ def supplement_consensus_callout_cluster_lines(
         return selected_lines
     supplemented = list(selected_lines)
     for line in sorted(additions, key=figure_selected_line_priority, reverse=True):
-        if any(
-            figure_selected_lines_are_redundant(line, existing)
-            for existing in supplemented
-        ):
+        if any(figure_selected_lines_are_redundant(line, existing) for existing in supplemented):
             continue
         supplemented.append(line)
     return supplemented
@@ -7489,10 +7229,7 @@ def descriptive_callout_cluster_line_is_consensus_eligible(
     numeric_tokens = sum(1 for token in tokens if any(ch.isdigit() for ch in token))
     if readable_alpha < 3 or numeric_tokens < 1:
         return False
-    if any(
-        figure_selected_lines_are_redundant(line, existing)
-        for existing in selected_lines
-    ):
+    if any(figure_selected_lines_are_redundant(line, existing) for existing in selected_lines):
         return False
     return True
 
@@ -7502,9 +7239,7 @@ def callout_cluster_line_consensus_support(
     cluster_lines: list[ocr_page_analysis.TextGeometryLine],
 ) -> int:
     target_tokens = set(normalized_text_tokens(target.text.casefold()))
-    target_alpha = {
-        token for token in target_tokens if token.isalpha() and len(token) >= 4
-    }
+    target_alpha = {token for token in target_tokens if token.isalpha() and len(token) >= 4}
     if len(target_alpha) < 3:
         return 0
     support = 0
@@ -7515,9 +7250,7 @@ def callout_cluster_line_consensus_support(
         if not figure_text_lines_match(target, line):
             continue
         line_tokens = set(normalized_text_tokens(line.text.casefold()))
-        line_alpha = {
-            token for token in line_tokens if token.isalpha() and len(token) >= 4
-        }
+        line_alpha = {token for token in line_tokens if token.isalpha() and len(token) >= 4}
         if len(line_alpha) < 2:
             continue
         if len(target_alpha & line_alpha) < min(3, len(target_alpha), len(line_alpha)):
@@ -7542,15 +7275,8 @@ def figure_selected_callout_line_should_drop(
         return True
     numeric_tokens = sum(1 for token in tokens if any(ch.isdigit() for ch in token))
     alpha_tokens = sum(1 for token in tokens if token.isalpha() and len(token) >= 4)
-    short_alpha_tokens = sum(
-        1 for token in tokens if token.isalpha() and len(token) <= 3
-    )
-    if (
-        numeric_tokens >= 1
-        and alpha_tokens >= 1
-        and short_alpha_tokens >= 1
-        and len(tokens) >= 3
-    ):
+    short_alpha_tokens = sum(1 for token in tokens if token.isalpha() and len(token) <= 3)
+    if numeric_tokens >= 1 and alpha_tokens >= 1 and short_alpha_tokens >= 1 and len(tokens) >= 3:
         return True
     if numeric_tokens >= 2 and alpha_tokens >= 2 and len(tokens) >= 4:
         return True
@@ -7564,9 +7290,7 @@ def figure_drop_redundant_selected_lines(
         return lines
     kept: list[ocr_page_analysis.TextGeometryLine] = []
     for line in sorted(lines, key=figure_selected_line_priority, reverse=True):
-        if any(
-            figure_selected_lines_are_redundant(line, existing) for existing in kept
-        ):
+        if any(figure_selected_lines_are_redundant(line, existing) for existing in kept):
             continue
         kept.append(line)
     return kept or lines
@@ -7654,9 +7378,7 @@ def figure_callout_line_has_single_label_token(text: str) -> bool:
     tokens = normalized_text_tokens(text)
     if len(tokens) > 2:
         return False
-    readable_alpha_tokens = [
-        token for token in tokens if token.isalpha() and len(token) >= 4
-    ]
+    readable_alpha_tokens = [token for token in tokens if token.isalpha() and len(token) >= 4]
     return len(readable_alpha_tokens) == 1 and any(token.isdigit() for token in tokens)
 
 
@@ -7665,9 +7387,7 @@ def figure_callout_source_is_fragment_heavy(
 ) -> bool:
     if len(lines) < 3:
         return False
-    fragment_count = sum(
-        1 for line in lines if figure_callout_source_line_is_fragment(line)
-    )
+    fragment_count = sum(1 for line in lines if figure_callout_source_line_is_fragment(line))
     return fragment_count >= 2
 
 
@@ -7766,9 +7486,7 @@ def figure_lines_are_complementary_neighbors(
     horizontal_gap = max(0.0, right_bbox[0] - left_bbox[2])
     if horizontal_gap > max(left_height, right_height) * 4.5:
         return False
-    overlap = max(
-        0.0, min(left_bbox[2], right_bbox[2]) - max(left_bbox[0], right_bbox[0])
-    )
+    overlap = max(0.0, min(left_bbox[2], right_bbox[2]) - max(left_bbox[0], right_bbox[0]))
     if (
         overlap
         > min(
@@ -7876,8 +7594,7 @@ def precision_clean_figure_reference_text(
     if len(tokens) == 1 and tokens[0].isalpha() and confidence < 75:
         return ""
     if confidence < 60 and not any(
-        token.isalpha() and len(token) >= 4 and token.upper() == token
-        for token in tokens
+        token.isalpha() and len(token) >= 4 and token.upper() == token for token in tokens
     ):
         return ""
     cleaned = " ".join(tokens)
@@ -7963,9 +7680,7 @@ def drop_figure_reference_numeric_outlier_lines(
     if not outlier_values:
         return lines
     outlier_line_ids = {
-        id(outlier_line)
-        for value in outlier_values
-        for outlier_line in isolated_values[value]
+        id(outlier_line) for value in outlier_values for outlier_line in isolated_values[value]
     }
     return [line for line in lines if id(line) not in outlier_line_ids]
 
@@ -8021,14 +7736,10 @@ def figure_text_alternative_score(line: ocr_page_analysis.TextGeometryLine) -> f
 
 
 def figure_ocr_candidate_score(candidate: OcrCandidate) -> float:
-    lines = [
-        line.strip() for line in candidate.result.text.splitlines() if line.strip()
-    ]
+    lines = [line.strip() for line in candidate.result.text.splitlines() if line.strip()]
     useful_lines = sum(1 for line in lines if figure_text_line_is_useful(line))
     tokens = normalized_text_tokens(candidate.result.text)
-    confidence = (
-        candidate.result.confidence if candidate.result.confidence is not None else 45
-    )
+    confidence = candidate.result.confidence if candidate.result.confidence is not None else 45
     quality = text_ocr_quality_score(candidate.result.text)
     noise = figure_text_noise_ratio(candidate.result.text)
     gibberish = ocr_text_analysis.alphabetic_gibberish_score(candidate.result.text)
@@ -8053,9 +7764,7 @@ def figure_ocr_candidate_purity_penalty(
         return 0.0
     if len(lines) <= 1:
         return 0.0
-    fragment_lines = sum(
-        1 for line in lines if figure_callout_candidate_line_is_fragment(line)
-    )
+    fragment_lines = sum(1 for line in lines if figure_callout_candidate_line_is_fragment(line))
     metadata_lines = sum(1 for line in lines if figure_selected_line_is_metadata(line))
     descriptive_lines = sum(
         1 for line in lines if figure_callout_candidate_line_is_descriptive(line)
@@ -8077,9 +7786,7 @@ def figure_callout_candidate_line_is_fragment(text: str) -> bool:
     confidence = 60 if figure_text_line_is_useful(text) else 40
     if figure_fused_line_is_fragment(text, confidence):
         return True
-    if len(tokens) <= 2 and not any(
-        token.isalpha() and len(token) >= 4 for token in tokens
-    ):
+    if len(tokens) <= 2 and not any(token.isalpha() and len(token) >= 4 for token in tokens):
         return True
     return False
 
@@ -8105,9 +7812,7 @@ def combined_figure_ocr_page_result(
         for candidate in selected_candidates
         if candidate.result.confidence is not None
     ]
-    confidence = (
-        int(round(sum(confidences) / len(confidences))) if confidences else None
-    )
+    confidence = int(round(sum(confidences) / len(confidences))) if confidences else None
     line_rows = tuple(
         row for candidate in selected_candidates for row in candidate.result.line_rows
     )
@@ -8118,9 +7823,7 @@ def combined_figure_ocr_page_result(
         row for candidate in selected_candidates for row in candidate.result.symbol_rows
     )
     page_bbox = union_page_bboxes(
-        candidate.page_bbox
-        for candidate in selected_candidates
-        if candidate.page_bbox is not None
+        candidate.page_bbox for candidate in selected_candidates if candidate.page_bbox is not None
     )
     text_result = OcrTextResult(
         text,
@@ -8175,18 +7878,12 @@ def extract_ocr_page_result(
             ocr_session=ocr_session,
         )
         verification_candidates = tuple(
-            candidate
-            for candidate in candidates
-            if candidate.name.startswith("verification_")
+            candidate for candidate in candidates if candidate.name.startswith("verification_")
         )
         candidates = [
-            candidate
-            for candidate in candidates
-            if not candidate.name.startswith("verification_")
+            candidate for candidate in candidates if not candidate.name.startswith("verification_")
         ]
-        candidate = ocr_selection.select_ocr_candidate(
-            candidates, support_text=vector_text
-        )
+        candidate = ocr_selection.select_ocr_candidate(candidates, support_text=vector_text)
         if candidate is not None:
             text = candidate.result.text
             table_fusion = fuse_table_ocr_candidates(
@@ -8200,9 +7897,7 @@ def extract_ocr_page_result(
                 candidates,
                 selected_candidate=candidate,
             )
-            split_band_lines = ocr_postprocess.candidate_multi_column_band_split_lines(
-                candidate
-            )
+            split_band_lines = ocr_postprocess.candidate_multi_column_band_split_lines(candidate)
             if split_band_lines and len(split_band_lines) >= len(output_lines) + 8:
                 output_lines = ocr_postprocess.resolved_text_lines_from_geometry_lines(
                     split_band_lines,
@@ -8273,9 +7968,7 @@ def collect_ocr_candidates(
     )
     candidates.append(
         ocr_candidate_generation.ocr_candidate_from_image(
-            "full_page_simple"
-            if image.source.startswith("full_page_")
-            else image.source,
+            "full_page_simple" if image.source.startswith("full_page_") else image.source,
             result,
             image,
             token_type_classifier=ocr_schematic.classify_schematic_token_type,
@@ -8391,8 +8084,7 @@ def should_expand_weak_full_page_ocr_candidates(
         if confidence < 60 and tokens >= 300 and quality >= 0.10:
             return True
     if not (
-        image.source.startswith("full_page_")
-        or ocr_page_analysis.has_dominant_page_image(page)
+        image.source.startswith("full_page_") or ocr_page_analysis.has_dominant_page_image(page)
     ):
         return False
     text = candidate.result.text
@@ -8480,9 +8172,7 @@ def precision_clean_dominant_image_label_output_lines(
             return lines
     except Exception:
         return lines
-    table_like_lines = sum(
-        1 for line in lines if line.observation.source == "table_fusion_text"
-    )
+    table_like_lines = sum(1 for line in lines if line.observation.source == "table_fusion_text")
     if table_like_lines < 6:
         return lines
     consensus_tokens = dominant_image_label_consensus_tokens(
@@ -8609,9 +8299,7 @@ def precision_prune_render_consensus_output_lines(
 ) -> tuple[observation_resolver.ResolvedTextLine, ...]:
     if not lines or broad_page_result is None or broad_page_result.candidate is None:
         return lines
-    selected_tokens = precision_render_consensus_tokens(
-        broad_page_result.candidate.result.text
-    )
+    selected_tokens = precision_render_consensus_tokens(broad_page_result.candidate.result.text)
     if len(selected_tokens) < OCR_RENDER_CONSENSUS_MIN_TOKENS:
         return lines
     consensus_candidates = (
@@ -8629,9 +8317,9 @@ def precision_prune_render_consensus_output_lines(
         minimum_coverage = OCR_CROSS_SOURCE_CONSENSUS_MIN_COVERAGE
         if not consensus_tokens:
             return lines
-    selected_coverage = sum(
-        token in consensus_tokens for token in selected_tokens
-    ) / len(selected_tokens)
+    selected_coverage = sum(token in consensus_tokens for token in selected_tokens) / len(
+        selected_tokens
+    )
     if selected_coverage < minimum_coverage:
         return lines
 
@@ -8650,9 +8338,7 @@ def precision_prune_render_consensus_output_lines(
     for line in lines:
         matches = tuple(OCR_RENDER_CONSENSUS_TOKEN_RE.finditer(line.text))
         kept = [
-            match.group(0)
-            for match in matches
-            if match.group(0).casefold() in consensus_tokens
+            match.group(0) for match in matches if match.group(0).casefold() in consensus_tokens
         ]
         replacement = " ".join(kept)
         if replacement == line.text:
@@ -8689,15 +8375,11 @@ def independent_render_family_consensus_tokens(
         family_tokens.setdefault(match.group(1), []).append(
             set(precision_render_consensus_tokens(candidate.result.text))
         )
-    if len(family_tokens) < 2 or any(
-        len(token_sets) < 2 for token_sets in family_tokens.values()
-    ):
+    if len(family_tokens) < 2 or any(len(token_sets) < 2 for token_sets in family_tokens.values()):
         return set()
     supported_by_family: list[set[str]] = []
     for token_sets in family_tokens.values():
-        minimum_support = math.ceil(
-            len(token_sets) * OCR_RENDER_CONSENSUS_FAMILY_SUPPORT_RATIO
-        )
+        minimum_support = math.ceil(len(token_sets) * OCR_RENDER_CONSENSUS_FAMILY_SUPPORT_RATIO)
         support = Counter(token for tokens in token_sets for token in tokens)
         supported_by_family.append(
             {token for token, count in support.items() if count >= minimum_support}
@@ -8706,10 +8388,7 @@ def independent_render_family_consensus_tokens(
 
 
 def precision_render_consensus_tokens(text: str) -> list[str]:
-    return [
-        match.group(0).casefold()
-        for match in OCR_RENDER_CONSENSUS_TOKEN_RE.finditer(text)
-    ]
+    return [match.group(0).casefold() for match in OCR_RENDER_CONSENSUS_TOKEN_RE.finditer(text)]
 
 
 def full_page_render_consensus_tokens(
@@ -8823,11 +8502,7 @@ def prune_weak_dominant_image_rendered_label_lines(
         source = line.observation.source
         confidence = page_geometry.numeric_confidence(line.observation.confidence)
         alpha_tokens, digit_tokens = dominant_image_line_token_sets(line.text)
-        if (
-            source.startswith("rendered_page_")
-            and confidence is not None
-            and confidence < 45
-        ):
+        if source.startswith("rendered_page_") and confidence is not None and confidence < 45:
             if not alpha_tokens:
                 continue
             if not alpha_tokens <= consensus_tokens:
@@ -8892,9 +8567,7 @@ def supplement_dominant_image_figure_label_lines(
             source="figure_ocr_regions",
             text=cleaned_text,
             confidence=candidate_confidence,
-            provenance=page_geometry.provenance_tuple(
-                dominant_image_label_supplement=True
-            ),
+            provenance=page_geometry.provenance_tuple(dominant_image_label_supplement=True),
         )
         records.append(
             observation_resolver.ResolvedTextLine(
@@ -8989,17 +8662,12 @@ def drop_duplicate_dominant_image_text_lines(
         if existing is None:
             kept_by_text[text] = line
             continue
-        existing_conf = (
-            page_geometry.numeric_confidence(existing.observation.confidence) or 0.0
-        )
+        existing_conf = page_geometry.numeric_confidence(existing.observation.confidence) or 0.0
         line_conf = page_geometry.numeric_confidence(line.observation.confidence) or 0.0
         existing_source = existing.observation.source
         line_source = line.observation.source
         if (
-            (
-                existing_source == "table_fusion_text"
-                and line_source != "table_fusion_text"
-            )
+            (existing_source == "table_fusion_text" and line_source != "table_fusion_text")
             or line_conf > existing_conf
             or (
                 line_conf == existing_conf
@@ -9075,13 +8743,11 @@ def dominant_image_label_line_should_drop(
             return True
     if alpha_tokens == {"housing", "hinge"}:
         has_housing = any(
-            other is not line
-            and "housing" in dominant_image_line_token_sets(other.text)[0]
+            other is not line and "housing" in dominant_image_line_token_sets(other.text)[0]
             for other in lines
         )
         has_hinge = any(
-            other is not line
-            and "hinge" in dominant_image_line_token_sets(other.text)[0]
+            other is not line and "hinge" in dominant_image_line_token_sets(other.text)[0]
             for other in lines
         )
         if has_housing and has_hinge:
@@ -9112,11 +8778,7 @@ def dominant_image_label_line_has_better_conflicting_variant(
     alpha_tokens: set[str],
     digit_tokens: set[str],
 ) -> bool:
-    if (
-        line.observation.source != "table_fusion_text"
-        or not alpha_tokens
-        or not digit_tokens
-    ):
+    if line.observation.source != "table_fusion_text" or not alpha_tokens or not digit_tokens:
         return False
     return any(
         other is not line
@@ -9149,17 +8811,13 @@ def supplement_dominant_image_alternate_render_lines(
         )
     )
     existing_alpha_tokens = {
-        token
-        for line in lines
-        for token in dominant_image_line_token_sets(line.text)[0]
+        token for line in lines for token in dominant_image_line_token_sets(line.text)[0]
     }
     records = list(lines)
     for candidate in broad_page_result.candidates:
         if not str(candidate.name).startswith("rendered_page_"):
             continue
-        candidate_confidence = (
-            page_geometry.numeric_confidence(candidate.result.confidence) or 0.0
-        )
+        candidate_confidence = page_geometry.numeric_confidence(candidate.result.confidence) or 0.0
         if candidate_confidence < 55.0:
             continue
         added_from_rows = False
@@ -9169,12 +8827,10 @@ def supplement_dominant_image_alternate_render_lines(
                 consensus_tokens,
             )
             if cleaned_text is None:
-                cleaned_text = (
-                    precision_clean_dominant_image_single_alpha_row_label_text(
-                        str(row.get("text", "")),
-                        consensus_tokens=consensus_tokens,
-                        supported_numeric_tokens=supported_numeric_tokens,
-                    )
+                cleaned_text = precision_clean_dominant_image_single_alpha_row_label_text(
+                    str(row.get("text", "")),
+                    consensus_tokens=consensus_tokens,
+                    supported_numeric_tokens=supported_numeric_tokens,
                 )
                 if cleaned_text is None:
                     continue
@@ -9184,9 +8840,7 @@ def supplement_dominant_image_alternate_render_lines(
             if not alpha_tokens:
                 continue
             bbox = dominant_image_row_page_bbox(row)
-            if bbox is None or not dominant_image_bbox_in_label_region(
-                bbox, label_region_bbox
-            ):
+            if bbox is None or not dominant_image_bbox_in_label_region(bbox, label_region_bbox):
                 continue
             replace_index = best_dominant_image_single_alpha_row_replacement_index(
                 records,
@@ -9263,9 +8917,7 @@ def supplement_dominant_image_alternate_render_lines(
                         contributing_observations=base_line.contributing_observations,
                         resolution=base_line.resolution,
                     )
-                    existing_alpha_tokens.update(
-                        dominant_image_line_token_sets(cleaned_text)[0]
-                    )
+                    existing_alpha_tokens.update(dominant_image_line_token_sets(cleaned_text)[0])
                     continue
             cleaned_text = precision_clean_dominant_image_short_label_line_text(
                 raw_line,
@@ -9311,9 +8963,7 @@ def supplement_dominant_image_figure_single_alpha_row_labels(
     )
     records = list(lines)
     for candidate in figure_result.candidates:
-        candidate_confidence = (
-            page_geometry.numeric_confidence(candidate.result.confidence) or 0.0
-        )
+        candidate_confidence = page_geometry.numeric_confidence(candidate.result.confidence) or 0.0
         if candidate_confidence < 55.0:
             continue
         for row in candidate.result.line_rows:
@@ -9325,9 +8975,7 @@ def supplement_dominant_image_figure_single_alpha_row_labels(
             if cleaned_text is None:
                 continue
             bbox = dominant_image_row_page_bbox(row)
-            if bbox is None or not dominant_image_bbox_in_label_region(
-                bbox, label_region_bbox
-            ):
+            if bbox is None or not dominant_image_bbox_in_label_region(bbox, label_region_bbox):
                 continue
             alpha_tokens, digit_tokens = dominant_image_line_token_sets(cleaned_text)
             replace_index = best_dominant_image_single_alpha_row_replacement_index(
@@ -9394,13 +9042,9 @@ def supplement_dominant_image_broad_numeric_labels(
         compact_clusters = [
             cluster
             for cluster in clusters
-            if dominant_image_numeric_label_cluster_is_compact(
-                cluster[1], label_region_bbox
-            )
+            if dominant_image_numeric_label_cluster_is_compact(cluster[1], label_region_bbox)
         ]
-        supported_clusters = [
-            cluster for cluster in compact_clusters if cluster[0] >= 2
-        ]
+        supported_clusters = [cluster for cluster in compact_clusters if cluster[0] >= 2]
         if token.isdigit() and int(token) % 2 == 1:
             if len(supported_clusters) >= 2:
                 target_clusters = supported_clusters
@@ -9416,13 +9060,12 @@ def supplement_dominant_image_broad_numeric_labels(
         else:
             if len(supported_clusters) == 1:
                 target_clusters = supported_clusters
-            elif (
-                len(compact_clusters) == 1
-                and dominant_image_compact_numeric_cluster_has_neighboring_alpha_support(
-                    rendered_candidates,
-                    cluster_bbox=compact_clusters[0][1],
-                    token=token,
-                )
+            elif len(
+                compact_clusters
+            ) == 1 and dominant_image_compact_numeric_cluster_has_neighboring_alpha_support(
+                rendered_candidates,
+                cluster_bbox=compact_clusters[0][1],
+                token=token,
             ):
                 target_clusters = compact_clusters
             else:
@@ -9596,11 +9239,7 @@ def supplement_dominant_image_display_oled_numeric_confusion_lines(
             continue
         alpha_tokens = [token for token in tokens if token.isalpha()]
         digit_tokens = [token for token in tokens if token.isdigit()]
-        if (
-            alpha_tokens != ["oled"]
-            or len(digit_tokens) != 1
-            or len(digit_tokens[0]) != 2
-        ):
+        if alpha_tokens != ["oled"] or len(digit_tokens) != 1 or len(digit_tokens[0]) != 2:
             continue
         companion = dominant_image_numeric_display_companion_support(
             rendered_candidates,
@@ -9632,9 +9271,7 @@ def supplement_dominant_image_figure_micro_band_alpha_tokens(
     *,
     figure_result: OcrPageTextResult,
 ) -> tuple[observation_resolver.ResolvedTextLine, ...]:
-    line_boxes = [
-        line.observation.bbox for line in lines if line.observation.bbox is not None
-    ]
+    line_boxes = [line.observation.bbox for line in lines if line.observation.bbox is not None]
     label_region_bbox = union_page_bboxes(
         cast(Iterable[tuple[float, float, float, float]], line_boxes)
     )
@@ -9689,9 +9326,7 @@ def supplement_dominant_image_figure_micro_fragment_completions(
     *,
     figure_result: OcrPageTextResult,
 ) -> tuple[observation_resolver.ResolvedTextLine, ...]:
-    line_boxes = [
-        line.observation.bbox for line in lines if line.observation.bbox is not None
-    ]
+    line_boxes = [line.observation.bbox for line in lines if line.observation.bbox is not None]
     label_region_bbox = union_page_bboxes(
         cast(Iterable[tuple[float, float, float, float]], line_boxes)
     )
@@ -9868,20 +9503,14 @@ def best_dominant_image_conflicting_label_replacement_index(
     *,
     replacement_text: str,
 ) -> int | None:
-    replacement_alpha, replacement_digits = dominant_image_line_token_sets(
-        replacement_text
-    )
+    replacement_alpha, replacement_digits = dominant_image_line_token_sets(replacement_text)
     if len(replacement_alpha) < 2 or not replacement_digits:
         return None
     for index, line in enumerate(lines):
         if line.observation.source != "table_fusion_text":
             continue
         line_alpha, line_digits = dominant_image_line_token_sets(line.text)
-        if (
-            line_alpha != replacement_alpha
-            or not line_digits
-            or line_digits == replacement_digits
-        ):
+        if line_alpha != replacement_alpha or not line_digits or line_digits == replacement_digits:
             continue
         return index
     return None
@@ -9913,26 +9542,18 @@ def precision_clean_dominant_image_single_alpha_row_label_text(
     tokens = precision_label_candidate_tokens(text)
     if len(tokens) < 2:
         return None
-    alpha_positions = [
-        (index, token) for index, token in enumerate(tokens) if token.isalpha()
-    ]
+    alpha_positions = [(index, token) for index, token in enumerate(tokens) if token.isalpha()]
     if len(alpha_positions) != 1:
         return None
     alpha_index, alpha_token = alpha_positions[0]
-    if (
-        alpha_token not in consensus_tokens
-        or alpha_token in PATENT_FIGURE_SHORT_LABEL_TOKENS
-    ):
+    if alpha_token not in consensus_tokens or alpha_token in PATENT_FIGURE_SHORT_LABEL_TOKENS:
         return None
     best_digit: str | None = None
     best_distance: int | None = None
     for index, token in enumerate(tokens):
         if not token.isdigit():
             continue
-        if (
-            token not in supported_numeric_tokens
-            and not plausible_dominant_image_row_digit(token)
-        ):
+        if token not in supported_numeric_tokens and not plausible_dominant_image_row_digit(token):
             continue
         distance = abs(index - alpha_index)
         if best_distance is None or distance < best_distance:
@@ -10001,9 +9622,7 @@ def supplement_dominant_image_consensus_numeric_labels(
             ink_bbox=bbox,
             text=token,
             confidence=confidence,
-            provenance=page_geometry.provenance_tuple(
-                dominant_image_numeric_label_supplement=True
-            ),
+            provenance=page_geometry.provenance_tuple(dominant_image_numeric_label_supplement=True),
         )
         records.append(
             observation_resolver.ResolvedTextLine(
@@ -10072,9 +9691,7 @@ def normalized_generic_dominant_image_label_line(
         lines=lines,
     ):
         return line
-    kept_digits = [
-        token for token in tokens if token.isdigit() and token in consensus_tokens
-    ]
+    kept_digits = [token for token in tokens if token.isdigit() and token in consensus_tokens]
     if kept_digits:
         replacement_text = " ".join(kept_digits)
         if replacement_text == line.text:
@@ -10163,9 +9780,7 @@ def dominant_image_supported_single_alpha_row_labels_from_candidates(
             continue
         for row in candidate.result.line_rows:
             bbox = dominant_image_row_page_bbox(row)
-            if bbox is None or not dominant_image_bbox_in_label_region(
-                bbox, label_region_bbox
-            ):
+            if bbox is None or not dominant_image_bbox_in_label_region(bbox, label_region_bbox):
                 continue
             cleaned_text = precision_clean_dominant_image_single_alpha_row_label_text(
                 str(row.get("text", "")),
@@ -10220,8 +9835,7 @@ def dominant_image_label_region_bbox(
     boxes = [
         line.observation.bbox
         for line in lines
-        if line.observation.bbox is not None
-        and dominant_image_line_token_sets(line.text)[0]
+        if line.observation.bbox is not None and dominant_image_line_token_sets(line.text)[0]
     ]
     if not boxes:
         return None
@@ -10267,17 +9881,13 @@ def dominant_image_numeric_label_cluster_groups(
     label_region_bbox: tuple[float, float, float, float] | None,
     pad_ratio_x: float = 0.08,
     pad_ratio_y: float = 0.08,
-) -> dict[
-    str, tuple[tuple[int, tuple[float, float, float, float], str, float | None], ...]
-]:
+) -> dict[str, tuple[tuple[int, tuple[float, float, float, float], str, float | None], ...]]:
     grouped: dict[
         str,
         list[tuple[int, tuple[float, float, float, float], str, float | None]],
     ] = {}
     for candidate in candidates:
-        candidate_confidence = page_geometry.numeric_confidence(
-            candidate.result.confidence
-        )
+        candidate_confidence = page_geometry.numeric_confidence(candidate.result.confidence)
         for row in candidate.result.line_rows:
             token = dominant_image_numeric_label_row_token(str(row.get("text", "")))
             if token is None:
@@ -10311,9 +9921,7 @@ def dominant_image_numeric_label_cluster_groups(
             clusters[matched_index] = (
                 count + 1,
                 dominant_image_union_bbox(cluster_bbox, bbox),
-                source
-                if (confidence or 0.0) >= (candidate_confidence or 0.0)
-                else candidate.name,
+                source if (confidence or 0.0) >= (candidate_confidence or 0.0) else candidate.name,
                 max(confidence or 0.0, candidate_confidence or 0.0),
             )
     cluster_groups: dict[
@@ -10366,8 +9974,7 @@ def dominant_image_label_boxes_match(
     right_height = max(1.0, right[3] - right[1])
     return (
         abs(left_center[0] - right_center[0]) <= max(left_width, right_width) * 0.75
-        and abs(left_center[1] - right_center[1])
-        <= max(left_height, right_height) * 0.75
+        and abs(left_center[1] - right_center[1]) <= max(left_height, right_height) * 0.75
     )
 
 
@@ -10395,8 +10002,7 @@ def dominant_image_numeric_label_boxes_match(
     right_center = ((right[0] + right[2]) * 0.5, (right[1] + right[3]) * 0.5)
     return (
         abs(left_center[0] - right_center[0]) <= min(left_width, right_width) * 2.0
-        and abs(left_center[1] - right_center[1])
-        <= max(left_height, right_height) * 0.9
+        and abs(left_center[1] - right_center[1]) <= max(left_height, right_height) * 0.9
     )
 
 
@@ -10413,11 +10019,7 @@ def dominant_image_numeric_label_cluster_is_compact(
     area_ratio = page_geometry.rect_area(bbox) / max(
         1.0, page_geometry.rect_area(label_region_bbox)
     )
-    return (
-        width <= region_width * 0.12
-        and height <= region_height * 0.08
-        and area_ratio <= 0.008
-    )
+    return width <= region_width * 0.12 and height <= region_height * 0.08 and area_ratio <= 0.008
 
 
 def dominant_image_numeric_token_has_embedded_alpha_support(
@@ -10448,9 +10050,7 @@ def dominant_image_compact_numeric_cluster_has_neighboring_alpha_support(
                 continue
             row_text = str(row.get("text", ""))
             row_tokens = precision_label_candidate_tokens(row_text)
-            alpha_tokens = [
-                row_token for row_token in row_tokens if row_token.isalpha()
-            ]
+            alpha_tokens = [row_token for row_token in row_tokens if row_token.isalpha()]
             if not alpha_tokens or token in row_tokens:
                 continue
             if not dominant_image_neighboring_row_supports_compact_cluster(
@@ -10499,9 +10099,7 @@ def dominant_image_stacked_alpha_companion_token(
                 continue
             for other in rows:
                 other_bbox = dominant_image_row_page_bbox(other)
-                other_tokens = precision_label_candidate_tokens(
-                    str(other.get("text", ""))
-                )
+                other_tokens = precision_label_candidate_tokens(str(other.get("text", "")))
                 if (
                     other_bbox is None
                     or len(other_tokens) != 1
@@ -10553,9 +10151,7 @@ def dominant_image_numeric_display_companion_support(
                 dominant_image_union_bbox(numeric_bbox, display_bbox)
                 for numeric_bbox in numeric_boxes
                 for display_bbox in display_boxes
-                if dominant_image_numeric_display_boxes_match(
-                    numeric_bbox, display_bbox
-                )
+                if dominant_image_numeric_display_boxes_match(numeric_bbox, display_bbox)
             ),
             None,
         )
@@ -10582,9 +10178,7 @@ def dominant_image_single_alpha_numeric_companion_support(
         rows = tuple(candidate.result.line_rows)
         alpha_boxes: list[tuple[float, float, float, float]] = []
         for row in rows:
-            if precision_label_candidate_tokens(str(row.get("text", ""))) != [
-                alpha_token
-            ]:
+            if precision_label_candidate_tokens(str(row.get("text", ""))) != [alpha_token]:
                 continue
             bbox = dominant_image_row_page_bbox(row)
             if bbox is not None:
@@ -10619,9 +10213,7 @@ def dominant_image_single_alpha_numeric_companion_support(
                 ):
                     continue
                 supporting[token] += 1
-                if best is None or (
-                    token == alpha_token or (confidence or 0.0) > (best[2] or 0.0)
-                ):
+                if best is None or (token == alpha_token or (confidence or 0.0) > (best[2] or 0.0)):
                     best = (
                         str(candidate.name),
                         dominant_image_union_bbox(cluster_bbox, alpha_boxes[0]),
@@ -10630,9 +10222,7 @@ def dominant_image_single_alpha_numeric_companion_support(
                     )
     if not supporting:
         return None
-    token, count = max(
-        supporting.items(), key=lambda item: (item[1], -abs(int(item[0]) - 44))
-    )
+    token, count = max(supporting.items(), key=lambda item: (item[1], -abs(int(item[0]) - 44)))
     if count < 2:
         return None
     if best is None or best[3] != token:
@@ -10644,9 +10234,7 @@ def dominant_image_figure_micro_band_alpha_word_clusters(
     candidates: tuple[OcrCandidate, ...],
     *,
     label_region_bbox: tuple[float, float, float, float] | None,
-) -> dict[
-    str, tuple[tuple[int, tuple[float, float, float, float], str, float | None], ...]
-]:
+) -> dict[str, tuple[tuple[int, tuple[float, float, float, float], str, float | None], ...]]:
     grouped: dict[
         str,
         list[tuple[int, tuple[float, float, float, float], str, float | None]],
@@ -10659,8 +10247,7 @@ def dominant_image_figure_micro_band_alpha_word_clusters(
             bbox
             for row in candidate.result.word_rows
             if (bbox := dominant_image_row_page_bbox(row)) is not None
-            and dominant_image_numeric_label_row_token(str(row.get("text", "")))
-            is not None
+            and dominant_image_numeric_label_row_token(str(row.get("text", ""))) is not None
         ]
         if not numeric_boxes:
             continue
@@ -10738,9 +10325,7 @@ def dominant_image_figure_micro_fragment_clusters(
     local_vocabulary: set[str] | None = None,
     fusion_support: dict[str, tuple[FigureFragmentFusionSupport, ...]] | None = None,
     analysis: FigureFragmentAnalysis | None = None,
-) -> dict[
-    str, tuple[tuple[int, tuple[float, float, float, float], str, float | None], ...]
-]:
+) -> dict[str, tuple[tuple[int, tuple[float, float, float, float], str, float | None], ...]]:
     if fragment_clusters is not None:
         raw_clusters = fragment_clusters
     elif analysis is not None:
@@ -10792,9 +10377,7 @@ def dominant_image_figure_micro_fragment_clusters(
             if fragment is None:
                 continue
             raw_group = raw_clusters.get(fragment)
-            if raw_group is None or not any(
-                cluster.count >= 3 for cluster in raw_group
-            ):
+            if raw_group is None or not any(cluster.count >= 3 for cluster in raw_group):
                 continue
             support_group = fragment_support.get(fragment)
             if support_group is None or not any(
@@ -10943,10 +10526,7 @@ def dominant_image_figure_band_local_fragment_clusters(
     grouped: dict[str, list[FigureFragmentCluster]] = {}
     for candidate in candidates:
         candidate_name = str(candidate.name)
-        if (
-            "_micro_fragment_" not in candidate_name
-            and "_micro_band_" not in candidate_name
-        ):
+        if "_micro_fragment_" not in candidate_name and "_micro_band_" not in candidate_name:
             continue
         confidence = page_geometry.numeric_confidence(candidate.result.confidence)
         rows = "word_rows"
@@ -11298,9 +10878,7 @@ def dominant_image_page_local_technical_lexicon(
         ordered_fragments = getattr(evidence, "ordered_fragments", ())
         fragments = getattr(evidence, "fragments", ())
         lexicon.update(
-            dominant_image_slot_fragment_synthetic_candidates(
-                ordered_fragments or fragments
-            )
+            dominant_image_slot_fragment_synthetic_candidates(ordered_fragments or fragments)
         )
     return lexicon
 
@@ -11342,9 +10920,7 @@ def dominant_image_compact_slot_fragment_sequence(
 def dominant_image_ordered_slot_fragments(
     fragment_observations: list[tuple[float, str]],
 ) -> tuple[str, ...]:
-    ordered = sorted(
-        fragment_observations, key=lambda item: (item[0], -len(item[1]), item[1])
-    )
+    ordered = sorted(fragment_observations, key=lambda item: (item[0], -len(item[1]), item[1]))
     compact: list[str] = []
     for _center_x, fragment in ordered:
         if compact and compact[-1] == fragment:
@@ -11389,10 +10965,7 @@ def dominant_image_band_slot_numeric_supports_anchor(
     numeric_center_y = (numeric_bbox[1] + numeric_bbox[3]) * 0.5
     anchor_height = max(1.0, anchor_bbox[3] - anchor_bbox[1])
     numeric_height = max(1.0, numeric_bbox[3] - numeric_bbox[1])
-    if (
-        abs(anchor_center_y - numeric_center_y)
-        > max(anchor_height, numeric_height) * 5.0
-    ):
+    if abs(anchor_center_y - numeric_center_y) > max(anchor_height, numeric_height) * 5.0:
         return False
     return numeric_bbox[0] > anchor_bbox[2]
 
@@ -11421,15 +10994,11 @@ def dominant_image_band_local_fragment_supports_neighbor(
     neighbor_center_y = (neighbor_bbox[1] + neighbor_bbox[3]) * 0.5
     fragment_height = max(1.0, fragment_bbox[3] - fragment_bbox[1])
     neighbor_height = max(1.0, neighbor_bbox[3] - neighbor_bbox[1])
-    if (
-        abs(fragment_center_y - neighbor_center_y)
-        > max(fragment_height, neighbor_height) * 5.0
-    ):
+    if abs(fragment_center_y - neighbor_center_y) > max(fragment_height, neighbor_height) * 5.0:
         return False
     horizontal_gap = max(
         0.0,
-        max(fragment_bbox[0], neighbor_bbox[0])
-        - min(fragment_bbox[2], neighbor_bbox[2]),
+        max(fragment_bbox[0], neighbor_bbox[0]) - min(fragment_bbox[2], neighbor_bbox[2]),
     )
     return (
         horizontal_gap
@@ -11511,9 +11080,7 @@ def dominant_image_neighboring_row_supports_compact_cluster(
     cluster_bbox: tuple[float, float, float, float],
     row_bbox: tuple[float, float, float, float],
 ) -> bool:
-    overlap_width = max(
-        0.0, min(cluster_bbox[2], row_bbox[2]) - max(cluster_bbox[0], row_bbox[0])
-    )
+    overlap_width = max(0.0, min(cluster_bbox[2], row_bbox[2]) - max(cluster_bbox[0], row_bbox[0]))
     min_width = max(
         1.0,
         min(cluster_bbox[2] - cluster_bbox[0], row_bbox[2] - row_bbox[0]),
@@ -11604,9 +11171,7 @@ def dominant_image_peripheral_render_row_clusters(
         ]
     ] = []
     for candidate in candidates:
-        candidate_confidence = page_geometry.numeric_confidence(
-            candidate.result.confidence
-        )
+        candidate_confidence = page_geometry.numeric_confidence(candidate.result.confidence)
         for row in candidate.result.line_rows:
             bbox = dominant_image_row_page_bbox(row)
             text = str(row.get("text", "")).strip()
@@ -11712,12 +11277,8 @@ def dominant_image_peripheral_render_row_text_is_better(
     candidate_confidence: float | None,
     current_confidence: float | None,
 ) -> bool:
-    candidate_punct = sum(
-        1 for ch in candidate_text if not ch.isalnum() and not ch.isspace()
-    )
-    current_punct = sum(
-        1 for ch in current_text if not ch.isalnum() and not ch.isspace()
-    )
+    candidate_punct = sum(1 for ch in candidate_text if not ch.isalnum() and not ch.isspace())
+    current_punct = sum(1 for ch in current_text if not ch.isalnum() and not ch.isspace())
     if candidate_punct != current_punct:
         return candidate_punct > current_punct
     candidate_quality = text_ocr_quality_score(candidate_text)
@@ -11747,10 +11308,7 @@ def should_preserve_dominant_image_peripheral_line(
     alpha_tokens = [token for token in tokens if token.isalpha()]
     if not alpha_tokens:
         return False
-    if (
-        text_ocr_quality_score(line.text) > 0.45
-        and max(len(token) for token in alpha_tokens) < 6
-    ):
+    if text_ocr_quality_score(line.text) > 0.45 and max(len(token) for token in alpha_tokens) < 6:
         return False
     return dominant_image_peripheral_line_has_render_support(
         line,
@@ -11913,10 +11471,7 @@ def precision_clean_degradation_chart_line_text(text: str) -> str | None:
         return stripped
     if informative_index == 0:
         return stripped
-    if all(
-        degradation_chart_token_is_leading_junk(token)
-        for token in tokens[:informative_index]
-    ):
+    if all(degradation_chart_token_is_leading_junk(token) for token in tokens[:informative_index]):
         return " ".join(tokens[informative_index:])
     return stripped
 
@@ -11964,9 +11519,7 @@ def append_rendered_full_page_ocr_candidates(
         profile = page.get_page_profile()
     except Exception:
         profile = None
-    prioritize_sparse_layout = (
-        getattr(profile, "recommended_strategy", None) == "native_text"
-    )
+    prioritize_sparse_layout = getattr(profile, "recommended_strategy", None) == "native_text"
     vector_diagram_sparse = (
         getattr(profile, "recommended_strategy", None) == "vector_or_table"
         and bool(getattr(profile, "has_path_ops", False))
@@ -12094,9 +11647,7 @@ def append_rendered_full_page_ocr_candidates(
                 sparse_result,
                 rendered_image,
             )
-        if vector_diagram_sparse and not ocr_full_page.should_try_sparse_ocr(
-            primary_result
-        ):
+        if vector_diagram_sparse and not ocr_full_page.should_try_sparse_ocr(primary_result):
             sparse_result = (
                 ocr_session.image_to_text_result(
                     rendered_image,
@@ -12312,8 +11863,7 @@ def best_column_ocr_candidate_image(
     rendered_candidates = [
         candidate
         for candidate in candidates
-        if should_try_two_column_ocr_candidate(candidate)
-        and candidate.name in candidate_images
+        if should_try_two_column_ocr_candidate(candidate) and candidate.name in candidate_images
     ]
     candidate = ocr_selection.select_ocr_candidate(rendered_candidates)
     if candidate is None:
@@ -12334,9 +11884,7 @@ def should_limit_rendered_ocr_after_large_full_page_image(
 def rendered_dpis_limited_for_large_full_page_image(
     candidates: tuple[int, ...],
 ) -> tuple[int, ...]:
-    return tuple(
-        dpi for dpi in candidates if dpi <= OCR_LARGE_FULL_PAGE_IMAGE_MAX_RENDER_DPI
-    )
+    return tuple(dpi for dpi in candidates if dpi <= OCR_LARGE_FULL_PAGE_IMAGE_MAX_RENDER_DPI)
 
 
 def collect_rotated_ocr_supplement_candidates(
@@ -12432,11 +11980,7 @@ def should_try_rotated_ocr_supplement(
     candidate: OcrCandidate | OcrTextResult,
     image: OcrImage | None = None,
 ) -> bool:
-    result = (
-        candidate.result
-        if isinstance(candidate, ocr_candidates.OcrCandidate)
-        else candidate
-    )
+    result = candidate.result if isinstance(candidate, ocr_candidates.OcrCandidate) else candidate
     if not result.text:
         return False
     tokens = extracted_text_token_count(result.text)
@@ -12447,9 +11991,9 @@ def should_try_rotated_ocr_supplement(
     if image is None:
         return False
     if image.source.startswith("rendered_page_"):
-        if isinstance(
-            candidate, ocr_candidates.OcrCandidate
-        ) and not candidate.name.startswith("rendered_page_"):
+        if isinstance(candidate, ocr_candidates.OcrCandidate) and not candidate.name.startswith(
+            "rendered_page_"
+        ):
             return False
         if tokens <= 4 and confidence < 60:
             return True
@@ -12486,9 +12030,7 @@ def rotated_ocr_supplement_score(base_text: str, rotated: OcrTextResult) -> floa
     )
 
 
-def should_accept_rotated_ocr_supplement(
-    base_text: str, rotated: OcrTextResult
-) -> bool:
+def should_accept_rotated_ocr_supplement(base_text: str, rotated: OcrTextResult) -> bool:
     tokens = normalized_text_tokens(rotated.text)
     if not (3 <= len(tokens) <= 30):
         return False
@@ -12652,9 +12194,7 @@ def two_column_ocr_candidate_from_regions(
             confidences.append(result.confidence)
     if len(texts) < 2:
         return None
-    confidence = (
-        int(round(sum(confidences) / len(confidences))) if confidences else None
-    )
+    confidence = int(round(sum(confidences) / len(confidences))) if confidences else None
     return ocr_candidates.OcrCandidate(
         name,
         OcrTextResult("\n".join(texts), confidence),
@@ -12728,9 +12268,7 @@ def ocr_line_rects_from_result(
         )
         if len(line_rects) >= OCR_MULTI_COLUMN_BAND_MIN_LINES * 2:
             return line_rects
-    boxes = tuple(
-        box for box in result.component_boxes if box.level == TESSERACT_RIL_TEXTLINE
-    )
+    boxes = tuple(box for box in result.component_boxes if box.level == TESSERACT_RIL_TEXTLINE)
     if boxes:
         textline_rects = two_column_text_rects_from_boxes(
             list(boxes),
@@ -12778,9 +12316,7 @@ def vertical_rect_groups(
 ) -> list[list[tuple[int, int, int, int]]]:
     if not rects:
         return []
-    ordered = sorted(
-        rects, key=lambda rect: ((rect[1] + rect[3]) * 0.5, rect[0], rect[2])
-    )
+    ordered = sorted(rects, key=lambda rect: ((rect[1] + rect[3]) * 0.5, rect[0], rect[2]))
     heights = [rect[3] - rect[1] for rect in ordered if rect[3] > rect[1]]
     median_height = median(heights) if heights else 12.0
     gap_threshold = max(20.0, median_height * 2.8, image_height * 0.014)
@@ -12789,10 +12325,7 @@ def vertical_rect_groups(
     previous_center_y: float | None = None
     for rect in ordered:
         center_y = (rect[1] + rect[3]) * 0.5
-        if (
-            previous_center_y is not None
-            and center_y - previous_center_y > gap_threshold
-        ):
+        if previous_center_y is not None and center_y - previous_center_y > gap_threshold:
             if current:
                 groups.append(current)
             current = [rect]
@@ -12981,9 +12514,7 @@ def two_column_split_from_result(
         )
         if split is not None:
             return split
-    boxes = tuple(
-        box for box in result.component_boxes if box.level == TESSERACT_RIL_TEXTLINE
-    )
+    boxes = tuple(box for box in result.component_boxes if box.level == TESSERACT_RIL_TEXTLINE)
     if boxes:
         return two_column_split_from_boxes(list(boxes), image_width, image_height)
     return None
@@ -13129,10 +12660,7 @@ def two_column_boundary_from_evidence(
     tolerance = max(8.0, image_width * 0.012)
     groups: list[list[tuple[float, float]]] = []
     for item in sorted(evidence, key=lambda value: value[0]):
-        if (
-            groups
-            and abs(item[0] - two_column_boundary_group_center(groups[-1])) <= tolerance
-        ):
+        if groups and abs(item[0] - two_column_boundary_group_center(groups[-1])) <= tolerance:
             groups[-1].append(item)
         else:
             groups.append([item])
@@ -13171,9 +12699,7 @@ def two_column_split_from_coverage_profile(
     if right <= left:
         return None
     min_value = min(coverage[left:right])
-    candidates = [
-        index for index in range(left, right) if coverage[index] <= min_value + 1
-    ]
+    candidates = [index for index in range(left, right) if coverage[index] <= min_value + 1]
     if not candidates:
         return None
     midpoint_bucket = buckets * 0.5
@@ -13197,9 +12723,7 @@ def should_try_two_column_ocr_candidate(candidate: OcrCandidate) -> bool:
         return False
     if numeric_token_ratio(text) >= 0.40:
         return False
-    confidence = (
-        candidate.result.confidence if candidate.result.confidence is not None else 50
-    )
+    confidence = candidate.result.confidence if candidate.result.confidence is not None else 50
     quality = text_ocr_quality_score(text)
     if confidence >= 92 and quality <= 0.08 and tokens >= 900:
         return False
@@ -13339,7 +12863,7 @@ def ocr_component_boxes_from_rows(
             top = int(row["top"])
             width = int(row["width"])
             height = int(row["height"])
-        except KeyError, TypeError, ValueError:
+        except (KeyError, TypeError, ValueError):
             continue
         if width <= 0 or height <= 0:
             continue
@@ -13386,9 +12910,7 @@ def native_ocr_regions_from_component_boxes(
         regions.append(region)
     regions = merge_native_ocr_regions(regions, image_width, image_height)
     if len(regions) > max_regions:
-        regions = sorted(regions, key=lambda region: region.area, reverse=True)[
-            :max_regions
-        ]
+        regions = sorted(regions, key=lambda region: region.area, reverse=True)[:max_regions]
     regions.sort(key=lambda region: (region.y0, region.x0))
     return regions
 
@@ -13432,12 +12954,7 @@ def merge_native_ocr_regions(
             right_y0 = max(0, right.y0 - pad_y)
             right_x1 = min(image_width, right.x1 + pad_x)
             right_y1 = min(image_height, right.y1 + pad_y)
-            if (
-                left_x1 < right_x0
-                or right_x1 < left_x0
-                or left_y1 < right_y0
-                or right_y1 < left_y0
-            ):
+            if left_x1 < right_x0 or right_x1 < left_x0 or left_y1 < right_y0 or right_y1 < left_y0:
                 continue
             union(left_index, right_index)
 
@@ -13503,9 +13020,7 @@ def collect_rectangle_region_ocr_candidates(
             )
         )
     if len(texts) >= 2:
-        confidence = (
-            int(round(sum(confidences) / len(confidences))) if confidences else None
-        )
+        confidence = int(round(sum(confidences) / len(confidences))) if confidences else None
         candidates.append(
             ocr_candidates.OcrCandidate(
                 "rectangle_regions",
@@ -13530,13 +13045,9 @@ def should_try_region_ocr_candidate(candidate: OcrCandidate | None) -> bool:
     result = candidate.result
     tokens = extracted_text_token_count(result.text)
     confidence = result.confidence
-    if ocr_selection.rendered_sparse_ocr_candidate_is_usable_without_region_retry(
-        candidate
-    ):
+    if ocr_selection.rendered_sparse_ocr_candidate_is_usable_without_region_retry(candidate):
         return False
-    if ocr_selection.high_density_full_page_ocr_candidate_is_usable_without_region_retry(
-        candidate
-    ):
+    if ocr_selection.high_density_full_page_ocr_candidate_is_usable_without_region_retry(candidate):
         return False
     if confidence is not None and confidence < 52 and tokens < 900:
         return True
@@ -13588,9 +13099,7 @@ def full_page_image_for_ocr(page: PageExtractionHost) -> OcrImage | None:
         if isinstance(cache, dict):
             cache[cache_key] = None
         return None
-    if best_area < page_area * 0.80 and rendered_page_has_substantial_text_overlay(
-        rendered
-    ):
+    if best_area < page_area * 0.80 and rendered_page_has_substantial_text_overlay(rendered):
         if isinstance(cache, dict):
             cache[cache_key] = None
         return None
@@ -13678,9 +13187,7 @@ def ocr_image_from_rendered_image_item(
     data = item.data
     dictionary = data.get("dictionary")
     raw = data.get("raw_data")
-    if not isinstance(dictionary, dict) or not isinstance(
-        raw, (bytes, bytearray, memoryview)
-    ):
+    if not isinstance(dictionary, dict) or not isinstance(raw, (bytes, bytearray, memoryview)):
         if cache is not None and image_cache_key is not None:
             cache[image_cache_key] = None
         return None
@@ -13701,9 +13208,7 @@ def ocr_image_from_rendered_image_item(
 
     raw_bytes = raw if isinstance(raw, bytes) else bytes(raw)
     filter_names = [
-        name
-        for name in image_filter_names(lookup_dict_key(dictionary, "Filter"))
-        if name
+        name for name in image_filter_names(lookup_dict_key(dictionary, "Filter")) if name
     ]
     filters = set(filter_names)
     converted_cache_key = (
@@ -13760,11 +13265,7 @@ def ocr_image_from_rendered_image_item(
         if cache is not None and image_cache_key is not None:
             cache[image_cache_key] = image
         return image
-    if (
-        orientation_matches
-        and len(filter_names) == 1
-        and filters & {"DCTDecode", "DCT"}
-    ):
+    if orientation_matches and len(filter_names) == 1 and filters & {"DCTDecode", "DCT"}:
         filters = {"DCTDecode"}
     if orientation_matches and filter_names in (
         ["FlateDecode", "DCTDecode"],

@@ -5,9 +5,9 @@ from collections import Counter
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Mapping, Protocol
 
-from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.engine.extraction.cache import ExtractionCache
 from core_pdf.impl.engine.extraction.common import page_profile
+from core_pdf.impl.exceptions import PdfParseError
 
 if TYPE_CHECKING:
     from core_pdf.impl.engine.spec.s_07_document.metadata_types import MetadataRecord
@@ -88,8 +88,7 @@ def document_summary(
     ocr_assisted = sum(
         1
         for result in page_results
-        if result.base_route not in {"skip", "native_fast", "native_layout"}
-        or result.supplements
+        if result.base_route not in {"skip", "native_fast", "native_layout"} or result.supplements
     )
     supplement_pages = sum(1 for result in page_results if result.supplements)
     replacement_pages = sum(
@@ -196,9 +195,7 @@ def resolved_line_record_from_content_record(
         confidence=coerce_float(record.get("confidence")),
         baseline=segment_or_none(record.get("baseline")),
         contributing_sources=tuple(
-            str(source)
-            for source in record.get("contributing_sources", ())
-            if source is not None
+            str(source) for source in record.get("contributing_sources", ()) if source is not None
         ),
     )
 
@@ -363,9 +360,7 @@ def base_route_name(
         return "vector_stroke"
     if text_source and "ocr" in text_source:
         return "full_page_ocr"
-    if profile.recommended_strategy == "native_text" and not cache.get(
-        "resolved_output_lines"
-    ):
+    if profile.recommended_strategy == "native_text" and not cache.get("resolved_output_lines"):
         return "native_fast"
     if profile.recommended_strategy == "text_table":
         return "native_layout"
@@ -406,8 +401,7 @@ def resolved_output_lines_have_source(cache: ExtractionCache, source: str) -> bo
     if not isinstance(lines, tuple):
         return False
     return any(
-        getattr(getattr(line, "observation", None), "source", None) == source
-        for line in lines
+        getattr(getattr(line, "observation", None), "source", None) == source for line in lines
     )
 
 
