@@ -280,9 +280,10 @@ class PdfDocument(NavigationMixin, FormsMixin, LayersMixin):
     def structure(self) -> StructureTree | None:
         if self.structure_cache is None:
             if self.structure_root_cache is None:
-                self.structure_root_cache = self.resolver.resolve_dict(
-                    self.catalog().get("StructTreeRoot")
-                )
+                resolved_root = self.resolver.resolve(self.catalog().get("StructTreeRoot"))
+                if resolved_root is not None and not isinstance(resolved_root, dict):
+                    raise ValueError("invalid StructTreeRoot dictionary")
+                self.structure_root_cache = resolved_root
             struct_root = self.structure_root_cache
             if struct_root is None:
                 self.structure_cache = None

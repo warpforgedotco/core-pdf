@@ -538,13 +538,14 @@ class FontDecoder:
         ):
             fast_widths = self.fast_widths_cid
             total = 0.0
+            space_count = 0
             for i in range(0, n, 2):
                 code = (data[i] << 8) | data[i + 1]
                 total += fast_widths[code]
+                if code == 32:
+                    space_count += 1
             total += (n >> 1) * cs
-            # space (32) in CID is usually mapped to GID 32, but we checked in init
-            # Actually count(32) for CID needs to be per-2-byte.
-            # We'll skip precise word_space for now in this fast path if rare.
+            total += space_count * ws
             if self.is_vertical:
                 return (0.0, -total * scale)
             return (total * scale, 0.0)
