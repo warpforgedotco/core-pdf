@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import Protocol
+from typing import Any, Protocol, cast
 
 from core_pdf.impl.engine.layout.models import TextRun
 from core_pdf.impl.engine.spec.s_07_objects.coercion import normalize_pdf_name
@@ -217,7 +217,7 @@ def detect_ligature_overrides(
             if 0 <= idx < len(lig_widths_raw):
                 w = lig_widths_raw[idx]
                 if type(w) in (int, float):
-                    lig_width = float(w)
+                    lig_width = float(cast(Any, w))
 
         if lig_width and 0.85 <= lig_width / ft_width <= 0.98:
             overrides[pdf_code] = "ft"

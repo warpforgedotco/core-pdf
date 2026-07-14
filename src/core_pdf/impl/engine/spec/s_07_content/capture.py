@@ -239,11 +239,11 @@ def type3_font_matrix(font: dict[str, Any]) -> Matrix:
     matrix = lookup_dict_key(font, "FontMatrix")
     if not isinstance(matrix, (list, tuple)) or len(matrix) != 6:
         return Matrix(0.001, 0.0, 0.0, 0.001, 0.0, 0.0)
-    values = []
+    values: list[float] = []
     for value in matrix:
         if type(value) not in (int, float):
             return Matrix(0.001, 0.0, 0.0, 0.001, 0.0, 0.0)
-        values.append(float(value))
+        values.append(float(typing.cast(Any, value)))
     return Matrix(*values)
 
 

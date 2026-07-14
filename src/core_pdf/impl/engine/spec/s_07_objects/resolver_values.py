@@ -122,7 +122,7 @@ class ResolverValueMixin:
 
     def resolve_dict(self, value: object) -> PdfDict | None:
         resolved = self.deep_resolve(value)
-        return resolved if isinstance(resolved, dict) else None
+        return cast(PdfDict, resolved) if isinstance(resolved, dict) else None
 
     def resolve_box(self, value: object) -> tuple[float, float, float, float] | None:
         resolved = self.deep_resolve(value)
@@ -144,11 +144,11 @@ class ResolverValueMixin:
         resolved_font = self.deep_resolve(font)
         if not isinstance(resolved_font, dict):
             raise ValueError("invalid font dictionary")
-        return resolved_font
+        return cast(PdfDict, resolved_font)
 
     def resolve_list(self, value: object) -> list[object] | None:
         resolved = self.deep_resolve(value)
-        return resolved if isinstance(resolved, list) else None
+        return cast(list[object], resolved) if isinstance(resolved, list) else None
 
     def resolve_float(self, value: object, default: float | None = 0.0) -> float | None:
         if type(value) is int:

@@ -18,6 +18,7 @@ from core_pdf.impl.engine.spec.s_07_content.operations import (
     ContentOperand,
     ContentOperands,
     OperandWindow,
+    OperationTarget,
     StateOperationHandler,
     content_stream_may_show_text,
     dispatch_operations,
@@ -674,7 +675,11 @@ class TextState(XObjectMixin, ContentCaptureMixin, OperatorMixin):
         operator, operands = operation
         handler = self.op_handlers.get(operator)
         if handler is not None:
-            handler(self, OperandWindow(list(operands), len(operands)), depth)
+            handler(
+                typing.cast(OperationTarget, self),
+                OperandWindow(list(operands), len(operands)),
+                depth,
+            )
 
     def capture_stream_state(self) -> StreamState:
         return StreamState(
@@ -784,13 +789,13 @@ class TextState(XObjectMixin, ContentCaptureMixin, OperatorMixin):
                 return
 
             lexer = PdfLexer(stream.data_view, kw_cache=self.kw_cache)
-            dispatch_operations(
+            typing.cast(typing.Any, dispatch_operations)(
                 lexer,
                 self.op_handlers,
                 self.op_handlers_bytes,
                 self.single_op_handlers,
                 self.double_op_handlers,
-                self,
+                typing.cast(OperationTarget, self),
                 depth,
                 operands=self.operands,
             )
@@ -960,7 +965,8 @@ class TextState(XObjectMixin, ContentCaptureMixin, OperatorMixin):
             self.current_decoder = decoder
             return decoder
 
-        resolved_font = self.document.resolver.resolve_font_dict(font_obj)
+        font_dict = typing.cast(PdfDict, font_obj)
+        resolved_font = self.document.resolver.resolve_font_dict(font_dict)
         self.current_decoder = FontDecoder(
             typing.cast(dict[str, object], resolved_font),
             ligature_overrides=detect_ligature_overrides(
