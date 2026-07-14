@@ -22,6 +22,9 @@ License = "https://github.com/core-experiments/core-pdf/blob/main/LICENSE.txt"
 "Philanthropy waiver terms" = "https://github.com/core-experiments/core-pdf/blob/main/docs/license/LICENSE-PHILANTHROPY-WAIVER.txt"
 
 [dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
 lint = [
     "mypy >=1.16.0, <2.0.0",
     "ruff >=0.11.13, <1.0.0",
