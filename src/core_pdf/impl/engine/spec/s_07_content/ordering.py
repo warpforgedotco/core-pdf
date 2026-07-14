@@ -84,12 +84,86 @@ def cluster_runs_into_lines(
     return rows
 
 
+def cluster_rotated_runs_into_lines(
+    runs: list[TextRun],
+    *,
+    lookback: int = 10,
+    min_width: float = 4.0,
+    threshold: float = 0.45,
+) -> list[list[TextRun]]:
+    if not runs:
+        return []
+
+    decorated = [(r.rotation_angle, r.mid_x, r.order, i, r) for i, r in enumerate(runs)]
+    decorated.sort()
+    sorted_runs = [item[4] for item in decorated]
+
+    rows: list[list[TextRun]] = []
+    row_mid_sums: list[float] = []
+    row_w_sums: list[float] = []
+    row_counts: list[int] = []
+    row_mid_avg: list[float] = []
+    row_w_avg: list[float] = []
+
+    for run in sorted_runs:
+        rx_mid = run.mid_x
+        rw = run.x1 - run.x0
+        placed = False
+
+        start = max(0, len(rows) - lookback)
+        for i in range(len(rows) - 1, start - 1, -1):
+            if rows[i] and rows[i][0].rotation_angle != run.rotation_angle:
+                continue
+            lx_mid = row_mid_avg[i]
+            lw = row_w_avg[i]
+            dx = rx_mid - lx_mid
+            max_w = rw if rw > lw else lw
+            if max_w < min_width:
+                max_w = min_width
+            gap_threshold = max_w * threshold
+            if dx > gap_threshold * 1.8:
+                break
+            if abs(dx) < gap_threshold:
+                rows[i].append(run)
+                n = row_counts[i] + 1
+                row_counts[i] = n
+                row_mid_sums[i] += rx_mid
+                row_w_sums[i] += rw
+                row_mid_avg[i] = row_mid_sums[i] / n
+                row_w_avg[i] = row_w_sums[i] / n
+                placed = True
+                break
+
+        if not placed:
+            rows.append([run])
+            row_mid_sums.append(rx_mid)
+            row_w_sums.append(rw)
+            row_counts.append(1)
+            row_mid_avg.append(rx_mid)
+            row_w_avg.append(rw)
+
+    return rows
+
+
 class LayoutAnalyzer:
     """Namespace for higher-level layout analysis and clustering."""
 
     @staticmethod
     def cluster_into_lines(runs: list[TextRun]) -> list[LayoutLine]:
-        rows = cluster_runs_into_lines(runs)
+        horizontal_runs: list[TextRun] = []
+        vertical_writing_runs: list[TextRun] = []
+        rotated_runs: list[TextRun] = []
+        for run in runs:
+            if run.rotation_angle in (90, 270):
+                rotated_runs.append(run)
+            elif run.is_vertical:
+                vertical_writing_runs.append(run)
+            else:
+                horizontal_runs.append(run)
+
+        rows = cluster_runs_into_lines(horizontal_runs)
+        rows.extend(cluster_rotated_runs_into_lines(vertical_writing_runs))
+        rows.extend(cluster_rotated_runs_into_lines(rotated_runs))
         all_lines: list[LayoutLine] = []
         line_add = LayoutLine.add
         for row in rows:
@@ -100,7 +174,12 @@ class LayoutAnalyzer:
 
         all_lines.sort(key=lambda ln: (-ln.y1, ln.x0))
         for line in all_lines:
-            line.runs.sort(key=lambda r: r.x0)
+            if line.rotation_angle == 90:
+                line.runs.sort(key=lambda r: (r.y0, r.order))
+            elif line.rotation_angle == 270:
+                line.runs.sort(key=lambda r: (-r.y1, r.order))
+            else:
+                line.runs.sort(key=lambda r: (r.x0, r.order))
         return all_lines
 
     @staticmethod
@@ -370,6 +449,12 @@ class LayoutAnalyzer:
     def is_right_to_left_line(runs: list[TextRun]) -> bool:
         ordered = [run for run in runs if run.text.strip()]
         if len(ordered) < 2:
+            return False
+        if not any(
+            "\u0590" <= char <= "\u08FF" or "\uFB1D" <= char <= "\uFEFC"
+            for run in ordered
+            for char in run.text
+        ):
             return False
         # Check if stream order corresponds to right-to-left (x0 decreasing)
         stream_sorted = sorted(ordered, key=lambda r: (r.order, r.stream_order))

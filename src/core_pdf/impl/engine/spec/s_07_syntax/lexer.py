@@ -5,7 +5,7 @@ import binascii
 import mmap
 import re
 from collections.abc import Callable, Iterator, Mapping, Sequence
-from typing import TypeAlias
+from typing import TypeAlias, Union
 
 from core_pdf.impl.engine.spec.s_07_syntax.errors import PdfParseError
 from core_pdf.impl.engine.spec.s_07_syntax.primitives import (
@@ -76,6 +76,7 @@ IS_WORD_START = bytes(
     [1 if i > 32 and i not in (40, 41, 60, 62, 91, 93, 47, 123, 125, 37) else 0 for i in range(256)]
 )
 IS_DIGIT = bytes([1 if 48 <= i <= 57 else 0 for i in range(256)])
+STREAM_DECODE_METADATA_KEYS = (PdfName_of(b"Filter"), PdfName_of(b"DecodeParms"))
 
 HEX_VALUE = bytes(
     [
@@ -88,7 +89,7 @@ KeywordValue: TypeAlias = bool | None | str
 KeywordCacheValue: TypeAlias = KeywordValue | object
 ResolvedReference: TypeAlias = Callable[[PdfReference], PdfObject]
 DecipherFn: TypeAlias = Callable[[int, int, bytes, PdfDictLike | None], bytes]
-ParsedOperand: TypeAlias = PdfObject | "InlineImage"
+ParsedOperand: TypeAlias = Union[PdfObject, "InlineImage"]
 OperationHandler: TypeAlias = Callable[[Sequence[ParsedOperand], int], None]
 
 
@@ -564,10 +565,60 @@ class PdfLexer:
             key = PdfName_of(key_bytes)
             values[key] = self.parse_object()
 
+    def resolve_stream_decode_metadata_value(self, value: PdfObject) -> PdfObject:
+        resolver = self.reference_resolver
+        if resolver is None:
+            return value
+        if isinstance(value, PdfReference):
+            return resolver(value)
+        if isinstance(value, list):
+            return [self.resolve_stream_decode_metadata_value(item) for item in value]
+        if isinstance(value, tuple):
+            return tuple(self.resolve_stream_decode_metadata_value(item) for item in value)
+        return value
+
+    def resolve_stream_decode_metadata(self, dictionary: PdfDictLike) -> PdfDictLike:
+        if self.reference_resolver is None:
+            return dictionary
+
+        resolved: PdfDictLike | None = None
+        for key in STREAM_DECODE_METADATA_KEYS:
+            value = dictionary.get(key)
+            if value is None:
+                continue
+            new_value = self.resolve_stream_decode_metadata_value(value)
+            if new_value is value:
+                continue
+            if resolved is None:
+                resolved = dictionary.copy()
+            resolved[key] = new_value
+        return dictionary if resolved is None else resolved
+
+    def read_stream_until_end_marker(self, stream_start: int) -> bytes | None:
+        for match in ENDSTREAM_RE.finditer(self.raw_data, stream_start):
+            marker_start = match.start()
+            marker_end = match.end()
+            prev_ok = marker_start == stream_start or self.raw_data[marker_start - 1] in WHITESPACE
+            next_ok = marker_end >= self.data_len or self.raw_data[marker_end] in WHITESPACE
+            if not prev_ok or not next_ok:
+                continue
+
+            data_end = marker_start
+            if data_end > stream_start and self.raw_data[data_end - 1] == 10:
+                data_end -= 1
+                if data_end > stream_start and self.raw_data[data_end - 1] == 13:
+                    data_end -= 1
+            elif data_end > stream_start and self.raw_data[data_end - 1] == 13:
+                data_end -= 1
+            self.pos = marker_end
+            return bytes(self.raw_data[stream_start:data_end])
+        return None
+
     def parse_stream(self, dictionary: PdfDictLike) -> PdfStream:
         from core_pdf.impl.engine.spec.s_07_filters.filters import normalize_stream_decode_spec
 
         self.skip_eol()
+        stream_start = self.pos
         # Lookup using PdfName to avoid decoding
         length = dictionary.get(PdfName_of(b"Length"))
         if isinstance(length, PdfReference):
@@ -579,15 +630,23 @@ class PdfLexer:
 
         raw_data = self.read_bytes(length)
         if len(raw_data) != length:
-            raise PdfParseError("truncated stream data")
+            recovered = self.read_stream_until_end_marker(stream_start)
+            if recovered is None:
+                raise PdfParseError("truncated stream data")
+            raw_data = recovered
         self.skip_ignored()
         if self.raw_data[self.pos : self.pos + 9] != b"endstream":
-            raise PdfParseError("expected endstream")
-        self.advance(9)
+            recovered = self.read_stream_until_end_marker(stream_start)
+            if recovered is None:
+                raise PdfParseError("expected endstream")
+            raw_data = recovered
+        else:
+            self.advance(9)
 
         raw_data = self.apply_decipher(raw_data, dictionary)
-        stream_spec = normalize_stream_decode_spec(dictionary)
-        return PdfStream(dictionary, raw_data, stream_spec)
+        normalized_dictionary = self.resolve_stream_decode_metadata(dictionary)
+        stream_spec = normalize_stream_decode_spec(normalized_dictionary)
+        return PdfStream(normalized_dictionary, raw_data, stream_spec)
 
     def parse_dictionary_or_stream(self) -> PdfObject:
         dictionary = self.parse_dictionary()
@@ -607,7 +666,8 @@ class PdfLexer:
             pos += 1
         if pos < self.data_len and data[pos] == 10:  # \n
             pos += 1
-        self.rewind(pos)
+        self.pos = max(0, min(pos, self.data_len))
+        self.exhausted = False
 
     def skip_inline_image_separator(self) -> bool:
         start = self.pos
@@ -617,10 +677,7 @@ class PdfLexer:
         return self.pos > start
 
     def parse_inline_image(self) -> InlineImage:
-        from core_pdf.impl.engine.spec.s_07_filters.filters import (
-            decode_stream_data,
-            normalize_stream_decode_spec,
-        )
+        from core_pdf.impl.engine.spec.s_07_filters.filters import normalize_stream_decode_spec
         from core_pdf.impl.engine.spec.s_09_fonts.data.core14 import INLINE_IMAGE_KEY_MAP
 
         dictionary: PdfDictLike = {}
@@ -663,8 +720,8 @@ class PdfLexer:
                     k_str = str(k)
                     mapped_k = INLINE_IMAGE_KEY_MAP.get(k_str, k_str)
                     normalized[PdfName_of(mapped_k)] = value
-                stream_spec = normalize_stream_decode_spec(normalized)
-                return InlineImage(normalized, decode_stream_data(image_data, stream_spec))
+                normalize_stream_decode_spec(normalized)
+                return InlineImage(normalized, image_data)
             pos = marker + 1
 
     def dispatch_operations(
@@ -737,7 +794,7 @@ class PdfLexer:
 
                 # Fast-path for numbers (highly frequent)
                 first = raw[0]
-                if 48 <= first <= 57 or first == 45 or first == 43:  # 0-9 or - or +
+                if 48 <= first <= 57 or first in (43, 45, 46):  # 0-9 or +, -, .
                     # Inline integer parsing for 1-4 digits
                     if n_raw == 1:
                         if 48 <= first <= 57:
@@ -775,9 +832,10 @@ class PdfLexer:
 
                     # Try general number path
                     if 46 in raw:  # .
-                        _store_operand(op_count, float(raw))
-                        op_count += 1
-                        continue
+                        if is_num_word(raw):
+                            _store_operand(op_count, parse_number(raw))
+                            op_count += 1
+                            continue
                     else:
                         # Manual isdigit on memoryview avoids bytes() allocation per call
                         if first in (43, 45):
@@ -826,6 +884,9 @@ class PdfLexer:
                     token = parse_keyword(raw)
                     if isinstance(token, str):
                         handler = op_get(token)
+                        if handler is None:
+                            op_count = 0
+                            continue
                     else:
                         _store_operand(op_count, token)
                         op_count += 1

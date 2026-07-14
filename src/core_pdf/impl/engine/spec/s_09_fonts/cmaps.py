@@ -21,6 +21,10 @@ RE_ITEMS = re.compile(b"(<[0-9A-Fa-f]+>|\\([^)]*\\))")
 RE_BFRANGE = re.compile(b"beginbfrange(.*?)endbfrange", re.DOTALL)
 RE_RANGE_ITEMS = re.compile(b"(<[0-9A-Fa-f]+>|\\([^)]*\\)|\\[[^\\]]*\\])")
 RE_DSTS = re.compile(b"(<[0-9A-Fa-f]+>|\\([^)]*\\))")
+RE_CIDRANGE = re.compile(b"begincidrange(.*?)endcidrange", re.DOTALL)
+RE_CIDRANGE_ENTRY = re.compile(
+    b"<([0-9A-Fa-f]+)>\\s*<([0-9A-Fa-f]+)>\\s+(-?\\d+)"
+)
 
 
 def expand_range(start: int, end: int, source_hex_len: int, base_dst: str) -> dict[bytes, str]:
@@ -57,6 +61,7 @@ class ToUnicodeCMap:
         self.parse_codespace_ranges(data)
         self.parse_bfchar(data)
         self.parse_bfrange(data)
+        self.parse_cidrange(data)
 
         self.decode_lengths = sorted(
             ({len(end) for _, end in self.code_space_ranges} | {len(k) for k in self.mappings})
@@ -150,7 +155,7 @@ class ToUnicodeCMap:
                 elif t3.startswith(b"<") or t3.startswith(b"("):
                     try:
                         base_dst = (
-                            decode_utf16be(t3[1:-1].decode())
+                            decode_utf16be(bytes.fromhex(t3[1:-1].decode()))
                             if t3.startswith(b"<")
                             else decode_utf16be(t3[1:-1])
                         )
@@ -166,6 +171,33 @@ class ToUnicodeCMap:
                     idx += 3
                 else:
                     raise ValueError("invalid ToUnicode CMap bfrange")
+
+    def parse_cidrange(self, data: bytes) -> None:
+        for block in RE_CIDRANGE.findall(data):
+            entries = RE_CIDRANGE_ENTRY.findall(block)
+            if not entries:
+                raise ValueError("invalid ToUnicode CMap cidrange")
+            for start_tok, end_tok, cid_tok in entries:
+                try:
+                    start_code = int(start_tok.decode(), 16)
+                    end_code = int(end_tok.decode(), 16)
+                    start_cid = int(cid_tok.decode())
+                    src_len = len(start_tok) // 2
+                except (ValueError, UnicodeDecodeError) as exc:
+                    raise ValueError("invalid ToUnicode CMap cidrange") from exc
+                if start_code > end_code:
+                    raise ValueError("invalid ToUnicode CMap cidrange")
+                for code in range(start_code, end_code + 1):
+                    cid = start_cid + code - start_code
+                    if cid == 0 or 0xD800 <= cid <= 0xDFFF or cid > 0x10FFFF:
+                        continue
+                    src = code.to_bytes(src_len, "big")
+                    dst = chr(cid)
+                    self.mappings.setdefault(src, dst)
+                    if src_len == 1:
+                        self.mappings.setdefault(b"\x00" + src, dst)
+                    elif src_len == 2 and src[0] == 0:
+                        self.mappings.setdefault(src[1:], dst)
 
     def precalculate_fast_tables(self) -> None:
         if 1 in self.decode_lengths:

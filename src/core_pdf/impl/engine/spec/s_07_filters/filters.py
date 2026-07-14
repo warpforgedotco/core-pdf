@@ -38,6 +38,65 @@ FilterParams_from_parms = FilterParams.from_parms
 PdfName_of = PdfName.of
 normalize_filter_name = normalize_pdf_name
 
+PDF_CONTENT_OPERATORS = {
+    b"b",
+    b"b*",
+    b"B",
+    b"B*",
+    b"BI",
+    b"BT",
+    b"c",
+    b"cm",
+    b"CS",
+    b"cs",
+    b"d",
+    b"Do",
+    b"ET",
+    b"f",
+    b"F",
+    b"f*",
+    b"gs",
+    b"h",
+    b"i",
+    b"ID",
+    b"j",
+    b"J",
+    b"l",
+    b"m",
+    b"M",
+    b"n",
+    b"q",
+    b"Q",
+    b"re",
+    b"ri",
+    b"s",
+    b"S",
+    b"SC",
+    b"sc",
+    b"SCN",
+    b"scn",
+    b"sh",
+    b"T*",
+    b"TD",
+    b"Td",
+    b"Tf",
+    b"Tj",
+    b"TJ",
+    b"Tm",
+    b"Tr",
+    b"Ts",
+    b"Tw",
+    b"Tz",
+    b"v",
+    b"w",
+    b"W",
+    b"W*",
+    b"y",
+    b"'",
+    b'"',
+}
+PDF_CONTENT_DELIMITERS = b"()<>[]{}/%"
+
 
 def normalize_stream_decode_spec(dictionary: PdfDictLike) -> StreamDecodeSpec:
     raw_filters = dictionary.get(PdfName_of(b"Filter"))
@@ -392,20 +451,116 @@ def apply_predictor(data: bytes | memoryview, parms: FilterArg) -> bytes:
 
 
 def apply_flate(data: bytes, parms: FilterArg) -> bytes:
-    try:
-        return zlib.decompress(data)
-    except zlib.error:
+    if not data:
+        return b""
+
+    candidates: tuple[int, ...]
+    if len(data) >= 2:
+        cmf = data[0]
+        flg = data[1]
+        if cmf & 0x0F == 8 and ((cmf << 8) | flg) % 31 == 0:
+            candidates = (zlib.MAX_WBITS, zlib.MAX_WBITS | 32, -15)
+        elif cmf == 0x1F and flg == 0x8B:
+            candidates = (zlib.MAX_WBITS | 32, zlib.MAX_WBITS, -15)
+        else:
+            candidates = (-15, zlib.MAX_WBITS | 32, zlib.MAX_WBITS)
+    else:
+        candidates = (-15, zlib.MAX_WBITS | 32, zlib.MAX_WBITS)
+
+    for wbits in candidates:
         try:
-            return zlib.decompress(data, -15)
+            return zlib.decompress(data, wbits)
+        except zlib.error as exc:
+            recovered = recover_zlib_checksum_data(data, exc) if wbits == zlib.MAX_WBITS else None
+            if recovered is not None:
+                return recovered
+            recovered = recover_flate(data, wbits)
+            if recovered:
+                return recovered
+
+    if looks_like_pdf_content_stream(data):
+        return bytes(data)
+    raise PdfParseError("invalid FlateDecode stream")
+
+
+def recover_flate(data: bytes, wbits: int = zlib.MAX_WBITS) -> bytes:
+    try:
+        decoder = zlib.decompressobj(wbits)
+        return decoder.decompress(data) + decoder.flush()
+    except zlib.error:
+        return b""
+
+
+def recover_zlib_checksum_data(data: bytes, original_error: zlib.error) -> bytes | None:
+    if "incorrect data check" not in str(original_error):
+        return None
+
+    decompressor = zlib.decompressobj()
+    output = bytearray()
+    try:
+        for index in range(0, len(data), 64):
+            output.extend(decompressor.decompress(data[index : index + 64]))
+        output.extend(decompressor.flush())
+    except zlib.error as exc:
+        if "incorrect data check" not in str(exc):
+            return None
+    if output:
+        return bytes(output)
+    if len(data) > 6:
+        try:
+            return zlib.decompress(data[2:-4], -15)
         except zlib.error:
-            raise PdfParseError("invalid FlateDecode stream")
+            return None
+    return None
+
+
+def looks_like_pdf_content_stream(data: bytes | memoryview) -> bool:
+    view = data if type(data) is memoryview else memoryview(data)
+    end = len(view)
+    pos = 0
+    token_count = 0
+    scan_limit = min(end, 1024)
+    while pos < scan_limit and token_count < 64:
+        byte = view[pos]
+        if WS_TABLE[byte]:
+            pos += 1
+            continue
+        if byte == 37:
+            newline = bytes(view[pos:scan_limit]).find(b"\n")
+            if newline < 0:
+                return False
+            pos += newline + 1
+            continue
+        if byte in PDF_CONTENT_DELIMITERS:
+            pos += 1
+            continue
+        start = pos
+        while pos < scan_limit:
+            byte = view[pos]
+            if WS_TABLE[byte] or byte in PDF_CONTENT_DELIMITERS:
+                break
+            pos += 1
+        token = bytes(view[start:pos])
+        token_count += 1
+        if token in PDF_CONTENT_OPERATORS:
+            return True
+    return False
 
 
 def apply_ascii85(data: bytes, parms: FilterArg) -> bytes:
     try:
         return base64.a85decode(data, adobe=True)
     except (ValueError, binascii.Error) as exc:
-        raise PdfParseError("invalid ASCII85Decode stream") from exc
+        stripped = data.strip()
+        if stripped.startswith(b"<~"):
+            stripped = stripped[2:]
+        terminator = stripped.find(b"~>")
+        if terminator >= 0:
+            stripped = stripped[:terminator]
+        try:
+            return base64.a85decode(stripped, adobe=False)
+        except (ValueError, binascii.Error):
+            raise PdfParseError("invalid ASCII85Decode stream") from exc
 
 
 def decode_jpx(data: bytes, parms: FilterArg) -> bytes:
@@ -442,7 +597,9 @@ FILTER_MAP: dict[str, FilterFn] = {
     "LZWDecode": apply_lzw,
     "LZW": apply_lzw,
     "CCITTFaxDecode": decode_ccitt_fax,
+    "CCF": decode_ccitt_fax,
     "DCTDecode": decode_jpeg,
+    "DCT": decode_jpeg,
     "JPXDecode": decode_jpx,
     "JBIG2Decode": decode_jbig2,
 }

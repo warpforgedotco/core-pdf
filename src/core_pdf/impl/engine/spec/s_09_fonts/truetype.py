@@ -23,7 +23,7 @@ def tt_tables(data: bytes) -> dict[str, tuple[int, int]]:
                 raise ValueError("invalid TrueType table directory")
             tables[tag] = (tbl_off, length)
         return tables
-    except struct.error, UnicodeDecodeError, IndexError:
+    except (struct.error, UnicodeDecodeError, IndexError):
         raise ValueError("invalid TrueType table directory")
 
 
@@ -47,7 +47,7 @@ def tt_loca(data: bytes, tables: dict[str, tuple[int, int]], n_glyphs: int) -> l
             struct.unpack(">I", data[loca_off + i * 4 : loca_off + i * 4 + 4])[0]
             for i in range(n_glyphs + 1)
         ]
-    except struct.error, IndexError, KeyError:
+    except (struct.error, IndexError, KeyError):
         raise ValueError("invalid TrueType loca table")
 
 
@@ -63,7 +63,7 @@ def tt_glyph_bbox(
             ">hhhh", data[glyf_off + start + 2 : glyf_off + start + 10]
         )
         return (xmin, ymin, xmax, ymax)
-    except struct.error, IndexError:
+    except (struct.error, IndexError):
         return None
 
 
@@ -141,7 +141,7 @@ def tt_cmap(data: bytes, tables: dict[str, tuple[int, int]]) -> dict[int, int]:
                     if gid:
                         cp_to_gid[first_code + j] = gid
         return cp_to_gid
-    except struct.error, IndexError, KeyError:
+    except (struct.error, IndexError, KeyError):
         raise ValueError("invalid TrueType cmap")
 
 
@@ -184,5 +184,5 @@ def tt_gid_composite_info(
             else:
                 body_bbox = bbox
         return (body_bbox, has_dot)
-    except struct.error, IndexError, KeyError:
+    except (struct.error, IndexError, KeyError):
         return (None, False)

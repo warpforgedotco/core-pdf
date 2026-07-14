@@ -10,6 +10,7 @@ from core_pdf.impl.engine.spec.s_07_content.tables import TableExtractionResult,
 from core_pdf.impl.engine.spec.s_07_content.traces import CapturedLine
 from core_pdf.impl.engine.spec.s_07_document.models import AnnotationRecord, TextTraceSpan
 from core_pdf.impl.engine.spec.s_07_objects.resolver import is_pdf_object
+from core_pdf.impl.engine.spec.s_07_syntax.errors import PdfParseError
 from core_pdf.impl.engine.spec.s_07_syntax.primitives import (
     MISSING,
     PdfDictLike,
@@ -247,8 +248,6 @@ class PdfPage:
         if isinstance(contents, (list, tuple)):
             queue.extend(contents)
         elif contents is not None:
-            if not isinstance(contents, (PdfStream, int)):
-                raise ValueError("invalid page Contents value")
             queue.append(contents)
         streams: list[PdfStream] = []
         while queue:
@@ -269,8 +268,17 @@ class PdfPage:
         if self.contents is None:
             return
         resources = self.cached_resources
-        for stream in self.iter_content_streams():
-            state.consume_stream(stream, resources, state.ctm, 0)
+        streams = self.content_streams
+        if not streams:
+            return
+        try:
+            if len(streams) == 1:
+                state.consume_stream(streams[0], resources, state.ctm, 0, restore_state=False)
+            else:
+                data = b"\n".join(bytes(stream.data_view) for stream in streams)
+                state.consume_stream_data(data, resources, state.ctm, 0, restore_state=False)
+        except PdfParseError:
+            return
 
     def get_state(self) -> TextState:
         if self.state is None:
@@ -490,17 +498,44 @@ class PdfPage:
         """Return all AcroForm fields that have a widget on this page."""
         all_fields = self.document.fields()
         page_fields = []
+        page_annotation_ids: set[int] | None = None
+
+        def annotation_ids() -> set[int]:
+            nonlocal page_annotation_ids
+            if page_annotation_ids is not None:
+                return page_annotation_ids
+            annots_raw = self.inherited_values.get("Annots")
+            page_annotation_ids = set()
+            if annots_raw is None:
+                return page_annotation_ids
+            if not isinstance(annots_raw, list):
+                raise ValueError("invalid page Annots array")
+            for annot_ref in annots_raw:
+                annot = self.document.resolver.resolve(annot_ref)
+                if not isinstance(annot, dict):
+                    raise ValueError("invalid page annotation entry")
+                page_annotation_ids.add(id(annot))
+            return page_annotation_ids
+
+        def widget_is_on_page(widget: PdfDictLike) -> bool:
+            pg_ref = widget.get("P")
+            if pg_ref is not None:
+                pg_obj = self.document.resolver.resolve(pg_ref)
+                if pg_obj is self.page_dict:
+                    return True
+            return id(widget) in annotation_ids()
+
         # In PDF, a field's visual representation (Widget) might be on a specific page
         # or the field itself might be a Widget.
         for field in all_fields:
             if field.widget:
                 if not isinstance(field.widget, dict):
                     raise ValueError("invalid field widget entry")
-                pg_ref = field.widget.get("P")
-                if pg_ref is not None:
-                    pg_obj = self.document.resolver.resolve(pg_ref)
-                    if pg_obj is self.page_dict:
-                        page_fields.append(field)
+                if widget_is_on_page(field.widget):
+                    page_fields.append(field)
+            elif self.document.resolver.resolve_name(field.dict.get("Subtype")) == "Widget":
+                if widget_is_on_page(field.dict):
+                    page_fields.append(field)
             elif field.kids:
                 # Check kids for widgets on this page
                 if not isinstance(field.kids, list):
@@ -510,13 +545,10 @@ class PdfPage:
                     if (
                         isinstance(kid, dict)
                         and self.document.resolver.resolve_name(kid.get("Subtype")) == "Widget"
+                        and widget_is_on_page(kid)
                     ):
-                        pg_ref = kid.get("P")
-                        if pg_ref is not None:
-                            pg_obj = self.document.resolver.resolve(pg_ref)
-                            if pg_obj is self.page_dict:
-                                page_fields.append(field)
-                                break
+                        page_fields.append(field)
+                        break
         return page_fields
 
     def find_text_near(

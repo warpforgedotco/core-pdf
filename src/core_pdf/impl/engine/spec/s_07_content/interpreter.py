@@ -4,6 +4,7 @@ from __future__ import annotations
 import struct
 import typing
 from functools import lru_cache
+from math import hypot
 from typing import TypeAlias
 
 from core_pdf.impl.engine.spec.s_07_content.models import TextRun
@@ -92,6 +93,25 @@ def is_pdf_value(value: object) -> typing.TypeGuard[PdfObject | None]:
     )
 
 
+def to_float(value: object) -> float | None:
+    if not isinstance(value, (int, float, str, bytes)):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def to_int(value: object) -> int | None:
+    numeric = to_float(value)
+    return int(numeric) if numeric is not None else None
+
+
+def clamp_unit(value: object) -> float | None:
+    numeric = to_float(value)
+    return None if numeric is None else max(0.0, min(1.0, numeric))
+
+
 class StreamState:
     __slots__ = (
         "resources",
@@ -104,6 +124,7 @@ class StreamState:
         "current_decoder",
         "graphics_stack_len",
         "marked_content_stack_len",
+        "actual_text_stack_len",
         "fill_color",
         "fill_opacity",
         "pending_line_break",
@@ -120,6 +141,7 @@ class StreamState:
     current_decoder: FontDecoder | None
     graphics_stack_len: int
     marked_content_stack_len: int
+    actual_text_stack_len: int
     fill_color: tuple[float, ...] | None
     fill_opacity: float | None
     pending_line_break: bool
@@ -137,6 +159,7 @@ class StreamState:
         current_decoder: FontDecoder | None,
         graphics_stack_len: int,
         marked_content_stack_len: int,
+        actual_text_stack_len: int,
         fill_color: tuple[float, ...] | None,
         fill_opacity: float | None,
         pending_line_break: bool,
@@ -152,6 +175,7 @@ class StreamState:
         self.current_decoder = current_decoder
         self.graphics_stack_len = graphics_stack_len
         self.marked_content_stack_len = marked_content_stack_len
+        self.actual_text_stack_len = actual_text_stack_len
         self.fill_color = fill_color
         self.fill_opacity = fill_opacity
         self.pending_line_break = pending_line_break
@@ -224,6 +248,7 @@ class TextState:
         "stream_order",
         "xobject_depth",
         "marked_content_stack",
+        "actual_text_stack",
         "active_streams",
         "resources",
         "resources_id",
@@ -333,6 +358,7 @@ class TextState:
         self.stream_order = -1
         self.xobject_depth = 0
         self.marked_content_stack: list[str | None] = []
+        self.actual_text_stack: list[tuple[str | None, bool]] = []
         self.active_streams: set[int] = set()
         self.resources: PdfDict = {}
         self.resources_id = 0
@@ -498,7 +524,7 @@ class TextState:
         self.tm_f = self.lm_f = 0.0
         self.update_combined()
         self.invisible_text_layer = False
-        if self.current_decoder is None:
+        if self.current_font is not None and self.current_decoder is None:
             self.current_decoder = self.get_decoder()
 
     def op_ET(self, o, d):
@@ -510,12 +536,24 @@ class TextState:
         # combined translation updated in shift_line
 
     def op_Td(self, o, d):
+        if len(o) < 2:
+            return
+        tx = to_float(o[0])
+        ty = to_float(o[1])
+        if tx is None or ty is None:
+            return
         self.flush_run()
-        self.shift_line(tx=o[0], ty=o[1])
+        self.shift_line(tx=tx, ty=ty)
 
     def op_TD(self, o, d):
+        if len(o) < 2:
+            return
+        tx = to_float(o[0])
+        ty = to_float(o[1])
+        if tx is None or ty is None:
+            return
         self.flush_run()
-        self.shift_line(tx=o[0], ty=o[1], set_leading=True)
+        self.shift_line(tx=tx, ty=ty, set_leading=True)
 
     def op_Tj(self, o, d):
         if not o:
@@ -533,37 +571,66 @@ class TextState:
 
     def op_Tm(self, o, d):
         if len(o) >= 6:
+            m_a = to_float(o[0])
+            m_b = to_float(o[1])
+            m_c = to_float(o[2])
+            m_d = to_float(o[3])
+            m_e = to_float(o[4])
+            m_f = to_float(o[5])
+            if (
+                m_a is None
+                or m_b is None
+                or m_c is None
+                or m_d is None
+                or m_e is None
+                or m_f is None
+            ):
+                return
             self.flush_run()
-            self.tm_a = self.lm_a = float(o[0])
-            self.tm_b = self.lm_b = float(o[1])
-            self.tm_c = self.lm_c = float(o[2])
-            self.tm_d = self.lm_d = float(o[3])
-            self.tm_e = self.lm_e = float(o[4])
-            self.tm_f = self.lm_f = float(o[5])
+            self.tm_a = self.lm_a = m_a
+            self.tm_b = self.lm_b = m_b
+            self.tm_c = self.lm_c = m_c
+            self.tm_d = self.lm_d = m_d
+            self.tm_e = self.lm_e = m_e
+            self.tm_f = self.lm_f = m_f
             self.update_combined()
 
     def op_Tf(self, o, d):
         self.current_font = self.resolve_name(o[0]) if o else None
-        self.font_size = o[1] if len(o) >= 2 else self.font_size
+        font_size = to_float(o[1]) if len(o) >= 2 else None
+        self.font_size = font_size if font_size is not None else self.font_size
+        self.current_decoder = None
         self.current_decoder = self.get_decoder()
 
     def op_TL(self, o, d):
-        self.leading = o[0]
+        value = to_float(o[0]) if o else None
+        if value is not None:
+            self.leading = value
 
     def op_Tc(self, o, d):
-        self.char_space = o[0]
+        value = to_float(o[0]) if o else None
+        if value is not None:
+            self.char_space = value
 
     def op_Tw(self, o, d):
-        self.word_space = o[0]
+        value = to_float(o[0]) if o else None
+        if value is not None:
+            self.word_space = value
 
     def op_Tr(self, o, d):
-        self.render_mode = int(o[0])
+        value = to_int(o[0]) if o else None
+        if value is not None:
+            self.render_mode = value
 
     def op_Tz(self, o, d):
-        self.horizontal_scale = o[0]
+        value = to_float(o[0]) if o else None
+        if value is not None:
+            self.horizontal_scale = value
 
     def op_Ts(self, o, d):
-        self.rise = o[0]
+        value = to_float(o[0]) if o else None
+        if value is not None:
+            self.rise = value
 
     def op_quote(self, o, d):
         self.shift_line(ty=-self.leading)
@@ -579,8 +646,12 @@ class TextState:
     def op_double_quote(self, o, d):
         if len(o) < 3:
             return
-        self.word_space = o[0]
-        self.char_space = o[1]
+        word_space = to_float(o[0])
+        char_space = to_float(o[1])
+        if word_space is None or char_space is None:
+            return
+        self.word_space = word_space
+        self.char_space = char_space
         self.shift_line(ty=-self.leading)
         self.pending_line_break = True
         operand = o[2]
@@ -595,16 +666,24 @@ class TextState:
     def op_BDC(self, o, d):
         tag = self.resolve_name(o[0]) if o else None
         layer = None
+        actual_text = None
+        props = self.resolve(o[1]) if len(o) >= 2 else None
+        if isinstance(props, dict):
+            actual_text = self.resolve_str(props.get("ActualText"))
         if tag == "OC":
             layer = self.resolve_str(o[1]) if len(o) >= 2 else None
         self.marked_content_stack.append(layer)
+        self.actual_text_stack.append((actual_text, False))
 
     def op_BMC(self, o, d):
         self.marked_content_stack.append(None)
+        self.actual_text_stack.append((None, False))
 
     def op_EMC(self, o, d):
         if self.marked_content_stack:
             self.marked_content_stack.pop()
+        if self.actual_text_stack:
+            self.actual_text_stack.pop()
 
     def edge_rect(self, x0: float, y0: float, x1: float, y1: float) -> RectBox:
         line_width = max(0.0, self.line_width)
@@ -671,69 +750,98 @@ class TextState:
 
     def op_G(self, o, d):
         if o:
-            gray = max(0.0, min(1.0, float(o[0])))
-            self.stroke_color = (gray,)
+            gray = clamp_unit(o[0])
+            if gray is not None:
+                self.stroke_color = (gray,)
 
     def op_RG(self, o, d):
         if len(o) >= 3:
-            r = max(0.0, min(1.0, float(o[0])))
-            g = max(0.0, min(1.0, float(o[1])))
-            b = max(0.0, min(1.0, float(o[2])))
-            self.stroke_color = (r, g, b)
+            r = clamp_unit(o[0])
+            g = clamp_unit(o[1])
+            b = clamp_unit(o[2])
+            if r is not None and g is not None and b is not None:
+                self.stroke_color = (r, g, b)
 
     def op_K(self, o, d):
         if len(o) >= 4:
-            c = max(0.0, min(1.0, float(o[0])))
-            m = max(0.0, min(1.0, float(o[1])))
-            y = max(0.0, min(1.0, float(o[2])))
-            k = max(0.0, min(1.0, float(o[3])))
-            self.stroke_color = (c, m, y, k)
+            c = clamp_unit(o[0])
+            m = clamp_unit(o[1])
+            y = clamp_unit(o[2])
+            k = clamp_unit(o[3])
+            if c is not None and m is not None and y is not None and k is not None:
+                self.stroke_color = (c, m, y, k)
 
     def op_w(self, o, d):
         if o:
-            self.line_width = max(0.0, float(o[0]))
+            value = to_float(o[0])
+            if value is not None:
+                self.line_width = max(0.0, value)
 
     def op_J(self, o, d):
         if o:
-            self.line_cap = int(o[0])
+            value = to_int(o[0])
+            if value is not None:
+                self.line_cap = value
 
     def op_j(self, o, d):
         if o:
-            self.line_join = int(o[0])
+            value = to_int(o[0])
+            if value is not None:
+                self.line_join = value
 
     def op_M(self, o, d):
         if o:
-            self.miter_limit = max(1.0, float(o[0]))
+            value = to_float(o[0])
+            if value is not None:
+                self.miter_limit = max(1.0, value)
 
     def op_d(self, o, d):
         if o and len(o) >= 2:
             array_obj = o[0]
-            phase = float(o[1])
+            phase = to_float(o[1])
+            if phase is None:
+                return
             if isinstance(array_obj, (list, tuple)):
-                dash_array = [float(v) for v in array_obj]
+                dash_array = []
+                for item in array_obj:
+                    value = to_float(item)
+                    if value is None:
+                        return
+                    dash_array.append(value)
             else:
                 dash_array = []
             self.dash_pattern = (dash_array, phase)
 
     def op_m(self, o, d):
         if len(o) >= 2:
-            self.current_point = (float(o[0]), float(o[1]))
+            x = to_float(o[0])
+            y = to_float(o[1])
+            if x is None or y is None:
+                return
+            self.current_point = (x, y)
             self.subpath_start = self.current_point
 
     def op_l(self, o, d):
         if len(o) >= 2 and self.current_point is not None:
+            nx = to_float(o[0])
+            ny = to_float(o[1])
+            if nx is None or ny is None:
+                return
             if self.capture_graphics:
-                nx, ny = float(o[0]), float(o[1])
                 self.pending_edges.append((self.current_point[0], self.current_point[1], nx, ny))
                 self.current_point = (nx, ny)
             else:
-                self.current_point = (float(o[0]), float(o[1]))
+                self.current_point = (nx, ny)
 
     def op_re(self, o, d):
         if len(o) >= 4:
-            x, y = float(o[0]), float(o[1])
+            x = to_float(o[0])
+            y = to_float(o[1])
+            w = to_float(o[2])
+            h = to_float(o[3])
+            if x is None or y is None or w is None or h is None:
+                return
             if self.capture_graphics:
-                w, h = float(o[2]), float(o[3])
                 self.pending_edges.append((x, y, x + w, y))
                 self.pending_edges.append((x + w, y, x + w, y + h))
                 self.pending_edges.append((x + w, y + h, x, y + h))
@@ -888,15 +996,18 @@ class TextState:
 
     def op_cm(self, o, d):
         if not o or len(o) < 6:
-            raise ValueError("invalid matrix operands")
-        m_a, m_b, m_c, m_d, m_e, m_f = (
-            float(o[0]),
-            float(o[1]),
-            float(o[2]),
-            float(o[3]),
-            float(o[4]),
-            float(o[5]),
-        )
+            return
+        try:
+            m_a, m_b, m_c, m_d, m_e, m_f = (
+                float(o[0]),
+                float(o[1]),
+                float(o[2]),
+                float(o[3]),
+                float(o[4]),
+                float(o[5]),
+            )
+        except (TypeError, ValueError):
+            return
 
         ca, cb, cc, cd, ce, cf = self.ca, self.cb, self.cc, self.cd, self.ce, self.cf
         self.ca = m_a * ca + m_b * cc
@@ -909,48 +1020,48 @@ class TextState:
 
     def op_g(self, o, d):
         if o:
-            gray = max(0.0, min(1.0, float(o[0])))
-            self.set_fill_color(gray)
+            gray = clamp_unit(o[0])
+            if gray is not None:
+                self.set_fill_color(gray)
 
     def op_rg(self, o, d):
         if len(o) >= 3:
-            r = max(0.0, min(1.0, float(o[0])))
-            g = max(0.0, min(1.0, float(o[1])))
-            b = max(0.0, min(1.0, float(o[2])))
-            self.set_fill_color(r, g, b)
+            r = clamp_unit(o[0])
+            g = clamp_unit(o[1])
+            b = clamp_unit(o[2])
+            if r is not None and g is not None and b is not None:
+                self.set_fill_color(r, g, b)
 
     def op_k(self, o, d):
         if len(o) >= 4:
-            c = max(0.0, min(1.0, float(o[0])))
-            m = max(0.0, min(1.0, float(o[1])))
-            y = max(0.0, min(1.0, float(o[2])))
-            k = max(0.0, min(1.0, float(o[3])))
-            self.set_fill_color(c, m, y, k)
+            c = clamp_unit(o[0])
+            m = clamp_unit(o[1])
+            y = clamp_unit(o[2])
+            k = clamp_unit(o[3])
+            if c is not None and m is not None and y is not None and k is not None:
+                self.set_fill_color(c, m, y, k)
 
     def op_gs(self, o, d):
         if not o:
-            raise ValueError("invalid graphics state")
+            return
         name = self.resolve_name(o[0])
         if not name:
-            raise ValueError("invalid graphics state")
+            return
         extgstate = self.resolve_extgstate(name)
         if not extgstate:
-            raise ValueError("invalid graphics state")
-        try:
-            fill_opacity = extgstate.get("ca")
-            if isinstance(fill_opacity, (int, float, str, bytes)):
-                self.fill_opacity = max(0.0, min(1.0, float(fill_opacity)))
-            stroke_opacity = extgstate.get("CA")
-            if isinstance(stroke_opacity, (int, float, str, bytes)):
-                self.stroke_opacity = max(0.0, min(1.0, float(stroke_opacity)))
-        except TypeError, ValueError:
-            raise ValueError("invalid graphics state opacity")
+            return
+        fill_opacity = clamp_unit(extgstate.get("ca"))
+        if fill_opacity is not None:
+            self.fill_opacity = fill_opacity
+        stroke_opacity = clamp_unit(extgstate.get("CA"))
+        if stroke_opacity is not None:
+            self.stroke_opacity = stroke_opacity
 
     def shift_line(self, tx: float = 0.0, ty: float = 0.0, *, set_leading: bool = False) -> None:
         if set_leading:
             self.leading = -ty
-        self.tm_e += tx
-        self.tm_f += ty
+        self.tm_e = self.lm_e + tx * self.lm_a + ty * self.lm_c
+        self.tm_f = self.lm_f + tx * self.lm_b + ty * self.lm_d
         self.lm_e = self.tm_e
         self.lm_f = self.tm_f
 
@@ -972,6 +1083,7 @@ class TextState:
             current_decoder=self.current_decoder,
             graphics_stack_len=len(self.stack),
             marked_content_stack_len=len(self.marked_content_stack),
+            actual_text_stack_len=len(self.actual_text_stack),
             fill_color=self.fill_color,
             fill_opacity=self.fill_opacity,
             pending_line_break=self.pending_line_break,
@@ -989,6 +1101,7 @@ class TextState:
         self.current_decoder = state.current_decoder
         del self.stack[state.graphics_stack_len :]
         del self.marked_content_stack[state.marked_content_stack_len :]
+        del self.actual_text_stack[state.actual_text_stack_len :]
         self.fill_color = state.fill_color
         self.fill_opacity = state.fill_opacity
         self.pending_line_break = state.pending_line_break
@@ -1000,12 +1113,40 @@ class TextState:
         resources: PdfDict,
         ctm: Matrix,
         depth: int,
+        *,
+        restore_state: bool = True,
     ) -> None:
         if id(stream) in self.active_streams or depth > 10:
             return
 
         self.active_streams.add(id(stream))
-        old_state = self.capture_stream_state()
+        old_state = self.capture_stream_state() if restore_state else None
+        try:
+            self.consume_stream_data(
+                stream.data_view,
+                resources,
+                ctm,
+                depth,
+                restore_state=False,
+            )
+        finally:
+            if old_state is not None:
+                self.restore_stream_state(old_state)
+            self.active_streams.remove(id(stream))
+
+    def consume_stream_data(
+        self,
+        data: bytes | memoryview,
+        resources: PdfDict,
+        ctm: Matrix,
+        depth: int,
+        *,
+        restore_state: bool = True,
+    ) -> None:
+        if depth > 10:
+            return
+
+        old_state = self.capture_stream_state() if restore_state else None
         self.resources = resources
         self.resources_id = id(resources)
         self.ctm = ctm
@@ -1015,16 +1156,16 @@ class TextState:
         self.stream_order += 1
 
         try:
-            lexer = PdfLexer(stream.data_view, kw_cache=self.kw_cache)
+            lexer = PdfLexer(data, kw_cache=self.kw_cache)
             lexer.dispatch_operations(
                 self.op_handlers, self.fast_op_handlers, depth, operands=self.operands
             )
 
             self.flush_run()
         finally:
-            # Restore parent stream context even if parsing fails.
-            self.restore_stream_state(old_state)
-            self.active_streams.remove(id(stream))
+            if old_state is not None:
+                # Restore parent stream context even if parsing fails.
+                self.restore_stream_state(old_state)
 
     def lookup_page_resource(
         self, category: str, name: str, parent_category: str | None = None
@@ -1120,6 +1261,15 @@ class TextState:
         if text is None:
             text = ""
         return text, data, chunks, chunk_texts
+
+    def consume_actual_text(self) -> str | None:
+        for index in range(len(self.actual_text_stack) - 1, -1, -1):
+            actual_text, used = self.actual_text_stack[index]
+            if actual_text is None or used:
+                continue
+            self.actual_text_stack[index] = (actual_text, True)
+            return actual_text
+        return None
 
     def is_text_visible(self, text: str) -> bool:
         if self.is_garbage(text):
@@ -1278,7 +1428,12 @@ class TextState:
             chunk_texts = decoder.decode_chunks(chunks)
 
         chunk_codes = [
-            chunk[0] if len(chunk) == 1 else int.from_bytes(chunk, "big") for chunk in chunks
+            decoder.cid_for_chunk(chunk)
+            if decoder.is_cid_font
+            else chunk[0]
+            if len(chunk) == 1
+            else int.from_bytes(chunk, "big")
+            for chunk in chunks
         ]
         advances = [self.chunk_advance(code, decoder) for code in chunk_codes]
         total_advance = sum(advances)
@@ -1374,6 +1529,9 @@ class TextState:
             chunk_texts = None
         else:
             text, data, chunks, chunk_texts = self.decode_operand(operand, decoder)
+        actual_text = self.consume_actual_text()
+        if actual_text is not None:
+            text = actual_text
         if not text:
             return
 
@@ -1436,13 +1594,13 @@ class TextState:
         c1_x = ar * C + E
         c1_y = ar * D + F
 
-        adv_A = adv_x * A
-        adv_B = adv_x * B
+        adv_vec_x = adv_x * A + adv_y * C
+        adv_vec_y = adv_x * B + adv_y * D
 
-        c2_x = adv_A + c0_x
-        c2_y = adv_B + c0_y
-        c3_x = adv_A + c1_x
-        c3_y = adv_B + c1_y
+        c2_x = adv_vec_x + c0_x
+        c2_y = adv_vec_y + c0_y
+        c3_x = adv_vec_x + c1_x
+        c3_y = adv_vec_y + c1_y
 
         x0 = c0_x if c0_x < c1_x else c1_x
         if c2_x < x0:
@@ -1567,6 +1725,15 @@ class TextState:
                 else:
                     te += delta * ta
                     tf += delta * tb
+                if delta > 0.0 and self.pending_run is not None:
+                    if is_vert:
+                        user_gap = abs(delta) * hypot(tc, td)
+                        threshold = max((self.pending_run.x1 - self.pending_run.x0) * 0.25, 1.0)
+                    else:
+                        user_gap = abs(delta) * hypot(ta, tb)
+                        threshold = max(self.pending_run.height * 0.2, 1.0)
+                    if user_gap > threshold and not self.pending_run.text.endswith(" "):
+                        self.pending_run.text += " "
 
         if pending_bytes:
             self.tm_e, self.tm_f = te, tf
@@ -1767,7 +1934,7 @@ def detect_ligature_overrides(
     try:
         n_glyphs = struct.unpack(">H", tt_data[tables["maxp"][0] + 4 : tables["maxp"][0] + 6])[0]
         loca = tt_loca(tt_data, tables, n_glyphs)
-    except struct.error, IndexError, KeyError:
+    except (struct.error, IndexError, KeyError):
         return {}
     if loca is None:
         return {}
@@ -1797,7 +1964,7 @@ def detect_ligature_overrides(
         )[0]
         if not tt_loca(companion_data, comp_tables, comp_n):
             return {}
-    except struct.error, IndexError, KeyError:
+    except (struct.error, IndexError, KeyError):
         return {}
 
     lig_widths_raw = font_obj.get("Widths")

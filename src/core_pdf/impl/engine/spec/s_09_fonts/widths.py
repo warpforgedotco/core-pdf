@@ -22,6 +22,8 @@ def get_descendant(font: PdfDictLike) -> PdfDictLike | None:
 
 def parse_cid_widths(value: PdfObject) -> dict[int, float]:
     widths: dict[int, float] = {}
+    if value is None:
+        return widths
     if not isinstance(value, (list, tuple)):
         raise ValueError("invalid CID widths array")
     index = 0
@@ -89,7 +91,6 @@ def parse_font_widths(
             if not isinstance(desc_missing_width, (int, float)):
                 raise ValueError("invalid font MissingWidth")
             default_width = parse_float(desc_missing_width, default_width)
-        return widths, default_width, is_vertical
 
     if subtype == "Type0":
         return widths, default_width, is_vertical

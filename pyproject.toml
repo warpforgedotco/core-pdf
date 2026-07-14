@@ -10,7 +10,7 @@ authors = [{ name = "Kevin Turcios", email = "turcioskevinr@gmail.com" }]
 readme = "README.md"
 license = "AGPL-3.0-only"
 license-files = ["LICENSE.txt"]
-requires-python = ">=3.14"
+requires-python = ">=3.11"
 classifiers = ["Development Status :: 3 - Alpha"]
 
 [project.urls]
@@ -25,7 +25,16 @@ License = "https://github.com/core-experiments/core-pdf/blob/main/LICENSE.txt"
 lint = [
     "mypy >=1.16.0, <2.0.0",
     "ruff >=0.11.13, <1.0.0",
+    "ty >=0.0.59, <1.0.0",
 ]
+test = [
+    "pdfminer.six >=20251107, <20260000",
+    "pytest >=8.4.0, <9.0.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests/src"]
+norecursedirs = ["tests/fixtures"]
 
 [tool.ruff]
 line-length = 100
@@ -57,7 +66,7 @@ ignore = [
 ]
 
 [tool.mypy]
-python_version = "3.14"
+python_version = "3.11"
 files = ["src/core_pdf"]
 mypy_path = "src"
 show_error_codes = true

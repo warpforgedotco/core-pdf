@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Protocol
 
 from core_pdf.impl.engine.spec.s_09_fonts.data.core14 import PDFDOC_ENCODING_OVERRIDES
@@ -13,7 +14,8 @@ PDFDOC_ENCODING_TABLE: list[str] = [
 
 
 class CMapWithRanges(Protocol):
-    code_space_ranges: list[tuple[bytes, bytes]]
+    @property
+    def code_space_ranges(self) -> Sequence[tuple[bytes, bytes]]: ...
 
 
 def decode_pdf_text_string(data: bytes) -> str:
@@ -38,16 +40,16 @@ def decode_utf16be(data: bytes) -> str:
     if data.startswith((b"\xfe\xff", b"\xff\xfe")):
         try:
             return data.decode("utf-16")
-        except UnicodeDecodeError, ValueError:
+        except (UnicodeDecodeError, ValueError):
             raise ValueError("invalid UTF-16BE data")
     buf = data if len(data) % 2 == 0 else b"\x00" + data
     try:
         return buf.decode("utf-16-be", "replace")
-    except UnicodeDecodeError, ValueError:
+    except (UnicodeDecodeError, ValueError):
         return data.decode("latin-1", "replace")
 
 
-def split_data_by_ranges(data: bytes, ranges: list[tuple[bytes, bytes]]) -> list[bytes]:
+def split_data_by_ranges(data: bytes, ranges: Sequence[tuple[bytes, bytes]]) -> list[bytes]:
     if not data:
         return []
 
@@ -87,7 +89,8 @@ def split_data_by_ranges(data: bytes, ranges: list[tuple[bytes, bytes]]) -> list
             if match_found:
                 break
         if not match_found:
-            raise ValueError("invalid code space data")
+            chunks.append(data[pos : pos + 1])
+            pos += 1
     return chunks
 
 

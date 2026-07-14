@@ -52,7 +52,7 @@ class CryptRC4:
             j = (j + sbox_fn(i)) & 0xFF
             si, sj = sbox[i], sbox[j]
             sbox[i], sbox[j] = sj, si
-            t = (si + sbox_fn(j)) & 0xFF
+            t = (sj + si) & 0xFF
             out[k] = data_fn(k) ^ sbox_fn(t)
 
         return bytes(out)

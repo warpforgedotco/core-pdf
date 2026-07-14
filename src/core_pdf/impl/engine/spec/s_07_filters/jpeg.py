@@ -1107,5 +1107,5 @@ class JPEGDecoder:
             decoder = cls(data)
             decoder.parse()
             return decoder.decode()
-        except PdfUnsupportedError, struct.error, OSError:
+        except (PdfUnsupportedError, struct.error, OSError):
             raise PdfUnsupportedError("JPEGDecode failed")

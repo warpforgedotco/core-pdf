@@ -63,7 +63,7 @@ def parse_int(value: PdfObject, default: int | None = None) -> int | None:
         return default
     try:
         return int(value)
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return default
 
 
@@ -83,7 +83,7 @@ def parse_float(value: PdfObject, default: float = 0.0) -> float:
         return default
     try:
         return float(value)
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return default
 
 
@@ -555,6 +555,8 @@ def is_pdf_scalar_matrix_values(
 
 
 def parse_matrix_operand(operands: "PdfObject") -> Matrix:
+    if operands is None:
+        return IDENTITY_MATRIX
     if not isinstance(operands, (list, tuple)) or len(operands) < 6:
         raise ValueError("invalid matrix operand")
     a0, a1, a2, a3, a4, a5 = (
@@ -586,7 +588,7 @@ def parse_matrix_operand(operands: "PdfObject") -> Matrix:
             float(raw_values[4]),
             float(raw_values[5]),
         )
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         raise ValueError("invalid matrix operand")
 
 

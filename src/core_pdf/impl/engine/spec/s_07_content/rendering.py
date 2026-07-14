@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import re
 import typing
+from bisect import bisect_left, bisect_right
 from statistics import median_low
 
 if typing.TYPE_CHECKING:
@@ -43,6 +44,82 @@ def render_run_line(runs: list[TextRun]) -> str:
         sorted_runs,
         is_table_like_line=is_table_like_line,
         is_all_caps_line=is_all_caps_line,
+    )
+
+
+def make_layout_line(runs: list[TextRun]) -> LayoutLine:
+    line = LayoutLine()
+    for run in runs:
+        line.add(run)
+    return line
+
+
+def line_has_gap_at_split(runs: list[TextRun], split_x: float) -> bool:
+    text_runs = sorted((r for r in runs if r.text.strip()), key=lambda r: (r.x0, r.order))
+    prev_x1: float | None = None
+    for run in text_runs:
+        if run.x0 < split_x < run.x1:
+            return False
+        if prev_x1 is not None:
+            gap = run.x0 - prev_x1
+            if prev_x1 <= split_x <= run.x0 and gap >= 8.0:
+                return True
+        if prev_x1 is None or run.x1 > prev_x1:
+            prev_x1 = run.x1
+    return False
+
+
+def run_has_text(run: TextRun) -> bool:
+    return bool(run.text and not run.text.isspace())
+
+
+def column_run_groups(runs: list[TextRun]) -> list[list[TextRun]]:
+    sorted_runs = sorted(runs, key=lambda run: (run.x0, run.order, run.stream_order))
+    groups: list[list[TextRun]] = []
+    current: list[TextRun] = []
+    for run in sorted_runs:
+        if not current:
+            current.append(run)
+            continue
+        if column_group_breaks_between(current[-1], run):
+            groups.append(current)
+            current = [run]
+            continue
+        current.append(run)
+    if current:
+        groups.append(current)
+    return groups
+
+
+def column_group_breaks_between(left: TextRun, right: TextRun) -> bool:
+    if not run_has_text(left) or not run_has_text(right):
+        return True
+    if left.rotation_angle != right.rotation_angle or left.is_vertical != right.is_vertical:
+        return True
+    if left.text[-1].isspace() or right.text[0].isspace():
+        return True
+
+    y_overlap = max(0.0, min(left.y1, right.y1) - max(left.y0, right.y0))
+    min_height = max(1.0, min(left.height, right.height))
+    if y_overlap / min_height < 0.45:
+        return True
+
+    gap = right.x0 - left.x1
+    if gap < -max(1.5, min_height * 0.2):
+        return False
+    allowed_gap = max(1.8, min(left.space_width, right.space_width) * 0.45)
+    return gap > allowed_gap
+
+
+def run_group_bbox(group: list[TextRun]) -> tuple[float, float, float, float] | None:
+    text_runs = [run for run in group if run_has_text(run)]
+    if not text_runs:
+        return None
+    return (
+        min(run.x0 for run in text_runs),
+        min(run.y0 for run in text_runs),
+        max(run.x1 for run in text_runs),
+        max(run.y1 for run in text_runs),
     )
 
 
@@ -87,50 +164,114 @@ class LayoutReconstructor:
         return "\n\n".join(text for text in box_texts if text)
 
     def render_box(self, lines: list[LayoutLine]) -> str:
-        """Render a box to text, handling columns recursively."""
-        segments: list[list[LayoutLine]] = [lines]
-        i = 0
-        while i < len(segments):
-            seg = segments[i]
-            if not seg:
-                i += 1
+        """Render a box to text, handling stable multi-column regions."""
+        split_points = self.find_column_splits(lines)
+        if split_points and (
+            self.column_split_is_stable(lines, split_points)
+            or self.multi_column_split_is_stable(lines, split_points)
+            or (
+                len(split_points) == 1
+                and self.parallel_column_split_is_viable(lines, split_points[0])
+            )
+        ):
+            return self.render_columnar_lines(lines, split_points)
+        return self.render_rows(lines)
+
+    def render_columnar_lines(self, lines: list[LayoutLine], split_points: list[float]) -> str:
+        if not lines:
+            return ""
+        box_x0 = min(line.x0 for line in lines if line.runs)
+        box_x1 = max(line.x1 for line in lines if line.runs)
+        boundaries = [box_x0, *split_points, box_x1]
+        column_count = len(boundaries) - 1
+        column_width = max(
+            boundaries[index + 1] - boundaries[index] for index in range(column_count)
+        )
+        sorted_rows = sorted(lines, key=lambda ln: (-ln.mid_y, ln.x0))
+        output_parts: list[str] = []
+        column_block: list[LayoutLine] = []
+
+        def append_part(text: str) -> None:
+            if text:
+                output_parts.append(text)
+
+        def flush_columns() -> None:
+            if not column_block:
+                return
+            column_lines: list[list[LayoutLine]] = [[] for _ in range(column_count)]
+            for line in column_block:
+                split_runs: list[list[TextRun]] = [[] for _ in range(column_count)]
+                for group in column_run_groups(line.runs):
+                    group_box = run_group_bbox(group)
+                    if group_box is None:
+                        continue
+                    column_position = (group_box[0] + group_box[2]) * 0.5
+                    column_index = 0
+                    while (
+                        column_index < len(split_points)
+                        and column_position >= split_points[column_index]
+                    ):
+                        column_index += 1
+                    split_runs[column_index].extend(group)
+                for column_index, runs in enumerate(split_runs):
+                    if runs:
+                        column_lines[column_index].append(make_layout_line(runs))
+
+            for lines_for_column in column_lines:
+                if lines_for_column:
+                    append_part(self.render_box(lines_for_column))
+            column_block.clear()
+
+        for line in sorted_rows:
+            if not line.runs:
                 continue
-            split_x = self.find_column_split(seg)
-            if split_x is None:
-                i += 1
+            is_column_line = self.line_has_column_gutter(
+                line, split_points, column_width
+            )
+            if not is_column_line and column_block:
+                is_column_line = (line.x1 - line.x0) <= column_width * 1.15
+            if is_column_line:
+                column_block.append(line)
                 continue
 
-            left_lines: list[LayoutLine] = []
-            right_lines: list[LayoutLine] = []
-            for line in seg:
-                left_runs = [r for r in line.runs if r.mid_x < split_x]
-                right_runs = [r for r in line.runs if r.mid_x >= split_x]
-                if left_runs:
-                    left_lines.append(LayoutLine(runs=left_runs))
-                if right_runs:
-                    right_lines.append(LayoutLine(runs=right_runs))
-            segments[i : i + 1] = [left_lines, right_lines]
+            flush_columns()
+            append_part(self.render_line(line))
 
-        parts: list[str] = []
-        for seg in segments:
-            if not seg:
-                continue
-            sorted_rows = sorted(seg, key=lambda ln: (-ln.mid_y, ln.x0))
-            parts.append("\n".join(render_run_line(ln.runs) for ln in sorted_rows if ln.runs))
+        flush_columns()
+        return "\n\n".join(part for part in output_parts if part)
 
-        return "\n\n".join(p for p in parts if p)
+    @staticmethod
+    def render_rows(lines: list[LayoutLine]) -> str:
+        line_texts = []
+        for line in sorted(lines, key=lambda ln: (-ln.mid_y, ln.x0)):
+            line_text = LayoutReconstructor.render_line(line)
+            if line_text:
+                line_texts.append(line_text)
+        return "\n".join(line_texts)
+
+    @staticmethod
+    def render_line(line: LayoutLine) -> str:
+        if not line.runs:
+            return ""
+        line_text = render_run_line(line.runs).rstrip()
+        return line_text if line_text.strip() else ""
 
     def find_column_split(self, lines: list[LayoutLine]) -> float | None:
+        splits = self.find_column_splits(lines)
+        return splits[0] if len(splits) == 1 else None
+
+    def find_column_splits(self, lines: list[LayoutLine]) -> list[float]:
+        if len(lines) < 8:
+            return []
         all_runs: list[TextRun] = []
-        filtered_lines: list[list[TextRun]] = []
+        gap_mids: list[float] = []
         box_x0: float = 1e9
         box_x1: float = -1e9
 
         for line in lines:
-            current_line_runs: list[TextRun] = []
+            current_line_runs = []
             for r in line.runs:
-                text = r.text
-                if text and not text.isspace():
+                if run_has_text(r):
                     rx0, rx1 = r.x0, r.x1
                     if rx0 < box_x0:
                         box_x0 = rx0
@@ -138,50 +279,213 @@ class LayoutReconstructor:
                         box_x1 = rx1
                     all_runs.append(r)
                     current_line_runs.append(r)
-            if current_line_runs:
-                filtered_lines.append(current_line_runs)
-
-        if len(all_runs) < 100:
-            return None
-
-        box_width = box_x1 - box_x0
-        if box_width <= 0:
-            return None
-
-        gap_mids: list[float] = []
-        for line_runs in filtered_lines:
-            if len(line_runs) < 2:
+            if len(current_line_runs) < 2:
                 continue
-            best_gap = 0.0
-            best_mid = 0.0
-            prev_x1 = line_runs[0].x1
-            for run in line_runs[1:]:
+            current_line_runs.sort(key=lambda run: (run.x0, run.order))
+            prev_x1 = current_line_runs[0].x1
+            for run in current_line_runs[1:]:
                 gap = run.x0 - prev_x1
-                if gap > best_gap:
-                    best_gap = gap
-                    best_mid = (prev_x1 + run.x0) * 0.5
+                if gap >= 8.0:
+                    gap_mids.append((prev_x1 + run.x0) * 0.5)
                 if run.x1 > prev_x1:
                     prev_x1 = run.x1
-            if best_gap >= 20.0:
-                gap_mids.append(best_mid)
 
-        if len(gap_mids) < 10:
-            return None
+        if len(all_runs) < 25:
+            return []
+        box_width = box_x1 - box_x0
+        if box_width <= 0:
+            return []
+        if len(gap_mids) < 5:
+            return []
 
-        split_x = median_low(gap_mids)
-        consistent_count = sum(1 for mid in gap_mids if abs(mid - split_x) <= 30.0)
-        if consistent_count < len(gap_mids) * 0.6:
-            return None
+        sorted_gap_mids = sorted(gap_mids)
+        sorted_mid_x = sorted(r.mid_x for r in all_runs)
 
-        split_rel = (split_x - box_x0) / box_width
-        if not (0.20 <= split_rel <= 0.80):
-            return None
+        clusters: list[list[float]] = []
+        for mid in sorted_gap_mids:
+            if not clusters or mid - clusters[-1][-1] > 35.0:
+                clusters.append([mid])
+            else:
+                clusters[-1].append(mid)
 
-        left_n = sum(1 for r in all_runs if r.mid_x < split_x)
-        if left_n < 30 or (len(all_runs) - left_n) < 30:
-            return None
+        splits: list[float] = []
+        for cluster in clusters:
+            if len(cluster) < 5:
+                continue
+            split_x = median_low(cluster)
+            split_rel = (split_x - box_x0) / box_width
+            if not (0.12 <= split_rel <= 0.88):
+                continue
+            left_n = bisect_left(sorted_mid_x, split_x)
+            right_n = len(all_runs) - left_n
+            if left_n < 8 or right_n < 8:
+                continue
+            splits.append(split_x)
 
-        return split_x
+        if not splits:
+            return []
+
+        filtered: list[float] = []
+
+        def split_density(split_x: float) -> int:
+            return bisect_right(sorted_gap_mids, split_x + 17.5) - bisect_left(
+                sorted_gap_mids, split_x - 17.5
+            )
+
+        for split_x in splits:
+            if not filtered or split_x - filtered[-1] >= 45.0:
+                filtered.append(split_x)
+            elif split_density(split_x) > split_density(filtered[-1]):
+                filtered[-1] = split_x
+        return filtered
+
+    @staticmethod
+    def column_split_is_stable(lines: list[LayoutLine], split_points: list[float]) -> bool:
+        if len(lines) < 24 or len(split_points) != 1:
+            return False
+        split_x = split_points[0]
+        left_only: list[LayoutLine] = []
+        right_only: list[LayoutLine] = []
+        spanning = 0
+        gutter_rows = 0
+
+        for line in lines:
+            runs = [run for run in line.runs if run_has_text(run)]
+            if not runs:
+                continue
+            has_left = any(run.mid_x < split_x for run in runs)
+            has_right = any(run.mid_x >= split_x for run in runs)
+            if has_left and has_right:
+                spanning += 1
+                left_edge = max((run.x1 for run in runs if run.mid_x < split_x), default=split_x)
+                right_edge = min(
+                    (run.x0 for run in runs if run.mid_x >= split_x), default=split_x
+                )
+                if right_edge - left_edge >= 8.0:
+                    gutter_rows += 1
+            elif has_left:
+                left_only.append(line)
+            elif has_right:
+                right_only.append(line)
+
+        if len(left_only) < 8 or len(right_only) < 8:
+            return False
+        if spanning + gutter_rows < 5:
+            return False
+
+        left_top, left_bottom = LayoutReconstructor.line_y_extent(left_only)
+        right_top, right_bottom = LayoutReconstructor.line_y_extent(right_only)
+        overlap = min(left_top, right_top) - max(left_bottom, right_bottom)
+        if overlap <= 0:
+            return False
+        left_height = left_top - left_bottom
+        right_height = right_top - right_bottom
+        if left_height <= 0 or right_height <= 0:
+            return False
+        return overlap >= min(left_height, right_height) * 0.45
+
+    @staticmethod
+    def multi_column_split_is_stable(lines: list[LayoutLine], split_points: list[float]) -> bool:
+        if len(lines) < 24 or len(split_points) < 2:
+            return False
+        box_x0 = min(line.x0 for line in lines if line.runs)
+        box_x1 = max(line.x1 for line in lines if line.runs)
+        boundaries = [box_x0, *split_points, box_x1]
+        widths = [
+            boundaries[index + 1] - boundaries[index]
+            for index in range(len(boundaries) - 1)
+        ]
+        if min(widths) <= 0 or max(widths) / min(widths) > 1.8:
+            return False
+        column_counts = [0] * (len(split_points) + 1)
+        multi_column_rows = 0
+        for line in lines:
+            columns: set[int] = set()
+            for group in column_run_groups(line.runs):
+                group_box = run_group_bbox(group)
+                if group_box is None:
+                    continue
+                group_mid_x = (group_box[0] + group_box[2]) * 0.5
+                column_index = 0
+                while (
+                    column_index < len(split_points)
+                    and group_mid_x >= split_points[column_index]
+                ):
+                    column_index += 1
+                column_counts[column_index] += 1
+                columns.add(column_index)
+            if len(columns) >= 2:
+                multi_column_rows += 1
+
+        active_columns = [count for count in column_counts if count >= 8]
+        if len(active_columns) < 3:
+            return False
+        return multi_column_rows >= max(8, len(lines) // 4)
+
+    @staticmethod
+    def parallel_column_split_is_viable(lines: list[LayoutLine], split_x: float) -> bool:
+        if len(lines) < 12:
+            return False
+        left_rows = 0
+        right_rows = 0
+        gutter_rows = 0
+        for line in lines:
+            runs = [run for run in line.runs if run_has_text(run)]
+            if not runs:
+                continue
+            has_left = any(run.mid_x < split_x for run in runs)
+            has_right = any(run.mid_x >= split_x for run in runs)
+            if has_left:
+                left_rows += 1
+            if has_right:
+                right_rows += 1
+            if has_left and has_right:
+                left_edge = max((run.x1 for run in runs if run.mid_x < split_x), default=split_x)
+                right_edge = min(
+                    (run.x0 for run in runs if run.mid_x >= split_x), default=split_x
+                )
+                if right_edge - left_edge >= 8.0:
+                    gutter_rows += 1
+        if left_rows < 8 or right_rows < 8:
+            return False
+        return gutter_rows >= max(4, len(lines) // 6)
+
+    @staticmethod
+    def line_y_extent(lines: list[LayoutLine]) -> tuple[float, float]:
+        return (
+            max(line.y1 for line in lines if line.runs),
+            min(line.y0 for line in lines if line.runs),
+        )
+
+    @staticmethod
+    def line_has_column_gutter(
+        line: LayoutLine, split_points: list[float], column_width: float | None = None
+    ) -> bool:
+        runs = [run for run in line.runs if run_has_text(run)]
+        if len(runs) < 2:
+            return False
+        line_width = line.x1 - line.x0
+        for split_x in split_points:
+            has_left = False
+            has_right = False
+            left_edge = split_x
+            right_edge = split_x
+            for run in runs:
+                if run.mid_x < split_x:
+                    has_left = True
+                    if run.x1 > left_edge:
+                        left_edge = run.x1
+                else:
+                    has_right = True
+                    if run.x0 < right_edge:
+                        right_edge = run.x0
+            if not has_left or not has_right:
+                continue
+            if right_edge - left_edge >= 8.0:
+                return True
+            if column_width is not None and line_width > column_width * 1.45:
+                return True
+        return False
 
 
 def render_page_text(
@@ -285,6 +589,9 @@ def render_sorted_runs(
         if not text:
             continue
 
+        if text.isspace() and run.x1 - run.x0 <= 0.01:
+            continue
+
         # Deduplication: if this run overlaps significantly with the previous one
         if has_prev_bbox and prev_x1 is not None:
             # Inline overlap calculation
@@ -294,27 +601,58 @@ def render_sorted_runs(
             oy -= run.y0 if run.y0 > prev_y0 else prev_y0
 
             if ox > 0 and oy > 0:
-                box_area = (run.y1 - run.y0) * (run.x1 - run.x0)
+                run_w = run.x1 - run.x0
+                prev_w = prev_x1 - prev_x0
+                run_h = run.y1 - run.y0
+                prev_h = prev_y1 - prev_y0
+                min_w = run_w if run_w < prev_w else prev_w
+                min_h = run_h if run_h < prev_h else prev_h
+                if (
+                    text == prev_text
+                    and abs(run.x0 - prev_x0) <= max(1.5, min_w * 0.75)
+                    and abs(run.y0 - prev_y0) <= max(1.5, min_h * 0.25)
+                ):
+                    continue
+                box_area = run_h * run_w
+                prev_area = prev_h * prev_w
+                overlap_area = ox * oy
+                min_area = box_area if box_area < prev_area else prev_area
+                if min_area > 0 and text == prev_text and overlap_area / min_area > 0.7:
+                    continue
                 if (
                     box_area > 0
-                    and (ox * oy) / box_area > 0.8
+                    and overlap_area / box_area > 0.8
                     and (text == prev_text or (len(text) == len(prev_text) and len(text) <= 2))
                 ):
                     continue
 
         if prev_x1 is not None:
-            x_gap = run.x0 - prev_x1
-            # Use effective font size (height) for thresholding
-            rh = run.y1 - run.y0
-            # More balanced threshold for spacing
-            threshold = max(run.space_width * 0.25, rh * 0.12, 1.0)
-            if is_all_caps_line:
-                threshold = min(threshold, 0.5)
+            angle = run.rotation_angle
+            if angle == 90:
+                axis_gap = run.y0 - prev_y1
+                thickness = run.x1 - run.x0
+                threshold = max(run.space_width * 0.25, thickness * 0.12, 1.0)
+                if axis_gap > threshold:
+                    append_part(" ")
+            elif angle == 270:
+                axis_gap = prev_y0 - run.y1
+                thickness = run.x1 - run.x0
+                threshold = max(run.space_width * 0.25, thickness * 0.12, 1.0)
+                if axis_gap > threshold:
+                    append_part(" ")
+            else:
+                x_gap = run.x0 - prev_x1
+                # Use effective font size (height) for thresholding
+                rh = run.y1 - run.y0
+                # More balanced threshold for spacing
+                threshold = max(run.space_width * 0.25, rh * 0.12, 1.0)
+                if is_all_caps_line:
+                    threshold = min(threshold, 0.5)
 
-            if x_gap > threshold:
-                append_part(" ")
-            elif (prev_x1 - run.x0) > max(threshold * 4.0, rh * 2.0, 24.0):
-                append_part("\n")
+                if x_gap > threshold:
+                    append_part(" ")
+                elif (prev_x1 - run.x0) > max(threshold * 4.0, rh * 2.0, 24.0):
+                    append_part("\n")
 
         append_part(text)
         prev_x1 = run.x1

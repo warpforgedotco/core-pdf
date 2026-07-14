@@ -85,7 +85,9 @@ class ObjectResolver:
 
     def get_lexer(self) -> PdfLexer:
         if self.lexer_stack:
-            return self.lexer_stack.pop()
+            lexer = self.lexer_stack.pop()
+            lexer.decipher = self.decipher
+            return lexer
         return PdfLexer(
             self.data,
             reference_resolver=self.resolve,
@@ -254,7 +256,7 @@ class ObjectResolver:
                     coords[2],
                     coords[3],
                 )
-            except TypeError, ValueError:
+            except (TypeError, ValueError):
                 raise ValueError("invalid box value")
         raise ValueError("invalid box value")
 

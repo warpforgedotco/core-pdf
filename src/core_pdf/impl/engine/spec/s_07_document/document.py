@@ -160,12 +160,19 @@ class PdfDocument(NavigationMixin, FormsMixin, LayersMixin):
         data = self.raw_data
         start = XRefScanner.find_startxref(data)
         if start is None:
-            raise PdfParseError("missing startxref")
+            self.xref, self.trailer_dict = XRefScanner.recover_missing_xref(data)
+            self.xref = XRefScanner.repair_misaligned_entries(data, self.xref)
+            return
 
         try:
             self.xref, self.trailer_dict = XRefScanner.load_section_chain(data, start, set())
+            self.xref = XRefScanner.repair_misaligned_entries(data, self.xref)
         except (PdfParseError, ValueError, struct.error, OSError) as exc:
-            raise PdfParseError("invalid xref section") from exc
+            try:
+                self.xref, self.trailer_dict = XRefScanner.recover_missing_xref(data)
+                self.xref = XRefScanner.repair_misaligned_entries(data, self.xref)
+            except PdfParseError:
+                raise PdfParseError("invalid xref section") from exc
 
     def init_security(self, password: str) -> None:
         encrypt_ref = self.trailer_dict.get("Encrypt")
@@ -190,12 +197,16 @@ class PdfDocument(NavigationMixin, FormsMixin, LayersMixin):
 
         docid = self.trailer_dict.get("ID")
         if docid is None:
-            raise PdfUnsupportedError("Missing trailer ID array")
-        if isinstance(docid, PdfReference):
+            docid_list: tuple[PdfObject, ...] = (b"", b"")
+        elif isinstance(docid, PdfReference):
             docid = self.resolver.resolve(docid)
-        if not isinstance(docid, (list, tuple)) or len(docid) == 0:
+            if not isinstance(docid, (list, tuple)) or len(docid) == 0:
+                raise PdfUnsupportedError("Invalid trailer ID array")
+            docid_list = tuple(docid)
+        elif isinstance(docid, (list, tuple)) and len(docid) > 0:
+            docid_list = tuple(docid)
+        else:
             raise PdfUnsupportedError("Invalid trailer ID array")
-        docid_list = docid
 
         handler = handler_cls(docid_list, encrypt_dict, password)
         self.decipher = handler.decrypt
@@ -241,7 +252,7 @@ class PdfDocument(NavigationMixin, FormsMixin, LayersMixin):
                     indent = "  " * item.level
                     md_parts.append(f"{indent}- {item.title}")
                 md_parts.append("")
-        except ValueError, KeyError, StopIteration:
+        except (ValueError, KeyError, StopIteration):
             pass
 
         # 3. Pages
@@ -338,7 +349,7 @@ class PdfDocument(NavigationMixin, FormsMixin, LayersMixin):
                 return
             if not isinstance(resources, dict):
                 raise ValueError("invalid page Resources dictionary")
-            fonts = resources.get("Font")
+            fonts = self.resolver.resolve(resources.get("Font"))
             if fonts is None:
                 return
             if not isinstance(fonts, dict):
@@ -373,6 +384,9 @@ class PdfDocument(NavigationMixin, FormsMixin, LayersMixin):
                 PdfPage(self, page_dict, i + 1) for i, page_dict in enumerate(self.page_dicts_cache)
             ]
         return self.pages_cache
+
+    def page_count(self) -> int:
+        return len(self.pages)
 
     def page_index_for(self, page_obj: PdfObject) -> int | None:
         if isinstance(page_obj, PdfPage):

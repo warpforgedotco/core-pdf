@@ -16,6 +16,7 @@ from core_pdf.impl.engine.spec.s_07_syntax.primitives import (
 )
 
 STARTXREF_RE = re.compile(b"startxref")
+TRAILER_RE = re.compile(b"trailer")
 OBJ_MARKER_RE = re.compile(rb"(\d+)\s+(\d+)\s+obj")
 
 
@@ -80,6 +81,19 @@ class XRefScanner:
         return parse_int_strict(bytes(number).strip())
 
     @staticmethod
+    def find_trailer_dictionary(data: ByteSource) -> PdfDictLike | None:
+        matches = list(TRAILER_RE.finditer(data))
+        for match in reversed(matches):
+            lexer = PdfLexer(data)
+            lexer.pos = XRefScanner.skip_ws(data, match.end())
+            try:
+                trailer = lexer.parse_dictionary()
+            except PdfParseError:
+                continue
+            return trailer
+        return None
+
+    @staticmethod
     def skip_ws(data: ByteSource, pos: int) -> int:
         ws = WS_TABLE
         n = len(data)
@@ -119,10 +133,15 @@ class XRefScanner:
         entries: XRefTable = {}
         while pos < len(data):
             line, next_pos = XRefScanner.read_line(data, pos)
-            if line == b"trailer":
-                pos = next_pos
-                break
             b_line = bytes(line)
+            stripped_line = b_line.strip()
+            if stripped_line.startswith(b"trailer"):
+                after_trailer = stripped_line[len(b"trailer") :]
+                if after_trailer and not WS_TABLE[after_trailer[0]]:
+                    raise PdfParseError("invalid xref table subsection")
+                leading_ws = len(b_line) - len(b_line.lstrip())
+                pos += leading_ws + len(b"trailer")
+                break
             parts = b_line.strip().split()
             if not parts:
                 pos = next_pos
@@ -169,30 +188,85 @@ class XRefScanner:
     def load_section_chain(
         data: ByteSource, start: int, seen: set[int]
     ) -> tuple[XRefTable, PdfDictLike]:
-        if start in seen:
-            raise PdfParseError("xref section loop detected")
-        seen.add(start)
+        sections: list[tuple[XRefTable, PdfDictLike]] = []
+        current = start
+        while True:
+            if current in seen:
+                raise PdfParseError("xref section loop detected")
+            seen.add(current)
 
-        # 1. Try XRef Stream first
-        lexer = PdfLexer(data)
-        lexer.pos = start
-        obj = lexer.parse_indirect_object()
-        if isinstance(obj, PdfStream):
+            pos = XRefScanner.skip_ws(data, current)
+            if data[pos : pos + 4] == b"xref":
+                entries, trailer, prev = XRefScanner.parse_table_section(data, pos)
+                sections.append((entries, trailer))
+                if prev is None:
+                    break
+                current = prev
+                continue
+
+            # Otherwise the startxref offset must point at an xref stream object.
+            lexer = PdfLexer(data)
+            lexer.pos = pos
+            obj = lexer.parse_indirect_object()
+            if not isinstance(obj, PdfStream):
+                raise PdfParseError("expected xref stream")
+
             entries, trailer = XRefScanner.parse_stream(obj)
-            prev = trailer.get(PdfName.of(b"Prev"))
-            if isinstance(prev, int):
-                p_entries, p_trailer = XRefScanner.load_section_chain(data, prev, seen)
-                p_entries.update(entries)
-                return p_entries, trailer
-            return entries, trailer
+            sections.append((entries, trailer))
+            stream_prev = trailer.get(PdfName.of(b"Prev"))
+            if not isinstance(stream_prev, int):
+                break
+            current = stream_prev
 
-        # 2. Fallback to classic XRef table
-        entries, trailer, prev = XRefScanner.parse_table_section(data, start)
-        if prev is not None:
-            p_entries, p_trailer = XRefScanner.load_section_chain(data, prev, seen)
-            p_entries.update(entries)
-            return p_entries, trailer
-        return entries, trailer
+        if not sections:
+            raise PdfParseError("missing xref section")
+        merged: XRefTable = {}
+        for entries, _trailer in reversed(sections):
+            merged.update(entries)
+        return merged, sections[0][1]
+
+    @staticmethod
+    def offset_matches_object(
+        data: ByteSource, offset: int, object_number: int, generation_number: int
+    ) -> bool:
+        if offset < 0 or offset >= len(data):
+            return False
+        match = OBJ_MARKER_RE.match(data, XRefScanner.skip_ws(data, offset))
+        if match is None:
+            return False
+        try:
+            return int(match.group(1)) == object_number and int(match.group(2)) == generation_number
+        except ValueError:
+            return False
+
+    @staticmethod
+    def repair_misaligned_entries(data: ByteSource, entries: XRefTable) -> XRefTable:
+        scanned: XRefTable | None = None
+        repaired: XRefTable | None = None
+        for key, entry in entries.items():
+            if not entry.in_use or entry.object_stream is not None:
+                continue
+            obj_num = key >> 16
+            gen_num = key & 0xFFFF
+            if XRefScanner.offset_matches_object(data, entry.offset, obj_num, gen_num):
+                continue
+            if scanned is None:
+                scanned = XRefScanner.brute_force_scan(data)
+            replacement = scanned.get(key)
+            if replacement is None:
+                continue
+            if repaired is None:
+                repaired = entries.copy()
+            repaired[key] = replacement
+
+        if repaired is None:
+            return entries
+        assert scanned is not None
+        for key, replacement in scanned.items():
+            current = repaired.get(key)
+            if current is None or not current.in_use:
+                repaired[key] = replacement
+        return repaired
 
     @staticmethod
     def parse_stream(stream: PdfStream) -> tuple[XRefTable, PdfDictLike]:
@@ -220,14 +294,15 @@ class XRefScanner:
 
         index_raw = dict_obj.get(PdfName.of(b"Index"))
         if index_raw is None:
+            index = [0, size]
+        elif not isinstance(index_raw, (list, tuple)):
             raise PdfParseError("invalid xref stream Index")
-        if not isinstance(index_raw, (list, tuple)):
-            raise PdfParseError("invalid xref stream Index")
-        if not all(isinstance(x, int) and not isinstance(x, bool) for x in index_raw):
-            raise PdfParseError("invalid xref stream Index")
-        index = [x for x in index_raw if isinstance(x, int) and not isinstance(x, bool)]
-        if len(index) % 2 != 0:
-            raise PdfParseError("invalid xref stream Index")
+        else:
+            if not all(isinstance(x, int) and not isinstance(x, bool) for x in index_raw):
+                raise PdfParseError("invalid xref stream Index")
+            index = [x for x in index_raw if isinstance(x, int) and not isinstance(x, bool)]
+            if len(index) % 2 != 0:
+                raise PdfParseError("invalid xref stream Index")
 
         data = stream.data
         entries: XRefTable = {}
@@ -273,7 +348,7 @@ class XRefScanner:
         return entries, dict_obj
 
     @staticmethod
-    def brute_force_scan(data: bytes, max_entries: int = 100000) -> XRefTable:
+    def brute_force_scan(data: ByteSource, max_entries: int = 100000) -> XRefTable:
         """Fallback: scan for 'obj' markers when xref is missing or corrupt."""
         entries: XRefTable = {}
         for match in OBJ_MARKER_RE.finditer(data):
@@ -285,6 +360,14 @@ class XRefScanner:
                 offset = match.start()
                 if obj_num < 10000000:
                     entries[key_for(obj_num, gen_num)] = PdfXRefEntry(offset, gen_num, True)
-            except ValueError, IndexError:
+            except (ValueError, IndexError):
                 continue
         return entries
+
+    @staticmethod
+    def recover_missing_xref(data: ByteSource) -> tuple[XRefTable, PdfDictLike]:
+        entries = XRefScanner.brute_force_scan(data)
+        trailer = XRefScanner.find_trailer_dictionary(data)
+        if not entries or trailer is None:
+            raise PdfParseError("missing startxref")
+        return entries, trailer
