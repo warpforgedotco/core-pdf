@@ -833,7 +833,11 @@ class PdfLexer:
 
                 if handler is not None:
                     handler(operands[:op_count], depth)
-                    op_count = 0
+                # Every keyword terminates the preceding operand sequence,
+                # including operators that this implementation does not
+                # support. Otherwise their operands leak into the next
+                # recognized operator.
+                op_count = 0
                 continue
 
             # 4. Special characters (delimiters)

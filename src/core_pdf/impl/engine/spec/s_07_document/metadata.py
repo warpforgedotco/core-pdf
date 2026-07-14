@@ -7,6 +7,7 @@ from typing import TypeAlias, TypeGuard
 from core_pdf.impl.engine.spec.s_07_objects.resolver import ObjectResolver
 from core_pdf.impl.engine.spec.s_07_syntax.primitives import (
     PdfDictLike,
+    PdfName,
     PdfObject,
     PdfStream,
     coerce_value,
@@ -14,13 +15,20 @@ from core_pdf.impl.engine.spec.s_07_syntax.primitives import (
 from core_pdf.impl.engine.spec.s_09_fonts.encoding import decode_pdf_text_string
 
 MetadataValue: TypeAlias = (
-    None | bool | int | float | str | list["MetadataValue"] | dict[str, "MetadataValue"]
+    None
+    | bool
+    | int
+    | float
+    | str
+    | PdfName
+    | list["MetadataValue"]
+    | dict[str, "MetadataValue"]
 )
 MetadataDict: TypeAlias = dict[str, MetadataValue]
 
 
 def is_metadata_value(value: object) -> TypeGuard[MetadataValue]:
-    if value is None or isinstance(value, (bool, int, float, str)):
+    if value is None or isinstance(value, (bool, int, float, str, PdfName)):
         return True
     if isinstance(value, list):
         return all(is_metadata_value(item) for item in value)

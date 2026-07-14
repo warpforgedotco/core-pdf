@@ -61,11 +61,16 @@ class NavigationMixin:
             )
             first = current.get("First")
             if first is not None:
-                resolved_first = self.resolver.resolve_dict(first)
+                resolved_first = self.resolver.resolve(first)
                 if resolved_first is None:
                     raise ValueError("invalid outline child")
+                if not isinstance(resolved_first, dict):
+                    raise ValueError("invalid outline child")
                 result.extend(self.walk_outlines(resolved_first, level + 1))
-            current = self.resolver.resolve_dict(current.get("Next"))
+            next_item = self.resolver.resolve(current.get("Next"))
+            if next_item is not None and not isinstance(next_item, dict):
+                raise ValueError("invalid outline item")
+            current = next_item
         return result
 
     def resolve_destination(
