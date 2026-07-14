@@ -1478,9 +1478,7 @@ def schematic_base_supplement_cluster_is_accepted(
         and ("word" in evidence_types or "symbol" in evidence_types)
     ):
         return True
-    if source_count >= 2 and len(cluster.entries) >= 2:
-        return True
-    return False
+    return bool(source_count >= 2 and len(cluster.entries) >= 2)
 
 
 def schematic_symbol_only_cluster_is_accepted(

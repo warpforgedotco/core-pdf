@@ -234,9 +234,7 @@ class RedactionAnalyzer:
         overlap_x, overlap_y, overlap_area = left.bbox.intersection_lengths(right.bbox)
         if overlap_area <= 0.0:
             return False
-        if overlap_x < 2.0 or overlap_y < 2.0:
-            return False
-        return True
+        return not (overlap_x < 2.0 or overlap_y < 2.0)
 
     def build_candidate(
         self, paint_group: tuple[RedactionPaintSpan, ...], glyphs: list[Glyph]
@@ -461,21 +459,17 @@ class RedactionAnalyzer:
             return True
         if features.repeated_char_ratio >= 0.8:
             return True
-        if features.text_length <= 4 and features.alpha_count <= 1:
-            return True
-        return False
+        return bool(features.text_length <= 4 and features.alpha_count <= 1)
 
     def is_redaction_numeric(self, features: RedactionFeatures) -> bool:
         if features.is_numeric_only and features.text_length > 0:
             return True
-        if (
+        return bool(
             features.text_length >= 20
             and features.digit_count >= 20
             and features.digit_count >= features.text_length // 2
             and features.alpha_count <= 12
-        ):
-            return True
-        return False
+        )
 
 
 def is_dark_color(color: tuple[float, ...] | None) -> bool:

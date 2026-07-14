@@ -114,9 +114,12 @@ class PageInteractionsMixin:
             action = lookup_dict_key(annot, "A")
             if isinstance(action, PdfReference):
                 action = self.document.resolver.resolve(action)
-            if dest is None and isinstance(action, dict):
-                if self.document.resolver.resolve_name(lookup_dict_key(action, "S")) == "GoTo":
-                    dest = lookup_dict_key(action, "D")
+            if (
+                dest is None
+                and isinstance(action, dict)
+                and self.document.resolver.resolve_name(lookup_dict_key(action, "S")) == "GoTo"
+            ):
+                dest = lookup_dict_key(action, "D")
 
             results.append(
                 AnnotationRecord(

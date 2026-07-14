@@ -562,9 +562,8 @@ def raster_pixel_is_dark(image: OcrImage, x: int, y: int) -> bool:
         return image.data[offset] <= OCR_RASTER_TABLE_DARK_THRESHOLD
     if offset + 2 >= len(image.data):
         return False
-    if image.bytes_per_pixel == 4 and offset + 3 < len(image.data):
-        if image.data[offset + 3] <= 32:
-            return False
+    if image.bytes_per_pixel == 4 and offset + 3 < len(image.data) and image.data[offset + 3] <= 32:
+        return False
     red = image.data[offset]
     green = image.data[offset + 1]
     blue = image.data[offset + 2]
@@ -751,13 +750,11 @@ def table_ocr_regions_need_textline_refinement(
     if table_bounds is None:
         return False
     table_height = table_bounds[3] - table_bounds[1]
-    if (
+    return bool(
         len(row_regions) <= OCR_TABLE_TEXTLINE_REFINEMENT_COARSE_ROW_COUNT
         and table_height >= image.height * OCR_TABLE_TEXTLINE_REFINEMENT_MIN_TABLE_HEIGHT_RATIO
         and max_height >= table_height * OCR_TABLE_TEXTLINE_REFINEMENT_COARSE_ROW_HEIGHT_RATIO
-    ):
-        return True
-    return False
+    )
 
 
 def table_textline_row_regions_from_boxes(
@@ -1400,9 +1397,7 @@ def should_retry_table_row_ocr_result(
         return True
     if tokens < 3 and region.width >= region.height * 3:
         return True
-    if text_ocr_quality_score(text) > 0.36 and confidence < 70:
-        return True
-    return False
+    return bool(text_ocr_quality_score(text) > 0.36 and confidence < 70)
 
 
 def select_table_row_profile_result(
@@ -1616,9 +1611,12 @@ def table_cell_consensus_candidate(
         if not selected_text:
             continue
         filled_cells += 1
-        if selected_source == "ocr" or selected_source == "agreement":
-            if result is not None and result.confidence is not None:
-                confidences.append(result.confidence)
+        if (
+            (selected_source == "ocr" or selected_source == "agreement")
+            and result is not None
+            and result.confidence is not None
+        ):
+            confidences.append(result.confidence)
         rows[region.row_index].append((region.col_index or 0, selected_text))
     lines = [
         " ".join(text for ignored_col, text in sorted(items)).strip()

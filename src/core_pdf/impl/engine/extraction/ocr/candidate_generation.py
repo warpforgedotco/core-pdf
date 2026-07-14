@@ -140,14 +140,12 @@ def should_try_line_art_text_mask_ocr_candidate(
     confidence = base_candidate.result.confidence
     if confidence is not None and confidence >= 88 and text_ocr_quality_score(text) <= 0.12:
         return False
-    if (
+    return not (
         ocr_selection.ocr_candidate_score(base_candidate) >= 78.0
         and (confidence or 0) >= 55
         and text_ocr_quality_score(text) <= 0.18
         and compact_uppercase_label_count(text) >= OCR_LINE_ART_SKIP_COMPACT_LABELS
-    ):
-        return False
-    return True
+    )
 
 
 def should_keep_line_art_text_mask_ocr_candidate(candidate: OcrCandidate) -> bool:
@@ -420,9 +418,7 @@ def should_keep_rendered_downsampled_page_ocr_candidate(
         return False
     base_confidence = base.result.confidence if base.result.confidence is not None else 50
     confidence = candidate.result.confidence if candidate.result.confidence is not None else 50
-    if confidence + 3 < base_confidence:
-        return False
-    return True
+    return not confidence + 3 < base_confidence
 
 
 def rendered_sparse_page_ocr_candidate(
@@ -1122,9 +1118,7 @@ def should_generate_layout_variants(candidate: OcrCandidate) -> bool:
     confidence = candidate.result.confidence or 0
     quality = text_ocr_quality_score(text)
     artifact = scanned_ocr_artifact_score(text)
-    if confidence >= 88 and tokens >= 80 and quality <= 0.10 and artifact <= 0.05:
-        return False
-    return True
+    return not (confidence >= 88 and tokens >= 80 and quality <= 0.1 and artifact <= 0.05)
 
 
 def ocr_candidate_from_image(
@@ -1496,22 +1490,18 @@ def should_try_high_density_full_page_image(
     confidence = candidate.result.confidence or 0
     quality = text_ocr_quality_score(candidate.result.text)
     if "_rotated_" in image.source:
-        if (
-            image.width * image.height >= 6_000_000
+        return not (
+            image.width * image.height >= 6000000
             and tokens >= 35
             and confidence >= 90
             and quality <= 0.18
-        ):
-            return False
-        return True
-    if (
-        image.width * image.height >= 6_000_000
+        )
+    return not (
+        image.width * image.height >= 6000000
         and tokens < 80
         and confidence >= 88
-        and quality >= 0.20
-    ):
-        return False
-    return True
+        and quality >= 0.2
+    )
 
 
 def should_skip_rendered_ocr_after_full_page_image(
@@ -1567,9 +1557,7 @@ def should_skip_rendered_ocr_after_full_page_image(
         return True
     if confidence >= 82 and tokens >= 100 and quality <= 0.16:
         return True
-    if confidence >= 76 and tokens >= 180 and quality <= 0.18:
-        return True
-    return False
+    return bool(confidence >= 76 and tokens >= 180 and quality <= 0.18)
 
 
 def stable_encoded_full_page_image_ocr_candidate(

@@ -1589,9 +1589,7 @@ def lower_confidence_token_substitution_is_untrusted(
         return False
     if len(current_tokens) != len(candidate_tokens):
         return False
-    if quality_gain >= 0.08:
-        return False
-    return True
+    return not quality_gain >= 0.08
 
 
 def short_token_ratio(tokens: list[str]) -> float:
@@ -2060,9 +2058,8 @@ def table_ocr_should_append_line(
         # Consensus cell OCR is only reliable when it can repair an existing row.
         # Without a geometry/text match, novel tokens can come from nearby figures.
         return False
-    if candidate_name == "table_cells":
-        if not table_ocr_base_lines_are_table_dominant(base_lines):
-            return False
+    if candidate_name == "table_cells" and not table_ocr_base_lines_are_table_dominant(base_lines):
+        return False
     if candidate_name == "table_cells_rotated":
         if len(tokens) < 2 or quality > 0.62:
             return False
@@ -2077,9 +2074,7 @@ def table_ocr_should_append_line(
     if new_tokens < needed:
         return False
     token_set = set(tokens)
-    if len(token_set.difference(seen_tokens)) < 2:
-        return False
-    return True
+    return not len(token_set.difference(seen_tokens)) < 2
 
 
 def table_ocr_base_lines_are_table_dominant(lines: list[str]) -> bool:
@@ -3471,9 +3466,8 @@ def dominant_image_common_prefix_completion(prefix: str) -> str | None:
             continue
         if len(normalized) / len(word) < 0.45:
             continue
-        if len(normalized) <= 3:
-            if len(word) < 6 or word.endswith("s"):
-                continue
+        if len(normalized) <= 3 and (len(word) < 6 or word.endswith("s")):
+            continue
         key = (
             0 if len(normalized) >= 4 else -len(word),
             0 if not word.endswith("s") else 1,
@@ -3629,9 +3623,7 @@ def embedded_image_text_span_is_useful(
     if long_unknown_words:
         return False
     text = " ".join(words)
-    if ocr_text_analysis.text_ocr_quality_score(text) > 0.34:
-        return False
-    return True
+    return not ocr_text_analysis.text_ocr_quality_score(text) > 0.34
 
 
 def embedded_image_text_confidence(candidates: list[OcrCandidate]) -> int | None:
@@ -6670,9 +6662,7 @@ def figure_text_line_is_useful(text: str, confidence: int | None = None) -> bool
         )
     if not (has_digit or has_assignment or has_connector or has_descriptive_token):
         return False
-    if confidence_value < 20 and not (has_digit or has_assignment):
-        return False
-    return True
+    return not (confidence_value < 20 and not (has_digit or has_assignment))
 
 
 def figure_text_line_looks_alpha_noise(text: str, tokens: list[str]) -> bool:
@@ -6686,9 +6676,7 @@ def figure_text_line_looks_alpha_noise(text: str, tokens: list[str]) -> bool:
         if token.isalpha() and len(token) == 1:
             return True
         raw = "".join(ch for ch in text if ch.isalpha())
-        if token.isalpha() and len(token) < 4 and not raw.isupper():
-            return True
-        return False
+        return bool(token.isalpha() and len(token) < 4 and not raw.isupper())
     if has_digit_or_connector:
         return False
     alpha_chars = [ch for ch in text if ch.isalpha()]
@@ -7148,9 +7136,7 @@ def figure_selected_line_is_metadata(text: str) -> bool:
         return True
     if len(tokens) == 3 and tokens[0].isdigit() and tokens[1] == "of" and tokens[2].isdigit():
         return True
-    if {"oct", "us", "patent"} & set(tokens):
-        return True
-    return False
+    return bool({"oct", "us", "patent"} & set(tokens))
 
 
 def figure_cleanup_selected_callout_lines(
@@ -7229,9 +7215,9 @@ def descriptive_callout_cluster_line_is_consensus_eligible(
     numeric_tokens = sum(1 for token in tokens if any(ch.isdigit() for ch in token))
     if readable_alpha < 3 or numeric_tokens < 1:
         return False
-    if any(figure_selected_lines_are_redundant(line, existing) for existing in selected_lines):
-        return False
-    return True
+    return not any(
+        figure_selected_lines_are_redundant(line, existing) for existing in selected_lines
+    )
 
 
 def callout_cluster_line_consensus_support(
@@ -7278,9 +7264,7 @@ def figure_selected_callout_line_should_drop(
     short_alpha_tokens = sum(1 for token in tokens if token.isalpha() and len(token) <= 3)
     if numeric_tokens >= 1 and alpha_tokens >= 1 and short_alpha_tokens >= 1 and len(tokens) >= 3:
         return True
-    if numeric_tokens >= 2 and alpha_tokens >= 2 and len(tokens) >= 4:
-        return True
-    return False
+    return bool(numeric_tokens >= 2 and alpha_tokens >= 2 and len(tokens) >= 4)
 
 
 def figure_drop_redundant_selected_lines(
@@ -7486,17 +7470,18 @@ def figure_lines_are_complementary_neighbors(
     horizontal_gap = max(0.0, right_bbox[0] - left_bbox[2])
     if horizontal_gap > max(left_height, right_height) * 4.5:
         return False
-    overlap = max(0.0, min(left_bbox[2], right_bbox[2]) - max(left_bbox[0], right_bbox[0]))
-    if (
-        overlap
-        > min(
+    overlap = max(
+        0.0,
+        min(left_bbox[2], right_bbox[2]) - max(left_bbox[0], right_bbox[0]),
+    )
+    max_allowed_overlap = (
+        min(
             page_geometry.observation_width(left.observation),
             page_geometry.observation_width(right.observation),
         )
         * 0.55
-    ):
-        return False
-    return True
+    )
+    return not overlap > max_allowed_overlap
 
 
 def figure_merge_complementary_line_text(left_text: str, right_text: str) -> str | None:
@@ -7569,9 +7554,7 @@ def figure_fused_line_is_fragment(
             return True
         if ocr_text_analysis.alphabetic_gibberish_score(stripped) >= 0.28:
             return True
-    if confidence is not None and confidence < 65 and readable_alpha == 0:
-        return True
-    return False
+    return bool(confidence is not None and confidence < 65 and readable_alpha == 0)
 
 
 def precision_clean_figure_reference_text(
@@ -7786,9 +7769,9 @@ def figure_callout_candidate_line_is_fragment(text: str) -> bool:
     confidence = 60 if figure_text_line_is_useful(text) else 40
     if figure_fused_line_is_fragment(text, confidence):
         return True
-    if len(tokens) <= 2 and not any(token.isalpha() and len(token) >= 4 for token in tokens):
-        return True
-    return False
+    return bool(
+        len(tokens) <= 2 and not any(token.isalpha() and len(token) >= 4 for token in tokens)
+    )
 
 
 def figure_callout_candidate_line_is_descriptive(text: str) -> bool:
@@ -8610,9 +8593,7 @@ def dominant_image_label_line_adds_useful_support(
         line_alpha, line_digits = dominant_image_line_token_sets(line.text)
         if alpha_tokens <= line_alpha and digit_tokens <= line_digits:
             return False
-    if not digit_tokens:
-        return False
-    return True
+    return digit_tokens
 
 
 def drop_redundant_dominant_image_label_lines(
@@ -10952,9 +10933,7 @@ def dominant_image_slot_hypothesis_matches_fragment(token: str, fragment: str) -
         return False
     if normalized_token.startswith(normalized_fragment):
         return True
-    if normalized_fragment in normalized_token and len(normalized_fragment) >= 3:
-        return True
-    return False
+    return bool(normalized_fragment in normalized_token and len(normalized_fragment) >= 3)
 
 
 def dominant_image_band_slot_numeric_supports_anchor(
@@ -11997,9 +11976,7 @@ def should_try_rotated_ocr_supplement(
             return False
         if tokens <= 4 and confidence < 60:
             return True
-        if tokens <= 20 and confidence < 60 and quality <= 0.30:
-            return True
-        return False
+        return bool(tokens <= 20 and confidence < 60 and quality <= 0.3)
     if not isinstance(candidate, ocr_candidates.OcrCandidate):
         return False
     if not image.source.startswith("full_page_"):

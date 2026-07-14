@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
+import contextlib
 from typing import Any
 
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
@@ -43,16 +44,12 @@ def parse_font_metrics(
     if isinstance(descriptor, dict):
         descriptor_ascent = lookup_dict_key(descriptor, "Ascent")
         if descriptor_ascent is not None:
-            try:
+            with contextlib.suppress(ValueError):
                 ascent = require_font_float(descriptor_ascent, "invalid font Ascent")
-            except ValueError:
-                pass
         descriptor_descent = lookup_dict_key(descriptor, "Descent")
         if descriptor_descent is not None:
-            try:
+            with contextlib.suppress(ValueError):
                 descent = require_font_float(descriptor_descent, "invalid font Descent")
-            except ValueError:
-                pass
     return ascent, descent
 
 

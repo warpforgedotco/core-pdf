@@ -34,7 +34,7 @@ class DocumentSourceMixin:
         if isinstance(source, (str, PathLike)):
             if isinstance(source, str) and source.startswith("%PDF"):
                 return source.encode("latin-1")
-            file_handle = open(cast(PathSource, source), "rb")
+            file_handle = open(cast(PathSource, source), "rb")  # noqa: SIM115
             self.file_handle = file_handle
             try:
                 return mmap.mmap(file_handle.fileno(), 0, access=mmap.ACCESS_READ)

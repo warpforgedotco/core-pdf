@@ -794,9 +794,9 @@ def line_starts_new_vertical_band(
     band_x1 = max(line.x1 for line in current_band[-8:])
     current_extends_right = current.x1 > band_x1 + max(line_height * 2.5, 42.0)
     current_resets_left = current.x0 <= band_x0 + max(line_height * 1.5, 18.0)
-    if current_width > median_width * 1.45 and current_extends_right and current_resets_left:
-        return True
-    return False
+    return bool(
+        current_width > median_width * 1.45 and current_extends_right and current_resets_left
+    )
 
 
 def stable_multi_column_split_texts_look_safe(texts: list[str]) -> bool:
@@ -815,9 +815,7 @@ def stable_multi_column_split_texts_look_safe(texts: list[str]) -> bool:
         for tokens in token_lists
     ):
         return False
-    if any(len(text) < 18 for text in texts):
-        return False
-    return True
+    return not any(len(text) < 18 for text in texts)
 
 
 def stable_multi_column_split_is_safe(
@@ -852,9 +850,7 @@ def stable_multi_column_split_is_safe(
         prose_line,
         split_points,
     )
-    if marker_column is None or prose_column is None or marker_column == prose_column:
-        return False
-    return True
+    return not (marker_column is None or prose_column is None or marker_column == prose_column)
 
 
 def short_numeric_marker_fragment_index(texts: list[str]) -> int | None:
@@ -1323,9 +1319,7 @@ def lines_form_same_native_paragraph(
     right_width = max(1.0, right_box[2] - right_box[0])
     if max(left_width, right_width) / max(1.0, min(left_width, right_width)) > 3.2:
         return False
-    if right.break_before == 2 and not native_paragraph_line_pair_looks_prose(left, right):
-        return False
-    return True
+    return not (right.break_before == 2 and not native_paragraph_line_pair_looks_prose(left, right))
 
 
 def native_paragraph_line_pair_looks_prose(
@@ -1336,9 +1330,7 @@ def native_paragraph_line_pair_looks_prose(
     right_tokens = normalized_text_tokens(right.text)
     if len(left_tokens) < 3 or len(right_tokens) < 2:
         return False
-    if any(any(ch.isdigit() for ch in token) for token in (*left_tokens, *right_tokens)):
-        return False
-    return True
+    return not any(any(ch.isdigit() for ch in token) for token in (*left_tokens, *right_tokens))
 
 
 def standalone_hyphen_bridges_lines(

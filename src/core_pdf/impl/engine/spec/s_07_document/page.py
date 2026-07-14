@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
+import contextlib
 from typing import TYPE_CHECKING, cast
 
 from core_pdf.impl.engine.extraction.cache import ExtractionCache
@@ -130,10 +131,8 @@ class PdfPage(PageInteractionsMixin, PageStateMixin):
         page_caches = getattr(document, "page_extraction_caches", None)
         if page_caches is None:
             page_caches = {}
-            try:
+            with contextlib.suppress(AttributeError):
                 document.page_extraction_caches = page_caches
-            except AttributeError:
-                pass
         self.extraction_cache = page_caches.setdefault(page_number, ExtractionCache())
 
     @property

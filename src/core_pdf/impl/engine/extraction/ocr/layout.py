@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
+import contextlib
 from bisect import bisect_right
 from dataclasses import dataclass
 from statistics import median
@@ -491,9 +492,7 @@ def ocr_words_need_space(previous: OcrLayoutWord, current: OcrLayoutWord) -> boo
     if previous.text[-1] in "([{/$":
         return False
     gap = current.x0 - previous.x1
-    if gap < -max(previous.height, current.height) * 0.15:
-        return False
-    return True
+    return not gap < -max(previous.height, current.height) * 0.15
 
 
 def ocr_order_line_words(words: list[OcrLayoutWord]) -> list[OcrLayoutWord]:
@@ -869,9 +868,7 @@ def geometry_text_is_usable(original: str, rendered: str) -> bool:
         return True
     if rendered_tokens < max(2, int(original_tokens * 0.65)):
         return False
-    if rendered_tokens > max(original_tokens + 300, int(original_tokens * 2.75)):
-        return False
-    return True
+    return not rendered_tokens > max(original_tokens + 300, int(original_tokens * 2.75))
 
 
 def geometry_text_confidence(rows: Iterable[OcrRow], fallback: int | None) -> int | None:
@@ -880,10 +877,8 @@ def geometry_text_confidence(rows: Iterable[OcrRow], fallback: int | None) -> in
         confidence = row.get("conf")
         if confidence is None:
             continue
-        try:
+        with contextlib.suppress(TypeError, ValueError):
             confidences.append(max(0, min(100, int(round(ocr_float_value(confidence))))))
-        except (TypeError, ValueError):
-            pass
     if not confidences:
         return fallback
     return int(round(sum(confidences) / len(confidences)))

@@ -406,13 +406,17 @@ class FontDecoder:
                 if not text:
                     if self.glyph_decode_table_authoritative or mapped:
                         text = mapped
-                elif len(text) == 1 and mapped and text != mapped:
-                    if should_prefer_glyph_name_mapping(
+                elif (
+                    len(text) == 1
+                    and mapped
+                    and text != mapped
+                    and should_prefer_glyph_name_mapping(
                         text,
                         mapped,
                         authoritative=self.glyph_decode_table_authoritative,
-                    ):
-                        text = mapped
+                    )
+                ):
+                    text = mapped
             else:
                 text = replace_unicode_from_glyph_names(
                     text,

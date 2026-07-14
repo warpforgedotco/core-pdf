@@ -135,16 +135,12 @@ class DocumentXRefMixin:
                     ):
                         while pos < data_len and data[pos] in (0, 9, 10, 12, 13, 32):
                             pos += 1
-                        if pos + 3 <= data_len and data[pos : pos + 3] == b"obj":
-                            if pos + 3 == data_len or data[pos + 3] in (
-                                0,
-                                9,
-                                10,
-                                12,
-                                13,
-                                32,
-                            ):
-                                return True
+                        if (
+                            pos + 3 <= data_len
+                            and data[pos : pos + 3] == b"obj"
+                            and (pos + 3 == data_len or data[pos + 3] in (0, 9, 10, 12, 13, 32))
+                        ):
+                            return True
 
         search_end = min(data_len, offset + 64)
         marker = data.find(b"obj", offset, search_end)

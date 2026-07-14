@@ -161,11 +161,10 @@ class ObjectResolver(ResolverValueMixin):
         if obj_num < 0 or gen_num < 0:
             raise ValueError("invalid PDF reference")
 
-        if gen_num == 0 and self.objects_gen0 is not None:
-            if obj_num < len(self.objects_gen0):
-                cached_gen0 = self.objects_gen0[obj_num]
-                if cached_gen0 is not MISSING:
-                    return cached_gen0
+        if gen_num == 0 and self.objects_gen0 is not None and obj_num < len(self.objects_gen0):
+            cached_gen0 = self.objects_gen0[obj_num]
+            if cached_gen0 is not MISSING:
+                return cached_gen0
 
         cache_key = key_for(obj_num, gen_num)
         cached = self.objects.get(cache_key, MISSING)
@@ -185,9 +184,13 @@ class ObjectResolver(ResolverValueMixin):
                     entry = None
             else:
                 entry = self.xref.get(cache_key)
-                if entry is None and gen_num != 0 and self.xref_gen0 is not None:
-                    if obj_num < len(self.xref_gen0):
-                        entry = self.xref_gen0[obj_num]
+                if (
+                    entry is None
+                    and gen_num != 0
+                    and self.xref_gen0 is not None
+                    and obj_num < len(self.xref_gen0)
+                ):
+                    entry = self.xref_gen0[obj_num]
 
             if entry is None or not entry.in_use:
                 resolved = None

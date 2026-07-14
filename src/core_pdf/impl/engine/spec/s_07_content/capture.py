@@ -1311,22 +1311,21 @@ class ContentCaptureMixin:
         if simple_horizontal_run:
             normalized_text = normalize_extracted_text(text)
             prepared_text = normalized_text
-            if normalized_text:
-                if self.merge_pending_horizontal_run(
-                    normalized_text,
-                    x0,
-                    x1,
-                    y0,
-                    effective_font_size,
-                    self.current_font,
-                    prepared_visible,
-                    self.fill_color,
-                ):
-                    self.sequence = seqno + 1
-                    self.tm_e = te + adv_x * ta + adv_y * tc
-                    self.tm_f = tf + adv_x * tb + adv_y * td
-                    self.pending_line_break = False
-                    return
+            if normalized_text and self.merge_pending_horizontal_run(
+                normalized_text,
+                x0,
+                x1,
+                y0,
+                effective_font_size,
+                self.current_font,
+                prepared_visible,
+                self.fill_color,
+            ):
+                self.sequence = seqno + 1
+                self.tm_e = te + adv_x * ta + adv_y * tc
+                self.tm_f = tf + adv_x * tb + adv_y * td
+                self.pending_line_break = False
+                return
 
         if simple_horizontal_run:
             new_run = self.alloc_prepared_run(

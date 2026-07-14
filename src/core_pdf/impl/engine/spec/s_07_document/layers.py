@@ -45,12 +45,11 @@ class LayersMixin:
 
         on_layers: set[tuple[int, int] | int] = set()
         d = self.resolver.resolve(lookup_dict_key(oc, "D"))
-        if d is not None:
-            if not isinstance(d, dict):
-                if recover:
-                    d = None
-                else:
-                    raise ValueError("invalid OCProperties D dictionary")
+        if d is not None and not isinstance(d, dict):
+            if recover:
+                d = None
+            else:
+                raise ValueError("invalid OCProperties D dictionary")
         if d is not None:
             base_state_value = lookup_dict_key(d, "BaseState")
             base_state = (

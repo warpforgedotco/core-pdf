@@ -222,13 +222,16 @@ def should_preserve_native_text_against_rendered_page_ocr(
             return False
         if ocr_profile.occupied_area_ratio < native_profile.occupied_area_ratio * 0.75:
             return False
-        if native_geometry is not None and native_geometry.suspicion_score >= 12.0:
-            if not rendered_page_ocr_breaks_dense_native_layout(
+        if (
+            native_geometry is not None
+            and native_geometry.suspicion_score >= 12.0
+            and not rendered_page_ocr_breaks_dense_native_layout(
                 native_profile,
                 ocr_profile,
                 native_geometry=native_geometry,
-            ):
-                return False
+            )
+        ):
+            return False
         if (
             native_profile.native_aligned_column_count >= 6
             and rendered_page_ocr_breaks_dense_native_layout(
@@ -859,9 +862,7 @@ def ocr_candidate_is_complete_for_general_scan(
         page=page,
         media_box=getattr(page, "media_box", None),
     )
-    if classification.kind in {"dense_table", "form", "invoice", "schematic"}:
-        return False
-    return True
+    return classification.kind not in {"dense_table", "form", "invoice", "schematic"}
 
 
 def page_dimensions(

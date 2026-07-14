@@ -397,9 +397,8 @@ class LayoutAnalyzer:
         if n_proj == 0:
             return 0.0
 
-        if best_angle == 0.0:
-            if max_variance > v1 * 1.5 and max_variance > vm1 * 1.5:
-                return 0.0
+        if best_angle == 0.0 and max_variance > v1 * 1.5 and max_variance > vm1 * 1.5:
+            return 0.0
 
         if best_angle != 0.0 and max_variance < v0 * 1.05:
             return 0.0

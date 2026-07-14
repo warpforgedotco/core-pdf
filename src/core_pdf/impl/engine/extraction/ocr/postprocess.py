@@ -890,9 +890,12 @@ def prune_orphaned_trailing_hyphen_fragment(
         if next_line is None:
             return match.group("prefix").rstrip()
         suffix = leading_alpha_fragment_text(next_line)
-        if len(suffix) >= 2 and suffix[:1].islower():
-            if joined_word_is_plausible(match.group("fragment"), suffix):
-                return line
+        if (
+            len(suffix) >= 2
+            and suffix[:1].islower()
+            and joined_word_is_plausible(match.group("fragment"), suffix)
+        ):
+            return line
     return match.group("prefix").rstrip()
 
 
@@ -904,9 +907,7 @@ def standalone_fragment_text_line_should_drop(
     stripped = line.strip()
     if not stripped or previous_nonempty is None:
         return False
-    if isolated_numeric_symbol_junk_line(stripped):
-        return True
-    return False
+    return bool(isolated_numeric_symbol_junk_line(stripped))
 
 
 def isolated_numeric_symbol_junk_line(text: str) -> bool:
@@ -1033,9 +1034,7 @@ def titlecase_compound_parts_should_split(parts: list[str]) -> bool:
         return False
     if all(titlecase_compound_common_word(part) for part in parts):
         return True
-    if all(len(part) >= 4 for part in parts):
-        return True
-    return False
+    return bool(all(len(part) >= 4 for part in parts))
 
 
 def split_hyphenated_titlecase_compound_token_match(match: re.Match[str]) -> str:
@@ -1075,9 +1074,7 @@ def line_has_identifier_context(text: str) -> bool:
 def titlecase_token_fragment_is_uncommon(token: str) -> bool:
     rank = word_rank(token.casefold())
     if rank is None:
-        if len(token) >= 4 and token[:1].isupper() and token[1:].islower():
-            return False
-        return True
+        return not (len(token) >= 4 and token[:1].isupper() and token[1:].islower())
     return rank > 3_000
 
 
@@ -1127,9 +1124,7 @@ def malformed_prize_digit_token_should_drop(tokens: list[str], index: int) -> bo
         return False
     if index > 0 and prize_rank_token(tokens[index - 1]) is None:
         return False
-    if index + 1 < len(tokens) and prize_rank_token(tokens[index + 1]) is None:
-        return False
-    return True
+    return not (index + 1 < len(tokens) and prize_rank_token(tokens[index + 1]) is None)
 
 
 def prize_numeric_amount_like_token(token: str) -> bool:
@@ -1582,9 +1577,7 @@ def edge_token_is_noise(token: str) -> bool:
     if any(ch.isdigit() for ch in stripped):
         if any(ch.isalpha() for ch in stripped) and not stripped.isalnum():
             return True
-        if alnum <= 2:
-            return True
-        return False
+        return alnum <= 2
     if not any(ch.isalpha() for ch in stripped):
         return True
     alpha_only = alpha_token_letters(stripped)
@@ -1597,9 +1590,7 @@ def edge_token_is_noise(token: str) -> bool:
         return rank is None or rank > 2_000
     if len(alpha_only) <= 3:
         return rank is None or rank > 12_000
-    if stripped != alpha_only and not token_uses_only_alpha_joiners(stripped):
-        return True
-    return False
+    return bool(stripped != alpha_only and not token_uses_only_alpha_joiners(stripped))
 
 
 def edge_token_is_strong(token: str) -> bool:
@@ -1908,9 +1899,7 @@ def malformed_edge_url_line_should_drop(
     if width > page_width * 0.42:
         return False
     edge_band = max(24.0, page_height * 0.10)
-    if not (bbox[3] <= min_y + edge_band or bbox[1] >= max_y - edge_band):
-        return False
-    return True
+    return bbox[3] <= min_y + edge_band or bbox[1] >= max_y - edge_band
 
 
 def malformed_url_text_signal(text: str) -> bool:
@@ -3965,9 +3954,7 @@ def split_line_pair_is_usable(
     split_tokens = ocr_text_analysis.normalized_text_tokens(
         left_line.text
     ) + ocr_text_analysis.normalized_text_tokens(right_line.text)
-    if split_tokens and len(split_tokens) > max(6, len(original_tokens) + 2):
-        return False
-    return True
+    return not (split_tokens and len(split_tokens) > max(6, len(original_tokens) + 2))
 
 
 def synthetic_split_line_is_usable(
@@ -4206,9 +4193,7 @@ def line_art_ocr_word_row_is_body(row: dict[str, Any], candidate: Any) -> bool:
         return False
     if left + width < image_width * 0.035:
         return False
-    if left > image_width * 0.935:
-        return False
-    return True
+    return not left > image_width * 0.935
 
 
 def line_art_ocr_word_row_order_key(row: dict[str, Any]) -> tuple[float, float]:
@@ -4643,9 +4628,7 @@ def should_use_reconciled_native_ocr_text(
         return False
     current_quality = ocr_text_analysis.text_ocr_quality_score(current)
     reconciled_quality = ocr_text_analysis.text_ocr_quality_score(reconciled)
-    if reconciled_quality > max(0.48, current_quality + 0.22):
-        return False
-    return True
+    return not reconciled_quality > max(0.48, current_quality + 0.22)
 
 
 def should_reject_full_page_ocr_result(
@@ -4785,9 +4768,7 @@ def should_replace_native_line_with_ocr_line(
     ocr_quality = ocr_text_analysis.text_ocr_quality_score(ocr)
     if compact_similarity >= 0.72 and len(ocr_tokens) > len(native_tokens):
         return ocr_quality <= max(0.42, native_quality + 0.18)
-    if native_quality >= 0.22 and ocr_quality + 0.08 < native_quality:
-        return True
-    return False
+    return bool(native_quality >= 0.22 and ocr_quality + 0.08 < native_quality)
 
 
 def compact_alnum_text(text: str) -> str:
@@ -5021,9 +5002,7 @@ def vector_stroke_text_looks_noisy(text: str, confidence: int | None = None) -> 
         return True
     if quality >= 0.30 and lower_ratio >= 0.25:
         return True
-    if quality >= 0.34 and short_ratio >= 0.55 and digit_ratio >= 0.25:
-        return True
-    return False
+    return bool(quality >= 0.34 and short_ratio >= 0.55 and digit_ratio >= 0.25)
 
 
 def vector_stroke_line_is_spatial_supplement(line: Any) -> bool:
@@ -5189,9 +5168,7 @@ def should_use_merged_vector_stroke_ocr(current: str, ocr_text: str, merged_text
         and merged_quality > ocr_quality + 0.015
     ):
         return False
-    if merged_quality > max(0.65, ocr_quality + 0.25):
-        return False
-    return True
+    return not merged_quality > max(0.65, ocr_quality + 0.25)
 
 
 def should_replace_vector_stroke_text_with_ocr(

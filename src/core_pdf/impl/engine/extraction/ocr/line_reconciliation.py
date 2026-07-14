@@ -1773,9 +1773,7 @@ def figure_variant_looks_like_page_metadata(tokens: list[str]) -> bool:
         return True
     if "oct" in token_set and any(token.isdigit() for token in tokens):
         return True
-    if "us" in token_set and any(token.isdigit() for token in tokens):
-        return True
-    return False
+    return bool("us" in token_set and any(token.isdigit() for token in tokens))
 
 
 def suppress_geometry_noise_lines(
@@ -2240,9 +2238,7 @@ def broad_page_variant_is_geom_weak(
         return True
     if stats.ocr_confusion_count >= 2:
         return True
-    if ocr_text_analysis.alphabetic_gibberish_line_score(variant.text) >= 0.40:
-        return True
-    return False
+    return ocr_text_analysis.alphabetic_gibberish_line_score(variant.text) >= 0.4
 
 
 def variant_is_dense_label_cluster_noise(
@@ -2428,9 +2424,7 @@ def figure_variant_is_fragment_like(variant: OcrLineVariant) -> bool:
     readable_tokens = readable_content_token_count(text)
     if readable_tokens == 0 and len(tokens) <= 2:
         return True
-    if figure_text_like_noise(variant):
-        return True
-    return False
+    return bool(figure_text_like_noise(variant))
 
 
 def dominant_figure_region_line_should_drop(
@@ -2442,9 +2436,7 @@ def dominant_figure_region_line_should_drop(
     if variant.line_type in {"header_footer", "page_marker"}:
         return False
     region_score = diagram_region_membership_score(variant, context)
-    if region_score < 0.42:
-        return False
-    return True
+    return not region_score < 0.42
 
 
 def insert_supplement_variants(
@@ -2674,9 +2666,7 @@ def line_types_compatible(left: OcrLineType, right: OcrLineType) -> bool:
     chemical_types = {"chemical_symbolic", "chemical_hybrid", "diagram_label"}
     if left in chemical_types and right in chemical_types:
         return True
-    if {left, right} <= {"body_prose", "table_row"}:
-        return True
-    return False
+    return {left, right} <= {"body_prose", "table_row"}
 
 
 def cluster_line_types_compatible(
@@ -2759,7 +2749,7 @@ def anchor_tokens(text: str, line_type: OcrLineType) -> tuple[str, ...]:
         informative = list(tokens[:4])
     if len(informative) <= 4:
         return tuple(informative)
-    return tuple((*informative[:2], *informative[-2:]))
+    return (*informative[:2], *informative[-2:])
 
 
 def anchor_token_overlap_score(base: OcrLineVariant, variant: OcrLineVariant) -> float:

@@ -111,23 +111,23 @@ class PageTableMixin(PageTableTextGeometryMixin, PageTableExportMixin, PageTable
         if (normalized_header_text or normalized_footer_text) and flavor == "lattice":
             raise ValueError("header_text and footer_text cannot be used with flavor='lattice'")
 
-        extract_options = dict(
-            flavor=flavor,
-            detect_header=detect_header,
-            include_span_info=include_span_info,
-            header_text=tuple(normalized_header_text),
-            footer_text=tuple(normalized_footer_text),
-            columns=tuple(normalized_columns),
-            edge_tolerance=edge_tolerance,
-            row_tolerance=row_tolerance,
-            column_tolerance=column_tolerance,
-            split_text=split_text,
-            flag_size=flag_size,
-            strip_text=strip_text,
-            replace_text=replace_text,
-            copy_text=normalized_copy_text,
-            shift_text=normalized_shift_text or (("l", "t") if flavor == "lattice" else ()),
-        )
+        extract_options = {
+            "flavor": flavor,
+            "detect_header": detect_header,
+            "include_span_info": include_span_info,
+            "header_text": tuple(normalized_header_text),
+            "footer_text": tuple(normalized_footer_text),
+            "columns": tuple(normalized_columns),
+            "edge_tolerance": edge_tolerance,
+            "row_tolerance": row_tolerance,
+            "column_tolerance": column_tolerance,
+            "split_text": split_text,
+            "flag_size": flag_size,
+            "strip_text": strip_text,
+            "replace_text": replace_text,
+            "copy_text": normalized_copy_text,
+            "shift_text": normalized_shift_text or (("l", "t") if flavor == "lattice" else ()),
+        }
 
         resolved_table_areas: list[tuple[float, float, float, float]] = []
         if explicit_areas:

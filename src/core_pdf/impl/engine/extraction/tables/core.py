@@ -216,13 +216,11 @@ class PageTableCoreMixin:
         ruled_nonempty = cls.total_nonempty_cells(ruled_tables)
         if ruled_area >= candidate_area * 0.9 and ruled_nonempty >= candidate_nonempty + 8:
             return True
-        if (
+        return bool(
             ruled_area >= candidate_area * 0.9
             and ruled_nonempty + 4 >= candidate_nonempty
             and cls.total_column_count(ruled_tables) >= cls.total_column_count(candidate_tables) + 2
-        ):
-            return True
-        return False
+        )
 
     @classmethod
     def should_prefer_richer_result(
@@ -572,9 +570,10 @@ class PageTableCoreMixin:
                 result = ruled_result
             else:
                 network_result = extract_network_result()
-                if network_result.get("tables"):
-                    if PageTableCoreMixin.should_prefer_split_result(result, network_result):
-                        result = network_result
+                if network_result.get("tables") and PageTableCoreMixin.should_prefer_split_result(
+                    result, network_result
+                ):
+                    result = network_result
             result = PageTableCoreMixin.normalize_result(result)
         elif flavor in ("auto", "hybrid"):
             if len(grids) > 1:

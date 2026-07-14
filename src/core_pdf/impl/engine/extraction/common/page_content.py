@@ -407,9 +407,12 @@ class PageContentMixin:
             elif direction == "above":
                 if run.y0 >= y1 and abs(run_mid_x - mid_x) < max(run.x1 - run.x0, x1 - x0, 20.0):
                     dist = run.y0 - y1
-            elif direction == "below":
-                if run.y1 <= y0 and abs(run_mid_x - mid_x) < max(run.x1 - run.x0, x1 - x0, 20.0):
-                    dist = y0 - run.y1
+            elif (
+                direction == "below"
+                and run.y1 <= y0
+                and abs(run_mid_x - mid_x) < max(run.x1 - run.x0, x1 - x0, 20.0)
+            ):
+                dist = y0 - run.y1
 
             if 0 <= dist <= distance:
                 candidates.append((dist, run))

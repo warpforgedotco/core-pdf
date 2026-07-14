@@ -187,9 +187,8 @@ class XRefScanner:
         trailer_pos = data.rfind(b"trailer", 0, eof_pos)
         if trailer_pos >= 0:
             xref_pos = data.rfind(b"xref", 0, trailer_pos)
-            if xref_pos >= 0:
-                if xref_pos == 0 or WS_TABLE[data[xref_pos - 1]]:
-                    return xref_pos
+            if xref_pos >= 0 and (xref_pos == 0 or WS_TABLE[data[xref_pos - 1]]):
+                return xref_pos
 
         xref_type_pos = data.rfind(b"XRef")
         if xref_type_pos >= 0:

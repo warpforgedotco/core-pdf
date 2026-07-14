@@ -310,9 +310,13 @@ class GlyphLineBuilder:
             ):
                 continue
 
-            if run.text_is_space and prev_run is not None and prev_run_text:
-                if self.should_drop_explicit_space(index, run, prev_run, prev_last_char):
-                    continue
+            if (
+                run.text_is_space
+                and prev_run is not None
+                and prev_run_text
+                and self.should_drop_explicit_space(index, run, prev_run, prev_last_char)
+            ):
+                continue
 
             emitted_run = False
             for atom in self.text_atoms(run, text):
@@ -1036,9 +1040,7 @@ def explicit_spaces_should_control_glyph_gaps(
     if single_glyph_runs < len(non_space_runs) * 0.72:
         return False
     text_chars = sum(len(run.stripped_text) for run in non_space_runs)
-    if text_chars > len(non_space_runs) * 1.5:
-        return False
-    return True
+    return not text_chars > len(non_space_runs) * 1.5
 
 
 def tracked_glyph_word_gap_threshold(runs: list[TextRun]) -> float | None:
@@ -1134,9 +1136,7 @@ def should_use_estimated_word_spacing(previous: str, current: str) -> bool:
         return False
     if previous == "T" and current in {"he", "hes", "hese", "his"}:
         return True
-    if not previous[-1].isalpha() or not current[0].isalpha():
-        return False
-    return True
+    return not (not previous[-1].isalpha() or not current[0].isalpha())
 
 
 @lru_cache(maxsize=4096)
@@ -1215,9 +1215,7 @@ def should_join_plausible_split_word(
         return True
     if len(head) <= 3 and joined_rank <= max(tail_rank * 8, 150_000):
         return True
-    if head_rank is None and joined_rank < tail_rank:
-        return True
-    return False
+    return bool(head_rank is None and joined_rank < tail_rank)
 
 
 def digit_fragments_are_tightly_joined(
@@ -1260,9 +1258,7 @@ def should_insert_tight_word_space(
 
     if is_high_frequency_boundary_word(prev) or is_high_frequency_boundary_word(current):
         return True
-    if prev.isupper() and current_first.islower() and len(prev) <= 8:
-        return True
-    return False
+    return bool(prev.isupper() and current_first.islower() and len(prev) <= 8)
 
 
 def should_insert_hidden_ocr_overlap_space(
@@ -1418,10 +1414,7 @@ def is_decorative_leader(text: str) -> bool:
     first = stripped[0]
     if first not in leader_chars:
         return False
-    for ch in stripped:
-        if ch not in leader_chars and not ch.isspace():
-            return False
-    return True
+    return all(not (ch not in leader_chars and not ch.isspace()) for ch in stripped)
 
 
 def is_tiny_page_footer(text: str) -> bool:
@@ -1462,14 +1455,13 @@ def trailing_tiny_page_label_run_indexes(sorted_runs: list[TextRun]) -> set[int]
         and digit_width <= 14.0
         and pair_gap >= max(32.0, previous_run.space_width * 8.0)
     )
-    if not compact_pair:
-        if (
-            page_run.font_size > 6.5
-            or digit_run.font_size > 6.5
-            or page_width > 20.0
-            or digit_width > 16.0
-        ):
-            return set()
+    if not compact_pair and (
+        page_run.font_size > 6.5
+        or digit_run.font_size > 6.5
+        or page_width > 20.0
+        or digit_width > 16.0
+    ):
+        return set()
     if (
         significant_font > 0.0
         and not compact_pair

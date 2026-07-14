@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
+import contextlib
 from dataclasses import dataclass
 from math import ceil, floor, hypot
 from statistics import median
@@ -148,10 +149,8 @@ def vector_stroke_ocr_worker(
         result = VectorStrokeOcrResult("", None)
     if result_queue is None:
         return result
-    try:
+    with contextlib.suppress(BaseException):
         result_queue.put_nowait(result)
-    except BaseException:
-        pass
     return None
 
 

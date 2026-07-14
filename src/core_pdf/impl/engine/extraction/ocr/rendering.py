@@ -164,12 +164,11 @@ def render_page_for_ocr_at_dpi(
 ) -> OcrImage | None:
     cache = page.extraction_cache
     cache_key = ("ocr_raster_image", dpi)
-    if cache is not None:
-        if cache_key in cache:
-            cached = cache.get(cache_key)
-            if isinstance(cached, OcrImage):
-                return replace(cached, source=source)
-            return None
+    if cache is not None and cache_key in cache:
+        cached = cache.get(cache_key)
+        if isinstance(cached, OcrImage):
+            return replace(cached, source=source)
+        return None
     rendered = rendered_page_for_ocr_render(page, dpi=dpi, source=source)
     width_points = max(1.0, float(rendered.width))
     height_points = max(1.0, float(rendered.height))

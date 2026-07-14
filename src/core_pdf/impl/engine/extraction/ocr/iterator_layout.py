@@ -700,9 +700,7 @@ def line_alternative_should_replace(
         return False
     if len(best_tokens) < max(1, int(len(base_tokens) * 0.75)):
         return False
-    if len(best_tokens) > max(len(base_tokens) + 5, int(len(base_tokens) * 1.25)):
-        return False
-    return True
+    return not len(best_tokens) > max(len(base_tokens) + 5, int(len(base_tokens) * 1.25))
 
 
 def line_alternative_score(

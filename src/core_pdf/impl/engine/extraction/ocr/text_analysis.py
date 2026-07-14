@@ -260,9 +260,10 @@ def alphabetic_gibberish_line_score(line: str) -> float:
         alpha_token_values.append(normalized)
         if len(normalized) <= 3:
             short_alpha += 1
-        elif normalized.isalpha() and (rank := word_rank(normalized)) is not None:
-            if rank <= 100_000:
-                supported_long_alpha += 1
+        elif (
+            normalized.isalpha() and (rank := word_rank(normalized)) is not None and rank <= 100_000
+        ):
+            supported_long_alpha += 1
         rank = word_rank(normalized) if normalized.isalpha() else None
         if rank is not None and rank <= 100_000:
             known += 1
@@ -513,16 +514,19 @@ def line_has_readable_technical_notation(line: str, tokens: list[str]) -> bool:
     if mixed_case_runs >= max(2, int(raw_alpha_run_count * 0.15)):
         return False
     weird_alpha = sum(1 for token in alpha_tokens if alpha_token_looks_ocr_garbled(token))
-    if sum(
-        1
-        for token in alpha_tokens
-        if len(token) >= 3
-        and token.isalpha()
-        and (rank := word_rank(token)) is not None
-        and rank <= 5_000
+    if (
+        sum(
+            1
+            for token in alpha_tokens
+            if len(token) >= 3
+            and token.isalpha()
+            and (rank := word_rank(token)) is not None
+            and rank <= 5_000
+        )
+        and not weird_alpha
+        and not line_has_non_ascii_alnum(line)
     ):
-        if not weird_alpha and not line_has_non_ascii_alnum(line):
-            return False
+        return False
     unknown_alpha = sum(
         1
         for token in alpha_tokens
@@ -589,9 +593,7 @@ def line_has_readable_technical_notation(line: str, tokens: list[str]) -> bool:
         return bool(long_unknown_alpha or formula_alpha >= 2 or mixed_alnum_tokens)
     if formula_like_mixed and long_unknown_alpha >= 2:
         return True
-    if long_unknown_alpha >= 2 and notation_chars >= 4 and not weird_alpha:
-        return True
-    return False
+    return bool(long_unknown_alpha >= 2 and notation_chars >= 4 and not weird_alpha)
 
 
 def supplemental_ocr_short_line_looks_tabular(

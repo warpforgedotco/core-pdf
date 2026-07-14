@@ -565,9 +565,7 @@ def should_use_rendered_glyph_candidate(
         return False
     glyph_orphans = orphan_punctuation_run_ratio(glyph_runs)
     current_orphans = orphan_punctuation_run_ratio(current_runs)
-    if glyph_orphans > max(0.18, current_orphans + 0.12):
-        return False
-    return True
+    return not glyph_orphans > max(0.18, current_orphans + 0.12)
 
 
 def text_run_geometry_quality_score(runs: list[Any]) -> float:

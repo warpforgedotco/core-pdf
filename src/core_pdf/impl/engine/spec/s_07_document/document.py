@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
+import contextlib
 import mmap
 from types import TracebackType
 from typing import TYPE_CHECKING, BinaryIO
@@ -160,10 +161,8 @@ class PdfDocument(
         tb: TracebackType | None,
     ) -> None:
         if self.file_handle is not None:
-            try:
+            with contextlib.suppress(OSError):
                 self.file_handle.close()
-            except OSError:
-                pass
             self.file_handle = None
 
     def invalidate_document_extraction_cache(self) -> None:

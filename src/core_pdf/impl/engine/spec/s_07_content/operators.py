@@ -671,30 +671,28 @@ class OperatorMixin:
             self.append_cubic_curve(x1, y1, x2, y2, x3, y3)
 
     def op_v(self: Any, o, d):
-        if len(o) >= 4:
-            if self.current_point is not None:
-                x0, y0 = self.current_point
-                try:
-                    x2 = self.as_float(o[0])
-                    y2 = self.as_float(o[1])
-                    x3 = self.as_float(o[2])
-                    y3 = self.as_float(o[3])
-                except (TypeError, ValueError):
-                    return
-                self.append_cubic_curve(x0, y0, x2, y2, x3, y3)
+        if len(o) >= 4 and self.current_point is not None:
+            x0, y0 = self.current_point
+            try:
+                x2 = self.as_float(o[0])
+                y2 = self.as_float(o[1])
+                x3 = self.as_float(o[2])
+                y3 = self.as_float(o[3])
+            except (TypeError, ValueError):
+                return
+            self.append_cubic_curve(x0, y0, x2, y2, x3, y3)
 
     def op_y(self: Any, o, d):
-        if len(o) >= 4:
-            if self.current_point is not None:
-                x0, y0 = self.current_point
-                try:
-                    x1 = self.as_float(o[0])
-                    y1 = self.as_float(o[1])
-                    x3 = self.as_float(o[2])
-                    y3 = self.as_float(o[3])
-                except (TypeError, ValueError):
-                    return
-                self.append_cubic_curve(x0, y0, x1, y1, x3, y3)
+        if len(o) >= 4 and self.current_point is not None:
+            x0, y0 = self.current_point
+            try:
+                x1 = self.as_float(o[0])
+                y1 = self.as_float(o[1])
+                x3 = self.as_float(o[2])
+                y3 = self.as_float(o[3])
+            except (TypeError, ValueError):
+                return
+            self.append_cubic_curve(x0, y0, x1, y1, x3, y3)
 
     def op_paint_stroke(self: Any, o, d):
         if (
@@ -715,9 +713,14 @@ class OperatorMixin:
         self.subpath_start = None
 
     def op_paint_fillstroke(self: Any, o, d):
-        if self.capture_graphics and self.is_graphics_visible() and (d == "b" or d == "b*"):
-            if self.current_point is not None and self.subpath_start is not None:
-                self.current_path.close()
+        if (
+            self.capture_graphics
+            and self.is_graphics_visible()
+            and (d == "b" or d == "b*")
+            and self.current_point is not None
+            and self.subpath_start is not None
+        ):
+            self.current_path.close()
         self.flush_drawing("fillstroke", "evenodd" if d in {"B*", "b*"} else "nonzero")
         self.current_point = None
         self.subpath_start = None

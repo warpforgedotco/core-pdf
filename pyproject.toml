@@ -43,7 +43,10 @@ testpaths = ["tests/src"]
 norecursedirs = ["tests/fixtures"]
 
 [tool.ruff]
-extend-exclude = ["tests/fixtures"]
+extend-exclude = [
+    "src/core_pdf/impl/third_party",
+    "tests/fixtures",
+]
 line-length = 100
 
 [tool.ruff.lint]
@@ -79,7 +82,10 @@ mypy_path = "src"
 show_error_codes = true
 
 [tool.ty.src]
-exclude = ["tests/fixtures"]
+exclude = [
+    "src/core_pdf/impl/third_party",
+    "tests/fixtures",
+]
 
 [tool.uv.sources]
 core-jpeg = { path = "../../core/core-JPEG" }
