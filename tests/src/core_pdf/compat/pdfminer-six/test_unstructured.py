@@ -3,15 +3,15 @@ from __future__ import annotations
 import io
 from pathlib import Path
 
-from core_pdf.impl.engine.spec.s_07_content.models import LayoutLine, TextRun
-from core_pdf.impl.engine.spec.s_07_document.models import FieldRecord
-from core_pdf.impl.engine.spec.s_07_syntax.primitives import PdfObject, parse_name
-from core_pdf.integrations.pdfminer.document import PdfDocument
-from core_pdf.integrations.pdfminer.unstructured import (
+from core_pdf.compat.pdfminer.document import PdfDocument
+from core_pdf.compat.pdfminer.unstructured import (
     _field_regions,
     _render_line_with_words,
     iter_unstructured_region_layouts,
 )
+from core_pdf.impl.engine.spec.s_07_content.models import LayoutLine, TextRun
+from core_pdf.impl.engine.spec.s_07_document.models import FieldRecord
+from core_pdf.impl.engine.spec.s_07_syntax.primitives import PdfObject, parse_name
 
 TESTS_DIR = Path(__file__).parents[4]
 SAMPLES_DIR = TESTS_DIR / "fixtures" / "pdfminer.six" / "samples"

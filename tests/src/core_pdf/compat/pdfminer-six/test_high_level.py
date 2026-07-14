@@ -4,8 +4,8 @@ from __future__ import annotations
 import io
 from pathlib import Path
 
-from core_pdf.integrations.pdfminer import extract_text
-from core_pdf.integrations.pdfminer.high_level import extract_text as extract_text_high_level
+from core_pdf.compat.pdfminer import extract_text
+from core_pdf.compat.pdfminer.high_level import extract_text as extract_text_high_level
 
 TESTS_DIR = Path(__file__).parents[4]
 SAMPLES_DIR = TESTS_DIR / "fixtures" / "pdfminer.six" / "samples"
