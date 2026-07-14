@@ -9,7 +9,7 @@ from collections import Counter, deque
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from time import perf_counter
-from typing import Any, Callable
+from typing import Any, Callable, cast
 
 from rich import box
 from rich.console import Console
@@ -165,7 +165,7 @@ def extract_document_text(document: PdfDocument) -> str:
     texts: list[str] = []
     for page in pages:
         try:
-            texts.append(page.extract_text())
+            texts.append(cast(Any, page).extract_text())
         except PdfParseError:
             if can_skip_bad_page:
                 continue
@@ -303,7 +303,7 @@ class ScoreBenchUI:
         self.completed_results.append(numbered_score)
         self.progress.update(self.progress_task_id, advance=1)
 
-    def render_live(self) -> Panel:
+    def render_live(self) -> Layout:
         layout = Layout(name="scorebench")
         layout.split_column(
             Layout(self._header_panel(), name="header", size=3),

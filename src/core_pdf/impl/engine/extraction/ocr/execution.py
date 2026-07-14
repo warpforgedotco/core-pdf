@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from collections.abc import MutableMapping
 from dataclasses import dataclass
-from typing import Any, Mapping
+from typing import Any, Mapping, cast
 
 from core_pdf.impl.engine.extraction.cache import ExtractionCacheKey
 from core_pdf.impl.engine.extraction.common import page_geometry
@@ -360,15 +360,12 @@ def rectangle_for_backend_image(
     y0 = max(0, min(source_height, y0))
     x1 = max(x0, min(source_width, x1))
     y1 = max(y0, min(source_height, y1))
-    return tuple(
-        max(0, min(target, int(round(value * target / source))))
-        for value, target, source in (
-            (x0, target_width, source_width),
-            (y0, target_height, source_height),
-            (x1, target_width, source_width),
-            (y1, target_height, source_height),
-        )
-    )  # type: ignore[return-value]
+    return (
+        max(0, min(target_width, int(round(x0 * target_width / source_width)))),
+        max(0, min(target_height, int(round(y0 * target_height / source_height)))),
+        max(0, min(target_width, int(round(x1 * target_width / source_width)))),
+        max(0, min(target_height, int(round(y1 * target_height / source_height)))),
+    )
 
 
 def ocr_image_to_iterator_layout_with_timeout(
@@ -442,7 +439,7 @@ def ocr_component_boxes_with_timeout(
         )
         cached = cache.get(cache_key)
         if isinstance(cached, tuple):
-            return list(cached)
+            return list(cast(tuple[OcrComponentBox, ...], cached))
     boxes = _ocr_component_boxes_with_timeout_uncached(
         image,
         level,

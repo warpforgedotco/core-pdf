@@ -53,11 +53,12 @@ class DocumentExtractionMixin:
         value = item.get("bbox", item.get("rect"))
         if not isinstance(value, (list, tuple)) or len(value) != 4:
             return None
+        rect = cast(tuple[object, object, object, object], tuple(value))
         try:
-            x0 = float(value[0])
-            y0 = float(value[1])
-            x1 = float(value[2])
-            y1 = float(value[3])
+            x0 = float(cast(Any, rect[0]))
+            y0 = float(cast(Any, rect[1]))
+            x1 = float(cast(Any, rect[2]))
+            y1 = float(cast(Any, rect[3]))
         except (TypeError, ValueError):
             return None
         if x1 <= x0 or y1 <= y0:

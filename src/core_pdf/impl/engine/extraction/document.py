@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
-from typing import Self
+from typing import Any, Self, cast
 
 from core_pdf.impl.engine.extraction.document_extraction import DocumentExtractionMixin
 from core_pdf.impl.engine.extraction.document_structured import DocumentStructuredMixin
@@ -32,7 +32,7 @@ class PdfDocument(
         return build_document_extraction_result(self)
 
     def extract_text(self) -> str:
-        return "\f".join(page.extract_text() for page in self.pages) + "\f"
+        return "\f".join(cast(Any, page).extract_text() for page in self.pages) + "\f"
 
 
 __all__ = ("PdfDocument",)

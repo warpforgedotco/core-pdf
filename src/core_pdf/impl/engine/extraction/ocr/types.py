@@ -201,10 +201,10 @@ def ocr_observation_from_row(
     if isinstance(baseline, (list, tuple)) and len(baseline) == 4:
         try:
             baseline_value = (
-                int(baseline[0]),
-                int(baseline[1]),
-                int(baseline[2]),
-                int(baseline[3]),
+                ocr_int_value(baseline[0]),
+                ocr_int_value(baseline[1]),
+                ocr_int_value(baseline[2]),
+                ocr_int_value(baseline[3]),
             )
         except (TypeError, ValueError):
             baseline_value = None
@@ -213,10 +213,10 @@ def ocr_observation_from_row(
         if isinstance(row_page_bbox, (list, tuple)) and len(row_page_bbox) == 4:
             try:
                 page_bbox = (
-                    float(row_page_bbox[0]),
-                    float(row_page_bbox[1]),
-                    float(row_page_bbox[2]),
-                    float(row_page_bbox[3]),
+                    ocr_float_value(row_page_bbox[0]),
+                    ocr_float_value(row_page_bbox[1]),
+                    ocr_float_value(row_page_bbox[2]),
+                    ocr_float_value(row_page_bbox[3]),
                 )
             except (TypeError, ValueError):
                 page_bbox = None
@@ -225,10 +225,10 @@ def ocr_observation_from_row(
         if isinstance(row_page_baseline, (list, tuple)) and len(row_page_baseline) == 4:
             try:
                 page_baseline = (
-                    float(row_page_baseline[0]),
-                    float(row_page_baseline[1]),
-                    float(row_page_baseline[2]),
-                    float(row_page_baseline[3]),
+                    ocr_float_value(row_page_baseline[0]),
+                    ocr_float_value(row_page_baseline[1]),
+                    ocr_float_value(row_page_baseline[2]),
+                    ocr_float_value(row_page_baseline[3]),
                 )
             except (TypeError, ValueError):
                 page_baseline = None

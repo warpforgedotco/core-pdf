@@ -662,8 +662,6 @@ class TextState(XObjectMixin, ContentCaptureMixin, OperatorMixin):
         self.font_space_width = decoder.glyph_width(32) * self.font_size * 0.001
         self.font_widths = decoder.fast_widths
 
-    @staticmethod
-    @staticmethod
     def shift_line(self, tx: float = 0.0, ty: float = 0.0, *, set_leading: bool = False) -> None:
         if set_leading:
             self.leading = -ty

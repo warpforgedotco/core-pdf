@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Iterator
+from typing import TYPE_CHECKING, Any, Iterator, cast
 
 from core_pdf.impl.engine.extraction.common.page_content import PageContentMixin
 from core_pdf.impl.engine.extraction.page_text.engine import (
@@ -24,6 +24,9 @@ if TYPE_CHECKING:
 class PdfPage(PageExtractionMixin, PageTableMixin, SpecPdfPage):
     def extract(self) -> PageExtractionResult:
         return build_page_extraction_result(self, page_index=self.page_number - 1)
+
+    def extract_text(self) -> str:
+        return PageExtractionMixin.extract_text(cast(Any, self))
 
     def find_text_near(
         self,

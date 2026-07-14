@@ -72,7 +72,8 @@ class BBox(NamedTuple):
         if isinstance(rect, BBox):
             return rect
         if isinstance(rect, tuple):
-            return cls(rect[0], rect[1], rect[2], rect[3])
+            rect_tuple = cast(RectTuple, rect)
+            return cls(rect_tuple[0], rect_tuple[1], rect_tuple[2], rect_tuple[3])
         return cls(rect.x0, rect.y0, rect.x1, rect.y1)
 
     @classmethod

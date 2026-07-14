@@ -199,7 +199,6 @@ def rendered_tile_ocr_layout_result(
             tile,
             ocr_rendering.TileOcrLayoutResult(
                 OcrIteratorLayout([], [], []),
-                {"error": "render_failed"},
             ),
         )
     result = ocr_image_to_tile_iterator_result_with_timeout(image, timeout)
@@ -362,7 +361,7 @@ def select_tile_iterator_layout_from_image(
 
 
 def empty_tile_ocr_layout_result() -> ocr_rendering.TileOcrLayoutResult:
-    return ocr_rendering.TileOcrLayoutResult(OcrIteratorLayout([], [], []), {})
+    return ocr_rendering.TileOcrLayoutResult(OcrIteratorLayout([], [], []))
 
 
 def should_try_sparse_tile_layout_ocr(result: OcrTextResult) -> bool:

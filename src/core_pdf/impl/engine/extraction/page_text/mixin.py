@@ -8593,7 +8593,7 @@ def dominant_image_label_line_adds_useful_support(
         line_alpha, line_digits = dominant_image_line_token_sets(line.text)
         if alpha_tokens <= line_alpha and digit_tokens <= line_digits:
             return False
-    return digit_tokens
+    return bool(digit_tokens)
 
 
 def drop_redundant_dominant_image_label_lines(
