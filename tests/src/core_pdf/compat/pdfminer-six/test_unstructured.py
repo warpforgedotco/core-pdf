@@ -103,7 +103,8 @@ class FakeResolver:
     def resolve_box(self, value: PdfObject) -> tuple[float, float, float, float] | None:
         if not isinstance(value, list) or len(value) != 4:
             return None
-        return tuple(float(item) for item in value)  # type: ignore[return-value]
+        left, bottom, right, top = (float(item) for item in value)
+        return left, bottom, right, top
 
     def resolve_str(self, value: PdfObject) -> str | None:
         if isinstance(value, bytes):
