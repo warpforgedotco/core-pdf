@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """JPEG stream decoding helpers."""
 
 from __future__ import annotations

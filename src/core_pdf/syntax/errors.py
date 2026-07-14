@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Core PDF exception hierarchy."""
 
 from __future__ import annotations

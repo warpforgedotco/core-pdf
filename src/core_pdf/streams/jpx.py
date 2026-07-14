@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """JPEG 2000 (JPXDecode) stream decoder.
 
 Minimal pure-Python JPEG 2000 decoder for the subset commonly used

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 import stringprep
 import unicodedata
 from collections.abc import Callable
