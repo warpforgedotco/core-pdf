@@ -1,10 +1,13 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
-from core_pdf.impl.engine.spec.s_07_document.models import FieldRecord
-from core_pdf.impl.engine.spec.s_07_syntax.primitives import PdfName, PdfObject, parse_name
+from typing import Any, cast
 
 from core_pdf.impl.engine.spec.s_07_document.page import PdfPage
+from core_pdf.impl.engine.spec.s_07_objects.coercion import parse_name
+from core_pdf.impl.models import FieldRecord
+from core_pdf.impl.primitives import PdfName
+from core_pdf.impl.types import PdfArray, PdfDict, PdfObject
 
 
 class FakeResolver:
@@ -32,9 +35,17 @@ def test_page_get_fields_matches_direct_widget_annotation_without_page_ref() -> 
         "V": b"Jane Doe",
         "Rect": [40, 700, 300, 720],
     }
-    field = FieldRecord("name", "Tx", b"Jane Doe", widget)
-    page = PdfPage(FakeDocument([field]), {"Annots": [widget]}, 0)  # type: ignore[arg-type]
-    page._inherited_values = {"Annots": [widget]}
+    field = FieldRecord(
+        "name",
+        "Tx",
+        b"Jane Doe",
+        "Jane Doe",
+        (40.0, 700.0, 300.0, 720.0),
+        cast(PdfDict, widget),
+        widget=cast(PdfDict, widget),
+    )
+    page = PdfPage(cast(Any, FakeDocument([field])), {"Annots": [widget]}, 0)
+    page.inherited_values_cache = {"Annots": [widget]}
 
     assert page.get_fields() == [field]
 
@@ -50,8 +61,16 @@ def test_page_get_fields_matches_kid_widget_annotation_without_page_ref() -> Non
         "V": b"Jane Doe",
         "Kids": [widget],
     }
-    field = FieldRecord("name", "Tx", b"Jane Doe", parent, kids=[widget])
-    page = PdfPage(FakeDocument([field]), {"Annots": [widget]}, 0)  # type: ignore[arg-type]
-    page._inherited_values = {"Annots": [widget]}
+    field = FieldRecord(
+        "name",
+        "Tx",
+        b"Jane Doe",
+        "Jane Doe",
+        None,
+        cast(PdfDict, parent),
+        kids=cast(PdfArray, [widget]),
+    )
+    page = PdfPage(cast(Any, FakeDocument([field])), {"Annots": [widget]}, 0)
+    page.inherited_values_cache = {"Annots": [widget]}
 
     assert page.get_fields() == [field]

@@ -1,12 +1,11 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
-from core_pdf.impl.engine.spec.s_07_syntax.primitives import PdfStream
-
 from core_pdf.impl.engine.spec.s_09_fonts.decoder import (
     FontDecoder,
     parse_type1_font_program_encoding,
 )
+from core_pdf.impl.objects import PdfStream
 
 
 def test_parse_type1_font_program_encoding_reads_custom_array() -> None:

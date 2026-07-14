@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
+import re
 import typing
 from dataclasses import dataclass
 from typing import Iterable
@@ -50,6 +51,21 @@ if typing.TYPE_CHECKING:
 
 
 LEGITIMATE_MULTI_CHAR_GLYPHS = frozenset({"ff", "fi", "fl", "ffi", "ffl", "st"})
+TYPE1_ENCODING_ENTRY_RE = re.compile(rb"\bdup\s+(\d{1,3})\s+/([A-Za-z0-9_.]+)\s+put\b")
+
+
+def parse_type1_font_program_encoding(font_program: bytes | memoryview) -> dict[int, str]:
+    data = bytes(font_program)
+    eexec_pos = data.find(b"currentfile eexec")
+    if eexec_pos >= 0:
+        data = data[:eexec_pos]
+
+    differences: dict[int, str] = {}
+    for match in TYPE1_ENCODING_ENTRY_RE.finditer(data):
+        code = int(match.group(1))
+        if 0 <= code <= 255:
+            differences[code] = match.group(2).decode("latin-1")
+    return differences
 
 
 @dataclass(frozen=True, slots=True)
@@ -274,6 +290,7 @@ class FontDecoder:
         cmap = None
         base_encoding = None
         differences: dict[int, str] = {}
+        subtype = normalize_pdf_name(lookup_dict_key(font, "Subtype"))
         encoding_obj = lookup_dict_key(font, "Encoding")
         if isinstance(encoding_obj, str):
             base_encoding = normalize_pdf_name(encoding_obj)
@@ -298,6 +315,12 @@ class FontDecoder:
         else:
             base_encoding = normalize_pdf_name(encoding_obj)
             cmap = self._named_cmap(base_encoding)
+        if not differences and subtype == "Type1":
+            descriptor = lookup_dict_key(font, "FontDescriptor")
+            if isinstance(descriptor, dict):
+                font_file = lookup_dict_key(descriptor, "FontFile")
+                if isinstance(font_file, PdfStream):
+                    differences = parse_type1_font_program_encoding(font_file.data)
         return cmap, base_encoding, differences
 
     def _named_cmap(self, base_encoding: str | None) -> CMapDecoder | None:

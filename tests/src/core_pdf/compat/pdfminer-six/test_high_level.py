@@ -3,9 +3,10 @@ from __future__ import annotations
 
 import io
 from pathlib import Path
+from typing import Any, cast
 
-from core_pdf.compat.pdfminer import extract_text
-from core_pdf.compat.pdfminer.high_level import extract_text as extract_text_high_level
+from core_pdf.impl.engine.extraction.document import PdfDocument
+from core_pdf.impl.types import PdfSource
 
 TESTS_DIR = Path(__file__).parents[4]
 SAMPLES_DIR = TESTS_DIR / "fixtures" / "pdfminer.six" / "samples"
@@ -13,6 +14,21 @@ ACROFORM_PDF = SAMPLES_DIR / "acroform" / "AcroForm_TEST.pdf"
 PAGELABELS_PDF = SAMPLES_DIR / "contrib" / "pagelabels.pdf"
 CMAP_OTHER_FONTS_PDF = SAMPLES_DIR / "contrib" / "issue-598-cmap-other-fonts.pdf"
 ACROFORM_TEXT = "BUTTON\n\nCHECKBOX\n\nRADIO BUTTON\n\nDROPDOWN\n\n LIST\n\nCOMBO LIST\n\nTEXT\f"
+
+
+def extract_text(
+    source: PdfSource,
+    *,
+    page_numbers: set[int] | None = None,
+    maxpages: int = 0,
+) -> str:
+    with PdfDocument.open(source) as document:
+        doc = cast(Any, document)
+        if page_numbers is not None:
+            return "\f".join(doc.pages[index].extract_text() for index in page_numbers) + "\f"
+        if maxpages:
+            return "\f".join(page.extract_text() for page in doc.pages[:maxpages]) + "\f"
+        return cast(str, doc.extract_text())
 
 
 def test_extract_text_accepts_file_like_object() -> None:
@@ -23,8 +39,9 @@ def test_extract_text_accepts_path_object() -> None:
     assert extract_text(ACROFORM_PDF) == ACROFORM_TEXT
 
 
-def test_high_level_module_reexports_extract_text() -> None:
-    assert extract_text_high_level(io.BytesIO(ACROFORM_PDF.read_bytes())) == ACROFORM_TEXT
+def test_document_extract_text_accepts_file_like_object() -> None:
+    with PdfDocument.open(io.BytesIO(ACROFORM_PDF.read_bytes())) as document:
+        assert cast(Any, document).extract_text() == ACROFORM_TEXT
 
 
 def test_extract_text_supports_page_numbers() -> None:

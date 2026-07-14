@@ -3,10 +3,13 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
-from core_pdf.compat.pdfminer import extract_text as core_extract_text
 from pdfminer.high_level import extract_text as pdfminer_six_extract_text
+
+from core_pdf.impl.engine.extraction.document import PdfDocument
+from core_pdf.impl.types import PdfSource
 
 TESTS_DIR = Path(__file__).parents[4]
 SAMPLES_DIR = TESTS_DIR / "fixtures" / "pdfminer.six" / "samples"
@@ -141,6 +144,11 @@ EXPECTED_CORE_TEXT = {
     "simple5.pdf": stored_text("simple5.core.txt"),
     "zen_of_python_corrupted.pdf": stored_text("zen_of_python_corrupted.core.txt"),
 }
+
+
+def core_extract_text(source: PdfSource, *, password: str = "") -> str:
+    with PdfDocument.open(source, password=password) as document:
+        return cast(str, cast(Any, document).extract_text())
 
 
 def sample_id(path: Path) -> str:

@@ -1,9 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
-from core_pdf.impl.engine.spec.s_07_syntax.primitives import PdfName
-
 from core_pdf.impl.engine.spec.s_07_syntax.xref import XRefScanner, key_for
+from core_pdf.impl.primitives import PdfName
 
 
 def build_xref_prev_chain(section_count: int) -> tuple[bytes, int]:

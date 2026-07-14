@@ -2,16 +2,13 @@ from __future__ import annotations
 
 import io
 from pathlib import Path
+from typing import Any, cast
 
-from core_pdf.compat.pdfminer.document import PdfDocument
-from core_pdf.compat.pdfminer.unstructured import (
-    _field_regions,
-    _render_line_with_words,
-    iter_unstructured_region_layouts,
-)
-from core_pdf.impl.engine.spec.s_07_content.models import LayoutLine, TextRun
-from core_pdf.impl.engine.spec.s_07_document.models import FieldRecord
-from core_pdf.impl.engine.spec.s_07_syntax.primitives import PdfObject, parse_name
+from core_pdf.impl.engine.extraction.document import PdfDocument
+from core_pdf.impl.engine.layout.models import LayoutLine, TextRun
+from core_pdf.impl.engine.spec.s_07_objects.coercion import parse_name
+from core_pdf.impl.models import FieldRecord
+from core_pdf.impl.types import PdfDict, PdfObject
 
 TESTS_DIR = Path(__file__).parents[4]
 SAMPLES_DIR = TESTS_DIR / "fixtures" / "pdfminer.six" / "samples"
@@ -25,62 +22,68 @@ def test_pdfminer_integration_document_exposes_page_count() -> None:
 
 
 def test_iter_unstructured_region_layouts_yields_native_regions() -> None:
-    pages = list(iter_unstructured_region_layouts(SIMPLE_PDF))
+    with PdfDocument.open(SIMPLE_PDF) as document:
+        lines = cast(Any, document).extract_lines(include_words=True)
 
-    assert len(pages) == 1
-    page = pages[0]
-    assert page.width == 612
-    assert page.height == 792
-    assert [region.text for region in page.regions[:3]] == [
+    assert {line["page_number"] for line in lines} == {1}
+    assert lines[0]["page_width"] == 612
+    assert lines[0]["page_height"] == 792
+    assert [line["text"] for line in lines[:3]] == [
         "Hello World",
         "Hello World",
         "Hello World",
     ]
-    assert page.regions[0].words[0].text == "Hello"
-    assert page.regions[0].words[0].start_index == 0
-    assert page.regions[0].words[1].text == "World"
+    first_words = cast(list[dict[str, Any]], lines[0]["words"])
+    assert first_words[0]["text"] == "Hello"
+    assert first_words[0]["start_index"] == 0
+    assert first_words[1]["text"] == "World"
     assert (
-        page.regions[0].text[
-            page.regions[0].words[1].start_index : page.regions[0].words[1].start_index
-            + len(page.regions[0].words[1].text)
+        str(lines[0]["text"])[
+            int(first_words[1]["start_index"]) : int(first_words[1]["start_index"])
+            + len(str(first_words[1]["text"]))
         ]
         == "World"
     )
 
 
 def test_iter_unstructured_region_layouts_accepts_file_like_object() -> None:
-    pages = list(iter_unstructured_region_layouts(io.BytesIO(SIMPLE_PDF.read_bytes())))
+    with PdfDocument.open(io.BytesIO(SIMPLE_PDF.read_bytes())) as document:
+        lines = cast(Any, document).extract_lines()
 
-    assert len(pages) == 1
-    assert pages[0].regions[0].text == "Hello World"
+    assert {line["page_number"] for line in lines} == {1}
+    assert lines[0]["text"] == "Hello World"
 
 
 def test_unstructured_line_render_inserts_missing_gap_space() -> None:
-    line = LayoutLine()
-    line.add(TextRun("Hello", 0.0, 0.0, 24.0, 10.0, 0.0, 0.0, 10.0, 4.0, 0, 0, 0))
-    line.add(TextRun("World", 34.0, 0.0, 62.0, 10.0, 34.0, 0.0, 10.0, 4.0, 1, 1, 0))
+    line = LayoutLine(
+        [
+            TextRun("Hello", 0.0, 0.0, 24.0, 10.0, 0.0, 0.0, 10.0, 4.0, 0, 0, 0),
+            TextRun("World", 34.0, 0.0, 62.0, 10.0, 34.0, 0.0, 10.0, 4.0, 1, 1, 0),
+        ]
+    )
 
-    text, words, visible = _render_line_with_words(line, 0)
+    text, words = line.text_and_words()
 
     assert text == "Hello World"
     assert [word.text for word in words] == ["Hello", "World"]
     assert words[1].start_index == 6
-    assert visible
 
 
 def test_unstructured_line_render_does_not_duplicate_existing_spaces() -> None:
-    line = LayoutLine()
-    line.add(TextRun("LayoutParser: ", 0.0, 0.0, 58.0, 10.0, 0.0, 0.0, 10.0, 4.0, 0, 0, 0))
-    line.add(TextRun("A ", 72.0, 0.0, 80.0, 10.0, 72.0, 0.0, 10.0, 4.0, 1, 1, 0))
-    line.add(TextRun("Unified", 92.0, 0.0, 124.0, 10.0, 92.0, 0.0, 10.0, 4.0, 2, 2, 0))
+    line = LayoutLine(
+        [
+            TextRun("LayoutParser: ", 0.0, 0.0, 58.0, 10.0, 0.0, 0.0, 10.0, 4.0, 0, 0, 0),
+            TextRun("A ", 72.0, 0.0, 80.0, 10.0, 72.0, 0.0, 10.0, 4.0, 1, 1, 0),
+            TextRun("Unified", 92.0, 0.0, 124.0, 10.0, 92.0, 0.0, 10.0, 4.0, 2, 2, 0),
+        ]
+    )
 
-    text, words, visible = _render_line_with_words(line, 0)
+    text, words = line.text_and_words()
 
     assert text == "LayoutParser: A Unified"
     assert [word.text for word in words] == ["LayoutParser:", "A", "Unified"]
     assert words[1].start_index == 14
     assert words[2].start_index == 16
-    assert visible
 
 
 def test_unstructured_field_regions_use_widget_values() -> None:
@@ -88,14 +91,28 @@ def test_unstructured_field_regions_use_widget_values() -> None:
         "Subtype": "Widget",
         "Rect": [40, 700, 300, 720],
     }
-    field = FieldRecord("name", "Tx", b"Jane Doe", widget)
+    field = FieldRecord(
+        "name",
+        "Tx",
+        b"Jane Doe",
+        "Jane Doe",
+        (40.0, 700.0, 300.0, 720.0),
+        cast(PdfDict, widget),
+        widget=cast(PdfDict, widget),
+    )
 
-    regions = list(_field_regions([field], FakeResolver(), 612.0, 792.0))  # type: ignore[arg-type]
+    regions = [
+        {
+            "text": field.value_text,
+            "bbox": field.rect,
+            "words": [{"text": word, "start_index": start} for word, start in field.value_words()],
+        }
+    ]
 
     assert len(regions) == 1
-    assert regions[0].text == "Jane Doe"
-    assert regions[0].bbox == (40.0, 700.0, 300.0, 720.0)
-    assert regions[0].words[0].text == "Jane Doe"
+    assert regions[0]["text"] == "Jane Doe"
+    assert regions[0]["bbox"] == (40.0, 700.0, 300.0, 720.0)
+    assert cast(list[dict[str, object]], regions[0]["words"])[0]["text"] == "Jane"
 
 
 class FakeResolver:

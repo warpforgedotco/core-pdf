@@ -4,8 +4,10 @@ from __future__ import annotations
 import zlib
 
 import pytest
-from core_pdf.impl.engine.spec.s_07_filters.filters import apply_ascii85, apply_flate
-from core_pdf.impl.engine.spec.s_07_syntax.errors import PdfParseError
+
+from core_pdf.impl.engine.spec.s_07_filters.codecs import apply_ascii85
+from core_pdf.impl.engine.spec.s_07_filters.flate import apply_flate
+from core_pdf.impl.exceptions import PdfParseError
 
 
 def gzip_compress(data: bytes) -> bytes:
