@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from collections import deque
 from collections.abc import Iterator
-from typing import TYPE_CHECKING, Protocol, cast
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from core_pdf.impl.engine.spec.s_07_content import TextState
 from core_pdf.impl.engine.spec.s_07_document.protocols import LayersDocumentProtocol
@@ -109,7 +109,7 @@ class PageStateMixin:
     def get_state(self: PageStateHost) -> TextState:
         if self.state is None:
             state = TextState(
-                self.document,
+                cast(Any, self.document),
                 self.page_dict,
                 capture_glyphs=True,
                 capture_graphics=False,
@@ -123,7 +123,7 @@ class PageStateMixin:
 
     def capture_text_state(self: PageStateHost) -> TextState:
         state = TextState(
-            self.document,
+            cast(Any, self.document),
             self.page_dict,
             capture_glyphs=True,
             capture_graphics=True,
@@ -136,7 +136,7 @@ class PageStateMixin:
     def get_graphics(self: PageStateHost) -> TextState:
         if self.graphics is None:
             state = TextState(
-                self.document,
+                cast(Any, self.document),
                 self.page_dict,
                 capture_graphics=True,
                 hidden_layers=page_hidden_layers(self),

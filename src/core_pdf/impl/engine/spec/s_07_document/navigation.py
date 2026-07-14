@@ -74,7 +74,7 @@ class NavigationMixin:
                         level=level,
                         dest=cast(PdfObject | str | None, dest),
                         page_index=self.resolve_destination(dest),
-                        count=self.extract_outline_count(current),
+                        count=self.extract_outline_count(cast(PdfDict, current)),
                     )
                 )
             except ValueError:
@@ -190,7 +190,7 @@ class NavigationMixin:
         if isinstance(resolved_list, tuple):
             resolved_list = list(resolved_list)
         if isinstance(resolved_list, list) and resolved_list:
-            return self.destination_from_list(resolved_list)
+            return self.destination_from_list(cast(PdfArray, resolved_list))
         if isinstance(resolved_list, list):
             raise ValueError("invalid destination array")
 

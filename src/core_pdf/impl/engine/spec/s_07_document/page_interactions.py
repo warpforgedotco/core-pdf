@@ -63,7 +63,7 @@ class PageInteractionsMixin:
         for annot_ref in annots:
             annot = self.document.resolver.resolve(annot_ref)
             if isinstance(annot, dict):
-                resolved_annots.append(annot)
+                resolved_annots.append(cast(PdfDict, annot))
         return resolved_annots
 
     def has_destination_annotation(self: PageInteractionsHost) -> bool:
@@ -126,9 +126,9 @@ class PageInteractionsMixin:
                     subtype=subtype,
                     rect=rect,
                     contents=contents,
-                    dict_=annot,
+                    dict_=cast(PdfDict, annot),
                     dest=cast(PdfObject | None, dest),
-                    action=action if isinstance(action, dict) else None,
+                    action=cast(PdfDict, action) if isinstance(action, dict) else None,
                 )
             )
         return results
@@ -175,6 +175,7 @@ class PageInteractionsMixin:
             link_type = None
             url = None
             if isinstance(action, dict):
+                action = cast(PdfDict, action)
                 raw_type = lookup_pdf_key(action, "S", PDFKEY_S)
                 link_type = pdf_name_direct(raw_type) or resolver.resolve_name(raw_type)
                 url = link_target_direct(action, link_type)
@@ -187,7 +188,7 @@ class PageInteractionsMixin:
                     url=url,
                     link_type=link_type,
                     page_number=page_number,
-                    dict_=annot,
+                    dict_=cast(PdfDict, annot),
                 )
             )
 

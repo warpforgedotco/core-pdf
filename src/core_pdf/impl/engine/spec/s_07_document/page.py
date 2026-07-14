@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import contextlib
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from core_pdf.impl.engine.extraction.cache import ExtractionCache
 from core_pdf.impl.engine.extraction.common.page_content import (
@@ -241,7 +241,7 @@ class PdfPage(PageInteractionsMixin, PageStateMixin):
         if resources is None:
             return {}
         if type(resources) is dict:
-            return resources
+            return cast(PdfDict, resources)
         resolved = self.document.resolver.resolve_dict(resources)
         if resolved is None:
             return {}
@@ -292,7 +292,7 @@ class PdfPage(PageInteractionsMixin, PageStateMixin):
         new_page = self.__class__(self.document, self.page_dict, self.page_number)
 
         graphics = self.get_graphics()
-        new_state = TextState(self.document, self.page_dict)
+        new_state = TextState(cast(Any, self.document), self.page_dict)
         new_state.runs = [
             r for r in graphics.runs if r.x1 > x0 and r.x0 < x1 and r.y1 > y0 and r.y0 < y1
         ]
@@ -314,7 +314,7 @@ class PdfPage(PageInteractionsMixin, PageStateMixin):
         new_page = self.__class__(self.document, self.page_dict, self.page_number)
 
         graphics = self.get_graphics()
-        new_state = TextState(self.document, self.page_dict)
+        new_state = TextState(cast(Any, self.document), self.page_dict)
         new_state.runs = [
             r for r in graphics.runs if r.x0 >= x0 and r.x1 <= x1 and r.y0 >= y0 and r.y1 <= y1
         ]
