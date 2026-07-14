@@ -81,9 +81,10 @@ def test_unstructured_line_render_does_not_duplicate_existing_spaces() -> None:
     text, words = line.text_and_words()
 
     assert text == "LayoutParser: A Unified"
-    assert [word.text for word in words] == ["LayoutParser:", "A", "Unified"]
-    assert words[1].start_index == 14
-    assert words[2].start_index == 16
+    assert [word.text for word in words] == ["LayoutParser", ":", "A", "Unified"]
+    assert words[1].start_index == 12
+    assert words[2].start_index == 14
+    assert words[3].start_index == 16
 
 
 def test_unstructured_field_regions_use_widget_values() -> None:

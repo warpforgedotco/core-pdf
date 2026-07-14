@@ -13,7 +13,7 @@ SAMPLES_DIR = TESTS_DIR / "fixtures" / "pdfminer.six" / "samples"
 ACROFORM_PDF = SAMPLES_DIR / "acroform" / "AcroForm_TEST.pdf"
 PAGELABELS_PDF = SAMPLES_DIR / "contrib" / "pagelabels.pdf"
 CMAP_OTHER_FONTS_PDF = SAMPLES_DIR / "contrib" / "issue-598-cmap-other-fonts.pdf"
-ACROFORM_TEXT = "BUTTON\n\nCHECKBOX\n\nRADIO BUTTON\n\nDROPDOWN\n\n LIST\n\nCOMBO LIST\n\nTEXT\f"
+ACROFORM_TEXT = "BUTTON\n\nCHECKBOX\n\nRADIO BUTTON\n\nDROPDOWN\n\nLIST\n\nCOMBO LIST\n\nTEXT\f"
 
 
 def extract_text(

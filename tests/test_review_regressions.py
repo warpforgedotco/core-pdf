@@ -37,6 +37,7 @@ def test_cid_fast_path_applies_word_spacing() -> None:
     decoder.cmap = None
     decoder.fast_widths_cid = [500.0] * 65536
     decoder.is_vertical = False
+    decoder.default_width = 500.0
 
     advance = decoder.text_advance_vector(
         b"\x00 \x00A", font_size=10.0, char_space=0.0, word_space=2.0, horizontal_scale=1.0
@@ -101,6 +102,9 @@ class _NavigationDocument(NavigationMixin):
     def __init__(self, page: dict[object, object]) -> None:
         self.page = page
         self.resolver = cast(NavigationResolver, _TestResolver())
+        self.xref_was_recovered = False
+        self.page_tree_was_recovered = False
+        self.named_destinations_cache = None
 
     def page_index_for(self, page_obj: object) -> int | None:
         return 0 if page_obj is self.page else None

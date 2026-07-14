@@ -241,6 +241,9 @@ class PageInteractionsMixin:
                             ):
                                 page_fields.append(field)
                                 break
+                        elif id(kid) in page_annot_ids:
+                            page_fields.append(field)
+                            break
         return page_fields
 
 

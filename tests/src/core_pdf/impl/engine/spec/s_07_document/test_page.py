@@ -26,6 +26,12 @@ class FakeDocument:
     def fields(self) -> list[FieldRecord]:
         return self._fields
 
+    def resolve(self, value: PdfObject) -> PdfObject:
+        return self.resolver.resolve(value)
+
+    def page_index_for(self, page_obj: object) -> int | None:
+        return 0 if isinstance(page_obj, dict) else None
+
 
 def test_page_get_fields_matches_direct_widget_annotation_without_page_ref() -> None:
     widget = {

@@ -100,6 +100,14 @@ def recover_flate(data: bytes, wbits: int = zlib.MAX_WBITS) -> bytes:
         decoder = zlib.decompressobj(wbits)
         return decoder.decompress(data) + decoder.flush()
     except zlib.error:
+        if wbits > 0 and len(data) > 6:
+            cmf = data[0]
+            flg = data[1]
+            if cmf & 0x0F == 8 and ((cmf << 8) | flg) % 31 == 0:
+                try:
+                    return zlib.decompress(data[2:-4], -15)
+                except zlib.error:
+                    return b""
         return b""
 
 

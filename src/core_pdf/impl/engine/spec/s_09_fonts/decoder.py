@@ -673,6 +673,8 @@ class FontDecoder:
                 for i in range(0, n, 2):
                     code = (data[i] << 8) | data[i + 1]
                     total += fwc[code]
+                    if code == 32:
+                        total += ws
                 total += (n >> 1) * cs
 
                 if self.is_vertical:

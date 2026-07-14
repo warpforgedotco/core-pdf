@@ -405,32 +405,45 @@ class XRefScanner:
     def load_section_chain(
         data: PdfByteBuffer, start: int, seen: set[int]
     ) -> tuple[XRefTable, PdfDict]:
-        if start in seen:
-            raise PdfParseError("xref section loop detected")
-        seen.add(start)
+        section_start = start
+        sections: list[XRefTable] = []
+        trailer: PdfDict | None = None
 
-        try:
-            entries, trailer, prev, xrefstm = XRefScanner.parse_section_at(data, start)
-        except PdfParseError:
-            nearby = XRefScanner.find_nearby_section(data, start)
-            if nearby is None or nearby in seen:
-                raise
-            seen.add(nearby)
-            entries, trailer, prev, xrefstm = XRefScanner.parse_section_at(data, nearby)
-        if prev is not None and prev < 0:
-            raise PdfParseError("invalid xref section")
-        if xrefstm is not None and xrefstm < 0:
-            raise PdfParseError("invalid xref section")
+        while True:
+            if section_start in seen:
+                raise PdfParseError("xref section loop detected")
+            seen.add(section_start)
 
-        if xrefstm is not None:
-            s_entries, ignored = XRefScanner.load_section_chain(data, xrefstm, seen)
-            entries.update(s_entries)
+            try:
+                entries, current_trailer, prev, xrefstm = XRefScanner.parse_section_at(
+                    data, section_start
+                )
+            except PdfParseError:
+                nearby = XRefScanner.find_nearby_section(data, section_start)
+                if nearby is None or nearby in seen:
+                    raise
+                seen.add(nearby)
+                entries, current_trailer, prev, xrefstm = XRefScanner.parse_section_at(data, nearby)
+            if trailer is None:
+                trailer = current_trailer
+            if prev is not None and prev < 0:
+                raise PdfParseError("invalid xref section")
+            if xrefstm is not None and xrefstm < 0:
+                raise PdfParseError("invalid xref section")
 
-        if prev is not None:
-            p_entries, p_trailer = XRefScanner.load_section_chain(data, prev, seen)
-            p_entries.update(entries)
-            return p_entries, trailer
-        return entries, trailer
+            if xrefstm is not None:
+                s_entries, ignored = XRefScanner.load_section_chain(data, xrefstm, seen)
+                entries.update(s_entries)
+            sections.append(entries)
+
+            if prev is None:
+                break
+            section_start = prev
+
+        merged: XRefTable = {}
+        for section in reversed(sections):
+            merged.update(section)
+        return merged, trailer if trailer is not None else {}
 
     @staticmethod
     def parse_stream(stream: PdfStream) -> tuple[XRefTable, PdfDict]:
