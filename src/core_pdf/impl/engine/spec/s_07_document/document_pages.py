@@ -99,6 +99,7 @@ class DocumentPagesMixin(DocumentPageRecoveryMixin, DocumentPageLabelsMixin):
                 if depth == 0:
                     raise ValueError("invalid page tree node")
                 return
+            node = cast(PdfDict, node)
             node_type = self.resolver.resolve_name(lookup_dict_key(node, "Type"))
             if node_type is None:
                 node_type = infer_page_tree_node_type(node)
@@ -208,7 +209,7 @@ class DocumentPagesMixin(DocumentPageRecoveryMixin, DocumentPageLabelsMixin):
             if cached_page == page_obj:
                 self.page_index_cache[id(page_obj)] = index
                 return index
-        signature = self.recovered_page_signature(page_obj)
+        signature = self.recovered_page_signature(cast(PdfDict, page_obj))
         for index, cached_page in enumerate(self.page_dicts_cache):
             if self.recovered_page_signature(cached_page) == signature:
                 self.page_index_cache[id(page_obj)] = index

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Protocol
+from typing import Protocol, cast
 
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_07_security.crypto_handlers import (
@@ -40,6 +40,7 @@ class DocumentSecurityMixin:
         encrypt_dict = self.resolver.resolve_dict(encrypt_ref)
         if not isinstance(encrypt_dict, dict):
             raise PdfUnsupportedError("Invalid Encrypt dictionary")
+        encrypt_dict = cast(PdfDict, encrypt_dict)
 
         filter_name = self.resolver.resolve_name(lookup_dict_key(encrypt_dict, "Filter"))
         if filter_name is None:

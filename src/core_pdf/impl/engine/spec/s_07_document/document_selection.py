@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator, Sequence
-from typing import Protocol
+from typing import Any, Protocol, cast
 
 from core_pdf.impl.engine.spec.s_07_document.page import PdfPage
 from core_pdf.impl.types import PageSelection
@@ -50,7 +50,7 @@ class DocumentSelectionMixin:
                         raise ValueError(f"invalid page selection: {pages!r}") from exc
         elif isinstance(pages, Sequence):
             try:
-                selected = [int(page_number) - 1 for page_number in pages]
+                selected = [int(cast(Any, page_number)) - 1 for page_number in pages]
             except (TypeError, ValueError) as exc:
                 raise ValueError(f"invalid page selection: {pages!r}") from exc
         else:

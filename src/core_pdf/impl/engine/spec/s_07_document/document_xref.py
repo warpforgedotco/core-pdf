@@ -167,6 +167,7 @@ class DocumentXRefMixin:
             pages = resolver.resolve(lookup_dict_key(root, "Pages"))
             if not isinstance(pages, dict):
                 return False
+            pages = cast(PdfDict, pages)
             node_type = normalize_pdf_name(lookup_dict_key(pages, "Type"))
             if node_type is None:
                 node_type = infer_page_tree_node_type(pages)
@@ -231,7 +232,7 @@ class DocumentXRefMixin:
                 resolve_for_inference(lookup_dict_key(node, "Type"), depth + 1)
             )
             if node_type is None:
-                node_type = infer_page_tree_node_type(node)
+                node_type = infer_page_tree_node_type(cast(PdfDict, node))
             if node_type == "Page":
                 score = 10
                 if lookup_dict_key(node, "Contents") is not None:
