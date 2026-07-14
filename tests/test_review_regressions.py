@@ -1,12 +1,43 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from math import isclose
 
 from core_pdf.impl.engine.spec.s_07_document.document import PdfDocument
 from core_pdf.impl.engine.spec.s_07_document.metadata import resolve_info_metadata
 from core_pdf.impl.engine.spec.s_07_document.navigation import NavigationMixin
 from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.engine.spec.s_07_syntax.primitives import PdfName
+from core_pdf.impl.engine.spec.s_09_fonts.decoder import FontDecoder
+
+
+def test_leading_dot_number_is_passed_to_operator() -> None:
+    received: list[object] = []
+
+    def move_to(operands: Sequence[object], _depth: int) -> None:
+        received.extend(operands)
+
+    fast_handlers: list[object] = [None] * 65536
+    fast_handlers[ord("m") << 8] = move_to
+    PdfLexer(b".5 1 m").dispatch_operations({"m": move_to}, fast_handlers, 0)
+
+    assert received == [0.5, 1]
+
+
+def test_cid_fast_path_applies_word_spacing() -> None:
+    decoder = object.__new__(FontDecoder)
+    decoder.is_cid_font = True
+    decoder.to_unicode = None
+    decoder.cmap = None
+    decoder.fast_widths_cid = [500.0] * 65536
+    decoder.is_vertical = False
+
+    advance = decoder.text_advance_vector(
+        b"\x00 \x00A", font_size=10.0, char_space=0.0, word_space=2.0, horizontal_scale=1.0
+    )
+
+    assert isclose(advance[0], 0.12)
+    assert advance[1] == 0.0
 
 
 def test_unsupported_operator_does_not_leak_operands() -> None:

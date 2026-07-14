@@ -737,7 +737,7 @@ class PdfLexer:
 
                 # Fast-path for numbers (highly frequent)
                 first = raw[0]
-                if 48 <= first <= 57 or first == 45 or first == 43:  # 0-9 or - or +
+                if 48 <= first <= 57 or first == 45 or first == 43 or first == 46:  # 0-9, -, +, or .
                     # Inline integer parsing for 1-4 digits
                     if n_raw == 1:
                         if 48 <= first <= 57:
@@ -774,7 +774,7 @@ class PdfLexer:
                             continue
 
                     # Try general number path
-                    if 46 in raw:  # .
+                    if 46 in raw and is_num_word(raw):  # .
                         _store_operand(op_count, float(raw))
                         op_count += 1
                         continue
