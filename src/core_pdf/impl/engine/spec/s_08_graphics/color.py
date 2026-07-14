@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Stream color space conversion helpers."""
 
 from __future__ import annotations

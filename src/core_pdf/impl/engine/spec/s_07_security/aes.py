@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """AES block cipher implementation (pure Python).
 
 Implements AES-128 and AES-256 in CBC mode with PKCS7 padding for PDF encryption.

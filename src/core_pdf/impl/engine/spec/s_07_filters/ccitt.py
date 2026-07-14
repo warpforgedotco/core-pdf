@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """CCITT Fax stream decoding with full Group 3/4 support.
 
 Implements ITU-T Recommendation T.4 and T.6 fax compression.

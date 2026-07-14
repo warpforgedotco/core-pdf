@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 class CryptRC4:
     """RC4 encryption/decryption stream cipher.
 

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """AES cryptographic constants (S-boxes, round constants, etc.).
 
 All constants are defined as module-level tuples following FIPS 197.

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 import struct
 from collections.abc import Callable, Sequence
 from hashlib import md5, sha256, sha384, sha512
