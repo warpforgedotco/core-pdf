@@ -65,7 +65,7 @@ class FormsMixin:
             if acroform_val is None:
                 self.acroform_cache = None
             elif isinstance(acroform_val, dict):
-                self.acroform_cache = acroform_val
+                self.acroform_cache = cast(PdfDict, acroform_val)
             elif recover:
                 self.acroform_cache = None
             else:
@@ -145,12 +145,14 @@ class FormsMixin:
                     kids = []
                 else:
                     raise ValueError("invalid AcroForm Kids array")
+            kids = cast(list[PdfObject], kids)
             subtype_value = lookup_dict_key(current_node, "Subtype")
             subtype = (
                 self.resolver.resolve_name(subtype_value)
                 or self.resolver.resolve_str(subtype_value)
                 or ""
             )
+            current_node = cast(PdfDict, current_node)
             records.append(
                 FieldRecord(
                     current_name,
@@ -170,6 +172,7 @@ class FormsMixin:
                     if recover:
                         continue
                     raise ValueError("invalid AcroForm kid entry")
+                resolved_kid = cast(PdfDict, resolved_kid)
                 subtype_value = lookup_dict_key(resolved_kid, "Subtype")
                 subtype = (
                     self.resolver.resolve_name(subtype_value)
