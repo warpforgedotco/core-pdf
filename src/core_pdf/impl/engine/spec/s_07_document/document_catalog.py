@@ -42,7 +42,7 @@ class DocumentCatalogMixin:
             root = self.resolve(root_ref)
             if not isinstance(root, dict):
                 raise ValueError("invalid catalog root")
-            catalog = root
+            catalog = cast(PdfDict, root)
             self.catalog_cache = catalog
         return catalog
 
@@ -73,7 +73,7 @@ class DocumentCatalogMixin:
                     return None
                 if not isinstance(resolved_root, dict):
                     raise ValueError("invalid StructTreeRoot dictionary")
-                struct_root = resolved_root
+                struct_root = cast(PdfDict, resolved_root)
                 self.structure_root_cache = struct_root
             structure = StructureTree(cast("PdfDocument", self), struct_root)
             self.structure_cache = structure
@@ -88,7 +88,7 @@ class DocumentCatalogMixin:
                 return None
             if not isinstance(resolved_mark_info, dict):
                 raise ValueError("invalid MarkInfo dictionary")
-            mark_info = resolved_mark_info
+            mark_info = cast(PdfDict, resolved_mark_info)
             self.mark_info_cache = mark_info
         return mark_info
 

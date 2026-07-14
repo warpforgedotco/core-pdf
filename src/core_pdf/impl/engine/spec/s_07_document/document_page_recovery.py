@@ -60,6 +60,7 @@ class DocumentPageRecoveryMixin:
                 continue
             if not isinstance(obj, dict):
                 continue
+            obj = cast(PdfDict, obj)
             marker = id(obj)
             if marker in seen_objects:
                 continue
@@ -157,7 +158,7 @@ class DocumentPageRecoveryMixin:
             except Exception:
                 parent_obj = None
             if isinstance(parent_obj, dict):
-                sources.append(parent_obj)
+                sources.append(cast(PdfDict, parent_obj))
         sources.extend(pages_nodes)
         if not sources:
             return page_dict

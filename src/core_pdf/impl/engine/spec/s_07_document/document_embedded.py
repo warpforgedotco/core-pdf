@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
-from typing import Protocol
+from typing import Protocol, cast
 
 from core_pdf.impl.engine.spec.s_07_document.name_trees import iter_name_tree_items
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
@@ -73,9 +73,11 @@ class DocumentEmbeddedMixin:
         filespec = self.resolver.resolve(value)
         if not isinstance(filespec, dict):
             raise ValueError("invalid embedded file spec")
+        filespec = cast(PdfDict, filespec)
         ef = self.resolver.resolve(lookup_dict_key(filespec, "EF"))
         if not isinstance(ef, dict):
             raise ValueError("invalid embedded file stream")
+        ef = cast(PdfDict, ef)
         stream = self.resolver.resolve(lookup_dict_key(ef, "UF") or lookup_dict_key(ef, "F"))
         if not isinstance(stream, PdfStream):
             raise ValueError("invalid embedded file stream")

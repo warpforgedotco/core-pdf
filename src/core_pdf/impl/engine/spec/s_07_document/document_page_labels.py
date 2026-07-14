@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from collections.abc import Sized
-from typing import Protocol
+from typing import Protocol, cast
 
 from core_pdf.impl.engine.spec.s_07_document.document_labels import format_page_label
 from core_pdf.impl.engine.spec.s_07_document.name_trees import iter_number_tree_items
@@ -52,7 +52,7 @@ class DocumentPageLabelsMixin:
             raise ValueError("invalid PageLabels number tree")
 
         specs = [
-            (page_index, spec)
+            (page_index, cast(PdfDict, spec))
             for page_index, spec in iter_number_tree_items(
                 labels_root,
                 self.resolve,
