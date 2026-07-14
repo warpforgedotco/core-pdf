@@ -28,7 +28,7 @@ lint = [
     "ty >=0.0.59, <1.0.0",
 ]
 test = [
-    "pdfminer.six >=20251107, <20260000",
+    "pdfminer.six",
     "pytest >=8.4.0, <9.0.0",
 ]
 

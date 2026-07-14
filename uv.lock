@@ -212,7 +212,7 @@ lint = [
     { name = "ty", specifier = ">=0.0.59,<1.0.0" },
 ]
 test = [
-    { name = "pdfminer-six", specifier = ">=20251107,<20260000" },
+    { name = "pdfminer-six" },
     { name = "pytest", specifier = ">=8.4.0,<9.0.0" },
 ]
 
