@@ -177,8 +177,8 @@ class ImageColorManager:
         if isinstance(decode, (list, tuple)) and len(decode) >= components * 2:
             for i in range(components):
                 try:
-                    dmin = float(decode[i * 2])
-                    dmax = float(decode[i * 2 + 1])
+                    dmin = float(typing.cast(typing.Any, decode[i * 2]))
+                    dmax = float(typing.cast(typing.Any, decode[i * 2 + 1]))
                 except (TypeError, ValueError):
                     pairs = []
                     break
@@ -216,8 +216,9 @@ class ImageColorManager:
                 components = evaluate_sampled_tint_function(tint_fn, v)
             elif isinstance(tint_fn, (list, tuple)):
                 if len(tint_fn) >= 1 and callable(tint_fn[0]):
+                    tint_callable = typing.cast(typing.Callable[..., object], tint_fn[0])
                     try:
-                        components = cast(ColorComponents, tint_fn[0](v))
+                        components = cast(ColorComponents, tint_callable(v))
                     except Exception as exc:
                         raise ValueError("invalid separation tint function") from exc
                 else:
@@ -268,8 +269,9 @@ class ImageColorManager:
         for i in range(0, len(raw), step):
             components: ColorComponents = [raw[i + j] / 255.0 for j in range(step)]
             if isinstance(tint_fn, (list, tuple)) and len(tint_fn) >= 1 and callable(tint_fn[0]):
+                tint_callable = typing.cast(typing.Callable[..., object], tint_fn[0])
                 try:
-                    components = cast(ColorComponents, tint_fn[0](*components))
+                    components = cast(ColorComponents, tint_callable(*components))
                 except Exception as exc:
                     raise ValueError("invalid DeviceN tint function") from exc
             elif isinstance(tint_fn, PdfStream):

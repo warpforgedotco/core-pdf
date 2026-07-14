@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import struct
 from hashlib import md5
-from typing import Callable
+from typing import Callable, cast
 
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import (
     lookup_dict_key,
@@ -32,7 +32,7 @@ class PdfStandardSecurityHandlerV4(PdfStandardSecurityHandler):
         elif not isinstance(cf, dict):
             raise PDFEncryptionError("Invalid crypt filter dictionary: CF")
         else:
-            self.cf = cf
+            self.cf = cast(PdfDict, cf)
         stmf_raw = lookup_dict_key_default(self.param, "StmF", MISSING)
         self.stmf = get_name("Identity" if stmf_raw is MISSING else stmf_raw) or "Identity"
         strf_raw = lookup_dict_key_default(self.param, "StrF", MISSING)

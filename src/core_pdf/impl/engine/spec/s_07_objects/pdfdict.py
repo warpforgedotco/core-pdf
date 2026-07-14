@@ -85,10 +85,11 @@ def collect_inherited_values(
                         values[key] = value
                 break
 
-        ancestors.append((marker, current))
+        current_dict = cast("PdfDict", current)
+        ancestors.append((marker, current_dict))
         for key in keys:
             if key not in values:
-                inherited_value = lookup_dict_key(current, key)
+                inherited_value = lookup_dict_key(current_dict, key)
                 if inherited_value is not None:
                     values[key] = cast("CachedPdfObject", inherited_value)
 

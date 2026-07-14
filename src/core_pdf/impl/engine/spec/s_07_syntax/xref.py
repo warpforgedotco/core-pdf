@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import typing
 import zlib
+from typing import cast
 
 from core_pdf.impl.engine.spec.s_07_objects.coercion import (
     normalize_pdf_name,
@@ -447,7 +448,7 @@ class XRefScanner:
             raise PdfParseError("invalid xref stream W")
         if not all(type(x) is int for x in w_raw):
             raise PdfParseError("invalid xref stream W")
-        w = [int(x) for x in w_raw[:3]]
+        w = [int(cast(typing.Any, x)) for x in w_raw[:3]]
         if any(width < 0 for width in w):
             raise PdfParseError("invalid xref stream W")
 
@@ -457,7 +458,7 @@ class XRefScanner:
         elif not isinstance(index_raw, (list, tuple)) or not all(type(x) is int for x in index_raw):
             raise PdfParseError("invalid xref stream Index")
         else:
-            index = [int(x) for x in index_raw]
+            index = [int(cast(typing.Any, x)) for x in index_raw]
             if len(index) % 2 != 0:
                 index = index[:-1]
         effective_size = size

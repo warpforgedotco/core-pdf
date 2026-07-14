@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator, Sequence
-from typing import TYPE_CHECKING, Any, Callable, TypeAlias, overload
+from typing import TYPE_CHECKING, Any, Callable, TypeAlias, cast, overload
 
 from core_pdf.impl.engine.spec.s_07_objects.coercion import (
     coerce_value,
@@ -237,7 +237,7 @@ class StructureElement:
             tree = self.document.structure
             self.parent_value = tree
             return tree
-        self.parent_value = StructureElement(self.document, parent)
+        self.parent_value = StructureElement(self.document, cast(PdfDict, parent))
         return self.parent_value
 
     def __iter__(
@@ -439,7 +439,9 @@ class PageStructure(Sequence[StructureElement | None]):
             if isinstance(resolved, dict):
                 marker = id(resolved)
                 if marker not in self.elements:
-                    self.elements[marker] = StructureElement(self.page.document, resolved)
+                    self.elements[marker] = StructureElement(
+                        self.page.document, cast(PdfDict, resolved)
+                    )
                 return self.elements[marker]
             raise ValueError("invalid page structure parent entry")
         raise ValueError("invalid page structure parent entry")
@@ -552,7 +554,7 @@ def make_kids(
                     raise ValueError("invalid structure object reference")
                 yield StructureContentObject(
                     page_index=get_kid_page_index(document, page, current),
-                    props=obj,
+                    props=cast(PdfDict, obj),
                 )
                 continue
             yield StructureElement(document, current)

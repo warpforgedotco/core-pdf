@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from math import hypot
-from typing import TYPE_CHECKING, Protocol, TypeAlias, TypedDict
+from typing import TYPE_CHECKING, Protocol, TypeAlias, TypedDict, cast
 
 from core_pdf.impl.engine.layout.geometry import BBox
 from core_pdf.impl.objects import PdfStream
@@ -158,7 +158,12 @@ class LinkRecord:
             return "", -1
 
         bbox = self.page_bbox(page_height) if page_height is not None else self.bbox
-        bboxes = [word["bbox"] if isinstance(word, dict) else word.bbox for word in word_list]
+        bboxes = [
+            cast(LinkTextWordRecord, word)["bbox"]
+            if isinstance(word, dict)
+            else cast(LinkTextWordObject, word).bbox
+            for word in word_list
+        ]
         start_index = min(
             range(len(bboxes)),
             key=lambda i: hypot(bbox[0] - bboxes[i][0], bbox[1] - bboxes[i][1]),
@@ -172,12 +177,17 @@ class LinkRecord:
         else:
             selected_words = [word_list[start_index]]
         text = " ".join(
-            word["text"] if isinstance(word, dict) else word.text for word in selected_words
+            cast(LinkTextWordRecord, word)["text"]
+            if isinstance(word, dict)
+            else cast(LinkTextWordObject, word).text
+            for word in selected_words
         )
         first_word = word_list[start_index]
         return (
             text.strip(),
-            first_word["start_index"] if isinstance(first_word, dict) else first_word.start_index,
+            cast(LinkTextWordRecord, first_word)["start_index"]
+            if isinstance(first_word, dict)
+            else cast(LinkTextWordObject, first_word).start_index,
         )
 
     def text_metadata(
