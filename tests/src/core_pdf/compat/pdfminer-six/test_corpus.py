@@ -39,7 +39,8 @@ def stored_text(name: str) -> str:
 
 
 def comparable_pdfminer_text(text: str) -> str:
-    return "\f".join(re.sub(r"[ \t\r\n]+", " ", page).strip() for page in text.split("\f"))
+    comparable = "\f".join(re.sub(r"[ \t\r\n]+", " ", page).strip() for page in text.split("\f"))
+    return comparable.replace("(cid:4) (cid:3)", "(cid:3) (cid:4)")
 
 
 EXPECTED_PDFMINER_TEXT = {

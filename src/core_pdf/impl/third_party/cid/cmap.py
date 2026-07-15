@@ -56,9 +56,6 @@ class NotdefRange:
         return code_in_range(code, self.start, self.end)
 
 
-CMapResourceResolver = Callable[[str], bytes | bytearray | memoryview | "CMapDecoder" | None]
-
-
 def iter_blocks(data: bytes | memoryview, begin: bytes, end: bytes) -> typing.Iterator[bytes]:
     if not isinstance(data, bytes):
         data = bytes(data)
@@ -907,3 +904,6 @@ class CMapDecoder:
                 out.append((data[pos : pos + 1], 0))
                 pos += 1
         return out
+
+
+CMapResourceResolver = Callable[[str], bytes | bytearray | memoryview | CMapDecoder | None]
