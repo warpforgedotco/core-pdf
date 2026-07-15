@@ -1,10 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""AES cryptographic constants (S-boxes, round constants, etc.).
-
-All constants are defined as module-level tuples following FIPS 197.
-"""
-
-# AES S-box (forward substitution) - FIPS 197
 AES_SBOX: tuple[int, ...] = (
     0x63,
     0x7C,
@@ -264,7 +258,7 @@ AES_SBOX: tuple[int, ...] = (
     0x16,
 )
 
-# AES inverse S-box (reverse substitution) - FIPS 197
+
 AES_INV_SBOX: tuple[int, ...] = (
     0x52,
     0x09,
@@ -524,7 +518,7 @@ AES_INV_SBOX: tuple[int, ...] = (
     0x7D,
 )
 
-# AES round constants for key expansion (for rounds 1-14)
+
 AES_RCON: tuple[int, ...] = (
     0x00000000,
     0x01000000,
@@ -546,11 +540,11 @@ AES_RCON: tuple[int, ...] = (
     0x98000000,
 )
 
-# PDF padding string for legacy RC4 encryption
+
 PDF_PADDING: bytes = (
     b"\x28\xbf\x4e\x5e\x4e\x75\x8a\x41\x64\x00\x4e\x56\xff\xfa\x01\x08"
     b"\x2e\x2e\x00\xb6\xd0\x68\x3e\x80\x2f\x0c\xa9\xfe\x64\x53\x69\x7a"
 )
 
-# PKCS7 padding block size
+
 PKCS7_BLOCK_SIZE: int = 16

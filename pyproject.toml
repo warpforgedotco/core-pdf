@@ -4,14 +4,17 @@ build-backend = "uv_build"
 
 [project]
 name = "core-pdf"
-version = "0.0.1"
+version = "0.0.2"
 description = "High-performance pure Python PDF parsing engine"
 authors = [{ name = "Kevin Turcios", email = "turcioskevinr@gmail.com" }]
 readme = "README.md"
 license = "AGPL-3.0-only"
 license-files = ["LICENSE.txt"]
-requires-python = ">=3.14"
+requires-python = ">=3.11"
 classifiers = ["Development Status :: 3 - Alpha"]
+dependencies = [
+    "core-jpeg>=0.0.0",
+]
 
 [project.urls]
 Repository = "https://github.com/core-experiments/core-pdf"
@@ -22,19 +25,32 @@ License = "https://github.com/core-experiments/core-pdf/blob/main/LICENSE.txt"
 "Philanthropy waiver terms" = "https://github.com/core-experiments/core-pdf/blob/main/docs/license/LICENSE-PHILANTHROPY-WAIVER.txt"
 
 [dependency-groups]
-dev = [
-    "pytest>=9.1.1",
+benchmark = [
+    "rich>=15.0.0",
+]
+vendor = [
+    "vendoring >=0.2.2",
 ]
 lint = [
     "mypy >=1.16.0, <2.0.0",
     "ruff >=0.11.13, <1.0.0",
+    "ty >=0.0.59, <1.0.0",
+]
+test = [
+    "pdfminer.six",
+    "pytest >=8.4.0, <9.0.0",
 ]
 
-[tool.ruff]
-line-length = 100
-
 [tool.pytest.ini_options]
-norecursedirs = ["fixtures"]
+testpaths = ["tests/src"]
+norecursedirs = ["tests/fixtures"]
+
+[tool.ruff]
+extend-exclude = [
+    "src/core_pdf/impl/third_party",
+    "tests/fixtures",
+]
+line-length = 100
 
 [tool.ruff.lint]
 select = [
@@ -63,7 +79,42 @@ ignore = [
 ]
 
 [tool.mypy]
-python_version = "3.14"
+python_version = "3.11"
 files = ["src/core_pdf"]
 mypy_path = "src"
 show_error_codes = true
+
+[[tool.mypy.overrides]]
+module = "core_pdf.impl.third_party._vendor.*"
+ignore_errors = true
+
+[tool.ty.src]
+exclude = [
+    "src/core_pdf/impl/third_party",
+    "tests/fixtures",
+]
+
+[tool.vendoring]
+destination = "src/core_pdf/impl/third_party/_vendor/"
+requirements = "src/core_pdf/impl/third_party/_vendor/vendor.txt"
+namespace = "core_pdf.impl.third_party._vendor"
+protected-files = ["__init__.py", "README.rst", "vendor.txt"]
+patches-dir = "tools/vendoring/patches"
+
+[tool.vendoring.transformations]
+substitute = [
+    { match = "(?m)^import fontTools\\.encodings\\.codecs$", replace = "import fontTools.encodings.codecs as codecs" },
+    { match = "(?m)^import fontTools\\.merge\\.base$", replace = "import fontTools.merge.base as merge_base" },
+    { match = "(?m)^import fontTools\\.merge\\.tables$", replace = "import fontTools.merge.tables as merge_tables" },
+    { match = "(?m)^import fontTools\\.otlLib\\.builder$", replace = "import fontTools.otlLib.builder as otl_lib_builder" },
+    { match = "(?m)^import fontTools\\.subset\\.cff$", replace = "import fontTools.subset.cff as subset_cff" },
+    { match = "(?m)^import fontTools\\.varLib\\.varStore  # For monkey-patching$", replace = "import fontTools.varLib.varStore as var_store  # For monkey-patching" },
+    { match = '"fontTools\.ttLib\.tables\."', replace = '"core_pdf.impl.third_party._vendor.fontTools.ttLib.tables."' },
+]
+drop = [
+    "*.dist-info/",
+    "bin/",
+    "share/",
+    "*.so",
+    "*.pyd",
+]

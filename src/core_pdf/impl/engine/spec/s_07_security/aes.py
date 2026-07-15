@@ -1,9 +1,4 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""AES block cipher implementation (pure Python).
-
-Implements AES-128 and AES-256 in CBC mode with PKCS7 padding for PDF encryption.
-"""
-
 from core_pdf.impl.engine.spec.s_07_security.crypto_constants import (
     AES_INV_SBOX,
     AES_RCON,
@@ -25,9 +20,8 @@ def sub_word(w: int) -> int:
 
 
 def gf_mul(x: int, y: int) -> int:
-    """Multiply two elements in GF(2^8) modulo x^8 + x^4 + x^3 + x + 1."""
     p = 0
-    for _ in range(8):
+    for ignored in range(8):
         if y & 1:
             p ^= x
         hi_bit_set = x & 0x80
@@ -38,7 +32,6 @@ def gf_mul(x: int, y: int) -> int:
     return p
 
 
-# Pre-compute multiplication tables for efficient MixColumns
 SBOX_TABLE = bytes(AES_SBOX)
 INV_SBOX_TABLE = bytes(AES_INV_SBOX)
 
@@ -65,7 +58,7 @@ def key_expansion(key: bytes) -> list[tuple[int, ...]]:
         t = round_key_words[i - 1]
         if i % Nk == 0:
             t = sub_word(rotate_left(t, 8)) ^ AES_RCON[i // Nk]
-        elif Nk > 6 and i % Nk == 4:  # AES-256 only
+        elif Nk > 6 and i % Nk == 4:
             t = sub_word(t)
         round_key_words[i] = round_key_words[i - Nk] ^ t
 
@@ -122,8 +115,6 @@ def inv_mix_columns(state: bytearray) -> None:
 
 
 class AES:
-    """AES block cipher supporting 128-bit and 256-bit keys in CBC mode."""
-
     BLOCK_SIZE = 16
 
     def __init__(self, key: bytes) -> None:
@@ -179,11 +170,9 @@ class AES:
         prev = bytearray(iv)
         state = bytearray(self.BLOCK_SIZE)
 
-        # Local bindings for hot loop
         encrypt_inplace = self.encrypt_inplace
 
         for i in range(0, len(padded), self.BLOCK_SIZE):
-            # XOR with previous block - inline the loop
             for j in range(16):
                 state[j] = padded[i + j] ^ prev[j]
 
@@ -201,7 +190,6 @@ class AES:
         prev = bytearray(iv)
         state = bytearray(self.BLOCK_SIZE)
 
-        # Local bindings for hot loop
         decrypt_inplace = self.decrypt_inplace
 
         for i in range(0, len(ciphertext), self.BLOCK_SIZE):
@@ -209,13 +197,14 @@ class AES:
             block_copy = bytes(state)
             decrypt_inplace(state)
 
-            # XOR with previous block - inline the loop
             for j in range(16):
                 plaintext[i + j] = state[j] ^ prev[j]
 
             prev[:] = block_copy
 
         if padding:
+            if not plaintext:
+                raise ValueError("Invalid PKCS7 padding")
             pad_len = plaintext[-1]
             if pad_len > self.BLOCK_SIZE or pad_len == 0:
                 raise ValueError("Invalid PKCS7 padding")

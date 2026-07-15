@@ -2,34 +2,90 @@
 from __future__ import annotations
 
 import mmap
-from typing import TypeGuard
+from typing import cast
 
-from core_pdf.impl.engine.spec.s_07_syntax.lexer import DecipherFn, KeywordCacheValue, PdfLexer
-from core_pdf.impl.engine.spec.s_07_syntax.objects import PdfObjectStream
-from core_pdf.impl.engine.spec.s_07_syntax.primitives import (
-    MISSING,
-    PdfDictLike,
-    PdfName,
-    PdfObject,
-    PdfReference,
-    PdfStream,
-    PdfString,
-    parse_float,
-    parse_int,
-    parse_name,
+from core_pdf.impl.engine.spec.s_07_objects.coercion import normalize_pdf_name
+from core_pdf.impl.engine.spec.s_07_objects.indirect_headers import (
+    find_indirect_object_header,
 )
-from core_pdf.impl.engine.spec.s_07_syntax.xref import PdfXRefEntry
-from core_pdf.impl.engine.spec.s_09_fonts.encoding import decode_pdf_text_string
+from core_pdf.impl.engine.spec.s_07_objects.object_cache import (
+    CachedPdfObject,
+    DeepObjectCache,
+    GenerationZeroObjectCache,
+    ObjectCache,
+)
+from core_pdf.impl.engine.spec.s_07_objects.resolver_values import ResolverValueMixin
+from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
+from core_pdf.impl.engine.spec.s_07_syntax.objects import PdfObjectStream
+from core_pdf.impl.engine.spec.s_07_syntax.xref import PdfXRefEntry, key_for
+from core_pdf.impl.exceptions import PdfParseError
+from core_pdf.impl.objects import MISSING, PdfReference, PdfStream
+from core_pdf.impl.types import Decipher, PdfDict
+
+COMMON_KEYWORDS: tuple[bytes, ...] = (
+    b"BT",
+    b"ET",
+    b"T*",
+    b"Td",
+    b"TD",
+    b"Tj",
+    b"TJ",
+    b"Tm",
+    b"Tf",
+    b"TL",
+    b"Tc",
+    b"Tw",
+    b"Tz",
+    b"Tr",
+    b"Ts",
+    b"'",
+    b'"',
+    b"Do",
+    b"BI",
+    b"BDC",
+    b"BMC",
+    b"EMC",
+    b"q",
+    b"Q",
+    b"cm",
+    b"g",
+    b"rg",
+    b"k",
+    b"G",
+    b"RG",
+    b"K",
+    b"CS",
+    b"cs",
+    b"SC",
+    b"SCN",
+    b"sc",
+    b"scn",
+    b"sh",
+    b"i",
+    b"ri",
+    b"MP",
+    b"DP",
+    b"BX",
+    b"EX",
+    b"true",
+    b"false",
+    b"null",
+    b"R",
+)
+
+STREAM_DECODE_KEYS = frozenset(
+    {
+        "F",
+        "Filter",
+        "DecodeParms",
+        "DP",
+        "FFilter",
+        "FDecodeParms",
+    }
+)
 
 
-def is_pdf_object(value: object) -> TypeGuard[PdfObject]:
-    return value is None or isinstance(
-        value,
-        (int, float, str, bytes, PdfName, PdfReference, PdfString, PdfStream, list, tuple, dict),
-    )
-
-
-class ObjectResolver:
+class ObjectResolver(ResolverValueMixin):
     __slots__ = (
         "data",
         "xref",
@@ -47,28 +103,26 @@ class ObjectResolver:
 
     def __init__(
         self,
-        data: bytes | memoryview | mmap.mmap,
+        data: bytes | bytearray | memoryview | mmap.mmap,
         xref: dict[int, PdfXRefEntry],
-        trailer: PdfDictLike,
-        decipher: DecipherFn | None = None,
+        trailer: PdfDict,
+        decipher: Decipher | None = None,
     ) -> None:
-        self.data = memoryview(data) if not isinstance(data, memoryview) else data
+        self.data = data if type(data) is memoryview else memoryview(data)
         self.xref = xref
         self.trailer = trailer
         self.decipher = decipher
-        self.objects: dict[int, PdfObject] = {}
+        self.objects: ObjectCache = {}
 
-        # Optimized O(1) array-based cache for generation 0 objects and xrefs
         max_obj = 0
         if self.xref:
-            # key is (obj_num << 16 | gen_num)
             for k in self.xref:
                 obj_num = k >> 16
                 if obj_num > max_obj:
                     max_obj = obj_num
 
         if max_obj < 1000000:
-            self.objects_gen0: list[PdfObject | object] | None = [MISSING] * (max_obj + 1)
+            self.objects_gen0: GenerationZeroObjectCache | None = [MISSING] * (max_obj + 1)
             self.xref_gen0: list[PdfXRefEntry | None] | None = [None] * (max_obj + 1)
             for k, entry in self.xref.items():
                 if (k & 0xFFFF) == 0:
@@ -79,13 +133,15 @@ class ObjectResolver:
 
         self.object_streams: dict[int, PdfObjectStream] = {}
         self.resolving: set[int] = set()
-        self.deep_cache: dict[int, PdfObject] = {}
-        self.kw_cache: dict[bytes, KeywordCacheValue] = {}
+        self.deep_cache: DeepObjectCache = {}
+        self.kw_cache: dict[bytes, object] = {key: key.decode("latin-1") for key in COMMON_KEYWORDS}
         self.lexer_stack: list[PdfLexer] = []
 
     def get_lexer(self) -> PdfLexer:
         if self.lexer_stack:
-            return self.lexer_stack.pop()
+            lexer = self.lexer_stack.pop()
+            lexer.decipher = self.decipher
+            return lexer
         return PdfLexer(
             self.data,
             reference_resolver=self.resolve,
@@ -96,37 +152,31 @@ class ObjectResolver:
     def release_lexer(self, lexer: PdfLexer) -> None:
         self.lexer_stack.append(lexer)
 
-    def resolve(self, ref: PdfReference | PdfObject) -> PdfObject:
+    def resolve(self, ref: object) -> object:
         if type(ref) is not PdfReference:
             return ref
 
-        # Use integer key to avoid tuple allocation
         obj_num = ref.object_number
         gen_num = ref.generation_number
         if obj_num < 0 or gen_num < 0:
             raise ValueError("invalid PDF reference")
 
-        # FAST PATH: O(1) Array Lookup for gen-0
         if gen_num == 0 and self.objects_gen0 is not None and obj_num < len(self.objects_gen0):
-            resolved = self.objects_gen0[obj_num]
-            if resolved is not MISSING:
-                if is_pdf_object(resolved):
-                    return resolved
-                raise ValueError("invalid cached PDF object")
+            cached_gen0 = self.objects_gen0[obj_num]
+            if cached_gen0 is not MISSING:
+                return cached_gen0
 
-        cache_key = (obj_num << 16) | gen_num
-        resolved = self.objects.get(cache_key, MISSING)
-        if resolved is not MISSING:
-            if is_pdf_object(resolved):
-                return resolved
-            raise ValueError("invalid cached PDF object")
+        cache_key = key_for(obj_num, gen_num)
+        cached = self.objects.get(cache_key, MISSING)
+        if cached is not MISSING:
+            return cached
 
         if cache_key in self.resolving:
-            return ref  # Break cycle
+            return ref
 
         self.resolving.add(cache_key)
         try:
-            # FAST PATH: O(1) XRef Lookup for gen-0
+            resolved: object
             if gen_num == 0 and self.xref_gen0 is not None:
                 if obj_num < len(self.xref_gen0):
                     entry = self.xref_gen0[obj_num]
@@ -134,12 +184,18 @@ class ObjectResolver:
                     entry = None
             else:
                 entry = self.xref.get(cache_key)
+                if (
+                    entry is None
+                    and gen_num != 0
+                    and self.xref_gen0 is not None
+                    and obj_num < len(self.xref_gen0)
+                ):
+                    entry = self.xref_gen0[obj_num]
 
             if entry is None or not entry.in_use:
                 resolved = None
             else:
                 if entry.object_stream is not None:
-                    # Compressed object (Type 2)
                     stream_num = entry.object_stream
                     container = self.object_streams.get(stream_num)
                     if container is None:
@@ -148,165 +204,50 @@ class ObjectResolver:
                             container = PdfObjectStream(stream_obj, kw_cache=self.kw_cache)
                             self.object_streams[stream_num] = container
                     resolved = (
-                        container.get(obj_num)
-                        if container is not None and obj_num in container.index
-                        else None
+                        container.get(obj_num, self.resolve) if container is not None else None
                     )
                 else:
-                    # Normal object (Type 1)
                     lexer = self.get_lexer()
                     lexer.rewind(entry.offset)
                     try:
                         resolved = lexer.parse_indirect_object()
+                    except Exception:
+                        resolved = self.recover_indirect_object(lexer, entry.offset)
                     finally:
                         self.release_lexer(lexer)
 
+            if type(resolved) is PdfStream:
+                resolved = self.resolve_stream(resolved)
+
             if gen_num == 0 and self.objects_gen0 is not None:
                 if obj_num < len(self.objects_gen0):
-                    self.objects_gen0[obj_num] = resolved
+                    self.objects_gen0[obj_num] = cast(CachedPdfObject, resolved)
             else:
-                self.objects[cache_key] = resolved
+                self.objects[cache_key] = cast(CachedPdfObject, resolved)
             return resolved
         finally:
             self.resolving.remove(cache_key)
 
-    def deep_resolve(self, value: PdfObject, seen: set[int] | None = None) -> PdfObject:
-        """
-        Recursively resolves all references within an object.
-        """
-        # FAST PATH: primitives (most common case in traversal)
-        t = type(value)
-        if t is int or t is float or t is str or t is bool or value is None:
-            return value
+    def resolve_stream(self, stream: PdfStream) -> PdfStream:
+        resolved_dict: dict[object, object] | None = None
+        for key, value in stream.dictionary.items():
+            if normalize_pdf_name(key) not in STREAM_DECODE_KEYS:
+                continue
+            resolved_value = self.deep_resolve(value, set())
+            if resolved_value is not value:
+                if resolved_dict is None:
+                    resolved_dict = dict(stream.dictionary)
+                resolved_dict[key] = resolved_value
+        if resolved_dict is None:
+            return stream
+        return stream.replace(dictionary=resolved_dict)
 
-        if t is PdfReference:
-            # Special handling for reference to avoid recursion overhead
-            res = self.resolve(value)
-            if type(res) in (dict, list, PdfStream, tuple, PdfReference):
-                return self.deep_resolve(res, seen)
-            return res
-
-        if t not in (dict, list, tuple, PdfStream):
-            # Probably PdfName or other primitive wrapper
-            if t is PdfName:
-                return value
-            return value
-
-        val_id = id(value)
-        cached = self.deep_cache.get(val_id, MISSING)
-        if cached is not MISSING:
-            if is_pdf_object(cached):
-                return cached
-            raise ValueError("invalid cached deep-resolved PDF object")
-
-        if seen is None:
-            seen = set()
-
-        if isinstance(value, PdfStream):
-            resolved_dictionary = self.deep_resolve(value.dictionary, seen)
-            if not isinstance(resolved_dictionary, dict):
-                raise ValueError("invalid deep-resolved stream dictionary")
-            res = value.replace(dictionary=resolved_dictionary)
-            self.deep_cache[val_id] = res
-            return res
-
-        marker = id(value)
-        if marker in seen:
-            return value
-        seen.add(marker)
-
-        if isinstance(value, list):
-            res = [self.deep_resolve(item, seen) for item in value]
-            self.deep_cache[val_id] = res
-            return res
-
-        if isinstance(value, tuple):
-            res = tuple(self.deep_resolve(item, seen) for item in value)
-            self.deep_cache[val_id] = res
-            return res
-
-        if isinstance(value, dict):
-            res = {key: self.deep_resolve(item, seen) for key, item in value.items()}
-            self.deep_cache[val_id] = res
-            return res
-
-        return value
-
-    def resolve_dict(self, value: PdfObject) -> PdfDictLike | None:
-        resolved = self.deep_resolve(value)
-        return resolved if isinstance(resolved, dict) else None
-
-    def resolve_box(self, value: PdfObject) -> tuple[float, float, float, float] | None:
-        """Helper to resolve a box reference."""
-        resolved = self.deep_resolve(value)
-        if resolved is None:
-            return None
-        if isinstance(resolved, (list, tuple)) and len(resolved) == 4:
-            try:
-                coords: list[float] = []
-                for item in resolved:
-                    if not isinstance(item, (int, float, str, bytes)):
-                        raise ValueError("invalid box value")
-                    coords.append(float(item))
-                return (
-                    coords[0],
-                    coords[1],
-                    coords[2],
-                    coords[3],
-                )
-            except TypeError, ValueError:
-                raise ValueError("invalid box value")
-        raise ValueError("invalid box value")
-
-    def resolve_font_dict(self, font: PdfDictLike) -> PdfDictLike:
-        """Helper to resolve font dictionary references."""
-        resolved_font = self.deep_resolve(font)
-        if not isinstance(resolved_font, dict):
-            raise ValueError("invalid font dictionary")
-        return resolved_font
-
-    def resolve_list(self, value: PdfObject) -> list[PdfObject] | None:
-        resolved = self.deep_resolve(value)
-        return resolved if isinstance(resolved, list) else None
-
-    def resolve_float(self, value: PdfObject, default: float = 0.0) -> float:
-        """Helper to resolve a float reference."""
-        if isinstance(value, (int, float)):
-            return float(value)
-        return parse_float(self.resolve(value), default=default)
-
-    def resolve_name(self, value: PdfObject) -> str | None:
-        if type(value) is PdfName:
-            return value.value
-        if type(value) is str:
-            return value
-        return parse_name(self.resolve(value))
-
-    def resolve_name_like_value(self, resolved: PdfObject) -> str | None:
-        val = self.resolve(resolved)
-        name = parse_name(val)
-        if name is not None:
-            return name
-        if isinstance(val, PdfString):
-            return decode_pdf_text_string(val.data)
-        return None
-
-    def resolve_int(self, value: PdfObject, default: int | None = None) -> int | None:
-        if type(value) is int:
-            return value
-        return parse_int(self.resolve(value), default)
-
-    def resolve_str(self, value: PdfObject) -> str | None:
-        """Helper to resolve a string reference."""
-        # Fast path for string
-        if type(value) is str:
-            return value
-
-        resolved = self.deep_resolve(value)
-        if isinstance(resolved, PdfString):
-            return decode_pdf_text_string(resolved.data)
-        if isinstance(resolved, bytes):
-            return decode_pdf_text_string(resolved)
-        if type(resolved) is str:
-            return resolved
-        return None
+    def recover_indirect_object(self, lexer: PdfLexer, offset: int) -> object:
+        data = lexer.raw_data
+        search_start = max(0, offset - 128)
+        search_end = min(len(data), offset + 128)
+        marker = find_indirect_object_header(data, search_start, search_end)
+        if marker is None:
+            raise PdfParseError("expected indirect object header")
+        lexer.rewind(marker)
+        return lexer.parse_indirect_object()

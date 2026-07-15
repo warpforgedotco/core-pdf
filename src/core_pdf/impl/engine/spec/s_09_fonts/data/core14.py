@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
-FONT_DATA: dict[str, object] = {
+from typing import Any
+
+FONT_DATA: dict[str, Any] = {
     "GLYPH_MAP": {},
     "PDFDOC_ENCODING_OVERRIDES": {
         128: "•",
@@ -13202,58 +13204,11 @@ FONT_DATA: dict[str, object] = {
 }
 
 
-def _require_str_dict(name: str) -> dict[str, str]:
-    value = FONT_DATA[name]
-    if isinstance(value, dict) and all(
-        isinstance(key, str) and isinstance(item, str) for key, item in value.items()
-    ):
-        result: dict[str, str] = {}
-        for key, item in value.items():
-            if isinstance(key, str) and isinstance(item, str):
-                result[key] = item
-        return result
-    raise TypeError(f"invalid core14 string mapping for {name}")
-
-
-def _require_int_str_dict(name: str) -> dict[int, str]:
-    value = FONT_DATA[name]
-    if isinstance(value, dict) and all(
-        isinstance(key, int) and isinstance(item, str) for key, item in value.items()
-    ):
-        result: dict[int, str] = {}
-        for key, item in value.items():
-            if isinstance(key, int) and isinstance(item, str):
-                result[key] = item
-        return result
-    raise TypeError(f"invalid core14 encoding mapping for {name}")
-
-
-def glyph_entries() -> dict[str, str]:
-    return {name: value for name, value in FONT_DATA.items() if isinstance(value, str)}
-
-
-def get_font_metrics_props(name: str) -> dict[str, object] | None:
-    if name not in FONT_DATA:
-        return None
-    value = FONT_DATA[name]
-    if not isinstance(value, dict):
-        return None
-    props = value.get("props")
-    if isinstance(props, dict) and all(isinstance(key, str) for key in props):
-        result: dict[str, object] = {}
-        for key, item in props.items():
-            if isinstance(key, str):
-                result[key] = item
-        return result
-    return None
-
-
-PDFDOC_ENCODING_OVERRIDES = _require_int_str_dict("PDFDOC_ENCODING_OVERRIDES")
-INLINE_IMAGE_KEY_MAP = _require_str_dict("INLINE_IMAGE_KEY_MAP")
-GLYPH_NAME_ALIASES = _require_str_dict("GLYPH_NAME_ALIASES")
-SYMBOL_GLYPH_NAME_ALIASES = _require_str_dict("SYMBOL_GLYPH_NAME_ALIASES")
-MODIFIER_NAMES = _require_str_dict("MODIFIER_NAMES")
-COMMON_GLYPHS = _require_str_dict("COMMON_GLYPHS")
-STANDARD_ENCODING_OVERRIDES = _require_int_str_dict("STANDARD_ENCODING_OVERRIDES")
-GLYPH_MAP = _require_str_dict("GLYPH_MAP")
-GLYPH_FONT_DATA = glyph_entries()
+PDFDOC_ENCODING_OVERRIDES = FONT_DATA["PDFDOC_ENCODING_OVERRIDES"]
+INLINE_IMAGE_KEY_MAP = FONT_DATA["INLINE_IMAGE_KEY_MAP"]
+GLYPH_NAME_ALIASES = FONT_DATA["GLYPH_NAME_ALIASES"]
+SYMBOL_GLYPH_NAME_ALIASES = FONT_DATA["SYMBOL_GLYPH_NAME_ALIASES"]
+MODIFIER_NAMES = FONT_DATA["MODIFIER_NAMES"]
+COMMON_GLYPHS = FONT_DATA["COMMON_GLYPHS"]
+STANDARD_ENCODING_OVERRIDES = FONT_DATA["STANDARD_ENCODING_OVERRIDES"]
+GLYPH_MAP = FONT_DATA["GLYPH_MAP"]

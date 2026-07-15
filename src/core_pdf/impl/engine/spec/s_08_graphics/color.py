@@ -1,293 +1,49 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Stream color space conversion helpers."""
-
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
-from typing import TypeAlias, TypeGuard
+import typing
+from functools import lru_cache
+from typing import TypeAlias, cast
 
-from core_pdf.impl.engine.spec.s_07_syntax.primitives import (
-    PdfDictLike,
-    PdfObject,
-    PdfStream,
-    normalize_pdf_name,
+from core_pdf.impl.engine.spec.s_07_objects.coercion import (
+    parse_float,
     parse_int,
-    parse_name,
 )
+from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_08_graphics.color_math import (
+    adapt_d50_to_d65,
+    lab_to_xyz,
+    xyz_to_srgb,
+)
+from core_pdf.impl.engine.spec.s_08_graphics.color_spec import (
+    ImageColorSpec,
+    cs_name,
+    cs_param,
+    cs_param_floats,
+    normalize_image_color_spec,
+)
+from core_pdf.impl.engine.spec.s_08_graphics.icc_profiles import (
+    convert_icc_profile_samples,
+)
+from core_pdf.impl.objects import PdfStream
 
-ColorParams: TypeAlias = PdfDictLike
-ColorComponent: TypeAlias = float
-ColorComponents: TypeAlias = list[ColorComponent]
-TintFn: TypeAlias = Callable[..., ColorComponents]
-TintSequence: TypeAlias = list[PdfObject] | tuple[PdfObject, ...]
-TintValue: TypeAlias = TintSequence | None
-DeviceColorSpace: TypeAlias = "ImageColorSpec | list[PdfObject] | tuple[PdfObject, ...]"
+if typing.TYPE_CHECKING:
+    from collections.abc import Callable
 
-
-def linear_to_srgb(c: float) -> float:
-    if c <= 0.0031308:
-        return 12.92 * c
-    return 1.055 * pow(c, 1.0 / 2.4) - 0.055
-
-
-def xyz_to_srgb(x: float, y: float, z: float) -> tuple[float, float, float]:
-    rl = 3.2404542 * x - 1.5371385 * y - 0.4985314 * z
-    gl = -0.9692660 * x + 1.8760108 * y + 0.0415560 * z
-    bl = 0.0556434 * x - 0.2040259 * y + 1.0572252 * z
-    return linear_to_srgb(rl), linear_to_srgb(gl), linear_to_srgb(bl)
-
-
-def lab_to_xyz(
-    l_star: float, a: float, b: float, wp: list[float] | tuple[float, float, float]
-) -> tuple[float, float, float]:
-    fy = (l_star + 16.0) / 116.0
-    fx = a / 500.0 + fy
-    fz = fy - b / 200.0
-    eps = 216.0 / 24389.0
-    kappa = 24389.0 / 27.0
-    xr = fx**3 if fx**3 > eps else (116.0 * fx - 16.0) / kappa
-    yr = ((l_star + 16.0) / 116.0) ** 3 if l_star > kappa * eps else l_star / kappa
-    zr = fz**3 if fz**3 > eps else (116.0 * fz - 16.0) / kappa
-    return xr * wp[0], yr * wp[1], zr * wp[2]
-
-
-def cs_param(
-    params: ColorParams, key: str, default: PdfObject | list[float] = None
-) -> PdfObject | list[float]:
-    if isinstance(params, dict):
-        return params.get(key, default)
-    return default
-
-
-def cs_param_floats(params: ColorParams, key: str, count: int, default: list[float]) -> list[float]:
-    raw = cs_param(params, key, default)
-    if isinstance(raw, (list, tuple)) and len(raw) >= count:
-        values: list[float] = []
-        for value in raw[:count]:
-            if not isinstance(value, (int, float, str, bytes)):
-                return default
-            values.append(float(value))
-        return values
-    return default
-
-
-def cs_param_float(params: ColorParams, key: str, default: float) -> float:
-    raw = cs_param(params, key, default)
-    if isinstance(raw, (int, float, str, bytes)):
-        return float(raw)
-    return default
-
-
-def cs_name(value: PdfObject, default: str | None = None) -> str | None:
-    return parse_name(value, default)
-
-
-def icc_profile_alt_name(profile: bytes | None, channels: int) -> str | None:
-    if profile is None or len(profile) < 128:
-        return {1: "DeviceGray", 3: "DeviceRGB", 4: "DeviceCMYK"}.get(channels)
-    pcs = profile[20:24]
-    if pcs == b"XYZ ":
-        return {1: "DeviceGray", 3: "DeviceRGB", 4: "DeviceCMYK"}.get(channels)
-    color_space = profile[16:20]
-    if color_space == b"GRAY":
-        return "DeviceGray"
-    if color_space == b"RGB ":
-        return "DeviceRGB"
-    if color_space == b"CMYK":
-        return "DeviceCMYK"
-    return {1: "DeviceGray", 3: "DeviceRGB", 4: "DeviceCMYK"}.get(channels)
-
-
-def as_tint_value(value: PdfObject) -> TintValue:
-    if isinstance(value, (list, tuple)):
-        return value
-    return None
-
-
-def is_tint_fn(value: object) -> TypeGuard[TintFn]:
-    return callable(value)
-
-
-def tint_callable(value: TintValue) -> TintFn | None:
-    if (
-        isinstance(value, Sequence)
-        and not isinstance(value, (str, bytes, bytearray))
-        and len(value) >= 1
-        and is_tint_fn(value[0])
-    ):
-        callable_value = value[0]
-
-        def apply_tint(*components: float) -> ColorComponents:
-            result = callable_value(*components)
-            if not isinstance(result, list):
-                raise ValueError("invalid tint function result")
-            converted: ColorComponents = []
-            for item in result:
-                if not isinstance(item, (int, float)):
-                    raise ValueError("invalid tint function result")
-                converted.append(float(item))
-            return converted
-
-        return apply_tint
-    return None
-
-
-class ImageColorSpec:
-    __slots__ = (
-        "kind",
-        "params",
-        "bits_per_component",
-        "base",
-        "hival",
-        "lookup",
-        "alt",
-        "tint_fn",
-        "names",
-        "channels",
-    )
-
-    kind: str | None
-    params: ColorParams
-    bits_per_component: int
-    base: str | None
-    hival: int
-    lookup: bytes | None
-    alt: str | None
-    tint_fn: TintValue
-    names: list[PdfObject] | tuple[PdfObject, ...] | None
-    channels: int
-
-    def __init__(
-        self,
-        kind: str | None,
-        params: ColorParams,
-        bits_per_component: int = 8,
-        base: str | None = None,
-        hival: int = 0,
-        lookup: bytes | None = None,
-        alt: str | None = None,
-        tint_fn: TintValue = None,
-        names: list[PdfObject] | tuple[PdfObject, ...] | None = None,
-        channels: int = 1,
-    ) -> None:
-        self.kind = kind
-        self.params = params
-        self.bits_per_component = bits_per_component
-        self.base = base
-        self.hival = hival
-        self.lookup = lookup
-        self.alt = alt
-        self.tint_fn = tint_fn
-        self.names = names
-        self.channels = channels
-
-
-def normalize_color_space_name(value: PdfObject) -> str | None:
-    result = normalize_pdf_name(value)
-    if result is not None:
-        return result
-    if value is None:
-        return None
-    text = str(value)
-    return text[1:] if text.startswith("/") else text
-
-
-def normalize_image_color_spec(image_dict: ColorParams) -> ImageColorSpec:
-    bits_per_component = parse_int(image_dict.get("BitsPerComponent", 8), 8) or 8
-    color_space = image_dict.get("ColorSpace")
-    if isinstance(color_space, (list, tuple)) and color_space:
-        kind = normalize_color_space_name(color_space[0])
-        if kind == "Indexed" and len(color_space) >= 4:
-            lookup = color_space[3]
-            lookup_bytes = (
-                lookup.data
-                if isinstance(lookup, PdfStream)
-                else (lookup if isinstance(lookup, bytes) else None)
-            )
-            return ImageColorSpec(
-                kind="Indexed",
-                params={},
-                bits_per_component=bits_per_component,
-                base=normalize_color_space_name(color_space[1]),
-                hival=parse_int(color_space[2], 0) or 0,
-                lookup=lookup_bytes,
-            )
-        if kind == "Indexed":
-            raise ValueError("invalid Indexed color space")
-        if (
-            kind == "ICCBased"
-            and len(color_space) >= 2
-            and isinstance(color_space[1], (dict, PdfStream))
-        ):
-            icc_stream = color_space[1]
-            icc_dict = icc_stream.dictionary if isinstance(icc_stream, PdfStream) else icc_stream
-            alt = normalize_color_space_name(icc_dict.get("Alternate"))
-            n = icc_dict.get("N", 3)
-            channels = parse_int(n, 3) or 3
-            if alt is None and isinstance(icc_stream, PdfStream):
-                alt = icc_profile_alt_name(icc_stream.data, channels)
-            return ImageColorSpec(
-                kind="ICCBased",
-                params=icc_dict,
-                bits_per_component=bits_per_component,
-                alt=alt,
-                channels=channels,
-            )
-        if kind == "ICCBased":
-            raise ValueError("invalid ICCBased color space")
-        if (
-            kind in {"Lab", "CalGray", "CalRGB"}
-            and len(color_space) >= 2
-            and isinstance(color_space[1], dict)
-        ):
-            return ImageColorSpec(
-                kind=kind,
-                params=color_space[1],
-                bits_per_component=bits_per_component,
-            )
-        if kind in {"Lab", "CalGray", "CalRGB"}:
-            raise ValueError(f"invalid {kind} color space")
-        if kind in {"Separation", "DeviceN"}:
-            if len(color_space) < 4:
-                raise ValueError(f"invalid {kind} color space")
-            names = color_space[1] if isinstance(color_space[1], (list, tuple)) else None
-            if kind == "DeviceN" and names is None:
-                raise ValueError("invalid DeviceN color space")
-            alt = normalize_color_space_name(color_space[2])
-            return ImageColorSpec(
-                kind=kind,
-                params={},
-                bits_per_component=bits_per_component,
-                alt=alt,
-                tint_fn=as_tint_value(color_space[3]) if len(color_space) >= 4 else None,
-                names=list(names)
-                if kind == "DeviceN" and isinstance(names, (list, tuple))
-                else None,
-                channels=len(names)
-                if kind == "DeviceN" and isinstance(names, (list, tuple))
-                else 1,
-            )
-        if kind in {"Separation", "DeviceN"}:
-            raise ValueError(f"invalid {kind} color space")
-        return ImageColorSpec(kind=kind, params={}, bits_per_component=bits_per_component)
-    return ImageColorSpec(
-        kind=normalize_color_space_name(color_space),
-        params={},
-        bits_per_component=bits_per_component,
-    )
-
-
-def adapt_d50_to_d65(x: float, y: float, z: float) -> tuple[float, float, float]:
-    ax = 0.955473 * x - 0.023098 * y + 0.063259 * z
-    ay = -0.028369 * x + 1.009995 * y + 0.021300 * z
-    az = 0.012314 * x - 0.020507 * y + 1.330365 * z
-    return ax, ay, az
+ImageDict: TypeAlias = dict[str, object]
+ColorSpaceSequence: TypeAlias = list[object] | tuple[object, ...]
+ColorComponents: TypeAlias = list[float]
 
 
 class ImageColorManager:
     @staticmethod
-    def convert_image_data(raw: bytes, image_dict: ColorParams | ImageColorSpec) -> bytes | None:
-        current: ColorParams | ImageColorSpec = image_dict
+    def convert_image_data(
+        raw: bytes,
+        image_dict: ImageDict | ImageColorSpec,
+        *,
+        prefer_embedded_icc: bool = False,
+    ) -> bytes | None:
+        current: ImageDict | ImageColorSpec = image_dict
         depth = 0
 
         while depth <= 3:
@@ -296,51 +52,149 @@ class ImageColorManager:
                 if isinstance(current, ImageColorSpec)
                 else normalize_image_color_spec(current)
             )
-            if spec.bits_per_component != 8:
+            if spec.bits_per_component not in {1, 2, 4, 8}:
                 return None
             cs_kind = spec.kind
             if cs_kind is None:
                 return None
+            if isinstance(current, dict):
+                fast = ImageColorManager.simple_device_color_fast_path(
+                    raw,
+                    spec,
+                    current,
+                )
+                if fast is not None:
+                    return fast
+            samples = ImageColorManager.normalize_image_samples(raw, spec, current)
+            if samples is None:
+                return None
 
             if cs_kind == "DeviceRGB":
-                return raw
+                return samples
             if cs_kind == "DeviceGray":
-                return ImageColorManager.convert_gray(raw)
+                return ImageColorManager.convert_gray(samples)
             if cs_kind == "DeviceCMYK":
-                return ImageColorManager.convert_cmyk(raw)
+                return ImageColorManager.convert_cmyk(samples)
             if cs_kind == "Lab":
-                return ImageColorManager.convert_lab_raw(raw, spec.params)
+                return ImageColorManager.convert_lab_raw(samples, spec.params)
             if cs_kind == "CalGray":
-                return ImageColorManager.convert_calgray(raw, spec.params)
+                return ImageColorManager.convert_calgray(samples, spec.params)
             if cs_kind == "CalRGB":
-                return ImageColorManager.convert_calrgb(raw, spec.params)
+                return ImageColorManager.convert_calrgb(samples, spec.params)
             if cs_kind == "Indexed":
-                return ImageColorManager.convert_indexed(raw, spec)
+                return ImageColorManager.convert_indexed(samples, spec)
             if cs_kind == "ICCBased":
+                if prefer_embedded_icc and spec.icc_profile is not None:
+                    converted = convert_icc_profile_samples(samples, spec.icc_profile)
+                    if converted is not None:
+                        if spec.channels == 1 and len(converted) == len(samples):
+                            return ImageColorManager.convert_gray(converted)
+                        return converted
                 if spec.alt is not None:
                     current = ImageColorSpec(kind=spec.alt, params={})
+                    raw = samples
                     depth += 1
                     continue
                 if spec.channels == 1:
-                    return ImageColorManager.convert_gray(raw)
+                    return ImageColorManager.convert_gray(samples)
                 if spec.channels == 3:
                     current = ImageColorSpec(kind="DeviceRGB", params={})
+                    raw = samples
                     depth += 1
                     continue
                 if spec.channels == 4:
                     current = ImageColorSpec(kind="DeviceCMYK", params={})
+                    raw = samples
                     depth += 1
                     continue
                 raise ValueError("invalid ICCBased color space")
             if cs_kind == "Separation":
-                return ImageColorManager.convert_separation(raw, spec)
+                return ImageColorManager.convert_separation(samples, spec)
             if cs_kind == "DeviceN":
-                return ImageColorManager.convert_devicen(raw, spec)
+                return ImageColorManager.convert_devicen(samples, spec)
             return None
         return None
 
     @staticmethod
-    def convert_separation(raw: bytes, color_space: DeviceColorSpace) -> bytes | None:
+    def normalize_image_samples(
+        raw: bytes,
+        spec: ImageColorSpec,
+        image_dict: ImageDict | ImageColorSpec,
+    ) -> bytes | None:
+        bpc = spec.bits_per_component
+        if bpc == 8:
+            return ImageColorManager.apply_decode_array(raw, spec, image_dict)
+        width = image_dimension(image_dict, "Width")
+        height = image_dimension(image_dict, "Height")
+        if width <= 0 or height <= 0:
+            return None
+        components = image_component_count(spec)
+        unpacked = unpack_subbyte_image_samples(raw, bpc, width, height, components)
+        if spec.kind == "Indexed":
+            return unpacked
+        return ImageColorManager.apply_decode_array(unpacked, spec, image_dict)
+
+    @staticmethod
+    def simple_device_color_fast_path(
+        raw: bytes,
+        spec: ImageColorSpec,
+        image_dict: ImageDict,
+    ) -> bytes | None:
+        if spec.bits_per_component != 8:
+            return None
+        if spec.kind not in {"DeviceRGB", "DeviceGray"}:
+            return None
+        if lookup_dict_key(image_dict, "Decode") is not None:
+            return None
+        width = image_dimension(image_dict, "Width")
+        height = image_dimension(image_dict, "Height")
+        if width <= 0 or height <= 0:
+            return None
+        expected = width * height * (3 if spec.kind == "DeviceRGB" else 1)
+        if len(raw) != expected:
+            return None
+        if spec.kind == "DeviceRGB":
+            return raw
+        return ImageColorManager.convert_gray(raw)
+
+    @staticmethod
+    def apply_decode_array(
+        samples: bytes,
+        spec: ImageColorSpec,
+        image_dict: ImageDict | ImageColorSpec,
+    ) -> bytes:
+        if spec.kind == "Indexed":
+            return samples
+        components = image_component_count(spec)
+        if components <= 0:
+            return samples
+        bpc = spec.bits_per_component
+        max_sample = (1 << bpc) - 1
+        if max_sample <= 0:
+            return samples
+        decode = lookup_dict_key(image_dict, "Decode") if isinstance(image_dict, dict) else None
+        pairs: list[tuple[float, float]] = []
+        if isinstance(decode, (list, tuple)) and len(decode) >= components * 2:
+            for i in range(components):
+                try:
+                    dmin = float(typing.cast(typing.Any, decode[i * 2]))
+                    dmax = float(typing.cast(typing.Any, decode[i * 2 + 1]))
+                except (TypeError, ValueError):
+                    pairs = []
+                    break
+                pairs.append((dmin, dmax))
+        if not pairs:
+            pairs = [(0.0, 1.0)] * components
+        if bpc == 8 and all(pair == (0.0, 1.0) for pair in pairs):
+            return samples
+        if bpc == 8:
+            return apply_decode_array_8bit(samples, tuple(pairs))
+        return apply_decode_array_subbyte(samples, tuple(pairs), max_sample)
+
+    @staticmethod
+    def convert_separation(
+        raw: bytes, color_space: ImageColorSpec | ColorSpaceSequence
+    ) -> bytes | None:
         if isinstance(color_space, ImageColorSpec):
             alt_name = color_space.alt or "DeviceGray"
             tint_fn = color_space.tint_fn
@@ -350,27 +204,25 @@ class ImageColorManager:
             alt_cs = color_space[2]
             if not isinstance(alt_cs, dict):
                 raise ValueError("invalid Separation color space")
-            alt_name = cs_name(alt_cs.get("ColorSpace"), "DeviceGray") or "DeviceGray"
-            tint_fn = as_tint_value(color_space[3]) if len(color_space) > 3 else None
+            alt_name = cs_name(lookup_dict_key(alt_cs, "ColorSpace"), "DeviceGray") or "DeviceGray"
+            tint_fn = color_space[3] if len(color_space) > 3 else None
 
         result = bytearray()
         for byte in raw:
             v = byte / 255.0
             if tint_fn is None:
                 components: ColorComponents = [v]
-            elif isinstance(tint_fn, Sequence) and not isinstance(tint_fn, (str, bytes, bytearray)):
-                tint_operator = tint_callable(tint_fn)
-                if tint_operator is not None:
+            elif isinstance(tint_fn, PdfStream):
+                components = evaluate_sampled_tint_function(tint_fn, v)
+            elif isinstance(tint_fn, (list, tuple)):
+                if len(tint_fn) >= 1 and callable(tint_fn[0]):
+                    tint_callable = typing.cast(typing.Callable[..., object], tint_fn[0])
                     try:
-                        components = tint_operator(v)
+                        components = cast(ColorComponents, tint_callable(v))
                     except Exception as exc:
                         raise ValueError("invalid separation tint function") from exc
                 else:
-                    components = []
-                    for component in tint_fn:
-                        if not isinstance(component, (int, float, str, bytes)):
-                            raise ValueError("invalid separation tint function")
-                        components.append(float(component))
+                    components = cast(ColorComponents, list(tint_fn))
             else:
                 components = [v]
             expected = (
@@ -392,7 +244,9 @@ class ImageColorManager:
         return bytes(result)
 
     @staticmethod
-    def convert_devicen(raw: bytes, color_space: DeviceColorSpace) -> bytes | None:
+    def convert_devicen(
+        raw: bytes, color_space: ImageColorSpec | ColorSpaceSequence
+    ) -> bytes | None:
         if isinstance(color_space, ImageColorSpec):
             alt_name = color_space.alt or ""
             n = color_space.channels
@@ -404,7 +258,7 @@ class ImageColorManager:
             alt_cs_name = color_space[2]
             alt_name = cs_name(alt_cs_name, "") or ""
             n = len(names) if isinstance(names, (list, tuple)) else 1
-            tint_fn = as_tint_value(color_space[3]) if len(color_space) > 3 else None
+            tint_fn = color_space[3] if len(color_space) > 3 else None
         if n <= 0:
             raise ValueError("invalid DeviceN color space")
         if len(raw) % n != 0:
@@ -414,12 +268,14 @@ class ImageColorManager:
         step = n
         for i in range(0, len(raw), step):
             components: ColorComponents = [raw[i + j] / 255.0 for j in range(step)]
-            tint_operator = tint_callable(tint_fn)
-            if tint_operator is not None:
+            if isinstance(tint_fn, (list, tuple)) and len(tint_fn) >= 1 and callable(tint_fn[0]):
+                tint_callable = typing.cast(typing.Callable[..., object], tint_fn[0])
                 try:
-                    components = tint_operator(*components)
+                    components = cast(ColorComponents, tint_callable(*components))
                 except Exception as exc:
                     raise ValueError("invalid DeviceN tint function") from exc
+            elif isinstance(tint_fn, PdfStream):
+                components = evaluate_sampled_tint_function(tint_fn, *components)
             expected = (
                 1
                 if alt_name == "DeviceGray"
@@ -441,9 +297,9 @@ class ImageColorManager:
     @staticmethod
     def convert_gray(raw: bytes) -> bytes:
         result = bytearray(len(raw) * 3)
-        for i, byte in enumerate(raw):
-            idx = i * 3
-            result[idx] = result[idx + 1] = result[idx + 2] = byte
+        result[0::3] = raw
+        result[1::3] = raw
+        result[2::3] = raw
         return bytes(result)
 
     @staticmethod
@@ -499,51 +355,29 @@ class ImageColorManager:
         result = bytearray(len(raw) * 3)
         inv255 = 1.0 / 255.0
         for i in range(0, len(raw), channels):
+            out = (i // channels) * 3
             if channels == 1:
                 r, g, b = fn(raw[i] * inv255)
             elif i + channels - 1 < len(raw):
                 r, g, b = fn(*(raw[i + j] * inv255 for j in range(channels)))
             else:
                 raise ValueError("invalid color sample data")
-            result[i * 3] = max(0, min(255, int(r * 255.0)))
-            result[i * 3 + 1] = max(0, min(255, int(g * 255.0)))
-            result[i * 3 + 2] = max(0, min(255, int(b * 255.0)))
+            result[out] = max(0, min(255, int(r * 255.0)))
+            result[out + 1] = max(0, min(255, int(g * 255.0)))
+            result[out + 2] = max(0, min(255, int(b * 255.0)))
         return bytes(result)
 
     @staticmethod
-    def convert_calgray(raw: bytes, params: ColorParams) -> bytes:
-        params = params if isinstance(params, dict) else {}
-        wp = cs_param_floats(params, "WhitePoint", 3, [0.9505, 1.0, 1.089])
-        bp = cs_param_floats(params, "BlackPoint", 3, [0.0, 0.0, 0.0])
-        gamma = cs_param_float(params, "Gamma", 1.0)
+    def convert_calgray(raw: bytes, params: object) -> bytes:
+        gamma_raw = cs_param(params, "Gamma", 1.0)
+        gamma = parse_float(gamma_raw, None)
+        if gamma is None:
+            raise ValueError("invalid color space parameters")
 
-        lut = bytearray(768)
-        inv255 = 1.0 / 255.0
-
-        for i in range(256):
-            v = i * inv255
-            vg = pow(v, gamma) if gamma != 1.0 else v
-            x = bp[0] + vg * (wp[0] - bp[0])
-            y = bp[1] + vg * (wp[1] - bp[1])
-            z = bp[2] + vg * (wp[2] - bp[2])
-            ax, ay, az = adapt_d50_to_d65(x, y, z)
-            r, g, b = xyz_to_srgb(ax, ay, az)
-            lut[i * 3] = max(0, min(255, int(r * 255.0)))
-            lut[i * 3 + 1] = max(0, min(255, int(g * 255.0)))
-            lut[i * 3 + 2] = max(0, min(255, int(b * 255.0)))
-
-        result = bytearray(len(raw) * 3)
-        data_getitem = raw.__getitem__
-        result_setitem = result.__setitem__
-        for idx in range(len(raw)):
-            off = data_getitem(idx) * 3
-            result_setitem(idx * 3, lut[off])
-            result_setitem(idx * 3 + 1, lut[off + 1])
-            result_setitem(idx * 3 + 2, lut[off + 2])
-        return bytes(result)
+        return ImageColorManager.convert_gray(raw)
 
     @staticmethod
-    def convert_calrgb(raw: bytes, params: ColorParams) -> bytes:
+    def convert_calrgb(raw: bytes, params: object) -> bytes:
         bp = cs_param_floats(params, "BlackPoint", 3, [0.0, 0.0, 0.0])
         gamma = cs_param_floats(params, "Gamma", 3, [1.0, 1.0, 1.0])
         matrix = cs_param_floats(params, "Matrix", 9, [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0])
@@ -561,7 +395,7 @@ class ImageColorManager:
         return ImageColorManager.convert_to_rgb(raw, fn, channels=3)
 
     @staticmethod
-    def convert_lab_raw(raw: bytes, params: ColorParams) -> bytes:
+    def convert_lab_raw(raw: bytes, params: object) -> bytes:
         wp = cs_param_floats(params, "WhitePoint", 3, [0.9505, 1.0, 1.089])
         range_a = cs_param_floats(params, "Range", 2, [-100.0, 100.0])
 
@@ -602,3 +436,188 @@ class ImageColorManager:
             b_ = int(255 * (1 - y) * (1 - k))
             return bytes([max(0, min(255, r)), max(0, min(255, g_)), max(0, min(255, b_))])
         return None
+
+
+@lru_cache(maxsize=1024)
+def decode_translation_tables_8bit(
+    pairs: tuple[tuple[float, float], ...],
+) -> tuple[bytes, ...]:
+    tables: list[bytes] = []
+    for dmin, dmax in pairs:
+        table = bytearray(256)
+        span = dmax - dmin
+        for value in range(256):
+            decoded = dmin + (value / 255.0) * span
+            table[value] = max(0, min(255, int(round(decoded * 255.0))))
+        tables.append(bytes(table))
+    return tuple(tables)
+
+
+def apply_decode_array_8bit(
+    samples: bytes,
+    pairs: tuple[tuple[float, float], ...],
+) -> bytes:
+    tables = decode_translation_tables_8bit(pairs)
+    if len(tables) == 1:
+        return samples.translate(tables[0])
+    components = len(tables)
+    result = bytearray(len(samples))
+    for index, table in enumerate(tables):
+        result[index::components] = samples[index::components].translate(table)
+    return bytes(result)
+
+
+@lru_cache(maxsize=1024)
+def decode_translation_tables_subbyte(
+    max_sample: int,
+    pairs: tuple[tuple[float, float], ...],
+) -> tuple[bytes, ...]:
+    tables: list[bytes] = []
+    for dmin, dmax in pairs:
+        table = bytearray(256)
+        span = dmax - dmin
+        for value in range(256):
+            normalized = value / max_sample if max_sample > 0 else 0.0
+            decoded = dmin + normalized * span
+            table[value] = max(0, min(255, int(round(decoded * 255.0))))
+        tables.append(bytes(table))
+    return tuple(tables)
+
+
+def apply_decode_array_subbyte(
+    samples: bytes,
+    pairs: tuple[tuple[float, float], ...],
+    max_sample: int,
+) -> bytes:
+    tables = decode_translation_tables_subbyte(max_sample, pairs)
+    if len(tables) == 1:
+        return samples.translate(tables[0])
+    components = len(tables)
+    result = bytearray(len(samples))
+    for index, table in enumerate(tables):
+        result[index::components] = samples[index::components].translate(table)
+    return bytes(result)
+
+
+def image_dimension(image_dict: ImageDict | ImageColorSpec, key: str) -> int:
+    if not isinstance(image_dict, dict):
+        return 0
+    value = lookup_dict_key(image_dict, key)
+    if type(value) is bool:
+        return 0
+    return parse_int(value, 0) or 0
+
+
+def image_component_count(spec: ImageColorSpec) -> int:
+    if spec.kind in {"DeviceGray", "CalGray", "Indexed", "Separation"}:
+        return 1
+    if spec.kind in {"DeviceRGB", "Lab", "CalRGB"}:
+        return 3
+    if spec.kind == "DeviceCMYK":
+        return 4
+    if spec.kind in {"ICCBased", "DeviceN"}:
+        return max(1, spec.channels)
+    return 1
+
+
+def evaluate_sampled_tint_function(function: PdfStream, *inputs: float) -> list[float]:
+    dictionary = function.dictionary
+    if parse_int(lookup_dict_key(dictionary, "FunctionType"), -1) != 0:
+        raise ValueError("invalid sampled function")
+    if parse_int(lookup_dict_key(dictionary, "BitsPerSample"), 0) != 8:
+        raise ValueError("unsupported sampled function bit depth")
+
+    size_obj = lookup_dict_key(dictionary, "Size")
+    domain_obj = lookup_dict_key(dictionary, "Domain")
+    range_obj = lookup_dict_key(dictionary, "Range")
+    if not isinstance(size_obj, (list, tuple)):
+        raise ValueError("invalid sampled function size")
+    if not isinstance(domain_obj, (list, tuple)):
+        raise ValueError("invalid sampled function domain")
+    if not isinstance(range_obj, (list, tuple)) or len(range_obj) < 2:
+        raise ValueError("invalid sampled function range")
+
+    input_count = len(size_obj)
+    if input_count != len(inputs):
+        raise ValueError("invalid sampled function input count")
+    if len(domain_obj) < input_count * 2:
+        raise ValueError("invalid sampled function domain")
+    output_count = len(range_obj) // 2
+
+    sizes = [parse_int(value, 0) or 0 for value in size_obj]
+    if any(size <= 0 for size in sizes):
+        raise ValueError("invalid sampled function size")
+    sample_count = 1
+    for size in sizes:
+        sample_count *= size
+    samples = function.data
+    if len(samples) < sample_count * output_count:
+        raise ValueError("invalid sampled function data")
+
+    encode_obj = lookup_dict_key(dictionary, "Encode")
+    encoded_positions: list[int] = []
+    for input_index, raw_input in enumerate(inputs):
+        domain_min = parse_float(domain_obj[input_index * 2], None)
+        domain_max = parse_float(domain_obj[input_index * 2 + 1], None)
+        if domain_min is None or domain_max is None or domain_max == domain_min:
+            raise ValueError("invalid sampled function domain")
+        clipped = max(domain_min, min(domain_max, raw_input))
+        normalized = (clipped - domain_min) / (domain_max - domain_min)
+        encode_min = 0.0
+        encode_max = float(sizes[input_index] - 1)
+        if isinstance(encode_obj, (list, tuple)) and len(encode_obj) >= input_count * 2:
+            parsed_min = parse_float(encode_obj[input_index * 2], None)
+            parsed_max = parse_float(encode_obj[input_index * 2 + 1], None)
+            if parsed_min is not None and parsed_max is not None:
+                encode_min = parsed_min
+                encode_max = parsed_max
+        encoded = encode_min + normalized * (encode_max - encode_min)
+        encoded_positions.append(max(0, min(sizes[input_index] - 1, int(round(encoded)))))
+
+    sample_index = 0
+    stride = 1
+    for input_index, position in enumerate(encoded_positions):
+        if input_index > 0:
+            stride *= sizes[input_index - 1]
+        sample_index += position * stride
+
+    result: list[float] = []
+    base = sample_index * output_count
+    for output_index in range(output_count):
+        range_min = parse_float(range_obj[output_index * 2], None)
+        range_max = parse_float(range_obj[output_index * 2 + 1], None)
+        if range_min is None or range_max is None:
+            raise ValueError("invalid sampled function range")
+        decoded = range_min + (samples[base + output_index] / 255.0) * (range_max - range_min)
+        result.append(max(range_min, min(range_max, decoded)))
+    return result
+
+
+def unpack_subbyte_image_samples(
+    data: bytes,
+    bits_per_component: int,
+    width: int,
+    height: int,
+    components: int,
+) -> bytes:
+    if bits_per_component not in {1, 2, 4}:
+        return data
+    if width <= 0 or height <= 0 or components <= 0:
+        raise ValueError("invalid image dimensions")
+    samples_per_row = width * components
+    row_bytes = (samples_per_row * bits_per_component + 7) // 8
+    if len(data) < row_bytes * height:
+        raise ValueError("invalid image sample data")
+    mask = (1 << bits_per_component) - 1
+    output = bytearray(width * height * components)
+    out = 0
+    for row in range(height):
+        row_start = row * row_bytes
+        bit_offset = 0
+        for ignored in range(samples_per_row):
+            source = data[row_start + (bit_offset // 8)]
+            shift = 8 - bits_per_component - (bit_offset % 8)
+            output[out] = (source >> shift) & mask
+            out += 1
+            bit_offset += bits_per_component
+    return bytes(output)

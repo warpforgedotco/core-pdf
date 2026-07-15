@@ -1,0 +1,49 @@
+DIAGNOSTIC TOOLS AND SOFTWARE 120.
+DTC displayed Error Name
+03-7FA81.03 Clutch/Gearbox/MCR valve Fault: Signal voltage above threshold
+03-7FA81.05 Clutch/Gearbox/MCR valve Fault: Open load
+03-7FB00.11 Calibration Error Warning
+03-7FB01.11 Calibration Error
+03-7FC15.02 TSC1 CAN Message Fault: initialization
+03-7FC15.31 TSC1 CAN Message Fault: invalid signal received
+03-7FC20.11 EEC1 CAN Message Fault: generic error
+03-7FC20.09 EEC1 CAN Message Fault: time out
+03-7FC20.02 EEC1 CAN Message Fault: counter error
+03-7FC21.11 ET1 CAN Message Fault: generic error
+03-7FC21.09 ET1 CAN Message Fault: time out
+03-7FC21.02 ET1 CAN Message Fault: counter error
+03-7FC22.11 HMI1 CAN Message Fault: generic error
+03-7FC22.09 HMI1 CAN Message Fault: time out
+03-7FC22.02 HMI1 CAN Message Fault: counter error
+03-7FC23.11 HMI2 CAN Message Fault: generic error
+03-7FC23.09 HMI2 CAN Message Fault: time out
+03-7FC23.02 HMI2 CAN Message Fault: counter error
+03-7FC24.11 HMI4 CAN Message Fault: generic error
+03-7FC24.09 HMI4 CAN Message Fault: time out
+03-7FC24.02 HMI4 CAN Message Fault: counter error
+03-7FC25.11 HMI5 CAN Message Fault: generic error
+03-7FC25.09 HMI5 CAN Message Fault: time out
+03-7FC25.02 HMI5 CAN Message Fault: counter error
+03-7FC26.11 Mac Ifc1 CAN Message Fault: generic error
+03-7FC26.09 Mac Ifc1 CAN Message Fault: time out
+03-7FC26.02 Mac Ifc1 CAN Message Fault: counter error
+03-7FC27.11 Mac Ifc2 CAN Message Fault: generic error
+03-7FC27.09 Mac Ifc2 CAN Message Fault: time out
+03-7FC27.02 Mac Ifc2 CAN Message Fault: counter error
+120.4.4 ENGINE ECU ERROR CODES
+Table 92. ENGINE ECU CODES
+DTC J1939 Error Name
+displayed SPN FMI
+00-
+07F8A0.2 522400 2 Crankshaft signal error
+00-
+07F8A0.5 522400 5 No signal from crankshaft
+00-
+07F8A1.2 522401 2 Crankshaft signal error
+00-
+07F8A1.5 522401 5 No signal from crankshaft
+00-
+07FBF1.5 523249 5 Crankshaft/camshaft speed sensor non-input (simultaneous)
+00-5B.3 91 3 Accelerator sensor 1 error (voltage high)
+00-5B.4 91 4 Accelerator sensor 1 error (voltage low）
+649283EN-USMG(C-04/2023) 1761

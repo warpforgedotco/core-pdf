@@ -1,0 +1,48 @@
+8 7 6 5 4 3 2 1
++ 0,00
+150,00 70,00
+- 0,02
+F F
+30,00
+50,00
+0,1 0,1
+0,05 A
+E 0,05 E
+A
+D D
+16,00
+20,00
++ 0,05
+15,00
+- 0,00
+C C
+M 12x 1.75 - 6H
+R18,00
+0,1 A
++ 0,50
+15,00
+- 0,00
+B B
+60,00 0,02
+Ra 1,6
+100,00 0,05
+A l l g e m e in t o l e r a n z e n M A T E R IA L
+132,00 P FINISH
+DIN ISO 2768 - m K ET BLACK Eloxieren (natur)
+Date Name
+Drawn 29.03.2021 Lucas Giering
+Checked
+A Standard A
+Arretierungshilfe 1 
+A2
+State Changes Date Name
+8 7 6 5 4 3 2 1
+40,00
+20,00
+20,00
+45,00
+16,00 Ø16,00
+8,00
+Ø10H9Ø10H9
+50,00
+35,00
