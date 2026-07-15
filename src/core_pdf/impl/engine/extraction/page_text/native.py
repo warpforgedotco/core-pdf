@@ -293,6 +293,22 @@ def native_text_runs_inside_page_bounds(
         intersection_height = max(0.0, min(run.y1, page_y1) - max(run.y0, page_y0))
         if intersection_width * intersection_height / area >= 0.80:
             filtered.append(run)
+            continue
+        vertical_coverage = intersection_height / height if height > 0.0 else 0.0
+        horizontally_anchored = (
+            page_x0 <= run.x0 <= page_x1 or page_x0 <= run.x1 <= page_x1
+        )
+        if (
+            vertical_coverage >= 0.80
+            and horizontally_anchored
+            and width >= (page_x1 - page_x0) * 0.50
+            and sum(ch.isalnum() for ch in run.text) >= 8
+        ):
+            # Some generators publish correct text with font metrics scaled far
+            # beyond the page.  Keep substantial, vertically valid lines whose
+            # baseline is still anchored on-page; otherwise their whole line is
+            # lost even though PDF viewers render it normally.
+            filtered.append(run)
     return filtered
 
 

@@ -124,6 +124,15 @@ def should_replace_text_with_ocr(
         native_geometry=native_geometry,
     ):
         return False
+    if sparse_drawing_schematic_should_yield_to_ocr(
+        text,
+        ocr_text,
+        text_tokens=text_tokens,
+        ocr_tokens=ocr_tokens,
+        native_profile=native_profile,
+        ocr_profile=ocr_profile,
+    ):
+        return True
     if text_tokens <= 24:
         if tiny_native_text_should_yield_to_ocr(
             text,
@@ -315,6 +324,32 @@ def text_table_like_layout_diverges_in_rendered_ocr(
         and ocr_profile.aligned_column_count >= native_profile.native_aligned_column_count * 2
         and ocr_profile.occupied_area_ratio >= native_profile.occupied_area_ratio * 1.15
     )
+
+
+def sparse_drawing_schematic_should_yield_to_ocr(
+    text: str,
+    ocr_text: str,
+    *,
+    text_tokens: int,
+    ocr_tokens: int,
+    native_profile: PageTextGeometryProfile,
+    ocr_profile: OcrCandidateGeometryProfile,
+) -> bool:
+    """Recover path-encoded labels from otherwise near-empty schematics."""
+    if text_tokens == 0 or text_tokens > 12:
+        return False
+    if ocr_tokens < max(50, text_tokens * 10):
+        return False
+    if native_profile.drawing_line_count < 200:
+        return False
+    if native_profile.candidate_schematic_signals < 30:
+        return False
+    if ocr_profile.confidence < 55:
+        return False
+    ocr_quality = text_ocr_quality_score(ocr_text)
+    if ocr_quality > 0.38:
+        return False
+    return ocr_quality + 0.10 < text_ocr_quality_score(text)
 
 
 def tiny_native_text_should_yield_to_ocr(

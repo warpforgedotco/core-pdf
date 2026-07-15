@@ -242,6 +242,20 @@ OCR_LARGE_FULL_PAGE_IMAGE_MAX_RENDER_DPI = 400
 OCR_FULL_PAGE_PRIMARY_MAX_PIXELS = 24_000_000
 OCR_FULL_PAGE_FIGURE_MAX_PIXELS = 30_000_000
 OCR_FULL_PAGE_FIGURE_FOLLOWUP_MAX_PIXELS = 27_000_000
+OCR_IMAGE_ONLY_LAYOUT_RETRY_MIN_TOKENS = 260
+OCR_IMAGE_ONLY_LAYOUT_RETRY_MAX_TOKENS = 650
+OCR_IMAGE_ONLY_LAYOUT_RETRY_MAX_CONFIDENCE = 78
+OCR_IMAGE_ONLY_LAYOUT_RETRY_MIN_QUALITY = 0.18
+OCR_IMAGE_ONLY_LAYOUT_RETRY_MIN_LINES = 20
+OCR_IMAGE_ONLY_LAYOUT_RETRY_MIN_WORDS = 100
+OCR_IMAGE_ONLY_LAYOUT_SUPPLEMENT_MIN_CONFIDENCE = 85
+OCR_IMAGE_ONLY_LAYOUT_SUPPLEMENT_MAX_TOKENS = 18
+OCR_IMAGE_ONLY_LAYOUT_SUPPLEMENT_TOP_RATIO = 0.40
+OCR_IMAGE_ONLY_LAYOUT_SUPPLEMENT_MAX_LINES = 4
+OCR_IMAGE_ONLY_LAYOUT_PROMINENT_MIN_CONFIDENCE = 40
+OCR_IMAGE_ONLY_LAYOUT_PROMINENT_TOP_RATIO = 0.20
+OCR_IMAGE_ONLY_LAYOUT_PROMINENT_MIN_WIDTH_RATIO = 0.35
+OCR_IMAGE_ONLY_LAYOUT_PROMINENT_MAX_TOKENS = 6
 OCR_TABLE_FUSION_MAX_REPLACEMENTS = 16
 OCR_TABLE_FUSION_MAX_ADDITIONS = 24
 OCR_TABLE_FUSION_MAX_REJECTIONS = 48
@@ -1005,6 +1019,11 @@ class PageExtractionMixin(PageContentMixin):
                 pruned_output_lines = precision_clean_degradation_chart_output_lines(
                     self,
                     pruned_output_lines,
+                )
+                pruned_output_lines = supplement_image_only_layout_top_lines(
+                    self,
+                    pruned_output_lines,
+                    broad_page_result=broad_ocr_result,
                 )
                 if pruned_output_lines != final_output_lines:
                     final_output_lines = pruned_output_lines
@@ -7972,6 +7991,25 @@ def collect_ocr_candidates(
             token_type_classifier=ocr_schematic.classify_schematic_token_type,
         )
     )
+    if should_try_image_only_layout_ocr_candidate(page, image, candidates[0]):
+        alternate_result = (
+            ocr_session.image_to_text_result(
+                image,
+                psm=ocr_full_page.OCR_FALLBACK_ALTERNATE_PAGE_SEGMENTATION_MODE,
+            )
+            if ocr_session is not None
+            else ocr_execution.ocr_image_to_text_result_with_psm_timeout(
+                image,
+                psm=ocr_full_page.OCR_FALLBACK_ALTERNATE_PAGE_SEGMENTATION_MODE,
+                timeout=timeout,
+            )
+        )
+        append_nonempty_ocr_candidate(
+            candidates,
+            "verification_full_page_simple_psm4",
+            alternate_result,
+            image,
+        )
     expand_rendered = should_expand_weak_full_page_ocr_candidates(
         page,
         image,
@@ -8004,6 +8042,41 @@ def collect_ocr_candidates(
             for candidate in verification_candidates
         )
     return candidates
+
+
+def should_try_image_only_layout_ocr_candidate(
+    page: PageExtractionHost,
+    image: OcrImage,
+    candidate: OcrCandidate,
+) -> bool:
+    if not image.source.startswith("full_page_"):
+        return False
+    try:
+        profile = page.get_page_profile()
+    except Exception:
+        return False
+    if (
+        getattr(profile, "recommended_strategy", None) != "image_or_ocr"
+        or bool(getattr(profile, "has_text_showing_ops", False))
+    ):
+        return False
+    result = candidate.result
+    tokens = extracted_text_token_count(result.text)
+    if not (
+        OCR_IMAGE_ONLY_LAYOUT_RETRY_MIN_TOKENS
+        <= tokens
+        <= OCR_IMAGE_ONLY_LAYOUT_RETRY_MAX_TOKENS
+    ):
+        return False
+    confidence = result.confidence if result.confidence is not None else 0
+    if confidence > OCR_IMAGE_ONLY_LAYOUT_RETRY_MAX_CONFIDENCE:
+        return False
+    if text_ocr_quality_score(result.text) < OCR_IMAGE_ONLY_LAYOUT_RETRY_MIN_QUALITY:
+        return False
+    return (
+        len(result.line_rows) >= OCR_IMAGE_ONLY_LAYOUT_RETRY_MIN_LINES
+        and len(result.word_rows) >= OCR_IMAGE_ONLY_LAYOUT_RETRY_MIN_WORDS
+    )
 
 
 def optimized_full_page_primary_ocr_image(image: OcrImage) -> OcrImage:
@@ -8288,6 +8361,130 @@ def precision_clean_dominant_image_label_output_lines(
         broad_page_result=broad_page_result,
     )
     return deduped
+
+
+def supplement_image_only_layout_top_lines(
+    page: PageExtractionHost,
+    lines: tuple[observation_resolver.ResolvedTextLine, ...],
+    *,
+    broad_page_result: OcrPageTextResult | None,
+) -> tuple[observation_resolver.ResolvedTextLine, ...]:
+    if not lines or broad_page_result is None or broad_page_result.candidate is None:
+        return lines
+    if broad_page_result.candidate.name != "full_page_simple":
+        return lines
+    try:
+        profile = page.get_page_profile()
+    except Exception:
+        return lines
+    if (
+        getattr(profile, "recommended_strategy", None) != "image_or_ocr"
+        or bool(getattr(profile, "has_text_showing_ops", False))
+    ):
+        return lines
+    verification = next(
+        (
+            candidate
+            for candidate in broad_page_result.verification_candidates
+            if candidate.name == "verification_full_page_simple_psm4"
+        ),
+        None,
+    )
+    if verification is None:
+        return lines
+    page_bbox = page_geometry.rect_box_tuple(getattr(page, "media_box", None))
+    if page_bbox is None:
+        return lines
+    page_height = page_bbox[3] - page_bbox[1]
+    page_width = page_bbox[2] - page_bbox[0]
+    if page_height <= 0.0 or page_width <= 0.0:
+        return lines
+    top_region_y = page_bbox[3] - page_height * OCR_IMAGE_ONLY_LAYOUT_SUPPLEMENT_TOP_RATIO
+    prominent_region_y = (
+        page_bbox[3] - page_height * OCR_IMAGE_ONLY_LAYOUT_PROMINENT_TOP_RATIO
+    )
+    primary_text = broad_page_result.candidate.result.text.casefold()
+    output = list(lines)
+    additions = 0
+    for record in table_ocr_candidate_line_records(verification):
+        if additions >= OCR_IMAGE_ONLY_LAYOUT_SUPPLEMENT_MAX_LINES:
+            break
+        observation = record.observation
+        if observation is None or observation.bbox is None:
+            continue
+        if observation.bbox[1] < top_region_y:
+            continue
+        confidence = record.confidence if record.confidence is not None else 0
+        text = cleaned_image_only_layout_supplement_text(record.text)
+        tokens = normalized_text_tokens(text)
+        standard_token_count = 2 <= len(tokens) <= OCR_IMAGE_ONLY_LAYOUT_SUPPLEMENT_MAX_TOKENS
+        prominent_token_count = 1 <= len(tokens) <= OCR_IMAGE_ONLY_LAYOUT_PROMINENT_MAX_TOKENS
+        if not standard_token_count and not prominent_token_count:
+            continue
+        high_confidence = (
+            confidence >= OCR_IMAGE_ONLY_LAYOUT_SUPPLEMENT_MIN_CONFIDENCE
+            and standard_token_count
+        )
+        prominent_consensus = (
+            confidence >= OCR_IMAGE_ONLY_LAYOUT_PROMINENT_MIN_CONFIDENCE
+            and observation.bbox[1] >= prominent_region_y
+            and (observation.bbox[2] - observation.bbox[0])
+            >= page_width * OCR_IMAGE_ONLY_LAYOUT_PROMINENT_MIN_WIDTH_RATIO
+            and prominent_token_count
+            and len("".join(ch for ch in text if ch.isalnum())) >= 4
+            and text.casefold() in primary_text
+        )
+        if not high_confidence and not prominent_consensus:
+            continue
+        if text_ocr_quality_score(text) > 0.22:
+            continue
+        observation = replace(
+            observation,
+            text=text,
+            provenance=page_geometry.provenance_tuple(
+                dict(observation.provenance),
+                image_only_layout_supplement=True,
+            ),
+        )
+        existing_observations = [line.observation for line in output]
+        if observation_resolver.observation_coverage_ratio(
+            observation,
+            existing_observations,
+        ) >= 0.45:
+            continue
+        resolution = observation_resolver.resolve_observation_append(
+            observation,
+            existing_observations,
+            existing_text=render_resolved_text_lines(tuple(output)),
+        )
+        if resolution.action != "append":
+            continue
+        line = observation_resolver.ResolvedTextLine(
+            text,
+            observation,
+            contributing_observations=(observation,),
+            resolution=resolution,
+        )
+        output.insert(image_only_layout_supplement_insert_index(output, observation), line)
+        additions += 1
+    return tuple(output) if additions else lines
+
+
+def cleaned_image_only_layout_supplement_text(text: str) -> str:
+    return " ".join(part for part in text.split() if any(ch.isalnum() for ch in part))
+
+
+def image_only_layout_supplement_insert_index(
+    lines: list[observation_resolver.ResolvedTextLine],
+    observation: page_geometry.PageObservation,
+) -> int:
+    if observation.bbox is None:
+        return len(lines)
+    for index, line in enumerate(lines):
+        bbox = line.observation.bbox
+        if bbox is not None and observation.bbox[1] > bbox[1] + 1.0:
+            return index
+    return len(lines)
 
 
 def precision_prune_render_consensus_output_lines(

@@ -2653,6 +2653,11 @@ def should_ocr_fallback(page: PageExtractionHost, text: str) -> bool:
         return False
     native_geometry_summary = native_layout_geometry_summary_from_page_cache(page)
     if text_tokens <= 20:
+        try:
+            if text_tokens <= 12 and page_has_vector_stroke_text_candidates(page):
+                return True
+        except Exception:
+            pass
         if layout_geometry_should_trigger_ocr(
             native_geometry_summary,
             text_tokens=text_tokens,
