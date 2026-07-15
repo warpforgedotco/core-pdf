@@ -220,19 +220,10 @@ wheels = [
 [[package]]
 name = "core-jpeg"
 version = "0.0.0"
-source = { directory = "../../core/core-JPEG" }
-
-[package.metadata]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "pytest", specifier = ">=9.1.1" },
-    { name = "pytest-cov", specifier = ">=7.1.0" },
-    { name = "ty", specifier = ">=0.0.57" },
-]
-lint = [
-    { name = "mypy", specifier = ">=1.16.0,<2.0.0" },
-    { name = "ruff", specifier = ">=0.11.13,<1.0.0" },
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/85/2c/f3cc256a07c5df4d6ed7d85e9ef27b80a634ad532b0c70f360fd7286ac81/core_jpeg-0.0.0.tar.gz", hash = "sha256:3d595b78c4e7a42b30578adf1b2d5bd07004f704b561c649f2e748b9337e537b", size = 66691, upload-time = "2026-07-15T17:01:09.183Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c9/9a/daab128685c1b29924728fe26933a59cffc1967363eaeebe7eafe4d90373/core_jpeg-0.0.0-py3-none-any.whl", hash = "sha256:de591e6a8c1136ce2b5692fc365aaa3dd0517b794bc04875d3b1d266d9d006b1", size = 83380, upload-time = "2026-07-15T17:01:07.896Z" },
 ]
 
 [[package]]
@@ -261,7 +252,7 @@ vendor = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "core-jpeg", directory = "../../core/core-JPEG" }]
+requires-dist = [{ name = "core-jpeg", specifier = ">=0.0.0" }]
 
 [package.metadata.requires-dev]
 benchmark = [{ name = "rich", specifier = ">=15.0.0" }]

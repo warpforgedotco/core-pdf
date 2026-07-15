@@ -13,7 +13,7 @@ license-files = ["LICENSE.txt"]
 requires-python = ">=3.11"
 classifiers = ["Development Status :: 3 - Alpha"]
 dependencies = [
-    "core-jpeg",
+    "core-jpeg>=0.0.0",
 ]
 
 [project.urls]
@@ -118,6 +118,3 @@ drop = [
     "*.so",
     "*.pyd",
 ]
-
-[tool.uv.sources]
-core-jpeg = { path = "../../core/core-JPEG" }
