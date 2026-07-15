@@ -1,11 +1,27 @@
 from __future__ import annotations
 
+import mmap
 from collections.abc import Sequence
+from io import BytesIO
 from math import isclose
+from operator import eq
+from pathlib import Path
 from typing import Any, cast
 
+import pytest
+
+from core_pdf import PdfDocument as PublicPdfDocument
+from core_pdf import PdfSourceError
+from core_pdf.impl.engine.extraction.page_text import mixin as page_text_mixin
 from core_pdf.impl.engine.spec.s_07_content.operations import dispatch_operations
 from core_pdf.impl.engine.spec.s_07_document.document import PdfDocument
+from core_pdf.impl.engine.spec.s_07_document.document_labels import (
+    format_alpha,
+    format_page_label,
+)
+from core_pdf.impl.engine.spec.s_07_document.document_page_labels import (
+    DocumentPageLabelsMixin,
+)
 from core_pdf.impl.engine.spec.s_07_document.metadata import MetadataResolver, resolve_info_metadata
 from core_pdf.impl.engine.spec.s_07_document.navigation import NavigationMixin
 from core_pdf.impl.engine.spec.s_07_document.protocols import NavigationResolver
@@ -60,6 +76,195 @@ def test_unsupported_operator_does_not_leak_operands() -> None:
     cast(Any, dispatch_operations)(lexer, {"m": move_to}, None, fast_handlers, {}, None, 0)
 
     assert received == [1, 2]
+
+
+@pytest.mark.parametrize("invalid_operator", [b"12foo", b".x", b"+bad", b".", b"+", b"-"])
+def test_number_shaped_unsupported_operator_does_not_leak_operands(
+    invalid_operator: bytes,
+) -> None:
+    received: list[object] = []
+
+    def move_to(operands: Sequence[object], _depth: int) -> None:
+        received.extend(operands)
+
+    fast_handlers: list[object] = [None] * 65536
+    fast_handlers[ord("m") << 8] = move_to
+    lexer = PdfLexer(b"99 " + invalid_operator + b" 1 2 m")
+
+    cast(Any, dispatch_operations)(lexer, {"m": move_to}, None, fast_handlers, {}, None, 0)
+
+    assert received == [1, 2]
+
+
+def test_pdf_name_bytes_equality_supports_mapping_lookup() -> None:
+    name = PdfName.of(b"N\xe1me")
+    mapping = {name: "value"}
+    cross_type_mapping = cast(dict[Any, str], mapping)
+
+    assert name == b"N\xe1me"
+    assert eq(b"N\xe1me", name)
+    assert hash(name) == hash(b"N\xe1me")
+    assert cross_type_mapping[b"N\xe1me"] == "value"
+
+
+@pytest.mark.parametrize(
+    ("number", "expected"),
+    [(1, "a"), (26, "z"), (27, "aa"), (28, "bb"), (52, "zz"), (53, "aaa")],
+)
+def test_page_label_alphabetic_sequence(number: int, expected: str) -> None:
+    assert format_alpha(number) == expected
+
+
+def test_page_label_without_style_is_prefix_only() -> None:
+    assert format_page_label({"P": b"Appendix-"}, 17, lambda value: value) == "Appendix-"
+
+
+class _PageLabelDocument(DocumentPageLabelsMixin):
+    def __init__(self, *, recovered: bool) -> None:
+        self.page_labels_cache = None
+        self.xref_was_recovered = recovered
+        self.page_tree_was_recovered = False
+        self.pages = [None, None, None, None]
+        self._catalog = {"PageLabels": {"Nums": [2, {"S": PdfName.of("D")}]}}
+
+    def catalog(self) -> PdfDict:
+        return cast(PdfDict, self._catalog)
+
+    def resolve(self, ref: object) -> object:
+        return ref
+
+
+def test_page_labels_require_page_zero_range() -> None:
+    with pytest.raises(ValueError, match="page index 0"):
+        _PageLabelDocument(recovered=False).build_page_labels()
+
+
+def test_recovered_page_labels_fill_missing_initial_range() -> None:
+    assert _PageLabelDocument(recovered=True).build_page_labels() == ["", "", "1", "2"]
+
+
+def test_explicit_crypt_metadata_stream_uses_document_security_handler() -> None:
+    fixture = Path(__file__).parent / "fixtures" / "SCORE-Bench" / "src" / "g-325a.pdf"
+
+    with PublicPdfDocument(fixture) as document:
+        xmp = document.get_metadata()["xmp"]
+
+    assert xmp is not None
+    assert "parse_error" not in xmp
+    assert xmp["tag"].endswith("xmpmeta")
+
+
+def simple_pdf_fixture() -> Path:
+    return Path(__file__).parent / "fixtures" / "pdfminer.six" / "samples" / "simple1.pdf"
+
+
+def test_document_close_releases_owned_path_resources() -> None:
+    document = PdfDocument(simple_pdf_fixture())
+    mapping = document.raw_data
+    file_handle = document.file_handle
+
+    assert isinstance(mapping, mmap.mmap)
+    assert file_handle is not None
+    document.close()
+
+    assert document.closed
+    assert mapping.closed
+    assert file_handle.closed
+    assert document.raw_data == b""
+    document.close()
+
+
+def test_document_close_preserves_caller_owned_reader() -> None:
+    reader = BytesIO(simple_pdf_fixture().read_bytes())
+    document = PdfDocument(reader)
+
+    document.close()
+
+    assert not reader.closed
+    assert document.closed
+
+
+def test_document_close_defers_unmap_for_external_view() -> None:
+    document = PdfDocument(simple_pdf_fixture())
+    mapping = document.raw_data
+    assert isinstance(mapping, mmap.mmap)
+    external_view = memoryview(mapping)
+
+    document.close()
+
+    assert document.closed
+    assert not mapping.closed
+    external_view.release()
+    mapping.close()
+    assert mapping.closed
+
+
+def test_empty_path_closes_opened_file(tmp_path: Path) -> None:
+    empty_pdf = tmp_path / "empty.pdf"
+    empty_pdf.write_bytes(b"")
+    document = object.__new__(PdfDocument)
+    document.file_handle = None
+
+    with pytest.raises(PdfSourceError, match="empty"):
+        document.load_data(empty_pdf)
+
+    assert document.file_handle is None
+
+
+class _FailingDocument(PdfDocument):
+    mapping_at_failure: mmap.mmap | None = None
+    handle_at_failure: Any = None
+
+    def scan_xref(self) -> None:
+        type(self).mapping_at_failure = cast(mmap.mmap, self.raw_data)
+        type(self).handle_at_failure = self.file_handle
+        raise RuntimeError("scan failed")
+
+
+def test_construction_failure_releases_acquired_resources() -> None:
+    with pytest.raises(RuntimeError, match="scan failed"):
+        _FailingDocument(simple_pdf_fixture())
+
+    mapping = _FailingDocument.mapping_at_failure
+    handle = _FailingDocument.handle_at_failure
+    assert mapping is not None
+    assert mapping.closed
+    assert handle is not None
+    assert handle.closed
+
+
+def test_extraction_snapshot_survives_metadata_and_recomputes_after_invalidation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("CORE_PDF_OCR", "0")
+    original_decision = page_text_mixin.page_extraction_decision
+    decision_calls = 0
+
+    def counting_decision(*args: Any, **kwargs: Any) -> Any:
+        nonlocal decision_calls
+        decision_calls += 1
+        return original_decision(*args, **kwargs)
+
+    monkeypatch.setattr(page_text_mixin, "page_extraction_decision", counting_decision)
+
+    with PublicPdfDocument(simple_pdf_fixture()) as document:
+        first = document.extract()
+        document.get_metadata()
+        second = document.extract()
+
+        assert decision_calls == 1
+        assert second.pages[0].text == first.pages[0].text
+        assert second.pages[0].resolved_lines == first.pages[0].resolved_lines
+        assert document.page_extraction_caches is not None
+        snapshot = document.page_extraction_caches[1].get("page_extraction_snapshot")
+        assert isinstance(snapshot, page_text_mixin.PageExtractionSnapshot)
+        assert snapshot.text == first.pages[0].text
+
+        document.invalidate_document_extraction_cache()
+        third = document.extract()
+
+        assert decision_calls == 2
+        assert third.pages[0].text == first.pages[0].text
 
 
 def test_trapped_info_value_accepts_pdf_name() -> None:

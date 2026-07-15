@@ -55,9 +55,6 @@ class DocumentCatalogMixin:
                 recover=self.xref_was_recovered or self.page_tree_was_recovered,
             )
             self.metadata_cache = metadata
-            invalidate = getattr(self, "invalidate_document_extraction_cache", None)
-            if callable(invalidate):
-                invalidate()
         return metadata
 
     @property

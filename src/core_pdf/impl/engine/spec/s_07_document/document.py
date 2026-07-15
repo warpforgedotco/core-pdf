@@ -82,6 +82,7 @@ class PdfDocument(
         "page_extraction_caches",
         "xref_was_recovered",
         "page_tree_was_recovered",
+        "_closed",
     )
 
     source: PdfSource
@@ -111,24 +112,19 @@ class PdfDocument(
     page_extraction_caches: dict[int, ExtractionCache] | None
     xref_was_recovered: bool
     page_tree_was_recovered: bool
+    _closed: bool
 
     def __init__(self, source: PdfSource, password: str = "") -> None:
+        self._closed = False
         self.source = source
         self.password = password
         self.file_handle = None
+        self.raw_data = b""
         self.decipher = None
         self.xref = {}
         self.trailer_dict = {}
         self.xref_was_recovered = False
         self.page_tree_was_recovered = False
-
-        self.raw_data = self.load_data(source)
-        self.scan_xref()
-
-        self.resolver = ObjectResolver(self.raw_data, self.xref, self.trailer_dict)
-        self.init_security(password)
-        self.resolver.decipher = self.decipher
-
         self.catalog_cache = None
         self.metadata_cache = None
         self.structure_cache = None
@@ -147,11 +143,24 @@ class PdfDocument(
         self.page_labels_cache = None
         self.page_extraction_caches = None
 
+        try:
+            self.raw_data = self.load_data(source)
+            self.scan_xref()
+
+            self.resolver = ObjectResolver(self.raw_data, self.xref, self.trailer_dict)
+            self.init_security(password)
+            self.resolver.decipher = self.decipher
+        except BaseException:
+            self.close()
+            raise
+
     @classmethod
     def open(cls, source: PdfSource, password: str = "") -> PdfDocument:
         return cls(source, password=password)
 
     def __enter__(self) -> PdfDocument:
+        if self.closed:
+            raise ValueError("PDF document is closed")
         return self
 
     def __exit__(
@@ -160,10 +169,55 @@ class PdfDocument(
         exc: BaseException | None,
         tb: TracebackType | None,
     ) -> None:
+        self.close()
+
+    @property
+    def closed(self) -> bool:
+        return self._closed
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+
+        for cache_name in (
+            "catalog_cache",
+            "metadata_cache",
+            "structure_cache",
+            "structure_root_cache",
+            "mark_info_cache",
+            "page_dicts_cache",
+            "pages_cache",
+            "page_index_cache",
+            "named_destinations_cache",
+            "embedded_files_cache",
+            "oc_layers",
+            "acroform_cache",
+            "fields_cache",
+            "page_labels_cache",
+            "page_extraction_caches",
+        ):
+            setattr(self, cache_name, None)
+        self.decoder_cache.clear()
+        self.inherited_values_cache.clear()
+
+        resolver = getattr(self, "resolver", None)
+        if resolver is not None:
+            resolver.close()
+
+        raw_data = self.raw_data
+        self.raw_data = b""
+        if isinstance(raw_data, mmap.mmap):
+            with contextlib.suppress(BufferError, OSError, ValueError):
+                raw_data.close()
+
         if self.file_handle is not None:
             with contextlib.suppress(OSError):
                 self.file_handle.close()
             self.file_handle = None
 
     def invalidate_document_extraction_cache(self) -> None:
+        if self.page_extraction_caches is not None:
+            for cache in self.page_extraction_caches.values():
+                cache.clear()
         self.page_extraction_caches = None

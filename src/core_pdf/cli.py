@@ -46,19 +46,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
-        document = PdfDocument(args.pdf)
-    except Exception as exc:
-        print(f"core-pdf: {exc}", file=sys.stderr)
-        return 1
-
-    try:
-        print_plain_output(extract_output(document, args.mode))
+        with PdfDocument(args.pdf) as document:
+            print_plain_output(extract_output(document, args.mode))
         return 0
     except Exception as exc:
         print(f"core-pdf: {exc}", file=sys.stderr)
         return 1
-    finally:
-        document.__exit__(None, None, None)
 
 
 if __name__ == "__main__":

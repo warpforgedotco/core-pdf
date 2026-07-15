@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
+import contextlib
 import mmap
 from typing import cast
 
@@ -151,6 +152,24 @@ class ObjectResolver(ResolverValueMixin):
 
     def release_lexer(self, lexer: PdfLexer) -> None:
         self.lexer_stack.append(lexer)
+
+    def close(self) -> None:
+        for lexer in self.lexer_stack:
+            lexer.close()
+        self.lexer_stack.clear()
+        self.objects.clear()
+        if self.objects_gen0 is not None:
+            self.objects_gen0.clear()
+        self.objects_gen0 = None
+        self.xref_gen0 = None
+        self.object_streams.clear()
+        self.resolving.clear()
+        self.deep_cache.clear()
+        self.kw_cache.clear()
+        self.decipher = None
+        with contextlib.suppress(ValueError):
+            self.data.release()
+        self.data = memoryview(b"")
 
     def resolve(self, ref: object) -> object:
         if type(ref) is not PdfReference:

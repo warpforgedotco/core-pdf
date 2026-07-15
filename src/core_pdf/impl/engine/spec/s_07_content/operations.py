@@ -404,11 +404,10 @@ def dispatch_operations(
                 # This avoids slicing strings and allocating temporary objects.
                 if first == 46 or 48 <= first <= 57 or first == 45 or first == 43:
                     # Fast path: Single digit number (e.g. '0', '5')
-                    if n_raw == 1:
-                        if 48 <= first <= 57:
-                            if op_count < max_operands:
-                                operands[op_count] = first - 48
-                            op_count += 1
+                    if n_raw == 1 and 48 <= first <= 57:
+                        if op_count < max_operands:
+                            operands[op_count] = first - 48
+                        op_count += 1
                         continue
 
                     # Fast path: Two-character numeric tokens (e.g. '12', '-5', '.5')
@@ -608,7 +607,7 @@ def dispatch_operations(
                         if op_count < max_operands:
                             operands[op_count] = float(raw_number) if saw_dot else int(raw_number)
                         op_count += 1
-                    continue
+                        continue
 
                 if n_raw == 2 and raw_bytes[pos - 2] == 66 and raw_bytes[pos - 1] == 73:
                     lexer.pos = pos

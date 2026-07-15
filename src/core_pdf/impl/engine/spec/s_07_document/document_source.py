@@ -38,8 +38,16 @@ class DocumentSourceMixin:
             self.file_handle = file_handle
             try:
                 return mmap.mmap(file_handle.fileno(), 0, access=mmap.ACCESS_READ)
-            except ValueError:
-                raise PdfSourceError("PDF source is empty")
+            except (OSError, ValueError) as exc:
+                try:
+                    is_empty = file_handle.seek(0, 2) == 0
+                except OSError:
+                    is_empty = False
+                file_handle.close()
+                self.file_handle = None
+                if is_empty:
+                    raise PdfSourceError("PDF source is empty") from exc
+                raise PdfSourceError(str(exc)) from exc
         if isinstance(source, bytes):
             return source
         if isinstance(source, (memoryview, bytearray)):

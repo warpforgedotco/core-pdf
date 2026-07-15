@@ -78,7 +78,11 @@ class PdfStream:
             if isinstance(spec, dict):
                 spec = stream_decode_spec.normalize_stream_decode_spec(spec)
                 self.spec = spec
-            self.decoded_data = stream_pipeline.decode_stream_data(self.raw_data, spec)
+            self.decoded_data = stream_pipeline.decode_stream_data(
+                self.raw_data,
+                spec,
+                parent_dictionary=self.dictionary,
+            )
         return self.decoded_data
 
     @property

@@ -42,7 +42,7 @@ test = [
 ]
 
 [tool.pytest.ini_options]
-testpaths = ["tests/src"]
+testpaths = ["tests"]
 norecursedirs = ["tests/fixtures"]
 
 [tool.ruff]

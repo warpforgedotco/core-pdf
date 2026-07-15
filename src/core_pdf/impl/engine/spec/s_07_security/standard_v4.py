@@ -5,6 +5,8 @@ import struct
 from hashlib import md5
 from typing import Callable, cast
 
+from core_pdf.impl.engine.spec.s_07_filters.decode_spec import normalize_stream_decode_spec
+from core_pdf.impl.engine.spec.s_07_objects.coercion import is_pdf_null, normalize_pdf_name
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import (
     lookup_dict_key,
     lookup_dict_key_default,
@@ -13,7 +15,7 @@ from core_pdf.impl.engine.spec.s_07_security.aes import AES
 from core_pdf.impl.engine.spec.s_07_security.errors import PDFEncryptionError
 from core_pdf.impl.engine.spec.s_07_security.standard import PdfStandardSecurityHandler
 from core_pdf.impl.engine.spec.s_07_security.values import get_name
-from core_pdf.impl.exceptions import PdfUnsupportedError
+from core_pdf.impl.exceptions import PdfParseError, PdfUnsupportedError
 from core_pdf.impl.objects import MISSING
 from core_pdf.impl.types import PdfDict
 
@@ -76,13 +78,38 @@ class PdfStandardSecurityHandlerV4(PdfStandardSecurityHandler):
             if t is not None and get_name(t) == "Metadata":
                 return data
         if name is None:
-            name = self.stmf if attrs is not None else self.strf
+            name = self.stream_crypt_filter_name(attrs) if attrs is not None else self.strf
         if name == "Identity":
             return data
         fn = self.cfm.get(name)
         if fn is None:
             raise PdfUnsupportedError(f"Undefined crypt filter: {name}")
         return fn(objid, genno, data)
+
+    def stream_crypt_filter_name(self, attrs: PdfDict) -> str:
+        spec = normalize_stream_decode_spec(attrs)
+        crypt_indexes = [
+            index
+            for index, filter_name in enumerate(spec.filters)
+            if filter_name == "Crypt"
+        ]
+        if not crypt_indexes:
+            return self.stmf
+        if len(crypt_indexes) != 1 or crypt_indexes[0] != 0:
+            raise PdfParseError("Crypt must be the first and only Crypt stream filter")
+
+        params = spec.params[crypt_indexes[0]]
+        if is_pdf_null(params):
+            return "Identity"
+        if not isinstance(params, dict):
+            raise PdfParseError("invalid Crypt filter params")
+        raw_name = lookup_dict_key(params, "Name")
+        if is_pdf_null(raw_name):
+            return "Identity"
+        filter_name = normalize_pdf_name(raw_name)
+        if filter_name is None:
+            raise PdfParseError("invalid Crypt filter name")
+        return filter_name
 
     def decrypt_aes128(self, objid: int, genno: int, data: bytes) -> bytes:
         assert self.key is not None

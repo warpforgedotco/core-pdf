@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import binascii
+import contextlib
 import mmap
 from collections.abc import Callable
 from typing import Any
@@ -134,6 +135,17 @@ class PdfLexer:
     @property
     def position(self) -> int:
         return self.pos
+
+    def close(self) -> None:
+        self.source_buffer = None
+        self.reference_resolver = None
+        self.decipher = None
+        with contextlib.suppress(ValueError):
+            self.raw_data.release()
+        self.raw_data = memoryview(b"")
+        self.data_len = 0
+        self.pos = 0
+        self.exhausted = True
 
     def rewind(self, position: int = 0) -> None:
         self.pos = max(0, min(position, self.data_len))
