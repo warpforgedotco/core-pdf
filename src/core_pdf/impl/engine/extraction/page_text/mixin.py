@@ -1005,6 +1005,7 @@ class PageExtractionMixin(PageContentMixin):
             page=self,
             native_runs=chars,
             media_box=self.media_box,
+            include_dominant_image=ocr_postprocess.ocr_is_enabled(),
         )
         if cache is not None:
             cache["page_region_classification"] = region_classification

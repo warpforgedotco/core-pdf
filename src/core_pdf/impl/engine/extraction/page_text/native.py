@@ -118,6 +118,7 @@ def try_extract_native_text_fast(
         page=page,
         native_runs=chars,
         media_box=page.media_box,
+        include_dominant_image=False,
     )
     text = ocr_text_analysis.repair_formula_control_delimiters(text)
     return text

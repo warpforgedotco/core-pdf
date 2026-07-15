@@ -556,6 +556,7 @@ def classify_page_region(
     page: Any = None,
     native_runs: Iterable[TextRun] = (),
     media_box: tuple[float, float, float, float] | None = None,
+    include_dominant_image: bool = True,
 ) -> ocr_schematic.PageRegionClassification:
     candidate_tuple = tuple(candidates)
     geometry = page_text_geometry_profile(
@@ -565,6 +566,7 @@ def classify_page_region(
         page=page,
         native_runs=tuple(native_runs),
         media_box=media_box,
+        include_dominant_image=include_dominant_image,
     )
     text_tokens = extracted_text_token_count(text)
     vector_tokens = extracted_text_token_count(vector_text)
@@ -719,6 +721,7 @@ def page_text_geometry_profile(
     page: Any = None,
     native_runs: tuple[TextRun, ...] = (),
     media_box: tuple[float, float, float, float] | None = None,
+    include_dominant_image: bool = True,
 ) -> PageTextGeometryProfile:
     del text, vector_text
     page_width, page_height = page_dimensions(page, media_box)
@@ -776,7 +779,7 @@ def page_text_geometry_profile(
         drawing_line_count=len(drawing_lines),
         horizontal_rule_count=horizontal_rule_count,
         vertical_rule_count=vertical_rule_count,
-        dominant_image=page_has_dominant_image(page),
+        dominant_image=page_has_dominant_image(page) if include_dominant_image else False,
         occupied_area_ratio=occupied_area_ratio_for_line_boxes(
             ((line.x0, line.y0, line.x1, line.y1) for line in lines),
             page_width=page_width,
