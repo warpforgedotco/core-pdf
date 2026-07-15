@@ -628,9 +628,7 @@ class PageTableCoreMixin:
         elif options.flavor == "network":
             ruled_result = extract_from_grids(grids) if grids else None
             result = extract_network_result()
-            if ruled_result is not None and cls.should_prefer_ruled_result(
-                result, ruled_result
-            ):
+            if ruled_result is not None and cls.should_prefer_ruled_result(result, ruled_result):
                 result = ruled_result
             else:
                 stream_result = extract_stream_result()
@@ -640,9 +638,7 @@ class PageTableCoreMixin:
         elif options.flavor == "stream":
             ruled_result = extract_from_grids(grids) if grids else None
             result = extract_stream_result()
-            if ruled_result is not None and cls.should_prefer_ruled_result(
-                result, ruled_result
-            ):
+            if ruled_result is not None and cls.should_prefer_ruled_result(result, ruled_result):
                 result = ruled_result
             else:
                 network_result = extract_network_result()
