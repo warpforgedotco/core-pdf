@@ -57,6 +57,10 @@ class LayoutReconstructor:
             if split_points and (
                 self.column_split_is_stable(lines, split_points)
                 or self.multi_column_split_is_stable(lines, split_points)
+                or (
+                    len(split_points) == 1
+                    and self.parallel_column_split_is_viable(lines, split_points[0])
+                )
             ):
                 return observation_resolver.resolve_text_lines(
                     self.render_line_segment_lines(lines)
@@ -523,7 +527,7 @@ class LayoutReconstructor:
                     gutter_rows += 1
         if left_rows < 8 or right_rows < 8:
             return False
-        return gutter_rows >= max(4, len(lines) // 6)
+        return gutter_rows >= max(4, len(lines) // 10)
 
     @staticmethod
     def line_y_extent(lines: list[LayoutLine]) -> tuple[float, float]:
@@ -589,6 +593,7 @@ class LayoutReconstructor:
                     current_line_runs.append(r)
             if len(current_line_runs) < 2:
                 continue
+            current_line_runs.sort(key=lambda run: (run.x0, run.order))
             prev_x1 = current_line_runs[0].x1
             for run in current_line_runs[1:]:
                 gap = run.x0 - prev_x1
@@ -619,7 +624,7 @@ class LayoutReconstructor:
 
         splits: list[float] = []
         for cluster in clusters:
-            if len(cluster) < 5:
+            if len(cluster) < 4:
                 continue
             split_x = median_low(cluster)
             split_rel = (split_x - box_x0) / box_width
