@@ -74,6 +74,15 @@ def iter_score_bench_cases(root: Path = SCORE_BENCH_ROOT) -> list[ScoreBenchCase
         return []
 
     content_by_stem = ground_truth_by_stem(content_dir, "*.txt")
+    correct_truth_root = root.with_name(f"{root.name}-correct-truth")
+    if correct_truth_root.exists():
+        content_by_stem.update(
+            {
+                stem: path
+                for stem, path in ground_truth_by_stem(correct_truth_root, "*.txt").items()
+                if is_correct_truth_path(path)
+            }
+        )
     table_by_stem = ground_truth_by_stem(table_dir, "*.json")
     return [
         ScoreBenchCase(stem, src_dir / stem, content_by_stem[stem], table_by_stem[stem])
