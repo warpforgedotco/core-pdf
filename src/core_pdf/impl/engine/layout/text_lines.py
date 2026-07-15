@@ -196,20 +196,25 @@ def reconstruct_rotated_table_line(sorted_runs: list[TextRun]) -> LayoutLineText
     parts: list[str] = []
     segments: list[LayoutLineTextSegment] = []
     for run in sorted_runs:
+        text = run.text
+        if text.isspace():
+            if parts and parts[-1] != " ":
+                parts.append(" ")
+                segments.append(line_text_segment(run, " ", " ", "rotated_explicit_space"))
+            continue
         if not run.has_text:
             continue
-        text = run.text
         if is_structural_list_marker_run(run):
             continue
         if not text.isprintable() and any(is_private_use_or_control(ch) for ch in text):
             text = strip_private_use_chars(text)
         text = text.strip()
         if text:
-            separator = " " if parts else ""
-            spacing_decision = "rotated_table_space" if separator else "line_start"
+            separator = ""
+            spacing_decision = "rotated_join" if parts else "line_start"
             parts.append(text)
             segments.append(line_text_segment(run, text, separator, spacing_decision))
-    combined = split_glued_numeric_label_boundaries(" ".join(parts))
+    combined = split_glued_numeric_label_boundaries("".join(parts))
     if not combined:
         return EMPTY_LAYOUT_LINE_TEXT
     return LayoutLineText(combined, tuple(segments))
@@ -294,6 +299,7 @@ class GlyphLineBuilder:
         prev_last_char = ""
         prev_run_bbox: tuple[float, float, float, float] | None = None
         prev_atom: LayoutLineTextAtom | None = None
+        recent_emitted_runs: list[tuple[tuple[float, float, float, float], str]] = []
 
         for index, run in enumerate(self.runs):
             text = self.normalized_text(run, index)
@@ -308,6 +314,8 @@ class GlyphLineBuilder:
                 and prev_run_bbox is not None
                 and self.is_duplicate_overlap(prev_run_bbox, prev_run_text, run, text)
             ):
+                continue
+            if self.is_recent_duplicate_overlap(recent_emitted_runs, run, text):
                 continue
 
             if (
@@ -355,6 +363,9 @@ class GlyphLineBuilder:
             prev_run_text = text
             prev_last_char = text[-1:]
             prev_run_bbox = self.advance_bbox(run)
+            recent_emitted_runs.append((prev_run_bbox, text))
+            if len(recent_emitted_runs) > 256:
+                del recent_emitted_runs[:64]
 
         combined = "".join(parts)
         if self.suppress_tiny_page_footer and is_tiny_page_footer(combined):
@@ -635,9 +646,25 @@ class GlyphLineBuilder:
         if ox <= 0 or oy <= 0:
             return False
         box_area = (y1 - y0) * (x1 - x0)
-        if box_area <= 0 or (ox * oy) / box_area <= 0.8:
+        if box_area <= 0:
             return False
-        return text == prev_text or (len(text) == len(prev_text) and len(text) <= 2)
+        overlap_ratio = (ox * oy) / box_area
+        if text == prev_text:
+            return overlap_ratio > 0.5
+        return overlap_ratio > 0.8 and len(text) == len(prev_text) and len(text) <= 2
+
+    def is_recent_duplicate_overlap(
+        self,
+        recent_runs: list[tuple[tuple[float, float, float, float], str]],
+        run: TextRun,
+        text: str,
+    ) -> bool:
+        if not recent_runs:
+            return False
+        return any(
+            self.is_duplicate_overlap(prev_bbox, prev_text, run, text)
+            for prev_bbox, prev_text in reversed(recent_runs)
+        )
 
     def should_drop_explicit_space(
         self,
@@ -652,6 +679,8 @@ class GlyphLineBuilder:
         next_x0 = self.next_non_space_x0s[index] if index < len(self.next_non_space_x0s) else 0.0
         leading_gap = run.x0 - prev_run.x1
         following_gap = next_x0 - run.x1 if next_text else 0.0
+        if run.x1 - run.x0 >= max(1.0, run.space_width * 0.5):
+            return False
         tight_gap = max(run.space_width * 0.55, run.height * 0.35, 2.0)
         if (
             next_text
@@ -665,11 +694,7 @@ class GlyphLineBuilder:
             bool(next_text)
             and prev_last_char.isalpha()
             and next_text[:1].isalpha()
-            and (
-                self.is_table_like_line
-                or self.is_tracked_glyph_line
-                or (self.explicit_space_count >= 3 and self.has_large_column_gap)
-            )
+            and (self.is_table_like_line or self.is_tracked_glyph_line)
             and min(leading_gap, following_gap) <= max(2.0, run.height * 0.1)
         )
 

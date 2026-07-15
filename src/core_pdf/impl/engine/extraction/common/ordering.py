@@ -74,6 +74,22 @@ def cluster_runs_into_lines(
             decorated.append((-mid_y, x0, 0.0, i, mid_y, run.height_value, run))
     else:
         for i, run in enumerate(runs):
+            if run.rotation_angle in (90, 270):
+                x0 = run.coords[TextRun.X0]
+                x1 = run.coords[TextRun.X1]
+                mid_x = (x0 + x1) * 0.5
+                decorated.append(
+                    (
+                        x0,
+                        run.rotation_angle,
+                        -run.mid_y_value,
+                        i,
+                        mid_x,
+                        x1 - x0,
+                        run,
+                    )
+                )
+                continue
             mid_y = run.mid_y_value
             decorated.append(
                 (

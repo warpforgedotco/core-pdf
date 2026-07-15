@@ -247,7 +247,7 @@ class FontDecoder:
 
         byte_decode_table: tuple[str, ...] | None = None
         if to_unicode is None and not is_cid_font:
-            key = "Type3" if is_type3 else (base_encoding or "")
+            key = base_encoding or ("Type3" if is_type3 else "")
             byte_decode_table = cached_decode_table(key, tuple(sorted(differences.items())))
 
         self.to_unicode = to_unicode
@@ -462,7 +462,7 @@ class FontDecoder:
         glyphs: list[DecodedGlyph] = []
         table = self.byte_decode_table
         if table is None and self.to_unicode is None:
-            key = "Type3" if self.is_type3 else (self.base_encoding or "")
+            key = self.base_encoding or ("Type3" if self.is_type3 else "")
             table = cached_decode_table(key, tuple(sorted(self.differences.items())))
         byte_cache = BYTE_CACHE
         for code in data:
