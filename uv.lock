@@ -219,11 +219,11 @@ wheels = [
 
 [[package]]
 name = "core-jpeg"
-version = "0.0.0"
+version = "0.0.1"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/85/2c/f3cc256a07c5df4d6ed7d85e9ef27b80a634ad532b0c70f360fd7286ac81/core_jpeg-0.0.0.tar.gz", hash = "sha256:3d595b78c4e7a42b30578adf1b2d5bd07004f704b561c649f2e748b9337e537b", size = 66691, upload-time = "2026-07-15T17:01:09.183Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ad/ef/3541321f0e3e2a4df164680f8291f5cf4005464bff5f4aa28ee0338e595e/core_jpeg-0.0.1.tar.gz", hash = "sha256:d9eb30790c8420e18a33224f9f1691f2cbe399c57d2d7ec2edb8aa6fdebc2f77", size = 66763, upload-time = "2026-07-15T18:24:39.709Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/c9/9a/daab128685c1b29924728fe26933a59cffc1967363eaeebe7eafe4d90373/core_jpeg-0.0.0-py3-none-any.whl", hash = "sha256:de591e6a8c1136ce2b5692fc365aaa3dd0517b794bc04875d3b1d266d9d006b1", size = 83380, upload-time = "2026-07-15T17:01:07.896Z" },
+    { url = "https://files.pythonhosted.org/packages/0e/fb/667dd23ea950959a76b9ca830149e68a03a1c9a54ebd59279c0c1c9addbc/core_jpeg-0.0.1-py3-none-any.whl", hash = "sha256:e0753777faae457f03b87850b177daa33cbcb72af8004d6260f243c3de61e8a2", size = 83457, upload-time = "2026-07-15T18:24:35.775Z" },
 ]
 
 [[package]]
