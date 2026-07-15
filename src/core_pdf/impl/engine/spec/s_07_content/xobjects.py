@@ -10,7 +10,6 @@ from core_pdf.impl.engine.spec.s_08_graphics.matrix import (
     IDENTITY_MATRIX,
     Matrix,
 )
-from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.objects import PdfStream
 
 
@@ -135,40 +134,15 @@ class XObjectMixin:
         transformed_form_bbox = (
             transform_bbox(form_bbox, nested_ctm) if form_bbox is not None else None
         )
-        old_group_alpha = self.group_alpha
-        if group_alpha is not None:
-            self.drawings.append(
-                CapturedDrawing(
-                    seqno=self.sequence,
-                    fill=None,
-                    fill_opacity=group_alpha,
-                    blend_mode=self.blend_mode,
-                    kind="group-begin",
-                )
-            )
-            self.group_alpha = group_alpha
-        try:
-            self.consume_stream(
-                xobj,
-                resources,
-                nested_ctm,
-                depth + 1,
-                clip_bbox=transformed_form_bbox,
-            )
-        except PdfParseError:
-            return
-        finally:
-            self.group_alpha = old_group_alpha
-            if group_alpha is not None:
-                self.drawings.append(
-                    CapturedDrawing(
-                        seqno=self.sequence,
-                        fill=None,
-                        fill_opacity=group_alpha,
-                        blend_mode=self.blend_mode,
-                        kind="group-end",
-                    )
-                )
+        self.queue_stream(
+            xobj,
+            resources,
+            nested_ctm,
+            depth + 1,
+            clip_bbox=transformed_form_bbox,
+            group_alpha=group_alpha,
+            swallow_parse_errors=True,
+        )
 
 
 def transform_bbox(

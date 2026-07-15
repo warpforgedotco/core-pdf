@@ -4,613 +4,278 @@ New York University
 715, Broadway, 7th Floor
 New York, NY, 10003
 {yusuke,sekine}@cs.nyu.edu
-
-Abstract
-We are trying to extend the boundary of
-Information Extraction (IE) systems. Ex-
-isting IE systems require a lot of time and
-human effort to tune for a new scenario.
-Preemptive Information Extraction is an
-attempt to automatically create all feasible
-IE systems in advance without human in-
-tervention. We propose a technique called
-Unrestricted Relation Discovery that dis-
-covers all possible relations from texts and
-presents them as tables. We present a pre-
-liminary system that obtains reasonably
-good results.
-1 Background
-Every day, a large number of news articles are cre-
-
-cles and adjust its patterns, either manually or semi-
+Abstract cles and adjust its patterns, either manually or semi-
 automatically. There is a bit of a dangerous pitfall
-here. First, it is hard to estimate how good the sys-
-tem can be after months of work. Furthermore, you
-might not know if the task is even doable in the ﬁrst
-place. Knowing what kind of information is easily
-obtained in advance would help reduce this risk.
-An IE task can be deﬁned as ﬁnding a relation
-among several entities involved in a certain type of
-event. For example, in the MUC-6 management
-succession scenario, one seeks a relation between
-COMPANY, PERSON and POST involved with hir-
-ing/ﬁring events. For each row of an extracted ta-
-ble, you can always read it as “COMPANY hired
-(or ﬁred) PERSON for POST.” The relation between
+We are trying to extend the boundary of here. First, it is hard to estimate how good the sys-
+Information Extraction (IE) systems. Ex- tem can be after months of work. Furthermore, you
+isting IE systems require a lot of time and might not know if the task is even doable in the ﬁrst
+human effort to tune for a new scenario. place. Knowing what kind of information is easily
+Preemptive Information Extraction is an obtained in advance would help reduce this risk.
+attempt to automatically create all feasible An IE task can be deﬁned as ﬁnding a relation
+IE systems in advance without human in- among several entities involved in a certain type of
+tervention. We propose a technique called event. For example, in the MUC-6 management
+Unrestricted Relation Discovery that dis- succession scenario, one seeks a relation between
+covers all possible relations from texts and COMPANY, PERSON and POST involved with hir-
+presents them as tables. We present a pre- ing/ﬁring events. For each row of an extracted ta-
+liminary system that obtains reasonably ble, you can always read it as “COMPANY hired
+good results. (or ﬁred) PERSON for POST.” The relation between
 these entities is retained throughout the table. There
 are many existing works on obtaining extraction pat-
+1 Background
 terns for pre-deﬁned relations (Riloff, 1996; Yangar-
-ber et al., 2000; Agichtein and Gravano, 2000; Sudo
-
+Every day, a large number of news articles are cre- ber et al., 2000; Agichtein and Gravano, 2000; Sudo
 ated and reported, many of which are unique. But et al., 2003).
-
-certain types of events, such as hurricanes or mur-
-ders, are reported again and again throughout a year.
-The goal of Information Extraction, or IE, is to re-
-trieve a certain type of news event from past articles
-and present the events as a table whose columns are
-ﬁlled with a name of a person or company, accord-
-ing to its role in the event. However, existing IE
-techniques require a lot of human labor. First, you
-have to specify the type of information you want and
-collect articles that include this information. Then,
-you have to analyze the articles and manually craft
-a set of patterns to capture these events. Most exist-
-ing IE research focuses on reducing this burden by
-helping people create such patterns. But each time
-you want to extract a different kind of information,
-
-Unrestricted Relation Discovery is a technique to
-automatically discover such relations that repeatedly
-appear in a corpus and present them as a table, with
-absolutely no human intervention. Unlike most ex-
-isting IE research, a user does not specify the type
-of articles or information wanted. Instead, a system
-tries to ﬁnd all the kinds of relations that are reported
-multiple times and can be reported in tabular form.
-This technique will open up the possibility of try-
-ing new IE scenarios. Furthermore, the system itself
-can be used as an IE system, since an obtained re-
-lation is already presented as a table. If this system
-works to a certain extent, tuning an IE system be-
-comes a search problem: all the tables are already
-built “preemptively.” A user only needs to search
-
+certain types of events, such as hurricanes or mur- Unrestricted Relation Discovery is a technique to
+ders, are reported again and again throughout a year. automatically discover such relations that repeatedly
+The goal of Information Extraction, or IE, is to re- appear in a corpus and present them as a table, with
+trieve a certain type of news event from past articles absolutely no human intervention. Unlike most ex-
+and present the events as a table whose columns are isting IE research, a user does not specify the type
+ﬁlled with a name of a person or company, accord- of articles or information wanted. Instead, a system
+ing to its role in the event. However, existing IE tries to ﬁnd all the kinds of relations that are reported
+techniques require a lot of human labor. First, you multiple times and can be reported in tabular form.
+have to specify the type of information you want and This technique will open up the possibility of try-
+collect articles that include this information. Then, ing new IE scenarios. Furthermore, the system itself
+you have to analyze the articles and manually craft can be used as an IE system, since an obtained re-
+a set of patterns to capture these events. Most exist- lation is already presented as a table. If this system
+ing IE research focuses on reducing this burden by works to a certain extent, tuning an IE system be-
+helping people create such patterns. But each time comes a search problem: all the tables are already
+you want to extract a different kind of information, built “preemptively.” A user only needs to search
 you need to repeat the whole process: specify arti- for a relevant table.Article dump be-hit
-
-2005-09-23 Katrina
-2005-10-02 Longwang
-2005-11-20 Gamma
-
-New Orleans
-Taiwan
-Florida
-
-. . .Katrina. . .New Orleans. . .
-headed
-
-was-hit
-
+1. 2.
+2005-09-23 Katrina New Orleans Katrina New Orleans
+2005-10-02 Longwang Taiwan
+2005-11-20 Gamma Florida headed was-hit
 threatened has-been-evacuated
-
 Keywords: storm, evacuate, coast, rain, hurricane
-
 is-category-5-residents
-
-... ...
 
 Table 1: Sample discovered relation.
-
 Basic patternsBasic patterns
-
-article Afor entity "Katrina"
-for entity "New Orleans"
-
+article Afor entity "Katrina"for entity "New Orleans"
 Figure 1: Obtaining basic patterns.
+We implemented a preliminary system for this
+technique and obtained reasonably good perfor-
+1. 2.
+mance. Table 1 is a sample relation that was ex- Katrina New Orleans
+tracted as a table by our system. The columns of the
+headed was-hit
+table show article dates, names of hurricanes and the threatened has-been-evacuated
+places they affected respectively. The headers of the is-category-5-residents
 
-We implemented a preliminary
-technique and obtained
-mance. Table 1 is a sample
-tracted as a table by our system.
-table show article dates, names
-places they affected respectively.
-table and its keywords were
-ically.
-2 Basic Idea
-
-system for this
-reasonably good perfor-
-relation that was ex-
-The columns of the
-of hurricanes and the
-The headers of the
-also extracted automat-
-
-1.
-. . .Katrina. . .New Orleans. . .
-headed
-...
-article A
-"stroke"
-1.
-
-2.
-was-hit
-threatened has-been-evacuated
-is-category-5-residents
-...
-Common PatternCommon Pattern
-"was-hit"
-2.
-
-. . .Longwang. . .Taiwan. . .
-
-In Unrestricted Relation
-process (i.e. creating new
-as a clustering task. The key
-of articles that contain entities
-tion to each other in such a way
-a table where the entities that
-placed in the same column.
-Suppose that there are two
-and both report hurricane-related
-contains two entities “Katrina”
-and article B contains
-These entities are recognized
-(NE) tagger. We want to
-them. First, we introduce a
-pattern” to form a relation.
-part of the text that is
-an entity. Some examples are
-residents”. Figure 1 shows
-connected to the entities
-leans” in article A. Similarly,
-patterns for article B. Now,
-ties “Katrina” and “Longwang”
-tern “headed” in common. In
-these two entities to each other.
-is also a common basic pattern
-“New Orleans” and “Taiwan”.
-sets of entities that can be
-at the same time. What does
-that both entity sets (“Katrina”-“New
-“Longwang”-“Taiwan”) represent
-that has something in common:
-
-Discovery, the discovery
-tables) can be formulated
-idea is to cluster a set
-bearing a similar rela-
-that we can construct
-play the same role are
-articles A and B,
-news. Article A
-and “New Orleans”,
-“Longwang” and “Taiwan”.
-by a Named Entity
-discover a relation among
-notion called “basic
-A basic pattern is a
-syntactically connected to
-“X is hit” or “Y’s
-several basic patterns
-“Katrina” and “New Or-
-we obtain the basic
-in Figure 2, both enti-
-have the basic pat-
-this case, we connect
-Furthermore, there
-“was-hit” shared by
-Now, we found two
-placed in correspondence
-this mean? We can infer
-Orleans” and
-a certain relation
-a hurricane name
-
-hit
-headed
-swirling
-...
+table and its keywords were also extracted automat- article A
+ically. Common PatternCommon Pattern
+"stroke" "was-hit"
+2 Basic Idea 1. 2.
+Longwang Taiwan
+In Unrestricted Relation Discovery, the discovery hit 's-coast
+process (i.e. creating new tables) can be formulated headed was-pounded
+swirling was-hit
+as a clustering task. The key idea is to cluster a set
 article B
+of articles that contain entities bearing a similar rela-
+tion to each other in such a way that we can construct article AKatrinaNew Orleans
 Obtained
-Table
-Figure 2: Finding a similar
-and the place it affected. By
-allel correspondences between
-estimate the similarity of their
-Generally, in a clustering
-by ﬁnding similar pairs. After
-cles that have a similar relation,
-into the same cluster. In this
-by using their basic patterns
-each basic pattern is still
-that we can extract the name
-sider a basic pattern to represent
-“role” of its entity. In this
-had “headed” as a basic pattern
-the entities that had “was-hit”
-the places it affected. By
-can align the entities into the
-that represents a certain role
-this example, we create a
-each column represents the
-each row represents a different
-the bottom of Figure 2.
-We can extend this table by
-
-'s-coast
-was-pounded
-was-hit
-...
-article AKatrinaNew Orleans
-article BLongwangTaiwan
-relation from two articles.
-ﬁnding multiple par-
-two articles, we can
-relations.
-task, one groups items
-ﬁnding a pair of arti-
-we can bring them
-case, we cluster articles
-as features. However,
-connected to its entity so
-from it. We can con-
-something like the
-example, the entities that
-are hurricanes, and
-as a basic pattern are
-using basic patterns, we
-corresponding column
-in the relation. From
-two-by-two table, where
-roles of the entities, and
-article, as shown in
-ﬁnding another article
-
-1. 2.in the same manner. In this way, we gradually extend
-a table while retaining a relation among its columns.
-In this example, the obtained table is just what an IE
-system (whose task is to ﬁnd a hurricane name and
-the affected place) would create.
-However, these articles might also include other
-things, which could represent different relations. For
-example, the governments might call for help or
-some casualties might have been reported. To ob-
-tain such relations, we need to choose different en-
-tities from the articles. Several existing works have
-tried to extract a certain type of relation by manu-
-ally choosing different pairs of entities (Brin, 1998;
-Ravichandran and Hovy, 2002). Hasegawa et al.
-(2004) tried to extract multiple relations by choos-
-ing entity types. We assume that we can ﬁnd such
-relations by trying all possible combinations from
-a set of entities we have chosen in advance; some
-combinations might represent a hurricane and gov-
-
-enough, because the number of sentences is rather
-small in comparison to the variation of expressions.
-So having two articles that have multiple basic pat-
-terns in common is very unlikely. We extend the
-number of articles for obtaining basic patterns by
-using a cluster of comparable articles that report the
-same event instead of a single article. We call this
-cluster of articles a “basic cluster.” Using basic clus-
-ters instead of single articles also helps to increase
-the redundancy of data. We can give more conﬁ-
-dence to repeated basic patterns.
-Note that the notion of “basic cluster” is different
-from the clusters used for creating tables explained
-above. In the following sections, a cluster for creat-
-ing a table is called a “metacluster,” because this is
-a cluster of basic clusters. A basic cluster consists
-of a set of articles that report the same event which
-happens at a certain time, and a metacluster consists
-of a set of events that contain the same relation over
-
+a table where the entities that play the same role are article BLongwangTaiwan Table
+placed in the same column.
+Figure 2: Finding a similar relation from two articles.
+Suppose that there are two articles A and B,
+and both report hurricane-related news. Article A
+contains two entities “Katrina” and “New Orleans”, and the place it affected. By ﬁnding multiple par-
+and article B contains “Longwang” and “Taiwan”. allel correspondences between two articles, we can
+These entities are recognized by a Named Entity estimate the similarity of their relations.
+(NE) tagger. We want to discover a relation among Generally, in a clustering task, one groups items
+them. First, we introduce a notion called “basic by ﬁnding similar pairs. After ﬁnding a pair of arti-
+pattern” to form a relation. A basic pattern is a cles that have a similar relation, we can bring them
+part of the text that is syntactically connected to into the same cluster. In this case, we cluster articles
+an entity. Some examples are “X is hit” or “Y’s by using their basic patterns as features. However,
+residents”. Figure 1 shows several basic patterns each basic pattern is still connected to its entity so
+connected to the entities “Katrina” and “New Or- that we can extract the name from it. We can con-
+leans” in article A. Similarly, we obtain the basic sider a basic pattern to represent something like the
+patterns for article B. Now, in Figure 2, both enti- “role” of its entity. In this example, the entities that
+ties “Katrina” and “Longwang” have the basic pat- had “headed” as a basic pattern are hurricanes, and
+tern “headed” in common. In this case, we connect the entities that had “was-hit” as a basic pattern are
+these two entities to each other. Furthermore, there the places it affected. By using basic patterns, we
+is also a common basic pattern “was-hit” shared by can align the entities into the corresponding column
+“New Orleans” and “Taiwan”. Now, we found two that represents a certain role in the relation. From
+sets of entities that can be placed in correspondence this example, we create a two-by-two table, where
+at the same time. What does this mean? We can infer each column represents the roles of the entities, and
+that both entity sets (“Katrina”-“New Orleans” and each row represents a different article, as shown in
+“Longwang”-“Taiwan”) represent a certain relation the bottom of Figure 2.
+that has something in common: a hurricane name We can extend this table by ﬁnding another articlein the same manner. In this way, we gradually extend enough, because the number of sentences is rather
+a table while retaining a relation among its columns. small in comparison to the variation of expressions.
+In this example, the obtained table is just what an IE So having two articles that have multiple basic pat-
+system (whose task is to ﬁnd a hurricane name and terns in common is very unlikely. We extend the
+the affected place) would create. number of articles for obtaining basic patterns by
+However, these articles might also include other using a cluster of comparable articles that report the
+things, which could represent different relations. For same event instead of a single article. We call this
+example, the governments might call for help or cluster of articles a “basic cluster.” Using basic clus-
+some casualties might have been reported. To ob- ters instead of single articles also helps to increase
+tain such relations, we need to choose different en- the redundancy of data. We can give more conﬁ-
+tities from the articles. Several existing works have dence to repeated basic patterns.
+tried to extract a certain type of relation by manu- Note that the notion of “basic cluster” is different
+ally choosing different pairs of entities (Brin, 1998; from the clusters used for creating tables explained
+Ravichandran and Hovy, 2002). Hasegawa et al. above. In the following sections, a cluster for creat-
+(2004) tried to extract multiple relations by choos- ing a table is called a “metacluster,” because this is
+ing entity types. We assume that we can ﬁnd such a cluster of basic clusters. A basic cluster consists
+relations by trying all possible combinations from of a set of articles that report the same event which
+a set of entities we have chosen in advance; some happens at a certain time, and a metacluster consists
+combinations might represent a hurricane and gov- of a set of events that contain the same relation over
 ernment relation, and others might represent a place a certain period.
-
-and its casualties. To ensure that an article can have
-several different relations, we let each article belong
-to several different clusters.
-In a real-world situation, only using basic patterns
-sometimes gives undesired results. For example,
-“(President) Bush ﬂew to Texas” and “(Hurricane)
-Katrina ﬂew to New Orleans” both have a basic pat-
-tern “flew to” in common, so “Bush” and “Kat-
-rina” would be put into the same column. But we
-want to separate them in different tables. To allevi-
-ate this problem, we put an additional restriction on
-clustering. We use a bag-of-words approach to dis-
-criminate two articles: if the word-based similarity
-between two articles is too small, we do not bring
-them together into the same cluster (i.e. table). We
-exclude names from the similarity calculation at this
-stage because we want to link articles about the same
-type of event, not the same instance. In addition, we
-use the frequency of each basic pattern to compute
-the similarity of relations, since basic patterns like
-“say” or “have” appear in almost every article and it
-is dangerous to rely on such expressions.
-Increasing Basic Patterns
-In the above explanation, we have assumed that we
-can obtain enough basic patterns from an article.
-However, the actual number of basic patterns that
-one can ﬁnd from a single article is usually not
-
-We try to increase the number of articles in a basic
-cluster by looking at multiple news sources simulta-
-neously. We use a clustering algorithm that uses a
-vector-space-model to obtain basic clusters. Then
-we apply cross-document coreference resolution to
-connect entities of different articles within a basic
-cluster. This way, we can increase the number of ba-
-sic patterns connected to each entity. Also, it allows
-us to give a weight to entities. We calculate their
-weights using the number of occurrences within a
-cluster and their position within an article. These
-entities are used to obtain basic patterns later.
-We also use a parser and tree normalizer to gen-
-erate basic patterns. The format of basic patterns
-is crucial to performance. We think a basic pat-
-tern should be somewhat speciﬁc, since each pat-
-tern should capture an entity with some relevant con-
-text. But at the same time a basic pattern should
-be general enough to reduce data sparseness. We
-choose a predicate-argument structure as a natural
-solution for this problem. Compared to traditional
-constituent trees, a predicate-argument structure is
+and its casualties. To ensure that an article can have We try to increase the number of articles in a basic
+several different relations, we let each article belong cluster by looking at multiple news sources simulta-
+to several different clusters. neously. We use a clustering algorithm that uses a
+In a real-world situation, only using basic patterns vector-space-model to obtain basic clusters. Then
+sometimes gives undesired results. For example, we apply cross-document coreference resolution to
+“(President) Bush ﬂew to Texas” and “(Hurricane) connect entities of different articles within a basic
+Katrina ﬂew to New Orleans” both have a basic pat- cluster. This way, we can increase the number of ba-
+tern “flew to” in common, so “Bush” and “Kat- sic patterns connected to each entity. Also, it allows
+rina” would be put into the same column. But we us to give a weight to entities. We calculate their
+want to separate them in different tables. To allevi- weights using the number of occurrences within a
+ate this problem, we put an additional restriction on cluster and their position within an article. These
+clustering. We use a bag-of-words approach to dis- entities are used to obtain basic patterns later.
+criminate two articles: if the word-based similarity We also use a parser and tree normalizer to gen-
+between two articles is too small, we do not bring erate basic patterns. The format of basic patterns
+them together into the same cluster (i.e. table). We is crucial to performance. We think a basic pat-
+exclude names from the similarity calculation at this tern should be somewhat speciﬁc, since each pat-
+stage because we want to link articles about the same tern should capture an entity with some relevant con-
+type of event, not the same instance. In addition, we text. But at the same time a basic pattern should
+use the frequency of each basic pattern to compute be general enough to reduce data sparseness. We
+the similarity of relations, since basic patterns like choose a predicate-argument structure as a natural
+“say” or “have” appear in almost every article and it solution for this problem. Compared to traditional
+is dangerous to rely on such expressions. constituent trees, a predicate-argument structure is
 a higher-level representation of sentences that has
-gained wide acceptance from the natural language
-community recently. In this paper we used a logical
-feature structure called GLARF proposed by Mey-
-ers et al. (2001a). A GLARF converter takes a syn-
-tactic tree as an input and augments it with several's ...Newspapers
-
+Increasing Basic Patterns gained wide acceptance from the natural language
+In the above explanation, we have assumed that we community recently. In this paper we used a logical
+can obtain enough basic patterns from an article. feature structure called GLARF proposed by Mey-
+However, the actual number of basic patterns that ers et al. (2001a). A GLARF converter takes a syn-
+one can ﬁnd from a single article is usually not tactic tree as an input and augments it with several's Newspapers
 SUFFIX
-
 Louisiana
-
 Web
-
 T-POS Crawling
-
 Katrina coast Basic
-
 Clustering
-
 SBJ OBJ
-
-...Basic
-
+Basic
 hit Clusters
-
-Figure 3: GLARF structure of the sentence ﬁ
-Katrina
-
+Figure 3: GLARF structure of the sentence “Katrina
 Parsing
-
-hit Louisiana's coast.
-ﬂ Coreference
-
+hit Louisiana’s coast.” Coreference
 Resolution
-
 GLARFing
-
 features. Figure 3 shows a sample GLARF structure
-
-obtained from the sentence ﬁ
-Katrina hit Louisiana's
-
-coast.
-ﬂ We used GLARF for two reasons: 
-Basic Pattern
-rst,
-
-Generation
-
-unlike traditional constituent parsers, 
-Basic PatternsGLARF has
-
+obtained from the sentence “Katrina hit Louisiana’s
+coast.” We used GLARF for two reasons: ﬁrst, Basic Pattern Generation
+unlike traditional constituent parsers, GLARF has Basic Patterns
 an ability to regularize several linguistic phenom-
-
-ena such as participial constructions and coordina-
-Metaclustering
-
+ena such as participial constructions and coordina- Metaclustering
 tion. This allows us to handle this syntactic variety
-
-in a uniform way. Second, an output structure can
-Metaclusters
-
+in a uniform way. Second, an output structure can Metaclusters
 (Tables)
-
 be easily converted into a directed graph that rep-
-
-resents the relationship between each word, without
-Figure 4: System overview.
-
-losing signicant information from the original sen-
-
+resents the relationship between each word, without Figure 4: System overview.
+losing signiﬁcant information from the original sen-
 tence. Compared to an ordinary constituent tree, it is
-
 cles that talk about exactly the same news and form
-
 easier to extract syntactic relationships. In the next
-
 a basic cluster.
-
 section, we discuss how we used this structure to
-
 We eliminate stop words and stem all the other
-
 generate basic patterns.
-
 words, then compute the similarity between two ar-
-
 ticles by using a bag-of-words approach. In news
-
 3 Implementation
-
 articles, a sentence that appears in the beginning of
-
-The overall process to generate basic patterns and
-an article is usually more important than the others.
-
-discover relations from unannotated news articles is
-So we preserved the word order to take into account
-
-shown in Figure 4. Theoretically this could be a
-the location of each sentence. First we computed a
-
-straight pipeline, but due to the nature of the im-
-word vector from each article:
-
-plementation we process some stages separately and
-X i
-
-combine them in the later stage. 
-Vw(A) =IDF(w)In the following
-exp(¡ )
-
+The overall process to generate basic patterns and an article is usually more important than the others.
+discover relations from unannotated news articles is So we preserved the word order to take into account
+shown in Figure 4. Theoretically this could be a the location of each sentence. First we computed a
+straight pipeline, but due to the nature of the im- word vector from each article:
+plementation we process some stages separately and ∑ i
+combine them in the later stage. In the following Vw(A) = IDF(w) exp(− )
 avgwords
-
-subsection, we explain each component.
-i2POS(w;A)
-
-where
-Vw(A)isavectorelementofword
-winarticle
-
-3.1 Web Crawling and Basic Clustering
-A,IDF(w)is the inverse document frequency of
-
-First of all, we need a lot of news articles from mul-
-wordw, andPOS(w;A)is a list of
-w's positions
-
-tiple news sources. We created a simple web crawler
-in the article.
-avgwords
-is the average number of
-
+subsection, we explain each component. i∈P OS(w,A)
+where Vw(A) is a vector element of word w in article
+3.1 Web Crawling and Basic Clustering A, IDF(w) is the inverse document frequency of
+First of all, we need a lot of news articles from mul- word w, and P OS(w, A) is a list of w’s positions
+tiple news sources. We created a simple web crawler in the article. avgwords is the average number of
+that extract the main texts from web pages. We ob- words for all articles. Then we calculated the cosine
+served that the crawler can correctly take the main value of each pair of vectors:
 texts from about 90% of the pages from each news
-site.
-
-that extract the main texts from web pages. We ob-
-words for all articles. Then we calculated the cosine
-served that the crawler can correctly take the main
-value of each pair of vectors:
-Sim(A1;A2) = cos(
-V(A1)¢V(A2))
-We ran the crawler every day on several news
-
-sites. Then we applied a simple clustering algorithm
-We computed the similarity of all possible pairs of
-
-to the obtained articles in order to nd a set of arti-
-articles from the same day, and selected the pairswhose similarity exceeded a certain threshold (0.65 's
-
+Sim(A₁, A₂) = cos(V (A₁) · V (A₂))
+site. We ran the crawler every day on several news
+sites. Then we applied a simple clustering algorithm We computed the similarity of all possible pairs of
+to the obtained articles in order to ﬁnd a set of arti- articles from the same day, and selected the pairswhose similarity exceeded a certain threshold (0.65 's
 in this experiment) to form a basic cluster.
-
-3.2 Parsing and GLARFing
-After getting a set of basic clusters, we pass them
-to an existing statistical parser (Charniak, 2000) and
-rule-based tree normalizer to obtain a GLARF struc-
-
-Louisiana
-T-POS
-GPE+T-POS:coast
+SUFFIX
+3.2 Parsing and GLARFing Louisiana
+After getting a set of basic clusters, we pass them T-POS
+to an existing statistical parser (Charniak, 2000) and GPE+T-POS:coast
 Katrina coast
-
+rule-based tree normalizer to obtain a GLARF struc-
 ture for each sentence in every article. The current SBJ OBJ
-
 PER+SBJ:hit-OBJ:coast
-
 implementation of a GLARF converter gives about hit
-
-75% F-score using parser output. For the details of
+75% F-score using parser output. For the details of PER+SBJ:hit
 GLARF representation and its conversion, see Mey-
-ers et al. (2001b).
-3.3 NE Tagging and Coreference Resolution
-In parallel with parsing and GLARFing, we also ap-
-ply NE tagging and coreference resolution for each
-article in a basic cluster. We used an HMM-based
-NE tagger whose performance is about 85% in F-
-score. This NE tagger produces ACE-type Named
-Entities 1: PERSON, ORGANIZATION, GPE, LO-
-CATION and FACILITY 2. After applying single-
-document coreference resolution for each article, we
-connect the entities among different articles in the
-same basic cluster to obtain cross-document coref-
-erence entities with simple string matching.
-3.4 Basic Pattern Generation
-After getting a GLARF structure for each sentence
-and a set of documents whose entities are tagged
-and connected to each other, we merge the two out-
-puts and create a big network of GLARF structures
-whose nodes are interconnected across different sen-
-tences/articles. Now we can generate basic patterns
-for each entity. First, we compute the weight for
-each cross-document entityE in a certain basic clus-
-ter as follows:
-
-PER+SBJ:hit
 Figure 5: Basic patterns obtained from the sentence
+ers et al. (2001b).
 “Katrina hit Louisiana’s coast.”
-of the sentence where entitye ﬁrst appeared, respec-
-tively. C is a constant value which was0.5 in this ex-
+3.3 NE Tagging and Coreference Resolution
+of the sentence where entity e ﬁrst appeared, respec-
+In parallel with parsing and GLARFing, we also ap-
+tively. C is a constant value which was 0.5 in this ex-
+ply NE tagging and coreference resolution for each
 periment. To reduce combinatorial complexity, we
+article in a basic cluster. We used an HMM-based
 took only the ﬁve most highly weighted entities from
+NE tagger whose performance is about 85% in F-
 each basic cluster to generate basic patterns. We ob-
+score. This NE tagger produces ACE-type Named
 served these ﬁve entities can cover major relations
+Entities¹: PERSON, ORGANIZATION, GPE, LO-
 that are reported in a basic cluster.
+CATION and FACILITY². After applying single-
 Next, we obtain basic patterns from the GLARF
+document coreference resolution for each article, we
 structures. We used only the ﬁrst ten sentences
+connect the entities among different articles in the
 in each article for getting basic patterns, as most
+same basic cluster to obtain cross-document coref-
 important facts are usually written in the ﬁrst few
+erence entities with simple string matching.
 sentences of a news article. Figure 5 shows all
 the basic patterns obtained from the sentence “Ka-
+3.4 Basic Pattern Generation
 trina hit Louisiana’s coast.” The shaded nodes
-“Katrina” and “Louisiana” are entities from which
-each basic pattern originates. We take a path
-of GLARF nodes from each entity node until it
-reaches any predicative node: noun, verb, or ad-
-jective in this case. Since the nodes “hit” and
-“coast” can be predicates in this example, we ob-
-tain three unique paths “Louisiana+T-POS:coast
-(Louisiana’s coast)”, “Katrina+SBJ:hit (Katrina
-hit something)”, and “Katrina+SBJ:hit-OBJ:coast
-
-X (Katrina hit some coast)”.
-
-WE = mentions(e)·exp(−C ·firstsent(e))
-e∈E
-where e ∈ E is an entity within one article and
-mentions(e) and firstsent(e) are the number of
-mentions of entity e in a document and the position
-1The ACE task description can be found at
-http://www.itl.nist.gov/iad/894.01/tests/ace/ and the ACE
-guidelines at http://www.ldc.upenn.edu/Projects/ACE/
-2Thehurricane namesused inthe exampleswere recognized
-as PERSON.
-
-To increase the speciﬁcity of patterns, we generate
-extra basic patterns by adding a node that is imme-
+After getting a GLARF structure for each sentence “Katrina” and “Louisiana” are entities from which
+and a set of documents whose entities are tagged each basic pattern originates. We take a path
+and connected to each other, we merge the two out- of GLARF nodes from each entity node until it
+puts and create a big network of GLARF structures reaches any predicative node: noun, verb, or ad-
+whose nodes are interconnected across different sen- jective in this case. Since the nodes “hit” and
+tences/articles. Now we can generate basic patterns “coast” can be predicates in this example, we ob-
+for each entity. First, we compute the weight for tain three unique paths “Louisiana+T-POS:coast
+each cross-document entity E in a certain basic clus- (Louisiana’s coast)”, “Katrina+SBJ:hit (Katrina
+ter as follows: hit something)”, and “Katrina+SBJ:hit-OBJ:coast
+∑ (Katrina hit some coast)”.
+WE = mentions(e) · exp(−C · firstsent(e)) To increase the speciﬁcity of patterns, we generate
+e∈E extra basic patterns by adding a node that is imme-
 diately connected to a predicative node. (From this
+where e ∈ E is an entity within one article and
 example, we generate two basic patterns: “hit” and
+mentions(e) and firstsent(e) are the number of
 “hit-coast” from the “Katrina” node.)
+mentions of entity e in a document and the position
 Notice that in a GLARF structure, the type
-of each argument such as subject or object is
-preserved in an edge even if we extract a sin-
-gle path of a graph. Now, we replace both
-entities “Katrina” and “Louisiana” with variables
-
-SUFFIXbased on their NE tags and obtain parameter- Source articles 28,009
+¹The ACE task description can be found at of each argument such as subject or object is
+http://www.itl.nist.gov/iad/894.01/tests/ace/ and the ACE preserved in an edge even if we extract a sin-
+guidelines at http://www.ldc.upenn.edu/Projects/ACE/
+²The hurricane names used in the examples were recognized gle path of a graph. Now, we replace both
+as PERSON. entities “Katrina” and “Louisiana” with variablesbased on their NE tags and obtain parameter- Source articles 28,009
 ized patterns: “GPE+T-POS:coast (Louisiana’s Basic clusters 5,543
 coast)”, “PER+SBJ:hit (Katrina hit something)”, Basic patterns (token) 643,767
 and “PER+SBJ:hit-OBJ:coast (Katrina hit some Basic patterns (type) 7,990
 coast)”. Metaclusters 302
-After taking all the basic patterns from every basic Metaclusters (rows≥ 3) 101
+After taking all the basic patterns from every basic Metaclusters (rows ≥ 3) 101
 cluster, we compute the Inverse Cluster Frequency Table 2: Articles and obtained metaclusters.
 (ICF) of each unique basic pattern. ICF is similar
 to the Inverse Document Frequency (IDF) of words,
@@ -630,13 +295,13 @@ A B
 mappings of relations (parallel mappings of multi- source articles that were used to extract the rela-
 ple entities) from both basic clusters, and ﬁnd all the tion. Then for each table, an evaluator looks into
 mappings M whose similarity score exceeds a cer- every row and its source article, and tries to come
-tain threshold. wordsim(c ,c ) is the bag-of-words up with a sentence that explains the relation among
+tain threshold. wordsim(c , c ) is the bag-of-words up with a sentence that explains the relation among
 A B
 similarity of two clusters. As a weighting function its columns. The description should be as speciﬁc as
 we used ICF: possible. If at least half of the rows can ﬁt the ex-
 planation, the table is considered “consistent.” For
 clusters that include p each consistent table, the evaluator wrote down the
-weight(p) = −log( )
+weight(p) = − log( )
 all clusters sentence using variable names ($1, $2, ...) to refer
 to its columns. Finally, we counted the number of
 We then sort the similarities of all possible pairs
@@ -663,305 +328,125 @@ determines its columns and therefore deﬁne the re-
 table, we tried to estimate the recall by comparing
 lation of that table.
 this hurricane table to a manually created one (Table
-4 Experiment and Evaluation 6). We found 6 out of 9 hurricanes 3. It is worth
+4 Experiment and Evaluation 6). We found 6 out of 9 hurricanes³. It is worth
 noting that most of these hurricane names were au-
 We used twelve newspapers published mainly in the tomatically disambiguated although our NE tagger
 U.S. We collected their articles over two months didn’t distinguish a hurricane name from a person
 (from Sep. 21, 2005 - Nov. 27, 2005). We obtained
-3Hurricane Katrina and Longwang shown in the previous
+³Hurricane Katrina and Longwang shown in the previous
 643,767 basic patterns and 7,990 unique types. Then examples are not included in this table. They appeared before
-we applied metaclustering to these basic clusters this period.for each cluster pair (cA, cB) {
-
-XA = cA.entities
-
-XB = cB.entities
-
-for each entity mapping M = [(xA1,xB1),...,(xAn,xBn)] ∈ (2|XA| ×2|XB|) {
-
-for each entity pair (xAi,xBi){
-
-Pi = xAi.patternsP ∩xBi.patterns
-
+we applied metaclustering to these basic clusters this period.for each cluster pair (c A, c B ) {
+XA = c A.entities
+XB = c B.entities
+for each entity mapping M = [(x A₁, x B₁), ..., (x An, x Bn)] ∈ (2 |XA| × 2 |XB|) {
+for each entity pair (x Ai, x Bi) {
+Pi = x Ai.patterns ∩ x Bi.patternssummationtext
 pairscorei = weight(p)
-
 p∈Pi
-
-} P
-
+} summationtext
 mapscore = pairscorei
-
-if T1 < |M| and T2 < mapscore and T3 < wordsim(cA.words,cB.words) {
-
-link cA and cB with mapping M.
-
+if T₁ < |M| and T₂ < mapscore and T₃ < wordsim(c A.words, c B.words) {
+link c A and c B with mapping M .
 }
-
 }
-
 }
-
 Figure 6: Computing similarity of basic clusters.
-
-Tables:
-
+Tables: isting IE systems, as we are relying on a cluster of
 Consistent tables 36 (75%)
-
-Inconsistent tables 12
-
-Total 48
-
-Rows:
-
+Inconsistent tables 12 comparable articles rather than a single document to
+Total 48 discover an event. We might be able to improve this
+Rows: in the future by adjusting the basic clustering algo-
 Rows that ﬁt the description 118 (73%)
-
-Rows not ﬁtted 43
-
-Total 161
-
-Table 3: Evaluation results.
-
-Description
-
-Storm $1(PER) probably affected $2(GPE).
-
-Nominee $2(PER) must be
-
-conﬁrmed by $1(ORG).
-
-$1(PER) urges $2(GPE) to make changes.
-
-$1(GPE) launched an attack in $2(GPE).
-
-$1(PER) ran against $2(PER) in an election.
-
-$2(PER) visited $1(GPE) on a
-$2(PER) beat $1(PER) in golf.
-
-diplomatic mission.
-
-$2(GPE) soldier(s) were killed in $1(GPE).
-
-$2(PER) ran for governor of $1(GPE).
-
-Boxer $1(PER) fought boxer $2(PER).
-
-Table 4: Description of obtained
-ber of ﬁtted/total rows.
-
-tables and the
-
-name. The second largest table (about
-
-of ofﬁcials) is shown in Table 7.
-
-We reviewed 10 incorrect
-bles and found 4 of them were
-rors and one error was due to
-4 errors were due to multiple
-from each other that happened
-event reported in the same
-
-rows from various
-due to coreference
-a parse error. The
-basic patterns
-to refer to a
-cluster. The causes
-
-one remaining error was obscure. Most
-
-tables were a mixture of
-
-multiple relations and
-
-isting IE systems, as we are relying on a cluster of
-
-comparable articles rather than a single document to
-
-discover an event. We might be able to improve this
-
-in the future by adjusting the basic clustering algo-
-
-rithm or weighting schema of basic patterns. Sec-
-
-ondly, some combinations of basic patterns looked
-
-inherently vague. For example, we used the two ba-
-
+Rows not ﬁtted 43 rithm or weighting schema of basic patterns. Sec-
+Total 161 ondly, some combinations of basic patterns looked
+Table 3: Evaluation results. inherently vague. For example, we used the two ba-
 sic patterns “pitched” and “’s-series” in the fol-
-
-Rows lowing sentence (the patterns are underlined):
-
-8/16
-
-4/7 Ervin Santana pitched 5 1-3 gutsy innings in his post-
-
-4/6 season debut for the Angels, Adam Kennedy hit a go-
-
-3/5
-
+Description Rows lowing sentence (the patterns are underlined):
+Storm $1(PER) probably affected $2(GPE). 8/16
+Nominee $2(PER) must be conﬁrmed by $1(ORG). 4/7 Ervin Santana pitched 5 1-3 gutsy innings in his post-
+$1(PER) urges $2(GPE) to make changes. 4/6 season debut for the Angels, Adam Kennedy hit a go-
+$1(GPE) launched an attack in $2(GPE). 3/5
 ahead triple that sent Yankees outﬁelders crashing to the
-
-4/5
-
-2/4 ground, and Los Angeles beat New York 5-3 Monday
-
-4/4 night in the decisive Game 5 of their AL playoff series.
-
-3/3
-
-2/3 It is not clear whether this set of patterns can yield
-
-3/3
-
+$1(PER) ran against $2(PER) in an election. 4/5
+$2(PER) visited $1(GPE) on a diplomatic mission. 2/4 ground, and Los Angeles beat New York 5-3 Monday
+$2(PER) beat $1(PER) in golf. 4/4 night in the decisive Game 5 of their AL playoff series.
+$2(GPE) soldier(s) were killed in $1(GPE). 3/3
+$2(PER) ran for governor of $1(GPE). 2/3 It is not clear whether this set of patterns can yield
+Boxer $1(PER) fought boxer $2(PER). 3/3
 any meaningful relation. We are not sure how much
-
-num- this sort of table can affect overall IE performance.
-
+Table 4: Description of obtained tables and the num- this sort of table can affect overall IE performance.
+ber of ﬁtted/total rows.
 5 Conclusion
-
-nominations In this paper we proposed Preemptive Information
-
-Extraction as a new direction of IE research. As
-
-ta- its key technique, we presented Unrestricted Rela-
-
-er- tion Discovery that tries to ﬁnd parallel correspon-
-
-other dences between multiple entities in a document, and
-
-distant perform clustering using basic patterns as features.
-
-different To increase the number of basic patterns, we used
-
-of the a cluster of comparable articles instead of a single
-
-inconsistent document. We presented the implementation of our
-
-some preliminary system and its outputs. We obtained
-
+name. The second largest table (about nominations In this paper we proposed Preemptive Information
+of ofﬁcials) is shown in Table 7. Extraction as a new direction of IE research. As
+We reviewed 10 incorrect rows from various ta- its key technique, we presented Unrestricted Rela-
+bles and found 4 of them were due to coreference er- tion Discovery that tries to ﬁnd parallel correspon-
+rors and one error was due to a parse error. The other dences between multiple entities in a document, and
+4 errors were due to multiple basic patterns distant perform clustering using basic patterns as features.
+from each other that happened to refer to a different To increase the number of basic patterns, we used
+event reported in the same cluster. The causes of the a cluster of comparable articles instead of a single
+one remaining error was obscure. Most inconsistent document. We presented the implementation of our
+tables were a mixture of multiple relations and some preliminary system and its outputs. We obtained
 of their rows still looked consistent. dozens of usable tables.
-
 We have a couple of open questions. First, the
-
 overall recall of our system might be lower than ex-Article 1:dump 2:coast Acknowledgements
-
 2005-09-21 (1) Rita Texas
-
 2005-09-23 Rita New Orleans This research was supported by the National Science
-
 2005-09-25 Bush Texas Foundation under Grant IIS-00325657. This paper
-
 2005-09-26 Damrey Hainan
-
 (2) does not necessarily reﬂect the position of the U.S.
-
 2005-09-27 Damrey Vietnam
-
 2005-10-01 Rita Louisiana Government. We would like to thank Prof. Ralph
-
 2005-10-02 Otis Mexico Grishman who provided useful suggestions and dis-
-
 2005-10-04 Longwang China cussions.
-
 2005-10-05 Stan Mexico
-
 2005-10-06 Tammy Florida
-
 2005-10-07 Tammy Georgia
-
 2005-10-19 (3) Wilma Florida References
-
 2005-10-25 Wilma Cuba
-
 2005-10-25 Wilma Massachusetts Eugene Agichtein and L. Gravano. 2000. Snowball: Ex-
-
 2005-10-28 Beta Nicaragua tracting Relations from Large Plaintext Collections. In
-
 2005-11-20 Gamma Florida Proceedings of the 5th ACM International Conference
-
 on Digital Libraries (DL-00).
-
 1. More than 2,000 National Guard troops were put on
-
 active-duty alert to assist as Rita slammed into the string Sergey Brin. 1998. Extracting Patterns and Relations
-
-of islands and headed west, perhaps toward Texas. ... from the World Wide Web. In WebDB Workshop at
-
+of islands and headed west, perhaps toward Texas. from the World Wide Web. In Web DB Workshop at
 2. Typhoon Damrey smashed into Vietnam on Tuesday af- EDBT ’98.
-
-ter killing nine people in China, ... Eugene Charniak. 2000. A maximum-entropy-inspired
-
+ter killing nine people in China, Eugene Charniak. 2000. A maximum-entropy-inspired
 3. Oil markets have been watching Wilma’s progress ner- parser. In Proceedings of NAACL-2000.
-
-vously, ... but the threat to energy interests appears to
-
+vously, but the threat to energy interests appears to
 have eased as forecasters predict the storm will turn to- Takaaki Hasegawa, Satoshi Sekine, and Ralph Grishman.
-
-ward Florida. ... 2004. Discovering relations among named entities
-
+ward Florida. 2004. Discovering relations among named entities
 from large corpora. In Proceedings of the Annual
-
 Table 5: Hurricane table (“Storm $1(PER) probably Meeting of Association of Computational Linguistics
-
 affected $2(GPE).”) and the actual expressions we (ACL-04).
-
 used for extraction. Adam Meyers, Ralph Grishman, Michiko Kosaka, and
-
 Shubin Zhao. 2001a. Covering Treebanks with
-
 Hurricane Date (Affected Place) Articles GLARF. In ACL/EACL Workshop on Sharing Tools
-
 Philippe Sep 17-20 (?) 6 and Resources for Research and Education.
-
 * Rita Sep 17-26 (Louisiana, Texas, etc.) 566
-
 * Stan Oct 1-5 (Mexico, Nicaragua, etc.) 83 Adam Meyers, Michiko Kosaka, Satoshi Sekine, Ralph
-
 * Tammy Oct 5-? (Georgia, Alabama) 18 Grishman, and Shubin Zhao. 2001b. Parsing and
-
 Vince Oct 8-11 (Portugal, Spain) 12 GLARFing. In Proceedings of RANLP-2001, Tzigov
-
 * Wilma Oct 15-25 (Cuba, Honduras, etc.) 368 Chark, Bulgaria.
-
 Alpha Oct 22-24 (Haiti, Dominican Rep.) 80
-
 * Beta Oct 26-31 (Nicaragua, Honduras) 55 Deepak Ravichandran and Eduard Hovy. 2002. Learning
-
 * Gamma Nov 13-20 (Belize, etc.) 36 surface text patterns for a question answering system.
-
 Table 6: Hurricanes in North America between mid- In Proceedings of the 40th Annual Meeting of the As-
-
 sociation for Computational Linguistics (ACL).
-
 Sep. and Nov. (from Wikipedia). Rows with a
-
 star (*) were actually extracted. The number of the Ellen Riloff. 1996. Automatically Generating Extrac-
-
 source articles that contained a mention of the hurri- tion Patterns from Untagged Text. In Proceedings of
-
 the 13th National Conference on Artiﬁcial Intelligence
-
 cane is shown in the right column. (AAAI-96).
-
 Article 1:conﬁrm 2:be-conﬁrmed Kiyoshi Sudo, Satoshi Sekine, and Ralph Grishman.
-
 2005-09-21 Senate Roberts 2003. An Improved Extraction Pattern Representa-
-
 2005-10-03 Supreme Court Miers tion Model for Automatic IE Pattern Acquisition. In
-
 2005-10-20 Senate Bush Proceedings of the Annual Meeting of Association of
-
 2005-10-26 Senate Sauerbrey Computational Linguistics (ACL-03).
-
 2005-10-31 Senate Mr. Alito
-
 2005-11-04 Senate Alito Roman Yangarber, Ralph Grishman, Pasi Tapanainen,
-
 2005-11-17 Fed Bernanke and Silja Huttunen. 2000. Unsupervised Discovery
-
 of Scenario-Level Patterns for Information Extraction.
-
 Table 7: Nomination table (“Nominee $2(PER) In Proceedings of the 18th International Conference
-
 must be conﬁrmed by $1(ORG).”) on Computational Linguistics (COLING-00).

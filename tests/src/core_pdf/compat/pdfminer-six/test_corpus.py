@@ -29,12 +29,9 @@ SAMPLE_PASSWORDS = {
 
 EXPECTED_PDFMINER_FAILURES = {
     "contrib/issue-1249-evil-xrefs.pdf": "RecursionError",
-    "contrib/issue-598-cmap-other-fonts.pdf": "AssertionError",
 }
 
-EXPECTED_CORE_FAILURES = {
-    "contrib/issue-1249-evil-xrefs.pdf": "PdfParseError",
-}
+EXPECTED_CORE_FAILURES: dict[str, str] = {}
 
 
 def stored_text(name: str) -> str:
@@ -64,6 +61,9 @@ EXPECTED_PDFMINER_TEXT = {
     "contrib/issue-1113-evil-xobjects.pdf": stored_text("issue-1113-evil-xobjects.pdfminer.txt"),
     "contrib/issue-449-horizontal.pdf": stored_text("issue-449-horizontal.pdfminer.txt"),
     "contrib/issue-449-vertical.pdf": stored_text("issue-449-vertical.pdfminer.txt"),
+    "contrib/issue-598-cmap-other-fonts.pdf": stored_text(
+        "issue-598-cmap-other-fonts.pdfminer.txt"
+    ),
     "contrib/issue-625-identity-cmap.pdf": stored_text("issue-625-identity-cmap.pdfminer.txt"),
     "contrib/issue-791-non-unicode-cmap.pdf": stored_text(
         "issue-791-non-unicode-cmap.pdfminer.txt"
@@ -105,6 +105,7 @@ EXPECTED_CORE_TEXT = {
     "contrib/issue-1062-filters.pdf": stored_text("issue-1062-filters.core.txt"),
     "contrib/issue-1082-annotations.pdf": stored_text("issue-1082-annotations.core.txt"),
     "contrib/issue-1113-evil-xobjects.pdf": stored_text("issue-1113-evil-xobjects.core.txt"),
+    "contrib/issue-1249-evil-xrefs.pdf": stored_text("issue-1249-evil-xrefs.core.txt"),
     "contrib/issue-449-horizontal.pdf": stored_text("issue-449-horizontal.core.txt"),
     "contrib/issue-449-vertical.pdf": stored_text("issue-449-vertical.core.txt"),
     "contrib/issue-598-cmap-other-fonts.pdf": stored_text("issue-598-cmap-other-fonts.core.txt"),
@@ -148,7 +149,14 @@ EXPECTED_CORE_TEXT = {
 
 def core_extract_text(source: PdfSource, *, password: str = "") -> str:
     with PdfDocument.open(source, password=password) as document:
-        return cast(str, cast(Any, document).extract_text())
+        pages = []
+        for page in cast(Any, document).pages:
+            pages.append(
+                "\n".join(
+                    str(line.get("text") or "").replace("\r", "\n") for line in page.extract_lines()
+                )
+            )
+        return "\f".join(pages) + "\f"
 
 
 def sample_id(path: Path) -> str:

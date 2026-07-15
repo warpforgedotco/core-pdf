@@ -1,7 +1,7 @@
+IEEE TRANSACTIONS ON INFORMATION FORENSICS AND SECURITY, VOL. X, NO. X, JULY 2016 1
 Individual Diﬀerential Privacy: A Utility-Preserving
 Formulation of Diﬀerential Privacy Guarantees
-Jordi Soria-Comas, Josep Domingo-Ferrer, David Sánchez, and David Megías,
-
+Jordi Soria-Comas, Josep Domingo-Ferrer, Fellow, IEEE, David Sánchez, and David Megías, Member, IEEE
 Abstract—Diﬀerential privacy is a popular privacy Essentially, two main approaches exist in statistical
 model within the research community because of the disclosure control [1], [2] to limit the disclosure risk: (i)
 strong privacy guarantee it oﬀers, namely that the
@@ -20,7 +20,8 @@ have been proposed that trade oﬀ privacy guarantees
 for improved data utility. In this work, we argue that the former approach is the only viable solution; however,
 the standard formalization of diﬀerential privacy is for a ﬁxed data analysis known beforehand, interactive
 stricter than required by the intuitive privacy guar- protection should be preferred as it allows adjusting the
-antee it seeks. In particular, the standard formalizalevel of protection to the analysis being performed, which
+antee it seeks. In particular, the standard formaliza-
+level of protection to the analysis being performed, which
 tion requires indistinguishability of results between any
 makes it possible to maximize the accuracy of the results.
 pair of neighbor data sets, while indistinguishability
@@ -75,1484 +76,875 @@ josep.domingo, david.sanchez}@urv.cat the data on an individual have a signiﬁc
 D. Megías is with the Estudis d’Informàtica, Multimèdia i Tele- results of an analysis, most probably the privacy of this
 comunicació, Internet Interdisciplinary Institute (IN3), Universitat
 Oberta de Catalunya, Av. Carl Friedrich Gauss 5, E-08860 Castellde- individual is at risk. Thus, intuitively, diﬀerential privacy
-fels, Catalonia. E-mail dmegias@uoc.edu ensures the data are adequately protected.However, we argue here that the standard
-of diﬀerential privacy is stronger (and, thus,
-data distortion and less useful results) than
-data protection intuition requires. This can
-two diﬀerent but related points of view:
-Diﬀerential privacy assumes the presence
-party that holds the data set, receives
-mitted by the users and returns diﬀerentially
-
-formalization
-leads to more
-what the above to
-be seen from
-of
-of a trusted
-queries sub-
-private
-
-present and formalize our individual diﬀerential privacy
-model and in Section V we propose several mechanisms
-satisfy it that exploit its less strict formulation to
-reduce data distortion. Section VI analyzes the accuracy
-individually diﬀerentially private results of several common queries and compares their accuracy against the
-one obtained using standard diﬀerential privacy. The ﬁnal
-section presents the conclusions along with some future
-
+fels, Catalonia. E-mail dmegias@uoc.edu ensures the data are adequately protected.IEEE TRANSACTIONS ON INFORMATION FORENSICS AND SECURITY, VOL. X, NO. X, JULY 2016 2
+However, we argue here that the standard formalization present and formalize our individual diﬀerential privacy
+of diﬀerential privacy is stronger (and, thus, leads to more model and in Section V we propose several mechanisms
+data distortion and less useful results) than what the above to satisfy it that exploit its less strict formulation to
+data protection intuition requires. This can be seen from reduce data distortion. Section VI analyzes the accuracy
+two diﬀerent but related points of view: of individually diﬀerentially private results of several com-
+• Diﬀerential privacy assumes the presence of a trusted mon queries and compares their accuracy against the
+party that holds the data set, receives queries sub- one obtained using standard diﬀerential privacy. The ﬁnal
+mitted by the users and returns diﬀerentially private section presents the conclusions along with some future
 results for these queries. In the standard diﬀerential research lines.
-
 privacy formulation, the trusted party is not allowed
-
-to use its knowledge of the actual data
-puting the noise to be added to the query
-order to protect privacy.
-Diﬀerential privacy provides provable
-tees to groups of data subjects (in addition
-that derive from the guarantees given
-subject individually). These guarantees
-go beyond the previously mentioned
-diﬀerential privacy, which is about
-individuals.
-While being more demanding than required
-itive notion of diﬀerential privacy may be
-argue in the following sections that enforcing
-stronger privacy notion may have a signiﬁcant
-impact on the accuracy/utility of the protected
-Thus, if data utility is a priority, the suitability
-ing additional guarantees (i.e., group-based
-privacy) should be carefully pondered. Besides,
-tical disclosure control, the goal is to prevent
-inferences on single individuals, but accurate
-on groups (statistical and aggregate
-usually viewed as legitimate analyses.
-In this line, we propose here individual
-vacy, a novel formalization of diﬀerential
-aligned with the intuitive diﬀerential privacy
-Our approach limits the protection to the
-the data set (as suggested in the intuitive
-than extending it to groups of individuals (as
-the standard deﬁnition of diﬀerential privacy).
-this means that the trusted party managing
-make use of its knowledge of the actual data
-of query response and downwardly adjust
-to the actual data; as a consequence of the
-distortion, the accuracy/utility of the protected
-be signiﬁcantly improved in comparison with
-formulation of diﬀerential privacy.
-Nonetheless, we will also indicate how to
-ual diﬀerential privacy to group diﬀerential
-the data controller wants to oﬀer privacy
-groups while still leveraging his knowledge
-data set when computing the distortion to
-protection.
-The rest of this paper is organized as
-tion II provides background on the standard
-and the usual mechanisms to attain diﬀerential
-Section III reviews related work aimed at
-accuracy/utility of diﬀerentially private results
-lights the diﬀerences with our approach. In
-
-set when com-
-response in
-privacy guaran-
-to those
-to each data
-for groups
-intuition behind
-protecting single
-by the intumeaningful, we
-an actually
-negative
-results.
-of includ-
-diﬀerential
-in statis-
-a
-accurate
-to
-inferences
-computations) are
-of
-diﬀerential pri-
-privacy that is
-guarantees.
-of
-individuals in
-in
-notion), rather
-formalized in
-in
-In practice,
-the data can
-set at the time
-the distortion
-lower data
-results can
-the standard
-extend individprivacy, in case
-guarantees for
-on the actual
-be added for
-to
-follows. Sec-
-formulation
-privacy.
-improving the
-and high-
-Section IV, we
-
-II. Background on Differential Privacy
-Diﬀerential privacy was originally proposed in [3] as a
-privacy model for the interactive setting, that is, to protect
-the results of queries to a database. In this setting, a
-diﬀerentially private sanitization mechanism sits between
-the user submitting queries and the database controller
-answering them. To preserve the privacy of individuals, the
-sanitization mechanism must guarantee that the contribution of each individual’s data to a query result is limited
-(according to an parameter).
-( -diﬀerential privacy) A randomized function κ gives -diﬀerential privacy (or -DP) if, for all data
+to use its knowledge of the actual data set when com- II. Background on Differential Privacy
+puting the noise to be added to the query response in Diﬀerential privacy was originally proposed in [3] as a
+order to protect privacy. privacy model for the interactive setting, that is, to protect
+• Diﬀerential privacy provides provable privacy guaran- the results of queries to a database. In this setting, a
+tees to groups of data subjects (in addition to those diﬀerentially private sanitization mechanism sits between
+that derive from the guarantees given to each data the user submitting queries and the database controller
+subject individually). These guarantees for groups answering them. To preserve the privacy of individuals, the
+go beyond the previously mentioned intuition behind sanitization mechanism must guarantee that the contribu-
+diﬀerential privacy, which is about protecting single tion of each individual’s data to a query result is limited
+individuals. (according to an parameter).
+While being more demanding than required by the intu-
+Deﬁnition 1 ( -diﬀerential privacy). A randomized func-
+itive notion of diﬀerential privacy may be meaningful, we
+tion κ gives -diﬀerential privacy (or -DP) if, for all data
+argue in the following sections that enforcing an actually
 sets D and D that diﬀer in one record (a.k.a. neighbor
-data sets), and all S Range(κ), we have
-Pr(κ(D ) S) exp( ) Pr(κ(D ) S).
+stronger privacy notion may have a signiﬁcant negative 1 2
+data sets), and all S ⊂ Range(κ), we have
+impact on the accuracy/utility of the protected results.
+Thus, if data utility is a priority, the suitability of includ- Pr(κ(D ) ∈ S)≤ exp( ) Pr(κ(D ) ∈ S).
+1 2
+ing additional guarantees (i.e., group-based diﬀerential
 Let D be the data set that is to be protected. Given
-query f , the goal in DP is to ﬁnd an approximation
-f that satisﬁes the privacy requirements stated in
+privacy) should be carefully pondered. Besides, in statis-
+a query f , the goal in DP is to ﬁnd an approximation
+tical disclosure control, the goal is to prevent accurate
+to f that satisﬁes the privacy requirements stated in
+inferences on single individuals, but accurate inferences
 Deﬁnition 1. Let us call κf such an approximation. The
+on groups (statistical and aggregate computations) are
 value of κf (D) is then returned as the query result, instead
-the actual value f (D).
+usually viewed as legitimate analyses.
+of the actual value f (D).
+In this line, we propose here individual diﬀerential pri-
 In the following, we refer to the diﬀerentially private
+vacy, a novel formalization of diﬀerential privacy that is
 condition in terms of indistinguishability: the distributions
-the responses to the queries between data sets that diﬀer
-one record are similar.
+aligned with the intuitive diﬀerential privacy guarantees.
+of the responses to the queries between data sets that diﬀer
+Our approach limits the protection to the individuals in
+in one record are similar.
+the data set (as suggested in the intuitive notion), rather
 An interesting property of DP, which the privacy models
-the k-anonymity family (k-anonymity [4], l-diversity [5],
+than extending it to groups of individuals (as formalized in
+in the k-anonymity family (k-anonymity [4], l-diversity [5],
+the standard deﬁnition of diﬀerential privacy). In practice,
 t-closeness [6], etc.) do not have, is composition: com-
+this means that the trusted party managing the data can
 posing several diﬀerentially private results still satisﬁes
+make use of its knowledge of the actual data set at the time
 DP, although with a diﬀerent parameter value. Several
+of query response and downwardly adjust the distortion
 composition theorems have been stated. The most basic
+to the actual data; as a consequence of the lower data
 ones are:
-(Sequential composition) Let κ be a randomized function giving -DP and κ a randomized function giving -DP. Then, any deterministic function of
-(κ ,κ ) gives ( + )-DP.
-(Parallel composition) Let κ and κ be
+distortion, the accuracy/utility of the protected results can
+be signiﬁcantly improved in comparison with the standard Theorem 1 (Sequential composition). Let κ be a ran-
+1
+formulation of diﬀerential privacy. domized function giving 1-DP and κ2 a randomized func-
+Nonetheless, we will also indicate how to extend individ- tion giving -DP. Then, any deterministic function of
+2
+ual diﬀerential privacy to group diﬀerential privacy, in case (κ ,κ ) gives ( + )-DP.
+1 2 1 2
+the data controller wants to oﬀer privacy guarantees for
+Theorem 2 (Parallel composition). Let κ1 and κ2 be
+groups while still leveraging his knowledge on the actual
 randomized functions giving -DP. If κ and κ are applied
-disjoint data sets or subsets of records, any deterministic
+data set when computing the distortion to be added for 1 2
+to disjoint data sets or subsets of records, any deterministic
+protection.
 function of (κ ,κ ) gives -DP.
-The computational mechanism to attain DP is often
-called a diﬀerentially private sanitizer. Diﬀerentially private mechanisms for numerical data can be seen as noise
-addition mechanisms that, rather than returning the actual query value f (D), mask it by adding some noise.The amount of noise that needs to be added
-on the variability of the query function between
-data sets. This noise may be: (i) independent of the
-set, which requires adjusting the noise to the
-variability between neighbor data sets, or (ii) dependent
-on the data set, which allows adjusting the level of
+The rest of this paper is organized as follows. Sec- 1 2
+tion II provides background on the standard formulation The computational mechanism to attain DP is often
+and the usual mechanisms to attain diﬀerential privacy. called a diﬀerentially private sanitizer. Diﬀerentially pri-
+Section III reviews related work aimed at improving the vate mechanisms for numerical data can be seen as noise
+accuracy/utility of diﬀerentially private results and high- addition mechanisms that, rather than returning the ac-
+lights the diﬀerences with our approach. In Section IV, we tual query value f (D), mask it by adding some noise.IEEE TRANSACTIONS ON INFORMATION FORENSICS AND SECURITY, VOL. X, NO. X, JULY 2016 3
+The amount of noise that needs to be added depends Example 1. Consider a data set X = {x ,...,xn}, where
+1
+on the variability of the query function between neighbor each record corresponds to a value in {0, 1}. For the sake
+data sets. This noise may be: (i) independent of the data of simplicity, we assume that the number of records is odd,
+set, which requires adjusting the noise to the maximum say n =2m + 1, so that the median corresponds to a single
+variability between neighbor data sets, or (ii) dependent record, the m + 1-th record. The global sensitivity of the
+on the data set, which allows adjusting the level of noise median is 1, since we can consider the neighbor data sets:
 to the variability of f in the actual data set.
+{0, m+1... ,0, 1, m...,1}→median =0,
+{0, m...,0, 1, m+1... ,1}→median =1.
 A. Noise calibration to the global sensitivity
-The global sensitivity measures the maximum
-ity of a function between neighbor data sets.
-(l -sensitivity (a.k.a. global sensitivity))
-The l -sensitivity of a function f : k is
-Δf= max f(x) f(y) ,
-x,y
-d x,y
-where d(x, y) means that data sets x and y diﬀer in
-record.
-In calibration to the global sensitivity, DP is attained
-adding a noise to the query response that is proportional
-to the global sensitivity; that is, the maximum variability
-of the query response in the domain of the data.
-noise distributions are possible (e.g. the Laplace
-tion [8], the optimal absolutely continuous distribution
-and the discrete Laplace distribution [10]). For the
-of conciseness, we focus on the commonly used
-distribution.
-Let f be a query function with values
-k. The mechanism κf (X)=f (X)+(N ,...,Nk),
-Ni are independent and identically distributed
-noises drawn from a Laplace(0,/Δf ) distribution,
-diﬀerentially private.
-B. Noise calibration to the smooth sensitivity
-Even if the variability of the query function in the
-data set is small, quite often its variability in the
-domain (i.e., global sensitivity) is large. In these
-the use of a noise calibrated to the global sensitivity
-may seriously and unjustiﬁedly damage data, but a
-dependent noise may still permit accurate results.
-a data set D, the variability of a function between D
-its neighbor data sets is known as the local sensitivity.
-(Local sensitivity [11]) Let f be a
-that is evaluated at data sets and returns values in
-The local sensitivity of f at D is
-LSf(D)= max f(y) f(D) .
-y d y,D
-Obviously, the global sensitivity upper-bounds the
-sensitivity. Moreover, the local sensitivity is usually
-except for especially ill-conditioned data sets. In this
-the gap between the global and the local sensitivity
-be large. This is illustrated in the following example
-function that returns the median of a list of values.
-
-depends Consider a data
-
-neighbor each record corresponds to a
-
-data of simplicity, we assume that the
-
-maximum say n =2m + 1, so that the median
-
-record, the m + 1-th record.
-
-noise median is 1, since we can consider
-
-0, m... ,0, 1, m...,1
-
-0, m...,0, 1, m... ,1
-
-variabil- The local sensitivity is, except
-
-sets, always 0. The reason is
-
-data sets, changing the value of
-
-the median.
-
-In most cases, releasing the
-
-magnitude of noise proportional
-
-(rather than the global sensitivity)
-
-icantly more accurate response.
-
-sensitivity in mechanisms
-
-one
-
+The global sensitivity measures the maximum variabil- The local sensitivity is, except for the two previous data
+ity of a function between neighbor data sets. sets, always 0. The reason is that, except for the previous
+data sets, changing the value of a record does not modify
+Deﬁnition 2 (l1-sensitivity (a.k.a. global sensitivity)). the median.
+The l -sensitivity of a function f : D→R k is
+1
+In most cases, releasing the value of a query with a
+Δf = max f (x) − f (y) , magnitude of noise proportional to the local sensitivity
+1
+x,y∈D (rather than the global sensitivity) would result in a signif-
+d(x,y)=1 icantly more accurate response. However, using the local
+sensitivity in mechanisms designed for global sensitivity
+where d(x, y) means that data sets x and y diﬀer in one
 does not yield DP.
-
-Consider the data
-
-by
-
-and 0, m... ,0, 1, m...,1 . In both
-
-the local sensitivity diﬀers; it
-
+record.
+Example 2. Consider the data sets: {0, m+2... ,0, 1, m−¹... ,1}
+In calibration to the global sensitivity, DP is attained by
+and {0, m+1... ,0, 1, m...,1}. In both cases the median is 0, but
+adding a noise to the query response that is proportional
+the local sensitivity diﬀers; it is 0 in the ﬁrst case and 1
+to the global sensitivity; that is, the maximum variability
 in the second one:
-
-Several
-
-distribu- X = 0, m... ,0, 1, m... ,1
-
-[9], m m
-
-X = 0, ... ,0, 1, ...,1
-
-sake
-
-Laplace Given that the local sensitivity
-
-proportional to the local
-
-median; thus, the probability
-
-in to be satisﬁed, the probability
-
-where also be 0. However, that is not
-
-random sensitivity for X is diﬀerent
-
-is -
-
-The previous example shows
-
-used to protect a data set should
-
-to its local sensitivity but also
-
-sensitivity of neighbor data
-
-actual sensitivity of neighbor data
-
-data smooth sensitivity.
-
-cases,
-
-(Smooth sensitivity)
-
-set D ,theβ-smooth
-
-data-
-
+of the query response in the domain of the data. Several median local sensitivity
+noise distributions are possible (e.g. the Laplace distribu- X = 0, m+2... ,0, 1, m−¹... ,1 00
+{ }
+tion [8], the optimal absolutely continuous distribution [9], X ′ = 0, m+1... ,0, 1, m...,1 01
+{ }
+and the discrete Laplace distribution [10]). For the sake
+of conciseness, we focus on the commonly used Laplace Given that the local sensitivity for X is 0, adding a noise
+distribution. proportional to the local sensitivity does not modify the
+median; thus, the probability of getting 1 is 0. For -DP
+Proposition 1. Let f be a query function with values in to be satisﬁed, the probability of getting 1 for X ′ must
+R k. The mechanism κf (X)=f (X)+(N₁,...,Nk), where also be 0. However, that is not the case, since the local
+Ni are independent and identically distributed random sensitivity for X ′ is diﬀerent from 0.
+noises drawn from a Laplace(0,/Δf ) distribution, is -
+diﬀerentially private. The previous example shows that the amount of noise
+used to protect a data set should not only be proportional
+to its local sensitivity but also take into account the local
+B. Noise calibration to the smooth sensitivity
+sensitivity of neighbor data sets. Considering the local
+Even if the variability of the query function in the actual sensitivity of neighbor data sets leads to the notion of
+data set is small, quite often its variability in the data smooth sensitivity.
+domain (i.e., global sensitivity) is large. In these cases,
+Deﬁnition 4 (Smooth sensitivity). Fo r β>0 and a data
+the use of a noise calibrated to the global sensitivity
+set D ∈D,theβ-smooth sensitivity of f at D is deﬁned
+may seriously and unjustiﬁedly damage data, but a data-
 as
-
-Given
-
-Sf,β(D) = max(LSf (y) exp(
-
-and y
-
-The greater the parameter
-
-function dence of the smooth sensitivity
-
-k. neighbor data sets. Thus, the
-
-attain -DP must depend on
-
-smooth sensitivity. In particular,
-
-tions, known as (α, β)-admissible
-
-be used. The downside of these
-
-local
-
+dependent noise may still permit accurate results. Given
+a data set D, the variability of a function between D and Sf,β(D) = max(LSf (y) exp(−βd(D, y))).
+y∈D
+its neighbor data sets is known as the local sensitivity.
+The greater the parameter β, the smaller the depen-
+Deﬁnition 3 (Local sensitivity [11]). Let f be a function dence of the smooth sensitivity on the local sensitivity of
+that is evaluated at data sets and returns values in R k. neighbor data sets. Thus, the amount of noise required to
+The local sensitivity of f at D is attain -DP must depend on other factors apart from the
+smooth sensitivity. In particular, a special kind of distribu-
+LSf(D)= max f(y)−f(D) .
+y d y,D 1 tions, known as (α, β)-admissible distributions [11], must
+: ( )=1
+be used. The downside of these distributions is that they
+Obviously, the global sensitivity upper-bounds the local
 are heavy-tailed.
-
-small,
-
-case,
-
-III.
-
-can
-
-for a Even though DP is appreciated
-
-guarantees it oﬀers, its practical
-
-set X = x ,...,xn , where
-value in 0, 1 . For the sake
-number of records is odd,
-corresponds to a single
-The global sensitivity of the
-the neighbor data sets:
-median =0,
-median =1.
-for the two previous data
-that, except for the previous
-a record does not modify
-value of a query with a
-to the local sensitivity
-would result in a signif-
-However, using the local
-designed for global sensitivity
-sets: 0, m... ,0, 1, m... ,1
-cases the median is 0, but
-is 0 in the ﬁrst case and 1
-median local sensitivity
-00
-01
-for X is 0, adding a noise
-sensitivity does not modify the
-of getting 1 is 0. For -DP
-of getting 1 for X must
-the case, since the local
-from 0.
-that the amount of noise
-not only be proportional
-take into account the local
-sets. Considering the local
-sets leads to the notion of
-Fo r β>0 and a data
-sensitivity of f at D is deﬁned
-βd(D, y))).
-β, the smaller the depen-
-on the local sensitivity of
-amount of noise required to
-other factors apart from the
-a special kind of distribudistributions [11], must
-distributions is that they
-Related Work
-for the strong privacy
-deployment is hamperedby the poor accuracy oﬀered by diﬀerentially private
-mechanisms.
-Works that discuss the accuracy limitations of diﬀeren-
-
-a small probability. The relaxation that we propose in the
-next section is diﬀerent in the sense that the privacy guarantees for individuals envisioned in the original deﬁnition
-
+sensitivity. Moreover, the local sensitivity is usually small,
+except for especially ill-conditioned data sets. In this case,
+III. Related Work
+the gap between the global and the local sensitivity can
+be large. This is illustrated in the following example for a Even though DP is appreciated for the strong privacy
+function that returns the median of a list of values. guarantees it oﬀers, its practical deployment is hamperedIEEE TRANSACTIONS ON INFORMATION FORENSICS AND SECURITY, VOL. X, NO. X, JULY 2016 4
+by the poor accuracy oﬀered by diﬀerentially private a small probability. The relaxation that we propose in the
+mechanisms. next section is diﬀerent in the sense that the privacy guar-
+Works that discuss the accuracy limitations of diﬀeren- antees for individuals envisioned in the original deﬁnition
 tially private results in diﬀerent contexts include [12], [13], of DP are preserved.
-
 [14], [15], [16]. Although these accuracy issues have hin-
-
 dered the practical adoption of DP, they have also boosted
-
 IV. Individual differential privacy
-
 further research to ﬁnd ﬁxes. This research has taken two
-
-main lines: (i) to come up with novel diﬀerentially private
-mechanisms that improve the accuracy of the results, and
-(ii) to propose relaxations of DP that require less data
-distortion and allow for more accurate results.
-An outcome of the ﬁrst line is the design of general
-mechanisms that improve accuracy with respect to the basic Laplace noise addition mechanism. In [11], the calibration of Laplace noise to the global sensitivity of the data is
-replaced by the calibration of suitable noises to the smooth
+main lines: (i) to come up with novel diﬀerentially private The existing relaxations of DP violate strict DP be-
+mechanisms that improve the accuracy of the results, and cause, under some circumstances, they permit the proba-
+(ii) to propose relaxations of DP that require less data bility of responses to diﬀer signiﬁcantly between neighbor
+distortion and allow for more accurate results. data sets. In this section, we take a diﬀerent approach
+An outcome of the ﬁrst line is the design of general to improve data accuracy/utility. Rather than propos-
+mechanisms that improve accuracy with respect to the ba- ing another relaxation, we analyze the intuitive privacy
+sic Laplace noise addition mechanism. In [11], the calibra- guarantees that DP seeks to capture and we suggest an
+tion of Laplace noise to the global sensitivity of the data is alternative deﬁnition that allows exactly attaining these
+replaced by the calibration of suitable noises to the smooth privacy guarantees and nothing more.
 sensitivity. On the other hand, the authors of [9] showed
 that the Laplace distribution is not optimal to attain DP
-based on calibration to the global sensitivity. They described and constructed the optimal absolutely continuous
-distributions: essentially, a distribution is optimal if the
-probability mass is as concentrated as possible around zero
-given the DP constraints. Other outcomes of the ﬁrst line
-of research are mechanisms that are less sensitive. In [17],
-[18], [19], several methods based on microaggregation of
-records are proposed to generate diﬀerentially private
-data sets. In [20], the dependence between attributes is
-analyzed to reduce the dimensionality in the computation
+based on calibration to the global sensitivity. They de- A. Intuitive view of diﬀerential privacy
+scribed and constructed the optimal absolutely continuous As introduced above, DP assumes the presence of a
+distributions: essentially, a distribution is optimal if the trusted party that: (i) holds the data set, (ii) receives the
+probability mass is as concentrated as possible around zero queries submitted by the data users, and (iii) responds to
+given the DP constraints. Other outcomes of the ﬁrst line them in a privacy-aware manner.
+of research are mechanisms that are less sensitive. In [17], We described in Section II that the standard notion of
+[18], [19], several methods based on microaggregation of DP is formalized in terms of indistinguishability of the
+records are proposed to generate diﬀerentially private response to queries between neighbor data sets. However,
+data sets. In [20], the dependence between attributes is prior to this formalization, [3] provided an intuitive de-
+analyzed to reduce the dimensionality in the computation scription of the privacy guarantees aimed at by DP:
 of diﬀerentially private histograms. Other works that try
-to improve the accuracy in histogram publication are [21],
-[22]. In [23], a diﬀerentially private alternative to the ID3
-algorithm for learning decision trees is proposed.
-The second line of research, focused on ﬁnding relaxations of DP, has been active since the inception of DP.
-In [24], the concept of δ-approximate -indistinguishability
-is presented (a.k.a. (, δ)-indistinguishability in [11]). This
-relaxation allows some additional margin δ to the requirements in DP. In [25], the notion of (, δ)-probabilistic
-diﬀerential privacy (a.k.a. (, δ)-pdp) is proposed. Rather
-than allowing some additional margin, it requires -DP
-to be satisﬁed with probability greater than 1 δ.In
-other words, the probability that the adversary gains
-signiﬁcant information about an individual is, at most, δ.
-Yet another relaxation is given in [15], who assume that
-conﬁdential data become less sensitive over time, which
-allows relaxing privacy parameters for older data. In [26],
-a relaxation is presented that restricts the deﬁnition of
-neighbor data sets: they are no longer data sets diﬀering
-in any record, but in a record within a certain subset.
-In [27], an alternative relaxation of DP, called (µ, τ )-
-concentrated diﬀerential privacy, is proposed. Similarly
-to (, δ)-pdp, concentrated diﬀerential privacy allows the
-ratio of probabilities to be arbitrarily large with a small
-probability that is determined by the parameters µ and τ .
-In all the above relaxations, the accuracy gain is obtained by allowing the diﬀerentially private condition to
-be broken: the presence or absence of an individual may
-
-The existing relaxations of DP violate strict DP because, under some circumstances, they permit the probability of responses to diﬀer signiﬁcantly between neighbor
-data sets. In this section, we take a diﬀerent approach
-to improve data accuracy/utility. Rather than proposing another relaxation, we analyze the intuitive privacy
-guarantees that DP seeks to capture and we suggest an
-alternative deﬁnition that allows exactly attaining these
-privacy guarantees and nothing more.
-A. Intuitive view of diﬀerential privacy
-As introduced above, DP assumes the presence of a
-trusted party that: (i) holds the data set, (ii) receives the
-queries submitted by the data users, and (iii) responds to
-them in a privacy-aware manner.
-We described in Section II that the standard notion of
-DP is formalized in terms of indistinguishability of the
-response to queries between neighbor data sets. However,
-prior to this formalization, [3] provided an intuitive description of the privacy guarantees aimed at by DP:
 Any given disclosure will be, within a small
+to improve the accuracy in histogram publication are [21],
 multiplicative factor, just as likely whether or not
+[22]. In [23], a diﬀerentially private alternative to the ID3
 the individual participates in the database. As
+algorithm for learning decision trees is proposed.
 a consequence, there is a nominally higher risk
+The second line of research, focused on ﬁnding relax-
 for the individual who participates, and only a
+ations of DP, has been active since the inception of DP.
 nominal gain for the individual who conceals or
+In [24], the concept of δ-approximate -indistinguishability
 misrepresents her data.
-Thus, individuals should not be reluctant to participate in
-the data set. After all, the risk of disclosure is only very
-marginally increased by participation.
-Providing relative (rather than absolute) privacy guarantees is the only sensible approach to deal with intruders
-having arbitrary side knowledge. Absolute privacy guarantees against arbitrary side knowledge are incompatible
-with releasing accurate statistics. This is illustrated in [3]
-with a simple example about the height of an individual
-I: if the intruder knows that the height of I is two inches
-above the average height of the population of a country,
-then releasing an accurate approximation of the average
-height of the population provides the intruder with an
-accurate estimate of I’s height. Here it is important to
-notice that such disclosure happens even if I does not
-participate in the data set. Thus, the disclosure is not
-associated to I’s participation in the data set, but to the
-accurate side knowledge. This illustrates that diﬀerential
-privacy cannot guarantee that disclosure will not happen;
-what it guarantees is that, should disclosure happen, it
-will not be due to the participation of any particular
-
-leak some information, although not too much or only with individual.B. Formalization of individual diﬀerential privacy
-DP is the result of formalizing the intuitive view of
-privacy described in Section IV-A into a rigorous mathematical deﬁnition. However, the fact that in this formalization (see Deﬁnition 1) results are required to be
-indistinguishable between any pair of neighbor data sets
-is more stringent than required by the intuitive view of
-0
-privacy that is described above. Let us explain this in
-greater detail.
-Consider an individual I who has to decide between
-participating in a data set or not. To neutralize any
-reluctance by I to disclose her private information, I is
-told that query answers based on the data set will not
-allow anyone to learn anything that was not learnable
-without I’s presence; this is precisely the intuitive privacy
-guarantee DP oﬀers. Although DP controls the access to
-a data set regardless of the way the data were collected
-(either through voluntary participation or not), thinking
-in terms of voluntary participation is clarifying: we can
-think that an individual accepts to participate if she
-regards privacy protection as suﬃcient.
-To attain such privacy guarantees, DP requires the
-response to be indistinguishable between any pair of neighbor data sets. While such a requirement yields the target
-privacy guarantees indeed, it is an overkill because, in
-reality, queries are not answered on an arbitrary data
-set, but on the actual data set held by the trusted
-party. In other words, if D is the collected data set,
-the target privacy guarantees can be attained by just
-requiring indistinguishability of the responses between D
-and its neighbor data sets. Notice that, although the
-data set D is not known until all the individuals have
-made their decisions about participating/contributing to
-it, the presence of a trusted party that controls the access
-to D makes it possible to give the previously described of
-indistinguishability guarantees. After all, the data set D is
-known to the trusted party at the time of query response.
-According to the previous discussion, we propose the
-following privacy model, which we call -individual diﬀerential privacy.
-of
-( -individual diﬀerential privacy) Given
-a data set D, a response mechanism κ( ) satisﬁes -
-individual diﬀerential privacy (or -i DP) if, for any data
-set D that is a neighbor of D, and any S Range(κ)we
-have
-a
-exp( ) Pr(κ(D ) S) Pr(κ(D) S)
-exp( ) Pr(κ(D ) S).
-In line with Deﬁnition 1, we require the probability of
-any result to diﬀer between neighbor data sets at most
-by a factor of exp( ). However, unlike in Deﬁnition 1,
-the role of the data sets D and D is not exchangeable:
-D refers to the actual data set, and D to a neighbor
-data set of D. The asymmetry between D and D is relevant, because indistinguishability is achieved only between
-D and its neighbor data sets. As a side eﬀect of this
-asymmetry, we need to explicitly enforce an upper bound
-
-(Pr(κ(D) S) exp( ) Pr(κ(D ) S)) and a lower bound
-(exp( ) Pr(κ(D ) S)) Pr(κ(D) S)). This was not
+is presented (a.k.a. (, δ)-indistinguishability in [11]). This
+relaxation allows some additional margin δ to the require- Thus, individuals should not be reluctant to participate in
+ments in DP. In [25], the notion of (, δ)-probabilistic the data set. After all, the risk of disclosure is only very
+diﬀerential privacy (a.k.a. (, δ)-pdp) is proposed. Rather marginally increased by participation.
+than allowing some additional margin, it requires -DP Providing relative (rather than absolute) privacy guar-
+to be satisﬁed with probability greater than 1 − δ.In antees is the only sensible approach to deal with intruders
+other words, the probability that the adversary gains having arbitrary side knowledge. Absolute privacy guar-
+signiﬁcant information about an individual is, at most, δ. antees against arbitrary side knowledge are incompatible
+Yet another relaxation is given in [15], who assume that with releasing accurate statistics. This is illustrated in [3]
+conﬁdential data become less sensitive over time, which with a simple example about the height of an individual
+allows relaxing privacy parameters for older data. In [26], I: if the intruder knows that the height of I is two inches
+a relaxation is presented that restricts the deﬁnition of above the average height of the population of a country,
+neighbor data sets: they are no longer data sets diﬀering then releasing an accurate approximation of the average
+in any record, but in a record within a certain subset. height of the population provides the intruder with an
+In [27], an alternative relaxation of DP, called (µ, τ )- accurate estimate of I’s height. Here it is important to
+concentrated diﬀerential privacy, is proposed. Similarly notice that such disclosure happens even if I does not
+to (, δ)-pdp, concentrated diﬀerential privacy allows the participate in the data set. Thus, the disclosure is not
+ratio of probabilities to be arbitrarily large with a small associated to I’s participation in the data set, but to the
+probability that is determined by the parameters µ and τ . accurate side knowledge. This illustrates that diﬀerential
+In all the above relaxations, the accuracy gain is ob- privacy cannot guarantee that disclosure will not happen;
+tained by allowing the diﬀerentially private condition to what it guarantees is that, should disclosure happen, it
+be broken: the presence or absence of an individual may will not be due to the participation of any particular
+leak some information, although not too much or only with individual.IEEE TRANSACTIONS ON INFORMATION FORENSICS AND SECURITY, VOL. X, NO. X, JULY 2016 5
+B. Formalization of individual diﬀerential privacy (Pr(κ(D) ∈ S)≤ exp( ) Pr(κ(D ′) ∈ S)) and a lower bound
+DP is the result of formalizing the intuitive view of (exp(− ) Pr(κ(D ′) ∈ S)) ≤ Pr(κ(D) ∈ S)). This was not
 needed in Deﬁnition 1 because the upper bound could be
+privacy described in Section IV-A into a rigorous math-
 obtained from the lower bound by exchanging the roles of
-D and D .
+ematical deﬁnition. However, the fact that in this for-
+D and D ′.
+malization (see Deﬁnition 1) results are required to be
 To illustrate the implications of the diﬀerences between
+indistinguishable between any pair of neighbor data sets
 DP and i DP, consider a data set D whose records are either
-or 1, and assume that we query the data set for the
-median. We consider two cases, D = 0, 0, 0, 0, 1 and
-D = 0, 0, 0, 1, 1 , which are discussed next:
-In data set D , the median is 0. Moreover, the median
-remains 0 after modiﬁcation of any single record.
-Since the median is unaﬀected by the contribution
-of any single individual, there is no way to learn
-anything about an individual from the median of D .
-Hence, according to i DP, the median of D can be
-released without any masking. This is not the case
-according to DP, where the mere existence of a pair
-of neighbor data sets (not involving D ) with diﬀerent
-values for the median requires masking it (even if the
-median of D discloses nothing about any individual).
-In data set D , the median is 0, but a change in
-a single record is enough for the median to become
-1. Since a single individual may aﬀect the result of
-the median, information about an individual might
-be learned from the value of the median. To limit the
-risk of disclosure, both DP and i DP require masking
-the outcome of the median.
-In the previous example, we have considered boundary
-cases where the change of a single record can make it
-necessary or unnecessary to mask the query result. Let
-us now consider a diﬀerent case, consisting of a data set
-D with 99 binary records, of which 90 contain the value 1.
-Clearly, no single individual has any eﬀect on the median
-D . Thus, i DP does not require any masking for the
-answer to the median query. In contrast, under DP the
-possible existence of a data set D containing forty-nine
-0s and ﬁfty 1s has to be considered, in which a single
-individual can change the median; since this data set must
-be indistinguishable from its neighbors given the value
-its median, the answer to the median query must be
+is more stringent than required by the intuitive view of
+0 or 1, and assume that we query the data set for the
+privacy that is described above. Let us explain this in
+median. We consider two cases, D = {0, 0, 0, 0, 1} and
+greater detail. 1
+D = {0, 0, 0, 1, 1}, which are discussed next:
+Consider an individual I who has to decide between 2
+participating in a data set or not. To neutralize any • In data set D₁, the median is 0. Moreover, the median
+reluctance by I to disclose her private information, I is remains 0 after modiﬁcation of any single record.
+told that query answers based on the data set will not Since the median is unaﬀected by the contribution
+allow anyone to learn anything that was not learnable of any single individual, there is no way to learn
+without I’s presence; this is precisely the intuitive privacy anything about an individual from the median of D₁.
+guarantee DP oﬀers. Although DP controls the access to Hence, according to i DP, the median of D₁ can be
+a data set regardless of the way the data were collected released without any masking. This is not the case
+(either through voluntary participation or not), thinking according to DP, where the mere existence of a pair
+in terms of voluntary participation is clarifying: we can of neighbor data sets (not involving D₁) with diﬀerent
+think that an individual accepts to participate if she values for the median requires masking it (even if the
+regards privacy protection as suﬃcient. median of D₁ discloses nothing about any individual).
+To attain such privacy guarantees, DP requires the • In data set D₂, the median is 0, but a change in
+response to be indistinguishable between any pair of neigh- a single record is enough for the median to become
+bor data sets. While such a requirement yields the target 1. Since a single individual may aﬀect the result of
+privacy guarantees indeed, it is an overkill because, in the median, information about an individual might
+reality, queries are not answered on an arbitrary data be learned from the value of the median. To limit the
+set, but on the actual data set held by the trusted risk of disclosure, both DP and i DP require masking
+party. In other words, if D is the collected data set, the outcome of the median.
+the target privacy guarantees can be attained by just In the previous example, we have considered boundary
+requiring indistinguishability of the responses between D cases where the change of a single record can make it
+and its neighbor data sets. Notice that, although the necessary or unnecessary to mask the query result. Let
+data set D is not known until all the individuals have us now consider a diﬀerent case, consisting of a data set
+made their decisions about participating/contributing to D with 99 binary records, of which 90 contain the value 1.
+3
+it, the presence of a trusted party that controls the access Clearly, no single individual has any eﬀect on the median
+to D makes it possible to give the previously described of D . Thus, i DP does not require any masking for the
+3
+indistinguishability guarantees. After all, the data set D is answer to the median query. In contrast, under DP the
+known to the trusted party at the time of query response. possible existence of a data set D containing forty-nine
+4
+According to the previous discussion, we propose the 0s and ﬁfty 1s has to be considered, in which a single
+following privacy model, which we call -individual diﬀer- individual can change the median; since this data set must
+ential privacy. be indistinguishable from its neighbors given the value
+of its median, the answer to the median query must be
+Deﬁnition 5 ( -individual diﬀerential privacy). Given
 masked even for D (although D and D are far from
+a data set D, a response mechanism κ(·) satisﬁes - 3 3 4
 neighbors).
+individual diﬀerential privacy (or -i DP) if, for any data
 Like in DP, two diﬀerent notions of neighbor data sets
-D and D are possible in i DP. We can either think of D as
-data set generated from D by modifying one record or
-as a data set generated from D by adding or removing one
-record. Although such a choice can make some diﬀerence
+set D ′ that is a neighbor of D, and any S ⊂ Range(κ)we
+D and D ′ are possible in i DP. We can either think of D ′ as
+have
+a data set generated from D by modifying one record or
+exp(− ) Pr(κ(D ′) ∈ S) ≤ Pr(κ(D) ∈ S) as a data set generated from D by adding or removing one
+≤ exp( ) Pr(κ(D ′) ∈ S). record. Although such a choice can make some diﬀerence
 in terms of query answers, both alternatives are similar as
+In line with Deﬁnition 1, we require the probability of
 far as disclosure risk limitation is concerned. In the sequel,
-we assume that D is generated from D by modifying one
+any result to diﬀer between neighbor data sets at most
+we assume that D ′ is generated from D by modifying one
+by a factor of exp( ). However, unlike in Deﬁnition 1,
 record.
-Strictly speaking, individual diﬀerential privacy is a relaxation of DP where indistinguishability is only required
+the role of the data sets D and D ′ is not exchangeable:
+Strictly speaking, individual diﬀerential privacy is a re-
+D refers to the actual data set, and D ′ to a neighbor
+laxation of DP where indistinguishability is only required
+data set of D. The asymmetry between D and D ′ is rele-
 between the actual data set D and its neighbor data sets.
+vant, because indistinguishability is achieved only between
 Thus, the following holds:
-Any mechanism that satisﬁes -DP alsosatisﬁes -i DP for any actual data set D.
-However, unlike other relaxations in the literature,
-dividual diﬀerential privacy preserves the strict privacy
-guarantees that DP gives to individuals. In this sense,
-rather than being regarded as a relaxation, individual
-diﬀerential privacy can be construed as a more precise
-formalization of the intuitive notion of privacy described
-in Section IV-A.
-Even though we can satisfy -i DP by resorting to
-mechanisms commonly used to satisfy -DP, doing
-would squander the potential accuracy gains of -i DP.
-reason is that, as discussed in Section II, being able
-adjust the noise to the actual data set may signiﬁcantly
-reduce its magnitude. In Section V, we design mechanisms
-that are speciﬁc to -i DP.
-C. Disclosure limitation for groups of data subjects
-If -i DP oﬀers all the intuitive privacy guarantees
--diﬀerential privacy while allowing more accuracy, it
-because -i DP oﬀers nothing more than those intuitive
-guarantees. Let us discuss this issue here.
-Even if DP seeks to protect privacy by limiting
-impact of each single individual on a query response,
-Deﬁnition 1 also results in (limited) privacy guarantees
-for groups of individuals. For example, if data sets D
-
-Direct group privacy guarantees not being part of the
+D and its neighbor data sets. As a side eﬀect of this
+asymmetry, we need to explicitly enforce an upper bound Proposition 2. Any mechanism that satisﬁes -DP alsoIEEE TRANSACTIONS ON INFORMATION FORENSICS AND SECURITY, VOL. X, NO. X, JULY 2016 6
+satisﬁes -i DP for any actual data set D. Direct group privacy guarantees not being part of the
 intuitive notion of DP (which is aimed at individuals), but
-in-
+However, unlike other relaxations in the literature, in-
 rather a by-product of the formalization in Deﬁnition 1,
+dividual diﬀerential privacy preserves the strict privacy
 we drop such group guarantees in order to improve data
+guarantees that DP gives to individuals. In this sense,
 utility. However, the proposed i DP could be modiﬁed to
+rather than being regarded as a relaxation, individual
 retain privacy guarantees for groups of individuals, by
+diﬀerential privacy can be construed as a more precise
 requiring indistinguishability between the data set D and
-the data sets D that diﬀer from D in a group of records,
+formalization of the intuitive notion of privacy described
+the data sets D ′ that diﬀer from D in a group of records,
+in Section IV-A.
 as follows.
-the
-so (( ,...,n)-group diﬀerential privacy)
-The Given a data set D, a response mechanism κ sat-
-to isﬁes ( ,...,n)-group diﬀerential privacy (denoted
-( ,...,n)-g DP) if, for any data set D at distance i
-1,...,n from D, and any S Range(κ) it holds
-exp( i) Pr(κ(D ) S) Pr(κ(D) S)
-exp( i) Pr(κ(D ) S).
-Notice that, in general, the level of protection for groups
-of should be smaller than for individuals. For example, in DP,
-is the parameter grows linearly with the cardinality of the
-group and, thus, the level of indistinguishability decreases
-exponentially with the size of the group. As a result, even
-the in standard DP, protection for groups of individuals is only
-noticeable for small values of (which on the other hand
-severely damage data utility) and for small groups. To
-and attain an equivalent level of protection with g DP, it must
-
-D diﬀer in two individuals (two records), by considering be i = i for i .
-
-the intermediate data set D that diﬀers in one individual
-
-from D and in one individual from D ,wehave D. Composition theorems
-
-Pr(κ(D ) S) exp( ) Pr(κ(D ) S),
-Pr(κ(D ) S) exp( ) Pr(κ(D ) S),
-which results in
-Pr(κ(D ) S) exp(2 ) Pr(κ(D ) S).
-That is, -DP guarantees that the knowledge gain
-groups of two individuals is limited by the factor exp(2
-More generally, the knowledge gain for a group of
-individuals is limited by the factor exp(n).
-In contrast, with i DP, the fact that the response mechanism is adjusted to each concrete data set makes
-concatenation of inequalities not possible. Speciﬁcally,
-the data sets D , D and D above, i DP provides
-
-The composition theorems for DP described in Section II are also trivially satisﬁed by individual diﬀerential
-privacy.
-(Sequential composition) Let κ be a mechanism giving -i DP and κ a mechanism giving -i DP.
-Then, any deterministic function of (κ ,κ ) gives + -
-for i DP.
-).
-n (Parallel composition) Let κ and κ be
-mechanisms giving -i DP. If κ and κ are applied to
-disjoint data sets or subsets of records, any deterministic
-the function of (κ ,κ ) gives -i DP.
-for The proofs of the theorems for i DP are not detailed
-the because they are straightforward adaptations of the proofs
-
-upper bounds of Theorems 1 and 2 for DP.
-
-Pr(κ(D ) S) exp( ) Pr(κ(D ) S),
-
-Pr(κ (D ) S) exp( ) Pr(κ (D ) S), E. Privacy axioms
-
-In [28], an axiomatization of the notions of privacy and
-
-where κ is a mechanism whose distortion is calibrated on
-
-utility is proposed. In particular, two desirable properties
-
-D and κ is a mechanism whose distortion is calibrated
-
-of privacy models are described: the axiom of transforma-
-
-on D . Note that the probability on the right-hand side of
-
-tion invariance and the privacy axiom of choice.
-
-the ﬁrst inequality does not match the probability on the
-
-The axiom of transformation invariance says that post-
-
-left-hand side of the second inequality.
-
-processing of sanitized data must be safe as long as
-
-Therefore, with i DP we lose any direct privacy guar-
-
-no sensitive information is incorporated into the post-
-
-antees for groups of individuals. In other words, any
-
-processing.
-
-disclosure risk limitation for a group that may subsist
-
-under -i DP is an indirect consequence of the disclosure
-risk limitation obtained by each individual in the group.
-
-(Axiom of transformation invariance) Suppose we have a privacy deﬁnition, a privacy mechanism Mthat satisﬁes this deﬁnition, and a randomized
-A whose input space is the output space of M and
-randomness is independent of both the data and
-randomness in M . Then M = A M must also be a
-mechanism satisfying that privacy deﬁnition.
--iDP satisﬁes the axiom of
-tion invariance.
-Proof. Let M be an -iDP mechanism, and let A
-randomized algorithm whose input space is the
-space of M and whose randomness is independent
-the data and the randomness in M . According to
-we can think of M and A as returning
-probability distributions. That is, M :
-assigns to each data set D a probability distribution
-E such that, for each D that diﬀers in one record
-D, we have exp( ) Pr(M (D ) S) Pr(M (D)
-exp( ) Pr(M (D ) S). On the other hand, A :
-Dist(F ) assigns to each e E a probability
-over F .
-To check that exp( ) Pr(A(M (D )
-Pr(A(M (D)) S) exp( ) Pr(A(M (D ))
-
-algorithm local sensitivity LSf (D) (see
-whose calibrate the noise to the local
-the the global or smooth sensitivities
-privacy to preserve data utility: ﬁrst,
-local sensitivity but large global
-after Deﬁnition 3 above; second,
-transformasensitivity also improves the
-with respect to calibration to
-be a only because the local sensitivity
-output smooth sensitivity, but also
-of both cal sensitivity allows using
-[28], distributions (rather than the
-independent required by calibration to the
-Dist(E) but not least, calibration to the
-over than calibration to the smooth
-from We next detail how to enforce
-S) and discrete numerical results.
-E
-distribution A. Laplace mechanism
-The Laplace(µ, b) distribution
-S))
-nential distribution) is an absolutely
-S),
-tion whose density function is
-
-Deﬁnition 3). The ability to
-sensitivity rather than to
-is a signiﬁcant advantage
-many functions have small
-sensitivity, as noted right
-calibration to the local
-accuracy of query responses
-the smooth sensitivity, not
-is smaller than the
-because calibration to the lo-
-exponentially decreasing noise
-heavy-tailed distributions
-smooth sensitivity). Last
-local sensitivity is simpler
-sensitivity.
-i DP for both continuous
-(a.k.a the double expocontinuous distribu-
-
-we decompose Pr(A(M (d)) S)as x S Pr(M (d)=
-
-y) Pr(A(y)=x) and we use that M satisﬁes -iDP.
-The privacy axiom of choice allows randomly
-between -iDP mechanisms.
-(Privacy axiom of choice) Let M
-M be privacy mechanisms that satisfy a certain
-deﬁnition. For any p [0, 1], let Mp be a
-algorithm that, on input i, outputs M (i) with
-p (independent of the data and the randomness in M
-M ) and M (i) with probability 1 p. Then Mp is a
-mechanism that satisﬁes the privacy deﬁnition.
--iDP satisﬁes the privacy axiom
-choice.
-Proof. Let M and M be -iDP mechanisms, and
-[0, 1]. Let Mp be a mechanism that, on input i,
-M (i) with probability p and M (i) with probability
-We want to check that Mp is -iDP. That is,
-
+Even though we can satisfy -i DP by resorting to the
+mechanisms commonly used to satisfy -DP, doing so Deﬁnition 6 (( 1,...,n)-group diﬀerential privacy).
+would squander the potential accuracy gains of -i DP. The Given a data set D, a response mechanism κ sat-
+reason is that, as discussed in Section II, being able to isﬁes ( 1,...,n)-group diﬀerential privacy (denoted
+adjust the noise to the actual data set may signiﬁcantly ( ,...,n)-g DP) if, for any data set D ′ at distance i ∈
 1
-Lµ,b(x)= exp
-2b
-choosing
-where µ is the location parameter,
-parameter. We use Lb(x) when
-and
-In case of using the Laplace
-privacy
-random noise, i DP can be rewritten
-randomized
-probability Let f be
-and takes values in k. The
-privacy (N ,...,Nk), where Ni are
-tributed Laplace(0,LSf (D)/)
-of Proof. If N is a vector of
-tributed variables, we know that
-letp zz Pr(z+N
-exp
-outputs β Pr(z + N
-1 p.
-Let D be a data set that
-for any By taking z = f (D), z = f (D
-
-x µ
-,
-b
-and b is the scale
-the mean parameter is zero.
-distribution to generate the
-as follows.
-a query function that
-mechanism κ(x)=f (x)+
-independent identically dis-
-random noises, gives -iDP.
-independent Laplace(0,β) dis-
-for all s k
-= s) z z
-exp .
-= s) β
-diﬀers from D in one record.
-), and β = LSf (D)/ we
-
-D neighbor of D, we have exp( ) Pr(Mp(D ) S) get
-
-Pr(Mp(D) S) exp( ) Pr(Mp(D ) S). This is easily
-
-seen by expressing Pr(Mp(D) S)asp Pr(M
-S)+(1 p) Pr(M (D) S) and using that both M
-M satisfy -iDP.
+reduce its magnitude. In Section V, we design mechanisms {1,...,n} from D, and any S ⊂ Range(κ) it holds
+that are speciﬁc to -i DP. ′
+exp(−i) Pr(κ(D)∈S)≤Pr(κ(D)∈S)
+≤exp( i) Pr(κ(D ′) ∈ S).
+C. Disclosure limitation for groups of data subjects Notice that, in general, the level of protection for groups
+If -i DP oﬀers all the intuitive privacy guarantees of should be smaller than for individuals. For example, in DP,
+-diﬀerential privacy while allowing more accuracy, it is the parameter grows linearly with the cardinality of the
+because -i DP oﬀers nothing more than those intuitive group and, thus, the level of indistinguishability decreases
+guarantees. Let us discuss this issue here. exponentially with the size of the group. As a result, even
+Even if DP seeks to protect privacy by limiting the in standard DP, protection for groups of individuals is only
+impact of each single individual on a query response, noticeable for small values of (which on the other hand
+Deﬁnition 1 also results in (limited) privacy guarantees severely damage data utility) and for small groups. To
+for groups of individuals. For example, if data sets D and attain an equivalent level of protection with g DP, it must
+1
+D diﬀer in two individuals (two records), by considering be i = i for i ∈ N.
+3
+the intermediate data set D that diﬀers in one individual
+2
+from D₁ and in one individual from D₃,wehave D. Composition theorems
+Pr(κ(D ) ∈ S) ≤ exp( ) Pr(κ(D ) ∈ S), The composition theorems for DP described in Sec-
+1 2
+Pr(κ(D ) ∈ S) ≤ exp( ) Pr(κ(D ) ∈ S), tion II are also trivially satisﬁed by individual diﬀerential
+2 3
+privacy.
+which results in
+Theorem 3 (Sequential composition). Let κ be a mech-
+1
+Pr(κ(D ) ∈ S) ≤ exp(2 ) Pr(κ(D ) ∈ S). anism giving -i DP and κ a mechanism giving -i DP.
+1 3 1 2 2
+Then, any deterministic function of (κ ,κ ) gives + -
+1 2 1 2
+That is, -DP guarantees that the knowledge gain for i DP.
+groups of two individuals is limited by the factor exp(2 ).
+More generally, the knowledge gain for a group of n Theorem 4 (Parallel composition). Let κ1 and κ2 be
+individuals is limited by the factor exp(n). mechanisms giving -i DP. If κ1 and κ2 are applied to
+In contrast, with i DP, the fact that the response mech- disjoint data sets or subsets of records, any deterministic
+anism is adjusted to each concrete data set makes the function of (κ1,κ2) gives -i DP.
+concatenation of inequalities not possible. Speciﬁcally, for The proofs of the theorems for i DP are not detailed
+the data sets D₁, D₂ and D₃ above, i DP provides the because they are straightforward adaptations of the proofs
+upper bounds of Theorems 1 and 2 for DP.
+Pr(κ(D)∈S)≤exp() Pr(κ(D)∈S),
+1 2
+Pr(κ ′(D ) ∈ S) ≤ exp( ) Pr(κ ′(D ) ∈ S), E. Privacy axioms
+2 3
+In [28], an axiomatization of the notions of privacy and
+where κ is a mechanism whose distortion is calibrated on
+utility is proposed. In particular, two desirable properties
+D and κ ′ is a mechanism whose distortion is calibrated
+1 of privacy models are described: the axiom of transforma-
+on D . Note that the probability on the right-hand side of
+2 tion invariance and the privacy axiom of choice.
+the ﬁrst inequality does not match the probability on the
+The axiom of transformation invariance says that post-
+left-hand side of the second inequality.
+processing of sanitized data must be safe as long as
+Therefore, with i DP we lose any direct privacy guar-
+no sensitive information is incorporated into the post-
+antees for groups of individuals. In other words, any
+processing.
+disclosure risk limitation for a group that may subsist
+under -i DP is an indirect consequence of the disclosure Deﬁnition 7 (Axiom of transformation invariance). Sup-
+risk limitation obtained by each individual in the group. pose we have a privacy deﬁnition, a privacy mechanism MIEEE TRANSACTIONS ON INFORMATION FORENSICS AND SECURITY, VOL. X, NO. X, JULY 2016 7
+that satisﬁes this deﬁnition, and a randomized algorithm local sensitivity LSf (D) (see Deﬁnition 3). The ability to
+A whose input space is the output space of M and whose calibrate the noise to the local sensitivity rather than to
+randomness is independent of both the data and the the global or smooth sensitivities is a signiﬁcant advantage
+randomness in M . Then M ′ = A◦M must also be a privacy to preserve data utility: ﬁrst, many functions have small
+mechanism satisfying that privacy deﬁnition. local sensitivity but large global sensitivity, as noted right
+after Deﬁnition 3 above; second, calibration to the local
+Proposition 3. -i DP satisﬁes the axiom of transforma-
+sensitivity also improves the accuracy of query responses
+tion invariance.
+with respect to calibration to the smooth sensitivity, not
+Proof. Let M be an -i DP mechanism, and let A be a only because the local sensitivity is smaller than the
+randomized algorithm whose input space is the output smooth sensitivity, but also because calibration to the lo-
+space of M and whose randomness is independent of both cal sensitivity allows using exponentially decreasing noise
+the data and the randomness in M . According to [28], distributions (rather than the heavy-tailed distributions
+we can think of M and A as returning independent required by calibration to the smooth sensitivity). Last
+probability distributions. That is, M : D→Dist(E) but not least, calibration to the local sensitivity is simpler
+assigns to each data set D a probability distribution over than calibration to the smooth sensitivity.
+E such that, for each D ′ that diﬀers in one record from We next detail how to enforce i DP for both continuous
+D, we have exp(− ) Pr(M (D ′) ∈ S) ≤ Pr(M (D) ∈ S) and discrete numerical results.
+≤ exp( ) Pr(M (D ′) ∈ S). On the other hand, A : E →
+Dist(F ) assigns to each e ∈ E a probability distribution A. Laplace mechanism
+over F .
+The Laplace(µ, b) distribution (a.k.a the double expo-
+To check that exp(− ) Pr(A(M (D ′) ∈ S)) ≤
+nential distribution) is an absolutely continuous distribu-
+Pr(A(M(D)) ∈ S) ≤ exp( ) Pr(A(M(D ′)) ∈ S),
+integraltext tion whose density function is
+we decompose Pr(A(M (d)) ∈ S)as x S Pr(M (d)=
+∈ ( )
+y) Pr(A(y)=x) and we use that M satisﬁes -i DP. 1 |x − µ|
+Lµ,b(x)= exp − ,
+2b b
+The privacy axiom of choice allows randomly choosing
+between -i DP mechanisms. where µ is the location parameter, and b is the scale
+parameter. We use Lb(x) when the mean parameter is zero.
+Deﬁnition 8 (Privacy axiom of choice). Let M₁ and In case of using the Laplace distribution to generate the
+M be privacy mechanisms that satisfy a certain privacy
+2 random noise, i DP can be rewritten as follows.
+deﬁnition. For any p ∈ [0, 1], let Mp be a randomized
+algorithm that, on input i, outputs M (i) with probability Proposition 5. Let f be a query function that
+1 k
+p (independent of the data and the randomness in M and takes values in R . The mechanism κ(x)=f (x)+
+1
+M ) and M (i) with probability 1−p. Then Mp is a privacy (N₁,...,Nk), where Ni are independent identically dis-
+2 2
+mechanism that satisﬁes the privacy deﬁnition. tributed Laplace(0,LSf (D)/) random noises, gives -i DP.
+Proposition 4. -i DP satisﬁes the privacy axiom of Proof. If N is a vector of independent Laplace(0,β) dis-
+choice. tributed variables, we know that for all s ∈ R k
+( ) ( )
+Proof. Let M and M be -i DP mechanisms, and let p z − z ′ Pr(z + N = s) z − z ′
+1 2 ∈ exp − 1 ≤ ≤ exp 1 .
+[0, 1]. Let Mp be a mechanism that, on input i, outputs β Pr(z ′ + N = s) β
+M (i) with probability p and M (i) with probability 1 − p. ′
+1 2 Let D be a data set that diﬀers from D in one record.
+We want to check that Mp is -i DP. That is, for any By taking z = f (D), z ′ = f (D ′), and β = LSf (D)/ we
+D ′ neighbor of D, we have exp(− ) Pr(Mp(D ′) ∈ S) ≤ get
+Pr(Mp(D) ∈ S) ≤ exp( ) Pr(Mp(D ′) ∈ S). This is easily
+seen by expressing Pr(Mp(D) ∈ S)asp × Pr(M (D) ∈ Pr(f (D)+N = s)
+1 exp(− ) ≤ ≤ exp( ).
+S)+(1− p) × Pr(M₂(D) ∈ S) and using that both M₁ and Pr(f (D ′)+N = s)
+M satisfy -i DP.
+2
 V. -iDP for Numerical Queries
-InDP, response mechanisms for numerical queries
-often expressed in terms of noise addition (see Section
-In this line, given a numerical query f , this section
-an -iDP mechanism of the form κ(x)=f (x)+N ,
-N is a random noise.
-Fo r κ(x)=f (x)+N to be -iDP, we have to
-sure that the result of the mechanism is indistinguishable between D and its neighbor data sets. As we
-later, this can be done by adjusting the noise
-
-(D) Pr(f(D)+N
-exp( )
-and Pr(f (D )+N
 B. Discrete Laplace mechanism
-are
-The previous mechanism (based
-II).
-with values in ) is also
-presents
-query functions with values in
-where
-functions the use of a noise
-is a better option. The discrete
-make
+In DP, response mechanisms for numerical queries are
+The previous mechanism (based on adding random noise
+often expressed in terms of noise addition (see Section II).
+with values in R) is also capable of providing DP to
+In this line, given a numerical query f , this section presents
+query functions with values in Z. However, for such query
+an -i DP mechanism of the form κ(x)=f (x)+N , where
+functions the use of a noise distribution with support over
+N is a random noise.
+Z is a better option. The discrete version of the Laplace
+Fo r κ(x)=f (x)+N to be -i DP, we have to make
 distribution is deﬁned as follows.
-show (Discrete Laplace
-to the dom variable N follows the
-
-= s)
-exp( ).
-= s)
-on adding random noise
-capable of providing DP to
-. However, for such query
-distribution with support over
-version of the Laplace
-distribution [10]) A ran-
-discrete Laplace distributionwith parameter α (0, 1), denoted by DL(α),
-k ,
-
-if for all mechanisms to signiﬁcantly degrade accuracy. Instead,
-i DP allows adjusting the amount of protection to each
-
-Pr(N = i)= 1 α α i . speciﬁc data set; thus, most of the times, i DP yields
-
+sure that the result of the mechanism is indistinguish-
+able between D and its neighbor data sets. As we show Deﬁnition 9 (Discrete Laplace distribution [10]). A ran-
+later, this can be done by adjusting the noise to the dom variable N follows the discrete Laplace distributionIEEE TRANSACTIONS ON INFORMATION FORENSICS AND SECURITY, VOL. X, NO. X, JULY 2016 8
+with parameter α ∈ (0, 1), denoted by DL(α), if for all mechanisms to signiﬁcantly degrade accuracy. Instead,
+k ∈ Z, i DP allows adjusting the amount of protection to each
+Pr(N = i)= 1 − α α |i|. speciﬁc data set; thus, most of the times, i DP yields
 1+α reasonably high accuracy, as we discuss below.
-
-The discrete Laplace distribution can also be
-attain -i DP. To this end, the parameter α
-adjusted to the desired privacy level and to
-sensitivity LSf (D) of the query.
-(The discrete Laplace mechanism)
-
-used to 1) Diﬀerential privacy via calibration to the global sen-
-must be sitivity: Let the values x , ,xn, with n =2m +1,
-the local be instances of an attribute with domain Dom(A). Consider data sets D and D such that: in D values
+The discrete Laplace distribution can also be used to 1) Diﬀerential privacy via calibration to the global sen-
+attain -i DP. To this end, the parameter α must be sitivity: Let the values x , ··· ,xn, with n =2m +1,
+1
+adjusted to the desired privacy level and to the local be instances of an attribute with domain Dom(A). Con-
+sensitivity LSf (D) of the query. sider data sets D₁ and D₂ such that: in D₁ values
 x ,...,xm are equal to the minimum of Dom(A), and val-
-Let f
-
+Theorem 5 (The discrete Laplace mechanism). Let f 1
 k ues xm ,...,xn are equal to the maximum of Dom(A);
-
-be a function with values in . The discrete mechanism
-
+be a function with values in Z . The discrete mechanism +1
 and in D values x ,...,xm are equal to the minimum of
-
-κ D(x)=f (x)+N , where N =(N ,...,Nk) and Ni
-
-Dom(A), and values xm,...,xn are equal to the maximum
-
-DL(exp( /LSf (D))) are independent random variables,
-
+κ D(x)=f (x)+N , where N =(N ,...,Nk) and Ni ∼ 2 1 −1
+1 Dom(A), and values xm,...,xn are equal to the maximum
+DL(exp(−/LSf (D))) are independent random variables,
 of Dom(A). As a result, the median xm in D is the
-
-gives -i DP.
-
+gives -i DP. 1
 minimum of Dom(A), and the median xm in D is the
-
-Proof. If N is a vector of independent DL(α)
-variables, we know that for all s k
-
-distributed maximum of Dom(A); thus, the global sensitivity for the
-median is
-
-z z Pr(z + N = s) z z Δ(median) = max(Dom(A)) min(Dom(A)).
-
-α α .
-
-Pr(z+N=s)
-
+2
+Proof. If N is a vector of independent DL(α) distributed maximum of Dom(A); thus, the global sensitivity for the
+variables, we know that for all s ∈ Z k median is
+z−z ′ Pr(z + N = s) − z−z ′ Δ(median) = max(Dom(A)) − min(Dom(A)).
+α 1 ≤ ≤ α 1 .
+Pr(z ′+N=s)
 Having a global sensitivity equal to the domain size
-
-Let D be a data set that diﬀers from D in one
-
+Let D ′ be a data set that diﬀers from D in one
 severely compromises the accuracy of diﬀerentially private
-
-record. By taking z = f (D), z = f (D ) and α =
-
+record. By taking z = f (D), z ′ = f (D ′) and α =
 estimations of the median via calibration to the global
-
-exp( /LSf (D)), we get
-
+exp(−/LSf (D)), we get
 sensitivity. The situation becomes even worse when the
-
 Pr(f (D)+N = s) domain of the attribute is not naturally bounded (e.g.
-
-exp( ) exp(
-Pr(f(D)+N=s)
-
-). incomes are unbounded, even if the income of most individuals falls within a given window); in such cases, it
+exp(− ) ≤ ≤ exp( ). incomes are unbounded, even if the income of most in-
+Pr(f(D ′)+N = s)
+dividuals falls within a given window); in such cases, it
 may not even be possible to compute the global sensitivity
 without artiﬁcially restricting the values to a ﬁxed interval.
-
 VI. Evaluation 2) Diﬀerential privacy via calibration to the smooth
-
-In this section, we compare the accuracy obtained
-the standard DP deﬁnition and with i DP for
-addition mechanisms. In particular, we compare
-
-with sensitivity: Calibration to the smooth sensitivity tries to
-basic noise avoid the shortcomings of global sensitivity by adjusting
-calibra- the amount of noise to each data set. From [11], the smooth
-
+In this section, we compare the accuracy obtained with sensitivity: Calibration to the smooth sensitivity tries to
+the standard DP deﬁnition and with i DP for basic noise avoid the shortcomings of global sensitivity by adjusting
+addition mechanisms. In particular, we compare calibra- the amount of noise to each data set. From [11], the smooth
 tion to the global sensitivity (for DP), to the smooth sensitivity for the median is
-
 sensitivity (for DP), and to the local sensitivity (for i DP).
-
 Smedian,(D)=
-
 Noise addition mechanisms provide simple ways to make
-
-= max exp( k) max xm t xm t k .
-
-an output compliant with DP (or i DP) and are agnostic to k ,...,n t k
-
+= max {exp(−k) max {xm+t − xm+t−k−1}}.
+an output compliant with DP (or i DP) and are agnostic to k=0,...,n 0≤t≤k+1
 the speciﬁc data uses; hence, using standard noise addition
-
 Calibration to the smooth sensitivity is eﬀective at reduc-
-
 mechanisms is relevant to make a general comparison
-
 ing the amount of noise that is added to most data sets.
-
 between DP and i DP.
-
 However, it still has some drawbacks:
-
 Since the accuracy we obtain from standard DP cali-
-
-Computing the smooth sensitivity can be complex. In
-
-brated to the smooth sensitivity and from i DP calibrated
-
+brated to the smooth sensitivity and from i DP calibrated • Computing the smooth sensitivity can be complex. In
 particular, the formula for the smooth sensitivity of
-
 to the local sensitivity depends on the actual data set, a
-
-the median has time complexity (n ), which may
-
+the median has time complexity O(n²), which may
 purely empirical evaluation carried out on some sample
-
 not be feasible for large data sets.
-
 data sets would only provide a partial picture. Therefore,
-
-Similarly to the global sensitivity, the smooth sen-
-
-we give both an empirical analysis based on simulations
-
+we give both an empirical analysis based on simulations • Similarly to the global sensitivity, the smooth sen-
 sitivity can only be computed when Dom(A)is
-
 and a theoretical analysis. We will see that, even in the
-
 bounded.
-
 worst case, i DP oﬀers a signiﬁcant improvement on the
-
-The mechanisms used to attain DP are more complex
-
-accuracy of the responses.
-
+accuracy of the responses. • The mechanisms used to attain DP are more complex
 than with global sensitivity, and the eligible noise
-
 distributions are heavy-tailed (rather than the expo-
-
 A. Median
-
 nentially decreasing distributions used in calibration
-
 The median is a measure of central tendency. Compared to the global sensitivity).
-
 to the arithmetic mean, the median is quite stable, because
-
 3) i DP (via calibration to the local sensitivity): i DP also
-
 it is relatively insensitive to outliers. Since statistical
-
 allows the response mechanism to be independently ad-
-
 queries like the median represent properties of the data set
-
 justed to each data set. i DP can be reached via calibration
-
 rather than properties of a speciﬁc individual, we could
-
 to the local sensitivity (see Section V). For the median, the
-
 expect DP to provide accurate results for such queries.
-
 local sensitivity is:
-
 However, the fact that standard DP guarantees must hold
-
-for any pair of neighbor data sets forces noise
-
-addition LSmedian(D) = max xm xm ,xm xm .Table I
-
+for any pair of neighbor data sets forces noise addition LSmedian(D) = max{xm − xm ,xm − xm}.
+−1 +1IEEE TRANSACTIONS ON INFORMATION FORENSICS AND SECURITY, VOL. X, NO. X, JULY 2016 9
+Table I
 95% confidence intervals of the noise distributions required
-
 by -DP via calibration to the smooth sensitivity (for
-
-different values of the noise parameter ) and -iDP via
-
+different values of the noise parameter γ) and -iDP via
 calibration to the local sensitivity (with a Laplace
-
 distribution), where the query is the median, =1and
-
 sensitivities are 1.
-
-Privacy model -iDP -DP =2 -DP =3
-
+Privacy model -i DP -DP γ =2 -DP γ =3
 95% interval [-3,3] [-101.7,101.7] [-34.2,34.2]
-
 These results show that the use of calibration to the
-
-Figure 1. Comparison of the noise distributions required by
-calibration to the smooth sensitivity (for = 2 and = 3,
-the noise parameter) and -iDP via calibration to the local
-(with a Laplace distribution), where the query is the
-and sensitivities are 1.
-i DP via calibration to the local sensitivity oﬀers
-lowing advantages compared to calibration to the
-sensitivity:
-The computation of the local sensitivity is
-
--DP via smooth sensitivity may be incompatible with an accurate
-where is and -diﬀerentially private approximation for the median.
-sensitivity
-median, =1 Although the smooth sensitivity is deﬁnitely better than
-the global sensitivity for noise calibration, at 95% conﬁdence the amount of noise can be as large as 101 times the
+Figure 1. Comparison of the noise distributions required by -DP via smooth sensitivity may be incompatible with an accurate
+calibration to the smooth sensitivity (for γ = 2 and γ = 3, where γ is and -diﬀerentially private approximation for the median.
+the noise parameter) and -i DP via calibration to the local sensitivity
+(with a Laplace distribution), where the query is the median, =1 Although the smooth sensitivity is deﬁnitely better than
+and sensitivities are 1. the global sensitivity for noise calibration, at 95% conﬁ-
+dence the amount of noise can be as large as 101 times the
 smooth sensitivity. Whether this is acceptable depends on
-the fol-
+i DP via calibration to the local sensitivity oﬀers the fol-
 the data set. Only if the smooth sensitivity is very small
-smooth
+lowing advantages compared to calibration to the smooth
 compared to the attribute domain, accuracy may still be
+sensitivity:
 acceptable. In contrast, the accuracy provided by i DP is
-less com- much better: at 95% conﬁdence, the noise is at most 3
-
+• The computation of the local sensitivity is less com- much better: at 95% conﬁdence, the noise is at most 3
 plex. times the local sensitivity.
-
-The local sensitivity is lower than the smooth
-tivity.
-The local sensitivity does not depend on the
-the domain. It only depends on xm , xm and
-The mechanism used to attain i DP is simpler
-noise distributions can be selected to be
-decreasing (e.g. the Laplace distribution).
-4) Experimental comparison between DP with
-
-sensi- Finally, we evaluate the accuracy of the median by
-computing, for a collection of data sets, the average ab-
-size of solute error incurred; we use the absolute error because
-xm . the relative error may be misleading when the median is
-and the close to 0. We consider data sets with three diﬀerent sizes
-exponentially (10, 100, and 1000) whose records are drawn from [0, 1]
-(the uniform distribution in [0, 1]), N (0, 1) (the normal
-smooth distribution with mean 0 and variance 1) and Exp(1) (the
-
+• The local sensitivity is lower than the smooth sensi- Finally, we evaluate the accuracy of the median by
+tivity. computing, for a collection of data sets, the average ab-
+• The local sensitivity does not depend on the size of solute error incurred; we use the absolute error because
+the domain. It only depends on xm−1, xm and xm+1. the relative error may be misleading when the median is
+• The mechanism used to attain i DP is simpler and the close to 0. We consider data sets with three diﬀerent sizes
+noise distributions can be selected to be exponentially (10, 100, and 1000) whose records are drawn from U [0, 1]
+decreasing (e.g. the Laplace distribution). (the uniform distribution in [0, 1]), N (0, 1) (the normal
+4) Experimental comparison between DP with smooth distribution with mean 0 and variance 1) and Exp(1) (the
 sensitivity and i DP: After the previous theoretical com- exponential distribution with rate 1).
-
-parison, we now turn to experimental evaluation
-curacy for the median. Due to the poor accuracy
-by calibration to the global sensitivity, the
-focuses on DP via calibration to the smooth
-and i DP via calibration to the local sensitivity.
-For i DP, we have used the mechanism
-Proposition 5. For standard DP, we have used a
-having a density of the form
-1
-
-of the ac- For the smooth sensitivity to be ﬁnite, the domain of the
-provided records must be bounded. Thus, to be able to compute the
-comparison smooth sensitivity in the N (0, 1) and the Exp(1) cases, we
-sensitivity have to restrict the domain of the data. This is done by
-bounding the domain to the range between the minimum
-proposed in and the maximum values in the data set. Figure 2 shows
-noise N the average absolute error for each of the data sets. We
-include the results obtained for DP by adjusting the noise
+parison, we now turn to experimental evaluation of the ac- For the smooth sensitivity to be ﬁnite, the domain of the
+curacy for the median. Due to the poor accuracy provided records must be bounded. Thus, to be able to compute the
+by calibration to the global sensitivity, the comparison smooth sensitivity in the N (0, 1) and the Exp(1) cases, we
+focuses on DP via calibration to the smooth sensitivity have to restrict the domain of the data. This is done by
+and i DP via calibration to the local sensitivity. bounding the domain to the range between the minimum
+For i DP, we have used the mechanism proposed in and the maximum values in the data set. Figure 2 shows
+Proposition 5. For standard DP, we have used a noise N the average absolute error for each of the data sets. We
+having a density of the form include the results obtained for DP by adjusting the noise
 to the smooth sensitivity with γ = 3, and for i DP by
-
-f N (x) γ , adjusting a Laplace noise to the local sensitivity. We
-
-1+ x
-
-took γ = 3 as the best performing value after evaluating
-
-where γ>1. This noise distribution is ( ,
-to achieve DP calibrated to the smooth sensitivity
-In the comparison, we take = 1 and we assume
-the local sensitivity equals the smooth sensitivity.
-i) noise in DP is proportional to the smooth
-ii) noise in i DP is proportional to the local
-and iii) the latter sensitivity is never greater
-former, both sensitivities being equal is the
-for i DP. Speciﬁcally, we take both sensitivities
-1. Figure 1 shows the distribution of the noise
-response. Even in the most favorable case for the
-sensitivity, the accuracy obtained with i DP is much
-The reason is that, to enforce -DP via calibration
-smooth sensitivity, the noise distribution must be
-tailed. Table I shows 95%-conﬁdence intervals
-noise distributions.
-
-)-admissible several other values of γ; speciﬁcally, smaller values led to
-[11]. too much probability mass in the tails, whereas greater
-that values introduced greater correction factors to the noise
-Since distribution that oﬀset the gain produced by having the
-sensitivity, probability mass closer to zero. By looking at the ﬁgure, we
-sensitivity, notice that, regardless of the underlying data distribution
-than the and the data set size, the results are signiﬁcantly better
-worst case for i DP.
-equal to
-in the
+1
+f N (x) ∝ , adjusting a Laplace noise to the local sensitivity. We
+1+ x γ
+| | took γ = 3 as the best performing value after evaluating
+where γ>1. This noise distribution is ( , )-admissible several other values of γ; speciﬁcally, smaller values led to
+4γ γ
+to achieve DP calibrated to the smooth sensitivity [11]. too much probability mass in the tails, whereas greater
+In the comparison, we take = 1 and we assume that values introduced greater correction factors to the noise
+the local sensitivity equals the smooth sensitivity. Since distribution that oﬀset the gain produced by having the
+i) noise in DP is proportional to the smooth sensitivity, probability mass closer to zero. By looking at the ﬁgure, we
+ii) noise in i DP is proportional to the local sensitivity, notice that, regardless of the underlying data distribution
+and iii) the latter sensitivity is never greater than the and the data set size, the results are signiﬁcantly better
+former, both sensitivities being equal is the worst case for i DP.
+for i DP. Speciﬁcally, we take both sensitivities equal to
+1. Figure 1 shows the distribution of the noise in the
 B. Maximum
-smooth
-better. Rather than comparing the accuracy obtained with
-to the diﬀerent mechanisms in a baseline scenario, this example
-heavy- focuses on the maximum value of a data set and shows how
-for these i DP is useful to avoid calibrating the noise to a domaindependent (and hence too large) sensitivity.Figure 2. Absolute error in the median (y-axis) for in the range
-a speciﬁc distribution: [0 1] (top row graphs), (0 1) (middle
-column graphs), 100 (middle column graphs), and 1000 (right
-strict DP yields completely oﬀ-range median values for all considered
-probability, the median of a (0 1) is within [ 3 3] and the median
-Diﬀerential privacy via calibration to the global sen
-sitivity: The global sensitivity of the maximum of a set of
-values equals the length of the domain. Let us consider
-data sets D and D such that: in D , all the values
-x ,...,xn are equal to the minimum of Dom(A), and in
-D the values x ,...,xn are equal to the minimum of
-and the value xn is equal to the maximum of
-Thus, the global sensitivity for the maximum is
-Δ(maximum) = max(Dom(A)) min(Dom(A)).
+response. Even in the most favorable case for the smooth
+sensitivity, the accuracy obtained with i DP is much better. Rather than comparing the accuracy obtained with
+The reason is that, to enforce -DP via calibration to the diﬀerent mechanisms in a baseline scenario, this example
+smooth sensitivity, the noise distribution must be heavy- focuses on the maximum value of a data set and shows how
+tailed. Table I shows 95%-conﬁdence intervals for these i DP is useful to avoid calibrating the noise to a domain-
+noise distributions. dependent (and hence too large) sensitivity.IEEE TRANSACTIONS ON INFORMATION FORENSICS AND SECURITY, VOL. X, NO. X, JULY 2016 10
+7
+DP Γ3 DP Γ3 DP Γ3
+6 0.8 0.08
+i DP i DP i DP
+5
+0.6 0.06
+4
+3 0.4 0.04
+2
+0.2 0.02
+1
+0.6 0.7 0.8 0.9 1.0 0.6 0.7 0.8 0.9 1.0 0.6 0.7 0.8 0.9 1.0
+30 2.0
+DP Γ3 DP Γ3 DP Γ3
+25 i DP 0.20
+i DP i DP
+1.5
+20 0.15
+15 1.0
+0.10
+10
+0.5 0.05
+5
+0.6 0.7 0.8 0.9 1.0 0.6 0.7 0.8 0.9 1.0 0.6 0.7 0.8 0.9 1.0
+2.0 0.20
+30 DP Γ3 DP Γ3 DP Γ3
+25 i DP 1.5 i DP 0.15 i DP
+20
+15 1.0 0.10
+10
+0.5 0.05
+5
+0.6 0.7 0.8 0.9 1.0 0.6 0.7 0.8 0.9 1.0 0.6 0.7 0.8 0.9 1.0
+Figure 2. Absolute error in the median (y-axis) for in the range [0.5, 1] (x-axis) and several data sets. Data sets have been drawn from
+a speciﬁc distribution: U [0, 1] (top row graphs), N (0, 1) (middle row graphs) and Exp(1) (bottom row graphs). Data set sizes are 10 (left
+column graphs), 100 (middle column graphs), and 1000 (right column graphs). Especially in the left column graphs, it can be seen that
+strict DP yields completely oﬀ-range median values for all considered , as the median of a U [0, 1] must be within [0, 1], and, with very great
+probability, the median of a N (0, 1) is within [−3, 3] and the median of an Exp(1) is within [0, 5]. Clearly, i DP is much more utility-preserving.
+1) Diﬀerential privacy via calibration to the global sen- fact, except for the worst-case data sets described when
+sitivity: The global sensitivity of the maximum of a set of computing the global sensitivity, the smooth sensitivity is
+values equals the length of the domain. Let us consider smaller. However, the smooth sensitivity does not avoid
+data sets D and D such that: in D , all the values the dependence on the domain of the attribute.
+1 2 1
+x1,...,xn are equal to the minimum of Dom(A), and in 3) i DP (via calibration to the local sensitivity): The
+D₂ the values x1,...,xn−1 are equal to the minimum of local sensitivity of the maximum can be computed as
+Dom(A), and the value xn is equal to the maximum of
+Dom(A). Thus, the global sensitivity for the maximum is LSmaximum(D) = max{max(Dom(A)) − xn,xn − xn }.
+−1
+Δ(maximum) = max(Dom(A)) − min(Dom(A)). While i DP oﬀers the expected advantages (the local sen-
+sitivity is smaller than the smooth sensitivity, and we can
 Like in the case of the median, having a global sensitivity
-equal to the domain size severely degrades the accuracy
-of diﬀerentially private estimations of the maximum via
-calibration to the global sensitivity. Also, if the domain
-is unbounded, the global sensitivity cannot even be computed.
-Diﬀerential privacy via calibration to the smooth
-sensitivity: The smooth sensitivity for the maximum can
-be computed as
-Smaximum,(D)=
-max exp( k)(max(Dom(A)) xn k),
-k ,...,n
-exp( k)(xn xn k ) .
-Calibration to the smooth sensitivity is eﬀective to reduce
-the amount of noise that is added to most data sets. In
-
-[0 5 1] (x-axis) and several data sets. Data sets have been drawn from
-row graphs) and Exp(1) (bottom row graphs). Data set sizes are 10 (left
-column graphs). Especially in the left column graphs, it can be seen that
-, as the median of a [0 1] must be within [0 1], and, with very great
-of an Exp(1) is within [0 5]. Clearly, i DP is much more utility-preserving.
-fact, except for the worst-case data sets described when
-computing the global sensitivity, the smooth sensitivity is
-smaller. However, the smooth sensitivity does not avoid
-the dependence on the domain of the attribute.
-3) i DP (via calibration to the local sensitivity): The
-local sensitivity of the maximum can be computed as
-LSmaximum(D) = max max(Dom(A)) xn,xn xn .
-While i DP oﬀers the expected advantages (the local sensitivity is smaller than the smooth sensitivity, and we can
 use exponentially decreasing noise distributions), the local
+equal to the domain size severely degrades the accuracy
 sensitivity still depends on the domain of the attribute,
+of diﬀerentially private estimations of the maximum via
 which can be unbounded. However, i DP allows an easy
+calibration to the global sensitivity. Also, if the domain
 workaround to solve this issue: rather than querying for
-the maximum value, we can query for the second maximum. Unless there is a single record that has a signiﬁcantly
+is unbounded, the global sensitivity cannot even be com-
+the maximum value, we can query for the second maxi-
+puted.
+mum. Unless there is a single record that has a signiﬁcantly
+2) Diﬀerential privacy via calibration to the smooth
 greater value (as in the worst-case data set described
+sensitivity: The smooth sensitivity for the maximum can
 above), querying for the second maximum should be a
-reasonably good approximation; otherwise, the approximation will be very inexact, but, anyway, the accuracy
-when querying for the maximum would also be poor. The
+be computed as
+reasonably good approximation; otherwise, the approxi-
+Smaximum,(D)= mation will be very inexact, but, anyway, the accuracy
+max {exp(−k)(max(Dom(A)) − xn−k), when querying for the maximum would also be poor. The
+k=0,...,n
 advantage of querying for the second maximum is that the
+exp(−k)(xn − xn−k−1)}.
 local sensitivity does not depend on the domain anymore:
-LS (D)=maxxnxn,xnxn.It is important to note that this workaround to avoid
-having a sensitivity that depends on the domain attribute
-is not possible with calibration to the smooth sensitivity.
-C. Range queries
-Given a data set D and a range , a range query counts
-the number of records of D that are contained in :
-f(D)=x D:x .
-Range queries behave well under DP: their sensitivity is
-This low sensitivity is preserved in histogram queries (a
-collection of range queries over disjoint ranges).
-The mechanisms to attain -i DP described in Sections V-A and V-B were based on calibrating the noise
-to the local sensitivity at D. As the local sensitivity of
-f at any D is 1, which is equal to the global sensitivity,
-the use of these mechanisms does not provide improved
-accuracy w.r.t. DP.
-VII. Conclusions and future work
-This work formalizes and discusses individual diﬀerential privacy, an alternative to the standard formulation
-of DP that reduces the noise to be added to the query
-results and, thus, better preserves their accuracy/utility.
-While, at ﬁrst sight, individual diﬀerential privacy may
-look like another relaxation of DP, it exactly maintains
-the intuitive disclosure limitation guarantee of DP: the
-presence or absence of one individual in the data set
-must be unnoticeable from the query result. Improving
-the accuracy of the results is possible because individual
-diﬀerential privacy exploits the fact that the actual data
-set is known by the trusted data controller at the time of
-answering queries. By focusing only on indistinguishability
-between the actual data set and its neighbor data sets, the
-sensitivity of the query and, and hence, the magnitude of
-noise to be added signiﬁcantly decrease.
-We have also proposed several mechanisms to attain individual diﬀerential privacy. First, we have explained that
-any mechanism providing -DP also provides -individual
-
-In addition to improved accuracy, i DP via local sensitivity
-is less dependent on the attribute domain (which may be
-large or even unbounded); what is more, in case the local
+Calibration to the smooth sensitivity is eﬀective to reduce
+the amount of noise that is added to most data sets. In LS (D) = max{xn − xn ,xn − xn }.
+2−max −1 −1 −2IEEE TRANSACTIONS ON INFORMATION FORENSICS AND SECURITY, VOL. X, NO. X, JULY 2016 11
+It is important to note that this workaround to avoid In addition to improved accuracy, i DP via local sensitivity
+having a sensitivity that depends on the domain attribute is less dependent on the attribute domain (which may be
+is not possible with calibration to the smooth sensitivity. large or even unbounded); what is more, in case the local
 sensitivity depends on the domain, workarounds can be
-found.
+C. Range queries found.
 In our opinion, the signiﬁcant accuracy/utility gains
-brought by -i DP, together with its strong privacy guarantee (the same intuitive privacy guarantee of -DP for
-individuals), pave the way to using -i DP where standard
+Given a data set D and a range R, a range query counts
+brought by -i DP, together with its strong privacy guar-
+the number of records of D that are contained in R:
+antee (the same intuitive privacy guarantee of -DP for
+f (D)=|{x ∈ D : x ∈ R}| . individuals), pave the way to using -i DP where standard
+R
 DP is not viable. As future work, we plan to study the
+Range queries behave well under DP: their sensitivity is
 performance of i DP for other common queries in the
+1. This low sensitivity is preserved in histogram queries (a
 interactive scenario. We also plan to design mechanisms,
+collection of range queries over disjoint ranges).
 other than noise addition, that may oﬀer improved utility
+The mechanisms to attain -i DP described in Sec-
 for speciﬁc tasks. Speciﬁcally, we aim at mechanisms for
-non-numerical discrete functions that leverage the advantages of i DP. Finally, we also plan to apply -i DP
-to non-interactive data releases. Although such releases
+tions V-A and V-B were based on calibrating the noise
+non-numerical discrete functions that leverage the ad-
+to the local sensitivity at D. As the local sensitivity of
+vantages of i DP. Finally, we also plan to apply -i DP
+f at any D is 1, which is equal to the global sensitivity,
+R to non-interactive data releases. Although such releases
+the use of these mechanisms does not provide improved
 provide more ﬂexibility regarding data uses, they have
+accuracy w.r.t. DP.
 been traditionally neglected by researchers because of the
-enormous distortion that making them diﬀerentially private according to the standard deﬁnition would entail [18].
-Acknowledgments and disclaimer
-We thank Frank Mc Sherry and Daniel Kifer for their
-comments and suggestions on individual diﬀerential privacy. This work was supported by the European Commission (projects H2020-644024 “CLARUS” and H2020-
-700540 “CANVAS”), by the Spanish Government (projects
-TIN2014-57364-C2-1/2-R “Smart Glacis”, TIN2016-80250-
-R “Sec-MCloud” and TIN2015-70054-REDC) and by the
-Government of Catalonia under grant 2014 537.
-Josep Domingo-Ferrer is partially supported as an ICREA-
-Acadèmia researcher by the Government of Catalonia. The
-opinions expressed in this paper are the authors’ own and
-do not necessarily reﬂect the views of UNESCO. The ﬁrst
-and second authors thank the Isaac Newton Institute for
-Mathematical Sciences at the University of Cambridge for
-support and hospitality during the “Data Linkage and
-Anonymisation” programme (funded by EPSRC Grant
-Number EP/K032208/1), when work on this paper was
-
+enormous distortion that making them diﬀerentially pri-
+VII. Conclusions and future work
+vate according to the standard deﬁnition would entail [18].
+This work formalizes and discusses individual diﬀeren-
+tial privacy, an alternative to the standard formulation Acknowledgments and disclaimer
+of DP that reduces the noise to be added to the query We thank Frank Mc Sherry and Daniel Kifer for their
+results and, thus, better preserves their accuracy/utility. comments and suggestions on individual diﬀerential pri-
+While, at ﬁrst sight, individual diﬀerential privacy may vacy. This work was supported by the European Com-
+look like another relaxation of DP, it exactly maintains mission (projects H2020-644024 “CLARUS” and H2020-
+the intuitive disclosure limitation guarantee of DP: the 700540 “CANVAS”), by the Spanish Government (projects
+presence or absence of one individual in the data set TIN2014-57364-C2-1/2-R “Smart Glacis”, TIN2016-80250-
+must be unnoticeable from the query result. Improving R “Sec-MCloud” and TIN2015-70054-REDC) and by the
+the accuracy of the results is possible because individual Government of Catalonia under grant 2014 SGR 537.
+diﬀerential privacy exploits the fact that the actual data Josep Domingo-Ferrer is partially supported as an ICREA-
+set is known by the trusted data controller at the time of Acadèmia researcher by the Government of Catalonia. The
+answering queries. By focusing only on indistinguishability opinions expressed in this paper are the authors’ own and
+between the actual data set and its neighbor data sets, the do not necessarily reﬂect the views of UNESCO. The ﬁrst
+sensitivity of the query and, and hence, the magnitude of and second authors thank the Isaac Newton Institute for
+noise to be added signiﬁcantly decrease. Mathematical Sciences at the University of Cambridge for
+We have also proposed several mechanisms to attain in- support and hospitality during the “Data Linkage and
+dividual diﬀerential privacy. First, we have explained that Anonymisation” programme (funded by EPSRC Grant
+any mechanism providing -DP also provides -individual Number EP/K032208/1), when work on this paper was
 diﬀerential privacy. However, direct use of -diﬀerentially completed and discussed.
-
 private mechanisms fails to reap the potential accuracy
-
-improvements of individual diﬀerential privacy. Next, we
-have shown that, for numerical queries, -i DP can be
-attained by adjusting the noise to the local sensitivity,
-which results in substantial accuracy gains:
-Since the local sensitivity is normally signiﬁcantly
-
-References
-[1] A. Hundepool, J. Domingo-Ferrer, L. Franconi, S. Giessing,
-E. Schulte-Nordholt, K. Spicer, and P. de Wolf, Statistical
+improvements of individual diﬀerential privacy. Next, we References
+have shown that, for numerical queries, -i DP can be [1] A. Hundepool, J. Domingo-Ferrer, L. Franconi, S. Giessing,
+attained by adjusting the noise to the local sensitivity, E. Schulte-Nordholt, K. Spicer, and P. de Wolf, Statistical
 disclosure control. Wiley, 2012.
-[2] J. Domingo-Ferrer, D. Sanchez, and J. Soria-Comas,
-Database Anonymization: Privacy Models, Data Utility,
+which results in substantial accuracy gains: [2] J. Domingo-Ferrer, D. Sanchez, and J. Soria-Comas,
+Since the local sensitivity is normally signiﬁcantly Database Anonymization: Privacy Models, Data Utility,
+•
 and Microaggregation-Based Inter-Model Connections. Morgan
-
 smaller than the global sensitivity employed by stan- & Claypool, 2016.
-
-dard DP, i DP leads to substantially better accuracy.
-Even if noise is calibrated to the smooth sensitivity,
-i DP still oﬀers much better accuracy and this for two
-reasons: (i) the local sensitivity is smaller than the
-smooth sensitivity (although the diﬀerence is not as
-important as with respect to the global sensitivity);
-(ii) exponentially decreasing random noise can be
-used with local sensitivity (in contrast with the heavytailed noises that are to be employed with calibration
-
-[3] C. Dwork, “Diﬀerential privacy,” in Automata, Languages and
-Programming, Springer, 2006, pp. 1–12.
+dard DP, i DP leads to substantially better accuracy. [3] C. Dwork, “Diﬀerential privacy,” in Automata, Languages and
+• Even if noise is calibrated to the smooth sensitivity, Programming, Springer, 2006, pp. 1–12.
 [4] P. Samarati, “Protecting respondents’ identities in microdata
-release,” IEEE Transactions on Knowledge and Data Engineering, vol. 13, 6, 1010–1027, Nov. 2001.
-[5] A. Machanavajjhala, D. Kifer, J. Gehrke, and M. Venkitasubramaniam, “ -diversity: privacy beyond -anonymity,” ACM
-Transactions on Knowledge Discovery from Data,vol.1,no.1,
-Mar. 2007.
-[6] N. Li, T. Li, and S. Venkatasubramanian, “ -closeness: privacy
-beyond -anonymity and -diversity,” in ICDE, R. Chirkova,
-A. Dogac, M. T. Özsu, and T. K. Sellis, Eds. IEEE, 2007,
-
-to the smooth sensitivity). pp. 106–115.[7] J. Soria-Comas and J. Domingo-Ferrer, “Probabilistic - [26] A.
-anonymity through microaggregation and data swapping,” in
-FUZZ-IEEE 2012, IEEE International Conference on Fuzzy pp.
-Systems, Brisbane, Australia, IEEE, pp. 1-8. [27] C.
-[8] C. Dwork, F. Mc Sherry, K. Nissim, and A. D. Smith, “Calibrat- privacy,”
-
-Machanavajjhala and D. Kiefer, “Designing statistical privacy for your data,” Communications of the ACM, vol. 58, no. 3,
-58–67, 2015.
-Dwork and G. N. Rothblum, “Concentrated diﬀerential
-CoRR, vol. abs/1603.01887, 2016. [Online]. Available:
-
+i DP still oﬀers much better accuracy and this for two release,” IEEE Transactions on Knowledge and Data Engineer-
+reasons: (i) the local sensitivity is smaller than the ing, vol. 13, no. 6, pp. 1010–1027, Nov. 2001.
+smooth sensitivity (although the diﬀerence is not as [5] A. Machanavajjhala, D. Kifer, J. Gehrke, and M. Venkita-
+subramaniam, “l-diversity: privacy beyond k-anonymity,” ACM
+important as with respect to the global sensitivity); Transactions on Knowledge Discovery from Data,vol.1,no.1,
+(ii) exponentially decreasing random noise can be Mar. 2007.
+used with local sensitivity (in contrast with the heavy- [6] N. Li, T. Li, and S. Venkatasubramanian, “t-closeness: privacy
+beyond k-anonymity and l-diversity,” in ICDE, R. Chirkova,
+tailed noises that are to be employed with calibration A. Dogac, M. T. Özsu, and T. K. Sellis, Eds. IEEE, 2007,
+to the smooth sensitivity). pp. 106–115.IEEE TRANSACTIONS ON INFORMATION FORENSICS AND SECURITY, VOL. X, NO. X, JULY 2016 12
+[7] J. Soria-Comas and J. Domingo-Ferrer, “Probabilistic k- [26] A. Machanavajjhala and D. Kiefer, “Designing statistical pri-
+anonymity through microaggregation and data swapping,” in vacy for your data,” Communications of the ACM, vol. 58, no. 3,
+FUZZ-IEEE 2012, IEEE International Conference on Fuzzy pp. 58–67, 2015.
+Systems, Brisbane, Australia, IEEE, pp. 1-8. [27] C. Dwork and G. N. Rothblum, “Concentrated diﬀerential
+[8] C. Dwork, F. Mc Sherry, K. Nissim, and A. D. Smith, “Calibrat- privacy,” Co RR, vol. abs/1603.01887, 2016. [Online]. Available:
 ing noise to sensitivity in private data analysis,” in Theory of http://arxiv.org/abs/1603.01887
-
-Cryptography, Third Theory of Cryptography Conference, TCC [28] D.
-2006, New York, NY, USA, March 4-7, 2006, pp. 265–284.
-[9] J. Soria-Comas and J. Domingo-Ferrer, “Optimal data- ACM
-independent noise for diﬀerential privacy.” Information Sciences, vol. 250, 200–214, 2013.
+Cryptography, Third Theory of Cryptography Conference, TCC [28] D. Kifer and B.-R. Lin, “Towards an axiomatization of
+2006, New York, NY, USA, March 4-7, 2006, pp. 265–284. statistical privacy and utility,” in Proceedings of the 29th
+[9] J. Soria-Comas and J. Domingo-Ferrer, “Optimal data- ACM SIGMOD-SIGACT-SIGART Symposium on Principles
+independent noise for diﬀerential privacy.” Information Sci- of Database Systems, PODS ’10. New York, NY, USA: ACM,
+ences, vol. 250, pp. 200–214, 2013. 2010, pp. 147-158.
 [10] S. Inusah and T. J. Kozubowski, “A discrete analogue of the
-Laplace distribution,” Journal of Statistical Planning and Inference, vol. 136, 3, 1090–1102, 2006.
+Laplace distribution,” Journal of Statistical Planning and In-
+ference, vol. 136, no. 3, pp. 1090–1102, 2006.
 [11] K. Nissim, S. Raskhodnikova, and A. Smith, “Smooth sensitivity
 and sampling in private data analysis,” in Proceedings of the
-39th Annual ACM Symposium on Theory of Computing, STOC
-’07. New York, NY, USA: ACM, 2007, pp. 75–84.
-[12] J. Bambauer, K. Muralidhar, and R. Sarathy, “Fool’s gold: an
-illustrated critique of diﬀerential privacy,” Vanderbilt Journal of
-Entertainment & Technology Law, vol. 16, no. 4, pp. 701–755,
-Summer 2014.
-[13] Sarathy and K. Muralidhar, “Evaluating Laplace noise addition to satisfy diﬀerential privacy for numeric data,” Transactions on Data Privacy, vol. 4, 1, 1–17, Apr. 2011.
-[14] A. Friedman and A. Schuster, “Data mining with diﬀerential privacy,” in Proceedings of the 16th ACM SIGKDD International
+39th Annual ACM Symposium on Theory of Computing, STOC Jordi Soria-Comas is a postdoctoral re-
+’07. New York, NY, USA: ACM, 2007, pp. 75–84. searcher at Universitat Rovira i Virgili, Tar-
+[12] J. Bambauer, K. Muralidhar, and R. Sarathy, “Fool’s gold: an ragona, Catalonia. He received an MSc in com-
+illustrated critique of diﬀerential privacy,” Vanderbilt Journal of puter security (2011) and a Ph D in computer
+Entertainment & Technology Law, vol. 16, no. 4, pp. 701–755, science (2013) from Universitat Rovira i Vir-
+Summer 2014. gili. He also holds an MSc in ﬁnance from the
+[13] R. Sarathy and K. Muralidhar, “Evaluating Laplace noise addi- Autonomous University of Barcelona (2004)
+tion to satisfy diﬀerential privacy for numeric data,” Transac- and a BSc in mathematics from the University
+tions on Data Privacy, vol. 4, no. 1, pp. 1–17, Apr. 2011. of Barcelona (2003). His research interests are
+[14] A. Friedman and A. Schuster, “Data mining with diﬀerential pri- in data privacy and security.
+vacy,” in Proceedings of the 16th ACM SIGKDD International
 Conference on Knowledge Discovery and Data Mining, KDD
 ’10. New York, NY, USA: ACM, 2010, pp. 493–502.
 [15] P. Mohan, A. Thakurta, E. Shi, D. Song, and D. Culler, “GUPT:
 privacy preserving data analysis made easy,” in Proceedings of
-the 2012 ACM SIGMOD International Conference on Management of Data, 2012, pp. 349–360.
-[16] M. Fredrikson, E. Lantz, S. Jha, S. Lin, D. Page, and T. Ristenpart, “Privacy in pharmacogenetics: an end-to-end case study
+the 2012 ACM SIGMOD International Conference on Manage-
+Josep Domingo-Ferrer (Fellow, IEEE) is
+ment of Data, 2012, pp. 349–360.
+a distinguished professor of computer science
+[16] M. Fredrikson, E. Lantz, S. Jha, S. Lin, D. Page, and T. Risten-
+and an ICREA-Acadèmia researcher at Uni-
+part, “Privacy in pharmacogenetics: an end-to-end case study
+versitat Rovira i Virgili, Tarragona, Catalonia,
 of personalized warfarin dosing,” in Proceedings of the 23rd
+where he holds the UNESCO Chair in Data
 USENIX Security Symposium, San Diego CA, EUA, 2014, pp.
+Privacy. He received the MSc and PhD degrees
 17–32.
+in computer science from the Autonomous
 [17] J. Soria-Comas, J. Domingo-Ferrer, D. Sánchez, and
+University of Barcelona in 1988 and 1991,
 S. Martínez, “Improving the utility of diﬀerentially private
+respectively. He also holds an MSc degree in
 data releases via k-anonymity,” in 12th IEEE International
+mathematics. His research interests are in data
 Conference on Trust, Security and Privacy in Computing and
-Communications (Trust Com), July 2013, pp. 372–379.
+privacy, data security and cryptographic pro-
+Communications (TrustCom), July 2013, pp. 372–379.
 tocols.
 [18] J. Soria-Comas, J. Domingo-Ferrer, D. Sánchez, and
 S. Martínez, “Enhancing data utility in diﬀerential privacy via
-microaggregation-based -anonymity,” The VLDB Journal,
-vol. 23, 5, 771–794, Oct. 2014.
+microaggregation-based k-anonymity,” The VLDB Journal,
+vol. 23, no. 5, pp. 771–794, Oct. 2014.
 [19] D. Sánchez, J. Domingo-Ferrer, S. Martínez, and J. Soria-
-Comas, “Utility-preserving diﬀerentially private data releases
-via individual ranking microaggregation,” Information Fusion,
-vol. 30, pp. 1 – 14, 2016.
-[20] J. Zhang, G. Cormode, C. M. Procopiuc, D. Srivastava, and
-X. Xiao, “Privbayes: private data release via Bayesian net-
-works,” in Proceedings of the 2014 ACM SIGMOD International
-Conference on Management of Data, SIGMOD ’14. New York,
-NY, USA: ACM, 2014, pp. 1423–1434.
-[21] J. Xu, Z. Zhang, X. Xiao, Y. Yang, and G. Yu, “Diﬀerentially private histogram publication,” in Proceedings of the 28th
+Comas, “Utility-preserving diﬀerentially private data releases David Sánchez is an associate professor of
+via individual ranking microaggregation,” Information Fusion, computer science at Universitat Rovira i Vir-
+vol. 30, pp. 1 – 14, 2016. gili, Tarragona, Catalonia. He received a Ph D
+[20] J. Zhang, G. Cormode, C. M. Procopiuc, D. Srivastava, and in computer science (2008) from the Technical
+X. Xiao, “Privbayes: private data release via Bayesian net- University of Catalonia. He also holds a BSc
+works,” in Proceedings of the 2014 ACM SIGMOD International and an MSc in computer engineering from Uni-
+Conference on Management of Data, SIGMOD ’14. New York, versitat Rovira i Virgili. His research interests
+NY, USA: ACM, 2014, pp. 1423–1434. are in data semantics and data privacy.
+[21] J. Xu, Z. Zhang, X. Xiao, Y. Yang, and G. Yu, “Diﬀeren-
+tially private histogram publication,” in Proceedings of the 28th
 IEEE International Conference on Data Engineering, ICDE
 ’12. Washington, DC: IEEE Computer Society, 2012, pp. 32–
 43.
 [22] Y. Xiao, L. Xiong, and C. Yuan, “Diﬀerentially private data
 release through multidimensional partitioning,” in Secure Data
-Management, Springer, 2010, pp. 150–168.
-[23] G. Jagannathan, K. Pillaipakkamnatt, and R. N. Wright, “A
-practical diﬀerentially private random decision tree classiﬁer,”
-Transactions on Data Privacy, vol. 5, no. 1, pp. 273–295, Apr.
-2012.
-[24] C. Dwork, K. Kenthapadi, F. Mc Sherry, I. Mironov, and
-M. Naor, “Our data, ourselves: privacy via distributed noise
-generation,” in Advances in Cryptology - EUROCRYPT 2006,
-Springer, 2006, pp. 486–503.
-[25] A. Machanavajjhala, D. Kifer, J. Abowd, J. Gehrke, and L. Vil-
-huber, “Privacy: theory meets practice on the map,” in Pro-
-
-Kifer and B.-R. Lin, “Towards an axiomatization of
-statistical privacy and utility,” in Proceedings of the 29th
-SIGMOD-SIGACT-SIGART Symposium on Principles
-of Database Systems, PODS ’10. New York, NY, USA: ACM,
-pp. 147-158.
-Jordi Soria-Comas is a postdoctoral researcher at Universitat Rovira i Virgili, Tarragona, Catalonia. He received an MSc in computer security (2011) and a Ph D in computer
-science (2013) from Universitat Rovira i Vir-
-gili. He also holds an MSc in ﬁnance from the
-Autonomous University of Barcelona (2004)
-and a BSc in mathematics from the University
-of Barcelona (2003). His research interests are
-in data privacy and security.
-Josep Domingo-Ferrer (Fellow, IEEE) is
-a distinguished professor of computer science
-and an ICREA-Acadèmia researcher at Universitat Rovira i Virgili, Tarragona, Catalonia,
-where he holds the UNESCO Chair in Data
-Privacy. He received the MSc and PhD degrees
-in computer science from the Autonomous
-University of Barcelona in 1988 and 1991,
-respectively. He also holds an MSc degree in
-mathematics. His research interests are in data
-privacy, data security and cryptographic pro-
-David Sánchez is an associate professor of
-computer science at Universitat Rovira i Vir-
-gili, Tarragona, Catalonia. He received a Ph D
-in computer science (2008) from the Technical
-University of Catalonia. He also holds a BSc
-and an MSc in computer engineering from Universitat Rovira i Virgili. His research interests
-are in data semantics and data privacy.
-David Megías (Member, IEEE) received
-a Ph D in computer science from the Autonomous University of Barcelona (2000),
-where he was an assistant lecturer from 1994 to
-2001. Since 2001, he is a tenured associate professor with Universitat Oberta de Catalunya
-(UOC). He currently serves as the director of
-the Internet Interdisciplinary Institute (IN3)
-of UOC. His current research interests include
-security and privacy in multimedia content
-distribution, steganography, steganalysis and
-
+Management, Springer, 2010, pp. 150–168. David Megías (Member, IEEE) received
+[23] G. Jagannathan, K. Pillaipakkamnatt, and R. N. Wright, “A a Ph D in computer science from the Au-
+practical diﬀerentially private random decision tree classiﬁer,” tonomous University of Barcelona (2000),
+Transactions on Data Privacy, vol. 5, no. 1, pp. 273–295, Apr. where he was an assistant lecturer from 1994 to
+2012. 2001. Since 2001, he is a tenured associate pro-
+[24] C. Dwork, K. Kenthapadi, F. Mc Sherry, I. Mironov, and fessor with Universitat Oberta de Catalunya
+M. Naor, “Our data, ourselves: privacy via distributed noise (UOC). He currently serves as the director of
+generation,” in Advances in Cryptology - EUROCRYPT 2006, the Internet Interdisciplinary Institute (IN3)
+Springer, 2006, pp. 486–503. of UOC. His current research interests include
+[25] A. Machanavajjhala, D. Kifer, J. Abowd, J. Gehrke, and L. Vil- security and privacy in multimedia content
+huber, “Privacy: theory meets practice on the map,” in Pro- distribution, steganography, steganalysis and
 ceedings of the 24th IEEE International Conference on Data information security and privacy.
-
 Engineering (ICDE 2008), 2008, pp. 277–286.

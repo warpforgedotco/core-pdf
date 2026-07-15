@@ -1,52 +1,41 @@
-LenzeB.V. Postbus 3101, 5203 DC 's-Hertogenbosch
+Lenze B.V. Postbus 3101, 5203 DC 's-Hertogenbosch
 BTW-nr. NL004271920B01
 Kamer van Koophandel 's-Hertogenbosch 160 30 531
 Verkoopkantoor: Contact Lenze Benelux
-LenzeB.V. Tel. +31 73-6456500
-Ploegweg 15 Telefax +31 73-6456510 Pagina 1 / 2
+Lenze B.V. Tel. +31 73-6456500
+Ploegweg 15 Telefax +31 73-6456510 Pagina 1 / 2 
 NL-5232 BR 's-Hertogenbosch sales.nl@lenze.com
 Factuurontvanger: Factuur
 Supertape B.V.
-Postbus 14
-4870 AA ETTEN-LEUR Verkoop-ref.
-
 Bij navraag s.v.p. vermelden
+Postbus 14
 Deb.nr. 2056981
-
+4870 AA ETTEN-LEUR Verkoop-ref.
 Factuurnr. Datum
-
-Uw bestelling
-3389
-Besteld door
-Marc van Pul
-UwBTW identificatienr.
-NL001901308B01
-
 98559514 98559514 16.02.2017
 Leverbon Datum
 87032595 16.02.2017
 Ordernr. Datum
 4550219 15.02.2017
-
 Best.datum
 24.01.2017
+Uw bestelling
+3389
+Besteld door
+Marc van Pul
+Uw BTW identificatienr.
+NL001901308B01
 
 Betalingsvoorwaarden 30 dagen netto na rek.datum
 Leveringsvoorwaarden Incoterms 2000 CPT .
+Vracht op rekening, incl.verpakking, excl. verzekering
 Verzendvoorwaarden Exp.bedrijf / TNT small Packages
 
-Vracht op rekening, incl.verpakking, excl. verzekering
-
-Pos. Materiaal Af fabriek
-0010 15995646 16.02.2017 1 ST
-
-Aantal Prijs / eenheid Waarde
+Pos. Materiaal Af fabriek Aantal Prijs / eenheid Waarde
 Eenheid in EUR in EUR
-
+0010 15995646 16.02.2017 1 ST
 Nettoprijs 534,87 534,87
-
 AC wormwiel-motorreductor
-
 motorreductortype SSN40-1UVAR-063C22
 motortype 13.751.65.5.2.0
 motorsoort draaistroom-asynchroon-motor
@@ -59,74 +48,46 @@ nom. stroom 1,20/0,70 A
 nom. frequentie 50 Hz
 cos phi 0,79
 reductieverhouding 10
-
 volgende pagina
-
 Wij verzoeken u vriendelijk de Lenze instructies voor inbedrijfstelling en Deutsche Bank
 montage op te volgen. Deze instructies worden op verzoek verstrekt of kunt u IBAN: NL67 DEUT 0265 1909 75
 terugvinden op onze website: www.lenze.com SWIFT / BIC: DEUTNL2A
-Onbetaalde goederen blijven eigendom van LenzeB.V.
-Dit document is geldig zonder ondertekening.LenzeB.V. Postbus 3101, 5203 DC 's-Hertogenbosch
+Onbetaalde goederen blijven eigendom van Lenze B.V.
+Dit document is geldig zonder ondertekening.Lenze B.V. Postbus 3101, 5203 DC 's-Hertogenbosch
 BTW-nr. NL004271920B01
 Kamer van Koophandel 's-Hertogenbosch 160 30 531
 Supertape B.V.
 Postbus 14
-4870 AA ETTEN-LEUR Factuur Pagina 2 / 2
-Pos. Materiaal Af fabriek
-
-uitgaand toerental 135 r/min
-
-uitgaand koppel 10,31 Nm
-
-belastbaarheid 3,4
-
-beschermingsklasse IP55
-
-temperatuurklasse F
-
-motorbeveiliging
-uitgaande as
-reductorbouwvorm
-flens uitgaande zijde
-
-thermocontact NC
-V - uitg. as 15x43 p. 5
-A - met voet, met centrering
-R - zonder flens
-
-inbouwpositie A
-
-electr. aansl.
-soort smeermiddel
-
-klemmenkast in positie 4
-CLP PG 460
-
-kleur niet gelakt
-
-koeling
-
-eigen koeling
-
-Statistieknummer: 85015100
-
-Land van oorsprong:
-
-DE (Duitsland)
-
+4870 AA ETTEN-LEUR Factuur Pagina 2 / 2 
 98559514 / 16.02.2017
-Aantal Prijs / eenheid Waarde
+Pos. Materiaal Af fabriek Aantal Prijs / eenheid Waarde
 Eenheid in EUR in EUR
+uitgaand toerental 135 r/min
+uitgaand koppel 10,31 Nm
+belastbaarheid 3,4
+beschermingsklasse IP55
+temperatuurklasse F
+motorbeveiliging thermocontact NC
+uitgaande as V - uitg. as 15x43 p. 5
+reductorbouwvorm A - met voet, met centrering
+flens uitgaande zijde R - zonder flens
+inbouwpositie A
+electr. aansl. klemmenkast in positie 4
+soort smeermiddel CLP PG 460
+kleur niet gelakt
+koeling eigen koeling
+Statistieknummer: 85015100
+Land van oorsprong: DE (Duitsland)
 
-Netto goederenwaarde 534,87
-Vrachtkosten 19,95
-BTW plichtig bedrag 554,82
-Af te dragen BTW 21,00 % 116,51
+Netto goederenwaarde 534,87 
+Vrachtkosten 19,95 
+BTW plichtig bedrag 554,82 
+Af te dragen BTW 21,00 % 116,51 
 
-Rekeningsbedrag 671,33
+Rekeningsbedrag 671,33 
 
 Wij verzoeken u vriendelijk de Lenze instructies voor inbedrijfstelling en Deutsche Bank
 montage op te volgen. Deze instructies worden op verzoek verstrekt of kunt u IBAN: NL67 DEUT 0265 1909 75
 terugvinden op onze website: www.lenze.com SWIFT / BIC: DEUTNL2A
-Onbetaalde goederen blijven eigendom van LenzeB.V.
+Onbetaalde goederen blijven eigendom van Lenze B.V.
 Dit document is geldig zonder ondertekening.

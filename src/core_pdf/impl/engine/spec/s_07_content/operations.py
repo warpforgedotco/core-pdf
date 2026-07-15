@@ -193,6 +193,10 @@ class OperandWindow:
             yield self.operands[index]
 
 
+class NestedStreamRequest(Exception):
+    """Internal control flow used to pause a content stream for a nested one."""
+
+
 class OperationTarget(Protocol):
     capture_graphics: bool
     capture_glyphs: bool
@@ -353,6 +357,7 @@ def dispatch_operations(
     skipped_clip_q_count = 0
 
     def call_handler(handler: StateOperationHandler | BoundOperationHandler) -> None:
+        lexer.pos = pos
         if handler_target is None:
             cast(BoundOperationHandler, handler)(operand_window, depth)
         else:

@@ -1,65 +1,35 @@
 THE DIGITAL MILLENNIUM COPYRIGHT ACT OF 1998
 U.S. Copyright Office Summary
-
 December 1998
-
 INTRODUCTION
-
-The Digital Millennium Copyright Act (DMCA)1 was signed into law by
-
+The Digital Millennium Copyright Act (DMCA)¹ was signed into law by
 President Clinton on October 28, 1998. The legislation implements two 1996 World
-
 Intellectual Property Organization (WIPO) treaties: the WIPO Copyright Treaty and
-
 the WIPO Performances and Phonograms Treaty. The DMCA also addresses a
-
 number of other significant copyright-related issues.
-
-The DMCA is divided into five titles:
-
+The DMCA is divided into five titles: 
 ! Title I, the “WIPO Copyright and Performances and Phonograms
-
 Treaties Implementation Act of 1998,” implements the WIPO
-
 treaties.
-
 ! Title II, the “Online Copyright Infringement Liability Limitation
-
 Act,” creates limitations on the liability of online service providers for
-
 copyright infringement when engaging in certain types of activities.
-
 ! Title III, the “Computer Maintenance Competition Assurance
-
 Act,” creates an exemption for making a copy of a computer program
-
 by activating a computer for purposes of maintenance or repair.
-
 ! Title IV contains six miscellaneous provisions, relating to the
-
 functions of the Copyright Office, distance education, the exceptions
-
 in the Copyright Act for libraries and for making ephemeral recordings,
-
 “webcasting” of sound recordings on the Internet, and the applicability
-
 of collective bargaining agreement obligations in the case of transfers
-
 of rights in motion pictures.
-
 ! Title V, the “Vessel Hull Design Protection Act,” creates a new form
-
 of protection for the design of vessel hulls.
-
 This memorandum summarizes briefly each title of the DMCA. It provides
-
 merely an overview of the law’s provisions; for purposes of length and readability a
-
 significant amount of detail has been omitted. A complete understanding of any
-
 provision of the DMCA requires reference to the text of the legislation itself.
-
-1Pub. L. No. 105-304, 112 Stat. 2860 (Oct. 28, 1998).
+¹ Pub. L. No. 105-304, 112 Stat. 2860 (Oct. 28, 1998).
 Copyright Office Summary December 1998 Page 1The Digital Millennium Copyright Act of 1998
 TITLE I: WIPO TREATY IMPLEMENTATION
 Title I implements the WIPO treaties. First, it makes certain technical
@@ -95,7 +65,6 @@ United States in the past because of a failure to comply with formalities that t
 existed in U.S. law, or due to a lack of treaty relations. Section 102(c) of the DMCA
 amends section 104A to restore copyright protection in the same circumstances to
 works from WCT and WPPT member countries.
-
 Copyright Office Summary December 1998 Page 2The Digital Millennium Copyright Act of 1998
 Registration as a Prerequisite to Suit
 The remaining technical amendment relates to the prohibition in both treaties
@@ -131,9 +100,8 @@ protection against circumvention of technological measures used by copyright own
 to protect their works.
 Section 1201 divides technological measures into two categories: measures that
 prevent unauthorized access to a copyrighted work and measures that prevent
-
 Copyright Office Summary December 1998 Page 3The Digital Millennium Copyright Act of 1998
-unauthorized copying2 of a copyrighted work. Making or selling devices or services that
+unauthorized copying² of a copyrighted work. Making or selling devices or services that
 are used to circumvent either category of technological measure is prohibited in certain
 circumstances, described below. As to the act of circumvention in itself, the provision
 prohibits circumventing the first category of technological measures, but not the
@@ -162,13 +130,11 @@ Macrovision, currently in use for preventing unauthorized copying of analog
 videocassettes and certain analog signals. The provision prohibits rightholders from
 applying these specified technologies to free television and basic and extended basic tier
 cable broadcasts.
-
-2“Copying” is used in this context as a short-hand for the exercise of any of the exclus-
+² “Copying” is used in this context as a short-hand for the exercise of any of the exclus-
 ive rights of an author under section 106 of the Copyright Act. Consequently, a technological
 measure that prevents unauthorized distribution or public performance of a work would fall
 in this second category.
 Copyright Office Summary December 1998 Page 4The Digital Millennium Copyright Act of 1998
-
  Savings clauses
 Section 1201 contains two general savings clauses. First, section 1201(c)(1)
 states that nothing in section 1201 affects rights, remedies, limitations or defenses to
@@ -233,9 +199,9 @@ any of the following acts knowing, or with respect to
 civil remedies having reasonable grounds to know, that
 it will induce, enable, facilitate or conceal an infringe-
 ment of any right covered by this Treaty or the Berne
-Convention:
+Convention: 
 (i) to remove or alter any electronic rights
-management information without authority;
+management information without authority; 
 (ii) to distribute, import for distribution, broad-
 cast or communicate to the public, without authority,
 works or copies of works knowing that electronic rights
@@ -280,7 +246,6 @@ penalties range up to a $500,000 fine or up to five years imprisonment for a fir
 offense, and up to a $1,000,000 fine or up to 10 years imprisonment for subsequent
 offenses. Nonprofit libraries, archives and educational institutions are entirely
 exempted from criminal liability. (Section 1204(b)).
-
 Copyright Office Summary December 1998 Page 7The Digital Millennium Copyright Act of 1998
 Copyright Office and NTIA Studies Relating to Technological Develop-
 ment
@@ -303,7 +268,7 @@ them for use on a computer), and (2) the relationship between existing and emerg
 technology and the operation of those sections. This study is due 24 months after the
 date of enactment of the DMCA.
 TITLE II: ONLINE COPYRIGHT INFRINGEMENT LIABILITY LIMITATION
-Title II of the DMCA adds a new section 512 to the Copyright Act3 to create
+Title II of the DMCA adds a new section 512 to the Copyright Act³ to create
 four new limitations on liability for copyright infringement by online service providers.
 The limitations are based on the following four categories of conduct by a service
 provider:
@@ -314,8 +279,7 @@ and
 4. Information location tools.
 New section 512 also includes special rules concerning the application of these
 limitations to nonprofit educational institutions.
-
-3The Fairness in Musical Licensing Act, Title II of Pub. L. No. 105-298, 112 Stat. 2827,
+³ The Fairness in Musical Licensing Act, Title II of Pub. L. No. 105-298, 112 Stat. 2827,
 2830-34 (Oct. 27, 1998) also adds a new section 512 to the Copyright Act. This duplication of
 section numbers will need to be corrected in a technical amendments bill.
 Copyright Office Summary December 1998 Page 8The Digital Millennium Copyright Act of 1998
@@ -393,83 +357,44 @@ information about the number of requests for particular material on a website �
 which advertising revenue is frequently calculated. For this reason, the person making
 the material available online may establish rules about updating it, and may utilize
 technological means to track the number of “hits.”
-
 Copyright Office Summary December 1998 Page 10The Digital Millennium Copyright Act of 1998
-
 The limitation applies to acts of intermediate and temporary storage, when
-
 carried out through an automatic technical process for the purpose of making the
-
 material available to subscribers who subsequently request it. It is subject to the
-
 following conditions:
-
 ! The content of the retained material must not be modified.
-
 ! The provider must comply with rules about “refreshing” mate-
-
 rial—replacing retained copies of material with material from the
-
 original location— when specified in accordance with a generally
-
 accepted industry standard data communication protocol.
-
 ! The provider must not interfere with technology that returns “hit”
-
 information to the person who posted the material, where such
-
 technology meets certain requirements.
-
 ! The provider must limit users’ access to the material in accordance with
-
 conditions on access (e.g., password protection) imposed by the person
-
 who posted the material.
-
 ! Any material that was posted without the copyright owner’s authoriza-
-
 tion must be removed or blocked promptly once the service provider
-
 has been notified that it has been removed, blocked, or ordered to be
-
 removed or blocked, at the originating site.
-
 Limitation for Information Residing on Systems or Networks at the
-
 Direction of Users
-
 Section 512(c) limits the liability of service providers for infringing material on
-
 websites (or other information repositories) hosted on their systems. It applies to
-
 storage at the direction of a user. In order to be eligible for the limitation, the
-
 following conditions must be met:
-
 ! The provider must not have the requisite level of knowledge of the
-
 infringing activity, as described below.
-
 ! If the provider has the right and ability to control the infringing activity,
-
 it must not receive a financial benefit directly attributable to the
-
 infringing activity.
-
 ! Upon receiving proper notification of claimed infringement, the
-
 provider must expeditiously take down or block access to the material.
-
 In addition, a service provider must have filed with the Copyright Office a
-
 designation of an agent to receive notifications of claimed infringement. The Office
-
 provides a suggested form for the purpose of designating an agent
-
 (http://www.loc.gov/copyright/onlinesp/) and maintains a list of agents on the
-
 Copyright Office website (http://www.loc.gov/copyright/onlinesp/list/).
-
 Copyright Office Summary December 1998 Page 11The Digital Millennium Copyright Act of 1998
 Under the knowledge standard, a service provider is eligible for the limitation
 on liability only if it does not have actual knowledge of the infringement, is not aware
@@ -508,85 +433,45 @@ Section 512(d) relates to hyperlinks, online directories, search engines and the
 like. It limits liability for the acts of referring or linking users to a site that contains
 infringing material by using such information location tools, if the following conditions
 are met:
-
 Copyright Office Summary December 1998 Page 12The Digital Millennium Copyright Act of 1998
-
 ! The provider must not have the requisite level of knowledge that the
-
 material is infringing. The knowledge standard is the same as under the
-
 limitation for information residing on systems or networks.
-
 ! If the provider has the right and ability to control the infringing activity,
-
 the provider must not receive a financial benefit directly attributable to
-
 the activity.
-
 ! Upon receiving a notification of claimed infringement, the provider
-
 must expeditiously take down or block access to the material.
-
 These are essentially the same conditions that apply under the previous
-
 limitation, with some differences in the notification requirements. The provisions
-
 establishing safeguards against the possibility of erroneous or fraudulent notifications,
-
 as discussed above, as well as those protecting the provider against claims based on
-
 having taken down the material apply to this limitation. (Sections 512(f)-(g)).
-
 Special Rules Regarding Liability of Nonprofit Educational Institutions
-
 Section 512(e) determines when the actions or knowledge of a faculty member
-
 or graduate student employee who is performing a teaching or research function may
-
 affect the eligibility of a nonprofit educational institution for one of the four limitations
-
 on liability. As to the limitations for transitory communications or system caching, the
-
 faculty member or student shall be considered a “person other than the provider,” so
-
 as to avoid disqualifying the institution from eligibility. As to the other limitations, the
-
 knowledge or awareness of the faculty member or student will not be attributed to the
-
 institution. The following conditions must be met:
-
 ! the faculty member or graduate student’s infringing activities do not
-
 involve providing online access to course materials that were required
-
 or recommended during the past three years;
-
 ! the institution has not received more than two notifications over the
-
 past three years that the faculty member or graduate student was
-
 infringing; and
-
 ! the institution provides all of its users with informational materials
-
 describing and promoting compliance with copyright law.
-
 TITLE III: COMPUTER MAINTENANCE OR REPAIR
-
 Title III expands the existing exemption relating to computer programs in
-
 section 117 of the Copyright Act, which allows the owner of a copy of a program to
-
 make reproductions or adaptations when necessary to use the program in conjunction
-
 with a computer. The amendment permits the owner or lessee of a computer to make
-
 or authorize the making of a copy of a computer program in the course of maintaining
-
 or repairing that computer. The exemption only permits a copy that is made
-
 automatically when a computer is activated, and only if the computer already lawfully
-
 Copyright Office Summary December 1998 Page 13The Digital Millennium Copyright Act of 1998
 contains an authorized copy of the program. The new copy cannot be used in any
 other manner and must be destroyed immediately after the maintenance or repair is
@@ -621,83 +506,44 @@ where the transmission is made under the DPRA’s exemption for digital broadcas
 statutory license. As amended, section 112 also permits in some circumstances the
 circumvention of access control technologies in order to enable an organization to
 make an ephemeral recording.
-
 Copyright Office Summary December 1998 Page 14The Digital Millennium Copyright Act of 1998
-
 Distance Education Study
-
 In the course of consideration of the DMCA, legislators expressed an interest
-
 in amending the Copyright Act to promote distance education, possibly through an
-
 expansion of the existing exception for instructional broadcasting in section 110(2).
-
 Section 403 of the DMCA directs the Copyright Office to consult with affected parties
-
 and make recommendations to Congress on how to promote distance education
-
 through digital technologies. The Office must report to Congress within six months
-
 of enactment.
-
 The Copyright Office is directed to consider the following issues:
-
 ! The need for a new exemption;
-
 ! Categories of works to be included in any exemption;
-
 ! Appropriate quantitative limitations on the portions of works that may
-
 be used under any exemption;
-
 ! Which parties should be eligible for any exemption;
-
 ! Which parties should be eligible recipients of distance education
-
 material under any exemption;
-
 ! The extent to which use of technological protection measures should
-
 be mandated as a condition of eligibility for any exemption;
-
 ! The extent to which the availability of licenses should be considered in
-
 assessing eligibility for any exemption; and
-
 ! Other issues as appropriate.
-
 Exemption for Nonprofit Libraries and Archives
-
 Section 404 of the DMCA amends the exemption for nonprofit libraries and
-
 archives in section 108 of the Copyright Act to accommodate digital technologies and
-
 evolving preservation practices. Prior to enactment of the DMCA, section 108
-
 permitted such libraries and archives to make a single facsimile (i.e., not digital) copy
-
 of a work for purposes of preservation or interlibrary loan. As amended, section 108
-
 permits up to three copies, which may be digital, provided that digital copies are not
-
 made available to the public outside the library premises. In addition, the amended
-
 section permits such a library or archive to copy a work into a new format if the
-
 original format becomes obsolete—that is, the machine or device used to render the
-
 work perceptible is no longer manufactured or is no longer reasonably available in the
-
 commercial marketplace.
-
 Webcasting Amendments to the Digital Performance Right in Sound
-
 Recordings
-
 As discussed above, in 1995 Congress enacted the DPRA, creating a
-
 performance right in sound recordings that is limited to digital transmissions. Under
-
 Copyright Office Summary December 1998 Page 15The Digital Millennium Copyright Act of 1998
 that legislation, three categories of digital transmissions were addressed: broadcast
 transmissions, which were exempted from the performance right; subscription
@@ -737,7 +583,6 @@ from distributors in certain circumstances, by which the distributor assumes the
 producer’s obligation to make such residual payments. Some production companies
 apparently do not always do so, leaving the guilds without contractual privity enabling
 them to seek recourse from the distributor.
-
 Copyright Office Summary December 1998 Page 16The Digital Millennium Copyright Act of 1998
 The DMCA adds a new chapter to Title 28 of the U.S. Code that imposes on
 transferees those obligations to make residual payments that the producer would be
@@ -748,7 +593,7 @@ in the event of a court order confirming an arbitration award under the collecti
 bargaining agreement that the producer cannot satisfy within ninety days. There are
 two classes of transfers that are excluded from the scope of this provision. The first
 is transfers limited to public performance rights, and the second is grants of security
-interests, along with any subsequent transfers from the security interest holder.
+interests, along with any subsequent transfers from the security interest holder. 
 The provision also directs the Comptroller General, in consultation with the
 Register of Copyrights, to conduct a study on the conditions in the motion picture
 industry that gave rise to this provision, and the impact of the provision on the
@@ -780,5 +625,4 @@ Copyright Office Summary December 1998 Page 17The Digital Millennium Copyright 
 control measures does not take effect until two years from enactment (October 28,
 2000).
 F
-
 Copyright Office Summary December 1998 Page 18

@@ -17,6 +17,7 @@ from core_pdf.impl.engine.spec.s_07_content.marked_content import MarkedContentE
 from core_pdf.impl.engine.spec.s_07_content.operations import (
     ContentOperand,
     ContentOperands,
+    NestedStreamRequest,
     OperandWindow,
     OperationTarget,
     StateOperationHandler,
@@ -204,6 +205,63 @@ class StreamState:
         self.resolved_resource_categories = resolved_resource_categories
 
 
+StreamKey: TypeAlias = tuple[str, int, int]
+
+
+class ContentStreamFrame:
+    __slots__ = (
+        "stream",
+        "resources",
+        "ctm",
+        "depth",
+        "clip_bbox",
+        "group_alpha",
+        "swallow_parse_errors",
+        "lexer",
+        "old_state",
+        "stream_key",
+        "outer_group_alpha",
+        "entered",
+    )
+
+    stream: PdfStream
+    resources: PdfDict
+    ctm: Matrix
+    depth: int
+    clip_bbox: tuple[float, float, float, float] | None
+    group_alpha: float | None
+    swallow_parse_errors: bool
+    lexer: PdfLexer | None
+    old_state: StreamState | None
+    stream_key: StreamKey | None
+    outer_group_alpha: float | None
+    entered: bool
+
+    def __init__(
+        self,
+        stream: PdfStream,
+        resources: PdfDict,
+        ctm: Matrix,
+        depth: int,
+        clip_bbox: tuple[float, float, float, float] | None,
+        group_alpha: float | None = None,
+        *,
+        swallow_parse_errors: bool = False,
+    ) -> None:
+        self.stream = stream
+        self.resources = resources
+        self.ctm = ctm
+        self.depth = depth
+        self.clip_bbox = clip_bbox
+        self.group_alpha = group_alpha
+        self.swallow_parse_errors = swallow_parse_errors
+        self.lexer = None
+        self.old_state = None
+        self.stream_key = None
+        self.outer_group_alpha = None
+        self.entered = False
+
+
 class TextState(XObjectMixin, ContentCaptureMixin, OperatorMixin):
     document: TextDocument
     page: PdfDict
@@ -238,7 +296,8 @@ class TextState(XObjectMixin, ContentCaptureMixin, OperatorMixin):
     current_font: str | None
     current_decoder: FontDecoder | None
     marked_content_stack: list[MarkedContentEntry]
-    active_streams: set[int]
+    active_streams: set[StreamKey]
+    queued_stream: ContentStreamFrame | None
     resources: PdfDict
     resolved_resource_categories: ResolvedResourceCache
     resource_cache: ResourceCache
@@ -332,6 +391,7 @@ class TextState(XObjectMixin, ContentCaptureMixin, OperatorMixin):
         "xobject_depth",
         "marked_content_stack",
         "active_streams",
+        "queued_stream",
         "resources",
         "resources_id",
         "hidden_layers",
@@ -465,6 +525,7 @@ class TextState(XObjectMixin, ContentCaptureMixin, OperatorMixin):
         self.compatibility_depth = 0
         self.marked_content_stack = []
         self.active_streams = set()
+        self.queued_stream = None
         self.resources = {}
         self.resources_id = 0
         self.hidden_layers = hidden_layers
@@ -747,6 +808,104 @@ class TextState(XObjectMixin, ContentCaptureMixin, OperatorMixin):
         self.update_text_scales()
         self.update_font_metrics()
 
+    @staticmethod
+    def stream_execution_key(stream: PdfStream) -> StreamKey:
+        raw_data = stream.raw_data
+        if type(raw_data) is memoryview:
+            raw_obj = raw_data.obj
+            return ("raw", id(raw_obj), raw_data.nbytes)
+        return ("raw", id(raw_data), len(raw_data))
+
+    def queue_stream(
+        self,
+        stream: PdfStream,
+        resources: PdfDict,
+        ctm: Matrix,
+        depth: int,
+        *,
+        clip_bbox: tuple[float, float, float, float] | None = None,
+        group_alpha: float | None = None,
+        swallow_parse_errors: bool = False,
+    ) -> None:
+        if depth > 10:
+            return
+        stream_key = self.stream_execution_key(stream)
+        if stream_key in self.active_streams:
+            return
+        self.queued_stream = ContentStreamFrame(
+            stream,
+            resources,
+            ctm,
+            depth,
+            clip_bbox,
+            group_alpha,
+            swallow_parse_errors=swallow_parse_errors,
+        )
+        raise NestedStreamRequest
+
+    def enter_stream_frame(self, frame: ContentStreamFrame) -> bool:
+        if frame.depth > 10:
+            return False
+        stream_key = self.stream_execution_key(frame.stream)
+        if stream_key in self.active_streams:
+            return False
+
+        self.active_streams.add(stream_key)
+        frame.stream_key = stream_key
+        if frame.group_alpha is not None:
+            frame.outer_group_alpha = self.group_alpha
+            self.drawings.append(
+                CapturedDrawing(
+                    seqno=self.sequence,
+                    fill=None,
+                    fill_opacity=frame.group_alpha,
+                    blend_mode=self.blend_mode,
+                    kind="group-begin",
+                )
+            )
+            self.group_alpha = frame.group_alpha
+
+        frame.old_state = self.capture_stream_state()
+        self.resources = frame.resources
+        self.resources_id = id(frame.resources)
+        self.ctm = frame.ctm
+        self.xobject_depth = frame.depth
+        if frame.clip_bbox is not None:
+            if self.clip_bbox is None:
+                self.clip_bbox = frame.clip_bbox
+            else:
+                self.clip_bbox = (
+                    max(self.clip_bbox[0], frame.clip_bbox[0]),
+                    max(self.clip_bbox[1], frame.clip_bbox[1]),
+                    min(self.clip_bbox[2], frame.clip_bbox[2]),
+                    min(self.clip_bbox[3], frame.clip_bbox[3]),
+                )
+
+        self.pending_line_break = False
+        self.stream_order += 1
+        frame.lexer = PdfLexer(frame.stream.data_view, kw_cache=self.kw_cache)
+        frame.entered = True
+        return True
+
+    def exit_stream_frame(self, frame: ContentStreamFrame) -> None:
+        old_state = frame.old_state
+        stream_key = frame.stream_key
+        if old_state is not None:
+            self.restore_stream_state(old_state)
+        if stream_key is not None:
+            self.active_streams.remove(stream_key)
+        if frame.group_alpha is not None:
+            self.group_alpha = frame.outer_group_alpha
+            self.drawings.append(
+                CapturedDrawing(
+                    seqno=self.sequence,
+                    fill=None,
+                    fill_opacity=frame.group_alpha,
+                    blend_mode=self.blend_mode,
+                    kind="group-end",
+                )
+            )
+
     def consume_stream(
         self,
         stream: PdfStream,
@@ -756,54 +915,56 @@ class TextState(XObjectMixin, ContentCaptureMixin, OperatorMixin):
         *,
         clip_bbox: tuple[float, float, float, float] | None = None,
     ) -> None:
-        if id(stream) in self.active_streams or depth > 10:
-            return
+        stream_stack = [
+            ContentStreamFrame(stream, resources, ctm, depth, clip_bbox),
+        ]
+        while stream_stack:
+            frame = stream_stack.pop()
+            if not frame.entered and not self.enter_stream_frame(frame):
+                continue
+            lexer = frame.lexer
+            if lexer is None:
+                self.exit_stream_frame(frame)
+                continue
+            try:
+                if (
+                    not self.capture_graphics
+                    and not self.capture_glyphs
+                    and not content_stream_may_show_text(frame.stream.data_view)
+                ):
+                    self.flush_run()
+                    self.exit_stream_frame(frame)
+                    continue
 
-        self.active_streams.add(id(stream))
-        old_state = self.capture_stream_state()
-        self.resources = resources
-        self.resources_id = id(resources)
-        self.ctm = ctm
-        self.xobject_depth = depth
-        if clip_bbox is not None:
-            if self.clip_bbox is None:
-                self.clip_bbox = clip_bbox
-            else:
-                self.clip_bbox = (
-                    max(self.clip_bbox[0], clip_bbox[0]),
-                    max(self.clip_bbox[1], clip_bbox[1]),
-                    min(self.clip_bbox[2], clip_bbox[2]),
-                    min(self.clip_bbox[3], clip_bbox[3]),
+                typing.cast(typing.Any, dispatch_operations)(
+                    lexer,
+                    self.op_handlers,
+                    self.op_handlers_bytes,
+                    self.single_op_handlers,
+                    self.double_op_handlers,
+                    typing.cast(OperationTarget, self),
+                    frame.depth,
+                    operands=self.operands,
                 )
 
-        self.pending_line_break = False
-        self.stream_order += 1
-
-        try:
-            if (
-                not self.capture_graphics
-                and not self.capture_glyphs
-                and not content_stream_may_show_text(stream.data_view)
-            ):
                 self.flush_run()
-                return
-
-            lexer = PdfLexer(stream.data_view, kw_cache=self.kw_cache)
-            typing.cast(typing.Any, dispatch_operations)(
-                lexer,
-                self.op_handlers,
-                self.op_handlers_bytes,
-                self.single_op_handlers,
-                self.double_op_handlers,
-                typing.cast(OperationTarget, self),
-                depth,
-                operands=self.operands,
-            )
-
-            self.flush_run()
-        finally:
-            self.restore_stream_state(old_state)
-            self.active_streams.remove(id(stream))
+            except NestedStreamRequest:
+                queued_stream = self.queued_stream
+                self.queued_stream = None
+                stream_stack.append(frame)
+                if queued_stream is not None:
+                    stream_stack.append(queued_stream)
+                continue
+            except PdfParseError:
+                self.exit_stream_frame(frame)
+                if not frame.swallow_parse_errors:
+                    raise
+                continue
+            except Exception:
+                self.exit_stream_frame(frame)
+                raise
+            else:
+                self.exit_stream_frame(frame)
 
     def lookup_page_resource(
         self, category: str, name: str, parent_category: str | None = None
