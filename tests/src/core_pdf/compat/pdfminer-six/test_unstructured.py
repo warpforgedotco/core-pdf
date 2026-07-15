@@ -7,7 +7,7 @@ from typing import Any, cast
 from core_pdf.impl.engine.extraction.document import PdfDocument
 from core_pdf.impl.engine.layout.models import LayoutLine, TextRun
 from core_pdf.impl.engine.spec.s_07_objects.coercion import parse_name
-from core_pdf.impl.models import FieldRecord
+from core_pdf.impl.models import FieldRecord, LinkRecord
 from core_pdf.impl.types import PdfDict, PdfObject
 
 TESTS_DIR = Path(__file__).parents[4]
@@ -34,7 +34,21 @@ def test_iter_unstructured_region_layouts_yields_native_regions() -> None:
         "Hello World",
     ]
     first_words = cast(list[dict[str, Any]], lines[0]["words"])
+    assert lines[0]["bbox"] == (100.0, 695.032, 463.98400000000004, 717.232)
+    assert lines[0]["page_bbox"] == (
+        100.0,
+        74.76800000000003,
+        463.98400000000004,
+        96.96799999999996,
+    )
     assert first_words[0]["text"] == "Hello"
+    assert first_words[0]["bbox"] == (100.0, 695.032, 220.0, 717.232)
+    assert first_words[0]["page_bbox"] == (
+        100.0,
+        74.76800000000003,
+        220.0,
+        96.96799999999996,
+    )
     assert first_words[0]["start_index"] == 0
     assert first_words[1]["text"] == "World"
     assert (
@@ -113,7 +127,33 @@ def test_unstructured_field_regions_use_widget_values() -> None:
     assert len(regions) == 1
     assert regions[0]["text"] == "Jane Doe"
     assert regions[0]["bbox"] == (40.0, 700.0, 300.0, 720.0)
+    assert field.page_bbox(792.0) == (40.0, 72.0, 300.0, 92.0)
     assert cast(list[dict[str, object]], regions[0]["words"])[0]["text"] == "Jane"
+
+
+def test_link_record_builds_text_metadata_from_extracted_line_words() -> None:
+    link = LinkRecord(
+        bbox=(20.0, 80.0, 40.0, 90.0),
+        page_number=1,
+        url="https://example.test",
+    )
+    line = {
+        "text": "one two three",
+        "words": [
+            {"text": "one", "page_bbox": (0.0, 10.0, 10.0, 20.0), "start_index": 0},
+            {"text": "two", "page_bbox": (20.0, 10.0, 40.0, 20.0), "start_index": 4},
+            {"text": "three", "page_bbox": (50.0, 10.0, 80.0, 20.0), "start_index": 8},
+        ],
+    }
+
+    assert link.text_metadata_for_line(line, page_height=100.0, threshold=0.1) == {
+        "bbox": (20.0, 10.0, 40.0, 20.0),
+        "text": "two",
+        "uri": "https://example.test",
+        "url": "https://example.test",
+        "start_index": 4,
+        "source_text": "one two three",
+    }
 
 
 class FakeResolver:

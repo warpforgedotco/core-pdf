@@ -173,20 +173,25 @@ class PageContentMixin:
 
     def extract_words(self: PageContentHost) -> list[PageContentRecord]:
         words: list[PageContentRecord] = []
+        page_height = getattr(self, "height", None)
         for line_index, line in enumerate(self.get_text_lines()):
+            line_bbox = (line.x0, line.y0, line.x1, line.y1)
             for word_index, word in enumerate(line.words()):
+                word_bbox = word.bbox
                 words.append(
                     {
                         "text": word.text,
-                        "bbox": word.bbox,
-                        "x0": word.bbox[0],
-                        "y0": word.bbox[1],
-                        "x1": word.bbox[2],
-                        "y1": word.bbox[3],
+                        "bbox": word_bbox,
+                        "page_bbox": _page_bbox(word_bbox, page_height),
+                        "x0": word_bbox[0],
+                        "y0": word_bbox[1],
+                        "x1": word_bbox[2],
+                        "y1": word_bbox[3],
                         "start_index": word.start_index,
                         "word_index": word_index,
                         "line_index": line_index,
-                        "line_bbox": (line.x0, line.y0, line.x1, line.y1),
+                        "line_bbox": line_bbox,
+                        "line_page_bbox": _page_bbox(line_bbox, page_height),
                         "line_text": line.text(),
                         "rotation_angle": line.rotation_angle,
                         "is_vertical": line.is_vertical,
@@ -201,10 +206,13 @@ class PageContentMixin:
         self: PageContentHost, *, include_words: bool = False
     ) -> list[PageContentRecord]:
         lines: list[PageContentRecord] = []
+        page_height = getattr(self, "height", None)
         for line_index, line in enumerate(self.get_text_lines()):
+            line_bbox = (line.x0, line.y0, line.x1, line.y1)
             line_record: PageContentRecord = {
                 "text": line.text(),
-                "bbox": (line.x0, line.y0, line.x1, line.y1),
+                "bbox": line_bbox,
+                "page_bbox": _page_bbox(line_bbox, page_height),
                 "x0": line.x0,
                 "y0": line.y0,
                 "x1": line.x1,
@@ -226,6 +234,7 @@ class PageContentMixin:
                     {
                         "text": word.text,
                         "bbox": word.bbox,
+                        "page_bbox": _page_bbox(word.bbox, page_height),
                         "x0": word.bbox[0],
                         "y0": word.bbox[1],
                         "x1": word.bbox[2],
@@ -253,6 +262,7 @@ class PageContentMixin:
             return []
 
         images: list[PageContentRecord] = []
+        page_height = getattr(self, "height", None)
         for item in self.render().display_list.items:
             if item.kind not in kinds:
                 continue
@@ -265,6 +275,7 @@ class PageContentMixin:
             bbox = page_geometry.rect_box_tuple(item.data.get("bbox"))
             if bbox is not None:
                 image["bbox"] = bbox
+                image["page_bbox"] = _page_bbox(bbox, page_height)
             soft_mask_alpha = item.data.get("soft_mask_alpha")
             if soft_mask_alpha is not None:
                 image["soft_mask_alpha"] = soft_mask_alpha
@@ -437,6 +448,16 @@ def glyph_cluster_record(cluster: GlyphCluster) -> GlyphClusterRecord:
         "provenance": cluster.provenance,
         "glyph_count": len(cluster.glyphs),
     }
+
+
+def _page_bbox(
+    bbox: tuple[float, float, float, float],
+    page_height: object,
+) -> tuple[float, float, float, float] | None:
+    if not isinstance(page_height, (int, float)):
+        return None
+    x0, y1, x1, y0 = bbox
+    return (x0, float(page_height) - y0, x1, float(page_height) - y1)
 
 
 __all__ = (

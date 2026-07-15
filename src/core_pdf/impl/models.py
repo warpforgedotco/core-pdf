@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from math import hypot
 from typing import TYPE_CHECKING, Protocol, TypeAlias, TypedDict, cast
 
@@ -203,6 +203,49 @@ class LinkRecord:
             "start_index": start_index,
         }
 
+    def text_metadata_for_line(
+        self,
+        line: Mapping[str, object],
+        page_height: float,
+        threshold: float = 0.5,
+    ) -> dict[str, object] | None:
+        """Return link metadata for the words in ``line`` that overlap this link.
+
+        ``line`` is the dictionary shape returned by ``extract_lines(include_words=True)``.
+        Word records are expected to carry ``page_bbox`` values in the top-left page coordinate
+        frame.
+        """
+
+        raw_words = line.get("words")
+        if not isinstance(raw_words, Iterable) or isinstance(raw_words, (str, bytes)):
+            return None
+
+        linked_words: list[LinkTextWordRecord] = []
+        for raw_word in raw_words:
+            if not isinstance(raw_word, Mapping):
+                continue
+            bbox = raw_word.get("page_bbox")
+            if not isinstance(bbox, (list, tuple)) or len(bbox) != 4:
+                continue
+            if not self.overlaps_page_bbox(cast(Rectangle, tuple(bbox)), page_height, threshold):
+                continue
+
+            linked_words.append(
+                {
+                    "bbox": cast(Rectangle, tuple(bbox)),
+                    "text": str(raw_word.get("text", "")),
+                    "start_index": int(cast(int, raw_word.get("start_index", 0))),
+                }
+            )
+
+        if not linked_words:
+            return None
+
+        metadata = self.text_metadata(linked_words, page_height)
+        if isinstance(source_text := line.get("text"), str):
+            metadata["source_text"] = source_text
+        return metadata
+
 
 class FieldRecord:
     """Interactive form field with resolved value and widget metadata."""
@@ -251,3 +294,8 @@ class FieldRecord:
         if start is not None:
             words.append((self.value_text[start:], start))
         return words
+
+    def page_bbox(self, page_height: float) -> Rectangle | None:
+        if self.rect is None:
+            return None
+        return BBox.from_page_rect(BBox.from_rect(self.rect), page_height)
