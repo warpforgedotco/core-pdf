@@ -6,10 +6,10 @@ from io import BytesIO
 from math import ceil
 from typing import Any
 
-from core_pdf.impl.third_party.fontTools.pens.recordingPen import (
+from core_pdf.impl.third_party._vendor.fontTools.pens.recordingPen import (
     DecomposingRecordingPen,
 )
-from core_pdf.impl.third_party.fontTools.ttLib import TTFont, TTLibError
+from core_pdf.impl.third_party._vendor.fontTools.ttLib import TTFont, TTLibError
 
 Point = tuple[float, float]
 
@@ -330,8 +330,14 @@ def _flatten_cubic(p0: Point, p1: Point, p2: Point, p3: Point, segments: int = 8
         mt = 1.0 - t
         out.append(
             (
-                mt**3 * p0[0] + 3.0 * mt * mt * t * p1[0] + 3.0 * mt * t * t * p2[0] + t**3 * p3[0],
-                mt**3 * p0[1] + 3.0 * mt * mt * t * p1[1] + 3.0 * mt * t * t * p2[1] + t**3 * p3[1],
+                mt**3 * p0[0]
+                + 3.0 * mt * mt * t * p1[0]
+                + 3.0 * mt * t * t * p2[0]
+                + t**3 * p3[0],
+                mt**3 * p0[1]
+                + 3.0 * mt * mt * t * p1[1]
+                + 3.0 * mt * t * t * p2[1]
+                + t**3 * p3[1],
             )
         )
     return out
