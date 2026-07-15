@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Mapping, Sequence, TypedDict, cast
 
 from core_pdf.impl.engine.extraction.tables.extract import extract_grid, extract_heuristic
@@ -48,6 +49,32 @@ class HeuristicExtractOptions(GridExtractOptions, total=False):
     row_tolerance: float
     column_tolerance: float
     columns: list[float]
+
+
+@dataclass(frozen=True)
+class TableExtractionOptions:
+    flavor: str
+    canonicalize: bool
+    detect_header: bool
+    include_span_info: bool
+    columns: tuple[float, ...]
+    edge_tolerance: float
+    row_tolerance: float
+    column_tolerance: float
+    split_text: bool
+    flag_size: bool
+    strip_text: str | Sequence[str] | None
+    replace_text: Mapping[str, str] | None
+    copy_text: Sequence[str]
+    shift_text: Sequence[str]
+
+
+@dataclass(frozen=True)
+class TableExtractionContext:
+    visible_runs: list[TextRun]
+    grids: list[TableGrid]
+    grid: TableGrid | None
+    run_chars: dict[int, list[tuple[str, float, float, float, float]]] | None
 
 
 class PageTableCoreMixin:
@@ -348,35 +375,70 @@ class PageTableCoreMixin:
             bboxes=bboxes,
         )
 
-    def extract_tables_core(self: PageTableHost, **kwargs: Any) -> TableExtractionResult:
-        flavor: str = kwargs["flavor"]
-        canonicalize: bool = kwargs.get("canonicalize", True)
-        detect_header: bool = kwargs["detect_header"]
-        include_span_info: bool = kwargs["include_span_info"]
-        normalized_columns: list[float] = list(kwargs.get("columns") or [])
-        edge_tolerance: float = kwargs.get("edge_tolerance", 50.0)
-        row_tolerance: float = kwargs.get("row_tolerance", 2.0)
-        column_tolerance: float = kwargs.get("column_tolerance", 8.0)
-        split_text: bool = kwargs.get("split_text", False)
-        flag_size: bool = kwargs.get("flag_size", False)
-        strip_text: str | Sequence[str] | None = kwargs.get("strip_text")
-        replace_text: Mapping[str, str] | None = kwargs.get("replace_text")
-        copy_text: Sequence[str] | None = kwargs.get("copy_text")
-        shift_text: Sequence[str] | None = kwargs.get("shift_text")
+    @classmethod
+    def table_options_from_kwargs(cls, kwargs: Mapping[str, Any]) -> TableExtractionOptions:
+        return TableExtractionOptions(
+            flavor=str(kwargs["flavor"]),
+            canonicalize=bool(kwargs.get("canonicalize", True)),
+            detect_header=bool(kwargs["detect_header"]),
+            include_span_info=bool(kwargs["include_span_info"]),
+            columns=tuple(float(value) for value in kwargs.get("columns") or ()),
+            edge_tolerance=float(kwargs.get("edge_tolerance", 50.0)),
+            row_tolerance=float(kwargs.get("row_tolerance", 2.0)),
+            column_tolerance=float(kwargs.get("column_tolerance", 8.0)),
+            split_text=bool(kwargs.get("split_text", False)),
+            flag_size=bool(kwargs.get("flag_size", False)),
+            strip_text=kwargs.get("strip_text"),
+            replace_text=kwargs.get("replace_text"),
+            copy_text=tuple(kwargs.get("copy_text") or ()),
+            shift_text=tuple(kwargs.get("shift_text") or ()),
+        )
+
+    @classmethod
+    def canonical_table_options(
+        cls,
+        base: TableExtractionOptions,
+        *,
+        flavor: str,
+    ) -> TableExtractionOptions:
+        shift_text = base.shift_text or (("l", "t") if flavor == "lattice" else ())
+        return TableExtractionOptions(
+            flavor=flavor,
+            canonicalize=False,
+            detect_header=base.detect_header,
+            include_span_info=base.include_span_info,
+            columns=base.columns,
+            edge_tolerance=base.edge_tolerance,
+            row_tolerance=base.row_tolerance,
+            column_tolerance=base.column_tolerance,
+            split_text=base.split_text,
+            flag_size=base.flag_size,
+            strip_text=base.strip_text,
+            replace_text=base.replace_text,
+            copy_text=base.copy_text,
+            shift_text=shift_text,
+        )
+
+    @classmethod
+    def build_table_extraction_context(
+        cls,
+        page: PageTableHost,
+        options: TableExtractionOptions,
+    ) -> TableExtractionContext:
         grid = None
         grids: list[TableGrid] = []
-        page_rotate = self.rotation
-        page_width = self.width
-        page_height = self.height
+        page_rotate = page.rotation
+        page_width = page.width
+        page_height = page.height
 
         source_runs = rotate_page_runs(
-            self.chars,
+            page.chars,
             rotate=page_rotate,
             page_width=page_width,
             page_height=page_height,
         )
-        if flavor in ("lattice", "hybrid", "auto", "stream", "network"):
-            grid_lines = self.grid_lines if self.grid_lines is not None else self.get_grid_lines()
+        if options.flavor in ("lattice", "hybrid", "auto", "stream", "network"):
+            grid_lines = page.grid_lines if page.grid_lines is not None else page.get_grid_lines()
             grid_lines = rotate_page_lines(
                 grid_lines,
                 rotate=page_rotate,
@@ -386,36 +448,50 @@ class PageTableCoreMixin:
             if grid_lines:
                 grids = detect_grids_from_edges(
                     grid_lines,
-                    snap_tolerance=column_tolerance,
-                    join_tolerance=max(3.0, column_tolerance),
+                    snap_tolerance=options.column_tolerance,
+                    join_tolerance=max(3.0, options.column_tolerance),
                 )
                 grid = grids[0] if grids else None
 
         visible_runs = [r for r in source_runs if r.visible]
+        return TableExtractionContext(
+            visible_runs=visible_runs,
+            grids=grids,
+            grid=grid,
+            run_chars=page.display_text_span_chars() if options.split_text else None,
+        )
+
+    @classmethod
+    def extract_table_strategy(
+        cls,
+        context: TableExtractionContext,
+        options: TableExtractionOptions,
+    ) -> TableExtractionResult:
+        visible_runs = context.visible_runs
+        grids = context.grids
+        grid = context.grid
+        normalized_columns = list(options.columns)
         if not visible_runs:
-            result = PageTableCoreMixin.table_result([])
-            cache_key = table_cache_key(kwargs)
-            self.tables[cache_key] = result
-            return result
-        run_chars = self.display_text_span_chars() if split_text else None
+            return cls.table_result([])
+
         grid_options: GridExtractOptions = {
-            "split_text": split_text,
-            "flag_size": flag_size,
-            "strip_text": strip_text,
-            "replace_text": replace_text,
-            "copy_text": copy_text,
-            "shift_text": shift_text,
+            "split_text": options.split_text,
+            "flag_size": options.flag_size,
+            "strip_text": options.strip_text,
+            "replace_text": options.replace_text,
+            "copy_text": options.copy_text,
+            "shift_text": options.shift_text,
         }
         heuristic_options: HeuristicExtractOptions = {
-            "row_tolerance": row_tolerance,
-            "column_tolerance": column_tolerance,
+            "row_tolerance": options.row_tolerance,
+            "column_tolerance": options.column_tolerance,
             "columns": normalized_columns,
-            "split_text": split_text,
-            "flag_size": flag_size,
-            "strip_text": strip_text,
-            "replace_text": replace_text,
-            "copy_text": copy_text,
-            "shift_text": shift_text,
+            "split_text": options.split_text,
+            "flag_size": options.flag_size,
+            "strip_text": options.strip_text,
+            "replace_text": options.replace_text,
+            "copy_text": options.copy_text,
+            "shift_text": options.shift_text,
         }
 
         def extract_from_grid(
@@ -427,12 +503,12 @@ class PageTableCoreMixin:
             raw_result = extract_grid(
                 visible_runs,
                 table_grid,
-                include_span_info,
+                options.include_span_info,
                 compact_network=compact_network,
-                run_chars=run_chars if include_run_chars else None,
+                run_chars=context.run_chars if include_run_chars else None,
                 **grid_options,
             )
-            if include_span_info:
+            if options.include_span_info:
                 tables, spans = cast(tuple[TableSet, TableSpanRows], raw_result)
             else:
                 tables = cast(TableSet, raw_result)
@@ -474,13 +550,13 @@ class PageTableCoreMixin:
         ) -> TableExtractionResult:
             raw_result = extract_heuristic(
                 visible_runs,
-                detect_header,
-                include_span_info,
+                options.detect_header,
+                options.include_span_info,
                 include_bboxes=True,
-                run_chars=run_chars if include_run_chars else None,
+                run_chars=context.run_chars if include_run_chars else None,
                 **heuristic_options,
             )
-            if detect_header:
+            if options.detect_header:
                 header_result, heuristic_bboxes = cast(TableHeaderResultWithBBoxes, raw_result)
                 header_rows, body_tables = header_result
                 return PageTableCoreMixin.table_result(
@@ -488,7 +564,7 @@ class PageTableCoreMixin:
                     bboxes=heuristic_bboxes,
                     header=header_rows,
                 )
-            elif include_span_info:
+            elif options.include_span_info:
                 span_result, heuristic_bboxes = cast(TableSpanResultWithBBoxes, raw_result)
                 tables, spans = span_result
                 return PageTableCoreMixin.table_result(
@@ -503,16 +579,16 @@ class PageTableCoreMixin:
         def extract_stream_result() -> TableExtractionResult:
             stream_grids = detect_stream_grids(
                 visible_runs,
-                row_tolerance=row_tolerance,
-                column_tolerance=column_tolerance,
+                row_tolerance=options.row_tolerance,
+                column_tolerance=options.column_tolerance,
                 columns=normalized_columns,
             )
             if stream_grids:
                 return extract_from_grids(stream_grids)
             stream_grid = detect_stream_grid(
                 visible_runs,
-                row_tolerance=row_tolerance,
-                column_tolerance=column_tolerance,
+                row_tolerance=options.row_tolerance,
+                column_tolerance=options.column_tolerance,
                 columns=normalized_columns,
             )
             if stream_grid is not None and stream_grid.is_valid():
@@ -522,9 +598,9 @@ class PageTableCoreMixin:
         def extract_network_result() -> TableExtractionResult:
             network_grids = detect_network_grids(
                 visible_runs,
-                edge_tolerance=edge_tolerance,
-                row_tolerance=row_tolerance,
-                column_tolerance=column_tolerance,
+                edge_tolerance=options.edge_tolerance,
+                row_tolerance=options.row_tolerance,
+                column_tolerance=options.column_tolerance,
                 columns=normalized_columns,
             )
             if not network_grids:
@@ -542,53 +618,53 @@ class PageTableCoreMixin:
                 bboxes.extend(grid_result["bboxes"])
             return PageTableCoreMixin.table_result(tables, spans=spans, bboxes=bboxes)
 
-        if flavor == "lattice":
+        if options.flavor == "lattice":
             if grids:
                 result = extract_from_grids(grids)
             elif grid is not None and grid.is_valid():
                 result = extract_from_grid(grid)
             else:
                 result = extract_fallback_heuristic()
-        elif flavor == "network":
+        elif options.flavor == "network":
             ruled_result = extract_from_grids(grids) if grids else None
             result = extract_network_result()
-            if ruled_result is not None and PageTableCoreMixin.should_prefer_ruled_result(
+            if ruled_result is not None and cls.should_prefer_ruled_result(
                 result, ruled_result
             ):
                 result = ruled_result
             else:
                 stream_result = extract_stream_result()
-                if PageTableCoreMixin.should_prefer_richer_result(result, stream_result):
+                if cls.should_prefer_richer_result(result, stream_result):
                     result = stream_result
-            result = PageTableCoreMixin.normalize_result(result)
-        elif flavor == "stream":
+            result = cls.normalize_result(result)
+        elif options.flavor == "stream":
             ruled_result = extract_from_grids(grids) if grids else None
             result = extract_stream_result()
-            if ruled_result is not None and PageTableCoreMixin.should_prefer_ruled_result(
+            if ruled_result is not None and cls.should_prefer_ruled_result(
                 result, ruled_result
             ):
                 result = ruled_result
             else:
                 network_result = extract_network_result()
-                if network_result.get("tables") and PageTableCoreMixin.should_prefer_split_result(
+                if network_result.get("tables") and cls.should_prefer_split_result(
                     result, network_result
                 ):
                     result = network_result
-            result = PageTableCoreMixin.normalize_result(result)
-        elif flavor in ("auto", "hybrid"):
+            result = cls.normalize_result(result)
+        elif options.flavor in ("auto", "hybrid"):
             if len(grids) > 1:
                 result = extract_from_grids(grids, include_run_chars=False)
             elif grid is not None and grid.is_valid():
                 lattice_result = extract_from_grid(grid, include_run_chars=False)
                 network_grids = detect_network_grids(
                     visible_runs,
-                    edge_tolerance=edge_tolerance,
-                    row_tolerance=row_tolerance,
-                    column_tolerance=column_tolerance,
+                    edge_tolerance=options.edge_tolerance,
+                    row_tolerance=options.row_tolerance,
+                    column_tolerance=options.column_tolerance,
                     columns=normalized_columns,
                 )
                 if (
-                    flavor == "hybrid"
+                    options.flavor == "hybrid"
                     and network_grids
                     and len(network_grids[0].cols) > len(grid.cols)
                 ):
@@ -601,15 +677,15 @@ class PageTableCoreMixin:
             else:
                 network_grids = detect_network_grids(
                     visible_runs,
-                    edge_tolerance=edge_tolerance,
-                    row_tolerance=row_tolerance,
-                    column_tolerance=column_tolerance,
+                    edge_tolerance=options.edge_tolerance,
+                    row_tolerance=options.row_tolerance,
+                    column_tolerance=options.column_tolerance,
                     columns=normalized_columns,
                 )
                 stream_grid = detect_stream_grid(
                     visible_runs,
-                    row_tolerance=row_tolerance,
-                    column_tolerance=column_tolerance,
+                    row_tolerance=options.row_tolerance,
+                    column_tolerance=options.column_tolerance,
                     columns=normalized_columns,
                 )
                 selected_grid = network_grids[0] if network_grids else stream_grid
@@ -617,50 +693,58 @@ class PageTableCoreMixin:
                     result = extract_from_grid(selected_grid)
                 else:
                     result = extract_fallback_heuristic()
-            result = PageTableCoreMixin.normalize_result(result)
-            stream_result = PageTableCoreMixin.normalize_result(extract_stream_result())
-            network_result = PageTableCoreMixin.normalize_result(extract_network_result())
+            result = cls.normalize_result(result)
+            stream_result = cls.normalize_result(extract_stream_result())
+            network_result = cls.normalize_result(extract_network_result())
             if not result.get("tables"):
                 if stream_result.get("tables"):
                     result = stream_result
                 elif network_result.get("tables"):
                     result = network_result
             else:
-                if PageTableCoreMixin.should_prefer_richer_result(result, stream_result):
+                if cls.should_prefer_richer_result(result, stream_result):
                     result = stream_result
-                elif PageTableCoreMixin.should_prefer_richer_result(result, network_result):
+                elif cls.should_prefer_richer_result(result, network_result):
                     result = network_result
-            if PageTableCoreMixin.is_tiny_single_result(result):
-                result = PageTableCoreMixin.table_result([])
+            if cls.is_tiny_single_result(result):
+                result = cls.table_result([])
         else:
-            raise NotImplementedError(f"Unknown flavor specified: {flavor!r}")
+            raise NotImplementedError(f"Unknown flavor specified: {options.flavor!r}")
 
-        if canonicalize and not detect_header:
+        return result
+
+    def extract_tables_core(self: PageTableHost, **kwargs: Any) -> TableExtractionResult:
+        options = PageTableCoreMixin.table_options_from_kwargs(kwargs)
+        context = PageTableCoreMixin.build_table_extraction_context(self, options)
+        if not context.visible_runs:
+            result = PageTableCoreMixin.table_result([])
+            cache_key = table_cache_key(kwargs)
+            self.tables[cache_key] = result
+            return result
+
+        if options.canonicalize and not options.detect_header:
             canonical_flavors = ("lattice", "stream", "network", "auto", "hybrid")
-
-            def canonical_flavor_kwargs(current_flavor: str) -> dict[str, object]:
-                flavor_kwargs = {
-                    **kwargs,
-                    "flavor": current_flavor,
-                    "canonicalize": False,
-                }
-                if not shift_text:
-                    flavor_kwargs["shift_text"] = ("l", "t") if current_flavor == "lattice" else ()
-                return flavor_kwargs
-
             canonical_results = [
-                self.extract_tables_core(**canonical_flavor_kwargs(canonical_flavors[0]))
+                PageTableCoreMixin.extract_table_strategy(
+                    context,
+                    PageTableCoreMixin.canonical_table_options(options, flavor=current_flavor),
+                )
+                for current_flavor in canonical_flavors
             ]
-            canonical_results.extend(
-                self.extract_tables_core(**canonical_flavor_kwargs(current_flavor))
-                for current_flavor in canonical_flavors[1:]
-            )
             result = PageTableCoreMixin.canonicalize_results(canonical_results)
+        else:
+            result = PageTableCoreMixin.extract_table_strategy(context, options)
 
-        if canonicalize:
+        if options.canonicalize:
             cache_key = table_cache_key(kwargs)
             self.tables[cache_key] = result
         return result
 
 
-__all__ = ("GridExtractOptions", "HeuristicExtractOptions", "PageTableCoreMixin")
+__all__ = (
+    "GridExtractOptions",
+    "HeuristicExtractOptions",
+    "PageTableCoreMixin",
+    "TableExtractionContext",
+    "TableExtractionOptions",
+)
