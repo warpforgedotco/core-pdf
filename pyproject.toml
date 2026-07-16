@@ -25,6 +25,12 @@ License = "https://github.com/core-experiments/core-pdf/blob/main/LICENSE.txt"
 "Philanthropy waiver terms" = "https://github.com/core-experiments/core-pdf/blob/main/docs/license/LICENSE-PHILANTHROPY-WAIVER.txt"
 
 [dependency-groups]
+dev = [
+    { include-group = "benchmark" },
+    { include-group = "lint" },
+    { include-group = "test" },
+    { include-group = "vendor" },
+]
 benchmark = [
     "rich>=15.0.0",
 ]
@@ -39,6 +45,7 @@ lint = [
 test = [
     "pdfminer.six",
     "pytest >=8.4.0, <9.0.0",
+    "pytest-xdist>=3.8.0",
 ]
 
 [tool.pytest.ini_options]

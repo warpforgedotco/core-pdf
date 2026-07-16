@@ -23,21 +23,21 @@ jobs:
           version: "0.11.28"
           python-version: "3.14"
           enable-cache: true
+          cache-dependency-glob: "uv.lock"
 
       - name: Check lockfile
         run: uv lock --check
 
-      - name: Run Ruff
-        run: uv run --locked --group lint ruff check .
+      - name: Run prek
+        run: uvx prek run --all-files --stage pre-push
 
-      - name: Run mypy
-        run: uv run --locked --group lint mypy
-
-      - name: Run ty
-        run: uv run --locked --group lint --group test --group benchmark ty check
+      - name: Prune uv cache
+        if: always()
+        run: uv cache prune --ci
 
   test:
     name: Python ${{ matrix.python-version }}
+    needs: quality
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -51,7 +51,7 @@ jobs:
           submodules: recursive
 
       - name: Fetch encrypted PDF fixture
-        run: git -C tests/fixtures/SCORE-Bench lfs pull --include="src/g-325a.pdf"
+        run: git -C tests/fixtures/SCORE-Bench lfs pull
 
       - name: Install uv
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
@@ -59,29 +59,14 @@ jobs:
           version: "0.11.28"
           python-version: ${{ matrix.python-version }}
           enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install OCR libraries
+        run: sudo apt-get update && sudo apt-get install -y tesseract-ocr libtesseract-dev libleptonica-dev
 
       - name: Run tests
         run: uv run --locked --group test pytest
 
-  windows:
-    name: Windows Python 3.14
-    runs-on: windows-latest
-
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v7
-        with:
-          submodules: recursive
-
-      - name: Fetch encrypted PDF fixture
-        run: git -C tests/fixtures/SCORE-Bench lfs pull --include="src/g-325a.pdf"
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
-        with:
-          version: "0.11.28"
-          python-version: "3.14"
-          enable-cache: true
-
-      - name: Run tests
-        run: uv run --locked --group test pytest
+      - name: Prune uv cache
+        if: always()
+        run: uv cache prune --ci

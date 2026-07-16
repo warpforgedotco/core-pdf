@@ -89,9 +89,7 @@ class PdfStandardSecurityHandlerV4(PdfStandardSecurityHandler):
     def stream_crypt_filter_name(self, attrs: PdfDict) -> str:
         spec = normalize_stream_decode_spec(attrs)
         crypt_indexes = [
-            index
-            for index, filter_name in enumerate(spec.filters)
-            if filter_name == "Crypt"
+            index for index, filter_name in enumerate(spec.filters) if filter_name == "Crypt"
         ]
         if not crypt_indexes:
             return self.stmf

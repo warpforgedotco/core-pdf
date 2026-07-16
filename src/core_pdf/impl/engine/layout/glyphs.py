@@ -14,6 +14,8 @@ UNICODE_SOURCE_CONFIDENCE = {
     "ligature_override": 0.94,
     "glyph_name": 0.92,
     "truetype_cmap": 0.90,
+    "predefined_cmap": 0.94,
+    "cid_collection": 0.88,
     "encoding": 0.84,
     "identity": 0.58,
     "fallback_nul": 0.05,
@@ -91,6 +93,13 @@ def glyph_unicode_confidence(
     visible: bool = True,
     alternates: tuple[str, ...] = (),
 ) -> float:
+    """Estimate Unicode decoding confidence independently of paint visibility.
+
+    ``visible`` is retained for call compatibility and provenance symmetry.  A
+    text-rendering mode or optional-content state says whether a glyph is
+    painted, not whether its character mapping is correct.
+    """
+    del visible
     if not text:
         confidence = 0.0
     else:
@@ -102,8 +111,6 @@ def glyph_unicode_confidence(
             confidence = max(confidence, 0.68)
         if glyph_text_has_unsupported_codepoint(text):
             confidence = min(confidence, 0.20)
-    if not visible:
-        confidence = min(confidence, 0.35)
     return confidence
 
 

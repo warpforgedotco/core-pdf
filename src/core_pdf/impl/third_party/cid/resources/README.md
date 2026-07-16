@@ -12,13 +12,13 @@ Although originally designed for use with CIDFont resources, CMap resources are 
 
 This project includes the following CMap resources, grouped by character collection:
 
-*Adobe-Identity-0*: Adobe-Identity-0 (Special Purpose)  
-*Adobe-CNS1-7*: [Adobe-CNS1-7](https://github.com/adobe-type-tools/Adobe-CNS1/) (Traditional Chinese, including Hong Kong SCS-2016)  
-*Adobe-GB1-6*: [Adobe-GB1-6](https://github.com/adobe-type-tools/Adobe-GB1/) (Simplified Chinese)  
-*Adobe-Japan1-7*: [Adobe-Japan1-7](https://github.com/adobe-type-tools/Adobe-Japan1/) (Japanese)  
-*Adobe-Korea1-2*: [Adobe-Korea1-2](https://github.com/adobe-type-tools/Adobe-KR/raw/master/5093.Adobe-Korea1-2.pdf) (Korean)  
-*Adobe-KR-9*: [Adobe-KR-9](https://github.com/adobe-type-tools/Adobe-KR/) (Korean)  
-*Adobe-Manga1-0*: [Adobe-Manga1-0](https://github.com/adobe-type-tools/Adobe-Manga1/) (Japanese Manga)  
+*Adobe-Identity-0*: Adobe-Identity-0 (Special Purpose)
+*Adobe-CNS1-7*: [Adobe-CNS1-7](https://github.com/adobe-type-tools/Adobe-CNS1/) (Traditional Chinese, including Hong Kong SCS-2016)
+*Adobe-GB1-6*: [Adobe-GB1-6](https://github.com/adobe-type-tools/Adobe-GB1/) (Simplified Chinese)
+*Adobe-Japan1-7*: [Adobe-Japan1-7](https://github.com/adobe-type-tools/Adobe-Japan1/) (Japanese)
+*Adobe-Korea1-2*: [Adobe-Korea1-2](https://github.com/adobe-type-tools/Adobe-KR/raw/master/5093.Adobe-Korea1-2.pdf) (Korean)
+*Adobe-KR-9*: [Adobe-KR-9](https://github.com/adobe-type-tools/Adobe-KR/) (Korean)
+*Adobe-Manga1-0*: [Adobe-Manga1-0](https://github.com/adobe-type-tools/Adobe-Manga1/) (Japanese Manga)
 *deprecated/Adobe-Japan2-0*: [Adobe-Japan2-0](https://github.com/adobe-type-tools/Adobe-Japan1/raw/master/5097.Adobe-Japan2-0.pdf) (Japanese, for JIS X 0212-1990 only; Deprecated and replaced by Adobe-Japan1-6)
 
 The *VERSIONS.txt* file specifies the current version of each CMap resource.
@@ -37,10 +37,10 @@ The [Perl Scripts](https://github.com/adobe-type-tools/perl-scripts) open source
 
 The sections that follow provide detailed information about the CMap resources that are included in this project, on a per character collection basis, and the following conventions and notes apply:
 
-* References to code points and code space ranges are expressed in hexadecimal notation, and use a leading “0x.”  
-* Every two hexadecimal digits correspond to one byte.  
-* The encodings described in this document range from one- to four-byte.  
-* Whenever a horizontal CMap resource is modified to support a newer Supplement, its corresponding vertical CMap resource is also modified to reflect the same Supplement, regardless of whether mappings were added or not.  
+* References to code points and code space ranges are expressed in hexadecimal notation, and use a leading “0x.”
+* Every two hexadecimal digits correspond to one byte.
+* The encodings described in this document range from one- to four-byte.
+* Whenever a horizontal CMap resource is modified to support a newer Supplement, its corresponding vertical CMap resource is also modified to reflect the same Supplement, regardless of whether mappings were added or not.
 * Although still listed, the UCS-2 CMap files are now considered obsolete, and are no longer being maintained. They have been replaced&mdash;for all character collections&mdash;with a suite of UTF-8, UTF-16, and UTF-32 CMap resources that include the same number of mappings.
 
 For more information about the character sets and encodings that are referenced in the sections below, please reference [*CJKV Information Processing*, Second Edition](http://shop.oreilly.com/product/9780596514471.do) (O’Reilly Media, 2009).

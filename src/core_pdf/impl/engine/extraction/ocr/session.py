@@ -152,7 +152,10 @@ class OcrPageSession:
             image,
             psm=psm,
             variables=variables,
-            rectangle=ocr_execution.rectangle_for_backend_image(image, rectangle),
+            # ``_image_to_text_result_from_prepared`` maps source coordinates
+            # to the prepared image. Passing an already mapped rectangle here
+            # scales it a second time and can move it completely out of bounds.
+            rectangle=rectangle,
         )
 
     def image_regions_to_text_results(

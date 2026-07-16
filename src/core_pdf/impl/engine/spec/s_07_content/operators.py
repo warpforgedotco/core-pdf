@@ -344,7 +344,12 @@ class OperatorMixin:
         self.op_Tf_values(font_operand, font_size_operand)
 
     def op_Tf_values(self: Any, font_operand: Any, font_size_operand: Any) -> None:
-        if self.current_decoder is not None and font_operand is self.font_operand:
+        decoder_matches_resources = self.current_decoder_resources_id == self.resources_id
+        if (
+            self.current_decoder is not None
+            and decoder_matches_resources
+            and font_operand is self.font_operand
+        ):
             if font_size_operand is not self.font_size_operand:
                 value_type = type(font_size_operand)
                 if value_type is float or value_type is int:
@@ -373,7 +378,11 @@ class OperatorMixin:
             self.font_setting_cache[cache_key] = (font_name, font_size)
         else:
             font_name, font_size = cached
-        if self.current_font == font_name and self.current_decoder is not None:
+        if (
+            self.current_font == font_name
+            and self.current_decoder is not None
+            and decoder_matches_resources
+        ):
             if self.font_size != font_size:
                 self.font_size = font_size
                 self.update_text_scales()

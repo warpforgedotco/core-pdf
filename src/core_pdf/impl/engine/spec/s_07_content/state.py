@@ -93,6 +93,7 @@ class StreamState:
         "font_size_operand",
         "current_font",
         "current_decoder",
+        "current_decoder_resources_id",
         "graphics_stack_len",
         "marked_content_stack_len",
         "fill_color",
@@ -125,6 +126,7 @@ class StreamState:
     font_size_operand: object
     current_font: str | None
     current_decoder: FontDecoder | None
+    current_decoder_resources_id: int | None
     graphics_stack_len: int
     marked_content_stack_len: int
     fill_color: tuple[float, ...] | None
@@ -154,6 +156,7 @@ class StreamState:
         font_size_operand: object,
         current_font: str | None,
         current_decoder: FontDecoder | None,
+        current_decoder_resources_id: int | None,
         graphics_stack_len: int,
         marked_content_stack_len: int,
         fill_color: tuple[float, ...] | None,
@@ -184,6 +187,7 @@ class StreamState:
         self.font_size_operand = font_size_operand
         self.current_font = current_font
         self.current_decoder = current_decoder
+        self.current_decoder_resources_id = current_decoder_resources_id
         self.graphics_stack_len = graphics_stack_len
         self.marked_content_stack_len = marked_content_stack_len
         self.fill_color = fill_color
@@ -295,6 +299,7 @@ class TextState(XObjectMixin, ContentCaptureMixin, OperatorMixin):
     font_widths: tuple[float, ...] | None
     current_font: str | None
     current_decoder: FontDecoder | None
+    current_decoder_resources_id: int | None
     marked_content_stack: list[MarkedContentEntry]
     active_streams: set[StreamKey]
     queued_stream: ContentStreamFrame | None
@@ -386,6 +391,7 @@ class TextState(XObjectMixin, ContentCaptureMixin, OperatorMixin):
         "render_mode",
         "current_font",
         "current_decoder",
+        "current_decoder_resources_id",
         "sequence",
         "stream_order",
         "xobject_depth",
@@ -519,6 +525,7 @@ class TextState(XObjectMixin, ContentCaptureMixin, OperatorMixin):
         self.render_mode = 0
         self.current_font = None
         self.current_decoder = None
+        self.current_decoder_resources_id = None
         self.sequence = 0
         self.stream_order = -1
         self.xobject_depth = 0
@@ -754,6 +761,7 @@ class TextState(XObjectMixin, ContentCaptureMixin, OperatorMixin):
             font_size_operand=self.font_size_operand,
             current_font=self.current_font,
             current_decoder=self.current_decoder,
+            current_decoder_resources_id=self.current_decoder_resources_id,
             graphics_stack_len=len(self.stack),
             marked_content_stack_len=len(self.marked_content_stack),
             fill_color=self.fill_color,
@@ -786,6 +794,7 @@ class TextState(XObjectMixin, ContentCaptureMixin, OperatorMixin):
         self.font_size_operand = state.font_size_operand
         self.current_font = state.current_font
         self.current_decoder = state.current_decoder
+        self.current_decoder_resources_id = state.current_decoder_resources_id
         del self.stack[state.graphics_stack_len :]
         del self.marked_content_stack[state.marked_content_stack_len :]
         self.fill_color = state.fill_color
@@ -1017,7 +1026,16 @@ class TextState(XObjectMixin, ContentCaptureMixin, OperatorMixin):
         cat_cache[name] = None
         return None
 
-    def chunk_advance(self, code: int, decoder: "FontDecoder") -> float:
+    def chunk_advance(
+        self, code: int, decoder: "FontDecoder", *, char_code: int | None = None
+    ) -> float:
+        if decoder.is_vertical:
+            metric = decoder.vertical_metrics.get(
+                code, (decoder.default_vertical_width, decoder.glyph_width(code) / 2.0, 0.0)
+            )
+            word = char_code == 32 if char_code is not None else code == 32
+            extra = self.char_space_scale + (self.word_space_scale if word else 0.0)
+            return (metric[0] + extra) * self.font_size / 100000.0
         scale = self.text_advance_scale
         base = decoder.glyph_width(code)
         char_extra = self.char_space_scale
@@ -1110,6 +1128,7 @@ class TextState(XObjectMixin, ContentCaptureMixin, OperatorMixin):
         if not isinstance(font_obj, dict):
             decoder = FontDecoder({})
             self.current_decoder = decoder
+            self.current_decoder_resources_id = self.resources_id
             if update_metrics:
                 self.update_font_metrics()
             return decoder
@@ -1124,6 +1143,7 @@ class TextState(XObjectMixin, ContentCaptureMixin, OperatorMixin):
         if cached_decoder is not MISSING:
             decoder = typing.cast("FontDecoder", cached_decoder)
             self.current_decoder = decoder
+            self.current_decoder_resources_id = self.resources_id
             return decoder
 
         font_dict = typing.cast(PdfDict, font_obj)
@@ -1135,6 +1155,7 @@ class TextState(XObjectMixin, ContentCaptureMixin, OperatorMixin):
             ),
         )
         decoder = self.current_decoder
+        self.current_decoder_resources_id = self.resources_id
         doc_cache[cache_key] = decoder
         if update_metrics:
             self.update_font_metrics()

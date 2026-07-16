@@ -1,12 +1,15 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
+from contextlib import suppress
+from io import BytesIO
 from typing import Any
 
 from core_pdf.impl.engine.spec.s_07_objects.coercion import normalize_pdf_name
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_09_fonts.widths import get_descendant
 from core_pdf.impl.objects import PdfStream
+from core_pdf.impl.third_party._vendor.fontTools.ttLib import TTFont, TTLibError
 from core_pdf.impl.third_party.cff import (
     REPAIRABLE_TO_UNICODE,
     CFFFont,
@@ -46,8 +49,16 @@ def cff_font_for_pdf_font(font: dict[str, Any]) -> CFFFont | None:
     font_file = lookup_dict_key(descriptor, "FontFile3")
     if not isinstance(font_file, PdfStream):
         return None
+    subtype = normalize_pdf_name(lookup_dict_key(font_file, "Subtype"))
+    font_data: bytes | None = font_file.data
+    if subtype == "OpenType":
+        if font_data is None:
+            return None
+        font_data = _extract_cff_table(font_data)
+        if font_data is None:
+            return None
     try:
-        return cff_font_for_data(font_file.data)
+        return cff_font_for_data(font_data)
     except ValueError:
         return None
 
@@ -70,17 +81,44 @@ def build_cff_unicode_repairs(
         return {}
     if len(font_file.data) > 750_000:
         return {}
+    subtype = normalize_pdf_name(lookup_dict_key(font_file, "Subtype"))
+    font_data: bytes | None = font_file.data
+    if subtype == "OpenType":
+        if font_data is None:
+            return {}
+        font_data = _extract_cff_table(font_data)
+        if font_data is None:
+            return {}
     mapping = single_code_mapping(to_unicode, cmap)
     if not any(value in REPAIRABLE_TO_UNICODE for ignored_cid, value in mapping.values()):
         return {}
     try:
         repair_items = cff_unicode_repairs_for_data(
-            font_file.data,
+            font_data,
             tuple(sorted((code_bytes, cid, value) for code_bytes, (cid, value) in mapping.items())),
         )
     except ValueError:
         return {}
     return dict(repair_items)
+
+
+def _extract_cff_table(data: bytes) -> bytes | None:
+    font: TTFont | None = None
+    try:
+        font = TTFont(BytesIO(data), lazy=True, recalcBBoxes=False, recalcTimestamp=False)
+        reader = font.reader
+        if reader is None:
+            return None
+        table = reader.tables.get("CFF ")
+        if table is None:
+            return None
+        return getattr(table, "data")
+    except (TTLibError, OSError, ValueError, KeyError):
+        return None
+    finally:
+        if font is not None:
+            with suppress(AttributeError):
+                font.close()
 
 
 __all__ = (

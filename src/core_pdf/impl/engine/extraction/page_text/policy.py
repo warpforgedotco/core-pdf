@@ -124,6 +124,15 @@ def should_replace_text_with_ocr(
         native_geometry=native_geometry,
     ):
         return False
+    if sparse_drawing_schematic_should_yield_to_ocr(
+        text,
+        ocr_text,
+        text_tokens=text_tokens,
+        ocr_tokens=ocr_tokens,
+        native_profile=native_profile,
+        ocr_profile=ocr_profile,
+    ):
+        return True
     if text_tokens <= 24:
         if tiny_native_text_should_yield_to_ocr(
             text,
@@ -317,6 +326,32 @@ def text_table_like_layout_diverges_in_rendered_ocr(
     )
 
 
+def sparse_drawing_schematic_should_yield_to_ocr(
+    text: str,
+    ocr_text: str,
+    *,
+    text_tokens: int,
+    ocr_tokens: int,
+    native_profile: PageTextGeometryProfile,
+    ocr_profile: OcrCandidateGeometryProfile,
+) -> bool:
+    """Recover path-encoded labels from otherwise near-empty schematics."""
+    if text_tokens == 0 or text_tokens > 12:
+        return False
+    if ocr_tokens < max(50, text_tokens * 10):
+        return False
+    if native_profile.drawing_line_count < 200:
+        return False
+    if native_profile.candidate_schematic_signals < 30:
+        return False
+    if ocr_profile.confidence < 55:
+        return False
+    ocr_quality = text_ocr_quality_score(ocr_text)
+    if ocr_quality > 0.38:
+        return False
+    return ocr_quality + 0.10 < text_ocr_quality_score(text)
+
+
 def tiny_native_text_should_yield_to_ocr(
     text: str,
     ocr_text: str,
@@ -477,6 +512,18 @@ def should_replace_dominant_image_native_text_with_ocr(
         ocr_tokens=ocr_tokens,
     ):
         return False
+    try:
+        dominant_image = ocr_page_analysis.has_dominant_page_image(page)
+    except Exception:
+        return False
+    if text_tokens <= 20:
+        if ocr_tokens < max(80, text_tokens * 6):
+            return False
+        if text_ocr_quality_score(ocr_text) > 0.55:
+            return False
+        if ocr_text_analysis.scanned_ocr_artifact_score(ocr_text) > 0.34:
+            return False
+        return dominant_image
     if text_tokens < 100 or ocr_tokens < 140:
         return False
     token_ratio = ocr_tokens / max(1, text_tokens)
@@ -485,10 +532,50 @@ def should_replace_dominant_image_native_text_with_ocr(
     ocr_artifact = ocr_text_analysis.scanned_ocr_artifact_score(ocr_text)
     if ocr_artifact > 0.05:
         return False
+    return dominant_image
+
+
+def fragmented_invisible_text_layer_should_yield_to_ocr(
+    text: str,
+    ocr_text: str,
+    confidence: int | None,
+    *,
+    native_layer_is_fragmented: bool,
+) -> bool:
+    """Replace a fragmented hidden OCR layer with a clean full-page OCR pass."""
+    if not native_layer_is_fragmented or confidence is None or confidence < 80:
+        return False
+    text_tokens = extracted_text_token_count(text)
+    ocr_tokens = extracted_text_token_count(ocr_text)
+    if ocr_tokens < 60 or ocr_tokens < int(text_tokens * 0.75):
+        return False
+    ocr_quality = text_ocr_quality_score(ocr_text)
+    if ocr_quality > max(0.16, text_ocr_quality_score(text) + 0.04):
+        return False
+    return ocr_text_analysis.scanned_ocr_artifact_score(ocr_text) <= 0.05
+
+
+def should_preserve_substantial_text_table_native_text(
+    page: Any,
+    text: str,
+    ocr_text: str,
+) -> bool:
+    """Keep a clean native table when OCR adds no material text coverage."""
     try:
-        return ocr_page_analysis.has_dominant_page_image(page)
+        profile = page.get_page_profile()
     except Exception:
         return False
+    if getattr(profile, "recommended_strategy", None) != "text_table":
+        return False
+    text_tokens = extracted_text_token_count(text)
+    if text_tokens < 250:
+        return False
+    ocr_tokens = extracted_text_token_count(ocr_text)
+    if ocr_tokens >= int(text_tokens * 1.20):
+        return False
+    if text_ocr_quality_score(text) > 0.32:
+        return False
+    return ocr_text_analysis.scanned_ocr_artifact_score(text) <= 0.10
 
 
 def should_replace_symbol_encoded_text_with_ocr(
