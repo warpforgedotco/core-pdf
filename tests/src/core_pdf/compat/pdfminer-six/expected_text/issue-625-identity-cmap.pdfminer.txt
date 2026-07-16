@@ -231,5 +231,3 @@ Imię i nazwisko osoby uprawnionej
 do odbioru faktury
 
 Wydruk pochodzi z systemu wFirma.pl wersja 21.2
-
-

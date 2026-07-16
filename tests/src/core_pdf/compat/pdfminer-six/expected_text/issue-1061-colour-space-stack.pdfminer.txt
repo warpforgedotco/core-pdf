@@ -1859,5 +1859,3 @@ security and privacy in multimedia content
 distribution, steganography, steganalysis and
 
 information security and privacy.
-
-
