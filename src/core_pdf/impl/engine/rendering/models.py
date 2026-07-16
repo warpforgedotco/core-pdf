@@ -19,6 +19,7 @@ from core_pdf.impl.engine.spec.s_08_graphics.color import (
     ImageColorManager,
     evaluate_sampled_tint_function,
 )
+from core_pdf.impl.exceptions import PdfRasterTooLargeError
 from core_pdf.impl.objects import PdfStream
 
 BIT_IMAGE_MASK_ALPHA = tuple(
@@ -252,13 +253,28 @@ class RenderedPage:
         width, height = self.unrotated_raster_size(scale)
         return (height, width) if self.rotate % 180 else (width, height)
 
+    def validate_raster_size(self, scale: float = 1.0, max_pixels: int | None = None) -> None:
+        """Reject a raster request before allocating an oversized RGBA canvas."""
+        if max_pixels is None or max_pixels <= 0:
+            return
+        width, height = self.unrotated_raster_size(scale)
+        pixels = width * height
+        if pixels > max_pixels:
+            raise PdfRasterTooLargeError(
+                "PDF page would render to too many pixels for safe processing: "
+                f"page={self.page_number}, pixels={pixels}, maximum={max_pixels}. "
+                "Try splitting the PDF, reducing the page dimensions, or using a lower render DPI."
+            )
+
     def rasterize(
         self,
         *,
         background: tuple[int, int, int, int] = (255, 255, 255, 0),
         scale: float = 1.0,
+        max_pixels: int | None = None,
     ) -> bytes:
         scale = max(0.01, float(scale))
+        self.validate_raster_size(scale, max_pixels)
         crop = self.metadata.get("crop")
         cache_key = (
             "raster",

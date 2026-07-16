@@ -28,6 +28,28 @@ class PdfPage(PageExtractionMixin, PageTableMixin, SpecPdfPage):
     def extract_text(self) -> str:
         return PageExtractionMixin.extract_text(cast(Any, self))
 
+    def text_rotation_correction(self, threshold: float = 0.95) -> int:
+        """Return the counter-clockwise rotation needed to make dominant text upright.
+
+        Text-run angles are evaluated in the displayed page frame and weighted by
+        character count. Pages without a clear non-horizontal orientation return zero.
+        """
+        counts = {0: 0, 90: 0, 180: 0, 270: 0}
+        total = 0
+        for run in self.display_chars:
+            angle = run.rotation_angle % 360
+            bucket = min((0, 90, 180, 270, 360), key=lambda value: abs(value - angle)) % 360
+            weight = max(1, len(run.text))
+            counts[bucket] += weight
+            total += weight
+
+        if total == 0:
+            return 0
+        dominant = max(counts, key=lambda angle: counts[angle])
+        if dominant == 0 or counts[dominant] / total < threshold:
+            return 0
+        return (360 - dominant) % 360
+
     def find_text_near(
         self,
         target_box: tuple[float, float, float, float],

@@ -16,3 +16,7 @@ class PdfParseError(PdfError):
 
 class PdfUnsupportedError(PdfError):
     pass
+
+
+class PdfRasterTooLargeError(PdfError, ValueError):
+    pass

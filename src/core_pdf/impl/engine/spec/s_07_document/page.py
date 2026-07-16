@@ -15,6 +15,7 @@ from core_pdf.impl.engine.extraction.tables.types import (
 )
 from core_pdf.impl.engine.spec.s_07_content import TextState
 from core_pdf.impl.engine.spec.s_07_content.capture import CapturedLine
+from core_pdf.impl.engine.spec.s_07_document.page_boxes import rotate_page_runs
 from core_pdf.impl.engine.spec.s_07_document.page_interactions import (
     PageInteractionsMixin,
 )
@@ -282,6 +283,16 @@ class PdfPage(PageInteractionsMixin, PageStateMixin):
     @property
     def chars(self) -> list[TextRun]:
         return self.get_state().runs
+
+    @property
+    def display_chars(self) -> list[TextRun]:
+        """Text runs transformed into the page's displayed rotation frame."""
+        return rotate_page_runs(
+            self.chars,
+            rotate=self.rotation,
+            page_width=self.width,
+            page_height=self.height,
+        )
 
     @property
     def lines(self) -> list[CapturedLine]:

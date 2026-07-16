@@ -6,6 +6,7 @@ from core_pdf.impl.engine.extraction.page import PdfPage
 from core_pdf.impl.exceptions import (
     PdfError,
     PdfParseError,
+    PdfRasterTooLargeError,
     PdfSourceError,
     PdfUnsupportedError,
 )
@@ -17,6 +18,7 @@ __all__ = (
     "PdfError",
     "PdfPage",
     "PdfParseError",
+    "PdfRasterTooLargeError",
     "PdfSourceError",
     "PdfUnsupportedError",
 )
