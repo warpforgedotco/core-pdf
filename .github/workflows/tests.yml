@@ -27,14 +27,8 @@ jobs:
       - name: Check lockfile
         run: uv lock --check
 
-      - name: Run Ruff
-        run: uv run --locked --group lint ruff check .
-
-      - name: Run mypy
-        run: uv run --locked --group lint mypy
-
-      - name: Run ty
-        run: uv run --locked --group lint --group test --group benchmark ty check
+      - name: Run prek
+        run: uvx prek run --all-files --stage pre-push
 
   test:
     name: Python ${{ matrix.python-version }}
