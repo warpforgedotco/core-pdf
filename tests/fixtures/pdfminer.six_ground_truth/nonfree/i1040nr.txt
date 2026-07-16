@@ -9750,7 +9750,6 @@ Effectively connected
 
 Itemized deductions
 11, 29
-K
 Line instructions for Form
 M
 

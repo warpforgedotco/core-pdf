@@ -50,7 +50,11 @@ TESSERACT_DEFAULT_VARIABLES: Mapping[str, str] = {
     "tessedit_char_blacklist": "",
     "tessedit_char_unblacklist": "",
     "tessedit_char_whitelist": "",
+    "textord_tablefind_recognize_tables": "0",
+    "textord_tabfind_find_tables": "0",
+    "thresholding_kfactor": "0.34",
     "thresholding_method": "0",
+    "thresholding_window_size": "0.33",
 }
 LEPTONICA_PIX_MAX_BYTES = (1 << 31) - 1
 LEPTONICA_PIX_COLOR_BYTES_PER_PIXEL = 4
