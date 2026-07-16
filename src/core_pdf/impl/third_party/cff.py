@@ -431,17 +431,11 @@ class CFFFont:
             charstring = self.charstrings[glyph_id]
         except IndexError:
             return None
-        contours = _type2_glyph_contours(
+        return _type2_glyph_bbox(
             charstring,
             local_subrs=self.local_subrs_for_glyph(glyph_id),
             global_subrs=self.global_subrs,
         )
-        points = [point for contour in contours for point in contour]
-        if not points:
-            return None
-        xs = [point[0] for point in points]
-        ys = [point[1] for point in points]
-        return (min(xs), min(ys), max(xs), max(ys))
 
 
 def type2_glyph_feature(
@@ -502,9 +496,50 @@ def _type2_glyph_contours(
     local_subrs: tuple[bytes, ...] = (),
     global_subrs: tuple[bytes, ...] = (),
 ) -> list[list[tuple[float, float]]]:
+    contours, ignored_bbox = _type2_glyph_geometry(
+        charstring,
+        local_subrs=local_subrs,
+        global_subrs=global_subrs,
+        collect_contours=True,
+    )
+    return contours
+
+
+def _type2_glyph_bbox(
+    charstring: bytes,
+    *,
+    local_subrs: tuple[bytes, ...] = (),
+    global_subrs: tuple[bytes, ...] = (),
+) -> tuple[float, float, float, float] | None:
+    ignored_contours, bbox = _type2_glyph_geometry(
+        charstring,
+        local_subrs=local_subrs,
+        global_subrs=global_subrs,
+        collect_contours=False,
+    )
+    return bbox
+
+
+def _type2_glyph_geometry(
+    charstring: bytes,
+    *,
+    local_subrs: tuple[bytes, ...],
+    global_subrs: tuple[bytes, ...],
+    collect_contours: bool,
+) -> tuple[list[list[tuple[float, float]]], tuple[float, float, float, float] | None]:
     stack: list[float] = []
     contours: list[list[tuple[float, float]]] = []
     current: list[tuple[float, float]] = []
+    current_min_x = inf
+    current_min_y = inf
+    current_max_x = -inf
+    current_max_y = -inf
+    bbox_min_x = inf
+    bbox_min_y = inf
+    bbox_max_x = -inf
+    bbox_max_y = -inf
+    current_has_points = False
+    bbox_has_points = False
     x = 0.0
     y = 0.0
     stem_count = 0
@@ -514,22 +549,47 @@ def _type2_glyph_contours(
 
     def flush_contour() -> None:
         nonlocal current
+        nonlocal current_min_x, current_min_y, current_max_x, current_max_y
+        nonlocal bbox_min_x, bbox_min_y, bbox_max_x, bbox_max_y
+        nonlocal current_has_points, bbox_has_points
         if current:
             contours.append(current)
             current = []
+        if current_has_points:
+            bbox_min_x = min(bbox_min_x, current_min_x)
+            bbox_min_y = min(bbox_min_y, current_min_y)
+            bbox_max_x = max(bbox_max_x, current_max_x)
+            bbox_max_y = max(bbox_max_y, current_max_y)
+            bbox_has_points = True
+            current_min_x = inf
+            current_min_y = inf
+            current_max_x = -inf
+            current_max_y = -inf
+            current_has_points = False
+
+    def record_point(px: float, py: float) -> None:
+        nonlocal current_min_x, current_min_y, current_max_x, current_max_y
+        nonlocal current_has_points
+        if collect_contours:
+            current.append((px, py))
+        current_min_x = min(current_min_x, px)
+        current_min_y = min(current_min_y, py)
+        current_max_x = max(current_max_x, px)
+        current_max_y = max(current_max_y, py)
+        current_has_points = True
 
     def move(dx: float, dy: float) -> None:
-        nonlocal x, y, current
+        nonlocal x, y
         flush_contour()
         x += dx
         y += dy
-        current = [(x, y)]
+        record_point(x, y)
 
     def line(dx: float, dy: float) -> None:
         nonlocal x, y
         x += dx
         y += dy
-        current.append((x, y))
+        record_point(x, y)
 
     def curve(dx1: float, dy1: float, dx2: float, dy2: float, dx3: float, dy3: float) -> None:
         nonlocal x, y
@@ -539,11 +599,9 @@ def _type2_glyph_contours(
         x3, y3 = x2 + dx3, y2 + dy3
         for t in (0.25, 0.5, 0.75, 1.0):
             mt = 1.0 - t
-            current.append(
-                (
-                    mt**3 * x0 + 3 * mt * mt * t * x1 + 3 * mt * t * t * x2 + t**3 * x3,
-                    mt**3 * y0 + 3 * mt * mt * t * y1 + 3 * mt * t * t * y2 + t**3 * y3,
-                )
+            record_point(
+                mt**3 * x0 + 3 * mt * mt * t * x1 + 3 * mt * t * t * x2 + t**3 * x3,
+                mt**3 * y0 + 3 * mt * mt * t * y1 + 3 * mt * t * t * y2 + t**3 * y3,
             )
         x, y = x3, y3
 
@@ -680,9 +738,11 @@ def _type2_glyph_contours(
             return False
 
     if not execute(charstring):
-        return contours
+        bbox = (bbox_min_x, bbox_min_y, bbox_max_x, bbox_max_y) if bbox_has_points else None
+        return contours, bbox
     flush_contour()
-    return contours
+    bbox = (bbox_min_x, bbox_min_y, bbox_max_x, bbox_max_y) if bbox_has_points else None
+    return contours, bbox
 
 
 def _type2_subr_bias(count: int) -> int:
