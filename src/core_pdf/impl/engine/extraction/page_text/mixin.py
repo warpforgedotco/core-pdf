@@ -713,9 +713,27 @@ class PageExtractionMixin(PageContentMixin):
             text,
             native_geometry_summary,
         )
-        if cache is not None and trusted_invisible_text_layer:
+        dominant_image_requires_ocr_verification = (
+            ocr_postprocess.ocr_is_enabled()
+            and ocr_page_analysis.dominant_image_requires_ocr_verification(self)
+        )
+        omit_native_text_from_ocr_render = (
+            ocr_postprocess.ocr_is_enabled()
+            and ocr_page_analysis.native_text_should_be_omitted_from_ocr_render(self, text)
+        )
+        if cache is not None:
+            cache["ocr_render_exclude_native_text"] = omit_native_text_from_ocr_render
+        if cache is not None and dominant_image_requires_ocr_verification:
+            cache["ocr_verification_reason"] = "dominant_image_sparse_visible_text"
+        if (
+            cache is not None
+            and trusted_invisible_text_layer
+            and not dominant_image_requires_ocr_verification
+        ):
             cache["ocr_skipped_for_trusted_invisible_text_layer"] = True
-        if ocr_postprocess.ocr_is_enabled() and not trusted_invisible_text_layer:
+        if ocr_postprocess.ocr_is_enabled() and (
+            not trusted_invisible_text_layer or dominant_image_requires_ocr_verification
+        ):
             ocr_session = ocr_session_runtime.OcrPageSession()
             try:
                 trusted_vector_stroke_text = False
@@ -1285,6 +1303,7 @@ class PageExtractionMixin(PageContentMixin):
             options.page_number,
             options.rotate,
             options.crop,
+            options.include_text,
             options.include_annotations,
             options.include_layers,
         )

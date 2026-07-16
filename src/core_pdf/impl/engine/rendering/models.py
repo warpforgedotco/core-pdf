@@ -193,6 +193,7 @@ class RenderOptions:
     crop: tuple[float, float, float, float] | None = None
     include_annotations: bool = True
     include_layers: bool = True
+    include_text: bool = True
 
 
 @dataclass(slots=True)

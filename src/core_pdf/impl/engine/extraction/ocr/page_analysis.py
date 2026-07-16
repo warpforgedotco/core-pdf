@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, cast
 from core_pdf.impl.engine.extraction.common import page_geometry
 from core_pdf.impl.engine.extraction.common.ordering import LayoutAnalyzer
 from core_pdf.impl.engine.extraction.ocr import text_analysis as ocr_text_analysis
+from core_pdf.impl.engine.extraction.ocr.text_analysis import uninterpretable_char_count
 from core_pdf.impl.engine.rendering import RenderOptions
 from core_pdf.impl.engine.rendering.models import RenderedPage
 from core_pdf.impl.engine.spec.s_07_objects.coercion import normalize_pdf_name
@@ -371,6 +372,41 @@ def native_text_layer_has_sparse_page_coverage(page: PageExtractionHost) -> bool
         if 0.0 <= relative_mid_y <= 1.0:
             occupied_bands.add(min(4, max(0, int(relative_mid_y * 5))))
     return len(occupied_bands) < 3
+
+
+def dominant_image_requires_ocr_verification(page: PageExtractionHost) -> bool:
+    """Return whether a raster page should be checked against its native text.
+
+    A scanned page can carry a large invisible text layer that looks coherent
+    enough to suppress OCR while still being badly decoded.  Sparse painted
+    text is the useful discriminator here: a page whose visible text covers
+    only a small part of a dominant image should get an independent OCR pass.
+    """
+    try:
+        return has_dominant_page_image(page) and native_text_layer_has_sparse_page_coverage(page)
+    except Exception:
+        return False
+
+
+def native_text_should_be_omitted_from_ocr_render(
+    page: PageExtractionHost,
+    text: str,
+) -> bool:
+    """Return whether native text would contaminate the OCR raster.
+
+    Some scanned PDFs contain a visible text layer that is not merely stale;
+    its decoded glyphs are wrong and are painted over the scan.  Tesseract can
+    then recognize the bad overlay instead of the underlying page image.
+    """
+    try:
+        if not dominant_image_requires_ocr_verification(page):
+            return False
+    except Exception:
+        return False
+    # A bad Unicode mapping does not imply bad painted glyphs: NASA's page is
+    # the counterexample.  Suppress text only when the sparse overlay also
+    # contains characters that cannot be rendered/reconciled reliably.
+    return uninterpretable_char_count(text) > 0
 
 
 def page_has_many_non_image_drawings(page: PageExtractionHost) -> bool:

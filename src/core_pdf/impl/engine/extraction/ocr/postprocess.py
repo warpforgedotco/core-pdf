@@ -2670,6 +2670,11 @@ def resolved_line_with_repaired_text(
 def should_ocr_fallback(page: PageExtractionHost, text: str) -> bool:
     if not text.strip():
         return True
+    if ocr_page_analysis.dominant_image_requires_ocr_verification(page):
+        cache = getattr(page, "extraction_cache", None)
+        if isinstance(cache, dict):
+            cache["ocr_fallback_reason"] = "dominant_image_sparse_visible_text"
+        return True
     text_tokens = ocr_text_analysis.extracted_text_token_count(text)
     if native_text_layer_looks_reliable_enough(
         page,
