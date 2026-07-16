@@ -313,6 +313,17 @@ class EmbeddedImageTextSpanRecord:
     confidence: int | None
 
 
+@dataclass(frozen=True)
+class DominantImageLabelObservation:
+    """A spatially anchored label observation from one OCR candidate."""
+
+    text: str
+    numeric_token: str | None
+    bbox: tuple[float, float, float, float]
+    source: str
+    confidence: float | None
+
+
 NONSPACE_TOKEN_RE = re.compile(r"\S+")
 ALNUM_RE = re.compile(r"[^\W_]")
 NONSPACE_RE = re.compile(r"\S")
@@ -10507,11 +10518,11 @@ def dominant_image_numeric_label_cluster_groups(
     ] = {}
     for candidate in candidates:
         candidate_confidence = page_geometry.numeric_confidence(candidate.result.confidence)
-        for row in candidate.result.line_rows:
-            token = dominant_image_numeric_label_row_token(str(row.get("text", "")))
+        for observation in dominant_image_label_observations(candidate):
+            token = observation.numeric_token
             if token is None:
                 continue
-            bbox = dominant_image_row_page_bbox(row)
+            bbox = observation.bbox
             if bbox is None or not dominant_image_bbox_in_label_region(
                 bbox,
                 label_region_bbox,
@@ -10534,7 +10545,7 @@ def dominant_image_numeric_label_cluster_groups(
                 None,
             )
             if matched_index is None:
-                clusters.append((1, bbox, candidate.name, candidate_confidence))
+                clusters.append((1, bbox, observation.source, observation.confidence))
                 continue
             count, cluster_bbox, source, confidence = clusters[matched_index]
             clusters[matched_index] = (
@@ -10561,6 +10572,28 @@ def dominant_image_numeric_label_cluster_groups(
             ),
         )
     return cluster_groups
+
+
+def dominant_image_label_observations(
+    candidate: OcrCandidate,
+) -> tuple[DominantImageLabelObservation, ...]:
+    observations: list[DominantImageLabelObservation] = []
+    confidence = page_geometry.numeric_confidence(candidate.result.confidence)
+    for row in candidate.result.line_rows:
+        text = str(row.get("text", "")).strip()
+        bbox = dominant_image_row_page_bbox(row)
+        if not text or bbox is None:
+            continue
+        observations.append(
+            DominantImageLabelObservation(
+                text=text,
+                numeric_token=dominant_image_numeric_label_row_token(text),
+                bbox=bbox,
+                source=str(candidate.name),
+                confidence=confidence,
+            )
+        )
+    return tuple(observations)
 
 
 def dominant_image_numeric_label_row_token(text: str) -> str | None:
