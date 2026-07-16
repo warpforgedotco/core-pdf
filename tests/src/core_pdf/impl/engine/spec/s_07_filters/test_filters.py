@@ -2,12 +2,19 @@
 from __future__ import annotations
 
 import zlib
+from typing import cast
 
 import pytest
 
+from core_pdf.impl.engine.spec.s_07_filters import decoders
 from core_pdf.impl.engine.spec.s_07_filters.codecs import apply_ascii85
 from core_pdf.impl.engine.spec.s_07_filters.flate import apply_flate
-from core_pdf.impl.exceptions import PdfParseError
+from core_pdf.impl.engine.spec.s_07_filters.pipeline import decode_stream_data
+from core_pdf.impl.engine.spec.s_07_security.standard_v4 import PdfStandardSecurityHandlerV4
+from core_pdf.impl.exceptions import PdfParseError, PdfUnsupportedError
+from core_pdf.impl.objects import PdfStream
+from core_pdf.impl.primitives import PdfName
+from core_pdf.impl.types import PdfDict
 
 
 def gzip_compress(data: bytes) -> bytes:
@@ -53,3 +60,83 @@ def test_apply_ascii85_decodes_unterminated_pdf_stream() -> None:
 def test_apply_ascii85_rejects_invalid_data() -> None:
     with pytest.raises(PdfParseError):
         apply_ascii85(b"!!!!~bad", {})
+
+
+@pytest.mark.parametrize(
+    ("raw_data", "filters"),
+    [
+        (b"raw", PdfName.of("JPXDecode")),
+        (b"726177>", [PdfName.of("ASCIIHexDecode"), PdfName.of("JPXDecode")]),
+    ],
+)
+def test_jpx_receives_parent_colorspace_for_any_filter_position(
+    monkeypatch: pytest.MonkeyPatch,
+    raw_data: bytes,
+    filters: object,
+) -> None:
+    embedded_color_flags: list[bool] = []
+
+    def fake_decode_jpx(data: bytes, *, apply_embedded_color: bool) -> bytes:
+        embedded_color_flags.append(apply_embedded_color)
+        return data
+
+    monkeypatch.setattr(decoders, "decode_jpx_impl", fake_decode_jpx)
+    dictionary = {
+        "Filter": filters,
+        "ColorSpace": PdfName.of("DeviceRGB"),
+    }
+    stream = PdfStream(dictionary, raw_data, dictionary)
+
+    assert stream.data == b"raw"
+    assert embedded_color_flags == [False]
+
+
+def test_crypt_filter_without_params_is_identity_after_security_stage() -> None:
+    assert decode_stream_data(b"plain", {"Filter": PdfName.of("Crypt")}) == b"plain"
+
+
+def make_v4_handler() -> PdfStandardSecurityHandlerV4:
+    handler = object.__new__(PdfStandardSecurityHandlerV4)
+    handler.encrypt_metadata = True
+    handler.stmf = "Default"
+    handler.strf = "Default"
+    handler.cfm = {
+        "Default": lambda _objid, _genno, data: b"default:" + data,
+        "Special": lambda _objid, _genno, data: b"special:" + data,
+    }
+    return handler
+
+
+def test_security_handler_uses_explicit_named_crypt_filter() -> None:
+    handler = make_v4_handler()
+    attrs = {
+        "Filter": [PdfName.of("Crypt"), PdfName.of("FlateDecode")],
+        "DecodeParms": [{"Name": PdfName.of("Special")}, None],
+    }
+
+    assert handler.decrypt(1, 0, b"ciphertext", cast(PdfDict, attrs)) == b"special:ciphertext"
+
+
+def test_security_handler_defaults_explicit_crypt_to_identity() -> None:
+    handler = make_v4_handler()
+
+    assert handler.decrypt(1, 0, b"plain", {"Filter": PdfName.of("Crypt")}) == b"plain"
+
+
+def test_security_handler_rejects_late_crypt_filter() -> None:
+    handler = make_v4_handler()
+    attrs = {"Filter": [PdfName.of("FlateDecode"), PdfName.of("Crypt")]}
+
+    with pytest.raises(PdfParseError, match="first"):
+        handler.decrypt(1, 0, b"ciphertext", cast(PdfDict, attrs))
+
+
+def test_security_handler_rejects_unknown_named_crypt_filter() -> None:
+    handler = make_v4_handler()
+    attrs = {
+        "Filter": PdfName.of("Crypt"),
+        "DecodeParms": {"Name": PdfName.of("Unknown")},
+    }
+
+    with pytest.raises(PdfUnsupportedError, match="Undefined crypt filter"):
+        handler.decrypt(1, 0, b"ciphertext", cast(PdfDict, attrs))

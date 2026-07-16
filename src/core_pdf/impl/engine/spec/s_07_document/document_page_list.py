@@ -48,9 +48,6 @@ class LazyPageList(list[PdfPage]):
         except StopIteration:
             self.complete = True
             document.page_dicts_cache = [page.page_dict for page in list.__iter__(self)]
-            invalidate = getattr(document, "invalidate_document_extraction_cache", None)
-            if callable(invalidate):
-                invalidate()
             raise IndexError("page index out of range") from None
 
     def ensure(self, index: int) -> None:

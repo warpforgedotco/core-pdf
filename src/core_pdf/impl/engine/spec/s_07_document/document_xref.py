@@ -157,8 +157,8 @@ class DocumentXRefMixin:
         return False
 
     def is_valid_catalog_root(self, root_ref: object) -> bool:
+        resolver = ObjectResolver(self.raw_data, self.xref, self.trailer_dict)
         try:
-            resolver = ObjectResolver(self.raw_data, self.xref, self.trailer_dict)
             root = resolver.resolve(root_ref)
             if not isinstance(root, dict):
                 return False
@@ -178,11 +178,14 @@ class DocumentXRefMixin:
             return isinstance(kids, list) or (type(count) is int and count >= 0)
         except Exception:
             return False
+        finally:
+            resolver.close()
 
     def infer_catalog_root(self) -> PdfReference | None:
         data = self.raw_data
         object_cache: ResolvedObjectCache = {}
         resolver = ObjectResolver(self.raw_data, self.xref, self.trailer_dict)
+        lexer = PdfLexer(data)
         entries_by_ref = {
             (k >> 16, k & 0xFFFF): entry for k, entry in self.xref.items() if entry.in_use
         }
@@ -278,46 +281,53 @@ class DocumentXRefMixin:
                     score += 2
             return score
 
-        candidates = sorted(
-            {
-                (
-                    k >> 16,
-                    k & 0xFFFF,
-                    entry.offset if entry.object_stream is None else 0,
-                    entry.object_stream is not None,
-                )
-                for k, entry in self.xref.items()
-                if entry.in_use
-                and (
-                    (entry.object_stream is None and entry.offset >= 0)
-                    or entry.object_stream is not None
-                )
-            },
-            key=lambda item: (item[3], item[2], item[0]),
-        )
-        lexer = PdfLexer(data)
-        scored: list[tuple[int, int, int, int]] = []
-        for obj_num, gen_num, offset, compressed in candidates:
-            if compressed:
-                try:
-                    obj = resolver.resolve(PdfReference(obj_num, gen_num))
-                except Exception:
-                    continue
-            else:
-                lexer.rewind(offset)
-                try:
-                    obj = lexer.parse_indirect_object()
-                except Exception:
-                    continue
-            object_cache[(obj_num, gen_num)] = cast(CachedPdfObject, obj)
-            score = catalog_score(obj)
-            if score > -100:
-                scored.append((score, -offset, obj_num, gen_num))
-        if not scored:
-            return None
-        scored.sort(reverse=True)
-        ignored, ignored, obj_num, gen_num = scored[0]
-        return PdfReference(obj_num, gen_num)
+        def select_catalog_root() -> PdfReference | None:
+            candidates = sorted(
+                {
+                    (
+                        k >> 16,
+                        k & 0xFFFF,
+                        entry.offset if entry.object_stream is None else 0,
+                        entry.object_stream is not None,
+                    )
+                    for k, entry in self.xref.items()
+                    if entry.in_use
+                    and (
+                        (entry.object_stream is None and entry.offset >= 0)
+                        or entry.object_stream is not None
+                    )
+                },
+                key=lambda item: (item[3], item[2], item[0]),
+            )
+            scored: list[tuple[int, int, int, int]] = []
+            for obj_num, gen_num, offset, compressed in candidates:
+                if compressed:
+                    try:
+                        obj = resolver.resolve(PdfReference(obj_num, gen_num))
+                    except Exception:
+                        continue
+                else:
+                    lexer.rewind(offset)
+                    try:
+                        obj = lexer.parse_indirect_object()
+                    except Exception:
+                        continue
+                object_cache[(obj_num, gen_num)] = cast(CachedPdfObject, obj)
+                score = catalog_score(obj)
+                if score > -100:
+                    scored.append((score, -offset, obj_num, gen_num))
+            if not scored:
+                return None
+            scored.sort(reverse=True)
+            ignored, ignored, obj_num, gen_num = scored[0]
+            return PdfReference(obj_num, gen_num)
+
+        try:
+            return select_catalog_root()
+        finally:
+            object_cache.clear()
+            lexer.close()
+            resolver.close()
 
     def merge_recovered_trailer_metadata(self, trailer: PdfDict) -> PdfDict:
         missing_keys = [
@@ -363,40 +373,46 @@ class DocumentXRefMixin:
     def iter_literal_trailer_dictionaries(self) -> Iterator[PdfDict]:
         data = self.raw_data
         lexer = PdfLexer(data)
-        search_from = 0
-        while True:
-            marker = data.find(b"trailer", search_from)
-            if marker < 0:
-                break
-            search_from = marker + len(b"trailer")
-            dict_start = data.find(b"<<", search_from, search_from + 4096)
-            if dict_start < 0:
-                continue
-            lexer.rewind(dict_start)
-            try:
-                candidate = lexer.parse_dictionary()
-            except Exception:
-                continue
-            yield cast(PdfDict, candidate)
+        try:
+            search_from = 0
+            while True:
+                marker = data.find(b"trailer", search_from)
+                if marker < 0:
+                    break
+                search_from = marker + len(b"trailer")
+                dict_start = data.find(b"<<", search_from, search_from + 4096)
+                if dict_start < 0:
+                    continue
+                lexer.rewind(dict_start)
+                try:
+                    candidate = lexer.parse_dictionary()
+                except Exception:
+                    continue
+                yield cast(PdfDict, candidate)
+        finally:
+            lexer.close()
 
     def iter_recoverable_xref_stream_dictionaries(self) -> Iterator[PdfDict]:
         lexer = PdfLexer(self.raw_data)
-        for key, entry in sorted(self.xref.items()):
-            if not entry.in_use or entry.object_stream is not None or entry.offset < 0:
-                continue
-            lexer.rewind(entry.offset)
-            try:
-                obj = lexer.parse_indirect_object()
-            except Exception:
-                continue
-            if not isinstance(obj, PdfStream):
-                continue
-            dictionary = obj.dictionary
-            if normalize_pdf_name(lookup_dict_key(dictionary, "Type")) == "XRef" or (
-                lookup_dict_key(dictionary, "W") is not None
-                and lookup_dict_key(dictionary, "Size") is not None
-            ):
-                yield cast(PdfDict, dictionary)
+        try:
+            for key, entry in sorted(self.xref.items()):
+                if not entry.in_use or entry.object_stream is not None or entry.offset < 0:
+                    continue
+                lexer.rewind(entry.offset)
+                try:
+                    obj = lexer.parse_indirect_object()
+                except Exception:
+                    continue
+                if not isinstance(obj, PdfStream):
+                    continue
+                dictionary = obj.dictionary
+                if normalize_pdf_name(lookup_dict_key(dictionary, "Type")) == "XRef" or (
+                    lookup_dict_key(dictionary, "W") is not None
+                    and lookup_dict_key(dictionary, "Size") is not None
+                ):
+                    yield cast(PdfDict, dictionary)
+        finally:
+            lexer.close()
 
     def iter_recoverable_trailer_dictionaries(self) -> Iterator[PdfDict]:
         yield from self.iter_literal_trailer_dictionaries()

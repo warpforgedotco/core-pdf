@@ -29,7 +29,7 @@ def format_page_label(
         return prefix + format_alpha(number).lower()
     if style == "A":
         return prefix + format_alpha(number).upper()
-    if style == "D" or style is None:
+    if style == "D":
         return prefix + str(number)
     return prefix
 
@@ -91,12 +91,8 @@ def format_roman(value: int) -> str:
 def format_alpha(value: int) -> str:
     if value <= 0:
         return ""
-    chars: list[str] = []
-    while value:
-        value, remainder = divmod(value - 1, 26)
-        chars.append(chr(97 + remainder))
-    chars.reverse()
-    return "".join(chars)
+    repeat_count, remainder = divmod(value - 1, 26)
+    return chr(97 + remainder) * (repeat_count + 1)
 
 
 __all__ = (

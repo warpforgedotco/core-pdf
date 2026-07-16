@@ -136,7 +136,10 @@ def store_expensive_decode(key: tuple[object, ...], data: bytes, decoded: bytes)
 
 
 def decode_stream_data(
-    data: bytes | memoryview, dictionary: object | StreamDecodeSpec | None
+    data: bytes | memoryview,
+    dictionary: object | StreamDecodeSpec | None,
+    *,
+    parent_dictionary: object | None = None,
 ) -> bytes:
     if type(data) is memoryview:
         data = data.tobytes()
@@ -170,7 +173,10 @@ def decode_stream_data(
             raise PdfUnsupportedError(f"stream filter {flt} is not implemented yet")
         parms = normalized_parms[0] if normalized_parms else None
         try:
-            result = fn(data, dictionary if flt == "JPXDecode" else parms)
+            decoder_context = (
+                parent_dictionary if parent_dictionary is not None else dictionary
+            ) if flt == "JPXDecode" else parms
+            result = fn(data, decoder_context)
             result_type = type(result)
             if result_type is bytearray:
                 result = bytes(result)
@@ -204,7 +210,10 @@ def decode_stream_data(
         if fn is None:
             raise PdfUnsupportedError(f"stream filter {flt} is not implemented yet")
         try:
-            result = fn(result, parms)
+            decoder_context = (
+                parent_dictionary if parent_dictionary is not None else dictionary
+            ) if flt == "JPXDecode" else parms
+            result = fn(result, decoder_context)
             result_type = type(result)
             if result_type is bytearray:
                 result = bytes(result)

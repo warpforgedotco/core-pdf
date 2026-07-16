@@ -63,6 +63,10 @@ class DocumentPageLabelsMixin:
         if not specs:
             return None
         specs.sort(key=lambda item: item[0])
+        if specs[0][0] != 0:
+            if not (self.xref_was_recovered or self.page_tree_was_recovered):
+                raise ValueError("PageLabels is missing page index 0")
+            specs.insert(0, (0, {}))
 
         page_count = len(self.pages)
         labels: list[str] = []

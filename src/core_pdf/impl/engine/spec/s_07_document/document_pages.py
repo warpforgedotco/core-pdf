@@ -58,9 +58,6 @@ class DocumentPagesMixin(DocumentPageRecoveryMixin, DocumentPageLabelsMixin):
             page_dicts.append(page_dict)
             yield page_dict
         self.page_dicts_cache = page_dicts
-        invalidate = getattr(self, "invalidate_document_extraction_cache", None)
-        if callable(invalidate):
-            invalidate()
 
     def iter_page_dicts_stream(self) -> Iterator[PdfDict]:
         def inherited_from_pages_node(

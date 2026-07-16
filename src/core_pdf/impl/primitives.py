@@ -85,7 +85,7 @@ class PdfName:
         if type(other) is PdfName:
             return self.value == other.value
         if type(other) is bytes:
-            return self.value == other
+            return self.value_bytes == other
         if type(other) is str:
             s = self.str_value
             if s is not None:

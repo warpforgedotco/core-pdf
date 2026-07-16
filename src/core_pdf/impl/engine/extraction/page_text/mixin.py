@@ -488,6 +488,23 @@ class PageExtractionHost(Protocol):
     def extract_text(self) -> str: ...
 
 
+@dataclass(frozen=True)
+class PageExtractionSnapshot:
+    text: str
+    resolved_output_lines: tuple[observation_resolver.ResolvedTextLine, ...]
+
+
+def cache_page_extraction_snapshot(
+    cache: ExtractionCache,
+    text: str,
+    resolved_output_lines: Iterable[observation_resolver.ResolvedTextLine],
+) -> str:
+    lines = tuple(resolved_output_lines)
+    cache["resolved_output_lines"] = lines
+    cache["page_extraction_snapshot"] = PageExtractionSnapshot(text, lines)
+    return text
+
+
 class PageExtractionMixin(PageContentMixin):
     extraction_cache: ExtractionCache | None
     text_lines: list[LayoutLine] | None
@@ -570,6 +587,9 @@ class PageExtractionMixin(PageContentMixin):
         cache = self.extraction_cache
         if cache is None:
             self.extraction_cache = cache = ExtractionCache()
+        snapshot = cache.get_as("page_extraction_snapshot", PageExtractionSnapshot)
+        if snapshot is not None:
+            return snapshot.text
         profile = self.get_page_profile()
         decision = page_extraction_decision(
             profile,
@@ -579,13 +599,11 @@ class PageExtractionMixin(PageContentMixin):
             cache["native_layout_geometry_summary"] = layout_geometry_summary_record(
                 page_layout_geometry_summary([])
             )
-            cache["resolved_output_lines"] = ()
-            return ""
+            return cache_page_extraction_snapshot(cache, "", ())
         if decision.route == "native_text_fast":
             fast_text = try_extract_native_text_fast(self, profile, cache)
             if fast_text is not None:
-                cache["resolved_output_lines"] = ()
-                return fast_text
+                return cache_page_extraction_snapshot(cache, fast_text, ())
         chars = native_text_runs_for_extraction(self.chars)
         chars = native_text_runs_inside_page_bounds(chars, self.media_box, rotate=self.rotation)
         chars = native_text_runs_inside_visible_row_bands(chars, self.media_box, self)
@@ -1115,26 +1133,22 @@ class PageExtractionMixin(PageContentMixin):
             else ""
         )
         if final_output_lines and text == final_lines_text:
-            cache["resolved_output_lines"] = final_output_lines
+            resolved_output_lines = final_output_lines
         else:
-            cache["resolved_output_lines"] = ()
-        return text
+            resolved_output_lines = ()
+        return cache_page_extraction_snapshot(cache, text, resolved_output_lines)
 
     def extract_resolved_lines(self: PageExtractionHost) -> list[dict[str, Any]]:
         cache = self.extraction_cache
         if cache is None:
             self.extraction_cache = cache = ExtractionCache()
         self.extract_text()
-        cached = cache.get("resolved_output_lines")
-        if not isinstance(cached, tuple):
+        snapshot = cache.get_as("page_extraction_snapshot", PageExtractionSnapshot)
+        if snapshot is None:
             return []
-        resolved_lines = cast(
-            tuple[observation_resolver.ResolvedTextLine, ...],
-            cached,
-        )
         return [
             resolved_line_content_record(line, line_index=line_index)
-            for line_index, line in enumerate(resolved_lines)
+            for line_index, line in enumerate(snapshot.resolved_output_lines)
         ]
 
     def to_markdown(self: PageExtractionHost) -> str:

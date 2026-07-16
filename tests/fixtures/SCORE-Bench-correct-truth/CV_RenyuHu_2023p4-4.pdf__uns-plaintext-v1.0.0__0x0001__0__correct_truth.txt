@@ -1,0 +1,59 @@
+--------------------------------------------------- Unstructured Plain Text Format 1.0.4
+
+
+--------------------------------------------------- Unstructured Page Header Begin
+Renyu Hu
+--------------------------------------------------- Unstructured Page Header End
+2012 Teaching Certificate Program, Massachusetts Institute of Technology
+2010 Teaching Assistant, Tsinghua University, Class: Quantum Mechanics
+--------------------------------------------------- Unstructured Title Begin
+EXTERNALLY SPONSORED RESEARCH PROJECTS
+--------------------------------------------------- Unstructured Title End
+Awarded $3.2M since 2015
+• $2.4M as PI
+• $1.3M for JWST projects, in which $1.0M as PI
+--------------------------------------------------- Unstructured Sub-Title Begin
+Deep Characterization of the Atmosphere of a Temperate Sub-Neptune
+--------------------------------------------------- Unstructured Sub-Title End
+Principal Investigator: Renyu Hu
+Program: James Webb Space Telescope Cycle 1 Guest Observers
+Funding Period: 2022 – 2025
+Total Funding: $394,001
+--------------------------------------------------- Unstructured Sub-Title Begin
+Determining the Atmospheric Composition of the Super-Earth 55 Cancri e
+--------------------------------------------------- Unstructured Sub-Title End
+Principal Investigator: Renyu Hu
+Program: James Webb Space Telescope Cycle 1 Guest Observers
+Funding Period: 2022 – 2024
+Total Funding: $236,320
+--------------------------------------------------- Unstructured Sub-Title Begin
+Exploring the nature of a temperate exoplanet in the Fulton gap
+--------------------------------------------------- Unstructured Sub-Title End
+Principal Investigator: Mario Damiano (Renyu Hu is Co-PI)
+Program: James Webb Space Telescope Cycle 1 Guest Observers
+Funding Period: 2022 – 2024
+Total Funding: $226,553
+--------------------------------------------------- Unstructured Sub-Title Begin
+A Search for Signatures of Volcanism and Geodynamics on the Hot Rocky Exoplanet LHS 3844b
+--------------------------------------------------- Unstructured Sub-Title End
+Principal Investigator: Laura Kreidberg (Renyu Hu is Co-PI)
+Program: James Webb Space Telescope Cycle 1 Guest Observers
+Funding Period: 2022 – 2024
+Total Funding: $176,322
+--------------------------------------------------- Unstructured Sub-Title Begin
+Thermal Structure, Chemistry, and Observational Signatures of Cold Exoplanet Atmospheres
+--------------------------------------------------- Unstructured Sub-Title End
+Principal Investigator: Renyu Hu
+Program: NASA Exoplanets Research Program
+Funding Period: 2018 – 2022
+Total Funding: $ 458,552
+--------------------------------------------------- Unstructured Sub-Title Begin
+Constraining Early Mars’s Atmosphere and Habitability with Isotopic Measurements
+--------------------------------------------------- Unstructured Sub-Title End
+Principal Investigator: Renyu Hu
+Program: NASA Habitable Worlds
+--------------------------------------------------- Unstructured Page Footer Begin
+--------------------------------------------------- Unstructured Page Number Block Begin
+Page 4 of 23
+--------------------------------------------------- Unstructured Page Number Block End
+--------------------------------------------------- Unstructured Page Footer End

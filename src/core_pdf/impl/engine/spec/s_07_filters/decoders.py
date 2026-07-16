@@ -9,14 +9,8 @@ from core_jpeg.api import decode_jpx as decode_jpx_impl
 from core_jpeg.errors import JpegParseError, JpegUnsupportedError
 
 from core_pdf.impl.engine.spec.s_07_filters.decode_spec import FilterParams
-from core_pdf.impl.engine.spec.s_07_objects.coercion import (
-    coerce_to_bytes,
-    is_pdf_null,
-    normalize_pdf_name,
-)
+from core_pdf.impl.engine.spec.s_07_objects.coercion import coerce_to_bytes, is_pdf_null
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
-from core_pdf.impl.engine.spec.s_07_security.aes import AES
-from core_pdf.impl.engine.spec.s_07_security.rc4 import CryptRC4
 from core_pdf.impl.exceptions import PdfParseError, PdfUnsupportedError
 from core_pdf.impl.third_party.ccitt import (
     CcittParseError,
@@ -124,44 +118,11 @@ def decode_jbig2(data: bytes, parms: object) -> bytes:
 
 
 def decode_crypt(data: bytes, parms: object) -> bytes:
-    if not isinstance(parms, dict):
-        if is_pdf_null(parms):
-            raise PdfParseError("missing Crypt params")
-        raise PdfParseError("invalid Crypt filter params")
-
-    cfm_raw = lookup_dict_key(parms, "CFM")
-    if is_pdf_null(cfm_raw):
-        raise PdfParseError("invalid Crypt filter CFM")
-
-    cfm = normalize_pdf_name(cfm_raw)
-    if cfm is None:
-        raise PdfParseError("invalid Crypt filter CFM")
-    if cfm in {"None", "Identity"}:
+    # Stream cryptography is applied by the document security handler before
+    # ordinary filters.  /Crypt remains in the decode pipeline only to retain
+    # the original dictionary and filter ordering.
+    if is_pdf_null(parms):
         return data
-
-    key = lookup_dict_key(parms, "Key")
-    if is_pdf_null(key):
-        key = lookup_dict_key(parms, "CryptKey")
-    if is_pdf_null(key):
-        raise PdfParseError("Crypt filter missing key")
-    try:
-        key_bytes = coerce_to_bytes(key)
-    except TypeError as exc:
-        raise PdfParseError("invalid Crypt filter key type") from exc
-
-    if cfm in {"V2", "RC4"}:
-        return CryptRC4(key_bytes).decrypt(data)
-    if cfm in {"AESV2", "AESV3"}:
-        if len(data) < 16:
-            raise PdfParseError("invalid Crypt filter AES stream")
-        initialization_vector = data[:16]
-        ciphertext = data[16:]
-        try:
-            cipher = AES(key_bytes)
-        except ValueError as exc:
-            raise PdfParseError("invalid Crypt filter key") from exc
-        try:
-            return cipher.decrypt_cbc(initialization_vector, ciphertext, padding=True)
-        except ValueError as exc:
-            raise PdfParseError("invalid Crypt filter stream") from exc
-    raise PdfUnsupportedError(f"Unsupported crypt filter method {cfm}")
+    if not isinstance(parms, dict):
+        raise PdfParseError("invalid Crypt filter params")
+    return data
