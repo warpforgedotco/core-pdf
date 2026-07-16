@@ -33,6 +33,24 @@ def resolved_full_page_line(
     )
 
 
+def resolved_native_line(
+    text: str,
+    *,
+    confidence: float | None = 0.35,
+) -> observation_resolver.ResolvedTextLine:
+    observation = page_geometry.PageObservation(
+        kind="native_text",
+        source="native_text",
+        text=text,
+        confidence=confidence,
+    )
+    return observation_resolver.ResolvedTextLine(
+        text,
+        observation,
+        contributing_observations=(observation,),
+    )
+
+
 def test_prunes_geometryless_table_fusion_toc_leader_tail_keep_page_number() -> None:
     line = resolved_table_fusion_line(
         "CHAPTER RIVE: (6 THEFBI'S CONDUCT NOVEMBER OF THE PRELIMINARY 1995 .............224++-222"
@@ -107,3 +125,26 @@ def test_does_not_prune_strong_full_page_toc_text() -> None:
         prune_weak_ocr_artifact_line_text(line)
         == "LEE AND SYLVIA LEE: DECEMBER 1998 TO MARCH 1999... 2... .000.00.++ 629"
     )
+
+
+def test_normalizes_weak_native_table_numeric_separators() -> None:
+    line = resolved_native_line("2003 3.007 741 60,420 75520 80674 49809 72682")
+
+    assert (
+        prune_weak_ocr_artifact_line_text(line) == "2003 3,007,741 60,420 75520 80674 49809 72682"
+    )
+
+
+def test_normalizes_weak_native_table_footnote_quote_marks() -> None:
+    line = resolved_native_line('2008 935 592 12,526 4672 1533 1591 2817 251079" 9267*"')
+
+    assert (
+        prune_weak_ocr_artifact_line_text(line)
+        == "2008 935,592 12,526 4672 1533 1591 2817 251079* 9267**"
+    )
+
+
+def test_does_not_normalize_strong_native_table_numeric_text() -> None:
+    line = resolved_native_line("2003 3.007 741", confidence=0.95)
+
+    assert prune_weak_ocr_artifact_line_text(line) == "2003 3.007 741"
