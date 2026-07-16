@@ -143,12 +143,29 @@ def test_text_rotation_correction_uses_displayed_text_orientation() -> None:
     assert correction == 90
 
 
-def test_bitmap_text_rows_use_top_to_bottom_glyph_order() -> None:
+def test_text_display_items_do_not_fabricate_raster_pixels() -> None:
     page = rendered_page()
     page.display_list.append(
         "text",
         1,
         text="L",
+        bbox=(0, 0, 5, 7),
+        fill_color=(0, 0, 0),
+    )
+
+    raster = page.rasterize(background=(255, 255, 255, 255))
+
+    assert raster == bytes((255, 255, 255, 255)) * 5 * 7
+
+
+def test_captured_glyph_bitmap_rows_use_top_to_bottom_order() -> None:
+    page = rendered_page()
+    page.display_list.append(
+        "glyph",
+        1,
+        bitmap=(1, 1, 1, 1, 1, 1, 31),
+        bitmap_width=5,
+        bitmap_height=7,
         bbox=(0, 0, 5, 7),
         fill_color=(0, 0, 0),
     )
