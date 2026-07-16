@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
-import os
 import re
 from collections import Counter
 from dataclasses import dataclass, replace
@@ -126,12 +125,13 @@ class OcrSyntheticTextLine:
 
 
 def ocr_is_enabled() -> bool:
-    return os.environ.get("CORE_PDF_OCR", "").casefold() not in {
-        "0",
-        "false",
-        "no",
-        "off",
-    }
+    # return os.environ.get("CORE_PDF_OCR", "").casefold() not in {
+    #     "0",
+    #     "false",
+    #     "no",
+    #     "off",
+    # }
+    return False
 
 
 def prune_weak_ocr_artifact_output_lines(
