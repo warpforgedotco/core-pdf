@@ -301,11 +301,11 @@ allows relaxing privacy parameters for older data. In [26], I: if the intruder k
 a relaxation is presented that restricts the deﬁnition of above the average height of the population of a country,
 neighbor data sets: they are no longer data sets diﬀering then releasing an accurate approximation of the average
 in any record, but in a record within a certain subset. height of the population provides the intruder with an
-In [27], an alternative relaxation of DP, called (µ, τ )- accurate estimate of I’s height. Here it is important to
+In [27], an alternative relaxation of DP, called (μ, τ )- accurate estimate of I’s height. Here it is important to
 concentrated diﬀerential privacy, is proposed. Similarly notice that such disclosure happens even if I does not
 to (, δ)-pdp, concentrated diﬀerential privacy allows the participate in the data set. Thus, the disclosure is not
 ratio of probabilities to be arbitrarily large with a small associated to I’s participation in the data set, but to the
-probability that is determined by the parameters µ and τ . accurate side knowledge. This illustrates that diﬀerential
+probability that is determined by the parameters μ and τ . accurate side knowledge. This illustrates that diﬀerential
 In all the above relaxations, the accuracy gain is ob- privacy cannot guarantee that disclosure will not happen;
 tained by allowing the diﬀerentially private condition to what it guarantees is that, should disclosure happen, it
 be broken: the presence or absence of an individual may will not be due to the participation of any particular
@@ -497,18 +497,18 @@ D, we have exp(− ) Pr(M (D ′) ∈ S) ≤ Pr(M (D) ∈ S) and discrete numeri
 ≤ exp( ) Pr(M (D ′) ∈ S). On the other hand, A : E →
 Dist(F ) assigns to each e ∈ E a probability distribution A. Laplace mechanism
 over F .
-The Laplace(µ, b) distribution (a.k.a the double expo-
+The Laplace(μ, b) distribution (a.k.a the double expo-
 To check that exp(− ) Pr(A(M (D ′) ∈ S)) ≤
 nential distribution) is an absolutely continuous distribu-
 Pr(A(M(D)) ∈ S) ≤ exp( ) Pr(A(M(D ′)) ∈ S),
 integraltext tion whose density function is
 we decompose Pr(A(M (d)) ∈ S)as x S Pr(M (d)=
 ∈ ( )
-y) Pr(A(y)=x) and we use that M satisﬁes -i DP. 1 |x − µ|
-Lµ,b(x)= exp − ,
+y) Pr(A(y)=x) and we use that M satisﬁes -i DP. 1 |x − μ|
+Lμ,b(x)= exp − ,
 2b b
 The privacy axiom of choice allows randomly choosing
-between -i DP mechanisms. where µ is the location parameter, and b is the scale
+between -i DP mechanisms. where μ is the location parameter, and b is the scale
 parameter. We use Lb(x) when the mean parameter is zero.
 Deﬁnition 8 (Privacy axiom of choice). Let M₁ and In case of using the Laplace distribution to generate the
 M be privacy mechanisms that satisfy a certain privacy

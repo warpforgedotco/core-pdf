@@ -1,5 +1,2 @@
-Hello
-Hello ͋ ͍ ͏ ͑ ͓
-͋ ͍ ͏ ͑ ͓
-World
-World
+Hello Hello あいうえお World
+あいうえおWorld
