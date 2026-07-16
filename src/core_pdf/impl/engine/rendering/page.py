@@ -182,6 +182,8 @@ def compose_page(page: Any, options: RenderOptions | None = None) -> RenderedPag
                 )
             normal = selected
         if not isinstance(normal, PdfStream):
+            normal = page.document.resolver.resolve(normal)
+        if not isinstance(normal, PdfStream):
             return False
         form_dict = page.document.resolver.resolve_dict(normal.dictionary) or {}
         bbox = page.document.resolver.resolve_box(lookup_dict_key(form_dict, "BBox"))
@@ -246,7 +248,7 @@ def compose_page(page: Any, options: RenderOptions | None = None) -> RenderedPag
                 -1,
                 name=field.name,
                 field_type=field.type,
-                value=field.value,
+                value=field.value_text,
                 rect=rect,
                 widget=dict(widget) if isinstance(widget, dict) else {},
                 appearance=appearance,

@@ -234,6 +234,24 @@ class RenderedPage:
     )
     ppm_cache: bytes | None = field(default=None, repr=False)
 
+    def unrotated_raster_size(self, scale: float = 1.0) -> tuple[int, int]:
+        """Return the raster size before applying the page rotation."""
+        scale = max(0.01, float(scale))
+        crop = self.metadata.get("crop")
+        if isinstance(crop, (list, tuple)) and len(crop) == 4:
+            width = max(1, int(round((float(crop[2]) - float(crop[0])) * scale)))
+            height = max(1, int(round((float(crop[3]) - float(crop[1])) * scale)))
+            return width, height
+        return (
+            max(1, int(round(self.width * scale))),
+            max(1, int(round(self.height * scale))),
+        )
+
+    def raster_size(self, scale: float = 1.0) -> tuple[int, int]:
+        """Return the width and height of the bytes produced by ``rasterize``."""
+        width, height = self.unrotated_raster_size(scale)
+        return (height, width) if self.rotate % 180 else (width, height)
+
     def rasterize(
         self,
         *,
@@ -253,21 +271,19 @@ class RenderedPage:
         if cached is not None:
             return cached
         if isinstance(crop, (list, tuple)) and len(crop) == 4:
-            crop_x0, crop_y0, crop_x1, crop_y1 = (
+            crop_x0, crop_y0, _crop_x1, crop_y1 = (
                 float(crop[0]),
                 float(crop[1]),
                 float(crop[2]),
                 float(crop[3]),
             )
-            width = max(1, int(round((crop_x1 - crop_x0) * scale)))
-            height = max(1, int(round((crop_y1 - crop_y0) * scale)))
         else:
             crop_x0 = 0.0
             crop_y0 = 0.0
             crop_y1 = self.height
-            width = max(1, int(round(self.width * scale)))
-            height = max(1, int(round(self.height * scale)))
-        pixels = bytearray(background * (width * height))
+        width, height = self.unrotated_raster_size(scale)
+        background_bytes = bytes(background)
+        pixels = bytearray(background_bytes * (width * height))
         page_group_alpha = self.metadata.get("group_alpha")
         if not pdf_number(page_group_alpha):
             page_group_alpha = None
@@ -1007,7 +1023,7 @@ class RenderedPage:
             drawable = [char for char in text if char == " " or char.upper() in BITMAP_GLYPHS_5X7]
             if not drawable:
                 return
-            glyph_units = max(1, len(drawable)) * 6 - 1
+            glyph_units = max(1, sum(3 if char == " " else 6 for char in drawable) - 1)
             unit_w = (x1 - x0) / glyph_units
             unit_h = (y1 - y0) / 7.0
             if unit_w <= 0 or unit_h <= 0:
@@ -1021,8 +1037,8 @@ class RenderedPage:
                 if pattern is None:
                     pattern = BITMAP_GLYPHS_5X7["?"]
                 for row_index, row in enumerate(pattern):
-                    cell_y0 = y0 + row_index * unit_h
-                    cell_y1 = y0 + (row_index + 1) * unit_h
+                    cell_y1 = y1 - row_index * unit_h
+                    cell_y0 = y1 - (row_index + 1) * unit_h
                     for col_index, value in enumerate(row):
                         if value != "1":
                             continue
@@ -2702,7 +2718,7 @@ class RenderedPage:
             if item.kind == "group-begin":
                 buffer_stack.append(
                     (
-                        bytearray(background * (width * height)),
+                        bytearray(background_bytes * (width * height)),
                         data.get("fill_opacity"),
                         data.get("blend_mode"),
                     )
@@ -2811,7 +2827,7 @@ class RenderedPage:
             self.raster_cache[cache_key] = result
             return result
 
-        rotated = bytearray(background * (width * height))
+        rotated = bytearray(background_bytes * (width * height))
         for y in range(height):
             for x in range(width):
                 src_idx = (y * width + x) * 4
@@ -2838,10 +2854,7 @@ class RenderedPage:
         if self.ppm_cache is not None:
             return self.ppm_cache
         rgba = self.rasterize()
-        width = max(1, int(round(self.width)))
-        height = max(1, int(round(self.height)))
-        if self.rotate % 180:
-            width, height = height, width
+        width, height = self.raster_size()
         header = f"P6\n{width} {height}\n255\n".encode("ascii")
         pixel_count = len(rgba) // 4
         out = bytearray(len(header) + pixel_count * 3)
