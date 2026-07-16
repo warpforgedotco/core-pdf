@@ -2,15 +2,14 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, cast
 
 import pytest
+from pdfminer.high_level import extract_text as pdfminer_extract_text
 
-from core_pdf.impl.engine.extraction.document import PdfDocument
+from core_pdf.integrations.pdfminer.high_level import extract_text as core_pdf_extract_text
 
 TESTS_DIR = Path(__file__).parents[4]
 SAMPLES_DIR = TESTS_DIR / "fixtures" / "pdfminer.six" / "samples"
-GROUND_TRUTH_DIR = TESTS_DIR / "fixtures" / "pdfminer.six_ground_truth"
 OCR_DISABLED_SAMPLES = {
     "contrib/issue-00352-asw-oct96-p41.pdf",
     "contrib/issue-1061-colour-space-stack.pdf",
@@ -48,18 +47,12 @@ def sample_id(path: Path) -> str:
     return path.relative_to(SAMPLES_DIR).as_posix()
 
 
-def ground_truth_for(pdf_path: Path) -> str:
-    path = GROUND_TRUTH_DIR / pdf_path.relative_to(SAMPLES_DIR).with_suffix(".txt")
-    return path.read_text(encoding="utf-8")
-
-
 @pytest.mark.parametrize("pdf_path", PDF_SAMPLES, ids=sample_id)
 def test_extract_text_handles_pdfminer_sample_corpus(pdf_path: Path) -> None:
     sample = sample_id(pdf_path)
     password = SAMPLE_PASSWORDS.get(sample, "")
-    expected = ground_truth_for(pdf_path)
+    expected = pdfminer_extract_text(pdf_path, password=password)
 
-    with PdfDocument.open(pdf_path, password=password) as document:
-        result = cast(Any, document).extract_text()
+    result = core_pdf_extract_text(pdf_path, password=password)
 
     assert result == expected, f"Failed for sample: {sample}"
