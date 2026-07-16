@@ -29,9 +29,15 @@ def test_cmap_uses_shortest_matching_code_space_first() -> None:
 
 
 def test_identity_vertical_cmaps_preserve_wmode() -> None:
-    assert resolve_cmap_decoder("Identity-H").wmode == 0
-    assert resolve_cmap_decoder("Identity-V").wmode == 1
-    assert resolve_cmap_decoder("OneByteIdentityV").wmode == 1
+    horizontal = resolve_cmap_decoder("Identity-H")
+    vertical = resolve_cmap_decoder("Identity-V")
+    one_byte_vertical = resolve_cmap_decoder("OneByteIdentityV")
+    assert horizontal is not None
+    assert horizontal.wmode == 0
+    assert vertical is not None
+    assert vertical.wmode == 1
+    assert one_byte_vertical is not None
+    assert one_byte_vertical.wmode == 1
 
 
 def test_tounicode_usecmap_inherits_and_allows_local_override() -> None:

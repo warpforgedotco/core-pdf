@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
+from typing import cast
+
 import pytest
 
 from core_pdf.impl.engine.spec.s_09_fonts.decoder import (
@@ -94,7 +96,7 @@ def test_font_decoder_recovers_japanese_without_to_unicode() -> None:
 
 def test_vertical_cid_advance_uses_w2_and_dw2() -> None:
     font = cid_type0_font("Identity-V")
-    descendant = font["DescendantFonts"][0]
+    descendant = cast(dict[str, object], cast(list[object], font["DescendantFonts"])[0])
     assert isinstance(descendant, dict)
     descendant.update({"DW": 200, "W": [1, [200]], "DW2": [880, 900], "W2": [1, [500, 0, -700]]})
     decoder = FontDecoder(font)
@@ -109,7 +111,7 @@ def test_vertical_cid_advance_uses_w2_and_dw2() -> None:
 
 def test_vertical_cid_w2_range_overrides_dw2() -> None:
     font = cid_type0_font("Identity-V")
-    descendant = font["DescendantFonts"][0]
+    descendant = cast(dict[str, object], cast(list[object], font["DescendantFonts"])[0])
     assert isinstance(descendant, dict)
     descendant.update({"DW2": [880, -1000], "W2": [3, 4, -600, 250, 770]})
     decoder = FontDecoder(font)
@@ -123,7 +125,7 @@ def test_vertical_cid_w2_range_overrides_dw2() -> None:
 
 def test_vertical_w2_position_vector_is_scaled_to_text_space() -> None:
     font = cid_type0_font("Identity-V")
-    descendant = font["DescendantFonts"][0]
+    descendant = cast(dict[str, object], cast(list[object], font["DescendantFonts"])[0])
     assert isinstance(descendant, dict)
     descendant.update({"DW2": [880, -1000], "W2": [7, [600, 200, -450]]})
 

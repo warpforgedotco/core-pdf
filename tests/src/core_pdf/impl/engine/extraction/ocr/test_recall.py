@@ -39,12 +39,15 @@ def test_fully_covered_table_fusion_lines_are_pruned() -> None:
     geometry = tuple(
         ResolvedTextLine(
             f"G{index}",
-            page_geometry.page_observation_from_bbox(
-                (float(index), 10.0, float(index + 1), 20.0),
-                source="figure_ocr_regions",
-                kind="ocr_textline",
-                text=f"G{index}",
-                confidence=90,
+            cast(
+                page_geometry.PageObservation,
+                page_geometry.page_observation_from_bbox(
+                    (float(index), 10.0, float(index + 1), 20.0),
+                    source="figure_ocr_regions",
+                    kind="ocr_textline",
+                    text=f"G{index}",
+                    confidence=90,
+                ),
             ),
         )
         for index in range(30)

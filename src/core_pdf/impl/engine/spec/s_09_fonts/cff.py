@@ -112,7 +112,7 @@ def _extract_cff_table(data: bytes) -> bytes | None:
         table = reader.tables.get("CFF ")
         if table is None:
             return None
-        return table.data
+        return getattr(table, "data")
     except (TTLibError, OSError, ValueError, KeyError):
         return None
     finally:
