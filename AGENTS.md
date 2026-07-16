@@ -19,6 +19,10 @@ uv run --group lint --group test --group benchmark ty check
 
 After making broad changes, run the full suite with `uv run pytest tests/ -n auto`. Otherwise, test a subset covering the code and behavior affected by the changes, for example `uv run pytest tests/src/core_pdf/impl/engine/layout/test_glyphs.py`. CI also checks the lockfile and runs tests on Python 3.11–3.14 and Windows.
 
+## Dependency Management
+
+Never edit `pyproject.toml` or `uv.lock` manually when adding or removing dependencies. Use `uv add --group <group> <package>` or `uv remove --group <group> <package>` so uv manages project metadata and the lockfile consistently. Use the existing groups for their intended purpose: `test` for pytest and test fixtures, `lint` for Ruff, mypy, and ty, `benchmark` for benchmark tooling, and `vendor` for vendoring tooling. For example, add a test dependency with `uv add --group test pytest-xdist`; do not create a new group when an existing group fits.
+
 ## Coding Style & Naming Conventions
 
 Write Python with four-space indentation, clear type annotations, and lines no longer than 100 characters. Ruff handles import sorting, linting, and formatting; run it before submitting. Use `snake_case` for modules, functions, and variables, `PascalCase` for classes, and `UPPER_SNAKE_CASE` for constants. Keep changes out of `src/core_pdf/impl/third_party` unless explicitly updating vendored code.
