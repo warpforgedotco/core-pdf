@@ -58,6 +58,15 @@ def test_page_bounds_still_drop_text_starting_outside_page() -> None:
     )
 
 
+def test_page_bounds_keep_zero_height_text_with_an_in_page_baseline() -> None:
+    run = text_run("Valid text without vertical font metrics", 60.0, 100.0, 260.0, 100.0)
+
+    assert native_text_runs_inside_page_bounds(
+        [run],
+        (0.0, 0.0, 612.0, 792.0),
+    ) == [run]
+
+
 def test_dense_native_text_is_not_rebuilt_from_rendered_glyphs() -> None:
     noisy_multicolumn_text = "index entry ........ 12 " * 200
 

@@ -181,7 +181,8 @@ en- the redundancy of data. We can give more conﬁ-
 have dence to repeated basic patterns.
 manu- Note that the notion of “basic cluster” is different
 1998; from the clusters used for creating tables explained
-al. above. In the following sections, a cluster for creatchoos- ing a table is called a “metacluster,” because this is
+al. above. In the following sections, a cluster for creat-
+choos- ing a table is called a “metacluster,” because this is
 such a cluster of basic clusters. A basic cluster consists
 from of a set of articles that report the same event which
 some happens at a certain time, and a metacluster consists

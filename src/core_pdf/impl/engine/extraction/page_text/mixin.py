@@ -710,6 +710,7 @@ class PageExtractionMixin(PageContentMixin):
         preserve_complete_page_ocr_text = False
         preserved_raw_ocr_text = False
         preserved_substantial_native_text_table = False
+        preserve_substantial_native_lines = False
         pre_ocr_native_text = text
         pre_ocr_native_output_lines = final_output_lines
         schematic_ocr_supplement_candidate: OcrCandidate | None = None
@@ -1063,7 +1064,26 @@ class PageExtractionMixin(PageContentMixin):
                         and text == broad_ocr_result.text
                     )
                 )
-                if not (replaced_fragmented_invisible_text_layer or preserved_raw_ocr_text):
+                has_reconciliation_source = bool(
+                    (broad_ocr_result is not None and broad_ocr_result.text)
+                    or (figure_ocr_result is not None and figure_ocr_result.text)
+                    or (embedded_image_text_result is not None and embedded_image_text_result.text)
+                    or vector_result.text
+                )
+                native_text_tokens = extracted_text_token_count(text)
+                preserve_substantial_native_lines = bool(
+                    pre_reconciliation_text_source == "native"
+                    and native_text_tokens >= 700
+                    and ocr_page_analysis.native_text_layer_has_substantial_page_coverage(
+                        self,
+                        native_text_tokens,
+                    )
+                )
+                if has_reconciliation_source and not (
+                    replaced_fragmented_invisible_text_layer
+                    or preserved_raw_ocr_text
+                    or preserve_substantial_native_lines
+                ):
                     reconciliation = ocr_line_reconciliation.reconcile_page_text_lines(
                         text,
                         final_output_lines,
@@ -1125,7 +1145,11 @@ class PageExtractionMixin(PageContentMixin):
                     pruned_output_lines,
                     broad_page_result=broad_ocr_result,
                 )
-                if replaced_fragmented_invisible_text_layer or preserved_raw_ocr_text:
+                if (
+                    replaced_fragmented_invisible_text_layer
+                    or preserved_raw_ocr_text
+                    or preserve_substantial_native_lines
+                ):
                     # The native layer is known to be character-fragmented and
                     # the replacement candidate has already passed strict gates,
                     # or rendering the selected dense OCR geometry was proven to
@@ -1135,7 +1159,7 @@ class PageExtractionMixin(PageContentMixin):
                 if pruned_output_lines != final_output_lines:
                     final_output_lines = pruned_output_lines
                     text = render_resolved_text_lines(final_output_lines)
-                if preserved_substantial_native_text_table:
+                if preserved_substantial_native_text_table or preserve_substantial_native_lines:
                     text = pre_ocr_native_text
                     final_output_lines = pre_ocr_native_output_lines
                     broad_ocr_result = None
@@ -1143,6 +1167,9 @@ class PageExtractionMixin(PageContentMixin):
                     schematic_ocr_supplement_candidates = ()
             finally:
                 ocr_session.close()
+        if preserve_substantial_native_lines:
+            text = ocr_text_analysis.repair_formula_control_delimiters(pre_ocr_native_text)
+            return cache_page_extraction_snapshot(cache, text, pre_ocr_native_output_lines)
         schematic_consensus_candidates = schematic_ocr_supplement_candidates or (
             (schematic_ocr_supplement_candidate,)
             if schematic_ocr_supplement_candidate is not None

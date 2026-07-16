@@ -1,4 +1,4 @@
-Userid: DTD INSTR04 Leadpct: 0% Pt. size: 9.5 Draft Ok to Print
+Userid: DTD INSTR04 Leadpct: 0% Pt. size: 9.5 ❏ Draft ❏ Ok to Print
 PAGER/SGML Fileid: D:\USERS\8fllb\documents\epicfiles\2007Instructions1040NR.sgm (Init. & date)
 Page 1 of 48 Instructions for Form 1040NR 7:48 - 6-DEC-2007
 
@@ -17,12 +17,7 @@ What’s New for 2007
 Tax benefits extended. The following
 tax benefits were extended through
 2007.
-Deduction for educator expenses in
-figuring adjusted gross income.
-District of Columbia first-time
-homebuyer credit.
-Alternative minimum tax (AMT)
-exemption amount decreased. The
+• Deduction for educator expenses in
 
 use a different address this year. See
 Where To File
@@ -30,18 +25,29 @@ Domestic production activities
 Unreported social security and
 Medicare tax on wages.
 withhold social security and Medicare
-Refundable credit for prior-year
-minimum tax.
 
 on page 4.
 If you are
 an employee and your employer did not
-If you have an unused
 
 retirement plan and your 2008 modified
 qualifying widow(er)).
 participant in a 401(k) plan and your
 earlier year.
+deduction phaseouts reduced.
+
+figuring adjusted gross income. this tax.
+
+• District of Columbia first-time
+
+homebuyer credit.
+Alternative minimum tax (AMT)
+exemption amount decreased. The
+
+minimum tax.
+
+If you have an unused
+
 exemptions and itemized deductions.
 The amount by which these deductions
 
@@ -86,7 +92,6 @@ Mailing your return. If you are filing
 the return for an estate or trust, you will
 
 Health savings account (HSA)
-able to elect to exclude from income a
 and 16b beginning on page 12.
 a bank record (such as a cancelled
 check) or a written record from the
@@ -106,6 +111,7 @@ IRA deduction expanded.
 if age 50 or older at the end of the
 deduction if you were covered by a
 
+able to elect to exclude from income a
 HSA. See the instructions for lines 16a
 charity. The written record must include
 Gifts to
@@ -127,10 +133,8 @@ the children listed above.
 benefits are scheduled to expire and
 will not apply for 2008.
 figuring adjusted gross income.
-The exclusion from income of
 qualified charitable deductions.
 property.
-District of Columbia first-time
 purchased after 2007).
 
 deduction. The deduction rate for
@@ -138,8 +142,6 @@ deduction. The deduction rate for
 2007 is increased to 6%.
 
 tax, see Form 8919 to figure and report Personal exemption and itemized
-
-this tax. deduction phaseouts reduced.
 
 minimum tax credit carryforward from
 
@@ -172,7 +174,7 @@ You may be able to deduct up to an
 additional $3,000 if you were a
 employer was in bankruptcy in an
 Taxpayers with adjusted gross income
-above a certain amount may lose part
+Refundable credit for prior-year above a certain amount may lose part
 of their deduction for personal
 are reduced in 2008 will be only ¹/2 of
 funding distributions. You may be otherwise would have applied in 2007.
@@ -189,7 +191,10 @@ full-time students.
 The election to report a child’s
 investment income on a parent’s return
 Deduction for educator expenses in
-Credit for nonbusiness energyPage 2 of 48 Instructions for Form 1040NR 7:48 - 6-DEC-2007
+•
+• The exclusion from income of
+• Credit for nonbusiness energy
+• District of Columbia first-timePage 2 of 48 Instructions for Form 1040NR 7:48 - 6-DEC-2007
 
 The type and rule above prints on all proofs including departmental reproduction proofs. MUST be removed before printing.
 
@@ -240,15 +245,12 @@ foreign-government-related individuals
 forms and schedules you will need are
 Service. You can download them from
 see Taxpayer Assistance on page 32
-for other ways to get them (as well as
 information on receiving IRS assistance
 in completing the forms).
 Resident Alien or
 Nonresident Alien
 If you are not a citizen of the United
-States, specific rules apply to determine
 if you are a resident alien or a
-nonresident alien for tax purposes.
 Generally, you are considered a
 resident alien if you meet either the
 green card test or the substantial
@@ -260,7 +262,6 @@ U.S. resident for part of 2007. See
 First-Year Choice in Pub. 519 for
 details.
 You are generally considered a
-nonresident alien for the year if you are
 not a U.S. resident under either of
 these tests. However, even if you are a
 U.S. resident under one of these tests,
@@ -281,26 +282,18 @@ residence, and the exceptions to them,
 However, there are exceptions to this
 following as days of presence in the
 presence test.
-Days you commute to work in the
 United States from a residence in
 Canada or Mexico if you regularly
 commute from Canada or Mexico.
-Days you are in the United States for
 the United States.
-Days you are in the United States as
 a crew member of a foreign vessel.
-Days you intend, but are unable, to
 leave the United States because of a
 medical condition that arose while you
 were in the United States.
-Days you are an exempt individual
 (defined below).
 purposes, an exempt individual is
 generally an individual who is a:
 individual,
-Teacher or trainee,
-Student, or
-Professional athlete who is
 temporarily in the United States to
 compete in a charitable sports event.
 are treated as either students, teachers,
@@ -321,8 +314,19 @@ taxpayers who claim tax treaty benefits
 must file Form 8833. A dual-resident
 taxpayer is one who is a resident of
 both the United States and another
-country under each country’s tax laws.
+
+Green Card Test
+
+Closer Connection to Foreign
+Country
+Even though you otherwise would meet
+the substantial presence test, you can
+be treated as a nonresident alien if you:
+
+country under each country’s tax laws. time during 2007.
+
 Additional Information
+
 If you need more information, our free
 publications may help you. Pub. 519
 will be the most important, but the
@@ -335,54 +339,69 @@ States-Canada Income Tax
 Pub. 901 U.S. Tax Treaties
 Pub. 910 Guide to Free Tax Services
 
-Green Card Test
-Substantial Presence Test
 You are considered a U.S. resident if
-you meet the substantial presence test
 for 2007. You meet this test if you were
 physically present in the United States
 2006, and 2005, counting all the days
 of physical presence in 2007, but only
 Generally, you are treated as
 
-Closer Connection to Foreign
-Country
-Even though you otherwise would meet
-the substantial presence test, you can
-be treated as a nonresident alien if you:
-Were present in the United States for
-Establish that during 2007 you had a
 tax home in a foreign country, and
-Establish that during 2007 you had a
 closer connection to one foreign
 country in which you had a tax home
 Who Must File
 
 Form 1040NR-EZ. You may be able available from the Internal Revenue
+
 the IRS website at www.irs.gov. Also United States for the substantial
+
+for other ways to get them (as well as • Days you commute to work in the
+
+States, specific rules apply to determine • Days you are in the United States as
+
+nonresident alien for the year if you are • Student, or
+
 You are a resident for tax purposes if
+
 you were a lawful permanent resident
+
 (immigrant) of the United States at any
-time during 2007.
+
+you meet the substantial presence test • Establish that during 2007 you had a
+
 for at least:
+
 1. 31 days during 2007, and countries.
+
 Income 2. 183 days during the period 2007, See Pub. 519 for more information.
+
 ¹/3 the number of days of presence in
+
 2006 and only ¹/6 the number of days in File Form 1040NR if any of the
+
 Treaty 2005. following four conditions applies to you.
+
 (includes a list of all present in the United States on any day United States during 2007. You must
+
 publications) that you are physically present in the file even if:
 
 These free publications and the country at any time during the day.
 rule. In general, do not count the
+• Days you are in the United States for
 less than 24 hours when you are in
 transit between two places outside of
+nonresident alien for tax purposes. • Days you intend, but are unable, to
+• Days you are an exempt individual
 Exempt individual. For these
-Foreign government-related
+• Foreign government-related
+• Teacher or trainee,
+• Professional athlete who is
 Note. Alien individuals with “Q” visas
 substantial presence test if they
 to aliens participating in certain
+• Were present in the United States for
 fewer than 183 days during 2007,
+Substantial Presence Test • Establish that during 2007 you had a
 than to the United States unless you
 had a closer connection to two foreign
 1. You were a nonresident alien
@@ -486,18 +505,17 @@ income on Form 1040, 1040A, or
 in the instructions for those forms. You
 can only file Form 1040NR and figure
 your tax as a nonresident alien for the
-portion of the year after you have
 Rules for Former U.S. Citizens and
 in Pub. 519.
 Simplified Procedure for
 Claiming Certain Refunds
 meet all of the following conditions for
 the tax year.
-You were a nonresident alien.
-You were not engaged in a trade or
+• You were a nonresident alien.
 business in the United States at any
 time.
-You had no income that was
+• You had no income that was
+• Your U.S. income tax liability was
 claim a refund of U.S. tax withheld at
 source.
 alien individual. The only U.S. source
@@ -516,6 +534,7 @@ entry visa, country of citizenship, and all
 address information requested at the
 top of page 1. Leave the rest of page 1
 of, or exemption from, withholding on
+• 4 dividend payments.
 dividend payments, the withholding
 other withholding discrepancies. Mary
 must report all four dividend payments.
@@ -524,8 +543,6 @@ interest payments.
 Note. Payments of gross proceeds
 futures contracts are generally exempt
 from U.S. tax. If you received such
-payments and they were subjected to
-backup withholding, specify the type of
 payment on line 85 and show the
 amount in column (e).
 these lines as instructed on the form.
@@ -549,7 +566,9 @@ notify the Department of State or the
 
 Exceptions. You do not need to Department of Homeland Security (see
 
-You were a nonresident alien satisfied both of the requirements
+portion of the year after you have • 12 interest payments.
+
+2. You were a nonresident alien satisfied both of the requirements
 
 above. For more details, see Special on Form(s) 1042-S. On one of the
 
@@ -563,13 +582,11 @@ effectively connected with the conduct Line 86. Enter the total amount of
 
 of a U.S. trade or business. U.S. tax withheld at source (and not
 
-Your U.S. income tax liability was refunded by the payer or withholding
-
 fully satisfied through withholding of tax agent) for the income you included on
 
 at source. lines 76a through 85.
 
-You are filing Form 1040NR solely to Lines 87 through 89. Complete
+• You are filing Form 1040NR solely to
 
 payments, the withholding agent
 the simplified procedure.
@@ -594,10 +611,12 @@ Example. Mary is a nonresident
 alien individual. The only U.S. source
 income she received during the year
 was as follows.
-4 dividend payments.
-12 interest payments.
 All payments were reported to Mary
 from the sale of securities or regulated
+payments and they were subjected to
+• You were not engaged in a trade or backup withholding, specify the type of
+refunded by the payer or withholding
+Lines 87 through 89. Complete
 Page 5. You must answer all
 Example. John is a nonresident questions that apply. For item M, youPage 4 of 48 Instructions for Form 1040NR 7:48 - 6-DEC-2007
 
@@ -617,26 +636,32 @@ establishment or fixed base in the
 United States. payment was (a) a complete
 redemption, (b) a disproportionate
 Page 2, lines 53 and 58. Enter your
+total income tax liability. redemption, or (c) not essentially
 
-mutual fund or REIT and provides the the “timely mailing as timely filing/
+mutual fund or REIT and provides the
+If you are claiming an exemption
+from withholding on a distribution from
+a U.S. corporation with respect to its
+circumstances, the transaction qualifies
+as a redemption of stock under section
+302, you must attach a statement that
+describes the transaction and presents
+the facts necessary to establish that the
+
+the “timely mailing as timely filing/
 paying” rule for tax returns and
 payments. These private delivery
-If you are claiming an exemption
 services include only the following.
-from withholding on a distribution from
-a U.S. corporation with respect to its DHL Express (DHL): DHL Same Day
+• DHL Express (DHL): DHL Same Day
 Service, DHL Next Day 10:30 am, DHL
-circumstances, the transaction qualifies Next Day 12:00 pm, DHL Next Day
-as a redemption of stock under section 3:00 pm, and DHL 2nd Day Service.
-302, you must attach a statement that Federal Express (FedEx): FedEx
-describes the transaction and presents Priority Overnight, FedEx Standard
-the facts necessary to establish that the Overnight, FedEx 2Day, FedEx
+Next Day 12:00 pm, DHL Next Day
+3:00 pm, and DHL 2nd Day Service.
+• Federal Express (FedEx): FedEx
+Priority Overnight, FedEx Standard
+Overnight, FedEx 2Day, FedEx
 International Priority, and FedEx
 International First.
-
-redemption, or (c) not essentially United Parcel Service (UPS): UPS
-
-total income tax liability.
+• United Parcel Service (UPS): UPS
 
 equivalent to a dividend. Next Day Air, UPS Next Day Air Saver,
 
@@ -679,25 +704,22 @@ employee subject to U.S. income tax
 Signature. You must sign and date withholding, file Form 1040NR by the
 
 your tax return. See Reminders on
-
-15th day of the 6th month after your tax Election To Be Taxed as
-
 page 30. year ends. A return for the 2007
-
 Documentation. You must attach
 acceptable proof of the withholding for Estates and trusts.
 which you are claiming a refund. If you
 are claiming a refund of backup
-withholding tax based on your status as the return by the 15th day of the 4th
+withholding tax based on your status as
 a nonresident alien, you must attach a
 copy of the Form 1099 that shows the
 
+15th day of the 6th month after your tax Election To Be Taxed as
 calendar year is due by June 16, 2008. a Resident Alien
 If you file for a You can elect to be taxed as a U.S.
 nonresident alien estate or trust that resident for the whole year if all of the
 has an office in the United States, file following apply.
-You were married.
-month after the tax year ends. If you file Your spouse was a U.S. citizen or
+the return by the 15th day of the 4th • You were married.
+month after the tax year ends. If you file • Your spouse was a U.S. citizen or
 for a nonresident alien estate or trust resident alien on the last day of the tax
 
 income and the amount of backup that does not have an office in the year.
@@ -724,7 +746,7 @@ If the regular due date for filing
 falls on a Saturday, Sunday, or legal
 holiday, file by the next business day.
 
-You file a joint return for the year of
+• You file a joint return for the year of
 the election using Form 1040, 1040A,
 or 1040EZ.
 To make this election, you must attach
@@ -775,12 +797,12 @@ that identifies the distributing Internal Revenue Service Center,
 
 corporation and provides the basis for Austin, TX 73301-0215 U.S.A.
 the claim. Estates and trusts.
-If you are claiming an exemption 1040NR with the Department of the
+If you are claiming an exemption
 
 ! this election may forfeit the right
 CAUTION to claim benefits otherwise
 File Form available under a U.S. tax treaty. For
-more details, see the specific treaty.
+1040NR with the Department of the more details, see the specific treaty.
 
 from withholding on a distribution from Treasury, Internal Revenue Service
 
@@ -1049,67 +1071,63 @@ and you had community income during
 the year, treat the community income
 according to the applicable community
 property laws except as follows.
-Earned income of a spouse, other
+• Earned income of a spouse, other
 than trade or business income or
 partnership distributive share income.
 The spouse whose services produced
 the income must report it on his or her
 separate return.
-Trade or business income, other than
 partnership distributive share income.
 Treat this income as received by the
 spouse carrying on the trade or
 business and report it on that spouse’s
 return.
 Partnership distributive share income
+•
 (or loss). Treat this income (or loss) as
 received by the spouse who is the
 partner and report it on that spouse’s
 return.
 Income derived from the separate
+•
 property of one spouse that is not
 earned income, trade or business
 income, or partnership distributive
 
+See Pub. 555, Community Property, for
 more details.
 Kinds of Income
-rate that applies to you. Report this
-on U.S. source gross transportation
-3.
-22 on page 1.
-See section 897 and its regulations.
-disposition of U.S. real property
-line 42.
-Income You May Elect To
-Treat as Effectively
-You can elect to treat some items of
-U.S. trade or business. The election
-income from any interest in such
-property. This includes:
-such property or an interest therein.
-or iron ore with a retained economic
-
-See Pub. 555, Community Property, for
 You must divide your income for the tax
 year into the following three categories.
 unless a treaty between your country
-Income exempt from U.S. tax.
+rate that applies to you. Report this
+on U.S. source gross transportation
+3. Income exempt from U.S. tax.
 Complete items L and/or M on page 5
 of Form 1040NR and, if applicable, line
+22 on page 1.
 real property interest (see Pub. 519 for
 definition) is taxed as if the gain or loss
+See section 897 and its regulations.
 Report gains and losses on the
+disposition of U.S. real property
 interests on Schedule D (Form 1040)
 and Form 1040NR, line 14. Also, net
 gains may be subject to the alternative
 minimum tax. See the instructions for
-Connected With a U.S. Trade
+line 42.
+Income You May Elect To
+Treat as Effectively
+You can elect to treat some items of
 income as effectively connected with a
+U.S. trade or business. The election
 applies to all income from real property
 located in the United States and held
 for the production of income and to all
-Gains from the sale or exchange of
-Gains on the disposal of timber, coal,
+income from any interest in such
+property. This includes:
+such property or an interest therein.
+or iron ore with a retained economic
 
 The election does not apply to
 dispositions of U.S. real property
@@ -1134,7 +1152,6 @@ Special Rules for Former
 U.S. Citizens and Former
 U.S. Long-Term
 Residents
-The expatriation tax provisions provide
 an alternative tax regime for certain
 citizenship or terminated U.S. long-term
 resident status. In 2004, the
@@ -1144,20 +1161,17 @@ alternative tax regime changed. If you
 expatriated on or before June 3, 2004,
 one set of rules applies. If you
 expatriated after June 3, 2004, another
-set of rules applies. See the rules on
 this page and the next two pages that
-apply to you.
 Former U.S. long-term resident
 
 share income. The spouse with the interest.
 
 separate property must report this
+
 income on his or her separate return.
 
-Rents and royalties from mines, oil or
 gas wells, or other natural resources.
 
-long-term resident if you were a lawful
 permanent resident of the United States
 
 1. Income effectively connected with 1. That you are making the election.
@@ -1204,7 +1218,13 @@ conduct of a U.S. trade or business. be attributed. For more information,
 
 See Pub. 519 for more details.
 
+• Trade or business income, other than Connected With a U.S. Trade
+
 or Business nonresident aliens who lost U.S.
+
+• Gains on the disposal of timber, coal, apply to you.
+
+• Rents and royalties from mines, oil or long-term resident if you were a lawful
 
 2. A complete list of all of your real
 3. The extent of your ownership in
@@ -1214,6 +1234,8 @@ or Business nonresident aliens who lost U.S.
 8. Details of any previous elections
 Foreign Income Taxed by the
 Expatriation Tax
+The expatriation tax provisions provide
+• Gains from the sale or exchange of set of rules applies. See the rules on
 defined. You are a former U.S.
 -6- Instructions for Form 1040NRPage 7 of 48 Instructions for Form 1040NR 7:48 - 6-DEC-2007
 
@@ -1414,7 +1436,7 @@ inflation if your expatriation is after prescribed in the instructions for those
 
 your action was $2,000,000 or more.
 
-3. You fail to certify under penalties June 3, 2004, Pub. 519.
+3. You fail to certify under penalties June 3, 2004, in Pub. 519.
 
 of perjury that all of your U.S. federal Annual information statement. If the
 
@@ -1590,7 +1612,7 @@ wherever your SSN is requested on
 your tax return. If you are required to
 include another person’s SSN on your
 return and that person does not have
-AnITIN is for tax use only. It
+An ITIN is for tax use only. It
 does not entitle you to social security
 
 during the last 6 months of 2007.
@@ -1753,7 +1775,6 @@ of your dependents. If you have more
 than four dependents, attach a
 statement to your return with the
 required information.
-!
 501.
 8332 for details.
 Other dependent children.
@@ -1773,7 +1794,6 @@ Pub. 501 for more details. If you were a
 complete item I on page 5 of the form.
 You can take an exemption for each
 For additional information on
-whether you can claim an
 taxpayer identification number (ATIN)).
 other tax benefits (such as the child tax
 identifying number, see
@@ -1796,7 +1816,6 @@ Line 7c, column (4). Check the
 box in this column if your dependent is
 a qualifying child for the child tax credit
 Qualifying child for child tax
-Was under age 17 at the end of
 2007.
 resident alien.
 school, vacation, or medical care, count
@@ -1833,7 +1852,7 @@ dependent child. You can check the lived with you in the United States at
 
 CAUTION exemption for a dependent, see own support for 2007.
 
-Exemptions for Dependents in Pub. Lived with you more than half of
+Exemptions for Dependents in Pub. • Lived with you more than half of
 
 Children who did not live with you
 
@@ -1878,13 +1897,14 @@ one qualifying child, you may be able to
 take the child tax credit on line 47 and
 the additional child tax credit on line 62.
 of the child tax credit is a child who:
-Is your son, daughter, stepchild,
+• Was under age 17 at the end of
+• Is your son, daughter, stepchild,
 foster child, brother, sister, stepbrother,
 stepsister, or a descendant of any of
 them (for example, your grandchild,
 niece, or nephew).
-Is a U.S. citizen, a U.S. national, or a
-Did not provide over half of his or her
+• Is a U.S. citizen, a U.S. national, or a
+! whether you can claim an • Did not provide over half of his or her
 2007. Temporary absences, such as for
 amounts under 50 cents and increase
 amounts from 50 to 99 cents to the next
@@ -1929,6 +1949,24 @@ employee both inside and outside the
 United States, you must allocate your
 compensation between U.S. and
 non-U.S. sources. Only the U.S. source
+income is included on line 8 as
+effectively connected wages.
+Compensation (other than certain
+fringe benefits) generally is sourced on
+a time basis. To figure your U.S. source
+income, divide the number of days you
+performed labor or personal services
+within the United States by the total
+number of days you performed labor or
+personal services within and without the
+United States. Multiply the result by
+your total compensation (other than
+certain fringe benefits).
+Certain fringe benefits (such as
+housing and educational expenses) are
+sourced on a geographic basis. The
+source of the fringe benefit
+compensation generally is your
 
 specific fringe benefit for which an
 alternative basis is used.
@@ -1947,17 +1985,24 @@ Also include on line 8:
 Wages received as a household
 employee for which you did not receive
 a Form W-2 because your employer
-paid you less than $1,500 2007.
+paid you less than $1,500 in 2007.
 Also, enter “HSH” and the amount not
 reported on a Form W-2 on the dotted
 line next to line 8.
-Tip income you did not report to your
+• Tip income you did not report to your
 employer. Also include allocated tips
 shown on your Form(s) W-2 unless you
 can prove that you received less.
 Allocated tips should be shown in your
 Form(s) W-2, box 8. They are not
 included as income in box 1. See Pub.
+531 for more details.
+CAUTION or allocated tips. See the
+may be able to exclude amounts if you
+adopted a child with special needs and
+the adoption became final in 2007. See
+the Instructions for Form 8839 to find
+out if you can exclude part or all of the
 
 Form W-2.
 A higher limit may apply to
@@ -1967,7 +2012,6 @@ You cannot deduct the amount
 ! deferred. It is not included as
 CAUTION income in your Form W-2,
 box 1.
-Disability pensions shown on Form
 1042-S or Form 1099-R if you have not
 reached the minimum retirement age
 set by your employer. Disability
@@ -1975,36 +2019,7 @@ pensions received after you reach that
 age and other payments shown on
 Form 1042-S or Form 1099-R (other
 than payments from an IRA*) are
-
-income is included on line 8 as 531 for more details.
-
-effectively connected wages.
-
-Compensation (other than certain
-fringe benefits) generally is sourced on
-a time basis. To figure your U.S. source
-income, divide the number of days you
-performed labor or personal services
-within the United States by the total
-number of days you performed labor or
-personal services within and without the
-United States. Multiply the result by
-your total compensation (other than
-certain fringe benefits).
-Certain fringe benefits (such as
-housing and educational expenses) are
-sourced on a geographic basis. The
-source of the fringe benefit
-compensation generally is your
-
-may be able to exclude amounts if you
-adopted a child with special needs and
-the adoption became final in 2007. See
-the Instructions for Form 8839 to find
-out if you can exclude part or all of the
-
 on lines 16a and 16b.
-Wages from Form 8919, line 6.
 on line 8. If you lose your Form W-2 or
 it is incorrect, ask your employer for a
 new one.
@@ -2059,32 +2074,33 @@ determines the source of the
 
 compensation.
 
+•
+
 You may owe social security
 ! and Medicare tax on unreported
-CAUTION or allocated tips. See the
 instructions for line 54 on page 22.
 
 Instead, report distributions from an IRA
 *This includes a Roth, SEP, or
 
-Dependent care benefits, which SIMPLE IRA.
+• Dependent care benefits, which SIMPLE IRA.
 
 should be shown in your Form(s) W-2,
 box 10. But first complete Form 2441 to
 see if you can exclude part or all of the
 benefits.
-Employer-provided adoption benefits,
 which should be shown in your Form(s)
 W-2, box 12, with code T. You also
+•
 box in box 13 should be checked. If the
 
 Missing or incorrect Form W-2.
 Your employer is required to provide or
 send Form W-2 to you no later than
 January 31, 2008. If you do not receive
-it by early February, ask your employer
 for it. Even if you do not get a Form
 W-2, you still must report your earnings
+connected with a U.S. trade or
 
 1. The specific compensation or the are included as income in box 1 of your
 participants in section 457(b) deferred
@@ -2097,19 +2113,21 @@ section 401(k)(11) and SIMPLE plans).
 This additional deferral amount is not
 subject to the overall limit on elective
 deferrals.
+• Disability pensions shown on Form
 reported on lines 17a and 17b.
 Payments from an IRA are reported on
 lines 16a and 16b.
-Corrective distributions from a
+• Corrective distributions from a
 retirement plan shown on Form 1042-S
 or Form 1099-R of excess salary
 deferrals and excess contributions (plus
 earnings). But do not include
 distributions from an IRA* on line 8.
+• Wages from Form 8919, line 6.
+• Employer-provided adoption benefits, it by early February, ask your employer
 Line 9a — Taxable interest. Report
 on line 9a all of your taxable interest
 income from assets effectively
-connected with a U.S. trade or
 business.
 effectively connected with a U.S. trade
 or business, report it on Form 1040NR,
@@ -2194,7 +2212,7 @@ the stock, you cannot count certain
 days during which your risk of loss was
 diminished. See Pub. 550 for more
 details.
-Dividends attributable to periods
+• Dividends attributable to periods
 totaling more than 366 days that you
 received on any share of preferred
 stock held for less than 91 days during
@@ -2202,12 +2220,11 @@ the 181-day period that began 90 days
 before the ex-dividend date. When
 counting the number of days you held
 rule above.
-Dividends on any share of stock to
+• Dividends on any share of stock to
 the extent that you are under an
 obligation (including a short sale) to
 positions in substantially similar or
 related property.
-Payments in lieu of dividends, but
 only if you know or have reason to
 know that the payments are not
 
@@ -2229,7 +2246,6 @@ Your Form 1099-DIV from ABC Mutual
 Fund shows total ordinary dividends of
 $1,000 and qualified dividends of $200.
 However, you sold the 10,000 shares
-on August 1, 2007. You have no
 qualified dividends from ABC Mutual
 Fund because you held the ABC
 Mutual Fund stock for less than 61
@@ -2240,11 +2256,9 @@ Tax Worksheet, whichever applies, to
 figure your tax. Your tax may be less.
 See the instructions for line 41
 beginning on page 18 for details.
-or offsets of state and local income
 or offset of state or local income taxes
 1099-G. If you chose to apply part or all
 of the refund to your 2007 estimated
-state or local income tax, the amount
 applied is treated as received in 2007.
 
 you get back all of your cost (or other qualified dividends.
@@ -2287,17 +2301,15 @@ board, and travel are generally taxable.
 
 qualified dividends if you received less than 61 days.
 
-Instructions for Form 1040NR
-
--11-
+Instructions for Form 1040NR -11-
 
 qualified dividends. These include:
 
-Dividends you received as a
+• Dividends you received as a
 
 nominee. See chapter 1 in Pub. 550.
 
-Dividends you received on any share
+• Dividends you received on any share
 
 of stock that you held for less than 61
 
@@ -2319,7 +2331,7 @@ are subject to the 61-day holding period
 
 Nondividend distributions. Some make related payments with respect to
 
-Example 1. You bought 5,000 Recoveries Pub. 525.
+Example 1. You bought 5,000 Recoveries in Pub. 525.
 
 shares of XYZ Corp. common stock on Line 12 — Scholarship and fellowship
 
@@ -2333,11 +2345,11 @@ dividends) and in box 1b (qualified amounts you used for expenses other
 
 dividends). However, you sold the than tuition and course-related
 
-5,000 shares August 1, 2007. You expenses (fees, books, supplies, and
+5,000 shares on August 1, 2007. You expenses (fees, books, supplies, and
 
 held your shares of XYZ Corp. for only equipment) are generally taxable. For
 
-days of the 121-day period (from example, amounts used for room,
+34 days of the 121-day period (from example, amounts used for room,
 
 Exception. Some dividends may the stock on July 5, 2007 (the day
 before the ex-dividend date), and you
@@ -2345,10 +2357,13 @@ sold the stock on September 6, 2007.
 You held the stock for 63 days (from
 September 4, 2007).
 Example 3. You bought 10,000
+on August 1, 2007. You have no
 TIP Dividends and Capital Gain Tax
 Line 11 — Taxable refunds, credits,
+or offsets of state and local income
 taxes. If you received a refund, credit,
 in 2007, you may receive a Form
+• Payments in lieu of dividends, but state or local income tax, the amount
 For details on how to figure the
 amount you must report as income, see
 If you were not a degree candidate,
@@ -2365,6 +2380,7 @@ as in Example 1 except that you boughtPage 12 of 48 Instructions for Form 1040N
 The type and rule above prints on all proofs including departmental reproduction proofs. MUST be removed before printing.
 
 wages even if the services were
+
 required to get the grant.
 If the grant was reported on
 Form(s) 1042-S, you must generally
@@ -2406,7 +2422,13 @@ box 7.
 Note. Box 2 shows only $9,000
 because withholding agents (such as
 
-the tax treaty, all of your scholarship
+30 for details.
+reported to you in box 2 of
+line 12).
+• Enter $9,000 on line 22.
+item M on page 5.
+agent, your income may not be
+
 income is exempt from tax because
 an exemption from tax on scholarship
 or fellowship grant income unless the
@@ -2417,22 +2439,15 @@ terms of the tax treaty between the
 United States and the treaty country to
 claim treaty benefits on Form 1040NR.
 See the instructions for item M on page
-30 for details.
 When completing Form 1040NR:
-Enter $0 line 12. The $9,000
-reported to you in box 2 of
-line 12).
-Enter $9,000 on line 22.
+Enter $0 on line 12. The $9,000
 Provide all the required information in
-item M on page 5.
 commodities through your U.S. office. If
 you dealt in these items through an
 independent agent, such as a U.S.
 broker, custodian, or commissioned
-agent, your income may not be
 considered effectively connected with a
 
-None of the Form(s) 1099-DIV or
 substitute statements have an amount
 If both of the above apply, enter your
 effectively connected capital gain
@@ -2449,7 +2464,6 @@ received as a nominee. See chapter 1
 of Pub. 550 for filing requirements for
 If you do not have to file
 TIP Schedule D (Form 1040), be
-sure you use the Qualified
 Dividends and Capital Gain Tax
 Worksheet on page 19 to figure your
 tax. Your tax may be less if you use this
@@ -2469,9 +2483,9 @@ report section 117 amounts (tuition,
 fees, books, supplies, and equipment)
 on Form 1042-S.
 When completing Form 1040NR:
-Enter on line 12 the $9,000 shown in
+• Enter on line 12 the $9,000 shown in
 box 2 of Form 1042-S.
-Enter $0 on line 30. Because
+• Enter $0 on line 30. Because
 section 117 amounts (tuition, fees,
 books, supplies, and equipment) were
 not included in box 2 of your Form
@@ -2479,13 +2493,15 @@ not included in box 2 of your Form
 of Form 1040NR), you cannot exclude
 any of the section 117 amounts on line
 30.
-Include on line 59 the $1,260 shown
+• Include on line 59 the $1,260 shown
+
+gains or losses, including any
 
 Line 14 — Capital gain or (loss). If
 you had effectively connected capital
-gains or losses, including any
+from 2006, you must complete and
 effectively connected gain or (loss) from
-Schedule (Form 1040) line 14.
+Schedule D (Form 1040) on line 14.
 Gains and losses from disposing of
 U.S. real property interests are reported
 on Schedule D (Form 1040) and
@@ -2493,6 +2509,8 @@ included on line 14 of Form 1040NR.
 
 distribution on line 16a if you rolled over
 part or all of the distribution from one:
+to another traditional IRA), or
+IRA.
 Also, enter “Rollover” next to line
 16b. If the total distribution was rolled
 over in a qualified rollover, enter -0- on
@@ -2516,8 +2534,10 @@ immediately before leaving for the
 United States to attend ABC University.
 Also, assume that, under the terms of
 
-The only amounts you have to report
+•
 on Schedule D (Form 1040) are
+
+The only amounts you have to report
 effectively connected capital gain
 distributions from Form(s) 1099-DIV,
 box 2a, or substitute statements.
@@ -2526,62 +2546,54 @@ If you rolled over the distribution (a)
 in 2008, or (b) from an IRA into a
 qualified plan (other than an IRA),
 
-ABC University is a nonprofit in box 2b (unrecaptured section 1250
-
-educational organization. gain), box 2c (section 1202 gain), or
-
-Note. Many tax treaties do not permit box 2d (collectibles (28%) gain).
-
-Form 1042-S is reported on line 22 (not Forms 1099-DIV and 1096.
-
-Enter $0 on line 30. Because none of
-
-the $9,000 reported to you in box 2 of
-
-Form 1042-S is included in your
-
-income, you cannot exclude it on
-
+ABC University is a nonprofit
+educational organization.
+•
+Form 1042-S is reported on line 22 (not
+• Enter $0 on line 30. Because none of
 line 30.
+• Include on line 59 any withholding
+•
+If you operated a business or practiced
+your profession as a sole proprietor,
+report your effectively connected
+income and expenses on Schedule C
+or Schedule C-EZ (Form 1040).
+effectively connected capital gain
+distributions, or a capital loss carryover
+attach Schedule D (Form 1040). But
+see the Exception below. Enter the
 
-Include on line 59 any withholding
+in box 2b (unrecaptured section 1250
+gain), box 2c (section 1202 gain), or
+Forms 1099-DIV and 1096.
+sure you use the Qualified
+Lines 16a and 16b— IRA
+distributions. You should receive a
+Form 1099-R showing the amount of
+any distribution from your individual
+retirement arrangement (IRA). Unless
+• IRA to another IRA of the same type
+(for example, from one traditional IRA
+• SEP or SIMPLE IRA to a traditional
 
+the tax treaty, all of your scholarship • None of the Form(s) 1099-DIV or
+the $9,000 reported to you in box 2 of
+Form 1042-S is included in your
+income, you cannot exclude it on
 Line 13 — Business income or (loss).
-
-If you operated a business or practiced Lines 16a and 16b— IRA
-
-your profession as a sole proprietor, distributions. You should receive a
-
-report your effectively connected Form 1099-R showing the amount of
-
-income and expenses on Schedule C any distribution from your individual
-
-or Schedule C-EZ (Form 1040). retirement arrangement (IRA). Unless
-
 $35,000 Include any income you received as
-
 a dealer in stocks, securities, and
-
-effectively connected capital gain IRA to another IRA of the same type
-
-distributions, or a capital loss carryover (for example, from one traditional IRA
-
-from 2006, you must complete and to another traditional IRA), or
-
-attach Schedule D (Form 1040). But SEP or SIMPLE IRA to a traditional
-
-see the Exception below. Enter the IRA.
-
-See Dispositions of U.S. Real Property unless Exception 2 applies to the part
-
 Exception. You do not have to file
 
+Note. Many tax treaties do not permit box 2d (collectibles (28%) gain).
 shown in box 7 of Form 1042-S. Line 15 — Other gains or (losses). If
 instructions, an IRA includes a
 provided below, leave line 16a blank
 and enter the total distribution on
 line 16b.
 Exception 1. Enter the total
+See Dispositions of U.S. Real Property unless Exception 2 applies to the part
 not rolled over. Generally, a qualified
 rollover must be made within 60 days
 after the day you received the
@@ -2600,7 +2612,7 @@ apply, enter the total distribution on
 line 16a and see Form 8606 and its
 instructions to figure the amount to
 enter on line 16b.
-You received a distribution from an
+• You received a distribution from an
 IRA (other than a Roth IRA) and you
 made nondeductible contributions to
 any of your traditional or SEP IRAs for
@@ -2608,6 +2620,7 @@ any of your traditional or SEP IRAs for
 nondeductible contributions to these
 IRAs for 2007, also see Pub. 590.
 You received a distribution from a
+•
 Roth IRA. But if either 1 or 2 below
 applies, enter -0- on line 16b; you do
 not have to see Form 8606 or its
@@ -2618,17 +2631,18 @@ contribution (including a conversion) to
 a Roth IRA for 2002 or an earlier year.
 Form 1099-R, box 7.
 You converted part or all of a
+•
 traditional, SEP, or SIMPLE IRA to a
 Roth IRA in 2007.
-You had a 2006 or 2007 IRA
+• You had a 2006 or 2007 IRA
 contribution returned to you, with the
 related earnings or less any loss, by the
 due date (including extensions) of your
 tax return for that year.
-You made excess contributions to
+• You made excess contributions to
 your IRA for an earlier year and had
 them returned to you in 2007.
-You recharacterized part or all of a
+• You recharacterized part or all of a
 contribution to a Roth IRA as a
 traditional IRA contribution, or vice
 versa.
@@ -2642,7 +2656,7 @@ is not a QCD on line 16b unless
 Exception 2 applies to that part. Enter
 “QCD” next to line 16b.
 
-AnHFD is a distribution made
+An HFD is a distribution made
 directly by the trustee of your IRA
 (other than a SEP or SIMPLE IRA) to
 elect to exclude an HFD from your
@@ -2667,7 +2681,6 @@ distribution, figure the taxable amount
 
 earnings) of excess salary deferrals or
 If you received a Form 1042-S
-TIP or 1099-R that shows federal
 income tax withheld, attach it to
 Form 1040NR.
 United States, your income generally is
@@ -2682,7 +2695,6 @@ page 14) of your pension or annuity, or
 (b) you got your entire cost back tax
 free before 2007.
 If you received a Form RRB-1099-R,
-see Pub. 575 for information on how to
 Partially taxable pensions and
 annuity payments you received in 2007
 on line 17a. If your Form 1042-S or
@@ -2774,7 +2786,7 @@ included in your income. If your IRA considered effectively connected with
 
 includes nondeductible contributions, the conduct of a U.S. trade or business.
 
-Distribution code Q is shown in the HFD is first considered to be paid
+2. Distribution code Q is shown in the HFD is first considered to be paid
 
 CAUTION an early distribution from your
 
@@ -2797,14 +2809,16 @@ You may have to pay an
 IRA and the total was not rolled over, or
 (b) you were born before July 1, 1936,
 See the instructions for line 55 on page
-contribution deduction for any Disability pensions received before
+! contribution deduction for any • Disability pensions received before
 
-Exception 4. If the distribution is a Corrective distributions (including any
+Exception 4. If the distribution is a • Corrective distributions (including any
+TIP or 1099-R that shows federal
 chapter 3 of Pub. 519.
 Note. If you performed services in the
 Fully taxable pensions and
 out of otherwise taxable income. See annuities. If your pension or annuity is
 CAUTION to your HSA for the year. If you not contribute to the cost (defined on
+see Pub. 575 for information on how to
 part.
 taxable part for you for a $380 fee. For
 Annuity starting date. Your
@@ -2820,10 +2834,10 @@ last year to figure the taxable part, or following apply.
 Simplified Method Worksheet — Lines
 17a and 17b Keep for Your Records
 
-The payments are from a qualified
+• The payments are from a qualified
 employee plan, a qualified employee
 annuity, or a tax-sheltered annuity.
-On your annuity starting date, either
+• On your annuity starting date, either
 you were under age 75 or the number
 of years of guaranteed payments was
 fewer than 5. See Pub. 575 for the
@@ -2847,28 +2861,28 @@ Note. If you had more than one partially taxable pension or annuity, figure the 
 
 separately. Enter the total of the taxable parts on Form 1040NR, line 17b. Enter the total pension
 or annuity payments received in 2007 on Form 1040NR, line 17a.
-Enter the total pension or annuity payments received in 2007. Also, enter this
+1. Enter the total pension or annuity payments received in 2007. Also, enter this
 amount on Form 1040NR, line 17a
-Enter your cost in the plan at the annuity starting date 2.
+2. Enter your cost in the plan at the annuity starting date 2.
 Note. If you completed this worksheet last year, skip line 3 and
 enter the amount from line 4 of last year’s worksheet on line 4
 below (even if the amount of your pension or annuity has
 changed). Otherwise, go to line 3
-Enter the appropriate number from Table 1 below. But if your
+3. Enter the appropriate number from Table 1 below. But if your
 annuity starting date was after 1997 and the payments are for
 your life and that of your beneficiary, enter the appropriate
 number from Table 2 below 3.
-Divide line 2 by the number on line 3 4.
-Multiply line 4 by the number of months for which this year’s
+4. Divide line 2 by the number on line 3 4.
+5. Multiply line 4 by the number of months for which this year’s
 payments were made. If your annuity starting date was before
 1987, skip lines 6 and 7 and enter this amount on line 8.
 Otherwise, go to line 6 5.
 6. Enter the amount, if any, recovered tax free in years after
 1986. If you completed this worksheet last year, enter the
 amount from line 10 of last year’s worksheet 6.
-Subtract line 6 from line 2 7.
+7. Subtract line 6 from line 2 7.
 8. Enter the smaller of line 5 or line 7
-Taxable amount. Subtract line 8 from line 1. Enter the result, but not less than
+9. Taxable amount. Subtract line 8 from line 1. Enter the result, but not less than
 zero. Also, enter this amount on Form 1040NR, line 17b. If your Form 1042-S
 or Form 1099-R shows a larger amount, use the amount on this line instead of
 the amount from Form 1042-S or Form 1099-R
@@ -2923,7 +2937,7 @@ before November 19, 1996, after November 18, 1996, deductions were withheld. Thi
 
 date (see page
 
-was . . . enter on line 3 . . . enter on line 3 . . .
+13) was . . . enter on line 3 . . . enter on line 3 . . .
 
 55 or under 300
 
@@ -3020,10 +3034,9 @@ received an early distribution from a
 qualified retirement plan and the total
 amount was not rolled over in a
 
-have to be reported on Form 1040NR.
 See Pub. 970.
 
-You may be able to deduct expenses
+have to be reported on Form 1040NR. You may be able to deduct expenses
 that are more than the $250 limit on
 Schedule A, line 9. An eligible educator
 is a kindergarten through grade 12
@@ -3056,7 +3069,6 @@ unemployment compensation program
 if (a) they are more than the
 !
 from an HSA because you did not
-remain an eligible individual during
 
 HSA or an Archer MSA may be taxable equipment (including computer
 equipment, software, and services),
@@ -3078,17 +3090,14 @@ and you are not itemizing deductions, the testing period. See Form 8889,
 reduce the amount you report on line
 20 by those contributions.
 If you received an overpayment of
+unemployment compensation in 2007
+and you repaid any of it in 2007,
 
-Part III.
-Recapture of a charitable
 the contribution of a fractional
+interest in tangible personal
 
 earnings or distributions.
-Any nontaxable distribution of
-
-unemployment compensation in 2007 interest in tangible personal
-
-and you repaid any of it in 2007,
+• Any reimbursements you received for
 
 subtract the amount you repaid from Tangible Personal Property in Pub.
 
@@ -3169,39 +3178,77 @@ were self-employed or a partner, you
 -15-
 
 You may have to pay an
+
 CAUTION taxable distribution from a
+
 Coverdell ESA or a QTP. See the
+
 Instructions for Form 5329.
+
 Archer MSA. Distributions from an
+
 unreimbursed qualified medical
+
 expenses of the account beneficiary or
+
 account holder in 2007, and (b) they
+
 were not included in a qualified rollover.
+
 See Pub. 969.
+
 CAUTION taxable distribution from an HSA
+
 or Archer MSA. See the Instructions for expenses for home schooling or for
+
 Form 8889 for HSAs and the nonathletic supplies for courses in
+
 Instructions for Form 8853 for Archer health or physical education.
+
 MSAs.
+
+remain an eligible individual during •
+
+Part III. •
+
 contribution deduction relating to Coverdell education savings account
+
 and an additional 10% tax apply to the
+
 Recapture of a charitable
+
 contribution deduction if the
+
 charitable organization disposes of
+
 the donated property within 3 years
+
 of the contribution. See Recapture if
+
 no exempt use in Pub. 526. Line 26 — Moving expenses.
+
 may be shown in box 2 of Form
+
 Report other income on page 4 of
+
 Form 1040NR if not effectively
+
 connected with a U.S. trade or
+
 business.
+
 Line 22 — Treaty-exempt income. least 50 miles farther from your old
+
 exempt from tax by a tax treaty. Do not
+
 include this exempt income on line 23.
+
 Also, you must complete item M on
+
 page 5 of Form 1040NR.
+
 Line 24 — Educator expenses. If you enter on this line.
+
 Nontaxable distributions from these can deduct on line 24 up to $250 of
 
 ! additional tax if you received a teacher, instructor, counselor, principal,
@@ -3209,9 +3256,10 @@ and necessary expenses paid in
 connection with books, supplies,
 and other materials used in the
 Nontaxable qualified tuition program
+Recapture of a charitable • Any nontaxable distribution of
 earnings.
-Any reimbursements you received for
-property. See Fractional Interest in these expenses that were not reported
+property. See Fractional Interest in
+these expenses that were not reported
 to you in Form W-2, box 1.
 instructions for line 41 on page 18. (HSA) deduction. You may be able to
 Employees and self-employed persons
@@ -3252,7 +3300,7 @@ more details, see Pub. 535.
 Note. If, during 2007, you were an
 eligible trade adjustment assistance
 
-Any health coverage tax credit
+• Any health coverage tax credit
 advance payments shown in box 1 of
 Form 1099-H.
 amount you can deduct.
@@ -3263,7 +3311,6 @@ Line 30 — Scholarship and fellowship
 grants excluded. If you received a
 instructions for line 12 on page 12.
 
-contributions to your traditional IRA for
 2007. See Pub. 590 to figure the
 amount, if any, of your IRA deduction.
 profit-sharing (including 401(k)),
@@ -3300,24 +3347,19 @@ figuring the amount to enter on line 1 of report them on Form 8606.
 
 the worksheet below, do not include:
 
-Any amounts you included on Form
+• Any amounts you included on Form
 8885, line 4,
-Any qualified health insurance
+• Any qualified health insurance
 premiums you paid to “U.S.
 Treasury-HCTC,” or
 Self-Employed Health Insurance
 
 traditional IRA for 2007, you may be
 able to take an IRA deduction. But you
-must have had earned income to do so.
 A statement should be sent to you by
-May 31, 2008, that shows all
 
-deduction only if all of the following
 apply.
-You paid interest in 2007 on a
 qualified student loan (see below).
-You checked filing status box 1, 2, or
 
 Deduction Worksheet— Line 28 Keep for Your Records
 
@@ -3354,14 +3396,15 @@ b. The person had gross income
 
 If you qualify to take the deduction, plan? If you were covered by a
 use the worksheet below to figure the retirement plan (qualified pension,
-You had more than one source of
+• You had more than one source of
 income from self-employment.
-You are using amounts paid for
+• You are using amounts paid for
 qualified long-term care insurance to
 figure the deduction.
 Form 1099-INT or Form 1099-OID you
 received will show the amount of any
 penalty you were charged.
+must have had earned income to do so. • You paid interest in 2007 on a
 assistance (TAA) recipient, alternative TAA recipient, or on someone else’s (such as your
 Pension Benefit Guaranty Corporation (PBGC) pension parent’s) 2007 tax return.
 recipient, see the Note above.
@@ -3369,6 +3412,8 @@ Be sure you have read the Exception above to see if you
 can use this worksheet instead of Pub. 535 to figure your figure your student loan interest
 deduction. deduction.
 *Earned income includes net earnings and gains from the sale, transfer, or licensing of
+
+contributions to your traditional IRA for
 
 Were you covered by a retirement
 
@@ -3384,6 +3429,7 @@ the extent the amounts are included on
 line 12. See the examples in the
 If you made any nondeductible
 If you made contributions to a
+May 31, 2008, that shows all
 
 annuity, SEP, SIMPLE, etc.) at work or
 The “Retirement plan” box in Form
@@ -3401,11 +3447,14 @@ TIP retirement savings contributions
 credit (saver’s credit). See the
 Line 32 — Student loan interest
 deduction. You can take this
+deduction only if all of the following
+• You checked filing status box 1, 2, or
 6.
-Your modified adjusted gross income
+• Your modified adjusted gross income
 (AGI) is less than $70,000. Use lines 2
 through 4 of the worksheet on page 17
 to figure your modified AGI.
+•
 Use the worksheet on page 17 to
 Qualified student loan. This is any
 3. Any person you could have
@@ -3422,10 +3471,9 @@ exemption amount for that year ($3,400
 for 2007), or
 dependent on someone else’s return.
 
-Any scholarship, educational
-excluded from income.
-
+• Any scholarship, educational
 assistance allowance, or other payment
+excluded from income.
 
 or
 water you produced in the United
@@ -3439,7 +3487,9 @@ student (see this page). However, a
 loan is not a qualified student loan if (a)
 
 any of the proceeds were used for
+
 other purposes, or (b) the loan was
+
 from either a related person or a person
 who borrowed the proceeds under a
 qualified employer plan or a contract
@@ -3457,130 +3507,126 @@ eligible educational institution includes
 most colleges, universities, and certain
 vocational schools. You must reduce
 the expenses by the following benefits.
-Employer-provided educational
+• Employer-provided educational
 assistance benefits that are not
 included in Form(s) W-2, box 1.
-Excludable U.S. series EE and I
 savings bond interest from Form 8815.
-Any nontaxable distribution of
+• Any nontaxable distribution of
 qualified tuition program earnings.
-Any nontaxable distribution of
+• Any nontaxable distribution of
 Coverdell education savings account
 earnings.
 Student Loan Interest Deduction
 Worksheet — Line 32
 Before you begin:
 
-or other program (including a program
 of study abroad that was approved for
 credit by the institution at which the
 student was enrolled) leading to a
+recognized educational credential at an
 eligible educational institution, and
-Carried at least half the normal
+• Carried at least half the normal
 study he or she was pursuing.
 Line 33 — Domestic production
 able to deduct up to 6% of your
 qualified production activities income
 from the following activities.
-2.
-exchange, or other disposition of:
+2. Engineering or architectural
+for construction of real property in the
+computer software, and sound
 produced, grew, or extracted in whole
 or in significant part within the United
 States;
+Keep for Your Records
 Figure any amount to be entered on the dotted line next
 
-Was enrolled in a degree, certificate,
-recognized educational credential at an
-Engineering or architectural
-Keep for Your Records
-
-prepare at a retail establishment;
-Property you leased, licensed, or
 rented for use by any related person;
-The transmission or distribution of
 electricity, natural gas, or potable water;
 or
-The lease, rental, license, sale,
 any of the following write-in
 adjustments that are related to your
 effectively connected income. To find
 out if you can take the deduction, see
-Performing-arts-related expenses
 (see Form 2106 or 2106-EZ). Identify
 as “QPA.”
-Reforestation amortization and
+• Repayment of supplemental
 Identify as “Sub-Pay TRA.”
-Contributions to section
+• Contributions to section
 525). Identify as “501(c)(18)(D).”
 
-An eligible student is a person who: The sale of food and beverages you
+An eligible student is a person who: • The sale of food and beverages you
 1. Construction of real property the form or publication indicated. On
 performed in the United States. the dotted line next to line 34, enter the
 services performed in the United States as indicated.
-United States. Archer MSA deduction (see Form
+United States. • Archer MSA deduction (see Form
 3. Any lease, rental, license, sale, 8853). Identify as “MSA.”
 
 c. You could be claimed as a (but not gifts, inheritances, etc.)
 For more details on these expenses,
+• Was enrolled in a degree, certificate, prepare at a retail establishment;
+or other program (including a program • Property you leased, licensed, or
 full-time workload for the course of
-for construction of real property in the
+• Excludable U.S. series EE and I exchange, or other disposition of:
 a. Tangible personal property,
-computer software, and sound
-recordings that you manufactured,
+recordings that you manufactured, • Reforestation amortization and
 
 b. Any qualified film you produced;
 c. Electricity, natural gas, or potable
 States.
 The deduction does not apply to
 income derived from:
+• The transmission or distribution of
+• The lease, rental, license, sale,
 exchange, or other disposition of land.
 For details, see Form 8903 and its
 instructions.
 activities deduction. You may be Line 34. Include in the total on line 34
 amount of your deduction and identify it
+• Performing-arts-related expenses
 expenses (see Pub. 535). Identify as
 “RFST.”
-Repayment of supplemental
 unemployment benefits under the
 Trade Act of 1974 (see Pub. 525).
 501(c)(18)(D) pension plans (see Pub.
 
-to line 34 (see the instructions for line 34 on this page). Contributions by certain chaplains to
+to line 34 (see the instructions for line 34 on this page). • Contributions by certain chaplains to
 
 See the instructions for line 32 that begin on page 16. section 403(b) plans (see Pub. 517).
 
-1. Enter the total interest you paid in 2007 on qualified student loans Attorney fees and court costs for
 3. Enter the total of the amounts from Form 1040NR,
 you entered on the dotted line next to line 34 3.
 4. Subtract line 3 from line 2 4.
 5. Is line 4 more than $55,000?
-No. Skip lines 5 and 6, enter -0- on line 7, and go the IRS for information you provided
 to line 8. after December 19, 2006, that
-Yes. Subtract $55,000 from line 4 5.
+❏ Yes. Subtract $55,000 from line 4 5.
 6. Divide line 5 by $15,000. Enter the result as a decimal (rounded to at detection of tax law violations, up to the
 8. Student loan interest deduction. Subtract line 7 from line 1. Enter
-the result here and on Form 1040NR, line 32. Do not include this
 amount in figuring any other deduction on your return (such as on line 35 is less than zero, you may have
 Schedule A (Form 1040NR), Schedule C (Form 1040), Schedule E a net operating loss that you can carry
 Instructions for Form 1040NR -17-
 
+1. Enter the total interest you paid in 2007 on qualified student loans
 (see page 16). Do not enter more than $2,500 1.
 2. Enter the amount from Form 1040NR, line 23 2.
 lines 24 through 31, plus any write-in adjustments
-least three places). If the result 1.000 more, enter 1.000 6. .
+❏ No. Skip lines 5 and 6, enter -0- on line 7, and go
+least three places). If the result is 1.000 or more, enter 1.000 6. .
+the result here and on Form 1040NR, line 32. Do not include this
 
 7. Multiply line 1 by line 6 7.
 (Form 1040), etc.) 8.
 
 Identify as “403(b).”
+• Attorney fees and court costs for
 actions settled or decided after October
 22, 2004, involving certain unlawful
 discrimination claims, but only to the
 extent of effectively connected gross
 income from such actions (see Pub.
 525). Identify as “UDC.”
-Attorney fees and court costs paid by
+• Attorney fees and court costs paid by
 you in connection with an award from
+the IRS for information you provided
 substantially contributed to the
 amount of the award includible in your
 gross income. Identify as “WBF.”
@@ -3607,7 +3653,7 @@ You can claim exemptions only to the you checked filing status box 1 or 2; line 
 extent of your income that is effectively $117,300 if you checked filing status apply.
 Deduction for Exemptions described on this page and the next
 Worksheet — Line 39 page.
-See the instructions for line 39 on page Tax from Form 8814 (relating to the
+See the instructions for line 39 on page • Tax from Form 8814 (relating to the
 
 connected with a U.S. trade or box 3, 4, or 5; or $234,600 if you
 Individuals. If you are a
@@ -3629,29 +3675,35 @@ amount to enter on line 39. If you are
 filing for any other trust, enter $100 on
 line 39.
 Line 41 — Tax. Include in the total on
-Tax on your taxable income. Figure
+• Tax on your taxable income. Figure
 the tax using one of the methods
 
-Keep for Your Records election to report child’s interest or
+18. Keep for Your Records election to report child’s interest or
 
-Caution: If you are filing for a qualified disability trust (on this page), use this
 worksheet only if the trust’s modified AGI* is more than $156,400. Also, skip line 1,
 enter $3,400 on line 2, enter the trust’s modified AGI on line 3, and enter $156,400 on
 line 4.
-Is the amount on Form 1040NR, line 36, more than the amount shown on line 4
+
+lump-sum distributions). Check the
+appropriate box.
+• Tax from Form 8889, Part III (relating
+
+1. Is the amount on Form 1040NR, line 36, more than the amount shown on line 4
+
 below for your filing status?
-No. Stop. Multiply $3,400 by the total number of exemptions
+
 claimed on Form 1040NR, line 7d, and enter the
 result on Form 1040NR, line 39.
-Yes. Go to line 2.
-Multiply $3,400 by the total number of exemptions claimed on
-Enter the amount from Form 1040NR, line 36 . . . 3.
+❏ Yes. Go to line 2.
+2. Multiply $3,400 by the total number of exemptions claimed on
+3. Enter the amount from Form 1040NR, line 36 . . . 3.
 4. Enter the amount shown below for the filing status
 box you checked on page 1 of Form 1040NR:
-Box 1 or 2, enter $156,400
+• Box 1 or 2, enter $156,400
 Box 3, 4, or 5, enter $117,300
-Box 6, enter $234,600 4.
-Subtract line 4 from line 3. 5.
+•
+• Box 6, enter $234,600 4.
+5. Subtract line 4 from line 3. 5.
 6. Is line 5 more than $122,500 ($61,250 if you
 checked filing status box 3, 4, or 5)?
 Yes. Multiply $1,133 by the total number of
@@ -3661,15 +3713,15 @@ Form 1040NR, line 39. Do not complete
 the rest of this worksheet.
 No. Divide line 5 by $2,500 ($1,250 if
 you checked filing status box 3, 4,
+or 5). If the result is not a whole
+number, increase it to the next
+higher whole number (for example,
+increase 0.0004 to 1) 6.
+7. Multiply line 6 by 2% (.02) and enter the result as a decimal
+8. Multiply line 2 by line 7
 
-Tax from Form 4972 (relating to
-lump-sum distributions). Check the
-appropriate box.
-Tax from Form 8889, Part III (relating
-charitable contribution deduction
 relating to the contribution of a
 fractional interest in tangible personal
-property. See the instructions for line
 21 on page 15. Enter the amount and
 estate or trust, use the Tax Rate
 Schedules on page 47.
@@ -3680,15 +3732,7 @@ your taxable income is $100,000 or
 more, use the Tax Computation
 Tax Computation Worksheet, or Tax
 Rate Schedules to figure your tax if
-
-or 5). If the result is not a whole either of the following applies.
-
-number, increase it to the next
-higher whole number (for example,
-increase 0.0004 1) 6.
-Multiply line 6 by 2% (.02) and enter the result as a decimal
-8. Multiply line 2 by line 7
-
+either of the following applies.
 You are required to figure your tax
 using Form 8615, the Qualified
 7. .
@@ -3696,20 +3740,25 @@ using Form 8615, the Qualified
 
 result here and on Form 1040NR, line 39 10. tax.
 
-the trust’s modified AGI by applying section 67(e) without regard to section
+*Figure the trust’s modified AGI by applying section 67(e) without regard to section
 642(b).
 
 Form 8615. You generally must use
 Form 8615 to figure the tax for any
 
+Caution: If you are filing for a qualified disability trust (on this page), use this
+❏ No. Stop. Multiply $3,400 by the total number of exemptions
 Form 1040NR, line 7d 2.
-Divide line 8 by 1.5 9.
-Deduction for exemptions. Subtract line 9 from line 2. Enter the
+9. Divide line 8 by 1.5 9.
+10. Deduction for exemptions. Subtract line 9 from line 2. Enter the
 
 dividends). Check the appropriate box.
+• Tax from Form 4972 (relating to
 to health savings accounts). Check the
 appropriate box.
-Additional tax on recapture of a
+• Additional tax on recapture of a
+charitable contribution deduction
+property. See the instructions for line
 “FITPP” in the space next to line 41.
 Tax Table or Tax Computation
 Worksheet. If you are filing for an
@@ -3719,16 +3768,18 @@ page 34 to figure your tax. Be sure you
 the Married filing separately column. If
 Worksheet on page 46.
 Exception. Do not use the Tax Table,
+•
 Dividends and Capital Gain Tax
 Worksheet on page 19, or the Schedule
-You use Schedule J (Form 1040) (for
+• You use Schedule J (Form 1040) (for
 farming or fishing income) to figure your
 child who was under age 18 at the end
-Instructions for Form 1040NRPage 19 of 48 Instructions for Form 1040NR 7:48 - 6-DEC-2007
+-18- Instructions for Form 1040NRPage 19 of 48 Instructions for Form 1040NR 7:48 - 6-DEC-2007
 
 The type and rule above prints on all proofs including departmental reproduction proofs. MUST be removed before printing.
 
 of 2007, and who had more than
+
 $1,700 of investment income, such as
 taxable interest, ordinary dividends, or
 capital gains (including capital gain
@@ -3753,16 +3804,14 @@ use the Schedule D Tax Worksheet
 (see above) and any of the following
 apply, use the worksheet below to
 figure your tax.
-You reported qualified dividends on
+• You reported qualified dividends on
 Form 1040NR, line 10b.
 Before you begin:
 your tax.
 
-You do not have to file Schedule D
 (Form 1040) and you reported capital
 gain distributions on Form 1040NR, line
 14.
-You are filing Schedule D and
 Schedule D, lines 15 and 16, are both
 more than zero.
 Line 42 — Alternative minimum tax.
@@ -3777,24 +3826,17 @@ tax.
 If you have any of the adjustments or
 preferences from the list on this page
 and the next page or you are claiming a
-net operating loss deduction, a general
-business credit, or the foreign tax
 Qualified Dividends and Capital Gain Tax Worksheet — Line 41
 See the instructions for line 41 that begin on page 18 to see if you can use this worksheet to figure
 
-credit, you must complete Form 6251.
 Otherwise, to see if you should
 complete Form 6251, add the amount
 on line 38 of Form 1040NR to the
-amounts on lines 3 and 15 of Schedule
 A (Form 1040NR). If the total is more
 than the dollar amount shown below
 that applies to you, fill in Form 6251.
-$33,750 if you checked filing status
 box 1 or 2.
-$22,500 if you checked filing status
 box 3, 4, or 5.
-$45,000 if you checked filing status
 box 6.
 would increase the amounts above. To
 find out if this legislation was enacted,
@@ -3805,19 +3847,22 @@ real property interest at a gain, you
 must make a special computation to
 see if you owe this tax. For details, see
 the Instructions for Form 6251.
-Adjustments and Preferences:
-Accelerated depreciation.
 Keep for Your Records
 
 Schedule J (Form 1040). If you had
-income from farming or fishing, your tax
+income from farming or fishing, your tax • $33,750 if you checked filing status
 may be less if you choose to figure it
-using income averaging on Schedule J.
+using income averaging on Schedule J. • $22,500 if you checked filing status
 some kinds of income and allows
 Schedule D Tax Worksheet. If you special deductions and credits for some
 have to file Schedule D (Form 1040) kinds of expenses. If you benefit from
 these provisions, you may have to pay CAUTION considering legislation that
+net operating loss deduction, a general Adjustments and Preferences:
+business credit, or the foreign tax • Accelerated depreciation.
 
+• You do not have to file Schedule D credit, you must complete Form 6251.
+• You are filing Schedule D and amounts on lines 3 and 15 of Schedule
+• $45,000 if you checked filing status
 At the time these instructions
 ! went to print, Congress was
 interests. If you disposed of a U.S.
@@ -3827,285 +3872,283 @@ If you do not have to file Schedule D (Form 1040) and you received capital gain 
 1. Enter the amount from Form 1040NR, line 40
 2. Enter the amount from Form 1040NR, line 10b 2.
 3. Are you filing Schedule D (Form 1040)?
-Yes. Enter the smaller of line 15 or 16 of Schedule D. If either }
+❏ Yes. Enter the smaller of line 15 or 16 of Schedule D. If either }
 
 you checked the box on line 14 of Form 1040NR.
 
 1.
 
-No. Enter the amount from Form 1040NR, line 14.
+❏ No. Enter the amount from Form 1040NR, line 14.
 4. Add lines 2 and 3 4.
 5. Subtract line 4 from line 1. If zero or less, enter -0-
 6. Enter the smaller of:
-The amount on line 1, or
-$31,850 if you checked filing status box 1, 2, 3, 4, or 5; or }
+• The amount on line 1, or
+• $31,850 if you checked filing status box 1, 2, 3, 4, or 5; or }
 
 5.
 
 7. Is the amount on line 5 equal to or more than the amount on
 
 line 6?
-Yes. Skip lines 7 through 9; go to line 10 and check the “No” box.
-No. Enter the amount from line 5 7.
+❏ Yes. Skip lines 7 through 9; go to line 10 and check the “No” box.
+❏ No. Enter the amount from line 5 7.
 8. Subtract line 7 from line 6 8.
 9. Multiply line 8 by 5% (.05) 9.
 10. Are the amounts on lines 4 and 8 the same?
-Yes. Skip lines 10 through 13; go to line 14.
-No. Enter the smaller of line 1 or line 4 10.
+❏ Yes. Skip lines 10 through 13; go to line 14.
+❏ No. Enter the smaller of line 1 or line 4 10.
 11. Enter the amount from line 8 (if line 8 is blank, enter -0-) 11.
-12. Subtract line 1. from line 10. 12.
+12. Subtract line 11 from line 10. 12.
 13. Multiply line 12 by 15% (.15) 13.
-14. Figure the tax on the amount line 5. Use the Tax Table or Tax Computation Worksheet, whichever applies* 14.
+14. Figure the tax on the amount on line 5. Use the Tax Table or Tax Computation Worksheet, whichever applies* 14.
 15. Add lines 9,13, and 14 15.
-16. Figure the tax on the amount line 1. Use the Tax Table or Tax Computation Worksheet, whichever applies* 16.
+16. Figure the tax on the amount on line 1. Use the Tax Table or Tax Computation Worksheet, whichever applies* 16.
 17. Tax on all taxable income. Enter the smaller of line 15 or line 16 here and on Form 1040NR, line 41 17.
 *Estates and trusts must use the Tax Rate Schedules.
 Instructions for Form 1040NR -19-Page 20 of 48 Instructions for Form 1040NR 7:48 - 6-DEC-2007
 
 The type and rule above prints on all proofs including departmental reproduction proofs. MUST be removed before printing.
 
-Stock by exercising an incentive
-stock option and you did not dispose of
+• Stock by exercising an incentive
 
-You also may be able to claim this 6. All of your foreign taxes were:
-credit for the cost of any of the following a. Legally owed and not eligible for
-
-the stock in the same year. items if the items meet certain a refund, and
-
-Tax-exempt interest from private
+the stock in the same year.
 activity bonds.
-Intangible drilling, circulation,
+• Intangible drilling, circulation,
 research, experimental, or mining
 costs.
-Amortization of pollution-control or oil water heaters.
-facilities or depletion.
-Income or (loss) from tax-shelter
 
-performance and quality standards. b. Paid to countries that are
-Certain electric heat pump water recognized by the United States and do
-heaters, electric heat pumps, not support terrorism.
+items if the items meet certain
+• Certain electric heat pump water
+heaters, electric heat pumps,
 geothermal heat pumps, central air
-conditioners, and natural gas, propane, Note. If you need more information
-about these requirements, see the
-A qualified natural gas, propane, or Instructions for Form 1116.
-oil furnace or hot water boiler.
-If you meet all six requirements, see
+conditioners, and natural gas, propane,
 
-farm activities or passive activities. An advanced main air circulating fan
+a refund, and
+recognized by the United States and do
+Note. If you need more information
 
-Election To Claim the Foreign Tax
+• Amortization of pollution-control or oil water heaters.
 
-Income from long-term contracts not used in a natural gas, propane, or oil
+facilities or depletion.
 
-Credit Without Filing Form 1116 in the
-
-figured using the furnace.
-
-Instructions for Form 1116 to figure the
-
-percentage-of-completion method. For details, see Form 5695.
-
-amount to enter on Form 1040NR, line
-
-Alternative minimum tax adjustments Residential energy efficient
-
-46. If you do not meet all six
-
-from an estate, trust, electing large property credit.
-
-You may be able to requirements, see Form 1116 to find
-
-partnership, or cooperative. take this credit if you paid for any of the
-
-out if you can take the credit.
-
-Section 1202 exclusion. following during 2007.
-
+• Income or (loss) from tax-shelter
+farm activities or passive activities.
+• Income from long-term contracts not
+figured using the
+percentage-of-completion method.
+• Alternative minimum tax adjustments
+from an estate, trust, electing large
+partnership, or cooperative.
+• Section 1202 exclusion.
 Credit for child and dependent care
+•
 expenses.
-Residential energy credits.
-States.
-Mortgage interest credits.
+• Residential energy credits.
+• Mortgage interest credits.
 D.C. first-time homebuyer credit.
+•
 
-Line 47 — Child tax credit. This credit
-Qualified solar electric property for
-is for people who have a qualifying
-use in your home located in the United
-child as defined below. It is in addition
-to the credit for child and dependent
-Qualified solar water heating property
-care expenses on Form 1040NR, line
+oil furnace or hot water boiler.
+• An advanced main air circulating fan
+used in a natural gas, propane, or oil
+furnace.
+For details, see Form 5695.
+Residential energy efficient
+take this credit if you paid for any of the
+following during 2007.
+• Qualified solar electric property for
+States.
+•
 for use in your home located in the
 
-Any general business credit claimed 44.
+Line 47 — Child tax credit. This credit
+is for people who have a qualifying
+care expenses on Form 1040NR, line
 
-United States.
+• Any general business credit claimed United States.
 
 on Form 3800.
-
-Qualified fuel cell property installed Three steps to take the child tax
-
-Empowerment zone and renewal on or in connection with your main credit.
-
+• Empowerment zone and renewal
 community employment credit.
-Qualified electric vehicle credit. For details, see Form 5695.
-
-home located in the United States. 1. Make sure you have a qualifying
-child for the child tax credit (defined
-
-Alternative motor vehicle credit. below).
-
-Special rule. If you are a member
-
-Alternative fuel vehicle refueling
+• Qualified electric vehicle credit.
+• Alternative motor vehicle credit.
+• Alternative fuel vehicle refueling
 property credit.
-Credit for prior year minimum tax.
+• Credit for prior year minimum tax.
 Form 6251 should be filled in for
 ! a child who was under age 18 at
 CAUTION the end of 2007 if the child’s
 adjusted gross income from Form
-1040NR, line 36, exceeds the child’s credits.
+1040NR, line 36, exceeds the child’s
+earned income by more than $6,300.
 
-of a condominium management 2. Make sure for each qualifying
+Qualified fuel cell property installed
+on or in connection with your main
+For details, see Form 5695.
+of a condominium management
+housing corporation, you are treated as
+having paid your proportionate share of
+any costs of such association or
+corporation for purposes of these
+credits.
+Line 46 — Foreign tax credit. If you
+
+Three steps to take the child tax
+credit.
 child you either checked the box on
-association for a condominium you own
-Form 1040NR, line 7c, column (4), or
-or a tenant-stockholder in a cooperative
-housing corporation, you are treated as completed Form 8901 (if the child is not
-having paid your proportionate share of your dependent).
-any costs of such association or 3. Answer the questions in the Who
-corporation for purposes of these Must Use Pub. 972 chart on page 21 to
+completed Form 8901 (if the child is not
+your dependent).
+Must Use Pub. 972 chart on page 21 to
 see if you can use the Child Tax Credit
-Worksheet on page 21 or if you must
-
-earned income by more than $6,300. Line 46 — Foreign tax credit. If you
-
-use Pub. 972.
-
-paid income tax to a foreign country,
-
-you may be able to take this credit, but Qualifying child for child tax
 
 Credits only if you:
-1.
+
 Line 44 — Credit for child and
-sources (see
+
 dependent care expenses. You may
-the United States
+
 be able to take this credit if you paid
-2.
+
 someone to care for your qualifying
-
-credit. A qualifying child for purposes
-Report income from foreign of the child tax credit is a child who:
-Foreign Income Taxed by Was under age 17 at the end of
-on page 6), and 2007.
-Have paid or owe foreign tax on Is your son, daughter, stepchild,
-
-that income. foster child, brother, sister, stepbrother,
 
 child under age 13 or your dependent
 
-stepsister, or a descendant of any of
-
-or spouse who could not care for Generally, you must complete and
-
-them (for example, your grandchild,
-
-himself or herself. For details, see the attach Form 1116 to take this credit.
-
-niece, or nephew).
-
+or spouse who could not care for
+himself or herself. For details, see the
 Instructions for Form 2441.
-
-Exception. You do not have to Is a U.S. citizen, a U.S. national, or a
-
-Line 45 — Residential energy credits. complete Form 1116 to take this credit resident alien.
-
+Line 45 — Residential energy credits.
 Complete Form 5695 to claim either of
-
-the following credits. 1.
-
+the following credits.
 Nonbusiness energy property
 
-credit. You may be able to take this
+Generally, you must complete and
+attach Form 1116 to take this credit.
+complete Form 1116 to take this credit
+if all six of the following apply.
 
-estate or trust.
+resident alien.
 
-credit for any of the following 2.
+credit. You may be able to take this estate or trust.
+
+credit for any of the following
 
 improvements to your main home
-
 located in the United States in 2007 if
-
 they are new and meet certain
+requirements for energy efficiency.
+• Any insulation material or system
+primarily designed to reduce heat gain
+or loss in your home.
+skylights).
+• Exterior doors.
 
+income is from the passive category
+(which includes most interest and
 dividend income).
+qualified payee statements, such as
+Form 1099-INT, Form 1099-DIV, or
+4. If you have dividend income from
+shares of stock, you held those shares
 
-requirements for energy efficiency. 3.
+as time lived in the home.
+An adopted child is always treated as
+your own child. An adopted child
+Line 48 — Retirement savings
+contributions credit (saver’s credit).
+you made (a) contributions to a
+traditional or Roth IRA; (b) elective
 
-Any insulation material or system
+• A metal roof with pigmented coatings for at least 16 days.
 
 primarily designed to reduce heat gain
-
-or loss in your home.
-
-Exterior windows (including
-
-skylights). 4.
-
-Exterior doors.
-
-A metal roof with pigmented coatings
-
-for at least 16 days.
-
-primarily designed to reduce heat gain 5.
 
 in your home.
 
 not more than $300.
 
-if all six of the following apply.
+contributions) or to a governmental 457,
 
-Did not provide over half of his or her
+You also may be able to claim this 6. All of your foreign taxes were:
 
-Form 1040NR is being filed for a own support for 2007.
+stock option and you did not dispose of credit for the cost of any of the following
 
-nonresident alien individual and not an
-All of your gross foreign source
-income is from the passive category
-(which includes most interest and
-All the income and any foreign
+• Tax-exempt interest from private performance and quality standards.
 
-Lived with you for more than half of
-2007. Temporary absences, such as for
-school, vacation, or medical care, count
-as time lived in the home.
-An adopted child is always treated as
-your own child. An adopted child
-includes a child lawfully placed with you
+• A qualified natural gas, propane, or Instructions for Form 1116.
+
+use in your home located in the United
+
+Qualified solar water heating property to the credit for child and dependent
+
+•
+
+home located in the United States. 1. Make sure you have a qualifying
+
+Special rule. If you are a member below).
+
+association for a condominium you own
+
+or a tenant-stockholder in a cooperative Form 1040NR, line 7c, column (4), or
+
+paid income tax to a foreign country,
+
+you may be able to take this credit, but Qualifying child for child tax
+
+1. Report income from foreign of the child tax credit is a child who:
+
+sources (see Foreign Income Taxed by
+
+the United States on page 6), and 2007.
+
+2. Have paid or owe foreign tax on
+
+that income. foster child, brother, sister, stepbrother,
+
+Exception. You do not have to
+
+1. Form 1040NR is being filed for a own support for 2007.
+
+nonresident alien individual and not an • Lived with you for more than half of
 
 taxes paid on it were reported to you on for legal adoption.
 
-qualified payee statements, such as
-Form 1099-INT, Form 1099-DIV, or
-similar substitute statements.
-If you have dividend income from
-shares of stock, you held those shares
-The total of your foreign taxes is
--20-
+• Exterior windows (including similar substitute statements.
 
-Line 48 — Retirement savings
-contributions credit (saver’s credit).
+5. The total of your foreign taxes is (including designated Roth
+
+a. Legally owed and not eligible for
+b. Paid to countries that are
+not support terrorism.
+about these requirements, see the
+If you meet all six requirements, see
+Election To Claim the Foreign Tax
+Credit Without Filing Form 1116 in the
+Instructions for Form 1116 to figure the
+amount to enter on Form 1040NR, line
+46. If you do not meet all six
+property credit. You may be able to requirements, see Form 1116 to find
+out if you can take the credit.
+child as defined below. It is in addition
+44.
+child for the child tax credit (defined
+2. Make sure for each qualifying
+3. Answer the questions in the Who
+Worksheet on page 21 or if you must
+use Pub. 972.
+credit. A qualifying child for purposes
+• Was under age 17 at the end of
+• Is your son, daughter, stepchild,
+stepsister, or a descendant of any of
+them (for example, your grandchild,
+niece, or nephew).
+• Is a U.S. citizen, a U.S. national, or a
+• Did not provide over half of his or her
+2007. Temporary absences, such as for
+2. All of your gross foreign source school, vacation, or medical care, count
+3. All the income and any foreign includes a child lawfully placed with you
 You may be able to take this credit if
-you made (a) contributions to a
-traditional or Roth IRA; (b) elective
 deferrals to a 401(k) or 403(b) plan
-(including designated Roth
-contributions) or to a governmental 457,
-Instructions for Form 1040NRPage 21 of 48 Instructions for Form 1040NR 7:48 - 6-DEC-2007
+-20- Instructions for Form 1040NRPage 21 of 48 Instructions for Form 1040NR 7:48 - 6-DEC-2007
 
 The type and rule above prints on all proofs including departmental reproduction proofs. MUST be removed before printing.
 
@@ -4115,46 +4158,52 @@ have rental property. See Form 3800 or
 
 1. Is the amount on Form 1040NR, line 36, more than the amount shown below for Pub. 334.
 
-your filing status?
+your filing status? Empowerment zone and renewal
 
-Empowerment zone and renewal
+•
 
-Filing status 1, 2, or 6—$75,000 community employment credit. See
+• Filing status 1, 2, or 6—$75,000 community employment credit. See
 
-Filing status 3, 4, 5—$55,000 Form 8844.
+• Filing status 3, 4, or 5—$55,000 Form 8844.
 
-Yes. Stop. You must use Pub. 972 to figure your credit.
-No. Go to line 2.
+❏ Yes. Stop. You must use Pub. 972 to figure your credit. • Credit for alcohol used as fuel. See
+
+❏ No. Go to line 2. Form 6478.
+
 2. Are you claiming any of the following credits?
 
-Credit for alcohol used as fuel. See
-Form 6478.
 Renewable electricity, refined coal,
+•
 
-Residential energy credits, Form 5695. and Indian coal production credit for
+• Residential energy credits, Form 5695. and Indian coal production credit for
 
-Retirement savings contributions credit, Form 8880.
-Mortgage interest credit, Form 8396.
-District of Columbia first-time homebuyer credit, Form 8859.
+Retirement savings contributions credit, Form 8880. electricity and refined coal produced at
 
-electricity and refined coal produced at
+•
+
 facilities placed in service after October
+
+• Mortgage interest credit, Form 8396.
+
 22, 2004, and Indian coal produced at
+
+• District of Columbia first-time homebuyer credit, Form 8859.
+
 facilities placed in service after August
 
-Adoption credit, Form 8839. 8, 2005. See Form 8835, Section B.
+• Adoption credit, Form 8839. 8, 2005. See Form 8835, Section B.
 
-Yes. Stop. You must use Pub. 972 to figure your child tax credit. You also will
+❏ Yes. Stop. You must use Pub. 972 to figure your child tax credit. You also will Work opportunity credit. See Form
 
-Work opportunity credit. See Form
+•
 
 need the form(s) listed above for any credit(s) you are claiming.
 
 5884.
 
-No. Use the worksheet on this page to figure your child tax credit.
+❏ No. Use the worksheet on this page to figure your child tax credit.
 
-Credit for employer social security
+• Credit for employer social security
 
 and Medicare taxes paid on certain
 
@@ -4162,9 +4211,9 @@ SEP, or SIMPLE plan; (c) voluntary credit, see the form or publication tips. See
 
 employee contributions to a qualified indicated.
 
-New York Liberty Zone business
+• New York Liberty Zone business
 
-retirement plan (including the federal Credit for prior year minimum tax. If
+retirement plan (including the federal • Credit for prior year minimum tax. If
 
 employee credit. If you have a
 
@@ -4176,25 +4225,23 @@ to a 501(c)(18)(D) plan. prior year, see Form 8801.
 
 5884.
 
-Qualified electric vehicle credit. This
+However, you cannot take the credit • Qualified electric vehicle credit. This
 
-However, you cannot take the credit
-
-credit does not apply to vehicles placed Clean renewable energy bond credit.
+credit does not apply to vehicles placed • Clean renewable energy bond credit.
 
 if either of the following applies.
 
-service after 2006. However, you See Form 8912.
+in service after 2006. However, you See Form 8912.
 
-The amount on Form 1040NR, line
-
-may be able to take the credit if you Credit for Gulf tax credit bonds. See
+• The amount on Form 1040NR, line
 
 36, is more than $26,000.
 
-The person(s) who made the received 2006 Schedule K-1 showing Form 8912.
+may be able to take the credit if you • Credit for Gulf tax credit bonds. See
 
-the credit from an entity with a fiscal
+The person(s) who made the received a 2006 Schedule K-1 showing Form 8912.
+
+• the credit from an entity with a fiscal
 
 qualified contribution or elective deferral
 (a) was born after January 1, 1990, (b)
@@ -4202,37 +4249,37 @@ is claimed as a dependent on someone
 else’s 2007 tax return, or (c) was a
 student (defined below).
 
-Alternative motor vehicle credit. If
+• Alternative motor vehicle credit. If
 year ending in 2007 or have an
 you placed an alternative motor vehicle
 unallowed passive activity credit from a
 (such as a qualified hybrid vehicle) in
 prior year. See Form 8834.
 service during 2007, see Form 8910.
-General business credit. This credit
-consists of a number of credits that Alternative fuel vehicle refueling
+• General business credit. This credit
+consists of a number of credits that • Alternative fuel vehicle refueling
 
 You were a student if during any part usually apply only to individuals who property credit. See Form 8911.
 
 of 5 calendar months of 2007 you:
 
-Were enrolled as a full-time student
+• Were enrolled as a full-time student
 
 Child Tax Credit Worksheet — Line 47 Keep for Your Records
 
 at a school, or
 
-Took a full-time, on-farm training
+• Took a full-time, on-farm training
 
 course given by a school or a state,
 county, or local government agency. A
 school includes a technical, trade, and
 mechanical school. It does not include
 
-To be a qualifying child for the child tax credit, the child must be under
+• To be a qualifying child for the child tax credit, the child must be under
 ! age 17 at the end of 2007 and meet the other requirements listed in the
 CAUTION instructions for line 47 on page 20.
-Do not use this worksheet if you answered “Yes” to question 1 or 2 in
+• Do not use this worksheet if you answered “Yes” to question 1 or 2 in
 
 an on-the-job training course, Who Must Use Pub. 972 above. Instead, use Pub. 972.
 
@@ -4252,17 +4299,17 @@ box(es). To find out if you can take the 4. Are the amounts on lines 2 and 3 the
 
 credit, see the form indicated. Yes. STOP. You cannot take this credit because there is no tax to
 
-Mortgage interest credit. If a state or reduce. However, you may be able to take the additional child tax
+• Mortgage interest credit. If a state or reduce. However, you may be able to take the additional child tax
 
 local government gave you a mortgage credit. See the TIP below.
 
 credit certificate, see Form 8396. No. Subtract line 3 from line 2 4.
 
-District of Columbia first-time 5. Is the amount on line 1 more than the amount on line 4?
+• District of Columbia first-time 5. Is the amount on line 1 more than the amount on line 4?
 
 homebuyer credit. See Form 8859. Yes. Enter the amount from line 4. Also, you may be able to take
 
-Adoption credit. If you paid expenses the additional child tax credit. See the TIP below.
+• Adoption credit. If you paid expenses the additional child tax credit. See the TIP below.
 
 to adopt a child or you adopted a child No. Enter the amount from line 1 5.
 
@@ -4280,9 +4327,9 @@ line 62, if you answered “Yes” on line 4 or line 5 above.
 
 following credits on line 50 and check
 
-the appropriate box(es). If box c is First, complete your Form 1040NR through line 61.
+the appropriate box(es). If box c is • First, complete your Form 1040NR through line 61.
 
-checked, also enter the applicable form Then, use Form 8812 to figure any additional child tax credit.
+checked, also enter the applicable form • Then, use Form 8812 to figure any additional child tax credit.
 
 number. To find out if you can take the
 
@@ -4293,17 +4340,47 @@ The type and rule above prints on all proofs including departmental reproduction
 Other Taxes
 Line 54 — Unreported social security
 and Medicare tax from Forms 4137
-and 8919. Enter the total of any taxes
+
+Form 1040NR, line 16b or line 17b, or
+dotted line next to line 55 to indicate
+that you do not have to file Form 5329.
+
+order, etc.
+during 2007 at the request of any
+household employee.
+
+and 8919. Enter the total of any taxes But if distribution code 1 is incorrectly
+
 from Form 4137 and Form 8919. Check
 the appropriate box(es).
 Form 4137. If you received tips of
-$20 or more in any month and you did
+
+shown in Form 1099-R, box 7, you
+received a Form 1042-S for the
+distribution, or you qualify for an
+
+$1,000 or more in any calendar quarter
+of 2006 or 2007 to household
+employees.
+
+$20 or more in any month and you did exception for qualified higher education
+
 not report the full amount to your
 employer, you must pay the social
 security and Medicare or railroad
 retirement (RRTA) tax on the
 unreported tips. You must also pay this
-tax if your Form(s) W-2 shows allocated
+
+expenses or qualified first-time
+Form 5329.
+
+For purposes of item 1, do not
+employee who was under age
+18 at any time in 2007 and was a
+student.
+
+tax if your Form(s) W-2 shows allocated subject to a 4% tax on U.S. source
+
 tips that you are including in your
 income on Form 1040NR, line 8.
 To figure the social security and
@@ -4314,17 +4391,6 @@ RRTA tax.
 You may be charged a penalty
 ! equal to 50% of the social
 
-Form 1040NR, line 16b or line 17b, or
-dotted line next to line 55 to indicate
-that you do not have to file Form 5329.
-But if distribution code 1 is incorrectly
-shown in Form 1099-R, box 7, you
-received a Form 1042-S for the
-distribution, or you qualify for an
-exception for qualified higher education
-expenses or qualified first-time
-Form 5329.
-subject to a 4% tax on U.S. source
 gross transportation income that is not
 effectively connected with a U.S. trade
 or business. However, the term U.S.
@@ -4333,16 +4399,6 @@ does not include any such income that
 is taxable in a possession of the United
 States under the provisions of the
 
-order, etc.
-during 2007 at the request of any
-household employee.
-$1,000 or more in any calendar quarter
-of 2006 or 2007 to household
-employees.
-For purposes of item 1, do not
-employee who was under age
-18 at any time in 2007 and was a
-student.
 who does household work is a
 household employee if you can control
 what will be done and how it will be
@@ -4353,38 +4409,44 @@ maids, yard workers, and similar
 
 CAUTION security and Medicare tax due For purposes of this tax,
 
-on tips you received but did not report
-to your employer.
-Form 8919. If you are an employee
+on tips you received but did not report transportation income will be treated as
 
-transportation income will be treated as
-not effectively connected with the
-conduct of a trade or business in the
+to your employer. not effectively connected with the
+
+Form 8919. If you are an employee conduct of a trade or business in the
 
 who received wages from an employer United States unless:
 
-who did not withhold social security and
-Medicare tax from your wages, use
-Form 8919 to figure your share of the
-unreported tax. Include on line 54 the
-amount from line 13 of Form 8919.
-Include the amount from line 6 of Form
+who did not withhold social security and 1. You had a fixed place of business
 
-1. You had a fixed place of business
-in the United States involved in the
-earning of transportation income, and
-2. At least 90% of your U.S. source
-gross transportation income was
-attributable to regularly scheduled
+Medicare tax from your wages, use in the United States involved in the
+
+Form 8919 to figure your share of the
+
+unreported tax. Include on line 54 the 2. At least 90% of your U.S. source
+
+amount from line 13 of Form 8919. gross transportation income was
+
+Include the amount from line 6 of Form attributable to regularly scheduled
 
 8919 on Form 1040NR, line 8. transportation. Or, in the case of
 
-Line 55 — Additional tax on IRAs,
-other qualified retirement plans, etc.
-If any of the following apply, see Form
+Line 55 — Additional tax on IRAs, income from the leasing of a vessel or
+
+other qualified retirement plans, etc. aircraft, it was attributable to a fixed
+
+If any of the following apply, see Form place of business in the United States.
+
 5329 and its instructions to find out if
-you owe this tax and if you must file
+
+See sections 887 and 863 for rules,
+
+Recapture of the following credits.
+
+you owe this tax and if you must file definitions, and exceptions.
+
 Form 5329.
+
 1. You received an early distribution
 from (a) an IRA or other qualified
 retirement plan, (b) an annuity,
@@ -4400,33 +4462,7 @@ MSAs, or health savings accounts.
 from Coverdell ESAs or qualified tuition
 programs.
 4. You were born before July 1,
-1936, and did not take the minimum
-required distribution from your IRA or
-other qualified retirement plan.
-to you and distribution code 1 is
-correctly shown in your Form 1099-R,
-box 7, you do not have to file Form
-5329. Instead, multiply the taxable
-amount of the distribution by 10% (.10)
-and enter the result on line 55. The
-taxable amount of the distribution is the
 
-income from the leasing of a vessel or
-aircraft, it was attributable to a fixed
-place of business in the United States.
-See sections 887 and 863 for rules,
-definitions, and exceptions.
-If you owe this tax, you must attach
-a statement to your return that includes
-the information described in Pub. 519.
-see Schedule H (Form 1040) and its
-instructions to find out if you owe these
-taxes.
-1. You paid any one household
-$1,500 more 2007. Cash wages
-
-Recapture of the following credits.
-Investment credit (see Form 4255).
 Form 8611). Identify as “LIHCR.”
 Qualified electric vehicle credit (see
 Form 8834). Identify as “QEVCR.”
@@ -4442,34 +4478,85 @@ Form 8910). Identify as “AMVCR.”
 Alternative fuel vehicle refueling
 property credit (see Form 8911).
 Identify as “ARPCR.”
+
+1936, and did not take the minimum If you owe this tax, you must attach
+
+required distribution from your IRA or a statement to your return that includes
+
+other qualified retirement plan. the information described in Pub. 519.
+
+to you and distribution code 1 is
+
+correctly shown in your Form 1099-R,
+box 7, you do not have to file Form
+5329. Instead, multiply the taxable
+
+see Schedule H (Form 1040) and its
+instructions to find out if you owe these
+taxes.
+
 you claimed the mortgage interest
 credit, see Form 8828. Identify as
 “FMSR.”
+
+amount of the distribution by 10% (.10) 1. You paid any one household
+
+and enter the result on line 55. The
+
+taxable amount of the distribution is the
+
+of $1,500 or more in 2007. Cash wages
+
 “Sec. 72(m)(5).”
 
 part of the distribution you reported on include wages paid by check, money
-Form 4972. Also, enter the 2. You withheld federal income tax
+
+on Form 4972. Also, enter “No” on the 2. You withheld federal income tax
+
 homebuyer distributions, you must file TIP count amounts paid to an
+
 Line 56 — Transportation tax.
+
 Nonresident alien individuals are
+
 Internal Revenue Code as applied to domestic workers.
+
 that possession. Line 58 — Total tax. Include in the
-You may be exempt from this tax Low-income housing credit (see
+
+earning of transportation income, and • Health savings account distributions
+
+You may be exempt from this tax • Low-income housing credit (see
+
 because of a treaty or an exchange of
-notes between the United States and
+
+notes between the United States and •
+
 the country of which you are a resident.
-If the country of which you are a
+
+If the country of which you are a •
+
 resident does not impose tax on the
-shipping or aircraft income of U.S.
+
+shipping or aircraft income of U.S. •
+
 persons, you may also be exempt from
-this tax. If you are exempt from the tax
+
+this tax. If you are exempt from the tax •
+
 for one of these reasons, you must
+
 attach a statement to Form 1040NR
-identifying your country of residence
+
+identifying your country of residence •
+
 and the treaty, note, or law and
-provisions under which you claim
+
+provisions under which you claim •
+
 exemption from the tax.
+
 Exception. If only item (1) applies Line 57 — Household employment
+
 employee (defined below) cash wages tax. (See Pub. 560.) Identify as
 
 3. You paid total cash wages of
@@ -4481,14 +4568,14 @@ On the dotted line next to line 58, enter
 the amount of the tax and identify it as
 indicated.
 Additional taxes on the following.
-Health savings account distributions
 (see Form 8889, Part II). Identify as
 “HSA.”
-Archer MSA distributions (see Form
+• Archer MSA distributions (see Form
 8853). Identify as “MSA.”
-Medicare Advantage MSA
+• Medicare Advantage MSA
 distributions (see Form 8853). Identify
 as “Med MSA.”
+• Investment credit (see Form 4255).
 Identify as “ICR.”
 Recapture of federal mortgage
 subsidy. If you sold your home in
@@ -4529,7 +4616,7 @@ automatic extension of time to file Form
 with that form or by electronic funds
 credit card, do not include on line 63
 the box(es) on line 64 to report any
-credit from Form 2439, 4136, 8885.
+credit from Form 2439, 4136, or 8885.
 Line 65 — Credit for amount paid with
 
 Identify as “EPP.” page 2, line 66.
@@ -4584,8 +4671,8 @@ front of your return. Also, include in the
 total for line 59 any tax withheld from
 Form 1042-S, box 7, that was withheld
 on:
-Scholarship or fellowship grants, or
-Pensions that you included on line
+• Scholarship or fellowship grants, or
+• Pensions that you included on line
 17a or 17b.
 Instructions for Form 1040NR
 
@@ -4754,21 +4841,23 @@ Line 72b.
 
 Why Use Direct Deposit?
 
-You get your refund faster by direct
+• You get your refund faster by direct
 
 deposit than you do by check.
 
-Payment is more secure— there is
+• Payment is more secure— there is
 
 no check that can get lost or stolen.
 
 It is more convenient. You do not
 
+•
+
 have to make a trip to the bank to
 
 deposit your check.
 
-It saves tax dollars. It costs the
+• It saves tax dollars. It costs the
 
 government less to refund by direct
 
@@ -4782,6 +4871,8 @@ amount shown on line 72a to your
 
 checking or savings account, including
 
+•
+
 an IRA, at a U.S. bank or other financial
 
 institution (such as a mutual fund,
@@ -4790,9 +4881,11 @@ or
 
 brokerage firm, or credit union) in the
 
+•
+
 United States:
 
-Check the box on line 72a and attach
+• Check the box on line 72a and attach
 
 Form 8888 if you want to split the direct
 
@@ -4801,7 +4894,7 @@ checking account.
 deposit of your refund among two or
 
 three accounts, or
-Complete lines 72b through 72d if
+• Complete lines 72b through 72d if
 
 Line 72c.
 
@@ -4832,6 +4925,8 @@ Anyplace, LA 70000
 (line 72b) (line 72d)
 
 For
+
+|:250250025|:202020"’86" . 1234
 
 is different from the routing number on
 If the direct deposit to your
@@ -4914,7 +5009,7 @@ owe a penalty if your contributions
 
 exceed these limits.
 
-For more information on IRAs,
+$ For more information on IRAs,
 
 TIP see Pub. 590.
 
@@ -4936,13 +5031,13 @@ tax. This election cannot be changed
 
 Note: The routing and account numbers may appear in different places on your check. later.
 
-Instructions for Form 1040NRPage 25 of 48 Instructions for Form 1040NR 7:48 - 6-DEC-2007
+-24- Instructions for Form 1040NRPage 25 of 48 Instructions for Form 1040NR 7:48 - 6-DEC-2007
 
 The type and rule above prints on all proofs including departmental reproduction proofs. MUST be removed before printing.
 
 To pay by electronic federal tax the amount on line 57 only if line 59 is
 
-Amount YouOwe payment system (EFTPS).
+Amount You Owe payment system (EFTPS).
 can pay using EFTPS, a free tax
 Line 74 — Amount you owe. payment system that allows you to
 make payments online or by phone. For
@@ -5043,15 +5138,15 @@ To pay by credit card. You can use agreement, you should consider other
 
 Figuring the penalty. If the
 
-your American Express Card, less costly alternatives, such as a bank
+your American Express® Card, less costly alternatives, such as a bank
 
 Exception above does not apply and
 
-Discover Card, Master Card card, or loan or credit card payment.
+Discover® Card, MasterCard® card, or loan or credit card payment.
 
 you choose to figure the penalty
 
-Visa card. To pay by credit card, call
+Visa® card. To pay by credit card, call
 
 To ask for an installment agreement, yourself, see Form 2210 (or Form
 
@@ -5090,7 +5185,7 @@ file your return after March 31, it may total on line 74. If you are due a refun
 A convenience fee will be charged take us longer to reply.
 by the service provider based on the Line 75 — Estimated tax penalty.
 amount you are paying. Fees may vary You may owe this penalty if:
-between the providers. You will be told Line 74 is at least $1,000 and it is
+between the providers. You will be told • Line 74 is at least $1,000 and it is
 what the fee is during the transaction more than 10% of the tax shown on
 
 subtract the penalty from the
@@ -5101,7 +5196,7 @@ must do so. Instead, keep it for your
 
 and you will have the option to either your return, or records.
 
-continue or cancel the transaction. You You did not pay enough estimated
+continue or cancel the transaction. You • You did not pay enough estimated
 
 also can find out what the fee will be by
 calling the provider’s toll-free
@@ -5211,16 +5306,17 @@ to answer any questions that may arise
 during the processing of your return.
 You also are authorizing the designee
 to:
-Give the IRS any information that is
+• Give the IRS any information that is
 missing from your return,
-Call the IRS for information about the
+• Call the IRS for information about the
 processing of your return or the status status, you can:
-of your refund or payment(s),
-Receive copies of notices or
+of your refund or payment(s), •
+• Receive copies of notices or
 transcripts related to your return, upon
 request, and
 status.
-Respond to certain IRS notices about
+• Respond to certain IRS notices about
+•
 math errors, offsets, and return
 preparation.
 Pub. 78 at
@@ -5262,9 +5358,8 @@ admission to a religious ceremony), the
 www.irs.gov under Charities
 organization must state this, but it does
 not have to describe or value the
-If in the United States, call our Tax
 
-to receive any refund check, bind you benefit.
+to receive any refund check, bind you • If in the United States, call our Tax benefit.
 
 Exempt/Government Entities Customer
 
@@ -5275,7 +5370,7 @@ Account Services at 1-877-829-5500.
 liability), or otherwise represent you
 before the IRS. If you want to expand
 the designee’s authorization, see Pub.
-947.
+947. •
 
 In figuring whether a gift is $250 or
 Examples of U.S. qualified charitable more, do not combine separate
@@ -5284,9 +5379,9 @@ Churches, mosques, synagogues, your church $25 each week for a total
 
 temples, etc. of $1,300, treat each $25 payment as a
 
-The authorization will end Boy Scouts, Boys and Girls Clubs of
+The authorization will end •
 
-separate gift. If you made donations
+Boy Scouts, Boys and Girls Clubs of separate gift. If you made donations
 
 automatically no later than the due date America, CARE, Girl Scouts, Goodwill
 
@@ -5300,17 +5395,16 @@ your 2008 tax return (see When To File United Way, etc.
 
 separate gift. See Pub. 526 if you made
 
-on page 4). If you wish to revoke the Fraternal orders, if the gifts will be
+on page 4). If you wish to revoke the •
+authorization before it ends, see Pub.
 
-a separate gift of $250 or more through
-
-authorization before it ends, see Pub. used for the purposes listed above.
-
+Fraternal orders, if the gifts will be a separate gift of $250 or more through
+used for the purposes listed above.
 payroll deduction.
 
-947. Veterans’ and certain cultural groups.
+947. • Veterans’ and certain cultural groups.
 
-Nonprofit schools, hospitals, and You must get the statement by
+• Nonprofit schools, hospitals, and You must get the statement by
 
 organizations whose purpose is to find TIP the date you file your return or
 
@@ -5320,6 +5414,17 @@ Signature
 See Reminders beginning on page 30
 after you complete pages 3, 4, and 5 of
 the form.
+
+arthritis, asthma, birth defects, cancer, extensions) for filing your return,
+cerebral palsy, cystic fibrosis, diabetes, whichever is earlier. Do not attach the
+heart disease, hemophilia, mental statement to your return. Instead, keep
+illness or retardation, multiple sclerosis, it for your records.
+muscular dystrophy, tuberculosis, etc.
+
+• Federal, state, and local Limit on the amount you can deduct.
+
+governments if the gifts are solely for See Pub. 526 to figure the amount of
+
 Instructions for public purposes.
 Schedule A, Itemized
 Deductions
@@ -5328,50 +5433,25 @@ Do not include on Schedule A
 CAUTION as on Form 1040NR or
 Schedule C, C-EZ, E, or F (Form 1040).
 
-arthritis, asthma, birth defects, cancer,
-cerebral palsy, cystic fibrosis, diabetes,
-heart disease, hemophilia, mental
-
-extensions) for filing your return,
-whichever is earlier. Do not attach the
-statement to your return. Instead, keep
-
-illness or retardation, multiple sclerosis, it for your records.
-
-muscular dystrophy, tuberculosis, etc.
-
-Federal, state, and local
-governments if the gifts are solely for
-Contributions you can deduct.
-Contributions can be in cash, property,
-or out-of-pocket expenses you paid to
-do volunteer work for the kinds of
-organizations described earlier. If you
-drove to and from the volunteer work,
-you can take the actual cost of gas and
-oil or 14 cents a mile. Add parking and
--26-
-
-Limit on the amount you can deduct.
-See Pub. 526 to figure the amount of
 your deduction if any of the following
 applies.
-1. Your cash contributions or
-contributions of ordinary income
-property are more than 30% of the
-amount on Form 1040NR, line 36.
-2. Your gifts of capital gain property
-are more than 20% of the amount on
-Form 1040NR, line 36.
-Instructions for Form 1040NRPage 27 of 48 Instructions for Form 1040NR 7:48 - 6-DEC-2007
+Contributions you can deduct.
+Contributions can be in cash, property, 1. Your cash contributions or
+or out-of-pocket expenses you paid to contributions of ordinary income
+do volunteer work for the kinds of property are more than 30% of the
+organizations described earlier. If you amount on Form 1040NR, line 36.
+drove to and from the volunteer work, 2. Your gifts of capital gain property
+you can take the actual cost of gas and are more than 20% of the amount on
+oil or 14 cents a mile. Add parking and Form 1040NR, line 36.
+-26- Instructions for Form 1040NRPage 27 of 48 Instructions for Form 1040NR 7:48 - 6-DEC-2007
 
 The type and rule above prints on all proofs including departmental reproduction proofs. MUST be removed before printing.
 
-3. You gave gifts of property that details on determining the value of
+3. You gave gifts of property that
+increased in value or gave gifts of the
 
-Casualty and Theft Losses
-
-increased in value or gave gifts of the donated property, see Pub. 561.
+details on determining the value of Casualty and Theft Losses
+donated property, see Pub. 561.
 
 use of property. If the amount of your deduction is Line 8
 
@@ -5381,9 +5461,9 @@ Contributions you cannot deduct.
 
 and attach Form 8283. For this figure the amount of your loss to enter
 
-Travel expenses (including meals
+• Travel expenses (including meals purpose, the “amount of your
 
-purpose, the “amount of your on line 8.
+on line 8.
 
 and lodging) while away from home,
 
@@ -5391,33 +5471,28 @@ deduction” means your deduction
 
 unless there was no significant element
 of personal pleasure, recreation, or
-could result in a carryover of
 vacation in the travel.
-Political contributions.
-$500 for a contribution of a motor
-Dues, fees, or bills paid to country
+• Political contributions.
+• Dues, fees, or bills paid to country
 clubs, lodges, fraternal orders, or
 similar groups.
-organization to your return. The
-Cost of raffle, bingo, or lottery tickets.
+• Cost of raffle, bingo, or lottery tickets.
 
 You may be able to deduct part or all
 before applying any income limits that
 of each loss caused by theft,
+could result in a carryover of
 vandalism, fire, storm, or similar
 contributions. If you deduct more than
-causes, and car, boat, and other
-accidents. You also may be able to
-vehicle, boat, or airplane, you also must
+$500 for a contribution of a motor causes, and car, boat, and other
+vehicle, boat, or airplane, you also must accidents. You also may be able to
 deduct money you had in a financial
 attach a statement from the charitable
 institution but lost because of the
-insolvency or bankruptcy of the
-organization may use Form 1098-C to
+organization to your return. The
+organization may use Form 1098-C to insolvency or bankruptcy of the
 
-Cost of tuition. But you may be able institution.
-
-provide the required information. If your
+• Cost of tuition. But you may be able provide the required information. If your institution.
 
 to deduct this expense on line 9. See
 
@@ -5427,323 +5502,311 @@ page 28.
 
 may have to get appraisals of the casualty or theft losses only to the
 
-Value of your time or services.
+• Value of your time or services. values of the donated property. This
 
-values of the donated property. This extent that:
+extent that:
 
-Value of blood given to a blood bank.
-
-amount is $500 for certain contributions
+• Value of blood given to a blood bank. amount is $500 for certain contributions
 
 The transfer of a future interest in
+•
 tangible personal property (generally,
-below). See Form 8283 and its
-until the entire interest has been
-instructions for details.
-transferred).
-Gifts to individuals and groups that Contributions of clothing and
-are run for personal profit. household items.
-Gifts to foreign organizations. But
-you may be able to deduct gifts to
 
 1. The amount of each separate
 of clothing and household items (see
 casualty or theft loss is more than
-$100, and
+below). See Form 8283 and its
+
+until the entire interest has been $100, and
+
+instructions for details.
+
+transferred).
+Gifts to individuals and groups that
+•
+are run for personal profit.
+Gifts to foreign organizations. But
+•
+
 2. The total amount of all losses
-during the year (reduced by the $100
-A deduction for limit discussed in (1) above) is more
+Contributions of clothing and during the year (reduced by the $100
+household items. A deduction for limit discussed in (1) above) is more
 these contributions will be allowed only than 10% of the amount shown on
-if the items are in good used condition Form 1040NR, line 36.
+
+you may be able to deduct gifts to if the items are in good used condition Form 1040NR, line 36.
 
 certain U.S. organizations that transfer or better. However, this rule does not
 
 funds to foreign charities and certain
 Canadian, Israeli, and Mexican
-charities. See Pub. 526 for details. $500 is claimed and for which you
+charities. See Pub. 526 for details.
 Gifts to organizations engaged in
-certain political activities that are of 8283 with your tax return.
-direct financial interest to your trade or Recordkeeping.
+•
+certain political activities that are of
+direct financial interest to your trade or
 business. See section 170(f)(9).
-Gifts to groups whose purpose is to
-lobby for changes in the laws. gave the property to, or a reliable
+• Gifts to groups whose purpose is to
+lobby for changes in the laws.
 
 apply to a contribution of any single Special rules apply if you had both
 item for which a deduction of more than gains and losses from nonbusiness
-casualties or thefts. See Form 4684
+$500 is claimed and for which you casualties or thefts. See Form 4684
 include a qualified appraisal and Form and its instructions for details.
+8283 with your tax return.
 Use Schedule A, line 11, to deduct
-If you gave property, the costs of proving that you had a
+Recordkeeping. If you gave property, the costs of proving that you had a
 you should keep a receipt or written property loss. Examples of these costs
 statement from the organization you are appraisal fees and photographs
-used to establish the amount of your
+gave the property to, or a reliable used to establish the amount of your
 
-Gifts to civic leagues, social and written record, that shows the loss.
+• Gifts to civic leagues, social and written record, that shows the loss.
 
 sports clubs, labor unions, and organization’s name and address, the
 
-chambers of commerce. date and location of the gift, and a
-Value of benefits received in
-
-For information on federal disaster
-description of the property. For each area losses, see Pub. 547.
-
-connection with a contribution to a gift of property, you also should keep
-
+chambers of commerce.
+• Value of benefits received in
+connection with a contribution to a
 charitable organization. See Pub. 526
-for exceptions.
+for exceptions. •
 Line 4
-Enter the total gifts you made in cash or signed copy of the appraisal.
-by check (including out-of-pocket The cost or other basis of the
+Enter the total gifts you made in cash or
+by check (including out-of-pocket •
 expenses).
+Recordkeeping. For any contribution
 
+date and location of the gift, and a For information on federal disaster
+description of the property. For each area losses, see Pub. 547.
+gift of property, you also should keep
 reliable written records that include: Job Expenses and Certain
 How you figured the property’s value Miscellaneous Deductions
 at the time you gave it. If the value was
 determined by an appraisal, keep a Note. Miscellaneous deductions are
-allowed only if and to the extent they
-are directly related to your effectively
+signed copy of the appraisal. allowed only if and to the extent they
+The cost or other basis of the are directly related to your effectively
 property if you must reduce it by any connected income. You can deduct
-
 ordinary income or capital gain that only the part of these expenses that
+exceeds 2% of the amount on Form
+would have resulted if the property had
 
-Recordkeeping. For any contribution
-made in cash, regardless of the
+made in cash, regardless of the 1040NR, line 36.
+
 been sold at its fair market value.
+
 amount, you must maintain as a record
-of the contribution a bank record (such
+
+of the contribution a bank record (such •
 as a canceled check) or a written
-gifts of capital gain property.
 record from the charity. The written
+•
 record must include the name of the
-charity, date, and amount of the
+
+How you figured your deduction if Pub. 529 discusses the types of
+you chose to reduce your deduction for expenses you can and cannot deduct.
+gifts of capital gain property.
+Any conditions attached to the gift. Examples of Expenses You
+
+charity, date, and amount of the If your total deduction for gifts of Cannot Deduct
+
 contribution. Do not attach the record to !
 your tax return. Instead, keep it with CAUTION
 your other tax records.
-
-exceeds 2% of the amount on Form
-would have resulted if the property had
-1040NR, line 36.
-How you figured your deduction if Pub. 529 discusses the types of
-you chose to reduce your deduction for expenses you can and cannot deduct.
-Any conditions attached to the gift. Examples of Expenses You
-If your total deduction for gifts of Cannot Deduct
-property is over $500, you gave Political contributions.
-less than your entire interest in Legal expenses for personal matters
-the property, or you made a “qualified that do not produce taxable income.
-
-conservation contribution,” your records Lost or misplaced cash or property.
-
 Line 5
-Enter your contributions of property. If See Pub. 526 for details.
+
+property is over $500, you gave • Political contributions.
+less than your entire interest in • Legal expenses for personal matters
+the property, or you made a “qualified that do not produce taxable income.
+conservation contribution,” your records • Lost or misplaced cash or property.
+should contain additional information. • Expenses for meals during regular or
+
+Enter your contributions of property. If See Pub. 526 for details. extra work hours.
+
 you gave used items, such as clothing
 or furniture, deduct their fair market Line 6
 value at the time you gave them. Fair
 market value is what a willing buyer
-would pay a willing seller when neither year because they exceeded your
-has to buy or sell and both are aware of adjusted gross income limit. See
-the conditions of the sale. For more Pub. 526 for details.
+would pay a willing seller when neither
+has to buy or sell and both are aware of
+the conditions of the sale. For more
 Instructions for Form 1040NR
 
-should contain additional information. Expenses for meals during regular or
-extra work hours.
-The cost of entertaining friends.
-Commuting expenses. See Pub. 529
+• The cost of entertaining friends.
+• Commuting expenses. See Pub. 529
 Enter any carryover of contributions for the definition of commuting.
-that you could not deduct in an earlier Travel expenses for employment
-away from home if that period of
-employment exceeds 1 year.
-Travel as a form of education.
+that you could not deduct in an earlier • Travel expenses for employment
+year because they exceeded your away from home if that period of
+adjusted gross income limit. See employment exceeds 1 year.
+Pub. 526 for details. • Travel as a form of education.
 -27-Page 28 of 48 Instructions for Form 1040NR 7:48 - 6-DEC-2007
 
 The type and rule above prints on all proofs including departmental reproduction proofs. MUST be removed before printing.
 
-Expenses of attending a seminar,
-
-convention, or similar meeting unless it
-is related to your employment.
-Club dues. See Pub. 529 for
+• Expenses of attending a seminar, 2.
+convention, or similar meeting unless it of your job expenses that you otherwise
+is related to your employment. would report on line 9.
+• Club dues. See Pub. 529 for
 exceptions.
-Expenses of adopting a child. But
+• Expenses of adopting a child. But TIP
 you may be able to take a credit for
-adoption expenses. See Form 8839 for
+adoption expenses. See Form 8839 for Form 2106-EZ instead.
 details.
-Fines and penalties.
-Expenses of producing tax-exempt
-income.
-Line 9
 
-of your job expenses that you otherwise
-would report on line 9.
-If you used your own vehicle
-apply, you may be able to file
-Form 2106-EZ instead.
-If you do not have to file Form 2106
-
+Your employer paid you for any • Fees to employment agencies and
 other costs to look for a new job in your
 present occupation, even if you do not
 get a new job.
-Certain business use of part of your
-apply, see Pub. 587.
-Certain educational expenses. For
+If you used your own vehicle • Certain business use of part of your
+and item (2) above does not home. For details, including limits that
+apply, you may be able to file apply, see Pub. 587.
+• Certain educational expenses. For
 details, see Pub. 970.
+
+Fines and penalties. If you do not have to file Form 2106
+
+•
+or 2106-EZ, list the type and amount of
+• Expenses of producing tax-exempt
+
+Line 10
+
+each expense on the dotted lines next Enter the fees you paid for preparation
+
+income.
+
+to line 9. If you need more space, of your tax return. If you paid your tax
+
+attach a statement showing the type by credit card, do not include the
+
+Line 9
+
+and amount of each expense. Enter convenience fee you were charged.
 
 Enter the total ordinary and necessary one total on line 9.
 
 job expenses you paid for which you
 were not reimbursed. (Amounts your
-
-Do not include on line 9 any
+employer included in box 1 of your ! educator expenses you
+Form W-2 are not considered CAUTION
+reimbursements.) 24.
 
 Line 11
-Enter the total amount you paid to
-
-employer included in box 1 of your ! educator expenses you
-
-Form W-2 are not considered
-
-reimbursements.)
-
-24.
-
+Do not include on line 9 any Enter the total amount you paid to
+produce or collect taxable income and
+deducted on Form 1040NR, line manage or protect property held for
 earning income. But do not include any
+personal expenses. List the type and
 
 An ordinary expense is one that is Examples of other expenses to
 
+amount of each expense on the dotted
+
 common and accepted in your field of include on line 9 are:
 
-trade, business, or profession. A
+lines next to line 11. If you need more
 
-Safety equipment, small tools, and
+trade, business, or profession. A • Safety equipment, small tools, and
+
+space, attach a statement showing the
 
 necessary expense is one that is supplies needed for your job.
 
-helpful and appropriate for your
-business. An expense does not have to
-be required to be considered
-necessary.
-But you must fill in and attach
-Form 2106 if either (1) or (2) below
-applies.
-transportation, meal, or entertainment
-expenses for your job.
-Itemized Deductions
+type and amount of each expense.
 
-Uniforms required by your employer
-that are not suitable for ordinary wear.
-Protective clothing required in your
-work, such as hard hats, safety shoes,
-Physical examinations required by
-your employer.
-Dues to professional organizations
-Subscriptions to professional
-journals.
+helpful and appropriate for your • Uniforms required by your employer
+
+Enter one total on line 11.
+
+business. An expense does not have to that are not suitable for ordinary wear.
+
+be required to be considered • Protective clothing required in your
+necessary. work, such as hard hats, safety shoes,
 
 Examples of expenses to include on
 line 11 are:
-Clerical help and office rent.
+
+and glasses. • Certain legal and accounting fees.
+
+But you must fill in and attach • Physical examinations required by
+Form 2106 if either (1) or (2) below your employer.
+
+• Clerical help and office rent.
 Custodial (for example, trust account)
-fees.
-expenses of a regulated investment
-company.
+•
 
-Worksheet — Line 17 Keep for Your Records
+applies. • Dues to professional organizations fees.
 
-Add the amounts on Schedule A, lines 3, 7, 8, 15, and 16 1.
-
-Enter the total of the amount on Schedule A, line 8, plus
+1. You claim any travel, and chambers of commerce.
+transportation, meal, or entertainment • Subscriptions to professional
+expenses for your job. journals.
+Itemized Deductions
+Worksheet — Line 17
+1. Add the amounts on Schedule A, lines 3, 7, 8, 15, and 16
+2. Enter the total of the amount on Schedule A, line 8, plus
 any casualty or theft losses included on line 16
 Caution: Be sure your casualty or theft losses are clearly
 identified on the dotted lines next to line 16.
-Is the amount on line 2 less than the amount on line 1?
-No. Stop. Your deduction is not limited. Enter the
+3. Is the amount on line 2 less than the amount on line 1?
+❏ No. Stop. Your deduction is not limited. Enter the
 amount from line 1 above on Schedule A, line 17.
-Yes. Subtract line 2 from line 1
-4. Multiply line 3 above by 80% (.80)
-5. Enter the amount from Form
-1040NR, line 36
+❏ Yes. Subtract line 2 from line 1
+4. Multiply line 3 above by 80% (.80) 4.
+
+• Your share of the investment
+expenses of a regulated investment
+company.
+• Certain losses on nonfederally
+insured deposits in an insolvent or
+bankrupt financial institution. For
+Keep for Your Records
+details, including limits that apply, see
+Pub. 529.
+1. • Casualty and theft losses of property
+used in performing services as an
+2. employee from Form 4684, lines 32 and
+38b, or Form 4797, line 18a.
+• Deduction for repayment of amounts
+under a claim of right if $3,000 or less.
+Other Miscellaneous
+3. Deductions
+
+5. Enter the amount from Form Line 16
+
+1040NR, line 36 5.
 6. Enter: $156,400 ($78,200 if you
-checked filing status box 3, 4, or 5)
+checked filing status box 3, 4, or 5) 6.
 7. Is the amount on line 6 less than the
 amount on line 5?
-No. Stop. Your deduction is not
+❏ No. Stop. Your deduction is not
 limited. Enter the amount from
 line 1 above on Schedule A, line
 17.
-Yes. Subtract line 6 from line 5
-8. Multiply line 7 above by 3% (.03).
+❏ Yes. Subtract line 6 from line 5 7.
+8. Multiply line 7 above by 3% (.03). . 8.
+9. Enter the smaller of line 4 or line 8
+10. Divide line 9 by 3.0
+11. Subtract line 10 from line 9
+12. Total itemized deductions. Subtract line 11 from line 1.
+Enter the result here and on Schedule A, line 17
+-28-
 
-2.
-3.
-4.
-5.
-6.
-7.
-. 8.
-
-used in performing services as an
-38b, or Form 4797, line 18a.
-Deduction for repayment of amounts
-Deductions
-Line 16
+List the type and amount of each
 expense on the dotted lines next to line
 16. Enter one total on line 16.
 Examples of these expenses are:
-Casualty and theft losses of
-
-Enter the smaller of line 4 or line 8 9.
-
-11. Subtract line 10 from line 9
-12. Total itemized deductions.
-Enter the result here and on Schedule A, line 17
-
-11.
-Subtract line 11 from line 1.
-12.
-
-pension.
-
-or 2106-EZ, list the type and amount of Line 10
-each expense on the dotted lines next Enter the fees you paid for preparation
-to line 9. If you need more space, of your tax return. If you paid your tax
-attach a statement showing the type by credit card, do not include the
-and amount of each expense. Enter convenience fee you were charged.
-CAUTION deducted on Form 1040NR, line manage or protect property held for
-and glasses. Certain legal and accounting fees.
-You claim any travel, and chambers of commerce.
-Divide line 9 by 3.0 10.
-
-Your employer paid you for any Fees to employment agencies and
-TIP and item (2) above does not home. For details, including limits that
-produce or collect taxable income and
-personal expenses. List the type and
-amount of each expense on the dotted
-lines next to line 11. If you need more
-space, attach a statement showing the
-type and amount of each expense.
-Enter one total on line 11.
-Your share of the investment
-Certain losses on nonfederally
-insured deposits in an insolvent or
-bankrupt financial institution. For
-details, including limits that apply, see
-Pub. 529.
-Casualty and theft losses of property
-employee from Form 4684, lines 32 and
-under a claim of right if $3,000 or less.
-Other Miscellaneous
-List the type and amount of each
+• Casualty and theft losses of
 income-producing property from Form
 4684, lines 32 and 38b, or Form 4797,
 line 18a.
-Loss from other activities from
+• Loss from other activities from
 Schedule K-1 (Form 1065-B), box 2.
-Deduction for repayment of amounts
+• Deduction for repayment of amounts
 under a claim of right if over $3,000.
+9.
 See Pub. 525 for details.
-Certain unrecovered investment in a
-Impairment-related work expenses of
-a disabled person.
+10. Certain unrecovered investment in a
+•
+11. pension.
+• Impairment-related work expenses of
+12. a disabled person.
 For more details, see Pub. 529.
 Instructions for Form 1040NRPage 29 of 48 Instructions for Form 1040NR 7:48 - 6-DEC-2007
 
@@ -5863,19 +5926,19 @@ Exceptions. The following items of
 interest and dividend income that you
 received as a nonresident alien
 generally are exempt from the 30% tax.
-Interest from a U.S. bank, savings
+• Interest from a U.S. bank, savings
 and loan association, or similar
 institution, and from certain deposits
 with U.S. insurance companies.
-Portfolio interest on obligations
+• Portfolio interest on obligations
 issued after July 18, 1984.
-Interest-related dividends received
+• Interest-related dividends received
 from a mutual fund.
-Short-term capital gain dividends
+• Short-term capital gain dividends
 from a mutual fund only if you were
 present in the United States for less
 than 183 days during the tax year.
-U.S. source dividends paid by
+• U.S. source dividends paid by
 certain foreign corporations.
 For more information, see Pub. 519.
 2. Gains, other than capital gains,
@@ -6099,13 +6162,13 @@ and sign your return if you could not do
 
 301.6114-1.
 so for one of the following reasons:
-Exceptions. You do not have to file You were ill.
+Exceptions. You do not have to file • You were ill.
 
 Identity theft occurs when someone
 uses your personal information such as
 your name, social security number
 
-Form 8833 for any of the following You were not in the United States at
+Form 8833 for any of the following • You were not in the United States at
 
 (SSN), or other identifying information,
 
@@ -6114,7 +6177,7 @@ situations. any time during the 60 days before the
 without your permission, to commit
 
 1. You claim a treaty reduces the return was due.
-withholding tax on interest, dividends,
+withholding tax on interest, dividends, •
 rents, royalties, or other fixed or in writing to the Department of the
 determinable annual or periodic income Treasury, Internal Revenue Service
 
@@ -6129,11 +6192,11 @@ and that the IRS approved. To reduce your risk:
 
 2. You claim a treaty reduces or
 
-Protect your SSN,
+• Protect your SSN,
 
 modifies the taxation of income from A return prepared by an agent must
 
-Ensure your employer is protecting
+• Ensure your employer is protecting
 
 dependent personal services, pensions, be accompanied by a power of
 
@@ -6141,7 +6204,7 @@ your SSN, and
 
 annuities, social security and other attorney. Form 2848 may be used for
 
-Be careful when choosing a tax
+• Be careful when choosing a tax
 
 public pensions, or income of artists, this purpose.
 
@@ -6263,7 +6326,7 @@ Generally, Form 1040X must be filed
 Requesting a Copy of Your Tax
 Return
 If you need a copy of your tax return,
-use Form 4506. There is $39 fee
+use Form 4506. There is a $39 fee
 (subject to change) for each return
 requested. If your main home, principal
 place of business, or tax records are
@@ -6478,11 +6541,11 @@ book under “United States Government,
 Internal Revenue Service.”
 How can you get IRS tax forms and
 publications?
-You can download them from the IRS
+• You can download them from the IRS
 website at www.irs.gov.
-In the United States, you can call
+• In the United States, you can call
 1-800-TAX-FORM (1-800-829-3676).
-You can send your order to the
+• You can send your order to the
 National Distribution Center, P.O. Box
 8903, Bloomington, IL 61702-8903
 U.S.A.
@@ -6509,8 +6572,11 @@ Constitution Ave. NW, IR-6526,
 Washington, DC 20224. Do not send
 your return to this address. Instead, see
 Where To File on page 4.
+estimates for taxpayers filing a Form
+costs are estimated separately.
+expenses incurred by taxpayers to
 
-You can pick them up in person from Generally, tax returns and return
+• You can pick them up in person from Generally, tax returns and return
 
 our U.S. embassies and consulates information are confidential, as required
 
@@ -6604,11 +6670,8 @@ be happy to hear from you. You can
 email us at *taxforms@irs.gov. (The
 Estimates of taxpayer burden. The
 table below shows average burden
-estimates for taxpayers filing a Form
 1040NR. Time spent and out-of-pocket
-costs are estimated separately.
 Out-of-pocket costs include any
-expenses incurred by taxpayers to
 prepare and submit their tax returns.
 Examples of out-of-pocket costs include
 Both time and cost burdens are
@@ -6628,7 +6691,7 @@ tax return preparation and submission
 fees, postage, tax preparation software
 costs, photocopying costs, and phone
 calls (if not toll-free).
-Instructions for Form 1040NRPage 33 of 48 Instructions for Form 1040NR 7:48 - 6-DEC-2007
+-32- Instructions for Form 1040NRPage 33 of 48 Instructions for Form 1040NR 7:48 - 6-DEC-2007
 
 The type and rule above prints on all proofs including departmental reproduction proofs. MUST be removed before printing.
 
@@ -8088,7 +8151,7 @@ Your tax is— Your tax is— Your tax is—
 40,950 41,000 6,668 5,364 6,668
 
 (Continued on page 39)
-Instructions for Form 1040NRPage 39 of 48 Instructions for Form 1040NR 7:48 - 6-DEC-2007
+- 38 - Instructions for Form 1040NRPage 39 of 48 Instructions for Form 1040NR 7:48 - 6-DEC-2007
 
 The type and rule above prints on all proofs including departmental reproduction proofs. MUST be removed before printing.
 
@@ -9487,7 +9550,7 @@ Computation
 Worksheet
 on page 46
 
-Instructions for Form 1040NR - 45 -Page 46 of 48 Instructions for Form 1040NR 7:48 - 6-DEC-2007
+Instructions for Form 1040NR - 45 -Page 46 of 48 Instructions for Form 1040NR 7 48- 6-DEG-2007
 
 The type and rule above prints on all proofs including departmental reproduction proofs. MUST be removed before printing.
 
@@ -9505,11 +9568,11 @@ If line 40 is: Enter the amount from Multiplication Multiply Subtraction Subtrac
 line 40 amount (a) by (b) amount Enter the result here
 
 At least $100,000 but not over
-$160,850 $ 28% (.28) $ $ 5,889.25 $
+$160,850 $ × 28% (.28) $ $ 5,889.25 $
 Over $160,850 but not over
-$349,700 $ 33% (.33) $ $ 13,931.75 $
-Over $349,700 $ 35% (.35) $ $ 20,925.75 $
-Section B — Use if you checked filing status box 6 for Qualifying widow(er). Complete the row below that applies to you.
+$349,700 $ × 33% (.33) $ $ 13,931.75 $
+Over $349,700 $ × 35% (.35) $ $ 20,925.75 $
+Section B Use if you checked filing status box 6 for Qualifying widow/er). Gomplete the row below that applies to you.
 
 Taxable income. (a) (b) (c) (d) Tax.
 If line 40 is: Enter the amount from Multiplication Multiply Subtraction Subtract (d) from (c).
@@ -9520,13 +9583,13 @@ Form 1040NR, line 41
 line 40 amount (a) by (b) amount Enter the result here
 
 At least $100,000 but not over
-$128,500 $ 25% (.25) $ $ 7,152.50 $
+$128,500 $ × 25% (.25) $ $ 7,152.50 $
 Over $128,500 but not over
-$195,850 $ 28% (.28) $ $ 11,007.50 $
+$195,850 $ × 28% (.28) $ $ 11,007.50 $
 Over $195,850 but not over
-$349,700 $ 33% (.33) $ $ 20,800.00 $
-Over $349,700 $ 35% (.35) $ $ 27,794.00 $
-Section C — Use if you checked filing status box 3, 4, or 5 for Married filing separately. Complete the row below that
+$349,700 $ × 33% (.33) $ $ 20,800.00 $
+Over $349,700 $ × 35% (.35) $ $ 27,794.00 $
+Section ¢ Use if you checked filing status box 3, 4, or 5 for Married filing separately. Complete the row below that
 applies to you.
 
 Taxable income (a) (b) (c) (d) Tax.
@@ -9538,8 +9601,8 @@ Form 1040NR, line 41
 line 40 amount (a) by (b) amount Enter the result here
 
 At least $100,000 but not
-over $174,850 $ 33% (.33) $ $ 10,400.00 $
-Over $174,850 $ 35% (.35) $ $ 13,897.00 $
+over $174,850 $ × 33% (.33) $ $ 10,400.00 $
+Over $174,850 $ × 35% (.35) $ $ 13,897.00 $
 
 and on
 Form 1040NR, line 41
@@ -9798,7 +9861,7 @@ Refund ..................... 23 U.S. real property interests,
 Reminders .................. 30 Unresolved tax problems .... 32
 payment of tax ............ 31 Rental income .............. 29
 Interest income 10, 29 Requesting a copy of your tax W
-Salaries and wages 10, 29
+Salaries and wages 10, 29 ■
 Sales or exchanges, capital
 Scholarship and fellowship
 deductions ................ 28 Social security benefits ...... 29
@@ -9821,8 +9884,8 @@ Widows and widowers,
 Rounding off to whole Winnings, proceeds from prizes,
 awards, gambling and
 
--48- Instructions for Form 1040NRUserid: DTD TIP04 Leadpct: 0% Pt. size: 8 Draft Ok to Print
-Fileid: D:\Users\d4rfb\Documents\Epicfiles\2007\07P4655.sgm (Init. & date)
+-48- Instructions for Form 1040NRUserid: DTD TIP04 Leadpct: 0% Pt. size: 8 ❏ Draft ❏ Ok to Print
+PAGER/SGML Fileid: D:\Users\d4rfb\Documents\Epicfiles\2007\07P4655.sgm (Init. & date)
 Page 1 of 2 of Publication 4655 13:17 - 18-JAN-2008
 
 The type and rule above prints on all proofs including departmental reproduction proofs. MUST be removed before printing.
@@ -9856,7 +9919,7 @@ and Form 1040 (and Form
 
 1040NR
 
-The tax from Form 8889, Part III (relating
+• The tax from Form 8889, Part III (relating
 to health savings accounts) that was to be
 reported on Form 1040, line 44 (or Form
 1040NR, line 41), using checkbox “c” must
@@ -9866,7 +9929,7 @@ as an additional write-in tax. On the dotted
 line next to Form 1040, line 63 (or Form
 1040NR, line 58), enter “HDHP” and the
 amount of this tax.
-The additional tax on recapture of a charitable contribution of a fractional interest in
+• The additional tax on recapture of a charitable contribution of a fractional interest in
 tangible personal property that was to be
 included on Form 1040, line 44 (or Form
 1040NR, line 41), must instead be included in the total on Form 1040, line 63
@@ -9874,7 +9937,7 @@ included on Form 1040, line 44 (or Form
 to Form 1040, line 63 (or Form 1040NR,
 line 58), enter “FITPP” and the amount of
 this tax.
-All filers of Forms 2555 or 2555-EZ must
+• All filers of Forms 2555 or 2555-EZ must
 disregard the Foreign Earned Income Tax
 Worksheet on page 34 of the Instructions
 for Form 1040 and instead use the revised
@@ -9885,7 +9948,7 @@ of the
 
 Get forms and other information
 faster and easier by:
-Internet www.irs.govPage 2 of 2 of Publication 4655 13:17 - 18-JAN-2008
+Internet • www.irs.govPage 2 of 2 of Publication 4655 13:17 - 18-JAN-2008
 
 The type and rule above prints on all proofs including departmental reproduction proofs. MUST be removed before printing.
 

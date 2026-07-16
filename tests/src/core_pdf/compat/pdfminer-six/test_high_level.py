@@ -14,6 +14,7 @@ ACROFORM_PDF = SAMPLES_DIR / "acroform" / "AcroForm_TEST.pdf"
 PAGELABELS_PDF = SAMPLES_DIR / "contrib" / "pagelabels.pdf"
 CMAP_OTHER_FONTS_PDF = SAMPLES_DIR / "contrib" / "issue-598-cmap-other-fonts.pdf"
 CYCLIC_XOBJECTS_PDF = SAMPLES_DIR / "contrib" / "issue-1113-evil-xobjects.pdf"
+COLOUR_SPACE_STACK_PDF = SAMPLES_DIR / "contrib" / "issue-1061-colour-space-stack.pdf"
 ACROFORM_TEXT = "BUTTON\n\nCHECKBOX\n\nRADIO BUTTON\n\nDROPDOWN\n\nLIST\n\nCOMBO LIST\n\nTEXT\f"
 
 
@@ -69,3 +70,11 @@ def test_extract_text_decodes_cmaps_after_font_selection() -> None:
 
 def test_distinct_cyclic_xobjects_with_identical_stream_lengths_are_both_extracted() -> None:
     assert extract_text(CYCLIC_XOBJECTS_PDF) == "Hello world\nHello world\f"
+
+
+def test_degenerate_font_metrics_do_not_drop_in_page_text() -> None:
+    result = extract_text(COLOUR_SPACE_STACK_PDF, page_numbers={6})
+
+    assert "The Laplace(μ, b) distribution (a.k.a the double expo-" in result
+    assert "nential distribution) is an absolutely continuous distribu-" in result
+    assert "expoabsolutely" not in result

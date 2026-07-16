@@ -290,6 +290,8 @@ def native_text_runs_inside_page_bounds(
         height = max(0.0, run.y1 - run.y0)
         area = width * height
         if area <= 0.0:
+            if page_x0 <= run.x0 <= page_x1 and page_y0 <= run.y0 <= page_y1:
+                filtered.append(run)
             continue
         intersection_width = max(0.0, min(run.x1, page_x1) - max(run.x0, page_x0))
         intersection_height = max(0.0, min(run.y1, page_y1) - max(run.y0, page_y0))
