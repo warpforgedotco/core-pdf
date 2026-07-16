@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
-from collections.abc import Iterator
+import struct
+from collections.abc import Iterable
 from typing import cast
 
 
@@ -13,18 +14,33 @@ class CMap:
     def is_vertical(self) -> bool:
         return bool(self.attrs.get("WMode", 0))
 
-    def decode(self, code: bytes) -> Iterator[tuple[int, int]]:
+    def __repr__(self) -> str:
+        return f"<CMap: {self.attrs.get('CMapName')}>"
+
+    def decode(self, code: bytes) -> Iterable[int]:
         mapping: dict[int, object] = self.code2cid
-        start = 0
-        for index, byte in enumerate(code):
+        for byte in code:
             value = mapping.get(byte)
             if isinstance(value, dict):
                 mapping = cast(dict[int, object], value)
                 continue
             if isinstance(value, int):
-                yield value, index + 1 - start
+                yield value
                 mapping = self.code2cid
-                start = index + 1
+                continue
+            mapping = self.code2cid
+
+
+class IdentityCMap(CMap):
+    def decode(self, code: bytes) -> tuple[int, ...]:
+        count = len(code) // 2
+        return struct.unpack(f">{count}H", code[: count * 2]) if count else ()
+
+
+class IdentityCMapByte(IdentityCMap):
+    def decode(self, code: bytes) -> tuple[int, ...]:
+        count = len(code)
+        return struct.unpack(f">{count}B", code) if count else ()
 
 
 class CMapDB:
@@ -33,15 +49,15 @@ class CMapDB:
 
     @classmethod
     def get_cmap(cls, name: str) -> CMap:
-        if name in {"Identity-H", "OneByteIdentityH"}:
-            cmap = CMap()
-            cmap.code2cid = {index: index for index in range(256)}
-            return cmap
-        if name in {"Identity-V", "OneByteIdentityV"}:
-            cmap = CMap(WMode=1)
-            cmap.code2cid = {index: index for index in range(256)}
-            return cmap
+        if name == "Identity-H":
+            return IdentityCMap(WMode=0)
+        if name == "Identity-V":
+            return IdentityCMap(WMode=1)
+        if name == "OneByteIdentityH":
+            return IdentityCMapByte(WMode=0)
+        if name == "OneByteIdentityV":
+            return IdentityCMapByte(WMode=1)
         raise cls.CMapNotFound(name)
 
 
-__all__ = ("CMap", "CMapDB")
+__all__ = ("CMap", "CMapDB", "IdentityCMap", "IdentityCMapByte")

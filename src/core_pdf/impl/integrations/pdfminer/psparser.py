@@ -14,7 +14,7 @@ END_KEYWORD = re.compile(rb"[\000\011\012\014\015\040\050\051\074\076\133\135\17
 
 
 class PSLiteral:
-    def __init__(self, name: str) -> None:
+    def __init__(self, name: str | bytes) -> None:
         self.name = name
 
     def __repr__(self) -> str:
@@ -22,20 +22,19 @@ class PSLiteral:
 
     __str__ = __repr__
 
-    def __hash__(self) -> int:
-        return hash(self.name)
-
-    def __eq__(self, other: object) -> bool:
-        return isinstance(other, PSLiteral) and self.name == other.name
-
 
 class PSKeyword:
     def __init__(self, name: bytes) -> None:
         self.name = name
 
+    def __repr__(self) -> str:
+        return f"/{self.name!r}"
+
+    __str__ = __repr__
+
 
 @lru_cache(maxsize=4096)
-def LIT(name: str) -> PSLiteral:
+def LIT(name: str | bytes) -> PSLiteral:
     return PSLiteral(name)
 
 
@@ -46,12 +45,15 @@ def KWD(name: bytes) -> PSKeyword:
 
 def literal_name(value: Any) -> str:
     if isinstance(value, PSLiteral):
-        return value.name
+        if isinstance(value.name, str):
+            return value.name
+        try:
+            return value.name.decode("utf-8")
+        except UnicodeDecodeError:
+            return str(value.name)
     if isinstance(value, PdfName):
         return value.value
-    if isinstance(value, str):
-        return value
-    raise TypeError(f"literal name required: {value!r}")
+    return str(value)
 
 
 PSBaseParserToken: TypeAlias = object

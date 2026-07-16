@@ -28,11 +28,11 @@ class PDFCIDFont:
         del strict
         encoding = resolve1(spec.get("Encoding"))
         if isinstance(encoding, PSLiteral):
-            return encoding.name
+            return literal_name(encoding)
         if isinstance(encoding, PDFStream):
             name = resolve1(encoding.attrs.get("CMapName"))
             if isinstance(name, PSLiteral):
-                return name.name
+                return literal_name(name)
             if isinstance(name, str):
                 return name
         return "unknown"

@@ -51,18 +51,23 @@ class PDFStream:
 
     def get_filters(self) -> list[tuple[PSLiteral, Any]]:
         filters = resolve1(self.get_any(("F", "Filter"), []))
-        params = resolve1(self.get_any(("DP", "DecodeParms", "FDecodeParms"), []))
+        params = resolve1(self.get_any(("DP", "DecodeParms", "FDecodeParms"), {}))
+        if not filters:
+            return []
         if not isinstance(filters, list):
             filters = [filters]
         if not isinstance(params, list):
             params = [params] * len(filters)
-        params += [None] * (len(filters) - len(params))
         return [(LIT(literal_name(name)), param) for name, param in zip(filters, params)]
 
     def get_data(self) -> bytes:
         if self.data is not None:
             return self.data
         data = self.rawdata or b""
+        if self.decipher:
+            assert self.objid is not None
+            assert self.genno is not None
+            data = self.decipher(self.objid, self.genno, data, self.attrs)
         for filter_name, _ in self.get_filters():
             if filter_name in LITERALS_FLATE_DECODE:
                 data = zlib.decompress(data)
