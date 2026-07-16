@@ -2,6 +2,7 @@ from core_pdf.impl.engine.extraction.page_text.native import (
     native_invisible_text_layer_has_fragmented_geometry,
     native_invisible_text_layer_is_trustworthy,
     native_text_runs_inside_page_bounds,
+    should_try_rendered_glyph_text,
 )
 from core_pdf.impl.engine.layout.geometry_quality import (
     LayoutGeometrySummary,
@@ -57,6 +58,18 @@ def test_page_bounds_still_drop_text_starting_outside_page() -> None:
     )
 
 
+def test_dense_native_text_is_not_rebuilt_from_rendered_glyphs() -> None:
+    noisy_multicolumn_text = "index entry ........ 12 " * 200
+
+    assert not should_try_rendered_glyph_text(noisy_multicolumn_text)
+
+
+def test_uninterpretable_dense_native_text_can_use_rendered_glyphs() -> None:
+    damaged_text = ("index entry ........ 12 " * 200) + "\ufffd"
+
+    assert should_try_rendered_glyph_text(damaged_text)
+
+
 def test_sparse_geometry_issues_do_not_trigger_ocr_for_substantial_text() -> None:
     summary = LayoutGeometrySummary(
         issue_count=20,
@@ -70,6 +83,21 @@ def test_sparse_geometry_issues_do_not_trigger_ocr_for_substantial_text() -> Non
     )
 
     assert not layout_geometry_should_trigger_ocr(summary, text_tokens=324)
+
+
+def test_isolated_glyph_mismatches_do_not_trigger_full_page_ocr() -> None:
+    summary = LayoutGeometrySummary(
+        issue_count=27,
+        error_count=27,
+        warning_count=0,
+        repairable_count=27,
+        text_run_count=425,
+        line_count=90,
+        issue_codes=(("glyph_cluster_text_mismatch", 27),),
+        suspicion_score=148.5,
+    )
+
+    assert not layout_geometry_should_trigger_ocr(summary, text_tokens=783)
 
 
 def test_dense_geometry_issues_still_trigger_ocr() -> None:

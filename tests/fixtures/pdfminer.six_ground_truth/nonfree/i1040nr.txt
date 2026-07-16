@@ -194,7 +194,6 @@ Credit for nonbusiness energyPage 2 of 48 Instructions for Form 1040NR 7:48 - 6
 The type and rule above prints on all proofs including departmental reproduction proofs. MUST be removed before printing.
 
 Items to Note
-Form 1040NR-EZ. You may be able
 to use Form 1040NR-EZ if your only
 income from U.S. sources is wages,
 salaries, tips, taxable refunds of state
@@ -239,7 +238,6 @@ Form 8843. This rule does not apply to
 foreign-government-related individuals
 
 forms and schedules you will need are
-available from the Internal Revenue
 Service. You can download them from
 see Taxpayer Assistance on page 32
 for other ways to get them (as well as
@@ -360,6 +358,7 @@ closer connection to one foreign
 country in which you had a tax home
 Who Must File
 
+Form 1040NR-EZ. You may be able available from the Internal Revenue
 the IRS website at www.irs.gov. Also United States for the substantial
 You are a resident for tax purposes if
 you were a lawful permanent resident
@@ -536,8 +535,6 @@ applying for a refund of tax. Also, enter
 the type of income (for example,
 dividends, royalties) and amount in the
 
-CAUTION to file Form 3520-A, Annual the amounts of gross income you
-
 Information Return of Foreign Trust received from dividends, interest,
 
 With a U.S. Owner, on or before March royalties, pensions, annuities, and other
@@ -580,6 +577,7 @@ earlier for the tax year, complete Form
 change the form to reflect the Page 1. Enter your name, identifying
 blank.
 ! for a foreign trust, you may have Page 4, lines 76a through 85. Enter
+CAUTION to file Form 3520-A, Annual the amounts of gross income you
 withholding at source, you must include
 all gross income of that type that you
 received. The amount of each type of
@@ -690,7 +688,7 @@ Documentation. You must attach
 acceptable proof of the withholding for Estates and trusts.
 which you are claiming a refund. If you
 are claiming a refund of backup
-withholding tax based on your status as
+withholding tax based on your status as the return by the 15th day of the 4th
 a nonresident alien, you must attach a
 copy of the Form 1099 that shows the
 
@@ -698,7 +696,7 @@ calendar year is due by June 16, 2008. a Resident Alien
 If you file for a You can elect to be taxed as a U.S.
 nonresident alien estate or trust that resident for the whole year if all of the
 has an office in the United States, file following apply.
-the return by the 15th day of the 4th You were married.
+You were married.
 month after the tax year ends. If you file Your spouse was a U.S. citizen or
 for a nonresident alien estate or trust resident alien on the last day of the tax
 
@@ -791,13 +789,13 @@ a mutual fund or real estate investment Center, Cincinnati, OH 45999-0048
 trust (REIT) with respect to its stock U.S.A.
 because the distribution was
 designated as long-term capital gain or Private Delivery Services
-a nondividend distribution, you must You can use certain private delivery
+a nondividend distribution, you must
 attach a statement that identifies the
 
 Dual-Status Taxpayers
 Note. If you elect to be taxed as a
 resident alien (discussed earlier), the
-special instructions and restrictions
+You can use certain private delivery special instructions and restrictions
 services designated by the IRS to meet discussed here do not apply.
 -4- Instructions for Form 1040NRPage 5 of 48 Instructions for Form 1040NR 7:48 - 6-DEC-2007
 
@@ -1081,7 +1079,6 @@ on U.S. source gross transportation
 22 on page 1.
 See section 897 and its regulations.
 disposition of U.S. real property
-and Form 1040NR, line 14. Also, net
 line 42.
 Income You May Elect To
 Treat as Effectively
@@ -1103,6 +1100,7 @@ real property interest (see Pub. 519 for
 definition) is taxed as if the gain or loss
 Report gains and losses on the
 interests on Schedule D (Form 1040)
+and Form 1040NR, line 14. Also, net
 gains may be subject to the alternative
 minimum tax. See the instructions for
 Connected With a U.S. Trade
@@ -1518,7 +1516,6 @@ exchange and any gain is treated as
 Form 1040NR
 Identifying Number
 you are filing Form 1040NR for an
-Foreign address.
 Identifying number.
 
 Line Instructions for
@@ -1529,7 +1526,6 @@ any U.S. grantors and beneficiaries. If
 estate or trust engaged in a trade or
 business in the United States during
 2007, give the names and addresses of
-Enter the
 information in the following order: City,
 province or state, and country. Follow
 the country’s practice for entering the
@@ -1662,7 +1658,7 @@ An incorrect or missing identifying
 Name. If you are filing Form 1040NR number may increase your tax or
 The amount of your tax depends on
 your filing status. Before you decide
-consider yourself married for the whole
+Foreign address. Enter the consider yourself married for the whole
 described under Married persons who
 1. You file a return separate from
 your spouse.
@@ -1696,7 +1692,6 @@ placement agency, or by judgment,
 decree, or other order of any court of
 competent jurisdiction.
 Line 6 — Qualifying widow(er) with
-dependent child. You can check the
 box on line 6 if all seven of the following
 apply.
 1. You were a resident of Canada,
@@ -1744,6 +1739,7 @@ Instructions for Form 1040NR
 
 even if your spouse died in 2007.) In
 4, your spouse must have lived with
+you in the United States at some time
 is not eligible to obtain an SSN, he or
 she must apply for an ITIN. See
 Identifying number
@@ -1752,7 +1748,6 @@ nationals and residents of Canada,
 the same terms as U.S. citizens. See
 resident of the Republic of Korea
 (South Korea), you can claim an
-lived with you in the United States at
 some time during 2007. Be sure to
 of your dependents. If you have more
 than four dependents, attach a
@@ -1771,7 +1766,6 @@ TIP dependent can get an
 Identifying number
 
 addition, if you checked filing status box
-you in the United States at some time
 have an SSN or an ITIN. If your spouse
 on page 8 for
 your children and other dependents on
@@ -1821,47 +1815,61 @@ Pub. 519 explains how income is
 classified and what income you should
 report here. The instructions for this
 
-during 2007. Finally, your spouse must
-Mexico, and the Republic of Korea
-(South Korea) can claim exemptions for
-their dependents. If you were a U.S.
-national or a resident of Canada or
-Mexico, you can claim exemptions for
-exemption for any of your children who
-CAUTION exemption for a dependent, see
-Exemptions for Dependents in Pub.
-Children who did not live with you
-due to divorce or separation. If you
-checked filing status box 1 or 3 and are
-claiming as a dependent a child who
-did not live with you under the rules for
-children of divorced or separated
-parents, attach Form 8332 or similar
-statement to your return. See Form
-who did not live with you for reasons
-other than divorce or separation on the
-line labeled “Dependents on 7c not
-entered above.”
-Line 7c, column (2). You must
-enter each dependent’s identifying
-process your return we may disallow
-the exemption claimed for the
-dependent and reduce or disallow any
-For details on how your
+during 2007. Finally, your spouse must numbers (ATINs). If you have a
 
-numbers (ATINs). If you have a
-adoption. See Form W-7A for details.
-credit. A qualifying child for purposes
-own support for 2007.
-Lived with you more than half of
-You may round off cents to whole
-dollars on your return and schedules. If
-you do round to whole dollars, you
-must round all amounts. To round, drop
-on a line, include cents when adding
-the amounts and round off only the
-total.
-Income Effectively
+Mexico, and the Republic of Korea adoption. See Form W-7A for details.
+
+(South Korea) can claim exemptions for
+
+their dependents. If you were a U.S.
+
+national or a resident of Canada or
+
+Mexico, you can claim exemptions for
+
+exemption for any of your children who credit. A qualifying child for purposes
+
+dependent child. You can check the lived with you in the United States at
+
+CAUTION exemption for a dependent, see own support for 2007.
+
+Exemptions for Dependents in Pub. Lived with you more than half of
+
+Children who did not live with you
+
+due to divorce or separation. If you
+
+checked filing status box 1 or 3 and are
+
+claiming as a dependent a child who
+
+did not live with you under the rules for
+
+children of divorced or separated
+
+parents, attach Form 8332 or similar
+
+statement to your return. See Form
+
+who did not live with you for reasons You may round off cents to whole
+
+other than divorce or separation on the dollars on your return and schedules. If
+
+line labeled “Dependents on 7c not you do round to whole dollars, you
+
+entered above.” must round all amounts. To round, drop
+
+Line 7c, column (2). You must
+
+enter each dependent’s identifying
+
+process your return we may disallow on a line, include cents when adding
+
+the exemption claimed for the the amounts and round off only the
+
+dependent and reduce or disallow any total.
+
+For details on how your Income Effectively
 
 must get an ATIN for the dependent
 Line 7c — Dependents. Only U.S. agency includes any person authorized
@@ -2585,6 +2593,7 @@ Retirement Arrangements (IRAs).
 The type and rule above prints on all proofs including departmental reproduction proofs. MUST be removed before printing.
 
 attach a statement explaining what you
+
 did.
 Exception 2. If any of the following
 apply, enter the total distribution on
@@ -2633,7 +2642,6 @@ is not a QCD on line 16b unless
 Exception 2 applies to that part. Enter
 “QCD” next to line 16b.
 
-Exception 4.
 AnHFD is a distribution made
 directly by the trustee of your IRA
 (other than a SEP or SIMPLE IRA) to
@@ -2644,19 +2652,18 @@ Pub. 590 for details.
 !
 the 12 months following the month of
 the HFD, you may have to report the
-HFD as income and pay an additional
 tax. See Form 8889, Part III.
-distribution, figure the taxable amount
 of the taxable amounts on line 16b.
 Enter the total amount of those
 distributions on line 16a.
 
-If the distribution is a
 qualified health savings account (HSA)
 your HSA. If eligible, you generally can
 The amount of an HFD reduces
 the amount you can contribute
 fail to maintain eligibility for an HSA for
+HFD as income and pay an additional
+distribution, figure the taxable amount
 
 earnings) of excess salary deferrals or
 If you received a Form 1042-S
@@ -2792,7 +2799,7 @@ IRA and the total was not rolled over, or
 See the instructions for line 55 on page
 contribution deduction for any Disability pensions received before
 
-Corrective distributions (including any
+Exception 4. If the distribution is a Corrective distributions (including any
 chapter 3 of Pub. 519.
 Note. If you performed services in the
 Fully taxable pensions and
@@ -3132,12 +3139,15 @@ more than the qualified higher
 education expenses of the designated
 beneficiary in 2007, and (b) they were
 not included in a qualified rollover.
+accounts, including rollovers, do not
+Instructions for Form 1040NR
 
 “foreclosure” in the search box.
 Use line 22 to report your total
 effectively connected income that is
 Adjusted Gross Income
 were an eligible educator in 2007, you
+qualified expenses you paid in 2007.
 
 generates effectively connected
 income.
@@ -3155,14 +3165,6 @@ States or its possessions. If you meet
 these requirements, see Pub. 521. Use
 Form 3903 to figure the amount to
 Line 27 — Self-employed SEP,
-
-Nontaxable distributions from these can deduct on line 24 up to $250 of
-
-accounts, including rollovers, do not
-Instructions for Form 1040NR
-
-qualified expenses you paid in 2007.
-
 were self-employed or a partner, you
 -15-
 
@@ -3200,6 +3202,7 @@ include this exempt income on line 23.
 Also, you must complete item M on
 page 5 of Form 1040NR.
 Line 24 — Educator expenses. If you enter on this line.
+Nontaxable distributions from these can deduct on line 24 up to $250 of
 
 ! additional tax if you received a teacher, instructor, counselor, principal,
 and necessary expenses paid in
@@ -7403,9 +7406,9 @@ line 40, is— line 40, is— line 40, is—
 least less widow(er) filing least less widow(er) filing least less widow(er) filing
 than separately than separately than separately
 
-At But Single Qualifying Married
-
 At But Single Qualifying Married At But Single Qualifying Married
+
+At But Single Qualifying Married
 
 Your tax is— Your tax is— Your tax is—
 
@@ -7611,11 +7614,10 @@ line 40, is— line 40, is— line 40, is—
 least less widow(er) filing least less widow(er) filing least less widow(er) filing
 than separately than separately than separately
 
-At But Single Qualifying Married
-
 At But Single Qualifying Married At But Single Qualifying Married
 
 2007 Tax Table– Continued
+At But Single Qualifying Married
 
 Your tax is— Your tax is— Your tax is—
 
@@ -7826,9 +7828,9 @@ line 40, is— line 40, is— line 40, is—
 least less widow(er) filing least less widow(er) filing least less widow(er) filing
 than separately than separately than separately
 
-At But Single Qualifying Married
-
 At But Single Qualifying Married At But Single Qualifying Married
+
+At But Single Qualifying Married
 
 Your tax is— Your tax is— Your tax is—
 
@@ -8095,11 +8097,10 @@ line 40, is— line 40, is— line 40, is—
 least less widow(er) filing least less widow(er) filing least less widow(er) filing
 than separately than separately than separately
 
-At But Single Qualifying Married
-
 At But Single Qualifying Married At But Single Qualifying Married
 
 2007 Tax Table– Continued
+At But Single Qualifying Married
 
 Your tax is— Your tax is— Your tax is—
 
@@ -8310,9 +8311,9 @@ line 40, is— line 40, is— line 40, is—
 least less widow(er) filing least less widow(er) filing least less widow(er) filing
 than separately than separately than separately
 
-At But Single Qualifying Married
-
 At But Single Qualifying Married At But Single Qualifying Married
+
+At But Single Qualifying Married
 
 Your tax is— Your tax is— Your tax is—
 
@@ -8518,11 +8519,10 @@ line 40, is— line 40, is— line 40, is—
 least less widow(er) filing least less widow(er) filing least less widow(er) filing
 than separately than separately than separately
 
-At But Single Qualifying Married
-
 At But Single Qualifying Married At But Single Qualifying Married
 
 2007 Tax Table– Continued
+At But Single Qualifying Married
 
 Your tax is— Your tax is— Your tax is—
 
@@ -8733,9 +8733,9 @@ line 40, is— line 40, is— line 40, is—
 least less widow(er) filing least less widow(er) filing least less widow(er) filing
 than separately than separately than separately
 
-At But Single Qualifying Married
-
 At But Single Qualifying Married At But Single Qualifying Married
+
+At But Single Qualifying Married
 
 Your tax is— Your tax is— Your tax is—
 
@@ -8941,11 +8941,10 @@ line 40, is— line 40, is— line 40, is—
 least less widow(er) filing least less widow(er) filing least less widow(er) filing
 than separately than separately than separately
 
-At But Single Qualifying Married
-
 At But Single Qualifying Married At But Single Qualifying Married
 
 2007 Tax Table– Continued
+At But Single Qualifying Married
 
 Your tax is— Your tax is— Your tax is—
 
@@ -9156,9 +9155,9 @@ line 40, is— line 40, is— line 40, is—
 least less widow(er) filing least less widow(er) filing least less widow(er) filing
 than separately than separately than separately
 
-At But Single Qualifying Married
-
 At But Single Qualifying Married At But Single Qualifying Married
+
+At But Single Qualifying Married
 
 Your tax is— Your tax is— Your tax is—
 
@@ -9604,13 +9603,12 @@ $0 $7,825 10% $0 $0 $15,650 10% $0
 97,925 174,850 21,915.25 + 33% 97,925 195,850 349,700 43,830.50 + 33% 195,850
 174,850 47,300.50 + 35% 174,850 349,700 94,601.00 + 35% 349,700
 
-Instructions for Form 1040NR -47-BYGE TS OE TS — TheLBNCLIOW? EO EDEN ETB Ait6 - B-DEC-S084
+Instructions for Form 1040NR -47-Page 48 of 48 Instructions for Form 1040NR 7:48 - 6-DEC-2007
 
 The type and rule above prints on all proofs including departmental reproduction proofs. MUST be removed before printing.
 
 Index
 
-A Estimated tax penalty ....... 25 N Standard mileage rate ....... 26
 Address change ............ 31 Estimated tax,
 Adjustments ................ 15 individuals 23, 24, 25, 30 defined .................... 2 deduction for ............. 26
 Adoption expenses: Excess salary deferrals ...... 10 Student loan interest
@@ -9628,6 +9626,7 @@ Business income or
 C Expatriation before June 4, Late payment ............. 31 Archer MSAs ........... 22
 Capital assets, sales or
 
+A Estimated tax penalty ....... 25 N
 Extension of time to file ....... 4 Other taxes ................. 22 Tax computation
 Filing requirements ........... 2 Tax rates ................... 18
 Filing status .................. 8 Tax table 18, 34-45
@@ -9640,6 +9639,7 @@ Penalties:
 long-term residents: Estimated tax ............. 25 Income effectively
 Frivolous return ........... 31 connected .............. 18
 
+Standard mileage rate ....... 26
 Nonresident aliens, State and local income taxes,
 Tax rate schedules .......... 18
 Tax withholding 23, 29
@@ -9657,7 +9657,6 @@ Capital gains and
 Casualty and theft
 losses .................... 27
 Charity, gifts to 26-27
-Child and dependent care
 expenses:
 
 G
@@ -9708,7 +9707,8 @@ Income to be reported
 
 Qualified retirement plans,
 Real property income
-CWEDT ED siereestessseeeeegg THCOWE LOBE BEGOBLED T°" OTE. yerouno? HOW FOWE 10 —————
+9-15, election .................... 6
+29 Records, how long to
 keep ..................... 31
 
 Tip income 10, 22
@@ -9750,6 +9750,7 @@ Effectively connected
 
 Itemized deductions
 11, 29
+K
 Line instructions for Form
 M
 
@@ -9766,16 +9767,13 @@ income 9-15 Married persons who live
 
 Election to be taxed as a
 
-resident alien .............. 4
 Estates
 Estates, exemption deduction
 for........................ 18
 
-Mileage rates, standard ...... 1
 3, 4, 8 Miscellaneous itemized
 Moving expenses
 
-Scholarship and fellowship
 grants 11, 16
 1, 15
 
@@ -9787,26 +9785,29 @@ Identity theft ................ 30 (Tier 1) ................... 29
 Income tax withholding ...... 30 for........................ 18
 Individual retirement
 Installment payments ........ 25 taxes ..................... 11 compensation ............ 15
-Interest income 10, 29 Requesting a copy of your tax W
 Domestic production activities Kinds of income .............. 6 Retirement plan deduction,
 L dollars ..................... 9
 1040NR ................... 8
 apart ...................... 8 assets 12, 29
+resident alien .............. 4 Mileage rates, standard ...... 1
 
 uncollected tax on ........ 23 the ....................... 31 tips .................. 22
-Health insurance deduction: Qualified dividends .......... 11 Medicare or Tier 1 RRTA
+Child and dependent care Health insurance deduction: Qualified dividends .......... 11
 worksheet ................ 19 Income not effectively
 Refund ..................... 23 U.S. real property interests,
 Reminders .................. 30 Unresolved tax problems .... 32
 payment of tax ............ 31 Rental income .............. 29
+Interest income 10, 29 Requesting a copy of your tax W
 Salaries and wages 10, 29
 Sales or exchanges, capital
+Scholarship and fellowship
 deductions ................ 28 Social security benefits ...... 29
 
 IRAs and other qualified
 retirement plans ...... 22
 Recapture taxes ........ 22
 social security and
+Medicare or Tier 1 RRTA
 artists .................... 17 Taxpayer assistance ........ 32
 Third party designee ........ 26
 deduction for ............. 15 Tier 1 RRTA tax withheld .... 23

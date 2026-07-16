@@ -10,7 +10,7 @@ from core_pdf.impl.engine.spec.s_08_graphics.matrix import (
     IDENTITY_MATRIX,
     Matrix,
 )
-from core_pdf.impl.objects import PdfStream
+from core_pdf.impl.objects import PdfReference, PdfStream
 
 
 class XObjectMixin:
@@ -27,12 +27,19 @@ class XObjectMixin:
         name = self.resolve_name(name_obj)
         if not name:
             return
-        xobj = self.lookup_page_resource("XObject", name)
+        xobjects = lookup_dict_key(self.resources, "XObject")
+        raw_xobj = lookup_dict_key(xobjects, name) if isinstance(xobjects, dict) else None
+        stream_key = (
+            ("ref", raw_xobj.object_number, raw_xobj.generation_number)
+            if isinstance(raw_xobj, PdfReference)
+            else None
+        )
+        xobj = self.resolve(raw_xobj) if raw_xobj is not None else None
+        if xobj is None:
+            xobj = self.lookup_page_resource("XObject", name)
         if not isinstance(xobj, PdfStream):
             return
-        xobj_dict = self.document.resolver.resolve_dict(xobj.dictionary)
-        if xobj_dict is None:
-            return
+        xobj_dict = xobj.dictionary
         subtype = self.resolve_name(lookup_dict_key(xobj_dict, "Subtype"))
         if self.resolve_name(lookup_dict_key(xobj_dict, "Type")) == "ObjStm":
             return
@@ -123,7 +130,10 @@ class XObjectMixin:
                 )
                 if group_alpha_val is not None:
                     group_alpha = max(0.0, min(1.0, group_alpha_val))
-        resources = self.resolve_dict(lookup_dict_key(xobj_dict, "Resources")) or self.resources
+        raw_resources = lookup_dict_key(xobj_dict, "Resources")
+        resources = (
+            raw_resources if isinstance(raw_resources, dict) else self.resolve_dict(raw_resources)
+        ) or self.resources
         xobj_matrix = lookup_dict_key(xobj_dict, "Matrix")
         if isinstance(xobj_matrix, (list, tuple)) and len(xobj_matrix) > 6:
             xobj_matrix = xobj_matrix[:6]
@@ -141,6 +151,7 @@ class XObjectMixin:
             depth + 1,
             clip_bbox=transformed_form_bbox,
             group_alpha=group_alpha,
+            stream_key=stream_key,
             swallow_parse_errors=True,
         )
 

@@ -16,6 +16,71 @@ class CFFGlyphFeature:
 EMPTY_FEATURE = CFFGlyphFeature((), 0.0, 0, ())
 FEATURE_GRID_WIDTH = 18
 FEATURE_GRID_HEIGHT = 24
+STANDARD_GLYPH_SIDS = {
+    name: sid
+    for sid, name in enumerate(
+        (
+            ".notdef",
+            "space",
+            "exclam",
+            "quotedbl",
+            "numbersign",
+            "dollar",
+            "percent",
+            "ampersand",
+            "quoteright",
+            "parenleft",
+            "parenright",
+            "asterisk",
+            "plus",
+            "comma",
+            "hyphen",
+            "period",
+            "slash",
+            "zero",
+            "one",
+            "two",
+            "three",
+            "four",
+            "five",
+            "six",
+            "seven",
+            "eight",
+            "nine",
+            "colon",
+            "semicolon",
+            "less",
+            "equal",
+            "greater",
+            "question",
+            "at",
+            *tuple("ABCDEFGHIJKLMNOPQRSTUVWXYZ"),
+            "bracketleft",
+            "backslash",
+            "bracketright",
+            "asciicircum",
+            "underscore",
+            "quoteleft",
+            *tuple("abcdefghijklmnopqrstuvwxyz"),
+            "braceleft",
+            "bar",
+            "braceright",
+            "asciitilde",
+        )
+    )
+}
+STANDARD_GLYPH_SIDS.update(
+    {
+        "quotesingle": 104,
+        "quotedblleft": 105,
+        "endash": 111,
+        "bullet": 116,
+        "quotedblright": 119,
+        "emdash": 137,
+        "multiply": 168,
+    }
+)
+CFF_STANDARD_STRING_COUNT = 391
 
 
 class CFFFont:
@@ -24,6 +89,7 @@ class CFFFont:
         "top_dict",
         "charstrings",
         "cid_to_gid",
+        "custom_string_sids",
         "is_cid_keyed",
         "global_subrs",
         "local_subrs",
@@ -37,7 +103,11 @@ class CFFFont:
         pos = self.data[2]
         ignored_names, pos = self._read_index(pos)
         top_index, pos = self._read_index(pos)
-        ignored_strings, pos = self._read_index(pos)
+        custom_strings, pos = self._read_index(pos)
+        self.custom_string_sids = {
+            value.decode("latin-1"): CFF_STANDARD_STRING_COUNT + index
+            for index, value in enumerate(custom_strings)
+        }
         global_subrs, pos = self._read_index(pos)
         self.global_subrs = tuple(global_subrs)
         if not top_index:
@@ -224,6 +294,14 @@ class CFFFont:
             return self.cid_to_gid.get(cid, 0)
         return cid
 
+    def glyph_id_for_name(self, name: str) -> int:
+        sid = STANDARD_GLYPH_SIDS.get(name)
+        if sid is None:
+            sid = self.custom_string_sids.get(name)
+        if sid is None:
+            return 0
+        return self.cid_to_gid.get(sid, 0)
+
     def has_glyph_id(self, gid: int) -> bool:
         return 0 <= gid < len(self.charstrings)
 
@@ -324,8 +402,16 @@ class CFFFont:
         return self.glyph_feature(self.glyph_id_for_cid(cid))
 
     def glyph_bitmap(self, cid: int, width: int = 24, height: int = 32) -> tuple[int, ...]:
+        return self.glyph_bitmap_for_gid(
+            self.glyph_id_for_cid(cid),
+            width=width,
+            height=height,
+        )
+
+    def glyph_bitmap_for_gid(
+        self, glyph_id: int, width: int = 24, height: int = 32
+    ) -> tuple[int, ...]:
         try:
-            glyph_id = self.glyph_id_for_cid(cid)
             charstring = self.charstrings[glyph_id]
         except IndexError:
             return ()
@@ -338,8 +424,10 @@ class CFFFont:
         )
 
     def glyph_bbox(self, cid: int) -> tuple[float, float, float, float] | None:
+        return self.glyph_bbox_for_gid(self.glyph_id_for_cid(cid))
+
+    def glyph_bbox_for_gid(self, glyph_id: int) -> tuple[float, float, float, float] | None:
         try:
-            glyph_id = self.glyph_id_for_cid(cid)
             charstring = self.charstrings[glyph_id]
         except IndexError:
             return None
@@ -522,9 +610,10 @@ def _type2_glyph_contours(
                 elif byte == 10:
                     if stack:
                         subr_index = int(stack.pop()) + subr_bias
-                        if 0 <= subr_index < len(local_subrs):
-                            if not execute(local_subrs[subr_index], depth + 1):
-                                return False
+                        if 0 <= subr_index < len(local_subrs) and not execute(
+                            local_subrs[subr_index], depth + 1
+                        ):
+                            return False
                 elif byte == 11:
                     return True
                 elif byte == 14:
@@ -559,9 +648,10 @@ def _type2_glyph_contours(
                 elif byte == 29:
                     if stack:
                         subr_index = int(stack.pop()) + gsubr_bias
-                        if 0 <= subr_index < len(global_subrs):
-                            if not execute(global_subrs[subr_index], depth + 1):
-                                return False
+                        if 0 <= subr_index < len(global_subrs) and not execute(
+                            global_subrs[subr_index], depth + 1
+                        ):
+                            return False
                 elif byte in (30, 31):
                     horizontal = byte == 31
                     args = list(stack)

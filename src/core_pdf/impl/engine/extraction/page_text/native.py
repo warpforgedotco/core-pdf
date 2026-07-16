@@ -46,6 +46,8 @@ from core_pdf.impl.engine.layout.geometry_quality import (
     text_run_has_repairable_glyph_geometry_issue,
 )
 
+MIN_VISIBLE_GLYPH_COVERAGE = 0.75
+
 if TYPE_CHECKING:
     from core_pdf.impl.engine.layout.models import TextRun
 
@@ -291,13 +293,13 @@ def native_text_runs_inside_page_bounds(
             continue
         intersection_width = max(0.0, min(run.x1, page_x1) - max(run.x0, page_x0))
         intersection_height = max(0.0, min(run.y1, page_y1) - max(run.y0, page_y0))
-        if intersection_width * intersection_height / area >= 0.80:
+        if intersection_width * intersection_height / area >= MIN_VISIBLE_GLYPH_COVERAGE:
             filtered.append(run)
             continue
         vertical_coverage = intersection_height / height if height > 0.0 else 0.0
         horizontally_anchored = page_x0 <= run.x0 <= page_x1 or page_x0 <= run.x1 <= page_x1
         if (
-            vertical_coverage >= 0.80
+            vertical_coverage >= MIN_VISIBLE_GLYPH_COVERAGE
             and horizontally_anchored
             and width >= (page_x1 - page_x0) * 0.50
             and sum(ch.isalnum() for ch in run.text) >= 8
@@ -412,7 +414,7 @@ def text_run_is_inside_active_clip(run: TextRun) -> bool:
         return False
     intersection_width = max(0.0, min(run.x1, clip_bbox[2]) - max(run.x0, clip_bbox[0]))
     intersection_height = max(0.0, min(run.y1, clip_bbox[3]) - max(run.y0, clip_bbox[1]))
-    return intersection_width * intersection_height / area >= 0.80
+    return intersection_width * intersection_height / area >= MIN_VISIBLE_GLYPH_COVERAGE
 
 
 def invisible_text_layer_duplicates_painted_text(
@@ -555,7 +557,9 @@ def should_try_rendered_glyph_text(text: str) -> bool:
     tokens = extracted_text_token_count(text)
     if tokens < 20:
         return False
-    return uninterpretable_char_count(text) > 0 or sparse_text_looks_noisy(text)
+    if uninterpretable_char_count(text) > 0:
+        return True
+    return tokens < 180 and sparse_text_looks_noisy(text)
 
 
 def should_use_rendered_glyph_text(current: str, glyph_text: str) -> bool:

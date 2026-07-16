@@ -13,6 +13,7 @@ SAMPLES_DIR = TESTS_DIR / "fixtures" / "pdfminer.six" / "samples"
 ACROFORM_PDF = SAMPLES_DIR / "acroform" / "AcroForm_TEST.pdf"
 PAGELABELS_PDF = SAMPLES_DIR / "contrib" / "pagelabels.pdf"
 CMAP_OTHER_FONTS_PDF = SAMPLES_DIR / "contrib" / "issue-598-cmap-other-fonts.pdf"
+CYCLIC_XOBJECTS_PDF = SAMPLES_DIR / "contrib" / "issue-1113-evil-xobjects.pdf"
 ACROFORM_TEXT = "BUTTON\n\nCHECKBOX\n\nRADIO BUTTON\n\nDROPDOWN\n\nLIST\n\nCOMBO LIST\n\nTEXT\f"
 
 
@@ -64,3 +65,7 @@ def test_extract_text_decodes_cmaps_after_font_selection() -> None:
     assert "\x00" not in result
     assert "DIAGNOSTIC TOOLS AND SOFTWARE 120." in result
     assert "Clutch/Gearbox/MCR valve Fault: Signal voltage above threshold" in result
+
+
+def test_distinct_cyclic_xobjects_with_identical_stream_lengths_are_both_extracted() -> None:
+    assert extract_text(CYCLIC_XOBJECTS_PDF) == "Hello world\nHello world\f"

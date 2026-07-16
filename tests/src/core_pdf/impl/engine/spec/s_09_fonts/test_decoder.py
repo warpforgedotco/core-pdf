@@ -1,10 +1,12 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
+from pathlib import Path
 from typing import cast
 
 import pytest
 
+from core_pdf.impl.engine.extraction.document import PdfDocument
 from core_pdf.impl.engine.spec.s_09_fonts.decoder import (
     FontDecoder,
     parse_type1_font_program_encoding,
@@ -15,6 +17,8 @@ from core_pdf.impl.objects import PdfStream
 from core_pdf.impl.primitives import PdfString
 from core_pdf.impl.third_party.cid.cmap import ToUnicodeCMap
 from core_pdf.impl.third_party.truetype import _invert_unicode_cmap
+
+TESTS_DIR = Path(__file__).parents[6]
 
 
 def test_parse_type1_font_program_encoding_reads_custom_array() -> None:
@@ -62,6 +66,17 @@ def test_font_decoder_uses_embedded_type1_encoding_without_pdf_encoding() -> Non
     decoder = FontDecoder(font)
 
     assert decoder.decode(b"A\x0c") == "A\ufb01"
+
+
+def test_simple_type1c_font_captures_embedded_glyph_bitmaps() -> None:
+    pdf_path = TESTS_DIR / "fixtures" / "pdfminer.six" / "samples" / "nonfree" / "i1040nr.pdf"
+
+    with PdfDocument.open(pdf_path) as document:
+        glyphs = document.pages[0].capture_text_state().glyphs
+
+    user_id = glyphs[:6]
+    assert "".join(glyph.text for glyph in user_id) == "Userid"
+    assert all(glyph.bitmap for glyph in user_id)
 
 
 def test_font_decoder_does_not_emit_unknown_difference_names() -> None:

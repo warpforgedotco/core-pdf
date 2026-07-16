@@ -39,17 +39,22 @@ def single_code_mapping(
 
 def cff_font_for_pdf_font(font: dict[str, Any]) -> CFFFont | None:
     descendant = get_descendant(font)
-    if descendant is None:
+    font_dict = descendant if descendant is not None else font
+    font_subtype = normalize_pdf_name(lookup_dict_key(font_dict, "Subtype"))
+    if descendant is not None:
+        if font_subtype != "CIDFontType0":
+            return None
+    elif font_subtype not in {"Type1", "MMType1"}:
         return None
-    if normalize_pdf_name(lookup_dict_key(descendant, "Subtype")) != "CIDFontType0":
-        return None
-    descriptor = lookup_dict_key(descendant, "FontDescriptor")
+    descriptor = lookup_dict_key(font_dict, "FontDescriptor")
     if not isinstance(descriptor, dict):
         return None
     font_file = lookup_dict_key(descriptor, "FontFile3")
     if not isinstance(font_file, PdfStream):
         return None
-    subtype = normalize_pdf_name(lookup_dict_key(font_file, "Subtype"))
+    subtype = normalize_pdf_name(lookup_dict_key(font_file.dictionary, "Subtype"))
+    if descendant is None and subtype != "Type1C":
+        return None
     font_data: bytes | None = font_file.data
     if subtype == "OpenType":
         if font_data is None:
@@ -81,7 +86,7 @@ def build_cff_unicode_repairs(
         return {}
     if len(font_file.data) > 750_000:
         return {}
-    subtype = normalize_pdf_name(lookup_dict_key(font_file, "Subtype"))
+    subtype = normalize_pdf_name(lookup_dict_key(font_file.dictionary, "Subtype"))
     font_data: bytes | None = font_file.data
     if subtype == "OpenType":
         if font_data is None:
