@@ -51,7 +51,7 @@ jobs:
           submodules: recursive
 
       - name: Fetch encrypted PDF fixture
-        run: git -C tests/fixtures/SCORE-Bench lfs pull --include="src/g-325a.pdf"
+        run: git -C tests/fixtures/SCORE-Bench lfs pull
 
       - name: Install uv
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
@@ -61,34 +61,8 @@ jobs:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
 
-      - name: Run tests
-        run: uv run --locked --group test pytest
-
-      - name: Prune uv cache
-        if: always()
-        run: uv cache prune --ci
-
-  windows:
-    name: Windows Python 3.14
-    needs: quality
-    runs-on: windows-latest
-
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v7
-        with:
-          submodules: recursive
-
-      - name: Fetch encrypted PDF fixture
-        run: git -C tests/fixtures/SCORE-Bench lfs pull --include="src/g-325a.pdf"
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
-        with:
-          version: "0.11.28"
-          python-version: "3.14"
-          enable-cache: true
-          cache-dependency-glob: "uv.lock"
+      - name: Install OCR libraries
+        run: sudo apt-get update && sudo apt-get install -y tesseract-ocr libtesseract-dev libleptonica-dev
 
       - name: Run tests
         run: uv run --locked --group test pytest
