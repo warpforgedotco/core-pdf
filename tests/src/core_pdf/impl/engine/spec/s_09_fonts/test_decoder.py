@@ -178,6 +178,29 @@ def test_to_unicode_bfrange_does_not_emit_surrogates() -> None:
     assert cmap.decode(b"\x01\x02") == "\ud7ff\ufffd"
 
 
+def test_to_unicode_destination_strings_stay_utf16be() -> None:
+    cmap = ToUnicodeCMap(
+        b"""
+        /CIDInit /ProcSet findresource begin
+        12 dict begin
+        begincmap
+        2 begincodespacerange
+        <01> <02>
+        endcodespacerange
+        2 beginbfchar
+        <01> <FEFF0041>
+        <02> <FFFE4100>
+        endbfchar
+        endcmap
+        CMapName currentdict /CMap defineresource pop
+        end end
+        """
+    )
+
+    assert cmap.decode(b"\x01") == "A"
+    assert cmap.decode(b"\x02") != "A"
+
+
 def test_to_unicode_fallback_does_not_emit_surrogates() -> None:
     cmap = ToUnicodeCMap(
         b"""
