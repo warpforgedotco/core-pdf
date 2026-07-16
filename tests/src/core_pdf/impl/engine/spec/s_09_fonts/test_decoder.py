@@ -9,8 +9,12 @@ from core_pdf.impl.engine.spec.s_09_fonts.decoder import (
     FontDecoder,
     parse_type1_font_program_encoding,
 )
+from core_pdf.impl.engine.spec.s_09_fonts.encoding import decode_pdf_text_string
+from core_pdf.impl.engine.spec.s_09_fonts.glyphs import glyph_name_to_unicode
 from core_pdf.impl.objects import PdfStream
 from core_pdf.impl.primitives import PdfString
+from core_pdf.impl.third_party.cid.cmap import ToUnicodeCMap
+from core_pdf.impl.third_party.truetype import _invert_unicode_cmap
 
 
 def test_parse_type1_font_program_encoding_reads_custom_array() -> None:
@@ -25,6 +29,15 @@ def test_parse_type1_font_program_encoding_reads_custom_array() -> None:
     """
 
     assert parse_type1_font_program_encoding(font_program) == {12: "fi", 65: "A"}
+
+
+def test_decode_pdfdoc_encoding_accent_and_quote_bytes() -> None:
+    assert decode_pdf_text_string(bytes(range(0x18, 0x20))) == "˘ˇˆ˙˝˛˚˜"
+    assert decode_pdf_text_string(bytes(range(0x8D, 0x91))) == "“”‘’"
+
+
+def test_decode_pdf_text_string_accepts_utf8_bom() -> None:
+    assert decode_pdf_text_string(b"\xef\xbb\xbfPrice \xe2\x82\xac") == "Price €"
 
 
 def test_font_decoder_uses_embedded_type1_encoding_without_pdf_encoding() -> None:
@@ -49,6 +62,246 @@ def test_font_decoder_uses_embedded_type1_encoding_without_pdf_encoding() -> Non
     decoder = FontDecoder(font)
 
     assert decoder.decode(b"A\x0c") == "A\ufb01"
+
+
+def test_font_decoder_does_not_emit_unknown_difference_names() -> None:
+    font = {
+        "Subtype": "Type1",
+        "Encoding": {"Differences": [65, "/DefinitelyUnknownGlyphName"]},
+    }
+
+    decoder = FontDecoder(font)
+
+    assert decoder.decode(b"A") == ""
+
+
+def test_font_decoder_does_not_emit_unknown_dotted_difference_base_names() -> None:
+    font = {
+        "Subtype": "Type1",
+        "Encoding": {"Differences": [65, "/DefinitelyUnknownGlyphName.alt"]},
+    }
+
+    decoder = FontDecoder(font)
+
+    assert decoder.decode(b"A") == ""
+
+
+def test_font_decoder_does_not_emit_unknown_underscore_difference_parts() -> None:
+    font = {
+        "Subtype": "Type1",
+        "Encoding": {"Differences": [65, "/DefinitelyUnknown_OtherUnknown"]},
+    }
+
+    decoder = FontDecoder(font)
+
+    assert decoder.decode(b"A") == ""
+
+
+def test_font_decoder_keeps_single_character_difference_names() -> None:
+    font = {
+        "Subtype": "Type1",
+        "Encoding": {"Differences": [12, "/A"]},
+    }
+
+    decoder = FontDecoder(font)
+
+    assert decoder.decode(b"\x0c") == "A"
+
+
+def test_font_decoder_keeps_known_underscore_difference_parts() -> None:
+    font = {
+        "Subtype": "Type1",
+        "Encoding": {"Differences": [12, "/A_B"]},
+    }
+
+    decoder = FontDecoder(font)
+
+    assert decoder.decode(b"\x0c") == "AB"
+
+
+def test_font_decoder_keeps_known_dotted_difference_base_names() -> None:
+    font = {
+        "Subtype": "Type1",
+        "Encoding": {"Differences": [12, "/A.alt"]},
+    }
+
+    decoder = FontDecoder(font)
+
+    assert decoder.decode(b"\x0c") == "A"
+
+
+def test_font_decoder_maps_tex_text_symbol_difference_names() -> None:
+    font = {
+        "Subtype": "Type1",
+        "Encoding": {"Differences": [12, "/integraltext", "/summationtext"]},
+    }
+
+    decoder = FontDecoder(font)
+
+    assert decoder.decode(b"\x0c\x0d") == "\u222b\u2211"
+
+
+def test_glyph_u_codepoint_rejects_surrogates() -> None:
+    assert glyph_name_to_unicode("uD800") == "uD800"
+
+
+def test_font_decoder_identity_fallback_does_not_emit_surrogates() -> None:
+    font = {
+        "Subtype": "Type0",
+        "Encoding": "Identity-H",
+        "DescendantFonts": [{"Subtype": "CIDFontType2"}],
+    }
+
+    decoder = FontDecoder(font)
+
+    assert decoder.decode(b"\xd8\x00") == "\ufffd"
+
+
+def test_truetype_cmap_inversion_rejects_surrogates() -> None:
+    assert _invert_unicode_cmap({0xD800: 1, 0x41: 2}) == {2: "A"}
+
+
+def test_to_unicode_bfrange_does_not_emit_surrogates() -> None:
+    cmap = ToUnicodeCMap(
+        b"""
+        /CIDInit /ProcSet findresource begin
+        12 dict begin
+        begincmap
+        1 begincodespacerange
+        <01> <02>
+        endcodespacerange
+        1 beginbfrange
+        <01> <02> <D7FF>
+        endbfrange
+        endcmap
+        CMapName currentdict /CMap defineresource pop
+        end end
+        """
+    )
+
+    assert cmap.decode(b"\x01\x02") == "\ud7ff\ufffd"
+
+
+def test_to_unicode_destination_strings_stay_utf16be() -> None:
+    cmap = ToUnicodeCMap(
+        b"""
+        /CIDInit /ProcSet findresource begin
+        12 dict begin
+        begincmap
+        2 begincodespacerange
+        <01> <02>
+        endcodespacerange
+        2 beginbfchar
+        <01> <FEFF0041>
+        <02> <FFFE4100>
+        endbfchar
+        endcmap
+        CMapName currentdict /CMap defineresource pop
+        end end
+        """
+    )
+
+    assert cmap.decode(b"\x01") == "A"
+    assert cmap.decode(b"\x02") != "A"
+
+
+def test_to_unicode_fallback_does_not_emit_surrogates() -> None:
+    cmap = ToUnicodeCMap(
+        b"""
+        /CIDInit /ProcSet findresource begin
+        12 dict begin
+        begincmap
+        2 begincodespacerange
+        <0000> <ffff>
+        <000000> <ffffff>
+        endcodespacerange
+        endcmap
+        CMapName currentdict /CMap defineresource pop
+        end end
+        """
+    )
+
+    assert cmap.decode(b"\xd8\x00") == "\ufffd"
+
+
+def test_to_unicode_fixed_two_byte_fast_path_preserves_unmapped_identity() -> None:
+    cmap = ToUnicodeCMap(
+        b"""
+        /CIDInit /ProcSet findresource begin
+        12 dict begin
+        begincmap
+        1 begincodespacerange
+        <0000> <ffff>
+        endcodespacerange
+        1 beginbfchar
+        <0041> <0058>
+        endbfchar
+        endcmap
+        CMapName currentdict /CMap defineresource pop
+        end end
+        """
+    )
+
+    assert cmap.decode(b"\x00\x41\x00\x42") == "XB"
+
+
+def test_to_unicode_one_byte_fast_path_strips_nul_like_other_paths() -> None:
+    cmap = ToUnicodeCMap(
+        b"""
+        /CIDInit /ProcSet findresource begin
+        12 dict begin
+        begincmap
+        1 begincodespacerange
+        <00> <ff>
+        endcodespacerange
+        1 beginbfchar
+        <41> <0000>
+        endbfchar
+        endcmap
+        CMapName currentdict /CMap defineresource pop
+        end end
+        """
+    )
+
+    assert cmap.decode(b"AB") == "B"
+
+
+def test_to_unicode_rejects_invalid_codespace_ranges() -> None:
+    for range_line in (b"<ff> <00>", b"<> <ff>", b"<00> <ffff>"):
+        with pytest.raises(ValueError, match="^invalid ToUnicode CMap codespacerange$"):
+            ToUnicodeCMap(
+                b"""
+                /CIDInit /ProcSet findresource begin
+                12 dict begin
+                begincmap
+                1 begincodespacerange
+                """
+                + range_line
+                + b"""
+                endcodespacerange
+                endcmap
+                CMapName currentdict /CMap defineresource pop
+                end end
+                """
+            )
+
+
+def test_to_unicode_rejects_only_overlapping_codespace_ranges() -> None:
+    with pytest.raises(ValueError, match="^invalid ToUnicode CMap codespacerange$"):
+        ToUnicodeCMap(
+            b"""
+            /CIDInit /ProcSet findresource begin
+            12 dict begin
+            begincmap
+            2 begincodespacerange
+            <00> <7f>
+            <40> <ff>
+            endcodespacerange
+            endcmap
+            CMapName currentdict /CMap defineresource pop
+            end end
+            """
+        )
 
 
 def test_encoding_differences_default_to_standard_encoding() -> None:

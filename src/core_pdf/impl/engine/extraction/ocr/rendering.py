@@ -140,16 +140,32 @@ def rendered_page_for_ocr_render(
     *,
     dpi: int | None = None,
     source: str = "ocr_render",
+    include_text: bool | None = None,
 ) -> RenderedPage:
+    if include_text is None:
+        cache = page.extraction_cache
+        include_text = not bool(
+            isinstance(cache, dict) and cache.get("ocr_render_exclude_native_text")
+        )
     cache = page.extraction_cache
-    cache_key = "ocr_rendered_page_with_annotations_and_layers"
+    cache_key = (
+        "ocr_rendered_page_with_annotations_and_layers"
+        if include_text
+        else "ocr_rendered_page_without_native_text"
+    )
     if cache is not None:
         cached = cache.get(cache_key)
         if cached is not None:
             return cast(RenderedPage, cached)
     rendered = cast(
         RenderedPage,
-        page.render(RenderOptions(include_annotations=True, include_layers=True)),
+        page.render(
+            RenderOptions(
+                include_text=include_text,
+                include_annotations=True,
+                include_layers=True,
+            )
+        ),
     )
     if cache is not None:
         cache[cache_key] = rendered
@@ -161,9 +177,15 @@ def render_page_for_ocr_at_dpi(
     *,
     dpi: int,
     source: str,
+    include_text: bool | None = None,
 ) -> OcrImage | None:
+    if include_text is None:
+        cache = page.extraction_cache
+        include_text = not bool(
+            isinstance(cache, dict) and cache.get("ocr_render_exclude_native_text")
+        )
     cache = page.extraction_cache
-    cache_key = ("ocr_raster_image", dpi)
+    cache_key = ("ocr_raster_image", dpi, include_text)
     if cache is not None and cache_key in cache:
         cached = cache.get(cache_key)
         if isinstance(cached, OcrImage):

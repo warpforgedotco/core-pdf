@@ -4830,8 +4830,6 @@ Anyplace, LA 70000
 
 For
 
-H17074
-
 is different from the routing number on
 If the direct deposit to your
 account(s) is different from the amount
@@ -4935,9 +4933,7 @@ tax. This election cannot be changed
 
 Note: The routing and account numbers may appear in different places on your check. later.
 
-Instructions for Form 1040NR
-
-H17074Page 25 of 48 Instructions for Form 1040NR 7:48 - 6-DEC-2007
+Instructions for Form 1040NRPage 25 of 48 Instructions for Form 1040NR 7:48 - 6-DEC-2007
 
 The type and rule above prints on all proofs including departmental reproduction proofs. MUST be removed before printing.
 
@@ -9608,7 +9604,7 @@ $0 $7,825 10% $0 $0 $15,650 10% $0
 97,925 174,850 21,915.25 + 33% 97,925 195,850 349,700 43,830.50 + 33% 195,850
 174,850 47,300.50 + 35% 174,850 349,700 94,601.00 + 35% 349,700
 
-Instructions for Form 1040NR -47-Page 48 of 48 Instructions for Form 1040NR 7:48 - 6-DEC-2007
+Instructions for Form 1040NR -47-BYGE TS OE TS — TheLBNCLIOW? EO EDEN ETB Ait6 - B-DEC-S084
 
 The type and rule above prints on all proofs including departmental reproduction proofs. MUST be removed before printing.
 
@@ -9754,7 +9750,6 @@ Effectively connected
 
 Itemized deductions
 11, 29
-K
 Line instructions for Form
 M
 

@@ -14,6 +14,12 @@ from core_pdf.impl.third_party.cid.pdf_string import decode_pdf_literal_string
 CodeSpaceRanges = list[tuple[bytes, bytes]] | tuple[tuple[bytes, bytes], ...]
 
 
+def unicode_scalar_or_replacement(codepoint: int) -> str:
+    if 0 <= codepoint < 0x110000 and not 0xD800 <= codepoint <= 0xDFFF:
+        return chr(codepoint)
+    return "\ufffd"
+
+
 def expand_range(start: int, end: int, source_hex_len: int, base_dst: str) -> dict[bytes, str]:
     mapping: dict[bytes, str] = {}
     if source_hex_len <= 0 or end >= 1 << (source_hex_len * 8):
@@ -25,7 +31,9 @@ def expand_range(start: int, end: int, source_hex_len: int, base_dst: str) -> di
             continue
         units = [ord(c) for c in base_dst]
         units[-1] += offset
-        mapping[i.to_bytes(source_hex_len, "big")] = "".join(chr(u) for u in units)
+        mapping[i.to_bytes(source_hex_len, "big")] = "".join(
+            unicode_scalar_or_replacement(u) for u in units
+        )
     return mapping
 
 
@@ -418,8 +426,13 @@ class ToUnicodeCMap:
                 try:
                     start = decode_cmap_hex_token(tokens[i])
                     end = decode_cmap_hex_token(tokens[i + 1])
+                    validate_codespace_range(start, end)
                 except (ValueError, UnicodeDecodeError):
                     continue
+                if any(
+                    ranges_overlap((start, end), existing) for existing in code_space_ranges
+                ):
+                    raise ValueError("invalid ToUnicode CMap codespacerange")
                 code_space_ranges.append((start, end))
                 valid_range_count += 1
         if saw_codespace_block and valid_range_count == 0:
@@ -533,7 +546,10 @@ class ToUnicodeCMap:
             return self.fast_decode_table_2byte
         if 2 not in self.decode_lengths:
             return None
-        table2 = [""] * 65536
+        table2 = [
+            unicode_scalar_or_replacement(code) if code != 0 else "\ufffd"
+            for code in range(65536)
+        ]
         for k, v in self.mappings.items():
             if len(k) == 2:
                 code = (k[0] << 8) | k[1]
@@ -550,6 +566,8 @@ class ToUnicodeCMap:
         ):
             table = self.fast_decode_table
             result = "".join(table[byte] for byte in data)
+            if "\x00" in result:
+                return result.replace("\x00", "")
             return result
 
         n = len(data)
@@ -618,10 +636,7 @@ class ToUnicodeCMap:
             if 1 not in lengths and n - pos >= 2:
                 cid = (data[pos] << 8) | data[pos + 1]
                 pos += 2
-                if cid < 0x110000 and cid != 0:
-                    out_append(chr(cid))
-                else:
-                    out_append("\ufffd")
+                out_append(unicode_scalar_or_replacement(cid) if cid != 0 else "\ufffd")
             else:
                 out_append(chr(data[pos]))
                 pos += 1

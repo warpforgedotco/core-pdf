@@ -23,6 +23,11 @@ def decode_pdf_text_string(data: bytes | memoryview) -> str:
             return data[2:].decode("utf-16-le")
         except UnicodeDecodeError as exc:
             raise ValueError("invalid UTF-16LE data") from exc
+    if data.startswith(b"\xef\xbb\xbf"):
+        try:
+            return data[3:].decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise ValueError("invalid UTF-8 data") from exc
     return "".join(PDFDOC_ENCODING_TABLE[b] for b in data)
 
 

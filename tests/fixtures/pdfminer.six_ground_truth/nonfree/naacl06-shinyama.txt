@@ -624,13 +624,13 @@ for each entity mapping M = [(x A₁, x B₁), ..., (x An, x Bn)] ∈ (2 |XA| ×
 
 for each entity pair (x Ai, x Bi) {
 
-Pi = x Ai.patterns ∩ x Bi.patternssummationtext
+Pi = x Ai.patterns ∩ x Bi.patterns∑
 
 pairscorei = weight(p)
 
 p∈Pi
 
-} summationtext
+} ∑
 
 mapscore = pairscorei
 

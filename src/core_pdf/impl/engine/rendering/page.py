@@ -26,21 +26,22 @@ def compose_page(page: Any, options: RenderOptions | None = None) -> RenderedPag
     height = max(0.0, y1 - y0)
     display_list = DisplayList(width=width, height=height)
 
-    for run in page.chars:
-        display_list.append(
-            "text",
-            run.seqno,
-            text=run.text,
-            bbox=(run.x0, run.y0, run.x1, run.y1),
-            font_name=run.font_name,
-            font_size=run.font_size,
-            visible=run.visible,
-            fill_color=run.fill_color,
-            rotation_angle=run.rotation_angle,
-        )
+    if options.include_text:
+        for run in page.chars:
+            display_list.append(
+                "text",
+                run.seqno,
+                text=run.text,
+                bbox=(run.x0, run.y0, run.x1, run.y1),
+                font_name=run.font_name,
+                font_size=run.font_size,
+                visible=run.visible,
+                fill_color=run.fill_color,
+                rotation_angle=run.rotation_angle,
+            )
 
     capture_state = None
-    if hasattr(page, "capture_text_state"):
+    if options.include_text and hasattr(page, "capture_text_state"):
         try:
             capture_state = page.capture_text_state()
         except Exception:
@@ -118,18 +119,19 @@ def compose_page(page: Any, options: RenderOptions | None = None) -> RenderedPag
     display_list.items.sort(key=lambda item: item.seqno)
 
     def append_capture(state: TextState) -> None:
-        for run in state.runs:
-            display_list.append(
-                "text",
-                run.seqno,
-                text=run.text,
-                bbox=(run.x0, run.y0, run.x1, run.y1),
-                font_name=run.font_name,
-                font_size=run.font_size,
-                visible=run.visible,
-                fill_color=run.fill_color,
-                rotation_angle=run.rotation_angle,
-            )
+        if options.include_text:
+            for run in state.runs:
+                display_list.append(
+                    "text",
+                    run.seqno,
+                    text=run.text,
+                    bbox=(run.x0, run.y0, run.x1, run.y1),
+                    font_name=run.font_name,
+                    font_size=run.font_size,
+                    visible=run.visible,
+                    fill_color=run.fill_color,
+                    rotation_angle=run.rotation_angle,
+                )
         for drawing in state.drawings:
             display_list.append(
                 drawing.kind,

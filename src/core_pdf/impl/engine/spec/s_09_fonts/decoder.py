@@ -59,6 +59,12 @@ LEGITIMATE_MULTI_CHAR_GLYPHS = frozenset({"ff", "fi", "fl", "ffi", "ffl", "st"})
 TYPE1_ENCODING_ENTRY_RE = re.compile(rb"\bdup\s+(\d{1,3})\s+/([A-Za-z0-9_.]+)\s+put\b")
 
 
+def unicode_scalar_or_replacement(codepoint: int) -> str:
+    if 0 <= codepoint < 0x110000 and not 0xD800 <= codepoint <= 0xDFFF:
+        return chr(codepoint)
+    return "\ufffd"
+
+
 def parse_type1_font_program_encoding(font_program: bytes | memoryview) -> dict[int, str]:
     data = bytes(font_program)
     eexec_pos = data.find(b"currentfile eexec")
@@ -494,10 +500,9 @@ class FontDecoder:
 
         if fallback_code == 0:
             return UnicodeChoice("\u0000", "fallback_nul", dedupe_alternates(alternates, "\u0000"))
-        if fallback_code < 0x110000:
-            text = chr(fallback_code)
-            return UnicodeChoice(text, "identity", dedupe_alternates(alternates, text))
-        return UnicodeChoice("\ufffd", "replacement", dedupe_alternates(alternates, "\ufffd"))
+        text = unicode_scalar_or_replacement(fallback_code)
+        source = "identity" if text != "\ufffd" else "replacement"
+        return UnicodeChoice(text, source, dedupe_alternates(alternates, text))
 
     def _true_type_unicode_for_gid(self, gid: int) -> str:
         tt_font = self.tt_font

@@ -63,6 +63,17 @@ OCR_EDGE_NOISE_PUNCTUATION = "\"'“”‘’`~_=|¦¬^°•·.,;:!?()[]{}<>/\\+
 OCR_ALPHA_JOINERS = frozenset({"'", "’", "-", "‐", "‑", "‒", "–", "—"})
 PRIZE_AMOUNT_TOKEN_RE = re.compile(r"^(?P<whole>\d{1,4})[:,-](?P<cents>\d{2})$")
 PRIZE_RANK_TOKEN_RE = re.compile(r"^(?P<rank>\d+)(?:\.\)|\)|\.)$")
+WEAK_OCR_TOC_LEADER_RE = re.compile(
+    r"^(?P<body>.*[A-Za-z][A-Za-z0-9'’),:(\]\[\s-]{8,}?)\s+"
+    r"(?P<tail>[._~\-–—0-9][._~\-–—+$A-Za-z0-9\s<>]*?)\s*$"
+)
+STANDALONE_PAGE_NUMBER_RE = re.compile(r"(?<![A-Za-z0-9])\d{1,4}(?![A-Za-z0-9])")
+LEADER_TAIL_PREFIX_YEAR_RE = re.compile(r"(?P<year>(?:19|20)\d{2})(?=[._~\-–—])(?P<rest>.*)")
+WEAK_NATIVE_TABLE_YEAR_ROW_RE = re.compile(r"^(?:20\d{2}|19,954,294)\b")
+NUMERIC_THOUSANDS_DOT_RE = re.compile(r"(?<=\d)[.'](?=\d{3}(?:\D|$))")
+SPLIT_THOUSANDS_RE = re.compile(r"(?<!\d)(\d{1,3}(?:,\d{3})*)\s+(\d{3})(?!\d)")
+NUMERIC_FOOTNOTE_QUOTE_RE = re.compile(r"(?<=\d)[\"']+(?=(?:\s|$))")
+FOOTNOTE_STAR_QUOTE_RE = re.compile(r"(?<=\*)[\"'](?=(?:\s|$))")
 MONTH_NAME_TOKENS = frozenset(
     {
         "january",
@@ -1221,10 +1232,16 @@ def replace_short_lowercase_prefix_titlecase_token(match: re.Match[str]) -> str:
 def prune_weak_ocr_artifact_line_text(
     line: observation_resolver.ResolvedTextLine,
 ) -> str | None:
+    native_table = normalize_weak_native_table_numeric_text(line)
+    if native_table is not None:
+        return native_table
     if not ocr_artifact_prunable_line(line):
         return line.text
     if geometryless_table_fusion_noise_line_should_drop(line.text, line):
         return None
+    toc_leader = trim_weak_ocr_toc_leader_text(line.text, line)
+    if toc_leader is not None:
+        return toc_leader
     geometryless_date = trim_geometryless_table_fusion_date_noise_text(line.text, line)
     if geometryless_date is not None:
         return geometryless_date
@@ -2529,6 +2546,65 @@ def trim_geometryless_table_fusion_date_noise_text(
     return date_text if date_text is not None else None
 
 
+def normalize_weak_native_table_numeric_text(
+    line: observation_resolver.ResolvedTextLine,
+) -> str | None:
+    if line.observation.source != "native_text":
+        return None
+    confidence = resolved_line_max_confidence(line)
+    if confidence is None or not confidence_is_weak(confidence, threshold=0.45):
+        return None
+    text = line.text.strip()
+    if not WEAK_NATIVE_TABLE_YEAR_ROW_RE.match(text):
+        return None
+    repaired = NUMERIC_THOUSANDS_DOT_RE.sub(",", text)
+    while True:
+        joined = SPLIT_THOUSANDS_RE.sub(r"\1,\2", repaired)
+        if joined == repaired:
+            break
+        repaired = joined
+    repaired = NUMERIC_FOOTNOTE_QUOTE_RE.sub("*", repaired)
+    repaired = FOOTNOTE_STAR_QUOTE_RE.sub("*", repaired)
+    return repaired if repaired != line.text else None
+
+
+def trim_weak_ocr_toc_leader_text(
+    text: str,
+    line: observation_resolver.ResolvedTextLine,
+) -> str | None:
+    source = line.observation.source
+    geometryless_table_fusion = (
+        source == "table_fusion_text"
+        and line.observation.bbox is None
+        and line.observation.ink_bbox is None
+    )
+    confidence = resolved_line_max_confidence(line)
+    weak_full_page_ocr = (
+        source.startswith("full_page_")
+        and confidence is not None
+        and confidence_is_weak(confidence, threshold=75.0)
+    )
+    if not (geometryless_table_fusion or weak_full_page_ocr):
+        return None
+    match = WEAK_OCR_TOC_LEADER_RE.match(text.strip())
+    if match is None:
+        return None
+    tail = match.group("tail")
+    body = match.group("body").strip()
+    if year_match := LEADER_TAIL_PREFIX_YEAR_RE.match(tail):
+        body = f"{body} {year_match.group('year')}".strip()
+        tail = year_match.group("rest")
+    decorative_count = sum(1 for ch in tail if ch in "._~–—-")
+    if decorative_count < 3:
+        return None
+    page_numbers = STANDALONE_PAGE_NUMBER_RE.findall(tail)
+    if "chapter" not in text.casefold() and not page_numbers:
+        return None
+    if page_numbers:
+        return f"{body} {page_numbers[-1]}".strip()
+    return body
+
+
 def geometryless_table_fusion_noise_line_should_drop(
     text: str,
     line: observation_resolver.ResolvedTextLine,
@@ -2669,6 +2745,11 @@ def resolved_line_with_repaired_text(
 
 def should_ocr_fallback(page: PageExtractionHost, text: str) -> bool:
     if not text.strip():
+        return True
+    if ocr_page_analysis.dominant_image_requires_ocr_verification(page):
+        cache = getattr(page, "extraction_cache", None)
+        if isinstance(cache, dict):
+            cache["ocr_fallback_reason"] = "dominant_image_sparse_visible_text"
         return True
     text_tokens = ocr_text_analysis.extracted_text_token_count(text)
     if native_text_layer_looks_reliable_enough(

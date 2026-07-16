@@ -313,6 +313,17 @@ class EmbeddedImageTextSpanRecord:
     confidence: int | None
 
 
+@dataclass(frozen=True)
+class DominantImageLabelObservation:
+    """A spatially anchored label observation from one OCR candidate."""
+
+    text: str
+    numeric_token: str | None
+    bbox: tuple[float, float, float, float]
+    source: str
+    confidence: float | None
+
+
 NONSPACE_TOKEN_RE = re.compile(r"\S+")
 ALNUM_RE = re.compile(r"[^\W_]")
 NONSPACE_RE = re.compile(r"\S")
@@ -713,9 +724,27 @@ class PageExtractionMixin(PageContentMixin):
             text,
             native_geometry_summary,
         )
-        if cache is not None and trusted_invisible_text_layer:
+        dominant_image_requires_ocr_verification = (
+            ocr_postprocess.ocr_is_enabled()
+            and ocr_page_analysis.dominant_image_requires_ocr_verification(self)
+        )
+        omit_native_text_from_ocr_render = (
+            ocr_postprocess.ocr_is_enabled()
+            and ocr_page_analysis.native_text_should_be_omitted_from_ocr_render(self, text)
+        )
+        if cache is not None:
+            cache["ocr_render_exclude_native_text"] = omit_native_text_from_ocr_render
+        if cache is not None and dominant_image_requires_ocr_verification:
+            cache["ocr_verification_reason"] = "dominant_image_sparse_visible_text"
+        if (
+            cache is not None
+            and trusted_invisible_text_layer
+            and not dominant_image_requires_ocr_verification
+        ):
             cache["ocr_skipped_for_trusted_invisible_text_layer"] = True
-        if ocr_postprocess.ocr_is_enabled() and not trusted_invisible_text_layer:
+        if ocr_postprocess.ocr_is_enabled() and (
+            not trusted_invisible_text_layer or dominant_image_requires_ocr_verification
+        ):
             ocr_session = ocr_session_runtime.OcrPageSession()
             try:
                 trusted_vector_stroke_text = False
@@ -1285,6 +1314,7 @@ class PageExtractionMixin(PageContentMixin):
             options.page_number,
             options.rotate,
             options.crop,
+            options.include_text,
             options.include_annotations,
             options.include_layers,
         )
@@ -10488,11 +10518,11 @@ def dominant_image_numeric_label_cluster_groups(
     ] = {}
     for candidate in candidates:
         candidate_confidence = page_geometry.numeric_confidence(candidate.result.confidence)
-        for row in candidate.result.line_rows:
-            token = dominant_image_numeric_label_row_token(str(row.get("text", "")))
+        for observation in dominant_image_label_observations(candidate):
+            token = observation.numeric_token
             if token is None:
                 continue
-            bbox = dominant_image_row_page_bbox(row)
+            bbox = observation.bbox
             if bbox is None or not dominant_image_bbox_in_label_region(
                 bbox,
                 label_region_bbox,
@@ -10515,7 +10545,7 @@ def dominant_image_numeric_label_cluster_groups(
                 None,
             )
             if matched_index is None:
-                clusters.append((1, bbox, candidate.name, candidate_confidence))
+                clusters.append((1, bbox, observation.source, observation.confidence))
                 continue
             count, cluster_bbox, source, confidence = clusters[matched_index]
             clusters[matched_index] = (
@@ -10542,6 +10572,28 @@ def dominant_image_numeric_label_cluster_groups(
             ),
         )
     return cluster_groups
+
+
+def dominant_image_label_observations(
+    candidate: OcrCandidate,
+) -> tuple[DominantImageLabelObservation, ...]:
+    observations: list[DominantImageLabelObservation] = []
+    confidence = page_geometry.numeric_confidence(candidate.result.confidence)
+    for row in candidate.result.line_rows:
+        text = str(row.get("text", "")).strip()
+        bbox = dominant_image_row_page_bbox(row)
+        if not text or bbox is None:
+            continue
+        observations.append(
+            DominantImageLabelObservation(
+                text=text,
+                numeric_token=dominant_image_numeric_label_row_token(text),
+                bbox=bbox,
+                source=str(candidate.name),
+                confidence=confidence,
+            )
+        )
+    return tuple(observations)
 
 
 def dominant_image_numeric_label_row_token(text: str) -> str | None:
@@ -12161,6 +12213,30 @@ def append_rendered_full_page_ocr_candidates(
             primary_result,
             rendered_image,
         )
+        # Dense scanned tables are poorly served by the default sparse-page
+        # segmentation.  Keep a dedicated block-mode candidate so the normal
+        # line reconciliation can choose cells/rows with stable geometry.
+        if ocr_full_page.should_try_tesseract_table_profile_ocr(primary_result):
+            table_result = (
+                ocr_session.image_to_text_result(
+                    rendered_image,
+                    psm=6,
+                    variables={"preserve_interword_spaces": "1"},
+                )
+                if ocr_session is not None
+                else ocr_execution.ocr_image_to_text_result_with_psm_timeout(
+                    rendered_image,
+                    psm=6,
+                    variables={"preserve_interword_spaces": "1"},
+                    timeout=timeout,
+                )
+            )
+            append_nonempty_ocr_candidate(
+                candidates,
+                f"{source}_table_profile_psm6",
+                table_result,
+                rendered_image,
+            )
         append_rendered_band_column_ocr_candidates(
             candidates,
             rendered_image,
