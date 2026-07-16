@@ -233,6 +233,26 @@ def test_to_unicode_one_byte_fast_path_strips_nul_like_other_paths() -> None:
     assert cmap.decode(b"AB") == "B"
 
 
+def test_to_unicode_rejects_invalid_codespace_ranges() -> None:
+    for range_line in (b"<ff> <00>", b"<> <ff>", b"<00> <ffff>"):
+        with pytest.raises(ValueError, match="^invalid ToUnicode CMap codespacerange$"):
+            ToUnicodeCMap(
+                b"""
+                /CIDInit /ProcSet findresource begin
+                12 dict begin
+                begincmap
+                1 begincodespacerange
+                """
+                + range_line
+                + b"""
+                endcodespacerange
+                endcmap
+                CMapName currentdict /CMap defineresource pop
+                end end
+                """
+            )
+
+
 def test_encoding_differences_default_to_standard_encoding() -> None:
     decoder = FontDecoder(
         {

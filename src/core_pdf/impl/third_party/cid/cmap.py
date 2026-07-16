@@ -426,6 +426,7 @@ class ToUnicodeCMap:
                 try:
                     start = decode_cmap_hex_token(tokens[i])
                     end = decode_cmap_hex_token(tokens[i + 1])
+                    validate_codespace_range(start, end)
                 except (ValueError, UnicodeDecodeError):
                     continue
                 code_space_ranges.append((start, end))
