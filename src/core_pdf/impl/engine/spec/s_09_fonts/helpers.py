@@ -52,7 +52,8 @@ def build_decode_table(
         return tuple(fallback_fn(b) for b in range(256))
     table = [fallback_fn(b) for b in range(256)]
     for code, glyph_name in differences.items():
-        table[code] = gtn(glyph_name)
+        mapped = gtn(glyph_name)
+        table[code] = "" if mapped == glyph_name and len(glyph_name) != 1 else mapped
     return tuple(table)
 
 

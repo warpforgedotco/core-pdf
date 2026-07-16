@@ -14,6 +14,10 @@ from core_pdf.impl.third_party._vendor.fontTools.ttLib import TTFont, TTLibError
 Point = tuple[float, float]
 
 
+def is_unicode_scalar(codepoint: int) -> bool:
+    return 0 <= codepoint < 0x110000 and not 0xD800 <= codepoint <= 0xDFFF
+
+
 class TrueTypeFontProgram:
     __slots__ = (
         "data",
@@ -150,7 +154,7 @@ def _best_unicode_gid_cmap(font: TTFont) -> dict[int, int]:
         name_cmap = symbol_cmap.cmap if symbol_cmap is not None else {}
     mapping: dict[int, int] = {}
     for codepoint, glyph_name in name_cmap.items():
-        if not (0 <= codepoint < 0x110000):
+        if not is_unicode_scalar(codepoint):
             continue
         try:
             gid = font.getGlyphID(glyph_name)
@@ -164,7 +168,7 @@ def _best_unicode_gid_cmap(font: TTFont) -> dict[int, int]:
 def _invert_unicode_cmap(cmap: dict[int, int]) -> dict[int, str]:
     by_gid: dict[int, str] = {}
     for codepoint, gid in cmap.items():
-        if gid <= 0:
+        if gid <= 0 or not is_unicode_scalar(codepoint):
             continue
         char = chr(codepoint)
         previous = by_gid.get(gid)

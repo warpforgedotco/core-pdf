@@ -16,7 +16,9 @@ from core_pdf.impl.engine.spec.s_09_fonts.data.core14 import (
 HEX_DIGITS = frozenset("0123456789abcdefABCDEF")
 TEX_GLYPH_ALIASES = {
     "lscript": "\u2113",
+    "integraltext": "\u222b",
     "summationdisplay": "\u2211",
+    "summationtext": "\u2211",
     "parenleftbig": "(",
     "parenleftBig": "(",
     "parenleftbigg": "(",
@@ -44,21 +46,28 @@ def glyph_name_to_unicode(name: str) -> str:
         return ""
 
     full = ensure_glyph_map()
+    original_name = name
     name = name.split(".", 1)[0]
     if name.isdigit() or (name.startswith("i") and name[1:].isdigit()):
         return ""
     if len(name) == 1:
         return name
     if "_" in name:
-        parts = [glyph_name_part_to_unicode(part, full) for part in name.split("_")]
-        if any(part == "" or "_" in part for part in parts):
-            return name
+        raw_parts = name.split("_")
+        parts = [glyph_name_part_to_unicode(part, full) for part in raw_parts]
+        if any(
+            mapped == "" or "_" in mapped or (mapped == raw and len(raw) != 1)
+            for raw, mapped in zip(raw_parts, parts, strict=True)
+        ):
+            return original_name
         return "".join(parts)
 
-    return glyph_name_part_to_unicode(name, full)
+    return glyph_name_part_to_unicode(name, full, unknown_name=original_name)
 
 
-def glyph_name_part_to_unicode(name: str, full: dict[str, str]) -> str:
+def glyph_name_part_to_unicode(
+    name: str, full: dict[str, str], *, unknown_name: str | None = None
+) -> str:
     result = full.get(name)
     if result is not None:
         return result
@@ -94,7 +103,10 @@ def glyph_name_part_to_unicode(name: str, full: dict[str, str]) -> str:
             return name
     if is_u_codepoint(name):
         try:
-            return chr(int(name[1:], 16))
+            codepoint = int(name[1:], 16)
+            if 0xD800 <= codepoint <= 0xDFFF:
+                return name
+            return chr(codepoint)
         except ValueError:
             return name
 
@@ -114,7 +126,7 @@ def glyph_name_part_to_unicode(name: str, full: dict[str, str]) -> str:
     try:
         return unicodedata.lookup(name)
     except KeyError:
-        return name
+        return unknown_name or name
 
 
 def is_uni_sequence(name: str) -> bool:
