@@ -26,6 +26,7 @@ from core_pdf.impl.engine.spec.s_07_content.text_helpers import (
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_08_graphics.matrix import Matrix
 from core_pdf.impl.objects import PdfName, PdfStream, PdfString
+from core_pdf.impl.third_party._vendor.fontTools.encodings.StandardEncoding import StandardEncoding
 
 if typing.TYPE_CHECKING:
     from core_pdf.impl.engine.spec.s_09_fonts.decoder import DecodedGlyph, FontDecoder
@@ -174,18 +175,20 @@ def glyph_text_space_boxes(
     offset: float,
     advance: float,
     decoder: Any,
+    position: tuple[float, float] = (0.0, 0.0),
 ) -> tuple[
     tuple[float, float, float, float],
     tuple[float, float, float, float],
     Matrix6,
 ]:
-    ar = state.font_ascent + state.rise
-    dr = state.font_descent + state.rise
     if decoder.is_vertical:
-        start_y = state.rise - offset
-        end_y = state.rise - offset - advance
-        x0 = dr if dr < ar else ar
-        x1 = ar if ar > dr else dr
+        position_x, position_y = position
+        start_y = state.rise + position_y - offset
+        end_y = start_y - advance
+        ar = state.font_ascent
+        dr = state.font_descent
+        x0 = position_x + (dr if dr < ar else ar)
+        x1 = position_x + (ar if ar > dr else dr)
         y0 = end_y if end_y < start_y else start_y
         y1 = start_y if start_y > end_y else end_y
         return (
@@ -196,10 +199,18 @@ def glyph_text_space_boxes(
                 state.tm_b,
                 state.tm_c,
                 state.tm_d,
-                state.tm_e - offset * state.tm_c,
-                state.tm_f - offset * state.tm_d,
+                state.tm_e
+                + position_x * state.tm_a
+                - offset * state.tm_c
+                + position_y * state.tm_c,
+                state.tm_f
+                + position_x * state.tm_b
+                - offset * state.tm_d
+                + position_y * state.tm_d,
             ),
         )
+    ar = state.font_ascent + state.rise
+    dr = state.font_descent + state.rise
     return (
         (offset, dr, offset + advance, ar),
         (offset, state.rise, offset + advance, state.rise),
@@ -212,6 +223,31 @@ def glyph_text_space_boxes(
             state.tm_f + offset * state.tm_b,
         ),
     )
+
+
+def type3_glyph_names(font: dict[Any, Any], decoder: Any) -> dict[int, str]:
+    encoding = lookup_dict_key(font, "Encoding")
+    differences_obj = (
+        lookup_dict_key(encoding, "Differences") if isinstance(encoding, dict) else None
+    )
+    glyph_names = {
+        code: name for code, name in enumerate(StandardEncoding) if name != ".notdef"
+    }
+    if decoder.base_encoding == "MacRomanEncoding":
+        from core_pdf.impl.third_party._vendor.fontTools.encodings.MacRoman import MacRoman
+
+        glyph_names = {code: name for code, name in enumerate(MacRoman) if name != ".notdef"}
+    if isinstance(differences_obj, (list, tuple)):
+        code = 0
+        for item in differences_obj:
+            if type(item) is int:
+                code = item
+                continue
+            name = str(item) if isinstance(item, PdfName) else None
+            if name is not None and 0 <= code <= 255:
+                glyph_names[code] = name
+                code += 1
+    return glyph_names
 
 
 def apply_glyph_geometry_to_run(
@@ -859,7 +895,10 @@ class ContentCaptureMixin:
         if not glyphs:
             return
 
-        advances = [self.chunk_advance(glyph.width_code, decoder) for glyph in glyphs]
+        advances = [
+            self.chunk_advance(glyph.width_code, decoder, char_code=glyph.char_code)
+            for glyph in glyphs
+        ]
 
         offset = 0.0
         seqno = self.sequence
@@ -881,7 +920,13 @@ class ContentCaptureMixin:
 
             cluster_id = len(clusters)
             text_box, baseline_text, glyph_text_matrix = glyph_text_space_boxes(
-                self, offset, advance, decoder
+                self,
+                offset,
+                advance,
+                decoder,
+                decoder.vertical_glyph_position(glyph.cid, font_size=self.font_size)
+                if decoder.is_vertical
+                else (0.0, 0.0),
             )
             advance_rect = transformed_text_rect(self, *text_box)
             baseline = transformed_text_line(self, *baseline_text)
@@ -1192,21 +1237,30 @@ class ContentCaptureMixin:
         E = te * ca + tf * cc + ce
         F = te * cb + tf * cd + cf
 
-        ar = ascent + rise
-        dr = descent + rise
-
-        c0_x = dr * C + E
-        c0_y = dr * D + F
-        c1_x = ar * C + E
-        c1_y = ar * D + F
-
-        adv_A = adv_x * A
-        adv_B = adv_x * B
-
-        c2_x = adv_A + c0_x
-        c2_y = adv_B + c0_y
-        c3_x = adv_A + c1_x
-        c3_y = adv_B + c1_y
+        if decoder.is_vertical:
+            c0_x = descent * A + rise * C + E
+            c0_y = descent * B + rise * D + F
+            c1_x = ascent * A + rise * C + E
+            c1_y = ascent * B + rise * D + F
+            adv_C = adv_y * C
+            adv_D = adv_y * D
+            c2_x = adv_C + c0_x
+            c2_y = adv_D + c0_y
+            c3_x = adv_C + c1_x
+            c3_y = adv_D + c1_y
+        else:
+            ar = ascent + rise
+            dr = descent + rise
+            c0_x = dr * C + E
+            c0_y = dr * D + F
+            c1_x = ar * C + E
+            c1_y = ar * D + F
+            adv_A = adv_x * A
+            adv_B = adv_x * B
+            c2_x = adv_A + c0_x
+            c2_y = adv_B + c0_y
+            c3_x = adv_A + c1_x
+            c3_y = adv_B + c1_y
 
         x0 = c0_x if c0_x < c1_x else c1_x
         if c2_x < x0:
@@ -1282,7 +1336,7 @@ class ContentCaptureMixin:
                 ink_bbox=advance_bbox,
                 baseline=baseline,
                 provenance=provenance,
-                confidence=1.0 if visible else 0.35,
+                confidence=1.0,
             )
             self.sequence = seqno + 1
             self.tm_e = te + adv_x * ta + adv_y * tc
@@ -1352,7 +1406,7 @@ class ContentCaptureMixin:
                 ink_bbox=advance_bbox,
                 baseline=baseline,
                 provenance=provenance,
-                confidence=1.0 if prepared_visible else 0.35,
+                confidence=None,
             )
         else:
             new_run = self.alloc_run(
@@ -1379,7 +1433,7 @@ class ContentCaptureMixin:
                 ink_bbox=advance_bbox,
                 baseline=baseline,
                 provenance=provenance,
-                confidence=1.0 if visible else 0.35,
+                confidence=None,
             )
         if self.capture_glyphs:
             glyph_start = len(self.glyphs)
@@ -1413,21 +1467,7 @@ class ContentCaptureMixin:
             return
         glyph_names = decoder.type3_glyph_names
         if glyph_names is None:
-            encoding = lookup_dict_key(font, "Encoding")
-            differences_obj = (
-                lookup_dict_key(encoding, "Differences") if isinstance(encoding, dict) else None
-            )
-            glyph_names = {}
-            if isinstance(differences_obj, (list, tuple)):
-                code = 0
-                for item in differences_obj:
-                    if type(item) is int:
-                        code = item
-                        continue
-                    name = str(item) if isinstance(item, PdfName) else None
-                    if name is not None and 0 <= code <= 255:
-                        glyph_names[code] = name
-                        code += 1
+            glyph_names = type3_glyph_names(font, decoder)
             decoder.type3_glyph_names = glyph_names
 
         resources = lookup_dict_key(font, "Resources")
@@ -2179,6 +2219,7 @@ class ContentCaptureMixin:
             and self.current_actual_text_span() is None
             and decoder.byte_decode_table is not None
             and not decoder.is_cid_font
+            and not decoder.is_vertical
             and not (decoder.is_type3 and self.capture_graphics)
             and decoder.to_unicode is None
             and decoder.cmap is None

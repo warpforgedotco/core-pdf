@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import re
 import typing
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Iterable
 
@@ -34,6 +35,7 @@ from core_pdf.impl.engine.spec.s_09_fonts.widths import (
 )
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.objects import PdfStream
+from core_pdf.impl.primitives import PdfString
 from core_pdf.impl.third_party.cff import CFFFont
 from core_pdf.impl.third_party.cid.cmap import (
     CMapDecoder,
@@ -41,7 +43,10 @@ from core_pdf.impl.third_party.cid.cmap import (
     code_in_ranges,
 )
 from core_pdf.impl.third_party.cid.resource_loader import (
+    predefined_cmap_unicode,
+    resolve_cid_unicode_map,
     resolve_cmap_decoder,
+    resolve_cmap_resource,
 )
 from core_pdf.impl.third_party.cid.widths import FontWidthMap
 from core_pdf.impl.third_party.truetype import TrueTypeFontProgram
@@ -142,6 +147,7 @@ class FontDecoder:
         "ligature_overrides",
         "to_unicode",
         "cmap",
+        "cid_unicode_map",
         "base_encoding",
         "differences",
         "is_cid_font",
@@ -149,6 +155,9 @@ class FontDecoder:
         "byte_decode_table",
         "widths",
         "default_width",
+        "vertical_widths",
+        "default_vertical_width",
+        "vertical_metrics",
         "is_vertical",
         "ascent",
         "descent",
@@ -172,6 +181,7 @@ class FontDecoder:
     ligature_overrides: dict[int, str]
     to_unicode: ToUnicodeCMap | None
     cmap: CMapDecoder | None
+    cid_unicode_map: Mapping[int, str] | None
     base_encoding: str | None
     differences: dict[int, str]
     is_cid_font: bool
@@ -179,6 +189,9 @@ class FontDecoder:
     byte_decode_table: tuple[str, ...] | None
     widths: FontWidthMap
     default_width: float
+    vertical_widths: FontWidthMap
+    default_vertical_width: float
+    vertical_metrics: dict[int, tuple[float, float, float]]
     is_vertical: bool
     ascent: float
     descent: float
@@ -227,16 +240,31 @@ class FontDecoder:
         to_unicode = None
         if isinstance(to_unicode_obj, PdfStream):
             try:
-                to_unicode = ToUnicodeCMap(to_unicode_obj.data)
+                to_unicode = ToUnicodeCMap(
+                    to_unicode_obj.data,
+                    usecmap_resolver=resolve_cmap_resource,
+                )
             except (PdfParseError, ValueError):
                 to_unicode = None
 
         cmap, base_encoding, differences = self.parse_encoding(font)
-        widths, default_width, is_vertical = parse_font_widths(font, subtype)
+        (
+            widths,
+            default_width,
+            is_vertical,
+            vertical_widths,
+            default_vertical_width,
+            vertical_metrics,
+        ) = parse_font_widths(font, subtype)
         is_cid_font = subtype == "Type0" and get_descendant(font) is not None
 
         base_font_name = resolve_base_font_name(font, subtype)
-        if base_encoding == "V" or (base_font_name and base_font_name.endswith("-V")):
+        if (
+            base_encoding == "V"
+            or (base_encoding and base_encoding.endswith("-V"))
+            or (base_font_name and base_font_name.endswith("-V"))
+            or (cmap is not None and getattr(cmap, "wmode", 0) == 1)
+        ):
             is_vertical = True
 
         ascent, descent = parse_font_metrics(font, subtype, base_font_name, widths)
@@ -252,6 +280,9 @@ class FontDecoder:
 
         self.to_unicode = to_unicode
         self.cmap = cmap
+        self.cid_unicode_map = (
+            self._cid_unicode_map(font, vertical=is_vertical) if is_cid_font else None
+        )
         self.base_encoding = base_encoding
         self.differences = differences
         self.is_cid_font = is_cid_font
@@ -259,6 +290,9 @@ class FontDecoder:
         self.byte_decode_table = byte_decode_table
         self.widths = widths
         self.default_width = default_width
+        self.vertical_widths = vertical_widths
+        self.default_vertical_width = default_vertical_width
+        self.vertical_metrics = vertical_metrics
         self.is_vertical = is_vertical
         self.ascent = ascent
         self.descent = descent
@@ -275,6 +309,38 @@ class FontDecoder:
 
         self.fast_widths_cid = None
         self.fast_widths_cid_unavailable = False
+
+    @staticmethod
+    def _cid_system_info_string(value: object) -> str | None:
+        if isinstance(value, PdfString):
+            return value.data.decode("latin-1")
+        normalized = normalize_pdf_name(value)
+        if normalized is not None:
+            return normalized
+        if isinstance(value, bytes):
+            return value.decode("latin-1")
+        return None
+
+    @classmethod
+    def _cid_unicode_map(
+        cls,
+        font: dict[str, Any],
+        *,
+        vertical: bool,
+    ) -> Mapping[int, str] | None:
+        descendant = get_descendant(font)
+        if descendant is None:
+            return None
+        system_info = lookup_dict_key(descendant, "CIDSystemInfo")
+        if not isinstance(system_info, dict):
+            system_info = lookup_dict_key(font, "CIDSystemInfo")
+        if not isinstance(system_info, dict):
+            return None
+        registry = cls._cid_system_info_string(lookup_dict_key(system_info, "Registry"))
+        ordering = cls._cid_system_info_string(lookup_dict_key(system_info, "Ordering"))
+        if registry is None or ordering is None:
+            return None
+        return resolve_cid_unicode_map(registry, ordering, vertical=vertical)
 
     @property
     def fast_widths(self) -> tuple[float, ...]:
@@ -305,6 +371,8 @@ class FontDecoder:
                 cmap = None
         elif isinstance(encoding_obj, dict):
             base_encoding = normalize_pdf_name(lookup_dict_key(encoding_obj, "BaseEncoding"))
+            if base_encoding is None:
+                base_encoding = "WinAnsiEncoding" if subtype == "TrueType" else "StandardEncoding"
             differences_obj = lookup_dict_key(encoding_obj, "Differences")
             if differences_obj is not None and not isinstance(differences_obj, (list, tuple)):
                 differences_obj = None
@@ -381,19 +449,19 @@ class FontDecoder:
             if to_unicode_text is not None:
                 alternates.append(to_unicode_text)
 
+        if to_unicode_text is not None:
+            return UnicodeChoice(
+                to_unicode_text,
+                "to_unicode",
+                dedupe_alternates(alternates, to_unicode_text),
+            )
+
         replacement = self.cff_unicode_repairs.get(code_bytes)
         if replacement is not None:
             return UnicodeChoice(
                 replacement,
                 "cff_glyph_repair",
                 dedupe_alternates(alternates, replacement),
-            )
-
-        if to_unicode_text is not None:
-            return UnicodeChoice(
-                to_unicode_text,
-                "to_unicode",
-                dedupe_alternates(alternates, to_unicode_text),
             )
 
         if gid is not None:
@@ -403,6 +471,25 @@ class FontDecoder:
                     tt_text,
                     "truetype_cmap",
                     dedupe_alternates(alternates, tt_text),
+                )
+
+        if fallback_code != 0:
+            predefined_text = predefined_cmap_unicode(self.base_encoding, code_bytes)
+            if predefined_text is not None:
+                return UnicodeChoice(
+                    predefined_text,
+                    "predefined_cmap",
+                    dedupe_alternates(alternates, predefined_text),
+                )
+
+        cid_unicode_map = self.cid_unicode_map
+        if cid_unicode_map is not None:
+            cid_text = cid_unicode_map.get(fallback_code)
+            if cid_text is not None:
+                return UnicodeChoice(
+                    cid_text,
+                    "cid_collection",
+                    dedupe_alternates(alternates, cid_text),
                 )
 
         if fallback_code == 0:
@@ -421,6 +508,8 @@ class FontDecoder:
     def _apply_simple_unicode_overrides(
         self, choice: UnicodeChoice, code_bytes: bytes
     ) -> UnicodeChoice:
+        if choice.source == "to_unicode":
+            return choice
         text = choice.text
         if self.glyph_decode_table is not None:
             glyph_decode_table = self.glyph_decode_table
@@ -501,6 +590,11 @@ class FontDecoder:
         for code_bytes, cid in entries:
             char_code = int.from_bytes(code_bytes, "big") if code_bytes else 0
             gid = self.glyph_id_for_code(cid)
+            if gid is not None and gid != 0 and not self._glyph_exists(gid):
+                notdef_cid = self.cmap.mapped_notdef(code_bytes) if self.cmap else None
+                if notdef_cid is not None:
+                    cid = notdef_cid
+                    gid = self.glyph_id_for_code(cid)
             choice = self._unicode_choice_for_code(code_bytes, cid, gid)
             if self.ligature_overrides:
                 lo = self.ligature_overrides
@@ -526,6 +620,13 @@ class FontDecoder:
                 )
             )
         return glyphs
+
+    def _glyph_exists(self, gid: int) -> bool:
+        if self.cff_font is not None:
+            return self.cff_font.has_glyph_id(gid)
+        if self.tt_font is not None:
+            return self.tt_font.has_glyph_id(gid)
+        return True
 
     def get_fast_widths_cid(self) -> list[float] | None:
         if self.fast_widths_cid is not None:
@@ -556,6 +657,10 @@ class FontDecoder:
             return cff_font.glyph_id_for_cid(code)
         tt_font = self.tt_font
         if tt_font is not None:
+            if not self.is_cid_font and self.byte_decode_table is not None:
+                text = self.byte_decode_table[code] if 0 <= code < 256 else ""
+                if len(text) == 1:
+                    return tt_font.glyph_id_for_unicode(ord(text))
             return tt_font.glyph_id_for_code(code)
         return code
 
@@ -572,6 +677,13 @@ class FontDecoder:
         if width <= 0:
             return None
         return (0.0, self.descent, width, self.ascent)
+
+    def vertical_glyph_position(self, code: int, *, font_size: float) -> tuple[float, float]:
+        metric = self.vertical_metrics.get(
+            code, (self.default_vertical_width, self.glyph_width(code) / 2.0, 0.0)
+        )
+        scale = font_size / 100000.0
+        return (metric[1] * scale, metric[2] * scale)
 
     def glyph_bitmap(self, code: int, *, width: int = 24, height: int = 32) -> tuple[int, ...]:
         if code < 0:
@@ -625,6 +737,20 @@ class FontDecoder:
         ws = word_space * 1000.0 / font_size if font_size else 0.0
         scale = font_size * horizontal_scale / 100000.0
 
+        if self.is_vertical:
+            if glyphs is None:
+                glyphs = self.decode_glyphs(data)
+            total = 0.0
+            for glyph in glyphs:
+                metric = self.vertical_metrics.get(
+                    glyph.cid,
+                    (self.default_vertical_width, self.glyph_width(glyph.cid) / 2.0, 0.0),
+                )
+                total += metric[0] * font_size / 100000.0 + char_space
+                if glyph.char_code == 32:
+                    total += word_space
+            return (0.0, -total)
+
         if (
             glyphs is None
             and not self.is_cid_font
@@ -639,8 +765,6 @@ class FontDecoder:
                 if b == 32:
                     space_count += 1
             total += len(data) * cs + space_count * ws
-            if self.is_vertical:
-                return (0.0, -total * scale)
             return (total * scale, 0.0)
 
         n = len(data)

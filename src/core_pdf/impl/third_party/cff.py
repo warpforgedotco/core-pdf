@@ -24,6 +24,7 @@ class CFFFont:
         "top_dict",
         "charstrings",
         "cid_to_gid",
+        "is_cid_keyed",
         "global_subrs",
         "local_subrs",
         "fd_select",
@@ -42,6 +43,7 @@ class CFFFont:
         if not top_index:
             raise ValueError("invalid CFF top dict")
         self.top_dict = self._parse_dict(top_index[0])
+        self.is_cid_keyed = (12, 30) in self.top_dict
         charstrings_off = self.top_dict.get(17, [None])[0]
         if not isinstance(charstrings_off, (int, float)):
             raise ValueError("invalid CFF CharStrings offset")
@@ -218,7 +220,12 @@ class CFFFont:
         return cid_to_gid
 
     def glyph_id_for_cid(self, cid: int) -> int:
-        return self.cid_to_gid.get(cid, cid)
+        if self.is_cid_keyed:
+            return self.cid_to_gid.get(cid, 0)
+        return cid
+
+    def has_glyph_id(self, gid: int) -> bool:
+        return 0 <= gid < len(self.charstrings)
 
     def _read_fd_select(self) -> tuple[int, ...]:
         glyph_count = len(self.charstrings)

@@ -6,6 +6,7 @@ from typing import Any, Callable
 
 from core_pdf.impl.engine.spec.s_07_objects.coercion import normalize_pdf_name
 from core_pdf.impl.engine.spec.s_09_fonts.encoding import PDFDOC_ENCODING_TABLE
+from core_pdf.impl.engine.spec.s_09_fonts.data.core14 import STANDARD_ENCODING_OVERRIDES
 from core_pdf.impl.engine.spec.s_09_fonts.glyphs import glyph_name_to_unicode
 
 EncodingFallback = Callable[[int], str]
@@ -20,6 +21,13 @@ LIGATURE_TEXT_OVERRIDES = {
 
 def fallback_with_pdfdoc(b: int) -> str:
     return normalize_ligature_text(PDFDOC_ENCODING_TABLE[b])
+
+
+def fallback_with_standard(b: int) -> str:
+    name = STANDARD_ENCODING_OVERRIDES.get(b)
+    if name is not None:
+        return glyph_name_to_unicode(name)
+    return chr(b) if 32 <= b <= 126 else ""
 
 
 def normalize_ligature_text(text: str) -> str:
@@ -85,6 +93,7 @@ def parse_differences(
 
 
 ENCODING_FALLBACKS: dict[str, EncodingFallback] = {
+    "StandardEncoding": fallback_with_standard,
     "Type3": lambda b: "",
     "WinAnsiEncoding": lambda b: normalize_ligature_text(bytes([b]).decode("cp1252", "replace")),
     "MacRomanEncoding": lambda b: normalize_ligature_text(

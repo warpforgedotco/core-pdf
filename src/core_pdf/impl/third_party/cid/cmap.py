@@ -255,6 +255,18 @@ def cmap_usecmap_name(data: bytes) -> str | None:
     return None
 
 
+def cmap_wmode(data: bytes) -> int | None:
+    words = cmap_noncomment_words(data)
+    for index, word in enumerate(words[:-2]):
+        if word == b"/WMode" and words[index + 2] == b"def":
+            try:
+                value = int(words[index + 1])
+            except ValueError:
+                return None
+            return value if value in {0, 1} else None
+    return None
+
+
 def decode_cmap_hex_token(token: bytes) -> bytes:
     raw = token[1:-1].translate(None, b"\x00\t\n\f\r ")
     if not all(HEX_BYTES[item] for item in raw):
@@ -325,8 +337,9 @@ def iter_codespace_range(start: bytes, end: bytes) -> typing.Iterator[bytes]:
         yield bytes(current)
         index = len(current) - 1
         while index >= 0:
-            current[index] += 1
-            if current[index] <= end[index]:
+            next_byte = current[index] + 1
+            if next_byte <= end[index]:
+                current[index] = next_byte
                 break
             current[index] = start[index]
             index -= 1
@@ -355,12 +368,41 @@ class ToUnicodeCMap:
         "fast_decode_table_2byte",
     )
 
-    def __init__(self, data: bytes | bytearray | memoryview) -> None:
+    def __init__(
+        self,
+        data: bytes | bytearray | memoryview,
+        *,
+        usecmap_resolver: Callable[[str], bytes | None] | None = None,
+        _depth: int = 0,
+    ) -> None:
+        if _depth > 16:
+            raise ValueError("ToUnicode CMap UseCMap recursion limit exceeded")
         parsed = _parse_to_unicode_cmap(bytes(data))
-        self.code_space_ranges = parsed[0]
-        self.mappings = parsed[1]
-        self.decode_lengths = parsed[2]
-        self.fast_decode_table = parsed[3]
+        parent: ToUnicodeCMap | None = None
+        parent_name = cmap_usecmap_name(bytes(data))
+        if parent_name is not None and usecmap_resolver is not None:
+            parent_data = usecmap_resolver(parent_name)
+            if parent_data is not None:
+                try:
+                    parent = ToUnicodeCMap(
+                        parent_data,
+                        usecmap_resolver=usecmap_resolver,
+                        _depth=_depth + 1,
+                    )
+                except ValueError:
+                    parent = None
+        self.code_space_ranges = tuple(parent.code_space_ranges if parent else ()) + parsed[0]
+        self.mappings = dict(parent.mappings) if parent else {}
+        self.mappings.update(parsed[1])
+        self.decode_lengths = tuple(
+            sorted(
+                {len(end) for _, end in self.code_space_ranges}
+                | {len(k) for k in self.mappings}
+            )
+            or {1}
+        )
+        self.fast_decode_table = None
+        self.precalculate_fast_tables()
         self.fast_decode_table_2byte: list[str] | None = None
 
     def parse_codespace_ranges(self, data: bytes) -> None:
@@ -617,7 +659,7 @@ def _parse_to_unicode_cmap(data: bytes) -> ParsedToUnicodeCMap:
                 | {len(k) for k in cmap.mappings}
             )
             or {1},
-            reverse=True,
+            reverse=False,
         )
     )
     cmap.precalculate_fast_tables()
@@ -640,6 +682,7 @@ class CMapDecoder:
     notdef_mappings: dict[bytes, int]
     notdef_ranges: list[NotdefRange]
     default_to_identity: bool
+    wmode: int
 
     __slots__ = (
         "code_space_ranges",
@@ -649,6 +692,7 @@ class CMapDecoder:
         "notdef_mappings",
         "notdef_ranges",
         "default_to_identity",
+        "wmode",
     )
 
     def __init__(
@@ -667,6 +711,7 @@ class CMapDecoder:
         self.notdef_mappings: dict[bytes, int] = {}
         self.notdef_ranges: list[NotdefRange] = []
         self.default_to_identity = False
+        self.wmode = 0
         usecmap_name = cmap_usecmap_name(data)
         if usecmap_name is not None:
             parent = self.resolve_usecmap(
@@ -674,6 +719,9 @@ class CMapDecoder:
             )
             if parent is not None:
                 self.inherit(parent)
+        local_wmode = cmap_wmode(data)
+        if local_wmode is not None:
+            self.wmode = local_wmode
 
         for block in iter_blocks(data, b"begincodespacerange", b"endcodespacerange"):
             tokens = cmap_tokens(block)
@@ -712,13 +760,13 @@ class CMapDecoder:
                     | {len(item.end) for item in self.notdef_ranges}
                 )
                 or {1},
-                reverse=True,
+                reverse=False,
             )
         )
         self.freeze()
 
     @classmethod
-    def identity(cls, *, byte_width: int = 2) -> "CMapDecoder":
+    def identity(cls, *, byte_width: int = 2, wmode: int = 0) -> "CMapDecoder":
         cmap = typing.cast(typing.Any, object.__new__(cls))
         if byte_width == 1:
             cmap.code_space_ranges = ((b"\x00", b"\xff"),)
@@ -731,6 +779,7 @@ class CMapDecoder:
         cmap.notdef_mappings = MappingProxyType({})
         cmap.notdef_ranges = ()
         cmap.default_to_identity = True
+        cmap.wmode = wmode
         return typing.cast("CMapDecoder", cmap)
 
     def freeze(self) -> None:
@@ -749,9 +798,9 @@ class CMapDecoder:
         depth: int,
     ) -> "CMapDecoder | None":
         if name in {"Identity-H", "Identity-V"}:
-            return CMapDecoder.identity(byte_width=2)
+            return CMapDecoder.identity(byte_width=2, wmode=int(name.endswith("-V")))
         if name in {"OneByteIdentityH", "OneByteIdentityV"}:
-            return CMapDecoder.identity(byte_width=1)
+            return CMapDecoder.identity(byte_width=1, wmode=int(name.endswith("V")))
         if usecmap_resolver is None:
             return None
         resolved = usecmap_resolver(name)
@@ -772,6 +821,7 @@ class CMapDecoder:
         self.notdef_mappings.update(parent.notdef_mappings)
         self.notdef_ranges.extend(parent.notdef_ranges)
         self.default_to_identity = parent.default_to_identity
+        self.wmode = parent.wmode
 
     def parse_cidchar(self, data: bytes) -> None:
         for block in iter_blocks(data, b"begincidchar", b"endcidchar"):

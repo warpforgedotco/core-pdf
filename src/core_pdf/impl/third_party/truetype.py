@@ -49,9 +49,19 @@ class TrueTypeFontProgram:
             pos = code * 2
             if pos >= 0 and pos + 2 <= len(self.cid_to_gid):
                 return struct.unpack(">H", self.cid_to_gid[pos : pos + 2])[0]
+            return 0
         if self.cmap:
             return self.cmap.get(code, code)
         return code
+
+    def glyph_id_for_unicode(self, codepoint: int) -> int:
+        """Resolve a simple-font character through the embedded TrueType cmap."""
+        if self.cmap:
+            return self.cmap.get(codepoint, 0)
+        return 0
+
+    def has_glyph_id(self, gid: int) -> bool:
+        return 0 <= gid < len(self.font.getGlyphOrder())
 
     def unicode_for_gid(self, gid: int) -> str:
         return self.glyph_to_unicode.get(gid, "")
