@@ -1,4 +1,0 @@
-Booked and Text Amount in EUR Booked balance in
-interest EUR
-date
-01/14/2016 Transfer 1,406,164.00 1,406,246.50

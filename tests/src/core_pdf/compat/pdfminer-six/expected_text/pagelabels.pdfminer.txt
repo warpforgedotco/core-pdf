@@ -1,45 +1,0 @@
-Contents
-
-1 First section
-
-2 Second section
-
-3 Third section
-
-4 Heading on Level 1 (section)
-
-1 First section
-
-Some text here...
-
-iii
-
-iv
-
-1
-
-1
-
-iii
-
-2 Second section
-
-Some text here...
-
-iv
-
-3 Third section
-
-Some text here..
-
-1
-
-Some text here..
-
-2
-
-4 Heading on Level 1 (section)
-
-More text here...
-
-1

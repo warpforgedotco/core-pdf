@@ -1,6 +1,0 @@
-Heading
-Link to heading that is working with vim-pandoc.
-Link to heading “that is” not working with vim-pandoc.
-Subheading
-Some “more text”
-1
