@@ -63,6 +63,12 @@ OCR_EDGE_NOISE_PUNCTUATION = "\"'“”‘’`~_=|¦¬^°•·.,;:!?()[]{}<>/\\+
 OCR_ALPHA_JOINERS = frozenset({"'", "’", "-", "‐", "‑", "‒", "–", "—"})
 PRIZE_AMOUNT_TOKEN_RE = re.compile(r"^(?P<whole>\d{1,4})[:,-](?P<cents>\d{2})$")
 PRIZE_RANK_TOKEN_RE = re.compile(r"^(?P<rank>\d+)(?:\.\)|\)|\.)$")
+WEAK_OCR_TOC_LEADER_RE = re.compile(
+    r"^(?P<body>.*[A-Za-z][A-Za-z0-9'’),:(\]\[\s-]{8,}?)\s+"
+    r"(?P<tail>[._~\-–—0-9][._~\-–—+$A-Za-z0-9\s<>]*?)\s*$"
+)
+STANDALONE_PAGE_NUMBER_RE = re.compile(r"(?<![A-Za-z0-9])\d{1,4}(?![A-Za-z0-9])")
+LEADER_TAIL_PREFIX_YEAR_RE = re.compile(r"(?P<year>(?:19|20)\d{2})(?=[._~\-–—])(?P<rest>.*)")
 MONTH_NAME_TOKENS = frozenset(
     {
         "january",
@@ -1225,6 +1231,9 @@ def prune_weak_ocr_artifact_line_text(
         return line.text
     if geometryless_table_fusion_noise_line_should_drop(line.text, line):
         return None
+    toc_leader = trim_weak_ocr_toc_leader_text(line.text, line)
+    if toc_leader is not None:
+        return toc_leader
     geometryless_date = trim_geometryless_table_fusion_date_noise_text(line.text, line)
     if geometryless_date is not None:
         return geometryless_date
@@ -2527,6 +2536,43 @@ def trim_geometryless_table_fusion_date_noise_text(
         return None
     date_text = month_day_year_text(raw_tokens[month_index:])
     return date_text if date_text is not None else None
+
+
+def trim_weak_ocr_toc_leader_text(
+    text: str,
+    line: observation_resolver.ResolvedTextLine,
+) -> str | None:
+    source = line.observation.source
+    geometryless_table_fusion = (
+        source == "table_fusion_text"
+        and line.observation.bbox is None
+        and line.observation.ink_bbox is None
+    )
+    confidence = resolved_line_max_confidence(line)
+    weak_full_page_ocr = (
+        source.startswith("full_page_")
+        and confidence is not None
+        and confidence_is_weak(confidence, threshold=75.0)
+    )
+    if not (geometryless_table_fusion or weak_full_page_ocr):
+        return None
+    match = WEAK_OCR_TOC_LEADER_RE.match(text.strip())
+    if match is None:
+        return None
+    tail = match.group("tail")
+    body = match.group("body").strip()
+    if year_match := LEADER_TAIL_PREFIX_YEAR_RE.match(tail):
+        body = f"{body} {year_match.group('year')}".strip()
+        tail = year_match.group("rest")
+    decorative_count = sum(1 for ch in tail if ch in "._~–—-")
+    if decorative_count < 3:
+        return None
+    page_numbers = STANDALONE_PAGE_NUMBER_RE.findall(tail)
+    if "chapter" not in text.casefold() and not page_numbers:
+        return None
+    if page_numbers:
+        return f"{body} {page_numbers[-1]}".strip()
+    return body
 
 
 def geometryless_table_fusion_noise_line_should_drop(
