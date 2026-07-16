@@ -238,6 +238,16 @@ dependencies = [
 benchmark = [
     { name = "rich" },
 ]
+dev = [
+    { name = "mypy" },
+    { name = "pdfminer-six" },
+    { name = "pytest" },
+    { name = "pytest-xdist" },
+    { name = "rich" },
+    { name = "ruff" },
+    { name = "ty" },
+    { name = "vendoring" },
+]
 lint = [
     { name = "mypy" },
     { name = "ruff" },
@@ -257,6 +267,16 @@ requires-dist = [{ name = "core-jpeg", specifier = ">=0.0.0" }]
 
 [package.metadata.requires-dev]
 benchmark = [{ name = "rich", specifier = ">=15.0.0" }]
+dev = [
+    { name = "mypy", specifier = ">=1.16.0,<2.0.0" },
+    { name = "pdfminer-six" },
+    { name = "pytest", specifier = ">=8.4.0,<9.0.0" },
+    { name = "pytest-xdist", specifier = ">=3.8.0" },
+    { name = "rich", specifier = ">=15.0.0" },
+    { name = "ruff", specifier = ">=0.11.13,<1.0.0" },
+    { name = "ty", specifier = ">=0.0.59,<1.0.0" },
+    { name = "vendoring", specifier = ">=0.2.2" },
+]
 lint = [
     { name = "mypy", specifier = ">=1.16.0,<2.0.0" },
     { name = "ruff", specifier = ">=0.11.13,<1.0.0" },

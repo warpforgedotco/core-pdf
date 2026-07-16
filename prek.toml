@@ -36,3 +36,14 @@ hooks = [
     "manual",
   ], require_serial = true },
 ]
+
+[[repos]]
+repo = "https://github.com/astral-sh/ty-pre-commit"
+rev = "v0.0.59"
+hooks = [
+  { id = "ty", args = ["--isolated"], stages = [
+    "pre-commit",
+    "pre-push",
+    "manual",
+  ] },
+]

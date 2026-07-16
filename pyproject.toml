@@ -25,6 +25,12 @@ License = "https://github.com/core-experiments/core-pdf/blob/main/LICENSE.txt"
 "Philanthropy waiver terms" = "https://github.com/core-experiments/core-pdf/blob/main/docs/license/LICENSE-PHILANTHROPY-WAIVER.txt"
 
 [dependency-groups]
+dev = [
+    { include-group = "benchmark" },
+    { include-group = "lint" },
+    { include-group = "test" },
+    { include-group = "vendor" },
+]
 benchmark = [
     "rich>=15.0.0",
 ]
