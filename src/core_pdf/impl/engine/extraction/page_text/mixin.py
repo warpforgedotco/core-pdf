@@ -12213,6 +12213,30 @@ def append_rendered_full_page_ocr_candidates(
             primary_result,
             rendered_image,
         )
+        # Dense scanned tables are poorly served by the default sparse-page
+        # segmentation.  Keep a dedicated block-mode candidate so the normal
+        # line reconciliation can choose cells/rows with stable geometry.
+        if ocr_full_page.should_try_tesseract_table_profile_ocr(primary_result):
+            table_result = (
+                ocr_session.image_to_text_result(
+                    rendered_image,
+                    psm=6,
+                    variables={"preserve_interword_spaces": "1"},
+                )
+                if ocr_session is not None
+                else ocr_execution.ocr_image_to_text_result_with_psm_timeout(
+                    rendered_image,
+                    psm=6,
+                    variables={"preserve_interword_spaces": "1"},
+                    timeout=timeout,
+                )
+            )
+            append_nonempty_ocr_candidate(
+                candidates,
+                f"{source}_table_profile_psm6",
+                table_result,
+                rendered_image,
+            )
         append_rendered_band_column_ocr_candidates(
             candidates,
             rendered_image,
