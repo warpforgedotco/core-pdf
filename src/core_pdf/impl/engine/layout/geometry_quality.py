@@ -474,6 +474,15 @@ def layout_geometry_should_trigger_ocr(
         return False
     if text_tokens <= 20:
         return summary.error_count > 0 or summary.has_repairable_issues
+    if (
+        text_tokens >= 250
+        and summary.text_run_count >= 100
+        and summary.issue_count / summary.text_run_count <= 0.04
+    ):
+        # A few suspect formula or symbol glyphs do not make an otherwise
+        # substantial native layer unreliable. Full-page OCR tends to turn
+        # those isolated constructs into high-confidence mirrored gibberish.
+        return False
     if summary.has_repairable_issues and summary.suspicion_score >= 5.0:
         return True
     if summary.error_count >= 2 and summary.suspicion_score >= 7.0:

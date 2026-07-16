@@ -158,6 +158,22 @@ def simple_pdf_fixture() -> Path:
     return Path(__file__).parent / "fixtures" / "pdfminer.six" / "samples" / "simple1.pdf"
 
 
+def test_nested_form_rebinds_same_named_font_resource() -> None:
+    fixture = (
+        Path(__file__).parent
+        / "fixtures"
+        / "SCORE-Bench"
+        / "src"
+        / "korean_power_system_challenges-p003.pdf"
+    )
+
+    with PublicPdfDocument(fixture) as document:
+        text = cast(Any, document.pages[0]).extract_text()
+
+    assert "This document was prepared as an account of work" in text
+    assert "5Iis document was prepared as an account of worL" not in text
+
+
 def test_document_close_releases_owned_path_resources() -> None:
     document = PdfDocument(simple_pdf_fixture())
     mapping = document.raw_data

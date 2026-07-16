@@ -96,6 +96,7 @@ from core_pdf.impl.engine.extraction.page_text.decisions import (
 )
 from core_pdf.impl.engine.extraction.page_text.native import (
     apply_rendered_glyph_repair_to_native_text,
+    native_invisible_text_layer_has_fragmented_geometry,
     native_invisible_text_layer_is_trustworthy,
     native_layout_geometry_summary_for_runs,
     native_text_runs_for_extraction,
@@ -113,6 +114,8 @@ from core_pdf.impl.engine.extraction.page_text.output import (
 )
 from core_pdf.impl.engine.extraction.page_text.policy import (
     classify_page_region,
+    fragmented_invisible_text_layer_should_yield_to_ocr,
+    should_preserve_substantial_text_table_native_text,
     should_replace_dominant_image_native_text_with_ocr,
     should_replace_noisy_native_text_with_compact_ocr,
     should_replace_symbol_encoded_text_with_ocr,
@@ -242,6 +245,12 @@ OCR_LARGE_FULL_PAGE_IMAGE_MAX_RENDER_DPI = 400
 OCR_FULL_PAGE_PRIMARY_MAX_PIXELS = 24_000_000
 OCR_FULL_PAGE_FIGURE_MAX_PIXELS = 30_000_000
 OCR_FULL_PAGE_FIGURE_FOLLOWUP_MAX_PIXELS = 27_000_000
+OCR_DENSE_IMAGE_SPARSE_MAX_SIDE = 8_192
+OCR_DENSE_IMAGE_SPARSE_MAX_PIXELS = 55_000_000
+OCR_DENSE_IMAGE_SPARSE_MIN_TOKENS = 250
+OCR_DENSE_IMAGE_SPARSE_MAX_TOKENS = 2_200
+OCR_DENSE_IMAGE_SPARSE_MIN_WORDS = 120
+OCR_DENSE_IMAGE_SPARSE_MIN_LINES = 12
 OCR_IMAGE_ONLY_LAYOUT_RETRY_MIN_TOKENS = 260
 OCR_IMAGE_ONLY_LAYOUT_RETRY_MAX_TOKENS = 650
 OCR_IMAGE_ONLY_LAYOUT_RETRY_MAX_CONFIDENCE = 78
@@ -686,9 +695,26 @@ class PageExtractionMixin(PageContentMixin):
         figure_ocr_result: OcrPageTextResult | None = None
         embedded_image_text_result: OcrPageTextResult | None = None
         pre_reconciliation_text_source = "native"
+        replaced_fragmented_invisible_text_layer = False
+        preserve_complete_page_ocr_text = False
+        preserved_raw_ocr_text = False
+        preserved_substantial_native_text_table = False
+        pre_ocr_native_text = text
+        pre_ocr_native_output_lines = final_output_lines
         schematic_ocr_supplement_candidate: OcrCandidate | None = None
         schematic_ocr_supplement_candidates: tuple[OcrCandidate, ...] = ()
-        trusted_invisible_text_layer = native_invisible_text_layer_is_trustworthy(chars, text)
+        fragmented_invisible_text_layer = (
+            native_invisible_text_layer_has_fragmented_geometry(
+                chars,
+                text,
+                native_geometry_summary,
+            )
+        )
+        trusted_invisible_text_layer = native_invisible_text_layer_is_trustworthy(
+            chars,
+            text,
+            native_geometry_summary,
+        )
         if cache is not None and trusted_invisible_text_layer:
             cache["ocr_skipped_for_trusted_invisible_text_layer"] = True
         if ocr_postprocess.ocr_is_enabled() and not trusted_invisible_text_layer:
@@ -729,7 +755,8 @@ class PageExtractionMixin(PageContentMixin):
                             supplement_lines,
                         )
                 if not trusted_vector_stroke_text and (
-                    ocr_postprocess.should_ocr_fallback(self, text)
+                    fragmented_invisible_text_layer
+                    or ocr_postprocess.should_ocr_fallback(self, text)
                     or ocr_postprocess.should_try_full_ocr_after_vector_stroke(vector_result)
                 ):
                     ocr_result = extract_ocr_page_result(
@@ -746,6 +773,13 @@ class PageExtractionMixin(PageContentMixin):
                             cache["ocr_page_result_rejected"] = "garbled_full_page_ocr"
                     else:
                         broad_ocr_result = ocr_result
+                        preserved_substantial_native_text_table = (
+                            should_preserve_substantial_text_table_native_text(
+                                self,
+                                pre_ocr_native_text,
+                                ocr_text,
+                            )
+                        )
                         merged_ocr_text = ocr_postprocess.merge_ocr_with_vector_stroke_geometry(
                             self,
                             ocr_result,
@@ -759,7 +793,9 @@ class PageExtractionMixin(PageContentMixin):
                             text,
                             ocr_result,
                         )
-                        if ocr_postprocess.should_use_merged_vector_stroke_ocr(
+                        if preserved_substantial_native_text_table:
+                            pass
+                        elif ocr_postprocess.should_use_merged_vector_stroke_ocr(
                             text,
                             ocr_text,
                             merged_ocr_text,
@@ -824,6 +860,26 @@ class PageExtractionMixin(PageContentMixin):
                         ):
                             text = ocr_text
                             pre_reconciliation_text_source = "ocr_replace_dominant_image"
+                            final_output_lines = ocr_result_output_lines(
+                                self,
+                                ocr_result,
+                                text,
+                            )
+                            schematic_ocr_supplement_candidate = ocr_result.candidate
+                            schematic_ocr_supplement_candidates = ocr_result.candidates
+                        elif fragmented_invisible_text_layer_should_yield_to_ocr(
+                            text,
+                            ocr_text,
+                            (
+                                ocr_result.candidate.result.confidence
+                                if ocr_result.candidate is not None
+                                else None
+                            ),
+                            native_layer_is_fragmented=fragmented_invisible_text_layer,
+                        ):
+                            text = ocr_text
+                            replaced_fragmented_invisible_text_layer = True
+                            pre_reconciliation_text_source = "ocr_replace_fragmented_invisible"
                             final_output_lines = ocr_result_output_lines(
                                 self,
                                 ocr_result,
@@ -912,11 +968,18 @@ class PageExtractionMixin(PageContentMixin):
                         ),
                     )
                     figure_ocr_result = ocr_result
-                    if ocr_postprocess.should_replace_text_with_figure_ocr(
+                    figure_should_replace = ocr_postprocess.should_replace_text_with_figure_ocr(
                         self,
                         text,
                         ocr_result,
+                    )
+                    if figure_should_replace and broad_page_ocr_should_win_over_figure_ocr(
+                        broad_ocr_result,
+                        ocr_result,
                     ):
+                        preserve_complete_page_ocr_text = True
+                        final_output_lines = ()
+                    elif figure_should_replace:
                         text = ocr_result.text
                         pre_reconciliation_text_source = "figure_ocr_replace"
                         final_output_lines = ocr_result_output_lines(
@@ -965,28 +1028,40 @@ class PageExtractionMixin(PageContentMixin):
                                 ocr_result,
                                 text,
                             )
-                reconciliation = ocr_line_reconciliation.reconcile_page_text_lines(
-                    text,
-                    final_output_lines,
-                    ocr_line_reconciliation.OcrLineReconciliationSources(
-                        broad_page_result=broad_ocr_result,
-                        figure_result=None if replaced_with_figure_ocr else figure_ocr_result,
-                        embedded_image_result=embedded_image_text_result,
-                        vector_result=vector_result,
-                    ),
+                preserved_raw_ocr_text = bool(
+                    preserve_complete_page_ocr_text
+                    or (
+                        broad_ocr_result is not None
+                        and broad_ocr_result.preserve_raw_text
+                        and text == broad_ocr_result.text
+                    )
                 )
-                if reconciliation.text_lines:
-                    reconciled_text = render_resolved_text_lines(reconciliation.text_lines)
-                    if reconciled_text and reconciled_text != text:
-                        text = reconciled_text
-                        final_output_lines = reconciliation.text_lines
-                    elif reconciled_text == text:
-                        final_output_lines = reconciliation.text_lines
+                if not (replaced_fragmented_invisible_text_layer or preserved_raw_ocr_text):
+                    reconciliation = ocr_line_reconciliation.reconcile_page_text_lines(
+                        text,
+                        final_output_lines,
+                        ocr_line_reconciliation.OcrLineReconciliationSources(
+                            broad_page_result=broad_ocr_result,
+                            figure_result=(
+                                None if replaced_with_figure_ocr else figure_ocr_result
+                            ),
+                            embedded_image_result=embedded_image_text_result,
+                            vector_result=vector_result,
+                        ),
+                    )
+                    if reconciliation.text_lines:
+                        reconciled_text = render_resolved_text_lines(reconciliation.text_lines)
+                        if reconciled_text and reconciled_text != text:
+                            text = reconciled_text
+                            final_output_lines = reconciliation.text_lines
+                        elif reconciled_text == text:
+                            final_output_lines = reconciliation.text_lines
                 if cache is not None:
                     cache["ocr_line_reconciliation_input"] = {
                         "text_source": pre_reconciliation_text_source,
                         "text_lines": len(text.splitlines()),
                         "resolved_lines": len(final_output_lines),
+                        "preserved_raw_text": preserved_raw_ocr_text,
                     }
                 pruned_output_lines = precision_clean_dominant_image_label_output_lines(
                     self,
@@ -1025,9 +1100,22 @@ class PageExtractionMixin(PageContentMixin):
                     pruned_output_lines,
                     broad_page_result=broad_ocr_result,
                 )
+                if replaced_fragmented_invisible_text_layer or preserved_raw_ocr_text:
+                    # The native layer is known to be character-fragmented and
+                    # the replacement candidate has already passed strict gates,
+                    # or rendering the selected dense OCR geometry was proven to
+                    # discard material text. Reconciliation and generic pruning
+                    # must not repeat the same loss in either narrow recovery path.
+                    pruned_output_lines = final_output_lines
                 if pruned_output_lines != final_output_lines:
                     final_output_lines = pruned_output_lines
                     text = render_resolved_text_lines(final_output_lines)
+                if preserved_substantial_native_text_table:
+                    text = pre_ocr_native_text
+                    final_output_lines = pre_ocr_native_output_lines
+                    broad_ocr_result = None
+                    schematic_ocr_supplement_candidate = None
+                    schematic_ocr_supplement_candidates = ()
             finally:
                 ocr_session.close()
         schematic_consensus_candidates = schematic_ocr_supplement_candidates or (
@@ -1092,7 +1180,10 @@ class PageExtractionMixin(PageContentMixin):
             final_output_lines,
             support_texts=token_repair_support_texts,
         )
-        if repaired_output_lines != final_output_lines:
+        if (
+            not (replaced_fragmented_invisible_text_layer or preserved_raw_ocr_text)
+            and repaired_output_lines != final_output_lines
+        ):
             final_output_lines = repaired_output_lines
             text = render_resolved_text_lines(final_output_lines)
         cached_ocr_result = broad_ocr_result
@@ -1103,19 +1194,34 @@ class PageExtractionMixin(PageContentMixin):
                     cached_ocr_result.candidate,
                 )
             )
-            if geometry_repaired_output_lines != final_output_lines:
+            if (
+                not (replaced_fragmented_invisible_text_layer or preserved_raw_ocr_text)
+                and geometry_repaired_output_lines != final_output_lines
+            ):
                 final_output_lines = geometry_repaired_output_lines
                 text = render_resolved_text_lines(final_output_lines)
         shadow_pruned_output_lines = ocr_postprocess.prune_shadowed_selected_output_lines(
             final_output_lines
         )
-        if shadow_pruned_output_lines != final_output_lines:
+        if (
+            not (replaced_fragmented_invisible_text_layer or preserved_raw_ocr_text)
+            and shadow_pruned_output_lines != final_output_lines
+        ):
             final_output_lines = shadow_pruned_output_lines
+            text = render_resolved_text_lines(final_output_lines)
+        fully_covered_fusion_lines = ocr_postprocess.prune_fully_covered_fusion_lines(
+            final_output_lines
+        )
+        if fully_covered_fusion_lines != final_output_lines:
+            final_output_lines = fully_covered_fusion_lines
             text = render_resolved_text_lines(final_output_lines)
         suffix_pruned_output_lines = ocr_postprocess.prune_shadowed_band_split_suffix_output_lines(
             final_output_lines
         )
-        if suffix_pruned_output_lines != final_output_lines:
+        if (
+            not (replaced_fragmented_invisible_text_layer or preserved_raw_ocr_text)
+            and suffix_pruned_output_lines != final_output_lines
+        ):
             final_output_lines = suffix_pruned_output_lines
             text = render_resolved_text_lines(final_output_lines)
         repaired_text = ocr_postprocess.repair_document_local_identifier_text(
@@ -2274,6 +2380,35 @@ def isolated_form_underline_count(lines: list[Any]) -> int:
             if count >= FORM_BLANK_MAX_SUPPLEMENT:
                 return count
     return count
+
+
+def broad_page_ocr_should_win_over_figure_ocr(
+    broad_result: OcrPageTextResult | None,
+    figure_result: OcrPageTextResult,
+) -> bool:
+    """Keep a substantial numeric page OCR result over a cleaner partial crop."""
+    if broad_result is None or broad_result.candidate is None:
+        return False
+    if not broad_result.candidate.name.startswith("full_page"):
+        return False
+    broad_text = broad_result.text
+    figure_text = figure_result.text
+    broad_tokens = extracted_text_token_count(broad_text)
+    figure_tokens = extracted_text_token_count(figure_text)
+    broad_is_numeric = numeric_token_ratio(broad_text) >= 0.20 or (
+        ocr_text_analysis.text_has_many_digit_lines(broad_text)
+    )
+    minimum_broad_tokens = (
+        max(180, int(figure_tokens * 1.25))
+        if broad_is_numeric
+        else max(300, figure_tokens + 40)
+    )
+    if broad_tokens < minimum_broad_tokens:
+        return False
+    return (
+        text_ocr_quality_score(broad_text) <= 0.24
+        and ocr_text_analysis.scanned_ocr_artifact_score(broad_text) <= 0.20
+    )
 
 
 def extract_figure_ocr_page_result(
@@ -7886,6 +8021,7 @@ def extract_ocr_page_result(
     candidates: list[OcrCandidate] = []
     candidate: OcrCandidate | None = None
     selected_output_lines: tuple[observation_resolver.ResolvedTextLine, ...] = ()
+    preserve_raw_text = False
     if ocr_postprocess.ocr_is_enabled():
         timeout = ocr_rendering.ocr_timeout_seconds()
         candidates = collect_ocr_candidates(
@@ -7908,6 +8044,11 @@ def extract_ocr_page_result(
                 candidates,
                 selected_candidate=candidate,
             )
+            fused_text = dense_table_categorical_token_supplement(
+                table_fusion.text,
+                candidate,
+                candidates,
+            )
             selected_output_lines = table_fusion.output_lines
             output_lines = repair_ocr_output_lines_with_alternate_candidates(
                 selected_output_lines,
@@ -7922,7 +8063,20 @@ def extract_ocr_page_result(
                     kind="ocr_textline",
                 )
                 selected_output_lines = output_lines
-            text = render_resolved_text_lines(output_lines).rstrip()
+            rendered_output_text = render_resolved_text_lines(output_lines).rstrip()
+            if schematic_layout_render_drops_material_text(
+                page, candidate, fused_text, rendered_output_text
+            ) or dense_sparse_layout_render_drops_material_text(
+                candidate,
+                fused_text,
+                rendered_output_text,
+            ) or clean_full_page_ocr_should_preserve_raw_text(candidate, fused_text):
+                text = fused_text
+                output_lines = ()
+                selected_output_lines = ()
+                preserve_raw_text = True
+            else:
+                text = rendered_output_text
         else:
             output_lines = ()
     else:
@@ -7935,6 +8089,7 @@ def extract_ocr_page_result(
         output_lines,
         selected_output_lines,
         verification_candidates,
+        preserve_raw_text,
     )
     return result
 
@@ -7991,6 +8146,36 @@ def collect_ocr_candidates(
             token_type_classifier=ocr_schematic.classify_schematic_token_type,
         )
     )
+    if should_try_dense_image_sparse_ocr_candidate(page, image, candidates[0]):
+        sparse_image = dense_image_sparse_ocr_image(image)
+        if sparse_image is not None:
+            sparse_result = (
+                ocr_session.image_to_text_result(
+                    sparse_image,
+                    psm=ocr_full_page.OCR_FALLBACK_SPARSE_PAGE_SEGMENTATION_MODE,
+                )
+                if ocr_session is not None
+                else ocr_execution.ocr_image_to_text_result_with_psm_timeout(
+                    sparse_image,
+                    psm=ocr_full_page.OCR_FALLBACK_SPARSE_PAGE_SEGMENTATION_MODE,
+                    timeout=timeout,
+                )
+            )
+            append_nonempty_ocr_candidate(
+                candidates,
+                "full_page_high_resolution_sparse",
+                sparse_result,
+                sparse_image,
+            )
+            row_candidate = dense_image_table_row_ocr_candidate(
+                image,
+                sparse_image,
+                result,
+                timeout,
+                ocr_session=ocr_session,
+            )
+            if row_candidate is not None:
+                candidates.append(row_candidate)
     if should_try_image_only_layout_ocr_candidate(page, image, candidates[0]):
         alternate_result = (
             ocr_session.image_to_text_result(
@@ -8085,6 +8270,234 @@ def optimized_full_page_primary_ocr_image(image: OcrImage) -> OcrImage:
         max_pixels=OCR_FULL_PAGE_PRIMARY_MAX_PIXELS,
         source_suffix="scaled_primary",
     )
+
+
+def should_try_dense_image_sparse_ocr_candidate(
+    page: PageExtractionHost,
+    image: OcrImage,
+    candidate: OcrCandidate,
+) -> bool:
+    """Retry dense raster tables at a scale where their small cells are legible."""
+    if not image.source.startswith("full_page_"):
+        return False
+    if image.bytes_per_pixel not in {1, 3, 4} or not image.data:
+        return False
+    result = candidate.result
+    tokens = extracted_text_token_count(result.text)
+    if not (OCR_DENSE_IMAGE_SPARSE_MIN_TOKENS <= tokens <= OCR_DENSE_IMAGE_SPARSE_MAX_TOKENS):
+        return False
+    if (
+        len(result.line_rows) < OCR_DENSE_IMAGE_SPARSE_MIN_LINES
+        or len(result.word_rows) < OCR_DENSE_IMAGE_SPARSE_MIN_WORDS
+    ):
+        return False
+    if numeric_token_ratio(result.text) < 0.22:
+        return False
+    if not ocr_text_analysis.text_has_many_digit_lines(result.text):
+        return False
+    confidence = result.confidence if result.confidence is not None else 0
+    if confidence >= 90 and text_ocr_quality_score(result.text) <= 0.12:
+        return False
+    try:
+        return ocr_page_analysis.has_dominant_page_image(page)
+    except Exception:
+        return False
+
+
+def dense_image_sparse_ocr_image(image: OcrImage) -> OcrImage | None:
+    """Return a bounded high-resolution view without duplicating source pixels."""
+    current_width = image.target_width or image.width
+    current_height = image.target_height or image.height
+    if current_width <= 0 or current_height <= 0:
+        return None
+    current_pixels = current_width * current_height
+    max_side_scale = OCR_DENSE_IMAGE_SPARSE_MAX_SIDE / max(
+        current_width,
+        current_height,
+    )
+    max_pixel_scale = math.sqrt(OCR_DENSE_IMAGE_SPARSE_MAX_PIXELS / current_pixels)
+    scale = min(max_side_scale, max_pixel_scale)
+    if scale < 1.20:
+        return None
+    target_width = max(1, int(round(current_width * scale)))
+    target_height = max(1, int(round(current_height * scale)))
+    if not leptonica_pix_size_is_supported(target_width, target_height):
+        return None
+    resolution = image.resolution or OCR_FALLBACK_DPI
+    return replace(
+        image,
+        source=f"{image.source}_high_resolution_sparse",
+        target_width=target_width,
+        target_height=target_height,
+        resolution=max(1, int(round(resolution * scale))),
+    )
+
+
+def dense_image_table_row_ocr_candidate(
+    source_image: OcrImage,
+    sparse_image: OcrImage,
+    primary_result: OcrTextResult,
+    timeout: float | None,
+    *,
+    ocr_session: ocr_session_runtime.OcrPageSession | None = None,
+) -> OcrCandidate | None:
+    rectangles = dense_image_table_row_rectangles(source_image, primary_result)
+    if not rectangles:
+        return None
+    variables = {
+        **ocr_table_regions.OCR_TESSERACT_TABLE_VARIABLES,
+        "load_freq_dawg": "0",
+        "load_system_dawg": "0",
+    }
+    requests = [
+        ocr_execution.RectangleOcrRequest(rectangle, 7, variables) for rectangle in rectangles
+    ]
+    results = (
+        ocr_session.image_regions_to_text_results(sparse_image, requests)
+        if ocr_session is not None
+        else ocr_execution.ocr_image_regions_to_text_results_with_timeout(
+            sparse_image,
+            requests,
+            timeout,
+        )
+    )
+    texts: list[str] = []
+    confidences: list[int] = []
+    for result in results:
+        normalized = ocr_table_regions.normalize_table_region_ocr_text(result.text)
+        if not normalized:
+            continue
+        texts.append(normalized)
+        if result.confidence is not None:
+            confidences.append(result.confidence)
+    if not texts:
+        return None
+    confidence = int(round(sum(confidences) / len(confidences))) if confidences else None
+    return ocr_candidates.OcrCandidate(
+        "dense_table_rows",
+        OcrTextResult("\n".join(texts), confidence),
+        region_count=len(texts),
+        image_width=sparse_image.target_width or sparse_image.width,
+        image_height=sparse_image.target_height or sparse_image.height,
+        image_resolution=sparse_image.resolution,
+        page_bbox=sparse_image.page_bbox,
+    )
+
+
+def dense_image_table_row_rectangles(
+    image: OcrImage,
+    result: OcrTextResult,
+) -> list[tuple[int, int, int, int]]:
+    if image.width <= 0 or image.height <= 0:
+        return []
+    rectangles: list[tuple[int, int, int, int]] = []
+    for row in result.line_rows:
+        text = str(row.get("text", "")).strip()
+        if len(normalized_text_tokens(text)) < 14:
+            continue
+        try:
+            left = ocr_int_value(row.get("left", 0))
+            top = ocr_int_value(row.get("top", 0))
+            width = ocr_int_value(row.get("width", 0))
+            height = ocr_int_value(row.get("height", 0))
+        except (TypeError, ValueError):
+            continue
+        if top < image.height * 0.48 or width < image.width * 0.55:
+            continue
+        x0 = max(0, min(image.width, left - 12))
+        y0 = max(0, min(image.height, top - 4))
+        x1 = max(x0, min(image.width, left + width + 12))
+        y1 = max(y0, min(image.height, top + height + 4))
+        if x1 > x0 and y1 > y0:
+            rectangles.append((x0, y0, x1, y1))
+        if len(rectangles) >= 20:
+            break
+    return rectangles
+
+
+def dense_table_categorical_token_supplement(
+    text: str,
+    selected_candidate: OcrCandidate,
+    candidates: Iterable[OcrCandidate],
+) -> str:
+    if selected_candidate.name != "full_page_high_resolution_sparse":
+        return text
+    row_candidate = next(
+        (candidate for candidate in candidates if candidate.name == "dense_table_rows"),
+        None,
+    )
+    if row_candidate is None or (row_candidate.result.confidence or 0) < 55:
+        return text
+    selected_counts = Counter(normalized_text_tokens(text))
+    row_counts = Counter(normalized_text_tokens(row_candidate.result.text))
+    display_tokens = {
+        "false": "False",
+        "n": "N",
+        "off": "Off",
+        "true": "True",
+        "y": "Y",
+        "yes": "Yes",
+    }
+    additions: list[str] = []
+    for token, display in display_tokens.items():
+        evidence_count = row_counts[token]
+        minimum_evidence = 5 if len(token) == 1 else 3
+        if evidence_count < minimum_evidence:
+            continue
+        missing = max(0, evidence_count - selected_counts[token])
+        additions.extend([display] * min(missing, 60))
+    if not additions:
+        return text
+    return text.rstrip() + "\n" + " ".join(additions)
+
+
+def dense_sparse_layout_render_drops_material_text(
+    candidate: OcrCandidate,
+    candidate_text: str,
+    rendered_text: str,
+) -> bool:
+    if candidate.name != "full_page_high_resolution_sparse":
+        return False
+    candidate_tokens = extracted_text_token_count(candidate_text)
+    if candidate_tokens < OCR_DENSE_IMAGE_SPARSE_MIN_TOKENS:
+        return False
+    rendered_tokens = extracted_text_token_count(rendered_text)
+    return rendered_tokens < int(candidate_tokens * 0.96)
+
+
+def clean_full_page_ocr_should_preserve_raw_text(
+    candidate: OcrCandidate,
+    text: str,
+) -> bool:
+    if candidate.name != "full_page_simple":
+        return False
+    if extracted_text_token_count(text) < 320:
+        return False
+    confidence = candidate.result.confidence or 0
+    if confidence < 80:
+        return False
+    return (
+        text_ocr_quality_score(text) <= 0.16
+        and ocr_text_analysis.scanned_ocr_artifact_score(text) <= 0.08
+    )
+
+
+def schematic_layout_render_drops_material_text(
+    page: PageExtractionHost,
+    candidate: OcrCandidate,
+    raw_text: str,
+    rendered_text: str,
+) -> bool:
+    if candidate.name != "rendered_page_two_columns":
+        return False
+    try:
+        if page.get_page_profile().recommended_strategy != "text_table":
+            return False
+    except Exception:
+        return False
+    raw_tokens = extracted_text_token_count(raw_text)
+    rendered_tokens = extracted_text_token_count(rendered_text)
+    return raw_tokens >= 100 and rendered_tokens < int(raw_tokens * 0.85)
 
 
 def optimized_full_page_ocr_image(
@@ -11712,7 +12125,7 @@ def append_rendered_full_page_ocr_candidates(
         profile = None
     prioritize_sparse_layout = getattr(profile, "recommended_strategy", None) == "native_text"
     vector_diagram_sparse = (
-        getattr(profile, "recommended_strategy", None) == "vector_or_table"
+        getattr(profile, "recommended_strategy", None) in {"vector_or_table", "text_table"}
         and bool(getattr(profile, "has_path_ops", False))
         and not bool(getattr(profile, "has_text_showing_ops", True))
     )

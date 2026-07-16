@@ -1,0 +1,8977 @@
+[
+  {
+    "stem": "005-CISA-AA22-076-Strengthening-Cybersecurity-p1-p4-p001.pdf",
+    "status": "ok",
+    "cct": 0.0,
+    "percent_tokens_found": 0.0,
+    "percent_tokens_added": 0.0,
+    "precision": 0.0,
+    "gt_tokens": 536,
+    "predicted_tokens": 0,
+    "matched_tokens": 0,
+    "elapsed_seconds": 0.7369872080016648,
+    "error": null,
+    "missing_top": [
+      [
+        ".",
+        33
+      ],
+      [
+        ",",
+        16
+      ],
+      [
+        "of",
+        15
+      ],
+      [
+        "and",
+        15
+      ],
+      [
+        "the",
+        14
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "005-CISA-AA22-076-Strengthening-Cybersecurity-p1-p4-p004.pdf",
+    "status": "ok",
+    "cct": 0.0,
+    "percent_tokens_found": 0.0,
+    "percent_tokens_added": 0.0,
+    "precision": 0.0,
+    "gt_tokens": 85,
+    "predicted_tokens": 0,
+    "matched_tokens": 0,
+    "elapsed_seconds": 0.12509008300548885,
+    "error": null,
+    "missing_top": [
+      [
+        ":",
+        8
+      ],
+      [
+        "of",
+        4
+      ],
+      [
+        "cybersecurity",
+        3
+      ],
+      [
+        "cisa",
+        3
+      ],
+      [
+        "advisory",
+        2
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "12456420-p002.pdf",
+    "status": "ok",
+    "cct": 0.0,
+    "percent_tokens_found": 0.0,
+    "percent_tokens_added": 0.0,
+    "precision": 0.0,
+    "gt_tokens": 97,
+    "predicted_tokens": 0,
+    "matched_tokens": 0,
+    "elapsed_seconds": 0.0024630830012029037,
+    "error": null,
+    "missing_top": [
+      [
+        ".",
+        4
+      ],
+      [
+        "display",
+        4
+      ],
+      [
+        ",",
+        3
+      ],
+      [
+        "portion",
+        3
+      ],
+      [
+        "oled",
+        3
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "12456420-p004.pdf",
+    "status": "ok",
+    "cct": 0.0,
+    "percent_tokens_found": 0.0,
+    "percent_tokens_added": 0.0,
+    "precision": 0.0,
+    "gt_tokens": 63,
+    "predicted_tokens": 0,
+    "matched_tokens": 0,
+    "elapsed_seconds": 0.0014178330020513386,
+    "error": null,
+    "missing_top": [
+      [
+        ".",
+        7
+      ],
+      [
+        "0",
+        4
+      ],
+      [
+        ",",
+        3
+      ],
+      [
+        "-",
+        3
+      ],
+      [
+        "phase",
+        3
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "153rd-Omaha-Pow-Wow-p001.pdf",
+    "status": "ok",
+    "cct": 0.0,
+    "percent_tokens_found": 0.0,
+    "percent_tokens_added": 0.0,
+    "precision": 0.0,
+    "gt_tokens": 665,
+    "predicted_tokens": 0,
+    "matched_tokens": 0,
+    "elapsed_seconds": 0.002010084004723467,
+    "error": null,
+    "missing_top": [
+      [
+        ".",
+        116
+      ],
+      [
+        "00",
+        51
+      ],
+      [
+        "-",
+        19
+      ],
+      [
+        ",",
+        19
+      ],
+      [
+        "1",
+        19
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "EPA_AirQualityLetter_Table-p001.pdf",
+    "status": "ok",
+    "cct": 0.0,
+    "percent_tokens_found": 0.0,
+    "percent_tokens_added": 0.0,
+    "precision": 0.0,
+    "gt_tokens": 538,
+    "predicted_tokens": 0,
+    "matched_tokens": 0,
+    "elapsed_seconds": 0.0016893340070964769,
+    "error": null,
+    "missing_top": [
+      [
+        ",",
+        32
+      ],
+      [
+        ".",
+        24
+      ],
+      [
+        "the",
+        20
+      ],
+      [
+        "of",
+        15
+      ],
+      [
+        "so\u2082",
+        12
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "EPA_AirQualityLetter_Table-p002.pdf",
+    "status": "ok",
+    "cct": 0.0,
+    "percent_tokens_found": 0.0,
+    "percent_tokens_added": 0.0,
+    "precision": 0.0,
+    "gt_tokens": 495,
+    "predicted_tokens": 0,
+    "matched_tokens": 0,
+    "elapsed_seconds": 0.0012632080033654347,
+    "error": null,
+    "missing_top": [
+      [
+        "the",
+        24
+      ],
+      [
+        ".",
+        22
+      ],
+      [
+        ",",
+        20
+      ],
+      [
+        "epa",
+        13
+      ],
+      [
+        "-",
+        13
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "EPA_DCWaterQuality_Tables_Equations-p006.pdf",
+    "status": "ok",
+    "cct": 0.0,
+    "percent_tokens_found": 0.0,
+    "percent_tokens_added": 0.0,
+    "precision": 0.0,
+    "gt_tokens": 359,
+    "predicted_tokens": 0,
+    "matched_tokens": 0,
+    "elapsed_seconds": 0.0010458340111654252,
+    "error": null,
+    "missing_top": [
+      [
+        ".",
+        14
+      ],
+      [
+        "the",
+        11
+      ],
+      [
+        "criteria",
+        10
+      ],
+      [
+        "chemical",
+        10
+      ],
+      [
+        ")",
+        9
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "EPA_DCWaterQuality_Tables_Equations-p007.pdf",
+    "status": "ok",
+    "cct": 0.0,
+    "percent_tokens_found": 0.0,
+    "percent_tokens_added": 0.0,
+    "precision": 0.0,
+    "gt_tokens": 413,
+    "predicted_tokens": 0,
+    "matched_tokens": 0,
+    "elapsed_seconds": 0.0010719580022851005,
+    "error": null,
+    "missing_top": [
+      [
+        ".",
+        17
+      ],
+      [
+        "the",
+        13
+      ],
+      [
+        ",",
+        10
+      ],
+      [
+        "(",
+        10
+      ],
+      [
+        ")",
+        10
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "EPA_pesticide_label_2008-p002.pdf",
+    "status": "ok",
+    "cct": 0.0,
+    "percent_tokens_found": 0.0,
+    "percent_tokens_added": 0.0,
+    "precision": 0.0,
+    "gt_tokens": 2048,
+    "predicted_tokens": 0,
+    "matched_tokens": 0,
+    "elapsed_seconds": 0.0020869169966317713,
+    "error": null,
+    "missing_top": [
+      [
+        ".",
+        126
+      ],
+      [
+        ",",
+        98
+      ],
+      [
+        "and",
+        48
+      ],
+      [
+        "to",
+        43
+      ],
+      [
+        "the",
+        41
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "EPA_pesticide_label_2008-p003.pdf",
+    "status": "ok",
+    "cct": 0.0,
+    "percent_tokens_found": 0.0,
+    "percent_tokens_added": 0.0,
+    "precision": 0.0,
+    "gt_tokens": 1404,
+    "predicted_tokens": 0,
+    "matched_tokens": 0,
+    "elapsed_seconds": 0.0016559169889660552,
+    "error": null,
+    "missing_top": [
+      [
+        ".",
+        148
+      ],
+      [
+        "to",
+        39
+      ],
+      [
+        ",",
+        36
+      ],
+      [
+        "a",
+        33
+      ],
+      [
+        "lbs",
+        28
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "Enron_1998-99_Earnings_Summary-p001.pdf",
+    "status": "ok",
+    "cct": 0.0,
+    "percent_tokens_found": 0.0,
+    "percent_tokens_added": 0.0,
+    "precision": 0.0,
+    "gt_tokens": 388,
+    "predicted_tokens": 0,
+    "matched_tokens": 0,
+    "elapsed_seconds": 0.002742582990322262,
+    "error": null,
+    "missing_top": [
+      [
+        "$",
+        24
+      ],
+      [
+        ".",
+        23
+      ],
+      [
+        "(",
+        23
+      ],
+      [
+        ")",
+        23
+      ],
+      [
+        ",",
+        17
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "Enron_1998-99_Earnings_Summary-p007.pdf",
+    "status": "ok",
+    "cct": 0.0,
+    "percent_tokens_found": 0.0,
+    "percent_tokens_added": 0.0,
+    "precision": 0.0,
+    "gt_tokens": 331,
+    "predicted_tokens": 0,
+    "matched_tokens": 0,
+    "elapsed_seconds": 0.00091608299408108,
+    "error": null,
+    "missing_top": [
+      [
+        ",",
+        50
+      ],
+      [
+        "(",
+        16
+      ],
+      [
+        ")",
+        16
+      ],
+      [
+        "$",
+        8
+      ],
+      [
+        "volumes",
+        6
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "Enron_2000_Earnings_Release-p011.pdf",
+    "status": "ok",
+    "cct": 0.0,
+    "percent_tokens_found": 0.0,
+    "percent_tokens_added": 0.0,
+    "precision": 0.0,
+    "gt_tokens": 2948,
+    "predicted_tokens": 0,
+    "matched_tokens": 0,
+    "elapsed_seconds": 0.0019367909990251064,
+    "error": null,
+    "missing_top": [
+      [
+        ".",
+        622
+      ],
+      [
+        ")",
+        253
+      ],
+      [
+        "(",
+        252
+      ],
+      [
+        "-",
+        201
+      ],
+      [
+        "1",
+        127
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "Enron_2000_Earnings_Release-p038.pdf",
+    "status": "ok",
+    "cct": 0.0,
+    "percent_tokens_found": 0.0,
+    "percent_tokens_added": 0.0,
+    "precision": 0.0,
+    "gt_tokens": 1098,
+    "predicted_tokens": 0,
+    "matched_tokens": 0,
+    "elapsed_seconds": 0.0014535420050378889,
+    "error": null,
+    "missing_top": [
+      [
+        "$",
+        99
+      ],
+      [
+        "-",
+        66
+      ],
+      [
+        ",",
+        49
+      ],
+      [
+        ".",
+        43
+      ],
+      [
+        "(",
+        40
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "Enron_Attendee_List-Grainy-p001.pdf",
+    "status": "ok",
+    "cct": 0.0,
+    "percent_tokens_found": 0.0,
+    "percent_tokens_added": 0.0,
+    "precision": 0.0,
+    "gt_tokens": 296,
+    "predicted_tokens": 0,
+    "matched_tokens": 0,
+    "elapsed_seconds": 0.0016050830017775297,
+    "error": null,
+    "missing_top": [
+      [
+        ",",
+        37
+      ],
+      [
+        ":",
+        9
+      ],
+      [
+        "capital",
+        9
+      ],
+      [
+        "management",
+        8
+      ],
+      [
+        "mark",
+        4
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "Enron_Board of_Directors_Meeting-p068.pdf",
+    "status": "ok",
+    "cct": 0.0,
+    "percent_tokens_found": 0.0,
+    "percent_tokens_added": 0.0,
+    "precision": 0.0,
+    "gt_tokens": 344,
+    "predicted_tokens": 0,
+    "matched_tokens": 0,
+    "elapsed_seconds": 0.0010777919960673898,
+    "error": null,
+    "missing_top": [
+      [
+        "mm",
+        15
+      ],
+      [
+        "limit",
+        14
+      ],
+      [
+        ",",
+        13
+      ],
+      [
+        "-",
+        11
+      ],
+      [
+        "$",
+        11
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "Enron_Board of_Directors_Meeting-p069.pdf",
+    "status": "ok",
+    "cct": 0.0,
+    "percent_tokens_found": 0.0,
+    "percent_tokens_added": 0.0,
+    "precision": 0.0,
+    "gt_tokens": 499,
+    "predicted_tokens": 0,
+    "matched_tokens": 0,
+    "elapsed_seconds": 0.0011208749929210171,
+    "error": null,
+    "missing_top": [
+      [
+        "var",
+        23
+      ],
+      [
+        "of",
+        22
+      ],
+      [
+        "%",
+        20
+      ],
+      [
+        "to",
+        16
+      ],
+      [
+        "/",
+        14
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "Enron_Emails-Skewed-Vertical-p001.pdf",
+    "status": "ok",
+    "cct": 0.0,
+    "percent_tokens_found": 0.0,
+    "percent_tokens_added": 0.0,
+    "precision": 0.0,
+    "gt_tokens": 584,
+    "predicted_tokens": 0,
+    "matched_tokens": 0,
+    "elapsed_seconds": 0.0015802499983692542,
+    "error": null,
+    "missing_top": [
+      [
+        "-",
+        55
+      ],
+      [
+        ">",
+        49
+      ],
+      [
+        ":",
+        34
+      ],
+      [
+        ",",
+        33
+      ],
+      [
+        ".",
+        25
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "Fake_FormCA-5_OHara-p002.pdf",
+    "status": "ok",
+    "cct": 0.0,
+    "percent_tokens_found": 0.0,
+    "percent_tokens_added": 0.0,
+    "precision": 0.0,
+    "gt_tokens": 317,
+    "predicted_tokens": 0,
+    "matched_tokens": 0,
+    "elapsed_seconds": 0.005457667008158751,
+    "error": null,
+    "missing_top": [
+      [
+        ".",
+        22
+      ],
+      [
+        ",",
+        16
+      ],
+      [
+        "the",
+        11
+      ],
+      [
+        "of",
+        10
+      ],
+      [
+        "or",
+        6
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "Fake_FormEE-1_Wells-p001.pdf",
+    "status": "ok",
+    "cct": 0.0,
+    "percent_tokens_found": 0.0,
+    "percent_tokens_added": 0.0,
+    "precision": 0.0,
+    "gt_tokens": 800,
+    "predicted_tokens": 0,
+    "matched_tokens": 0,
+    "elapsed_seconds": 0.0022969580022618175,
+    "error": null,
+    "missing_top": [
+      [
+        ".",
+        40
+      ],
+      [
+        "___",
+        34
+      ],
+      [
+        ",",
+        26
+      ],
+      [
+        "[",
+        22
+      ],
+      [
+        "]",
+        22
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "Fake_FormSF1440_DefenderTech-p001.pdf",
+    "status": "ok",
+    "cct": 0.0,
+    "percent_tokens_found": 0.0,
+    "percent_tokens_added": 0.0,
+    "precision": 0.0,
+    "gt_tokens": 410,
+    "predicted_tokens": 0,
+    "matched_tokens": 0,
+    "elapsed_seconds": 0.001662541995756328,
+    "error": null,
+    "missing_top": [
+      [
+        "(",
+        20
+      ],
+      [
+        ")",
+        20
+      ],
+      [
+        ",",
+        13
+      ],
+      [
+        "of",
+        12
+      ],
+      [
+        "or",
+        8
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "Fake_GSA3708-14.pdf",
+    "status": "ok",
+    "cct": 0.0,
+    "percent_tokens_found": 0.0,
+    "percent_tokens_added": 0.0,
+    "precision": 0.0,
+    "gt_tokens": 180,
+    "predicted_tokens": 0,
+    "matched_tokens": 0,
+    "elapsed_seconds": 0.0008264159987447783,
+    "error": null,
+    "missing_top": [
+      [
+        ":",
+        13
+      ],
+      [
+        ".",
+        8
+      ],
+      [
+        "00",
+        7
+      ],
+      [
+        "-",
+        6
+      ],
+      [
+        "/",
+        5
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "Fake_Survivor_Comp_Claim_p001.pdf",
+    "status": "ok",
+    "cct": 0.0,
+    "percent_tokens_found": 0.0,
+    "percent_tokens_added": 0.0,
+    "precision": 0.0,
+    "gt_tokens": 1038,
+    "predicted_tokens": 0,
+    "matched_tokens": 0,
+    "elapsed_seconds": 0.001222542006871663,
+    "error": null,
+    "missing_top": [
+      [
+        ".",
+        72
+      ],
+      [
+        ",",
+        51
+      ],
+      [
+        "of",
+        33
+      ],
+      [
+        "___",
+        30
+      ],
+      [
+        ":",
+        23
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "Fake_VA Form 10-10EZ_p005.pdf",
+    "status": "ok",
+    "cct": 0.0,
+    "percent_tokens_found": 0.0,
+    "percent_tokens_added": 0.0,
+    "precision": 0.0,
+    "gt_tokens": 1092,
+    "predicted_tokens": 0,
+    "matched_tokens": 0,
+    "elapsed_seconds": 0.0015577919984934852,
+    "error": null,
+    "missing_top": [
+      [
+        ",",
+        57
+      ],
+      [
+        ".",
+        41
+      ],
+      [
+        "(",
+        36
+      ],
+      [
+        ")",
+        35
+      ],
+      [
+        "[",
+        34
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "Fake_vba-21-526ez-are_p011.pdf",
+    "status": "ok",
+    "cct": 0.0,
+    "percent_tokens_found": 0.0,
+    "percent_tokens_added": 0.0,
+    "precision": 0.0,
+    "gt_tokens": 468,
+    "predicted_tokens": 0,
+    "matched_tokens": 0,
+    "elapsed_seconds": 0.0014047919976292178,
+    "error": null,
+    "missing_top": [
+      [
+        ".",
+        28
+      ],
+      [
+        "-",
+        19
+      ],
+      [
+        ")",
+        19
+      ],
+      [
+        "(",
+        18
+      ],
+      [
+        ",",
+        15
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "Patent_US-12459968-B2_Nov-4-25_p010.pdf",
+    "status": "ok",
+    "cct": 0.0,
+    "percent_tokens_found": 0.0,
+    "percent_tokens_added": 0.0,
+    "precision": 0.0,
+    "gt_tokens": 1084,
+    "predicted_tokens": 0,
+    "matched_tokens": 0,
+    "elapsed_seconds": 0.004913791999570094,
+    "error": null,
+    "missing_top": [
+      [
+        ",",
+        134
+      ],
+      [
+        "(",
+        58
+      ],
+      [
+        ")",
+        57
+      ],
+      [
+        "-",
+        46
+      ],
+      [
+        "o",
+        43
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "Patent_US-12459968-B2_Nov-4-25_p029.pdf",
+    "status": "ok",
+    "cct": 0.0,
+    "percent_tokens_found": 0.0,
+    "percent_tokens_added": 0.0,
+    "precision": 0.0,
+    "gt_tokens": 701,
+    "predicted_tokens": 0,
+    "matched_tokens": 0,
+    "elapsed_seconds": 0.005576083000050858,
+    "error": null,
+    "missing_top": [
+      [
+        "o",
+        68
+      ],
+      [
+        "(",
+        53
+      ],
+      [
+        ")",
+        53
+      ],
+      [
+        "-",
+        47
+      ],
+      [
+        "i",
+        27
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "Patent_US-12461028-B2_Nov-2025_p007.pdf",
+    "status": "ok",
+    "cct": 0.0,
+    "percent_tokens_found": 0.0,
+    "percent_tokens_added": 0.0,
+    "precision": 0.0,
+    "gt_tokens": 1139,
+    "predicted_tokens": 0,
+    "matched_tokens": 0,
+    "elapsed_seconds": 0.0029455420008162037,
+    "error": null,
+    "missing_top": [
+      [
+        ",",
+        72
+      ],
+      [
+        "the",
+        58
+      ],
+      [
+        "of",
+        46
+      ],
+      [
+        ".",
+        31
+      ],
+      [
+        "a",
+        30
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "Roosevelt-Letter-Oppenheimer-p001.pdf",
+    "status": "ok",
+    "cct": 0.0,
+    "percent_tokens_found": 0.0,
+    "percent_tokens_added": 0.0,
+    "precision": 0.0,
+    "gt_tokens": 344,
+    "predicted_tokens": 0,
+    "matched_tokens": 0,
+    "elapsed_seconds": 0.007805625005858019,
+    "error": null,
+    "missing_top": [
+      [
+        "the",
+        26
+      ],
+      [
+        "of",
+        19
+      ],
+      [
+        ".",
+        17
+      ],
+      [
+        "and",
+        10
+      ],
+      [
+        "to",
+        9
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "change-of-address-1_FILLED_p001.pdf",
+    "status": "ok",
+    "cct": 0.0,
+    "percent_tokens_found": 0.0,
+    "percent_tokens_added": 0.0,
+    "precision": 0.0,
+    "gt_tokens": 626,
+    "predicted_tokens": 0,
+    "matched_tokens": 0,
+    "elapsed_seconds": 0.0016568330029258505,
+    "error": null,
+    "missing_top": [
+      [
+        ".",
+        70
+      ],
+      [
+        ",",
+        49
+      ],
+      [
+        "/",
+        18
+      ],
+      [
+        "a",
+        16
+      ],
+      [
+        "(",
+        13
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "circuit schematic.pdf",
+    "status": "ok",
+    "cct": 0.0,
+    "percent_tokens_found": 0.0,
+    "percent_tokens_added": 0.0,
+    "precision": 0.0,
+    "gt_tokens": 1397,
+    "predicted_tokens": 0,
+    "matched_tokens": 0,
+    "elapsed_seconds": 0.029200250006397255,
+    "error": null,
+    "missing_top": [
+      [
+        "gnd",
+        80
+      ],
+      [
+        "/",
+        59
+      ],
+      [
+        "1",
+        40
+      ],
+      [
+        "2",
+        38
+      ],
+      [
+        "3",
+        32
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "citycar_19830107_Payments-p001.pdf",
+    "status": "ok",
+    "cct": 0.0,
+    "percent_tokens_found": 0.0,
+    "percent_tokens_added": 0.0,
+    "precision": 0.0,
+    "gt_tokens": 645,
+    "predicted_tokens": 0,
+    "matched_tokens": 0,
+    "elapsed_seconds": 0.09549387499282602,
+    "error": null,
+    "missing_top": [
+      [
+        ".",
+        47
+      ],
+      [
+        "$",
+        31
+      ],
+      [
+        ":",
+        28
+      ],
+      [
+        "/",
+        20
+      ],
+      [
+        "___",
+        16
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "citycar_19830107_Payments-p002.pdf",
+    "status": "ok",
+    "cct": 0.0,
+    "percent_tokens_found": 0.0,
+    "percent_tokens_added": 0.0,
+    "precision": 0.0,
+    "gt_tokens": 1988,
+    "predicted_tokens": 0,
+    "matched_tokens": 0,
+    "elapsed_seconds": 0.4236517919925973,
+    "error": null,
+    "missing_top": [
+      [
+        ".",
+        135
+      ],
+      [
+        "the",
+        97
+      ],
+      [
+        ",",
+        77
+      ],
+      [
+        "to",
+        63
+      ],
+      [
+        "of",
+        61
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "esp32_s3_circuit_schematic.pdf",
+    "status": "ok",
+    "cct": 0.0,
+    "percent_tokens_found": 0.0,
+    "percent_tokens_added": 0.0,
+    "precision": 0.0,
+    "gt_tokens": 647,
+    "predicted_tokens": 0,
+    "matched_tokens": 0,
+    "elapsed_seconds": 0.013546417001634836,
+    "error": null,
+    "missing_top": [
+      [
+        "/",
+        55
+      ],
+      [
+        "gnd",
+        29
+      ],
+      [
+        ".",
+        23
+      ],
+      [
+        "\u2013",
+        15
+      ],
+      [
+        "%",
+        15
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "g-325a_FILLED_p004.pdf",
+    "status": "ok",
+    "cct": 0.0,
+    "percent_tokens_found": 0.0,
+    "percent_tokens_added": 0.0,
+    "precision": 0.0,
+    "gt_tokens": 643,
+    "predicted_tokens": 0,
+    "matched_tokens": 0,
+    "elapsed_seconds": 0.0014689160016132519,
+    "error": null,
+    "missing_top": [
+      [
+        ".",
+        42
+      ],
+      [
+        ",",
+        28
+      ],
+      [
+        "and",
+        18
+      ],
+      [
+        "the",
+        16
+      ],
+      [
+        "to",
+        14
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "hilton_20230829-p001.pdf",
+    "status": "ok",
+    "cct": 0.0,
+    "percent_tokens_found": 0.0,
+    "percent_tokens_added": 0.0,
+    "precision": 0.0,
+    "gt_tokens": 533,
+    "predicted_tokens": 0,
+    "matched_tokens": 0,
+    "elapsed_seconds": 0.09727179199398961,
+    "error": null,
+    "missing_top": [
+      [
+        "/",
+        47
+      ],
+      [
+        ".",
+        29
+      ],
+      [
+        "2023",
+        21
+      ],
+      [
+        "8",
+        20
+      ],
+      [
+        "$",
+        17
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "hilton_20230829-p002.pdf",
+    "status": "ok",
+    "cct": 0.0,
+    "percent_tokens_found": 0.0,
+    "percent_tokens_added": 0.0,
+    "precision": 0.0,
+    "gt_tokens": 419,
+    "predicted_tokens": 0,
+    "matched_tokens": 0,
+    "elapsed_seconds": 0.14768650000041816,
+    "error": null,
+    "missing_top": [
+      [
+        "/",
+        29
+      ],
+      [
+        ".",
+        21
+      ],
+      [
+        "hilton",
+        15
+      ],
+      [
+        ":",
+        15
+      ],
+      [
+        "2023",
+        12
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "lqvh0375-p003.pdf",
+    "status": "ok",
+    "cct": 0.0,
+    "percent_tokens_found": 0.0,
+    "percent_tokens_added": 0.0,
+    "precision": 0.0,
+    "gt_tokens": 777,
+    "predicted_tokens": 0,
+    "matched_tokens": 0,
+    "elapsed_seconds": 0.20439691700448748,
+    "error": null,
+    "missing_top": [
+      [
+        ",",
+        50
+      ],
+      [
+        ".",
+        47
+      ],
+      [
+        "(",
+        21
+      ],
+      [
+        ")",
+        21
+      ],
+      [
+        "-",
+        17
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "lqvh0375-p033.pdf",
+    "status": "ok",
+    "cct": 0.0,
+    "percent_tokens_found": 0.0,
+    "percent_tokens_added": 0.0,
+    "precision": 0.0,
+    "gt_tokens": 661,
+    "predicted_tokens": 0,
+    "matched_tokens": 0,
+    "elapsed_seconds": 0.11186470800021198,
+    "error": null,
+    "missing_top": [
+      [
+        ":",
+        154
+      ],
+      [
+        "2",
+        33
+      ],
+      [
+        "3",
+        24
+      ],
+      [
+        "4",
+        23
+      ],
+      [
+        ",",
+        20
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "patent-document-11809240-p001.pdf",
+    "status": "ok",
+    "cct": 0.0,
+    "percent_tokens_found": 0.0,
+    "percent_tokens_added": 0.0,
+    "precision": 0.0,
+    "gt_tokens": 614,
+    "predicted_tokens": 0,
+    "matched_tokens": 0,
+    "elapsed_seconds": 0.0017662500031292439,
+    "error": null,
+    "missing_top": [
+      [
+        "/",
+        40
+      ],
+      [
+        ".",
+        28
+      ],
+      [
+        "(",
+        25
+      ],
+      [
+        ")",
+        25
+      ],
+      [
+        ",",
+        22
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "patent-document-11809240-p006.pdf",
+    "status": "ok",
+    "cct": 0.0,
+    "percent_tokens_found": 0.0,
+    "percent_tokens_added": 0.0,
+    "precision": 0.0,
+    "gt_tokens": 1293,
+    "predicted_tokens": 0,
+    "matched_tokens": 0,
+    "elapsed_seconds": 0.002485874996636994,
+    "error": null,
+    "missing_top": [
+      [
+        "the",
+        115
+      ],
+      [
+        ".",
+        57
+      ],
+      [
+        ",",
+        44
+      ],
+      [
+        "and",
+        44
+      ],
+      [
+        "fixed",
+        41
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "patent-y2016-9493801-p17.pdf",
+    "status": "ok",
+    "cct": 0.0,
+    "percent_tokens_found": 0.0,
+    "percent_tokens_added": 0.0,
+    "precision": 0.0,
+    "gt_tokens": 1235,
+    "predicted_tokens": 0,
+    "matched_tokens": 0,
+    "elapsed_seconds": 0.0027607499941950664,
+    "error": null,
+    "missing_top": [
+      [
+        ".",
+        94
+      ],
+      [
+        "the",
+        51
+      ],
+      [
+        ",",
+        41
+      ],
+      [
+        "and",
+        36
+      ],
+      [
+        "-",
+        30
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "visa-application-us-1_FILLED_p001.pdf",
+    "status": "ok",
+    "cct": 0.0,
+    "percent_tokens_found": 0.0,
+    "percent_tokens_added": 0.0,
+    "precision": 0.0,
+    "gt_tokens": 662,
+    "predicted_tokens": 0,
+    "matched_tokens": 0,
+    "elapsed_seconds": 0.00763737500528805,
+    "error": null,
+    "missing_top": [
+      [
+        ".",
+        47
+      ],
+      [
+        "-",
+        28
+      ],
+      [
+        ",",
+        19
+      ],
+      [
+        "(",
+        17
+      ],
+      [
+        ")",
+        17
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "xqvh0375-p010.pdf",
+    "status": "ok",
+    "cct": 0.0,
+    "percent_tokens_found": 0.0,
+    "percent_tokens_added": 0.0,
+    "precision": 0.0,
+    "gt_tokens": 205,
+    "predicted_tokens": 0,
+    "matched_tokens": 0,
+    "elapsed_seconds": 0.0516998329985654,
+    "error": null,
+    "missing_top": [
+      [
+        ".",
+        18
+      ],
+      [
+        "the",
+        9
+      ],
+      [
+        ",",
+        8
+      ],
+      [
+        "\u2013",
+        8
+      ],
+      [
+        "a",
+        6
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "xqvh0375-p022.pdf",
+    "status": "ok",
+    "cct": 0.0,
+    "percent_tokens_found": 0.0,
+    "percent_tokens_added": 0.0,
+    "precision": 0.0,
+    "gt_tokens": 120,
+    "predicted_tokens": 0,
+    "matched_tokens": 0,
+    "elapsed_seconds": 0.031079958003829233,
+    "error": null,
+    "missing_top": [
+      [
+        "the",
+        8
+      ],
+      [
+        "of",
+        4
+      ],
+      [
+        ".",
+        4
+      ],
+      [
+        "by",
+        3
+      ],
+      [
+        "-",
+        3
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "sec_gov_archives_edgar_data-p017.pdf",
+    "status": "ok",
+    "cct": 0.0072992700729927005,
+    "percent_tokens_found": 0.003663003663003663,
+    "percent_tokens_added": 0.0,
+    "precision": 1.0,
+    "gt_tokens": 273,
+    "predicted_tokens": 1,
+    "matched_tokens": 1,
+    "elapsed_seconds": 0.009100041992496699,
+    "error": null,
+    "missing_top": [
+      [
+        ":",
+        37
+      ],
+      [
+        "___",
+        18
+      ],
+      [
+        "#",
+        9
+      ],
+      [
+        ".",
+        8
+      ],
+      [
+        "-",
+        8
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "VCAs_REV2_SCHEMATIC-p002.pdf",
+    "status": "ok",
+    "cct": 0.03292181069958848,
+    "percent_tokens_found": 0.016736401673640166,
+    "percent_tokens_added": 0.0,
+    "precision": 1.0,
+    "gt_tokens": 478,
+    "predicted_tokens": 8,
+    "matched_tokens": 8,
+    "elapsed_seconds": 0.15901174998725764,
+    "error": null,
+    "missing_top": [
+      [
+        "1",
+        101
+      ],
+      [
+        "2",
+        67
+      ],
+      [
+        "gnd",
+        21
+      ],
+      [
+        "+",
+        18
+      ],
+      [
+        "3",
+        16
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "BarrowArchAnalysis_Alaska1984-p299.pdf",
+    "status": "ok",
+    "cct": 0.03389830508474576,
+    "percent_tokens_found": 0.017241379310344827,
+    "percent_tokens_added": 0.0,
+    "precision": 1.0,
+    "gt_tokens": 232,
+    "predicted_tokens": 4,
+    "matched_tokens": 4,
+    "elapsed_seconds": 0.016849042003741488,
+    "error": null,
+    "missing_top": [
+      [
+        "(",
+        30
+      ],
+      [
+        ")",
+        30
+      ],
+      [
+        "+",
+        14
+      ],
+      [
+        "*",
+        11
+      ],
+      [
+        ".",
+        9
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "executive-summary-2022-p1-7-p001.pdf",
+    "status": "ok",
+    "cct": 0.040214477211796246,
+    "percent_tokens_found": 0.02051983584131327,
+    "percent_tokens_added": 0.0,
+    "precision": 1.0,
+    "gt_tokens": 731,
+    "predicted_tokens": 15,
+    "matched_tokens": 15,
+    "elapsed_seconds": 0.01122045899683144,
+    "error": null,
+    "missing_top": [
+      [
+        ".",
+        62
+      ],
+      [
+        ",",
+        47
+      ],
+      [
+        "$",
+        43
+      ],
+      [
+        "(",
+        35
+      ],
+      [
+        ")",
+        35
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "mhky0282-p004.pdf",
+    "status": "ok",
+    "cct": 0.041463414634146344,
+    "percent_tokens_found": 0.021170610211706103,
+    "percent_tokens_added": 0.0,
+    "precision": 1.0,
+    "gt_tokens": 803,
+    "predicted_tokens": 17,
+    "matched_tokens": 17,
+    "elapsed_seconds": 0.012600250003742985,
+    "error": null,
+    "missing_top": [
+      [
+        "$",
+        47
+      ],
+      [
+        "the",
+        31
+      ],
+      [
+        ".",
+        31
+      ],
+      [
+        ",",
+        31
+      ],
+      [
+        "___",
+        28
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "ftgd0346-p024.pdf",
+    "status": "ok",
+    "cct": 0.043037974683544304,
+    "percent_tokens_found": 0.02199223803363519,
+    "percent_tokens_added": 0.0,
+    "precision": 1.0,
+    "gt_tokens": 773,
+    "predicted_tokens": 17,
+    "matched_tokens": 17,
+    "elapsed_seconds": 0.005516999997780658,
+    "error": null,
+    "missing_top": [
+      [
+        "/",
+        71
+      ],
+      [
+        ":",
+        40
+      ],
+      [
+        ".",
+        36
+      ],
+      [
+        "26",
+        35
+      ],
+      [
+        "0",
+        34
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "ftgd0346-p016.pdf",
+    "status": "ok",
+    "cct": 0.043478260869565216,
+    "percent_tokens_found": 0.022222222222222223,
+    "percent_tokens_added": 0.0,
+    "precision": 1.0,
+    "gt_tokens": 765,
+    "predicted_tokens": 17,
+    "matched_tokens": 17,
+    "elapsed_seconds": 0.009276290991692804,
+    "error": null,
+    "missing_top": [
+      [
+        ".",
+        112
+      ],
+      [
+        "0",
+        71
+      ],
+      [
+        "n",
+        70
+      ],
+      [
+        "400",
+        30
+      ],
+      [
+        "200",
+        30
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "VCAs_REV2_SCHEMATIC-p001.pdf",
+    "status": "ok",
+    "cct": 0.05042016806722689,
+    "percent_tokens_found": 0.02586206896551724,
+    "percent_tokens_added": 0.0,
+    "precision": 1.0,
+    "gt_tokens": 232,
+    "predicted_tokens": 6,
+    "matched_tokens": 6,
+    "elapsed_seconds": 0.08281804199214093,
+    "error": null,
+    "missing_top": [
+      [
+        "1",
+        48
+      ],
+      [
+        "2",
+        29
+      ],
+      [
+        "+",
+        15
+      ],
+      [
+        "\u2013",
+        13
+      ],
+      [
+        "gnd",
+        11
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "sydd0278.pdf",
+    "status": "ok",
+    "cct": 0.05167173252279635,
+    "percent_tokens_found": 0.0265210608424337,
+    "percent_tokens_added": 0.0,
+    "precision": 1.0,
+    "gt_tokens": 641,
+    "predicted_tokens": 17,
+    "matched_tokens": 17,
+    "elapsed_seconds": 0.005913291999604553,
+    "error": null,
+    "missing_top": [
+      [
+        "of",
+        18
+      ],
+      [
+        ",",
+        16
+      ],
+      [
+        ".",
+        16
+      ],
+      [
+        "[",
+        15
+      ],
+      [
+        "]",
+        15
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "nqpy0379-p001.pdf",
+    "status": "ok",
+    "cct": 0.05723905723905724,
+    "percent_tokens_found": 0.029462738301559793,
+    "percent_tokens_added": 0.0,
+    "precision": 1.0,
+    "gt_tokens": 577,
+    "predicted_tokens": 17,
+    "matched_tokens": 17,
+    "elapsed_seconds": 0.22084062499925494,
+    "error": null,
+    "missing_top": [
+      [
+        ":",
+        58
+      ],
+      [
+        "-",
+        28
+      ],
+      [
+        ".",
+        23
+      ],
+      [
+        "101",
+        18
+      ],
+      [
+        ",",
+        17
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "nqpy0379-p002.pdf",
+    "status": "ok",
+    "cct": 0.061371841155234655,
+    "percent_tokens_found": 0.03165735567970205,
+    "percent_tokens_added": 0.0,
+    "precision": 1.0,
+    "gt_tokens": 537,
+    "predicted_tokens": 17,
+    "matched_tokens": 17,
+    "elapsed_seconds": 0.2036250840028515,
+    "error": null,
+    "missing_top": [
+      [
+        ":",
+        55
+      ],
+      [
+        "106",
+        27
+      ],
+      [
+        "-",
+        23
+      ],
+      [
+        ".",
+        20
+      ],
+      [
+        ",",
+        19
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "mhky0282-p010.pdf",
+    "status": "ok",
+    "cct": 0.06981519507186858,
+    "percent_tokens_found": 0.036170212765957444,
+    "percent_tokens_added": 0.0,
+    "precision": 1.0,
+    "gt_tokens": 470,
+    "predicted_tokens": 17,
+    "matched_tokens": 17,
+    "elapsed_seconds": 0.01427262500510551,
+    "error": null,
+    "missing_top": [
+      [
+        ".",
+        25
+      ],
+      [
+        "$",
+        23
+      ],
+      [
+        "&",
+        14
+      ],
+      [
+        "d",
+        13
+      ],
+      [
+        ",",
+        13
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "Bellows_Ch_1-Redacted-Handwriting-p018.pdf",
+    "status": "ok",
+    "cct": 0.07852193995381063,
+    "percent_tokens_found": 0.041463414634146344,
+    "percent_tokens_added": 0.2608695652173913,
+    "precision": 0.7391304347826086,
+    "gt_tokens": 410,
+    "predicted_tokens": 23,
+    "matched_tokens": 17,
+    "elapsed_seconds": 0.02862045800429769,
+    "error": null,
+    "missing_top": [
+      [
+        "the",
+        32
+      ],
+      [
+        ",",
+        28
+      ],
+      [
+        ".",
+        19
+      ],
+      [
+        "of",
+        16
+      ],
+      [
+        "and",
+        13
+      ]
+    ],
+    "extra_top": [
+      [
+        "thedocumentsobtainedbythe",
+        1
+      ],
+      [
+        "agrtwereindexed",
+        1
+      ],
+      [
+        "ohled",
+        1
+      ],
+      [
+        "towests",
+        1
+      ],
+      [
+        "additionaldocuments",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "Tobacco-Lab-Reproducibility-Tables-p001.pdf",
+    "status": "ok",
+    "cct": 0.09855072463768116,
+    "percent_tokens_found": 0.07142857142857142,
+    "percent_tokens_added": 0.8411214953271028,
+    "precision": 0.1588785046728972,
+    "gt_tokens": 238,
+    "predicted_tokens": 107,
+    "matched_tokens": 17,
+    "elapsed_seconds": 0.05153633300506044,
+    "error": null,
+    "missing_top": [
+      [
+        ".",
+        66
+      ],
+      [
+        "1",
+        43
+      ],
+      [
+        "0",
+        16
+      ],
+      [
+        "988",
+        3
+      ],
+      [
+        "199",
+        3
+      ]
+    ],
+    "extra_top": [
+      [
+        "~",
+        90
+      ]
+    ]
+  },
+  {
+    "stem": "DEA_Compliance-Rotat_Table-Form_Img-p001.pdf",
+    "status": "ok",
+    "cct": 0.15178571428571427,
+    "percent_tokens_found": 0.0821256038647343,
+    "percent_tokens_added": 0.0,
+    "precision": 1.0,
+    "gt_tokens": 207,
+    "predicted_tokens": 17,
+    "matched_tokens": 17,
+    "elapsed_seconds": 0.006947375004529022,
+    "error": null,
+    "missing_top": [
+      [
+        ",",
+        10
+      ],
+      [
+        "dea",
+        9
+      ],
+      [
+        "director",
+        8
+      ],
+      [
+        "manager",
+        7
+      ],
+      [
+        "controlled",
+        5
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "hilton_20220718.pdf",
+    "status": "ok",
+    "cct": 0.30097087378640774,
+    "percent_tokens_found": 0.2818181818181818,
+    "percent_tokens_added": 0.6770833333333334,
+    "precision": 0.3229166666666667,
+    "gt_tokens": 330,
+    "predicted_tokens": 288,
+    "matched_tokens": 93,
+    "elapsed_seconds": 0.27057808300014585,
+    "error": null,
+    "missing_top": [
+      [
+        "00",
+        16
+      ],
+      [
+        "\u20ac",
+        14
+      ],
+      [
+        "07",
+        12
+      ],
+      [
+        "2022",
+        12
+      ],
+      [
+        ":",
+        9
+      ]
+    ],
+    "extra_top": [
+      [
+        "kk",
+        13
+      ],
+      [
+        "ku",
+        11
+      ],
+      [
+        "nknn",
+        11
+      ],
+      [
+        "p",
+        11
+      ],
+      [
+        "roompxpbreakfastprate",
+        6
+      ]
+    ]
+  },
+  {
+    "stem": "mgm_895557014-p002.pdf",
+    "status": "ok",
+    "cct": 0.3157894736842105,
+    "percent_tokens_found": 0.23636363636363636,
+    "percent_tokens_added": 0.524390243902439,
+    "precision": 0.47560975609756095,
+    "gt_tokens": 165,
+    "predicted_tokens": 82,
+    "matched_tokens": 39,
+    "elapsed_seconds": 0.20826641700114124,
+    "error": null,
+    "missing_top": [
+      [
+        "your",
+        5
+      ],
+      [
+        "the",
+        4
+      ],
+      [
+        "to",
+        3
+      ],
+      [
+        "/",
+        2
+      ],
+      [
+        "1",
+        2
+      ]
+    ],
+    "extra_top": [
+      [
+        "y",
+        3
+      ],
+      [
+        "w",
+        2
+      ],
+      [
+        "w7",
+        2
+      ],
+      [
+        ".",
+        1
+      ],
+      [
+        "895557014s",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "NASA-SNA-8-D-027III-Rev2-CsmLmSpacecraftOperationalDataBook-Volume3-MassProperties-Pg54.pdf",
+    "status": "ok",
+    "cct": 0.4227129337539432,
+    "percent_tokens_found": 0.43156199677938806,
+    "percent_tokens_added": 0.5857805255023184,
+    "precision": 0.4142194744976816,
+    "gt_tokens": 621,
+    "predicted_tokens": 647,
+    "matched_tokens": 268,
+    "elapsed_seconds": 21.770921083007124,
+    "error": null,
+    "missing_top": [
+      [
+        ".",
+        71
+      ],
+      [
+        "0",
+        25
+      ],
+      [
+        "2",
+        21
+      ],
+      [
+        "-",
+        16
+      ],
+      [
+        "3",
+        15
+      ]
+    ],
+    "extra_top": [
+      [
+        "'",
+        48
+      ],
+      [
+        ",",
+        29
+      ],
+      [
+        "\"",
+        17
+      ],
+      [
+        ")",
+        17
+      ],
+      [
+        "o",
+        12
+      ]
+    ]
+  },
+  {
+    "stem": "O27Hara_DeepSeaFloorBio-p002.pdf",
+    "status": "ok",
+    "cct": 0.5439919557566616,
+    "percent_tokens_found": 0.46358183376178236,
+    "percent_tokens_added": 0.3418491484184915,
+    "precision": 0.6581508515815085,
+    "gt_tokens": 1167,
+    "predicted_tokens": 822,
+    "matched_tokens": 541,
+    "elapsed_seconds": 1.0267844589980086,
+    "error": null,
+    "missing_top": [
+      [
+        "1",
+        35
+      ],
+      [
+        "4",
+        33
+      ],
+      [
+        "34",
+        31
+      ],
+      [
+        "2",
+        24
+      ],
+      [
+        "gab",
+        23
+      ]
+    ],
+    "extra_top": [
+      [
+        "7344",
+        4
+      ],
+      [
+        "1512",
+        3
+      ],
+      [
+        "1715",
+        3
+      ],
+      [
+        "1510",
+        3
+      ],
+      [
+        "1729",
+        3
+      ]
+    ]
+  },
+  {
+    "stem": "Index_to_Positions_table_vertical_text-p063.pdf",
+    "status": "ok",
+    "cct": 0.5758513931888545,
+    "percent_tokens_found": 0.6241610738255033,
+    "percent_tokens_added": 0.46551724137931033,
+    "precision": 0.5344827586206896,
+    "gt_tokens": 447,
+    "predicted_tokens": 522,
+    "matched_tokens": 279,
+    "elapsed_seconds": 0.3165305000002263,
+    "error": null,
+    "missing_top": [
+      [
+        "\u2713",
+        22
+      ],
+      [
+        "$",
+        18
+      ],
+      [
+        "\"",
+        17
+      ],
+      [
+        "28",
+        5
+      ],
+      [
+        "10",
+        4
+      ]
+    ],
+    "extra_top": [
+      [
+        ".",
+        45
+      ],
+      [
+        ",",
+        27
+      ],
+      [
+        "'",
+        22
+      ],
+      [
+        "\u2022",
+        10
+      ],
+      [
+        "j",
+        9
+      ]
+    ]
+  },
+  {
+    "stem": "Bellows_ToC-Redacted-Handwriting-p001.pdf",
+    "status": "ok",
+    "cct": 0.6010928961748634,
+    "percent_tokens_found": 0.5069124423963134,
+    "percent_tokens_added": 0.26174496644295303,
+    "precision": 0.738255033557047,
+    "gt_tokens": 217,
+    "predicted_tokens": 149,
+    "matched_tokens": 110,
+    "elapsed_seconds": 0.09488095800043084,
+    "error": null,
+    "missing_top": [
+      [
+        "chapter",
+        8
+      ],
+      [
+        "s",
+        7
+      ],
+      [
+        "the",
+        7
+      ],
+      [
+        "of",
+        6
+      ],
+      [
+        "lee",
+        6
+      ]
+    ],
+    "extra_top": [
+      [
+        "'",
+        2
+      ],
+      [
+        "thefbi",
+        2
+      ],
+      [
+        "sinvestigation",
+        2
+      ],
+      [
+        "ofwen",
+        2
+      ],
+      [
+        "acknowledgements",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "Sugar-Research-Foundation-Progress-p001.pdf",
+    "status": "ok",
+    "cct": 0.6216216216216216,
+    "percent_tokens_found": 0.6798029556650246,
+    "percent_tokens_added": 0.42738589211618255,
+    "precision": 0.5726141078838174,
+    "gt_tokens": 203,
+    "predicted_tokens": 241,
+    "matched_tokens": 138,
+    "elapsed_seconds": 0.1445336659962777,
+    "error": null,
+    "missing_top": [
+      [
+        "membership",
+        6
+      ],
+      [
+        "sugar",
+        3
+      ],
+      [
+        ":",
+        3
+      ],
+      [
+        "and",
+        3
+      ],
+      [
+        "from",
+        3
+      ]
+    ],
+    "extra_top": [
+      [
+        "\u00bb",
+        5
+      ],
+      [
+        "-",
+        5
+      ],
+      [
+        "\u00ab",
+        3
+      ],
+      [
+        "*",
+        3
+      ],
+      [
+        ".",
+        3
+      ]
+    ]
+  },
+  {
+    "stem": "Sugar-Research-Meeting-Agenda-p001.pdf",
+    "status": "ok",
+    "cct": 0.6222910216718266,
+    "percent_tokens_found": 0.7027972027972028,
+    "percent_tokens_added": 0.44166666666666665,
+    "precision": 0.5583333333333333,
+    "gt_tokens": 286,
+    "predicted_tokens": 360,
+    "matched_tokens": 201,
+    "elapsed_seconds": 0.13401641600648873,
+    "error": null,
+    "missing_top": [
+      [
+        "and",
+        8
+      ],
+      [
+        "the",
+        7
+      ],
+      [
+        "of",
+        5
+      ],
+      [
+        "meeting",
+        3
+      ],
+      [
+        "election",
+        3
+      ]
+    ],
+    "extra_top": [
+      [
+        ".",
+        17
+      ],
+      [
+        ",",
+        16
+      ],
+      [
+        "'",
+        7
+      ],
+      [
+        "-",
+        6
+      ],
+      [
+        ";",
+        5
+      ]
+    ]
+  },
+  {
+    "stem": "PDFTriage-p7-p002.pdf",
+    "status": "ok",
+    "cct": 0.6448385629831742,
+    "percent_tokens_found": 0.47679892400806995,
+    "percent_tokens_added": 0.004213483146067416,
+    "precision": 0.9957865168539326,
+    "gt_tokens": 1487,
+    "predicted_tokens": 712,
+    "matched_tokens": 709,
+    "elapsed_seconds": 0.439738999994006,
+    "error": null,
+    "missing_top": [
+      [
+        ",",
+        47
+      ],
+      [
+        "the",
+        28
+      ],
+      [
+        "to",
+        22
+      ],
+      [
+        "of",
+        19
+      ],
+      [
+        "a",
+        18
+      ]
+    ],
+    "extra_top": [
+      [
+        "li",
+        2
+      ],
+      [
+        "questionanswering",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "BarrowArchAnalysis_Alaska1984-p076.pdf",
+    "status": "ok",
+    "cct": 0.6461538461538462,
+    "percent_tokens_found": 0.4803921568627451,
+    "percent_tokens_added": 0.013422818791946308,
+    "precision": 0.9865771812080537,
+    "gt_tokens": 306,
+    "predicted_tokens": 149,
+    "matched_tokens": 147,
+    "elapsed_seconds": 0.06449833299848251,
+    "error": null,
+    "missing_top": [
+      [
+        ",",
+        22
+      ],
+      [
+        "1",
+        17
+      ],
+      [
+        "valdez",
+        6
+      ],
+      [
+        ".",
+        5
+      ],
+      [
+        ")",
+        4
+      ]
+    ],
+    "extra_top": [
+      [
+        "south",
+        1
+      ],
+      [
+        "central",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "Bellows_ToC-Redacted-Handwriting-p002.pdf",
+    "status": "ok",
+    "cct": 0.671201814058957,
+    "percent_tokens_found": 0.5967741935483871,
+    "percent_tokens_added": 0.23316062176165803,
+    "precision": 0.7668393782383419,
+    "gt_tokens": 248,
+    "predicted_tokens": 193,
+    "matched_tokens": 148,
+    "elapsed_seconds": 0.1119077500043204,
+    "error": null,
+    "missing_top": [
+      [
+        "the",
+        6
+      ],
+      [
+        "chapter",
+        5
+      ],
+      [
+        "and",
+        5
+      ],
+      [
+        "1997",
+        4
+      ],
+      [
+        "s",
+        4
+      ]
+    ],
+    "extra_top": [
+      [
+        "'",
+        3
+      ],
+      [
+        "\"",
+        2
+      ],
+      [
+        "i997",
+        2
+      ],
+      [
+        "leeand",
+        2
+      ],
+      [
+        "chaptertwenty",
+        2
+      ]
+    ]
+  },
+  {
+    "stem": "SPUR_Future_Of_Transportation-p001.pdf",
+    "status": "ok",
+    "cct": 0.6792452830188679,
+    "percent_tokens_found": 0.5142857142857142,
+    "percent_tokens_added": 0.0,
+    "precision": 1.0,
+    "gt_tokens": 35,
+    "predicted_tokens": 18,
+    "matched_tokens": 18,
+    "elapsed_seconds": 0.04869549999420997,
+    "error": null,
+    "missing_top": [
+      [
+        "tempo",
+        4
+      ],
+      [
+        "ac",
+        3
+      ],
+      [
+        "transit",
+        3
+      ],
+      [
+        "spur",
+        1
+      ],
+      [
+        "regional",
+        1
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "USDC-compression-vit-2310.11117-p7-p004.pdf",
+    "status": "ok",
+    "cct": 0.6909975669099757,
+    "percent_tokens_found": 0.5788043478260869,
+    "percent_tokens_added": 0.14285714285714285,
+    "precision": 0.8571428571428571,
+    "gt_tokens": 736,
+    "predicted_tokens": 497,
+    "matched_tokens": 426,
+    "elapsed_seconds": 0.16197170899249613,
+    "error": null,
+    "missing_top": [
+      [
+        "k",
+        73
+      ],
+      [
+        "q",
+        72
+      ],
+      [
+        "v",
+        72
+      ],
+      [
+        "l",
+        23
+      ],
+      [
+        "f",
+        11
+      ]
+    ],
+    "extra_top": [
+      [
+        "\u2113",
+        17
+      ],
+      [
+        "\u03b1",
+        16
+      ],
+      [
+        "lres",
+        4
+      ],
+      [
+        "fg",
+        3
+      ],
+      [
+        "fo",
+        3
+      ]
+    ]
+  },
+  {
+    "stem": "Financing-the-big-investment-p001.pdf",
+    "status": "ok",
+    "cct": 0.7213114754098361,
+    "percent_tokens_found": 0.5641025641025641,
+    "percent_tokens_added": 0.0,
+    "precision": 1.0,
+    "gt_tokens": 39,
+    "predicted_tokens": 22,
+    "matched_tokens": 22,
+    "elapsed_seconds": 0.058027834005770274,
+    "error": null,
+    "missing_top": [
+      [
+        "and",
+        1
+      ],
+      [
+        "for",
+        1
+      ],
+      [
+        "sustainable",
+        1
+      ],
+      [
+        "lse",
+        1
+      ],
+      [
+        "grantham",
+        1
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "ijerph-19-00825-p020.pdf",
+    "status": "ok",
+    "cct": 0.7216981132075472,
+    "percent_tokens_found": 0.5784499054820416,
+    "percent_tokens_added": 0.04075235109717868,
+    "precision": 0.9592476489028213,
+    "gt_tokens": 529,
+    "predicted_tokens": 319,
+    "matched_tokens": 306,
+    "elapsed_seconds": 1.2506755829963367,
+    "error": null,
+    "missing_top": [
+      [
+        ":",
+        15
+      ],
+      [
+        "search",
+        10
+      ],
+      [
+        "___",
+        10
+      ],
+      [
+        "(",
+        9
+      ],
+      [
+        ")",
+        9
+      ]
+    ],
+    "extra_top": [
+      [
+        "per\u00edodo",
+        4
+      ],
+      [
+        "2",
+        1
+      ],
+      [
+        "32",
+        1
+      ],
+      [
+        "ecua",
+        1
+      ],
+      [
+        "dor",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "korean_power_system_challenges-p003.pdf",
+    "status": "ok",
+    "cct": 0.7337662337662337,
+    "percent_tokens_found": 0.7129337539432177,
+    "percent_tokens_added": 0.24414715719063546,
+    "precision": 0.7558528428093646,
+    "gt_tokens": 317,
+    "predicted_tokens": 299,
+    "matched_tokens": 226,
+    "elapsed_seconds": 0.28245650000462774,
+    "error": null,
+    "missing_top": [
+      [
+        ",",
+        21
+      ],
+      [
+        "the",
+        12
+      ],
+      [
+        ".",
+        5
+      ],
+      [
+        "united",
+        4
+      ],
+      [
+        "government",
+        4
+      ]
+    ],
+    "extra_top": [
+      [
+        "tie",
+        8
+      ],
+      [
+        "6nited",
+        4
+      ],
+      [
+        "(",
+        4
+      ],
+      [
+        "owernment",
+        4
+      ],
+      [
+        "5ie",
+        4
+      ]
+    ]
+  },
+  {
+    "stem": "OptimalEstimationMethodologies-for-PanelDataRegressionModels-pg9-12-p003.pdf",
+    "status": "ok",
+    "cct": 0.7361344537815127,
+    "percent_tokens_found": 0.6422287390029325,
+    "percent_tokens_added": 0.1377952755905512,
+    "precision": 0.8622047244094488,
+    "gt_tokens": 682,
+    "predicted_tokens": 508,
+    "matched_tokens": 438,
+    "elapsed_seconds": 0.284309333001147,
+    "error": null,
+    "missing_top": [
+      [
+        "t",
+        40
+      ],
+      [
+        "/",
+        20
+      ],
+      [
+        "\u03b8",
+        17
+      ],
+      [
+        "(",
+        11
+      ],
+      [
+        ")",
+        11
+      ]
+    ],
+    "extra_top": [
+      [
+        "\u03b80",
+        16
+      ],
+      [
+        "dt",
+        7
+      ],
+      [
+        "\"",
+        5
+      ],
+      [
+        "yt",
+        5
+      ],
+      [
+        "#",
+        5
+      ]
+    ]
+  },
+  {
+    "stem": "Tobacco-Lab-Reproducibility-Tables-p002.pdf",
+    "status": "ok",
+    "cct": 0.7462235649546828,
+    "percent_tokens_found": 0.7017045454545454,
+    "percent_tokens_added": 0.2032258064516129,
+    "precision": 0.7967741935483871,
+    "gt_tokens": 352,
+    "predicted_tokens": 310,
+    "matched_tokens": 247,
+    "elapsed_seconds": 0.07614741600991692,
+    "error": null,
+    "missing_top": [
+      [
+        "6",
+        8
+      ],
+      [
+        "1",
+        7
+      ],
+      [
+        "5",
+        7
+      ],
+      [
+        "4",
+        5
+      ],
+      [
+        "8",
+        4
+      ]
+    ],
+    "extra_top": [
+      [
+        ".",
+        5
+      ],
+      [
+        "averagecoef",
+        2
+      ],
+      [
+        "35",
+        2
+      ],
+      [
+        "16",
+        2
+      ],
+      [
+        "vet",
+        2
+      ]
+    ]
+  },
+  {
+    "stem": "Zhand-Ilavsky-p012.pdf",
+    "status": "ok",
+    "cct": 0.7665505226480837,
+    "percent_tokens_found": 0.6300114547537228,
+    "percent_tokens_added": 0.021352313167259787,
+    "precision": 0.9786476868327402,
+    "gt_tokens": 873,
+    "predicted_tokens": 562,
+    "matched_tokens": 550,
+    "elapsed_seconds": 0.26051333401119336,
+    "error": null,
+    "missing_top": [
+      [
+        ".",
+        77
+      ],
+      [
+        "0",
+        75
+      ],
+      [
+        "1",
+        8
+      ],
+      [
+        "30",
+        6
+      ],
+      [
+        "4",
+        5
+      ]
+    ],
+    "extra_top": [
+      [
+        "\u2014",
+        3
+      ],
+      [
+        "zr",
+        2
+      ],
+      [
+        "o\u2082",
+        2
+      ],
+      [
+        "volumeaveraged",
+        1
+      ],
+      [
+        "beamphysical",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "pet-display-patent-p001.pdf",
+    "status": "ok",
+    "cct": 0.7672131147540984,
+    "percent_tokens_found": 0.823943661971831,
+    "percent_tokens_added": 0.2822085889570552,
+    "precision": 0.7177914110429447,
+    "gt_tokens": 426,
+    "predicted_tokens": 489,
+    "matched_tokens": 351,
+    "elapsed_seconds": 0.15380562499922235,
+    "error": null,
+    "missing_top": [
+      [
+        "[",
+        12
+      ],
+      [
+        "]",
+        12
+      ],
+      [
+        "/",
+        6
+      ],
+      [
+        ",",
+        5
+      ],
+      [
+        "1",
+        3
+      ]
+    ],
+    "extra_top": [
+      [
+        ".",
+        63
+      ],
+      [
+        "-",
+        52
+      ],
+      [
+        ")",
+        4
+      ],
+      [
+        "(",
+        3
+      ],
+      [
+        "usoo59",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "Bellows_Ch_1-Redacted-Handwriting-p015.pdf",
+    "status": "ok",
+    "cct": 0.7746243739565943,
+    "percent_tokens_found": 0.7051671732522796,
+    "percent_tokens_added": 0.14074074074074075,
+    "precision": 0.8592592592592593,
+    "gt_tokens": 329,
+    "predicted_tokens": 270,
+    "matched_tokens": 232,
+    "elapsed_seconds": 0.1816131669911556,
+    "error": null,
+    "missing_top": [
+      [
+        "the",
+        10
+      ],
+      [
+        "(",
+        7
+      ],
+      [
+        ")",
+        7
+      ],
+      [
+        "s",
+        7
+      ],
+      [
+        "'",
+        6
+      ]
+    ],
+    "extra_top": [
+      [
+        "\u2019",
+        6
+      ],
+      [
+        ".",
+        1
+      ],
+      [
+        "ofthe",
+        1
+      ],
+      [
+        "a",
+        1
+      ],
+      [
+        "thepurpose",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "Smoking-Website-Chart-p001.pdf",
+    "status": "ok",
+    "cct": 0.7791706846673095,
+    "percent_tokens_found": 0.7906066536203522,
+    "percent_tokens_added": 0.23193916349809887,
+    "precision": 0.7680608365019012,
+    "gt_tokens": 511,
+    "predicted_tokens": 526,
+    "matched_tokens": 404,
+    "elapsed_seconds": 0.1731904170010239,
+    "error": null,
+    "missing_top": [
+      [
+        ",",
+        14
+      ],
+      [
+        "*",
+        10
+      ],
+      [
+        "n",
+        10
+      ],
+      [
+        "/",
+        9
+      ],
+      [
+        "a",
+        6
+      ]
+    ],
+    "extra_top": [
+      [
+        ".",
+        24
+      ],
+      [
+        "'",
+        6
+      ],
+      [
+        "r",
+        6
+      ],
+      [
+        ":",
+        5
+      ],
+      [
+        "i",
+        5
+      ]
+    ]
+  },
+  {
+    "stem": "Mission-costs_p27-35-p008.pdf",
+    "status": "ok",
+    "cct": 0.7860262008733624,
+    "percent_tokens_found": 0.6474820143884892,
+    "percent_tokens_added": 0.0,
+    "precision": 1.0,
+    "gt_tokens": 139,
+    "predicted_tokens": 90,
+    "matched_tokens": 90,
+    "elapsed_seconds": 0.1742860840022331,
+    "error": null,
+    "missing_top": [
+      [
+        "$",
+        7
+      ],
+      [
+        "60b",
+        1
+      ],
+      [
+        "50b",
+        1
+      ],
+      [
+        "40b",
+        1
+      ],
+      [
+        "30b",
+        1
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "USDC-compression-vit-2310.11117-p7-p007.pdf",
+    "status": "ok",
+    "cct": 0.7956678700361011,
+    "percent_tokens_found": 0.6670702179176755,
+    "percent_tokens_added": 0.014311270125223614,
+    "precision": 0.9856887298747764,
+    "gt_tokens": 826,
+    "predicted_tokens": 559,
+    "matched_tokens": 551,
+    "elapsed_seconds": 0.1556172919954406,
+    "error": null,
+    "missing_top": [
+      [
+        "=",
+        54
+      ],
+      [
+        ".",
+        21
+      ],
+      [
+        "0",
+        21
+      ],
+      [
+        "r",
+        21
+      ],
+      [
+        "+",
+        18
+      ]
+    ],
+    "extra_top": [
+      [
+        "-",
+        2
+      ],
+      [
+        "ran",
+        1
+      ],
+      [
+        "dom",
+        1
+      ],
+      [
+        "dei",
+        1
+      ],
+      [
+        "t",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "OptimalEstimationMethodologies-for-PanelDataRegressionModels-pg9-12-p002.pdf",
+    "status": "ok",
+    "cct": 0.8127853881278538,
+    "percent_tokens_found": 0.7458100558659218,
+    "percent_tokens_added": 0.10702341137123746,
+    "precision": 0.8929765886287625,
+    "gt_tokens": 716,
+    "predicted_tokens": 598,
+    "matched_tokens": 534,
+    "elapsed_seconds": 0.29338616599852685,
+    "error": null,
+    "missing_top": [
+      [
+        "t",
+        33
+      ],
+      [
+        "y",
+        25
+      ],
+      [
+        "/",
+        21
+      ],
+      [
+        "j",
+        12
+      ],
+      [
+        "g",
+        11
+      ]
+    ],
+    "extra_top": [
+      [
+        "yt",
+        24
+      ],
+      [
+        "\u00af",
+        8
+      ],
+      [
+        "gj",
+        7
+      ],
+      [
+        "\u03c9h",
+        4
+      ],
+      [
+        "\u2212",
+        2
+      ]
+    ]
+  },
+  {
+    "stem": "Management-By-Objectives-Food-Exhibit-3-p004.pdf",
+    "status": "ok",
+    "cct": 0.8333333333333334,
+    "percent_tokens_found": 0.8639705882352942,
+    "percent_tokens_added": 0.1952054794520548,
+    "precision": 0.8047945205479452,
+    "gt_tokens": 272,
+    "predicted_tokens": 292,
+    "matched_tokens": 235,
+    "elapsed_seconds": 0.22581737500149757,
+    "error": null,
+    "missing_top": [
+      [
+        "\u2013",
+        9
+      ],
+      [
+        "2",
+        2
+      ],
+      [
+        ":",
+        2
+      ],
+      [
+        "/",
+        2
+      ],
+      [
+        "page",
+        2
+      ]
+    ],
+    "extra_top": [
+      [
+        "o",
+        8
+      ],
+      [
+        "cd",
+        6
+      ],
+      [
+        "-",
+        5
+      ],
+      [
+        "co",
+        4
+      ],
+      [
+        "i",
+        3
+      ]
+    ]
+  },
+  {
+    "stem": "Index_to_Positions_table_vertical_text-p001.pdf",
+    "status": "ok",
+    "cct": 0.8341384863123994,
+    "percent_tokens_found": 0.8222222222222222,
+    "percent_tokens_added": 0.15359477124183007,
+    "precision": 0.8464052287581699,
+    "gt_tokens": 630,
+    "predicted_tokens": 612,
+    "matched_tokens": 518,
+    "elapsed_seconds": 0.42702195899619255,
+    "error": null,
+    "missing_top": [
+      [
+        "16",
+        17
+      ],
+      [
+        "\u2e3a",
+        15
+      ],
+      [
+        "7",
+        14
+      ],
+      [
+        "\u2713",
+        13
+      ],
+      [
+        ".",
+        7
+      ]
+    ],
+    "extra_top": [
+      [
+        "1",
+        9
+      ],
+      [
+        "\u00b7",
+        8
+      ],
+      [
+        ",",
+        8
+      ],
+      [
+        "'",
+        7
+      ],
+      [
+        ">",
+        5
+      ]
+    ]
+  },
+  {
+    "stem": "Fake_customs-declaration.pdf",
+    "status": "ok",
+    "cct": 0.8390166534496432,
+    "percent_tokens_found": 0.8039513677811551,
+    "percent_tokens_added": 0.12271973466003316,
+    "precision": 0.8772802653399668,
+    "gt_tokens": 1316,
+    "predicted_tokens": 1206,
+    "matched_tokens": 1058,
+    "elapsed_seconds": 0.5249641249974957,
+    "error": null,
+    "missing_top": [
+      [
+        "-",
+        50
+      ],
+      [
+        ".",
+        22
+      ],
+      [
+        "[",
+        16
+      ],
+      [
+        "]",
+        15
+      ],
+      [
+        "x",
+        6
+      ]
+    ],
+    "extra_top": [
+      [
+        ",",
+        11
+      ],
+      [
+        ":",
+        11
+      ],
+      [
+        "'",
+        9
+      ],
+      [
+        "i",
+        7
+      ],
+      [
+        "\\",
+        6
+      ]
+    ]
+  },
+  {
+    "stem": "korean_power_system_challenges-p001.pdf",
+    "status": "ok",
+    "cct": 0.8514056224899599,
+    "percent_tokens_found": 0.8217054263565892,
+    "percent_tokens_added": 0.11666666666666667,
+    "precision": 0.8833333333333333,
+    "gt_tokens": 129,
+    "predicted_tokens": 120,
+    "matched_tokens": 106,
+    "elapsed_seconds": 0.11089525000716094,
+    "error": null,
+    "missing_top": [
+      [
+        "1",
+        5
+      ],
+      [
+        "seung",
+        2
+      ],
+      [
+        "berkeley",
+        1
+      ],
+      [
+        "lab",
+        1
+      ],
+      [
+        "group",
+        1
+      ]
+    ],
+    "extra_top": [
+      [
+        "park1",
+        1
+      ],
+      [
+        "shiraishi1",
+        1
+      ],
+      [
+        "2",
+        1
+      ],
+      [
+        "abhyankar1",
+        1
+      ],
+      [
+        "paliwal1",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "SEC-FORM-D-OAG-p002.pdf",
+    "status": "ok",
+    "cct": 0.8701298701298701,
+    "percent_tokens_found": 0.7952522255192879,
+    "percent_tokens_added": 0.03942652329749104,
+    "precision": 0.9605734767025089,
+    "gt_tokens": 337,
+    "predicted_tokens": 279,
+    "matched_tokens": 268,
+    "elapsed_seconds": 0.30708220800443087,
+    "error": null,
+    "missing_top": [
+      [
+        "[",
+        32
+      ],
+      [
+        "]",
+        32
+      ],
+      [
+        "postalcode",
+        4
+      ],
+      [
+        "xslformdx01",
+        1
+      ]
+    ],
+    "extra_top": [
+      [
+        "postal",
+        4
+      ],
+      [
+        "code",
+        4
+      ],
+      [
+        "form",
+        1
+      ],
+      [
+        "xsl",
+        1
+      ],
+      [
+        "dx01",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "fhhd0346-p016.pdf",
+    "status": "ok",
+    "cct": 0.8753180661577609,
+    "percent_tokens_found": 0.7818181818181819,
+    "percent_tokens_added": 0.005780346820809248,
+    "precision": 0.9942196531791907,
+    "gt_tokens": 440,
+    "predicted_tokens": 346,
+    "matched_tokens": 344,
+    "elapsed_seconds": 0.20067895800457336,
+    "error": null,
+    "missing_top": [
+      [
+        ".",
+        7
+      ],
+      [
+        "\u25cb",
+        6
+      ],
+      [
+        "1",
+        4
+      ],
+      [
+        "\u00d7",
+        4
+      ],
+      [
+        "\u2267",
+        4
+      ]
+    ],
+    "extra_top": [
+      [
+        "appendix",
+        1
+      ],
+      [
+        "01",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "cyberport-20210813_Rechnung.pdf",
+    "status": "ok",
+    "cct": 0.8795669824086604,
+    "percent_tokens_found": 0.8904109589041096,
+    "percent_tokens_added": 0.13101604278074866,
+    "precision": 0.8689839572192514,
+    "gt_tokens": 365,
+    "predicted_tokens": 374,
+    "matched_tokens": 325,
+    "elapsed_seconds": 0.14381424999737646,
+    "error": null,
+    "missing_top": [
+      [
+        "cyberport",
+        2
+      ],
+      [
+        "gmbh",
+        2
+      ],
+      [
+        "/",
+        2
+      ],
+      [
+        "idnr",
+        2
+      ],
+      [
+        ")",
+        2
+      ]
+    ],
+    "extra_top": [
+      [
+        "!",
+        3
+      ],
+      [
+        "i",
+        3
+      ],
+      [
+        "\u061b",
+        3
+      ],
+      [
+        "gmb",
+        2
+      ],
+      [
+        "h",
+        2
+      ]
+    ]
+  },
+  {
+    "stem": "gnyv0392-p008.pdf",
+    "status": "ok",
+    "cct": 0.8825757575757576,
+    "percent_tokens_found": 0.797945205479452,
+    "percent_tokens_added": 0.012711864406779662,
+    "precision": 0.9872881355932204,
+    "gt_tokens": 292,
+    "predicted_tokens": 236,
+    "matched_tokens": 233,
+    "elapsed_seconds": 0.19557008300034795,
+    "error": null,
+    "missing_top": [
+      [
+        "-",
+        6
+      ],
+      [
+        ",",
+        4
+      ],
+      [
+        "ros",
+        3
+      ],
+      [
+        "il",
+        3
+      ],
+      [
+        "hla",
+        2
+      ]
+    ],
+    "extra_top": [
+      [
+        "\u2019",
+        1
+      ],
+      [
+        "inml2",
+        1
+      ],
+      [
+        "mrkcaegsd",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "2023-gmi-lab-call_p4-15-p003.pdf",
+    "status": "ok",
+    "cct": 0.8839190628328009,
+    "percent_tokens_found": 0.8027079303675049,
+    "percent_tokens_added": 0.016587677725118485,
+    "precision": 0.9834123222748815,
+    "gt_tokens": 517,
+    "predicted_tokens": 422,
+    "matched_tokens": 415,
+    "elapsed_seconds": 0.5120532500004629,
+    "error": null,
+    "missing_top": [
+      [
+        "/",
+        8
+      ],
+      [
+        "-",
+        7
+      ],
+      [
+        "t",
+        7
+      ],
+      [
+        ".",
+        4
+      ],
+      [
+        "69kv",
+        4
+      ]
+    ],
+    "extra_top": [
+      [
+        "\u2022",
+        2
+      ],
+      [
+        "16k",
+        1
+      ],
+      [
+        "v",
+        1
+      ],
+      [
+        "mediumvoltage",
+        1
+      ],
+      [
+        "fuelcells",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "Manuel-Rionda-Letter-p001.pdf",
+    "status": "ok",
+    "cct": 0.8872802481902792,
+    "percent_tokens_found": 0.8755102040816326,
+    "percent_tokens_added": 0.10062893081761007,
+    "precision": 0.89937106918239,
+    "gt_tokens": 490,
+    "predicted_tokens": 477,
+    "matched_tokens": 429,
+    "elapsed_seconds": 0.16078820900293067,
+    "error": null,
+    "missing_top": [
+      [
+        "%",
+        15
+      ],
+      [
+        "m",
+        3
+      ],
+      [
+        "e",
+        3
+      ],
+      [
+        "l",
+        2
+      ],
+      [
+        "h",
+        2
+      ]
+    ],
+    "extra_top": [
+      [
+        "$",
+        14
+      ],
+      [
+        ":",
+        2
+      ],
+      [
+        "6",
+        1
+      ],
+      [
+        ".",
+        1
+      ],
+      [
+        "a",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "Travel-Expenses-p001.pdf",
+    "status": "ok",
+    "cct": 0.887459807073955,
+    "percent_tokens_found": 0.8679245283018868,
+    "percent_tokens_added": 0.09210526315789473,
+    "precision": 0.9078947368421053,
+    "gt_tokens": 318,
+    "predicted_tokens": 304,
+    "matched_tokens": 276,
+    "elapsed_seconds": 0.09840166701178532,
+    "error": null,
+    "missing_top": [
+      [
+        "___",
+        31
+      ],
+      [
+        ".",
+        2
+      ],
+      [
+        "00",
+        2
+      ],
+      [
+        "dr",
+        1
+      ],
+      [
+        "mark",
+        1
+      ]
+    ],
+    "extra_top": [
+      [
+        "^",
+        5
+      ],
+      [
+        "*",
+        2
+      ],
+      [
+        ")",
+        2
+      ],
+      [
+        "'",
+        2
+      ],
+      [
+        "\u00a3",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "gnyv0392-p009.pdf",
+    "status": "ok",
+    "cct": 0.8906882591093117,
+    "percent_tokens_found": 0.8088235294117647,
+    "percent_tokens_added": 0.009009009009009009,
+    "precision": 0.990990990990991,
+    "gt_tokens": 408,
+    "predicted_tokens": 333,
+    "matched_tokens": 330,
+    "elapsed_seconds": 0.2350447089993395,
+    "error": null,
+    "missing_top": [
+      [
+        "(",
+        5
+      ],
+      [
+        ")",
+        5
+      ],
+      [
+        ",",
+        5
+      ],
+      [
+        "-",
+        4
+      ],
+      [
+        "anti",
+        4
+      ]
+    ],
+    "extra_top": [
+      [
+        "4",
+        2
+      ],
+      [
+        "5",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "NASA-SNA-8-D-027III-Rev2-CsmLmSpacecraftOperationalDataBook-Volume3-MassProperties-pg856.pdf",
+    "status": "ok",
+    "cct": 0.8909952606635071,
+    "percent_tokens_found": 0.8690292758089369,
+    "percent_tokens_added": 0.08589951377633712,
+    "precision": 0.9141004862236629,
+    "gt_tokens": 649,
+    "predicted_tokens": 617,
+    "matched_tokens": 564,
+    "elapsed_seconds": 22.013448875004542,
+    "error": null,
+    "missing_top": [
+      [
+        "___",
+        33
+      ],
+      [
+        "in\u00b3",
+        19
+      ],
+      [
+        "(",
+        2
+      ],
+      [
+        ")",
+        2
+      ],
+      [
+        "/",
+        2
+      ]
+    ],
+    "extra_top": [
+      [
+        "in3",
+        19
+      ],
+      [
+        "l",
+        6
+      ],
+      [
+        "-",
+        3
+      ],
+      [
+        "_",
+        2
+      ],
+      [
+        "\u00b1",
+        2
+      ]
+    ]
+  },
+  {
+    "stem": "B1404020615_BiophilicDesign_p10-11-p001.pdf",
+    "status": "ok",
+    "cct": 0.9149797570850202,
+    "percent_tokens_found": 0.8475,
+    "percent_tokens_added": 0.005865102639296188,
+    "precision": 0.9941348973607038,
+    "gt_tokens": 400,
+    "predicted_tokens": 341,
+    "matched_tokens": 339,
+    "elapsed_seconds": 0.33832295901083853,
+    "error": null,
+    "missing_top": [
+      [
+        ".",
+        21
+      ],
+      [
+        "connection",
+        4
+      ],
+      [
+        "with",
+        3
+      ],
+      [
+        "and",
+        3
+      ],
+      [
+        "visual",
+        2
+      ]
+    ],
+    "extra_top": [
+      [
+        "accessway",
+        1
+      ],
+      [
+        "s",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "zero-trust-architecture-tech_p009.pdf",
+    "status": "ok",
+    "cct": 0.9154013015184381,
+    "percent_tokens_found": 0.8577235772357723,
+    "percent_tokens_added": 0.018604651162790697,
+    "precision": 0.9813953488372092,
+    "gt_tokens": 246,
+    "predicted_tokens": 215,
+    "matched_tokens": 211,
+    "elapsed_seconds": 0.12912991699704435,
+    "error": null,
+    "missing_top": [
+      [
+        "policy",
+        4
+      ],
+      [
+        "system",
+        3
+      ],
+      [
+        "data",
+        2
+      ],
+      [
+        "cdm",
+        1
+      ],
+      [
+        "industry",
+        1
+      ]
+    ],
+    "extra_top": [
+      [
+        "\u2022",
+        4
+      ]
+    ]
+  },
+  {
+    "stem": "EPD-p001.pdf",
+    "status": "ok",
+    "cct": 0.9210292812777284,
+    "percent_tokens_found": 0.9719101123595506,
+    "percent_tokens_added": 0.12478920741989882,
+    "precision": 0.8752107925801011,
+    "gt_tokens": 534,
+    "predicted_tokens": 593,
+    "matched_tokens": 519,
+    "elapsed_seconds": 0.739873084006831,
+    "error": null,
+    "missing_top": [
+      [
+        "gross",
+        2
+      ],
+      [
+        "accumulated",
+        2
+      ],
+      [
+        "amortization",
+        2
+      ],
+      [
+        "carrying",
+        2
+      ],
+      [
+        "ngl",
+        2
+      ]
+    ],
+    "extra_top": [
+      [
+        "r",
+        10
+      ],
+      [
+        "a",
+        10
+      ],
+      [
+        "c",
+        6
+      ],
+      [
+        "m",
+        5
+      ],
+      [
+        "g",
+        4
+      ]
+    ]
+  },
+  {
+    "stem": "BIPExtendedProgramme.pdf",
+    "status": "ok",
+    "cct": 0.9260273972602739,
+    "percent_tokens_found": 0.8848167539267016,
+    "percent_tokens_added": 0.028735632183908046,
+    "precision": 0.9712643678160919,
+    "gt_tokens": 382,
+    "predicted_tokens": 348,
+    "matched_tokens": 338,
+    "elapsed_seconds": 0.4271892079996178,
+    "error": null,
+    "missing_top": [
+      [
+        "university",
+        4
+      ],
+      [
+        "of",
+        3
+      ],
+      [
+        ".",
+        3
+      ],
+      [
+        "de",
+        2
+      ],
+      [
+        "aix",
+        1
+      ]
+    ],
+    "extra_top": [
+      [
+        "\u2022",
+        3
+      ],
+      [
+        "th",
+        2
+      ],
+      [
+        "12",
+        1
+      ],
+      [
+        "10",
+        1
+      ],
+      [
+        "27",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "mgm_895557014-p001.pdf",
+    "status": "ok",
+    "cct": 0.9273927392739274,
+    "percent_tokens_found": 0.9335548172757475,
+    "percent_tokens_added": 0.07868852459016394,
+    "precision": 0.921311475409836,
+    "gt_tokens": 301,
+    "predicted_tokens": 305,
+    "matched_tokens": 281,
+    "elapsed_seconds": 0.2038620829989668,
+    "error": null,
+    "missing_top": [
+      [
+        "/",
+        3
+      ],
+      [
+        "no",
+        2
+      ],
+      [
+        "21",
+        2
+      ],
+      [
+        "xxxxxxxxxxxx5052",
+        2
+      ],
+      [
+        "xx",
+        2
+      ]
+    ],
+    "extra_top": [
+      [
+        ".",
+        4
+      ],
+      [
+        "n",
+        3
+      ],
+      [
+        "!",
+        2
+      ],
+      [
+        "-",
+        2
+      ],
+      [
+        "arriva",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "zero-trust-architecture-tech_p020.pdf",
+    "status": "ok",
+    "cct": 0.9282051282051282,
+    "percent_tokens_found": 0.8715890850722311,
+    "percent_tokens_added": 0.007312614259597806,
+    "precision": 0.9926873857404022,
+    "gt_tokens": 623,
+    "predicted_tokens": 547,
+    "matched_tokens": 543,
+    "elapsed_seconds": 0.28464195899141487,
+    "error": null,
+    "missing_top": [
+      [
+        ".",
+        9
+      ],
+      [
+        "and",
+        2
+      ],
+      [
+        ",",
+        2
+      ],
+      [
+        "\u26a0",
+        2
+      ],
+      [
+        "initial",
+        2
+      ]
+    ],
+    "extra_top": [
+      [
+        "ghost",
+        1
+      ],
+      [
+        "emperor",
+        1
+      ],
+      [
+        "famous",
+        1
+      ],
+      [
+        "sparrow",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "SFG-Content-Marketing-2021-p001.pdf",
+    "status": "ok",
+    "cct": 0.9285714285714286,
+    "percent_tokens_found": 0.8666666666666667,
+    "percent_tokens_added": 0.0,
+    "precision": 1.0,
+    "gt_tokens": 15,
+    "predicted_tokens": 13,
+    "matched_tokens": 13,
+    "elapsed_seconds": 0.01937083399388939,
+    "error": null,
+    "missing_top": [
+      [
+        "schoolfinder",
+        1
+      ],
+      [
+        "group",
+        1
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "Dellafera_Warrant-Redacted-p028.pdf",
+    "status": "ok",
+    "cct": 0.9295774647887324,
+    "percent_tokens_found": 0.9103448275862069,
+    "percent_tokens_added": 0.050359712230215826,
+    "precision": 0.9496402877697842,
+    "gt_tokens": 145,
+    "predicted_tokens": 139,
+    "matched_tokens": 132,
+    "elapsed_seconds": 0.032939249998889863,
+    "error": null,
+    "missing_top": [
+      [
+        "m",
+        2
+      ],
+      [
+        ":",
+        1
+      ],
+      [
+        "0",
+        1
+      ],
+      [
+        ",",
+        1
+      ],
+      [
+        "ja",
+        1
+      ]
+    ],
+    "extra_top": [
+      [
+        "of",
+        1
+      ],
+      [
+        "pm",
+        1
+      ],
+      [
+        "sa",
+        1
+      ],
+      [
+        "signature",
+        1
+      ],
+      [
+        "alan",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "ksph0230-p001.pdf",
+    "status": "ok",
+    "cct": 0.9298100743187449,
+    "percent_tokens_found": 0.9199346405228758,
+    "percent_tokens_added": 0.06010016694490818,
+    "precision": 0.9398998330550918,
+    "gt_tokens": 612,
+    "predicted_tokens": 599,
+    "matched_tokens": 563,
+    "elapsed_seconds": 0.5916474590048892,
+    "error": null,
+    "missing_top": [
+      [
+        "\u201c",
+        8
+      ],
+      [
+        "\u201d",
+        8
+      ],
+      [
+        ".",
+        8
+      ],
+      [
+        ",",
+        5
+      ],
+      [
+        "will",
+        3
+      ]
+    ],
+    "extra_top": [
+      [
+        "\"",
+        16
+      ],
+      [
+        "wil",
+        3
+      ],
+      [
+        "docu",
+        1
+      ],
+      [
+        "sign",
+        1
+      ],
+      [
+        "jltul",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "executive-summary-2022-p1-7-p007.pdf",
+    "status": "ok",
+    "cct": 0.9305555555555556,
+    "percent_tokens_found": 0.8726483357452967,
+    "percent_tokens_added": 0.003305785123966942,
+    "precision": 0.996694214876033,
+    "gt_tokens": 691,
+    "predicted_tokens": 605,
+    "matched_tokens": 603,
+    "elapsed_seconds": 0.609716250008205,
+    "error": null,
+    "missing_top": [
+      [
+        "spending",
+        6
+      ],
+      [
+        "interest",
+        5
+      ],
+      [
+        "-",
+        4
+      ],
+      [
+        "total",
+        4
+      ],
+      [
+        "+",
+        4
+      ]
+    ],
+    "extra_top": [
+      [
+        "\u2022",
+        2
+      ]
+    ]
+  },
+  {
+    "stem": "2310.03502text_to_image_synthesis1-7-p005.pdf",
+    "status": "ok",
+    "cct": 0.9327286470143613,
+    "percent_tokens_found": 0.9046920821114369,
+    "percent_tokens_added": 0.0374414976599064,
+    "precision": 0.9625585023400937,
+    "gt_tokens": 682,
+    "predicted_tokens": 641,
+    "matched_tokens": 617,
+    "elapsed_seconds": 0.26565904200833756,
+    "error": null,
+    "missing_top": [
+      [
+        ".",
+        8
+      ],
+      [
+        "0",
+        8
+      ],
+      [
+        "prior",
+        7
+      ],
+      [
+        "fid",
+        2
+      ],
+      [
+        "clip",
+        2
+      ]
+    ],
+    "extra_top": [
+      [
+        "-",
+        6
+      ],
+      [
+        "sults",
+        1
+      ],
+      [
+        "coder",
+        1
+      ],
+      [
+        "ducted",
+        1
+      ],
+      [
+        "tups",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "ksph0230-p008.pdf",
+    "status": "ok",
+    "cct": 0.933546837469976,
+    "percent_tokens_found": 0.9268680445151033,
+    "percent_tokens_added": 0.05967741935483871,
+    "precision": 0.9403225806451613,
+    "gt_tokens": 629,
+    "predicted_tokens": 620,
+    "matched_tokens": 583,
+    "elapsed_seconds": 0.6971602499979781,
+    "error": null,
+    "missing_top": [
+      [
+        "\u201c",
+        7
+      ],
+      [
+        "\u201d",
+        7
+      ],
+      [
+        ".",
+        3
+      ],
+      [
+        "\u2019",
+        3
+      ],
+      [
+        ":",
+        2
+      ]
+    ],
+    "extra_top": [
+      [
+        "\"",
+        14
+      ],
+      [
+        "'",
+        3
+      ],
+      [
+        "suva",
+        2
+      ],
+      [
+        "o",
+        2
+      ],
+      [
+        "eac",
+        2
+      ]
+    ]
+  },
+  {
+    "stem": "fhhd0346-p009.pdf",
+    "status": "ok",
+    "cct": 0.9338303821062441,
+    "percent_tokens_found": 0.9329608938547486,
+    "percent_tokens_added": 0.06529850746268656,
+    "precision": 0.9347014925373134,
+    "gt_tokens": 537,
+    "predicted_tokens": 536,
+    "matched_tokens": 501,
+    "elapsed_seconds": 0.6147009580017766,
+    "error": null,
+    "missing_top": [
+      [
+        "(",
+        11
+      ],
+      [
+        ")",
+        11
+      ],
+      [
+        "c",
+        4
+      ],
+      [
+        ",",
+        2
+      ],
+      [
+        "appendix01",
+        1
+      ]
+    ],
+    "extra_top": [
+      [
+        "\uff08",
+        11
+      ],
+      [
+        "\uff09",
+        11
+      ],
+      [
+        "\uff0c",
+        2
+      ],
+      [
+        "appendix",
+        1
+      ],
+      [
+        "01",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "BurningCharacteristicsFir-p015.pdf",
+    "status": "ok",
+    "cct": 0.9362962962962963,
+    "percent_tokens_found": 0.88268156424581,
+    "percent_tokens_added": 0.0031545741324921135,
+    "precision": 0.9968454258675079,
+    "gt_tokens": 358,
+    "predicted_tokens": 317,
+    "matched_tokens": 316,
+    "elapsed_seconds": 0.5609434579964727,
+    "error": null,
+    "missing_top": [
+      [
+        ".",
+        4
+      ],
+      [
+        "m",
+        3
+      ],
+      [
+        "=",
+        3
+      ],
+      [
+        "2",
+        2
+      ],
+      [
+        "strong",
+        2
+      ]
+    ],
+    "extra_top": [
+      [
+        "d\u0103\u01c9\u03ef\u03ed\u03ef\u03c1",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "FOOD_ELEMENTS_FALL_2017p20-20.pdf",
+    "status": "ok",
+    "cct": 0.9371196754563894,
+    "percent_tokens_found": 0.9203187250996016,
+    "percent_tokens_added": 0.045454545454545456,
+    "precision": 0.9545454545454546,
+    "gt_tokens": 251,
+    "predicted_tokens": 242,
+    "matched_tokens": 231,
+    "elapsed_seconds": 0.13061345799360424,
+    "error": null,
+    "missing_top": [
+      [
+        "\u2264",
+        18
+      ],
+      [
+        "final",
+        2
+      ]
+    ],
+    "extra_top": [
+      [
+        "fi",
+        2
+      ],
+      [
+        "nal",
+        2
+      ],
+      [
+        ".",
+        1
+      ],
+      [
+        "\u2022",
+        1
+      ],
+      [
+        "20",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "SFG-Content-Marketing-2021-p002.pdf",
+    "status": "ok",
+    "cct": 0.9393939393939394,
+    "percent_tokens_found": 0.9393939393939394,
+    "percent_tokens_added": 0.06060606060606061,
+    "precision": 0.9393939393939394,
+    "gt_tokens": 66,
+    "predicted_tokens": 66,
+    "matched_tokens": 62,
+    "elapsed_seconds": 0.0886143340030685,
+    "error": null,
+    "missing_top": [
+      [
+        "schoolfinder",
+        1
+      ],
+      [
+        "group",
+        1
+      ],
+      [
+        "schoolfindergroup",
+        1
+      ],
+      [
+        "com",
+        1
+      ]
+    ],
+    "extra_top": [
+      [
+        "co",
+        1
+      ],
+      [
+        "schoolfindergrou",
+        1
+      ],
+      [
+        "m",
+        1
+      ],
+      [
+        "p",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "VBA-29-0975-ARE-p002.pdf",
+    "status": "ok",
+    "cct": 0.940130409010077,
+    "percent_tokens_found": 0.8870246085011185,
+    "percent_tokens_added": 0.0,
+    "precision": 1.0,
+    "gt_tokens": 894,
+    "predicted_tokens": 793,
+    "matched_tokens": 793,
+    "elapsed_seconds": 1.0237198749964591,
+    "error": null,
+    "missing_top": [
+      [
+        "[",
+        15
+      ],
+      [
+        "]",
+        15
+      ],
+      [
+        "___",
+        6
+      ],
+      [
+        ".",
+        4
+      ],
+      [
+        "-",
+        4
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "GlobalTrends_2040p10-17-p004.pdf",
+    "status": "ok",
+    "cct": 0.9475437135720233,
+    "percent_tokens_found": 0.969335604770017,
+    "percent_tokens_added": 0.0732899022801303,
+    "precision": 0.9267100977198697,
+    "gt_tokens": 587,
+    "predicted_tokens": 614,
+    "matched_tokens": 569,
+    "elapsed_seconds": 0.8219087080069585,
+    "error": null,
+    "missing_top": [
+      [
+        "technological",
+        2
+      ],
+      [
+        "|",
+        1
+      ],
+      [
+        "exacerbate",
+        1
+      ],
+      [
+        "heightening",
+        1
+      ],
+      [
+        "conditions",
+        1
+      ]
+    ],
+    "extra_top": [
+      [
+        "-",
+        14
+      ],
+      [
+        "ical",
+        2
+      ],
+      [
+        "ex",
+        1
+      ],
+      [
+        "technologacerbate",
+        1
+      ],
+      [
+        "height",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "SEC-FORM-D-OAG-p004.pdf",
+    "status": "ok",
+    "cct": 0.9491525423728814,
+    "percent_tokens_found": 0.9090909090909091,
+    "percent_tokens_added": 0.0070921985815602835,
+    "precision": 0.9929078014184397,
+    "gt_tokens": 462,
+    "predicted_tokens": 423,
+    "matched_tokens": 420,
+    "elapsed_seconds": 0.32796083399443887,
+    "error": null,
+    "missing_top": [
+      [
+        "[",
+        20
+      ],
+      [
+        "]",
+        20
+      ],
+      [
+        "___",
+        1
+      ],
+      [
+        "xslformdx01",
+        1
+      ]
+    ],
+    "extra_top": [
+      [
+        "form",
+        1
+      ],
+      [
+        "xsl",
+        1
+      ],
+      [
+        "dx01",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "UN-Capabilities-OneSheeter-04-29-24-p002.pdf",
+    "status": "ok",
+    "cct": 0.95,
+    "percent_tokens_found": 0.9620253164556962,
+    "percent_tokens_added": 0.06172839506172839,
+    "precision": 0.9382716049382716,
+    "gt_tokens": 237,
+    "predicted_tokens": 243,
+    "matched_tokens": 228,
+    "elapsed_seconds": 0.16838770800677594,
+    "error": null,
+    "missing_top": [
+      [
+        "unstructured",
+        3
+      ],
+      [
+        "cx",
+        1
+      ],
+      [
+        "pdf",
+        1
+      ],
+      [
+        "[",
+        1
+      ],
+      [
+        ";",
+        1
+      ]
+    ],
+    "extra_top": [
+      [
+        "\u25a1",
+        14
+      ],
+      [
+        "docx",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "BurningCharacteristicsFir-p016.pdf",
+    "status": "ok",
+    "cct": 0.9512195121951219,
+    "percent_tokens_found": 0.9154929577464789,
+    "percent_tokens_added": 0.01015228426395939,
+    "precision": 0.9898477157360406,
+    "gt_tokens": 213,
+    "predicted_tokens": 197,
+    "matched_tokens": 195,
+    "elapsed_seconds": 0.3452156669955002,
+    "error": null,
+    "missing_top": [
+      [
+        "i",
+        4
+      ],
+      [
+        "2",
+        2
+      ],
+      [
+        "+",
+        2
+      ],
+      [
+        "nist",
+        1
+      ],
+      [
+        "tn",
+        1
+      ]
+    ],
+    "extra_top": [
+      [
+        "d\u0103\u01c9\u03ef\u03ed\u03ef\u03c1",
+        1
+      ],
+      [
+        "4",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "s12940-025-01154-x-p009.pdf",
+    "status": "ok",
+    "cct": 0.9564777327935222,
+    "percent_tokens_found": 0.9545454545454546,
+    "percent_tokens_added": 0.04158215010141988,
+    "precision": 0.9584178498985801,
+    "gt_tokens": 990,
+    "predicted_tokens": 986,
+    "matched_tokens": 945,
+    "elapsed_seconds": 0.6906996249890653,
+    "error": null,
+    "missing_top": [
+      [
+        "the",
+        11
+      ],
+      [
+        "(",
+        2
+      ],
+      [
+        ")",
+        2
+      ],
+      [
+        ".",
+        2
+      ],
+      [
+        "sugar",
+        2
+      ]
+    ],
+    "extra_top": [
+      [
+        "!",
+        16
+      ],
+      [
+        "e",
+        11
+      ],
+      [
+        "is",
+        1
+      ],
+      [
+        "ere",
+        1
+      ],
+      [
+        "12",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "GOOGLE-10Q-2023-03-31-7pages-p001.pdf",
+    "status": "ok",
+    "cct": 0.9572506286672254,
+    "percent_tokens_found": 0.9422442244224423,
+    "percent_tokens_added": 0.027257240204429302,
+    "precision": 0.9727427597955707,
+    "gt_tokens": 606,
+    "predicted_tokens": 587,
+    "matched_tokens": 571,
+    "elapsed_seconds": 0.43551229199511,
+    "error": null,
+    "missing_top": [
+      [
+        "[",
+        14
+      ],
+      [
+        "]",
+        14
+      ],
+      [
+        "x",
+        5
+      ],
+      [
+        "___",
+        2
+      ]
+    ],
+    "extra_top": [
+      [
+        "\u2610",
+        9
+      ],
+      [
+        "\u2612",
+        5
+      ],
+      [
+        "_______",
+        2
+      ]
+    ]
+  },
+  {
+    "stem": "2310.03502text_to_image_synthesis1-7-p006.pdf",
+    "status": "ok",
+    "cct": 0.95900439238653,
+    "percent_tokens_found": 0.9212376933895922,
+    "percent_tokens_added": 0.0,
+    "precision": 1.0,
+    "gt_tokens": 711,
+    "predicted_tokens": 655,
+    "matched_tokens": 655,
+    "elapsed_seconds": 0.43069233300047927,
+    "error": null,
+    "missing_top": [
+      [
+        "kandinsky",
+        8
+      ],
+      [
+        "-",
+        6
+      ],
+      [
+        "vs",
+        4
+      ],
+      [
+        "%",
+        4
+      ],
+      [
+        "fidelity",
+        4
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "Zhand-Ilavsky-p004.pdf",
+    "status": "ok",
+    "cct": 0.9614721104082806,
+    "percent_tokens_found": 0.9425028184892897,
+    "percent_tokens_added": 0.018779342723004695,
+    "precision": 0.9812206572769953,
+    "gt_tokens": 887,
+    "predicted_tokens": 852,
+    "matched_tokens": 836,
+    "elapsed_seconds": 0.3669321249908535,
+    "error": null,
+    "missing_top": [
+      [
+        "\u2013",
+        5
+      ],
+      [
+        "-",
+        4
+      ],
+      [
+        "(",
+        3
+      ],
+      [
+        ")",
+        3
+      ],
+      [
+        "incident",
+        2
+      ]
+    ],
+    "extra_top": [
+      [
+        "\u2014",
+        5
+      ],
+      [
+        "ke",
+        2
+      ],
+      [
+        "v",
+        2
+      ],
+      [
+        "!",
+        2
+      ],
+      [
+        "mm",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "s12940-025-01154-x-p001.pdf",
+    "status": "ok",
+    "cct": 0.9635135135135136,
+    "percent_tokens_found": 0.9767123287671233,
+    "percent_tokens_added": 0.04933333333333333,
+    "precision": 0.9506666666666667,
+    "gt_tokens": 730,
+    "predicted_tokens": 750,
+    "matched_tokens": 713,
+    "elapsed_seconds": 0.5031860839953879,
+    "error": null,
+    "missing_top": [
+      [
+        "effectiveness",
+        3
+      ],
+      [
+        "efforts",
+        2
+      ],
+      [
+        "effects",
+        2
+      ],
+      [
+        "environmental",
+        1
+      ],
+      [
+        "check",
+        1
+      ]
+    ],
+    "extra_top": [
+      [
+        "\"",
+        8
+      ],
+      [
+        "e",
+        7
+      ],
+      [
+        "!",
+        4
+      ],
+      [
+        "ectiveness",
+        3
+      ],
+      [
+        "orts",
+        2
+      ]
+    ]
+  },
+  {
+    "stem": "frai_03_543305_p1-2-p002.pdf",
+    "status": "ok",
+    "cct": 0.964824120603015,
+    "percent_tokens_found": 0.9559032716927454,
+    "percent_tokens_added": 0.02608695652173913,
+    "precision": 0.9739130434782609,
+    "gt_tokens": 703,
+    "predicted_tokens": 690,
+    "matched_tokens": 672,
+    "elapsed_seconds": 0.4540444170124829,
+    "error": null,
+    "missing_top": [
+      [
+        "mhealth",
+        5
+      ],
+      [
+        "|",
+        3
+      ],
+      [
+        "s",
+        2
+      ],
+      [
+        "m",
+        2
+      ],
+      [
+        "frontiers",
+        1
+      ]
+    ],
+    "extra_top": [
+      [
+        "health",
+        5
+      ],
+      [
+        "hunt\u00b9",
+        1
+      ],
+      [
+        "\u00b9",
+        1
+      ],
+      [
+        "department",
+        1
+      ],
+      [
+        "global",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "Dellafera_Warrant-Redacted-p022.pdf",
+    "status": "ok",
+    "cct": 0.9648562300319489,
+    "percent_tokens_found": 0.9741935483870968,
+    "percent_tokens_added": 0.04430379746835443,
+    "precision": 0.9556962025316456,
+    "gt_tokens": 155,
+    "predicted_tokens": 158,
+    "matched_tokens": 151,
+    "elapsed_seconds": 0.08207258400216233,
+    "error": null,
+    "missing_top": [
+      [
+        "___",
+        2
+      ],
+      [
+        "t",
+        1
+      ],
+      [
+        "ll",
+        1
+      ]
+    ],
+    "extra_top": [
+      [
+        "signature",
+        2
+      ],
+      [
+        "of",
+        2
+      ],
+      [
+        "thomas",
+        1
+      ],
+      [
+        "f",
+        1
+      ],
+      [
+        "dellafera",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "UN_ProductComparison-p001.pdf",
+    "status": "ok",
+    "cct": 0.9653579676674365,
+    "percent_tokens_found": 0.9372197309417041,
+    "percent_tokens_added": 0.004761904761904762,
+    "precision": 0.9952380952380953,
+    "gt_tokens": 223,
+    "predicted_tokens": 210,
+    "matched_tokens": 209,
+    "elapsed_seconds": 0.24095074999786448,
+    "error": null,
+    "missing_top": [
+      [
+        "\u2713",
+        5
+      ],
+      [
+        "x",
+        3
+      ],
+      [
+        "unstructured",
+        2
+      ],
+      [
+        "ai",
+        1
+      ],
+      [
+        "octo",
+        1
+      ]
+    ],
+    "extra_top": [
+      [
+        "octoai",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "2020-jinich_p1-6-p006.pdf",
+    "status": "ok",
+    "cct": 0.9655813953488372,
+    "percent_tokens_found": 0.9558011049723757,
+    "percent_tokens_added": 0.02443609022556391,
+    "precision": 0.9755639097744361,
+    "gt_tokens": 1086,
+    "predicted_tokens": 1064,
+    "matched_tokens": 1038,
+    "elapsed_seconds": 1.0154952500015497,
+    "error": null,
+    "missing_top": [
+      [
+        "\u2013",
+        9
+      ],
+      [
+        "\u2022",
+        4
+      ],
+      [
+        "a",
+        2
+      ],
+      [
+        "neurophysiological",
+        1
+      ],
+      [
+        "mechanisms",
+        1
+      ]
+    ],
+    "extra_top": [
+      [
+        "-",
+        3
+      ],
+      [
+        "neu",
+        1
+      ],
+      [
+        "rophysiological",
+        1
+      ],
+      [
+        "mecha",
+        1
+      ],
+      [
+        "nisms",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "IRS-2023-Form-1095-A-p002.pdf",
+    "status": "ok",
+    "cct": 0.9656419529837251,
+    "percent_tokens_found": 0.9335664335664335,
+    "percent_tokens_added": 0.0,
+    "precision": 1.0,
+    "gt_tokens": 286,
+    "predicted_tokens": 267,
+    "matched_tokens": 267,
+    "elapsed_seconds": 0.10294287500437349,
+    "error": null,
+    "missing_top": [
+      [
+        "___",
+        15
+      ],
+      [
+        "[",
+        2
+      ],
+      [
+        "]",
+        2
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "UN-Capabilities-OneSheeter-04-29-24-p001.pdf",
+    "status": "ok",
+    "cct": 0.9664179104477612,
+    "percent_tokens_found": 0.9628252788104089,
+    "percent_tokens_added": 0.0299625468164794,
+    "precision": 0.9700374531835206,
+    "gt_tokens": 269,
+    "predicted_tokens": 267,
+    "matched_tokens": 259,
+    "elapsed_seconds": 0.16302183399966452,
+    "error": null,
+    "missing_top": [
+      [
+        "unstructured",
+        2
+      ],
+      [
+        "postgresql",
+        1
+      ],
+      [
+        "high",
+        1
+      ],
+      [
+        "res",
+        1
+      ],
+      [
+        "[",
+        1
+      ]
+    ],
+    "extra_top": [
+      [
+        ">",
+        3
+      ],
+      [
+        "search",
+        1
+      ],
+      [
+        "postgre",
+        1
+      ],
+      [
+        "sql",
+        1
+      ],
+      [
+        "highres",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "i-9-p001.pdf",
+    "status": "ok",
+    "cct": 0.9682444577591373,
+    "percent_tokens_found": 0.9384436701509872,
+    "percent_tokens_added": 0.0,
+    "precision": 1.0,
+    "gt_tokens": 861,
+    "predicted_tokens": 808,
+    "matched_tokens": 808,
+    "elapsed_seconds": 1.0739921250060434,
+    "error": null,
+    "missing_top": [
+      [
+        "___",
+        25
+      ],
+      [
+        "_",
+        9
+      ],
+      [
+        "[",
+        5
+      ],
+      [
+        "]",
+        5
+      ],
+      [
+        ".",
+        2
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "healthcare-workforce-strategies-p002.pdf",
+    "status": "ok",
+    "cct": 0.968503937007874,
+    "percent_tokens_found": 1.0,
+    "percent_tokens_added": 0.061068702290076333,
+    "precision": 0.9389312977099237,
+    "gt_tokens": 492,
+    "predicted_tokens": 524,
+    "matched_tokens": 492,
+    "elapsed_seconds": 0.4862325419962872,
+    "error": null,
+    "missing_top": [],
+    "extra_top": [
+      [
+        "\u2022",
+        15
+      ],
+      [
+        "\u00bb",
+        11
+      ],
+      [
+        "\u25aa",
+        6
+      ]
+    ]
+  },
+  {
+    "stem": "hqcv0284.pdf",
+    "status": "ok",
+    "cct": 0.9688581314878892,
+    "percent_tokens_found": 0.9790209790209791,
+    "percent_tokens_added": 0.0410958904109589,
+    "precision": 0.958904109589041,
+    "gt_tokens": 143,
+    "predicted_tokens": 146,
+    "matched_tokens": 140,
+    "elapsed_seconds": 0.06583245799993165,
+    "error": null,
+    "missing_top": [
+      [
+        "\u2014",
+        1
+      ],
+      [
+        "1\u02e2\u1d57",
+        1
+      ],
+      [
+        "28\u1d57\u02b0",
+        1
+      ]
+    ],
+    "extra_top": [
+      [
+        ":",
+        1
+      ],
+      [
+        "1",
+        1
+      ],
+      [
+        "st",
+        1
+      ],
+      [
+        "|",
+        1
+      ],
+      [
+        "28",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "i-9-p004.pdf",
+    "status": "ok",
+    "cct": 0.9693251533742331,
+    "percent_tokens_found": 0.9404761904761905,
+    "percent_tokens_added": 0.0,
+    "precision": 1.0,
+    "gt_tokens": 840,
+    "predicted_tokens": 790,
+    "matched_tokens": 790,
+    "elapsed_seconds": 0.5899053329922026,
+    "error": null,
+    "missing_top": [
+      [
+        "___",
+        36
+      ],
+      [
+        "[",
+        3
+      ],
+      [
+        "]",
+        3
+      ],
+      [
+        ".",
+        2
+      ],
+      [
+        "u",
+        1
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "g-325a.pdf",
+    "status": "ok",
+    "cct": 0.9698857736240913,
+    "percent_tokens_found": 0.9415322580645161,
+    "percent_tokens_added": 0.0,
+    "precision": 1.0,
+    "gt_tokens": 496,
+    "predicted_tokens": 467,
+    "matched_tokens": 467,
+    "elapsed_seconds": 0.2560503340064315,
+    "error": null,
+    "missing_top": [
+      [
+        "___",
+        21
+      ],
+      [
+        "[",
+        3
+      ],
+      [
+        "]",
+        3
+      ],
+      [
+        "x",
+        1
+      ],
+      [
+        "\u2b95",
+        1
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "water-15-0151828729_p3-3.pdf",
+    "status": "ok",
+    "cct": 0.9699666295884316,
+    "percent_tokens_found": 0.9416846652267818,
+    "percent_tokens_added": 0.0,
+    "precision": 1.0,
+    "gt_tokens": 463,
+    "predicted_tokens": 436,
+    "matched_tokens": 436,
+    "elapsed_seconds": 0.9240930000087246,
+    "error": null,
+    "missing_top": [
+      [
+        ",",
+        7
+      ],
+      [
+        "of",
+        1
+      ],
+      [
+        "series1",
+        1
+      ],
+      [
+        "606",
+        1
+      ],
+      [
+        "1",
+        1
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "23-BERKSHIRE.pdf",
+    "status": "ok",
+    "cct": 0.9704142011834319,
+    "percent_tokens_found": 0.9704142011834319,
+    "percent_tokens_added": 0.029585798816568046,
+    "precision": 0.9704142011834319,
+    "gt_tokens": 507,
+    "predicted_tokens": 507,
+    "matched_tokens": 492,
+    "elapsed_seconds": 0.7741634590056492,
+    "error": null,
+    "missing_top": [
+      [
+        "\u207d",
+        5
+      ],
+      [
+        "\u00b9",
+        5
+      ],
+      [
+        "\u207e",
+        5
+      ]
+    ],
+    "extra_top": [
+      [
+        "(",
+        5
+      ],
+      [
+        ")",
+        5
+      ],
+      [
+        "1",
+        5
+      ]
+    ]
+  },
+  {
+    "stem": "PDFTriage-p7-p003.pdf",
+    "status": "ok",
+    "cct": 0.9705882352941176,
+    "percent_tokens_found": 0.952887537993921,
+    "percent_tokens_added": 0.011041009463722398,
+    "precision": 0.9889589905362776,
+    "gt_tokens": 658,
+    "predicted_tokens": 634,
+    "matched_tokens": 627,
+    "elapsed_seconds": 0.1969326669932343,
+    "error": null,
+    "missing_top": [
+      [
+        "pdftriage",
+        3
+      ],
+      [
+        ".",
+        3
+      ],
+      [
+        "document",
+        2
+      ],
+      [
+        "word",
+        2
+      ],
+      [
+        "count",
+        2
+      ]
+    ],
+    "extra_top": [
+      [
+        "-",
+        2
+      ],
+      [
+        "pdf",
+        2
+      ],
+      [
+        "triage",
+        2
+      ],
+      [
+        "andretrieve",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "UNH-Q4-2023-Form-10-K-p072.pdf",
+    "status": "ok",
+    "cct": 0.9709465791940018,
+    "percent_tokens_found": 0.9718574108818011,
+    "percent_tokens_added": 0.0299625468164794,
+    "precision": 0.9700374531835206,
+    "gt_tokens": 533,
+    "predicted_tokens": 534,
+    "matched_tokens": 518,
+    "elapsed_seconds": 0.5410556249989895,
+    "error": null,
+    "missing_top": [
+      [
+        "\u207d",
+        4
+      ],
+      [
+        "\u207e",
+        4
+      ],
+      [
+        "\u00b2",
+        2
+      ],
+      [
+        "unitedhealth",
+        2
+      ],
+      [
+        "of",
+        1
+      ]
+    ],
+    "extra_top": [
+      [
+        "(",
+        4
+      ],
+      [
+        ")",
+        4
+      ],
+      [
+        "2",
+        2
+      ],
+      [
+        "united",
+        2
+      ],
+      [
+        "health",
+        2
+      ]
+    ]
+  },
+  {
+    "stem": "Covid19-White-Paper-FINALp4-5-p001.pdf",
+    "status": "ok",
+    "cct": 0.9729119638826185,
+    "percent_tokens_found": 0.9885321100917431,
+    "percent_tokens_added": 0.042222222222222223,
+    "precision": 0.9577777777777777,
+    "gt_tokens": 436,
+    "predicted_tokens": 450,
+    "matched_tokens": 431,
+    "elapsed_seconds": 1.031506041996181,
+    "error": null,
+    "missing_top": [
+      [
+        "analysis",
+        1
+      ],
+      [
+        "process",
+        1
+      ],
+      [
+        "x",
+        1
+      ],
+      [
+        "prisoned",
+        1
+      ],
+      [
+        "quieter",
+        1
+      ]
+    ],
+    "extra_top": [
+      [
+        "s",
+        3
+      ],
+      [
+        "a",
+        2
+      ],
+      [
+        "n",
+        2
+      ],
+      [
+        "p",
+        2
+      ],
+      [
+        "e",
+        2
+      ]
+    ]
+  },
+  {
+    "stem": "phs-6031-p001.pdf",
+    "status": "ok",
+    "cct": 0.973308504034761,
+    "percent_tokens_found": 0.9655172413793104,
+    "percent_tokens_added": 0.01877346683354193,
+    "precision": 0.981226533166458,
+    "gt_tokens": 812,
+    "predicted_tokens": 799,
+    "matched_tokens": 784,
+    "elapsed_seconds": 0.8084660839958815,
+    "error": null,
+    "missing_top": [
+      [
+        "the",
+        2
+      ],
+      [
+        "of",
+        2
+      ],
+      [
+        "nih",
+        2
+      ],
+      [
+        "individuals",
+        2
+      ],
+      [
+        "payback",
+        1
+      ]
+    ],
+    "extra_top": [
+      [
+        "\u2022",
+        6
+      ],
+      [
+        "ofthe",
+        1
+      ],
+      [
+        "nihrevitalization",
+        1
+      ],
+      [
+        "containsprovisionswhichsubstantiallymodify",
+        1
+      ],
+      [
+        "paybackrequirementsforindividualsreceiving",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "dd2642-p002.pdf",
+    "status": "ok",
+    "cct": 0.9734075448361162,
+    "percent_tokens_found": 0.9487643158529234,
+    "percent_tokens_added": 0.0006349206349206349,
+    "precision": 0.9993650793650793,
+    "gt_tokens": 1659,
+    "predicted_tokens": 1575,
+    "matched_tokens": 1574,
+    "elapsed_seconds": 0.6288584169960814,
+    "error": null,
+    "missing_top": [
+      [
+        "[",
+        39
+      ],
+      [
+        "]",
+        39
+      ],
+      [
+        "___",
+        5
+      ],
+      [
+        "if",
+        1
+      ],
+      [
+        "va",
+        1
+      ]
+    ],
+    "extra_top": [
+      [
+        "ifva",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "UNH-Q4-2023-Form-10-K-p028.pdf",
+    "status": "ok",
+    "cct": 0.9792114695340501,
+    "percent_tokens_found": 0.9869942196531792,
+    "percent_tokens_added": 0.02844950213371266,
+    "precision": 0.9715504978662873,
+    "gt_tokens": 692,
+    "predicted_tokens": 703,
+    "matched_tokens": 683,
+    "elapsed_seconds": 0.6205970409937436,
+    "error": null,
+    "missing_top": [
+      [
+        "unitedhealth",
+        4
+      ],
+      [
+        "unitedhealthcare",
+        3
+      ],
+      [
+        "of",
+        1
+      ],
+      [
+        "to",
+        1
+      ]
+    ],
+    "extra_top": [
+      [
+        "united",
+        7
+      ],
+      [
+        "\u2022",
+        6
+      ],
+      [
+        "health",
+        4
+      ],
+      [
+        "healthcare",
+        3
+      ]
+    ]
+  },
+  {
+    "stem": "TAMU-Annual-Report-2023p18-23-p004.pdf",
+    "status": "ok",
+    "cct": 0.9794594594594594,
+    "percent_tokens_found": 0.9597457627118644,
+    "percent_tokens_added": 0.0,
+    "precision": 1.0,
+    "gt_tokens": 472,
+    "predicted_tokens": 453,
+    "matched_tokens": 453,
+    "elapsed_seconds": 0.28393620799761266,
+    "error": null,
+    "missing_top": [
+      [
+        "atm",
+        3
+      ],
+      [
+        "a",
+        2
+      ],
+      [
+        "|",
+        2
+      ],
+      [
+        "ma",
+        1
+      ],
+      [
+        "m",
+        1
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "national_ai_rd_strategic_plan-p28.pdf",
+    "status": "ok",
+    "cct": 0.9796238244514106,
+    "percent_tokens_found": 0.9858044164037855,
+    "percent_tokens_added": 0.0264797507788162,
+    "precision": 0.9735202492211839,
+    "gt_tokens": 634,
+    "predicted_tokens": 642,
+    "matched_tokens": 625,
+    "elapsed_seconds": 0.8628593339963118,
+    "error": null,
+    "missing_top": [
+      [
+        "\u2077\u2074",
+        3
+      ],
+      [
+        "security",
+        1
+      ],
+      [
+        "federal",
+        1
+      ],
+      [
+        "marshals",
+        1
+      ],
+      [
+        "flights",
+        1
+      ]
+    ],
+    "extra_top": [
+      [
+        "74",
+        3
+      ],
+      [
+        "it",
+        1
+      ],
+      [
+        "s",
+        1
+      ],
+      [
+        "f",
+        1
+      ],
+      [
+        "ederal",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "csia_federal_plan-p47-p52-p001.pdf",
+    "status": "ok",
+    "cct": 0.9803012746234068,
+    "percent_tokens_found": 0.9814385150812065,
+    "percent_tokens_added": 0.020833333333333332,
+    "precision": 0.9791666666666666,
+    "gt_tokens": 431,
+    "predicted_tokens": 432,
+    "matched_tokens": 423,
+    "elapsed_seconds": 0.22493879200192168,
+    "error": null,
+    "missing_top": [
+      [
+        "cyber",
+        1
+      ],
+      [
+        "security",
+        1
+      ],
+      [
+        "and",
+        1
+      ],
+      [
+        "information",
+        1
+      ],
+      [
+        "assurance",
+        1
+      ]
+    ],
+    "extra_top": [
+      [
+        "\u2756",
+        9
+      ]
+    ]
+  },
+  {
+    "stem": "French-p076.pdf",
+    "status": "ok",
+    "cct": 0.9818731117824774,
+    "percent_tokens_found": 0.9643916913946587,
+    "percent_tokens_added": 0.0,
+    "precision": 1.0,
+    "gt_tokens": 337,
+    "predicted_tokens": 325,
+    "matched_tokens": 325,
+    "elapsed_seconds": 0.11733954199007712,
+    "error": null,
+    "missing_top": [
+      [
+        "\u2022",
+        3
+      ],
+      [
+        "\ud83d\udd0a",
+        3
+      ],
+      [
+        "\ud83c\uddeb",
+        3
+      ],
+      [
+        "\ud83c\uddf7",
+        3
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "FY2020-EDA-Annual-Report-Summary-Tables-p001.pdf",
+    "status": "ok",
+    "cct": 0.9831460674157303,
+    "percent_tokens_found": 0.9668508287292817,
+    "percent_tokens_added": 0.0,
+    "precision": 1.0,
+    "gt_tokens": 362,
+    "predicted_tokens": 350,
+    "matched_tokens": 350,
+    "elapsed_seconds": 0.5063592079968657,
+    "error": null,
+    "missing_top": [
+      [
+        "\u2b50",
+        2
+      ],
+      [
+        ".",
+        2
+      ],
+      [
+        "e",
+        1
+      ],
+      [
+        "d",
+        1
+      ],
+      [
+        "a",
+        1
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "pet-display-patent-p004.pdf",
+    "status": "ok",
+    "cct": 0.9832460732984293,
+    "percent_tokens_found": 0.9811912225705329,
+    "percent_tokens_added": 0.014690451206715634,
+    "precision": 0.9853095487932844,
+    "gt_tokens": 957,
+    "predicted_tokens": 953,
+    "matched_tokens": 939,
+    "elapsed_seconds": 0.26818187499884516,
+    "error": null,
+    "missing_top": [
+      [
+        "*",
+        5
+      ],
+      [
+        "\u2019",
+        3
+      ],
+      [
+        "5",
+        1
+      ],
+      [
+        "passageway",
+        1
+      ],
+      [
+        "wearer",
+        1
+      ]
+    ],
+    "extra_top": [
+      [
+        "'",
+        3
+      ],
+      [
+        "gravi",
+        1
+      ],
+      [
+        "across",
+        1
+      ],
+      [
+        "tate",
+        1
+      ],
+      [
+        "ferent",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "This_Is_Caltech_2018_p20-20.pdf",
+    "status": "ok",
+    "cct": 0.9838472834067548,
+    "percent_tokens_found": 0.9766763848396501,
+    "percent_tokens_added": 0.008875739644970414,
+    "precision": 0.9911242603550295,
+    "gt_tokens": 343,
+    "predicted_tokens": 338,
+    "matched_tokens": 335,
+    "elapsed_seconds": 0.287370167003246,
+    "error": null,
+    "missing_top": [
+      [
+        "in",
+        2
+      ],
+      [
+        "2017",
+        1
+      ],
+      [
+        "this",
+        1
+      ],
+      [
+        "is",
+        1
+      ],
+      [
+        "caltech",
+        1
+      ]
+    ],
+    "extra_top": [
+      [
+        "asilomarbio",
+        1
+      ],
+      [
+        "ca",
+        1
+      ],
+      [
+        "ltech",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "healthcare-workforce-strategies-p003.pdf",
+    "status": "ok",
+    "cct": 0.9839119390347163,
+    "percent_tokens_found": 1.0,
+    "percent_tokens_added": 0.03166666666666667,
+    "precision": 0.9683333333333334,
+    "gt_tokens": 581,
+    "predicted_tokens": 600,
+    "matched_tokens": 581,
+    "elapsed_seconds": 0.4767625419917749,
+    "error": null,
+    "missing_top": [],
+    "extra_top": [
+      [
+        "\u00bb",
+        8
+      ],
+      [
+        "\u25aa",
+        5
+      ],
+      [
+        "\u2022",
+        3
+      ],
+      [
+        "\u031b",
+        3
+      ]
+    ]
+  },
+  {
+    "stem": "ResumeGuideFinal_p13-15-p001.pdf",
+    "status": "ok",
+    "cct": 0.9842696629213483,
+    "percent_tokens_found": 1.0,
+    "percent_tokens_added": 0.030973451327433628,
+    "precision": 0.9690265486725663,
+    "gt_tokens": 219,
+    "predicted_tokens": 226,
+    "matched_tokens": 219,
+    "elapsed_seconds": 0.10688987500907388,
+    "error": null,
+    "missing_top": [],
+    "extra_top": [
+      [
+        "\u2022",
+        7
+      ]
+    ]
+  },
+  {
+    "stem": "FY2020-EDA-Annual-Report-Summary-Tables-p002.pdf",
+    "status": "ok",
+    "cct": 0.9842931937172775,
+    "percent_tokens_found": 0.9690721649484536,
+    "percent_tokens_added": 0.0,
+    "precision": 1.0,
+    "gt_tokens": 388,
+    "predicted_tokens": 376,
+    "matched_tokens": 376,
+    "elapsed_seconds": 0.4999725829984527,
+    "error": null,
+    "missing_top": [
+      [
+        "\u2b50",
+        2
+      ],
+      [
+        ".",
+        2
+      ],
+      [
+        "e",
+        1
+      ],
+      [
+        "d",
+        1
+      ],
+      [
+        "a",
+        1
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "vba-29-4125-are_p003.pdf",
+    "status": "ok",
+    "cct": 0.9844444444444445,
+    "percent_tokens_found": 0.9704271631982475,
+    "percent_tokens_added": 0.0011273957158962795,
+    "precision": 0.9988726042841037,
+    "gt_tokens": 913,
+    "predicted_tokens": 887,
+    "matched_tokens": 886,
+    "elapsed_seconds": 0.8309228330035694,
+    "error": null,
+    "missing_top": [
+      [
+        "___",
+        18
+      ],
+      [
+        "[",
+        2
+      ],
+      [
+        "]",
+        2
+      ],
+      [
+        "\u21b3",
+        1
+      ],
+      [
+        "1234",
+        1
+      ]
+    ],
+    "extra_top": [
+      [
+        "12341617284958569678",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "frai_03_543305_p1-2-p001.pdf",
+    "status": "ok",
+    "cct": 0.9852216748768473,
+    "percent_tokens_found": 0.975609756097561,
+    "percent_tokens_added": 0.004975124378109453,
+    "precision": 0.9950248756218906,
+    "gt_tokens": 410,
+    "predicted_tokens": 402,
+    "matched_tokens": 400,
+    "elapsed_seconds": 0.27981883399479557,
+    "error": null,
+    "missing_top": [
+      [
+        "mhealth",
+        2
+      ],
+      [
+        "est",
+        1
+      ],
+      [
+        "d",
+        1
+      ],
+      [
+        "1845",
+        1
+      ],
+      [
+        "queen",
+        1
+      ]
+    ],
+    "extra_top": [
+      [
+        "health",
+        2
+      ]
+    ]
+  },
+  {
+    "stem": "global-AIDS-strategy-p74-75-p001.pdf",
+    "status": "ok",
+    "cct": 0.9852941176470589,
+    "percent_tokens_found": 0.9852941176470589,
+    "percent_tokens_added": 0.014705882352941176,
+    "precision": 0.9852941176470589,
+    "gt_tokens": 68,
+    "predicted_tokens": 68,
+    "matched_tokens": 67,
+    "elapsed_seconds": 0.024517583995475434,
+    "error": null,
+    "missing_top": [
+      [
+        "|",
+        1
+      ]
+    ],
+    "extra_top": [
+      [
+        "v",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "EPD-p004.pdf",
+    "status": "ok",
+    "cct": 0.9855618330194601,
+    "percent_tokens_found": 0.9961928934010152,
+    "percent_tokens_added": 0.024844720496894408,
+    "precision": 0.9751552795031055,
+    "gt_tokens": 788,
+    "predicted_tokens": 805,
+    "matched_tokens": 785,
+    "elapsed_seconds": 1.1233475830085808,
+    "error": null,
+    "missing_top": [
+      [
+        "form10q",
+        1
+      ],
+      [
+        "subordinated",
+        1
+      ],
+      [
+        "remainder",
+        1
+      ]
+    ],
+    "extra_top": [
+      [
+        "d",
+        3
+      ],
+      [
+        "r",
+        3
+      ],
+      [
+        "in",
+        2
+      ],
+      [
+        "a",
+        2
+      ],
+      [
+        "e",
+        2
+      ]
+    ]
+  },
+  {
+    "stem": "Syl_London_ARTH-UA9676L01_Fall2019.pdf",
+    "status": "ok",
+    "cct": 0.9859154929577465,
+    "percent_tokens_found": 0.9869848156182213,
+    "percent_tokens_added": 0.015151515151515152,
+    "precision": 0.9848484848484849,
+    "gt_tokens": 461,
+    "predicted_tokens": 462,
+    "matched_tokens": 455,
+    "elapsed_seconds": 0.47978325000440236,
+    "error": null,
+    "missing_top": [
+      [
+        "18\u1d57\u02b0",
+        3
+      ],
+      [
+        "assignment",
+        1
+      ],
+      [
+        "4\u1d57\u02b0",
+        1
+      ],
+      [
+        "11\u1d57\u02b0",
+        1
+      ]
+    ],
+    "extra_top": [
+      [
+        "18th",
+        3
+      ],
+      [
+        "4th",
+        1
+      ],
+      [
+        "11th",
+        1
+      ],
+      [
+        "assignme",
+        1
+      ],
+      [
+        "nt",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "B1404020615_BiophilicDesign_p10-11-p002.pdf",
+    "status": "ok",
+    "cct": 0.9860324650811627,
+    "percent_tokens_found": 0.983433734939759,
+    "percent_tokens_added": 0.011355034065102196,
+    "precision": 0.9886449659348978,
+    "gt_tokens": 1328,
+    "predicted_tokens": 1321,
+    "matched_tokens": 1306,
+    "elapsed_seconds": 0.7653412090003258,
+    "error": null,
+    "missing_top": [
+      [
+        "\u2019",
+        6
+      ],
+      [
+        "r",
+        2
+      ],
+      [
+        "s",
+        2
+      ],
+      [
+        "berto",
+        1
+      ],
+      [
+        "kellert",
+        1
+      ]
+    ],
+    "extra_top": [
+      [
+        "\u201f",
+        4
+      ],
+      [
+        "\u201e",
+        2
+      ],
+      [
+        "bertor",
+        1
+      ],
+      [
+        "the",
+        1
+      ],
+      [
+        "biophilia",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "2018-brag-and-afri-social-p009.pdf",
+    "status": "ok",
+    "cct": 0.986046511627907,
+    "percent_tokens_found": 0.9724770642201835,
+    "percent_tokens_added": 0.0,
+    "precision": 1.0,
+    "gt_tokens": 436,
+    "predicted_tokens": 424,
+    "matched_tokens": 424,
+    "elapsed_seconds": 0.6385054590064101,
+    "error": null,
+    "missing_top": [
+      [
+        "of",
+        2
+      ],
+      [
+        "agriculture",
+        2
+      ],
+      [
+        "usda",
+        1
+      ],
+      [
+        "and",
+        1
+      ],
+      [
+        "united",
+        1
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "O27Hara_DeepSeaFloorBio-p001.pdf",
+    "status": "ok",
+    "cct": 0.986328125,
+    "percent_tokens_found": 0.9805825242718447,
+    "percent_tokens_added": 0.007858546168958742,
+    "precision": 0.9921414538310412,
+    "gt_tokens": 515,
+    "predicted_tokens": 509,
+    "matched_tokens": 505,
+    "elapsed_seconds": 0.7847366659989348,
+    "error": null,
+    "missing_top": [
+      [
+        "|",
+        3
+      ],
+      [
+        "diversity",
+        1
+      ],
+      [
+        "and",
+        1
+      ],
+      [
+        "distributions",
+        1
+      ],
+      [
+        "wiley",
+        1
+      ]
+    ],
+    "extra_top": [
+      [
+        "-",
+        1
+      ],
+      [
+        "e145",
+        1
+      ],
+      [
+        "perts",
+        1
+      ],
+      [
+        "ex",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "cb9722en_p35-36-p002.pdf",
+    "status": "ok",
+    "cct": 0.9865384615384616,
+    "percent_tokens_found": 0.9827586206896551,
+    "percent_tokens_added": 0.009652509652509652,
+    "precision": 0.9903474903474904,
+    "gt_tokens": 522,
+    "predicted_tokens": 518,
+    "matched_tokens": 513,
+    "elapsed_seconds": 0.44938887500029523,
+    "error": null,
+    "missing_top": [
+      [
+        "-",
+        2
+      ],
+      [
+        "self",
+        2
+      ],
+      [
+        "resources",
+        1
+      ],
+      [
+        "gardening",
+        1
+      ],
+      [
+        "income",
+        1
+      ]
+    ],
+    "extra_top": [
+      [
+        "selfgardening",
+        1
+      ],
+      [
+        "resourc",
+        1
+      ],
+      [
+        "es",
+        1
+      ],
+      [
+        "incomecrop",
+        1
+      ],
+      [
+        "selfirrigation",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "cb9722en_p35-36-p001.pdf",
+    "status": "ok",
+    "cct": 0.9866117404737385,
+    "percent_tokens_found": 0.9896694214876033,
+    "percent_tokens_added": 0.01642710472279261,
+    "precision": 0.9835728952772074,
+    "gt_tokens": 484,
+    "predicted_tokens": 487,
+    "matched_tokens": 479,
+    "elapsed_seconds": 0.2145632080064388,
+    "error": null,
+    "missing_top": [
+      [
+        ".",
+        3
+      ],
+      [
+        "jon",
+        1
+      ],
+      [
+        "spaull",
+        1
+      ]
+    ],
+    "extra_top": [
+      [
+        "\u2022",
+        6
+      ],
+      [
+        "\u2026",
+        1
+      ],
+      [
+        "jonspaull",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "final-r3-report-emergency-p004.pdf",
+    "status": "ok",
+    "cct": 0.9869375907111756,
+    "percent_tokens_found": 0.984081041968162,
+    "percent_tokens_added": 0.010189228529839884,
+    "precision": 0.9898107714701602,
+    "gt_tokens": 691,
+    "predicted_tokens": 687,
+    "matched_tokens": 680,
+    "elapsed_seconds": 0.5247738750040298,
+    "error": null,
+    "missing_top": [
+      [
+        ",",
+        2
+      ],
+      [
+        "r\u00b3",
+        1
+      ],
+      [
+        "report",
+        1
+      ],
+      [
+        "|",
+        1
+      ],
+      [
+        "requirement",
+        1
+      ]
+    ],
+    "extra_top": [
+      [
+        "\u2022",
+        7
+      ]
+    ]
+  },
+  {
+    "stem": "HorticulturalIndustries_AC_p3-6-p002.pdf",
+    "status": "ok",
+    "cct": 0.9872340425531915,
+    "percent_tokens_found": 0.9931506849315068,
+    "percent_tokens_added": 0.018612521150592216,
+    "precision": 0.9813874788494078,
+    "gt_tokens": 584,
+    "predicted_tokens": 591,
+    "matched_tokens": 580,
+    "elapsed_seconds": 0.3575615000008838,
+    "error": null,
+    "missing_top": [
+      [
+        "algonquin",
+        1
+      ],
+      [
+        "college",
+        1
+      ],
+      [
+        "of",
+        1
+      ],
+      [
+        "no",
+        1
+      ]
+    ],
+    "extra_top": [
+      [
+        "-",
+        11
+      ]
+    ]
+  },
+  {
+    "stem": "Covid19-White-Paper-FINALp4-5-p002.pdf",
+    "status": "ok",
+    "cct": 0.988198269079465,
+    "percent_tokens_found": 0.9905362776025236,
+    "percent_tokens_added": 0.0141287284144427,
+    "precision": 0.9858712715855573,
+    "gt_tokens": 634,
+    "predicted_tokens": 637,
+    "matched_tokens": 628,
+    "elapsed_seconds": 1.3354837500082795,
+    "error": null,
+    "missing_top": [
+      [
+        "to",
+        1
+      ],
+      [
+        "and",
+        1
+      ],
+      [
+        "participants",
+        1
+      ],
+      [
+        "pearson",
+        1
+      ],
+      [
+        "r",
+        1
+      ]
+    ],
+    "extra_top": [
+      [
+        "a",
+        2
+      ],
+      [
+        "pearsonrand",
+        1
+      ],
+      [
+        "testto",
+        1
+      ],
+      [
+        "p",
+        1
+      ],
+      [
+        "rtic",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "2023-OFC-Technical-Brochure-p003.pdf",
+    "status": "ok",
+    "cct": 0.9892086330935251,
+    "percent_tokens_found": 0.9927797833935018,
+    "percent_tokens_added": 0.014336917562724014,
+    "precision": 0.985663082437276,
+    "gt_tokens": 554,
+    "predicted_tokens": 558,
+    "matched_tokens": 550,
+    "elapsed_seconds": 1.0216891659947578,
+    "error": null,
+    "missing_top": [
+      [
+        "amplifiersfrom",
+        1
+      ],
+      [
+        "networkfrom",
+        1
+      ],
+      [
+        "microphotonicstechnology",
+        1
+      ],
+      [
+        "networkarchitecture",
+        1
+      ]
+    ],
+    "extra_top": [
+      [
+        "network",
+        2
+      ],
+      [
+        "from",
+        2
+      ],
+      [
+        "architecture",
+        1
+      ],
+      [
+        "amplifiers",
+        1
+      ],
+      [
+        "technology",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "SPUR_Future_Of_Transportation-p002.pdf",
+    "status": "ok",
+    "cct": 0.9894366197183099,
+    "percent_tokens_found": 0.9825174825174825,
+    "percent_tokens_added": 0.0035460992907801418,
+    "precision": 0.9964539007092199,
+    "gt_tokens": 286,
+    "predicted_tokens": 282,
+    "matched_tokens": 281,
+    "elapsed_seconds": 0.14252987499639858,
+    "error": null,
+    "missing_top": [
+      [
+        "spur",
+        1
+      ],
+      [
+        "regional",
+        1
+      ],
+      [
+        "strategy",
+        1
+      ],
+      [
+        "darton",
+        1
+      ],
+      [
+        "ito",
+        1
+      ]
+    ],
+    "extra_top": [
+      [
+        "dartonito",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "global-AIDS-strategy-p74-75-p002.pdf",
+    "status": "ok",
+    "cct": 0.9897100093545369,
+    "percent_tokens_found": 0.9851024208566108,
+    "percent_tokens_added": 0.005639097744360902,
+    "precision": 0.9943609022556391,
+    "gt_tokens": 537,
+    "predicted_tokens": 532,
+    "matched_tokens": 529,
+    "elapsed_seconds": 0.30927004099066835,
+    "error": null,
+    "missing_top": [
+      [
+        "-",
+        2
+      ],
+      [
+        "that",
+        1
+      ],
+      [
+        "youth",
+        1
+      ],
+      [
+        "high",
+        1
+      ],
+      [
+        "\u00b2\u2078",
+        1
+      ]
+    ],
+    "extra_top": [
+      [
+        "28",
+        1
+      ],
+      [
+        "youththat",
+        1
+      ],
+      [
+        "highincidence",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "GlobalTrends_2040p10-17-p007.pdf",
+    "status": "ok",
+    "cct": 0.989843028624192,
+    "percent_tokens_found": 0.9962825278810409,
+    "percent_tokens_added": 0.01651376146788991,
+    "precision": 0.9834862385321101,
+    "gt_tokens": 538,
+    "predicted_tokens": 545,
+    "matched_tokens": 536,
+    "elapsed_seconds": 0.752230750003946,
+    "error": null,
+    "missing_top": [
+      [
+        "accelerating",
+        1
+      ],
+      [
+        "democracies",
+        1
+      ]
+    ],
+    "extra_top": [
+      [
+        "\u2022",
+        3
+      ],
+      [
+        "-",
+        2
+      ],
+      [
+        "democ",
+        1
+      ],
+      [
+        "racies",
+        1
+      ],
+      [
+        "acceler",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "PB150529_Climate-Change-Food-p002.pdf",
+    "status": "ok",
+    "cct": 0.9909465020576131,
+    "percent_tokens_found": 0.9885057471264368,
+    "percent_tokens_added": 0.006600660066006601,
+    "precision": 0.9933993399339934,
+    "gt_tokens": 609,
+    "predicted_tokens": 606,
+    "matched_tokens": 602,
+    "elapsed_seconds": 0.9625830000004498,
+    "error": null,
+    "missing_top": [
+      [
+        "saline",
+        1
+      ],
+      [
+        "an",
+        1
+      ],
+      [
+        "irri",
+        1
+      ],
+      [
+        "\u00b2\u2074",
+        1
+      ],
+      [
+        "\u00b2\u2075",
+        1
+      ]
+    ],
+    "extra_top": [
+      [
+        "anirri",
+        1
+      ],
+      [
+        "24",
+        1
+      ],
+      [
+        "25",
+        1
+      ],
+      [
+        "lassaja",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "ijerph-19-00825-p008.pdf",
+    "status": "ok",
+    "cct": 0.9917355371900827,
+    "percent_tokens_found": 0.994475138121547,
+    "percent_tokens_added": 0.01098901098901099,
+    "precision": 0.989010989010989,
+    "gt_tokens": 724,
+    "predicted_tokens": 728,
+    "matched_tokens": 720,
+    "elapsed_seconds": 0.19277379098639358,
+    "error": null,
+    "missing_top": [
+      [
+        "randomized",
+        2
+      ],
+      [
+        "\u00b0",
+        1
+      ],
+      [
+        "\u00b9",
+        1
+      ]
+    ],
+    "extra_top": [
+      [
+        "-",
+        2
+      ],
+      [
+        "random",
+        2
+      ],
+      [
+        "ized",
+        2
+      ],
+      [
+        "1",
+        1
+      ],
+      [
+        "\u25e6",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "final-r3-report-emergency-p001.pdf",
+    "status": "ok",
+    "cct": 0.991833704528582,
+    "percent_tokens_found": 0.9837997054491899,
+    "percent_tokens_added": 0.0,
+    "precision": 1.0,
+    "gt_tokens": 679,
+    "predicted_tokens": 668,
+    "matched_tokens": 668,
+    "elapsed_seconds": 0.5196727080037817,
+    "error": null,
+    "missing_top": [
+      [
+        ",",
+        2
+      ],
+      [
+        "r\u00b3",
+        1
+      ],
+      [
+        "report",
+        1
+      ],
+      [
+        "|",
+        1
+      ],
+      [
+        "requirement",
+        1
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "AlienPlantThreatAssess-p24-p27-p004.pdf",
+    "status": "ok",
+    "cct": 0.9918458117123795,
+    "percent_tokens_found": 0.9911111111111112,
+    "percent_tokens_added": 0.00741839762611276,
+    "precision": 0.9925816023738873,
+    "gt_tokens": 675,
+    "predicted_tokens": 674,
+    "matched_tokens": 669,
+    "elapsed_seconds": 0.26642604199878406,
+    "error": null,
+    "missing_top": [
+      [
+        "(",
+        1
+      ],
+      [
+        ")",
+        1
+      ],
+      [
+        "every",
+        1
+      ],
+      [
+        "sampled",
+        1
+      ],
+      [
+        "5m",
+        1
+      ]
+    ],
+    "extra_top": [
+      [
+        "5",
+        1
+      ],
+      [
+        "sam",
+        1
+      ],
+      [
+        "led",
+        1
+      ],
+      [
+        "ever",
+        1
+      ],
+      [
+        "oints",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "usaid_psepolicy_final_p31-38-p004.pdf",
+    "status": "ok",
+    "cct": 0.9922212618841832,
+    "percent_tokens_found": 0.9948006932409013,
+    "percent_tokens_added": 0.010344827586206896,
+    "precision": 0.9896551724137931,
+    "gt_tokens": 577,
+    "predicted_tokens": 580,
+    "matched_tokens": 574,
+    "elapsed_seconds": 0.6873013750009704,
+    "error": null,
+    "missing_top": [
+      [
+        "34",
+        1
+      ],
+      [
+        "policy",
+        1
+      ],
+      [
+        "|",
+        1
+      ]
+    ],
+    "extra_top": [
+      [
+        "\u2022",
+        5
+      ],
+      [
+        "policy34",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "csia_federal_plan-p47-p52-p006.pdf",
+    "status": "ok",
+    "cct": 0.9927583936800527,
+    "percent_tokens_found": 0.9856209150326798,
+    "percent_tokens_added": 0.0,
+    "precision": 1.0,
+    "gt_tokens": 765,
+    "predicted_tokens": 754,
+    "matched_tokens": 754,
+    "elapsed_seconds": 0.2741079580009682,
+    "error": null,
+    "missing_top": [
+      [
+        "federal",
+        1
+      ],
+      [
+        "plan",
+        1
+      ],
+      [
+        "for",
+        1
+      ],
+      [
+        "cyber",
+        1
+      ],
+      [
+        "security",
+        1
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "French-p104.pdf",
+    "status": "ok",
+    "cct": 0.9932659932659933,
+    "percent_tokens_found": 0.9866220735785953,
+    "percent_tokens_added": 0.0,
+    "precision": 1.0,
+    "gt_tokens": 299,
+    "predicted_tokens": 295,
+    "matched_tokens": 295,
+    "elapsed_seconds": 0.10178966600506101,
+    "error": null,
+    "missing_top": [
+      [
+        "\u2022",
+        1
+      ],
+      [
+        "\ud83d\udd0a",
+        1
+      ],
+      [
+        "\ud83c\uddeb",
+        1
+      ],
+      [
+        "\ud83c\uddf7",
+        1
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "pdac-framework_p23-29-p001.pdf",
+    "status": "ok",
+    "cct": 0.9934895833333334,
+    "percent_tokens_found": 0.9921976592977894,
+    "percent_tokens_added": 0.005215123859191656,
+    "precision": 0.9947848761408083,
+    "gt_tokens": 769,
+    "predicted_tokens": 767,
+    "matched_tokens": 763,
+    "elapsed_seconds": 0.326829458004795,
+    "error": null,
+    "missing_top": [
+      [
+        "glp",
+        1
+      ],
+      [
+        "-",
+        1
+      ],
+      [
+        "do",
+        1
+      ],
+      [
+        "clinicaltrials",
+        1
+      ],
+      [
+        "paraffin",
+        1
+      ]
+    ],
+    "extra_top": [
+      [
+        "doglp",
+        1
+      ],
+      [
+        "clinical",
+        1
+      ],
+      [
+        "trials",
+        1
+      ],
+      [
+        "paraffinembedded",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "TAMU-Annual-Report-2023p18-23-p003.pdf",
+    "status": "ok",
+    "cct": 0.9941747572815534,
+    "percent_tokens_found": 0.9884169884169884,
+    "percent_tokens_added": 0.0,
+    "precision": 1.0,
+    "gt_tokens": 518,
+    "predicted_tokens": 512,
+    "matched_tokens": 512,
+    "elapsed_seconds": 0.4005165830021724,
+    "error": null,
+    "missing_top": [
+      [
+        "a",
+        1
+      ],
+      [
+        "&",
+        1
+      ],
+      [
+        "m",
+        1
+      ],
+      [
+        "ex",
+        1
+      ],
+      [
+        "l",
+        1
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "Employee_Health_Benefits_Assess-p003.pdf",
+    "status": "ok",
+    "cct": 0.9943181818181818,
+    "percent_tokens_found": 0.9943181818181818,
+    "percent_tokens_added": 0.005681818181818182,
+    "precision": 0.9943181818181818,
+    "gt_tokens": 352,
+    "predicted_tokens": 352,
+    "matched_tokens": 350,
+    "elapsed_seconds": 0.3842425839975476,
+    "error": null,
+    "missing_top": [
+      [
+        "1\u02e2\u1d57",
+        1
+      ],
+      [
+        "30\u1d57\u02b0",
+        1
+      ]
+    ],
+    "extra_top": [
+      [
+        "1st",
+        1
+      ],
+      [
+        "30th",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "usaid_psepolicy_final_p31-38-p007.pdf",
+    "status": "ok",
+    "cct": 0.9946332737030411,
+    "percent_tokens_found": 0.996415770609319,
+    "percent_tokens_added": 0.007142857142857143,
+    "precision": 0.9928571428571429,
+    "gt_tokens": 837,
+    "predicted_tokens": 840,
+    "matched_tokens": 834,
+    "elapsed_seconds": 0.94663787499303,
+    "error": null,
+    "missing_top": [
+      [
+        "usaid",
+        1
+      ],
+      [
+        "|",
+        1
+      ],
+      [
+        "37",
+        1
+      ]
+    ],
+    "extra_top": [
+      [
+        "\u2022",
+        5
+      ],
+      [
+        "37usaid",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "Financing-the-big-investment-p002.pdf",
+    "status": "ok",
+    "cct": 0.9946605644546148,
+    "percent_tokens_found": 0.9908814589665653,
+    "percent_tokens_added": 0.0015313935681470138,
+    "precision": 0.998468606431853,
+    "gt_tokens": 658,
+    "predicted_tokens": 653,
+    "matched_tokens": 652,
+    "elapsed_seconds": 0.9253323339944473,
+    "error": null,
+    "missing_top": [
+      [
+        "the",
+        1
+      ],
+      [
+        "foundation",
+        1
+      ],
+      [
+        "tim",
+        1
+      ],
+      [
+        "besley",
+        1
+      ],
+      [
+        "rockefeller",
+        1
+      ]
+    ],
+    "extra_top": [
+      [
+        "timbesley",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "qingli-dai-cv_p7-8-p001.pdf",
+    "status": "ok",
+    "cct": 0.9951113525258012,
+    "percent_tokens_found": 0.9956521739130435,
+    "percent_tokens_added": 0.0054288816503800215,
+    "precision": 0.99457111834962,
+    "gt_tokens": 920,
+    "predicted_tokens": 921,
+    "matched_tokens": 916,
+    "elapsed_seconds": 1.1971292499947594,
+    "error": null,
+    "missing_top": [
+      [
+        "a",
+        1
+      ],
+      [
+        "appel",
+        1
+      ],
+      [
+        "articlelanding",
+        1
+      ],
+      [
+        "divabstract",
+        1
+      ]
+    ],
+    "extra_top": [
+      [
+        "appela",
+        1
+      ],
+      [
+        "article",
+        1
+      ],
+      [
+        "landing",
+        1
+      ],
+      [
+        "div",
+        1
+      ],
+      [
+        "abstract",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "ihs-961.pdf",
+    "status": "ok",
+    "cct": 0.9954545454545455,
+    "percent_tokens_found": 0.9909502262443439,
+    "percent_tokens_added": 0.0,
+    "precision": 1.0,
+    "gt_tokens": 442,
+    "predicted_tokens": 438,
+    "matched_tokens": 438,
+    "elapsed_seconds": 0.24192666700400878,
+    "error": null,
+    "missing_top": [
+      [
+        "___",
+        1
+      ],
+      [
+        "14",
+        1
+      ],
+      [
+        "3",
+        1
+      ],
+      [
+        "2025",
+        1
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "fin_irjmets1682369218p12-12.pdf",
+    "status": "ok",
+    "cct": 0.9958298582151793,
+    "percent_tokens_found": 0.9933444259567388,
+    "percent_tokens_added": 0.0016722408026755853,
+    "precision": 0.9983277591973244,
+    "gt_tokens": 601,
+    "predicted_tokens": 598,
+    "matched_tokens": 597,
+    "elapsed_seconds": 0.7964998329989612,
+    "error": null,
+    "missing_top": [
+      [
+        "irjets",
+        1
+      ],
+      [
+        "-",
+        1
+      ],
+      [
+        "factor",
+        1
+      ],
+      [
+        "usage",
+        1
+      ]
+    ],
+    "extra_top": [
+      [
+        "factorusage",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "160106big-data-rpt_p44-44.pdf",
+    "status": "ok",
+    "cct": 0.995850622406639,
+    "percent_tokens_found": 0.9933774834437086,
+    "percent_tokens_added": 0.0016638935108153079,
+    "precision": 0.9983361064891847,
+    "gt_tokens": 604,
+    "predicted_tokens": 601,
+    "matched_tokens": 600,
+    "elapsed_seconds": 0.6758195000002161,
+    "error": null,
+    "missing_top": [
+      [
+        ",",
+        1
+      ],
+      [
+        "tim",
+        1
+      ],
+      [
+        "smedley",
+        1
+      ],
+      [
+        "peck",
+        1
+      ]
+    ],
+    "extra_top": [
+      [
+        "timsmedley",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "AlienPlantThreatAssess-p24-p27-p002.pdf",
+    "status": "ok",
+    "cct": 0.9959420289855072,
+    "percent_tokens_found": 0.9942129629629629,
+    "percent_tokens_added": 0.0023228803716608595,
+    "precision": 0.9976771196283392,
+    "gt_tokens": 864,
+    "predicted_tokens": 861,
+    "matched_tokens": 859,
+    "elapsed_seconds": 0.30487504100892693,
+    "error": null,
+    "missing_top": [
+      [
+        "-",
+        1
+      ],
+      [
+        "elevation",
+        1
+      ],
+      [
+        "forbs",
+        1
+      ],
+      [
+        "umi5718",
+        1
+      ],
+      [
+        "upper",
+        1
+      ]
+    ],
+    "extra_top": [
+      [
+        "forbsumi5718",
+        1
+      ],
+      [
+        "upperelevation",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "power-phrases_p3-4-p002.pdf",
+    "status": "ok",
+    "cct": 0.996031746031746,
+    "percent_tokens_found": 0.994059405940594,
+    "percent_tokens_added": 0.0019880715705765406,
+    "precision": 0.9980119284294234,
+    "gt_tokens": 505,
+    "predicted_tokens": 503,
+    "matched_tokens": 502,
+    "elapsed_seconds": 0.5345896249928046,
+    "error": null,
+    "missing_top": [
+      [
+        ".",
+        3
+      ]
+    ],
+    "extra_top": [
+      [
+        "\u2026",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "az1863-2021_rain-harvest-p11-11.pdf",
+    "status": "ok",
+    "cct": 0.996268656716418,
+    "percent_tokens_found": 0.994413407821229,
+    "percent_tokens_added": 0.001869158878504673,
+    "precision": 0.9981308411214953,
+    "gt_tokens": 537,
+    "predicted_tokens": 535,
+    "matched_tokens": 534,
+    "elapsed_seconds": 0.8090228329965612,
+    "error": null,
+    "missing_top": [
+      [
+        "-",
+        1
+      ],
+      [
+        "https",
+        1
+      ],
+      [
+        "harvest",
+        1
+      ]
+    ],
+    "extra_top": [
+      [
+        "harvesthttps",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "HorticulturalIndustries_AC_p3-6-p004.pdf",
+    "status": "ok",
+    "cct": 0.9963898916967509,
+    "percent_tokens_found": 0.9963898916967509,
+    "percent_tokens_added": 0.0036101083032490976,
+    "precision": 0.9963898916967509,
+    "gt_tokens": 554,
+    "predicted_tokens": 554,
+    "matched_tokens": 552,
+    "elapsed_seconds": 0.3260632500023348,
+    "error": null,
+    "missing_top": [
+      [
+        "algonquin",
+        1
+      ],
+      [
+        "college",
+        1
+      ]
+    ],
+    "extra_top": [
+      [
+        "-",
+        2
+      ]
+    ]
+  },
+  {
+    "stem": "CC-BY-4.0-Legal-Code-1.pdf",
+    "status": "ok",
+    "cct": 0.9964243146603099,
+    "percent_tokens_found": 0.9952380952380953,
+    "percent_tokens_added": 0.002386634844868735,
+    "precision": 0.9976133651551312,
+    "gt_tokens": 420,
+    "predicted_tokens": 419,
+    "matched_tokens": 418,
+    "elapsed_seconds": 0.2367583330051275,
+    "error": null,
+    "missing_top": [
+      [
+        "sui",
+        1
+      ],
+      [
+        "generis",
+        1
+      ]
+    ],
+    "extra_top": [
+      [
+        "suigeneris",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "2023-OFC-Technical-Brochure-p004.pdf",
+    "status": "ok",
+    "cct": 0.9965226030799801,
+    "percent_tokens_found": 0.9970178926441352,
+    "percent_tokens_added": 0.003972194637537239,
+    "precision": 0.9960278053624627,
+    "gt_tokens": 1006,
+    "predicted_tokens": 1007,
+    "matched_tokens": 1003,
+    "elapsed_seconds": 0.7458456249878509,
+    "error": null,
+    "missing_top": [
+      [
+        "wendell",
+        1
+      ],
+      [
+        "p",
+        1
+      ],
+      [
+        "multipartite",
+        1
+      ]
+    ],
+    "extra_top": [
+      [
+        "-",
+        1
+      ],
+      [
+        "wendellp",
+        1
+      ],
+      [
+        "multi",
+        1
+      ],
+      [
+        "partite",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "661_Singh_p9-9.pdf",
+    "status": "ok",
+    "cct": 0.9966465459423206,
+    "percent_tokens_found": 0.9946452476572959,
+    "percent_tokens_added": 0.0013440860215053765,
+    "precision": 0.9986559139784946,
+    "gt_tokens": 747,
+    "predicted_tokens": 744,
+    "matched_tokens": 743,
+    "elapsed_seconds": 1.0228970000025583,
+    "error": null,
+    "missing_top": [
+      [
+        "-",
+        1
+      ],
+      [
+        "cross",
+        1
+      ],
+      [
+        "cultural",
+        1
+      ],
+      [
+        "|",
+        1
+      ]
+    ],
+    "extra_top": [
+      [
+        "crosscultural",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "virus-statistics-2022-p1-7-p001.pdf",
+    "status": "ok",
+    "cct": 0.9973808276584599,
+    "percent_tokens_found": 0.99581589958159,
+    "percent_tokens_added": 0.001049317943336831,
+    "precision": 0.9989506820566632,
+    "gt_tokens": 956,
+    "predicted_tokens": 953,
+    "matched_tokens": 952,
+    "elapsed_seconds": 0.9441790839919122,
+    "error": null,
+    "missing_top": [
+      [
+        "nvss",
+        1
+      ],
+      [
+        "farida",
+        1
+      ],
+      [
+        "b",
+        1
+      ],
+      [
+        "in",
+        1
+      ]
+    ],
+    "extra_top": [
+      [
+        "faridab",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "2023-gmi-lab-call_p4-15-p009.pdf",
+    "status": "ok",
+    "cct": 0.9980506822612085,
+    "percent_tokens_found": 0.9961089494163424,
+    "percent_tokens_added": 0.0,
+    "precision": 1.0,
+    "gt_tokens": 514,
+    "predicted_tokens": 512,
+    "matched_tokens": 512,
+    "elapsed_seconds": 0.6594148330041207,
+    "error": null,
+    "missing_top": [
+      [
+        "|",
+        2
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "wipo-2022-financial-report-p24-p30-p001.pdf",
+    "status": "ok",
+    "cct": 0.9985052316890882,
+    "percent_tokens_found": 0.9970149253731343,
+    "percent_tokens_added": 0.0,
+    "precision": 1.0,
+    "gt_tokens": 335,
+    "predicted_tokens": 334,
+    "matched_tokens": 334,
+    "elapsed_seconds": 0.2913586249924265,
+    "error": null,
+    "missing_top": [
+      [
+        "en",
+        1
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "phs-6031-p002.pdf",
+    "status": "ok",
+    "cct": 0.9987244897959183,
+    "percent_tokens_found": 1.0,
+    "percent_tokens_added": 0.0025477707006369425,
+    "precision": 0.9974522292993631,
+    "gt_tokens": 783,
+    "predicted_tokens": 785,
+    "matched_tokens": 783,
+    "elapsed_seconds": 0.8165376249962719,
+    "error": null,
+    "missing_top": [],
+    "extra_top": [
+      [
+        "-",
+        1
+      ],
+      [
+        "post",
+        1
+      ]
+    ]
+  },
+  {
+    "stem": "IPOL_STU2020658279_ENp40-41-p001.pdf",
+    "status": "ok",
+    "cct": 0.9988385598141696,
+    "percent_tokens_found": 0.9976798143851509,
+    "percent_tokens_added": 0.0,
+    "precision": 1.0,
+    "gt_tokens": 431,
+    "predicted_tokens": 430,
+    "matched_tokens": 430,
+    "elapsed_seconds": 0.20039470799383707,
+    "error": null,
+    "missing_top": [
+      [
+        "|",
+        1
+      ]
+    ],
+    "extra_top": []
+  },
+  {
+    "stem": "09facial_recognition_pia_report.pdf",
+    "status": "ok",
+    "cct": 1.0,
+    "percent_tokens_found": 1.0,
+    "percent_tokens_added": 0.0,
+    "precision": 1.0,
+    "gt_tokens": 501,
+    "predicted_tokens": 501,
+    "matched_tokens": 501,
+    "elapsed_seconds": 0.686268083009054,
+    "error": null,
+    "missing_top": [],
+    "extra_top": []
+  },
+  {
+    "stem": "2018-brag-and-afri-social-p008.pdf",
+    "status": "ok",
+    "cct": 1.0,
+    "percent_tokens_found": 1.0,
+    "percent_tokens_added": 0.0,
+    "precision": 1.0,
+    "gt_tokens": 180,
+    "predicted_tokens": 180,
+    "matched_tokens": 180,
+    "elapsed_seconds": 0.09026716700464021,
+    "error": null,
+    "missing_top": [],
+    "extra_top": []
+  },
+  {
+    "stem": "26_HS-IssueOfRenewableEnergy-p001.pdf",
+    "status": "ok",
+    "cct": 1.0,
+    "percent_tokens_found": 1.0,
+    "percent_tokens_added": 0.0,
+    "precision": 1.0,
+    "gt_tokens": 524,
+    "predicted_tokens": 524,
+    "matched_tokens": 524,
+    "elapsed_seconds": 0.15929454201250337,
+    "error": null,
+    "missing_top": [],
+    "extra_top": []
+  },
+  {
+    "stem": "26_HS-IssueOfRenewableEnergy-p002.pdf",
+    "status": "ok",
+    "cct": 1.0,
+    "percent_tokens_found": 1.0,
+    "percent_tokens_added": 0.0,
+    "precision": 1.0,
+    "gt_tokens": 564,
+    "predicted_tokens": 564,
+    "matched_tokens": 564,
+    "elapsed_seconds": 0.15162787499139085,
+    "error": null,
+    "missing_top": [],
+    "extra_top": []
+  },
+  {
+    "stem": "33715_water_p34-35-p001.pdf",
+    "status": "ok",
+    "cct": 1.0,
+    "percent_tokens_found": 1.0,
+    "percent_tokens_added": 0.0,
+    "precision": 1.0,
+    "gt_tokens": 989,
+    "predicted_tokens": 989,
+    "matched_tokens": 989,
+    "elapsed_seconds": 0.3827868750086054,
+    "error": null,
+    "missing_top": [],
+    "extra_top": []
+  },
+  {
+    "stem": "CC-BY-4.0-Legal-Code-2.pdf",
+    "status": "ok",
+    "cct": 1.0,
+    "percent_tokens_found": 1.0,
+    "percent_tokens_added": 0.0,
+    "precision": 1.0,
+    "gt_tokens": 466,
+    "predicted_tokens": 466,
+    "matched_tokens": 466,
+    "elapsed_seconds": 0.22242000000551343,
+    "error": null,
+    "missing_top": [],
+    "extra_top": []
+  },
+  {
+    "stem": "CV_RenyuHu_2023p4-4.pdf",
+    "status": "ok",
+    "cct": 1.0,
+    "percent_tokens_found": 1.0,
+    "percent_tokens_added": 0.0,
+    "precision": 1.0,
+    "gt_tokens": 295,
+    "predicted_tokens": 295,
+    "matched_tokens": 295,
+    "elapsed_seconds": 0.36862962500890717,
+    "error": null,
+    "missing_top": [],
+    "extra_top": []
+  },
+  {
+    "stem": "Carbone-4-for-Bird-E-Scooter.pdf",
+    "status": "ok",
+    "cct": 1.0,
+    "percent_tokens_found": 1.0,
+    "percent_tokens_added": 0.0,
+    "precision": 1.0,
+    "gt_tokens": 452,
+    "predicted_tokens": 452,
+    "matched_tokens": 452,
+    "elapsed_seconds": 0.26818929200817365,
+    "error": null,
+    "missing_top": [],
+    "extra_top": []
+  },
+  {
+    "stem": "Employee_Health_Benefits_Assess-p006.pdf",
+    "status": "ok",
+    "cct": 1.0,
+    "percent_tokens_found": 1.0,
+    "percent_tokens_added": 0.0,
+    "precision": 1.0,
+    "gt_tokens": 236,
+    "predicted_tokens": 236,
+    "matched_tokens": 236,
+    "elapsed_seconds": 0.12989674998971168,
+    "error": null,
+    "missing_top": [],
+    "extra_top": []
+  },
+  {
+    "stem": "Exploring_Cost_Coverage_5G_Britain.pdf",
+    "status": "ok",
+    "cct": 1.0,
+    "percent_tokens_found": 1.0,
+    "percent_tokens_added": 0.0,
+    "precision": 1.0,
+    "gt_tokens": 247,
+    "predicted_tokens": 247,
+    "matched_tokens": 247,
+    "elapsed_seconds": 0.1329168749944074,
+    "error": null,
+    "missing_top": [],
+    "extra_top": []
+  },
+  {
+    "stem": "F2021_214_Lauretta_p6-6.pdf",
+    "status": "ok",
+    "cct": 1.0,
+    "percent_tokens_found": 1.0,
+    "percent_tokens_added": 0.0,
+    "precision": 1.0,
+    "gt_tokens": 500,
+    "predicted_tokens": 500,
+    "matched_tokens": 500,
+    "elapsed_seconds": 0.49625708399980795,
+    "error": null,
+    "missing_top": [],
+    "extra_top": []
+  },
+  {
+    "stem": "IPOL_STU2020658279_ENp40-41-p002.pdf",
+    "status": "ok",
+    "cct": 1.0,
+    "percent_tokens_found": 1.0,
+    "percent_tokens_added": 0.0,
+    "precision": 1.0,
+    "gt_tokens": 445,
+    "predicted_tokens": 445,
+    "matched_tokens": 445,
+    "elapsed_seconds": 0.2561733339971397,
+    "error": null,
+    "missing_top": [],
+    "extra_top": []
+  },
+  {
+    "stem": "Mission-costs_p27-35-p006.pdf",
+    "status": "ok",
+    "cct": 1.0,
+    "percent_tokens_found": 1.0,
+    "percent_tokens_added": 0.0,
+    "precision": 1.0,
+    "gt_tokens": 108,
+    "predicted_tokens": 108,
+    "matched_tokens": 108,
+    "elapsed_seconds": 0.11380608299805317,
+    "error": null,
+    "missing_top": [],
+    "extra_top": []
+  },
+  {
+    "stem": "PB150529_Climate-Change-Food-p001.pdf",
+    "status": "ok",
+    "cct": 1.0,
+    "percent_tokens_found": 1.0,
+    "percent_tokens_added": 0.0,
+    "precision": 1.0,
+    "gt_tokens": 423,
+    "predicted_tokens": 423,
+    "matched_tokens": 423,
+    "elapsed_seconds": 0.36735687499458436,
+    "error": null,
+    "missing_top": [],
+    "extra_top": []
+  },
+  {
+    "stem": "ResumeGuideFinal_p13-15-p002.pdf",
+    "status": "ok",
+    "cct": 1.0,
+    "percent_tokens_found": 1.0,
+    "percent_tokens_added": 0.0,
+    "precision": 1.0,
+    "gt_tokens": 247,
+    "predicted_tokens": 247,
+    "matched_tokens": 247,
+    "elapsed_seconds": 0.10926020800252445,
+    "error": null,
+    "missing_top": [],
+    "extra_top": []
+  },
+  {
+    "stem": "Williamson_SpringCooking-p001.pdf",
+    "status": "ok",
+    "cct": 1.0,
+    "percent_tokens_found": 1.0,
+    "percent_tokens_added": 0.0,
+    "precision": 1.0,
+    "gt_tokens": 61,
+    "predicted_tokens": 61,
+    "matched_tokens": 61,
+    "elapsed_seconds": 0.023007958006928675,
+    "error": null,
+    "missing_top": [],
+    "extra_top": []
+  },
+  {
+    "stem": "Williamson_SpringCooking-p002.pdf",
+    "status": "ok",
+    "cct": 1.0,
+    "percent_tokens_found": 1.0,
+    "percent_tokens_added": 0.0,
+    "precision": 1.0,
+    "gt_tokens": 88,
+    "predicted_tokens": 88,
+    "matched_tokens": 88,
+    "elapsed_seconds": 0.036655166986747645,
+    "error": null,
+    "missing_top": [],
+    "extra_top": []
+  },
+  {
+    "stem": "bns_roadmap_10212019_p48-48.pdf",
+    "status": "ok",
+    "cct": 1.0,
+    "percent_tokens_found": 1.0,
+    "percent_tokens_added": 0.0,
+    "precision": 1.0,
+    "gt_tokens": 199,
+    "predicted_tokens": 199,
+    "matched_tokens": 199,
+    "elapsed_seconds": 0.2717863750003744,
+    "error": null,
+    "missing_top": [],
+    "extra_top": []
+  },
+  {
+    "stem": "chp_manuscripts_grants_2020.pdf",
+    "status": "ok",
+    "cct": 1.0,
+    "percent_tokens_found": 1.0,
+    "percent_tokens_added": 0.0,
+    "precision": 1.0,
+    "gt_tokens": 83,
+    "predicted_tokens": 83,
+    "matched_tokens": 83,
+    "elapsed_seconds": 0.13798512499488425,
+    "error": null,
+    "missing_top": [],
+    "extra_top": []
+  },
+  {
+    "stem": "gs4dhdStrategicObjectives-p008.pdf",
+    "status": "ok",
+    "cct": 1.0,
+    "percent_tokens_found": 1.0,
+    "percent_tokens_added": 0.0,
+    "precision": 1.0,
+    "gt_tokens": 400,
+    "predicted_tokens": 400,
+    "matched_tokens": 400,
+    "elapsed_seconds": 0.5666660830029286,
+    "error": null,
+    "missing_top": [],
+    "extra_top": []
+  },
+  {
+    "stem": "gs4dhdStrategicObjectives-p009.pdf",
+    "status": "ok",
+    "cct": 1.0,
+    "percent_tokens_found": 1.0,
+    "percent_tokens_added": 0.0,
+    "precision": 1.0,
+    "gt_tokens": 168,
+    "predicted_tokens": 168,
+    "matched_tokens": 168,
+    "elapsed_seconds": 0.31146304099820554,
+    "error": null,
+    "missing_top": [],
+    "extra_top": []
+  },
+  {
+    "stem": "pdac-framework_p23-29-p003.pdf",
+    "status": "ok",
+    "cct": 1.0,
+    "percent_tokens_found": 1.0,
+    "percent_tokens_added": 0.0,
+    "precision": 1.0,
+    "gt_tokens": 225,
+    "predicted_tokens": 225,
+    "matched_tokens": 225,
+    "elapsed_seconds": 0.10080608300631866,
+    "error": null,
+    "missing_top": [],
+    "extra_top": []
+  },
+  {
+    "stem": "power-phrases_p3-4-p001.pdf",
+    "status": "ok",
+    "cct": 1.0,
+    "percent_tokens_found": 1.0,
+    "percent_tokens_added": 0.0,
+    "precision": 1.0,
+    "gt_tokens": 479,
+    "predicted_tokens": 479,
+    "matched_tokens": 479,
+    "elapsed_seconds": 0.5908008749975124,
+    "error": null,
+    "missing_top": [],
+    "extra_top": []
+  },
+  {
+    "stem": "qingli-dai-cv_p7-8-p002.pdf",
+    "status": "ok",
+    "cct": 1.0,
+    "percent_tokens_found": 1.0,
+    "percent_tokens_added": 0.0,
+    "precision": 1.0,
+    "gt_tokens": 944,
+    "predicted_tokens": 944,
+    "matched_tokens": 944,
+    "elapsed_seconds": 1.4098670829989715,
+    "error": null,
+    "missing_top": [],
+    "extra_top": []
+  },
+  {
+    "stem": "wipo-2022-financial-report-p24-p30-p005.pdf",
+    "status": "ok",
+    "cct": 1.0,
+    "percent_tokens_found": 1.0,
+    "percent_tokens_added": 0.0,
+    "precision": 1.0,
+    "gt_tokens": 265,
+    "predicted_tokens": 265,
+    "matched_tokens": 265,
+    "elapsed_seconds": 0.10345733299618587,
+    "error": null,
+    "missing_top": [],
+    "extra_top": []
+  }
+]

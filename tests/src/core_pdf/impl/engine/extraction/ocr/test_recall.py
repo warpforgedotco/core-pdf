@@ -7,11 +7,13 @@ import pytest
 
 from core_pdf.impl.engine.extraction.common import page_geometry
 from core_pdf.impl.engine.extraction.common.observation_resolver import ResolvedTextLine
-from core_pdf.impl.engine.extraction.ocr import postprocess
+from core_pdf.impl.engine.extraction.ocr import postprocess, selection
 from core_pdf.impl.engine.extraction.ocr.candidates import OcrCandidate, OcrPageTextResult
 from core_pdf.impl.engine.extraction.ocr.types import OcrImage, OcrTextResult
 from core_pdf.impl.engine.extraction.page_text import mixin
 from core_pdf.impl.engine.extraction.page_text.policy import (
+    fragmented_invisible_text_layer_should_yield_to_ocr,
+    should_replace_dominant_image_native_text_with_ocr,
     sparse_drawing_schematic_should_yield_to_ocr,
 )
 
@@ -31,6 +33,35 @@ def test_sparse_vector_page_triggers_full_page_ocr(
     )
 
     assert postprocess.should_ocr_fallback(cast(Any, object()), "A B C")
+
+
+def test_fully_covered_table_fusion_lines_are_pruned() -> None:
+    geometry = tuple(
+        ResolvedTextLine(
+            f"G{index}",
+            page_geometry.page_observation_from_bbox(
+                (float(index), 10.0, float(index + 1), 20.0),
+                source="figure_ocr_regions",
+                kind="ocr_textline",
+                text=f"G{index}",
+                confidence=90,
+            ),
+        )
+        for index in range(30)
+    )
+    fusion = ResolvedTextLine(
+        "G0 G1 G2 G3 G4 G5 G6 G7 G8 G9",
+        page_geometry.PageObservation(
+            kind="ocr_textline",
+            source="table_fusion_text",
+            bbox=None,
+            advance_bbox=None,
+            ink_bbox=None,
+            text="G0 G1 G2 G3 G4 G5 G6 G7 G8 G9",
+        ),
+    )
+    assert all(line.observation is not None for line in geometry)
+    assert postprocess.prune_fully_covered_fusion_lines(geometry + (fusion,)) == geometry
 
 
 def test_vector_page_with_substantial_native_title_skips_full_page_ocr(
@@ -92,6 +123,33 @@ def test_sparse_drawing_schematic_yields_to_cleaner_ocr() -> None:
     )
 
 
+def test_fragmented_invisible_layer_yields_to_clean_full_page_ocr() -> None:
+    assert fragmented_invisible_text_layer_should_yield_to_ocr(
+        "broken hidden receipt words " * 30,
+        "hotel receipt date room charge tax total " * 25,
+        92,
+        native_layer_is_fragmented=True,
+    )
+
+
+def test_fragmented_invisible_layer_rejects_low_confidence_ocr() -> None:
+    assert not fragmented_invisible_text_layer_should_yield_to_ocr(
+        "broken hidden receipt words " * 30,
+        "hotel receipt date room charge tax total " * 25,
+        62,
+        native_layer_is_fragmented=True,
+    )
+
+
+def test_clean_ocr_does_not_replace_unfragmented_invisible_layer() -> None:
+    assert not fragmented_invisible_text_layer_should_yield_to_ocr(
+        "native technical table values " * 30,
+        "technical table values volume temperature pressure " * 25,
+        92,
+        native_layer_is_fragmented=False,
+    )
+
+
 def test_image_only_complex_layout_gets_alternate_ocr_candidate(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -146,6 +204,215 @@ def test_non_image_page_does_not_get_alternate_layout_ocr(
         image,
         candidate,
     )
+
+
+def test_dense_dominant_image_gets_high_resolution_sparse_retry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    text = "\n".join(f"row {index} 100 200 300 400 500 600" for index in range(40))
+    result = OcrTextResult(
+        text,
+        68,
+        line_rows=tuple({} for _ in range(40)),
+        word_rows=tuple({} for _ in range(280)),
+    )
+    candidate = OcrCandidate("full_page_simple", result)
+    image = OcrImage(
+        b"\xff" * (1_600 * 1_200),
+        1_600,
+        1_200,
+        1,
+        1_600,
+        source="full_page_rendered_crop",
+        resolution=300,
+    )
+    monkeypatch.setattr(
+        mixin.ocr_page_analysis,
+        "has_dominant_page_image",
+        lambda _page: True,
+    )
+
+    assert mixin.should_try_dense_image_sparse_ocr_candidate(
+        cast(Any, object()),
+        image,
+        candidate,
+    )
+    scaled = mixin.dense_image_sparse_ocr_image(image)
+    assert scaled is not None
+    assert max(scaled.target_width or 0, scaled.target_height or 0) == 8_192
+    assert (scaled.target_width or 0) * (scaled.target_height or 0) <= 55_000_000
+
+
+def test_cleaner_high_resolution_sparse_candidate_wins_dense_near_tie() -> None:
+    primary_text = "\n".join(f"row {index} 100 200 300 400 500 600 extra" for index in range(40))
+    sparse_text = "\n".join(f"row {index} 100 200 300 400 500 600" for index in range(40))
+    primary = OcrCandidate(
+        "full_page_simple",
+        OcrTextResult(primary_text, 70),
+    )
+    sparse = OcrCandidate(
+        "full_page_high_resolution_sparse",
+        OcrTextResult(sparse_text, 82),
+    )
+
+    assert selection.select_ocr_candidate([primary, sparse]) is sparse
+
+
+def test_sparse_native_footer_yields_to_substantial_dominant_image_ocr(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        mixin.ocr_page_analysis,
+        "has_dominant_page_image",
+        lambda _page: True,
+    )
+    native = "Source: https://example.test/document"
+    ocr = "\n".join(f"measurement row {index} value {100 + index}.5 valid" for index in range(35))
+
+    assert should_replace_dominant_image_native_text_with_ocr(
+        cast(Any, object()),
+        native,
+        ocr,
+    )
+
+
+def test_substantial_numeric_page_ocr_wins_over_partial_figure_ocr() -> None:
+    broad_candidate = OcrCandidate(
+        "full_page_simple",
+        OcrTextResult("row 100 200 300 400 500 600 " * 45, 93),
+    )
+    figure_candidate = OcrCandidate(
+        "figure_ocr_regions",
+        OcrTextResult("row 100 200 300 400 " * 30, 94),
+    )
+
+    assert mixin.broad_page_ocr_should_win_over_figure_ocr(
+        OcrPageTextResult(broad_candidate.result.text, broad_candidate),
+        OcrPageTextResult(figure_candidate.result.text, figure_candidate),
+    )
+
+
+def test_substantial_prose_page_ocr_wins_over_partial_figure_ocr() -> None:
+    broad_candidate = OcrCandidate(
+        "full_page_simple",
+        OcrTextResult("message body contains complete context " * 60, 85),
+    )
+    figure_candidate = OcrCandidate(
+        "figure_ocr_regions",
+        OcrTextResult("message body contains complete context " * 52, 90),
+    )
+
+    assert mixin.broad_page_ocr_should_win_over_figure_ocr(
+        OcrPageTextResult(broad_candidate.result.text, broad_candidate),
+        OcrPageTextResult(figure_candidate.result.text, figure_candidate),
+    )
+
+
+def test_dense_sparse_layout_render_cannot_drop_repeated_table_cells() -> None:
+    candidate_text = " ".join(["N"] * 120 + ["0"] * 120 + ["200"] * 120)
+    rendered_text = " ".join(["N"] * 80 + ["0"] * 80 + ["200"] * 80)
+    candidate = OcrCandidate(
+        "full_page_high_resolution_sparse",
+        OcrTextResult(candidate_text, 82),
+    )
+
+    assert mixin.dense_sparse_layout_render_drops_material_text(
+        candidate,
+        candidate_text,
+        rendered_text,
+    )
+
+
+def test_clean_full_page_ocr_can_preserve_substantial_raw_text(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    candidate = OcrCandidate(
+        "full_page_simple",
+        OcrTextResult("clean page text " * 120, 90),
+    )
+    monkeypatch.setattr(mixin, "text_ocr_quality_score", lambda _text: 0.08)
+    monkeypatch.setattr(
+        mixin.ocr_text_analysis,
+        "scanned_ocr_artifact_score",
+        lambda _text: 0.02,
+    )
+
+    assert mixin.clean_full_page_ocr_should_preserve_raw_text(
+        candidate,
+        candidate.result.text,
+    )
+
+
+def test_dense_sparse_loss_marks_raw_text_as_authoritative(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    text = " ".join(["N"] * 120 + ["0"] * 120 + ["200"] * 120)
+    candidate = OcrCandidate(
+        "full_page_high_resolution_sparse",
+        OcrTextResult(text, 82),
+    )
+    monkeypatch.setattr(mixin.ocr_postprocess, "ocr_is_enabled", lambda: True)
+    monkeypatch.setattr(mixin.ocr_rendering, "ocr_timeout_seconds", lambda: None)
+    monkeypatch.setattr(
+        mixin,
+        "collect_ocr_candidates",
+        lambda *_args, **_kwargs: [candidate],
+    )
+    monkeypatch.setattr(
+        mixin,
+        "repair_ocr_output_lines_with_alternate_candidates",
+        lambda *_args, **_kwargs: (),
+    )
+
+    result = mixin.extract_ocr_page_result(cast(Any, object()))
+
+    assert result.preserve_raw_text
+    assert result.text == text
+    assert not result.output_lines
+
+
+def test_dense_table_rows_restore_missing_repeated_categories() -> None:
+    selected = OcrCandidate(
+        "full_page_high_resolution_sparse",
+        OcrTextResult("Monthly max 140.6 151.8", 82),
+    )
+    rows = OcrCandidate(
+        "dense_table_rows",
+        OcrTextResult("Max Off Off Off Off Off Off 140.6 151.8", 74),
+    )
+
+    supplemented = mixin.dense_table_categorical_token_supplement(
+        selected.result.text,
+        selected,
+        (selected, rows),
+    )
+
+    assert supplemented.splitlines()[-1] == "Off Off Off Off Off Off"
+
+
+def test_dense_table_row_rectangles_ignore_header_and_keep_wide_lower_row() -> None:
+    image = OcrImage(b"", 1_000, 1_000, 0, 0)
+    header: dict[str, object] = {
+        "text": "Reporting of monitored emissions for June 2024 with descriptive title",
+        "left": 20,
+        "top": 100,
+        "width": 900,
+        "height": 30,
+    }
+    table_row: dict[str, object] = {
+        "text": "Max Off Off Off Off 140.6 151.8 148.6 146.7 151.4 155.7 153.7",
+        "left": 100,
+        "top": 600,
+        "width": 800,
+        "height": 24,
+    }
+
+    rectangles = mixin.dense_image_table_row_rectangles(
+        image,
+        OcrTextResult("", 70, line_rows=(header, table_row)),
+    )
+
+    assert rectangles == [(88, 596, 912, 628)]
 
 
 def test_image_only_layout_supplements_high_confidence_top_line() -> None:

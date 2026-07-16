@@ -30,6 +30,7 @@ class OcrPageTextResult:
     output_lines: tuple[Any, ...] = ()
     selected_output_lines: tuple[Any, ...] = ()
     verification_candidates: tuple[OcrCandidate, ...] = ()
+    preserve_raw_text: bool = False
 
 
 def full_page_ocr_candidate_name(image: OcrImage, index: int) -> str:

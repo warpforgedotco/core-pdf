@@ -195,12 +195,17 @@ def render_single_run_text(run: TextRun) -> str:
 def reconstruct_rotated_table_line(sorted_runs: list[TextRun]) -> LayoutLineText:
     parts: list[str] = []
     segments: list[LayoutLineTextSegment] = []
+    previous_run: TextRun | None = None
+    geometric_cell_spacing = (
+        sum(len(run.stripped_text) >= 2 for run in sorted_runs if run.has_text) >= 6
+    )
     for run in sorted_runs:
         text = run.text
         if text.isspace():
             if parts and parts[-1] != " ":
                 parts.append(" ")
                 segments.append(line_text_segment(run, " ", " ", "rotated_explicit_space"))
+            previous_run = run
             continue
         if not run.has_text:
             continue
@@ -211,13 +216,32 @@ def reconstruct_rotated_table_line(sorted_runs: list[TextRun]) -> LayoutLineText
         text = text.strip()
         if text:
             separator = ""
-            spacing_decision = "rotated_join" if parts else "line_start"
+            spacing_decision = "line_start"
+            if parts:
+                spacing_decision = "rotated_join"
+                if (
+                    parts[-1] != " "
+                    and geometric_cell_spacing
+                    and previous_run is not None
+                    and rotated_table_run_gap(previous_run, run)
+                    > max(1.0, min(previous_run.font_size, run.font_size) * 0.40)
+                ):
+                    parts.append(" ")
+                    separator = " "
+                    spacing_decision = "rotated_geometric_space"
             parts.append(text)
             segments.append(line_text_segment(run, text, separator, spacing_decision))
+            previous_run = run
     combined = split_glued_numeric_label_boundaries("".join(parts))
     if not combined:
         return EMPTY_LAYOUT_LINE_TEXT
     return LayoutLineText(combined, tuple(segments))
+
+
+def rotated_table_run_gap(previous: TextRun, current: TextRun) -> float:
+    if current.rotation_angle == 270:
+        return previous.y0 - current.y1
+    return current.y0 - previous.y1
 
 
 def render_rotated_table_line(sorted_runs: list[TextRun]) -> str:

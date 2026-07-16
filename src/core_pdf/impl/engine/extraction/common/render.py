@@ -24,6 +24,15 @@ from core_pdf.impl.engine.layout.text_lines import strip_private_use_chars
 from core_pdf.impl.engine.layout.word_frequencies import word_rank
 
 
+def text_boxes_in_reading_order(boxes: list[LayoutBox], angle: int) -> list[LayoutBox]:
+    """Order rotated text rows along their cross-line page axis."""
+    if angle == 90:
+        return sorted(boxes, key=lambda box: (box.x0, -box.y1))
+    if angle == 270:
+        return sorted(boxes, key=lambda box: (-box.x1, -box.y1))
+    return boxes
+
+
 class LayoutReconstructor:
     __slots__ = ("media_box",)
 
@@ -78,7 +87,7 @@ class LayoutReconstructor:
 
         ordered_boxes = []
         for angle in sorted(boxes_by_angle):
-            ordered_boxes.extend(boxes_by_angle[angle])
+            ordered_boxes.extend(text_boxes_in_reading_order(boxes_by_angle[angle], angle))
 
         output_lines: list[observation_resolver.ResolvedTextLine] = []
         for box in ordered_boxes:

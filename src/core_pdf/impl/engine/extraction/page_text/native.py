@@ -332,7 +332,33 @@ def native_text_runs_for_extraction(runs: list[TextRun]) -> list[TextRun]:
     return painted
 
 
-def native_invisible_text_layer_is_trustworthy(runs: list[TextRun], text: str) -> bool:
+def native_invisible_text_layer_has_fragmented_geometry(
+    runs: list[TextRun],
+    text: str,
+    geometry: LayoutGeometrySummary,
+) -> bool:
+    """Detect character-fragmented hidden OCR layers that merit fresh OCR."""
+    if not runs or geometry.text_run_count < 500:
+        return False
+    invisible_run_count = sum(text_run_uses_invisible_render_mode(run) for run in runs)
+    if invisible_run_count / len(runs) < 0.95:
+        return False
+    text_tokens = extracted_text_token_count(text)
+    if text_tokens < 40 or text_tokens / invisible_run_count > 0.30:
+        return False
+    single_character_runs = sum(
+        len(run.text.strip()) <= 1
+        for run in runs
+        if text_run_uses_invisible_render_mode(run)
+    )
+    return single_character_runs / invisible_run_count >= 0.95
+
+
+def native_invisible_text_layer_is_trustworthy(
+    runs: list[TextRun],
+    text: str,
+    geometry: LayoutGeometrySummary | None = None,
+) -> bool:
     """Return whether a substantive invisible text layer should outrank fresh OCR."""
     if not runs or not text.strip():
         return False
@@ -348,6 +374,12 @@ def native_invisible_text_layer_is_trustworthy(runs: list[TextRun], text: str) -
         return False
     invisible_run_count = sum(text_run_uses_invisible_render_mode(run) for run in runs)
     if invisible_token_count / invisible_run_count > 4.0:
+        return False
+    if geometry is not None and native_invisible_text_layer_has_fragmented_geometry(
+        runs,
+        text,
+        geometry,
+    ):
         return False
     if ocr_text_analysis.text_ocr_quality_score(text) > 0.20:
         return False
@@ -641,6 +673,7 @@ def orphan_punctuation_run_ratio(runs: list[Any]) -> float:
 
 __all__ = (
     "apply_rendered_glyph_repair_to_native_text",
+    "native_invisible_text_layer_has_fragmented_geometry",
     "native_invisible_text_layer_is_trustworthy",
     "native_text_runs_for_extraction",
     "native_text_runs_inside_page_bounds",

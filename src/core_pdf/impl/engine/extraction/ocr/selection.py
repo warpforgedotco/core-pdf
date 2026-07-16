@@ -65,11 +65,12 @@ def select_ocr_candidate(
         if not candidate.result.text or candidate.name.startswith("verification_"):
             continue
         candidate_score = ocr_candidate_score(candidate, support_text=support_text)
-        if best is None:
+        if best is None or prefer_high_resolution_sparse_dense_candidate(candidate, best):
             best = candidate
             best_score = candidate_score
         elif (
-            prefer_more_complete_short_rendered_candidate(
+            prefer_high_resolution_sparse_dense_candidate(best, candidate)
+            or prefer_more_complete_short_rendered_candidate(
                 best,
                 candidate,
                 candidate_score=best_score,
@@ -132,6 +133,37 @@ def select_ocr_candidate(
             best = candidate
             best_score = candidate_score
     return best
+
+
+def prefer_high_resolution_sparse_dense_candidate(
+    candidate: OcrCandidate,
+    best: OcrCandidate,
+) -> bool:
+    if candidate.name != "full_page_high_resolution_sparse":
+        return False
+    if best.name != "full_page_simple":
+        return False
+    candidate_text = candidate.result.text
+    best_text = best.result.text
+    candidate_tokens = ocr_text_analysis.extracted_text_token_count(candidate_text)
+    best_tokens = ocr_text_analysis.extracted_text_token_count(best_text)
+    if candidate_tokens < max(250, int(best_tokens * 0.88)):
+        return False
+    candidate_confidence = candidate.result.confidence or 0
+    best_confidence = best.result.confidence or 0
+    if candidate_confidence < best_confidence + 8:
+        return False
+    candidate_quality = ocr_text_analysis.text_ocr_quality_score(candidate_text)
+    best_quality = ocr_text_analysis.text_ocr_quality_score(best_text)
+    if candidate_quality > best_quality + 0.04:
+        return False
+    candidate_artifact = ocr_text_analysis.scanned_ocr_artifact_score(candidate_text)
+    best_artifact = ocr_text_analysis.scanned_ocr_artifact_score(best_text)
+    if candidate_artifact > best_artifact + 0.03:
+        return False
+    if ocr_text_analysis.numeric_token_ratio(candidate_text) < 0.22:
+        return False
+    return ocr_text_analysis.text_has_many_digit_lines(candidate_text)
 
 
 def prefer_more_complete_page_candidate(

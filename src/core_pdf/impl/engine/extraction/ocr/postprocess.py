@@ -308,6 +308,32 @@ def prune_shadowed_selected_output_lines(
     return tuple(kept) if changed else lines
 
 
+def prune_fully_covered_fusion_lines(
+    lines: tuple[observation_resolver.ResolvedTextLine, ...],
+) -> tuple[observation_resolver.ResolvedTextLine, ...]:
+    geometry_tokens = {
+        token
+        for line in lines
+        if line.observation.bbox is not None
+        for token in ocr_text_analysis.normalized_text_tokens(line.text)
+    }
+    if len(geometry_tokens) < 30:
+        return lines
+    changed = False
+    kept: list[observation_resolver.ResolvedTextLine] = []
+    for line in lines:
+        tokens = set(ocr_text_analysis.normalized_text_tokens(line.text))
+        if (
+            line.observation.source == "table_fusion_text"
+            and len(tokens) >= 5
+            and tokens <= geometry_tokens
+        ):
+            changed = True
+            continue
+        kept.append(line)
+    return tuple(kept) if changed else lines
+
+
 def prune_shadowed_band_split_suffix_output_lines(
     lines: tuple[observation_resolver.ResolvedTextLine, ...],
 ) -> tuple[observation_resolver.ResolvedTextLine, ...]:

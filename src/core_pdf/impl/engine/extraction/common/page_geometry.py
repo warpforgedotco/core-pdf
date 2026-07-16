@@ -1190,7 +1190,7 @@ def page_observation_from_glyph_observation(
         bbox=bbox,
         advance_bbox=advance_bbox,
         ink_bbox=ink_bbox,
-        confidence=getattr(glyph, "confidence", 1.0 if visible is not False else 0.35),
+        confidence=getattr(glyph, "confidence", None),
         text=str(getattr(glyph, "text", "")),
         provenance=provenance_tuple(
             visible=visible,

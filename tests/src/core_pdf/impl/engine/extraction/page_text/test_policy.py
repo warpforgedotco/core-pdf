@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -40,3 +41,45 @@ def test_classify_page_region_checks_dominant_image_by_default(
 
     assert calls == 1
     assert classification.signals["dominant_image"] is True
+
+
+def test_substantial_clean_native_table_outweighs_partial_ocr() -> None:
+    page = SimpleNamespace(
+        get_page_profile=lambda: SimpleNamespace(recommended_strategy="text_table")
+    )
+    native = "parameter volume temperature pressure value " * 70
+    partial_ocr = "parameter volume temperature " * 50
+
+    assert policy.should_preserve_substantial_text_table_native_text(
+        page,
+        native,
+        partial_ocr,
+    )
+
+
+def test_noisy_native_table_can_yield_to_partial_ocr() -> None:
+    page = SimpleNamespace(
+        get_page_profile=lambda: SimpleNamespace(recommended_strategy="text_table")
+    )
+    native = "T @ B L E P ? R A M E T E R S } { " * 70
+    partial_ocr = "table parameters volume temperature " * 50
+
+    assert not policy.should_preserve_substantial_text_table_native_text(
+        page,
+        native,
+        partial_ocr,
+    )
+
+
+def test_native_table_can_yield_to_materially_more_complete_ocr() -> None:
+    page = SimpleNamespace(
+        get_page_profile=lambda: SimpleNamespace(recommended_strategy="text_table")
+    )
+    native = "parameter volume temperature pressure value " * 60
+    complete_ocr = "parameter volume temperature pressure value measurement " * 90
+
+    assert not policy.should_preserve_substantial_text_table_native_text(
+        page,
+        native,
+        complete_ocr,
+    )
