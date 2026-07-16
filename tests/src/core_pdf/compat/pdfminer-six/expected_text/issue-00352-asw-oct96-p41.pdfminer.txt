@@ -24,8 +24,8 @@ destroyed
 
 6 fatal
 
-The aircraft was on a charter flight from Orlando, Florida, to Dallas. Radio communication was lost soon after the flight crew reported 
-climbing through FL 230 and was cleared to FL 390. The aircraft continued flying on a northwesterly heading for 3.7 hours and reached an 
+The aircraft was on a charter flight from Orlando, Florida, to Dallas. Radio communication was lost soon after the flight crew reported
+climbing through FL 230 and was cleared to FL 390. The aircraft continued flying on a northwesterly heading for 3.7 hours and reached an
 altitude of 40,600 ft. The aircraft began descending after the left engine flamed out.
 
 June 13, 2000
@@ -50,7 +50,7 @@ substantial
 
 1 fatal, 88 none
 
-The aircraft was en route from Recife to São Paulo when an uncontained engine failure occurred. Debris penetrated the cabin, killing one 
+The aircraft was en route from Recife to São Paulo when an uncontained engine failure occurred. Debris penetrated the cabin, killing one
 passenger. The flight crew conducted an emergency landing at Belo Horizonte.
 
 Feb. 17, 2002
@@ -63,7 +63,7 @@ NA
 
 NA
 
-The flight crew conducted an emergency landing following a cabin depressurization. A small crack was found in the fuselage aft of the 
+The flight crew conducted an emergency landing following a cabin depressurization. A small crack was found in the fuselage aft of the
 forward left door.
 
 Aug. 23, 2003
@@ -76,7 +76,7 @@ minor
 
 16 none
 
-The aircraft was climbing through 8,000 ft when the cabin door opened. The flight crew returned to Denver. The report said that the first 
+The aircraft was climbing through 8,000 ft when the cabin door opened. The flight crew returned to Denver. The report said that the first
 officer had failed to ensure that the cabin door was secure before takeoff.
 
 Dec. 5, 2004
@@ -89,7 +89,7 @@ minor
 
 3 none
 
-After a rapid depressurization occurred during cruise at FL 300, the flight crew returned to Anchorage. A 12-in (30-cm) tear was found along 
+After a rapid depressurization occurred during cruise at FL 300, the flight crew returned to Anchorage. A 12-in (30-cm) tear was found along
 a line of rivets between the nosewheel well and the electronics service bay.
 
 May 13, 2005
@@ -102,7 +102,7 @@ substantial
 
 98 none
 
-A broken nose landing gear actuator rod penetrated the forward pressure bulkhead during initial climb. After confirming with tower 
+A broken nose landing gear actuator rod penetrated the forward pressure bulkhead during initial climb. After confirming with tower
 controllers that the landing gear appeared to be down and locked, the flight crew landed without further incident.
 
 Aug. 14, 2005
@@ -115,9 +115,9 @@ destroyed
 
 121 fatal
 
-The cabin altitude warning horn sounded as the aircraft was climbing through 12,000 ft during a flight from Larnaka, Cyprus, to Athens. A 
-preliminary report said that the captain was in radio communication with airline maintenance personnel until the aircraft passed through 
-28,900 ft. The aircraft, apparently being flown on autopilot, entered a holding pattern near Athens at FL 340. Both engines flamed out more 
+The cabin altitude warning horn sounded as the aircraft was climbing through 12,000 ft during a flight from Larnaka, Cyprus, to Athens. A
+preliminary report said that the captain was in radio communication with airline maintenance personnel until the aircraft passed through
+28,900 ft. The aircraft, apparently being flown on autopilot, entered a holding pattern near Athens at FL 340. Both engines flamed out more
 than an hour later, and the aircraft descended to the ground.
 
 Aug. 24, 2005
@@ -130,7 +130,7 @@ minor
 
 256 none
 
-The flight crew was not aware that a tail strike had occurred, causing substantial damage on takeoff from Shanghai. Indications of a cabin 
+The flight crew was not aware that a tail strike had occurred, causing substantial damage on takeoff from Shanghai. Indications of a cabin
 pressurization problem appeared as the aircraft climbed through 9,900 ft. The crew returned to Shanghai.
 
 Nov. 9, 2005
@@ -143,8 +143,8 @@ none
 
 none
 
-About 11 minutes after the aircraft reached FL 400, the captain felt a stomach upset and ear discomfort, and noticed that cabin pressure 
-altitude was climbing at 4,000 fpm. The cabin altitude warning horn sounded about 44 seconds after the crew began an emergency descent 
+About 11 minutes after the aircraft reached FL 400, the captain felt a stomach upset and ear discomfort, and noticed that cabin pressure
+altitude was climbing at 4,000 fpm. The cabin altitude warning horn sounded about 44 seconds after the crew began an emergency descent
 to 10,000 ft. The aircraft was landed at the destination, Melbourne. Both positive pressure relief valves had failed.
 
 Dec. 26, 2005
@@ -157,9 +157,9 @@ substantial
 
 142 none
 
-The aircraft was climbing through 24,000 ft when the flight crew heard a loud bang and the cabin rapidly depressurized. The crew returned 
-to Seattle and landed without further incident. A six- by 12-in (15- by 30-cm) hole was found in the right fuselage, between the middle and 
-forward cargo doors. A ground service worker said that he had grazed the aircraft with a tug; he had not reported the incident before the 
+The aircraft was climbing through 24,000 ft when the flight crew heard a loud bang and the cabin rapidly depressurized. The crew returned
+to Seattle and landed without further incident. A six- by 12-in (15- by 30-cm) hole was found in the right fuselage, between the middle and
+forward cargo doors. A ground service worker said that he had grazed the aircraft with a tug; he had not reported the incident before the
 aircraft departed.
 
 NA = not available
@@ -170,4 +170,4 @@ www.flightsafety.org  |  AviAtionSAfetyworld  |  october 2006
 
 | 41
 
-
+

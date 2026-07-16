@@ -86,12 +86,8 @@ def test_extracts_horizontal_and_vertical_japanese_without_to_unicode() -> None:
     assert risen_vertical["is_vertical"] is True
     assert cast(float, vertical["x1"]) > cast(float, vertical["x0"])
     assert cast(float, vertical["y1"]) > cast(float, vertical["y0"])
-    assert cast(float, risen_vertical["x0"]) == pytest.approx(
-        cast(float, vertical["x0"])
-    )
-    assert cast(float, risen_vertical["x1"]) == pytest.approx(
-        cast(float, vertical["x1"])
-    )
+    assert cast(float, risen_vertical["x0"]) == pytest.approx(cast(float, vertical["x0"]))
+    assert cast(float, risen_vertical["x1"]) == pytest.approx(cast(float, vertical["x1"]))
     assert vertical["geometry_issues"] == []
     assert risen_vertical["geometry_issues"] == []
     assert geometry["error_count"] == 0

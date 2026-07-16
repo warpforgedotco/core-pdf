@@ -33,7 +33,7 @@ Date Name
 Drawn 29.03.2021 Lucas Giering
 Checked
 A Standard A
-Arretierungshilfe 1 
+Arretierungshilfe 1
 A2
 State Changes Date Name
 8 7 6 5 4 3 2 1
@@ -45,4 +45,4 @@ State Changes Date Name
 8,00
 Ø10H9Ø10H9
 50,00
-35,00
+35,00

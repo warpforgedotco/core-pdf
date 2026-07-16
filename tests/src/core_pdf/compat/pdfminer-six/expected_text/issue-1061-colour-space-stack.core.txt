@@ -947,4 +947,4 @@ Springer, 2006, pp. 486–503. of UOC. His current research interests include
 [25] A. Machanavajjhala, D. Kifer, J. Abowd, J. Gehrke, and L. Vil- security and privacy in multimedia content
 huber, “Privacy: theory meets practice on the map,” in Pro- distribution, steganography, steganalysis and
 ceedings of the 24th IEEE International Conference on Data information security and privacy.
-Engineering (ICDE 2008), 2008, pp. 277–286.
+Engineering (ICDE 2008), 2008, pp. 277–286.

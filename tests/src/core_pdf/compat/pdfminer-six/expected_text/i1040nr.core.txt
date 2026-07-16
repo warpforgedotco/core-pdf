@@ -1478,7 +1478,7 @@ include this exempt income on line 23.
 Coverdell education savings account must be at least 50 miles from your old
 Also, you must complete item M on
 (ESA) or a qualified tuition program home. The deduction is generally
-page 5 of Form 1040NR. 
+page 5 of Form 1040NR.
 (QTP). Distributions from these limited to moves to or within the United
 accounts may be taxable if (a) they are States or its possessions. If you meet
 more than the qualified higher Adjusted Gross Income these requirements, see Pub. 521. Use
@@ -2720,7 +2720,7 @@ See Pub. 525 for details.
 11. Subtract line 10 from line 9 11. pension.
 12. Total itemized deductions. Subtract line 11 from line 1. • Impairment-related work expenses of
 Enter the result here and on Schedule A, line 17 12. a disabled person.
-For more details, see Pub. 529. 
+For more details, see Pub. 529.
 -28- Instructions for Form 1040NRPage 29 of 48 Instructions for Form 1040NR 7:48 - 6-DEC-2007
 The type and rule above prints on all proofs including departmental reproduction proofs. MUST be removed before printing.
 Total Itemized Deductions copyrights, and other intangible security, you should receive a Form
@@ -2759,7 +2759,7 @@ countries have such treaties and what Property Interests on page 6. should be re
 the rates are. 5. Prizes, awards, and certain 1040NR. For details, see Pub. 519,
 Pub. 515, and section 1441 and its
 gambling winnings. Proceeds from
-The 30% tax applies only to amounts regulations. 
+The 30% tax applies only to amounts regulations.
 lotteries, raffles, etc., are gambling
 included in gross income. For example,
 winnings (see section 871(j) for
@@ -3143,7 +3143,7 @@ taxpayer burden incorporates results fewer errors, implying a lower overall
 from a taxpayer burden survey post-filing burden.
 Estimated Average Taxpayer Burden
 The average time and costs required to complete and file Form 1040NR, its schedules, and accompanying forms will vary depending on
-individual circumstances. The estimated averages are: 
+individual circumstances. The estimated averages are:
 Average Hours per Return Average Dollars per Return
 29.5 $204
 Instructions for Form 1040NR -33-Page 34 of 48 Instructions for Form 1040NR 7:48 - 6-DEC-2007
@@ -4059,7 +4059,7 @@ The type and rule above prints on all proofs including departmental reproduction
 !
 CAUTION
 Section A — Use if you checked filing status box 1 or 2 for Single. Complete the row below that applies to you.
-Taxable income. (a) (b) (c) (d) Tax. 
+Taxable income. (a) (b) (c) (d) Tax.
 If line 40 is: Enter the amount from Multiplication Multiply Subtraction Subtract (d) from (c).
 line 40 amount (a) by (b) amount Enter the result here
 and on
@@ -4298,4 +4298,4 @@ above.
 3. Reduce the amount on your Schedule D (Form 1040), line 18, (but not below zero) by your capital gain excess.
 4. Include your capital gain excess as a loss on line 16 of your Unrecaptured Section 1250 Gain Worksheet on page D-9 of the Instructions for
 Schedule D (Form 1040).
-Page 2 Publication 4655 (January 2008)
+Page 2 Publication 4655 (January 2008)

@@ -20,10 +20,7 @@ def vertical_regions_from_component_boxes(
             (
                 group
                 for group in groups
-                if abs(
-                    center
-                    - sum(item.left + item.width / 2 for item in group) / len(group)
-                )
+                if abs(center - sum(item.left + item.width / 2 for item in group) / len(group))
                 <= max(16, box.width * 2)
             ),
             None,

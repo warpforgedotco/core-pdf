@@ -174,8 +174,10 @@ def decode_stream_data(
         parms = normalized_parms[0] if normalized_parms else None
         try:
             decoder_context = (
-                parent_dictionary if parent_dictionary is not None else dictionary
-            ) if flt == "JPXDecode" else parms
+                (parent_dictionary if parent_dictionary is not None else dictionary)
+                if flt == "JPXDecode"
+                else parms
+            )
             result = fn(data, decoder_context)
             result_type = type(result)
             if result_type is bytearray:
@@ -211,8 +213,10 @@ def decode_stream_data(
             raise PdfUnsupportedError(f"stream filter {flt} is not implemented yet")
         try:
             decoder_context = (
-                parent_dictionary if parent_dictionary is not None else dictionary
-            ) if flt == "JPXDecode" else parms
+                (parent_dictionary if parent_dictionary is not None else dictionary)
+                if flt == "JPXDecode"
+                else parms
+            )
             result = fn(result, decoder_context)
             result_type = type(result)
             if result_type is bytearray:

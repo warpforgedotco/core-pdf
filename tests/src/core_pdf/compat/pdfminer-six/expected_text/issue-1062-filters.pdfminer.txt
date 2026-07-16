@@ -43,7 +43,7 @@ Marc van Pul
 Uw BTW identificatienr.
 NL001901308B01
 
-Pagina 1  / 2    
+Pagina 1  / 2
 
 Datum
 16.02.2017
@@ -94,18 +94,18 @@ Nettoprijs
        534,87
 
 AC wormwiel-motorreductor
-motorreductortype              
-motortype                      
-motorsoort                     
-nominaal vermogen              
-nom. koppel                    
-nom. toerental                 
-nom. spanning                  
-schakeling                     
-nom. stroom                    
-nom. frequentie                
-cos phi                        
-reductieverhouding             
+motorreductortype
+motortype
+motorsoort
+nominaal vermogen
+nom. koppel
+nom. toerental
+nom. spanning
+schakeling
+nom. stroom
+nom. frequentie
+cos phi
+reductieverhouding
 
 SSN40-1UVAR-063C22
 13.751.65.5.2.0
@@ -148,7 +148,7 @@ Af fabriek
 Factuur
 98559514 / 16.02.2017
 
-Pagina 2  / 2    
+Pagina 2  / 2
 
 Aantal
 Eenheid
@@ -177,32 +177,32 @@ eigen koeling
 DE (Duitsland)
 _________________________________________________________________________________________________________________________________
 
-uitgaand toerental             
-uitgaand koppel                
-belastbaarheid                 
-beschermingsklasse             
-temperatuurklasse              
-motorbeveiliging               
-uitgaande as                   
-reductorbouwvorm               
-flens uitgaande zijde          
-inbouwpositie                  
-electr. aansl.                 
-soort smeermiddel              
-kleur                          
-koeling                        
+uitgaand toerental
+uitgaand koppel
+belastbaarheid
+beschermingsklasse
+temperatuurklasse
+motorbeveiliging
+uitgaande as
+reductorbouwvorm
+flens uitgaande zijde
+inbouwpositie
+electr. aansl.
+soort smeermiddel
+kleur
+koeling
 Statistieknummer:
 Land van oorsprong:
 
 Netto goederenwaarde
 
-              534,87 
+              534,87
 
-      19,95 
+      19,95
 Vrachtkosten
-     554,82 
+     554,82
 BTW plichtig bedrag
-     116,51 
+     116,51
 Af te dragen BTW
 _________________________________________________________________________________________________________________________________
 
@@ -210,7 +210,7 @@ ________________________________________________________________________________
 
 Rekeningsbedrag
 
-           671,33 
+           671,33
 
 _________________________________________________________________________________________________________________________________
 
@@ -225,4 +225,4 @@ SWIFT / BIC: DEUTNL2A
 Onbetaalde goederen blijven eigendom van Lenze B.V.
 Dit document is geldig zonder ondertekening.
 
-
+

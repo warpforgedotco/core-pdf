@@ -449,4 +449,4 @@ Article 1:conﬁrm 2:be-conﬁrmed Kiyoshi Sudo, Satoshi Sekine, and Ralph Grish
 2005-11-17 Fed Bernanke and Silja Huttunen. 2000. Unsupervised Discovery
 of Scenario-Level Patterns for Information Extraction.
 Table 7: Nomination table (“Nominee $2(PER) In Proceedings of the 18th International Conference
-must be conﬁrmed by $1(ORG).”) on Computational Linguistics (COLING-00).
+must be conﬁrmed by $1(ORG).”) on Computational Linguistics (COLING-00).

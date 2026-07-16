@@ -7,7 +7,7 @@ President Clinton on October 28, 1998. The legislation implements two 1996 World
 Intellectual Property Organization (WIPO) treaties: the WIPO Copyright Treaty and
 the WIPO Performances and Phonograms Treaty. The DMCA also addresses a
 number of other significant copyright-related issues.
-The DMCA is divided into five titles: 
+The DMCA is divided into five titles:
 ! Title I, the “WIPO Copyright and Performances and Phonograms
 Treaties Implementation Act of 1998,” implements the WIPO
 treaties.
@@ -199,9 +199,9 @@ any of the following acts knowing, or with respect to
 civil remedies having reasonable grounds to know, that
 it will induce, enable, facilitate or conceal an infringe-
 ment of any right covered by this Treaty or the Berne
-Convention: 
+Convention:
 (i) to remove or alter any electronic rights
-management information without authority; 
+management information without authority;
 (ii) to distribute, import for distribution, broad-
 cast or communicate to the public, without authority,
 works or copies of works knowing that electronic rights
@@ -593,7 +593,7 @@ in the event of a court order confirming an arbitration award under the collecti
 bargaining agreement that the producer cannot satisfy within ninety days. There are
 two classes of transfers that are excluded from the scope of this provision. The first
 is transfers limited to public performance rights, and the second is grants of security
-interests, along with any subsequent transfers from the security interest holder. 
+interests, along with any subsequent transfers from the security interest holder.
 The provision also directs the Comptroller General, in consultation with the
 Register of Copyrights, to conduct a study on the conditions in the motion picture
 industry that gave rise to this provision, and the impact of the provision on the
@@ -625,4 +625,4 @@ Copyright Office Summary December 1998 Page 17The Digital Millennium Copyright 
 control measures does not take effect until two years from enactment (October 28,
 2000).
 F
-Copyright Office Summary December 1998 Page 18
+Copyright Office Summary December 1998 Page 18

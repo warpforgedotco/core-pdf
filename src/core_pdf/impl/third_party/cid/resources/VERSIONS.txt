@@ -215,4 +215,3 @@ UniManga-UTF32-H (CMapVersion=1.000)
 UniManga-UTF32-V (CMapVersion=1.000)
 UniManga-UTF8-H (CMapVersion=1.000)
 UniManga-UTF8-V (CMapVersion=1.000)
-

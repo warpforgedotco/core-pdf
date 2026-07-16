@@ -36,4 +36,4 @@ Razem 121,00 27,83 148,83 Razem 148,83 PLN
 sto czterdzieści osiem złotych 83/100
 Imię i nazwisko osoby uprawnionej Imię i nazwisko osoby uprawnionej
 do wystawiania faktury do odbioru faktury
-Wydruk pochodzi z systemu wFirma.pl wersja 21.2
+Wydruk pochodzi z systemu wFirma.pl wersja 21.2

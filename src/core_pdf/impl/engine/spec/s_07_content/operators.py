@@ -344,9 +344,7 @@ class OperatorMixin:
         self.op_Tf_values(font_operand, font_size_operand)
 
     def op_Tf_values(self: Any, font_operand: Any, font_size_operand: Any) -> None:
-        decoder_matches_resources = (
-            self.current_decoder_resources_id == self.resources_id
-        )
+        decoder_matches_resources = self.current_decoder_resources_id == self.resources_id
         if (
             self.current_decoder is not None
             and decoder_matches_resources

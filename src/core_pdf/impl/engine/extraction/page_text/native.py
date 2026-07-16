@@ -295,9 +295,7 @@ def native_text_runs_inside_page_bounds(
             filtered.append(run)
             continue
         vertical_coverage = intersection_height / height if height > 0.0 else 0.0
-        horizontally_anchored = (
-            page_x0 <= run.x0 <= page_x1 or page_x0 <= run.x1 <= page_x1
-        )
+        horizontally_anchored = page_x0 <= run.x0 <= page_x1 or page_x0 <= run.x1 <= page_x1
         if (
             vertical_coverage >= 0.80
             and horizontally_anchored
@@ -347,9 +345,7 @@ def native_invisible_text_layer_has_fragmented_geometry(
     if text_tokens < 40 or text_tokens / invisible_run_count > 0.30:
         return False
     single_character_runs = sum(
-        len(run.text.strip()) <= 1
-        for run in runs
-        if text_run_uses_invisible_render_mode(run)
+        len(run.text.strip()) <= 1 for run in runs if text_run_uses_invisible_render_mode(run)
     )
     return single_character_runs / invisible_run_count >= 0.95
 

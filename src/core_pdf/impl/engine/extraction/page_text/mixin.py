@@ -703,12 +703,10 @@ class PageExtractionMixin(PageContentMixin):
         pre_ocr_native_output_lines = final_output_lines
         schematic_ocr_supplement_candidate: OcrCandidate | None = None
         schematic_ocr_supplement_candidates: tuple[OcrCandidate, ...] = ()
-        fragmented_invisible_text_layer = (
-            native_invisible_text_layer_has_fragmented_geometry(
-                chars,
-                text,
-                native_geometry_summary,
-            )
+        fragmented_invisible_text_layer = native_invisible_text_layer_has_fragmented_geometry(
+            chars,
+            text,
+            native_geometry_summary,
         )
         trusted_invisible_text_layer = native_invisible_text_layer_is_trustworthy(
             chars,
@@ -1042,9 +1040,7 @@ class PageExtractionMixin(PageContentMixin):
                         final_output_lines,
                         ocr_line_reconciliation.OcrLineReconciliationSources(
                             broad_page_result=broad_ocr_result,
-                            figure_result=(
-                                None if replaced_with_figure_ocr else figure_ocr_result
-                            ),
+                            figure_result=(None if replaced_with_figure_ocr else figure_ocr_result),
                             embedded_image_result=embedded_image_text_result,
                             vector_result=vector_result,
                         ),
@@ -2399,9 +2395,7 @@ def broad_page_ocr_should_win_over_figure_ocr(
         ocr_text_analysis.text_has_many_digit_lines(broad_text)
     )
     minimum_broad_tokens = (
-        max(180, int(figure_tokens * 1.25))
-        if broad_is_numeric
-        else max(300, figure_tokens + 40)
+        max(180, int(figure_tokens * 1.25)) if broad_is_numeric else max(300, figure_tokens + 40)
     )
     if broad_tokens < minimum_broad_tokens:
         return False
@@ -8064,13 +8058,17 @@ def extract_ocr_page_result(
                 )
                 selected_output_lines = output_lines
             rendered_output_text = render_resolved_text_lines(output_lines).rstrip()
-            if schematic_layout_render_drops_material_text(
-                page, candidate, fused_text, rendered_output_text
-            ) or dense_sparse_layout_render_drops_material_text(
-                candidate,
-                fused_text,
-                rendered_output_text,
-            ) or clean_full_page_ocr_should_preserve_raw_text(candidate, fused_text):
+            if (
+                schematic_layout_render_drops_material_text(
+                    page, candidate, fused_text, rendered_output_text
+                )
+                or dense_sparse_layout_render_drops_material_text(
+                    candidate,
+                    fused_text,
+                    rendered_output_text,
+                )
+                or clean_full_page_ocr_should_preserve_raw_text(candidate, fused_text)
+            ):
                 text = fused_text
                 output_lines = ()
                 selected_output_lines = ()
@@ -8240,17 +8238,14 @@ def should_try_image_only_layout_ocr_candidate(
         profile = page.get_page_profile()
     except Exception:
         return False
-    if (
-        getattr(profile, "recommended_strategy", None) != "image_or_ocr"
-        or bool(getattr(profile, "has_text_showing_ops", False))
+    if getattr(profile, "recommended_strategy", None) != "image_or_ocr" or bool(
+        getattr(profile, "has_text_showing_ops", False)
     ):
         return False
     result = candidate.result
     tokens = extracted_text_token_count(result.text)
     if not (
-        OCR_IMAGE_ONLY_LAYOUT_RETRY_MIN_TOKENS
-        <= tokens
-        <= OCR_IMAGE_ONLY_LAYOUT_RETRY_MAX_TOKENS
+        OCR_IMAGE_ONLY_LAYOUT_RETRY_MIN_TOKENS <= tokens <= OCR_IMAGE_ONLY_LAYOUT_RETRY_MAX_TOKENS
     ):
         return False
     confidence = result.confidence if result.confidence is not None else 0
@@ -8790,9 +8785,8 @@ def supplement_image_only_layout_top_lines(
         profile = page.get_page_profile()
     except Exception:
         return lines
-    if (
-        getattr(profile, "recommended_strategy", None) != "image_or_ocr"
-        or bool(getattr(profile, "has_text_showing_ops", False))
+    if getattr(profile, "recommended_strategy", None) != "image_or_ocr" or bool(
+        getattr(profile, "has_text_showing_ops", False)
     ):
         return lines
     verification = next(
@@ -8813,9 +8807,7 @@ def supplement_image_only_layout_top_lines(
     if page_height <= 0.0 or page_width <= 0.0:
         return lines
     top_region_y = page_bbox[3] - page_height * OCR_IMAGE_ONLY_LAYOUT_SUPPLEMENT_TOP_RATIO
-    prominent_region_y = (
-        page_bbox[3] - page_height * OCR_IMAGE_ONLY_LAYOUT_PROMINENT_TOP_RATIO
-    )
+    prominent_region_y = page_bbox[3] - page_height * OCR_IMAGE_ONLY_LAYOUT_PROMINENT_TOP_RATIO
     primary_text = broad_page_result.candidate.result.text.casefold()
     output = list(lines)
     additions = 0
@@ -8835,8 +8827,7 @@ def supplement_image_only_layout_top_lines(
         if not standard_token_count and not prominent_token_count:
             continue
         high_confidence = (
-            confidence >= OCR_IMAGE_ONLY_LAYOUT_SUPPLEMENT_MIN_CONFIDENCE
-            and standard_token_count
+            confidence >= OCR_IMAGE_ONLY_LAYOUT_SUPPLEMENT_MIN_CONFIDENCE and standard_token_count
         )
         prominent_consensus = (
             confidence >= OCR_IMAGE_ONLY_LAYOUT_PROMINENT_MIN_CONFIDENCE
@@ -8860,10 +8851,13 @@ def supplement_image_only_layout_top_lines(
             ),
         )
         existing_observations = [line.observation for line in output]
-        if observation_resolver.observation_coverage_ratio(
-            observation,
-            existing_observations,
-        ) >= 0.45:
+        if (
+            observation_resolver.observation_coverage_ratio(
+                observation,
+                existing_observations,
+            )
+            >= 0.45
+        ):
             continue
         resolution = observation_resolver.resolve_observation_append(
             observation,

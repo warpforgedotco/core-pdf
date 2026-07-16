@@ -232,4 +232,4 @@ do odbioru faktury
 
 Wydruk pochodzi z systemu wFirma.pl wersja 21.2
 
-
+

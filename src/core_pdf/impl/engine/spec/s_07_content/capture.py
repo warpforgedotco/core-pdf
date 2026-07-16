@@ -230,9 +230,7 @@ def type3_glyph_names(font: dict[Any, Any], decoder: Any) -> dict[int, str]:
     differences_obj = (
         lookup_dict_key(encoding, "Differences") if isinstance(encoding, dict) else None
     )
-    glyph_names = {
-        code: name for code, name in enumerate(StandardEncoding) if name != ".notdef"
-    }
+    glyph_names = {code: name for code, name in enumerate(StandardEncoding) if name != ".notdef"}
     if decoder.base_encoding == "MacRomanEncoding":
         from core_pdf.impl.third_party._vendor.fontTools.encodings.MacRoman import MacRoman
 

@@ -46,4 +46,4 @@ displayed SPN FMI
 07FBF1.5 523249 5 Crankshaft/camshaft speed sensor non-input (simultaneous)
 00-5B.3 91 3 Accelerator sensor 1 error (voltage high)
 00-5B.4 91 4 Accelerator sensor 1 error (voltage low）
-649283EN-USMG(C-04/2023) 1761
+649283EN-USMG(C-04/2023) 1761

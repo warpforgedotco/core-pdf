@@ -1,4 +1,4 @@
-Printed by 
+Printed by
 Mai 30, 18 13:27Page 1/1zen_of_python.txt
 Beautiful is better than ugly.
 Explicit is better than implicit.
@@ -19,4 +19,4 @@ Although never is often better than *right* now.
 If the implementation is hard to explain, it’s a bad idea.
 If the implementation is easy to explain, it may be a good idea.
 Namespaces are one honking great idea −− let’s do more of those!
-Mittwoch Mai 30, 2018zen_of_python.txt1/1
+Mittwoch Mai 30, 2018zen_of_python.txt1/1
