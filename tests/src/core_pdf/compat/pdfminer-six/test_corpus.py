@@ -11,7 +11,26 @@ from core_pdf.impl.engine.extraction.document import PdfDocument
 TESTS_DIR = Path(__file__).parents[4]
 SAMPLES_DIR = TESTS_DIR / "fixtures" / "pdfminer.six" / "samples"
 GROUND_TRUTH_DIR = TESTS_DIR / "fixtures" / "pdfminer.six_ground_truth"
-PDF_SAMPLES = tuple(sorted(SAMPLES_DIR.rglob("*.pdf")))
+OCR_DISABLED_SAMPLES = {
+    "contrib/issue-00352-asw-oct96-p41.pdf",
+    "contrib/issue-1061-colour-space-stack.pdf",
+    "contrib/pdf-with-jbig2.pdf",
+    "contrib/pr-00530-ml-lines.pdf",
+    "encryption/encrypted_doc_no_id.pdf",
+    "nonfree/175.pdf",
+    "nonfree/dmca.pdf",
+    "nonfree/f1040nr.pdf",
+    "nonfree/i1040nr.pdf",
+    "nonfree/naacl06-shinyama.pdf",
+    "nonfree/nlp2004slides.pdf",
+}
+# These compatibility cases depend on OCR or OCR-specific reconciliation. Keep
+# them disabled while OCR is globally shut off in core-pdf.
+PDF_SAMPLES = tuple(
+    path
+    for path in sorted(SAMPLES_DIR.rglob("*.pdf"))
+    if path.relative_to(SAMPLES_DIR).as_posix() not in OCR_DISABLED_SAMPLES
+)
 
 SAMPLE_PASSWORDS = {
     "encryption/aes-128-m.pdf": "foo",
