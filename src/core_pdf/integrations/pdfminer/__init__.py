@@ -5,4 +5,6 @@ from __future__ import annotations
 
 from core_pdf.impl.integrations.pdfminer.high_level import extract_pages, extract_text
 
-__all__ = ("extract_pages", "extract_text")
+__version__ = "20260107"
+
+__all__ = ("__version__", "extract_pages", "extract_text")

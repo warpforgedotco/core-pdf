@@ -16,6 +16,18 @@ Rect = tuple[float, float, float, float]
 Matrix = tuple[float, float, float, float, float, float]
 
 
+class _LTCompatMeta(type):
+    """Recognize legacy pdfminer layout instances during staged migrations."""
+
+    def __instancecheck__(cls, instance: object) -> bool:
+        if type.__instancecheck__(cls, instance):
+            return True
+        instance_type = type(instance)
+        if not instance_type.__module__.startswith("pdfminer."):
+            return False
+        return any(base.__name__ == cls.__name__ for base in instance_type.__mro__)
+
+
 def _apply_matrix_point(matrix: Matrix, point: tuple[float, float]) -> tuple[float, float]:
     a, b, c, d, e, f = matrix
     x, y = point
@@ -75,7 +87,7 @@ class LAParams:
         )
 
 
-class LTItem:
+class LTItem(metaclass=_LTCompatMeta):
     def analyze(self, laparams: LAParams) -> None:
         del laparams
 

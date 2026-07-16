@@ -84,7 +84,17 @@ def _line_from_core(line: Any, laparams: LAParams) -> LTTextLine:
     else:
         result = LTTextLineHorizontal(laparams.word_margin)
     chars: list[LTChar] = []
-    for run in line.runs:
+    runs = sorted(line.runs, key=lambda item: item.order)
+    text_parts: list[str] = []
+    previous_run: Any = None
+    for run in runs:
+        if previous_run is not None and text_parts:
+            gap = run.x0 - previous_run.x1
+            margin = laparams.word_margin * max(run.space_width, 1.0)
+            if gap > margin and not text_parts[-1].endswith(tuple(" \t\r\n")):
+                text_parts.append(" ")
+        text_parts.append(run.text)
+        previous_run = run
         run_chars = tuple(_glyph_chars(run))
         if run_chars:
             chars.extend(run_chars)
@@ -103,7 +113,7 @@ def _line_from_core(line: Any, laparams: LAParams) -> LTTextLine:
                 rendermode=int(_provenance_value(run.provenance, "text_render_mode", 0)),
             )
         )
-    target_text = line.text()
+    target_text = "".join(text_parts)
     position = 0
     for char in chars:
         char_text = char.get_text()
@@ -129,6 +139,12 @@ def _box_from_core(line: Any, laparams: LAParams) -> LTTextBox:
 def _page_layout(page: Any, laparams: LAParams) -> LTPage:
     media_box = page.media_box or (0.0, 0.0, page.width, page.height)
     layout = LTPage(page.page_number, media_box, page.rotation)
+    for annotation in page.get_annotations():
+        if annotation.subtype != "Link" or annotation.rect is None:
+            continue
+        link_box = LTTextBoxHorizontal()
+        link_box.set_bbox(annotation.rect)
+        layout.add(link_box)
     for line in page.get_text_lines():
         layout.add(_box_from_core(line, laparams))
     for index, image in enumerate(page.extract_images()):
