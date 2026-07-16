@@ -429,6 +429,10 @@ class ToUnicodeCMap:
                     validate_codespace_range(start, end)
                 except (ValueError, UnicodeDecodeError):
                     continue
+                if any(
+                    ranges_overlap((start, end), existing) for existing in code_space_ranges
+                ):
+                    raise ValueError("invalid ToUnicode CMap codespacerange")
                 code_space_ranges.append((start, end))
                 valid_range_count += 1
         if saw_codespace_block and valid_range_count == 0:

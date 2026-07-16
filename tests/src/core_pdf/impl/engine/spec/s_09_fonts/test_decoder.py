@@ -253,6 +253,24 @@ def test_to_unicode_rejects_invalid_codespace_ranges() -> None:
             )
 
 
+def test_to_unicode_rejects_only_overlapping_codespace_ranges() -> None:
+    with pytest.raises(ValueError, match="^invalid ToUnicode CMap codespacerange$"):
+        ToUnicodeCMap(
+            b"""
+            /CIDInit /ProcSet findresource begin
+            12 dict begin
+            begincmap
+            2 begincodespacerange
+            <00> <7f>
+            <40> <ff>
+            endcodespacerange
+            endcmap
+            CMapName currentdict /CMap defineresource pop
+            end end
+            """
+        )
+
+
 def test_encoding_differences_default_to_standard_encoding() -> None:
     decoder = FontDecoder(
         {
