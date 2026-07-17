@@ -895,6 +895,7 @@ class PDFFont:
         self.descriptor = descriptor
         self.widths: FontWidthDict = resolve_all(widths)
         self._char_width_cache: dict[int, float] = {}
+        self._char_text_cache: dict[int, str] = {}
         self.fontname = resolve1(descriptor.get("FontName", "unknown"))
         if isinstance(self.fontname, PSLiteral):
             self.fontname = literal_name(self.fontname)

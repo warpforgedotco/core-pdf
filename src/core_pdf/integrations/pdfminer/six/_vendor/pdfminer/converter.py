@@ -68,7 +68,6 @@ class PDFLayoutAnalyzer(PDFTextDevice):
         self.pageno = pageno
         self.laparams = laparams
         self._stack: list[LTLayoutContainer] = []
-        self._char_text_cache: dict[PDFFont, dict[int, str]] = {}
 
     def begin_page(self, page: PDFPage, ctm: Matrix) -> None:
         (x0, y0, x1, y1) = apply_matrix_rect(ctm, page.mediabox)
@@ -234,9 +233,7 @@ class PDFLayoutAnalyzer(PDFTextDevice):
         ncs: PDFColorSpace,
         graphicstate: PDFGraphicState,
     ) -> float:
-        font_cache = self._char_text_cache.get(font)
-        if font_cache is None:
-            font_cache = self._char_text_cache[font] = {}
+        font_cache = font._char_text_cache
         text = font_cache.get(cid)
         if text is None:
             try:
