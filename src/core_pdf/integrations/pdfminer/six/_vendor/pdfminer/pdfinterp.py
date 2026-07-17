@@ -1393,9 +1393,12 @@ class PDFPageInterpreter:
             # empty page
             return
         operator_cache = {}
+        nextobject = parser.nextobject
+        pop = self.pop
+        push = self.push
         while True:
             try:
-                (_, obj) = parser.nextobject()
+                (_, obj) = nextobject()
             except PSEOF:
                 break
             if isinstance(obj, PSKeyword):
@@ -1418,7 +1421,7 @@ class PDFPageInterpreter:
                     name, func, nargs = operator
                 if func is not None:
                     if nargs:
-                        args = self.pop(nargs)
+                        args = pop(nargs)
                         if len(args) == nargs:
                             func(*args)
                     else:
@@ -1427,4 +1430,4 @@ class PDFPageInterpreter:
                     error_msg = f"Unknown operator: {name!r}"
                     raise PDFInterpreterError(error_msg)
             else:
-                self.push(obj)
+                push(obj)
