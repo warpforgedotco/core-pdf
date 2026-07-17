@@ -14,6 +14,8 @@ FOOTER_RE = re.compile(r"^\s*page\s*\d+\s*$", re.IGNORECASE)
 LEADER_START_CHARS = "._~-–—"
 SUPERSCRIPT_DIGIT_TRANSLATION = str.maketrans("0123456789", "⁰¹²³⁴⁵⁶⁷⁸⁹")
 SUBSCRIPT_DIGIT_TRANSLATION = str.maketrans("0123456789", "₀₁₂₃₄₅₆₇₈₉")
+SCRIPT_DIGITS = frozenset("⁰¹²³⁴⁵⁶⁷⁸⁹₀₁₂₃₄₅₆₇₈₉")
+INLINE_MARKERS = frozenset({"™", "℠", "®", "©"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -735,8 +737,6 @@ class GlyphLineBuilder:
             return "", "join"
         prev_last_char = prev_text[-1:]
         first_char = text[:1]
-        stripped = text.strip()
-        prev_stripped = prev_text.strip()
         if not prev_last_char or not first_char:
             return "", "join"
 
@@ -745,11 +745,14 @@ class GlyphLineBuilder:
         height = y1 - y0
         x_gap = x0 - prev_x1
         spacing_gap = x_gap
-        if self.estimated_char_width is not None and should_use_estimated_word_spacing(
-            prev_stripped, stripped
-        ):
-            spacing_gap = x0 - (prev_x0 + len(prev_stripped) * self.estimated_char_width)
-        threshold = self.word_gap_threshold(run, height)
+        estimated_char_width = self.estimated_char_width
+        prev_stripped: str | None = None
+        stripped: str | None = None
+        if estimated_char_width is not None:
+            stripped = text.strip()
+            prev_stripped = prev_text.strip()
+            if should_use_estimated_word_spacing(prev_stripped, stripped):
+                spacing_gap = x0 - (prev_x0 + len(prev_stripped) * estimated_char_width)
         baseline_delta = self.atom_baseline_delta(previous, atom)
         if inline_marker_text(text):
             return "", "inline_marker_join"
@@ -768,6 +771,12 @@ class GlyphLineBuilder:
             and atom.has_glyph_geometry
         ):
             return "", "same_run_explicit_space_join"
+
+        if prev_stripped is None:
+            prev_stripped = prev_text.strip()
+            stripped = text.strip()
+        assert stripped is not None
+        threshold = self.word_gap_threshold(run, height)
 
         if (
             self.is_table_like_line
@@ -1392,12 +1401,16 @@ def baseline_midpoint(
 
 
 def script_digit_text(text: str) -> bool:
+    if len(text) == 1:
+        return text in SCRIPT_DIGITS
     stripped = text.strip()
-    return bool(stripped) and all(ch in "⁰¹²³⁴⁵⁶⁷⁸⁹₀₁₂₃₄₅₆₇₈₉" for ch in stripped)
+    return bool(stripped) and all(ch in SCRIPT_DIGITS for ch in stripped)
 
 
 def inline_marker_text(text: str) -> bool:
-    return text.strip() in {"™", "℠", "®", "©"}
+    if len(text) == 1:
+        return text in INLINE_MARKERS
+    return text.strip() in INLINE_MARKERS
 
 
 def compact_unit_suffix_should_join(

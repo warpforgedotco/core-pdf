@@ -1,6 +1,10 @@
 from core_pdf.impl.engine.extraction.common.render import text_boxes_in_reading_order
 from core_pdf.impl.engine.layout.models import LayoutBox, LayoutLine, TextRun
-from core_pdf.impl.engine.layout.text_lines import reconstruct_layout_line_text
+from core_pdf.impl.engine.layout.text_lines import (
+    inline_marker_text,
+    reconstruct_layout_line_text,
+    script_digit_text,
+)
 
 
 def rotated_run(text: str, y0: float, y1: float) -> TextRun:
@@ -98,3 +102,12 @@ def test_layout_line_reconstruction_cache_tracks_geometry_and_run_order() -> Non
 
     line.runs.reverse()
     assert line.reconstructed_text() is not after_direct_coordinate_change
+
+
+def test_inline_marker_and_script_digit_fast_paths_preserve_padded_text() -> None:
+    assert inline_marker_text("™")
+    assert inline_marker_text("  ™ ")
+    assert not inline_marker_text("T")
+    assert script_digit_text("²")
+    assert script_digit_text("  ²³ ")
+    assert not script_digit_text("2")
