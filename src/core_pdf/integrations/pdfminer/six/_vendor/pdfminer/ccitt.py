@@ -19,7 +19,7 @@ from typing import (
     cast,
 )
 
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.pdfexceptions import PDFException, PDFValueError
+from core_pdf.integrations.pdfminer.six.pdfexceptions import PDFException, PDFValueError
 
 
 def get_bytes(data: bytes) -> Iterator[int]:

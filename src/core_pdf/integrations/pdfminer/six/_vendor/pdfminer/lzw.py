@@ -3,7 +3,7 @@ from collections.abc import Iterator
 from io import BytesIO
 from typing import BinaryIO, cast
 
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.pdfexceptions import PDFEOFError, PDFException
+from core_pdf.integrations.pdfminer.six.pdfexceptions import PDFEOFError, PDFException
 
 logger = logging.getLogger(__name__)
 

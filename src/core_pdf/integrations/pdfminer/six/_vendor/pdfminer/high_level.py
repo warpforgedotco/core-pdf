@@ -6,20 +6,20 @@ from collections.abc import Container, Iterator
 from io import StringIO
 from typing import Any, BinaryIO, cast
 
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.converter import (
+from core_pdf.integrations.pdfminer.six.converter import (
     HOCRConverter,
     HTMLConverter,
     PDFPageAggregator,
     TextConverter,
     XMLConverter,
 )
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.image import ImageWriter
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.layout import LAParams, LTPage
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.pdfdevice import PDFDevice, TagExtractor
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.pdfexceptions import PDFValueError
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.pdfinterp import PDFPageInterpreter, PDFResourceManager
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.pdfpage import PDFPage
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.utils import AnyIO, FileOrName, open_filename
+from core_pdf.integrations.pdfminer.six.image import ImageWriter
+from core_pdf.integrations.pdfminer.six.layout import LAParams, LTPage
+from core_pdf.integrations.pdfminer.six.pdfdevice import PDFDevice, TagExtractor
+from core_pdf.integrations.pdfminer.six.pdfexceptions import PDFValueError
+from core_pdf.integrations.pdfminer.six.pdfinterp import PDFPageInterpreter, PDFResourceManager
+from core_pdf.integrations.pdfminer.six.pdfpage import PDFPage
+from core_pdf.integrations.pdfminer.six.utils import AnyIO, FileOrName, open_filename
 
 
 def extract_text_to_fp(

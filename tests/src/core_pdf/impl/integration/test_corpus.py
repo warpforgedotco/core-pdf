@@ -1,12 +1,14 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
+from core_pdf.integrations.pdfminer.six.high_level import (  # ty: ignore[unresolved-import]
+    extract_text as core_pdf_extract_text,
+)
 from pdfminer.high_level import extract_text as pdfminer_extract_text
-
-from core_pdf.integrations.pdfminer.high_level import extract_text as core_pdf_extract_text
 
 TESTS_DIR = Path(__file__).parents[4]
 SAMPLES_DIR = TESTS_DIR / "fixtures" / "pdfminer.six" / "samples"
@@ -51,7 +53,12 @@ def sample_id(path: Path) -> str:
 def test_extract_text_handles_pdfminer_sample_corpus(pdf_path: Path) -> None:
     sample = sample_id(pdf_path)
     password = SAMPLE_PASSWORDS.get(sample, "")
-    expected = pdfminer_extract_text(pdf_path, password=password)
+    try:
+        expected = pdfminer_extract_text(pdf_path, password=password)
+    except Exception as expected_error:
+        with pytest.raises(type(expected_error), match=re.escape(str(expected_error))):
+            core_pdf_extract_text(pdf_path, password=password)
+        return
 
     result = core_pdf_extract_text(pdf_path, password=password)
 

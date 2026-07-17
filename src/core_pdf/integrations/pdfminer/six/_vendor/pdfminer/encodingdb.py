@@ -3,10 +3,10 @@ import re
 from collections.abc import Iterable
 from typing import ClassVar, cast
 
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.glyphlist import glyphname2unicode
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.latin_enc import ENCODING
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.pdfexceptions import PDFKeyError
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.psparser import PSLiteral
+from core_pdf.integrations.pdfminer.six.glyphlist import glyphname2unicode
+from core_pdf.integrations.pdfminer.six.latin_enc import ENCODING
+from core_pdf.integrations.pdfminer.six.pdfexceptions import PDFKeyError
+from core_pdf.integrations.pdfminer.six.psparser import PSLiteral
 
 HEXADECIMAL = re.compile(r"[0-9a-fA-F]+")
 

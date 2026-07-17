@@ -13,18 +13,18 @@ from typing import (
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer import settings
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.arcfour import Arcfour
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.casting import safe_int
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.data_structures import NumberTree
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.pdfexceptions import (
+from core_pdf.integrations.pdfminer.six import settings
+from core_pdf.integrations.pdfminer.six.arcfour import Arcfour
+from core_pdf.integrations.pdfminer.six.casting import safe_int
+from core_pdf.integrations.pdfminer.six.data_structures import NumberTree
+from core_pdf.integrations.pdfminer.six.pdfexceptions import (
     PDFException,
     PDFKeyError,
     PDFObjectNotFound,
     PDFTypeError,
 )
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.pdfparser import PDFParser, PDFStreamParser, PDFSyntaxError
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.pdftypes import (
+from core_pdf.integrations.pdfminer.six.pdfparser import PDFParser, PDFStreamParser, PDFSyntaxError
+from core_pdf.integrations.pdfminer.six.pdftypes import (
     DecipherCallable,
     PDFStream,
     decipher_all,
@@ -35,9 +35,9 @@ from core_pdf.integrations.pdfminer.six._vendor.pdfminer.pdftypes import (
     stream_value,
     uint_value,
 )
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.psexceptions import PSEOF
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.psparser import KWD, LIT, literal_name
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.utils import (
+from core_pdf.integrations.pdfminer.six.psexceptions import PSEOF
+from core_pdf.integrations.pdfminer.six.psparser import KWD, LIT, literal_name
+from core_pdf.integrations.pdfminer.six.utils import (
     choplist,
     decode_text,
     format_int_alpha,
@@ -593,7 +593,7 @@ class PDFStandardSecurityHandlerV5(PDFStandardSecurityHandlerV4):
             # saslprep expects non-empty strings, apparently
             if not password:
                 return b""
-            from core_pdf.integrations.pdfminer.six._vendor.pdfminer._saslprep import saslprep
+            from core_pdf.integrations.pdfminer.six._saslprep import saslprep
 
             password = saslprep(password)
         return password.encode("utf-8")[:127]

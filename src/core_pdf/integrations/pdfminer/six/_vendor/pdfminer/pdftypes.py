@@ -11,17 +11,17 @@ from typing import (
 )
 from warnings import warn
 
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer import pdfexceptions, settings
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.ascii85 import ascii85decode, asciihexdecode
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.ccitt import ccittfaxdecode
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.lzw import lzwdecode
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.pdfexceptions import PDFKeyError
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.psparser import LIT, PSObject
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.runlength import rldecode
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.utils import apply_png_predictor, apply_tiff_predictor
+from core_pdf.integrations.pdfminer.six import pdfexceptions, settings
+from core_pdf.integrations.pdfminer.six.ascii85 import ascii85decode, asciihexdecode
+from core_pdf.integrations.pdfminer.six.ccitt import ccittfaxdecode
+from core_pdf.integrations.pdfminer.six.lzw import lzwdecode
+from core_pdf.integrations.pdfminer.six.pdfexceptions import PDFKeyError
+from core_pdf.integrations.pdfminer.six.psparser import LIT, PSObject
+from core_pdf.integrations.pdfminer.six.runlength import rldecode
+from core_pdf.integrations.pdfminer.six.utils import apply_png_predictor, apply_tiff_predictor
 
 if TYPE_CHECKING:
-    from core_pdf.integrations.pdfminer.six._vendor.pdfminer.pdfdocument import PDFDocument
+    from core_pdf.integrations.pdfminer.six.pdfdocument import PDFDocument
 
 logger = logging.getLogger(__name__)
 

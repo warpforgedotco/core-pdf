@@ -4,17 +4,17 @@ import struct
 from io import BytesIO
 from typing import BinaryIO, Literal
 
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.jbig2 import JBIG2StreamReader, JBIG2StreamWriter
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.layout import LTImage
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.pdfcolor import (
+from core_pdf.integrations.pdfminer.six.jbig2 import JBIG2StreamReader, JBIG2StreamWriter
+from core_pdf.integrations.pdfminer.six.layout import LTImage
+from core_pdf.integrations.pdfminer.six.pdfcolor import (
     LITERAL_DEVICE_CMYK,
     LITERAL_DEVICE_GRAY,
     LITERAL_DEVICE_RGB,
     LITERAL_INLINE_DEVICE_GRAY,
     LITERAL_INLINE_DEVICE_RGB,
 )
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.pdfexceptions import PDFValueError
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.pdftypes import (
+from core_pdf.integrations.pdfminer.six.pdfexceptions import PDFValueError
+from core_pdf.integrations.pdfminer.six.pdftypes import (
     LITERALS_DCT_DECODE,
     LITERALS_FLATE_DECODE,
     LITERALS_JBIG2_DECODE,

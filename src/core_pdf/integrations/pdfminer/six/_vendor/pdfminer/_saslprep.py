@@ -24,7 +24,7 @@ import stringprep
 import unicodedata
 from collections.abc import Callable
 
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.pdfexceptions import PDFValueError
+from core_pdf.integrations.pdfminer.six.pdfexceptions import PDFValueError
 
 # RFC4013 section 2.3 prohibited output.
 _PROHIBITED: tuple[Callable[[str], bool], ...] = (

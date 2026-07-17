@@ -8,7 +8,7 @@ The following data was taken by
   $ wget https://partners.adobe.com/public/developer/en/opentype/glyphlist.txt
 
 ```python
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.glyphlist import convert_glyphlist
+from core_pdf.integrations.pdfminer.six.glyphlist import convert_glyphlist
 
 convert_glyphlist("glyphlist.txt")
 """

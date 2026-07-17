@@ -28,7 +28,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     group.addoption(
         "--pdfminer-core-compat",
         action="store_true",
-        help="Run PDFMiner tests against core_pdf.integrations.pdfminer.",
+        help="Run PDFMiner tests against core_pdf.integrations.pdfminer.six.",
     )
 
 
@@ -45,11 +45,11 @@ def pytest_configure(config: pytest.Config) -> None:
             + ", ".join(already_imported)
         )
 
-    compat_package = importlib.import_module("core_pdf.integrations.pdfminer")
+    compat_package = importlib.import_module("core_pdf.integrations.pdfminer.six")
     sys.modules["pdfminer"] = compat_package
 
     for module_name in PDFMINER_MODULES:
-        compat_name = f"core_pdf.integrations.pdfminer.{module_name}"
+        compat_name = f"core_pdf.integrations.pdfminer.six.{module_name}"
         module = importlib.import_module(compat_name)
         sys.modules[f"pdfminer.{module_name}"] = module
         setattr(compat_package, module_name, module)

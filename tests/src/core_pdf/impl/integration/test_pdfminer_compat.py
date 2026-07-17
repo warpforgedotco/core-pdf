@@ -6,23 +6,24 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
-from pdfminer.layout import LTChar as PdfMinerLTChar
-from pdfminer.layout import LTFigure as PdfMinerLTFigure
-from pdfminer.layout import LTLayoutContainer as PdfMinerLTLayoutContainer
-
-from core_pdf.integrations.pdfminer.high_level import extract_pages, extract_text
-from core_pdf.integrations.pdfminer.layout import (
+from core_pdf.integrations.pdfminer.six.high_level import (  # ty: ignore[unresolved-import]
+    extract_pages,
+    extract_text,
+)
+from core_pdf.integrations.pdfminer.six.layout import (  # ty: ignore[unresolved-import]
     LAParams,
-    LTAnno,
     LTChar,
     LTContainer,
     LTFigure,
-    LTImage,
     LTLayoutContainer,
     LTPage,
-    LTTextBox,
-    LTTextLine,
 )
+from pdfminer.high_level import extract_pages as pdfminer_extract_pages
+from pdfminer.high_level import extract_text as pdfminer_extract_text
+from pdfminer.layout import LTChar as PdfMinerLTChar
+from pdfminer.layout import LTContainer as PdfMinerLTContainer
+from pdfminer.layout import LTFigure as PdfMinerLTFigure
+from pdfminer.layout import LTLayoutContainer as PdfMinerLTLayoutContainer
 
 TESTS_DIR = Path(__file__).parents[4]
 SAMPLES_DIR = TESTS_DIR / "fixtures" / "pdfminer.six" / "samples"
@@ -46,6 +47,21 @@ def walk(container: LTContainer[Any]) -> list[Any]:
         if isinstance(child, LTContainer):
             children.extend(walk(child))
     return children
+
+
+def layout_snapshot(obj: Any) -> tuple[Any, ...]:
+    children = (
+        tuple(layout_snapshot(child) for child in obj)
+        if isinstance(obj, (LTContainer, PdfMinerLTContainer))
+        else ()
+    )
+    get_text = getattr(obj, "get_text", None)
+    return (
+        type(obj).__name__,
+        getattr(obj, "bbox", None),
+        get_text() if get_text is not None else None,
+        children,
+    )
 
 
 def test_ltchar_constructor_matches_pdfminer_geometry_and_attributes() -> None:
@@ -103,27 +119,16 @@ def test_laparams_validates_boxes_flow_like_pdfminer() -> None:
 
 
 def test_extract_pages_returns_pdfminer_compatible_layout_tree() -> None:
+    expected_page = next(pdfminer_extract_pages(SIMPLE_PDF))
     page = next(extract_pages(SIMPLE_PDF))
 
     assert isinstance(page, LTPage)
     assert isinstance(page, LTLayoutContainer)
-    assert page.pageid == 1
-    assert page.bbox == (0.0, 0.0, 612.0, 792.0)
-    assert page.width == 612.0
-    assert page.height == 792.0
-
-    children = walk(page)
-    assert all(isinstance(obj, LTTextBox) for obj in page)
-    assert sum(isinstance(obj, LTTextLine) for obj in children) == 4
-    assert sum(isinstance(obj, LTChar) for obj in children) == 44
-    assert any(isinstance(obj, LTAnno) for obj in children)
-    assert not any(isinstance(obj, LTImage) for obj in children)
-    assert [cast(LTTextBox, obj).get_text() for obj in page] == [
-        "Hello World\n",
-        "Hello World\n",
-        "Hello World\n",
-        "H e l l o W o r l d\n",
-    ]
+    assert page.pageid == expected_page.pageid
+    assert page.bbox == expected_page.bbox
+    assert page.width == expected_page.width
+    assert page.height == expected_page.height
+    assert layout_snapshot(page) == layout_snapshot(expected_page)
 
 
 def test_extract_pages_accepts_file_like_objects() -> None:
@@ -133,7 +138,9 @@ def test_extract_pages_accepts_file_like_objects() -> None:
     assert page.width == 612.0
 
 
-def test_extract_text_preserves_core_pdf_output_and_pdfminer_arguments() -> None:
-    assert extract_text(SIMPLE_PDF, page_numbers={0}, maxpages=1) == (
-        "Hello World\n\nHello World\n\nHello World\n\nH e l l o W o r l d\f"
+def test_extract_text_matches_pdfminer_arguments_and_output() -> None:
+    assert extract_text(SIMPLE_PDF, page_numbers={0}, maxpages=1) == pdfminer_extract_text(
+        SIMPLE_PDF,
+        page_numbers={0},
+        maxpages=1,
     )

@@ -8,12 +8,12 @@ from typing import (
     cast,
 )
 
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.pdfcolor import PDFColorSpace
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.pdfexceptions import PDFTypeError, PDFValueError
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.pdffont import PDFFont
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.pdfinterp import Color, PDFGraphicState
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.pdftypes import PDFStream
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.utils import (
+from core_pdf.integrations.pdfminer.six.pdfcolor import PDFColorSpace
+from core_pdf.integrations.pdfminer.six.pdfexceptions import PDFTypeError, PDFValueError
+from core_pdf.integrations.pdfminer.six.pdffont import PDFFont
+from core_pdf.integrations.pdfminer.six.pdfinterp import Color, PDFGraphicState
+from core_pdf.integrations.pdfminer.six.pdftypes import PDFStream
+from core_pdf.integrations.pdfminer.six.utils import (
     INF,
     LTComponentT,
     Matrix,

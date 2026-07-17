@@ -4,13 +4,13 @@ from collections.abc import Mapping, Sequence
 from io import BytesIO
 from typing import Union, cast
 
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer import settings
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.casting import safe_cmyk, safe_float, safe_int, safe_matrix, safe_rgb
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.cmapdb import CMap, CMapBase, CMapDB
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.pdfcolor import PREDEFINED_COLORSPACE, PDFColorSpace
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.pdfdevice import PDFDevice, PDFTextSeq
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.pdfexceptions import PDFException, PDFValueError
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.pdffont import (
+from core_pdf.integrations.pdfminer.six import settings
+from core_pdf.integrations.pdfminer.six.casting import safe_cmyk, safe_float, safe_int, safe_matrix, safe_rgb
+from core_pdf.integrations.pdfminer.six.cmapdb import CMap, CMapBase, CMapDB
+from core_pdf.integrations.pdfminer.six.pdfcolor import PREDEFINED_COLORSPACE, PDFColorSpace
+from core_pdf.integrations.pdfminer.six.pdfdevice import PDFDevice, PDFTextSeq
+from core_pdf.integrations.pdfminer.six.pdfexceptions import PDFException, PDFValueError
+from core_pdf.integrations.pdfminer.six.pdffont import (
     PDFCIDFont,
     PDFFont,
     PDFFontError,
@@ -18,8 +18,8 @@ from core_pdf.integrations.pdfminer.six._vendor.pdfminer.pdffont import (
     PDFType1Font,
     PDFType3Font,
 )
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.pdfpage import PDFPage
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.pdftypes import (
+from core_pdf.integrations.pdfminer.six.pdfpage import PDFPage
+from core_pdf.integrations.pdfminer.six.pdftypes import (
     LITERALS_ASCII85_DECODE,
     PDFObjRef,
     PDFStream,
@@ -28,8 +28,8 @@ from core_pdf.integrations.pdfminer.six._vendor.pdfminer.pdftypes import (
     resolve1,
     stream_value,
 )
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.psexceptions import PSEOF, PSTypeError
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.psparser import (
+from core_pdf.integrations.pdfminer.six.psexceptions import PSEOF, PSTypeError
+from core_pdf.integrations.pdfminer.six.psparser import (
     KWD,
     LIT,
     PSKeyword,
@@ -39,7 +39,7 @@ from core_pdf.integrations.pdfminer.six._vendor.pdfminer.psparser import (
     keyword_name,
     literal_name,
 )
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.utils import (
+from core_pdf.integrations.pdfminer.six.utils import (
     MATRIX_IDENTITY,
     Matrix,
     PathSegment,

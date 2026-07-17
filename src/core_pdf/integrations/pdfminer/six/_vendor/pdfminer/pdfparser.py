@@ -2,15 +2,15 @@ import logging
 from io import BytesIO
 from typing import TYPE_CHECKING, BinaryIO, Union
 
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer import settings
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.casting import safe_int
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.pdfexceptions import PDFException
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.pdftypes import PDFObjRef, PDFStream, dict_value, int_value
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.psexceptions import PSEOF
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.psparser import KWD, PSKeyword, PSStackParser
+from core_pdf.integrations.pdfminer.six import settings
+from core_pdf.integrations.pdfminer.six.casting import safe_int
+from core_pdf.integrations.pdfminer.six.pdfexceptions import PDFException
+from core_pdf.integrations.pdfminer.six.pdftypes import PDFObjRef, PDFStream, dict_value, int_value
+from core_pdf.integrations.pdfminer.six.psexceptions import PSEOF
+from core_pdf.integrations.pdfminer.six.psparser import KWD, PSKeyword, PSStackParser
 
 if TYPE_CHECKING:
-    from core_pdf.integrations.pdfminer.six._vendor.pdfminer.pdfdocument import PDFDocument
+    from core_pdf.integrations.pdfminer.six.pdfdocument import PDFDocument
 
 log = logging.getLogger(__name__)
 

@@ -10,9 +10,9 @@ from typing import (
     cast,
 )
 
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer import settings
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.casting import safe_float, safe_rect_list
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.cmapdb import (
+from core_pdf.integrations.pdfminer.six import settings
+from core_pdf.integrations.pdfminer.six.casting import safe_float, safe_rect_list
+from core_pdf.integrations.pdfminer.six.cmapdb import (
     CMap,
     CMapBase,
     CMapDB,
@@ -21,10 +21,10 @@ from core_pdf.integrations.pdfminer.six._vendor.pdfminer.cmapdb import (
     IdentityUnicodeMap,
     UnicodeMap,
 )
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.encodingdb import EncodingDB, name2unicode
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.fontmetrics import FONT_METRICS
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.pdfexceptions import PDFException, PDFKeyError, PDFValueError
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.pdftypes import (
+from core_pdf.integrations.pdfminer.six.encodingdb import EncodingDB, name2unicode
+from core_pdf.integrations.pdfminer.six.fontmetrics import FONT_METRICS
+from core_pdf.integrations.pdfminer.six.pdfexceptions import PDFException, PDFKeyError, PDFValueError
+from core_pdf.integrations.pdfminer.six.pdftypes import (
     PDFStream,
     dict_value,
     int_value,
@@ -34,8 +34,8 @@ from core_pdf.integrations.pdfminer.six._vendor.pdfminer.pdftypes import (
     resolve_all,
     stream_value,
 )
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.psexceptions import PSEOF
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.psparser import (
+from core_pdf.integrations.pdfminer.six.psexceptions import PSEOF
+from core_pdf.integrations.pdfminer.six.psparser import (
     KWD,
     LIT,
     PSKeyword,
@@ -43,10 +43,10 @@ from core_pdf.integrations.pdfminer.six._vendor.pdfminer.psparser import (
     PSStackParser,
     literal_name,
 )
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.utils import Matrix, Point, Rect, apply_matrix_norm, choplist, nunpack
+from core_pdf.integrations.pdfminer.six.utils import Matrix, Point, Rect, apply_matrix_norm, choplist, nunpack
 
 if TYPE_CHECKING:
-    from core_pdf.integrations.pdfminer.six._vendor.pdfminer.pdfinterp import PDFResourceManager
+    from core_pdf.integrations.pdfminer.six.pdfinterp import PDFResourceManager
 
 log = logging.getLogger(__name__)
 

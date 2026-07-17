@@ -11,9 +11,9 @@ from typing import (
     cast,
 )
 
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer import utils
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.image import ImageWriter
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.layout import (
+from core_pdf.integrations.pdfminer.six import utils
+from core_pdf.integrations.pdfminer.six.image import ImageWriter
+from core_pdf.integrations.pdfminer.six.layout import (
     LAParams,
     LTAnno,
     LTChar,
@@ -34,14 +34,14 @@ from core_pdf.integrations.pdfminer.six._vendor.pdfminer.layout import (
     LTTextLine,
     TextGroupElement,
 )
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.pdfcolor import PDFColorSpace
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.pdfdevice import PDFTextDevice
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.pdfexceptions import PDFValueError
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.pdffont import PDFFont, PDFUnicodeNotDefined
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.pdfinterp import PDFGraphicState, PDFResourceManager
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.pdfpage import PDFPage
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.pdftypes import PDFStream
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.utils import (
+from core_pdf.integrations.pdfminer.six.pdfcolor import PDFColorSpace
+from core_pdf.integrations.pdfminer.six.pdfdevice import PDFTextDevice
+from core_pdf.integrations.pdfminer.six.pdfexceptions import PDFValueError
+from core_pdf.integrations.pdfminer.six.pdffont import PDFFont, PDFUnicodeNotDefined
+from core_pdf.integrations.pdfminer.six.pdfinterp import PDFGraphicState, PDFResourceManager
+from core_pdf.integrations.pdfminer.six.pdfpage import PDFPage
+from core_pdf.integrations.pdfminer.six.pdftypes import PDFStream
+from core_pdf.integrations.pdfminer.six.utils import (
     AnyIO,
     Matrix,
     PathSegment,

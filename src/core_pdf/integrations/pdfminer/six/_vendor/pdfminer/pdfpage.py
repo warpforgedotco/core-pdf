@@ -3,17 +3,17 @@ import logging
 from collections.abc import Container, Iterator
 from typing import Any, BinaryIO, ClassVar
 
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer import settings
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.pdfdocument import (
+from core_pdf.integrations.pdfminer.six import settings
+from core_pdf.integrations.pdfminer.six.pdfdocument import (
     PDFDocument,
     PDFNoPageLabels,
     PDFTextExtractionNotAllowed,
 )
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.pdfexceptions import PDFObjectNotFound, PDFValueError
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.pdfparser import PDFParser
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.pdftypes import dict_value, int_value, list_value, resolve1
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.psparser import LIT
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.utils import Rect, parse_rect
+from core_pdf.integrations.pdfminer.six.pdfexceptions import PDFObjectNotFound, PDFValueError
+from core_pdf.integrations.pdfminer.six.pdfparser import PDFParser
+from core_pdf.integrations.pdfminer.six.pdftypes import dict_value, int_value, list_value, resolve1
+from core_pdf.integrations.pdfminer.six.psparser import LIT
+from core_pdf.integrations.pdfminer.six.utils import Rect, parse_rect
 
 log = logging.getLogger(__name__)
 

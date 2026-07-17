@@ -12,8 +12,8 @@ from typing import (
     Union,
 )
 
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer import psexceptions, settings
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.utils import choplist
+from core_pdf.integrations.pdfminer.six import psexceptions, settings
+from core_pdf.integrations.pdfminer.six.utils import choplist
 
 log = logging.getLogger(__name__)
 

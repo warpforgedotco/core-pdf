@@ -16,10 +16,10 @@ from typing import (
     cast,
 )
 
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.pdfexceptions import PDFTypeError, PDFValueError
+from core_pdf.integrations.pdfminer.six.pdfexceptions import PDFTypeError, PDFValueError
 
 if TYPE_CHECKING:
-    from core_pdf.integrations.pdfminer.six._vendor.pdfminer.layout import LTComponent
+    from core_pdf.integrations.pdfminer.six.layout import LTComponent
 
 import contextlib
 

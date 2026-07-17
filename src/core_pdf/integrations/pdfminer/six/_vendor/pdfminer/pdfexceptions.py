@@ -1,4 +1,4 @@
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.psexceptions import PSException
+from core_pdf.integrations.pdfminer.six.psexceptions import PSException
 
 
 class PDFException(PSException):

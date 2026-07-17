@@ -6,6 +6,25 @@ from collections.abc import Callable
 from typing import Any, cast
 
 import pytest
+from core_pdf.integrations.pdfminer.six.ascii85 import (  # ty: ignore[unresolved-import]
+    ascii85decode,
+    asciihexdecode,
+)
+from core_pdf.integrations.pdfminer.six.cmapdb import CMap, CMapDB  # ty: ignore[unresolved-import]
+from core_pdf.integrations.pdfminer.six.layout import (  # ty: ignore[unresolved-import]
+    LTChar,
+    LTComponent,
+    LTImage,
+    LTTextLineHorizontal,
+)
+from core_pdf.integrations.pdfminer.six.pdftypes import PDFStream  # ty: ignore[unresolved-import]
+from core_pdf.integrations.pdfminer.six.psparser import (  # ty: ignore[unresolved-import]
+    KWD,
+    LIT,
+    PSLiteral,
+    literal_name,
+)
+from core_pdf.integrations.pdfminer.six.utils import decode_text  # ty: ignore[unresolved-import]
 from pdfminer.ascii85 import ascii85decode as pdfminer_ascii85decode
 from pdfminer.ascii85 import asciihexdecode as pdfminer_asciihexdecode
 from pdfminer.cmapdb import CMap as PdfMinerCMap
@@ -20,18 +39,6 @@ from pdfminer.psparser import LIT as PDFMINER_LIT
 from pdfminer.psparser import PSLiteral as PdfMinerPSLiteral
 from pdfminer.psparser import literal_name as pdfminer_literal_name
 from pdfminer.utils import decode_text as pdfminer_decode_text
-
-from core_pdf.integrations.pdfminer.ascii85 import ascii85decode, asciihexdecode
-from core_pdf.integrations.pdfminer.cmapdb import CMap, CMapDB
-from core_pdf.integrations.pdfminer.layout import (
-    LTChar,
-    LTComponent,
-    LTImage,
-    LTTextLineHorizontal,
-)
-from core_pdf.integrations.pdfminer.pdftypes import PDFStream
-from core_pdf.integrations.pdfminer.psparser import KWD, LIT, PSLiteral, literal_name
-from core_pdf.integrations.pdfminer.utils import decode_text
 
 
 @pytest.mark.parametrize(

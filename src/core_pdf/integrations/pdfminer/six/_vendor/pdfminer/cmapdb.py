@@ -27,11 +27,11 @@ from typing import (
     cast,
 )
 
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.encodingdb import name2unicode
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.pdfexceptions import PDFException, PDFTypeError
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.psexceptions import PSEOF, PSSyntaxError
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.psparser import KWD, PSKeyword, PSLiteral, PSStackParser, literal_name
-from core_pdf.integrations.pdfminer.six._vendor.pdfminer.utils import choplist, nunpack
+from core_pdf.integrations.pdfminer.six.encodingdb import name2unicode
+from core_pdf.integrations.pdfminer.six.pdfexceptions import PDFException, PDFTypeError
+from core_pdf.integrations.pdfminer.six.psexceptions import PSEOF, PSSyntaxError
+from core_pdf.integrations.pdfminer.six.psparser import KWD, PSKeyword, PSLiteral, PSStackParser, literal_name
+from core_pdf.integrations.pdfminer.six.utils import choplist, nunpack
 
 log = logging.getLogger(__name__)
 
