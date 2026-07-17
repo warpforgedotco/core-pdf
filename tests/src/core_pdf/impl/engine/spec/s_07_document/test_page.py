@@ -1,13 +1,17 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, cast
 
+from core_pdf.impl.engine.extraction.document import PdfDocument
 from core_pdf.impl.engine.spec.s_07_document.page import PdfPage
 from core_pdf.impl.engine.spec.s_07_objects.coercion import parse_name
 from core_pdf.impl.models import FieldRecord
 from core_pdf.impl.primitives import PdfName
 from core_pdf.impl.types import PdfArray, PdfDict, PdfObject
+
+TESTS_DIR = Path(__file__).parents[6]
 
 
 class FakeResolver:
@@ -80,3 +84,15 @@ def test_page_get_fields_matches_kid_widget_annotation_without_page_ref() -> Non
     page.inherited_values_cache = {"Annots": [widget]}
 
     assert page.get_fields() == [field]
+
+
+def test_page_combined_capture_shares_text_and_graphics_state() -> None:
+    pdf_path = TESTS_DIR / "fixtures" / "pdfminer.six" / "samples" / "simple1.pdf"
+
+    with PdfDocument.open(pdf_path) as document:
+        page = document.pages[0]
+        state = page.get_text_and_graphics_state()
+
+        assert page.state is state
+        assert page.graphics is state
+        assert state.runs

@@ -498,6 +498,8 @@ class PageExtractionHost(Protocol):
 
     def capture_text_state(self) -> Any: ...
 
+    def get_text_and_graphics_state(self) -> Any: ...
+
     def get_text_lines(self) -> list[LayoutLine]: ...
 
     def get_drawings(self) -> list[dict[str, Any]]: ...
@@ -638,6 +640,7 @@ class PageExtractionMixin(PageContentMixin):
             fast_text = try_extract_native_text_fast(self, profile, cache)
             if fast_text is not None:
                 return cache_page_extraction_snapshot(cache, fast_text, ())
+        self.get_text_and_graphics_state()
         chars = native_text_runs_for_extraction(self.chars)
         chars = native_text_runs_inside_page_bounds(chars, self.media_box, rotate=self.rotation)
         chars = native_text_runs_inside_visible_row_bands(chars, self.media_box, self)
