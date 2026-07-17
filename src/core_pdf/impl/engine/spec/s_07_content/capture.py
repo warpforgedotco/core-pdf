@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import typing
+from functools import lru_cache
 from math import ceil, hypot
 from typing import Any
 
@@ -49,6 +50,7 @@ def should_capture_glyph_bitmap(text: str) -> bool:
     return 0xE000 <= code <= 0xF8FF or code < 32
 
 
+@lru_cache(maxsize=4096)
 def glyph_bitmap_dimensions(
     glyph_bbox: tuple[float, float, float, float] | None,
     font_size: float,
