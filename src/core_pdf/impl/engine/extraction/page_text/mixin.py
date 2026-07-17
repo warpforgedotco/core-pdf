@@ -1292,6 +1292,7 @@ class PageExtractionMixin(PageContentMixin):
         repaired_text = ocr_postprocess.repair_document_local_identifier_text(
             text,
             support_texts=token_repair_support_texts,
+            normalize_ocr_noise=pre_reconciliation_text_source != "native",
         )
         if repaired_text != text:
             text = repaired_text

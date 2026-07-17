@@ -491,10 +491,16 @@ def repair_document_local_identifier_text(
     text: str,
     *,
     support_texts: Iterable[str] = (),
+    normalize_ocr_noise: bool = True,
 ) -> str:
     context = document_local_token_repair_context((text,), support_texts=support_texts)
     return "\n".join(
-        repair_document_local_identifier_line_text(line, context) for line in text.splitlines()
+        repair_document_local_identifier_line_text(
+            line,
+            context,
+            normalize_ocr_noise=normalize_ocr_noise,
+        )
+        for line in text.splitlines()
     )
 
 
@@ -582,8 +588,10 @@ def split_compound_token_part(token: str) -> list[str]:
 def repair_document_local_identifier_line_text(
     text: str,
     context: DocumentLocalTokenRepairContext,
+    *,
+    normalize_ocr_noise: bool = True,
 ) -> str:
-    repaired = normalize_generic_ocr_line_text(text)
+    repaired = normalize_generic_ocr_line_text(text) if normalize_ocr_noise else text
     repaired = intrinsic_identifier_spacing(repaired)
     for spaced, display in context.replacements:
         spaced_pattern = re.escape(spaced).replace(r"\ ", r"[ \t]+")
