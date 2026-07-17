@@ -5,7 +5,7 @@ import pytest
 
 from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.engine.spec.s_07_syntax.tokens import DELIMITERS, WHITESPACE
-from core_pdf.impl.objects import PdfStream, PdfString
+from core_pdf.impl.objects import PdfReference, PdfStream, PdfString
 
 
 @pytest.mark.parametrize("separator", WHITESPACE + DELIMITERS)
@@ -130,6 +130,26 @@ def test_literal_string_special_scan_supports_all_byte_views(
 )
 def test_numeric_array_fast_path_uses_pdf_whitespace(data: bytes | memoryview) -> None:
     assert PdfLexer(data).parse_object() == ["1\v2"]
+
+
+@pytest.mark.parametrize(
+    ("content", "expected"),
+    [
+        (b"[]", []),
+        (b"[1 -2 3.5]", [1, -2, 3.5]),
+        (b"[1 % comment\n2]", [1, 2]),
+        (b"[1 [2] 3]", [1, [2], 3]),
+        (b"[1 0 R]", [PdfReference(1, 0)]),
+        (b"[1.2.3]", ["1.2.3"]),
+    ],
+)
+def test_numeric_array_slice_fast_path_preserves_general_array_semantics(
+    content: bytes,
+    expected: list[object],
+) -> None:
+    data = memoryview(b"prefix" + content + b"suffix")[6:-6]
+
+    assert PdfLexer(data).parse_object() == expected
 
 
 @pytest.mark.parametrize(

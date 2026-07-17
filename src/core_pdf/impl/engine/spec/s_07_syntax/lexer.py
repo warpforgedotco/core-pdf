@@ -70,6 +70,7 @@ EMPTY_SIMPLE_TJ_ARRAY: tuple[Any, ...] = ()
 SEPARATOR_RE = re.compile(b"[" + re.escape(WHITESPACE + DELIMITERS) + b"]")
 HEX_STRING_END_RE = re.compile(b">")
 STRING_SPECIAL_RE = re.compile(b"[" + re.escape(b"()\\\r\n") + b"]")
+ARRAY_END_RE = re.compile(b"]")
 
 
 class PdfLexer:
@@ -569,36 +570,43 @@ class PdfLexer:
         raw_data = source_buffer if source_buffer is not None else data
         data_len = self.data_len
 
+        end_array = -1
         if source_buffer is not None:
             end_array = source_buffer.find(b"]", start_pos + 1)
-            if end_array >= 0:
-                if end_array == start_pos + 1:
-                    self.pos = end_array + 1
-                    return []
-                payload = source_buffer[start_pos + 1 : end_array]
-                if b"%" not in payload and b"[" not in payload and b"\v" not in payload:
-                    tokens = payload.split()
-                    if tokens and (
-                        tokens[-1] == b"R"
-                        or tokens[0][0] not in (43, 45, 46)
-                        and not 48 <= tokens[0][0] <= 57
-                    ):
-                        return None
+        elif data.c_contiguous:
+            match = ARRAY_END_RE.search(data, start_pos + 1)
+            if match is not None:
+                end_array = match.start()
+        if end_array >= 0:
+            if end_array == start_pos + 1:
+                self.pos = end_array + 1
+                return []
+            payload = (
+                source_buffer[start_pos + 1 : end_array]
+                if source_buffer is not None
+                else data[start_pos + 1 : end_array].tobytes()
+            )
+            if b"%" not in payload and b"[" not in payload and b"\v" not in payload:
+                tokens = payload.split()
+                if tokens and (
+                    tokens[-1] == b"R"
+                    or tokens[0][0] not in (43, 45, 46)
+                    and not 48 <= tokens[0][0] <= 57
+                ):
+                    return None
+                try:
+                    values: list[int | float] = list(map(int, tokens))
+                except ValueError:
                     try:
-                        values: list[int | float] = list(map(int, tokens))
+                        values = [float(token) if b"." in token else int(token) for token in tokens]
                     except ValueError:
-                        try:
-                            values = [
-                                float(token) if b"." in token else int(token) for token in tokens
-                            ]
-                        except ValueError:
-                            pass
-                        else:
-                            self.pos = end_array + 1
-                            return values
+                        pass
                     else:
                         self.pos = end_array + 1
                         return values
+                else:
+                    self.pos = end_array + 1
+                    return values
 
         values = []
         pos = start_pos + 1
