@@ -75,7 +75,7 @@ def is_regular_token_byte(byte: int) -> bool:
 
 def skip_name(data: bytes | memoryview, pos: int, data_len: int) -> int:
     pos += 1
-    while pos < data_len and is_regular_token_byte(data[pos]):
+    while pos < data_len and not SEPARATOR_TABLE[data[pos]]:
         pos += 1
     return pos
 

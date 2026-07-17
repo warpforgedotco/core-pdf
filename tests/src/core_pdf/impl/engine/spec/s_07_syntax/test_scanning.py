@@ -3,7 +3,8 @@ from __future__ import annotations
 
 from itertools import product
 
-from core_pdf.impl.engine.spec.s_07_syntax.scanning import skip_literal_string
+from core_pdf.impl.engine.spec.s_07_syntax.scanning import skip_literal_string, skip_name
+from core_pdf.impl.engine.spec.s_07_syntax.tokens import DELIMITERS, WHITESPACE
 
 
 def reference_skip_literal_string(data: bytes) -> int:
@@ -31,3 +32,14 @@ def test_skip_literal_string_matches_reference_exhaustively() -> None:
 
             assert skip_literal_string(data, 0, len(data)) == expected
             assert skip_literal_string(memoryview(data), 0, len(data)) == expected
+
+
+def test_skip_name_uses_canonical_pdf_separators() -> None:
+    for separator in WHITESPACE + DELIMITERS:
+        data = b"/Name" + bytes((separator,)) + b"suffix"
+
+        assert skip_name(data, 0, len(data)) == len(b"/Name")
+        assert skip_name(memoryview(data), 0, len(data)) == len(b"/Name")
+
+    data = b"/Name\vsuffix"
+    assert skip_name(data, 0, len(data)) == len(data)

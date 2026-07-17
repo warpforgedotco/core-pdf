@@ -23,12 +23,11 @@ from core_pdf.impl.engine.spec.s_07_syntax.lexer_helpers import (
     skip_pdf_ignored,
 )
 from core_pdf.impl.engine.spec.s_07_syntax.scanning import (
-    is_regular_token_byte,
     skip_hex_string,
     skip_literal_string,
     skip_name,
 )
-from core_pdf.impl.engine.spec.s_07_syntax.tokens import WS_TABLE
+from core_pdf.impl.engine.spec.s_07_syntax.tokens import SEPARATOR_TABLE, WS_TABLE
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.objects import PdfStream
 from core_pdf.impl.types import PdfDict
@@ -325,6 +324,7 @@ def content_operator_counts(
     inline_image_lexer: PdfLexer | None = None
     container_depth = 0
     pos = 0
+    separator_table = SEPARATOR_TABLE
     while pos < data_len:
         byte = raw_bytes[pos]
         if WS_TABLE[byte] or byte == 37:
@@ -360,7 +360,7 @@ def content_operator_counts(
             continue
 
         start = pos
-        while pos < data_len and is_regular_token_byte(raw_bytes[pos]):
+        while pos < data_len and not separator_table[raw_bytes[pos]]:
             pos += 1
         if start == pos:
             pos += 1

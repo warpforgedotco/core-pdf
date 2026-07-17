@@ -17,7 +17,6 @@ from core_pdf.impl.engine.spec.s_07_syntax.lexer import (
 )
 from core_pdf.impl.engine.spec.s_07_syntax.lexer_helpers import full_source_bytes
 from core_pdf.impl.engine.spec.s_07_syntax.scanning import (
-    is_regular_token_byte,
     skip_comment,
     skip_hex_string,
     skip_literal_string,
@@ -143,8 +142,8 @@ def content_stream_may_show_text(data: bytes | memoryview) -> bool:
             pos = skip_name(raw_bytes, marker, data_len)
             continue
         after = match.end()
-        delimited = (marker == 0 or not is_regular_token_byte(raw_bytes[marker - 1])) and (
-            after == data_len or not is_regular_token_byte(raw_bytes[after])
+        delimited = (marker == 0 or SEPARATOR_TABLE[raw_bytes[marker - 1]]) and (
+            after == data_len or SEPARATOR_TABLE[raw_bytes[after]]
         )
         if not delimited:
             pos = marker + 1
