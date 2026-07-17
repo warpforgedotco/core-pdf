@@ -82,6 +82,18 @@ def skip_pdf_ignored(data: bytes | memoryview, position: int, data_len: int) -> 
     if pos >= data_len:
         return pos
     if isinstance(data, bytes) or data.c_contiguous:
+        start = pos
+        if data[pos] != 37:
+            short_end = min(data_len, pos + 8)
+            while pos < short_end and WS_TABLE[data[pos]]:
+                pos += 1
+            if pos >= data_len:
+                return pos
+            byte = data[pos]
+            if byte != 37 and not WS_TABLE[byte]:
+                return pos
+            if byte != 37:
+                pos = start
         match = PDF_IGNORED_RE.match(data, pos)
         if match is not None:
             return match.end()

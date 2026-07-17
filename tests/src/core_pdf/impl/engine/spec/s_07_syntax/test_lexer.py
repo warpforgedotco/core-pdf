@@ -160,6 +160,10 @@ def test_numeric_array_slice_fast_path_preserves_general_array_semantics(
         (b"% comment\r\n", 11),
         (b"% comment\n\r \t", 13),
         (b" % first\n% second\r", 18),
+        (b" " * 8, 8),
+        (b" " * 9, 9),
+        (b" " * 7 + b"% comment\n", 17),
+        (b" " * 9 + b"% comment\r", 19),
         (b"\v", 0),
     ],
 )
