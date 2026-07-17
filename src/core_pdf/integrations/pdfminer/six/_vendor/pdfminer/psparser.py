@@ -492,7 +492,7 @@ class PSBaseParser:
             raise PSEOF("Unexpected EOF")
         while not self._tokens:
             try:
-                changed_stream = self.fillbuf()
+                changed_stream = self.charpos >= len(self.buf) and self.fillbuf()
                 if changed_stream and self._curtoken:
                     # Fixes #1157: if the stream is changed in the middle of a token,
                     # try to parse it by tacking on whitespace.
