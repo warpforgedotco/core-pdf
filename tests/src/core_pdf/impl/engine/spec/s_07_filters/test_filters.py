@@ -1,13 +1,15 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
+import binascii
 import zlib
+from itertools import product
 from typing import cast
 
 import pytest
 
 from core_pdf.impl.engine.spec.s_07_filters import decoders
-from core_pdf.impl.engine.spec.s_07_filters.codecs import apply_ascii85
+from core_pdf.impl.engine.spec.s_07_filters.codecs import apply_ascii85, apply_ascii_hex
 from core_pdf.impl.engine.spec.s_07_filters.flate import (
     apply_flate,
     looks_like_pdf_content_stream,
@@ -99,6 +101,29 @@ def test_content_stream_detection_supports_sliced_memoryview() -> None:
 
 def test_apply_ascii85_decodes_unterminated_pdf_stream() -> None:
     assert apply_ascii85(b"87cURD]j7BEbo80", {}) == b"Hello world!"
+
+
+def reference_ascii_hex(data: bytes) -> bytes:
+    filtered = bytearray()
+    for byte in data:
+        if byte in b"\x00\t\n\x0c\r ":
+            continue
+        if byte == 62:
+            break
+        if byte in b"0123456789ABCDEFabcdef":
+            filtered.append(byte)
+    if len(filtered) & 1:
+        filtered.append(48)
+    return binascii.unhexlify(filtered)
+
+
+def test_apply_ascii_hex_matches_reference_exhaustively() -> None:
+    alphabet = b"0Af Z\n>"
+    for length in range(6):
+        for value in product(alphabet, repeat=length):
+            data = bytes(value)
+
+            assert apply_ascii_hex(data, {}) == reference_ascii_hex(data)
 
 
 def test_apply_ascii85_rejects_invalid_data() -> None:

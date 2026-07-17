@@ -9,27 +9,20 @@ from core_pdf.impl.exceptions import PdfParseError
 
 PDF_WHITESPACE_TABLE = bytes([1 if i in b"\x00\t\n\x0c\r " else 0 for i in range(256)])
 PDF_WHITESPACE_BYTES = b"\x00\t\n\x0c\r "
+ASCII_HEX_DIGITS = b"0123456789ABCDEFabcdef"
+ASCII_HEX_INVALID_BYTES = bytes(byte for byte in range(256) if byte not in ASCII_HEX_DIGITS)
 ASCII85_DIGITS = bytes(range(33, 118))
 ASCII85_PACK_QUAD = struct.Struct(">I").pack_into
 
 
 def apply_ascii_hex(data: bytes, parms: object) -> bytes:
-    filtered = bytearray()
-    ws = PDF_WHITESPACE_TABLE
-    for byte in data:
-        if ws[byte]:
-            continue
-        if byte == 62:
-            break
-        if not (48 <= byte <= 57 or 65 <= byte <= 70 or 97 <= byte <= 102):
-            continue
-        filtered.append(byte)
+    terminator = data.find(b">")
+    if terminator >= 0:
+        data = data[:terminator]
+    filtered = data.translate(None, ASCII_HEX_INVALID_BYTES)
     if len(filtered) & 1:
-        filtered.append(48)
-    try:
-        return binascii.unhexlify(filtered)
-    except binascii.Error as exc:
-        raise PdfParseError("invalid ASCIIHexDecode stream") from exc
+        filtered += b"0"
+    return binascii.unhexlify(filtered)
 
 
 def apply_run_length(data: bytes, parms: object) -> bytes:
