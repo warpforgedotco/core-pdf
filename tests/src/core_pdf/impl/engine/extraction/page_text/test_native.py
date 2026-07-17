@@ -2,7 +2,9 @@ from core_pdf.impl.engine.extraction.page_text.native import (
     native_invisible_text_layer_has_fragmented_geometry,
     native_invisible_text_layer_is_trustworthy,
     native_text_runs_inside_page_bounds,
+    should_try_rendered_glyph_repair,
     should_try_rendered_glyph_text,
+    text_run_has_glyph_bitmap_repair_candidate,
 )
 from core_pdf.impl.engine.layout.geometry_quality import (
     LayoutGeometrySummary,
@@ -77,6 +79,37 @@ def test_uninterpretable_dense_native_text_can_use_rendered_glyphs() -> None:
     damaged_text = ("index entry ........ 12 " * 200) + "\ufffd"
 
     assert should_try_rendered_glyph_text(damaged_text)
+
+
+def test_glyph_repair_preflight_requires_an_actionable_bitmap_label() -> None:
+    ordinary = text_run("A", 0.0, 0.0, 10.0, 10.0)
+    ordinary.confidence = 0.2
+    suspicious = text_run("\ufffd", 0.0, 0.0, 10.0, 10.0)
+
+    assert not text_run_has_glyph_bitmap_repair_candidate(
+        ordinary,
+        repair_contextual_punctuation=False,
+    )
+    assert text_run_has_glyph_bitmap_repair_candidate(
+        suspicious,
+        repair_contextual_punctuation=False,
+    )
+    assert not should_try_rendered_glyph_repair([ordinary], "A")
+    assert should_try_rendered_glyph_repair([suspicious], "\ufffd")
+
+
+def test_glyph_repair_preflight_keeps_contextual_punctuation_mode() -> None:
+    punctuation = text_run("(", 0.0, 0.0, 10.0, 10.0)
+    punctuation.confidence = 0.2
+
+    assert not text_run_has_glyph_bitmap_repair_candidate(
+        punctuation,
+        repair_contextual_punctuation=False,
+    )
+    assert text_run_has_glyph_bitmap_repair_candidate(
+        punctuation,
+        repair_contextual_punctuation=True,
+    )
 
 
 def test_sparse_geometry_issues_do_not_trigger_ocr_for_substantial_text() -> None:

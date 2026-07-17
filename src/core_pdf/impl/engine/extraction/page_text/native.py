@@ -29,6 +29,8 @@ from core_pdf.impl.engine.extraction.ocr import (
     text_analysis as ocr_text_analysis,
 )
 from core_pdf.impl.engine.extraction.ocr.glyph_recognizer import (
+    CONTEXTUAL_PUNCTUATION_GLYPH_TEXT,
+    is_suspicious_bitmap_label,
     repair_text_runs_with_glyph_bitmaps,
     text_runs_from_rendered_glyphs,
 )
@@ -545,7 +547,33 @@ def should_try_rendered_glyph_repair(runs: list[TextRun], text: str) -> bool:
         return False
     if should_try_rendered_glyph_text(text):
         return True
-    return any(text_run_has_repairable_glyph_geometry_issue(run) for run in runs)
+    repair_contextual_punctuation = text_ocr_quality_score(text) >= 0.4
+    return any(
+        text_run_has_glyph_bitmap_repair_candidate(
+            run,
+            repair_contextual_punctuation=repair_contextual_punctuation,
+        )
+        for run in runs
+    )
+
+
+def text_run_has_glyph_bitmap_repair_candidate(
+    run: TextRun,
+    *,
+    repair_contextual_punctuation: bool,
+) -> bool:
+    if not text_run_has_repairable_glyph_geometry_issue(run):
+        return False
+    clusters = tuple(run.glyph_clusters or ())
+    texts = (cluster.text for cluster in clusters) if clusters else (run.text,)
+    for glyph_text in texts:
+        if is_suspicious_bitmap_label(glyph_text):
+            return True
+        if repair_contextual_punctuation and any(
+            char in CONTEXTUAL_PUNCTUATION_GLYPH_TEXT for char in glyph_text
+        ):
+            return True
+    return False
 
 
 def native_layout_geometry_summary_for_runs(
