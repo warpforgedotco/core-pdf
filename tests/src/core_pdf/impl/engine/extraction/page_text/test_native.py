@@ -132,6 +132,24 @@ def test_native_extraction_defers_ocr_geometry_summary_but_keeps_public_diagnost
         assert summary["line_count"] > 0
 
 
+def test_single_glyph_capture_shares_observation_with_cluster_and_preserves_provenance() -> None:
+    pdf_path = TESTS_DIR / "fixtures" / "pdfminer.six" / "samples" / "simple1.pdf"
+
+    with PdfDocument.open(pdf_path) as document:
+        page = cast(Any, document.pages[0])
+        state = page.capture_text_state()
+        cluster = next(item for item in state.glyph_clusters if item.kind == "single_glyph")
+        observation = cluster.glyphs[0]
+
+        assert any(item is observation for item in state.glyphs)
+        assert cluster.advance_bbox == observation.advance_bbox
+        assert cluster.ink_bbox == observation.ink_bbox
+        assert cluster.confidence == observation.confidence
+        assert cluster.provenance is observation.provenance
+        assert dict(observation.provenance)["source"] == "native_glyph"
+        assert type(dict(observation.provenance)["decoded_glyph_index"]) is int
+
+
 def test_sparse_geometry_issues_do_not_trigger_ocr_for_substantial_text() -> None:
     summary = LayoutGeometrySummary(
         issue_count=20,

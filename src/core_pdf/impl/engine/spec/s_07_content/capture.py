@@ -912,6 +912,13 @@ class ContentCaptureMixin:
         cursor = 0
         is_vertical = decoder.is_vertical
         writing_mode = "vertical" if is_vertical else "horizontal"
+        base_provenance = (
+            ("source", "native_glyph"),
+            ("seqno", seqno),
+            ("font_name", font_name),
+            ("stream_order", stream_order),
+            ("xobject_depth", xobject_depth),
+        )
         for decoded_index, glyph in enumerate(glyphs):
             advance = self.chunk_advance(
                 glyph.width_code,
@@ -949,14 +956,9 @@ class ContentCaptureMixin:
                 baseline[1],
             )
             common_provenance = (
-                ("source", "native_glyph"),
-                ("seqno", seqno),
-                ("font_name", font_name),
-                ("stream_order", stream_order),
-                ("xobject_depth", xobject_depth),
+                *base_provenance,
                 ("decoded_glyph_index", decoded_index),
             )
-            cluster_observations: list[GlyphObservation] = []
             observation_confidence = glyph_unicode_confidence(
                 chunk_text,
                 glyph.unicode_source,
@@ -981,41 +983,53 @@ class ContentCaptureMixin:
                     if not bitmap:
                         bitmap_width = 0
                         bitmap_height = 0
-                cluster_observations.append(
-                    GlyphObservation(
-                        text=chunk_text,
-                        ink_rect=rect,
-                        advance_rect=advance_rect,
-                        seqno=seqno,
-                        code_bytes=glyph.code_bytes,
-                        char_code=glyph.char_code,
-                        cid=glyph.cid,
-                        gid=glyph.gid,
-                        font_name=font_name,
-                        font_size=font_size,
-                        space_width=space_width,
-                        text_matrix=glyph_text_matrix,
-                        device_matrix=device_matrix,
-                        baseline=baseline,
-                        writing_mode=writing_mode,
-                        rotation_angle=rotation_angle,
-                        stream_order=stream_order,
-                        xobject_depth=xobject_depth,
-                        fill=fill,
-                        visible=visible,
-                        confidence=observation_confidence,
-                        unicode_source=glyph.unicode_source,
-                        alternates=glyph.alternates,
-                        cluster_id=cluster_id,
-                        cluster_index=0,
-                        cluster_size=1,
-                        bitmap=bitmap,
-                        bitmap_width=bitmap_width,
-                        bitmap_height=bitmap_height,
-                        provenance=common_provenance,
-                    )
+                observation = GlyphObservation(
+                    text=chunk_text,
+                    ink_rect=rect,
+                    advance_rect=advance_rect,
+                    seqno=seqno,
+                    code_bytes=glyph.code_bytes,
+                    char_code=glyph.char_code,
+                    cid=glyph.cid,
+                    gid=glyph.gid,
+                    font_name=font_name,
+                    font_size=font_size,
+                    space_width=space_width,
+                    text_matrix=glyph_text_matrix,
+                    device_matrix=device_matrix,
+                    baseline=baseline,
+                    writing_mode=writing_mode,
+                    rotation_angle=rotation_angle,
+                    stream_order=stream_order,
+                    xobject_depth=xobject_depth,
+                    fill=fill,
+                    visible=visible,
+                    confidence=observation_confidence,
+                    unicode_source=glyph.unicode_source,
+                    alternates=glyph.alternates,
+                    cluster_id=cluster_id,
+                    cluster_index=0,
+                    cluster_size=1,
+                    bitmap=bitmap,
+                    bitmap_width=bitmap_width,
+                    bitmap_height=bitmap_height,
+                    provenance=common_provenance,
                 )
-            elif glyph.split_unicode:
+                append_glyph(observation)
+                cluster = glyph_cluster_from_observations(
+                    cluster_id,
+                    chunk_text,
+                    (observation,),
+                    kind="single_glyph",
+                    provenance=common_provenance,
+                )
+                if cluster is not None:
+                    clusters.append(cluster)
+                offset += advance
+                continue
+
+            cluster_observations: list[GlyphObservation] = []
+            if glyph.split_unicode:
                 per_char_advance = advance / len(chunk_text)
                 char_offset = offset
                 cluster_size = len(chunk_text)
