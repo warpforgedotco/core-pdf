@@ -162,6 +162,7 @@ class PDFTextDevice(PDFDevice):
         graphicstate: "PDFGraphicState",
     ) -> Point:
         (x, y) = pos
+        (a, b, c, d, e, f) = matrix
         needcharspace = False
         for obj in seq:
             if isinstance(obj, (int, float)):
@@ -172,7 +173,7 @@ class PDFTextDevice(PDFDevice):
                     if needcharspace:
                         x += charspace
                     x += self.render_char(
-                        utils.translate_matrix(matrix, (x, y)),
+                        (a, b, c, d, x * a + y * c + e, x * b + y * d + f),
                         font,
                         fontsize,
                         scaling,
@@ -208,6 +209,7 @@ class PDFTextDevice(PDFDevice):
         graphicstate: "PDFGraphicState",
     ) -> Point:
         (x, y) = pos
+        (a, b, c, d, e, f) = matrix
         needcharspace = False
         for obj in seq:
             if isinstance(obj, (int, float)):
@@ -218,7 +220,7 @@ class PDFTextDevice(PDFDevice):
                     if needcharspace:
                         y += charspace
                     y += self.render_char(
-                        utils.translate_matrix(matrix, (x, y)),
+                        (a, b, c, d, x * a + y * c + e, x * b + y * d + f),
                         font,
                         fontsize,
                         scaling,

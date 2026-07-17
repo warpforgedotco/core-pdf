@@ -379,14 +379,32 @@ class LTChar(LTComponent, LTText):
             # horizontal
             descent = font.get_descent() * fontsize
             bbox = (0, descent + rise, self.adv, descent + rise + fontsize)
-        (a, b, c, d, _e, _f) = self.matrix
+        (a, b, c, d, e, f) = self.matrix
         self.upright = a * d * scaling > 0 and b * c <= 0
-        (x0, y0, x1, y1) = apply_matrix_rect(self.matrix, bbox)
+        (bx0, by0, bx1, by1) = bbox
+        left1 = a * bx0 + c * by0 + e
+        bottom1 = b * bx0 + d * by0 + f
+        right1 = a * bx1 + c * by0 + e
+        bottom2 = b * bx1 + d * by0 + f
+        right2 = a * bx1 + c * by1 + e
+        top1 = b * bx1 + d * by1 + f
+        left2 = a * bx0 + c * by1 + e
+        top2 = b * bx0 + d * by1 + f
+        x0 = min(left1, left2, right1, right2)
+        y0 = min(bottom1, bottom2, top1, top2)
+        x1 = max(left1, left2, right1, right2)
+        y1 = max(bottom1, bottom2, top1, top2)
         if x1 < x0:
             (x0, x1) = (x1, x0)
         if y1 < y0:
             (y0, y1) = (y1, y0)
-        LTComponent.__init__(self, (x0, y0, x1, y1))
+        self.x0 = x0
+        self.y0 = y0
+        self.x1 = x1
+        self.y1 = y1
+        self.width = x1 - x0
+        self.height = y1 - y0
+        self.bbox = (x0, y0, x1, y1)
         if font.is_vertical():
             self.size = self.width
         else:
