@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
+import base64
 import binascii
 import zlib
 from itertools import product
@@ -129,6 +130,28 @@ def test_apply_ascii_hex_matches_reference_exhaustively() -> None:
 def test_apply_ascii85_rejects_invalid_data() -> None:
     with pytest.raises(PdfParseError):
         apply_ascii85(b"!!!!~bad", {})
+
+
+@pytest.mark.parametrize("data", [b"uuuuu~>", b"uuuu~>", b"!~>", b"z!~>"])
+def test_apply_ascii85_rejects_overflow_and_incomplete_tuples(data: bytes) -> None:
+    with pytest.raises(PdfParseError, match="invalid ASCII85Decode stream"):
+        apply_ascii85(data, {})
+
+
+def test_apply_ascii85_accepts_maximum_tuple() -> None:
+    assert apply_ascii85(b"s8W-!~>", {}) == b"\xff\xff\xff\xff"
+
+
+def test_apply_ascii85_matches_stdlib_across_tuple_lengths() -> None:
+    for length in range(261):
+        payload = bytes(index & 0xFF for index in range(length))
+        encoded = base64.a85encode(payload, adobe=True)
+
+        assert apply_ascii85(encoded, {}) == payload
+        assert apply_ascii85(memoryview(encoded), {}) == payload
+
+    zero_payload = b"\0" * 64
+    assert apply_ascii85(base64.a85encode(zero_payload, adobe=True), {}) == zero_payload
 
 
 @pytest.mark.parametrize(
