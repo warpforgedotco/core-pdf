@@ -4,6 +4,7 @@ from __future__ import annotations
 import zlib
 
 from core_pdf.impl.engine.spec.s_07_filters.codecs import PDF_WHITESPACE_TABLE
+from core_pdf.impl.engine.spec.s_07_syntax.lexer_helpers import full_source_bytes
 from core_pdf.impl.engine.spec.s_07_syntax.scanning import (
     skip_comment,
     skip_hex_string,
@@ -125,11 +126,8 @@ def recover_flate(data: bytes, wbits: int = zlib.MAX_WBITS) -> bytes:
 def looks_like_pdf_content_stream(data: bytes | memoryview) -> bool:
     data_len = len(data)
     scan_limit = min(data_len, 1024)
-    source = data.obj if type(data) is memoryview else data
-    if type(source) is bytes and len(source) == data_len:
-        raw = source[:scan_limit]
-    else:
-        raw = bytes(data[:scan_limit])
+    source_bytes = full_source_bytes(data)
+    raw = source_bytes[:scan_limit] if source_bytes is not None else bytes(data[:scan_limit])
     end = len(raw)
     pos = 0
     token_count = 0

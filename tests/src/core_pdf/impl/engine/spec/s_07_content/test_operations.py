@@ -48,6 +48,12 @@ def test_content_stream_may_show_text_supports_sliced_memoryview() -> None:
     assert not content_stream_may_show_text(data)
 
 
+def test_content_stream_may_show_text_supports_reversed_memoryview() -> None:
+    content = b"(embedded Tj) q Q"
+
+    assert not content_stream_may_show_text(memoryview(content[::-1])[::-1])
+
+
 def test_content_stream_may_show_text_finds_operator_after_container() -> None:
     assert content_stream_may_show_text(b"[(embedded Tj)] TJ")
 
@@ -62,3 +68,12 @@ def test_content_operations_treat_null_as_pdf_whitespace() -> None:
     operations = list(iter_content_operations(PdfLexer(b"Tj\0Do")))
 
     assert operations == [("Tj", ()), ("Do", ())]
+
+
+def test_content_operations_support_reversed_memoryview() -> None:
+    content = b"q Q"
+
+    assert list(iter_content_operations(PdfLexer(memoryview(content[::-1])[::-1]))) == [
+        ("q", ()),
+        ("Q", ()),
+    ]

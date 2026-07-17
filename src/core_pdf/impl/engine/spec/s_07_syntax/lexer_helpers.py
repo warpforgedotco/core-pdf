@@ -43,6 +43,21 @@ class FindableSizedBuffer(Protocol):
     def rfind(self, sub: bytes, start: int = 0, end: int = -1, /) -> int: ...
 
 
+def full_source_bytes(data: bytes | memoryview) -> bytes | None:
+    if type(data) is bytes:
+        return data
+    assert isinstance(data, memoryview)
+    source = data.obj
+    if (
+        type(source) is bytes
+        and data.c_contiguous
+        and data.itemsize == 1
+        and data.nbytes == len(source)
+    ):
+        return source
+    return None
+
+
 def full_source_buffer(data: memoryview, data_len: int) -> FindableSizedBuffer | None:
     source = data.obj
     if hasattr(source, "find") and hasattr(source, "rfind") and hasattr(source, "__len__"):

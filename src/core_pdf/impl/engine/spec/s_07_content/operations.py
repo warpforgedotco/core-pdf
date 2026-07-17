@@ -15,6 +15,7 @@ from core_pdf.impl.engine.spec.s_07_syntax.lexer import (
     EMPTY_SIMPLE_TJ_ARRAY,
     PdfLexer,
 )
+from core_pdf.impl.engine.spec.s_07_syntax.lexer_helpers import full_source_bytes
 from core_pdf.impl.engine.spec.s_07_syntax.scanning import (
     is_regular_token_byte,
     skip_comment,
@@ -96,11 +97,8 @@ CONTAINER_LEXICAL_MARKER_RE = re.compile(rb"[%(<>\[\]]")
 
 def content_stream_may_show_text(data: bytes | memoryview) -> bool:
     data_len = len(data)
-    raw_source = data.obj if type(data) is memoryview else data
-    raw_bytes: bytes
-    if type(raw_source) is bytes and len(raw_source) == data_len:
-        raw_bytes = raw_source
-    else:
+    raw_bytes = full_source_bytes(data)
+    if raw_bytes is None:
         raw_bytes = bytes(data)
 
     if not any(raw_bytes.find(candidate) >= 0 for candidate in TEXT_SHOWING_CANDIDATES):
@@ -353,12 +351,9 @@ def dispatch_operations(
     op_count = 0
     raw_data = lexer.raw_data
     data_len = lexer.data_len
-    raw_source = raw_data.obj
     raw_bytes: bytes | memoryview
-    if type(raw_source) is bytes and len(raw_source) == data_len:
-        raw_bytes = raw_source
-    else:
-        raw_bytes = raw_data
+    source_bytes = full_source_bytes(raw_data)
+    raw_bytes = source_bytes if source_bytes is not None else raw_data
 
     word_break_or_ws = WORD_BREAK_OR_WS
     is_word_start = IS_WORD_START

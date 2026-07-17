@@ -105,6 +105,12 @@ def test_content_stream_detection_supports_sliced_memoryview() -> None:
     assert not looks_like_pdf_content_stream(data)
 
 
+def test_content_stream_detection_supports_reversed_memoryview() -> None:
+    content = b"[(Tj)] TJ"
+
+    assert looks_like_pdf_content_stream(memoryview(content[::-1])[::-1])
+
+
 def test_apply_ascii85_decodes_unterminated_pdf_stream() -> None:
     assert apply_ascii85(b"87cURD]j7BEbo80", {}) == b"Hello world!"
 

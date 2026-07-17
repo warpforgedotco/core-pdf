@@ -32,3 +32,11 @@ def test_content_operator_counts_do_not_split_on_vertical_tab() -> None:
     counts = content_operator_counts(b"Tj\vDo q", profile_thresholds=True)
 
     assert counts == {"q": 1}
+
+
+def test_content_operator_counts_support_reversed_memoryview() -> None:
+    content = b"q m Q"
+
+    counts = content_operator_counts(memoryview(content[::-1])[::-1])
+
+    assert counts == {"q": 1, "m": 1, "Q": 1}

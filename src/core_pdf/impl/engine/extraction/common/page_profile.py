@@ -18,6 +18,7 @@ from core_pdf.impl.engine.spec.s_07_objects.coercion import (
 )
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
+from core_pdf.impl.engine.spec.s_07_syntax.lexer_helpers import full_source_bytes
 from core_pdf.impl.engine.spec.s_07_syntax.scanning import (
     is_regular_token_byte,
     skip_comment,
@@ -306,12 +307,9 @@ def content_operator_counts(
     may_show_text: bool | None = None,
 ) -> dict[str, int]:
     data_len = len(data)
-    raw_source = data.obj if type(data) is memoryview else data
     raw_bytes: bytes | memoryview
-    if type(raw_source) is bytes and len(raw_source) == data_len:
-        raw_bytes = raw_source
-    else:
-        raw_bytes = data
+    source_bytes = full_source_bytes(data)
+    raw_bytes = source_bytes if source_bytes is not None else data
 
     inline_image_possible = True
     if profile_thresholds and type(raw_bytes) is bytes:
