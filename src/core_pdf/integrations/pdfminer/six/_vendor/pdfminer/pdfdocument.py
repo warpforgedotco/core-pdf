@@ -971,35 +971,36 @@ class PDFDocument:
         xrefs: list[PDFBaseXRef],
     ) -> None:
         """Reads XRefs from the given location."""
-        if start in self._xrefpos:
-            raise PDFNoValidXRef(f"Detected circular xref chain at {start}")
-        self._xrefpos.add(start)
-        parser.seek(start)
-        parser.reset()
-        try:
-            (pos, token) = parser.nexttoken()
-        except PSEOF as err:
-            raise PDFNoValidXRef("Unexpected EOF") from err
-        if isinstance(token, int):
-            # XRefStream: PDF-1.5
-            parser.seek(pos)
+        pending = [start]
+        while pending:
+            start = pending.pop()
+            if start in self._xrefpos:
+                raise PDFNoValidXRef(f"Detected circular xref chain at {start}")
+            self._xrefpos.add(start)
+            parser.seek(start)
             parser.reset()
-            xref: PDFBaseXRef = PDFXRefStream()
-            xref.load(parser)
-        else:
-            if token is parser.KEYWORD_XREF:
-                parser.nextline()
-            xref = PDFXRef()
-            xref.load(parser)
-        xrefs.append(xref)
-        trailer = xref.get_trailer()
-        if "XRefStm" in trailer:
-            pos = int_value(trailer["XRefStm"])
-            self.read_xref_from(parser, pos, xrefs)
-        if "Prev" in trailer:
-            # find previous xref
-            pos = int_value(trailer["Prev"])
-            self.read_xref_from(parser, pos, xrefs)
+            try:
+                (pos, token) = parser.nexttoken()
+            except PSEOF as err:
+                raise PDFNoValidXRef("Unexpected EOF") from err
+            if isinstance(token, int):
+                # XRefStream: PDF-1.5
+                parser.seek(pos)
+                parser.reset()
+                xref: PDFBaseXRef = PDFXRefStream()
+                xref.load(parser)
+            else:
+                if token is parser.KEYWORD_XREF:
+                    parser.nextline()
+                xref = PDFXRef()
+                xref.load(parser)
+            xrefs.append(xref)
+            trailer = xref.get_trailer()
+            if "Prev" in trailer:
+                # Process this after XRefStm to preserve the recursive traversal order.
+                pending.append(int_value(trailer["Prev"]))
+            if "XRefStm" in trailer:
+                pending.append(int_value(trailer["XRefStm"]))
 
 
 class PageLabels(NumberTree):
