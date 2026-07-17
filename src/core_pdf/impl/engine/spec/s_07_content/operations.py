@@ -621,7 +621,13 @@ def dispatch_operations(
                             "inline image keys must be names",
                             "expected inline image data separator",
                         ):
-                            recovered_pos = recover_inline_image_position(lexer, pos)
+                            recovered_pos = recover_inline_image_position(
+                                lexer,
+                                pos,
+                                (lambda token: op_get_bytes(token) is not None)
+                                if op_get_bytes is not None
+                                else None,
+                            )
                             if recovered_pos is None:
                                 if message == "unterminated inline image data":
                                     pos = data_len

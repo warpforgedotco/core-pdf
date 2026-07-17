@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any, Protocol
 
 from core_pdf.impl.engine.spec.s_07_filters.decode_spec import (
@@ -227,22 +228,21 @@ def parse_inline_image(lexer: InlineImageLexer) -> InlineImage:
         pos = marker + 1
 
 
-def recover_inline_image_position(lexer: InlineImageLexer, position: int) -> int | None:
+def recover_inline_image_position(
+    lexer: InlineImageLexer,
+    position: int,
+    is_valid_operator: Callable[[bytes], bool] | None = None,
+) -> int | None:
     data = lexer.raw_data
     data_len = lexer.data_len
     source = data.obj
     source_bytes = source if type(source) is bytes and len(source) == data_len else None
+    search_data = source_bytes if source_bytes is not None else data.tobytes()
     pos = position
     while pos < data_len:
-        marker = (
-            source_bytes.find(b"EI", pos)
-            if source_bytes is not None
-            else data[pos:].tobytes().find(b"EI")
-        )
+        marker = search_data.find(b"EI", pos)
         if marker < 0:
             return None
-        if source_bytes is None:
-            marker += pos
         after = marker + 2
         if (
             (marker == 0 or data[marker - 1] in WHITESPACE)
@@ -254,7 +254,11 @@ def recover_inline_image_position(lexer: InlineImageLexer, position: int) -> int
             if word is None:
                 return after
             token, ignored = word
-            if token in (b"BT", b"ET", b"q", b"Q", b"cm", b"Do", b"BI"):
+            if (
+                is_valid_operator(bytes(token))
+                if is_valid_operator is not None
+                else token in (b"BT", b"ET", b"q", b"Q", b"cm", b"Do", b"BI")
+            ):
                 return next_pos
         pos = marker + 1
     return None
