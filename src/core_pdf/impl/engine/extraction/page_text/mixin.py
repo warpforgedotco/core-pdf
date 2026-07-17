@@ -1166,6 +1166,7 @@ class PageExtractionMixin(PageContentMixin):
                     schematic_ocr_supplement_candidate = None
                     schematic_ocr_supplement_candidates = ()
             finally:
+                record_ocr_deskew_diagnostics(self, ocr_session)
                 ocr_session.close()
         if preserve_substantial_native_lines:
             text = ocr_text_analysis.repair_formula_control_delimiters(pre_ocr_native_text)
@@ -8068,6 +8069,16 @@ def extract_ocr_page_result(
     vector_text: str = "",
     ocr_session: ocr_session_runtime.OcrPageSession | None = None,
 ) -> OcrPageTextResult:
+    if ocr_session is None:
+        with ocr_session_runtime.OcrPageSession() as owned_session:
+            try:
+                return extract_ocr_page_result(
+                    page,
+                    vector_text=vector_text,
+                    ocr_session=owned_session,
+                )
+            finally:
+                record_ocr_deskew_diagnostics(page, owned_session)
     text = ""
     candidates: list[OcrCandidate] = []
     candidate: OcrCandidate | None = None
@@ -8146,7 +8157,18 @@ def extract_ocr_page_result(
         verification_candidates,
         preserve_raw_text,
     )
+    record_ocr_deskew_diagnostics(page, ocr_session)
     return result
+
+
+def record_ocr_deskew_diagnostics(
+    page: PageExtractionHost,
+    ocr_session: ocr_session_runtime.OcrPageSession,
+) -> None:
+    diagnostics = ocr_session.deskew_diagnostics()
+    cache = getattr(page, "extraction_cache", None)
+    if diagnostics and cache is not None:
+        cache["ocr_deskew"] = diagnostics
 
 
 def append_ocr_candidate_with_layout_variants(

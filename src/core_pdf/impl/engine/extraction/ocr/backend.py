@@ -3,11 +3,13 @@ from __future__ import annotations
 
 import ctypes
 import ctypes.util
+import math
 import shutil
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Mapping
 
+from core_pdf.impl.engine.extraction.ocr import deskew as ocr_deskew
 from core_pdf.impl.engine.extraction.ocr.types import (
     BMP_MAX_BYTES,
     LEPTONICA_LIBRARY_FILENAMES,
@@ -22,6 +24,7 @@ from core_pdf.impl.engine.extraction.ocr.types import (
     TESSERACT_RIL_TEXTLINE,
     TESSERACT_RIL_WORD,
     OcrComponentBox,
+    OcrDeskewInfo,
     OcrImage,
     OcrIteratorLayout,
     OcrTextChoice,
@@ -41,6 +44,9 @@ class TesseractCtypesBackend:
         "has_clear_adaptive_classifier",
         "has_init2",
         "has_pix_clip_rectangle",
+        "has_pix_convert_to_1",
+        "has_pix_find_skew",
+        "has_pix_rotate",
         "has_set_image2",
         "has_set_source_resolution",
         "has_pix_scale_to_size",
@@ -64,6 +70,11 @@ class TesseractCtypesBackend:
         self.has_pix_clip_rectangle = bool(
             leptonica is not None and hasattr(leptonica, "pixClipRectangle")
         )
+        self.has_pix_convert_to_1 = bool(
+            leptonica is not None and hasattr(leptonica, "pixConvertTo1")
+        )
+        self.has_pix_find_skew = bool(leptonica is not None and hasattr(leptonica, "pixFindSkew"))
+        self.has_pix_rotate = bool(leptonica is not None and hasattr(leptonica, "pixRotate"))
         self.has_pix_scale_to_size = bool(
             leptonica is not None and hasattr(leptonica, "pixScaleToSize")
         )
@@ -369,6 +380,26 @@ class TesseractCtypesBackend:
         if hasattr(leptonica, "pixRotateOrth"):
             leptonica.pixRotateOrth.argtypes = [ctypes.c_void_p, ctypes.c_int]
             leptonica.pixRotateOrth.restype = ctypes.c_void_p
+        if hasattr(leptonica, "pixConvertTo1"):
+            leptonica.pixConvertTo1.argtypes = [ctypes.c_void_p, ctypes.c_int]
+            leptonica.pixConvertTo1.restype = ctypes.c_void_p
+        if hasattr(leptonica, "pixFindSkew"):
+            leptonica.pixFindSkew.argtypes = [
+                ctypes.c_void_p,
+                ctypes.POINTER(ctypes.c_float),
+                ctypes.POINTER(ctypes.c_float),
+            ]
+            leptonica.pixFindSkew.restype = ctypes.c_int
+        if hasattr(leptonica, "pixRotate"):
+            leptonica.pixRotate.argtypes = [
+                ctypes.c_void_p,
+                ctypes.c_float,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_int,
+            ]
+            leptonica.pixRotate.restype = ctypes.c_void_p
         if hasattr(leptonica, "boxaGetCount"):
             leptonica.boxaGetCount.argtypes = [ctypes.c_void_p]
             leptonica.boxaGetCount.restype = ctypes.c_int
@@ -1565,6 +1596,139 @@ class TesseractCtypesBackend:
         )
         return int(scaled) if scaled else None
 
+    def deskew_pix(
+        self,
+        pix: int,
+        *,
+        source: str,
+        width: int,
+        height: int,
+    ) -> tuple[int, OcrDeskewInfo]:
+        unavailable = ocr_deskew.deskew_info(
+            source=source,
+            angle_degrees=None,
+            confidence=None,
+            applied=False,
+            reason="unavailable",
+            image_width=width,
+            image_height=height,
+        )
+        if (
+            not pix
+            or self.leptonica is None
+            or not self.has_pix_convert_to_1
+            or not self.has_pix_find_skew
+            or not self.has_pix_rotate
+        ):
+            return pix, unavailable
+
+        try:
+            binary_pix = self.leptonica.pixConvertTo1(
+                ctypes.c_void_p(pix),
+                ocr_deskew.OCR_DESKEW_BINARY_THRESHOLD,
+            )
+        except (AttributeError, OSError, ValueError):
+            return pix, unavailable
+        if not binary_pix:
+            return pix, ocr_deskew.deskew_info(
+                source=source,
+                angle_degrees=None,
+                confidence=None,
+                applied=False,
+                reason="binarization_failed",
+                image_width=width,
+                image_height=height,
+            )
+
+        angle = ctypes.c_float()
+        confidence = ctypes.c_float()
+        binary_handle = ctypes.c_void_p(binary_pix)
+        try:
+            try:
+                status = self.leptonica.pixFindSkew(
+                    binary_handle,
+                    ctypes.byref(angle),
+                    ctypes.byref(confidence),
+                )
+            except (AttributeError, OSError, ValueError):
+                return pix, unavailable
+        finally:
+            self.leptonica.pixDestroy(ctypes.byref(binary_handle))
+
+        angle_value = float(angle.value)
+        confidence_value = float(confidence.value)
+        if status != 0 or not math.isfinite(angle_value) or not math.isfinite(confidence_value):
+            return pix, ocr_deskew.deskew_info(
+                source=source,
+                angle_degrees=None,
+                confidence=None,
+                applied=False,
+                reason="invalid_measurement",
+                image_width=width,
+                image_height=height,
+            )
+        if confidence_value < ocr_deskew.OCR_DESKEW_CONFIDENCE_THRESHOLD:
+            return pix, ocr_deskew.deskew_info(
+                source=source,
+                angle_degrees=angle_value,
+                confidence=confidence_value,
+                applied=False,
+                reason="low_confidence",
+                image_width=width,
+                image_height=height,
+            )
+        if abs(angle_value) < ocr_deskew.OCR_DESKEW_MIN_ANGLE_DEGREES:
+            return pix, ocr_deskew.deskew_info(
+                source=source,
+                angle_degrees=angle_value,
+                confidence=confidence_value,
+                applied=False,
+                reason="below_minimum_angle",
+                image_width=width,
+                image_height=height,
+            )
+        if abs(angle_value) > ocr_deskew.OCR_DESKEW_MAX_ANGLE_DEGREES:
+            return pix, ocr_deskew.deskew_info(
+                source=source,
+                angle_degrees=angle_value,
+                confidence=confidence_value,
+                applied=False,
+                reason="angle_out_of_range",
+                image_width=width,
+                image_height=height,
+            )
+
+        try:
+            rotated = self.leptonica.pixRotate(
+                ctypes.c_void_p(pix),
+                ctypes.c_float(math.radians(angle_value)),
+                1,  # L_ROTATE_AREA_MAP
+                1,  # L_BRING_IN_WHITE
+                0,
+                0,
+            )
+        except (AttributeError, OSError, ValueError):
+            rotated = None
+        if not rotated:
+            return pix, ocr_deskew.deskew_info(
+                source=source,
+                angle_degrees=angle_value,
+                confidence=confidence_value,
+                applied=False,
+                reason="rotation_failed",
+                image_width=width,
+                image_height=height,
+            )
+        return int(rotated), ocr_deskew.deskew_info(
+            source=source,
+            angle_degrees=angle_value,
+            confidence=confidence_value,
+            applied=True,
+            reason="applied",
+            image_width=width,
+            image_height=height,
+        )
+
     def clip_scale_source_pix(
         self,
         source_pix: int,
@@ -1706,6 +1870,17 @@ class TesseractCtypesBackend:
             return False
         if image.encoded is not None:
             return leptonica_pix_size_is_supported(image.width, image.height)
+        if (
+            ocr_deskew.full_page_ocr_image_should_be_deskewed(image)
+            and image.bytes_per_pixel in {1, 3, 4}
+            and raw_ocr_image_size_is_supported(
+                image.width,
+                image.height,
+                image.bytes_per_pixel,
+                image.bytes_per_line,
+            )
+        ):
+            return True
         return self.should_scale_pix(image)
 
     def supports_encoded_pix(self) -> bool:
@@ -1725,7 +1900,7 @@ def rgba_image_to_bmp(image: OcrImage) -> bytes | None:
     height = image.height
     bytes_per_pixel = image.bytes_per_pixel
     bytes_per_line = image.bytes_per_line
-    if width <= 0 or height <= 0 or bytes_per_pixel < 3 or bytes_per_line <= 0:
+    if width <= 0 or height <= 0 or bytes_per_pixel not in {1, 3, 4} or bytes_per_line <= 0:
         return None
     if not leptonica_pix_size_is_supported(width, height):
         return None
@@ -1764,6 +1939,18 @@ def rgba_image_to_bmp(image: OcrImage) -> bytes | None:
                 rows[target + 1] = data[source + 1]
                 rows[target + 2] = data[source]
                 source += 4
+                target += 3
+    elif bytes_per_pixel == 1:
+        for y in range(height):
+            source_row = (height - 1 - y) * bytes_per_line
+            source = source_row
+            target = y * row_size
+            for _ in range(width):
+                value = data[source]
+                rows[target] = value
+                rows[target + 1] = value
+                rows[target + 2] = value
+                source += 1
                 target += 3
     else:
         for y in range(height):

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import contextlib
 from bisect import bisect_right
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from statistics import median
 from typing import Iterable, Literal, TypeAlias
 
@@ -79,15 +79,7 @@ def geometry_rendered_ocr_result(result: OcrTextResult) -> OcrTextResult:
     if not geometry_text_is_usable(result.text, text):
         return result
     confidence = geometry_text_confidence(result.word_rows, result.confidence)
-    return OcrTextResult(
-        text,
-        confidence,
-        line_rows=result.line_rows,
-        word_rows=result.word_rows,
-        symbol_rows=result.symbol_rows,
-        component_boxes=result.component_boxes,
-        observations=result.observations,
-    )
+    return replace(result, text=text, confidence=confidence)
 
 
 def render_ocr_text_from_geometry(rows: Iterable[OcrRow]) -> str:

@@ -6,9 +6,10 @@ from collections.abc import Hashable
 from dataclasses import dataclass
 from typing import TypeAlias, cast
 
+from core_pdf.impl.engine.extraction.ocr import deskew as ocr_deskew
 from core_pdf.impl.engine.extraction.ocr import execution as ocr_execution
 from core_pdf.impl.engine.extraction.ocr.backend import TesseractCtypesBackend
-from core_pdf.impl.engine.extraction.ocr.types import OcrImage, OcrTextResult
+from core_pdf.impl.engine.extraction.ocr.types import OcrDeskewInfo, OcrImage, OcrTextResult
 
 OcrSessionCacheKey: TypeAlias = Hashable
 OcrSessionCacheTuple: TypeAlias = tuple[OcrSessionCacheKey, ...]
@@ -20,6 +21,7 @@ class PreparedOcrImage:
     owns_pix: bool
     source_key: OcrSessionCacheKey
     variant_key: OcrSessionCacheTuple
+    deskew_info: OcrDeskewInfo | None = None
 
 
 class OcrPageSession:
@@ -63,6 +65,17 @@ class OcrPageSession:
             destroyed.add(pix)
         self._variant_pix_cache.clear()
         self._source_pix_cache.clear()
+
+    def deskew_diagnostics(self) -> tuple[dict[str, object], ...]:
+        diagnostics: list[dict[str, object]] = []
+        seen: set[OcrDeskewInfo] = set()
+        for prepared in self._variant_pix_cache.values():
+            info = prepared.deskew_info
+            if info is None or info in seen:
+                continue
+            seen.add(info)
+            diagnostics.append(ocr_deskew.deskew_diagnostic(info))
+        return tuple(diagnostics)
 
     def image_to_text_result(
         self,
@@ -245,12 +258,24 @@ class OcrPageSession:
         source_key = self.source_key_for_image(image)
         target_width = image.target_width or image.width
         target_height = image.target_height or image.height
+        should_deskew = ocr_deskew.full_page_ocr_image_should_be_deskewed(image)
+        deskew_signature: OcrSessionCacheTuple = ()
+        if should_deskew:
+            deskew_signature = (
+                "deskew",
+                image.source,
+                ocr_deskew.OCR_DESKEW_BINARY_THRESHOLD,
+                ocr_deskew.OCR_DESKEW_CONFIDENCE_THRESHOLD,
+                ocr_deskew.OCR_DESKEW_MIN_ANGLE_DEGREES,
+                ocr_deskew.OCR_DESKEW_MAX_ANGLE_DEGREES,
+            )
         variant_key = (
             source_key,
             target_width,
             target_height,
             image.resolution or ocr_execution.OCR_DEFAULT_DPI,
             image.clockwise_quarter_turns % 4,
+            *deskew_signature,
         )
         cached_variant = self._variant_pix_cache.get(variant_key)
         if cached_variant is not None:
@@ -264,11 +289,30 @@ class OcrPageSession:
         variant_pix = backend.scale_source_pix(source_pix, image)
         if not variant_pix:
             return None
+        prepared_pix = variant_pix
+        deskew_info = None
+        if should_deskew:
+            prepared_pix, deskew_info = backend.deskew_pix(
+                variant_pix,
+                source=image.source,
+                width=target_width,
+                height=target_height,
+            )
+            if not prepared_pix:
+                prepared_pix = variant_pix
+            if (
+                prepared_pix != variant_pix
+                and variant_pix != source_pix
+                and backend.leptonica is not None
+            ):
+                variant_handle = ctypes.c_void_p(variant_pix)
+                backend.leptonica.pixDestroy(ctypes.byref(variant_handle))
         prepared = PreparedOcrImage(
-            pix=variant_pix,
-            owns_pix=variant_pix != source_pix,
+            pix=prepared_pix,
+            owns_pix=prepared_pix != source_pix,
             source_key=source_key,
             variant_key=variant_key,
+            deskew_info=deskew_info,
         )
         self._variant_pix_cache[variant_key] = prepared
         return prepared
@@ -375,7 +419,7 @@ class OcrPageSession:
         rectangle: tuple[int, int, int, int] | None = None,
     ) -> OcrTextResult:
         if rectangle is not None and not hasattr(backend.tesseract, "TessBaseAPISetRectangle"):
-            return OcrTextResult("", None)
+            return self._result_with_deskew_info(OcrTextResult("", None), prepared)
         pix_handle = ctypes.c_void_p(prepared.pix)
         resolution = image.resolution or ocr_execution.OCR_DEFAULT_DPI
         try:
@@ -385,9 +429,23 @@ class OcrPageSession:
             if backend.has_set_source_resolution and resolution > 0:
                 backend.tesseract.TessBaseAPISetSourceResolution(backend.api, resolution)
             if rectangle is not None:
-                clamped = backend.rectangle_for_image(image, rectangle)
+                source_rectangle = backend.clamp_rectangle(
+                    rectangle,
+                    image.width,
+                    image.height,
+                )
+                if source_rectangle is None:
+                    return self._result_with_deskew_info(OcrTextResult("", None), prepared)
+                if prepared.deskew_info is not None:
+                    clamped = ocr_deskew.source_rectangle_to_deskew_rectangle(
+                        source_rectangle,
+                        image,
+                        prepared.deskew_info,
+                    )
+                else:
+                    clamped = backend.rectangle_for_image(image, source_rectangle)
                 if clamped is None:
-                    return OcrTextResult("", None)
+                    return self._result_with_deskew_info(OcrTextResult("", None), prepared)
                 x0, y0, x1, y1 = clamped
                 backend.tesseract.TessBaseAPISetRectangle(
                     backend.api,
@@ -396,9 +454,19 @@ class OcrPageSession:
                     x1 - x0,
                     y1 - y0,
                 )
-            return backend.current_image_text_result(image, resolution)
+            result = backend.current_image_text_result(image, resolution)
+            return self._result_with_deskew_info(result, prepared)
         finally:
             if backend.has_clear_adaptive_classifier:
                 backend.tesseract.TessBaseAPIClearAdaptiveClassifier(backend.api)
             if backend.has_clear:
                 backend.tesseract.TessBaseAPIClear(backend.api)
+
+    @staticmethod
+    def _result_with_deskew_info(
+        result: OcrTextResult,
+        prepared: PreparedOcrImage,
+    ) -> OcrTextResult:
+        if prepared.deskew_info is None:
+            return result
+        return ocr_deskew.restore_ocr_result_geometry(result, prepared.deskew_info)
