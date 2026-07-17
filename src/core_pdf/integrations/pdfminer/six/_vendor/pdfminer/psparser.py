@@ -267,13 +267,14 @@ class PSBaseParser:
         elif c == 0x2F:  # /
             m = END_LITERAL.search(s, j + 1)
             if m and s[m.start(0)] != 0x23:  # #
-                raw_name = s[j + 1 : m.start(0)]
+                end = m.start(0)
+                raw_name = s[j + 1 : end]
                 try:
                     name: str | bytes = str(raw_name, "utf-8")
                 except Exception:
                     name = raw_name
-                self._add_token(LIT(name))
-                return m.start(0)
+                self._token = (self._curtokenpos, LIT(name))
+                return end
             self._curtoken = b""
             self._parse1 = self._parse_literal
             return j + 1
@@ -290,7 +291,7 @@ class PSBaseParser:
                         except ValueError:
                             pass
                         else:
-                            self._add_token(number)
+                            self._token = (self._curtokenpos, number)
                         return end
                 else:
                     try:
@@ -298,7 +299,7 @@ class PSBaseParser:
                     except ValueError:
                         pass
                     else:
-                        self._add_token(number)
+                        self._token = (self._curtokenpos, number)
                     return end
             self._curtoken = token
             self._parse1 = self._parse_number
@@ -312,7 +313,7 @@ class PSBaseParser:
                 except ValueError:
                     pass
                 else:
-                    self._add_token(number)
+                    self._token = (self._curtokenpos, number)
                 return end
             self._curtoken = token
             self._parse1 = self._parse_float
@@ -328,7 +329,7 @@ class PSBaseParser:
                     keyword_token = False
                 else:
                     keyword_token = KWD(keyword)
-                self._add_token(keyword_token)
+                self._token = (self._curtokenpos, keyword_token)
                 return end
             self._curtoken = token
             self._parse1 = self._parse_keyword
@@ -349,7 +350,7 @@ class PSBaseParser:
         elif c == 0:
             return j + 1
         else:
-            self._add_token(KWD(token))
+            self._token = (self._curtokenpos, KWD(token))
             return j + 1
 
     def _add_token(self, obj: PSBaseParserToken) -> None:
