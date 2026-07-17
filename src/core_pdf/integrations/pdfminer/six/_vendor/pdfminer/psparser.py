@@ -100,6 +100,8 @@ LIT = PSLiteralTable.intern
 KWD = PSKeywordTable.intern
 KEYWORD_PROC_BEGIN = KWD(b"{")
 KEYWORD_PROC_END = KWD(b"}")
+
+NORMAL_TOKEN_TYPES = frozenset((int, float, bytes, PSLiteral, str, bool))
 KEYWORD_ARRAY_BEGIN = KWD(b"[")
 KEYWORD_ARRAY_END = KWD(b"]")
 KEYWORD_DICT_BEGIN = KWD(b"<<")
@@ -614,7 +616,7 @@ class PSStackParser(PSBaseParser, Generic[ExtraT]):
                             raise
                 else:
                     self.do_keyword(pos, token)
-            elif isinstance(token, (int, float, bytes, PSLiteral, str, bool)):
+            elif type(token) in NORMAL_TOKEN_TYPES:
                 # normal token
                 self.push((pos, token))
             else:
