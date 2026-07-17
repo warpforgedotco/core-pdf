@@ -94,6 +94,33 @@ def test_lexer_normalizes_non_byte_or_multidimensional_views(
     assert lexer.parse_object() == PdfString(expected)
 
 
+@pytest.mark.parametrize("view_kind", ["bytes", "sliced", "reversed"])
+@pytest.mark.parametrize(
+    ("encoded", "expected"),
+    [
+        (b"plain", b"plain"),
+        (b"escaped\\)value", b"escaped)value"),
+        (b"nested(inner)", b"nested(inner)"),
+        (b"line\r\nending", b"line\nending"),
+        (b"line\n\rending", b"line\nending"),
+    ],
+)
+def test_literal_string_special_scan_supports_all_byte_views(
+    view_kind: str,
+    encoded: bytes,
+    expected: bytes,
+) -> None:
+    content = b"(" + encoded + b") trailing data"
+    if view_kind == "sliced":
+        data: bytes | memoryview = memoryview(b"prefix" + content + b"suffix")[6:-6]
+    elif view_kind == "reversed":
+        data = memoryview(content[::-1])[::-1]
+    else:
+        data = content
+
+    assert PdfLexer(data).parse_object() == PdfString(expected)
+
+
 @pytest.mark.parametrize(
     "data",
     [

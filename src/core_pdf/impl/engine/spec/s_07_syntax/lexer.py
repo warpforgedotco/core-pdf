@@ -69,6 +69,7 @@ RECOVERABLE_DICTIONARY_KEY_NAMES = {
 EMPTY_SIMPLE_TJ_ARRAY: tuple[Any, ...] = ()
 SEPARATOR_RE = re.compile(b"[" + re.escape(WHITESPACE + DELIMITERS) + b"]")
 HEX_STRING_END_RE = re.compile(b">")
+STRING_SPECIAL_RE = re.compile(b"[" + re.escape(b"()\\\r\n") + b"]")
 
 
 class PdfLexer:
@@ -268,18 +269,9 @@ class PdfLexer:
         n = self.data_len
         source_buffer = self.source_buffer
 
-        if source_buffer is not None:
-            close_idx = source_buffer.find(b")", pos)
-            end_idx = close_idx if close_idx >= 0 else n
-            open_idx = source_buffer.find(b"(", pos, end_idx)
-            if open_idx >= 0:
-                end_idx = open_idx
-            escape_idx = source_buffer.find(b"\\", pos, end_idx)
-            if escape_idx >= 0:
-                end_idx = escape_idx
-            cr_idx = source_buffer.find(b"\r", pos, end_idx)
-            if cr_idx >= 0:
-                end_idx = cr_idx - 1 if cr_idx > pos and source_buffer[cr_idx - 1] == 10 else cr_idx
+        if data.c_contiguous:
+            match = STRING_SPECIAL_RE.search(data, pos)
+            end_idx = n if match is None else match.start()
         else:
             end_idx = pos
             string_special = STRING_SPECIAL_TABLE
@@ -295,7 +287,8 @@ class PdfLexer:
         self.pos = pos
         out = bytearray()
         if end_idx > pos:
-            out.extend(data[pos:end_idx])
+            prefix = data[pos:end_idx]
+            out.extend(prefix if prefix.c_contiguous else prefix.tobytes())
             self.pos = end_idx
 
         depth = 1
