@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "core-pdf"
-version = "0.0.4"
+version = "0.0.5"
 description = "High-performance pure Python PDF parsing engine"
 authors = [{ name = "Kevin Turcios", email = "turcioskevinr@gmail.com" }]
 readme = "README.md"
