@@ -250,6 +250,7 @@ class ContentStreamFrame:
         clip_bbox: tuple[float, float, float, float] | None,
         group_alpha: float | None = None,
         *,
+        stream_key: StreamKey | None = None,
         swallow_parse_errors: bool = False,
     ) -> None:
         self.stream = stream
@@ -261,7 +262,7 @@ class ContentStreamFrame:
         self.swallow_parse_errors = swallow_parse_errors
         self.lexer = None
         self.old_state = None
-        self.stream_key = None
+        self.stream_key = stream_key
         self.outer_group_alpha = None
         self.entered = False
 
@@ -819,11 +820,7 @@ class TextState(XObjectMixin, ContentCaptureMixin, OperatorMixin):
 
     @staticmethod
     def stream_execution_key(stream: PdfStream) -> StreamKey:
-        raw_data = stream.raw_data
-        if type(raw_data) is memoryview:
-            raw_obj = raw_data.obj
-            return ("raw", id(raw_obj), raw_data.nbytes)
-        return ("raw", id(raw_data), len(raw_data))
+        return ("stream", id(stream), len(stream.raw_data))
 
     def queue_stream(
         self,
@@ -834,12 +831,13 @@ class TextState(XObjectMixin, ContentCaptureMixin, OperatorMixin):
         *,
         clip_bbox: tuple[float, float, float, float] | None = None,
         group_alpha: float | None = None,
+        stream_key: StreamKey | None = None,
         swallow_parse_errors: bool = False,
     ) -> None:
         if depth > 10:
             return
-        stream_key = self.stream_execution_key(stream)
-        if stream_key in self.active_streams:
+        execution_key = stream_key or self.stream_execution_key(stream)
+        if execution_key in self.active_streams:
             return
         self.queued_stream = ContentStreamFrame(
             stream,
@@ -848,6 +846,7 @@ class TextState(XObjectMixin, ContentCaptureMixin, OperatorMixin):
             depth,
             clip_bbox,
             group_alpha,
+            stream_key=execution_key,
             swallow_parse_errors=swallow_parse_errors,
         )
         raise NestedStreamRequest
@@ -855,7 +854,7 @@ class TextState(XObjectMixin, ContentCaptureMixin, OperatorMixin):
     def enter_stream_frame(self, frame: ContentStreamFrame) -> bool:
         if frame.depth > 10:
             return False
-        stream_key = self.stream_execution_key(frame.stream)
+        stream_key = frame.stream_key or self.stream_execution_key(frame.stream)
         if stream_key in self.active_streams:
             return False
 

@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "core-pdf"
-version = "0.0.3"
+version = "0.0.5"
 description = "High-performance pure Python PDF parsing engine"
 authors = [{ name = "Kevin Turcios", email = "turcioskevinr@gmail.com" }]
 readme = "README.md"
@@ -55,6 +55,7 @@ norecursedirs = ["tests/fixtures"]
 [tool.ruff]
 extend-exclude = [
     "src/core_pdf/impl/third_party",
+    "src/core_pdf/integrations/pdfminer/six/_vendor",
     "tests/fixtures",
 ]
 line-length = 100
@@ -89,6 +90,7 @@ ignore = [
 python_version = "3.11"
 files = ["src/core_pdf"]
 mypy_path = "src"
+exclude = ["src/core_pdf/integrations/pdfminer/six/_vendor"]
 show_error_codes = true
 
 [[tool.mypy.overrides]]
@@ -98,6 +100,7 @@ ignore_errors = true
 [tool.ty.src]
 exclude = [
     "src/core_pdf/impl/third_party",
+    "src/core_pdf/integrations/pdfminer/six/_vendor",
     "tests/fixtures",
 ]
 

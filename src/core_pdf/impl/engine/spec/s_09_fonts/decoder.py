@@ -36,6 +36,8 @@ from core_pdf.impl.engine.spec.s_09_fonts.widths import (
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.objects import PdfStream
 from core_pdf.impl.primitives import PdfString
+from core_pdf.impl.third_party._vendor.fontTools.agl import UV2AGL
+from core_pdf.impl.third_party._vendor.fontTools.encodings.StandardEncoding import StandardEncoding
 from core_pdf.impl.third_party.cff import CFFFont
 from core_pdf.impl.third_party.cid.cmap import (
     CMapDecoder,
@@ -659,7 +661,9 @@ class FontDecoder:
     def glyph_id_for_code(self, code: int) -> int | None:
         cff_font = self.cff_font
         if cff_font is not None:
-            return cff_font.glyph_id_for_cid(code)
+            if self.is_cid_font:
+                return cff_font.glyph_id_for_cid(code)
+            return cff_font.glyph_id_for_name(self._simple_glyph_name(code))
         tt_font = self.tt_font
         if tt_font is not None:
             if not self.is_cid_font and self.byte_decode_table is not None:
@@ -669,12 +673,27 @@ class FontDecoder:
             return tt_font.glyph_id_for_code(code)
         return code
 
+    def _simple_glyph_name(self, code: int) -> str:
+        name = self.differences.get(code)
+        if name is not None:
+            return name
+        if self.base_encoding in {None, "StandardEncoding"} and 0 <= code < 256:
+            return StandardEncoding[code]
+        table = self.byte_decode_table
+        text = table[code] if table is not None and 0 <= code < len(table) else ""
+        if len(text) != 1:
+            return ".notdef"
+        return UV2AGL.get(ord(text), f"uni{ord(text):04X}")
+
     def glyph_bbox(self, code: int) -> tuple[float, float, float, float] | None:
         if code < 0:
             return None
         cff_font = self.cff_font
         if cff_font is not None:
-            return cff_font.glyph_bbox(code)
+            if self.is_cid_font:
+                return cff_font.glyph_bbox(code)
+            glyph_id = self.glyph_id_for_code(code)
+            return cff_font.glyph_bbox_for_gid(glyph_id or 0)
         tt_font = self.tt_font
         if tt_font is not None:
             return tt_font.glyph_bbox(code)
@@ -700,7 +719,15 @@ class FontDecoder:
         bitmap: tuple[int, ...] = ()
         cff_font = self.cff_font
         if cff_font is not None:
-            bitmap = cff_font.glyph_bitmap(code, width=width, height=height)
+            if self.is_cid_font:
+                bitmap = cff_font.glyph_bitmap(code, width=width, height=height)
+            else:
+                glyph_id = self.glyph_id_for_code(code)
+                bitmap = cff_font.glyph_bitmap_for_gid(
+                    glyph_id or 0,
+                    width=width,
+                    height=height,
+                )
             if bitmap:
                 self.glyph_bitmap_cache[cache_key] = bitmap
                 return bitmap

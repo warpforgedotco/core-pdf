@@ -31,9 +31,10 @@ is necessary to address the unsafe
 condition. This proposed AD would
 require installing new flight control
 
+https://www.regulations.gov. Follow the
 instructions for submitting comments.
-Fax: 202–493–2251.
-Mail: U.S. Department of
+• Fax: 202–493–2251.
+• Mail: U.S. Department of
 Washington, DC 20590.
 address above between 9 a.m. and 5
 Federal holidays.
@@ -54,6 +55,7 @@ Examining the AD Docket
 You may examine the AD docket on
 
 Federal Register
+recommended change, and include
 supporting data. To ensure the docket
 FAA–2020–0686; Product Identifier
 your comments.
@@ -128,7 +130,7 @@ on this proposed AD by September 21, Comments Invited
 using the procedures found in 14 CFR
 11.43 and 11.45, by any of the following
 methods:
-Ver Date Sep<11>2014 16:21 Aug 05, 2020 Jkt 250001
+VerDate Sep<11>2014 16:21 Aug 05, 2020 Jkt 250001
 
 The FAA invites you to participate in
 comments, data, or views about this
@@ -142,15 +144,13 @@ Background
 accident after takeoff from Soekarno-
 E:\FR\FM\06AUP1.SGM 06AUP1
 
-https://www.regulations.gov. Follow the recommended change, and include
-
 Transportation, Docket Operations, M– copy of the comments. Send your
 
 30, West Building Ground Floor, Room comments to an address listed under the
 
 W12–140, 1200 New Jersey Avenue SE, ADDRESSES section. Include ‘‘Docket No.
 
-Hand Delivery: Deliver to Mail 2019–NM–035–AD’’ at the beginning of
+• Hand Delivery: Deliver to Mail
 
 p.m., Monday through Friday, except Except for Confidential Business
 
@@ -176,9 +176,10 @@ ADDRESSES: You may send comments, this rulemaking by submitting written
 
 Vol. 85, No. 152
 Thursday, August 6, 2020
-Federal eRulemaking Portal: Go to proposal, explain the reason for any
+• Federal eRulemaking Portal: Go to proposal, explain the reason for any
 does not contain duplicate comments,
 commenters should submit only one
+2019–NM–035–AD’’ at the beginning of
 this referenced service information at will consider all comments received by
 will consider comments filed after the
 this material at the FAA, call 206–231– expense or delay. The FAA may change

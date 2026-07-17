@@ -151,7 +151,7 @@ Page 2
 
 40 Taxable income. Subtract line 39 from line 38. If line 39 is more than line 38, enter -0- 40
 
-41 Tax (see page 18). Check if any tax is from: a Form(s) 8814 b Form 4972 cForm(s) 8889 41
+41 Tax (see page 18). Check if any tax is from: a Form(s) 8814 b Form 4972 c Form(s) 8889 41
 
 42 Alternative minimum tax (see page 19). Attach Form 6251 42
 
@@ -171,7 +171,7 @@ Credits from: 49 49Form 8839Form 8396a cForm 8859b
 
 Other credits. Check applicable box(es): Form 3800a 50
 
-b Form 8801 cForm 50
+b Form 8801 c Form 50
 
 51 Add lines 44 through 50. These are your total credits 51
 
@@ -199,7 +199,7 @@ b Form 8801 cForm 50
 
 63 Amount paid with Form 4868 (request for extension) 63
 
-64 Other payments from: a Form 2439 b Form 4136 cForm 8885 64
+64 Other payments from: a Form 2439 b Form 4136 c Form 8885 64
 
 65 Credit for amount paid with Form 1040-C 65
 

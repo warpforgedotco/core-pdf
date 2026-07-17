@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
-from typing import Protocol, SupportsIndex, cast, overload
+from typing import TYPE_CHECKING, Protocol, SupportsIndex, cast, overload
 
-from core_pdf.impl.engine.spec.s_07_document.page import PdfPage
 from core_pdf.impl.types import PdfDict
 
-PageFactory = Callable[[object, PdfDict, int], PdfPage]
+if TYPE_CHECKING:
+    from core_pdf.impl.engine.spec.s_07_document.page import PdfPage
+
+PageFactory = Callable[[object, PdfDict, int], "PdfPage"]
 
 
 class PageListDocument(Protocol):
@@ -18,7 +20,7 @@ class PageListDocument(Protocol):
     def page_count(self) -> int: ...
 
 
-class LazyPageList(list[PdfPage]):
+class LazyPageList(list["PdfPage"]):
     __slots__ = ("document", "page_dict_iter", "complete")
 
     document: PageListDocument
@@ -53,7 +55,12 @@ class LazyPageList(list[PdfPage]):
     def ensure(self, index: int) -> None:
         while list.__len__(self) <= index:
             page_dict = self.next_page_dict()
-            page_class = cast(PageFactory, getattr(self.document, "page_class", PdfPage))
+            page_class = getattr(self.document, "page_class", None)
+            if page_class is None:
+                from core_pdf.impl.engine.spec.s_07_document.page import PdfPage
+
+                page_class = PdfPage
+            page_class = cast(PageFactory, page_class)
             list.append(self, page_class(self.document, page_dict, list.__len__(self) + 1))
 
     def __len__(self) -> int:

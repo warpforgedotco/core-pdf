@@ -16,6 +16,100 @@ class CFFGlyphFeature:
 EMPTY_FEATURE = CFFGlyphFeature((), 0.0, 0, ())
 FEATURE_GRID_WIDTH = 18
 FEATURE_GRID_HEIGHT = 24
+STANDARD_GLYPH_SIDS = {
+    name: sid
+    for sid, name in enumerate(
+        (
+            ".notdef",
+            "space",
+            "exclam",
+            "quotedbl",
+            "numbersign",
+            "dollar",
+            "percent",
+            "ampersand",
+            "quoteright",
+            "parenleft",
+            "parenright",
+            "asterisk",
+            "plus",
+            "comma",
+            "hyphen",
+            "period",
+            "slash",
+            "zero",
+            "one",
+            "two",
+            "three",
+            "four",
+            "five",
+            "six",
+            "seven",
+            "eight",
+            "nine",
+            "colon",
+            "semicolon",
+            "less",
+            "equal",
+            "greater",
+            "question",
+            "at",
+            *tuple("ABCDEFGHIJKLMNOPQRSTUVWXYZ"),
+            "bracketleft",
+            "backslash",
+            "bracketright",
+            "asciicircum",
+            "underscore",
+            "quoteleft",
+            *tuple("abcdefghijklmnopqrstuvwxyz"),
+            "braceleft",
+            "bar",
+            "braceright",
+            "asciitilde",
+        )
+    )
+}
+CFF_STANDARD_STRING_COUNT = 391
+_STANDARD_GLYPH_NAMES_AFTER_ASCII = """
+exclamdown cent sterling fraction yen florin section currency quotesingle quotedblleft
+guillemotleft guilsinglleft guilsinglright fi fl endash dagger daggerdbl periodcentered
+paragraph bullet quotesinglbase quotedblbase quotedblright guillemotright ellipsis perthousand
+questiondown grave acute circumflex tilde macron breve dotaccent dieresis ring cedilla
+hungarumlaut ogonek caron emdash AE ordfeminine Lslash Oslash OE ordmasculine ae dotlessi
+lslash oslash oe germandbls onesuperior logicalnot mu trademark Eth onehalf plusminus Thorn
+onequarter divide brokenbar degree thorn threequarters twosuperior registered minus eth
+multiply threesuperior copyright Aacute Acircumflex Adieresis Agrave Aring Atilde Ccedilla
+Eacute Ecircumflex Edieresis Egrave Iacute Icircumflex Idieresis Igrave Ntilde Oacute
+Ocircumflex Odieresis Ograve Otilde Scaron Uacute Ucircumflex Udieresis Ugrave Yacute
+Ydieresis Zcaron aacute acircumflex adieresis agrave aring atilde ccedilla eacute
+ecircumflex edieresis egrave iacute icircumflex idieresis igrave ntilde oacute ocircumflex
+odieresis ograve otilde scaron uacute ucircumflex udieresis ugrave yacute ydieresis zcaron
+exclamsmall Hungarumlautsmall dollaroldstyle dollarsuperior ampersandsmall Acutesmall
+parenleftsuperior parenrightsuperior twodotenleader onedotenleader zerooldstyle oneoldstyle
+twooldstyle threeoldstyle fouroldstyle fiveoldstyle sixoldstyle sevenoldstyle eightoldstyle
+nineoldstyle commasuperior threequartersemdash periodsuperior questionsmall asuperior bsuperior
+centsuperior dsuperior esuperior isuperior lsuperior msuperior nsuperior osuperior rsuperior
+ssuperior tsuperior ff ffi ffl parenleftinferior parenrightinferior Circumflexsmall
+hyphensuperior Gravesmall Asmall Bsmall Csmall Dsmall Esmall Fsmall Gsmall Hsmall Ismall Jsmall
+Ksmall Lsmall Msmall Nsmall Osmall Psmall Qsmall Rsmall Ssmall Tsmall Usmall Vsmall Wsmall
+Xsmall Ysmall Zsmall colonmonetary onefitted rupiah Tildesmall exclamdownsmall centoldstyle
+Lslashsmall Scaronsmall Zcaronsmall Dieresissmall Brevesmall Caronsmall Dotaccentsmall
+Macronsmall figuredash hypheninferior Ogoneksmall Ringsmall Cedillasmall questiondownsmall
+oneeighth threeeighths fiveeighths seveneighths onethird twothirds zerosuperior foursuperior
+fivesuperior sixsuperior sevensuperior eightsuperior ninesuperior zeroinferior oneinferior
+twoinferior threeinferior fourinferior fiveinferior sixinferior seveninferior eightinferior
+nineinferior centinferior dollarinferior periodinferior commainferior Agravesmall Aacutesmall
+Acircumflexsmall Atildesmall Adieresissmall Aringsmall AEsmall Ccedillasmall Egravesmall
+Eacutesmall Ecircumflexsmall Edieresissmall Igravesmall Iacutesmall Icircumflexsmall
+Idieresissmall Ethsmall Ntildesmall Ogravesmall Oacutesmall Ocircumflexsmall Otildesmall
+Odieresissmall OEsmall Oslashsmall Ugravesmall Uacutesmall Ucircumflexsmall Udieresissmall
+Yacutesmall Thornsmall Ydieresissmall 001.000 001.001 001.002 001.003 Black Bold Book Light
+Medium Regular Roman Semibold
+""".split()  # noqa: SIM905 - compact ordered copy of the CFF specification table
+STANDARD_GLYPH_SIDS.update(
+    {name: sid for sid, name in enumerate(_STANDARD_GLYPH_NAMES_AFTER_ASCII, start=96)}
+)
+assert len(STANDARD_GLYPH_SIDS) == CFF_STANDARD_STRING_COUNT
 
 
 class CFFFont:
@@ -24,6 +118,7 @@ class CFFFont:
         "top_dict",
         "charstrings",
         "cid_to_gid",
+        "custom_string_sids",
         "is_cid_keyed",
         "global_subrs",
         "local_subrs",
@@ -37,7 +132,11 @@ class CFFFont:
         pos = self.data[2]
         ignored_names, pos = self._read_index(pos)
         top_index, pos = self._read_index(pos)
-        ignored_strings, pos = self._read_index(pos)
+        custom_strings, pos = self._read_index(pos)
+        self.custom_string_sids = {
+            value.decode("latin-1"): CFF_STANDARD_STRING_COUNT + index
+            for index, value in enumerate(custom_strings)
+        }
         global_subrs, pos = self._read_index(pos)
         self.global_subrs = tuple(global_subrs)
         if not top_index:
@@ -224,6 +323,14 @@ class CFFFont:
             return self.cid_to_gid.get(cid, 0)
         return cid
 
+    def glyph_id_for_name(self, name: str) -> int:
+        sid = STANDARD_GLYPH_SIDS.get(name)
+        if sid is None:
+            sid = self.custom_string_sids.get(name)
+        if sid is None:
+            return 0
+        return self.cid_to_gid.get(sid, 0)
+
     def has_glyph_id(self, gid: int) -> bool:
         return 0 <= gid < len(self.charstrings)
 
@@ -324,8 +431,16 @@ class CFFFont:
         return self.glyph_feature(self.glyph_id_for_cid(cid))
 
     def glyph_bitmap(self, cid: int, width: int = 24, height: int = 32) -> tuple[int, ...]:
+        return self.glyph_bitmap_for_gid(
+            self.glyph_id_for_cid(cid),
+            width=width,
+            height=height,
+        )
+
+    def glyph_bitmap_for_gid(
+        self, glyph_id: int, width: int = 24, height: int = 32
+    ) -> tuple[int, ...]:
         try:
-            glyph_id = self.glyph_id_for_cid(cid)
             charstring = self.charstrings[glyph_id]
         except IndexError:
             return ()
@@ -338,22 +453,18 @@ class CFFFont:
         )
 
     def glyph_bbox(self, cid: int) -> tuple[float, float, float, float] | None:
+        return self.glyph_bbox_for_gid(self.glyph_id_for_cid(cid))
+
+    def glyph_bbox_for_gid(self, glyph_id: int) -> tuple[float, float, float, float] | None:
         try:
-            glyph_id = self.glyph_id_for_cid(cid)
             charstring = self.charstrings[glyph_id]
         except IndexError:
             return None
-        contours = _type2_glyph_contours(
+        return _type2_glyph_bbox(
             charstring,
             local_subrs=self.local_subrs_for_glyph(glyph_id),
             global_subrs=self.global_subrs,
         )
-        points = [point for contour in contours for point in contour]
-        if not points:
-            return None
-        xs = [point[0] for point in points]
-        ys = [point[1] for point in points]
-        return (min(xs), min(ys), max(xs), max(ys))
 
 
 def type2_glyph_feature(
@@ -414,9 +525,50 @@ def _type2_glyph_contours(
     local_subrs: tuple[bytes, ...] = (),
     global_subrs: tuple[bytes, ...] = (),
 ) -> list[list[tuple[float, float]]]:
+    contours, ignored_bbox = _type2_glyph_geometry(
+        charstring,
+        local_subrs=local_subrs,
+        global_subrs=global_subrs,
+        collect_contours=True,
+    )
+    return contours
+
+
+def _type2_glyph_bbox(
+    charstring: bytes,
+    *,
+    local_subrs: tuple[bytes, ...] = (),
+    global_subrs: tuple[bytes, ...] = (),
+) -> tuple[float, float, float, float] | None:
+    ignored_contours, bbox = _type2_glyph_geometry(
+        charstring,
+        local_subrs=local_subrs,
+        global_subrs=global_subrs,
+        collect_contours=False,
+    )
+    return bbox
+
+
+def _type2_glyph_geometry(
+    charstring: bytes,
+    *,
+    local_subrs: tuple[bytes, ...],
+    global_subrs: tuple[bytes, ...],
+    collect_contours: bool,
+) -> tuple[list[list[tuple[float, float]]], tuple[float, float, float, float] | None]:
     stack: list[float] = []
     contours: list[list[tuple[float, float]]] = []
     current: list[tuple[float, float]] = []
+    current_min_x = inf
+    current_min_y = inf
+    current_max_x = -inf
+    current_max_y = -inf
+    bbox_min_x = inf
+    bbox_min_y = inf
+    bbox_max_x = -inf
+    bbox_max_y = -inf
+    current_has_points = False
+    bbox_has_points = False
     x = 0.0
     y = 0.0
     stem_count = 0
@@ -426,22 +578,47 @@ def _type2_glyph_contours(
 
     def flush_contour() -> None:
         nonlocal current
+        nonlocal current_min_x, current_min_y, current_max_x, current_max_y
+        nonlocal bbox_min_x, bbox_min_y, bbox_max_x, bbox_max_y
+        nonlocal current_has_points, bbox_has_points
         if current:
             contours.append(current)
             current = []
+        if current_has_points:
+            bbox_min_x = min(bbox_min_x, current_min_x)
+            bbox_min_y = min(bbox_min_y, current_min_y)
+            bbox_max_x = max(bbox_max_x, current_max_x)
+            bbox_max_y = max(bbox_max_y, current_max_y)
+            bbox_has_points = True
+            current_min_x = inf
+            current_min_y = inf
+            current_max_x = -inf
+            current_max_y = -inf
+            current_has_points = False
+
+    def record_point(px: float, py: float) -> None:
+        nonlocal current_min_x, current_min_y, current_max_x, current_max_y
+        nonlocal current_has_points
+        if collect_contours:
+            current.append((px, py))
+        current_min_x = min(current_min_x, px)
+        current_min_y = min(current_min_y, py)
+        current_max_x = max(current_max_x, px)
+        current_max_y = max(current_max_y, py)
+        current_has_points = True
 
     def move(dx: float, dy: float) -> None:
-        nonlocal x, y, current
+        nonlocal x, y
         flush_contour()
         x += dx
         y += dy
-        current = [(x, y)]
+        record_point(x, y)
 
     def line(dx: float, dy: float) -> None:
         nonlocal x, y
         x += dx
         y += dy
-        current.append((x, y))
+        record_point(x, y)
 
     def curve(dx1: float, dy1: float, dx2: float, dy2: float, dx3: float, dy3: float) -> None:
         nonlocal x, y
@@ -451,11 +628,9 @@ def _type2_glyph_contours(
         x3, y3 = x2 + dx3, y2 + dy3
         for t in (0.25, 0.5, 0.75, 1.0):
             mt = 1.0 - t
-            current.append(
-                (
-                    mt**3 * x0 + 3 * mt * mt * t * x1 + 3 * mt * t * t * x2 + t**3 * x3,
-                    mt**3 * y0 + 3 * mt * mt * t * y1 + 3 * mt * t * t * y2 + t**3 * y3,
-                )
+            record_point(
+                mt**3 * x0 + 3 * mt * mt * t * x1 + 3 * mt * t * t * x2 + t**3 * x3,
+                mt**3 * y0 + 3 * mt * mt * t * y1 + 3 * mt * t * t * y2 + t**3 * y3,
             )
         x, y = x3, y3
 
@@ -522,9 +697,10 @@ def _type2_glyph_contours(
                 elif byte == 10:
                     if stack:
                         subr_index = int(stack.pop()) + subr_bias
-                        if 0 <= subr_index < len(local_subrs):
-                            if not execute(local_subrs[subr_index], depth + 1):
-                                return False
+                        if 0 <= subr_index < len(local_subrs) and not execute(
+                            local_subrs[subr_index], depth + 1
+                        ):
+                            return False
                 elif byte == 11:
                     return True
                 elif byte == 14:
@@ -559,9 +735,10 @@ def _type2_glyph_contours(
                 elif byte == 29:
                     if stack:
                         subr_index = int(stack.pop()) + gsubr_bias
-                        if 0 <= subr_index < len(global_subrs):
-                            if not execute(global_subrs[subr_index], depth + 1):
-                                return False
+                        if 0 <= subr_index < len(global_subrs) and not execute(
+                            global_subrs[subr_index], depth + 1
+                        ):
+                            return False
                 elif byte in (30, 31):
                     horizontal = byte == 31
                     args = list(stack)
@@ -590,9 +767,11 @@ def _type2_glyph_contours(
             return False
 
     if not execute(charstring):
-        return contours
+        bbox = (bbox_min_x, bbox_min_y, bbox_max_x, bbox_max_y) if bbox_has_points else None
+        return contours, bbox
     flush_contour()
-    return contours
+    bbox = (bbox_min_x, bbox_min_y, bbox_max_x, bbox_max_y) if bbox_has_points else None
+    return contours, bbox
 
 
 def _type2_subr_bias(count: int) -> int:

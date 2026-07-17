@@ -228,7 +228,7 @@ wheels = [
 
 [[package]]
 name = "core-pdf"
-version = "0.0.3"
+version = "0.0.5"
 source = { editable = "." }
 dependencies = [
     { name = "core-jpeg" },

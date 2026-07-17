@@ -19,71 +19,12 @@ from core_pdf.impl.engine.spec.s_08_graphics.color import (
     ImageColorManager,
     evaluate_sampled_tint_function,
 )
+from core_pdf.impl.exceptions import PdfRasterTooLargeError
 from core_pdf.impl.objects import PdfStream
 
 BIT_IMAGE_MASK_ALPHA = tuple(
     bytes(255 if byte & (0x80 >> bit) else 0 for bit in range(8)) for byte in range(256)
 )
-
-
-BITMAP_GLYPHS_5X7: dict[str, tuple[str, ...]] = {
-    "A": ("01110", "10001", "10001", "11111", "10001", "10001", "10001"),
-    "B": ("11110", "10001", "10001", "11110", "10001", "10001", "11110"),
-    "C": ("01111", "10000", "10000", "10000", "10000", "10000", "01111"),
-    "D": ("11110", "10001", "10001", "10001", "10001", "10001", "11110"),
-    "E": ("11111", "10000", "10000", "11110", "10000", "10000", "11111"),
-    "F": ("11111", "10000", "10000", "11110", "10000", "10000", "10000"),
-    "G": ("01111", "10000", "10000", "10111", "10001", "10001", "01111"),
-    "H": ("10001", "10001", "10001", "11111", "10001", "10001", "10001"),
-    "I": ("11111", "00100", "00100", "00100", "00100", "00100", "11111"),
-    "J": ("00111", "00010", "00010", "00010", "10010", "10010", "01100"),
-    "K": ("10001", "10010", "10100", "11000", "10100", "10010", "10001"),
-    "L": ("10000", "10000", "10000", "10000", "10000", "10000", "11111"),
-    "M": ("10001", "11011", "10101", "10101", "10001", "10001", "10001"),
-    "N": ("10001", "11001", "10101", "10011", "10001", "10001", "10001"),
-    "O": ("01110", "10001", "10001", "10001", "10001", "10001", "01110"),
-    "P": ("11110", "10001", "10001", "11110", "10000", "10000", "10000"),
-    "Q": ("01110", "10001", "10001", "10001", "10101", "10010", "01101"),
-    "R": ("11110", "10001", "10001", "11110", "10100", "10010", "10001"),
-    "S": ("01111", "10000", "10000", "01110", "00001", "00001", "11110"),
-    "T": ("11111", "00100", "00100", "00100", "00100", "00100", "00100"),
-    "U": ("10001", "10001", "10001", "10001", "10001", "10001", "01110"),
-    "V": ("10001", "10001", "10001", "10001", "10001", "01010", "00100"),
-    "W": ("10001", "10001", "10001", "10101", "10101", "10101", "01010"),
-    "X": ("10001", "10001", "01010", "00100", "01010", "10001", "10001"),
-    "Y": ("10001", "10001", "01010", "00100", "00100", "00100", "00100"),
-    "Z": ("11111", "00001", "00010", "00100", "01000", "10000", "11111"),
-    "0": ("01110", "10001", "10011", "10101", "11001", "10001", "01110"),
-    "1": ("00100", "01100", "00100", "00100", "00100", "00100", "01110"),
-    "2": ("01110", "10001", "00001", "00010", "00100", "01000", "11111"),
-    "3": ("11110", "00001", "00001", "01110", "00001", "00001", "11110"),
-    "4": ("00010", "00110", "01010", "10010", "11111", "00010", "00010"),
-    "5": ("11111", "10000", "10000", "11110", "00001", "00001", "11110"),
-    "6": ("01110", "10000", "10000", "11110", "10001", "10001", "01110"),
-    "7": ("11111", "00001", "00010", "00100", "01000", "01000", "01000"),
-    "8": ("01110", "10001", "10001", "01110", "10001", "10001", "01110"),
-    "9": ("01110", "10001", "10001", "01111", "00001", "00001", "01110"),
-    ".": ("00000", "00000", "00000", "00000", "00000", "01100", "01100"),
-    ",": ("00000", "00000", "00000", "00000", "01100", "00100", "01000"),
-    ":": ("00000", "01100", "01100", "00000", "01100", "01100", "00000"),
-    ";": ("00000", "01100", "01100", "00000", "01100", "00100", "01000"),
-    "-": ("00000", "00000", "00000", "11111", "00000", "00000", "00000"),
-    "+": ("00000", "00100", "00100", "11111", "00100", "00100", "00000"),
-    "/": ("00001", "00010", "00010", "00100", "01000", "01000", "10000"),
-    "\\": ("10000", "01000", "01000", "00100", "00010", "00010", "00001"),
-    "(": ("00010", "00100", "01000", "01000", "01000", "00100", "00010"),
-    ")": ("01000", "00100", "00010", "00010", "00010", "00100", "01000"),
-    "[": ("01110", "01000", "01000", "01000", "01000", "01000", "01110"),
-    "]": ("01110", "00010", "00010", "00010", "00010", "00010", "01110"),
-    "%": ("11001", "11010", "00010", "00100", "01000", "01011", "10011"),
-    "$": ("00100", "01111", "10100", "01110", "00101", "11110", "00100"),
-    "#": ("01010", "01010", "11111", "01010", "11111", "01010", "01010"),
-    "&": ("01100", "10010", "10100", "01000", "10101", "10010", "01101"),
-    "?": ("01110", "10001", "00001", "00010", "00100", "00000", "00100"),
-    "!": ("00100", "00100", "00100", "00100", "00100", "00000", "00100"),
-    "'": ("01100", "00100", "01000", "00000", "00000", "00000", "00000"),
-    '"': ("01010", "01010", "01010", "00000", "00000", "00000", "00000"),
-}
 
 
 def pdf_int(value: Any, default: int) -> int:
@@ -234,13 +175,46 @@ class RenderedPage:
     )
     ppm_cache: bytes | None = field(default=None, repr=False)
 
+    def unrotated_raster_size(self, scale: float = 1.0) -> tuple[int, int]:
+        """Return the raster size before applying the page rotation."""
+        scale = max(0.01, float(scale))
+        crop = self.metadata.get("crop")
+        if isinstance(crop, (list, tuple)) and len(crop) == 4:
+            width = max(1, int(round((float(crop[2]) - float(crop[0])) * scale)))
+            height = max(1, int(round((float(crop[3]) - float(crop[1])) * scale)))
+            return width, height
+        return (
+            max(1, int(round(self.width * scale))),
+            max(1, int(round(self.height * scale))),
+        )
+
+    def raster_size(self, scale: float = 1.0) -> tuple[int, int]:
+        """Return the width and height of the bytes produced by ``rasterize``."""
+        width, height = self.unrotated_raster_size(scale)
+        return (height, width) if self.rotate % 180 else (width, height)
+
+    def validate_raster_size(self, scale: float = 1.0, max_pixels: int | None = None) -> None:
+        """Reject a raster request before allocating an oversized RGBA canvas."""
+        if max_pixels is None or max_pixels <= 0:
+            return
+        width, height = self.unrotated_raster_size(scale)
+        pixels = width * height
+        if pixels > max_pixels:
+            raise PdfRasterTooLargeError(
+                "PDF page would render to too many pixels for safe processing: "
+                f"page={self.page_number}, pixels={pixels}, maximum={max_pixels}. "
+                "Try splitting the PDF, reducing the page dimensions, or using a lower render DPI."
+            )
+
     def rasterize(
         self,
         *,
         background: tuple[int, int, int, int] = (255, 255, 255, 0),
         scale: float = 1.0,
+        max_pixels: int | None = None,
     ) -> bytes:
         scale = max(0.01, float(scale))
+        self.validate_raster_size(scale, max_pixels)
         crop = self.metadata.get("crop")
         cache_key = (
             "raster",
@@ -253,21 +227,19 @@ class RenderedPage:
         if cached is not None:
             return cached
         if isinstance(crop, (list, tuple)) and len(crop) == 4:
-            crop_x0, crop_y0, crop_x1, crop_y1 = (
+            crop_x0, crop_y0, _crop_x1, crop_y1 = (
                 float(crop[0]),
                 float(crop[1]),
                 float(crop[2]),
                 float(crop[3]),
             )
-            width = max(1, int(round((crop_x1 - crop_x0) * scale)))
-            height = max(1, int(round((crop_y1 - crop_y0) * scale)))
         else:
             crop_x0 = 0.0
             crop_y0 = 0.0
             crop_y1 = self.height
-            width = max(1, int(round(self.width * scale)))
-            height = max(1, int(round(self.height * scale)))
-        pixels = bytearray(background * (width * height))
+        width, height = self.unrotated_raster_size(scale)
+        background_bytes = bytes(background)
+        pixels = bytearray(background_bytes * (width * height))
         page_group_alpha = self.metadata.get("group_alpha")
         if not pdf_number(page_group_alpha):
             page_group_alpha = None
@@ -283,11 +255,6 @@ class RenderedPage:
         cached_clip_box: tuple[float, float, float, float] | None = None
         cached_clip_is_rectangular = True
         raw_bytes_cache: dict[int, tuple[object, bytes]] = {}
-        glyph_seqnos = {
-            item.seqno
-            for item in self.display_list.items
-            if item.kind == "glyph" and item.data.get("bitmap")
-        }
 
         def image_raw_bytes(raw: bytes | bytearray | memoryview) -> bytes:
             if type(raw) is bytes:
@@ -993,44 +960,6 @@ class RenderedPage:
                 previous_x = x
             return spans
 
-        def draw_bitmap_text(
-            box: tuple[float, float, float, float] | None,
-            text: Any,
-            rgba: tuple[int, int, int, int],
-            blend_mode: str | None = None,
-        ) -> None:
-            if box is None or not isinstance(text, str) or not text:
-                return
-            x0, y0, x1, y1 = box
-            if x1 <= x0 or y1 <= y0:
-                return
-            drawable = [char for char in text if char == " " or char.upper() in BITMAP_GLYPHS_5X7]
-            if not drawable:
-                return
-            glyph_units = max(1, len(drawable)) * 6 - 1
-            unit_w = (x1 - x0) / glyph_units
-            unit_h = (y1 - y0) / 7.0
-            if unit_w <= 0 or unit_h <= 0:
-                return
-            cursor = x0
-            for char in drawable:
-                if char == " ":
-                    cursor += unit_w * 3.0
-                    continue
-                pattern = BITMAP_GLYPHS_5X7.get(char.upper())
-                if pattern is None:
-                    pattern = BITMAP_GLYPHS_5X7["?"]
-                for row_index, row in enumerate(pattern):
-                    cell_y0 = y0 + row_index * unit_h
-                    cell_y1 = y0 + (row_index + 1) * unit_h
-                    for col_index, value in enumerate(row):
-                        if value != "1":
-                            continue
-                        cell_x0 = cursor + col_index * unit_w
-                        cell_x1 = cursor + (col_index + 1) * unit_w
-                        fill_rect((cell_x0, cell_y0, cell_x1, cell_y1), rgba, blend_mode)
-                cursor += unit_w * 6.0
-
         def draw_glyph_bitmap(
             box: tuple[float, float, float, float] | None,
             bitmap: Any,
@@ -1710,15 +1639,12 @@ class RenderedPage:
             if x_step <= 0.0 or y_step <= 0.0:
                 return False
             drawings = pattern.get("drawings")
-            runs = pattern.get("runs")
             glyphs = pattern.get("glyphs")
             if type(drawings) is not list:
                 drawings = []
-            if type(runs) is not list:
-                runs = []
             if type(glyphs) is not list:
                 glyphs = []
-            if not drawings and not runs and not glyphs:
+            if not drawings and not glyphs:
                 return False
             target_box = target_data.get("bbox") or path_bbox(target_data.get("path"))
             target_box_type = type(target_box)
@@ -1766,27 +1692,11 @@ class RenderedPage:
                             if type(drawing) is not dict:
                                 continue
                             paint_tiling_drawing(drawing, tx, ty, blend_mode)
-                        paint_tiling_text(runs, tx, ty, blend_mode)
                         paint_tiling_glyphs(glyphs, tx, ty, blend_mode)
                     cells += 1
                     x += x_step
                 y += y_step
             return True
-
-        def paint_tiling_text(
-            runs: Any,
-            tx: float,
-            ty: float,
-            blend_mode: str | None,
-        ) -> None:
-            if type(runs) is not list:
-                return
-            for run in runs:
-                if type(run) is not dict or run.get("visible") is False:
-                    continue
-                bbox = translate_rect(run.get("bbox"), tx, ty)
-                rgba = color_rgba(run.get("fill_color"), None)
-                draw_bitmap_text(bbox, run.get("text"), rgba, blend_mode)
 
         def paint_tiling_glyphs(
             glyphs: Any,
@@ -2702,7 +2612,7 @@ class RenderedPage:
             if item.kind == "group-begin":
                 buffer_stack.append(
                     (
-                        bytearray(background * (width * height)),
+                        bytearray(background_bytes * (width * height)),
                         data.get("fill_opacity"),
                         data.get("blend_mode"),
                     )
@@ -2723,12 +2633,7 @@ class RenderedPage:
                 continue
             if item_is_outside_crop(item):
                 continue
-            if item.kind == "text":
-                if item.seqno in glyph_seqnos:
-                    continue
-                rgba = color_rgba(data.get("fill_color"), None)
-                draw_bitmap_text(data.get("bbox"), data.get("text"), rgba, blend_mode)
-            elif item.kind == "glyph":
+            if item.kind == "glyph":
                 if data.get("visible") is False:
                     continue
                 rgba = color_rgba(data.get("fill_color"), None)
@@ -2811,7 +2716,7 @@ class RenderedPage:
             self.raster_cache[cache_key] = result
             return result
 
-        rotated = bytearray(background * (width * height))
+        rotated = bytearray(background_bytes * (width * height))
         for y in range(height):
             for x in range(width):
                 src_idx = (y * width + x) * 4
@@ -2838,10 +2743,7 @@ class RenderedPage:
         if self.ppm_cache is not None:
             return self.ppm_cache
         rgba = self.rasterize()
-        width = max(1, int(round(self.width)))
-        height = max(1, int(round(self.height)))
-        if self.rotate % 180:
-            width, height = height, width
+        width, height = self.raster_size()
         header = f"P6\n{width} {height}\n255\n".encode("ascii")
         pixel_count = len(rgba) // 4
         out = bytearray(len(header) + pixel_count * 3)

@@ -6,7 +6,14 @@ from os import PathLike
 from typing import BinaryIO, Protocol, cast
 
 from core_pdf.impl.exceptions import PdfSourceError
-from core_pdf.impl.types import BinaryReader, PathSource, PdfByteBuffer, PdfDict, PdfSource
+from core_pdf.impl.types import (
+    BinaryReader,
+    PathSource,
+    PdfByteBuffer,
+    PdfDict,
+    PdfSource,
+    SeekableBinaryReader,
+)
 
 
 class DocumentSourceHost(Protocol):
@@ -61,10 +68,25 @@ class DocumentSourceMixin:
         if not callable(read):
             raise PdfSourceError(f"PDF source type {type(source).__name__} is not supported")
         reader = cast(BinaryReader, source)
+        tell = getattr(source, "tell", None)
+        seek = getattr(source, "seek", None)
+        position: int | None = None
+        seekable: SeekableBinaryReader | None = None
+        if callable(tell) and callable(seek):
+            seekable = cast(SeekableBinaryReader, source)
+            try:
+                position = seekable.tell()
+                seekable.seek(0)
+            except (OSError, TypeError, ValueError):
+                position = None
+                seekable = None
         try:
             raw = reader.read()
         except OSError as exc:
             raise PdfSourceError(str(exc)) from exc
+        finally:
+            if position is not None and seekable is not None:
+                seekable.seek(position)
         return raw if isinstance(raw, bytes) else bytes(raw)
 
     def try_mmap_reader(self: DocumentSourceHost, source: object) -> mmap.mmap | None:

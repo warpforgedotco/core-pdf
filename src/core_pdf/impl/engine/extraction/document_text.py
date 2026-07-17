@@ -4,9 +4,8 @@ from __future__ import annotations
 from collections.abc import Iterable, Iterator
 from typing import TYPE_CHECKING, Protocol, cast
 
-from core_pdf.impl.engine.extraction.page_text.engine import DocumentExtractionResult
-
 if TYPE_CHECKING:
+    from core_pdf.impl.engine.extraction.page_text.engine import DocumentExtractionResult
     from core_pdf.impl.engine.spec.s_07_document.metadata_types import (
         MetadataRecord,
         MetadataValue,

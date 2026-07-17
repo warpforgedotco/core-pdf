@@ -15,7 +15,6 @@ from core_pdf.impl.engine.spec.s_07_document.document_page_recovery import (
     RECOVERABLE_PAGE_INHERITED_KEYS,
     DocumentPageRecoveryMixin,
 )
-from core_pdf.impl.engine.spec.s_07_document.page import PdfPage
 from core_pdf.impl.engine.spec.s_07_objects.object_cache import (
     CachedPdfObject,
     InheritedValueMap,
@@ -181,6 +180,8 @@ class DocumentPagesMixin(DocumentPageRecoveryMixin, DocumentPageLabelsMixin):
         return pages
 
     def page_index_for(self, page_obj: object) -> int | None:
+        from core_pdf.impl.engine.spec.s_07_document.page import PdfPage
+
         if isinstance(page_obj, PdfPage):
             return page_obj.page_number - 1
         if not isinstance(page_obj, dict):

@@ -9,7 +9,7 @@ Oct. 25, 1999 Aberdeen, South Dakota, U.S. Gates Learjet 35 destroyed 6 fatal
 
 The aircraft was on a charter flight from Orlando, Florida, to Dallas. Radio communication was lost soon after the flight crew reported
 
-climbing through 230 and was cleared 390. The aircraft continued flying on a northwesterly heading for 3.7 hours and reached an
+climbing through FL 230 and was cleared to FL 390. The aircraft continued flying on a northwesterly heading for 3.7 hours and reached an
 
 altitude of 40,600 ft. The aircraft began descending after the left engine flamed out.
 
@@ -66,7 +66,7 @@ The cabin altitude warning horn sounded as the aircraft was climbing through 12,
 
 preliminary report said that the captain was in radio communication with airline maintenance personnel until the aircraft passed through
 
-28,900 ft. The aircraft, apparently being flown on autopilot, entered a holding pattern near Athens 340. Both engines flamed out more
+28,900 ft. The aircraft, apparently being flown on autopilot, entered a holding pattern near Athens at FL 340. Both engines flamed out more
 
 than an hour later, and the aircraft descended to the ground.
 
@@ -101,6 +101,6 @@ NA = not available
 
 Sources: Airclaims, Australian Transport Safety Bureau, Hellenic Air Accident Investigation and Aviation Safety Board, U.K. Air Accidents Investigation Branch, U.S. National Transportation Safety Board
 
-www.flightsafety.org Aviation Safety World October 2006
+www.flightsafety.org | Aviation Safety World | October 2006
 
-41
+| 41

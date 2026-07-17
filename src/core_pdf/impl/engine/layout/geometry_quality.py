@@ -477,7 +477,7 @@ def layout_geometry_should_trigger_ocr(
     if (
         text_tokens >= 250
         and summary.text_run_count >= 100
-        and summary.issue_count / summary.text_run_count <= 0.04
+        and summary.issue_count / summary.text_run_count <= 0.08
     ):
         # A few suspect formula or symbol glyphs do not make an otherwise
         # substantial native layer unreliable. Full-page OCR tends to turn
