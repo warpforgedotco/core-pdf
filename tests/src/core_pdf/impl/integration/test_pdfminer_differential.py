@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
+import random
 import zlib
 from collections.abc import Callable
+from io import BytesIO
 from typing import Any, cast
 
 import pytest
@@ -21,6 +23,8 @@ from core_pdf.integrations.pdfminer.six.pdftypes import PDFStream  # ty: ignore[
 from core_pdf.integrations.pdfminer.six.psparser import (  # ty: ignore[unresolved-import]
     KWD,
     LIT,
+    PSBaseParser,
+    PSKeyword,
     PSLiteral,
     literal_name,
 )
@@ -39,6 +43,8 @@ from pdfminer.layout import LTTextLineHorizontal as PdfMinerLTTextLineHorizontal
 from pdfminer.pdftypes import PDFStream as PdfMinerPDFStream
 from pdfminer.psparser import KWD as PDFMINER_KWD
 from pdfminer.psparser import LIT as PDFMINER_LIT
+from pdfminer.psparser import PSBaseParser as PdfMinerPSBaseParser
+from pdfminer.psparser import PSKeyword as PdfMinerPSKeyword
 from pdfminer.psparser import PSLiteral as PdfMinerPSLiteral
 from pdfminer.psparser import literal_name as pdfminer_literal_name
 from pdfminer.utils import Plane as PdfMinerPlane
@@ -95,6 +101,67 @@ def test_literal_and_keyword_contracts_match_pdfminer() -> None:
     assert PdfMinerPSLiteral("Font") != PdfMinerPSLiteral("Font")
     assert literal_name(LIT(b"Font")) == pdfminer_literal_name(PDFMINER_LIT(b"Font"))
     assert literal_name(42) == pdfminer_literal_name(42)
+
+
+def _token_snapshot(token: object) -> tuple[str, object]:
+    if isinstance(token, (PSLiteral, PdfMinerPSLiteral, PSKeyword, PdfMinerPSKeyword)):
+        return (type(token).__name__, token.name)
+    return (type(token).__name__, token)
+
+
+def _parse_token_stream(
+    parser_type: type[PSBaseParser] | type[PdfMinerPSBaseParser],
+    data: bytes,
+    buffer_size: int,
+) -> tuple[list[tuple[int, tuple[str, object]]], tuple[str, str]]:
+    parser = parser_type(BytesIO(data))
+    parser.BUFSIZ = buffer_size
+    tokens = []
+    while True:
+        try:
+            position, token = parser.nexttoken()
+        except Exception as error:
+            return tokens, (type(error).__name__, str(error))
+        tokens.append((position, _token_snapshot(token)))
+
+
+def test_randomized_tokenization_matches_pdfminer() -> None:
+    rng = random.Random(20260716)
+    fragments = [
+        b"123",
+        b"-45",
+        b"+.5",
+        b"1.25",
+        b"true",
+        b"false",
+        b"keyword",
+        b"/Name",
+        b"/escaped#20name",
+        b"(plain string)",
+        rb"(nested (string) and \\ escape)",
+        b"<4142f>",
+        b"<<",
+        b">>",
+        b"[",
+        b"]",
+        b"{",
+        b"}",
+        b"% comment\n",
+        b"@",
+        b"\x00",
+    ]
+    separators = [b" ", b"\n", b"\r\n", b"\t", b"  % gap\n"]
+
+    for _ in range(100):
+        data = b"".join(
+            rng.choice(fragments) + rng.choice(separators) for _ in range(rng.randint(1, 30))
+        )
+        for buffer_size in (1, 2, 7, 4096):
+            assert _parse_token_stream(PSBaseParser, data, buffer_size) == _parse_token_stream(
+                PdfMinerPSBaseParser,
+                data,
+                buffer_size,
+            )
 
 
 @pytest.mark.parametrize(
