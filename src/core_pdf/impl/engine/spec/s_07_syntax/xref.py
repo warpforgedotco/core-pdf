@@ -536,29 +536,43 @@ class XRefScanner:
 
     @staticmethod
     def parse_xref_stream_salvage(data: PdfByteBuffer, pos: int) -> PdfStream | None:
-        obj_end = data.find(b"endobj", pos)
-        stream_pos = data.find(b"stream", pos, obj_end if obj_end >= 0 else len(data))
-        if obj_end < 0 or stream_pos < 0:
+        lexer = PdfLexer(data)
+        dict_start = data.find(b"<<", pos)
+        if dict_start < 0:
             return None
-        header = data[pos:stream_pos]
-        if b"/Type/XRef" not in header and b"/Type /XRef" not in header:
+        lexer.pos = dict_start
+        try:
+            dict_obj = typing.cast(PdfDict, lexer.parse_dictionary())
+        except PdfParseError:
             return None
-        dict_obj: PdfDict = {}
-        dict_start = header.find(b"<<")
-        if dict_start >= 0:
-            lexer = PdfLexer(header)
-            lexer.pos = dict_start
-            try:
-                parsed = lexer.parse_dictionary()
-            except PdfParseError:
-                parsed = {}
-            if isinstance(parsed, dict):
-                dict_obj = typing.cast(PdfDict, parsed)
-        raw_data = data[stream_pos + len(b"stream") :]
-        endstream = raw_data.find(b"endstream")
-        if endstream >= 0:
-            raw_data = raw_data[:endstream]
-        raw_data = raw_data.strip(b"\r\n")
+        if normalize_pdf_name(lookup_dict_key(dict_obj, "Type")) != "XRef":
+            return None
+
+        lexer.skip_ignored()
+        stream_pos = lexer.pos
+        if data[stream_pos : stream_pos + 6] != b"stream":
+            return None
+        after_stream = stream_pos + 6
+        if after_stream >= len(data) or not WS_TABLE[data[after_stream]]:
+            return None
+        if after_stream < len(data) and data[after_stream] not in (10, 13):
+            while after_stream < len(data) and data[after_stream] in (0, 9, 12, 32):
+                after_stream += 1
+        lexer.pos = after_stream
+        lexer.skip_eol()
+        data_start = lexer.pos
+
+        length = lookup_dict_key(dict_obj, "Length")
+        if type(length) is int and length >= 0 and data_start + length <= len(data):
+            data_end = data_start + length
+            if lexer.find_object_end(data_end) < 0:
+                return None
+            raw_data = data[data_start:data_end]
+        else:
+            endstream = lexer.find_stream_end(data_start)
+            if endstream < data_start or lexer.find_object_end(endstream + 9) < 0:
+                return None
+            raw_data = data[data_start:endstream]
         decoded_data = None
         filter_name = normalize_pdf_name(lookup_dict_key(dict_obj, "Filter"))
         if filter_name == "FlateDecode":

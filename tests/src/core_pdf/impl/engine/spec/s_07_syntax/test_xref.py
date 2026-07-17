@@ -99,3 +99,29 @@ def test_find_previous_object_marker_skips_invalid_candidates() -> None:
     data = b"3 0 obj\nendobj\nobject obj subjective"
 
     assert find_previous_object_marker(data, len(data)) == 0
+
+
+def test_xref_stream_salvage_preserves_declared_binary_data() -> None:
+    raw_data = b"\nentry\nendstream\ninside\nendobj\ninside\r"
+    data = (
+        b"1 0 obj\n<< /Type /XRef /Length "
+        + str(len(raw_data)).encode()
+        + b" >>\nstream\n"
+        + raw_data
+        + b"\nendstream\nendobj"
+    )
+
+    stream = XRefScanner.parse_xref_stream_salvage(data, 0)
+
+    assert stream is not None
+    assert stream.raw_data == raw_data
+
+
+def test_xref_stream_salvage_uses_delimited_endstream_without_length() -> None:
+    raw_data = b"xref bytes"
+    data = b"1 0 obj\n<< /Type /XRef >>\nstream\r\n" + raw_data + b"\r\nendstream\nendobj"
+
+    stream = XRefScanner.parse_xref_stream_salvage(data, 0)
+
+    assert stream is not None
+    assert stream.raw_data == raw_data + b"\r\n"
