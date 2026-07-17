@@ -265,18 +265,71 @@ class PSBaseParser:
             self._parse1 = self._parse_comment
             return j + 1
         elif c == 0x2F:  # /
+            m = END_LITERAL.search(s, j + 1)
+            if m and s[m.start(0)] != 0x23:  # #
+                raw_name = s[j + 1 : m.start(0)]
+                try:
+                    name: str | bytes = str(raw_name, "utf-8")
+                except Exception:
+                    name = raw_name
+                self._add_token(LIT(name))
+                return m.start(0)
             self._curtoken = b""
             self._parse1 = self._parse_literal
             return j + 1
         elif c in (0x2D, 0x2B) or 0x30 <= c <= 0x39:  # -+0-9
+            m = END_NUMBER.search(s, j + 1)
+            if m:
+                end = m.start(0)
+                if s[end] == 0x2E:  # .
+                    float_end = END_NUMBER.search(s, end + 1)
+                    if float_end:
+                        end = float_end.start(0)
+                        try:
+                            number: int | float = float(s[j:end])
+                        except ValueError:
+                            pass
+                        else:
+                            self._add_token(number)
+                        return end
+                else:
+                    try:
+                        number = int(s[j:end])
+                    except ValueError:
+                        pass
+                    else:
+                        self._add_token(number)
+                    return end
             self._curtoken = token
             self._parse1 = self._parse_number
             return j + 1
         elif c == 0x2E:  # .
+            m = END_NUMBER.search(s, j + 1)
+            if m:
+                end = m.start(0)
+                try:
+                    number = float(s[j:end])
+                except ValueError:
+                    pass
+                else:
+                    self._add_token(number)
+                return end
             self._curtoken = token
             self._parse1 = self._parse_float
             return j + 1
         elif 0x41 <= c <= 0x5A or 0x61 <= c <= 0x7A:  # A-Z or a-z
+            m = END_KEYWORD.search(s, j + 1)
+            if m:
+                end = m.start(0)
+                keyword = s[j:end]
+                if keyword == b"true":
+                    keyword_token: bool | PSKeyword = True
+                elif keyword == b"false":
+                    keyword_token = False
+                else:
+                    keyword_token = KWD(keyword)
+                self._add_token(keyword_token)
+                return end
             self._curtoken = token
             self._parse1 = self._parse_keyword
             return j + 1
