@@ -633,7 +633,8 @@ class PSStackParser(PSBaseParser, Generic[ExtraT]):
         """
         while not self.results:
             (pos, token) = self.nexttoken()
-            if type(token) is PSKeyword:
+            token_type = type(token)
+            if token_type is PSKeyword:
                 if token is KEYWORD_ARRAY_BEGIN:
                     # begin array
                     self.start_type(pos, "a")
@@ -671,9 +672,9 @@ class PSStackParser(PSBaseParser, Generic[ExtraT]):
                             raise
                 else:
                     self.do_keyword(pos, token)
-            elif type(token) in NORMAL_TOKEN_TYPES:
+            elif token_type in NORMAL_TOKEN_TYPES:
                 # normal token
-                self.push((pos, token))
+                self.curstack.append((pos, token))
             else:
                 log.error(
                     "unknown token: pos=%r, token=%r, stack=%r",
