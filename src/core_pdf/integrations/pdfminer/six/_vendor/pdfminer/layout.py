@@ -95,9 +95,7 @@ class LAParams:
 
     def _validate(self) -> None:
         if self.boxes_flow is not None:
-            boxes_flow_err_msg = (
-                "LAParam boxes_flow should be None, or a number between -1 and +1"
-            )
+            boxes_flow_err_msg = "LAParam boxes_flow should be None, or a number between -1 and +1"
             if not (isinstance(self.boxes_flow, (int, float))):
                 raise PDFTypeError(boxes_flow_err_msg)
             if not -1 <= self.boxes_flow <= 1:
@@ -323,10 +321,7 @@ class LTImage(LTComponent):
             self.colorspace = [self.colorspace]
 
     def __repr__(self) -> str:
-        return (
-            f"<{self.__class__.__name__}({self.name}) "
-            f"{bbox2str(self.bbox)} {self.srcsize!r}>"
-        )
+        return f"<{self.__class__.__name__}({self.name}) {bbox2str(self.bbox)} {self.srcsize!r}>"
 
 
 class LTAnno(LTItem, LTText):
@@ -654,8 +649,7 @@ class LTTextBox(LTTextContainer[LTTextLine]):
 
     def __repr__(self) -> str:
         return (
-            f"<{self.__class__.__name__}({self.index}) "
-            f"{bbox2str(self.bbox)} {self.get_text()!r}>"
+            f"<{self.__class__.__name__}({self.index}) {bbox2str(self.bbox)} {self.get_text()!r}>"
         )
 
     def get_writing_mode(self) -> str:
@@ -696,8 +690,7 @@ class LTTextGroupLRTB(LTTextGroup):
         boxes_flow = laparams.boxes_flow
         # reorder the objects from top-left to bottom-right.
         self._objs.sort(
-            key=lambda obj: (1 - boxes_flow) * obj.x0
-            - (1 + boxes_flow) * (obj.y0 + obj.y1),
+            key=lambda obj: (1 - boxes_flow) * obj.x0 - (1 + boxes_flow) * (obj.y0 + obj.y1),
         )
 
 
@@ -708,8 +701,7 @@ class LTTextGroupTBRL(LTTextGroup):
         boxes_flow = laparams.boxes_flow
         # reorder the objects from top-right to bottom-left.
         self._objs.sort(
-            key=lambda obj: -(1 + boxes_flow) * (obj.x0 + obj.x1)
-            - (1 - boxes_flow) * obj.y1,
+            key=lambda obj: -(1 + boxes_flow) * (obj.x0 + obj.x1) - (1 - boxes_flow) * obj.y1,
         )
 
 
@@ -724,6 +716,9 @@ class LTLayoutContainer(LTContainer[LTComponent]):
         laparams: LAParams,
         objs: Iterable[LTComponent],
     ) -> Iterator[LTTextLine]:
+        char_margin = laparams.char_margin
+        line_overlap = laparams.line_overlap
+        detect_vertical = laparams.detect_vertical
         obj0 = None
         line: LTTextLine | None = None
         for obj1 in objs:
@@ -738,13 +733,16 @@ class LTLayoutContainer(LTContainer[LTComponent]):
                 #
                 #          |<--->|
                 #        (char_margin)
-                halign = (
-                    obj0.is_voverlap(obj1)
-                    and min(obj0.height, obj1.height) * laparams.line_overlap
-                    < obj0.voverlap(obj1)
-                    and obj0.hdistance(obj1)
-                    < max(obj0.width, obj1.width) * laparams.char_margin
-                )
+                halign = obj1.y0 <= obj0.y1 and obj0.y0 <= obj1.y1
+                if halign:
+                    halign = min(obj0.height, obj1.height) * line_overlap < min(
+                        abs(obj0.y0 - obj1.y1), abs(obj0.y1 - obj1.y0)
+                    )
+                if halign:
+                    hdistance = 0.0
+                    if obj1.x0 > obj0.x1 or obj0.x0 > obj1.x1:
+                        hdistance = min(abs(obj0.x0 - obj1.x1), abs(obj0.x1 - obj1.x0))
+                    halign = hdistance < max(obj0.width, obj1.width) * char_margin
 
                 # valign: obj0 and obj1 is vertically aligned.
                 #
@@ -760,14 +758,16 @@ class LTLayoutContainer(LTContainer[LTComponent]):
                 #
                 #     |<-->|
                 #   (line_overlap)
-                valign = (
-                    laparams.detect_vertical
-                    and obj0.is_hoverlap(obj1)
-                    and min(obj0.width, obj1.width) * laparams.line_overlap
-                    < obj0.hoverlap(obj1)
-                    and obj0.vdistance(obj1)
-                    < max(obj0.height, obj1.height) * laparams.char_margin
-                )
+                valign = detect_vertical and obj1.x0 <= obj0.x1 and obj0.x0 <= obj1.x1
+                if valign:
+                    valign = min(obj0.width, obj1.width) * line_overlap < min(
+                        abs(obj0.x0 - obj1.x1), abs(obj0.x1 - obj1.x0)
+                    )
+                if valign:
+                    vdistance = 0.0
+                    if obj1.y0 > obj0.y1 or obj0.y0 > obj1.y1:
+                        vdistance = min(abs(obj0.y0 - obj1.y1), abs(obj0.y1 - obj1.y0))
+                    valign = vdistance < max(obj0.height, obj1.height) * char_margin
 
                 if (halign and isinstance(line, LTTextLineHorizontal)) or (
                     valign and isinstance(line, LTTextLineVertical)
@@ -871,11 +871,7 @@ class LTLayoutContainer(LTContainer[LTComponent]):
             y0 = min(obj1.y0, obj2.y0)
             x1 = max(obj1.x1, obj2.x1)
             y1 = max(obj1.y1, obj2.y1)
-            return (
-                (x1 - x0) * (y1 - y0)
-                - obj1.width * obj1.height
-                - obj2.width * obj2.height
-            )
+            return (x1 - x0) * (y1 - y0) - obj1.width * obj1.height - obj2.width * obj2.height
 
         def isany(obj1: ElementT, obj2: ElementT) -> set[ElementT]:
             """Check if there's any other object between obj1 and obj2."""
@@ -955,9 +951,7 @@ class LTLayoutContainer(LTContainer[LTComponent]):
                 assigner.run(group)
             textboxes.sort(key=lambda box: box.index)
         self._objs = (
-            cast(list[LTComponent], textboxes)
-            + otherobjs
-            + cast(list[LTComponent], empties)
+            cast(list[LTComponent], textboxes) + otherobjs + cast(list[LTComponent], empties)
         )
 
 
