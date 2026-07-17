@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from core_pdf.impl.engine.extraction.cache import ExtractionCache
+from core_pdf.impl.engine.spec.s_07_content.inline_images import parse_inline_image
 from core_pdf.impl.engine.spec.s_07_content.operations import (
     content_stream_may_show_text,
 )
@@ -16,6 +17,7 @@ from core_pdf.impl.engine.spec.s_07_objects.coercion import (
     normalize_pdf_name,
 )
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.objects import PdfStream
 from core_pdf.impl.types import PdfDict
@@ -312,6 +314,7 @@ def content_operator_counts(
 
     counts: dict[str, int] = {}
     path_ops = 0
+    inline_image_lexer: PdfLexer | None = None
     pos = 0
     while pos < data_len:
         byte = raw_bytes[pos]
@@ -358,6 +361,16 @@ def content_operator_counts(
                         counts[op] = counts.get(op, 0) + 1
                 else:
                     counts.setdefault(op, 1)
+                if op == "BI":
+                    if inline_image_lexer is None:
+                        inline_image_lexer = PdfLexer(raw_bytes)
+                    inline_image_lexer.pos = pos
+                    try:
+                        parse_inline_image(inline_image_lexer)
+                    except PdfParseError:
+                        pass
+                    else:
+                        pos = inline_image_lexer.pos
         if (
             profile_thresholds
             and path_ops >= 12
