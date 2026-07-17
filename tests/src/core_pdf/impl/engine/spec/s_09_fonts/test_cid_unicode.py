@@ -22,6 +22,7 @@ def test_compact_cmap_preserves_explicit_and_later_range_precedence() -> None:
         mappings_by_cid={300: (b"B",)},
         mapped_codes=frozenset({b"B"}),
         ranges=(CIDRange(b"A", b"C", 100), CIDRange(b"B", b"B", 200)),
+        effective_codes_by_cid={100: (b"A",), 102: (b"C",), 300: (b"B",)},
     )
 
     assert cmap.codes_for_cid(100) == (b"A",)

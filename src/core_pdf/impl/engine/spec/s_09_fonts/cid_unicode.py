@@ -28,20 +28,10 @@ class CompactCMap:
     mappings_by_cid: dict[int, tuple[bytes, ...]]
     mapped_codes: frozenset[bytes]
     ranges: tuple[CIDRange, ...]
+    effective_codes_by_cid: dict[int, tuple[bytes, ...]]
 
     def codes_for_cid(self, cid: int) -> tuple[bytes, ...]:
-        codes = list(self.mappings_by_cid.get(cid, ()))
-        higher_priority_ranges: list[CIDRange] = []
-        for cid_range in reversed(self.ranges):
-            code = code_for_cid(cid_range, cid)
-            if (
-                code is not None
-                and code not in self.mapped_codes
-                and not any(item.contains(code) for item in higher_priority_ranges)
-            ):
-                codes.append(code)
-            higher_priority_ranges.append(cid_range)
-        return tuple(codes)
+        return self.effective_codes_by_cid.get(cid, ())
 
 
 def code_for_cid(cid_range: CIDRange, cid: int) -> bytes | None:
@@ -145,8 +135,8 @@ def compact_cmap(name: str) -> CompactCMap | None:
     mappings: dict[bytes, int] = {}
     ranges: list[CIDRange] = []
     if parent is not None:
-        for cid, codes in parent.mappings_by_cid.items():
-            mappings.update((code, cid) for code in codes)
+        for cid, parent_codes in parent.mappings_by_cid.items():
+            mappings.update((code, cid) for code in parent_codes)
         ranges.extend(parent.ranges)
     child_mappings, child_ranges = _parsed_cid_data(data)
     mappings.update(child_mappings)
@@ -156,10 +146,21 @@ def compact_cmap(name: str) -> CompactCMap | None:
     mappings_by_cid: defaultdict[int, list[bytes]] = defaultdict(list)
     for code, cid in mappings.items():
         mappings_by_cid[cid].append(code)
+    effective_codes_by_cid: defaultdict[int, list[bytes]] = defaultdict(list)
+    for cid, codes in mappings_by_cid.items():
+        effective_codes_by_cid[cid].extend(codes)
+    seen = set(mappings)
+    for cid_range in reversed(ranges):
+        for offset, code in enumerate(iter_codespace_range(cid_range.start, cid_range.end)):
+            if code in seen:
+                continue
+            seen.add(code)
+            effective_codes_by_cid[cid_range.first_cid + offset].append(code)
     return CompactCMap(
         {cid: tuple(codes) for cid, codes in mappings_by_cid.items()},
         frozenset(mappings),
         tuple(ranges),
+        {cid: tuple(codes) for cid, codes in effective_codes_by_cid.items()},
     )
 
 
