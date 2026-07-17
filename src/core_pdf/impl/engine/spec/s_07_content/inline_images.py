@@ -111,9 +111,8 @@ def skip_inline_image_separator(lexer: InlineImageLexer) -> bool:
 
 def filtered_inline_image_data_end(
     dictionary: PdfDict,
-    data: memoryview,
+    data: bytes,
     start: int,
-    source_bytes: bytes | None,
 ) -> int | None:
     try:
         filters = normalize_stream_decode_spec(dictionary).filters
@@ -124,20 +123,14 @@ def filtered_inline_image_data_end(
 
     first_filter = filters[0]
 
-    def find(needle: bytes) -> int:
-        if source_bytes is not None:
-            return source_bytes.find(needle, start)
-        relative = data[start:].tobytes().find(needle)
-        return -1 if relative < 0 else start + relative
-
     if first_filter in {"ASCII85Decode", "A85"}:
-        marker = find(b"~>")
+        marker = data.find(b"~>", start)
         return None if marker < 0 else marker + 2
     if first_filter in {"ASCIIHexDecode", "AHx"}:
-        marker = find(b">")
+        marker = data.find(b">", start)
         return None if marker < 0 else marker + 1
     if first_filter in {"DCTDecode", "DCT"}:
-        marker = find(b"\xff\xd9")
+        marker = data.find(b"\xff\xd9", start)
         return None if marker < 0 else marker + 2
     if first_filter in {"RunLengthDecode", "RL"}:
         pos = start
@@ -188,44 +181,31 @@ def parse_inline_image(lexer: InlineImageLexer) -> InlineImage:
             lexer.pos = marker + 2
             return InlineImage(normalized, image_data)
 
-    hinted_end = filtered_inline_image_data_end(normalized, raw_data, start, source_bytes)
-    search_start = hinted_end if hinted_end is not None else start
-
     if source_bytes is not None:
-        pos = search_start
-        while True:
-            marker = source_bytes.find(b"EI", pos)
-            if marker < 0:
-                raise PdfParseError("unterminated inline image data")
-            after = marker + 2
-            prev_ok = marker == start or source_bytes[marker - 1] in WHITESPACE
-            next_ok = (
-                after >= lexer.data_len
-                or source_bytes[after] in WHITESPACE
-                or source_bytes[after] in b"()<>[]{}/%"
-            )
-            if prev_ok and next_ok:
-                image_data = source_bytes[start:marker].rstrip(WHITESPACE)
-                lexer.pos = after
-                return InlineImage(normalized, image_data)
-            pos = marker + 1
+        search_data = source_bytes
+        data_start = start
+        position_offset = 0
+    else:
+        search_data = bytes(raw_data[start:])
+        data_start = 0
+        position_offset = start
 
-    data_bytes = bytes(lexer.raw_data[start:])
-    pos = search_start - start
+    hinted_end = filtered_inline_image_data_end(normalized, search_data, data_start)
+    pos = hinted_end if hinted_end is not None else data_start
     while True:
-        marker = data_bytes.find(b"EI", pos)
+        marker = search_data.find(b"EI", pos)
         if marker < 0:
             raise PdfParseError("unterminated inline image data")
         after = marker + 2
-        prev_ok = marker == 0 or data_bytes[marker - 1] in WHITESPACE
+        prev_ok = marker == data_start or search_data[marker - 1] in WHITESPACE
         next_ok = (
-            after >= len(data_bytes)
-            or data_bytes[after] in WHITESPACE
-            or data_bytes[after] in b"()<>[]{}/%"
+            after >= len(search_data)
+            or search_data[after] in WHITESPACE
+            or search_data[after] in b"()<>[]{}/%"
         )
         if prev_ok and next_ok:
-            image_data = data_bytes[:marker].rstrip(WHITESPACE)
-            lexer.pos = start + after
+            image_data = search_data[data_start:marker].rstrip(WHITESPACE)
+            lexer.pos = position_offset + after
             return InlineImage(normalized, image_data)
         pos = marker + 1
 
