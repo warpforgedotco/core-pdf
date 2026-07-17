@@ -9,13 +9,6 @@ from core_pdf.impl.engine.spec.s_07_content.inline_images import parse_inline_im
 from core_pdf.impl.engine.spec.s_07_content.operations import (
     content_stream_may_show_text,
 )
-from core_pdf.impl.engine.spec.s_07_content.scanning import (
-    is_regular_token_byte,
-    skip_comment,
-    skip_hex_string,
-    skip_literal_string,
-    skip_name,
-)
 from core_pdf.impl.engine.spec.s_07_filters.decode_spec import (
     StreamDecodeSpec,
     normalize_stream_decode_spec,
@@ -25,6 +18,13 @@ from core_pdf.impl.engine.spec.s_07_objects.coercion import (
 )
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
+from core_pdf.impl.engine.spec.s_07_syntax.scanning import (
+    is_regular_token_byte,
+    skip_comment,
+    skip_hex_string,
+    skip_literal_string,
+    skip_name,
+)
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.objects import PdfStream
 from core_pdf.impl.types import PdfDict

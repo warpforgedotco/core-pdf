@@ -4,6 +4,11 @@ from __future__ import annotations
 import zlib
 
 from core_pdf.impl.engine.spec.s_07_filters.codecs import PDF_WHITESPACE_TABLE
+from core_pdf.impl.engine.spec.s_07_syntax.scanning import (
+    skip_comment,
+    skip_hex_string,
+    skip_literal_string,
+)
 from core_pdf.impl.exceptions import PdfParseError
 
 PDF_CONTENT_OPERATORS = {
@@ -64,6 +69,9 @@ PDF_CONTENT_OPERATORS = {
     b'"',
 }
 PDF_CONTENT_DELIMITERS = b"()<>[]{}/%"
+# Incomplete raw Deflate has no signature, so a few arbitrary bytes can decode
+# to garbage without the decoder ever reaching an end-of-stream marker.
+MIN_TRUNCATED_RAW_FLATE_BYTES = 8
 
 
 def apply_flate(data: bytes, parms: object) -> bytes:
@@ -98,7 +106,10 @@ def apply_flate(data: bytes, parms: object) -> bytes:
 def recover_flate(data: bytes, wbits: int = zlib.MAX_WBITS) -> bytes:
     try:
         decoder = zlib.decompressobj(wbits)
-        return decoder.decompress(data) + decoder.flush()
+        decoded = decoder.decompress(data) + decoder.flush()
+        if wbits < 0 and not decoder.eof and len(data) < MIN_TRUNCATED_RAW_FLATE_BYTES:
+            return b""
+        return decoded
     except zlib.error:
         if wbits > 0 and len(data) > 6:
             cmf = data[0]
@@ -112,33 +123,65 @@ def recover_flate(data: bytes, wbits: int = zlib.MAX_WBITS) -> bytes:
 
 
 def looks_like_pdf_content_stream(data: bytes | memoryview) -> bool:
-    view = data if type(data) is memoryview else memoryview(data)
-    end = len(view)
+    data_len = len(data)
+    scan_limit = min(data_len, 1024)
+    source = data.obj if type(data) is memoryview else data
+    if type(source) is bytes and len(source) == data_len:
+        raw = source[:scan_limit]
+    else:
+        raw = bytes(data[:scan_limit])
+    end = len(raw)
     pos = 0
     token_count = 0
-    scan_limit = min(end, 1024)
-    while pos < scan_limit and token_count < 64:
-        byte = view[pos]
+    container_depth = 0
+    while pos < end and token_count < 64:
+        byte = raw[pos]
         if PDF_WHITESPACE_TABLE[byte]:
             pos += 1
             continue
         if byte == 37:
-            newline = bytes(view[pos:scan_limit]).find(b"\n")
-            if newline < 0:
-                return False
-            pos += newline + 1
+            pos = skip_comment(raw, pos, end)
+            continue
+        if byte == 40:
+            pos = skip_literal_string(raw, pos, end)
+            continue
+        if byte == 60:
+            if pos + 1 < end and raw[pos + 1] == 60:
+                container_depth += 1
+                pos += 2
+            else:
+                pos = skip_hex_string(raw, pos, end)
+            continue
+        if byte == 62 and pos + 1 < end and raw[pos + 1] == 62:
+            container_depth = max(0, container_depth - 1)
+            pos += 2
+            continue
+        if byte == 91:
+            container_depth += 1
+            pos += 1
+            continue
+        if byte == 93:
+            container_depth = max(0, container_depth - 1)
+            pos += 1
+            continue
+        if byte == 47:
+            pos += 1
+            while pos < end:
+                byte = raw[pos]
+                if PDF_WHITESPACE_TABLE[byte] or byte in PDF_CONTENT_DELIMITERS:
+                    break
+                pos += 1
             continue
         if byte in PDF_CONTENT_DELIMITERS:
             pos += 1
             continue
         start = pos
-        while pos < scan_limit:
-            byte = view[pos]
+        while pos < end:
+            byte = raw[pos]
             if PDF_WHITESPACE_TABLE[byte] or byte in PDF_CONTENT_DELIMITERS:
                 break
             pos += 1
-        token = bytes(view[start:pos])
         token_count += 1
-        if token in PDF_CONTENT_OPERATORS:
+        if container_depth == 0 and raw[start:pos] in PDF_CONTENT_OPERATORS:
             return True
     return False

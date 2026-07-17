@@ -8,7 +8,10 @@ import pytest
 
 from core_pdf.impl.engine.spec.s_07_filters import decoders
 from core_pdf.impl.engine.spec.s_07_filters.codecs import apply_ascii85
-from core_pdf.impl.engine.spec.s_07_filters.flate import apply_flate
+from core_pdf.impl.engine.spec.s_07_filters.flate import (
+    apply_flate,
+    looks_like_pdf_content_stream,
+)
 from core_pdf.impl.engine.spec.s_07_filters.pipeline import decode_stream_data
 from core_pdf.impl.engine.spec.s_07_security.standard_v4 import PdfStandardSecurityHandlerV4
 from core_pdf.impl.exceptions import PdfParseError, PdfUnsupportedError
@@ -35,6 +38,13 @@ def test_apply_flate_decodes_raw_deflate_stream() -> None:
     assert apply_flate(raw_deflate_compress(b"hello"), {}) == b"hello"
 
 
+def test_apply_flate_decodes_complete_short_raw_deflate_stream() -> None:
+    compressed = raw_deflate_compress(b"A")
+
+    assert len(compressed) < 8
+    assert apply_flate(compressed, {}) == b"A"
+
+
 def test_apply_flate_recovers_bad_zlib_checksum() -> None:
     compressed = bytearray(zlib.compress(b"hello"))
     compressed[-1] ^= 0xFF
@@ -51,6 +61,40 @@ def test_apply_flate_tolerates_mislabeled_content_stream() -> None:
 def test_apply_flate_rejects_non_pdf_garbage() -> None:
     with pytest.raises(PdfParseError):
         apply_flate(b"not compressed data", {})
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        b"(Tj Do q)",
+        b"<546a 446f 71>",
+        b"/Tj /Do /q",
+        b"[Tj Do q]",
+        b"<< /Operator Tj /Other Do >>",
+        b"% Tj Do q\nnot content",
+    ],
+)
+def test_content_stream_detection_ignores_operator_like_operands(data: bytes) -> None:
+    assert not looks_like_pdf_content_stream(data)
+
+
+@pytest.mark.parametrize("data", [b"(Tj)", b"/Do", b"[q]"])
+def test_apply_flate_rejects_operator_like_uncompressed_operands(data: bytes) -> None:
+    with pytest.raises(PdfParseError):
+        apply_flate(data, {})
+
+
+def test_content_stream_detection_finds_operator_after_complex_operands() -> None:
+    data = b"[(Tj) /Do << /Value q >>] TJ"
+
+    assert looks_like_pdf_content_stream(data)
+
+
+def test_content_stream_detection_supports_sliced_memoryview() -> None:
+    content = b"(embedded Tj) not-content"
+    data = memoryview(b"prefix" + content + b"suffix")[len(b"prefix") : -len(b"suffix")]
+
+    assert not looks_like_pdf_content_stream(data)
 
 
 def test_apply_ascii85_decodes_unterminated_pdf_stream() -> None:

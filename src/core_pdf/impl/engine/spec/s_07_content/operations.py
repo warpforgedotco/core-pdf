@@ -10,17 +10,17 @@ from core_pdf.impl.engine.spec.s_07_content.inline_images import (
     parse_inline_image,
     recover_inline_image_position,
 )
-from core_pdf.impl.engine.spec.s_07_content.scanning import (
+from core_pdf.impl.engine.spec.s_07_objects.object_cache import CachedPdfObject
+from core_pdf.impl.engine.spec.s_07_syntax.lexer import (
+    EMPTY_SIMPLE_TJ_ARRAY,
+    PdfLexer,
+)
+from core_pdf.impl.engine.spec.s_07_syntax.scanning import (
     is_regular_token_byte,
     skip_comment,
     skip_hex_string,
     skip_literal_string,
     skip_name,
-)
-from core_pdf.impl.engine.spec.s_07_objects.object_cache import CachedPdfObject
-from core_pdf.impl.engine.spec.s_07_syntax.lexer import (
-    EMPTY_SIMPLE_TJ_ARRAY,
-    PdfLexer,
 )
 from core_pdf.impl.engine.spec.s_07_syntax.tokens import SEPARATOR_TABLE, WS_TABLE
 from core_pdf.impl.engine.spec.s_09_fonts.decoder import FontDecoder

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from itertools import product
 
-from core_pdf.impl.engine.spec.s_07_content.scanning import skip_literal_string
+from core_pdf.impl.engine.spec.s_07_syntax.scanning import skip_literal_string
 
 
 def reference_skip_literal_string(data: bytes) -> int:
