@@ -47,6 +47,33 @@ def test_find_separator_supports_reversed_memoryview() -> None:
     assert lexer.find_separator(0) == len(b"ordinary")
 
 
+@pytest.mark.parametrize("view_kind", ["bytes", "sliced", "reversed"])
+@pytest.mark.parametrize(
+    ("encoded", "expected"),
+    [
+        (b"48656c6c6f", b"Hello"),
+        (b"48 65\n6c6c6f", b"Hello"),
+        (b"486", b"H\x60"),
+        (b"4g86", b"H\x60"),
+        (b"zz", b""),
+    ],
+)
+def test_hex_string_decode_supports_all_byte_views(
+    view_kind: str,
+    encoded: bytes,
+    expected: bytes,
+) -> None:
+    content = b"<" + encoded + b"> trailing data"
+    if view_kind == "sliced":
+        data: bytes | memoryview = memoryview(b"prefix" + content + b"suffix")[6:-6]
+    elif view_kind == "reversed":
+        data = memoryview(content[::-1])[::-1]
+    else:
+        data = content
+
+    assert PdfLexer(data).parse_object() == PdfString(expected)
+
+
 @pytest.mark.parametrize(
     "data",
     [

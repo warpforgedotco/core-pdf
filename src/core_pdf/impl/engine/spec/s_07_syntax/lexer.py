@@ -68,6 +68,7 @@ RECOVERABLE_DICTIONARY_KEY_NAMES = {
 
 EMPTY_SIMPLE_TJ_ARRAY: tuple[Any, ...] = ()
 SEPARATOR_RE = re.compile(b"[" + re.escape(WHITESPACE + DELIMITERS) + b"]")
+HEX_STRING_END_RE = re.compile(b">")
 
 
 class PdfLexer:
@@ -348,10 +349,16 @@ class PdfLexer:
         marker = -1
         if source_buffer is not None:
             marker = source_buffer.find(b">", start)
+        elif self.raw_data.c_contiguous:
+            match = HEX_STRING_END_RE.search(self.raw_data, start)
+            if match is not None:
+                marker = match.start()
         else:
-            marker = self.raw_data[start:].tobytes().find(b">")
-            if marker >= 0:
-                marker += start
+            marker = start
+            while marker < self.data_len and self.raw_data[marker] != 62:
+                marker += 1
+            if marker >= self.data_len:
+                marker = -1
         if marker < 0:
             raise PdfParseError("unterminated hex string")
 
