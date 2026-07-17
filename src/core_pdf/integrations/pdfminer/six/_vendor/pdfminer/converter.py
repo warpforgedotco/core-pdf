@@ -352,15 +352,15 @@ class TextConverter(PDFConverter[AnyIO]):
             write_text = self.outfp.write
 
         def render(item: LTItem) -> None:
-            if isinstance(item, LTContainer):
+            if isinstance(item, (LTChar, LTAnno)):
+                write_text(item.get_text())
+            elif isinstance(item, LTContainer):
                 for child in item:
                     render(child)
                 if isinstance(item, LTTextBox):
                     write_text("\n")
             elif isinstance(item, LTText):
                 write_text(item.get_text())
-                if isinstance(item, LTImage) and self.imagewriter is not None:
-                    self.imagewriter.export_image(item)
             elif isinstance(item, LTImage) and self.imagewriter is not None:
                 self.imagewriter.export_image(item)
 
