@@ -6,6 +6,7 @@ from core_pdf.impl.engine.extraction.common import observation_resolver
 from core_pdf.impl.engine.extraction.common.observation_resolver import (
     ResolvedTextLine,
     observation_useful_new_token_count,
+    resolve_observation_append,
     resolve_text_lines,
 )
 from core_pdf.impl.engine.extraction.common.page_geometry import PageObservation
@@ -55,3 +56,16 @@ def test_useful_token_count_accepts_pre_normalized_tokens_without_changing_dupli
         )
         == 2
     )
+
+
+def test_resolution_keeps_first_match_and_accumulates_geometry_coverage() -> None:
+    first = observation("First layer", 0.0)
+    tied = observation("Tied layer", 0.0)
+    duplicate = observation("First layer", 0.0)
+
+    resolution = resolve_observation_append(duplicate, (first, tied))
+
+    assert resolution.action == "skip"
+    assert resolution.matched is first
+    assert resolution.geometry_score == pytest.approx(1.0)
+    assert resolution.coverage_ratio == 1.0

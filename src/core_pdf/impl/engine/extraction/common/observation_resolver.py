@@ -50,12 +50,10 @@ def resolve_observation_append(
     if not candidate.text.strip():
         return ObservationResolution("skip", "empty_text", candidate)
 
-    matched, geometry_score = best_observation_geometry_match(
-        candidate,
-        accepted_observations,
+    matched, geometry_score, coverage_ratio = observation_geometry_resolution(
+        candidate, accepted_observations
     )
     text_overlap = observation_text_overlap(candidate, matched) if matched is not None else 0.0
-    coverage_ratio = observation_coverage_ratio(candidate, accepted_observations)
     useful_new_tokens = observation_useful_new_token_count(
         candidate,
         existing_text,
@@ -161,6 +159,26 @@ def best_observation_geometry_match(
             best = observation
             best_score = score
     return best, best_score
+
+
+def observation_geometry_resolution(
+    candidate: page_geometry.PageObservation,
+    accepted: Iterable[page_geometry.PageObservation],
+) -> tuple[page_geometry.PageObservation | None, float, float]:
+    best: page_geometry.PageObservation | None = None
+    best_score = 0.0
+    area = page_geometry.observation_area(candidate)
+    covered_area = 0.0
+    for observation in accepted:
+        score, intersection_area = page_geometry.observation_geometry_match_metrics(
+            candidate, observation
+        )
+        if score > best_score:
+            best = observation
+            best_score = score
+        covered_area += intersection_area
+    coverage_ratio = 1.0 if area <= 0.0 else min(1.0, covered_area / area)
+    return best, best_score, coverage_ratio
 
 
 def observation_coverage_ratio(
