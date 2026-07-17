@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, Iterator, Protocol, cast
+from typing import TYPE_CHECKING, Any, Iterator, Protocol, cast
 
 from core_pdf.impl.engine.extraction.common.page_content import PageContentRecord
 from core_pdf.impl.engine.extraction.tables.types import (
@@ -13,8 +13,10 @@ from core_pdf.impl.engine.extraction.tables.types import (
     TableSpanResult,
     TableSpanRows,
 )
-from core_pdf.impl.engine.rendering import RenderOptions
 from core_pdf.impl.types import PageSelection
+
+if TYPE_CHECKING:
+    from core_pdf.impl.engine.rendering import RenderOptions
 
 
 class DocumentTablePage(Protocol):

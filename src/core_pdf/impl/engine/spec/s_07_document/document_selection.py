@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 from collections.abc import Iterator, Sequence
-from typing import Any, Protocol, cast
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
-from core_pdf.impl.engine.spec.s_07_document.page import PdfPage
 from core_pdf.impl.types import PageSelection
+
+if TYPE_CHECKING:
+    from core_pdf.impl.engine.spec.s_07_document.page import PdfPage
 
 
 class DocumentSelectionHost(Protocol):
