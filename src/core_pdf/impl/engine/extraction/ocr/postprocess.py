@@ -591,8 +591,10 @@ def repair_document_local_identifier_line_text(
     *,
     normalize_ocr_noise: bool = True,
 ) -> str:
-    repaired = normalize_generic_ocr_line_text(text) if normalize_ocr_noise else text
-    repaired = intrinsic_identifier_spacing(repaired)
+    if normalize_ocr_noise:
+        repaired = intrinsic_identifier_spacing(normalize_generic_ocr_line_text(text))
+    else:
+        repaired = text
     for spaced, display in context.replacements:
         spaced_pattern = re.escape(spaced).replace(r"\ ", r"[ \t]+")
         pattern = re.compile(
@@ -600,7 +602,7 @@ def repair_document_local_identifier_line_text(
             re.IGNORECASE,
         )
         repaired = pattern.sub(display, repaired)
-    return intrinsic_identifier_compaction(repaired)
+    return intrinsic_identifier_compaction(repaired) if normalize_ocr_noise else repaired
 
 
 def normalize_generic_ocr_line_text(text: str) -> str:
