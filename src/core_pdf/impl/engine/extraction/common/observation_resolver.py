@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Set
 from dataclasses import dataclass, replace
 
 from core_pdf.impl.engine.extraction.common import page_geometry
@@ -34,12 +34,17 @@ def resolve_observation_append(
     accepted: Iterable[page_geometry.PageObservation],
     *,
     existing_text: str = "",
+    existing_tokens: Set[str] | None = None,
 ) -> ObservationResolution:
     accepted_observations = tuple(
         observation for observation in accepted if observation.bbox is not None
     )
     if candidate.bbox is None:
-        if observation_has_useful_new_text(candidate, existing_text):
+        if observation_has_useful_new_text(
+            candidate,
+            existing_text,
+            existing_tokens=existing_tokens,
+        ):
             return ObservationResolution("append", "no_geometry", candidate)
         return ObservationResolution("skip", "duplicate_text", candidate)
     if not candidate.text.strip():
@@ -51,7 +56,11 @@ def resolve_observation_append(
     )
     text_overlap = observation_text_overlap(candidate, matched) if matched is not None else 0.0
     coverage_ratio = observation_coverage_ratio(candidate, accepted_observations)
-    useful_new_tokens = observation_useful_new_token_count(candidate, existing_text)
+    useful_new_tokens = observation_useful_new_token_count(
+        candidate,
+        existing_text,
+        existing_tokens=existing_tokens,
+    )
 
     if coverage_ratio >= 0.72 and text_overlap >= 0.65:
         return ObservationResolution(
@@ -105,7 +114,7 @@ def resolve_text_lines(
 ) -> tuple[ResolvedTextLine, ...]:
     accepted_lines: list[ResolvedTextLine] = []
     accepted_observations: list[page_geometry.PageObservation] = []
-    text_parts: list[str] = [existing_text] if existing_text else []
+    accepted_tokens = set(normalized_text_tokens(existing_text))
     for line in lines:
         observation = line.observation
         if observation.text != line.text:
@@ -114,14 +123,14 @@ def resolve_text_lines(
         resolution = resolve_observation_append(
             observation,
             accepted_observations,
-            existing_text="\n".join(text_parts),
+            existing_tokens=accepted_tokens,
         )
         if resolution.action != "append":
             continue
         accepted_line = replace(line, resolution=resolution)
         accepted_lines.append(accepted_line)
         accepted_observations.append(observation)
-        text_parts.append(line.text)
+        accepted_tokens.update(normalized_text_tokens(line.text))
     return tuple(accepted_lines)
 
 
@@ -186,15 +195,30 @@ def observation_text_overlap(
 def observation_has_useful_new_text(
     candidate: page_geometry.PageObservation,
     existing_text: str,
+    *,
+    existing_tokens: Set[str] | None = None,
 ) -> bool:
-    return observation_useful_new_token_count(candidate, existing_text) > 0
+    return (
+        observation_useful_new_token_count(
+            candidate,
+            existing_text,
+            existing_tokens=existing_tokens,
+        )
+        > 0
+    )
 
 
 def observation_useful_new_token_count(
     candidate: page_geometry.PageObservation,
     existing_text: str,
+    *,
+    existing_tokens: Set[str] | None = None,
 ) -> int:
-    seen = set(normalized_text_tokens(existing_text))
+    seen = (
+        existing_tokens
+        if existing_tokens is not None
+        else set(normalized_text_tokens(existing_text))
+    )
     count = 0
     for token in normalized_text_tokens(candidate.text):
         if token in seen:
