@@ -7,17 +7,26 @@ import sys
 import pytest
 
 PDFMINER_MODULES = (
+    "arcfour",
     "ascii85",
+    "casting",
+    "ccitt",
     "cmapdb",
     "converter",
+    "encodingdb",
     "high_level",
     "layout",
+    "lzw",
+    "pdfdocument",
+    "pdfexceptions",
     "pdffont",
     "pdfinterp",
     "pdfpage",
+    "pdfparser",
     "pdftypes",
     "psexceptions",
     "psparser",
+    "runlength",
     "settings",
     "utils",
 )
