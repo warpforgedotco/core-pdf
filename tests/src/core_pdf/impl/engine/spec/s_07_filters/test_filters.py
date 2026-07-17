@@ -9,7 +9,7 @@ from typing import cast
 
 import pytest
 
-from core_pdf.impl.engine.spec.s_07_filters import decoders
+from core_pdf.impl.engine.spec.s_07_filters import decoders, predictors
 from core_pdf.impl.engine.spec.s_07_filters.codecs import apply_ascii85, apply_ascii_hex
 from core_pdf.impl.engine.spec.s_07_filters.decode_spec import FilterParams
 from core_pdf.impl.engine.spec.s_07_filters.flate import (
@@ -182,6 +182,17 @@ def test_png_predictor_can_recover_complete_rows_before_truncation() -> None:
     )
 
     assert apply_png_predictor(b"\x00full\x00bad", params) == b"full"
+
+
+def test_empty_png_predictor_avoids_row_allocation(monkeypatch: pytest.MonkeyPatch) -> None:
+    params = FilterParams(columns=10**9, colors=4, bits_per_component=16)
+
+    def unexpected_decode(*args: object, **kwargs: object) -> bytes:
+        raise AssertionError("empty predictor should not allocate or decode rows")
+
+    monkeypatch.setattr(predictors, "png_predict", unexpected_decode)
+
+    assert apply_png_predictor(b"", params) == b""
 
 
 @pytest.mark.parametrize(

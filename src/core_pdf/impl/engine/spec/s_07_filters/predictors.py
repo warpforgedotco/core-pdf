@@ -15,6 +15,8 @@ SUPPORTED_PREDICTOR_BITS = frozenset({1, 2, 4, 8, 16})
 
 def apply_tiff_predictor(data: bytes | memoryview, params: FilterParams) -> bytes:
     if params.bits_per_component in SUPPORTED_PREDICTOR_BITS:
+        if not data:
+            return b""
         row_length = (params.columns * params.colors * params.bits_per_component + 7) // 8
         if row_length and len(data) % row_length:
             raise PdfParseError("truncated TIFF predictor row")
@@ -31,6 +33,8 @@ def apply_tiff_predictor(data: bytes | memoryview, params: FilterParams) -> byte
 
 def apply_png_predictor(data: bytes | memoryview, params: FilterParams) -> bytes:
     if params.bits_per_component in SUPPORTED_PREDICTOR_BITS:
+        if not data:
+            return b""
         row_length = (params.columns * params.colors * params.bits_per_component + 7) // 8
         stride = row_length + 1
         if len(data) % stride and not params.damaged_rows_before_error:
