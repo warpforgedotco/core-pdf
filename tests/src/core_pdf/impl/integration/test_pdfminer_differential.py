@@ -24,7 +24,10 @@ from core_pdf.integrations.pdfminer.six.psparser import (  # ty: ignore[unresolv
     PSLiteral,
     literal_name,
 )
-from core_pdf.integrations.pdfminer.six.utils import decode_text  # ty: ignore[unresolved-import]
+from core_pdf.integrations.pdfminer.six.utils import (  # ty: ignore[unresolved-import]
+    Plane,
+    decode_text,
+)
 from pdfminer.ascii85 import ascii85decode as pdfminer_ascii85decode
 from pdfminer.ascii85 import asciihexdecode as pdfminer_asciihexdecode
 from pdfminer.cmapdb import CMap as PdfMinerCMap
@@ -38,6 +41,7 @@ from pdfminer.psparser import KWD as PDFMINER_KWD
 from pdfminer.psparser import LIT as PDFMINER_LIT
 from pdfminer.psparser import PSLiteral as PdfMinerPSLiteral
 from pdfminer.psparser import literal_name as pdfminer_literal_name
+from pdfminer.utils import Plane as PdfMinerPlane
 from pdfminer.utils import decode_text as pdfminer_decode_text
 
 
@@ -235,6 +239,32 @@ def test_layout_component_geometry_matches_pdfminer(
         expected_left.vdistance(expected_right),
         expected_left.voverlap(expected_right),
     )
+
+
+def test_layout_plane_query_order_and_removal_match_pdfminer() -> None:
+    bboxes = [
+        (60, 10, 70, 20),
+        (10, 10, 20, 20),
+        (0, 0, 100, 40),
+        (10, 60, 20, 70),
+    ]
+    components = [LTComponent(bbox) for bbox in bboxes]
+    expected_components = [PdfMinerLTComponent(bbox) for bbox in bboxes]
+    plane = Plane[LTComponent]((0, 0, 100, 100), gridsize=50)
+    expected_plane = PdfMinerPlane[PdfMinerLTComponent]((0, 0, 100, 100), gridsize=50)
+    plane.extend(components)
+    expected_plane.extend(expected_components)
+
+    query = (0, 0, 100, 50)
+    result = [components.index(component) for component in plane.find(query)]
+    expected = [expected_components.index(component) for component in expected_plane.find(query)]
+    assert result == expected
+
+    plane.remove(components[2])
+    expected_plane.remove(expected_components[2])
+    result = [components.index(component) for component in plane.find(query)]
+    expected = [expected_components.index(component) for component in expected_plane.find(query)]
+    assert result == expected
 
 
 def test_text_line_spacing_and_analysis_match_pdfminer() -> None:

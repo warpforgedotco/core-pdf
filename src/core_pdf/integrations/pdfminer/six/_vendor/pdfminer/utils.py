@@ -21,8 +21,6 @@ from core_pdf.integrations.pdfminer.six.pdfexceptions import PDFTypeError, PDFVa
 if TYPE_CHECKING:
     from core_pdf.integrations.pdfminer.six.layout import LTComponent
 
-import contextlib
-
 # from sys import maxint as INF doesn't work anymore under Python3, but PDF
 # still uses 32 bits ints
 INF = (1 << 31) - 1
@@ -746,7 +744,7 @@ class Plane(Generic[LTComponentT]):
     def __init__(self, bbox: Rect, gridsize: int = 50) -> None:
         self._seq: list[LTComponentT] = []  # preserve the object order.
         self._objs: set[LTComponentT] = set()
-        self._grid: dict[Point, list[LTComponentT]] = {}
+        self._grid: dict[Point, dict[LTComponentT, None]] = {}
         self.gridsize = gridsize
         (self.x0, self.y0, self.x1, self.y1) = bbox
 
@@ -789,32 +787,33 @@ class Plane(Generic[LTComponentT]):
         for k in self._getrange((obj.x0, obj.y0, obj.x1, obj.y1)):
             bucket = grid.get(k)
             if bucket is None:
-                bucket = []
+                bucket = {}
                 grid[k] = bucket
-            bucket.append(obj)
+            bucket[obj] = None
         self._seq.append(obj)
         self._objs.add(obj)
 
     def remove(self, obj: LTComponentT) -> None:
         """Displace an object."""
         for k in self._getrange((obj.x0, obj.y0, obj.x1, obj.y1)):
-            with contextlib.suppress(KeyError, ValueError):
-                self._grid[k].remove(obj)
+            bucket = self._grid.get(k)
+            if bucket is not None:
+                bucket.pop(obj, None)
         self._objs.remove(obj)
 
     def find(self, bbox: Rect) -> Iterator[LTComponentT]:
         """Finds objects that are in a certain area."""
         (x0, y0, x1, y1) = bbox
-        done = set()
         grid = self._grid
+        candidates: dict[LTComponentT, None] = {}
         for k in self._getrange(bbox):
-            for obj in grid.get(k, ()):
-                if obj in done:
-                    continue
-                done.add(obj)
-                if obj.x1 <= x0 or x1 <= obj.x0 or obj.y1 <= y0 or y1 <= obj.y0:
-                    continue
-                yield obj
+            bucket = grid.get(k)
+            if bucket is not None:
+                candidates.update(bucket)
+        for obj in candidates:
+            if obj.x1 <= x0 or x1 <= obj.x0 or obj.y1 <= y0 or y1 <= obj.y0:
+                continue
+            yield obj
 
 
 ROMAN_ONES = ["i", "x", "c", "m"]
