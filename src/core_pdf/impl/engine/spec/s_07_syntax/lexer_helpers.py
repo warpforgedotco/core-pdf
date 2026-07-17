@@ -40,10 +40,12 @@ class FindableSizedBuffer(Protocol):
 
     def find(self, sub: bytes, start: int = 0, end: int = -1, /) -> int: ...
 
+    def rfind(self, sub: bytes, start: int = 0, end: int = -1, /) -> int: ...
+
 
 def full_source_buffer(data: memoryview, data_len: int) -> FindableSizedBuffer | None:
     source = data.obj
-    if hasattr(source, "find") and hasattr(source, "__len__"):
+    if hasattr(source, "find") and hasattr(source, "rfind") and hasattr(source, "__len__"):
         buffer = cast(FindableSizedBuffer, source)
         if len(buffer) == data_len:
             return buffer

@@ -988,60 +988,18 @@ class PdfLexer:
             ):
                 self.advance(9)
             else:
-                source_buffer = self.source_buffer
-                if source_buffer is not None:
-                    endstream_pos = source_buffer.find(b"endstream", self.pos)
-                    if endstream_pos < 0:
-                        endstream_pos = source_buffer.find(b"endstream", data_start, self.pos)
-                    if endstream_pos < 0:
-                        endstream_pos = source_buffer.find(
-                            b"endstream",
-                            max(data_start, self.pos - 64),
-                            min(self.data_len, self.pos + 9),
-                        )
-                    if endstream_pos >= 0:
-                        if endstream_pos != self.pos:
-                            raw_data = self.raw_data[data_start:endstream_pos]
-                        self.pos = endstream_pos
-                    else:
-                        endobj_pos = self.find_object_end(data_start)
-                        if endobj_pos >= 0:
-                            raw_data = (
-                                self.raw_data[data_start:endobj_pos].tobytes().rstrip(WHITESPACE)
-                            )
-                            self.rewind(endobj_pos)
-                        else:
-                            self.rewind(self.data_len)
+                endstream_pos = self.find_stream_end(data_start, preferred=self.pos)
+                if endstream_pos >= 0:
+                    if endstream_pos != self.pos:
+                        raw_data = self.raw_data[data_start:endstream_pos]
+                    self.pos = endstream_pos
                 else:
-                    search_start = max(data_start, self.pos - 64)
-                    search_data = self.raw_data[search_start:].tobytes()
-                    endstream_pos = search_data.find(b"endstream", self.pos - search_start)
-                    if endstream_pos < 0:
-                        prefix = self.raw_data[data_start : self.pos].tobytes()
-                        endstream_pos = prefix.find(b"endstream")
-                        if endstream_pos >= 0:
-                            search_start = data_start
-                            search_data = prefix
-                    if endstream_pos < 0:
-                        endstream_pos = search_data.find(
-                            b"endstream",
-                            0,
-                            min(len(search_data), self.pos - search_start + 9),
-                        )
-                    if endstream_pos >= 0:
-                        recovered_pos = search_start + endstream_pos
-                        if recovered_pos != self.pos:
-                            raw_data = self.raw_data[data_start:recovered_pos]
-                        self.rewind(search_start + endstream_pos)
+                    endobj_pos = self.find_object_end(data_start)
+                    if endobj_pos >= 0:
+                        raw_data = self.raw_data[data_start:endobj_pos].tobytes().rstrip(WHITESPACE)
+                        self.rewind(endobj_pos)
                     else:
-                        endobj_pos = self.find_object_end(data_start)
-                        if endobj_pos >= 0:
-                            raw_data = (
-                                self.raw_data[data_start:endobj_pos].tobytes().rstrip(WHITESPACE)
-                            )
-                            self.rewind(endobj_pos)
-                        else:
-                            self.rewind(self.data_len)
+                        self.rewind(self.data_len)
             if self.raw_data[
                 self.pos : self.pos + 9
             ] == b"endstream" or matches_keyword_with_one_substitution(
@@ -1053,23 +1011,81 @@ class PdfLexer:
             raw_data = self.apply_decipher(raw_data, dictionary)
         return PdfStream(dictionary, raw_data, dictionary)
 
-    def find_stream_end(self, data_start: int) -> int:
+    def _find_keyword_candidate(
+        self,
+        keyword: bytes,
+        start: int,
+        end: int,
+        *,
+        reverse: bool,
+        require_eol_before: bool,
+    ) -> tuple[int, int]:
         source_buffer = self.source_buffer
-        if source_buffer is not None:
-            return source_buffer.find(b"endstream", data_start)
-        relative_pos = self.raw_data[data_start:].tobytes().find(b"endstream")
-        if relative_pos < 0:
-            return -1
-        return data_start + relative_pos
+        buffer: FindableSizedBuffer
+        if source_buffer is None:
+            buffer = self.raw_data.tobytes()
+        else:
+            buffer = source_buffer
+
+        find = buffer.rfind if reverse else buffer.find
+        raw_candidate = find(keyword, start, end)
+        candidate = raw_candidate
+        while candidate >= 0:
+            before = candidate - 1
+            after = candidate + len(keyword)
+            before_ok = (
+                before >= 0 and buffer[before] in (10, 13)
+                if require_eol_before
+                else before < 0 or bool(SEPARATOR_TABLE[buffer[before]])
+            )
+            after_ok = after >= self.data_len or bool(SEPARATOR_TABLE[buffer[after]])
+            if before_ok and after_ok:
+                return candidate, raw_candidate
+            if reverse:
+                end = candidate
+            else:
+                start = candidate + 1
+            candidate = find(keyword, start, end)
+        return -1, raw_candidate
+
+    def find_stream_end(self, data_start: int, preferred: int | None = None) -> int:
+        search_start = data_start if preferred is None else preferred
+        candidate, raw_candidate = self._find_keyword_candidate(
+            b"endstream",
+            search_start,
+            self.data_len,
+            reverse=False,
+            require_eol_before=True,
+        )
+        if preferred is None:
+            return candidate if candidate >= 0 else raw_candidate
+
+        previous, previous_raw = self._find_keyword_candidate(
+            b"endstream",
+            data_start,
+            preferred,
+            reverse=True,
+            require_eol_before=True,
+        )
+        if candidate >= 0 and previous >= 0:
+            forward_distance = candidate - preferred
+            reverse_distance = preferred - previous
+            return previous if reverse_distance <= forward_distance else candidate
+        if candidate >= 0:
+            return candidate
+        if previous >= 0:
+            return previous
+        return raw_candidate if raw_candidate >= 0 else previous_raw
 
     def find_object_end(self, data_start: int) -> int:
-        source_buffer = self.source_buffer
-        if source_buffer is not None:
-            return source_buffer.find(b"endobj", data_start)
-        relative_pos = self.raw_data[data_start:].tobytes().find(b"endobj")
-        if relative_pos < 0:
-            return -1
-        return data_start + relative_pos
+        candidate, raw_candidate = self._find_keyword_candidate(
+            b"endobj",
+            data_start,
+            self.data_len,
+            reverse=False,
+            require_eol_before=False,
+        )
+        return candidate if candidate >= 0 else raw_candidate
 
     def parse_dictionary_or_stream(self) -> Any:
         dictionary = self.parse_dictionary()
