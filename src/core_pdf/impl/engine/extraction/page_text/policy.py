@@ -1029,6 +1029,8 @@ def estimated_column_count(lines: list[LayoutLine], page_width: float) -> int:
 def native_aligned_column_count(lines: list[LayoutLine]) -> int:
     word_lines = []
     for line in lines:
+        if not text_may_have_native_word_table_signal(line.text()):
+            continue
         text, words = line.cached_text_and_words()
         if not text.strip() or len(words) < 3 or not native_word_line_has_table_signal(words):
             continue
@@ -1052,6 +1054,20 @@ def native_aligned_column_count(lines: list[LayoutLine]) -> int:
         columns.update(line_columns)
     min_lines = max(3, min(5, len(word_lines) // 2))
     return sum(1 for count in columns.values() if count >= min_lines)
+
+
+def text_may_have_native_word_table_signal(text: str) -> bool:
+    alphanumeric_groups = 0
+    previous_was_alphanumeric = False
+    has_digit = False
+    for char in text:
+        is_alphanumeric = char.isalnum()
+        if is_alphanumeric and not previous_was_alphanumeric:
+            alphanumeric_groups += 1
+        if char.isdigit():
+            has_digit = True
+        previous_was_alphanumeric = is_alphanumeric
+    return has_digit and alphanumeric_groups >= 3
 
 
 def candidate_layout_aligned_column_count(
@@ -1116,14 +1132,15 @@ def page_has_dominant_image(page: Any) -> bool:
 
 
 def layout_line_has_numeric_signal(line: LayoutLine) -> bool:
-    text, words = line.cached_text_and_words()
+    text = line.text()
     if not text.strip():
         return False
+    words = layout_text_word_strings(text)
     digit_words = 0
     alpha_words = 0
     token_count = 0
     for word in words:
-        token = word.text.strip()
+        token = word.strip()
         if not token:
             continue
         token_count += 1
@@ -1132,6 +1149,24 @@ def layout_line_has_numeric_signal(line: LayoutLine) -> bool:
         elif any(ch.isalpha() for ch in token):
             alpha_words += 1
     return digit_words >= 2 or (digit_words >= 1 and token_count >= 4 and alpha_words <= 2)
+
+
+def layout_text_word_strings(text: str) -> tuple[str, ...]:
+    words: list[str] = []
+    current = ""
+    for char in text:
+        if char.isspace():
+            if current:
+                words.append(current)
+                current = ""
+            continue
+        if current and char.isalnum() != current[-1].isalnum():
+            words.append(current)
+            current = ""
+        current += char
+    if current:
+        words.append(current)
+    return tuple(words)
 
 
 def native_word_line_has_table_signal(words: Sequence[Any]) -> bool:
