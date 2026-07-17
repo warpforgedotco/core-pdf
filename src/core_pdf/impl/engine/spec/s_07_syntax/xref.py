@@ -173,9 +173,13 @@ class XRefScanner:
             if b"%" in number_bytes:
                 number_bytes = number_bytes.split(b"%", 1)[0]
             number_end = pos + startxref_number_bytes.find(number_bytes) + len(number_bytes)
-            next_pos = XRefScanner.skip_ignored(data, number_end)
+            next_pos = XRefScanner.skip_ignored(
+                data,
+                number_end,
+                stop=eof_pos if has_eof else None,
+            )
             if has_eof:
-                if next_pos + 5 > len(data) or data[next_pos : next_pos + 5] != b"%%EOF":
+                if next_pos != eof_pos:
                     continue
             elif next_pos != len(data):
                 continue
@@ -244,11 +248,13 @@ class XRefScanner:
         return pos
 
     @staticmethod
-    def skip_ignored(data: PdfByteBuffer, pos: int) -> int:
+    def skip_ignored(data: PdfByteBuffer, pos: int, stop: int | None = None) -> int:
         n = len(data)
         while pos < n:
             while pos < n and WS_TABLE[data[pos]]:
                 pos += 1
+            if pos == stop:
+                return pos
             if data[pos : pos + 5] == b"%%EOF":
                 return pos
             if pos >= n or data[pos] != 37:
@@ -648,15 +654,25 @@ def find_all_bytes(data: PdfByteBuffer, needle: bytes) -> list[int]:
 
 
 def find_eof_marker(data: PdfByteBuffer) -> int:
-    eof_pos = data.rfind(b"%%EOF")
-    if eof_pos >= 0:
-        return eof_pos
+    def is_delimited(marker: int) -> bool:
+        before_ok = marker == 0 or data[marker - 1] in (10, 13)
+        after = marker + 5
+        after_ok = after >= len(data) or bool(WS_TABLE[data[after]])
+        return before_ok and after_ok
+
+    raw_exact = data.rfind(b"%%EOF")
+    exact = raw_exact
+    while exact >= 0:
+        if is_delimited(exact):
+            return exact
+        exact = data.rfind(b"%%EOF", 0, exact)
 
     search_end = len(data)
+    raw_recovered = -1
     while True:
         marker = data.rfind(b"%", 0, search_end)
         if marker < 0:
-            return -1
+            return raw_exact if raw_exact >= 0 else raw_recovered
         search_end = marker
         if marker + 5 > len(data):
             continue
@@ -665,7 +681,10 @@ def find_eof_marker(data: PdfByteBuffer) -> int:
         token = data[marker + 2 : marker + 5]
         mismatches = sum(1 for actual, expected in zip(token, b"EOF") if actual != expected)
         if mismatches == 1:
-            return marker
+            if raw_recovered < 0:
+                raw_recovered = marker
+            if is_delimited(marker):
+                return marker
 
 
 def iter_object_markers(

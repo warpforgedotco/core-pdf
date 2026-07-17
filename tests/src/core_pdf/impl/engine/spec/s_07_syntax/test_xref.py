@@ -57,6 +57,31 @@ def test_find_eof_marker_rejects_unrelated_percent_tokens() -> None:
     assert find_eof_marker(b"%PDF-1.7\n% comment\n%%XYZ\n") == -1
 
 
+def test_find_eof_marker_skips_embedded_exact_marker() -> None:
+    data = b"%PDF-1.7\n%%EOF\nstream payload %%EOF-not-a-marker"
+
+    assert find_eof_marker(data) == data.index(b"%%EOF")
+
+
+def test_find_eof_marker_prefers_delimited_recovery_over_embedded_exact_marker() -> None:
+    data = b"%PDF-1.7\n%%EOX\nstream payload %%EOF-not-a-marker"
+
+    assert find_eof_marker(data) == data.index(b"%%EOX")
+
+
+def test_find_eof_marker_preserves_compatibility_for_undelimited_marker() -> None:
+    data = b"%PDF-1.7\ntrailing-%%EOF-junk"
+
+    assert find_eof_marker(data) == data.index(b"%%EOF")
+
+
+@pytest.mark.parametrize("marker", [b"%%XOF", b"%%EXF", b"%%EOX"])
+def test_find_startxref_accepts_recovered_eof_marker(marker: bytes) -> None:
+    data = b"%PDF-1.7\nstartxref\n123\n" + marker + b"\n"
+
+    assert XRefScanner.find_startxref(data) == 123
+
+
 def test_find_previous_object_marker_returns_last_valid_object() -> None:
     data = b"1 0 obj\nendobj\nnot-an-object\n27 3 obj\nendobj"
 
