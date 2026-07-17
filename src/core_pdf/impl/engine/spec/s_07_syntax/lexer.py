@@ -71,6 +71,7 @@ SEPARATOR_RE = re.compile(b"[" + re.escape(WHITESPACE + DELIMITERS) + b"]")
 HEX_STRING_END_RE = re.compile(b">")
 STRING_SPECIAL_RE = re.compile(b"[" + re.escape(b"()\\\r\n") + b"]")
 ARRAY_END_RE = re.compile(b"]")
+IGNORED_RE = re.compile(b"(?:[\x00\t\n\x0c\r ]+|%[^\r\n]*(?:\r\n|\n\r|\r|\n)?)*")
 
 
 class PdfLexer:
@@ -177,6 +178,12 @@ class PdfLexer:
         data = self.raw_data
         pos = position
         n = self.data_len
+        if pos >= n:
+            return pos
+        if data.c_contiguous:
+            match = IGNORED_RE.match(data, pos)
+            if match is not None:
+                return match.end()
         whitespace = WS_TABLE
         while pos < n:
             byte = data[pos]

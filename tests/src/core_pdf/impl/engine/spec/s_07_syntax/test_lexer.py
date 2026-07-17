@@ -152,6 +152,33 @@ def test_numeric_array_slice_fast_path_preserves_general_array_semantics(
     assert PdfLexer(data).parse_object() == expected
 
 
+@pytest.mark.parametrize("view_kind", ["bytes", "sliced", "reversed"])
+@pytest.mark.parametrize(
+    ("ignored", "expected"),
+    [
+        (b"\x00\t\n\x0c\r ", 6),
+        (b"% comment\r\n", 11),
+        (b"% comment\n\r \t", 13),
+        (b" % first\n% second\r", 18),
+        (b"\v", 0),
+    ],
+)
+def test_skip_ignored_preserves_pdf_comment_and_whitespace_semantics(
+    view_kind: str,
+    ignored: bytes,
+    expected: int,
+) -> None:
+    content = ignored + b"/Name"
+    if view_kind == "sliced":
+        data: bytes | memoryview = memoryview(b"prefix" + content + b"suffix")[6:-6]
+    elif view_kind == "reversed":
+        data = memoryview(content[::-1])[::-1]
+    else:
+        data = content
+
+    assert PdfLexer(data).skip_ignored_at(0) == expected
+
+
 @pytest.mark.parametrize(
     "data",
     [
