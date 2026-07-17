@@ -780,13 +780,13 @@ class Plane(Generic[LTComponentT]):
 
     def add(self, obj: LTComponentT) -> None:
         """Place an object."""
+        grid = self._grid
         for k in self._getrange((obj.x0, obj.y0, obj.x1, obj.y1)):
-            if k not in self._grid:
-                r: list[LTComponentT] = []
-                self._grid[k] = r
-            else:
-                r = self._grid[k]
-            r.append(obj)
+            bucket = grid.get(k)
+            if bucket is None:
+                bucket = []
+                grid[k] = bucket
+            bucket.append(obj)
         self._seq.append(obj)
         self._objs.add(obj)
 
@@ -801,10 +801,9 @@ class Plane(Generic[LTComponentT]):
         """Finds objects that are in a certain area."""
         (x0, y0, x1, y1) = bbox
         done = set()
+        grid = self._grid
         for k in self._getrange(bbox):
-            if k not in self._grid:
-                continue
-            for obj in self._grid[k]:
+            for obj in grid.get(k, ()):
                 if obj in done:
                     continue
                 done.add(obj)
