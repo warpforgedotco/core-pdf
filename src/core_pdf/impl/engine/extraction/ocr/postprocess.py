@@ -835,7 +835,14 @@ def normalize_precision_first_prize_line_text(text: str) -> str:
     tokens = text.split()
     if len(tokens) < 3:
         return text
-    rank_count = sum(1 for token in tokens if prize_rank_token(token) is not None)
+    rank_count = sum(
+        1
+        for token in tokens
+        if prize_rank_token(token) is not None or prize_rank_one_confusion_token(token) is not None
+    )
+    explicit_amount_count = sum(
+        1 for token in tokens if prize_amount_token(token) is not None or token.startswith("$")
+    )
     amount_count = sum(
         1
         for token in tokens
@@ -843,7 +850,7 @@ def normalize_precision_first_prize_line_text(text: str) -> str:
         or token.startswith("$")
         or prize_numeric_amount_like_token(token)
     )
-    if rank_count == 0 or (rank_count + amount_count) < 3:
+    if rank_count < 2 or explicit_amount_count == 0 or (rank_count + amount_count) < 3:
         return text
     normalized: list[str] = []
     for index, token in enumerate(tokens):

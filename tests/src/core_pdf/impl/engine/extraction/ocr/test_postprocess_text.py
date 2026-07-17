@@ -1,6 +1,7 @@
 import pytest
 
 from core_pdf.impl.engine.extraction.ocr.postprocess import (
+    normalize_precision_first_prize_line_text,
     repair_document_local_identifier_text,
 )
 
@@ -22,3 +23,22 @@ def test_ocr_identifier_repair_retains_generic_noise_normalization() -> None:
     assert (
         repair_document_local_identifier_text("alpha|beta", normalize_ocr_noise=True) == "alphabeta"
     )
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "3. You fail to certify under penalties June 3, 2004, in Pub. 519.",
+        "Schedule D (Form 1040) on line 14.",
+        "credit from Form 2439, 4136, or 8885.",
+        "Enter $0 on line 12. The $9,000",
+    ],
+)
+def test_ocr_prize_cleanup_rejects_numbered_prose_without_multiple_rank_signals(
+    text: str,
+) -> None:
+    assert normalize_precision_first_prize_line_text(text) == text
+
+
+def test_ocr_prize_cleanup_accepts_multiple_rank_signals_and_explicit_amounts() -> None:
+    assert normalize_precision_first_prize_line_text("IL $500 x 2.) $300") == ("1. $500 2.) $300")
