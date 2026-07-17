@@ -43,7 +43,6 @@ from core_pdf.impl.engine.extraction.ocr.text_analysis import (
 from core_pdf.impl.engine.extraction.page_text.policy import classify_page_region
 from core_pdf.impl.engine.layout.geometry_quality import (
     LayoutGeometrySummary,
-    layout_geometry_summary_record,
     page_layout_geometry_summary,
     text_run_has_repairable_glyph_geometry_issue,
 )
@@ -113,10 +112,6 @@ def try_extract_native_text_fast(
             native_output_lines,
         )
 
-    native_geometry_summary = native_layout_geometry_summary_for_runs(chars)
-    cache["native_layout_geometry_summary"] = layout_geometry_summary_record(
-        native_geometry_summary
-    )
     cache["page_region_classification"] = classify_page_region(
         text,
         page=page,

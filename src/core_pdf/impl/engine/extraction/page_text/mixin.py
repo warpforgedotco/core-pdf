@@ -627,9 +627,10 @@ class PageExtractionMixin(PageContentMixin):
         if snapshot is not None:
             return snapshot.text
         profile = self.get_page_profile()
+        ocr_enabled = ocr_postprocess.ocr_is_enabled()
         decision = page_extraction_decision(
             profile,
-            ocr_enabled=ocr_postprocess.ocr_is_enabled(),
+            ocr_enabled=ocr_enabled,
         )
         if decision.skip_text:
             cache["native_layout_geometry_summary"] = layout_geometry_summary_record(
@@ -673,8 +674,10 @@ class PageExtractionMixin(PageContentMixin):
                 native_output_lines,
             )
             final_output_lines = native_output_lines
-        native_geometry_summary = native_layout_geometry_summary_for_runs(chars)
-        if cache is not None:
+        native_geometry_summary = (
+            native_layout_geometry_summary_for_runs(chars) if ocr_enabled else None
+        )
+        if cache is not None and native_geometry_summary is not None:
             cache["native_layout_geometry_summary"] = layout_geometry_summary_record(
                 native_geometry_summary
             )
@@ -718,22 +721,27 @@ class PageExtractionMixin(PageContentMixin):
         pre_ocr_native_output_lines = final_output_lines
         schematic_ocr_supplement_candidate: OcrCandidate | None = None
         schematic_ocr_supplement_candidates: tuple[OcrCandidate, ...] = ()
-        fragmented_invisible_text_layer = native_invisible_text_layer_has_fragmented_geometry(
-            chars,
-            text,
-            native_geometry_summary,
+        fragmented_invisible_text_layer = bool(
+            native_geometry_summary is not None
+            and native_invisible_text_layer_has_fragmented_geometry(
+                chars,
+                text,
+                native_geometry_summary,
+            )
         )
-        trusted_invisible_text_layer = native_invisible_text_layer_is_trustworthy(
-            chars,
-            text,
-            native_geometry_summary,
+        trusted_invisible_text_layer = bool(
+            native_geometry_summary is not None
+            and native_invisible_text_layer_is_trustworthy(
+                chars,
+                text,
+                native_geometry_summary,
+            )
         )
         dominant_image_requires_ocr_verification = (
-            ocr_postprocess.ocr_is_enabled()
-            and ocr_page_analysis.dominant_image_requires_ocr_verification(self)
+            ocr_enabled and ocr_page_analysis.dominant_image_requires_ocr_verification(self)
         )
         omit_native_text_from_ocr_render = (
-            ocr_postprocess.ocr_is_enabled()
+            ocr_enabled
             and ocr_page_analysis.native_text_should_be_omitted_from_ocr_render(self, text)
         )
         if cache is not None:
@@ -746,9 +754,10 @@ class PageExtractionMixin(PageContentMixin):
             and not dominant_image_requires_ocr_verification
         ):
             cache["ocr_skipped_for_trusted_invisible_text_layer"] = True
-        if ocr_postprocess.ocr_is_enabled() and (
+        if ocr_enabled and (
             not trusted_invisible_text_layer or dominant_image_requires_ocr_verification
         ):
+            assert native_geometry_summary is not None
             ocr_session = ocr_session_runtime.OcrPageSession()
             try:
                 trusted_vector_stroke_text = False
@@ -1186,7 +1195,7 @@ class PageExtractionMixin(PageContentMixin):
             page=self,
             native_runs=chars,
             media_box=self.media_box,
-            include_dominant_image=ocr_postprocess.ocr_is_enabled(),
+            include_dominant_image=ocr_enabled,
         )
         if cache is not None:
             cache["page_region_classification"] = region_classification

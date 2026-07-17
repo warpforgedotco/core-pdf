@@ -1,3 +1,7 @@
+from pathlib import Path
+from typing import Any, cast
+
+from core_pdf.impl.engine.extraction.document import PdfDocument
 from core_pdf.impl.engine.extraction.page_text.native import (
     native_invisible_text_layer_has_fragmented_geometry,
     native_invisible_text_layer_is_trustworthy,
@@ -11,6 +15,8 @@ from core_pdf.impl.engine.layout.geometry_quality import (
     layout_geometry_should_trigger_ocr,
 )
 from core_pdf.impl.engine.layout.models import TextRun
+
+TESTS_DIR = Path(__file__).parents[6]
 
 
 def text_run(text: str, x0: float, y0: float, x1: float, y1: float) -> TextRun:
@@ -110,6 +116,20 @@ def test_glyph_repair_preflight_keeps_contextual_punctuation_mode() -> None:
         punctuation,
         repair_contextual_punctuation=True,
     )
+
+
+def test_native_extraction_defers_ocr_geometry_summary_but_keeps_public_diagnostic() -> None:
+    pdf_path = TESTS_DIR / "fixtures" / "pdfminer.six" / "samples" / "simple1.pdf"
+
+    with PdfDocument.open(pdf_path) as document:
+        page = cast(Any, document.pages[0])
+        assert page.extract_text().strip()
+        assert page.extraction_cache is not None
+        assert "native_layout_geometry_summary" not in page.extraction_cache
+
+        summary = page.extract_geometry_summary()
+        assert summary["text_run_count"] > 0
+        assert summary["line_count"] > 0
 
 
 def test_sparse_geometry_issues_do_not_trigger_ocr_for_substantial_text() -> None:
