@@ -145,3 +145,29 @@ def test_xref_stream_salvage_uses_delimited_endstream_without_length() -> None:
 
     assert stream is not None
     assert stream.raw_data == raw_data + b"\r\n"
+
+
+def test_brute_force_xref_skips_object_markers_inside_streams() -> None:
+    embedded = b"2 0 obj\n(fake)\nendobj"
+    data = (
+        b"2 0 obj\n(real)\nendobj\n"
+        b"1 0 obj\n<< /Length "
+        + str(len(embedded)).encode()
+        + b" >>\nstream\n"
+        + embedded
+        + b"\nendstream\nendobj\n"
+    )
+
+    entries = XRefScanner.brute_force_scan(data)
+
+    assert entries[key_for(2)].offset == 0
+    assert entries[key_for(1)].offset == data.index(b"1 0 obj")
+
+
+def test_brute_force_xref_rejects_unparseable_object_markers() -> None:
+    data = b"1 0 obj\n(valid)\nendobj\n2 0 obj\n[unterminated"
+
+    entries = XRefScanner.brute_force_scan(data)
+
+    assert key_for(1) in entries
+    assert key_for(2) not in entries

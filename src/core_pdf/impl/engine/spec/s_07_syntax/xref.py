@@ -602,20 +602,48 @@ class XRefScanner:
     @staticmethod
     def brute_force_scan(data: PdfByteBuffer, max_entries: int = 100000) -> XRefTable:
         entries: XRefTable = {}
-        for offset, obj_num, gen_num in iter_object_markers(data):
+        parsed_streams: dict[int, tuple[int, PdfStream]] = {}
+        lexer = PdfLexer(data)
+        search_pos = 0
+        while search_pos < len(data):
             if len(entries) >= max_entries:
                 break
-            try:
-                if obj_num < 10000000:
-                    entries[key_for(obj_num, gen_num)] = PdfXRefEntry(offset, gen_num, True)
-            except (ValueError, IndexError):
+            marker = data.find(b"obj", search_pos)
+            if marker < 0:
+                break
+            search_pos = marker + 3
+            parsed_header = parse_object_marker_prefix(data, marker)
+            if parsed_header is None:
                 continue
-        XRefScanner.recover_object_stream_entries(data, entries, max_entries)
+            offset, obj_num, gen_num = parsed_header
+            lexer.rewind(offset)
+            try:
+                obj = lexer.parse_indirect_object()
+            except Exception:
+                continue
+            if lexer.pos >= 6 and data[lexer.pos - 6 : lexer.pos] == b"endobj":
+                search_pos = max(search_pos, lexer.pos)
+            if obj_num >= 10000000:
+                continue
+            key = key_for(obj_num, gen_num)
+            entries[key] = PdfXRefEntry(offset, gen_num, True)
+            if isinstance(obj, PdfStream):
+                parsed_streams[key] = (offset, obj)
+        XRefScanner.recover_object_stream_entries(
+            data,
+            entries,
+            max_entries,
+            parsed_streams=parsed_streams,
+        )
         return entries
 
     @staticmethod
     def recover_object_stream_entries(
-        data: PdfByteBuffer, entries: XRefTable, max_entries: int = 100000
+        data: PdfByteBuffer,
+        entries: XRefTable,
+        max_entries: int = 100000,
+        *,
+        parsed_streams: dict[int, tuple[int, PdfStream]] | None = None,
     ) -> None:
         lexer = PdfLexer(data)
         for key, entry in list(entries.items()):
@@ -625,11 +653,17 @@ class XRefScanner:
                 continue
             obj_num = key >> 16
             gen_num = key & 0xFFFF
-            lexer.rewind(entry.offset)
-            try:
-                obj = lexer.parse_indirect_object()
-            except Exception:
-                continue
+            if parsed_streams is not None:
+                parsed = parsed_streams.get(key)
+                if parsed is None or parsed[0] != entry.offset:
+                    continue
+                obj = parsed[1]
+            else:
+                lexer.rewind(entry.offset)
+                try:
+                    obj = lexer.parse_indirect_object()
+                except Exception:
+                    continue
             if not isinstance(obj, PdfStream):
                 continue
             dictionary = obj.dictionary
