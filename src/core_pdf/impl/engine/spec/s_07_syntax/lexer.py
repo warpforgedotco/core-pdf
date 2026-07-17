@@ -4,6 +4,7 @@ from __future__ import annotations
 import binascii
 import contextlib
 import mmap
+import re
 from collections.abc import Callable
 from typing import Any
 
@@ -25,6 +26,7 @@ from core_pdf.impl.engine.spec.s_07_syntax.lexer_helpers import (
     parse_int_token,
 )
 from core_pdf.impl.engine.spec.s_07_syntax.tokens import (
+    DELIMITERS,
     SEPARATOR_TABLE,
     WHITESPACE,
     WS_TABLE,
@@ -65,6 +67,7 @@ RECOVERABLE_DICTIONARY_KEY_NAMES = {
 }
 
 EMPTY_SIMPLE_TJ_ARRAY: tuple[Any, ...] = ()
+SEPARATOR_RE = re.compile(b"[" + re.escape(WHITESPACE + DELIMITERS) + b"]")
 
 
 class PdfLexer:
@@ -209,13 +212,8 @@ class PdfLexer:
         return data[start:pos], pos
 
     def find_separator(self, start: int) -> int:
-        data = self.raw_data
-        pos = start
-        n = self.data_len
-        table = SEPARATOR_TABLE
-        while pos < n and not table[data[pos]]:
-            pos += 1
-        return pos
+        match = SEPARATOR_RE.search(self.raw_data, start)
+        return self.data_len if match is None else match.start()
 
     def scan_word(self, skip_ignored: bool = True) -> tuple[memoryview, int] | None:
         return self.scan_word_at(self.pos, skip_ignored=skip_ignored)

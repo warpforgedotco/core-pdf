@@ -107,11 +107,11 @@ def content_stream_may_show_text(data: bytes | memoryview) -> bool:
 
     if type(raw_bytes) is bytes:
         return (
-            raw_bytes.find(b"Tj") >= 0
+            raw_bytes.find(b'"') >= 0
+            or raw_bytes.find(b"'") >= 0
+            or raw_bytes.find(b"Tj") >= 0
             or raw_bytes.find(b"TJ") >= 0
             or raw_bytes.find(b"Do") >= 0
-            or raw_bytes.find(b"'") >= 0
-            or raw_bytes.find(b'"') >= 0
         )
 
     pos = 0
