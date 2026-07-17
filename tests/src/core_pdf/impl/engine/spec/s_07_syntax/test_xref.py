@@ -1,7 +1,13 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
-from core_pdf.impl.engine.spec.s_07_syntax.xref import XRefScanner, key_for
+import pytest
+
+from core_pdf.impl.engine.spec.s_07_syntax.xref import (
+    XRefScanner,
+    find_eof_marker,
+    key_for,
+)
 from core_pdf.impl.primitives import PdfName
 
 
@@ -31,3 +37,20 @@ def test_xref_prev_chain_loads_iteratively() -> None:
     assert key_for(1) in entries
     assert key_for(1500) in entries
     assert trailer[PdfName.of(b"Size")] == 1501
+
+
+@pytest.mark.parametrize("marker", [b"%%XOF", b"%%EXF", b"%%EOX"])
+def test_find_eof_marker_recovers_one_substitution(marker: bytes) -> None:
+    data = b"%PDF-1.7\n% comment\n" + marker + b"\n% trailing comment"
+
+    assert find_eof_marker(data) == data.index(marker)
+
+
+def test_find_eof_marker_prefers_last_recoverable_marker() -> None:
+    data = b"%PDF-1.7\n%%XOF\n% comment\n%%EOX\n"
+
+    assert find_eof_marker(data) == data.index(b"%%EOX")
+
+
+def test_find_eof_marker_rejects_unrelated_percent_tokens() -> None:
+    assert find_eof_marker(b"%PDF-1.7\n% comment\n%%XYZ\n") == -1

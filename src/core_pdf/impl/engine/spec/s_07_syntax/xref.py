@@ -651,7 +651,13 @@ def find_eof_marker(data: PdfByteBuffer) -> int:
     eof_pos = data.rfind(b"%%EOF")
     if eof_pos >= 0:
         return eof_pos
-    for marker in reversed(find_all_bytes(data, b"%")):
+
+    search_end = len(data)
+    while True:
+        marker = data.rfind(b"%", 0, search_end)
+        if marker < 0:
+            return -1
+        search_end = marker
         if marker + 5 > len(data):
             continue
         if data[marker : marker + 2] != b"%%":
@@ -660,7 +666,6 @@ def find_eof_marker(data: PdfByteBuffer) -> int:
         mismatches = sum(1 for actual, expected in zip(token, b"EOF") if actual != expected)
         if mismatches == 1:
             return marker
-    return -1
 
 
 def iter_object_markers(
