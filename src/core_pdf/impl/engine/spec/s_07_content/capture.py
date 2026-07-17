@@ -885,29 +885,40 @@ class ContentCaptureMixin:
         visible: bool,
         glyphs: tuple[DecodedGlyph, ...] | None = None,
     ) -> None:
-        data = bytes(data)
         if not self.capture_glyphs:
             return
+        data = bytes(data)
         if glyphs is None:
             glyphs = decoder.decode_glyphs(data)
         if not glyphs:
             return
 
-        advances = [
-            self.chunk_advance(glyph.width_code, decoder, char_code=glyph.char_code)
-            for glyph in glyphs
-        ]
-
         offset = 0.0
         seqno = self.sequence
         fill = self.fill_color
+        font_name = self.current_font
+        font_size = self.font_size
+        space_width = self.font_space_width
+        stream_order = self.stream_order
+        xobject_depth = self.xobject_depth
+        combined_a = self.combined_A
+        combined_b = self.combined_B
+        combined_c = self.combined_C
+        combined_d = self.combined_D
         append_glyph = self.glyphs.append
         clusters = getattr(self, "glyph_clusters", None)
         if clusters is None:
             clusters = []
             self.glyph_clusters = clusters
         cursor = 0
-        for decoded_index, (glyph, advance) in enumerate(zip(glyphs, advances, strict=True)):
+        is_vertical = decoder.is_vertical
+        writing_mode = "vertical" if is_vertical else "horizontal"
+        for decoded_index, glyph in enumerate(glyphs):
+            advance = self.chunk_advance(
+                glyph.width_code,
+                decoder,
+                char_code=glyph.char_code,
+            )
             chunk_text = glyph.unicode
             if not chunk_text:
                 chunk_text = text[cursor : cursor + 1]
@@ -922,31 +933,30 @@ class ContentCaptureMixin:
                 offset,
                 advance,
                 decoder,
-                decoder.vertical_glyph_position(glyph.cid, font_size=self.font_size)
-                if decoder.is_vertical
+                decoder.vertical_glyph_position(glyph.cid, font_size=font_size)
+                if is_vertical
                 else (0.0, 0.0),
             )
             advance_rect = transformed_text_rect(self, *text_box)
             baseline = transformed_text_line(self, *baseline_text)
-            glyph_bbox = decoder.glyph_bbox(glyph.bitmap_code) if not decoder.is_vertical else None
+            glyph_bbox = decoder.glyph_bbox(glyph.bitmap_code) if not is_vertical else None
             rect = glyph_ink_rect(self, glyph_bbox, offset, advance_rect)
             device_matrix = (
-                self.combined_A,
-                self.combined_B,
-                self.combined_C,
-                self.combined_D,
+                combined_a,
+                combined_b,
+                combined_c,
+                combined_d,
                 baseline[0],
                 baseline[1],
             )
             common_provenance = (
                 ("source", "native_glyph"),
                 ("seqno", seqno),
-                ("font_name", self.current_font),
-                ("stream_order", self.stream_order),
-                ("xobject_depth", self.xobject_depth),
+                ("font_name", font_name),
+                ("stream_order", stream_order),
+                ("xobject_depth", xobject_depth),
                 ("decoded_glyph_index", decoded_index),
             )
-            writing_mode = "vertical" if decoder.is_vertical else "horizontal"
             cluster_observations: list[GlyphObservation] = []
             observation_confidence = glyph_unicode_confidence(
                 chunk_text,
@@ -962,7 +972,7 @@ class ContentCaptureMixin:
                 if should_capture_glyph_bitmap(chunk_text):
                     bitmap_width, bitmap_height = glyph_bitmap_dimensions(
                         glyph_bbox,
-                        self.font_size,
+                        font_size,
                     )
                     bitmap = decoder.glyph_bitmap(
                         glyph.bitmap_code,
@@ -982,16 +992,16 @@ class ContentCaptureMixin:
                         char_code=glyph.char_code,
                         cid=glyph.cid,
                         gid=glyph.gid,
-                        font_name=self.current_font,
-                        font_size=self.font_size,
-                        space_width=self.font_space_width,
+                        font_name=font_name,
+                        font_size=font_size,
+                        space_width=space_width,
                         text_matrix=glyph_text_matrix,
                         device_matrix=device_matrix,
                         baseline=baseline,
                         writing_mode=writing_mode,
                         rotation_angle=rotation_angle,
-                        stream_order=self.stream_order,
-                        xobject_depth=self.xobject_depth,
+                        stream_order=stream_order,
+                        xobject_depth=xobject_depth,
                         fill=fill,
                         visible=visible,
                         confidence=observation_confidence,
@@ -1023,10 +1033,10 @@ class ContentCaptureMixin:
                     char_advance_rect = transformed_text_rect(self, *char_box)
                     char_baseline = transformed_text_line(self, *char_baseline_text)
                     char_device_matrix = (
-                        self.combined_A,
-                        self.combined_B,
-                        self.combined_C,
-                        self.combined_D,
+                        combined_a,
+                        combined_b,
+                        combined_c,
+                        combined_d,
                         char_baseline[0],
                         char_baseline[1],
                     )
@@ -1040,16 +1050,16 @@ class ContentCaptureMixin:
                             char_code=glyph.char_code,
                             cid=glyph.cid,
                             gid=glyph.gid,
-                            font_name=self.current_font,
-                            font_size=self.font_size,
-                            space_width=self.font_space_width,
+                            font_name=font_name,
+                            font_size=font_size,
+                            space_width=space_width,
                             text_matrix=char_text_matrix,
                             device_matrix=char_device_matrix,
                             baseline=char_baseline,
                             writing_mode=writing_mode,
                             rotation_angle=rotation_angle,
-                            stream_order=self.stream_order,
-                            xobject_depth=self.xobject_depth,
+                            stream_order=stream_order,
+                            xobject_depth=xobject_depth,
                             fill=fill,
                             visible=visible,
                             confidence=char_confidence,
@@ -1073,16 +1083,16 @@ class ContentCaptureMixin:
                         char_code=glyph.char_code,
                         cid=glyph.cid,
                         gid=glyph.gid,
-                        font_name=self.current_font,
-                        font_size=self.font_size,
-                        space_width=self.font_space_width,
+                        font_name=font_name,
+                        font_size=font_size,
+                        space_width=space_width,
                         text_matrix=glyph_text_matrix,
                         device_matrix=device_matrix,
                         baseline=baseline,
                         writing_mode=writing_mode,
                         rotation_angle=rotation_angle,
-                        stream_order=self.stream_order,
-                        xobject_depth=self.xobject_depth,
+                        stream_order=stream_order,
+                        xobject_depth=xobject_depth,
                         fill=fill,
                         visible=visible,
                         confidence=observation_confidence,
