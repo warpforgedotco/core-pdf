@@ -167,6 +167,15 @@ def test_xref_stream_salvage_uses_delimited_endstream_without_length() -> None:
     assert stream.raw_data == raw_data + b"\r\n"
 
 
+def test_xref_stream_salvage_does_not_claim_later_object_dictionary() -> None:
+    damaged = b"1 0 obj\nbroken\nendobj\n"
+    valid = b"2 0 obj\n<< /Type /XRef /Length 0 >>\nstream\n\nendstream\nendobj"
+    data = damaged + valid
+
+    assert XRefScanner.parse_xref_stream_salvage(data, 0) is None
+    assert XRefScanner.parse_xref_stream_salvage(data, len(damaged)) is not None
+
+
 def test_brute_force_xref_skips_object_markers_inside_streams() -> None:
     embedded = b"2 0 obj\n(fake)\nendobj"
     data = (

@@ -545,8 +545,16 @@ class XRefScanner:
     @staticmethod
     def parse_xref_stream_salvage(data: PdfByteBuffer, pos: int) -> PdfStream | None:
         lexer = PdfLexer(data)
-        dict_start = data.find(b"<<", pos)
-        if dict_start < 0:
+        header_marker = data.find(b"obj", pos, min(len(data), pos + 64))
+        if header_marker < 0:
+            return None
+        parsed_header = parse_object_marker_prefix(data, header_marker)
+        if parsed_header is None or parsed_header[0] != pos:
+            return None
+        lexer.pos = header_marker + 3
+        lexer.skip_ignored()
+        dict_start = lexer.pos
+        if data[dict_start : dict_start + 2] != b"<<":
             return None
         lexer.pos = dict_start
         try:
