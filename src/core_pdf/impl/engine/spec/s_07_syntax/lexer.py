@@ -12,6 +12,7 @@ from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_07_syntax.lexer_helpers import (
     EMPTY_TRANSLATE_TABLE,
     HEX_VALUE,
+    PDF_IGNORED_RE,
     R_SENTINEL,
     STRING_ESCAPE,
     STRING_SPECIAL_TABLE,
@@ -71,7 +72,6 @@ SEPARATOR_RE = re.compile(b"[" + re.escape(WHITESPACE + DELIMITERS) + b"]")
 HEX_STRING_END_RE = re.compile(b">")
 STRING_SPECIAL_RE = re.compile(b"[" + re.escape(b"()\\\r\n") + b"]")
 ARRAY_END_RE = re.compile(b"]")
-IGNORED_RE = re.compile(b"(?:[\x00\t\n\x0c\r ]+|%[^\r\n]*(?:\r\n|\n\r|\r|\n)?)*")
 
 
 class PdfLexer:
@@ -181,7 +181,7 @@ class PdfLexer:
         if pos >= n:
             return pos
         if data.c_contiguous:
-            match = IGNORED_RE.match(data, pos)
+            match = PDF_IGNORED_RE.match(data, pos)
             if match is not None:
                 return match.end()
         whitespace = WS_TABLE

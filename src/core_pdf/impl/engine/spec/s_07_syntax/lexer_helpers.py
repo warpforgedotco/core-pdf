@@ -1,11 +1,13 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
+import re
 from typing import Protocol, cast, overload
 
 from core_pdf.impl.engine.spec.s_07_syntax.tokens import WS_TABLE
 
 IS_NUMBER_CHAR = bytes([1 if i in b"+-0123456789." else 0 for i in range(256)])
+PDF_IGNORED_RE = re.compile(b"(?:[\x00\t\n\x0c\r ]+|%[^\r\n]*(?:\r\n|\n\r|\r|\n)?)*")
 EMPTY_TRANSLATE_TABLE = bytes.maketrans(b"", b"")
 
 STRING_ESCAPE: dict[int, bytes] = {

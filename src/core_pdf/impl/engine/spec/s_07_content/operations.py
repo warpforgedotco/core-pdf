@@ -15,7 +15,10 @@ from core_pdf.impl.engine.spec.s_07_syntax.lexer import (
     EMPTY_SIMPLE_TJ_ARRAY,
     PdfLexer,
 )
-from core_pdf.impl.engine.spec.s_07_syntax.lexer_helpers import full_source_bytes
+from core_pdf.impl.engine.spec.s_07_syntax.lexer_helpers import (
+    PDF_IGNORED_RE,
+    full_source_bytes,
+)
 from core_pdf.impl.engine.spec.s_07_syntax.scanning import (
     is_regular_token_byte,
     skip_comment,
@@ -81,7 +84,6 @@ del op
 
 IS_WORD_START = bytes([0 if SEPARATOR_TABLE[i] else 1 for i in range(256)])
 
-SKIP_RE = re.compile(b"(?:[\x00\t\n\f\r ]+|%[^\r\n]*(?:\r\n|\n\r|\r|\n)?)*")
 TEXT_CLIP_PREFIX_RE = re.compile(
     b"[\x00\t\n\f\r ]*"
     b"[+\\-.0-9][^\x00\t\n\f\r ()<>\\[\\]{}%/]*[\x00\t\n\f\r ]+"
@@ -387,7 +389,7 @@ def dispatch_operations(
 
         if WS_TABLE[byte] or byte == 37:
             if byte == 37:
-                match = SKIP_RE.match(raw_bytes, pos)
+                match = PDF_IGNORED_RE.match(raw_bytes, pos)
                 if match is not None:
                     pos = match.end()
             else:
