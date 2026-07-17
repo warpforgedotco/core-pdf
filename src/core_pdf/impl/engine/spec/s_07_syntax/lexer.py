@@ -717,8 +717,6 @@ class PdfLexer:
         pos = start_pos + 1
         data = self.raw_data
         data_len = self.data_len
-        source_buffer = self.source_buffer
-        source_bytes = source_buffer if type(source_buffer) is bytes else None
         ws_table = WS_TABLE
         sep_table = SEPARATOR_TABLE
         should_decipher = self.decipher is not None and self.current_obj_num is not None
@@ -757,36 +755,12 @@ class PdfLexer:
             if byte == 40:
                 if values is None:
                     values = []
-                end = pos + 1
-                while end < data_len:
-                    string_byte = data[end]
-                    if string_byte == 41:
-                        raw = (
-                            source_bytes[pos + 1 : end]
-                            if source_bytes is not None
-                            else data[pos + 1 : end].tobytes()
-                        )
-                        if should_decipher:
-                            raw = apply_decipher(raw)
-                        values.append(raw)
-                        pos = end + 1
-                        break
-                    if string_byte in (40, 92, 10, 13):
-                        self.pos = pos
-                        raw = self.read_string()
-                        if should_decipher:
-                            raw = apply_decipher(raw)
-                        values.append(raw)
-                        pos = self.pos
-                        break
-                    end += 1
-                else:
-                    self.pos = pos
-                    raw = self.read_string()
-                    if should_decipher:
-                        raw = apply_decipher(raw)
-                    values.append(raw)
-                    pos = self.pos
+                self.pos = pos
+                raw = self.read_string()
+                if should_decipher:
+                    raw = apply_decipher(raw)
+                values.append(raw)
+                pos = self.pos
                 continue
             if byte == 60:
                 if pos + 1 < data_len and data[pos + 1] == 60:

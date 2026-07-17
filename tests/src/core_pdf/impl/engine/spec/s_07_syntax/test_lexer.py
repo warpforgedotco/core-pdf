@@ -43,6 +43,26 @@ def test_numeric_array_fast_path_uses_pdf_whitespace(data: bytes | memoryview) -
     assert PdfLexer(data).parse_object() == ["1\v2"]
 
 
+@pytest.mark.parametrize(
+    "data",
+    [
+        b"[(plain) (escaped\\)value) (nested(inner)) (line\n\rending)]",
+        memoryview(b"prefix[(plain) (escaped\\)value) (nested(inner)) (line\n\rending)]suffix")[
+            len(b"prefix") : -len(b"suffix")
+        ],
+    ],
+)
+def test_simple_tj_array_uses_literal_string_semantics(data: bytes | memoryview) -> None:
+    lexer = PdfLexer(data)
+
+    assert lexer.parse_simple_tj_array() == [
+        b"plain",
+        b"escaped)value",
+        b"nested(inner)",
+        b"line\nending",
+    ]
+
+
 def test_find_stream_end_prefers_delimited_keyword_over_payload_bytes() -> None:
     data = b"binary-endstream-data\nendstream\nendobj"
     lexer = PdfLexer(data)
