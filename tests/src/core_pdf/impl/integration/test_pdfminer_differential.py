@@ -260,6 +260,14 @@ def test_layout_plane_query_order_and_removal_match_pdfminer() -> None:
     expected = [expected_components.index(component) for component in expected_plane.find(query)]
     assert result == expected
 
+    plane.add(components[0])
+    expected_plane.add(expected_components[0])
+    plane.remove(components[0])
+    expected_plane.remove(expected_components[0])
+    result = [components.index(component) for component in plane.find(query)]
+    expected = [expected_components.index(component) for component in expected_plane.find(query)]
+    assert result == expected
+
     plane.remove(components[2])
     expected_plane.remove(expected_components[2])
     result = [components.index(component) for component in plane.find(query)]

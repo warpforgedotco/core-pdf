@@ -744,7 +744,7 @@ class Plane(Generic[LTComponentT]):
     def __init__(self, bbox: Rect, gridsize: int = 50) -> None:
         self._seq: list[LTComponentT] = []  # preserve the object order.
         self._objs: set[LTComponentT] = set()
-        self._grid: dict[Point, dict[LTComponentT, None]] = {}
+        self._grid: dict[Point, dict[LTComponentT, int]] = {}
         self.gridsize = gridsize
         (self.x0, self.y0, self.x1, self.y1) = bbox
 
@@ -789,7 +789,7 @@ class Plane(Generic[LTComponentT]):
             if bucket is None:
                 bucket = {}
                 grid[k] = bucket
-            bucket[obj] = None
+            bucket[obj] = bucket.get(obj, 0) + 1
         self._seq.append(obj)
         self._objs.add(obj)
 
@@ -798,14 +798,18 @@ class Plane(Generic[LTComponentT]):
         for k in self._getrange((obj.x0, obj.y0, obj.x1, obj.y1)):
             bucket = self._grid.get(k)
             if bucket is not None:
-                bucket.pop(obj, None)
+                count = bucket.get(obj)
+                if count == 1:
+                    del bucket[obj]
+                elif count is not None:
+                    bucket[obj] = count - 1
         self._objs.remove(obj)
 
     def find(self, bbox: Rect) -> Iterator[LTComponentT]:
         """Finds objects that are in a certain area."""
         (x0, y0, x1, y1) = bbox
         grid = self._grid
-        candidates: dict[LTComponentT, None] = {}
+        candidates: dict[LTComponentT, int] = {}
         for k in self._getrange(bbox):
             bucket = grid.get(k)
             if bucket is not None:
