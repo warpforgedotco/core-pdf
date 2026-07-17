@@ -22,7 +22,6 @@ from core_pdf.integrations.pdfminer.six.cmapdb import (
     UnicodeMap,
 )
 from core_pdf.integrations.pdfminer.six.encodingdb import EncodingDB, name2unicode
-from core_pdf.integrations.pdfminer.six.fontmetrics import FONT_METRICS
 from core_pdf.integrations.pdfminer.six.pdfexceptions import (
     PDFException,
     PDFKeyError,
@@ -122,6 +121,8 @@ def get_widths2(seq: Iterable[object]) -> dict[int, tuple[float, Point]]:
 class FontMetricsDB:
     @classmethod
     def get_metrics(cls, fontname: str) -> tuple[dict[str, object], dict[str, int]]:
+        from core_pdf.integrations.pdfminer.six.fontmetrics import FONT_METRICS
+
         return FONT_METRICS[fontname]
 
 
