@@ -2,6 +2,7 @@
 import io
 import logging
 import re
+from collections import deque
 from collections.abc import Iterator
 from typing import (
     Any,
@@ -532,7 +533,7 @@ class PSStackParser(PSBaseParser, Generic[ExtraT]):
         self.context: list[tuple[int, str | None, list[PSStackEntry[ExtraT]]]] = []
         self.curtype: str | None = None
         self.curstack: list[PSStackEntry[ExtraT]] = []
-        self.results: list[PSStackEntry[ExtraT]] = []
+        self.results: deque[PSStackEntry[ExtraT]] = deque()
 
     def seek(self, pos: int) -> None:
         PSBaseParser.seek(self, pos)
@@ -632,5 +633,5 @@ class PSStackParser(PSBaseParser, Generic[ExtraT]):
                 continue
             else:
                 self.flush()
-        obj = self.results.pop(0)
+        obj = self.results.popleft()
         return obj
