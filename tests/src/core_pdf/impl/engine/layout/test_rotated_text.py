@@ -95,6 +95,23 @@ def test_layout_lines_share_reconstruction_for_the_same_run_state() -> None:
     assert second is first
 
 
+def test_cached_word_reconstruction_preserves_public_mutability_isolation() -> None:
+    run = rotated_run("Shared", 10.0, 30.0)
+    line = LayoutLine(runs=[run])
+
+    first_text, first_words = line.text_and_words()
+    second_text, second_words = line.text_and_words()
+
+    assert first_text == second_text == "Shared"
+    assert first_words is not second_words
+    assert first_words[0] is not second_words[0]
+    first_words[0].text = "changed"
+    assert second_words[0].text == "Shared"
+
+    run.set_text("Updated")
+    assert line.cached_text_and_words()[0] == "Updated"
+
+
 def test_layout_line_reconstruction_cache_tracks_geometry_and_run_order() -> None:
     first_run = rotated_run("A", 10.0, 15.0)
     second_run = rotated_run("B", 15.0, 20.0)

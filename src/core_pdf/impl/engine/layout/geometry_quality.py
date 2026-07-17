@@ -298,7 +298,7 @@ def layout_line_geometry_issues(line: LayoutLine) -> tuple[LayoutGeometryIssue, 
                 )
             )
 
-    words = line.words()
+    ignored_text, words = line.cached_text_and_words()
     word_bboxes = tuple(word.bbox for word in words if bbox_is_positive(word.bbox))
     if not word_bboxes:
         return tuple(issues)

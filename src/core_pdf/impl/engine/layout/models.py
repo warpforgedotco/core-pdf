@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, TypeAlias
+from typing import TYPE_CHECKING, Any, NamedTuple, TypeAlias
 
 from core_pdf.impl.engine.layout.geometry import RectBox
 
@@ -21,6 +21,7 @@ Provenance: TypeAlias = tuple[tuple[str, object], ...]
 class TextRun:
     __slots__ = (
         "_layout_reconstruction_cache",
+        "_layout_words_cache",
         "_revision",
         "text",
         "stripped_text",
@@ -80,6 +81,7 @@ class TextRun:
     confidence: float | None
     glyph_clusters: tuple[GlyphCluster, ...]
     _layout_reconstruction_cache: tuple[object, LayoutLineText] | None
+    _layout_words_cache: tuple[object, tuple[str, tuple[LayoutWordSnapshot, ...]]] | None
 
     def __setattr__(self, name: str, value: Any) -> None:
         object.__setattr__(self, name, value)
@@ -210,6 +212,7 @@ class TextRun:
         glyph_clusters: tuple[GlyphCluster, ...] = (),
     ) -> None:
         self._layout_reconstruction_cache = None
+        self._layout_words_cache = None
         self._revision = 0
         self.coords = [x0, y0, x1, y1, tx, ty, font_size, space_width]
         self.mid_x_value = (x0 + x1) * 0.5
@@ -318,6 +321,7 @@ class TextRun:
         resolved_ink_bbox = ink_bbox or resolved_advance_bbox
         if existing is not None:
             existing._layout_reconstruction_cache = None
+            existing._layout_words_cache = None
             c = existing.coords
             c[cls.X0] = x0
             c[cls.Y0] = y0
@@ -359,6 +363,7 @@ class TextRun:
             return existing
         r = object.__new__(cls)
         r._layout_reconstruction_cache = None
+        r._layout_words_cache = None
         r._revision = 0
         c = COORDS_TEMPLATE.copy()
         c[cls.X0] = x0
@@ -451,6 +456,7 @@ class TextRun:
     def with_coords(self, x0: float, y0: float, x1: float, y1: float) -> TextRun:
         r = object.__new__(TextRun)
         r._layout_reconstruction_cache = None
+        r._layout_words_cache = None
         r._revision = 0
         coords = self.coords
         r.coords = [
@@ -495,6 +501,12 @@ LayoutLineReconstructionKey: TypeAlias = tuple[
     bool,
     tuple[tuple[TextRun, int, tuple[float, ...]], ...],
 ]
+
+
+class LayoutWordSnapshot(NamedTuple):
+    text: str
+    bbox: tuple[float, float, float, float]
+    start_index: int
 
 
 class LayoutWord:
@@ -669,13 +681,16 @@ class LayoutLine:
             is_all_caps_text=kwargs.get("is_all_caps_text", self.is_all_caps_text),
         )
 
-    def reconstructed_text(self) -> LayoutLineText:
-        from core_pdf.impl.engine.layout.text_lines import reconstruct_layout_line_text
-
-        key = (
+    def reconstruction_key(self) -> LayoutLineReconstructionKey:
+        return (
             self.is_all_caps_text,
             tuple((run, run._revision, tuple(run.coords)) for run in self.runs),
         )
+
+    def reconstructed_text(self) -> LayoutLineText:
+        from core_pdf.impl.engine.layout.text_lines import reconstruct_layout_line_text
+
+        key = self.reconstruction_key()
         cached = self._reconstructed_cache
         if cached is not None and key == self._reconstructed_cache_key:
             return cached
@@ -697,10 +712,10 @@ class LayoutLine:
     def text(self) -> str:
         return self.reconstructed_text().text
 
-    def text_and_words(self) -> tuple[str, list[LayoutWord]]:
+    def _build_text_and_words(self) -> tuple[str, tuple[LayoutWordSnapshot, ...]]:
         reconstructed = self.reconstructed_text()
         parts: list[str] = []
-        words: list[LayoutWord] = []
+        words: list[LayoutWordSnapshot] = []
         word = ""
         word_start = 0
         text_len = 0
@@ -712,7 +727,7 @@ class LayoutLine:
             nonlocal word, word_x0, word_y0, word_x1, word_y1
             if not word:
                 return
-            append_word(LayoutWord(word, (word_x0, word_y0, word_x1, word_y1), word_start))
+            append_word(LayoutWordSnapshot(word, (word_x0, word_y0, word_x1, word_y1), word_start))
             word = ""
 
         def extend_word(char: str, bbox: tuple[float, float, float, float]) -> None:
@@ -752,7 +767,22 @@ class LayoutLine:
                 text_len += 1
 
         flush_word()
-        return "".join(parts).rstrip(), words
+        return "".join(parts).rstrip(), tuple(words)
+
+    def cached_text_and_words(self) -> tuple[str, tuple[LayoutWordSnapshot, ...]]:
+        key = self.reconstruction_key()
+        first_run = self.runs[0] if self.runs else None
+        cache = first_run._layout_words_cache if first_run is not None else None
+        if cache is not None and cache[0] == key:
+            return cache[1]
+        result = self._build_text_and_words()
+        if first_run is not None:
+            object.__setattr__(first_run, "_layout_words_cache", (key, result))
+        return result
+
+    def text_and_words(self) -> tuple[str, list[LayoutWord]]:
+        text, snapshots = self.cached_text_and_words()
+        return text, [LayoutWord(word.text, word.bbox, word.start_index) for word in snapshots]
 
     def words(self) -> list[LayoutWord]:
         return self.text_and_words()[1]

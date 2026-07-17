@@ -4,7 +4,7 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass
 from statistics import median
-from typing import TYPE_CHECKING, Any, Iterable
+from typing import TYPE_CHECKING, Any, Iterable, Sequence
 
 from core_pdf.impl.engine.extraction.common.ordering import LayoutAnalyzer
 from core_pdf.impl.engine.extraction.ocr import (
@@ -1029,7 +1029,7 @@ def estimated_column_count(lines: list[LayoutLine], page_width: float) -> int:
 def native_aligned_column_count(lines: list[LayoutLine]) -> int:
     word_lines = []
     for line in lines:
-        text, words = line.text_and_words()
+        text, words = line.cached_text_and_words()
         if not text.strip() or len(words) < 3 or not native_word_line_has_table_signal(words):
             continue
         word_lines.append(words)
@@ -1116,7 +1116,7 @@ def page_has_dominant_image(page: Any) -> bool:
 
 
 def layout_line_has_numeric_signal(line: LayoutLine) -> bool:
-    text, words = line.text_and_words()
+    text, words = line.cached_text_and_words()
     if not text.strip():
         return False
     digit_words = 0
@@ -1134,7 +1134,7 @@ def layout_line_has_numeric_signal(line: LayoutLine) -> bool:
     return digit_words >= 2 or (digit_words >= 1 and token_count >= 4 and alpha_words <= 2)
 
 
-def native_word_line_has_table_signal(words: list[Any]) -> bool:
+def native_word_line_has_table_signal(words: Sequence[Any]) -> bool:
     tokens = [word.text for word in words if any(ch.isalnum() for ch in word.text)]
     if len(tokens) < 3:
         return False
