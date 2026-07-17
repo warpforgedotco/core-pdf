@@ -4,7 +4,7 @@ from __future__ import annotations
 import math
 from collections import Counter
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Mapping, TypedDict
+from typing import TYPE_CHECKING, Any, Mapping, TypedDict, cast
 
 from core_pdf.impl.engine.layout.glyphs import glyph_text_has_unsupported_codepoint
 
@@ -85,6 +85,16 @@ class LayoutGeometrySummary:
 
 
 def text_run_geometry_issues(run: TextRun) -> tuple[LayoutGeometryIssue, ...]:
+    key = (run._revision, tuple(run.coords))
+    cache = run._geometry_issues_cache
+    if cache is not None and cache[0] == key:
+        return cast(tuple[LayoutGeometryIssue, ...], cache[1])
+    issues = _compute_text_run_geometry_issues(run)
+    object.__setattr__(run, "_geometry_issues_cache", (key, issues))
+    return issues
+
+
+def _compute_text_run_geometry_issues(run: TextRun) -> tuple[LayoutGeometryIssue, ...]:
     issues: list[LayoutGeometryIssue] = []
     run_bbox = (run.x0, run.y0, run.x1, run.y1)
     visible_text = run.visible and bool(run.text.strip())

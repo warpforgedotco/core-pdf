@@ -22,6 +22,7 @@ class TextRun:
     __slots__ = (
         "_layout_reconstruction_cache",
         "_layout_words_cache",
+        "_geometry_issues_cache",
         "_revision",
         "text",
         "stripped_text",
@@ -82,6 +83,7 @@ class TextRun:
     glyph_clusters: tuple[GlyphCluster, ...]
     _layout_reconstruction_cache: tuple[object, LayoutLineText] | None
     _layout_words_cache: tuple[object, tuple[str, tuple[LayoutWordSnapshot, ...]]] | None
+    _geometry_issues_cache: tuple[object, tuple[object, ...]] | None
 
     def __setattr__(self, name: str, value: Any) -> None:
         object.__setattr__(self, name, value)
@@ -213,6 +215,7 @@ class TextRun:
     ) -> None:
         self._layout_reconstruction_cache = None
         self._layout_words_cache = None
+        self._geometry_issues_cache = None
         self._revision = 0
         self.coords = [x0, y0, x1, y1, tx, ty, font_size, space_width]
         self.mid_x_value = (x0 + x1) * 0.5
@@ -322,6 +325,7 @@ class TextRun:
         if existing is not None:
             existing._layout_reconstruction_cache = None
             existing._layout_words_cache = None
+            existing._geometry_issues_cache = None
             c = existing.coords
             c[cls.X0] = x0
             c[cls.Y0] = y0
@@ -364,6 +368,7 @@ class TextRun:
         r = object.__new__(cls)
         r._layout_reconstruction_cache = None
         r._layout_words_cache = None
+        r._geometry_issues_cache = None
         r._revision = 0
         c = COORDS_TEMPLATE.copy()
         c[cls.X0] = x0
@@ -457,6 +462,7 @@ class TextRun:
         r = object.__new__(TextRun)
         r._layout_reconstruction_cache = None
         r._layout_words_cache = None
+        r._geometry_issues_cache = None
         r._revision = 0
         coords = self.coords
         r.coords = [

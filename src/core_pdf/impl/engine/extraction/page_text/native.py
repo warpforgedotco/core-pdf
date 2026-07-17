@@ -562,18 +562,19 @@ def text_run_has_glyph_bitmap_repair_candidate(
     *,
     repair_contextual_punctuation: bool,
 ) -> bool:
-    if not text_run_has_repairable_glyph_geometry_issue(run):
-        return False
     clusters = tuple(run.glyph_clusters or ())
     texts = (cluster.text for cluster in clusters) if clusters else (run.text,)
+    actionable_label = False
     for glyph_text in texts:
         if is_suspicious_bitmap_label(glyph_text):
-            return True
+            actionable_label = True
+            break
         if repair_contextual_punctuation and any(
             char in CONTEXTUAL_PUNCTUATION_GLYPH_TEXT for char in glyph_text
         ):
-            return True
-    return False
+            actionable_label = True
+            break
+    return actionable_label and text_run_has_repairable_glyph_geometry_issue(run)
 
 
 def native_layout_geometry_summary_for_runs(
