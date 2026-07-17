@@ -1469,11 +1469,10 @@ def observation_geometry_match_score(
     right_bbox = right.bbox
     if right_bbox < left_bbox:
         left_bbox, right_bbox = right_bbox, left_bbox
-    return cached_bbox_geometry_match_score(left_bbox, right_bbox)
+    return bbox_geometry_match_score(left_bbox, right_bbox)
 
 
-@lru_cache(maxsize=262_144)
-def cached_bbox_geometry_match_score(
+def bbox_geometry_match_score(
     left_bbox: Rect,
     right_bbox: Rect,
 ) -> float:
