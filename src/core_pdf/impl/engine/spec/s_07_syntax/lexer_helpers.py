@@ -59,6 +59,9 @@ def full_source_bytes(data: bytes | memoryview) -> bytes | None:
 
 
 def full_source_buffer(data: memoryview, data_len: int) -> FindableSizedBuffer | None:
+    source_bytes = full_source_bytes(data)
+    if source_bytes is not None and len(source_bytes) == data_len:
+        return source_bytes
     source = data.obj
     if hasattr(source, "find") and hasattr(source, "rfind") and hasattr(source, "__len__"):
         buffer = cast(FindableSizedBuffer, source)

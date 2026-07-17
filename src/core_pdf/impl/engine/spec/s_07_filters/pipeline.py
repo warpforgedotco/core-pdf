@@ -54,6 +54,7 @@ from core_pdf.impl.engine.spec.s_07_filters.flate import (
 from core_pdf.impl.engine.spec.s_07_filters.predictors import (
     apply_predictor as apply_predictor,
 )
+from core_pdf.impl.engine.spec.s_07_syntax.lexer_helpers import full_source_bytes
 from core_pdf.impl.exceptions import PdfParseError, PdfUnsupportedError
 
 FILTER_MAP: dict[str, FilterFn] = {
@@ -147,17 +148,8 @@ def decode_stream_data(
     parent_dictionary: object | None = None,
 ) -> bytes:
     if type(data) is memoryview:
-        source = data.obj
-        data = (
-            source
-            if (
-                type(source) is bytes
-                and data.c_contiguous
-                and data.itemsize == 1
-                and data.nbytes == len(source)
-            )
-            else data.tobytes()
-        )
+        source_bytes = full_source_bytes(data)
+        data = source_bytes if source_bytes is not None else data.tobytes()
     if dictionary is None:
         return data
     if isinstance(dictionary, StreamDecodeSpec):
