@@ -1190,18 +1190,24 @@ class PageExtractionMixin(PageContentMixin):
             if schematic_ocr_supplement_candidate is not None
             else ()
         )
-        region_classification = classify_page_region(
-            text,
-            vector_text=vector_text,
-            candidates=schematic_consensus_candidates,
-            page=self,
-            native_runs=chars,
-            media_box=self.media_box,
-            include_dominant_image=ocr_enabled,
+        region_classification = (
+            classify_page_region(
+                text,
+                vector_text=vector_text,
+                candidates=schematic_consensus_candidates,
+                page=self,
+                native_runs=chars,
+                media_box=self.media_box,
+                include_dominant_image=ocr_enabled,
+            )
+            if ocr_enabled or vector_text or schematic_consensus_candidates
+            else None
         )
-        if cache is not None:
+        if cache is not None and region_classification is not None:
             cache["page_region_classification"] = region_classification
-        if ocr_schematic.region_classification_supports_schematic_consensus(region_classification):
+        if region_classification is not None and (
+            ocr_schematic.region_classification_supports_schematic_consensus(region_classification)
+        ):
             previous_text = text
             schematic_text = ocr_schematic.repair_schematic_ocr_text_with_support(
                 text,

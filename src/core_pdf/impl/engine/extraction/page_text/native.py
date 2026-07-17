@@ -40,7 +40,6 @@ from core_pdf.impl.engine.extraction.ocr.text_analysis import (
     text_ocr_quality_score,
     uninterpretable_char_count,
 )
-from core_pdf.impl.engine.extraction.page_text.policy import classify_page_region
 from core_pdf.impl.engine.layout.geometry_quality import (
     LayoutGeometrySummary,
     page_layout_geometry_summary,
@@ -112,13 +111,6 @@ def try_extract_native_text_fast(
             native_output_lines,
         )
 
-    cache["page_region_classification"] = classify_page_region(
-        text,
-        page=page,
-        native_runs=chars,
-        media_box=page.media_box,
-        include_dominant_image=False,
-    )
     text = ocr_text_analysis.repair_formula_control_delimiters(text)
     return text
 

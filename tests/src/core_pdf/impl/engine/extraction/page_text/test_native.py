@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from core_pdf.impl.engine.extraction.document import PdfDocument
+from core_pdf.impl.engine.extraction.page_text.engine import build_page_extraction_result
 from core_pdf.impl.engine.extraction.page_text.native import (
     native_invisible_text_layer_has_fragmented_geometry,
     native_invisible_text_layer_is_trustworthy,
@@ -126,10 +127,27 @@ def test_native_extraction_defers_ocr_geometry_summary_but_keeps_public_diagnost
         assert page.extract_text().strip()
         assert page.extraction_cache is not None
         assert "native_layout_geometry_summary" not in page.extraction_cache
+        assert "page_region_classification" not in page.extraction_cache
 
         summary = page.extract_geometry_summary()
         assert summary["text_run_count"] > 0
         assert summary["line_count"] > 0
+
+
+def test_structured_page_result_computes_deferred_region_classification() -> None:
+    pdf_path = TESTS_DIR / "fixtures" / "pdfminer.six" / "samples" / "simple1.pdf"
+
+    with PdfDocument.open(pdf_path) as document:
+        page = cast(Any, document.pages[0])
+        assert page.extract_text().strip()
+        assert "page_region_classification" not in page.extraction_cache
+
+        result = build_page_extraction_result(page)
+
+        assert result.page_class == "native_text"
+        classification = page.extraction_cache["page_region_classification"]
+        assert classification.kind == "unknown"
+        assert classification.signals["native_line_count"] > 0
 
 
 def test_single_glyph_capture_shares_observation_with_cluster_and_preserves_provenance() -> None:

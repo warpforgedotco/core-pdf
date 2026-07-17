@@ -149,6 +149,17 @@ def build_page_extraction_result(
     text = page.extract_text()
     profile = page.get_page_profile()
     region = cache.get("page_region_classification")
+    if region is None:
+        from core_pdf.impl.engine.extraction.page_text.policy import classify_page_region
+
+        region = classify_page_region(
+            text,
+            page=page,
+            native_runs=tuple(getattr(page, "chars", ()) or ()),
+            media_box=getattr(page, "media_box", None),
+            include_dominant_image=False,
+        )
+        cache["page_region_classification"] = region
     page_class, page_class_confidence = classify_page(profile, region, text)
     base_route = base_route_name(cache, profile, text)
     supplements = page_supplements(cache, base_route)
