@@ -525,7 +525,7 @@ class LTTextLineHorizontal(LTTextLine):
             if self._x1 < obj.x0 - margin:
                 LTContainer.add(self, LTAnno(" "))
         self._x1 = obj.x1
-        super().add(obj)
+        LTExpandableContainer.add(self, obj)
 
     def find_neighbors(
         self,
@@ -588,7 +588,7 @@ class LTTextLineVertical(LTTextLine):
             if obj.y1 + margin < self._y0:
                 LTContainer.add(self, LTAnno(" "))
         self._y0 = obj.y0
-        super().add(obj)
+        LTExpandableContainer.add(self, obj)
 
     def find_neighbors(
         self,
