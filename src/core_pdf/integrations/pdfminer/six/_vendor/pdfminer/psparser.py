@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import contextlib
 import io
 import logging
 import re
@@ -85,9 +84,9 @@ class PSSymbolTable(Generic[_SymbolT]):
         self.klass: type[_SymbolT] = klass
 
     def intern(self, name: PSLiteral.NameType) -> _SymbolT:
-        if name in self.dict:
-            lit = self.dict[name]
-        else:
+        try:
+            return self.dict[name]
+        except KeyError:
             # Type confusion issue: PSKeyword always takes bytes as name
             #                       PSLiteral uses either str or bytes
             lit = self.klass(name)  # type: ignore[arg-type]
@@ -258,45 +257,46 @@ class PSBaseParser:
         if not m:
             return len(s)
         j = m.start(0)
-        c = s[j : j + 1]
+        c = s[j]
+        token = s[j : j + 1]
         self._curtokenpos = self.bufpos + j
-        if c == b"%":
+        if c == 0x25:  # %
             self._curtoken = b"%"
             self._parse1 = self._parse_comment
             return j + 1
-        elif c == b"/":
+        elif c == 0x2F:  # /
             self._curtoken = b""
             self._parse1 = self._parse_literal
             return j + 1
-        elif c in b"-+" or c.isdigit():
-            self._curtoken = c
+        elif c in (0x2D, 0x2B) or 0x30 <= c <= 0x39:  # -+0-9
+            self._curtoken = token
             self._parse1 = self._parse_number
             return j + 1
-        elif c == b".":
-            self._curtoken = c
+        elif c == 0x2E:  # .
+            self._curtoken = token
             self._parse1 = self._parse_float
             return j + 1
-        elif c.isalpha():
-            self._curtoken = c
+        elif 0x41 <= c <= 0x5A or 0x61 <= c <= 0x7A:  # A-Z or a-z
+            self._curtoken = token
             self._parse1 = self._parse_keyword
             return j + 1
-        elif c == b"(":
+        elif c == 0x28:  # (
             self._curtoken = b""
             self.paren = 1
             self._parse1 = self._parse_string
             return j + 1
-        elif c == b"<":
+        elif c == 0x3C:  # <
             self._curtoken = b""
             self._parse1 = self._parse_wopen
             return j + 1
-        elif c == b">":
+        elif c == 0x3E:  # >
             self._curtoken = b""
             self._parse1 = self._parse_wclose
             return j + 1
-        elif c == b"\x00":
+        elif c == 0:
             return j + 1
         else:
-            self._add_token(KWD(c))
+            self._add_token(KWD(token))
             return j + 1
 
     def _add_token(self, obj: PSBaseParserToken) -> None:
@@ -356,8 +356,12 @@ class PSBaseParser:
             self._curtoken += c
             self._parse1 = self._parse_float
             return j + 1
-        with contextlib.suppress(ValueError):
-            self._add_token(int(self._curtoken))
+        try:
+            token = int(self._curtoken)
+        except ValueError:
+            pass
+        else:
+            self._add_token(token)
         self._parse1 = self._parse_main
         return j
 
@@ -368,8 +372,12 @@ class PSBaseParser:
             return len(s)
         j = m.start(0)
         self._curtoken += s[i:j]
-        with contextlib.suppress(ValueError):
-            self._add_token(float(self._curtoken))
+        try:
+            token = float(self._curtoken)
+        except ValueError:
+            pass
+        else:
+            self._add_token(token)
         self._parse1 = self._parse_main
         return j
 
@@ -502,7 +510,8 @@ class PSBaseParser:
                 if not self._tokens:
                     raise
         token = self._tokens.pop(0)
-        log.debug("nexttoken: %r", token)
+        if log.isEnabledFor(logging.DEBUG):
+            log.debug("nexttoken: %r", token)
         return token
 
 
@@ -548,10 +557,11 @@ class PSStackParser(PSBaseParser, Generic[ExtraT]):
         return objs
 
     def add_results(self, *objs: PSStackEntry[ExtraT]) -> None:
-        try:
-            log.debug("add_results: %r", objs)
-        except Exception:
-            log.debug("add_results: (unprintable object)")
+        if log.isEnabledFor(logging.DEBUG):
+            try:
+                log.debug("add_results: %r", objs)
+            except Exception:
+                log.debug("add_results: (unprintable object)")
         self.results.extend(objs)
 
     def start_type(self, pos: int, type: str) -> None:
@@ -623,12 +633,13 @@ class PSStackParser(PSBaseParser, Generic[ExtraT]):
                     if settings.STRICT:
                         raise
             elif isinstance(token, PSKeyword):
-                log.debug(
-                    "do_keyword: pos=%r, token=%r, stack=%r",
-                    pos,
-                    token,
-                    self.curstack,
-                )
+                if log.isEnabledFor(logging.DEBUG):
+                    log.debug(
+                        "do_keyword: pos=%r, token=%r, stack=%r",
+                        pos,
+                        token,
+                        self.curstack,
+                    )
                 self.do_keyword(pos, token)
             else:
                 log.error(
@@ -644,8 +655,9 @@ class PSStackParser(PSBaseParser, Generic[ExtraT]):
             else:
                 self.flush()
         obj = self.results.pop(0)
-        try:
-            log.debug("nextobject: %r", obj)
-        except Exception:
-            log.debug("nextobject: (unprintable object)")
+        if log.isEnabledFor(logging.DEBUG):
+            try:
+                log.debug("nextobject: %r", obj)
+            except Exception:
+                log.debug("nextobject: (unprintable object)")
         return obj

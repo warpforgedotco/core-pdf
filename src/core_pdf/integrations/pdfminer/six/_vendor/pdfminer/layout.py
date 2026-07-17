@@ -440,15 +440,18 @@ class LTExpandableContainer(LTContainer[LTItemT]):
     # Incompatible override: we take an LTComponent (with bounding box), but
     # super() LTContainer only considers LTItem (no bounding box).
     def add(self, obj: LTComponent) -> None:  # type: ignore[override]
-        LTContainer.add(self, cast(LTItemT, obj))
-        self.set_bbox(
-            (
-                min(self.x0, obj.x0),
-                min(self.y0, obj.y0),
-                max(self.x1, obj.x1),
-                max(self.y1, obj.y1),
-            ),
-        )
+        self._objs.append(cast(LTItemT, obj))
+        x0 = min(self.x0, obj.x0)
+        y0 = min(self.y0, obj.y0)
+        x1 = max(self.x1, obj.x1)
+        y1 = max(self.y1, obj.y1)
+        self.x0 = x0
+        self.y0 = y0
+        self.x1 = x1
+        self.y1 = y1
+        self.width = x1 - x0
+        self.height = y1 - y0
+        self.bbox = (x0, y0, x1, y1)
 
 
 class LTTextContainer(LTExpandableContainer[LTItemT], LTText):

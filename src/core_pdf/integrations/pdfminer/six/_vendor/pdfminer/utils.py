@@ -310,16 +310,16 @@ def apply_matrix_rect(m: Matrix, rect: Rect) -> Rect:
     :returns a rectangle with the same orientation, but that would fit the rotated
         content.
     """
+    (a, b, c, d, e, f) = m
     (x0, y0, x1, y1) = rect
-    left_bottom = (x0, y0)
-    right_bottom = (x1, y0)
-    right_top = (x1, y1)
-    left_top = (x0, y1)
-
-    (left1, bottom1) = apply_matrix_pt(m, left_bottom)
-    (right1, bottom2) = apply_matrix_pt(m, right_bottom)
-    (right2, top1) = apply_matrix_pt(m, right_top)
-    (left2, top2) = apply_matrix_pt(m, left_top)
+    left1 = a * x0 + c * y0 + e
+    bottom1 = b * x0 + d * y0 + f
+    right1 = a * x1 + c * y0 + e
+    bottom2 = b * x1 + d * y0 + f
+    right2 = a * x1 + c * y1 + e
+    top1 = b * x1 + d * y1 + f
+    left2 = a * x0 + c * y1 + e
+    top2 = b * x0 + d * y1 + f
 
     return (
         min(left1, left2, right1, right2),
