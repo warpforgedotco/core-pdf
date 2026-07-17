@@ -265,7 +265,12 @@ class ObjectResolver(ResolverValueMixin):
         data = lexer.raw_data
         search_start = max(0, offset - 128)
         search_end = min(len(data), offset + 128)
-        marker = find_indirect_object_header(data, search_start, search_end)
+        marker = find_indirect_object_header(
+            data,
+            search_start,
+            search_end,
+            lexer.source_buffer,
+        )
         if marker is None:
             raise PdfParseError("expected indirect object header")
         lexer.rewind(marker)

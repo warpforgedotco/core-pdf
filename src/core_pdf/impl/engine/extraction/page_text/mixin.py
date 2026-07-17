@@ -498,6 +498,8 @@ class PageExtractionHost(Protocol):
 
     def capture_text_state(self) -> Any: ...
 
+    def get_text_and_graphics_state(self) -> Any: ...
+
     def get_text_lines(self) -> list[LayoutLine]: ...
 
     def get_drawings(self) -> list[dict[str, Any]]: ...
@@ -625,9 +627,10 @@ class PageExtractionMixin(PageContentMixin):
         if snapshot is not None:
             return snapshot.text
         profile = self.get_page_profile()
+        ocr_enabled = ocr_postprocess.ocr_is_enabled()
         decision = page_extraction_decision(
             profile,
-            ocr_enabled=ocr_postprocess.ocr_is_enabled(),
+            ocr_enabled=ocr_enabled,
         )
         if decision.skip_text:
             cache["native_layout_geometry_summary"] = layout_geometry_summary_record(
@@ -638,6 +641,7 @@ class PageExtractionMixin(PageContentMixin):
             fast_text = try_extract_native_text_fast(self, profile, cache)
             if fast_text is not None:
                 return cache_page_extraction_snapshot(cache, fast_text, ())
+        capture_state = self.get_text_and_graphics_state()
         chars = native_text_runs_for_extraction(self.chars)
         chars = native_text_runs_inside_page_bounds(chars, self.media_box, rotate=self.rotation)
         chars = native_text_runs_inside_visible_row_bands(chars, self.media_box, self)
@@ -670,12 +674,16 @@ class PageExtractionMixin(PageContentMixin):
                 native_output_lines,
             )
             final_output_lines = native_output_lines
-        native_geometry_summary = native_layout_geometry_summary_for_runs(chars)
-        if cache is not None:
+        native_geometry_summary = (
+            native_layout_geometry_summary_for_runs(chars) if ocr_enabled else None
+        )
+        if cache is not None and native_geometry_summary is not None:
             cache["native_layout_geometry_summary"] = layout_geometry_summary_record(
                 native_geometry_summary
             )
-        if ocr_schematic.should_try_vector_table_symbol_supplement(
+        if ocr_schematic.vector_table_symbol_marks_from_drawings(
+            capture_state.drawings
+        ) and ocr_schematic.should_try_vector_table_symbol_supplement(
             text,
             chars,
             self.media_box,
@@ -715,22 +723,27 @@ class PageExtractionMixin(PageContentMixin):
         pre_ocr_native_output_lines = final_output_lines
         schematic_ocr_supplement_candidate: OcrCandidate | None = None
         schematic_ocr_supplement_candidates: tuple[OcrCandidate, ...] = ()
-        fragmented_invisible_text_layer = native_invisible_text_layer_has_fragmented_geometry(
-            chars,
-            text,
-            native_geometry_summary,
+        fragmented_invisible_text_layer = bool(
+            native_geometry_summary is not None
+            and native_invisible_text_layer_has_fragmented_geometry(
+                chars,
+                text,
+                native_geometry_summary,
+            )
         )
-        trusted_invisible_text_layer = native_invisible_text_layer_is_trustworthy(
-            chars,
-            text,
-            native_geometry_summary,
+        trusted_invisible_text_layer = bool(
+            native_geometry_summary is not None
+            and native_invisible_text_layer_is_trustworthy(
+                chars,
+                text,
+                native_geometry_summary,
+            )
         )
         dominant_image_requires_ocr_verification = (
-            ocr_postprocess.ocr_is_enabled()
-            and ocr_page_analysis.dominant_image_requires_ocr_verification(self)
+            ocr_enabled and ocr_page_analysis.dominant_image_requires_ocr_verification(self)
         )
         omit_native_text_from_ocr_render = (
-            ocr_postprocess.ocr_is_enabled()
+            ocr_enabled
             and ocr_page_analysis.native_text_should_be_omitted_from_ocr_render(self, text)
         )
         if cache is not None:
@@ -743,9 +756,10 @@ class PageExtractionMixin(PageContentMixin):
             and not dominant_image_requires_ocr_verification
         ):
             cache["ocr_skipped_for_trusted_invisible_text_layer"] = True
-        if ocr_postprocess.ocr_is_enabled() and (
+        if ocr_enabled and (
             not trusted_invisible_text_layer or dominant_image_requires_ocr_verification
         ):
+            assert native_geometry_summary is not None
             ocr_session = ocr_session_runtime.OcrPageSession()
             try:
                 trusted_vector_stroke_text = False
@@ -1166,6 +1180,7 @@ class PageExtractionMixin(PageContentMixin):
                     schematic_ocr_supplement_candidate = None
                     schematic_ocr_supplement_candidates = ()
             finally:
+                record_ocr_deskew_diagnostics(self, ocr_session)
                 ocr_session.close()
         if preserve_substantial_native_lines:
             text = ocr_text_analysis.repair_formula_control_delimiters(pre_ocr_native_text)
@@ -1175,18 +1190,24 @@ class PageExtractionMixin(PageContentMixin):
             if schematic_ocr_supplement_candidate is not None
             else ()
         )
-        region_classification = classify_page_region(
-            text,
-            vector_text=vector_text,
-            candidates=schematic_consensus_candidates,
-            page=self,
-            native_runs=chars,
-            media_box=self.media_box,
-            include_dominant_image=ocr_postprocess.ocr_is_enabled(),
+        region_classification = (
+            classify_page_region(
+                text,
+                vector_text=vector_text,
+                candidates=schematic_consensus_candidates,
+                page=self,
+                native_runs=chars,
+                media_box=self.media_box,
+                include_dominant_image=ocr_enabled,
+            )
+            if ocr_enabled or vector_text or schematic_consensus_candidates
+            else None
         )
-        if cache is not None:
+        if cache is not None and region_classification is not None:
             cache["page_region_classification"] = region_classification
-        if ocr_schematic.region_classification_supports_schematic_consensus(region_classification):
+        if region_classification is not None and (
+            ocr_schematic.region_classification_supports_schematic_consensus(region_classification)
+        ):
             previous_text = text
             schematic_text = ocr_schematic.repair_schematic_ocr_text_with_support(
                 text,
@@ -1279,6 +1300,7 @@ class PageExtractionMixin(PageContentMixin):
         repaired_text = ocr_postprocess.repair_document_local_identifier_text(
             text,
             support_texts=token_repair_support_texts,
+            normalize_ocr_noise=pre_reconciliation_text_source != "native",
         )
         if repaired_text != text:
             text = repaired_text
@@ -8068,6 +8090,16 @@ def extract_ocr_page_result(
     vector_text: str = "",
     ocr_session: ocr_session_runtime.OcrPageSession | None = None,
 ) -> OcrPageTextResult:
+    if ocr_session is None:
+        with ocr_session_runtime.OcrPageSession() as owned_session:
+            try:
+                return extract_ocr_page_result(
+                    page,
+                    vector_text=vector_text,
+                    ocr_session=owned_session,
+                )
+            finally:
+                record_ocr_deskew_diagnostics(page, owned_session)
     text = ""
     candidates: list[OcrCandidate] = []
     candidate: OcrCandidate | None = None
@@ -8146,7 +8178,18 @@ def extract_ocr_page_result(
         verification_candidates,
         preserve_raw_text,
     )
+    record_ocr_deskew_diagnostics(page, ocr_session)
     return result
+
+
+def record_ocr_deskew_diagnostics(
+    page: PageExtractionHost,
+    ocr_session: ocr_session_runtime.OcrPageSession,
+) -> None:
+    diagnostics = ocr_session.deskew_diagnostics()
+    cache = getattr(page, "extraction_cache", None)
+    if diagnostics and cache is not None:
+        cache["ocr_deskew"] = diagnostics
 
 
 def append_ocr_candidate_with_layout_variants(

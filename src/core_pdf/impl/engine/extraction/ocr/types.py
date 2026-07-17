@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Any, Mapping, TypeAlias
 
 OcrRow: TypeAlias = dict[str, object]
+OcrAffineTransform: TypeAlias = tuple[float, float, float, float, float, float]
 
 
 def ocr_int_value(value: object) -> int:
@@ -151,6 +152,19 @@ class OcrObservation:
 
 
 @dataclass(frozen=True)
+class OcrDeskewInfo:
+    source: str
+    angle_degrees: float | None
+    confidence: float | None
+    applied: bool
+    reason: str
+    image_width: int
+    image_height: int
+    source_to_deskew: OcrAffineTransform
+    deskew_to_source: OcrAffineTransform
+
+
+@dataclass(frozen=True)
 class OcrTextResult:
     text: str
     confidence: int | None
@@ -159,6 +173,7 @@ class OcrTextResult:
     symbol_rows: tuple[OcrRow, ...] = ()
     component_boxes: tuple[OcrComponentBox, ...] = ()
     observations: tuple[OcrObservation, ...] = ()
+    deskew_info: OcrDeskewInfo | None = None
 
 
 @dataclass(frozen=True)

@@ -1,14 +1,23 @@
+from pathlib import Path
+from typing import Any, cast
+
+from core_pdf.impl.engine.extraction.document import PdfDocument
+from core_pdf.impl.engine.extraction.page_text.engine import build_page_extraction_result
 from core_pdf.impl.engine.extraction.page_text.native import (
     native_invisible_text_layer_has_fragmented_geometry,
     native_invisible_text_layer_is_trustworthy,
     native_text_runs_inside_page_bounds,
+    should_try_rendered_glyph_repair,
     should_try_rendered_glyph_text,
+    text_run_has_glyph_bitmap_repair_candidate,
 )
 from core_pdf.impl.engine.layout.geometry_quality import (
     LayoutGeometrySummary,
     layout_geometry_should_trigger_ocr,
 )
 from core_pdf.impl.engine.layout.models import TextRun
+
+TESTS_DIR = Path(__file__).parents[6]
 
 
 def text_run(text: str, x0: float, y0: float, x1: float, y1: float) -> TextRun:
@@ -77,6 +86,86 @@ def test_uninterpretable_dense_native_text_can_use_rendered_glyphs() -> None:
     damaged_text = ("index entry ........ 12 " * 200) + "\ufffd"
 
     assert should_try_rendered_glyph_text(damaged_text)
+
+
+def test_glyph_repair_preflight_requires_an_actionable_bitmap_label() -> None:
+    ordinary = text_run("A", 0.0, 0.0, 10.0, 10.0)
+    ordinary.confidence = 0.2
+    suspicious = text_run("\ufffd", 0.0, 0.0, 10.0, 10.0)
+
+    assert not text_run_has_glyph_bitmap_repair_candidate(
+        ordinary,
+        repair_contextual_punctuation=False,
+    )
+    assert text_run_has_glyph_bitmap_repair_candidate(
+        suspicious,
+        repair_contextual_punctuation=False,
+    )
+    assert not should_try_rendered_glyph_repair([ordinary], "A")
+    assert should_try_rendered_glyph_repair([suspicious], "\ufffd")
+
+
+def test_glyph_repair_preflight_keeps_contextual_punctuation_mode() -> None:
+    punctuation = text_run("(", 0.0, 0.0, 10.0, 10.0)
+    punctuation.confidence = 0.2
+
+    assert not text_run_has_glyph_bitmap_repair_candidate(
+        punctuation,
+        repair_contextual_punctuation=False,
+    )
+    assert text_run_has_glyph_bitmap_repair_candidate(
+        punctuation,
+        repair_contextual_punctuation=True,
+    )
+
+
+def test_native_extraction_defers_ocr_geometry_summary_but_keeps_public_diagnostic() -> None:
+    pdf_path = TESTS_DIR / "fixtures" / "pdfminer.six" / "samples" / "simple1.pdf"
+
+    with PdfDocument.open(pdf_path) as document:
+        page = cast(Any, document.pages[0])
+        assert page.extract_text().strip()
+        assert page.extraction_cache is not None
+        assert "native_layout_geometry_summary" not in page.extraction_cache
+        assert "page_region_classification" not in page.extraction_cache
+
+        summary = page.extract_geometry_summary()
+        assert summary["text_run_count"] > 0
+        assert summary["line_count"] > 0
+
+
+def test_structured_page_result_computes_deferred_region_classification() -> None:
+    pdf_path = TESTS_DIR / "fixtures" / "pdfminer.six" / "samples" / "simple1.pdf"
+
+    with PdfDocument.open(pdf_path) as document:
+        page = cast(Any, document.pages[0])
+        assert page.extract_text().strip()
+        assert "page_region_classification" not in page.extraction_cache
+
+        result = build_page_extraction_result(page)
+
+        assert result.page_class == "native_text"
+        classification = page.extraction_cache["page_region_classification"]
+        assert classification.kind == "unknown"
+        assert classification.signals["native_line_count"] > 0
+
+
+def test_single_glyph_capture_shares_observation_with_cluster_and_preserves_provenance() -> None:
+    pdf_path = TESTS_DIR / "fixtures" / "pdfminer.six" / "samples" / "simple1.pdf"
+
+    with PdfDocument.open(pdf_path) as document:
+        page = cast(Any, document.pages[0])
+        state = page.capture_text_state()
+        cluster = next(item for item in state.glyph_clusters if item.kind == "single_glyph")
+        observation = cluster.glyphs[0]
+
+        assert any(item is observation for item in state.glyphs)
+        assert cluster.advance_bbox == observation.advance_bbox
+        assert cluster.ink_bbox == observation.ink_bbox
+        assert cluster.confidence == observation.confidence
+        assert cluster.provenance is observation.provenance
+        assert dict(observation.provenance)["source"] == "native_glyph"
+        assert type(dict(observation.provenance)["decoded_glyph_index"]) is int
 
 
 def test_sparse_geometry_issues_do_not_trigger_ocr_for_substantial_text() -> None:

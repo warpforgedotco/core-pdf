@@ -233,7 +233,7 @@ def _cached_image_space_from_ocr_image(
     )
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class PageObservation:
     kind: str
     source: str
@@ -269,6 +269,12 @@ def rect_box_tuple(value: Any) -> Rect | None:
 
 
 def normalize_rect(rect: Any) -> Rect | None:
+    if type(rect) is tuple and len(rect) == 4:
+        x0, y0, x1, y1 = rect
+        if type(x0) is float and type(y0) is float and type(x1) is float and type(y1) is float:
+            if x0 <= x1 and y0 <= y1:
+                return rect
+            return (min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1))
     box = rect_box_tuple(rect)
     if box is None:
         return None
@@ -1457,20 +1463,33 @@ def observation_geometry_match_score(
     left: PageObservation,
     right: PageObservation,
 ) -> float:
+    return observation_geometry_match_metrics(left, right)[0]
+
+
+def observation_geometry_match_metrics(
+    left: PageObservation,
+    right: PageObservation,
+) -> tuple[float, float]:
     if left.bbox is None or right.bbox is None:
-        return 0.0
+        return (0.0, 0.0)
     left_bbox = left.bbox
     right_bbox = right.bbox
     if right_bbox < left_bbox:
         left_bbox, right_bbox = right_bbox, left_bbox
-    return cached_bbox_geometry_match_score(left_bbox, right_bbox)
+    return bbox_geometry_match_metrics(left_bbox, right_bbox)
 
 
-@lru_cache(maxsize=262_144)
-def cached_bbox_geometry_match_score(
+def bbox_geometry_match_score(
     left_bbox: Rect,
     right_bbox: Rect,
 ) -> float:
+    return bbox_geometry_match_metrics(left_bbox, right_bbox)[0]
+
+
+def bbox_geometry_match_metrics(
+    left_bbox: Rect,
+    right_bbox: Rect,
+) -> tuple[float, float]:
     left_x0, left_y0, left_x1, left_y1 = left_bbox
     right_x0, right_y0, right_x1, right_y1 = right_bbox
     left_width = max(0.0, left_x1 - left_x0)
@@ -1478,9 +1497,10 @@ def cached_bbox_geometry_match_score(
     right_width = max(0.0, right_x1 - right_x0)
     right_height = max(0.0, right_y1 - right_y0)
     if min(left_width, left_height, right_width, right_height) <= 0.0:
-        return 0.0
+        return (0.0, 0.0)
     y_overlap = max(0.0, min(left_y1, right_y1) - max(left_y0, right_y0))
     x_overlap = max(0.0, min(left_x1, right_x1) - max(left_x0, right_x0))
+    intersection_area = x_overlap * y_overlap
     vertical_overlap = y_overlap / min(left_height, right_height)
     horizontal_overlap = x_overlap / min(left_width, right_width)
     left_center_y = (left_y0 + left_y1) * 0.5
@@ -1491,16 +1511,19 @@ def cached_bbox_geometry_match_score(
     )
     row_alignment = max(vertical_overlap, vertical_center)
     if row_alignment < 0.45 or horizontal_overlap < 0.18:
-        return 0.0
+        return (0.0, intersection_area)
     left_center_x = (left_x0 + left_x1) * 0.5
     right_center_x = (right_x0 + right_x1) * 0.5
     horizontal_center = max(
         0.0,
         1.0 - abs(left_center_x - right_center_x) / max(left_width, right_width),
     )
-    return min(
-        1.0,
-        row_alignment * 0.72 + horizontal_overlap * 0.18 + horizontal_center * 0.10,
+    return (
+        min(
+            1.0,
+            row_alignment * 0.72 + horizontal_overlap * 0.18 + horizontal_center * 0.10,
+        ),
+        intersection_area,
     )
 
 

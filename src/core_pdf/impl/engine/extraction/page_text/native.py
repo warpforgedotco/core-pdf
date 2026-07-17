@@ -29,6 +29,8 @@ from core_pdf.impl.engine.extraction.ocr import (
     text_analysis as ocr_text_analysis,
 )
 from core_pdf.impl.engine.extraction.ocr.glyph_recognizer import (
+    CONTEXTUAL_PUNCTUATION_GLYPH_TEXT,
+    is_suspicious_bitmap_label,
     repair_text_runs_with_glyph_bitmaps,
     text_runs_from_rendered_glyphs,
 )
@@ -38,10 +40,8 @@ from core_pdf.impl.engine.extraction.ocr.text_analysis import (
     text_ocr_quality_score,
     uninterpretable_char_count,
 )
-from core_pdf.impl.engine.extraction.page_text.policy import classify_page_region
 from core_pdf.impl.engine.layout.geometry_quality import (
     LayoutGeometrySummary,
-    layout_geometry_summary_record,
     page_layout_geometry_summary,
     text_run_has_repairable_glyph_geometry_issue,
 )
@@ -111,17 +111,6 @@ def try_extract_native_text_fast(
             native_output_lines,
         )
 
-    native_geometry_summary = native_layout_geometry_summary_for_runs(chars)
-    cache["native_layout_geometry_summary"] = layout_geometry_summary_record(
-        native_geometry_summary
-    )
-    cache["page_region_classification"] = classify_page_region(
-        text,
-        page=page,
-        native_runs=chars,
-        media_box=page.media_box,
-        include_dominant_image=False,
-    )
     text = ocr_text_analysis.repair_formula_control_delimiters(text)
     return text
 
@@ -545,7 +534,34 @@ def should_try_rendered_glyph_repair(runs: list[TextRun], text: str) -> bool:
         return False
     if should_try_rendered_glyph_text(text):
         return True
-    return any(text_run_has_repairable_glyph_geometry_issue(run) for run in runs)
+    repair_contextual_punctuation = text_ocr_quality_score(text) >= 0.4
+    return any(
+        text_run_has_glyph_bitmap_repair_candidate(
+            run,
+            repair_contextual_punctuation=repair_contextual_punctuation,
+        )
+        for run in runs
+    )
+
+
+def text_run_has_glyph_bitmap_repair_candidate(
+    run: TextRun,
+    *,
+    repair_contextual_punctuation: bool,
+) -> bool:
+    clusters = tuple(run.glyph_clusters or ())
+    texts = (cluster.text for cluster in clusters) if clusters else (run.text,)
+    actionable_label = False
+    for glyph_text in texts:
+        if is_suspicious_bitmap_label(glyph_text):
+            actionable_label = True
+            break
+        if repair_contextual_punctuation and any(
+            char in CONTEXTUAL_PUNCTUATION_GLYPH_TEXT for char in glyph_text
+        ):
+            actionable_label = True
+            break
+    return actionable_label and text_run_has_repairable_glyph_geometry_issue(run)
 
 
 def native_layout_geometry_summary_for_runs(

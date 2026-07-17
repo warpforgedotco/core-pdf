@@ -15,6 +15,13 @@ from core_pdf.impl.engine.spec.s_07_syntax.lexer import (
     EMPTY_SIMPLE_TJ_ARRAY,
     PdfLexer,
 )
+from core_pdf.impl.engine.spec.s_07_syntax.lexer_helpers import full_source_bytes
+from core_pdf.impl.engine.spec.s_07_syntax.scanning import (
+    skip_comment,
+    skip_hex_string,
+    skip_literal_string,
+    skip_name,
+)
 from core_pdf.impl.engine.spec.s_07_syntax.tokens import SEPARATOR_TABLE, WS_TABLE
 from core_pdf.impl.engine.spec.s_09_fonts.decoder import FontDecoder
 from core_pdf.impl.exceptions import PdfParseError
@@ -30,11 +37,7 @@ ContentOperand: TypeAlias = CachedPdfObject | InlineImage
 ContentOperands: TypeAlias = tuple[ContentOperand, ...]
 ContentOperation: TypeAlias = tuple[str, ContentOperands]
 
-WORD_BREAK = bytearray(256)
-for b in b"()<>[]{}%/":
-    WORD_BREAK[b] = 1
-
-WORD_BREAK_OR_WS = bytes([1 if (i <= 32 or WORD_BREAK[i]) else 0 for i in range(256)])
+WORD_BREAK_OR_WS = SEPARATOR_TABLE
 
 TEXT_ONLY_SKIP_SINGLE = bytes(
     [
@@ -75,11 +78,8 @@ for op in (b"re", b"W*", b"f*", b"B*", b"b*", b"BX", b"EX", b"MP", b"DP"):
     TEXT_ONLY_SKIP_DOUBLE[(op[0] << 8) | op[1]] = 1
 del op
 
-IS_WORD_START = bytes(
-    [1 if i > 32 and i not in (40, 41, 60, 62, 91, 93, 47, 123, 125, 37) else 0 for i in range(256)]
-)
+IS_WORD_START = bytes([0 if SEPARATOR_TABLE[i] else 1 for i in range(256)])
 
-SKIP_RE = re.compile(b"(?:[\x00\t\n\f\r ]+|%[^\r\n]*(?:\r\n|\n\r|\r|\n)?)*")
 TEXT_CLIP_PREFIX_RE = re.compile(
     b"[\x00\t\n\f\r ]*"
     b"[+\\-.0-9][^\x00\t\n\f\r ()<>\\[\\]{}%/]*[\x00\t\n\f\r ]+"
@@ -88,61 +88,80 @@ TEXT_CLIP_PREFIX_RE = re.compile(
     b"[+\\-.0-9][^\x00\t\n\f\r ()<>\\[\\]{}%/]*[\x00\t\n\f\r ]+"
     b"re[\x00\t\n\f\r ]+W[\x00\t\n\f\r ]+n"
 )
-TEXT_SHOWING_SINGLE = bytes([1 if i in (34, 39) else 0 for i in range(256)])
-TEXT_SHOWING_DOUBLE = {
-    (68 << 8) | 111,
-    (84 << 8) | 74,
-    (84 << 8) | 106,
-}
+TEXT_SHOWING_CANDIDATES = (b'"', b"'", b"Tj", b"TJ", b"Do")
+TEXT_OR_LEXICAL_MARKER_RE = re.compile(rb"""[%(/<>\[\]"']|T[jJ]|Do|BI""")
+CONTAINER_LEXICAL_MARKER_RE = re.compile(rb"[%(<>\[\]]")
 
 
 def content_stream_may_show_text(data: bytes | memoryview) -> bool:
     data_len = len(data)
-    raw_source = data.obj if type(data) is memoryview else data
-    raw_bytes: bytes | memoryview
-    if type(raw_source) is bytes and len(raw_source) == data_len:
-        raw_bytes = raw_source
-    else:
-        raw_bytes = data
+    raw_bytes = full_source_bytes(data)
+    if raw_bytes is None:
+        raw_bytes = bytes(data)
 
-    if type(raw_bytes) is bytes:
-        return (
-            raw_bytes.find(b"Tj") >= 0
-            or raw_bytes.find(b"TJ") >= 0
-            or raw_bytes.find(b"Do") >= 0
-            or raw_bytes.find(b"'") >= 0
-            or raw_bytes.find(b'"') >= 0
-        )
+    if not any(raw_bytes.find(candidate) >= 0 for candidate in TEXT_SHOWING_CANDIDATES):
+        return False
 
     pos = 0
-    word_break_or_ws = WORD_BREAK_OR_WS
-    while pos < data_len:
-        byte = raw_bytes[pos]
-        if WS_TABLE[byte] or byte == 37:
-            match = SKIP_RE.match(raw_bytes, pos)
-            if match is not None:
-                pos = match.end()
+    container_depth = 0
+    inline_image_lexer: PdfLexer | None = None
+    while match := (
+        CONTAINER_LEXICAL_MARKER_RE if container_depth else TEXT_OR_LEXICAL_MARKER_RE
+    ).search(raw_bytes, pos):
+        marker = match.start()
+        token = match.group()
+        if token == b"%":
+            pos = skip_comment(raw_bytes, marker, data_len)
+            continue
+        if token == b"(":
+            pos = skip_literal_string(raw_bytes, marker, data_len)
+            continue
+        if token == b"<":
+            if marker + 1 < data_len and raw_bytes[marker + 1] == 60:
+                container_depth += 1
+                pos = marker + 2
             else:
-                pos += 1
+                pos = skip_hex_string(raw_bytes, marker, data_len)
             continue
-        if SEPARATOR_TABLE[byte]:
-            pos += 1
+        if token == b">":
+            if marker + 1 < data_len and raw_bytes[marker + 1] == 62:
+                container_depth = max(0, container_depth - 1)
+                pos = marker + 2
+            else:
+                pos = marker + 1
             continue
-
-        start = pos
-        while pos < data_len and not word_break_or_ws[raw_bytes[pos]]:
-            pos += 1
-        token_len = pos - start
-        if token_len == 0:
-            pos += 1
+        if token == b"[":
+            container_depth += 1
+            pos = marker + 1
             continue
-        if token_len == 1:
-            if TEXT_SHOWING_SINGLE[raw_bytes[start]]:
-                return True
-        elif token_len == 2:
-            op_code = (raw_bytes[start] << 8) | raw_bytes[start + 1]
-            if op_code in TEXT_SHOWING_DOUBLE:
-                return True
+        if token == b"]":
+            container_depth = max(0, container_depth - 1)
+            pos = marker + 1
+            continue
+        if token == b"/":
+            pos = skip_name(raw_bytes, marker, data_len)
+            continue
+        after = match.end()
+        delimited = (marker == 0 or SEPARATOR_TABLE[raw_bytes[marker - 1]]) and (
+            after == data_len or SEPARATOR_TABLE[raw_bytes[after]]
+        )
+        if not delimited:
+            pos = marker + 1
+            continue
+        if token != b"BI" and container_depth == 0:
+            return True
+        if container_depth:
+            pos = after
+            continue
+        if inline_image_lexer is None:
+            inline_image_lexer = PdfLexer(raw_bytes)
+        inline_image_lexer.pos = after
+        try:
+            parse_inline_image(inline_image_lexer)
+        except PdfParseError:
+            pos = after
+        else:
+            pos = inline_image_lexer.pos
 
     return False
 
@@ -330,12 +349,9 @@ def dispatch_operations(
     op_count = 0
     raw_data = lexer.raw_data
     data_len = lexer.data_len
-    raw_source = raw_data.obj
     raw_bytes: bytes | memoryview
-    if type(raw_source) is bytes and len(raw_source) == data_len:
-        raw_bytes = raw_source
-    else:
-        raw_bytes = raw_data
+    source_bytes = full_source_bytes(raw_data)
+    raw_bytes = source_bytes if source_bytes is not None else raw_data
 
     word_break_or_ws = WORD_BREAK_OR_WS
     is_word_start = IS_WORD_START
@@ -368,14 +384,7 @@ def dispatch_operations(
         byte = raw_bytes[pos]
 
         if WS_TABLE[byte] or byte == 37:
-            if byte == 37:
-                match = SKIP_RE.match(raw_bytes, pos)
-                if match is not None:
-                    pos = match.end()
-            else:
-                pos += 1
-                while pos < data_len and WS_TABLE[raw_bytes[pos]]:
-                    pos += 1
+            pos = lexer.skip_ignored_at(pos)
             if pos >= data_len:
                 break
             byte = raw_bytes[pos]
@@ -621,7 +630,13 @@ def dispatch_operations(
                             "inline image keys must be names",
                             "expected inline image data separator",
                         ):
-                            recovered_pos = recover_inline_image_position(lexer, pos)
+                            recovered_pos = recover_inline_image_position(
+                                lexer,
+                                pos,
+                                (lambda token: op_get_bytes(token) is not None)
+                                if op_get_bytes is not None
+                                else None,
+                            )
                             if recovered_pos is None:
                                 if message == "unterminated inline image data":
                                     pos = data_len

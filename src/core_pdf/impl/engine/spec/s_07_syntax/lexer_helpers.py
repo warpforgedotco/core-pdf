@@ -1,11 +1,13 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
+import re
 from typing import Protocol, cast, overload
 
 from core_pdf.impl.engine.spec.s_07_syntax.tokens import WS_TABLE
 
 IS_NUMBER_CHAR = bytes([1 if i in b"+-0123456789." else 0 for i in range(256)])
+PDF_IGNORED_RE = re.compile(b"(?:[\x00\t\n\x0c\r ]+|%[^\r\n]*(?:\r\n|\n\r|\r|\n)?)*")
 EMPTY_TRANSLATE_TABLE = bytes.maketrans(b"", b"")
 
 STRING_ESCAPE: dict[int, bytes] = {
@@ -20,7 +22,7 @@ STRING_ESCAPE: dict[int, bytes] = {
 }
 
 R_SENTINEL = object()
-STRING_SPECIAL_TABLE = bytes([1 if i in b"()\\\r" else 0 for i in range(256)])
+STRING_SPECIAL_TABLE = bytes([1 if i in b"()\\\r\n" else 0 for i in range(256)])
 HEX_VALUE = bytes(
     [
         i - 48 if 48 <= i <= 57 else i - 55 if 65 <= i <= 70 else i - 87 if 97 <= i <= 102 else 255
@@ -40,14 +42,80 @@ class FindableSizedBuffer(Protocol):
 
     def find(self, sub: bytes, start: int = 0, end: int = -1, /) -> int: ...
 
+    def rfind(self, sub: bytes, start: int = 0, end: int = -1, /) -> int: ...
+
+
+def full_source_bytes(data: bytes | memoryview) -> bytes | None:
+    if type(data) is bytes:
+        return data
+    assert isinstance(data, memoryview)
+    source = data.obj
+    if (
+        type(source) is bytes
+        and data.c_contiguous
+        and data.itemsize == 1
+        and data.nbytes == len(source)
+    ):
+        return source
+    return None
+
 
 def full_source_buffer(data: memoryview, data_len: int) -> FindableSizedBuffer | None:
+    source_bytes = full_source_bytes(data)
+    if source_bytes is not None and len(source_bytes) == data_len:
+        return source_bytes
     source = data.obj
-    if hasattr(source, "find") and hasattr(source, "__len__"):
+    if hasattr(source, "find") and hasattr(source, "rfind") and hasattr(source, "__len__"):
         buffer = cast(FindableSizedBuffer, source)
-        if len(buffer) == data_len:
+        if (
+            data.c_contiguous
+            and data.itemsize == 1
+            and data.nbytes == data_len
+            and len(buffer) == data_len
+        ):
             return buffer
     return None
+
+
+def skip_pdf_ignored(data: bytes | memoryview, position: int, data_len: int) -> int:
+    pos = position
+    if pos >= data_len:
+        return pos
+    if isinstance(data, bytes) or data.c_contiguous:
+        start = pos
+        if data[pos] != 37:
+            short_end = min(data_len, pos + 8)
+            while pos < short_end and WS_TABLE[data[pos]]:
+                pos += 1
+            if pos >= data_len:
+                return pos
+            byte = data[pos]
+            if byte != 37 and not WS_TABLE[byte]:
+                return pos
+            if byte != 37:
+                pos = start
+        match = PDF_IGNORED_RE.match(data, pos)
+        if match is not None:
+            return match.end()
+    while pos < data_len:
+        byte = data[pos]
+        if WS_TABLE[byte]:
+            pos += 1
+            continue
+        if byte != 37:
+            break
+        pos += 1
+        while pos < data_len:
+            byte = data[pos]
+            if byte == 10 or byte == 13:
+                pos += 1
+                if pos < data_len:
+                    next_byte = data[pos]
+                    if (byte == 13 and next_byte == 10) or (byte == 10 and next_byte == 13):
+                        pos += 1
+                break
+            pos += 1
+    return pos
 
 
 def looks_like_indirect_object_header(data: memoryview, position: int, data_len: int) -> bool:

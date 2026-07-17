@@ -511,6 +511,7 @@ def word_layout_ocr_candidate(base_candidate: OcrCandidate) -> OcrCandidate | No
         line_rows=base_candidate.result.line_rows,
         word_rows=base_candidate.result.word_rows,
         symbol_rows=base_candidate.result.symbol_rows,
+        deskew_info=base_candidate.result.deskew_info,
     )
     return OcrCandidate(
         f"{base_candidate.name}_word_layout",
@@ -675,6 +676,7 @@ def low_confidence_word_refinement_ocr_candidate(
             word_rows=tuple(word_rows),
             symbol_rows=symbol_rows,
             observations=ocr_observations_from_rows([*refined_line_rows, *word_rows, *symbol_rows]),
+            deskew_info=base_candidate.result.deskew_info,
         )
     )
     if not should_keep_low_confidence_word_refinement_ocr_candidate(
@@ -1234,6 +1236,7 @@ def ocr_result_with_page_observations(
         symbol_rows=symbol_rows,
         component_boxes=result.component_boxes,
         observations=observations,
+        deskew_info=result.deskew_info,
     )
     return ocr_layout.geometry_rendered_ocr_result(normalized)
 

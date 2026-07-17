@@ -4,6 +4,7 @@ from __future__ import annotations
 import binascii
 import contextlib
 import mmap
+import re
 from collections.abc import Callable
 from typing import Any
 
@@ -23,8 +24,10 @@ from core_pdf.impl.engine.spec.s_07_syntax.lexer_helpers import (
     matches_keyword_with_one_substitution,
     parse_float_token,
     parse_int_token,
+    skip_pdf_ignored,
 )
 from core_pdf.impl.engine.spec.s_07_syntax.tokens import (
+    DELIMITERS,
     SEPARATOR_TABLE,
     WHITESPACE,
     WS_TABLE,
@@ -65,6 +68,10 @@ RECOVERABLE_DICTIONARY_KEY_NAMES = {
 }
 
 EMPTY_SIMPLE_TJ_ARRAY: tuple[Any, ...] = ()
+SEPARATOR_RE = re.compile(b"[" + re.escape(WHITESPACE + DELIMITERS) + b"]")
+HEX_STRING_END_RE = re.compile(b">")
+STRING_SPECIAL_RE = re.compile(b"[" + re.escape(b"()\\\r\n") + b"]")
+ARRAY_END_RE = re.compile(b"]")
 
 
 class PdfLexer:
@@ -102,7 +109,9 @@ class PdfLexer:
     ) -> None:
 
         if type(data) is memoryview:
-            self.raw_data = data
+            self.raw_data = (
+                data if data.ndim == 1 and data.format == "B" else memoryview(data.tobytes())
+            )
         else:
             self.raw_data = memoryview(data)
         self.data_len = len(self.raw_data)
@@ -166,29 +175,7 @@ class PdfLexer:
         self.pos = self.skip_ignored_at(self.pos)
 
     def skip_ignored_at(self, position: int) -> int:
-        data = self.raw_data
-        pos = position
-        n = self.data_len
-        whitespace = WS_TABLE
-        while pos < n:
-            byte = data[pos]
-            if whitespace[byte]:
-                pos += 1
-                continue
-            if byte != 37:
-                break
-            pos += 1
-            while pos < n:
-                byte = data[pos]
-                if byte == 10 or byte == 13:
-                    pos += 1
-                    if pos < n:
-                        next_byte = data[pos]
-                        if (byte == 13 and next_byte == 10) or (byte == 10 and next_byte == 13):
-                            pos += 1
-                    break
-                pos += 1
-        return pos
+        return skip_pdf_ignored(self.raw_data, position, self.data_len)
 
     def scan_word_at(
         self, position: int, skip_ignored: bool = True
@@ -210,10 +197,11 @@ class PdfLexer:
 
     def find_separator(self, start: int) -> int:
         data = self.raw_data
+        if data.c_contiguous:
+            match = SEPARATOR_RE.search(data, start)
+            return self.data_len if match is None else match.start()
         pos = start
-        n = self.data_len
-        table = SEPARATOR_TABLE
-        while pos < n and not table[data[pos]]:
+        while pos < self.data_len and not SEPARATOR_TABLE[data[pos]]:
             pos += 1
         return pos
 
@@ -261,19 +249,9 @@ class PdfLexer:
         n = self.data_len
         source_buffer = self.source_buffer
 
-        if source_buffer is not None:
-            close_idx = source_buffer.find(b")", pos)
-            scan_end = close_idx if close_idx >= 0 else n
-            open_idx = source_buffer.find(b"(", pos, scan_end)
-            escape_idx = source_buffer.find(b"\\", pos, scan_end)
-            cr_idx = source_buffer.find(b"\r", pos, scan_end)
-            end_idx = scan_end
-            if open_idx >= 0 and open_idx < end_idx:
-                end_idx = open_idx
-            if escape_idx >= 0 and escape_idx < end_idx:
-                end_idx = escape_idx
-            if cr_idx >= 0 and cr_idx < end_idx:
-                end_idx = cr_idx
+        if data.c_contiguous:
+            match = STRING_SPECIAL_RE.search(data, pos)
+            end_idx = n if match is None else match.start()
         else:
             end_idx = pos
             string_special = STRING_SPECIAL_TABLE
@@ -289,7 +267,8 @@ class PdfLexer:
         self.pos = pos
         out = bytearray()
         if end_idx > pos:
-            out.extend(data[pos:end_idx])
+            prefix = data[pos:end_idx]
+            out.extend(prefix if prefix.c_contiguous else prefix.tobytes())
             self.pos = end_idx
 
         depth = 1
@@ -345,10 +324,16 @@ class PdfLexer:
         marker = -1
         if source_buffer is not None:
             marker = source_buffer.find(b">", start)
+        elif self.raw_data.c_contiguous:
+            match = HEX_STRING_END_RE.search(self.raw_data, start)
+            if match is not None:
+                marker = match.start()
         else:
-            marker = self.raw_data[start:].tobytes().find(b">")
-            if marker >= 0:
-                marker += start
+            marker = start
+            while marker < self.data_len and self.raw_data[marker] != 62:
+                marker += 1
+            if marker >= self.data_len:
+                marker = -1
         if marker < 0:
             raise PdfParseError("unterminated hex string")
 
@@ -564,36 +549,43 @@ class PdfLexer:
         raw_data = source_buffer if source_buffer is not None else data
         data_len = self.data_len
 
+        end_array = -1
         if source_buffer is not None:
             end_array = source_buffer.find(b"]", start_pos + 1)
-            if end_array >= 0:
-                if end_array == start_pos + 1:
-                    self.pos = end_array + 1
-                    return []
-                payload = source_buffer[start_pos + 1 : end_array]
-                if b"%" not in payload and b"[" not in payload:
-                    tokens = payload.split()
-                    if tokens and (
-                        tokens[-1] == b"R"
-                        or tokens[0][0] not in (43, 45, 46)
-                        and not 48 <= tokens[0][0] <= 57
-                    ):
-                        return None
+        elif data.c_contiguous:
+            match = ARRAY_END_RE.search(data, start_pos + 1)
+            if match is not None:
+                end_array = match.start()
+        if end_array >= 0:
+            if end_array == start_pos + 1:
+                self.pos = end_array + 1
+                return []
+            payload = (
+                source_buffer[start_pos + 1 : end_array]
+                if source_buffer is not None
+                else data[start_pos + 1 : end_array].tobytes()
+            )
+            if b"%" not in payload and b"[" not in payload and b"\v" not in payload:
+                tokens = payload.split()
+                if tokens and (
+                    tokens[-1] == b"R"
+                    or tokens[0][0] not in (43, 45, 46)
+                    and not 48 <= tokens[0][0] <= 57
+                ):
+                    return None
+                try:
+                    values: list[int | float] = list(map(int, tokens))
+                except ValueError:
                     try:
-                        values: list[int | float] = list(map(int, tokens))
+                        values = [float(token) if b"." in token else int(token) for token in tokens]
                     except ValueError:
-                        try:
-                            values = [
-                                float(token) if b"." in token else int(token) for token in tokens
-                            ]
-                        except ValueError:
-                            pass
-                        else:
-                            self.pos = end_array + 1
-                            return values
+                        pass
                     else:
                         self.pos = end_array + 1
                         return values
+                else:
+                    self.pos = end_array + 1
+                    return values
 
         values = []
         pos = start_pos + 1
@@ -720,8 +712,6 @@ class PdfLexer:
         pos = start_pos + 1
         data = self.raw_data
         data_len = self.data_len
-        source_buffer = self.source_buffer
-        source_bytes = source_buffer if type(source_buffer) is bytes else None
         ws_table = WS_TABLE
         sep_table = SEPARATOR_TABLE
         should_decipher = self.decipher is not None and self.current_obj_num is not None
@@ -760,36 +750,12 @@ class PdfLexer:
             if byte == 40:
                 if values is None:
                     values = []
-                end = pos + 1
-                while end < data_len:
-                    string_byte = data[end]
-                    if string_byte == 41:
-                        raw = (
-                            source_bytes[pos + 1 : end]
-                            if source_bytes is not None
-                            else data[pos + 1 : end].tobytes()
-                        )
-                        if should_decipher:
-                            raw = apply_decipher(raw)
-                        values.append(raw)
-                        pos = end + 1
-                        break
-                    if string_byte in (40, 92, 10, 13):
-                        self.pos = pos
-                        raw = self.read_string()
-                        if should_decipher:
-                            raw = apply_decipher(raw)
-                        values.append(raw)
-                        pos = self.pos
-                        break
-                    end += 1
-                else:
-                    self.pos = pos
-                    raw = self.read_string()
-                    if should_decipher:
-                        raw = apply_decipher(raw)
-                    values.append(raw)
-                    pos = self.pos
+                self.pos = pos
+                raw = self.read_string()
+                if should_decipher:
+                    raw = apply_decipher(raw)
+                values.append(raw)
+                pos = self.pos
                 continue
             if byte == 60:
                 if pos + 1 < data_len and data[pos + 1] == 60:
@@ -990,60 +956,18 @@ class PdfLexer:
             ):
                 self.advance(9)
             else:
-                source_buffer = self.source_buffer
-                if source_buffer is not None:
-                    endstream_pos = source_buffer.find(b"endstream", self.pos)
-                    if endstream_pos < 0:
-                        endstream_pos = source_buffer.find(b"endstream", data_start, self.pos)
-                    if endstream_pos < 0:
-                        endstream_pos = source_buffer.find(
-                            b"endstream",
-                            max(data_start, self.pos - 64),
-                            min(self.data_len, self.pos + 9),
-                        )
-                    if endstream_pos >= 0:
-                        if endstream_pos != self.pos:
-                            raw_data = self.raw_data[data_start:endstream_pos]
-                        self.pos = endstream_pos
-                    else:
-                        endobj_pos = self.find_object_end(data_start)
-                        if endobj_pos >= 0:
-                            raw_data = (
-                                self.raw_data[data_start:endobj_pos].tobytes().rstrip(WHITESPACE)
-                            )
-                            self.rewind(endobj_pos)
-                        else:
-                            self.rewind(self.data_len)
+                endstream_pos = self.find_stream_end(data_start, preferred=self.pos)
+                if endstream_pos >= 0:
+                    if endstream_pos != self.pos:
+                        raw_data = self.raw_data[data_start:endstream_pos]
+                    self.pos = endstream_pos
                 else:
-                    search_start = max(data_start, self.pos - 64)
-                    search_data = self.raw_data[search_start:].tobytes()
-                    endstream_pos = search_data.find(b"endstream", self.pos - search_start)
-                    if endstream_pos < 0:
-                        prefix = self.raw_data[data_start : self.pos].tobytes()
-                        endstream_pos = prefix.find(b"endstream")
-                        if endstream_pos >= 0:
-                            search_start = data_start
-                            search_data = prefix
-                    if endstream_pos < 0:
-                        endstream_pos = search_data.find(
-                            b"endstream",
-                            0,
-                            min(len(search_data), self.pos - search_start + 9),
-                        )
-                    if endstream_pos >= 0:
-                        recovered_pos = search_start + endstream_pos
-                        if recovered_pos != self.pos:
-                            raw_data = self.raw_data[data_start:recovered_pos]
-                        self.rewind(search_start + endstream_pos)
+                    endobj_pos = self.find_object_end(data_start)
+                    if endobj_pos >= 0:
+                        raw_data = self.raw_data[data_start:endobj_pos].tobytes().rstrip(WHITESPACE)
+                        self.rewind(endobj_pos)
                     else:
-                        endobj_pos = self.find_object_end(data_start)
-                        if endobj_pos >= 0:
-                            raw_data = (
-                                self.raw_data[data_start:endobj_pos].tobytes().rstrip(WHITESPACE)
-                            )
-                            self.rewind(endobj_pos)
-                        else:
-                            self.rewind(self.data_len)
+                        self.rewind(self.data_len)
             if self.raw_data[
                 self.pos : self.pos + 9
             ] == b"endstream" or matches_keyword_with_one_substitution(
@@ -1055,23 +979,83 @@ class PdfLexer:
             raw_data = self.apply_decipher(raw_data, dictionary)
         return PdfStream(dictionary, raw_data, dictionary)
 
-    def find_stream_end(self, data_start: int) -> int:
+    def _find_keyword_candidate(
+        self,
+        keyword: bytes,
+        start: int,
+        end: int,
+        *,
+        reverse: bool,
+        require_eol_before: bool,
+        buffer: FindableSizedBuffer | None = None,
+    ) -> tuple[int, int]:
+        if buffer is None:
+            source_buffer = self.source_buffer
+            buffer = self.raw_data.tobytes() if source_buffer is None else source_buffer
+
+        find = buffer.rfind if reverse else buffer.find
+        raw_candidate = find(keyword, start, end)
+        candidate = raw_candidate
+        while candidate >= 0:
+            before = candidate - 1
+            after = candidate + len(keyword)
+            before_ok = (
+                before >= 0 and buffer[before] in (10, 13)
+                if require_eol_before
+                else before < 0 or bool(SEPARATOR_TABLE[buffer[before]])
+            )
+            after_ok = after >= self.data_len or bool(SEPARATOR_TABLE[buffer[after]])
+            if before_ok and after_ok:
+                return candidate, raw_candidate
+            if reverse:
+                end = candidate
+            else:
+                start = candidate + 1
+            candidate = find(keyword, start, end)
+        return -1, raw_candidate
+
+    def find_stream_end(self, data_start: int, preferred: int | None = None) -> int:
         source_buffer = self.source_buffer
-        if source_buffer is not None:
-            return source_buffer.find(b"endstream", data_start)
-        relative_pos = self.raw_data[data_start:].tobytes().find(b"endstream")
-        if relative_pos < 0:
-            return -1
-        return data_start + relative_pos
+        search_buffer = self.raw_data.tobytes() if source_buffer is None else source_buffer
+        search_start = data_start if preferred is None else preferred
+        candidate, raw_candidate = self._find_keyword_candidate(
+            b"endstream",
+            search_start,
+            self.data_len,
+            reverse=False,
+            require_eol_before=True,
+            buffer=search_buffer,
+        )
+        if preferred is None:
+            return candidate if candidate >= 0 else raw_candidate
+
+        previous, previous_raw = self._find_keyword_candidate(
+            b"endstream",
+            data_start,
+            preferred,
+            reverse=True,
+            require_eol_before=True,
+            buffer=search_buffer,
+        )
+        if candidate >= 0 and previous >= 0:
+            forward_distance = candidate - preferred
+            reverse_distance = preferred - previous
+            return previous if reverse_distance <= forward_distance else candidate
+        if candidate >= 0:
+            return candidate
+        if previous >= 0:
+            return previous
+        return raw_candidate if raw_candidate >= 0 else previous_raw
 
     def find_object_end(self, data_start: int) -> int:
-        source_buffer = self.source_buffer
-        if source_buffer is not None:
-            return source_buffer.find(b"endobj", data_start)
-        relative_pos = self.raw_data[data_start:].tobytes().find(b"endobj")
-        if relative_pos < 0:
-            return -1
-        return data_start + relative_pos
+        candidate, raw_candidate = self._find_keyword_candidate(
+            b"endobj",
+            data_start,
+            self.data_len,
+            reverse=False,
+            require_eol_before=False,
+        )
+        return candidate if candidate >= 0 else raw_candidate
 
     def parse_dictionary_or_stream(self) -> Any:
         dictionary = self.parse_dictionary()

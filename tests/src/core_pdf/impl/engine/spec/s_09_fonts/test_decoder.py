@@ -2,11 +2,12 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import pytest
 
 from core_pdf.impl.engine.extraction.document import PdfDocument
+from core_pdf.impl.engine.spec.s_09_fonts import decoder as decoder_module
 from core_pdf.impl.engine.spec.s_09_fonts.decoder import (
     FontDecoder,
     parse_type1_font_program_encoding,
@@ -68,6 +69,17 @@ def test_font_decoder_uses_embedded_type1_encoding_without_pdf_encoding() -> Non
     assert decoder.decode(b"A\x0c") == "A\ufb01"
 
 
+def test_simple_font_decoder_reuses_glyphs_across_distinct_text_operands() -> None:
+    decoder = FontDecoder({"Subtype": "Type1"})
+
+    first = decoder.decode_glyphs(b"A" * 17)
+    second = decoder.decode_glyphs(b"BA" * 9)
+
+    assert first[0].unicode == "A"
+    assert all(glyph is first[0] for glyph in first)
+    assert all(glyph is first[0] for glyph in second if glyph.char_code == ord("A"))
+
+
 def test_simple_type1c_font_captures_embedded_glyph_bitmaps() -> None:
     pdf_path = TESTS_DIR / "fixtures" / "pdfminer.six" / "samples" / "nonfree" / "i1040nr.pdf"
 
@@ -77,6 +89,30 @@ def test_simple_type1c_font_captures_embedded_glyph_bitmaps() -> None:
     user_id = glyphs[:6]
     assert "".join(glyph.text for glyph in user_id) == "Userid"
     assert all(glyph.bitmap for glyph in user_id)
+
+
+def test_font_decoder_caches_cff_glyph_bboxes_including_missing_glyphs() -> None:
+    class FakeCFFFont:
+        def __init__(self) -> None:
+            self.bbox_calls: list[int] = []
+
+        def glyph_id_for_name(self, name: str) -> int:
+            return {"A": 7, "B": 8}[name]
+
+        def glyph_bbox_for_gid(self, glyph_id: int) -> tuple[float, float, float, float] | None:
+            self.bbox_calls.append(glyph_id)
+            return (0.0, -2.0, 5.0, 8.0) if glyph_id == 7 else None
+
+    decoder = FontDecoder({"Subtype": "Type1"})
+    decoder.decode(b"A")
+    cff_font = FakeCFFFont()
+    decoder.cff_font = cast(Any, cff_font)
+
+    assert decoder.glyph_bbox(65) == (0.0, -2.0, 5.0, 8.0)
+    assert decoder.glyph_bbox(65) == (0.0, -2.0, 5.0, 8.0)
+    assert decoder.glyph_bbox(66) is None
+    assert decoder.glyph_bbox(66) is None
+    assert cff_font.bbox_calls == [7, 8]
 
 
 def test_font_decoder_does_not_emit_unknown_difference_names() -> None:
@@ -349,6 +385,56 @@ def cid_type0_font(encoding: str, *, ordering: str = "Japan1") -> dict[str, obje
             }
         ],
     }
+
+
+def cid_to_unicode_stream() -> PdfStream:
+    return PdfStream(
+        decoded_data=b"""
+        /CIDInit /ProcSet findresource begin
+        12 dict begin begincmap
+        /CMapType 2 def
+        1 begincodespacerange <0000> <ffff> endcodespacerange
+        1 beginbfchar <0041> <0058> endbfchar
+        endcmap end
+        """
+    )
+
+
+def test_cid_collection_map_stays_lazy_when_to_unicode_resolves_code(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, str, bool]] = []
+
+    def resolve(registry: str, ordering: str, *, vertical: bool = False) -> dict[int, str]:
+        calls.append((registry, ordering, vertical))
+        return {66: "fallback"}
+
+    monkeypatch.setattr(decoder_module, "resolve_cid_unicode_map", resolve)
+    font = cid_type0_font("Identity-H")
+    font["ToUnicode"] = cid_to_unicode_stream()
+    decoder = FontDecoder(font)
+
+    assert decoder.decode(b"\x00A") == "X"
+    assert calls == []
+
+
+def test_cid_collection_map_resolves_once_on_first_unmapped_code(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, str, bool]] = []
+
+    def resolve(registry: str, ordering: str, *, vertical: bool = False) -> dict[int, str]:
+        calls.append((registry, ordering, vertical))
+        return {66: "fallback"}
+
+    monkeypatch.setattr(decoder_module, "resolve_cid_unicode_map", resolve)
+    font = cid_type0_font("Identity-H")
+    font["ToUnicode"] = cid_to_unicode_stream()
+    decoder = FontDecoder(font)
+
+    assert decoder.decode(b"\x00B") == "fallback"
+    assert decoder.decode(b"\x00B") == "fallback"
+    assert calls == [("Adobe", "Japan1", False)]
 
 
 def test_font_decoder_recovers_japanese_without_to_unicode() -> None:

@@ -34,7 +34,13 @@ class PageStateHost(Protocol):
 
     def consume_contents(self, state: TextState) -> None: ...
 
+    def get_state(self) -> TextState: ...
+
+    def capture_text_state(self) -> TextState: ...
+
     def get_graphics(self) -> TextState: ...
+
+    def get_text_and_graphics_state(self) -> TextState: ...
 
 
 def page_hidden_layers(page: PageStateHost) -> frozenset[str]:
@@ -131,6 +137,17 @@ class PageStateMixin:
             decoder_cache=self.document.decoder_cache,
         )
         self.consume_contents(state)
+        return state
+
+    def get_text_and_graphics_state(self: PageStateHost) -> TextState:
+        if self.state is None and self.graphics is None:
+            state = self.capture_text_state()
+            self.state = state
+            self.graphics = state
+            return state
+        state = self.get_state()
+        if self.graphics is None:
+            self.get_graphics()
         return state
 
     def get_graphics(self: PageStateHost) -> TextState:

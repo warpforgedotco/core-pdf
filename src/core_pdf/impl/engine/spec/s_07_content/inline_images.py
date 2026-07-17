@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any, Protocol
 
 from core_pdf.impl.engine.spec.s_07_filters.decode_spec import (
@@ -12,6 +13,7 @@ from core_pdf.impl.engine.spec.s_07_objects.coercion import (
     normalize_pdf_name,
 )
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_07_syntax.lexer_helpers import FindableSizedBuffer
 from core_pdf.impl.engine.spec.s_07_syntax.tokens import (
     INLINE_IMAGE_KEY_MAP,
     WHITESPACE,
@@ -23,6 +25,7 @@ from core_pdf.impl.types import PdfDict
 
 class InlineImageLexer(Protocol):
     raw_data: memoryview
+    source_buffer: FindableSizedBuffer | None
     data_len: int
     pos: int
 
@@ -106,6 +109,42 @@ def skip_inline_image_separator(lexer: InlineImageLexer) -> bool:
     return lexer.pos > start
 
 
+def filtered_inline_image_data_end(
+    dictionary: PdfDict,
+    data: bytes,
+    start: int,
+) -> int | None:
+    try:
+        filters = normalize_stream_decode_spec(dictionary).filters
+    except PdfParseError:
+        return None
+    if not filters:
+        return None
+
+    first_filter = filters[0]
+
+    if first_filter in {"ASCII85Decode", "A85"}:
+        marker = data.find(b"~>", start)
+        return None if marker < 0 else marker + 2
+    if first_filter in {"ASCIIHexDecode", "AHx"}:
+        marker = data.find(b">", start)
+        return None if marker < 0 else marker + 1
+    if first_filter in {"DCTDecode", "DCT"}:
+        marker = data.find(b"\xff\xd9", start)
+        return None if marker < 0 else marker + 2
+    if first_filter in {"RunLengthDecode", "RL"}:
+        pos = start
+        while pos < len(data):
+            length = data[pos]
+            pos += 1
+            if length == 128:
+                return pos
+            pos += length + 1 if length < 128 else 1
+            if pos > len(data):
+                return None
+    return None
+
+
 def parse_inline_image(lexer: InlineImageLexer) -> InlineImage:
     dictionary: PdfDict = {}
     while True:
@@ -125,8 +164,8 @@ def parse_inline_image(lexer: InlineImageLexer) -> InlineImage:
     start = lexer.pos
     normalized = normalize_inline_image_dictionary(dictionary)
     raw_data = lexer.raw_data
-    source = raw_data.obj
-    source_bytes = source if type(source) is bytes and len(source) == lexer.data_len else None
+    source_buffer = lexer.source_buffer
+    source_bytes = source_buffer if type(source_buffer) is bytes else None
 
     exact_length = inline_image_unfiltered_data_length(normalized)
     if exact_length is not None and start + exact_length <= lexer.data_len:
@@ -143,60 +182,49 @@ def parse_inline_image(lexer: InlineImageLexer) -> InlineImage:
             return InlineImage(normalized, image_data)
 
     if source_bytes is not None:
-        pos = start
-        while True:
-            marker = source_bytes.find(b"EI", pos)
-            if marker < 0:
-                raise PdfParseError("unterminated inline image data")
-            after = marker + 2
-            prev_ok = marker == start or source_bytes[marker - 1] in WHITESPACE
-            next_ok = (
-                after >= lexer.data_len
-                or source_bytes[after] in WHITESPACE
-                or source_bytes[after] in b"()<>[]{}/%"
-            )
-            if prev_ok and next_ok:
-                image_data = source_bytes[start:marker].rstrip(WHITESPACE)
-                lexer.pos = after
-                return InlineImage(normalized, image_data)
-            pos = marker + 1
+        search_data = source_bytes
+        data_start = start
+        position_offset = 0
+    else:
+        search_data = bytes(raw_data[start:])
+        data_start = 0
+        position_offset = start
 
-    data_bytes = bytes(lexer.raw_data[start:])
-    pos = 0
+    hinted_end = filtered_inline_image_data_end(normalized, search_data, data_start)
+    pos = hinted_end if hinted_end is not None else data_start
     while True:
-        marker = data_bytes.find(b"EI", pos)
+        marker = search_data.find(b"EI", pos)
         if marker < 0:
             raise PdfParseError("unterminated inline image data")
         after = marker + 2
-        prev_ok = marker == 0 or data_bytes[marker - 1] in WHITESPACE
+        prev_ok = marker == data_start or search_data[marker - 1] in WHITESPACE
         next_ok = (
-            after >= len(data_bytes)
-            or data_bytes[after] in WHITESPACE
-            or data_bytes[after] in b"()<>[]{}/%"
+            after >= len(search_data)
+            or search_data[after] in WHITESPACE
+            or search_data[after] in b"()<>[]{}/%"
         )
         if prev_ok and next_ok:
-            image_data = data_bytes[:marker].rstrip(WHITESPACE)
-            lexer.pos = start + after
+            image_data = search_data[data_start:marker].rstrip(WHITESPACE)
+            lexer.pos = position_offset + after
             return InlineImage(normalized, image_data)
         pos = marker + 1
 
 
-def recover_inline_image_position(lexer: InlineImageLexer, position: int) -> int | None:
+def recover_inline_image_position(
+    lexer: InlineImageLexer,
+    position: int,
+    is_valid_operator: Callable[[bytes], bool] | None = None,
+) -> int | None:
     data = lexer.raw_data
     data_len = lexer.data_len
-    source = data.obj
-    source_bytes = source if type(source) is bytes and len(source) == data_len else None
+    source_buffer = lexer.source_buffer
+    source_bytes = source_buffer if type(source_buffer) is bytes else None
+    search_data = source_bytes if source_bytes is not None else data.tobytes()
     pos = position
     while pos < data_len:
-        marker = (
-            source_bytes.find(b"EI", pos)
-            if source_bytes is not None
-            else data[pos:].tobytes().find(b"EI")
-        )
+        marker = search_data.find(b"EI", pos)
         if marker < 0:
             return None
-        if source_bytes is None:
-            marker += pos
         after = marker + 2
         if (
             (marker == 0 or data[marker - 1] in WHITESPACE)
@@ -208,7 +236,11 @@ def recover_inline_image_position(lexer: InlineImageLexer, position: int) -> int
             if word is None:
                 return after
             token, ignored = word
-            if token in (b"BT", b"ET", b"q", b"Q", b"cm", b"Do", b"BI"):
+            if (
+                is_valid_operator(bytes(token))
+                if is_valid_operator is not None
+                else token in (b"BT", b"ET", b"q", b"Q", b"cm", b"Do", b"BI")
+            ):
                 return next_pos
         pos = marker + 1
     return None

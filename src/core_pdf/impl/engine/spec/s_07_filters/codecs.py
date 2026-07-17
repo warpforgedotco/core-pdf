@@ -9,27 +9,21 @@ from core_pdf.impl.exceptions import PdfParseError
 
 PDF_WHITESPACE_TABLE = bytes([1 if i in b"\x00\t\n\x0c\r " else 0 for i in range(256)])
 PDF_WHITESPACE_BYTES = b"\x00\t\n\x0c\r "
+ASCII_HEX_DIGITS = b"0123456789ABCDEFabcdef"
+ASCII_HEX_INVALID_BYTES = bytes(byte for byte in range(256) if byte not in ASCII_HEX_DIGITS)
 ASCII85_DIGITS = bytes(range(33, 118))
 ASCII85_PACK_QUAD = struct.Struct(">I").pack_into
+ASCII85_MAX = 0xFFFFFFFF
 
 
 def apply_ascii_hex(data: bytes, parms: object) -> bytes:
-    filtered = bytearray()
-    ws = PDF_WHITESPACE_TABLE
-    for byte in data:
-        if ws[byte]:
-            continue
-        if byte == 62:
-            break
-        if not (48 <= byte <= 57 or 65 <= byte <= 70 or 97 <= byte <= 102):
-            continue
-        filtered.append(byte)
+    terminator = data.find(b">")
+    if terminator >= 0:
+        data = data[:terminator]
+    filtered = data.translate(None, ASCII_HEX_INVALID_BYTES)
     if len(filtered) & 1:
-        filtered.append(48)
-    try:
-        return binascii.unhexlify(filtered)
-    except binascii.Error as exc:
-        raise PdfParseError("invalid ASCIIHexDecode stream") from exc
+        filtered += b"0"
+    return binascii.unhexlify(filtered)
 
 
 def apply_run_length(data: bytes, parms: object) -> bytes:
@@ -151,19 +145,10 @@ def apply_lzw(data: bytes | memoryview, parms: object) -> bytes:
 
 def apply_ascii85(data: bytes | memoryview, parms: object) -> bytes:
     try:
-        view = data if type(data) is memoryview else memoryview(data)
-        start = 0
-        end = len(view)
-
-        while start < end and PDF_WHITESPACE_TABLE[view[start]]:
-            start += 1
-        while end > start and PDF_WHITESPACE_TABLE[view[end - 1]]:
-            end -= 1
-
-        if end - start >= 2 and view[start] == 60 and view[start + 1] == 126:
-            start += 2
-
-        clean = bytes(view[start:end]).translate(None, PDF_WHITESPACE_BYTES)
+        clean = bytes(data).lstrip(PDF_WHITESPACE_BYTES)
+        if clean.startswith(b"<~"):
+            clean = clean[2:]
+        clean = clean.translate(None, PDF_WHITESPACE_BYTES)
         terminator = clean.find(b"~>")
         if terminator >= 0:
             clean = clean[:terminator]
@@ -186,8 +171,9 @@ def apply_ascii85(data: bytes | memoryview, parms: object) -> bytes:
                     acc = acc * 85 + (byte - 33)
                     digits += 1
                     if digits == 5:
-                        if acc <= 0xFFFFFFFF:
-                            append(acc.to_bytes(4, "big"))
+                        if acc > ASCII85_MAX:
+                            raise ValueError("Ascii85 overflow")
+                        append(acc.to_bytes(4, "big"))
                         acc = 0
                         digits = 0
                     continue
@@ -224,9 +210,10 @@ def apply_ascii85(data: bytes | memoryview, parms: object) -> bytes:
                         + byte4
                         - 33
                     )
-                    if acc <= 0xFFFFFFFF:
-                        pack_quad(decoded, out_pos, acc)
-                        out_pos += 4
+                    if acc > ASCII85_MAX:
+                        raise ValueError("Ascii85 overflow")
+                    pack_quad(decoded, out_pos, acc)
+                    out_pos += 4
                     pos += 5
             else:
                 while pos < full_end:
@@ -243,13 +230,16 @@ def apply_ascii85(data: bytes | memoryview, parms: object) -> bytes:
                         + byte4
                         - 33
                     )
-                    if acc <= 0xFFFFFFFF:
-                        pack_quad(decoded, out_pos, acc)
-                        out_pos += 4
+                    if acc > ASCII85_MAX:
+                        raise ValueError("Ascii85 overflow")
+                    pack_quad(decoded, out_pos, acc)
+                    out_pos += 4
                     pos += 5
 
             digits = clean_len - full_end
             if digits:
+                if digits == 1:
+                    raise ValueError("invalid final Ascii85 tuple")
                 acc = 0
                 if invalid_digits:
                     for byte in clean[full_end:]:
@@ -262,16 +252,20 @@ def apply_ascii85(data: bytes | memoryview, parms: object) -> bytes:
                         acc = acc * 85 + (byte - 33)
                 for count in range(5 - digits):
                     acc = acc * 85 + 84
-                if acc <= 0xFFFFFFFF:
-                    pack_quad(decoded, out_pos, acc)
-                    out_pos += digits - 1
+                if acc > ASCII85_MAX:
+                    raise ValueError("Ascii85 overflow")
+                pack_quad(decoded, out_pos, acc)
+                out_pos += digits - 1
             return bytes(decoded[:out_pos])
 
         if digits:
+            if digits == 1:
+                raise ValueError("invalid final Ascii85 tuple")
             for ignored in range(5 - digits):
                 acc = acc * 85 + 84
-            if acc <= 0xFFFFFFFF:
-                append(acc.to_bytes(4, "big")[: digits - 1])
+            if acc > ASCII85_MAX:
+                raise ValueError("Ascii85 overflow")
+            append(acc.to_bytes(4, "big")[: digits - 1])
         return bytes(decoded)
     except (ValueError, binascii.Error) as exc:
         raise PdfParseError("invalid ASCII85Decode stream") from exc

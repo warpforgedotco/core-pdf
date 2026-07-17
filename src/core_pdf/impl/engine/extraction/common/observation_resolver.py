@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Set
 from dataclasses import dataclass, replace
 
 from core_pdf.impl.engine.extraction.common import page_geometry
@@ -34,24 +34,31 @@ def resolve_observation_append(
     accepted: Iterable[page_geometry.PageObservation],
     *,
     existing_text: str = "",
+    existing_tokens: Set[str] | None = None,
 ) -> ObservationResolution:
     accepted_observations = tuple(
         observation for observation in accepted if observation.bbox is not None
     )
     if candidate.bbox is None:
-        if observation_has_useful_new_text(candidate, existing_text):
+        if observation_has_useful_new_text(
+            candidate,
+            existing_text,
+            existing_tokens=existing_tokens,
+        ):
             return ObservationResolution("append", "no_geometry", candidate)
         return ObservationResolution("skip", "duplicate_text", candidate)
     if not candidate.text.strip():
         return ObservationResolution("skip", "empty_text", candidate)
 
-    matched, geometry_score = best_observation_geometry_match(
-        candidate,
-        accepted_observations,
+    matched, geometry_score, coverage_ratio = observation_geometry_resolution(
+        candidate, accepted_observations
     )
     text_overlap = observation_text_overlap(candidate, matched) if matched is not None else 0.0
-    coverage_ratio = observation_coverage_ratio(candidate, accepted_observations)
-    useful_new_tokens = observation_useful_new_token_count(candidate, existing_text)
+    useful_new_tokens = observation_useful_new_token_count(
+        candidate,
+        existing_text,
+        existing_tokens=existing_tokens,
+    )
 
     if coverage_ratio >= 0.72 and text_overlap >= 0.65:
         return ObservationResolution(
@@ -105,7 +112,7 @@ def resolve_text_lines(
 ) -> tuple[ResolvedTextLine, ...]:
     accepted_lines: list[ResolvedTextLine] = []
     accepted_observations: list[page_geometry.PageObservation] = []
-    text_parts: list[str] = [existing_text] if existing_text else []
+    accepted_tokens = set(normalized_text_tokens(existing_text))
     for line in lines:
         observation = line.observation
         if observation.text != line.text:
@@ -114,14 +121,14 @@ def resolve_text_lines(
         resolution = resolve_observation_append(
             observation,
             accepted_observations,
-            existing_text="\n".join(text_parts),
+            existing_tokens=accepted_tokens,
         )
         if resolution.action != "append":
             continue
         accepted_line = replace(line, resolution=resolution)
         accepted_lines.append(accepted_line)
         accepted_observations.append(observation)
-        text_parts.append(line.text)
+        accepted_tokens.update(normalized_text_tokens(line.text))
     return tuple(accepted_lines)
 
 
@@ -152,6 +159,47 @@ def best_observation_geometry_match(
             best = observation
             best_score = score
     return best, best_score
+
+
+def observation_geometry_resolution(
+    candidate: page_geometry.PageObservation,
+    accepted: Iterable[page_geometry.PageObservation],
+) -> tuple[page_geometry.PageObservation | None, float, float]:
+    best: page_geometry.PageObservation | None = None
+    best_score = 0.0
+    area = page_geometry.observation_area(candidate)
+    covered_area = 0.0
+    candidate_bbox = candidate.bbox
+    if candidate_bbox is None:
+        return (None, 0.0, 1.0)
+    candidate_x0, candidate_y0, candidate_x1, candidate_y1 = candidate_bbox
+    candidate_height = candidate_y1 - candidate_y0
+    candidate_center_y = (candidate_y0 + candidate_y1) * 0.5
+    for observation in accepted:
+        observation_bbox = observation.bbox
+        if observation_bbox is None:
+            continue
+        observation_x0, observation_y0, observation_x1, observation_y1 = observation_bbox
+        if candidate_x1 <= observation_x0 or observation_x1 <= candidate_x0:
+            continue
+        if candidate_y1 <= observation_y0 or observation_y1 <= candidate_y0:
+            observation_height = observation_y1 - observation_y0
+            if candidate_height <= 0.0 or observation_height <= 0.0:
+                continue
+            observation_center_y = (observation_y0 + observation_y1) * 0.5
+            if abs(candidate_center_y - observation_center_y) > (
+                max(candidate_height, observation_height) * 0.55
+            ):
+                continue
+        score, intersection_area = page_geometry.observation_geometry_match_metrics(
+            candidate, observation
+        )
+        if score > best_score:
+            best = observation
+            best_score = score
+        covered_area += intersection_area
+    coverage_ratio = 1.0 if area <= 0.0 else min(1.0, covered_area / area)
+    return best, best_score, coverage_ratio
 
 
 def observation_coverage_ratio(
@@ -186,15 +234,30 @@ def observation_text_overlap(
 def observation_has_useful_new_text(
     candidate: page_geometry.PageObservation,
     existing_text: str,
+    *,
+    existing_tokens: Set[str] | None = None,
 ) -> bool:
-    return observation_useful_new_token_count(candidate, existing_text) > 0
+    return (
+        observation_useful_new_token_count(
+            candidate,
+            existing_text,
+            existing_tokens=existing_tokens,
+        )
+        > 0
+    )
 
 
 def observation_useful_new_token_count(
     candidate: page_geometry.PageObservation,
     existing_text: str,
+    *,
+    existing_tokens: Set[str] | None = None,
 ) -> int:
-    seen = set(normalized_text_tokens(existing_text))
+    seen = (
+        existing_tokens
+        if existing_tokens is not None
+        else set(normalized_text_tokens(existing_text))
+    )
     count = 0
     for token in normalized_text_tokens(candidate.text):
         if token in seen:

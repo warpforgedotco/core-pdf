@@ -49,6 +49,8 @@ def key_for(obj_num: int, gen_num: int = 0) -> int:
 
 
 def parse_xref_entry_line(line: bytes) -> tuple[int, int, bool]:
+    if 11 in line:
+        raise PdfParseError("invalid xref table entry")
     n = len(line)
     if n >= 18:
         marker = line[17]
@@ -162,7 +164,7 @@ class XRefScanner:
 
             pos = XRefScanner.skip_ws(data, marker + 9)
             startxref_number_bytes, ignored = XRefScanner.read_line(data, pos)
-            if not startxref_number_bytes:
+            if not startxref_number_bytes or 11 in startxref_number_bytes:
                 continue
 
             number_end = pos + len(startxref_number_bytes)
@@ -173,9 +175,13 @@ class XRefScanner:
             if b"%" in number_bytes:
                 number_bytes = number_bytes.split(b"%", 1)[0]
             number_end = pos + startxref_number_bytes.find(number_bytes) + len(number_bytes)
-            next_pos = XRefScanner.skip_ignored(data, number_end)
+            next_pos = XRefScanner.skip_ignored(
+                data,
+                number_end,
+                stop=eof_pos if has_eof else None,
+            )
             if has_eof:
-                if next_pos + 5 > len(data) or data[next_pos : next_pos + 5] != b"%%EOF":
+                if next_pos != eof_pos:
                     continue
             elif next_pos != len(data):
                 continue
@@ -185,41 +191,40 @@ class XRefScanner:
             except ValueError:
                 continue
 
-        trailer_pos = data.rfind(b"trailer", 0, eof_pos)
-        if trailer_pos >= 0:
-            xref_pos = data.rfind(b"xref", 0, trailer_pos)
-            if xref_pos >= 0 and (xref_pos == 0 or WS_TABLE[data[xref_pos - 1]]):
-                return xref_pos
-
-        xref_type_pos = data.rfind(b"XRef")
-        if xref_type_pos >= 0:
-            object_marker = find_previous_object_marker(data, xref_type_pos)
-            if object_marker is not None:
-                return object_marker
+        for candidate in XRefScanner.find_nearby_sections(data, eof_pos, window=len(data)):
+            if candidate >= eof_pos:
+                continue
+            try:
+                XRefScanner.parse_section_at(data, candidate)
+            except PdfParseError:
+                continue
+            return candidate
 
         return None
 
     @staticmethod
     def find_nearby_section(data: PdfByteBuffer, start: int, window: int = 1024) -> int | None:
+        candidates = XRefScanner.find_nearby_sections(data, start, window)
+        return candidates[0] if candidates else None
+
+    @staticmethod
+    def find_nearby_sections(data: PdfByteBuffer, start: int, window: int = 1024) -> list[int]:
         n = len(data)
         if start < 0:
-            return None
+            return []
         search_start = max(0, start - window)
         search_end = min(n, start + window)
 
-        best_pos: int | None = None
-        best_distance = window + 1
-        for marker in find_all_bytes(data[search_start:search_end], b"xref"):
-            pos = search_start + marker
+        candidates: set[int] = set()
+        pos = data.find(b"xref", search_start, search_end)
+        while pos >= 0:
             if pos > 0 and not WS_TABLE[data[pos - 1]]:
+                pos = data.find(b"xref", pos + 1, search_end)
                 continue
             after = pos + 4
-            if after < n and not WS_TABLE[data[after]]:
-                continue
-            distance = abs(pos - start)
-            if distance < best_distance:
-                best_pos = pos
-                best_distance = distance
+            if after >= n or WS_TABLE[data[after]]:
+                candidates.add(pos)
+            pos = data.find(b"xref", pos + 1, search_end)
 
         type_pos = data.find(b"/Type", search_start, search_end)
         while type_pos >= 0:
@@ -227,13 +232,10 @@ class XRefScanner:
             if xref_pos >= 0:
                 object_marker = find_previous_object_marker(data, type_pos)
                 if object_marker is not None:
-                    distance = abs(object_marker - start)
-                    if distance < best_distance:
-                        best_pos = object_marker
-                        best_distance = distance
+                    candidates.add(object_marker)
             type_pos = data.find(b"/Type", type_pos + 5, search_end)
 
-        return best_pos
+        return sorted(candidates, key=lambda candidate: (abs(candidate - start), candidate))
 
     @staticmethod
     def skip_ws(data: PdfByteBuffer, pos: int) -> int:
@@ -244,11 +246,13 @@ class XRefScanner:
         return pos
 
     @staticmethod
-    def skip_ignored(data: PdfByteBuffer, pos: int) -> int:
+    def skip_ignored(data: PdfByteBuffer, pos: int, stop: int | None = None) -> int:
         n = len(data)
         while pos < n:
             while pos < n and WS_TABLE[data[pos]]:
                 pos += 1
+            if pos == stop:
+                return pos
             if data[pos : pos + 5] == b"%%EOF":
                 return pos
             if pos >= n or data[pos] != 37:
@@ -302,6 +306,8 @@ class XRefScanner:
                 break
             if b_line.lstrip().startswith(b"<<"):
                 break
+            if 11 in b_line:
+                raise PdfParseError("invalid xref table subsection")
             parts = b_line.strip().split()
             if not parts:
                 pos = next_pos
@@ -418,12 +424,20 @@ class XRefScanner:
                 entries, current_trailer, prev, xrefstm = XRefScanner.parse_section_at(
                     data, section_start
                 )
-            except PdfParseError:
-                nearby = XRefScanner.find_nearby_section(data, section_start)
-                if nearby is None or nearby in seen:
-                    raise
-                seen.add(nearby)
-                entries, current_trailer, prev, xrefstm = XRefScanner.parse_section_at(data, nearby)
+            except PdfParseError as original_error:
+                recovered = None
+                for nearby in XRefScanner.find_nearby_sections(data, section_start):
+                    if nearby in seen:
+                        continue
+                    try:
+                        recovered = XRefScanner.parse_section_at(data, nearby)
+                    except PdfParseError:
+                        continue
+                    seen.add(nearby)
+                    break
+                if recovered is None:
+                    raise original_error
+                entries, current_trailer, prev, xrefstm = recovered
             if trailer is None:
                 trailer = current_trailer
             if prev is not None and prev < 0:
@@ -530,29 +544,51 @@ class XRefScanner:
 
     @staticmethod
     def parse_xref_stream_salvage(data: PdfByteBuffer, pos: int) -> PdfStream | None:
-        obj_end = data.find(b"endobj", pos)
-        stream_pos = data.find(b"stream", pos, obj_end if obj_end >= 0 else len(data))
-        if obj_end < 0 or stream_pos < 0:
+        lexer = PdfLexer(data)
+        header_marker = data.find(b"obj", pos, min(len(data), pos + 64))
+        if header_marker < 0:
             return None
-        header = data[pos:stream_pos]
-        if b"/Type/XRef" not in header and b"/Type /XRef" not in header:
+        parsed_header = parse_object_marker_prefix(data, header_marker)
+        if parsed_header is None or parsed_header[0] != pos:
             return None
-        dict_obj: PdfDict = {}
-        dict_start = header.find(b"<<")
-        if dict_start >= 0:
-            lexer = PdfLexer(header)
-            lexer.pos = dict_start
-            try:
-                parsed = lexer.parse_dictionary()
-            except PdfParseError:
-                parsed = {}
-            if isinstance(parsed, dict):
-                dict_obj = typing.cast(PdfDict, parsed)
-        raw_data = data[stream_pos + len(b"stream") :]
-        endstream = raw_data.find(b"endstream")
-        if endstream >= 0:
-            raw_data = raw_data[:endstream]
-        raw_data = raw_data.strip(b"\r\n")
+        lexer.pos = header_marker + 3
+        lexer.skip_ignored()
+        dict_start = lexer.pos
+        if data[dict_start : dict_start + 2] != b"<<":
+            return None
+        lexer.pos = dict_start
+        try:
+            dict_obj = typing.cast(PdfDict, lexer.parse_dictionary())
+        except PdfParseError:
+            return None
+        if normalize_pdf_name(lookup_dict_key(dict_obj, "Type")) != "XRef":
+            return None
+
+        lexer.skip_ignored()
+        stream_pos = lexer.pos
+        if data[stream_pos : stream_pos + 6] != b"stream":
+            return None
+        after_stream = stream_pos + 6
+        if after_stream >= len(data) or not WS_TABLE[data[after_stream]]:
+            return None
+        if after_stream < len(data) and data[after_stream] not in (10, 13):
+            while after_stream < len(data) and data[after_stream] in (0, 9, 12, 32):
+                after_stream += 1
+        lexer.pos = after_stream
+        lexer.skip_eol()
+        data_start = lexer.pos
+
+        length = lookup_dict_key(dict_obj, "Length")
+        if type(length) is int and length >= 0 and data_start + length <= len(data):
+            data_end = data_start + length
+            if lexer.find_object_end(data_end) < 0:
+                return None
+            raw_data = data[data_start:data_end]
+        else:
+            endstream = lexer.find_stream_end(data_start)
+            if endstream < data_start or lexer.find_object_end(endstream + 9) < 0:
+                return None
+            raw_data = data[data_start:endstream]
         decoded_data = None
         filter_name = normalize_pdf_name(lookup_dict_key(dict_obj, "Filter"))
         if filter_name == "FlateDecode":
@@ -578,20 +614,48 @@ class XRefScanner:
     @staticmethod
     def brute_force_scan(data: PdfByteBuffer, max_entries: int = 100000) -> XRefTable:
         entries: XRefTable = {}
-        for offset, obj_num, gen_num in iter_object_markers(data):
+        parsed_streams: dict[int, tuple[int, PdfStream]] = {}
+        lexer = PdfLexer(data)
+        search_pos = 0
+        while search_pos < len(data):
             if len(entries) >= max_entries:
                 break
-            try:
-                if obj_num < 10000000:
-                    entries[key_for(obj_num, gen_num)] = PdfXRefEntry(offset, gen_num, True)
-            except (ValueError, IndexError):
+            marker = data.find(b"obj", search_pos)
+            if marker < 0:
+                break
+            search_pos = marker + 3
+            parsed_header = parse_object_marker_prefix(data, marker)
+            if parsed_header is None:
                 continue
-        XRefScanner.recover_object_stream_entries(data, entries, max_entries)
+            offset, obj_num, gen_num = parsed_header
+            lexer.rewind(offset)
+            try:
+                obj = lexer.parse_indirect_object()
+            except Exception:
+                continue
+            if lexer.pos >= 6 and data[lexer.pos - 6 : lexer.pos] == b"endobj":
+                search_pos = max(search_pos, lexer.pos)
+            if obj_num >= 10000000:
+                continue
+            key = key_for(obj_num, gen_num)
+            entries[key] = PdfXRefEntry(offset, gen_num, True)
+            if isinstance(obj, PdfStream):
+                parsed_streams[key] = (offset, obj)
+        XRefScanner.recover_object_stream_entries(
+            data,
+            entries,
+            max_entries,
+            parsed_streams=parsed_streams,
+        )
         return entries
 
     @staticmethod
     def recover_object_stream_entries(
-        data: PdfByteBuffer, entries: XRefTable, max_entries: int = 100000
+        data: PdfByteBuffer,
+        entries: XRefTable,
+        max_entries: int = 100000,
+        *,
+        parsed_streams: dict[int, tuple[int, PdfStream]] | None = None,
     ) -> None:
         lexer = PdfLexer(data)
         for key, entry in list(entries.items()):
@@ -601,11 +665,17 @@ class XRefScanner:
                 continue
             obj_num = key >> 16
             gen_num = key & 0xFFFF
-            lexer.rewind(entry.offset)
-            try:
-                obj = lexer.parse_indirect_object()
-            except Exception:
-                continue
+            if parsed_streams is not None:
+                parsed = parsed_streams.get(key)
+                if parsed is None or parsed[0] != entry.offset:
+                    continue
+                obj = parsed[1]
+            else:
+                lexer.rewind(entry.offset)
+                try:
+                    obj = lexer.parse_indirect_object()
+                except Exception:
+                    continue
             if not isinstance(obj, PdfStream):
                 continue
             dictionary = obj.dictionary
@@ -648,10 +718,26 @@ def find_all_bytes(data: PdfByteBuffer, needle: bytes) -> list[int]:
 
 
 def find_eof_marker(data: PdfByteBuffer) -> int:
-    eof_pos = data.rfind(b"%%EOF")
-    if eof_pos >= 0:
-        return eof_pos
-    for marker in reversed(find_all_bytes(data, b"%")):
+    def is_delimited(marker: int) -> bool:
+        before_ok = marker == 0 or data[marker - 1] in (10, 13)
+        after = marker + 5
+        after_ok = after >= len(data) or bool(WS_TABLE[data[after]])
+        return before_ok and after_ok
+
+    raw_exact = data.rfind(b"%%EOF")
+    exact = raw_exact
+    while exact >= 0:
+        if is_delimited(exact):
+            return exact
+        exact = data.rfind(b"%%EOF", 0, exact)
+
+    search_end = len(data)
+    raw_recovered = -1
+    while True:
+        marker = data.rfind(b"%", 0, search_end)
+        if marker < 0:
+            return raw_exact if raw_exact >= 0 else raw_recovered
+        search_end = marker
         if marker + 5 > len(data):
             continue
         if data[marker : marker + 2] != b"%%":
@@ -659,8 +745,10 @@ def find_eof_marker(data: PdfByteBuffer) -> int:
         token = data[marker + 2 : marker + 5]
         mismatches = sum(1 for actual, expected in zip(token, b"EOF") if actual != expected)
         if mismatches == 1:
-            return marker
-    return -1
+            if raw_recovered < 0:
+                raw_recovered = marker
+            if is_delimited(marker):
+                return marker
 
 
 def iter_object_markers(
@@ -681,10 +769,15 @@ def iter_object_markers(
 
 
 def find_previous_object_marker(data: PdfByteBuffer, before: int) -> int | None:
-    found: int | None = None
-    for offset, ignored, ignored in iter_object_markers(data, 0, before):
-        found = offset
-    return found
+    search_end = min(before, len(data))
+    while True:
+        marker = data.rfind(b"obj", 0, search_end)
+        if marker < 0:
+            return None
+        parsed = parse_object_marker_prefix(data, marker)
+        if parsed is not None:
+            return parsed[0]
+        search_end = marker
 
 
 def parse_object_marker_prefix(data: PdfByteBuffer, marker: int) -> tuple[int, int, int] | None:

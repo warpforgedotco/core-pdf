@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import cast
 
 from core_pdf.impl.engine.extraction.common import page_geometry
@@ -159,8 +159,8 @@ def iterator_text_result_from_existing_result(
     min_confidence: int = 0,
 ) -> OcrTextResult:
     if not result.line_rows:
-        return OcrTextResult("", None)
-    return iterator_layout_text_result(
+        return OcrTextResult("", None, deskew_info=result.deskew_info)
+    converted = iterator_layout_text_result(
         OcrIteratorLayout(
             list(result.line_rows),
             list(result.word_rows),
@@ -168,12 +168,13 @@ def iterator_text_result_from_existing_result(
         ),
         min_confidence=min_confidence,
     )
+    return replace(converted, deskew_info=result.deskew_info)
 
 
 def reconciled_iterator_text_result_from_existing_result(
     result: OcrTextResult,
 ) -> OcrTextResult:
-    return reconciled_iterator_layout_text_result(
+    reconciled = reconciled_iterator_layout_text_result(
         OcrIteratorLayout(
             list(result.line_rows),
             list(result.word_rows),
@@ -182,6 +183,7 @@ def reconciled_iterator_text_result_from_existing_result(
             result.confidence,
         )
     )
+    return replace(reconciled, deskew_info=result.deskew_info)
 
 
 def iterator_layout_text_result(

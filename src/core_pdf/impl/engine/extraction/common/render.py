@@ -20,7 +20,7 @@ from core_pdf.impl.engine.extraction.common.ordering import (
 )
 from core_pdf.impl.engine.extraction.ocr.text_analysis import normalized_text_tokens
 from core_pdf.impl.engine.layout.models import LayoutBox, LayoutLine, TextRun
-from core_pdf.impl.engine.layout.text_lines import strip_private_use_chars
+from core_pdf.impl.engine.layout.text_lines import LayoutLineTextSegment, strip_private_use_chars
 from core_pdf.impl.engine.layout.word_frequencies import word_rank
 
 
@@ -964,35 +964,33 @@ def layout_line_to_resolved_text_line(
 
 
 def layout_segment_observation(
-    segment: Any,
+    segment: LayoutLineTextSegment,
     *,
     segment_index: int,
 ) -> page_geometry.PageObservation | None:
-    bbox = page_geometry.normalize_rect(getattr(segment, "bbox", None))
+    bbox = page_geometry.normalize_rect(segment.bbox)
     if not page_geometry.valid_rect(bbox):
         return None
-    advance_bbox = page_geometry.normalize_rect(getattr(segment, "advance_bbox", None))
-    ink_bbox = page_geometry.normalize_rect(getattr(segment, "ink_bbox", None))
+    advance_bbox = page_geometry.normalize_rect(segment.advance_bbox)
+    ink_bbox = page_geometry.normalize_rect(segment.ink_bbox)
     return page_geometry.PageObservation(
         kind="native_line_segment",
         source="native_text",
         bbox=bbox,
         advance_bbox=advance_bbox,
         ink_bbox=ink_bbox,
-        confidence=getattr(segment, "confidence", None),
-        text=str(getattr(segment, "text", "")),
-        baseline=page_geometry.normalize_segment(getattr(segment, "baseline", None)),
+        confidence=segment.confidence,
+        text=segment.text,
+        baseline=segment.baseline,
         provenance=(
-            *getattr(segment, "provenance", ()),
-            *page_geometry.provenance_tuple(
-                object_type=type(segment).__name__,
-                segment_index=segment_index,
-                spacing_decision=getattr(segment, "spacing_decision", None),
-                separator_before=getattr(segment, "separator_before", None),
-                writing_mode=getattr(segment, "writing_mode", None),
-                rotation_angle=getattr(segment, "rotation_angle", None),
-                visible=getattr(segment, "visible", None),
-            ),
+            *segment.provenance,
+            ("object_type", "LayoutLineTextSegment"),
+            ("segment_index", segment_index),
+            ("spacing_decision", segment.spacing_decision),
+            ("separator_before", segment.separator_before),
+            ("writing_mode", segment.writing_mode),
+            ("rotation_angle", segment.rotation_angle),
+            ("visible", segment.visible),
         ),
     )
 

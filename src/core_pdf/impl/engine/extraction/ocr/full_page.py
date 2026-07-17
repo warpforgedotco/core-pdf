@@ -777,7 +777,11 @@ def iterator_symbol_supplement_candidate(
         ]
         if comparable_confidences:
             confidence = min(confidence, max(comparable_confidences) + 3)
-    return OcrTextResult(symbol_result.text, confidence)
+    return OcrTextResult(
+        symbol_result.text,
+        confidence,
+        deskew_info=symbol_result.deskew_info,
+    )
 
 
 def select_rendered_sparse_layout_result(

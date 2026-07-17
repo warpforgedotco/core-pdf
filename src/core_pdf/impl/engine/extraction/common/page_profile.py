@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from core_pdf.impl.engine.extraction.cache import ExtractionCache
+from core_pdf.impl.engine.spec.s_07_content.inline_images import parse_inline_image
 from core_pdf.impl.engine.spec.s_07_content.operations import (
     content_stream_may_show_text,
 )
@@ -16,6 +17,17 @@ from core_pdf.impl.engine.spec.s_07_objects.coercion import (
     normalize_pdf_name,
 )
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
+from core_pdf.impl.engine.spec.s_07_syntax.lexer_helpers import (
+    full_source_bytes,
+    skip_pdf_ignored,
+)
+from core_pdf.impl.engine.spec.s_07_syntax.scanning import (
+    skip_hex_string,
+    skip_literal_string,
+    skip_name,
+)
+from core_pdf.impl.engine.spec.s_07_syntax.tokens import SEPARATOR_TABLE, WS_TABLE
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.objects import PdfStream
 from core_pdf.impl.types import PdfDict
@@ -296,12 +308,9 @@ def content_operator_counts(
     may_show_text: bool | None = None,
 ) -> dict[str, int]:
     data_len = len(data)
-    raw_source = data.obj if type(data) is memoryview else data
     raw_bytes: bytes | memoryview
-    if type(raw_source) is bytes and len(raw_source) == data_len:
-        raw_bytes = raw_source
-    else:
-        raw_bytes = data
+    source_bytes = full_source_bytes(data)
+    raw_bytes = source_bytes if source_bytes is not None else data
 
     inline_image_possible = True
     if profile_thresholds and type(raw_bytes) is bytes:
@@ -312,30 +321,46 @@ def content_operator_counts(
 
     counts: dict[str, int] = {}
     path_ops = 0
+    inline_image_lexer: PdfLexer | None = None
+    container_depth = 0
     pos = 0
+    separator_table = SEPARATOR_TABLE
     while pos < data_len:
         byte = raw_bytes[pos]
-        if byte <= 32 or byte == 37:
-            if byte == 37:
-                pos = skip_comment(raw_bytes, pos, data_len)
-            else:
-                pos += 1
+        if WS_TABLE[byte] or byte == 37:
+            pos = skip_pdf_ignored(raw_bytes, pos, data_len)
             continue
         if byte == 40:
             pos = skip_literal_string(raw_bytes, pos, data_len)
             continue
         if byte == 60:
             if pos + 1 < data_len and raw_bytes[pos + 1] == 60:
+                container_depth += 1
                 pos += 2
             else:
                 pos = skip_hex_string(raw_bytes, pos, data_len)
             continue
-        if byte in (41, 62, 91, 93, 123, 125, 47):
+        if byte == 62 and pos + 1 < data_len and raw_bytes[pos + 1] == 62:
+            container_depth = max(0, container_depth - 1)
+            pos += 2
+            continue
+        if byte == 91:
+            container_depth += 1
+            pos += 1
+            continue
+        if byte == 93:
+            container_depth = max(0, container_depth - 1)
+            pos += 1
+            continue
+        if byte == 47:
+            pos = skip_name(raw_bytes, pos, data_len)
+            continue
+        if byte in (41, 62, 91, 93, 123, 125):
             pos += 1
             continue
 
         start = pos
-        while pos < data_len and is_regular_token_byte(raw_bytes[pos]):
+        while pos < data_len and not separator_table[raw_bytes[pos]]:
             pos += 1
         if start == pos:
             pos += 1
@@ -347,7 +372,8 @@ def content_operator_counts(
             continue
         token_len = pos - start
         if (
-            token_len <= MAX_COUNTED_CONTENT_OP_BYTES
+            container_depth == 0
+            and token_len <= MAX_COUNTED_CONTENT_OP_BYTES
             and raw_bytes[start] in COUNTED_CONTENT_OP_STARTS
         ):
             op = COUNTED_CONTENT_OP_BYTES.get(bytes(raw_bytes[start:pos]))
@@ -358,6 +384,16 @@ def content_operator_counts(
                         counts[op] = counts.get(op, 0) + 1
                 else:
                     counts.setdefault(op, 1)
+                if op == "BI":
+                    if inline_image_lexer is None:
+                        inline_image_lexer = PdfLexer(raw_bytes)
+                    inline_image_lexer.pos = pos
+                    try:
+                        parse_inline_image(inline_image_lexer)
+                    except PdfParseError:
+                        pass
+                    else:
+                        pos = inline_image_lexer.pos
         if (
             profile_thresholds
             and path_ops >= 12
@@ -366,42 +402,6 @@ def content_operator_counts(
         ):
             break
     return counts
-
-
-def skip_comment(data: bytes | memoryview, pos: int, data_len: int) -> int:
-    pos += 1
-    while pos < data_len and data[pos] not in (10, 13):
-        pos += 1
-    return pos
-
-
-def skip_literal_string(data: bytes | memoryview, pos: int, data_len: int) -> int:
-    pos += 1
-    depth = 1
-    while pos < data_len and depth:
-        byte = data[pos]
-        if byte == 92:
-            pos += 2
-            continue
-        if byte == 40:
-            depth += 1
-        elif byte == 41:
-            depth -= 1
-        pos += 1
-    return pos
-
-
-def skip_hex_string(data: bytes | memoryview, pos: int, data_len: int) -> int:
-    pos += 1
-    while pos < data_len:
-        if data[pos] == 62:
-            return pos + 1
-        pos += 1
-    return pos
-
-
-def is_regular_token_byte(byte: int) -> bool:
-    return byte > 32 and byte not in (37, 40, 41, 47, 60, 62, 91, 93, 123, 125)
 
 
 def page_resource_profile(page: PageProfileHost) -> ResourceProfile:

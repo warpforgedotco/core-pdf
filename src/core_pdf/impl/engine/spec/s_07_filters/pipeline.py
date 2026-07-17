@@ -42,6 +42,9 @@ from core_pdf.impl.engine.spec.s_07_filters.decoders import (
 from core_pdf.impl.engine.spec.s_07_filters.decoders import (
     decode_jpx as decode_jpx,
 )
+from core_pdf.impl.engine.spec.s_07_filters.decoders import (
+    jpx_parent_uses_explicit_colorspace,
+)
 from core_pdf.impl.engine.spec.s_07_filters.flate import (
     apply_flate as apply_flate,
 )
@@ -51,6 +54,7 @@ from core_pdf.impl.engine.spec.s_07_filters.flate import (
 from core_pdf.impl.engine.spec.s_07_filters.predictors import (
     apply_predictor as apply_predictor,
 )
+from core_pdf.impl.engine.spec.s_07_syntax.lexer_helpers import full_source_bytes
 from core_pdf.impl.exceptions import PdfParseError, PdfUnsupportedError
 
 FILTER_MAP: dict[str, FilterFn] = {
@@ -94,12 +98,14 @@ def expensive_decode_cache_key(
     data: bytes,
     filters: typing.Sequence[str],
     params: typing.Sequence[object],
+    context: object = None,
 ) -> tuple[object, ...]:
     return (
         id(data),
         len(data),
         tuple(filters),
         repr(params),
+        context,
     )
 
 
@@ -142,7 +148,8 @@ def decode_stream_data(
     parent_dictionary: object | None = None,
 ) -> bytes:
     if type(data) is memoryview:
-        data = data.tobytes()
+        source_bytes = full_source_bytes(data)
+        data = source_bytes if source_bytes is not None else data.tobytes()
     if dictionary is None:
         return data
     if isinstance(dictionary, StreamDecodeSpec):
@@ -154,8 +161,12 @@ def decode_stream_data(
         normalized_parms = spec.params
     if normalized_parms and len(normalized_parms) != len(filters):
         raise PdfParseError("invalid stream decode parameters")
+    parent_context = parent_dictionary if parent_dictionary is not None else dictionary
+    cache_context = (
+        jpx_parent_uses_explicit_colorspace(parent_context) if "JPXDecode" in filters else None
+    )
     decode_cache_key = (
-        expensive_decode_cache_key(data, filters, normalized_parms)
+        expensive_decode_cache_key(data, filters, normalized_parms, cache_context)
         if EXPENSIVE_DECODE_CACHE_FILTERS.intersection(filters)
         else None
     )

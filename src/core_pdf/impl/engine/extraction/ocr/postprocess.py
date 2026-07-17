@@ -56,6 +56,7 @@ OCR_ARTIFACT_PRUNABLE_SOURCE_PREFIXES = (
 )
 OCR_ARTIFACT_EDGE_PUNCTUATION = "-‐‑‒–—−_"
 DOCUMENT_LOCAL_TOKEN_EDGE_CHARS = "\"'“”‘’«»()[]{}<>.,;:!?"
+TITLECASE_PHRASE_LEAD_WORDS = frozenset({"A", "All", "An", "That", "The", "This", "You", "Your"})
 _COMPOUND_TOKEN_PART_RE = re.compile(r"[A-Z]+(?=[A-Z][a-z]|$)|[A-Z]?[a-z]+|\d+")
 _DOCUMENT_LOCAL_TOKEN_FRAGMENT_RE = re.compile(r"[A-Za-z0-9*_-]+")
 OCR_EDGE_NOISE_PUNCTUATION = "\"'“”‘’`~_=|¦¬^°•·.,;:!?()[]{}<>/\\+-@%$"
@@ -491,10 +492,16 @@ def repair_document_local_identifier_text(
     text: str,
     *,
     support_texts: Iterable[str] = (),
+    normalize_ocr_noise: bool = True,
 ) -> str:
     context = document_local_token_repair_context((text,), support_texts=support_texts)
     return "\n".join(
-        repair_document_local_identifier_line_text(line, context) for line in text.splitlines()
+        repair_document_local_identifier_line_text(
+            line,
+            context,
+            normalize_ocr_noise=normalize_ocr_noise,
+        )
+        for line in text.splitlines()
     )
 
 
@@ -582,9 +589,13 @@ def split_compound_token_part(token: str) -> list[str]:
 def repair_document_local_identifier_line_text(
     text: str,
     context: DocumentLocalTokenRepairContext,
+    *,
+    normalize_ocr_noise: bool = True,
 ) -> str:
-    repaired = normalize_generic_ocr_line_text(text)
-    repaired = intrinsic_identifier_spacing(repaired)
+    if normalize_ocr_noise:
+        repaired = intrinsic_identifier_spacing(normalize_generic_ocr_line_text(text))
+    else:
+        repaired = text
     for spaced, display in context.replacements:
         spaced_pattern = re.escape(spaced).replace(r"\ ", r"[ \t]+")
         pattern = re.compile(
@@ -592,7 +603,7 @@ def repair_document_local_identifier_line_text(
             re.IGNORECASE,
         )
         repaired = pattern.sub(display, repaired)
-    return intrinsic_identifier_compaction(repaired)
+    return intrinsic_identifier_compaction(repaired) if normalize_ocr_noise else repaired
 
 
 def normalize_generic_ocr_line_text(text: str) -> str:
@@ -827,7 +838,14 @@ def normalize_precision_first_prize_line_text(text: str) -> str:
     tokens = text.split()
     if len(tokens) < 3:
         return text
-    rank_count = sum(1 for token in tokens if prize_rank_token(token) is not None)
+    rank_count = sum(
+        1
+        for token in tokens
+        if prize_rank_token(token) is not None or prize_rank_one_confusion_token(token) is not None
+    )
+    explicit_amount_count = sum(
+        1 for token in tokens if prize_amount_token(token) is not None or token.startswith("$")
+    )
     amount_count = sum(
         1
         for token in tokens
@@ -835,7 +853,7 @@ def normalize_precision_first_prize_line_text(text: str) -> str:
         or token.startswith("$")
         or prize_numeric_amount_like_token(token)
     )
-    if rank_count == 0 or (rank_count + amount_count) < 3:
+    if rank_count < 2 or explicit_amount_count == 0 or (rank_count + amount_count) < 3:
         return text
     normalized: list[str] = []
     for index, token in enumerate(tokens):
@@ -1020,15 +1038,12 @@ def compact_titlecase_identifier_pair(match: re.Match[str]) -> str:
     right = match.group(2)
     if min(len(left), len(right)) >= 4:
         return match.group(0)
+    if titlecase_phrase_lead_word(left):
+        return match.group(0)
     if short_titlecase_pair_should_stay_split(left, right):
         return match.group(0)
-    if (
-        titlecase_phrase_lead_word(left)
-        and titlecase_compound_common_word(right)
-        or not (
-            titlecase_token_fragment_is_uncommon(left)
-            or titlecase_token_fragment_is_uncommon(right)
-        )
+    if not (
+        titlecase_token_fragment_is_uncommon(left) or titlecase_token_fragment_is_uncommon(right)
     ):
         return match.group(0)
     return f"{left}{right}"
@@ -1037,7 +1052,7 @@ def compact_titlecase_identifier_pair(match: re.Match[str]) -> str:
 def compact_contextual_short_titlecase_pair(match: re.Match[str]) -> str:
     left = match.group(1)
     right = match.group(2)
-    if titlecase_phrase_lead_word(left) and titlecase_compound_common_word(right):
+    if titlecase_phrase_lead_word(left):
         return match.group(0)
     if not (
         titlecase_token_fragment_is_uncommon(left) or titlecase_token_fragment_is_uncommon(right)
@@ -1098,6 +1113,8 @@ def compact_short_titlecase_acronym_pair(match: re.Match[str]) -> str:
 
 
 def short_titlecase_prefix_is_identifier_fragment(token: str) -> bool:
+    if titlecase_phrase_lead_word(token):
+        return False
     if len(token) <= 2:
         return True
     rank = word_rank(token.casefold())
@@ -1121,7 +1138,7 @@ def titlecase_compound_common_word(token: str) -> bool:
 
 
 def titlecase_phrase_lead_word(token: str) -> bool:
-    return token in {"All"}
+    return token in TITLECASE_PHRASE_LEAD_WORDS
 
 
 def short_titlecase_pair_should_stay_split(left: str, right: str) -> bool:
