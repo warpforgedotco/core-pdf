@@ -26,7 +26,6 @@ from core_pdf.integrations.pdfminer.six.utils import (
     fsplit,
     get_bound,
     matrix2str,
-    uniq,
 )
 
 logger = logging.getLogger(__name__)
@@ -791,31 +790,42 @@ class LTLayoutContainer(LTContainer[LTComponent]):
         """Group neighboring lines to textboxes"""
         plane: Plane[LTTextLine] = Plane(self.bbox)
         plane.extend(lines)
-        boxes: dict[LTTextLine, LTTextBox] = {}
+        owners: dict[LTTextLine, LTTextLine] = {}
+        component_orders: dict[LTTextLine, list[LTTextLine]] = {}
         line_margin = laparams.line_margin
         for line in lines:
             neighbors = line.find_neighbors(plane, line_margin)
             members = [line]
-            for obj1 in neighbors:
-                members.append(obj1)
-                previous_box = boxes.pop(obj1, None)
-                if previous_box is not None:
-                    members.extend(previous_box)
+            seen = {line}
+            expanded_components: set[LTTextLine] = set()
+            for neighbor in neighbors:
+                if neighbor not in seen:
+                    seen.add(neighbor)
+                    members.append(neighbor)
+                owner = owners.get(neighbor)
+                if owner is None or owner in expanded_components:
+                    continue
+                expanded_components.add(owner)
+                for member in component_orders[owner]:
+                    if member not in seen:
+                        seen.add(member)
+                        members.append(member)
+            component_orders[line] = members
+            for member in members:
+                owners[member] = line
+
+        done = set()
+        for line in lines:
+            owner = owners[line]
+            if owner in done:
+                continue
+            done.add(owner)
             if isinstance(line, LTTextLineHorizontal):
                 box: LTTextBox = LTTextBoxHorizontal()
             else:
                 box = LTTextBoxVertical()
-            for obj in uniq(members):
-                box.add(obj)
-                boxes[obj] = box
-        done = set()
-        for line in lines:
-            if line not in boxes:
-                continue
-            box = boxes[line]
-            if box in done:
-                continue
-            done.add(box)
+            for member in component_orders[owner]:
+                box.add(member)
             if not box.is_empty():
                 yield box
 
