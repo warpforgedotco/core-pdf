@@ -568,7 +568,7 @@ class PdfLexer:
                     self.pos = end_array + 1
                     return []
                 payload = source_buffer[start_pos + 1 : end_array]
-                if b"%" not in payload and b"[" not in payload:
+                if b"%" not in payload and b"[" not in payload and b"\v" not in payload:
                     tokens = payload.split()
                     if tokens and (
                         tokens[-1] == b"R"

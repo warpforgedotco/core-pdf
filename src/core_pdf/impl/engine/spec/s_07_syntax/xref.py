@@ -49,6 +49,8 @@ def key_for(obj_num: int, gen_num: int = 0) -> int:
 
 
 def parse_xref_entry_line(line: bytes) -> tuple[int, int, bool]:
+    if 11 in line:
+        raise PdfParseError("invalid xref table entry")
     n = len(line)
     if n >= 18:
         marker = line[17]
@@ -162,7 +164,7 @@ class XRefScanner:
 
             pos = XRefScanner.skip_ws(data, marker + 9)
             startxref_number_bytes, ignored = XRefScanner.read_line(data, pos)
-            if not startxref_number_bytes:
+            if not startxref_number_bytes or 11 in startxref_number_bytes:
                 continue
 
             number_end = pos + len(startxref_number_bytes)
@@ -304,6 +306,8 @@ class XRefScanner:
                 break
             if b_line.lstrip().startswith(b"<<"):
                 break
+            if 11 in b_line:
+                raise PdfParseError("invalid xref table subsection")
             parts = b_line.strip().split()
             if not parts:
                 pos = next_pos

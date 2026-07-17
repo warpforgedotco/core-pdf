@@ -8,7 +8,9 @@ from core_pdf.impl.engine.spec.s_07_syntax.xref import (
     find_eof_marker,
     find_previous_object_marker,
     key_for,
+    parse_xref_entry_line,
 )
+from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.primitives import PdfName
 
 
@@ -100,6 +102,24 @@ def test_find_startxref_fallback_skips_trailing_false_section() -> None:
     data = b"%PDF-1.7\n" + valid + false_section
 
     assert XRefScanner.find_startxref(data) == data.index(valid)
+
+
+def test_find_startxref_rejects_vertical_tab_whitespace() -> None:
+    data = b"%PDF-1.7\nstartxref\n\v123\n%%EOF\n"
+
+    assert XRefScanner.find_startxref(data) is None
+
+
+def test_xref_entry_rejects_vertical_tab_separators() -> None:
+    with pytest.raises(PdfParseError, match="invalid xref table entry"):
+        parse_xref_entry_line(b"0000000000\v65535\vf")
+
+
+def test_xref_subsection_rejects_vertical_tab_separators() -> None:
+    data = b"xref\n0\v1\n0000000000 65535 f \ntrailer\n<< /Size 1 >>"
+
+    with pytest.raises(PdfParseError, match="invalid xref table subsection"):
+        XRefScanner.parse_section_at(data, 0)
 
 
 def test_find_previous_object_marker_returns_last_valid_object() -> None:

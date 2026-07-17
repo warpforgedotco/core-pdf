@@ -32,6 +32,17 @@ def test_find_separator_returns_data_length_without_separator(
     assert lexer.find_separator(8) == len(data)
 
 
+@pytest.mark.parametrize(
+    "data",
+    [
+        b"[1\v2]",
+        memoryview(b"prefix[1\v2]suffix")[len(b"prefix") : -len(b"suffix")],
+    ],
+)
+def test_numeric_array_fast_path_uses_pdf_whitespace(data: bytes | memoryview) -> None:
+    assert PdfLexer(data).parse_object() == ["1\v2"]
+
+
 def test_find_stream_end_prefers_delimited_keyword_over_payload_bytes() -> None:
     data = b"binary-endstream-data\nendstream\nendobj"
     lexer = PdfLexer(data)
