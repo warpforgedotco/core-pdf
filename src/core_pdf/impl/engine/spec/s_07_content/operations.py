@@ -96,7 +96,8 @@ TEXT_CLIP_PREFIX_RE = re.compile(
     b"re[\x00\t\n\f\r ]+W[\x00\t\n\f\r ]+n"
 )
 TEXT_SHOWING_CANDIDATES = (b'"', b"'", b"Tj", b"TJ", b"Do")
-TEXT_OR_LEXICAL_MARKER_RE = re.compile(rb"""[%(/<"']|T[jJ]|Do|BI""")
+TEXT_OR_LEXICAL_MARKER_RE = re.compile(rb"""[%(/<>\[\]"']|T[jJ]|Do|BI""")
+CONTAINER_LEXICAL_MARKER_RE = re.compile(rb"[%(<>\[\]]")
 
 
 def content_stream_may_show_text(data: bytes | memoryview) -> bool:
@@ -112,8 +113,11 @@ def content_stream_may_show_text(data: bytes | memoryview) -> bool:
         return False
 
     pos = 0
+    container_depth = 0
     inline_image_lexer: PdfLexer | None = None
-    while match := TEXT_OR_LEXICAL_MARKER_RE.search(raw_bytes, pos):
+    while match := (
+        CONTAINER_LEXICAL_MARKER_RE if container_depth else TEXT_OR_LEXICAL_MARKER_RE
+    ).search(raw_bytes, pos):
         marker = match.start()
         token = match.group()
         if token == b"%":
@@ -124,9 +128,25 @@ def content_stream_may_show_text(data: bytes | memoryview) -> bool:
             continue
         if token == b"<":
             if marker + 1 < data_len and raw_bytes[marker + 1] == 60:
+                container_depth += 1
                 pos = marker + 2
             else:
                 pos = skip_hex_string(raw_bytes, marker, data_len)
+            continue
+        if token == b">":
+            if marker + 1 < data_len and raw_bytes[marker + 1] == 62:
+                container_depth = max(0, container_depth - 1)
+                pos = marker + 2
+            else:
+                pos = marker + 1
+            continue
+        if token == b"[":
+            container_depth += 1
+            pos = marker + 1
+            continue
+        if token == b"]":
+            container_depth = max(0, container_depth - 1)
+            pos = marker + 1
             continue
         if token == b"/":
             pos = skip_name(raw_bytes, marker, data_len)
@@ -138,8 +158,11 @@ def content_stream_may_show_text(data: bytes | memoryview) -> bool:
         if not delimited:
             pos = marker + 1
             continue
-        if token != b"BI":
+        if token != b"BI" and container_depth == 0:
             return True
+        if container_depth:
+            pos = after
+            continue
         if inline_image_lexer is None:
             inline_image_lexer = PdfLexer(raw_bytes)
         inline_image_lexer.pos = after

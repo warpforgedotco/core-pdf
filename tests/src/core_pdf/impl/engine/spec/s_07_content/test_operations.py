@@ -13,6 +13,8 @@ from core_pdf.impl.engine.spec.s_07_content.operations import content_stream_may
         b"<546a 544a 446f>",
         b"% Tj TJ Do ' \\\"\nq Q",
         b"/Tj /TJ /Do /' /\\\" gs",
+        b"[Tj TJ Do ' \\\"] q Q",
+        b"<< /Text Tj /XObject Do /Quote ' >> q Q",
         b"prefixTjsuffix prefixDosuffix",
         b"BI /F /A85 ID Tj TJ Do ' \\\"~>\nEI Q",
     ],
@@ -40,3 +42,7 @@ def test_content_stream_may_show_text_supports_sliced_memoryview() -> None:
     data = memoryview(b"prefix" + content + b"suffix")[len(b"prefix") : -len(b"suffix")]
 
     assert not content_stream_may_show_text(data)
+
+
+def test_content_stream_may_show_text_finds_operator_after_container() -> None:
+    assert content_stream_may_show_text(b"[(embedded Tj)] TJ")

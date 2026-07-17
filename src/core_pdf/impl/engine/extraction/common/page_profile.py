@@ -322,6 +322,7 @@ def content_operator_counts(
     counts: dict[str, int] = {}
     path_ops = 0
     inline_image_lexer: PdfLexer | None = None
+    container_depth = 0
     pos = 0
     while pos < data_len:
         byte = raw_bytes[pos]
@@ -336,9 +337,22 @@ def content_operator_counts(
             continue
         if byte == 60:
             if pos + 1 < data_len and raw_bytes[pos + 1] == 60:
+                container_depth += 1
                 pos += 2
             else:
                 pos = skip_hex_string(raw_bytes, pos, data_len)
+            continue
+        if byte == 62 and pos + 1 < data_len and raw_bytes[pos + 1] == 62:
+            container_depth = max(0, container_depth - 1)
+            pos += 2
+            continue
+        if byte == 91:
+            container_depth += 1
+            pos += 1
+            continue
+        if byte == 93:
+            container_depth = max(0, container_depth - 1)
+            pos += 1
             continue
         if byte == 47:
             pos = skip_name(raw_bytes, pos, data_len)
@@ -360,7 +374,8 @@ def content_operator_counts(
             continue
         token_len = pos - start
         if (
-            token_len <= MAX_COUNTED_CONTENT_OP_BYTES
+            container_depth == 0
+            and token_len <= MAX_COUNTED_CONTENT_OP_BYTES
             and raw_bytes[start] in COUNTED_CONTENT_OP_STARTS
         ):
             op = COUNTED_CONTENT_OP_BYTES.get(bytes(raw_bytes[start:pos]))

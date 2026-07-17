@@ -18,3 +18,11 @@ def test_content_operator_counts_skip_operator_like_names() -> None:
     counts = content_operator_counts(data, profile_thresholds=True, may_show_text=False)
 
     assert counts == {"gs": 1}
+
+
+def test_content_operator_counts_skip_operators_inside_containers() -> None:
+    data = b"[Tj m] << /Text TJ /XObject Do >> q"
+
+    counts = content_operator_counts(data, profile_thresholds=True, may_show_text=False)
+
+    assert counts == {"q": 1}
