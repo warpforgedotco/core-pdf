@@ -68,6 +68,7 @@ class PDFLayoutAnalyzer(PDFTextDevice):
         self.pageno = pageno
         self.laparams = laparams
         self._stack: list[LTLayoutContainer] = []
+        self._char_text_cache: dict[PDFFont, dict[int, str]] = {}
 
     def begin_page(self, page: PDFPage, ctm: Matrix) -> None:
         (x0, y0, x1, y1) = apply_matrix_rect(ctm, page.mediabox)
@@ -233,11 +234,17 @@ class PDFLayoutAnalyzer(PDFTextDevice):
         ncs: PDFColorSpace,
         graphicstate: PDFGraphicState,
     ) -> float:
-        try:
-            text = font.to_unichr(cid)
-            assert isinstance(text, str), str(type(text))
-        except PDFUnicodeNotDefined:
-            text = self.handle_undefined_char(font, cid)
+        font_cache = self._char_text_cache.get(font)
+        if font_cache is None:
+            font_cache = self._char_text_cache[font] = {}
+        text = font_cache.get(cid)
+        if text is None:
+            try:
+                text = font.to_unichr(cid)
+                assert isinstance(text, str), str(type(text))
+            except PDFUnicodeNotDefined:
+                text = self.handle_undefined_char(font, cid)
+            font_cache[cid] = text
         textwidth = font.char_width(cid)
         textdisp = font.char_disp(cid)
         item = LTChar(
