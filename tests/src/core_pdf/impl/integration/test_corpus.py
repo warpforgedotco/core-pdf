@@ -44,6 +44,9 @@ SAMPLE_PASSWORDS = {
     "encryption/rc4-128.pdf": "foo",
     "encryption/rc4-40.pdf": "foo",
 }
+FIXED_UPSTREAM_OUTPUTS = {
+    "contrib/issue-1249-evil-xrefs.pdf": "",
+}
 
 
 def sample_id(path: Path) -> str:
@@ -54,6 +57,10 @@ def sample_id(path: Path) -> str:
 def test_extract_text_handles_pdfminer_sample_corpus(pdf_path: Path) -> None:
     sample = sample_id(pdf_path)
     password = SAMPLE_PASSWORDS.get(sample, "")
+    if sample in FIXED_UPSTREAM_OUTPUTS:
+        assert core_pdf_extract_text(pdf_path, password=password) == FIXED_UPSTREAM_OUTPUTS[sample]
+        return
+
     try:
         expected = pdfminer_extract_text(pdf_path, password=password)
     except Exception as expected_error:
