@@ -189,17 +189,14 @@ class XRefScanner:
             except ValueError:
                 continue
 
-        trailer_pos = data.rfind(b"trailer", 0, eof_pos)
-        if trailer_pos >= 0:
-            xref_pos = data.rfind(b"xref", 0, trailer_pos)
-            if xref_pos >= 0 and (xref_pos == 0 or WS_TABLE[data[xref_pos - 1]]):
-                return xref_pos
-
-        xref_type_pos = data.rfind(b"XRef")
-        if xref_type_pos >= 0:
-            object_marker = find_previous_object_marker(data, xref_type_pos)
-            if object_marker is not None:
-                return object_marker
+        for candidate in XRefScanner.find_nearby_sections(data, eof_pos, window=len(data)):
+            if candidate >= eof_pos:
+                continue
+            try:
+                XRefScanner.parse_section_at(data, candidate)
+            except PdfParseError:
+                continue
+            return candidate
 
         return None
 

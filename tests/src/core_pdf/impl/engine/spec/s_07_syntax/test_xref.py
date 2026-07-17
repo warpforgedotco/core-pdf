@@ -94,6 +94,14 @@ def test_find_startxref_accepts_recovered_eof_marker(marker: bytes) -> None:
     assert XRefScanner.find_startxref(data) == 123
 
 
+def test_find_startxref_fallback_skips_trailing_false_section() -> None:
+    valid = b"xref\n0 1\n0000000000 65535 f \ntrailer\n<< /Size 1 >>\n"
+    false_section = b"xref\nnot-an-entry\ntrailer\n<< /Type /XRef >>\n"
+    data = b"%PDF-1.7\n" + valid + false_section
+
+    assert XRefScanner.find_startxref(data) == data.index(valid)
+
+
 def test_find_previous_object_marker_returns_last_valid_object() -> None:
     data = b"1 0 obj\nendobj\nnot-an-object\n27 3 obj\nendobj"
 
