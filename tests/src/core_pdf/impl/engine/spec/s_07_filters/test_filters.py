@@ -9,7 +9,7 @@ from typing import cast
 
 import pytest
 
-from core_pdf.impl.engine.spec.s_07_filters import decoders, predictors
+from core_pdf.impl.engine.spec.s_07_filters import decoders, pipeline, predictors
 from core_pdf.impl.engine.spec.s_07_filters.codecs import apply_ascii85, apply_ascii_hex
 from core_pdf.impl.engine.spec.s_07_filters.decode_spec import FilterParams
 from core_pdf.impl.engine.spec.s_07_filters.flate import (
@@ -222,6 +222,80 @@ def test_jpx_receives_parent_colorspace_for_any_filter_position(
 
     assert stream.data == b"raw"
     assert embedded_color_flags == [False]
+
+
+def test_expensive_decode_cache_separates_jpx_parent_color_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cached: dict[tuple[object, ...], tuple[bytes, bytes]] = {}
+    calls: list[bool] = []
+
+    def fake_decode(data: bytes, context: object) -> bytes:
+        explicit = decoders.jpx_parent_uses_explicit_colorspace(context)
+        calls.append(explicit)
+        return b"explicit" if explicit else b"embedded"
+
+    def fake_get(key: tuple[object, ...], data: bytes) -> bytes | None:
+        entry = cached.get(key)
+        return entry[1] if entry is not None and entry[0] is data else None
+
+    def fake_store(key: tuple[object, ...], data: bytes, decoded: bytes) -> None:
+        cached[key] = (data, decoded)
+
+    monkeypatch.setitem(pipeline.FILTER_MAP, "JPXDecode", fake_decode)
+    monkeypatch.setattr(pipeline, "cached_expensive_decode", fake_get)
+    monkeypatch.setattr(pipeline, "store_expensive_decode", fake_store)
+    encoded = bytes(bytearray(b"same encoded image"))
+    spec = {"Filter": PdfName.of("JPXDecode")}
+
+    explicit = decode_stream_data(
+        encoded, spec, parent_dictionary={"ColorSpace": PdfName.of("RGB")}
+    )
+    embedded = decode_stream_data(encoded, spec, parent_dictionary={})
+    explicit_again = decode_stream_data(
+        encoded,
+        spec,
+        parent_dictionary={"ColorSpace": PdfName.of("RGB")},
+    )
+
+    assert explicit == explicit_again == b"explicit"
+    assert embedded == b"embedded"
+    assert calls == [True, False]
+
+
+def test_expensive_decode_cache_reuses_exact_memoryview_backing_bytes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cached: dict[tuple[object, ...], tuple[bytes, bytes]] = {}
+    decoded_sources: list[bytes] = []
+
+    def fake_decode(data: bytes, context: object) -> bytes:
+        decoded_sources.append(data)
+        return b"decoded"
+
+    def fake_get(key: tuple[object, ...], data: bytes) -> bytes | None:
+        entry = cached.get(key)
+        return entry[1] if entry is not None and entry[0] is data else None
+
+    def fake_store(key: tuple[object, ...], data: bytes, decoded: bytes) -> None:
+        cached[key] = (data, decoded)
+
+    monkeypatch.setitem(pipeline.FILTER_MAP, "JPXDecode", fake_decode)
+    monkeypatch.setattr(pipeline, "cached_expensive_decode", fake_get)
+    monkeypatch.setattr(pipeline, "store_expensive_decode", fake_store)
+    source = bytes(bytearray(b"encoded image"))
+    spec = {"Filter": PdfName.of("JPXDecode")}
+
+    assert decode_stream_data(memoryview(source), spec) == b"decoded"
+    assert decode_stream_data(memoryview(source), spec) == b"decoded"
+    assert decoded_sources == [source]
+    assert decoded_sources[0] is source
+
+
+def test_decode_stream_data_preserves_reversed_memoryview_order() -> None:
+    source = b"abcdef"
+
+    assert decode_stream_data(memoryview(source)[::-1], None) == b"fedcba"
 
 
 def test_crypt_filter_without_params_is_identity_after_security_stage() -> None:

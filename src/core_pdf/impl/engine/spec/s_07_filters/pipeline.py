@@ -42,6 +42,9 @@ from core_pdf.impl.engine.spec.s_07_filters.decoders import (
 from core_pdf.impl.engine.spec.s_07_filters.decoders import (
     decode_jpx as decode_jpx,
 )
+from core_pdf.impl.engine.spec.s_07_filters.decoders import (
+    jpx_parent_uses_explicit_colorspace,
+)
 from core_pdf.impl.engine.spec.s_07_filters.flate import (
     apply_flate as apply_flate,
 )
@@ -94,12 +97,14 @@ def expensive_decode_cache_key(
     data: bytes,
     filters: typing.Sequence[str],
     params: typing.Sequence[object],
+    context: object = None,
 ) -> tuple[object, ...]:
     return (
         id(data),
         len(data),
         tuple(filters),
         repr(params),
+        context,
     )
 
 
@@ -142,7 +147,17 @@ def decode_stream_data(
     parent_dictionary: object | None = None,
 ) -> bytes:
     if type(data) is memoryview:
-        data = data.tobytes()
+        source = data.obj
+        data = (
+            source
+            if (
+                type(source) is bytes
+                and data.c_contiguous
+                and data.itemsize == 1
+                and data.nbytes == len(source)
+            )
+            else data.tobytes()
+        )
     if dictionary is None:
         return data
     if isinstance(dictionary, StreamDecodeSpec):
@@ -154,8 +169,12 @@ def decode_stream_data(
         normalized_parms = spec.params
     if normalized_parms and len(normalized_parms) != len(filters):
         raise PdfParseError("invalid stream decode parameters")
+    parent_context = parent_dictionary if parent_dictionary is not None else dictionary
+    cache_context = (
+        jpx_parent_uses_explicit_colorspace(parent_context) if "JPXDecode" in filters else None
+    )
     decode_cache_key = (
-        expensive_decode_cache_key(data, filters, normalized_parms)
+        expensive_decode_cache_key(data, filters, normalized_parms, cache_context)
         if EXPENSIVE_DECODE_CACHE_FILTERS.intersection(filters)
         else None
     )
