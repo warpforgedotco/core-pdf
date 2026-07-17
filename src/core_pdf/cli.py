@@ -12,7 +12,7 @@ from core_pdf import PdfDocument
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="core-pdf",
-        description="Extract PDF content with core-pdf.",
+        description="High-Performance PDF Engine",
     )
     parser.add_argument("pdf", type=Path, help="Path to the PDF file")
     parser.add_argument(

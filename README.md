@@ -1,6 +1,8 @@
 # core-pdf
 
-A high-performance pure-Python PDF parsing engine.
+**High-Performance PDF Engine**
+
+![core-pdf — High-Performance PDF Engine](.github/assets/core-pdf-social-preview.jpg)
 
 ## License
 
