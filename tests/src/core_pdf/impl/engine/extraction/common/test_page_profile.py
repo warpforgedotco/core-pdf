@@ -26,3 +26,9 @@ def test_content_operator_counts_skip_operators_inside_containers() -> None:
     counts = content_operator_counts(data, profile_thresholds=True, may_show_text=False)
 
     assert counts == {"q": 1}
+
+
+def test_content_operator_counts_do_not_split_on_vertical_tab() -> None:
+    counts = content_operator_counts(b"Tj\vDo q", profile_thresholds=True)
+
+    assert counts == {"q": 1}

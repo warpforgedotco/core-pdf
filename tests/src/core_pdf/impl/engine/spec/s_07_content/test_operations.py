@@ -3,7 +3,11 @@ from __future__ import annotations
 
 import pytest
 
-from core_pdf.impl.engine.spec.s_07_content.operations import content_stream_may_show_text
+from core_pdf.impl.engine.spec.s_07_content.operations import (
+    content_stream_may_show_text,
+    iter_content_operations,
+)
+from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
 
 
 @pytest.mark.parametrize(
@@ -46,3 +50,15 @@ def test_content_stream_may_show_text_supports_sliced_memoryview() -> None:
 
 def test_content_stream_may_show_text_finds_operator_after_container() -> None:
     assert content_stream_may_show_text(b"[(embedded Tj)] TJ")
+
+
+def test_content_operations_do_not_treat_vertical_tab_as_whitespace() -> None:
+    operations = list(iter_content_operations(PdfLexer(b"Tj\vDo")))
+
+    assert operations == [("Tj\vDo", ())]
+
+
+def test_content_operations_treat_null_as_pdf_whitespace() -> None:
+    operations = list(iter_content_operations(PdfLexer(b"Tj\0Do")))
+
+    assert operations == [("Tj", ()), ("Do", ())]

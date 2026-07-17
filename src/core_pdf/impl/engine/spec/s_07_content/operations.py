@@ -37,11 +37,7 @@ ContentOperand: TypeAlias = CachedPdfObject | InlineImage
 ContentOperands: TypeAlias = tuple[ContentOperand, ...]
 ContentOperation: TypeAlias = tuple[str, ContentOperands]
 
-WORD_BREAK = bytearray(256)
-for b in b"()<>[]{}%/":
-    WORD_BREAK[b] = 1
-
-WORD_BREAK_OR_WS = bytes([1 if (i <= 32 or WORD_BREAK[i]) else 0 for i in range(256)])
+WORD_BREAK_OR_WS = SEPARATOR_TABLE
 
 TEXT_ONLY_SKIP_SINGLE = bytes(
     [
@@ -82,9 +78,7 @@ for op in (b"re", b"W*", b"f*", b"B*", b"b*", b"BX", b"EX", b"MP", b"DP"):
     TEXT_ONLY_SKIP_DOUBLE[(op[0] << 8) | op[1]] = 1
 del op
 
-IS_WORD_START = bytes(
-    [1 if i > 32 and i not in (40, 41, 60, 62, 91, 93, 47, 123, 125, 37) else 0 for i in range(256)]
-)
+IS_WORD_START = bytes([0 if SEPARATOR_TABLE[i] else 1 for i in range(256)])
 
 SKIP_RE = re.compile(b"(?:[\x00\t\n\f\r ]+|%[^\r\n]*(?:\r\n|\n\r|\r|\n)?)*")
 TEXT_CLIP_PREFIX_RE = re.compile(

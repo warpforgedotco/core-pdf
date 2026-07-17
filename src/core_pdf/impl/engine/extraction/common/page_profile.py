@@ -25,6 +25,7 @@ from core_pdf.impl.engine.spec.s_07_syntax.scanning import (
     skip_literal_string,
     skip_name,
 )
+from core_pdf.impl.engine.spec.s_07_syntax.tokens import WS_TABLE
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.objects import PdfStream
 from core_pdf.impl.types import PdfDict
@@ -326,7 +327,7 @@ def content_operator_counts(
     pos = 0
     while pos < data_len:
         byte = raw_bytes[pos]
-        if byte <= 32 or byte == 37:
+        if WS_TABLE[byte] or byte == 37:
             if byte == 37:
                 pos = skip_comment(raw_bytes, pos, data_len)
             else:

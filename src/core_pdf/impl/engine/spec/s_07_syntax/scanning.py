@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
+from core_pdf.impl.engine.spec.s_07_syntax.tokens import SEPARATOR_TABLE
+
 
 def skip_comment(data: bytes | memoryview, pos: int, data_len: int) -> int:
     if type(data) is bytes:
@@ -68,7 +70,7 @@ def skip_hex_string(data: bytes | memoryview, pos: int, data_len: int) -> int:
 
 
 def is_regular_token_byte(byte: int) -> bool:
-    return byte > 32 and byte not in (37, 40, 41, 47, 60, 62, 91, 93, 123, 125)
+    return not SEPARATOR_TABLE[byte]
 
 
 def skip_name(data: bytes | memoryview, pos: int, data_len: int) -> int:
