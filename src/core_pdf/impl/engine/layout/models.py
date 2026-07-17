@@ -426,9 +426,10 @@ class TextRun:
             "ink_bbox",
             (x0, y0, x1, y1) if coords_changed else self.ink_bbox,
         )
+        text_changed = "text" in kwargs and kwargs["text"] != self.text
         glyph_clusters = kwargs.get(
             "glyph_clusters",
-            () if coords_changed else self.glyph_clusters,
+            () if coords_changed or text_changed else self.glyph_clusters,
         )
         r = TextRun(
             text=kwargs.get("text", self.text),
