@@ -579,21 +579,21 @@ class PSStackParser(PSBaseParser, Generic[ExtraT]):
         """
         while not self.results:
             (pos, token) = self.nexttoken()
-            if isinstance(token, PSKeyword):
-                if token == KEYWORD_ARRAY_BEGIN:
+            if type(token) is PSKeyword:
+                if token is KEYWORD_ARRAY_BEGIN:
                     # begin array
                     self.start_type(pos, "a")
-                elif token == KEYWORD_ARRAY_END:
+                elif token is KEYWORD_ARRAY_END:
                     # end array
                     try:
                         self.push(self.end_type("a"))
                     except PSTypeError:
                         if settings.STRICT:
                             raise
-                elif token == KEYWORD_DICT_BEGIN:
+                elif token is KEYWORD_DICT_BEGIN:
                     # begin dictionary
                     self.start_type(pos, "d")
-                elif token == KEYWORD_DICT_END:
+                elif token is KEYWORD_DICT_END:
                     # end dictionary
                     try:
                         (pos, objs) = self.end_type("d")
@@ -605,10 +605,10 @@ class PSStackParser(PSBaseParser, Generic[ExtraT]):
                     except PSTypeError:
                         if settings.STRICT:
                             raise
-                elif token == KEYWORD_PROC_BEGIN:
+                elif token is KEYWORD_PROC_BEGIN:
                     # begin proc
                     self.start_type(pos, "p")
-                elif token == KEYWORD_PROC_END:
+                elif token is KEYWORD_PROC_END:
                     # end proc
                     try:
                         self.push(self.end_type("p"))
