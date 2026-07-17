@@ -40,6 +40,18 @@ def test_xref_prev_chain_loads_iteratively() -> None:
     assert trailer[PdfName.of(b"Size")] == 1501
 
 
+def test_xref_nearby_recovery_tries_candidates_until_one_parses() -> None:
+    valid = b"xref\n0 1\n0000000000 65535 f \ntrailer\n<< /Size 1 >>\n"
+    false_stream = b"9 0 obj\n<< /Type /XRef /Size 1 >>\nnot-a-stream\nendobj\n"
+    data = valid + b"padding\n" + false_stream
+    damaged_offset = data.index(false_stream) + 12
+
+    entries, trailer = XRefScanner.load_section_chain(data, damaged_offset, set())
+
+    assert key_for(0, 65535) in entries
+    assert trailer[PdfName.of(b"Size")] == 1
+
+
 @pytest.mark.parametrize("marker", [b"%%XOF", b"%%EXF", b"%%EOX"])
 def test_find_eof_marker_recovers_one_substitution(marker: bytes) -> None:
     data = b"%PDF-1.7\n% comment\n" + marker + b"\n% trailing comment"

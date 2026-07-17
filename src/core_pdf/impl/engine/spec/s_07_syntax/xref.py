@@ -205,25 +205,27 @@ class XRefScanner:
 
     @staticmethod
     def find_nearby_section(data: PdfByteBuffer, start: int, window: int = 1024) -> int | None:
+        candidates = XRefScanner.find_nearby_sections(data, start, window)
+        return candidates[0] if candidates else None
+
+    @staticmethod
+    def find_nearby_sections(data: PdfByteBuffer, start: int, window: int = 1024) -> list[int]:
         n = len(data)
         if start < 0:
-            return None
+            return []
         search_start = max(0, start - window)
         search_end = min(n, start + window)
 
-        best_pos: int | None = None
-        best_distance = window + 1
-        for marker in find_all_bytes(data[search_start:search_end], b"xref"):
-            pos = search_start + marker
+        candidates: set[int] = set()
+        pos = data.find(b"xref", search_start, search_end)
+        while pos >= 0:
             if pos > 0 and not WS_TABLE[data[pos - 1]]:
+                pos = data.find(b"xref", pos + 1, search_end)
                 continue
             after = pos + 4
-            if after < n and not WS_TABLE[data[after]]:
-                continue
-            distance = abs(pos - start)
-            if distance < best_distance:
-                best_pos = pos
-                best_distance = distance
+            if after >= n or WS_TABLE[data[after]]:
+                candidates.add(pos)
+            pos = data.find(b"xref", pos + 1, search_end)
 
         type_pos = data.find(b"/Type", search_start, search_end)
         while type_pos >= 0:
@@ -231,13 +233,10 @@ class XRefScanner:
             if xref_pos >= 0:
                 object_marker = find_previous_object_marker(data, type_pos)
                 if object_marker is not None:
-                    distance = abs(object_marker - start)
-                    if distance < best_distance:
-                        best_pos = object_marker
-                        best_distance = distance
+                    candidates.add(object_marker)
             type_pos = data.find(b"/Type", type_pos + 5, search_end)
 
-        return best_pos
+        return sorted(candidates, key=lambda candidate: (abs(candidate - start), candidate))
 
     @staticmethod
     def skip_ws(data: PdfByteBuffer, pos: int) -> int:
@@ -424,12 +423,20 @@ class XRefScanner:
                 entries, current_trailer, prev, xrefstm = XRefScanner.parse_section_at(
                     data, section_start
                 )
-            except PdfParseError:
-                nearby = XRefScanner.find_nearby_section(data, section_start)
-                if nearby is None or nearby in seen:
-                    raise
-                seen.add(nearby)
-                entries, current_trailer, prev, xrefstm = XRefScanner.parse_section_at(data, nearby)
+            except PdfParseError as original_error:
+                recovered = None
+                for nearby in XRefScanner.find_nearby_sections(data, section_start):
+                    if nearby in seen:
+                        continue
+                    try:
+                        recovered = XRefScanner.parse_section_at(data, nearby)
+                    except PdfParseError:
+                        continue
+                    seen.add(nearby)
+                    break
+                if recovered is None:
+                    raise original_error
+                entries, current_trailer, prev, xrefstm = recovered
             if trailer is None:
                 trailer = current_trailer
             if prev is not None and prev < 0:
