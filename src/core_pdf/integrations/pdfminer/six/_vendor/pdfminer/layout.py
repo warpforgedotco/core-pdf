@@ -476,7 +476,7 @@ class LTTextContainer(LTExpandableContainer[LTItemT], LTText):
         LTExpandableContainer.__init__(self)
 
     def get_text(self) -> str:
-        return "".join(obj.get_text() for obj in self if isinstance(obj, LTText))
+        return "".join(obj.get_text() for obj in self._objs)  # type: ignore[attr-defined]
 
 
 TextLineElement = Union[LTChar, LTAnno]
@@ -520,7 +520,7 @@ class LTTextLineHorizontal(LTTextLine):
     # Incompatible override: we take an LTComponent (with bounding box), but
     # LTContainer only considers LTItem (no bounding box).
     def add(self, obj: LTComponent) -> None:  # type: ignore[override]
-        if isinstance(obj, LTChar) and self.word_margin:
+        if type(obj) is LTChar and self.word_margin:
             margin = self.word_margin * max(obj.width, obj.height)
             if self._x1 < obj.x0 - margin:
                 LTContainer.add(self, LTAnno(" "))
@@ -583,7 +583,7 @@ class LTTextLineVertical(LTTextLine):
     # Incompatible override: we take an LTComponent (with bounding box), but
     # LTContainer only considers LTItem (no bounding box).
     def add(self, obj: LTComponent) -> None:  # type: ignore[override]
-        if isinstance(obj, LTChar) and self.word_margin:
+        if type(obj) is LTChar and self.word_margin:
             margin = self.word_margin * max(obj.width, obj.height)
             if obj.y1 + margin < self._y0:
                 LTContainer.add(self, LTAnno(" "))
@@ -772,8 +772,8 @@ class LTLayoutContainer(LTContainer[LTComponent]):
                         vdistance = min(abs(obj0.y0 - obj1.y1), abs(obj0.y1 - obj1.y0))
                     valign = vdistance < max(obj0.height, obj1.height) * char_margin
 
-                if (halign and isinstance(line, LTTextLineHorizontal)) or (
-                    valign and isinstance(line, LTTextLineVertical)
+                if (halign and type(line) is LTTextLineHorizontal) or (
+                    valign and type(line) is LTTextLineVertical
                 ):
                     line.add(obj1)
                 elif line is not None:
