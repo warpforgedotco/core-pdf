@@ -508,7 +508,7 @@ class PSBaseParser:
                 # Oh, so there wasn't actually a token there? OK.
                 if not self._tokens:
                     raise
-        token = self._tokens.pop(0)
+        token = self._tokens.pop()
         return token
 
 
