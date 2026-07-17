@@ -212,8 +212,14 @@ class PdfLexer:
         return data[start:pos], pos
 
     def find_separator(self, start: int) -> int:
-        match = SEPARATOR_RE.search(self.raw_data, start)
-        return self.data_len if match is None else match.start()
+        data = self.raw_data
+        if data.c_contiguous:
+            match = SEPARATOR_RE.search(data, start)
+            return self.data_len if match is None else match.start()
+        pos = start
+        while pos < self.data_len and not SEPARATOR_TABLE[data[pos]]:
+            pos += 1
+        return pos
 
     def scan_word(self, skip_ignored: bool = True) -> tuple[memoryview, int] | None:
         return self.scan_word_at(self.pos, skip_ignored=skip_ignored)

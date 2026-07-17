@@ -13,6 +13,7 @@ from core_pdf.impl.engine.spec.s_07_objects.coercion import (
     normalize_pdf_name,
 )
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_07_syntax.lexer_helpers import FindableSizedBuffer
 from core_pdf.impl.engine.spec.s_07_syntax.tokens import (
     INLINE_IMAGE_KEY_MAP,
     WHITESPACE,
@@ -24,6 +25,7 @@ from core_pdf.impl.types import PdfDict
 
 class InlineImageLexer(Protocol):
     raw_data: memoryview
+    source_buffer: FindableSizedBuffer | None
     data_len: int
     pos: int
 
@@ -169,8 +171,8 @@ def parse_inline_image(lexer: InlineImageLexer) -> InlineImage:
     start = lexer.pos
     normalized = normalize_inline_image_dictionary(dictionary)
     raw_data = lexer.raw_data
-    source = raw_data.obj
-    source_bytes = source if type(source) is bytes and len(source) == lexer.data_len else None
+    source_buffer = lexer.source_buffer
+    source_bytes = source_buffer if type(source_buffer) is bytes else None
 
     exact_length = inline_image_unfiltered_data_length(normalized)
     if exact_length is not None and start + exact_length <= lexer.data_len:
@@ -235,8 +237,8 @@ def recover_inline_image_position(
 ) -> int | None:
     data = lexer.raw_data
     data_len = lexer.data_len
-    source = data.obj
-    source_bytes = source if type(source) is bytes and len(source) == data_len else None
+    source_buffer = lexer.source_buffer
+    source_bytes = source_buffer if type(source_buffer) is bytes else None
     search_data = source_bytes if source_bytes is not None else data.tobytes()
     pos = position
     while pos < data_len:

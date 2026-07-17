@@ -40,6 +40,13 @@ def test_reversed_memoryview_does_not_reuse_backing_buffer_for_native_search() -
     assert lexer.parse_object() == PdfString(b"cba")
 
 
+def test_find_separator_supports_reversed_memoryview() -> None:
+    data = b"ordinary token"
+    lexer = PdfLexer(memoryview(data[::-1])[::-1])
+
+    assert lexer.find_separator(0) == len(b"ordinary")
+
+
 @pytest.mark.parametrize(
     "data",
     [

@@ -61,6 +61,17 @@ def test_filtered_inline_image_hint_supports_sliced_memoryview() -> None:
     assert lexer.raw_data[lexer.pos : lexer.pos + 2] == b" Q"
 
 
+def test_filtered_inline_image_hint_supports_reversed_memoryview() -> None:
+    content = b"/F /A85 ID abc EI def~>\nEI Q"
+    source = memoryview(content[::-1])[::-1]
+    lexer = PdfLexer(source)
+
+    image = parse_inline_image(lexer)
+
+    assert image.data == b"abc EI def~>"
+    assert lexer.raw_data[lexer.pos : lexer.pos + 2] == b" Q"
+
+
 def test_inline_image_recovery_accepts_registered_operator() -> None:
     data = b"damaged EI EMC"
     lexer = PdfLexer(data)
@@ -74,6 +85,15 @@ def test_inline_image_recovery_supports_sliced_memoryview_with_false_candidates(
     content = b" EI unknown" * 20 + b" EI EMC"
     source = memoryview(b"prefix" + content + b"suffix")[len(b"prefix") : -len(b"suffix")]
     lexer = PdfLexer(source)
+
+    position = recover_inline_image_position(lexer, 0, {b"EMC"}.__contains__)
+
+    assert position == content.index(b"EMC")
+
+
+def test_inline_image_recovery_supports_reversed_memoryview() -> None:
+    content = b"damaged EI EMC"
+    lexer = PdfLexer(memoryview(content[::-1])[::-1])
 
     position = recover_inline_image_position(lexer, 0, {b"EMC"}.__contains__)
 
