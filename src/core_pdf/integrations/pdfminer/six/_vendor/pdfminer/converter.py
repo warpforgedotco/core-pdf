@@ -139,18 +139,14 @@ class PDFLayoutAnalyzer(PDFTextDevice):
             # And, per Section 4.4's Table 4.9, all other path commands place
             # their point-position in their final two arguments. (Any preceding
             # arguments represent control points on Bézier curves.)
-            raw_pts = [
-                cast(Point, p[-2:] if p[0] != "h" else path[0][-2:]) for p in path
-            ]
+            raw_pts = [cast(Point, p[-2:] if p[0] != "h" else path[0][-2:]) for p in path]
             pts = [apply_matrix_pt(self.ctm, pt) for pt in raw_pts]
 
             operators = [str(operation[0]) for operation in path]
             transformed_points = [
                 [
                     apply_matrix_pt(self.ctm, (float(operand1), float(operand2)))
-                    for operand1, operand2 in zip(
-                        operation[1::2], operation[2::2], strict=False
-                    )
+                    for operand1, operand2 in zip(operation[1::2], operation[2::2], strict=False)
                 ]
                 for operation in path
             ]
@@ -187,9 +183,9 @@ class PDFLayoutAnalyzer(PDFTextDevice):
                 (x0, y0), (x1, y1), (x2, y2), (x3, y3), _ = pts
 
                 is_closed_loop = pts[0] == pts[4]
-                has_square_coordinates = (
-                    x0 == x1 and y1 == y2 and x2 == x3 and y3 == y0
-                ) or (y0 == y1 and x1 == x2 and y2 == y3 and x3 == x0)
+                has_square_coordinates = (x0 == x1 and y1 == y2 and x2 == x3 and y3 == y0) or (
+                    y0 == y1 and x1 == x2 and y2 == y3 and x3 == x0
+                )
                 if is_closed_loop and has_square_coordinates:
                     rect = LTRect(
                         gstate.linewidth,
@@ -339,11 +335,12 @@ class TextConverter(PDFConverter[AnyIO]):
         self.imagewriter = imagewriter
 
     def write_text(self, text: str) -> None:
-        text = utils.compatible_encode_method(text, self.codec, "ignore")
+        if not isinstance(text, str):
+            text = utils.compatible_encode_method(text, self.codec, "ignore")
         if self.outfp_binary:
-            cast(BinaryIO, self.outfp).write(text.encode())
+            self.outfp.write(text.encode())  # type: ignore[arg-type]
         else:
-            cast(TextIO, self.outfp).write(text)
+            self.outfp.write(text)  # type: ignore[arg-type]
 
     def receive_layout(self, ltpage: LTPage) -> None:
         def render(item: LTItem) -> None:
@@ -457,10 +454,7 @@ class HTMLConverter(PDFConverter[AnyIO]):
     def write_header(self) -> None:
         self.write("<html><head>\n")
         if self.codec:
-            s = (
-                '<meta http-equiv="Content-Type" content="text/html; '
-                f'charset={self.codec}">\n'
-            )
+            s = f'<meta http-equiv="Content-Type" content="text/html; charset={self.codec}">\n'
         else:
             s = '<meta http-equiv="Content-Type" content="text/html">\n'
         self.write(s)
@@ -468,10 +462,7 @@ class HTMLConverter(PDFConverter[AnyIO]):
 
     def write_footer(self) -> None:
         page_links = [f'<a href="#{i}">{i}</a>' for i in range(1, self.pageno)]
-        s = (
-            '<div style="position:absolute; top:0px;">'
-            f"Page: {', '.join(page_links)}</div>\n"
-        )
+        s = f'<div style="position:absolute; top:0px;">Page: {", ".join(page_links)}</div>\n'
         self.write(s)
         self.write("</body></html>\n")
 
@@ -735,9 +726,7 @@ class XMLConverter(PDFConverter[AnyIO]):
     def receive_layout(self, ltpage: LTPage) -> None:
         def show_group(item: LTItem) -> None:
             if isinstance(item, LTTextBox):
-                self.write(
-                    f'<textbox id="{item.index}" bbox="{bbox2str(item.bbox)}" />\n'
-                )
+                self.write(f'<textbox id="{item.index}" bbox="{bbox2str(item.bbox)}" />\n')
             elif isinstance(item, LTTextGroup):
                 self.write(f'<textgroup bbox="{bbox2str(item.bbox)}">\n')
                 for child in item:
@@ -762,18 +751,10 @@ class XMLConverter(PDFConverter[AnyIO]):
                     self.write("</layout>\n")
                 self.write("</page>\n")
             elif isinstance(item, LTLine):
-                s = (
-                    f"<line "
-                    f'linewidth="{item.linewidth}" '
-                    f'bbox="{bbox2str(item.bbox)}" />\n'
-                )
+                s = f'<line linewidth="{item.linewidth}" bbox="{bbox2str(item.bbox)}" />\n'
                 self.write(s)
             elif isinstance(item, LTRect):
-                s = (
-                    f"<rect "
-                    f'linewidth="{item.linewidth}" '
-                    f'bbox="{bbox2str(item.bbox)}" />\n'
-                )
+                s = f'<rect linewidth="{item.linewidth}" bbox="{bbox2str(item.bbox)}" />\n'
                 self.write(s)
             elif isinstance(item, LTCurve):
                 s = (
@@ -821,15 +802,10 @@ class XMLConverter(PDFConverter[AnyIO]):
                 if self.imagewriter is not None:
                     name = self.imagewriter.export_image(item)
                     self.write(
-                        f"<image "
-                        f'src="{enc(name)}" '
-                        f'width="{item.width}" '
-                        f'height="{item.height}" />\n'
+                        f'<image src="{enc(name)}" width="{item.width}" height="{item.height}" />\n'
                     )
                 else:
-                    self.write(
-                        f'<image width="{item.width}" height="{item.height}" />\n'
-                    )
+                    self.write(f'<image width="{item.width}" height="{item.height}" />\n')
             else:
                 raise AssertionError(str(("Unhandled", item)))
 
@@ -914,8 +890,7 @@ class HOCRConverter(PDFConverter[AnyIO]):
             "<meta name='ocr-system' content='pdfminer.six HOCR Converter' />\n",
         )
         self.write(
-            "  <meta name='ocr-capabilities'"
-            " content='ocr_page ocr_block ocr_line ocrx_word'/>\n",
+            "  <meta name='ocr-capabilities' content='ocr_page ocr_block ocr_line ocrx_word'/>\n",
         )
         self.write("</head>\n")
         self.write("<body>\n")
