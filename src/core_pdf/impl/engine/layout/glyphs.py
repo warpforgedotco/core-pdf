@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 
 from core_pdf.impl.engine.layout.geometry import RectBox
 
@@ -100,6 +101,15 @@ def glyph_unicode_confidence(
     painted, not whether its character mapping is correct.
     """
     del visible
+    return _cached_glyph_unicode_confidence(text, unicode_source, alternates)
+
+
+@lru_cache(maxsize=512)
+def _cached_glyph_unicode_confidence(
+    text: str,
+    unicode_source: str,
+    alternates: tuple[str, ...],
+) -> float:
     if not text:
         confidence = 0.0
     else:

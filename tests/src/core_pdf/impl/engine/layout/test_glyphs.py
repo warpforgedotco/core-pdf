@@ -1,5 +1,6 @@
 import pytest
 
+from core_pdf.impl.engine.layout import glyphs
 from core_pdf.impl.engine.layout.geometry import RectBox
 from core_pdf.impl.engine.layout.glyphs import (
     GlyphObservation,
@@ -14,6 +15,17 @@ def test_unicode_confidence_is_independent_of_paint_visibility() -> None:
 
 def test_hidden_unsupported_glyph_still_has_low_unicode_confidence() -> None:
     assert glyph_unicode_confidence("\ue000", "to_unicode", visible=False) == 0.20
+
+
+def test_unicode_confidence_reuses_semantic_result_across_paint_visibility() -> None:
+    glyphs._cached_glyph_unicode_confidence.cache_clear()
+
+    assert glyph_unicode_confidence("A", "to_unicode", visible=True) == 1.0
+    assert glyph_unicode_confidence("A", "to_unicode", visible=False) == 1.0
+
+    cache_info = glyphs._cached_glyph_unicode_confidence.cache_info()
+    assert cache_info.hits == 1
+    assert cache_info.misses == 1
 
 
 @pytest.mark.parametrize("confidence", [None, 0.84])
