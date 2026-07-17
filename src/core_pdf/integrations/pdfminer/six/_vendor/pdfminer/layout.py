@@ -378,22 +378,10 @@ class LTChar(LTComponent, LTText):
         (a, b, c, d, e, f) = self.matrix
         self.upright = a * d * scaling > 0 and b * c <= 0
         (bx0, by0, bx1, by1) = bbox
-        left1 = a * bx0 + c * by0 + e
-        bottom1 = b * bx0 + d * by0 + f
-        right1 = a * bx1 + c * by0 + e
-        bottom2 = b * bx1 + d * by0 + f
-        right2 = a * bx1 + c * by1 + e
-        top1 = b * bx1 + d * by1 + f
-        left2 = a * bx0 + c * by1 + e
-        top2 = b * bx0 + d * by1 + f
-        x0 = min(left1, left2, right1, right2)
-        y0 = min(bottom1, bottom2, top1, top2)
-        x1 = max(left1, left2, right1, right2)
-        y1 = max(bottom1, bottom2, top1, top2)
-        if x1 < x0:
-            (x0, x1) = (x1, x0)
-        if y1 < y0:
-            (y0, y1) = (y1, y0)
+        x0 = a * (bx0 if a >= 0 else bx1) + c * (by0 if c >= 0 else by1) + e
+        x1 = a * (bx1 if a >= 0 else bx0) + c * (by1 if c >= 0 else by0) + e
+        y0 = b * (bx0 if b >= 0 else bx1) + d * (by0 if d >= 0 else by1) + f
+        y1 = b * (bx1 if b >= 0 else bx0) + d * (by1 if d >= 0 else by0) + f
         self.x0 = x0
         self.y0 = y0
         self.x1 = x1
