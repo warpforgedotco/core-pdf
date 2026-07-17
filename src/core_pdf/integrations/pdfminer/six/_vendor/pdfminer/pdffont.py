@@ -894,6 +894,7 @@ class PDFFont:
     ) -> None:
         self.descriptor = descriptor
         self.widths: FontWidthDict = resolve_all(widths)
+        self._char_width_cache: dict[int, float] = {}
         self.fontname = resolve1(descriptor.get("FontName", "unknown"))
         if isinstance(self.fontname, PSLiteral):
             self.fontname = literal_name(self.fontname)
@@ -950,22 +951,32 @@ class PDFFont:
         return h * self.vscale
 
     def char_width(self, cid: int) -> float:
+        cached_width = self._char_width_cache.get(cid)
+        if cached_width is not None:
+            return cached_width
+
         # Because character widths may be mapping either IDs or strings,
         # we try to lookup the character ID first, then its str equivalent.
         cid_width = safe_float(self.widths.get(cid))
         if cid_width is not None:
-            return cid_width * self.hscale
+            width = cid_width * self.hscale
+            self._char_width_cache[cid] = width
+            return width
 
         try:
             str_cid = self.to_unichr(cid)
             cid_width = safe_float(self.widths.get(str_cid))
             if cid_width is not None:
-                return cid_width * self.hscale
+                width = cid_width * self.hscale
+                self._char_width_cache[cid] = width
+                return width
 
         except PDFUnicodeNotDefined:
             pass
 
-        return self.default_width * self.hscale
+        width = self.default_width * self.hscale
+        self._char_width_cache[cid] = width
+        return width
 
     def char_disp(self, cid: int) -> float | tuple[float | None, float]:
         """Returns an integer for horizontal fonts, a tuple for vertical fonts."""
