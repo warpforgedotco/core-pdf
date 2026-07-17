@@ -169,7 +169,28 @@ def observation_geometry_resolution(
     best_score = 0.0
     area = page_geometry.observation_area(candidate)
     covered_area = 0.0
+    candidate_bbox = candidate.bbox
+    if candidate_bbox is None:
+        return (None, 0.0, 1.0)
+    candidate_x0, candidate_y0, candidate_x1, candidate_y1 = candidate_bbox
+    candidate_height = candidate_y1 - candidate_y0
+    candidate_center_y = (candidate_y0 + candidate_y1) * 0.5
     for observation in accepted:
+        observation_bbox = observation.bbox
+        if observation_bbox is None:
+            continue
+        observation_x0, observation_y0, observation_x1, observation_y1 = observation_bbox
+        if candidate_x1 <= observation_x0 or observation_x1 <= candidate_x0:
+            continue
+        if candidate_y1 <= observation_y0 or observation_y1 <= candidate_y0:
+            observation_height = observation_y1 - observation_y0
+            if candidate_height <= 0.0 or observation_height <= 0.0:
+                continue
+            observation_center_y = (observation_y0 + observation_y1) * 0.5
+            if abs(candidate_center_y - observation_center_y) > (
+                max(candidate_height, observation_height) * 0.55
+            ):
+                continue
         score, intersection_area = page_geometry.observation_geometry_match_metrics(
             candidate, observation
         )
