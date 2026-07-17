@@ -246,7 +246,7 @@ class PDFLayoutAnalyzer(PDFTextDevice):
                 text = self.handle_undefined_char(font, cid)
             font_cache[cid] = text
         textwidth = font.char_width(cid)
-        textdisp = font.char_disp(cid)
+        textdisp = font.char_disp(cid) if font._vertical else 0
         item = LTChar(
             matrix,
             font,

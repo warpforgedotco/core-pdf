@@ -363,7 +363,10 @@ class LTChar(LTComponent, LTText):
         self.graphicstate = graphicstate
         self.adv = textwidth * fontsize * scaling
         # compute the boundary rectangle.
-        is_vertical = font.is_vertical()
+        try:
+            is_vertical = font._vertical
+        except AttributeError:
+            is_vertical = font.is_vertical()
         if is_vertical:
             # vertical
             assert isinstance(textdisp, tuple)
@@ -373,7 +376,10 @@ class LTChar(LTComponent, LTText):
             bbox = (-vx, vy + rise + self.adv, -vx + fontsize, vy + rise)
         else:
             # horizontal
-            descent = font.get_descent() * fontsize
+            try:
+                descent = font._scaled_descent * fontsize
+            except AttributeError:
+                descent = font.get_descent() * fontsize
             bbox = (0, descent + rise, self.adv, descent + rise + fontsize)
         (a, b, c, d, e, f) = self.matrix
         self.upright = a * d * scaling > 0 and b * c <= 0

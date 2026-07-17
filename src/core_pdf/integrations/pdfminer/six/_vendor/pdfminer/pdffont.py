@@ -917,6 +917,8 @@ class PDFFont:
         # descent to negative.
         if self.descent > 0:
             self.descent = -self.descent
+        self._vertical = self.is_vertical()
+        self._scaled_descent = self.get_descent()
 
     def __repr__(self) -> str:
         return "<PDFFont>"
@@ -1100,6 +1102,7 @@ class PDFType3Font(PDFSimpleFont):
         self.matrix = cast(Matrix, tuple(list_value(spec.get("FontMatrix"))))
         (_, self.descent, _, self.ascent) = self.bbox
         (self.hscale, self.vscale) = apply_matrix_norm(self.matrix, (1, 1))
+        self._scaled_descent = self.get_descent()
 
     def __repr__(self) -> str:
         return "<PDFType3Font>"
