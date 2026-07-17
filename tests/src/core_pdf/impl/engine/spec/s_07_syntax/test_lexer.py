@@ -75,6 +75,26 @@ def test_hex_string_decode_supports_all_byte_views(
 
 
 @pytest.mark.parametrize(
+    ("data", "expected"),
+    [
+        (memoryview(bytearray(b"(\xff)")).cast("b"), b"\xff"),
+        (memoryview(b"(AB)").cast("c"), b"AB"),
+        (memoryview(b"(AB)").cast("H"), b"AB"),
+        (memoryview(b"(AB)").cast("B", shape=(2, 2)), b"AB"),
+    ],
+)
+def test_lexer_normalizes_non_byte_or_multidimensional_views(
+    data: memoryview,
+    expected: bytes,
+) -> None:
+    lexer = PdfLexer(data)
+
+    assert lexer.raw_data.format == "B"
+    assert lexer.raw_data.ndim == 1
+    assert lexer.parse_object() == PdfString(expected)
+
+
+@pytest.mark.parametrize(
     "data",
     [
         b"[1\v2]",

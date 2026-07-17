@@ -106,7 +106,9 @@ class PdfLexer:
     ) -> None:
 
         if type(data) is memoryview:
-            self.raw_data = data
+            self.raw_data = (
+                data if data.ndim == 1 and data.format == "B" else memoryview(data.tobytes())
+            )
         else:
             self.raw_data = memoryview(data)
         self.data_len = len(self.raw_data)
