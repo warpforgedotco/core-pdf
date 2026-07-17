@@ -156,6 +156,7 @@ class FontDecoder:
         "to_unicode",
         "cmap",
         "cid_unicode_map",
+        "cid_unicode_map_resolved",
         "base_encoding",
         "differences",
         "is_cid_font",
@@ -190,6 +191,7 @@ class FontDecoder:
     to_unicode: ToUnicodeCMap | None
     cmap: CMapDecoder | None
     cid_unicode_map: Mapping[int, str] | None
+    cid_unicode_map_resolved: bool
     base_encoding: str | None
     differences: dict[int, str]
     is_cid_font: bool
@@ -288,9 +290,8 @@ class FontDecoder:
 
         self.to_unicode = to_unicode
         self.cmap = cmap
-        self.cid_unicode_map = (
-            self._cid_unicode_map(font, vertical=is_vertical) if is_cid_font else None
-        )
+        self.cid_unicode_map = None
+        self.cid_unicode_map_resolved = not is_cid_font
         self.base_encoding = base_encoding
         self.differences = differences
         self.is_cid_font = is_cid_font
@@ -490,7 +491,7 @@ class FontDecoder:
                     dedupe_alternates(alternates, predefined_text),
                 )
 
-        cid_unicode_map = self.cid_unicode_map
+        cid_unicode_map = self._resolved_cid_unicode_map()
         if cid_unicode_map is not None:
             cid_text = cid_unicode_map.get(fallback_code)
             if cid_text is not None:
@@ -505,6 +506,12 @@ class FontDecoder:
         text = unicode_scalar_or_replacement(fallback_code)
         source = "identity" if text != "\ufffd" else "replacement"
         return UnicodeChoice(text, source, dedupe_alternates(alternates, text))
+
+    def _resolved_cid_unicode_map(self) -> Mapping[int, str] | None:
+        if not self.cid_unicode_map_resolved:
+            self.cid_unicode_map = self._cid_unicode_map(self.font, vertical=self.is_vertical)
+            self.cid_unicode_map_resolved = True
+        return self.cid_unicode_map
 
     def _true_type_unicode_for_gid(self, gid: int) -> str:
         tt_font = self.tt_font

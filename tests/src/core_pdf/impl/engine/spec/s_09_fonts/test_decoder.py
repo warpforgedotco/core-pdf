@@ -7,6 +7,7 @@ from typing import cast
 import pytest
 
 from core_pdf.impl.engine.extraction.document import PdfDocument
+from core_pdf.impl.engine.spec.s_09_fonts import decoder as decoder_module
 from core_pdf.impl.engine.spec.s_09_fonts.decoder import (
     FontDecoder,
     parse_type1_font_program_encoding,
@@ -349,6 +350,56 @@ def cid_type0_font(encoding: str, *, ordering: str = "Japan1") -> dict[str, obje
             }
         ],
     }
+
+
+def cid_to_unicode_stream() -> PdfStream:
+    return PdfStream(
+        decoded_data=b"""
+        /CIDInit /ProcSet findresource begin
+        12 dict begin begincmap
+        /CMapType 2 def
+        1 begincodespacerange <0000> <ffff> endcodespacerange
+        1 beginbfchar <0041> <0058> endbfchar
+        endcmap end
+        """
+    )
+
+
+def test_cid_collection_map_stays_lazy_when_to_unicode_resolves_code(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, str, bool]] = []
+
+    def resolve(registry: str, ordering: str, *, vertical: bool = False) -> dict[int, str]:
+        calls.append((registry, ordering, vertical))
+        return {66: "fallback"}
+
+    monkeypatch.setattr(decoder_module, "resolve_cid_unicode_map", resolve)
+    font = cid_type0_font("Identity-H")
+    font["ToUnicode"] = cid_to_unicode_stream()
+    decoder = FontDecoder(font)
+
+    assert decoder.decode(b"\x00A") == "X"
+    assert calls == []
+
+
+def test_cid_collection_map_resolves_once_on_first_unmapped_code(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, str, bool]] = []
+
+    def resolve(registry: str, ordering: str, *, vertical: bool = False) -> dict[int, str]:
+        calls.append((registry, ordering, vertical))
+        return {66: "fallback"}
+
+    monkeypatch.setattr(decoder_module, "resolve_cid_unicode_map", resolve)
+    font = cid_type0_font("Identity-H")
+    font["ToUnicode"] = cid_to_unicode_stream()
+    decoder = FontDecoder(font)
+
+    assert decoder.decode(b"\x00B") == "fallback"
+    assert decoder.decode(b"\x00B") == "fallback"
+    assert calls == [("Adobe", "Japan1", False)]
 
 
 def test_font_decoder_recovers_japanese_without_to_unicode() -> None:
