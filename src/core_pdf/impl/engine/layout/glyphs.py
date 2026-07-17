@@ -156,13 +156,20 @@ def glyph_cluster_from_observations(
 ) -> GlyphCluster | None:
     if not glyphs:
         return None
-    advance_bbox = union_bboxes(tuple(glyph.advance_bbox for glyph in glyphs))
-    ink_bbox = union_bboxes(tuple(glyph.ink_bbox for glyph in glyphs))
-    if advance_bbox is None or ink_bbox is None:
-        return None
     first = glyphs[0]
-    confidences = [glyph.confidence for glyph in glyphs if glyph.confidence is not None]
-    confidence = min(confidences) if confidences else None
+    if len(glyphs) == 1:
+        advance_bbox = first.advance_bbox
+        ink_bbox = first.ink_bbox
+        confidence = first.confidence
+    else:
+        aggregated_advance_bbox = union_bboxes(tuple(glyph.advance_bbox for glyph in glyphs))
+        aggregated_ink_bbox = union_bboxes(tuple(glyph.ink_bbox for glyph in glyphs))
+        if aggregated_advance_bbox is None or aggregated_ink_bbox is None:
+            return None
+        advance_bbox = aggregated_advance_bbox
+        ink_bbox = aggregated_ink_bbox
+        confidences = [glyph.confidence for glyph in glyphs if glyph.confidence is not None]
+        confidence = min(confidences) if confidences else None
     return GlyphCluster(
         cluster_id=cluster_id,
         text=text,
