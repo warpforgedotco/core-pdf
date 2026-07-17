@@ -187,7 +187,7 @@ class PSBaseParser:
         self._parse1 = self._parse_main
         self._curtoken = b""
         self._curtokenpos = 0
-        self._tokens: list[tuple[int, PSBaseParserToken]] = []
+        self._token: tuple[int, PSBaseParserToken] | None = None
         self.eof = False
 
     def fillbuf(self) -> bool:
@@ -353,7 +353,7 @@ class PSBaseParser:
             return j + 1
 
     def _add_token(self, obj: PSBaseParserToken) -> None:
-        self._tokens.append((self._curtokenpos, obj))
+        self._token = (self._curtokenpos, obj)
 
     def _parse_comment(self, s: bytes, i: int) -> int:
         m = EOL.search(s, i)
@@ -544,7 +544,7 @@ class PSBaseParser:
         if self.eof:
             # It's not really unexpected, come on now...
             raise PSEOF("Unexpected EOF")
-        while not self._tokens:
+        while self._token is None:
             try:
                 changed_stream = self.charpos >= len(self.buf) and self.fillbuf()
                 if changed_stream and self._curtoken:
@@ -560,9 +560,10 @@ class PSBaseParser:
                 self.charpos = self._parse1(b"\n", 0)
                 self.eof = True
                 # Oh, so there wasn't actually a token there? OK.
-                if not self._tokens:
+                if self._token is None:
                     raise
-        token = self._tokens.pop()
+        token = self._token
+        self._token = None
         return token
 
 
