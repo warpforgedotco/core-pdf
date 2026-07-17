@@ -77,6 +77,35 @@ def full_source_buffer(data: memoryview, data_len: int) -> FindableSizedBuffer |
     return None
 
 
+def skip_pdf_ignored(data: bytes | memoryview, position: int, data_len: int) -> int:
+    pos = position
+    if pos >= data_len:
+        return pos
+    if isinstance(data, bytes) or data.c_contiguous:
+        match = PDF_IGNORED_RE.match(data, pos)
+        if match is not None:
+            return match.end()
+    while pos < data_len:
+        byte = data[pos]
+        if WS_TABLE[byte]:
+            pos += 1
+            continue
+        if byte != 37:
+            break
+        pos += 1
+        while pos < data_len:
+            byte = data[pos]
+            if byte == 10 or byte == 13:
+                pos += 1
+                if pos < data_len:
+                    next_byte = data[pos]
+                    if (byte == 13 and next_byte == 10) or (byte == 10 and next_byte == 13):
+                        pos += 1
+                break
+            pos += 1
+    return pos
+
+
 def looks_like_indirect_object_header(data: memoryview, position: int, data_len: int) -> bool:
     pos = position
     if pos >= data_len or not (48 <= data[pos] <= 57):

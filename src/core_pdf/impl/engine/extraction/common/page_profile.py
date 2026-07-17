@@ -18,10 +18,12 @@ from core_pdf.impl.engine.spec.s_07_objects.coercion import (
 )
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
-from core_pdf.impl.engine.spec.s_07_syntax.lexer_helpers import full_source_bytes
+from core_pdf.impl.engine.spec.s_07_syntax.lexer_helpers import (
+    full_source_bytes,
+    skip_pdf_ignored,
+)
 from core_pdf.impl.engine.spec.s_07_syntax.scanning import (
     is_regular_token_byte,
-    skip_comment,
     skip_hex_string,
     skip_literal_string,
     skip_name,
@@ -326,10 +328,7 @@ def content_operator_counts(
     while pos < data_len:
         byte = raw_bytes[pos]
         if WS_TABLE[byte] or byte == 37:
-            if byte == 37:
-                pos = skip_comment(raw_bytes, pos, data_len)
-            else:
-                pos += 1
+            pos = skip_pdf_ignored(raw_bytes, pos, data_len)
             continue
         if byte == 40:
             pos = skip_literal_string(raw_bytes, pos, data_len)

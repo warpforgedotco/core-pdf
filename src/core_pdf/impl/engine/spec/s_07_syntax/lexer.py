@@ -12,7 +12,6 @@ from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_07_syntax.lexer_helpers import (
     EMPTY_TRANSLATE_TABLE,
     HEX_VALUE,
-    PDF_IGNORED_RE,
     R_SENTINEL,
     STRING_ESCAPE,
     STRING_SPECIAL_TABLE,
@@ -25,6 +24,7 @@ from core_pdf.impl.engine.spec.s_07_syntax.lexer_helpers import (
     matches_keyword_with_one_substitution,
     parse_float_token,
     parse_int_token,
+    skip_pdf_ignored,
 )
 from core_pdf.impl.engine.spec.s_07_syntax.tokens import (
     DELIMITERS,
@@ -175,35 +175,7 @@ class PdfLexer:
         self.pos = self.skip_ignored_at(self.pos)
 
     def skip_ignored_at(self, position: int) -> int:
-        data = self.raw_data
-        pos = position
-        n = self.data_len
-        if pos >= n:
-            return pos
-        if data.c_contiguous:
-            match = PDF_IGNORED_RE.match(data, pos)
-            if match is not None:
-                return match.end()
-        whitespace = WS_TABLE
-        while pos < n:
-            byte = data[pos]
-            if whitespace[byte]:
-                pos += 1
-                continue
-            if byte != 37:
-                break
-            pos += 1
-            while pos < n:
-                byte = data[pos]
-                if byte == 10 or byte == 13:
-                    pos += 1
-                    if pos < n:
-                        next_byte = data[pos]
-                        if (byte == 13 and next_byte == 10) or (byte == 10 and next_byte == 13):
-                            pos += 1
-                    break
-                pos += 1
-        return pos
+        return skip_pdf_ignored(self.raw_data, position, self.data_len)
 
     def scan_word_at(
         self, position: int, skip_ignored: bool = True
