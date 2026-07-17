@@ -23,7 +23,11 @@ from core_pdf.integrations.pdfminer.six.cmapdb import (
 )
 from core_pdf.integrations.pdfminer.six.encodingdb import EncodingDB, name2unicode
 from core_pdf.integrations.pdfminer.six.fontmetrics import FONT_METRICS
-from core_pdf.integrations.pdfminer.six.pdfexceptions import PDFException, PDFKeyError, PDFValueError
+from core_pdf.integrations.pdfminer.six.pdfexceptions import (
+    PDFException,
+    PDFKeyError,
+    PDFValueError,
+)
 from core_pdf.integrations.pdfminer.six.pdftypes import (
     PDFStream,
     dict_value,
@@ -43,7 +47,14 @@ from core_pdf.integrations.pdfminer.six.psparser import (
     PSStackParser,
     literal_name,
 )
-from core_pdf.integrations.pdfminer.six.utils import Matrix, Point, Rect, apply_matrix_norm, choplist, nunpack
+from core_pdf.integrations.pdfminer.six.utils import (
+    Matrix,
+    Point,
+    Rect,
+    apply_matrix_norm,
+    choplist,
+    nunpack,
+)
 
 if TYPE_CHECKING:
     from core_pdf.integrations.pdfminer.six.pdfinterp import PDFResourceManager
@@ -148,10 +159,10 @@ class Type1FontHeaderParser(PSStackParser[int]):
                 (cid, name) = self.nextobject()
             except PSEOF:
                 break
-            try:
+            try:  # noqa: SIM105 - avoiding context-manager overhead in this hot loop
                 self._cid2unicode[cid] = name2unicode(cast(str, name))
-            except KeyError as e:
-                log.debug(str(e))
+            except KeyError:
+                pass
         return self._cid2unicode
 
     def do_keyword(self, pos: int, token: PSKeyword) -> None:
@@ -690,9 +701,7 @@ class CFFFont:
             # Format 0
             n = self.nglyphs - 1
             for gid, sid in enumerate(
-                cast(
-                    tuple[int, ...], struct.unpack(">" + "H" * n, self.fp.read(2 * n))
-                ),
+                cast(tuple[int, ...], struct.unpack(">" + "H" * n, self.fp.read(2 * n))),
             ):
                 gid += 1
                 sidname = self.getstr(sid)
@@ -735,9 +744,7 @@ class TrueTypeFont:
         try:
             (ntables, _1, _2, _3) = struct.unpack(">HHHH", fp.read(8))
             for _ in range(ntables):
-                (name_bytes, _tsum, offset, length) = struct.unpack(
-                    ">4sLLL", fp.read(16)
-                )
+                (name_bytes, _tsum, offset, length) = struct.unpack(">4sLLL", fp.read(16))
                 self.tables[name_bytes] = (offset, length)
         except struct.error:
             # Do not fail if there are not enough bytes to read. Even for
@@ -789,13 +796,11 @@ class TrueTypeFont:
     def parse_cmap_format_0(self, fp: BinaryIO, char2gid: dict[int, int]) -> None:
         """Parse cmap subtable format 0"""
         fmtlen, fmtlang = struct.unpack(">HH", fp.read(4))
-        log.debug("parse_cmap_format: fmtlen=%s, fmtlang=%s", fmtlen, fmtlang)
         char2gid.update(enumerate(struct.unpack(">256B", fp.read(256))))
 
     def parse_cmap_format_2(self, fp: BinaryIO, char2gid: dict[int, int]) -> None:
         """Parse cmap subtable format 2"""
         fmtlen, fmtlang = struct.unpack(">HH", fp.read(4))
-        log.debug("parse_cmap_format: fmtlen=%s, fmtlang=%s", fmtlen, fmtlang)
         subheaderkeys = struct.unpack(">256H", fp.read(512))
         firstbytes = [0] * 8192
         for i, k in enumerate(subheaderkeys):
@@ -819,7 +824,6 @@ class TrueTypeFont:
     def parse_cmap_format_4(self, fp: BinaryIO, char2gid: dict[int, int]) -> None:
         """Parse cmap subtable format 4"""
         fmtlen, fmtlang = struct.unpack(">HH", fp.read(4))
-        log.debug("parse_cmap_format: fmtlen=%s, fmtlang=%s", fmtlen, fmtlang)
         (segcount, _1, _2, _3) = struct.unpack(">HHHH", fp.read(8))
         segcount //= 2
         ecs = struct.unpack(f">{segcount}H", fp.read(2 * segcount))
@@ -841,7 +845,6 @@ class TrueTypeFont:
     def parse_cmap_format_6(self, fp: BinaryIO, char2gid: dict[int, int]) -> None:
         """Parse cmap subtable format 6"""
         fmtlen, fmtlang = struct.unpack(">HH", fp.read(4))
-        log.debug("parse_cmap_format: fmtlen=%s, fmtlang=%s", fmtlen, fmtlang)
         firstcode, entcount = struct.unpack(">HH", fp.read(4))
         gids = struct.unpack(f">{entcount}H", fp.read(2 * entcount))
         for i in range(entcount):
@@ -850,9 +853,6 @@ class TrueTypeFont:
     def parse_cmap_format_10(self, fp: BinaryIO, char2gid: dict[int, int]) -> None:
         """Parse cmap subtable format 10"""
         rsv, fmtlen, fmtlang = struct.unpack(">HII", fp.read(10))
-        log.debug(
-            "parse_cmap_format: rsv=%s, fmtlen=%s, fmtlang=%s", rsv, fmtlen, fmtlang
-        )
         startcode, numchars = struct.unpack(">II", fp.read(8))
         gids = struct.unpack(f">{numchars}H", fp.read(2 * numchars))
         for i in range(numchars):
@@ -861,9 +861,6 @@ class TrueTypeFont:
     def parse_cmap_format_12(self, fp: BinaryIO, char2gid: dict[int, int]) -> None:
         """Parse cmap subtable format 12"""
         rsv, fmtlen, fmtlang = struct.unpack(">HII", fp.read(10))
-        log.debug(
-            "parse_cmap_format: rsv=%s, fmtlen=%s, fmtlang=%s", rsv, fmtlen, fmtlang
-        )
         numgroups = struct.unpack(">I", fp.read(4))[0]
         for _i in range(numgroups):
             sc, ec, sgid = struct.unpack(">III", fp.read(12))
@@ -1083,9 +1080,7 @@ class PDFType3Font(PDFSimpleFont):
         firstchar = int_value(spec.get("FirstChar", 0))
         # lastchar = int_value(spec.get('LastChar', 0))
         width_list = list_value(spec.get("Widths", [0] * 256))
-        widths: dict[str | int, float] = {
-            i + firstchar: w for (i, w) in enumerate(width_list)
-        }
+        widths: dict[str | int, float] = {i + firstchar: w for (i, w) in enumerate(width_list)}
         if "FontDescriptor" in spec:
             descriptor = dict_value(spec["FontDescriptor"])
         else:
@@ -1143,11 +1138,7 @@ class PDFCIDFont(PDFFont):
             else:
                 cmap_name = literal_name(spec["ToUnicode"])
                 encoding = literal_name(spec["Encoding"])
-                if (
-                    "Identity" in cid_ordering
-                    or "Identity" in cmap_name
-                    or "Identity" in encoding
-                ):
+                if "Identity" in cid_ordering or "Identity" in cmap_name or "Identity" in encoding:
                     self.unicode_map = IdentityUnicodeMap()
         elif self.cidcoding in ("Adobe-Identity", "Adobe-UCS"):
             if ttf:
@@ -1167,9 +1158,7 @@ class PDFCIDFont(PDFFont):
             self.disps = {cid: (vx, vy) for (cid, (_, (vx, vy))) in widths2.items()}
             (vy, w) = resolve1(spec.get("DW2", [880, -1000]))
             self.default_disp = (None, vy)
-            widths: dict[str | int, float] = {
-                cid: w for (cid, (w, _)) in widths2.items()
-            }
+            widths: dict[str | int, float] = {cid: w for (cid, (w, _)) in widths2.items()}
             default_width = w
         else:
             # writing mode: horizontal

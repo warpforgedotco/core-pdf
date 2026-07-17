@@ -5,7 +5,13 @@ from io import BytesIO
 from typing import Union, cast
 
 from core_pdf.integrations.pdfminer.six import settings
-from core_pdf.integrations.pdfminer.six.casting import safe_cmyk, safe_float, safe_int, safe_matrix, safe_rgb
+from core_pdf.integrations.pdfminer.six.casting import (
+    safe_cmyk,
+    safe_float,
+    safe_int,
+    safe_matrix,
+    safe_rgb,
+)
 from core_pdf.integrations.pdfminer.six.cmapdb import CMap, CMapBase, CMapDB
 from core_pdf.integrations.pdfminer.six.pdfcolor import PREDEFINED_COLORSPACE, PDFColorSpace
 from core_pdf.integrations.pdfminer.six.pdfdevice import PDFDevice, PDFTextSeq
@@ -128,9 +134,7 @@ StandardColor = Union[
 Color = Union[
     StandardColor,  # Standard colors (gray, RGB, CMYK)
     str,  # Pattern name (colored pattern, PaintType=1)
-    tuple[
-        StandardColor, str
-    ],  # (base_color, pattern_name) (uncolored pattern, PaintType=2)
+    tuple[StandardColor, str],  # (base_color, pattern_name) (uncolored pattern, PaintType=2)
 ]
 
 
@@ -213,7 +217,6 @@ class PDFResourceManager:
         if objid and objid in self._cached_fonts:
             font = self._cached_fonts[objid]
         else:
-            log.debug("get_font: create: objid=%r, spec=%r", objid, spec)
             if settings.STRICT and spec["Type"] is not LITERAL_FONT:
                 raise PDFFontError("Type is not /Font")
             # Create a Font object.
@@ -416,7 +419,6 @@ class PDFPageInterpreter:
                 return PREDEFINED_COLORSPACE.get(name)
 
         for k, v in dict_value(resources).items():
-            log.debug("Resource: %r: %r", k, v)
             if k == "Font":
                 for fontid, spec in dict_value(v).items():
                     objid = None
@@ -546,8 +548,7 @@ class PDFPageInterpreter:
         if x_f is None or y_f is None:
             point = ("m", x, y)
             log.warning(
-                "Cannot start new subpath because not all values "
-                "in %r can be parsed as floats",
+                "Cannot start new subpath because not all values in %r can be parsed as floats",
                 point,
             )
         else:
@@ -766,8 +767,7 @@ class PDFPageInterpreter:
 
         if rgb is None:
             log.warning(
-                "Cannot set RGB stroke color "
-                "because not all values in %r can be parsed as floats",
+                "Cannot set RGB stroke color because not all values in %r can be parsed as floats",
                 (r, g, b),
             )
         else:
@@ -794,8 +794,7 @@ class PDFPageInterpreter:
 
         if cmyk is None:
             log.warning(
-                "Cannot set CMYK stroke color "
-                "because not all values in %r can be parsed as floats",
+                "Cannot set CMYK stroke color because not all values in %r can be parsed as floats",
                 (c, m, y, k),
             )
         else:
@@ -914,7 +913,6 @@ class PDFPageInterpreter:
             if len(components) == 1:
                 # Colored tiling pattern (PaintType=1): just pattern name
                 self.graphicstate.scolor = pattern_name
-                log.debug("Set stroke pattern (colored): %s", pattern_name)
             else:
                 # Uncolored tiling pattern (PaintType=2):
                 # color components + pattern name
@@ -929,9 +927,6 @@ class PDFPageInterpreter:
 
                 # Store as tuple: (base_color, pattern_name)
                 self.graphicstate.scolor = (base_color, pattern_name)
-                log.debug(
-                    "Set stroke pattern (uncolored): %s + %s", base_color, pattern_name
-                )
 
     def do_scn(self) -> None:
         """Set color for nonstroking operations.
@@ -980,7 +975,6 @@ class PDFPageInterpreter:
             if len(components) == 1:
                 # Colored tiling pattern (PaintType=1): just pattern name
                 self.graphicstate.ncolor = pattern_name
-                log.debug("Set non-stroke pattern (colored): %s", pattern_name)
             else:
                 # Uncolored tiling pattern (PaintType=2):
                 # color components + pattern name
@@ -995,11 +989,6 @@ class PDFPageInterpreter:
 
                 # Store as tuple: (base_color, pattern_name)
                 self.graphicstate.ncolor = (base_color, pattern_name)
-                log.debug(
-                    "Set non-stroke pattern (uncolored): %s + %s",
-                    base_color,
-                    pattern_name,
-                )
 
     def do_SC(self) -> None:
         """Set color for stroking operations"""
@@ -1245,8 +1234,7 @@ class PDFPageInterpreter:
 
         if matrix is None:
             log.warning(
-                "Could not set text matrix because "
-                "not all values in %r can be parsed as floats",
+                "Could not set text matrix because not all values in %r can be parsed as floats",
                 values,
             )
         else:
@@ -1323,7 +1311,6 @@ class PDFPageInterpreter:
             if settings.STRICT:
                 raise PDFInterpreterError(f"Undefined xobject id: {xobjid!r}") from err
             return
-        log.debug("Processing xobj: %r", xobj)
         subtype = xobj.get("Subtype")
         if subtype is LITERAL_FORM and "BBox" in xobj:
             interpreter = self.subinterp()
@@ -1350,7 +1337,6 @@ class PDFPageInterpreter:
             pass
 
     def process_page(self, page: PDFPage) -> None:
-        log.debug("Processing page: %r", page)
         (x0, y0, x1, y1) = page.mediabox
         if page.rotate == 90:
             ctm = (0, -1, 1, 0, -y0, x1)
@@ -1374,13 +1360,6 @@ class PDFPageInterpreter:
 
         This method may be called recursively.
         """
-        if log.isEnabledFor(logging.DEBUG):
-            log.debug(
-                "render_contents: resources=%r, streams=%r, ctm=%r",
-                resources,
-                streams,
-                ctm,
-            )
         self.init_resources(resources)
         self.init_state(ctm)
         self.execute(list_value(streams))
@@ -1398,9 +1377,7 @@ class PDFPageInterpreter:
             stream = stream_value(obj)
             if stream.objid is None:
                 # Inline streams without object IDs can't be tracked for circular refs
-                log.warning(
-                    "Execute called on non-indirect object (inline image?) %r", stream
-                )
+                log.warning("Execute called on non-indirect object (inline image?) %r", stream)
                 continue
             if stream.objid in self.parent_stream_ids:
                 log.warning(
@@ -1442,13 +1419,9 @@ class PDFPageInterpreter:
                 if func is not None:
                     if nargs:
                         args = self.pop(nargs)
-                        if log.isEnabledFor(logging.DEBUG):
-                            log.debug("exec: %s %r", name, args)
                         if len(args) == nargs:
                             func(*args)
                     else:
-                        if log.isEnabledFor(logging.DEBUG):
-                            log.debug("exec: %s", name)
                         func()
                 elif settings.STRICT:
                     error_msg = f"Unknown operator: {name!r}"

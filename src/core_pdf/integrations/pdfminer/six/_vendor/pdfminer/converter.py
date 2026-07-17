@@ -1,5 +1,4 @@
 import io
-import logging
 import re
 from collections.abc import Sequence
 from typing import (
@@ -54,8 +53,6 @@ from core_pdf.integrations.pdfminer.six.utils import (
     make_compat_str,
     mult_matrix,
 )
-
-log = logging.getLogger(__name__)
 
 
 class PDFLayoutAnalyzer(PDFTextDevice):
@@ -260,7 +257,6 @@ class PDFLayoutAnalyzer(PDFTextDevice):
         return item.adv
 
     def handle_undefined_char(self, font: PDFFont, cid: int) -> str:
-        log.debug("undefined: %r, %r", font, cid)
         return f"(cid:{cid})"
 
     def receive_layout(self, ltpage: LTPage) -> None:

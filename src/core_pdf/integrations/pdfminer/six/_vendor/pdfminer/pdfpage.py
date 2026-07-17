@@ -119,12 +119,10 @@ class PDFPage:
                 object_type = object_properties.get("type")
 
             if object_type is LITERAL_PAGES and "Kids" in object_properties:
-                log.debug("Pages: Kids=%r", object_properties["Kids"])
                 for child in list_value(object_properties["Kids"]):
                     yield from depth_first_search(child, object_properties, visited)
 
             elif object_type is LITERAL_PAGE:
-                log.debug("Page: %r", object_properties)
                 yield (object_id, object_properties)
 
         try:
@@ -190,10 +188,7 @@ class PDFPage:
         us_letter = (0.0, 0.0, 612.0, 792.0)
 
         if value is None:
-            log.warning(
-                "MediaBox missing from /Page (and not inherited), "
-                "defaulting to US Letter"
-            )
+            log.warning("MediaBox missing from /Page (and not inherited), defaulting to US Letter")
             return us_letter
 
         try:

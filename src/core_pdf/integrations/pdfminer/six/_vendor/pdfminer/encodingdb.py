@@ -1,4 +1,3 @@
-import logging
 import re
 from collections.abc import Iterable
 from typing import ClassVar, cast
@@ -9,8 +8,6 @@ from core_pdf.integrations.pdfminer.six.pdfexceptions import PDFKeyError
 from core_pdf.integrations.pdfminer.six.psparser import PSLiteral
 
 HEXADECIMAL = re.compile(r"[0-9a-fA-F]+")
-
-log = logging.getLogger(__name__)
 
 
 def name2unicode(name: str) -> str:
@@ -119,9 +116,9 @@ class EncodingDB:
                 if isinstance(x, int):
                     cid = x
                 elif isinstance(x, PSLiteral):
-                    try:
+                    try:  # noqa: SIM105 - avoiding context-manager overhead in this hot loop
                         cid2unicode[cid] = name2unicode(cast(str, x.name))
-                    except (KeyError, ValueError) as e:
-                        log.debug(str(e))
+                    except (KeyError, ValueError):
+                        pass
                     cid += 1
         return cid2unicode

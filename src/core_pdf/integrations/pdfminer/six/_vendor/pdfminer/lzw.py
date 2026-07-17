@@ -1,11 +1,8 @@
-import logging
 from collections.abc import Iterator
 from io import BytesIO
 from typing import BinaryIO, cast
 
 from core_pdf.integrations.pdfminer.six.pdfexceptions import PDFEOFError, PDFException
-
-logger = logging.getLogger(__name__)
 
 
 class CorruptDataError(PDFException):
@@ -90,14 +87,6 @@ class LZWDecoder:
                 # just ignore corrupt data and stop yielding there
                 break
             yield x
-
-            logger.debug(
-                "nbits=%d, code=%d, output=%r, table=%r",
-                self.nbits,
-                code,
-                x,
-                self.table[258:],
-            )
 
 
 def lzwdecode(data: bytes) -> bytes:

@@ -30,7 +30,13 @@ from typing import (
 from core_pdf.integrations.pdfminer.six.encodingdb import name2unicode
 from core_pdf.integrations.pdfminer.six.pdfexceptions import PDFException, PDFTypeError
 from core_pdf.integrations.pdfminer.six.psexceptions import PSEOF, PSSyntaxError
-from core_pdf.integrations.pdfminer.six.psparser import KWD, PSKeyword, PSLiteral, PSStackParser, literal_name
+from core_pdf.integrations.pdfminer.six.psparser import (
+    KWD,
+    PSKeyword,
+    PSLiteral,
+    PSStackParser,
+    literal_name,
+)
 from core_pdf.integrations.pdfminer.six.utils import choplist, nunpack
 
 log = logging.getLogger(__name__)
@@ -88,7 +94,6 @@ class CMap(CMapBase):
         copy(self.code2cid, cmap.code2cid)
 
     def decode(self, code: bytes) -> Iterator[int]:
-        log.debug("decode: %r, %r", self, code)
         d = self.code2cid
         for i in iter(code):
             if i in d:
@@ -145,7 +150,6 @@ class UnicodeMap(CMapBase):
         return "<UnicodeMap: {}>".format(self.attrs.get("CMapName"))
 
     def get_unichr(self, cid: int) -> str:
-        log.debug("get_unichr: %r, %r", self, cid)
         return self.cid2unichr[cid]
 
     def dump(self, out: TextIO = sys.stdout) -> None:
@@ -156,7 +160,6 @@ class UnicodeMap(CMapBase):
 class IdentityUnicodeMap(UnicodeMap):
     def get_unichr(self, cid: int) -> str:
         """Interpret character id as unicode codepoint"""
-        log.debug("get_unichr: %r, %r", self, cid)
         return chr(cid)
 
 
@@ -248,7 +251,6 @@ class CMapDB:
     @classmethod
     def _load_data(cls, name: str) -> type[Any]:
         name = name.replace("\0", "")
-        log.debug("loading: %r", name)
         cmap_paths = (
             os.environ.get("CMAP_PATH", "/usr/share/pdfminer/"),
             os.path.join(os.path.dirname(__file__), "cmap"),
@@ -262,21 +264,16 @@ class CMapDB:
             resolved_directory = os.path.realpath(directory)
 
             # Check if resolved path is within the intended directory
-            if resolved_json_path.startswith(
-                resolved_directory + os.sep
-            ) and os.path.exists(resolved_json_path):
-                log.debug("loading JSON: %r", json_path)
+            if resolved_json_path.startswith(resolved_directory + os.sep) and os.path.exists(
+                resolved_json_path
+            ):
                 with gzip.open(resolved_json_path, "rt", encoding="utf-8") as gzfile:
                     data: dict[str, Any] = json.load(gzfile)
                     # Convert string keys to integers for CID mappings
                     if "CID2UNICHR_H" in data:
-                        data["CID2UNICHR_H"] = {
-                            int(k): v for k, v in data["CID2UNICHR_H"].items()
-                        }
+                        data["CID2UNICHR_H"] = {int(k): v for k, v in data["CID2UNICHR_H"].items()}
                     if "CID2UNICHR_V" in data:
-                        data["CID2UNICHR_V"] = {
-                            int(k): v for k, v in data["CID2UNICHR_V"].items()
-                        }
+                        data["CID2UNICHR_V"] = {int(k): v for k, v in data["CID2UNICHR_V"].items()}
                     # CODE2CID may also have numeric keys that need conversion
                     if data.get("CODE2CID"):
                         data["CODE2CID"] = cls._convert_code2cid_keys(data["CODE2CID"])
@@ -402,16 +399,14 @@ class CMapParser(PSStackParser[PSKeyword]):
                     continue
                 if len(start_byte) != len(end_byte):
                     self._warn_once(
-                        "The start and end byte of begincidrange have "
-                        "different lengths.",
+                        "The start and end byte of begincidrange have different lengths.",
                     )
                     continue
                 start_prefix = start_byte[:-4]
                 end_prefix = end_byte[:-4]
                 if start_prefix != end_prefix:
                     self._warn_once(
-                        "The prefix of the start and end byte of "
-                        "begincidrange are not the same.",
+                        "The prefix of the start and end byte of begincidrange are not the same.",
                     )
                     continue
                 svar = start_byte[-4:]
@@ -459,9 +454,7 @@ class CMapParser(PSStackParser[PSKeyword]):
                             "The difference between the start and end "
                             "offsets does not match the code length.",
                         )
-                    for cid, unicode_value in zip(
-                        range(start, end + 1), code, strict=False
-                    ):
+                    for cid, unicode_value in zip(range(start, end + 1), code, strict=False):
                         self.cmap.add_cid2unichr(cid, unicode_value)
                 else:
                     assert isinstance(code, bytes)

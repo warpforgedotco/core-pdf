@@ -1,4 +1,3 @@
-import logging
 from io import BytesIO
 from typing import TYPE_CHECKING, BinaryIO, Union
 
@@ -11,8 +10,6 @@ from core_pdf.integrations.pdfminer.six.psparser import KWD, PSKeyword, PSStackP
 
 if TYPE_CHECKING:
     from core_pdf.integrations.pdfminer.six.pdfdocument import PDFDocument
-
-log = logging.getLogger(__name__)
 
 
 class PDFSyntaxError(PDFException):
@@ -79,9 +76,7 @@ class PDFParser(PSStackParser[Union[PSKeyword, PDFStream, PDFObjRef, None]]):
             try:
                 ((_, dic),) = popped_data
             except ValueError as err:
-                raise PDFSyntaxError(
-                    f"Invalid stream dictionary: {popped_data}"
-                ) from err
+                raise PDFSyntaxError(f"Invalid stream dictionary: {popped_data}") from err
 
             dic = dict_value(dic)
             objlen = 0
@@ -120,13 +115,6 @@ class PDFParser(PSStackParser[Union[PSKeyword, PDFStream, PDFObjRef, None]]):
                     data += line
             self.seek(pos + objlen)
             # XXX limit objlen not to exceed object boundary
-            log.debug(
-                "Stream: pos=%d, objlen=%d, dic=%r, data=%r...",
-                pos,
-                objlen,
-                dic,
-                data[:10],
-            )
             assert self.doc is not None
             stream = PDFStream(dic, bytes(data), self.doc.decipher)
             self.push((pos, stream))
