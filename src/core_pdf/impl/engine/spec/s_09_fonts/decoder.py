@@ -13,6 +13,10 @@ from core_pdf.impl.engine.spec.s_09_fonts.cff import (
     build_cff_unicode_repairs,
     cff_font_for_pdf_font,
 )
+from core_pdf.impl.engine.spec.s_09_fonts.cid_unicode import (
+    CIDUnicodeMap,
+    resolve_cid_unicode_map,
+)
 from core_pdf.impl.engine.spec.s_09_fonts.encoding import BYTE_CACHE
 from core_pdf.impl.engine.spec.s_09_fonts.font_names import resolve_base_font_name
 from core_pdf.impl.engine.spec.s_09_fonts.glyph_decode import (
@@ -46,7 +50,6 @@ from core_pdf.impl.third_party.cid.cmap import (
 )
 from core_pdf.impl.third_party.cid.resource_loader import (
     predefined_cmap_unicode,
-    resolve_cid_unicode_map,
     resolve_cmap_decoder,
     resolve_cmap_resource,
 )
@@ -191,7 +194,7 @@ class FontDecoder:
     ligature_overrides: dict[int, str]
     to_unicode: ToUnicodeCMap | None
     cmap: CMapDecoder | None
-    cid_unicode_map: Mapping[int, str] | None
+    cid_unicode_map: Mapping[int, str] | CIDUnicodeMap | None
     cid_unicode_map_resolved: bool
     base_encoding: str | None
     differences: dict[int, str]
@@ -339,7 +342,7 @@ class FontDecoder:
         font: dict[str, Any],
         *,
         vertical: bool,
-    ) -> Mapping[int, str] | None:
+    ) -> Mapping[int, str] | CIDUnicodeMap | None:
         descendant = get_descendant(font)
         if descendant is None:
             return None
@@ -510,7 +513,7 @@ class FontDecoder:
         source = "identity" if text != "\ufffd" else "replacement"
         return UnicodeChoice(text, source, dedupe_alternates(alternates, text))
 
-    def _resolved_cid_unicode_map(self) -> Mapping[int, str] | None:
+    def _resolved_cid_unicode_map(self) -> Mapping[int, str] | CIDUnicodeMap | None:
         if not self.cid_unicode_map_resolved:
             self.cid_unicode_map = self._cid_unicode_map(self.font, vertical=self.is_vertical)
             self.cid_unicode_map_resolved = True
