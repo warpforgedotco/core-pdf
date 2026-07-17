@@ -5,7 +5,7 @@ import pytest
 
 from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.engine.spec.s_07_syntax.tokens import DELIMITERS, WHITESPACE
-from core_pdf.impl.objects import PdfStream
+from core_pdf.impl.objects import PdfStream, PdfString
 
 
 @pytest.mark.parametrize("separator", WHITESPACE + DELIMITERS)
@@ -30,6 +30,14 @@ def test_find_separator_returns_data_length_without_separator(
 
     assert lexer.find_separator(0) == len(data)
     assert lexer.find_separator(8) == len(data)
+
+
+def test_reversed_memoryview_does_not_reuse_backing_buffer_for_native_search() -> None:
+    data = memoryview(b")abc(")[::-1]
+    lexer = PdfLexer(data)
+
+    assert lexer.source_buffer is None
+    assert lexer.parse_object() == PdfString(b"cba")
 
 
 @pytest.mark.parametrize(

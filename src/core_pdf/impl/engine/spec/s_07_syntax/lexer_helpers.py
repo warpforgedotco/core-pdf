@@ -47,7 +47,12 @@ def full_source_buffer(data: memoryview, data_len: int) -> FindableSizedBuffer |
     source = data.obj
     if hasattr(source, "find") and hasattr(source, "rfind") and hasattr(source, "__len__"):
         buffer = cast(FindableSizedBuffer, source)
-        if len(buffer) == data_len:
+        if (
+            data.c_contiguous
+            and data.itemsize == 1
+            and data.nbytes == data_len
+            and len(buffer) == data_len
+        ):
             return buffer
     return None
 
