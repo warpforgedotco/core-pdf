@@ -101,6 +101,19 @@ def test_find_stream_end_uses_nearest_delimited_candidate() -> None:
     assert lexer.find_stream_end(0, preferred=first_marker + 12) == first_marker
 
 
+@pytest.mark.parametrize("view_kind", ["sliced", "reversed"])
+def test_find_stream_end_reuses_logical_view_for_bidirectional_search(view_kind: str) -> None:
+    content = b"payload\nendstream\nshort gap\nendstream\nendobj"
+    if view_kind == "sliced":
+        data = memoryview(b"prefix" + content + b"suffix")[6:-6]
+    else:
+        data = memoryview(content[::-1])[::-1]
+    lexer = PdfLexer(data)
+    first_marker = content.index(b"endstream")
+
+    assert lexer.find_stream_end(0, preferred=first_marker + 9) == first_marker
+
+
 def test_find_stream_end_uses_compatible_fallback_for_malformed_keyword() -> None:
     data = b"payload-endstream-endobj"
     lexer = PdfLexer(data)

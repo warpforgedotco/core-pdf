@@ -998,13 +998,11 @@ class PdfLexer:
         *,
         reverse: bool,
         require_eol_before: bool,
+        buffer: FindableSizedBuffer | None = None,
     ) -> tuple[int, int]:
-        source_buffer = self.source_buffer
-        buffer: FindableSizedBuffer
-        if source_buffer is None:
-            buffer = self.raw_data.tobytes()
-        else:
-            buffer = source_buffer
+        if buffer is None:
+            source_buffer = self.source_buffer
+            buffer = self.raw_data.tobytes() if source_buffer is None else source_buffer
 
         find = buffer.rfind if reverse else buffer.find
         raw_candidate = find(keyword, start, end)
@@ -1028,6 +1026,8 @@ class PdfLexer:
         return -1, raw_candidate
 
     def find_stream_end(self, data_start: int, preferred: int | None = None) -> int:
+        source_buffer = self.source_buffer
+        search_buffer = self.raw_data.tobytes() if source_buffer is None else source_buffer
         search_start = data_start if preferred is None else preferred
         candidate, raw_candidate = self._find_keyword_candidate(
             b"endstream",
@@ -1035,6 +1035,7 @@ class PdfLexer:
             self.data_len,
             reverse=False,
             require_eol_before=True,
+            buffer=search_buffer,
         )
         if preferred is None:
             return candidate if candidate >= 0 else raw_candidate
@@ -1045,6 +1046,7 @@ class PdfLexer:
             preferred,
             reverse=True,
             require_eol_before=True,
+            buffer=search_buffer,
         )
         if candidate >= 0 and previous >= 0:
             forward_distance = candidate - preferred
