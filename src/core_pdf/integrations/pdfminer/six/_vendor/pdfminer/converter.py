@@ -10,7 +10,6 @@ from typing import (
     cast,
 )
 
-from core_pdf.integrations.pdfminer.six import utils
 from core_pdf.integrations.pdfminer.six.image import ImageWriter
 from core_pdf.integrations.pdfminer.six.layout import (
     LAParams,
@@ -331,31 +330,37 @@ class TextConverter(PDFConverter[AnyIO]):
         self.imagewriter = imagewriter
 
     def write_text(self, text: str) -> None:
-        if not isinstance(text, str):
-            text = utils.compatible_encode_method(text, self.codec, "ignore")
         if self.outfp_binary:
             self.outfp.write(text.encode())  # type: ignore[arg-type]
         else:
             self.outfp.write(text)  # type: ignore[arg-type]
 
     def receive_layout(self, ltpage: LTPage) -> None:
+        if self.outfp_binary:
+
+            def write_text(text: str) -> None:
+                self.outfp.write(text.encode())  # type: ignore[arg-type]
+
+        else:
+            write_text = self.outfp.write
+
         def render(item: LTItem) -> None:
             if isinstance(item, LTContainer):
                 for child in item:
                     render(child)
                 if isinstance(item, LTTextBox):
-                    self.write_text("\n")
+                    write_text("\n")
             elif isinstance(item, LTText):
-                self.write_text(item.get_text())
+                write_text(item.get_text())
                 if isinstance(item, LTImage) and self.imagewriter is not None:
                     self.imagewriter.export_image(item)
             elif isinstance(item, LTImage) and self.imagewriter is not None:
                 self.imagewriter.export_image(item)
 
         if self.showpageno:
-            self.write_text(f"Page {ltpage.pageid}\n")
+            write_text(f"Page {ltpage.pageid}\n")
         render(ltpage)
-        self.write_text("\f")
+        write_text("\f")
 
     # Some dummy functions to save memory/CPU when all that is wanted
     # is text.  This stops all the image and drawing output from being
