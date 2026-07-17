@@ -1,5 +1,5 @@
 from core_pdf.impl.engine.extraction.common.render import text_boxes_in_reading_order
-from core_pdf.impl.engine.layout.models import LayoutBox, TextRun
+from core_pdf.impl.engine.layout.models import LayoutBox, LayoutLine, TextRun
 from core_pdf.impl.engine.layout.text_lines import reconstruct_layout_line_text
 
 
@@ -67,3 +67,34 @@ def test_rotated_character_runs_preserve_intentional_joining() -> None:
         y += 5.0
 
     assert reconstruct_layout_line_text(runs).text == text
+
+
+def test_layout_line_reuses_reconstructed_text_until_a_run_changes() -> None:
+    run = rotated_run("A", 10.0, 15.0)
+    line = LayoutLine(runs=[run])
+
+    first = line.reconstructed_text()
+
+    assert line.reconstructed_text() is first
+    run.set_text("B")
+    second = line.reconstructed_text()
+    assert second is not first
+    assert second.text == "B"
+
+
+def test_layout_line_reconstruction_cache_tracks_geometry_and_run_order() -> None:
+    first_run = rotated_run("A", 10.0, 15.0)
+    second_run = rotated_run("B", 15.0, 20.0)
+    line = LayoutLine(runs=[first_run, second_run])
+
+    first = line.reconstructed_text()
+    second_run.y0 = 40.0
+    after_geometry_change = line.reconstructed_text()
+    assert after_geometry_change is not first
+
+    second_run.coords[TextRun.Y0] = 50.0
+    after_direct_coordinate_change = line.reconstructed_text()
+    assert after_direct_coordinate_change is not after_geometry_change
+
+    line.runs.reverse()
+    assert line.reconstructed_text() is not after_direct_coordinate_change
