@@ -86,20 +86,19 @@ def glyph_ink_rect(
     b = state.combined_B
     c = state.combined_C
     d = state.combined_D
-    corners = (
-        (text_x0, text_y0),
-        (text_x0, text_y1),
-        (text_x1, text_y0),
-        (text_x1, text_y1),
-    )
-    points = [(base_x + x * a + y * c, base_y + x * b + y * d) for x, y in corners]
-    xs = [point[0] for point in points]
-    ys = [point[1] for point in points]
+    p00_x = base_x + text_x0 * a + text_y0 * c
+    p00_y = base_y + text_x0 * b + text_y0 * d
+    p01_x = base_x + text_x0 * a + text_y1 * c
+    p01_y = base_y + text_x0 * b + text_y1 * d
+    p10_x = base_x + text_x1 * a + text_y0 * c
+    p10_y = base_y + text_x1 * b + text_y0 * d
+    p11_x = base_x + text_x1 * a + text_y1 * c
+    p11_y = base_y + text_x1 * b + text_y1 * d
     rect = RectBox(
-        min(xs),
-        min(ys),
-        max(xs),
-        max(ys),
+        min(p00_x, p01_x, p10_x, p11_x),
+        min(p00_y, p01_y, p10_y, p11_y),
+        max(p00_x, p01_x, p10_x, p11_x),
+        max(p00_y, p01_y, p10_y, p11_y),
         seqno=fallback.seqno,
         fill=fallback.fill,
         fill_opacity=fallback.fill_opacity,
@@ -130,19 +129,19 @@ def transformed_text_rect(
     b = state.combined_B
     c = state.combined_C
     d = state.combined_D
-    points = (
-        (base_x + x0 * a + y0 * c, base_y + x0 * b + y0 * d),
-        (base_x + x0 * a + y1 * c, base_y + x0 * b + y1 * d),
-        (base_x + x1 * a + y0 * c, base_y + x1 * b + y0 * d),
-        (base_x + x1 * a + y1 * c, base_y + x1 * b + y1 * d),
-    )
-    xs = [point[0] for point in points]
-    ys = [point[1] for point in points]
+    p00_x = base_x + x0 * a + y0 * c
+    p00_y = base_y + x0 * b + y0 * d
+    p01_x = base_x + x0 * a + y1 * c
+    p01_y = base_y + x0 * b + y1 * d
+    p10_x = base_x + x1 * a + y0 * c
+    p10_y = base_y + x1 * b + y0 * d
+    p11_x = base_x + x1 * a + y1 * c
+    p11_y = base_y + x1 * b + y1 * d
     return RectBox(
-        min(xs),
-        min(ys),
-        max(xs),
-        max(ys),
+        min(p00_x, p01_x, p10_x, p11_x),
+        min(p00_y, p01_y, p10_y, p11_y),
+        max(p00_x, p01_x, p10_x, p11_x),
+        max(p00_y, p01_y, p10_y, p11_y),
         seqno=state.sequence,
         fill=state.fill_color,
         fill_opacity=state.fill_opacity,
