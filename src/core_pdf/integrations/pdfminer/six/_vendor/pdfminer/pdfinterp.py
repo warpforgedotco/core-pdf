@@ -1401,7 +1401,7 @@ class PDFPageInterpreter:
                 (_, obj) = nextobject()
             except PSEOF:
                 break
-            if isinstance(obj, PSKeyword):
+            if type(obj) is PSKeyword:
                 operator = operator_cache.get(obj)
                 if operator is None:
                     name = keyword_name(obj)
