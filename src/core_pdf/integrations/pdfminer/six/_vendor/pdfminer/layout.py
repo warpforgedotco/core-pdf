@@ -440,7 +440,7 @@ class LTExpandableContainer(LTContainer[LTItemT]):
     # Incompatible override: we take an LTComponent (with bounding box), but
     # super() LTContainer only considers LTItem (no bounding box).
     def add(self, obj: LTComponent) -> None:  # type: ignore[override]
-        self._objs.append(cast(LTItemT, obj))
+        self._objs.append(obj)  # type: ignore[arg-type]
         x0 = min(self.x0, obj.x0)
         y0 = min(self.y0, obj.y0)
         x1 = max(self.x1, obj.x1)
@@ -460,9 +460,7 @@ class LTTextContainer(LTExpandableContainer[LTItemT], LTText):
         LTExpandableContainer.__init__(self)
 
     def get_text(self) -> str:
-        return "".join(
-            cast(LTText, obj).get_text() for obj in self if isinstance(obj, LTText)
-        )
+        return "".join(obj.get_text() for obj in self if isinstance(obj, LTText))
 
 
 TextLineElement = Union[LTChar, LTAnno]

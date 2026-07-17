@@ -1374,12 +1374,13 @@ class PDFPageInterpreter:
 
         This method may be called recursively.
         """
-        log.debug(
-            "render_contents: resources=%r, streams=%r, ctm=%r",
-            resources,
-            streams,
-            ctm,
-        )
+        if log.isEnabledFor(logging.DEBUG):
+            log.debug(
+                "render_contents: resources=%r, streams=%r, ctm=%r",
+                resources,
+                streams,
+                ctm,
+            )
         self.init_resources(resources)
         self.init_state(ctm)
         self.execute(list_value(streams))
@@ -1414,31 +1415,40 @@ class PDFPageInterpreter:
         except PSEOF:
             # empty page
             return
+        operator_cache = {}
         while True:
             try:
                 (_, obj) = parser.nextobject()
             except PSEOF:
                 break
             if isinstance(obj, PSKeyword):
-                name = keyword_name(obj)
-                method = "do_{}".format(
-                    name.replace("*", "_a")
-                    .replace('"', "_w")
-                    .replace(
-                        "'",
-                        "_q",
+                operator = operator_cache.get(obj)
+                if operator is None:
+                    name = keyword_name(obj)
+                    method = "do_{}".format(
+                        name.replace("*", "_a")
+                        .replace('"', "_w")
+                        .replace(
+                            "'",
+                            "_q",
+                        )
                     )
-                )
-                if hasattr(self, method):
-                    func = getattr(self, method)
-                    nargs = func.__code__.co_argcount - 1
+                    func = getattr(self, method, None)
+                    nargs = func.__code__.co_argcount - 1 if func is not None else 0
+                    operator = (name, func, nargs)
+                    operator_cache[obj] = operator
+                else:
+                    name, func, nargs = operator
+                if func is not None:
                     if nargs:
                         args = self.pop(nargs)
-                        log.debug("exec: %s %r", name, args)
+                        if log.isEnabledFor(logging.DEBUG):
+                            log.debug("exec: %s %r", name, args)
                         if len(args) == nargs:
                             func(*args)
                     else:
-                        log.debug("exec: %s", name)
+                        if log.isEnabledFor(logging.DEBUG):
+                            log.debug("exec: %s", name)
                         func()
                 elif settings.STRICT:
                     error_msg = f"Unknown operator: {name!r}"
