@@ -2,6 +2,7 @@ import io
 import re
 from collections.abc import Sequence
 from typing import (
+    TYPE_CHECKING,
     BinaryIO,
     ClassVar,
     Generic,
@@ -10,7 +11,6 @@ from typing import (
     cast,
 )
 
-from core_pdf.integrations.pdfminer.six.image import ImageWriter
 from core_pdf.integrations.pdfminer.six.layout import (
     LAParams,
     LTAnno,
@@ -52,6 +52,9 @@ from core_pdf.integrations.pdfminer.six.utils import (
     make_compat_str,
     mult_matrix,
 )
+
+if TYPE_CHECKING:
+    from core_pdf.integrations.pdfminer.six.image import ImageWriter
 
 
 class PDFLayoutAnalyzer(PDFTextDevice):
@@ -327,7 +330,7 @@ class TextConverter(PDFConverter[AnyIO]):
         pageno: int = 1,
         laparams: LAParams | None = None,
         showpageno: bool = False,
-        imagewriter: ImageWriter | None = None,
+        imagewriter: "ImageWriter | None" = None,
     ) -> None:
         super().__init__(rsrcmgr, outfp, codec=codec, pageno=pageno, laparams=laparams)
         self.showpageno = showpageno
@@ -411,7 +414,7 @@ class HTMLConverter(PDFConverter[AnyIO]):
         layoutmode: str = "normal",
         showpageno: bool = True,
         pagemargin: int = 50,
-        imagewriter: ImageWriter | None = None,
+        imagewriter: "ImageWriter | None" = None,
         debug: int = 0,
         rect_colors: dict[str, str] | None = None,
         text_colors: dict[str, str] | None = None,
@@ -689,7 +692,7 @@ class XMLConverter(PDFConverter[AnyIO]):
         codec: str = "utf-8",
         pageno: int = 1,
         laparams: LAParams | None = None,
-        imagewriter: ImageWriter | None = None,
+        imagewriter: "ImageWriter | None" = None,
         stripcontrol: bool = False,
     ) -> None:
         PDFConverter.__init__(
