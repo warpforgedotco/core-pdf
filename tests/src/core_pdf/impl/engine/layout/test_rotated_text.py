@@ -86,6 +86,15 @@ def test_layout_line_reuses_reconstructed_text_until_a_run_changes() -> None:
     assert second.text == "B"
 
 
+def test_layout_lines_share_reconstruction_for_the_same_run_state() -> None:
+    run = rotated_run("Shared", 10.0, 30.0)
+
+    first = LayoutLine(runs=[run]).reconstructed_text()
+    second = LayoutLine(runs=[run]).reconstructed_text()
+
+    assert second is first
+
+
 def test_layout_line_reconstruction_cache_tracks_geometry_and_run_order() -> None:
     first_run = rotated_run("A", 10.0, 15.0)
     second_run = rotated_run("B", 15.0, 20.0)

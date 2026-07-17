@@ -20,6 +20,7 @@ Provenance: TypeAlias = tuple[tuple[str, object], ...]
 
 class TextRun:
     __slots__ = (
+        "_layout_reconstruction_cache",
         "_revision",
         "text",
         "stripped_text",
@@ -78,6 +79,7 @@ class TextRun:
     provenance: Provenance
     confidence: float | None
     glyph_clusters: tuple[GlyphCluster, ...]
+    _layout_reconstruction_cache: tuple[object, LayoutLineText] | None
 
     def __setattr__(self, name: str, value: Any) -> None:
         object.__setattr__(self, name, value)
@@ -207,6 +209,7 @@ class TextRun:
         confidence: float | None = None,
         glyph_clusters: tuple[GlyphCluster, ...] = (),
     ) -> None:
+        self._layout_reconstruction_cache = None
         self._revision = 0
         self.coords = [x0, y0, x1, y1, tx, ty, font_size, space_width]
         self.mid_x_value = (x0 + x1) * 0.5
@@ -314,6 +317,7 @@ class TextRun:
         resolved_advance_bbox = advance_bbox or (x0, y0, x1, y1)
         resolved_ink_bbox = ink_bbox or resolved_advance_bbox
         if existing is not None:
+            existing._layout_reconstruction_cache = None
             c = existing.coords
             c[cls.X0] = x0
             c[cls.Y0] = y0
@@ -354,6 +358,7 @@ class TextRun:
             existing.text_is_upper = has_text and stripped_text.isupper()
             return existing
         r = object.__new__(cls)
+        r._layout_reconstruction_cache = None
         r._revision = 0
         c = COORDS_TEMPLATE.copy()
         c[cls.X0] = x0
@@ -445,6 +450,7 @@ class TextRun:
 
     def with_coords(self, x0: float, y0: float, x1: float, y1: float) -> TextRun:
         r = object.__new__(TextRun)
+        r._layout_reconstruction_cache = None
         r._revision = 0
         coords = self.coords
         r.coords = [
@@ -483,6 +489,12 @@ class TextRun:
         r.glyph_clusters = ()
         r._revision = 0
         return r
+
+
+LayoutLineReconstructionKey: TypeAlias = tuple[
+    bool,
+    tuple[tuple[TextRun, int, tuple[float, ...]], ...],
+]
 
 
 class LayoutWord:
@@ -555,9 +567,7 @@ class LayoutLine:
         is_all_caps_text: bool = True,
     ) -> None:
         self._reconstructed_cache: LayoutLineText | None = None
-        self._reconstructed_cache_key: (
-            tuple[bool, tuple[tuple[int, int, tuple[float, ...]], ...]] | None
-        ) = None
+        self._reconstructed_cache_key: LayoutLineReconstructionKey | None = None
         compute_from_runs = (
             runs is not None
             and len(runs) > 0
@@ -664,14 +674,22 @@ class LayoutLine:
 
         key = (
             self.is_all_caps_text,
-            tuple((id(run), run._revision, tuple(run.coords)) for run in self.runs),
+            tuple((run, run._revision, tuple(run.coords)) for run in self.runs),
         )
         cached = self._reconstructed_cache
         if cached is not None and key == self._reconstructed_cache_key:
             return cached
-        reconstructed = reconstruct_layout_line_text(
-            self.runs, is_all_caps_text=self.is_all_caps_text
-        )
+        first_run = self.runs[0] if self.runs else None
+        shared_cache = first_run._layout_reconstruction_cache if first_run is not None else None
+        if shared_cache is not None and shared_cache[0] == key:
+            reconstructed = shared_cache[1]
+        else:
+            reconstructed = reconstruct_layout_line_text(
+                self.runs,
+                is_all_caps_text=self.is_all_caps_text,
+            )
+            if first_run is not None:
+                object.__setattr__(first_run, "_layout_reconstruction_cache", (key, reconstructed))
         self._reconstructed_cache = reconstructed
         self._reconstructed_cache_key = key
         return reconstructed
