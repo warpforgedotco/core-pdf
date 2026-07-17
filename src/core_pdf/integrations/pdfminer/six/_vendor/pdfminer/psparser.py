@@ -522,9 +522,7 @@ class PSBaseParser:
 #  * dict (via KEYWORD_DICT)
 #  * subclass-specific extensions (e.g. PDFStream, PDFObjRef) via ExtraT
 ExtraT = TypeVar("ExtraT")
-PSStackType = Union[
-    str, float, bool, PSLiteral, bytes, list[Any], dict[Any, Any], ExtraT
-]
+PSStackType = Union[str, float, bool, PSLiteral, bytes, list[Any], dict[Any, Any], ExtraT]
 PSStackEntry = tuple[int, PSStackType[ExtraT]]
 
 
@@ -590,57 +588,54 @@ class PSStackParser(PSBaseParser, Generic[ExtraT]):
         """
         while not self.results:
             (pos, token) = self.nexttoken()
-            if isinstance(token, (int, float, bool, str, bytes, PSLiteral)):
+            if isinstance(token, PSKeyword):
+                if token == KEYWORD_ARRAY_BEGIN:
+                    # begin array
+                    self.start_type(pos, "a")
+                elif token == KEYWORD_ARRAY_END:
+                    # end array
+                    try:
+                        self.push(self.end_type("a"))
+                    except PSTypeError:
+                        if settings.STRICT:
+                            raise
+                elif token == KEYWORD_DICT_BEGIN:
+                    # begin dictionary
+                    self.start_type(pos, "d")
+                elif token == KEYWORD_DICT_END:
+                    # end dictionary
+                    try:
+                        (pos, objs) = self.end_type("d")
+                        if len(objs) % 2 != 0:
+                            error_msg = f"Invalid dictionary construct: {objs!r}"
+                            raise PSSyntaxError(error_msg)
+                        d = {literal_name(k): v for (k, v) in choplist(2, objs) if v is not None}
+                        self.push((pos, d))
+                    except PSTypeError:
+                        if settings.STRICT:
+                            raise
+                elif token == KEYWORD_PROC_BEGIN:
+                    # begin proc
+                    self.start_type(pos, "p")
+                elif token == KEYWORD_PROC_END:
+                    # end proc
+                    try:
+                        self.push(self.end_type("p"))
+                    except PSTypeError:
+                        if settings.STRICT:
+                            raise
+                else:
+                    if log.isEnabledFor(logging.DEBUG):
+                        log.debug(
+                            "do_keyword: pos=%r, token=%r, stack=%r",
+                            pos,
+                            token,
+                            self.curstack,
+                        )
+                    self.do_keyword(pos, token)
+            elif isinstance(token, (int, float, bool, str, bytes, PSLiteral)):
                 # normal token
                 self.push((pos, token))
-            elif token == KEYWORD_ARRAY_BEGIN:
-                # begin array
-                self.start_type(pos, "a")
-            elif token == KEYWORD_ARRAY_END:
-                # end array
-                try:
-                    self.push(self.end_type("a"))
-                except PSTypeError:
-                    if settings.STRICT:
-                        raise
-            elif token == KEYWORD_DICT_BEGIN:
-                # begin dictionary
-                self.start_type(pos, "d")
-            elif token == KEYWORD_DICT_END:
-                # end dictionary
-                try:
-                    (pos, objs) = self.end_type("d")
-                    if len(objs) % 2 != 0:
-                        error_msg = f"Invalid dictionary construct: {objs!r}"
-                        raise PSSyntaxError(error_msg)
-                    d = {
-                        literal_name(k): v
-                        for (k, v) in choplist(2, objs)
-                        if v is not None
-                    }
-                    self.push((pos, d))
-                except PSTypeError:
-                    if settings.STRICT:
-                        raise
-            elif token == KEYWORD_PROC_BEGIN:
-                # begin proc
-                self.start_type(pos, "p")
-            elif token == KEYWORD_PROC_END:
-                # end proc
-                try:
-                    self.push(self.end_type("p"))
-                except PSTypeError:
-                    if settings.STRICT:
-                        raise
-            elif isinstance(token, PSKeyword):
-                if log.isEnabledFor(logging.DEBUG):
-                    log.debug(
-                        "do_keyword: pos=%r, token=%r, stack=%r",
-                        pos,
-                        token,
-                        self.curstack,
-                    )
-                self.do_keyword(pos, token)
             else:
                 log.error(
                     "unknown token: pos=%r, token=%r, stack=%r",
