@@ -106,6 +106,49 @@ def skip_inline_image_separator(lexer: InlineImageLexer) -> bool:
     return lexer.pos > start
 
 
+def filtered_inline_image_data_end(
+    dictionary: PdfDict,
+    data: memoryview,
+    start: int,
+    source_bytes: bytes | None,
+) -> int | None:
+    try:
+        filters = normalize_stream_decode_spec(dictionary).filters
+    except PdfParseError:
+        return None
+    if not filters:
+        return None
+
+    first_filter = filters[0]
+
+    def find(needle: bytes) -> int:
+        if source_bytes is not None:
+            return source_bytes.find(needle, start)
+        relative = data[start:].tobytes().find(needle)
+        return -1 if relative < 0 else start + relative
+
+    if first_filter in {"ASCII85Decode", "A85"}:
+        marker = find(b"~>")
+        return None if marker < 0 else marker + 2
+    if first_filter in {"ASCIIHexDecode", "AHx"}:
+        marker = find(b">")
+        return None if marker < 0 else marker + 1
+    if first_filter in {"DCTDecode", "DCT"}:
+        marker = find(b"\xff\xd9")
+        return None if marker < 0 else marker + 2
+    if first_filter in {"RunLengthDecode", "RL"}:
+        pos = start
+        while pos < len(data):
+            length = data[pos]
+            pos += 1
+            if length == 128:
+                return pos
+            pos += length + 1 if length < 128 else 1
+            if pos > len(data):
+                return None
+    return None
+
+
 def parse_inline_image(lexer: InlineImageLexer) -> InlineImage:
     dictionary: PdfDict = {}
     while True:
@@ -142,8 +185,11 @@ def parse_inline_image(lexer: InlineImageLexer) -> InlineImage:
             lexer.pos = marker + 2
             return InlineImage(normalized, image_data)
 
+    hinted_end = filtered_inline_image_data_end(normalized, raw_data, start, source_bytes)
+    search_start = hinted_end if hinted_end is not None else start
+
     if source_bytes is not None:
-        pos = start
+        pos = search_start
         while True:
             marker = source_bytes.find(b"EI", pos)
             if marker < 0:
@@ -162,7 +208,7 @@ def parse_inline_image(lexer: InlineImageLexer) -> InlineImage:
             pos = marker + 1
 
     data_bytes = bytes(lexer.raw_data[start:])
-    pos = 0
+    pos = search_start - start
     while True:
         marker = data_bytes.find(b"EI", pos)
         if marker < 0:
