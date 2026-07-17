@@ -97,3 +97,25 @@ def test_parse_stream_trusts_exact_length_with_embedded_keyword() -> None:
 
     assert isinstance(stream, PdfStream)
     assert bytes(stream.raw_data) == payload
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        b"(first\n\rsecond)",
+        memoryview(b"prefix(first\n\rsecond)suffix")[len(b"prefix") : -len(b"suffix")],
+    ],
+)
+def test_read_string_normalizes_lfcr_as_one_line_ending(
+    data: bytes | memoryview,
+) -> None:
+    lexer = PdfLexer(data)
+
+    assert lexer.read_string() == b"first\nsecond"
+
+
+@pytest.mark.parametrize("line_ending", [b"\n", b"\r", b"\r\n", b"\n\r"])
+def test_read_string_normalizes_all_supported_line_endings(line_ending: bytes) -> None:
+    lexer = PdfLexer(b"(first" + line_ending + b"second)")
+
+    assert lexer.read_string() == b"first\nsecond"

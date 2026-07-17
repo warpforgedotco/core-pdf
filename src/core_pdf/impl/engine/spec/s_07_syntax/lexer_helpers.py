@@ -20,7 +20,7 @@ STRING_ESCAPE: dict[int, bytes] = {
 }
 
 R_SENTINEL = object()
-STRING_SPECIAL_TABLE = bytes([1 if i in b"()\\\r" else 0 for i in range(256)])
+STRING_SPECIAL_TABLE = bytes([1 if i in b"()\\\r\n" else 0 for i in range(256)])
 HEX_VALUE = bytes(
     [
         i - 48 if 48 <= i <= 57 else i - 55 if 65 <= i <= 70 else i - 87 if 97 <= i <= 102 else 255

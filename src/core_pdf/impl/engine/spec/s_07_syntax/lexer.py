@@ -261,17 +261,16 @@ class PdfLexer:
 
         if source_buffer is not None:
             close_idx = source_buffer.find(b")", pos)
-            scan_end = close_idx if close_idx >= 0 else n
-            open_idx = source_buffer.find(b"(", pos, scan_end)
-            escape_idx = source_buffer.find(b"\\", pos, scan_end)
-            cr_idx = source_buffer.find(b"\r", pos, scan_end)
-            end_idx = scan_end
-            if open_idx >= 0 and open_idx < end_idx:
+            end_idx = close_idx if close_idx >= 0 else n
+            open_idx = source_buffer.find(b"(", pos, end_idx)
+            if open_idx >= 0:
                 end_idx = open_idx
-            if escape_idx >= 0 and escape_idx < end_idx:
+            escape_idx = source_buffer.find(b"\\", pos, end_idx)
+            if escape_idx >= 0:
                 end_idx = escape_idx
-            if cr_idx >= 0 and cr_idx < end_idx:
-                end_idx = cr_idx
+            cr_idx = source_buffer.find(b"\r", pos, end_idx)
+            if cr_idx >= 0:
+                end_idx = cr_idx - 1 if cr_idx > pos and source_buffer[cr_idx - 1] == 10 else cr_idx
         else:
             end_idx = pos
             string_special = STRING_SPECIAL_TABLE
