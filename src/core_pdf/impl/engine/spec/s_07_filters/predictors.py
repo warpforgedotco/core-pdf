@@ -10,8 +10,14 @@ from core_pdf.impl.third_party.filters.predictors import (
     tiff_predict,
 )
 
+SUPPORTED_PREDICTOR_BITS = frozenset({1, 2, 4, 8, 16})
+
 
 def apply_tiff_predictor(data: bytes | memoryview, params: FilterParams) -> bytes:
+    if params.bits_per_component in SUPPORTED_PREDICTOR_BITS:
+        row_length = (params.columns * params.colors * params.bits_per_component + 7) // 8
+        if row_length and len(data) % row_length:
+            raise PdfParseError("truncated TIFF predictor row")
     try:
         return tiff_predict(
             data,
@@ -24,6 +30,11 @@ def apply_tiff_predictor(data: bytes | memoryview, params: FilterParams) -> byte
 
 
 def apply_png_predictor(data: bytes | memoryview, params: FilterParams) -> bytes:
+    if params.bits_per_component in SUPPORTED_PREDICTOR_BITS:
+        row_length = (params.columns * params.colors * params.bits_per_component + 7) // 8
+        stride = row_length + 1
+        if len(data) % stride and not params.damaged_rows_before_error:
+            raise PdfParseError("truncated PNG predictor row")
     try:
         return png_predict(
             data,

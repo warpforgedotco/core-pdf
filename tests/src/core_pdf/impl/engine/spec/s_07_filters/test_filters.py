@@ -11,11 +11,16 @@ import pytest
 
 from core_pdf.impl.engine.spec.s_07_filters import decoders
 from core_pdf.impl.engine.spec.s_07_filters.codecs import apply_ascii85, apply_ascii_hex
+from core_pdf.impl.engine.spec.s_07_filters.decode_spec import FilterParams
 from core_pdf.impl.engine.spec.s_07_filters.flate import (
     apply_flate,
     looks_like_pdf_content_stream,
 )
 from core_pdf.impl.engine.spec.s_07_filters.pipeline import decode_stream_data
+from core_pdf.impl.engine.spec.s_07_filters.predictors import (
+    apply_png_predictor,
+    apply_tiff_predictor,
+)
 from core_pdf.impl.engine.spec.s_07_security.standard_v4 import PdfStandardSecurityHandlerV4
 from core_pdf.impl.exceptions import PdfParseError, PdfUnsupportedError
 from core_pdf.impl.objects import PdfStream
@@ -152,6 +157,31 @@ def test_apply_ascii85_matches_stdlib_across_tuple_lengths() -> None:
 
     zero_payload = b"\0" * 64
     assert apply_ascii85(base64.a85encode(zero_payload, adobe=True), {}) == zero_payload
+
+
+def test_tiff_predictor_rejects_truncated_row() -> None:
+    params = FilterParams(columns=4, colors=1, bits_per_component=8)
+
+    with pytest.raises(PdfParseError, match="truncated TIFF predictor row"):
+        apply_tiff_predictor(b"abc", params)
+
+
+def test_png_predictor_rejects_truncated_row() -> None:
+    params = FilterParams(columns=4, colors=1, bits_per_component=8)
+
+    with pytest.raises(PdfParseError, match="truncated PNG predictor row"):
+        apply_png_predictor(b"\x00abc", params)
+
+
+def test_png_predictor_can_recover_complete_rows_before_truncation() -> None:
+    params = FilterParams(
+        columns=4,
+        colors=1,
+        bits_per_component=8,
+        damaged_rows_before_error=True,
+    )
+
+    assert apply_png_predictor(b"\x00full\x00bad", params) == b"full"
 
 
 @pytest.mark.parametrize(
