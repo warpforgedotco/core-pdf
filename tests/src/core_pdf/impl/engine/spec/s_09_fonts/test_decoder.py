@@ -69,6 +69,17 @@ def test_font_decoder_uses_embedded_type1_encoding_without_pdf_encoding() -> Non
     assert decoder.decode(b"A\x0c") == "A\ufb01"
 
 
+def test_simple_font_decoder_reuses_glyphs_across_distinct_text_operands() -> None:
+    decoder = FontDecoder({"Subtype": "Type1"})
+
+    first = decoder.decode_glyphs(b"A" * 17)
+    second = decoder.decode_glyphs(b"BA" * 9)
+
+    assert first[0].unicode == "A"
+    assert all(glyph is first[0] for glyph in first)
+    assert all(glyph is first[0] for glyph in second if glyph.char_code == ord("A"))
+
+
 def test_simple_type1c_font_captures_embedded_glyph_bitmaps() -> None:
     pdf_path = TESTS_DIR / "fixtures" / "pdfminer.six" / "samples" / "nonfree" / "i1040nr.pdf"
 

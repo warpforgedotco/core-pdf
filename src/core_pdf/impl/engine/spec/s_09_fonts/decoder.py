@@ -175,6 +175,7 @@ class FontDecoder:
         "descent",
         "decode_cache",
         "glyphs_cache",
+        "simple_glyph_cache",
         "fast_widths_cache",
         "glyph_bbox_cache",
         "glyph_bitmap_cache",
@@ -210,6 +211,7 @@ class FontDecoder:
     ascent: float
     descent: float
     fast_widths_cache: tuple[float, ...] | None
+    simple_glyph_cache: dict[int, DecodedGlyph]
     glyph_bbox_cache: dict[int, tuple[float, float, float, float] | None]
     fast_widths_cid: list[float] | None
     fast_widths_cid_unavailable: bool
@@ -230,6 +232,7 @@ class FontDecoder:
         self.ligature_overrides = ligature_overrides if ligature_overrides is not None else {}
         self.decode_cache: dict[bytes, str] = {}
         self.glyphs_cache: dict[bytes, tuple[DecodedGlyph, ...]] = {}
+        self.simple_glyph_cache = {}
         self.fast_widths_cache = None
         self.glyph_bbox_cache = {}
         self.glyph_bitmap_cache: dict[tuple[int, int, int], tuple[int, ...]] = {}
@@ -569,12 +572,17 @@ class FontDecoder:
 
     def _decode_simple_glyphs(self, data: bytes) -> list[DecodedGlyph]:
         glyphs: list[DecodedGlyph] = []
+        glyph_cache = self.simple_glyph_cache
         table = self.byte_decode_table
         if table is None and self.to_unicode is None:
             key = self.base_encoding or ("Type3" if self.is_type3 else "")
             table = cached_decode_table(key, tuple(sorted(self.differences.items())))
         byte_cache = BYTE_CACHE
         for code in data:
+            cached_glyph = glyph_cache.get(code)
+            if cached_glyph is not None:
+                glyphs.append(cached_glyph)
+                continue
             chunk = byte_cache[code]
             gid = self.glyph_id_for_code(code)
             if self.to_unicode is not None:
@@ -585,20 +593,20 @@ class FontDecoder:
             else:
                 choice = self._unicode_choice_for_code(chunk, code, gid)
             choice = self._apply_simple_unicode_overrides(choice, chunk)
-            glyphs.append(
-                DecodedGlyph(
-                    code_bytes=chunk,
-                    char_code=code,
-                    cid=code,
-                    gid=gid,
-                    unicode=choice.text,
-                    unicode_source=choice.source,
-                    alternates=choice.alternates,
-                    width_code=code,
-                    bitmap_code=code,
-                    split_unicode=choice.text in LEGITIMATE_MULTI_CHAR_GLYPHS,
-                )
+            glyph = DecodedGlyph(
+                code_bytes=chunk,
+                char_code=code,
+                cid=code,
+                gid=gid,
+                unicode=choice.text,
+                unicode_source=choice.source,
+                alternates=choice.alternates,
+                width_code=code,
+                bitmap_code=code,
+                split_unicode=choice.text in LEGITIMATE_MULTI_CHAR_GLYPHS,
             )
+            glyph_cache[code] = glyph
+            glyphs.append(glyph)
         return glyphs
 
     def _decode_cid_glyphs(self, data: bytes) -> list[DecodedGlyph]:
