@@ -29,6 +29,32 @@ def test_ocr_identifier_repair_retains_generic_noise_normalization() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        "An ITIN is for tax use only.",
+        "An HFD is a distribution made.",
+        "Amount You Owe payment system (EFTPS).",
+    ],
+)
+def test_ocr_identifier_repair_preserves_grammatical_lead_words(text: str) -> None:
+    assert repair_document_local_identifier_text(text, normalize_ocr_noise=True) == text
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("Ab QX-1 signal", "AbQX-1 signal"),
+        ("Foo Net signal", "FooNet signal"),
+    ],
+)
+def test_ocr_identifier_repair_still_compacts_positive_technical_patterns(
+    text: str,
+    expected: str,
+) -> None:
+    assert repair_document_local_identifier_text(text, normalize_ocr_noise=True) == expected
+
+
 def test_native_identifier_repair_uses_explicit_document_support() -> None:
     assert (
         repair_document_local_identifier_text(

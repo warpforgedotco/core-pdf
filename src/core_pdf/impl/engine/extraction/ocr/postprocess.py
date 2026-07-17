@@ -56,6 +56,7 @@ OCR_ARTIFACT_PRUNABLE_SOURCE_PREFIXES = (
 )
 OCR_ARTIFACT_EDGE_PUNCTUATION = "-‐‑‒–—−_"
 DOCUMENT_LOCAL_TOKEN_EDGE_CHARS = "\"'“”‘’«»()[]{}<>.,;:!?"
+TITLECASE_PHRASE_LEAD_WORDS = frozenset({"A", "All", "An", "That", "The", "This", "You", "Your"})
 _COMPOUND_TOKEN_PART_RE = re.compile(r"[A-Z]+(?=[A-Z][a-z]|$)|[A-Z]?[a-z]+|\d+")
 _DOCUMENT_LOCAL_TOKEN_FRAGMENT_RE = re.compile(r"[A-Za-z0-9*_-]+")
 OCR_EDGE_NOISE_PUNCTUATION = "\"'“”‘’`~_=|¦¬^°•·.,;:!?()[]{}<>/\\+-@%$"
@@ -1037,15 +1038,12 @@ def compact_titlecase_identifier_pair(match: re.Match[str]) -> str:
     right = match.group(2)
     if min(len(left), len(right)) >= 4:
         return match.group(0)
+    if titlecase_phrase_lead_word(left):
+        return match.group(0)
     if short_titlecase_pair_should_stay_split(left, right):
         return match.group(0)
-    if (
-        titlecase_phrase_lead_word(left)
-        and titlecase_compound_common_word(right)
-        or not (
-            titlecase_token_fragment_is_uncommon(left)
-            or titlecase_token_fragment_is_uncommon(right)
-        )
+    if not (
+        titlecase_token_fragment_is_uncommon(left) or titlecase_token_fragment_is_uncommon(right)
     ):
         return match.group(0)
     return f"{left}{right}"
@@ -1054,7 +1052,7 @@ def compact_titlecase_identifier_pair(match: re.Match[str]) -> str:
 def compact_contextual_short_titlecase_pair(match: re.Match[str]) -> str:
     left = match.group(1)
     right = match.group(2)
-    if titlecase_phrase_lead_word(left) and titlecase_compound_common_word(right):
+    if titlecase_phrase_lead_word(left):
         return match.group(0)
     if not (
         titlecase_token_fragment_is_uncommon(left) or titlecase_token_fragment_is_uncommon(right)
@@ -1115,6 +1113,8 @@ def compact_short_titlecase_acronym_pair(match: re.Match[str]) -> str:
 
 
 def short_titlecase_prefix_is_identifier_fragment(token: str) -> bool:
+    if titlecase_phrase_lead_word(token):
+        return False
     if len(token) <= 2:
         return True
     rank = word_rank(token.casefold())
@@ -1138,7 +1138,7 @@ def titlecase_compound_common_word(token: str) -> bool:
 
 
 def titlecase_phrase_lead_word(token: str) -> bool:
-    return token in {"All"}
+    return token in TITLECASE_PHRASE_LEAD_WORDS
 
 
 def short_titlecase_pair_should_stay_split(left: str, right: str) -> bool:
