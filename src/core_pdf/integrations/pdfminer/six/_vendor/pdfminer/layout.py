@@ -722,80 +722,63 @@ class LTLayoutContainer(LTContainer[LTComponent]):
         char_margin = laparams.char_margin
         line_overlap = laparams.line_overlap
         detect_vertical = laparams.detect_vertical
-        obj0 = None
+        word_margin = laparams.word_margin
+        iterator = iter(objs)
+        obj0 = next(iterator, None)
+        assert obj0 is not None
+        x00, y00, x01, y01 = obj0.bbox
+        width0 = obj0.width
+        height0 = obj0.height
         line: LTTextLine | None = None
-        for obj1 in objs:
-            if obj0 is not None:
-                # halign: obj0 and obj1 is horizontally aligned.
-                #
-                #   +------+ - - -
-                #   | obj0 | - - +------+   -
-                #   |      |     | obj1 |   | (line_overlap)
-                #   +------+ - - |      |   -
-                #          - - - +------+
-                #
-                #          |<--->|
-                #        (char_margin)
-                halign = obj1.y0 <= obj0.y1 and obj0.y0 <= obj1.y1
-                if halign:
-                    halign = min(obj0.height, obj1.height) * line_overlap < min(
-                        abs(obj0.y0 - obj1.y1), abs(obj0.y1 - obj1.y0)
-                    )
-                if halign:
-                    hdistance = 0.0
-                    if obj1.x0 > obj0.x1 or obj0.x0 > obj1.x1:
-                        hdistance = min(abs(obj0.x0 - obj1.x1), abs(obj0.x1 - obj1.x0))
-                    halign = hdistance < max(obj0.width, obj1.width) * char_margin
+        for obj1 in iterator:
+            x10, y10, x11, y11 = obj1.bbox
+            width1 = obj1.width
+            height1 = obj1.height
 
-                # valign: obj0 and obj1 is vertically aligned.
-                #
-                #   +------+
-                #   | obj0 |
-                #   |      |
-                #   +------+ - - -
-                #     |    |     | (char_margin)
-                #     +------+ - -
-                #     | obj1 |
-                #     |      |
-                #     +------+
-                #
-                #     |<-->|
-                #   (line_overlap)
-                valign = detect_vertical and obj1.x0 <= obj0.x1 and obj0.x0 <= obj1.x1
-                if valign:
-                    valign = min(obj0.width, obj1.width) * line_overlap < min(
-                        abs(obj0.x0 - obj1.x1), abs(obj0.x1 - obj1.x0)
-                    )
-                if valign:
-                    vdistance = 0.0
-                    if obj1.y0 > obj0.y1 or obj0.y0 > obj1.y1:
-                        vdistance = min(abs(obj0.y0 - obj1.y1), abs(obj0.y1 - obj1.y0))
-                    valign = vdistance < max(obj0.height, obj1.height) * char_margin
+            halign = y10 <= y01 and y00 <= y11
+            if halign:
+                halign = min(height0, height1) * line_overlap < min(abs(y00 - y11), abs(y01 - y10))
+            if halign:
+                hdistance = 0.0
+                if x10 > x01 or x00 > x11:
+                    hdistance = min(abs(x00 - x11), abs(x01 - x10))
+                halign = hdistance < max(width0, width1) * char_margin
 
-                if (halign and type(line) is LTTextLineHorizontal) or (
-                    valign and type(line) is LTTextLineVertical
-                ):
-                    line.add(obj1)
-                elif line is not None:
-                    yield line
-                    line = None
-                elif valign and not halign:
-                    line = LTTextLineVertical(laparams.word_margin)
-                    line.add(obj0)
-                    line.add(obj1)
-                elif halign and not valign:
-                    line = LTTextLineHorizontal(laparams.word_margin)
-                    line.add(obj0)
-                    line.add(obj1)
-                else:
-                    line = LTTextLineHorizontal(laparams.word_margin)
-                    line.add(obj0)
-                    yield line
-                    line = None
+            valign = detect_vertical and x10 <= x01 and x00 <= x11
+            if valign:
+                valign = min(width0, width1) * line_overlap < min(abs(x00 - x11), abs(x01 - x10))
+            if valign:
+                vdistance = 0.0
+                if y10 > y01 or y00 > y11:
+                    vdistance = min(abs(y00 - y11), abs(y01 - y10))
+                valign = vdistance < max(height0, height1) * char_margin
+
+            if (halign and type(line) is LTTextLineHorizontal) or (
+                valign and type(line) is LTTextLineVertical
+            ):
+                line.add(obj1)
+            elif line is not None:
+                yield line
+                line = None
+            elif valign and not halign:
+                line = LTTextLineVertical(word_margin)
+                line.add(obj0)
+                line.add(obj1)
+            elif halign and not valign:
+                line = LTTextLineHorizontal(word_margin)
+                line.add(obj0)
+                line.add(obj1)
+            else:
+                line = LTTextLineHorizontal(word_margin)
+                line.add(obj0)
+                yield line
+                line = None
             obj0 = obj1
+            x00, y00, x01, y01 = x10, y10, x11, y11
+            width0 = width1
+            height0 = height1
         if line is None:
-            line = LTTextLineHorizontal(laparams.word_margin)
-            assert obj0 is not None
+            line = LTTextLineHorizontal(word_margin)
             line.add(obj0)
         yield line
 
