@@ -233,7 +233,7 @@ def _cached_image_space_from_ocr_image(
     )
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class PageObservation:
     kind: str
     source: str
