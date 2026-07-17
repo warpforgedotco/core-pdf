@@ -25,6 +25,7 @@ if TYPE_CHECKING:
 
 
 PDFTextSeq = Iterable[int | float | bytes]
+PDF_TEXT_NUMBER_TYPES = frozenset((int, float, bool))
 
 logger = logging.getLogger(__name__)
 
@@ -163,16 +164,18 @@ class PDFTextDevice(PDFDevice):
     ) -> Point:
         (x, y) = pos
         (a, b, c, d, e, f) = matrix
+        decode = font.decode
+        render_char = self.render_char
         needcharspace = False
         for obj in seq:
-            if isinstance(obj, (int, float)):
+            if type(obj) in PDF_TEXT_NUMBER_TYPES:
                 x -= obj * dxscale
                 needcharspace = True
-            elif isinstance(obj, bytes):
-                for cid in font.decode(obj):
+            elif type(obj) is bytes:
+                for cid in decode(obj):
                     if needcharspace:
                         x += charspace
-                    x += self.render_char(
+                    x += render_char(
                         (a, b, c, d, x * a + y * c + e, x * b + y * d + f),
                         font,
                         fontsize,
@@ -210,16 +213,18 @@ class PDFTextDevice(PDFDevice):
     ) -> Point:
         (x, y) = pos
         (a, b, c, d, e, f) = matrix
+        decode = font.decode
+        render_char = self.render_char
         needcharspace = False
         for obj in seq:
-            if isinstance(obj, (int, float)):
+            if type(obj) in PDF_TEXT_NUMBER_TYPES:
                 y -= obj * dxscale
                 needcharspace = True
-            elif isinstance(obj, bytes):
-                for cid in font.decode(obj):
+            elif type(obj) is bytes:
+                for cid in decode(obj):
                     if needcharspace:
                         y += charspace
-                    y += self.render_char(
+                    y += render_char(
                         (a, b, c, d, x * a + y * c + e, x * b + y * d + f),
                         font,
                         fontsize,
@@ -234,8 +239,7 @@ class PDFTextDevice(PDFDevice):
                     needcharspace = True
             else:
                 logger.warning(
-                    "Cannot render vertical string because %r is not a valid "
-                    "int, float or bytes.",
+                    "Cannot render vertical string because %r is not a valid int, float or bytes.",
                     obj,
                 )
         return (x, y)
