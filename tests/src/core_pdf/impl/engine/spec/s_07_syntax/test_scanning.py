@@ -3,7 +3,12 @@ from __future__ import annotations
 
 from itertools import product
 
-from core_pdf.impl.engine.spec.s_07_syntax.scanning import skip_literal_string, skip_name
+from core_pdf.impl.engine.spec.s_07_syntax.scanning import (
+    skip_comment,
+    skip_hex_string,
+    skip_literal_string,
+    skip_name,
+)
 from core_pdf.impl.engine.spec.s_07_syntax.tokens import DELIMITERS, WHITESPACE
 
 
@@ -50,3 +55,15 @@ def test_skip_literal_string_respects_explicit_scan_boundary() -> None:
     data = visible + b") outside (\\"
 
     assert skip_literal_string(data, 0, len(visible)) == len(visible)
+
+
+def test_simple_scanners_respect_explicit_scan_boundary() -> None:
+    comment = b"% unterminated" + b"\n outside"
+    hex_string = b"<unterminated" + b"> outside"
+    comment_end = len(b"% unterminated")
+    hex_end = len(b"<unterminated")
+
+    assert skip_comment(comment, 0, comment_end) == comment_end
+    assert skip_comment(memoryview(comment), 0, comment_end) == comment_end
+    assert skip_hex_string(hex_string, 0, hex_end) == hex_end
+    assert skip_hex_string(memoryview(hex_string), 0, hex_end) == hex_end

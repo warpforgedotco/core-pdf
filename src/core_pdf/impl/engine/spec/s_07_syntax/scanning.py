@@ -6,8 +6,8 @@ from core_pdf.impl.engine.spec.s_07_syntax.tokens import SEPARATOR_TABLE
 
 def skip_comment(data: bytes | memoryview, pos: int, data_len: int) -> int:
     if type(data) is bytes:
-        lf = data.find(b"\n", pos + 1)
-        cr = data.find(b"\r", pos + 1)
+        lf = data.find(b"\n", pos + 1, data_len)
+        cr = data.find(b"\r", pos + 1, data_len)
         if lf < 0:
             return data_len if cr < 0 else cr
         return lf if cr < 0 else min(lf, cr)
@@ -59,7 +59,7 @@ def skip_literal_string(data: bytes | memoryview, pos: int, data_len: int) -> in
 
 
 def skip_hex_string(data: bytes | memoryview, pos: int, data_len: int) -> int:
-    marker = data.find(b">", pos + 1) if type(data) is bytes else -1
+    marker = data.find(b">", pos + 1, data_len) if type(data) is bytes else -1
     if marker >= 0:
         return marker + 1
     pos += 1
