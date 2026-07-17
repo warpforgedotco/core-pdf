@@ -22,9 +22,10 @@ def skip_literal_string(data: bytes | memoryview, pos: int, data_len: int) -> in
     depth = 1
     if type(data) is bytes:
         while pos < data_len:
-            escaped = data.find(b"\\", pos)
-            opened = data.find(b"(", pos)
-            closed = data.find(b")", pos)
+            closed = data.find(b")", pos, data_len)
+            search_end = data_len if closed < 0 else closed
+            escaped = data.find(b"\\", pos, search_end)
+            opened = data.find(b"(", pos, search_end)
             marker = (
                 min(candidate for candidate in (escaped, opened, closed) if candidate >= 0)
                 if escaped >= 0 or opened >= 0 or closed >= 0

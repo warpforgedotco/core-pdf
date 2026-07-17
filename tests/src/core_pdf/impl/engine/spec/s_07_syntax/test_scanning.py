@@ -43,3 +43,10 @@ def test_skip_name_uses_canonical_pdf_separators() -> None:
 
     data = b"/Name\vsuffix"
     assert skip_name(data, 0, len(data)) == len(data)
+
+
+def test_skip_literal_string_respects_explicit_scan_boundary() -> None:
+    visible = b"(unterminated"
+    data = visible + b") outside (\\"
+
+    assert skip_literal_string(data, 0, len(visible)) == len(visible)
