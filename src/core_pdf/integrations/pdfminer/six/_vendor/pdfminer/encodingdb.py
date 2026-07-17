@@ -1,6 +1,6 @@
 import re
 from collections.abc import Iterable
-from typing import ClassVar, cast
+from typing import ClassVar
 
 from core_pdf.integrations.pdfminer.six.glyphlist import glyphname2unicode
 from core_pdf.integrations.pdfminer.six.latin_enc import ENCODING
@@ -117,7 +117,7 @@ class EncodingDB:
                     cid = x
                 elif isinstance(x, PSLiteral):
                     try:  # noqa: SIM105 - avoiding context-manager overhead in this hot loop
-                        cid2unicode[cid] = name2unicode(cast(str, x.name))
+                        cid2unicode[cid] = name2unicode(x.name)  # type: ignore[arg-type]
                     except (KeyError, ValueError):
                         pass
                     cid += 1

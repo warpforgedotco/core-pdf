@@ -14,7 +14,7 @@ from core_pdf.integrations.pdfminer.six.casting import (
 )
 from core_pdf.integrations.pdfminer.six.cmapdb import CMap, CMapBase, CMapDB
 from core_pdf.integrations.pdfminer.six.pdfcolor import PREDEFINED_COLORSPACE, PDFColorSpace
-from core_pdf.integrations.pdfminer.six.pdfdevice import PDFDevice, PDFTextSeq
+from core_pdf.integrations.pdfminer.six.pdfdevice import PDFDevice
 from core_pdf.integrations.pdfminer.six.pdfexceptions import PDFException, PDFValueError
 from core_pdf.integrations.pdfminer.six.pdffont import (
     PDFCIDFont,
@@ -1262,7 +1262,7 @@ class PDFPageInterpreter:
             return
         self.device.render_string(
             self.textstate,
-            cast(PDFTextSeq, seq),
+            seq,  # type: ignore[arg-type]
             self.graphicstate.ncs,
             self.graphicstate.copy(),
         )
