@@ -792,13 +792,15 @@ class LTLayoutContainer(LTContainer[LTComponent]):
         plane: Plane[LTTextLine] = Plane(self.bbox)
         plane.extend(lines)
         boxes: dict[LTTextLine, LTTextBox] = {}
+        line_margin = laparams.line_margin
         for line in lines:
-            neighbors = line.find_neighbors(plane, laparams.line_margin)
+            neighbors = line.find_neighbors(plane, line_margin)
             members = [line]
             for obj1 in neighbors:
                 members.append(obj1)
-                if obj1 in boxes:
-                    members.extend(boxes.pop(obj1))
+                previous_box = boxes.pop(obj1, None)
+                if previous_box is not None:
+                    members.extend(previous_box)
             if isinstance(line, LTTextLineHorizontal):
                 box: LTTextBox = LTTextBoxHorizontal()
             else:
