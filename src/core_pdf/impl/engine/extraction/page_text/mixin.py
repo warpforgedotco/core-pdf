@@ -641,7 +641,7 @@ class PageExtractionMixin(PageContentMixin):
             fast_text = try_extract_native_text_fast(self, profile, cache)
             if fast_text is not None:
                 return cache_page_extraction_snapshot(cache, fast_text, ())
-        self.get_text_and_graphics_state()
+        capture_state = self.get_text_and_graphics_state()
         chars = native_text_runs_for_extraction(self.chars)
         chars = native_text_runs_inside_page_bounds(chars, self.media_box, rotate=self.rotation)
         chars = native_text_runs_inside_visible_row_bands(chars, self.media_box, self)
@@ -681,7 +681,9 @@ class PageExtractionMixin(PageContentMixin):
             cache["native_layout_geometry_summary"] = layout_geometry_summary_record(
                 native_geometry_summary
             )
-        if ocr_schematic.should_try_vector_table_symbol_supplement(
+        if ocr_schematic.vector_table_symbol_marks_from_drawings(
+            capture_state.drawings
+        ) and ocr_schematic.should_try_vector_table_symbol_supplement(
             text,
             chars,
             self.media_box,

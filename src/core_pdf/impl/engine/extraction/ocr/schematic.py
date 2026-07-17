@@ -288,15 +288,44 @@ def vector_table_symbol_marks(rendered: RenderedPage) -> list[VectorTableSymbolM
     return vector_table_symbol_filter_aligned_columns(raw_marks)
 
 
+def vector_table_symbol_marks_from_drawings(
+    drawings: Iterable[Any],
+) -> list[VectorTableSymbolMark]:
+    raw_marks: list[VectorTableSymbolMark] = []
+    for drawing in drawings:
+        mark = vector_table_symbol_mark(
+            getattr(drawing, "kind", None),
+            getattr(drawing, "bbox", None),
+            getattr(drawing, "path", None),
+        )
+        if mark is not None:
+            raw_marks.append(mark)
+    if len(raw_marks) < VECTOR_TABLE_SYMBOL_MIN_MARKS:
+        return []
+    return vector_table_symbol_filter_aligned_columns(raw_marks)
+
+
 def vector_table_symbol_mark_from_display_item(
     item: Any,
 ) -> VectorTableSymbolMark | None:
-    if getattr(item, "kind", None) != "fill":
-        return None
     data = getattr(item, "data", None)
     if not isinstance(data, dict):
         return None
-    bbox = page_geometry.rect_box_tuple(data.get("bbox"))
+    return vector_table_symbol_mark(
+        getattr(item, "kind", None),
+        data.get("bbox"),
+        data.get("path"),
+    )
+
+
+def vector_table_symbol_mark(
+    kind: Any,
+    bbox_value: Any,
+    path: Any,
+) -> VectorTableSymbolMark | None:
+    if kind != "fill":
+        return None
+    bbox = page_geometry.rect_box_tuple(bbox_value)
     if bbox is None:
         return None
     x0, y0, x1, y1 = bbox
@@ -304,7 +333,7 @@ def vector_table_symbol_mark_from_display_item(
     height = y1 - y0
     if not (5.0 <= width <= 28.0 and 5.0 <= height <= 24.0):
         return None
-    token = vector_table_symbol_token_from_path(data.get("path"), width, height)
+    token = vector_table_symbol_token_from_path(path, width, height)
     if token is None:
         return None
     return VectorTableSymbolMark(
