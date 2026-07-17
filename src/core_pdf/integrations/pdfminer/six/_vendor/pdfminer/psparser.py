@@ -614,7 +614,7 @@ class PSStackParser(PSBaseParser, Generic[ExtraT]):
                             raise
                 else:
                     self.do_keyword(pos, token)
-            elif isinstance(token, (int, float, bool, str, bytes, PSLiteral)):
+            elif isinstance(token, (int, float, bytes, PSLiteral, str, bool)):
                 # normal token
                 self.push((pos, token))
             else:
