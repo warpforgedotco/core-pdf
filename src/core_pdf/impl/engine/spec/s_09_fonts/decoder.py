@@ -173,6 +173,7 @@ class FontDecoder:
         "decode_cache",
         "glyphs_cache",
         "fast_widths_cache",
+        "glyph_bbox_cache",
         "glyph_bitmap_cache",
         "type3_glyph_names",
         "fast_widths_cid",
@@ -206,6 +207,7 @@ class FontDecoder:
     ascent: float
     descent: float
     fast_widths_cache: tuple[float, ...] | None
+    glyph_bbox_cache: dict[int, tuple[float, float, float, float] | None]
     fast_widths_cid: list[float] | None
     fast_widths_cid_unavailable: bool
     font_name: str | None
@@ -226,6 +228,7 @@ class FontDecoder:
         self.decode_cache: dict[bytes, str] = {}
         self.glyphs_cache: dict[bytes, tuple[DecodedGlyph, ...]] = {}
         self.fast_widths_cache = None
+        self.glyph_bbox_cache = {}
         self.glyph_bitmap_cache: dict[tuple[int, int, int], tuple[int, ...]] = {}
         self.type3_glyph_names = None
         # Flag to track whether full decoder initialization has run.
@@ -695,19 +698,27 @@ class FontDecoder:
     def glyph_bbox(self, code: int) -> tuple[float, float, float, float] | None:
         if code < 0:
             return None
+        cache = self.glyph_bbox_cache
+        if code in cache:
+            return cache[code]
         cff_font = self.cff_font
         if cff_font is not None:
             if self.is_cid_font:
-                return cff_font.glyph_bbox(code)
-            glyph_id = self.glyph_id_for_code(code)
-            return cff_font.glyph_bbox_for_gid(glyph_id or 0)
-        tt_font = self.tt_font
-        if tt_font is not None:
-            return tt_font.glyph_bbox(code)
-        width = self.glyph_width(code)
-        if width <= 0:
-            return None
-        return (0.0, self.descent, width, self.ascent)
+                bbox = cff_font.glyph_bbox(code)
+            else:
+                glyph_id = self.glyph_id_for_code(code)
+                bbox = cff_font.glyph_bbox_for_gid(glyph_id or 0)
+        else:
+            tt_font = self.tt_font
+            if tt_font is not None:
+                bbox = tt_font.glyph_bbox(code)
+            else:
+                width = self.glyph_width(code)
+                bbox = None if width <= 0 else (0.0, self.descent, width, self.ascent)
+        if len(cache) >= 4096:
+            cache.clear()
+        cache[code] = bbox
+        return bbox
 
     def vertical_glyph_position(self, code: int, *, font_size: float) -> tuple[float, float]:
         metric = self.vertical_metrics.get(

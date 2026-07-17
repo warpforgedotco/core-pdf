@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import pytest
 
@@ -78,6 +78,30 @@ def test_simple_type1c_font_captures_embedded_glyph_bitmaps() -> None:
     user_id = glyphs[:6]
     assert "".join(glyph.text for glyph in user_id) == "Userid"
     assert all(glyph.bitmap for glyph in user_id)
+
+
+def test_font_decoder_caches_cff_glyph_bboxes_including_missing_glyphs() -> None:
+    class FakeCFFFont:
+        def __init__(self) -> None:
+            self.bbox_calls: list[int] = []
+
+        def glyph_id_for_name(self, name: str) -> int:
+            return {"A": 7, "B": 8}[name]
+
+        def glyph_bbox_for_gid(self, glyph_id: int) -> tuple[float, float, float, float] | None:
+            self.bbox_calls.append(glyph_id)
+            return (0.0, -2.0, 5.0, 8.0) if glyph_id == 7 else None
+
+    decoder = FontDecoder({"Subtype": "Type1"})
+    decoder.decode(b"A")
+    cff_font = FakeCFFFont()
+    decoder.cff_font = cast(Any, cff_font)
+
+    assert decoder.glyph_bbox(65) == (0.0, -2.0, 5.0, 8.0)
+    assert decoder.glyph_bbox(65) == (0.0, -2.0, 5.0, 8.0)
+    assert decoder.glyph_bbox(66) is None
+    assert decoder.glyph_bbox(66) is None
+    assert cff_font.bbox_calls == [7, 8]
 
 
 def test_font_decoder_does_not_emit_unknown_difference_names() -> None:
