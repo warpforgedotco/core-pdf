@@ -34,7 +34,8 @@ class LayoutLineTextSegment:
     visible: bool
 
 
-@dataclass(frozen=True, slots=True)
+# Builder-only atoms are short-lived and never escape into the immutable layout result.
+@dataclass(slots=True)
 class LayoutLineTextAtom:
     text: str
     run: TextRun
