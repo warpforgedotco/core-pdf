@@ -10,9 +10,6 @@ from typing import (
     cast,
 )
 
-from cryptography.hazmat.backends import default_backend
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-
 from core_pdf.integrations.pdfminer.six import settings
 from core_pdf.integrations.pdfminer.six.arcfour import Arcfour
 from core_pdf.integrations.pdfminer.six.casting import safe_int
@@ -525,6 +522,9 @@ class PDFStandardSecurityHandlerV4(PDFStandardSecurityHandler):
         return data
 
     def decrypt_aes128(self, objid: int, genno: int, data: bytes) -> bytes:
+        from cryptography.hazmat.backends import default_backend
+        from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+
         assert self.key is not None
         key = (
             self.key
@@ -567,6 +567,9 @@ class PDFStandardSecurityHandlerV5(PDFStandardSecurityHandlerV4):
             return None
 
     def authenticate(self, password: str) -> bytes | None:
+        from cryptography.hazmat.backends import default_backend
+        from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+
         password_b = self._normalize_password(password)
         hash = self._password_hash(password_b, self.o_validation_salt, self.u)
         if hash == self.o_hash:
@@ -653,11 +656,16 @@ class PDFStandardSecurityHandlerV5(PDFStandardSecurityHandlerV4):
         return sum(b % 3 for b in input_bytes) % 3
 
     def _aes_cbc_encrypt(self, key: bytes, iv: bytes, data: bytes) -> bytes:
+        from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+
         cipher = Cipher(algorithms.AES(key), modes.CBC(iv))
         encryptor = cipher.encryptor()  # type: ignore
         return encryptor.update(data) + encryptor.finalize()  # type: ignore
 
     def decrypt_aes256(self, objid: int, genno: int, data: bytes) -> bytes:
+        from cryptography.hazmat.backends import default_backend
+        from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+
         initialization_vector = data[:16]
         ciphertext = data[16:]
         assert self.key is not None
