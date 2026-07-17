@@ -269,6 +269,12 @@ def rect_box_tuple(value: Any) -> Rect | None:
 
 
 def normalize_rect(rect: Any) -> Rect | None:
+    if type(rect) is tuple and len(rect) == 4:
+        x0, y0, x1, y1 = rect
+        if type(x0) is float and type(y0) is float and type(x1) is float and type(y1) is float:
+            if x0 <= x1 and y0 <= y1:
+                return rect
+            return (min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1))
     box = rect_box_tuple(rect)
     if box is None:
         return None
