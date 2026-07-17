@@ -770,8 +770,13 @@ class Plane(Generic[LTComponentT]):
         y0 = max(self.y0, y0)
         x1 = min(self.x1, x1)
         y1 = min(self.y1, y1)
-        for grid_y in drange(y0, y1, self.gridsize):
-            for grid_x in drange(x0, x1, self.gridsize):
+        gridsize = self.gridsize
+        grid_x0 = int(x0) // gridsize
+        grid_x1 = int(x1 + gridsize) // gridsize
+        grid_y0 = int(y0) // gridsize
+        grid_y1 = int(y1 + gridsize) // gridsize
+        for grid_y in range(grid_y0, grid_y1):
+            for grid_x in range(grid_x0, grid_x1):
                 yield (grid_x, grid_y)
 
     def extend(self, objs: Iterable[LTComponentT]) -> None:
