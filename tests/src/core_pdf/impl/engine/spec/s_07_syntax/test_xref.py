@@ -6,6 +6,7 @@ import pytest
 from core_pdf.impl.engine.spec.s_07_syntax.xref import (
     XRefScanner,
     find_eof_marker,
+    find_previous_object_marker,
     key_for,
 )
 from core_pdf.impl.primitives import PdfName
@@ -54,3 +55,22 @@ def test_find_eof_marker_prefers_last_recoverable_marker() -> None:
 
 def test_find_eof_marker_rejects_unrelated_percent_tokens() -> None:
     assert find_eof_marker(b"%PDF-1.7\n% comment\n%%XYZ\n") == -1
+
+
+def test_find_previous_object_marker_returns_last_valid_object() -> None:
+    data = b"1 0 obj\nendobj\nnot-an-object\n27 3 obj\nendobj"
+
+    assert find_previous_object_marker(data, len(data)) == data.index(b"27 3 obj")
+
+
+def test_find_previous_object_marker_respects_upper_bound() -> None:
+    data = b"1 0 obj\nendobj\n2 0 obj\nendobj"
+    second_object = data.index(b"2 0 obj")
+
+    assert find_previous_object_marker(data, second_object) == 0
+
+
+def test_find_previous_object_marker_skips_invalid_candidates() -> None:
+    data = b"3 0 obj\nendobj\nobject obj subjective"
+
+    assert find_previous_object_marker(data, len(data)) == 0

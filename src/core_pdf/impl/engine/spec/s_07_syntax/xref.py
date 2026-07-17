@@ -686,10 +686,15 @@ def iter_object_markers(
 
 
 def find_previous_object_marker(data: PdfByteBuffer, before: int) -> int | None:
-    found: int | None = None
-    for offset, ignored, ignored in iter_object_markers(data, 0, before):
-        found = offset
-    return found
+    search_end = min(before, len(data))
+    while True:
+        marker = data.rfind(b"obj", 0, search_end)
+        if marker < 0:
+            return None
+        parsed = parse_object_marker_prefix(data, marker)
+        if parsed is not None:
+            return parsed[0]
+        search_end = marker
 
 
 def parse_object_marker_prefix(data: PdfByteBuffer, marker: int) -> tuple[int, int, int] | None:
