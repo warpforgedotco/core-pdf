@@ -9,6 +9,13 @@ from core_pdf.impl.engine.spec.s_07_content.inline_images import parse_inline_im
 from core_pdf.impl.engine.spec.s_07_content.operations import (
     content_stream_may_show_text,
 )
+from core_pdf.impl.engine.spec.s_07_content.scanning import (
+    is_regular_token_byte,
+    skip_comment,
+    skip_hex_string,
+    skip_literal_string,
+    skip_name,
+)
 from core_pdf.impl.engine.spec.s_07_filters.decode_spec import (
     StreamDecodeSpec,
     normalize_stream_decode_spec,
@@ -333,7 +340,10 @@ def content_operator_counts(
             else:
                 pos = skip_hex_string(raw_bytes, pos, data_len)
             continue
-        if byte in (41, 62, 91, 93, 123, 125, 47):
+        if byte == 47:
+            pos = skip_name(raw_bytes, pos, data_len)
+            continue
+        if byte in (41, 62, 91, 93, 123, 125):
             pos += 1
             continue
 
@@ -379,42 +389,6 @@ def content_operator_counts(
         ):
             break
     return counts
-
-
-def skip_comment(data: bytes | memoryview, pos: int, data_len: int) -> int:
-    pos += 1
-    while pos < data_len and data[pos] not in (10, 13):
-        pos += 1
-    return pos
-
-
-def skip_literal_string(data: bytes | memoryview, pos: int, data_len: int) -> int:
-    pos += 1
-    depth = 1
-    while pos < data_len and depth:
-        byte = data[pos]
-        if byte == 92:
-            pos += 2
-            continue
-        if byte == 40:
-            depth += 1
-        elif byte == 41:
-            depth -= 1
-        pos += 1
-    return pos
-
-
-def skip_hex_string(data: bytes | memoryview, pos: int, data_len: int) -> int:
-    pos += 1
-    while pos < data_len:
-        if data[pos] == 62:
-            return pos + 1
-        pos += 1
-    return pos
-
-
-def is_regular_token_byte(byte: int) -> bool:
-    return byte > 32 and byte not in (37, 40, 41, 47, 60, 62, 91, 93, 123, 125)
 
 
 def page_resource_profile(page: PageProfileHost) -> ResourceProfile:

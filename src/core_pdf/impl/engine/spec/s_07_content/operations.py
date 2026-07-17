@@ -10,6 +10,13 @@ from core_pdf.impl.engine.spec.s_07_content.inline_images import (
     parse_inline_image,
     recover_inline_image_position,
 )
+from core_pdf.impl.engine.spec.s_07_content.scanning import (
+    is_regular_token_byte,
+    skip_comment,
+    skip_hex_string,
+    skip_literal_string,
+    skip_name,
+)
 from core_pdf.impl.engine.spec.s_07_objects.object_cache import CachedPdfObject
 from core_pdf.impl.engine.spec.s_07_syntax.lexer import (
     EMPTY_SIMPLE_TJ_ARRAY,
@@ -88,61 +95,60 @@ TEXT_CLIP_PREFIX_RE = re.compile(
     b"[+\\-.0-9][^\x00\t\n\f\r ()<>\\[\\]{}%/]*[\x00\t\n\f\r ]+"
     b"re[\x00\t\n\f\r ]+W[\x00\t\n\f\r ]+n"
 )
-TEXT_SHOWING_SINGLE = bytes([1 if i in (34, 39) else 0 for i in range(256)])
-TEXT_SHOWING_DOUBLE = {
-    (68 << 8) | 111,
-    (84 << 8) | 74,
-    (84 << 8) | 106,
-}
+TEXT_SHOWING_CANDIDATES = (b'"', b"'", b"Tj", b"TJ", b"Do")
+TEXT_OR_LEXICAL_MARKER_RE = re.compile(rb"""[%(/<"']|T[jJ]|Do|BI""")
 
 
 def content_stream_may_show_text(data: bytes | memoryview) -> bool:
     data_len = len(data)
     raw_source = data.obj if type(data) is memoryview else data
-    raw_bytes: bytes | memoryview
+    raw_bytes: bytes
     if type(raw_source) is bytes and len(raw_source) == data_len:
         raw_bytes = raw_source
     else:
-        raw_bytes = data
+        raw_bytes = bytes(data)
 
-    if type(raw_bytes) is bytes:
-        return (
-            raw_bytes.find(b'"') >= 0
-            or raw_bytes.find(b"'") >= 0
-            or raw_bytes.find(b"Tj") >= 0
-            or raw_bytes.find(b"TJ") >= 0
-            or raw_bytes.find(b"Do") >= 0
-        )
+    if not any(raw_bytes.find(candidate) >= 0 for candidate in TEXT_SHOWING_CANDIDATES):
+        return False
 
     pos = 0
-    word_break_or_ws = WORD_BREAK_OR_WS
-    while pos < data_len:
-        byte = raw_bytes[pos]
-        if WS_TABLE[byte] or byte == 37:
-            match = SKIP_RE.match(raw_bytes, pos)
-            if match is not None:
-                pos = match.end()
+    inline_image_lexer: PdfLexer | None = None
+    while match := TEXT_OR_LEXICAL_MARKER_RE.search(raw_bytes, pos):
+        marker = match.start()
+        token = match.group()
+        if token == b"%":
+            pos = skip_comment(raw_bytes, marker, data_len)
+            continue
+        if token == b"(":
+            pos = skip_literal_string(raw_bytes, marker, data_len)
+            continue
+        if token == b"<":
+            if marker + 1 < data_len and raw_bytes[marker + 1] == 60:
+                pos = marker + 2
             else:
-                pos += 1
+                pos = skip_hex_string(raw_bytes, marker, data_len)
             continue
-        if SEPARATOR_TABLE[byte]:
-            pos += 1
+        if token == b"/":
+            pos = skip_name(raw_bytes, marker, data_len)
             continue
-
-        start = pos
-        while pos < data_len and not word_break_or_ws[raw_bytes[pos]]:
-            pos += 1
-        token_len = pos - start
-        if token_len == 0:
-            pos += 1
+        after = match.end()
+        delimited = (marker == 0 or not is_regular_token_byte(raw_bytes[marker - 1])) and (
+            after == data_len or not is_regular_token_byte(raw_bytes[after])
+        )
+        if not delimited:
+            pos = marker + 1
             continue
-        if token_len == 1:
-            if TEXT_SHOWING_SINGLE[raw_bytes[start]]:
-                return True
-        elif token_len == 2:
-            op_code = (raw_bytes[start] << 8) | raw_bytes[start + 1]
-            if op_code in TEXT_SHOWING_DOUBLE:
-                return True
+        if token != b"BI":
+            return True
+        if inline_image_lexer is None:
+            inline_image_lexer = PdfLexer(raw_bytes)
+        inline_image_lexer.pos = after
+        try:
+            parse_inline_image(inline_image_lexer)
+        except PdfParseError:
+            pos = after
+        else:
+            pos = inline_image_lexer.pos
 
     return False
 

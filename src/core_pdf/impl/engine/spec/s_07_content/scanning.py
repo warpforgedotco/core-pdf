@@ -1,0 +1,87 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+from __future__ import annotations
+
+
+def skip_comment(data: bytes | memoryview, pos: int, data_len: int) -> int:
+    if type(data) is bytes:
+        lf = data.find(b"\n", pos + 1)
+        cr = data.find(b"\r", pos + 1)
+        if lf < 0:
+            return data_len if cr < 0 else cr
+        return lf if cr < 0 else min(lf, cr)
+    pos += 1
+    while pos < data_len and data[pos] not in (10, 13):
+        pos += 1
+    return pos
+
+
+def skip_literal_string(data: bytes | memoryview, pos: int, data_len: int) -> int:
+    pos += 1
+    depth = 1
+    if type(data) is bytes:
+        while pos < data_len:
+            escaped = data.find(b"\\", pos)
+            opened = data.find(b"(", pos)
+            closed = data.find(b")", pos)
+            marker = (
+                min(candidate for candidate in (escaped, opened, closed) if candidate >= 0)
+                if escaped >= 0 or opened >= 0 or closed >= 0
+                else -1
+            )
+            if marker < 0:
+                return data_len
+            byte = data[marker]
+            if byte == 92:
+                pos = min(marker + 2, data_len)
+                continue
+            if byte == 40:
+                depth += 1
+            else:
+                depth -= 1
+                if depth == 0:
+                    return marker + 1
+            pos = marker + 1
+        return pos
+    while pos < data_len and depth:
+        byte = data[pos]
+        if byte == 92:
+            pos = min(pos + 2, data_len)
+            continue
+        if byte == 40:
+            depth += 1
+        elif byte == 41:
+            depth -= 1
+        pos += 1
+    return pos
+
+
+def skip_hex_string(data: bytes | memoryview, pos: int, data_len: int) -> int:
+    marker = data.find(b">", pos + 1) if type(data) is bytes else -1
+    if marker >= 0:
+        return marker + 1
+    pos += 1
+    while pos < data_len:
+        if data[pos] == 62:
+            return pos + 1
+        pos += 1
+    return pos
+
+
+def is_regular_token_byte(byte: int) -> bool:
+    return byte > 32 and byte not in (37, 40, 41, 47, 60, 62, 91, 93, 123, 125)
+
+
+def skip_name(data: bytes | memoryview, pos: int, data_len: int) -> int:
+    pos += 1
+    while pos < data_len and is_regular_token_byte(data[pos]):
+        pos += 1
+    return pos
+
+
+__all__ = (
+    "is_regular_token_byte",
+    "skip_comment",
+    "skip_hex_string",
+    "skip_literal_string",
+    "skip_name",
+)

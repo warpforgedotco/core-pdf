@@ -10,3 +10,11 @@ def test_content_operator_counts_skip_inline_image_data() -> None:
     counts = content_operator_counts(data, profile_thresholds=True, may_show_text=False)
 
     assert counts == {"q": 1, "BI": 1, "Q": 1}
+
+
+def test_content_operator_counts_skip_operator_like_names() -> None:
+    data = b"/Tj /Do /m gs"
+
+    counts = content_operator_counts(data, profile_thresholds=True, may_show_text=False)
+
+    assert counts == {"gs": 1}
