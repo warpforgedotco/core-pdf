@@ -454,10 +454,18 @@ class LTExpandableContainer(LTContainer[LTItemT]):
     # super() LTContainer only considers LTItem (no bounding box).
     def add(self, obj: LTComponent) -> None:  # type: ignore[override]
         self._objs.append(obj)  # type: ignore[arg-type]
-        x0 = min(self.x0, obj.x0)
-        y0 = min(self.y0, obj.y0)
-        x1 = max(self.x1, obj.x1)
-        y1 = max(self.y1, obj.y1)
+        x0 = self.x0
+        y0 = self.y0
+        x1 = self.x1
+        y1 = self.y1
+        if obj.x0 < x0:
+            x0 = obj.x0
+        if obj.y0 < y0:
+            y0 = obj.y0
+        if obj.x1 > x1:
+            x1 = obj.x1
+        if obj.y1 > y1:
+            y1 = obj.y1
         self.x0 = x0
         self.y0 = y0
         self.x1 = x1
