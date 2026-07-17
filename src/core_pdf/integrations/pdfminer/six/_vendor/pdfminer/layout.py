@@ -866,18 +866,22 @@ class LTLayoutContainer(LTContainer[LTComponent]):
                     :wwwwwwwwww| obj2 |
             (x0, y0) +..........+------+
             """
-            x0 = min(obj1.x0, obj2.x0)
-            y0 = min(obj1.y0, obj2.y0)
-            x1 = max(obj1.x1, obj2.x1)
-            y1 = max(obj1.y1, obj2.y1)
+            obj1_x0, obj1_y0, obj1_x1, obj1_y1 = obj1.bbox
+            obj2_x0, obj2_y0, obj2_x1, obj2_y1 = obj2.bbox
+            x0 = obj1_x0 if obj1_x0 <= obj2_x0 else obj2_x0
+            y0 = obj1_y0 if obj1_y0 <= obj2_y0 else obj2_y0
+            x1 = obj1_x1 if obj1_x1 >= obj2_x1 else obj2_x1
+            y1 = obj1_y1 if obj1_y1 >= obj2_y1 else obj2_y1
             return (x1 - x0) * (y1 - y0) - obj1.width * obj1.height - obj2.width * obj2.height
 
         def isany(obj1: ElementT, obj2: ElementT) -> set[ElementT]:
             """Check if there's any other object between obj1 and obj2."""
-            x0 = min(obj1.x0, obj2.x0)
-            y0 = min(obj1.y0, obj2.y0)
-            x1 = max(obj1.x1, obj2.x1)
-            y1 = max(obj1.y1, obj2.y1)
+            obj1_x0, obj1_y0, obj1_x1, obj1_y1 = obj1.bbox
+            obj2_x0, obj2_y0, obj2_x1, obj2_y1 = obj2.bbox
+            x0 = obj1_x0 if obj1_x0 <= obj2_x0 else obj2_x0
+            y0 = obj1_y0 if obj1_y0 <= obj2_y0 else obj2_y0
+            x1 = obj1_x1 if obj1_x1 >= obj2_x1 else obj2_x1
+            y1 = obj1_y1 if obj1_y1 >= obj2_y1 else obj2_y1
             objs = set(plane.find((x0, y0, x1, y1)))
             return objs.difference((obj1, obj2))
 
