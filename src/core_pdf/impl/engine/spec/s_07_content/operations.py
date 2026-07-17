@@ -15,10 +15,7 @@ from core_pdf.impl.engine.spec.s_07_syntax.lexer import (
     EMPTY_SIMPLE_TJ_ARRAY,
     PdfLexer,
 )
-from core_pdf.impl.engine.spec.s_07_syntax.lexer_helpers import (
-    PDF_IGNORED_RE,
-    full_source_bytes,
-)
+from core_pdf.impl.engine.spec.s_07_syntax.lexer_helpers import full_source_bytes
 from core_pdf.impl.engine.spec.s_07_syntax.scanning import (
     is_regular_token_byte,
     skip_comment,
@@ -388,14 +385,7 @@ def dispatch_operations(
         byte = raw_bytes[pos]
 
         if WS_TABLE[byte] or byte == 37:
-            if byte == 37:
-                match = PDF_IGNORED_RE.match(raw_bytes, pos)
-                if match is not None:
-                    pos = match.end()
-            else:
-                pos += 1
-                while pos < data_len and WS_TABLE[raw_bytes[pos]]:
-                    pos += 1
+            pos = lexer.skip_ignored_at(pos)
             if pos >= data_len:
                 break
             byte = raw_bytes[pos]

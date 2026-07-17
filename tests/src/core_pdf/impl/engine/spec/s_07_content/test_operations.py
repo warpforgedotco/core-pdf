@@ -77,3 +77,26 @@ def test_content_operations_support_reversed_memoryview() -> None:
         ("q", ()),
         ("Q", ()),
     ]
+
+
+@pytest.mark.parametrize("view_kind", ["bytes", "sliced", "reversed"])
+@pytest.mark.parametrize(
+    ("content", "expected"),
+    [
+        (b"q \t% fake Do\n\r % fake Tj\r\n Q", [("q", ()), ("Q", ())]),
+        (b"q % fake Do", [("q", ())]),
+    ],
+)
+def test_content_operations_skip_comments_after_whitespace(
+    view_kind: str,
+    content: bytes,
+    expected: list[tuple[str, tuple[object, ...]]],
+) -> None:
+    if view_kind == "sliced":
+        data: bytes | memoryview = memoryview(b"prefix" + content + b"suffix")[6:-6]
+    elif view_kind == "reversed":
+        data = memoryview(content[::-1])[::-1]
+    else:
+        data = content
+
+    assert list(iter_content_operations(PdfLexer(data))) == expected
