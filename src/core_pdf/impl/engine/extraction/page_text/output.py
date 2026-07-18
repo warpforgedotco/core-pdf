@@ -4,11 +4,11 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
+from core_ocr.impl import postprocess as ocr_postprocess
 from core_ocr.impl.vector_text import VectorStrokeOcrResult
 
 from core_pdf.impl.engine.extraction.common import observation_resolver
 from core_pdf.impl.engine.extraction.common.render import render_resolved_text_lines
-from core_pdf.impl.engine.extraction.ocr import postprocess as ocr_postprocess
 
 if TYPE_CHECKING:
     from core_ocr.impl.candidates import OcrPageTextResult

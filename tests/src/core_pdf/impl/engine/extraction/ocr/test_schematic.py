@@ -1,8 +1,8 @@
 from core_layout.impl.layout.geometry import RectBox
-
-from core_pdf.impl.engine.extraction.ocr.schematic import (
+from core_ocr.impl.schematic import (
     vector_table_symbol_marks_from_drawings,
 )
+
 from core_pdf.impl.engine.spec.s_07_content.capture import (
     CapturedDrawing,
     CapturedPath,

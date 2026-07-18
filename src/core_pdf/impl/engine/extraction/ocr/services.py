@@ -15,10 +15,13 @@ from core_ocr.impl.rendering import OcrRenderTile
 from core_ocr.impl.services import configure_candidate_services
 from core_ocr.impl.types import OcrImage, OcrTextResult
 
-from core_pdf.impl.engine.extraction.common import page_geometry
+from core_pdf.impl.engine.extraction.common import observation_resolver, page_geometry
 from core_pdf.impl.engine.extraction.common.ordering import LayoutAnalyzer
+from core_pdf.impl.engine.extraction.common.render import render_resolved_text_lines
+from core_pdf.impl.engine.extraction.tables.grid import detect_grid, merge_grids
 from core_pdf.impl.engine.rendering import RenderOptions
 from core_pdf.impl.engine.rendering.models import RenderedPage
+from core_pdf.impl.engine.spec.s_07_document.page_boxes import rotate_page_lines
 from core_pdf.impl.engine.spec.s_07_objects.coercion import normalize_pdf_name
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_09_fonts.glyphs import glyph_name_to_unicode
@@ -44,6 +47,11 @@ class PdfOcrCandidateServices:
     rendering = ocr_rendering
     layout_analyzer = LayoutAnalyzer
     pdf_analysis = PdfOcrAnalysisServices
+    observation_resolver = observation_resolver
+    render_resolved_text_lines = staticmethod(render_resolved_text_lines)
+    detect_grid = staticmethod(detect_grid)
+    merge_grids = staticmethod(merge_grids)
+    rotate_page_lines = staticmethod(rotate_page_lines)
     clamp_ocr_bbox = staticmethod(ocr_tiling.clamp_ocr_bbox)
 
     @staticmethod

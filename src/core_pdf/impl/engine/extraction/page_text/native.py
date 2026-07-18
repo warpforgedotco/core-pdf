@@ -17,7 +17,9 @@ from core_layout.impl.layout.geometry_quality import (
     text_run_has_repairable_glyph_geometry_issue,
 )
 from core_ocr.impl import page_analysis as ocr_page_analysis
+from core_ocr.impl import postprocess as ocr_postprocess
 from core_ocr.impl import rendering as ocr_rendering
+from core_ocr.impl import schematic as ocr_schematic
 from core_ocr.impl import text_analysis as ocr_text_analysis
 from core_ocr.impl.text_analysis import (
     extracted_text_token_count,
@@ -33,12 +35,6 @@ from core_pdf.impl.engine.extraction.common.render import (
     render_page_observation_lines,
     render_page_text,
     render_resolved_text_lines,
-)
-from core_pdf.impl.engine.extraction.ocr import (
-    postprocess as ocr_postprocess,
-)
-from core_pdf.impl.engine.extraction.ocr import (
-    schematic as ocr_schematic,
 )
 
 MIN_VISIBLE_GLYPH_COVERAGE = 0.75

@@ -1,6 +1,5 @@
 import pytest
-
-from core_pdf.impl.engine.extraction.ocr.postprocess import (
+from core_ocr.impl.postprocess import (
     normalize_precision_first_prize_line_text,
     repair_document_local_identifier_text,
 )
