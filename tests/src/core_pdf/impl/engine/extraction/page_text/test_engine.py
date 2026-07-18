@@ -6,6 +6,7 @@ from core_pdf.impl.engine.extraction.page_text.engine import (
     ResolvedLineRecord,
     TextBlock,
     build_text_blocks,
+    related_page_records,
     render_page_blocks,
 )
 from core_pdf.impl.engine.spec.s_07_document.metadata_types import MetadataRecord
@@ -181,3 +182,23 @@ def test_pdf_related_records_adapt_into_core_document_page() -> None:
     assert page.links[0].url == "https://example.test"
     assert page.annotations[0].subtype == "Text"
     assert page.form_fields[0].value_text == "Ada"
+
+
+def test_related_extraction_failures_are_reported_as_diagnostics() -> None:
+    class FailingPage:
+        page_number = 4
+
+        def get_links(self) -> list[object]:
+            raise ValueError("malformed link annotation")
+
+    records, diagnostics = related_page_records(FailingPage())
+
+    assert records["links"] == ()
+    assert diagnostics == (
+        {
+            "code": "related_extraction_failed",
+            "message": "Failed to extract get_links: malformed link annotation",
+            "severity": "warning",
+            "page_number": 4,
+        },
+    )

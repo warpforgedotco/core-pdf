@@ -10,6 +10,7 @@ from core_document import (
     Annotation,
     Block,
     BlockKind,
+    Diagnostic,
     Document,
     Figure,
     FormField,
@@ -100,6 +101,18 @@ def extraction_result_to_document(result: DocumentExtractionResult) -> Document:
     return Document(
         metadata=result.metadata,
         pages=tuple(page_result_to_document_page(page) for page in result.pages),
+        diagnostics=tuple(
+            Diagnostic(
+                code=str(record.get("code") or "unknown"),
+                message=str(record.get("message") or ""),
+                severity=str(record.get("severity") or "warning"),
+                page_number=(
+                    int(record["page_number"]) if record.get("page_number") is not None else None
+                ),
+            )
+            for page in result.pages
+            for record in page.diagnostics
+        ),
     )
 
 

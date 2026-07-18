@@ -57,6 +57,7 @@ class PageExtractionResult:
     links: tuple[dict[str, Any], ...] = ()
     annotations: tuple[dict[str, Any], ...] = ()
     form_fields: tuple[dict[str, Any], ...] = ()
+    diagnostics: tuple[dict[str, Any], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -141,7 +142,7 @@ def build_page_extraction_result(
         page_class,
         page_class_confidence,
     )
-    related = related_page_records(page) if include_related else {}
+    related, related_diagnostics = related_page_records(page) if include_related else ({}, ())
     result = PageExtractionResult(
         page_number=page.page_number,
         page_label=getattr(page, "label", None),
@@ -157,6 +158,7 @@ def build_page_extraction_result(
         width=page.width,
         height=page.height,
         rotation=getattr(page, "rotation", 0),
+        diagnostics=related_diagnostics,
         **related,
     )
     return result
@@ -301,14 +303,18 @@ def segment_or_none(value: Any) -> tuple[float, float, float, float] | None:
     return rect_or_none(value)
 
 
-def related_page_records(page: Any) -> dict[str, tuple[dict[str, Any], ...]]:
+def related_page_records(
+    page: Any,
+) -> tuple[dict[str, tuple[dict[str, Any], ...]], tuple[dict[str, Any], ...]]:
+    diagnostics: list[dict[str, Any]] = []
     tables: tuple[dict[str, Any], ...] = ()
     extract_tables = getattr(page, "extract_tables", None)
     if callable(extract_tables):
         try:
             table_result = extract_tables()
-        except Exception:
+        except Exception as exc:
             table_result = None
+            diagnostics.append(related_extraction_diagnostic(page, "tables", exc))
         if isinstance(table_result, Mapping):
             raw_tables = table_result.get("tables", [])
             raw_bboxes = table_result.get("bboxes", [])
@@ -326,28 +332,32 @@ def related_page_records(page: Any) -> dict[str, tuple[dict[str, Any], ...]]:
                     if isinstance(rows, list)
                 )
 
-    figures = tuple(
-        dict(record)
-        for record in _safe_page_records(page, "extract_images")
-        if isinstance(record, Mapping)
-    )
-    links = tuple(
+    figures, figure_diagnostics = _safe_page_records(page, "extract_images")
+    diagnostics.extend(figure_diagnostics)
+    figure_records = tuple(dict(record) for record in figures if isinstance(record, Mapping))
+    links, link_diagnostics = _safe_page_records(page, "get_links")
+    diagnostics.extend(link_diagnostics)
+    link_records = tuple(
         {
             "bbox": getattr(record, "bbox", None),
             "url": getattr(record, "url", None),
             "link_type": getattr(record, "link_type", None),
         }
-        for record in _safe_page_records(page, "get_links")
+        for record in links
     )
-    annotations = tuple(
+    annotations_records, annotation_diagnostics = _safe_page_records(page, "get_annotations")
+    diagnostics.extend(annotation_diagnostics)
+    annotation_records = tuple(
         {
             "subtype": getattr(record, "subtype", None),
             "bbox": getattr(record, "rect", None),
             "contents": getattr(record, "contents", ""),
             "destination": getattr(record, "dest", None),
         }
-        for record in _safe_page_records(page, "get_annotations")
+        for record in annotations_records
     )
+    fields, field_diagnostics = _safe_page_records(page, "get_fields")
+    diagnostics.extend(field_diagnostics)
     form_fields = tuple(
         {
             "name": getattr(record, "name", ""),
@@ -355,26 +365,42 @@ def related_page_records(page: Any) -> dict[str, tuple[dict[str, Any], ...]]:
             "value_text": getattr(record, "value_text", ""),
             "bbox": getattr(record, "rect", None),
         }
-        for record in _safe_page_records(page, "get_fields")
+        for record in fields
     )
     return {
         "tables": tables,
-        "figures": figures,
-        "links": links,
-        "annotations": annotations,
+        "figures": figure_records,
+        "links": link_records,
+        "annotations": annotation_records,
         "form_fields": form_fields,
-    }
+    }, tuple(diagnostics)
 
 
-def _safe_page_records(page: Any, method_name: str) -> list[Any]:
+def _safe_page_records(
+    page: Any,
+    method_name: str,
+) -> tuple[list[Any], tuple[dict[str, Any], ...]]:
     method = getattr(page, method_name, None)
     if not callable(method):
-        return []
+        return [], ()
     try:
         records = method()
-    except Exception:
-        return []
-    return list(records) if isinstance(records, (list, tuple)) else []
+    except Exception as exc:
+        return [], (related_extraction_diagnostic(page, method_name, exc),)
+    return (list(records), ()) if isinstance(records, (list, tuple)) else ([], ())
+
+
+def related_extraction_diagnostic(
+    page: Any,
+    section: str,
+    exc: Exception,
+) -> dict[str, Any]:
+    return {
+        "code": "related_extraction_failed",
+        "message": f"Failed to extract {section}: {exc}",
+        "severity": "warning",
+        "page_number": getattr(page, "page_number", None),
+    }
 
 
 def build_text_blocks(
