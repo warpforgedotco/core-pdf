@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-This is a Python 3.11+ PDF parsing engine using the `src` layout. Production code is in `src/core_pdf`; public entry points include `cli.py`, `__main__.py`, and `__init__.py`. Internal implementation is organized under `src/core_pdf/impl`, including the PDF specification, extraction, layout, OCR, tables, and vendored third-party code. Tests mirror the package structure in `tests/src`; compatibility and corpus fixtures live under `tests/fixtures`. Documentation and licensing material are in `docs/`, benchmarks in `core/benchmarks`, and maintenance scripts in `scripts/`.
+This is a Python 3.11+ PDF parsing engine using the `src` layout. Production code is in `src/core_pdf`; public entry points include `cli.py`, `__main__.py`, and `__init__.py`. Internal implementation is organized under `src/core_pdf/impl`, including the PDF specification, extraction, rendering, writing, and tables. Reusable layout, glyph, and OCR components are separate workspace packages under `packages/`. Tests mirror the package structure in `tests/src`; corpus fixtures live under `tests/fixtures`. Documentation and licensing material are in `docs/`, and maintenance scripts are in `scripts/`.
 
 ## Build, Test, and Development Commands
 
@@ -26,7 +26,7 @@ Never edit `pyproject.toml` or `uv.lock` manually when adding or removing depend
 
 ## Coding Style & Naming Conventions
 
-Write Python with four-space indentation, clear type annotations, and lines no longer than 100 characters. Ruff handles import sorting, linting, and formatting; run it before submitting. Use `snake_case` for modules, functions, and variables, `PascalCase` for classes, and `UPPER_SNAKE_CASE` for constants. Keep changes out of `src/core_pdf/impl/third_party` unless explicitly updating vendored code.
+Write Python with four-space indentation, clear type annotations, and lines no longer than 100 characters. Ruff handles import sorting, linting, and formatting; run it before submitting. Use `snake_case` for modules, functions, and variables, `PascalCase` for classes, and `UPPER_SNAKE_CASE` for constants. Third-party implementations do not belong in `core-pdf`; add reusable functionality to the appropriate workspace package instead.
 
 ## Testing Guidelines
 

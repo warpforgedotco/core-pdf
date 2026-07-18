@@ -10,7 +10,8 @@ PDF 32000 section:
 - ``s_14_structure``: marked content, logical structure, tagged PDF
 
 Root-level packages are shared or derived processing layers:
-``layout``, ``extraction``, ``rendering``, and ``compat``.
+``extraction``, ``rendering``, and ``writing``. Reusable layout primitives
+live in the workspace-level ``core-layout`` package.
 """
 
 __all__: tuple[str, ...] = ()
