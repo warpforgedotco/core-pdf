@@ -8,6 +8,7 @@ from core_pdf.impl.engine.extraction.common import page_profile
 from core_pdf.impl.engine.extraction.common.render import (
     render_page_observation_lines,
     render_resolved_text_lines,
+    resolved_text_lines_for_output,
 )
 
 MIN_VISIBLE_GLYPH_COVERAGE = 0.75
@@ -104,9 +105,10 @@ def extract_native_text(page: Any) -> tuple[str, tuple[Any, ...]]:
         media_box=page.media_box,
         layout=True,
     )
-    text = render_resolved_text_lines(lines)
+    output_lines = resolved_text_lines_for_output(lines)
+    text = render_resolved_text_lines(output_lines)
     cache = getattr(page, "extraction_cache", None)
     if cache is not None:
         cache["native_text_profile"] = profile
-        cache["native_output_lines"] = lines
-    return text, lines
+        cache["native_output_lines"] = output_lines
+    return text, output_lines
