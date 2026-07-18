@@ -9,10 +9,10 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
+from core_ocr.impl import coordinator as page_text_mixin
 
 from core_pdf import PdfDocument as PublicPdfDocument
 from core_pdf import PdfSourceError
-from core_pdf.impl.engine.extraction.page_text import mixin as page_text_mixin
 from core_pdf.impl.engine.spec.s_07_content.operations import dispatch_operations
 from core_pdf.impl.engine.spec.s_07_document.document import PdfDocument
 from core_pdf.impl.engine.spec.s_07_document.document_labels import (

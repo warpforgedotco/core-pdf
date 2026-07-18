@@ -5,6 +5,12 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
+from core_filters.impl.flate import apply_flate
+from core_filters.impl.pipeline import decode_stream_data
+from core_layout.impl.layout.geometry_quality import (
+    layout_geometry_summary_record,
+    page_layout_geometry_summary,
+)
 from core_ocr.impl import execution as ocr_execution
 from core_ocr.impl import iterator_layout as ocr_iterator_layout
 from core_ocr.impl import layout as ocr_layout
@@ -15,15 +21,22 @@ from core_ocr.impl.rendering import OcrRenderTile
 from core_ocr.impl.services import configure_candidate_services
 from core_ocr.impl.types import OcrImage, OcrTextResult
 
-from core_pdf.impl.engine.extraction.common import observation_resolver, page_geometry
+from core_pdf.impl.engine.extraction.common import observation_resolver, page_geometry, page_profile
 from core_pdf.impl.engine.extraction.common.ordering import LayoutAnalyzer
-from core_pdf.impl.engine.extraction.common.render import render_resolved_text_lines
+from core_pdf.impl.engine.extraction.common.render import (
+    MarkdownRenderer,
+    render_page_observation_lines,
+    render_resolved_text_lines,
+)
+from core_pdf.impl.engine.extraction.page_text import decisions as page_text_decisions
+from core_pdf.impl.engine.extraction.page_text import native as native_text
 from core_pdf.impl.engine.extraction.tables.grid import detect_grid, merge_grids
-from core_pdf.impl.engine.rendering import RenderOptions
-from core_pdf.impl.engine.rendering.models import RenderedPage
+from core_pdf.impl.engine.rendering import RenderOptions, compose_page
+from core_pdf.impl.engine.rendering.models import RenderedPage, image_filter_names, pdf_int
 from core_pdf.impl.engine.spec.s_07_document.page_boxes import rotate_page_lines
 from core_pdf.impl.engine.spec.s_07_objects.coercion import normalize_pdf_name
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_08_graphics.color import ImageColorManager
 from core_pdf.impl.engine.spec.s_09_fonts.glyphs import glyph_name_to_unicode
 from core_pdf.impl.engine.spec.s_09_fonts.helpers import parse_differences
 from core_pdf.impl.objects import PdfStream
@@ -48,7 +61,44 @@ class PdfHostServices:
     layout_analyzer = LayoutAnalyzer
     pdf_analysis = PdfAnalysisServices
     observation_resolver = observation_resolver
+    page_profile = page_profile
+    render_options = RenderOptions
+    image_color_manager = ImageColorManager
+    markdown_renderer = MarkdownRenderer
     render_resolved_text_lines = staticmethod(render_resolved_text_lines)
+    render_page_observation_lines = staticmethod(render_page_observation_lines)
+    compose_page = staticmethod(compose_page)
+    apply_flate = staticmethod(apply_flate)
+    decode_stream_data = staticmethod(decode_stream_data)
+    lookup_dict_key = staticmethod(lookup_dict_key)
+    image_filter_names = staticmethod(image_filter_names)
+    pdf_int = staticmethod(pdf_int)
+    page_extraction_decision = staticmethod(page_text_decisions.page_extraction_decision)
+    layout_geometry_summary_record = staticmethod(layout_geometry_summary_record)
+    page_layout_geometry_summary = staticmethod(page_layout_geometry_summary)
+    native_text = native_text
+    try_extract_native_text_fast = staticmethod(native_text.try_extract_native_text_fast)
+    native_text_runs_for_extraction = staticmethod(native_text.native_text_runs_for_extraction)
+    native_text_runs_inside_page_bounds = staticmethod(
+        native_text.native_text_runs_inside_page_bounds
+    )
+    native_text_runs_inside_visible_row_bands = staticmethod(
+        native_text.native_text_runs_inside_visible_row_bands
+    )
+    select_native_text_layout = staticmethod(native_text.select_native_text_layout)
+    should_try_rendered_glyph_repair = staticmethod(native_text.should_try_rendered_glyph_repair)
+    apply_rendered_glyph_repair_to_native_text = staticmethod(
+        native_text.apply_rendered_glyph_repair_to_native_text
+    )
+    native_layout_geometry_summary_for_runs = staticmethod(
+        native_text.native_layout_geometry_summary_for_runs
+    )
+    native_invisible_text_layer_has_fragmented_geometry = staticmethod(
+        native_text.native_invisible_text_layer_has_fragmented_geometry
+    )
+    native_invisible_text_layer_is_trustworthy = staticmethod(
+        native_text.native_invisible_text_layer_is_trustworthy
+    )
     detect_grid = staticmethod(detect_grid)
     merge_grids = staticmethod(merge_grids)
     rotate_page_lines = staticmethod(rotate_page_lines)
