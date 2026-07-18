@@ -2,8 +2,11 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any, cast
 
+from core_layout.impl.layout.models import TextRun
+
 from core_pdf.impl.engine.extraction.document import PdfDocument
 from core_pdf.impl.engine.extraction.page_text.engine import build_page_extraction_result
+from core_pdf.impl.engine.extraction.page_text.native import native_text_runs_for_extraction
 
 TESTS_DIR = Path(__file__).parents[6]
 SAMPLE_PDF = TESTS_DIR / "fixtures" / "SCORE-Bench" / "src" / "global-AIDS-strategy-p74-75-p001.pdf"
@@ -45,6 +48,34 @@ def image_only_pdf() -> BytesIO:
     return BytesIO(data)
 
 
+def text_run(
+    text: str,
+    x0: float,
+    y0: float,
+    x1: float,
+    y1: float,
+    *,
+    visible: bool = True,
+    provenance: tuple[tuple[str, object], ...] = (),
+) -> TextRun:
+    return TextRun(
+        text,
+        x0,
+        y0,
+        x1,
+        y1,
+        x0,
+        y0,
+        10.0,
+        4.0,
+        0,
+        0,
+        0,
+        visible=visible,
+        provenance=provenance,
+    )
+
+
 def test_native_extraction_returns_pdf_text_without_external_services() -> None:
     with PdfDocument.open(SAMPLE_PDF) as document:
         page = cast(Any, document.pages[0])
@@ -75,3 +106,34 @@ def test_image_only_page_does_not_attempt_text_extraction() -> None:
         assert result.text == ""
         assert result.page_class == "image"
         assert result.resolved_lines == ()
+
+
+def test_native_bounds_keep_long_text_with_oversized_font_metrics() -> None:
+    run = text_run(
+        "A valid line whose reported width exceeds the page",
+        60.0,
+        100.0,
+        1_200.0,
+        112.0,
+    )
+
+    from core_pdf.impl.engine.extraction.page_text.native import (
+        native_text_runs_inside_page_bounds,
+    )
+
+    assert native_text_runs_inside_page_bounds([run], (0.0, 0.0, 612.0, 792.0)) == [run]
+
+
+def test_native_extraction_drops_duplicate_invisible_text_layer() -> None:
+    painted = text_run("Hello native PDF text", 10.0, 10.0, 100.0, 20.0)
+    invisible = text_run(
+        "Hello native PDF text",
+        10.0,
+        10.0,
+        100.0,
+        20.0,
+        visible=False,
+        provenance=(("text_render_mode", 3),),
+    )
+
+    assert native_text_runs_for_extraction([painted, invisible]) == [painted]
