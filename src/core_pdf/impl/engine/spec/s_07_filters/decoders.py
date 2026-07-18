@@ -4,6 +4,20 @@ from __future__ import annotations
 import struct
 from typing import NoReturn
 
+from core_ccitt import (
+    CcittParseError,
+    CcittUnsupportedError,
+)
+from core_ccitt import (
+    decode_ccitt_fax as decode_ccitt_impl,
+)
+from core_jbig2 import (
+    Jbig2ParseError,
+    Jbig2UnsupportedError,
+    assemble_embedded_jbig2,
+    decode_embedded_jbig2,
+    parse_jbig2_file,
+)
 from core_jpeg.api import decode_dct
 from core_jpeg.api import decode_jpx as decode_jpx_impl
 from core_jpeg.errors import JpegParseError, JpegUnsupportedError
@@ -12,20 +26,6 @@ from core_pdf.impl.engine.spec.s_07_filters.decode_spec import FilterParams
 from core_pdf.impl.engine.spec.s_07_objects.coercion import coerce_to_bytes, is_pdf_null
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.exceptions import PdfParseError, PdfUnsupportedError
-from core_pdf.impl.third_party.ccitt import (
-    CcittParseError,
-    CcittUnsupportedError,
-)
-from core_pdf.impl.third_party.ccitt import (
-    decode_ccitt_fax as decode_ccitt_impl,
-)
-from core_pdf.impl.third_party.jbig2 import (
-    Jbig2ParseError,
-    Jbig2UnsupportedError,
-    assemble_embedded_jbig2,
-    decode_embedded_jbig2,
-    parse_jbig2_file,
-)
 
 
 def raise_pdf_parse(exc: BaseException) -> NoReturn:

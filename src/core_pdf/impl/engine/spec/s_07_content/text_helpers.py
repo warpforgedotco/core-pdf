@@ -4,6 +4,8 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Any, Protocol, cast
 
+from core_font_programs import TrueTypeFontProgram
+
 from core_pdf.impl.engine.layout.models import TextRun
 from core_pdf.impl.engine.spec.s_07_objects.coercion import normalize_pdf_name
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
@@ -13,7 +15,6 @@ from core_pdf.impl.engine.spec.s_09_fonts.widths import (
 )
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.objects import PdfStream
-from core_pdf.impl.third_party.truetype import TrueTypeFontProgram
 
 FILL_OPS = frozenset({"f", "f*", "F"})
 FILL_AND_STROKE_OPS = frozenset({"B", "b", "B*", "b*"})

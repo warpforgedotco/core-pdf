@@ -5,25 +5,24 @@ import typing
 from functools import lru_cache
 from typing import TypeAlias, cast
 
+from core_color import (
+    adapt_d50_to_d65,
+    convert_icc_profile_samples,
+    lab_to_xyz,
+    xyz_to_srgb,
+)
+
 from core_pdf.impl.engine.spec.s_07_objects.coercion import (
     parse_float,
     parse_int,
 )
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
-from core_pdf.impl.engine.spec.s_08_graphics.color_math import (
-    adapt_d50_to_d65,
-    lab_to_xyz,
-    xyz_to_srgb,
-)
 from core_pdf.impl.engine.spec.s_08_graphics.color_spec import (
     ImageColorSpec,
     cs_name,
     cs_param,
     cs_param_floats,
     normalize_image_color_spec,
-)
-from core_pdf.impl.engine.spec.s_08_graphics.icc_profiles import (
-    convert_icc_profile_samples,
 )
 from core_pdf.impl.objects import PdfStream
 

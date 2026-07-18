@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from typing import TypeAlias, cast
 
+from core_color import icc_profile_alt_name
+
 from core_pdf.impl.engine.spec.s_07_objects.coercion import (
     coerce_to_bytes,
     normalize_pdf_name,
@@ -13,7 +15,6 @@ from core_pdf.impl.engine.spec.s_07_objects.pdfdict import (
     lookup_dict_key,
     lookup_dict_key_default,
 )
-from core_pdf.impl.engine.spec.s_08_graphics.icc_profiles import icc_profile_alt_name
 from core_pdf.impl.objects import (
     MISSING,
     PdfStream,

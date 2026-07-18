@@ -7,6 +7,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Iterable
 
+from core_font_programs import CFFFont, TrueTypeFontProgram
+
 from core_pdf.impl.engine.spec.s_07_objects.coercion import normalize_pdf_name
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_09_fonts.cff import (
@@ -42,7 +44,6 @@ from core_pdf.impl.objects import PdfStream
 from core_pdf.impl.primitives import PdfString
 from core_pdf.impl.third_party._vendor.fontTools.agl import UV2AGL
 from core_pdf.impl.third_party._vendor.fontTools.encodings.StandardEncoding import StandardEncoding
-from core_pdf.impl.third_party.cff import CFFFont
 from core_pdf.impl.third_party.cid.cmap import (
     CMapDecoder,
     ToUnicodeCMap,
@@ -54,7 +55,6 @@ from core_pdf.impl.third_party.cid.resource_loader import (
     resolve_cmap_resource,
 )
 from core_pdf.impl.third_party.cid.widths import FontWidthMap
-from core_pdf.impl.third_party.truetype import TrueTypeFontProgram
 
 if typing.TYPE_CHECKING:
     from typing import Any

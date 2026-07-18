@@ -3,12 +3,13 @@ from __future__ import annotations
 
 from typing import Any
 
+from core_font_programs import TrueTypeFontProgram
+from core_font_programs import tt_font_for_data as _tt_font_for_data
+
 from core_pdf.impl.engine.spec.s_07_objects.coercion import normalize_pdf_name
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_09_fonts.widths import get_descendant
 from core_pdf.impl.objects import PdfStream
-from core_pdf.impl.third_party.truetype import TrueTypeFontProgram
-from core_pdf.impl.third_party.truetype import tt_font_for_data as _tt_font_for_data
 
 
 def tt_font_for_pdf_font(font: dict[str, Any]) -> TrueTypeFontProgram | None:
