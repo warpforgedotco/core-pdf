@@ -10,6 +10,7 @@ from core_pdf.impl.engine.extraction.document_text import DocumentTextMixin
 from core_pdf.impl.engine.spec.s_07_document.document import (
     PdfDocument as SpecPdfDocument,
 )
+from core_pdf.impl.engine.writing import PdfDocumentWritingMixin
 
 if TYPE_CHECKING:
     from core_document import Document, DocumentAdapter
@@ -25,6 +26,7 @@ class PdfDocument(
     DocumentExtractionMixin,
     DocumentStructuredMixin,
     DocumentTextMixin,
+    PdfDocumentWritingMixin,
     SpecPdfDocument,
 ):
     page_class = staticmethod(_create_page)

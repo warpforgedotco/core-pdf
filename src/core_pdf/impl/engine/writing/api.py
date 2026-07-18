@@ -1,0 +1,84 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+"""PDF document writing entry points."""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from os import PathLike
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, BinaryIO, cast
+
+from core_pdf.impl.engine.writing.incremental import append_incremental_update
+from core_pdf.impl.exceptions import PdfUnsupportedError
+
+if TYPE_CHECKING:
+    from core_pdf.impl.types import PdfObject
+
+
+class PdfDocumentWritingMixin:
+    """Format-specific save operations for parsed PDF documents."""
+
+    def save_incremental(
+        self: Any,
+        target: str | PathLike[str] | BinaryIO,
+        objects: Mapping[int, PdfObject],
+        *,
+        trailer: Mapping[object, object] | None = None,
+    ) -> bytes:
+        """Append an incremental update and write it to ``target``.
+
+        ``objects`` contains replacement or newly allocated indirect objects.
+        The returned bytes are also written to the target, which may be a path
+        or an already-open binary stream.
+        """
+        if self.closed:
+            raise ValueError("PDF document is closed")
+        if self.decipher is not None:
+            raise PdfUnsupportedError("incremental writing of encrypted PDFs is not supported")
+        original = bytes(self.raw_data)
+        previous_xref_offset = find_startxref(original)
+        previous_size = previous_object_count(self.xref, self.trailer_dict)
+        updated = append_incremental_update(
+            original,
+            objects,
+            trailer={**self.trailer_dict, **dict(trailer or {})},
+            previous_xref_offset=previous_xref_offset,
+            previous_size=previous_size,
+        )
+        if isinstance(target, (str, PathLike)):
+            Path(cast(str | PathLike[str], target)).write_bytes(updated)
+        else:
+            cast(BinaryIO, target).write(updated)
+        return updated
+
+
+def find_startxref(data: bytes) -> int:
+    marker = b"startxref"
+    marker_position = data.rfind(marker)
+    if marker_position < 0:
+        raise ValueError("PDF does not contain a startxref marker")
+    position = marker_position + len(marker)
+    while position < len(data) and data[position] in b" \t\r\n":
+        position += 1
+    end = position
+    while end < len(data) and data[end] in b"0123456789":
+        end += 1
+    if end == position:
+        raise ValueError("PDF startxref marker has no numeric offset")
+    return int(data[position:end])
+
+
+def previous_object_count(
+    xref: Mapping[int, object],
+    trailer: Mapping[object, object],
+) -> int:
+    raw_size = trailer.get("Size")
+    if raw_size is None:
+        raw_size = trailer.get(b"Size")
+    if type(raw_size) is int and raw_size > 0:
+        return raw_size
+    object_numbers = [key >> 16 for key in xref if key > 0]
+    return max(object_numbers, default=0) + 1
+
+
+__all__ = ("PdfDocumentWritingMixin", "find_startxref", "previous_object_count")
