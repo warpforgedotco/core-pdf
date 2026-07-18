@@ -2,6 +2,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any, cast
 
+import pytest
 from core_layout.impl.layout.models import TextRun
 
 from core_pdf.impl.engine.extraction.document import PdfDocument
@@ -137,3 +138,46 @@ def test_native_extraction_drops_duplicate_invisible_text_layer() -> None:
     )
 
     assert native_text_runs_for_extraction([painted, invisible]) == [painted]
+
+
+@pytest.mark.parametrize(
+    ("fixture_name", "expected_rotation", "expected_text"),
+    [
+        (
+            "BarrowArchAnalysis_Alaska1984-p076.pdf",
+            90,
+            "PORT CAPACITY AT ANCHORAGE",
+        ),
+        (
+            "global-AIDS-strategy-p74-75-p001.pdf",
+            0,
+            "GLOBAL AIDS STRATEGY 2021–2026",
+        ),
+        (
+            "korean_power_system_challenges-p003.pdf",
+            0,
+            "This document was prepared as an account of work",
+        ),
+        (
+            "Employee_Health_Benefits_Assess-p006.pdf",
+            180,
+            "Data Findings Presentation",
+        ),
+    ],
+)
+def test_native_extraction_quality_corpus(
+    fixture_name: str,
+    expected_rotation: int,
+    expected_text: str,
+) -> None:
+    fixture = TESTS_DIR / "fixtures" / "SCORE-Bench" / "src" / fixture_name
+
+    with PdfDocument.open(fixture) as document:
+        page = cast(Any, document.pages[0])
+        text = page.extract_text()
+
+        assert page.rotation == expected_rotation
+        assert expected_text.casefold() in text.casefold()
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        assert lines
+        assert all(left != right for left, right in zip(lines, lines[1:], strict=False))
