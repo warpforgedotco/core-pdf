@@ -35,9 +35,6 @@ class _TablePage(PageTableMixin):
     def get_text_spans(self) -> list[Any]:
         return []
 
-    def display_text_span_chars(self) -> dict[int, list[tuple[str, float, float, float, float]]]:
-        return {}
-
     def crop(self, bbox: tuple[float, float, float, float]) -> _TablePage:
         del bbox
         return self

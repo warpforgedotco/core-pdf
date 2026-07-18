@@ -21,6 +21,7 @@ def native_snapshot(fixture_name: str, page: Any, result: Any) -> str:
         f"rotation: {page.rotation}",
         f"page_class: {result.page_class}",
         f"base_route: {result.base_route}",
+        f"block_count: {len(result.blocks)}",
         f"line_count: {len(result.resolved_lines)}",
         "---",
         "",
@@ -36,6 +37,10 @@ def native_snapshot(fixture_name: str, page: Any, result: Any) -> str:
             )
         )
     return "\n".join(lines) + "\n"
+
+
+def result_text(result: Any) -> str:
+    return "\n".join(line.text for block in result.blocks for line in block.lines)
 
 
 def image_only_pdf() -> BytesIO:
@@ -105,11 +110,13 @@ def text_run(
 def test_native_extraction_returns_pdf_text_without_external_services() -> None:
     with PdfDocument.open(SAMPLE_PDF) as document:
         page = cast(Any, document.pages[0])
-        text = page.extract_text()
+        result = build_page_extraction_result(page)
+        text = result_text(result)
 
         assert text.strip()
+        assert not hasattr(page, "extract_text")
         assert page.extraction_cache is not None
-        assert "native_text" in page.extraction_cache
+        assert "native_output_lines" in page.extraction_cache
         assert "page_extraction_snapshot" not in page.extraction_cache
 
 
@@ -118,7 +125,7 @@ def test_structured_page_result_reports_native_route() -> None:
         page = cast(Any, document.pages[0])
         result = build_page_extraction_result(page)
 
-        assert result.text.strip()
+        assert result_text(result).strip()
         assert result.base_route in {"native_fast", "native_layout"}
         assert result.resolved_lines
 
@@ -128,8 +135,7 @@ def test_image_only_page_does_not_attempt_text_extraction() -> None:
         page = cast(Any, document.pages[0])
         result = build_page_extraction_result(page)
 
-        assert page.extract_text() == ""
-        assert result.text == ""
+        assert result_text(result) == ""
         assert result.page_class == "image"
         assert result.resolved_lines == ()
 
@@ -208,7 +214,8 @@ def test_native_extraction_quality_corpus(
 
     with PdfDocument.open(fixture) as document:
         page = cast(Any, document.pages[0])
-        text = page.extract_text()
+        result = build_page_extraction_result(page)
+        text = result_text(result)
 
         assert page.rotation == expected_rotation
         assert expected_text.casefold() in text.casefold()
@@ -218,6 +225,5 @@ def test_native_extraction_quality_corpus(
         positions = [text.casefold().index(marker.casefold()) for marker in ordered_markers]
         assert positions == sorted(positions)
 
-        result = build_page_extraction_result(page)
         snapshot = SNAPSHOT_DIR / f"{Path(fixture_name).stem}.md"
         assert native_snapshot(fixture_name, page, result) == snapshot.read_text()

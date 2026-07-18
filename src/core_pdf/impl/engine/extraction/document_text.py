@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator
-from typing import TYPE_CHECKING, Protocol, cast
+from collections.abc import Iterable
+from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
     from core_pdf.impl.engine.extraction.page_text.engine import DocumentExtractionResult
@@ -12,21 +12,12 @@ if TYPE_CHECKING:
     )
 
 
-class _DocumentTextPage(Protocol):
-    def extract_text(self) -> str: ...
-
-    def to_markdown(self) -> str: ...
-
-
 class _DocumentTextOutline(Protocol):
     level: int
     title: str
 
 
 class _DocumentTextHost(Protocol):
-    @property
-    def pages(self) -> Iterable[object]: ...
-
     def extract(self) -> DocumentExtractionResult: ...
 
     def get_metadata(self) -> MetadataRecord: ...
@@ -43,9 +34,6 @@ def _metadata_markdown_value(value: MetadataValue) -> str:
 
 
 class DocumentTextMixin:
-    def extract_text(self: _DocumentTextHost) -> str:
-        return self.extract().text
-
     def to_markdown(self: _DocumentTextHost) -> str:
         md_parts: list[str] = []
 
@@ -69,20 +57,9 @@ class DocumentTextMixin:
         except (ValueError, KeyError, StopIteration):
             pass
 
-        md_parts.append(
-            "\f".join(cast(_DocumentTextPage, page_obj).to_markdown() for page_obj in self.pages)
-        )
+        md_parts.append(self.extract().to_markdown().rstrip("\f"))
 
         return "\n".join(md_parts) + "\f"
-
-    def iter_text(self: _DocumentTextHost) -> Iterator[str]:
-        result = self.extract()
-        if result.pages:
-            for page_result in result.pages:
-                yield page_result.text
-            return
-        for page_obj in self.pages:
-            yield cast(_DocumentTextPage, page_obj).extract_text()
 
 
 __all__ = ("DocumentTextMixin",)

@@ -2,11 +2,16 @@
 
 **High-Performance PDF Engine**
 
-## Text extraction
+## Structured extraction
 
-`core-pdf` currently extracts text from native PDF text objects only. Image-only and
-scanned pages return no extracted text; OCR is intentionally provided separately and is
-not invoked by this package.
+`PdfDocument.extract()` is the canonical extraction API. It returns immutable,
+layout-aware page results containing ordered text blocks and resolved lines, including
+their geometry, column index, rotation, source, and confidence metadata. Use
+`PdfDocument.to_markdown()` when a Markdown view is needed.
+
+`core-pdf` currently extracts native PDF text objects only. Image-only and scanned pages
+return no text blocks; OCR is intentionally provided separately and is not invoked by
+this package.
 
 ![core-pdf — High-Performance PDF Engine](.github/assets/core-pdf-social-preview.jpg)
 

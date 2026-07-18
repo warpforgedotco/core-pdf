@@ -104,23 +104,13 @@ class PageExtractionMixin(PageContentMixin):
             self.text_spans = list(spans.values())
         return self.text_spans
 
-    def extract_text(self: PdfPage) -> str:
-        cache = self.extraction_cache
-        if cache is None:
-            self.extraction_cache = cache = ExtractionCache()
-        cached = cache.get("native_text")
-        if isinstance(cached, str):
-            return cached
-        text, _ = extract_native_text(self)
-        cache["native_text"] = text
-        return text
-
     def extract_resolved_lines(self: PdfPage) -> list[dict[str, Any]]:
         cache = self.extraction_cache
         if cache is None:
             self.extraction_cache = cache = ExtractionCache()
-        cast(Any, self).extract_text()
         lines = cast(tuple[Any, ...] | None, cache.get("native_output_lines"))
+        if lines is None:
+            _, lines = extract_native_text(self)
         if not isinstance(lines, tuple):
             return []
         return [

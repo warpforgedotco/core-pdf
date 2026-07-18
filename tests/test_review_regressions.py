@@ -167,7 +167,8 @@ def test_nested_form_rebinds_same_named_font_resource() -> None:
     )
 
     with PublicPdfDocument(fixture) as document:
-        text = cast(Any, document.pages[0]).extract_text()
+        result = cast(Any, document.pages[0]).extract()
+        text = "\n".join(line.text for block in result.blocks for line in block.lines)
 
     assert "This document was prepared as an account of work" in text
     assert "5Iis document was prepared as an account of worL" not in text

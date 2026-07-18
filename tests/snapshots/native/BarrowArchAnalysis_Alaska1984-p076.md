@@ -3,6 +3,7 @@ fixture: BarrowArchAnalysis_Alaska1984-p076.pdf
 rotation: 90
 page_class: table
 base_route: native_layout
+block_count: 31
 line_count: 37
 ---
 

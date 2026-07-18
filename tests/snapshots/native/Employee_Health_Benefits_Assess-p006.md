@@ -3,6 +3,7 @@ fixture: Employee_Health_Benefits_Assess-p006.pdf
 rotation: 180
 page_class: native_text
 base_route: native_fast
+block_count: 9
 line_count: 27
 ---
 

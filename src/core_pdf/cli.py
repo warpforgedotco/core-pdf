@@ -17,9 +17,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("pdf", type=Path, help="Path to the PDF file")
     parser.add_argument(
         "--mode",
-        choices=("text", "markdown"),
-        default="text",
-        help="Plain output format",
+        choices=("markdown",),
+        default="markdown",
+        help="Output format",
     )
     parser.add_argument(
         "--plain",
@@ -30,9 +30,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def extract_output(document: PdfDocument, output_format: str) -> str:
-    if output_format == "markdown":
-        return document.to_markdown()
-    return document.extract_text()
+    if output_format != "markdown":
+        raise ValueError(f"unsupported output format: {output_format}")
+    return document.to_markdown()
 
 
 def print_plain_output(output: str) -> None:

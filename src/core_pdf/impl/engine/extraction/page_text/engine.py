@@ -28,14 +28,23 @@ class ResolvedLineRecord:
 
 
 @dataclass(frozen=True)
+class TextBlock:
+    order: int
+    bbox: tuple[float, float, float, float] | None
+    column_index: int | None
+    rotation: int
+    lines: tuple[ResolvedLineRecord, ...]
+
+
+@dataclass(frozen=True)
 class PageExtractionResult:
     page_number: int
     page_label: str | None
-    text: str
     confidence: float
     page_class: str
     base_route: str
     resolved_lines: tuple[ResolvedLineRecord, ...]
+    blocks: tuple[TextBlock, ...]
 
 
 @dataclass(frozen=True)
@@ -49,12 +58,11 @@ class DocumentExtractionSummary:
 @dataclass(frozen=True)
 class DocumentExtractionResult:
     metadata: MetadataRecord
-    text: str
     pages: tuple[PageExtractionResult, ...]
     summary: DocumentExtractionSummary
 
     def to_markdown(self) -> str:
-        return "\f".join(page.text for page in self.pages) + "\f"
+        return "\f".join(render_page_blocks(page.blocks) for page in self.pages) + "\f"
 
 
 def document_summary(
@@ -85,7 +93,6 @@ class SupportsPageExtraction(Protocol):
     def height(self) -> float: ...
 
     def get_page_profile(self) -> page_profile.PageProfile: ...
-    def extract_text(self) -> str: ...
     def extract_resolved_lines(self) -> list[dict[str, Any]]: ...
 
 
@@ -107,7 +114,10 @@ def build_page_extraction_result(
     if cache is None:
         page.extraction_cache = cache = ExtractionCache()
 
-    text = page.extract_text()
+    resolved_lines = tuple(
+        resolved_line_record_from_content_record(record) for record in page.extract_resolved_lines()
+    )
+    text = "\n".join(line.text for line in resolved_lines)
     profile = page.get_page_profile()
     page_class, page_class_confidence = classify_page(profile, text)
     base_route = base_route_name(cache, profile, text)
@@ -120,14 +130,11 @@ def build_page_extraction_result(
     result = PageExtractionResult(
         page_number=page.page_number,
         page_label=getattr(page, "label", None),
-        text=text,
         confidence=confidence,
         page_class=page_class,
         base_route=base_route,
-        resolved_lines=tuple(
-            resolved_line_record_from_content_record(record)
-            for record in page.extract_resolved_lines()
-        ),
+        resolved_lines=resolved_lines,
+        blocks=build_text_blocks(resolved_lines, rotation=getattr(page, "rotation", 0)),
     )
     return result
 
@@ -177,7 +184,6 @@ def build_document_extraction_result(
             page.tables = {}
     return DocumentExtractionResult(
         metadata=document.get_metadata(),
-        text="\f".join(page.text for page in page_results) + "\f",
         pages=tuple(page_results),
         summary=document_summary(page_results),
     )
@@ -272,7 +278,77 @@ def segment_or_none(value: Any) -> tuple[float, float, float, float] | None:
     return rect_or_none(value)
 
 
+def build_text_blocks(
+    lines: tuple[ResolvedLineRecord, ...],
+    *,
+    rotation: int,
+) -> tuple[TextBlock, ...]:
+    if not lines:
+        return ()
+    blocks: list[list[ResolvedLineRecord]] = []
+    block_columns: list[int | None] = []
+    column_anchors: list[float] = []
+    for line in lines:
+        bbox = line.bbox or line.advance_bbox or line.ink_bbox
+        x0 = bbox[0] if bbox is not None else None
+        column_index: int | None = None
+        if x0 is not None:
+            tolerance = max(24.0, (bbox[3] - bbox[1]) * 2.0) if bbox else 24.0
+            for index, anchor in enumerate(column_anchors):
+                if abs(anchor - x0) <= tolerance:
+                    column_index = index
+                    break
+            if column_index is None:
+                column_index = len(column_anchors)
+                column_anchors.append(x0)
+        if not blocks or line.break_before > 1 or block_columns[-1] != column_index:
+            blocks.append([line])
+            block_columns.append(column_index)
+        else:
+            blocks[-1].append(line)
+    return tuple(
+        TextBlock(
+            order=index,
+            bbox=block_bbox(block_lines),
+            column_index=block_columns[index - 1],
+            rotation=rotation % 360,
+            lines=tuple(block_lines),
+        )
+        for index, block_lines in enumerate(blocks, 1)
+    )
+
+
+def block_bbox(lines: list[ResolvedLineRecord]) -> tuple[float, float, float, float] | None:
+    boxes = [line.bbox or line.advance_bbox or line.ink_bbox for line in lines]
+    usable = [box for box in boxes if box is not None]
+    if not usable:
+        return None
+    return (
+        min(box[0] for box in usable),
+        min(box[1] for box in usable),
+        max(box[2] for box in usable),
+        max(box[3] for box in usable),
+    )
+
+
+def render_page_blocks(blocks: tuple[TextBlock, ...]) -> str:
+    rendered_blocks: list[str] = []
+    for block in blocks:
+        rendered_lines: list[str] = []
+        for line in block.lines:
+            if rendered_lines:
+                rendered_lines.append("\n" * max(1, line.break_before))
+            rendered_lines.append(line.text)
+        rendered_blocks.append("".join(rendered_lines))
+    return "\n\n".join(rendered_blocks)
+
+
 __all__ = (
+    "DocumentExtractionResult",
+    "DocumentExtractionSummary",
+    "PageExtractionResult",
+    "ResolvedLineRecord",
+    "TextBlock",
     "build_document_extraction_result",
     "build_page_extraction_result",
 )

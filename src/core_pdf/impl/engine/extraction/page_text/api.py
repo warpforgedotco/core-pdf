@@ -34,9 +34,6 @@ class PageExtractionMixin(PageContentMixin):
     def get_text_spans(self) -> Any:
         return _implementation().get_text_spans(cast(Any, self))
 
-    def extract_text(self) -> str:
-        return _implementation().extract_text(cast(Any, self))
-
     def extract_resolved_lines(self) -> list[dict[str, Any]]:
         return _implementation().extract_resolved_lines(cast(Any, self))
 

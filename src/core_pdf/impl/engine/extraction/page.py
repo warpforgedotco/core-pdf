@@ -1,9 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Iterator, cast
+from typing import TYPE_CHECKING, Iterator
 
-from core_pdf.impl.engine.extraction.common.page_content import PageContentMixin
 from core_pdf.impl.engine.extraction.page_text.api import PageExtractionMixin
 from core_pdf.impl.engine.extraction.page_text.engine import (
     PageExtractionResult,
@@ -13,8 +12,6 @@ from core_pdf.impl.engine.extraction.tables.api import PageTableMixin
 from core_pdf.impl.engine.spec.s_07_document.page import PdfPage as SpecPdfPage
 
 if TYPE_CHECKING:
-    from core_layout.impl.layout.models import TextRun
-
     from core_pdf.impl.engine.extraction.redactions import (
         RedactionAnalysis,
         RedactionCandidate,
@@ -24,9 +21,6 @@ if TYPE_CHECKING:
 class PdfPage(PageExtractionMixin, PageTableMixin, SpecPdfPage):
     def extract(self) -> PageExtractionResult:
         return build_page_extraction_result(self)
-
-    def extract_text(self) -> str:
-        return PageExtractionMixin.extract_text(cast(Any, self))
 
     def text_rotation_correction(self, threshold: float = 0.95) -> int:
         """Return the counter-clockwise rotation needed to make dominant text upright.
@@ -49,14 +43,6 @@ class PdfPage(PageExtractionMixin, PageTableMixin, SpecPdfPage):
         if dominant == 0 or counts[dominant] / total < threshold:
             return 0
         return (360 - dominant) % 360
-
-    def find_text_near(
-        self,
-        target_box: tuple[float, float, float, float],
-        direction: str = "left",
-        distance: float = 100.0,
-    ) -> list[TextRun]:
-        return PageContentMixin.find_text_near(self, target_box, direction, distance)
 
     def get_redaction_analysis(self) -> RedactionAnalysis:
         from core_pdf.impl.engine.extraction.redactions import RedactionAnalyzer
