@@ -133,6 +133,16 @@ class Page:
     def text(self) -> str:
         return "\n\n".join(block.text for block in self.blocks)
 
+    def to_markdown(self) -> str:
+        from core_document.serialization import page_to_markdown
+
+        return page_to_markdown(self)
+
+    def to_html(self) -> str:
+        from core_document.serialization import page_to_html
+
+        return page_to_html(self)
+
 
 @dataclass(frozen=True, slots=True)
 class Diagnostic:

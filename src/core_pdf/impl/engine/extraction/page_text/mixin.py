@@ -13,9 +13,6 @@ from core_pdf.impl.engine.extraction.common import (
 )
 from core_pdf.impl.engine.extraction.common.ordering import LayoutAnalyzer
 from core_pdf.impl.engine.extraction.common.page_content import PageContentMixin
-from core_pdf.impl.engine.extraction.common.render import (
-    MarkdownRenderer,
-)
 from core_pdf.impl.engine.extraction.page_text.native import extract_native_text
 from core_pdf.impl.engine.rendering import RenderOptions, compose_page
 from core_pdf.impl.models import TextSpan
@@ -132,7 +129,7 @@ class PageExtractionMixin(PageContentMixin):
         ]
 
     def to_markdown(self: PdfPage) -> str:
-        return MarkdownRenderer.render_page(cast(Any, self))
+        return cast(Any, self).extract().to_markdown()
 
     def render(self: PdfPage, options: RenderOptions | None = None) -> Any:
         options = options or RenderOptions()

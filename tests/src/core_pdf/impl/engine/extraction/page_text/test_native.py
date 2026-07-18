@@ -168,6 +168,13 @@ def test_document_outputs_use_canonical_extraction_ir() -> None:
     assert 'data-schema-version="1.0"' in html_output
 
 
+def test_page_markdown_uses_canonical_page_ir() -> None:
+    with PdfDocument.open(SAMPLE_PDF) as document:
+        page = cast(Any, document.pages[0])
+
+        assert page.to_markdown() == page.extract().to_markdown()
+
+
 def test_image_only_page_does_not_attempt_text_extraction() -> None:
     with PdfDocument(image_only_pdf()) as document:
         page = cast(Any, document.pages[0])

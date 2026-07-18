@@ -50,6 +50,16 @@ def test_document_views_escape_html_and_render_semantics() -> None:
     assert '<h2 data-block-kind="heading">&lt;Title&gt;</h2>' in document.to_html()
 
 
+def test_page_views_are_available_on_the_canonical_page() -> None:
+    page = Page(
+        page_number=1,
+        blocks=(Block(1, BlockKind.PARAGRAPH, (TextLine("hello"),)),),
+    )
+
+    assert page.to_markdown() == "hello"
+    assert 'data-page-number="1"' in page.to_html()
+
+
 def test_document_serializes_tables_in_all_views() -> None:
     table = Table(
         order=1,
