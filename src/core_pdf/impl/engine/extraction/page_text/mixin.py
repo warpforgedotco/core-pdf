@@ -33,6 +33,12 @@ from core_ocr.impl import session as ocr_session_runtime
 from core_ocr.impl import table_regions as ocr_table_regions
 from core_ocr.impl import text_analysis as ocr_text_analysis
 from core_ocr.impl.backend import TesseractCtypesBackend
+from core_ocr.impl.output import (
+    append_resolved_supplement_lines,
+    best_effort_resolved_text_lines,
+    ocr_result_output_lines,
+    vector_stroke_result_output_lines,
+)
 from core_ocr.impl.policy import (
     classify_page_region,
     fragmented_invisible_text_layer_should_yield_to_ocr,
@@ -96,12 +102,6 @@ from core_pdf.impl.engine.extraction.page_text.native import (
     select_native_text_layout,
     should_try_rendered_glyph_repair,
     try_extract_native_text_fast,
-)
-from core_pdf.impl.engine.extraction.page_text.output import (
-    append_resolved_supplement_lines,
-    best_effort_resolved_text_lines,
-    ocr_result_output_lines,
-    vector_stroke_result_output_lines,
 )
 from core_pdf.impl.engine.extraction.pdf_ocr_adapter import PdfOcrCandidateServices
 from core_pdf.impl.engine.extraction.tables.grid import detect_grid
