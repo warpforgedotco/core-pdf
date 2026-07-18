@@ -2,6 +2,7 @@
 """Immutable structured document records and derived views."""
 
 from core_document.adapters import DocumentAdapter
+from core_document.editor import DocumentEditor
 from core_document.model import (
     Annotation,
     BBox,
@@ -25,6 +26,7 @@ __all__ = (
     "BlockKind",
     "Diagnostic",
     "DocumentAdapter",
+    "DocumentEditor",
     "Document",
     "Figure",
     "FormField",

@@ -1,10 +1,12 @@
 from typing import Any, cast
 
+import pytest
 from core_document import (
     Block,
     BlockKind,
     Document,
     DocumentAdapter,
+    DocumentEditor,
     Page,
     Table,
     TableCell,
@@ -20,6 +22,36 @@ def test_document_adapter_protocol_is_runtime_checkable_by_shape() -> None:
     adapter: DocumentAdapter = Adapter()
 
     assert adapter.apply(Document()).pages == ()
+
+
+def test_document_editor_commits_without_mutating_the_original() -> None:
+    original = Document(
+        metadata={"title": "before"},
+        pages=(Page(page_number=1, blocks=(Block(1, BlockKind.PARAGRAPH, (TextLine("old"),)),)),),
+    )
+    replacement = Page(
+        page_number=99,
+        blocks=(Block(1, BlockKind.PARAGRAPH, (TextLine("new"),)),),
+    )
+
+    editor = original.edit()
+    assert isinstance(editor, DocumentEditor)
+    updated = editor.set_metadata("title", "after").replace_page(1, replacement).commit()
+
+    assert original.metadata["title"] == "before"
+    assert original.pages[0].text == "old"
+    assert updated.metadata["title"] == "after"
+    assert updated.pages[0].text == "new"
+    assert updated.pages[0].page_number == 1
+
+
+def test_document_editor_rollback_closes_transaction() -> None:
+    editor = Document().edit()
+
+    editor.rollback()
+
+    with pytest.raises(RuntimeError, match="rolled back"):
+        editor.commit()
 
 
 def test_document_serializes_to_versioned_json() -> None:

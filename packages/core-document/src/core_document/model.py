@@ -162,6 +162,11 @@ class Document:
     def __post_init__(self) -> None:
         object.__setattr__(self, "metadata", MappingProxyType(dict(self.metadata)))
 
+    def edit(self) -> Any:
+        from core_document.editor import DocumentEditor
+
+        return DocumentEditor(self)
+
     @property
     def text(self) -> str:
         return "\f".join(page.text for page in self.pages) + "\f"
