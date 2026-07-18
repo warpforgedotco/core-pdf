@@ -4,14 +4,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Iterator
 
 from core_pdf.impl.engine.extraction.page_text.api import PageExtractionMixin
-from core_pdf.impl.engine.extraction.page_text.engine import (
-    PageExtractionResult,
-    build_page_extraction_result,
-)
+from core_pdf.impl.engine.extraction.page_text.engine import build_page_extraction_result
 from core_pdf.impl.engine.extraction.tables.api import PageTableMixin
 from core_pdf.impl.engine.spec.s_07_document.page import PdfPage as SpecPdfPage
 
 if TYPE_CHECKING:
+    from core_document import Page as DocumentPage
+
     from core_pdf.impl.engine.extraction.redactions import (
         RedactionAnalysis,
         RedactionCandidate,
@@ -19,8 +18,14 @@ if TYPE_CHECKING:
 
 
 class PdfPage(PageExtractionMixin, PageTableMixin, SpecPdfPage):
-    def extract(self) -> PageExtractionResult:
-        return build_page_extraction_result(self)
+    def extract(self) -> DocumentPage:
+        from core_pdf.impl.engine.extraction.document_ir import page_result_to_document_page
+
+        return page_result_to_document_page(
+            build_page_extraction_result(self),
+            width=self.width,
+            height=self.height,
+        )
 
     def text_rotation_correction(self, threshold: float = 0.95) -> int:
         """Return the counter-clockwise rotation needed to make dominant text upright.

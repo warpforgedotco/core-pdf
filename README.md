@@ -9,6 +9,9 @@ layout-aware page results containing ordered text blocks and resolved lines, inc
 their geometry, column index, rotation, source, and confidence metadata. Use
 `PdfDocument.to_markdown()` when a Markdown view is needed.
 
+The records are provided by the workspace-level `core-document` package and can also
+be serialized as versioned JSON or semantic HTML.
+
 `core-pdf` currently extracts native PDF text objects only. Image-only and scanned pages
 return no text blocks; OCR is intentionally provided separately and is not invoked by
 this package.

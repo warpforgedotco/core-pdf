@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from core_pdf.impl.types import PageSelection
 
 _EXPORTS = {
+    "Document": ("core_document", "Document"),
     "PageSelection": ("core_pdf.impl.types", "PageSelection"),
     "PdfDocument": ("core_pdf.impl.engine.extraction.document", "PdfDocument"),
     "PdfError": ("core_pdf.impl.exceptions", "PdfError"),
@@ -43,6 +44,7 @@ def __dir__() -> list[str]:
 
 
 __all__ = (
+    "Document",
     "PageSelection",
     "PdfDocument",
     "PdfError",

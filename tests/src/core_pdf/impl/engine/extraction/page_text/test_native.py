@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
+from core_document import Document
 from core_layout.impl.layout.models import TextRun
 
 from core_pdf.impl.engine.extraction.document import PdfDocument
@@ -128,6 +129,18 @@ def test_structured_page_result_reports_native_route() -> None:
         assert result_text(result).strip()
         assert result.base_route in {"native_fast", "native_layout"}
         assert result.resolved_lines
+
+
+def test_document_extract_returns_core_document_ir() -> None:
+    with PdfDocument.open(SAMPLE_PDF) as document:
+        result = document.extract()
+
+    assert isinstance(result, Document)
+    assert result.pages[0].width > 0
+    assert result.pages[0].blocks
+    assert result.to_json_dict()["schema_version"] == "1.0"
+    assert "GLOBAL AIDS STRATEGY" in result.to_markdown()
+    assert 'data-schema-version="1.0"' in result.to_html()
 
 
 def test_image_only_page_does_not_attempt_text_extraction() -> None:

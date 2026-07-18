@@ -48,6 +48,9 @@ class PageExtractionResult:
     base_route: str
     resolved_lines: tuple[ResolvedLineRecord, ...]
     blocks: tuple[TextBlock, ...]
+    width: float = 0.0
+    height: float = 0.0
+    rotation: int = 0
 
 
 @dataclass(frozen=True)
@@ -142,6 +145,9 @@ def build_page_extraction_result(
             rotation=getattr(page, "rotation", 0),
             page_class=page_class,
         ),
+        width=page.width,
+        height=page.height,
+        rotation=getattr(page, "rotation", 0),
     )
     return result
 

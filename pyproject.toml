@@ -16,6 +16,7 @@ dependencies = [
     "core-ccitt>=0.0.1",
     "core-color>=0.0.1",
     "core-cmap>=0.0.1",
+    "core-document>=0.0.1",
     "core-filters>=0.0.1",
     "core-crypto>=0.0.1",
     "core-font-programs>=0.0.1",
@@ -29,6 +30,7 @@ dependencies = [
 core-ccitt = { workspace = true }
 core-color = { workspace = true }
 core-cmap = { workspace = true }
+core-document = { workspace = true }
 core-filters = { workspace = true }
 core-crypto = { workspace = true }
 core-font-programs = { workspace = true }
@@ -43,6 +45,7 @@ members = [
     "packages/core-JBIG2",
     "packages/core-JPEG",
     "packages/core-cmap",
+    "packages/core-document",
     "packages/core-color",
     "packages/core-filters",
     "packages/core-crypto",
@@ -128,6 +131,7 @@ root = [
     "./packages/core-JBIG2/src",
     "./packages/core-JPEG/src",
     "./packages/core-cmap/src",
+    "./packages/core-document/src",
     "./packages/core-color/src",
     "./packages/core-crypto/src",
     "./packages/core-filters/src",

@@ -48,9 +48,14 @@ class DocumentStructuredMixin:
         metadata = self.get_metadata()
         document_result = self.extract()
         warnings = [
-            warning.as_record()
-            for warning in document_result.warnings
-            if warning.page_index is None or warning.page_index in selected_pages
+            {
+                "code": diagnostic.code,
+                "message": diagnostic.message,
+                "severity": diagnostic.severity,
+                "page_number": diagnostic.page_number,
+            }
+            for diagnostic in document_result.diagnostics
+            if diagnostic.page_number is None or diagnostic.page_number in selected_page_numbers
         ]
         result: dict[str, object] = {"metadata": metadata, "page_count": page_count}
         if warnings:

@@ -5,7 +5,8 @@ from collections.abc import Iterable
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
-    from core_pdf.impl.engine.extraction.page_text.engine import DocumentExtractionResult
+    from core_document import Document
+
     from core_pdf.impl.engine.spec.s_07_document.metadata_types import (
         MetadataRecord,
         MetadataValue,
@@ -18,7 +19,7 @@ class _DocumentTextOutline(Protocol):
 
 
 class _DocumentTextHost(Protocol):
-    def extract(self) -> DocumentExtractionResult: ...
+    def extract(self) -> Document: ...
 
     def get_metadata(self) -> MetadataRecord: ...
 

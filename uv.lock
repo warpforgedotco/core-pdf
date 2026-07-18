@@ -12,6 +12,7 @@ members = [
     "core-cmap",
     "core-color",
     "core-crypto",
+    "core-document",
     "core-filters",
     "core-font-programs",
     "core-glyph",
@@ -64,6 +65,25 @@ source = { editable = "packages/core-color" }
 name = "core-crypto"
 version = "0.0.1"
 source = { editable = "packages/core-crypto" }
+
+[package.dev-dependencies]
+lint = [
+    { name = "ruff" },
+]
+test = [
+    { name = "pytest" },
+]
+
+[package.metadata]
+
+[package.metadata.requires-dev]
+lint = [{ name = "ruff", specifier = ">=0.11.13,<1.0.0" }]
+test = [{ name = "pytest", specifier = ">=8.4.0,<10.0.0" }]
+
+[[package]]
+name = "core-document"
+version = "0.0.1"
+source = { editable = "packages/core-document" }
 
 [package.dev-dependencies]
 lint = [
@@ -235,6 +255,7 @@ dependencies = [
     { name = "core-cmap" },
     { name = "core-color" },
     { name = "core-crypto" },
+    { name = "core-document" },
     { name = "core-filters" },
     { name = "core-font-programs" },
     { name = "core-glyph" },
@@ -272,6 +293,7 @@ requires-dist = [
     { name = "core-cmap", editable = "packages/core-cmap" },
     { name = "core-color", editable = "packages/core-color" },
     { name = "core-crypto", editable = "packages/core-crypto" },
+    { name = "core-document", editable = "packages/core-document" },
     { name = "core-filters", editable = "packages/core-filters" },
     { name = "core-font-programs", editable = "packages/core-font-programs" },
     { name = "core-glyph", editable = "packages/core-glyph" },

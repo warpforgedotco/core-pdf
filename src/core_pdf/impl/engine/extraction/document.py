@@ -11,7 +11,7 @@ from core_pdf.impl.engine.spec.s_07_document.document import (
 )
 
 if TYPE_CHECKING:
-    from core_pdf.impl.engine.extraction.page_text.engine import DocumentExtractionResult
+    from core_document import Document
 
 
 def _create_page(document: Any, page_dict: Any, page_number: int) -> Any:
@@ -32,12 +32,17 @@ class PdfDocument(
         SpecPdfDocument.__enter__(self)
         return self
 
-    def extract(self) -> DocumentExtractionResult:
+    @classmethod
+    def open(cls, source: Any, password: str = "") -> Self:
+        return cls(source, password=password)
+
+    def extract(self) -> Document:
+        from core_pdf.impl.engine.extraction.document_ir import extraction_result_to_document
         from core_pdf.impl.engine.extraction.page_text.engine import (
             build_document_extraction_result,
         )
 
-        return build_document_extraction_result(self)
+        return extraction_result_to_document(build_document_extraction_result(self))
 
 
 __all__ = ("PdfDocument",)
