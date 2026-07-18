@@ -8,11 +8,13 @@ from functools import lru_cache
 from typing import Any, Iterable, Literal
 
 from core_layout.impl.layout.word_frequencies import word_rank
+from core_ocr.impl import selection as ocr_selection
 from core_ocr.impl import text_analysis as ocr_text_analysis
 from core_ocr.impl.candidates import (
     OcrCandidate,
     OcrPageTextResult,
 )
+from core_ocr.impl.vector_text import VectorStrokeOcrResult
 
 from core_pdf.impl.engine.extraction.common import observation_resolver, page_geometry
 from core_pdf.impl.engine.extraction.common.render import render_resolved_text_lines
@@ -20,12 +22,8 @@ from core_pdf.impl.engine.extraction.ocr import (
     postprocess as ocr_postprocess,
 )
 from core_pdf.impl.engine.extraction.ocr import (
-    selection as ocr_selection,
-)
-from core_pdf.impl.engine.extraction.ocr import (
     table_regions as ocr_table_regions,
 )
-from core_pdf.impl.engine.extraction.ocr.vector_text import VectorStrokeOcrResult
 
 OcrLineSourceFamily = Literal[
     "native",

@@ -8,12 +8,12 @@ from typing import Any, Mapping
 from core_ocr.impl import execution as ocr_execution
 from core_ocr.impl import iterator_layout as ocr_iterator_layout
 from core_ocr.impl import layout as ocr_layout
+from core_ocr.impl import selection as ocr_selection
 from core_ocr.impl.services import configure_candidate_services
 from core_ocr.impl.types import OcrImage, OcrTextResult
 
 from core_pdf.impl.engine.extraction.common import page_geometry
 from core_pdf.impl.engine.extraction.ocr import rendering as ocr_rendering
-from core_pdf.impl.engine.extraction.ocr import selection as ocr_selection
 from core_pdf.impl.engine.extraction.ocr import tiling as ocr_tiling
 
 
@@ -24,6 +24,7 @@ class PdfOcrCandidateServices:
     selection = ocr_selection
     rectangle_request_type = ocr_execution.RectangleOcrRequest
     dense_vector_render_tile_min_tokens = ocr_rendering.OCR_DENSE_VECTOR_RENDER_TILE_MIN_TOKENS
+    rendering = ocr_rendering
     clamp_ocr_bbox = staticmethod(ocr_tiling.clamp_ocr_bbox)
 
     @staticmethod

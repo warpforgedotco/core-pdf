@@ -4,9 +4,8 @@ from typing import Any, cast
 
 import pytest
 from core_ocr.impl import deskew
+from core_ocr.impl.session import OcrPageSession, PreparedOcrImage
 from core_ocr.impl.types import OcrImage, OcrTextResult
-
-from core_pdf.impl.engine.extraction.ocr.session import OcrPageSession, PreparedOcrImage
 
 
 def test_scaled_single_region_keeps_source_coordinates(

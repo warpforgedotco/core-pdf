@@ -21,7 +21,10 @@ from core_layout.impl.layout.geometry_quality import (
 from core_ocr.impl import candidate_generation as ocr_candidate_generation
 from core_ocr.impl import candidates as ocr_candidates
 from core_ocr.impl import execution as ocr_execution
+from core_ocr.impl import full_page as ocr_full_page
 from core_ocr.impl import layout as ocr_layout
+from core_ocr.impl import selection as ocr_selection
+from core_ocr.impl import session as ocr_session_runtime
 from core_ocr.impl import text_analysis as ocr_text_analysis
 from core_ocr.impl.backend import TesseractCtypesBackend
 from core_ocr.impl.services import configure_candidate_services
@@ -43,6 +46,10 @@ from core_ocr.impl.types import (
     ocr_float_value,
     ocr_int_value,
 )
+from core_ocr.impl.vector_text import (
+    VectorStrokeOcrResult,
+    vector_stroke_ocr_result_with_timeout,
+)
 
 from core_pdf.impl.engine.extraction.cache import (
     ExtractionCache,
@@ -61,9 +68,6 @@ from core_pdf.impl.engine.extraction.common.render import (
     render_resolved_text_lines,
 )
 from core_pdf.impl.engine.extraction.ocr import (
-    full_page as ocr_full_page,
-)
-from core_pdf.impl.engine.extraction.ocr import (
     line_reconciliation as ocr_line_reconciliation,
 )
 from core_pdf.impl.engine.extraction.ocr import (
@@ -79,19 +83,9 @@ from core_pdf.impl.engine.extraction.ocr import (
     schematic as ocr_schematic,
 )
 from core_pdf.impl.engine.extraction.ocr import (
-    selection as ocr_selection,
-)
-from core_pdf.impl.engine.extraction.ocr import (
-    session as ocr_session_runtime,
-)
-from core_pdf.impl.engine.extraction.ocr import (
     table_regions as ocr_table_regions,
 )
 from core_pdf.impl.engine.extraction.ocr.services import PdfOcrCandidateServices
-from core_pdf.impl.engine.extraction.ocr.vector_text import (
-    VectorStrokeOcrResult,
-    vector_stroke_ocr_result_with_timeout,
-)
 from core_pdf.impl.engine.extraction.page_text.decisions import (
     page_extraction_decision,
 )
