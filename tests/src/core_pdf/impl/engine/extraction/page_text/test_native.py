@@ -138,6 +138,11 @@ def test_document_extract_returns_core_document_ir() -> None:
     assert isinstance(result, Document)
     assert result.pages[0].width > 0
     assert result.pages[0].blocks
+    assert isinstance(result.pages[0].tables, tuple)
+    assert isinstance(result.pages[0].figures, tuple)
+    assert isinstance(result.pages[0].links, tuple)
+    assert isinstance(result.pages[0].annotations, tuple)
+    assert isinstance(result.pages[0].form_fields, tuple)
     assert result.to_json_dict()["schema_version"] == "1.0"
     assert "GLOBAL AIDS STRATEGY" in result.to_markdown()
     assert 'data-schema-version="1.0"' in result.to_html()

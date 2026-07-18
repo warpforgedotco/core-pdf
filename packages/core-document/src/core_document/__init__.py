@@ -1,6 +1,34 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 """Immutable structured document records and derived views."""
 
-from core_document.model import BBox, Block, BlockKind, Diagnostic, Document, Page, TextLine
+from core_document.model import (
+    Annotation,
+    BBox,
+    Block,
+    BlockKind,
+    Diagnostic,
+    Document,
+    Figure,
+    FormField,
+    Link,
+    Page,
+    Table,
+    TableCell,
+    TextLine,
+)
 
-__all__ = ("BBox", "Block", "BlockKind", "Diagnostic", "Document", "Page", "TextLine")
+__all__ = (
+    "BBox",
+    "Annotation",
+    "Block",
+    "BlockKind",
+    "Diagnostic",
+    "Document",
+    "Figure",
+    "FormField",
+    "Link",
+    "Page",
+    "Table",
+    "TableCell",
+    "TextLine",
+)

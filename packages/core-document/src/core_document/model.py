@@ -26,6 +26,57 @@ class BlockKind(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
+class TableCell:
+    row: int
+    column: int
+    text: str
+    row_span: int = 1
+    column_span: int = 1
+    bbox: BBox | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class Table:
+    order: int
+    rows: tuple[tuple[TableCell, ...], ...] = ()
+    bbox: BBox | None = None
+    confidence: float | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class Figure:
+    order: int
+    bbox: BBox | None = None
+    kind: str = "figure"
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
+class Link:
+    bbox: BBox | None = None
+    url: str | None = None
+    link_type: str | None = None
+    text: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class Annotation:
+    subtype: str | None = None
+    bbox: BBox | None = None
+    contents: str = ""
+    destination: Any = None
+
+
+@dataclass(frozen=True, slots=True)
+class FormField:
+    name: str
+    field_type: str
+    value_text: str = ""
+    bbox: BBox | None = None
+    field_index: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class TextLine:
     text: str
     break_before: int = 1
@@ -72,6 +123,11 @@ class Page:
     page_class: str = "unknown"
     base_route: str = "unknown"
     confidence: float | None = None
+    tables: tuple[Table, ...] = ()
+    figures: tuple[Figure, ...] = ()
+    links: tuple[Link, ...] = ()
+    annotations: tuple[Annotation, ...] = ()
+    form_fields: tuple[FormField, ...] = ()
 
     @property
     def text(self) -> str:

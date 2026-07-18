@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Mapping
 from dataclasses import dataclass
 from re import compile as compile_regex
 from statistics import median
@@ -51,6 +52,11 @@ class PageExtractionResult:
     width: float = 0.0
     height: float = 0.0
     rotation: int = 0
+    tables: tuple[dict[str, Any], ...] = ()
+    figures: tuple[dict[str, Any], ...] = ()
+    links: tuple[dict[str, Any], ...] = ()
+    annotations: tuple[dict[str, Any], ...] = ()
+    form_fields: tuple[dict[str, Any], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -115,6 +121,8 @@ class SupportsDocumentExtraction(Protocol):
 
 def build_page_extraction_result(
     page: SupportsPageExtraction,
+    *,
+    include_related: bool = False,
 ) -> PageExtractionResult:
     cache = page.extraction_cache
     if cache is None:
@@ -133,6 +141,7 @@ def build_page_extraction_result(
         page_class,
         page_class_confidence,
     )
+    related = related_page_records(page) if include_related else {}
     result = PageExtractionResult(
         page_number=page.page_number,
         page_label=getattr(page, "label", None),
@@ -148,6 +157,7 @@ def build_page_extraction_result(
         width=page.width,
         height=page.height,
         rotation=getattr(page, "rotation", 0),
+        **related,
     )
     return result
 
@@ -184,7 +194,7 @@ def build_document_extraction_result(
     for index, page_dict in enumerate(page_dicts):
         page = document.page_class(document, page_dict, index + 1)
         try:
-            page_results.append(build_page_extraction_result(page))
+            page_results.append(build_page_extraction_result(page, include_related=True))
         except PdfParseError:
             if not can_skip_bad_page:
                 raise
@@ -289,6 +299,82 @@ def rect_or_none(value: Any) -> tuple[float, float, float, float] | None:
 
 def segment_or_none(value: Any) -> tuple[float, float, float, float] | None:
     return rect_or_none(value)
+
+
+def related_page_records(page: Any) -> dict[str, tuple[dict[str, Any], ...]]:
+    tables: tuple[dict[str, Any], ...] = ()
+    extract_tables = getattr(page, "extract_tables", None)
+    if callable(extract_tables):
+        try:
+            table_result = extract_tables()
+        except Exception:
+            table_result = None
+        if isinstance(table_result, Mapping):
+            raw_tables = table_result.get("tables", [])
+            raw_bboxes = table_result.get("bboxes", [])
+            if isinstance(raw_tables, list):
+                tables = tuple(
+                    {
+                        "rows": rows,
+                        "bbox": (
+                            raw_bboxes[index]
+                            if isinstance(raw_bboxes, list) and index < len(raw_bboxes)
+                            else None
+                        ),
+                    }
+                    for index, rows in enumerate(raw_tables)
+                    if isinstance(rows, list)
+                )
+
+    figures = tuple(
+        dict(record)
+        for record in _safe_page_records(page, "extract_images")
+        if isinstance(record, Mapping)
+    )
+    links = tuple(
+        {
+            "bbox": getattr(record, "bbox", None),
+            "url": getattr(record, "url", None),
+            "link_type": getattr(record, "link_type", None),
+        }
+        for record in _safe_page_records(page, "get_links")
+    )
+    annotations = tuple(
+        {
+            "subtype": getattr(record, "subtype", None),
+            "bbox": getattr(record, "rect", None),
+            "contents": getattr(record, "contents", ""),
+            "destination": getattr(record, "dest", None),
+        }
+        for record in _safe_page_records(page, "get_annotations")
+    )
+    form_fields = tuple(
+        {
+            "name": getattr(record, "name", ""),
+            "field_type": getattr(record, "type", ""),
+            "value_text": getattr(record, "value_text", ""),
+            "bbox": getattr(record, "rect", None),
+        }
+        for record in _safe_page_records(page, "get_fields")
+    )
+    return {
+        "tables": tables,
+        "figures": figures,
+        "links": links,
+        "annotations": annotations,
+        "form_fields": form_fields,
+    }
+
+
+def _safe_page_records(page: Any, method_name: str) -> list[Any]:
+    method = getattr(page, method_name, None)
+    if not callable(method):
+        return []
+    try:
+        records = method()
+    except Exception:
+        return []
+    return list(records) if isinstance(records, (list, tuple)) else []
 
 
 def build_text_blocks(

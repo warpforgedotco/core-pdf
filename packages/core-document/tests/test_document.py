@@ -1,6 +1,6 @@
 from typing import Any, cast
 
-from core_document import Block, BlockKind, Document, Page, TextLine
+from core_document import Block, BlockKind, Document, Page, Table, TableCell, TextLine
 
 
 def test_document_serializes_to_versioned_json() -> None:
@@ -48,3 +48,19 @@ def test_document_views_escape_html_and_render_semantics() -> None:
 
     assert "## <Title>" in document.to_markdown()
     assert '<h2 data-block-kind="heading">&lt;Title&gt;</h2>' in document.to_html()
+
+
+def test_document_serializes_tables_in_all_views() -> None:
+    table = Table(
+        order=1,
+        rows=(
+            (TableCell(0, 0, "Name"), TableCell(0, 1, "Value")),
+            (TableCell(1, 0, "A"), TableCell(1, 1, "1")),
+        ),
+    )
+    document = Document(pages=(Page(page_number=1, tables=(table,)),))
+
+    assert "| Name | Value |" in document.to_markdown()
+    assert "<th>Name</th>" in document.to_html()
+    payload = cast(Any, document.to_json_dict())
+    assert payload["pages"][0]["tables"]

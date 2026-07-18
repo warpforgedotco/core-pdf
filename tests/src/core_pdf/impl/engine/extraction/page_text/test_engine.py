@@ -1,3 +1,4 @@
+from core_pdf.impl.engine.extraction.document_ir import page_result_to_document_page
 from core_pdf.impl.engine.extraction.page_text.engine import (
     DocumentExtractionResult,
     DocumentExtractionSummary,
@@ -152,3 +153,31 @@ def test_empty_page_markdown_is_a_page_break() -> None:
     )
 
     assert result.to_markdown() == "\f"
+
+
+def test_pdf_related_records_adapt_into_core_document_page() -> None:
+    result = PageExtractionResult(
+        page_number=1,
+        page_label=None,
+        confidence=0.8,
+        page_class="mixed",
+        base_route="native_layout",
+        resolved_lines=(),
+        blocks=(),
+        width=612.0,
+        height=792.0,
+        rotation=0,
+        tables=({"rows": [["Name", "Value"]], "bbox": (10.0, 20.0, 100.0, 40.0)},),
+        figures=({"kind": "image", "bbox": (10.0, 50.0, 100.0, 140.0), "width": 90},),
+        links=({"bbox": (10.0, 150.0, 100.0, 165.0), "url": "https://example.test"},),
+        annotations=({"subtype": "Text", "bbox": (10.0, 170.0, 20.0, 180.0)},),
+        form_fields=({"name": "name", "field_type": "Tx", "value_text": "Ada"},),
+    )
+
+    page = page_result_to_document_page(result)
+
+    assert page.tables[0].rows[0][0].text == "Name"
+    assert page.figures[0].kind == "image"
+    assert page.links[0].url == "https://example.test"
+    assert page.annotations[0].subtype == "Text"
+    assert page.form_fields[0].value_text == "Ada"

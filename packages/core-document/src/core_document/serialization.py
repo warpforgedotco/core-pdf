@@ -7,7 +7,20 @@ import json
 from collections.abc import Mapping
 from html import escape
 
-from core_document.model import Block, BlockKind, Document, JsonValue, Page, TextLine
+from core_document.model import (
+    Annotation,
+    Block,
+    BlockKind,
+    Document,
+    Figure,
+    FormField,
+    JsonValue,
+    Link,
+    Page,
+    Table,
+    TableCell,
+    TextLine,
+)
 
 
 def document_to_json_dict(document: Document) -> dict[str, JsonValue]:
@@ -38,6 +51,11 @@ def page_to_json_dict(page: Page) -> dict[str, JsonValue]:
         "base_route": page.base_route,
         "confidence": page.confidence,
         "blocks": [block_to_json_dict(block) for block in page.blocks],
+        "tables": [table_to_json_dict(table) for table in page.tables],
+        "figures": [figure_to_json_dict(figure) for figure in page.figures],
+        "links": [link_to_json_dict(link) for link in page.links],
+        "annotations": [annotation_to_json_dict(annotation) for annotation in page.annotations],
+        "form_fields": [field_to_json_dict(field) for field in page.form_fields],
     }
 
 
@@ -70,6 +88,63 @@ def line_to_json_dict(line: TextLine) -> dict[str, JsonValue]:
     }
 
 
+def table_to_json_dict(table: Table) -> dict[str, JsonValue]:
+    return {
+        "order": table.order,
+        "bbox": bbox_to_json(table.bbox),
+        "confidence": table.confidence,
+        "rows": [[table_cell_to_json_dict(cell) for cell in row] for row in table.rows],
+    }
+
+
+def table_cell_to_json_dict(cell: TableCell) -> dict[str, JsonValue]:
+    return {
+        "row": cell.row,
+        "column": cell.column,
+        "text": cell.text,
+        "row_span": cell.row_span,
+        "column_span": cell.column_span,
+        "bbox": bbox_to_json(cell.bbox),
+    }
+
+
+def figure_to_json_dict(figure: Figure) -> dict[str, JsonValue]:
+    return {
+        "order": figure.order,
+        "bbox": bbox_to_json(figure.bbox),
+        "kind": figure.kind,
+        "metadata": json_safe(figure.metadata),
+    }
+
+
+def link_to_json_dict(link: Link) -> dict[str, JsonValue]:
+    return {
+        "bbox": bbox_to_json(link.bbox),
+        "url": link.url,
+        "link_type": link.link_type,
+        "text": link.text,
+    }
+
+
+def annotation_to_json_dict(annotation: Annotation) -> dict[str, JsonValue]:
+    return {
+        "subtype": annotation.subtype,
+        "bbox": bbox_to_json(annotation.bbox),
+        "contents": annotation.contents,
+        "destination": json_safe(annotation.destination),
+    }
+
+
+def field_to_json_dict(field: FormField) -> dict[str, JsonValue]:
+    return {
+        "name": field.name,
+        "field_type": field.field_type,
+        "value_text": field.value_text,
+        "bbox": bbox_to_json(field.bbox),
+        "field_index": field.field_index,
+    }
+
+
 def document_to_json(document: Document, *, indent: int | None, sort_keys: bool) -> str:
     return json.dumps(document_to_json_dict(document), indent=indent, sort_keys=sort_keys)
 
@@ -83,7 +158,10 @@ def document_to_markdown(document: Document) -> str:
 
 
 def page_to_markdown(page: Page) -> str:
-    return "\n\n".join(block_to_markdown(block) for block in page.blocks)
+    parts = [block_to_markdown(block) for block in page.blocks]
+    parts.extend(table_to_markdown(table) for table in page.tables)
+    parts.extend(f"> [Figure: {figure.kind}]" for figure in page.figures)
+    return "\n\n".join(parts)
 
 
 def block_to_markdown(block: Block) -> str:
@@ -103,8 +181,11 @@ def document_to_html(document: Document) -> str:
 
 
 def page_to_html(page: Page) -> str:
-    blocks = "\n".join(block_to_html(block) for block in page.blocks)
-    return f'<section data-page-number="{page.page_number}">{blocks}</section>'
+    parts = [block_to_html(block) for block in page.blocks]
+    parts.extend(table_to_html(table) for table in page.tables)
+    parts.extend(f'<figure data-kind="{escape(figure.kind)}"></figure>' for figure in page.figures)
+    rendered = "\n".join(parts)
+    return f'<section data-page-number="{page.page_number}">{rendered}</section>'
 
 
 def block_to_html(block: Block) -> str:
@@ -117,6 +198,29 @@ def block_to_html(block: Block) -> str:
         return f"<ul{attributes}>{items}</ul>"
     text = "<br />".join(escape(line.text) for line in block.lines)
     return f"<p{attributes}>{text}</p>"
+
+
+def table_to_markdown(table: Table) -> str:
+    if not table.rows:
+        return ""
+    rows = [[cell.text.replace("|", "\\|") for cell in row] for row in table.rows]
+    width = max(len(row) for row in rows)
+    normalized = [row + [""] * (width - len(row)) for row in rows]
+    header, *body = normalized
+    output = [f"| {' | '.join(header)} |", f"| {' | '.join('---' for _ in header)} |"]
+    output.extend(f"| {' | '.join(row)} |" for row in body)
+    return "\n".join(output)
+
+
+def table_to_html(table: Table) -> str:
+    if not table.rows:
+        return "<table></table>"
+    header, *body = table.rows
+    head = "".join(f"<th>{escape(cell.text)}</th>" for cell in header)
+    body_html = "".join(
+        f"<tr>{''.join(f'<td>{escape(cell.text)}</td>' for cell in row)}</tr>" for row in body
+    )
+    return f"<table><thead><tr>{head}</tr></thead><tbody>{body_html}</tbody></table>"
 
 
 def _has_list_marker(text: str) -> bool:
@@ -142,6 +246,9 @@ __all__ = (
     "block_to_html",
     "block_to_json_dict",
     "block_to_markdown",
+    "annotation_to_json_dict",
+    "field_to_json_dict",
+    "figure_to_json_dict",
     "document_to_html",
     "document_to_json",
     "document_to_json_dict",
@@ -150,4 +257,8 @@ __all__ = (
     "page_to_html",
     "page_to_json_dict",
     "page_to_markdown",
+    "table_cell_to_json_dict",
+    "table_to_html",
+    "table_to_markdown",
+    "table_to_json_dict",
 )

@@ -22,7 +22,7 @@ class PdfPage(PageExtractionMixin, PageTableMixin, SpecPdfPage):
         from core_pdf.impl.engine.extraction.document_ir import page_result_to_document_page
 
         return page_result_to_document_page(
-            build_page_extraction_result(self),
+            build_page_extraction_result(self, include_related=True),
             width=self.width,
             height=self.height,
         )
