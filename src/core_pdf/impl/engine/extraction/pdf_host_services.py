@@ -14,6 +14,8 @@ from core_layout.impl.layout.geometry_quality import (
 from core_ocr.impl import execution as ocr_execution
 from core_ocr.impl import iterator_layout as ocr_iterator_layout
 from core_ocr.impl import layout as ocr_layout
+from core_ocr.impl import native_text
+from core_ocr.impl import policy as ocr_policy
 from core_ocr.impl import rendering as ocr_rendering
 from core_ocr.impl import selection as ocr_selection
 from core_ocr.impl import tiling as ocr_tiling
@@ -26,10 +28,9 @@ from core_pdf.impl.engine.extraction.common.ordering import LayoutAnalyzer
 from core_pdf.impl.engine.extraction.common.render import (
     MarkdownRenderer,
     render_page_observation_lines,
+    render_page_text,
     render_resolved_text_lines,
 )
-from core_pdf.impl.engine.extraction.page_text import decisions as page_text_decisions
-from core_pdf.impl.engine.extraction.page_text import native as native_text
 from core_pdf.impl.engine.extraction.tables.grid import detect_grid, merge_grids
 from core_pdf.impl.engine.rendering import RenderOptions, compose_page
 from core_pdf.impl.engine.rendering.models import RenderedPage, image_filter_names, pdf_int
@@ -67,13 +68,14 @@ class PdfHostServices:
     markdown_renderer = MarkdownRenderer
     render_resolved_text_lines = staticmethod(render_resolved_text_lines)
     render_page_observation_lines = staticmethod(render_page_observation_lines)
+    render_page_text = staticmethod(render_page_text)
     compose_page = staticmethod(compose_page)
     apply_flate = staticmethod(apply_flate)
     decode_stream_data = staticmethod(decode_stream_data)
     lookup_dict_key = staticmethod(lookup_dict_key)
     image_filter_names = staticmethod(image_filter_names)
     pdf_int = staticmethod(pdf_int)
-    page_extraction_decision = staticmethod(page_text_decisions.page_extraction_decision)
+    page_extraction_decision = staticmethod(ocr_policy.page_extraction_decision)
     layout_geometry_summary_record = staticmethod(layout_geometry_summary_record)
     page_layout_geometry_summary = staticmethod(page_layout_geometry_summary)
     native_text = native_text

@@ -521,7 +521,8 @@ def reconciled_layout_ocr_candidate(
 ) -> OcrCandidate | None:
     if not should_try_reconciled_layout_ocr_candidate(base_candidate):
         return None
-    result = get_candidate_services().iterator_layout.reconciled_iterator_text_result_from_existing_result(
+    iterator_layout = get_candidate_services().iterator_layout
+    result = iterator_layout.reconciled_iterator_text_result_from_existing_result(
         base_candidate.result
     )
     if not should_keep_reconciled_layout_ocr_candidate(base_candidate, result):

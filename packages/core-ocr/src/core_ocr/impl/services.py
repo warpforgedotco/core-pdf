@@ -59,6 +59,7 @@ class OcrCandidateServices(Protocol):
     markdown_renderer: Any
     render_resolved_text_lines: Any
     render_page_observation_lines: Any
+    render_page_text: Any
     compose_page: Any
     apply_flate: Any
     decode_stream_data: Any

@@ -16,11 +16,13 @@ from core_layout.impl.layout.geometry_quality import (
     page_layout_geometry_summary,
     text_run_has_repairable_glyph_geometry_issue,
 )
+
 from core_ocr.impl import page_analysis as ocr_page_analysis
 from core_ocr.impl import postprocess as ocr_postprocess
 from core_ocr.impl import rendering as ocr_rendering
 from core_ocr.impl import schematic as ocr_schematic
 from core_ocr.impl import text_analysis as ocr_text_analysis
+from core_ocr.impl.services import service_function, service_module
 from core_ocr.impl.text_analysis import (
     extracted_text_token_count,
     sparse_text_looks_noisy,
@@ -28,14 +30,12 @@ from core_ocr.impl.text_analysis import (
     uninterpretable_char_count,
 )
 
-from core_pdf.impl.engine.extraction.cache import ExtractionCacheMapping
-from core_pdf.impl.engine.extraction.common import page_profile
-from core_pdf.impl.engine.extraction.common.ordering import LayoutAnalyzer
-from core_pdf.impl.engine.extraction.common.render import (
-    render_page_observation_lines,
-    render_page_text,
-    render_resolved_text_lines,
-)
+ExtractionCacheMapping = Any
+LayoutAnalyzer = service_module("layout_analyzer")
+page_profile = service_module("page_profile")
+render_page_observation_lines = service_function("render_page_observation_lines")
+render_page_text = service_function("render_page_text")
+render_resolved_text_lines = service_function("render_resolved_text_lines")
 
 MIN_VISIBLE_GLYPH_COVERAGE = 0.75
 

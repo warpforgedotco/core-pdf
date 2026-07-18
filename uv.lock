@@ -405,6 +405,7 @@ name = "core-ocr"
 version = "0.0.1"
 source = { editable = "packages/core-ocr" }
 dependencies = [
+    { name = "core-glyph" },
     { name = "core-layout" },
 ]
 
@@ -417,7 +418,10 @@ test = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "core-layout", editable = "packages/core-layout" }]
+requires-dist = [
+    { name = "core-glyph", editable = "packages/core-glyph" },
+    { name = "core-layout", editable = "packages/core-layout" },
+]
 
 [package.metadata.requires-dev]
 lint = [{ name = "ruff", specifier = ">=0.11.13,<1.0.0" }]

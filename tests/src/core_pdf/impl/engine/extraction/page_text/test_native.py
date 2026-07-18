@@ -6,10 +6,7 @@ from core_layout.impl.layout.geometry_quality import (
     layout_geometry_should_trigger_ocr,
 )
 from core_layout.impl.layout.models import TextRun
-
-from core_pdf.impl.engine.extraction.document import PdfDocument
-from core_pdf.impl.engine.extraction.page_text.engine import build_page_extraction_result
-from core_pdf.impl.engine.extraction.page_text.native import (
+from core_ocr.impl.native_text import (
     native_invisible_text_layer_has_fragmented_geometry,
     native_invisible_text_layer_is_trustworthy,
     native_text_runs_inside_page_bounds,
@@ -17,6 +14,9 @@ from core_pdf.impl.engine.extraction.page_text.native import (
     should_try_rendered_glyph_text,
     text_run_has_glyph_bitmap_repair_candidate,
 )
+
+from core_pdf.impl.engine.extraction.document import PdfDocument
+from core_pdf.impl.engine.extraction.page_text.engine import build_page_extraction_result
 
 TESTS_DIR = Path(__file__).parents[6]
 SAMPLE_PDF = TESTS_DIR / "fixtures" / "SCORE-Bench" / "src" / "global-AIDS-strategy-p74-75-p001.pdf"
