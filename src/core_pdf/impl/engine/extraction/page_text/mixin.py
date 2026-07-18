@@ -18,8 +18,10 @@ from core_layout.impl.layout.geometry_quality import (
     layout_geometry_summary_record,
     page_layout_geometry_summary,
 )
+from core_ocr.impl import candidate_generation as ocr_candidate_generation
 from core_ocr.impl import candidates as ocr_candidates
 from core_ocr.impl import text_analysis as ocr_text_analysis
+from core_ocr.impl.services import configure_candidate_services
 from core_ocr.impl.text_analysis import (
     extracted_text_token_count,
     normalized_text_tokens,
@@ -56,9 +58,6 @@ from core_pdf.impl.engine.extraction.common.render import (
     render_resolved_text_lines,
 )
 from core_pdf.impl.engine.extraction.ocr import (
-    candidate_generation as ocr_candidate_generation,
-)
-from core_pdf.impl.engine.extraction.ocr import (
     execution as ocr_execution,
 )
 from core_pdf.impl.engine.extraction.ocr import (
@@ -92,6 +91,7 @@ from core_pdf.impl.engine.extraction.ocr import (
     table_regions as ocr_table_regions,
 )
 from core_pdf.impl.engine.extraction.ocr.backend import TesseractCtypesBackend
+from core_pdf.impl.engine.extraction.ocr.services import PdfOcrCandidateServices
 from core_pdf.impl.engine.extraction.ocr.vector_text import (
     VectorStrokeOcrResult,
     vector_stroke_ocr_result_with_timeout,
@@ -133,6 +133,8 @@ from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_08_graphics.color import ImageColorManager
 from core_pdf.impl.models import TextSpan
 from core_pdf.impl.types import PdfDict
+
+configure_candidate_services(PdfOcrCandidateServices())
 
 if TYPE_CHECKING:
     from core_layout.impl.layout.models import LayoutLine, TextRun

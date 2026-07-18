@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
+from core_ocr.impl.services import configure_candidate_services
 from core_ocr.impl.types import OcrImage, OcrTextResult
 
 from core_pdf.impl.engine.extraction.common import page_geometry
@@ -52,3 +53,6 @@ class PdfOcrCandidateServices:
             timeout=timeout,
             variables=variables,
         )
+
+
+configure_candidate_services(PdfOcrCandidateServices())
