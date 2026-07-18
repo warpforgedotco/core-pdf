@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from core_layout.impl.layout.models import TableGrid
+from core_ocr.impl import candidates as ocr_candidates
 from core_ocr.impl.candidates import OcrCandidate
 from core_ocr.impl.text_analysis import (
     extracted_text_token_count,
@@ -23,9 +24,6 @@ from core_ocr.impl.types import (
 
 from core_pdf.impl.engine.extraction.cache import ExtractionCache
 from core_pdf.impl.engine.extraction.common import page_geometry
-from core_pdf.impl.engine.extraction.ocr import (
-    candidates as ocr_candidates,
-)
 from core_pdf.impl.engine.extraction.ocr import (
     execution as ocr_execution,
 )

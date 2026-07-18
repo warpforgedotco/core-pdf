@@ -4,6 +4,7 @@ import ctypes
 from typing import Any, cast
 
 import pytest
+from core_ocr.impl import deskew
 from core_ocr.impl.types import (
     OcrImage,
     OcrObservation,
@@ -11,7 +12,6 @@ from core_ocr.impl.types import (
     ocr_int_value,
 )
 
-from core_pdf.impl.engine.extraction.ocr import deskew
 from core_pdf.impl.engine.extraction.ocr.backend import (
     TesseractCtypesBackend,
     rgba_image_to_bmp,

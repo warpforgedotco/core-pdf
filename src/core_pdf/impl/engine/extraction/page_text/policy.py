@@ -7,6 +7,7 @@ from statistics import median
 from typing import TYPE_CHECKING, Any, Iterable, Sequence
 
 from core_layout.impl.layout.geometry_quality import LayoutGeometrySummary
+from core_ocr.impl import text_analysis as ocr_text_analysis
 from core_ocr.impl.text_analysis import (
     extracted_text_token_count,
     normalized_text_tokens,
@@ -31,9 +32,6 @@ from core_pdf.impl.engine.extraction.ocr import (
 )
 from core_pdf.impl.engine.extraction.ocr import (
     table_regions as ocr_table_regions,
-)
-from core_pdf.impl.engine.extraction.ocr import (
-    text_analysis as ocr_text_analysis,
 )
 
 if TYPE_CHECKING:

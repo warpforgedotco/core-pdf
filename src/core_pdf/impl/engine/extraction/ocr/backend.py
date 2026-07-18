@@ -9,6 +9,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Mapping
 
+from core_ocr.impl import deskew as ocr_deskew
 from core_ocr.impl.types import (
     BMP_MAX_BYTES,
     LEPTONICA_LIBRARY_FILENAMES,
@@ -32,8 +33,6 @@ from core_ocr.impl.types import (
     ocr_observations_from_rows,
     raw_ocr_image_size_is_supported,
 )
-
-from core_pdf.impl.engine.extraction.ocr import deskew as ocr_deskew
 
 
 class TesseractCtypesBackend:

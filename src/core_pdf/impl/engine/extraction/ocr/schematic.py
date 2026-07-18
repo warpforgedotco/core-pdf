@@ -6,6 +6,7 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Iterable, Mapping
 
+from core_ocr.impl import candidates as ocr_candidates
 from core_ocr.impl.candidates import OcrCandidate
 from core_ocr.impl.text_analysis import (
     extracted_text_token_count,
@@ -24,9 +25,6 @@ from core_ocr.impl.types import (
 
 from core_pdf.impl.engine.extraction.common import page_geometry
 from core_pdf.impl.engine.extraction.common.ordering import LayoutAnalyzer
-from core_pdf.impl.engine.extraction.ocr import (
-    candidates as ocr_candidates,
-)
 from core_pdf.impl.engine.extraction.ocr import (
     iterator_layout as ocr_iterator_layout,
 )

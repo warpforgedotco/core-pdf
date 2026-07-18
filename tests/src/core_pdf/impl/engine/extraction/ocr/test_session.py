@@ -3,9 +3,9 @@ from __future__ import annotations
 from typing import Any, cast
 
 import pytest
+from core_ocr.impl import deskew
 from core_ocr.impl.types import OcrImage, OcrTextResult
 
-from core_pdf.impl.engine.extraction.ocr import deskew
 from core_pdf.impl.engine.extraction.ocr.session import OcrPageSession, PreparedOcrImage
 
 

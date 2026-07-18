@@ -5,11 +5,11 @@ import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
+from core_ocr.impl import text_analysis as ocr_text_analysis
 from core_ocr.impl.text_analysis import uninterpretable_char_count
 
 from core_pdf.impl.engine.extraction.common import page_geometry
 from core_pdf.impl.engine.extraction.common.ordering import LayoutAnalyzer
-from core_pdf.impl.engine.extraction.ocr import text_analysis as ocr_text_analysis
 from core_pdf.impl.engine.rendering import RenderOptions
 from core_pdf.impl.engine.rendering.models import RenderedPage
 from core_pdf.impl.engine.spec.s_07_objects.coercion import normalize_pdf_name

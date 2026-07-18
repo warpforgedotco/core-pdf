@@ -8,6 +8,7 @@ from functools import lru_cache
 from typing import Any, Iterable, Literal
 
 from core_layout.impl.layout.word_frequencies import word_rank
+from core_ocr.impl import text_analysis as ocr_text_analysis
 from core_ocr.impl.candidates import (
     OcrCandidate,
     OcrPageTextResult,
@@ -23,9 +24,6 @@ from core_pdf.impl.engine.extraction.ocr import (
 )
 from core_pdf.impl.engine.extraction.ocr import (
     table_regions as ocr_table_regions,
-)
-from core_pdf.impl.engine.extraction.ocr import (
-    text_analysis as ocr_text_analysis,
 )
 from core_pdf.impl.engine.extraction.ocr.vector_text import VectorStrokeOcrResult
 
