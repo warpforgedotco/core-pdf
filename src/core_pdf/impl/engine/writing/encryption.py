@@ -6,6 +6,7 @@ from __future__ import annotations
 import struct
 from dataclasses import dataclass
 from hashlib import md5
+from typing import Any
 
 from core_crypto.impl.crypto_constants import PDF_PADDING
 from core_crypto.impl.rc4 import CryptRC4
@@ -33,6 +34,29 @@ class StandardPdfEncryptionContext:
     user_entry: bytes
     permissions: int
     encrypt_metadata: bool
+
+    @classmethod
+    def from_security_handler(cls, handler: Any) -> StandardPdfEncryptionContext:
+        """Reuse an authenticated parser security handler for an update."""
+        if getattr(handler, "r", None) != 3:
+            raise ValueError("encrypted incremental updates require Standard Security revision 3")
+        try:
+            key = handler.key
+            owner_entry = handler.o
+            user_entry = handler.u
+            permissions = handler.p
+            encrypt_metadata = handler.encrypt_metadata
+        except AttributeError as exc:
+            raise ValueError("missing Standard Security handler state") from exc
+        if not all(isinstance(value, bytes) for value in (key, owner_entry, user_entry)):
+            raise ValueError("invalid Standard Security handler state")
+        return cls(
+            key=key,
+            owner_entry=owner_entry,
+            user_entry=user_entry,
+            permissions=permissions,
+            encrypt_metadata=encrypt_metadata,
+        )
 
     @classmethod
     def create(
