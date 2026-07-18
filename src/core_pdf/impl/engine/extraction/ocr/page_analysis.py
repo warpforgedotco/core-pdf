@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
 from core_ocr.impl import text_analysis as ocr_text_analysis
+from core_ocr.impl.geometry import TextGeometryLine, text_geometry_line_from_bbox
 from core_ocr.impl.text_analysis import uninterpretable_char_count
 
 from core_pdf.impl.engine.extraction.common import page_geometry
@@ -45,39 +46,6 @@ OCR_LARGE_EMBEDDED_IMAGE_MIN_PIXELS = 350_000
 OCR_LARGE_EMBEDDED_IMAGE_MIN_AREA_RATIO = 0.12
 VECTOR_SPATIAL_TEXT_RE = re.compile(r"[A-Za-z0-9_+\-]")
 VECTOR_SPATIAL_ALLOWED_PUNCTUATION = frozenset("+-._/")
-
-
-@dataclass(frozen=True)
-class TextGeometryLine:
-    text: str
-    observation: page_geometry.PageObservation
-
-    @property
-    def confidence(self) -> int | None:
-        confidence = self.observation.confidence
-        return int(round(confidence)) if confidence is not None else None
-
-
-def text_geometry_line_from_bbox(
-    text: str,
-    bbox: tuple[float, float, float, float],
-    confidence: int | float | None = None,
-    *,
-    source: str,
-    kind: str,
-    provenance: dict[str, object] | None = None,
-) -> TextGeometryLine:
-    observation = page_geometry.page_observation_from_bbox(
-        bbox,
-        source=source,
-        kind=kind,
-        text=text,
-        confidence=page_geometry.numeric_confidence(confidence),
-        provenance=provenance,
-    )
-    if observation is None:
-        raise ValueError("TextGeometryLine requires a valid bbox")
-    return TextGeometryLine(text, observation)
 
 
 @dataclass(frozen=True)
