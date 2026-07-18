@@ -1,6 +1,7 @@
+from core_ocr.impl import page_geometry
 from core_ocr.impl.postprocess import prune_weak_ocr_artifact_line_text
 
-from core_pdf.impl.engine.extraction.common import observation_resolver, page_geometry
+from core_pdf.impl.engine.extraction.common import observation_resolver
 
 
 def resolved_table_fusion_line(text: str) -> observation_resolver.ResolvedTextLine:

@@ -4,9 +4,8 @@ from __future__ import annotations
 from collections.abc import Iterable, Set
 from dataclasses import dataclass, replace
 
+from core_ocr.impl import page_geometry
 from core_ocr.impl.text_analysis import normalized_text_tokens
-
-from core_pdf.impl.engine.extraction.common import page_geometry
 
 
 @dataclass(frozen=True)

@@ -8,6 +8,7 @@ from functools import lru_cache
 from typing import Any
 
 from core_layout.impl.layout.geometry import rect_tuple as layout_rect_tuple
+
 from core_ocr.impl.types import OcrImage, OcrObservation
 
 Rect = tuple[float, float, float, float]

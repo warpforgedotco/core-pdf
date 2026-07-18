@@ -1,6 +1,6 @@
 from dataclasses import replace
 
-from core_pdf.impl.engine.extraction.common.page_geometry import PageObservation, normalize_rect
+from core_ocr.impl.page_geometry import PageObservation, normalize_rect
 
 
 def test_normalize_rect_reuses_ordered_internal_float_tuple() -> None:

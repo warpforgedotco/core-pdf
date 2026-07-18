@@ -5,7 +5,7 @@ from typing import Any, cast
 
 import pytest
 from core_ocr.impl import coordinator as mixin
-from core_ocr.impl import postprocess, selection
+from core_ocr.impl import page_geometry, postprocess, selection
 from core_ocr.impl.candidates import OcrCandidate, OcrPageTextResult
 from core_ocr.impl.policy import (
     fragmented_invisible_text_layer_should_yield_to_ocr,
@@ -15,7 +15,6 @@ from core_ocr.impl.policy import (
 from core_ocr.impl.services import configure_candidate_services
 from core_ocr.impl.types import OcrImage, OcrTextResult
 
-from core_pdf.impl.engine.extraction.common import page_geometry
 from core_pdf.impl.engine.extraction.common.observation_resolver import ResolvedTextLine
 from core_pdf.impl.engine.extraction.pdf_host_services import PdfHostServices
 

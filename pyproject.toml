@@ -123,5 +123,21 @@ files = ["src/core_pdf"]
 mypy_path = "src"
 show_error_codes = true
 
+[tool.ty.environment]
+root = [
+    "./src",
+    "./packages/core-CCITT/src",
+    "./packages/core-JBIG2/src",
+    "./packages/core-JPEG/src",
+    "./packages/core-cmap/src",
+    "./packages/core-color/src",
+    "./packages/core-crypto/src",
+    "./packages/core-filters/src",
+    "./packages/core-font-programs/src",
+    "./packages/core-glyph/src",
+    "./packages/core-layout/src",
+    "./packages/core-ocr/src",
+]
+
 [tool.ty.src]
 exclude = ["tests/fixtures"]

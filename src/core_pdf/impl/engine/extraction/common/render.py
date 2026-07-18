@@ -17,9 +17,10 @@ if typing.TYPE_CHECKING:
 from core_layout.impl.layout.models import LayoutBox, LayoutLine, TextRun
 from core_layout.impl.layout.text_lines import LayoutLineTextSegment, strip_private_use_chars
 from core_layout.impl.layout.word_frequencies import word_rank
+from core_ocr.impl import page_geometry
 from core_ocr.impl.text_analysis import normalized_text_tokens
 
-from core_pdf.impl.engine.extraction.common import observation_resolver, page_geometry
+from core_pdf.impl.engine.extraction.common import observation_resolver
 from core_pdf.impl.engine.extraction.common.ordering import (
     SKEW_ANGLE_TOLERANCE,
     LayoutAnalyzer,

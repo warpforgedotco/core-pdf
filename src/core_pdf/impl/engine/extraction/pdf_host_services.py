@@ -14,7 +14,7 @@ from core_layout.impl.layout.geometry_quality import (
 from core_ocr.impl import execution as ocr_execution
 from core_ocr.impl import iterator_layout as ocr_iterator_layout
 from core_ocr.impl import layout as ocr_layout
-from core_ocr.impl import native_text
+from core_ocr.impl import native_text, page_geometry
 from core_ocr.impl import policy as ocr_policy
 from core_ocr.impl import rendering as ocr_rendering
 from core_ocr.impl import selection as ocr_selection
@@ -23,7 +23,7 @@ from core_ocr.impl.rendering import OcrRenderTile
 from core_ocr.impl.services import configure_candidate_services
 from core_ocr.impl.types import OcrImage, OcrTextResult
 
-from core_pdf.impl.engine.extraction.common import observation_resolver, page_geometry, page_profile
+from core_pdf.impl.engine.extraction.common import observation_resolver, page_profile
 from core_pdf.impl.engine.extraction.common.ordering import LayoutAnalyzer
 from core_pdf.impl.engine.extraction.common.render import (
     MarkdownRenderer,
