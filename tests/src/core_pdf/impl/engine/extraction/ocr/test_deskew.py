@@ -5,16 +5,15 @@ from typing import Any, cast
 
 import pytest
 from core_ocr.impl import deskew
+from core_ocr.impl.backend import (
+    TesseractCtypesBackend,
+    rgba_image_to_bmp,
+)
 from core_ocr.impl.types import (
     OcrImage,
     OcrObservation,
     OcrTextResult,
     ocr_int_value,
-)
-
-from core_pdf.impl.engine.extraction.ocr.backend import (
-    TesseractCtypesBackend,
-    rgba_image_to_bmp,
 )
 
 

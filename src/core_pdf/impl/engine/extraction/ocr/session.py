@@ -7,10 +7,9 @@ from dataclasses import dataclass
 from typing import TypeAlias, cast
 
 from core_ocr.impl import deskew as ocr_deskew
+from core_ocr.impl import execution as ocr_execution
+from core_ocr.impl.backend import TesseractCtypesBackend
 from core_ocr.impl.types import OcrDeskewInfo, OcrImage, OcrTextResult
-
-from core_pdf.impl.engine.extraction.ocr import execution as ocr_execution
-from core_pdf.impl.engine.extraction.ocr.backend import TesseractCtypesBackend
 
 OcrSessionCacheKey: TypeAlias = Hashable
 OcrSessionCacheTuple: TypeAlias = tuple[OcrSessionCacheKey, ...]

@@ -5,6 +5,7 @@ from typing import Protocol
 
 from core_ocr.impl import candidate_generation as ocr_candidate_generation
 from core_ocr.impl import candidates as ocr_candidates
+from core_ocr.impl import execution as ocr_execution
 from core_ocr.impl import iterator_layout as ocr_iterator_layout
 from core_ocr.impl import text_analysis as ocr_text_analysis
 from core_ocr.impl.types import (
@@ -16,7 +17,6 @@ from core_ocr.impl.types import (
     ocr_int_value,
 )
 
-from core_pdf.impl.engine.extraction.ocr import execution as ocr_execution
 from core_pdf.impl.engine.extraction.ocr import rendering as ocr_rendering
 from core_pdf.impl.engine.rendering.models import RenderedPage
 
