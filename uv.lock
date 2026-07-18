@@ -301,9 +301,9 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "core-ccitt", specifier = ">=0.0.1" },
-    { name = "core-jbig2", specifier = ">=0.0.1" },
-    { name = "core-jpeg", specifier = ">=0.0.1" },
+    { name = "core-ccitt", editable = "packages/core-CCITT" },
+    { name = "core-jbig2", editable = "packages/core-JBIG2" },
+    { name = "core-jpeg", editable = "packages/core-JPEG" },
 ]
 
 [package.metadata.requires-dev]
@@ -338,7 +338,7 @@ test = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "core-layout", specifier = ">=0.0.1" }]
+requires-dist = [{ name = "core-layout", editable = "packages/core-layout" }]
 
 [package.metadata.requires-dev]
 lint = [{ name = "ruff", specifier = ">=0.11.13,<1.0.0" }]
@@ -369,7 +369,7 @@ lint = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "core-color", specifier = ">=0.0.1" }]
+requires-dist = [{ name = "core-color", editable = "packages/core-color" }]
 
 [package.metadata.requires-dev]
 dev = [
@@ -418,7 +418,7 @@ test = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "core-layout", specifier = ">=0.0.1" }]
+requires-dist = [{ name = "core-layout", editable = "packages/core-layout" }]
 
 [package.metadata.requires-dev]
 lint = [{ name = "ruff", specifier = ">=0.11.13,<1.0.0" }]
