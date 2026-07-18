@@ -73,7 +73,6 @@ from core_pdf.impl.engine.extraction.common.render import (
     render_page_observation_lines,
     render_resolved_text_lines,
 )
-from core_pdf.impl.engine.extraction.ocr.services import PdfOcrCandidateServices
 from core_pdf.impl.engine.extraction.page_text.decisions import (
     page_extraction_decision,
 )
@@ -104,6 +103,7 @@ from core_pdf.impl.engine.extraction.page_text.policy import (
     should_replace_symbol_encoded_text_with_ocr,
     should_replace_text_with_ocr,
 )
+from core_pdf.impl.engine.extraction.pdf_ocr_adapter import PdfOcrCandidateServices
 from core_pdf.impl.engine.extraction.tables.grid import detect_grid
 from core_pdf.impl.engine.rendering import RenderOptions, compose_page
 from core_pdf.impl.engine.rendering.models import image_filter_names, pdf_int
