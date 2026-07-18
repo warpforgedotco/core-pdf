@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping as MappingABC
 from dataclasses import dataclass, field
 from enum import StrEnum
 from types import MappingProxyType
@@ -13,6 +14,16 @@ if TYPE_CHECKING:
 
 BBox: TypeAlias = tuple[float, float, float, float]
 JsonValue: TypeAlias = str | int | float | bool | None | list["JsonValue"] | dict[str, "JsonValue"]
+
+
+def _freeze(value: Any) -> Any:
+    if isinstance(value, MappingABC):
+        return MappingProxyType({key: _freeze(item) for key, item in value.items()})
+    if isinstance(value, (list, tuple)):
+        return tuple(_freeze(item) for item in value)
+    if isinstance(value, set):
+        return frozenset(_freeze(item) for item in value)
+    return value
 
 
 class BlockKind(StrEnum):
@@ -53,6 +64,9 @@ class Figure:
     kind: str = "figure"
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "metadata", _freeze(self.metadata))
+
 
 @dataclass(frozen=True, slots=True)
 class Link:
@@ -68,6 +82,9 @@ class Annotation:
     bbox: BBox | None = None
     contents: str = ""
     destination: Any = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "destination", _freeze(self.destination))
 
 
 @dataclass(frozen=True, slots=True)
@@ -163,7 +180,7 @@ class Document:
     schema_version: str = "1.0"
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "metadata", MappingProxyType(dict(self.metadata)))
+        object.__setattr__(self, "metadata", _freeze(self.metadata))
 
     def edit(self) -> DocumentEditor:
         from core_document.editor import DocumentEditor

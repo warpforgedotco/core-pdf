@@ -54,6 +54,15 @@ def test_document_editor_rollback_closes_transaction() -> None:
         editor.commit()
 
 
+def test_nested_ir_metadata_is_immutable() -> None:
+    document = Document(metadata={"nested": {"values": [1]}})
+
+    with pytest.raises(TypeError):
+        document.metadata["nested"]["values"] = (2,)
+
+    assert document.to_json_dict()["metadata"] == {"nested": {"values": [1]}}
+
+
 def test_document_serializes_to_versioned_json() -> None:
     document = Document(
         metadata={"title": "Example"},
