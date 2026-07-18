@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from core_pdf.impl.engine.extraction.document import PdfDocument
     from core_pdf.impl.engine.extraction.page import PdfPage
+    from core_pdf.impl.engine.writing.semantic import serialize_document_to_pdf
     from core_pdf.impl.exceptions import (
         PdfError,
         PdfParseError,
@@ -20,6 +21,10 @@ _EXPORTS = {
     "Document": ("core_document", "Document"),
     "PageSelection": ("core_pdf.impl.types", "PageSelection"),
     "PdfDocument": ("core_pdf.impl.engine.extraction.document", "PdfDocument"),
+    "serialize_document_to_pdf": (
+        "core_pdf.impl.engine.writing.semantic",
+        "serialize_document_to_pdf",
+    ),
     "PdfError": ("core_pdf.impl.exceptions", "PdfError"),
     "PdfPage": ("core_pdf.impl.engine.extraction.page", "PdfPage"),
     "PdfParseError": ("core_pdf.impl.exceptions", "PdfParseError"),
@@ -53,4 +58,5 @@ __all__ = (
     "PdfRasterTooLargeError",
     "PdfSourceError",
     "PdfUnsupportedError",
+    "serialize_document_to_pdf",
 )

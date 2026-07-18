@@ -15,6 +15,10 @@ be serialized as versioned JSON or semantic HTML.
 Optional enrichers implement `core_document.DocumentAdapter` and can be passed to
 `PdfDocument.extract(adapters=...)`; OCR is not a dependency of this package.
 
+`core_pdf.serialize_document_to_pdf(document)` writes a new PDF from the IR using
+standard Type1 fonts by default. Pass a `PdfFontProvider` for alternate font
+resources; Unicode outside the provider’s encoding is rejected explicitly.
+
 `core-pdf` currently extracts native PDF text objects only. Image-only and scanned pages
 return no text blocks; OCR is intentionally provided separately and is not invoked by
 this package.
