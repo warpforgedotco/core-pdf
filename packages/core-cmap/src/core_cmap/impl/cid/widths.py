@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator, Mapping
+from contextlib import suppress
 from typing import Any
 
 
@@ -44,7 +45,9 @@ class SparseFontWidthMap(FontWidthMap):
     def __len__(self) -> int:
         return len(self.widths)
 
-    def get(self, key: int, default: Any = None) -> float | Any:
+    def get(self, key: object, default: Any = None) -> float | Any:
+        if type(key) is not int:
+            return default
         return self.widths.get(key, default)
 
 
@@ -176,10 +179,8 @@ def parse_cid_widths(value: Any) -> FontWidthMap:
                 elif type(w) is float:
                     widths[code] = w
                 else:
-                    try:
+                    with suppress(ValueError):
                         widths[code] = require_cid_float(w, "invalid CID widths array")
-                    except ValueError:
-                        pass
                 code += 1
             index += 1
         else:

@@ -1,6 +1,7 @@
 import concurrent.futures
 import sys
 from dataclasses import FrozenInstanceError
+from typing import Any, Callable, cast
 
 import pytest
 
@@ -27,9 +28,9 @@ def test_decode_dct_rejects_empty_input() -> None:
 
 
 @pytest.mark.parametrize("decoder", [decode_jpx, decode_jpx_image])
-def test_jpx_decoders_reject_empty_input(decoder: object) -> None:
+def test_jpx_decoders_reject_empty_input(decoder: Callable[[bytes], object]) -> None:
     with pytest.raises(JpegParseError, match="unexpected end"):
-        decoder(b"")  # type: ignore[operator]
+        decoder(b"")
 
 
 def test_jpx_tile_executor_falls_back_on_python_313(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -59,4 +60,4 @@ def test_decoded_image_models_are_immutable() -> None:
 
     assert image.components == (component,)
     with pytest.raises(FrozenInstanceError):
-        image.width = 2  # type: ignore[misc]
+        cast(Any, image).width = 2

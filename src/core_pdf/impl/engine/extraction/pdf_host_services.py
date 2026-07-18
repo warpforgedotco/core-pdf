@@ -23,6 +23,7 @@ from core_ocr.impl.rendering import OcrRenderTile
 from core_ocr.impl.services import configure_candidate_services
 from core_ocr.impl.types import OcrImage, OcrTextResult
 
+from core_pdf.impl.engine.extraction.cache import ExtractionCache
 from core_pdf.impl.engine.extraction.common import observation_resolver, page_profile
 from core_pdf.impl.engine.extraction.common.ordering import LayoutAnalyzer
 from core_pdf.impl.engine.extraction.common.render import (
@@ -34,6 +35,7 @@ from core_pdf.impl.engine.extraction.common.render import (
 from core_pdf.impl.engine.extraction.tables.grid import detect_grid, merge_grids
 from core_pdf.impl.engine.rendering import RenderOptions, compose_page
 from core_pdf.impl.engine.rendering.models import RenderedPage, image_filter_names, pdf_int
+from core_pdf.impl.engine.spec.s_07_content.capture import CapturedLine
 from core_pdf.impl.engine.spec.s_07_document.page_boxes import rotate_page_lines
 from core_pdf.impl.engine.spec.s_07_objects.coercion import normalize_pdf_name
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
@@ -104,6 +106,8 @@ class PdfHostServices:
     detect_grid = staticmethod(detect_grid)
     merge_grids = staticmethod(merge_grids)
     rotate_page_lines = staticmethod(rotate_page_lines)
+    captured_line = CapturedLine
+    create_extraction_cache = staticmethod(ExtractionCache)
     clamp_ocr_bbox = staticmethod(ocr_tiling.clamp_ocr_bbox)
 
     @staticmethod

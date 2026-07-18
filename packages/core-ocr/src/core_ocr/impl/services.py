@@ -73,6 +73,8 @@ class OcrCandidateServices(Protocol):
     detect_grid: Any
     merge_grids: Any
     rotate_page_lines: Any
+    captured_line: Any
+    create_extraction_cache: Any
 
     def render_page_for_ocr(self, page: Any, *, include_text: bool) -> Any: ...
 

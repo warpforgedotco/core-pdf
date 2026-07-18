@@ -29,13 +29,17 @@ OCR_RENDER_TILE_MAX_WORKERS = 4
 OCR_TIMEOUT_DISABLED_VALUES = {"", "0", "none", "off", "false", "no"}
 
 
+class OcrPageProfile(Protocol):
+    recommended_strategy: str
+
+
 class OcrRenderablePage(Protocol):
     extraction_cache: Any
 
     @property
     def media_box(self) -> tuple[float, float, float, float] | None: ...
 
-    def get_page_profile(self) -> object: ...
+    def get_page_profile(self) -> OcrPageProfile: ...
 
 
 @dataclass(frozen=True)

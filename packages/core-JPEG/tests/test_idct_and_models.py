@@ -28,6 +28,6 @@ def test_idct_clamps_output_range() -> None:
 
 
 def test_decode_workload_normalizes_features() -> None:
-    workload = DecodeWorkload(codec="dct", features={"progressive", "restart-markers"})
+    workload = DecodeWorkload(codec="dct", features=frozenset({"progressive", "restart-markers"}))
 
     assert workload.features == frozenset({"progressive", "restart-markers"})

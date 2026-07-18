@@ -30,6 +30,7 @@ page_geometry = service_module("page_geometry")
 detect_grid = service_function("detect_grid")
 merge_grids = service_function("merge_grids")
 rotate_page_lines = service_function("rotate_page_lines")
+create_captured_line = service_function("captured_line")
 CapturedLine = Any
 
 
@@ -598,7 +599,7 @@ def captured_line_from_raster_line(
         )
         if segment is None or thickness is None:
             return None
-        return CapturedLine(
+        return create_captured_line(
             segment[0],
             segment[1],
             segment[2],
@@ -620,7 +621,7 @@ def captured_line_from_raster_line(
     )
     if segment is None or thickness is None:
         return None
-    return CapturedLine(
+    return create_captured_line(
         segment[0],
         segment[1],
         segment[2],

@@ -1,10 +1,13 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
+from typing import cast
+
 
 def full_source_bytes(data: bytes | memoryview) -> bytes | None:
     if type(data) is bytes:
         return data
+    data = cast(memoryview, data)
     source = data.obj
     if (
         type(source) is bytes

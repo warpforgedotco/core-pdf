@@ -89,6 +89,7 @@ pdf_int = service_function("pdf_int")
 render_page_observation_lines = service_function("render_page_observation_lines")
 render_resolved_text_lines = service_function("render_resolved_text_lines")
 page_extraction_decision = service_function("page_extraction_decision")
+create_extraction_cache = service_function("create_extraction_cache")
 layout_geometry_summary_record = service_function("layout_geometry_summary_record")
 page_layout_geometry_summary = service_function("page_layout_geometry_summary")
 try_extract_native_text_fast = service_function("try_extract_native_text_fast")
@@ -13330,7 +13331,7 @@ def page_is_overlay_ocr(page: PageExtractionHost) -> bool:
 def extract_page_text(page: PageExtractionHost) -> str:
     cache = page.extraction_cache
     if cache is None:
-        page.extraction_cache = cache = ExtractionCache()
+        page.extraction_cache = cache = create_extraction_cache()
     snapshot = cache.get_as("page_extraction_snapshot", PageExtractionSnapshot)
     if snapshot is not None:
         return snapshot.text

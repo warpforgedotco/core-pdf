@@ -39,10 +39,11 @@ def parse_int(value: object, default: int | None = None) -> int | None:
 def lookup_dict_key(value: object, key: str) -> object:
     if not isinstance(value, dict):
         return None
-    if key in value:
-        return value[key]
+    mapping = cast(dict[object, object], value)
+    if key in mapping:
+        return mapping[key]
     normalized = key.lstrip("/")
-    for candidate, item in value.items():
+    for candidate, item in mapping.items():
         candidate_name = normalize_pdf_name(candidate)
         if candidate_name == normalized:
             return item
