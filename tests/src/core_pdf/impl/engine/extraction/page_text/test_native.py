@@ -12,35 +12,11 @@ from core_pdf.impl.engine.extraction.page_text.engine import (
     build_page_extraction_result,
 )
 from core_pdf.impl.engine.extraction.page_text.native import native_text_runs_for_extraction
+from core_pdf.impl.engine.extraction.page_text.snapshots import native_snapshot
 
 TESTS_DIR = Path(__file__).parents[6]
 SAMPLE_PDF = TESTS_DIR / "fixtures" / "SCORE-Bench" / "src" / "global-AIDS-strategy-p74-75-p001.pdf"
 SNAPSHOT_DIR = TESTS_DIR / "snapshots" / "native"
-
-
-def native_snapshot(fixture_name: str, page: Any, result: Any) -> str:
-    lines = [
-        "---",
-        f"fixture: {fixture_name}",
-        f"rotation: {page.rotation}",
-        f"page_class: {result.page_class}",
-        f"base_route: {result.base_route}",
-        f"block_count: {len(result.blocks)}",
-        f"line_count: {len(result.resolved_lines)}",
-        "---",
-        "",
-    ]
-    for index, line in enumerate(result.resolved_lines, 1):
-        lines.extend(
-            (
-                f"<!-- line: {index:03d}; break_before: {line.break_before}; "
-                f"kind: {line.kind}; source: {line.source} -->",
-                "```text",
-                line.text,
-                "```",
-            )
-        )
-    return "\n".join(lines) + "\n"
 
 
 def result_text(result: Any) -> str:

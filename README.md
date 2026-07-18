@@ -31,6 +31,15 @@ core-pdf reserves and fills `/Contents` but does not manage keys or generate CMS
 return no text blocks; OCR is intentionally provided separately and is not invoked by
 this package.
 
+Native extraction snapshots are checked with:
+
+```sh
+uv run python scripts/native_snapshots.py
+```
+
+After an intentional extraction change, regenerate them with
+`uv run python scripts/native_snapshots.py --update` and review the Markdown diff.
+
 ![core-pdf — High-Performance PDF Engine](.github/assets/core-pdf-social-preview.jpg)
 
 ## License
