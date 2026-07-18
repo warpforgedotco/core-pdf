@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any, Self
 
 from core_pdf.impl.engine.extraction.document_extraction import DocumentExtractionMixin
@@ -11,7 +12,7 @@ from core_pdf.impl.engine.spec.s_07_document.document import (
 )
 
 if TYPE_CHECKING:
-    from core_document import Document
+    from core_document import Document, DocumentAdapter
 
 
 def _create_page(document: Any, page_dict: Any, page_number: int) -> Any:
@@ -36,13 +37,16 @@ class PdfDocument(
     def open(cls, source: Any, password: str = "") -> Self:
         return cls(source, password=password)
 
-    def extract(self) -> Document:
+    def extract(self, *, adapters: Iterable[DocumentAdapter] = ()) -> Document:
         from core_pdf.impl.engine.extraction.document_ir import extraction_result_to_document
         from core_pdf.impl.engine.extraction.page_text.engine import (
             build_document_extraction_result,
         )
 
-        return extraction_result_to_document(build_document_extraction_result(self))
+        document = extraction_result_to_document(build_document_extraction_result(self))
+        for adapter in adapters:
+            document = adapter.apply(document)
+        return document
 
 
 __all__ = ("PdfDocument",)

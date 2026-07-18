@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 """Immutable structured document records and derived views."""
 
+from core_document.adapters import DocumentAdapter
 from core_document.model import (
     Annotation,
     BBox,
@@ -23,6 +24,7 @@ __all__ = (
     "Block",
     "BlockKind",
     "Diagnostic",
+    "DocumentAdapter",
     "Document",
     "Figure",
     "FormField",

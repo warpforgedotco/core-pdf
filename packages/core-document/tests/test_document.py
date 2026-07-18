@@ -1,6 +1,25 @@
 from typing import Any, cast
 
-from core_document import Block, BlockKind, Document, Page, Table, TableCell, TextLine
+from core_document import (
+    Block,
+    BlockKind,
+    Document,
+    DocumentAdapter,
+    Page,
+    Table,
+    TableCell,
+    TextLine,
+)
+
+
+def test_document_adapter_protocol_is_runtime_checkable_by_shape() -> None:
+    class Adapter:
+        def apply(self, document: Document) -> Document:
+            return document
+
+    adapter: DocumentAdapter = Adapter()
+
+    assert adapter.apply(Document()).pages == ()
 
 
 def test_document_serializes_to_versioned_json() -> None:

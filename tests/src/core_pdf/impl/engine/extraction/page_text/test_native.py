@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
-from core_document import Document
+from core_document import Document, DocumentAdapter
 from core_layout.impl.layout.models import TextRun
 
 from core_pdf.impl.engine.extraction.document import PdfDocument
@@ -146,6 +146,23 @@ def test_document_extract_returns_core_document_ir() -> None:
     assert result.to_json_dict()["schema_version"] == "1.0"
     assert "GLOBAL AIDS STRATEGY" in result.to_markdown()
     assert 'data-schema-version="1.0"' in result.to_html()
+
+
+def test_document_extract_accepts_optional_immutable_adapters() -> None:
+    class Adapter:
+        def apply(self, document: Document) -> Document:
+            return Document(
+                pages=document.pages,
+                metadata={**document.metadata, "adapter": "test"},
+                diagnostics=document.diagnostics,
+                schema_version=document.schema_version,
+            )
+
+    adapter: DocumentAdapter = Adapter()
+    with PdfDocument.open(SAMPLE_PDF) as document:
+        result = document.extract(adapters=(adapter,))
+
+    assert result.metadata["adapter"] == "test"
 
 
 def test_structured_extraction_embeds_canonical_document_ir() -> None:
