@@ -9,7 +9,7 @@ from collections import Counter, deque
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from time import perf_counter
-from typing import Any, Callable, cast
+from typing import Any, Callable
 
 from rich import box
 from rich.console import Console
@@ -20,7 +20,7 @@ from rich.progress import BarColumn, Progress, TaskID, TextColumn, TimeElapsedCo
 from rich.table import Table
 from rich.text import Text
 
-from core_pdf import PdfDocument, PdfParseError
+from core_pdf import PdfDocument
 
 ROOT = Path(__file__).resolve().parents[1]
 SCORE_BENCH_ROOT = ROOT / "tests" / "fixtures" / "SCORE-Bench"
@@ -165,26 +165,8 @@ def score_case(case: ScoreBenchCase) -> CaseScore:
 
 
 def extract_document_text(document: PdfDocument) -> str:
-    pages = list(document.pages)
-    can_skip_bad_page = (
-        len(pages) > 1
-        or getattr(document, "xref_was_recovered", False)
-        or getattr(document, "page_tree_was_recovered", False)
-    )
-    texts: list[str] = []
-    for page in pages:
-        try:
-            texts.append(cast(Any, page).extract_text())
-        except PdfParseError:
-            if can_skip_bad_page:
-                continue
-            raise
-        page.state = None
-        page.graphics = None
-        page.grid_lines = None
-        page.text_spans = None
-        page.tables = {}
-    return "\f".join(texts)
+    """Return the canonical core-document text used for benchmark scoring."""
+    return document.extract().text
 
 
 def score_cases(
