@@ -253,6 +253,11 @@ wheels = [
 ]
 
 [[package]]
+name = "core-layout"
+version = "0.0.1"
+source = { directory = "../core-layout" }
+
+[[package]]
 name = "core-pdf"
 version = "0.0.5"
 source = { editable = "." }
@@ -262,6 +267,7 @@ dependencies = [
     { name = "core-font-programs" },
     { name = "core-jbig2" },
     { name = "core-jpeg" },
+    { name = "core-layout" },
 ]
 
 [package.dev-dependencies]
@@ -299,6 +305,7 @@ requires-dist = [
     { name = "core-font-programs", directory = "../core-font-programs" },
     { name = "core-jbig2", directory = "../core-JBIG2" },
     { name = "core-jpeg", specifier = ">=0.0.0" },
+    { name = "core-layout", directory = "../core-layout" },
 ]
 
 [package.metadata.requires-dev]

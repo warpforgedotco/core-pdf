@@ -18,6 +18,7 @@ dependencies = [
     "core-font-programs>=0.0.1",
     "core-jbig2>=0.0.1",
     "core-jpeg>=0.0.0",
+    "core-layout>=0.0.1",
 ]
 
 [tool.uv.sources]
@@ -25,6 +26,7 @@ core-ccitt = { path = "../core-CCITT" }
 core-color = { path = "../core-color" }
 core-font-programs = { path = "../core-font-programs" }
 core-jbig2 = { path = "../core-JBIG2" }
+core-layout = { path = "../core-layout" }
 
 [project.urls]
 Repository = "https://github.com/core-experiments/core-pdf"
