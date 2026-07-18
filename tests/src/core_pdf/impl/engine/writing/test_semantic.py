@@ -1,7 +1,7 @@
 import pytest
 from core_document import Block, BlockKind, Document, Page, Table, TableCell, TextLine
 
-from core_pdf import PdfDocument
+from core_pdf import PdfDocument, PdfSignaturePlan
 from core_pdf import StandardPdfEncryption as PublicEncryption
 from core_pdf import serialize_document_to_pdf as public_writer
 from core_pdf.impl.engine.writing import (
@@ -115,3 +115,50 @@ def test_semantic_writer_supports_standard_pdf_encryption() -> None:
 
     with pytest.raises(Exception):
         PdfDocument.open(encrypted, password="wrong")
+
+
+def test_semantic_writer_delegates_detached_signature_to_external_provider() -> None:
+    class RecordingSigner:
+        data: bytes | None = None
+
+        def sign(self, data: bytes) -> bytes:
+            self.data = data
+            return b"cms-signature"
+
+    signer = RecordingSigner()
+    document = Document(
+        pages=(
+            Page(
+                page_number=1,
+                blocks=(Block(1, BlockKind.PARAGRAPH, (TextLine("signed"),)),),
+            ),
+        )
+    )
+
+    output = serialize_document_to_pdf(
+        document,
+        signature=PdfSignaturePlan(signer, contents_length=128),
+    )
+
+    import re
+
+    match = re.search(rb"/ByteRange \[0 (\d+) (\d+) (\d+)\]", output)
+    assert match is not None
+    contents_start, contents_end, trailing_length = (int(value) for value in match.groups())
+    assert trailing_length == len(output) - contents_end
+    assert signer.data == output[:contents_start] + output[contents_end:]
+    assert b"/SubFilter /adbe.pkcs7.detached" in output
+    assert b"636D732D7369676E6174757265" in output
+
+
+def test_semantic_writer_rejects_combined_encryption_and_signature() -> None:
+    class Signer:
+        def sign(self, data: bytes) -> bytes:
+            return data[:1]
+
+    with pytest.raises(ValueError, match="cannot be combined"):
+        serialize_document_to_pdf(
+            Document(pages=(Page(page_number=1),)),
+            encryption=PublicEncryption(user_password="secret"),
+            signature=PdfSignaturePlan(Signer()),
+        )

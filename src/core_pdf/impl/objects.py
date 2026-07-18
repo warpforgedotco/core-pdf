@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TypeAlias, cast
 
 from core_filters.impl import decode_spec as stream_decode_spec
@@ -24,7 +25,21 @@ __all__ = (
     "PdfReference",
     "PdfStream",
     "PdfString",
+    "PdfByteRangePlaceholder",
+    "PdfSignatureContentsPlaceholder",
 )
+
+
+@dataclass(frozen=True, slots=True)
+class PdfByteRangePlaceholder:
+    """Marker serialized into a fixed-width PDF signature ByteRange."""
+
+
+@dataclass(frozen=True, slots=True)
+class PdfSignatureContentsPlaceholder:
+    """Marker reserving hexadecimal space for an external signature."""
+
+    length: int
 
 
 class PdfStream:

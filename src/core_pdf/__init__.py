@@ -9,6 +9,8 @@ if TYPE_CHECKING:
     from core_pdf.impl.engine.extraction.page import PdfPage
     from core_pdf.impl.engine.writing import (
         PdfFontProvider,
+        PdfSignaturePlan,
+        PdfSignatureProvider,
         StandardPdfEncryption,
         StandardType1FontProvider,
         TrueTypeFontProvider,
@@ -32,6 +34,8 @@ _EXPORTS = {
         "serialize_document_to_pdf",
     ),
     "PdfFontProvider": ("core_pdf.impl.engine.writing", "PdfFontProvider"),
+    "PdfSignaturePlan": ("core_pdf.impl.engine.writing", "PdfSignaturePlan"),
+    "PdfSignatureProvider": ("core_pdf.impl.engine.writing", "PdfSignatureProvider"),
     "StandardPdfEncryption": ("core_pdf.impl.engine.writing", "StandardPdfEncryption"),
     "StandardType1FontProvider": (
         "core_pdf.impl.engine.writing",
@@ -73,6 +77,8 @@ __all__ = (
     "PdfUnsupportedError",
     "serialize_document_to_pdf",
     "PdfFontProvider",
+    "PdfSignaturePlan",
+    "PdfSignatureProvider",
     "StandardPdfEncryption",
     "StandardType1FontProvider",
     "TrueTypeFontProvider",

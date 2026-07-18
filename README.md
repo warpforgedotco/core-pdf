@@ -23,6 +23,10 @@ Pass `StandardPdfEncryption(user_password=...)` to enable PDF Standard Security
 Revision 3 encryption. Incremental saves reject encrypted input until encrypted
 incremental updates are implemented.
 
+`PdfSignaturePlan` provides a detached PDF signature container backed by an
+external CMS/PKCS#7 signer. The signer receives the exact `/ByteRange` bytes;
+core-pdf reserves and fills `/Contents` but does not manage keys or generate CMS.
+
 `core-pdf` currently extracts native PDF text objects only. Image-only and scanned pages
 return no text blocks; OCR is intentionally provided separately and is not invoked by
 this package.

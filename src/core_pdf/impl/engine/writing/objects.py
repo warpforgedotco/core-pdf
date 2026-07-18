@@ -7,13 +7,26 @@ import math
 from collections.abc import Mapping
 from typing import Any, cast
 
-from core_pdf.impl.objects import PdfName, PdfReference, PdfStream, PdfString
+from core_pdf.impl.objects import (
+    PdfByteRangePlaceholder,
+    PdfName,
+    PdfReference,
+    PdfSignatureContentsPlaceholder,
+    PdfStream,
+    PdfString,
+)
 
 
 def serialize_pdf_object(value: object) -> bytes:
     """Return valid PDF syntax for one direct or indirect object."""
     if value is None:
         return b"null"
+    if isinstance(value, PdfByteRangePlaceholder):
+        return b"[0 0000000000 0000000000 0000000000]"
+    if isinstance(value, PdfSignatureContentsPlaceholder):
+        if value.length <= 0:
+            raise ValueError("signature placeholder length must be positive")
+        return b"<" + b"0" * (value.length * 2) + b">"
     if type(value) is bool:
         return b"true" if value else b"false"
     if type(value) is int:
