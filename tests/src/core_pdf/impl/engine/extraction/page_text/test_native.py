@@ -11,6 +11,31 @@ from core_pdf.impl.engine.extraction.page_text.native import native_text_runs_fo
 
 TESTS_DIR = Path(__file__).parents[6]
 SAMPLE_PDF = TESTS_DIR / "fixtures" / "SCORE-Bench" / "src" / "global-AIDS-strategy-p74-75-p001.pdf"
+SNAPSHOT_DIR = TESTS_DIR / "snapshots" / "native"
+
+
+def native_snapshot(fixture_name: str, page: Any, result: Any) -> str:
+    lines = [
+        "---",
+        f"fixture: {fixture_name}",
+        f"rotation: {page.rotation}",
+        f"page_class: {result.page_class}",
+        f"base_route: {result.base_route}",
+        f"line_count: {len(result.resolved_lines)}",
+        "---",
+        "",
+    ]
+    for index, line in enumerate(result.resolved_lines, 1):
+        lines.extend(
+            (
+                f"<!-- line: {index:03d}; break_before: {line.break_before}; "
+                f"kind: {line.kind}; source: {line.source} -->",
+                "```text",
+                line.text,
+                "```",
+            )
+        )
+    return "\n".join(lines) + "\n"
 
 
 def image_only_pdf() -> BytesIO:
@@ -192,3 +217,7 @@ def test_native_extraction_quality_corpus(
         assert all(left != right for left, right in zip(lines, lines[1:], strict=False))
         positions = [text.casefold().index(marker.casefold()) for marker in ordered_markers]
         assert positions == sorted(positions)
+
+        result = build_page_extraction_result(page)
+        snapshot = SNAPSHOT_DIR / f"{Path(fixture_name).stem}.md"
+        assert native_snapshot(fixture_name, page, result) == snapshot.read_text()
