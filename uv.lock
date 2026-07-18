@@ -17,6 +17,7 @@ members = [
     "core-jbig2",
     "core-jpeg",
     "core-layout",
+    "core-ocr",
     "core-pdf",
 ]
 
@@ -377,6 +378,25 @@ lint = [{ name = "ruff", specifier = ">=0.11.13,<1.0.0" }]
 test = [{ name = "pytest", specifier = ">=8.4.0,<10.0.0" }]
 
 [[package]]
+name = "core-ocr"
+version = "0.0.1"
+source = { editable = "../core-ocr" }
+
+[package.dev-dependencies]
+lint = [
+    { name = "ruff" },
+]
+test = [
+    { name = "pytest" },
+]
+
+[package.metadata]
+
+[package.metadata.requires-dev]
+lint = [{ name = "ruff", specifier = ">=0.11.13,<1.0.0" }]
+test = [{ name = "pytest", specifier = ">=8.4.0,<10.0.0" }]
+
+[[package]]
 name = "core-pdf"
 version = "0.0.5"
 source = { editable = "." }
@@ -390,6 +410,7 @@ dependencies = [
     { name = "core-jbig2" },
     { name = "core-jpeg" },
     { name = "core-layout" },
+    { name = "core-ocr" },
 ]
 
 [package.dev-dependencies]
@@ -431,6 +452,7 @@ requires-dist = [
     { name = "core-jbig2", editable = "../core-JBIG2" },
     { name = "core-jpeg", editable = "../core-JPEG" },
     { name = "core-layout", editable = "../core-layout" },
+    { name = "core-ocr", editable = "../core-ocr" },
 ]
 
 [package.metadata.requires-dev]
