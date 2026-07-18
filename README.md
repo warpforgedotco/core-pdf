@@ -19,6 +19,10 @@ Optional enrichers implement `core_document.DocumentAdapter` and can be passed t
 standard Type1 fonts by default. Pass a `PdfFontProvider` for alternate font
 resources; Unicode outside the provider’s encoding is rejected explicitly.
 
+Pass `StandardPdfEncryption(user_password=...)` to enable PDF Standard Security
+Revision 3 encryption. Incremental saves reject encrypted input until encrypted
+incremental updates are implemented.
+
 `core-pdf` currently extracts native PDF text objects only. Image-only and scanned pages
 return no text blocks; OCR is intentionally provided separately and is not invoked by
 this package.

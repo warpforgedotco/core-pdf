@@ -7,6 +7,12 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from core_pdf.impl.engine.extraction.document import PdfDocument
     from core_pdf.impl.engine.extraction.page import PdfPage
+    from core_pdf.impl.engine.writing import (
+        PdfFontProvider,
+        StandardPdfEncryption,
+        StandardType1FontProvider,
+        TrueTypeFontProvider,
+    )
     from core_pdf.impl.engine.writing.semantic import serialize_document_to_pdf
     from core_pdf.impl.exceptions import (
         PdfError,
@@ -25,6 +31,13 @@ _EXPORTS = {
         "core_pdf.impl.engine.writing.semantic",
         "serialize_document_to_pdf",
     ),
+    "PdfFontProvider": ("core_pdf.impl.engine.writing", "PdfFontProvider"),
+    "StandardPdfEncryption": ("core_pdf.impl.engine.writing", "StandardPdfEncryption"),
+    "StandardType1FontProvider": (
+        "core_pdf.impl.engine.writing",
+        "StandardType1FontProvider",
+    ),
+    "TrueTypeFontProvider": ("core_pdf.impl.engine.writing", "TrueTypeFontProvider"),
     "PdfError": ("core_pdf.impl.exceptions", "PdfError"),
     "PdfPage": ("core_pdf.impl.engine.extraction.page", "PdfPage"),
     "PdfParseError": ("core_pdf.impl.exceptions", "PdfParseError"),
@@ -59,4 +72,8 @@ __all__ = (
     "PdfSourceError",
     "PdfUnsupportedError",
     "serialize_document_to_pdf",
+    "PdfFontProvider",
+    "StandardPdfEncryption",
+    "StandardType1FontProvider",
+    "TrueTypeFontProvider",
 )
