@@ -8,6 +8,8 @@ from collections.abc import Iterator, Mapping, Sequence
 from statistics import median
 from typing import Literal, overload
 
+from core_layout.impl.layout.models import TableGrid, TextRun
+
 from core_pdf.impl.engine.extraction.tables.stream import (
     DEFAULT_COLUMN_TOLERANCE,
     DEFAULT_ROW_TOLERANCE,
@@ -27,7 +29,6 @@ from core_pdf.impl.engine.extraction.tables.types import (
     TableSpanResultWithBBoxes,
     TableSpanRows,
 )
-from core_pdf.impl.engine.layout.models import TableGrid, TextRun
 
 
 def median_font_size(runs: list[TextRun]) -> float:

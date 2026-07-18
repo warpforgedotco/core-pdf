@@ -3,13 +3,15 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from core_ocr.impl.text_analysis import normalized_text_tokens
+from core_ocr.impl.types import OcrRow, ocr_int_value
+
 from core_pdf.impl.engine.extraction.common import page_geometry
 from core_pdf.impl.engine.extraction.ocr import page_analysis as ocr_page_analysis
-from core_pdf.impl.engine.extraction.ocr.text_analysis import normalized_text_tokens
-from core_pdf.impl.engine.extraction.ocr.types import OcrRow, ocr_int_value
 
 if TYPE_CHECKING:
-    from core_pdf.impl.engine.extraction.ocr.candidates import OcrCandidate
+    from core_ocr.impl.candidates import OcrCandidate
+
     from core_pdf.impl.engine.extraction.ocr.page_analysis import TextGeometryLine
     from core_pdf.impl.engine.extraction.page_text.mixin import (
         PageExtractionHost,

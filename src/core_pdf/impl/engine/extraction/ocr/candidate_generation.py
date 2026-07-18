@@ -5,6 +5,22 @@ from dataclasses import dataclass, replace
 from statistics import median
 from typing import Any, Mapping, Protocol
 
+from core_layout.impl.layout.text_lines import is_decorative_leader
+from core_ocr.impl.candidates import OcrCandidate
+from core_ocr.impl.text_analysis import (
+    extracted_text_token_count,
+    numeric_token_ratio,
+    scanned_ocr_artifact_score,
+    text_ocr_quality_score,
+)
+from core_ocr.impl.types import (
+    OcrImage,
+    OcrTextResult,
+    leptonica_pix_size_is_supported,
+    ocr_int_value,
+    ocr_observations_from_rows,
+)
+
 from core_pdf.impl.engine.extraction.common import page_geometry
 from core_pdf.impl.engine.extraction.ocr import (
     execution as ocr_execution,
@@ -18,21 +34,6 @@ from core_pdf.impl.engine.extraction.ocr import (
 from core_pdf.impl.engine.extraction.ocr import (
     selection as ocr_selection,
 )
-from core_pdf.impl.engine.extraction.ocr.candidates import OcrCandidate
-from core_pdf.impl.engine.extraction.ocr.text_analysis import (
-    extracted_text_token_count,
-    numeric_token_ratio,
-    scanned_ocr_artifact_score,
-    text_ocr_quality_score,
-)
-from core_pdf.impl.engine.extraction.ocr.types import (
-    OcrImage,
-    OcrTextResult,
-    leptonica_pix_size_is_supported,
-    ocr_int_value,
-    ocr_observations_from_rows,
-)
-from core_pdf.impl.engine.layout.text_lines import is_decorative_leader
 
 OCR_HIGH_DENSITY_IMAGE_DPI = 200
 OCR_HIGH_DENSITY_IMAGE_SCALE = 4

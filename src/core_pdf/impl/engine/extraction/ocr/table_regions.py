@@ -5,6 +5,22 @@ from collections import defaultdict
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+from core_layout.impl.layout.models import TableGrid
+from core_ocr.impl.candidates import OcrCandidate
+from core_ocr.impl.text_analysis import (
+    extracted_text_token_count,
+    normalized_text_tokens,
+    numeric_token_ratio,
+    text_ocr_quality_score,
+)
+from core_ocr.impl.types import (
+    TESSERACT_RIL_TEXTLINE,
+    TESSERACT_RIL_WORD,
+    OcrComponentBox,
+    OcrImage,
+    OcrTextResult,
+)
+
 from core_pdf.impl.engine.extraction.cache import ExtractionCache
 from core_pdf.impl.engine.extraction.common import page_geometry
 from core_pdf.impl.engine.extraction.ocr import (
@@ -16,22 +32,7 @@ from core_pdf.impl.engine.extraction.ocr import (
 from core_pdf.impl.engine.extraction.ocr import (
     tiling as ocr_tiling,
 )
-from core_pdf.impl.engine.extraction.ocr.candidates import OcrCandidate
-from core_pdf.impl.engine.extraction.ocr.text_analysis import (
-    extracted_text_token_count,
-    normalized_text_tokens,
-    numeric_token_ratio,
-    text_ocr_quality_score,
-)
-from core_pdf.impl.engine.extraction.ocr.types import (
-    TESSERACT_RIL_TEXTLINE,
-    TESSERACT_RIL_WORD,
-    OcrComponentBox,
-    OcrImage,
-    OcrTextResult,
-)
 from core_pdf.impl.engine.extraction.tables.grid import detect_grid, merge_grids
-from core_pdf.impl.engine.layout.models import TableGrid
 from core_pdf.impl.engine.spec.s_07_content.capture import CapturedLine
 from core_pdf.impl.engine.spec.s_07_document.page_boxes import rotate_page_lines
 

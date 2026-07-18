@@ -5,8 +5,8 @@ from functools import lru_cache
 from typing import Any, Protocol, cast
 
 from core_font_programs import TrueTypeFontProgram
+from core_layout.impl.layout.models import TextRun
 
-from core_pdf.impl.engine.layout.models import TextRun
 from core_pdf.impl.engine.spec.s_07_objects.coercion import normalize_pdf_name
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_09_fonts.widths import (

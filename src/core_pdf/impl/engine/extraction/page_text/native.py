@@ -5,6 +5,18 @@ from bisect import bisect_left
 from collections import Counter
 from typing import TYPE_CHECKING, Any
 
+from core_layout.impl.layout.geometry_quality import (
+    LayoutGeometrySummary,
+    page_layout_geometry_summary,
+    text_run_has_repairable_glyph_geometry_issue,
+)
+from core_ocr.impl.text_analysis import (
+    extracted_text_token_count,
+    sparse_text_looks_noisy,
+    text_ocr_quality_score,
+    uninterpretable_char_count,
+)
+
 from core_pdf.impl.engine.extraction.cache import ExtractionCacheMapping
 from core_pdf.impl.engine.extraction.common import page_profile
 from core_pdf.impl.engine.extraction.common.ordering import LayoutAnalyzer
@@ -34,22 +46,11 @@ from core_pdf.impl.engine.extraction.ocr.glyph_recognizer import (
     repair_text_runs_with_glyph_bitmaps,
     text_runs_from_rendered_glyphs,
 )
-from core_pdf.impl.engine.extraction.ocr.text_analysis import (
-    extracted_text_token_count,
-    sparse_text_looks_noisy,
-    text_ocr_quality_score,
-    uninterpretable_char_count,
-)
-from core_pdf.impl.engine.layout.geometry_quality import (
-    LayoutGeometrySummary,
-    page_layout_geometry_summary,
-    text_run_has_repairable_glyph_geometry_issue,
-)
 
 MIN_VISIBLE_GLYPH_COVERAGE = 0.75
 
 if TYPE_CHECKING:
-    from core_pdf.impl.engine.layout.models import TextRun
+    from core_layout.impl.layout.models import TextRun
 
 
 def try_extract_native_text_fast(

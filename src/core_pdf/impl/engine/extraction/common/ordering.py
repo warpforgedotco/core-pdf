@@ -6,10 +6,11 @@ from collections.abc import Sequence
 from math import cos, radians, sin
 from typing import TYPE_CHECKING, Protocol
 
-from core_pdf.impl.engine.layout.models import LayoutBox, LayoutLine, TextRun
+from core_layout.impl.layout.models import LayoutBox, LayoutLine, TextRun
 
 if TYPE_CHECKING:
-    from core_pdf.impl.engine.layout.geometry import RectBox
+    from core_layout.impl.layout.geometry import RectBox
+
     from core_pdf.impl.engine.spec.s_07_content.capture import CapturedLine
 
 

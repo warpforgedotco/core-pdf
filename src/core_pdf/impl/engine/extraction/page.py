@@ -13,11 +13,12 @@ from core_pdf.impl.engine.extraction.tables.api import PageTableMixin
 from core_pdf.impl.engine.spec.s_07_document.page import PdfPage as SpecPdfPage
 
 if TYPE_CHECKING:
+    from core_layout.impl.layout.models import TextRun
+
     from core_pdf.impl.engine.extraction.redactions import (
         RedactionAnalysis,
         RedactionCandidate,
     )
-    from core_pdf.impl.engine.layout.models import TextRun
 
 
 class PdfPage(PageExtractionMixin, PageTableMixin, SpecPdfPage):

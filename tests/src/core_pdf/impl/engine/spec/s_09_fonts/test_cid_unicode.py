@@ -1,10 +1,11 @@
+from core_cmap.impl.cid.cmap import CIDRange
+
 from core_pdf.impl.engine.spec.s_09_fonts.cid_unicode import (
     CompactCMap,
     code_for_cid,
     remove_codes_covered_by_ranges,
     resolve_cid_unicode_map,
 )
-from core_pdf.impl.third_party.cid.cmap import CIDRange
 
 
 def test_code_for_cid_uses_cmap_mixed_radix_ranges() -> None:

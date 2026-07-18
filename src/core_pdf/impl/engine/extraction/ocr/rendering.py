@@ -8,9 +8,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from typing import Protocol, cast
 
-from core_pdf.impl.engine.extraction.cache import ExtractionCache
-from core_pdf.impl.engine.extraction.common.page_profile import PageProfile
-from core_pdf.impl.engine.extraction.ocr.types import (
+from core_ocr.impl.types import (
     LEPTONICA_PIX_COLOR_BYTES_PER_PIXEL,
     LEPTONICA_PIX_MAX_BYTES,
     OcrImage,
@@ -18,6 +16,9 @@ from core_pdf.impl.engine.extraction.ocr.types import (
     leptonica_pix_size_is_supported,
     ocr_float_value,
 )
+
+from core_pdf.impl.engine.extraction.cache import ExtractionCache
+from core_pdf.impl.engine.extraction.common.page_profile import PageProfile
 from core_pdf.impl.engine.rendering import RenderOptions
 from core_pdf.impl.engine.rendering.models import RenderedPage
 

@@ -22,7 +22,7 @@ def test_pdf_document_import_defers_page_and_extraction_stacks() -> None:
             "core_pdf.impl.engine.extraction.page_text.engine",
             "core_pdf.impl.engine.extraction.page_text.mixin",
             "core_pdf.impl.engine.spec.s_07_document.page",
-            "core_pdf.impl.engine.spec.s_07_filters.pipeline",
+            "core_filters.impl.pipeline",
         )
         assert not [name for name in deferred_modules if name in sys.modules]
         """

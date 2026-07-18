@@ -4,9 +4,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Protocol, TypeAlias, TypedDict, cast
 
-from core_pdf.impl.engine.extraction.cache import ExtractionCache
-from core_pdf.impl.engine.extraction.common import page_geometry
-from core_pdf.impl.engine.layout.geometry_quality import (
+from core_layout.impl.layout.geometry_quality import (
     LayoutGeometryIssueRecord,
     LayoutGeometrySummaryRecord,
     layout_geometry_summary_record,
@@ -15,9 +13,12 @@ from core_pdf.impl.engine.layout.geometry_quality import (
     text_run_geometry_issue_records,
 )
 
+from core_pdf.impl.engine.extraction.cache import ExtractionCache
+from core_pdf.impl.engine.extraction.common import page_geometry
+
 if TYPE_CHECKING:
-    from core_pdf.impl.engine.layout.glyphs import GlyphCluster
-    from core_pdf.impl.engine.layout.models import LayoutLine, TextRun
+    from core_layout.impl.layout.glyphs import GlyphCluster
+    from core_layout.impl.layout.models import LayoutLine, TextRun
 
 
 PageContentRecord: TypeAlias = dict[str, object]

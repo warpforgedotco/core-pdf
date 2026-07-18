@@ -8,20 +8,22 @@ from statistics import median_low
 from typing import Any
 
 if typing.TYPE_CHECKING:
-    from core_pdf.impl.engine.layout.geometry import RectBox
+    from core_layout.impl.layout.geometry import RectBox
+
     from core_pdf.impl.engine.spec.s_07_content.capture import CapturedLine
     from core_pdf.impl.engine.spec.s_07_document import PdfPage
     from core_pdf.impl.models import AnnotationRecord
+
+from core_layout.impl.layout.models import LayoutBox, LayoutLine, TextRun
+from core_layout.impl.layout.text_lines import LayoutLineTextSegment, strip_private_use_chars
+from core_layout.impl.layout.word_frequencies import word_rank
+from core_ocr.impl.text_analysis import normalized_text_tokens
 
 from core_pdf.impl.engine.extraction.common import observation_resolver, page_geometry
 from core_pdf.impl.engine.extraction.common.ordering import (
     SKEW_ANGLE_TOLERANCE,
     LayoutAnalyzer,
 )
-from core_pdf.impl.engine.extraction.ocr.text_analysis import normalized_text_tokens
-from core_pdf.impl.engine.layout.models import LayoutBox, LayoutLine, TextRun
-from core_pdf.impl.engine.layout.text_lines import LayoutLineTextSegment, strip_private_use_chars
-from core_pdf.impl.engine.layout.word_frequencies import word_rank
 
 
 def text_boxes_in_reading_order(boxes: list[LayoutBox], angle: int) -> list[LayoutBox]:

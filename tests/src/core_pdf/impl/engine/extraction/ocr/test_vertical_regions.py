@@ -1,5 +1,5 @@
-from core_pdf.impl.engine.extraction.ocr.types import OcrComponentBox
-from core_pdf.impl.engine.extraction.ocr.vertical_regions import (
+from core_ocr.impl.types import OcrComponentBox
+from core_ocr.impl.vertical_regions import (
     map_clockwise_rotated_regions_to_source,
     vertical_regions_from_component_boxes,
 )

@@ -11,7 +11,8 @@ from core_pdf.impl.engine.extraction.tables.types import (
 )
 
 if TYPE_CHECKING:
-    from core_pdf.impl.engine.layout.models import TextRun
+    from core_layout.impl.layout.models import TextRun
+
     from core_pdf.impl.engine.spec.s_07_content.capture import CapturedLine
     from core_pdf.impl.models import TextSpan
 

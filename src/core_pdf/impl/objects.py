@@ -3,7 +3,8 @@ from __future__ import annotations
 
 from typing import TypeAlias, cast
 
-from core_pdf.impl.engine.spec.s_07_filters import decode_spec as stream_decode_spec
+from core_filters.impl import decode_spec as stream_decode_spec
+
 from core_pdf.impl.primitives import (
     MISSING,
     MissingObject,
@@ -73,7 +74,7 @@ class PdfStream:
     @property
     def data(self) -> bytes:
         if self.decoded_data is None:
-            from core_pdf.impl.engine.spec.s_07_filters import pipeline as stream_pipeline
+            from core_filters.impl import pipeline as stream_pipeline
 
             spec = self.spec
             if isinstance(spec, dict):

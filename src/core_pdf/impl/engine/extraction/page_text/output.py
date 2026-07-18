@@ -10,7 +10,8 @@ from core_pdf.impl.engine.extraction.ocr import postprocess as ocr_postprocess
 from core_pdf.impl.engine.extraction.ocr.vector_text import VectorStrokeOcrResult
 
 if TYPE_CHECKING:
-    from core_pdf.impl.engine.extraction.ocr.candidates import OcrPageTextResult
+    from core_ocr.impl.candidates import OcrPageTextResult
+
     from core_pdf.impl.engine.extraction.page_text.mixin import PageExtractionHost
 
 

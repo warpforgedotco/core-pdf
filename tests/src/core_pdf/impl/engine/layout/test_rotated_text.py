@@ -1,10 +1,11 @@
-from core_pdf.impl.engine.extraction.common.render import text_boxes_in_reading_order
-from core_pdf.impl.engine.layout.models import LayoutBox, LayoutLine, TextRun
-from core_pdf.impl.engine.layout.text_lines import (
+from core_layout.impl.layout.models import LayoutBox, LayoutLine, TextRun
+from core_layout.impl.layout.text_lines import (
     inline_marker_text,
     reconstruct_layout_line_text,
     script_digit_text,
 )
+
+from core_pdf.impl.engine.extraction.common.render import text_boxes_in_reading_order
 
 
 def rotated_run(text: str, y0: float, y1: float) -> TextRun:

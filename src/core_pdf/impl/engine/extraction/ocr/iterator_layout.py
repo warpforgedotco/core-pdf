@@ -5,21 +5,22 @@ from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from typing import cast
 
-from core_pdf.impl.engine.extraction.common import page_geometry
-from core_pdf.impl.engine.extraction.ocr import (
-    layout as ocr_layout,
-)
-from core_pdf.impl.engine.extraction.ocr import (
-    rendering as ocr_rendering,
-)
-from core_pdf.impl.engine.extraction.ocr.text_analysis import normalized_text_tokens
-from core_pdf.impl.engine.extraction.ocr.types import (
+from core_ocr.impl.text_analysis import normalized_text_tokens
+from core_ocr.impl.types import (
     OcrIteratorLayout,
     OcrRow,
     OcrTextResult,
     ocr_float_value,
     ocr_int_value,
     ocr_observations_from_rows,
+)
+
+from core_pdf.impl.engine.extraction.common import page_geometry
+from core_pdf.impl.engine.extraction.ocr import (
+    layout as ocr_layout,
+)
+from core_pdf.impl.engine.extraction.ocr import (
+    rendering as ocr_rendering,
 )
 
 OCR_TILE_UNSUPPORTED_LINE_MIN_CONFIDENCE = 40

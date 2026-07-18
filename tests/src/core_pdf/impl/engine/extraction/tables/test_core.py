@@ -4,10 +4,10 @@ from collections import Counter
 from typing import Any
 
 import pytest
+from core_layout.impl.layout.models import TextRun
 
 from core_pdf.impl.engine.extraction.tables.api import PageTableMixin
 from core_pdf.impl.engine.extraction.tables.core import PageTableCoreMixin
-from core_pdf.impl.engine.layout.models import TextRun
 
 
 class _TablePage(PageTableMixin):

@@ -5,20 +5,21 @@ from collections.abc import MutableMapping
 from dataclasses import dataclass
 from typing import Any, Mapping, cast
 
-from core_pdf.impl.engine.extraction.cache import ExtractionCacheKey
-from core_pdf.impl.engine.extraction.common import page_geometry
-from core_pdf.impl.engine.extraction.ocr import tiling as ocr_tiling
-from core_pdf.impl.engine.extraction.ocr.backend import TesseractCtypesBackend
-from core_pdf.impl.engine.extraction.ocr.text_analysis import (
+from core_ocr.impl.text_analysis import (
     extracted_text_token_count,
     text_ocr_quality_score,
 )
-from core_pdf.impl.engine.extraction.ocr.types import (
+from core_ocr.impl.types import (
     OcrComponentBox,
     OcrImage,
     OcrIteratorLayout,
     OcrTextResult,
 )
+
+from core_pdf.impl.engine.extraction.cache import ExtractionCacheKey
+from core_pdf.impl.engine.extraction.common import page_geometry
+from core_pdf.impl.engine.extraction.ocr import tiling as ocr_tiling
+from core_pdf.impl.engine.extraction.ocr.backend import TesseractCtypesBackend
 
 OCR_DEFAULT_DPI = 300
 OCR_DEFAULT_PAGE_SEGMENTATION_MODE = 6

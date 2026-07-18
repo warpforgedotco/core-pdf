@@ -8,6 +8,12 @@ from difflib import SequenceMatcher
 from statistics import median
 from typing import TYPE_CHECKING, Any, Callable, Iterable, Mapping
 
+from core_layout.impl.layout.geometry_quality import (
+    layout_geometry_should_trigger_ocr,
+    layout_geometry_summary_from_record,
+)
+from core_layout.impl.layout.word_frequencies import word_rank
+
 from core_pdf.impl.engine.extraction.common import observation_resolver, page_geometry
 from core_pdf.impl.engine.extraction.ocr import geometry as ocr_geometry
 from core_pdf.impl.engine.extraction.ocr import page_analysis as ocr_page_analysis
@@ -16,14 +22,10 @@ from core_pdf.impl.engine.extraction.ocr.vector_text import (
     VectorStrokeOcrResult,
     page_has_vector_stroke_text_candidates,
 )
-from core_pdf.impl.engine.layout.geometry_quality import (
-    layout_geometry_should_trigger_ocr,
-    layout_geometry_summary_from_record,
-)
-from core_pdf.impl.engine.layout.word_frequencies import word_rank
 
 if TYPE_CHECKING:
-    from core_pdf.impl.engine.extraction.ocr.candidates import OcrPageTextResult
+    from core_ocr.impl.candidates import OcrPageTextResult
+
     from core_pdf.impl.engine.extraction.page_text.mixin import (
         PageExtractionHost,
     )

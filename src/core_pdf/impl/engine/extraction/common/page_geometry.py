@@ -7,8 +7,8 @@ from dataclasses import dataclass, replace
 from functools import lru_cache
 from typing import Any
 
-from core_pdf.impl.engine.extraction.ocr.types import OcrImage, OcrObservation
-from core_pdf.impl.engine.layout.geometry import rect_tuple as layout_rect_tuple
+from core_layout.impl.layout.geometry import rect_tuple as layout_rect_tuple
+from core_ocr.impl.types import OcrImage, OcrObservation
 
 Rect = tuple[float, float, float, float]
 PixelRect = tuple[int, int, int, int]

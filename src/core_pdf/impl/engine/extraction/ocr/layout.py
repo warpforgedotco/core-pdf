@@ -7,7 +7,7 @@ from dataclasses import dataclass, replace
 from statistics import median
 from typing import Iterable, Literal, TypeAlias
 
-from core_pdf.impl.engine.extraction.ocr.types import (
+from core_ocr.impl.types import (
     OcrRow,
     OcrTextResult,
     ocr_float_value,

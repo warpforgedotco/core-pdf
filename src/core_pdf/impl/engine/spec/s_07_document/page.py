@@ -37,7 +37,8 @@ from core_pdf.impl.objects import (
 from core_pdf.impl.types import PdfDict, Rectangle
 
 if TYPE_CHECKING:
-    from core_pdf.impl.engine.layout.models import LayoutLine, TextRun
+    from core_layout.impl.layout.models import LayoutLine, TextRun
+
     from core_pdf.impl.engine.spec.s_07_document.document import PdfDocument
     from core_pdf.impl.models import LinkRecord, TextSpan
 

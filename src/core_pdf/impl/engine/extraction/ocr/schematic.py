@@ -6,6 +6,22 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Iterable, Mapping
 
+from core_ocr.impl.candidates import OcrCandidate
+from core_ocr.impl.text_analysis import (
+    extracted_text_token_count,
+    normalized_text_tokens,
+    text_ocr_quality_score,
+    token_alnum_count,
+    vector_text_supports_schematic_tiled_ocr,
+)
+from core_ocr.impl.types import (
+    TESSERACT_RIL_TEXTLINE,
+    TESSERACT_RIL_WORD,
+    OcrIteratorLayout,
+    OcrObservation,
+    OcrTextResult,
+)
+
 from core_pdf.impl.engine.extraction.common import page_geometry
 from core_pdf.impl.engine.extraction.common.ordering import LayoutAnalyzer
 from core_pdf.impl.engine.extraction.ocr import (
@@ -17,30 +33,15 @@ from core_pdf.impl.engine.extraction.ocr import (
 from core_pdf.impl.engine.extraction.ocr import (
     selection as ocr_selection,
 )
-from core_pdf.impl.engine.extraction.ocr.candidates import OcrCandidate
 from core_pdf.impl.engine.extraction.ocr.page_analysis import (
     TextGeometryLine,
     text_geometry_line_from_bbox,
-)
-from core_pdf.impl.engine.extraction.ocr.text_analysis import (
-    extracted_text_token_count,
-    normalized_text_tokens,
-    text_ocr_quality_score,
-    token_alnum_count,
-    vector_text_supports_schematic_tiled_ocr,
-)
-from core_pdf.impl.engine.extraction.ocr.types import (
-    TESSERACT_RIL_TEXTLINE,
-    TESSERACT_RIL_WORD,
-    OcrIteratorLayout,
-    OcrObservation,
-    OcrTextResult,
 )
 from core_pdf.impl.engine.extraction.ocr.vector_text import VectorStrokeOcrResult
 from core_pdf.impl.engine.rendering.models import RenderedPage
 
 if TYPE_CHECKING:
-    from core_pdf.impl.engine.layout.models import TextRun
+    from core_layout.impl.layout.models import TextRun
 
 OCR_SCHEMATIC_REPAIR_MIN_SUPPORT_TOKENS = 80
 OCR_SCHEMATIC_REPAIR_MIN_SUPPORT_TARGETS = 12

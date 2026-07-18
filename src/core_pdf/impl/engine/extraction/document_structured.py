@@ -5,8 +5,9 @@ import json
 from pathlib import Path
 from typing import Any, Mapping, TypeAlias, cast
 
+from core_layout.impl.layout.geometry import RectBox
+
 from core_pdf.impl.engine.extraction.common.page_content import PageContentRecord
-from core_pdf.impl.engine.layout.geometry import RectBox
 from core_pdf.impl.engine.spec.s_09_fonts.encoding import decode_pdf_text_string
 from core_pdf.impl.exceptions import PdfError
 from core_pdf.impl.objects import PdfName, PdfReference, PdfStream, PdfString

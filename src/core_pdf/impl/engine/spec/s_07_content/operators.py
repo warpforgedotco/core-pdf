@@ -21,7 +21,8 @@ from core_pdf.impl.objects import MISSING, PdfStream, PdfString
 from core_pdf.impl.types import PdfDict
 
 if TYPE_CHECKING:
-    from core_pdf.impl.engine.layout.models import TextRun
+    from core_layout.impl.layout.models import TextRun
+
     from core_pdf.impl.engine.spec.s_09_fonts.decoder import FontDecoder
 
 

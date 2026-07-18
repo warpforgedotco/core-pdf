@@ -5,12 +5,13 @@ from collections.abc import Iterable, Mapping
 from math import hypot
 from typing import TYPE_CHECKING, Protocol, TypeAlias, TypedDict, cast
 
-from core_pdf.impl.engine.layout.geometry import BBox
+from core_layout.impl.layout.geometry import BBox
+
 from core_pdf.impl.objects import PdfStream
 from core_pdf.impl.types import PdfArray, PdfDict, PdfObject, Rectangle
 
 if TYPE_CHECKING:
-    from core_pdf.impl.engine.layout.geometry import RectBox
+    from core_layout.impl.layout.geometry import RectBox
 
 
 class TextSpan(TypedDict):

@@ -4,7 +4,8 @@ from __future__ import annotations
 import array
 import itertools
 
-from core_pdf.impl.engine.layout.models import TableGrid
+from core_layout.impl.layout.models import TableGrid
+
 from core_pdf.impl.engine.spec.s_07_content.capture import CapturedLine
 
 GRID_SNAP_TOLERANCE: float = 2.0

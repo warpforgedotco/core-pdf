@@ -6,6 +6,16 @@ from dataclasses import dataclass
 from statistics import median
 from typing import TYPE_CHECKING, Any, Iterable, Sequence
 
+from core_layout.impl.layout.geometry_quality import LayoutGeometrySummary
+from core_ocr.impl.text_analysis import (
+    extracted_text_token_count,
+    normalized_text_tokens,
+    numeric_token_ratio,
+    sparse_text_looks_noisy,
+    text_has_many_digit_lines,
+    text_ocr_quality_score,
+)
+
 from core_pdf.impl.engine.extraction.common.ordering import LayoutAnalyzer
 from core_pdf.impl.engine.extraction.ocr import (
     geometry as ocr_geometry,
@@ -25,19 +35,10 @@ from core_pdf.impl.engine.extraction.ocr import (
 from core_pdf.impl.engine.extraction.ocr import (
     text_analysis as ocr_text_analysis,
 )
-from core_pdf.impl.engine.extraction.ocr.text_analysis import (
-    extracted_text_token_count,
-    normalized_text_tokens,
-    numeric_token_ratio,
-    sparse_text_looks_noisy,
-    text_has_many_digit_lines,
-    text_ocr_quality_score,
-)
-from core_pdf.impl.engine.layout.geometry_quality import LayoutGeometrySummary
 
 if TYPE_CHECKING:
-    from core_pdf.impl.engine.extraction.ocr.candidates import OcrCandidate, OcrPageTextResult
-    from core_pdf.impl.engine.layout.models import LayoutLine, TextRun
+    from core_layout.impl.layout.models import LayoutLine, TextRun
+    from core_ocr.impl.candidates import OcrCandidate, OcrPageTextResult
 
 
 @dataclass(frozen=True, slots=True)

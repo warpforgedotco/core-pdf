@@ -3,10 +3,10 @@ from __future__ import annotations
 from typing import Any, cast
 
 import pytest
+from core_ocr.impl.types import OcrImage, OcrTextResult
 
 from core_pdf.impl.engine.extraction.ocr import deskew
 from core_pdf.impl.engine.extraction.ocr.session import OcrPageSession, PreparedOcrImage
-from core_pdf.impl.engine.extraction.ocr.types import OcrImage, OcrTextResult
 
 
 def test_scaled_single_region_keeps_source_coordinates(

@@ -5,8 +5,9 @@ import typing
 from math import ceil, hypot
 from typing import TypeAlias
 
-from core_pdf.impl.engine.layout.glyphs import GlyphCluster, GlyphObservation
-from core_pdf.impl.engine.layout.models import TextRun
+from core_layout.impl.layout.glyphs import GlyphCluster, GlyphObservation
+from core_layout.impl.layout.models import TextRun
+
 from core_pdf.impl.engine.spec.s_07_content.capture import (
     CapturedDrawing,
     CapturedLine,

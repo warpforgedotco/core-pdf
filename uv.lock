@@ -381,6 +381,9 @@ test = [{ name = "pytest", specifier = ">=8.4.0,<10.0.0" }]
 name = "core-ocr"
 version = "0.0.1"
 source = { editable = "../core-ocr" }
+dependencies = [
+    { name = "core-layout" },
+]
 
 [package.dev-dependencies]
 lint = [
@@ -391,6 +394,7 @@ test = [
 ]
 
 [package.metadata]
+requires-dist = [{ name = "core-layout", specifier = ">=0.0.1" }]
 
 [package.metadata.requires-dev]
 lint = [{ name = "ruff", specifier = ">=0.11.13,<1.0.0" }]

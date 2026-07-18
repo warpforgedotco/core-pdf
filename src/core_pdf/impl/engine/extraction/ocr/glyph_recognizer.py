@@ -4,8 +4,8 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Any
 
-from core_pdf.impl.engine.layout.glyphs import GlyphCluster
-from core_pdf.impl.engine.layout.models import TextRun
+from core_layout.impl.layout.glyphs import GlyphCluster
+from core_layout.impl.layout.models import TextRun
 
 BITMAP_REPAIR_LABELS = frozenset(
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,-+/()[]{}<>|_~"

@@ -3,7 +3,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from core_pdf.impl.engine.layout.geometry import RectBox
+from core_layout.impl.layout.geometry import RectBox
+
 from core_pdf.impl.engine.spec.s_07_content.capture import CapturedDrawing
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_08_graphics.matrix import (

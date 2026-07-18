@@ -10,6 +10,33 @@ from functools import lru_cache
 from statistics import median
 from typing import TYPE_CHECKING, Any, Callable, Iterable, Protocol, cast
 
+from core_filters.impl.flate import apply_flate
+from core_filters.impl.pipeline import decode_stream_data
+from core_layout.impl.layout import word_frequencies
+from core_layout.impl.layout.geometry import RectBox
+from core_layout.impl.layout.geometry_quality import (
+    layout_geometry_summary_record,
+    page_layout_geometry_summary,
+)
+from core_ocr.impl.text_analysis import (
+    extracted_text_token_count,
+    normalized_text_tokens,
+    numeric_token_ratio,
+    sparse_text_looks_noisy,
+    text_ocr_quality_score,
+)
+from core_ocr.impl.types import (
+    TESSERACT_RIL_BLOCK,
+    TESSERACT_RIL_TEXTLINE,
+    TESSERACT_RIL_WORD,
+    OcrComponentBox,
+    OcrImage,
+    OcrTextResult,
+    leptonica_pix_size_is_supported,
+    ocr_float_value,
+    ocr_int_value,
+)
+
 from core_pdf.impl.engine.extraction.cache import (
     ExtractionCache,
     ExtractionCacheMapping,
@@ -69,24 +96,6 @@ from core_pdf.impl.engine.extraction.ocr import (
     text_analysis as ocr_text_analysis,
 )
 from core_pdf.impl.engine.extraction.ocr.backend import TesseractCtypesBackend
-from core_pdf.impl.engine.extraction.ocr.text_analysis import (
-    extracted_text_token_count,
-    normalized_text_tokens,
-    numeric_token_ratio,
-    sparse_text_looks_noisy,
-    text_ocr_quality_score,
-)
-from core_pdf.impl.engine.extraction.ocr.types import (
-    TESSERACT_RIL_BLOCK,
-    TESSERACT_RIL_TEXTLINE,
-    TESSERACT_RIL_WORD,
-    OcrComponentBox,
-    OcrImage,
-    OcrTextResult,
-    leptonica_pix_size_is_supported,
-    ocr_float_value,
-    ocr_int_value,
-)
 from core_pdf.impl.engine.extraction.ocr.vector_text import (
     VectorStrokeOcrResult,
     vector_stroke_ocr_result_with_timeout,
@@ -122,27 +131,20 @@ from core_pdf.impl.engine.extraction.page_text.policy import (
     should_replace_text_with_ocr,
 )
 from core_pdf.impl.engine.extraction.tables.grid import detect_grid
-from core_pdf.impl.engine.layout import word_frequencies
-from core_pdf.impl.engine.layout.geometry import RectBox
-from core_pdf.impl.engine.layout.geometry_quality import (
-    layout_geometry_summary_record,
-    page_layout_geometry_summary,
-)
 from core_pdf.impl.engine.rendering import RenderOptions, compose_page
 from core_pdf.impl.engine.rendering.models import image_filter_names, pdf_int
-from core_pdf.impl.engine.spec.s_07_filters.flate import apply_flate
-from core_pdf.impl.engine.spec.s_07_filters.pipeline import decode_stream_data
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_08_graphics.color import ImageColorManager
 from core_pdf.impl.models import TextSpan
 from core_pdf.impl.types import PdfDict
 
 if TYPE_CHECKING:
-    from core_pdf.impl.engine.extraction.ocr.candidates import (
+    from core_layout.impl.layout.models import LayoutLine, TextRun
+    from core_ocr.impl.candidates import (
         OcrCandidate,
         OcrPageTextResult,
     )
-    from core_pdf.impl.engine.layout.models import LayoutLine, TextRun
+
     from core_pdf.impl.objects import PdfStream
 
 OCR_FALLBACK_DPI = ocr_execution.OCR_DEFAULT_DPI

@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from core_pdf.impl.engine.layout.geometry import BBox, RectBox
+from core_layout.impl.layout.geometry import BBox, RectBox
 
 RedactionClass = Literal[
     "bad_redaction",

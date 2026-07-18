@@ -7,6 +7,12 @@ from difflib import SequenceMatcher
 from functools import lru_cache
 from typing import Any, Iterable, Literal
 
+from core_layout.impl.layout.word_frequencies import word_rank
+from core_ocr.impl.candidates import (
+    OcrCandidate,
+    OcrPageTextResult,
+)
+
 from core_pdf.impl.engine.extraction.common import observation_resolver, page_geometry
 from core_pdf.impl.engine.extraction.common.render import render_resolved_text_lines
 from core_pdf.impl.engine.extraction.ocr import (
@@ -21,12 +27,7 @@ from core_pdf.impl.engine.extraction.ocr import (
 from core_pdf.impl.engine.extraction.ocr import (
     text_analysis as ocr_text_analysis,
 )
-from core_pdf.impl.engine.extraction.ocr.candidates import (
-    OcrCandidate,
-    OcrPageTextResult,
-)
 from core_pdf.impl.engine.extraction.ocr.vector_text import VectorStrokeOcrResult
-from core_pdf.impl.engine.layout.word_frequencies import word_rank
 
 OcrLineSourceFamily = Literal[
     "native",

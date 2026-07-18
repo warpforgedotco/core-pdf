@@ -6,9 +6,10 @@ from bisect import bisect_left
 from dataclasses import dataclass, field
 from typing import Any, TypeGuard, cast
 
-from core_pdf.impl.engine.layout.geometry import RectBox, rect_tuple
+from core_filters.impl.pipeline import decode_stream_data
+from core_layout.impl.layout.geometry import RectBox, rect_tuple
+
 from core_pdf.impl.engine.spec.s_07_content.capture import CapturedPath
-from core_pdf.impl.engine.spec.s_07_filters.pipeline import decode_stream_data
 from core_pdf.impl.engine.spec.s_07_objects.coercion import (
     normalize_pdf_name,
     parse_float,

@@ -1,6 +1,12 @@
 from pathlib import Path
 from typing import Any, cast
 
+from core_layout.impl.layout.geometry_quality import (
+    LayoutGeometrySummary,
+    layout_geometry_should_trigger_ocr,
+)
+from core_layout.impl.layout.models import TextRun
+
 from core_pdf.impl.engine.extraction.document import PdfDocument
 from core_pdf.impl.engine.extraction.page_text.engine import build_page_extraction_result
 from core_pdf.impl.engine.extraction.page_text.native import (
@@ -11,11 +17,6 @@ from core_pdf.impl.engine.extraction.page_text.native import (
     should_try_rendered_glyph_text,
     text_run_has_glyph_bitmap_repair_candidate,
 )
-from core_pdf.impl.engine.layout.geometry_quality import (
-    LayoutGeometrySummary,
-    layout_geometry_should_trigger_ocr,
-)
-from core_pdf.impl.engine.layout.models import TextRun
 
 TESTS_DIR = Path(__file__).parents[6]
 

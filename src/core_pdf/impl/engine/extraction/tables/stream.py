@@ -4,6 +4,8 @@ from __future__ import annotations
 from collections.abc import Iterator
 from statistics import median
 
+from core_layout.impl.layout.models import TableGrid, TextRun
+
 from core_pdf.impl.engine.extraction.common.ordering import cluster_runs_into_lines
 from core_pdf.impl.engine.extraction.tables.grid import (
     MIN_CELL_WIDTH,
@@ -14,7 +16,6 @@ from core_pdf.impl.engine.extraction.tables.grid import (
     snap_table_edges,
     table_edge_intersections,
 )
-from core_pdf.impl.engine.layout.models import TableGrid, TextRun
 
 DEFAULT_COLUMN_TOLERANCE: float = 8.0
 DEFAULT_ROW_TOLERANCE: float = 2.0

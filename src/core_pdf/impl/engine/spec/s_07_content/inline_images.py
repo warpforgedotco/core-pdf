@@ -4,10 +4,11 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any, Protocol
 
-from core_pdf.impl.engine.spec.s_07_filters.decode_spec import (
+from core_filters.impl.decode_spec import (
     normalize_stream_decode_spec,
 )
-from core_pdf.impl.engine.spec.s_07_filters.pipeline import decode_stream_data
+from core_filters.impl.pipeline import decode_stream_data
+
 from core_pdf.impl.engine.spec.s_07_objects.coercion import (
     is_pdf_null,
     normalize_pdf_name,

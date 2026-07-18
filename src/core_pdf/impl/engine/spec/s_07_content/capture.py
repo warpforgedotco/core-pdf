@@ -6,8 +6,8 @@ from functools import lru_cache
 from math import ceil, hypot
 from typing import Any
 
-from core_pdf.impl.engine.layout.geometry import RectBox
-from core_pdf.impl.engine.layout.glyphs import (
+from core_layout.impl.layout.geometry import RectBox
+from core_layout.impl.layout.glyphs import (
     GlyphCluster,
     GlyphObservation,
     Matrix6,
@@ -16,7 +16,8 @@ from core_pdf.impl.engine.layout.glyphs import (
     rectbox_tuple,
     union_bboxes,
 )
-from core_pdf.impl.engine.layout.models import TextRun
+from core_layout.impl.layout.models import TextRun
+
 from core_pdf.impl.engine.spec.s_07_content.text_helpers import (
     NO_SPACE_AFTER,
     NO_SPACE_BEFORE,

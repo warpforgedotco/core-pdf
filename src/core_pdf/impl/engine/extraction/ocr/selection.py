@@ -10,7 +10,8 @@ from core_pdf.impl.engine.extraction.ocr import rendering as ocr_rendering
 from core_pdf.impl.engine.extraction.ocr import text_analysis as ocr_text_analysis
 
 if TYPE_CHECKING:
-    from core_pdf.impl.engine.extraction.ocr.candidates import OcrCandidate
+    from core_ocr.impl.candidates import OcrCandidate
+
     from core_pdf.impl.engine.extraction.page_text.mixin import (
         PageExtractionHost,
     )

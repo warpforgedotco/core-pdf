@@ -7,11 +7,12 @@ from math import ceil, floor, hypot
 from statistics import median
 from typing import Any
 
-from core_pdf.impl.engine.extraction.ocr.backend import TesseractCtypesBackend
-from core_pdf.impl.engine.extraction.ocr.types import (
+from core_ocr.impl.types import (
     OcrImage,
     OcrTextResult,
 )
+
+from core_pdf.impl.engine.extraction.ocr.backend import TesseractCtypesBackend
 
 VECTOR_TEXT_DPI = 900
 VECTOR_TEXT_MIN_STROKES = 120

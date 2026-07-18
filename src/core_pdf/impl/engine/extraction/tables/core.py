@@ -4,6 +4,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Mapping, Sequence, TypedDict, cast
 
+from core_layout.impl.layout.models import TableGrid, TextRun
+
 from core_pdf.impl.engine.extraction.tables.extract import extract_grid, extract_heuristic
 from core_pdf.impl.engine.extraction.tables.grid import detect_grids_from_edges, merge_grids
 from core_pdf.impl.engine.extraction.tables.options import table_cache_key
@@ -29,7 +31,6 @@ from core_pdf.impl.engine.extraction.tables.types import (
     TableSpanResultWithBBoxes,
     TableSpanRows,
 )
-from core_pdf.impl.engine.layout.models import TableGrid, TextRun
 from core_pdf.impl.engine.spec.s_07_document.page_boxes import (
     rotate_page_lines,
     rotate_page_runs,

@@ -4,14 +4,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+from core_filters.impl.decode_spec import (
+    StreamDecodeSpec,
+    normalize_stream_decode_spec,
+)
+
 from core_pdf.impl.engine.extraction.cache import ExtractionCache
 from core_pdf.impl.engine.spec.s_07_content.inline_images import parse_inline_image
 from core_pdf.impl.engine.spec.s_07_content.operations import (
     content_stream_may_show_text,
-)
-from core_pdf.impl.engine.spec.s_07_filters.decode_spec import (
-    StreamDecodeSpec,
-    normalize_stream_decode_spec,
 )
 from core_pdf.impl.engine.spec.s_07_objects.coercion import (
     normalize_pdf_name,

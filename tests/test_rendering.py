@@ -3,9 +3,9 @@ from __future__ import annotations
 from io import BytesIO
 
 import pytest
+from core_layout.impl.layout.models import TextRun
 
 from core_pdf.impl.engine.extraction.page import PdfPage as ExtractedPdfPage
-from core_pdf.impl.engine.layout.models import TextRun
 from core_pdf.impl.engine.rendering.models import DisplayList, RenderedPage
 from core_pdf.impl.engine.spec.s_07_document.document_source import DocumentSourceMixin
 from core_pdf.impl.engine.spec.s_07_document.page import PdfPage

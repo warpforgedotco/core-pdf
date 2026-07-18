@@ -3,14 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from core_pdf.impl.engine.extraction.ocr import (
-    execution as ocr_execution,
-)
-from core_pdf.impl.engine.extraction.ocr import (
-    iterator_layout as ocr_iterator_layout,
-)
-from core_pdf.impl.engine.extraction.ocr.backend import TesseractCtypesBackend
-from core_pdf.impl.engine.extraction.ocr.text_analysis import (
+from core_ocr.impl.text_analysis import (
     extracted_text_token_count,
     normalized_text_tokens,
     numeric_token_ratio,
@@ -19,11 +12,19 @@ from core_pdf.impl.engine.extraction.ocr.text_analysis import (
     text_has_many_digit_lines,
     text_ocr_quality_score,
 )
-from core_pdf.impl.engine.extraction.ocr.types import (
+from core_ocr.impl.types import (
     OcrImage,
     OcrTextResult,
     leptonica_pix_size_is_supported,
 )
+
+from core_pdf.impl.engine.extraction.ocr import (
+    execution as ocr_execution,
+)
+from core_pdf.impl.engine.extraction.ocr import (
+    iterator_layout as ocr_iterator_layout,
+)
+from core_pdf.impl.engine.extraction.ocr.backend import TesseractCtypesBackend
 
 OCR_FALLBACK_DPI = ocr_execution.OCR_DEFAULT_DPI
 OCR_FALLBACK_PAGE_SEGMENTATION_MODE = ocr_execution.OCR_DEFAULT_PAGE_SEGMENTATION_MODE

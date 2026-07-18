@@ -1,5 +1,5 @@
-from core_pdf.impl.engine.extraction.ocr.bitmap_regions import bitmap_vertical_regions
-from core_pdf.impl.engine.extraction.ocr.types import OcrImage
+from core_ocr.impl.bitmap_regions import bitmap_vertical_regions
+from core_ocr.impl.types import OcrImage
 
 
 def test_bitmap_vertical_regions_returns_tall_component() -> None:

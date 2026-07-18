@@ -1,5 +1,6 @@
+from core_layout.impl.layout.text_lines import LayoutLineTextSegment
+
 from core_pdf.impl.engine.extraction.common.render import layout_segment_observation
-from core_pdf.impl.engine.layout.text_lines import LayoutLineTextSegment
 
 
 def segment(*, bbox: tuple[float, float, float, float]) -> LayoutLineTextSegment:
