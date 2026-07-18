@@ -4,9 +4,12 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from hashlib import sha256
 
 from core_document import Document, Page, TextLine
 
+from core_pdf.impl.engine.writing.document import serialize_encrypted_pdf_file
+from core_pdf.impl.engine.writing.encryption import StandardPdfEncryption
 from core_pdf.impl.engine.writing.fonts import (
     PdfFontProvider,
     PdfFontResource,
@@ -22,6 +25,7 @@ def serialize_document_to_pdf(
     *,
     font_name: str = "Helvetica",
     font_provider: PdfFontProvider | None = None,
+    encryption: StandardPdfEncryption | None = None,
     version: str = "1.7",
 ) -> bytes:
     """Serialize pages and their extracted text into a new PDF file."""
@@ -66,8 +70,15 @@ def serialize_document_to_pdf(
             PdfName.of("Pages"): pages_reference,
         }
     )
-    return graph.to_pdf(
-        trailer={PdfName.of("Root"): catalog_reference},
+    trailer: dict[object, object] = {PdfName.of("Root"): catalog_reference}
+    if encryption is None:
+        return graph.to_pdf(trailer=trailer, version=version)
+    file_id = sha256(document.to_json(sort_keys=True).encode("utf-8")).digest()[:16]
+    return serialize_encrypted_pdf_file(
+        graph.objects,
+        trailer=trailer,
+        encryption=encryption,
+        file_id=file_id,
         version=version,
     )
 

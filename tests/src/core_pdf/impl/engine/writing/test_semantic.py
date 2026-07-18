@@ -4,6 +4,7 @@ from core_document import Block, BlockKind, Document, Page, Table, TableCell, Te
 from core_pdf import PdfDocument
 from core_pdf import serialize_document_to_pdf as public_writer
 from core_pdf.impl.engine.writing import (
+    StandardPdfEncryption,
     StandardType1FontProvider,
     TrueTypeFontProvider,
     serialize_document_to_pdf,
@@ -93,3 +94,24 @@ def test_semantic_writer_is_available_from_public_core_pdf_api() -> None:
     output = public_writer(Document(pages=(Page(page_number=1),)))
 
     assert output.startswith(b"%PDF-1.7")
+
+
+def test_semantic_writer_supports_standard_pdf_encryption() -> None:
+    document = Document(
+        pages=(
+            Page(
+                page_number=1,
+                blocks=(Block(1, BlockKind.PARAGRAPH, (TextLine("secret"),)),),
+            ),
+        )
+    )
+    encrypted = serialize_document_to_pdf(
+        document,
+        encryption=StandardPdfEncryption(user_password="open"),
+    )
+
+    with PdfDocument.open(encrypted, password="open") as parsed:
+        assert "secret" in parsed.extract().text
+
+    with pytest.raises(Exception):
+        PdfDocument.open(encrypted, password="wrong")

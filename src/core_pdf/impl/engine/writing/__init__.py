@@ -2,7 +2,14 @@
 """PDF writing primitives."""
 
 from core_pdf.impl.engine.writing.api import PdfDocumentWritingMixin
-from core_pdf.impl.engine.writing.document import serialize_pdf_file
+from core_pdf.impl.engine.writing.document import (
+    serialize_encrypted_pdf_file,
+    serialize_pdf_file,
+)
+from core_pdf.impl.engine.writing.encryption import (
+    StandardPdfEncryption,
+    StandardPdfEncryptionContext,
+)
 from core_pdf.impl.engine.writing.fonts import (
     PdfFontProvider,
     PdfFontResource,
@@ -21,8 +28,11 @@ __all__ = (
     "PdfFontResource",
     "StandardType1FontProvider",
     "TrueTypeFontProvider",
+    "StandardPdfEncryption",
+    "StandardPdfEncryptionContext",
     "append_incremental_update",
     "serialize_pdf_file",
+    "serialize_encrypted_pdf_file",
     "serialize_pdf_object",
     "serialize_document_to_pdf",
 )

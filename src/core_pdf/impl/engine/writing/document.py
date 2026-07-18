@@ -5,8 +5,9 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
+from core_pdf.impl.engine.writing.encryption import StandardPdfEncryption
 from core_pdf.impl.engine.writing.objects import serialize_pdf_dictionary, serialize_pdf_object
-from core_pdf.impl.primitives import PdfName
+from core_pdf.impl.primitives import PdfName, PdfReference
 
 
 def serialize_pdf_file(
@@ -52,9 +53,34 @@ def serialize_pdf_file(
     return bytes(output)
 
 
+def serialize_encrypted_pdf_file(
+    objects: Mapping[int, object],
+    *,
+    trailer: Mapping[object, object],
+    encryption: StandardPdfEncryption,
+    file_id: bytes,
+    version: str = "1.7",
+) -> bytes:
+    """Serialize a PDF using Standard Security Revision 3 encryption."""
+    if not objects:
+        raise ValueError("a PDF file must contain at least one indirect object")
+    encryption_object_number = max(objects) + 1
+    context = encryption.context(file_id)
+    encrypted_objects = {
+        number: context.encrypt_object(value, number) for number, value in objects.items()
+    }
+    encrypted_objects[encryption_object_number] = context.encryption_dictionary()
+    encrypted_trailer = {
+        **dict(trailer),
+        PdfName.of("Encrypt"): PdfReference(encryption_object_number),
+        PdfName.of("ID"): [file_id, file_id],
+    }
+    return serialize_pdf_file(encrypted_objects, trailer=encrypted_trailer, version=version)
+
+
 def validate_pdf_version(version: str) -> None:
     if version not in {"1.4", "1.5", "1.6", "1.7"}:
         raise ValueError(f"unsupported PDF version: {version!r}")
 
 
-__all__ = ("serialize_pdf_file", "validate_pdf_version")
+__all__ = ("serialize_encrypted_pdf_file", "serialize_pdf_file", "validate_pdf_version")
