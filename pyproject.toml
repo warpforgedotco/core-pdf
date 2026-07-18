@@ -18,7 +18,6 @@ dependencies = [
     "core-cmap>=0.0.1",
     "core-filters>=0.0.1",
     "core-crypto>=0.0.1",
-    "core-ocr>=0.0.1",
     "core-font-programs>=0.0.1",
     "core-glyph>=0.0.1",
     "core-jbig2>=0.0.1",
@@ -32,7 +31,6 @@ core-color = { workspace = true }
 core-cmap = { workspace = true }
 core-filters = { workspace = true }
 core-crypto = { workspace = true }
-core-ocr = { workspace = true }
 core-font-programs = { workspace = true }
 core-glyph = { workspace = true }
 core-jbig2 = { workspace = true }

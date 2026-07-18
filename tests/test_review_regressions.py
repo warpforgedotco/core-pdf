@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
-from core_ocr.impl import coordinator as page_text_mixin
 
 from core_pdf import PdfDocument as PublicPdfDocument
 from core_pdf import PdfSourceError
@@ -247,40 +246,6 @@ def test_construction_failure_releases_acquired_resources() -> None:
     assert mapping.closed
     assert handle is not None
     assert handle.closed
-
-
-def test_extraction_snapshot_survives_metadata_and_recomputes_after_invalidation(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("CORE_PDF_OCR", "0")
-    original_decision = page_text_mixin.page_extraction_decision
-    decision_calls = 0
-
-    def counting_decision(*args: Any, **kwargs: Any) -> Any:
-        nonlocal decision_calls
-        decision_calls += 1
-        return original_decision(*args, **kwargs)
-
-    monkeypatch.setattr(page_text_mixin, "page_extraction_decision", counting_decision)
-
-    with PublicPdfDocument(simple_pdf_fixture()) as document:
-        first = document.extract()
-        document.get_metadata()
-        second = document.extract()
-
-        assert decision_calls == 1
-        assert second.pages[0].text == first.pages[0].text
-        assert second.pages[0].resolved_lines == first.pages[0].resolved_lines
-        assert document.page_extraction_caches is not None
-        snapshot = document.page_extraction_caches[1].get("page_extraction_snapshot")
-        assert isinstance(snapshot, page_text_mixin.PageExtractionSnapshot)
-        assert snapshot.text == first.pages[0].text
-
-        document.invalidate_document_extraction_cache()
-        third = document.extract()
-
-        assert decision_calls == 2
-        assert third.pages[0].text == first.pages[0].text
 
 
 def test_trapped_info_value_accepts_pdf_name() -> None:

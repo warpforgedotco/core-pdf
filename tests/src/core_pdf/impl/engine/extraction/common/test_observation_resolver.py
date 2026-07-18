@@ -3,7 +3,6 @@ from __future__ import annotations
 import random
 
 import pytest
-from core_ocr.impl.page_geometry import PageObservation
 
 from core_pdf.impl.engine.extraction.common import observation_resolver
 from core_pdf.impl.engine.extraction.common.observation_resolver import (
@@ -15,6 +14,7 @@ from core_pdf.impl.engine.extraction.common.observation_resolver import (
     resolve_observation_append,
     resolve_text_lines,
 )
+from core_pdf.impl.engine.extraction.common.page_geometry import PageObservation
 
 
 def observation(text: str, x0: float) -> PageObservation:

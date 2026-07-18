@@ -57,7 +57,6 @@ class PageExtractionResult:
 class DocumentExtractionSummary:
     page_count: int
     low_confidence_page_count: int
-    ocr_assisted_page_count: int
     supplement_page_count: int
     replacement_page_count: int
     page_class_counts: dict[str, int]
@@ -85,11 +84,6 @@ def document_summary(
         supplement for result in page_results for supplement in result.supplements
     )
     low_confidence = sum(1 for result in page_results if result.confidence < 0.5)
-    ocr_assisted = sum(
-        1
-        for result in page_results
-        if result.base_route not in {"skip", "native_fast", "native_layout"} or result.supplements
-    )
     supplement_pages = sum(1 for result in page_results if result.supplements)
     replacement_pages = sum(
         1
@@ -99,7 +93,6 @@ def document_summary(
     return DocumentExtractionSummary(
         page_count=len(page_results),
         low_confidence_page_count=low_confidence,
-        ocr_assisted_page_count=ocr_assisted,
         supplement_page_count=supplement_pages,
         replacement_page_count=replacement_pages,
         page_class_counts=dict(page_class_counts),
@@ -148,19 +141,7 @@ def build_page_extraction_result(
 
     text = page.extract_text()
     profile = page.get_page_profile()
-    region = cache.get("page_region_classification")
-    if region is None:
-        from core_ocr.impl.policy import classify_page_region
-
-        region = classify_page_region(
-            text,
-            page=page,
-            native_runs=tuple(getattr(page, "chars", ()) or ()),
-            media_box=getattr(page, "media_box", None),
-            include_dominant_image=False,
-        )
-        cache["page_region_classification"] = region
-    page_class, page_class_confidence = classify_page(profile, region, text)
+    page_class, page_class_confidence = classify_page(profile, text)
     base_route = base_route_name(cache, profile, text)
     supplements = page_supplements(cache, base_route)
     candidates = tuple(
@@ -245,19 +226,8 @@ def build_document_extraction_result(
 
 def classify_page(
     profile: page_profile.PageProfile,
-    region: Any,
     text: str,
 ) -> tuple[str, float]:
-    region_kind = string_or_none(getattr(region, "kind", None))
-    region_confidence = coerce_float(getattr(region, "confidence", None)) or 0.0
-    if region_kind == "schematic":
-        return "schematic", region_confidence
-    if region_kind == "dense_table":
-        return "table", region_confidence
-    if region_kind in {"form", "invoice"}:
-        return "form", region_confidence
-    if region_kind == "prose":
-        return "native_text", max(region_confidence, 0.64)
     if not text.strip() and profile.can_skip_all_text:
         return "empty", 1.0
     if profile.likely_table_page:
@@ -296,20 +266,8 @@ def page_confidence(
         base += min(0.25, candidate_confidence * 0.25)
     if supplements:
         base += min(0.08, 0.02 * len(supplements))
-    if page_class in {
-        "schematic",
-        "table",
-        "figure",
-        "image",
-        "mixed",
-    } and base_route in {
-        "full_page_ocr",
-        "figure_ocr",
-        "embedded_image_ocr",
-        "table_fusion",
-        "vector_stroke",
-    }:
-        base += 0.08
+    if page_class in {"table", "image", "mixed"}:
+        base += 0.02
     confidence = max(0.0, min(0.99, base - noise_penalty))
     if not text.strip():
         return min(confidence, 0.25)
@@ -361,16 +319,8 @@ def base_route_name(
     profile: page_profile.PageProfile,
     text: str,
 ) -> str:
-    reconciliation_input = cache_dict(cache.get("ocr_line_reconciliation_input"))
-    text_source = string_or_none(reconciliation_input.get("text_source"))
     if not text.strip() and profile.can_skip_all_text:
         return "skip"
-    if text_source and "figure_ocr" in text_source:
-        return "figure_ocr"
-    if text_source and "vector" in text_source:
-        return "vector_stroke"
-    if text_source and "ocr" in text_source:
-        return "full_page_ocr"
     if profile.recommended_strategy == "native_text" and not cache.get("resolved_output_lines"):
         return "native_fast"
     if profile.recommended_strategy == "text_table":

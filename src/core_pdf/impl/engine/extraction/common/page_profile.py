@@ -467,9 +467,9 @@ def recommended_page_strategy(
     if has_xobject_ops and resources.has_forms:
         return "form_xobject"
     if has_xobject_ops and resources.has_images:
-        return "image_or_ocr"
+        return "image"
     if any(stream.inline_image_ops > 0 for stream in content_profiles):
-        return "image_or_ocr"
+        return "image"
     if sum(stream.path_ops for stream in content_profiles) >= 12:
         return "vector_or_table"
     return "empty"

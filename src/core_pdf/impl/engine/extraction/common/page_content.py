@@ -12,9 +12,9 @@ from core_layout.impl.layout.geometry_quality import (
     page_layout_geometry_summary,
     text_run_geometry_issue_records,
 )
-from core_ocr.impl import page_geometry
 
 from core_pdf.impl.engine.extraction.cache import ExtractionCache
+from core_pdf.impl.engine.extraction.common import page_geometry
 
 if TYPE_CHECKING:
     from core_layout.impl.layout.glyphs import GlyphCluster

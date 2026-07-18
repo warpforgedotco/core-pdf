@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 """Lightweight entry points for page text extraction.
 
-The extraction implementation includes OCR, rendering, and layout analysis. Import it
-only when an extraction method is called so opening the public API does not initialize
+The extraction implementation includes native text extraction, rendering, and layout analysis.
+Import it only when an extraction method is called so opening the public API does not initialize
 the entire extraction stack.
 """
 
