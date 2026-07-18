@@ -47,6 +47,16 @@ class DocumentStructuredMixin:
 
         metadata = self.get_metadata()
         document_result = self.extract()
+        if pages is None:
+            canonical_document = document_result
+        else:
+            document_type = type(document_result)
+            canonical_document = document_type(
+                pages=tuple(document_result.pages[index] for index in selected_pages),
+                metadata=document_result.metadata,
+                diagnostics=document_result.diagnostics,
+                schema_version=document_result.schema_version,
+            )
         warnings = [
             {
                 "code": diagnostic.code,
@@ -57,7 +67,12 @@ class DocumentStructuredMixin:
             for diagnostic in document_result.diagnostics
             if diagnostic.page_number is None or diagnostic.page_number in selected_page_numbers
         ]
-        result: dict[str, object] = {"metadata": metadata, "page_count": page_count}
+        result: dict[str, object] = {
+            "schema_version": document_result.schema_version,
+            "document": canonical_document.to_json_dict(),
+            "metadata": metadata,
+            "page_count": page_count,
+        }
         if warnings:
             result["warnings"] = warnings
         errors: list[PageContentRecord] = []
@@ -279,6 +294,19 @@ class DocumentStructuredMixin:
             indent=indent,
             sort_keys=sort_keys,
         )
+
+    def to_json(
+        self: Any,
+        *,
+        indent: int | None = 2,
+        sort_keys: bool = True,
+    ) -> str:
+        """Serialize the canonical extraction IR as JSON."""
+        return self.extract().to_json(indent=indent, sort_keys=sort_keys)
+
+    def to_html(self: Any) -> str:
+        """Render the canonical extraction IR as semantic HTML."""
+        return self.extract().to_html()
 
     def extract_structured_text(
         self: Any,

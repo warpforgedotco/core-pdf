@@ -148,6 +148,26 @@ def test_document_extract_returns_core_document_ir() -> None:
     assert 'data-schema-version="1.0"' in result.to_html()
 
 
+def test_structured_extraction_embeds_canonical_document_ir() -> None:
+    with PdfDocument.open(SAMPLE_PDF) as document:
+        structured = cast(dict[str, Any], document.extract_structured())
+        selected = cast(dict[str, Any], document.extract_structured(pages=[1]))
+
+    assert structured["schema_version"] == "1.0"
+    assert structured["document"]["schema_version"] == "1.0"
+    assert len(structured["document"]["pages"]) == 1
+    assert len(selected["document"]["pages"]) == 1
+
+
+def test_document_outputs_use_canonical_extraction_ir() -> None:
+    with PdfDocument.open(SAMPLE_PDF) as document:
+        json_output = document.to_json()
+        html_output = document.to_html()
+
+    assert '"schema_version": "1.0"' in json_output
+    assert 'data-schema-version="1.0"' in html_output
+
+
 def test_image_only_page_does_not_attempt_text_extraction() -> None:
     with PdfDocument(image_only_pdf()) as document:
         page = cast(Any, document.pages[0])
