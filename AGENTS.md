@@ -18,7 +18,7 @@ uv run --group lint --group test --group benchmark ty check
 prek run --all-files                 # run repository hooks across all files
 ```
 
-After making broad changes, run the full suite with `uv run pytest tests/ -n auto`. Otherwise, test a subset covering the code and behavior affected by the changes, for example `uv run pytest tests/src/core_pdf/impl/engine/layout/test_glyphs.py`. CI also checks the lockfile and runs tests on Python 3.11–3.14 and Windows.
+After making broad changes, run the full suite with `uv run pytest tests/ -n auto`. Otherwise, test a subset covering the code and behavior affected by the changes, for example `uv run pytest packages/core-layout/tests/test_glyphs.py`. CI also checks the lockfile and runs tests on Python 3.11–3.14 and Windows.
 
 ## Dependency Management
 
