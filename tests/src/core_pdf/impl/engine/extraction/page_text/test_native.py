@@ -141,27 +141,35 @@ def test_native_extraction_drops_duplicate_invisible_text_layer() -> None:
 
 
 @pytest.mark.parametrize(
-    ("fixture_name", "expected_rotation", "expected_text"),
+    ("fixture_name", "expected_rotation", "expected_text", "ordered_markers"),
     [
         (
             "BarrowArchAnalysis_Alaska1984-p076.pdf",
             90,
             "PORT CAPACITY AT ANCHORAGE",
+            ("Port Anchorage", "PORT CAPACITY AT ANCHORAGE", "General Cargo"),
         ),
         (
             "global-AIDS-strategy-p74-75-p001.pdf",
             0,
             "GLOBAL AIDS STRATEGY 2021–2026",
+            ("GLOBAL AIDS STRATEGY", "leadership can play", "Financial an"),
         ),
         (
             "korean_power_system_challenges-p003.pdf",
             0,
             "This document was prepared as an account of work",
+            (
+                "Korean Power System Challenges",
+                "Disclaimer",
+                "This document was prepared",
+            ),
         ),
         (
             "Employee_Health_Benefits_Assess-p006.pdf",
             180,
             "Data Findings Presentation",
+            ("Data Findings Presentation", "Provide an oral presentation", "The presentation"),
         ),
     ],
 )
@@ -169,6 +177,7 @@ def test_native_extraction_quality_corpus(
     fixture_name: str,
     expected_rotation: int,
     expected_text: str,
+    ordered_markers: tuple[str, ...],
 ) -> None:
     fixture = TESTS_DIR / "fixtures" / "SCORE-Bench" / "src" / fixture_name
 
@@ -181,3 +190,5 @@ def test_native_extraction_quality_corpus(
         lines = [line.strip() for line in text.splitlines() if line.strip()]
         assert lines
         assert all(left != right for left, right in zip(lines, lines[1:], strict=False))
+        positions = [text.casefold().index(marker.casefold()) for marker in ordered_markers]
+        assert positions == sorted(positions)
