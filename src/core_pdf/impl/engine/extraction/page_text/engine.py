@@ -293,7 +293,8 @@ def build_text_blocks(
         x0 = bbox[0] if bbox is not None else None
         column_index: int | None = None
         if x0 is not None:
-            tolerance = max(24.0, (bbox[3] - bbox[1]) * 2.0) if bbox else 24.0
+            assert bbox is not None
+            tolerance = column_tolerance(bbox)
             for index, anchor in enumerate(column_anchors):
                 if abs(anchor - x0) <= tolerance:
                     column_index = index
@@ -329,6 +330,12 @@ def block_bbox(lines: list[ResolvedLineRecord]) -> tuple[float, float, float, fl
         max(box[2] for box in usable),
         max(box[3] for box in usable),
     )
+
+
+def column_tolerance(bbox: tuple[float, float, float, float]) -> float:
+    width = max(0.0, bbox[2] - bbox[0])
+    height = max(0.0, bbox[3] - bbox[1])
+    return max(24.0, height * 2.0, min(width * 0.2, 96.0))
 
 
 def render_page_blocks(blocks: tuple[TextBlock, ...]) -> str:
