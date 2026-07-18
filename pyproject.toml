@@ -77,7 +77,6 @@ lint = [
     "ty >=0.0.59, <1.0.0",
 ]
 test = [
-    "pdfminer.six",
     "pytest >=8.4.0, <10.0.0",
     "pytest-xdist>=3.8.0",
 ]
@@ -88,7 +87,6 @@ norecursedirs = ["tests/fixtures"]
 
 [tool.ruff]
 extend-exclude = [
-    "src/core_pdf/integrations/pdfminer/six/_vendor",
     "tests/fixtures",
 ]
 line-length = 100
@@ -123,11 +121,7 @@ ignore = [
 python_version = "3.11"
 files = ["src/core_pdf"]
 mypy_path = "src"
-exclude = ["src/core_pdf/integrations/pdfminer/six/_vendor"]
 show_error_codes = true
 
 [tool.ty.src]
-exclude = [
-    "src/core_pdf/integrations/pdfminer/six/_vendor",
-    "tests/fixtures",
-]
+exclude = ["tests/fixtures"]

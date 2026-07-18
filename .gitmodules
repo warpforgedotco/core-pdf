@@ -2,7 +2,3 @@
 	path = tests/fixtures/SCORE-Bench
 	url = https://huggingface.co/datasets/unstructuredio/SCORE-Bench
 	shallow = true
-[submodule "tests/fixtures/pdfminer.six"]
-	path = tests/fixtures/pdfminer.six
-	url = https://github.com/pdfminer/pdfminer.six.git
-	shallow = true

@@ -12,6 +12,7 @@ from core_pdf.impl.primitives import PdfName
 from core_pdf.impl.types import PdfArray, PdfDict, PdfObject
 
 TESTS_DIR = Path(__file__).parents[6]
+SAMPLE_PDF = TESTS_DIR / "fixtures" / "SCORE-Bench" / "src" / "g-325a.pdf"
 
 
 class FakeResolver:
@@ -87,9 +88,7 @@ def test_page_get_fields_matches_kid_widget_annotation_without_page_ref() -> Non
 
 
 def test_page_combined_capture_shares_text_and_graphics_state() -> None:
-    pdf_path = TESTS_DIR / "fixtures" / "pdfminer.six" / "samples" / "simple1.pdf"
-
-    with PdfDocument.open(pdf_path) as document:
+    with PdfDocument.open(SAMPLE_PDF) as document:
         page = document.pages[0]
         state = page.get_text_and_graphics_state()
 

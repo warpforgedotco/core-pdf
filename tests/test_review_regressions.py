@@ -155,7 +155,7 @@ def test_explicit_crypt_metadata_stream_uses_document_security_handler() -> None
 
 
 def simple_pdf_fixture() -> Path:
-    return Path(__file__).parent / "fixtures" / "pdfminer.six" / "samples" / "simple1.pdf"
+    return Path(__file__).parent / "fixtures" / "SCORE-Bench" / "src" / "g-325a.pdf"
 
 
 def test_nested_form_rebinds_same_named_font_resource() -> None:

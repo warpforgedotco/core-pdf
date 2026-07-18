@@ -19,6 +19,7 @@ from core_pdf.impl.engine.extraction.page_text.native import (
 )
 
 TESTS_DIR = Path(__file__).parents[6]
+SAMPLE_PDF = TESTS_DIR / "fixtures" / "SCORE-Bench" / "src" / "global-AIDS-strategy-p74-75-p001.pdf"
 
 
 def text_run(text: str, x0: float, y0: float, x1: float, y1: float) -> TextRun:
@@ -121,9 +122,7 @@ def test_glyph_repair_preflight_keeps_contextual_punctuation_mode() -> None:
 
 
 def test_native_extraction_defers_ocr_geometry_summary_but_keeps_public_diagnostic() -> None:
-    pdf_path = TESTS_DIR / "fixtures" / "pdfminer.six" / "samples" / "simple1.pdf"
-
-    with PdfDocument.open(pdf_path) as document:
+    with PdfDocument.open(SAMPLE_PDF) as document:
         page = cast(Any, document.pages[0])
         assert page.extract_text().strip()
         assert page.extraction_cache is not None
@@ -136,9 +135,7 @@ def test_native_extraction_defers_ocr_geometry_summary_but_keeps_public_diagnost
 
 
 def test_structured_page_result_computes_deferred_region_classification() -> None:
-    pdf_path = TESTS_DIR / "fixtures" / "pdfminer.six" / "samples" / "simple1.pdf"
-
-    with PdfDocument.open(pdf_path) as document:
+    with PdfDocument.open(SAMPLE_PDF) as document:
         page = cast(Any, document.pages[0])
         assert page.extract_text().strip()
         assert "page_region_classification" not in page.extraction_cache
@@ -152,9 +149,7 @@ def test_structured_page_result_computes_deferred_region_classification() -> Non
 
 
 def test_single_glyph_capture_shares_observation_with_cluster_and_preserves_provenance() -> None:
-    pdf_path = TESTS_DIR / "fixtures" / "pdfminer.six" / "samples" / "simple1.pdf"
-
-    with PdfDocument.open(pdf_path) as document:
+    with PdfDocument.open(SAMPLE_PDF) as document:
         page = cast(Any, document.pages[0])
         state = page.capture_text_state()
         cluster = next(item for item in state.glyph_clusters if item.kind == "single_glyph")

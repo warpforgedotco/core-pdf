@@ -1,1 +1,0 @@
-"""PDFMiner compatibility integrations."""

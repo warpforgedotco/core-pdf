@@ -8,7 +8,6 @@ import pytest
 from core_cmap.impl.cid.cmap import ToUnicodeCMap
 from core_font_programs.impl.truetype import _invert_unicode_cmap
 
-from core_pdf.impl.engine.extraction.document import PdfDocument
 from core_pdf.impl.engine.spec.s_09_fonts import decoder as decoder_module
 from core_pdf.impl.engine.spec.s_09_fonts.decoder import (
     FontDecoder,
@@ -78,17 +77,6 @@ def test_simple_font_decoder_reuses_glyphs_across_distinct_text_operands() -> No
     assert first[0].unicode == "A"
     assert all(glyph is first[0] for glyph in first)
     assert all(glyph is first[0] for glyph in second if glyph.char_code == ord("A"))
-
-
-def test_simple_type1c_font_captures_embedded_glyph_bitmaps() -> None:
-    pdf_path = TESTS_DIR / "fixtures" / "pdfminer.six" / "samples" / "nonfree" / "i1040nr.pdf"
-
-    with PdfDocument.open(pdf_path) as document:
-        glyphs = document.pages[0].capture_text_state().glyphs
-
-    user_id = glyphs[:6]
-    assert "".join(glyph.text for glyph in user_id) == "Userid"
-    assert all(glyph.bitmap for glyph in user_id)
 
 
 def test_font_decoder_caches_cff_glyph_bboxes_including_missing_glyphs() -> None:
