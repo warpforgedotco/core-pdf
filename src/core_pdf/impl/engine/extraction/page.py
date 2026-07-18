@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 
 class PdfPage(PageExtractionMixin, PageTableMixin, SpecPdfPage):
     def extract(self) -> PageExtractionResult:
-        return build_page_extraction_result(self, page_index=self.page_number - 1)
+        return build_page_extraction_result(self)
 
     def extract_text(self) -> str:
         return PageExtractionMixin.extract_text(cast(Any, self))
