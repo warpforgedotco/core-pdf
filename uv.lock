@@ -11,6 +11,7 @@ members = [
     "core-ccitt",
     "core-cmap",
     "core-color",
+    "core-crypto",
     "core-filters",
     "core-font-programs",
     "core-jbig2",
@@ -260,6 +261,25 @@ version = "0.0.1"
 source = { editable = "../core-color" }
 
 [[package]]
+name = "core-crypto"
+version = "0.0.1"
+source = { editable = "../core-crypto" }
+
+[package.dev-dependencies]
+lint = [
+    { name = "ruff" },
+]
+test = [
+    { name = "pytest" },
+]
+
+[package.metadata]
+
+[package.metadata.requires-dev]
+lint = [{ name = "ruff", specifier = ">=0.11.13,<1.0.0" }]
+test = [{ name = "pytest", specifier = ">=8.4.0,<10.0.0" }]
+
+[[package]]
 name = "core-filters"
 version = "0.0.1"
 source = { editable = "../core-filters" }
@@ -364,6 +384,7 @@ dependencies = [
     { name = "core-ccitt" },
     { name = "core-cmap" },
     { name = "core-color" },
+    { name = "core-crypto" },
     { name = "core-filters" },
     { name = "core-font-programs" },
     { name = "core-jbig2" },
@@ -404,6 +425,7 @@ requires-dist = [
     { name = "core-ccitt", editable = "../core-CCITT" },
     { name = "core-cmap", editable = "../core-cmap" },
     { name = "core-color", editable = "../core-color" },
+    { name = "core-crypto", editable = "../core-crypto" },
     { name = "core-filters", editable = "../core-filters" },
     { name = "core-font-programs", editable = "../core-font-programs" },
     { name = "core-jbig2", editable = "../core-JBIG2" },

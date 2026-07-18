@@ -4,10 +4,11 @@ from __future__ import annotations
 from hashlib import sha256, sha384, sha512
 from typing import Callable
 
+from core_crypto.impl.aes import AES
+from core_crypto.impl.saslprep import saslprep
+
 from core_pdf.impl.engine.spec.s_07_objects.coercion import coerce_to_bytes
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
-from core_pdf.impl.engine.spec.s_07_security.aes import AES
-from core_pdf.impl.engine.spec.s_07_security.saslprep import saslprep
 from core_pdf.impl.engine.spec.s_07_security.standard_v4 import (
     PdfStandardSecurityHandlerV4,
 )
