@@ -223,6 +223,17 @@ version = "0.0.1"
 source = { directory = "../core-CCITT" }
 
 [[package]]
+name = "core-cmap"
+version = "0.0.1"
+source = { directory = "../core-cmap" }
+
+[package.metadata]
+
+[package.metadata.requires-dev]
+lint = [{ name = "ruff", specifier = ">=0.11.13,<1.0.0" }]
+test = [{ name = "pytest", specifier = ">=8.4.0,<9.0.0" }]
+
+[[package]]
 name = "core-color"
 version = "0.0.1"
 source = { directory = "../core-color" }
@@ -269,6 +280,7 @@ version = "0.0.5"
 source = { editable = "." }
 dependencies = [
     { name = "core-ccitt" },
+    { name = "core-cmap" },
     { name = "core-color" },
     { name = "core-font-programs" },
     { name = "core-jbig2" },
@@ -307,6 +319,7 @@ vendor = [
 [package.metadata]
 requires-dist = [
     { name = "core-ccitt", directory = "../core-CCITT" },
+    { name = "core-cmap", directory = "../core-cmap" },
     { name = "core-color", directory = "../core-color" },
     { name = "core-font-programs", directory = "../core-font-programs" },
     { name = "core-jbig2", directory = "../core-JBIG2" },

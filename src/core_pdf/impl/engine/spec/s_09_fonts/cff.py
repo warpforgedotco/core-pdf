@@ -5,6 +5,7 @@ from contextlib import suppress
 from io import BytesIO
 from typing import Any
 
+from core_cmap.impl.cid.cmap import CMapDecoder, ToUnicodeCMap
 from core_font_programs import (
     REPAIRABLE_TO_UNICODE,
     CFFFont,
@@ -17,7 +18,6 @@ from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_09_fonts.widths import get_descendant
 from core_pdf.impl.objects import PdfStream
 from core_pdf.impl.third_party._vendor.fontTools.ttLib import TTFont, TTLibError
-from core_pdf.impl.third_party.cid.cmap import CMapDecoder, ToUnicodeCMap
 
 
 def single_code_mapping(

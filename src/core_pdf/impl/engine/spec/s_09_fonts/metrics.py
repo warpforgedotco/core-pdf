@@ -4,13 +4,14 @@ from __future__ import annotations
 import contextlib
 from typing import Any
 
+from core_cmap.impl.cid.widths import FontWidthMap, scale_font_widths
+
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_09_fonts.data.core14 import FONT_DATA
 from core_pdf.impl.engine.spec.s_09_fonts.widths import (
     get_descendant,
     require_font_float,
 )
-from core_pdf.impl.third_party.cid.widths import FontWidthMap, scale_font_widths
 
 
 def parse_font_metrics(

@@ -1,21 +1,3 @@
-from __future__ import annotations
+"""Compatibility imports for core-cmap encoding helpers."""
 
-BYTE_CACHE = [bytes([i]) for i in range(256)]
-
-
-def decode_utf16be(data: bytes | memoryview | str) -> str:
-    if not data:
-        return ""
-    if isinstance(data, memoryview):
-        data = data.tobytes()
-    if isinstance(data, str):
-        data = data.encode("latin-1")
-    if data.startswith(b"\xfe\xff"):
-        data = data[2:]
-    if len(data) == 1:
-        return chr(data[0])
-    buf = data if len(data) % 2 == 0 else b"\x00" + data
-    try:
-        return buf.decode("utf-16-be", "replace")
-    except (UnicodeDecodeError, ValueError):
-        return data.decode("latin-1", "replace")
+from core_cmap.impl.cid.encoding import *  # noqa: F401,F403

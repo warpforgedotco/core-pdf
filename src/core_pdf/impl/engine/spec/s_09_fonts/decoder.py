@@ -7,6 +7,17 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Iterable
 
+from core_cmap.impl.cid.cmap import (
+    CMapDecoder,
+    ToUnicodeCMap,
+    code_in_ranges,
+)
+from core_cmap.impl.cid.resource_loader import (
+    predefined_cmap_unicode,
+    resolve_cmap_decoder,
+    resolve_cmap_resource,
+)
+from core_cmap.impl.cid.widths import FontWidthMap
 from core_font_programs import CFFFont, TrueTypeFontProgram
 
 from core_pdf.impl.engine.spec.s_07_objects.coercion import normalize_pdf_name
@@ -44,17 +55,6 @@ from core_pdf.impl.objects import PdfStream
 from core_pdf.impl.primitives import PdfString
 from core_pdf.impl.third_party._vendor.fontTools.agl import UV2AGL
 from core_pdf.impl.third_party._vendor.fontTools.encodings.StandardEncoding import StandardEncoding
-from core_pdf.impl.third_party.cid.cmap import (
-    CMapDecoder,
-    ToUnicodeCMap,
-    code_in_ranges,
-)
-from core_pdf.impl.third_party.cid.resource_loader import (
-    predefined_cmap_unicode,
-    resolve_cmap_decoder,
-    resolve_cmap_resource,
-)
-from core_pdf.impl.third_party.cid.widths import FontWidthMap
 
 if typing.TYPE_CHECKING:
     from typing import Any

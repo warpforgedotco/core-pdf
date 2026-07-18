@@ -5,7 +5,7 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass
 from functools import lru_cache
 
-from core_pdf.impl.third_party.cid.cmap import (
+from core_cmap.impl.cid.cmap import (
     CIDRange,
     cmap_tokens,
     cmap_usecmap_name,
@@ -13,7 +13,7 @@ from core_pdf.impl.third_party.cid.cmap import (
     iter_codespace_range,
     validate_codespace_range,
 )
-from core_pdf.impl.third_party.cid.resource_loader import (
+from core_cmap.impl.cid.resource_loader import (
     CID_COLLECTION_UNICODE_OVERRIDES,
     CID_COLLECTION_UNICODE_SOURCES,
     normalized_cmap_name,
