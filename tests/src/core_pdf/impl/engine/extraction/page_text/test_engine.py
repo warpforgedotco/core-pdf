@@ -1,4 +1,7 @@
-from core_pdf.impl.engine.extraction.document_ir import page_result_to_document_page
+from core_pdf.impl.engine.extraction.document_ir import (
+    extraction_result_to_document,
+    page_result_to_document_page,
+)
 from core_pdf.impl.engine.extraction.page_text.engine import (
     DocumentExtractionResult,
     DocumentExtractionSummary,
@@ -202,3 +205,24 @@ def test_related_extraction_failures_are_reported_as_diagnostics() -> None:
             "page_number": 4,
         },
     )
+
+
+def test_document_level_extraction_diagnostics_reach_core_document() -> None:
+    result = DocumentExtractionResult(
+        metadata=EMPTY_METADATA,
+        pages=(),
+        summary=DocumentExtractionSummary(0, 0, {}, {}),
+        diagnostics=(
+            {
+                "code": "page_extraction_failed",
+                "message": "Skipped page 2: malformed page",
+                "severity": "warning",
+                "page_number": 2,
+            },
+        ),
+    )
+
+    document = extraction_result_to_document(result)
+
+    assert document.diagnostics[0].code == "page_extraction_failed"
+    assert document.diagnostics[0].page_number == 2

@@ -73,6 +73,7 @@ class DocumentExtractionResult:
     metadata: MetadataRecord
     pages: tuple[PageExtractionResult, ...]
     summary: DocumentExtractionSummary
+    diagnostics: tuple[dict[str, Any], ...] = ()
 
     def to_markdown(self) -> str:
         return "\f".join(render_page_blocks(page.blocks) for page in self.pages) + "\f"
@@ -193,13 +194,22 @@ def build_document_extraction_result(
         or getattr(document, "page_tree_was_recovered", False)
     )
     page_results: list[PageExtractionResult] = []
+    diagnostics: list[dict[str, Any]] = []
     for index, page_dict in enumerate(page_dicts):
         page = document.page_class(document, page_dict, index + 1)
         try:
             page_results.append(build_page_extraction_result(page, include_related=True))
-        except PdfParseError:
+        except PdfParseError as exc:
             if not can_skip_bad_page:
                 raise
+            diagnostics.append(
+                {
+                    "code": "page_extraction_failed",
+                    "message": f"Skipped page {index + 1}: {exc}",
+                    "severity": "warning",
+                    "page_number": index + 1,
+                }
+            )
             continue
         finally:
             page.state = None
@@ -211,6 +221,7 @@ def build_document_extraction_result(
         metadata=document.get_metadata(),
         pages=tuple(page_results),
         summary=document_summary(page_results),
+        diagnostics=tuple(diagnostics),
     )
 
 
