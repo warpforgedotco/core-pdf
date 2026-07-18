@@ -7,6 +7,7 @@ from core_pdf.impl.engine.writing.fonts import (
     PdfFontProvider,
     PdfFontResource,
     StandardType1FontProvider,
+    TrueTypeFontProvider,
 )
 from core_pdf.impl.engine.writing.incremental import append_incremental_update
 from core_pdf.impl.engine.writing.object_graph import PdfObjectGraph
@@ -19,6 +20,7 @@ __all__ = (
     "PdfFontProvider",
     "PdfFontResource",
     "StandardType1FontProvider",
+    "TrueTypeFontProvider",
     "append_incremental_update",
     "serialize_pdf_file",
     "serialize_pdf_object",

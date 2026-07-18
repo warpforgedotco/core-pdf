@@ -3,7 +3,11 @@ from core_document import Block, BlockKind, Document, Page, Table, TableCell, Te
 
 from core_pdf import PdfDocument
 from core_pdf import serialize_document_to_pdf as public_writer
-from core_pdf.impl.engine.writing import StandardType1FontProvider, serialize_document_to_pdf
+from core_pdf.impl.engine.writing import (
+    StandardType1FontProvider,
+    TrueTypeFontProvider,
+    serialize_document_to_pdf,
+)
 
 
 def test_semantic_writer_round_trips_text_geometry_and_tables() -> None:
@@ -64,6 +68,25 @@ def test_semantic_writer_accepts_a_font_provider() -> None:
     )
 
     assert b"/BaseFont /Times-Roman" in output
+
+
+def test_true_type_font_provider_embeds_a_unicode_font() -> None:
+    from pathlib import Path
+
+    font_path = Path("/System/Library/Fonts/Hiragino Sans GB.ttc")
+    if not font_path.exists():
+        return
+    document = Document(
+        pages=(Page(page_number=1, blocks=(Block(1, BlockKind.PARAGRAPH, (TextLine("你好"),)),)),)
+    )
+
+    output = serialize_document_to_pdf(
+        document,
+        font_provider=TrueTypeFontProvider(font_path.read_bytes(), font_number=0),
+    )
+
+    with PdfDocument.open(output) as parsed:
+        assert "你好" in parsed.extract().text
 
 
 def test_semantic_writer_is_available_from_public_core_pdf_api() -> None:

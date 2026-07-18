@@ -28,10 +28,14 @@ def serialize_document_to_pdf(
     graph = PdfObjectGraph()
     pages_reference = graph.add(None)
     font = font_provider or StandardType1FontProvider(font_name)
-    font_resource = font.add_to_graph(graph)
+    page_lines = tuple(tuple(_page_lines(page)) for page in document.pages)
+    font_resource = font.add_to_graph(
+        graph,
+        (line.text for lines in page_lines for line in lines),
+    )
     page_references: list[PdfReference] = []
-    for page in document.pages:
-        content = content_stream_for_page(page, font_resource)
+    for page, lines in zip(document.pages, page_lines, strict=True):
+        content = content_stream_for_page(page, font_resource, lines)
         content_reference = graph.add(PdfStream({}, content))
         page_references.append(
             graph.add(
@@ -68,10 +72,14 @@ def serialize_document_to_pdf(
     )
 
 
-def content_stream_for_page(page: Page, font: PdfFontResource | None = None) -> bytes:
-    font = font or StandardType1FontProvider().add_to_graph(PdfObjectGraph())
+def content_stream_for_page(
+    page: Page,
+    font: PdfFontResource | None = None,
+    lines: Iterable[TextLine] | None = None,
+) -> bytes:
+    font = font or StandardType1FontProvider().add_to_graph(PdfObjectGraph(), ())
     commands: list[bytes] = []
-    for line in _page_lines(page):
+    for line in lines or _page_lines(page):
         text = line.text.replace("\n", " ")
         encoded = font.encode_text(text)
         x, y = _line_position(page, line)
