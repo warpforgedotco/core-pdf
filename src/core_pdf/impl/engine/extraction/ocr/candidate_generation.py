@@ -21,19 +21,9 @@ from core_ocr.impl.types import (
     ocr_observations_from_rows,
 )
 
-from core_pdf.impl.engine.extraction.common import page_geometry
-from core_pdf.impl.engine.extraction.ocr import (
-    execution as ocr_execution,
-)
-from core_pdf.impl.engine.extraction.ocr import (
-    iterator_layout as ocr_iterator_layout,
-)
-from core_pdf.impl.engine.extraction.ocr import (
-    layout as ocr_layout,
-)
-from core_pdf.impl.engine.extraction.ocr import (
-    selection as ocr_selection,
-)
+from core_pdf.impl.engine.extraction.ocr.services import PdfOcrCandidateServices
+
+_CANDIDATE_SERVICES = PdfOcrCandidateServices()
 
 OCR_HIGH_DENSITY_IMAGE_DPI = 200
 OCR_HIGH_DENSITY_IMAGE_SCALE = 4
@@ -82,7 +72,7 @@ class OcrRegionsTextResultsFunction(Protocol):
     def __call__(
         self,
         image: OcrImage,
-        requests: list[ocr_execution.RectangleOcrRequest],
+        requests: list[Any],
         timeout: float | None,
     ) -> list[OcrTextResult]: ...
 
@@ -142,7 +132,7 @@ def should_try_line_art_text_mask_ocr_candidate(
     if confidence is not None and confidence >= 88 and text_ocr_quality_score(text) <= 0.12:
         return False
     return not (
-        ocr_selection.ocr_candidate_score(base_candidate) >= 78.0
+        _CANDIDATE_SERVICES.selection.ocr_candidate_score(base_candidate) >= 78.0
         and (confidence or 0) >= 55
         and text_ocr_quality_score(text) <= 0.18
         and compact_uppercase_label_count(text) >= OCR_LINE_ART_SKIP_COMPACT_LABELS
@@ -495,8 +485,8 @@ def should_keep_rendered_sparse_page_ocr_candidate(
     if sparse_confidence >= base_confidence - 8 and sparse_quality + 0.04 < base_quality:
         return True
     return (
-        ocr_selection.ocr_candidate_score(sparse_candidate)
-        >= ocr_selection.ocr_candidate_score(base_candidate) - 4.0
+        _CANDIDATE_SERVICES.selection.ocr_candidate_score(sparse_candidate)
+        >= _CANDIDATE_SERVICES.selection.ocr_candidate_score(base_candidate) - 4.0
     )
 
 
@@ -533,8 +523,10 @@ def reconciled_layout_ocr_candidate(
 ) -> OcrCandidate | None:
     if not should_try_reconciled_layout_ocr_candidate(base_candidate):
         return None
-    result = ocr_iterator_layout.reconciled_iterator_text_result_from_existing_result(
-        base_candidate.result
+    result = (
+        _CANDIDATE_SERVICES.iterator_layout.reconciled_iterator_text_result_from_existing_result(
+            base_candidate.result
+        )
     )
     if not should_keep_reconciled_layout_ocr_candidate(base_candidate, result):
         return None
@@ -601,7 +593,7 @@ def low_confidence_word_refinement_ocr_candidate(
     line_rows = list(base_candidate.result.line_rows)
     word_rows = [dict(row) for row in base_candidate.result.word_rows]
     symbol_rows = tuple(base_candidate.result.symbol_rows)
-    symbol_rows_by_line = ocr_iterator_layout.iterator_rows_by_line_key(symbol_rows)
+    symbol_rows_by_line = _CANDIDATE_SERVICES.iterator_layout.iterator_rows_by_line_key(symbol_rows)
     refinements = (
         batched_low_confidence_word_refinements(
             word_rows,
@@ -618,7 +610,7 @@ def low_confidence_word_refinement_ocr_candidate(
     for word_index, row in enumerate(word_rows):
         if not low_confidence_word_row_should_be_refined(row):
             continue
-        line_key = ocr_iterator_layout.iterator_line_key(row)
+        line_key = _CANDIDATE_SERVICES.iterator_layout.iterator_line_key(row)
         line_symbol_rows = symbol_rows_by_line.get(line_key, ())
         word_symbol_rows = tuple(
             symbol_row
@@ -645,12 +637,15 @@ def low_confidence_word_refinement_ocr_candidate(
     if not changed_word_indexes:
         return None
     changed_lines = {
-        ocr_iterator_layout.iterator_line_key(word_rows[index]) for index in changed_word_indexes
+        _CANDIDATE_SERVICES.iterator_layout.iterator_line_key(word_rows[index])
+        for index in changed_word_indexes
     }
-    word_rows_by_line = ocr_iterator_layout.iterator_rows_by_line_key(tuple(word_rows))
+    word_rows_by_line = _CANDIDATE_SERVICES.iterator_layout.iterator_rows_by_line_key(
+        tuple(word_rows)
+    )
     refined_line_rows: list[dict[str, Any]] = []
     for line_row in line_rows:
-        line_key = ocr_iterator_layout.iterator_line_key(line_row)
+        line_key = _CANDIDATE_SERVICES.iterator_layout.iterator_line_key(line_row)
         if line_key not in changed_lines:
             refined_line_rows.append(line_row)
             continue
@@ -659,17 +654,17 @@ def low_confidence_word_refinement_ocr_candidate(
         if not text:
             refined_line_rows.append(line_row)
             continue
-        row = ocr_iterator_layout.iterator_line_row_with_text(
+        row = _CANDIDATE_SERVICES.iterator_layout.iterator_line_row_with_text(
             line_row,
             text,
             line_word_rows,
         )
-        confidence = ocr_iterator_layout.iterator_rows_confidence(line_word_rows)
+        confidence = _CANDIDATE_SERVICES.iterator_layout.iterator_rows_confidence(line_word_rows)
         if confidence is not None:
             row["conf"] = confidence
         refined_line_rows.append(row)
-    result = ocr_iterator_layout.iterator_rows_text_result(refined_line_rows)
-    refined_result = ocr_layout.geometry_rendered_ocr_result(
+    result = _CANDIDATE_SERVICES.iterator_layout.iterator_rows_text_result(refined_line_rows)
+    refined_result = _CANDIDATE_SERVICES.layout.geometry_rendered_ocr_result(
         OcrTextResult(
             result.text,
             result.confidence,
@@ -717,12 +712,12 @@ def batched_low_confidence_word_refinements(
             float,
         ]
     ] = []
-    requests: list[ocr_execution.RectangleOcrRequest] = []
+    requests: list[Any] = []
     request_metadata: list[tuple[int, str, tuple[dict[str, Any], ...]]] = []
     for word_index, row in enumerate(word_rows):
         if not low_confidence_word_row_should_be_refined(row):
             continue
-        line_key = ocr_iterator_layout.iterator_line_key(row)
+        line_key = _CANDIDATE_SERVICES.iterator_layout.iterator_line_key(row)
         line_symbol_rows = symbol_rows_by_line.get(line_key, ())
         word_symbol_rows = tuple(
             symbol_row
@@ -730,7 +725,7 @@ def batched_low_confidence_word_refinements(
             if int(symbol_row.get("word_num", 0)) == int(row.get("word_num", 0))
         )
         base_text = str(row.get("text", "")).strip()
-        base_confidence = ocr_iterator_layout.iterator_row_confidence(row) or 0
+        base_confidence = _CANDIDATE_SERVICES.iterator_layout.iterator_row_confidence(row) or 0
         base_best = WordRefinement(base_text, base_confidence)
         candidates.append(
             (
@@ -747,7 +742,7 @@ def batched_low_confidence_word_refinements(
             if rectangle is None:
                 continue
             requests.extend(
-                ocr_execution.RectangleOcrRequest(
+                _CANDIDATE_SERVICES.rectangle_request_type(
                     rectangle=rectangle,
                     psm=psm,
                     variables={},
@@ -819,7 +814,7 @@ def should_try_low_confidence_word_refinement_ocr_candidate(
 
 
 def low_confidence_word_row_should_be_refined(row: dict[str, Any]) -> bool:
-    confidence = ocr_iterator_layout.iterator_row_confidence(row)
+    confidence = _CANDIDATE_SERVICES.iterator_layout.iterator_row_confidence(row)
     if confidence is None:
         return False
     if confidence >= OCR_LOW_CONFIDENCE_WORD_REFINEMENT_THRESHOLD:
@@ -844,7 +839,7 @@ def refine_low_confidence_word_row(
     ocr_image_to_text_result_with_psm: OcrPsmTextResultFunction,
 ) -> WordRefinement | None:
     base_text = str(row.get("text", "")).strip()
-    base_confidence = ocr_iterator_layout.iterator_row_confidence(row) or 0
+    base_confidence = _CANDIDATE_SERVICES.iterator_layout.iterator_row_confidence(row) or 0
     best = WordRefinement(base_text, base_confidence)
     best_score = word_refinement_score(best, base_text, symbol_rows)
     for pad in OCR_LOW_CONFIDENCE_WORD_REFINEMENT_PADS:
@@ -889,7 +884,7 @@ def crop_word_refinement_image(
     rectangle = word_refinement_rectangle(row, pad)
     if rectangle is None:
         return None
-    return ocr_execution.crop_ocr_image_region(
+    return _CANDIDATE_SERVICES.crop_ocr_image_region(
         image,
         rectangle,
     )
@@ -950,7 +945,7 @@ def high_confidence_symbol_agreement_score(
     for index, row in enumerate(
         sorted(symbol_rows, key=lambda item: int(item.get("symbol_num", 0)))
     ):
-        confidence = ocr_iterator_layout.iterator_row_confidence(row) or 0
+        confidence = _CANDIDATE_SERVICES.iterator_layout.iterator_row_confidence(row) or 0
         if confidence < OCR_LOW_CONFIDENCE_WORD_SYMBOL_CONFIDENCE:
             continue
         expected = str(row.get("text", "")).strip()
@@ -977,12 +972,12 @@ def rebuild_ocr_line_text_from_word_rows(
 ) -> str:
     words = []
     for row_index, row in enumerate(rows):
-        word = ocr_layout.ocr_layout_word(row, row_index=row_index)
+        word = _CANDIDATE_SERVICES.layout.ocr_layout_word(row, row_index=row_index)
         if word is not None:
             words.append(word)
     if not words:
         return ""
-    return ocr_layout.render_ocr_word_line(
+    return _CANDIDATE_SERVICES.layout.render_ocr_word_line(
         sorted(words, key=lambda word: (word.x0, word.word_num, word.row_index))
     )
 
@@ -1131,7 +1126,7 @@ def ocr_candidate_from_image(
     *,
     token_type_classifier: TokenTypeClassifier | None = None,
 ) -> OcrCandidate:
-    geometry = page_geometry.ImageSpace.from_ocr_image(image, source=name)
+    geometry = _CANDIDATE_SERVICES.page_geometry.ImageSpace.from_ocr_image(image, source=name)
     result = ocr_result_with_page_observations(
         result,
         source=name,
@@ -1169,7 +1164,7 @@ def ocr_result_with_page_observations(
     clockwise_quarter_turns: int = 0,
     token_type_classifier: TokenTypeClassifier | None = None,
 ) -> OcrTextResult:
-    geometry = page_geometry.ImageSpace.from_dimensions(
+    geometry = _CANDIDATE_SERVICES.page_geometry.ImageSpace.from_dimensions(
         image_width=image_width,
         image_height=image_height,
         image_resolution=image_resolution,
@@ -1180,7 +1175,7 @@ def ocr_result_with_page_observations(
         source=source,
     )
     line_rows = tuple(
-        page_geometry.normalize_ocr_row_to_page(
+        _CANDIDATE_SERVICES.page_geometry.normalize_ocr_row_to_page(
             row,
             geometry,
             token_type_classifier=token_type_classifier,
@@ -1188,7 +1183,7 @@ def ocr_result_with_page_observations(
         for row in result.line_rows
     )
     word_rows = tuple(
-        page_geometry.normalize_ocr_row_to_page(
+        _CANDIDATE_SERVICES.page_geometry.normalize_ocr_row_to_page(
             row,
             geometry,
             token_type_classifier=token_type_classifier,
@@ -1196,7 +1191,7 @@ def ocr_result_with_page_observations(
         for row in result.word_rows
     )
     symbol_rows = tuple(
-        page_geometry.normalize_ocr_row_to_page(
+        _CANDIDATE_SERVICES.page_geometry.normalize_ocr_row_to_page(
             row,
             geometry,
             token_type_classifier=token_type_classifier,
@@ -1212,7 +1207,7 @@ def ocr_result_with_page_observations(
     )
     if row_observations:
         observations = tuple(
-            page_geometry.annotate_ocr_observation_page_geometry(
+            _CANDIDATE_SERVICES.page_geometry.annotate_ocr_observation_page_geometry(
                 observation,
                 geometry,
                 source=source,
@@ -1221,7 +1216,7 @@ def ocr_result_with_page_observations(
         )
     else:
         observations = tuple(
-            page_geometry.normalize_ocr_observation_to_page(
+            _CANDIDATE_SERVICES.page_geometry.normalize_ocr_observation_to_page(
                 observation,
                 geometry,
                 source=source,
@@ -1239,7 +1234,7 @@ def ocr_result_with_page_observations(
         observations=observations,
         deskew_info=result.deskew_info,
     )
-    return ocr_layout.geometry_rendered_ocr_result(normalized)
+    return _CANDIDATE_SERVICES.layout.geometry_rendered_ocr_result(normalized)
 
 
 def high_density_full_page_image_for_ocr(image: OcrImage) -> OcrImage | None:
@@ -1590,7 +1585,7 @@ def stable_encoded_full_page_image_ocr_candidate(
         quality = text_ocr_quality_score(candidate.result.text)
     if quality > 0.30:
         return False
-    return ocr_selection.ocr_candidate_score(candidate) >= 95.0
+    return _CANDIDATE_SERVICES.selection.ocr_candidate_score(candidate) >= 95.0
 
 
 def compact_confident_full_page_image_ocr_candidate(
@@ -1619,4 +1614,4 @@ def compact_confident_full_page_image_ocr_candidate(
         quality = text_ocr_quality_score(candidate.result.text)
     if quality > 0.30:
         return False
-    return ocr_selection.ocr_candidate_score(candidate) >= 95.0
+    return _CANDIDATE_SERVICES.selection.ocr_candidate_score(candidate) >= 95.0
