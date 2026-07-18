@@ -1,8 +1,15 @@
 from core_pdf.impl.engine.extraction.page_text.engine import (
+    DocumentExtractionResult,
+    DocumentExtractionSummary,
+    PageExtractionResult,
     ResolvedLineRecord,
+    TextBlock,
     build_text_blocks,
     render_page_blocks,
 )
+from core_pdf.impl.engine.spec.s_07_document.metadata_types import MetadataRecord
+
+EMPTY_METADATA: MetadataRecord = {"info": {}, "xmp": None}
 
 
 def line(
@@ -66,3 +73,46 @@ def test_blocks_keep_distinct_narrow_columns_separate() -> None:
     )
 
     assert [block.column_index for block in blocks] == [0, 1]
+
+
+def test_document_markdown_preserves_page_boundaries() -> None:
+    first = line("first page", 0.0, 0.0, 100.0, 10.0)
+    second = line("second page", 0.0, 0.0, 100.0, 10.0)
+    pages = (
+        PageExtractionResult(
+            1,
+            None,
+            0.9,
+            "native_text",
+            "native_fast",
+            (first,),
+            (TextBlock(1, first.bbox, 0, 0, (first,)),),
+        ),
+        PageExtractionResult(
+            2,
+            None,
+            0.9,
+            "native_text",
+            "native_fast",
+            (second,),
+            (TextBlock(1, second.bbox, 0, 0, (second,)),),
+        ),
+    )
+    result = DocumentExtractionResult(
+        metadata=EMPTY_METADATA,
+        pages=pages,
+        summary=DocumentExtractionSummary(2, 0, {"native_text": 2}, {"native_fast": 2}),
+    )
+
+    assert result.to_markdown() == "first page\fsecond page\f"
+
+
+def test_empty_page_markdown_is_a_page_break() -> None:
+    page = PageExtractionResult(1, None, 0.25, "empty", "skip", (), ())
+    result = DocumentExtractionResult(
+        metadata=EMPTY_METADATA,
+        pages=(page,),
+        summary=DocumentExtractionSummary(1, 1, {"empty": 1}, {"skip": 1}),
+    )
+
+    assert result.to_markdown() == "\f"
