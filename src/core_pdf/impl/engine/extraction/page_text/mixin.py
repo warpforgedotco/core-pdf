@@ -20,6 +20,7 @@ from core_layout.impl.layout.geometry_quality import (
 )
 from core_ocr.impl import candidate_generation as ocr_candidate_generation
 from core_ocr.impl import candidates as ocr_candidates
+from core_ocr.impl import layout as ocr_layout
 from core_ocr.impl import text_analysis as ocr_text_analysis
 from core_ocr.impl.services import configure_candidate_services
 from core_ocr.impl.text_analysis import (
@@ -62,9 +63,6 @@ from core_pdf.impl.engine.extraction.ocr import (
 )
 from core_pdf.impl.engine.extraction.ocr import (
     full_page as ocr_full_page,
-)
-from core_pdf.impl.engine.extraction.ocr import (
-    layout as ocr_layout,
 )
 from core_pdf.impl.engine.extraction.ocr import (
     line_reconciliation as ocr_line_reconciliation,
