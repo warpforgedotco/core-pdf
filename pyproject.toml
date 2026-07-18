@@ -23,12 +23,24 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-core-ccitt = { path = "../core-CCITT" }
-core-color = { path = "../core-color" }
-core-cmap = { path = "../core-cmap" }
-core-font-programs = { path = "../core-font-programs" }
-core-jbig2 = { path = "../core-JBIG2" }
-core-layout = { path = "../core-layout" }
+core-ccitt = { workspace = true }
+core-color = { workspace = true }
+core-cmap = { workspace = true }
+core-font-programs = { workspace = true }
+core-jbig2 = { workspace = true }
+core-jpeg = { workspace = true }
+core-layout = { workspace = true }
+
+[tool.uv.workspace]
+members = [
+    "../core-CCITT",
+    "../core-JBIG2",
+    "../core-JPEG",
+    "../core-cmap",
+    "../core-color",
+    "../core-font-programs",
+    "../core-layout",
+]
 
 [project.urls]
 Repository = "https://github.com/core-experiments/core-pdf"
@@ -58,7 +70,7 @@ lint = [
 ]
 test = [
     "pdfminer.six",
-    "pytest >=8.4.0, <9.0.0",
+    "pytest >=8.4.0, <10.0.0",
     "pytest-xdist>=3.8.0",
 ]
 
