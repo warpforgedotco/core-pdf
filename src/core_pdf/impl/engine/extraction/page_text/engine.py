@@ -150,7 +150,7 @@ def build_page_extraction_result(
     profile = page.get_page_profile()
     region = cache.get("page_region_classification")
     if region is None:
-        from core_pdf.impl.engine.extraction.page_text.policy import classify_page_region
+        from core_ocr.impl.policy import classify_page_region
 
         region = classify_page_region(
             text,

@@ -5,8 +5,7 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
-
-from core_pdf.impl.engine.extraction.page_text import policy
+from core_ocr.impl import policy
 
 
 def test_classify_page_region_can_skip_dominant_image_probe(

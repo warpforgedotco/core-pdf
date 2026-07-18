@@ -33,6 +33,15 @@ from core_ocr.impl import session as ocr_session_runtime
 from core_ocr.impl import table_regions as ocr_table_regions
 from core_ocr.impl import text_analysis as ocr_text_analysis
 from core_ocr.impl.backend import TesseractCtypesBackend
+from core_ocr.impl.policy import (
+    classify_page_region,
+    fragmented_invisible_text_layer_should_yield_to_ocr,
+    should_preserve_substantial_text_table_native_text,
+    should_replace_dominant_image_native_text_with_ocr,
+    should_replace_noisy_native_text_with_compact_ocr,
+    should_replace_symbol_encoded_text_with_ocr,
+    should_replace_text_with_ocr,
+)
 from core_ocr.impl.services import configure_candidate_services
 from core_ocr.impl.text_analysis import (
     extracted_text_token_count,
@@ -93,15 +102,6 @@ from core_pdf.impl.engine.extraction.page_text.output import (
     best_effort_resolved_text_lines,
     ocr_result_output_lines,
     vector_stroke_result_output_lines,
-)
-from core_pdf.impl.engine.extraction.page_text.policy import (
-    classify_page_region,
-    fragmented_invisible_text_layer_should_yield_to_ocr,
-    should_preserve_substantial_text_table_native_text,
-    should_replace_dominant_image_native_text_with_ocr,
-    should_replace_noisy_native_text_with_compact_ocr,
-    should_replace_symbol_encoded_text_with_ocr,
-    should_replace_text_with_ocr,
 )
 from core_pdf.impl.engine.extraction.pdf_ocr_adapter import PdfOcrCandidateServices
 from core_pdf.impl.engine.extraction.tables.grid import detect_grid
