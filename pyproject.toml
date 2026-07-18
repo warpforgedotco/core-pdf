@@ -16,6 +16,7 @@ dependencies = [
     "core-ccitt>=0.0.1",
     "core-color>=0.0.1",
     "core-cmap>=0.0.1",
+    "core-filters>=0.0.1",
     "core-font-programs>=0.0.1",
     "core-jbig2>=0.0.1",
     "core-jpeg>=0.0.0",
@@ -26,6 +27,7 @@ dependencies = [
 core-ccitt = { workspace = true }
 core-color = { workspace = true }
 core-cmap = { workspace = true }
+core-filters = { workspace = true }
 core-font-programs = { workspace = true }
 core-jbig2 = { workspace = true }
 core-jpeg = { workspace = true }
@@ -38,6 +40,7 @@ members = [
     "../core-JPEG",
     "../core-cmap",
     "../core-color",
+    "../core-filters",
     "../core-font-programs",
     "../core-layout",
 ]

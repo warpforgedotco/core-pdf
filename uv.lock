@@ -11,6 +11,7 @@ members = [
     "core-ccitt",
     "core-cmap",
     "core-color",
+    "core-filters",
     "core-font-programs",
     "core-jbig2",
     "core-jpeg",
@@ -259,6 +260,35 @@ version = "0.0.1"
 source = { editable = "../core-color" }
 
 [[package]]
+name = "core-filters"
+version = "0.0.1"
+source = { editable = "../core-filters" }
+dependencies = [
+    { name = "core-ccitt" },
+    { name = "core-jbig2" },
+    { name = "core-jpeg" },
+]
+
+[package.dev-dependencies]
+lint = [
+    { name = "ruff" },
+]
+test = [
+    { name = "pytest" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "core-ccitt", specifier = ">=0.0.1" },
+    { name = "core-jbig2", specifier = ">=0.0.1" },
+    { name = "core-jpeg", specifier = ">=0.0.1" },
+]
+
+[package.metadata.requires-dev]
+lint = [{ name = "ruff", specifier = ">=0.11.13,<1.0.0" }]
+test = [{ name = "pytest", specifier = ">=8.4.0,<10.0.0" }]
+
+[[package]]
 name = "core-font-programs"
 version = "0.0.1"
 source = { editable = "../core-font-programs" }
@@ -334,6 +364,7 @@ dependencies = [
     { name = "core-ccitt" },
     { name = "core-cmap" },
     { name = "core-color" },
+    { name = "core-filters" },
     { name = "core-font-programs" },
     { name = "core-jbig2" },
     { name = "core-jpeg" },
@@ -373,6 +404,7 @@ requires-dist = [
     { name = "core-ccitt", editable = "../core-CCITT" },
     { name = "core-cmap", editable = "../core-cmap" },
     { name = "core-color", editable = "../core-color" },
+    { name = "core-filters", editable = "../core-filters" },
     { name = "core-font-programs", editable = "../core-font-programs" },
     { name = "core-jbig2", editable = "../core-JBIG2" },
     { name = "core-jpeg", editable = "../core-JPEG" },

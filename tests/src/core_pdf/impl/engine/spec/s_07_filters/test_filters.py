@@ -8,19 +8,20 @@ from itertools import product
 from typing import cast
 
 import pytest
-
-from core_pdf.impl.engine.spec.s_07_filters import decoders, pipeline, predictors
-from core_pdf.impl.engine.spec.s_07_filters.codecs import apply_ascii85, apply_ascii_hex
-from core_pdf.impl.engine.spec.s_07_filters.decode_spec import FilterParams
-from core_pdf.impl.engine.spec.s_07_filters.flate import (
+from core_filters.impl import decoders, pipeline, predictors
+from core_filters.impl.codecs import apply_ascii85, apply_ascii_hex
+from core_filters.impl.decode_spec import FilterParams
+from core_filters.impl.errors import FilterParseError
+from core_filters.impl.flate import (
     apply_flate,
     looks_like_pdf_content_stream,
 )
-from core_pdf.impl.engine.spec.s_07_filters.pipeline import decode_stream_data
-from core_pdf.impl.engine.spec.s_07_filters.predictors import (
+from core_filters.impl.pipeline import decode_stream_data
+from core_filters.impl.predictors import (
     apply_png_predictor,
     apply_tiff_predictor,
 )
+
 from core_pdf.impl.engine.spec.s_07_security.standard_v4 import PdfStandardSecurityHandlerV4
 from core_pdf.impl.exceptions import PdfParseError, PdfUnsupportedError
 from core_pdf.impl.objects import PdfStream
@@ -67,7 +68,7 @@ def test_apply_flate_tolerates_mislabeled_content_stream() -> None:
 
 
 def test_apply_flate_rejects_non_pdf_garbage() -> None:
-    with pytest.raises(PdfParseError):
+    with pytest.raises(FilterParseError):
         apply_flate(b"not compressed data", {})
 
 
@@ -88,7 +89,7 @@ def test_content_stream_detection_ignores_operator_like_operands(data: bytes) ->
 
 @pytest.mark.parametrize("data", [b"(Tj)", b"/Do", b"[q]"])
 def test_apply_flate_rejects_operator_like_uncompressed_operands(data: bytes) -> None:
-    with pytest.raises(PdfParseError):
+    with pytest.raises(FilterParseError):
         apply_flate(data, {})
 
 
@@ -139,13 +140,13 @@ def test_apply_ascii_hex_matches_reference_exhaustively() -> None:
 
 
 def test_apply_ascii85_rejects_invalid_data() -> None:
-    with pytest.raises(PdfParseError):
+    with pytest.raises(FilterParseError):
         apply_ascii85(b"!!!!~bad", {})
 
 
 @pytest.mark.parametrize("data", [b"uuuuu~>", b"uuuu~>", b"!~>", b"z!~>"])
 def test_apply_ascii85_rejects_overflow_and_incomplete_tuples(data: bytes) -> None:
-    with pytest.raises(PdfParseError, match="invalid ASCII85Decode stream"):
+    with pytest.raises(FilterParseError, match="invalid ASCII85Decode stream"):
         apply_ascii85(data, {})
 
 
@@ -168,14 +169,14 @@ def test_apply_ascii85_matches_stdlib_across_tuple_lengths() -> None:
 def test_tiff_predictor_rejects_truncated_row() -> None:
     params = FilterParams(columns=4, colors=1, bits_per_component=8)
 
-    with pytest.raises(PdfParseError, match="truncated TIFF predictor row"):
+    with pytest.raises(FilterParseError, match="truncated TIFF predictor row"):
         apply_tiff_predictor(b"abc", params)
 
 
 def test_png_predictor_rejects_truncated_row() -> None:
     params = FilterParams(columns=4, colors=1, bits_per_component=8)
 
-    with pytest.raises(PdfParseError, match="truncated PNG predictor row"):
+    with pytest.raises(FilterParseError, match="truncated PNG predictor row"):
         apply_png_predictor(b"\x00abc", params)
 
 
