@@ -1,6 +1,14 @@
 from io import BytesIO
 
-from core_pdf import PdfDocument
+import pytest
+from core_document import Block, BlockKind, Document, Page, TextLine
+
+from core_pdf import (
+    PdfDocument,
+    PdfUnsupportedError,
+    StandardPdfEncryption,
+    serialize_document_to_pdf,
+)
 from core_pdf.impl.engine.writing import append_incremental_update, serialize_pdf_file
 from core_pdf.impl.objects import PdfName, PdfReference, PdfStream
 
@@ -70,3 +78,21 @@ def test_pdf_document_save_incremental_writes_to_binary_target() -> None:
 
     assert target.getvalue() == updated
     assert updated.startswith(original)
+
+
+def test_pdf_document_rejects_incremental_save_for_encrypted_input() -> None:
+    encrypted = serialize_document_to_pdf(
+        Document(
+            pages=(
+                Page(
+                    page_number=1,
+                    blocks=(Block(1, BlockKind.PARAGRAPH, (TextLine("secret"),)),),
+                ),
+            )
+        ),
+        encryption=StandardPdfEncryption(user_password="open"),
+    )
+
+    with PdfDocument.open(encrypted, password="open") as document:
+        with pytest.raises(PdfUnsupportedError, match="encrypted PDFs"):
+            document.save_incremental(BytesIO(), {1: None})
