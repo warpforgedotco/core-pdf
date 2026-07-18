@@ -2,6 +2,12 @@
 
 **High-Performance PDF Engine**
 
+## Text extraction
+
+`core-pdf` currently extracts text from native PDF text objects only. Image-only and
+scanned pages return no extracted text; OCR is intentionally provided separately and is
+not invoked by this package.
+
 ![core-pdf — High-Performance PDF Engine](.github/assets/core-pdf-social-preview.jpg)
 
 ## License
