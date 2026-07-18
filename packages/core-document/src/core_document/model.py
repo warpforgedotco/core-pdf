@@ -6,7 +6,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import StrEnum
 from types import MappingProxyType
-from typing import Any, Mapping, TypeAlias
+from typing import TYPE_CHECKING, Any, Mapping, TypeAlias
+
+if TYPE_CHECKING:
+    from core_document.editor import DocumentEditor
 
 BBox: TypeAlias = tuple[float, float, float, float]
 JsonValue: TypeAlias = str | int | float | bool | None | list["JsonValue"] | dict[str, "JsonValue"]
@@ -162,7 +165,7 @@ class Document:
     def __post_init__(self) -> None:
         object.__setattr__(self, "metadata", MappingProxyType(dict(self.metadata)))
 
-    def edit(self) -> Any:
+    def edit(self) -> DocumentEditor:
         from core_document.editor import DocumentEditor
 
         return DocumentEditor(self)
