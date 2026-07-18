@@ -29,7 +29,7 @@ from core_pdf.impl.engine.spec.s_09_fonts.helpers import parse_differences
 from core_pdf.impl.objects import PdfStream
 
 
-class PdfOcrAnalysisServices:
+class PdfAnalysisServices:
     stream_type = PdfStream
     lookup_dict_key = staticmethod(lookup_dict_key)
     normalize_pdf_name = staticmethod(normalize_pdf_name)
@@ -37,7 +37,7 @@ class PdfOcrAnalysisServices:
     parse_differences = staticmethod(parse_differences)
 
 
-class PdfOcrCandidateServices:
+class PdfHostServices:
     page_geometry = page_geometry
     iterator_layout = ocr_iterator_layout
     layout = ocr_layout
@@ -46,7 +46,7 @@ class PdfOcrCandidateServices:
     dense_vector_render_tile_min_tokens = ocr_rendering.OCR_DENSE_VECTOR_RENDER_TILE_MIN_TOKENS
     rendering = ocr_rendering
     layout_analyzer = LayoutAnalyzer
-    pdf_analysis = PdfOcrAnalysisServices
+    pdf_analysis = PdfAnalysisServices
     observation_resolver = observation_resolver
     render_resolved_text_lines = staticmethod(render_resolved_text_lines)
     detect_grid = staticmethod(detect_grid)
@@ -180,4 +180,4 @@ class PdfOcrCandidateServices:
         )
 
 
-configure_candidate_services(PdfOcrCandidateServices())
+configure_candidate_services(PdfHostServices())

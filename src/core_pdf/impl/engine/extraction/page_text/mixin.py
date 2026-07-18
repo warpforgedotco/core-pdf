@@ -103,7 +103,7 @@ from core_pdf.impl.engine.extraction.page_text.native import (
     should_try_rendered_glyph_repair,
     try_extract_native_text_fast,
 )
-from core_pdf.impl.engine.extraction.pdf_ocr_adapter import PdfOcrCandidateServices
+from core_pdf.impl.engine.extraction.pdf_host_services import PdfHostServices
 from core_pdf.impl.engine.extraction.tables.grid import detect_grid
 from core_pdf.impl.engine.rendering import RenderOptions, compose_page
 from core_pdf.impl.engine.rendering.models import image_filter_names, pdf_int
@@ -112,7 +112,7 @@ from core_pdf.impl.engine.spec.s_08_graphics.color import ImageColorManager
 from core_pdf.impl.models import TextSpan
 from core_pdf.impl.types import PdfDict
 
-configure_candidate_services(PdfOcrCandidateServices())
+configure_candidate_services(PdfHostServices())
 
 if TYPE_CHECKING:
     from core_layout.impl.layout.models import LayoutLine, TextRun
