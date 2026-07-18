@@ -16,8 +16,22 @@ from core_ocr.impl.services import configure_candidate_services
 from core_ocr.impl.types import OcrImage, OcrTextResult
 
 from core_pdf.impl.engine.extraction.common import page_geometry
+from core_pdf.impl.engine.extraction.common.ordering import LayoutAnalyzer
 from core_pdf.impl.engine.rendering import RenderOptions
 from core_pdf.impl.engine.rendering.models import RenderedPage
+from core_pdf.impl.engine.spec.s_07_objects.coercion import normalize_pdf_name
+from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_09_fonts.glyphs import glyph_name_to_unicode
+from core_pdf.impl.engine.spec.s_09_fonts.helpers import parse_differences
+from core_pdf.impl.objects import PdfStream
+
+
+class PdfOcrAnalysisServices:
+    stream_type = PdfStream
+    lookup_dict_key = staticmethod(lookup_dict_key)
+    normalize_pdf_name = staticmethod(normalize_pdf_name)
+    glyph_name_to_unicode = staticmethod(glyph_name_to_unicode)
+    parse_differences = staticmethod(parse_differences)
 
 
 class PdfOcrCandidateServices:
@@ -28,6 +42,8 @@ class PdfOcrCandidateServices:
     rectangle_request_type = ocr_execution.RectangleOcrRequest
     dense_vector_render_tile_min_tokens = ocr_rendering.OCR_DENSE_VECTOR_RENDER_TILE_MIN_TOKENS
     rendering = ocr_rendering
+    layout_analyzer = LayoutAnalyzer
+    pdf_analysis = PdfOcrAnalysisServices
     clamp_ocr_bbox = staticmethod(ocr_tiling.clamp_ocr_bbox)
 
     @staticmethod
@@ -49,6 +65,19 @@ class PdfOcrCandidateServices:
                 include_layers=True,
             )
         )
+        if cache is not None:
+            cache[cache_key] = rendered
+        return rendered
+
+    @staticmethod
+    def render_page_for_ocr_analysis(page: Any) -> Any:
+        cache = page.extraction_cache
+        cache_key = "ocr_analysis_rendered_page"
+        if cache is not None:
+            cached = cache.get(cache_key)
+            if cached is not None:
+                return cached
+        rendered = page.render(RenderOptions(include_annotations=False, include_layers=False))
         if cache is not None:
             cache[cache_key] = rendered
         return rendered

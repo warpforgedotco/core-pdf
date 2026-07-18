@@ -14,6 +14,7 @@ from core_layout.impl.layout.geometry_quality import (
 )
 from core_layout.impl.layout.word_frequencies import word_rank
 from core_ocr.impl import geometry as ocr_geometry
+from core_ocr.impl import page_analysis as ocr_page_analysis
 from core_ocr.impl import text_analysis as ocr_text_analysis
 from core_ocr.impl.vector_text import (
     VectorStrokeOcrResult,
@@ -21,7 +22,6 @@ from core_ocr.impl.vector_text import (
 )
 
 from core_pdf.impl.engine.extraction.common import observation_resolver, page_geometry
-from core_pdf.impl.engine.extraction.ocr import page_analysis as ocr_page_analysis
 
 if TYPE_CHECKING:
     from core_ocr.impl.candidates import OcrPageTextResult

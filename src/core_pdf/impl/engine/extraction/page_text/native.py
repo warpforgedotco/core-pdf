@@ -16,6 +16,7 @@ from core_layout.impl.layout.geometry_quality import (
     page_layout_geometry_summary,
     text_run_has_repairable_glyph_geometry_issue,
 )
+from core_ocr.impl import page_analysis as ocr_page_analysis
 from core_ocr.impl import rendering as ocr_rendering
 from core_ocr.impl import text_analysis as ocr_text_analysis
 from core_ocr.impl.text_analysis import (
@@ -32,9 +33,6 @@ from core_pdf.impl.engine.extraction.common.render import (
     render_page_observation_lines,
     render_page_text,
     render_resolved_text_lines,
-)
-from core_pdf.impl.engine.extraction.ocr import (
-    page_analysis as ocr_page_analysis,
 )
 from core_pdf.impl.engine.extraction.ocr import (
     postprocess as ocr_postprocess,

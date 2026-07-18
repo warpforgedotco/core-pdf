@@ -23,6 +23,7 @@ from core_ocr.impl import candidates as ocr_candidates
 from core_ocr.impl import execution as ocr_execution
 from core_ocr.impl import full_page as ocr_full_page
 from core_ocr.impl import layout as ocr_layout
+from core_ocr.impl import page_analysis as ocr_page_analysis
 from core_ocr.impl import rendering as ocr_rendering
 from core_ocr.impl import selection as ocr_selection
 from core_ocr.impl import session as ocr_session_runtime
@@ -70,9 +71,6 @@ from core_pdf.impl.engine.extraction.common.render import (
 )
 from core_pdf.impl.engine.extraction.ocr import (
     line_reconciliation as ocr_line_reconciliation,
-)
-from core_pdf.impl.engine.extraction.ocr import (
-    page_analysis as ocr_page_analysis,
 )
 from core_pdf.impl.engine.extraction.ocr import (
     postprocess as ocr_postprocess,

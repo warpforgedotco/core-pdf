@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any, Iterable, Sequence
 from core_layout.impl.layout.geometry_quality import LayoutGeometrySummary
 from core_ocr.impl import geometry as ocr_geometry
 from core_ocr.impl import layout as ocr_layout
+from core_ocr.impl import page_analysis as ocr_page_analysis
 from core_ocr.impl import text_analysis as ocr_text_analysis
 from core_ocr.impl.text_analysis import (
     extracted_text_token_count,
@@ -20,9 +21,6 @@ from core_ocr.impl.text_analysis import (
 )
 
 from core_pdf.impl.engine.extraction.common.ordering import LayoutAnalyzer
-from core_pdf.impl.engine.extraction.ocr import (
-    page_analysis as ocr_page_analysis,
-)
 from core_pdf.impl.engine.extraction.ocr import (
     schematic as ocr_schematic,
 )

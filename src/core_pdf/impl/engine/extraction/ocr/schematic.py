@@ -10,6 +10,10 @@ from core_ocr.impl import candidates as ocr_candidates
 from core_ocr.impl import iterator_layout as ocr_iterator_layout
 from core_ocr.impl import selection as ocr_selection
 from core_ocr.impl.candidates import OcrCandidate
+from core_ocr.impl.page_analysis import (
+    TextGeometryLine,
+    text_geometry_line_from_bbox,
+)
 from core_ocr.impl.text_analysis import (
     extracted_text_token_count,
     normalized_text_tokens,
@@ -28,10 +32,6 @@ from core_ocr.impl.vector_text import VectorStrokeOcrResult
 
 from core_pdf.impl.engine.extraction.common import page_geometry
 from core_pdf.impl.engine.extraction.common.ordering import LayoutAnalyzer
-from core_pdf.impl.engine.extraction.ocr.page_analysis import (
-    TextGeometryLine,
-    text_geometry_line_from_bbox,
-)
 from core_pdf.impl.engine.rendering.models import RenderedPage
 
 if TYPE_CHECKING:
