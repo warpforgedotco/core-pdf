@@ -6,6 +6,7 @@ from typing import Any, cast
 
 import pytest
 from core_cmap.impl.cid.cmap import ToUnicodeCMap
+from core_font_programs.impl.truetype import _invert_unicode_cmap
 
 from core_pdf.impl.engine.extraction.document import PdfDocument
 from core_pdf.impl.engine.spec.s_09_fonts import decoder as decoder_module
@@ -17,7 +18,6 @@ from core_pdf.impl.engine.spec.s_09_fonts.encoding import decode_pdf_text_string
 from core_pdf.impl.engine.spec.s_09_fonts.glyphs import glyph_name_to_unicode
 from core_pdf.impl.objects import PdfStream
 from core_pdf.impl.primitives import PdfString
-from core_pdf.impl.third_party.truetype import _invert_unicode_cmap
 
 TESTS_DIR = Path(__file__).parents[6]
 

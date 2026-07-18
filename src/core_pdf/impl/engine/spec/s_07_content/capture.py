@@ -17,6 +17,7 @@ from core_layout.impl.layout.glyphs import (
     union_bboxes,
 )
 from core_layout.impl.layout.models import TextRun
+from fontTools.encodings.StandardEncoding import StandardEncoding
 
 from core_pdf.impl.engine.spec.s_07_content.text_helpers import (
     NO_SPACE_AFTER,
@@ -28,7 +29,6 @@ from core_pdf.impl.engine.spec.s_07_content.text_helpers import (
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_08_graphics.matrix import Matrix
 from core_pdf.impl.objects import PdfName, PdfStream, PdfString
-from core_pdf.impl.third_party._vendor.fontTools.encodings.StandardEncoding import StandardEncoding
 
 if typing.TYPE_CHECKING:
     from core_pdf.impl.engine.spec.s_09_fonts.decoder import DecodedGlyph, FontDecoder
@@ -234,7 +234,7 @@ def type3_glyph_names(font: dict[Any, Any], decoder: Any) -> dict[int, str]:
     )
     glyph_names = {code: name for code, name in enumerate(StandardEncoding) if name != ".notdef"}
     if decoder.base_encoding == "MacRomanEncoding":
-        from core_pdf.impl.third_party._vendor.fontTools.encodings.MacRoman import MacRoman
+        from fontTools.encodings.MacRoman import MacRoman
 
         glyph_names = {code: name for code, name in enumerate(MacRoman) if name != ".notdef"}
     if isinstance(differences_obj, (list, tuple)):

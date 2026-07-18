@@ -1,4 +1,4 @@
-from core_pdf.impl.third_party.truetype import TrueTypeFontProgram
+from core_font_programs.impl.truetype import TrueTypeFontProgram
 
 
 def test_explicit_cid_to_gid_map_returns_notdef_outside_stream() -> None:

@@ -1,28 +1,12 @@
 from __future__ import annotations
 
-import ast
-from pathlib import Path
-
 import pytest
-
-from core_pdf.impl.third_party.cff import STANDARD_GLYPH_SIDS, CFFFont
-
-REPO_ROOT = Path(__file__).parents[5]
-CFFLIB_PATH = REPO_ROOT / "src/core_pdf/impl/third_party/_vendor/fontTools/cffLib/__init__.py"
+from core_font_programs.impl.cff import STANDARD_GLYPH_SIDS, CFFFont
+from fontTools.cffLib import cffStandardStrings
 
 
 def authoritative_standard_strings() -> list[str]:
-    module = ast.parse(CFFLIB_PATH.read_text())
-    assignment = next(
-        node
-        for node in module.body
-        if isinstance(node, ast.Assign)
-        and any(
-            isinstance(target, ast.Name) and target.id == "cffStandardStrings"
-            for target in node.targets
-        )
-    )
-    return ast.literal_eval(assignment.value)
+    return list(cffStandardStrings)
 
 
 def test_standard_glyph_sids_match_authoritative_cff_mapping() -> None:

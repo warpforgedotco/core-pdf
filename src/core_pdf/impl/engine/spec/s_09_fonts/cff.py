@@ -12,12 +12,12 @@ from core_font_programs import (
     cff_font_for_data,
     cff_unicode_repairs_for_data,
 )
+from fontTools.ttLib import TTFont, TTLibError
 
 from core_pdf.impl.engine.spec.s_07_objects.coercion import normalize_pdf_name
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_09_fonts.widths import get_descendant
 from core_pdf.impl.objects import PdfStream
-from core_pdf.impl.third_party._vendor.fontTools.ttLib import TTFont, TTLibError
 
 
 def single_code_mapping(

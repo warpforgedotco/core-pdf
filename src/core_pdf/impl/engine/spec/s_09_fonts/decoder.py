@@ -19,6 +19,8 @@ from core_cmap.impl.cid.resource_loader import (
 )
 from core_cmap.impl.cid.widths import FontWidthMap
 from core_font_programs import CFFFont, TrueTypeFontProgram
+from fontTools.agl import UV2AGL
+from fontTools.encodings.StandardEncoding import StandardEncoding
 
 from core_pdf.impl.engine.spec.s_07_objects.coercion import normalize_pdf_name
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
@@ -53,8 +55,6 @@ from core_pdf.impl.engine.spec.s_09_fonts.widths import (
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.objects import PdfStream
 from core_pdf.impl.primitives import PdfString
-from core_pdf.impl.third_party._vendor.fontTools.agl import UV2AGL
-from core_pdf.impl.third_party._vendor.fontTools.encodings.StandardEncoding import StandardEncoding
 
 if typing.TYPE_CHECKING:
     from typing import Any

@@ -5,7 +5,6 @@ resolution-markers = [
     "python_full_version >= '3.15'",
     "python_full_version < '3.15'",
 ]
-
 [manifest]
 members = [
     "core-ccitt",
@@ -440,6 +439,7 @@ dependencies = [
     { name = "core-jpeg" },
     { name = "core-layout" },
     { name = "core-ocr" },
+    { name = "fonttools" },
 ]
 
 [package.dev-dependencies]
@@ -454,7 +454,6 @@ dev = [
     { name = "rich" },
     { name = "ruff" },
     { name = "ty" },
-    { name = "vendoring" },
 ]
 lint = [
     { name = "mypy" },
@@ -466,10 +465,6 @@ test = [
     { name = "pytest" },
     { name = "pytest-xdist" },
 ]
-vendor = [
-    { name = "vendoring" },
-]
-
 [package.metadata]
 requires-dist = [
     { name = "core-ccitt", editable = "packages/core-CCITT" },
@@ -483,6 +478,7 @@ requires-dist = [
     { name = "core-jpeg", editable = "packages/core-JPEG" },
     { name = "core-layout", editable = "packages/core-layout" },
     { name = "core-ocr", editable = "packages/core-ocr" },
+    { name = "fonttools", specifier = ">=4.63.0,<5.0.0" },
 ]
 
 [package.metadata.requires-dev]
@@ -495,7 +491,6 @@ dev = [
     { name = "rich", specifier = ">=15.0.0" },
     { name = "ruff", specifier = ">=0.11.13,<1.0.0" },
     { name = "ty", specifier = ">=0.0.59,<1.0.0" },
-    { name = "vendoring", specifier = ">=0.2.2" },
 ]
 lint = [
     { name = "mypy", specifier = ">=1.16.0,<2.0.0" },
@@ -507,7 +502,6 @@ test = [
     { name = "pytest", specifier = ">=8.4.0,<10.0.0" },
     { name = "pytest-xdist", specifier = ">=3.8.0" },
 ]
-vendor = [{ name = "vendoring", specifier = ">=0.2.2" }]
 
 [[package]]
 name = "coverage"
@@ -1307,22 +1301,4 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/53/0c/06f8b233b8fd13b9e5ee11424ef85419ba0d8ba0b3138bf360be2ff56953/urllib3-2.7.0.tar.gz", hash = "sha256:231e0ec3b63ceb14667c67be60f2f2c40a518cb38b03af60abc813da26505f4c", size = 433602, upload-time = "2026-05-07T16:13:18.596Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/7f/3e/5db95bcf282c52709639744ca2a8b149baccf648e39c8cc87553df9eae0c/urllib3-2.7.0-py3-none-any.whl", hash = "sha256:9fb4c81ebbb1ce9531cce37674bbc6f1360472bc18ca9a553ede278ef7276897", size = 131087, upload-time = "2026-05-07T16:13:17.151Z" },
-]
-
-[[package]]
-name = "vendoring"
-version = "1.4.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "click" },
-    { name = "jsonschema" },
-    { name = "packaging" },
-    { name = "pip" },
-    { name = "requests" },
-    { name = "rich" },
-    { name = "tomli" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/55/a6/2ad9ec99117eccf78ba6e69e7c904a3dc08ca2fba50e8869a3f02c1bc518/vendoring-1.4.0.tar.gz", hash = "sha256:48113adfb29db5e5051da823c083219567b9b3405859682cc04400a7743279d9", size = 24761, upload-time = "2026-05-19T14:39:50.773Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/e3/ba/2fe43514bcf426888101c2968f3c821c6338afc122ccbbde6e29ee2a5036/vendoring-1.4.0-py3-none-any.whl", hash = "sha256:3a5b5c44bdec2683a94cd4c7c25bad556b38539cf316defca65948d76107eb30", size = 19156, upload-time = "2026-05-19T14:39:49.457Z" },
 ]
