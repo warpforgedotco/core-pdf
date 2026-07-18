@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
+from re import compile as compile_regex
+from statistics import median
 from typing import TYPE_CHECKING, Any, Protocol
 
 from core_pdf.impl.engine.extraction.cache import ExtractionCache
@@ -34,6 +36,7 @@ class TextBlock:
     column_index: int | None
     rotation: int
     lines: tuple[ResolvedLineRecord, ...]
+    kind: str = "paragraph"
 
 
 @dataclass(frozen=True)
@@ -134,7 +137,11 @@ def build_page_extraction_result(
         page_class=page_class,
         base_route=base_route,
         resolved_lines=resolved_lines,
-        blocks=build_text_blocks(resolved_lines, rotation=getattr(page, "rotation", 0)),
+        blocks=build_text_blocks(
+            resolved_lines,
+            rotation=getattr(page, "rotation", 0),
+            page_class=page_class,
+        ),
     )
     return result
 
@@ -282,6 +289,7 @@ def build_text_blocks(
     lines: tuple[ResolvedLineRecord, ...],
     *,
     rotation: int,
+    page_class: str | None = None,
 ) -> tuple[TextBlock, ...]:
     if not lines:
         return ()
@@ -307,6 +315,12 @@ def build_text_blocks(
             block_columns.append(column_index)
         else:
             blocks[-1].append(line)
+    line_heights = tuple(line_height(line) for line in lines)
+    typical_line_height = (
+        median(height for height in line_heights if height is not None)
+        if any(height is not None for height in line_heights)
+        else None
+    )
     return tuple(
         TextBlock(
             order=index,
@@ -314,6 +328,11 @@ def build_text_blocks(
             column_index=block_columns[index - 1],
             rotation=rotation % 360,
             lines=tuple(block_lines),
+            kind=classify_block_kind(
+                block_lines,
+                typical_line_height,
+                allow_semantics=page_class != "table",
+            ),
         )
         for index, block_lines in enumerate(blocks, 1)
     )
@@ -336,6 +355,50 @@ def column_tolerance(bbox: tuple[float, float, float, float]) -> float:
     width = max(0.0, bbox[2] - bbox[0])
     height = max(0.0, bbox[3] - bbox[1])
     return max(24.0, height * 2.0, min(width * 0.2, 96.0))
+
+
+def line_height(line: ResolvedLineRecord) -> float | None:
+    bbox = line.bbox or line.advance_bbox or line.ink_bbox
+    if bbox is None:
+        return None
+    return max(0.0, bbox[3] - bbox[1])
+
+
+_LIST_ITEM_PATTERN = compile_regex(r"^\s*(?:[-*•▪◦]|\d+[.)]|[A-Za-z][.)])\s+")
+
+
+def classify_block_kind(
+    lines: list[ResolvedLineRecord],
+    typical_line_height: float | None,
+    *,
+    allow_semantics: bool,
+) -> str:
+    if not lines or not allow_semantics:
+        return "paragraph"
+    first_text = lines[0].text.strip()
+    if _LIST_ITEM_PATTERN.match(first_text):
+        return "list"
+    if len(lines) != 1 or not is_heading_candidate(first_text):
+        return "paragraph"
+    height = line_height(lines[0])
+    is_large = (
+        height is not None
+        and typical_line_height is not None
+        and typical_line_height > 0
+        and height >= typical_line_height * 1.35
+    )
+    letters = [character for character in first_text if character.isalpha()]
+    is_uppercase = bool(letters) and all(character.isupper() for character in letters)
+    if is_uppercase or is_large:
+        return "heading"
+    return "paragraph"
+
+
+def is_heading_candidate(text: str) -> bool:
+    words = text.split()
+    if not 1 <= len(words) <= 16 or len(text) > 140:
+        return False
+    return text[-1:] not in ".,:;!?"
 
 
 def render_page_blocks(blocks: tuple[TextBlock, ...]) -> str:

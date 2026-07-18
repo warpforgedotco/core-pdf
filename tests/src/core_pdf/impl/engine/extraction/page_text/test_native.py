@@ -172,19 +172,27 @@ def test_native_extraction_drops_duplicate_invisible_text_layer() -> None:
 
 
 @pytest.mark.parametrize(
-    ("fixture_name", "expected_rotation", "expected_text", "ordered_markers"),
+    (
+        "fixture_name",
+        "expected_rotation",
+        "expected_text",
+        "ordered_markers",
+        "expected_block_kinds",
+    ),
     [
         (
             "BarrowArchAnalysis_Alaska1984-p076.pdf",
             90,
             "PORT CAPACITY AT ANCHORAGE",
             ("Port Anchorage", "PORT CAPACITY AT ANCHORAGE", "General Cargo"),
+            (),
         ),
         (
             "global-AIDS-strategy-p74-75-p001.pdf",
             0,
             "GLOBAL AIDS STRATEGY 2021–2026",
             ("GLOBAL AIDS STRATEGY", "leadership can play", "Financial an"),
+            ("heading",),
         ),
         (
             "korean_power_system_challenges-p003.pdf",
@@ -195,12 +203,14 @@ def test_native_extraction_drops_duplicate_invisible_text_layer() -> None:
                 "Disclaimer",
                 "This document was prepared",
             ),
+            (),
         ),
         (
             "Employee_Health_Benefits_Assess-p006.pdf",
             180,
             "Data Findings Presentation",
             ("Data Findings Presentation", "Provide an oral presentation", "The presentation"),
+            ("list",),
         ),
     ],
 )
@@ -209,6 +219,7 @@ def test_native_extraction_quality_corpus(
     expected_rotation: int,
     expected_text: str,
     ordered_markers: tuple[str, ...],
+    expected_block_kinds: tuple[str, ...],
 ) -> None:
     fixture = TESTS_DIR / "fixtures" / "SCORE-Bench" / "src" / fixture_name
 
@@ -224,6 +235,9 @@ def test_native_extraction_quality_corpus(
         assert all(left != right for left, right in zip(lines, lines[1:], strict=False))
         positions = [text.casefold().index(marker.casefold()) for marker in ordered_markers]
         assert positions == sorted(positions)
+        assert expected_block_kinds == tuple(
+            sorted({block.kind for block in result.blocks if block.kind != "paragraph"})
+        )
 
         snapshot = SNAPSHOT_DIR / f"{Path(fixture_name).stem}.md"
         assert native_snapshot(fixture_name, page, result) == snapshot.read_text()

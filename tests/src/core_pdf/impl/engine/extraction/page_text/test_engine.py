@@ -46,6 +46,7 @@ def test_blocks_keep_indented_lines_in_one_column() -> None:
 
     assert len(blocks) == 1
     assert blocks[0].column_index == 0
+    assert blocks[0].kind == "paragraph"
     assert blocks[0].bbox == (100.0, 680.0, 450.0, 712.0)
 
 
@@ -60,6 +61,7 @@ def test_blocks_separate_paragraphs_but_preserve_column() -> None:
 
     assert [block.column_index for block in blocks] == [0, 0]
     assert [block.rotation for block in blocks] == [90, 90]
+    assert [block.kind for block in blocks] == ["paragraph", "paragraph"]
     assert render_page_blocks(blocks) == "First paragraph\n\nSecond paragraph"
 
 
@@ -73,6 +75,40 @@ def test_blocks_keep_distinct_narrow_columns_separate() -> None:
     )
 
     assert [block.column_index for block in blocks] == [0, 1]
+
+
+def test_blocks_classify_conservative_uppercase_headings() -> None:
+    blocks = build_text_blocks(
+        (line("A SHORT HEADING", 100.0, 700.0, 260.0, 712.0),),
+        rotation=0,
+    )
+
+    assert blocks[0].kind == "heading"
+
+
+def test_table_blocks_do_not_promote_cells_to_headings() -> None:
+    blocks = build_text_blocks(
+        (line("TOTAL 2,046 3,169", 100.0, 700.0, 300.0, 712.0),),
+        rotation=90,
+        page_class="table",
+    )
+
+    assert blocks[0].kind == "paragraph"
+
+
+def test_blocks_classify_lists_without_rewriting_their_text() -> None:
+    blocks = build_text_blocks(
+        (
+            line("1. First item", 100.0, 700.0, 250.0, 712.0),
+            line("- Second item", 100.0, 680.0, 250.0, 692.0),
+        ),
+        rotation=0,
+    )
+
+    assert len(blocks) == 1
+    assert blocks[0].kind == "list"
+    assert len(blocks[0].lines) == 2
+    assert render_page_blocks(blocks) == "1. First item\n- Second item"
 
 
 def test_document_markdown_preserves_page_boundaries() -> None:
