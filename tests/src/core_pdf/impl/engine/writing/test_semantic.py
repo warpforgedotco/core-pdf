@@ -2,7 +2,7 @@ import pytest
 from core_document import Block, BlockKind, Document, Page, Table, TableCell, TextLine
 
 from core_pdf import PdfDocument
-from core_pdf.impl.engine.writing import serialize_document_to_pdf
+from core_pdf.impl.engine.writing import StandardType1FontProvider, serialize_document_to_pdf
 
 
 def test_semantic_writer_round_trips_text_geometry_and_tables() -> None:
@@ -52,3 +52,14 @@ def test_semantic_writer_rejects_text_outside_standard_encoding() -> None:
 
     with pytest.raises(UnicodeEncodeError):
         serialize_document_to_pdf(document)
+
+
+def test_semantic_writer_accepts_a_font_provider() -> None:
+    document = Document(pages=(Page(page_number=1),))
+
+    output = serialize_document_to_pdf(
+        document,
+        font_provider=StandardType1FontProvider("Times-Roman"),
+    )
+
+    assert b"/BaseFont /Times-Roman" in output

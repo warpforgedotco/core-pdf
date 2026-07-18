@@ -7,40 +7,31 @@ from collections.abc import Iterable
 
 from core_document import Document, Page, TextLine
 
+from core_pdf.impl.engine.writing.fonts import (
+    PdfFontProvider,
+    PdfFontResource,
+    StandardType1FontProvider,
+)
 from core_pdf.impl.engine.writing.object_graph import PdfObjectGraph
 from core_pdf.impl.engine.writing.objects import serialize_pdf_string
 from core_pdf.impl.objects import PdfName, PdfReference, PdfStream
-
-STANDARD_TYPE1_FONTS = frozenset(
-    {"Courier", "Courier-Bold", "Courier-Oblique", "Courier-BoldOblique", "Helvetica"}
-    | {"Helvetica-Bold", "Helvetica-Oblique", "Helvetica-BoldOblique"}
-    | {"Times-Roman", "Times-Bold", "Times-Italic", "Times-BoldItalic", "Symbol", "ZapfDingbats"}
-)
 
 
 def serialize_document_to_pdf(
     document: Document,
     *,
     font_name: str = "Helvetica",
+    font_provider: PdfFontProvider | None = None,
     version: str = "1.7",
 ) -> bytes:
     """Serialize pages and their extracted text into a new PDF file."""
-    if font_name not in STANDARD_TYPE1_FONTS:
-        raise ValueError(f"unsupported standard PDF font: {font_name!r}")
-
     graph = PdfObjectGraph()
     pages_reference = graph.add(None)
-    font_reference = graph.add(
-        {
-            PdfName.of("Type"): PdfName.of("Font"),
-            PdfName.of("Subtype"): PdfName.of("Type1"),
-            PdfName.of("BaseFont"): PdfName.of(font_name),
-            PdfName.of("Encoding"): PdfName.of("WinAnsiEncoding"),
-        }
-    )
+    font = font_provider or StandardType1FontProvider(font_name)
+    font_resource = font.add_to_graph(graph)
     page_references: list[PdfReference] = []
     for page in document.pages:
-        content = content_stream_for_page(page)
+        content = content_stream_for_page(page, font_resource)
         content_reference = graph.add(PdfStream({}, content))
         page_references.append(
             graph.add(
@@ -49,7 +40,9 @@ def serialize_document_to_pdf(
                     PdfName.of("Parent"): pages_reference,
                     PdfName.of("MediaBox"): [0, 0, page.width or 612.0, page.height or 792.0],
                     PdfName.of("Resources"): {
-                        PdfName.of("Font"): {PdfName.of("F1"): font_reference},
+                        PdfName.of("Font"): {
+                            PdfName.of(font_resource.resource_name): font_resource.reference
+                        },
                     },
                     PdfName.of("Contents"): content_reference,
                 }
@@ -75,17 +68,18 @@ def serialize_document_to_pdf(
     )
 
 
-def content_stream_for_page(page: Page) -> bytes:
+def content_stream_for_page(page: Page, font: PdfFontResource | None = None) -> bytes:
+    font = font or StandardType1FontProvider().add_to_graph(PdfObjectGraph())
     commands: list[bytes] = []
     for line in _page_lines(page):
         text = line.text.replace("\n", " ")
-        encoded = text.encode("cp1252")
+        encoded = font.encode_text(text)
         x, y = _line_position(page, line)
         font_size = _line_font_size(line)
         commands.extend(
             (
                 b"BT\n",
-                f"/F1 {_number(font_size)} Tf\n".encode("ascii"),
+                f"/{font.resource_name} {_number(font_size)} Tf\n".encode("ascii"),
                 f"1 0 0 1 {_number(x)} {_number(y)} Tm\n".encode("ascii"),
                 serialize_pdf_string(encoded) + b" Tj\nET\n",
             )
