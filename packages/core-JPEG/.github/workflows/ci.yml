@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: "0.11.28"
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+
+      - name: Run lint checks
+        run: |
+          uv run --locked --group lint ruff check .
+          uv run --locked --group lint mypy
+
+      - name: Run tests
+        run: uv run --locked --group dev pytest tests/

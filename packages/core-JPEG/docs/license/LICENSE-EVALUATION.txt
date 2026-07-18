@@ -1,0 +1,77 @@
+Core Evaluation License Terms
+Version 0.1.0
+
+These terms allow a recipient to evaluate the Software for a limited time before deciding whether to use AGPLv3, request a commercial license, or request a philanthropy waiver. These terms become effective only when incorporated by a signed evaluation order form or another written agreement with the Licensor.
+
+1. Parties
+
+"Licensor" means Kevin Turcios.
+
+"Evaluator" means the person or entity identified in the applicable signed evaluation order form.
+
+"Software" means core-jpeg, including the source code, object code, documentation, examples, and other materials identified in the applicable evaluation order form.
+
+2. Evaluation License Grant
+
+Subject to these terms and the applicable evaluation order form, Licensor grants Evaluator a non-exclusive, non-transferable, worldwide license to use, copy, modify, and run the Software only for internal evaluation, testing, security review, compatibility review, and procurement review.
+
+Evaluator may exercise this evaluation license without releasing Evaluator proprietary source code solely because the Software is also available under AGPLv3.
+
+3. Evaluation Limits
+
+Unless the evaluation order form expressly allows it, Evaluator must not:
+
+- use the Software in production;
+- provide a hosted service, customer-facing service, or paid service using the Software;
+- distribute the Software or modified versions of the Software outside Evaluator;
+- distribute products, binaries, containers, packages, or services that include or depend on the Software;
+- use the Software for benchmarking or public comparison without Licensor's written approval;
+- remove copyright, license, attribution, or notices from the Software;
+- use Licensor names, trademarks, or logos except for accurate attribution;
+- represent that the Software is endorsed by the Python Software Foundation or any other third party.
+
+4. Employees and Contractors
+
+Evaluator may allow its employees and contractors to use the Software on Evaluator's behalf, provided they comply with these terms and use the Software only for the approved evaluation.
+
+Affiliates, customers, distributors, and other third parties are covered only if the evaluation order form expressly says so.
+
+5. Term
+
+The evaluation term is stated in the evaluation order form. If no term is stated, the evaluation term is 15 days from the effective date.
+
+The evaluation license ends automatically when the term expires unless Licensor signs an extension or another license applies.
+
+6. After Evaluation
+
+After the evaluation term ends, Evaluator must stop using the Software under this evaluation license and delete non-public copies of the Software and modifications, except for archival copies required by law or internal compliance policy.
+
+Evaluator may continue using the Software only under AGPLv3, a signed commercial license, a signed philanthropy waiver, or another written license from Licensor.
+
+7. Feedback
+
+Evaluator may provide feedback, bug reports, suggestions, or patches. Unless a separate written agreement says otherwise, feedback may be used by Licensor without restriction, and code contributions are governed by the project's published contribution terms.
+
+8. No Support or Updates
+
+This evaluation license does not include support, maintenance, service levels, security response commitments, or updates unless the evaluation order form expressly includes them.
+
+9. Warranty Disclaimer
+
+To the maximum extent permitted by law, the Software is provided "as is" and "as available", without warranties of any kind, including implied warranties of merchantability, fitness for a particular purpose, non-infringement, title, availability, or error-free operation.
+
+10. Limitation of Liability
+
+To the maximum extent permitted by law, Licensor will not be liable for indirect, incidental, special, consequential, exemplary, or punitive damages, or for lost profits, revenue, goodwill, data, or business interruption.
+
+Licensor's total liability under this evaluation license is limited to the maximum extent permitted by applicable law.
+
+11. General Terms
+
+Evaluator may not assign this evaluation license without Licensor's prior written consent.
+
+These terms do not grant rights to Licensor or PSF trademarks, service marks, trade names, logos, or branding except as expressly stated.
+
+The governing law and venue are stated in the evaluation order form.
+
+License contact: turcioskevinr@gmail.com

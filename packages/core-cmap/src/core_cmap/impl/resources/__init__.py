@@ -1,0 +1,1 @@
+"""Bundled Adobe CMap resources."""

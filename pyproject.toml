@@ -41,17 +41,17 @@ core-layout = { workspace = true }
 
 [tool.uv.workspace]
 members = [
-    "../core-CCITT",
-    "../core-JBIG2",
-    "../core-JPEG",
-    "../core-cmap",
-    "../core-color",
-    "../core-filters",
-    "../core-crypto",
-    "../core-ocr",
-    "../core-font-programs",
-    "../core-glyph",
-    "../core-layout",
+    "packages/core-CCITT",
+    "packages/core-JBIG2",
+    "packages/core-JPEG",
+    "packages/core-cmap",
+    "packages/core-color",
+    "packages/core-filters",
+    "packages/core-crypto",
+    "packages/core-ocr",
+    "packages/core-font-programs",
+    "packages/core-glyph",
+    "packages/core-layout",
 ]
 
 [project.urls]

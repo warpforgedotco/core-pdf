@@ -1,0 +1,19 @@
+[project]
+name = "core-glyph"
+version = "0.0.1"
+description = "Reusable rendered-glyph recognition and repair components"
+requires-python = ">=3.11"
+license = "AGPL-3.0-only"
+license-files = ["LICENSE.txt"]
+dependencies = ["core-layout>=0.0.1"]
+
+[build-system]
+requires = ["uv_build>=0.11.17,<0.12.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+lint = ["ruff>=0.11.13,<1.0.0"]
+test = ["pytest>=8.4.0,<10.0.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

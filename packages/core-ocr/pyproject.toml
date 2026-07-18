@@ -1,0 +1,24 @@
+[build-system]
+requires = ["uv_build>=0.11.16,<0.12"]
+build-backend = "uv_build"
+
+[project]
+name = "core-ocr"
+version = "0.0.1"
+description = "Reusable OCR data structures and image geometry primitives"
+readme = "README.md"
+authors = [{ name = "Kevin Turcios", email = "turcioskevinr@gmail.com" }]
+license = "AGPL-3.0-only"
+license-files = ["LICENSE.txt"]
+requires-python = ">=3.11"
+dependencies = ["core-layout>=0.0.1"]
+
+[project.urls]
+Repository = "https://github.com/core-experiments/core-ocr"
+
+[dependency-groups]
+test = ["pytest>=8.4.0,<10.0.0"]
+lint = ["ruff>=0.11.13,<1.0.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

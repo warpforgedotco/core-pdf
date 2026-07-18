@@ -1,0 +1,86 @@
+Core Commercial License Terms
+Version 0.1.0
+
+These terms are public standard terms. They become effective for a licensee only when incorporated by a signed order form or another written agreement with the Licensor.
+
+1. Parties
+
+"Licensor" means Kevin Turcios.
+
+"Licensee" means the person or entity identified in the applicable signed order form.
+
+"Software" means core-jpeg, including the source code, object code, documentation, examples, and other materials identified in the applicable order form.
+
+2. Commercial License Grant
+
+Subject to these terms and the applicable order form, Licensor grants Licensee a non-exclusive, non-transferable, worldwide license to use, copy, modify, prepare derivative works of, distribute, make available, perform, display, and run the Software as part of Licensee products, services, internal systems, and hosted offerings identified in the order form.
+
+Licensee may exercise this commercial license without releasing Licensee proprietary source code solely because the Software is also available under AGPLv3.
+
+3. Affiliates, Contractors, and Customers
+
+Licensee may allow its employees and contractors to use the Software on Licensee's behalf, provided they comply with these terms.
+
+Affiliates, customers, distributors, and other third parties are covered only if the order form expressly says so.
+
+4. Restrictions
+
+Unless the order form expressly allows it, Licensee must not:
+
+- remove copyright, license, attribution, or notices from the Software;
+- sell, sublicense, or make the Software available as a standalone product or service;
+- use Licensor names, trademarks, or logos except for accurate attribution;
+- use the Software outside the covered products, services, users, environments, or term stated in the order form;
+- represent that the Software is endorsed by the Python Software Foundation or any other third party.
+
+5. Open-Source License Fallback
+
+Anyone may use the Software under AGPLv3 without signing a commercial license. This commercial license is an additional permission for the Licensee only.
+
+If this commercial license expires or terminates, Licensee may continue using the Software only under AGPLv3 or another active written license from Licensor.
+
+6. Ownership
+
+Licensor and its contributors retain all rights not expressly granted. Licensee owns its independent proprietary code, products, services, data, and materials, subject to Licensor's rights in the Software.
+
+7. Contributions
+
+Unless a separate written agreement says otherwise, any contribution Licensee intentionally submits to the public project may be accepted under the inbound contribution terms published for the project at the time of submission.
+
+8. Support and Updates
+
+This commercial license does not include support, maintenance, service levels, security response commitments, or updates unless the order form expressly includes them.
+
+9. Term and Termination
+
+The license term is stated in the order form. If no term is stated, the commercial license is effective until terminated.
+
+Licensor may terminate this commercial license if Licensee materially breaches these terms and does not cure the breach within 30 days after written notice.
+
+Upon termination, Licensee must stop proprietary use of the Software under this commercial license. Any AGPLv3 rights that Licensee independently has are governed by AGPLv3.
+
+10. Compliance Records
+
+During the license term and for one year after it ends, Licensee must keep reasonable records showing use within the scope of the order form. Upon reasonable written request, Licensee must provide enough information to confirm compliance without disclosing unrelated confidential information.
+
+11. Warranty Disclaimer
+
+To the maximum extent permitted by law, the Software is provided "as is" and "as available", without warranties of any kind, including implied warranties of merchantability, fitness for a particular purpose, non-infringement, title, availability, or error-free operation.
+
+12. Limitation of Liability
+
+To the maximum extent permitted by law, Licensor will not be liable for indirect, incidental, special, consequential, exemplary, or punitive damages, or for lost profits, revenue, goodwill, data, or business interruption.
+
+Licensor's total liability under this commercial license will not exceed the amounts paid or payable by Licensee under the applicable order form during the 12 months before the event giving rise to the claim.
+
+13. General Terms
+
+The order form controls over these terms only where it expressly states that it overrides a specific section.
+
+Licensee may not assign this commercial license without Licensor's prior written consent, except to a successor in connection with a merger, acquisition, or sale of substantially all assets if the successor assumes these terms in writing.
+
+These terms do not grant rights to Licensor trademarks, service marks, trade names, logos, or branding except as expressly stated.
+
+The governing law and venue are stated in the order form.
+
+License contact: turcioskevinr@gmail.com

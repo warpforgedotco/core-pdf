@@ -1,0 +1,87 @@
+Core Philanthropy Waiver Terms
+Version 0.1.0
+
+These terms describe an optional proprietary-use waiver tied to qualifying donations to the Python Software Foundation. The waiver is not automatic. It becomes effective only when Licensor signs a waiver certificate for a specific recipient.
+
+The Python Software Foundation is not a party to this waiver, does not grant this waiver, does not verify compliance with this waiver, and is not responsible for the Software.
+
+1. Parties
+
+"Licensor" means Kevin Turcios.
+
+"Recipient" means the person or entity identified in a signed waiver certificate.
+
+"Software" means core-jpeg, including the source code, object code, documentation, examples, and other materials identified in the signed waiver certificate.
+
+"PSF" means the Python Software Foundation.
+
+2. Qualifying Donation
+
+A "Qualifying Donation" is a donation made directly to the PSF and documented in a receipt or acknowledgement that Licensor accepts in a signed waiver certificate.
+
+The public terms do not set donation amounts or schedules. Any donation evidence, amount, date, schedule, renewal rule, or term belongs in the signed waiver certificate or a separate written approval from Licensor.
+
+3. Waiver Grant
+
+Subject to these terms and the signed waiver certificate, Licensor grants Recipient a non-exclusive, non-transferable, worldwide license to use, copy, modify, prepare derivative works of, distribute, make available, perform, display, and run the Software as part of Recipient products, services, internal systems, and hosted offerings identified in the waiver certificate.
+
+Recipient may exercise this waiver without releasing Recipient proprietary source code solely because the Software is also available under AGPLv3.
+
+4. Conditions
+
+Recipient must:
+
+- make the Qualifying Donation directly to the PSF;
+- provide donation evidence to Licensor;
+- receive a signed waiver certificate from Licensor before relying on this waiver;
+- keep copyright, license, attribution, and notices from the Software;
+- use the Software only within the scope and term stated in the waiver certificate;
+- avoid representing that the PSF sponsors, endorses, verifies, or approves Recipient, Licensor, the Software, or this waiver.
+
+5. Affiliates, Contractors, and Customers
+
+Employees and contractors may use the Software on Recipient's behalf if they comply with these terms.
+
+Affiliates, customers, distributors, and other third parties are covered only if the signed waiver certificate expressly says so.
+
+6. Term and Renewal
+
+The waiver term is stated in the signed waiver certificate. If no term is stated, the waiver lasts for 12 months from the certificate effective date.
+
+Renewal requires a new Qualifying Donation or other written approval from Licensor and a new or updated waiver certificate.
+
+7. Termination
+
+Licensor may terminate the waiver if Recipient materially breaches these terms or the signed waiver certificate and does not cure the breach within 30 days after written notice.
+
+Licensor may terminate immediately if Recipient falsifies donation evidence, misrepresents PSF involvement, or uses the Software outside the certificate scope in a way that cannot reasonably be cured.
+
+After expiration or termination, Recipient must stop proprietary use under this waiver. Recipient may continue using the Software only under AGPLv3 or another active written license from Licensor.
+
+8. No Refunds or PSF Obligations
+
+Donations are made to the PSF, not to Licensor. Licensor does not control PSF donation processing, acknowledgement letters, refund decisions, tax treatment, or donor status.
+
+9. No Support or Updates
+
+This waiver does not include support, maintenance, service levels, security response commitments, or updates unless a separate written agreement says otherwise.
+
+10. Warranty Disclaimer
+
+To the maximum extent permitted by law, the Software is provided "as is" and "as available", without warranties of any kind, including implied warranties of merchantability, fitness for a particular purpose, non-infringement, title, availability, or error-free operation.
+
+11. Limitation of Liability
+
+To the maximum extent permitted by law, Licensor will not be liable for indirect, incidental, special, consequential, exemplary, or punitive damages, or for lost profits, revenue, goodwill, data, or business interruption.
+
+Licensor's total liability under this waiver is limited to the maximum extent permitted by applicable law.
+
+12. General Terms
+
+Recipient may not assign this waiver without Licensor's prior written consent, except to a successor in connection with a merger, acquisition, or sale of substantially all assets if the successor assumes these terms in writing.
+
+These terms do not grant rights to Licensor or PSF trademarks, service marks, trade names, logos, or branding except as expressly stated.
+
+The governing law and venue are stated in the signed waiver certificate.
+
+License contact: turcioskevinr@gmail.com

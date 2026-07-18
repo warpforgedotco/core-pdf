@@ -1,0 +1,12 @@
+[project]
+name = "core-color"
+version = "0.0.1"
+description = "Shared color-space and ICC profile conversion components"
+requires-python = ">=3.11"
+license = "AGPL-3.0-only"
+license-files = ["LICENSE.txt"]
+dependencies = []
+
+[build-system]
+requires = ["uv_build>=0.11.17,<0.12.0"]
+build-backend = "uv_build"

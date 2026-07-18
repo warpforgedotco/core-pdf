@@ -1,0 +1,19 @@
+[project]
+name = "core-cmap"
+version = "0.0.1"
+description = "Reusable CMap and CID resource components"
+requires-python = ">=3.11"
+license = "AGPL-3.0-only"
+license-files = ["LICENSE.txt"]
+dependencies = []
+
+[build-system]
+requires = ["uv_build>=0.11.17,<0.12.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+lint = ["ruff>=0.11.13,<1.0.0"]
+test = ["pytest>=8.4.0,<10.0.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

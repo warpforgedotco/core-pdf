@@ -1,0 +1,1 @@
+"""Shared color implementation details."""

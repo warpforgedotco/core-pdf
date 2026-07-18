@@ -1,0 +1,1 @@
+"""CCITT codec implementation details."""

@@ -236,12 +236,12 @@ wheels = [
 [[package]]
 name = "core-ccitt"
 version = "0.0.1"
-source = { editable = "../core-CCITT" }
+source = { editable = "packages/core-CCITT" }
 
 [[package]]
 name = "core-cmap"
 version = "0.0.1"
-source = { editable = "../core-cmap" }
+source = { editable = "packages/core-cmap" }
 
 [package.dev-dependencies]
 lint = [
@@ -260,12 +260,12 @@ test = [{ name = "pytest", specifier = ">=8.4.0,<10.0.0" }]
 [[package]]
 name = "core-color"
 version = "0.0.1"
-source = { editable = "../core-color" }
+source = { editable = "packages/core-color" }
 
 [[package]]
 name = "core-crypto"
 version = "0.0.1"
-source = { editable = "../core-crypto" }
+source = { editable = "packages/core-crypto" }
 
 [package.dev-dependencies]
 lint = [
@@ -284,7 +284,7 @@ test = [{ name = "pytest", specifier = ">=8.4.0,<10.0.0" }]
 [[package]]
 name = "core-filters"
 version = "0.0.1"
-source = { editable = "../core-filters" }
+source = { editable = "packages/core-filters" }
 dependencies = [
     { name = "core-ccitt" },
     { name = "core-jbig2" },
@@ -313,7 +313,7 @@ test = [{ name = "pytest", specifier = ">=8.4.0,<10.0.0" }]
 [[package]]
 name = "core-font-programs"
 version = "0.0.1"
-source = { editable = "../core-font-programs" }
+source = { editable = "packages/core-font-programs" }
 dependencies = [
     { name = "fonttools" },
 ]
@@ -324,7 +324,7 @@ requires-dist = [{ name = "fonttools", specifier = ">=4.63.0,<5.0.0" }]
 [[package]]
 name = "core-glyph"
 version = "0.0.1"
-source = { editable = "../core-glyph" }
+source = { editable = "packages/core-glyph" }
 dependencies = [
     { name = "core-layout" },
 ]
@@ -347,12 +347,12 @@ test = [{ name = "pytest", specifier = ">=8.4.0,<10.0.0" }]
 [[package]]
 name = "core-jbig2"
 version = "0.0.1"
-source = { editable = "../core-JBIG2" }
+source = { editable = "packages/core-JBIG2" }
 
 [[package]]
 name = "core-jpeg"
 version = "0.0.1"
-source = { editable = "../core-JPEG" }
+source = { editable = "packages/core-JPEG" }
 dependencies = [
     { name = "core-color" },
 ]
@@ -385,7 +385,7 @@ lint = [
 [[package]]
 name = "core-layout"
 version = "0.0.1"
-source = { editable = "../core-layout" }
+source = { editable = "packages/core-layout" }
 
 [package.dev-dependencies]
 lint = [
@@ -404,7 +404,7 @@ test = [{ name = "pytest", specifier = ">=8.4.0,<10.0.0" }]
 [[package]]
 name = "core-ocr"
 version = "0.0.1"
-source = { editable = "../core-ocr" }
+source = { editable = "packages/core-ocr" }
 dependencies = [
     { name = "core-layout" },
 ]
@@ -472,17 +472,17 @@ vendor = [
 
 [package.metadata]
 requires-dist = [
-    { name = "core-ccitt", editable = "../core-CCITT" },
-    { name = "core-cmap", editable = "../core-cmap" },
-    { name = "core-color", editable = "../core-color" },
-    { name = "core-crypto", editable = "../core-crypto" },
-    { name = "core-filters", editable = "../core-filters" },
-    { name = "core-font-programs", editable = "../core-font-programs" },
-    { name = "core-glyph", editable = "../core-glyph" },
-    { name = "core-jbig2", editable = "../core-JBIG2" },
-    { name = "core-jpeg", editable = "../core-JPEG" },
-    { name = "core-layout", editable = "../core-layout" },
-    { name = "core-ocr", editable = "../core-ocr" },
+    { name = "core-ccitt", editable = "packages/core-CCITT" },
+    { name = "core-cmap", editable = "packages/core-cmap" },
+    { name = "core-color", editable = "packages/core-color" },
+    { name = "core-crypto", editable = "packages/core-crypto" },
+    { name = "core-filters", editable = "packages/core-filters" },
+    { name = "core-font-programs", editable = "packages/core-font-programs" },
+    { name = "core-glyph", editable = "packages/core-glyph" },
+    { name = "core-jbig2", editable = "packages/core-JBIG2" },
+    { name = "core-jpeg", editable = "packages/core-JPEG" },
+    { name = "core-layout", editable = "packages/core-layout" },
+    { name = "core-ocr", editable = "packages/core-ocr" },
 ]
 
 [package.metadata.requires-dev]
