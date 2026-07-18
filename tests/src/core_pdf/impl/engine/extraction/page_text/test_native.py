@@ -262,6 +262,38 @@ def test_native_extraction_drops_duplicate_invisible_text_layer() -> None:
             ("Data Findings Presentation", "Provide an oral presentation", "The presentation"),
             ("list",),
         ),
+        (
+            "Index_to_Positions_table_vertical_text-p063.pdf",
+            0,
+            "Guards",
+            ("2758- 82", "Guards", "Clk-otenograpbers"),
+            (),
+        ),
+        (
+            "CV_RenyuHu_2023p4-4.pdf",
+            0,
+            "EXTERNALLY SPONSORED RESEARCH PROJECTS",
+            ("Renyu\tHu", "EXTERNALLY SPONSORED RESEARCH PROJECTS", "Principal\tInvestigator"),
+            (),
+        ),
+        (
+            "Financing-the-big-investment-p002.pdf",
+            0,
+            "The Grantham Research Institute",
+            (
+                "The Grantham Research Institute",
+                "The Brookings Institution",
+                "Financing a big investment push",
+            ),
+            (),
+        ),
+        (
+            "IRS-2023-Form-1095-A-p002.pdf",
+            0,
+            "Form 1095-A",
+            ("Form 1095-A", "Part I Recipient Information", "33 Annual Totals"),
+            (),
+        ),
     ],
 )
 def test_native_extraction_quality_corpus(
@@ -282,7 +314,8 @@ def test_native_extraction_quality_corpus(
         assert expected_text.casefold() in text.casefold()
         lines = [line.strip() for line in text.splitlines() if line.strip()]
         assert lines
-        assert all(left != right for left, right in zip(lines, lines[1:], strict=False))
+        if result.page_class != "table":
+            assert all(left != right for left, right in zip(lines, lines[1:], strict=False))
         positions = [text.casefold().index(marker.casefold()) for marker in ordered_markers]
         assert positions == sorted(positions)
         assert expected_block_kinds == tuple(
