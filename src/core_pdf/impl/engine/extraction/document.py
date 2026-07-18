@@ -38,12 +38,9 @@ class PdfDocument(
         return cls(source, password=password)
 
     def extract(self, *, adapters: Iterable[DocumentAdapter] = ()) -> Document:
-        from core_pdf.impl.engine.extraction.document_ir import extraction_result_to_document
-        from core_pdf.impl.engine.extraction.page_text.engine import (
-            build_document_extraction_result,
-        )
+        from core_pdf.impl.engine.extraction.page_text.engine import build_document
 
-        document = extraction_result_to_document(build_document_extraction_result(self))
+        document = build_document(self)
         for adapter in adapters:
             document = adapter.apply(document)
         return document

@@ -13,6 +13,8 @@ from core_pdf.impl.engine.extraction.common import page_profile
 from core_pdf.impl.exceptions import PdfParseError
 
 if TYPE_CHECKING:
+    from core_document import Document, Page
+
     from core_pdf.impl.engine.spec.s_07_document.metadata_types import MetadataRecord
 
 
@@ -76,7 +78,9 @@ class DocumentExtractionResult:
     diagnostics: tuple[dict[str, Any], ...] = ()
 
     def to_markdown(self) -> str:
-        return "\f".join(render_page_blocks(page.blocks) for page in self.pages) + "\f"
+        from core_pdf.impl.engine.extraction.document_ir import extraction_result_to_document
+
+        return extraction_result_to_document(self).to_markdown()
 
 
 def document_summary(
@@ -223,6 +227,19 @@ def build_document_extraction_result(
         summary=document_summary(page_results),
         diagnostics=tuple(diagnostics),
     )
+
+
+def build_page_document(page: SupportsPageExtraction) -> Page:
+    from core_pdf.impl.engine.extraction.document_ir import page_result_to_document_page
+
+    result = build_page_extraction_result(page, include_related=True)
+    return page_result_to_document_page(result, width=page.width, height=page.height)
+
+
+def build_document(document: SupportsDocumentExtraction) -> Document:
+    from core_pdf.impl.engine.extraction.document_ir import extraction_result_to_document
+
+    return extraction_result_to_document(build_document_extraction_result(document))
 
 
 def classify_page(
@@ -549,5 +566,7 @@ __all__ = (
     "ResolvedLineRecord",
     "TextBlock",
     "build_document_extraction_result",
+    "build_document",
+    "build_page_document",
     "build_page_extraction_result",
 )

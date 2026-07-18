@@ -7,7 +7,10 @@ from core_document import Document, DocumentAdapter
 from core_layout.impl.layout.models import TextRun
 
 from core_pdf.impl.engine.extraction.document import PdfDocument
-from core_pdf.impl.engine.extraction.page_text.engine import build_page_extraction_result
+from core_pdf.impl.engine.extraction.page_text.engine import (
+    build_page_document,
+    build_page_extraction_result,
+)
 from core_pdf.impl.engine.extraction.page_text.native import native_text_runs_for_extraction
 
 TESTS_DIR = Path(__file__).parents[6]
@@ -146,6 +149,15 @@ def test_document_extract_returns_core_document_ir() -> None:
     assert result.to_json_dict()["schema_version"] == "1.0"
     assert "GLOBAL AIDS STRATEGY" in result.to_markdown()
     assert 'data-schema-version="1.0"' in result.to_html()
+
+
+def test_page_builder_returns_core_document_page_directly() -> None:
+    with PdfDocument.open(SAMPLE_PDF) as document:
+        page = cast(Any, document.pages[0])
+        result = build_page_document(page)
+
+    assert result.page_number == 1
+    assert result.blocks
 
 
 def test_document_extract_accepts_optional_immutable_adapters() -> None:
