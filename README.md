@@ -20,8 +20,8 @@ standard Type1 fonts by default. Pass a `PdfFontProvider` for alternate font
 resources; Unicode outside the provider’s encoding is rejected explicitly.
 
 Pass `StandardPdfEncryption(user_password=...)` to enable PDF Standard Security
-Revision 3 encryption. Incremental saves reject encrypted input until encrypted
-incremental updates are implemented.
+Revision 3 encryption. Incremental saves preserve that encryption for new and
+replaced objects when the authenticated input uses Standard Security Revision 3.
 
 `PdfSignaturePlan` provides a detached PDF signature container backed by an
 external CMS/PKCS#7 signer. The signer receives the exact `/ByteRange` bytes;
