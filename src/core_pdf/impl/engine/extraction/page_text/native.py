@@ -5,6 +5,12 @@ from bisect import bisect_left
 from collections import Counter
 from typing import TYPE_CHECKING, Any
 
+from core_glyph.impl.glyph_recognizer import (
+    CONTEXTUAL_PUNCTUATION_GLYPH_TEXT,
+    is_suspicious_bitmap_label,
+    repair_text_runs_with_glyph_bitmaps,
+    text_runs_from_rendered_glyphs,
+)
 from core_layout.impl.layout.geometry_quality import (
     LayoutGeometrySummary,
     page_layout_geometry_summary,
@@ -37,12 +43,6 @@ from core_pdf.impl.engine.extraction.ocr import (
 )
 from core_pdf.impl.engine.extraction.ocr import (
     schematic as ocr_schematic,
-)
-from core_pdf.impl.engine.extraction.ocr.glyph_recognizer import (
-    CONTEXTUAL_PUNCTUATION_GLYPH_TEXT,
-    is_suspicious_bitmap_label,
-    repair_text_runs_with_glyph_bitmaps,
-    text_runs_from_rendered_glyphs,
 )
 
 MIN_VISIBLE_GLYPH_COVERAGE = 0.75

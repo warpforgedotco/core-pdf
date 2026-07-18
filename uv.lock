@@ -14,6 +14,7 @@ members = [
     "core-crypto",
     "core-filters",
     "core-font-programs",
+    "core-glyph",
     "core-jbig2",
     "core-jpeg",
     "core-layout",
@@ -321,6 +322,29 @@ dependencies = [
 requires-dist = [{ name = "fonttools", specifier = ">=4.63.0,<5.0.0" }]
 
 [[package]]
+name = "core-glyph"
+version = "0.0.1"
+source = { editable = "../core-glyph" }
+dependencies = [
+    { name = "core-layout" },
+]
+
+[package.dev-dependencies]
+lint = [
+    { name = "ruff" },
+]
+test = [
+    { name = "pytest" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "core-layout", specifier = ">=0.0.1" }]
+
+[package.metadata.requires-dev]
+lint = [{ name = "ruff", specifier = ">=0.11.13,<1.0.0" }]
+test = [{ name = "pytest", specifier = ">=8.4.0,<10.0.0" }]
+
+[[package]]
 name = "core-jbig2"
 version = "0.0.1"
 source = { editable = "../core-JBIG2" }
@@ -411,6 +435,7 @@ dependencies = [
     { name = "core-crypto" },
     { name = "core-filters" },
     { name = "core-font-programs" },
+    { name = "core-glyph" },
     { name = "core-jbig2" },
     { name = "core-jpeg" },
     { name = "core-layout" },
@@ -453,6 +478,7 @@ requires-dist = [
     { name = "core-crypto", editable = "../core-crypto" },
     { name = "core-filters", editable = "../core-filters" },
     { name = "core-font-programs", editable = "../core-font-programs" },
+    { name = "core-glyph", editable = "../core-glyph" },
     { name = "core-jbig2", editable = "../core-JBIG2" },
     { name = "core-jpeg", editable = "../core-JPEG" },
     { name = "core-layout", editable = "../core-layout" },

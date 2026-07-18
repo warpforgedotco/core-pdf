@@ -20,6 +20,7 @@ dependencies = [
     "core-crypto>=0.0.1",
     "core-ocr>=0.0.1",
     "core-font-programs>=0.0.1",
+    "core-glyph>=0.0.1",
     "core-jbig2>=0.0.1",
     "core-jpeg>=0.0.0",
     "core-layout>=0.0.1",
@@ -33,6 +34,7 @@ core-filters = { workspace = true }
 core-crypto = { workspace = true }
 core-ocr = { workspace = true }
 core-font-programs = { workspace = true }
+core-glyph = { workspace = true }
 core-jbig2 = { workspace = true }
 core-jpeg = { workspace = true }
 core-layout = { workspace = true }
@@ -48,6 +50,7 @@ members = [
     "../core-crypto",
     "../core-ocr",
     "../core-font-programs",
+    "../core-glyph",
     "../core-layout",
 ]
 
