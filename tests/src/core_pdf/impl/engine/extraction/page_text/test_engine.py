@@ -11,6 +11,7 @@ from core_pdf.impl.engine.extraction.page_text.engine import (
     build_text_blocks,
     related_page_records,
     render_page_blocks,
+    text_noise_penalty,
 )
 from core_pdf.impl.engine.spec.s_07_document.metadata_types import MetadataRecord
 
@@ -114,6 +115,14 @@ def test_blocks_classify_lists_without_rewriting_their_text() -> None:
     assert blocks[0].kind == "list"
     assert len(blocks[0].lines) == 2
     assert render_page_blocks(blocks) == "1. First item\n- Second item"
+
+
+def test_text_noise_penalty_distinguishes_corrupt_sentinels_from_punctuation() -> None:
+    valid = text_noise_penalty("Section 3: Results (2024)")
+    corrupt = text_noise_penalty("Section \ufffd\ufffd\ufffd Results")
+
+    assert corrupt > valid
+    assert corrupt >= 0.25
 
 
 def test_document_markdown_preserves_page_boundaries() -> None:

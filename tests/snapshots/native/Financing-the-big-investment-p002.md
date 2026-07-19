@@ -1,7 +1,7 @@
 ---
 fixture: Financing-the-big-investment-p002.pdf
 rotation: 0
-page_class: native_text
+page_class: mixed
 base_route: native_fast
 block_count: 2
 line_count: 42

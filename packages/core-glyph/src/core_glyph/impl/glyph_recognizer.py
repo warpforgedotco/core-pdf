@@ -1,11 +1,13 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from core_layout.impl.layout.glyphs import GlyphCluster
 from core_layout.impl.layout.models import TextRun
+
+from core_glyph.impl.recognition import GlyphRecognitionBackend
 
 BITMAP_REPAIR_LABELS = frozenset(
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,-+/()[]{}<>|_~"
@@ -16,11 +18,35 @@ LEGITIMATE_MULTI_CHAR_GLYPHS = {"ff", "fi", "fl", "ffi", "ffl", "st"}
 MAX_BITMAP_REPAIR_DISTANCE = 0.18
 
 
+@dataclass(slots=True)
+class GlyphBitmapCatalog:
+    """Document-scoped evidence for repairing mislabeled rendered glyphs."""
+
+    examples: dict[
+        tuple[str | None, int, int],
+        dict[tuple[tuple[int, ...], str], None],
+    ] = field(default_factory=dict)
+
+    def observe(self, glyph_items: list[dict[str, Any]]) -> None:
+        for item in glyph_items:
+            text = item.get("text")
+            bitmap = normalized_bitmap(item)
+            if bitmap is None or not is_trustworthy_bitmap_label(text):
+                continue
+            assert isinstance(text, str)
+            self.examples.setdefault(glyph_repair_key(item), {})[(bitmap, text)] = None
+
+    def candidates_for(self, key: tuple[str | None, int, int]) -> list[tuple[tuple[int, ...], str]]:
+        return list(self.examples.get(key, {}))
+
+
 def repair_text_runs_with_glyph_bitmaps(
     runs: list[Any],
     rendered_page: Any,
     *,
     repair_contextual_punctuation: bool = False,
+    recognizer: GlyphRecognitionBackend | None = None,
+    catalog: GlyphBitmapCatalog | None = None,
 ) -> list[Any]:
     display_list = getattr(rendered_page, "display_list", None)
     display_items = getattr(display_list, "items", ())
@@ -37,6 +63,8 @@ def repair_text_runs_with_glyph_bitmaps(
     repairs = glyph_bitmap_item_repairs(
         glyph_items,
         repair_contextual_punctuation=repair_contextual_punctuation,
+        recognizer=recognizer,
+        catalog=catalog,
     )
     if not repairs:
         return runs
@@ -186,6 +214,8 @@ def glyph_bitmap_item_repairs(
     glyph_items: list[dict[str, Any]],
     *,
     repair_contextual_punctuation: bool = False,
+    recognizer: GlyphRecognitionBackend | None = None,
+    catalog: GlyphBitmapCatalog | None = None,
 ) -> dict[int, str]:
     code_repairs = glyph_code_repairs(glyph_items)
     examples: dict[tuple[str | None, int, int], dict[tuple[tuple[int, ...], str], None]] = {}
@@ -214,7 +244,9 @@ def glyph_bitmap_item_repairs(
         elif is_suspicious_bitmap_label(text):
             targets.append(item)
             target_bitmaps[id(item)] = bitmap
-    if not examples or not targets:
+    if catalog is not None:
+        catalog.observe(glyph_items)
+    if not targets:
         return code_repairs
 
     repairs: dict[int, str] = dict(code_repairs)
@@ -229,14 +261,27 @@ def glyph_bitmap_item_repairs(
             best_label = best_label_cache[cache_key]
         else:
             candidates = examples.get(key)
+            candidate_bitmaps = list(candidates) if candidates else []
+            if catalog is not None:
+                candidate_bitmaps.extend(catalog.candidates_for(key))
             best_label = None
-            if candidates:
-                best_label = best_repair_label(bitmap, list(candidates.keys()))
+            if candidate_bitmaps:
+                best_label = best_repair_label(bitmap, candidate_bitmaps)
             best_label_cache[cache_key] = best_label
         if best_label is not None:
             glyph_index = glyph_item_index(item)
             if glyph_index is not None:
                 repairs[glyph_index] = best_label
+        if best_label is None and recognizer is not None:
+            recognized = recognizer.recognize(
+                bitmap,
+                int(item.get("bitmap_width") or 0),
+                int(item.get("bitmap_height") or len(bitmap)),
+            )
+            if recognized is not None:
+                glyph_index = glyph_item_index(item)
+                if glyph_index is not None:
+                    repairs[glyph_index] = recognized[0]
     return repairs
 
 

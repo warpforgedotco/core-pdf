@@ -16,6 +16,7 @@ SUPERSCRIPT_DIGIT_TRANSLATION = str.maketrans("0123456789", "⁰¹²³⁴⁵⁶�
 SUBSCRIPT_DIGIT_TRANSLATION = str.maketrans("0123456789", "₀₁₂₃₄₅₆₇₈₉")
 SCRIPT_DIGITS = frozenset("⁰¹²³⁴⁵⁶⁷⁸⁹₀₁₂₃₄₅₆₇₈₉")
 INLINE_MARKERS = frozenset({"™", "℠", "®", "©"})
+FORMULA_MARKERS = frozenset("∂∑√∞∈θΦω")
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,6 +93,10 @@ def reconstruct_layout_line_text(
             if has_interleaved_horizontal_overlap(sorted_runs):
                 sorted_runs = sorted(runs, key=lambda r: (r.order, r.stream_order))
 
+    is_formula_like_line = formula_like_runs(sorted_runs)
+    if angle == 0 and is_formula_like_line:
+        sorted_runs = reorder_stacked_formula_numerators(sorted_runs)
+
     digit_text_runs = 0
     all_text_runs_upper = True if is_all_caps_text is None else is_all_caps_text
     has_explicit_spaces = False
@@ -115,6 +120,7 @@ def reconstruct_layout_line_text(
     is_tracked_glyph_line = is_tracked_glyph_run_line(
         non_space_runs, has_explicit_spaces=has_explicit_spaces
     )
+    is_formula_like_line = formula_like_runs(sorted_runs)
 
     if angle in {90, 270} and len(non_space_runs) >= 8:
         return reconstruct_rotated_table_line(sorted_runs)
@@ -125,6 +131,7 @@ def reconstruct_layout_line_text(
         is_all_caps_line=is_all_caps_line,
         has_explicit_spaces=has_explicit_spaces,
         is_tracked_glyph_line=is_tracked_glyph_line,
+        is_formula_like_line=is_formula_like_line,
         suppress_tiny_page_footer=(len(sorted_runs) <= 3 and max_text_font_size <= 5.0),
     ).build()
 
@@ -259,6 +266,7 @@ class GlyphLineBuilder:
         "is_all_caps_line",
         "has_explicit_spaces",
         "is_tracked_glyph_line",
+        "is_formula_like_line",
         "suppress_tiny_page_footer",
         "tracked_word_gap",
         "explicit_spaces_control_glyph_gaps",
@@ -278,6 +286,7 @@ class GlyphLineBuilder:
         is_all_caps_line: bool = False,
         has_explicit_spaces: bool | None = None,
         is_tracked_glyph_line: bool = False,
+        is_formula_like_line: bool = False,
         suppress_tiny_page_footer: bool = False,
     ) -> None:
         self.runs = runs
@@ -290,6 +299,7 @@ class GlyphLineBuilder:
             else has_explicit_spaces
         )
         self.is_tracked_glyph_line = is_tracked_glyph_line
+        self.is_formula_like_line = is_formula_like_line
         self.suppress_tiny_page_footer = suppress_tiny_page_footer
         self.tracked_word_gap = (
             tracked_glyph_word_gap_threshold(runs) if is_tracked_glyph_line else None
@@ -398,6 +408,7 @@ class GlyphLineBuilder:
         if self.suppress_tiny_page_footer and is_tiny_page_footer(combined):
             return EMPTY_LAYOUT_LINE_TEXT
         text = collapse_repeated_spaces(combined)
+        text = repair_table_split_word_boundaries(text)
         if not text:
             return EMPTY_LAYOUT_LINE_TEXT
         return LayoutLineText(text, tuple(segments))
@@ -497,9 +508,13 @@ class GlyphLineBuilder:
             return ""
         if self.is_trademark_marker_run(run, index):
             return "™"
-        if self.is_superscript_like_numeric_run(run, index):
+        if self.is_superscript_like_numeric_run(run, index) or self.is_unit_exponent_run(
+            run, index
+        ):
             return text.translate(SUPERSCRIPT_DIGIT_TRANSLATION)
-        if self.is_subscript_like_numeric_run(run, index):
+        if self.is_subscript_like_numeric_run(run, index) or (
+            self.is_formula_like_line and self.is_formula_subscript_like_numeric_run(run, index)
+        ):
             return text.translate(SUBSCRIPT_DIGIT_TRANSLATION)
         return text
 
@@ -638,6 +653,100 @@ class GlyphLineBuilder:
         attach_gap = max(run.space_width * 0.5, context_font_size * 0.2, 2.0)
         return run.x0 - previous.x1 <= attach_gap
 
+    def is_formula_subscript_like_numeric_run(self, run: TextRun, index: int) -> bool:
+        """Recognize numeric subscripts attached to mathematical variables."""
+        stripped = run.stripped_text
+        if (
+            not stripped
+            or stripped != run.text
+            or not stripped.isdigit()
+            or len(stripped) > 3
+            or run.rotation_angle != 0
+            or run.baseline is None
+        ):
+            return False
+        previous = self.previous_non_space_run(index)
+        if previous is None or not previous.stripped_text[-1:].isalpha():
+            return False
+        if previous.baseline is None:
+            return False
+        previous_height = previous.height_value
+        if previous_height <= 0.0 or run.height_value >= previous_height * 0.9:
+            return False
+        baseline_drop = baseline_midpoint(previous.baseline, 0) - baseline_midpoint(run.baseline, 0)
+        if baseline_drop < max(0.45, previous_height * 0.05):
+            return False
+        attach_gap = max(run.space_width * 0.5, previous_height * 0.2, 2.0)
+        return run.x0 - previous.x1 <= attach_gap
+
+    def is_unit_exponent_run(self, run: TextRun, index: int) -> bool:
+        stripped = run.stripped_text
+        if (
+            not stripped
+            or stripped != run.text
+            or not stripped.isdigit()
+            or len(stripped) > 2
+            or run.rotation_angle != 0
+        ):
+            return False
+        left_candidates = sorted(
+            (
+                candidate
+                for candidate in self.runs
+                if candidate is not run
+                and candidate.has_text
+                and candidate.x0 < run.x0
+                and candidate.x1 <= run.x1 + 0.01
+            ),
+            key=lambda candidate: candidate.x0,
+        )
+        previous = max(
+            (
+                candidate
+                for candidate in left_candidates
+                if candidate.stripped_text.rstrip().endswith(("in", "cm", "mm", "ft", "yd"))
+            ),
+            key=lambda candidate: candidate.x1,
+            default=None,
+        )
+        if previous is None:
+            for left, right in zip(left_candidates, left_candidates[1:], strict=False):
+                if (
+                    left.stripped_text.rstrip().endswith("i")
+                    and right.stripped_text.lstrip().startswith("n")
+                    and right.x0 - left.x1 <= max(run.space_width * 0.5, 2.0)
+                ):
+                    previous = right
+        following = min(
+            (
+                candidate
+                for candidate in self.runs
+                if candidate is not run
+                and candidate.has_text
+                and candidate.x0 >= run.x1 - 0.01
+                and candidate.stripped_text.lstrip().startswith((")", "]", "}"))
+            ),
+            key=lambda candidate: candidate.x0,
+            default=None,
+        )
+        if following is not None:
+            prefix_runs = [
+                candidate
+                for candidate in left_candidates
+                if candidate.x1 <= run.x0 + max(1.0, run.space_width * 0.25)
+            ]
+            prefix = "".join(candidate.stripped_text for candidate in prefix_runs).rstrip()
+            if any(prefix.endswith(unit) for unit in ("in", "cm", "mm", "ft", "yd")):
+                attach_gap = max(run.space_width, run.font_size * 0.55, 4.0)
+                return (
+                    run.x0 - prefix_runs[-1].x1 <= attach_gap
+                    and following.x0 - run.x1 <= attach_gap
+                )
+        if previous is None or following is None or run.baseline is None:
+            return False
+        attach_gap = max(run.space_width, previous.font_size * 0.55, 4.0)
+        return run.x0 - previous.x1 <= attach_gap and following.x0 - run.x1 <= attach_gap
+
     def previous_non_space_run(self, index: int) -> TextRun | None:
         for reverse_index in range(index - 1, -1, -1):
             run = self.runs[reverse_index]
@@ -752,13 +861,25 @@ class GlyphLineBuilder:
         if estimated_char_width is not None:
             stripped = text.strip()
             prev_stripped = prev_text.strip()
-            if should_use_estimated_word_spacing(prev_stripped, stripped):
+            tight_fragment_gap = max(1.8, min(run.space_width, height) * 0.25)
+            if (
+                should_use_estimated_word_spacing(prev_stripped, stripped)
+                and x_gap > tight_fragment_gap
+            ):
                 spacing_gap = x0 - (prev_x0 + len(prev_stripped) * estimated_char_width)
         baseline_delta = self.atom_baseline_delta(previous, atom)
         if inline_marker_text(text):
             return "", "inline_marker_join"
+        if self.is_formula_like_line and self.is_formula_numeric_atom(previous, atom):
+            return " ", "formula_numeric_boundary_space"
+        if self.is_formula_like_line and self.is_formula_fraction_denominator(previous, atom):
+            return "/", "formula_fraction_separator"
+        if script_digit_text(prev_text) and text[:1] in ")]},.;:":
+            return "", "script_digit_suffix_join"
         if script_digit_text(text):
             return "", "script_digit_join"
+        if self.is_formula_like_line and self.is_formula_script_atom(previous, atom):
+            return " ", "formula_script_boundary_space"
         if baseline_delta is not None and baseline_delta > max(height * 0.42, 2.0):
             return " ", "baseline_space"
 
@@ -822,6 +943,7 @@ class GlyphLineBuilder:
             space_width=run.space_width,
             prev_visible=prev_run.visible,
             visible=run.visible,
+            allow_short_prefix=(len(prev_run.stripped_text) <= 2 and len(run.stripped_text) <= 2),
         ):
             return "", "word_fragment_join"
         if (
@@ -891,6 +1013,8 @@ class GlyphLineBuilder:
                 and len(stripped) >= 3
             )
         ):
+            if prev_run is run and x_gap <= max(0.5, min(run.space_width, height) * 0.2):
+                return "", "same_run_case_digit_join"
             if compact_unit_suffix_should_join(
                 prev_stripped,
                 stripped,
@@ -901,6 +1025,76 @@ class GlyphLineBuilder:
                 return "", "compact_unit_suffix_join"
             return " ", "case_digit_boundary_space"
         return "", "join"
+
+    def is_formula_script_atom(
+        self,
+        previous: LayoutLineTextAtom,
+        atom: LayoutLineTextAtom,
+    ) -> bool:
+        text = atom.text.strip()
+        if len(text) != 1 or not text.isalpha():
+            return False
+        previous_height = previous.advance_bbox[3] - previous.advance_bbox[1]
+        height = atom.advance_bbox[3] - atom.advance_bbox[1]
+        if previous_height <= 0.0 or height >= previous_height * 0.84:
+            return False
+        baseline_delta = self.atom_baseline_delta(previous, atom)
+        if baseline_delta is None or baseline_delta < max(0.7, previous_height * 0.1):
+            return False
+        x_gap = atom.advance_bbox[0] - previous.advance_bbox[2]
+        return x_gap <= max(2.0, previous_height * 0.25)
+
+    def is_formula_numeric_atom(
+        self,
+        previous: LayoutLineTextAtom,
+        atom: LayoutLineTextAtom,
+    ) -> bool:
+        text = atom.text.strip()
+        if len(text) != 1 or text not in "0123456789" or not previous.text.strip()[-1:].isalpha():
+            return False
+        previous_height = previous.advance_bbox[3] - previous.advance_bbox[1]
+        height = atom.advance_bbox[3] - atom.advance_bbox[1]
+        if previous_height <= 0.0 or height >= previous_height * 0.9:
+            return False
+        baseline_delta = self.atom_baseline_delta(previous, atom)
+        if baseline_delta is None or abs(baseline_delta) < max(0.45, previous_height * 0.04):
+            return False
+        x_gap = atom.advance_bbox[0] - previous.advance_bbox[2]
+        return x_gap <= max(2.0, previous_height * 0.25)
+
+    def is_formula_fraction_denominator(
+        self,
+        previous: LayoutLineTextAtom,
+        atom: LayoutLineTextAtom,
+    ) -> bool:
+        """Recognize a same-size lower glyph stacked under a formula glyph."""
+        text = atom.text.strip()
+        if not text:
+            return False
+        previous_text = previous.text.strip()
+        if not previous_text:
+            return False
+        if text[:1] == "∂" and previous_text.endswith((")", "]", "}")):
+            return True
+        if text[:1] not in "√GT":
+            return False
+        if text[:1] == "T" and previous_text in {"t", "s"}:
+            pass
+        elif not previous_text[-1:].isdigit():
+            return False
+        previous_height = previous.advance_bbox[3] - previous.advance_bbox[1]
+        height = atom.advance_bbox[3] - atom.advance_bbox[1]
+        if previous_height <= 0.0 or height < previous_height * 0.82:
+            return False
+        if previous.baseline is None or atom.baseline is None:
+            return False
+        previous_baseline = baseline_midpoint(previous.baseline, previous.run.rotation_angle)
+        atom_baseline = baseline_midpoint(atom.baseline, atom.run.rotation_angle)
+        lower_by = previous_baseline - atom_baseline
+        if lower_by < max(2.0, previous_height * 0.35):
+            return False
+        x_gap = atom.advance_bbox[0] - previous.advance_bbox[2]
+        return x_gap <= max(2.0, previous_height * 0.25)
 
     def is_column_gap(
         self,
@@ -928,9 +1122,27 @@ class GlyphLineBuilder:
         space_width: float,
         prev_visible: bool,
         visible: bool,
+        allow_short_prefix: bool,
     ) -> bool:
-        if self.is_table_like_line or self.is_tracked_glyph_line:
+        if self.is_tracked_glyph_line:
             return False
+        if self.is_table_like_line:
+            # Tables frequently split a word into adjacent text-showing
+            # operators while also containing numeric cells.  Preserve the
+            # table spacing rules for real cell gaps, but join only very tight
+            # fragments (for example ``Vo`` + ``lume``).
+            if spacing_gap > max(1.8, min(space_width, height) * 0.25):
+                return False
+            return should_join_plausible_split_word(
+                prev_text,
+                text,
+                x_gap=spacing_gap,
+                height=height,
+                space_width=space_width,
+                prev_visible=prev_visible,
+                visible=visible,
+                allow_short_prefix=allow_short_prefix,
+            )
         return should_join_plausible_split_word(
             prev_text,
             text,
@@ -939,6 +1151,7 @@ class GlyphLineBuilder:
             space_width=space_width,
             prev_visible=prev_visible,
             visible=visible,
+            allow_short_prefix=allow_short_prefix,
         )
 
     def word_gap_threshold(self, run: TextRun, height: float) -> float:
@@ -1206,6 +1419,41 @@ def ranked_alpha_word(text: str) -> int | None:
     return word_rank(normalized)
 
 
+def repair_table_split_word_boundaries(text: str) -> str:
+    """Join dictionary-backed fragments split by table glyph spacing."""
+    tokens = text.split(" ")
+    if len(tokens) < 2:
+        return text
+    index = 0
+    while index + 1 < len(tokens):
+        left = tokens[index]
+        right = tokens[index + 1]
+        if table_split_word_join_is_plausible(left, right):
+            tokens[index : index + 2] = [left + right]
+            if index > 0:
+                index -= 1
+            continue
+        index += 1
+    repaired = " ".join(tokens)
+    return re.sub(r"\s+([.,;:)\]])", r"\1", repaired)
+
+
+def table_split_word_join_is_plausible(left: str, right: str) -> bool:
+    if not left.isalpha() or not right.isalpha():
+        return False
+    joined = left + right
+    joined_rank = ranked_alpha_word(joined)
+    if joined_rank is None or len(joined) < 3:
+        return False
+    left_rank = ranked_alpha_word(left)
+    right_rank = ranked_alpha_word(right)
+    if left_rank is None or right_rank is None:
+        return True
+    if joined_rank < min(left_rank, right_rank):
+        return True
+    return joined_rank <= 10_000 and max(left_rank, right_rank) >= 20_000
+
+
 def trailing_alpha_token(text: str) -> str:
     index = len(text)
     while index > 0 and text[index - 1].isalpha():
@@ -1243,6 +1491,7 @@ def should_join_plausible_split_word(
     space_width: float,
     prev_visible: bool,
     visible: bool,
+    allow_short_prefix: bool = False,
 ) -> bool:
     if not (prev_visible and visible):
         return False
@@ -1252,7 +1501,7 @@ def should_join_plausible_split_word(
         return False
     tail = trailing_alpha_token(prev)
     head = leading_alpha_token(text)
-    if len(tail) < 3 or not head:
+    if len(tail) < (1 if allow_short_prefix else 3) or not head:
         return False
     if not (tail[-1].islower() and head[0].islower()):
         return False
@@ -1260,6 +1509,12 @@ def should_join_plausible_split_word(
         return False
     if x_gap > max(space_width * 1.45, height * 0.45, 4.5):
         return False
+    if allow_short_prefix and len(tail) < 3:
+        # A producer may split one word into several short text-showing
+        # operators (``V`` + ``o`` + ``l`` + ``u`` + ``m`` + ``e``). There is
+        # no useful dictionary candidate until the final fragment arrives, so
+        # keep only tight, lowercase joins in this opt-in path.
+        return x_gap <= max(1.8, min(space_width, height) * 0.25)
     joined = f"{tail}{head}"
     joined_rank = ranked_alpha_word(joined)
     if joined_rank is None or joined_rank > 150_000:
@@ -1399,6 +1654,81 @@ def baseline_midpoint(
     if rotation_angle in (90, 270):
         return (baseline[0] + baseline[2]) * 0.5
     return (baseline[1] + baseline[3]) * 0.5
+
+
+def formula_like_runs(runs: list[TextRun]) -> bool:
+    text = "".join(run.text for run in runs if run.has_text)
+    return bool(FORMULA_MARKERS.intersection(text))
+
+
+def reorder_stacked_formula_numerators(runs: list[TextRun]) -> list[TextRun]:
+    """Place a vertically stacked numeric numerator before its denominator.
+
+    PDF math producers commonly paint a fraction's numerator and denominator
+    as independent glyphs at the same x position.  The ordinary horizontal
+    sort consequently emits the denominator first.  Keep the correction
+    limited to a small digit/formula overlap so ordinary subscripts and table
+    values retain their existing order.
+    """
+    reordered = list(runs)
+    for index in range(1, len(reordered)):
+        numerator = reordered[index]
+        numerator_text = numerator.stripped_text
+        if not (
+            (numerator_text.isdigit() and len(numerator_text) <= 2) or numerator_text in {"t", "s"}
+        ):
+            continue
+        denominator_index = next(
+            (
+                candidate_index
+                for candidate_index in range(index - 1, -1, -1)
+                if stacked_formula_denominator(
+                    reordered[candidate_index],
+                    numerator,
+                    following=reordered[index + 1] if index + 1 < len(reordered) else None,
+                )
+            ),
+            None,
+        )
+        if denominator_index is None:
+            continue
+        denominator = reordered[denominator_index]
+        reordered[denominator_index:index] = [numerator, *reordered[denominator_index:index]]
+        reordered[index] = denominator
+    return reordered
+
+
+def stacked_formula_denominator(
+    denominator: TextRun,
+    numerator: TextRun,
+    *,
+    following: TextRun | None = None,
+) -> bool:
+    if not denominator.has_text or not numerator.has_text:
+        return False
+    if denominator.stripped_text.isdigit():
+        return False
+    if denominator.stripped_text[:1] not in "√GT":
+        return False
+    numerator_text = numerator.stripped_text
+    if denominator.stripped_text[:1] == "T" and numerator_text in {"t", "s"}:
+        if following is None or following.stripped_text[:1] not in ",;:)]}]:":
+            return False
+    elif not numerator_text.isdigit():
+        return False
+    if denominator.rotation_angle != 0 or numerator.rotation_angle != 0:
+        return False
+    denominator_height = denominator.height_value
+    numerator_height = numerator.height_value
+    if denominator_height <= 0.0 or numerator_height <= 0.0:
+        return False
+    if numerator_height < denominator_height * 0.7 or numerator_height > denominator_height * 1.3:
+        return False
+    overlap = min(denominator.x1, numerator.x1) - max(denominator.x0, numerator.x0)
+    if overlap <= 0.0:
+        return False
+    vertical_gap = numerator.y0 - denominator.y0
+    return vertical_gap >= max(2.0, denominator_height * 0.18)
 
 
 def script_digit_text(text: str) -> bool:

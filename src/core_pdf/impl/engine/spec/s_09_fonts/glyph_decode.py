@@ -44,6 +44,11 @@ def has_untrusted_unicode_semantics(text: str) -> bool:
     return False
 
 
+def has_invalid_unicode_mapping(text: str) -> bool:
+    """Return whether a mapping is an explicit failure sentinel."""
+    return "\ufffd" in text or "\x00" in text
+
+
 def should_prefer_glyph_name_mapping(
     current: str,
     mapped: str,
@@ -99,9 +104,10 @@ def replace_unicode_from_glyph_names(
     glyph_decode_table: tuple[str, ...],
     *,
     authoritative: bool,
+    fallback_mapping: bool = False,
 ) -> str:
     if not text:
-        if authoritative or all(glyph_decode_table[code] for code in data):
+        if authoritative or fallback_mapping or all(glyph_decode_table[code] for code in data):
             return "".join(glyph_decode_table[code] for code in data)
         return text
     if len(text) != len(data):
@@ -110,10 +116,13 @@ def replace_unicode_from_glyph_names(
         mapped = glyph_decode_table[data[0]]
         if not mapped:
             return text
-        if not should_prefer_glyph_name_mapping(
-            text,
-            mapped,
-            authoritative=authoritative,
+        if not (
+            fallback_mapping
+            or should_prefer_glyph_name_mapping(
+                text,
+                mapped,
+                authoritative=authoritative,
+            )
         ):
             return text
         return mapped
@@ -125,10 +134,13 @@ def replace_unicode_from_glyph_names(
         current = text[index]
         if current == mapped:
             continue
-        if not should_prefer_glyph_name_mapping(
-            current,
-            mapped,
-            authoritative=authoritative,
+        if not (
+            fallback_mapping
+            or should_prefer_glyph_name_mapping(
+                current,
+                mapped,
+                authoritative=authoritative,
+            )
         ):
             continue
         if out is None:

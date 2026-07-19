@@ -7,10 +7,10 @@ from typing import Any
 
 from core_cmap.impl.cid.cmap import CMapDecoder, ToUnicodeCMap
 from core_font_programs import (
-    REPAIRABLE_TO_UNICODE,
     CFFFont,
     cff_font_for_data,
     cff_unicode_repairs_for_data,
+    is_repairable_to_unicode_label,
 )
 from fontTools.ttLib import TTFont, TTLibError
 
@@ -96,7 +96,7 @@ def build_cff_unicode_repairs(
         if font_data is None:
             return {}
     mapping = single_code_mapping(to_unicode, cmap)
-    if not any(value in REPAIRABLE_TO_UNICODE for ignored_cid, value in mapping.values()):
+    if not any(is_repairable_to_unicode_label(value) for ignored_cid, value in mapping.values()):
         return {}
     try:
         repair_items = cff_unicode_repairs_for_data(

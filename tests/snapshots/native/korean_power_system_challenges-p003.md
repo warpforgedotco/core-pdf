@@ -1,7 +1,7 @@
 ---
 fixture: korean_power_system_challenges-p003.pdf
 rotation: 0
-page_class: native_text
+page_class: mixed
 base_route: native_fast
 block_count: 3
 line_count: 27

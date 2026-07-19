@@ -1,7 +1,7 @@
 ---
 fixture: global-AIDS-strategy-p74-75-p001.pdf
 rotation: 0
-page_class: native_text
+page_class: mixed
 base_route: native_fast
 block_count: 3
 line_count: 8

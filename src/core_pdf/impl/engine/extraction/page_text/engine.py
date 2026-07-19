@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
+import unicodedata
 from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -303,7 +304,14 @@ def text_noise_penalty(text: str) -> float:
     compact = sum(1 for ch in stripped if ch.isalnum())
     if compact == 0:
         return 0.35
-    return min(0.35, punctuation / max(1, compact) * 0.5)
+    punctuation_penalty = punctuation / max(1, compact) * 0.5
+    semantic_sentinels = sum(
+        1
+        for ch in stripped
+        if not ch.isspace() and (ch == "\ufffd" or unicodedata.category(ch).startswith("C"))
+    )
+    semantic_penalty = semantic_sentinels / max(1, len(stripped)) * 1.5
+    return min(0.5, punctuation_penalty + semantic_penalty)
 
 
 def coerce_float(value: Any) -> float | None:

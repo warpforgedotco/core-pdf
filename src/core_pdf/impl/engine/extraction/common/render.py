@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
+import re
 import typing
 from bisect import bisect_left, bisect_right
 from dataclasses import replace
@@ -43,6 +44,10 @@ class LayoutReconstructor:
         if not runs:
             return ()
 
+        runs = discard_vertical_margin_runs(runs, self.media_box)
+        if not runs:
+            return ()
+
         if len(runs) >= 50:
             skew_angle = LayoutAnalyzer.detect_skew(runs)
             if abs(skew_angle) > SKEW_ANGLE_TOLERANCE:
@@ -51,6 +56,8 @@ class LayoutReconstructor:
         lines = LayoutAnalyzer.cluster_into_lines(runs)
         if not lines:
             return ()
+        if self.is_formula_dense_single_column(lines):
+            return observation_resolver.resolve_text_lines(self.render_sorted_rows_lines(lines))
 
         boxes = LayoutAnalyzer.order_boxes(LayoutAnalyzer.cluster_into_boxes(lines))
         if not boxes:
@@ -272,11 +279,27 @@ class LayoutReconstructor:
         ):
             return self.render_rows_lines(lines)
 
+        exact_single_split = (
+            len(split_points) == 1
+            and len(lines) <= 40
+            and sum(len(line.runs) for line in lines) >= 200
+            and all(line.rotation_angle == 0 for line in lines)
+        )
         box_x0 = min(line.x0 for line in lines if line.runs)
         box_x1 = max(line.x1 for line in lines if line.runs)
         boundaries = [box_x0, *split_points, box_x1]
         column_width = max(
             boundaries[index + 1] - boundaries[index] for index in range(len(boundaries) - 1)
+        )
+        narrow_column_width = min(
+            boundaries[index + 1] - boundaries[index] for index in range(len(boundaries) - 1)
+        )
+        asymmetric_single_split = (
+            len(split_points) == 1
+            and narrow_column_width > 0.0
+            and column_width / narrow_column_width >= 1.6
+            and len(lines) >= 30
+            and all(line.rotation_angle == 0 for line in lines)
         )
         sorted_rows = sorted(lines, key=lambda ln: (-ln.mid_y, ln.x0))
         output_lines: list[observation_resolver.ResolvedTextLine] = []
@@ -328,7 +351,12 @@ class LayoutReconstructor:
         for line in sorted_rows:
             if not line.runs:
                 continue
-            is_column_line = self.line_has_column_gutter(line, split_points, column_width)
+            is_column_line = self.line_has_column_gutter(
+                line,
+                split_points,
+                column_width,
+                exact_edges=exact_single_split or asymmetric_single_split,
+            )
             if not is_column_line and column_block:
                 is_column_line = (line.x1 - line.x0) <= column_width * 1.15
             if is_column_line:
@@ -420,6 +448,17 @@ class LayoutReconstructor:
         right_edge = min(line.x0 for line in lines if line.runs and line.x0 >= split_x)
         return right_edge - left_edge < 18.0
 
+    @classmethod
+    def is_formula_dense_single_column(cls, lines: list[LayoutLine]) -> bool:
+        """Keep centered equations in visual reading order on single-column pages."""
+        if len(lines) < 20 or not cls.is_likely_single_column(lines):
+            return False
+        formula_markers = frozenset("∂∑√∞∈θΦω′")
+        formula_lines = sum(
+            bool(formula_markers.intersection(line.reconstructed_text().text)) for line in lines
+        )
+        return formula_lines >= max(8, int(len(lines) * 0.45))
+
     @staticmethod
     def column_split_is_stable(lines: list[LayoutLine], split_points: list[float]) -> bool:
         if len(lines) < 24 or len(split_points) != 1:
@@ -474,6 +513,8 @@ class LayoutReconstructor:
         if len(lines) < 24 or len(split_points) < 2:
             return False
         column_counts = [0] * (len(split_points) + 1)
+        page_width = max(line.x1 for line in lines) - min(line.x0 for line in lines)
+        narrow_lines = [line for line in lines if line.x1 - line.x0 < page_width * 0.82]
         multi_column_rows = 0
         for line in lines:
             columns: set[int] = set()
@@ -492,8 +533,19 @@ class LayoutReconstructor:
             if len(columns) >= 2:
                 multi_column_rows += 1
 
-        active_columns = [count for count in column_counts if count >= 8]
+        active_indexes = [index for index, count in enumerate(column_counts) if count >= 8]
+        active_columns = [column_counts[index] for index in active_indexes]
         if len(active_columns) < 3:
+            return False
+        page_height = max(line.y1 for line in lines) - min(line.y0 for line in lines)
+        if page_height <= 0:
+            return False
+        narrow_height = (
+            max(line.y1 for line in narrow_lines) - min(line.y0 for line in narrow_lines)
+            if narrow_lines
+            else 0.0
+        )
+        if len(narrow_lines) >= 8 and narrow_height < page_height * 0.72:
             return False
         return multi_column_rows >= max(8, len(lines) // 4)
 
@@ -544,6 +596,8 @@ class LayoutReconstructor:
         line: LayoutLine,
         split_points: list[float],
         column_width: float | None = None,
+        *,
+        exact_edges: bool = False,
     ) -> bool:
         runs = [r for r in line.runs if r.has_text]
         if len(runs) < 2:
@@ -565,6 +619,9 @@ class LayoutReconstructor:
                         right_edge = run.x0
             if not has_left or not has_right:
                 continue
+            if exact_edges:
+                left_edge = max(run.x1 for run in runs if run.mid_x < split_x)
+                right_edge = min(run.x0 for run in runs if run.mid_x >= split_x)
             if right_edge - left_edge >= 8.0:
                 return True
             if column_width is not None and line_width > column_width * 1.45:
@@ -894,8 +951,281 @@ def render_resolved_text_lines(
 def resolved_text_lines_for_output(
     lines: tuple[observation_resolver.ResolvedTextLine, ...],
 ) -> tuple[observation_resolver.ResolvedTextLine, ...]:
-    resolved = resolve_native_paragraph_continuations(resolve_line_continuations(lines))
-    return prune_standalone_separator_lines(resolved)
+    reordered = reorder_multicolumn_line_runs(lines)
+    resolved = resolve_native_paragraph_continuations(resolve_line_continuations(reordered))
+    normalized = tuple(
+        normalize_sentence_boundary_spacing(normalize_url_spacing(line)) for line in resolved
+    )
+    return prune_standalone_separator_lines(normalized)
+
+
+def reorder_multicolumn_line_runs(
+    lines: tuple[observation_resolver.ResolvedTextLine, ...],
+) -> tuple[observation_resolver.ResolvedTextLine, ...]:
+    """Put independently painted same-baseline columns in column-major order.
+
+    The layout stage can split a three-column row into separate lines while
+    retaining the original row-major sequence.  Paragraph continuation then
+    sees alternating columns and cannot join a hyphenated word.  Reorder only
+    contiguous, paragraph-like runs with at least three recurring x anchors;
+    headings and full-width lines delimit each candidate run.
+    """
+    if len(lines) < 9:
+        return lines
+
+    lines = reorder_four_column_line_runs(lines)
+
+    boxes = [line_effective_bbox(line) for line in lines]
+    x_values = [box[0] for box in boxes if box is not None]
+    if len(x_values) < 9:
+        return lines
+
+    anchors: list[float] = []
+    for value in sorted(x_values):
+        if anchors and value - anchors[-1] <= 8.0:
+            anchors[-1] = (anchors[-1] + value) * 0.5
+        else:
+            anchors.append(value)
+    anchor_counts = [sum(abs(value - anchor) <= 8.0 for value in x_values) for anchor in anchors]
+    recurring_candidates = [
+        (anchor, count) for anchor, count in zip(anchors, anchor_counts, strict=True) if count >= 3
+    ]
+    if len(recurring_candidates) < 3:
+        return lines
+
+    same_baseline_triplets: list[tuple[float, float, float, float]] = []
+    for line in lines:
+        line_box = line_effective_bbox(line)
+        if line_box is None:
+            continue
+        line_mid_y = (line_box[1] + line_box[3]) * 0.5
+        baseline_xs = sorted(
+            {
+                round(other_box[0], 4)
+                for other_box in boxes
+                if other_box is not None
+                and abs((other_box[1] + other_box[3]) * 0.5 - line_mid_y) <= 2.0
+            }
+        )
+        for left_index, left in enumerate(baseline_xs[:-2]):
+            for middle_index in range(left_index + 1, len(baseline_xs) - 1):
+                middle = baseline_xs[middle_index]
+                for right in baseline_xs[middle_index + 1 :]:
+                    left_gap = middle - left
+                    right_gap = right - middle
+                    if min(left_gap, right_gap) < 40.0:
+                        continue
+                    spacing_error = abs(left_gap - right_gap)
+                    if spacing_error <= max(24.0, left_gap * 0.3):
+                        same_baseline_triplets.append((spacing_error, left, middle, right))
+
+    best_triplet: tuple[float, float, float] | None = None
+    if same_baseline_triplets:
+        _, left, middle, right = max(
+            same_baseline_triplets,
+            key=lambda item: ((item[2] - item[1]) + (item[3] - item[2]), -item[0]),
+        )
+        best_triplet = (left, middle, right)
+
+    best_score = float("-inf")
+    if best_triplet is None:
+        for left_index, (left, left_count) in enumerate(recurring_candidates[:-2]):
+            for middle_index in range(left_index + 1, len(recurring_candidates) - 1):
+                middle, middle_count = recurring_candidates[middle_index]
+                left_gap = middle - left
+                if left_gap < 40.0:
+                    continue
+                for right, right_count in recurring_candidates[middle_index + 1 :]:
+                    right_gap = right - middle
+                    if right_gap < 40.0:
+                        continue
+                    spacing_error = abs(left_gap - right_gap)
+                    if spacing_error > max(24.0, left_gap * 0.3):
+                        continue
+                    score = left_count + middle_count + right_count - spacing_error * 0.1
+                    if score > best_score:
+                        best_score = score
+                        best_triplet = (left, middle, right)
+    if best_triplet is None:
+        return lines
+    recurring = list(best_triplet)
+    column_gap = min(
+        right - left for left, right in zip(recurring, recurring[1:], strict=False) if right > left
+    )
+    max_column_width = max(80.0, column_gap * 1.35)
+
+    def column_index(line: observation_resolver.ResolvedTextLine) -> int | None:
+        box = line_effective_bbox(line)
+        if box is None:
+            return None
+        nearest = min(range(len(recurring)), key=lambda index: abs(box[0] - recurring[index]))
+        if abs(box[0] - recurring[nearest]) > 10.0:
+            return None
+        if box[2] - box[0] > max_column_width:
+            return None
+        return nearest
+
+    output = list(lines)
+    index = 0
+    changed = False
+    while index < len(lines):
+        if lines[index].break_before > 1 or column_index(lines[index]) is None:
+            index += 1
+            continue
+        end = index
+        indexes: list[int] = []
+        while end < len(lines):
+            if lines[end].break_before > 1:
+                break
+            column = column_index(lines[end])
+            if column is None:
+                break
+            indexes.append(end)
+            end += 1
+        if len(indexes) >= 9:
+            counts = [
+                sum(column_index(lines[item]) == column for item in indexes)
+                for column in range(len(recurring))
+            ]
+            if sum(count >= 2 for count in counts) >= 3 and multicolumn_has_joinable_hyphen(
+                indexes, lines
+            ):
+                ordered = sorted(
+                    (lines[item] for item in indexes),
+                    key=lambda line: (
+                        column_index(line) or 0,
+                        -(line_effective_bbox(line) or (0.0, 0.0, 0.0, 0.0))[3],
+                    ),
+                )
+                for item, line in zip(indexes, ordered, strict=True):
+                    output[item] = line
+                changed = True
+        index = max(end, index + 1)
+    return tuple(output) if changed else lines
+
+
+def reorder_four_column_line_runs(
+    lines: tuple[observation_resolver.ResolvedTextLine, ...],
+) -> tuple[observation_resolver.ResolvedTextLine, ...]:
+    """Repair row-major ordering for a stable four-column text region."""
+    boxes = [line_effective_bbox(line) for line in lines]
+    candidates: list[tuple[float, ...]] = []
+    for line_box in boxes:
+        if line_box is None:
+            continue
+        mid_y = (line_box[1] + line_box[3]) * 0.5
+        xs = sorted(
+            {
+                round(box[0], 4)
+                for box in boxes
+                if box is not None and abs((box[1] + box[3]) * 0.5 - mid_y) <= 2.0
+            }
+        )
+        if len(xs) < 4:
+            continue
+        for start in range(len(xs) - 3):
+            group = tuple(xs[start : start + 4])
+            gaps = [right - left for left, right in zip(group, group[1:], strict=False)]
+            if min(gaps) >= 40.0 and max(gaps) - min(gaps) <= max(24.0, min(gaps) * 0.3):
+                candidates.append(group)
+    if not candidates:
+        return lines
+    anchors = max(
+        candidates,
+        key=lambda group: sum(sum(abs(box[0] - x) <= 8.0 for box in boxes if box) for x in group),
+    )
+    gap = min(right - left for left, right in zip(anchors, anchors[1:], strict=False))
+    max_width = max(80.0, gap * 1.35)
+
+    def index_for(line: observation_resolver.ResolvedTextLine) -> int | None:
+        box = line_effective_bbox(line)
+        if box is None:
+            return None
+        index = min(range(4), key=lambda item: abs(box[0] - anchors[item]))
+        if abs(box[0] - anchors[index]) > 10.0 or box[2] - box[0] > max_width:
+            return None
+        return index
+
+    output = list(lines)
+    index = 0
+    changed = False
+    while index < len(lines):
+        if lines[index].break_before > 1 or index_for(lines[index]) is None:
+            index += 1
+            continue
+        end = index
+        indexes: list[int] = []
+        while (
+            end < len(lines) and lines[end].break_before <= 1 and index_for(lines[end]) is not None
+        ):
+            indexes.append(end)
+            end += 1
+        counts = [sum(index_for(lines[item]) == column for item in indexes) for column in range(4)]
+        if (
+            len(indexes) >= 12
+            and all(count >= 2 for count in counts)
+            and multicolumn_has_joinable_hyphen(indexes, lines)
+        ):
+            ordered = sorted(
+                (lines[item] for item in indexes),
+                key=lambda line: (
+                    index_for(line) or 0,
+                    -(line_effective_bbox(line) or (0.0, 0.0, 0.0, 0.0))[3],
+                ),
+            )
+            for item, line in zip(indexes, ordered, strict=True):
+                output[item] = line
+            changed = True
+        index = max(end, index + 1)
+    return tuple(output) if changed else lines
+
+
+def multicolumn_has_joinable_hyphen(
+    indexes: list[int],
+    lines: tuple[observation_resolver.ResolvedTextLine, ...],
+) -> bool:
+    hyphenated = [
+        lines[index].text
+        for index in indexes
+        if lines[index].text.rstrip().endswith(tuple(SOFT_HYPHEN_CHARS))
+    ]
+    continuations = [lines[index].text for index in indexes if lines[index].text[:1].islower()]
+    return any(
+        line_join_word_is_plausible(left, right) for left in hyphenated for right in continuations
+    )
+
+
+def normalize_url_spacing(
+    line: observation_resolver.ResolvedTextLine,
+) -> observation_resolver.ResolvedTextLine:
+    text = line.text
+    start = re.search(r"https?://", text, re.IGNORECASE)
+    if start is None:
+        return line
+    page_suffix = re.search(r"\s+\d+/\d+\s*$", text[start.start() :])
+    body_end = start.start() + page_suffix.start() if page_suffix else len(text)
+    url = text[start.start() : body_end]
+    if re.search(r"\s+[^\s/]+/", url) is None:
+        return line
+    normalized_url = url.replace(" ", "")
+    if normalized_url == url:
+        return line
+    normalized_text = text[: start.start()] + normalized_url + text[body_end:]
+    observation = replace(line.observation, text=normalized_text)
+    return replace(line, text=normalized_text, observation=observation)
+
+
+def normalize_sentence_boundary_spacing(
+    line: observation_resolver.ResolvedTextLine,
+) -> observation_resolver.ResolvedTextLine:
+    """Restore a missing space after a sentence-ending punctuation glyph."""
+    if "://" in line.text:
+        return line
+    normalized_text = re.sub(r"([A-Za-z]{4,}[.!?])([A-Z])", r"\1 \2", line.text)
+    if normalized_text == line.text:
+        return line
+    observation = replace(line.observation, text=normalized_text)
+    return replace(line, text=normalized_text, observation=observation)
 
 
 def with_first_line_break(
@@ -1038,6 +1368,30 @@ def render_page_text(
 
     reconstructor = LayoutReconstructor(media_box or (0, 0, 612, 792))
     return reconstructor.render_page(runs)
+
+
+def discard_vertical_margin_runs(
+    runs: list[TextRun],
+    media_box: tuple[float, float, float, float],
+) -> list[TextRun]:
+    """Drop dense tiny glyph streams used for vertical page-edge labels."""
+    page_x0, page_y0, page_x1, page_y1 = media_box
+    candidates = [
+        run
+        for run in runs
+        if run.text.strip()
+        and run.x1 - run.x0 <= 18.0
+        and run.x1 <= page_x0 + 40.0
+        and len(run.text.strip()) <= 3
+    ]
+    if len(candidates) < 40:
+        return runs
+    x_span = max(run.x1 for run in candidates) - min(run.x0 for run in candidates)
+    y_span = max(run.y1 for run in candidates) - min(run.y0 for run in candidates)
+    if x_span > 28.0 or y_span < (page_y1 - page_y0) * 0.55:
+        return runs
+    candidate_ids = {id(run) for run in candidates}
+    return [run for run in runs if id(run) not in candidate_ids]
 
 
 def render_page_observation_lines(
@@ -1314,7 +1668,8 @@ def lines_form_same_native_paragraph(
     left_height = max(1.0, left_box[3] - left_box[1])
     right_height = max(1.0, right_box[3] - right_box[1])
     line_height = max(1.0, min(left_height, right_height))
-    if left_box[1] <= right_box[3]:
+    vertical_overlap = right_box[3] - left_box[1]
+    if vertical_overlap > line_height * 0.45:
         return False
     vertical_gap = left_box[1] - right_box[3]
     if vertical_gap > max(line_height * 2.4, 26.0):

@@ -144,7 +144,9 @@ def cluster_runs_into_lines(
             row_mid_avg.append(ry_mid)
             row_h_avg.append(rh)
             row_angles.append(run.rotation_angle)
-        return rows
+        return merge_overlapping_formula_rows(
+            merge_formula_fragment_rows(merge_unit_exponent_rows(split_multicolumn_rows(rows)))
+        )
 
     for item in decorated:
         ry_mid = item[4]
@@ -186,7 +188,374 @@ def cluster_runs_into_lines(
             row_h_avg.append(rh)
             row_angles.append(run.rotation_angle)
 
-    return rows
+    return merge_overlapping_formula_rows(
+        merge_formula_fragment_rows(merge_unit_exponent_rows(split_multicolumn_rows(rows)))
+    )
+
+
+def split_multicolumn_rows(rows: list[list[TextRun]]) -> list[list[TextRun]]:
+    """Split same-baseline text from independently painted page columns.
+
+    Multi-column PDFs often paint one text span per column at the same y
+    coordinate.  The baseline clusterer quite reasonably groups those spans
+    into one row, but that destroys reading order before paragraph assembly
+    can run.  Require several large gaps and several substantial text spans so
+    normal word spacing, tables, and formula rows remain intact.
+    """
+    candidate_segments: list[list[list[TextRun]] | None] = []
+    for row in rows:
+        ordered = sorted(row, key=lambda run: (run.x0, run.order))
+        if len(ordered) < 3:
+            candidate_segments.append(None)
+            continue
+        heights = sorted(run.height for run in ordered if run.height > 0.0)
+        if not heights:
+            candidate_segments.append(None)
+            continue
+        median_height = heights[len(heights) // 2]
+        gap_threshold = max(16.0, median_height * 1.5)
+        gaps = [
+            index
+            for index, (left, right) in enumerate(zip(ordered, ordered[1:], strict=False))
+            if right.x0 - left.x1 > gap_threshold
+        ]
+        if len(gaps) < 2:
+            candidate_segments.append(None)
+            continue
+
+        segments: list[list[TextRun]] = []
+        start = 0
+        for gap_index in gaps:
+            segments.append(ordered[start : gap_index + 1])
+            start = gap_index + 1
+        segments.append(ordered[start:])
+        substantial_segments = sum(
+            len("".join(run.stripped_text for run in segment)) >= 12
+            and any(any(char.isalpha() for char in run.stripped_text) for run in segment)
+            for segment in segments
+        )
+        if substantial_segments < 3:
+            candidate_segments.append(None)
+            continue
+        candidate_segments.append(segments)
+
+    usable = [segments for segments in candidate_segments if segments is not None]
+    if len(usable) < 2 or not any(
+        any(segment and segment[-1].stripped_text.endswith("-") for segment in segments)
+        for segments in usable
+    ):
+        return rows
+
+    split_rows: list[list[TextRun]] = []
+    for index in range(len(candidate_segments)):
+        candidate = candidate_segments[index]
+        row = rows[index]
+        if candidate is None:
+            split_rows.append(row)
+        else:
+            split_rows.extend(candidate)
+    return split_rows
+
+
+def merge_unit_exponent_rows(rows: list[list[TextRun]]) -> list[list[TextRun]]:
+    """Attach raised unit exponents to the baseline row that owns them.
+
+    Some producers emit the ``3`` in ``(in)3`` as a separate text-showing
+    operation.  Its box overlaps the unit row, but its raised baseline puts it
+    outside the midpoint tolerance used by the general line clusterer.  Only
+    merge a short, digit-only row when the target row has an ``in``-like token
+    immediately before a closing delimiter; this keeps ordinary numeric rows
+    and table values independent.
+    """
+    if len(rows) < 2:
+        return rows
+
+    assignments: dict[int, list[TextRun]] = {}
+    assigned_source_runs: dict[int, list[TextRun]] = {}
+    anchored_orphans: dict[int, list[tuple[TextRun, list[int]]]] = {}
+    for source_index, source_row in enumerate(rows):
+        if not source_row:
+            continue
+        source_runs = [run for run in source_row if run.has_text]
+        if not source_runs or len(source_runs) != len(source_row):
+            continue
+        exponent_runs = [
+            run
+            for run in source_runs
+            if run.stripped_text.isdigit() and len(run.stripped_text) <= 2
+        ]
+        if not exponent_runs:
+            continue
+
+        target_indexes: list[tuple[TextRun, int]] = []
+        for run in exponent_runs:
+            # A mixed row can already contain a complete ``(unit)3`` span.
+            # It is not a detached exponent, even if another column offers a
+            # competing unit anchor.  Leave it in place and only relocate
+            # exponents whose current row has no matching unit anchor.
+            if unit_exponent_row_anchor(source_row, run):
+                continue
+            candidates = [
+                target_index
+                for target_index, target_row in enumerate(rows)
+                if target_index != source_index
+                and unit_exponent_row_anchor(target_row, run)
+                and unit_exponent_rows_overlap(target_row, run)
+            ]
+            if not candidates:
+                anchored_targets = [
+                    target_index
+                    for target_index, target_row in enumerate(rows)
+                    if target_index != source_index and unit_exponent_row_anchor(target_row, run)
+                ]
+                if anchored_targets:
+                    anchored_orphans.setdefault(source_index, []).append((run, anchored_targets))
+                continue
+            target_indexes.append(
+                (
+                    run,
+                    min(
+                        candidates,
+                        key=lambda target_index: abs(
+                            sum(candidate.mid_y_value for candidate in rows[target_index])
+                            / len(rows[target_index])
+                            - run.mid_y_value
+                        ),
+                    ),
+                )
+            )
+        if not target_indexes:
+            continue
+        assigned_source_runs[source_index] = [run for run, _ in target_indexes]
+        for run, target_index in target_indexes:
+            assignments.setdefault(target_index, []).append(run)
+
+    if not assigned_source_runs:
+        return rows
+
+    merged_rows: list[list[TextRun]] = []
+    for index, row in enumerate(rows):
+        assigned_runs = assigned_source_runs.get(index)
+        if assigned_runs is not None:
+            suppressed = [
+                run
+                for run, targets in anchored_orphans.get(index, [])
+                if any(assignments.get(target_index) for target_index in targets)
+            ]
+            remaining = [run for run in row if run not in assigned_runs and run not in suppressed]
+            if remaining:
+                merged_rows.append(remaining)
+            continue
+        suppressed = [
+            run
+            for run, targets in anchored_orphans.get(index, [])
+            if any(assignments.get(target_index) for target_index in targets)
+        ]
+        if suppressed:
+            remaining = [run for run in row if run not in suppressed]
+            additions = [run for run in assignments.get(index, []) if run not in remaining]
+            if additions:
+                remaining.extend(additions)
+                remaining.sort(key=lambda run: (run.x0, run.order))
+            if remaining:
+                merged_rows.append(remaining)
+            continue
+        additions = [run for run in assignments.get(index, []) if run not in row]
+        if additions:
+            row = [*row, *additions]
+            row.sort(key=lambda run: (run.x0, run.order))
+        merged_rows.append(row)
+    return merged_rows
+
+
+def unit_exponent_row_anchor(row: list[TextRun], exponent: TextRun) -> bool:
+    ordered = sorted(row, key=lambda candidate: candidate.x0)
+    for closing_index, closing in enumerate(ordered):
+        if not closing.stripped_text.startswith((")", "]", "}")):
+            continue
+        if closing.x0 - exponent.x1 > max(4.0, exponent.space_width * 2.0):
+            continue
+        prefix_runs = [
+            candidate
+            for candidate in ordered[:closing_index]
+            if candidate is not exponent
+            if candidate.x1 <= exponent.x0 + max(2.0, exponent.space_width)
+        ]
+        prefix = "".join(candidate.stripped_text.lower() for candidate in prefix_runs)
+        if not prefix.endswith(("in", "cm", "mm", "ft", "yd")):
+            continue
+        if prefix_runs and exponent.x0 - prefix_runs[-1].x1 <= max(4.0, exponent.space_width * 2.0):
+            return True
+    return False
+
+
+def unit_exponent_rows_overlap(row: list[TextRun], exponent: TextRun) -> bool:
+    row_x0 = min(run.x0 for run in row)
+    row_x1 = max(run.x1 for run in row)
+    if exponent.x0 < row_x0 - 2.0 or exponent.x1 > row_x1 + 2.0:
+        return False
+    row_y0 = min(run.y0 for run in row)
+    row_y1 = max(run.y1 for run in row)
+    overlap = min(row_y1, exponent.y1) - max(row_y0, exponent.y0)
+    if overlap <= 0.0:
+        return False
+    row_mid = sum(run.mid_y_value for run in row) / len(row)
+    exponent_mid = exponent.mid_y_value
+    return exponent_mid > row_mid and exponent_mid - row_mid <= max(12.0, row_y1 - row_y0)
+
+
+FORMULA_ROW_MARKERS = frozenset("∂∑√∞∈θΦωφ")
+
+
+def merge_formula_fragment_rows(rows: list[list[TextRun]]) -> list[list[TextRun]]:
+    """Fold short formula fragments into the overlapping formula baseline.
+
+    PDF producers commonly place denominators, summation limits, and
+    evaluation bars in independent text rows.  Those rows are not paragraphs:
+    their boxes are contained by a neighboring formula row and overlap it
+    vertically.  Keeping them separate loses the visual reading order.
+    """
+    if len(rows) < 2:
+        return rows
+
+    assignments: dict[int, list[TextRun]] = {}
+    assigned_sources: set[int] = set()
+    for source_index, source_row in enumerate(rows):
+        if not formula_fragment_row(source_row):
+            continue
+        candidates = [
+            target_index
+            for target_index, target_row in enumerate(rows)
+            if target_index != source_index
+            and formula_row(target_row)
+            and formula_fragment_is_contained(target_row, source_row)
+        ]
+        if not candidates:
+            continue
+        target_index = min(
+            candidates,
+            key=lambda index: abs(
+                sum(run.mid_y_value for run in rows[index]) / len(rows[index])
+                - sum(run.mid_y_value for run in source_row) / len(source_row)
+            ),
+        )
+        assignments.setdefault(target_index, []).extend(source_row)
+        assigned_sources.add(source_index)
+
+    if not assigned_sources:
+        return rows
+
+    merged: list[list[TextRun]] = []
+    for index, row in enumerate(rows):
+        if index in assigned_sources:
+            continue
+        additions = [run for run in assignments.get(index, []) if run not in row]
+        if additions:
+            row = [*row, *additions]
+            row.sort(key=lambda run: (run.x0, run.order))
+        merged.append(row)
+    return merged
+
+
+def formula_row(row: list[TextRun]) -> bool:
+    return any(FORMULA_ROW_MARKERS.intersection(run.text) for run in row if run.has_text)
+
+
+def formula_fragment_row(row: list[TextRun]) -> bool:
+    if not row or len(row) > 12 or any(not run.has_text for run in row):
+        return False
+    text = "".join(run.stripped_text for run in row)
+    if not text or len(text) > 32:
+        return False
+    return all(len(run.stripped_text) <= 4 for run in row)
+
+
+def formula_fragment_is_contained(
+    target: list[TextRun],
+    fragment: list[TextRun],
+) -> bool:
+    target_x0 = min(run.x0 for run in target)
+    target_x1 = max(run.x1 for run in target)
+    fragment_x0 = min(run.x0 for run in fragment)
+    fragment_x1 = max(run.x1 for run in fragment)
+    if fragment_x0 < target_x0 - 2.0 or fragment_x1 > target_x1 + 2.0:
+        return False
+    target_y0 = min(run.y0 for run in target)
+    target_y1 = max(run.y1 for run in target)
+    fragment_y0 = min(run.y0 for run in fragment)
+    fragment_y1 = max(run.y1 for run in fragment)
+    overlap = min(target_y1, fragment_y1) - max(target_y0, fragment_y0)
+    return overlap > 0.0
+
+
+def merge_overlapping_formula_rows(rows: list[list[TextRun]]) -> list[list[TextRun]]:
+    """Merge compact formula rows whose native boxes visibly overlap."""
+    if len(rows) < 2:
+        return rows
+
+    parent: dict[int, int] = {index: index for index in range(len(rows))}
+
+    def find(index: int) -> int:
+        while parent[index] != index:
+            parent[index] = parent[parent[index]]
+            index = parent[index]
+        return index
+
+    def union(left: int, right: int) -> None:
+        left_root = find(left)
+        right_root = find(right)
+        if left_root != right_root:
+            parent[right_root] = left_root
+
+    for left_index, left in enumerate(rows):
+        if not compact_formula_row(left):
+            continue
+        for right_index in range(left_index + 1, len(rows)):
+            right = rows[right_index]
+            if not compact_formula_row(right) or not formula_rows_overlap(left, right):
+                continue
+            union(left_index, right_index)
+
+    groups: dict[int, list[int]] = {}
+    for index in range(len(rows)):
+        groups.setdefault(find(index), []).append(index)
+    if all(len(indexes) == 1 for indexes in groups.values()):
+        return rows
+
+    merged: list[list[TextRun]] = []
+    for indexes in sorted(groups.values(), key=min):
+        group_runs = [run for index in indexes for run in rows[index]]
+        group_runs.sort(key=lambda run: (run.x0, run.order))
+        merged.append(group_runs)
+    return merged
+
+
+def compact_formula_row(row: list[TextRun]) -> bool:
+    if not row or not formula_row(row):
+        return False
+    for run in row:
+        text = run.stripped_text
+        if not text:
+            continue
+        if len(text) > 6 and text.isalpha():
+            return False
+    return True
+
+
+def formula_rows_overlap(left: list[TextRun], right: list[TextRun]) -> bool:
+    left_x0 = min(run.x0 for run in left)
+    left_x1 = max(run.x1 for run in left)
+    right_x0 = min(run.x0 for run in right)
+    right_x1 = max(run.x1 for run in right)
+    horizontal_overlap = max(0.0, min(left_x1, right_x1) - max(left_x0, right_x0))
+    minimum_width = min(left_x1 - left_x0, right_x1 - right_x0)
+    if minimum_width <= 0.0 or horizontal_overlap / minimum_width < 0.55:
+        return False
+    left_y0 = min(run.y0 for run in left)
+    left_y1 = max(run.y1 for run in left)
+    right_y0 = min(run.y0 for run in right)
+    right_y1 = max(run.y1 for run in right)
+    return min(left_y1, right_y1) - max(left_y0, right_y0) > 0.0
 
 
 class LayoutAnalyzer:

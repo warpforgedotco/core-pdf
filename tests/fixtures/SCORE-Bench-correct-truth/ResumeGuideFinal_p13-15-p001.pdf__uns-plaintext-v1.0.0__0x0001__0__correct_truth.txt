@@ -1,0 +1,47 @@
+--------------------------------------------------- Unstructured Plain Text Format 1.0.4
+--------------------------------------------------- Unstructured Title Begin
+NEED IMPROVEMENT EXAMPLES:
+--------------------------------------------------- Unstructured Title End
+--------------------------------------------------- Unstructured Sub-Title Begin
+RESUME #1
+--------------------------------------------------- Unstructured Sub-Title End
+--------------------------------------------------- Unstructured Sub-Title Begin
+Name
+Home Address
+Cell
+Email
+--------------------------------------------------- Unstructured Sub-Title End
+--------------------------------------------------- Unstructured Sub-Title Begin
+EDUCATION
+--------------------------------------------------- Unstructured Sub-Title End
+Master of Arts
+2008-present
+Colorado State University, Fort Collins, CO
+Currently pursuing Masters in History, with focus on public history, specifically museum studies and archives/records management
+Bachelor of Arts
+2003-2007
+Colorado State University, Fort Collins, CO
+Majored in History and Anthropology
+--------------------------------------------------- Unstructured Sub-Title Begin
+WORK EXPERIENCE
+--------------------------------------------------- Unstructured Sub-Title End
+Fort Collins Museum, Fort Collins, CO
+08/06 - Present
+http://www.fcgov.com/museum/
+Collections Assistant
+• Assist in various aspects of museum work including collections and exhibits
+• Handle the processing of new objects into the collection, entering them into ContentDM, photographing them, and housing them
+• Help with the construction of new exhibits including painting, constructing displays, and mounting objects
+• Research objects and history of Fort Collins as needed
+Windsor Museum, Windsor, CO
+09/08 - 11/08
+http://www.ci.windsor.co.us/index.asp?NID=464
+Collections Assistant
+• Assisted in the processing of objects affected by a tornado
+• Created detailed accession records for museum objects, mainly consisting of books and medical equipment
+• Entered records into PastPerfect database
+--------------------------------------------------- Unstructured Page Footer Begin
+--------------------------------------------------- Unstructured Page Number Block Begin
+12
+--------------------------------------------------- Unstructured Page Number Block End
+--------------------------------------------------- Unstructured Page Footer End

@@ -21,6 +21,17 @@ from core_pdf.impl.primitives import PdfString
 TESTS_DIR = Path(__file__).parents[6]
 
 
+def test_glyph_name_to_unicode_handles_computer_modern_delimiter_aliases() -> None:
+    assert glyph_name_to_unicode("bracketleftbig") == "["
+    assert glyph_name_to_unicode("bracketrightBigg") == "]"
+    assert glyph_name_to_unicode("braceleftbigg") == "{"
+    assert glyph_name_to_unicode("bracerightBig") == "}"
+    assert glyph_name_to_unicode("slashbig") == "/"
+    assert glyph_name_to_unicode("radicalBigg") == "√"
+    assert glyph_name_to_unicode("integraldisplay") == "∫"
+    assert glyph_name_to_unicode("oint") == "∮"
+
+
 def test_parse_type1_font_program_encoding_reads_custom_array() -> None:
     font_program = b"""
     /Encoding 256 array
@@ -66,6 +77,28 @@ def test_font_decoder_uses_embedded_type1_encoding_without_pdf_encoding() -> Non
     decoder = FontDecoder(font)
 
     assert decoder.decode(b"A\x0c") == "A\ufb01"
+
+
+def test_font_decoder_prefers_explicit_pdf_encoding_over_embedded_type1_encoding() -> None:
+    font_program = b"""
+    /Encoding 256 array
+    0 1 255 {1 index exch /.notdef put} for
+    dup 49 /m put
+    readonly def
+    currentfile eexec
+    """
+    font = {
+        "Subtype": "Type1",
+        "BaseFont": "Helvetica",
+        "Encoding": "MacRomanEncoding",
+        "FontDescriptor": {
+            "FontFile": PdfStream(decoded_data=font_program),
+        },
+    }
+
+    decoder = FontDecoder(font)
+
+    assert decoder.decode(b"1") == "1"
 
 
 def test_simple_font_decoder_reuses_glyphs_across_distinct_text_operands() -> None:
@@ -194,6 +227,27 @@ def test_font_decoder_identity_fallback_does_not_emit_surrogates() -> None:
     decoder = FontDecoder(font)
 
     assert decoder.decode(b"\xd8\x00") == "\ufffd"
+
+
+def test_cid_decoder_rejects_private_use_true_type_cmap_values() -> None:
+    class FakeTrueTypeFont:
+        def glyph_id_for_code(self, code: int) -> int:
+            return code
+
+        def has_glyph_id(self, gid: int) -> bool:
+            return gid == 65
+
+        def unicode_for_gid(self, gid: int) -> str:
+            assert gid == 65
+            return "\ue000"
+
+    decoder = FontDecoder(cid_type0_font("Identity-H"))
+    decoder.tt_font = cast(Any, FakeTrueTypeFont())
+
+    glyph = decoder.decode_glyphs(b"\x00A")[0]
+
+    assert glyph.unicode != "\ue000"
+    assert glyph.unicode_source == "cid_collection"
 
 
 def test_truetype_cmap_inversion_rejects_surrogates() -> None:
@@ -496,6 +550,76 @@ def test_to_unicode_is_authoritative_over_glyph_name_repairs() -> None:
     glyph = decoder.decode_glyphs(b"A")[0]
     assert glyph.unicode == "X"
     assert glyph.unicode_source == "to_unicode"
+
+
+def test_font_decoder_uses_explicit_glyph_name_when_to_unicode_omits_code() -> None:
+    decoder = FontDecoder(
+        {
+            "Subtype": "Type1",
+            "BaseFont": "TeXGyrePagella-Regular",
+            "Encoding": {"Differences": [65, "ff"]},
+            "ToUnicode": PdfStream(
+                decoded_data=b"""\n                /CIDInit /ProcSet findresource begin
+                12 dict begin begincmap
+                /CMapType 2 def
+                1 begincodespacerange <00> <ff> endcodespacerange
+                0 beginbfchar endbfchar
+                endcmap end
+            """
+            ),
+        }
+    )
+
+    glyph = decoder.decode_glyphs(b"A")[0]
+    assert glyph.unicode == "ff"
+    assert glyph.unicode_source == "glyph_name"
+
+
+def test_font_decoder_falls_through_replacement_to_predefined_mapping() -> None:
+    decoder = FontDecoder(
+        {
+            "Subtype": "Type1",
+            "BaseFont": "Helvetica",
+            "Encoding": "WinAnsiEncoding",
+            "ToUnicode": PdfStream(
+                decoded_data=b"""\n                /CIDInit /ProcSet findresource begin
+                12 dict begin begincmap
+                /CMapType 2 def
+                1 begincodespacerange <00> <ff> endcodespacerange
+                1 beginbfchar <41> <fffd> endbfchar
+                endcmap end
+            """
+            ),
+        }
+    )
+
+    glyph = decoder.decode_glyphs(b"A")[0]
+    assert glyph.unicode == "A"
+    assert glyph.unicode_source == "encoding"
+    assert "�" in glyph.alternates
+
+
+def test_font_decoder_uses_glyph_name_when_to_unicode_is_nul() -> None:
+    decoder = FontDecoder(
+        {
+            "Subtype": "Type1",
+            "BaseFont": "TeXGyrePagella-Regular",
+            "Encoding": {"Differences": [65, "ff"]},
+            "ToUnicode": PdfStream(
+                decoded_data=b"""\n                /CIDInit /ProcSet findresource begin
+                12 dict begin begincmap
+                /CMapType 2 def
+                1 begincodespacerange <00> <ff> endcodespacerange
+                1 beginbfchar <41> <0000> endbfchar
+                endcmap end
+            """
+            ),
+        }
+    )
+
+    glyph = decoder.decode_glyphs(b"A")[0]
+    assert glyph.unicode == "ff"
+    assert glyph.unicode_source == "glyph_name"
 
 
 def test_font_decoder_recovers_japanese_identity_cids_without_to_unicode() -> None:

@@ -1,0 +1,57 @@
+--------------------------------------------------- Unstructured Plain Text Format 1.0.3
+--------------------------------------------------- Unstructured Sub-Title Begin
+SELECTED OPERATING PERFORMANCE ITEMS
+--------------------------------------------------- Unstructured Sub-Title End
+The following represents a summary of select 2023 year-over-year operating comparisons to 2022.
+• Consolidated revenues increased by 15%, UnitedHealthcare revenues increased 13% and Optum revenues grew 24%.
+• UnitedHealthcare served nearly 1.1 million more people, driven by growth in commercial and senior offerings.
+• Earnings from operations increased by 14%, including an increase of 14% at UnitedHealthcare and 13% at Optum.
+• Diluted earnings per common share increased 13% to $23.86.
+• Cash flows from operations were $29.1 billion.
+• Return on equity was 27.0%.
+--------------------------------------------------- Unstructured Sub-Title Begin
+RESULTS SUMMARY
+--------------------------------------------------- Unstructured Sub-Title End
+The following table summarizes our consolidated results of operations and other financial information:
+--------------------------------------------------- Unstructured Table Begin
+For the Years Ended December 31, Change
+(in millions, except percentages and per share data) 2023 2022 2021 2023 vs. 2022
+Revenues:
+Premiums $ 290,827 $ 257,157 $ 226,233 $ 33,670 13%
+Products 42,583 37,424 34,437 5,159 14
+Services 34,123 27,551 24,603 6,572 24
+Investment and other income 4,089 2,030 2,324 2,059 101
+Total revenues 371,622 324,162 287,597 47,460 15
+Operating costs:
+Medical costs 241,894 210,842 186,911 31,052 15
+Operating costs 54,628 47,782 42,579 6,846 14
+Cost of products sold 38,770 33,703 31,034 5,067 15
+Depreciation and amortization 3,972 3,400 3,103 572 17
+Total operating costs 339,264 295,727 263,627 43,537 15
+Earnings from operations 32,358 28,435 23,970 3,923 14
+Interest expense (3,246) (2,092) (1,660) (1,154) 55
+Earnings before income taxes 29,112 26,343 22,310 2,769 11
+Provision for income taxes (5,968) (5,704) (4,578) (264) 5
+Net earnings 23,144 20,639 17,732 2,505 12
+Earnings attributable to noncontrolling interests (763) (519) (447) (244) 47
+Net earnings attributable to UnitedHealth Group common shareholders $ 22,381 $ 20,120 $ 17,285 $ 2,261 11 %
+Diluted earnings per share attributable to UnitedHealth Group common shareholders $ 23.86 $ 21.18 $ 18.08 $ 2.68 13 %
+Medical care ratio (a) 83.2 % 82.0 % 82.6 % 1.2 %
+Operating cost ratio 14.7 14.7 14.8 —
+Operating margin 8.7 8.8 8.3 (0.1)
+Tax rate 20.5 21.7 20.5 (1.2)
+Net earnings margin (b) 6.0 6.2 6.0 (0.2)
+Return on equity (c) 27.0 % 27.2 % 25.2 % (0.2)%
+--------------------------------------------------- Unstructured Table End
+--------------------------------------------------- Unstructured Caption Begin
+(a) Medical care ratio (MCR) is calculated as medical costs divided by premium revenue.
+
+(b) Net earnings margin attributable to UnitedHealth Group common shareholders.
+
+(c) Return on equity is calculated as net earnings attributable to UnitedHealth Group common shareholders divided by average shareholders’ equity. Average shareholders’ equity is calculated using the shareholders’ equity balance at the end of the preceding year and the shareholders’ equity balances at the end of each of the four quarters of the year presented.
+--------------------------------------------------- Unstructured Caption End
+--------------------------------------------------- Unstructured Page Footer Begin
+--------------------------------------------------- Unstructured Page Number Block Begin
+26
+--------------------------------------------------- Unstructured Page Number Block End
+--------------------------------------------------- Unstructured Page Footer End

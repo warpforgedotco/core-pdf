@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import re
 import typing
+import unicodedata
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Iterable
@@ -36,6 +37,8 @@ from core_pdf.impl.engine.spec.s_09_fonts.encoding import BYTE_CACHE
 from core_pdf.impl.engine.spec.s_09_fonts.font_names import resolve_base_font_name
 from core_pdf.impl.engine.spec.s_09_fonts.glyph_decode import (
     build_glyph_decode_table,
+    has_invalid_unicode_mapping,
+    has_untrusted_unicode_semantics,
     replace_unicode_from_glyph_names,
     should_prefer_glyph_name_mapping,
 )
@@ -401,7 +404,7 @@ class FontDecoder:
         else:
             base_encoding = normalize_pdf_name(encoding_obj)
             cmap = self._named_cmap(base_encoding)
-        if not differences and subtype == "Type1":
+        if not differences and subtype == "Type1" and encoding_obj is None:
             descriptor = lookup_dict_key(font, "FontDescriptor")
             if isinstance(descriptor, dict):
                 font_file = lookup_dict_key(descriptor, "FontFile")
@@ -467,7 +470,17 @@ class FontDecoder:
             if to_unicode_text is not None:
                 alternates.append(to_unicode_text)
 
-        if to_unicode_text is not None:
+        if to_unicode_text is not None and not has_invalid_unicode_mapping(to_unicode_text):
+            visual_punctuation = self._visual_punctuation_for_code(
+                to_unicode_text,
+                fallback_code=fallback_code,
+            )
+            if visual_punctuation is not None:
+                return UnicodeChoice(
+                    visual_punctuation,
+                    "truetype_glyph_shape",
+                    dedupe_alternates(alternates, visual_punctuation),
+                )
             return UnicodeChoice(
                 to_unicode_text,
                 "to_unicode",
@@ -484,7 +497,7 @@ class FontDecoder:
 
         if gid is not None:
             tt_text = self._true_type_unicode_for_gid(gid)
-            if tt_text:
+            if tt_text and not has_untrusted_unicode_semantics(tt_text):
                 return UnicodeChoice(
                     tt_text,
                     "truetype_cmap",
@@ -498,6 +511,19 @@ class FontDecoder:
                     predefined_text,
                     "predefined_cmap",
                     dedupe_alternates(alternates, predefined_text),
+                )
+
+        if not self.is_cid_font and len(code_bytes) == 1 and code_bytes[0] not in self.differences:
+            encoding_table = self.byte_decode_table
+            if encoding_table is None:
+                key = self.base_encoding or ("Type3" if self.is_type3 else "")
+                encoding_table = cached_decode_table(key, tuple(sorted(self.differences.items())))
+            encoding_text = encoding_table[code_bytes[0]]
+            if encoding_text and not has_invalid_unicode_mapping(encoding_text):
+                return UnicodeChoice(
+                    encoding_text,
+                    "encoding",
+                    dedupe_alternates(alternates, encoding_text),
                 )
 
         cid_unicode_map = self._resolved_cid_unicode_map()
@@ -528,11 +554,26 @@ class FontDecoder:
             return ""
         return tt_font.unicode_for_gid(gid)
 
+    def _visual_punctuation_for_code(self, text: str, *, fallback_code: int) -> str | None:
+        """Recover a horizontal punctuation glyph from a misleading ToUnicode map."""
+        if len(text) != 1 or not unicodedata.category(text).startswith("M"):
+            return None
+        tt_font = self.tt_font
+        if tt_font is None:
+            return None
+        bbox = tt_font.glyph_bbox(fallback_code)
+        if bbox is None:
+            return None
+        x_min, y_min, x_max, y_max = bbox
+        width = x_max - x_min
+        height = y_max - y_min
+        if width < 450.0 or height <= 0.0 or width / height < 2.5:
+            return None
+        return "–"
+
     def _apply_simple_unicode_overrides(
         self, choice: UnicodeChoice, code_bytes: bytes
     ) -> UnicodeChoice:
-        if choice.source == "to_unicode":
-            return choice
         text = choice.text
         if self.glyph_decode_table is not None:
             glyph_decode_table = self.glyph_decode_table
@@ -545,10 +586,13 @@ class FontDecoder:
                     len(text) == 1
                     and mapped
                     and text != mapped
-                    and should_prefer_glyph_name_mapping(
-                        text,
-                        mapped,
-                        authoritative=self.glyph_decode_table_authoritative,
+                    and (
+                        choice.source in {"identity", "replacement", "fallback_nul"}
+                        or should_prefer_glyph_name_mapping(
+                            text,
+                            mapped,
+                            authoritative=self.glyph_decode_table_authoritative,
+                        )
                     )
                 ):
                     text = mapped
@@ -558,6 +602,7 @@ class FontDecoder:
                     code_bytes,
                     glyph_decode_table,
                     authoritative=self.glyph_decode_table_authoritative,
+                    fallback_mapping=choice.source in {"identity", "replacement", "fallback_nul"},
                 )
         if self.ligature_overrides:
             lo = self.ligature_overrides

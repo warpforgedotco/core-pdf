@@ -200,9 +200,7 @@ class PageProfile:
 
     @property
     def likely_image_page(self) -> bool:
-        return self.has_inline_images or (
-            self.has_xobject_ops and self.resources.has_images and not self.likely_text_page
-        )
+        return self.has_inline_images or (self.has_xobject_ops and self.resources.has_images)
 
     @property
     def likely_table_page(self) -> bool:

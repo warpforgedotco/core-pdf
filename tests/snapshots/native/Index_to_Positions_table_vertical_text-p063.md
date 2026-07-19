@@ -21,11 +21,11 @@ Clk-otenograpbers
 ```
 <!-- line: 004; break_before: 2; kind: native_line; source: native_text -->
 ```text
-(25) Alcetraz , Is. ,Cal .
+(25) Alcetraz, Is.,Cal.
 ```
 <!-- line: 005; break_before: 1; kind: native_line; source: native_text -->
 ```text
-(2 ) do
+(2) do
 ```
 <!-- line: 006; break_before: 2; kind: native_line; source: native_text -->
 ```text
@@ -41,7 +41,7 @@ wl680
 ```
 <!-- line: 009; break_before: 2; kind: native_line; source: native_text -->
 ```text
-2785 Clerk- 1ypist Prob . Officer Cr . Falls ,
+2785 Clerk- 1ypist Prob. Officer Cr. Falls,
 ```
 <!-- line: 010; break_before: 2; kind: native_line; source: native_text -->
 ```text
@@ -133,7 +133,7 @@ atchman
 ```
 <!-- line: 032; break_before: 1; kind: native_line; source: native_text -->
 ```text
-Asst . U.0. Atty .
+Asst. U.0. Atty.
 ```
 <!-- line: 033; break_before: 1; kind: native_line; source: native_text -->
 ```text
@@ -153,7 +153,7 @@ Clerk- 'I'ypists
 ```
 <!-- line: 037; break_before: 1; kind: native_line; source: native_text -->
 ```text
-Inst . For .
+Inst. For.
 ```
 <!-- line: 038; break_before: 1; kind: native_line; source: native_text -->
 ```text
@@ -161,7 +161,7 @@ Guf!rd
 ```
 <!-- line: 039; break_before: 1; kind: native_line; source: native_text -->
 ```text
-Asst . F . S . Atty .
+Asst. F. S. Atty.
 ```
 <!-- line: 040; break_before: 1; kind: native_line; source: native_text -->
 ```text
@@ -229,11 +229,11 @@ Pa. Eatotern
 ```
 <!-- line: 056; break_before: 1; kind: native_line; source: native_text -->
 ```text
-Pub. Le.nds .I.Ji v.
+Pub. Le.nds.I.Ji v.
 ```
 <!-- line: 057; break_before: 1; kind: native_line; source: native_text -->
 ```text
-( 3 ) Div. Inv .
+( 3) Div. Inv.
 ```
 <!-- line: 058; break_before: 1; kind: native_line; source: native_text -->
 ```text
@@ -253,7 +253,7 @@ Okla. Eastern
 ```
 <!-- line: 062; break_before: 1; kind: native_line; source: native_text -->
 ```text
-'l'enn . Eastern
+'l'enn. Eastern
 ```
 <!-- line: 063; break_before: 1; kind: native_line; source: native_text -->
 ```text
@@ -265,15 +265,15 @@ do
 ```
 <!-- line: 065; break_before: 1; kind: native_line; source: native_text -->
 ```text
-Tenn . .testern
+Tenn..testern
 ```
 <!-- line: 066; break_before: 1; kind: native_line; source: native_text -->
 ```text
-Tax-Crim . Div .
+Tax-Crim. Div.
 ```
 <!-- line: 067; break_before: 1; kind: native_line; source: native_text -->
 ```text
-Public Lands Div .
+Public Lands Div.
 ```
 <!-- line: 068; break_before: 1; kind: native_line; source: native_text -->
 ```text
@@ -293,7 +293,7 @@ Lands Div.
 ```
 <!-- line: 072; break_before: 1; kind: native_line; source: native_text -->
 ```text
-Transcrip tion Sec.
+Transcription Sec.
 ```
 <!-- line: 073; break_before: 2; kind: native_line; source: native_text -->
 ```text
@@ -301,11 +301,11 @@ Vice ullineaux
 ```
 <!-- line: 074; break_before: 2; kind: native_line; source: native_text -->
 ```text
-\;,3800 :; • Cullen Ganey
+\;,3800:; • Cullen Ganey
 ```
 <!-- line: 075; break_before: 2; kind: native_line; source: native_text -->
 ```text
-.,,_3800 .• • S. Hunnicutt
+.,,_3800.• • S. Hunnicutt
 ```
 <!-- line: 076; break_before: 2; kind: native_line; source: native_text -->
 ```text
@@ -313,7 +313,7 @@ Vice ullineaux
 ```
 <!-- line: 077; break_before: 2; kind: native_line; source: native_text -->
 ```text
-v32CO C. K . r.urley
+v32CO C. K. r.urley
 ```
 <!-- line: 078; break_before: 2; kind: native_line; source: native_text -->
 ```text
@@ -321,7 +321,7 @@ v v
 ```
 <!-- line: 079; break_before: 2; kind: native_line; source: native_text -->
 ```text
-.,,,1260 J'>linson , C·J
+.,,,1260 J'>linson, C·J
 ```
 <!-- line: 080; break_before: 2; kind: native_line; source: native_text -->
 ```text
@@ -341,23 +341,23 @@ vice Litchfield
 ```
 <!-- line: 084; break_before: 2; kind: native_line; source: native_text -->
 ```text
-'"'3200 C. 1' . l •• urphy
+'"'3200 C. 1'. l •• urphy
 ```
 <!-- line: 085; break_before: 2; kind: native_line; source: native_text -->
 ```text
-'lr'2600 C. , • :ill er
+'lr'2600 C., •:ill er
 ```
 <!-- line: 086; break_before: 2; kind: native_line; source: native_text -->
 ```text
-v3200 E . F . Sm ith
+v3200 E. F. Smith
 ```
 <!-- line: 087; break_before: 2; kind: native_line; source: native_text -->
 ```text
-R . Kennerly
+R. Kennerly
 ```
 <!-- line: 088; break_before: 2; kind: native_line; source: native_text -->
 ```text
-.,,,3200 E . ,J . 111ours1 nd
+.,,,3200 E.,J. 111ours1 nd
 ```
 <!-- line: 089; break_before: 2; kind: native_line; source: native_text -->
 ```text
@@ -377,7 +377,7 @@ $5600 Mr. M. H. Eustace
 ```
 <!-- line: 093; break_before: 2; kind: native_line; source: native_text -->
 ```text
-$2000 A. Bra dley Eben
+$2000 A. Bradley Eben
 ```
 <!-- line: 094; break_before: 2; kind: native_line; source: native_text -->
 ```text
@@ -405,7 +405,7 @@ No+'I.
 ```
 <!-- line: 100; break_before: 2; kind: native_line; source: native_text -->
 ```text
-$1440 Vi ce M:i.ry /Sheehy
+$1440 Vice M:i.ry /Sheehy
 ```
 <!-- line: 101; break_before: 2; kind: native_line; source: native_text -->
 ```text
@@ -413,7 +413,7 @@ Vice Nellie c. Hackett
 ```
 <!-- line: 102; break_before: 2; kind: native_line; source: native_text -->
 ```text
-" ,,
+",,
 ```
 <!-- line: 103; break_before: 2; kind: native_line; source: native_text -->
 ```text
@@ -425,7 +425,7 @@ Vice Nellie c. Hackett
 ```
 <!-- line: 105; break_before: 2; kind: native_line; source: native_text -->
 ```text
-10- J..3 ,
+10- J..3,
 ```
 <!-- line: 106; break_before: 2; kind: native_line; source: native_text -->
 ```text
@@ -461,7 +461,7 @@ fl n
 ```
 <!-- line: 114; break_before: 2; kind: native_line; source: native_text -->
 ```text
-If .. .J
+If...J
 ```
 <!-- line: 115; break_before: 2; kind: native_line; source: native_text -->
 ```text
@@ -485,7 +485,7 @@ If .. .J
 ```
 <!-- line: 120; break_before: 2; kind: native_line; source: native_text -->
 ```text
-" ,,
+",,
 ```
 <!-- line: 121; break_before: 2; kind: native_line; source: native_text -->
 ```text

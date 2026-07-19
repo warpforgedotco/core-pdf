@@ -39,6 +39,9 @@ core-jbig2 = { workspace = true }
 core-jpeg = { workspace = true }
 core-layout = { workspace = true }
 
+[tool.uv]
+python-preference = "system"
+
 [tool.uv.workspace]
 members = [
     "packages/core-CCITT",
