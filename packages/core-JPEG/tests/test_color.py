@@ -26,6 +26,19 @@ def test_neutral_ycbcr_is_gray() -> None:
     assert ycbcr_to_rgb_channels(128, 128, 128) == (128, 128, 128)
 
 
+def test_ycbcr_lookup_preserves_fixed_point_conversion() -> None:
+    for y_value in range(256):
+        for cb_value in (0, 1, 64, 127, 128, 129, 192, 255):
+            for cr_value in (0, 1, 64, 127, 128, 129, 192, 255):
+                red = y_value + ((91881 * (cr_value - 128) + 32768) >> 16)
+                green = y_value + (
+                    (-22554 * (cb_value - 128) + 32768 - 46802 * (cr_value - 128)) >> 16
+                )
+                blue = y_value + ((116130 * (cb_value - 128) + 32768) >> 16)
+                expected = tuple(max(0, min(255, value)) for value in (red, green, blue))
+                assert ycbcr_to_rgb_channels(y_value, cb_value, cr_value) == expected
+
+
 def test_cmyk_conversions_handle_white_and_black() -> None:
     assert cmyk_to_rgb_channels(0, 0, 0, 0) == (255, 255, 255)
     assert cmyk_to_rgb_channels(0, 0, 0, 255) == (0, 0, 0)

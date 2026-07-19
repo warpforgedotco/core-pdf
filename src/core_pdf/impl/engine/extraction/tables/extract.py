@@ -351,18 +351,16 @@ def extract_grid(
         if max_y + max_x <= len(runs) * 2:
             row_map = array.array("i", [-1] * max_y)
             for i in range(n_rows):
-                y_high = int(rows_desc[i] * PRECISION)
-                y_low = int(rows_desc[i + 1] * PRECISION)
-                for y in range(y_low, y_high + 1):
-                    if 0 <= y < max_y:
-                        row_map[y] = i
+                y_low = max(0, int(rows_desc[i + 1] * PRECISION))
+                y_high = min(max_y - 1, int(rows_desc[i] * PRECISION))
+                if y_low <= y_high:
+                    row_map[y_low : y_high + 1] = array.array("i", [i]) * (y_high - y_low + 1)
             col_map = array.array("i", [-1] * max_x)
             for j in range(n_cols):
-                x_low = int(cols_asc[j] * PRECISION)
-                x_high = int(cols_asc[j + 1] * PRECISION)
-                for x in range(x_low, x_high + 1):
-                    if 0 <= x < max_x:
-                        col_map[x] = j
+                x_low = max(0, int(cols_asc[j] * PRECISION))
+                x_high = min(max_x - 1, int(cols_asc[j + 1] * PRECISION))
+                if x_low <= x_high:
+                    col_map[x_low : x_high + 1] = array.array("i", [j]) * (x_high - x_low + 1)
             dense_lookup = True
 
             def row_index(y: float) -> int:
@@ -406,14 +404,19 @@ def extract_grid(
 
     median_size = median_font_size(runs) if flag_size else 0.0
     for run in runs:
+        coords = run.coords
+        run_x0 = coords[TextRun.X0]
+        run_x1 = coords[TextRun.X1]
+        run_mid_x = run.mid_x_value
+        run_mid_y = run.mid_y_value
         if dense_lookup:
-            y_index = int(run.mid_y_value * PRECISION)
+            y_index = int(run_mid_y * PRECISION)
             if 0 <= y_index < max_y:
                 row_idx = row_map[y_index]
             else:
                 row_idx = -1
         else:
-            row_idx = row_index(run.mid_y)
+            row_idx = row_index(run_mid_y)
         if row_idx == -1:
             continue
         if flag_size:
@@ -421,28 +424,42 @@ def extract_grid(
         else:
             run_text = run.text
         segments: list[tuple[int, str]]
-        if split_text and run.x1 > run.x0 and len(run_text) > 1:
-            start_col = col_index(run.x0)
-            end_col = col_index(run.x1)
+        if split_text and run_x1 > run_x0 and len(run_text) > 1:
+            start_col = col_index(run_x0)
+            end_col = col_index(run_x1)
             if start_col == -1:
-                start_col = col_index(run.mid_x)
+                start_col = col_index(run_mid_x)
             if end_col == -1:
                 end_col = start_col
             if start_col == -1:
                 continue
         else:
             if dense_lookup:
-                x_index = int(run.mid_x_value * PRECISION)
+                x_index = int(run_mid_x * PRECISION)
                 if 0 <= x_index < max_x:
                     start_col = col_map[x_index]
                 else:
                     start_col = -1
             else:
-                start_col = col_index(run.mid_x)
+                start_col = col_index(run_mid_x)
             end_col = start_col
             if start_col == -1:
                 continue
-        if split_text and end_col > start_col and run.x1 > run.x0 and len(run_text) > 1:
+            if not split_text:
+                row = text_grid[row_idx]
+                if row[start_col]:
+                    row[start_col] += " " + run_text
+                else:
+                    row[start_col] = run_text
+                if span_grid is not None:
+                    span_grid[row_idx][start_col] = {
+                        "text": run_text,
+                        "row_span": 1,
+                        "col_span": 1,
+                        "font_size": run.font_size,
+                    }
+                continue
+        if split_text and end_col > start_col and run_x1 > run_x0 and len(run_text) > 1:
             glyph_chars = run_chars.get(run.seqno) if run_chars else None
             if glyph_chars and "".join(char for char, *ignored in glyph_chars) != run_text:
                 glyph_chars = None
@@ -472,13 +489,13 @@ def extract_grid(
                         (start_col + offset, group) for offset, group in enumerate(padded_groups)
                     ]
                 else:
-                    width = run.x1 - run.x0
+                    width = run_x1 - run_x0
                     text_len = len(run_text)
                     segments = []
                     current_col = -1
                     current_chars = []
                     for char_idx, char in enumerate(run_text):
-                        char_x = run.x0 + ((char_idx + 0.5) / text_len) * width
+                        char_x = run_x0 + ((char_idx + 0.5) / text_len) * width
                         char_col = col_index(char_x)
                         if char_col == -1:
                             continue

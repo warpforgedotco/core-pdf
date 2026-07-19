@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+from functools import lru_cache
 from typing import TYPE_CHECKING, Protocol
 
 from core_layout.impl.layout.word_frequencies import word_rank
@@ -19,7 +20,13 @@ if TYPE_CHECKING:
 
 TEXT_TOKEN_RE = re.compile(r"\w+")
 NONSPACE_TOKEN_RE = re.compile(r"\S+")
-UNINTERPRETABLE_TEXT_RE = re.compile("[\ue000-\uf8ff\ufffd\x00-\x08\x0b\x0c\x0e-\x1f\x7f\xad]")
+# Braille is included because broken Identity-H/ToUnicode maps commonly decode
+# scanned overlays into the Braille block even though the source page is not
+# Braille.  Keep the explicit ranges here instead of treating all non-ASCII
+# text as corrupt: legitimate multilingual and technical documents are valid.
+UNINTERPRETABLE_TEXT_RE = re.compile(
+    "[\u2800-\u28ff\ue000-\uf8ff\ufffd\x00-\x08\x0b\x0c\x0e-\x1f\x7f\xad]"
+)
 OCR_ARTIFACT_EDGE_CHARS = "‘’“”`~_=|¦¬^°•·.,;:!?"
 OCR_ARTIFACT_CHARS = frozenset("~_=|¦¬^°•·`“”‘’")
 OCR_FORMULA_CHARS = frozenset("()*+/=")
@@ -62,6 +69,7 @@ class FragmentaryRegionCandidate(Protocol):
     image_height: int | None
 
 
+@lru_cache(maxsize=8_192)
 def extracted_text_token_count(text: str) -> int:
     count = 0
     in_token = False
@@ -75,8 +83,13 @@ def extracted_text_token_count(text: str) -> int:
     return count
 
 
+@lru_cache(maxsize=8_192)
+def _normalized_text_tokens_cached(text: str) -> tuple[str, ...]:
+    return tuple(match.group(0).casefold() for match in TEXT_TOKEN_RE.finditer(text))
+
+
 def normalized_text_tokens(text: str) -> list[str]:
-    return [match.group(0).casefold() for match in TEXT_TOKEN_RE.finditer(text)]
+    return list(_normalized_text_tokens_cached(text))
 
 
 def support_text_overlap_score(text: str, support_text: str) -> float | None:
@@ -146,6 +159,7 @@ def repair_formula_control_delimiters(text: str) -> str:
     return text.translate(FORMULA_CONTROL_TRANSLATION)
 
 
+@lru_cache(maxsize=8_192)
 def text_ocr_quality_score(text: str) -> float:
     alnum = 0
     punctuation = 0
@@ -357,6 +371,7 @@ def token_alnum_count(token: str) -> int:
     return sum(1 for ch in token if ch.isalnum() or ch == "_")
 
 
+@lru_cache(maxsize=8_192)
 def scanned_ocr_artifact_score(text: str) -> float:
     tokens = text.split()
     if not tokens:
@@ -649,6 +664,7 @@ def supplemental_ocr_line_looks_fragmentary(
     return False
 
 
+@lru_cache(maxsize=8_192)
 def numeric_token_ratio(text: str) -> float:
     tokens = normalized_text_tokens(text)
     if not tokens:

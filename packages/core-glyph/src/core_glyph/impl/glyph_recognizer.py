@@ -34,10 +34,18 @@ class GlyphBitmapCatalog:
             if bitmap is None or not is_trustworthy_bitmap_label(text):
                 continue
             assert isinstance(text, str)
-            self.examples.setdefault(glyph_repair_key(item), {})[(bitmap, text)] = None
+            canonical = canonicalize_bitmap(
+                bitmap,
+                int(item.get("bitmap_width") or 0),
+            )
+            self.examples.setdefault(glyph_repair_font_key(item), {})[(canonical, text)] = None
 
     def candidates_for(self, key: tuple[str | None, int, int]) -> list[tuple[tuple[int, ...], str]]:
-        return list(self.examples.get(key, {}))
+        exact = self.examples.get(key, {})
+        font_key = (key[0], 0, 0)
+        if font_key == key:
+            return list(exact)
+        return [*exact, *self.examples.get(font_key, {})]
 
 
 def repair_text_runs_with_glyph_bitmaps(
@@ -261,12 +269,29 @@ def glyph_bitmap_item_repairs(
             best_label = best_label_cache[cache_key]
         else:
             candidates = examples.get(key)
-            candidate_bitmaps = list(candidates) if candidates else []
+            candidate_bitmaps = (
+                [
+                    (
+                        canonicalize_bitmap(
+                            candidate_bitmap,
+                            int(item.get("bitmap_width") or 0),
+                        ),
+                        label,
+                    )
+                    for candidate_bitmap, label in candidates
+                ]
+                if candidates
+                else []
+            )
             if catalog is not None:
                 candidate_bitmaps.extend(catalog.candidates_for(key))
+            matching_bitmap = canonicalize_bitmap(
+                bitmap,
+                int(item.get("bitmap_width") or 0),
+            )
             best_label = None
             if candidate_bitmaps:
-                best_label = best_repair_label(bitmap, candidate_bitmaps)
+                best_label = best_repair_label(matching_bitmap, candidate_bitmaps)
             best_label_cache[cache_key] = best_label
         if best_label is not None:
             glyph_index = glyph_item_index(item)
@@ -296,7 +321,7 @@ def repaired_run_text_from_glyph_items(
     for item in sorted(glyph_items, key=lambda entry: glyph_item_index(entry) or -1):
         glyph_index = glyph_item_index(item)
         glyph_text = item.get("text")
-        if glyph_index is None or not isinstance(glyph_text, str) or len(glyph_text) != 1:
+        if glyph_index is None or not isinstance(glyph_text, str) or not glyph_text:
             return None
         ordered.append((glyph_index, glyph_text))
     if not any(glyph_index in repairs for glyph_index, ignored_text in ordered):
@@ -307,15 +332,30 @@ def repaired_run_text_from_glyph_items(
     if captured_text != nonspace_text:
         return None
 
+    replacements: dict[int, tuple[int, str]] = {}
+    nonspace_positions = [index for index, char in enumerate(text) if not char.isspace()]
+    cursor = 0
+    for glyph_index, glyph_text in ordered:
+        end = cursor + len(glyph_text)
+        if end > len(nonspace_positions):
+            return None
+        start_position = nonspace_positions[cursor]
+        end_position = nonspace_positions[end - 1] + 1
+        replacements[start_position] = (end_position, repairs.get(glyph_index, glyph_text))
+        cursor = end
+    if cursor != len(nonspace_positions):
+        return None
     output: list[str] = []
-    glyph_pos = 0
-    for ch in text:
-        if ch.isspace():
-            output.append(ch)
+    index = 0
+    while index < len(text):
+        replacement = replacements.get(index)
+        if replacement is None:
+            output.append(text[index])
+            index += 1
             continue
-        glyph_index, glyph_text = ordered[glyph_pos]
-        output.append(repairs.get(glyph_index, glyph_text))
-        glyph_pos += 1
+        end_position, replacement_text = replacement
+        output.append(replacement_text)
+        index = end_position
     return "".join(output)
 
 
@@ -595,6 +635,31 @@ def glyph_repair_key(item: dict[str, Any]) -> tuple[str | None, int, int]:
         int(item.get("bitmap_width") or 0),
         len(bitmap) if isinstance(bitmap, (list, tuple)) else 0,
     )
+
+
+def glyph_repair_font_key(item: dict[str, Any]) -> tuple[str | None, int, int]:
+    return (
+        item.get("font_name") if isinstance(item.get("font_name"), str) else None,
+        0,
+        0,
+    )
+
+
+def canonicalize_bitmap(bitmap: tuple[int, ...], width: int, size: int = 32) -> tuple[int, ...]:
+    if not bitmap or width <= 0 or size <= 0:
+        return ()
+    height = len(bitmap)
+    output: list[int] = []
+    for target_y in range(size):
+        source_y = min(height - 1, target_y * height // size)
+        source_row = bitmap[source_y]
+        row = 0
+        for target_x in range(size):
+            source_x = min(width - 1, target_x * width // size)
+            if source_row & (1 << (width - 1 - source_x)):
+                row |= 1 << (size - 1 - target_x)
+        output.append(row)
+    return tuple(output)
 
 
 def normalized_bitmap(item: dict[str, Any]) -> tuple[int, ...] | None:

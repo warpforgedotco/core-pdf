@@ -4,6 +4,7 @@ from __future__ import annotations
 import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import TYPE_CHECKING, Any, Iterable, Mapping
 
 from core_ocr.impl import candidates as ocr_candidates
@@ -1380,14 +1381,17 @@ def schematic_supplement_evidence_clusters(
     entries: list[SchematicSupplementEntry],
 ) -> list[SchematicSupplementCluster]:
     raw_clusters: list[list[SchematicSupplementEntry]] = []
+    clusters_by_key: dict[str, list[list[SchematicSupplementEntry]]] = defaultdict(list)
     for entry in sorted(entries, key=schematic_supplement_entry_order_key):
         target_cluster: list[SchematicSupplementEntry] | None = None
-        for cluster in raw_clusters:
+        for cluster in clusters_by_key[entry.key]:
             if schematic_entry_belongs_to_cluster(entry, cluster):
                 target_cluster = cluster
                 break
         if target_cluster is None:
-            raw_clusters.append([entry])
+            target_cluster = [entry]
+            raw_clusters.append(target_cluster)
+            clusters_by_key[entry.key].append(target_cluster)
         else:
             target_cluster.append(entry)
     clusters: list[SchematicSupplementCluster] = []
@@ -2665,7 +2669,10 @@ def schematic_token_has_net_label_shape(token: str) -> bool:
     )
 
 
+@lru_cache(maxsize=32_768)
 def schematic_token_distance(left: str, right: str) -> float:
+    left = left.casefold()
+    right = right.casefold()
     previous = [float(index) for index in range(len(right) + 1)]
     for left_index, left_char in enumerate(left, 1):
         current = [float(left_index)]

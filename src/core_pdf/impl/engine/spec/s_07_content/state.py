@@ -273,6 +273,7 @@ class TextState(XObjectMixin, ContentCaptureMixin, OperatorMixin):
     page: PdfDict
     capture_runs: bool
     capture_glyphs: bool
+    capture_glyph_bitmaps: bool
     capture_graphics: bool
     runs: list[TextRun]
     glyphs: list[GlyphObservation]
@@ -326,6 +327,7 @@ class TextState(XObjectMixin, ContentCaptureMixin, OperatorMixin):
         "page",
         "capture_runs",
         "capture_glyphs",
+        "capture_glyph_bitmaps",
         "capture_graphics",
         "capture_clipping",
         "runs",
@@ -443,6 +445,7 @@ class TextState(XObjectMixin, ContentCaptureMixin, OperatorMixin):
         hidden_layers: frozenset[str] = frozenset(),
         capture_runs: bool = True,
         capture_glyphs: bool = False,
+        capture_glyph_bitmaps: bool = True,
         capture_graphics: bool = False,
         capture_clipping: bool = True,
         decoder_cache: dict[tuple[int, int] | int, "FontDecoder"] | None = None,
@@ -498,6 +501,7 @@ class TextState(XObjectMixin, ContentCaptureMixin, OperatorMixin):
         self.stack = []
         self.capture_runs = capture_runs
         self.capture_glyphs = capture_glyphs
+        self.capture_glyph_bitmaps = capture_glyph_bitmaps
         self.capture_graphics = capture_graphics
         self.capture_clipping = capture_clipping
         self.runs = []
@@ -682,19 +686,28 @@ class TextState(XObjectMixin, ContentCaptureMixin, OperatorMixin):
             flatness = max(0.1, float(self.flatness) if self.flatness else 0.25)
             segments = max(4, min(128, ceil(control_len * scale / (flatness * 8.0))))
         prev_x, prev_y = x0, y0
+        draw_path = (
+            self.capture_clipping
+            or (self.capture_graphics or self.capture_glyphs)
+            and self.is_graphics_visible()
+        )
+        path = self.current_path if draw_path else None
+        segment_step = 1.0 / segments
         for i in range(1, segments + 1):
-            t = i / segments
+            t = i * segment_step
             mt = 1.0 - t
-            px = mt * mt * mt * x0 + 3.0 * mt * mt * t * x1 + 3.0 * mt * t * t * x2 + t * t * t * x3
-            py = mt * mt * mt * y0 + 3.0 * mt * mt * t * y1 + 3.0 * mt * t * t * y2 + t * t * t * y3
-            if (
-                self.capture_clipping
-                or (self.capture_graphics or self.capture_glyphs)
-                and self.is_graphics_visible()
-            ):
-                if not self.current_path.subpaths:
-                    self.current_path.move_to(prev_x, prev_y)
-                self.current_path.line_to(px, py)
+            mt2 = mt * mt
+            t2 = t * t
+            b0 = mt2 * mt
+            b1 = 3.0 * mt2 * t
+            b2 = 3.0 * mt * t2
+            b3 = t2 * t
+            px = b0 * x0 + b1 * x1 + b2 * x2 + b3 * x3
+            py = b0 * y0 + b1 * y1 + b2 * y2 + b3 * y3
+            if path is not None:
+                if not path.subpaths:
+                    path.move_to(prev_x, prev_y)
+                path.line_to(px, py)
             prev_x, prev_y = px, py
         self.current_point = (x3, y3)
 

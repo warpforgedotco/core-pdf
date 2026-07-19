@@ -753,6 +753,8 @@ class RenderedPage:
         ) -> None:
             if box is None:
                 return
+            if blend_mode == "Normal" and rgba[3] == 255 and buffer_stack[-1][1] is None:
+                blend_mode = None
             x0, y0, x1, y1 = box
             clip_box = current_clip()
             if clip_box is not None:
@@ -988,9 +990,35 @@ class RenderedPage:
             cell_h = (y1 - y0) / bitmap_h
             if cell_w <= 0 or cell_h <= 0:
                 return
+            opaque_glyph = (
+                rgba[3] == 255
+                and (blend_mode is None or blend_mode == "Normal")
+                and buffer_stack[-1][1] is None
+            )
             for row_index, row in enumerate(rows):
                 cell_y1 = y1 - row_index * cell_h
                 cell_y0 = y1 - (row_index + 1) * cell_h
+                if opaque_glyph:
+                    remaining = row
+                    while remaining:
+                        run_start = (remaining & -remaining).bit_length() - 1
+                        if run_start >= bitmap_w:
+                            break
+                        shifted = remaining >> run_start
+                        run_length = (~shifted & (shifted + 1)).bit_length() - 1
+                        run_end = min(bitmap_w, run_start + run_length)
+                        fill_rect(
+                            (
+                                x0 + run_start * cell_w,
+                                cell_y0,
+                                x0 + run_end * cell_w,
+                                cell_y1,
+                            ),
+                            rgba,
+                            blend_mode,
+                        )
+                        remaining &= ~(((1 << run_length) - 1) << run_start)
+                    continue
                 for col_index in range(bitmap_w):
                     if not (row & (1 << col_index)):
                         continue
@@ -2228,6 +2256,116 @@ class RenderedPage:
                     row = py * width * 4 + ix0 * 4
                     pixels[row : row + x_span * 4] = row_bytes
                 return True
+            if (
+                normal_fast
+                and blend_mode is None
+                and soft_mask_data is not None
+                and comps >= 3
+                and not clip_path_stack
+                and ((u_from_x and v_from_y) or (u_from_y and v_from_x))
+            ):
+                if u_from_x:
+                    inv_ux = 1.0 / ux
+                    inv_vy = 1.0 / vy
+                    source_x_map: list[int] = []
+                    mask_x_map: list[int] = []
+                    for px in range(ix0, ix1):
+                        u = (crop_x0 + (px + 0.5) / scale - p00[0]) * inv_ux
+                        if u < 0.0 or u > 1.0:
+                            source_x_map.append(-1)
+                            mask_x_map.append(-1)
+                            continue
+                        source_x_map.append(max(0, min(width_px - 1, int(u * width_px))))
+                        mask_x_map.append(
+                            max(0, min(soft_mask_width - 1, int(u * soft_mask_width)))
+                        )
+                    source_y_map: list[int] = []
+                    mask_y_map: list[int] = []
+                    for py in range(iy0, iy1):
+                        v = (crop_y1 - (py + 0.5) / scale - p00[1]) * inv_vy
+                        if v < 0.0 or v > 1.0:
+                            source_y_map.append(-1)
+                            mask_y_map.append(-1)
+                            continue
+                        source_y_map.append(max(0, min(height_px - 1, int((1.0 - v) * height_px))))
+                        mask_y_map.append(
+                            max(0, min(soft_mask_height - 1, int((1.0 - v) * soft_mask_height)))
+                        )
+                else:
+                    inv_uy = 1.0 / uy
+                    inv_vx = 1.0 / vx
+                    source_x_map = []
+                    mask_x_map = []
+                    for py in range(iy0, iy1):
+                        u = (crop_y1 - (py + 0.5) / scale - p00[1]) * inv_uy
+                        if u < 0.0 or u > 1.0:
+                            source_x_map.append(-1)
+                            mask_x_map.append(-1)
+                            continue
+                        source_x_map.append(max(0, min(width_px - 1, int(u * width_px))))
+                        mask_x_map.append(
+                            max(0, min(soft_mask_width - 1, int(u * soft_mask_width)))
+                        )
+                    source_y_map = []
+                    mask_y_map = []
+                    for px in range(ix0, ix1):
+                        v = (crop_x0 + (px + 0.5) / scale - p00[0]) * inv_vx
+                        if v < 0.0 or v > 1.0:
+                            source_y_map.append(-1)
+                            mask_y_map.append(-1)
+                            continue
+                        source_y_map.append(max(0, min(height_px - 1, int((1.0 - v) * height_px))))
+                        mask_y_map.append(
+                            max(0, min(soft_mask_height - 1, int((1.0 - v) * soft_mask_height)))
+                        )
+                for dy, py in enumerate(range(iy0, iy1)):
+                    src_x = source_x_map[dy] if u_from_y else None
+                    mask_x = mask_x_map[dy] if u_from_y else None
+                    src_y = source_y_map[dy] if u_from_x else None
+                    mask_y = mask_y_map[dy] if u_from_x else None
+                    if u_from_x and (src_y is None or src_y < 0):
+                        continue
+                    if u_from_y and (src_x is None or src_x < 0):
+                        continue
+                    row = py * width * 4
+                    for dx, px in enumerate(range(ix0, ix1)):
+                        mapped_src_x = source_x_map[dx] if u_from_x else src_x
+                        mapped_src_y = source_y_map[dx] if u_from_y else src_y
+                        mapped_mask_x = mask_x_map[dx] if u_from_x else mask_x
+                        mapped_mask_y = mask_y_map[dx] if u_from_y else mask_y
+                        if (
+                            mapped_src_x is None
+                            or mapped_src_y is None
+                            or mapped_src_x < 0
+                            or mapped_src_y < 0
+                            or mapped_mask_x is None
+                            or mapped_mask_y is None
+                            or mapped_mask_x < 0
+                            or mapped_mask_y < 0
+                        ):
+                            continue
+                        src_idx = (mapped_src_y * width_px + mapped_src_x) * comps
+                        if src_idx + 2 >= converted_len:
+                            continue
+                        mask_idx = mapped_mask_y * soft_mask_width + mapped_mask_x
+                        mask_alpha = soft_mask_data[mask_idx] if mask_idx < soft_mask_len else 255
+                        if mask_alpha <= 0:
+                            continue
+                        source_alpha = alpha
+                        if mask_alpha != 255:
+                            source_alpha = max(
+                                0, min(255, int(round(source_alpha * mask_alpha / 255)))
+                            )
+                        if source_alpha <= 0:
+                            continue
+                        blend_normal_pixel(
+                            row + px * 4,
+                            converted[src_idx],
+                            converted[src_idx + 1],
+                            converted[src_idx + 2],
+                            source_alpha,
+                        )
+                return True
             for py in range(iy0, iy1):
                 page_y = crop_y1 - (py + 0.5) / scale
                 row = py * width * 4
@@ -2718,6 +2856,27 @@ class RenderedPage:
             return result
 
         rotated = bytearray(background_bytes * (width * height))
+        if rotate in {90, 180, 270}:
+            source_pixels = memoryview(pixels).cast("I")
+            rotated_pixels = memoryview(rotated).cast("I")
+            if rotate == 90:
+                for x in range(width):
+                    start = x * height
+                    rotated_pixels[start : start + height] = source_pixels[x::width][::-1]
+            elif rotate == 270:
+                for x in range(width):
+                    start = (width - 1 - x) * height
+                    rotated_pixels[start : start + height] = source_pixels[x::width]
+            else:
+                for y in range(height):
+                    source = y * width
+                    target = (height - 1 - y) * width
+                    rotated_pixels[target : target + width] = source_pixels[
+                        source : source + width
+                    ][::-1]
+            result = bytes(rotated)
+            self.raster_cache[cache_key] = result
+            return result
         for y in range(height):
             for x in range(width):
                 src_idx = (y * width + x) * 4

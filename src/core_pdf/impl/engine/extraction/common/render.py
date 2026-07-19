@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import re
-import typing
 from bisect import bisect_left, bisect_right
 from dataclasses import replace
 from statistics import median_low
@@ -112,7 +111,7 @@ class LayoutReconstructor:
             return self.render_stable_multi_column_box_lines(lines, split_points)
         bands = partition_lines_into_vertical_bands(lines)
         if len(bands) == 1:
-            return self.render_line_segment_lines(lines)
+            return self.render_line_segment_lines(lines, split_points=split_points)
         output_lines: list[observation_resolver.ResolvedTextLine] = []
         for band in bands:
             band_lines = self.render_line_segment_lines(band)
@@ -184,16 +183,20 @@ class LayoutReconstructor:
                     column_buckets[split_index].append(split_line)
                 continue
             dominant_index = self.dominant_line_column_index(line, split_points)
+            macro_index = (
+                self.line_macro_column_index(
+                    line,
+                    macro_column_anchors,
+                    column_width=column_width,
+                )
+                if dominant_index is not None and len(column_indexes) > 1
+                else None
+            )
             if (
                 dominant_index is not None
                 and len(column_indexes) > 1
                 and (
-                    self.line_macro_column_index(
-                        line,
-                        macro_column_anchors,
-                        column_width=column_width,
-                    )
-                    is not None
+                    macro_index is not None
                     or self.line_can_use_dominant_column_assignment(
                         line,
                         split_points,
@@ -201,11 +204,6 @@ class LayoutReconstructor:
                     )
                 )
             ):
-                macro_index = self.line_macro_column_index(
-                    line,
-                    macro_column_anchors,
-                    column_width=column_width,
-                )
                 column_buckets[macro_index if macro_index is not None else dominant_index].append(
                     line
                 )
@@ -226,15 +224,16 @@ class LayoutReconstructor:
         line: LayoutLine,
         split_points: list[float],
     ) -> list[LayoutLine] | None:
-        groups = [
-            group for group in column_run_groups(line.runs) if run_group_bbox(group) is not None
-        ]
+        groups: list[list[TextRun]] = []
+        group_boxes: list[tuple[float, float, float, float]] = []
+        for group in column_run_groups(line.runs):
+            group_box = run_group_bbox(group)
+            if group_box is None:
+                continue
+            groups.append(group)
+            group_boxes.append(group_box)
         if len(groups) < 4:
             return None
-        group_boxes = [
-            typing.cast(tuple[float, float, float, float], run_group_bbox(group))
-            for group in groups
-        ]
         gaps = [
             group_boxes[index + 1][0] - group_boxes[index][2]
             for index in range(len(group_boxes) - 1)
@@ -263,10 +262,13 @@ class LayoutReconstructor:
     def render_line_segment_lines(
         self,
         lines: list[LayoutLine],
+        *,
+        split_points: list[float] | None = None,
     ) -> tuple[observation_resolver.ResolvedTextLine, ...]:
         if len(lines) < 8:
             return self.render_rows_lines(lines)
-        split_points = self.find_column_splits(lines)
+        if split_points is None:
+            split_points = self.find_column_splits(lines)
         if not split_points:
             return self.render_rows_lines(lines)
         if not (
@@ -455,7 +457,7 @@ class LayoutReconstructor:
             return False
         formula_markers = frozenset("∂∑√∞∈θΦω′")
         formula_lines = sum(
-            bool(formula_markers.intersection(line.reconstructed_text().text)) for line in lines
+            any(char in formula_markers for run in line.runs for char in run.text) for line in lines
         )
         return formula_lines >= max(8, int(len(lines) * 0.45))
 
@@ -473,16 +475,16 @@ class LayoutReconstructor:
             runs = [run for run in line.runs if run.has_text]
             if not runs:
                 continue
-            has_left = any(run.mid_x < split_x for run in runs)
-            has_right = any(run.mid_x >= split_x for run in runs)
+            has_left = any(run.mid_x_value < split_x for run in runs)
+            has_right = any(run.mid_x_value >= split_x for run in runs)
             if has_left and has_right:
                 spanning += 1
                 left_edge = max(
-                    (run.x1 for run in runs if run.mid_x < split_x),
+                    (run.coords[TextRun.X1] for run in runs if run.mid_x_value < split_x),
                     default=split_x,
                 )
                 right_edge = min(
-                    (run.x0 for run in runs if run.mid_x >= split_x),
+                    (run.coords[TextRun.X0] for run in runs if run.mid_x_value >= split_x),
                     default=split_x,
                 )
                 if right_edge - left_edge >= 8.0:
@@ -563,19 +565,19 @@ class LayoutReconstructor:
             runs = [run for run in line.runs if run.has_text]
             if not runs:
                 continue
-            has_left = any(run.mid_x < split_x for run in runs)
-            has_right = any(run.mid_x >= split_x for run in runs)
+            has_left = any(run.mid_x_value < split_x for run in runs)
+            has_right = any(run.mid_x_value >= split_x for run in runs)
             if has_left:
                 left_rows += 1
             if has_right:
                 right_rows += 1
             if has_left and has_right:
                 left_edge = max(
-                    (run.x1 for run in runs if run.mid_x < split_x),
+                    (run.coords[TextRun.X1] for run in runs if run.mid_x_value < split_x),
                     default=split_x,
                 )
                 right_edge = min(
-                    (run.x0 for run in runs if run.mid_x >= split_x),
+                    (run.coords[TextRun.X0] for run in runs if run.mid_x_value >= split_x),
                     default=split_x,
                 )
                 if right_edge - left_edge >= 8.0:
@@ -609,19 +611,23 @@ class LayoutReconstructor:
             left_edge = split_x
             right_edge = split_x
             for run in runs:
-                if run.mid_x < split_x:
+                if run.mid_x_value < split_x:
                     has_left = True
-                    if run.x1 > left_edge:
-                        left_edge = run.x1
+                    run_x1 = run.coords[TextRun.X1]
+                    if run_x1 > left_edge:
+                        left_edge = run_x1
                 else:
                     has_right = True
-                    if run.x0 < right_edge:
-                        right_edge = run.x0
+                    run_x0 = run.coords[TextRun.X0]
+                    if run_x0 < right_edge:
+                        right_edge = run_x0
             if not has_left or not has_right:
                 continue
             if exact_edges:
-                left_edge = max(run.x1 for run in runs if run.mid_x < split_x)
-                right_edge = min(run.x0 for run in runs if run.mid_x >= split_x)
+                left_edge = max(run.coords[TextRun.X1] for run in runs if run.mid_x_value < split_x)
+                right_edge = min(
+                    run.coords[TextRun.X0] for run in runs if run.mid_x_value >= split_x
+                )
             if right_edge - left_edge >= 8.0:
                 return True
             if column_width is not None and line_width > column_width * 1.45:
@@ -644,7 +650,7 @@ class LayoutReconstructor:
             current_line_runs = []
             for r in line.runs:
                 if r.has_text:
-                    rx0, rx1 = r.x0, r.x1
+                    rx0, rx1 = r.coords[TextRun.X0], r.coords[TextRun.X1]
                     if rx0 < box_x0:
                         box_x0 = rx0
                     if rx1 > box_x1:
@@ -653,14 +659,16 @@ class LayoutReconstructor:
                     current_line_runs.append(r)
             if len(current_line_runs) < 2:
                 continue
-            current_line_runs.sort(key=lambda run: (run.x0, run.order))
-            prev_x1 = current_line_runs[0].x1
+            current_line_runs.sort(key=lambda run: (run.coords[TextRun.X0], run.order))
+            prev_x1 = current_line_runs[0].coords[TextRun.X1]
             for run in current_line_runs[1:]:
-                gap = run.x0 - prev_x1
+                run_x0 = run.coords[TextRun.X0]
+                run_x1 = run.coords[TextRun.X1]
+                gap = run_x0 - prev_x1
                 if gap >= 16.0:
-                    gap_mids.append((prev_x1 + run.x0) * 0.5)
-                if run.x1 > prev_x1:
-                    prev_x1 = run.x1
+                    gap_mids.append((prev_x1 + run_x0) * 0.5)
+                if run_x1 > prev_x1:
+                    prev_x1 = run_x1
 
         if len(all_runs) < 25:
             return []
@@ -673,7 +681,7 @@ class LayoutReconstructor:
             return []
 
         sorted_gap_mids = sorted(gap_mids)
-        sorted_mid_x = sorted(r.mid_x for r in all_runs)
+        sorted_mid_x = sorted([r.mid_x_value for r in all_runs])
 
         clusters: list[list[float]] = []
         for mid in sorted_gap_mids:
@@ -976,36 +984,46 @@ def reorder_multicolumn_line_runs(
     lines = reorder_four_column_line_runs(lines)
 
     boxes = [line_effective_bbox(line) for line in lines]
+    boxes_by_mid_y = sorted(
+        (
+            (box[1] + box[3]) * 0.5,
+            box,
+        )
+        for box in boxes
+        if box is not None
+    )
+    mid_y_values = [mid_y for mid_y, _ in boxes_by_mid_y]
     x_values = [box[0] for box in boxes if box is not None]
     if len(x_values) < 9:
         return lines
 
+    sorted_x_values = sorted(x_values)
     anchors: list[float] = []
-    for value in sorted(x_values):
+    for value in sorted_x_values:
         if anchors and value - anchors[-1] <= 8.0:
             anchors[-1] = (anchors[-1] + value) * 0.5
         else:
             anchors.append(value)
-    anchor_counts = [sum(abs(value - anchor) <= 8.0 for value in x_values) for anchor in anchors]
+    anchor_counts = [
+        bisect_right(sorted_x_values, anchor + 8.0) - bisect_left(sorted_x_values, anchor - 8.0)
+        for anchor in anchors
+    ]
     recurring_candidates = [
         (anchor, count) for anchor, count in zip(anchors, anchor_counts, strict=True) if count >= 3
     ]
     if len(recurring_candidates) < 3:
         return lines
 
-    same_baseline_triplets: list[tuple[float, float, float, float]] = []
-    for line in lines:
-        line_box = line_effective_bbox(line)
+    best_triplet: tuple[float, float, float] | None = None
+    best_triplet_score: tuple[float, float] | None = None
+    for line_box in boxes:
         if line_box is None:
             continue
         line_mid_y = (line_box[1] + line_box[3]) * 0.5
+        start = bisect_left(mid_y_values, line_mid_y - 2.0)
+        stop = bisect_right(mid_y_values, line_mid_y + 2.0)
         baseline_xs = sorted(
-            {
-                round(other_box[0], 4)
-                for other_box in boxes
-                if other_box is not None
-                and abs((other_box[1] + other_box[3]) * 0.5 - line_mid_y) <= 2.0
-            }
+            {round(other_box[0], 4) for _, other_box in boxes_by_mid_y[start:stop]}
         )
         for left_index, left in enumerate(baseline_xs[:-2]):
             for middle_index in range(left_index + 1, len(baseline_xs) - 1):
@@ -1017,15 +1035,10 @@ def reorder_multicolumn_line_runs(
                         continue
                     spacing_error = abs(left_gap - right_gap)
                     if spacing_error <= max(24.0, left_gap * 0.3):
-                        same_baseline_triplets.append((spacing_error, left, middle, right))
-
-    best_triplet: tuple[float, float, float] | None = None
-    if same_baseline_triplets:
-        _, left, middle, right = max(
-            same_baseline_triplets,
-            key=lambda item: ((item[2] - item[1]) + (item[3] - item[2]), -item[0]),
-        )
-        best_triplet = (left, middle, right)
+                        score = (left_gap + right_gap, -spacing_error)
+                        if best_triplet_score is None or score > best_triplet_score:
+                            best_triplet_score = score
+                            best_triplet = (left, middle, right)
 
     best_score = float("-inf")
     if best_triplet is None:
@@ -1054,8 +1067,7 @@ def reorder_multicolumn_line_runs(
     )
     max_column_width = max(80.0, column_gap * 1.35)
 
-    def column_index(line: observation_resolver.ResolvedTextLine) -> int | None:
-        box = line_effective_bbox(line)
+    def column_index(box: tuple[float, float, float, float] | None) -> int | None:
         if box is None:
             return None
         nearest = min(range(len(recurring)), key=lambda index: abs(box[0] - recurring[index]))
@@ -1065,11 +1077,12 @@ def reorder_multicolumn_line_runs(
             return None
         return nearest
 
+    line_indexes = [column_index(box) for box in boxes]
     output = list(lines)
     index = 0
     changed = False
     while index < len(lines):
-        if lines[index].break_before > 1 or column_index(lines[index]) is None:
+        if lines[index].break_before > 1 or line_indexes[index] is None:
             index += 1
             continue
         end = index
@@ -1077,26 +1090,29 @@ def reorder_multicolumn_line_runs(
         while end < len(lines):
             if lines[end].break_before > 1:
                 break
-            column = column_index(lines[end])
+            column = line_indexes[end]
             if column is None:
                 break
             indexes.append(end)
             end += 1
         if len(indexes) >= 9:
             counts = [
-                sum(column_index(lines[item]) == column for item in indexes)
+                sum(line_indexes[item] == column for item in indexes)
                 for column in range(len(recurring))
             ]
             if sum(count >= 2 for count in counts) >= 3 and multicolumn_has_joinable_hyphen(
                 indexes, lines
             ):
-                ordered = sorted(
-                    (lines[item] for item in indexes),
-                    key=lambda line: (
-                        column_index(line) or 0,
-                        -(line_effective_bbox(line) or (0.0, 0.0, 0.0, 0.0))[3],
-                    ),
-                )
+                ordered = [
+                    line
+                    for item, line in sorted(
+                        ((item, lines[item]) for item in indexes),
+                        key=lambda item_and_line: (
+                            line_indexes[item_and_line[0]] or 0,
+                            -(boxes[item_and_line[0]] or (0.0, 0.0, 0.0, 0.0))[3],
+                        ),
+                    )
+                ]
                 for item, line in zip(indexes, ordered, strict=True):
                     output[item] = line
                 changed = True
@@ -1109,18 +1125,23 @@ def reorder_four_column_line_runs(
 ) -> tuple[observation_resolver.ResolvedTextLine, ...]:
     """Repair row-major ordering for a stable four-column text region."""
     boxes = [line_effective_bbox(line) for line in lines]
+    boxes_by_mid_y = sorted(
+        (
+            (box[1] + box[3]) * 0.5,
+            box,
+        )
+        for box in boxes
+        if box is not None
+    )
+    mid_y_values = [mid_y for mid_y, _ in boxes_by_mid_y]
     candidates: list[tuple[float, ...]] = []
     for line_box in boxes:
         if line_box is None:
             continue
         mid_y = (line_box[1] + line_box[3]) * 0.5
-        xs = sorted(
-            {
-                round(box[0], 4)
-                for box in boxes
-                if box is not None and abs((box[1] + box[3]) * 0.5 - mid_y) <= 2.0
-            }
-        )
+        start = bisect_left(mid_y_values, mid_y - 2.0)
+        stop = bisect_right(mid_y_values, mid_y + 2.0)
+        xs = sorted({round(box[0], 4) for _, box in boxes_by_mid_y[start:stop]})
         if len(xs) < 4:
             continue
         for start in range(len(xs) - 3):
@@ -1130,15 +1151,22 @@ def reorder_four_column_line_runs(
                 candidates.append(group)
     if not candidates:
         return lines
+    sorted_box_x0 = sorted(box[0] for box in boxes if box is not None)
+    anchor_support: dict[float, int] = {}
+    for group in candidates:
+        for x in group:
+            if x not in anchor_support:
+                anchor_support[x] = bisect_right(sorted_box_x0, x + 8.0) - bisect_left(
+                    sorted_box_x0, x - 8.0
+                )
     anchors = max(
         candidates,
-        key=lambda group: sum(sum(abs(box[0] - x) <= 8.0 for box in boxes if box) for x in group),
+        key=lambda group: sum(anchor_support[x] for x in group),
     )
     gap = min(right - left for left, right in zip(anchors, anchors[1:], strict=False))
     max_width = max(80.0, gap * 1.35)
 
-    def index_for(line: observation_resolver.ResolvedTextLine) -> int | None:
-        box = line_effective_bbox(line)
+    def index_for(box: tuple[float, float, float, float] | None) -> int | None:
         if box is None:
             return None
         index = min(range(4), key=lambda item: abs(box[0] - anchors[item]))
@@ -1146,33 +1174,35 @@ def reorder_four_column_line_runs(
             return None
         return index
 
+    line_indexes = [index_for(box) for box in boxes]
     output = list(lines)
     index = 0
     changed = False
     while index < len(lines):
-        if lines[index].break_before > 1 or index_for(lines[index]) is None:
+        if lines[index].break_before > 1 or line_indexes[index] is None:
             index += 1
             continue
         end = index
         indexes: list[int] = []
-        while (
-            end < len(lines) and lines[end].break_before <= 1 and index_for(lines[end]) is not None
-        ):
+        while end < len(lines) and lines[end].break_before <= 1 and line_indexes[end] is not None:
             indexes.append(end)
             end += 1
-        counts = [sum(index_for(lines[item]) == column for item in indexes) for column in range(4)]
+        counts = [sum(line_indexes[item] == column for item in indexes) for column in range(4)]
         if (
             len(indexes) >= 12
             and all(count >= 2 for count in counts)
             and multicolumn_has_joinable_hyphen(indexes, lines)
         ):
-            ordered = sorted(
-                (lines[item] for item in indexes),
-                key=lambda line: (
-                    index_for(line) or 0,
-                    -(line_effective_bbox(line) or (0.0, 0.0, 0.0, 0.0))[3],
-                ),
-            )
+            ordered = [
+                line
+                for item, line in sorted(
+                    ((item, lines[item]) for item in indexes),
+                    key=lambda item_and_line: (
+                        line_indexes[item_and_line[0]] or 0,
+                        -(boxes[item_and_line[0]] or (0.0, 0.0, 0.0, 0.0))[3],
+                    ),
+                )
+            ]
             for item, line in zip(indexes, ordered, strict=True):
                 output[item] = line
             changed = True
@@ -1292,22 +1322,22 @@ def layout_segment_observation(
     *,
     segment_index: int,
 ) -> page_geometry.PageObservation | None:
-    bbox = page_geometry.normalize_rect(segment.bbox)
+    bbox = normalized_layout_segment_rect(segment.bbox)
     if not page_geometry.valid_rect(bbox):
         return None
-    advance_bbox = page_geometry.normalize_rect(segment.advance_bbox)
-    ink_bbox = page_geometry.normalize_rect(segment.ink_bbox)
+    advance_bbox = normalized_layout_segment_rect(segment.advance_bbox)
+    ink_bbox = normalized_layout_segment_rect(segment.ink_bbox)
     return page_geometry.PageObservation(
-        kind="native_line_segment",
-        source="native_text",
-        bbox=bbox,
-        advance_bbox=advance_bbox,
-        ink_bbox=ink_bbox,
-        confidence=segment.confidence,
-        text=segment.text,
-        baseline=segment.baseline,
-        provenance=(
-            *segment.provenance,
+        "native_line_segment",
+        "native_text",
+        bbox,
+        advance_bbox,
+        ink_bbox,
+        segment.confidence,
+        segment.text,
+        segment.baseline,
+        segment.provenance
+        + (
             ("object_type", "LayoutLineTextSegment"),
             ("segment_index", segment_index),
             ("spacing_decision", segment.spacing_decision),
@@ -1319,9 +1349,24 @@ def layout_segment_observation(
     )
 
 
+def normalized_layout_segment_rect(
+    rect: tuple[float, float, float, float],
+) -> page_geometry.Rect:
+    x0, y0, x1, y1 = rect
+    if x0 <= x1 and y0 <= y1:
+        return rect
+    normalized = page_geometry.normalize_rect(rect)
+    return normalized if normalized is not None else rect
+
+
 def line_ink_bbox(
     observations: tuple[page_geometry.PageObservation, ...],
 ) -> page_geometry.Rect | None:
+    if not observations:
+        return None
+    if len(observations) == 1:
+        observation = observations[0]
+        return observation.ink_bbox if observation.ink_bbox is not None else observation.bbox
     boxes: list[page_geometry.Rect] = []
     for observation in observations:
         box = observation.ink_bbox if observation.ink_bbox is not None else observation.bbox
@@ -1340,12 +1385,17 @@ def line_ink_bbox(
 def line_confidence(
     observations: tuple[page_geometry.PageObservation, ...],
 ) -> float | None:
-    values = [
-        observation.confidence for observation in observations if observation.confidence is not None
-    ]
-    if not values:
+    total = 0.0
+    count = 0
+    for observation in observations:
+        confidence = observation.confidence
+        if confidence is None:
+            continue
+        total += confidence
+        count += 1
+    if count == 0:
         return None
-    return sum(values) / len(values)
+    return total / count
 
 
 def render_page_text(
@@ -1564,10 +1614,10 @@ def merge_direct_soft_hyphen_continuation(
     left: observation_resolver.ResolvedTextLine,
     right: observation_resolver.ResolvedTextLine,
 ) -> observation_resolver.ResolvedTextLine | None:
-    if right.break_before > 1 or not lines_form_same_column_continuation(left, right):
-        return None
     left_core = remove_trailing_soft_hyphen(left.text)
     if left_core == left.text:
+        return None
+    if right.break_before > 1 or not lines_form_same_column_continuation(left, right):
         return None
     right_core = strip_leading_soft_hyphen_artifact(right.text)
     if not line_join_word_is_plausible(left_core, right_core):
@@ -1907,7 +1957,10 @@ def leading_alpha_fragment(text: str) -> str:
 
 
 def column_run_groups(runs: list[TextRun]) -> list[list[TextRun]]:
-    sorted_runs = sorted(runs, key=lambda run: (run.x0, run.order, run.stream_order))
+    sorted_runs = sorted(
+        runs,
+        key=lambda run: (run.coords[TextRun.X0], run.order, run.stream_order),
+    )
     groups: list[list[TextRun]] = []
     current: list[TextRun] = []
     for run in sorted_runs:
@@ -1931,37 +1984,73 @@ def column_group_breaks_between(left: TextRun, right: TextRun) -> bool:
         return True
     if left.rotation_angle != right.rotation_angle or left.is_vertical != right.is_vertical:
         return True
-    if left.text and left.text[-1].isspace():
+    if left.text[-1].isspace():
         return True
-    if right.text and right.text[0].isspace():
+    if right.text[0].isspace():
         return True
 
-    y_overlap = max(0.0, min(left.y1, right.y1) - max(left.y0, right.y0))
-    min_height = max(1.0, min(left.height, right.height))
+    left_coords = left.coords
+    right_coords = right.coords
+    overlap_y1 = (
+        left_coords[TextRun.Y1]
+        if left_coords[TextRun.Y1] < right_coords[TextRun.Y1]
+        else right_coords[TextRun.Y1]
+    )
+    overlap_y0 = (
+        left_coords[TextRun.Y0]
+        if left_coords[TextRun.Y0] > right_coords[TextRun.Y0]
+        else right_coords[TextRun.Y0]
+    )
+    y_overlap = overlap_y1 - overlap_y0
+    if y_overlap < 0.0:
+        y_overlap = 0.0
+    min_height = left.height_value if left.height_value < right.height_value else right.height_value
+    if min_height < 1.0:
+        min_height = 1.0
     if y_overlap / min_height < 0.45:
         return True
 
-    gap = right.x0 - left.x1
+    gap = right_coords[TextRun.X0] - left_coords[TextRun.X1]
     if gap < -max(1.5, min_height * 0.2):
         return False
-    allowed_gap = max(1.8, min(left.space_width, right.space_width) * 0.45)
+    allowed_gap = max(
+        1.8,
+        min(
+            left_coords[TextRun.SPACE_WIDTH],
+            right_coords[TextRun.SPACE_WIDTH],
+        )
+        * 0.45,
+    )
     return gap > allowed_gap
 
 
 def run_group_bbox(group: list[TextRun]) -> page_geometry.Rect | None:
-    boxes: list[page_geometry.Rect] = []
+    min_x: float | None = None
+    min_y: float | None = None
+    max_x: float | None = None
+    max_y: float | None = None
     for run in group:
-        box = page_geometry.normalize_rect(run.ink_bbox or run.advance_bbox)
-        if box is not None:
-            boxes.append(box)
-    if not boxes:
+        box = run.ink_bbox or run.advance_bbox
+        if box is None:
+            continue
+        x0, y0, x1, y1 = box
+        if x0 > x1:
+            x0, x1 = x1, x0
+        if y0 > y1:
+            y0, y1 = y1, y0
+        if min_x is None:
+            min_x, min_y, max_x, max_y = x0, y0, x1, y1
+            continue
+        assert min_y is not None
+        assert max_x is not None
+        assert max_y is not None
+        min_x = min(min_x, x0)
+        min_y = min(min_y, y0)
+        max_x = max(max_x, x1)
+        max_y = max(max_y, y1)
+    if min_x is None or min_y is None or max_x is None or max_y is None:
         return None
-    return (
-        min(box[0] for box in boxes),
-        min(box[1] for box in boxes),
-        max(box[2] for box in boxes),
-        max(box[3] for box in boxes),
-    )
+    return (min_x, min_y, max_x, max_y)
 
 
 def narrow_boundary_punctuation_run(run: TextRun) -> bool:

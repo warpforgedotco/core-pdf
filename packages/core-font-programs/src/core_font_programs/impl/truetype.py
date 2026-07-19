@@ -153,13 +153,19 @@ def _best_unicode_gid_cmap(font: TTFont) -> dict[int, int]:
         symbol_cmap = cmap_table.getcmap(3, 0)
         name_cmap = symbol_cmap.cmap if symbol_cmap is not None else {}
     mapping: dict[int, int] = {}
+    reverse_glyph_map = font.getReverseGlyphMap()
     for codepoint, glyph_name in name_cmap.items():
         if not is_unicode_scalar(codepoint):
             continue
         try:
-            gid = font.getGlyphID(glyph_name)
-        except (KeyError, TTLibError, AttributeError):
-            continue
+            gid = reverse_glyph_map[glyph_name]
+        except KeyError:
+            if not glyph_name.startswith("glyph"):
+                continue
+            try:
+                gid = int(glyph_name[5:])
+            except ValueError:
+                continue
         if gid > 0:
             mapping[codepoint] = gid
     return mapping

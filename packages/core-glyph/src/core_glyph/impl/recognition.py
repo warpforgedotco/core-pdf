@@ -3,6 +3,7 @@ from __future__ import annotations
 import shutil
 import subprocess
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Protocol
 
 RecognizedGlyph = tuple[str, float]
@@ -27,30 +28,51 @@ class TesseractGlyphRecognizer:
         return cls(executable) if executable else None
 
     def recognize(self, bitmap: tuple[int, ...], width: int, height: int) -> RecognizedGlyph | None:
-        if width <= 0 or height <= 0 or not bitmap:
-            return None
-        image = bitmap_to_pgm(bitmap, width, height, self.scale, self.border)
-        try:
-            result = subprocess.run(
-                [
-                    self.executable,
-                    "stdin",
-                    "stdout",
-                    "--psm",
-                    "10",
-                    "tsv",
-                    "-c",
-                    "tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,-+/()[]{}<>|_~",
-                ],
-                input=image,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
-                check=False,
-                timeout=2.0,
-            )
-        except (OSError, subprocess.TimeoutExpired):
-            return None
-        return parse_tesseract_symbol(result.stdout, self.minimum_confidence)
+        return _recognize_cached(
+            self.executable,
+            self.scale,
+            self.border,
+            self.minimum_confidence,
+            bitmap,
+            width,
+            height,
+        )
+
+
+@lru_cache(maxsize=8192)
+def _recognize_cached(
+    executable: str,
+    scale: int,
+    border: int,
+    minimum_confidence: float,
+    bitmap: tuple[int, ...],
+    width: int,
+    height: int,
+) -> RecognizedGlyph | None:
+    if width <= 0 or height <= 0 or not bitmap:
+        return None
+    image = bitmap_to_pgm(bitmap, width, height, scale, border)
+    try:
+        result = subprocess.run(
+            [
+                executable,
+                "stdin",
+                "stdout",
+                "--psm",
+                "10",
+                "tsv",
+                "-c",
+                "tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,-+/()[]{}<>|_~",
+            ],
+            input=image,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            check=False,
+            timeout=2.0,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return parse_tesseract_symbol(result.stdout, minimum_confidence)
 
 
 def bitmap_to_pgm(

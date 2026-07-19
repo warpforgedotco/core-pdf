@@ -42,6 +42,31 @@ class FigureOcrRegion:
     signals: dict[str, float | int | str | bool] | None = None
 
 
+@dataclass(frozen=True)
+class NativeTextAssessment:
+    """Trust decision for the decoded native text layer on a page."""
+
+    status: str
+    reason: str
+    token_count: int
+    uninterpretable_count: int
+
+
+def assess_native_text(text: str) -> NativeTextAssessment:
+    token_count = ocr_text_analysis.extracted_text_token_count(text)
+    uninterpretable_count = uninterpretable_char_count(text)
+    if not text.strip():
+        return NativeTextAssessment("empty", "empty_text", 0, 0)
+    if uninterpretable_count >= 2 and token_count >= 20:
+        return NativeTextAssessment(
+            "suspect",
+            "uninterpretable_unicode",
+            token_count,
+            uninterpretable_count,
+        )
+    return NativeTextAssessment("trusted", "no_decode_artifacts", token_count, 0)
+
+
 def rendered_page_for_ocr_analysis(page: Any) -> Any:
     cache = page.extraction_cache
     cache_key = "ocr_analysis_rendered_page"
@@ -355,15 +380,16 @@ def native_text_should_be_omitted_from_ocr_render(
     its decoded glyphs are wrong and are painted over the scan.  Tesseract can
     then recognize the bad overlay instead of the underlying page image.
     """
+    assessment = assess_native_text(text)
+    if assessment.status != "suspect":
+        return False
     try:
-        if not dominant_image_requires_ocr_verification(page):
-            return False
+        # A bad Unicode mapping does not imply bad painted glyphs.  On vector
+        # pages the native glyphs may be the only copy of the visible content;
+        # suppress them only when an independent raster image is present.
+        return dominant_image_requires_ocr_verification(page) or page_has_large_embedded_image(page)
     except Exception:
         return False
-    # A bad Unicode mapping does not imply bad painted glyphs: NASA's page is
-    # the counterexample.  Suppress text only when the sparse overlay also
-    # contains characters that cannot be rendered/reconciled reliably.
-    return uninterpretable_char_count(text) > 0
 
 
 def page_has_many_non_image_drawings(page: Any) -> bool:

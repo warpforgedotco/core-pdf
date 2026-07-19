@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import array
 import itertools
+from bisect import bisect_right
+from collections import defaultdict
 
 from core_layout.impl.layout.models import TableGrid
 
@@ -123,20 +125,19 @@ def snap_table_edges(
         group = [edge for edge in edges if edge["orientation"] == orientation]
         group.sort(key=lambda edge: float(edge["coord"]))
         clusters: list[list[TableEdge]] = []
+        cluster_sums: list[float] = []
         for edge in group:
             if (
                 clusters
-                and abs(
-                    float(edge["coord"])
-                    - sum(float(item["coord"]) for item in clusters[-1]) / len(clusters[-1])
-                )
-                <= tolerance
+                and abs(float(edge["coord"]) - cluster_sums[-1] / len(clusters[-1])) <= tolerance
             ):
                 clusters[-1].append(edge)
+                cluster_sums[-1] += float(edge["coord"])
             else:
                 clusters.append([edge])
-        for cluster in clusters:
-            coord = sum(float(edge["coord"]) for edge in cluster) / len(cluster)
+                cluster_sums.append(float(edge["coord"]))
+        for cluster, cluster_sum in zip(clusters, cluster_sums):
+            coord = cluster_sum / len(cluster)
             for edge in cluster:
                 replacement = dict(edge)
                 replacement["coord"] = coord
@@ -234,11 +235,20 @@ def intersections_to_cells(
         return False
 
     points = sorted(intersections, key=lambda point: (point[0], -point[1]))
+    points_by_top: dict[float, list[tuple[float, float]]] = defaultdict(list)
+    points_by_x: dict[float, list[tuple[float, float]]] = defaultdict(list)
+    for point in points:
+        points_by_top[point[1]].append(point)
+        points_by_x[point[0]].append(point)
+    points_by_top_x = {
+        top: (tuple(point[0] for point in row), row) for top, row in points_by_top.items()
+    }
     cells: list[tuple[float, float, float, float]] = []
     for point in points:
         x0, top = point
-        rights = [candidate for candidate in points if candidate[1] == top and candidate[0] > x0]
-        belows = [candidate for candidate in points if candidate[0] == x0 and candidate[1] < top]
+        top_xs, top_points = points_by_top_x[top]
+        rights = top_points[bisect_right(top_xs, x0) :]
+        belows = [candidate for candidate in points_by_x[x0] if candidate[1] < top]
         for below in belows:
             if not connected(point, below):
                 continue

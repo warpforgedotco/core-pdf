@@ -13,8 +13,6 @@ from core_layout.impl.layout.glyphs import (
     Matrix6,
     glyph_cluster_from_observations,
     glyph_unicode_confidence,
-    rectbox_tuple,
-    union_bboxes,
 )
 from core_layout.impl.layout.models import TextRun
 from fontTools.encodings.StandardEncoding import StandardEncoding
@@ -49,6 +47,17 @@ def should_capture_glyph_bitmap(text: str) -> bool:
         return True
     code = ord(text)
     return 0xE000 <= code <= 0xF8FF or code < 32
+
+
+def should_capture_suspicious_multi_glyph_bitmap(text: str) -> bool:
+    """Capture shapes for non-ligature CMap values that look concatenated."""
+    if len(text) <= 1 or text in {"ff", "fi", "fl", "ffi", "ffl", "st"}:
+        return False
+    nonspace = [char for char in text if not char.isspace()]
+    if len(nonspace) < 2:
+        return False
+    punctuation = sum(not char.isalnum() for char in nonspace)
+    return punctuation >= 1 and punctuation / len(nonspace) >= 0.25
 
 
 @lru_cache(maxsize=4096)
@@ -255,20 +264,48 @@ def apply_glyph_geometry_to_run(
     glyphs: typing.Iterable[GlyphObservation],
     glyph_clusters: tuple[GlyphCluster, ...] = (),
 ) -> None:
-    glyph_tuple = tuple(glyphs)
     if glyph_clusters:
         run.glyph_clusters = glyph_clusters
-    if not glyph_tuple:
-        return
-    ink_bbox = union_bboxes(tuple(rectbox_tuple(glyph.ink_rect) for glyph in glyph_tuple))
-    advance_bbox = union_bboxes(tuple(rectbox_tuple(glyph.advance_rect) for glyph in glyph_tuple))
+    advance_bbox: tuple[float, float, float, float] | None = None
+    ink_bbox: tuple[float, float, float, float] | None = None
+    confidence: float | None = None
+    for glyph in glyphs:
+        advance = glyph.advance_rect
+        advance_values = (advance.x0, advance.y0, advance.x1, advance.y1)
+        if advance_bbox is None:
+            advance_bbox = advance_values
+        else:
+            x0, y0, x1, y1 = advance_bbox
+            advance_bbox = (
+                min(x0, advance.x0),
+                min(y0, advance.y0),
+                max(x1, advance.x1),
+                max(y1, advance.y1),
+            )
+
+        ink = glyph.ink_rect
+        ink_values = (ink.x0, ink.y0, ink.x1, ink.y1)
+        if ink_bbox is None:
+            ink_bbox = ink_values
+        else:
+            x0, y0, x1, y1 = ink_bbox
+            ink_bbox = (
+                min(x0, ink.x0),
+                min(y0, ink.y0),
+                max(x1, ink.x1),
+                max(y1, ink.y1),
+            )
+
+        glyph_confidence = glyph.confidence
+        if glyph_confidence is not None and (confidence is None or glyph_confidence < confidence):
+            confidence = glyph_confidence
+
     if advance_bbox is not None:
         run.advance_bbox = advance_bbox
     if ink_bbox is not None:
         run.ink_bbox = ink_bbox
-    confidences = [glyph.confidence for glyph in glyph_tuple if glyph.confidence is not None]
-    if confidences:
-        run.confidence = min(confidences)
+    if confidence is not None:
+        run.confidence = confidence
 
 
 def type3_font_matrix(font: dict[str, Any]) -> Matrix:
@@ -383,10 +420,13 @@ class CapturedPath:
         self.subpaths.append(CapturedSubpath([(x, y)]))
 
     def line_to(self, x: float, y: float) -> None:
-        if not self.subpaths:
+        subpaths = self.subpaths
+        if not subpaths:
             self.move_to(x, y)
             return
-        self.subpaths[-1].line_to(x, y)
+        subpath = subpaths[-1]
+        if not subpath.closed:
+            subpath.points.append((x, y))
 
     def close(self) -> None:
         if self.subpaths:
@@ -424,12 +464,14 @@ class CapturedPath:
         return [edges for subpath in self.subpaths if (edges := subpath.edges(close_open=False))]
 
     def derived_lines(self, line_width: float) -> list[CapturedLine]:
-        return [
-            CapturedLine(x0, y0, x1, y1, line_width)
-            for subpath in self.subpaths
-            for x0, y0, x1, y1 in subpath.edges(close_open=False)
-            if abs(x1 - x0) > 0.01 or abs(y1 - y0) > 0.01
-        ]
+        lines: list[CapturedLine] = []
+        append_line = lines.append
+        for subpath in self.subpaths:
+            points = subpath.points
+            for (x0, y0), (x1, y1) in zip(points, points[1:]):
+                if abs(x1 - x0) > 0.01 or abs(y1 - y0) > 0.01:
+                    append_line(CapturedLine(x0, y0, x1, y1, line_width))
+        return lines
 
 
 DrawingItem = tuple[str, tuple[tuple[float, float], ...]]
@@ -712,8 +754,9 @@ class ContentCaptureMixin:
         confidence: float | None = None,
         glyph_clusters: tuple[GlyphCluster, ...] = (),
     ) -> TextRun:
+        existing = self.run_pool.pop() if self.capture_glyphs and self.run_pool else None
         r = TextRun.reinit(
-            None,
+            existing,
             text,
             x0,
             y0,
@@ -740,8 +783,6 @@ class ContentCaptureMixin:
             confidence,
             glyph_clusters,
         )
-        self.run_pool.append(r)
-        self.run_pool_idx += 1
         return r
 
     def update_pending_run(self: Any, new_run: TextRun) -> None:
@@ -835,6 +876,8 @@ class ContentCaptureMixin:
             self.pending_run = new_run
         else:
             p.extend_glyph_clusters(new_run.glyph_clusters)
+            if self.capture_glyphs:
+                self.run_pool.append(new_run)
 
     def merge_pending_horizontal_run(
         self,
@@ -889,7 +932,6 @@ class ContentCaptureMixin:
     ) -> None:
         if not self.capture_glyphs:
             return
-        data = bytes(data)
         if glyphs is None:
             glyphs = decoder.decode_glyphs(data)
         if not glyphs:
@@ -908,6 +950,10 @@ class ContentCaptureMixin:
         combined_c = self.combined_C
         combined_d = self.combined_D
         append_glyph = self.glyphs.append
+        chunk_advance = self.chunk_advance
+        glyph_bbox_for_code = decoder.glyph_bbox
+        glyph_bitmap_for_code = decoder.glyph_bitmap
+        vertical_position = decoder.vertical_glyph_position
         clusters = getattr(self, "glyph_clusters", None)
         if clusters is None:
             clusters = []
@@ -923,7 +969,7 @@ class ContentCaptureMixin:
             ("xobject_depth", xobject_depth),
         )
         for decoded_index, glyph in enumerate(glyphs):
-            advance = self.chunk_advance(
+            advance = chunk_advance(
                 glyph.width_code,
                 decoder,
                 char_code=glyph.char_code,
@@ -942,13 +988,11 @@ class ContentCaptureMixin:
                 offset,
                 advance,
                 decoder,
-                decoder.vertical_glyph_position(glyph.cid, font_size=font_size)
-                if is_vertical
-                else (0.0, 0.0),
+                vertical_position(glyph.cid, font_size=font_size) if is_vertical else (0.0, 0.0),
             )
             advance_rect = transformed_text_rect(self, *text_box)
             baseline = transformed_text_line(self, *baseline_text)
-            glyph_bbox = decoder.glyph_bbox(glyph.bitmap_code) if not is_vertical else None
+            glyph_bbox = glyph_bbox_for_code(glyph.bitmap_code) if not is_vertical else None
             rect = glyph_ink_rect(self, glyph_bbox, offset, advance_rect)
             device_matrix = (
                 combined_a,
@@ -969,16 +1013,19 @@ class ContentCaptureMixin:
                 alternates=glyph.alternates,
             )
 
-            if len(chunk_text) == 1:
+            if len(chunk_text) == 1 or should_capture_suspicious_multi_glyph_bitmap(chunk_text):
                 bitmap: tuple[int, ...] = ()
                 bitmap_width = 0
                 bitmap_height = 0
-                if should_capture_glyph_bitmap(chunk_text):
+                if self.capture_glyph_bitmaps and (
+                    should_capture_glyph_bitmap(chunk_text)
+                    or should_capture_suspicious_multi_glyph_bitmap(chunk_text)
+                ):
                     bitmap_width, bitmap_height = glyph_bitmap_dimensions(
                         glyph_bbox,
                         font_size,
                     )
-                    bitmap = decoder.glyph_bitmap(
+                    bitmap = glyph_bitmap_for_code(
                         glyph.bitmap_code,
                         width=bitmap_width,
                         height=bitmap_height,
@@ -1150,17 +1197,16 @@ class ContentCaptureMixin:
         decoder = decoder if decoder is not None else self.get_decoder()
 
         if data is not None:
-            if type(data) is memoryview:
-                data = data.tobytes()
+            if not self.capture_glyphs:
+                data = bytes(data)
             glyphs = None
             if self.capture_glyphs:
                 glyphs = decoder.decode_glyphs(data)
                 text = "".join(glyph.unicode for glyph in glyphs)
             else:
-                text = decoder.decode(data)
+                text = decoder.decode(bytes(data))
         else:
             text, data, glyphs = self.decode_operand(operand, decoder)
-        data = bytes(data)
         data_len = len(data)
         rendered_type3_glyphs = False
         if decoder.is_type3 and self.capture_graphics and data:

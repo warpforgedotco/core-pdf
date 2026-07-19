@@ -24,6 +24,7 @@ dependencies = [
     "core-jbig2>=0.0.1",
     "core-jpeg>=0.0.0",
     "core-layout>=0.0.1",
+    "core-ocr>=0.0.1",
     "fonttools>=4.63.0,<5.0.0",
 ]
 [tool.uv.sources]
@@ -38,6 +39,7 @@ core-glyph = { workspace = true }
 core-jbig2 = { workspace = true }
 core-jpeg = { workspace = true }
 core-layout = { workspace = true }
+core-ocr = { workspace = true }
 
 [tool.uv]
 python-preference = "system"

@@ -71,6 +71,43 @@ def test_raster_size_accounts_for_rotation_crop_and_scale() -> None:
     assert len(page.rasterize(scale=2)) == 160 * 120 * 4
 
 
+@pytest.mark.parametrize("rotation", [90, 180, 270])
+def test_rasterize_rotation_preserves_rgba_pixel_order(rotation: int) -> None:
+    page = rendered_page(width=2, height=3, rotate=rotation)
+    page.display_list.append(
+        "glyph",
+        1,
+        bitmap=(1, 2, 3, 4, 5, 6),
+        bitmap_width=2,
+        bitmap_height=3,
+        bbox=(0, 0, 2, 3),
+        fill_color=(0, 0, 0),
+    )
+    unrotated = rendered_page(width=2, height=3)
+    unrotated.display_list.items = page.display_list.items
+
+    source = unrotated.rasterize(background=(255, 255, 255, 255))
+    actual = page.rasterize(background=(255, 255, 255, 255))
+    width = 2
+    height = 3
+    expected_pixels = [source[index : index + 4] for index in range(0, len(source), 4)]
+    rotated_pixels = [b"\xff\xff\xff\xff"] * (width * height)
+    for y in range(height):
+        for x in range(width):
+            if rotation == 90:
+                dst_x, dst_y = height - 1 - y, x
+                dst_width = height
+            elif rotation == 180:
+                dst_x, dst_y = width - 1 - x, height - 1 - y
+                dst_width = width
+            else:
+                dst_x, dst_y = y, width - 1 - x
+                dst_width = height
+            rotated_pixels[dst_y * dst_width + dst_x] = expected_pixels[y * width + x]
+
+    assert actual == b"".join(rotated_pixels)
+
+
 def test_rasterize_rejects_oversized_canvas_before_allocation() -> None:
     page = rendered_page(width=100, height=200)
 

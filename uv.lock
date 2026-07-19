@@ -262,6 +262,7 @@ dependencies = [
     { name = "core-jbig2" },
     { name = "core-jpeg" },
     { name = "core-layout" },
+    { name = "core-ocr" },
     { name = "fonttools" },
 ]
 
@@ -300,6 +301,7 @@ requires-dist = [
     { name = "core-jbig2", editable = "packages/core-JBIG2" },
     { name = "core-jpeg", editable = "packages/core-JPEG" },
     { name = "core-layout", editable = "packages/core-layout" },
+    { name = "core-ocr", editable = "packages/core-ocr" },
     { name = "fonttools", specifier = ">=4.63.0,<5.0.0" },
 ]
 

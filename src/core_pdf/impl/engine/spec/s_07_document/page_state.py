@@ -118,12 +118,14 @@ class PageStateMixin:
                 cast(Any, self.document),
                 self.page_dict,
                 capture_glyphs=True,
-                capture_graphics=False,
+                capture_glyph_bitmaps=False,
+                capture_graphics=True,
                 hidden_layers=page_hidden_layers(self),
                 decoder_cache=self.document.decoder_cache,
             )
             self.consume_contents(state)
             self.state = state
+            self.graphics = state
         cached_state = self.state
         return cached_state
 

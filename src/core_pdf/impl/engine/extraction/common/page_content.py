@@ -17,6 +17,9 @@ from core_pdf.impl.engine.extraction.cache import ExtractionCache
 from core_pdf.impl.engine.extraction.common import page_geometry
 
 if TYPE_CHECKING:
+    from core_pdf.impl.engine.rendering import RenderOptions
+
+if TYPE_CHECKING:
     from core_layout.impl.layout.glyphs import GlyphCluster
     from core_layout.impl.layout.models import LayoutLine, TextRun
 
@@ -90,7 +93,7 @@ class PageContentHost(Protocol):
 
     def get_annotations(self) -> Sequence[PageAnnotation]: ...
 
-    def render(self) -> PageRenderResult: ...
+    def render(self, options: RenderOptions | None = None) -> PageRenderResult: ...
 
     def extract_lines(self, *, include_words: bool = False) -> list[PageContentRecord]: ...
 
@@ -262,9 +265,18 @@ class PageContentMixin:
         if not kinds:
             return []
 
+        from core_pdf.impl.engine.rendering import RenderOptions
+
         images: list[PageContentRecord] = []
         page_height = getattr(self, "height", None)
-        for item in self.render().display_list.items:
+        rendered = self.render(
+            RenderOptions(
+                include_text=False,
+                include_annotations=False,
+                include_layers=False,
+            )
+        )
+        for item in rendered.display_list.items:
             if item.kind not in kinds:
                 continue
             metadata = item.data.get("image_metadata")

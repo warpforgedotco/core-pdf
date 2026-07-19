@@ -404,6 +404,8 @@ class FontDecoder:
         else:
             base_encoding = normalize_pdf_name(encoding_obj)
             cmap = self._named_cmap(base_encoding)
+        if base_encoding is None and subtype == "Type3":
+            base_encoding = "StandardEncoding"
         if not differences and subtype == "Type1" and encoding_obj is None:
             descriptor = lookup_dict_key(font, "FontDescriptor")
             if isinstance(descriptor, dict):
@@ -442,22 +444,22 @@ class FontDecoder:
         return result
 
     def decode_glyphs(self, data: bytes | bytearray | memoryview) -> tuple[DecodedGlyph, ...]:
-        data = bytes(data)
         if not data:
             return ()
         use_cache = len(data) <= 16
+        cache_key = bytes(data) if use_cache else None
         if use_cache:
-            cached = self.glyphs_cache.get(data)
+            cached = self.glyphs_cache.get(cache_key)
             if cached is not None:
                 return cached
 
         if self.is_cid_font:
-            glyphs = self._decode_cid_glyphs(data)
+            glyphs = self._decode_cid_glyphs(bytes(data))
         else:
             glyphs = self._decode_simple_glyphs(data)
         result = tuple(glyphs)
-        if use_cache and len(self.glyphs_cache) < 512:
-            self.glyphs_cache[data] = result
+        if cache_key is not None and len(self.glyphs_cache) < 512:
+            self.glyphs_cache[cache_key] = result
         return result
 
     def _unicode_choice_for_code(
@@ -615,7 +617,7 @@ class FontDecoder:
             dedupe_alternates((choice.text, *choice.alternates), text),
         )
 
-    def _decode_simple_glyphs(self, data: bytes) -> list[DecodedGlyph]:
+    def _decode_simple_glyphs(self, data: bytes | bytearray | memoryview) -> list[DecodedGlyph]:
         glyphs: list[DecodedGlyph] = []
         glyph_cache = self.simple_glyph_cache
         table = self.byte_decode_table
@@ -755,8 +757,11 @@ class FontDecoder:
         if code < 0:
             return None
         cache = self.glyph_bbox_cache
+        bbox = cache.get(code)
+        if bbox is not None:
+            return bbox
         if code in cache:
-            return cache[code]
+            return None
         cff_font = self.cff_font
         if cff_font is not None:
             if self.is_cid_font:

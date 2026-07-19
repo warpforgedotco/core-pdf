@@ -26,6 +26,7 @@ from core_ocr.impl import selection as ocr_selection
 from core_ocr.impl import session as ocr_session_runtime
 from core_ocr.impl import table_regions as ocr_table_regions
 from core_ocr.impl import text_analysis as ocr_text_analysis
+from core_ocr.impl import tiling as ocr_tiling
 from core_ocr.impl.backend import TesseractCtypesBackend
 from core_ocr.impl.output import (
     append_resolved_supplement_lines,
@@ -7259,6 +7260,12 @@ def extract_ocr_page_result(
             candidate for candidate in candidates if not candidate.name.startswith("verification_")
         ]
         candidate = ocr_selection.select_ocr_candidate(candidates, support_text=vector_text)
+        record_ocr_candidate_diagnostics(
+            page,
+            candidates,
+            selected_candidate=candidate,
+            support_text=vector_text,
+        )
         if candidate is not None:
             text = candidate.result.text
             table_fusion = fuse_table_ocr_candidates(
@@ -7319,6 +7326,37 @@ def extract_ocr_page_result(
     )
     record_ocr_deskew_diagnostics(page, ocr_session)
     return result
+
+
+def record_ocr_candidate_diagnostics(
+    page: PageExtractionHost,
+    candidates: Iterable[OcrCandidate],
+    *,
+    selected_candidate: OcrCandidate | None,
+    support_text: str = "",
+) -> None:
+    """Cache compact candidate diagnostics for difficult OCR pages."""
+    cache = getattr(page, "extraction_cache", None)
+    if cache is None:
+        return
+    records = []
+    for candidate in candidates:
+        result = candidate.result
+        records.append(
+            {
+                "name": candidate.name,
+                "selected": candidate is selected_candidate,
+                "characters": len(result.text),
+                "tokens": ocr_text_analysis.extracted_text_token_count(result.text),
+                "confidence": result.confidence,
+                "score": ocr_selection.ocr_candidate_score(candidate, support_text=support_text),
+                "quality": ocr_text_analysis.text_ocr_quality_score(result.text),
+                "artifact": ocr_text_analysis.scanned_ocr_artifact_score(result.text),
+                "line_rows": len(result.line_rows),
+                "word_rows": len(result.word_rows),
+            }
+        )
+    cache["ocr_candidate_diagnostics"] = tuple(records)
 
 
 def record_ocr_deskew_diagnostics(
@@ -11422,6 +11460,15 @@ def append_rendered_full_page_ocr_candidates(
             primary_result,
             rendered_image,
         )
+        if dpi == max_render_dpi and should_try_suspect_native_table_tiling(page):
+            tiled_candidate = ocr_tiling.tiled_ocr_candidate_for_dpi(
+                page,
+                dpi,
+                timeout,
+                token_type_classifier=ocr_schematic.classify_schematic_token_type,
+            )
+            if tiled_candidate is not None:
+                candidates.append(tiled_candidate)
         # Dense scanned tables are poorly served by the default sparse-page
         # segmentation.  Keep a dedicated block-mode candidate so the normal
         # line reconciliation can choose cells/rows with stable geometry.
@@ -11524,12 +11571,20 @@ def append_rendered_full_page_ocr_candidates(
                     timeout=timeout,
                 )
             )
-            append_nonempty_ocr_candidate(
+            sparse_candidate = append_nonempty_ocr_candidate(
                 candidates,
                 f"{source}_psm{ocr_full_page.OCR_FALLBACK_SPARSE_PAGE_SEGMENTATION_MODE}",
                 sparse_result,
                 rendered_image,
             )
+            if (
+                sparse_candidate is not None
+                and dpi != max_render_dpi
+                and ocr_selection.rendered_sparse_ocr_candidate_is_usable_without_resolution_retry(
+                    sparse_candidate
+                )
+            ):
+                return
         if vector_diagram_sparse and not ocr_full_page.should_try_sparse_ocr(primary_result):
             sparse_result = (
                 ocr_session.image_to_text_result(
@@ -11620,6 +11675,22 @@ def append_rendered_full_page_ocr_candidates(
                 timeout,
                 ocr_session=ocr_session,
             )
+
+
+def should_try_suspect_native_table_tiling(page: PageExtractionHost) -> bool:
+    cache = getattr(page, "extraction_cache", None)
+    if not isinstance(cache, dict):
+        return False
+    assessment = cache.get("native_text_assessment")
+    if not isinstance(assessment, dict) or assessment.get("status") != "suspect":
+        return False
+    try:
+        profile = page.get_page_profile()
+    except Exception:
+        return False
+    return getattr(profile, "recommended_strategy", None) == "text_table" and bool(
+        getattr(profile, "has_path_ops", False)
+    )
 
 
 def rendered_sparse_ocr_candidate_is_usable_for_page(
@@ -13456,6 +13527,13 @@ def extract_page_text(page: PageExtractionHost) -> str:
     )
     if cache is not None:
         cache["ocr_render_exclude_native_text"] = omit_native_text_from_ocr_render
+        native_assessment = ocr_page_analysis.assess_native_text(text)
+        cache["native_text_assessment"] = {
+            "status": native_assessment.status,
+            "reason": native_assessment.reason,
+            "token_count": native_assessment.token_count,
+            "uninterpretable_count": native_assessment.uninterpretable_count,
+        }
     if cache is not None and dominant_image_requires_ocr_verification:
         cache["ocr_verification_reason"] = "dominant_image_sparse_visible_text"
     if (
@@ -13465,7 +13543,9 @@ def extract_page_text(page: PageExtractionHost) -> str:
     ):
         cache["ocr_skipped_for_trusted_invisible_text_layer"] = True
     if ocr_enabled and (
-        not trusted_invisible_text_layer or dominant_image_requires_ocr_verification
+        not trusted_invisible_text_layer
+        or dominant_image_requires_ocr_verification
+        or omit_native_text_from_ocr_render
     ):
         assert native_geometry_summary is not None
         ocr_session = ocr_session_runtime.OcrPageSession()
@@ -13504,6 +13584,7 @@ def extract_page_text(page: PageExtractionHost) -> str:
                     )
             if not trusted_vector_stroke_text and (
                 fragmented_invisible_text_layer
+                or omit_native_text_from_ocr_render
                 or ocr_postprocess.should_ocr_fallback(page, text)
                 or ocr_postprocess.should_try_full_ocr_after_vector_stroke(vector_result)
             ):
@@ -13521,6 +13602,16 @@ def extract_page_text(page: PageExtractionHost) -> str:
                         cache["ocr_page_result_rejected"] = "garbled_full_page_ocr"
                 else:
                     broad_ocr_result = ocr_result
+                    if cache is not None:
+                        cache["ocr_page_result_summary"] = {
+                            "candidate": (
+                                ocr_result.candidate.name
+                                if ocr_result.candidate is not None
+                                else None
+                            ),
+                            "tokens": ocr_text_analysis.extracted_text_token_count(ocr_text),
+                            "characters": len(ocr_text),
+                        }
                     preserved_substantial_native_text_table = (
                         should_preserve_substantial_text_table_native_text(
                             page,
@@ -13580,6 +13671,19 @@ def extract_page_text(page: PageExtractionHost) -> str:
                     ):
                         text = ocr_text
                         pre_reconciliation_text_source = "ocr_replace_symbol_encoded"
+                        final_output_lines = ocr_result_output_lines(
+                            page,
+                            ocr_result,
+                            text,
+                        )
+                        schematic_ocr_supplement_candidate = ocr_result.candidate
+                        schematic_ocr_supplement_candidates = ocr_result.candidates
+                    elif (
+                        omit_native_text_from_ocr_render
+                        and ocr_text_analysis.extracted_text_token_count(ocr_text) >= 20
+                    ):
+                        text = ocr_text
+                        pre_reconciliation_text_source = "ocr_replace_suspect_native"
                         final_output_lines = ocr_result_output_lines(
                             page,
                             ocr_result,
@@ -13783,6 +13887,11 @@ def extract_page_text(page: PageExtractionHost) -> str:
                     and broad_ocr_result.preserve_raw_text
                     and text == broad_ocr_result.text
                 )
+                or (
+                    omit_native_text_from_ocr_render
+                    and broad_ocr_result is not None
+                    and pre_reconciliation_text_source != "native"
+                )
             )
             has_reconciliation_source = bool(
                 (broad_ocr_result is not None and broad_ocr_result.text)
@@ -13828,6 +13937,7 @@ def extract_page_text(page: PageExtractionHost) -> str:
                     "resolved_lines": len(final_output_lines),
                     "preserved_raw_text": preserved_raw_ocr_text,
                 }
+                cache["ocr_pre_reconciliation_source"] = pre_reconciliation_text_source
             pruned_output_lines = precision_clean_dominant_image_label_output_lines(
                 page,
                 final_output_lines,

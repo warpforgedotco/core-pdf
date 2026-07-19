@@ -689,6 +689,21 @@ class GlyphLineBuilder:
             or run.rotation_angle != 0
         ):
             return False
+        following = min(
+            (
+                candidate
+                for candidate in self.runs
+                if candidate is not run
+                and candidate.has_text
+                and candidate.x0 >= run.x1 - 0.01
+                and candidate.stripped_text.lstrip().startswith((")", "]", "}"))
+            ),
+            key=lambda candidate: candidate.x0,
+            default=None,
+        )
+        if following is None:
+            return False
+
         left_candidates = sorted(
             (
                 candidate
@@ -717,31 +732,20 @@ class GlyphLineBuilder:
                     and right.x0 - left.x1 <= max(run.space_width * 0.5, 2.0)
                 ):
                     previous = right
-        following = min(
-            (
-                candidate
-                for candidate in self.runs
-                if candidate is not run
-                and candidate.has_text
-                and candidate.x0 >= run.x1 - 0.01
-                and candidate.stripped_text.lstrip().startswith((")", "]", "}"))
-            ),
-            key=lambda candidate: candidate.x0,
-            default=None,
-        )
-        if following is not None:
-            prefix_runs = [
-                candidate
-                for candidate in left_candidates
-                if candidate.x1 <= run.x0 + max(1.0, run.space_width * 0.25)
-            ]
-            prefix = "".join(candidate.stripped_text for candidate in prefix_runs).rstrip()
-            if any(prefix.endswith(unit) for unit in ("in", "cm", "mm", "ft", "yd")):
-                attach_gap = max(run.space_width, run.font_size * 0.55, 4.0)
-                return (
-                    run.x0 - prefix_runs[-1].x1 <= attach_gap
-                    and following.x0 - run.x1 <= attach_gap
-                )
+
+        prefix_runs = [
+            candidate
+            for candidate in left_candidates
+            if candidate.x1 <= run.x0 + max(1.0, run.space_width * 0.25)
+        ]
+        prefix = "".join(candidate.stripped_text for candidate in prefix_runs).rstrip()
+        if any(prefix.endswith(unit) for unit in ("in", "cm", "mm", "ft", "yd")):
+            attach_gap = max(run.space_width, run.font_size * 0.55, 4.0)
+            return (
+                bool(prefix_runs)
+                and run.x0 - prefix_runs[-1].x1 <= attach_gap
+                and following.x0 - run.x1 <= attach_gap
+            )
         if previous is None or following is None or run.baseline is None:
             return False
         attach_gap = max(run.space_width, previous.font_size * 0.55, 4.0)
@@ -763,10 +767,7 @@ class GlyphLineBuilder:
 
     @staticmethod
     def advance_bbox(run: TextRun) -> tuple[float, float, float, float]:
-        bbox = getattr(run, "advance_bbox", None)
-        if isinstance(bbox, tuple) and len(bbox) == 4:
-            return bbox
-        return (run.x0, run.y0, run.x1, run.y1)
+        return run.advance_bbox
 
     def is_duplicate_overlap(
         self,
@@ -774,8 +775,10 @@ class GlyphLineBuilder:
         prev_text: str,
         run: TextRun,
         text: str,
+        *,
+        run_bbox: tuple[float, float, float, float] | None = None,
     ) -> bool:
-        x0, y0, x1, y1 = self.advance_bbox(run)
+        x0, y0, x1, y1 = run_bbox if run_bbox is not None else self.advance_bbox(run)
         px0, py0, px1, py1 = prev_bbox
         ox = (x1 if x1 < px1 else px1) - (x0 if x0 > px0 else px0)
         oy = (y1 if y1 < py1 else py1) - (y0 if y0 > py0 else py0)
@@ -797,10 +800,22 @@ class GlyphLineBuilder:
     ) -> bool:
         if not recent_runs:
             return False
-        return any(
-            self.is_duplicate_overlap(prev_bbox, prev_text, run, text)
-            for prev_bbox, prev_text in reversed(recent_runs)
-        )
+        x0, y0, x1, y1 = self.advance_bbox(run)
+        box_area = (y1 - y0) * (x1 - x0)
+        if box_area <= 0:
+            return False
+        text_length = len(text)
+        for (px0, py0, px1, py1), prev_text in reversed(recent_runs):
+            ox = (x1 if x1 < px1 else px1) - (x0 if x0 > px0 else px0)
+            oy = (y1 if y1 < py1 else py1) - (y0 if y0 > py0 else py0)
+            if ox <= 0 or oy <= 0:
+                continue
+            overlap_ratio = (ox * oy) / box_area
+            if (text == prev_text and overlap_ratio > 0.5) or (
+                overlap_ratio > 0.8 and text_length == len(prev_text) and text_length <= 2
+            ):
+                return True
+        return False
 
     def should_drop_explicit_space(
         self,
@@ -855,13 +870,14 @@ class GlyphLineBuilder:
         height = y1 - y0
         x_gap = x0 - prev_x1
         spacing_gap = x_gap
+        space_width = run.coords[TextRun.SPACE_WIDTH]
         estimated_char_width = self.estimated_char_width
         prev_stripped: str | None = None
         stripped: str | None = None
         if estimated_char_width is not None:
             stripped = text.strip()
             prev_stripped = prev_text.strip()
-            tight_fragment_gap = max(1.8, min(run.space_width, height) * 0.25)
+            tight_fragment_gap = max(1.8, min(space_width, height) * 0.25)
             if (
                 should_use_estimated_word_spacing(prev_stripped, stripped)
                 and x_gap > tight_fragment_gap
@@ -883,7 +899,7 @@ class GlyphLineBuilder:
         if baseline_delta is not None and baseline_delta > max(height * 0.42, 2.0):
             return " ", "baseline_space"
 
-        if self.is_column_gap(spacing_gap, height, run.space_width):
+        if self.is_column_gap(spacing_gap, height, space_width):
             return " ", "column_space"
 
         if (
@@ -922,7 +938,7 @@ class GlyphLineBuilder:
             text=stripped,
             x_gap=spacing_gap,
             height=height,
-            space_width=run.space_width,
+            space_width=space_width,
         ):
             return " ", "hidden_tight_word_space"
         if should_insert_hidden_ocr_overlap_space(
@@ -930,7 +946,7 @@ class GlyphLineBuilder:
             text=stripped,
             x_gap=spacing_gap,
             height=height,
-            space_width=run.space_width,
+            space_width=space_width,
             prev_visible=prev_run.visible,
             visible=run.visible,
         ):
@@ -940,7 +956,7 @@ class GlyphLineBuilder:
             stripped,
             spacing_gap=spacing_gap,
             height=height,
-            space_width=run.space_width,
+            space_width=space_width,
             prev_visible=prev_run.visible,
             visible=run.visible,
             allow_short_prefix=(len(prev_run.stripped_text) <= 2 and len(run.stripped_text) <= 2),
@@ -953,7 +969,7 @@ class GlyphLineBuilder:
             and first_char.isalnum()
             and len(prev_stripped) > 1
             and len(stripped) > 1
-            and spacing_gap > max(0.55, min(run.space_width, height) * 0.1)
+            and spacing_gap > max(0.55, min(space_width, height) * 0.1)
             and (prev_last_char.isupper() or first_char.isupper() or prev_last_char.isdigit())
         ):
             return " ", "explicit_context_space"
@@ -962,7 +978,7 @@ class GlyphLineBuilder:
             and " " in prev_stripped
             and prev_last_char.islower()
             and first_char.islower()
-            and spacing_gap >= max(0.25, min(run.space_width, height) * 0.08)
+            and spacing_gap >= max(0.25, min(space_width, height) * 0.08)
             and spacing_gap <= max(0.5, height * 0.04)
             and should_insert_phrase_continuation_space(prev_stripped, stripped)
             and len(stripped.split(" ", 1)[0]) >= 3
@@ -975,7 +991,7 @@ class GlyphLineBuilder:
             and first_char.islower()
             and len(prev_stripped) > 1
             and len(stripped) > 1
-            and spacing_gap > max(0.45, min(run.space_width, height) * 0.12)
+            and spacing_gap > max(0.45, min(space_width, height) * 0.12)
         ):
             return " ", "lowercase_gap_space"
         if (
@@ -986,7 +1002,7 @@ class GlyphLineBuilder:
                 or (previous.has_glyph_geometry and atom.has_glyph_geometry)
                 or (
                     self.is_table_like_line
-                    and spacing_gap > max(run.space_width * 2.2, height * 1.4, 24.0)
+                    and spacing_gap > max(space_width * 2.2, height * 1.4, 24.0)
                 )
             )
             and not (
@@ -1007,20 +1023,20 @@ class GlyphLineBuilder:
                     stripped,
                     x_gap=spacing_gap,
                     height=height,
-                    space_width=run.space_width,
+                    space_width=space_width,
                 )
                 and ("," in prev_text or "," in text or len(prev_stripped) >= 3)
                 and len(stripped) >= 3
             )
         ):
-            if prev_run is run and x_gap <= max(0.5, min(run.space_width, height) * 0.2):
+            if prev_run is run and x_gap <= max(0.5, min(space_width, height) * 0.2):
                 return "", "same_run_case_digit_join"
             if compact_unit_suffix_should_join(
                 prev_stripped,
                 stripped,
                 x_gap=spacing_gap,
                 height=height,
-                space_width=run.space_width,
+                space_width=space_width,
             ):
                 return "", "compact_unit_suffix_join"
             return " ", "case_digit_boundary_space"

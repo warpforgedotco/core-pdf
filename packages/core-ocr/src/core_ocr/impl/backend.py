@@ -5,6 +5,7 @@ import ctypes
 import ctypes.util
 import math
 import shutil
+import sys
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Mapping
@@ -33,6 +34,43 @@ from core_ocr.impl.types import (
     ocr_observations_from_rows,
     raw_ocr_image_size_is_supported,
 )
+
+
+class _VImageBuffer(ctypes.Structure):
+    _fields_ = [
+        ("data", ctypes.c_void_p),
+        ("height", ctypes.c_size_t),
+        ("width", ctypes.c_size_t),
+        ("row_bytes", ctypes.c_size_t),
+    ]
+
+
+@lru_cache(maxsize=1)
+def _accelerate_rgb888_to_bgr888() -> tuple[Any, Any] | None:
+    if sys.platform != "darwin":
+        return None
+    try:
+        accelerate = ctypes.CDLL("/System/Library/Frameworks/Accelerate.framework/Accelerate")
+        expand = accelerate.vImageConvert_RGB888toBGRA8888
+        convert = accelerate.vImageConvert_RGBA8888toRGB888
+    except (AttributeError, OSError):
+        return None
+    expand.argtypes = [
+        ctypes.POINTER(_VImageBuffer),
+        ctypes.c_void_p,
+        ctypes.c_uint8,
+        ctypes.POINTER(_VImageBuffer),
+        ctypes.c_bool,
+        ctypes.c_uint32,
+    ]
+    expand.restype = ctypes.c_int
+    convert.argtypes = [
+        ctypes.POINTER(_VImageBuffer),
+        ctypes.POINTER(_VImageBuffer),
+        ctypes.c_uint32,
+    ]
+    convert.restype = ctypes.c_int
+    return expand, convert
 
 
 class TesseractCtypesBackend:
@@ -1928,6 +1966,48 @@ def rgba_image_to_bmp(image: OcrImage) -> bytes | None:
     header.extend((0).to_bytes(4, "little"))
     header.extend((0).to_bytes(4, "little"))
     rows = bytearray(pixel_bytes)
+    converters = _accelerate_rgb888_to_bgr888()
+    if converters is not None and bytes_per_pixel == 3 and bytes_per_line == width * 3:
+        expand, convert = converters
+        source_buffer = (ctypes.c_ubyte * len(data)).from_buffer_copy(data)
+        bgra = bytearray(width * height * 4)
+        bgr = bytearray(width * height * 3)
+        source_view = _VImageBuffer(
+            ctypes.cast(source_buffer, ctypes.c_void_p),
+            height,
+            width,
+            bytes_per_line,
+        )
+        bgra_view = _VImageBuffer(
+            ctypes.cast((ctypes.c_ubyte * len(bgra)).from_buffer(bgra), ctypes.c_void_p),
+            height,
+            width,
+            width * 4,
+        )
+        bgr_view = _VImageBuffer(
+            ctypes.cast((ctypes.c_ubyte * len(bgr)).from_buffer(bgr), ctypes.c_void_p),
+            height,
+            width,
+            width * 3,
+        )
+        if (
+            expand(
+                ctypes.byref(source_view),
+                None,
+                255,
+                ctypes.byref(bgra_view),
+                False,
+                0,
+            )
+            == 0
+            and convert(ctypes.byref(bgra_view), ctypes.byref(bgr_view), 0) == 0
+        ):
+            row_bytes = width * 3
+            for y in range(height):
+                source = (height - 1 - y) * row_bytes
+                target = y * row_size
+                rows[target : target + row_bytes] = bgr[source : source + row_bytes]
+            return bytes(header + rows)
     if bytes_per_pixel == 4 and bytes_per_line == width * 4:
         for y in range(height):
             source_row = (height - 1 - y) * bytes_per_line

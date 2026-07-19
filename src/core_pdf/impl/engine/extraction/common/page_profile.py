@@ -326,7 +326,16 @@ def content_operator_counts(
     separator_table = SEPARATOR_TABLE
     while pos < data_len:
         byte = raw_bytes[pos]
-        if WS_TABLE[byte] or byte == 37:
+        if WS_TABLE[byte]:
+            while pos < data_len and WS_TABLE[raw_bytes[pos]]:
+                pos += 1
+            if pos >= data_len:
+                break
+            byte = raw_bytes[pos]
+            if byte == 37:
+                pos = skip_pdf_ignored(raw_bytes, pos, data_len)
+                continue
+        elif byte == 37:
             pos = skip_pdf_ignored(raw_bytes, pos, data_len)
             continue
         if byte == 40:

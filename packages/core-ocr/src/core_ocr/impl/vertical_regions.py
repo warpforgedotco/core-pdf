@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from bisect import bisect_left
+
 from core_ocr.impl.types import OcrComponentBox
 
 
@@ -14,21 +16,28 @@ def vertical_regions_from_component_boxes(
     if image_width <= 0 or image_height <= 0:
         return ()
     groups: list[list[OcrComponentBox]] = []
+    group_centers: list[float] = []
     for box in sorted(boxes, key=lambda item: item.left):
         center = box.left + box.width / 2
-        target = next(
+        insertion_point = bisect_left(group_centers, center)
+        candidate_indexes = (
+            index for index in (insertion_point - 1, insertion_point) if 0 <= index < len(groups)
+        )
+        target_index = next(
             (
-                group
-                for group in groups
-                if abs(center - sum(item.left + item.width / 2 for item in group) / len(group))
-                <= max(16, box.width * 2)
+                index
+                for index in candidate_indexes
+                if abs(center - group_centers[index]) <= max(16, box.width * 2)
             ),
             None,
         )
-        if target is None:
+        if target_index is None:
             groups.append([box])
+            group_centers.append(center)
         else:
+            target = groups[target_index]
             target.append(box)
+            group_centers[target_index] += (center - group_centers[target_index]) / len(target)
     regions: list[tuple[int, int, int, int]] = []
     for group in groups:
         left = max(0, min(item.left for item in group) - 8)

@@ -28,6 +28,24 @@ def test_unmapped_glyph_uses_injected_recognizer() -> None:
     assert repairs == {4: "A"}
 
 
+def test_repair_supports_multi_character_corrupt_cmap_run() -> None:
+    repairs = glyph_bitmap_item_repairs(
+        [
+            {
+                "glyph_index": 4,
+                "text": 'r"!',
+                "bitmap": (3, 3),
+                "bitmap_width": 2,
+                "bitmap_height": 2,
+                "font_name": "Unknown",
+            }
+        ],
+        recognizer=FakeRecognizer(),
+    )
+
+    assert repairs == {4: "A"}
+
+
 def test_catalog_reuses_labeled_shape_across_pages() -> None:
     catalog = GlyphBitmapCatalog()
     glyph_bitmap_item_repairs(
@@ -54,6 +72,37 @@ def test_catalog_reuses_labeled_shape_across_pages() -> None:
         ],
         catalog=catalog,
     )
+    assert repairs == {9: "A"}
+
+
+def test_catalog_reuses_labeled_shape_at_a_different_rendered_size() -> None:
+    catalog = GlyphBitmapCatalog()
+    catalog.observe(
+        [
+            {
+                "glyph_index": 1,
+                "text": "A",
+                "bitmap": (1, 3),
+                "bitmap_width": 2,
+                "bitmap_height": 2,
+                "font_name": "SharedFont",
+            }
+        ]
+    )
+    repairs = glyph_bitmap_item_repairs(
+        [
+            {
+                "glyph_index": 9,
+                "text": "�",
+                "bitmap": (3, 3, 15, 15),
+                "bitmap_width": 4,
+                "bitmap_height": 4,
+                "font_name": "SharedFont",
+            }
+        ],
+        catalog=catalog,
+    )
+
     assert repairs == {9: "A"}
 
 

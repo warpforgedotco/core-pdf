@@ -197,9 +197,12 @@ class OperandWindow:
 
     def __getitem__(self, item: int | slice) -> ContentOperand | list[ContentOperand]:
         if type(item) is int:
+            count = self.count
+            if 0 <= item < count:
+                return self.operands[item]
             if item < 0:
-                item += self.count
-            if item < 0 or item >= self.count:
+                item += count
+            if item < 0 or item >= count:
                 raise IndexError(item)
             return self.operands[item]
         if isinstance(item, slice):
@@ -358,6 +361,7 @@ def dispatch_operations(
     op_get = op_handlers.get
     op_get_bytes = op_handlers_bytes.get if op_handlers_bytes is not None else None
     max_operands = len(operands)
+    exact_number_types = (int, float)
 
     def set_operand_count(count: int) -> None:
         operand_window.count = count if count < max_operands else max_operands
@@ -383,7 +387,18 @@ def dispatch_operations(
     while pos < data_len:
         byte = raw_bytes[pos]
 
-        if WS_TABLE[byte] or byte == 37:
+        if WS_TABLE[byte]:
+            while pos < data_len and WS_TABLE[raw_bytes[pos]]:
+                pos += 1
+            if pos >= data_len:
+                break
+            byte = raw_bytes[pos]
+            if byte == 37:
+                pos = lexer.skip_ignored_at(pos)
+                if pos >= data_len:
+                    break
+                byte = raw_bytes[pos]
+        elif byte == 37:
             pos = lexer.skip_ignored_at(pos)
             if pos >= data_len:
                 break
@@ -667,10 +682,14 @@ def dispatch_operations(
                             continue
                         if op1 == 68:
                             if op_count >= 2:
-                                tx = exact_number_operand(operands[0])
-                                ty = exact_number_operand(operands[1])
-                                if tx is not None and ty is not None:
-                                    handler_target.op_TD_values(tx, ty)
+                                tx, ty = operands[0], operands[1]
+                                if (
+                                    type(tx) in exact_number_types
+                                    and type(ty) in exact_number_types
+                                ):
+                                    handler_target.op_TD_values(
+                                        cast(int | float, tx), cast(int | float, ty)
+                                    )
                                 else:
                                     set_operand_count(op_count)
                                     handler_target.op_TD(operand_window, depth)
@@ -681,9 +700,9 @@ def dispatch_operations(
                             continue
                         if op1 == 99:
                             if op_count:
-                                char_space = exact_number_operand(operands[0])
-                                if char_space is not None:
-                                    handler_target.op_Tc_values(char_space)
+                                char_space = operands[0]
+                                if type(char_space) in exact_number_types:
+                                    handler_target.op_Tc_values(cast(int | float, char_space))
                                 else:
                                     set_operand_count(op_count)
                                     handler_target.op_Tc(operand_window, depth)
@@ -715,21 +734,24 @@ def dispatch_operations(
                             continue
                         if op1 == 109:
                             if op_count >= 6:
-                                tm_a = exact_number_operand(operands[0])
-                                tm_b = exact_number_operand(operands[1])
-                                tm_c = exact_number_operand(operands[2])
-                                tm_d = exact_number_operand(operands[3])
-                                tm_e = exact_number_operand(operands[4])
-                                tm_f = exact_number_operand(operands[5])
+                                tm_a, tm_b, tm_c = operands[0], operands[1], operands[2]
+                                tm_d, tm_e, tm_f = operands[3], operands[4], operands[5]
                                 if (
-                                    tm_a is not None
-                                    and tm_b is not None
-                                    and tm_c is not None
-                                    and tm_d is not None
-                                    and tm_e is not None
-                                    and tm_f is not None
+                                    type(tm_a) in exact_number_types
+                                    and type(tm_b) in exact_number_types
+                                    and type(tm_c) in exact_number_types
+                                    and type(tm_d) in exact_number_types
+                                    and type(tm_e) in exact_number_types
+                                    and type(tm_f) in exact_number_types
                                 ):
-                                    handler_target.op_Tm_values(tm_a, tm_b, tm_c, tm_d, tm_e, tm_f)
+                                    handler_target.op_Tm_values(
+                                        cast(int | float, tm_a),
+                                        cast(int | float, tm_b),
+                                        cast(int | float, tm_c),
+                                        cast(int | float, tm_d),
+                                        cast(int | float, tm_e),
+                                        cast(int | float, tm_f),
+                                    )
                                 else:
                                     set_operand_count(op_count)
                                     handler_target.op_Tm(operand_window, depth)
@@ -740,9 +762,9 @@ def dispatch_operations(
                             continue
                         if op1 == 119:
                             if op_count:
-                                word_space = exact_number_operand(operands[0])
-                                if word_space is not None:
-                                    handler_target.op_Tw_values(word_space)
+                                word_space = operands[0]
+                                if type(word_space) in exact_number_types:
+                                    handler_target.op_Tw_values(cast(int | float, word_space))
                                 else:
                                     set_operand_count(op_count)
                                     handler_target.op_Tw(operand_window, depth)
@@ -755,10 +777,14 @@ def dispatch_operations(
                             continue
                         if op1 == 100:
                             if op_count >= 2:
-                                tx = exact_number_operand(operands[0])
-                                ty = exact_number_operand(operands[1])
-                                if tx is not None and ty is not None:
-                                    handler_target.op_Td_values(tx, ty)
+                                tx, ty = operands[0], operands[1]
+                                if (
+                                    type(tx) in exact_number_types
+                                    and type(ty) in exact_number_types
+                                ):
+                                    handler_target.op_Td_values(
+                                        cast(int | float, tx), cast(int | float, ty)
+                                    )
                                 else:
                                     set_operand_count(op_count)
                                     handler_target.op_Td(operand_window, depth)
@@ -782,21 +808,24 @@ def dispatch_operations(
                         op_count = 0
                         continue
                     elif op0 == 99 and op1 == 109 and op_count >= 6:
-                        m_a = exact_number_operand(operands[0])
-                        m_b = exact_number_operand(operands[1])
-                        m_c = exact_number_operand(operands[2])
-                        m_d = exact_number_operand(operands[3])
-                        m_e = exact_number_operand(operands[4])
-                        m_f = exact_number_operand(operands[5])
+                        m_a, m_b, m_c = operands[0], operands[1], operands[2]
+                        m_d, m_e, m_f = operands[3], operands[4], operands[5]
                         if (
-                            m_a is not None
-                            and m_b is not None
-                            and m_c is not None
-                            and m_d is not None
-                            and m_e is not None
-                            and m_f is not None
+                            type(m_a) in exact_number_types
+                            and type(m_b) in exact_number_types
+                            and type(m_c) in exact_number_types
+                            and type(m_d) in exact_number_types
+                            and type(m_e) in exact_number_types
+                            and type(m_f) in exact_number_types
                         ):
-                            handler_target.op_cm_values(m_a, m_b, m_c, m_d, m_e, m_f)
+                            handler_target.op_cm_values(
+                                cast(int | float, m_a),
+                                cast(int | float, m_b),
+                                cast(int | float, m_c),
+                                cast(int | float, m_d),
+                                cast(int | float, m_e),
+                                cast(int | float, m_f),
+                            )
                         else:
                             set_operand_count(op_count)
                             handler_target.op_cm(operand_window, depth)

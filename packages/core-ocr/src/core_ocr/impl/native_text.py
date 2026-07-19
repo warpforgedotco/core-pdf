@@ -3,14 +3,17 @@ from __future__ import annotations
 
 from bisect import bisect_left
 from collections import Counter
+from functools import lru_cache
 from typing import TYPE_CHECKING, Any
 
 from core_glyph.impl.glyph_recognizer import (
     CONTEXTUAL_PUNCTUATION_GLYPH_TEXT,
+    GlyphBitmapCatalog,
     is_suspicious_bitmap_label,
     repair_text_runs_with_glyph_bitmaps,
     text_runs_from_rendered_glyphs,
 )
+from core_glyph.impl.recognition import GlyphRecognitionBackend, TesseractGlyphRecognizer
 from core_layout.impl.layout.geometry_quality import (
     LayoutGeometrySummary,
     page_layout_geometry_summary,
@@ -118,10 +121,14 @@ def apply_rendered_glyph_repair_to_native_text(
             page,
             source="glyph_repair",
         )
+        recognizer = system_glyph_recognizer()
+        catalog = glyph_bitmap_catalog_for_page(page)
         chars = repair_text_runs_with_glyph_bitmaps(
             chars,
             rendered,
             repair_contextual_punctuation=(text_ocr_quality_score(text) >= 0.4),
+            recognizer=recognizer,
+            catalog=catalog,
         )
         native_output_lines = render_page_observation_lines(
             chars,
@@ -160,6 +167,23 @@ def apply_rendered_glyph_repair_to_native_text(
                 text = glyph_text
                 native_output_lines = glyph_output_lines
     return chars, text, native_output_lines
+
+
+@lru_cache(maxsize=1)
+def system_glyph_recognizer() -> GlyphRecognitionBackend | None:
+    return TesseractGlyphRecognizer.from_system()
+
+
+def glyph_bitmap_catalog_for_page(page: Any) -> GlyphBitmapCatalog:
+    cache = getattr(page, "extraction_cache", None)
+    if isinstance(cache, dict):
+        catalog = cache.get("glyph_bitmap_catalog")
+        if isinstance(catalog, GlyphBitmapCatalog):
+            return catalog
+        catalog = GlyphBitmapCatalog()
+        cache["glyph_bitmap_catalog"] = catalog
+        return catalog
+    return GlyphBitmapCatalog()
 
 
 def native_text_fast_xobject_fallback_reason(

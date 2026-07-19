@@ -52,6 +52,26 @@ def rendered_sparse_ocr_candidate_is_usable_without_region_retry(
     return ocr_candidate_score(candidate) >= 34.0
 
 
+def rendered_sparse_ocr_candidate_is_usable_without_resolution_retry(
+    candidate: OcrCandidate,
+) -> bool:
+    """Return whether a rendered sparse result is strong enough to skip more DPI."""
+    if not candidate.name.startswith("rendered_page_") or not candidate.name.endswith("_psm11"):
+        return False
+    text = candidate.result.text
+    tokens = ocr_text_analysis.extracted_text_token_count(text)
+    if tokens < 120 or tokens > 900:
+        return False
+    confidence = candidate.result.confidence or 0
+    if confidence < 80:
+        return False
+    if ocr_text_analysis.text_ocr_quality_score(text) > 0.14:
+        return False
+    if ocr_text_analysis.sparse_text_looks_noisy(text):
+        return False
+    return ocr_text_analysis.scanned_ocr_artifact_score(text) <= 0.05
+
+
 def select_ocr_candidate(
     candidates: list[OcrCandidate],
     *,
@@ -81,6 +101,12 @@ def select_ocr_candidate(
                 best_score=candidate_score,
             )
             or prefer_more_complete_compact_label_rendered_candidate(
+                best,
+                candidate,
+                candidate_score=best_score,
+                best_score=candidate_score,
+            )
+            or prefer_lower_resolution_rendered_candidate(
                 best,
                 candidate,
                 candidate_score=best_score,
@@ -120,6 +146,12 @@ def select_ocr_candidate(
                 candidate_score=candidate_score,
                 best_score=best_score,
             )
+            or prefer_lower_resolution_rendered_candidate(
+                candidate,
+                best,
+                candidate_score=candidate_score,
+                best_score=best_score,
+            )
             or prefer_word_layout_same_source_candidate(candidate, best)
             or prefer_word_refined_same_source_candidate(candidate, best)
             or prefer_rendered_page_qa_candidate(candidate, best)
@@ -131,6 +163,35 @@ def select_ocr_candidate(
             best = candidate
             best_score = candidate_score
     return best
+
+
+def prefer_lower_resolution_rendered_candidate(
+    candidate: OcrCandidate,
+    best: OcrCandidate,
+    *,
+    candidate_score: float,
+    best_score: float,
+) -> bool:
+    """Prefer a cleaner lower-DPI page pass when candidates are near ties."""
+    candidate_dpi = plain_rendered_page_candidate_dpi(candidate.name)
+    best_dpi = plain_rendered_page_candidate_dpi(best.name)
+    if candidate_dpi is None or best_dpi is None or candidate_dpi >= best_dpi:
+        return False
+    if best_score - candidate_score > 2.0:
+        return False
+    candidate_text = candidate.result.text
+    best_text = best.result.text
+    candidate_tokens = ocr_text_analysis.extracted_text_token_count(candidate_text)
+    best_tokens = ocr_text_analysis.extracted_text_token_count(best_text)
+    if candidate_tokens < max(20, int(best_tokens * 0.75)):
+        return False
+    candidate_quality = ocr_text_analysis.text_ocr_quality_score(candidate_text)
+    best_quality = ocr_text_analysis.text_ocr_quality_score(best_text)
+    if candidate_quality > best_quality + 0.04:
+        return False
+    candidate_artifact = ocr_text_analysis.scanned_ocr_artifact_score(candidate_text)
+    best_artifact = ocr_text_analysis.scanned_ocr_artifact_score(best_text)
+    return candidate_artifact <= best_artifact + 0.08
 
 
 def prefer_high_resolution_sparse_dense_candidate(
@@ -606,7 +667,13 @@ def _ocr_candidate_score_from_signature(
     if bbox is not None and region_count == 1 and tokens >= 20:
         score += 2.0
     if name.startswith("rendered_page_two_columns") and region_count >= 2:
-        score += min(120.0, region_count * 60.0)
+        # A geometric split is only useful when both regions produced a
+        # substantive result.  Sparse/empty split regions otherwise receive a
+        # disproportionate bonus and can beat a complete page OCR candidate.
+        if tokens >= max(80, region_count * 24):
+            score += min(120.0, region_count * 60.0)
+        else:
+            score -= 30.0
     score += ocr_text_analysis.table_like_ocr_coverage_bonus(
         text,
         tokens,

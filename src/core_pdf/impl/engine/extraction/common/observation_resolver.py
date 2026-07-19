@@ -39,9 +39,6 @@ def resolve_observation_append(
     existing_text: str = "",
     existing_tokens: Set[str] | None = None,
 ) -> ObservationResolution:
-    accepted_observations = tuple(
-        observation for observation in accepted if observation.bbox is not None
-    )
     if candidate.bbox is None:
         if observation_has_useful_new_text(
             candidate,
@@ -53,9 +50,7 @@ def resolve_observation_append(
     if not candidate.text.strip():
         return ObservationResolution("skip", "empty_text", candidate)
 
-    matched, geometry_score, coverage_ratio = observation_geometry_resolution(
-        candidate, accepted_observations
-    )
+    matched, geometry_score, coverage_ratio = observation_geometry_resolution(candidate, accepted)
     text_overlap = observation_text_overlap(candidate, matched) if matched is not None else 0.0
     useful_new_tokens = observation_useful_new_token_count(
         candidate,
@@ -271,7 +266,10 @@ def observation_useful_new_token_count(
 
 
 def token_has_content_signal(token: str) -> bool:
-    alnum = "".join(ch for ch in token if ch.isalnum())
-    if any(ch.isdigit() for ch in alnum):
-        return True
-    return len(alnum) >= 3
+    alnum_count = 0
+    for character in token:
+        if character.isdigit():
+            return True
+        if character.isalnum():
+            alnum_count += 1
+    return alnum_count >= 3

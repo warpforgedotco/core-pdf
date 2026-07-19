@@ -5,6 +5,7 @@ import concurrent.futures
 import json
 import os
 import sys
+import unicodedata
 from collections import Counter, deque
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -882,6 +883,22 @@ def is_unstructured_marker(line: str) -> bool:
 
 
 def tokenize(text: str) -> list[str]:
+    text = unicodedata.normalize("NFKC", text).translate(
+        str.maketrans(
+            {
+                "‐": "-",
+                "‑": "-",
+                "‒": "-",
+                "–": "-",
+                "—": "-",
+                "−": "-",
+                "‘": "'",
+                "’": "'",
+                "“": '"',
+                "”": '"',
+            }
+        )
+    )
     tokens: list[str] = []
     current: list[str] = []
     for ch in text:

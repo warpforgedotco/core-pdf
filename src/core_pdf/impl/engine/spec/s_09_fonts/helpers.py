@@ -95,7 +95,10 @@ def parse_differences(
 
 ENCODING_FALLBACKS: dict[str, EncodingFallback] = {
     "StandardEncoding": fallback_with_standard,
-    "Type3": lambda b: "",
+    # Type3 fonts use StandardEncoding when /Encoding is omitted.  Keep this
+    # fallback separate from the parser's default so explicitly supplied
+    # Differences can still override individual character codes.
+    "Type3": fallback_with_standard,
     "WinAnsiEncoding": lambda b: normalize_ligature_text(bytes([b]).decode("cp1252", "replace")),
     "MacRomanEncoding": lambda b: normalize_ligature_text(
         bytes([b]).decode("mac_roman", "replace")

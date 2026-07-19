@@ -14,19 +14,22 @@ from core_pdf.impl.engine.extraction.common.render import (
 )
 
 MIN_VISIBLE_GLYPH_COVERAGE = 0.75
+WORD_TOKEN_RE = re.compile(r"\w+")
 
 
 def native_text_runs_for_extraction(runs: list[Any]) -> list[Any]:
     """Return painted, active PDF text runs without duplicate text layers."""
-    extractable = [
-        run
-        for run in runs
-        if getattr(run, "text", "")
-        and (getattr(run, "visible", True) or text_run_uses_invisible_render_mode(run))
-        and text_run_is_inside_active_clip(run)
-    ]
-    invisible = [run for run in extractable if text_run_uses_invisible_render_mode(run)]
-    painted = [run for run in extractable if not text_run_uses_invisible_render_mode(run)]
+    extractable: list[Any] = []
+    invisible: list[Any] = []
+    painted: list[Any] = []
+    for run in runs:
+        if not getattr(run, "text", "") or not text_run_is_inside_active_clip(run):
+            continue
+        invisible_render_mode = text_run_uses_invisible_render_mode(run)
+        if not getattr(run, "visible", True) and not invisible_render_mode:
+            continue
+        extractable.append(run)
+        (invisible if invisible_render_mode else painted).append(run)
     if (
         invisible
         and painted
@@ -45,30 +48,35 @@ def native_text_runs_for_extraction(runs: list[Any]) -> list[Any]:
 
 def discard_overlapping_nested_xobject_runs(runs: list[Any]) -> list[Any]:
     """Drop nested-form text that duplicates page-level painted geometry."""
-    page_runs = [run for run in runs if xobject_depth(run) == 0]
+    runs_by_depth: dict[int, list[Any]] = {}
+    runs_with_depth: list[tuple[Any, int]] = []
+    for run in runs:
+        depth = xobject_depth(run)
+        runs_by_depth.setdefault(depth, []).append(run)
+        runs_with_depth.append((run, depth))
+    page_runs = runs_by_depth.get(0, [])
     if not page_runs:
         return runs
+    if len(runs_by_depth) == 1:
+        return runs
     page_text = normalized_run_text(page_runs)
+    nested_text_by_depth = {
+        depth: normalized_run_text(depth_runs)
+        for depth, depth_runs in runs_by_depth.items()
+        if depth > 0
+    }
     duplicate_nested_depths = {
         depth
-        for depth in {xobject_depth(run) for run in runs if xobject_depth(run) > 0}
-        if nested_layer_duplicates_page_text(
-            normalized_run_text([run for run in runs if xobject_depth(run) == depth]),
-            page_text,
-        )
+        for depth, nested_text in nested_text_by_depth.items()
+        if nested_layer_duplicates_page_text(nested_text, page_text)
     }
     alternate_nested_depths = {
         depth
-        for depth in {xobject_depth(run) for run in runs if xobject_depth(run) > 0}
-        if nested_layer_duplicates_page_text(
-            normalized_run_text([run for run in runs if xobject_depth(run) == depth]),
-            page_text,
-            minimum_overlap=0.6,
-        )
+        for depth, nested_text in nested_text_by_depth.items()
+        if nested_layer_duplicates_page_text(nested_text, page_text, minimum_overlap=0.6)
     }
     filtered: list[Any] = []
-    for run in runs:
-        depth = xobject_depth(run)
+    for run, depth in runs_with_depth:
         if depth == 0 or (
             depth not in duplicate_nested_depths
             and depth not in alternate_nested_depths
@@ -101,8 +109,10 @@ def nested_layer_duplicates_page_text(
 def discard_alternate_clipped_runs(runs: list[Any]) -> list[Any]:
     """Keep the largest clipped text layer when smaller layers repeat it."""
     groups: dict[tuple[float, float, float, float], list[Any]] = {}
+    run_bboxes: list[tuple[Any, tuple[float, float, float, float] | None]] = []
     for run in runs:
         bbox = clip_bbox_for_run(run)
+        run_bboxes.append((run, bbox))
         if bbox is not None:
             groups.setdefault(bbox, []).append(run)
     if len(groups) < 2:
@@ -120,13 +130,31 @@ def discard_alternate_clipped_runs(runs: list[Any]) -> list[Any]:
     }
     if not alternate_bboxes:
         return runs
-    return [run for run in runs if clip_bbox_for_run(run) not in alternate_bboxes]
+    return [run for run, bbox in run_bboxes if bbox not in alternate_bboxes]
 
 
 def clip_bbox_for_run(run: Any) -> tuple[float, float, float, float] | None:
-    value = dict(getattr(run, "provenance", ())).get("clip_bbox")
+    provenance = run.provenance
+    if not provenance:
+        return None
+    value: object | None = None
+    for key, candidate in reversed(provenance):
+        if key == "clip_bbox":
+            value = candidate
+            break
+    else:
+        return None
     if not isinstance(value, (list, tuple)) or len(value) != 4:
         return None
+    if isinstance(value, tuple):
+        x0, y0, x1, y1 = value
+        if (
+            isinstance(x0, (int, float))
+            and isinstance(y0, (int, float))
+            and isinstance(x1, (int, float))
+            and isinstance(y1, (int, float))
+        ):
+            return value if x1 > x0 and y1 > y0 else None
     try:
         bbox = tuple(float(part) for part in value)
     except (TypeError, ValueError):
@@ -199,9 +227,15 @@ def normalize_checkbox_runs(runs: list[Any]) -> list[Any]:
         text = str(getattr(run, "text", ""))
         if text in {"☒", "☐"} and hasattr(run, "replace"):
             run = run.replace(text="[x]" if text == "☒" else "[]")
-        elif is_checkbox_blank_run(run) and hasattr(run, "replace"):
+        elif (
+            len(text) >= 2
+            and "\xa0" in text
+            and all(character in " \xa0" for character in text)
+            and is_checkbox_blank_run(run)
+            and hasattr(run, "replace")
+        ):
             run = run.replace(text="[]")
-        elif is_checkbox_mark_run(run) and hasattr(run, "replace"):
+        elif text == "X" and is_checkbox_mark_run(run) and hasattr(run, "replace"):
             run = run.replace(text="[x]")
         normalized.append(run)
     return normalized
@@ -209,23 +243,45 @@ def normalize_checkbox_runs(runs: list[Any]) -> list[Any]:
 
 def is_checkbox_blank_run(run: Any) -> bool:
     text = str(getattr(run, "text", ""))
-    width = max(0.0, float(getattr(run, "x1", 0.0)) - float(getattr(run, "x0", 0.0)))
-    height = max(0.0, float(getattr(run, "y1", 0.0)) - float(getattr(run, "y0", 0.0)))
-    return (
-        bool(text)
-        and len(text) >= 2
-        and all(character in " \xa0" for character in text)
-        and "\xa0" in text
-        and 5.0 <= width <= 7.0
-        and 5.0 <= height <= 7.0
-    )
+    if (
+        not text
+        or len(text) < 2
+        or "\xa0" not in text
+        or not all(character in " \xa0" for character in text)
+    ):
+        return False
+    coords = getattr(run, "coords", None)
+    if coords is None:
+        x0, y0, x1, y1 = (
+            float(getattr(run, "x0", 0.0)),
+            float(getattr(run, "y0", 0.0)),
+            float(getattr(run, "x1", 0.0)),
+            float(getattr(run, "y1", 0.0)),
+        )
+    else:
+        x0, y0, x1, y1 = coords[0], coords[1], coords[2], coords[3]
+    width = max(0.0, float(x1) - float(x0))
+    height = max(0.0, float(y1) - float(y0))
+    return 5.0 <= width <= 7.0 and 5.0 <= height <= 7.0
 
 
 def is_checkbox_mark_run(run: Any) -> bool:
     text = str(getattr(run, "text", ""))
-    width = max(0.0, float(getattr(run, "x1", 0.0)) - float(getattr(run, "x0", 0.0)))
-    height = max(0.0, float(getattr(run, "y1", 0.0)) - float(getattr(run, "y0", 0.0)))
-    return text == "X" and 0.0 < width <= 10.0 and 4.5 <= height <= 10.0
+    if text != "X":
+        return False
+    coords = getattr(run, "coords", None)
+    if coords is None:
+        x0, y0, x1, y1 = (
+            float(getattr(run, "x0", 0.0)),
+            float(getattr(run, "y0", 0.0)),
+            float(getattr(run, "x1", 0.0)),
+            float(getattr(run, "y1", 0.0)),
+        )
+    else:
+        x0, y0, x1, y1 = coords[0], coords[1], coords[2], coords[3]
+    width = max(0.0, float(x1) - float(x0))
+    height = max(0.0, float(y1) - float(y0))
+    return 0.0 < width <= 10.0 and 4.5 <= height <= 10.0
 
 
 def normalize_misdecoded_space_runs(runs: list[Any]) -> list[Any]:
@@ -238,7 +294,13 @@ def normalize_misdecoded_space_runs(runs: list[Any]) -> list[Any]:
         space_width = max(0.0, float(getattr(run, "space_width", 0.0)))
         if space_width <= 0.0:
             continue
-        width = max(0.0, float(getattr(run, "x1", 0.0)) - float(getattr(run, "x0", 0.0)))
+        coords = getattr(run, "coords", None)
+        if coords is None:
+            x0 = float(getattr(run, "x0", 0.0))
+            x1 = float(getattr(run, "x1", 0.0))
+        else:
+            x0, x1 = coords[0], coords[2]
+        width = max(0.0, float(x1) - float(x0))
         ratio = width / space_width
         narrow, wide = profiles.setdefault((getattr(run, "font_name", None), text), ([], []))
         (narrow if ratio <= 1.15 else wide).append(ratio)
@@ -247,6 +309,8 @@ def normalize_misdecoded_space_runs(runs: list[Any]) -> list[Any]:
         for key, (narrow, wide) in profiles.items()
         if len(narrow) >= 3 and wide and median(narrow) <= median(wide) * 0.75
     }
+    if not space_profiles:
+        return runs
     return [
         run.replace(text=" ")
         if (getattr(run, "font_name", None), str(getattr(run, "text", ""))) in space_profiles
@@ -261,7 +325,13 @@ def is_misdecoded_space_run(run: Any) -> bool:
     text = str(getattr(run, "text", ""))
     if text not in {"a", "P"}:
         return False
-    width = max(0.0, float(getattr(run, "x1", 0.0)) - float(getattr(run, "x0", 0.0)))
+    coords = getattr(run, "coords", None)
+    if coords is None:
+        x0 = float(getattr(run, "x0", 0.0))
+        x1 = float(getattr(run, "x1", 0.0))
+    else:
+        x0, x1 = coords[0], coords[2]
+    width = max(0.0, float(x1) - float(x0))
     space_width = max(0.0, float(getattr(run, "space_width", 0.0)))
     return space_width > 0.0 and width <= space_width * 1.15
 
@@ -294,14 +364,17 @@ def normalized_run_text(runs: list[Any]) -> str:
     return " ".join(
         token.casefold()
         for run in runs
-        for token in re.findall(r"\w+", str(getattr(run, "text", "")))
+        for token in WORD_TOKEN_RE.findall(str(getattr(run, "text", "")))
     )
 
 
 def text_run_uses_invisible_render_mode(run: Any) -> bool:
-    return getattr(run, "visible", True) is False and dict(getattr(run, "provenance", ())).get(
-        "text_render_mode"
-    ) in (3, "3")
+    if run.visible is not False:
+        return False
+    for key, value in reversed(run.provenance):
+        if key == "text_render_mode":
+            return value in (3, "3")
+    return False
 
 
 def text_run_is_inside_active_clip(run: Any) -> bool:
@@ -319,7 +392,8 @@ def native_text_runs_inside_page_bounds(
     page_x0, page_y0, page_x1, page_y1 = media_box
     filtered: list[Any] = []
     for run in runs:
-        x0, y0, x1, y1 = run.x0, run.y0, run.x1, run.y1
+        coords = run.coords
+        x0, y0, x1, y1 = coords[0], coords[1], coords[2], coords[3]
         width = max(0.0, x1 - x0)
         height = max(0.0, y1 - y0)
         if width * height == 0:

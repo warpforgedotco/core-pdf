@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Mapping, Sequence, TypedDict, cast
 
 from core_layout.impl.layout.models import TableGrid, TextRun
@@ -76,6 +76,31 @@ class TableExtractionContext:
     grids: list[TableGrid]
     grid: TableGrid | None
     run_chars: dict[int, list[tuple[str, float, float, float, float]]] | None
+    stream_grids_cache: dict[tuple[object, ...], list[TableGrid]] = field(
+        default_factory=dict,
+        repr=False,
+        compare=False,
+    )
+    stream_grid_cache: dict[tuple[object, ...], TableGrid | None] = field(
+        default_factory=dict,
+        repr=False,
+        compare=False,
+    )
+    network_grids_cache: dict[tuple[object, ...], list[TableGrid]] = field(
+        default_factory=dict,
+        repr=False,
+        compare=False,
+    )
+    grid_results_cache: dict[tuple[object, ...], TableExtractionResult] = field(
+        default_factory=dict,
+        repr=False,
+        compare=False,
+    )
+    grid_runs_cache: dict[int, list[TextRun]] = field(
+        default_factory=dict,
+        repr=False,
+        compare=False,
+    )
 
 
 class PageTableCoreMixin:
@@ -495,14 +520,92 @@ class PageTableCoreMixin:
             "shift_text": options.shift_text,
         }
 
+        columns_key = tuple(normalized_columns)
+
+        def cached_stream_grids() -> list[TableGrid]:
+            key = (options.row_tolerance, options.column_tolerance, columns_key)
+            cached = context.stream_grids_cache.get(key)
+            if cached is None:
+                cached = detect_stream_grids(
+                    visible_runs,
+                    row_tolerance=options.row_tolerance,
+                    column_tolerance=options.column_tolerance,
+                    columns=normalized_columns,
+                )
+                context.stream_grids_cache[key] = cached
+            return cached
+
+        def cached_stream_grid() -> TableGrid | None:
+            key = (options.row_tolerance, options.column_tolerance, columns_key)
+            if key not in context.stream_grid_cache:
+                context.stream_grid_cache[key] = detect_stream_grid(
+                    visible_runs,
+                    row_tolerance=options.row_tolerance,
+                    column_tolerance=options.column_tolerance,
+                    columns=normalized_columns,
+                )
+            return context.stream_grid_cache[key]
+
+        def cached_network_grids() -> list[TableGrid]:
+            key = (
+                options.edge_tolerance,
+                options.row_tolerance,
+                options.column_tolerance,
+                columns_key,
+            )
+            cached = context.network_grids_cache.get(key)
+            if cached is None:
+                cached = detect_network_grids(
+                    visible_runs,
+                    edge_tolerance=options.edge_tolerance,
+                    row_tolerance=options.row_tolerance,
+                    column_tolerance=options.column_tolerance,
+                    columns=normalized_columns,
+                )
+                context.network_grids_cache[key] = cached
+            return cached
+
         def extract_from_grid(
             table_grid: TableGrid,
             *,
             compact_network: bool = False,
             include_run_chars: bool = True,
         ) -> TableExtractionResult:
+            cache_key = (
+                id(table_grid),
+                compact_network,
+                include_run_chars,
+                options.include_span_info,
+                options.split_text,
+                options.flag_size,
+                options.shift_text,
+            )
+            result = context.grid_results_cache.get(cache_key)
+            if result is not None:
+                return result
+
+            if options.flag_size:
+                grid_runs = visible_runs
+            else:
+                grid_key = id(table_grid)
+                grid_runs = context.grid_runs_cache.get(grid_key)
+                if grid_runs is None:
+                    left = table_grid.cols[0]
+                    right = table_grid.cols[-1]
+                    bottom = table_grid.rows[-1]
+                    top = table_grid.rows[0]
+                    grid_runs = [
+                        run
+                        for run in visible_runs
+                        if run.coords[TextRun.X1] >= left
+                        and run.coords[TextRun.X0] <= right
+                        and run.coords[TextRun.Y1] >= bottom
+                        and run.coords[TextRun.Y0] <= top
+                    ]
+                    context.grid_runs_cache[grid_key] = grid_runs
+
             raw_result = extract_grid(
-                visible_runs,
+                grid_runs,
                 table_grid,
                 options.include_span_info,
                 compact_network=compact_network,
@@ -515,11 +618,13 @@ class PageTableCoreMixin:
                 tables = cast(TableSet, raw_result)
                 spans = []
             bbox = PageTableCoreMixin.table_bbox_from_grid(table_grid)
-            return PageTableCoreMixin.table_result(
+            result = PageTableCoreMixin.table_result(
                 tables,
                 spans=spans,
                 bboxes=[bbox] * len(tables),
             )
+            context.grid_results_cache[cache_key] = result
+            return result
 
         def extract_from_grids(
             table_grids: Sequence[TableGrid],
@@ -578,32 +683,16 @@ class PageTableCoreMixin:
                 return PageTableCoreMixin.table_result(tables, bboxes=heuristic_bboxes)
 
         def extract_stream_result() -> TableExtractionResult:
-            stream_grids = detect_stream_grids(
-                visible_runs,
-                row_tolerance=options.row_tolerance,
-                column_tolerance=options.column_tolerance,
-                columns=normalized_columns,
-            )
+            stream_grids = cached_stream_grids()
             if stream_grids:
                 return extract_from_grids(stream_grids)
-            stream_grid = detect_stream_grid(
-                visible_runs,
-                row_tolerance=options.row_tolerance,
-                column_tolerance=options.column_tolerance,
-                columns=normalized_columns,
-            )
+            stream_grid = cached_stream_grid()
             if stream_grid is not None and stream_grid.is_valid():
                 return extract_from_grid(stream_grid)
             return extract_fallback_heuristic()
 
         def extract_network_result() -> TableExtractionResult:
-            network_grids = detect_network_grids(
-                visible_runs,
-                edge_tolerance=options.edge_tolerance,
-                row_tolerance=options.row_tolerance,
-                column_tolerance=options.column_tolerance,
-                columns=normalized_columns,
-            )
+            network_grids = cached_network_grids()
             if not network_grids:
                 return extract_fallback_heuristic(include_run_chars=True)
             tables: TableSet = []
@@ -653,13 +742,7 @@ class PageTableCoreMixin:
                 result = extract_from_grids(grids, include_run_chars=False)
             elif grid is not None and grid.is_valid():
                 lattice_result = extract_from_grid(grid, include_run_chars=False)
-                network_grids = detect_network_grids(
-                    visible_runs,
-                    edge_tolerance=options.edge_tolerance,
-                    row_tolerance=options.row_tolerance,
-                    column_tolerance=options.column_tolerance,
-                    columns=normalized_columns,
-                )
+                network_grids = cached_network_grids()
                 if (
                     options.flavor == "hybrid"
                     and network_grids
@@ -672,19 +755,8 @@ class PageTableCoreMixin:
                 else:
                     result = lattice_result
             else:
-                network_grids = detect_network_grids(
-                    visible_runs,
-                    edge_tolerance=options.edge_tolerance,
-                    row_tolerance=options.row_tolerance,
-                    column_tolerance=options.column_tolerance,
-                    columns=normalized_columns,
-                )
-                stream_grid = detect_stream_grid(
-                    visible_runs,
-                    row_tolerance=options.row_tolerance,
-                    column_tolerance=options.column_tolerance,
-                    columns=normalized_columns,
-                )
+                network_grids = cached_network_grids()
+                stream_grid = cached_stream_grid()
                 selected_grid = network_grids[0] if network_grids else stream_grid
                 if selected_grid is not None and selected_grid.is_valid():
                     result = extract_from_grid(selected_grid)

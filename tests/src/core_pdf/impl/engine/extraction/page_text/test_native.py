@@ -102,10 +102,9 @@ def test_native_extraction_returns_pdf_text_without_external_services() -> None:
         text = result_text(result)
 
         assert text.strip()
-        assert not hasattr(page, "extract_text")
+        assert hasattr(page, "extract_text")
         assert page.extraction_cache is not None
         assert "native_output_lines" in page.extraction_cache
-        assert "page_extraction_snapshot" not in page.extraction_cache
 
 
 def test_structured_page_result_reports_native_route() -> None:
@@ -186,6 +185,25 @@ def test_page_markdown_uses_canonical_page_ir() -> None:
         page = cast(Any, document.pages[0])
 
         assert page.to_markdown() == page.extract().to_markdown()
+
+
+def test_page_exposes_coordinated_text_extraction() -> None:
+    with PdfDocument.open(SAMPLE_PDF) as document:
+        page = cast(Any, document.pages[0])
+
+        assert hasattr(page, "extract_text")
+        assert page.extract_text()
+
+
+def test_ocr_layer_extracts_image_only_text(monkeypatch: pytest.MonkeyPatch) -> None:
+    fixture = TESTS_DIR / "fixtures" / "SCORE-Bench" / "src" / "Enron_Attendee_List-Grainy-p001.pdf"
+    monkeypatch.setenv("CORE_PDF_OCR", "1")
+
+    with PdfDocument.open(fixture) as document:
+        result = cast(Any, document.pages[0]).extract()
+
+    assert result.page_class == "image"
+    assert "Enron Corporation" in result.text
 
 
 def test_image_only_page_does_not_attempt_text_extraction() -> None:

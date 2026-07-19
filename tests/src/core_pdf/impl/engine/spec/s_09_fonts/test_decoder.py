@@ -79,6 +79,12 @@ def test_font_decoder_uses_embedded_type1_encoding_without_pdf_encoding() -> Non
     assert decoder.decode(b"A\x0c") == "A\ufb01"
 
 
+def test_type3_font_defaults_to_standard_encoding() -> None:
+    decoder = FontDecoder({"Subtype": "Type3"})
+
+    assert decoder.decode(b"AZ ") == "AZ "
+
+
 def test_font_decoder_prefers_explicit_pdf_encoding_over_embedded_type1_encoding() -> None:
     font_program = b"""
     /Encoding 256 array

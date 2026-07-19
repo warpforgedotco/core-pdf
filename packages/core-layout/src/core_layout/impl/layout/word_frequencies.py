@@ -27,6 +27,15 @@ def english_word_frequencies() -> dict[str, WordFrequency]:
 
 
 @lru_cache(maxsize=1)
+def english_word_ranks() -> dict[str, int]:
+    """Load only the ranks needed by the hot word-classification path."""
+    ranks: dict[str, int] = {}
+    load_norvig_ranks(ranks)
+    load_wordninja_ranks_only(ranks)
+    return ranks
+
+
+@lru_cache(maxsize=1)
 def english_word_frequency_items_sorted() -> tuple[tuple[str, WordFrequency], ...]:
     return tuple(sorted(english_word_frequencies().items()))
 
@@ -64,6 +73,22 @@ def load_norvig_counts(frequencies: dict[str, WordFrequency]) -> None:
             frequencies[word] = WordFrequency(count, rank)
 
 
+def load_norvig_ranks(ranks: dict[str, int]) -> None:
+    path = str(files(WORDLIST_PACKAGE).joinpath(NORVIG_COUNTS))
+    with gzip.open(path, "rt", encoding="utf-8") as handle:
+        for rank, line in enumerate(handle.read().splitlines(), start=1):
+            parts = line.strip().split()
+            if len(parts) != 2:
+                continue
+            word = parts[0].casefold()
+            if word and word.isalpha():
+                try:
+                    int(parts[1])
+                except ValueError:
+                    continue
+                ranks[word] = rank
+
+
 def load_wordninja_ranks(frequencies: dict[str, WordFrequency]) -> None:
     path = str(files(WORDLIST_PACKAGE).joinpath(WORDNINJA_WORDS))
     with gzip.open(path, "rt", encoding="utf-8") as handle:
@@ -72,6 +97,16 @@ def load_wordninja_ranks(frequencies: dict[str, WordFrequency]) -> None:
             if not word or not word.isalpha() or word in frequencies:
                 continue
             frequencies[word] = WordFrequency(0, rank)
+
+
+def load_wordninja_ranks_only(ranks: dict[str, int]) -> None:
+    path = str(files(WORDLIST_PACKAGE).joinpath(WORDNINJA_WORDS))
+    with gzip.open(path, "rt", encoding="utf-8") as handle:
+        for rank, line in enumerate(handle.read().splitlines(), start=1):
+            word = line.strip().casefold()
+            if not word or not word.isalpha() or word in ranks:
+                continue
+            ranks[word] = rank
 
 
 @lru_cache(maxsize=262_144)
@@ -87,8 +122,9 @@ def word_frequency(word: str) -> WordFrequency | None:
 
 @lru_cache(maxsize=262_144)
 def normalized_word_rank(normalized: str) -> int | None:
-    frequency = normalized_word_frequency(normalized)
-    return frequency.rank if frequency is not None else None
+    if not normalized or not normalized.isalpha():
+        return None
+    return english_word_ranks().get(normalized)
 
 
 def english_word_frequency_prefix_items(

@@ -12,6 +12,8 @@ CB_TO_B = tuple(((FIX_1_77200 * (i - 128) + ONE_HALF) >> SCALEBITS) for i in ran
 CB_TO_G = tuple((-FIX_0_34414 * (i - 128)) + ONE_HALF for i in range(256))
 CR_TO_R = tuple(((FIX_1_40200 * (i - 128) + ONE_HALF) >> SCALEBITS) for i in range(256))
 CR_TO_G = tuple((-FIX_0_71414 * (i - 128)) for i in range(256))
+_CLAMP_OFFSET = 256
+_CLAMP_U8 = bytes(max(0, min(255, value)) for value in range(-_CLAMP_OFFSET, 512))
 
 
 def clamp_u8(value: int) -> int:
@@ -26,7 +28,11 @@ def ycbcr_to_rgb_channels(y_value: int, cb_value: int, cr_value: int) -> tuple[i
     red = y_value + CR_TO_R[cr_value]
     green = y_value + ((CB_TO_G[cb_value] + CR_TO_G[cr_value]) >> SCALEBITS)
     blue = y_value + CB_TO_B[cb_value]
-    return clamp_u8(red), clamp_u8(green), clamp_u8(blue)
+    return (
+        _CLAMP_U8[red + _CLAMP_OFFSET],
+        _CLAMP_U8[green + _CLAMP_OFFSET],
+        _CLAMP_U8[blue + _CLAMP_OFFSET],
+    )
 
 
 def cmyk_to_rgb_channels(cyan: int, magenta: int, yellow: int, black: int) -> tuple[int, int, int]:

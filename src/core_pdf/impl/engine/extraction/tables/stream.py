@@ -77,6 +77,24 @@ def detect_stream_grid(
     if compressed_rows:
         rows = split_discontinuous_order_rows(rows)
 
+    return _detect_stream_grid_from_rows(
+        runs,
+        rows,
+        row_tolerance=row_tolerance,
+        column_tolerance=column_tolerance,
+        columns=columns,
+    )
+
+
+def _detect_stream_grid_from_rows(
+    runs: list[TextRun],
+    rows: list[list[TextRun]],
+    *,
+    row_tolerance: float,
+    column_tolerance: float,
+    columns: list[float] | None,
+) -> TableGrid | None:
+
     if len(rows) < 2:
         return None
 
@@ -184,8 +202,9 @@ def detect_stream_grids(
     grids: list[TableGrid] = []
     for row_group in row_groups:
         group_runs = [run for row in row_group for run in row]
-        grid = detect_stream_grid(
+        grid = _detect_stream_grid_from_rows(
             group_runs,
+            row_group,
             row_tolerance=row_tolerance,
             column_tolerance=column_tolerance,
             columns=columns,
@@ -299,13 +318,16 @@ def words_to_vertical_edges(
             positions.append(((run.x0 + run.x1) * 0.5, run))
     positions.sort(key=lambda item: item[0])
     clusters: list[list[tuple[float, TextRun]]] = []
+    cluster_sums: list[float] = []
     for item in positions:
-        if clusters and abs(
-            item[0] - sum(value for value, ignored in clusters[-1]) / len(clusters[-1])
-        ) <= max(0.5, column_tolerance):
+        if clusters and abs(item[0] - cluster_sums[-1] / len(clusters[-1])) <= max(
+            0.5, column_tolerance
+        ):
             clusters[-1].append(item)
+            cluster_sums[-1] += item[0]
         else:
             clusters.append([item])
+            cluster_sums.append(item[0])
 
     candidates: list[tuple[float, float, float, float]] = []
     for cluster in clusters:
@@ -489,41 +511,53 @@ def detect_network_grids(
     if len(rows) < 2:
         return []
 
+    text_rows: list[tuple[float, float, float, float]] = []
+    for row in rows:
+        row_runs = [run for run in row if run.text.strip()]
+        if not row_runs:
+            continue
+        text_rows.append(
+            (
+                min(run.x0 for run in row_runs),
+                max(run.x1 for run in row_runs),
+                min(run.y0 for run in row_runs),
+                max(run.y1 for run in row_runs),
+            )
+        )
+
     candidate_edges: list[tuple[float, float, float]] = []
     for align in ("left", "right", "middle"):
-        values: list[tuple[float, list[TextRun]]] = []
-        for row in rows:
-            row_runs = [run for run in row if run.text.strip()]
-            if not row_runs:
-                continue
-            x0 = min(run.x0 for run in row_runs)
-            x1 = max(run.x1 for run in row_runs)
+        values: list[tuple[float, float, float]] = []
+        for x0, x1, row_y0, row_y1 in text_rows:
             coord = x0 if align == "left" else x1 if align == "right" else (x0 + x1) * 0.5
-            values.append((coord, row_runs))
+            values.append((coord, row_y0, row_y1))
         values.sort(key=lambda item: item[0])
-        clusters: list[list[tuple[float, list[TextRun]]]] = []
+        clusters: list[list[tuple[float, float, float]]] = []
+        cluster_sums: list[float] = []
         for value in values:
-            if clusters and abs(
-                value[0] - (sum(v[0] for v in clusters[-1]) / len(clusters[-1]))
-            ) <= max(0.5, column_tolerance):
+            if clusters and abs(value[0] - cluster_sums[-1] / len(clusters[-1])) <= max(
+                0.5, column_tolerance
+            ):
                 clusters[-1].append(value)
+                cluster_sums[-1] += value[0]
             else:
                 clusters.append([value])
-        for cluster in clusters:
+                cluster_sums.append(value[0])
+        for cluster_index, cluster in enumerate(clusters):
             if len(cluster) < 4:
                 continue
-            cluster_runs = [run for ignored, row_runs in cluster for run in row_runs]
             candidate_edges.append(
                 (
-                    min(run.y0 for run in cluster_runs),
-                    max(run.y1 for run in cluster_runs),
-                    sum(value for value, ignored in cluster) / len(cluster),
+                    min(value[1] for value in cluster),
+                    max(value[2] for value in cluster),
+                    cluster_sums[cluster_index] / len(cluster),
                 )
             )
 
     if not candidate_edges:
         return []
 
+    visible_text_runs = [run for run in runs if run.visible and run.text.strip()]
     candidate_edges.sort(key=lambda item: (-item[1], item[2]))
     areas: list[tuple[float, float, float, float]] = []
     for bottom, top, x in candidate_edges:
@@ -547,10 +581,8 @@ def detect_network_grids(
     for x0, y0, x1, y1 in areas:
         area_runs = [
             run
-            for run in runs
-            if run.visible
-            and run.text.strip()
-            and run.x1 >= x0 - column_tolerance
+            for run in visible_text_runs
+            if run.x1 >= x0 - column_tolerance
             and run.x0 <= x1 + column_tolerance
             and run.y1 >= y0
             and run.y0 <= y1

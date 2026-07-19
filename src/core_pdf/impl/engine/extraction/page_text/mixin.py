@@ -4,6 +4,14 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, cast
 
 from core_layout.impl.layout.geometry import RectBox
+from core_ocr.impl.coordinator import (
+    PageExtractionHost,
+    PageExtractionSnapshot,
+    extract_page_text,
+    resolved_line_content_record,
+)
+from core_ocr.impl.postprocess import ocr_is_enabled
+from core_ocr.impl.services import configure_candidate_services
 
 from core_pdf.impl.engine.extraction.cache import (
     ExtractionCache,
@@ -14,13 +22,14 @@ from core_pdf.impl.engine.extraction.common import (
 from core_pdf.impl.engine.extraction.common.ordering import LayoutAnalyzer
 from core_pdf.impl.engine.extraction.common.page_content import PageContentMixin
 from core_pdf.impl.engine.extraction.page_text.native import extract_native_text
+from core_pdf.impl.engine.extraction.pdf_host_services import PdfHostServices
 from core_pdf.impl.engine.rendering import RenderOptions, compose_page
 from core_pdf.impl.models import TextSpan
 
+configure_candidate_services(PdfHostServices())
+
 if TYPE_CHECKING:
     from core_layout.impl.layout.models import LayoutLine
-
-    from core_pdf.impl.engine.spec.s_07_document import PdfPage
 
 
 class PageExtractionMixin(PageContentMixin):
@@ -28,17 +37,17 @@ class PageExtractionMixin(PageContentMixin):
     text_lines: list[LayoutLine] | None
     text_spans: list[TextSpan] | None
 
-    def get_page_profile(self: PdfPage) -> page_profile.PageProfile:
+    def get_page_profile(self: PageExtractionHost) -> page_profile.PageProfile:
         return page_profile.get_page_profile(self)
 
-    def get_text_lines(self: PdfPage) -> list[LayoutLine]:
+    def get_text_lines(self: PageExtractionHost) -> list[LayoutLine]:
         if self.text_lines is None:
             self.text_lines = LayoutAnalyzer.cluster_into_lines(
                 [run for run in self.chars if run.text]
             )
         return self.text_lines
 
-    def get_drawings(self: PdfPage) -> list[dict[str, Any]]:
+    def get_drawings(self: PageExtractionHost) -> list[dict[str, Any]]:
         graphics = self.get_graphics()
         return [
             {
@@ -66,7 +75,7 @@ class PageExtractionMixin(PageContentMixin):
             for drawing in graphics.drawings
         ]
 
-    def get_text_spans(self: PdfPage) -> list[TextSpan]:
+    def get_text_spans(self: PageExtractionHost) -> list[TextSpan]:
         if self.text_spans is None:
             state = (
                 self.state
@@ -101,37 +110,70 @@ class PageExtractionMixin(PageContentMixin):
             self.text_spans = list(spans.values())
         return self.text_spans
 
-    def extract_resolved_lines(self: PdfPage) -> list[dict[str, Any]]:
+    def extract_text(self: PageExtractionHost) -> str:
+        if not ocr_is_enabled():
+            text, _ = extract_native_text(self)
+            return text
+        return extract_page_text(self)
+
+    def extract_resolved_lines(self: PageExtractionHost) -> list[dict[str, Any]]:
         cache = self.extraction_cache
         if cache is None:
             self.extraction_cache = cache = ExtractionCache()
-        lines = cast(tuple[Any, ...] | None, cache.get("native_output_lines"))
-        if lines is None:
+        if not ocr_is_enabled():
             _, lines = extract_native_text(self)
-        if not isinstance(lines, tuple):
+            return [
+                {
+                    "text": line.text,
+                    "break_before": line.break_before,
+                    "observation_kind": line.observation.kind,
+                    "source": line.observation.source,
+                    "bbox": line.observation.bbox,
+                    "advance_bbox": line.observation.advance_bbox,
+                    "ink_bbox": line.observation.ink_bbox,
+                    "confidence": line.observation.confidence,
+                    "baseline": line.observation.baseline,
+                    "contributing_sources": tuple(
+                        observation.source for observation in line.contributing_observations
+                    ),
+                }
+                for line in lines
+            ]
+        self.extract_text()
+        snapshot = cache.get_as("page_extraction_snapshot", PageExtractionSnapshot)
+        if snapshot is None:
             return []
+        if not snapshot.resolved_output_lines and snapshot.text.strip():
+            # OCR post-processing may change the selected text after its
+            # geometry lines are built.  In that case the coordinator keeps
+            # the authoritative text but intentionally drops stale geometry.
+            # Document extraction still needs to expose that text instead of
+            # silently turning the page into an empty form-feed page.
+            return [
+                {
+                    "text": line,
+                    "break_before": 1,
+                    "observation_kind": "ocr-text-line",
+                    "source": "ocr",
+                    "bbox": None,
+                    "advance_bbox": None,
+                    "ink_bbox": None,
+                    "confidence": None,
+                    "baseline": None,
+                    "contributing_sources": ("ocr",),
+                }
+                for line in snapshot.text.splitlines()
+                if line.strip()
+            ]
         return [
-            {
-                "text": line.text,
-                "break_before": line.break_before,
-                "observation_kind": line.observation.kind,
-                "source": line.observation.source,
-                "bbox": line.observation.bbox,
-                "advance_bbox": line.observation.advance_bbox,
-                "ink_bbox": line.observation.ink_bbox,
-                "confidence": line.observation.confidence,
-                "baseline": line.observation.baseline,
-                "contributing_sources": tuple(
-                    observation.source for observation in line.contributing_observations
-                ),
-            }
-            for line in lines
+            resolved_line_content_record(line, line_index=line_index)
+            for line_index, line in enumerate(snapshot.resolved_output_lines)
         ]
 
-    def to_markdown(self: PdfPage) -> str:
+    def to_markdown(self: PageExtractionHost) -> str:
         return cast(Any, self).extract().to_markdown()
 
-    def render(self: PdfPage, options: RenderOptions | None = None) -> Any:
+    def render(self: PageExtractionHost, options: RenderOptions | None = None) -> Any:
         options = options or RenderOptions()
         cache = self.extraction_cache
         if cache is None:

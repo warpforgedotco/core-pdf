@@ -90,6 +90,7 @@ def text_run_geometry_issues(run: TextRun) -> tuple[LayoutGeometryIssue, ...]:
     if cache is not None and cache[0] == key:
         return cast(tuple[LayoutGeometryIssue, ...], cache[1])
     issues = _compute_text_run_geometry_issues(run)
+    object.__setattr__(run, "_cache_tracking", True)
     object.__setattr__(run, "_geometry_issues_cache", (key, issues))
     return issues
 

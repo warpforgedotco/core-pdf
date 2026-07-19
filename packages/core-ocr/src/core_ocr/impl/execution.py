@@ -92,31 +92,26 @@ def rotate_ocr_image_right_angle(image: OcrImage, *, clockwise: bool) -> OcrImag
                 x = width - 1 - rotated_y
                 start = rotated_y * height
                 rotated_pixels[start : start + height] = source_pixels[x::width]
+    elif bpp == 3:
+        source_view = memoryview(image.data)[:required_size]
+        rotated_view = memoryview(data)
+        for rotated_y in range(rotated_height):
+            x = rotated_y if clockwise else width - 1 - rotated_y
+            source_start = x * 3
+            target_start = rotated_y * row_bytes
+            for channel in range(3):
+                column = source_view[
+                    source_start + channel : source_start
+                    + channel
+                    + height * image.bytes_per_line : image.bytes_per_line
+                ]
+                if clockwise:
+                    column = column[::-1]
+                rotated_view[target_start + channel : target_start + row_bytes : 3] = column
     else:
         source = image.data
         source_stride = image.bytes_per_line
-        if bpp == 3:
-            if clockwise:
-                for x in range(width):
-                    dst = x * row_bytes
-                    src = (height - 1) * source_stride + x * 3
-                    for _ in range(height):
-                        data[dst] = source[src]
-                        data[dst + 1] = source[src + 1]
-                        data[dst + 2] = source[src + 2]
-                        dst += 3
-                        src -= source_stride
-            else:
-                for rotated_y in range(rotated_height):
-                    dst = rotated_y * row_bytes
-                    src = (width - 1 - rotated_y) * 3
-                    for _ in range(height):
-                        data[dst] = source[src]
-                        data[dst + 1] = source[src + 1]
-                        data[dst + 2] = source[src + 2]
-                        dst += 3
-                        src += source_stride
-        elif bpp == 4:
+        if bpp == 4:
             if clockwise:
                 for x in range(width):
                     dst = x * row_bytes
@@ -200,6 +195,48 @@ def rotate_ocr_image_half_turn(image: OcrImage) -> OcrImage:
     width = image.width
     height = image.height
     data = bytearray(width * height * bpp)
+    if bpp == 1 and image.bytes_per_line >= width:
+        for y in range(height):
+            src = y * image.bytes_per_line
+            dst = (height - 1 - y) * width
+            data[dst : dst + width] = image.data[src : src + width][::-1]
+        return OcrImage(
+            bytes(data),
+            width,
+            height,
+            bpp,
+            width * bpp,
+            source=f"{image.source}_rotated_180",
+            cache_key=image.cache_key,
+            target_width=image.target_width,
+            target_height=image.target_height,
+            resolution=image.resolution,
+            clockwise_quarter_turns=(image.clockwise_quarter_turns + 2) % 4,
+            page_bbox=image.page_bbox,
+            page_clockwise_quarter_turns=(image.page_clockwise_quarter_turns + 2) % 4,
+        )
+    if bpp == 4 and image.bytes_per_line == width * 4:
+        source_pixels = memoryview(image.data)[: width * height * 4].cast("I")
+        rotated_pixels = memoryview(data).cast("I")
+        for y in range(height):
+            src = y * width
+            dst = (height - 1 - y) * width
+            rotated_pixels[dst : dst + width] = source_pixels[src : src + width][::-1]
+        return OcrImage(
+            bytes(data),
+            width,
+            height,
+            bpp,
+            width * bpp,
+            source=f"{image.source}_rotated_180",
+            cache_key=image.cache_key,
+            target_width=image.target_width,
+            target_height=image.target_height,
+            resolution=image.resolution,
+            clockwise_quarter_turns=(image.clockwise_quarter_turns + 2) % 4,
+            page_bbox=image.page_bbox,
+            page_clockwise_quarter_turns=(image.page_clockwise_quarter_turns + 2) % 4,
+        )
     for y in range(height):
         for x in range(width):
             src = y * image.bytes_per_line + x * bpp
