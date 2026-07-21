@@ -152,6 +152,14 @@ class _NativeTextPage:
         return self
 
 
+@dataclass
+class _ImagePage:
+    recommended_strategy: str = "image"
+
+    def get_page_profile(self) -> Any:
+        return self
+
+
 def test_sparse_native_table_ocr_preserves_selected_raw_result() -> None:
     candidate = OcrCandidate("full_page_simple", OcrTextResult("clean table " * 190, 69))
     result = OcrPageTextResult(candidate.result.text, candidate=candidate)
@@ -172,4 +180,16 @@ def test_dense_low_confidence_full_page_ocr_expands_layout_search(monkeypatch) -
         cast(Any, _NativeTextPage()),
         cast(Any, SimpleNamespace(source="full_page_image")),
         candidate,
+    )
+
+
+def test_empty_image_page_preserves_bounded_full_page_ocr() -> None:
+    candidate = OcrCandidate("full_page_simple", OcrTextResult("label 12 " * 200, 60))
+    result = OcrPageTextResult(candidate.result.text, candidate=candidate)
+
+    assert should_preserve_sparse_text_table_ocr_result(
+        cast(Any, _ImagePage()),
+        "",
+        result,
+        "ocr_replace_dominant_image",
     )

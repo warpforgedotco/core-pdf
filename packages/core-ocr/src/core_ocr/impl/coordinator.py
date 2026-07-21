@@ -7766,13 +7766,24 @@ def should_preserve_sparse_text_table_ocr_result(
         profile = page.get_page_profile()
     except Exception:
         return False
-    if getattr(profile, "recommended_strategy", None) not in {"native_text", "text_table"}:
-        return False
     native_tokens = extracted_text_token_count(native_text)
     ocr_tokens = extracted_text_token_count(ocr_result.text)
+    strategy = getattr(profile, "recommended_strategy", None)
+    candidate = ocr_result.candidate
+    if (
+        strategy == "image"
+        and native_tokens <= 20
+        and candidate.name == "full_page_simple"
+        and 300 <= ocr_tokens <= 700
+        and (candidate.result.confidence or 0) >= 55
+        and ocr_text_analysis.scanned_ocr_artifact_score(ocr_result.text) <= 0.08
+        and ocr_text_analysis.text_ocr_quality_score(ocr_result.text) <= 0.40
+    ):
+        return True
+    if strategy not in {"native_text", "text_table"}:
+        return False
     if not 80 <= native_tokens <= 240 or ocr_tokens < max(80, int(native_tokens * 0.85)):
         return False
-    candidate = ocr_result.candidate
     if (candidate.result.confidence or 0) < 55:
         return False
     return ocr_text_analysis.scanned_ocr_artifact_score(ocr_result.text) <= 0.12
