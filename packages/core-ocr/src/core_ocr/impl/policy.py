@@ -572,7 +572,7 @@ def should_replace_dominant_image_native_text_with_ocr(
         if ocr_text_analysis.scanned_ocr_artifact_score(ocr_text) > 0.34:
             return False
         return dominant_image
-    if text_tokens < 100 or ocr_tokens < 140:
+    if text_tokens < 60 or ocr_tokens < 140:
         return False
     token_ratio = ocr_tokens / max(1, text_tokens)
     if token_ratio < 1.35:

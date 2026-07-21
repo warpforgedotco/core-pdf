@@ -2,6 +2,7 @@ from core_ocr.impl import policy
 from core_ocr.impl.policy import (
     OcrCandidateGeometryProfile,
     PageTextGeometryProfile,
+    should_replace_dominant_image_native_text_with_ocr,
     tiny_native_text_should_yield_to_ocr,
 )
 
@@ -116,4 +117,18 @@ def test_two_line_corrupt_native_layer_yields_to_ocr() -> None:
         ocr_tokens=90,
         native_profile=native,
         ocr_profile=ocr,
+    )
+
+
+def test_medium_corrupt_native_image_layer_yields_to_ocr(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(policy.ocr_page_analysis, "has_dominant_page_image", lambda page: True)
+    native_text = "i " * 79
+    ocr_text = "Source industry document reference " * 100
+
+    assert should_replace_dominant_image_native_text_with_ocr(
+        object(),
+        native_text,
+        ocr_text,
     )
