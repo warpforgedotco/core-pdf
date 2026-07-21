@@ -11578,6 +11578,13 @@ def append_rendered_full_page_ocr_candidates(
                     token_type_classifier=ocr_schematic.classify_schematic_token_type,
                 )
             )
+            candidates.extend(
+                ocr_table_regions.collect_table_rectangle_ocr_candidates(
+                    cast(ocr_table_regions.TableOcrPage, page),
+                    rendered_image,
+                    timeout,
+                )
+            )
         if dpi == max_render_dpi and vector_diagram_sparse:
             tiled_candidate = ocr_tiling.tiled_ocr_candidate_for_dpi(
                 page,
