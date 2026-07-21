@@ -189,7 +189,7 @@ def prefer_lower_resolution_rendered_candidate(
     best_dpi = plain_rendered_page_candidate_dpi(best.name)
     if candidate_dpi is None or best_dpi is None or candidate_dpi >= best_dpi:
         return False
-    if best_score - candidate_score > 2.0:
+    if best_score - candidate_score > 4.0:
         return False
     candidate_text = candidate.result.text
     best_text = best.result.text
@@ -612,7 +612,7 @@ def prefer_rendered_page_qa_candidate(
 
 
 def plain_rendered_page_candidate_dpi(name: str) -> int | None:
-    match = re.fullmatch(r"rendered_page_(\d+)dpi", name)
+    match = re.fullmatch(r"rendered_page_(\d+)dpi(?:_.*)?", name)
     if match is None:
         return None
     return int(match.group(1))

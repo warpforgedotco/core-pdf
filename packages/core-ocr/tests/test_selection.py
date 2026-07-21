@@ -71,3 +71,16 @@ def test_selection_prefers_fuller_high_resolution_psm4_pass() -> None:
     )
 
     assert select_ocr_candidate([low_resolution, high_resolution]) is high_resolution
+
+
+def test_selection_applies_lower_resolution_preference_to_profiled_pass() -> None:
+    lower_resolution = OcrCandidate(
+        "rendered_page_250dpi",
+        OcrTextResult("clean label 12 " * 42, 63),
+    )
+    higher_resolution = OcrCandidate(
+        "rendered_page_300dpi_table_profile_psm6",
+        OcrTextResult("clean label 12 " * 43, 62),
+    )
+
+    assert select_ocr_candidate([higher_resolution, lower_resolution]) is lower_resolution
