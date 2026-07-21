@@ -7771,7 +7771,7 @@ def should_preserve_sparse_text_table_ocr_result(
     strategy = getattr(profile, "recommended_strategy", None)
     candidate = ocr_result.candidate
     if (
-        strategy == "image"
+        strategy in {"image", "native_text"}
         and native_tokens <= 20
         and candidate.name == "full_page_simple"
         and 300 <= ocr_tokens <= 700

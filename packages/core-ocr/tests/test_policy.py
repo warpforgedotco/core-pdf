@@ -193,3 +193,9 @@ def test_empty_image_page_preserves_bounded_full_page_ocr() -> None:
         result,
         "ocr_replace_dominant_image",
     )
+    assert should_preserve_sparse_text_table_ocr_result(
+        cast(Any, _NativeTextPage()),
+        "",
+        result,
+        "ocr_replace_dominant_image",
+    )
