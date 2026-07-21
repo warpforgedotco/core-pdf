@@ -1,5 +1,9 @@
 from core_ocr.impl import policy
-from core_ocr.impl.policy import PageTextGeometryProfile
+from core_ocr.impl.policy import (
+    OcrCandidateGeometryProfile,
+    PageTextGeometryProfile,
+    tiny_native_text_should_yield_to_ocr,
+)
 
 
 def test_portrait_raster_formula_noise_prefers_dense_table_route(
@@ -66,3 +70,50 @@ def test_landscape_raster_formula_noise_keeps_technical_route(
     classification = policy.classify_page_region("noisy formula text")
 
     assert classification.kind == "patent_formula"
+
+
+def test_two_line_corrupt_native_layer_yields_to_ocr() -> None:
+    native = PageTextGeometryProfile(
+        page_width=612,
+        page_height=792,
+        native_run_count=3,
+        native_line_count=2,
+        wide_line_ratio=0.0,
+        short_line_ratio=1.0,
+        centered_line_ratio=0.0,
+        numeric_line_ratio=0.5,
+        left_anchor_count=0,
+        right_anchor_count=0,
+        estimated_column_count=1,
+        native_aligned_column_count=0,
+        candidate_aligned_column_count=0,
+        candidate_table_signals=0,
+        candidate_schematic_signals=0,
+        drawing_line_count=0,
+        horizontal_rule_count=0,
+        vertical_rule_count=0,
+        dominant_image=False,
+        occupied_area_ratio=0.02,
+    )
+    ocr = OcrCandidateGeometryProfile(
+        line_count=58,
+        word_count=158,
+        aligned_column_count=1,
+        occupied_area_ratio=0.10,
+        wide_line_ratio=0.1,
+        short_line_ratio=0.3,
+        line_coverage_score=0.7,
+        confidence=84,
+        text_quality=0.27,
+        artifact_score=0.16,
+        gibberish_score=0.0,
+    )
+
+    assert tiny_native_text_should_yield_to_ocr(
+        "(1 (1 -h",
+        "ARCHITECTURE ANALYSIS " * 30,
+        text_tokens=3,
+        ocr_tokens=90,
+        native_profile=native,
+        ocr_profile=ocr,
+    )

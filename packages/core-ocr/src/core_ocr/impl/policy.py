@@ -426,7 +426,7 @@ def tiny_native_text_should_yield_to_ocr(
         or native_profile.horizontal_rule_count >= 4
         or native_profile.vertical_rule_count >= 3
         or native_profile.drawing_line_count >= 20
-        or (native_profile.native_line_count <= 1 and native_profile.occupied_area_ratio <= 0.03)
+        or (native_profile.native_line_count <= 2 and native_profile.occupied_area_ratio <= 0.03)
     )
 
 
