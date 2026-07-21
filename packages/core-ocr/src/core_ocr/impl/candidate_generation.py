@@ -120,7 +120,7 @@ def should_try_line_art_text_mask_ocr_candidate(
         return False
     if image.width * image.height < 100_000:
         return False
-    if not str(image.source).startswith("full_page_"):
+    if not str(image.source).startswith(("full_page_", "rendered_page_")):
         return False
     text = base_candidate.result.text
     tokens = extracted_text_token_count(text)

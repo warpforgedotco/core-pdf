@@ -7775,7 +7775,11 @@ def clean_full_page_ocr_should_preserve_raw_text(
             profile = page.get_page_profile()
         except Exception:
             profile = None
-        if getattr(profile, "recommended_strategy", None) == "text_table":
+        if (
+            getattr(profile, "recommended_strategy", None) == "text_table"
+            and 65 <= len(getattr(page, "chars", ())) <= 120
+            and bool(getattr(profile, "has_path_ops", False))
+        ):
             tokens = extracted_text_token_count(text)
             confidence = candidate.result.confidence or 0
             return 20 <= tokens <= 60 and confidence >= 80 and text_ocr_quality_score(text) <= 0.20
@@ -11547,6 +11551,33 @@ def append_rendered_full_page_ocr_candidates(
             primary_result,
             rendered_image,
         )
+        if (
+            getattr(profile, "recommended_strategy", None) == "text_table"
+            and 65 <= len(getattr(page, "chars", ())) <= 120
+            and bool(getattr(profile, "has_path_ops", False))
+            and rendered_image.width * rendered_image.height <= 12_000_000
+        ):
+            candidates.extend(
+                ocr_candidate_generation.line_art_text_mask_ocr_candidates(
+                    ocr_candidates.OcrCandidate(source, primary_result),
+                    rendered_image,
+                    timeout,
+                    ocr_image_to_text_result_with_psm=cast(
+                        ocr_candidate_generation.OcrPsmTextResultFunction,
+                        lambda image, *, psm, timeout, variables: (
+                            ocr_session.image_to_text_result(image, psm=psm, variables=variables)
+                            if ocr_session is not None
+                            else ocr_execution.ocr_image_to_text_result_with_psm_timeout(
+                                image,
+                                psm=psm,
+                                variables=variables,
+                                timeout=timeout,
+                            )
+                        ),
+                    ),
+                    token_type_classifier=ocr_schematic.classify_schematic_token_type,
+                )
+            )
         if dpi == max_render_dpi and vector_diagram_sparse:
             tiled_candidate = ocr_tiling.tiled_ocr_candidate_for_dpi(
                 page,
