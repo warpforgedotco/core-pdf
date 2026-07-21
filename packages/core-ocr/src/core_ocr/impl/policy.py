@@ -725,6 +725,13 @@ def classify_page_region(
     formula_signal = bool(text) and (
         ocr_text_analysis.ocr_text_has_dense_formula_notation(text) or formula_heavy_ocr_text(text)
     )
+    raster_formula_signal = (
+        formula_signal
+        and geometry.dominant_image
+        and not schematic_vector_signal
+        and geometry.page_height > geometry.page_width
+        and dense_table_signal
+    )
     form_signal = (
         geometry.horizontal_rule_count >= 8
         or (
@@ -789,6 +796,7 @@ def classify_page_region(
         "schematic_vector_signal": schematic_vector_signal,
         "dense_table_signal": dense_table_signal,
         "formula_signal": formula_signal,
+        "raster_formula_signal": raster_formula_signal,
         "form_signal": form_signal,
         "invoice_signal": invoice_signal,
         "invoice_geometry_signal": invoice_geometry_signal,
@@ -813,7 +821,10 @@ def classify_page_region(
             min(confidence, 0.99),
             signals,
         )
-    if formula_signal:
+    # On portrait scans, formula-like OCR is often caused by table borders,
+    # seals, handwriting, or dense label text. Prefer the table route there;
+    # keep the existing formula route for landscape technical drawings.
+    if formula_signal and not raster_formula_signal:
         return ocr_schematic.PageRegionClassification("patent_formula", 0.78, signals)
     if dense_table_signal:
         confidence = 0.72

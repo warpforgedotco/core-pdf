@@ -49,6 +49,7 @@ class CaseScore:
     predicted_tokens: int
     matched_tokens: int
     elapsed_seconds: float
+    track: str = "native"
     error: str | None = None
     missing_top: list[tuple[str, int]] | None = None
     extra_top: list[tuple[str, int]] | None = None
@@ -111,6 +112,17 @@ def is_correct_truth_path(path: Path) -> bool:
 
 def score_case(case: ScoreBenchCase) -> CaseScore:
     started = perf_counter()
+    track = (
+        "ocr"
+        if os.environ.get("CORE_PDF_OCR", "").casefold()
+        in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+        else "native"
+    )
     if not is_materialized_pdf(case.pdf):
         return CaseScore(
             stem=case.stem,
@@ -123,6 +135,7 @@ def score_case(case: ScoreBenchCase) -> CaseScore:
             predicted_tokens=0,
             matched_tokens=0,
             elapsed_seconds=perf_counter() - started,
+            track=track,
             error=f"{case.pdf} is not a materialized PDF. Run git lfs pull in SCORE-Bench.",
         )
 
@@ -145,6 +158,7 @@ def score_case(case: ScoreBenchCase) -> CaseScore:
             predicted_tokens=predicted_count,
             matched_tokens=matched,
             elapsed_seconds=perf_counter() - started,
+            track=track,
             missing_top=token_diff["missing_top"][:5],
             extra_top=token_diff["extra_top"][:5],
         )
@@ -161,6 +175,7 @@ def score_case(case: ScoreBenchCase) -> CaseScore:
             predicted_tokens=0,
             matched_tokens=0,
             elapsed_seconds=perf_counter() - started,
+            track=track,
             error=f"{type(exc).__name__}: {exc}",
         )
 
@@ -176,10 +191,12 @@ def score_cases(
     on_score: Callable[[int, CaseScore], None] | None = None,
     on_case_started: Callable[[int, ScoreBenchCase], None] | None = None,
     jobs: int = 1,
+    ocr_enabled: bool = False,
 ) -> list[CaseScore]:
     if jobs < 1:
         raise ValueError("--jobs must be at least 1")
     os.environ.setdefault("OMP_THREAD_LIMIT", "1")
+    os.environ["CORE_PDF_OCR"] = "1" if ocr_enabled else "0"
     if jobs == 1 or len(cases) <= 1:
         scores = []
         for case_number, case in enumerate(cases, start=1):
@@ -245,11 +262,13 @@ class ScoreBenchUI:
         jobs: int,
         filters: list[str],
         limit: int | None,
+        track: str,
     ) -> None:
         self.total_cases = total_cases
         self.jobs = jobs
         self.filters = filters
         self.limit = limit
+        self.track = track
         self.started_at = perf_counter()
         self.completed_cases = 0
         self.status_counts: Counter[str] = Counter()
@@ -710,6 +729,7 @@ class ScoreBenchUI:
 
     def _subtitle(self) -> str:
         parts = [
+            f"track={self.track}",
             f"jobs={self.jobs}",
             f"elapsed={format_seconds(perf_counter() - self.started_at)}",
         ]
@@ -933,6 +953,11 @@ def main() -> int:
         action="store_true",
         help="Opt into the full-screen live Rich dashboard.",
     )
+    parser.add_argument(
+        "--ocr",
+        action="store_true",
+        help="Enable the opt-in OCR extraction track; native extraction is the default.",
+    )
     parser.add_argument("--json-output", type=Path, default=None)
     parser.add_argument(
         "--full-results",
@@ -965,6 +990,7 @@ def main() -> int:
         jobs=args.jobs,
         filters=filters,
         limit=args.limit,
+        track="ocr" if args.ocr else "native",
     )
     ui.set_case_queue(cases)
 
@@ -987,6 +1013,7 @@ def main() -> int:
                         score,
                     ),
                     jobs=args.jobs,
+                    ocr_enabled=args.ocr,
                 )
         else:
             scores = score_cases(
@@ -998,6 +1025,7 @@ def main() -> int:
                     score,
                 ),
                 jobs=args.jobs,
+                ocr_enabled=args.ocr,
             )
     except ValueError as exc:
         CONSOLE.print(
