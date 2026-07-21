@@ -142,6 +142,7 @@ OCR_FIGURE_MAX_CALLOUT_NEIGHBORHOOD_SUBREGIONS = 8
 OCR_FIGURE_MAX_GRID_SUBREGIONS = 28
 OCR_FIGURE_MAX_PIXEL_SUBREGIONS = 12
 OCR_FIGURE_MAX_TOTAL_SUBREGIONS = 32
+OCR_VECTOR_DIAGRAM_TILE_MAX_SIDE_PIXELS = 1_400
 OCR_FIGURE_GRID_COLUMNS = (2, 4)
 OCR_FIGURE_GRID_ROWS = (2, 4)
 OCR_FIGURE_GRID_OVERLAP_RATIO = 0.12
@@ -11508,6 +11509,16 @@ def append_rendered_full_page_ocr_candidates(
             primary_result,
             rendered_image,
         )
+        if dpi == max_render_dpi and vector_diagram_sparse:
+            tiled_candidate = ocr_tiling.tiled_ocr_candidate_for_dpi(
+                page,
+                dpi,
+                timeout,
+                max_side_pixels=OCR_VECTOR_DIAGRAM_TILE_MAX_SIDE_PIXELS,
+                token_type_classifier=ocr_schematic.classify_schematic_token_type,
+            )
+            if tiled_candidate is not None:
+                candidates.append(tiled_candidate)
         if dpi == max_render_dpi and should_try_suspect_native_table_tiling(page):
             tiled_candidate = ocr_tiling.tiled_ocr_candidate_for_dpi(
                 page,
