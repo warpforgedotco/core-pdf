@@ -7433,6 +7433,22 @@ def collect_ocr_candidates(
             )
         )
         append_nonempty_ocr_candidate(candidates, "full_page_auto_psm3", auto_result, image)
+        if getattr(page.get_page_profile(), "recommended_strategy", None) == "text_table":
+            table_result = (
+                ocr_session.image_to_text_result(image, psm=11)
+                if ocr_session is not None
+                else ocr_execution.ocr_image_to_text_result_with_psm_timeout(
+                    image,
+                    psm=11,
+                    timeout=timeout,
+                )
+            )
+            append_nonempty_ocr_candidate(
+                candidates,
+                "full_page_auto_psm11",
+                table_result,
+                image,
+            )
     if should_try_dense_image_sparse_ocr_candidate(page, image, candidates[0]):
         sparse_image = dense_image_sparse_ocr_image(image)
         if sparse_image is not None:
