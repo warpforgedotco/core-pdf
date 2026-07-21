@@ -14,6 +14,7 @@ from core_ocr.impl.policy import (
     should_replace_dominant_image_native_text_with_ocr,
     tiny_native_text_should_yield_to_ocr,
 )
+from core_ocr.impl.postprocess import ocr_is_enabled
 from core_ocr.impl.types import OcrTextResult
 
 
@@ -48,6 +49,15 @@ def test_portrait_raster_formula_noise_prefers_dense_table_route(
     classification = policy.classify_page_region("noisy formula text")
 
     assert classification.kind == "dense_table"
+
+
+def test_ocr_is_enabled_by_default_and_supports_explicit_opt_out(monkeypatch) -> None:
+    monkeypatch.delenv("CORE_PDF_OCR", raising=False)
+    assert ocr_is_enabled()
+    monkeypatch.setenv("CORE_PDF_OCR", "0")
+    assert not ocr_is_enabled()
+    monkeypatch.setenv("CORE_PDF_OCR", "1")
+    assert ocr_is_enabled()
 
 
 def test_landscape_raster_formula_noise_keeps_technical_route(

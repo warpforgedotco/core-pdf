@@ -115,11 +115,11 @@ def score_case(case: ScoreBenchCase) -> CaseScore:
     track = (
         "ocr"
         if os.environ.get("CORE_PDF_OCR", "").casefold()
-        in {
-            "1",
-            "true",
-            "yes",
-            "on",
+        not in {
+            "0",
+            "false",
+            "no",
+            "off",
         }
         else "native"
     )
@@ -191,7 +191,7 @@ def score_cases(
     on_score: Callable[[int, CaseScore], None] | None = None,
     on_case_started: Callable[[int, ScoreBenchCase], None] | None = None,
     jobs: int = 1,
-    ocr_enabled: bool = False,
+    ocr_enabled: bool = True,
 ) -> list[CaseScore]:
     if jobs < 1:
         raise ValueError("--jobs must be at least 1")
@@ -956,7 +956,12 @@ def main() -> int:
     parser.add_argument(
         "--ocr",
         action="store_true",
-        help="Enable the opt-in OCR extraction track; native extraction is the default.",
+        help="Explicitly select the default OCR extraction track.",
+    )
+    parser.add_argument(
+        "--native",
+        action="store_true",
+        help="Use native extraction only instead of the default OCR track.",
     )
     parser.add_argument("--json-output", type=Path, default=None)
     parser.add_argument(
@@ -1013,7 +1018,7 @@ def main() -> int:
                         score,
                     ),
                     jobs=args.jobs,
-                    ocr_enabled=args.ocr,
+                    ocr_enabled=not args.native,
                 )
         else:
             scores = score_cases(
@@ -1025,7 +1030,7 @@ def main() -> int:
                     score,
                 ),
                 jobs=args.jobs,
-                ocr_enabled=args.ocr,
+                ocr_enabled=not args.native,
             )
     except ValueError as exc:
         CONSOLE.print(

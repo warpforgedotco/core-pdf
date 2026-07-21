@@ -26,6 +26,8 @@ def test_score_case_reports_native_and_ocr_tracks(
     )
     score_case = score_bench["score_case"]
 
+    monkeypatch.delenv("CORE_PDF_OCR", raising=False)
+    assert score_case(case).track == "ocr"
     monkeypatch.setenv("CORE_PDF_OCR", "0")
     assert score_case(case).track == "native"
     monkeypatch.setenv("CORE_PDF_OCR", "1")

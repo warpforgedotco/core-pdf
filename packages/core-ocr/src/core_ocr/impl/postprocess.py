@@ -129,12 +129,12 @@ class OcrSyntheticTextLine:
 
 
 def ocr_is_enabled() -> bool:
-    """Return whether the host explicitly requested OCR candidate generation."""
-    return os.environ.get("CORE_PDF_OCR", "").casefold() in {
-        "1",
-        "true",
-        "yes",
-        "on",
+    """Return whether OCR candidate generation is enabled by default."""
+    return os.environ.get("CORE_PDF_OCR", "").casefold() not in {
+        "0",
+        "false",
+        "no",
+        "off",
     }
 
 
