@@ -11643,7 +11643,10 @@ def append_rendered_full_page_ocr_candidates(
                 alternate_result,
                 rendered_image,
             )
-            if getattr(profile, "recommended_strategy", None) == "text_table":
+            if (
+                getattr(profile, "recommended_strategy", None) == "text_table"
+                and len(getattr(page, "chars", ())) <= 64
+            ):
                 auto_result = (
                     ocr_session.image_to_text_result(rendered_image, psm=3)
                     if ocr_session is not None

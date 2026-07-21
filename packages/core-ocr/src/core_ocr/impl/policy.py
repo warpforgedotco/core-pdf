@@ -252,6 +252,8 @@ def should_use_short_table_psm3_ocr(
         return False
     if getattr(profile, "recommended_strategy", None) != "text_table":
         return False
+    if len(getattr(page, "chars", ())) > 64:
+        return False
     confidence = candidate.result.confidence or 0
     return 12 <= text_tokens <= 24 and text_tokens < ocr_tokens <= 60 and confidence >= 80
 
