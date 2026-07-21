@@ -146,6 +146,8 @@ def should_replace_text_with_ocr(
     candidate = ocr_result.candidate
     if candidate is None:
         return False
+    if should_use_medium_table_psm11_ocr(page, candidate, ocr_tokens=ocr_tokens):
+        return True
     if should_preserve_dense_numeric_native_text_against_ocr(
         text,
         ocr_text,
@@ -256,6 +258,26 @@ def should_use_short_table_psm3_ocr(
         return False
     confidence = candidate.result.confidence or 0
     return 12 <= text_tokens <= 24 and text_tokens < ocr_tokens <= 60 and confidence >= 80
+
+
+def should_use_medium_table_psm11_ocr(
+    page: Any,
+    candidate: OcrCandidate,
+    *,
+    ocr_tokens: int,
+) -> bool:
+    if not str(getattr(candidate, "name", "")).endswith("_psm11"):
+        return False
+    try:
+        profile = page.get_page_profile()
+    except Exception:
+        return False
+    if getattr(profile, "recommended_strategy", None) != "text_table":
+        return False
+    if not 65 <= len(getattr(page, "chars", ())) <= 120:
+        return False
+    confidence = candidate.result.confidence or 0
+    return 80 <= ocr_tokens <= 220 and confidence >= 80
 
 
 def should_preserve_native_text_against_rendered_page_ocr(

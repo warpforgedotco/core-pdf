@@ -7779,6 +7779,18 @@ def clean_full_page_ocr_should_preserve_raw_text(
             tokens = extracted_text_token_count(text)
             confidence = candidate.result.confidence or 0
             return 20 <= tokens <= 60 and confidence >= 80 and text_ocr_quality_score(text) <= 0.20
+    if candidate.name.endswith("_psm11"):
+        try:
+            profile = page.get_page_profile()
+        except Exception:
+            profile = None
+        if (
+            getattr(profile, "recommended_strategy", None) == "text_table"
+            and 65 <= len(getattr(page, "chars", ())) <= 120
+        ):
+            tokens = extracted_text_token_count(text)
+            confidence = candidate.result.confidence or 0
+            return 80 <= tokens <= 220 and confidence >= 80 and text_ocr_quality_score(text) <= 0.25
     if candidate.name != "full_page_simple":
         return False
     if extracted_text_token_count(text) < 320:

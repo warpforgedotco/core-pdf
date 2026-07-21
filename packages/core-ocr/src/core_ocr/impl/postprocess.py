@@ -2894,6 +2894,8 @@ def native_layout_geometry_summary_from_page_cache(
 
 def should_try_ocr_supplement(page: PageExtractionHost, text: str) -> bool:
     text_tokens = ocr_text_analysis.extracted_text_token_count(text)
+    if should_try_medium_table_ocr(page, text_tokens):
+        return True
     if native_text_layer_looks_reliable_enough(
         page,
         text,
@@ -2947,6 +2949,19 @@ def should_try_ocr_supplement(page: PageExtractionHost, text: str) -> bool:
     except Exception:
         pass
     return False
+
+
+def should_try_medium_table_ocr(page: PageExtractionHost, text_tokens: int) -> bool:
+    if not 80 <= text_tokens <= 220:
+        return False
+    try:
+        profile = page.get_page_profile()
+    except Exception:
+        return False
+    return (
+        getattr(profile, "recommended_strategy", None) == "text_table"
+        and 65 <= len(getattr(page, "chars", ())) <= 120
+    )
 
 
 def tiny_native_text_should_trigger_ocr_supplement(
