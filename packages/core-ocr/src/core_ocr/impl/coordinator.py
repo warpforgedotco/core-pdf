@@ -7754,6 +7754,30 @@ def clean_full_page_ocr_should_preserve_raw_text(
     )
 
 
+def should_preserve_sparse_text_table_ocr_result(
+    page: PageExtractionHost,
+    native_text: str,
+    ocr_result: OcrPageTextResult | None,
+    source: str,
+) -> bool:
+    if ocr_result is None or ocr_result.candidate is None or not source.startswith("ocr_replace"):
+        return False
+    try:
+        profile = page.get_page_profile()
+    except Exception:
+        return False
+    if getattr(profile, "recommended_strategy", None) not in {"native_text", "text_table"}:
+        return False
+    native_tokens = extracted_text_token_count(native_text)
+    ocr_tokens = extracted_text_token_count(ocr_result.text)
+    if not 80 <= native_tokens <= 240 or ocr_tokens < max(80, int(native_tokens * 0.85)):
+        return False
+    candidate = ocr_result.candidate
+    if (candidate.result.confidence or 0) < 55:
+        return False
+    return ocr_text_analysis.scanned_ocr_artifact_score(ocr_result.text) <= 0.12
+
+
 def schematic_layout_render_drops_material_text(
     page: PageExtractionHost,
     candidate: OcrCandidate,
@@ -13882,6 +13906,12 @@ def extract_page_text(page: PageExtractionHost) -> str:
                         )
             preserved_raw_ocr_text = bool(
                 preserve_complete_page_ocr_text
+                or should_preserve_sparse_text_table_ocr_result(
+                    page,
+                    pre_ocr_native_text,
+                    broad_ocr_result,
+                    pre_reconciliation_text_source,
+                )
                 or (
                     broad_ocr_result is not None
                     and broad_ocr_result.preserve_raw_text
@@ -13893,6 +13923,13 @@ def extract_page_text(page: PageExtractionHost) -> str:
                     and pre_reconciliation_text_source != "native"
                 )
             )
+            if (
+                preserved_raw_ocr_text
+                and broad_ocr_result is not None
+                and broad_ocr_result.candidate is not None
+            ):
+                text = broad_ocr_result.candidate.result.text
+                final_output_lines = ()
             has_reconciliation_source = bool(
                 (broad_ocr_result is not None and broad_ocr_result.text)
                 or (figure_ocr_result is not None and figure_ocr_result.text)

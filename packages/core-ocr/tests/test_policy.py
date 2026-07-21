@@ -1,10 +1,16 @@
+from dataclasses import dataclass
+from typing import Any, cast
+
 from core_ocr.impl import policy
+from core_ocr.impl.candidates import OcrCandidate, OcrPageTextResult
+from core_ocr.impl.coordinator import should_preserve_sparse_text_table_ocr_result
 from core_ocr.impl.policy import (
     OcrCandidateGeometryProfile,
     PageTextGeometryProfile,
     should_replace_dominant_image_native_text_with_ocr,
     tiny_native_text_should_yield_to_ocr,
 )
+from core_ocr.impl.types import OcrTextResult
 
 
 def test_portrait_raster_formula_noise_prefers_dense_table_route(
@@ -131,4 +137,24 @@ def test_medium_corrupt_native_image_layer_yields_to_ocr(
         object(),
         native_text,
         ocr_text,
+    )
+
+
+@dataclass
+class _NativeTextPage:
+    recommended_strategy: str = "native_text"
+
+    def get_page_profile(self) -> Any:
+        return self
+
+
+def test_sparse_native_table_ocr_preserves_selected_raw_result() -> None:
+    candidate = OcrCandidate("full_page_simple", OcrTextResult("clean table " * 190, 69))
+    result = OcrPageTextResult(candidate.result.text, candidate=candidate)
+
+    assert should_preserve_sparse_text_table_ocr_result(
+        cast(Any, _NativeTextPage()),
+        "native table " * 90,
+        result,
+        "ocr_replace_general",
     )
