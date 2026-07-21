@@ -7421,6 +7421,17 @@ def collect_ocr_candidates(
             token_type_classifier=ocr_schematic.classify_schematic_token_type,
         )
     )
+    if image.source.startswith("full_page_") and ocr_full_page.should_try_alternate_ocr(result):
+        auto_result = (
+            ocr_session.image_to_text_result(image, psm=3)
+            if ocr_session is not None
+            else ocr_execution.ocr_image_to_text_result_with_psm_timeout(
+                image,
+                psm=3,
+                timeout=timeout,
+            )
+        )
+        append_nonempty_ocr_candidate(candidates, "full_page_auto_psm3", auto_result, image)
     if should_try_dense_image_sparse_ocr_candidate(page, image, candidates[0]):
         sparse_image = dense_image_sparse_ocr_image(image)
         if sparse_image is not None:

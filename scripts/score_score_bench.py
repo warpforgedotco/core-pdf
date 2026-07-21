@@ -995,7 +995,7 @@ def main() -> int:
         jobs=args.jobs,
         filters=filters,
         limit=args.limit,
-        track="ocr" if args.ocr else "native",
+        track="native" if args.native else "ocr",
     )
     ui.set_case_queue(cases)
 
