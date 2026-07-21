@@ -1,9 +1,13 @@
 from dataclasses import dataclass
+from types import SimpleNamespace
 from typing import Any, cast
 
-from core_ocr.impl import policy
+from core_ocr.impl import coordinator, policy
 from core_ocr.impl.candidates import OcrCandidate, OcrPageTextResult
-from core_ocr.impl.coordinator import should_preserve_sparse_text_table_ocr_result
+from core_ocr.impl.coordinator import (
+    should_expand_weak_full_page_ocr_candidates,
+    should_preserve_sparse_text_table_ocr_result,
+)
 from core_ocr.impl.policy import (
     OcrCandidateGeometryProfile,
     PageTextGeometryProfile,
@@ -157,4 +161,15 @@ def test_sparse_native_table_ocr_preserves_selected_raw_result() -> None:
         "native table " * 90,
         result,
         "ocr_replace_general",
+    )
+
+
+def test_dense_low_confidence_full_page_ocr_expands_layout_search(monkeypatch) -> None:
+    monkeypatch.setattr(coordinator, "text_ocr_quality_score", lambda text: 0.10)
+    candidate = OcrCandidate("full_page_simple", OcrTextResult("table " * 1_000, 61))
+
+    assert should_expand_weak_full_page_ocr_candidates(
+        cast(Any, _NativeTextPage()),
+        cast(Any, SimpleNamespace(source="full_page_image")),
+        candidate,
     )

@@ -7873,6 +7873,8 @@ def should_expand_weak_full_page_ocr_candidates(
     tokens = extracted_text_token_count(text)
     confidence = candidate.result.confidence or 0
     quality = text_ocr_quality_score(text)
+    if 900 <= tokens <= 2_000 and confidence < 75 and quality >= 0.04:
+        return True
     if tokens < 80:
         return True
     if confidence < 60:
