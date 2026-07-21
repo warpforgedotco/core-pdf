@@ -11556,6 +11556,7 @@ def append_rendered_full_page_ocr_candidates(
             and 65 <= len(getattr(page, "chars", ())) <= 120
             and bool(getattr(profile, "has_path_ops", False))
             and rendered_image.width * rendered_image.height <= 12_000_000
+            and ocr_full_page.should_try_tesseract_table_profile_ocr(primary_result)
         ):
             candidates.extend(
                 ocr_candidate_generation.line_art_text_mask_ocr_candidates(
