@@ -7303,7 +7303,7 @@ def extract_ocr_page_result(
                     fused_text,
                     rendered_output_text,
                 )
-                or clean_full_page_ocr_should_preserve_raw_text(candidate, fused_text)
+                or clean_full_page_ocr_should_preserve_raw_text(page, candidate, fused_text)
             ):
                 text = fused_text
                 output_lines = ()
@@ -7766,9 +7766,19 @@ def dense_sparse_layout_render_drops_material_text(
 
 
 def clean_full_page_ocr_should_preserve_raw_text(
+    page: PageExtractionHost,
     candidate: OcrCandidate,
     text: str,
 ) -> bool:
+    if candidate.name == "full_page_auto_psm3":
+        try:
+            profile = page.get_page_profile()
+        except Exception:
+            profile = None
+        if getattr(profile, "recommended_strategy", None) == "text_table":
+            tokens = extracted_text_token_count(text)
+            confidence = candidate.result.confidence or 0
+            return 20 <= tokens <= 60 and confidence >= 80 and text_ocr_quality_score(text) <= 0.20
     if candidate.name != "full_page_simple":
         return False
     if extracted_text_token_count(text) < 320:
@@ -11633,6 +11643,22 @@ def append_rendered_full_page_ocr_candidates(
                 alternate_result,
                 rendered_image,
             )
+            if getattr(profile, "recommended_strategy", None) == "text_table":
+                auto_result = (
+                    ocr_session.image_to_text_result(rendered_image, psm=3)
+                    if ocr_session is not None
+                    else ocr_execution.ocr_image_to_text_result_with_psm_timeout(
+                        rendered_image,
+                        psm=3,
+                        timeout=timeout,
+                    )
+                )
+                append_nonempty_ocr_candidate(
+                    candidates,
+                    "full_page_auto_psm3",
+                    auto_result,
+                    rendered_image,
+                )
         if ocr_full_page.should_try_sparse_ocr(primary_result):
             sparse_result = (
                 ocr_session.image_to_text_result(

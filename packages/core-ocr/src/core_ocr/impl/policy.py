@@ -182,6 +182,13 @@ def should_replace_text_with_ocr(
     ):
         return True
     if text_tokens <= 24:
+        if should_use_short_table_psm3_ocr(
+            page,
+            candidate,
+            text_tokens=text_tokens,
+            ocr_tokens=ocr_tokens,
+        ):
+            return True
         if tiny_native_text_should_yield_to_ocr(
             text,
             ocr_text,
@@ -228,6 +235,25 @@ def should_replace_text_with_ocr(
             ocr_tokens=ocr_tokens,
         )
     )
+
+
+def should_use_short_table_psm3_ocr(
+    page: Any,
+    candidate: OcrCandidate,
+    *,
+    text_tokens: int,
+    ocr_tokens: int,
+) -> bool:
+    if str(getattr(candidate, "name", "")) != "full_page_auto_psm3":
+        return False
+    try:
+        profile = page.get_page_profile()
+    except Exception:
+        return False
+    if getattr(profile, "recommended_strategy", None) != "text_table":
+        return False
+    confidence = candidate.result.confidence or 0
+    return 12 <= text_tokens <= 24 and text_tokens < ocr_tokens <= 60 and confidence >= 80
 
 
 def should_preserve_native_text_against_rendered_page_ocr(
