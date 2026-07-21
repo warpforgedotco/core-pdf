@@ -124,7 +124,7 @@ def ocr_render_dpi_candidates_for_page(
     if strategy == "text_table":
         return (250, 300)
     if strategy == "vector_or_table":
-        return (250, 300)
+        return (250, 300, 400)
     if strategy == "image_or_ocr":
         dimensions = ocr_page_dimensions_points(page)
         if dimensions is not None and dimensions[1] > dimensions[0]:
