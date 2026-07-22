@@ -14272,11 +14272,7 @@ def extract_page_text(page: PageExtractionHost) -> str:
         if ocr_enabled or vector_text or schematic_consensus_candidates
         else None
     )
-    if (
-        preserved_raw_ocr_text
-        and region_classification is not None
-        and region_classification.kind == "schematic"
-    ):
+    if region_classification is not None and region_classification.kind == "schematic":
         text = ocr_schematic.remove_schematic_ocr_artifact_tokens(text)
     if region_classification is not None and region_classification.kind == "dense_table":
         text = remove_dense_table_ocr_artifact_tokens(text)
