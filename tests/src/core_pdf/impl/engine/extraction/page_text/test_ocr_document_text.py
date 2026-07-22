@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
-from core_ocr.impl import coordinator, schematic
+from core_ocr.impl import coordinator, schematic, text_analysis
 
 from core_pdf import PdfDocument
 
@@ -83,3 +83,11 @@ def test_dense_table_cleanup_removes_form_mark_artifacts() -> None:
     text = "Label ~ | *\nValue 123"
 
     assert coordinator.remove_dense_table_ocr_artifact_tokens(text) == "Label\nValue 123"
+
+
+def test_chart_row_repair_joins_split_first_numeric_value() -> None:
+    text = "2003 3.007 741 60,420\n2004 935 592 12,526\nHeader 3.007 741"
+
+    assert text_analysis.repair_year_prefixed_chart_numeric_rows(text) == (
+        "2003 3,007,741 60,420\n2004 935,592 12,526\nHeader 3.007 741"
+    )

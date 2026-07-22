@@ -14276,6 +14276,7 @@ def extract_page_text(page: PageExtractionHost) -> str:
             text = supplemented_text
             final_output_lines = ()
     text = ocr_text_analysis.repair_formula_control_delimiters(text)
+    text = ocr_text_analysis.repair_year_prefixed_chart_numeric_rows(text)
     token_repair_support_texts: list[str] = [
         text,
         render_resolved_text_lines(native_output_lines),
