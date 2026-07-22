@@ -725,16 +725,22 @@ def schematic_ocr_text_candidates_supplement(
     support_text: str,
     *,
     coverage_lines: tuple[TextGeometryLine, ...] = (),
+    allow_rendered_candidates: bool = False,
 ) -> str:
     if not text or not candidates or not support_text:
         return text
-    if not vector_text_supports_schematic_tiled_ocr(support_text):
+    has_vector_support = vector_text_supports_schematic_tiled_ocr(support_text)
+    if not has_vector_support and not allow_rendered_candidates:
         return text
     ordered_candidates = sorted(
         (
             candidate
             for candidate in candidates
-            if candidate.name.startswith("rendered_page_") and candidate.name.endswith("_tiled")
+            if candidate.name.startswith("rendered_page_")
+            and (
+                (has_vector_support and candidate.name.endswith("_tiled"))
+                or allow_rendered_candidates
+            )
         ),
         key=lambda candidate: ocr_selection.ocr_candidate_score(
             candidate, support_text=support_text
@@ -749,6 +755,10 @@ def schematic_ocr_text_candidates_supplement(
         support_text,
         coverage_lines=coverage_lines,
     )
+    if allow_rendered_candidates:
+        additions = [
+            entry for entry in additions if entry.token.strip() in {"1", "2", "+", "-", "–", "—"}
+        ]
     if not additions:
         return text
     supplement_text = render_positioned_schematic_supplement(additions)

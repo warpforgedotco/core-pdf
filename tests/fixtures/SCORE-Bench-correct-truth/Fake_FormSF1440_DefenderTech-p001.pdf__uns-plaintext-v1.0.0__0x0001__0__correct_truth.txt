@@ -1,0 +1,152 @@
+--------------------------------------------------- Unstructured Plain Text Format 1.0.4
+--------------------------------------------------- Unstructured Form Begin
+
+--------------------------------------------------- Unstructured Title Begin
+Application for Partial Payment
+--------------------------------------------------- Unstructured Title End
+
+--------------------------------------------------- Unstructured Sub-Title Begin
+OMB Control Number: 9000-0012
+Expiration Date: 2/28/2026
+--------------------------------------------------- Unstructured Sub-Title End
+
+--------------------------------------------------- Unstructured Sub-Title Begin
+For Use by Prime Contractor or Subcontractor Under Contracts Terminated for the Convenience of the Government.
+--------------------------------------------------- Unstructured Sub-Title End
+
+This Application Applies to (Check one) [] A Prime Contract with the Government
+--------------------------------------------------- Unstructured Handwriting Begin
+[x]
+--------------------------------------------------- Unstructured Handwriting End
+Subcontract or Purchase Order
+Subcontract or Purchase Order Number(s)
+--------------------------------------------------- Unstructured Handwriting Begin
+427918972
+--------------------------------------------------- Unstructured Handwriting End
+--------------------------------------------------- Unstructured Sub-Title Begin
+Contractor Who Sent Notice of Termination
+--------------------------------------------------- Unstructured Sub-Title End
+Name
+--------------------------------------------------- Unstructured Handwriting Begin
+Uber Defense Systems
+--------------------------------------------------- Unstructured Handwriting End
+Address (Include ZIP Code)
+--------------------------------------------------- Unstructured Handwriting Begin
+1042 Chain Bridge Rd, Fairfax, VA 22030
+--------------------------------------------------- Unstructured Handwriting End
+
+--------------------------------------------------- Unstructured Sub-Title Begin
+If Contractor has Guaranteed Loans or has
+Assigned Moneys due Under the Contract, Give
+the Following:
+--------------------------------------------------- Unstructured Sub-Title End
+Name and Address of Financing Institution
+(Include ZIP Code) ___
+Name and Address of Guarantor (Include ZIP Code) ___
+Name and Address of Assignee (Include ZIP Code) ___
+Applicant
+--------------------------------------------------- Unstructured Handwriting Begin
+Defender Tech LLC
+--------------------------------------------------- Unstructured Handwriting End
+Street Address
+--------------------------------------------------- Unstructured Handwriting Begin
+4411 Blackwood St
+--------------------------------------------------- Unstructured Handwriting End
+City and State (Include ZIP Code)
+--------------------------------------------------- Unstructured Handwriting Begin
+Denver, CO 80414
+--------------------------------------------------- Unstructured Handwriting End
+Name of Government Agency
+--------------------------------------------------- Unstructured Handwriting Begin
+Department of Defense
+--------------------------------------------------- Unstructured Handwriting End
+Government Prime Contract Number
+--------------------------------------------------- Unstructured Handwriting Begin
+81597234
+--------------------------------------------------- Unstructured Handwriting End
+Contractor's Reference Number
+--------------------------------------------------- Unstructured Handwriting Begin
+848922
+--------------------------------------------------- Unstructured Handwriting End
+Effective Date of Termination
+--------------------------------------------------- Unstructured Handwriting Begin
+Oct 31, 2025
+--------------------------------------------------- Unstructured Handwriting End
+Date of this Application
+--------------------------------------------------- Unstructured Handwriting Begin
+Nov 7, 2025
+--------------------------------------------------- Unstructured Handwriting End
+Amount Requested $
+--------------------------------------------------- Unstructured Handwriting Begin
+50,000
+--------------------------------------------------- Unstructured Handwriting End
+Application Number Under this Termination
+--------------------------------------------------- Unstructured Handwriting Begin
+2271
+--------------------------------------------------- Unstructured Handwriting End
+--------------------------------------------------- Unstructured Caption Begin
+Section I - Status of Contract or Order at Effective Date of Termination
+--------------------------------------------------- Unstructured Caption End
+
+
+--------------------------------------------------- Unstructured Table Begin
+Products Covered by Terminated Contract or Purchase Order (a) Finished Unfinished or Not Commenced Total Covered by Contract or Order (g)
+Previously Shipped and Invoiced (b) On Hand
+Payment to be Received Through Invoicing (c) Included in this Application (d) To be Completed (e) Not be Completed (f)
+--------------------------------------------------- Unstructured Handwriting Begin
+Smart Vest
+--------------------------------------------------- Unstructured Handwriting End
+Quantity
+--------------------------------------------------- Unstructured Handwriting Begin
+50
+--------------------------------------------------- Unstructured Handwriting End
+--------------------------------------------------- Unstructured Handwriting Begin
+150
+--------------------------------------------------- Unstructured Handwriting End
+--------------------------------------------------- Unstructured Handwriting Begin
+200
+--------------------------------------------------- Unstructured Handwriting End
+$
+--------------------------------------------------- Unstructured Handwriting Begin
+12,500
+--------------------------------------------------- Unstructured Handwriting End
+--------------------------------------------------- Unstructured Handwriting Begin
+37,500
+--------------------------------------------------- Unstructured Handwriting End
+--------------------------------------------------- Unstructured Handwriting Begin
+50,000
+--------------------------------------------------- Unstructured Handwriting End
+Quantity
+$
+Quantity
+$
+--------------------------------------------------- Unstructured Table End
+
+--------------------------------------------------- Unstructured Caption Begin
+Section II - Applicant's Own Termination Charges (Exclusive of its Subcontractors' Charges)
+--------------------------------------------------- Unstructured Caption End
+
+Settlement [] Attached
+--------------------------------------------------- Unstructured Handwriting Begin
+[x]
+--------------------------------------------------- Unstructured Handwriting End
+Previously Submitted
+
+--------------------------------------------------- Unstructured Table Begin
+Number Item Charges as Listed in Settlement Proposal
+1. Acceptable furnished Product (at contract price) $
+--------------------------------------------------- Unstructured Handwriting Begin
+50,000
+--------------------------------------------------- Unstructured Handwriting End
+2. Work-in-Process
+3. Raw Materials, Purchased Parts, and Supplies
+--------------------------------------------------- Unstructured Table End
+--------------------------------------------------- Unstructured Form End
+
+
+--------------------------------------------------- Unstructured Page Footer Begin
+Authorized For Local Reproduction
+Previous Edition Is Not Usable
+STANDARD FORM 1440 (REV. 10/2023)
+Prescribed by GSA-FAR (48 CFR) 53.249(a)(7)
+--------------------------------------------------- Unstructured Page Footer End

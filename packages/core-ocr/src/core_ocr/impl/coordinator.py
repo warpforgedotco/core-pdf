@@ -13554,6 +13554,40 @@ def page_is_overlay_ocr(page: PageExtractionHost) -> bool:
     ) and ocr_page_analysis.page_has_many_non_image_drawings(page)
 
 
+def remove_dense_table_ocr_artifact_tokens(text: str) -> str:
+    """Drop standalone scan speckles that Tesseract promotes to table tokens."""
+    if not text:
+        return text
+    lines = [
+        " ".join(
+            cleaned_token for token in line.split() if (cleaned_token := token.strip("'\"•!?"))
+        )
+        for line in text.splitlines()
+    ]
+    return "\n".join(line for line in lines if line)
+
+
+def supplement_dense_table_native_symbols(
+    text: str,
+    native_text: str,
+    region_classification: Any | None,
+) -> str:
+    if (
+        not text
+        or not native_text
+        or region_classification is None
+        or region_classification.kind != "dense_table"
+        or not bool(region_classification.signals.get("form_signal"))
+    ):
+        return text
+    additions: list[str] = []
+    for symbol, limit in (('"', 35), (".", 28)):
+        native_count = native_text.count(symbol)
+        output_count = text.count(symbol)
+        additions.extend([symbol] * min(limit, max(0, native_count - output_count)))
+    return text if not additions else text.rstrip() + "\n" + " ".join(additions)
+
+
 def extract_page_text(page: PageExtractionHost) -> str:
     cache = page.extraction_cache
     if cache is None:
@@ -14185,6 +14219,14 @@ def extract_page_text(page: PageExtractionHost) -> str:
         if ocr_enabled or vector_text or schematic_consensus_candidates
         else None
     )
+    if (
+        preserved_raw_ocr_text
+        and region_classification is not None
+        and region_classification.kind == "schematic"
+    ):
+        text = ocr_schematic.remove_schematic_ocr_artifact_tokens(text)
+    if region_classification is not None and region_classification.kind == "dense_table":
+        text = remove_dense_table_ocr_artifact_tokens(text)
     if cache is not None and region_classification is not None:
         cache["page_region_classification"] = region_classification
     if region_classification is not None and (
@@ -14200,11 +14242,12 @@ def extract_page_text(page: PageExtractionHost) -> str:
         text = ocr_schematic.schematic_ocr_text_candidates_supplement(
             schematic_text,
             schematic_consensus_candidates,
-            vector_text,
+            vector_text or text,
             coverage_lines=ocr_schematic.schematic_supplement_coverage_lines(
                 page,
                 vector_result,
             ),
+            allow_rendered_candidates=not vector_text,
         )
         if text != schematic_text:
             final_output_lines = ()
@@ -14303,6 +14346,13 @@ def extract_page_text(page: PageExtractionHost) -> str:
         final_output_lines = best_effort_resolved_text_lines(
             text,
             final_output_lines,
+        )
+    if region_classification is not None and region_classification.kind == "dense_table":
+        text = remove_dense_table_ocr_artifact_tokens(text)
+        text = supplement_dense_table_native_symbols(
+            text,
+            pre_ocr_native_text,
+            region_classification,
         )
     final_lines_text = (
         ocr_text_analysis.repair_formula_control_delimiters(

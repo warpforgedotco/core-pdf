@@ -111,7 +111,16 @@ def should_try_alternate_ocr(result: OcrTextResult) -> bool:
     if tokens < 80:
         return True
     confidence = result.confidence
-    return confidence is None or confidence < 70
+    if confidence is None or confidence < 70:
+        return True
+    # Formula-heavy scanned pages can have deceptively high mean confidence
+    # while still producing systematic punctuation and glyph substitutions.
+    # Keep the extra PSM passes limited to the common patent-page size range.
+    return (
+        400 <= tokens <= 900
+        and text_ocr_quality_score(result.text) >= 0.34
+        and scanned_ocr_artifact_score(result.text) >= 0.02
+    )
 
 
 def select_targeted_thresholding_ocr_result(
