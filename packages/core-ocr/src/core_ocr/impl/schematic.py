@@ -1514,6 +1514,14 @@ def schematic_base_supplement_cluster_is_accepted(
 ) -> bool:
     evidence_types = {entry.evidence_type for entry in cluster.entries}
     source_count = len({entry.source for entry in cluster.entries if entry.source})
+    if (
+        cluster.token_type == "pin"
+        and len(cluster.entries) == 1
+        and cluster.confidence is not None
+        and cluster.confidence >= 94
+        and any(entry.source.endswith("_tiled") for entry in cluster.entries)
+    ):
+        return True
     if {"word", "symbol"}.issubset(evidence_types):
         return True
     if (
@@ -1969,9 +1977,6 @@ def schematic_row_supplement_entry_map(
     entries: dict[str, list[SchematicSupplementEntry]] = defaultdict(list)
     for row in rows:
         raw_text = str(row.get("text", ""))
-        confidence = ocr_iterator_layout.iterator_row_confidence(row)
-        if confidence is None:
-            continue
         token = schematic_row_supplement_display_token(
             raw_text,
             context,
@@ -1984,6 +1989,11 @@ def schematic_row_supplement_entry_map(
         if key is None:
             continue
         token_type = classify_schematic_token_type(token)
+        confidence = ocr_iterator_layout.iterator_row_confidence(row)
+        if confidence is None and token_type == "pin":
+            confidence = schematic_pin_choice_confidence(row, token)
+        if confidence is None:
+            continue
         min_confidence = schematic_supplement_entry_min_confidence(
             token_type,
             value_min_confidence=value_min_confidence,
@@ -2004,6 +2014,26 @@ def schematic_row_supplement_entry_map(
     for key, values in list(entries.items()):
         entries[key] = sorted(values, key=schematic_supplement_entry_order_key)
     return entries
+
+
+def schematic_pin_choice_confidence(row: Any, token: str) -> int | None:
+    choices = row.get("choices", ())
+    if not isinstance(choices, (tuple, list)):
+        return None
+    target = schematic_token_core(token).casefold()
+    confidences: list[int] = []
+    for choice in choices:
+        choice_text = schematic_token_core(str(getattr(choice, "text", ""))).casefold()
+        if choice_text != target:
+            continue
+        confidence = getattr(choice, "confidence", None)
+        if confidence is None:
+            continue
+        try:
+            confidences.append(int(round(float(confidence))))
+        except (TypeError, ValueError):
+            continue
+    return max(confidences, default=None)
 
 
 def schematic_supplement_entry_min_confidence(

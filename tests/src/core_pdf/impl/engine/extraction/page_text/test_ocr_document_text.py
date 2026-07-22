@@ -3,6 +3,7 @@ from typing import Any, cast
 
 import pytest
 from core_ocr.impl import coordinator, schematic, text_analysis
+from core_ocr.impl.types import OcrTextChoice
 
 from core_pdf import PdfDocument
 
@@ -77,6 +78,16 @@ def test_rendered_schematic_supplement_requires_typed_evidence(
     )
 
     assert schematic.rendered_schematic_addition_is_safe(entry) is expected
+
+
+def test_schematic_pin_choice_confidence_recovers_tiny_labels() -> None:
+    row = {
+        "text": "2",
+        "conf": 19,
+        "choices": (OcrTextChoice("2", 96),),
+    }
+
+    assert schematic.schematic_pin_choice_confidence(row, "2") == 96
 
 
 def test_dense_table_cleanup_removes_form_mark_artifacts() -> None:
