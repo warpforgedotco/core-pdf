@@ -11511,7 +11511,17 @@ def append_rendered_full_page_ocr_candidates(
     vector_diagram_sparse = (
         getattr(profile, "recommended_strategy", None) in {"vector_or_table", "text_table"}
         and bool(getattr(profile, "has_path_ops", False))
-        and not bool(getattr(profile, "has_text_showing_ops", True))
+        and (
+            not bool(getattr(profile, "has_text_showing_ops", True))
+            or (
+                getattr(profile, "recommended_strategy", None) == "text_table"
+                and len(getattr(page, "chars", ())) <= 20
+                and any(
+                    stream.decoded_bytes >= 150_000
+                    for stream in getattr(profile, "content_streams", ())
+                )
+            )
+        )
     )
     for dpi in dpi_candidates:
         source = f"rendered_page_{dpi}dpi"

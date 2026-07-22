@@ -37,3 +37,16 @@ def test_document_extract_preserves_ocr_text_without_resolved_geometry(
     assert expected in page_text
     assert expected in document_text
     assert resolved_lines
+
+
+def test_dense_sparse_text_schematic_uses_tiled_ocr(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CORE_PDF_OCR", "1")
+
+    fixture = SCORE_BENCH_SRC / "VCAs_REV2_SCHEMATIC-p002.pdf"
+    with PdfDocument.open(fixture) as document:
+        page = cast(Any, document.pages[0])
+        text = page.extract_text()
+        diagnostics = page.extraction_cache["ocr_candidate_diagnostics"]
+
+    assert text
+    assert any(candidate["name"].endswith("_tiled") for candidate in diagnostics)
