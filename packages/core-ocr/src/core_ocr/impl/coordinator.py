@@ -13570,7 +13570,7 @@ def remove_dense_table_ocr_artifact_tokens(text: str) -> str:
         return text
     lines = [
         " ".join(
-            cleaned_token for token in line.split() if (cleaned_token := token.strip("'\"•!?"))
+            cleaned_token for token in line.split() if (cleaned_token := token.strip("'\"•!?~|*"))
         )
         for line in text.splitlines()
     ]

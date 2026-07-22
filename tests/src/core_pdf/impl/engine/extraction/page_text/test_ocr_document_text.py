@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
-from core_ocr.impl import schematic
+from core_ocr.impl import coordinator, schematic
 
 from core_pdf import PdfDocument
 
@@ -77,3 +77,9 @@ def test_rendered_schematic_supplement_requires_typed_evidence(
     )
 
     assert schematic.rendered_schematic_addition_is_safe(entry) is expected
+
+
+def test_dense_table_cleanup_removes_form_mark_artifacts() -> None:
+    text = "Label ~ | *\nValue 123"
+
+    assert coordinator.remove_dense_table_ocr_artifact_tokens(text) == "Label\nValue 123"
