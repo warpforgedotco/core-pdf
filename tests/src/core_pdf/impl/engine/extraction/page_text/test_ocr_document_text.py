@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
+from core_ocr.impl import schematic
 
 from core_pdf import PdfDocument
 
@@ -50,3 +51,29 @@ def test_dense_sparse_text_schematic_uses_tiled_ocr(monkeypatch: pytest.MonkeyPa
 
     assert text
     assert any(candidate["name"].endswith("_tiled") for candidate in diagnostics)
+
+
+@pytest.mark.parametrize(
+    ("token_type", "evidence_count", "confidence", "expected"),
+    [
+        ("rail", 2, 60, True),
+        ("reference", 1, 90, True),
+        ("rail", 1, 89, False),
+        (None, 3, 95, False),
+    ],
+)
+def test_rendered_schematic_supplement_requires_typed_evidence(
+    token_type: str | None,
+    evidence_count: int,
+    confidence: int,
+    expected: bool,
+) -> None:
+    entry = schematic.SchematicSupplementEntry(
+        token="gnd",
+        key="gnd",
+        token_type=token_type,
+        evidence_count=evidence_count,
+        confidence=confidence,
+    )
+
+    assert schematic.rendered_schematic_addition_is_safe(entry) is expected

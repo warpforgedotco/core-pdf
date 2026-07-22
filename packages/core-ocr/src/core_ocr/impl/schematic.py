@@ -756,9 +756,7 @@ def schematic_ocr_text_candidates_supplement(
         coverage_lines=coverage_lines,
     )
     if allow_rendered_candidates:
-        additions = [
-            entry for entry in additions if entry.token.strip() in {"1", "2", "+", "-", "–", "—"}
-        ]
+        additions = [entry for entry in additions if rendered_schematic_addition_is_safe(entry)]
     if not additions:
         return text
     supplement_text = render_positioned_schematic_supplement(additions)
@@ -778,6 +776,14 @@ def schematic_ocr_text_candidates_supplement(
         if recall_text:
             supplemented_text = supplemented_text.rstrip() + "\n" + recall_text
     return supplemented_text
+
+
+def rendered_schematic_addition_is_safe(entry: SchematicSupplementEntry) -> bool:
+    if entry.token.strip() in {"1", "2", "+", "-", "–", "—"}:
+        return True
+    return entry.token_type in {"pin", "rail", "reference", "opamp_label"} and (
+        entry.evidence_count >= 2 or (entry.confidence or 0) >= 90
+    )
 
 
 def schematic_token_consensus_graph_candidate(
