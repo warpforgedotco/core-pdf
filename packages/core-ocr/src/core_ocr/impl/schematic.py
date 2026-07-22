@@ -781,6 +781,8 @@ def schematic_ocr_text_candidates_supplement(
 def rendered_schematic_addition_is_safe(entry: SchematicSupplementEntry) -> bool:
     if entry.token.strip() in {"1", "2", "+", "-", "–", "—"}:
         return True
+    if entry.token_type == "value" and (entry.confidence or 0) >= 85 and "tiled" in entry.source:
+        return True
     return entry.token_type in {"pin", "rail", "reference", "opamp_label"} and (
         entry.evidence_count >= 2 or (entry.confidence or 0) >= 90
     )
