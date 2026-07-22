@@ -7261,6 +7261,12 @@ def extract_ocr_page_result(
             candidate for candidate in candidates if not candidate.name.startswith("verification_")
         ]
         candidate = ocr_selection.select_ocr_candidate(candidates, support_text=vector_text)
+        candidate = prefer_schematic_tiled_ocr_candidate(
+            page,
+            candidate,
+            candidates,
+            vector_text=vector_text,
+        )
         record_ocr_candidate_diagnostics(
             page,
             candidates,
@@ -7327,6 +7333,43 @@ def extract_ocr_page_result(
     )
     record_ocr_deskew_diagnostics(page, ocr_session)
     return result
+
+
+def prefer_schematic_tiled_ocr_candidate(
+    page: PageExtractionHost,
+    selected: OcrCandidate | None,
+    candidates: list[OcrCandidate],
+    *,
+    vector_text: str,
+) -> OcrCandidate | None:
+    """Use tiled OCR as the schematic supplement source when the page warrants it."""
+    if selected is None or vector_text:
+        return selected
+    tiled = [
+        candidate
+        for candidate in candidates
+        if candidate.name.startswith("rendered_page_")
+        and candidate.name.endswith("_tiled")
+        and candidate.result.text
+    ]
+    if not tiled:
+        return selected
+    classification = classify_page_region(
+        selected.result.text,
+        vector_text=vector_text,
+        candidates=candidates,
+        page=page,
+        media_box=page.media_box,
+    )
+    if classification.kind != "schematic":
+        return selected
+    return max(
+        tiled,
+        key=lambda candidate: ocr_selection.ocr_candidate_score(
+            candidate,
+            support_text=vector_text,
+        ),
+    )
 
 
 def record_ocr_candidate_diagnostics(
