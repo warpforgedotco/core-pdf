@@ -40,6 +40,22 @@ OCR_TARGETED_THRESHOLDING_PROFILES = (
 )
 
 
+def should_try_vector_diagram_thresholding_ocr(
+    *,
+    strategy: str | None,
+    dpi: int,
+    max_render_dpi: int | None,
+    vector_diagram_sparse: bool,
+) -> bool:
+    """Use alternate binarization only for the vector-table class it improves."""
+    return bool(
+        strategy == "text_table"
+        and vector_diagram_sparse
+        and max_render_dpi is not None
+        and dpi == max_render_dpi
+    )
+
+
 def ocr_image_to_text_with_timeout(image: OcrImage, timeout: float | None) -> str:
     return ocr_image_to_text_result_with_timeout(image, timeout).text
 

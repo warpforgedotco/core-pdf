@@ -18,7 +18,7 @@ from core_ocr.impl.types import (
 )
 
 OCR_RENDER_DPI_CANDIDATES = (300, 400)
-OCR_RENDER_MAX_DPI = 400
+OCR_RENDER_MAX_DPI = 475
 OCR_RENDER_TILE_MAX_SIDE_PIXELS = 8192
 OCR_RENDER_TILE_OVERLAP_PIXELS = 256
 OCR_DENSE_VECTOR_RENDER_TILE_MIN_TOKENS = 160
@@ -122,8 +122,18 @@ def ocr_render_dpi_candidates_for_page(
         # the higher-resolution pass is still weak.
         return (300, 250)
     if strategy == "text_table":
+        if dense_vector_text_table_page(page, profile=profile):
+            return (300, 400, 475)
         return (250, 300)
     if strategy == "vector_or_table":
+        # Path-heavy schematics often contain labels below the native raster's
+        # effective x-height.  Keep the ordinary passes, then add a supersampled
+        # candidate so glyph strokes survive rasterization and tiling.  Very
+        # large sheets are already expensive and tend to have larger labels;
+        # reserve the extra pass for standard-size pages where glyphs are small.
+        dimensions = ocr_page_dimensions_points(page)
+        if dimensions is not None and max(dimensions) <= 900.0:
+            return (250, 300, 400, 475)
         return (250, 300, 400)
     if strategy == "image_or_ocr":
         dimensions = ocr_page_dimensions_points(page)
@@ -131,6 +141,26 @@ def ocr_render_dpi_candidates_for_page(
             return (300,)
         return (400, 300)
     return ocr_render_dpi_candidates()
+
+
+def dense_vector_text_table_page(
+    page: OcrRenderablePage,
+    *,
+    profile: OcrPageProfile | None = None,
+) -> bool:
+    if profile is None:
+        try:
+            profile = page.get_page_profile()
+        except Exception:
+            return False
+    return bool(
+        profile.recommended_strategy == "text_table"
+        and len(getattr(page, "chars", ())) <= 20
+        and bool(getattr(profile, "has_path_ops", False))
+        and any(
+            stream.decoded_bytes >= 100_000 for stream in getattr(profile, "content_streams", ())
+        )
+    )
 
 
 def rendered_page_for_ocr_render(

@@ -59,6 +59,13 @@ class CaseScore:
     error: str | None = None
     missing_top: list[tuple[str, int]] | None = None
     extra_top: list[tuple[str, int]] | None = None
+    candidate_analysis: list[dict[str, Any]] | None = None
+    selected_candidate_cct: float | None = None
+    best_candidate_name: str | None = None
+    best_candidate_cct: float | None = None
+    candidate_oracle_gap: float | None = None
+    selected_to_final_cct: float | None = None
+    best_to_final_cct: float | None = None
 
 
 @dataclass(frozen=True)
@@ -151,6 +158,7 @@ def score_case(case: ScoreBenchCase) -> CaseScore:
             text_started = perf_counter()
             predicted_text = extract_document_text(document)
             text_elapsed = perf_counter() - text_started
+            candidate_analysis = score_document_candidates(document, gt_text)
             table_started = perf_counter()
             predicted_tables = document.extract_tables(include_span_info=True)
             table_elapsed = perf_counter() - table_started
@@ -161,6 +169,21 @@ def score_case(case: ScoreBenchCase) -> CaseScore:
         cer, wer = score_ordered_errors(gt_text, predicted_text)
         table_truth = json.loads(case.table_gt.read_text(encoding="utf-8"))
         table_structure_f1, table_content_f1 = score_tables(table_truth, predicted_tables)
+        selected_candidate = next(
+            (candidate for candidate in candidate_analysis if candidate["selected"]),
+            None,
+        )
+        best_candidate = max(
+            candidate_analysis,
+            key=lambda candidate: (candidate["cct"], candidate["precision"]),
+            default=None,
+        )
+        selected_candidate_cct = (
+            cast(float, selected_candidate["cct"]) if selected_candidate is not None else None
+        )
+        best_candidate_cct = (
+            cast(float, best_candidate["cct"]) if best_candidate is not None else None
+        )
         score = CaseScore(
             stem=case.stem,
             status="ok",
@@ -181,6 +204,23 @@ def score_case(case: ScoreBenchCase) -> CaseScore:
             table_elapsed_seconds=table_elapsed,
             missing_top=token_diff["missing_top"][:5],
             extra_top=token_diff["extra_top"][:5],
+            candidate_analysis=candidate_analysis or None,
+            selected_candidate_cct=selected_candidate_cct,
+            best_candidate_name=(
+                cast(str, best_candidate["name"]) if best_candidate is not None else None
+            ),
+            best_candidate_cct=best_candidate_cct,
+            candidate_oracle_gap=(
+                best_candidate_cct - selected_candidate_cct
+                if best_candidate_cct is not None and selected_candidate_cct is not None
+                else None
+            ),
+            selected_to_final_cct=(
+                cct - selected_candidate_cct if selected_candidate_cct is not None else None
+            ),
+            best_to_final_cct=(
+                best_candidate_cct - cct if best_candidate_cct is not None else None
+            ),
         )
         return score
     except Exception as exc:
@@ -205,6 +245,38 @@ def extract_document_text(document: PdfDocument) -> str:
     return document.extract().text
 
 
+def score_document_candidates(document: PdfDocument, gt_text: str) -> list[dict[str, Any]]:
+    """Score opt-in raw OCR candidates against the case's content ground truth."""
+    scored: list[dict[str, Any]] = []
+    for page_number, page in enumerate(document.pages, start=1):
+        cache = getattr(page, "extraction_cache", None)
+        records = cache.get("ocr_candidate_analysis", ()) if cache is not None else ()
+        for record in records:
+            text = record.get("text")
+            if not isinstance(text, str):
+                continue
+            cct, found, added, precision, gt_count, predicted_count, matched = score_tokens(
+                gt_text, text
+            )
+            cer, wer = score_ordered_errors(gt_text, text)
+            scored.append(
+                {key: value for key, value in record.items() if key != "text"}
+                | {
+                    "page": page_number,
+                    "cct": cct,
+                    "recall": found,
+                    "added": added,
+                    "precision": precision,
+                    "gt_tokens": gt_count,
+                    "predicted_tokens": predicted_count,
+                    "matched_tokens": matched,
+                    "cer": cer,
+                    "wer": wer,
+                }
+            )
+    return scored
+
+
 def score_cases(
     cases: list[ScoreBenchCase],
     *,
@@ -212,11 +284,13 @@ def score_cases(
     on_case_started: Callable[[int, ScoreBenchCase], None] | None = None,
     jobs: int = 1,
     ocr_enabled: bool = True,
+    candidate_analysis: bool = False,
 ) -> list[CaseScore]:
     if jobs < 1:
         raise ValueError("--jobs must be at least 1")
     os.environ.setdefault("OMP_THREAD_LIMIT", "1")
     os.environ["CORE_PDF_OCR"] = "1" if ocr_enabled else "0"
+    os.environ["CORE_PDF_CANDIDATE_ANALYSIS"] = "1" if candidate_analysis else "0"
     if jobs == 1 or len(cases) <= 1:
         scores = []
         for case_number, case in enumerate(cases, start=1):
@@ -615,6 +689,14 @@ class ScoreBenchUI:
                 f"{format_ratio(score.table_structure_f1)} / "
                 f"{format_ratio(score.table_content_f1 or 0.0)}",
             )
+        if score.best_candidate_name is not None:
+            table.add_row(
+                "OCR oracle",
+                f"{score.best_candidate_name} @ {format_ratio(score.best_candidate_cct or 0.0)}",
+            )
+        if score.candidate_oracle_gap is not None:
+            table.add_row("Selection gap", format_ratio(score.candidate_oracle_gap))
+            table.add_row("Best → final", format_ratio(score.best_to_final_cct or 0.0))
         table.add_row("Missing", format_focus_tokens(score.missing_top))
         table.add_row("Extra", format_focus_tokens(score.extra_top))
         if score.error is not None:
@@ -1119,6 +1201,11 @@ def main() -> int:
     )
     parser.add_argument("--json-output", type=Path, default=None)
     parser.add_argument(
+        "--candidate-analysis",
+        action="store_true",
+        help="Score every raw OCR candidate and report selection/oracle gaps.",
+    )
+    parser.add_argument(
         "--full-results",
         action="store_true",
         help="Print the full sorted results table in addition to the capped summary tables.",
@@ -1173,6 +1260,7 @@ def main() -> int:
                     ),
                     jobs=args.jobs,
                     ocr_enabled=not args.native,
+                    candidate_analysis=args.candidate_analysis,
                 )
         else:
             scores = score_cases(
@@ -1185,6 +1273,7 @@ def main() -> int:
                 ),
                 jobs=args.jobs,
                 ocr_enabled=not args.native,
+                candidate_analysis=args.candidate_analysis,
             )
     except ValueError as exc:
         CONSOLE.print(

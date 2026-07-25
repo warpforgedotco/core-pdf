@@ -1,5 +1,6 @@
 from pathlib import Path
 from runpy import run_path
+from types import SimpleNamespace
 
 import pytest
 
@@ -61,3 +62,21 @@ def test_score_case_reports_native_and_ocr_tracks(
     assert score_case(case).track == "native"
     monkeypatch.setenv("CORE_PDF_OCR", "1")
     assert score_case(case).track == "ocr"
+
+
+def test_score_document_candidates_identifies_oracle_gap() -> None:
+    page = SimpleNamespace(
+        extraction_cache={
+            "ocr_candidate_analysis": (
+                {"name": "selected", "selected": True, "text": "alpha noise"},
+                {"name": "oracle", "selected": False, "text": "alpha beta"},
+            )
+        }
+    )
+    document = SimpleNamespace(pages=[page])
+
+    candidates = score_bench["score_document_candidates"](document, "alpha beta")
+
+    assert candidates[0]["cct"] == pytest.approx(0.5)
+    assert candidates[1]["cct"] == 1.0
+    assert candidates[1]["wer"] == 0.0
