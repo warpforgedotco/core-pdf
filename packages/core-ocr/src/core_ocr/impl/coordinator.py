@@ -13641,9 +13641,33 @@ def remove_dense_table_ocr_artifact_tokens(text: str) -> str:
         " ".join(
             cleaned_token for token in line.split() if (cleaned_token := token.strip("'\"•!?~|*"))
         )
-        for line in text.splitlines()
+        for line in (re.sub(r"\.{3,}", " ", raw_line) for raw_line in text.splitlines())
     ]
     return "\n".join(line for line in lines if line)
+
+
+def precision_prune_redundant_dense_table_text(text: str) -> str:
+    """Remove systematic OCR fragment rows already contained in fuller table rows."""
+    lines = [line for line in text.splitlines() if line.strip()]
+    if len(lines) < 12 or len(lines) > 400:
+        return text
+    token_counts = [Counter(normalized_text_tokens(line)) for line in lines]
+    redundant: set[int] = set()
+    for index, counts in enumerate(token_counts):
+        token_count = sum(counts.values())
+        if token_count < 2 or token_count > 8:
+            continue
+        if any(
+            other_index != index
+            and counts != other
+            and counts <= other
+            and sum(other.values()) > token_count
+            for other_index, other in enumerate(token_counts)
+        ):
+            redundant.add(index)
+    if len(redundant) < 6 or len(redundant) < len(lines) * 0.10:
+        return text
+    return "\n".join(line for index, line in enumerate(lines) if index not in redundant)
 
 
 def supplement_dense_table_native_symbols(
@@ -14430,6 +14454,7 @@ def extract_page_text(page: PageExtractionHost) -> str:
             pre_ocr_native_text,
             region_classification,
         )
+        text = precision_prune_redundant_dense_table_text(text)
     final_lines_text = (
         ocr_text_analysis.repair_formula_control_delimiters(
             render_resolved_text_lines(final_output_lines)

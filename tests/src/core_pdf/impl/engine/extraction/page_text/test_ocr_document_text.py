@@ -91,9 +91,31 @@ def test_schematic_pin_choice_confidence_recovers_tiny_labels() -> None:
 
 
 def test_dense_table_cleanup_removes_form_mark_artifacts() -> None:
-    text = "Label ~ | *\nValue 123"
+    text = "Label ~ | *\nCERTIFICATE....... 115\nValue 123"
 
-    assert coordinator.remove_dense_table_ocr_artifact_tokens(text) == "Label\nValue 123"
+    assert coordinator.remove_dense_table_ocr_artifact_tokens(text) == (
+        "Label\nCERTIFICATE 115\nValue 123"
+    )
+
+
+def test_dense_table_cleanup_prunes_systematic_contained_fragments() -> None:
+    complete = [f"entry {index} code {index}:4 value" for index in range(10)]
+    fragments = [f"code {index}:4" for index in range(10)]
+
+    cleaned = coordinator.precision_prune_redundant_dense_table_text(
+        "\n".join([*complete, *fragments])
+    )
+
+    assert cleaned.splitlines() == complete
+
+
+def test_dense_table_cleanup_preserves_isolated_contained_line() -> None:
+    lines = [f"entry {index} code {index}:4 value" for index in range(12)]
+    lines.append("code 1:4")
+
+    assert coordinator.precision_prune_redundant_dense_table_text("\n".join(lines)) == "\n".join(
+        lines
+    )
 
 
 def test_chart_row_repair_joins_split_first_numeric_value() -> None:
