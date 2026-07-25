@@ -193,6 +193,22 @@ def test_dense_low_confidence_full_page_ocr_expands_layout_search(monkeypatch) -
     )
 
 
+def test_dense_formula_page_expands_layout_search(monkeypatch) -> None:
+    monkeypatch.setattr(coordinator, "text_ocr_quality_score", lambda text: 0.35)
+    monkeypatch.setattr(
+        coordinator.ocr_text_analysis,
+        "ocr_text_has_dense_formula_notation",
+        lambda text: True,
+    )
+    candidate = OcrCandidate("full_page_simple", OcrTextResult("C H O 12 " * 150, 76))
+
+    assert should_expand_weak_full_page_ocr_candidates(
+        cast(Any, _NativeTextPage()),
+        cast(Any, SimpleNamespace(source="full_page_image")),
+        candidate,
+    )
+
+
 def test_empty_image_page_preserves_bounded_full_page_ocr() -> None:
     candidate = OcrCandidate("full_page_simple", OcrTextResult("label 12 " * 200, 60))
     result = OcrPageTextResult(candidate.result.text, candidate=candidate)

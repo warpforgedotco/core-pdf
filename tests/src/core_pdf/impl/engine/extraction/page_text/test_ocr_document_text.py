@@ -91,11 +91,17 @@ def test_schematic_pin_choice_confidence_recovers_tiny_labels() -> None:
 
 
 def test_dense_table_cleanup_removes_form_mark_artifacts() -> None:
-    text = "Label ~ | *\nCERTIFICATE....... 115\nValue 123"
+    text = "APPEARANCES....... 2\nEXHIBITS....... 6\nCERTIFICATE....... 115\nLabel ~ | *"
 
     assert coordinator.remove_dense_table_ocr_artifact_tokens(text) == (
-        "Label\nCERTIFICATE 115\nValue 123"
+        "APPEARANCES 2\nEXHIBITS 6\nCERTIFICATE 115\nLabel"
     )
+
+
+def test_dense_table_cleanup_preserves_dot_runs_outside_transcript_indexes() -> None:
+    text = "MASS PROPERTIES\n....................\n0.001 0.002"
+
+    assert coordinator.remove_dense_table_ocr_artifact_tokens(text) == text
 
 
 def test_dense_table_cleanup_prunes_systematic_contained_fragments() -> None:
@@ -115,6 +121,49 @@ def test_dense_table_cleanup_preserves_isolated_contained_line() -> None:
 
     assert coordinator.precision_prune_redundant_dense_table_text("\n".join(lines)) == "\n".join(
         lines
+    )
+
+
+def test_dense_table_cleanup_preserves_repeated_numeric_measurement_rows() -> None:
+    complete = [f"station {index} 100 200 300" for index in range(10)]
+    fragments = [f"100 200 {index}" for index in range(10)]
+
+    text = "\n".join([*complete, *fragments])
+
+    assert coordinator.precision_prune_redundant_dense_table_text(text) == text
+
+
+def test_archival_letter_list_repair_recovers_sequence_markers() -> None:
+    text = "\n".join(
+        [
+            "A letter from Alpha accepting membership.",
+            "A letter from Beta accepting membership.",
+            "& letter from Gamma accepting membership.",
+            "4 letter from Delta accepting membership.",
+        ]
+    )
+
+    repaired = coordinator.repair_repeated_archival_letter_list_markers(text)
+
+    assert repaired.splitlines() == [
+        "(a) A letter from Alpha accepting membership.",
+        "(b) A letter from Beta accepting membership.",
+        "(c) A letter from Gamma accepting membership.",
+        "(d) A letter from Delta accepting membership.",
+    ]
+
+
+def test_archival_letter_list_repair_ignores_isolated_phrase() -> None:
+    text = "A letter from Alpha accepting membership."
+
+    assert coordinator.repair_repeated_archival_letter_list_markers(text) == text
+
+
+def test_group_insurance_coverage_election_repair_recovers_checkboxes() -> None:
+    text = "LifefAD&D Yes No Dependent Life § Yes {1 NoLTO il Yes NoSTD 2: Yes i. No"
+
+    assert coordinator.repair_group_insurance_coverage_election_line(text) == (
+        "Life/AD&D [] Yes [] No Dependent Life [] Yes [] No LTD [] Yes [] No STD [] Yes [] No"
     )
 
 

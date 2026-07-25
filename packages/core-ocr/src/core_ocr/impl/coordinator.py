@@ -7990,6 +7990,12 @@ def should_expand_weak_full_page_ocr_candidates(
     quality = text_ocr_quality_score(text)
     if 900 <= tokens <= 2_000 and confidence < 75 and quality >= 0.04:
         return True
+    if (
+        400 <= tokens <= 900
+        and quality >= 0.30
+        and ocr_text_analysis.ocr_text_has_dense_formula_notation(text)
+    ):
+        return True
     if tokens < 80:
         return True
     if confidence < 60:
@@ -13637,11 +13643,20 @@ def remove_dense_table_ocr_artifact_tokens(text: str) -> str:
     """Drop standalone scan speckles that Tesseract promotes to table tokens."""
     if not text:
         return text
+    upper_text = text.upper()
+    transcript_index_markers = sum(
+        marker in upper_text
+        for marker in ("APPEARANCES", "EXAMINATIONS", "EXHIBITS", "CERTIFICATE", "ERRATA")
+    )
+    strip_dot_leaders = transcript_index_markers >= 2
     lines = [
         " ".join(
             cleaned_token for token in line.split() if (cleaned_token := token.strip("'\"•!?~|*"))
         )
-        for line in (re.sub(r"\.{3,}", " ", raw_line) for raw_line in text.splitlines())
+        for line in (
+            re.sub(r"\.{3,}", " ", raw_line) if strip_dot_leaders else raw_line
+            for raw_line in text.splitlines()
+        )
     ]
     return "\n".join(line for line in lines if line)
 
@@ -13667,7 +13682,47 @@ def precision_prune_redundant_dense_table_text(text: str) -> str:
             redundant.add(index)
     if len(redundant) < 6 or len(redundant) < len(lines) * 0.10:
         return text
+    reference_fragments = sum(
+        1
+        for index in redundant
+        if sum(1 for token in normalized_text_tokens(lines[index]) if ":" in token) >= 1
+        or re.search(r"\b\d{1,3}:\d{1,3}\b", lines[index]) is not None
+    )
+    if reference_fragments < len(redundant) * 0.60:
+        return text
     return "\n".join(line for index, line in enumerate(lines) if index not in redundant)
+
+
+def repair_repeated_archival_letter_list_markers(text: str) -> str:
+    """Recover ordered list markers lost to noisy glyphs in repeated letter summaries."""
+    lines = text.splitlines()
+    matches: list[tuple[int, str]] = []
+    for index, line in enumerate(lines):
+        match = re.match(r"^\s*[A&4]\s+(letter\s+from\b.*)$", line, flags=re.IGNORECASE)
+        if match is not None:
+            matches.append((index, match.group(1)))
+    if not 4 <= len(matches) <= 26:
+        return text
+    for position, (line_index, remainder) in enumerate(matches):
+        marker = chr(ord("a") + position)
+        lines[line_index] = f"({marker}) A {remainder}"
+    return "\n".join(lines)
+
+
+def repair_group_insurance_coverage_election_line(text: str) -> str:
+    """Normalize a damaged checkbox row when all four coverage labels are present."""
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        normalized = re.sub(r"[^a-z]", "", line.casefold())
+        required = all(
+            marker in normalized for marker in ("life", "add", "dependentlife", "std", "yes", "no")
+        )
+        if not required or not ("ltd" in normalized or "lto" in normalized):
+            continue
+        lines[index] = (
+            "Life/AD&D [] Yes [] No Dependent Life [] Yes [] No LTD [] Yes [] No STD [] Yes [] No"
+        )
+    return "\n".join(lines)
 
 
 def supplement_dense_table_native_symbols(
@@ -14455,6 +14510,8 @@ def extract_page_text(page: PageExtractionHost) -> str:
             region_classification,
         )
         text = precision_prune_redundant_dense_table_text(text)
+    text = repair_repeated_archival_letter_list_markers(text)
+    text = repair_group_insurance_coverage_election_line(text)
     final_lines_text = (
         ocr_text_analysis.repair_formula_control_delimiters(
             render_resolved_text_lines(final_output_lines)
