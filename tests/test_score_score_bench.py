@@ -14,6 +14,35 @@ def test_tokenize_normalizes_compatible_unicode_forms() -> None:
     assert tokenize("–12V in³ ‘quoted’") == tokenize("-12V in3 'quoted'")
 
 
+def test_ordered_errors_detect_reordered_text_hidden_by_cct() -> None:
+    score_tokens = score_bench["score_tokens"]
+    score_ordered_errors = score_bench["score_ordered_errors"]
+
+    assert score_tokens("alpha beta", "beta alpha")[0] == 1.0
+    cer, wer = score_ordered_errors("alpha beta", "beta alpha")
+
+    assert cer > 0.0
+    assert wer == 1.0
+
+
+def test_table_scores_separate_topology_from_cell_content() -> None:
+    truth = [
+        {
+            "type": "Table",
+            "text": [
+                {"x": 0, "y": 0, "w": 1, "h": 1, "content": "alpha"},
+                {"x": 1, "y": 0, "w": 1, "h": 1, "content": "beta"},
+            ],
+        }
+    ]
+    predicted = [{"rows": [["alpha", "wrong"]], "spans": [[{}, {}]]}]
+
+    structure, content = score_bench["score_tables"](truth, predicted)
+
+    assert structure == 1.0
+    assert content == 0.5
+
+
 def test_score_case_reports_native_and_ocr_tracks(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

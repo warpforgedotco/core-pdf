@@ -8,6 +8,7 @@ from dataclasses import dataclass, field, replace
 from difflib import SequenceMatcher
 from functools import lru_cache
 from statistics import median
+from time import monotonic
 from typing import TYPE_CHECKING, Any, Callable, Iterable, Protocol, cast
 
 from core_layout.impl.layout import word_frequencies
@@ -7434,6 +7435,7 @@ def collect_ocr_candidates(
     ocr_session: ocr_session_runtime.OcrPageSession | None = None,
 ) -> list[OcrCandidate]:
     candidates: list[OcrCandidate] = []
+    deadline = monotonic() + timeout if timeout is not None else None
 
     image = full_page_image_for_ocr(page)
     if image is None:
@@ -7465,6 +7467,9 @@ def collect_ocr_candidates(
             token_type_classifier=ocr_schematic.classify_schematic_token_type,
         )
     )
+    if deadline is not None and monotonic() >= deadline:
+        record_ocr_budget_exhausted(page, candidates)
+        return candidates
     if image.source.startswith("full_page_") and ocr_full_page.should_try_alternate_ocr(result):
         auto_result = (
             ocr_session.image_to_text_result(image, psm=3)
@@ -7554,6 +7559,7 @@ def collect_ocr_candidates(
             timeout,
             base_image=image,
             ocr_session=ocr_session,
+            deadline=deadline,
         )
     elif should_collect_cross_source_verification_candidate(
         page,
@@ -7567,6 +7573,7 @@ def collect_ocr_candidates(
             timeout,
             base_image=image,
             ocr_session=ocr_session,
+            deadline=deadline,
         )
         candidates.extend(
             replace(candidate, name=f"verification_{candidate.name}")
@@ -11542,7 +11549,11 @@ def append_rendered_full_page_ocr_candidates(
     *,
     base_image: OcrImage,
     ocr_session: ocr_session_runtime.OcrPageSession | None = None,
+    deadline: float | None = None,
 ) -> None:
+    if deadline is not None and monotonic() >= deadline:
+        record_ocr_budget_exhausted(page, candidates)
+        return
     backend = TesseractCtypesBackend.from_system()
     dpi_candidates = ocr_rendering.ocr_render_dpi_candidates_for_page(page)
     max_render_dpi = max(dpi_candidates) if dpi_candidates else None
@@ -11567,6 +11578,9 @@ def append_rendered_full_page_ocr_candidates(
         )
     )
     for dpi in dpi_candidates:
+        if deadline is not None and monotonic() >= deadline:
+            record_ocr_budget_exhausted(page, candidates)
+            return
         source = f"rendered_page_{dpi}dpi"
         rendered_image: OcrImage | None
         if base_image.source == source:
@@ -11604,6 +11618,9 @@ def append_rendered_full_page_ocr_candidates(
             primary_result,
             rendered_image,
         )
+        if deadline is not None and monotonic() >= deadline:
+            record_ocr_budget_exhausted(page, candidates)
+            return
         if (
             getattr(profile, "recommended_strategy", None) == "text_table"
             and 65 <= len(getattr(page, "chars", ())) <= 120
@@ -11883,6 +11900,15 @@ def append_rendered_full_page_ocr_candidates(
                 timeout,
                 ocr_session=ocr_session,
             )
+
+
+def record_ocr_budget_exhausted(page: PageExtractionHost, candidates: list[OcrCandidate]) -> None:
+    cache = getattr(page, "extraction_cache", None)
+    if isinstance(cache, dict):
+        cache["ocr_budget"] = {
+            "exhausted": True,
+            "candidate_count": len(candidates),
+        }
 
 
 def should_try_suspect_native_table_tiling(page: PageExtractionHost) -> bool:

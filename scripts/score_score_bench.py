@@ -10,7 +10,7 @@ from collections import Counter, deque
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from time import perf_counter
-from typing import Any, Callable
+from typing import Any, Callable, cast
 
 from rich import box
 from rich.console import Console
@@ -50,6 +50,12 @@ class CaseScore:
     matched_tokens: int
     elapsed_seconds: float
     track: str = "native"
+    cer: float | None = None
+    wer: float | None = None
+    table_structure_f1: float | None = None
+    table_content_f1: float | None = None
+    text_elapsed_seconds: float = 0.0
+    table_elapsed_seconds: float = 0.0
     error: str | None = None
     missing_top: list[tuple[str, int]] | None = None
     extra_top: list[tuple[str, int]] | None = None
@@ -142,11 +148,19 @@ def score_case(case: ScoreBenchCase) -> CaseScore:
     gt_text = case.content_gt.read_text(encoding="utf-8")
     try:
         with PdfDocument(case.pdf) as document:
+            text_started = perf_counter()
             predicted_text = extract_document_text(document)
+            text_elapsed = perf_counter() - text_started
+            table_started = perf_counter()
+            predicted_tables = document.extract_tables(include_span_info=True)
+            table_elapsed = perf_counter() - table_started
         cct, found, added, precision, gt_count, predicted_count, matched = score_tokens(
             gt_text, predicted_text
         )
         token_diff = score_token_diff_summary(gt_text, predicted_text)
+        cer, wer = score_ordered_errors(gt_text, predicted_text)
+        table_truth = json.loads(case.table_gt.read_text(encoding="utf-8"))
+        table_structure_f1, table_content_f1 = score_tables(table_truth, predicted_tables)
         score = CaseScore(
             stem=case.stem,
             status="ok",
@@ -159,6 +173,12 @@ def score_case(case: ScoreBenchCase) -> CaseScore:
             matched_tokens=matched,
             elapsed_seconds=perf_counter() - started,
             track=track,
+            cer=cer,
+            wer=wer,
+            table_structure_f1=table_structure_f1,
+            table_content_f1=table_content_f1,
+            text_elapsed_seconds=text_elapsed,
+            table_elapsed_seconds=table_elapsed,
             missing_top=token_diff["missing_top"][:5],
             extra_top=token_diff["extra_top"][:5],
         )
@@ -585,6 +605,16 @@ class ScoreBenchUI:
         table.add_row("CCT", format_ratio(score.cct))
         table.add_row("Recall", format_ratio(score.percent_tokens_found))
         table.add_row("Precision", format_ratio(score.precision))
+        if score.cer is not None:
+            table.add_row(
+                "CER / WER", f"{format_ratio(score.cer)} / {format_ratio(score.wer or 0.0)}"
+            )
+        if score.table_structure_f1 is not None:
+            table.add_row(
+                "Table S/C",
+                f"{format_ratio(score.table_structure_f1)} / "
+                f"{format_ratio(score.table_content_f1 or 0.0)}",
+            )
         table.add_row("Missing", format_focus_tokens(score.missing_top))
         table.add_row("Extra", format_focus_tokens(score.extra_top))
         if score.error is not None:
@@ -884,6 +914,130 @@ def score_tokens(
         predicted_count,
         matched,
     )
+
+
+def edit_distance(reference: list[str], predicted: list[str]) -> int:
+    """Return Levenshtein distance using memory proportional to the shorter input."""
+    if len(reference) < len(predicted):
+        reference, predicted = predicted, reference
+    previous = list(range(len(predicted) + 1))
+    for row, reference_item in enumerate(reference, start=1):
+        current = [row]
+        for column, predicted_item in enumerate(predicted, start=1):
+            current.append(
+                min(
+                    current[-1] + 1,
+                    previous[column] + 1,
+                    previous[column - 1] + (reference_item != predicted_item),
+                )
+            )
+        previous = current
+    return previous[-1]
+
+
+def score_ordered_errors(gt_text: str, predicted_text: str) -> tuple[float, float]:
+    cleaned_gt = clean_score_bench_text(gt_text)
+    gt_characters = list(normalize_score_text(cleaned_gt))
+    predicted_characters = list(normalize_score_text(predicted_text))
+    gt_tokens = tokenize(cleaned_gt)
+    predicted_tokens = tokenize(predicted_text)
+    cer = edit_distance(gt_characters, predicted_characters) / max(1, len(gt_characters))
+    wer = edit_distance(gt_tokens, predicted_tokens) / max(1, len(gt_tokens))
+    return cer, wer
+
+
+def normalize_score_text(text: str) -> str:
+    """Normalize characters while retaining whitespace and reading order for CER."""
+    return " ".join(unicodedata.normalize("NFKC", text).casefold().split())
+
+
+def score_tables(
+    ground_truth: object, predicted_records: object
+) -> tuple[float | None, float | None]:
+    """Score table cell topology and coordinate-aware cell content independently."""
+    truth_cells = ground_truth_table_cells(ground_truth)
+    predicted_cells = predicted_table_cells(predicted_records)
+    if not truth_cells and not predicted_cells:
+        return None, None
+
+    truth_structure = Counter(
+        (table, x, y, width, height) for table, x, y, width, height, _ in truth_cells
+    )
+    predicted_structure = Counter(
+        (table, x, y, width, height) for table, x, y, width, height, _ in predicted_cells
+    )
+    structure_f1 = counter_f1(truth_structure, predicted_structure)
+
+    truth_content: Counter[tuple[int, int, int, str]] = Counter()
+    predicted_content: Counter[tuple[int, int, int, str]] = Counter()
+    for table, x, y, _width, _height, content in truth_cells:
+        truth_content.update((table, x, y, token) for token in tokenize(content))
+    for table, x, y, _width, _height, content in predicted_cells:
+        predicted_content.update((table, x, y, token) for token in tokenize(content))
+    return structure_f1, counter_f1(truth_content, predicted_content)
+
+
+def ground_truth_table_cells(value: object) -> list[tuple[int, int, int, int, int, str]]:
+    if not isinstance(value, list):
+        return []
+    cells = []
+    for table_index, table in enumerate(value):
+        if not isinstance(table, dict):
+            continue
+        table_cells = table.get("text")
+        if not isinstance(table_cells, list):
+            continue
+        for cell in table_cells:
+            if not isinstance(cell, dict):
+                continue
+            cells.append(
+                (
+                    table_index,
+                    int(cast(Any, cell.get("x", 0))),
+                    int(cast(Any, cell.get("y", 0))),
+                    max(1, int(cast(Any, cell.get("w", 1)))),
+                    max(1, int(cast(Any, cell.get("h", 1)))),
+                    str(cell.get("content", "")),
+                )
+            )
+    return cells
+
+
+def predicted_table_cells(value: object) -> list[tuple[int, int, int, int, int, str]]:
+    if not isinstance(value, list):
+        return []
+    cells = []
+    for table_index, record in enumerate(value):
+        if not isinstance(record, dict):
+            continue
+        rows = record.get("rows")
+        if not isinstance(rows, list):
+            continue
+        spans = record.get("spans")
+        for y, row in enumerate(rows):
+            if not isinstance(row, list):
+                continue
+            for x, content in enumerate(row):
+                span_row = spans[y] if isinstance(spans, list) and y < len(spans) else None
+                span = span_row[x] if isinstance(span_row, list) and x < len(span_row) else None
+                span = span if isinstance(span, dict) else {}
+                cells.append(
+                    (
+                        table_index,
+                        x,
+                        y,
+                        max(1, int(cast(Any, span.get("col_span", 1)))),
+                        max(1, int(cast(Any, span.get("row_span", 1)))),
+                        str(content or ""),
+                    )
+                )
+    return cells
+
+
+def counter_f1(reference: Counter[Any], predicted: Counter[Any]) -> float:
+    matched = sum((reference & predicted).values())
+    total = sum(reference.values()) + sum(predicted.values())
+    return 2 * matched / total if total else 1.0
 
 
 def clean_score_bench_text(text: str) -> str:
