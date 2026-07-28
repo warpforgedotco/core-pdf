@@ -27,6 +27,13 @@ SAMPLE_PDF = TESTS_DIR / "fixtures" / "SCORE-Bench" / "src" / "global-AIDS-strat
 SNAPSHOT_DIR = TESTS_DIR / "snapshots" / "native"
 
 
+@pytest.fixture(autouse=True)
+def native_extraction_is_explicit_for_this_module(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("CORE_PDF_OCR", "0")
+
+
 def result_text(result: Any) -> str:
     return "\n".join(line.text for block in result.blocks for line in block.lines)
 

@@ -89,6 +89,7 @@ class TesseractCtypesBackend:
         "has_set_source_resolution",
         "has_pix_scale_to_size",
         "has_pix_rotate_orth",
+        "_bmp_cache",
         "leptonica",
         "tesseract",
     )
@@ -100,6 +101,10 @@ class TesseractCtypesBackend:
     ) -> None:
         self.tesseract = tesseract
         self.leptonica = leptonica
+        # OCR frequently revisits the same rendered image for different
+        # segmentation modes and table regions. Keep the expensive raw-image
+        # to BMP conversion alongside the backend instead of repeating it.
+        self._bmp_cache: dict[int, tuple[bytes, bytes | None]] = {}
         self.configure_symbols(tesseract)
         if leptonica is not None:
             self.configure_leptonica_symbols(leptonica)
@@ -1564,7 +1569,13 @@ class TesseractCtypesBackend:
         if not leptonica_pix_size_is_supported(image.width, image.height):
             return None
         if encoded is None:
-            encoded = rgba_image_to_bmp(image)
+            cache_key = id(image.data)
+            cached = self._bmp_cache.get(cache_key)
+            if cached is not None and cached[0] is image.data:
+                encoded = cached[1]
+            else:
+                encoded = rgba_image_to_bmp(image)
+                self._bmp_cache[cache_key] = (image.data, encoded)
         if encoded is None:
             return None
         buffer = self.raw_image_buffer(encoded, buffer_cache=buffer_cache)

@@ -31,8 +31,9 @@ def decode_jpx_image(
             apply_embedded_color=apply_embedded_color,
         )
         color_mode = jp2_color_space_kind(jp2.color_specification) is not None
+        native_components = decoded_jpx_native_components(img)
         components = (
-            decoded_jpx_native_components(img)
+            native_components
             if jp2_preserves_native_component_output(
                 img,
                 jp2,
@@ -50,6 +51,7 @@ def decode_jpx_image(
             jp2,
             component_mode=component_mode,
             components=components,
+            native_components=native_components,
         )
     raise JpegUnsupportedError("JPXDecode failed to parse codestream")
 

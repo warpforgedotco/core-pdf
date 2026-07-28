@@ -40,6 +40,22 @@ OCR_TARGETED_THRESHOLDING_PROFILES = (
 )
 
 
+def should_try_vector_diagram_thresholding_ocr(
+    *,
+    strategy: str | None,
+    dpi: int,
+    max_render_dpi: int | None,
+    vector_diagram_sparse: bool,
+) -> bool:
+    """Use alternate binarization only for the vector-table class it improves."""
+    return bool(
+        strategy == "text_table"
+        and vector_diagram_sparse
+        and max_render_dpi is not None
+        and dpi == max_render_dpi
+    )
+
+
 def ocr_image_to_text_with_timeout(image: OcrImage, timeout: float | None) -> str:
     return ocr_image_to_text_result_with_timeout(image, timeout).text
 
@@ -111,7 +127,16 @@ def should_try_alternate_ocr(result: OcrTextResult) -> bool:
     if tokens < 80:
         return True
     confidence = result.confidence
-    return confidence is None or confidence < 70
+    if confidence is None or confidence < 70:
+        return True
+    # Formula-heavy scanned pages can have deceptively high mean confidence
+    # while still producing systematic punctuation and glyph substitutions.
+    # Keep the extra PSM passes limited to the common patent-page size range.
+    return (
+        400 <= tokens <= 900
+        and text_ocr_quality_score(result.text) >= 0.34
+        and scanned_ocr_artifact_score(result.text) >= 0.02
+    )
 
 
 def select_targeted_thresholding_ocr_result(

@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 
 from core_pdf.impl.engine.extraction.cache import ExtractionCache
 from core_pdf.impl.engine.extraction.common import page_profile
+from core_pdf.impl.engine.extraction.trace import extraction_stage
 from core_pdf.impl.exceptions import PdfParseError
 
 if TYPE_CHECKING:
@@ -135,20 +136,24 @@ def build_page_extraction_result(
     if cache is None:
         page.extraction_cache = cache = ExtractionCache()
 
-    resolved_lines = tuple(
-        resolved_line_record_from_content_record(record) for record in page.extract_resolved_lines()
-    )
+    with extraction_stage(cache, "resolved_lines"):
+        resolved_lines = tuple(
+            resolved_line_record_from_content_record(record)
+            for record in page.extract_resolved_lines()
+        )
     text = "\n".join(line.text for line in resolved_lines)
-    profile = page.get_page_profile()
-    page_class, page_class_confidence = classify_page(profile, text)
-    base_route = base_route_name(cache, profile, text)
-    confidence = page_confidence(
-        text,
-        base_route,
-        page_class,
-        page_class_confidence,
-    )
-    related, related_diagnostics = related_page_records(page) if include_related else ({}, ())
+    with extraction_stage(cache, "classification"):
+        profile = page.get_page_profile()
+        page_class, page_class_confidence = classify_page(profile, text)
+        base_route = base_route_name(cache, profile, text)
+        confidence = page_confidence(
+            text,
+            base_route,
+            page_class,
+            page_class_confidence,
+        )
+    with extraction_stage(cache, "related_content"):
+        related, related_diagnostics = related_page_records(page) if include_related else ({}, ())
     result = PageExtractionResult(
         page_number=page.page_number,
         page_label=getattr(page, "label", None),

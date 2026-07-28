@@ -112,6 +112,12 @@ def select_ocr_candidate(
                 candidate_score=best_score,
                 best_score=candidate_score,
             )
+            or prefer_higher_resolution_psm4_candidate(
+                best,
+                candidate,
+                candidate_score=best_score,
+                best_score=candidate_score,
+            )
             or prefer_word_layout_same_source_candidate(best, candidate)
             or prefer_word_refined_same_source_candidate(best, candidate)
             or prefer_rendered_page_qa_candidate(best, candidate)
@@ -152,6 +158,12 @@ def select_ocr_candidate(
                 candidate_score=candidate_score,
                 best_score=best_score,
             )
+            or prefer_higher_resolution_psm4_candidate(
+                candidate,
+                best,
+                candidate_score=candidate_score,
+                best_score=best_score,
+            )
             or prefer_word_layout_same_source_candidate(candidate, best)
             or prefer_word_refined_same_source_candidate(candidate, best)
             or prefer_rendered_page_qa_candidate(candidate, best)
@@ -177,7 +189,7 @@ def prefer_lower_resolution_rendered_candidate(
     best_dpi = plain_rendered_page_candidate_dpi(best.name)
     if candidate_dpi is None or best_dpi is None or candidate_dpi >= best_dpi:
         return False
-    if best_score - candidate_score > 2.0:
+    if best_score - candidate_score > 4.0:
         return False
     candidate_text = candidate.result.text
     best_text = best.result.text
@@ -192,6 +204,37 @@ def prefer_lower_resolution_rendered_candidate(
     candidate_artifact = ocr_text_analysis.scanned_ocr_artifact_score(candidate_text)
     best_artifact = ocr_text_analysis.scanned_ocr_artifact_score(best_text)
     return candidate_artifact <= best_artifact + 0.08
+
+
+def prefer_higher_resolution_psm4_candidate(
+    candidate: OcrCandidate,
+    best: OcrCandidate,
+    *,
+    candidate_score: float,
+    best_score: float,
+) -> bool:
+    """Prefer a materially fuller high-resolution PSM4 pass on tiny scans."""
+    if not candidate.name.endswith("_psm4") or not best.name.endswith("_psm4"):
+        return False
+    candidate_dpi = rendered_candidate_base_dpi(candidate.name)
+    best_dpi = rendered_candidate_base_dpi(best.name)
+    if candidate_dpi is None or best_dpi is None or candidate_dpi <= best_dpi:
+        return False
+    if best_score - candidate_score > 50.0:
+        return False
+    candidate_text = candidate.result.text
+    best_text = best.result.text
+    candidate_tokens = ocr_text_analysis.extracted_text_token_count(candidate_text)
+    best_tokens = ocr_text_analysis.extracted_text_token_count(best_text)
+    if candidate_tokens < max(60, int(best_tokens * 1.5)):
+        return False
+    candidate_quality = ocr_text_analysis.text_ocr_quality_score(candidate_text)
+    best_quality = ocr_text_analysis.text_ocr_quality_score(best_text)
+    if candidate_quality > best_quality + 0.13:
+        return False
+    candidate_artifact = ocr_text_analysis.scanned_ocr_artifact_score(candidate_text)
+    best_artifact = ocr_text_analysis.scanned_ocr_artifact_score(best_text)
+    return candidate_artifact <= best_artifact + 0.13
 
 
 def prefer_high_resolution_sparse_dense_candidate(
@@ -569,7 +612,7 @@ def prefer_rendered_page_qa_candidate(
 
 
 def plain_rendered_page_candidate_dpi(name: str) -> int | None:
-    match = re.fullmatch(r"rendered_page_(\d+)dpi", name)
+    match = re.fullmatch(r"rendered_page_(\d+)dpi(?:_.*)?", name)
     if match is None:
         return None
     return int(match.group(1))
@@ -670,8 +713,14 @@ def _ocr_candidate_score_from_signature(
         # A geometric split is only useful when both regions produced a
         # substantive result.  Sparse/empty split regions otherwise receive a
         # disproportionate bonus and can beat a complete page OCR candidate.
-        if tokens >= max(80, region_count * 24):
+        if tokens >= max(80, region_count * 24) and (
+            line_rows >= region_count * 2
+            or word_rows >= region_count * 12
+            or ocr_text_analysis.scanned_ocr_artifact_score(text) <= 0.25
+        ):
             score += min(120.0, region_count * 60.0)
+        elif tokens >= max(80, region_count * 24):
+            score -= 25.0
         else:
             score -= 30.0
     score += ocr_text_analysis.table_like_ocr_coverage_bonus(

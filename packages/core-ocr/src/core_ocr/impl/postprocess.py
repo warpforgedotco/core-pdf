@@ -64,6 +64,8 @@ _COMPOUND_TOKEN_PART_RE = re.compile(r"[A-Z]+(?=[A-Z][a-z]|$)|[A-Z]?[a-z]+|\d+")
 _DOCUMENT_LOCAL_TOKEN_FRAGMENT_RE = re.compile(r"[A-Za-z0-9*_-]+")
 OCR_EDGE_NOISE_PUNCTUATION = "\"'“”‘’`~_=|¦¬^°•·.,;:!?()[]{}<>/\\+-@%$"
 OCR_ALPHA_JOINERS = frozenset({"'", "’", "-", "‐", "‑", "‒", "–", "—"})
+OCR_DECORATIVE_LEADER_RE = re.compile(r"[._~\-–—]{3,}")
+OCR_SEPARATED_LEADER_RE = re.compile(r"(?:\s+[._~\-–—]{1,3}){3,}")
 PRIZE_AMOUNT_TOKEN_RE = re.compile(r"^(?P<whole>\d{1,4})[:,-](?P<cents>\d{2})$")
 PRIZE_RANK_TOKEN_RE = re.compile(r"^(?P<rank>\d+)(?:\.\)|\)|\.)$")
 WEAK_OCR_TOC_LEADER_RE = re.compile(
@@ -129,12 +131,12 @@ class OcrSyntheticTextLine:
 
 
 def ocr_is_enabled() -> bool:
-    """Return whether the host explicitly requested OCR candidate generation."""
-    return os.environ.get("CORE_PDF_OCR", "").casefold() in {
-        "1",
-        "true",
-        "yes",
-        "on",
+    """Return whether OCR candidate generation is enabled by default."""
+    return os.environ.get("CORE_PDF_OCR", "").casefold() not in {
+        "0",
+        "false",
+        "no",
+        "off",
     }
 
 
@@ -620,6 +622,23 @@ def normalize_generic_ocr_line_text(text: str) -> str:
     repaired = re.sub(r"[ \t]{2,}", " ", repaired).strip()
     repaired = normalize_precision_first_prize_line_text(repaired)
     return repaired
+
+
+def remove_decorative_ocr_leaders_text(text: str) -> str:
+    """Remove repeated table leaders that OCR promotes to text tokens."""
+    if not text:
+        return text
+    leader_char_count = sum(text.count(character) for character in "._~‐‑‒–—-")
+    if leader_char_count < 12:
+        return text
+    cleaned = "\n".join(
+        OCR_SEPARATED_LEADER_RE.sub(
+            " ",
+            OCR_DECORATIVE_LEADER_RE.sub(" ", line),
+        ).strip()
+        for line in text.splitlines()
+    )
+    return cleaned if cleaned != text else text
 
 
 def normalize_rare_alpha_confusion_tokens(text: str) -> str:
@@ -2894,6 +2913,8 @@ def native_layout_geometry_summary_from_page_cache(
 
 def should_try_ocr_supplement(page: PageExtractionHost, text: str) -> bool:
     text_tokens = ocr_text_analysis.extracted_text_token_count(text)
+    if should_try_medium_table_ocr(page, text_tokens):
+        return True
     if native_text_layer_looks_reliable_enough(
         page,
         text,
@@ -2947,6 +2968,19 @@ def should_try_ocr_supplement(page: PageExtractionHost, text: str) -> bool:
     except Exception:
         pass
     return False
+
+
+def should_try_medium_table_ocr(page: PageExtractionHost, text_tokens: int) -> bool:
+    if not 80 <= text_tokens <= 220:
+        return False
+    try:
+        profile = page.get_page_profile()
+    except Exception:
+        return False
+    return (
+        getattr(profile, "recommended_strategy", None) == "text_table"
+        and 65 <= len(getattr(page, "chars", ())) <= 120
+    )
 
 
 def tiny_native_text_should_trigger_ocr_supplement(

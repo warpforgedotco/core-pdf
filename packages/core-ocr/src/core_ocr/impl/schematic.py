@@ -49,17 +49,26 @@ OCR_SCHEMATIC_ROW_SUPPLEMENT_PIN_MAX_PER_TOKEN = 40
 OCR_SCHEMATIC_ROW_SUPPLEMENT_RAIL_MAX_PER_TOKEN = 40
 OCR_SCHEMATIC_ROW_SUPPLEMENT_VALUE_MAX_PER_TOKEN = 16
 OCR_SCHEMATIC_ROW_SUPPLEMENT_REFERENCE_MAX_PER_TOKEN = 12
+OCR_SCHEMATIC_ROW_SUPPLEMENT_NO_CONNECT_MAX_PER_TOKEN = 48
+OCR_SCHEMATIC_NO_CONNECT_MIN_EVIDENCE = 4
+OCR_SCHEMATIC_NO_CONNECT_MIN_SOURCES = 2
 OCR_SCHEMATIC_OBSERVATION_GRAPH_MIN_CLUSTERS = 8
 VECTOR_TABLE_SYMBOL_MIN_MARKS = 6
 VECTOR_TABLE_SYMBOL_MIN_COLUMN_MARKS = 4
 VECTOR_TABLE_SYMBOL_COLUMN_TOLERANCE = 8.0
 VECTOR_TABLE_SYMBOL_ROW_TOLERANCE = 7.0
 NONSPACE_TOKEN_RE = re.compile(r"\S+")
+SCHEMATIC_SLASH_TOKEN_RE = re.compile(
+    r"(?<![\w/])[A-Za-z0-9_+\-–—]+(?:/[A-Za-z0-9_+\-–—]+)+(?![\w/])"
+)
 SCHEMATIC_EDGE_CHARS = "‘’“”«»`~_=|¦¬^°•·.,;:!?()[]{}<>€"
 SCHEMATIC_REPAIR_WORDS = frozenset({"gnd", "vcc", "vdd", "vee", "vref"})
+SCHEMATIC_GROUND_RAIL_TOKENS = frozenset({"gnd", "ground"})
+SCHEMATIC_LOWERCASE_NET_LABELS = frozenset({"in", "out"})
 SCHEMATIC_CONFUSABLE_DIGITS = frozenset("@oOiIlLsS|")
 SCHEMATIC_STANDALONE_VALUE_SIGNS = frozenset({"+", "-", "–", "—"})
-SCHEMATIC_ARTIFACT_TOKEN_CHARS = frozenset('|=<>[]{}()\\/“”"`~^°•·¦¬!;:?')
+SCHEMATIC_ARTIFACT_TOKEN_CHARS = frozenset('|=<>[]{}()\\/“”"`~^°•·¦¬!;:?,.€')
+SCHEMATIC_INTERNAL_ARTIFACT_CHARS = frozenset("{}")
 SCHEMATIC_NET_LABEL_SEPARATORS = frozenset("_/–—-")
 
 
@@ -657,14 +666,28 @@ def remove_schematic_ocr_artifact_tokens(text: str) -> str:
     if not text:
         return text
     cleaned_lines: list[str] = []
+    removed_whole_tokens: list[str] = []
+    artifact_chars = "".join(SCHEMATIC_ARTIFACT_TOKEN_CHARS)
     removed = 0
     for line in text.splitlines():
         cleaned_tokens: list[str] = []
         for token in line.strip().split():
             if should_remove_schematic_ocr_artifact_token(token):
+                removed_whole_tokens.append(token)
                 removed += 1
                 continue
-            cleaned_tokens.append(token)
+            edge_cleaned = token.strip(artifact_chars)
+            if edge_cleaned != token:
+                removed += 1
+            internal_cleaned = "".join(
+                character
+                for character in edge_cleaned
+                if character not in SCHEMATIC_INTERNAL_ARTIFACT_CHARS
+            )
+            if internal_cleaned != edge_cleaned:
+                removed += 1
+            if internal_cleaned:
+                cleaned_tokens.append(internal_cleaned)
         if cleaned_tokens:
             cleaned_lines.append(" ".join(cleaned_tokens))
     if removed == 0 or not cleaned_lines:
@@ -672,9 +695,128 @@ def remove_schematic_ocr_artifact_tokens(text: str) -> str:
     cleaned = "\n".join(cleaned_lines)
     original_tokens = extracted_text_token_count(text)
     cleaned_token_count = extracted_text_token_count(cleaned)
-    if cleaned_token_count < int(original_tokens * 0.92):
+    only_artifact_edits = removed and not removed_whole_tokens
+    only_standalone_artifacts = only_artifact_edits or (
+        bool(removed_whole_tokens)
+        and all(token_alnum_count(token) == 0 for token in removed_whole_tokens)
+    )
+    if cleaned_token_count < int(original_tokens * 0.92) and not only_standalone_artifacts:
         return text
     return cleaned
+
+
+def repair_fragmented_schematic_value_tokens(text: str) -> str:
+    """Rejoin component values split around a zero-shaped OCR glyph or unit suffix."""
+    if not text:
+        return text
+    unit = r"(?:meg|[pnumk](?:f)?)"
+    repaired = re.sub(
+        rf"(?i)\b(\d+)\s*[@Oo]\s*({unit})\b",
+        lambda match: f"{match.group(1)}0{match.group(2)}",
+        text,
+    )
+    return re.sub(
+        rf"(?i)\b(\d+(?:\.\d+)?)\s+({unit})\b",
+        lambda match: f"{match.group(1)}{match.group(2)}",
+        repaired,
+    )
+
+
+def repair_schematic_spaced_dates(text: str) -> str:
+    """Restore omitted separators in unambiguous month/day/year metadata."""
+    if not text or re.search(r"\b\d{1,2}/\d{1,2}/(?:19|20)\d{2}\b", text):
+        return text
+    return re.sub(
+        r"(?<!\d)(1[0-2]|0?[1-9])\s+(3[01]|[12]\d|0?[1-9])\s+((?:19|20)\d{2})(?!\d)",
+        r"\1/\2/\3",
+        text,
+    )
+
+
+def restore_consensus_schematic_slash_tokens(
+    text: str,
+    candidates: Iterable[OcrCandidate],
+) -> str:
+    """Restore slash notation that fusion separated without changing its components."""
+    candidate_texts = {candidate.result.text for candidate in candidates if candidate.result.text}
+    supported: Counter[str] = Counter()
+    display: dict[str, str] = {}
+    for candidate_text in candidate_texts:
+        seen: set[str] = set()
+        for match in SCHEMATIC_SLASH_TOKEN_RE.finditer(candidate_text):
+            token = match.group(0)
+            segments = token.split("/")
+            for span_length in range(2, len(segments) + 1):
+                for start in range(len(segments) - span_length + 1):
+                    span = "/".join(segments[start : start + span_length])
+                    key = span.casefold()
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    supported[key] += 1
+                    display.setdefault(key, span)
+
+    restored = text
+    ordered = sorted(supported, key=lambda key: (-key.count("/"), -len(key), key))
+    for key in ordered:
+        support_count = supported[key]
+        if support_count < 2 or key in restored.casefold():
+            continue
+        segments = key.split("/")
+        if len(segments) < 2 or any(not any(ch.isalnum() for ch in part) for part in segments):
+            continue
+        separated = r"(?:\s+|\s*[|:]\s*)".join(re.escape(part) for part in segments)
+        pattern = re.compile(rf"(?<![\w/]){separated}(?![\w/])", flags=re.IGNORECASE)
+        restored = pattern.sub(display[key], restored)
+    return restored
+
+
+def cap_overrepresented_schematic_rail_tokens(
+    text: str,
+    candidates: Iterable[OcrCandidate],
+) -> str:
+    """Cap repeated rails when multiple full-page observations agree on a population."""
+    if not text:
+        return text
+    candidate_counts: dict[str, list[int]] = defaultdict(list)
+    seen_texts: set[str] = set()
+    for candidate in candidates:
+        candidate_text = candidate.result.text
+        if not candidate_text or candidate_text in seen_texts or "_tile_" in candidate.name:
+            continue
+        seen_texts.add(candidate_text)
+        counts = Counter(
+            key
+            for token in NONSPACE_TOKEN_RE.findall(candidate_text)
+            if (key := schematic_supplement_token_key(token)) is not None
+            and key in SCHEMATIC_GROUND_RAIL_TOKENS
+        )
+        for key, count in counts.items():
+            candidate_counts[key].append(count)
+
+    caps: dict[str, int] = {}
+    final_counts = schematic_supplement_text_counts(text)
+    for key, counts in candidate_counts.items():
+        cap = max(counts)
+        corroborating = sum(count >= cap - 1 for count in counts)
+        if cap >= 4 and corroborating >= 2 and final_counts[key] >= cap + 3:
+            caps[key] = cap
+    if not caps:
+        return text
+
+    kept: Counter[str] = Counter()
+    lines: list[str] = []
+    for line in text.splitlines():
+        tokens: list[str] = []
+        for token in line.split():
+            key = schematic_supplement_token_key(token)
+            if key in caps:
+                if kept[key] >= caps[key]:
+                    continue
+                kept[key] += 1
+            tokens.append(token)
+        lines.append(" ".join(tokens))
+    return "\n".join(lines)
 
 
 def should_remove_schematic_ocr_artifact_token(token: str) -> bool:
@@ -687,6 +829,45 @@ def should_remove_schematic_ocr_artifact_token(token: str) -> bool:
     if alnum == 1 and len(stripped) >= 3:
         return any(ch in SCHEMATIC_ARTIFACT_TOKEN_CHARS for ch in stripped)
     return False
+
+
+def remove_final_schematic_lowercase_fragments(text: str, support_text: str = "") -> str:
+    """Remove compact lowercase OCR debris after all schematic fusion is complete."""
+    if not text:
+        return text
+    support_tokens = frozenset(normalized_text_tokens(support_text))
+    lowercase_counts = Counter(
+        token.strip().casefold()
+        for line in text.splitlines()
+        for token in line.split()
+        if token.strip().isalpha() and token.strip().islower()
+    )
+    cleaned_lines: list[str] = []
+    removed = 0
+    for line in text.splitlines():
+        tokens = []
+        for token in line.split():
+            stripped = token.strip()
+            if (
+                2 <= len(stripped) <= 4
+                and stripped.isalpha()
+                and stripped.islower()
+                and classify_schematic_token_type(stripped) is None
+                and stripped.casefold() not in support_tokens
+                and stripped.casefold() not in SCHEMATIC_LOWERCASE_NET_LABELS
+                and lowercase_counts[stripped.casefold()] == 1
+            ):
+                removed += 1
+                continue
+            tokens.append(token)
+        if tokens:
+            cleaned_lines.append(" ".join(tokens))
+    if removed < 4 or not cleaned_lines:
+        return text
+    cleaned = "\n".join(cleaned_lines)
+    if extracted_text_token_count(cleaned) < int(extracted_text_token_count(text) * 0.85):
+        return text
+    return cleaned
 
 
 def supplement_schematic_ocr_text_from_candidate(
@@ -725,16 +906,22 @@ def schematic_ocr_text_candidates_supplement(
     support_text: str,
     *,
     coverage_lines: tuple[TextGeometryLine, ...] = (),
+    allow_rendered_candidates: bool = False,
 ) -> str:
     if not text or not candidates or not support_text:
         return text
-    if not vector_text_supports_schematic_tiled_ocr(support_text):
+    has_vector_support = vector_text_supports_schematic_tiled_ocr(support_text)
+    if not has_vector_support and not allow_rendered_candidates:
         return text
     ordered_candidates = sorted(
         (
             candidate
             for candidate in candidates
-            if candidate.name.startswith("rendered_page_") and candidate.name.endswith("_tiled")
+            if candidate.name.startswith("rendered_page_")
+            and (
+                (has_vector_support and candidate.name.endswith("_tiled"))
+                or allow_rendered_candidates
+            )
         ),
         key=lambda candidate: ocr_selection.ocr_candidate_score(
             candidate, support_text=support_text
@@ -749,6 +936,8 @@ def schematic_ocr_text_candidates_supplement(
         support_text,
         coverage_lines=coverage_lines,
     )
+    if allow_rendered_candidates:
+        additions = [entry for entry in additions if rendered_schematic_addition_is_safe(entry)]
     if not additions:
         return text
     supplement_text = render_positioned_schematic_supplement(additions)
@@ -768,6 +957,16 @@ def schematic_ocr_text_candidates_supplement(
         if recall_text:
             supplemented_text = supplemented_text.rstrip() + "\n" + recall_text
     return supplemented_text
+
+
+def rendered_schematic_addition_is_safe(entry: SchematicSupplementEntry) -> bool:
+    if entry.token.strip() in {"1", "2", "X", "+", "-", "–", "—"}:
+        return True
+    if entry.token_type == "value" and (entry.confidence or 0) >= 85 and "tiled" in entry.source:
+        return True
+    return entry.token_type in {"pin", "rail", "reference", "opamp_label", "no_connect"} and (
+        entry.evidence_count >= 2 or (entry.confidence or 0) >= 90
+    )
 
 
 def schematic_token_consensus_graph_candidate(
@@ -821,6 +1020,7 @@ def schematic_token_consensus_graph(
                 support_text,
             )
         )
+    evidence_entries = filter_unsupported_schematic_no_connect_entries(evidence_entries)
     clusters = schematic_accepted_supplement_clusters(
         schematic_supplement_evidence_clusters(evidence_entries)
     )
@@ -1180,6 +1380,7 @@ def schematic_fused_supplement_entries(
         if not entries:
             continue
         evidence_entries.extend(entries)
+    evidence_entries = filter_unsupported_schematic_no_connect_entries(evidence_entries)
     clusters = schematic_supplement_evidence_clusters(evidence_entries)
     accepted_clusters = schematic_accepted_supplement_clusters(clusters)
     uncovered_clusters = [
@@ -1206,6 +1407,19 @@ def schematic_fused_supplement_entries(
                 key=schematic_supplement_entry_order_key,
             )
     return additions
+
+
+def filter_unsupported_schematic_no_connect_entries(
+    entries: list[SchematicSupplementEntry],
+) -> list[SchematicSupplementEntry]:
+    no_connect_entries = [entry for entry in entries if entry.token_type == "no_connect"]
+    sources = {entry.source for entry in no_connect_entries if entry.source}
+    if (
+        len(no_connect_entries) >= OCR_SCHEMATIC_NO_CONNECT_MIN_EVIDENCE
+        and len(sources) >= OCR_SCHEMATIC_NO_CONNECT_MIN_SOURCES
+    ):
+        return entries
+    return [entry for entry in entries if entry.token_type != "no_connect"]
 
 
 def schematic_low_confidence_value_supplement_clusters(
@@ -1498,6 +1712,14 @@ def schematic_base_supplement_cluster_is_accepted(
 ) -> bool:
     evidence_types = {entry.evidence_type for entry in cluster.entries}
     source_count = len({entry.source for entry in cluster.entries if entry.source})
+    if (
+        cluster.token_type == "pin"
+        and len(cluster.entries) == 1
+        and cluster.confidence is not None
+        and cluster.confidence >= 94
+        and any(entry.source.endswith("_tiled") for entry in cluster.entries)
+    ):
+        return True
     if {"word", "symbol"}.issubset(evidence_types):
         return True
     if (
@@ -1523,6 +1745,8 @@ def schematic_symbol_only_cluster_is_accepted(
     has_context = schematic_cluster_has_row_context(cluster, context_clusters)
     if cluster.token_type == "opamp_label":
         return confidence >= 84 or (has_context and confidence >= 80)
+    if cluster.token_type == "no_connect":
+        return confidence >= 88 or (has_context and confidence >= 84)
     if cluster.token_type == "pin":
         return (
             len(core) == 1
@@ -1562,12 +1786,21 @@ def schematic_token_types_are_contextual(
 ) -> bool:
     if token_type == "opamp_label":
         return other_type in {"pin", "reference", "opamp_label"}
+    if token_type == "no_connect":
+        return other_type in {"pin", "rail", "reference", "no_connect"}
     if token_type == "pin":
-        return other_type in {"pin", "reference", "value", "rail", "opamp_label"}
+        return other_type in {
+            "pin",
+            "reference",
+            "value",
+            "rail",
+            "opamp_label",
+            "no_connect",
+        }
     if token_type == "value":
         return other_type in {"pin", "reference", "value"}
     if token_type == "reference":
-        return other_type in {"pin", "value", "rail", "opamp_label"}
+        return other_type in {"pin", "value", "rail", "opamp_label", "no_connect"}
     return False
 
 
@@ -1756,6 +1989,8 @@ def schematic_supplement_token_max_per_token(token_type: str | None) -> int:
         return OCR_SCHEMATIC_ROW_SUPPLEMENT_VALUE_MAX_PER_TOKEN
     if token_type == "reference":
         return OCR_SCHEMATIC_ROW_SUPPLEMENT_REFERENCE_MAX_PER_TOKEN
+    if token_type == "no_connect":
+        return OCR_SCHEMATIC_ROW_SUPPLEMENT_NO_CONNECT_MAX_PER_TOKEN
     return OCR_SCHEMATIC_ROW_SUPPLEMENT_MAX_PER_TOKEN
 
 
@@ -1953,9 +2188,6 @@ def schematic_row_supplement_entry_map(
     entries: dict[str, list[SchematicSupplementEntry]] = defaultdict(list)
     for row in rows:
         raw_text = str(row.get("text", ""))
-        confidence = ocr_iterator_layout.iterator_row_confidence(row)
-        if confidence is None:
-            continue
         token = schematic_row_supplement_display_token(
             raw_text,
             context,
@@ -1968,6 +2200,11 @@ def schematic_row_supplement_entry_map(
         if key is None:
             continue
         token_type = classify_schematic_token_type(token)
+        confidence = ocr_iterator_layout.iterator_row_confidence(row)
+        if confidence is None and token_type == "pin":
+            confidence = schematic_pin_choice_confidence(row, token)
+        if confidence is None:
+            continue
         min_confidence = schematic_supplement_entry_min_confidence(
             token_type,
             value_min_confidence=value_min_confidence,
@@ -1988,6 +2225,26 @@ def schematic_row_supplement_entry_map(
     for key, values in list(entries.items()):
         entries[key] = sorted(values, key=schematic_supplement_entry_order_key)
     return entries
+
+
+def schematic_pin_choice_confidence(row: Any, token: str) -> int | None:
+    choices = row.get("choices", ())
+    if not isinstance(choices, (tuple, list)):
+        return None
+    target = schematic_token_core(token).casefold()
+    confidences: list[int] = []
+    for choice in choices:
+        choice_text = schematic_token_core(str(getattr(choice, "text", ""))).casefold()
+        if choice_text != target:
+            continue
+        confidence = getattr(choice, "confidence", None)
+        if confidence is None:
+            continue
+        try:
+            confidences.append(int(round(float(confidence))))
+        except (TypeError, ValueError):
+            continue
+    return max(confidences, default=None)
 
 
 def schematic_supplement_entry_min_confidence(
@@ -2251,6 +2508,8 @@ def schematic_row_supplement_display_token(
 
 def schematic_row_supplement_core_is_allowed(core: str) -> bool:
     if core in SCHEMATIC_STANDALONE_VALUE_SIGNS:
+        return True
+    if core == "x":
         return True
     if core.isdigit():
         return 1 <= int(core) <= 15
@@ -2710,6 +2969,8 @@ def schematic_char_distance(left: str, right: str) -> float:
 
 def canonical_schematic_display_token(token: str) -> str:
     token = token.casefold()
+    if token == "x":
+        return "X"
     if token in SCHEMATIC_STANDALONE_VALUE_SIGNS:
         return "+" if token == "+" else "–"
     if token == "gnd":
@@ -2743,6 +3004,8 @@ def classify_schematic_token_type(token: str) -> str | None:
         return None
     if core in SCHEMATIC_STANDALONE_VALUE_SIGNS:
         return "opamp_label"
+    if core == "x":
+        return "no_connect"
     if schematic_token_is_pin(core):
         return "pin"
     if schematic_token_is_rail(core):

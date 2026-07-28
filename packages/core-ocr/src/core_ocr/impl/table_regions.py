@@ -225,6 +225,8 @@ def table_grid_for_ocr(page: TableOcrPage, image: OcrImage | None = None) -> Tab
         vector_grid = vector_table_grid_for_ocr(page)
         if cache is not None:
             cache[vector_cache_key] = vector_grid
+    if vector_grid is not None:
+        return vector_grid
     if image is None:
         return vector_grid
     page_width, page_height = page_display_dimensions_for_ocr(page)

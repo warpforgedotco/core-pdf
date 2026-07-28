@@ -159,6 +159,32 @@ def repair_formula_control_delimiters(text: str) -> str:
     return text.translate(FORMULA_CONTROL_TRANSLATION)
 
 
+def repair_year_prefixed_chart_numeric_rows(text: str) -> str:
+    """Join OCR-split first numeric values in year-indexed chart rows."""
+    if not text:
+        return text
+    output: list[str] = []
+    for line in text.splitlines():
+        tokens = line.split()
+        if len(tokens) < 3 or not re.fullmatch(r"20(?:0\d|1\d|2\d)", tokens[0]):
+            output.append(line)
+            continue
+        left, right = tokens[1], tokens[2]
+        if not re.fullmatch(r"\d{3}", right):
+            output.append(line)
+            continue
+        left_parts = re.fullmatch(r"(\d{1,3})[.,](\d{3})", left)
+        if left_parts is not None:
+            merged = f"{left_parts[1]},{left_parts[2]},{right}"
+        elif re.fullmatch(r"\d{3}", left):
+            merged = f"{left},{right}"
+        else:
+            output.append(line)
+            continue
+        output.append(" ".join((tokens[0], merged, *tokens[3:])))
+    return "\n".join(output)
+
+
 @lru_cache(maxsize=8_192)
 def text_ocr_quality_score(text: str) -> float:
     alnum = 0

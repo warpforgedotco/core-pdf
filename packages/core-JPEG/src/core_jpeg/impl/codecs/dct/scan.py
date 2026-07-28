@@ -5,15 +5,9 @@ from typing import Any, TypeAlias
 
 from core_jpeg.impl.codecs.dct.bitstream import JpegBitReader
 from core_jpeg.impl.codecs.dct.color import (
-    _CLAMP_OFFSET,
-    _CLAMP_U8,
-    CB_TO_B,
-    CB_TO_G,
-    CR_TO_G,
-    CR_TO_R,
-    SCALEBITS,
     cmyk_to_rgb_channels,
     inverted_cmyk_to_rgb_channels,
+    ycbcr_to_rgb_channels,
     ycck_to_rgb_channels,
 )
 from core_jpeg.impl.codecs.dct.huffman import (
@@ -188,18 +182,13 @@ def compose_rgb(decoder: Any, comp_buf: dict[int, list[int]], comp_w: dict[int, 
                 outh = src_h * 2
                 out = [0] * (outw * outh)
                 for inrow in range(src_h):
-                    row0_start = inrow * stride
                     for v in (0, 1):
-                        row1 = inrow - 1 if v == 0 else inrow + 1
-                        if row1 < 0:
-                            row1 = 0
-                        elif row1 >= src_h:
-                            row1 = src_h - 1
-                        row1_start = row1 * stride
+                        row0 = row_slice(buf, stride, inrow)
+                        row1 = row_slice(buf, stride, inrow - 1 if v == 0 else inrow + 1)
                         dst = (inrow * 2 + v) * outw
-                        thiscolsum = buf[row0_start] * 3 + buf[row1_start]
+                        thiscolsum = row0[0] * 3 + row1[0]
                         if stride > 1:
-                            nextcolsum = buf[row0_start + 1] * 3 + buf[row1_start + 1]
+                            nextcolsum = row0[1] * 3 + row1[1]
                         else:
                             nextcolsum = thiscolsum
                         out[dst] = (thiscolsum * 4 + 8) >> 4
@@ -208,7 +197,7 @@ def compose_rgb(decoder: Any, comp_buf: dict[int, list[int]], comp_w: dict[int, 
                         thiscolsum = nextcolsum
                         out_idx = 2
                         for col in range(1, stride - 1):
-                            nextcolsum = buf[row0_start + col + 1] * 3 + buf[row1_start + col + 1]
+                            nextcolsum = row0[col + 1] * 3 + row1[col + 1]
                             out[dst + out_idx] = (thiscolsum * 3 + lastcolsum + 8) >> 4
                             out[dst + out_idx + 1] = (thiscolsum * 3 + nextcolsum + 7) >> 4
                             lastcolsum = thiscolsum
@@ -317,11 +306,10 @@ def compose_rgb(decoder: Any, comp_buf: dict[int, list[int]], comp_w: dict[int, 
                 y_sample = y_buf[y_row + x]
                 cb = second_buf[y_row + x]
                 cr = third_buf[y_row + x]
-                rgb[off] = _CLAMP_U8[y_sample + CR_TO_R[cr] + _CLAMP_OFFSET]
-                rgb[off + 1] = _CLAMP_U8[
-                    y_sample + ((CB_TO_G[cb] + CR_TO_G[cr]) >> SCALEBITS) + _CLAMP_OFFSET
-                ]
-                rgb[off + 2] = _CLAMP_U8[y_sample + CB_TO_B[cb] + _CLAMP_OFFSET]
+                r, g, b = ycbcr_to_rgb_channels(y_sample, cb, cr)
+                rgb[off] = r
+                rgb[off + 1] = g
+                rgb[off + 2] = b
                 off += 3
     return bytes(rgb)
 

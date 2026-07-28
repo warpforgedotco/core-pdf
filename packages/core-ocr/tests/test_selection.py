@@ -58,3 +58,29 @@ def test_sparse_two_column_split_does_not_get_full_bonus() -> None:
     )
 
     assert ocr_candidate_score(split) < ocr_candidate_score(page)
+
+
+def test_selection_prefers_fuller_high_resolution_psm4_pass() -> None:
+    low_resolution = OcrCandidate(
+        "rendered_page_300dpi_psm4",
+        OcrTextResult("label " * 40, 73),
+    )
+    high_resolution = OcrCandidate(
+        "rendered_page_400dpi_psm4",
+        OcrTextResult("label " * 70, 55),
+    )
+
+    assert select_ocr_candidate([low_resolution, high_resolution]) is high_resolution
+
+
+def test_selection_applies_lower_resolution_preference_to_profiled_pass() -> None:
+    lower_resolution = OcrCandidate(
+        "rendered_page_250dpi",
+        OcrTextResult("clean label 12 " * 42, 63),
+    )
+    higher_resolution = OcrCandidate(
+        "rendered_page_300dpi_table_profile_psm6",
+        OcrTextResult("clean label 12 " * 43, 62),
+    )
+
+    assert select_ocr_candidate([higher_resolution, lower_resolution]) is lower_resolution

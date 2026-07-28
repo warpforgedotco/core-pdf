@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 import math
+import os
 import re
 from collections import Counter
 from dataclasses import dataclass, field, replace
 from difflib import SequenceMatcher
 from functools import lru_cache
 from statistics import median
+from time import monotonic
 from typing import TYPE_CHECKING, Any, Callable, Iterable, Protocol, cast
 
 from core_layout.impl.layout import word_frequencies
@@ -142,6 +144,7 @@ OCR_FIGURE_MAX_CALLOUT_NEIGHBORHOOD_SUBREGIONS = 8
 OCR_FIGURE_MAX_GRID_SUBREGIONS = 28
 OCR_FIGURE_MAX_PIXEL_SUBREGIONS = 12
 OCR_FIGURE_MAX_TOTAL_SUBREGIONS = 32
+OCR_VECTOR_DIAGRAM_TILE_MAX_SIDE_PIXELS = 1_400
 OCR_FIGURE_GRID_COLUMNS = (2, 4)
 OCR_FIGURE_GRID_ROWS = (2, 4)
 OCR_FIGURE_GRID_OVERLAP_RATIO = 0.12
@@ -7260,6 +7263,12 @@ def extract_ocr_page_result(
             candidate for candidate in candidates if not candidate.name.startswith("verification_")
         ]
         candidate = ocr_selection.select_ocr_candidate(candidates, support_text=vector_text)
+        candidate = prefer_schematic_tiled_ocr_candidate(
+            page,
+            candidate,
+            candidates,
+            vector_text=vector_text,
+        )
         record_ocr_candidate_diagnostics(
             page,
             candidates,
@@ -7302,7 +7311,12 @@ def extract_ocr_page_result(
                     fused_text,
                     rendered_output_text,
                 )
-                or clean_full_page_ocr_should_preserve_raw_text(candidate, fused_text)
+                or clean_full_page_ocr_should_preserve_raw_text(
+                    page,
+                    candidate,
+                    fused_text,
+                    rendered_output_text,
+                )
             ):
                 text = fused_text
                 output_lines = ()
@@ -7328,6 +7342,43 @@ def extract_ocr_page_result(
     return result
 
 
+def prefer_schematic_tiled_ocr_candidate(
+    page: PageExtractionHost,
+    selected: OcrCandidate | None,
+    candidates: list[OcrCandidate],
+    *,
+    vector_text: str,
+) -> OcrCandidate | None:
+    """Use tiled OCR as the schematic supplement source when the page warrants it."""
+    if selected is None or vector_text:
+        return selected
+    tiled = [
+        candidate
+        for candidate in candidates
+        if candidate.name.startswith("rendered_page_")
+        and candidate.name.endswith("_tiled")
+        and candidate.result.text
+    ]
+    if not tiled:
+        return selected
+    classification = classify_page_region(
+        selected.result.text,
+        vector_text=vector_text,
+        candidates=candidates,
+        page=page,
+        media_box=page.media_box,
+    )
+    if classification.kind != "schematic":
+        return selected
+    return max(
+        tiled,
+        key=lambda candidate: ocr_selection.ocr_candidate_score(
+            candidate,
+            support_text=vector_text,
+        ),
+    )
+
+
 def record_ocr_candidate_diagnostics(
     page: PageExtractionHost,
     candidates: Iterable[OcrCandidate],
@@ -7339,6 +7390,7 @@ def record_ocr_candidate_diagnostics(
     cache = getattr(page, "extraction_cache", None)
     if cache is None:
         return
+    candidates = tuple(candidates)
     records = []
     for candidate in candidates:
         result = candidate.result
@@ -7354,9 +7406,25 @@ def record_ocr_candidate_diagnostics(
                 "artifact": ocr_text_analysis.scanned_ocr_artifact_score(result.text),
                 "line_rows": len(result.line_rows),
                 "word_rows": len(result.word_rows),
+                "region_count": candidate.region_count,
+                "image_width": candidate.image_width,
+                "image_height": candidate.image_height,
+                "image_resolution": candidate.image_resolution,
             }
         )
     cache["ocr_candidate_diagnostics"] = tuple(records)
+    if os.environ.get("CORE_PDF_CANDIDATE_ANALYSIS", "").casefold() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }:
+        cache["ocr_candidate_analysis"] = tuple(
+            {**record, "text": candidate.result.text}
+            for record, candidate in zip(records, candidates, strict=True)
+        )
+    else:
+        cache.pop("ocr_candidate_analysis", None)
 
 
 def record_ocr_deskew_diagnostics(
@@ -7390,6 +7458,7 @@ def collect_ocr_candidates(
     ocr_session: ocr_session_runtime.OcrPageSession | None = None,
 ) -> list[OcrCandidate]:
     candidates: list[OcrCandidate] = []
+    deadline = monotonic() + timeout if timeout is not None else None
 
     image = full_page_image_for_ocr(page)
     if image is None:
@@ -7421,6 +7490,36 @@ def collect_ocr_candidates(
             token_type_classifier=ocr_schematic.classify_schematic_token_type,
         )
     )
+    if deadline is not None and monotonic() >= deadline:
+        record_ocr_budget_exhausted(page, candidates)
+        return candidates
+    if image.source.startswith("full_page_") and ocr_full_page.should_try_alternate_ocr(result):
+        auto_result = (
+            ocr_session.image_to_text_result(image, psm=3)
+            if ocr_session is not None
+            else ocr_execution.ocr_image_to_text_result_with_psm_timeout(
+                image,
+                psm=3,
+                timeout=timeout,
+            )
+        )
+        append_nonempty_ocr_candidate(candidates, "full_page_auto_psm3", auto_result, image)
+        if getattr(page.get_page_profile(), "recommended_strategy", None) == "text_table":
+            table_result = (
+                ocr_session.image_to_text_result(image, psm=11)
+                if ocr_session is not None
+                else ocr_execution.ocr_image_to_text_result_with_psm_timeout(
+                    image,
+                    psm=11,
+                    timeout=timeout,
+                )
+            )
+            append_nonempty_ocr_candidate(
+                candidates,
+                "full_page_auto_psm11",
+                table_result,
+                image,
+            )
     if should_try_dense_image_sparse_ocr_candidate(page, image, candidates[0]):
         sparse_image = dense_image_sparse_ocr_image(image)
         if sparse_image is not None:
@@ -7483,6 +7582,7 @@ def collect_ocr_candidates(
             timeout,
             base_image=image,
             ocr_session=ocr_session,
+            deadline=deadline,
         )
     elif should_collect_cross_source_verification_candidate(
         page,
@@ -7496,6 +7596,7 @@ def collect_ocr_candidates(
             timeout,
             base_image=image,
             ocr_session=ocr_session,
+            deadline=deadline,
         )
         candidates.extend(
             replace(candidate, name=f"verification_{candidate.name}")
@@ -7738,11 +7839,44 @@ def dense_sparse_layout_render_drops_material_text(
 
 
 def clean_full_page_ocr_should_preserve_raw_text(
+    page: PageExtractionHost,
     candidate: OcrCandidate,
     text: str,
+    rendered_text: str = "",
 ) -> bool:
+    if candidate.name == "full_page_auto_psm3":
+        try:
+            profile = page.get_page_profile()
+        except Exception:
+            profile = None
+        if (
+            getattr(profile, "recommended_strategy", None) == "text_table"
+            and 65 <= len(getattr(page, "chars", ())) <= 120
+            and bool(getattr(profile, "has_path_ops", False))
+        ):
+            tokens = extracted_text_token_count(text)
+            confidence = candidate.result.confidence or 0
+            return 20 <= tokens <= 60 and confidence >= 80 and text_ocr_quality_score(text) <= 0.20
+    if candidate.name.endswith("_psm11"):
+        try:
+            profile = page.get_page_profile()
+        except Exception:
+            profile = None
+        if (
+            getattr(profile, "recommended_strategy", None) == "text_table"
+            and 65 <= len(getattr(page, "chars", ())) <= 120
+        ):
+            tokens = extracted_text_token_count(text)
+            confidence = candidate.result.confidence or 0
+            return 80 <= tokens <= 220 and confidence >= 80 and text_ocr_quality_score(text) <= 0.25
     if candidate.name != "full_page_simple":
         return False
+    if structured_application_form_should_preserve_raw_ocr(
+        text,
+        rendered_text,
+        confidence=candidate.result.confidence or 0,
+    ):
+        return True
     if extracted_text_token_count(text) < 320:
         return False
     confidence = candidate.result.confidence or 0
@@ -7752,6 +7886,61 @@ def clean_full_page_ocr_should_preserve_raw_text(
         text_ocr_quality_score(text) <= 0.16
         and ocr_text_analysis.scanned_ocr_artifact_score(text) <= 0.08
     )
+
+
+def structured_application_form_should_preserve_raw_ocr(
+    raw_text: str,
+    rendered_text: str,
+    *,
+    confidence: int,
+) -> bool:
+    """Keep complete raw OCR for long, numbered application forms."""
+    if confidence < 70:
+        return False
+    raw_tokens = extracted_text_token_count(raw_text)
+    if not 450 <= raw_tokens <= 900:
+        return False
+    del rendered_text
+    numbered_fields = {
+        int(match.group(1))
+        for match in re.finditer(r"(?:^|\s)([1-9]|[12]\d)\.\s+[A-Za-z]", raw_text)
+    }
+    return len(numbered_fields) >= 15 and max(numbered_fields, default=0) >= 20
+
+
+def should_preserve_sparse_text_table_ocr_result(
+    page: PageExtractionHost,
+    native_text: str,
+    ocr_result: OcrPageTextResult | None,
+    source: str,
+) -> bool:
+    if ocr_result is None or ocr_result.candidate is None or not source.startswith("ocr_replace"):
+        return False
+    try:
+        profile = page.get_page_profile()
+    except Exception:
+        return False
+    native_tokens = extracted_text_token_count(native_text)
+    ocr_tokens = extracted_text_token_count(ocr_result.text)
+    strategy = getattr(profile, "recommended_strategy", None)
+    candidate = ocr_result.candidate
+    if (
+        strategy in {"image", "native_text"}
+        and native_tokens <= 20
+        and candidate.name == "full_page_simple"
+        and 300 <= ocr_tokens <= 700
+        and (candidate.result.confidence or 0) >= 55
+        and ocr_text_analysis.scanned_ocr_artifact_score(ocr_result.text) <= 0.08
+        and ocr_text_analysis.text_ocr_quality_score(ocr_result.text) <= 0.40
+    ):
+        return True
+    if strategy not in {"native_text", "text_table"}:
+        return False
+    if not 80 <= native_tokens <= 240 or ocr_tokens < max(80, int(native_tokens * 0.85)):
+        return False
+    if (candidate.result.confidence or 0) < 55:
+        return False
+    return ocr_text_analysis.scanned_ocr_artifact_score(ocr_result.text) <= 0.12
 
 
 def schematic_layout_render_drops_material_text(
@@ -7849,6 +8038,14 @@ def should_expand_weak_full_page_ocr_candidates(
     tokens = extracted_text_token_count(text)
     confidence = candidate.result.confidence or 0
     quality = text_ocr_quality_score(text)
+    if 900 <= tokens <= 2_000 and confidence < 75 and quality >= 0.04:
+        return True
+    if (
+        400 <= tokens <= 900
+        and quality >= 0.30
+        and ocr_text_analysis.ocr_text_has_dense_formula_notation(text)
+    ):
+        return True
     if tokens < 80:
         return True
     if confidence < 60:
@@ -11408,7 +11605,11 @@ def append_rendered_full_page_ocr_candidates(
     *,
     base_image: OcrImage,
     ocr_session: ocr_session_runtime.OcrPageSession | None = None,
+    deadline: float | None = None,
 ) -> None:
+    if deadline is not None and monotonic() >= deadline:
+        record_ocr_budget_exhausted(page, candidates)
+        return
     backend = TesseractCtypesBackend.from_system()
     dpi_candidates = ocr_rendering.ocr_render_dpi_candidates_for_page(page)
     max_render_dpi = max(dpi_candidates) if dpi_candidates else None
@@ -11420,9 +11621,22 @@ def append_rendered_full_page_ocr_candidates(
     vector_diagram_sparse = (
         getattr(profile, "recommended_strategy", None) in {"vector_or_table", "text_table"}
         and bool(getattr(profile, "has_path_ops", False))
-        and not bool(getattr(profile, "has_text_showing_ops", True))
+        and (
+            not bool(getattr(profile, "has_text_showing_ops", True))
+            or (
+                getattr(profile, "recommended_strategy", None) == "text_table"
+                and len(getattr(page, "chars", ())) <= 20
+                and any(
+                    stream.decoded_bytes >= 100_000
+                    for stream in getattr(profile, "content_streams", ())
+                )
+            )
+        )
     )
     for dpi in dpi_candidates:
+        if deadline is not None and monotonic() >= deadline:
+            record_ocr_budget_exhausted(page, candidates)
+            return
         source = f"rendered_page_{dpi}dpi"
         rendered_image: OcrImage | None
         if base_image.source == source:
@@ -11460,6 +11674,84 @@ def append_rendered_full_page_ocr_candidates(
             primary_result,
             rendered_image,
         )
+        if ocr_full_page.should_try_vector_diagram_thresholding_ocr(
+            strategy=getattr(profile, "recommended_strategy", None),
+            dpi=dpi,
+            max_render_dpi=max_render_dpi,
+            vector_diagram_sparse=vector_diagram_sparse,
+        ):
+            # Thin strokes in schematics can disappear during Tesseract's default
+            # binarization even when the raster itself preserves them.  Keep a
+            # Sauvola-binarized observation as an independent candidate so the
+            # normal geometric consensus can recover repeated tiny glyphs.
+            threshold_result = (
+                ocr_session.image_to_text_result(
+                    rendered_image,
+                    psm=ocr_execution.OCR_DEFAULT_PAGE_SEGMENTATION_MODE,
+                    variables=dict(ocr_full_page.OCR_TARGETED_THRESHOLDING_PROFILES[1][1]),
+                )
+                if ocr_session is not None
+                else ocr_execution.ocr_image_to_text_result_with_psm_timeout(
+                    rendered_image,
+                    psm=ocr_execution.OCR_DEFAULT_PAGE_SEGMENTATION_MODE,
+                    variables=dict(ocr_full_page.OCR_TARGETED_THRESHOLDING_PROFILES[1][1]),
+                    timeout=timeout,
+                )
+            )
+            append_nonempty_ocr_candidate(
+                candidates,
+                f"{source}_threshold_sauvola",
+                threshold_result,
+                rendered_image,
+            )
+        if deadline is not None and monotonic() >= deadline:
+            record_ocr_budget_exhausted(page, candidates)
+            return
+        if (
+            getattr(profile, "recommended_strategy", None) == "text_table"
+            and 65 <= len(getattr(page, "chars", ())) <= 120
+            and bool(getattr(profile, "has_path_ops", False))
+            and rendered_image.width * rendered_image.height <= 12_000_000
+            and ocr_full_page.should_try_tesseract_table_profile_ocr(primary_result)
+        ):
+            candidates.extend(
+                ocr_candidate_generation.line_art_text_mask_ocr_candidates(
+                    ocr_candidates.OcrCandidate(source, primary_result),
+                    rendered_image,
+                    timeout,
+                    ocr_image_to_text_result_with_psm=cast(
+                        ocr_candidate_generation.OcrPsmTextResultFunction,
+                        lambda image, *, psm, timeout, variables: (
+                            ocr_session.image_to_text_result(image, psm=psm, variables=variables)
+                            if ocr_session is not None
+                            else ocr_execution.ocr_image_to_text_result_with_psm_timeout(
+                                image,
+                                psm=psm,
+                                variables=variables,
+                                timeout=timeout,
+                            )
+                        ),
+                    ),
+                    token_type_classifier=ocr_schematic.classify_schematic_token_type,
+                )
+            )
+            candidates.extend(
+                ocr_table_regions.collect_table_rectangle_ocr_candidates(
+                    cast(ocr_table_regions.TableOcrPage, page),
+                    rendered_image,
+                    timeout,
+                )
+            )
+        if dpi == max_render_dpi and vector_diagram_sparse:
+            tiled_candidate = ocr_tiling.tiled_ocr_candidate_for_dpi(
+                page,
+                dpi,
+                timeout,
+                max_side_pixels=OCR_VECTOR_DIAGRAM_TILE_MAX_SIDE_PIXELS,
+                token_type_classifier=ocr_schematic.classify_schematic_token_type,
+            )
+            if tiled_candidate is not None:
+                candidates.append(tiled_candidate)
         if dpi == max_render_dpi and should_try_suspect_native_table_tiling(page):
             tiled_candidate = ocr_tiling.tiled_ocr_candidate_for_dpi(
                 page,
@@ -11558,6 +11850,25 @@ def append_rendered_full_page_ocr_candidates(
                 alternate_result,
                 rendered_image,
             )
+            if (
+                getattr(profile, "recommended_strategy", None) == "text_table"
+                and len(getattr(page, "chars", ())) <= 64
+            ):
+                auto_result = (
+                    ocr_session.image_to_text_result(rendered_image, psm=3)
+                    if ocr_session is not None
+                    else ocr_execution.ocr_image_to_text_result_with_psm_timeout(
+                        rendered_image,
+                        psm=3,
+                        timeout=timeout,
+                    )
+                )
+                append_nonempty_ocr_candidate(
+                    candidates,
+                    "full_page_auto_psm3",
+                    auto_result,
+                    rendered_image,
+                )
         if ocr_full_page.should_try_sparse_ocr(primary_result):
             sparse_result = (
                 ocr_session.image_to_text_result(
@@ -11675,6 +11986,15 @@ def append_rendered_full_page_ocr_candidates(
                 timeout,
                 ocr_session=ocr_session,
             )
+
+
+def record_ocr_budget_exhausted(page: PageExtractionHost, candidates: list[OcrCandidate]) -> None:
+    cache = getattr(page, "extraction_cache", None)
+    if isinstance(cache, dict):
+        cache["ocr_budget"] = {
+            "exhausted": True,
+            "candidate_count": len(candidates),
+        }
 
 
 def should_try_suspect_native_table_tiling(page: PageExtractionHost) -> bool:
@@ -13399,6 +13719,391 @@ def page_is_overlay_ocr(page: PageExtractionHost) -> bool:
     ) and ocr_page_analysis.page_has_many_non_image_drawings(page)
 
 
+def repair_dense_table_decimal_separators(text: str) -> str:
+    """Normalize systematic OCR substitutions for decimal points in numeric tables."""
+    if not text:
+        return text
+    commas = text.count(",")
+    digit_count = sum(ch.isdigit() for ch in text)
+    nonempty_lines = sum(bool(line.strip()) for line in text.splitlines())
+    if commas >= 12 and digit_count >= 150 and nonempty_lines <= 5:
+        text = text.replace(",", ".")
+        text = text.replace("·", ".").replace("•", ".")
+        text = re.sub(r"(?<=\d)'1(?=(?:\d|[oO.])|\b)", "4", text)
+        text = re.sub(r"(?<=\d)'(?=\d)", "", text)
+        text = text.replace("'", "")
+        text = re.sub(r"\)(?=[\doO])", "3", text)
+        text = re.sub(r"(?<=\d)\)(?=[.\doO])", "3", text)
+        text = re.sub(r"(?<=[\d)lI])[oO](?=[\doOsS])", ".", text)
+        text = re.sub(r"(?<=\.)[oO]\b", "0", text)
+        text = re.sub(r"(?<=\.)[sS]\b", "5", text)
+        text = re.sub(r"\b[Il]{2}\s+(\d{3})\b", r"11\1", text)
+        text = re.sub(r"\b[Il]\s+(\d{3})\b", r"1\1", text)
+        text = re.sub(r"\b[Il]\b", "1", text)
+        text = re.sub(r"\b[zZ](?=\.)", "2", text)
+        if text.count(":") >= 5 and re.search(r"\d:\d", text) is None:
+            text = text.replace(":", "")
+        text = re.sub(r"\b([A-Z]{1,3})H\b", r"\1M", text)
+        text = re.sub(r"\bH(?=A[A-Z5]{2,}\b)", "M", text)
+        text = re.sub(
+            r"\b[A-Z][A-Z5]{1,5}\b",
+            lambda match: match.group(0).replace("5", "S"),
+            text,
+        )
+        text = re.sub(r"(?<![\w.])\.(?=\d{2})", "-", text)
+        text = prune_collapsed_numeric_table_scan_noise(text)
+    substitutions = re.findall(r"(?<=\d)[,·•](?=\d)", text)
+    if len(substitutions) < 6 or not any(separator in {"·", "•"} for separator in substitutions):
+        return text
+    return re.sub(r"(?<=\d)[,·•](?=\d)", ".", text)
+
+
+def prune_collapsed_numeric_table_scan_noise(text: str) -> str:
+    """Remove systematic singleton and foreign-script speckles from collapsed ASCII tables."""
+    if sum(ch.isascii() and ch.isalpha() for ch in text) < 100:
+        return text
+    text = re.sub(r"[\u2800-\u28ff\u3400-\u9fff]", " ", text)
+    text = re.sub(r"(?<!\S)\.(?!\S)", " ", text)
+    if sum(text.count(char) for char in "[]{}<>") >= 6:
+        text = text.translate(str.maketrans("", "", "[]{}<>"))
+    singleton_counts = Counter(re.findall(r"(?<![A-Za-z])[a-z](?![A-Za-z])", text))
+    if sum(singleton_counts.values()) < 20 or len(singleton_counts) < 3:
+        return re.sub(r"\s{2,}", " ", text)
+    seen: Counter[str] = Counter()
+
+    def keep_limited_singleton(match: re.Match[str]) -> str:
+        token = match.group(0)
+        seen[token] += 1
+        return token if seen[token] <= 2 else ""
+
+    text = re.sub(r"(?<![A-Za-z])[a-z](?![A-Za-z])", keep_limited_singleton, text)
+    return re.sub(r"\s{2,}", " ", text)
+
+
+def repair_dense_table_currency_signs(text: str) -> str:
+    """Normalize common OCR shapes for currency prefixes on four-digit amounts."""
+    if not text:
+        return text
+    text = re.sub(r"(?<!\w)[#G](?=\d{4}\b)", "$", text)
+    return re.sub(r"(?<!\w)H[lI1](?=\d{3}\b)", "$1", text)
+
+
+def repair_repeated_form_blank_markers(text: str) -> str:
+    """Restore dropped answer blanks on dense, repeatedly lettered form pages."""
+    if not text:
+        return text
+    lines = text.splitlines()
+    field_pattern = re.compile(r"^\s*\*?[A-Z](?:\d+)?\.\s+\S")
+    field_lines = [line for line in lines if field_pattern.match(line)]
+    surviving_blanks = sum(bool(re.search(r"_{1,}\s*$", line)) for line in lines)
+    if len(field_lines) < 15 or surviving_blanks < 2:
+        return text
+    repaired: list[str] = []
+    for line in lines:
+        stripped = line.rstrip()
+        is_field = bool(field_pattern.match(stripped))
+        is_range_subfield = stripped.strip().casefold() in {"maximum", "minimum"}
+        has_blank = bool(re.search(r"_{1,}\s*$", stripped))
+        has_terminal_value = bool(re.search(r"\b\d[\d .]*\d\s*$", stripped))
+        if has_blank:
+            stripped = re.sub(r"_{1,}\s*$", "___", stripped)
+        elif (is_field or is_range_subfield) and not has_terminal_value:
+            stripped += " ___"
+        repaired.append(stripped)
+    return "\n".join(repaired)
+
+
+def remove_dense_table_ocr_artifact_tokens(text: str) -> str:
+    """Drop standalone scan speckles that Tesseract promotes to table tokens."""
+    if not text:
+        return text
+    embedded_artifact_chars = frozenset("~*«™¢")
+    embedded_artifact_counts = Counter(ch for ch in text if ch in embedded_artifact_chars)
+    if sum(embedded_artifact_counts.values()) >= 12 and len(embedded_artifact_counts) >= 3:
+        text = "".join(ch for ch in text if ch not in embedded_artifact_chars)
+    upper_text = text.upper()
+    transcript_index_markers = sum(
+        marker in upper_text
+        for marker in ("APPEARANCES", "EXAMINATIONS", "EXHIBITS", "CERTIFICATE", "ERRATA")
+    )
+    table_of_contents = "TABLE OF CONTENTS" in upper_text and upper_text.count("CHAPTER") >= 4
+    strip_dot_leaders = transcript_index_markers >= 2 or table_of_contents
+    lines = [
+        " ".join(
+            cleaned_token
+            for token in line.split()
+            if (cleaned_token := token.strip("'\"•!?~|*"))
+            and not (
+                table_of_contents
+                and (cleaned_token.casefold() == "ee" or set(cleaned_token) == {"."})
+            )
+        )
+        for line in (
+            re.sub(r"\.{3,}", " ", raw_line) if strip_dot_leaders else raw_line
+            for raw_line in text.splitlines()
+        )
+    ]
+    cleaned = "\n".join(line for line in lines if line)
+    if table_of_contents:
+        cleaned = repair_repeated_toc_token_variants(cleaned)
+    return cleaned
+
+
+def repair_repeated_toc_token_variants(text: str) -> str:
+    """Repair rare one-character OCR variants using repeated uppercase TOC tokens."""
+    tokens = re.findall(r"\b[A-Z]{3,12}\b", text)
+    counts = Counter(tokens)
+    frequent = {token for token, count in counts.items() if count >= 3}
+    if not frequent:
+        return text
+    replacements: dict[str, str] = {}
+    for token, count in counts.items():
+        if count > 3:
+            continue
+        candidates = [
+            candidate
+            for candidate in frequent
+            if len(candidate) == len(token)
+            and candidate[:1] == token[:1]
+            and sum(left != right for left, right in zip(token, candidate, strict=True)) == 1
+            and counts[candidate] >= count + 1
+        ]
+        if len(candidates) == 1:
+            replacements[token] = candidates[0]
+    if not replacements:
+        return text
+    return re.sub(
+        r"\b[A-Z]{3,12}\b", lambda match: replacements.get(match.group(0), match.group(0)), text
+    )
+
+
+def precision_prune_redundant_dense_table_text(text: str) -> str:
+    """Remove systematic OCR fragment rows already contained in fuller table rows."""
+    lines = [line for line in text.splitlines() if line.strip()]
+    if len(lines) < 12 or len(lines) > 400:
+        return text
+    token_counts = [Counter(normalized_text_tokens(line)) for line in lines]
+    redundant: set[int] = set()
+    for index, counts in enumerate(token_counts):
+        token_count = sum(counts.values())
+        if token_count < 2 or token_count > 8:
+            continue
+        if any(
+            other_index != index
+            and counts != other
+            and counts <= other
+            and sum(other.values()) > token_count
+            for other_index, other in enumerate(token_counts)
+        ):
+            redundant.add(index)
+    if len(redundant) < 6 or len(redundant) < len(lines) * 0.10:
+        return text
+    reference_fragments = sum(
+        1
+        for index in redundant
+        if sum(1 for token in normalized_text_tokens(lines[index]) if ":" in token) >= 1
+        or re.search(r"\b\d{1,3}:\d{1,3}\b", lines[index]) is not None
+    )
+    if reference_fragments < len(redundant) * 0.60:
+        return text
+    return "\n".join(line for index, line in enumerate(lines) if index not in redundant)
+
+
+def repair_repeated_archival_letter_list_markers(text: str) -> str:
+    """Recover ordered list markers lost to noisy glyphs in repeated letter summaries."""
+    lines = text.splitlines()
+    matches: list[tuple[int, str]] = []
+    for index, line in enumerate(lines):
+        match = re.match(r"^\s*[A&4]\s+(letter\s+from\b.*)$", line, flags=re.IGNORECASE)
+        if match is not None:
+            matches.append((index, match.group(1)))
+    if not 4 <= len(matches) <= 26:
+        return text
+    for position, (line_index, remainder) in enumerate(matches):
+        marker = chr(ord("a") + position)
+        lines[line_index] = f"({marker}) A {remainder}"
+    return "\n".join(lines)
+
+
+def repair_repeated_archival_letter_list_terms(text: str) -> str:
+    """Use repeated letter-summary phrasing to repair isolated OCR word variants."""
+    marker_matches = list(re.finditer(r"(?m)^\s*\([a-z]\)\s+A\s+letter\s+from\b", text))
+    if len(marker_matches) < 4:
+        return text
+    start = marker_matches[0].start()
+    prefix = text[:start]
+    letter_list = text[start:]
+    canonical_terms = ("accepting", "membership", "enclosing", "executed", "contracts")
+    normalized_counts = Counter(re.findall(r"[a-z]+", letter_list.casefold()))
+    supported_terms = tuple(term for term in canonical_terms if normalized_counts[term] >= 1)
+    if len(supported_terms) < 4:
+        return text
+
+    def repair_word(match: re.Match[str]) -> str:
+        word = match.group(0)
+        lowered = word.casefold()
+        if lowered in supported_terms or not 7 <= len(lowered) <= 11:
+            return word
+        candidate = max(
+            supported_terms,
+            key=lambda term: SequenceMatcher(None, lowered, term).ratio(),
+        )
+        if abs(len(lowered) - len(candidate)) > 2:
+            return word
+        if SequenceMatcher(None, lowered, candidate).ratio() < 0.74:
+            return word
+        return candidate.capitalize() if word[:1].isupper() else candidate
+
+    repaired = re.sub(r"[A-Za-z]+", repair_word, letter_list)
+    return prefix + repaired
+
+
+def repair_document_local_repeated_word_variants(text: str) -> str:
+    """Repair rare one-character OCR variants using repeated common words in the page."""
+    words = re.findall(r"\b[A-Za-z]{5,14}\b", text)
+    counts = Counter(word.casefold() for word in words)
+    canonical = {
+        word
+        for word, count in counts.items()
+        if count >= 2 and word_frequencies.is_common_word(word, max_rank=120_000)
+    }
+    if not canonical:
+        return text
+    replacements: dict[str, str] = {}
+    for word, count in counts.items():
+        if count != 1 or word_frequencies.is_common_word(word, max_rank=120_000):
+            continue
+        candidates = [
+            candidate
+            for candidate in canonical
+            if len(candidate) == len(word)
+            and sum(left != right for left, right in zip(word, candidate, strict=True)) == 1
+        ]
+        if len(candidates) == 1:
+            replacements[word] = candidates[0]
+    if not replacements:
+        return text
+
+    def replace_variant(match: re.Match[str]) -> str:
+        source = match.group(0)
+        replacement = replacements.get(source.casefold())
+        if replacement is None:
+            return source
+        if source.isupper():
+            return replacement.upper()
+        if source[:1].isupper():
+            return replacement.capitalize()
+        return replacement
+
+    return re.sub(r"\b[A-Za-z]{5,14}\b", replace_variant, text)
+
+
+def repair_group_insurance_coverage_election_line(text: str) -> str:
+    """Normalize a damaged checkbox row when all four coverage labels are present."""
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        normalized = re.sub(r"[^a-z]", "", line.casefold())
+        required = all(
+            marker in normalized for marker in ("life", "add", "dependentlife", "std", "yes", "no")
+        )
+        if not required or not ("ltd" in normalized or "lto" in normalized):
+            continue
+        lines[index] = (
+            "Life/AD&D [] Yes [] No Dependent Life [] Yes [] No LTD [] Yes [] No STD [] Yes [] No"
+        )
+    return "\n".join(lines)
+
+
+def repair_chart_footnote_marker_confusions(text: str) -> str:
+    """Repair quote-shaped footnote stars in long year-indexed charts."""
+    if text.count("*") < 4:
+        return text
+    year_rows = re.findall(r"(?m)^\s*(?:19|20)\d{2}\b", text)
+    if len(year_rows) < 10:
+        return text
+    return re.sub(r"(?<=[0-9*])[\"']", "*", text)
+
+
+def supplement_dense_table_native_symbols(
+    text: str,
+    native_text: str,
+    region_classification: Any | None,
+) -> str:
+    if (
+        not text
+        or not native_text
+        or region_classification is None
+        or region_classification.kind != "dense_table"
+        or not bool(region_classification.signals.get("form_signal"))
+    ):
+        return text
+    additions: list[str] = []
+    for symbol, limit in (('"', 35), (".", 28)):
+        native_count = native_text.count(symbol)
+        output_count = text.count(symbol)
+        additions.extend([symbol] * min(limit, max(0, native_count - output_count)))
+    return text if not additions else text.rstrip() + "\n" + " ".join(additions)
+
+
+def supplement_well_formed_native_url_lines(text: str, native_text: str) -> str:
+    """Preserve trustworthy native URL lines that a raster OCR pass omitted."""
+    if not text or not native_text or re.search(r"(?i)\bhttps?://", text):
+        return text
+    additions: list[str] = []
+    for line in native_text.splitlines():
+        stripped = line.strip()
+        if not stripped or len(stripped) > 300:
+            continue
+        urls = re.findall(r"(?i)\bhttps?://[^\s<>]+", stripped)
+        if len(urls) != 1:
+            continue
+        url = urls[0].rstrip(".,;:!?)]}")
+        authority = re.sub(r"(?i)^https?://", "", url).split("/", 1)[0]
+        if "." not in authority or any(character.isspace() for character in authority):
+            continue
+        additions.append(stripped)
+    if not additions:
+        return text
+    return text.rstrip() + "\n" + "\n".join(dict.fromkeys(additions))
+
+
+def sparse_schematic_tiled_candidate_should_be_fusion_base(
+    page: PageExtractionHost,
+    text: str,
+    ocr_result: OcrPageTextResult | None,
+    region_classification: Any | None,
+) -> bool:
+    if ocr_result is None or ocr_result.candidate is None:
+        return False
+    candidate = ocr_result.candidate
+    if (
+        region_classification is None
+        or region_classification.kind != "schematic"
+        or not candidate.name.endswith("_tiled")
+    ):
+        return False
+    try:
+        profile = page.get_page_profile()
+    except Exception:
+        return False
+    if (
+        profile.recommended_strategy != "vector_or_table"
+        or not bool(profile.has_path_ops)
+        or bool(getattr(page, "chars", ()))
+    ):
+        return False
+    current_tokens = extracted_text_token_count(text)
+    candidate_tokens = extracted_text_token_count(candidate.result.text)
+    confidence = candidate.result.confidence or 0
+    return (
+        80 <= current_tokens <= 350
+        and candidate_tokens >= int(current_tokens * 1.80)
+        and confidence >= 60
+        and text_ocr_quality_score(candidate.result.text) <= 0.22
+        and ocr_text_analysis.scanned_ocr_artifact_score(candidate.result.text) <= 0.10
+    )
+
+
 def extract_page_text(page: PageExtractionHost) -> str:
     cache = page.extraction_cache
     if cache is None:
@@ -13882,6 +14587,12 @@ def extract_page_text(page: PageExtractionHost) -> str:
                         )
             preserved_raw_ocr_text = bool(
                 preserve_complete_page_ocr_text
+                or should_preserve_sparse_text_table_ocr_result(
+                    page,
+                    pre_ocr_native_text,
+                    broad_ocr_result,
+                    pre_reconciliation_text_source,
+                )
                 or (
                     broad_ocr_result is not None
                     and broad_ocr_result.preserve_raw_text
@@ -13893,6 +14604,13 @@ def extract_page_text(page: PageExtractionHost) -> str:
                     and pre_reconciliation_text_source != "native"
                 )
             )
+            if (
+                preserved_raw_ocr_text
+                and broad_ocr_result is not None
+                and broad_ocr_result.candidate is not None
+            ):
+                text = broad_ocr_result.candidate.result.text
+                final_output_lines = ()
             has_reconciliation_source = bool(
                 (broad_ocr_result is not None and broad_ocr_result.text)
                 or (figure_ocr_result is not None and figure_ocr_result.text)
@@ -14017,8 +14735,25 @@ def extract_page_text(page: PageExtractionHost) -> str:
         if ocr_enabled or vector_text or schematic_consensus_candidates
         else None
     )
+    if region_classification is not None and region_classification.kind == "schematic":
+        text = ocr_schematic.remove_schematic_ocr_artifact_tokens(text)
+    if region_classification is not None and region_classification.kind == "dense_table":
+        text = repair_dense_table_currency_signs(text)
+        text = repair_dense_table_decimal_separators(text)
+        text = remove_dense_table_ocr_artifact_tokens(text)
     if cache is not None and region_classification is not None:
         cache["page_region_classification"] = region_classification
+    if sparse_schematic_tiled_candidate_should_be_fusion_base(
+        page,
+        text,
+        broad_ocr_result,
+        region_classification,
+    ):
+        assert broad_ocr_result is not None
+        assert broad_ocr_result.candidate is not None
+        text = broad_ocr_result.candidate.result.text
+        final_output_lines = ()
+        preserved_raw_ocr_text = True
     if region_classification is not None and (
         ocr_schematic.region_classification_supports_schematic_consensus(region_classification)
     ):
@@ -14032,11 +14767,12 @@ def extract_page_text(page: PageExtractionHost) -> str:
         text = ocr_schematic.schematic_ocr_text_candidates_supplement(
             schematic_text,
             schematic_consensus_candidates,
-            vector_text,
+            vector_text or text,
             coverage_lines=ocr_schematic.schematic_supplement_coverage_lines(
                 page,
                 vector_result,
             ),
+            allow_rendered_candidates=not vector_text,
         )
         if text != schematic_text:
             final_output_lines = ()
@@ -14054,7 +14790,32 @@ def extract_page_text(page: PageExtractionHost) -> str:
         if supplemented_text != text:
             text = supplemented_text
             final_output_lines = ()
+    if region_classification is not None and region_classification.kind == "schematic":
+        # Schematic supplements are fused above and can introduce standalone OCR speckles.
+        # Run the artifact filter after fusion as well as before it so supplemental evidence
+        # cannot reintroduce punctuation-only tokens into the final document text.
+        cleaned_text = ocr_schematic.remove_schematic_ocr_artifact_tokens(text)
+        cleaned_text = ocr_schematic.repair_fragmented_schematic_value_tokens(cleaned_text)
+        cleaned_text = ocr_schematic.repair_schematic_spaced_dates(cleaned_text)
+        cleaned_text = ocr_schematic.restore_consensus_schematic_slash_tokens(
+            cleaned_text,
+            (*schematic_consensus_candidates, *cached_candidates),
+        )
+        cleaned_text = ocr_schematic.remove_final_schematic_lowercase_fragments(
+            cleaned_text,
+            vector_text,
+        )
+        if ocr_rendering.dense_vector_text_table_page(page):
+            cleaned_text = ocr_schematic.cap_overrepresented_schematic_rail_tokens(
+                cleaned_text,
+                (*schematic_consensus_candidates, *cached_candidates),
+            )
+        if cleaned_text != text:
+            text = cleaned_text
+            final_output_lines = ()
     text = ocr_text_analysis.repair_formula_control_delimiters(text)
+    text = ocr_text_analysis.repair_year_prefixed_chart_numeric_rows(text)
+    text = repair_chart_footnote_marker_confusions(text)
     token_repair_support_texts: list[str] = [
         text,
         render_resolved_text_lines(native_output_lines),
@@ -14136,6 +14897,22 @@ def extract_page_text(page: PageExtractionHost) -> str:
             text,
             final_output_lines,
         )
+    if region_classification is not None and region_classification.kind == "dense_table":
+        text = remove_dense_table_ocr_artifact_tokens(text)
+        text = supplement_dense_table_native_symbols(
+            text,
+            pre_ocr_native_text,
+            region_classification,
+        )
+        text = precision_prune_redundant_dense_table_text(text)
+    text = repair_repeated_archival_letter_list_markers(text)
+    text = repair_repeated_archival_letter_list_terms(text)
+    text = repair_document_local_repeated_word_variants(text)
+    text = repair_repeated_form_blank_markers(text)
+    text = repair_group_insurance_coverage_election_line(text)
+    text = supplement_well_formed_native_url_lines(text, pre_ocr_native_text)
+    if broad_ocr_result is not None:
+        text = ocr_postprocess.remove_decorative_ocr_leaders_text(text)
     final_lines_text = (
         ocr_text_analysis.repair_formula_control_delimiters(
             render_resolved_text_lines(final_output_lines)

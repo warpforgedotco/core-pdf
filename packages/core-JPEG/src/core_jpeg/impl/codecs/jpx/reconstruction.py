@@ -12,6 +12,7 @@ from core_jpeg.impl.codecs.jpx.params import (
     JpxCodingParams,
     coding_component_quant_guard_bits,
     coding_component_quant_steps,
+    coding_component_quant_style,
     coding_component_roi_shift,
     coding_component_style_params,
 )
@@ -24,7 +25,7 @@ from core_jpeg.impl.codecs.jpx.wavelet import (
     apply_roi_shift_subband,
     dequantize_subband,
     quant_num_bitplanes,
-    subband_quant_index,
+    resolve_quant_step,
     synthesize_component,
 )
 from core_jpeg.impl.errors import JpegParseError, JpegUnsupportedError
@@ -59,6 +60,7 @@ def decode_tile_payload_stream(
         params = tile.get("coding_params", params)
     else:
         tile["coding_params"] = params
+    included_packet_keys = tile.setdefault("included_packet_keys", set())
     consumed = decode_progression_packet_streams(
         payload,
         tile["components"],
@@ -70,11 +72,13 @@ def decode_tile_payload_stream(
         progression_changes=params.progression_changes,
         packet_headers=packet_headers,
         packet_header_offset=packet_header_offset,
-        packet_position_offset=int(tile.get("packet_position_offset", 0)),
+        included_packet_keys=included_packet_keys,
+        # Nsop is tile-scoped (ISO/IEC 15444-1 A.8.1), not tile-part-scoped.
+        packet_sequence_offset=int(tile.get("packet_sequence", 0)),
     )
-    tile["packet_position_offset"] = int(tile.get("packet_position_offset", 0)) + int(
-        consumed.positions
-    )
+    tile["packet_sequence"] = (
+        int(tile.get("packet_sequence", 0)) + int(consumed.positions)
+    ) % 65536
     decode_tile_components(image, tile, params)
     return consumed
 
@@ -89,15 +93,18 @@ def reconstruct_component(
     component_params = coding_component_style_params(params, comp_index)
     quant_steps = coding_component_quant_steps(params, comp_index)
     quant_guard_bits = coding_component_quant_guard_bits(params, comp_index)
+    quant_style = coding_component_quant_style(params, comp_index)
     roi_shift = coding_component_roi_shift(params, comp_index)
     component_spec = image.components_data[min(comp_index, len(image.components_data) - 1)]
     precision = int(component_spec.get("precision", 8))
     for res in comp.resolutions:
         for subband in res.subbands:
-            index = subband_quant_index(component_params.levels, subband)
-            if index >= len(quant_steps):
-                raise JpegParseError("missing JPX quantization step")
-            ignored_mantissa, exponent = quant_steps[index]
+            ignored_mantissa, exponent = resolve_quant_step(
+                quant_style,
+                quant_steps,
+                component_params.levels,
+                subband,
+            )
             num_bitplanes = quant_num_bitplanes(exponent, quant_guard_bits)
             decode_subband_codeblocks(
                 subband,
@@ -108,6 +115,7 @@ def reconstruct_component(
             dequantize_subband(
                 subband,
                 quant_steps,
+                quant_style,
                 component_params.levels,
                 precision,
                 component_params.reversible,

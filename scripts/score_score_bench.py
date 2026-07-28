@@ -10,7 +10,7 @@ from collections import Counter, deque
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from time import perf_counter
-from typing import Any, Callable
+from typing import Any, Callable, cast
 
 from rich import box
 from rich.console import Console
@@ -49,9 +49,23 @@ class CaseScore:
     predicted_tokens: int
     matched_tokens: int
     elapsed_seconds: float
+    track: str = "native"
+    cer: float | None = None
+    wer: float | None = None
+    table_structure_f1: float | None = None
+    table_content_f1: float | None = None
+    text_elapsed_seconds: float = 0.0
+    table_elapsed_seconds: float = 0.0
     error: str | None = None
     missing_top: list[tuple[str, int]] | None = None
     extra_top: list[tuple[str, int]] | None = None
+    candidate_analysis: list[dict[str, Any]] | None = None
+    selected_candidate_cct: float | None = None
+    best_candidate_name: str | None = None
+    best_candidate_cct: float | None = None
+    candidate_oracle_gap: float | None = None
+    selected_to_final_cct: float | None = None
+    best_to_final_cct: float | None = None
 
 
 @dataclass(frozen=True)
@@ -111,6 +125,17 @@ def is_correct_truth_path(path: Path) -> bool:
 
 def score_case(case: ScoreBenchCase) -> CaseScore:
     started = perf_counter()
+    track = (
+        "ocr"
+        if os.environ.get("CORE_PDF_OCR", "").casefold()
+        not in {
+            "0",
+            "false",
+            "no",
+            "off",
+        }
+        else "native"
+    )
     if not is_materialized_pdf(case.pdf):
         return CaseScore(
             stem=case.stem,
@@ -123,17 +148,42 @@ def score_case(case: ScoreBenchCase) -> CaseScore:
             predicted_tokens=0,
             matched_tokens=0,
             elapsed_seconds=perf_counter() - started,
+            track=track,
             error=f"{case.pdf} is not a materialized PDF. Run git lfs pull in SCORE-Bench.",
         )
 
     gt_text = case.content_gt.read_text(encoding="utf-8")
     try:
         with PdfDocument(case.pdf) as document:
+            text_started = perf_counter()
             predicted_text = extract_document_text(document)
+            text_elapsed = perf_counter() - text_started
+            candidate_analysis = score_document_candidates(document, gt_text)
+            table_started = perf_counter()
+            predicted_tables = document.extract_tables(include_span_info=True)
+            table_elapsed = perf_counter() - table_started
         cct, found, added, precision, gt_count, predicted_count, matched = score_tokens(
             gt_text, predicted_text
         )
         token_diff = score_token_diff_summary(gt_text, predicted_text)
+        cer, wer = score_ordered_errors(gt_text, predicted_text)
+        table_truth = json.loads(case.table_gt.read_text(encoding="utf-8"))
+        table_structure_f1, table_content_f1 = score_tables(table_truth, predicted_tables)
+        selected_candidate = next(
+            (candidate for candidate in candidate_analysis if candidate["selected"]),
+            None,
+        )
+        best_candidate = max(
+            candidate_analysis,
+            key=lambda candidate: (candidate["cct"], candidate["precision"]),
+            default=None,
+        )
+        selected_candidate_cct = (
+            cast(float, selected_candidate["cct"]) if selected_candidate is not None else None
+        )
+        best_candidate_cct = (
+            cast(float, best_candidate["cct"]) if best_candidate is not None else None
+        )
         score = CaseScore(
             stem=case.stem,
             status="ok",
@@ -145,8 +195,32 @@ def score_case(case: ScoreBenchCase) -> CaseScore:
             predicted_tokens=predicted_count,
             matched_tokens=matched,
             elapsed_seconds=perf_counter() - started,
+            track=track,
+            cer=cer,
+            wer=wer,
+            table_structure_f1=table_structure_f1,
+            table_content_f1=table_content_f1,
+            text_elapsed_seconds=text_elapsed,
+            table_elapsed_seconds=table_elapsed,
             missing_top=token_diff["missing_top"][:5],
             extra_top=token_diff["extra_top"][:5],
+            candidate_analysis=candidate_analysis or None,
+            selected_candidate_cct=selected_candidate_cct,
+            best_candidate_name=(
+                cast(str, best_candidate["name"]) if best_candidate is not None else None
+            ),
+            best_candidate_cct=best_candidate_cct,
+            candidate_oracle_gap=(
+                best_candidate_cct - selected_candidate_cct
+                if best_candidate_cct is not None and selected_candidate_cct is not None
+                else None
+            ),
+            selected_to_final_cct=(
+                cct - selected_candidate_cct if selected_candidate_cct is not None else None
+            ),
+            best_to_final_cct=(
+                best_candidate_cct - cct if best_candidate_cct is not None else None
+            ),
         )
         return score
     except Exception as exc:
@@ -161,6 +235,7 @@ def score_case(case: ScoreBenchCase) -> CaseScore:
             predicted_tokens=0,
             matched_tokens=0,
             elapsed_seconds=perf_counter() - started,
+            track=track,
             error=f"{type(exc).__name__}: {exc}",
         )
 
@@ -170,16 +245,52 @@ def extract_document_text(document: PdfDocument) -> str:
     return document.extract().text
 
 
+def score_document_candidates(document: PdfDocument, gt_text: str) -> list[dict[str, Any]]:
+    """Score opt-in raw OCR candidates against the case's content ground truth."""
+    scored: list[dict[str, Any]] = []
+    for page_number, page in enumerate(document.pages, start=1):
+        cache = getattr(page, "extraction_cache", None)
+        records = cache.get("ocr_candidate_analysis", ()) if cache is not None else ()
+        for record in records:
+            text = record.get("text")
+            if not isinstance(text, str):
+                continue
+            cct, found, added, precision, gt_count, predicted_count, matched = score_tokens(
+                gt_text, text
+            )
+            cer, wer = score_ordered_errors(gt_text, text)
+            scored.append(
+                {key: value for key, value in record.items() if key != "text"}
+                | {
+                    "page": page_number,
+                    "cct": cct,
+                    "recall": found,
+                    "added": added,
+                    "precision": precision,
+                    "gt_tokens": gt_count,
+                    "predicted_tokens": predicted_count,
+                    "matched_tokens": matched,
+                    "cer": cer,
+                    "wer": wer,
+                }
+            )
+    return scored
+
+
 def score_cases(
     cases: list[ScoreBenchCase],
     *,
     on_score: Callable[[int, CaseScore], None] | None = None,
     on_case_started: Callable[[int, ScoreBenchCase], None] | None = None,
     jobs: int = 1,
+    ocr_enabled: bool = True,
+    candidate_analysis: bool = False,
 ) -> list[CaseScore]:
     if jobs < 1:
         raise ValueError("--jobs must be at least 1")
     os.environ.setdefault("OMP_THREAD_LIMIT", "1")
+    os.environ["CORE_PDF_OCR"] = "1" if ocr_enabled else "0"
+    os.environ["CORE_PDF_CANDIDATE_ANALYSIS"] = "1" if candidate_analysis else "0"
     if jobs == 1 or len(cases) <= 1:
         scores = []
         for case_number, case in enumerate(cases, start=1):
@@ -245,11 +356,13 @@ class ScoreBenchUI:
         jobs: int,
         filters: list[str],
         limit: int | None,
+        track: str,
     ) -> None:
         self.total_cases = total_cases
         self.jobs = jobs
         self.filters = filters
         self.limit = limit
+        self.track = track
         self.started_at = perf_counter()
         self.completed_cases = 0
         self.status_counts: Counter[str] = Counter()
@@ -566,6 +679,24 @@ class ScoreBenchUI:
         table.add_row("CCT", format_ratio(score.cct))
         table.add_row("Recall", format_ratio(score.percent_tokens_found))
         table.add_row("Precision", format_ratio(score.precision))
+        if score.cer is not None:
+            table.add_row(
+                "CER / WER", f"{format_ratio(score.cer)} / {format_ratio(score.wer or 0.0)}"
+            )
+        if score.table_structure_f1 is not None:
+            table.add_row(
+                "Table S/C",
+                f"{format_ratio(score.table_structure_f1)} / "
+                f"{format_ratio(score.table_content_f1 or 0.0)}",
+            )
+        if score.best_candidate_name is not None:
+            table.add_row(
+                "OCR oracle",
+                f"{score.best_candidate_name} @ {format_ratio(score.best_candidate_cct or 0.0)}",
+            )
+        if score.candidate_oracle_gap is not None:
+            table.add_row("Selection gap", format_ratio(score.candidate_oracle_gap))
+            table.add_row("Best → final", format_ratio(score.best_to_final_cct or 0.0))
         table.add_row("Missing", format_focus_tokens(score.missing_top))
         table.add_row("Extra", format_focus_tokens(score.extra_top))
         if score.error is not None:
@@ -710,6 +841,7 @@ class ScoreBenchUI:
 
     def _subtitle(self) -> str:
         parts = [
+            f"track={self.track}",
             f"jobs={self.jobs}",
             f"elapsed={format_seconds(perf_counter() - self.started_at)}",
         ]
@@ -866,6 +998,130 @@ def score_tokens(
     )
 
 
+def edit_distance(reference: list[str], predicted: list[str]) -> int:
+    """Return Levenshtein distance using memory proportional to the shorter input."""
+    if len(reference) < len(predicted):
+        reference, predicted = predicted, reference
+    previous = list(range(len(predicted) + 1))
+    for row, reference_item in enumerate(reference, start=1):
+        current = [row]
+        for column, predicted_item in enumerate(predicted, start=1):
+            current.append(
+                min(
+                    current[-1] + 1,
+                    previous[column] + 1,
+                    previous[column - 1] + (reference_item != predicted_item),
+                )
+            )
+        previous = current
+    return previous[-1]
+
+
+def score_ordered_errors(gt_text: str, predicted_text: str) -> tuple[float, float]:
+    cleaned_gt = clean_score_bench_text(gt_text)
+    gt_characters = list(normalize_score_text(cleaned_gt))
+    predicted_characters = list(normalize_score_text(predicted_text))
+    gt_tokens = tokenize(cleaned_gt)
+    predicted_tokens = tokenize(predicted_text)
+    cer = edit_distance(gt_characters, predicted_characters) / max(1, len(gt_characters))
+    wer = edit_distance(gt_tokens, predicted_tokens) / max(1, len(gt_tokens))
+    return cer, wer
+
+
+def normalize_score_text(text: str) -> str:
+    """Normalize characters while retaining whitespace and reading order for CER."""
+    return " ".join(unicodedata.normalize("NFKC", text).casefold().split())
+
+
+def score_tables(
+    ground_truth: object, predicted_records: object
+) -> tuple[float | None, float | None]:
+    """Score table cell topology and coordinate-aware cell content independently."""
+    truth_cells = ground_truth_table_cells(ground_truth)
+    predicted_cells = predicted_table_cells(predicted_records)
+    if not truth_cells and not predicted_cells:
+        return None, None
+
+    truth_structure = Counter(
+        (table, x, y, width, height) for table, x, y, width, height, _ in truth_cells
+    )
+    predicted_structure = Counter(
+        (table, x, y, width, height) for table, x, y, width, height, _ in predicted_cells
+    )
+    structure_f1 = counter_f1(truth_structure, predicted_structure)
+
+    truth_content: Counter[tuple[int, int, int, str]] = Counter()
+    predicted_content: Counter[tuple[int, int, int, str]] = Counter()
+    for table, x, y, _width, _height, content in truth_cells:
+        truth_content.update((table, x, y, token) for token in tokenize(content))
+    for table, x, y, _width, _height, content in predicted_cells:
+        predicted_content.update((table, x, y, token) for token in tokenize(content))
+    return structure_f1, counter_f1(truth_content, predicted_content)
+
+
+def ground_truth_table_cells(value: object) -> list[tuple[int, int, int, int, int, str]]:
+    if not isinstance(value, list):
+        return []
+    cells = []
+    for table_index, table in enumerate(value):
+        if not isinstance(table, dict):
+            continue
+        table_cells = table.get("text")
+        if not isinstance(table_cells, list):
+            continue
+        for cell in table_cells:
+            if not isinstance(cell, dict):
+                continue
+            cells.append(
+                (
+                    table_index,
+                    int(cast(Any, cell.get("x", 0))),
+                    int(cast(Any, cell.get("y", 0))),
+                    max(1, int(cast(Any, cell.get("w", 1)))),
+                    max(1, int(cast(Any, cell.get("h", 1)))),
+                    str(cell.get("content", "")),
+                )
+            )
+    return cells
+
+
+def predicted_table_cells(value: object) -> list[tuple[int, int, int, int, int, str]]:
+    if not isinstance(value, list):
+        return []
+    cells = []
+    for table_index, record in enumerate(value):
+        if not isinstance(record, dict):
+            continue
+        rows = record.get("rows")
+        if not isinstance(rows, list):
+            continue
+        spans = record.get("spans")
+        for y, row in enumerate(rows):
+            if not isinstance(row, list):
+                continue
+            for x, content in enumerate(row):
+                span_row = spans[y] if isinstance(spans, list) and y < len(spans) else None
+                span = span_row[x] if isinstance(span_row, list) and x < len(span_row) else None
+                span = span if isinstance(span, dict) else {}
+                cells.append(
+                    (
+                        table_index,
+                        x,
+                        y,
+                        max(1, int(cast(Any, span.get("col_span", 1)))),
+                        max(1, int(cast(Any, span.get("row_span", 1)))),
+                        str(content or ""),
+                    )
+                )
+    return cells
+
+
+def counter_f1(reference: Counter[Any], predicted: Counter[Any]) -> float:
+    matched = sum((reference & predicted).values())
+    total = sum(reference.values()) + sum(predicted.values())
+    return 2 * matched / total if total else 1.0
+
+
 def clean_score_bench_text(text: str) -> str:
     lines = []
     for line in text.splitlines():
@@ -933,7 +1189,22 @@ def main() -> int:
         action="store_true",
         help="Opt into the full-screen live Rich dashboard.",
     )
+    parser.add_argument(
+        "--ocr",
+        action="store_true",
+        help="Explicitly select the default OCR extraction track.",
+    )
+    parser.add_argument(
+        "--native",
+        action="store_true",
+        help="Use native extraction only instead of the default OCR track.",
+    )
     parser.add_argument("--json-output", type=Path, default=None)
+    parser.add_argument(
+        "--candidate-analysis",
+        action="store_true",
+        help="Score every raw OCR candidate and report selection/oracle gaps.",
+    )
     parser.add_argument(
         "--full-results",
         action="store_true",
@@ -965,6 +1236,7 @@ def main() -> int:
         jobs=args.jobs,
         filters=filters,
         limit=args.limit,
+        track="native" if args.native else "ocr",
     )
     ui.set_case_queue(cases)
 
@@ -987,6 +1259,8 @@ def main() -> int:
                         score,
                     ),
                     jobs=args.jobs,
+                    ocr_enabled=not args.native,
+                    candidate_analysis=args.candidate_analysis,
                 )
         else:
             scores = score_cases(
@@ -998,6 +1272,8 @@ def main() -> int:
                     score,
                 ),
                 jobs=args.jobs,
+                ocr_enabled=not args.native,
+                candidate_analysis=args.candidate_analysis,
             )
     except ValueError as exc:
         CONSOLE.print(

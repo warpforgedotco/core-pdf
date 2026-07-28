@@ -14,6 +14,15 @@ class DecodedJpxComponent:
     precision: int
     is_signed: bool
     data: bytes
+    # Exact, level-shift-corrected component samples. ``data`` remains the
+    # historical display-oriented 8-bit plane for compatibility.
+    samples: tuple[int, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class Jp2Resolution:
+    vertical: float
+    horizontal: float
 
 
 @dataclass(frozen=True, slots=True)
@@ -23,6 +32,9 @@ class DecodedJpxImage:
     color_space: str | None
     components: tuple[DecodedJpxComponent, ...]
     interleaved: bytes
+    native_components: tuple[DecodedJpxComponent, ...] = ()
+    capture_resolution: Jp2Resolution | None = None
+    display_resolution: Jp2Resolution | None = None
 
 
 @dataclass(frozen=True, slots=True)

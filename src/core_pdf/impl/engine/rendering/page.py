@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
+from contextlib import suppress
 from typing import Any
 
 from core_pdf.impl.engine.rendering.models import (
@@ -26,8 +27,24 @@ def compose_page(page: Any, options: RenderOptions | None = None) -> RenderedPag
     height = max(0.0, y1 - y0)
     display_list = DisplayList(width=width, height=height)
 
+    capture_state = None
     if options.include_text:
-        for run in page.chars:
+        if hasattr(page, "get_text_and_graphics_state"):
+            try:
+                capture_state = page.get_text_and_graphics_state()
+            except Exception:
+                capture_state = None
+        if (
+            capture_state is not None
+            and not capture_state.capture_glyph_bitmaps
+            and hasattr(page, "capture_text_state")
+        ):
+            # A prior text-only extraction may have populated the lean state. Rendering
+            # still needs Type 3 glyph bitmaps, so only that path requires a second pass.
+            with suppress(Exception):
+                capture_state = page.capture_text_state()
+        runs = capture_state.runs if capture_state is not None else page.chars
+        for run in runs:
             display_list.append(
                 "text",
                 run.seqno,
@@ -40,12 +57,6 @@ def compose_page(page: Any, options: RenderOptions | None = None) -> RenderedPag
                 rotation_angle=run.rotation_angle,
             )
 
-    capture_state = None
-    if options.include_text and hasattr(page, "capture_text_state"):
-        try:
-            capture_state = page.capture_text_state()
-        except Exception:
-            capture_state = None
     if capture_state is not None:
         for glyph in capture_state.glyphs:
             if not glyph.bitmap:

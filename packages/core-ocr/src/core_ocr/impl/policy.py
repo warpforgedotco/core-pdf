@@ -146,6 +146,8 @@ def should_replace_text_with_ocr(
     candidate = ocr_result.candidate
     if candidate is None:
         return False
+    if should_use_medium_table_psm11_ocr(page, candidate, ocr_tokens=ocr_tokens):
+        return True
     if should_preserve_dense_numeric_native_text_against_ocr(
         text,
         ocr_text,
@@ -182,6 +184,13 @@ def should_replace_text_with_ocr(
     ):
         return True
     if text_tokens <= 24:
+        if should_use_short_table_psm3_ocr(
+            page,
+            candidate,
+            text_tokens=text_tokens,
+            ocr_tokens=ocr_tokens,
+        ):
+            return True
         if tiny_native_text_should_yield_to_ocr(
             text,
             ocr_text,
@@ -228,6 +237,47 @@ def should_replace_text_with_ocr(
             ocr_tokens=ocr_tokens,
         )
     )
+
+
+def should_use_short_table_psm3_ocr(
+    page: Any,
+    candidate: OcrCandidate,
+    *,
+    text_tokens: int,
+    ocr_tokens: int,
+) -> bool:
+    if str(getattr(candidate, "name", "")) != "full_page_auto_psm3":
+        return False
+    try:
+        profile = page.get_page_profile()
+    except Exception:
+        return False
+    if getattr(profile, "recommended_strategy", None) != "text_table":
+        return False
+    if len(getattr(page, "chars", ())) > 64:
+        return False
+    confidence = candidate.result.confidence or 0
+    return 12 <= text_tokens <= 24 and text_tokens < ocr_tokens <= 60 and confidence >= 80
+
+
+def should_use_medium_table_psm11_ocr(
+    page: Any,
+    candidate: OcrCandidate,
+    *,
+    ocr_tokens: int,
+) -> bool:
+    if not str(getattr(candidate, "name", "")).endswith("_psm11"):
+        return False
+    try:
+        profile = page.get_page_profile()
+    except Exception:
+        return False
+    if getattr(profile, "recommended_strategy", None) != "text_table":
+        return False
+    if not 65 <= len(getattr(page, "chars", ())) <= 120:
+        return False
+    confidence = candidate.result.confidence or 0
+    return 80 <= ocr_tokens <= 220 and confidence >= 80
 
 
 def should_preserve_native_text_against_rendered_page_ocr(
@@ -426,7 +476,7 @@ def tiny_native_text_should_yield_to_ocr(
         or native_profile.horizontal_rule_count >= 4
         or native_profile.vertical_rule_count >= 3
         or native_profile.drawing_line_count >= 20
-        or (native_profile.native_line_count <= 1 and native_profile.occupied_area_ratio <= 0.03)
+        or (native_profile.native_line_count <= 2 and native_profile.occupied_area_ratio <= 0.03)
     )
 
 
@@ -572,7 +622,7 @@ def should_replace_dominant_image_native_text_with_ocr(
         if ocr_text_analysis.scanned_ocr_artifact_score(ocr_text) > 0.34:
             return False
         return dominant_image
-    if text_tokens < 100 or ocr_tokens < 140:
+    if text_tokens < 60 or ocr_tokens < 140:
         return False
     token_ratio = ocr_tokens / max(1, text_tokens)
     if token_ratio < 1.35:
@@ -725,6 +775,13 @@ def classify_page_region(
     formula_signal = bool(text) and (
         ocr_text_analysis.ocr_text_has_dense_formula_notation(text) or formula_heavy_ocr_text(text)
     )
+    raster_formula_signal = (
+        formula_signal
+        and geometry.dominant_image
+        and not schematic_vector_signal
+        and geometry.page_height > geometry.page_width
+        and dense_table_signal
+    )
     form_signal = (
         geometry.horizontal_rule_count >= 8
         or (
@@ -789,6 +846,7 @@ def classify_page_region(
         "schematic_vector_signal": schematic_vector_signal,
         "dense_table_signal": dense_table_signal,
         "formula_signal": formula_signal,
+        "raster_formula_signal": raster_formula_signal,
         "form_signal": form_signal,
         "invoice_signal": invoice_signal,
         "invoice_geometry_signal": invoice_geometry_signal,
@@ -813,7 +871,10 @@ def classify_page_region(
             min(confidence, 0.99),
             signals,
         )
-    if formula_signal:
+    # On portrait scans, formula-like OCR is often caused by table borders,
+    # seals, handwriting, or dense label text. Prefer the table route there;
+    # keep the existing formula route for landscape technical drawings.
+    if formula_signal and not raster_formula_signal:
         return ocr_schematic.PageRegionClassification("patent_formula", 0.78, signals)
     if dense_table_signal:
         confidence = 0.72
