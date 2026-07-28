@@ -26,6 +26,8 @@ OCR_SCHEMATIC_VECTOR_RENDER_TILE_MIN_TOKENS = 80
 OCR_DENSE_VECTOR_RENDER_TILE_MIN_PIXELS = 6_000_000
 OCR_DENSE_VECTOR_RENDER_TILE_MAX_SIDE_PIXELS = 2048
 OCR_RENDER_TILE_MAX_WORKERS = 4
+OCR_COMPLEX_VECTOR_DRAWING_THRESHOLD = 20_000
+OCR_EXTREME_VECTOR_DRAWING_THRESHOLD = 50_000
 OCR_TIMEOUT_DISABLED_VALUES = {"", "0", "none", "off", "false", "no"}
 
 
@@ -132,6 +134,10 @@ def ocr_render_dpi_candidates_for_page(
         # large sheets are already expensive and tend to have larger labels;
         # reserve the extra pass for standard-size pages where glyphs are small.
         dimensions = ocr_page_dimensions_points(page)
+        if vector_page_has_extreme_rendering_complexity(page):
+            return (300,)
+        if vector_page_is_rendering_complex(page):
+            return (250, 300)
         if dimensions is not None and max(dimensions) <= 900.0:
             return (250, 300, 400, 475)
         return (250, 300, 400)
@@ -141,6 +147,34 @@ def ocr_render_dpi_candidates_for_page(
             return (300,)
         return (400, 300)
     return ocr_render_dpi_candidates()
+
+
+def vector_page_is_rendering_complex(page: OcrRenderablePage) -> bool:
+    """Avoid expensive supersampling retries for pages with excessive paths."""
+    return vector_page_drawing_count(page) >= OCR_COMPLEX_VECTOR_DRAWING_THRESHOLD
+
+
+def vector_page_has_extreme_rendering_complexity(page: OcrRenderablePage) -> bool:
+    return vector_page_drawing_count(page) >= OCR_EXTREME_VECTOR_DRAWING_THRESHOLD
+
+
+def vector_page_drawing_count(page: OcrRenderablePage) -> int:
+    cache = getattr(page, "extraction_cache", None)
+    cache_key = "ocr_vector_drawing_count"
+    if isinstance(cache, dict):
+        cached = cache.get(cache_key)
+        if isinstance(cached, int):
+            return cached
+    get_drawings = getattr(page, "get_drawings", None)
+    if not callable(get_drawings):
+        return 0
+    try:
+        count = len(get_drawings())
+    except Exception:
+        return 0
+    if isinstance(cache, dict):
+        cache[cache_key] = count
+    return count
 
 
 def dense_vector_text_table_page(
