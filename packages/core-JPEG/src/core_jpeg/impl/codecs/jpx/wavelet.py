@@ -304,6 +304,31 @@ def quant_num_bitplanes(exponent: int, guard_bits: int) -> int:
     return max(0, exponent + guard_bits - 1)
 
 
+def resolve_quant_step(
+    quant_style: int,
+    quant_steps: list[tuple[int, int]],
+    total_levels: int,
+    subband: SubBand,
+) -> tuple[int, int]:
+    if not quant_steps:
+        raise JpegParseError("missing JPX quantization step")
+    index = subband_quant_index(total_levels, subband)
+    if quant_style == 1:
+        if len(quant_steps) != 1:
+            raise JpegParseError("invalid JPX derived quantization table")
+        mantissa, base_exponent = quant_steps[0]
+        # ISO equation E-5, clamped like OpenJPEG for malformed negative exponents.
+        exponent = (
+            base_exponent
+            if subband.orientation == T1_ORIENT_LL
+            else max(0, base_exponent - (total_levels - subband.level))
+        )
+        return mantissa, exponent
+    if index >= len(quant_steps):
+        raise JpegParseError("missing JPX quantization step")
+    return quant_steps[index]
+
+
 def trunc_divide_by_two(value: int) -> int:
     return value // 2 if value >= 0 else -((-value) // 2)
 
@@ -349,19 +374,17 @@ def apply_roi_shift_subband(subband: SubBand, roi_shift: int) -> None:
 def dequantize_subband(
     subband: SubBand,
     quant_steps: list[tuple[int, int]],
+    quant_style: int,
     total_levels: int,
     precision: int,
     reversible: bool,
 ) -> None:
-    index = subband_quant_index(total_levels, subband)
-    if index >= len(quant_steps):
-        if len(quant_steps) == 1:
-            index = 0
-        else:
-            raise JpegParseError("missing JPX quantization step")
-    if not quant_steps:
-        raise JpegParseError("missing JPX quantization step")
-    mantissa, exponent = quant_steps[index]
+    mantissa, exponent = resolve_quant_step(
+        quant_style,
+        quant_steps,
+        total_levels,
+        subband,
+    )
     step = quant_step_size(
         mantissa,
         exponent,

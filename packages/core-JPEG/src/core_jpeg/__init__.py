@@ -4,6 +4,7 @@ from __future__ import annotations
 from core_jpeg.api import (
     DecodedJpxComponent,
     DecodedJpxImage,
+    Jp2Resolution,
     decode_dct,
     decode_jpx,
     decode_jpx_image,
@@ -20,6 +21,7 @@ __all__ = (
     "JpegError",
     "JpegParseError",
     "JpegUnsupportedError",
+    "Jp2Resolution",
     "decode_dct",
     "decode_jpx",
     "decode_jpx_image",

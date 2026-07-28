@@ -69,6 +69,8 @@ class JpxCodingParams:
     roi_shift_by_component: list[int | None]
     quant_guard_bits: int
     quant_guard_bits_by_component: list[int | None]
+    quant_style: int
+    quant_style_by_component: list[int | None]
     quant_steps: list[list[tuple[int, int]]]
     reversible: bool
 
@@ -106,6 +108,8 @@ def copy_coding_params(params: JpxCodingParams) -> JpxCodingParams:
         roi_shift_by_component=list(params.roi_shift_by_component),
         quant_guard_bits=params.quant_guard_bits,
         quant_guard_bits_by_component=list(params.quant_guard_bits_by_component),
+        quant_style=params.quant_style,
+        quant_style_by_component=list(params.quant_style_by_component),
         quant_steps=[list(steps) for steps in params.quant_steps],
         reversible=params.reversible,
     )
@@ -113,27 +117,27 @@ def copy_coding_params(params: JpxCodingParams) -> JpxCodingParams:
 
 def validate_jpx_coding_params(params: JpxCodingParams) -> None:
     if params.codeblock_style & ~JPX_SUPPORTED_CODEBLOCK_STYLE:
-        raise JpegUnsupportedError("JPX code-block style includes unsupported HT modes")
+        raise JpegUnsupportedError("JPX code-block style includes unsupported HT mode")
     for component_params in params.component_coding_params:
         if (
             component_params is not None
             and component_params.codeblock_style & ~JPX_SUPPORTED_CODEBLOCK_STYLE
         ):
             raise JpegUnsupportedError(
-                "JPX component code-block style includes unsupported HT modes"
+                "JPX component code-block style includes unsupported HT mode"
             )
 
 
 def validate_jpx_spcod_spcoc(levels: int, cb_w: int, cb_h: int) -> None:
     if levels + 1 > JPX_MAX_RESOLUTION_LEVELS:
-        raise ValueError("too many JPX resolution levels")
+        raise JpegParseError("too many JPX resolution levels")
     if cb_w + 2 > 10 or cb_h + 2 > 10 or cb_w + cb_h + 4 > 12:
-        raise ValueError("invalid JPX code-block dimensions")
+        raise JpegParseError("invalid JPX code-block dimensions")
 
 
 def validate_jpx_precinct_size(value: int, resolution_index: int) -> None:
     if resolution_index != 0 and ((value & 0x0F) == 0 or (value >> 4) == 0):
-        raise ValueError("invalid JPX precinct size")
+        raise JpegParseError("invalid JPX precinct size")
 
 
 def default_component_coding_params(
@@ -180,6 +184,7 @@ def coding_params_with_component_quantization(
     params: JpxCodingParams,
     component_index: int,
     guard_bits: int,
+    style: int,
     steps: list[tuple[int, int]],
 ) -> JpxCodingParams:
     quant_steps = [list(component_steps) for component_steps in params.quant_steps]
@@ -191,10 +196,16 @@ def coding_params_with_component_quantization(
     while len(guard_bits_by_component) <= component_index:
         guard_bits_by_component.append(None)
     guard_bits_by_component[component_index] = guard_bits
+
+    style_by_component = list(params.quant_style_by_component)
+    while len(style_by_component) <= component_index:
+        style_by_component.append(None)
+    style_by_component[component_index] = style
     return replace(
         params,
         quant_steps=quant_steps,
         quant_guard_bits_by_component=guard_bits_by_component,
+        quant_style_by_component=style_by_component,
     )
 
 
@@ -234,3 +245,11 @@ def coding_component_quant_guard_bits(params: JpxCodingParams, component_index: 
         if guard_bits is not None:
             return guard_bits
     return params.quant_guard_bits
+
+
+def coding_component_quant_style(params: JpxCodingParams, component_index: int) -> int:
+    if component_index < len(params.quant_style_by_component):
+        style = params.quant_style_by_component[component_index]
+        if style is not None:
+            return style
+    return params.quant_style

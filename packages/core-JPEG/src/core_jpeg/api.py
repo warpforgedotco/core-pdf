@@ -9,12 +9,14 @@ from core_jpeg.impl.codecs.jpx.decoder import (
 from core_jpeg.impl.models import (
     DecodedJpxComponent,
     DecodedJpxImage,
+    Jp2Resolution,
 )
 
 __all__ = (
     "DecodedJpxComponent",
     "DecodedJpxImage",
     "JPEGDecoder",
+    "Jp2Resolution",
     "decode_dct",
     "decode_jpx",
     "decode_jpx_image",

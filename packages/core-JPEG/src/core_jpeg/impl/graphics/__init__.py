@@ -1,13 +1,13 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
-from core_color.impl.color_math import (
+from core_jpeg.impl.graphics.color_math import (
     adapt_d50_to_d65,
     lab_to_xyz,
     linear_to_srgb,
     xyz_to_srgb,
 )
-from core_color.impl.icc_profiles import (
+from core_jpeg.impl.graphics.icc_profiles import (
     IccCurve,
     IccLutProfile,
     IccMatrixProfile,

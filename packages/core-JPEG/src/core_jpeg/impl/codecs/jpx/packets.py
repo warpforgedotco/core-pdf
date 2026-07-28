@@ -360,20 +360,36 @@ def decode_packet_codeblock_chunks(
     return chunks, offset
 
 
-def skip_sop_marker(packet: bytes, offset: int, packet_uses_sop: bool) -> int:
-    if not packet_uses_sop or packet[offset : offset + 2] != b"\xff\x91":
+def skip_sop_marker(
+    packet: bytes,
+    offset: int,
+    packet_uses_sop: bool,
+    expected_sequence: int,
+) -> int:
+    has_sop = packet[offset : offset + 2] == b"\xff\x91"
+    if not has_sop:
         return offset
-    if offset + 4 > len(packet):
+    if not packet_uses_sop:
+        raise JpegParseError("JPX SOP marker used without COD signaling")
+    if offset + 6 > len(packet):
         raise JpegParseError("truncated JPX SOP marker")
     length = int.from_bytes(packet[offset + 2 : offset + 4], "big")
-    if length < 2 or offset + 2 + length > len(packet):
+    if length != 4:
         raise JpegParseError("invalid JPX SOP marker length")
-    return offset + 2 + length
+    sequence = int.from_bytes(packet[offset + 4 : offset + 6], "big")
+    if sequence != expected_sequence % 65536:
+        raise JpegParseError("invalid JPX SOP packet sequence")
+    return offset + 6
 
 
 def skip_eph_marker(packet: bytes, offset: int, packet_uses_eph: bool) -> int:
-    if packet_uses_eph and packet[offset : offset + 2] == b"\xff\x92":
+    has_eph = packet[offset : offset + 2] == b"\xff\x92"
+    if packet_uses_eph:
+        if not has_eph:
+            raise JpegParseError("missing signaled JPX EPH marker")
         return offset + 2
+    if has_eph:
+        raise JpegParseError("JPX EPH marker used without COD signaling")
     return offset
 
 

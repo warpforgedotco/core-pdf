@@ -38,6 +38,23 @@ def output_sample_byte(
     return clamp_sample(value, precision)
 
 
+def native_sample_value(
+    sample: int | float,
+    *,
+    precision: int,
+    is_signed: bool,
+) -> int:
+    value = int(round(sample))
+    if is_signed:
+        minimum = -(1 << (precision - 1))
+        maximum = (1 << (precision - 1)) - 1
+    else:
+        value += 1 << (precision - 1)
+        minimum = 0
+        maximum = (1 << precision) - 1
+    return max(minimum, min(maximum, value))
+
+
 def component_samples(component: Any) -> list[int | float]:
     if not component.resolutions:
         return []
@@ -239,6 +256,7 @@ def decoded_jpx_image_from_interleaved(
     *,
     component_mode: str,
     components: tuple[DecodedJpxComponent, ...] | None = None,
+    native_components: tuple[DecodedJpxComponent, ...] = (),
 ) -> DecodedJpxImage:
     pixel_count = img.width * img.height
     if pixel_count <= 0:
@@ -277,6 +295,9 @@ def decoded_jpx_image_from_interleaved(
         color_space=jp2_color_space_kind(jp2.color_specification),
         components=tuple(decoded_components),
         interleaved=raw,
+        native_components=native_components,
+        capture_resolution=jp2.capture_resolution,
+        display_resolution=jp2.display_resolution,
     )
 
 
@@ -286,12 +307,15 @@ def decoded_jpx_native_components(img: Any) -> tuple[DecodedJpxComponent, ...]:
         return ()
     reference_indices = decoded_jpx_native_component_reference_indices(img)
     outputs: list[bytearray] = []
+    exact_outputs: list[list[int]] = []
     output_bounds: list[tuple[int, int, int, int]] = []
     for component_index, reference_index in enumerate(reference_indices):
         bounds = image_component_bounds(img, reference_index)
         output_bounds.append(bounds)
         x0, y0, x1, y1 = bounds
-        outputs.append(bytearray(max(0, x1 - x0) * max(0, y1 - y0)))
+        sample_count = max(0, x1 - x0) * max(0, y1 - y0)
+        outputs.append(bytearray(sample_count))
+        exact_outputs.append([0] * sample_count)
     for tile_index, tile in enumerate(img.tiles):
         if not tile:
             tile = img.ensure_tile(tile_index, img.coding_params())
@@ -316,6 +340,7 @@ def decoded_jpx_native_components(img: Any) -> tuple[DecodedJpxComponent, ...]:
                 planes[component_index],
                 precision=precision,
                 is_signed=is_signed,
+                exact_output=exact_outputs[component_index],
             )
     return tuple(
         DecodedJpxComponent(
@@ -325,6 +350,7 @@ def decoded_jpx_native_components(img: Any) -> tuple[DecodedJpxComponent, ...]:
             precision=component_precision(img.components_data, component_index),
             is_signed=component_is_signed(img.components_data, component_index),
             data=bytes(output),
+            samples=tuple(exact_outputs[component_index]),
         )
         for component_index, (bounds, output) in enumerate(zip(output_bounds, outputs))
     )
@@ -387,6 +413,7 @@ def place_native_component_samples(
     *,
     precision: int,
     is_signed: bool,
+    exact_output: list[int] | None = None,
 ) -> None:
     x0, y0, x1, y1 = output_bounds
     width = max(0, x1 - x0)
@@ -409,3 +436,9 @@ def place_native_component_samples(
                 precision=precision,
                 is_signed=is_signed,
             )
+            if exact_output is not None:
+                exact_output[dst_row + dst_x] = native_sample_value(
+                    samples[src_index],
+                    precision=precision,
+                    is_signed=is_signed,
+                )

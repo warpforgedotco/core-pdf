@@ -1,16 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
-from core_color.impl.color_math import (
-    adapt_d50_to_d65,
-    lab_to_xyz,
-    xyz_to_srgb,
-)
-from core_color.impl.icc_profiles import (
-    convert_icc_profile_samples,
-    icc_profile_alt_name,
-)
-
 from core_jpeg.impl.codecs.jpx.boxes import (
     Jp2ChannelDefinition,
     Jp2ColorSpecification,
@@ -20,6 +10,15 @@ from core_jpeg.impl.codecs.jpx.boxes import (
     parse_jp2_cielab_parameters,
 )
 from core_jpeg.impl.errors import JpegParseError, JpegUnsupportedError
+from core_jpeg.impl.graphics.color_math import (
+    adapt_d50_to_d65,
+    lab_to_xyz,
+    xyz_to_srgb,
+)
+from core_jpeg.impl.graphics.icc_profiles import (
+    convert_icc_profile_samples,
+    icc_profile_alt_name,
+)
 
 
 def convert_jp2_cmyk_to_rgb(raw: bytes) -> bytes:

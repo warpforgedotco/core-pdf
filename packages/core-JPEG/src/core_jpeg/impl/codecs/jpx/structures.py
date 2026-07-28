@@ -28,6 +28,7 @@ class JpxTilePart:
     coding_params: JpxCodingParams
     payload: bytes
     packet_headers: bytes | None = None
+    packet_lengths: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -35,10 +36,12 @@ class JpxTilePartHeader:
     tile_index: int
     tile_part_index: int
     tile_part_count: int
+    tile_part_length: int
     coding_params: JpxCodingParams
     payload_start: int
     payload_end: int
     packet_headers: bytes | None = None
+    packet_lengths: tuple[int, ...] = ()
 
 
 class SubBand:

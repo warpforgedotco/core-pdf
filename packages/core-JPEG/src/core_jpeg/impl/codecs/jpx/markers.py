@@ -50,6 +50,9 @@ def read_tile_part_header(
         base_params = image.coding_params()
     coding_params = copy_coding_params(base_params)
     ppt_markers: dict[int, bytes] = {}
+    packet_lengths: list[int] = []
+    plt_next_index = 0
+    saw_tile_poc = False
     while True:
         marker = br.read_u16()
         if marker == 0xFF93:
@@ -67,13 +70,17 @@ def read_tile_part_header(
         elif marker == 0xFF5E:
             coding_params = parse_rgn_params(image, br, coding_params)
         elif marker == 0xFF5F:
+            if not saw_tile_poc:
+                coding_params = replace(coding_params, progression_changes=[])
+                saw_tile_poc = True
             coding_params = parse_poc_params(image, br, coding_params)
         elif marker == 0xFF61:
             if image.ppm_markers:
                 raise JpegParseError("JPX codestream mixes PPM and PPT markers")
             parse_ppt_marker(br, ppt_markers)
         elif marker == 0xFF58:
-            parse_plt_marker(br)
+            packet_lengths.extend(parse_plt_marker(br, plt_next_index))
+            plt_next_index += 1
         elif marker == 0xFF64:
             skip_marker_segment(br)
         else:
@@ -83,21 +90,37 @@ def read_tile_part_header(
             br.skip_bytes(length - 2)
     payload_start = br.byte
     if tile_part_length == 0:
+        if br.data[data_len - 2 : data_len] != b"\xff\xd9":
+            raise JpegParseError("zero-length JPX tile-part is not terminated by EOC")
         payload_end = data_len - 2
     else:
         payload_end = tile_start + tile_part_length
-        if payload_end > data_len:
+        if payload_end > data_len - 2:
             raise JpegParseError("invalid JPX tile-part length")
     if payload_end < payload_start:
         raise JpegParseError("invalid JPX tile payload")
+    payload_size = payload_end - payload_start
+    if packet_lengths and sum(packet_lengths) != payload_size:
+        raise JpegParseError("JPX PLT packet lengths do not match tile-part payload")
+    if image.plm_consume_index < len(image.plm_packet_lengths):
+        plm_lengths = image.plm_packet_lengths[image.plm_consume_index]
+        if sum(plm_lengths) != payload_size:
+            raise JpegParseError("JPX PLM packet lengths do not match tile-part payload")
+        if packet_lengths and tuple(plm_lengths) != tuple(packet_lengths):
+            raise JpegParseError("JPX PLM and PLT packet lengths disagree")
+        image.plm_consume_index += 1
+    elif image.plm_packet_lengths:
+        raise JpegParseError("JPX tile-part has no matching PLM entry")
     return JpxTilePartHeader(
         tile_index=tile_index,
         tile_part_index=tile_part_index,
         tile_part_count=tile_part_count,
+        tile_part_length=tile_part_length,
         coding_params=coding_params,
         payload_start=payload_start,
         payload_end=payload_end,
         packet_headers=merge_ppt_packet_headers(ppt_markers) if ppt_markers else None,
+        packet_lengths=tuple(packet_lengths),
     )
 
 
@@ -129,12 +152,16 @@ def parse_header(image: Any, br: BitStream) -> bool:
         elif marker == 0xFF55:
             parse_tlm(image, br)
         elif marker == 0xFF57:
-            parse_plm(br)
+            parse_plm(image, br)
         elif marker == 0xFF63:
             parse_crg(image, br)
-        elif marker in {0xFF50, 0xFF64}:
+        elif marker == 0xFF50:
+            parse_cap(br)
+        elif marker == 0xFF64:
             skip_marker_segment(br)
         else:
+            if image.ppm_markers:
+                image.packed_packet_headers = merge_ppm_packet_headers(image.ppm_markers)
             return marker in {0xFF90, 0xFF93, 0xFFD9}
 
 
@@ -150,16 +177,19 @@ def parse_tlm(image: Any, br: BitStream) -> None:
     if length < 4:
         raise JpegParseError("TLM marker segment too short")
     payload = BitStream(br.read_bytes(length - 2))
-    payload.read_byte()
+    index = payload.read_byte()
+    if index != image.tlm_next_index:
+        raise JpegParseError("non-consecutive JPX TLM marker index")
+    image.tlm_next_index += 1
     stlm = payload.read_byte()
     tile_index_size = (stlm >> 4) & 0x03
     if tile_index_size == 3:
-        return
+        raise JpegParseError("invalid JPX TLM tile-index size")
     tile_part_length_size = ((stlm >> 6) & 0x01) + 1
     entry_size = tile_index_size + tile_part_length_size * 2
     remaining = len(payload.data) - payload.byte
     if entry_size == 0 or remaining % entry_size:
-        return
+        raise JpegParseError("invalid JPX TLM entry length")
     base_index = len(image.tile_part_lengths)
     tile_count = image.tiles_cols * image.tiles_rows
     entries: list[tuple[int, int]] = []
@@ -172,7 +202,7 @@ def parse_tlm(image: Any, br: BitStream) -> None:
                 "big",
             )
         if tile_count and tile_index >= tile_count:
-            return
+            raise JpegParseError("JPX TLM tile index out of range")
         tile_part_length = int.from_bytes(
             payload.read_bytes(tile_part_length_size * 2),
             "big",
@@ -181,11 +211,23 @@ def parse_tlm(image: Any, br: BitStream) -> None:
     image.tile_part_lengths.extend(entries)
 
 
-def parse_plm(br: BitStream) -> None:
+def parse_plm(image: Any, br: BitStream) -> None:
     length = br.read_u16()
-    if length < 3:
+    if length < 4:
         raise JpegParseError("PLM marker segment too short")
-    br.skip_bytes(length - 2)
+    payload = BitStream(br.read_bytes(length - 2))
+    index = payload.read_byte()
+    if index != image.plm_next_index:
+        raise JpegParseError("non-consecutive JPX PLM marker index")
+    image.plm_next_index += 1
+    while payload.byte < len(payload.data):
+        block_length = payload.read_byte()
+        if block_length == 0 or payload.byte + block_length > len(payload.data):
+            raise JpegParseError("invalid JPX PLM packet-length block")
+        # Each Nplm block describes one tile-part's packet lengths in order.
+        image.plm_packet_lengths.append(
+            parse_packet_lengths(payload.read_bytes(block_length), "PLM")
+        )
 
 
 def parse_ppm(image: Any, br: BitStream) -> None:
@@ -209,20 +251,29 @@ def parse_ppt_marker(br: BitStream, markers: dict[int, bytes]) -> None:
     markers[index] = br.read_bytes(length - 3)
 
 
-def parse_plt_marker(br: BitStream) -> None:
+def parse_plt_marker(br: BitStream, expected_index: int = 0) -> list[int]:
     length = br.read_u16()
     if length < 3:
         raise JpegParseError("PLT marker segment too short")
     payload = br.read_bytes(length - 2)
+    if payload[0] != expected_index:
+        raise JpegParseError("non-consecutive JPX PLT marker index")
+    return parse_packet_lengths(payload[1:], "PLT")
+
+
+def parse_packet_lengths(payload: bytes, marker_name: str) -> list[int]:
+    lengths: list[int] = []
     packet_length = 0
-    for value in payload[1:]:
-        packet_length |= value & 0x7F
-        if value & 0x80:
-            packet_length <<= 7
-        else:
+    continued = False
+    for value in payload:
+        packet_length = (packet_length << 7) | (value & 0x7F)
+        continued = bool(value & 0x80)
+        if not continued:
+            lengths.append(packet_length)
             packet_length = 0
-    if packet_length != 0:
-        raise JpegParseError("unterminated JPX PLT packet length")
+    if continued:
+        raise JpegParseError(f"unterminated JPX {marker_name} packet length")
+    return lengths
 
 
 def parse_crg(image: Any, br: BitStream) -> None:
@@ -241,12 +292,25 @@ def ppm_packet_headers(image: Any) -> bytes | None:
     return image.packed_packet_headers
 
 
+def parse_cap(br: BitStream) -> None:
+    length = br.read_u16()
+    if length < 6 or (length - 6) % 2:
+        raise JpegParseError("invalid JPX CAP marker length")
+    capabilities = br.read_u32()
+    expected_words = capabilities.bit_count()
+    if length != 6 + expected_words * 2:
+        raise JpegParseError("JPX CAP capability fields do not match Pcap")
+    br.read_bytes(expected_words * 2)
+    if capabilities:
+        raise JpegUnsupportedError("unsupported capability signaled by JPX CAP marker")
+
+
 def parse_siz(image: Any, br: BitStream) -> None:
     lsiz = br.read_u16()
     if lsiz < 41:
-        raise ValueError("SIZ too short")
+        raise JpegParseError("SIZ too short")
     if (lsiz - 38) % 3:
-        raise ValueError("bad JPX SIZ marker length")
+        raise JpegParseError("bad JPX SIZ marker length")
     image.capabilities = br.read_u16()
     image.x_end = br.read_u32()
     image.y_end = br.read_u32()
@@ -261,13 +325,13 @@ def parse_siz(image: Any, br: BitStream) -> None:
     image.components = br.read_u16()
     expected_lsiz = 38 + 3 * image.components
     if lsiz != expected_lsiz:
-        raise ValueError("JPX SIZ component count does not match marker length")
+        raise JpegParseError("JPX SIZ component count does not match marker length")
     if image.components == 0:
-        raise ValueError("zero components")
+        raise JpegParseError("zero components")
     if image.components > 16384:
-        raise ValueError("too many JPX components")
+        raise JpegParseError("too many JPX components")
     if image.width <= 0 or image.height <= 0:
-        raise ValueError("invalid JPX image size")
+        raise JpegParseError("invalid JPX image size")
     if (
         image.expected_width is not None
         and image.expected_height is not None
@@ -277,27 +341,30 @@ def parse_siz(image: Any, br: BitStream) -> None:
     image.components_data = []
     for ignored in range(image.components):
         sample_spec = br.read_byte()
+        precision = (sample_spec & 0x7F) + 1
+        if precision > 38:
+            raise JpegUnsupportedError("JPX component precision exceeds 38 bits")
         h_sep = br.read_byte()
         v_sep = br.read_byte()
         if h_sep <= 0 or v_sep <= 0:
-            raise ValueError("invalid JPX component separation")
+            raise JpegParseError("invalid JPX component separation")
         image.components_data.append(
             {
-                "precision": (sample_spec & 0x7F) + 1,
+                "precision": precision,
                 "is_signed": bool(sample_spec & 0x80),
                 "h_sep": h_sep,
                 "v_sep": v_sep,
             }
         )
     if image.tile_width <= 0 or image.tile_height <= 0:
-        raise ValueError("invalid JPX tile size")
+        raise JpegParseError("invalid JPX tile size")
     if (
         image.tile_x_origin > image.x_origin
         or image.tile_y_origin > image.y_origin
         or image.tile_x_origin + image.tile_width <= image.x_origin
         or image.tile_y_origin + image.tile_height <= image.y_origin
     ):
-        raise ValueError("illegal JPX tile offset")
+        raise JpegParseError("illegal JPX tile offset")
     image.tiles_cols = (
         ceil_div(image.image_x_end() - image.tile_x_origin, image.tile_width)
         if image.image_x_end() > image.tile_x_origin
@@ -321,7 +388,7 @@ def parse_cod_params(
 ) -> JpxCodingParams:
     lcod = br.read_u16()
     if lcod < 8:
-        raise ValueError("COD too short")
+        raise JpegParseError("COD too short")
     scod = br.read_byte()
     if scod & ~JPX_CODING_STYLE_SUPPORTED:
         raise JpegUnsupportedError("unsupported JPX COD coding style")
@@ -332,10 +399,10 @@ def parse_cod_params(
         raise JpegUnsupportedError("unsupported JPX progression order")
     num_layers = br.read_u16()
     if num_layers < 1:
-        raise ValueError("invalid JPX layer count")
+        raise JpegParseError("invalid JPX layer count")
     multiple_component_transform = br.read_byte()
     if multiple_component_transform > 1:
-        raise ValueError("invalid JPX multiple component transform")
+        raise JpegParseError("invalid JPX multiple component transform")
     levels = br.read_byte()
     cb_w = br.read_byte()
     cb_h = br.read_byte()
@@ -345,19 +412,19 @@ def parse_cod_params(
     codeblock_style = br.read_byte()
     wavelet = br.read_byte()
     if wavelet > 1:
-        raise ValueError("invalid JPX wavelet transform")
+        raise JpegParseError("invalid JPX wavelet transform")
     reversible = wavelet == 1
     remaining = lcod - 12
     precincts: list[Any] = []
     if scod & 0x01:
         if remaining != levels + 1:
-            raise ValueError("bad JPX precinct size list")
+            raise JpegParseError("bad JPX precinct size list")
         for index in range(levels + 1):
             value = br.read_byte()
             validate_jpx_precinct_size(value, index)
             precincts.append((1 << (value & 0x0F), 1 << (value >> 4)))
     elif remaining:
-        raise ValueError("bad JPX COD marker length")
+        raise JpegParseError("bad JPX COD marker length")
     return replace(
         base_params,
         levels=levels,
@@ -386,10 +453,10 @@ def parse_coc_params(
     length = br.read_u16()
     component_bytes = 1 if image.components < 257 else 2
     if length < component_bytes + 8:
-        raise ValueError("COC too short")
+        raise JpegParseError("COC too short")
     component_index = br.read_byte() if component_bytes == 1 else br.read_u16()
     if component_index >= image.components:
-        raise ValueError("COC component out of range")
+        raise JpegParseError("COC component out of range")
     scoc = br.read_byte()
     levels = br.read_byte()
     cb_w = br.read_byte()
@@ -400,19 +467,19 @@ def parse_coc_params(
     codeblock_style = br.read_byte()
     wavelet = br.read_byte()
     if wavelet > 1:
-        raise ValueError("invalid JPX wavelet transform")
+        raise JpegParseError("invalid JPX wavelet transform")
     reversible = wavelet == 1
     remaining = length - 2 - component_bytes - 6
     precincts: list[Any] = []
     if scoc & 0x01:
         if remaining != levels + 1:
-            raise ValueError("bad JPX component precinct size list")
+            raise JpegParseError("bad JPX component precinct size list")
         for index in range(levels + 1):
             value = br.read_byte()
             validate_jpx_precinct_size(value, index)
             precincts.append((1 << (value & 0x0F), 1 << (value >> 4)))
     elif remaining:
-        raise ValueError("bad JPX COC marker length")
+        raise JpegParseError("bad JPX COC marker length")
     return coding_params_with_component_style(
         base_params,
         component_index,
@@ -438,13 +505,15 @@ def parse_qcd_params(
 ) -> JpxCodingParams:
     length = br.read_u16()
     if length < 3:
-        raise ValueError("QCD too short")
-    guard_bits, steps = parse_quantization(br, length - 2)
+        raise JpegParseError("QCD too short")
+    guard_bits, style, steps = parse_quantization(br, length - 2)
     return replace(
         base_params,
         quant_guard_bits=guard_bits,
+        quant_style=style,
         quant_steps=[steps],
         quant_guard_bits_by_component=[guard_bits],
+        quant_style_by_component=[style],
     )
 
 
@@ -460,15 +529,16 @@ def parse_qcc_params(
     length = br.read_u16()
     component_bytes = 1 if image.components < 257 else 2
     if length < component_bytes + 3:
-        raise ValueError("QCC too short")
+        raise JpegParseError("QCC too short")
     component_index = br.read_byte() if component_bytes == 1 else br.read_u16()
     if component_index >= image.components:
-        raise ValueError("QCC component out of range")
-    guard_bits, steps = parse_quantization(br, length - 2 - component_bytes)
+        raise JpegParseError("QCC component out of range")
+    guard_bits, style, steps = parse_quantization(br, length - 2 - component_bytes)
     return coding_params_with_component_quantization(
         base_params,
         component_index,
         guard_bits,
+        style,
         steps,
     )
 
@@ -485,10 +555,10 @@ def parse_rgn_params(
     length = br.read_u16()
     component_bytes = 1 if image.components <= 256 else 2
     if length != 2 + component_bytes + 2:
-        raise ValueError("bad JPX RGN marker length")
+        raise JpegParseError("bad JPX RGN marker length")
     component_index = br.read_byte() if component_bytes == 1 else br.read_u16()
     if component_index >= image.components:
-        raise ValueError("RGN component out of range")
+        raise JpegParseError("RGN component out of range")
     roi_style = br.read_byte()
     if roi_style != 0:
         raise JpegUnsupportedError("unsupported JPX ROI style")
@@ -514,7 +584,7 @@ def parse_poc_params(
     record_size = 5 + component_bytes * 2
     payload_size = length - 2
     if length < 2 + record_size or payload_size % record_size:
-        raise ValueError("bad JPX POC marker length")
+        raise JpegParseError("bad JPX POC marker length")
     changes = list(base_params.progression_changes)
     for ignored in range(payload_size // record_size):
         resolution_start = br.read_byte()
@@ -525,6 +595,14 @@ def parse_poc_params(
         progression_order = br.read_byte()
         if progression_order > CPRL:
             raise JpegUnsupportedError("unsupported JPX POC progression order")
+        if component_end == 0:
+            component_end = 256 if component_bytes == 1 else 16384
+        if not (resolution_start < resolution_end <= 33):
+            raise JpegParseError("invalid JPX POC resolution bounds")
+        if layer_end < 1 or layer_end > base_params.num_layers:
+            raise JpegParseError("invalid JPX POC layer bound")
+        if not (component_start < component_end <= image.components):
+            raise JpegParseError("invalid JPX POC component bounds")
         changes.append(
             JpxProgressionChange(
                 resolution_start=resolution_start,
@@ -541,9 +619,9 @@ def parse_poc_params(
 def parse_quantization(
     br: BitStream,
     length: int,
-) -> tuple[int, list[tuple[int, int]]]:
+) -> tuple[int, int, list[tuple[int, int]]]:
     if length < 1:
-        raise ValueError("quantization segment too short")
+        raise JpegParseError("quantization segment too short")
     sqcx = br.read_byte()
     guard_bits = sqcx >> 5
     style = sqcx & 0x1F
@@ -552,14 +630,16 @@ def parse_quantization(
         steps = [(0, br.read_byte() >> 3) for ignored in range(remaining)]
     elif style == 1:
         if remaining != 2:
-            raise ValueError("bad derived quantization step")
+            raise JpegParseError("bad derived quantization step")
         mantissa = br.read_u16()
         steps = [(mantissa & 0x7FF, mantissa >> 11)]
-    else:
+    elif style == 2:
         if remaining % 2:
-            raise ValueError("bad expounded quantization steps")
+            raise JpegParseError("bad expounded quantization steps")
         steps = []
         for ignored in range(remaining // 2):
             mantissa = br.read_u16()
             steps.append((mantissa & 0x7FF, mantissa >> 11))
-    return guard_bits, steps
+    else:
+        raise JpegUnsupportedError("unsupported JPX quantization style")
+    return guard_bits, style, steps

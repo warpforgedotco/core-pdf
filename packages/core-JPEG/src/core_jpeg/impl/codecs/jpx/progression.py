@@ -415,9 +415,11 @@ def iter_progression_packet_positions(
 
     positions: list[JpxPacketPosition] = []
     if progression_changes:
+        included: set[tuple[int, int, int, int]] = set()
         for change in progression_changes:
+            change_positions: list[JpxPacketPosition] = []
             add_positions_for_order(
-                positions,
+                change_positions,
                 change.progression_order,
                 0,
                 min(change.layer_end, num_layers),
@@ -426,6 +428,16 @@ def iter_progression_packet_positions(
                 min(change.component_start, len(components)),
                 min(change.component_end, len(components)),
             )
+            for position in change_positions:
+                key = (
+                    position.layer,
+                    position.resolution,
+                    position.component,
+                    position.precinct,
+                )
+                if key not in included:
+                    included.add(key)
+                    positions.append(position)
         return positions
 
     add_positions_for_order(
@@ -485,6 +497,7 @@ def decode_progression_packets(
 
 
 def merge_ppm_packet_headers(markers: dict[int, bytes]) -> bytes:
+    validate_marker_sequence(markers, "PPM")
     raw = b"".join(markers[index] for index in sorted(markers))
     offset = 0
     packet_headers = bytearray()
@@ -502,7 +515,14 @@ def merge_ppm_packet_headers(markers: dict[int, bytes]) -> bytes:
 
 
 def merge_ppt_packet_headers(markers: dict[int, bytes]) -> bytes:
+    validate_marker_sequence(markers, "PPT")
     return b"".join(markers[index] for index in sorted(markers))
+
+
+def validate_marker_sequence(markers: dict[int, bytes], marker_name: str) -> None:
+    indices = sorted(markers)
+    if indices != list(range(len(indices))):
+        raise JpegParseError(f"non-consecutive JPX {marker_name} marker indices")
 
 
 def decode_progression_packet_streams(
@@ -518,6 +538,8 @@ def decode_progression_packet_streams(
     packet_headers: bytes | None = None,
     packet_header_offset: int = 0,
     packet_position_offset: int = 0,
+    packet_sequence_offset: int = 0,
+    included_packet_keys: set[tuple[int, int, int, int]] | None = None,
 ) -> JpxPacketStreamConsumed:
     body_offset = 0
     header_offset = packet_header_offset
@@ -530,22 +552,43 @@ def decode_progression_packet_streams(
     )
     decoded_positions = 0
     for position in positions[packet_position_offset:]:
+        position_key = (
+            position.layer,
+            position.resolution,
+            position.component,
+            position.precinct,
+        )
+        if included_packet_keys is not None and position_key in included_packet_keys:
+            continue
+        packet_sequence = (packet_sequence_offset + decoded_positions) % 65536
         if packet_headers is None:
             if body_offset >= len(payload):
                 break
-            body_offset = skip_sop_marker(payload, body_offset, packet_uses_sop)
+            body_offset = skip_sop_marker(
+                payload,
+                body_offset,
+                packet_uses_sop,
+                packet_sequence,
+            )
             decoded = decode_packet_position(
                 payload[body_offset:],
                 position,
                 packet_uses_eph=packet_uses_eph,
             )
             body_offset += decoded.consumed
+            if included_packet_keys is not None:
+                included_packet_keys.add(position_key)
             decoded_positions += 1
             continue
 
         if header_offset >= len(packet_headers):
             break
-        body_offset = skip_sop_marker(payload, body_offset, packet_uses_sop)
+        body_offset = skip_sop_marker(
+            payload,
+            body_offset,
+            packet_uses_sop,
+            packet_sequence,
+        )
         decoded = decode_packet_position_with_packed_headers(
             packet_headers,
             payload,
@@ -556,6 +599,8 @@ def decode_progression_packet_streams(
         )
         header_offset += decoded.header_consumed
         body_offset += decoded.consumed
+        if included_packet_keys is not None:
+            included_packet_keys.add(position_key)
         decoded_positions += 1
     return JpxPacketStreamConsumed(
         body=body_offset,
