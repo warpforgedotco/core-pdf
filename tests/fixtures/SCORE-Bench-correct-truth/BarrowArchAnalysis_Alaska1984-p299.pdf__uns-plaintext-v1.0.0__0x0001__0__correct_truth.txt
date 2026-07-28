@@ -1,0 +1,31 @@
+--------------------------------------------------- Unstructured Plain Text Format 1.0.4
+--------------------------------------------------- Unstructured Image Begin
+Offshore Locations Barrow Pt. Belcher (1) (3) (2) Wainwright (4) Fairbanks (5) (7) (6) Anchorage (8) Seattle
+--------------------------------------------------- Unstructured Caption Begin
+Composition of Trips in Table 71
+(1) All Offshore Trips From Table 67
+(2) (1 * (OA + SC + FCD + ACA) + (0.70 * NSB)
+(3) (1 * FCD) + (0.42 * (OA + SC + ACA))
+(4) (1 * FCD) + (0.42 * (OA + SC + ACA))
+(5) (0.58 * (OA + SC + ACA))
+(6) (0.126 * OA)
+(7) (0.294 * OA) + (0.42 * (SC + ACA))
+(8) (0.874 * OA)
+NOTE: abbreviations keyed to Table 70:
+
+OA = Outside Alaska
+SC = South Central Alaska
+ACA = Anchorage Census Area
+FCD = Fairbanks Census Division
+NSB = North Slope Borough
+--------------------------------------------------- Unstructured Caption End
+--------------------------------------------------- Unstructured Image End
+--------------------------------------------------- Unstructured Caption Begin
+FIGURE 23
+ILLUSTRATION OF INDUSTRY AIR TRAVEL DEMANDS BY ROUTE PAIR WITH THE BARROW ARCH LEASE OFFERING MEAN CASE 1986 - 1992
+--------------------------------------------------- Unstructured Caption End
+--------------------------------------------------- Unstructured Page Footer Begin
+--------------------------------------------------- Unstructured Page Number Block Begin
+277
+--------------------------------------------------- Unstructured Page Number Block End
+--------------------------------------------------- Unstructured Page Footer End
