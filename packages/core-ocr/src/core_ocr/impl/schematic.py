@@ -68,6 +68,7 @@ SCHEMATIC_LOWERCASE_NET_LABELS = frozenset({"in", "out"})
 SCHEMATIC_CONFUSABLE_DIGITS = frozenset("@oOiIlLsS|")
 SCHEMATIC_STANDALONE_VALUE_SIGNS = frozenset({"+", "-", "–", "—"})
 SCHEMATIC_ARTIFACT_TOKEN_CHARS = frozenset('|=<>[]{}()\\/“”"`~^°•·¦¬!;:?,.€')
+SCHEMATIC_INTERNAL_ARTIFACT_CHARS = frozenset("{}")
 SCHEMATIC_NET_LABEL_SEPARATORS = frozenset("_/–—-")
 
 
@@ -678,8 +679,15 @@ def remove_schematic_ocr_artifact_tokens(text: str) -> str:
             edge_cleaned = token.strip(artifact_chars)
             if edge_cleaned != token:
                 removed += 1
-            if edge_cleaned:
-                cleaned_tokens.append(edge_cleaned)
+            internal_cleaned = "".join(
+                character
+                for character in edge_cleaned
+                if character not in SCHEMATIC_INTERNAL_ARTIFACT_CHARS
+            )
+            if internal_cleaned != edge_cleaned:
+                removed += 1
+            if internal_cleaned:
+                cleaned_tokens.append(internal_cleaned)
         if cleaned_tokens:
             cleaned_lines.append(" ".join(cleaned_tokens))
     if removed == 0 or not cleaned_lines:

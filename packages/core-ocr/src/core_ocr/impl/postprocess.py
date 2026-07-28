@@ -64,6 +64,8 @@ _COMPOUND_TOKEN_PART_RE = re.compile(r"[A-Z]+(?=[A-Z][a-z]|$)|[A-Z]?[a-z]+|\d+")
 _DOCUMENT_LOCAL_TOKEN_FRAGMENT_RE = re.compile(r"[A-Za-z0-9*_-]+")
 OCR_EDGE_NOISE_PUNCTUATION = "\"'“”‘’`~_=|¦¬^°•·.,;:!?()[]{}<>/\\+-@%$"
 OCR_ALPHA_JOINERS = frozenset({"'", "’", "-", "‐", "‑", "‒", "–", "—"})
+OCR_DECORATIVE_LEADER_RE = re.compile(r"[._~\-–—]{3,}")
+OCR_SEPARATED_LEADER_RE = re.compile(r"(?:\s+[._~\-–—]{1,3}){3,}")
 PRIZE_AMOUNT_TOKEN_RE = re.compile(r"^(?P<whole>\d{1,4})[:,-](?P<cents>\d{2})$")
 PRIZE_RANK_TOKEN_RE = re.compile(r"^(?P<rank>\d+)(?:\.\)|\)|\.)$")
 WEAK_OCR_TOC_LEADER_RE = re.compile(
@@ -620,6 +622,23 @@ def normalize_generic_ocr_line_text(text: str) -> str:
     repaired = re.sub(r"[ \t]{2,}", " ", repaired).strip()
     repaired = normalize_precision_first_prize_line_text(repaired)
     return repaired
+
+
+def remove_decorative_ocr_leaders_text(text: str) -> str:
+    """Remove repeated table leaders that OCR promotes to text tokens."""
+    if not text:
+        return text
+    leader_char_count = sum(text.count(character) for character in "._~‐‑‒–—-")
+    if leader_char_count < 12:
+        return text
+    cleaned = "\n".join(
+        OCR_SEPARATED_LEADER_RE.sub(
+            " ",
+            OCR_DECORATIVE_LEADER_RE.sub(" ", line),
+        ).strip()
+        for line in text.splitlines()
+    )
+    return cleaned if cleaned != text else text
 
 
 def normalize_rare_alpha_confusion_tokens(text: str) -> str:

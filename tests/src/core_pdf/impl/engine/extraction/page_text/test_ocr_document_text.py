@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
-from core_ocr.impl import coordinator, schematic, text_analysis
+from core_ocr.impl import coordinator, postprocess, schematic, text_analysis
 from core_ocr.impl.candidates import OcrCandidate, OcrPageTextResult
 from core_ocr.impl.types import OcrTextChoice, OcrTextResult
 
@@ -173,10 +173,18 @@ def test_final_schematic_cleanup_removes_lowercase_ocr_fragments() -> None:
 
 
 def test_schematic_artifact_cleanup_removes_standalone_speckles() -> None:
-    text = "GPIO1 [ GPIO2 } GPIO3 . GPIO4 GPIO5} GPIO6. " + "[ ] { } . " * 20
+    text = "GPIO1 [ GPIO2 } GPIO3 . GPIO4 GPIO5} GPIO{6}. " + "[ ] { } . " * 20
 
     assert schematic.remove_schematic_ocr_artifact_tokens(text) == (
         "GPIO1 GPIO2 GPIO3 GPIO4 GPIO5 GPIO6"
+    )
+
+
+def test_ocr_leader_cleanup_removes_repeated_table_decorations() -> None:
+    text = "Reference........................... 119/19\nValue 2.7V - - - - - 5.5V"
+
+    assert postprocess.remove_decorative_ocr_leaders_text(text) == (
+        "Reference  119/19\nValue 2.7V  5.5V"
     )
 
 

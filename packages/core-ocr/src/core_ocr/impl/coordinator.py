@@ -14911,6 +14911,8 @@ def extract_page_text(page: PageExtractionHost) -> str:
     text = repair_repeated_form_blank_markers(text)
     text = repair_group_insurance_coverage_election_line(text)
     text = supplement_well_formed_native_url_lines(text, pre_ocr_native_text)
+    if broad_ocr_result is not None:
+        text = ocr_postprocess.remove_decorative_ocr_leaders_text(text)
     final_lines_text = (
         ocr_text_analysis.repair_formula_control_delimiters(
             render_resolved_text_lines(final_output_lines)
