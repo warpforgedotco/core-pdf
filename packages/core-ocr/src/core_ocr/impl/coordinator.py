@@ -14791,7 +14791,11 @@ def extract_page_text(page: PageExtractionHost) -> str:
             text = supplemented_text
             final_output_lines = ()
     if region_classification is not None and region_classification.kind == "schematic":
-        cleaned_text = ocr_schematic.repair_fragmented_schematic_value_tokens(text)
+        # Schematic supplements are fused above and can introduce standalone OCR speckles.
+        # Run the artifact filter after fusion as well as before it so supplemental evidence
+        # cannot reintroduce punctuation-only tokens into the final document text.
+        cleaned_text = ocr_schematic.remove_schematic_ocr_artifact_tokens(text)
+        cleaned_text = ocr_schematic.repair_fragmented_schematic_value_tokens(cleaned_text)
         cleaned_text = ocr_schematic.repair_schematic_spaced_dates(cleaned_text)
         cleaned_text = ocr_schematic.restore_consensus_schematic_slash_tokens(
             cleaned_text,

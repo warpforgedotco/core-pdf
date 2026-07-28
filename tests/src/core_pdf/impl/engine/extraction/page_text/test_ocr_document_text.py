@@ -172,6 +172,14 @@ def test_final_schematic_cleanup_removes_lowercase_ocr_fragments() -> None:
     assert "in" in schematic.remove_final_schematic_lowercase_fragments(f"{text}\nin")
 
 
+def test_schematic_artifact_cleanup_removes_standalone_speckles() -> None:
+    text = "GPIO1 [ GPIO2 } GPIO3 . GPIO4 GPIO5} GPIO6. " + "[ ] { } . " * 20
+
+    assert schematic.remove_schematic_ocr_artifact_tokens(text) == (
+        "GPIO1 GPIO2 GPIO3 GPIO4 GPIO5 GPIO6"
+    )
+
+
 def test_fragmented_schematic_value_repair_rejoins_zero_glyphs_and_units() -> None:
     text = "R1 10 @ k C1 10 O p R2 4.7 k C2 100 nF R3 10@k pin 2 VCA"
 

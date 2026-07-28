@@ -67,7 +67,7 @@ SCHEMATIC_GROUND_RAIL_TOKENS = frozenset({"gnd", "ground"})
 SCHEMATIC_LOWERCASE_NET_LABELS = frozenset({"in", "out"})
 SCHEMATIC_CONFUSABLE_DIGITS = frozenset("@oOiIlLsS|")
 SCHEMATIC_STANDALONE_VALUE_SIGNS = frozenset({"+", "-", "–", "—"})
-SCHEMATIC_ARTIFACT_TOKEN_CHARS = frozenset('|=<>[]{}()\\/“”"`~^°•·¦¬!;:?')
+SCHEMATIC_ARTIFACT_TOKEN_CHARS = frozenset('|=<>[]{}()\\/“”"`~^°•·¦¬!;:?,.€')
 SCHEMATIC_NET_LABEL_SEPARATORS = frozenset("_/–—-")
 
 
@@ -665,14 +665,21 @@ def remove_schematic_ocr_artifact_tokens(text: str) -> str:
     if not text:
         return text
     cleaned_lines: list[str] = []
+    removed_whole_tokens: list[str] = []
+    artifact_chars = "".join(SCHEMATIC_ARTIFACT_TOKEN_CHARS)
     removed = 0
     for line in text.splitlines():
         cleaned_tokens: list[str] = []
         for token in line.strip().split():
             if should_remove_schematic_ocr_artifact_token(token):
+                removed_whole_tokens.append(token)
                 removed += 1
                 continue
-            cleaned_tokens.append(token)
+            edge_cleaned = token.strip(artifact_chars)
+            if edge_cleaned != token:
+                removed += 1
+            if edge_cleaned:
+                cleaned_tokens.append(edge_cleaned)
         if cleaned_tokens:
             cleaned_lines.append(" ".join(cleaned_tokens))
     if removed == 0 or not cleaned_lines:
@@ -680,7 +687,12 @@ def remove_schematic_ocr_artifact_tokens(text: str) -> str:
     cleaned = "\n".join(cleaned_lines)
     original_tokens = extracted_text_token_count(text)
     cleaned_token_count = extracted_text_token_count(cleaned)
-    if cleaned_token_count < int(original_tokens * 0.92):
+    only_artifact_edits = removed and not removed_whole_tokens
+    only_standalone_artifacts = only_artifact_edits or (
+        bool(removed_whole_tokens)
+        and all(token_alnum_count(token) == 0 for token in removed_whole_tokens)
+    )
+    if cleaned_token_count < int(original_tokens * 0.92) and not only_standalone_artifacts:
         return text
     return cleaned
 
