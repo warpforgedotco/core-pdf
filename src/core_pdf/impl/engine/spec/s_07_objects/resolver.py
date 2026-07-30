@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import contextlib
 import mmap
+import threading
 from typing import cast
 
 from core_pdf.impl.engine.spec.s_07_objects.coercion import normalize_pdf_name
@@ -96,10 +97,11 @@ class ObjectResolver(ResolverValueMixin):
         "objects",
         "objects_gen0",
         "object_streams",
-        "resolving",
         "deep_cache",
         "kw_cache",
         "lexer_stack",
+        "lock",
+        "thread_state",
     )
 
     def __init__(
@@ -109,7 +111,10 @@ class ObjectResolver(ResolverValueMixin):
         trailer: PdfDict,
         decipher: Decipher | None = None,
     ) -> None:
-        self.data = data if type(data) is memoryview else memoryview(data)
+        # Keep an owned view.  Reusing the caller's memoryview lets a temporary
+        # resolver.close() release the document's source buffer underneath
+        # concurrent readers.
+        self.data = memoryview(data)
         self.xref = xref
         self.trailer = trailer
         self.decipher = decipher
@@ -133,25 +138,28 @@ class ObjectResolver(ResolverValueMixin):
             self.xref_gen0 = None
 
         self.object_streams: dict[int, PdfObjectStream] = {}
-        self.resolving: set[int] = set()
         self.deep_cache: DeepObjectCache = {}
         self.kw_cache: dict[bytes, object] = {key: key.decode("latin-1") for key in COMMON_KEYWORDS}
         self.lexer_stack: list[PdfLexer] = []
+        self.lock = threading.RLock()
+        self.thread_state = threading.local()
 
     def get_lexer(self) -> PdfLexer:
-        if self.lexer_stack:
-            lexer = self.lexer_stack.pop()
-            lexer.decipher = self.decipher
-            return lexer
+        with self.lock:
+            if self.lexer_stack:
+                lexer = self.lexer_stack.pop()
+                lexer.decipher = self.decipher
+                return lexer
         return PdfLexer(
             self.data,
             reference_resolver=self.resolve,
             decipher=self.decipher,
-            kw_cache=self.kw_cache,
+            kw_cache=dict(self.kw_cache),
         )
 
     def release_lexer(self, lexer: PdfLexer) -> None:
-        self.lexer_stack.append(lexer)
+        with self.lock:
+            self.lexer_stack.append(lexer)
 
     def close(self) -> None:
         for lexer in self.lexer_stack:
@@ -163,7 +171,6 @@ class ObjectResolver(ResolverValueMixin):
         self.objects_gen0 = None
         self.xref_gen0 = None
         self.object_streams.clear()
-        self.resolving.clear()
         self.deep_cache.clear()
         self.kw_cache.clear()
         self.decipher = None
@@ -175,77 +182,101 @@ class ObjectResolver(ResolverValueMixin):
         if type(ref) is not PdfReference:
             return ref
 
+        with self.lock:
+            cached = self.internal_cached_object(ref)
+            if cached is not MISSING:
+                return cached
+
+        resolving = getattr(self.thread_state, "resolving", None)
+        if resolving is None:
+            resolving = set()
+            self.thread_state.resolving = resolving
+        cache_key = key_for(ref.object_number, ref.generation_number)
+        if cache_key in resolving:
+            return ref
+
+        resolving.add(cache_key)
+        try:
+            resolved = self.internal_resolve_reference(ref)
+        finally:
+            resolving.remove(cache_key)
+
+        with self.lock:
+            cached = self.internal_cached_object(ref)
+            if cached is not MISSING:
+                return cached
+            self.internal_store_object(ref, cast(CachedPdfObject, resolved))
+        return resolved
+
+    def internal_cached_object(self, ref: PdfReference) -> object:
+        obj_num = ref.object_number
+        gen_num = ref.generation_number
+        if gen_num == 0 and self.objects_gen0 is not None and obj_num < len(self.objects_gen0):
+            cached_gen0 = self.objects_gen0[obj_num]
+            if cached_gen0 is not MISSING:
+                return cached_gen0
+        return self.objects.get(key_for(obj_num, gen_num), MISSING)
+
+    def internal_store_object(self, ref: PdfReference, resolved: CachedPdfObject) -> None:
+        obj_num = ref.object_number
+        gen_num = ref.generation_number
+        if gen_num == 0 and self.objects_gen0 is not None and obj_num < len(self.objects_gen0):
+            self.objects_gen0[obj_num] = resolved
+        else:
+            self.objects[key_for(obj_num, gen_num)] = resolved
+
+    def internal_resolve_reference(self, ref: PdfReference) -> object:
         obj_num = ref.object_number
         gen_num = ref.generation_number
         if obj_num < 0 or gen_num < 0:
             raise ValueError("invalid PDF reference")
 
-        if gen_num == 0 and self.objects_gen0 is not None and obj_num < len(self.objects_gen0):
-            cached_gen0 = self.objects_gen0[obj_num]
-            if cached_gen0 is not MISSING:
-                return cached_gen0
-
         cache_key = key_for(obj_num, gen_num)
-        cached = self.objects.get(cache_key, MISSING)
-        if cached is not MISSING:
-            return cached
-
-        if cache_key in self.resolving:
-            return ref
-
-        self.resolving.add(cache_key)
-        try:
-            resolved: object
-            if gen_num == 0 and self.xref_gen0 is not None:
-                if obj_num < len(self.xref_gen0):
-                    entry = self.xref_gen0[obj_num]
-                else:
-                    entry = None
+        resolved: object
+        if gen_num == 0 and self.xref_gen0 is not None:
+            if obj_num < len(self.xref_gen0):
+                entry = self.xref_gen0[obj_num]
             else:
-                entry = self.xref.get(cache_key)
-                if (
-                    entry is None
-                    and gen_num != 0
-                    and self.xref_gen0 is not None
-                    and obj_num < len(self.xref_gen0)
-                ):
-                    entry = self.xref_gen0[obj_num]
+                entry = None
+        else:
+            entry = self.xref.get(cache_key)
+            if (
+                entry is None
+                and gen_num != 0
+                and self.xref_gen0 is not None
+                and obj_num < len(self.xref_gen0)
+            ):
+                entry = self.xref_gen0[obj_num]
 
-            if entry is None or not entry.in_use:
-                resolved = None
-            else:
-                if entry.object_stream is not None:
-                    stream_num = entry.object_stream
+        if entry is None or not entry.in_use:
+            resolved = None
+        else:
+            if entry.object_stream is not None:
+                stream_num = entry.object_stream
+                with self.lock:
                     container = self.object_streams.get(stream_num)
-                    if container is None:
-                        stream_obj = self.resolve(PdfReference(stream_num))
-                        if type(stream_obj) is PdfStream:
-                            container = PdfObjectStream(stream_obj, kw_cache=self.kw_cache)
-                            self.object_streams[stream_num] = container
-                    resolved = (
-                        container.get(obj_num, self.resolve) if container is not None else None
-                    )
-                else:
-                    lexer = self.get_lexer()
-                    lexer.rewind(entry.offset)
-                    try:
-                        resolved = lexer.parse_indirect_object()
-                    except Exception:
-                        resolved = self.recover_indirect_object(lexer, entry.offset)
-                    finally:
-                        self.release_lexer(lexer)
-
-            if type(resolved) is PdfStream:
-                resolved = self.resolve_stream(resolved)
-
-            if gen_num == 0 and self.objects_gen0 is not None:
-                if obj_num < len(self.objects_gen0):
-                    self.objects_gen0[obj_num] = cast(CachedPdfObject, resolved)
+                if container is None:
+                    stream_obj = self.resolve(PdfReference(stream_num))
+                    if type(stream_obj) is PdfStream:
+                        candidate = PdfObjectStream(stream_obj, kw_cache=dict(self.kw_cache))
+                        with self.lock:
+                            container = self.object_streams.setdefault(stream_num, candidate)
+                resolved = container.get(obj_num, self.resolve) if container is not None else None
             else:
-                self.objects[cache_key] = cast(CachedPdfObject, resolved)
-            return resolved
-        finally:
-            self.resolving.remove(cache_key)
+                lexer = self.get_lexer()
+                lexer.rewind(entry.offset)
+                try:
+                    resolved = lexer.parse_indirect_object()
+                except Exception:
+                    resolved = self.recover_indirect_object(lexer, entry.offset)
+                else:
+                    pass
+                finally:
+                    self.release_lexer(lexer)
+
+        if type(resolved) is PdfStream:
+            resolved = self.resolve_stream(resolved)
+        return resolved
 
     def resolve_stream(self, stream: PdfStream) -> PdfStream:
         resolved_dict: dict[object, object] | None = None

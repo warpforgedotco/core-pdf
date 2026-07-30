@@ -9,8 +9,8 @@ layout-aware page results containing ordered text blocks and resolved lines, inc
 their geometry, column index, rotation, source, and confidence metadata. Use
 `PdfDocument.to_markdown()` when a Markdown view is needed.
 
-The records are provided by the workspace-level `core-document` package and can also
-be serialized as versioned JSON or semantic HTML.
+The records are implemented in `core_pdf.impl.engine.structured` and can also be serialized
+as versioned JSON or semantic HTML.
 
 Optional enrichers implement `core_document.DocumentAdapter` and can be passed to
 `PdfDocument.extract(adapters=...)`; OCR is not a dependency of this package.

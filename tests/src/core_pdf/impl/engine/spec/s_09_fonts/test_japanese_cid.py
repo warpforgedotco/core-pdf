@@ -2,11 +2,10 @@
 from __future__ import annotations
 
 import io
-from typing import cast
 
 import pytest
 
-from core_pdf import PdfDocument, PdfPage
+from core_pdf import PdfDocument
 
 
 def type0_font(encoding: str, descendant: int) -> bytes:
@@ -71,7 +70,7 @@ def japanese_pdf_without_to_unicode() -> bytes:
 
 def test_extracts_horizontal_and_vertical_japanese_without_to_unicode() -> None:
     with PdfDocument.open(io.BytesIO(japanese_pdf_without_to_unicode())) as document:
-        page = cast(PdfPage, document.pages[0])
+        page = document.pages[0]
         result = page.extract()
         text = "\n".join(line.text for block in result.blocks for line in block.lines)
         runs = page.extract_text_runs()
@@ -80,15 +79,15 @@ def test_extracts_horizontal_and_vertical_japanese_without_to_unicode() -> None:
     assert "日本語かなカナ漢字" in text
     assert "（" in text
     assert "）" in text
-    assert [run["text"] for run in runs] == ["日本語かなカナ漢字", "（）", "（"]
+    assert [run.text for run in runs] == ["日本語かなカナ漢字", "（）", "（"]
     vertical = runs[1]
     risen_vertical = runs[2]
-    assert vertical["is_vertical"] is True
-    assert risen_vertical["is_vertical"] is True
-    assert cast(float, vertical["x1"]) > cast(float, vertical["x0"])
-    assert cast(float, vertical["y1"]) > cast(float, vertical["y0"])
-    assert cast(float, risen_vertical["x0"]) == pytest.approx(cast(float, vertical["x0"]))
-    assert cast(float, risen_vertical["x1"]) == pytest.approx(cast(float, vertical["x1"]))
-    assert vertical["geometry_issues"] == []
-    assert risen_vertical["geometry_issues"] == []
-    assert geometry["error_count"] == 0
+    assert vertical.is_vertical is True
+    assert risen_vertical.is_vertical is True
+    assert vertical.bbox[2] > vertical.bbox[0]
+    assert vertical.bbox[3] > vertical.bbox[1]
+    assert risen_vertical.bbox[0] == pytest.approx(vertical.bbox[0])
+    assert risen_vertical.bbox[2] == pytest.approx(vertical.bbox[2])
+    assert vertical.geometry_issues == ()
+    assert risen_vertical.geometry_issues == ()
+    assert geometry.error_count == 0

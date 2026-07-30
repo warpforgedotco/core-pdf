@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-only
+"""Native glyph-name Unicode recovery helpers."""
+
 from __future__ import annotations
 
+import threading
 import unicodedata
 from functools import lru_cache
 
@@ -53,15 +56,19 @@ TEX_GLYPH_ALIASES = {
     "radicalbigg": "√",
     "radicalBigg": "√",
 }
+internal_GLYPH_MAP_LOCK = threading.Lock()
 
 
 def ensure_glyph_map() -> dict[str, str]:
     if GLYPH_MAP:
         return GLYPH_MAP
-    GLYPH_MAP.update(COMMON_GLYPHS)
-    GLYPH_MAP.update(GLYPH_NAME_ALIASES)
-    GLYPH_MAP.update(SYMBOL_GLYPH_NAME_ALIASES)
-    GLYPH_MAP.update(FONT_DATA)
+    with internal_GLYPH_MAP_LOCK:
+        if GLYPH_MAP:
+            return GLYPH_MAP
+        GLYPH_MAP.update(COMMON_GLYPHS)
+        GLYPH_MAP.update(GLYPH_NAME_ALIASES)
+        GLYPH_MAP.update(SYMBOL_GLYPH_NAME_ALIASES)
+        GLYPH_MAP.update(FONT_DATA)
     return GLYPH_MAP
 
 

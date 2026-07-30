@@ -1,10 +1,13 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
+from core_pdf.impl.engine.spec.s_07_document.document_lock import (
+    document_cache_lock,
+    document_recovery_enabled,
+)
 from core_pdf.impl.engine.spec.s_07_document.name_trees import iter_name_tree_items
-from core_pdf.impl.engine.spec.s_07_document.protocols import NavigationResolver
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.models import NamedDestination, OutlineItem
 from core_pdf.impl.types import PdfArray, PdfDict, PdfObject
@@ -13,8 +16,8 @@ from core_pdf.impl.types import PdfArray, PdfDict, PdfObject
 class NavigationMixin:
     __slots__ = ()
 
+    resolver: Any
     named_destinations_cache: dict[str, NamedDestination] | None
-    resolver: NavigationResolver
     xref_was_recovered: bool
     page_tree_was_recovered: bool
 
@@ -36,7 +39,7 @@ class NavigationMixin:
         return self.walk_outlines(first, 0)
 
     def walk_outlines(self, item: object, level: int) -> list[OutlineItem]:
-        recover_outlines = self.xref_was_recovered or self.page_tree_was_recovered
+        recover_outlines = document_recovery_enabled(self)
         if level > 200:
             raise ValueError("invalid outline depth")
         if not isinstance(item, dict):
@@ -104,7 +107,7 @@ class NavigationMixin:
             return 0
         current_count = self.resolver.resolve_int(raw_count)
         if current_count is None:
-            if self.xref_was_recovered or self.page_tree_was_recovered:
+            if document_recovery_enabled(self):
                 return 0
             raise ValueError("invalid outline count")
         return self.validate_outline_count(current_count)
@@ -125,9 +128,10 @@ class NavigationMixin:
     def named_destinations(
         self,
     ) -> dict[str, NamedDestination]:
-        if self.named_destinations_cache is None:
-            self.populate_named_destinations()
-        return dict(self.named_destinations_cache or {})
+        with document_cache_lock(self):
+            if self.named_destinations_cache is None:
+                self.populate_named_destinations()
+            return dict(self.named_destinations_cache or {})
 
     def resolve_named_destination(
         self, name: str, seen: set[str] | None = None
@@ -137,14 +141,10 @@ class NavigationMixin:
         if name in seen:
             return None
         seen.add(name)
-        if self.named_destinations_cache is None:
-            self.populate_named_destinations()
-        return (self.named_destinations_cache or {}).get(name)
-
-    def resolve_named_destination_value(
-        self, val: object, seen: set[str] | None = None
-    ) -> NamedDestination:
-        return self.normalize_destination_value(val, seen)
+        with document_cache_lock(self):
+            if self.named_destinations_cache is None:
+                self.populate_named_destinations()
+            return (self.named_destinations_cache or {}).get(name)
 
     def destination_from_list(self, resolved_list: PdfArray) -> NamedDestination:
         if not resolved_list:
@@ -229,37 +229,38 @@ class NavigationMixin:
         raise ValueError("invalid destination")
 
     def populate_named_destinations(self) -> None:
-        if self.named_destinations_cache is not None:
-            return
-        targets: dict[str, object] = {}
-        dests = self.resolver.resolve(lookup_dict_key(self.catalog(), "Dests"))
-        if isinstance(dests, dict):
-            for name, val in dests.items():
-                resolved_name = self.resolver.resolve_name(name)
-                if resolved_name is None:
-                    raise ValueError("invalid named destination key")
-                targets[resolved_name] = self.resolver.resolve(val)
-        names = self.resolver.resolve(lookup_dict_key(self.catalog(), "Names"))
-        if isinstance(names, dict):
-            dests_tree = self.resolver.resolve(lookup_dict_key(names, "Dests"))
-            if isinstance(dests_tree, dict):
-                for name, value in iter_name_tree_items(
-                    dests_tree,
-                    self.resolver.resolve,
-                    self.resolver.resolve_str,
-                    recover=self.xref_was_recovered or self.page_tree_was_recovered,
-                ):
-                    targets[name] = value
+        with document_cache_lock(self):
+            if self.named_destinations_cache is not None:
+                return
+            targets: dict[str, object] = {}
+            dests = self.resolver.resolve(lookup_dict_key(self.catalog(), "Dests"))
+            if isinstance(dests, dict):
+                for name, val in dests.items():
+                    resolved_name = self.resolver.resolve_name(name)
+                    if resolved_name is None:
+                        raise ValueError("invalid named destination key")
+                    targets[resolved_name] = self.resolver.resolve(val)
+            names = self.resolver.resolve(lookup_dict_key(self.catalog(), "Names"))
+            if isinstance(names, dict):
+                dests_tree = self.resolver.resolve(lookup_dict_key(names, "Dests"))
+                if isinstance(dests_tree, dict):
+                    for name, value in iter_name_tree_items(
+                        dests_tree,
+                        self.resolver.resolve,
+                        self.resolver.resolve_str,
+                        recover=document_recovery_enabled(self),
+                    ):
+                        targets[name] = value
 
-        normalized: dict[str, NamedDestination] = {}
-        resolving: set[str] = set()
+            normalized: dict[str, NamedDestination] = {}
+            resolving: set[str] = set()
 
-        for name in targets:
-            self.normalize_destination_value(
-                name,
-                targets=targets,
-                normalized=normalized,
-                resolving=resolving,
-            )
+            for name in targets:
+                self.normalize_destination_value(
+                    name,
+                    targets=targets,
+                    normalized=normalized,
+                    resolving=resolving,
+                )
 
-        object.__setattr__(self, "named_destinations_cache", normalized)
+            object.__setattr__(self, "named_destinations_cache", normalized)

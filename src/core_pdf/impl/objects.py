@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass
 from typing import TypeAlias, cast
 
-from core_filters.impl import decode_spec as stream_decode_spec
-
+from core_pdf.impl.engine.spec.s_07_filters import decode_spec as stream_decode_spec
 from core_pdf.impl.primitives import (
     MISSING,
     MissingObject,
@@ -45,7 +45,14 @@ class PdfSignatureContentsPlaceholder:
 class PdfStream:
     """PDF stream object: dictionary plus raw and lazily decoded bytes."""
 
-    __slots__ = ("dictionary", "raw_data", "spec", "decoded_data", "data_view_cache")
+    __slots__ = (
+        "dictionary",
+        "raw_data",
+        "spec",
+        "decoded_data",
+        "data_view_cache",
+        "internal_lock",
+    )
 
     dictionary: PdfStreamDictionary
     raw_data: bytes | memoryview
@@ -73,6 +80,7 @@ class PdfStream:
         self.spec = cast(PdfStreamDecodeSpec, spec)
         self.decoded_data = decoded_data
         self.data_view_cache = None
+        self.internal_lock = threading.RLock()
 
     def replace(self, **kwargs: object) -> "PdfStream":
         dictionary = kwargs.get("dictionary", self.dictionary)
@@ -88,24 +96,34 @@ class PdfStream:
 
     @property
     def data(self) -> bytes:
-        if self.decoded_data is None:
-            from core_filters.impl import pipeline as stream_pipeline
+        decoded_data = self.decoded_data
+        if decoded_data is None:
+            with self.internal_lock:
+                decoded_data = self.decoded_data
+                if decoded_data is None:
+                    from core_pdf.impl.engine.spec.s_07_filters import (
+                        pipeline as stream_pipeline,
+                    )
 
-            spec = self.spec
-            if isinstance(spec, dict):
-                spec = stream_decode_spec.normalize_stream_decode_spec(spec)
-                self.spec = spec
-            self.decoded_data = stream_pipeline.decode_stream_data(
-                self.raw_data,
-                spec,
-                parent_dictionary=self.dictionary,
-            )
-        return self.decoded_data
+                    spec = self.spec
+                    if isinstance(spec, dict):
+                        spec = stream_decode_spec.normalize_stream_decode_spec(spec)
+                        self.spec = spec
+                    decoded_data = stream_pipeline.decode_stream_data(
+                        self.raw_data,
+                        spec,
+                        parent_dictionary=self.dictionary,
+                    )
+                    self.decoded_data = decoded_data
+        return decoded_data
 
     @property
     def data_view(self) -> memoryview:
         data_view = self.data_view_cache
         if data_view is None:
-            data_view = memoryview(self.data)
-            self.data_view_cache = data_view
+            with self.internal_lock:
+                data_view = self.data_view_cache
+                if data_view is None:
+                    data_view = memoryview(self.data)
+                    self.data_view_cache = data_view
         return data_view

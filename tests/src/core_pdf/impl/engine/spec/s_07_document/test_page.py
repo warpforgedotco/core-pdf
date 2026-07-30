@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, cast
 
-from core_pdf.impl.engine.extraction.document import PdfDocument
+from core_pdf.impl.engine.document import PdfDocument
 from core_pdf.impl.engine.spec.s_07_document.page import PdfPage
 from core_pdf.impl.engine.spec.s_07_objects.coercion import parse_name
 from core_pdf.impl.models import FieldRecord
@@ -26,10 +26,10 @@ class FakeResolver:
 class FakeDocument:
     def __init__(self, fields: list[FieldRecord]) -> None:
         self.resolver = FakeResolver()
-        self._fields = fields
+        self.internal_fields = fields
 
     def fields(self) -> list[FieldRecord]:
-        return self._fields
+        return self.internal_fields
 
     def resolve(self, value: PdfObject) -> PdfObject:
         return self.resolver.resolve(value)
@@ -87,11 +87,30 @@ def test_page_get_fields_matches_kid_widget_annotation_without_page_ref() -> Non
     assert page.get_fields() == [field]
 
 
-def test_page_combined_capture_shares_text_and_graphics_state() -> None:
+def test_page_builds_one_canonical_program_for_all_consumers() -> None:
     with PdfDocument.open(SAMPLE_PDF) as document:
         page = document.pages[0]
-        state = page.get_text_and_graphics_state()
+        program = page.get_page_program()
 
-        assert page.state is state
-        assert page.graphics is state
-        assert state.runs
+        assert page.get_page_program() is program
+        assert program.products.runs
+        assert program.events.sequence.flags.writeable is False
+
+
+def test_page_program_is_shared_by_extraction_and_rendering(monkeypatch) -> None:
+    with PdfDocument.open(SAMPLE_PDF) as document:
+        page = document.pages[0]
+        calls = 0
+        original = page.consume_contents
+
+        def counted(state) -> None:
+            nonlocal calls
+            calls += 1
+            original(state)
+
+        monkeypatch.setattr(page, "consume_contents", counted)
+        program = page.get_page_program()
+        page.extract()
+        page.render()
+        assert page.get_page_program() is program
+        assert calls == 1

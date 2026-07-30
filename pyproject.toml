@@ -1,6 +1,6 @@
 [build-system]
-requires = ["uv_build>=0.11.16,<0.12"]
-build-backend = "uv_build"
+requires = ["setuptools>=80", "wheel"]
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "core-pdf"
@@ -10,55 +10,16 @@ authors = [{ name = "Kevin Turcios", email = "turcioskevinr@gmail.com" }]
 readme = "README.md"
 license = "AGPL-3.0-only"
 license-files = ["LICENSE.txt"]
-requires-python = ">=3.11"
+requires-python = ">=3.13,<3.14"
 classifiers = ["Development Status :: 3 - Alpha"]
 dependencies = [
-    "core-ccitt>=0.0.1",
-    "core-color>=0.0.1",
-    "core-cmap>=0.0.1",
-    "core-document>=0.0.1",
-    "core-filters>=0.0.1",
-    "core-crypto>=0.0.1",
-    "core-font-programs>=0.0.1",
-    "core-glyph>=0.0.1",
-    "core-jbig2>=0.0.1",
-    "core-jpeg>=0.0.0",
-    "core-layout>=0.0.1",
-    "core-ocr>=0.0.1",
-    "fonttools>=4.63.0,<5.0.0",
+    "numpy>=2.5.1",
+    "tesserocr>=2.10.0",
+    "imagecodecs>=2026.6.26",
 ]
-[tool.uv.sources]
-core-ccitt = { workspace = true }
-core-color = { workspace = true }
-core-cmap = { workspace = true }
-core-document = { workspace = true }
-core-filters = { workspace = true }
-core-crypto = { workspace = true }
-core-font-programs = { workspace = true }
-core-glyph = { workspace = true }
-core-jbig2 = { workspace = true }
-core-jpeg = { workspace = true }
-core-layout = { workspace = true }
-core-ocr = { workspace = true }
 
 [tool.uv]
 python-preference = "system"
-
-[tool.uv.workspace]
-members = [
-    "packages/core-CCITT",
-    "packages/core-JBIG2",
-    "packages/core-JPEG",
-    "packages/core-cmap",
-    "packages/core-document",
-    "packages/core-color",
-    "packages/core-filters",
-    "packages/core-crypto",
-    "packages/core-ocr",
-    "packages/core-font-programs",
-    "packages/core-glyph",
-    "packages/core-layout",
-]
 
 [project.urls]
 Repository = "https://github.com/core-experiments/core-pdf"
@@ -75,7 +36,9 @@ dev = [
     { include-group = "test" },
 ]
 benchmark = [
-    "rich>=15.0.0",
+    "liteparse>=2.11.0",
+    "llama-cloud>=1.0",
+    "pytest-benchmark>=5.1.0,<6.0.0",
 ]
 lint = [
     "mypy >=1.16.0, <2.0.0",
@@ -93,6 +56,7 @@ norecursedirs = ["tests/fixtures"]
 
 [tool.ruff]
 extend-exclude = [
+    "src/core_pdf/_vendor/fontTools",
     "tests/fixtures",
 ]
 line-length = 100
@@ -124,27 +88,36 @@ ignore = [
 ]
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.13"
 files = ["src/core_pdf"]
 mypy_path = "src"
+exclude = ["src/core_pdf/_vendor/fontTools"]
 show_error_codes = true
+ignore_missing_imports = true
 
 [tool.ty.environment]
-root = [
-    "./src",
-    "./packages/core-CCITT/src",
-    "./packages/core-JBIG2/src",
-    "./packages/core-JPEG/src",
-    "./packages/core-cmap/src",
-    "./packages/core-document/src",
-    "./packages/core-color/src",
-    "./packages/core-crypto/src",
-    "./packages/core-filters/src",
-    "./packages/core-font-programs/src",
-    "./packages/core-glyph/src",
-    "./packages/core-layout/src",
-    "./packages/core-ocr/src",
-]
+root = ["./src"]
 
 [tool.ty.src]
-exclude = ["tests/fixtures"]
+exclude = ["src/core_pdf/_vendor/fontTools", "tests/fixtures"]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+core_pdf = ["py.typed"]
+"core_pdf._vendor.fontTools" = ["LICENSE.txt", "LICENSE.external.txt"]
+"core_pdf._vendor.fontTools.ttLib.tables" = ["table_API_readme.txt"]
+"core_pdf.impl.engine.layout" = [
+    "data/wordlists/*.txt.gz",
+    "data/wordlists/*.bin",
+    "data/wordlists/*.md",
+    "data/wordlists/LICENSE*",
+]
+"core_pdf.impl.engine.spec.s_09_fonts" = [
+    "data/cmaps/**",
+]

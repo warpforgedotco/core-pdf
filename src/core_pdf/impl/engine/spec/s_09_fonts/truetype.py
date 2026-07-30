@@ -3,13 +3,21 @@ from __future__ import annotations
 
 from typing import Any
 
-from core_font_programs import TrueTypeFontProgram
-from core_font_programs import tt_font_for_data as _tt_font_for_data
-
 from core_pdf.impl.engine.spec.s_07_objects.coercion import normalize_pdf_name
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_09_fonts.font_program_truetype import (
+    Point,
+    TrueTypeFontProgram,
+    rasterize_contours,
+    tt_font_for_data,
+)
+from core_pdf.impl.engine.spec.s_09_fonts.font_program_truetype import (
+    internal_invert_unicode_cmap as internal_invert_unicode_cmap_impl,
+)
 from core_pdf.impl.engine.spec.s_09_fonts.widths import get_descendant
 from core_pdf.impl.objects import PdfStream
+
+internal_invert_unicode_cmap = internal_invert_unicode_cmap_impl
 
 
 def tt_font_for_pdf_font(font: dict[str, Any]) -> TrueTypeFontProgram | None:
@@ -30,9 +38,16 @@ def tt_font_for_pdf_font(font: dict[str, Any]) -> TrueTypeFontProgram | None:
         if isinstance(cid_to_gid_obj, PdfStream):
             cid_to_gid = cid_to_gid_obj.data
     try:
-        return _tt_font_for_data(font_file.data, cid_to_gid, use_cmap=descendant is None)
+        return tt_font_for_data(font_file.data, cid_to_gid, use_cmap=descendant is None)
     except ValueError:
         return None
 
 
-__all__ = ("tt_font_for_pdf_font",)
+__all__ = (
+    "internal_invert_unicode_cmap",
+    "Point",
+    "TrueTypeFontProgram",
+    "rasterize_contours",
+    "tt_font_for_data",
+    "tt_font_for_pdf_font",
+)

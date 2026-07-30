@@ -5,16 +5,16 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
-from core_cmap.impl.cid.cmap import ToUnicodeCMap
-from core_font_programs.impl.truetype import _invert_unicode_cmap
 
 from core_pdf.impl.engine.spec.s_09_fonts import decoder as decoder_module
+from core_pdf.impl.engine.spec.s_09_fonts.cmap_tounicode import ToUnicodeCMap
 from core_pdf.impl.engine.spec.s_09_fonts.decoder import (
     FontDecoder,
     parse_type1_font_program_encoding,
 )
 from core_pdf.impl.engine.spec.s_09_fonts.encoding import decode_pdf_text_string
 from core_pdf.impl.engine.spec.s_09_fonts.glyphs import glyph_name_to_unicode
+from core_pdf.impl.engine.spec.s_09_fonts.truetype import internal_invert_unicode_cmap
 from core_pdf.impl.objects import PdfStream
 from core_pdf.impl.primitives import PdfString
 
@@ -235,6 +235,18 @@ def test_font_decoder_identity_fallback_does_not_emit_surrogates() -> None:
     assert decoder.decode(b"\xd8\x00") == "\ufffd"
 
 
+def test_font_decoder_applies_learned_mapping_to_unknown_identity_code() -> None:
+    decoder = FontDecoder(cid_type0_font("Identity-H", ordering="Unknown"))
+    encoded = b"\x00A"
+
+    assert decoder.decode_glyphs(encoded)[0].unicode_source == "identity"
+    assert decoder.install_learned_unicode({encoded: "Z"}) == 1
+
+    glyph = decoder.decode_glyphs(encoded)[0]
+    assert glyph.unicode == "Z"
+    assert glyph.unicode_source == "learned_ocr"
+
+
 def test_cid_decoder_rejects_private_use_true_type_cmap_values() -> None:
     class FakeTrueTypeFont:
         def glyph_id_for_code(self, code: int) -> int:
@@ -257,7 +269,7 @@ def test_cid_decoder_rejects_private_use_true_type_cmap_values() -> None:
 
 
 def test_truetype_cmap_inversion_rejects_surrogates() -> None:
-    assert _invert_unicode_cmap({0xD800: 1, 0x41: 2}) == {2: "A"}
+    assert internal_invert_unicode_cmap({0xD800: 1, 0x41: 2}) == {2: "A"}
 
 
 def test_to_unicode_bfrange_does_not_emit_surrogates() -> None:
@@ -464,6 +476,41 @@ def test_cid_collection_map_stays_lazy_when_to_unicode_resolves_code(
 
     assert decoder.decode(b"\x00A") == "X"
     assert calls == []
+
+
+def test_cff_unicode_repair_is_batched_on_first_suspicious_code(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeRepairIndex:
+        def __init__(self) -> None:
+            self.calls: list[tuple[bytes, ...]] = []
+
+        def repairs_for_codes(self, codes: object) -> dict[bytes, str]:
+            requested = tuple(cast(Any, codes))
+            self.calls.append(requested)
+            return {b"\x00A": "X"}
+
+    repair_index = FakeRepairIndex()
+    monkeypatch.setattr(
+        decoder_module,
+        "build_cff_unicode_repair_index",
+        lambda *internal_args: repair_index,
+    )
+    font = cid_type0_font("Identity-H")
+    font["ToUnicode"] = PdfStream(
+        decoded_data=b"""
+        /CIDInit /ProcSet findresource begin 12 dict begin begincmap
+        1 begincodespacerange <0000> <ffff> endcodespacerange
+        1 beginbfchar <0041> <fffd> endbfchar
+        endcmap end
+        """
+    )
+
+    decoder = FontDecoder(font)
+
+    assert repair_index.calls == []
+    assert decoder.decode(b"\x00A") == "X"
+    assert repair_index.calls == [(b"\x00A",)]
 
 
 def test_cid_collection_map_resolves_once_on_first_unmapped_code(

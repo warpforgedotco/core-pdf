@@ -1,12 +1,11 @@
 from io import BytesIO
 
-from core_document import Block, BlockKind, Document, Page, TextLine
-
 from core_pdf import (
     PdfDocument,
     StandardPdfEncryption,
     serialize_document_to_pdf,
 )
+from core_pdf.impl.engine.structured import Block, BlockKind, Document, Page, TextLine
 from core_pdf.impl.engine.writing import append_incremental_update, serialize_pdf_file
 from core_pdf.impl.objects import PdfName, PdfReference, PdfStream, PdfString
 

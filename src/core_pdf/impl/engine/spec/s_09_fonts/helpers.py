@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
+"""Native font encoding and differences helpers."""
+
 from __future__ import annotations
 
 from functools import lru_cache

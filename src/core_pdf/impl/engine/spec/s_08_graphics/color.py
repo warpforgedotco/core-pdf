@@ -1,22 +1,44 @@
 # SPDX-License-Identifier: AGPL-3.0-only
+"""Native image color conversion manager."""
+
 from __future__ import annotations
 
 import typing
 from functools import lru_cache
-from typing import TypeAlias, cast
+from typing import Any, TypeAlias, cast
 
-from core_color import (
-    adapt_d50_to_d65,
-    convert_icc_profile_samples,
-    lab_to_xyz,
-    xyz_to_srgb,
-)
+import numpy
 
+from core_pdf.impl.engine.array_views import ByteBuffer, uint8_view
 from core_pdf.impl.engine.spec.s_07_objects.coercion import (
     parse_float,
-    parse_int,
 )
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_08_graphics import (
+    IccProfileError,
+    adapt_d50_to_d65,
+    lab_to_xyz,
+    parse_icc_transform,
+    xyz_to_srgb,
+)
+from core_pdf.impl.engine.spec.s_08_graphics.color_kernels import (
+    apply_decode_array_8bit as internal_native_apply_decode_array_8bit,
+)
+from core_pdf.impl.engine.spec.s_08_graphics.color_kernels import (
+    apply_decode_array_subbyte as internal_native_apply_decode_array_subbyte,
+)
+from core_pdf.impl.engine.spec.s_08_graphics.color_kernels import (
+    evaluate_sampled_tint_function as internal_native_evaluate_sampled_tint_function,
+)
+from core_pdf.impl.engine.spec.s_08_graphics.color_kernels import (
+    image_component_count as internal_native_image_component_count,
+)
+from core_pdf.impl.engine.spec.s_08_graphics.color_kernels import (
+    image_dimension as internal_native_image_dimension,
+)
+from core_pdf.impl.engine.spec.s_08_graphics.color_kernels import (
+    unpack_subbyte_image_samples as internal_native_unpack_subbyte_image_samples,
+)
 from core_pdf.impl.engine.spec.s_08_graphics.color_spec import (
     ImageColorSpec,
     cs_name,
@@ -32,16 +54,90 @@ if typing.TYPE_CHECKING:
 ImageDict: TypeAlias = dict[str, object]
 ColorSpaceSequence: TypeAlias = list[object] | tuple[object, ...]
 ColorComponents: TypeAlias = list[float]
+ImageBuffer: TypeAlias = ByteBuffer
+
+
+@lru_cache(maxsize=1)
+def internal_cmyk_channel_table() -> numpy.ndarray[Any, numpy.dtype[numpy.uint8]]:
+    """Return the exact scalar CMYK channel conversion table."""
+    values = numpy.arange(256, dtype=numpy.float64) / 255.0
+    table = numpy.floor(255.0 * (1.0 - values[:, None]) * (1.0 - values[None, :])).astype(
+        numpy.uint8
+    )
+    table.flags.writeable = False
+    return table
+
+
+def internal_alternate_color_component_count(alt_name: str) -> int:
+    if alt_name == "DeviceGray":
+        return 1
+    if alt_name == "DeviceRGB":
+        return 3
+    if alt_name == "DeviceCMYK":
+        return 4
+    raise ValueError("invalid Separation color space")
+
+
+@lru_cache(maxsize=256)
+def internal_sampled_separation_rgb_lut(
+    tint_fn: PdfStream,
+    alt_name: str,
+) -> numpy.ndarray[Any, numpy.dtype[numpy.uint8]]:
+    """Compile an 8-bit sampled Separation function to a read-only RGB LUT."""
+    expected = internal_alternate_color_component_count(alt_name)
+    table = numpy.empty((256, 3), dtype=numpy.uint8)
+    for value in range(256):
+        components = internal_native_evaluate_sampled_tint_function(tint_fn, value / 255.0)
+        if len(components) != expected:
+            raise ValueError("invalid separation tint function")
+        rgb = ImageColorManager.apply_alt_color(components, alt_name)
+        if rgb is None:
+            raise ValueError("invalid Separation color space")
+        table[value] = tuple(rgb)
+    table.flags.writeable = False
+    return table
+
+
+@lru_cache(maxsize=256)
+def internal_calrgb_parameter_arrays(
+    matrix: tuple[float, ...],
+    black_point: tuple[float, ...],
+) -> tuple[numpy.ndarray[Any, Any], numpy.ndarray[Any, Any]]:
+    matrix_array = numpy.asarray(matrix, dtype=numpy.float64).reshape(3, 3)
+    black_point_array = numpy.asarray(black_point, dtype=numpy.float64)
+    matrix_array.flags.writeable = False
+    black_point_array.flags.writeable = False
+    return matrix_array, black_point_array
+
+
+def xyz_to_srgb_point(x: float, y: float, z: float) -> tuple[float, float, float]:
+    values = numpy.asarray([[x, y, z]], dtype=numpy.float32)
+    result = xyz_to_srgb(adapt_d50_to_d65(values))[0]
+    return float(result[0]), float(result[1]), float(result[2])
+
+
+def lab_to_srgb_point(
+    l_star: float,
+    a_star: float,
+    b_star: float,
+    white_point: tuple[float, float, float],
+) -> tuple[float, float, float]:
+    values = numpy.asarray(
+        [[l_star / 100.0, (a_star + 128.0) / 255.0, (b_star + 128.0) / 255.0]],
+        dtype=numpy.float32,
+    )
+    result = xyz_to_srgb(adapt_d50_to_d65(lab_to_xyz(values, white_point)))[0]
+    return float(result[0]), float(result[1]), float(result[2])
 
 
 class ImageColorManager:
     @staticmethod
     def convert_image_data(
-        raw: bytes,
+        raw: ImageBuffer,
         image_dict: ImageDict | ImageColorSpec,
         *,
         prefer_embedded_icc: bool = False,
-    ) -> bytes | None:
+    ) -> ImageBuffer | None:
         current: ImageDict | ImageColorSpec = image_dict
         depth = 0
 
@@ -67,7 +163,6 @@ class ImageColorManager:
             samples = ImageColorManager.normalize_image_samples(raw, spec, current)
             if samples is None:
                 return None
-
             if cs_kind == "DeviceRGB":
                 return samples
             if cs_kind == "DeviceGray":
@@ -84,11 +179,19 @@ class ImageColorManager:
                 return ImageColorManager.convert_indexed(samples, spec)
             if cs_kind == "ICCBased":
                 if prefer_embedded_icc and spec.icc_profile is not None:
-                    converted = convert_icc_profile_samples(samples, spec.icc_profile)
-                    if converted is not None:
-                        if spec.channels == 1 and len(converted) == len(samples):
+                    try:
+                        transform = parse_icc_transform(spec.icc_profile)
+                        array = uint8_view(samples).reshape(-1, transform.input_channels)
+                        normalized = array.astype(numpy.float32) / 255.0
+                        converted = numpy.rint(
+                            numpy.clip(transform.apply(normalized) * 255.0, 0.0, 255.0)
+                        ).astype(numpy.uint8)
+                        converted = converted.reshape(-1)
+                        if spec.channels == 1 and converted.size == len(samples):
                             return ImageColorManager.convert_gray(converted)
                         return converted
+                    except (IccProfileError, ValueError):
+                        pass
                 if spec.alt is not None:
                     current = ImageColorSpec(kind=spec.alt, params={})
                     raw = samples
@@ -116,37 +219,37 @@ class ImageColorManager:
 
     @staticmethod
     def normalize_image_samples(
-        raw: bytes,
+        raw: ImageBuffer,
         spec: ImageColorSpec,
         image_dict: ImageDict | ImageColorSpec,
-    ) -> bytes | None:
+    ) -> ImageBuffer | None:
         bpc = spec.bits_per_component
         if bpc == 8:
             return ImageColorManager.apply_decode_array(raw, spec, image_dict)
-        width = image_dimension(image_dict, "Width")
-        height = image_dimension(image_dict, "Height")
+        width = internal_native_image_dimension(image_dict, "Width")
+        height = internal_native_image_dimension(image_dict, "Height")
         if width <= 0 or height <= 0:
             return None
-        components = image_component_count(spec)
-        unpacked = unpack_subbyte_image_samples(raw, bpc, width, height, components)
+        components = internal_native_image_component_count(spec)
+        unpacked = internal_native_unpack_subbyte_image_samples(raw, bpc, width, height, components)
         if spec.kind == "Indexed":
             return unpacked
         return ImageColorManager.apply_decode_array(unpacked, spec, image_dict)
 
     @staticmethod
     def simple_device_color_fast_path(
-        raw: bytes,
+        raw: ImageBuffer,
         spec: ImageColorSpec,
         image_dict: ImageDict,
-    ) -> bytes | None:
+    ) -> ImageBuffer | None:
         if spec.bits_per_component != 8:
             return None
         if spec.kind not in {"DeviceRGB", "DeviceGray"}:
             return None
         if lookup_dict_key(image_dict, "Decode") is not None:
             return None
-        width = image_dimension(image_dict, "Width")
-        height = image_dimension(image_dict, "Height")
+        width = internal_native_image_dimension(image_dict, "Width")
+        height = internal_native_image_dimension(image_dict, "Height")
         if width <= 0 or height <= 0:
             return None
         expected = width * height * (3 if spec.kind == "DeviceRGB" else 1)
@@ -154,17 +257,20 @@ class ImageColorManager:
             return None
         if spec.kind == "DeviceRGB":
             return raw
-        return ImageColorManager.convert_gray(raw)
+        # Preserve native grayscale samples. Consumers that need RGB can
+        # expand them at the final compositing boundary; OCR can consume the
+        # one-channel buffer directly.
+        return raw
 
     @staticmethod
     def apply_decode_array(
-        samples: bytes,
+        samples: ImageBuffer,
         spec: ImageColorSpec,
         image_dict: ImageDict | ImageColorSpec,
-    ) -> bytes:
+    ) -> ImageBuffer:
         if spec.kind == "Indexed":
             return samples
-        components = image_component_count(spec)
+        components = internal_native_image_component_count(spec)
         if components <= 0:
             return samples
         bpc = spec.bits_per_component
@@ -187,13 +293,13 @@ class ImageColorManager:
         if bpc == 8 and all(pair == (0.0, 1.0) for pair in pairs):
             return samples
         if bpc == 8:
-            return apply_decode_array_8bit(samples, tuple(pairs))
-        return apply_decode_array_subbyte(samples, tuple(pairs), max_sample)
+            return internal_native_apply_decode_array_8bit(samples, tuple(pairs))
+        return internal_native_apply_decode_array_subbyte(samples, tuple(pairs), max_sample)
 
     @staticmethod
     def convert_separation(
-        raw: bytes, color_space: ImageColorSpec | ColorSpaceSequence
-    ) -> bytes | None:
+        raw: ImageBuffer, color_space: ImageColorSpec | ColorSpaceSequence
+    ) -> ImageBuffer | None:
         if isinstance(color_space, ImageColorSpec):
             alt_name = color_space.alt or "DeviceGray"
             tint_fn = color_space.tint_fn
@@ -206,13 +312,26 @@ class ImageColorManager:
             alt_name = cs_name(lookup_dict_key(alt_cs, "ColorSpace"), "DeviceGray") or "DeviceGray"
             tint_fn = color_space[3] if len(color_space) > 3 else None
 
-        result = bytearray()
+        expected = internal_alternate_color_component_count(alt_name)
+        if isinstance(tint_fn, PdfStream):
+            samples = uint8_view(raw)
+            return internal_sampled_separation_rgb_lut(tint_fn, alt_name)[samples].reshape(-1)
+
+        if tint_fn is None and alt_name in {"DeviceGray", "DeviceRGB", "DeviceCMYK"}:
+            samples = uint8_view(raw)
+            result = numpy.empty((len(samples), 3), dtype=numpy.uint8)
+            if alt_name in {"DeviceGray", "DeviceRGB"}:
+                result[:] = samples[:, None]
+            else:
+                result[:, 0] = 255 - samples
+                result[:, 1:] = 255
+            return result.reshape(-1)
+
+        fallback_result = bytearray()
         for byte in raw:
             v = byte / 255.0
             if tint_fn is None:
                 components: ColorComponents = [v]
-            elif isinstance(tint_fn, PdfStream):
-                components = evaluate_sampled_tint_function(tint_fn, v)
             elif isinstance(tint_fn, (list, tuple)):
                 if len(tint_fn) >= 1 and callable(tint_fn[0]):
                     tint_callable = typing.cast(typing.Callable[..., object], tint_fn[0])
@@ -224,28 +343,17 @@ class ImageColorManager:
                     components = cast(ColorComponents, list(tint_fn))
             else:
                 components = [v]
-            expected = (
-                1
-                if alt_name == "DeviceGray"
-                else 3
-                if alt_name == "DeviceRGB"
-                else 4
-                if alt_name == "DeviceCMYK"
-                else None
-            )
-            if expected is None:
-                raise ValueError("invalid Separation color space")
             if len(components) != expected:
                 raise ValueError("invalid separation tint function")
             rgb = ImageColorManager.apply_alt_color(components, alt_name)
             if rgb is not None:
-                result.extend(rgb)
-        return bytes(result)
+                fallback_result.extend(rgb)
+        return numpy.frombuffer(fallback_result, dtype=numpy.uint8)
 
     @staticmethod
     def convert_devicen(
-        raw: bytes, color_space: ImageColorSpec | ColorSpaceSequence
-    ) -> bytes | None:
+        raw: ImageBuffer, color_space: ImageColorSpec | ColorSpaceSequence
+    ) -> ImageBuffer | None:
         if isinstance(color_space, ImageColorSpec):
             alt_name = color_space.alt or ""
             n = color_space.channels
@@ -263,7 +371,29 @@ class ImageColorManager:
         if len(raw) % n != 0:
             raise ValueError("invalid DeviceN color sample data")
 
-        result = bytearray()
+        if tint_fn is None and alt_name in {"DeviceGray", "DeviceRGB", "DeviceCMYK"}:
+            samples = uint8_view(raw).reshape(-1, n)
+            if alt_name == "DeviceGray":
+                return numpy.repeat(samples[:, :1], 3, axis=1).reshape(-1)
+            if alt_name == "DeviceRGB":
+                result = numpy.empty((len(samples), 3), dtype=numpy.uint8)
+                result[:, 0] = samples[:, 0]
+                result[:, 1] = samples[:, 1] if n >= 2 else samples[:, 0]
+                result[:, 2] = samples[:, 2] if n >= 3 else samples[:, 0]
+                return result.reshape(-1)
+            table = internal_cmyk_channel_table()
+            zero = numpy.zeros(len(samples), dtype=numpy.uint8) if n < 4 else None
+            cyan = samples[:, 0]
+            magenta = samples[:, 1] if n >= 2 else zero
+            yellow = samples[:, 2] if n >= 3 else zero
+            black = samples[:, 3] if n >= 4 else zero
+            result = numpy.empty((len(samples), 3), dtype=numpy.uint8)
+            result[:, 0] = table[cyan, black]
+            result[:, 1] = table[magenta, black]
+            result[:, 2] = table[yellow, black]
+            return result.reshape(-1)
+
+        fallback_result = bytearray()
         step = n
         for i in range(0, len(raw), step):
             components: ColorComponents = [raw[i + j] / 255.0 for j in range(step)]
@@ -274,7 +404,7 @@ class ImageColorManager:
                 except Exception as exc:
                     raise ValueError("invalid DeviceN tint function") from exc
             elif isinstance(tint_fn, PdfStream):
-                components = evaluate_sampled_tint_function(tint_fn, *components)
+                components = internal_native_evaluate_sampled_tint_function(tint_fn, *components)
             expected = (
                 1
                 if alt_name == "DeviceGray"
@@ -290,68 +420,60 @@ class ImageColorManager:
                 raise ValueError("invalid DeviceN tint function")
             rgb = ImageColorManager.apply_alt_color(components, alt_name)
             if rgb is not None:
-                result.extend(rgb)
-        return bytes(result)
+                fallback_result.extend(rgb)
+        return numpy.frombuffer(fallback_result, dtype=numpy.uint8)
 
     @staticmethod
-    def convert_gray(raw: bytes) -> bytes:
-        result = bytearray(len(raw) * 3)
-        result[0::3] = raw
-        result[1::3] = raw
-        result[2::3] = raw
-        return bytes(result)
+    def convert_gray(raw: ImageBuffer) -> numpy.ndarray[Any, numpy.dtype[numpy.uint8]]:
+        samples = uint8_view(raw)
+        result = numpy.empty((len(samples), 3), dtype=numpy.uint8)
+        result[:, :] = samples[:, None]
+        return result.reshape(-1)
 
     @staticmethod
-    def convert_cmyk(raw: bytes) -> bytes:
-        result = bytearray()
+    def convert_cmyk(raw: ImageBuffer) -> numpy.ndarray[Any, numpy.dtype[numpy.uint8]]:
         n = len(raw)
-        inv255 = 1.0 / 255.0
         if n % 4 != 0:
             raise ValueError("invalid color sample data")
-        for i in range(0, n, 4):
-            c, m, y, k = raw[i], raw[i + 1], raw[i + 2], raw[i + 3]
-            r = int(255 * (1 - c * inv255) * (1 - k * inv255))
-            g = int(255 * (1 - m * inv255) * (1 - k * inv255))
-            b = int(255 * (1 - y * inv255) * (1 - k * inv255))
-            result.extend([max(0, min(255, r)), max(0, min(255, g)), max(0, min(255, b))])
-        return bytes(result)
+        samples = uint8_view(raw).reshape(-1, 4)
+        table = internal_cmyk_channel_table()
+        result = numpy.empty((len(samples), 3), dtype=numpy.uint8)
+        result[:, 0] = table[samples[:, 0], samples[:, 3]]
+        result[:, 1] = table[samples[:, 1], samples[:, 3]]
+        result[:, 2] = table[samples[:, 2], samples[:, 3]]
+        return result.reshape(-1)
 
     @staticmethod
-    def convert_indexed(raw: bytes, spec: ImageColorSpec) -> bytes | None:
+    def convert_indexed(raw: ImageBuffer, spec: ImageColorSpec) -> ImageBuffer | None:
         if spec.lookup is None:
             return None
-        result = bytearray()
         lookup = spec.lookup
         hival = spec.hival
+        samples = uint8_view(raw)
+        if numpy.any(samples > hival):
+            raise ValueError("invalid Indexed color sample")
         if spec.base == "DeviceRGB":
             if len(lookup) < (hival + 1) * 3:
                 raise ValueError("invalid Indexed color lookup")
-            for byte in raw:
-                if byte > hival:
-                    raise ValueError("invalid Indexed color sample")
-                start = byte * 3
-                result.extend(lookup[start : start + 3])
+            table = uint8_view(lookup).reshape(-1, 3)
+            return table[samples].reshape(-1)
         elif spec.base == "DeviceGray":
             if len(lookup) < hival + 1:
                 raise ValueError("invalid Indexed color lookup")
-            for byte in raw:
-                if byte > hival:
-                    raise ValueError("invalid Indexed color sample")
-                val = lookup[byte]
-                result.extend([val, val, val])
+            values = uint8_view(lookup)[samples]
+            return numpy.repeat(values[:, None], 3, axis=1).reshape(-1)
         else:
             raise ValueError("invalid Indexed color space")
-        return bytes(result)
 
     @staticmethod
     def convert_to_rgb(
-        raw: bytes, fn: Callable[..., tuple[float, float, float]], channels: int = 1
-    ) -> bytes:
+        raw: ImageBuffer, fn: Callable[..., tuple[float, float, float]], channels: int = 1
+    ) -> ImageBuffer:
         if channels <= 0:
             raise ValueError("invalid color channel count")
         if len(raw) % channels != 0:
             raise ValueError("invalid color sample data")
-        result = bytearray(len(raw) * 3)
+        result = bytearray((len(raw) // channels) * 3)
         inv255 = 1.0 / 255.0
         for i in range(0, len(raw), channels):
             out = (i // channels) * 3
@@ -364,10 +486,10 @@ class ImageColorManager:
             result[out] = max(0, min(255, int(r * 255.0)))
             result[out + 1] = max(0, min(255, int(g * 255.0)))
             result[out + 2] = max(0, min(255, int(b * 255.0)))
-        return bytes(result)
+        return numpy.frombuffer(result, dtype=numpy.uint8)
 
     @staticmethod
-    def convert_calgray(raw: bytes, params: object) -> bytes:
+    def convert_calgray(raw: ImageBuffer, params: object) -> ImageBuffer:
         gamma_raw = cs_param(params, "Gamma", 1.0)
         gamma = parse_float(gamma_raw, None)
         if gamma is None:
@@ -376,37 +498,34 @@ class ImageColorManager:
         return ImageColorManager.convert_gray(raw)
 
     @staticmethod
-    def convert_calrgb(raw: bytes, params: object) -> bytes:
+    def convert_calrgb(raw: ImageBuffer, params: object) -> ImageBuffer:
         bp = cs_param_floats(params, "BlackPoint", 3, [0.0, 0.0, 0.0])
         gamma = cs_param_floats(params, "Gamma", 3, [1.0, 1.0, 1.0])
         matrix = cs_param_floats(params, "Matrix", 9, [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0])
 
-        def fn(r: float, g: float, b: float) -> tuple[float, float, float]:
-            rg = pow(r, gamma[0]) if gamma[0] != 1.0 else r
-            gg = pow(g, gamma[1]) if gamma[1] != 1.0 else g
-            bg = pow(b, gamma[2]) if gamma[2] != 1.0 else b
-            x = bp[0] + matrix[0] * rg + matrix[1] * gg + matrix[2] * bg
-            y = bp[1] + matrix[3] * rg + matrix[4] * gg + matrix[5] * bg
-            z = bp[2] + matrix[6] * rg + matrix[7] * gg + matrix[8] * bg
-            ax, ay, az = adapt_d50_to_d65(x, y, z)
-            return xyz_to_srgb(ax, ay, az)
-
-        return ImageColorManager.convert_to_rgb(raw, fn, channels=3)
+        samples = uint8_view(raw).reshape(-1, 3)
+        values = samples.astype(numpy.float64) / 255.0
+        for index, exponent in enumerate(gamma):
+            if exponent != 1.0:
+                values[:, index] = numpy.power(values[:, index], exponent)
+        matrix_array, black_point_array = internal_calrgb_parameter_arrays(tuple(matrix), tuple(bp))
+        xyz = (values @ matrix_array.T + black_point_array).astype(numpy.float32)
+        rgb = xyz_to_srgb(adapt_d50_to_d65(xyz))
+        return numpy.clip(rgb * 255.0, 0.0, 255.0).astype(numpy.uint8).reshape(-1)
 
     @staticmethod
-    def convert_lab_raw(raw: bytes, params: object) -> bytes:
+    def convert_lab_raw(raw: ImageBuffer, params: object) -> ImageBuffer:
         wp = cs_param_floats(params, "WhitePoint", 3, [0.9505, 1.0, 1.089])
         range_a = cs_param_floats(params, "Range", 2, [-100.0, 100.0])
-
-        def fn(l_byte: float, a_byte: float, b_byte: float) -> tuple[float, float, float]:
-            l_star = l_byte * 100.0
-            a_star = a_byte * (range_a[1] - range_a[0]) + range_a[0]
-            b_star = b_byte * (range_a[1] - range_a[0]) + range_a[0]
-            x, y, z = lab_to_xyz(l_star, a_star, b_star, wp)
-            ax, ay, az = adapt_d50_to_d65(x, y, z)
-            return xyz_to_srgb(ax, ay, az)
-
-        return ImageColorManager.convert_to_rgb(raw, fn, channels=3)
+        samples = uint8_view(raw).reshape(-1, 3)
+        a_span = range_a[1] - range_a[0]
+        lab = samples.astype(numpy.float32)
+        lab[:, 0] /= 255.0
+        lab[:, 1] = (lab[:, 1] / 255.0 * a_span + range_a[0] + 128.0) / 255.0
+        lab[:, 2] = (lab[:, 2] / 255.0 * a_span + range_a[0] + 128.0) / 255.0
+        xyz = lab_to_xyz(lab, (wp[0], wp[1], wp[2]))
+        rgb = xyz_to_srgb(adapt_d50_to_d65(xyz))
+        return numpy.clip(rgb * 255.0, 0.0, 255.0).astype(numpy.uint8).reshape(-1)
 
     @staticmethod
     def apply_alt_color(components: ColorComponents, alt_name: str) -> bytes | None:
@@ -430,193 +549,8 @@ class ImageColorManager:
             m = components[1] if len(components) >= 2 else 0.0
             y = components[2] if len(components) >= 3 else 0.0
             k = components[3] if len(components) >= 4 else 0.0
-            r = int(255 * (1 - c) * (1 - k))
-            g_ = int(255 * (1 - m) * (1 - k))
-            b_ = int(255 * (1 - y) * (1 - k))
-            return bytes([max(0, min(255, r)), max(0, min(255, g_)), max(0, min(255, b_))])
+            red = int(255 * (1 - c) * (1 - k))
+            green = int(255 * (1 - m) * (1 - k))
+            blue = int(255 * (1 - y) * (1 - k))
+            return bytes([max(0, min(255, red)), max(0, min(255, green)), max(0, min(255, blue))])
         return None
-
-
-@lru_cache(maxsize=1024)
-def decode_translation_tables_8bit(
-    pairs: tuple[tuple[float, float], ...],
-) -> tuple[bytes, ...]:
-    tables: list[bytes] = []
-    for dmin, dmax in pairs:
-        table = bytearray(256)
-        span = dmax - dmin
-        for value in range(256):
-            decoded = dmin + (value / 255.0) * span
-            table[value] = max(0, min(255, int(round(decoded * 255.0))))
-        tables.append(bytes(table))
-    return tuple(tables)
-
-
-def apply_decode_array_8bit(
-    samples: bytes,
-    pairs: tuple[tuple[float, float], ...],
-) -> bytes:
-    tables = decode_translation_tables_8bit(pairs)
-    if len(tables) == 1:
-        return samples.translate(tables[0])
-    components = len(tables)
-    result = bytearray(len(samples))
-    for index, table in enumerate(tables):
-        result[index::components] = samples[index::components].translate(table)
-    return bytes(result)
-
-
-@lru_cache(maxsize=1024)
-def decode_translation_tables_subbyte(
-    max_sample: int,
-    pairs: tuple[tuple[float, float], ...],
-) -> tuple[bytes, ...]:
-    tables: list[bytes] = []
-    for dmin, dmax in pairs:
-        table = bytearray(256)
-        span = dmax - dmin
-        for value in range(256):
-            normalized = value / max_sample if max_sample > 0 else 0.0
-            decoded = dmin + normalized * span
-            table[value] = max(0, min(255, int(round(decoded * 255.0))))
-        tables.append(bytes(table))
-    return tuple(tables)
-
-
-def apply_decode_array_subbyte(
-    samples: bytes,
-    pairs: tuple[tuple[float, float], ...],
-    max_sample: int,
-) -> bytes:
-    tables = decode_translation_tables_subbyte(max_sample, pairs)
-    if len(tables) == 1:
-        return samples.translate(tables[0])
-    components = len(tables)
-    result = bytearray(len(samples))
-    for index, table in enumerate(tables):
-        result[index::components] = samples[index::components].translate(table)
-    return bytes(result)
-
-
-def image_dimension(image_dict: ImageDict | ImageColorSpec, key: str) -> int:
-    if not isinstance(image_dict, dict):
-        return 0
-    value = lookup_dict_key(image_dict, key)
-    if type(value) is bool:
-        return 0
-    return parse_int(value, 0) or 0
-
-
-def image_component_count(spec: ImageColorSpec) -> int:
-    if spec.kind in {"DeviceGray", "CalGray", "Indexed", "Separation"}:
-        return 1
-    if spec.kind in {"DeviceRGB", "Lab", "CalRGB"}:
-        return 3
-    if spec.kind == "DeviceCMYK":
-        return 4
-    if spec.kind in {"ICCBased", "DeviceN"}:
-        return max(1, spec.channels)
-    return 1
-
-
-def evaluate_sampled_tint_function(function: PdfStream, *inputs: float) -> list[float]:
-    dictionary = function.dictionary
-    if parse_int(lookup_dict_key(dictionary, "FunctionType"), -1) != 0:
-        raise ValueError("invalid sampled function")
-    if parse_int(lookup_dict_key(dictionary, "BitsPerSample"), 0) != 8:
-        raise ValueError("unsupported sampled function bit depth")
-
-    size_obj = lookup_dict_key(dictionary, "Size")
-    domain_obj = lookup_dict_key(dictionary, "Domain")
-    range_obj = lookup_dict_key(dictionary, "Range")
-    if not isinstance(size_obj, (list, tuple)):
-        raise ValueError("invalid sampled function size")
-    if not isinstance(domain_obj, (list, tuple)):
-        raise ValueError("invalid sampled function domain")
-    if not isinstance(range_obj, (list, tuple)) or len(range_obj) < 2:
-        raise ValueError("invalid sampled function range")
-
-    input_count = len(size_obj)
-    if input_count != len(inputs):
-        raise ValueError("invalid sampled function input count")
-    if len(domain_obj) < input_count * 2:
-        raise ValueError("invalid sampled function domain")
-    output_count = len(range_obj) // 2
-
-    sizes = [parse_int(value, 0) or 0 for value in size_obj]
-    if any(size <= 0 for size in sizes):
-        raise ValueError("invalid sampled function size")
-    sample_count = 1
-    for size in sizes:
-        sample_count *= size
-    samples = function.data
-    if len(samples) < sample_count * output_count:
-        raise ValueError("invalid sampled function data")
-
-    encode_obj = lookup_dict_key(dictionary, "Encode")
-    encoded_positions: list[int] = []
-    for input_index, raw_input in enumerate(inputs):
-        domain_min = parse_float(domain_obj[input_index * 2], None)
-        domain_max = parse_float(domain_obj[input_index * 2 + 1], None)
-        if domain_min is None or domain_max is None or domain_max == domain_min:
-            raise ValueError("invalid sampled function domain")
-        clipped = max(domain_min, min(domain_max, raw_input))
-        normalized = (clipped - domain_min) / (domain_max - domain_min)
-        encode_min = 0.0
-        encode_max = float(sizes[input_index] - 1)
-        if isinstance(encode_obj, (list, tuple)) and len(encode_obj) >= input_count * 2:
-            parsed_min = parse_float(encode_obj[input_index * 2], None)
-            parsed_max = parse_float(encode_obj[input_index * 2 + 1], None)
-            if parsed_min is not None and parsed_max is not None:
-                encode_min = parsed_min
-                encode_max = parsed_max
-        encoded = encode_min + normalized * (encode_max - encode_min)
-        encoded_positions.append(max(0, min(sizes[input_index] - 1, int(round(encoded)))))
-
-    sample_index = 0
-    stride = 1
-    for input_index, position in enumerate(encoded_positions):
-        if input_index > 0:
-            stride *= sizes[input_index - 1]
-        sample_index += position * stride
-
-    result: list[float] = []
-    base = sample_index * output_count
-    for output_index in range(output_count):
-        range_min = parse_float(range_obj[output_index * 2], None)
-        range_max = parse_float(range_obj[output_index * 2 + 1], None)
-        if range_min is None or range_max is None:
-            raise ValueError("invalid sampled function range")
-        decoded = range_min + (samples[base + output_index] / 255.0) * (range_max - range_min)
-        result.append(max(range_min, min(range_max, decoded)))
-    return result
-
-
-def unpack_subbyte_image_samples(
-    data: bytes,
-    bits_per_component: int,
-    width: int,
-    height: int,
-    components: int,
-) -> bytes:
-    if bits_per_component not in {1, 2, 4}:
-        return data
-    if width <= 0 or height <= 0 or components <= 0:
-        raise ValueError("invalid image dimensions")
-    samples_per_row = width * components
-    row_bytes = (samples_per_row * bits_per_component + 7) // 8
-    if len(data) < row_bytes * height:
-        raise ValueError("invalid image sample data")
-    mask = (1 << bits_per_component) - 1
-    output = bytearray(width * height * components)
-    out = 0
-    for row in range(height):
-        row_start = row * row_bytes
-        bit_offset = 0
-        for ignored in range(samples_per_row):
-            source = data[row_start + (bit_offset // 8)]
-            shift = 8 - bits_per_component - (bit_offset % 8)
-            output[out] = (source >> shift) & mask
-            out += 1
-            bit_offset += bits_per_component
-    return bytes(output)

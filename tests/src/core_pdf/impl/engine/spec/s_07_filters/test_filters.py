@@ -7,24 +7,27 @@ import zlib
 from itertools import product
 from typing import cast
 
+import numpy
 import pytest
-from core_filters.impl import decoders, pipeline, predictors
-from core_filters.impl.codecs import apply_ascii85, apply_ascii_hex
-from core_filters.impl.decode_spec import FilterParams
-from core_filters.impl.errors import FilterParseError
-from core_filters.impl.flate import (
+
+from core_pdf.impl.engine.spec.s_07_filters import pipeline, predictors
+from core_pdf.impl.engine.spec.s_07_filters.codecs import apply_ascii85, apply_ascii_hex
+from core_pdf.impl.engine.spec.s_07_filters.decode_spec import FilterParams
+from core_pdf.impl.engine.spec.s_07_filters.errors import FilterParseError
+from core_pdf.impl.engine.spec.s_07_filters.flate import (
     apply_flate,
     looks_like_pdf_content_stream,
 )
-from core_filters.impl.pipeline import decode_stream_data
-from core_filters.impl.predictors import (
+from core_pdf.impl.engine.spec.s_07_filters.pipeline import decode_stream_data
+from core_pdf.impl.engine.spec.s_07_filters.predictors import (
     apply_png_predictor,
     apply_tiff_predictor,
 )
-
 from core_pdf.impl.engine.spec.s_07_security.standard_v4 import PdfStandardSecurityHandlerV4
+from core_pdf.impl.engine.spec.s_08_graphics.color_kernels import (
+    unpack_subbyte_image_samples,
+)
 from core_pdf.impl.exceptions import PdfParseError, PdfUnsupportedError
-from core_pdf.impl.objects import PdfStream
 from core_pdf.impl.primitives import PdfName
 from core_pdf.impl.types import PdfDict
 
@@ -166,6 +169,18 @@ def test_apply_ascii85_matches_stdlib_across_tuple_lengths() -> None:
     assert apply_ascii85(base64.a85encode(zero_payload, adobe=True), {}) == zero_payload
 
 
+def test_apply_ascii85_decodes_large_vectorizable_stream() -> None:
+    payload = bytes((index * 17) & 0xFF for index in range(50_000))
+    encoded = base64.a85encode(payload, adobe=True)
+
+    assert apply_ascii85(encoded, {}) == payload
+
+
+def test_apply_ascii85_rejects_large_overflowing_stream() -> None:
+    with pytest.raises(FilterParseError, match="invalid ASCII85Decode stream"):
+        apply_ascii85(b"u" * 5_000, {})
+
+
 def test_tiff_predictor_rejects_truncated_row() -> None:
     params = FilterParams(columns=4, colors=1, bits_per_component=8)
 
@@ -191,6 +206,40 @@ def test_png_predictor_can_recover_complete_rows_before_truncation() -> None:
     assert apply_png_predictor(b"\x00full\x00bad", params) == b"full"
 
 
+@pytest.mark.parametrize("bits_per_component", [1, 2, 4])
+def test_subbyte_image_samples_match_expected_values(bits_per_component: int) -> None:
+    width = 13
+    height = 3
+    components = 2
+    values = [
+        (index * 3 + 1) & ((1 << bits_per_component) - 1)
+        for index in range(width * height * components)
+    ]
+    row_sample_count = width * components
+    row_bits = row_sample_count * bits_per_component
+    row_bytes = (row_bits + 7) // 8
+    encoded = bytearray()
+    for row_start in range(0, len(values), row_sample_count):
+        bit_string = "".join(
+            f"{value:0{bits_per_component}b}"
+            for value in values[row_start : row_start + row_sample_count]
+        )
+        bit_string = bit_string.ljust(row_bytes * 8, "0")
+        encoded.extend(
+            int(bit_string[index : index + 8], 2) for index in range(0, len(bit_string), 8)
+        )
+    numpy.testing.assert_array_equal(
+        unpack_subbyte_image_samples(
+            bytes(encoded),
+            bits_per_component,
+            width,
+            height,
+            components,
+        ),
+        numpy.asarray(values, dtype=numpy.uint8),
+    )
+
+
 def test_empty_png_predictor_avoids_row_allocation(monkeypatch: pytest.MonkeyPatch) -> None:
     params = FilterParams(columns=10**9, colors=4, bits_per_component=16)
 
@@ -200,74 +249,6 @@ def test_empty_png_predictor_avoids_row_allocation(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(predictors, "png_predict", unexpected_decode)
 
     assert apply_png_predictor(b"", params) == b""
-
-
-@pytest.mark.parametrize(
-    ("raw_data", "filters"),
-    [
-        (b"raw", PdfName.of("JPXDecode")),
-        (b"726177>", [PdfName.of("ASCIIHexDecode"), PdfName.of("JPXDecode")]),
-    ],
-)
-def test_jpx_receives_parent_colorspace_for_any_filter_position(
-    monkeypatch: pytest.MonkeyPatch,
-    raw_data: bytes,
-    filters: object,
-) -> None:
-    embedded_color_flags: list[bool] = []
-
-    def fake_decode_jpx(data: bytes, *, apply_embedded_color: bool) -> bytes:
-        embedded_color_flags.append(apply_embedded_color)
-        return data
-
-    monkeypatch.setattr(decoders, "decode_jpx_impl", fake_decode_jpx)
-    dictionary = {
-        "Filter": filters,
-        "ColorSpace": PdfName.of("DeviceRGB"),
-    }
-    stream = PdfStream(dictionary, raw_data, dictionary)
-
-    assert stream.data == b"raw"
-    assert embedded_color_flags == [False]
-
-
-def test_expensive_decode_cache_separates_jpx_parent_color_context(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    cached: dict[tuple[object, ...], tuple[bytes, bytes]] = {}
-    calls: list[bool] = []
-
-    def fake_decode(data: bytes, context: object) -> bytes:
-        explicit = decoders.jpx_parent_uses_explicit_colorspace(context)
-        calls.append(explicit)
-        return b"explicit" if explicit else b"embedded"
-
-    def fake_get(key: tuple[object, ...], data: bytes) -> bytes | None:
-        entry = cached.get(key)
-        return entry[1] if entry is not None and entry[0] is data else None
-
-    def fake_store(key: tuple[object, ...], data: bytes, decoded: bytes) -> None:
-        cached[key] = (data, decoded)
-
-    monkeypatch.setitem(pipeline.FILTER_MAP, "JPXDecode", fake_decode)
-    monkeypatch.setattr(pipeline, "cached_expensive_decode", fake_get)
-    monkeypatch.setattr(pipeline, "store_expensive_decode", fake_store)
-    encoded = bytes(bytearray(b"same encoded image"))
-    spec = {"Filter": PdfName.of("JPXDecode")}
-
-    explicit = decode_stream_data(
-        encoded, spec, parent_dictionary={"ColorSpace": PdfName.of("RGB")}
-    )
-    embedded = decode_stream_data(encoded, spec, parent_dictionary={})
-    explicit_again = decode_stream_data(
-        encoded,
-        spec,
-        parent_dictionary={"ColorSpace": PdfName.of("RGB")},
-    )
-
-    assert explicit == explicit_again == b"explicit"
-    assert embedded == b"embedded"
-    assert calls == [True, False]
 
 
 def test_expensive_decode_cache_reuses_exact_memoryview_backing_bytes(
@@ -315,8 +296,8 @@ def make_v4_handler() -> PdfStandardSecurityHandlerV4:
     handler.stmf = "Default"
     handler.strf = "Default"
     handler.cfm = {
-        "Default": lambda _objid, _genno, data: b"default:" + data,
-        "Special": lambda _objid, _genno, data: b"special:" + data,
+        "Default": lambda internal_objid, internal_genno, data: b"default:" + data,
+        "Special": lambda internal_objid, internal_genno, data: b"special:" + data,
     }
     return handler
 

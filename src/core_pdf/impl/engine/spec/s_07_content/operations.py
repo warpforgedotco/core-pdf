@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable, Iterator
+from dataclasses import dataclass
 from typing import Protocol, TypeAlias, TypeVar, cast, overload
 
 from core_pdf.impl.engine.spec.s_07_content.inline_images import (
@@ -91,6 +92,65 @@ TEXT_CLIP_PREFIX_RE = re.compile(
 TEXT_SHOWING_CANDIDATES = (b'"', b"'", b"Tj", b"TJ", b"Do")
 TEXT_OR_LEXICAL_MARKER_RE = re.compile(rb"""[%(/<>\[\]"']|T[jJ]|Do|BI""")
 CONTAINER_LEXICAL_MARKER_RE = re.compile(rb"[%(<>\[\]]")
+GRAPHICS_PAINT_RE = re.compile(
+    rb"(?:^|[\x00\t\n\f\r ])(?:S|s|f|F|f\*|B|b|B\*|b\*|sh)(?=$|[\x00\t\n\f\r ])"
+)
+
+TEXT_OPERATORS = frozenset({"Tj", "TJ", "'", '"'})
+IMAGE_OPERATORS = frozenset({"BI", "ID", "EI", "Do"})
+VECTOR_PATH_OPERATORS = frozenset({"m", "l", "c", "v", "y", "h", "re"})
+VECTOR_PAINT_OPERATORS = frozenset({"S", "s", "f", "F", "f*", "B", "B*", "b", "b*", "sh"})
+GRAPHICS_STATE_OPERATORS = frozenset({"q", "Q", "cm", "w", "J", "j", "M", "d", "gs"})
+
+
+@dataclass(frozen=True, slots=True)
+class ContentOperatorCounts:
+    """Coarse content-stream operator counts for cheap page preflight."""
+
+    text: int = 0
+    image: int = 0
+    vector_path: int = 0
+    vector_paint: int = 0
+    graphics_state: int = 0
+    unknown: int = 0
+    malformed: int = 0
+
+    @property
+    def vector(self) -> int:
+        return self.vector_path + self.vector_paint
+
+    @property
+    def total(self) -> int:
+        return (
+            self.text
+            + self.image
+            + self.vector_path
+            + self.vector_paint
+            + self.graphics_state
+            + self.unknown
+        )
+
+    def add(self, other: "ContentOperatorCounts") -> "ContentOperatorCounts":
+        return ContentOperatorCounts(
+            text=self.text + other.text,
+            image=self.image + other.image,
+            vector_path=self.vector_path + other.vector_path,
+            vector_paint=self.vector_paint + other.vector_paint,
+            graphics_state=self.graphics_state + other.graphics_state,
+            unknown=self.unknown + other.unknown,
+            malformed=self.malformed + other.malformed,
+        )
+
+
+def content_stream_may_paint_graphics(data: bytes | memoryview) -> bool:
+    """Return whether a stream may emit visible vector graphics.
+
+    This intentionally permits false positives (for example inside comments or strings):
+    callers use it only to choose a richer capture. Exact token boundaries prevent
+    ordinary text and PDF names from creating most false positives.
+    """
+    raw_bytes = full_source_bytes(data)
+    return GRAPHICS_PAINT_RE.search(raw_bytes if raw_bytes is not None else bytes(data)) is not None
 
 
 def content_stream_may_show_text(data: bytes | memoryview) -> bool:
@@ -166,6 +226,38 @@ def content_stream_may_show_text(data: bytes | memoryview) -> bool:
     return False
 
 
+def count_content_stream_operators(data: bytes | memoryview) -> ContentOperatorCounts:
+    """Return coarse operator counts without constructing graphics or text state."""
+    text = image = vector_path = vector_paint = graphics_state = unknown = 0
+    try:
+        operations = iter_content_operations(PdfLexer(data))
+        for operator, internal_operands in operations:
+            if operator in TEXT_OPERATORS:
+                text += 1
+            elif operator in IMAGE_OPERATORS:
+                image += 1
+            elif operator in VECTOR_PATH_OPERATORS:
+                vector_path += 1
+            elif operator in VECTOR_PAINT_OPERATORS:
+                vector_paint += 1
+            elif operator in GRAPHICS_STATE_OPERATORS:
+                graphics_state += 1
+            elif operator in {"BT", "ET", "Tf", "Td", "TD", "Tm", "Tc", "Tw", "T*", "Tr"}:
+                text += 1
+            elif operator:
+                unknown += 1
+    except PdfParseError:
+        return ContentOperatorCounts(malformed=1)
+    return ContentOperatorCounts(
+        text=text,
+        image=image,
+        vector_path=vector_path,
+        vector_paint=vector_paint,
+        graphics_state=graphics_state,
+        unknown=unknown,
+    )
+
+
 def skip_text_clip_prefix(raw_bytes: bytes | memoryview, pos: int, data_len: int) -> int | None:
     match = TEXT_CLIP_PREFIX_RE.match(raw_bytes, pos)
     if match is None:
@@ -176,7 +268,13 @@ def skip_text_clip_prefix(raw_bytes: bytes | memoryview, pos: int, data_len: int
 class OperandWindow:
     __slots__ = ("operands", "count")
 
-    def __init__(self, operands: list[ContentOperand], count: int = 0) -> None:
+    operands: list[ContentOperand] | ContentOperands
+
+    def __init__(
+        self,
+        operands: list[ContentOperand] | ContentOperands,
+        count: int = 0,
+    ) -> None:
         self.operands = operands
         self.count = count
 
@@ -267,6 +365,22 @@ class OperationTarget(Protocol):
 
     def op_re(self, operands: OperandWindow, depth: int) -> None: ...
 
+    def op_RG_values(self, red: int | float, green: int | float, blue: int | float) -> None: ...
+
+    def op_w_value(self, line_width: int | float) -> None: ...
+
+    def op_J_value(self, line_cap: int | float) -> None: ...
+
+    def op_j_value(self, line_join: int | float) -> None: ...
+
+    def op_M_value(self, miter_limit: int | float) -> None: ...
+
+    def op_m_values(self, x: int | float, y: int | float) -> None: ...
+
+    def op_l_values(self, x: int | float, y: int | float) -> None: ...
+
+    def op_paint_stroke(self, operands: OperandWindow, depth: int) -> None: ...
+
     def op_ET(self, operands: OperandWindow, depth: int) -> None: ...
 
     def op_cm(self, operands: OperandWindow, depth: int) -> None: ...
@@ -282,23 +396,61 @@ BoundOperationHandler: TypeAlias = Callable[[OperandWindow, int], None]
 StateOperationHandler: TypeAlias = Callable[[OperationTarget, OperandWindow, int], None]
 OperationCollector: TypeAlias = Callable[[OperandWindow, int, str], None]
 
-_HandlerT = TypeVar("_HandlerT", covariant=True)
+internal_HandlerT = TypeVar("internal_HandlerT", covariant=True)
 
 
-class StringHandlerMap(Protocol[_HandlerT]):
-    def get(self, key: str) -> _HandlerT | None: ...
+class StringHandlerMap(Protocol[internal_HandlerT]):
+    def get(self, key: str) -> internal_HandlerT | None: ...
 
 
-class ByteHandlerMap(Protocol[_HandlerT]):
-    def get(self, key: bytes) -> _HandlerT | None: ...
+class ByteHandlerMap(Protocol[internal_HandlerT]):
+    def get(self, key: bytes) -> internal_HandlerT | None: ...
 
 
-class SingleHandlerLookup(Protocol[_HandlerT]):
-    def __getitem__(self, key: int) -> _HandlerT | None: ...
+class SingleHandlerLookup(Protocol[internal_HandlerT]):
+    def __getitem__(self, key: int) -> internal_HandlerT | None: ...
 
 
-class IntHandlerMap(Protocol[_HandlerT]):
-    def get(self, key: int) -> _HandlerT | None: ...
+class IntHandlerMap(Protocol[internal_HandlerT]):
+    def get(self, key: int) -> internal_HandlerT | None: ...
+
+
+class CollectedOperationHandler:
+    __slots__ = ("callback", "op_name")
+
+    def __init__(self, callback: OperationCollector, op_name: str) -> None:
+        self.callback = callback
+        self.op_name = op_name
+
+    def __call__(self, operands: OperandWindow, depth: int) -> None:
+        self.callback(operands, depth, self.op_name)
+
+
+class CollectedStringHandlers:
+    __slots__ = ("callback",)
+
+    def __init__(self, callback: OperationCollector) -> None:
+        self.callback = callback
+
+    def get(self, key: str) -> BoundOperationHandler:
+        return CollectedOperationHandler(self.callback, key)
+
+
+class CollectedIntegerHandlers:
+    __slots__ = ("callback",)
+
+    def __init__(self, callback: OperationCollector) -> None:
+        self.callback = callback
+
+    def __getitem__(self, key: int) -> BoundOperationHandler:
+        if key > 255:
+            op_name = chr(key >> 8) + chr(key & 0xFF)
+        else:
+            op_name = chr(key)
+        return CollectedOperationHandler(self.callback, op_name)
+
+    def get(self, key: int) -> BoundOperationHandler:
+        return self[key]
 
 
 def exact_number_operand(value: ContentOperand) -> int | float | None:
@@ -375,13 +527,6 @@ def dispatch_operations(
     )
     should_decipher = lexer.decipher is not None and lexer.current_obj_num is not None
     skipped_clip_q_count = 0
-
-    def call_handler(handler: StateOperationHandler | BoundOperationHandler) -> None:
-        lexer.pos = pos
-        if handler_target is None:
-            cast(BoundOperationHandler, handler)(operand_window, depth)
-        else:
-            cast(StateOperationHandler, handler)(handler_target, operand_window, depth)
 
     pos = lexer.pos
     while pos < data_len:
@@ -667,8 +812,16 @@ def dispatch_operations(
                     op_count += 1
                     handler = op_get("BI")
                     if handler is not None:
-                        set_operand_count(op_count)
-                        call_handler(handler)
+                        operand_window.count = min(op_count, max_operands)
+                        lexer.pos = pos
+                        if handler_target is None:
+                            cast(BoundOperationHandler, handler)(operand_window, depth)
+                        else:
+                            cast(StateOperationHandler, handler)(
+                                handler_target,
+                                operand_window,
+                                depth,
+                            )
                     op_count = 0
                     continue
 
@@ -793,6 +946,20 @@ def dispatch_operations(
                                 handler_target.op_Td(operand_window, depth)
                             op_count = 0
                             continue
+                    elif op0 == 82 and op1 == 71 and op_count >= 3:
+                        red, green, blue = operands[0], operands[1], operands[2]
+                        if (
+                            type(red) in exact_number_types
+                            and type(green) in exact_number_types
+                            and type(blue) in exact_number_types
+                        ):
+                            handler_target.op_RG_values(
+                                cast(int | float, red),
+                                cast(int | float, green),
+                                cast(int | float, blue),
+                            )
+                            op_count = 0
+                            continue
                     elif op0 == 114 and op1 == 101:
                         if (
                             handler_target.capture_graphics
@@ -857,6 +1024,58 @@ def dispatch_operations(
 
                 if handler_target is not None and n_raw == 1:
                     op0 = raw_bytes[pos - 1]
+                    if op0 == 119 and op_count:
+                        line_width = operands[0]
+                        if type(line_width) in exact_number_types:
+                            handler_target.op_w_value(cast(int | float, line_width))
+                            op_count = 0
+                            continue
+                    elif op0 == 74 and op_count:
+                        line_cap = operands[0]
+                        if type(line_cap) in exact_number_types:
+                            handler_target.op_J_value(cast(int | float, line_cap))
+                            op_count = 0
+                            continue
+                    elif op0 == 106 and op_count:
+                        line_join = operands[0]
+                        if type(line_join) in exact_number_types:
+                            handler_target.op_j_value(cast(int | float, line_join))
+                            op_count = 0
+                            continue
+                    elif op0 == 77 and op_count:
+                        miter_limit = operands[0]
+                        if type(miter_limit) in exact_number_types:
+                            handler_target.op_M_value(cast(int | float, miter_limit))
+                            op_count = 0
+                            continue
+                    elif op0 == 109 and op_count >= 2:
+                        move_x, move_y = operands[0], operands[1]
+                        if (
+                            type(move_x) in exact_number_types
+                            and type(move_y) in exact_number_types
+                        ):
+                            handler_target.op_m_values(
+                                cast(int | float, move_x),
+                                cast(int | float, move_y),
+                            )
+                            op_count = 0
+                            continue
+                    elif op0 == 108 and op_count >= 2:
+                        line_x, line_y = operands[0], operands[1]
+                        if (
+                            type(line_x) in exact_number_types
+                            and type(line_y) in exact_number_types
+                        ):
+                            handler_target.op_l_values(
+                                cast(int | float, line_x),
+                                cast(int | float, line_y),
+                            )
+                            op_count = 0
+                            continue
+                    elif op0 == 83:
+                        handler_target.op_paint_stroke(operand_window, depth)
+                        op_count = 0
+                        continue
                     if op0 == 113:
                         handler_target.op_q(operand_window, depth)
                         op_count = 0
@@ -891,8 +1110,12 @@ def dispatch_operations(
                         handler = op_get(op_name)
 
                 if handler is not None:
-                    set_operand_count(op_count)
-                    call_handler(handler)
+                    operand_window.count = min(op_count, max_operands)
+                    lexer.pos = pos
+                    if handler_target is None:
+                        cast(BoundOperationHandler, handler)(operand_window, depth)
+                    else:
+                        cast(StateOperationHandler, handler)(handler_target, operand_window, depth)
                 op_count = 0
                 continue
 
@@ -1048,40 +1271,12 @@ def iter_content_operations(lexer: PdfLexer) -> Iterator[ContentOperation]:
     def collector(operands: OperandWindow, depth: int, op_name: str) -> None:
         results.append((op_name, tuple(operands)))
 
-    class DictAdapter:
-        def __init__(self, callback: OperationCollector) -> None:
-            self.callback = callback
-
-        def get(self, key: str) -> BoundOperationHandler:
-            def collect(operands: OperandWindow, depth: int) -> None:
-                self.callback(operands, depth, key)
-
-            return collect
-
-    class FastAdapter:
-        def __init__(self, callback: OperationCollector) -> None:
-            self.callback = callback
-
-        def __getitem__(self, key: int) -> BoundOperationHandler:
-            if key > 255:
-                op_name = chr(key >> 8) + chr(key & 0xFF)
-            else:
-                op_name = chr(key)
-
-            def collect(operands: OperandWindow, depth: int) -> None:
-                self.callback(operands, depth, op_name)
-
-            return collect
-
-        def get(self, key: int) -> BoundOperationHandler:
-            return self.__getitem__(key)
-
     dispatch_operations(
         lexer,
-        DictAdapter(collector),
+        CollectedStringHandlers(collector),
         None,
-        FastAdapter(collector),
-        FastAdapter(collector),
+        CollectedIntegerHandlers(collector),
+        CollectedIntegerHandlers(collector),
         None,
         0,
     )
@@ -1092,8 +1287,11 @@ __all__ = (
     "ContentOperand",
     "ContentOperands",
     "ContentOperation",
+    "ContentOperatorCounts",
     "OperandWindow",
+    "content_stream_may_paint_graphics",
     "content_stream_may_show_text",
+    "count_content_stream_operators",
     "dispatch_operations",
     "iter_content_operations",
 )

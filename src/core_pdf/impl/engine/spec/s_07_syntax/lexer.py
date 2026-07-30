@@ -110,7 +110,9 @@ class PdfLexer:
 
         if type(data) is memoryview:
             self.raw_data = (
-                data if data.ndim == 1 and data.format == "B" else memoryview(data.tobytes())
+                memoryview(data)
+                if data.ndim == 1 and data.format == "B"
+                else memoryview(data.tobytes())
             )
         else:
             self.raw_data = memoryview(data)
@@ -275,46 +277,48 @@ class PdfLexer:
         while self.pos < n:
             byte = data[self.pos]
             self.pos += 1
-            if byte == 40:
-                depth += 1
-                out.append(byte)
-            elif byte == 41:
-                depth -= 1
-                if depth == 0:
-                    return bytes(out)
-                out.append(byte)
-            elif byte == 92:
-                if self.pos < n:
-                    esc = data[self.pos]
-                    self.pos += 1
-                    if 48 <= esc <= 55:
-                        oct_val = esc - 48
-                        count = 1
-                        while count < 3 and self.pos < n and 48 <= data[self.pos] <= 55:
-                            oct_val = (oct_val << 3) | (data[self.pos] - 48)
-                            self.pos += 1
-                            count += 1
-                        out.append(oct_val & 0xFF)
-                    elif esc == 10:
-                        if self.pos < n and data[self.pos] == 13:
-                            self.pos += 1
-                    elif esc == 13:
-                        if self.pos < n and data[self.pos] == 10:
-                            self.pos += 1
-                    else:
-                        mapped = STRING_ESCAPE.get(esc)
-                        if mapped is None:
-                            out.append(esc)
-                        else:
-                            out.extend(mapped)
-            elif byte == 13 or byte == 10:
-                out.append(10)
-                if self.pos < n:
-                    next_byte = data[self.pos]
-                    if (byte == 13 and next_byte == 10) or (byte == 10 and next_byte == 13):
+            match byte:
+                case 40:
+                    depth += 1
+                    out.append(byte)
+                case 41:
+                    depth -= 1
+                    if depth == 0:
+                        return bytes(out)
+                    out.append(byte)
+                case 92:
+                    if self.pos < n:
+                        esc = data[self.pos]
                         self.pos += 1
-            else:
-                out.append(byte)
+                        match esc:
+                            case _ if 48 <= esc <= 55:
+                                oct_val = esc - 48
+                                count = 1
+                                while count < 3 and self.pos < n and 48 <= data[self.pos] <= 55:
+                                    oct_val = (oct_val << 3) | (data[self.pos] - 48)
+                                    self.pos += 1
+                                    count += 1
+                                out.append(oct_val & 0xFF)
+                            case 10:
+                                if self.pos < n and data[self.pos] == 13:
+                                    self.pos += 1
+                            case 13:
+                                if self.pos < n and data[self.pos] == 10:
+                                    self.pos += 1
+                            case _:
+                                mapped = STRING_ESCAPE.get(esc)
+                                if mapped is None:
+                                    out.append(esc)
+                                else:
+                                    out.extend(mapped)
+                case 13 | 10:
+                    out.append(10)
+                    if self.pos < n:
+                        next_byte = data[self.pos]
+                        if (byte == 13 and next_byte == 10) or (byte == 10 and next_byte == 13):
+                            self.pos += 1
+                case _:
+                    out.append(byte)
         raise PdfParseError("unterminated string")
 
     def read_hex_string(self) -> bytes:
@@ -424,26 +428,27 @@ class PdfLexer:
             raise PdfParseError("unexpected end of PDF input")
 
         byte = data[pos]
-        if byte == 40:
-            value = self.read_string()
-            if self.decipher is not None and self.current_obj_num is not None:
-                value = self.apply_decipher(value)
-            return PdfString(value)
-        if byte == 60:
-            if pos + 1 < self.data_len and data[pos + 1] == 60:
-                return self.parse_dictionary_or_stream()
-            value = self.read_hex_string()
-            if self.decipher is not None and self.current_obj_num is not None:
-                value = self.apply_decipher(value)
-            return PdfString(value)
-        if byte == 91:
-            return self.parse_array()
-        if byte == 47:
-            return PdfName_of(self.read_name())
-        if byte == 62 and pos + 1 < self.data_len and data[pos + 1] == 62:
-            raise PdfParseError("unexpected dictionary end")
-        if byte == 93:
-            raise PdfParseError("unexpected array end")
+        match byte:
+            case 40:
+                value = self.read_string()
+                if self.decipher is not None and self.current_obj_num is not None:
+                    value = self.apply_decipher(value)
+                return PdfString(value)
+            case 60:
+                if pos + 1 < self.data_len and data[pos + 1] == 60:
+                    return self.parse_dictionary_or_stream()
+                value = self.read_hex_string()
+                if self.decipher is not None and self.current_obj_num is not None:
+                    value = self.apply_decipher(value)
+                return PdfString(value)
+            case 91:
+                return self.parse_array()
+            case 47:
+                return PdfName_of(self.read_name())
+            case 62 if pos + 1 < self.data_len and data[pos + 1] == 62:
+                raise PdfParseError("unexpected dictionary end")
+            case 93:
+                raise PdfParseError("unexpected array end")
 
         scanned = self.scan_word_at(pos, skip_ignored=False)
         if scanned is None:
@@ -651,30 +656,31 @@ class PdfLexer:
                 raise PdfParseError("unterminated array")
             pos = self.pos
             byte = data[pos]
-            if byte == 93:
-                self.advance(1)
-                return values
-            if byte == 40:
-                value = self.read_string()
-                if should_decipher:
-                    value = apply_decipher(value)
-                values.append(PdfString(value))
-                continue
-            if byte == 91:
-                values.append(self.parse_array())
-                continue
-            if byte == 60:
-                if pos + 1 < self.data_len and data[pos + 1] == 60:
-                    values.append(self.parse_dictionary_or_stream())
-                else:
-                    value = self.read_hex_string()
+            match byte:
+                case 93:
+                    self.advance(1)
+                    return values
+                case 40:
+                    value = self.read_string()
                     if should_decipher:
                         value = apply_decipher(value)
                     values.append(PdfString(value))
-                continue
-            if byte == 47:
-                values.append(PdfName_of(self.read_name()))
-                continue
+                    continue
+                case 91:
+                    values.append(self.parse_array())
+                    continue
+                case 60:
+                    if pos + 1 < self.data_len and data[pos + 1] == 60:
+                        values.append(self.parse_dictionary_or_stream())
+                    else:
+                        value = self.read_hex_string()
+                        if should_decipher:
+                            value = apply_decipher(value)
+                        values.append(PdfString(value))
+                    continue
+                case 47:
+                    values.append(PdfName_of(self.read_name()))
+                    continue
 
             scanned = self.scan_word_at(pos, skip_ignored=False)
             if scanned is None:
@@ -979,7 +985,7 @@ class PdfLexer:
             raw_data = self.apply_decipher(raw_data, dictionary)
         return PdfStream(dictionary, raw_data, dictionary)
 
-    def _find_keyword_candidate(
+    def internal_find_keyword_candidate(
         self,
         keyword: bytes,
         start: int,
@@ -987,7 +993,7 @@ class PdfLexer:
         *,
         reverse: bool,
         require_eol_before: bool,
-        buffer: FindableSizedBuffer | None = None,
+        buffer: bytes | FindableSizedBuffer | None = None,
     ) -> tuple[int, int]:
         if buffer is None:
             source_buffer = self.source_buffer
@@ -1018,7 +1024,7 @@ class PdfLexer:
         source_buffer = self.source_buffer
         search_buffer = self.raw_data.tobytes() if source_buffer is None else source_buffer
         search_start = data_start if preferred is None else preferred
-        candidate, raw_candidate = self._find_keyword_candidate(
+        candidate, raw_candidate = self.internal_find_keyword_candidate(
             b"endstream",
             search_start,
             self.data_len,
@@ -1029,7 +1035,7 @@ class PdfLexer:
         if preferred is None:
             return candidate if candidate >= 0 else raw_candidate
 
-        previous, previous_raw = self._find_keyword_candidate(
+        previous, previous_raw = self.internal_find_keyword_candidate(
             b"endstream",
             data_start,
             preferred,
@@ -1048,7 +1054,7 @@ class PdfLexer:
         return raw_candidate if raw_candidate >= 0 else previous_raw
 
     def find_object_end(self, data_start: int) -> int:
-        candidate, raw_candidate = self._find_keyword_candidate(
+        candidate, raw_candidate = self.internal_find_keyword_candidate(
             b"endobj",
             data_start,
             self.data_len,

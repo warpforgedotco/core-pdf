@@ -1,14 +1,14 @@
 # SPDX-License-Identifier: AGPL-3.0-only
+"""Compiled PDF scalar and container coercion kernels."""
+
 from __future__ import annotations
 
 from collections.abc import Callable
 from functools import lru_cache
-from typing import SupportsFloat, SupportsIndex, SupportsInt, TypeAlias, cast, overload
+from typing import TypeAlias, overload
 
 from core_pdf.impl.primitives import PdfName, PdfString
 
-IntCoercible: TypeAlias = str | bytes | bytearray | SupportsInt | SupportsIndex
-FloatCoercible: TypeAlias = str | bytes | bytearray | SupportsFloat | SupportsIndex
 CoercedContainer: TypeAlias = dict[object, object] | list[object]
 
 
@@ -43,14 +43,18 @@ def parse_int(value: object, default: int | None = None) -> int | None:
         return default
     if type(value) is memoryview:
         value = value.tobytes()
+    if type(value) is bytearray:
+        value = bytes(value)
     if type(value) is bytes:
         try:
             value = value.decode("ascii")
         except UnicodeDecodeError:
             return default
+    if type(value) is not str:
+        return default
     try:
-        return int(cast(IntCoercible, value))
-    except (TypeError, ValueError, OverflowError):
+        return int(value)
+    except (ValueError, OverflowError):
         return default
 
 
@@ -81,14 +85,18 @@ def parse_float(value: object, default: float | None = 0.0) -> float | None:
         return default
     if type(value) is memoryview:
         value = value.tobytes()
+    if type(value) is bytearray:
+        value = bytes(value)
     if type(value) is bytes:
         try:
             value = value.decode("ascii")
         except UnicodeDecodeError:
             return default
+    if type(value) is not str:
+        return default
     try:
-        return float(cast(FloatCoercible, value))
-    except (TypeError, ValueError, OverflowError):
+        return float(value)
+    except (ValueError, OverflowError):
         return default
 
 
@@ -117,71 +125,50 @@ def coerce_to_bytes(value: object) -> bytes:
         return value.data
     if isinstance(value, str):
         return value.encode("latin-1")
-    data = getattr(value, "data", None)
-    if isinstance(data, bytes):
-        return data
-    if isinstance(data, bytearray):
-        return bytes(data)
-    if isinstance(data, memoryview):
-        return data.tobytes()
     raise TypeError(f"cannot coerce {type(value).__name__} to bytes")
 
 
 def coerce_value(value: object, string_decoder: Callable[[bytes], object] | None = None) -> object:
-    def scalar_or_container(item: object) -> object:
+    def decode_scalar(item: object) -> object:
         if string_decoder is not None:
             if isinstance(item, PdfString):
                 return string_decoder(item.data)
             if isinstance(item, bytes):
                 return string_decoder(item)
-        if isinstance(item, dict):
-            return {}
-        if isinstance(item, (list, tuple)):
-            return []
         return item
 
-    root = scalar_or_container(value)
-    if not isinstance(value, (dict, list, tuple)):
-        return root
+    def walk(item: object) -> object:
+        decoded_item = decode_scalar(item)
+        if decoded_item is not item:
+            return decoded_item
 
-    stack: list[tuple[CoercedContainer | None, object | None, object]] = [(None, None, value)]
-    results: dict[int, object] = {id(value): root}
-    processed: set[int] = set()
-    while stack:
-        parent, key, item = stack.pop()
-        coerced = results.get(id(item))
-        if coerced is None:
-            coerced = scalar_or_container(item)
-            if isinstance(item, (dict, list, tuple)):
-                results[id(item)] = coerced
-        if parent is not None:
-            if isinstance(parent, dict):
-                parent[key] = coerced
-            else:
-                parent.append(coerced)
         if isinstance(item, dict):
-            marker = id(item)
-            if marker in processed:
-                continue
-            processed.add(marker)
-            target = cast(CoercedContainer, coerced)
-            for child_key, child_value in reversed(tuple(item.items())):
-                stack.append(
-                    (
-                        target,
-                        normalize_pdf_name(child_key) or child_key,
-                        child_value,
-                    )
-                )
-        elif isinstance(item, (list, tuple)):
-            marker = id(item)
-            if marker in processed:
-                continue
-            processed.add(marker)
-            target = cast(CoercedContainer, coerced)
-            for child in reversed(item):
-                stack.append((target, None, child))
-    return root
+            changed = False
+            coerced_items: list[tuple[object, object]] = []
+            for child_key, child_value in item.items():
+                coerced_child = walk(child_value)
+                coerced_items.append((child_key, coerced_child))
+                if coerced_child is not child_value:
+                    changed = True
+            if not changed:
+                return item
+            return dict(coerced_items)
+
+        if isinstance(item, (list, tuple)):
+            changed = False
+            coerced_seq_items: list[object] = []
+            for child_value in item:
+                coerced_child = walk(child_value)
+                coerced_seq_items.append(coerced_child)
+                if coerced_child is not child_value:
+                    changed = True
+            if not changed:
+                return item
+            return list(coerced_seq_items)
+
+        return decoded_item
+
+    return walk(value)
 
 
 __all__ = (

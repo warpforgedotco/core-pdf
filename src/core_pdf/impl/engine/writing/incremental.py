@@ -5,7 +5,10 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from core_pdf.impl.engine.writing.objects import serialize_pdf_dictionary, serialize_pdf_object
+from core_pdf.impl.engine.writing.objects import (
+    serialize_pdf_dictionary,
+    serialize_pdf_object,
+)
 from core_pdf.impl.primitives import PdfName
 
 

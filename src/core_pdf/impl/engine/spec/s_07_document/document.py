@@ -3,35 +3,26 @@ from __future__ import annotations
 
 import contextlib
 import mmap
+import threading
 from types import TracebackType
-from typing import TYPE_CHECKING, BinaryIO
+from typing import TYPE_CHECKING, BinaryIO, Generic, Self, TypeVar, cast
 
-from core_pdf.impl.engine.extraction.cache import ExtractionCache
-from core_pdf.impl.engine.spec.s_07_document.document_catalog import (
-    DocumentCatalogMixin,
-)
-from core_pdf.impl.engine.spec.s_07_document.document_embedded import (
-    DocumentEmbeddedMixin,
+from core_pdf.impl.engine.cache import ExtractionCache
+from core_pdf.impl.engine.image_cache import ImageCache
+from core_pdf.impl.engine.spec.s_07_document.document_core import DocumentCoreMixin
+from core_pdf.impl.engine.spec.s_07_document.document_features import DocumentFeaturesMixin
+from core_pdf.impl.engine.spec.s_07_document.document_lock import (
+    document_cache_lock,
+    document_recovery_enabled,
 )
 from core_pdf.impl.engine.spec.s_07_document.document_pages import (
     DocumentPagesMixin,
     LazyPageList,
+    PageListItem,
 )
-from core_pdf.impl.engine.spec.s_07_document.document_security import (
-    DocumentSecurityMixin,
-)
-from core_pdf.impl.engine.spec.s_07_document.document_selection import (
-    DocumentSelectionMixin,
-)
-from core_pdf.impl.engine.spec.s_07_document.document_source import DocumentSourceMixin
-from core_pdf.impl.engine.spec.s_07_document.document_xref import (
-    DocumentXRefMixin,
-)
-from core_pdf.impl.engine.spec.s_07_document.forms import FormsMixin
-from core_pdf.impl.engine.spec.s_07_document.layers import LayersMixin
-from core_pdf.impl.engine.spec.s_07_document.metadata_types import MetadataRecord
-from core_pdf.impl.engine.spec.s_07_document.navigation import NavigationMixin
+from core_pdf.impl.engine.spec.s_07_document.metadata import MetadataRecord, resolve_metadata
 from core_pdf.impl.engine.spec.s_07_objects.object_cache import InheritedValuesCache
+from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_07_objects.resolver import ObjectResolver
 from core_pdf.impl.engine.spec.s_07_syntax.xref import PdfXRefEntry
 from core_pdf.impl.engine.spec.s_14_structure.tree import StructureTree
@@ -42,17 +33,32 @@ if TYPE_CHECKING:
     from core_pdf.impl.engine.spec.s_09_fonts.decoder import FontDecoder
 
 
+internal_PageT = TypeVar("internal_PageT", bound=PageListItem)
+
+DOCUMENT_CACHE_FIELDS = (
+    "catalog_cache",
+    "metadata_cache",
+    "structure_cache",
+    "structure_root_cache",
+    "mark_info_cache",
+    "page_dicts_cache",
+    "pages_cache",
+    "page_index_cache",
+    "named_destinations_cache",
+    "embedded_files_cache",
+    "oc_layers",
+    "acroform_cache",
+    "fields_cache",
+    "page_labels_cache",
+    "page_extraction_caches",
+)
+
+
 class PdfDocument(
-    DocumentSourceMixin,
-    DocumentXRefMixin,
-    DocumentSecurityMixin,
-    DocumentPagesMixin,
-    DocumentSelectionMixin,
-    DocumentEmbeddedMixin,
-    DocumentCatalogMixin,
-    NavigationMixin,
-    FormsMixin,
-    LayersMixin,
+    DocumentCoreMixin,
+    DocumentPagesMixin[internal_PageT],
+    DocumentFeaturesMixin,
+    Generic[internal_PageT],
 ):
     __slots__ = (
         "source",
@@ -77,12 +83,14 @@ class PdfDocument(
         "acroform_cache",
         "fields_cache",
         "decoder_cache",
+        "image_cache",
         "inherited_values_cache",
         "page_labels_cache",
         "page_extraction_caches",
+        "internal_cache_lock",
         "xref_was_recovered",
         "page_tree_was_recovered",
-        "_closed",
+        "internal_closed",
     )
 
     source: PdfSource
@@ -99,7 +107,7 @@ class PdfDocument(
     structure_root_cache: PdfDict | None
     mark_info_cache: PdfDict | None
     page_dicts_cache: list[PdfDict] | None
-    pages_cache: LazyPageList | None
+    pages_cache: LazyPageList[internal_PageT] | None
     page_index_cache: dict[int, int] | None
     named_destinations_cache: dict[str, NamedDestination] | None
     embedded_files_cache: list[EmbeddedFileRecord] | None
@@ -107,15 +115,18 @@ class PdfDocument(
     acroform_cache: PdfDict | None
     fields_cache: list[FieldRecord] | None
     decoder_cache: dict[tuple[int, int] | int, FontDecoder]
+    image_cache: ImageCache
     inherited_values_cache: InheritedValuesCache
     page_labels_cache: list[str] | None
     page_extraction_caches: dict[int, ExtractionCache] | None
+    internal_cache_lock: threading.RLock
     xref_was_recovered: bool
     page_tree_was_recovered: bool
-    _closed: bool
+    internal_closed: bool
 
     def __init__(self, source: PdfSource, password: str = "") -> None:
-        self._closed = False
+        self.internal_closed = False
+        self.internal_cache_lock = threading.RLock()
         self.source = source
         self.password = password
         self.file_handle = None
@@ -125,23 +136,7 @@ class PdfDocument(
         self.trailer_dict = {}
         self.xref_was_recovered = False
         self.page_tree_was_recovered = False
-        self.catalog_cache = None
-        self.metadata_cache = None
-        self.structure_cache = None
-        self.structure_root_cache = None
-        self.mark_info_cache = None
-        self.page_dicts_cache = None
-        self.pages_cache = None
-        self.page_index_cache = None
-        self.named_destinations_cache = None
-        self.embedded_files_cache = None
-        self.oc_layers = None
-        self.acroform_cache = None
-        self.fields_cache = None
-        self.decoder_cache = {}
-        self.inherited_values_cache = {}
-        self.page_labels_cache = None
-        self.page_extraction_caches = None
+        self._initialize_document_caches()
 
         try:
             self.raw_data = self.load_data(source)
@@ -155,10 +150,10 @@ class PdfDocument(
             raise
 
     @classmethod
-    def open(cls, source: PdfSource, password: str = "") -> PdfDocument:
+    def open(cls, source: PdfSource, password: str = "") -> Self:
         return cls(source, password=password)
 
-    def __enter__(self) -> PdfDocument:
+    def __enter__(self) -> Self:
         if self.closed:
             raise ValueError("PDF document is closed")
         return self
@@ -173,33 +168,14 @@ class PdfDocument(
 
     @property
     def closed(self) -> bool:
-        return self._closed
+        return self.internal_closed
 
     def close(self) -> None:
-        if self._closed:
+        if self.internal_closed:
             return
-        self._closed = True
+        self.internal_closed = True
 
-        for cache_name in (
-            "catalog_cache",
-            "metadata_cache",
-            "structure_cache",
-            "structure_root_cache",
-            "mark_info_cache",
-            "page_dicts_cache",
-            "pages_cache",
-            "page_index_cache",
-            "named_destinations_cache",
-            "embedded_files_cache",
-            "oc_layers",
-            "acroform_cache",
-            "fields_cache",
-            "page_labels_cache",
-            "page_extraction_caches",
-        ):
-            setattr(self, cache_name, None)
-        self.decoder_cache.clear()
-        self.inherited_values_cache.clear()
+        self._clear_document_caches()
 
         resolver = getattr(self, "resolver", None)
         if resolver is not None:
@@ -216,8 +192,87 @@ class PdfDocument(
                 self.file_handle.close()
             self.file_handle = None
 
+    def resolve(self, ref: object) -> object:
+        return self.resolver.resolve(ref)
+
+    def catalog(self) -> PdfDict:
+        with document_cache_lock(self):
+            catalog = self.catalog_cache
+            if catalog is None:
+                root_ref = lookup_dict_key(self.trailer_dict, "Root")
+                if root_ref is None:
+                    raise ValueError("missing catalog root")
+                root = self.resolve(root_ref)
+                if not isinstance(root, dict):
+                    raise ValueError("invalid catalog root")
+                catalog = cast(PdfDict, root)
+                self.catalog_cache = catalog
+            return catalog
+
+    def get_metadata(self) -> MetadataRecord:
+        with document_cache_lock(self):
+            metadata = self.metadata_cache
+            if metadata is None:
+                metadata = resolve_metadata(
+                    self.resolver,
+                    self.trailer_dict,
+                    recover=document_recovery_enabled(self),
+                )
+                self.metadata_cache = metadata
+            return metadata
+
+    @property
+    def structure(self) -> StructureTree | None:
+        with document_cache_lock(self):
+            structure = self.structure_cache
+            if structure is None:
+                struct_root = self.structure_root_cache
+                if struct_root is None:
+                    resolved_root = self.resolver.resolve(
+                        lookup_dict_key(self.catalog(), "StructTreeRoot")
+                    )
+                    if resolved_root is None:
+                        return None
+                    if not isinstance(resolved_root, dict):
+                        raise ValueError("invalid StructTreeRoot dictionary")
+                    struct_root = cast(PdfDict, resolved_root)
+                    self.structure_root_cache = struct_root
+                structure = StructureTree(self, struct_root)
+                self.structure_cache = structure
+            return structure
+
+    @property
+    def mark_info(self) -> PdfDict | None:
+        with document_cache_lock(self):
+            mark_info = self.mark_info_cache
+            if mark_info is None:
+                resolved_mark_info = self.resolver.resolve(
+                    lookup_dict_key(self.catalog(), "MarkInfo")
+                )
+                if resolved_mark_info is None:
+                    return None
+                if not isinstance(resolved_mark_info, dict):
+                    raise ValueError("invalid MarkInfo dictionary")
+                mark_info = cast(PdfDict, resolved_mark_info)
+                self.mark_info_cache = mark_info
+            return mark_info
+
     def invalidate_document_extraction_cache(self) -> None:
         if self.page_extraction_caches is not None:
             for cache in self.page_extraction_caches.values():
                 cache.clear()
         self.page_extraction_caches = None
+
+    def _initialize_document_caches(self) -> None:
+        for cache_name in DOCUMENT_CACHE_FIELDS:
+            setattr(self, cache_name, None)
+        self.decoder_cache = {}
+        self.image_cache = ImageCache()
+        self.inherited_values_cache = {}
+
+    def _clear_document_caches(self) -> None:
+        for cache_name in DOCUMENT_CACHE_FIELDS:
+            setattr(self, cache_name, None)
+        self.decoder_cache.clear()
+        self.image_cache.clear()
+        self.inherited_values_cache.clear()

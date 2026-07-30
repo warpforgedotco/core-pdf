@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
-from typing import cast
+from typing import Protocol, cast
 
 from core_pdf.impl.engine.spec.s_07_objects.coercion import (
     normalize_pdf_name,
@@ -18,6 +18,30 @@ from core_pdf.impl.objects import MISSING, PdfName, PdfReference, PdfStream, Pdf
 from core_pdf.impl.types import PdfDict, PdfObject
 
 TERMINAL_TYPES = {int, float, str, bool, type(None), PdfName, bytes}
+
+
+class PdfValueResolver(Protocol):
+    def resolve(self, ref: object) -> object: ...
+
+    def deep_resolve(self, value: object, seen: set[int] | None = None) -> object: ...
+
+    def resolve_dict(self, value: object) -> PdfDict | None: ...
+
+    def resolve_box(self, value: object) -> tuple[float, float, float, float] | None: ...
+
+    def resolve_font_dict(self, font: PdfDict) -> PdfDict: ...
+
+    def resolve_list(self, value: object) -> list[object] | None: ...
+
+    def resolve_float(self, value: object, default: float | None = 0.0) -> float | None: ...
+
+    def resolve_name(self, value: object) -> str | None: ...
+
+    def resolve_name_like_value(self, resolved: object) -> str | None: ...
+
+    def resolve_int(self, value: object, default: int | None = None) -> int | None: ...
+
+    def resolve_str(self, value: object) -> str | None: ...
 
 
 class ResolverValueMixin:

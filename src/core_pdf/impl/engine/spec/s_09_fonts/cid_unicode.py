@@ -1,25 +1,29 @@
 # SPDX-License-Identifier: AGPL-3.0-only
+"""Native CID-to-Unicode recovery and compact CMap helpers."""
+
 from __future__ import annotations
 
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from functools import lru_cache
 
-from core_cmap.impl.cid.cmap import (
+from core_pdf.impl.engine.spec.s_09_fonts.cmap_ranges import (
     CIDRange,
-    cmap_tokens,
-    cmap_usecmap_name,
-    decode_cmap_hex_token,
     iter_codespace_range,
     validate_codespace_range,
 )
-from core_cmap.impl.cid.resource_loader import (
+from core_pdf.impl.engine.spec.s_09_fonts.cmap_resources import (
     CID_COLLECTION_UNICODE_OVERRIDES,
     CID_COLLECTION_UNICODE_SOURCES,
     normalized_cmap_name,
     resolve_cmap_resource,
     unicode_candidate_preference,
     unicode_scalar_from_cmap_code,
+)
+from core_pdf.impl.engine.spec.s_09_fonts.cmap_tokenizer import (
+    cmap_tokens,
+    cmap_usecmap_name,
+    decode_cmap_hex_token,
 )
 
 
@@ -72,7 +76,7 @@ def remove_codes_covered_by_ranges(
     }
 
 
-def _parsed_cid_data(data: bytes) -> tuple[dict[bytes, int], list[CIDRange]]:
+def internal_parsed_cid_data(data: bytes) -> tuple[dict[bytes, int], list[CIDRange]]:
     mappings: dict[bytes, int] = {}
     ranges: list[CIDRange] = []
     mode = 0
@@ -138,7 +142,7 @@ def compact_cmap(name: str) -> CompactCMap | None:
         for cid, parent_codes in parent.mappings_by_cid.items():
             mappings.update((code, cid) for code in parent_codes)
         ranges.extend(parent.ranges)
-    child_mappings, child_ranges = _parsed_cid_data(data)
+    child_mappings, child_ranges = internal_parsed_cid_data(data)
     mappings.update(child_mappings)
     if child_ranges and mappings:
         mappings = remove_codes_covered_by_ranges(mappings, child_ranges)
@@ -191,11 +195,11 @@ class CIDUnicodeMap:
         if cid in self.cache:
             result = self.cache[cid]
             return default if result is None else result
-        result = self._resolve(cid)
+        result = self.internal_resolve(cid)
         self.cache[cid] = result
         return default if result is None else result
 
-    def _resolve(self, cid: int) -> str | None:
+    def internal_resolve(self, cid: int) -> str | None:
         override = CID_COLLECTION_UNICODE_OVERRIDES.get((self.registry, self.ordering), {}).get(cid)
         if override is not None:
             return override

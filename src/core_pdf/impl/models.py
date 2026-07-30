@@ -2,16 +2,16 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
 from math import hypot
-from typing import TYPE_CHECKING, Protocol, TypeAlias, TypedDict, cast
+from typing import TYPE_CHECKING, Generic, Protocol, TypeAlias, TypedDict, TypeVar, cast
 
-from core_layout.impl.layout.geometry import BBox
-
+from core_pdf.impl.engine.layout.geometry import BBox
 from core_pdf.impl.objects import PdfStream
 from core_pdf.impl.types import PdfArray, PdfDict, PdfObject, Rectangle
 
 if TYPE_CHECKING:
-    from core_layout.impl.layout.geometry import RectBox
+    from core_pdf.impl.engine.layout.geometry import RectBox
 
 
 class TextSpan(TypedDict):
@@ -34,6 +34,114 @@ class LinkTextWordObject(Protocol):
 
 
 LinkTextWord: TypeAlias = LinkTextWordRecord | LinkTextWordObject
+
+RecordT = TypeVar("RecordT")
+
+
+@dataclass(frozen=True, slots=True)
+class PageScoped(Generic[RecordT]):
+    """A page-level extraction record with its document-level context."""
+
+    page_index: int
+    page_number: int
+    page_label: str | None
+    record: RecordT
+
+
+@dataclass(frozen=True, slots=True)
+class TextRunRecord:
+    text: str
+    bbox: tuple[float, float, float, float]
+    font_name: str | None
+    font_size: float
+    is_vertical: bool
+    visible: bool
+    rotation: int
+    seqno: int
+    geometry_issues: tuple[object, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class WordRecord:
+    text: str
+    bbox: tuple[float, float, float, float]
+    line_index: int
+    word_index: int
+    source: str
+
+
+@dataclass(frozen=True, slots=True)
+class LineRecord:
+    text: str
+    break_before: int
+    source: str
+    bbox: tuple[float, float, float, float] | None
+    confidence: float | None
+    contributing_sources: tuple[str, ...]
+    words: tuple[WordRecord, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class DrawingRecord:
+    kind: str
+    seqno: int
+    fill: tuple[float, ...] | None
+    fill_pattern: Mapping[object, object] | None
+    fill_opacity: float | None
+    stroke_color: tuple[float, ...] | None
+    stroke_pattern: Mapping[object, object] | None
+    stroke_opacity: float | None
+    line_width: float
+    line_cap: int
+    line_join: int
+    dash_pattern: tuple[list[float], float] | None
+    fill_rule: str
+    blend_mode: str | None
+    soft_mask_alpha: float | None
+    raw_data: bytes | memoryview | None
+    dictionary: Mapping[object, object] | None
+    image_source: object | None
+    image_clip: tuple[float, float, float, float] | None
+    path: object | None
+    items: tuple[object, ...]
+    rect: tuple[float, float, float, float] | None
+
+
+@dataclass(frozen=True, slots=True)
+class ImageMetadata:
+    width: int
+    height: int
+    channels: int
+    color_model: str
+    alpha: bool
+    stride: int
+    source_rect: tuple[float, float, float, float]
+    transform: object | None
+    clipping: BBox | None
+
+
+@dataclass(frozen=True, slots=True)
+class ImageRecord(DrawingRecord):
+    data: object | None = None
+    image_metadata: ImageMetadata | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class AnnotationContentRecord:
+    subtype: str | None
+    bbox: tuple[float, float, float, float] | None
+    contents: str
+
+
+@dataclass(frozen=True, slots=True)
+class TableRecord:
+    table_index: int
+    rows: tuple[tuple[str, ...], ...]
+    spans: tuple[tuple[tuple[int, int], ...], ...]
+    bbox: tuple[float, float, float, float] | None
+
+
+ExtractionContent: TypeAlias = LineRecord | DrawingRecord | ImageRecord | AnnotationContentRecord
 
 
 class OutlineItem:

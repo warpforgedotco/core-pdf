@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
+"""Compiled PDF dictionary lookup and inheritance kernels."""
+
 from __future__ import annotations
 
 from collections.abc import Callable

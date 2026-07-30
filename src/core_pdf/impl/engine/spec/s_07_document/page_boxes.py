@@ -1,11 +1,12 @@
 # SPDX-License-Identifier: AGPL-3.0-only
+"""Native page-coordinate transformation helpers."""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from core_layout.impl.layout.models import TextRun
-
+    from core_pdf.impl.engine.layout.models import TextRun
     from core_pdf.impl.engine.spec.s_07_content.capture import CapturedLine
 
 
@@ -17,13 +18,15 @@ def rotate_page_point(
     page_width: float,
     page_height: float,
 ) -> tuple[float, float]:
-    if rotate == 90:
-        return (y, page_width - x)
-    if rotate == 180:
-        return (page_width - x, page_height - y)
-    if rotate == 270:
-        return (page_height - y, x)
-    return (x, y)
+    match rotate:
+        case 90:
+            return (y, page_width - x)
+        case 180:
+            return (page_width - x, page_height - y)
+        case 270:
+            return (page_height - y, x)
+        case _:
+            return (x, y)
 
 
 def rotate_page_runs(

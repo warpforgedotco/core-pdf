@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
+"""Native security dictionary value coercions."""
+
 from __future__ import annotations
 
 from core_pdf.impl.engine.spec.s_07_objects.coercion import (

@@ -5,6 +5,7 @@ import pytest
 
 from core_pdf.impl.engine.spec.s_07_content.operations import (
     content_stream_may_show_text,
+    count_content_stream_operators,
     iter_content_operations,
 )
 from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
@@ -100,3 +101,25 @@ def test_content_operations_skip_comments_after_whitespace(
         data = content
 
     assert list(iter_content_operations(PdfLexer(data))) == expected
+
+
+def test_content_operator_counts_ignore_operand_and_inline_image_bytes() -> None:
+    data = b"(Tj) % Do\nBI /W 1 /H 1 /BPC 8 ID Tj Do S EI q Q"
+
+    counts = count_content_stream_operators(data)
+
+    assert counts.text == 0
+    assert counts.image == 1
+    assert counts.graphics_state == 2
+
+
+def test_content_operator_counts_group_text_image_and_vector_operators() -> None:
+    counts = count_content_stream_operators(
+        b"BT /F1 12 Tf (hello) Tj ET q 0 0 10 10 re f /Im1 Do Q"
+    )
+
+    assert counts.text >= 4
+    assert counts.image == 1
+    assert counts.vector_path == 1
+    assert counts.vector_paint == 1
+    assert counts.graphics_state == 2

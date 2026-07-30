@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import re
-from typing import Protocol, cast, overload
+from typing import Any, Protocol, cast
 
 from core_pdf.impl.engine.spec.s_07_syntax.tokens import WS_TABLE
 
@@ -34,11 +34,7 @@ HEX_VALUE = bytes(
 class FindableSizedBuffer(Protocol):
     def __len__(self) -> int: ...
 
-    @overload
-    def __getitem__(self, key: int, /) -> int: ...
-
-    @overload
-    def __getitem__(self, key: slice, /) -> bytes: ...
+    def __getitem__(self, key: int | slice, /) -> Any: ...
 
     def find(self, sub: bytes, start: int = 0, end: int = -1, /) -> int: ...
 
@@ -63,7 +59,7 @@ def full_source_bytes(data: bytes | memoryview) -> bytes | None:
 def full_source_buffer(data: memoryview, data_len: int) -> FindableSizedBuffer | None:
     source_bytes = full_source_bytes(data)
     if source_bytes is not None and len(source_bytes) == data_len:
-        return source_bytes
+        return cast(FindableSizedBuffer, source_bytes)
     source = data.obj
     if hasattr(source, "find") and hasattr(source, "rfind") and hasattr(source, "__len__"):
         buffer = cast(FindableSizedBuffer, source)
@@ -147,11 +143,15 @@ def number_bytes(value: memoryview | bytes) -> bytes:
 
 
 def parse_float_token(value: memoryview | bytes) -> float:
-    return float(number_bytes(value))
+    if isinstance(value, bytes):
+        return float(value)
+    return float(bytes(value) if not value.c_contiguous else value)
 
 
 def parse_int_token(value: memoryview | bytes) -> int:
-    return int(number_bytes(value))
+    if isinstance(value, bytes):
+        return int(value)
+    return int(bytes(value) if not value.c_contiguous else value)
 
 
 def is_digit_bytes(value: memoryview | bytes) -> bool:

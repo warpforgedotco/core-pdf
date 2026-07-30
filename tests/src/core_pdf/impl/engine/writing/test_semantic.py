@@ -1,9 +1,17 @@
 import pytest
-from core_document import Block, BlockKind, Document, Page, Table, TableCell, TextLine
 
 from core_pdf import PdfDocument, PdfSignaturePlan
 from core_pdf import StandardPdfEncryption as PublicEncryption
 from core_pdf import serialize_document_to_pdf as public_writer
+from core_pdf.impl.engine.structured import (
+    Block,
+    BlockKind,
+    Document,
+    Page,
+    Table,
+    TableCell,
+    TextLine,
+)
 from core_pdf.impl.engine.writing import (
     StandardType1FontProvider,
     TrueTypeFontProvider,

@@ -1,16 +1,17 @@
 # SPDX-License-Identifier: AGPL-3.0-only
+"""Native font width parsing helpers."""
+
 from __future__ import annotations
 
 from typing import Any
 
-from core_cmap.impl.cid.widths import (
+from core_pdf.impl.engine.spec.s_07_objects.coercion import parse_float, parse_int
+from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_09_fonts.cmap_widths import (
     FontWidthMap,
     SparseFontWidthMap,
     parse_cid_widths,
 )
-
-from core_pdf.impl.engine.spec.s_07_objects.coercion import parse_float, parse_int
-from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 
 
 def require_font_int(value: Any, message: str) -> int:

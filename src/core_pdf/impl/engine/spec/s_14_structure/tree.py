@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator, Sequence
-from typing import TYPE_CHECKING, Any, Callable, TypeAlias, cast, overload
+from collections.abc import Callable, Iterable, Iterator, Sequence
+from typing import TYPE_CHECKING, Any, TypeAlias, cast, overload
 
 from core_pdf.impl.engine.spec.s_07_objects.coercion import (
     coerce_value,
@@ -17,7 +17,8 @@ from core_pdf.impl.objects import MISSING, PdfReference
 from core_pdf.impl.types import PdfArray, PdfDict
 
 if TYPE_CHECKING:
-    from core_pdf.impl.engine.spec.s_07_document import PdfDocument, PdfPage
+    from core_pdf.impl.engine.spec.s_07_document.document import PdfDocument
+    from core_pdf.impl.engine.spec.s_07_document.page import PdfPage
 
 
 MAX_PARENT_TREE_DEPTH = 100
@@ -41,9 +42,9 @@ def make_match_func(
 
 
 def find_all(
-    elements: list["StructureElement"],
+    elements: list[StructureElement],
     matcher: str | MatchFunc | None = None,
-) -> Iterator["StructureElement"]:
+) -> Iterator[StructureElement]:
     match_func = make_match_func(matcher)
     elements.reverse()
     while elements:
@@ -53,6 +54,10 @@ def find_all(
         for child in reversed(list(el)):
             if isinstance(child, StructureElement):
                 elements.append(child)
+
+
+def find_first(elements: Iterable[StructureElement]) -> StructureElement | None:
+    return next(iter(elements), None)
 
 
 def literal_name(value: Any) -> str | None:
@@ -75,18 +80,18 @@ class StructureElement:
     """Logical structure element dictionary from the structure tree."""
 
     __slots__ = (
-        "document",
-        "props",
-        "role_value",
-        "type_value",
-        "kids_value",
-        "title_value",
-        "language_value",
-        "alternate_description_value",
         "actual_text_value",
+        "alternate_description_value",
         "attributes_value",
         "class_name_value",
+        "document",
+        "kids_value",
+        "language_value",
         "parent_value",
+        "props",
+        "role_value",
+        "title_value",
+        "type_value",
     )
 
     def __init__(self, document: PdfDocument, props: StructureDict) -> None:
@@ -255,10 +260,7 @@ class StructureElement:
         return find_all(filtered, matcher)
 
     def find(self, matcher: str | MatchFunc | None = None) -> StructureElement | None:
-        try:
-            return next(self.find_all(matcher))
-        except StopIteration:
-            return None
+        return find_first(self.find_all(matcher))
 
     def __hash__(self) -> int:
         return hash((id(self.document), repr(self.props)))
@@ -375,10 +377,7 @@ class StructureTree(Iterable[StructureElement | StructureContentItem | Structure
         return find_all([item for item in self if isinstance(item, StructureElement)], matcher)
 
     def find(self, matcher: str | MatchFunc | None = None) -> StructureElement | None:
-        try:
-            return next(self.find_all(matcher))
-        except StopIteration:
-            return None
+        return find_first(self.find_all(matcher))
 
     def page_structure(self, page: PdfPage) -> "PageStructure":
         key = self.document.resolver.resolve_int(lookup_dict_key(page.page_dict, "StructParents"))
@@ -396,7 +395,7 @@ class StructureTree(Iterable[StructureElement | StructureContentItem | Structure
 class PageStructure(Sequence[StructureElement | None]):
     """Per-page parent-tree slice indexed by marked-content id."""
 
-    __slots__ = ("page", "parents", "elements")
+    __slots__ = ("elements", "page", "parents")
 
     page: PdfPage
     parents: ParentTreeParents
@@ -466,10 +465,7 @@ class PageStructure(Sequence[StructureElement | None]):
                 element = parent
 
     def find(self, matcher: str | MatchFunc | None = None) -> StructureElement | None:
-        try:
-            return next(self.find_all(matcher))
-        except StopIteration:
-            return None
+        return find_first(self.find_all(matcher))
 
 
 StructureChild: TypeAlias = StructureElement | StructureContentItem | StructureContentObject

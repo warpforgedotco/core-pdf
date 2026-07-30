@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
+import threading
 from functools import lru_cache
 from typing import Final
 
@@ -11,18 +12,20 @@ class MissingObject:
 
 MISSING: Final = MissingObject()
 PDF_NAME_CACHE: dict[bytes, "PdfName"] = {}
+internal_PDF_NAME_CACHE_LOCK = threading.RLock()
 
 
 @lru_cache(maxsize=4096)
 def pdf_name_from_str(value: str) -> "PdfName":
     b_value = value.encode("latin-1")
-    cache = PDF_NAME_CACHE
-    cached = cache.get(b_value)
-    if cached is not None:
+    with internal_PDF_NAME_CACHE_LOCK:
+        cache = PDF_NAME_CACHE
+        cached = cache.get(b_value)
+        if cached is not None:
+            return cached
+        cached = PdfName(b_value)
+        cache[b_value] = cached
         return cached
-    cached = PdfName(b_value)
-    cache[b_value] = cached
-    return cached
 
 
 class PdfName:
@@ -53,7 +56,6 @@ class PdfName:
         if type(value) is PdfName:
             return value
 
-        cache = PDF_NAME_CACHE
         if type(value) is str:
             return pdf_name_from_str(value)
 
@@ -63,10 +65,12 @@ class PdfName:
             key_bytes = value
         else:
             raise TypeError("PDF names must be str, bytes, memoryview, or PdfName")
-        n = cache.get(key_bytes)
-        if n is None:
-            cache[key_bytes] = n = cls(key_bytes)
-        return n
+        with internal_PDF_NAME_CACHE_LOCK:
+            cache = PDF_NAME_CACHE
+            n = cache.get(key_bytes)
+            if n is None:
+                cache[key_bytes] = n = cls(key_bytes)
+            return n
 
     def __str__(self) -> str:
         return self.str_value or ""

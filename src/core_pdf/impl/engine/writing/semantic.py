@@ -6,8 +6,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from hashlib import sha256
 
-from core_document import Document, Page, TextLine
-
+from core_pdf.impl.engine.structured import Document, Page, TextLine
 from core_pdf.impl.engine.writing.document import serialize_encrypted_pdf_file
 from core_pdf.impl.engine.writing.encryption import StandardPdfEncryption
 from core_pdf.impl.engine.writing.fonts import (
@@ -17,7 +16,10 @@ from core_pdf.impl.engine.writing.fonts import (
 )
 from core_pdf.impl.engine.writing.object_graph import PdfObjectGraph
 from core_pdf.impl.engine.writing.objects import serialize_pdf_string
-from core_pdf.impl.engine.writing.signatures import PdfSignaturePlan, apply_signature_plan
+from core_pdf.impl.engine.writing.signatures import (
+    PdfSignaturePlan,
+    apply_signature_plan,
+)
 from core_pdf.impl.objects import PdfName, PdfReference, PdfStream
 
 
@@ -38,7 +40,7 @@ def serialize_document_to_pdf(
     graph = PdfObjectGraph()
     pages_reference = graph.add(None)
     font = font_provider or StandardType1FontProvider(font_name)
-    page_lines = tuple(tuple(_page_lines(page)) for page in document.pages)
+    page_lines = tuple(tuple(internal_page_lines(page)) for page in document.pages)
     font_resource = font.add_to_graph(
         graph,
         (line.text for lines in page_lines for line in lines),
@@ -128,23 +130,23 @@ def content_stream_for_page(
 ) -> bytes:
     font = font or StandardType1FontProvider().add_to_graph(PdfObjectGraph(), ())
     commands: list[bytes] = []
-    for line in lines or _page_lines(page):
+    for line in lines or internal_page_lines(page):
         text = line.text.replace("\n", " ")
         encoded = font.encode_text(text)
-        x, y = _line_position(page, line)
-        font_size = _line_font_size(line)
+        x, y = internal_line_position(page, line)
+        font_size = internal_line_font_size(line)
         commands.extend(
             (
                 b"BT\n",
-                f"/{font.resource_name} {_number(font_size)} Tf\n".encode("ascii"),
-                f"1 0 0 1 {_number(x)} {_number(y)} Tm\n".encode("ascii"),
+                f"/{font.resource_name} {internal_number(font_size)} Tf\n".encode("ascii"),
+                f"1 0 0 1 {internal_number(x)} {internal_number(y)} Tm\n".encode("ascii"),
                 serialize_pdf_string(encoded) + b" Tj\nET\n",
             )
         )
     return b"".join(commands)
 
 
-def _page_lines(page: Page) -> Iterable[TextLine]:
+def internal_page_lines(page: Page) -> Iterable[TextLine]:
     for block in page.blocks:
         yield from block.lines
     for table in page.tables:
@@ -152,19 +154,19 @@ def _page_lines(page: Page) -> Iterable[TextLine]:
             yield TextLine(" | ".join(cell.text for cell in row))
 
 
-def _line_position(page: Page, line: TextLine) -> tuple[float, float]:
+def internal_line_position(page: Page, line: TextLine) -> tuple[float, float]:
     if line.bbox is not None:
         return line.bbox[0], line.bbox[1]
     return 36.0, max(36.0, (page.height or 792.0) - 36.0)
 
 
-def _line_font_size(line: TextLine) -> float:
+def internal_line_font_size(line: TextLine) -> float:
     if line.bbox is None:
         return 12.0
     return max(1.0, line.bbox[3] - line.bbox[1])
 
 
-def _number(value: float) -> str:
+def internal_number(value: float) -> str:
     return format(value, ".4g")
 
 
