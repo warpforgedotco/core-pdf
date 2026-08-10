@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
+"""Native indirect-object header scanning helpers."""
+
 from __future__ import annotations
 
 from core_pdf.impl.engine.spec.s_07_syntax.lexer_helpers import (
@@ -38,6 +40,12 @@ def find_indirect_object_header(
 
 
 def parse_object_header_prefix(data: memoryview, marker: int) -> int | None:
+    """Return the offset of the ``N G obj`` header ending at ``marker``, or None.
+
+    Deliberately mirrors ``s_07_syntax.xref.parse_object_marker_prefix``: the scan is
+    identical, but this variant only needs the start offset, so it skips that one's two
+    ``int()`` conversions and tuple allocation. Keep the two in sync.
+    """
     if marker + 3 < len(data) and not WS_TABLE[data[marker + 3]]:
         return None
     pos = marker - 1

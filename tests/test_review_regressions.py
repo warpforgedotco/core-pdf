@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import mmap
+import threading
 from collections.abc import Sequence
 from io import BytesIO
 from math import isclose
@@ -14,16 +15,19 @@ from core_pdf import PdfDocument as PublicPdfDocument
 from core_pdf import PdfSourceError
 from core_pdf.impl.engine.spec.s_07_content.operations import dispatch_operations
 from core_pdf.impl.engine.spec.s_07_document.document import PdfDocument
+from core_pdf.impl.engine.spec.s_07_document.document_features import (
+    DocumentFeaturesMixin,
+)
 from core_pdf.impl.engine.spec.s_07_document.document_labels import (
     format_alpha,
     format_page_label,
 )
-from core_pdf.impl.engine.spec.s_07_document.document_page_labels import (
-    DocumentPageLabelsMixin,
+from core_pdf.impl.engine.spec.s_07_document.document_pages import DocumentPagesMixin
+from core_pdf.impl.engine.spec.s_07_document.metadata import (
+    MetadataResolver,
+    resolve_info_metadata,
 )
-from core_pdf.impl.engine.spec.s_07_document.metadata import MetadataResolver, resolve_info_metadata
-from core_pdf.impl.engine.spec.s_07_document.navigation import NavigationMixin
-from core_pdf.impl.engine.spec.s_07_document.protocols import NavigationResolver
+from core_pdf.impl.engine.spec.s_07_objects.resolver_values import PdfValueResolver
 from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.engine.spec.s_09_fonts.decoder import FontDecoder
 from core_pdf.impl.primitives import PdfName
@@ -33,7 +37,7 @@ from core_pdf.impl.types import PdfDict
 def test_leading_dot_number_is_passed_to_operator() -> None:
     received: list[object] = []
 
-    def move_to(operands: Sequence[object], _depth: int) -> None:
+    def move_to(operands: Sequence[object], internal_depth: int) -> None:
         received.extend(operands)
 
     fast_handlers: list[object] = [None] * 65536
@@ -46,7 +50,7 @@ def test_leading_dot_number_is_passed_to_operator() -> None:
 
 
 def test_cid_fast_path_applies_word_spacing() -> None:
-    decoder = object.__new__(FontDecoder)
+    decoder = FontDecoder({})
     decoder.is_cid_font = True
     decoder.to_unicode = None
     decoder.cmap = None
@@ -65,7 +69,7 @@ def test_cid_fast_path_applies_word_spacing() -> None:
 def test_unsupported_operator_does_not_leak_operands() -> None:
     received: list[object] = []
 
-    def move_to(operands: Sequence[object], _depth: int) -> None:
+    def move_to(operands: Sequence[object], internal_depth: int) -> None:
         received.extend(operands)
 
     fast_handlers: list[object] = [None] * 65536
@@ -83,7 +87,7 @@ def test_number_shaped_unsupported_operator_does_not_leak_operands(
 ) -> None:
     received: list[object] = []
 
-    def move_to(operands: Sequence[object], _depth: int) -> None:
+    def move_to(operands: Sequence[object], internal_depth: int) -> None:
         received.extend(operands)
 
     fast_handlers: list[object] = [None] * 65536
@@ -118,16 +122,18 @@ def test_page_label_without_style_is_prefix_only() -> None:
     assert format_page_label({"P": b"Appendix-"}, 17, lambda value: value) == "Appendix-"
 
 
-class _PageLabelDocument(DocumentPageLabelsMixin):
+class internal_PageLabelDocument(DocumentPagesMixin):
     def __init__(self, *, recovered: bool) -> None:
+        self.internal_cache_lock = threading.RLock()
         self.page_labels_cache = None
         self.xref_was_recovered = recovered
         self.page_tree_was_recovered = False
-        self.pages = [None, None, None, None]
-        self._catalog = {"PageLabels": {"Nums": [2, {"S": PdfName.of("D")}]}}
+        self.page_dicts_cache = [{}, {}, {}, {}]
+        self.pages_cache = cast(Any, [None, None, None, None])
+        self.internal_catalog = {"PageLabels": {"Nums": [2, {"S": PdfName.of("D")}]}}
 
     def catalog(self) -> PdfDict:
-        return cast(PdfDict, self._catalog)
+        return cast(PdfDict, self.internal_catalog)
 
     def resolve(self, ref: object) -> object:
         return ref
@@ -135,11 +141,11 @@ class _PageLabelDocument(DocumentPageLabelsMixin):
 
 def test_page_labels_require_page_zero_range() -> None:
     with pytest.raises(ValueError, match="page index 0"):
-        _PageLabelDocument(recovered=False).build_page_labels()
+        internal_PageLabelDocument(recovered=False).build_page_labels()
 
 
 def test_recovered_page_labels_fill_missing_initial_range() -> None:
-    assert _PageLabelDocument(recovered=True).build_page_labels() == ["", "", "1", "2"]
+    assert internal_PageLabelDocument(recovered=True).build_page_labels() == ["", "", "1", "2"]
 
 
 def test_explicit_crypt_metadata_stream_uses_document_security_handler() -> None:
@@ -227,7 +233,7 @@ def test_empty_path_closes_opened_file(tmp_path: Path) -> None:
     assert document.file_handle is None
 
 
-class _FailingDocument(PdfDocument):
+class internal_FailingDocument(PdfDocument):
     mapping_at_failure: mmap.mmap | None = None
     handle_at_failure: Any = None
 
@@ -239,10 +245,10 @@ class _FailingDocument(PdfDocument):
 
 def test_construction_failure_releases_acquired_resources() -> None:
     with pytest.raises(RuntimeError, match="scan failed"):
-        _FailingDocument(simple_pdf_fixture())
+        internal_FailingDocument(simple_pdf_fixture())
 
-    mapping = _FailingDocument.mapping_at_failure
-    handle = _FailingDocument.handle_at_failure
+    mapping = internal_FailingDocument.mapping_at_failure
+    handle = internal_FailingDocument.handle_at_failure
     assert mapping is not None
     assert mapping.closed
     assert handle is not None
@@ -253,24 +259,28 @@ def test_trapped_info_value_accepts_pdf_name() -> None:
     info = {"Trapped": PdfName.of("False")}
 
     result = resolve_info_metadata(
-        cast(MetadataResolver, _TestResolver()), cast(PdfDict, {"Info": info})
+        cast(MetadataResolver, internal_TestResolver()), cast(PdfDict, {"Info": info})
     )
 
     assert result["Trapped"] == PdfName.of("False")
 
 
-class _TestResolver:
+class internal_TestResolver:
     def resolve(self, value: object) -> object:
         return value
 
     def resolve_dict(self, value: object) -> dict[object, object] | None:
-        return cast(dict[object, object], self._copy(value)) if isinstance(value, dict) else None
+        return (
+            cast(dict[object, object], self.internal_copy(value))
+            if isinstance(value, dict)
+            else None
+        )
 
-    def _copy(self, value: object) -> object:
+    def internal_copy(self, value: object) -> object:
         if isinstance(value, dict):
-            return {key: self._copy(item) for key, item in value.items()}
+            return {key: self.internal_copy(item) for key, item in value.items()}
         if isinstance(value, list):
-            return [self._copy(item) for item in value]
+            return [self.internal_copy(item) for item in value]
         return value
 
     def resolve_name(self, value: object) -> str | None:
@@ -285,10 +295,10 @@ class _TestResolver:
         return value if isinstance(value, int) else default
 
 
-class _NavigationDocument(NavigationMixin):
+class internal_NavigationDocument(DocumentFeaturesMixin):
     def __init__(self, page: dict[object, object]) -> None:
         self.page = page
-        self.resolver = cast(NavigationResolver, _TestResolver())
+        self.resolver = cast(PdfValueResolver, internal_TestResolver())
         self.xref_was_recovered = False
         self.page_tree_was_recovered = False
         self.named_destinations_cache = None
@@ -303,7 +313,7 @@ def test_outline_links_are_resolved_shallowly() -> None:
     child = {"Title": "Child", "Dest": [page, PdfName.of("Fit")], "Next": sibling}
     first = {"Title": "First", "First": child}
 
-    result = NavigationMixin.walk_outlines(_NavigationDocument(page), first, 0)
+    result = DocumentFeaturesMixin.walk_outlines(internal_NavigationDocument(page), first, 0)
 
     assert [item.title for item in result] == ["First", "Child", "Sibling"]
     assert result[1].page_index == 0
@@ -312,7 +322,7 @@ def test_outline_links_are_resolved_shallowly() -> None:
 def test_structure_root_keeps_catalog_object_identity() -> None:
     root: dict[str, object] = {}
     document = object.__new__(PdfDocument)
-    document.resolver = _TestResolver()
+    document.resolver = internal_TestResolver()
     document.catalog_cache = cast(PdfDict, {"StructTreeRoot": root})
     document.structure_cache = None
     document.structure_root_cache = None

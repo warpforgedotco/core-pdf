@@ -3,6 +3,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from core_pdf.impl.engine.spec.s_07_content.geometry import (
+    extend_baseline,
+    min_optional_confidence,
+    union_bbox,
+)
+
 BBox = tuple[float, float, float, float]
 Provenance = tuple[tuple[str, object], ...]
 
@@ -11,6 +17,7 @@ Provenance = tuple[tuple[str, object], ...]
 class MarkedContentEntry:
     layer: str | None = None
     actual_text: str | None = None
+    mcid: int | None = None
     has_text_extents: bool = False
     x0: float = 0.0
     y0: float = 0.0
@@ -100,35 +107,3 @@ class MarkedContentEntry:
             self.confidence = confidence
             self.has_text_extents = True
         self.nbytes += nbytes
-
-
-def union_bbox(left: BBox | None, right: BBox | None) -> BBox | None:
-    if left is None:
-        return right
-    if right is None:
-        return left
-    return (
-        min(left[0], right[0]),
-        min(left[1], right[1]),
-        max(left[2], right[2]),
-        max(left[3], right[3]),
-    )
-
-
-def extend_baseline(left: BBox | None, right: BBox | None) -> BBox | None:
-    if left is None:
-        return right
-    if right is None:
-        return left
-    return (left[0], left[1], right[2], right[3])
-
-
-def min_optional_confidence(
-    left: float | None,
-    right: float | None,
-) -> float | None:
-    if left is None:
-        return right
-    if right is None:
-        return left
-    return min(left, right)

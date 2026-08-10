@@ -43,8 +43,10 @@ def apply_signature_plan(
 ) -> bytes:
     """Replace signature placeholders and invoke the external signer."""
     contents_placeholder = b"<" + b"0" * (plan.contents_length * 2) + b">"
-    contents_position = _unique_position(pdf, contents_placeholder, "signature contents")
-    byte_range_position = _unique_position(pdf, byte_range_placeholder, "signature ByteRange")
+    contents_position = internal_unique_position(pdf, contents_placeholder, "signature contents")
+    byte_range_position = internal_unique_position(
+        pdf, byte_range_placeholder, "signature ByteRange"
+    )
     contents_end = contents_position + len(contents_placeholder)
     byte_range = (
         f"[0 {contents_position:010d} {contents_end:010d} {len(pdf) - contents_end:010d}]".encode(
@@ -65,7 +67,7 @@ def apply_signature_plan(
     return bytes(result)
 
 
-def _unique_position(data: bytes, marker: bytes, label: str) -> int:
+def internal_unique_position(data: bytes, marker: bytes, label: str) -> int:
     position = data.find(marker)
     if position < 0 or data.find(marker, position + 1) >= 0:
         raise ValueError(f"expected exactly one {label} placeholder")

@@ -1,14 +1,14 @@
 # SPDX-License-Identifier: AGPL-3.0-only
+"""Native text spacing and normalization helpers."""
+
 from __future__ import annotations
 
 from functools import lru_cache
 from typing import Any, Protocol, cast
 
-from core_font_programs import TrueTypeFontProgram
-from core_layout.impl.layout.models import TextRun
-
 from core_pdf.impl.engine.spec.s_07_objects.coercion import normalize_pdf_name
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_09_fonts import TrueTypeFontProgram
 from core_pdf.impl.engine.spec.s_09_fonts.widths import (
     require_font_float,
     require_font_int,
@@ -16,11 +16,8 @@ from core_pdf.impl.engine.spec.s_09_fonts.widths import (
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.objects import PdfStream
 
-FILL_OPS = frozenset({"f", "f*", "F"})
-FILL_AND_STROKE_OPS = frozenset({"B", "b", "B*", "b*"})
 NO_SPACE_BEFORE = frozenset(".,;:!?)]}%")
 NO_SPACE_AFTER = frozenset("([{")
-PAINT_OPS = FILL_OPS | FILL_AND_STROKE_OPS
 
 
 class FontResourceDocument(Protocol):
@@ -32,7 +29,7 @@ def cached_encode_latin1(s: str) -> bytes:
     return s.encode("latin-1", "replace")
 
 
-def gap_separator(left: str, right: str, gap: float, run: TextRun) -> str:
+def gap_separator(left: str, right: str, gap: float, run: Any) -> str:
     threshold = run.space_width * 0.12
     font_threshold = run.font_size * 0.10
     if font_threshold > threshold:
@@ -54,6 +51,28 @@ def can_merge_cross_font_word(left: str, right: str) -> bool:
     return (left[-1].isalnum() or left[-1] == "_") and (right[0].isalnum() or right[0] == "_")
 
 
+@lru_cache(maxsize=4096)
+def is_garbage_text(text: str) -> bool:
+    if not text:
+        return True
+    for c in text:
+        o = ord(c)
+        if not (o < 32 or 0xE000 <= o <= 0xF8FF):
+            return False
+    return True
+
+
+# Lone surrogates cannot survive encoding to UTF-8, so drop them here rather
+# than letting them fail somewhere downstream.
+NORMALIZE_EXTRACTED_TEXT_TABLE = dict.fromkeys(range(0xD800, 0xE000))
+
+
+def normalize_extracted_text(text: str) -> str:
+    if text.isascii():
+        return text
+    return text.translate(NORMALIZE_EXTRACTED_TEXT_TABLE)
+
+
 def get_font_file(document: FontResourceDocument, font_obj: object) -> PdfStream | None:
     descriptor = lookup_dict_key(font_obj, "FontDescriptor")
     if not isinstance(descriptor, dict):
@@ -62,9 +81,7 @@ def get_font_file(document: FontResourceDocument, font_obj: object) -> PdfStream
     return font_file if isinstance(font_file, PdfStream) else None
 
 
-def load_ligature_font_tables(
-    tt_data: bytes,
-) -> TrueTypeFontProgram | None:
+def load_ligature_font_tables(tt_data: bytes) -> TrueTypeFontProgram | None:
     try:
         return TrueTypeFontProgram(tt_data)
     except ValueError:
@@ -110,22 +127,23 @@ def find_companion_font(
 
         starter_widths: dict[int, float] = {}
         starter_chars: dict[str, float] = {}
-        for i, w in enumerate(widths_raw):
+        for i, width_value in enumerate(widths_raw):
             try:
-                width = require_font_float(w, "invalid font widths array")
+                width = require_font_float(width_value, "invalid font widths array")
             except ValueError:
                 continue
-            if width > 0:
-                code = fc_int + i
-                if code < 0 or code > 255:
-                    continue
-                try:
-                    ch = bytes([code]).decode("mac_roman")
-                except UnicodeDecodeError:
-                    ch = chr(code) if code < 128 else ""
-                if ch in ligature_starters:
-                    starter_widths[code] = width
-                    starter_chars[ch] = width
+            if width <= 0:
+                continue
+            code = fc_int + i
+            if code < 0 or code > 255:
+                continue
+            try:
+                character = bytes([code]).decode("mac_roman")
+            except UnicodeDecodeError:
+                character = chr(code) if code < 128 else ""
+            if character in ligature_starters:
+                starter_widths[code] = width
+                starter_chars[character] = width
 
         if starter_widths:
             font_file = get_font_file(document, fobj)
@@ -196,15 +214,15 @@ def detect_ligature_overrides(
         if pdf_code < 0 or pdf_code > 255:
             continue
         try:
-            cp = ord(bytes([pdf_code]).decode("mac_roman"))
+            codepoint = ord(bytes([pdf_code]).decode("mac_roman"))
         except UnicodeDecodeError:
-            cp = pdf_code
+            codepoint = pdf_code
 
-        if cp in parsed_primary.unicode_cmap:
+        if codepoint in parsed_primary.unicode_cmap:
             continue
 
-        gid = pdf_code - first_char_int
-        body_bbox, is_composite = parsed_primary.composite_body_bbox(gid)
+        glyph_id = pdf_code - first_char_int
+        body_bbox, is_composite = parsed_primary.composite_body_bbox(glyph_id)
         if not (is_composite and body_bbox):
             continue
 
@@ -214,11 +232,11 @@ def detect_ligature_overrides(
 
         lig_width = 0.0
         if lig_widths_raw is not None:
-            idx = pdf_code - first_char_int
-            if 0 <= idx < len(lig_widths_raw):
-                w = lig_widths_raw[idx]
-                if type(w) in (int, float):
-                    lig_width = float(cast(Any, w))
+            width_index = pdf_code - first_char_int
+            if 0 <= width_index < len(lig_widths_raw):
+                width_value = lig_widths_raw[width_index]
+                if type(width_value) in (int, float):
+                    lig_width = float(cast(Any, width_value))
 
         if lig_width and 0.85 <= lig_width / ft_width <= 0.98:
             overrides[pdf_code] = "ft"
@@ -226,33 +244,16 @@ def detect_ligature_overrides(
     return overrides
 
 
-@lru_cache(maxsize=4096)
-def is_garbage_text(text: str) -> bool:
-    if not text:
-        return True
-    for c in text:
-        o = ord(c)
-        if not (o < 32 or 0xE000 <= o <= 0xF8FF):
-            return False
-    return True
-
-
-NORMALIZE_EXTRACTED_TEXT_TABLE = {12: "\ufb01"} | dict.fromkeys(range(55296, 57344))
-
-
-def normalize_extracted_text(text: str) -> str:
-    if text.isascii():
-        if "\x0c" in text:
-            return text.replace("\x0c", "\ufb01")
-        return text
-    return text.translate(NORMALIZE_EXTRACTED_TEXT_TABLE)
-
-
 __all__ = (
+    "NO_SPACE_AFTER",
+    "NO_SPACE_BEFORE",
     "cached_encode_latin1",
+    "can_merge_cross_font_word",
     "detect_ligature_overrides",
     "find_companion_font",
+    "gap_separator",
     "get_font_file",
     "is_garbage_text",
+    "load_ligature_font_tables",
     "normalize_extracted_text",
 )

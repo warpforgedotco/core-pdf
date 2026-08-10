@@ -7,22 +7,18 @@ import textwrap
 from collections.abc import Sequence
 
 
-def test_pdf_document_import_defers_page_and_extraction_stacks() -> None:
+def test_pdf_document_import_defers_page_stack() -> None:
     script = textwrap.dedent(
         """
         import sys
 
         from core_pdf import PdfDocument
-        from core_pdf.impl.engine.extraction.document import PdfDocument as DirectPdfDocument
+        from core_pdf.impl.engine.document import PdfDocument as DirectPdfDocument
 
         assert PdfDocument is DirectPdfDocument
         deferred_modules = (
-            "core_jpeg",
-            "core_pdf.impl.engine.extraction.page",
-            "core_pdf.impl.engine.extraction.page_text.engine",
-            "core_pdf.impl.engine.extraction.page_text.mixin",
+            "core_pdf.impl.engine.page",
             "core_pdf.impl.engine.spec.s_07_document.page",
-            "core_filters.impl.pipeline",
         )
         assert not [name for name in deferred_modules if name in sys.modules]
         """

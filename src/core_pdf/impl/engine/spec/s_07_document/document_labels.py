@@ -1,14 +1,35 @@
 # SPDX-License-Identifier: AGPL-3.0-only
+"""Native page-label and page-tree classification helpers."""
+
 from __future__ import annotations
 
 from collections.abc import Callable
+from enum import StrEnum
 
 from core_pdf.impl.engine.spec.s_07_objects.coercion import normalize_pdf_name
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_07_objects.resolver_values import PdfValueResolver
 from core_pdf.impl.engine.spec.s_09_fonts.encoding import decode_pdf_text_string
 from core_pdf.impl.types import PdfDict
 
 ResolveFn = Callable[[object], object]
+MAX_PAGE_TREE_DEPTH = 100
+
+
+class PageLabelStyle(StrEnum):
+    """PDF page-label numbering styles."""
+
+    LOWER_ROMAN = "r"
+    UPPER_ROMAN = "R"
+    LOWER_ALPHA = "a"
+    UPPER_ALPHA = "A"
+    DECIMAL = "D"
+
+
+def resolve_page_tree_node_type(resolver: PdfValueResolver, node: PdfDict) -> str | None:
+    """Resolve a page-tree node type, falling back to structural inference."""
+    node_type = resolver.resolve_name(lookup_dict_key(node, "Type"))
+    return node_type if node_type is not None else infer_page_tree_node_type(node)
 
 
 def format_page_label(
@@ -21,21 +42,27 @@ def format_page_label(
     start = resolve(lookup_dict_key(spec, "St"))
     number = (start if type(start) is int and start > 0 else 1) + page_offset
 
-    if style == "r":
-        return prefix + format_roman(number).lower()
-    if style == "R":
-        return prefix + format_roman(number).upper()
-    if style == "a":
-        return prefix + format_alpha(number).lower()
-    if style == "A":
-        return prefix + format_alpha(number).upper()
-    if style == "D":
-        return prefix + str(number)
-    return prefix
+    match style:
+        case PageLabelStyle.LOWER_ROMAN:
+            return prefix + format_roman(number).lower()
+        case PageLabelStyle.UPPER_ROMAN:
+            return prefix + format_roman(number).upper()
+        case PageLabelStyle.LOWER_ALPHA:
+            return prefix + format_alpha(number).lower()
+        case PageLabelStyle.UPPER_ALPHA:
+            return prefix + format_alpha(number).upper()
+        case PageLabelStyle.DECIMAL:
+            return prefix + str(number)
+        case _:
+            return prefix
 
 
-def normalize_page_label_style(value: object) -> str | None:
-    return normalize_pdf_name(value)
+def normalize_page_label_style(value: object) -> PageLabelStyle | None:
+    style = normalize_pdf_name(value)
+    try:
+        return PageLabelStyle(style) if style is not None else None
+    except ValueError:
+        return None
 
 
 def decode_page_label_prefix(value: object) -> str:

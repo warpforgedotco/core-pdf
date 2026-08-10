@@ -5,17 +5,26 @@ from contextlib import suppress
 from io import BytesIO
 from typing import Any
 
-from core_cmap.impl.cid.cmap import CMapDecoder, ToUnicodeCMap
-from core_font_programs import (
-    CFFFont,
-    cff_font_for_data,
-    cff_unicode_repairs_for_data,
-    is_repairable_to_unicode_label,
-)
-from fontTools.ttLib import TTFont, TTLibError
-
+from core_pdf._vendor.fontTools.ttLib import TTFont
 from core_pdf.impl.engine.spec.s_07_objects.coercion import normalize_pdf_name
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_09_fonts.cmap_decoder import CMapDecoder
+from core_pdf.impl.engine.spec.s_09_fonts.cmap_tounicode import ToUnicodeCMap
+from core_pdf.impl.engine.spec.s_09_fonts.font_program import (  # noqa: F401
+    EMPTY_FEATURE,
+    STANDARD_GLYPH_SIDS,
+    CFFFont,
+    CFFGlyphFeature,
+    CFFUnicodeRepairIndex,
+    cff_font_for_data,
+    cff_unicode_repair_index_for_data,
+    glyph_feature_distance,
+    is_repairable_to_unicode_label,
+)
+from core_pdf.impl.engine.spec.s_09_fonts.font_program import (
+    internal_type2_glyph_geometry_impl as internal_type2_glyph_geometry,  # noqa: F401
+)
+from core_pdf.impl.engine.spec.s_09_fonts.font_program_truetype import FONT_PROGRAM_ERRORS
 from core_pdf.impl.engine.spec.s_09_fonts.widths import get_descendant
 from core_pdf.impl.objects import PdfStream
 
@@ -29,7 +38,7 @@ def single_code_mapping(
             continue
         cid = int.from_bytes(code_bytes, "big")
         if cmap is not None:
-            decoded = cmap.decode(code_bytes)
+            decoded = cmap.decode_entries(code_bytes)
             if len(decoded) == 1 and decoded[0][0] == code_bytes:
                 cid = decoded[0][1]
         if limit is not None and cid >= limit:
@@ -60,7 +69,7 @@ def cff_font_for_pdf_font(font: dict[str, Any]) -> CFFFont | None:
     if subtype == "OpenType":
         if font_data is None:
             return None
-        font_data = _extract_cff_table(font_data)
+        font_data = internal_extract_cff_table(font_data)
         if font_data is None:
             return None
     try:
@@ -69,46 +78,42 @@ def cff_font_for_pdf_font(font: dict[str, Any]) -> CFFFont | None:
         return None
 
 
-def build_cff_unicode_repairs(
+def build_cff_unicode_repair_index(
     font: dict[str, Any], to_unicode: ToUnicodeCMap | None, cmap: CMapDecoder | None
-) -> dict[bytes, str]:
+) -> CFFUnicodeRepairIndex | None:
     if to_unicode is None:
-        return {}
+        return None
     descendant = get_descendant(font)
     if descendant is None:
-        return {}
+        return None
     if normalize_pdf_name(lookup_dict_key(descendant, "Subtype")) != "CIDFontType0":
-        return {}
+        return None
     descriptor = lookup_dict_key(descendant, "FontDescriptor")
     if not isinstance(descriptor, dict):
-        return {}
+        return None
     font_file = lookup_dict_key(descriptor, "FontFile3")
-    if not isinstance(font_file, PdfStream):
-        return {}
-    if len(font_file.data) > 750_000:
-        return {}
+    if not isinstance(font_file, PdfStream) or len(font_file.data) > 750_000:
+        return None
     subtype = normalize_pdf_name(lookup_dict_key(font_file.dictionary, "Subtype"))
     font_data: bytes | None = font_file.data
     if subtype == "OpenType":
         if font_data is None:
-            return {}
-        font_data = _extract_cff_table(font_data)
+            return None
+        font_data = internal_extract_cff_table(font_data)
         if font_data is None:
-            return {}
+            return None
     mapping = single_code_mapping(to_unicode, cmap)
-    if not any(is_repairable_to_unicode_label(value) for ignored_cid, value in mapping.values()):
-        return {}
+    if not any(is_repairable_to_unicode_label(value) for internal_cid, value in mapping.values()):
+        return None
     try:
-        repair_items = cff_unicode_repairs_for_data(
-            font_data,
-            tuple(sorted((code_bytes, cid, value) for code_bytes, (cid, value) in mapping.items())),
+        return cff_unicode_repair_index_for_data(
+            font_data, tuple(sorted((code, cid, value) for code, (cid, value) in mapping.items()))
         )
     except ValueError:
-        return {}
-    return dict(repair_items)
+        return None
 
 
-def _extract_cff_table(data: bytes) -> bytes | None:
+def internal_extract_cff_table(data: bytes) -> bytes | None:
     font: TTFont | None = None
     try:
         font = TTFont(BytesIO(data), lazy=True, recalcBBoxes=False, recalcTimestamp=False)
@@ -116,10 +121,8 @@ def _extract_cff_table(data: bytes) -> bytes | None:
         if reader is None:
             return None
         table = reader.tables.get("CFF ")
-        if table is None:
-            return None
-        return getattr(table, "data")
-    except (TTLibError, OSError, ValueError, KeyError):
+        return getattr(table, "data") if table is not None else None
+    except FONT_PROGRAM_ERRORS:
         return None
     finally:
         if font is not None:
@@ -127,8 +130,4 @@ def _extract_cff_table(data: bytes) -> bytes | None:
                 font.close()
 
 
-__all__ = (
-    "build_cff_unicode_repairs",
-    "cff_font_for_pdf_font",
-    "single_code_mapping",
-)
+__all__ = ("build_cff_unicode_repair_index", "cff_font_for_pdf_font")

@@ -11,7 +11,7 @@ PDF 32000 section:
 
 Root-level packages are shared or derived processing layers:
 ``extraction``, ``rendering``, and ``writing``. Reusable layout primitives
-live in the workspace-level ``core-layout`` package.
+live in ``core_pdf.impl.engine.layout``.
 """
 
 __all__: tuple[str, ...] = ()

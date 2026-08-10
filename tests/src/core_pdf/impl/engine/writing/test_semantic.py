@@ -1,9 +1,17 @@
 import pytest
-from core_document import Block, BlockKind, Document, Page, Table, TableCell, TextLine
 
-from core_pdf import PdfDocument, PdfSignaturePlan
+from core_pdf import PdfDocument, PdfSignaturePlan, PdfUnsupportedError
 from core_pdf import StandardPdfEncryption as PublicEncryption
 from core_pdf import serialize_document_to_pdf as public_writer
+from core_pdf.impl.engine.structured import (
+    Block,
+    BlockKind,
+    Document,
+    Page,
+    Table,
+    TableCell,
+    TextLine,
+)
 from core_pdf.impl.engine.writing import (
     StandardType1FontProvider,
     TrueTypeFontProvider,
@@ -44,6 +52,147 @@ def test_semantic_writer_round_trips_text_geometry_and_tables() -> None:
     assert "Hello" in extracted.text
     assert "Name" in extracted.text
     assert extracted.pages[0].width == 300.0
+
+
+def test_semantic_writer_emits_minimal_tagged_page_structure() -> None:
+    document = Document(
+        pages=(
+            Page(
+                page_number=1,
+                blocks=(Block(1, BlockKind.PARAGRAPH, (TextLine("One"), TextLine("Two"))),),
+            ),
+        )
+    )
+
+    pdf = serialize_document_to_pdf(document)
+
+    with PdfDocument.open(pdf) as parsed:
+        structure = parsed.structure
+        assert structure is not None
+        elements = tuple(structure.find_all())
+        assert [element.role for element in elements] == ["Div", "P", "P"]
+        assert [element.page_index for element in elements] == [0, 0, 0]
+
+
+def test_semantic_writer_preserves_heading_tag_roles() -> None:
+    document = Document(
+        pages=(
+            Page(
+                page_number=1,
+                blocks=(Block(1, BlockKind.HEADING, (TextLine("Title"),), level=2),),
+            ),
+        )
+    )
+
+    with PdfDocument.open(serialize_document_to_pdf(document)) as parsed:
+        structure = parsed.structure
+        assert structure is not None
+        assert [element.role for element in structure.find_all()] == ["Div", "Sect", "H2"]
+
+
+def test_semantic_writer_nests_lower_level_headings() -> None:
+    document = Document(
+        pages=(
+            Page(
+                page_number=1,
+                blocks=(
+                    Block(1, BlockKind.HEADING, (TextLine("One"),), level=1),
+                    Block(2, BlockKind.HEADING, (TextLine("One.A"),), level=2),
+                ),
+            ),
+        )
+    )
+
+    with PdfDocument.open(serialize_document_to_pdf(document)) as parsed:
+        structure = parsed.structure
+        assert structure is not None
+        sections = tuple(structure.find_all("Sect"))
+        assert len(sections) == 2
+        assert sections[1].parent is not None
+        assert sections[1].parent.role == "Sect"
+
+
+def test_semantic_writer_emits_list_and_table_cell_roles() -> None:
+    document = Document(
+        pages=(
+            Page(
+                page_number=1,
+                blocks=(Block(1, BlockKind.LIST, (TextLine("Item"),)),),
+                tables=(
+                    Table(
+                        1,
+                        rows=(
+                            (TableCell(0, 0, "Header"),),
+                            (TableCell(1, 0, "Value"),),
+                        ),
+                    ),
+                ),
+            ),
+        )
+    )
+
+    with PdfDocument.open(serialize_document_to_pdf(document)) as parsed:
+        structure = parsed.structure
+        assert structure is not None
+        assert [element.role for element in structure.find_all()] == ["Div", "LI", "TH", "TD"]
+
+
+def test_semantic_writer_emits_figure_alt_and_artifact_roles() -> None:
+    from core_pdf.impl.engine.structured import Figure
+
+    document = Document(
+        pages=(
+            Page(
+                page_number=1,
+                figures=(
+                    Figure(1, kind="image", metadata={"alt": "A chart"}),
+                    Figure(2, kind="rule", metadata={"decorative": True}),
+                ),
+            ),
+        )
+    )
+
+    with PdfDocument.open(serialize_document_to_pdf(document)) as parsed:
+        structure = parsed.structure
+        assert structure is not None
+        figures = tuple(structure.find_all("Figure"))
+        assert [element.alternate_description for element in figures] == ["A chart"]
+        assert tuple(structure.find_all("Artifact"))
+        assert structure.role_map["CoreFigure"] == "Figure"
+
+
+def test_semantic_writer_propagates_document_language() -> None:
+    document = Document(
+        pages=(Page(page_number=1),),
+        metadata={"Lang": "en-US", "Title": "Accessible document"},
+    )
+
+    with PdfDocument.open(serialize_document_to_pdf(document)) as parsed:
+        language = parsed.catalog()[next(key for key in parsed.catalog() if str(key) == "Lang")]
+        assert parsed.resolver.resolve_str(language) == "en-US"
+        assert parsed.structure is not None
+        structure_language = parsed.structure.props[
+            next(key for key in parsed.structure.props if str(key) == "Lang")
+        ]
+        assert parsed.resolver.resolve_str(structure_language) == "en-US"
+
+
+def test_semantic_writer_generates_outlines_from_headings() -> None:
+    document = Document(
+        pages=(
+            Page(
+                page_number=1,
+                blocks=(Block(1, BlockKind.HEADING, (TextLine("Introduction"),), level=1),),
+            ),
+        )
+    )
+
+    with PdfDocument.open(serialize_document_to_pdf(document)) as parsed:
+        outlines = tuple(parsed.outlines)
+        assert len(outlines) == 1
+        assert outlines[0].level == 0
+        assert outlines[0].title == "Introduction"
+        assert outlines[0].page_index == 0
 
 
 def test_semantic_writer_rejects_text_outside_standard_encoding() -> None:
@@ -113,7 +262,7 @@ def test_semantic_writer_supports_standard_pdf_encryption() -> None:
     with PdfDocument.open(encrypted, password="open") as parsed:
         assert "secret" in parsed.extract().text
 
-    with pytest.raises(Exception):
+    with pytest.raises(PdfUnsupportedError, match="Incorrect password"):
         PdfDocument.open(encrypted, password="wrong")
 
 

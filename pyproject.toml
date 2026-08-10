@@ -1,6 +1,6 @@
 [build-system]
-requires = ["uv_build>=0.11.16,<0.12"]
-build-backend = "uv_build"
+requires = ["setuptools>=80", "wheel"]
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "core-pdf"
@@ -10,55 +10,22 @@ authors = [{ name = "Kevin Turcios", email = "turcioskevinr@gmail.com" }]
 readme = "README.md"
 license = "AGPL-3.0-only"
 license-files = ["LICENSE.txt"]
-requires-python = ">=3.11"
+requires-python = ">=3.13"
 classifiers = ["Development Status :: 3 - Alpha"]
 dependencies = [
-    "core-ccitt>=0.0.1",
-    "core-color>=0.0.1",
-    "core-cmap>=0.0.1",
-    "core-document>=0.0.1",
-    "core-filters>=0.0.1",
-    "core-crypto>=0.0.1",
-    "core-font-programs>=0.0.1",
-    "core-glyph>=0.0.1",
-    "core-jbig2>=0.0.1",
-    "core-jpeg>=0.0.0",
-    "core-layout>=0.0.1",
-    "core-ocr>=0.0.1",
-    "fonttools>=4.63.0,<5.0.0",
+    "numpy>=2.5.1",
+    "tesserocr>=2.10.0",
+    "imagecodecs>=2026.6.26",
 ]
-[tool.uv.sources]
-core-ccitt = { workspace = true }
-core-color = { workspace = true }
-core-cmap = { workspace = true }
-core-document = { workspace = true }
-core-filters = { workspace = true }
-core-crypto = { workspace = true }
-core-font-programs = { workspace = true }
-core-glyph = { workspace = true }
-core-jbig2 = { workspace = true }
-core-jpeg = { workspace = true }
-core-layout = { workspace = true }
-core-ocr = { workspace = true }
+
+[project.scripts]
+core-pdf = "core_pdf.cli:main"
 
 [tool.uv]
 python-preference = "system"
 
-[tool.uv.workspace]
-members = [
-    "packages/core-CCITT",
-    "packages/core-JBIG2",
-    "packages/core-JPEG",
-    "packages/core-cmap",
-    "packages/core-document",
-    "packages/core-color",
-    "packages/core-filters",
-    "packages/core-crypto",
-    "packages/core-ocr",
-    "packages/core-font-programs",
-    "packages/core-glyph",
-    "packages/core-layout",
-]
+[tool.uv.sources]
+nuitka = { path = "../Nuitka", editable = true }
 
 [project.urls]
 Repository = "https://github.com/core-experiments/core-pdf"
@@ -75,7 +42,9 @@ dev = [
     { include-group = "test" },
 ]
 benchmark = [
-    "rich>=15.0.0",
+    "liteparse>=2.11.0",
+    "llama-cloud>=1.0",
+    "pytest-benchmark>=5.1.0,<6.0.0",
 ]
 lint = [
     "mypy >=1.16.0, <2.0.0",
@@ -84,22 +53,77 @@ lint = [
 ]
 test = [
     "pytest >=8.4.0, <10.0.0",
+    "pytest-cov>=7.1.0",
     "pytest-xdist>=3.8.0",
+]
+compiling = [
+    "nuitka>=4.1.3",
+]
+scripts = [
+    "textual>=8.2.8",
+]
+vendor-test = [
+    "charset-normalizer>=2.0.0",
+    "pandas>=2.3.3",
+    "pdfminer-six>=20260107",
+    "pillow>=12.2.0",
+    "pypdfium2>=5.9.0",
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 norecursedirs = ["tests/fixtures"]
+pythonpath = ["."]
+
+[tool.coverage.run]
+source = ["src/core_pdf"]
+# Vendored fontTools is excluded from linting, typing, and formatting; exclude it
+# from coverage too so the totals describe code this project owns.
+omit = ["src/core_pdf/_vendor/*"]
+parallel = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+# A ratchet, not a target. Set just below the measured figure so coverage cannot
+# silently regress; raise it as gaps close. `rendering.py` is at 73% now that the
+# rasterizer is decomposed, up from 52% when its internals were unreachable.
+fail_under = 77
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "@typing.overload",
+    "@overload",
+]
 
 [tool.ruff]
 extend-exclude = [
+    "src/core_pdf/_vendor/fontTools",
     "tests/fixtures",
+    "vendor/pdfplumber",
 ]
 line-length = 100
 
+[tool.ruff.lint.per-file-ignores]
+"src/core_pdf/__main__.py" = ["E501"]
+# C901 exemptions. Each of these files holds a function above the complexity gate
+# that is either a deliberate optimization pinned by docs/architecture.md or known
+# debt. Shrink this list rather than raising max-complexity.
+#   operations.py  dispatch_operations (170) — protected: hand-unrolled dispatch loop
+#   state.py       append_tj_array_simple_horizontal_batched (70) — protected: batched text
+#   ocr.py         internal_recognize_page_with_reserved_raster (66)
+"src/core_pdf/impl/engine/spec/s_07_content/operations.py" = ["C901"]
+"src/core_pdf/impl/engine/spec/s_07_content/state.py" = ["C901"]
+"src/core_pdf/impl/engine/parse/ocr.py" = ["C901"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 60
+
 [tool.ruff.lint]
 select = [
+    "B",       # flake8-bugbear
     "C4",      # flake8-comprehensions
+    "C90",     # mccabe complexity
     "COM",     # flake8-commas
     "E",       # pycodestyle errors
     "F",       # pyflakes
@@ -114,6 +138,15 @@ select = [
 ]
 
 ignore = [
+    # Loop/unpack variables the codebase deliberately names `ignored*` or
+    # `internal_*` rather than `_`; the rules cannot see that convention.
+    "B007",   # unused loop control variable
+    # The one getattr() flagged reads an attribute that the vendored fontTools
+    # DirectoryEntry does not declare; `ty` rejects direct attribute access there.
+    "B009",   # getattr with a constant attribute value
+    # Every zip() flagged here is either preceded by an explicit length check or
+    # is an intentional pairwise zip(xs, xs[1:]); strict=True would be wrong.
+    "B905",   # zip() without an explicit strict=
     "COM812", # over aggressively insists on trailing commas where not desirable
     "PT001",  # use @pytest.fixture() over @pytest.fixture
     "PT011",  # pytest.raises({exc}) too broad, use match param or more specific exception
@@ -124,27 +157,52 @@ ignore = [
 ]
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.13"
 files = ["src/core_pdf"]
 mypy_path = "src"
+exclude = ["src/core_pdf/_vendor/fontTools"]
 show_error_codes = true
+ignore_missing_imports = true
+# Enabled incrementally. Remaining candidates and their current cost:
+# check_untyped_defs (1), disallow_any_generics (9), no_implicit_reexport (9),
+# strict_equality (10), warn_unreachable (33), warn_return_any (59).
+#
+# `warn_redundant_casts` is deliberately NOT enabled: `ty` also runs in this
+# project's lint gate and needs several casts that mypy considers redundant, so
+# the two checkers give contradictory advice on the same lines.
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+warn_unused_ignores = true
 
 [tool.ty.environment]
-root = [
-    "./src",
-    "./packages/core-CCITT/src",
-    "./packages/core-JBIG2/src",
-    "./packages/core-JPEG/src",
-    "./packages/core-cmap/src",
-    "./packages/core-document/src",
-    "./packages/core-color/src",
-    "./packages/core-crypto/src",
-    "./packages/core-filters/src",
-    "./packages/core-font-programs/src",
-    "./packages/core-glyph/src",
-    "./packages/core-layout/src",
-    "./packages/core-ocr/src",
-]
+root = ["."]
 
 [tool.ty.src]
-exclude = ["tests/fixtures"]
+exclude = [
+    "src/core_pdf/_vendor/fontTools",
+    "tests/fixtures",
+    "vendor/x-ray",
+  "vendor/pdfminer.six",
+  "vendor/pdfplumber",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+core_pdf = ["py.typed"]
+"core_pdf._vendor.fontTools" = ["LICENSE.txt", "LICENSE.external.txt"]
+"core_pdf._vendor.fontTools.ttLib.tables" = ["table_API_readme.txt"]
+"core_pdf.impl.engine.layout.data.wordlists" = [
+    "*.txt.gz",
+    "*.bin",
+    "*.md",
+    "LICENSE*",
+]
+"core_pdf.impl.engine.spec.s_09_fonts" = [
+    "data/cmaps/**",
+]

@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-only
+"""Native image color-space specification parsing."""
+
 from __future__ import annotations
 
 from typing import TypeAlias, cast
-
-from core_color import icc_profile_alt_name
 
 from core_pdf.impl.engine.spec.s_07_objects.coercion import (
     coerce_to_bytes,
@@ -15,6 +15,7 @@ from core_pdf.impl.engine.spec.s_07_objects.pdfdict import (
     lookup_dict_key,
     lookup_dict_key_default,
 )
+from core_pdf.impl.engine.spec.s_08_graphics import IccProfileError, parse_icc_transform
 from core_pdf.impl.objects import (
     MISSING,
     PdfStream,
@@ -125,7 +126,10 @@ def normalize_indexed_base_color_space_name(value: object) -> str | None:
         n = cs_param(icc_dict, "N", 3)
         channels = parse_int(n, 3)
         if isinstance(icc_stream, PdfStream):
-            alt = icc_profile_alt_name(icc_stream.data, channels or 3)
+            try:
+                alt = parse_icc_transform(icc_stream.data).alternate_color_space
+            except IccProfileError:
+                alt = None
             if alt is not None:
                 return alt
         return {1: "DeviceGray", 3: "DeviceRGB", 4: "DeviceCMYK"}.get(channels or 3)
@@ -201,7 +205,10 @@ def normalize_image_color_spec(image_dict: object) -> ImageColorSpec:
             channels = parse_channel_count(n)
             icc_profile = icc_stream.data if isinstance(icc_stream, PdfStream) else None
             if alt is None and isinstance(icc_stream, PdfStream):
-                alt = icc_profile_alt_name(icc_profile, channels)
+                try:
+                    alt = parse_icc_transform(icc_profile).alternate_color_space
+                except IccProfileError:
+                    alt = None
             return ImageColorSpec(
                 kind="ICCBased",
                 params=cast(ColorParams, icc_dict),

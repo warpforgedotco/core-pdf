@@ -1,17 +1,66 @@
 # SPDX-License-Identifier: AGPL-3.0-only
+"""Native PDF font metric helpers."""
+
 from __future__ import annotations
 
 import contextlib
 from typing import Any
 
-from core_cmap.impl.cid.widths import FontWidthMap, scale_font_widths
-
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_09_fonts.cmap_widths import (
+    FontWidthMap,
+    SparseFontWidthMap,
+    scale_font_widths,
+)
 from core_pdf.impl.engine.spec.s_09_fonts.data.core14 import FONT_DATA
+from core_pdf.impl.engine.spec.s_09_fonts.helpers import LIGATURE_TEXT_OVERRIDES
 from core_pdf.impl.engine.spec.s_09_fonts.widths import (
     get_descendant,
     require_font_float,
 )
+
+LIGATURE_TEXT_TO_CHAR = {text: char for char, text in LIGATURE_TEXT_OVERRIDES.items()}
+
+
+def standard_14_widths(
+    base_font_name: str | None, decode_table: tuple[str, ...] | None
+) -> FontWidthMap | None:
+    """Return built-in glyph widths for a standard 14 font, if this is one.
+
+    9.6.2.2 lets the standard 14 fonts omit FirstChar, LastChar, Widths and
+    FontDescriptor entirely, and requires a conforming reader to supply the
+    metrics itself -- the special treatment is deprecated for writers from
+    PDF 1.5 but readers "shall still provide" it. Without this, every glyph in
+    such a font falls back to MissingWidth and text advances at a full em,
+    which stretches a line of Times to roughly twice its true width.
+
+    The shipped tables are keyed by the character a code denotes, so the
+    font's own encoding is what turns them into a per-code map.
+    """
+    if base_font_name is None or decode_table is None:
+        return None
+    entry = FONT_DATA.get(base_font_name)
+    if not isinstance(entry, dict):
+        return None
+    char_widths = entry.get("widths")
+    if not isinstance(char_widths, dict):
+        return None
+    sparse: dict[int, float] = {}
+    for code in range(min(len(decode_table), 256)):
+        text = decode_table[code]
+        width = char_widths.get(text)
+        if width is None:
+            # The tables are keyed by the character the glyph draws, and
+            # decoding has already expanded ligatures, so "fi" has to be
+            # folded back to find the single glyph's advance.
+            ligature = LIGATURE_TEXT_TO_CHAR.get(text)
+            if ligature is not None:
+                width = char_widths.get(ligature)
+        if width is not None:
+            sparse[code] = float(width)
+    if not sparse:
+        return None
+    return SparseFontWidthMap(sparse)
 
 
 def parse_font_metrics(

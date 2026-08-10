@@ -8,9 +8,8 @@ from dataclasses import dataclass
 from hashlib import md5
 from typing import Any
 
-from core_crypto.impl.crypto_constants import PDF_PADDING
-from core_crypto.impl.rc4 import CryptRC4
-
+from core_pdf.impl.engine.spec.s_07_security.crypto_constants import PDF_PADDING
+from core_pdf.impl.engine.spec.s_07_security.rc4 import CryptRC4
 from core_pdf.impl.objects import PdfName, PdfStream, PdfString
 
 
@@ -67,16 +66,18 @@ class StandardPdfEncryptionContext:
         if not file_id:
             raise ValueError("PDF encryption requires a non-empty file ID")
         owner_password = settings.owner_password or settings.user_password
-        owner_key = _password_key(owner_password)
-        owner_entry = _owner_entry(owner_key, _password_bytes(settings.user_password))
-        key = _file_key(
-            _password_bytes(settings.user_password),
+        owner_key = internal_password_key(owner_password)
+        owner_entry = internal_owner_entry(
+            owner_key, internal_password_bytes(settings.user_password)
+        )
+        key = internal_file_key(
+            internal_password_bytes(settings.user_password),
             owner_entry,
             settings.permissions,
             file_id,
             settings.encrypt_metadata,
         )
-        user_entry = _user_entry(key, file_id)
+        user_entry = internal_user_entry(key, file_id)
         return cls(
             key=key,
             owner_entry=owner_entry,
@@ -141,18 +142,18 @@ class StandardPdfEncryptionContext:
         return CryptRC4(object_key).encrypt(data)
 
 
-def _password_bytes(password: str) -> bytes:
+def internal_password_bytes(password: str) -> bytes:
     return password.encode("latin-1", errors="strict")
 
 
-def _password_key(password: str) -> bytes:
-    digest = md5((_password_bytes(password) + PDF_PADDING)[:32]).digest()
+def internal_password_key(password: str) -> bytes:
+    digest = md5((internal_password_bytes(password) + PDF_PADDING)[:32]).digest()
     for _ in range(50):
         digest = md5(digest).digest()
     return digest[:16]
 
 
-def _owner_entry(owner_key: bytes, user_password: bytes) -> bytes:
+def internal_owner_entry(owner_key: bytes, user_password: bytes) -> bytes:
     value = (user_password + PDF_PADDING)[:32]
     encrypted = CryptRC4(owner_key).encrypt(value)
     for index in range(1, 20):
@@ -160,7 +161,7 @@ def _owner_entry(owner_key: bytes, user_password: bytes) -> bytes:
     return encrypted
 
 
-def _file_key(
+def internal_file_key(
     user_password: bytes,
     owner_entry: bytes,
     permissions: int,
@@ -180,7 +181,7 @@ def _file_key(
     return value[:16]
 
 
-def _user_entry(key: bytes, file_id: bytes) -> bytes:
+def internal_user_entry(key: bytes, file_id: bytes) -> bytes:
     value = md5(PDF_PADDING + file_id).digest()
     value = CryptRC4(key).encrypt(value)
     for index in range(1, 20):

@@ -1,50 +1,27 @@
 # SPDX-License-Identifier: AGPL-3.0-only
+"""Native inline-image parsing and decode helpers."""
+
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any, Protocol
+from typing import Any
 
-from core_filters.impl.decode_spec import (
+from core_pdf.impl.engine.spec.s_07_filters.decode_spec import (
     normalize_stream_decode_spec,
 )
-from core_filters.impl.pipeline import decode_stream_data
-
 from core_pdf.impl.engine.spec.s_07_objects.coercion import (
     is_pdf_null,
     normalize_pdf_name,
 )
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
-from core_pdf.impl.engine.spec.s_07_syntax.lexer_helpers import FindableSizedBuffer
+from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.engine.spec.s_07_syntax.tokens import (
     INLINE_IMAGE_KEY_MAP,
     WHITESPACE,
 )
-from core_pdf.impl.exceptions import PdfParseError, PdfUnsupportedError
+from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.objects import PdfName
 from core_pdf.impl.types import PdfDict
-
-
-class InlineImageLexer(Protocol):
-    raw_data: memoryview
-    source_buffer: FindableSizedBuffer | None
-    data_len: int
-    pos: int
-
-    def advance(self, count: int) -> None: ...
-
-    def parse_object(self) -> Any: ...
-
-    def read_name(self) -> bytes | memoryview: ...
-
-    def scan_word_at(
-        self, position: int, *, skip_ignored: bool = True
-    ) -> tuple[memoryview, int] | None: ...
-
-    def skip_eol(self) -> None: ...
-
-    def skip_ignored(self) -> None: ...
-
-    def skip_ignored_at(self, position: int) -> int: ...
 
 
 class InlineImage:
@@ -102,7 +79,7 @@ def inline_image_unfiltered_data_length(dictionary: PdfDict) -> int | None:
     return ((row_bits + 7) // 8) * height
 
 
-def skip_inline_image_separator(lexer: InlineImageLexer) -> bool:
+def skip_inline_image_separator(lexer: PdfLexer) -> bool:
     start = lexer.pos
     lexer.skip_eol()
     if lexer.pos < lexer.data_len and lexer.raw_data[lexer.pos] in WHITESPACE:
@@ -146,7 +123,7 @@ def filtered_inline_image_data_end(
     return None
 
 
-def parse_inline_image(lexer: InlineImageLexer) -> InlineImage:
+def parse_inline_image(lexer: PdfLexer) -> InlineImage:
     dictionary: PdfDict = {}
     while True:
         lexer.skip_ignored()
@@ -166,7 +143,7 @@ def parse_inline_image(lexer: InlineImageLexer) -> InlineImage:
     normalized = normalize_inline_image_dictionary(dictionary)
     raw_data = lexer.raw_data
     source_buffer = lexer.source_buffer
-    source_bytes = source_buffer if type(source_buffer) is bytes else None
+    source_bytes: bytes | None = source_buffer if type(source_buffer) is bytes else None
 
     exact_length = inline_image_unfiltered_data_length(normalized)
     if exact_length is not None and start + exact_length <= lexer.data_len:
@@ -212,14 +189,14 @@ def parse_inline_image(lexer: InlineImageLexer) -> InlineImage:
 
 
 def recover_inline_image_position(
-    lexer: InlineImageLexer,
+    lexer: PdfLexer,
     position: int,
     is_valid_operator: Callable[[bytes], bool] | None = None,
 ) -> int | None:
     data = lexer.raw_data
     data_len = lexer.data_len
     source_buffer = lexer.source_buffer
-    source_bytes = source_buffer if type(source_buffer) is bytes else None
+    source_bytes: bytes | None = source_buffer if type(source_buffer) is bytes else None
     search_data = source_bytes if source_bytes is not None else data.tobytes()
     pos = position
     while pos < data_len:
@@ -247,16 +224,7 @@ def recover_inline_image_position(
     return None
 
 
-def decode_inline_image_data(dictionary: PdfDict, data: bytes) -> bytes:
-    stream_spec = normalize_stream_decode_spec(dictionary)
-    try:
-        return decode_stream_data(data, stream_spec)
-    except (PdfParseError, PdfUnsupportedError):
-        return data
-
-
 __all__ = (
-    "decode_inline_image_data",
     "InlineImage",
     "parse_inline_image",
     "recover_inline_image_position",

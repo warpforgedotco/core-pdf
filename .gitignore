@@ -51,6 +51,7 @@ coverage.xml
 .hypothesis/
 .pytest_cache/
 cover/
+parsebench-output/
 
 # Translations
 *.mo
@@ -220,3 +221,6 @@ __marimo__/
 .streamlit/secrets.toml
 
 /core/
+
+# pytest-benchmark local result storage
+.benchmarks/

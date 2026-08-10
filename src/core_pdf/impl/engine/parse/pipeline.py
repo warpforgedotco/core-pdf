@@ -1,0 +1,974 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+"""Orchestration and per-page caching."""
+
+from __future__ import annotations
+
+import math
+import time
+from collections import Counter, defaultdict
+from collections.abc import Iterable, Sequence
+from dataclasses import replace
+from typing import Any, cast
+
+from core_pdf.impl.engine.execution import TaskScope, WorkStage
+from core_pdf.impl.engine.layout.glyphs import GlyphUnicodeSemantics
+from core_pdf.impl.engine.parse.capture import (
+    internal_capture_from_program,
+    internal_learned_glyph_text,
+    preflight_page,
+)
+from core_pdf.impl.engine.parse.emit import (
+    assemble_page,
+)
+from core_pdf.impl.engine.parse.fusion import (
+    fuse_observations,
+)
+from core_pdf.impl.engine.parse.layout import layout_blocks
+from core_pdf.impl.engine.parse.model import (
+    CapturedPage,
+    ObservationBatch,
+    OcrPassScope,
+    PagePreflight,
+    PagePreflightClass,
+    PageRoute,
+    ParsedBlock,
+    ParsedPage,
+    WorkPlan,
+    internal_candidate,
+)
+from core_pdf.impl.engine.parse.ocr import (
+    internal_stroked_text_profile,
+    internal_stroked_vector_decoded_batch,
+    recognize_page,
+)
+from core_pdf.impl.engine.parse.route import (
+    plan_page,
+)
+from core_pdf.impl.engine.parse.tables import (
+    extract_chart_table,
+    extract_tables,
+    internal_annotate_table_associations,
+)
+from core_pdf.impl.engine.stroked_text import (
+    GlyphSignature,
+    StrokedTextDecode,
+    decode_stroked_text_profile_with_alphabet,
+)
+from core_pdf.impl.engine.structured import (
+    SCHEMA_VERSION,
+    Annotation,
+    Diagnostic,
+    Document,
+    Figure,
+    FormField,
+    Link,
+    Table,
+)
+
+PARSED_PAGE_CACHE_KEY = "parsed_page_v4"
+ASSEMBLED_PAGE_CACHE_KEY = "assembled_page_v1"
+PAGE_EXTRACTION_CACHE_KEY = "page_extraction_v2"
+CAPTURED_PAGE_CACHE_KEY = "captured_page_program_v3"
+
+
+def internal_plan_cache_record(plan: WorkPlan) -> dict[str, object]:
+    return {
+        "route": plan.route.value,
+        "reason": plan.reason,
+        "verify_hidden_text": plan.verify_hidden_text,
+        "ocr_passes": tuple(
+            {
+                "name": ocr_pass.name,
+                "scope": ocr_pass.scope.value,
+                "scale": ocr_pass.scale,
+                "modes": ocr_pass.modes,
+                "tiles": ocr_pass.tiles,
+                "region_columns": ocr_pass.region_columns,
+                "max_regions": ocr_pass.max_regions,
+                "minimum_confidence": ocr_pass.minimum_confidence,
+                "run_if_characters_below": ocr_pass.run_if_characters_below,
+                "minimum_utility_gain": ocr_pass.minimum_utility_gain,
+                "adaptive_scale": ocr_pass.adaptive_scale,
+                "minimum_characters_for_rescue": ocr_pass.minimum_characters_for_rescue,
+                "character_confidence_threshold": ocr_pass.character_confidence_threshold,
+                "run_if_additions_below": ocr_pass.run_if_additions_below,
+                "seed_with_native": ocr_pass.seed_with_native,
+                "region_first": ocr_pass.region_first,
+                "preprocess": ocr_pass.preprocess,
+                "pixel_budget": ocr_pass.pixel_budget,
+                "include_native_text": ocr_pass.include_native_text,
+                "recognize_words": ocr_pass.recognize_words,
+            }
+            for ocr_pass in plan.ocr_passes
+        ),
+    }
+
+
+class internal_PageExtraction:
+    """Lazily materialized extraction products for one page."""
+
+    def __init__(self, page: Any) -> None:
+        self.page = page
+        self.started = time.perf_counter()
+        self.internal_preflight: PagePreflight | None = None
+        self.internal_preflighted_at: float | None = None
+        self.internal_capture: CapturedPage | None = None
+        self.internal_captured_at: float | None = None
+        self.internal_plan: WorkPlan | None = None
+        self.internal_planned_at: float | None = None
+        self.internal_route_mismatches: tuple[int, int, int] | None = None
+        self.internal_ocr: ObservationBatch | None = None
+        self.internal_recognized_at: float | None = None
+        self.internal_observations: ObservationBatch | None = None
+        self.internal_fused_at: float | None = None
+        self.internal_tables: tuple[Table, ...] | None = None
+        self.internal_tabled_at: float | None = None
+        self.internal_layout: tuple[tuple[ParsedBlock, ...], str] | None = None
+        self.internal_layout_finished_at: float | None = None
+
+    def preflight(self) -> PagePreflight:
+        if self.internal_preflight is None:
+            self.internal_preflight = preflight_page(self.page, self.capture())
+            self.internal_preflighted_at = time.perf_counter()
+        return self.internal_preflight
+
+    def capture(self) -> CapturedPage:
+        if self.internal_capture is not None:
+            return self.internal_capture
+        cache = self.page.extraction_cache
+        program = self.page.get_page_program()
+        cached = cache.get(CAPTURED_PAGE_CACHE_KEY)
+        if isinstance(cached, CapturedPage) and cached.program is program:
+            capture = cached
+        else:
+            capture = internal_capture_from_program(self.page, program)
+            cache[CAPTURED_PAGE_CACHE_KEY] = capture
+        self.internal_capture = capture
+        self.internal_captured_at = time.perf_counter()
+        return capture
+
+    def internal_mismatches_for(
+        self, preflight: PagePreflight, plan: WorkPlan
+    ) -> tuple[int, int, int]:
+        native = int(
+            preflight.recommendation.page_class is PagePreflightClass.NATIVE_TEXT
+            and plan.route is not PageRoute.NATIVE
+        )
+        image = int(
+            preflight.recommendation.page_class is PagePreflightClass.IMAGE_ONLY
+            and plan.route is not PageRoute.OCR
+        )
+        vector = int(
+            preflight.recommendation.page_class is PagePreflightClass.VECTOR_DIAGRAM
+            and plan.route is PageRoute.NATIVE
+            and plan.reason != "newstroke-vector-text"
+        )
+        return native, image, vector
+
+    def plan(self) -> WorkPlan:
+        if self.internal_plan is not None:
+            return self.internal_plan
+        preflight = self.preflight()
+        capture = self.capture()
+        plan = plan_page(capture)
+        native, image, vector = self.internal_mismatches_for(preflight, plan)
+        self.internal_plan = plan
+        self.internal_route_mismatches = (native, image, vector)
+        self.internal_planned_at = time.perf_counter()
+        self.page.extraction_cache["parse_plan"] = internal_plan_cache_record(plan)
+        return plan
+
+    def ocr(self, context: TaskScope) -> ObservationBatch:
+        if self.internal_ocr is None:
+            self.internal_ocr = recognize_page(self.capture(), self.plan(), context)
+            self.internal_recognized_at = time.perf_counter()
+        return self.internal_ocr
+
+    def observations(self, context: TaskScope) -> ObservationBatch:
+        if self.internal_observations is None:
+            capture = self.capture()
+            self.internal_observations = fuse_observations(
+                capture.observations,
+                self.ocr(context),
+                self.plan(),
+            )
+            self.internal_fused_at = time.perf_counter()
+        return self.internal_observations
+
+    def tables(self, context: TaskScope) -> tuple[Table, ...]:
+        if self.internal_tables is None:
+            observations = self.observations(context)
+            capture = self.capture()
+            # Dense schematic wiring creates large false ruled tables. Vector
+            # decoders already supply text geometry, and keeping those
+            # observations in normal layout preserves reading order and
+            # precision while avoiding another geometric pass.
+            tables: tuple[Table, ...]
+            if capture.evidence.vector_text_trusted or capture.evidence.stroked_vector_text.trusted:
+                tables = ()
+            else:
+                tables = extract_tables(capture, observations)
+                chart_table = extract_chart_table(capture, observations)
+                if chart_table is not None:
+                    tables = (*tables, chart_table)
+            self.internal_tables = tables
+            self.internal_tabled_at = time.perf_counter()
+        return self.internal_tables
+
+    def internal_image_obstacles(self) -> tuple[tuple[float, float, float, float], ...]:
+        capture = self.capture()
+        return tuple(
+            box
+            for box in capture.evidence.image_boxes
+            if 0.01 <= ((box[2] - box[0]) * (box[3] - box[1])) / capture.evidence.page_area < 0.65
+        )
+
+    def layout(
+        self,
+        context: TaskScope,
+        *,
+        include_table_obstacles: bool,
+    ) -> tuple[ParsedBlock, ...]:
+        if include_table_obstacles and self.internal_layout is not None:
+            return self.internal_layout[0]
+        observations = self.observations(context)
+        capture = self.capture()
+        table_obstacles = (
+            tuple(table.bbox for table in self.tables(context) if table.bbox is not None)
+            if include_table_obstacles
+            else ()
+        )
+        use_xy_cut = not (
+            capture.evidence.image_count >= 8 and 0.05 <= capture.evidence.image_area_ratio < 0.65
+        )
+        blocks = layout_blocks(
+            observations,
+            obstacles=(*table_obstacles, *self.internal_image_obstacles()),
+            use_xy_cut=use_xy_cut,
+            rotation=int(getattr(self.page, "rotation", 0) or 0),
+            page_width=float(capture.page.width),
+            page_height=float(capture.page.height),
+        )
+        if include_table_obstacles:
+            self.internal_layout = (blocks, "xy-cut" if use_xy_cut else "row-order")
+            self.internal_layout_finished_at = time.perf_counter()
+        return blocks
+
+    def parsed_page(self, context: TaskScope) -> ParsedPage:
+        cache = self.page.extraction_cache
+        cached = cache.get_as(PARSED_PAGE_CACHE_KEY, ParsedPage)
+        if cached is not None:
+            return cached
+        preflight = self.preflight()
+        capture = self.capture()
+        plan = self.plan()
+        ocr = self.ocr(context)
+        observations = self.observations(context)
+        tables = self.tables(context)
+        blocks = self.layout(context, include_table_obstacles=True)
+        figures = (
+            ()
+            if capture.evidence.full_page_image
+            else tuple(
+                Figure(order=index, bbox=box, kind="image", metadata={"source": "capture"})
+                for index, box in enumerate(capture.evidence.image_boxes)
+            )
+        )
+        finished = self.internal_layout_finished_at or time.perf_counter()
+        preflight_native, preflight_image, preflight_vector = self.internal_route_mismatches or (
+            0,
+            0,
+            0,
+        )
+        ocr_diagnostics = cache.get("ocr_pass_diagnostics", ())
+        capture_diagnostics = cache.get("capture_diagnostics", {})
+        newstroke_diagnostics = (
+            capture_diagnostics.get("newstroke", {})
+            if isinstance(capture_diagnostics, dict)
+            else {}
+        )
+        stroked_decode_diagnostics = cache.get("stroked_vector_decode", {})
+        if not isinstance(stroked_decode_diagnostics, dict):
+            stroked_decode_diagnostics = {}
+        stroked_packed_diagnostics = cache.get("stroked_vector_packed", {})
+        if not isinstance(stroked_packed_diagnostics, dict):
+            stroked_packed_diagnostics = {}
+        document_stroked_diagnostics = cache.get("document_stroked_glyphs", {})
+        if not isinstance(document_stroked_diagnostics, dict):
+            document_stroked_diagnostics = {}
+        ocr_raster_pixels = sum(
+            int(diagnostic.get("raster_pixels", 0))
+            for diagnostic in ocr_diagnostics
+            if isinstance(diagnostic, dict)
+        )
+        ocr_full_page_fallback = int(
+            any(
+                bool(diagnostic.get("full_page_fallback"))
+                for diagnostic in ocr_diagnostics
+                if isinstance(diagnostic, dict)
+            )
+        )
+        layout_strategy = self.internal_layout[1] if self.internal_layout is not None else "xy-cut"
+        image_cache = getattr(self.page.document, "image_cache", None)
+        image_cache_stats = image_cache.stats() if image_cache is not None else None
+        decoder_cache = getattr(self.page.document, "decoder_cache", {})
+        decoders = tuple(decoder_cache.values()) if isinstance(decoder_cache, dict) else ()
+        parsed = ParsedPage(
+            page_number=int(self.page.page_number),
+            width=float(self.page.width),
+            height=float(self.page.height),
+            rotation=int(self.page.rotation),
+            route=plan.route,
+            blocks=blocks,
+            tables=tables,
+            structured_tables=tuple(
+                internal_annotate_table_associations(table, observations) for table in tables
+            ),
+            figures=figures,
+            metrics={
+                "route": plan.route.value,
+                "preflight_class": preflight.recommendation.page_class.value,
+                "preflight_capture": preflight.recommendation.capture,
+                "preflight_ocr": preflight.recommendation.ocr,
+                "page_program_seconds": (self.internal_captured_at or self.started) - self.started,
+                "preflight_seconds": (self.internal_preflighted_at or self.started)
+                - (self.internal_captured_at or self.started),
+                "preflight_native_route_mismatch": preflight_native,
+                "preflight_image_route_mismatch": preflight_image,
+                "preflight_vector_route_mismatch": preflight_vector,
+                "page_program_events": len(capture.program.events.sequence),
+                "content_stream_passes": 1,
+                "capture_product_count": 1,
+                "capture_seconds": (self.internal_captured_at or self.started) - self.started,
+                "planning_seconds": (self.internal_planned_at or self.started)
+                - (self.internal_preflighted_at or self.internal_captured_at or self.started),
+                "ocr_seconds": (self.internal_recognized_at or self.started)
+                - (self.internal_planned_at or self.started),
+                "fusion_seconds": (self.internal_fused_at or self.started)
+                - (self.internal_recognized_at or self.started),
+                "table_seconds": (self.internal_tabled_at or self.started)
+                - (self.internal_fused_at or self.started),
+                "layout_seconds": finished - (self.internal_tabled_at or self.started),
+                "native_observations": len(capture.observations),
+                "ocr_observations": len(ocr),
+                "ocr_raster_pixels": ocr_raster_pixels,
+                "ocr_full_page_fallback": ocr_full_page_fallback,
+                "image_cache_hits": image_cache_stats.hits if image_cache_stats else 0,
+                "image_cache_misses": image_cache_stats.misses if image_cache_stats else 0,
+                "image_cache_evictions": image_cache_stats.evictions if image_cache_stats else 0,
+                "image_cache_bytes": image_cache_stats.bytes if image_cache_stats else 0,
+                "image_cache_peak_bytes": image_cache_stats.peak_bytes if image_cache_stats else 0,
+                "type3_charproc_cache_hits": sum(
+                    int(getattr(decoder, "type3_charproc_cache_hits", 0)) for decoder in decoders
+                ),
+                "type3_charproc_cache_misses": sum(
+                    int(getattr(decoder, "type3_charproc_cache_misses", 0)) for decoder in decoders
+                ),
+                "type3_charproc_compiled_programs": sum(
+                    int(getattr(decoder, "type3_charproc_compiled_programs", 0))
+                    for decoder in decoders
+                ),
+                "type3_charproc_compiled_operations": sum(
+                    int(getattr(decoder, "type3_charproc_compiled_operations", 0))
+                    for decoder in decoders
+                ),
+                "type3_charproc_unsafe_fallbacks": sum(
+                    int(getattr(decoder, "type3_charproc_unsafe_fallbacks", 0))
+                    for decoder in decoders
+                ),
+                "fused_observations": len(observations),
+                "layout_strategy": layout_strategy,
+                "text_coverage": capture.evidence.text_coverage,
+                "painted_text_coverage": capture.evidence.painted_text_coverage or 0.0,
+                "glyph_mapped_ratio": capture.evidence.glyphs.mapped_ratio,
+                "glyph_unknown_ratio": capture.evidence.glyphs.unknown_ratio,
+                "trusted_hidden_text": int(capture.evidence.trusted_hidden_text),
+                "vector_text_characters": capture.evidence.vector_text_characters,
+                "vector_text_candidate_segments": (capture.evidence.vector_text_candidate_segments),
+                "vector_text_matched_segments": capture.evidence.vector_text_matched_segments,
+                "vector_text_segment_coverage": (capture.evidence.vector_text_segment_coverage),
+                "vector_text_sequences": capture.evidence.vector_text_sequences,
+                "vector_text_maximum_error": capture.evidence.vector_text_maximum_error,
+                "vector_text_seconds": float(newstroke_diagnostics.get("seconds", 0.0)),
+                "vector_text_trusted": int(capture.evidence.vector_text_trusted),
+                "stroked_vector_text_trusted": int(capture.evidence.stroked_vector_text.trusted),
+                "stroked_vector_candidate_paths": (
+                    capture.evidence.stroked_vector_text.candidate_paths
+                ),
+                "stroked_vector_packed_cells": int(stroked_packed_diagnostics.get("cells", 0)),
+                "stroked_vector_packed_fallback": int(
+                    bool(stroked_packed_diagnostics.get("fallback_used", False))
+                ),
+                "stroked_vector_document_reuse": int(
+                    document_stroked_diagnostics.get("role") == "reuse"
+                ),
+                "stroked_vector_document_alphabet": int(
+                    document_stroked_diagnostics.get("alphabet_size", 0)
+                ),
+                "stroked_vector_decode_seconds": float(
+                    stroked_decode_diagnostics.get("seconds", 0.0)
+                ),
+                "stroked_vector_decoded_runs": int(
+                    stroked_decode_diagnostics.get("decoded_runs", 0)
+                ),
+                "stroked_vector_decode_additions": int(
+                    stroked_decode_diagnostics.get("additions", 0)
+                ),
+                "stroked_vector_decode_corrections": int(
+                    stroked_decode_diagnostics.get("corrections", 0)
+                ),
+                "stroked_vector_approximate_signatures": int(
+                    stroked_decode_diagnostics.get("approximate_signatures", 0)
+                ),
+                "verified_hidden_text": int(
+                    bool(cache.get("hidden_text_verification", {}).get("accepted", False))
+                ),
+                "full_page_image": capture.evidence.full_page_image,
+                "uncovered_vector_area": capture.evidence.uncovered_vector_area or 0.0,
+            },
+        )
+        cache[PARSED_PAGE_CACHE_KEY] = parsed
+        cache["parse_metrics"] = parsed.metrics
+        return parsed
+
+    def assembled_page(self, context: TaskScope) -> Any:
+        cache = self.page.extraction_cache
+        assembled = cache.get(ASSEMBLED_PAGE_CACHE_KEY)
+        if assembled is None:
+            assembled = assemble_page(self.parsed_page(context), self.capture().drawings)
+            try:
+                annotations = tuple(
+                    Annotation(
+                        subtype=record.subtype,
+                        bbox=record.rect,
+                        contents=record.contents,
+                        destination=record.dest or record.action,
+                    )
+                    for record in self.page.get_annotations()
+                )
+                links = tuple(
+                    Link(
+                        bbox=record.bbox,
+                        url=record.url,
+                        link_type=record.link_type,
+                        text="",
+                    )
+                    for record in self.page.get_links()
+                )
+                fields = tuple(
+                    FormField(
+                        name=record.name,
+                        field_type=record.type,
+                        value_text=record.value_text,
+                        bbox=record.rect,
+                        field_index=index,
+                        required=record.is_required,
+                        read_only=record.is_read_only,
+                        no_export=record.no_export,
+                        options=record.options,
+                    )
+                    for index, record in enumerate(self.page.get_fields())
+                )
+                cropbox = self.page.crop_box
+                assembled = replace(
+                    assembled,
+                    annotations=annotations,
+                    links=links,
+                    form_fields=fields,
+                    cropbox=cropbox,
+                )
+            except (TypeError, ValueError):
+                # Malformed optional interactive objects must not block extraction.
+                pass
+            cache[ASSEMBLED_PAGE_CACHE_KEY] = assembled
+        return assembled
+
+
+def page_extraction(page: Any) -> internal_PageExtraction:
+    cache = page.extraction_cache
+    with page.internal_page_lock:
+        extraction = cache.get(PAGE_EXTRACTION_CACHE_KEY)
+        if not isinstance(extraction, internal_PageExtraction):
+            extraction = internal_PageExtraction(page)
+            cache[PAGE_EXTRACTION_CACHE_KEY] = extraction
+        return extraction
+
+
+def parse_page(page: Any, context: TaskScope) -> ParsedPage:
+    cache = page.extraction_cache
+    with page.internal_page_lock:
+        cached = cache.get_as(PARSED_PAGE_CACHE_KEY, ParsedPage)
+        if cached is not None:
+            return cached
+        return internal_parse_page_locked(page, context)
+
+
+def extract_page(page: Any, context: TaskScope) -> Any:
+    """Return the canonical emitted page, parsing and emitting at most once."""
+    with page.internal_page_lock:
+        return page_extraction(page).assembled_page(context)
+
+
+def internal_parse_page_locked(page: Any, context: TaskScope) -> ParsedPage:
+    """Run one page pipeline while its single-flight lock is held."""
+    return page_extraction(page).parsed_page(context)
+
+
+DOCUMENT_FONT_SEED_LIMIT = 4
+DOCUMENT_FONT_SEEDS_PER_DECODER = 2
+DOCUMENT_STROKED_MIN_DECODED_RUNS = 20
+DOCUMENT_STROKED_MIN_RUN_COVERAGE = 0.70
+DOCUMENT_STROKED_MIN_GLYPH_COVERAGE = 0.70
+
+
+def internal_unknown_decoder_counts(capture: CapturedPage) -> Counter[object]:
+    counts: Counter[object] = Counter()
+    quality = capture.evidence.text_quality
+    corrupt = (
+        capture.evidence.visible_native_characters >= 24
+        and quality.noise_score >= 0.20
+        and quality.wordlike_ratio < 0.20
+    )
+    for glyph in capture.program.products.glyphs:
+        decoder = glyph.font_decoder
+        if (
+            decoder is None
+            or not glyph.visible
+            or not glyph.code_bytes
+            or internal_learned_glyph_text(glyph) is not None
+            or (
+                not corrupt
+                and glyph.unicode_semantics
+                not in {
+                    GlyphUnicodeSemantics.UNKNOWN_IDENTIFIER,
+                    GlyphUnicodeSemantics.UNSUPPORTED,
+                }
+            )
+            or not callable(getattr(decoder, "install_learned_unicode", None))
+        ):
+            continue
+        counts[decoder] += 1
+    return counts
+
+
+def internal_document_font_seed_indexes(captures: Sequence[CapturedPage]) -> tuple[int, ...]:
+    pages_by_decoder: dict[object, list[tuple[int, int]]] = defaultdict(list)
+    for page_index, capture in enumerate(captures):
+        for decoder, count in internal_unknown_decoder_counts(capture).items():
+            if count >= 8:
+                pages_by_decoder[decoder].append((page_index, count))
+    page_scores: Counter[int] = Counter()
+    for entries in pages_by_decoder.values():
+        if len(entries) < 2 or sum(count for _, count in entries) < 32:
+            continue
+        for page_index, count in sorted(entries, key=lambda item: -item[1])[
+            :DOCUMENT_FONT_SEEDS_PER_DECODER
+        ]:
+            page_scores[page_index] += count
+    return tuple(
+        page_index
+        for page_index, ignored_score in page_scores.most_common(DOCUMENT_FONT_SEED_LIMIT)
+    )
+
+
+def internal_font_mapping_votes(
+    capture: CapturedPage,
+    ocr: ObservationBatch,
+) -> dict[object, dict[bytes, Counter[str]]]:
+    votes: dict[object, dict[bytes, Counter[str]]] = defaultdict(lambda: defaultdict(Counter))
+    glyphs = tuple(
+        glyph
+        for glyph in capture.program.products.glyphs
+        if glyph.visible
+        and glyph.code_bytes
+        and len(glyph.text) == 1
+        and not glyph.text.isspace()
+        and int(glyph.rotation_angle) % 360 == 0
+    )
+    if not glyphs:
+        return votes
+    for text, bbox, confidence in zip(ocr.text, ocr.bbox, ocr.confidence, strict=True):
+        if not math.isfinite(float(confidence)) or float(confidence) < 90.0:
+            continue
+        characters = tuple(character for character in text if not character.isspace())
+        if len(characters) < 3:
+            continue
+        x0, y0, x1, y1 = (float(value) for value in bbox)
+        tolerance = max(1.0, (y1 - y0) * 0.10)
+        aligned = tuple(
+            sorted(
+                (
+                    glyph
+                    for glyph in glyphs
+                    if x0 - tolerance
+                    <= (glyph.ink_bbox[0] + glyph.ink_bbox[2]) * 0.5
+                    <= x1 + tolerance
+                    and y0 - tolerance
+                    <= (glyph.ink_bbox[1] + glyph.ink_bbox[3]) * 0.5
+                    <= y1 + tolerance
+                ),
+                key=lambda glyph: (glyph.ink_bbox[1], glyph.ink_bbox[0], glyph.seqno),
+            )
+        )
+        if len(aligned) != len(characters):
+            continue
+        known_pairs = tuple(
+            (glyph.text.casefold(), character.casefold())
+            for glyph, character in zip(aligned, characters, strict=True)
+            if glyph.unicode_semantics
+            in {GlyphUnicodeSemantics.AUTHORITATIVE, GlyphUnicodeSemantics.HEURISTIC}
+        )
+        if (
+            known_pairs
+            and sum(left == right for left, right in known_pairs) / len(known_pairs) < 0.8
+        ):
+            continue
+        for glyph, character in zip(aligned, characters, strict=True):
+            decoder = glyph.font_decoder
+            if (
+                decoder is None
+                or glyph.unicode_semantics
+                not in {
+                    GlyphUnicodeSemantics.UNKNOWN_IDENTIFIER,
+                    GlyphUnicodeSemantics.UNSUPPORTED,
+                }
+                or not character.isprintable()
+            ):
+                continue
+            votes[decoder][glyph.code_bytes][character] += 1
+    return votes
+
+
+def internal_merge_font_mapping_votes(
+    destination: dict[object, dict[bytes, Counter[str]]],
+    source: dict[object, dict[bytes, Counter[str]]],
+) -> None:
+    for decoder, by_code in source.items():
+        destination_codes = destination.setdefault(decoder, {})
+        for code_bytes, counts in by_code.items():
+            destination_codes.setdefault(code_bytes, Counter()).update(counts)
+
+
+def internal_install_document_font_mappings(
+    votes: dict[object, dict[bytes, Counter[str]]],
+) -> tuple[frozenset[object], int]:
+    installed_decoders: set[object] = set()
+    installed_characters = 0
+    for decoder, by_code in votes.items():
+        mapping: dict[bytes, str] = {}
+        for code_bytes, counts in by_code.items():
+            if not counts:
+                continue
+            character, count = counts.most_common(1)[0]
+            total = counts.total()
+            if count >= 2 and count / total >= 0.90:
+                mapping[code_bytes] = character
+        installer = getattr(decoder, "install_learned_unicode", None)
+        if not mapping or not callable(installer):
+            continue
+        additions = int(installer(mapping))
+        if additions:
+            installed_decoders.add(decoder)
+            installed_characters += additions
+    return frozenset(installed_decoders), installed_characters
+
+
+def internal_refresh_learned_capture(page: Any, decoders: frozenset[object]) -> None:
+    extraction = page_extraction(page)
+    capture = extraction.internal_capture
+    if capture is None or not any(
+        glyph.font_decoder in decoders for glyph in capture.program.products.glyphs
+    ):
+        return
+    cache = page.extraction_cache
+    cache.pop(CAPTURED_PAGE_CACHE_KEY, None)
+    extraction.internal_capture = internal_capture_from_program(page, capture.program)
+    extraction.internal_captured_at = time.perf_counter()
+
+
+def internal_prepare_document_font_mappings(
+    pages: tuple[Any, ...],
+    captures: tuple[CapturedPage, ...],
+    context: TaskScope,
+) -> tuple[int, int]:
+    seed_indexes = internal_document_font_seed_indexes(captures)
+    if not seed_indexes:
+        return 0, 0
+    ocr_by_index: dict[int, ObservationBatch] = {}
+    for completed in context.map_completed(
+        lambda page_index: page_extraction(pages[page_index]).ocr(context),
+        seed_indexes,
+        stage=WorkStage.PAGE,
+    ):
+        ocr_by_index[seed_indexes[completed.index]] = completed.value
+    votes: dict[object, dict[bytes, Counter[str]]] = {}
+    for page_index, ocr in ocr_by_index.items():
+        internal_merge_font_mapping_votes(
+            votes,
+            internal_font_mapping_votes(captures[page_index], ocr),
+        )
+    installed_decoders, installed_characters = internal_install_document_font_mappings(votes)
+    if not installed_decoders:
+        return len(seed_indexes), 0
+    seed_set = frozenset(seed_indexes)
+    for page_index, page in enumerate(pages):
+        if page_index not in seed_set:
+            internal_refresh_learned_capture(page, installed_decoders)
+    for page_index in seed_indexes:
+        pages[page_index].extraction_cache["document_font_learning"] = {
+            "seed_pages": len(seed_indexes),
+            "installed_characters": installed_characters,
+        }
+    return len(seed_indexes), installed_characters
+
+
+def internal_merge_document_stroked_alphabet(
+    destination: dict[GlyphSignature, str],
+    ambiguous: set[GlyphSignature],
+    source: Iterable[tuple[GlyphSignature, str]],
+) -> None:
+    """Merge exact glyph mappings and permanently exclude cross-page conflicts."""
+    for signature, character in source:
+        if signature in ambiguous:
+            continue
+        if signature not in destination:
+            destination[signature] = character
+        elif destination[signature] != character:
+            destination.pop(signature)
+            ambiguous.add(signature)
+
+
+def internal_document_stroked_decode_is_sufficient(decoded: StrokedTextDecode) -> bool:
+    return bool(
+        len(decoded.observations) >= DOCUMENT_STROKED_MIN_DECODED_RUNS
+        and decoded.decoded_candidate_runs >= DOCUMENT_STROKED_MIN_DECODED_RUNS
+        and decoded.candidate_run_coverage >= DOCUMENT_STROKED_MIN_RUN_COVERAGE
+        and decoded.candidate_glyph_coverage >= DOCUMENT_STROKED_MIN_GLYPH_COVERAGE
+    )
+
+
+def internal_install_document_stroked_decode(
+    page: Any,
+    decoded: StrokedTextDecode,
+    *,
+    seconds: float,
+    seed_pages: tuple[int, ...],
+    alphabet_size: int,
+) -> bool:
+    """Install deterministic cross-page vector text as this page's zero-raster OCR result."""
+    with page.internal_page_lock:
+        extraction = page_extraction(page)
+        if extraction.internal_ocr is not None:
+            return False
+        internal_install_document_stroked_decode_locked(
+            page,
+            extraction,
+            decoded,
+            seconds=seconds,
+            seed_pages=seed_pages,
+            alphabet_size=alphabet_size,
+        )
+    return True
+
+
+def internal_install_document_stroked_decode_locked(
+    page: Any,
+    extraction: internal_PageExtraction,
+    decoded: StrokedTextDecode,
+    *,
+    seconds: float,
+    seed_pages: tuple[int, ...],
+    alphabet_size: int,
+) -> None:
+    observations = internal_stroked_vector_decoded_batch(decoded.observations)
+    candidate = internal_candidate(-1, observations)
+    extraction.internal_ocr = observations
+    extraction.internal_recognized_at = time.perf_counter()
+    cache = page.extraction_cache
+    bbox = extraction.capture().evidence.stroked_vector_text.bbox
+    cache["ocr_pass_diagnostics"] = (
+        {
+            "name": "document-stroked-glyphs",
+            "scope": OcrPassScope.STROKED_VECTOR_TEXT.value,
+            "scale": 0.0,
+            "modes": (),
+            "recognize_words": False,
+            "character_confidence_threshold": None,
+            "task_count": 0,
+            "raster_pixels": 0,
+            "skipped_raster_pixels": 0,
+            "image_text_preflight": (),
+            "region_stage": "document-glyph-alphabet",
+            "region_boxes": (bbox,) if bbox is not None else (),
+            "skipped_region_boxes": (),
+            "full_page_fallback": False,
+            "elapsed_seconds": seconds,
+            "render_timings": {},
+            "recognition_seconds": 0.0,
+            "setup_seconds": 0.0,
+            "api_seconds": 0.0,
+            "iterator_seconds": 0.0,
+            "cleanup_seconds": 0.0,
+            "candidate_seconds": 0.0,
+            "recognition_statuses": (),
+            "accepted_additions": len(observations),
+            "adaptive_retry_scale": None,
+            "adaptive_preflight": None,
+            "adaptive_rescue_decision": None,
+            "adaptive_rescue": None,
+            "pixel_budget": 0,
+            "rectangles": (),
+            "selected": True,
+            **candidate.metrics.as_record(),
+        },
+    )
+    cache["stroked_vector_decode"] = {
+        "seconds": seconds,
+        "eligible_seeds": 0,
+        "aligned_seeds": 0,
+        "accepted_seeds": 0,
+        "initial_signatures": decoded.initial_signatures,
+        "learned_signatures": decoded.learned_signatures,
+        "approximate_signatures": decoded.approximate_signatures,
+        "candidate_runs": decoded.candidate_runs,
+        "decoded_candidate_runs": decoded.decoded_candidate_runs,
+        "candidate_run_coverage": decoded.candidate_run_coverage,
+        "candidate_glyph_coverage": decoded.candidate_glyph_coverage,
+        "decoded_runs": len(decoded.observations),
+        "additions": len(decoded.observations),
+        "corrections": 0,
+        "document_reuse": True,
+    }
+    cache["stroked_vector_packed"] = {
+        "accepted": True,
+        "cells": 0,
+        "raster_pixels": 0,
+        "unmapped_observations": 0,
+        "fallback_used": False,
+        "document_reuse": True,
+    }
+    cache["document_stroked_glyphs"] = {
+        "role": "reuse",
+        "seed_pages": seed_pages,
+        "alphabet_size": alphabet_size,
+        "candidate_run_coverage": decoded.candidate_run_coverage,
+        "candidate_glyph_coverage": decoded.candidate_glyph_coverage,
+        "decoded_runs": len(decoded.observations),
+        "seconds": seconds,
+    }
+    cache["_stroked_vector_alphabet"] = decoded.alphabet
+
+
+def internal_prepare_document_stroked_mappings(
+    pages: tuple[Any, ...],
+    captures: tuple[CapturedPage, ...],
+    context: TaskScope,
+) -> tuple[int, int]:
+    """OCR the richest flattened-font page, then decode compatible pages structurally."""
+    indexes = tuple(
+        index
+        for index, capture in enumerate(captures)
+        if capture.evidence.stroked_vector_text.trusted
+    )
+    if len(indexes) < 2:
+        return 0, 0
+    ordered = tuple(
+        sorted(
+            indexes,
+            key=lambda index: (
+                -captures[index].evidence.stroked_vector_text.candidate_paths,
+                index,
+            ),
+        )
+    )
+    alphabet: dict[GlyphSignature, str] = {}
+    ambiguous: set[GlyphSignature] = set()
+    seed_indexes: list[int] = []
+    reused_pages = 0
+    for page_index in ordered:
+        page = pages[page_index]
+        extraction = page_extraction(page)
+        capture = extraction.capture()
+        if extraction.internal_ocr is None and alphabet:
+            with page.internal_page_lock:
+                extraction.plan()
+            started = time.perf_counter()
+            decoded = decode_stroked_text_profile_with_alphabet(
+                internal_stroked_text_profile(capture),
+                alphabet,
+            )
+            seconds = time.perf_counter() - started
+            if internal_document_stroked_decode_is_sufficient(
+                decoded
+            ) and internal_install_document_stroked_decode(
+                page,
+                decoded,
+                seconds=seconds,
+                seed_pages=tuple(int(pages[index].page_number) for index in seed_indexes),
+                alphabet_size=len(alphabet),
+            ):
+                reused_pages += 1
+                continue
+
+        if extraction.internal_ocr is None:
+            with page.internal_page_lock:
+                if extraction.internal_ocr is None:
+                    extraction.ocr(context)
+        learned = page.extraction_cache.get("_stroked_vector_alphabet", ())
+        if isinstance(learned, tuple):
+            internal_merge_document_stroked_alphabet(
+                alphabet,
+                ambiguous,
+                cast(tuple[tuple[GlyphSignature, str], ...], learned),
+            )
+        seed_indexes.append(page_index)
+        page.extraction_cache["document_stroked_glyphs"] = {
+            "role": "seed",
+            "seed_pages": tuple(int(pages[index].page_number) for index in seed_indexes),
+            "alphabet_size": len(alphabet),
+            "ambiguous_signatures": len(ambiguous),
+        }
+    return len(seed_indexes), reused_pages
+
+
+def parse_document(
+    document: Any,
+    context: TaskScope,
+    pages: Sequence[Any],
+) -> Document:
+    pages = tuple(pages)
+    parsed_pages: tuple[ParsedPage, ...]
+    if len(pages) == 1:
+        parsed_pages = (parse_page(pages[0], context),)
+    else:
+        captures_by_index: list[CapturedPage | None] = [None] * len(pages)
+        for capture_completed in context.map_completed(
+            lambda page: page_extraction(page).capture(),
+            pages,
+            stage=WorkStage.PAGE,
+        ):
+            captures_by_index[capture_completed.index] = capture_completed.value
+        captures = tuple(capture for capture in captures_by_index if capture is not None)
+        if len(captures) == len(pages):
+            internal_prepare_document_font_mappings(pages, captures, context)
+            internal_prepare_document_stroked_mappings(pages, captures, context)
+        parsed_by_index: list[ParsedPage | None] = [None] * len(pages)
+        for parse_completed in context.map_completed(
+            lambda page: parse_page(page, context),
+            pages,
+            stage=WorkStage.PAGE,
+        ):
+            parsed_by_index[parse_completed.index] = parse_completed.value
+        parsed_pages = tuple(page for page in parsed_by_index if page is not None)
+    diagnostics = tuple(
+        Diagnostic("parse", message, page_number=page.page_number)
+        for page in parsed_pages
+        for message in page.diagnostics
+    )
+    metadata = document.get_metadata()
+    return Document(
+        pages=tuple(page_extraction(source_page).assembled_page(context) for source_page in pages),
+        metadata=metadata,
+        diagnostics=diagnostics,
+        schema_version=SCHEMA_VERSION,
+    )

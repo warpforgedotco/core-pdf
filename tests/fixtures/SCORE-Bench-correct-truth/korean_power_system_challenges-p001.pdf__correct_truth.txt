@@ -1,0 +1,32 @@
+--------------------------------------------------- Unstructured Plain Text Format 1.0.4
+--------------------------------------------------- Unstructured Page Header Begin
+﻿April 2023
+LBNL-2001524
+--------------------------------------------------- Unstructured Image Begin
+BERKELEY LAB
+--------------------------------------------------- Unstructured Image End
+--------------------------------------------------- Unstructured Image Begin
+NEXT group
+--------------------------------------------------- Unstructured Image End
+--------------------------------------------------- Unstructured Page Header End
+
+--------------------------------------------------- Unstructured Title Begin
+Korean Power System Challenges and Opportunities
+--------------------------------------------------- Unstructured Title End
+
+--------------------------------------------------- Unstructured Sub-Title Begin
+Priorities for Swift and Successful Clean Energy Deployment at Scale
+--------------------------------------------------- Unstructured Sub-Title End
+
+--------------------------------------------------- Unstructured Sub-Title Begin
+AUTHORS
+--------------------------------------------------- Unstructured Sub-Title End
+Won Young Park 1* , Nina Khanna¹ , James Hyungkwan Kim¹ , Kenji Shiraishi 1,2 , Nikit Abhyankar 1,2 , Umed Paliwal 1,2 , Jiang Lin 1,2 , and Amol Phadke 1,2
+¹Lawrence Berkeley National Laboratory, United States of America
+²University of California, Berkeley, United States of America
+Hee Seung Moon³ , Yong Hyun Song³ , Eunsung Kim³ , Sanghyun Hong³ , Yunsik Chung³ , and Seung Wan Kim 3,4*
+³NEXT Group, Republic of Korea
+⁴ Chungnam National University, Republic of Korea
+* corresponding author
+--------------------------------------------------- Unstructured Image Begin
+--------------------------------------------------- Unstructured Image End

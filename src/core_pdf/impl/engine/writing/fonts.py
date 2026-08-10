@@ -77,7 +77,7 @@ class TrueTypeFontProvider:
     def add_to_graph(self, graph: PdfObjectGraph, texts: Iterable[str]) -> PdfFontResource:
         from io import BytesIO
 
-        from fontTools.ttLib import TTFont
+        from core_pdf._vendor.fontTools.ttLib import TTFont
 
         font = TTFont(
             BytesIO(self.font_data),
@@ -101,7 +101,7 @@ class TrueTypeFontProvider:
             (cid, round(hmetrics[glyph_order[glyph_ids[cid]]][0] * 1000 / units_per_em))
             for cid in sorted(glyph_ids)
         ]
-        font_name = _font_name(font)
+        font_name = internal_font_name(font)
         font_file = graph.add(
             PdfStream({PdfName.of("Length1"): len(self.font_data)}, self.font_data)
         )
@@ -110,11 +110,11 @@ class TrueTypeFontProvider:
                 PdfName.of("Type"): PdfName.of("FontDescriptor"),
                 PdfName.of("FontName"): PdfName.of(font_name),
                 PdfName.of("Flags"): 4,
-                PdfName.of("FontBBox"): _font_bbox(font, units_per_em),
+                PdfName.of("FontBBox"): internal_font_bbox(font, units_per_em),
                 PdfName.of("ItalicAngle"): 0,
-                PdfName.of("Ascent"): _font_metric(font, "ascent", units_per_em),
-                PdfName.of("Descent"): _font_metric(font, "descent", units_per_em),
-                PdfName.of("CapHeight"): _font_metric(font, "ascent", units_per_em),
+                PdfName.of("Ascent"): internal_font_metric(font, "ascent", units_per_em),
+                PdfName.of("Descent"): internal_font_metric(font, "descent", units_per_em),
+                PdfName.of("CapHeight"): internal_font_metric(font, "ascent", units_per_em),
                 PdfName.of("StemV"): 80,
                 PdfName.of("FontFile2"): font_file,
             }
@@ -135,11 +135,11 @@ class TrueTypeFontProvider:
                 },
                 PdfName.of("FontDescriptor"): descriptor,
                 PdfName.of("DW"): 1000,
-                PdfName.of("W"): _widths_array(widths),
+                PdfName.of("W"): internal_widths_array(widths),
                 PdfName.of("CIDToGIDMap"): cid_map,
             }
         )
-        to_unicode = graph.add(PdfStream({}, _to_unicode_cmap(cid_by_codepoint)))
+        to_unicode = graph.add(PdfStream({}, internal_to_unicode_cmap(cid_by_codepoint)))
         type0 = graph.add(
             {
                 PdfName.of("Type"): PdfName.of("Font"),
@@ -157,27 +157,27 @@ class TrueTypeFontProvider:
         )
 
 
-def _font_name(font: Any) -> str:
+def internal_font_name(font: Any) -> str:
     return "CoreTTFont"
 
 
-def _font_bbox(font: Any, units_per_em: int) -> list[int]:
+def internal_font_bbox(font: Any, units_per_em: int) -> list[int]:
     head = font["head"]
     return [
         round(value * 1000 / units_per_em) for value in (head.xMin, head.yMin, head.xMax, head.yMax)
     ]
 
 
-def _font_metric(font: Any, name: str, units_per_em: int) -> int:
+def internal_font_metric(font: Any, name: str, units_per_em: int) -> int:
     value = getattr(font["hhea"], name, 0)
     return round(value * 1000 / units_per_em)
 
 
-def _widths_array(widths: list[tuple[int, int]]) -> list[object]:
+def internal_widths_array(widths: list[tuple[int, int]]) -> list[object]:
     return [item for cid, width in widths for item in (cid, [width])]
 
 
-def _to_unicode_cmap(cid_by_codepoint: dict[int, int]) -> bytes:
+def internal_to_unicode_cmap(cid_by_codepoint: dict[int, int]) -> bytes:
     lines = [
         "/CIDInit /ProcSet findresource begin",
         "12 dict begin",

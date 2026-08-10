@@ -1,0 +1,356 @@
+"""ToUnicode CMap parsing and decoding."""
+
+from __future__ import annotations
+
+import typing
+from collections.abc import Callable
+from functools import lru_cache
+
+import numpy
+
+from core_pdf.impl.engine.spec.s_09_fonts.cmap_encoding import BYTE_CACHE, decode_utf16be
+from core_pdf.impl.engine.spec.s_09_fonts.cmap_ranges import (
+    CodeSpaceRanges,
+    expand_range,
+    ranges_overlap,
+    unicode_scalar_or_replacement,
+    validate_codespace_range,
+)
+from core_pdf.impl.engine.spec.s_09_fonts.cmap_tokenizer import (
+    cmap_tokens,
+    cmap_usecmap_name,
+    decode_cmap_hex_token,
+    decode_cmap_token,
+    iter_blocks,
+)
+
+
+class ToUnicodeCMap:
+    code_space_ranges: CodeSpaceRanges
+    mappings: dict[bytes, str]
+    decode_lengths: tuple[int, ...]
+    fast_decode_table: list[str] | tuple[str, ...] | None
+    fast_decode_table_2byte: list[str] | None
+
+    __slots__ = (
+        "code_space_ranges",
+        "mappings",
+        "decode_lengths",
+        "fast_decode_table",
+        "fast_decode_table_2byte",
+    )
+
+    def __init__(
+        self,
+        data: bytes | bytearray | memoryview,
+        *,
+        usecmap_resolver: Callable[[str], bytes | None] | None = None,
+        internal_depth: int = 0,
+        internal_empty: bool = False,
+    ) -> None:
+        self.code_space_ranges = []
+        self.mappings = {}
+        self.fast_decode_table = None
+        self.fast_decode_table_2byte = None
+        if internal_empty:
+            self.decode_lengths = ()
+            return
+        if internal_depth > 16:
+            raise ValueError("ToUnicode CMap UseCMap recursion limit exceeded")
+        source = data if type(data) is bytes else bytes(data)
+        parsed = parse_to_unicode_cmap(source)
+        parent: ToUnicodeCMap | None = None
+        parent_name = cmap_usecmap_name(source)
+        if parent_name is not None and usecmap_resolver is not None:
+            parent_data = usecmap_resolver(parent_name)
+            if parent_data is not None:
+                try:
+                    parent = ToUnicodeCMap(
+                        parent_data,
+                        usecmap_resolver=usecmap_resolver,
+                        internal_depth=internal_depth + 1,
+                    )
+                except ValueError:
+                    parent = None
+        self.code_space_ranges = tuple(parent.code_space_ranges if parent else ()) + parsed[0]
+        self.mappings = dict(parent.mappings) if parent else {}
+        self.mappings.update(parsed[1])
+        self.decode_lengths = tuple(
+            sorted(
+                {len(end) for _, end in self.code_space_ranges} | {len(k) for k in self.mappings}
+            )
+            or {1}
+        )
+        parsed_fast_table = parsed[3]
+        if parent is None and parsed_fast_table is not None:
+            self.fast_decode_table = parsed_fast_table
+        else:
+            self.fast_decode_table = None
+            self.precalculate_fast_tables()
+        self.fast_decode_table_2byte = None
+
+    def parse_codespace_ranges(self, data: bytes) -> None:
+        code_space_ranges = typing.cast("list[tuple[bytes, bytes]]", self.code_space_ranges)
+        saw_codespace_block = False
+        valid_range_count = 0
+        for block in iter_blocks(data, b"begincodespacerange", b"endcodespacerange"):
+            saw_codespace_block = True
+            tokens = cmap_tokens(block)
+            if len(tokens) % 2 != 0:
+                tokens = tokens[:-1]
+            for i in range(0, len(tokens), 2):
+                try:
+                    start = decode_cmap_hex_token(tokens[i])
+                    end = decode_cmap_hex_token(tokens[i + 1])
+                    validate_codespace_range(start, end)
+                except (ValueError, UnicodeDecodeError):
+                    continue
+                if any(ranges_overlap((start, end), existing) for existing in code_space_ranges):
+                    raise ValueError("invalid ToUnicode CMap codespacerange")
+                code_space_ranges.append((start, end))
+                valid_range_count += 1
+        if saw_codespace_block and valid_range_count == 0:
+            raise ValueError("invalid ToUnicode CMap codespacerange")
+
+    def parse_bfchar(self, data: bytes) -> None:
+        for block in iter_blocks(data, b"beginbfchar", b"endbfchar"):
+            items = cmap_tokens(block)
+            if len(items) < 2:
+                continue
+            if len(items) % 2 != 0:
+                items = items[:-1]
+            for i in range(0, len(items), 2):
+                src_tok = items[i]
+                dst_tok = items[i + 1]
+                try:
+                    src = decode_cmap_token(src_tok)
+                    dst = decode_utf16be(decode_cmap_token(dst_tok))
+                except (ValueError, UnicodeDecodeError):
+                    continue
+
+                self.mappings[src] = dst
+
+    def parse_bfrange(self, data: bytes) -> None:
+        invalid_range_count = 0
+        valid_range_count = 0
+        for block in iter_blocks(data, b"beginbfrange", b"endbfrange"):
+            items = cmap_tokens(block, include_arrays=True)
+            if not items:
+                continue
+            if len(items) % 3 != 0:
+                invalid_range_count += 1
+                items = items[: len(items) - (len(items) % 3)]
+            idx = 0
+            while idx <= len(items) - 3:
+                t1, t2, t3 = items[idx], items[idx + 1], items[idx + 2]
+                if not (t1.startswith(b"<") and t2.startswith(b"<")):
+                    invalid_range_count += 1
+                    idx += 3
+                    continue
+                try:
+                    start_bytes = decode_cmap_hex_token(t1)
+                    end_bytes = decode_cmap_hex_token(t2)
+                    start_code = int.from_bytes(start_bytes, "big")
+                    end_code = int.from_bytes(end_bytes, "big")
+                    src_len = len(start_bytes)
+                except (ValueError, UnicodeDecodeError, IndexError):
+                    invalid_range_count += 1
+                    idx += 3
+                    continue
+                if len(start_bytes) != len(end_bytes):
+                    invalid_range_count += 1
+                    idx += 3
+                    continue
+                if start_code > end_code:
+                    invalid_range_count += 1
+                    idx += 3
+                    continue
+
+                if t3.startswith(b"["):
+                    dsts = cmap_tokens(t3)
+                    if not dsts:
+                        invalid_range_count += 1
+                        idx += 3
+                        continue
+                    added = False
+                    for i, dst_tok in enumerate(dsts):
+                        if start_code + i > end_code:
+                            break
+                        try:
+                            dst = decode_utf16be(decode_cmap_token(dst_tok))
+                        except (ValueError, UnicodeDecodeError):
+                            continue
+                        src = (start_code + i).to_bytes(src_len, "big")
+                        self.mappings[src] = dst
+                        added = True
+                    if added:
+                        valid_range_count += 1
+                    else:
+                        invalid_range_count += 1
+                    idx += 3
+                elif t3.startswith(b"<") or t3.startswith(b"("):
+                    try:
+                        base_dst = decode_utf16be(decode_cmap_token(t3))
+                        m = expand_range(start_code, end_code, src_len, base_dst)
+                    except (ValueError, UnicodeDecodeError):
+                        invalid_range_count += 1
+                        idx += 3
+                        continue
+                    for k, v in m.items():
+                        self.mappings[k] = v
+                    valid_range_count += 1
+                    idx += 3
+                else:
+                    invalid_range_count += 1
+                    idx += 3
+        if invalid_range_count and not valid_range_count:
+            raise ValueError("invalid ToUnicode CMap bfrange")
+
+    def precalculate_fast_tables(self) -> None:
+        if 1 in self.decode_lengths:
+            table = [""] * 256
+            for i in range(256):
+                b = BYTE_CACHE[i]
+                res = self.mappings.get(b)
+                table[i] = res if res is not None else chr(i)
+            self.fast_decode_table = table
+
+    def get_fast_decode_table_2byte(self) -> list[str] | None:
+        if self.fast_decode_table_2byte is not None:
+            return self.fast_decode_table_2byte
+        if 2 not in self.decode_lengths:
+            return None
+        table2 = [
+            unicode_scalar_or_replacement(code) if code != 0 else "\ufffd" for code in range(65536)
+        ]
+        for k, v in self.mappings.items():
+            if len(k) == 2:
+                code = (k[0] << 8) | k[1]
+                table2[code] = v
+        self.fast_decode_table_2byte = table2
+        return table2
+
+    def decode(self, data: bytes) -> str:
+        if not data:
+            return ""
+
+        if self.fast_decode_table is not None and (
+            not self.decode_lengths or self.decode_lengths == (1,)
+        ):
+            table = self.fast_decode_table
+            result = "".join(map(table.__getitem__, data))
+            if "\x00" in result:
+                return result.replace("\x00", "")
+            return result
+
+        n = len(data)
+        if n == 1 and self.fast_decode_table is not None:
+            result = self.fast_decode_table[data[0]]
+            if result:
+                return result
+
+        if self.decode_lengths == (2,) and n % 2 == 0:
+            table2 = self.get_fast_decode_table_2byte()
+            if table2 is None:
+                return ""
+            if n > 64:
+                cids = numpy.frombuffer(data, dtype=">u2")
+                result = "".join(table2[int(cid)] for cid in cids)
+            else:
+                out_small = []
+                for i in range(0, n, 2):
+                    code = (data[i] << 8) | data[i + 1]
+                    out_small.append(table2[code])
+                result = "".join(out_small)
+
+            if "\x00" in result:
+                return result.replace("\x00", "")
+            return result
+
+        mappings = self.mappings
+        lengths = self.decode_lengths or (1,)
+        n = len(data)
+        out: list[str] = []
+        out_append = out.append
+        pos = 0
+        bc = BYTE_CACHE
+
+        mappings_get = mappings.get
+        while pos < n:
+            match_found = False
+            for length in lengths:
+                if pos + length > n:
+                    continue
+
+                if length == 1:
+                    chunk = bc[data[pos]]
+                else:
+                    chunk = data[pos : pos + length]
+
+                mapped = mappings_get(chunk)
+                if mapped is not None:
+                    out_append(mapped)
+                    pos += length
+                    match_found = True
+                    break
+
+            if match_found:
+                continue
+
+            chunk1 = bc[data[pos]]
+            mapped1 = mappings_get(chunk1)
+            if mapped1 is not None:
+                out_append(mapped1)
+                pos += 1
+                continue
+
+            if 1 not in lengths and n - pos >= 2:
+                cid = (data[pos] << 8) | data[pos + 1]
+                pos += 2
+                out_append(unicode_scalar_or_replacement(cid) if cid != 0 else "\ufffd")
+            else:
+                out_append(chr(data[pos]))
+                pos += 1
+
+        result = "".join(out)
+        if "\x00" in result:
+            return result.replace("\x00", "")
+        return result
+
+
+ParsedToUnicodeCMap = tuple[
+    tuple[tuple[bytes, bytes], ...],
+    dict[bytes, str],
+    tuple[int, ...],
+    tuple[str, ...] | None,
+]
+
+
+@lru_cache(maxsize=4096)
+def parse_to_unicode_cmap(data: bytes) -> ParsedToUnicodeCMap:
+    cmap = ToUnicodeCMap(b"", internal_empty=True)
+
+    cmap.parse_codespace_ranges(data)
+    cmap.parse_bfchar(data)
+    cmap.parse_bfrange(data)
+
+    cmap.decode_lengths = tuple(
+        sorted(
+            (
+                {len(end) for ignored, end in cmap.code_space_ranges}
+                | {len(k) for k in cmap.mappings}
+            )
+            or {1},
+            reverse=False,
+        )
+    )
+    cmap.precalculate_fast_tables()
+    fast_decode_table: tuple[str, ...] | None = (
+        tuple(cmap.fast_decode_table) if cmap.fast_decode_table is not None else None
+    )
+    return (
+        tuple(cmap.code_space_ranges),
+        cmap.mappings,
+        tuple(cmap.decode_lengths),
+        fast_decode_table,
+    )

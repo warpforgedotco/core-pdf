@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
+"""Native affine matrix value type."""
+
 from __future__ import annotations
 
 from typing import Any, Final, NamedTuple
@@ -31,6 +33,8 @@ class Matrix(NamedTuple):
     def multiply(self, right: Matrix) -> Matrix:
         if right == IDENTITY_MATRIX:
             return self
+        if self == IDENTITY_MATRIX:
+            return right
         a2, b2, c2, d2, e2, f2 = right
         return Matrix(
             self.a * a2 + self.b * c2,

@@ -1,0 +1,436 @@
+import subprocess
+import sys
+import sysconfig
+import textwrap
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+from core_pdf.impl.engine.document import PdfDocument
+from core_pdf.impl.engine.execution import ExecutionRuntime, RuntimeConfig, TaskScope, WorkStage
+from core_pdf.impl.engine.parse import ParsedPage
+from core_pdf.impl.engine.parse import pipeline as parse_pipeline
+
+TESTS_DIR = Path(__file__).parent / "fixtures"
+SAMPLE_PDF = TESTS_DIR / "SCORE-Bench" / "src" / "global-AIDS-strategy-p74-75-p001.pdf"
+ADAPTIVE_OCR_PDF = TESTS_DIR / "SCORE-Bench" / "src" / "SFG-Content-Marketing-2021-p001.pdf"
+
+
+def test_first_extraction_can_start_in_an_application_worker() -> None:
+    script = textwrap.dedent(
+        f"""
+        from concurrent.futures import ThreadPoolExecutor
+        from pathlib import Path
+        from core_pdf import PdfDocument
+
+        fixture = Path({str(SAMPLE_PDF)!r})
+
+        def extract():
+            with PdfDocument.open(fixture) as document:
+                return document.extract().text
+
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            assert executor.submit(extract).result()
+        """
+    )
+    subprocess.run([sys.executable, "-c", script], check=True)
+
+
+def test_worker_first_ocr_initialization_has_an_actionable_error() -> None:
+    script = textwrap.dedent(
+        """
+        from concurrent.futures import ThreadPoolExecutor
+
+        def load_pdf_document():
+            from core_pdf import PdfDocument
+            return PdfDocument
+
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            executor.submit(load_pdf_document).result()
+        """
+    )
+
+    completed = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert completed.returncode != 0
+    assert "initialize OCR on the main thread" in completed.stderr
+
+
+def test_runtime_uses_standard_cpython() -> None:
+    assert sysconfig.get_config_var("Py_GIL_DISABLED") == 0
+    assert not str(sysconfig.get_config_var("SOABI")).startswith("cpython-313t")
+
+
+def test_adaptive_ocr_retry_runs_in_an_application_worker() -> None:
+    script = textwrap.dedent(
+        f"""
+        from concurrent.futures import ThreadPoolExecutor
+        from pathlib import Path
+        from core_pdf import PdfDocument
+
+        fixture = Path({str(ADAPTIVE_OCR_PDF)!r})
+
+        def extract():
+            with PdfDocument.open(fixture) as document:
+                return document.extract().text
+
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            assert executor.submit(extract).result()
+        """
+    )
+    subprocess.run([sys.executable, "-c", script], check=True)
+
+
+def test_runtime_maps_in_order_with_bounded_workers() -> None:
+    runtime = ExecutionRuntime()
+    runtime.configure(RuntimeConfig(parent_workers=2))
+    thread_ids: set[int] = set()
+
+    def work(value: int) -> int:
+        thread_ids.add(threading.get_ident())
+        return value * 2
+
+    assert list(runtime.map_ordered(work, range(8))) == [0, 2, 4, 6, 8, 10, 12, 14]
+    assert thread_ids
+
+
+def test_runtime_submits_foreground_overlap_work() -> None:
+    runtime = ExecutionRuntime()
+    runtime.configure(RuntimeConfig(parent_workers=2))
+
+    future = runtime.submit(lambda value: value * 2, 21)
+
+    assert future.result() == 42
+    runtime.shutdown()
+
+
+def test_runtime_maps_in_completion_order_with_input_indexes() -> None:
+    runtime = ExecutionRuntime()
+    runtime.configure(RuntimeConfig(parent_workers=2))
+    release_first = threading.Event()
+
+    def work(value: int) -> int:
+        if value == 0:
+            assert release_first.wait(timeout=2)
+        return value * 2
+
+    results = runtime.map_completed(work, [0, 1])
+    first = next(results)
+    release_first.set()
+    remainder = list(results)
+
+    assert (first.index, first.value) == (1, 2)
+    assert [(result.index, result.value) for result in remainder] == [(0, 0)]
+    runtime.shutdown()
+
+
+def test_completion_order_iterator_does_not_submit_more_work_when_closed() -> None:
+    runtime = ExecutionRuntime()
+    runtime.configure(RuntimeConfig(parent_workers=1))
+    started: list[int] = []
+
+    def work(value: int) -> int:
+        started.append(value)
+        return value
+
+    with runtime.task_scope() as context:
+        results = context.map_completed(work, range(8))
+        first = next(results)
+        results.close()
+
+    assert (first.index, first.value) == (0, 0)
+    assert len(started) <= 2
+    runtime.shutdown()
+
+
+def test_nested_maps_run_without_pool_deadlock() -> None:
+    runtime = ExecutionRuntime()
+    runtime.configure(RuntimeConfig(parent_workers=2))
+
+    def inner(value: int) -> int:
+        return value + 1
+
+    def outer(value: int) -> list[int]:
+        return list(runtime.map_ordered(inner, [value, value + 1]))
+
+    assert list(runtime.map_ordered(outer, [0, 10])) == [[1, 2], [11, 12]]
+    runtime.shutdown()
+
+
+def test_stage_budget_limits_ocr_without_blocking_page_workers() -> None:
+    runtime = ExecutionRuntime()
+    runtime.configure(RuntimeConfig(parent_workers=4, ocr_workers=2))
+    lock = threading.Lock()
+    active = 0
+    peak = 0
+
+    def work(value: int) -> int:
+        nonlocal active, peak
+        with lock:
+            active += 1
+            peak = max(peak, active)
+        time.sleep(0.02)
+        with lock:
+            active -= 1
+        return value
+
+    values = list(runtime.map_ordered(work, range(8), stage=WorkStage.OCR))
+    metrics = runtime.metrics()
+
+    assert values == list(range(8))
+    assert peak == 2
+    assert metrics.ocr_capacity == 2
+    assert metrics.ocr_active == 0
+    runtime.shutdown()
+
+
+def test_nested_page_to_ocr_stages_run_without_deadlock() -> None:
+    runtime = ExecutionRuntime()
+    runtime.configure(RuntimeConfig(parent_workers=2, ocr_workers=1))
+
+    def outer(value: int) -> list[int]:
+        return list(
+            runtime.map_ordered(
+                lambda inner: inner + 1,
+                (value,),
+                stage=WorkStage.OCR,
+            )
+        )
+
+    assert list(runtime.map_ordered(outer, (0, 10), stage=WorkStage.PAGE)) == [[1], [11]]
+    runtime.shutdown()
+
+
+def test_worker_nested_map_uses_idle_workers_and_caller() -> None:
+    runtime = ExecutionRuntime()
+    runtime.configure(RuntimeConfig(parent_workers=2))
+    rendezvous = threading.Barrier(2)
+    thread_ids: set[int] = set()
+
+    def inner(value: int) -> int:
+        thread_ids.add(threading.get_ident())
+        rendezvous.wait(timeout=2)
+        return value
+
+    future = runtime.submit(lambda: list(runtime.map_ordered(inner, (1, 2))))
+
+    assert future.result(timeout=3) == [1, 2]
+    assert len(thread_ids) == 2
+    runtime.shutdown()
+
+
+def test_runtime_round_robins_pending_document_work() -> None:
+    runtime = ExecutionRuntime()
+    runtime.configure(RuntimeConfig(parent_workers=1))
+    first_started = threading.Event()
+    release_first = threading.Event()
+    started: list[str] = []
+
+    def first() -> str:
+        started.append("a0")
+        first_started.set()
+        assert release_first.wait(timeout=2)
+        return "a0"
+
+    def record(label: str) -> str:
+        started.append(label)
+        return label
+
+    with runtime.task_scope() as first_context:
+        with runtime.task_scope() as second_context:
+            futures = [first_context.submit(first)]
+            assert first_started.wait(timeout=2)
+            futures.extend(
+                (
+                    first_context.submit(record, "a1"),
+                    second_context.submit(record, "b0"),
+                    first_context.submit(record, "a2"),
+                    second_context.submit(record, "b1"),
+                )
+            )
+            release_first.set()
+            assert [future.result(timeout=2) for future in futures] == [
+                "a0",
+                "a1",
+                "b0",
+                "a2",
+                "b1",
+            ]
+
+    assert started == ["a0", "a1", "b0", "a2", "b1"]
+    runtime.shutdown()
+
+
+def test_raster_budget_blocks_until_the_active_lease_is_released() -> None:
+    from core_pdf.impl.engine import execution as runtime_module
+
+    runtime = ExecutionRuntime()
+    runtime.internal_raster_budget = runtime_module.internal_ResourceBudget(10)
+    acquired = threading.Event()
+
+    with runtime.task_scope() as context:
+
+        def reserve() -> None:
+            with context.reserve_raster(1):
+                acquired.set()
+
+        with context.reserve_raster(10):
+            thread = threading.Thread(target=reserve)
+            thread.start()
+            assert not acquired.wait(timeout=0.05)
+        assert acquired.wait(timeout=2)
+        thread.join(timeout=2)
+
+    runtime.shutdown()
+
+
+def test_context_tracks_scheduler_metrics_and_worker_state() -> None:
+    runtime = ExecutionRuntime()
+    runtime.configure(RuntimeConfig(parent_workers=2))
+
+    with runtime.task_scope(metrics=True) as context:
+        values = list(context.map_ordered(lambda value: (value, runtime.in_worker), range(4)))
+        metrics = context.metrics()
+
+    assert [value for value, internal_in_worker in values] == [0, 1, 2, 3]
+    assert all(in_worker for internal_value, in_worker in values)
+    assert metrics.submitted == 4
+    assert metrics.completed == 4
+    assert metrics.peak_workers > 0
+    runtime.shutdown()
+
+
+def test_close_defers_resource_release_until_operation_finishes() -> None:
+    document = PdfDocument.open(SAMPLE_PDF)
+    operation = document.acquire_operation()
+    document.close()
+
+    assert document.closed
+    assert document.raw_data
+
+    operation.release()
+
+    assert document.raw_data == b""
+    with pytest.raises(ValueError, match="closed"):
+        document.acquire_operation()
+
+
+def test_resolver_is_safe_for_concurrent_same_object_reads() -> None:
+    with PdfDocument.open(SAMPLE_PDF) as document:
+        root = document.trailer_dict["Root"]
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            resolved = list(executor.map(document.resolve, [root] * 16))
+
+    assert all(isinstance(value, dict) for value in resolved)
+
+
+def test_same_document_extraction_is_single_flight(monkeypatch: pytest.MonkeyPatch) -> None:
+    original = parse_pipeline.internal_parse_page_locked
+    calls = 0
+    calls_lock = threading.Lock()
+
+    def counted_parse(page: Any, context: TaskScope) -> ParsedPage:
+        nonlocal calls
+        with calls_lock:
+            calls += 1
+        time.sleep(0.05)
+        return original(page, context)
+
+    monkeypatch.setattr(parse_pipeline, "internal_parse_page_locked", counted_parse)
+    with PdfDocument.open(SAMPLE_PDF) as document:
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            results = list(executor.map(lambda internal_index: document.extract().text, range(4)))
+
+    assert results[0]
+    assert results == [results[0]] * 4
+    assert calls == 1
+
+
+def test_document_and_page_share_the_emitted_page() -> None:
+    with PdfDocument.open(SAMPLE_PDF) as document:
+        extracted_document = document.extract()
+        extracted_page = document.pages[0].extract()
+
+    assert extracted_document.pages[0] is extracted_page
+
+
+def test_concurrent_document_extracts_share_the_emitted_document() -> None:
+    with PdfDocument.open(SAMPLE_PDF) as document:
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            results = list(executor.map(lambda internal_index: document.extract(), range(4)))
+
+    assert all(result is results[0] for result in results)
+
+
+def internal_multi_page_pdf() -> bytes:
+    from core_pdf import serialize_document_to_pdf
+    from core_pdf.impl.engine.structured import Block, BlockKind, Document, Page, TextLine
+
+    return serialize_document_to_pdf(
+        Document(
+            pages=tuple(
+                Page(
+                    page_number=page_number,
+                    width=300.0,
+                    height=400.0,
+                    blocks=(
+                        Block(
+                            page_number,
+                            BlockKind.PARAGRAPH,
+                            (TextLine(f"page {page_number} payload"),),
+                        ),
+                    ),
+                )
+                for page_number in range(1, 4)
+            )
+        )
+    )
+
+
+def test_document_extract_parses_only_the_selected_pages(monkeypatch: pytest.MonkeyPatch) -> None:
+    original = parse_pipeline.parse_page
+    parsed_page_numbers: list[int] = []
+
+    def counted_parse(page: Any, context: TaskScope) -> ParsedPage:
+        parsed_page_numbers.append(page.page_number)
+        return original(page, context)
+
+    monkeypatch.setattr(parse_pipeline, "parse_page", counted_parse)
+    with PdfDocument.open(internal_multi_page_pdf()) as document:
+        selected = document.extract(pages=2)
+        cached = document.extract(pages=[2])
+
+    assert selected is cached
+    assert tuple(page.page_number for page in selected.pages) == (2,)
+    assert "page 2 payload" in selected.text
+    assert "page 1 payload" not in selected.text
+    assert parsed_page_numbers == [2]
+
+
+def test_distinct_page_selections_can_extract_concurrently(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original = parse_pipeline.internal_parse_page_locked
+    rendezvous = threading.Barrier(2)
+
+    def concurrent_parse(page: Any, context: TaskScope) -> ParsedPage:
+        rendezvous.wait(timeout=3)
+        return original(page, context)
+
+    monkeypatch.setattr(parse_pipeline, "internal_parse_page_locked", concurrent_parse)
+    with PdfDocument.open(internal_multi_page_pdf()) as document:
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            first = executor.submit(document.extract, pages=1)
+            second = executor.submit(document.extract, pages=2)
+            results = first.result(timeout=10), second.result(timeout=10)
+
+    assert [page.pages[0].page_number for page in results] == [1, 2]

@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
+"""Read cross-reference tables and streams, with recovery scanning for damaged files."""
+
 from __future__ import annotations
 
 import typing
@@ -131,14 +133,6 @@ def parse_xref_entry_at(data: PdfByteBuffer, pos: int) -> tuple[int, int, bool, 
 
 class XRefScanner:
     @staticmethod
-    def lookup_entry(
-        xref: XRefTable, object_number: int, generation_number: int
-    ) -> PdfXRefEntry | None:
-        if object_number < 0 or generation_number < 0:
-            raise ValueError("invalid xref lookup")
-        return xref.get(key_for(object_number, generation_number))
-
-    @staticmethod
     def find_startxref(data: PdfByteBuffer) -> int | None:
         eof_pos = find_eof_marker(data)
         has_eof = eof_pos >= 0
@@ -201,11 +195,6 @@ class XRefScanner:
             return candidate
 
         return None
-
-    @staticmethod
-    def find_nearby_section(data: PdfByteBuffer, start: int, window: int = 1024) -> int | None:
-        candidates = XRefScanner.find_nearby_sections(data, start, window)
-        return candidates[0] if candidates else None
 
     @staticmethod
     def find_nearby_sections(data: PdfByteBuffer, start: int, window: int = 1024) -> list[int]:
@@ -316,8 +305,8 @@ class XRefScanner:
                 try:
                     start_obj = int(parts[0])
                     num_objs = int(parts[1])
-                except ValueError:
-                    raise PdfParseError("invalid xref table subsection")
+                except ValueError as error:
+                    raise PdfParseError("invalid xref table subsection") from error
                 if start_obj < 0 or num_objs < 0:
                     raise PdfParseError("invalid xref table subsection")
                 pos = next_pos
@@ -558,7 +547,7 @@ class XRefScanner:
             return None
         lexer.pos = dict_start
         try:
-            dict_obj = typing.cast(PdfDict, lexer.parse_dictionary())
+            dict_obj = lexer.parse_dictionary()
         except PdfParseError:
             return None
         if normalize_pdf_name(lookup_dict_key(dict_obj, "Type")) != "XRef":
@@ -706,17 +695,6 @@ class XRefScanner:
                 )
 
 
-def find_all_bytes(data: PdfByteBuffer, needle: bytes) -> list[int]:
-    positions: list[int] = []
-    pos = 0
-    while True:
-        pos = data.find(needle, pos)
-        if pos < 0:
-            return positions
-        positions.append(pos)
-        pos += 1
-
-
 def find_eof_marker(data: PdfByteBuffer) -> int:
     def is_delimited(marker: int) -> bool:
         before_ok = marker == 0 or data[marker - 1] in (10, 13)
@@ -751,23 +729,6 @@ def find_eof_marker(data: PdfByteBuffer) -> int:
                 return marker
 
 
-def iter_object_markers(
-    data: PdfByteBuffer, start: int = 0, stop: int | None = None
-) -> typing.Iterator[tuple[int, int, int]]:
-    if stop is None:
-        stop = len(data)
-    pos = start
-    while pos < stop:
-        marker = data.find(b"obj", pos, stop)
-        if marker < 0:
-            return
-        parsed = parse_object_marker_prefix(data, marker)
-        if parsed is not None:
-            offset, obj_num, gen_num = parsed
-            yield offset, obj_num, gen_num
-        pos = marker + 3
-
-
 def find_previous_object_marker(data: PdfByteBuffer, before: int) -> int | None:
     search_end = min(before, len(data))
     while True:
@@ -781,6 +742,11 @@ def find_previous_object_marker(data: PdfByteBuffer, before: int) -> int | None:
 
 
 def parse_object_marker_prefix(data: PdfByteBuffer, marker: int) -> tuple[int, int, int] | None:
+    """Return ``(offset, object number, generation)`` for the ``N G obj`` header at ``marker``.
+
+    ``s_07_objects.indirect_headers.parse_object_header_prefix`` runs the same scan but
+    returns only the offset, avoiding the int conversions below. Keep the two in sync.
+    """
     if marker + 3 < len(data) and not WS_TABLE[data[marker + 3]]:
         return None
     pos = marker - 1

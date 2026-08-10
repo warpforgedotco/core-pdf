@@ -1,16 +1,17 @@
 # SPDX-License-Identifier: AGPL-3.0-only
+"""Native font width parsing helpers."""
+
 from __future__ import annotations
 
 from typing import Any
 
-from core_cmap.impl.cid.widths import (
+from core_pdf.impl.engine.spec.s_07_objects.coercion import parse_float, parse_int
+from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_09_fonts.cmap_widths import (
     FontWidthMap,
     SparseFontWidthMap,
     parse_cid_widths,
 )
-
-from core_pdf.impl.engine.spec.s_07_objects.coercion import parse_float, parse_int
-from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 
 
 def require_font_int(value: Any, message: str) -> int:
@@ -46,17 +47,6 @@ def parse_optional_font_float(value: Any, default: float) -> float:
         return default
     parsed = parse_float(value, None)
     return default if parsed is None else parsed
-
-
-def parse_font_width(value: Any, default_width: float) -> float:
-    if type(value) is float:
-        return value
-    if type(value) is int:
-        return float(value)
-    if value is None or type(value) is bool:
-        return default_width
-    parsed = parse_float(value, None)
-    return default_width if parsed is None else parsed
 
 
 def get_descendant(font: dict[Any, Any]) -> dict[Any, Any] | None:
@@ -105,9 +95,11 @@ def parse_font_widths(
                     if isinstance(values, (list, tuple)):
                         for offset in range(0, len(values) // 3):
                             vertical_metrics[first + offset] = (
-                                parse_font_width(values[offset * 3], default_vertical_width),
-                                parse_font_width(values[offset * 3 + 1], 0.0),
-                                parse_font_width(values[offset * 3 + 2], 0.0),
+                                parse_optional_font_float(
+                                    values[offset * 3], default_vertical_width
+                                ),
+                                parse_optional_font_float(values[offset * 3 + 1], 0.0),
+                                parse_optional_font_float(values[offset * 3 + 2], 0.0),
                             )
                             parsed[first + offset] = vertical_metrics[first + offset][0]
                         index += 2
@@ -115,9 +107,11 @@ def parse_font_widths(
                         if index + 4 < len(w2):
                             try:
                                 last = require_font_int(values, "invalid CID vertical widths")
-                                width = parse_font_width(w2[index + 2], default_vertical_width)
-                                vx = parse_font_width(w2[index + 3], 0.0)
-                                vy = parse_font_width(w2[index + 4], 0.0)
+                                width = parse_optional_font_float(
+                                    w2[index + 2], default_vertical_width
+                                )
+                                vx = parse_optional_font_float(w2[index + 3], 0.0)
+                                vy = parse_optional_font_float(w2[index + 4], 0.0)
                                 if last >= first:
                                     for cid in range(first, last + 1):
                                         parsed[cid] = width
@@ -180,7 +174,7 @@ def parse_font_widths(
             code = first_char + index
             if last_char is not None and code > last_char:
                 break
-            sparse_widths[code] = parse_font_width(width, default_width)
+            sparse_widths[code] = parse_optional_font_float(width, default_width)
         widths = SparseFontWidthMap(sparse_widths)
     elif font_widths is not None:
         raise ValueError("invalid font widths array")

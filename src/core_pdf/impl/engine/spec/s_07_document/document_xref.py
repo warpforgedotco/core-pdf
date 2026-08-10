@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
+"""Document-level cross-reference loading and repair."""
+
 from __future__ import annotations
 
 import struct
@@ -6,7 +8,9 @@ from collections.abc import Iterator
 from typing import cast
 
 from core_pdf.impl.engine.spec.s_07_document.document_labels import (
+    MAX_PAGE_TREE_DEPTH,
     infer_page_tree_node_type,
+    resolve_page_tree_node_type,
 )
 from core_pdf.impl.engine.spec.s_07_objects.coercion import normalize_pdf_name
 from core_pdf.impl.engine.spec.s_07_objects.object_cache import (
@@ -25,7 +29,6 @@ from core_pdf.impl.exceptions import PdfParseError, PdfUnsupportedError
 from core_pdf.impl.objects import PdfReference, PdfStream
 from core_pdf.impl.types import PdfByteBuffer, PdfDict, PdfObject
 
-MAX_PAGE_TREE_DEPTH = 100
 TRAILER_METADATA_KEYS = ("Info", "ID", "Encrypt")
 
 
@@ -168,9 +171,7 @@ class DocumentXRefMixin:
             if not isinstance(pages, dict):
                 return False
             pages = cast(PdfDict, pages)
-            node_type = normalize_pdf_name(lookup_dict_key(pages, "Type"))
-            if node_type is None:
-                node_type = infer_page_tree_node_type(pages)
+            node_type = resolve_page_tree_node_type(resolver, pages)
             if node_type != "Pages":
                 return False
             kids = resolver.resolve(lookup_dict_key(pages, "Kids"))
@@ -388,7 +389,7 @@ class DocumentXRefMixin:
                     candidate = lexer.parse_dictionary()
                 except Exception:
                     continue
-                yield cast(PdfDict, candidate)
+                yield candidate
         finally:
             lexer.close()
 
@@ -413,10 +414,6 @@ class DocumentXRefMixin:
                     yield cast(PdfDict, dictionary)
         finally:
             lexer.close()
-
-    def iter_recoverable_trailer_dictionaries(self) -> Iterator[PdfDict]:
-        yield from self.iter_literal_trailer_dictionaries()
-        yield from self.iter_recoverable_xref_stream_dictionaries()
 
     def is_valid_trailer_metadata_value(self, key: str, value: object) -> bool:
         if key == "Info":

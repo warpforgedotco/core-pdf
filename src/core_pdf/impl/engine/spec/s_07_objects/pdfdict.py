@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
+"""Compiled PDF dictionary lookup and inheritance kernels."""
+
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -57,10 +59,6 @@ def lookup_dict_key(value: object, key: str) -> object:
     return lookup_dict_key_default(value, key, None)
 
 
-def has_dict_key(value: object, key: str) -> bool:
-    return lookup_dict_key_default(value, key, MISSING) is not MISSING
-
-
 def collect_inherited_values(
     node: PdfDict,
     keys: tuple[str, ...],
@@ -114,7 +112,6 @@ def collect_inherited_values(
 
 __all__ = (
     "collect_inherited_values",
-    "has_dict_key",
     "lookup_dict_key",
     "lookup_dict_key_default",
 )

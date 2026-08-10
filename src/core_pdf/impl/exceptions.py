@@ -18,5 +18,13 @@ class PdfUnsupportedError(PdfError):
     pass
 
 
+class PdfContractError(PdfError, TypeError):
+    """Raised when an internal typed extraction contract is violated."""
+
+
 class PdfRasterTooLargeError(PdfError, ValueError):
     pass
+
+
+class PdfDocumentClosedError(PdfError, ValueError):
+    """Raised when an operation is attempted on a closed document."""

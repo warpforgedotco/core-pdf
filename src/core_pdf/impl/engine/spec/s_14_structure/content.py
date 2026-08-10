@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
+"""Native structure-content reference value objects."""
+
 from __future__ import annotations
 
 from typing import Any

@@ -1,38 +1,67 @@
 # SPDX-License-Identifier: AGPL-3.0-only
+"""Native document metadata parsing and resolution helpers."""
+
 from __future__ import annotations
 
 import xml.etree.ElementTree as ET
-from typing import Protocol, cast
+from typing import TypeAlias, TypedDict, cast
 
-from core_pdf.impl.engine.spec.s_07_document.metadata_types import (
-    InfoMetadataRecord,
-    MetadataRecord,
-    MetadataValue,
-    XmpNodeRecord,
-)
 from core_pdf.impl.engine.spec.s_07_objects.coercion import (
     coerce_value,
     normalize_pdf_name,
 )
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_07_objects.resolver_values import PdfValueResolver
 from core_pdf.impl.engine.spec.s_09_fonts.encoding import decode_pdf_text_string
-from core_pdf.impl.objects import PdfStream
+from core_pdf.impl.objects import PdfName, PdfReference, PdfStream, PdfString
 from core_pdf.impl.types import PdfDict
 
+MetadataResolver = PdfValueResolver
+MetadataScalar: TypeAlias = (
+    str
+    | bytes
+    | bytearray
+    | memoryview
+    | int
+    | float
+    | bool
+    | None
+    | PdfName
+    | PdfReference
+    | PdfStream
+    | PdfString
+)
+MetadataList: TypeAlias = list["MetadataValue"]
+MetadataMap: TypeAlias = dict[str, "MetadataValue"]
+MetadataValue: TypeAlias = MetadataScalar | MetadataList | MetadataMap
+InfoMetadataRecord: TypeAlias = dict[str, MetadataValue]
 
-class MetadataResolver(Protocol):
-    def resolve(self, ref: object) -> object: ...
 
-    def resolve_dict(self, value: object) -> PdfDict | None: ...
+class XmpNodeRecord(TypedDict, total=False):
+    tag: str
+    attributes: dict[str, str]
+    text: str
+    children: list["XmpNodeRecord"]
+    parse_error: str
+
+
+class MetadataRecord(TypedDict):
+    info: InfoMetadataRecord
+    xmp: XmpNodeRecord | None
 
 
 def resolve_metadata(
     resolver: MetadataResolver, trailer: PdfDict, *, recover: bool = False
 ) -> MetadataRecord:
+    xmp: XmpNodeRecord | None
+    try:
+        xmp = resolve_metadata_stream(resolver, trailer, recover=True)
+    except (RecursionError, ValueError):
+        # XMP is optional metadata and malformed metadata must not block extraction.
+        xmp = {"parse_error": "invalid XMP metadata"}
     return {
         "info": resolve_info_metadata(resolver, trailer, recover=recover),
-        # XMP is optional metadata and should not block document extraction.
-        "xmp": resolve_metadata_stream(resolver, trailer, recover=True),
+        "xmp": xmp,
     }
 
 
@@ -93,10 +122,10 @@ def parse_xmp_metadata(stream: object, *, recover: bool = False) -> XmpNodeRecor
         return None
     try:
         root = ET.fromstring(raw)
-    except ET.ParseError:
+    except ET.ParseError as error:
         if recover:
             return {"parse_error": "invalid XMP metadata"}
-        raise ValueError("invalid XMP metadata")
+        raise ValueError("invalid XMP metadata") from error
 
     packet: XmpNodeRecord = {
         "tag": local_name(root.tag),

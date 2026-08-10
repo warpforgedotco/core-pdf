@@ -3,7 +3,6 @@
 
 from core_pdf.impl.engine.spec.s_07_content.inline_images import (
     InlineImage,
-    decode_inline_image_data,
     parse_inline_image,
 )
 from core_pdf.impl.engine.spec.s_07_content.operations import dispatch_operations
@@ -18,7 +17,6 @@ __all__ = (
     "StreamState",
     "TextDocument",
     "TextState",
-    "decode_inline_image_data",
     "dispatch_operations",
     "parse_inline_image",
 )

@@ -2,7 +2,16 @@
 
 ## Project Structure & Module Organization
 
-This is a Python 3.11+ PDF parsing engine using the `src` layout. Production code is in `src/core_pdf`; public entry points include `cli.py`, `__main__.py`, and `__init__.py`. Internal implementation is organized under `src/core_pdf/impl`, including the PDF specification, extraction, rendering, writing, and tables. Reusable layout, glyph, and OCR components are separate workspace packages under `packages/`. Tests mirror the package structure in `tests/src`; corpus fixtures live under `tests/fixtures`. Documentation and licensing material are in `docs/`, and maintenance scripts are in `scripts/`.
+This is a Python 3.13+ PDF parsing engine using the `src` layout. Production code is in `src/core_pdf`; public entry points include `cli.py`, `__main__.py`, and `__init__.py`. The versioned capability surface lives in `src/core_pdf/api/v0` (typed records, adapters, analysis operations, and the third-party compat facades). Internal implementation is organized under `src/core_pdf/impl`:
+
+- `impl/engine/spec/` implements the PDF specification, one subpackage per spec chapter (`s_07_syntax`, `s_08_graphics`, `s_09_fonts`, …).
+- `impl/engine/parse/` is the extraction pipeline, one module per stage (capture → route → fusion → tables → OCR → layout → emit). `parse/__init__.py` re-exports only the pipeline entry points and shared stage models; import stage internals from the owning submodule.
+- `impl/engine/rendering.py` rasterizes; `impl/engine/writing/` produces PDF output; `impl/engine/structured/` serializes to markdown/HTML/JSON; `impl/engine/layout/` holds line, glyph, and geometry helpers.
+- `src/core_pdf/_vendor/fontTools` is vendored third-party code, excluded from linting, typing, and formatting.
+
+Tests live under `tests/`: `tests/src` mirrors the package structure, while broader pipeline tests (`test_parse_*.py`, `test_rendering.py`, …) sit at the top level. Corpus fixtures are in `tests/fixtures`. `docs/` holds `architecture.md`, `api.md`, `roadmap.md`, and licensing material; maintenance scripts are in `scripts/`.
+
+Start with `docs/architecture.md` — it describes the pipeline and, importantly, inventories the deliberate performance optimizations that must not be "simplified".
 
 ## Build, Test, and Development Commands
 
@@ -18,7 +27,45 @@ uv run --group lint --group test --group benchmark ty check
 prek run --all-files                 # run repository hooks across all files
 ```
 
-After making broad changes, run the full suite with `uv run pytest tests/ -n auto`. Otherwise, test a subset covering the code and behavior affected by the changes, for example `uv run pytest packages/core-layout/tests/test_glyphs.py`. CI also checks the lockfile and runs tests on Python 3.11–3.14 and Windows.
+After making broad changes, run the full suite with `uv run pytest tests/ -n auto`. Otherwise, test a subset covering the code and behavior affected by the changes, for example `uv run pytest tests/src/core_pdf/impl/engine/layout/test_glyphs.py`. CI checks the lockfile, runs `prek` at the `pre-push` stage, and runs the test suite on Python 3.13 on Ubuntu.
+
+### Coverage
+
+```sh
+uv run pytest tests/ -n auto --ignore=tests/benchmarks --cov --cov-report=term
+```
+
+Coverage is configured in `[tool.coverage]` and excludes vendored fontTools, so
+the total describes code this project owns. `fail_under` is a ratchet set just
+below the measured figure — raise it as gaps close rather than lowering it.
+
+Rendering changes are additionally pinned by golden rasters; see the "Golden
+rasters" section of `docs/architecture.md` before changing anything under
+`rendering.py`.
+
+### Compiled modules must not shadow sources
+
+A Nuitka module build can leave a `<module>.cpython-*.so` next to its `.py` in
+`src/`. Python's `ExtensionFileLoader` wins over `SourceFileLoader`, so the stale
+binary is imported instead of the source — and it still reports the `.py` path as
+`__file__`, so nothing looks wrong. Edits to that module then silently do nothing.
+`tests/conftest.py` fails the session if any such pair exists; delete the `.so`.
+
+### Two type checkers, contradictory advice
+
+Both `mypy` and `ty` gate this repo, and they disagree about several `cast()`
+calls: mypy reports them as redundant while `ty` requires them. Because of that,
+mypy's `warn_redundant_casts` is deliberately left off. Run both before assuming
+a typing change is an improvement.
+
+For performance-sensitive changes, capture a benchmark baseline first:
+
+```sh
+uv run --group benchmark pytest --benchmark-only --benchmark-save=baseline
+uv run --group benchmark pytest --benchmark-only --benchmark-compare=baseline
+```
+
+Timings on the heavy page-program and OCR benchmarks are noisy — several vary by more than 5% between runs of identical code — so treat a single run as weak evidence and rely on the invariants those benchmarks assert. See `docs/architecture.md` for details.
 
 ## Dependency Management
 
@@ -26,11 +73,15 @@ Never edit `pyproject.toml` or `uv.lock` manually when adding or removing depend
 
 ## Coding Style & Naming Conventions
 
-Write Python with four-space indentation, clear type annotations, and lines no longer than 100 characters. Ruff handles import sorting, linting, and formatting; run it before submitting. Use `snake_case` for modules, functions, and variables, `PascalCase` for classes, and `UPPER_SNAKE_CASE` for constants. Third-party implementations do not belong in `core-pdf`; add reusable functionality to the appropriate workspace package instead.
+Write Python with four-space indentation, clear type annotations, and lines no longer than 100 characters. Ruff handles import sorting, linting, and formatting; run it before submitting. Use `snake_case` for modules, functions, and variables, `PascalCase` for classes, and `UPPER_SNAKE_CASE` for constants.
+
+Module-level symbols that are not part of a module's interface are prefixed `internal_` rather than with a leading underscore — about 490 of them. Treat anything so prefixed as private. The convention is applied unevenly across subpackages, so its *absence* does not imply a symbol is public; nothing under `impl/` is. Where a module declares `__all__`, that is the more reliable signal. Two wrinkles worth knowing: `internal_EXPORTS` in `__init__.py` is the public export table (the prefix marks the variable as private, not its contents), and a handful of constants are spelled `internal_UPPER_CASE`.
+
+Third-party code belongs in `src/core_pdf/_vendor/`; do not add new third-party implementations elsewhere in `core-pdf`.
 
 ## Testing Guidelines
 
-Tests use pytest and pytest-xdist, and are named `test_*.py`, with test functions named `test_<behavior>`. Place new tests beside the corresponding implementation area under `tests/src/core_pdf`. Add or update fixtures and expected extraction output when behavior changes. For broad changes, use `uv run pytest tests/ -n auto`; for focused changes, run the subset of tests that exercises the recently modified code.
+Tests use pytest and pytest-xdist, and are named `test_*.py`, with test functions named `test_<behavior>`. Place unit tests beside the corresponding implementation area under `tests/src/core_pdf`; broader pipeline and regression tests belong at the top level of `tests/`. Add or update fixtures and expected extraction output when behavior changes. For broad changes, use `uv run pytest tests/ -n auto`; for focused changes, run the subset of tests that exercises the recently modified code.
 
 ## Commit & Pull Request Guidelines
 
