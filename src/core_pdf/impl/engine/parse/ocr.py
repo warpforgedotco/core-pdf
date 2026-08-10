@@ -4897,7 +4897,7 @@ def internal_recognize_page_with_reserved_raster(
                         # the cell reads; this grid's cells recognize worse
                         # than whole-page OCR, so keep the original.
                         return selected.observations
-                    retained = prior.take(tuple(numpy.flatnonzero(outside)))
+                    retained = prior.take(numpy.flatnonzero(outside))
                     capture.page.extraction_cache["grid_cell_ocr"] = {
                         "cells": len(cell_tasks),
                         "cell_observations": len(cell_observations),
