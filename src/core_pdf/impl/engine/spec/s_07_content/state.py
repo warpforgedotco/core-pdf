@@ -1723,6 +1723,14 @@ class TextState:
         combined_b = self.combined_B
         combined_c = self.combined_C
         combined_d = self.combined_D
+        text_basis = (
+            self.tm_e * self.ca + self.tm_f * self.cc + self.ce,
+            self.tm_e * self.cb + self.tm_f * self.cd + self.cf,
+            combined_a,
+            combined_b,
+            combined_c,
+            combined_d,
+        )
         append_glyph = self.glyphs.append
         chunk_advance = self.chunk_advance
         glyph_bbox_for_code = decoder.glyph_bbox
@@ -1763,10 +1771,10 @@ class TextState:
                 decoder,
                 vertical_position(glyph.cid, font_size=font_size) if is_vertical else (0.0, 0.0),
             )
-            advance_rect = transformed_text_rect(self, *text_box)
-            baseline = transformed_text_line(self, *baseline_text)
+            advance_rect = transformed_text_rect(self, *text_box, text_basis)
+            baseline = transformed_text_line(*baseline_text, text_basis)
             glyph_bbox = glyph_bbox_for_code(glyph.bitmap_code) if not is_vertical else None
-            rect = glyph_ink_rect(self, glyph_bbox, offset, advance_rect)
+            rect = glyph_ink_rect(self, glyph_bbox, offset, advance_rect, text_basis)
             device_matrix = (
                 combined_a,
                 combined_b,
@@ -1862,8 +1870,8 @@ class TextState:
                     char_box, char_baseline_text, char_text_matrix = glyph_text_space_boxes(
                         self, char_offset, per_char_advance, decoder
                     )
-                    char_advance_rect = transformed_text_rect(self, *char_box)
-                    char_baseline = transformed_text_line(self, *char_baseline_text)
+                    char_advance_rect = transformed_text_rect(self, *char_box, text_basis)
+                    char_baseline = transformed_text_line(*char_baseline_text, text_basis)
                     char_device_matrix = (
                         combined_a,
                         combined_b,

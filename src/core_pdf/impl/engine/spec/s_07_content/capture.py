@@ -35,6 +35,11 @@ from core_pdf.impl.objects import PdfName
 if typing.TYPE_CHECKING:
     pass
 
+# (base_x, base_y, combined_A, combined_B, combined_C, combined_D): invariant across every
+# glyph in one text-showing operation, so callers looping over glyphs compute it once and
+# pass it in rather than re-deriving it from `state` on every glyph.
+TextBasis = tuple[float, float, float, float, float, float]
+
 
 GLYPH_BITMAP_REPAIR_LABELS = frozenset(
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,-+/()[]{}<>|_~"
@@ -86,6 +91,7 @@ def glyph_ink_rect(
     glyph_bbox: tuple[float, float, float, float] | None,
     advance_start: float,
     fallback: RectBox,
+    text_basis: TextBasis,
 ) -> RectBox:
     if glyph_bbox is None:
         return fallback
@@ -96,12 +102,7 @@ def glyph_ink_rect(
     text_x1 = advance_start + gx1 * state.text_advance_scale
     text_y0 = state.rise + gy0 * state.font_scale
     text_y1 = state.rise + gy1 * state.font_scale
-    base_x = state.tm_e * state.ca + state.tm_f * state.cc + state.ce
-    base_y = state.tm_e * state.cb + state.tm_f * state.cd + state.cf
-    a = state.combined_A
-    b = state.combined_B
-    c = state.combined_C
-    d = state.combined_D
+    base_x, base_y, a, b, c, d = text_basis
     p00_x = base_x + text_x0 * a + text_y0 * c
     p00_y = base_y + text_x0 * b + text_y0 * d
     p01_x = base_x + text_x0 * a + text_y1 * c
@@ -138,13 +139,9 @@ def transformed_text_rect(
     y0: float,
     x1: float,
     y1: float,
+    text_basis: TextBasis,
 ) -> RectBox:
-    base_x = state.tm_e * state.ca + state.tm_f * state.cc + state.ce
-    base_y = state.tm_e * state.cb + state.tm_f * state.cd + state.cf
-    a = state.combined_A
-    b = state.combined_B
-    c = state.combined_C
-    d = state.combined_D
+    base_x, base_y, a, b, c, d = text_basis
     p00_x = base_x + x0 * a + y0 * c
     p00_y = base_y + x0 * b + y0 * d
     p01_x = base_x + x0 * a + y1 * c
@@ -165,18 +162,13 @@ def transformed_text_rect(
 
 
 def transformed_text_line(
-    state: Any,
     x0: float,
     y0: float,
     x1: float,
     y1: float,
+    text_basis: TextBasis,
 ) -> tuple[float, float, float, float]:
-    base_x = state.tm_e * state.ca + state.tm_f * state.cc + state.ce
-    base_y = state.tm_e * state.cb + state.tm_f * state.cd + state.cf
-    a = state.combined_A
-    b = state.combined_B
-    c = state.combined_C
-    d = state.combined_D
+    base_x, base_y, a, b, c, d = text_basis
     return (
         base_x + x0 * a + y0 * c,
         base_y + x0 * b + y0 * d,
