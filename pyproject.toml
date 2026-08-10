@@ -24,8 +24,8 @@ core-pdf = "core_pdf.cli:main"
 [tool.uv]
 python-preference = "system"
 
-[tool.uv.sources]
-nuitka = { path = "../Nuitka", editable = true }
+# [tool.uv.sources]
+# nuitka = { path = "../Nuitka", editable = true }
 
 [project.urls]
 Repository = "https://github.com/core-experiments/core-pdf"
