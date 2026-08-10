@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
+"""Decode font programs to glyphs, widths, and Unicode text."""
+
 from __future__ import annotations
 
 import re
@@ -7,6 +9,10 @@ import unicodedata
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Iterable
+
+if typing.TYPE_CHECKING:
+    # numpy is imported lazily at each call site to keep module import cheap.
+    import numpy
 
 from core_pdf._vendor.fontTools.agl import UV2AGL
 from core_pdf._vendor.fontTools.encodings.StandardEncoding import StandardEncoding
@@ -53,6 +59,7 @@ from core_pdf.impl.engine.spec.s_09_fonts.helpers import (
 from core_pdf.impl.engine.spec.s_09_fonts.metrics import (
     adjust_type3_widths,
     parse_font_metrics,
+    standard_14_widths,
 )
 from core_pdf.impl.engine.spec.s_09_fonts.truetype import tt_font_for_pdf_font
 from core_pdf.impl.engine.spec.s_09_fonts.widths import (
@@ -171,6 +178,7 @@ class FontDecoder:
         "cid_unicode_map_resolved",
         "base_encoding",
         "differences",
+        "encoding_differences",
         "is_cid_font",
         "is_type3",
         "byte_decode_table",
@@ -295,7 +303,7 @@ class FontDecoder:
             except (PdfParseError, ValueError):
                 to_unicode = None
 
-        cmap, base_encoding, differences = self.parse_encoding(font)
+        cmap, base_encoding, differences, builtin_encoding = self.parse_encoding(font)
         (
             widths,
             default_width,
@@ -324,7 +332,25 @@ class FontDecoder:
         byte_decode_table: tuple[str, ...] | None = None
         if to_unicode is None and not is_cid_font:
             key = base_encoding or ("Type3" if is_type3 else "")
-            byte_decode_table = cached_decode_table(key, tuple(sorted(differences.items())))
+            byte_decode_table = cached_decode_table(
+                key, tuple(sorted({**builtin_encoding, **differences}.items()))
+            )
+
+        if not widths and not is_cid_font and not is_type3:
+            # A standard 14 font may legally omit /Widths (9.6.2.2); supply the
+            # built-in metrics rather than advancing every glyph by MissingWidth.
+            encoding_table = byte_decode_table
+            if encoding_table is None:
+                encoding_table = cached_decode_table(
+                    base_encoding or "StandardEncoding", tuple(sorted(differences.items()))
+                )
+            builtin = standard_14_widths(base_font_name, encoding_table)
+            if builtin is not None:
+                widths = builtin
+                # Table 122 defaults MissingWidth to 0, and a code this font
+                # does not encode should not advance by a full em.
+                if lookup_dict_key(font, "MissingWidth") is None:
+                    default_width = 0.0
 
         self.to_unicode = to_unicode
         self.cmap = cmap
@@ -332,6 +358,13 @@ class FontDecoder:
         self.cid_unicode_map_resolved = not is_cid_font
         self.base_encoding = base_encoding
         self.differences = differences
+        # The decode table layers explicit /Differences over the font
+        # program's built-in encoding. Everything else -- the TeX glyph
+        # overrides, the single-byte fast path, glyph-name lookups -- keys off
+        # the explicit differences alone, which is what those callers mean.
+        self.encoding_differences = (
+            {**builtin_encoding, **differences} if builtin_encoding else differences
+        )
         self.is_cid_font = is_cid_font
         self.is_type3 = is_type3
         self.byte_decode_table = byte_decode_table
@@ -400,7 +433,7 @@ class FontDecoder:
         return widths
 
     @property
-    def fast_widths_array(self):
+    def fast_widths_array(self) -> numpy.ndarray[typing.Any, typing.Any]:
         widths = self.fast_widths_array_cache
         if widths is None:
             widths = self.widths.fast_256_array(self.default_width)
@@ -409,14 +442,16 @@ class FontDecoder:
 
     def parse_encoding(
         self, font: dict[str, Any]
-    ) -> tuple[CMapDecoder | None, str | None, dict[int, str]]:
+    ) -> tuple[CMapDecoder | None, str | None, dict[int, str], dict[int, str]]:
         cmap = None
         base_encoding = None
+        base_encoding_explicit = False
         differences: dict[int, str] = {}
         subtype = normalize_pdf_name(lookup_dict_key(font, "Subtype"))
         encoding_obj = lookup_dict_key(font, "Encoding")
         if isinstance(encoding_obj, str):
             base_encoding = normalize_pdf_name(encoding_obj)
+            base_encoding_explicit = base_encoding is not None
             cmap = self.internal_named_cmap(base_encoding)
         elif isinstance(encoding_obj, PdfStream):
             try:
@@ -430,6 +465,8 @@ class FontDecoder:
             base_encoding = normalize_pdf_name(lookup_dict_key(encoding_obj, "BaseEncoding"))
             if base_encoding is None:
                 base_encoding = "WinAnsiEncoding" if subtype == "TrueType" else "StandardEncoding"
+            else:
+                base_encoding_explicit = True
             differences_obj = lookup_dict_key(encoding_obj, "Differences")
             if differences_obj is not None and not isinstance(differences_obj, (list, tuple)):
                 differences_obj = None
@@ -439,16 +476,45 @@ class FontDecoder:
             )
         else:
             base_encoding = normalize_pdf_name(encoding_obj)
+            base_encoding_explicit = base_encoding is not None
             cmap = self.internal_named_cmap(base_encoding)
         if base_encoding is None and subtype == "Type3":
             base_encoding = "StandardEncoding"
-        if not differences and subtype == "Type1" and encoding_obj is None:
-            descriptor = lookup_dict_key(font, "FontDescriptor")
-            if isinstance(descriptor, dict):
-                font_file = lookup_dict_key(descriptor, "FontFile")
-                if isinstance(font_file, PdfStream):
-                    differences = parse_type1_font_program_encoding(font_file.data)
-        return cmap, base_encoding, differences
+        builtin: dict[int, str] = {}
+        if subtype in ("Type1", "MMType1") and not base_encoding_explicit:
+            # Table 114: when /BaseEncoding is absent, the implicit base for an
+            # embedded font program is the program's own built-in encoding, and
+            # /Differences describes changes from that. An explicit base
+            # encoding still wins, so this only fills the implicit case.
+            builtin = self.internal_builtin_font_encoding(font)
+        if base_encoding is None and subtype in ("Type1", "MMType1"):
+            # 9.6.6.1: every font program bar Type 3 carries a built-in
+            # encoding, which governs when the font dictionary supplies none.
+            # Where we cannot read it back out of the program, the Latin text
+            # default in Annex D is the right stand-in -- PDFDocEncoding, the
+            # previous fallback, encodes text strings such as metadata and
+            # bookmark titles and has no business decoding glyphs.
+            base_encoding = "StandardEncoding"
+        return cmap, base_encoding, differences, builtin
+
+    def internal_builtin_font_encoding(self, font: dict[str, Any]) -> dict[int, str]:
+        """Read the code to glyph-name encoding out of an embedded program."""
+        descriptor = lookup_dict_key(font, "FontDescriptor")
+        if not isinstance(descriptor, dict):
+            return {}
+        font_file = lookup_dict_key(descriptor, "FontFile")
+        if isinstance(font_file, PdfStream):
+            try:
+                return parse_type1_font_program_encoding(font_file.data)
+            except (PdfParseError, ValueError):
+                return {}
+        cff_font = cff_font_for_pdf_font(font)
+        if cff_font is None:
+            return {}
+        try:
+            return cff_font.builtin_encoding()
+        except (PdfParseError, ValueError):
+            return {}
 
     def internal_named_cmap(self, base_encoding: str | None) -> CMapDecoder | None:
         if base_encoding is None:
@@ -555,7 +621,9 @@ class FontDecoder:
             encoding_table = self.byte_decode_table
             if encoding_table is None:
                 key = self.base_encoding or ("Type3" if self.is_type3 else "")
-                encoding_table = cached_decode_table(key, tuple(sorted(self.differences.items())))
+                encoding_table = cached_decode_table(
+                    key, tuple(sorted(self.encoding_differences.items()))
+                )
             encoding_text = encoding_table[code_bytes[0]]
             if encoding_text and not has_invalid_unicode_mapping(encoding_text):
                 return UnicodeChoice(
@@ -687,7 +755,7 @@ class FontDecoder:
         table = self.byte_decode_table
         if table is None and self.to_unicode is None:
             key = self.base_encoding or ("Type3" if self.is_type3 else "")
-            table = cached_decode_table(key, tuple(sorted(self.differences.items())))
+            table = cached_decode_table(key, tuple(sorted(self.encoding_differences.items())))
         byte_cache = BYTE_CACHE
         for code in data:
             cached_glyph = glyph_cache.get(code)
@@ -802,7 +870,7 @@ class FontDecoder:
         self.fast_widths_cid = table
         return table
 
-    def get_fast_widths_cid_array(self):
+    def get_fast_widths_cid_array(self) -> numpy.ndarray[typing.Any, typing.Any] | None:
         if self.fast_widths_cid_array is not None:
             return self.fast_widths_cid_array
         widths = self.get_fast_widths_cid()
@@ -998,9 +1066,12 @@ class FontDecoder:
                     import numpy
 
                     codes = numpy.frombuffer(data, dtype=">u2")
-                    total = float(
-                        numpy.sum(self.get_fast_widths_cid_array()[codes], dtype=numpy.float64)
+                    # Non-None: the array is derived from `fwc`, checked above.
+                    widths_array = typing.cast(
+                        "numpy.ndarray[typing.Any, typing.Any]",
+                        self.get_fast_widths_cid_array(),
                     )
+                    total = float(numpy.sum(widths_array[codes], dtype=numpy.float64))
                     total += int(numpy.count_nonzero(codes == 32)) * ws
                 else:
                     total = 0.0
@@ -1039,8 +1110,12 @@ class FontDecoder:
                         if cmap_codes is not None
                         else numpy.frombuffer(data, dtype=">u2")
                     )
-                    widths = self.get_fast_widths_cid_array()
-                    total = float(numpy.sum(widths[codes], dtype=numpy.float64))
+                    # Non-None: the array is derived from `fwc`, checked above.
+                    cid_widths_array = typing.cast(
+                        "numpy.ndarray[typing.Any, typing.Any]",
+                        self.get_fast_widths_cid_array(),
+                    )
+                    total = float(numpy.sum(cid_widths_array[codes], dtype=numpy.float64))
                     total += int(numpy.count_nonzero(codes == 32)) * ws
                 else:
                     for i in range(0, n, 2):

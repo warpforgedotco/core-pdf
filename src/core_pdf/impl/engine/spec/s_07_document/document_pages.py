@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-only
+"""Page tree traversal and the lazily-populated page list."""
+
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Iterator
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -13,6 +15,7 @@ from typing import (
     overload,
 )
 
+from core_pdf.impl.engine.cache import ExtractionCache
 from core_pdf.impl.engine.spec.s_07_document.document_labels import (
     MAX_PAGE_TREE_DEPTH,
     format_page_label,
@@ -34,6 +37,7 @@ from core_pdf.impl.engine.spec.s_07_objects.pdfdict import (
 from core_pdf.impl.engine.spec.s_07_objects.resolver_values import PdfValueResolver
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.objects import PdfReference, PdfStream
+from core_pdf.impl.pages import resolve_page_selection
 from core_pdf.impl.types import PageSelection, PdfDict, PdfObject
 
 PAGE_INHERITED_KEYS = (
@@ -50,6 +54,7 @@ PAGE_INHERITED_KEYS = (
 
 class PageListItem(Protocol):
     page_dict: PdfDict
+    extraction_cache: ExtractionCache | None
 
 
 internal_PageT = TypeVar("internal_PageT", bound=PageListItem)
@@ -58,6 +63,7 @@ PageFactory = Callable[[object, PdfDict, int], internal_PageT]
 
 class PageListDocument(Protocol):
     page_dicts_cache: list[PdfDict] | None
+    page_class: type | None
 
     def iter_page_dicts_stream(self) -> Iterator[PdfDict]: ...
 
@@ -101,13 +107,13 @@ class LazyPageList(list[internal_PageT], Generic[internal_PageT]):
     def ensure(self, index: int) -> None:
         while list.__len__(self) <= index:
             page_dict = self.next_page_dict()
-            page_class = getattr(self.document, "page_class", None)
+            page_class = self.document.page_class
             if page_class is None:
                 from core_pdf.impl.engine.spec.s_07_document.page import PdfPage
 
                 page_class = PdfPage
-            page_class = cast(PageFactory[internal_PageT], page_class)
-            list.append(self, page_class(self.document, page_dict, list.__len__(self) + 1))
+            factory = cast(PageFactory[internal_PageT], page_class)
+            list.append(self, factory(self.document, page_dict, list.__len__(self) + 1))
 
     def __len__(self) -> int:
         return self.document.page_count()
@@ -149,6 +155,7 @@ class DocumentPagesMixin(Generic[internal_PageT]):
     internal_cache_lock: Any
     xref: dict[int, Any]
     xref_was_recovered: bool
+    page_class: type | None
     page_dicts_cache: list[PdfDict] | None
     pages_cache: LazyPageList[internal_PageT] | None
     page_index_cache: dict[int, int] | None
@@ -161,6 +168,8 @@ class DocumentPagesMixin(Generic[internal_PageT]):
         def catalog(self) -> PdfDict: ...
 
         def resolve(self, ref: object) -> object: ...
+
+        def invalidate_document_extraction_cache(self) -> None: ...
 
     def discover_page_dicts(self) -> Iterator[PdfDict]:
         """Recover likely page dictionaries when the declared page tree is unusable."""
@@ -335,9 +344,7 @@ class DocumentPagesMixin(Generic[internal_PageT]):
         discovered = list(self.discover_page_dicts())
         if discovered:
             self.page_tree_was_recovered = True
-            invalidate = getattr(self, "invalidate_document_extraction_cache", None)
-            if callable(invalidate):
-                invalidate()
+            self.invalidate_document_extraction_cache()
         return discovered
 
     def iter_page_dicts_stream(self) -> Iterator[PdfDict]:
@@ -537,56 +544,7 @@ class DocumentPagesMixin(Generic[internal_PageT]):
             return None
 
     def selected_page_indexes(self, pages: PageSelection | None = None) -> list[int]:
-        page_count = len(self.pages)
-        match pages:
-            case None:
-                selected = list(range(page_count))
-            case int() if type(pages) is int:
-                selected = [pages - 1]
-            case range() as page_range:
-                selected = [page_number - 1 for page_number in page_range]
-            case str() as page_spec:
-                selected = []
-                for part in page_spec.split(","):
-                    part = part.strip()
-                    if not part:
-                        continue
-                    if "-" in part:
-                        parts = part.split("-", 1)
-                        if not parts[0].strip() or not parts[1].strip():
-                            raise ValueError(f"invalid page selection: {pages!r}")
-                        try:
-                            start = int(parts[0])
-                            end = int(parts[1])
-                        except ValueError as exc:
-                            raise ValueError(f"invalid page selection: {pages!r}") from exc
-                        step = 1 if end >= start else -1
-                        selected.extend(range(start - 1, end - 1 + step, step))
-                    else:
-                        try:
-                            selected.append(int(part) - 1)
-                        except ValueError as exc:
-                            raise ValueError(f"invalid page selection: {pages!r}") from exc
-            case Sequence() as page_sequence:
-                try:
-                    selected = [int(cast(Any, page_number)) - 1 for page_number in page_sequence]
-                except (TypeError, ValueError) as exc:
-                    raise ValueError(f"invalid page selection: {pages!r}") from exc
-            case _:
-                raise TypeError(f"invalid page selection: {pages!r}")
-
-        if not selected:
-            raise ValueError(f"invalid page selection: {pages!r}")
-
-        normalized: list[int] = []
-        seen: set[int] = set()
-        for page_index in selected:
-            if page_index < 0 or page_index >= page_count:
-                raise IndexError(f"page selection out of range: {page_index + 1}")
-            if page_index not in seen:
-                normalized.append(page_index)
-                seen.add(page_index)
-        return normalized
+        return resolve_page_selection(pages, len(self.pages))
 
     def iter_selected_pages(
         self, pages: PageSelection | None = None

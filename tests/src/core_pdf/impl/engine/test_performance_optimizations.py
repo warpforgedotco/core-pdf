@@ -7,7 +7,7 @@ from core_pdf.impl.engine.execution import RuntimeConfig, SharedMemoryPdfBuffer
 from core_pdf.impl.engine.layout.models import TextRun
 from core_pdf.impl.engine.layout.spatial import SpatialIndex
 from core_pdf.impl.engine.layout.word_frequencies import word_rank
-from core_pdf.impl.engine.parse import internal_observations_from_runs
+from core_pdf.impl.engine.parse.capture import internal_observations_from_runs
 from core_pdf.impl.engine.spec.s_07_syntax.lexer_helpers import parse_float_token, parse_int_token
 from core_pdf.impl.engine.spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 from core_pdf.impl.engine.spec.s_09_fonts.cmap_resources import resolve_cmap_decoder

@@ -7,9 +7,11 @@ from core_pdf.impl.engine.parse import (
     ParsedBlock,
     ParsedLine,
     ParsedPage,
-    emit_page,
-    internal_line_decoration_flags,
 )
+from core_pdf.impl.engine.parse import (
+    assemble_page as emit_page,
+)
+from core_pdf.impl.engine.parse.emit import internal_line_decoration_flags
 from core_pdf.impl.engine.spec.s_07_content.capture import CapturedDrawing
 from core_pdf.impl.engine.structured import BlockKind, Table, TableCell
 
@@ -230,7 +232,15 @@ def test_emit_removes_stream_table_covered_by_overlapping_blocks() -> None:
     assert page.tables == ()
 
 
-def test_emit_removes_table_covered_by_overlapping_blocks() -> None:
+def test_emit_keeps_a_grid_shaped_table_and_drops_the_duplicate_block() -> None:
+    """A table and blocks describing one region both hold the same glyphs.
+
+    One of them has to go, and dropping the table is the wrong way round: the
+    text survives either way, but only the table carries the rows and columns.
+    Emission used to resolve this in favour of blocks in every case, which
+    discarded the structure of genuine tables -- the dominant reason a page
+    with a table in the ground truth came back with none.
+    """
     parsed = ParsedPage(
         page_number=1,
         width=300.0,
@@ -270,8 +280,14 @@ def test_emit_removes_table_covered_by_overlapping_blocks() -> None:
 
     page = emit_page(parsed)
 
-    assert len(page.blocks) == 1
-    assert page.tables == ()
+    # The rows use their columns, so this is a table and it is kept.
+    assert len(page.tables) == 1
+    assert [[cell.text for cell in row] for row in page.tables[0].rows][0] == [
+        "Marketplace assigned policy number",
+        "Policy issuer name",
+    ]
+    # ...and the block repeating it is removed, so the text appears once.
+    assert page.blocks == ()
 
 
 def test_emit_removes_small_table_duplicated_by_page_text() -> None:
@@ -431,6 +447,31 @@ def test_emit_keeps_short_non_latin_native_text() -> None:
         "你好",
         "（）",
     }
+
+
+def test_emit_removes_symbol_only_native_blocks() -> None:
+    # Isolated Braille glyphs or stray symbols with no alphanumeric content
+    # carry no semantic text (cf. the OCR route's `internal_corrupt_ocr_block`).
+    parsed = ParsedPage(
+        page_number=1,
+        width=300.0,
+        height=400.0,
+        rotation=0,
+        route=PageRoute.NATIVE,
+        blocks=(
+            block("⠭ ⠬", (20.0, 300.0, 260.0, 320.0)),
+            block("Real sentence describing the payload", (20.0, 250.0, 260.0, 270.0)),
+            # CJK fullwidth punctuation is preserved (letter-like content).
+            block("（）", (20.0, 200.0, 260.0, 220.0)),
+        ),
+    )
+
+    page = emit_page(parsed)
+
+    assert [emitted_block.text for emitted_block in page.blocks] == [
+        "Real sentence describing the payload",
+        "（）",
+    ]
 
 
 def test_emit_removes_corrupt_mixed_native_fragments() -> None:

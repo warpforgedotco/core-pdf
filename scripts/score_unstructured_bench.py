@@ -12,6 +12,7 @@ from collections import Counter
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from random import Random
 from time import perf_counter
 from typing import Any, Iterable, cast
 
@@ -22,6 +23,7 @@ SCORE_BENCH_ROOT = ROOT / "tests" / "fixtures" / "SCORE-Bench"
 CORRECT_TRUTH_SUFFIX = "__correct_truth"
 DEFAULT_HTML_OUTPUT = ROOT / "parsebench-output" / "scorebench-report.html"
 PARTITION_SALT = "core-pdf-precision-v1\0"
+SCORING_SCHEMA_VERSION = "2"
 
 
 @dataclass(frozen=True)
@@ -44,12 +46,16 @@ class CaseScore:
     predicted_tokens: int
     matched_tokens: int
     elapsed_seconds: float
+    scoring_schema_version: str = SCORING_SCHEMA_VERSION
     content_f1: float = 0.0
     order_gap: float = 0.0
     cer: float | None = None
     wer: float | None = None
     table_structure_f1: float | None = None
     table_content_f1: float | None = None
+    table_expected: int = 0
+    table_predicted: int = 0
+    table_matched: int = 0
     open_elapsed_seconds: float = 0.0
     text_elapsed_seconds: float = 0.0
     table_elapsed_seconds: float = 0.0
@@ -120,6 +126,18 @@ def mean(values: list[float]) -> float:
     return sum(values) / len(values) if values else 0.0
 
 
+def bootstrap_interval(
+    values: list[float], *, samples: int = 2_000, seed: int = 0
+) -> tuple[float, float]:
+    """Return a deterministic percentile-bootstrap 95% confidence interval."""
+    if len(values) < 2:
+        value = values[0] if values else 0.0
+        return value, value
+    random = Random(seed)
+    means = [sum(random.choice(values) for _ in values) / len(values) for _ in range(samples)]
+    return percentile(means, 0.025), percentile(means, 0.975)
+
+
 def shorten_middle(value: str, width: int) -> str:
     if len(value) <= width:
         return value
@@ -182,6 +200,7 @@ def render_meta_card(label: str, value: str) -> str:
 
 
 def render_metric_card(title: str, values: list[float], suffix: str = "") -> str:
+    low, high = bootstrap_interval(values)
     return f"""
     <div class="metric-card">
       <span>{html.escape(title)}</span>
@@ -192,6 +211,7 @@ def render_metric_card(title: str, values: list[float], suffix: str = "") -> str
         <div><dt>p90</dt><dd>{metric_value(percentile(values, 0.9), suffix)}</dd></div>
         <div><dt>p95</dt><dd>{metric_value(percentile(values, 0.95), suffix)}</dd></div>
         <div><dt>p99</dt><dd>{metric_value(percentile(values, 0.99), suffix)}</dd></div>
+        <div><dt>95% CI</dt><dd>{metric_value(low, suffix)}–{metric_value(high, suffix)}</dd></div>
         <div><dt>min</dt><dd>{metric_value(min(values), suffix)}</dd></div>
         <div><dt>max</dt><dd>{metric_value(max(values), suffix)}</dd></div>
       </dl>
@@ -266,9 +286,12 @@ def score_metric_rows(scores: list[CaseScore]) -> list[tuple[str, list[float], s
         ("Content F1", [score.content_f1 for score in scores], ""),
         ("Recall", [score.percent_tokens_found for score in scores], ""),
         ("Precision", [score.precision for score in scores], ""),
-        ("Order gap", [score.order_gap for score in scores], ""),
+        ("Order gap (F1-CCT)", [score.order_gap for score in scores], ""),
+        ("CER", [score.cer for score in scores if score.cer is not None], ""),
+        ("WER", [score.wer for score in scores if score.wer is not None], ""),
         ("E2E seconds", [score.elapsed_seconds for score in scores], "s"),
-        ("Extract seconds", [score.text_elapsed_seconds for score in scores], "s"),
+        ("Text extraction seconds", [score.text_elapsed_seconds for score in scores], "s"),
+        ("Table extraction seconds", [score.table_elapsed_seconds for score in scores], "s"),
         ("Table structure", table_structure, ""),
         ("Table content", table_content, ""),
     ]
@@ -439,7 +462,7 @@ def score_case(case: ScoreBenchCase) -> CaseScore:
             predicted_text = extract_document_text(document)
             text_elapsed = perf_counter() - text_started
             table_started = perf_counter()
-            predicted_tables = document.extract_tables()
+            predicted_tables = document.extract().table_view.tables
             table_elapsed = perf_counter() - table_started
             evaluation_started = perf_counter()
             candidate_analysis = score_document_candidates(document, gt_text)
@@ -452,6 +475,9 @@ def score_case(case: ScoreBenchCase) -> CaseScore:
         cer, wer = score_ordered_errors(gt_text, predicted_text)
         table_truth = json.loads(case.table_gt.read_text(encoding="utf-8"))
         table_structure_f1, table_content_f1 = score_tables(table_truth, predicted_tables)
+        truth_cells = ground_truth_table_cells(table_truth)
+        predicted_cells = predicted_table_cells(predicted_tables)
+        table_pairs = match_table_indexes(truth_cells, predicted_cells)
         selected_candidate = next(
             (candidate for candidate in candidate_analysis if candidate["selected"]),
             None,
@@ -485,6 +511,9 @@ def score_case(case: ScoreBenchCase) -> CaseScore:
             wer=wer,
             table_structure_f1=table_structure_f1,
             table_content_f1=table_content_f1,
+            table_expected=len(group_table_cells(truth_cells)),
+            table_predicted=len(group_table_cells(predicted_cells)),
+            table_matched=len(table_pairs),
             open_elapsed_seconds=open_elapsed,
             text_elapsed_seconds=text_elapsed,
             table_elapsed_seconds=table_elapsed,
@@ -735,21 +764,115 @@ def score_tables(
     if not truth_cells and not predicted_cells:
         return None, None
 
-    truth_structure = Counter(
-        (table, x, y, width, height) for table, x, y, width, height, _ in truth_cells
-    )
-    predicted_structure = Counter(
-        (table, x, y, width, height) for table, x, y, width, height, _ in predicted_cells
-    )
-    structure_f1 = counter_f1(truth_structure, predicted_structure)
+    table_pairs = match_table_indexes(truth_cells, predicted_cells)
+    truth_to_match = {truth: match for match, (truth, _predicted) in enumerate(table_pairs)}
+    predicted_to_match = {predicted: match for match, (_truth, predicted) in enumerate(table_pairs)}
 
-    truth_content: Counter[tuple[int, int, int, str]] = Counter()
-    predicted_content: Counter[tuple[int, int, int, str]] = Counter()
-    for table, x, y, internal_width, internal_height, content in truth_cells:
-        truth_content.update((table, x, y, token) for token in tokenize(content))
-    for table, x, y, internal_width, internal_height, content in predicted_cells:
-        predicted_content.update((table, x, y, token) for token in tokenize(content))
-    return structure_f1, counter_f1(truth_content, predicted_content)
+    def remap(
+        cells: list[tuple[int, int, int, int, int, str]], mapping: dict[int, int], offset: int
+    ) -> list[tuple[int, int, int, int, int, str]]:
+        return [
+            (mapping.get(table, offset + table), x, y, width, height, content)
+            for table, x, y, width, height, content in cells
+        ]
+
+    matched_count = len(table_pairs)
+    truth_cells = remap(truth_cells, truth_to_match, matched_count)
+    predicted_cells = remap(
+        predicted_cells,
+        predicted_to_match,
+        matched_count + len(group_table_cells(truth_cells)),
+    )
+
+    truth_tables = group_table_cells(truth_cells)
+    predicted_tables = group_table_cells(predicted_cells)
+    structure_total = len(truth_cells) + len(predicted_cells)
+    structure_matches = 0
+    truth_content_count = 0
+    predicted_content_count = 0
+    content_matches = 0
+    for table in set(truth_tables) | set(predicted_tables):
+        truth = truth_tables.get(table, [])
+        predicted = predicted_tables.get(table, [])
+        matches = match_table_cells(truth, predicted)
+        structure_matches += len(matches)
+        truth_content_count += sum(len(tokenize(cell[5])) for cell in truth)
+        predicted_content_count += sum(len(tokenize(cell[5])) for cell in predicted)
+        content_matches += sum(
+            sum((Counter(tokenize(truth_cell[5])) & Counter(tokenize(predicted_cell[5]))).values())
+            for truth_cell, predicted_cell in matches
+        )
+    structure_f1 = 2 * structure_matches / structure_total if structure_total else 1.0
+    content_total = truth_content_count + predicted_content_count
+    content_f1 = 2 * content_matches / content_total if content_total else 1.0
+    return structure_f1, content_f1
+
+
+def match_table_indexes(
+    truth_cells: list[tuple[int, int, int, int, int, str]],
+    predicted_cells: list[tuple[int, int, int, int, int, str]],
+) -> tuple[tuple[int, int], ...]:
+    """Match tables by content overlap so list ordering is not table identity."""
+    truth_tables = group_table_cells(truth_cells)
+    predicted_tables = group_table_cells(predicted_cells)
+    candidates: list[tuple[float, int, int]] = []
+    for truth_index, truth in truth_tables.items():
+        truth_tokens = Counter(token for cell in truth for token in tokenize(cell[5]))
+        for predicted_index, predicted in predicted_tables.items():
+            predicted_tokens = Counter(token for cell in predicted for token in tokenize(cell[5]))
+            overlap = sum((truth_tokens & predicted_tokens).values())
+            denominator = max(1, sum(truth_tokens.values()) + sum(predicted_tokens.values()))
+            if overlap:
+                candidates.append((2 * overlap / denominator, truth_index, predicted_index))
+    pairs: list[tuple[int, int]] = []
+    used_truth: set[int] = set()
+    used_predicted: set[int] = set()
+    for _score, truth_index, predicted_index in sorted(candidates, reverse=True):
+        if truth_index in used_truth or predicted_index in used_predicted:
+            continue
+        pairs.append((truth_index, predicted_index))
+        used_truth.add(truth_index)
+        used_predicted.add(predicted_index)
+    return tuple(pairs)
+
+
+def group_table_cells(
+    cells: list[tuple[int, int, int, int, int, str]],
+) -> dict[int, list[tuple[int, int, int, int, int, str]]]:
+    grouped: dict[int, list[tuple[int, int, int, int, int, str]]] = {}
+    for cell in cells:
+        grouped.setdefault(cell[0], []).append(cell)
+    return grouped
+
+
+def match_table_cells(
+    truth: list[tuple[int, int, int, int, int, str]],
+    predicted: list[tuple[int, int, int, int, int, str]],
+    tolerance: int = 1,
+) -> tuple[tuple[tuple[int, int, int, int, int, str], tuple[int, int, int, int, int, str]], ...]:
+    """Match cells by span and nearby grid coordinates, at most once each."""
+    candidates: list[tuple[int, int, int]] = []
+    for truth_index, truth_cell in enumerate(truth):
+        for predicted_index, predicted_cell in enumerate(predicted):
+            if truth_cell[3:5] != predicted_cell[3:5]:
+                continue
+            distance = abs(truth_cell[1] - predicted_cell[1]) + abs(
+                truth_cell[2] - predicted_cell[2]
+            )
+            if distance <= tolerance * 2:
+                candidates.append((distance, truth_index, predicted_index))
+    matches: list[
+        tuple[tuple[int, int, int, int, int, str], tuple[int, int, int, int, int, str]]
+    ] = []
+    used_truth: set[int] = set()
+    used_predicted: set[int] = set()
+    for _distance, truth_index, predicted_index in sorted(candidates):
+        if truth_index in used_truth or predicted_index in used_predicted:
+            continue
+        matches.append((truth[truth_index], predicted[predicted_index]))
+        used_truth.add(truth_index)
+        used_predicted.add(predicted_index)
+    return tuple(matches)
 
 
 def ground_truth_table_cells(value: object) -> list[tuple[int, int, int, int, int, str]]:
@@ -778,34 +901,60 @@ def ground_truth_table_cells(value: object) -> list[tuple[int, int, int, int, in
     return cells
 
 
+def internal_table_spans(record: object, y: int, x: int) -> tuple[int, int]:
+    """Return (col_span, row_span) for one cell of a predicted table.
+
+    Dictionary payloads store spans as (row_span, col_span) pairs; named keys
+    are also accepted for fixture and diagnostic data.
+    """
+    spans = record.get("spans") if isinstance(record, dict) else getattr(record, "spans", None)
+    if not isinstance(spans, (list, tuple)) or y >= len(spans):
+        return 1, 1
+    span_row = spans[y]
+    if not isinstance(span_row, (list, tuple)) or x >= len(span_row):
+        return 1, 1
+    span = span_row[x]
+    if isinstance(span, dict):
+        return (
+            max(1, int(cast(Any, span.get("col_span", 1)))),
+            max(1, int(cast(Any, span.get("row_span", 1)))),
+        )
+    if isinstance(span, (list, tuple)) and len(span) >= 2:
+        return (
+            max(1, int(cast(Any, span[1]))),
+            max(1, int(cast(Any, span[0]))),
+        )
+    return 1, 1
+
+
 def predicted_table_cells(value: object) -> list[tuple[int, int, int, int, int, str]]:
-    if not isinstance(value, list):
+    # The graph API returns structured Table objects directly.
+    if not isinstance(value, (list, tuple)):
         return []
     cells = []
-    for table_index, record in enumerate(value):
-        if not isinstance(record, dict):
+    for table_index, entry in enumerate(value):
+        record = getattr(entry, "record", entry)
+        rows = record.get("rows") if isinstance(record, dict) else getattr(record, "rows", None)
+        if not isinstance(rows, (list, tuple)):
             continue
-        rows = record.get("rows")
-        if not isinstance(rows, list):
-            continue
-        spans = record.get("spans")
         for y, row in enumerate(rows):
-            if not isinstance(row, list):
+            if not isinstance(row, (list, tuple)):
                 continue
             for x, content in enumerate(row):
-                span_row = spans[y] if isinstance(spans, list) and y < len(spans) else None
-                span = span_row[x] if isinstance(span_row, list) and x < len(span_row) else None
-                span = span if isinstance(span, dict) else {}
-                cells.append(
-                    (
-                        table_index,
-                        x,
-                        y,
-                        max(1, int(cast(Any, span.get("col_span", 1)))),
-                        max(1, int(cast(Any, span.get("row_span", 1)))),
-                        str(content or ""),
+                if hasattr(content, "text"):
+                    cells.append(
+                        (
+                            table_index,
+                            x,
+                            y,
+                            max(1, int(getattr(content, "column_span", 1))),
+                            max(1, int(getattr(content, "row_span", 1))),
+                            str(getattr(content, "text", "") or ""),
+                        )
                     )
-                )
+                    continue
+                col_span, row_span = internal_table_spans(record, y, x)
+                cells.append((table_index, x, y, col_span, row_span, str(content or "")))
     return cells
 
 
@@ -1025,8 +1174,8 @@ class ScoreBench:
         if successful:
             lines.append("")
             lines.append("### Overall Metrics\n")
-            lines.append("| Metric | Mean | Median | Min | Max |")
-            lines.append("|:-------|-----:|-------:|----:|----:|")
+            lines.append("| Metric | Mean | Median | Min | Max | 95% CI |")
+            lines.append("|:-------|-----:|-------:|----:|----:|:--------|")
             import statistics
 
             for title, values, suffix in score_metric_rows(successful):
@@ -1036,10 +1185,25 @@ class ScoreBench:
                 median = statistics.median(values)
                 mn = min(values)
                 mx = max(values)
+                low, high = bootstrap_interval(values)
                 s = suffix
                 lines.append(
-                    f"| {title} | {mean:.4f}{s} | {median:.4f}{s} | {mn:.4f}{s} | {mx:.4f}{s} |"
+                    f"| {title} | {mean:.4f}{s} | {median:.4f}{s} | {mn:.4f}{s} "
+                    f"| {mx:.4f}{s} | {low:.4f}{s}–{high:.4f}{s} |"
                 )
+            expected_tables = sum(score.table_expected for score in successful)
+            predicted_tables = sum(score.table_predicted for score in successful)
+            matched_tables = sum(score.table_matched for score in successful)
+            lines.append("")
+            lines.append("### Table Coverage\n")
+            lines.append("| Expected | Predicted | Matched | Recall | Precision |")
+            lines.append("|---------:|----------:|--------:|-------:|----------:|")
+            table_recall = matched_tables / expected_tables if expected_tables else 1.0
+            table_precision = matched_tables / predicted_tables if predicted_tables else 0.0
+            lines.append(
+                f"| {expected_tables} | {predicted_tables} | {matched_tables} "
+                f"| {table_recall:.4f} | {table_precision:.4f} |"
+            )
             # Bucket breakdown
             bucket_counts = Counter(score_failure_bucket(score) for score in successful)
             lines.append("")
@@ -1123,6 +1287,23 @@ class ScoreBench:
                 Counter(score_failure_bucket(score) for score in successful).items()
             )
         )
+        expected_tables = sum(score.table_expected for score in successful)
+        predicted_tables = sum(score.table_predicted for score in successful)
+        matched_tables = sum(score.table_matched for score in successful)
+        table_recall = matched_tables / expected_tables if expected_tables else 1.0
+        table_precision = matched_tables / predicted_tables if predicted_tables else 0.0
+        table_coverage = f"""
+  <section>
+    <h2>Table Coverage</h2>
+    <div class="run-meta">
+      {render_meta_card("Expected", str(expected_tables))}
+      {render_meta_card("Predicted", str(predicted_tables))}
+      {render_meta_card("Matched", str(matched_tables))}
+      {render_meta_card("Recall", f"{table_recall:.4f}")}
+      {render_meta_card("Precision", f"{table_precision:.4f}")}
+    </div>
+  </section>
+"""
         sections = "\n".join(
             render_html_section(title, self.internal_limit_results(section_results))
             for title, section_results in score_result_sections(results)
@@ -1271,6 +1452,7 @@ class ScoreBench:
     <div>
       <h1>SCORE-Bench Report</h1>
       <div class="muted">Generated by scripts/score_unstructured_bench.py</div>
+      <div class="muted">Scoring schema {SCORING_SCHEMA_VERSION}</div>
     </div>
   </header>
   <section>
@@ -1289,6 +1471,7 @@ class ScoreBench:
       {metric_cards}
     </div>
   </section>
+  {table_coverage}
   <section>
     <h2>Buckets</h2>
     <div class="bucket-grid">

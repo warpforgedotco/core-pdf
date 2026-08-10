@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
+"""Static tables used by the standard security handlers."""
+
 AES_SBOX: tuple[int, ...] = (
     0x63,
     0x7C,

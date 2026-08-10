@@ -11,7 +11,9 @@ from typing import Any, cast
 import pytest
 
 from core_pdf import PdfDocument
-from core_pdf.impl.engine import parse as ocr
+from core_pdf.impl.engine.parse import ocr
+from core_pdf.impl.engine.parse.capture import capture_page, preflight_page
+from core_pdf.impl.engine.parse.route import plan_page
 from core_pdf.impl.engine.rendering import RasterImage, RenderOptions
 from core_pdf.impl.engine.spec.s_08_graphics import image_decode
 
@@ -120,9 +122,9 @@ def internal_calibrate_preflight(paths: tuple[Path, ...]) -> dict[str, Any]:
     for path in paths:
         with PdfDocument.open(path) as document:
             page = document.pages[0]
-            capture = ocr.capture_page(page)
-            preflight = ocr.preflight_page(page, capture)
-            plan = ocr.plan_page(capture)
+            capture = capture_page(page)
+            preflight = preflight_page(page, capture)
+            plan = plan_page(capture)
         page_class = preflight.recommendation.page_class.value
         route = plan.route.value
         class_counts[page_class] += 1

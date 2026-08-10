@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
+"""Stream codecs: ASCIIHex, ASCII85, LZW, and run-length."""
+
 from __future__ import annotations
 
 import binascii

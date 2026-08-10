@@ -10,11 +10,15 @@ from core_pdf.impl.engine.parse import (
     ObservationBatch,
     ObservationSource,
     extract_tables,
+)
+from core_pdf.impl.engine.parse.tables import (
     internal_compact_stream_table,
+    internal_merge_adjacent_tables,
     internal_merge_grid_cells,
     internal_split_grid_component,
     internal_split_semantic_table,
     internal_stream_table,
+    internal_stream_tables,
     internal_table_character_spaced_prose,
 )
 from core_pdf.impl.engine.structured import Table, TableCell
@@ -335,6 +339,45 @@ def test_extract_tables_assigns_runs_to_ruled_cells() -> None:
     ]
 
 
+def test_merge_adjacent_tables_drops_repeated_continuation_header() -> None:
+    def table(order: int, y_top: float, rows: tuple[tuple[str, ...], ...]) -> Table:
+        return Table(
+            order=order,
+            rows=tuple(
+                tuple(
+                    TableCell(
+                        row=row_index,
+                        column=column_index,
+                        text=text,
+                        bbox=(
+                            column_index * 50.0,
+                            y_top - row_index * 10.0 - 10.0,
+                            column_index * 50.0 + 40.0,
+                            y_top - row_index * 10.0,
+                        ),
+                    )
+                    for column_index, text in enumerate(values)
+                )
+                for row_index, values in enumerate(rows)
+            ),
+            bbox=(0.0, y_top - len(rows) * 10.0, 90.0, y_top),
+        )
+
+    merged = internal_merge_adjacent_tables(
+        [
+            table(0, 100.0, (("Name", "Value"), ("A", "1"))),
+            table(1, 55.0, (("Name", "Value"), ("B", "2"))),
+        ]
+    )
+
+    assert len(merged) == 1
+    assert [[cell.text for cell in row] for row in merged[0].rows] == [
+        ["Name", "Value"],
+        ["A", "1"],
+        ["B", "2"],
+    ]
+
+
 def test_extract_tables_ignores_many_observations_outside_ruled_component() -> None:
     table_runs = (
         text("top-left", 20.0, 70.0, 0),
@@ -390,6 +433,44 @@ def test_extract_tables_detects_aligned_borderless_rows() -> None:
     tables = extract_tables(capture, observations(capture.runs))
 
     assert len(tables) == 1
+    assert [[cell.text for cell in row] for row in tables[0].rows] == [
+        ["label-0", "1"],
+        ["label-1", "2"],
+        ["label-2", "3"],
+        ["label-3", "4"],
+    ]
+
+
+def test_stream_tables_prefer_horizontal_observations_over_rotated_noise() -> None:
+    text_values = [value for row in range(4) for value in (f"label-{row}", str(row + 1))]
+    boxes = [
+        (x, y, x + 20.0, y + 6.0)
+        for row, y in enumerate((80.0, 65.0, 50.0, 35.0))
+        for x in (10.0, 70.0)
+    ]
+    text_values.extend(("rotated-a", "rotated-b", "rotated-c", "rotated-d"))
+    boxes.extend(
+        (
+            (5.0, 10.0, 50.0, 15.0),
+            (5.0, 20.0, 50.0, 25.0),
+            (5.0, 30.0, 50.0, 35.0),
+            (5.0, 40.0, 50.0, 45.0),
+        )
+    )
+    observations = ObservationBatch.from_columns(
+        text_values,
+        boxes,
+        source=ObservationSource.NATIVE,
+        rotation=(0,) * 8 + (90,) * 4,
+    )
+
+    tables = internal_stream_tables(
+        cast(CapturedPage, SimpleNamespace(page=SimpleNamespace(width=100.0, height=100.0))),
+        observations,
+        0,
+    )
+
+    assert tables
     assert [[cell.text for cell in row] for row in tables[0].rows] == [
         ["label-0", "1"],
         ["label-1", "2"],

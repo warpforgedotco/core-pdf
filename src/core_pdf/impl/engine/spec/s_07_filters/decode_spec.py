@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
+"""Normalize stream dictionaries into a decode specification."""
+
 from __future__ import annotations
 
 from typing import TypeAlias, cast

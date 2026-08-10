@@ -110,26 +110,6 @@ def internal_calrgb_parameter_arrays(
     return matrix_array, black_point_array
 
 
-def xyz_to_srgb_point(x: float, y: float, z: float) -> tuple[float, float, float]:
-    values = numpy.asarray([[x, y, z]], dtype=numpy.float32)
-    result = xyz_to_srgb(adapt_d50_to_d65(values))[0]
-    return float(result[0]), float(result[1]), float(result[2])
-
-
-def lab_to_srgb_point(
-    l_star: float,
-    a_star: float,
-    b_star: float,
-    white_point: tuple[float, float, float],
-) -> tuple[float, float, float]:
-    values = numpy.asarray(
-        [[l_star / 100.0, (a_star + 128.0) / 255.0, (b_star + 128.0) / 255.0]],
-        dtype=numpy.float32,
-    )
-    result = xyz_to_srgb(adapt_d50_to_d65(lab_to_xyz(values, white_point)))[0]
-    return float(result[0]), float(result[1]), float(result[2])
-
-
 class ImageColorManager:
     @staticmethod
     def convert_image_data(
@@ -426,9 +406,7 @@ class ImageColorManager:
     @staticmethod
     def convert_gray(raw: ImageBuffer) -> numpy.ndarray[Any, numpy.dtype[numpy.uint8]]:
         samples = uint8_view(raw)
-        result = numpy.empty((len(samples), 3), dtype=numpy.uint8)
-        result[:, :] = samples[:, None]
-        return result.reshape(-1)
+        return numpy.repeat(samples, 3)
 
     @staticmethod
     def convert_cmyk(raw: ImageBuffer) -> numpy.ndarray[Any, numpy.dtype[numpy.uint8]]:

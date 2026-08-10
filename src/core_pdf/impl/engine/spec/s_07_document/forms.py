@@ -13,7 +13,7 @@ from core_pdf.impl.engine.spec.s_07_document.fields import (
     field_widget_rect,
 )
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
-from core_pdf.impl.models import FieldRecord
+from core_pdf.impl.models import RawFormField
 from core_pdf.impl.types import PdfDict, PdfObject
 
 
@@ -21,7 +21,7 @@ class FormsMixin:
     __slots__ = ()
 
     acroform_cache: PdfDict | None
-    fields_cache: list[FieldRecord] | None
+    fields_cache: list[RawFormField] | None
 
     @property
     def acroform(self: Any) -> PdfDict | None:
@@ -47,11 +47,11 @@ class FormsMixin:
         inherited_value: object = None,
         depth: int = 0,
         seen: set[int] | None = None,
-    ) -> list[FieldRecord]:
+    ) -> list[RawFormField]:
         recover = document_recovery_enabled(self)
         if seen is None:
             seen = set()
-        records: list[FieldRecord] = []
+        records: list[RawFormField] = []
         stack: list[FieldTraversalEntry] = [
             ("node", node, inherited_name, inherited_type, inherited_value, depth)
         ]
@@ -121,7 +121,7 @@ class FormsMixin:
             )
             current_node = cast(PdfDict, current_node)
             records.append(
-                FieldRecord(
+                RawFormField(
                     current_name,
                     field_type,
                     cast(PdfObject, value),
@@ -150,7 +150,7 @@ class FormsMixin:
                     stack.append(
                         (
                             "record",
-                            FieldRecord(
+                            RawFormField(
                                 current_name,
                                 field_type,
                                 cast(PdfObject, value),
@@ -175,34 +175,40 @@ class FormsMixin:
                     )
         return records
 
-    def fields(self: Any) -> list[FieldRecord]:
+    def fields(self: Any) -> list[RawFormField]:
         with document_cache_lock(self):
             if self.fields_cache is not None:
                 return self.fields_cache
             af = self.acroform
-            if af is None:
-                self.fields_cache = []
-                return []
-            field_list = lookup_dict_key(af, "Fields")
-            if field_list is None:
-                field_list = []
-            elif not isinstance(field_list, list):
-                if document_recovery_enabled(self):
+            records: list[RawFormField] = []
+            if af is not None:
+                field_list = lookup_dict_key(af, "Fields")
+                if field_list is None:
                     field_list = []
-                else:
-                    raise ValueError("invalid AcroForm Fields array")
-            records: list[FieldRecord] = []
-            for field in field_list:
-                field_obj = self.resolver.resolve(field)
-                records.extend(self.collect_field_records(field_obj))
-            if document_recovery_enabled(self):
+                elif not isinstance(field_list, list):
+                    if document_recovery_enabled(self):
+                        field_list = []
+                    else:
+                        raise ValueError("invalid AcroForm Fields array")
+                for field in field_list:
+                    field_obj = self.resolver.resolve(field)
+                    records.extend(self.collect_field_records(field_obj))
+            # 12.5.6.19 lets a field with a single widget merge both
+            # dictionaries into one, so a widget carrying /FT is itself a field
+            # and a missing or empty catalog field tree does not mean the
+            # document has none -- producers do ship filled forms that way.
+            # Fall back to the pages when the tree tells us nothing, which also
+            # keeps well-formed documents clear of a whole-page scan.
+            if not records or document_recovery_enabled(self):
                 records.extend(self.discover_widget_field_records(records))
             self.fields_cache = records
             return records
 
-    def discover_widget_field_records(self: Any, existing: list[FieldRecord]) -> list[FieldRecord]:
+    def discover_widget_field_records(
+        self: Any, existing: list[RawFormField]
+    ) -> list[RawFormField]:
         seen_widgets = {id(record.widget) for record in existing if isinstance(record.widget, dict)}
-        records: list[FieldRecord] = []
+        records: list[RawFormField] = []
         for page_dict in self.iter_page_dicts():
             raw_annots = self.resolver.resolve(lookup_dict_key(page_dict, "Annots"))
             if raw_annots is None:
@@ -221,6 +227,25 @@ class FormsMixin:
                 )
                 if subtype != "Widget":
                     continue
+                # A widget may be merged with its field or hang off one as a
+                # kid. Collect from the root of the chain either way, so the
+                # /FT, /T and /V a split field keeps on the parent still reach
+                # the record.
+                root = self.internal_widget_field_root(annot)
+                if id(root) in seen_widgets:
+                    continue
+                seen_widgets.add(id(root))
                 seen_widgets.add(id(annot))
-                records.extend(self.collect_field_records(annot))
+                records.extend(self.collect_field_records(root))
         return records
+
+    def internal_widget_field_root(self: Any, annot: PdfDict) -> PdfDict:
+        node = annot
+        for _ in range(50):
+            parent = self.resolver.resolve(lookup_dict_key(node, "Parent"))
+            if not isinstance(parent, dict) or parent is node:
+                break
+            if lookup_dict_key(parent, "FT") is None and lookup_dict_key(parent, "T") is None:
+                break
+            node = cast(PdfDict, parent)
+        return node

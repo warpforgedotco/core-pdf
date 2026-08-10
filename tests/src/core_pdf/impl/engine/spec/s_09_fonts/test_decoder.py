@@ -76,7 +76,10 @@ def test_font_decoder_uses_embedded_type1_encoding_without_pdf_encoding() -> Non
 
     decoder = FontDecoder(font)
 
-    assert decoder.decode(b"A\x0c") == "A\ufb01"
+    # The built-in encoding puts the fi ligature at 014. Ligatures are expanded
+    # wherever else they are decoded, so a glyph reached through a built-in
+    # encoding reads the same as one reached through a base encoding table.
+    assert decoder.decode(b"A\x0c") == "Afi"
 
 
 def test_type3_font_defaults_to_standard_encoding() -> None:

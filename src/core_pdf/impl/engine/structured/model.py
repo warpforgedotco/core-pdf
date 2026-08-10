@@ -9,8 +9,14 @@ from enum import StrEnum
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Mapping, TypeAlias
 
+from core_pdf.impl.engine.layout.geometry import bbox_union
+from core_pdf.impl.types import PageSelection
+
 if TYPE_CHECKING:
     from core_pdf.impl.engine.structured.editor import DocumentEditor
+
+SCHEMA_VERSION = "3.0"
+"""Schema version stamped on every structured :class:`Document`."""
 
 BBox: TypeAlias = tuple[float, float, float, float]
 JsonValue: TypeAlias = str | int | float | bool | None | list["JsonValue"] | dict[str, "JsonValue"]
@@ -50,6 +56,29 @@ class TableCell:
 
 
 @dataclass(frozen=True, slots=True)
+class TableRowBand:
+    index: int
+    bbox: BBox | None = None
+    kind: str = "body"
+    confidence: float | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class TableColumnBand:
+    index: int
+    bbox: BBox | None = None
+    confidence: float | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class TableAssociatedText:
+    text: str
+    bbox: BBox | None = None
+    kind: str = "caption"
+    confidence: float | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class Table:
     order: int
     rows: tuple[tuple[TableCell, ...], ...] = ()
@@ -59,6 +88,98 @@ class Table:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "metadata", internal_freeze(self.metadata))
+
+    @property
+    def title(self) -> TableAssociatedText | None:
+        value = self.metadata.get("title")
+        return value if isinstance(value, TableAssociatedText) else None
+
+    @property
+    def caption(self) -> TableAssociatedText | None:
+        value = self.metadata.get("caption")
+        return value if isinstance(value, TableAssociatedText) else None
+
+    @property
+    def layout_bbox(self) -> BBox | None:
+        boxes = [box for box in (self.bbox, self.title_bbox, self.caption_bbox) if box is not None]
+        return bbox_union(boxes)
+
+    @property
+    def title_bbox(self) -> BBox | None:
+        return self.title.bbox if self.title is not None else None
+
+    @property
+    def caption_bbox(self) -> BBox | None:
+        return self.caption.bbox if self.caption is not None else None
+
+    @property
+    def content_bbox(self) -> BBox | None:
+        boxes = [cell.bbox for row in self.rows for cell in row if cell.bbox is not None]
+        if not boxes:
+            return self.bbox
+        return bbox_union(boxes)
+
+    @property
+    def row_bands(self) -> tuple[TableRowBand, ...]:
+        bands: list[TableRowBand] = []
+        associated = {
+            text.kind: text.text.casefold()
+            for text in (self.title, self.caption)
+            if text is not None
+        }
+        first_grid = next(
+            (
+                index
+                for index, row in enumerate(self.rows)
+                if any(cell.text.strip() for cell in row)
+                and not any(
+                    value in associated.values()
+                    for value in (cell.text.strip().casefold() for cell in row if cell.text.strip())
+                )
+            ),
+            None,
+        )
+        for index, row in enumerate(self.rows):
+            boxes = [cell.bbox for cell in row if cell.bbox is not None]
+            texts = tuple(cell.text.strip().casefold() for cell in row if cell.text.strip())
+            kind = "blank"
+            if texts:
+                if any(value in associated.values() for value in texts):
+                    kind = "title" if texts[0] == associated.get("title") else "caption"
+                elif first_grid is not None and index == first_grid and len(texts) >= 2:
+                    kind = "header"
+                else:
+                    kind = "body"
+            bands.append(
+                TableRowBand(
+                    index=index,
+                    bbox=bbox_union(boxes),
+                    kind=kind,
+                )
+            )
+        return tuple(bands)
+
+    @property
+    def column_bands(self) -> tuple[TableColumnBand, ...]:
+        columns = max(
+            (cell.column + cell.column_span for row in self.rows for cell in row),
+            default=0,
+        )
+        bands: list[TableColumnBand] = []
+        for index in range(columns):
+            boxes = [
+                cell.bbox
+                for row in self.rows
+                for cell in row
+                if cell.bbox is not None and cell.column <= index < cell.column + cell.column_span
+            ]
+            bands.append(
+                TableColumnBand(
+                    index=index,
+                    bbox=bbox_union(boxes),
+                )
+            )
+        return tuple(bands)
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,6 +219,10 @@ class FormField:
     value_text: str = ""
     bbox: BBox | None = None
     field_index: int | None = None
+    required: bool = False
+    read_only: bool = False
+    no_export: bool = False
+    options: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -185,29 +310,63 @@ PageElement: TypeAlias = Block | Table | Figure
 
 
 @dataclass(frozen=True, slots=True)
-class Page:
-    page_number: int
-    page_label: str | None = None
-    width: float = 0.0
-    height: float = 0.0
-    rotation: int = 0
-    blocks: tuple[Block, ...] = ()
-    page_class: str = "unknown"
-    base_route: str = "unknown"
-    confidence: float | None = None
-    tables: tuple[Table, ...] = ()
-    figures: tuple[Figure, ...] = ()
-    links: tuple[Link, ...] = ()
-    annotations: tuple[Annotation, ...] = ()
-    form_fields: tuple[FormField, ...] = ()
-    header: str = ""
-    footer: str = ""
+class ContentNode:
+    """A shared ordered graph node with a typed payload."""
+
+    node_id: int
+    kind: str
+    payload: PageElement
+    page_number: int | None = None
 
     @property
-    def elements(self) -> tuple[PageElement, ...]:
-        return tuple(
-            sorted((*self.blocks, *self.tables, *self.figures), key=lambda item: item.order)
-        )
+    def bbox(self) -> BBox | None:
+        return self.payload.bbox
+
+    @property
+    def provenance(self) -> tuple[str, ...]:
+        value = getattr(self.payload, "provenance", ())
+        if value:
+            return tuple(value)
+        metadata = getattr(self.payload, "metadata", {})
+        source = metadata.get("source") if isinstance(metadata, MappingABC) else None
+        return (str(source),) if source else ()
+
+
+@dataclass(frozen=True, slots=True)
+class TextView:
+    """Reading-order projection over the page's text nodes."""
+
+    elements: tuple[PageElement, ...]
+    page_number: int | None = None
+
+    @property
+    def lines(self) -> tuple[TextLine, ...]:
+        return tuple(line for block in self.blocks for line in block.lines)
+
+    @property
+    def blocks(self) -> tuple[Block, ...]:
+        return tuple(element for element in self.elements if isinstance(element, Block))
+
+    @property
+    def words(self) -> tuple[TextWord, ...]:
+        words: list[TextWord] = []
+        line_index = 0
+        for block_index, block in enumerate(self.blocks):
+            for line in block.lines:
+                for word_index, word in enumerate(line.text.split()):
+                    words.append(
+                        TextWord(
+                            text=word,
+                            bbox=line.bbox,
+                            line_index=line_index,
+                            word_index=word_index,
+                            block_index=block_index,
+                            page_number=self.page_number,
+                            source=line.source,
+                        )
+                    )
+                line_index += 1
+        return tuple(words)
 
     @property
     def text(self) -> str:
@@ -222,6 +381,186 @@ class Page:
             if text:
                 parts.append(text)
         return "\n\n".join(parts)
+
+
+@dataclass(frozen=True, slots=True)
+class TextWord:
+    """A word projection derived from a normalized text line."""
+
+    text: str
+    bbox: BBox | None = None
+    line_index: int = 0
+    word_index: int = 0
+    block_index: int = 0
+    page_number: int | None = None
+    source: str = "unknown"
+
+
+@dataclass(frozen=True, slots=True)
+class TextLineReference:
+    """A document-owned reference to a normalized line and its source page."""
+
+    page_number: int
+    line_index: int
+    line: TextLine
+
+
+@dataclass(frozen=True, slots=True)
+class TextRun:
+    """Raw font-level text evidence exposed only through diagnostics."""
+
+    text: str
+    bbox: BBox
+    font_name: str | None
+    font_size: float
+    is_vertical: bool
+    visible: bool
+    rotation: int
+    seqno: int
+    geometry_issues: tuple[object, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class TextDiagnostics:
+    """Low-level text evidence separate from semantic text projections."""
+
+    runs: tuple[TextRun, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class TableView:
+    """Structured table projection independent of reading-order text."""
+
+    tables: tuple[Table, ...]
+    page_number: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class TableReference:
+    """A document-owned reference to a table and its source page."""
+
+    page_number: int
+    table_index: int
+    table: Table
+
+
+@dataclass(frozen=True, slots=True)
+class DocumentTextView:
+    """Document-wide text projection retaining page boundaries."""
+
+    pages: tuple[TextView, ...]
+
+    @property
+    def lines(self) -> tuple[TextLine, ...]:
+        return tuple(line for page in self.pages for line in page.lines)
+
+    @property
+    def blocks(self) -> tuple[Block, ...]:
+        return tuple(block for page in self.pages for block in page.blocks)
+
+    @property
+    def line_references(self) -> tuple[TextLineReference, ...]:
+        return tuple(
+            TextLineReference(
+                page_number=(page.page_number if page.page_number is not None else page_number),
+                line_index=index,
+                line=line,
+            )
+            for page_number, page in enumerate(self.pages, start=1)
+            for index, line in enumerate(page.lines)
+        )
+
+    @property
+    def words(self) -> tuple[TextWord, ...]:
+        words: list[TextWord] = []
+        for page in self.pages:
+            words.extend(replace(word, page_number=page.page_number) for word in page.words)
+        return tuple(words)
+
+    @property
+    def text(self) -> str:
+        return "\f".join(page.text for page in self.pages) + "\f"
+
+
+@dataclass(frozen=True, slots=True)
+class DocumentTableView:
+    """Document-wide structured table projection retaining page ownership."""
+
+    pages: tuple[TableView, ...]
+
+    @property
+    def tables(self) -> tuple[Table, ...]:
+        return tuple(table for page in self.pages for table in page.tables)
+
+    @property
+    def references(self) -> tuple[TableReference, ...]:
+        return tuple(
+            TableReference(
+                page_number=(page.page_number if page.page_number is not None else page_number),
+                table_index=table_index,
+                table=table,
+            )
+            for page_number, page in enumerate(self.pages, start=1)
+            for table_index, table in enumerate(page.tables)
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class Page:
+    page_number: int
+    page_label: str | None = None
+    width: float = 0.0
+    height: float = 0.0
+    rotation: int = 0
+    blocks: tuple[Block, ...] = ()
+    page_class: str = "unknown"
+    base_route: str = "unknown"
+    confidence: float | None = None
+    tables: tuple[Table, ...] = ()
+    structured_tables: tuple[Table, ...] = ()
+    figures: tuple[Figure, ...] = ()
+    links: tuple[Link, ...] = ()
+    annotations: tuple[Annotation, ...] = ()
+    form_fields: tuple[FormField, ...] = ()
+    header: str = ""
+    footer: str = ""
+    diagnostics: tuple[Diagnostic, ...] = ()
+    cropbox: BBox | None = None
+
+    @property
+    def elements(self) -> tuple[PageElement, ...]:
+        return tuple(
+            sorted((*self.blocks, *self.tables, *self.figures), key=lambda item: item.order)
+        )
+
+    @property
+    def nodes(self) -> tuple[ContentNode, ...]:
+        return tuple(
+            ContentNode(
+                node_id=index,
+                kind=type(element).__name__.casefold(),
+                payload=element,
+                page_number=self.page_number,
+            )
+            for index, element in enumerate(self.elements)
+        )
+
+    @property
+    def text_view(self) -> TextView:
+        return TextView(self.elements, page_number=self.page_number)
+
+    @property
+    def words(self) -> tuple[TextWord, ...]:
+        """Return the canonical reading-order word projection for this page."""
+        return self.text_view.words
+
+    @property
+    def table_view(self) -> TableView:
+        return TableView(self.structured_tables or self.tables, page_number=self.page_number)
+
+    @property
+    def text(self) -> str:
+        return self.text_view.text
 
     def to_markdown(self) -> str:
         from core_pdf.impl.engine.structured.serialization import page_to_markdown
@@ -247,10 +586,27 @@ class Document:
     pages: tuple[Page, ...] = ()
     metadata: Mapping[str, Any] = field(default_factory=dict)
     diagnostics: tuple[Diagnostic, ...] = ()
-    schema_version: str = "2.0"
+    schema_version: str = SCHEMA_VERSION
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "metadata", internal_freeze(self.metadata))
+
+    @property
+    def text_view(self) -> DocumentTextView:
+        return DocumentTextView(tuple(page.text_view for page in self.pages))
+
+    @property
+    def table_view(self) -> DocumentTableView:
+        return DocumentTableView(tuple(page.table_view for page in self.pages))
+
+    @property
+    def nodes(self) -> tuple[ContentNode, ...]:
+        """Return one reading-order node stream with page ownership preserved."""
+        nodes: list[ContentNode] = []
+        for page in self.pages:
+            offset = len(nodes)
+            nodes.extend(replace(node, node_id=offset + node.node_id) for node in page.nodes)
+        return tuple(nodes)
 
     def edit(self) -> DocumentEditor:
         from core_pdf.impl.engine.structured.editor import DocumentEditor
@@ -259,7 +615,19 @@ class Document:
 
     @property
     def text(self) -> str:
-        return "\f".join(page.text for page in self.pages) + "\f"
+        return self.text_view.text
+
+    @property
+    def words(self) -> tuple[TextWord, ...]:
+        return self.text_view.words
+
+    @property
+    def lines(self) -> tuple[TextLine, ...]:
+        return self.text_view.lines
+
+    @property
+    def blocks(self) -> tuple[Block, ...]:
+        return self.text_view.blocks
 
     def to_json_dict(self) -> dict[str, JsonValue]:
         from core_pdf.impl.engine.structured.serialization import document_to_json_dict
@@ -280,3 +648,13 @@ class Document:
         from core_pdf.impl.engine.structured.serialization import document_to_html
 
         return document_to_html(self)
+
+    def to_csv(self, *, pages: PageSelection | None = None) -> str:
+        from core_pdf.impl.engine.structured.serialization import document_to_csv
+
+        return document_to_csv(self, pages=pages)
+
+    def to_tei(self, *, pages: PageSelection | None = None) -> str:
+        from core_pdf.impl.engine.structured.serialization import document_to_tei
+
+        return document_to_tei(self, pages=pages)

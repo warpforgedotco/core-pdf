@@ -1,46 +1,6 @@
 # core-pdf
 
-**High-Performance PDF Engine**
-
-## Structured extraction
-
-`PdfDocument.extract()` is the canonical extraction API. It returns immutable,
-layout-aware page results containing ordered text blocks and resolved lines, including
-their geometry, column index, rotation, source, and confidence metadata. Use
-`PdfDocument.to_markdown()` when a Markdown view is needed.
-
-The records are implemented in `core_pdf.impl.engine.structured` and can also be serialized
-as versioned JSON or semantic HTML.
-
-Optional enrichers implement `core_document.DocumentAdapter` and can be passed to
-`PdfDocument.extract(adapters=...)`; OCR is not a dependency of this package.
-
-`core_pdf.serialize_document_to_pdf(document)` writes a new PDF from the IR using
-standard Type1 fonts by default. Pass a `PdfFontProvider` for alternate font
-resources; Unicode outside the provider’s encoding is rejected explicitly.
-
-Pass `StandardPdfEncryption(user_password=...)` to enable PDF Standard Security
-Revision 3 encryption. Incremental saves preserve that encryption for new and
-replaced objects when the authenticated input uses Standard Security Revision 3.
-
-`PdfSignaturePlan` provides a detached PDF signature container backed by an
-external CMS/PKCS#7 signer. The signer receives the exact `/ByteRange` bytes;
-core-pdf reserves and fills `/Contents` but does not manage keys or generate CMS.
-
-`core-pdf` currently extracts native PDF text objects only. Image-only and scanned pages
-return no text blocks; OCR is intentionally provided separately and is not invoked by
-this package.
-
-Native extraction snapshots are checked with:
-
-```sh
-uv run python scripts/native_snapshots.py
-```
-
-After an intentional extraction change, regenerate them with
-`uv run python scripts/native_snapshots.py --update` and review the Markdown diff.
-
-![core-pdf — High-Performance PDF Engine](.github/assets/core-pdf-social-preview.jpg)
+High-Performance PDF Engine
 
 ## License
 

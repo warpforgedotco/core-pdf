@@ -10,29 +10,14 @@ from typing import Generic, TypeVar
 
 import numpy
 
-from core_pdf.impl.engine.layout.geometry import bbox_area, bbox_intersection_area
+from core_pdf.impl.engine.layout.geometry import (
+    bbox_area,
+    bbox_intersection_area,
+    finite_rect,
+)
 
 RectTuple = tuple[float, float, float, float]
 T = TypeVar("T")
-
-
-def bbox_overlap_ratio(left: Sequence[float], right: Sequence[float]) -> float:
-    intersection = bbox_intersection_area(left, right)
-    if intersection <= 0.0:
-        return 0.0
-    return intersection / max(1.0, min(bbox_area(left), bbox_area(right)))
-
-
-def internal_bbox_tuple(box: Sequence[float]) -> RectTuple | None:
-    try:
-        x0, y0, x1, y1 = (float(box[0]), float(box[1]), float(box[2]), float(box[3]))
-    except (IndexError, TypeError, ValueError):
-        return None
-    if not all(math.isfinite(value) for value in (x0, y0, x1, y1)):
-        return None
-    if x1 <= x0 or y1 <= y0:
-        return None
-    return (x0, y0, x1, y1)
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,7 +52,7 @@ class SpatialIndex(Generic[T]):
     ) -> None:
         materialized: list[SpatialHit[T]] = []
         for item, box in entries:
-            bbox = internal_bbox_tuple(box)
+            bbox = finite_rect(box)
             if bbox is not None:
                 materialized.append(SpatialHit(item, bbox))
         self.internal_entries = tuple(materialized)
@@ -83,7 +68,7 @@ class SpatialIndex(Generic[T]):
             return
 
         bbox_array = numpy.asarray([hit.bbox for hit in materialized], dtype=numpy.float64)
-        resolved_bounds = internal_bbox_tuple(bounds) if bounds is not None else None
+        resolved_bounds = finite_rect(bounds) if bounds is not None else None
         if resolved_bounds is None:
             resolved_bounds = (
                 float(bbox_array[:, 0].min()),
@@ -220,7 +205,7 @@ class SpatialIndex(Generic[T]):
         if not self.internal_entries:
             return []
         if normalized is None:
-            normalized = internal_bbox_tuple(box)
+            normalized = finite_rect(box)
         if normalized is None:
             return []
         x0, y0, x1, y1 = self.internal_cell_range(normalized)
@@ -242,11 +227,13 @@ class SpatialIndex(Generic[T]):
         return tuple(hit.item for hit in self.candidate_hits(box))
 
     def intersecting_hits(self, box: Sequence[float]) -> tuple[SpatialHit[T], ...]:
-        normalized = internal_bbox_tuple(box)
+        normalized = finite_rect(box)
         indexes = self.internal_candidate_indexes(box, normalized)
         if normalized is None or not indexes:
             return ()
-        candidates = self.internal_bbox_array[indexes]
+        # Avoid double numpy array conversion by creating intp array once.
+        np_indexes = numpy.asarray(indexes, dtype=numpy.intp)
+        candidates = self.internal_bbox_array[np_indexes]
         query = numpy.asarray(normalized, dtype=numpy.float64)
         overlaps = (
             (candidates[:, 0] < query[2])
@@ -254,10 +241,7 @@ class SpatialIndex(Generic[T]):
             & (candidates[:, 1] < query[3])
             & (candidates[:, 3] > query[1])
         )
-        return tuple(
-            self.internal_entries[index]
-            for index in numpy.asarray(indexes, dtype=numpy.intp)[overlaps]
-        )
+        return tuple(self.internal_entries[index] for index in np_indexes[overlaps].tolist())
 
     def intersecting(self, box: Sequence[float]) -> tuple[T, ...]:
         return tuple(hit.item for hit in self.intersecting_hits(box))
@@ -272,5 +256,4 @@ __all__ = (
     "SpatialIndex",
     "bbox_area",
     "bbox_intersection_area",
-    "bbox_overlap_ratio",
 )

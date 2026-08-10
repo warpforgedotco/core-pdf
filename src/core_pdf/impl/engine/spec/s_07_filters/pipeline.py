@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
+"""Filter dispatch: map stream filter names to decoders and cache expensive decodes."""
+
 from __future__ import annotations
 
 import os

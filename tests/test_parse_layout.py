@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from core_pdf.impl.engine.parse import ObservationBatch, ObservationSource, layout_blocks
+from core_pdf.impl.engine.parse.layout import internal_column_major_prose
+from core_pdf.impl.engine.parse.model import ParsedBlock, ParsedLine
 
 
 def observations(
@@ -37,6 +39,36 @@ def test_xy_cut_reads_columns_before_moving_right() -> None:
     ]
     assert blocks[0].column_index is None
     assert {block.column_index for block in blocks[1:]} == {0, 1}
+
+
+def test_column_major_prose_recovers_two_columns_with_a_header_cluster() -> None:
+    lines = [
+        ParsedLine(
+            text=f"{column} line {index}",
+            bbox=(left, 800.0 - index * 8.0, left + 80.0, 806.0 - index * 8.0),
+            source="ocr",
+        )
+        for index in range(80)
+        for column, left in (("left", 40.0), ("right", 240.0))
+    ]
+    # A centered heading creates a third x-start cluster without being a column.
+    lines.insert(
+        0,
+        ParsedLine(
+            text="Centered heading",
+            bbox=(140.0, 820.0, 220.0, 826.0),
+            source="ocr",
+        ),
+    )
+    block = ParsedBlock(
+        lines=tuple(lines),
+        bbox=(40.0, 0.0, 320.0, 826.0),
+    )
+
+    ordered = internal_column_major_prose([block])[0].lines
+
+    assert ordered[0].text == "left line 0"
+    assert ordered[81].text == "right line 0"
 
 
 def test_full_width_obstacle_keeps_surrounding_regions_separate() -> None:

@@ -526,6 +526,41 @@ def stroked_text_seed_runs(
     return profile_stroked_text(drawings, drawing_indexes).seed_runs
 
 
+STROKED_TEXT_ISOLATED_MIN_ASPECT_RATIO = 0.12
+
+
+def stroked_text_isolated_runs(profile: StrokedTextProfile) -> tuple[StrokedTextRun, ...]:
+    """Return single-glyph runs the seed packer skips (pin numbers, lone digits).
+
+    Seed packing requires at least two glyphs per run, so isolated labels are
+    never rasterized for OCR.  Collect the glyph-sized singles here so a
+    supplemental montage can show them to OCR; near-degenerate boxes (wire
+    stubs, junction dashes) stay excluded via the aspect gate.
+    """
+    isolated: list[StrokedTextRun] = []
+    for glyphs in profile.runs:
+        if len(glyphs) != 1:
+            continue
+        box = internal_glyph_bbox(glyphs[0])
+        width = box[2] - box[0]
+        height = box[3] - box[1]
+        if not (
+            STROKED_TEXT_SEED_RUN_MIN_HEIGHT <= height <= STROKED_TEXT_SEED_RUN_MAX_HEIGHT
+            and width <= STROKED_TEXT_SEED_RUN_MAX_WIDTH
+        ):
+            continue
+        if min(width, height) < max(width, height) * STROKED_TEXT_ISOLATED_MIN_ASPECT_RATIO:
+            continue
+        isolated.append(
+            StrokedTextRun(
+                bbox=box,
+                drawing_indexes=tuple(record.index for record in glyphs[0]),
+                glyph_count=1,
+            )
+        )
+    return tuple(isolated)
+
+
 def internal_stroked_text_seed_run(
     glyphs: tuple[internal_Glyph, ...],
 ) -> StrokedTextRun | None:

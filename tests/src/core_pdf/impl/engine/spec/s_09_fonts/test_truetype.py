@@ -1,4 +1,4 @@
-from typing import Protocol
+from typing import Any, Protocol, cast
 
 from core_pdf.impl.engine.spec.s_09_fonts.truetype import TrueTypeFontProgram
 
@@ -51,3 +51,59 @@ def test_glyph_contours_reuses_glyph_set_and_returns_fresh_lists() -> None:
     assert first is not second
     assert fake_font.glyph_set_calls == 1
     assert len(font.internal_glyph_contour_cache) == 1
+
+
+def test_corrupt_font_tables_do_not_escape_as_assertion_errors() -> None:
+    """fontTools guards malformed tables with bare `assert`, not just raises.
+
+    A damaged embedded font must degrade to "no usable font program" rather
+    than aborting the caller: a real document was left entirely unextractable
+    because a corrupt cmap format 4 subtable raised AssertionError out through
+    the content interpreter.
+    """
+    from core_pdf.impl.engine.spec.s_07_content.text_helpers import (
+        load_ligature_font_tables,
+    )
+    from core_pdf.impl.engine.spec.s_09_fonts.font_program_truetype import (
+        internal_best_unicode_gid_cmap,
+    )
+
+    class AssertingFont:
+        def __getitem__(self, key: str) -> object:
+            raise AssertionError(f"corrupt {key} table")
+
+    assert internal_best_unicode_gid_cmap(cast(Any, AssertingFont())) == {}
+
+    class AssertingCmapFont:
+        def __getitem__(self, key: str) -> object:
+            class Table:
+                def getBestCmap(self) -> object:
+                    raise AssertionError("corrupt cmap subtable")
+
+            return Table()
+
+    assert internal_best_unicode_gid_cmap(cast(Any, AssertingCmapFont())) == {}
+
+    # The whole-program entry point degrades rather than propagating.
+    assert load_ligature_font_tables(b"not a font at all") is None
+    assert load_ligature_font_tables(b"\x00\x01\x00\x00" + b"\xff" * 64) is None
+
+
+def test_symbol_bracket_pieces_map_to_unicode_not_private_use() -> None:
+    """The AGL puts the Symbol font's bracket pieces in Adobe's private-use
+    area, but Unicode 3.2 gave them real codepoints. A private-use character
+    renders as a blank box and means nothing to a downstream consumer, so
+    extraction should prefer the standard ones.
+    """
+    from core_pdf.impl.engine.spec.s_09_fonts.glyphs import glyph_name_to_unicode
+
+    assert glyph_name_to_unicode("bracketlefttp") == "⎡"
+    assert glyph_name_to_unicode("bracketleftex") == "⎢"
+    assert glyph_name_to_unicode("bracketrightbt") == "⎦"
+    assert glyph_name_to_unicode("parenleftex") == "⎜"
+    assert glyph_name_to_unicode("braceex") == "⎪"
+    assert glyph_name_to_unicode("integralex") == "⎮"
+    # Sans-serif variants are a typeface distinction, not a different character.
+    assert glyph_name_to_unicode("registersans") == "®"
+    for name in ("bracketlefttp", "braceleftmid", "arrowvertex", "trademarksans"):
+        assert not (0xE000 <= ord(glyph_name_to_unicode(name)) <= 0xF8FF)

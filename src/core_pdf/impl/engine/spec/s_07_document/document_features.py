@@ -13,7 +13,7 @@ from core_pdf.impl.engine.spec.s_07_document.forms import FormsMixin
 from core_pdf.impl.engine.spec.s_07_document.name_trees import iter_name_tree_items
 from core_pdf.impl.engine.spec.s_07_document.navigation import NavigationMixin
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
-from core_pdf.impl.models import EmbeddedFileRecord
+from core_pdf.impl.models import RawEmbeddedFile
 from core_pdf.impl.objects import PdfReference, PdfStream
 from core_pdf.impl.types import PdfDict
 
@@ -23,10 +23,10 @@ class DocumentFeaturesMixin(NavigationMixin, FormsMixin):
 
     __slots__ = ()
 
-    embedded_files_cache: list[EmbeddedFileRecord] | None
+    embedded_files_cache: list[RawEmbeddedFile] | None
     oc_layers: dict[str, bool] | None
 
-    def embedded_files(self: Any) -> list[EmbeddedFileRecord]:
+    def embedded_files(self: Any) -> list[RawEmbeddedFile]:
         with document_cache_lock(self):
             records = self.embedded_files_cache
             if records is None:
@@ -34,7 +34,7 @@ class DocumentFeaturesMixin(NavigationMixin, FormsMixin):
                 self.embedded_files_cache = records
             return list(records)
 
-    def build_embedded_files(self: Any) -> list[EmbeddedFileRecord]:
+    def build_embedded_files(self: Any) -> list[RawEmbeddedFile]:
         names = self.resolver.resolve(lookup_dict_key(self.catalog(), "Names"))
         if not isinstance(names, dict):
             return []
@@ -45,7 +45,7 @@ class DocumentFeaturesMixin(NavigationMixin, FormsMixin):
             raise ValueError("invalid EmbeddedFiles name tree")
 
         recover = document_recovery_enabled(self)
-        records: list[EmbeddedFileRecord] = []
+        records: list[RawEmbeddedFile] = []
         for name, value in iter_name_tree_items(
             embedded_tree,
             self.resolver.resolve,
@@ -62,7 +62,7 @@ class DocumentFeaturesMixin(NavigationMixin, FormsMixin):
                 records.append(record)
         return records
 
-    def embedded_file_record(self: Any, name: str, value: object) -> EmbeddedFileRecord | None:
+    def embedded_file_record(self: Any, name: str, value: object) -> RawEmbeddedFile | None:
         filespec = self.resolver.resolve(value)
         if not isinstance(filespec, dict):
             raise ValueError("invalid embedded file spec")
@@ -79,7 +79,7 @@ class DocumentFeaturesMixin(NavigationMixin, FormsMixin):
             or self.resolver.resolve_str(lookup_dict_key(filespec, "F"))
             or name
         )
-        return EmbeddedFileRecord(name, filename, filespec, stream, stream.data)
+        return RawEmbeddedFile(name, filename, filespec, stream, stream.data)
 
     @staticmethod
     def ocg_key(ref: object, resolved: object) -> tuple[int, int] | int | None:

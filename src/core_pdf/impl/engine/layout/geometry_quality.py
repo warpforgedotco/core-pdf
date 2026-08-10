@@ -1,55 +1,25 @@
 # SPDX-License-Identifier: AGPL-3.0-only
+"""Detect geometry problems in text runs and lines, and summarize them per page."""
+
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Mapping, TypedDict, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from core_pdf.impl.engine.layout.geometry import (
-    bbox_area,
-    bbox_intersection_area,
-    internal_float_value,
+    finite_rect,
+    overlap_ratio_of,
 )
 from core_pdf.impl.engine.layout.glyphs import (
     glyph_text_has_unsupported_codepoint,
     union_bboxes,
 )
+from core_pdf.impl.engine.layout.models import internal_track_text_run
 
 if TYPE_CHECKING:
     from core_pdf.impl.engine.layout.models import LayoutLine, TextRun
 
 BBoxTuple = tuple[float, float, float, float]
-
-
-class LayoutGeometryIssueRecord(TypedDict, total=False):
-    code: str
-    severity: str
-    subject: str
-    repairable: bool
-    bbox: BBoxTuple
-    message: str
-    details: tuple[tuple[str, object], ...]
-
-
-class LayoutGeometrySummaryRecord(TypedDict):
-    issue_count: int
-    error_count: int
-    warning_count: int
-    repairable_count: int
-    text_run_count: int
-    line_count: int
-    issue_codes: tuple[tuple[str, int], ...]
-    suspicion_score: float
-
-
-def int_record_value(value: object) -> int:
-    if isinstance(value, bool):
-        return int(value)
-    if isinstance(value, int):
-        return value
-    if isinstance(value, (float, str, bytes, bytearray)):
-        return int(value)
-    raise TypeError(f"expected int-compatible value, got {type(value).__name__}")
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,7 +59,7 @@ def text_run_geometry_issues(run: TextRun) -> tuple[LayoutGeometryIssue, ...]:
     if cache is not None and cache[0] == key:
         return cast(tuple[LayoutGeometryIssue, ...], cache[1])
     issues = internal_compute_text_run_geometry_issues(run)
-    object.__setattr__(run, "internal_cache_tracking", True)
+    internal_track_text_run(run)
     object.__setattr__(run, "internal_geometry_issues_cache", (key, issues))
     return issues
 
@@ -235,7 +205,7 @@ def internal_compute_text_run_geometry_issues(run: TextRun) -> tuple[LayoutGeome
     if cluster_union is None or not bbox_is_positive(run_bbox):
         return tuple(issues)
 
-    cluster_inside_run = bbox_overlap_ratio(cluster_union, run_bbox)
+    cluster_inside_run = overlap_ratio_of(cluster_union, run_bbox)
     if cluster_inside_run < 0.80:
         issues.append(
             LayoutGeometryIssue(
@@ -295,7 +265,7 @@ def layout_line_geometry_issues(line: LayoutLine) -> tuple[LayoutGeometryIssue, 
         run_bbox = (run.x0, run.y0, run.x1, run.y1)
         if not bbox_is_positive(run_bbox):
             continue
-        overlap = bbox_overlap_ratio(run_bbox, line_bbox)
+        overlap = overlap_ratio_of(run_bbox, line_bbox)
         if overlap < 0.80:
             issues.append(
                 LayoutGeometryIssue(
@@ -308,7 +278,7 @@ def layout_line_geometry_issues(line: LayoutLine) -> tuple[LayoutGeometryIssue, 
                 )
             )
 
-    ignored_text, words = line.cached_text_and_words()
+    words = line.cached_text_and_words()[1]
     word_bboxes = tuple(word.bbox for word in words if bbox_is_positive(word.bbox))
     if not word_bboxes:
         return tuple(issues)
@@ -414,106 +384,6 @@ def layout_geometry_suspicion_score(
     return round(score, 4)
 
 
-def text_run_has_repairable_glyph_geometry_issue(run: TextRun) -> bool:
-    return any(issue.repairable for issue in text_run_geometry_issues(run))
-
-
-def layout_geometry_issue_record(
-    issue: LayoutGeometryIssue,
-) -> LayoutGeometryIssueRecord:
-    record: LayoutGeometryIssueRecord = {
-        "code": issue.code,
-        "severity": issue.severity,
-        "subject": issue.subject,
-        "repairable": issue.repairable,
-    }
-    if issue.bbox is not None:
-        record["bbox"] = issue.bbox
-    if issue.message:
-        record["message"] = issue.message
-    if issue.details:
-        record["details"] = issue.details
-    return record
-
-
-def text_run_geometry_issue_records(run: TextRun) -> list[LayoutGeometryIssueRecord]:
-    return [layout_geometry_issue_record(issue) for issue in text_run_geometry_issues(run)]
-
-
-def page_layout_geometry_issue_records(
-    lines: list[LayoutLine],
-) -> list[LayoutGeometryIssueRecord]:
-    return [layout_geometry_issue_record(issue) for issue in page_layout_geometry_issues(lines)]
-
-
-def layout_geometry_summary_record(
-    summary: LayoutGeometrySummary,
-) -> LayoutGeometrySummaryRecord:
-    return {
-        "issue_count": summary.issue_count,
-        "error_count": summary.error_count,
-        "warning_count": summary.warning_count,
-        "repairable_count": summary.repairable_count,
-        "text_run_count": summary.text_run_count,
-        "line_count": summary.line_count,
-        "issue_codes": summary.issue_codes,
-        "suspicion_score": summary.suspicion_score,
-    }
-
-
-def layout_geometry_summary_from_record(
-    record: Mapping[str, object],
-) -> LayoutGeometrySummary | None:
-    try:
-        issue_codes_value = record.get("issue_codes", ())
-        if not isinstance(issue_codes_value, tuple | list):
-            return None
-        issue_codes_list: list[tuple[str, int]] = []
-        for item in issue_codes_value:
-            if not isinstance(item, tuple | list) or len(item) != 2:
-                return None
-            code, count = item
-            issue_codes_list.append((str(code), int_record_value(count)))
-        issue_codes = tuple(issue_codes_list)
-        return LayoutGeometrySummary(
-            issue_count=int_record_value(record.get("issue_count", 0)),
-            error_count=int_record_value(record.get("error_count", 0)),
-            warning_count=int_record_value(record.get("warning_count", 0)),
-            repairable_count=int_record_value(record.get("repairable_count", 0)),
-            text_run_count=int_record_value(record.get("text_run_count", 0)),
-            line_count=int_record_value(record.get("line_count", 0)),
-            issue_codes=issue_codes,
-            suspicion_score=internal_float_value(record.get("suspicion_score", 0.0)),
-        )
-    except (TypeError, ValueError):
-        return None
-
-
-def layout_geometry_should_trigger_ocr(
-    summary: LayoutGeometrySummary | None,
-    *,
-    text_tokens: int,
-) -> bool:
-    if summary is None or not summary.has_issues:
-        return False
-    if text_tokens <= 20:
-        return summary.error_count > 0 or summary.has_repairable_issues
-    if (
-        text_tokens >= 250
-        and summary.text_run_count >= 100
-        and summary.issue_count / summary.text_run_count <= 0.08
-    ):
-        # A few suspect formula or symbol glyphs do not make an otherwise
-        # substantial native layer unreliable. Full-page OCR tends to turn
-        # those isolated constructs into high-confidence mirrored gibberish.
-        return False
-    if summary.has_repairable_issues and summary.suspicion_score >= 5.0:
-        return True
-    if summary.error_count >= 2 and summary.suspicion_score >= 7.0:
-        return True
-    return summary.suspicion_score >= 12.0 and text_tokens <= 1000
-
-
 def with_issue_detail(
     issue: LayoutGeometryIssue,
     key: str,
@@ -533,18 +403,7 @@ def with_issue_detail(
 def numeric_bbox(value: Any) -> BBoxTuple | None:
     if not isinstance(value, (list, tuple)) or len(value) != 4:
         return None
-    try:
-        bbox = (
-            float(value[0]),
-            float(value[1]),
-            float(value[2]),
-            float(value[3]),
-        )
-    except (TypeError, ValueError):
-        return None
-    if not all(math.isfinite(coord) for coord in bbox):
-        return None
-    return bbox
+    return finite_rect(value, require_positive=False)
 
 
 def bbox_is_positive(bbox: BBoxTuple | None) -> bool:
@@ -559,27 +418,11 @@ def bbox_height(bbox: BBoxTuple) -> float:
     return bbox[3] - bbox[1]
 
 
-def bbox_overlap_ratio(subject: BBoxTuple, container: BBoxTuple) -> float:
-    subject_area = bbox_area(subject)
-    if subject_area <= 0.0:
-        return 0.0
-    return bbox_intersection_area(subject, container) / subject_area
-
-
 __all__ = (
     "LayoutGeometryIssue",
-    "LayoutGeometryIssueRecord",
     "LayoutGeometrySummary",
-    "LayoutGeometrySummaryRecord",
-    "layout_geometry_issue_record",
-    "layout_geometry_summary_record",
-    "layout_geometry_summary_from_record",
-    "layout_geometry_should_trigger_ocr",
     "layout_line_geometry_issues",
-    "page_layout_geometry_issue_records",
     "page_layout_geometry_issues",
     "page_layout_geometry_summary",
-    "text_run_geometry_issue_records",
     "text_run_geometry_issues",
-    "text_run_has_repairable_glyph_geometry_issue",
 )

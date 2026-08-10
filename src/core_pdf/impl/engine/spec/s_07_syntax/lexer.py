@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
+"""Lexer for PDF syntax: tokens, objects, strings, and numeric arrays."""
+
 from __future__ import annotations
 
 import binascii

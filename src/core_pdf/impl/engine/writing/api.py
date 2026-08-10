@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any, BinaryIO, cast
 from core_pdf.impl.engine.spec.s_07_syntax.xref import XRefScanner
 from core_pdf.impl.engine.writing.encryption import StandardPdfEncryptionContext
 from core_pdf.impl.engine.writing.incremental import append_incremental_update
-from core_pdf.impl.exceptions import PdfUnsupportedError
+from core_pdf.impl.exceptions import PdfDocumentClosedError, PdfUnsupportedError
 
 if TYPE_CHECKING:
     from core_pdf.impl.types import PdfObject
@@ -34,7 +34,7 @@ class PdfDocumentWritingMixin:
         or an already-open binary stream.
         """
         if self.closed:
-            raise ValueError("PDF document is closed")
+            raise PdfDocumentClosedError("PDF document is closed")
         original = bytes(self.raw_data)
         previous_xref_offset = find_startxref(original)
         previous_size = previous_object_count(self.xref, self.trailer_dict)

@@ -160,8 +160,8 @@ class ResolverValueMixin:
                     parse_float_strict(resolved[2]),
                     parse_float_strict(resolved[3]),
                 )
-            except ValueError:
-                raise ValueError("invalid box value")
+            except ValueError as error:
+                raise ValueError("invalid box value") from error
         raise ValueError("invalid box value")
 
     def resolve_font_dict(self, font: PdfDict) -> PdfDict:

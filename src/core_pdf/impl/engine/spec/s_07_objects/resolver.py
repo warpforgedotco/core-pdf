@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
+"""Resolve indirect references against the cross-reference table."""
+
 from __future__ import annotations
 
 import contextlib

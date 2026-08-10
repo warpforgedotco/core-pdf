@@ -9,7 +9,8 @@ from core_pdf.impl.engine.spec.s_07_document.document_lock import (
 )
 from core_pdf.impl.engine.spec.s_07_document.name_trees import iter_name_tree_items
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
-from core_pdf.impl.models import NamedDestination, OutlineItem
+from core_pdf.impl.exceptions import PdfParseError
+from core_pdf.impl.models import RawNamedDestination, RawOutlineItem
 from core_pdf.impl.types import PdfArray, PdfDict, PdfObject
 
 
@@ -17,7 +18,7 @@ class NavigationMixin:
     __slots__ = ()
 
     resolver: Any
-    named_destinations_cache: dict[str, NamedDestination] | None
+    named_destinations_cache: dict[str, RawNamedDestination] | None
     xref_was_recovered: bool
     page_tree_was_recovered: bool
 
@@ -27,7 +28,7 @@ class NavigationMixin:
 
         def page_index_for(self, page_obj: object) -> int | None: ...
 
-    def iter_outlines(self) -> list[OutlineItem]:
+    def iter_outlines(self) -> list[RawOutlineItem]:
         outlines = self.resolver.resolve(lookup_dict_key(self.catalog(), "Outlines"))
         if outlines is None:
             return []
@@ -38,7 +39,7 @@ class NavigationMixin:
             return []
         return self.walk_outlines(first, 0)
 
-    def walk_outlines(self, item: object, level: int) -> list[OutlineItem]:
+    def walk_outlines(self, item: object, level: int) -> list[RawOutlineItem]:
         recover_outlines = document_recovery_enabled(self)
         if level > 200:
             raise ValueError("invalid outline depth")
@@ -46,7 +47,7 @@ class NavigationMixin:
             if recover_outlines:
                 return []
             raise ValueError("invalid outline item")
-        result: list[OutlineItem] = []
+        result: list[RawOutlineItem] = []
         current: object | None = item
         seen: set[int] = set()
         while current is not None:
@@ -64,7 +65,9 @@ class NavigationMixin:
             title = self.resolver.resolve_str(lookup_dict_key(current, "Title"))
             dest = lookup_dict_key(current, "Dest")
             if dest is None:
-                action = lookup_dict_key(current, "A")
+                # /A is very often an indirect reference, so it has to be
+                # resolved before it can be recognised as an action dictionary.
+                action = self.resolver.resolve(lookup_dict_key(current, "A"))
                 if (
                     isinstance(action, dict)
                     and self.resolver.resolve_name(lookup_dict_key(action, "S")) == "GoTo"
@@ -72,7 +75,7 @@ class NavigationMixin:
                     dest = lookup_dict_key(action, "D")
             try:
                 result.append(
-                    OutlineItem(
+                    RawOutlineItem(
                         title=title or "",
                         level=level,
                         dest=cast(PdfObject | str | None, dest),
@@ -127,7 +130,7 @@ class NavigationMixin:
 
     def named_destinations(
         self,
-    ) -> dict[str, NamedDestination]:
+    ) -> dict[str, RawNamedDestination]:
         with document_cache_lock(self):
             if self.named_destinations_cache is None:
                 self.populate_named_destinations()
@@ -135,7 +138,7 @@ class NavigationMixin:
 
     def resolve_named_destination(
         self, name: str, seen: set[str] | None = None
-    ) -> NamedDestination | None:
+    ) -> RawNamedDestination | None:
         if seen is None:
             seen = set()
         if name in seen:
@@ -146,7 +149,7 @@ class NavigationMixin:
                 self.populate_named_destinations()
             return (self.named_destinations_cache or {}).get(name)
 
-    def destination_from_list(self, resolved_list: PdfArray) -> NamedDestination:
+    def destination_from_list(self, resolved_list: PdfArray) -> RawNamedDestination:
         if not resolved_list:
             raise ValueError("invalid destination array")
         page_obj = self.resolver.resolve(resolved_list[0])
@@ -163,16 +166,18 @@ class NavigationMixin:
             if dest_type is None:
                 raise ValueError("invalid destination type")
             args = list(resolved_list[2:]) if len(resolved_list) > 2 else []
-        return NamedDestination(page_index=page_index, type=dest_type, args=args, raw=resolved_list)
+        return RawNamedDestination(
+            page_index=page_index, type=dest_type, args=args, raw=resolved_list
+        )
 
     def normalize_destination_value(
         self,
         val: object,
         seen: set[str] | None = None,
         targets: dict[str, object] | None = None,
-        normalized: dict[str, NamedDestination] | None = None,
+        normalized: dict[str, RawNamedDestination] | None = None,
         resolving: set[str] | None = None,
-    ) -> NamedDestination:
+    ) -> RawNamedDestination:
         if seen is None:
             seen = set()
         resolved = self.resolver.resolve(val)
@@ -201,12 +206,12 @@ class NavigationMixin:
                 if cached is not None:
                     return cached
                 if name in resolving:
-                    return NamedDestination(page_index=None, type=None, args=[], raw=name)
+                    return RawNamedDestination(page_index=None, type=None, args=[], raw=name)
                 resolving.add(name)
                 try:
                     target = targets.get(name)
                     result = (
-                        NamedDestination(page_index=None, type=None, args=[], raw=name)
+                        RawNamedDestination(page_index=None, type=None, args=[], raw=name)
                         if target is None
                         else self.normalize_destination_value(
                             target,
@@ -222,7 +227,7 @@ class NavigationMixin:
                     resolving.discard(name)
 
             if name in seen:
-                return NamedDestination(page_index=None, type=None, args=[], raw=name)
+                return RawNamedDestination(page_index=None, type=None, args=[], raw=name)
             nested = self.resolve_named_destination(name, seen)
             if nested is not None:
                 return nested
@@ -252,15 +257,26 @@ class NavigationMixin:
                     ):
                         targets[name] = value
 
-            normalized: dict[str, NamedDestination] = {}
+            normalized: dict[str, RawNamedDestination] = {}
             resolving: set[str] = set()
 
             for name in targets:
-                self.normalize_destination_value(
-                    name,
-                    targets=targets,
-                    normalized=normalized,
-                    resolving=resolving,
-                )
+                try:
+                    self.normalize_destination_value(
+                        name,
+                        targets=targets,
+                        normalized=normalized,
+                        resolving=resolving,
+                    )
+                except (PdfParseError, ValueError):
+                    # The entries of a name tree are independent, so one that
+                    # points at a page the document no longer contains says
+                    # nothing about the rest. Record it as unresolved and carry
+                    # on: 93 dangling destinations in the PDF 1.7 reference
+                    # otherwise took all 70,306 sound ones, and the entire
+                    # outline tree, down with them.
+                    normalized[name] = RawNamedDestination(
+                        page_index=None, type=None, args=[], raw=name
+                    )
 
             object.__setattr__(self, "named_destinations_cache", normalized)

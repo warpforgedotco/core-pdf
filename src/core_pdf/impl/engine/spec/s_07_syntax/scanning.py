@@ -70,10 +70,6 @@ def skip_hex_string(data: bytes | memoryview, pos: int, data_len: int) -> int:
     return pos
 
 
-def is_regular_token_byte(byte: int) -> bool:
-    return not SEPARATOR_TABLE[byte]
-
-
 def skip_name(data: bytes | memoryview, pos: int, data_len: int) -> int:
     pos += 1
     while pos < data_len and not SEPARATOR_TABLE[data[pos]]:
@@ -82,7 +78,6 @@ def skip_name(data: bytes | memoryview, pos: int, data_len: int) -> int:
 
 
 __all__ = (
-    "is_regular_token_byte",
     "skip_comment",
     "skip_hex_string",
     "skip_literal_string",

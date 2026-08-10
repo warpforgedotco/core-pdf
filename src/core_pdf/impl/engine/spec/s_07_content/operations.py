@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
+"""Tokenize and dispatch content-stream operators."""
+
 from __future__ import annotations
 
 import re
@@ -142,17 +144,6 @@ class ContentOperatorCounts:
         )
 
 
-def content_stream_may_paint_graphics(data: bytes | memoryview) -> bool:
-    """Return whether a stream may emit visible vector graphics.
-
-    This intentionally permits false positives (for example inside comments or strings):
-    callers use it only to choose a richer capture. Exact token boundaries prevent
-    ordinary text and PDF names from creating most false positives.
-    """
-    raw_bytes = full_source_bytes(data)
-    return GRAPHICS_PAINT_RE.search(raw_bytes if raw_bytes is not None else bytes(data)) is not None
-
-
 def content_stream_may_show_text(data: bytes | memoryview) -> bool:
     data_len = len(data)
     raw_bytes = full_source_bytes(data)
@@ -276,9 +267,6 @@ class OperandWindow:
         count: int = 0,
     ) -> None:
         self.operands = operands
-        self.count = count
-
-    def set_count(self, count: int) -> None:
         self.count = count
 
     def __len__(self) -> int:
@@ -453,13 +441,6 @@ class CollectedIntegerHandlers:
         return self[key]
 
 
-def exact_number_operand(value: ContentOperand) -> int | float | None:
-    value_type = type(value)
-    if value_type is float or value_type is int:
-        return cast(int | float, value)
-    return None
-
-
 @overload
 def dispatch_operations(
     lexer: PdfLexer,
@@ -512,6 +493,7 @@ def dispatch_operations(
     is_word_start = IS_WORD_START
     op_get = op_handlers.get
     op_get_bytes = op_handlers_bytes.get if op_handlers_bytes is not None else None
+    double_get = double_op_handlers.get
     max_operands = len(operands)
     exact_number_types = (int, float)
 
@@ -1089,7 +1071,7 @@ def dispatch_operations(
                 if n_raw == 1:
                     handler = single_op_handlers[raw_bytes[pos - 1]]
                 elif n_raw == 2:
-                    handler = double_op_handlers.get((raw_bytes[pos - 2] << 8) | raw_bytes[pos - 1])
+                    handler = double_get((raw_bytes[pos - 2] << 8) | raw_bytes[pos - 1])
 
                 if handler is None:
                     raw = raw_bytes[pos - n_raw : pos]
@@ -1289,7 +1271,6 @@ __all__ = (
     "ContentOperation",
     "ContentOperatorCounts",
     "OperandWindow",
-    "content_stream_may_paint_graphics",
     "content_stream_may_show_text",
     "count_content_stream_operators",
     "dispatch_operations",

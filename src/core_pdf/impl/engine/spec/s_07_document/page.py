@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
+"""Spec-level page object: boxes, resources, annotations, and content streams."""
+
 from __future__ import annotations
 
 import contextlib
@@ -11,6 +13,9 @@ from core_pdf.impl.engine.cache import ExtractionCache
 from core_pdf.impl.engine.spec.s_07_content.capture import CapturedLine
 from core_pdf.impl.engine.spec.s_07_content.page_program import PageProducts, PageProgram
 from core_pdf.impl.engine.spec.s_07_content.state import TextState
+from core_pdf.impl.engine.spec.s_07_document.annotation_appearance import (
+    consume_annotation_appearances,
+)
 from core_pdf.impl.engine.spec.s_07_document.document_lock import (
     document_cache_lock,
     document_recovery_enabled,
@@ -34,7 +39,7 @@ from core_pdf.impl.engine.spec.s_07_objects.pdfdict import (
 )
 from core_pdf.impl.engine.spec.s_14_structure.tree import PageStructure
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.models import AnnotationRecord, LinkRecord
+from core_pdf.impl.models import RawAnnotation, RawLink
 from core_pdf.impl.objects import (
     MISSING,
     MissingObject,
@@ -46,7 +51,7 @@ from core_pdf.impl.types import PdfDict, PdfObject, Rectangle
 if TYPE_CHECKING:
     from core_pdf.impl.engine.layout.models import LayoutLine, TextRun
     from core_pdf.impl.engine.spec.s_07_document.document import PdfDocument
-    from core_pdf.impl.models import FieldRecord, TextSpan
+    from core_pdf.impl.models import RawFormField, RawTextSpan
 
 PageBoxCacheValue = Rectangle | None | MissingObject
 
@@ -61,8 +66,8 @@ class PdfPage:
     page_program_cache: PageProgram | None
     grid_lines: list[CapturedLine] | None
     text_lines: list[LayoutLine] | None
-    text_spans: list[TextSpan] | None
-    links: list[LinkRecord] | MissingObject
+    text_spans: list[RawTextSpan] | None
+    links: list[RawLink] | MissingObject
     page_box_cache: dict[str, PageBoxCacheValue]
     rotation_cache: int | MissingObject
     resources_cache: PdfDict | MissingObject
@@ -213,7 +218,7 @@ class PdfPage:
                 return True
         return False
 
-    def get_annotations(self) -> list[AnnotationRecord]:
+    def get_annotations(self) -> list[RawAnnotation]:
         recover_annotations = document_recovery_enabled(self.document)
         results = []
         for annot in self._annotation_dicts(strict=True):
@@ -236,20 +241,20 @@ class PdfPage:
                 dest = lookup_dict_key(action, "D")
 
             results.append(
-                AnnotationRecord(
+                RawAnnotation(
                     subtype=subtype,
                     rect=rect,
                     contents=contents,
-                    dict_=cast(PdfDict, annot),
+                    dict_=annot,
                     dest=cast(PdfObject | None, dest),
                     action=cast(PdfDict, action) if isinstance(action, dict) else None,
                 )
             )
         return results
 
-    def get_links(self) -> list[LinkRecord]:
+    def get_links(self) -> list[RawLink]:
         if self.links is not MISSING:
-            return cast(list[LinkRecord], self.links)
+            return cast(list[RawLink], self.links)
 
         annots = self._annotation_dicts(strict=False)
         if not annots:
@@ -258,7 +263,7 @@ class PdfPage:
 
         resolver = self.document.resolver
         resolve = self.document.resolve
-        records: list[LinkRecord] = []
+        records: list[RawLink] = []
         for annot in annots:
             subtype = pdf_name_direct(lookup_dict_key(annot, "Subtype"))
             if subtype is None:
@@ -286,19 +291,19 @@ class PdfPage:
                     url = link_target_resolved(resolver, action, link_type)
 
             records.append(
-                LinkRecord(
+                RawLink(
                     bbox=rect,
                     url=url,
                     link_type=link_type,
                     page_number=self.page_number,
-                    dict_=cast(PdfDict, annot),
+                    dict_=annot,
                 )
             )
 
         self.links = records
         return records
 
-    def get_fields(self) -> list[FieldRecord]:
+    def get_fields(self) -> list[RawFormField]:
         all_fields = self.document.fields()
         page_fields = []
         page_annot_ids = {id(annot) for annot in self.annotation_dicts()}
@@ -448,8 +453,10 @@ class PdfPage:
                 self.page_dict,
                 hidden_layers=self.document.oc_hidden_layers(),
                 decoder_cache=self.document.decoder_cache,
+                page_clip=self.effective_page_clip(),
             )
             self.consume_contents(state)
+            consume_annotation_appearances(self, state)
             program = PageProgram.from_state(state)
             self.page_program_cache = program
             return program
@@ -473,6 +480,32 @@ class PdfPage:
             return self.document.resolver.resolve_box(lookup_dict_key(self.inherited_values, key))
         except ValueError:
             return None
+
+    def effective_page_clip(self) -> tuple[float, float, float, float] | None:
+        """Return the region the page actually displays.
+
+        7.7.3.3, Table 30 defines CropBox as the visible region of user space,
+        whose contents "shall be clipped (cropped) to this rectangle", and
+        defaults it to MediaBox. 14.11.2.1 adds that a crop box extending past
+        the media box "[is] effectively reduced to [its] intersection with the
+        media box", so the displayed region is the intersection of the two.
+
+        A page missing both boxes is malformed; leave it unclipped rather than
+        discard all of its content.
+        """
+        media = self.resolve_box("MediaBox")
+        crop = self.resolve_box("CropBox")
+        if crop is None:
+            return media
+        if media is None:
+            return crop
+        x0 = max(min(crop[0], crop[2]), min(media[0], media[2]))
+        y0 = max(min(crop[1], crop[3]), min(media[1], media[3]))
+        x1 = min(max(crop[0], crop[2]), max(media[0], media[2]))
+        y1 = min(max(crop[1], crop[3]), max(media[1], media[3]))
+        if x0 >= x1 or y0 >= y1:
+            return media
+        return (x0, y0, x1, y1)
 
     def resolve_rotation(self) -> int:
         rotate_ref = lookup_dict_key(self.inherited_values, "Rotate")
@@ -509,7 +542,7 @@ class PdfPage:
         return max(0.0, min(1.0, ca))
 
     @property
-    def structure(self):
+    def structure(self) -> PageStructure:
         structure = self.document.structure
         if structure is None:
             return PageStructure(self, [])

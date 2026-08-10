@@ -122,10 +122,10 @@ def parse_xmp_metadata(stream: object, *, recover: bool = False) -> XmpNodeRecor
         return None
     try:
         root = ET.fromstring(raw)
-    except ET.ParseError:
+    except ET.ParseError as error:
         if recover:
             return {"parse_error": "invalid XMP metadata"}
-        raise ValueError("invalid XMP metadata")
+        raise ValueError("invalid XMP metadata") from error
 
     packet: XmpNodeRecord = {
         "tag": local_name(root.tag),

@@ -5,7 +5,7 @@ from contextlib import suppress
 from io import BytesIO
 from typing import Any
 
-from core_pdf._vendor.fontTools.ttLib import TTFont, TTLibError
+from core_pdf._vendor.fontTools.ttLib import TTFont
 from core_pdf.impl.engine.spec.s_07_objects.coercion import normalize_pdf_name
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_09_fonts.cmap_decoder import CMapDecoder
@@ -20,11 +20,11 @@ from core_pdf.impl.engine.spec.s_09_fonts.font_program import (  # noqa: F401
     cff_unicode_repair_index_for_data,
     glyph_feature_distance,
     is_repairable_to_unicode_label,
-    type2_glyph_bitmap,
 )
 from core_pdf.impl.engine.spec.s_09_fonts.font_program import (
     internal_type2_glyph_geometry_impl as internal_type2_glyph_geometry,  # noqa: F401
 )
+from core_pdf.impl.engine.spec.s_09_fonts.font_program_truetype import FONT_PROGRAM_ERRORS
 from core_pdf.impl.engine.spec.s_09_fonts.widths import get_descendant
 from core_pdf.impl.objects import PdfStream
 
@@ -113,13 +113,6 @@ def build_cff_unicode_repair_index(
         return None
 
 
-def build_cff_unicode_repairs(
-    font: dict[str, Any], to_unicode: ToUnicodeCMap | None, cmap: CMapDecoder | None
-) -> dict[bytes, str]:
-    index = build_cff_unicode_repair_index(font, to_unicode, cmap)
-    return index.all_repairs() if index is not None else {}
-
-
 def internal_extract_cff_table(data: bytes) -> bytes | None:
     font: TTFont | None = None
     try:
@@ -129,7 +122,7 @@ def internal_extract_cff_table(data: bytes) -> bytes | None:
             return None
         table = reader.tables.get("CFF ")
         return getattr(table, "data") if table is not None else None
-    except (TTLibError, OSError, ValueError, KeyError):
+    except FONT_PROGRAM_ERRORS:
         return None
     finally:
         if font is not None:
@@ -137,4 +130,4 @@ def internal_extract_cff_table(data: bytes) -> bytes | None:
                 font.close()
 
 
-__all__ = ("build_cff_unicode_repair_index", "build_cff_unicode_repairs", "cff_font_for_pdf_font")
+__all__ = ("build_cff_unicode_repair_index", "cff_font_for_pdf_font")

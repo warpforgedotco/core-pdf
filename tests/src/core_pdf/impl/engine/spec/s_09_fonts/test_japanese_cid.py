@@ -73,7 +73,7 @@ def test_extracts_horizontal_and_vertical_japanese_without_to_unicode() -> None:
         page = document.pages[0]
         result = page.extract()
         text = "\n".join(line.text for block in result.blocks for line in block.lines)
-        runs = page.extract_text_runs()
+        runs = page.text_diagnostics().runs
         geometry = page.extract_geometry_summary()
 
     assert "日本語かなカナ漢字" in text

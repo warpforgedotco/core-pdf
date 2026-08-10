@@ -5,39 +5,10 @@ from dataclasses import dataclass
 from enum import StrEnum
 from functools import lru_cache
 
-import numpy
-
-from core_pdf.impl.engine.layout.geometry import RectBox
+from core_pdf.impl.engine.layout.geometry import RectBox, bbox_union
 
 BBox = tuple[float, float, float, float]
 Matrix6 = tuple[float, float, float, float, float, float]
-
-
-def glyph_bboxes_matrix(
-    glyphs: list[GlyphObservation] | tuple[GlyphObservation, ...],
-) -> numpy.ndarray:
-    """Pack glyph ink bounding boxes into a contiguous (N, 4) float32 matrix for SIMD queries."""
-    if not glyphs:
-        return numpy.empty((0, 4), dtype=numpy.float32)
-    return numpy.asarray(
-        [[g.ink_rect.x0, g.ink_rect.y0, g.ink_rect.x1, g.ink_rect.y1] for g in glyphs],
-        dtype=numpy.float32,
-    )
-
-
-def find_glyphs_in_region(
-    matrix: numpy.ndarray, x0: float, y0: float, x1: float, y1: float
-) -> numpy.ndarray:
-    """Return indices of glyphs contained within region coordinates using SIMD operations."""
-    if matrix.size == 0:
-        return numpy.empty(0, dtype=numpy.intp)
-    mask = (
-        (matrix[:, 0] >= x0 - 0.5)
-        & (matrix[:, 1] >= y0 - 0.5)
-        & (matrix[:, 2] <= x1 + 0.5)
-        & (matrix[:, 3] <= y1 + 0.5)
-    )
-    return numpy.flatnonzero(mask)
 
 
 UNICODE_SOURCE_CONFIDENCE = {
@@ -249,19 +220,7 @@ def glyph_text_has_unsupported_codepoint(text: str) -> bool:
 
 
 def union_bboxes(boxes: tuple[BBox, ...]) -> BBox | None:
-    if not boxes:
-        return None
-    x0, y0, x1, y1 = boxes[0]
-    for bx0, by0, bx1, by1 in boxes[1:]:
-        if bx0 < x0:
-            x0 = bx0
-        if by0 < y0:
-            y0 = by0
-        if bx1 > x1:
-            x1 = bx1
-        if by1 > y1:
-            y1 = by1
-    return (x0, y0, x1, y1)
+    return bbox_union(boxes)
 
 
 def glyph_cluster_from_observations(

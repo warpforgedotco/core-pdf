@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
+"""Parse ICC profiles and apply their curves and transforms."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

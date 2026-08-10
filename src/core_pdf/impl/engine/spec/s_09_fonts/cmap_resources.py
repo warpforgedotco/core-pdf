@@ -1,3 +1,5 @@
+"""Locate and load the bundled predefined CMap resources."""
+
 from __future__ import annotations
 
 from functools import lru_cache
@@ -298,10 +300,6 @@ def resolve_cmap_decoder(name: str) -> CMapDecoder | None:
         return None
 
 
-def has_cmap_resource(name: str) -> bool:
-    return normalized_cmap_name(name) in cmap_resource_index()
-
-
 @lru_cache(maxsize=131_072)
 def unicode_scalar_from_cmap_code(code: bytes, codec: str) -> str | None:
     try:
@@ -383,7 +381,6 @@ def unicode_candidate_preference(text: str) -> tuple[int, int, int, int, int]:
 __all__ = (
     "cmap_resource_index",
     "cmap_resource_root",
-    "has_cmap_resource",
     "normalized_cmap_name",
     "predefined_cmap_unicode",
     "resolve_cmap_decoder",

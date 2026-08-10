@@ -9,7 +9,6 @@ from typing import Any
 from core_pdf.impl.engine.spec.s_07_filters.decode_spec import (
     normalize_stream_decode_spec,
 )
-from core_pdf.impl.engine.spec.s_07_filters.pipeline import decode_stream_data
 from core_pdf.impl.engine.spec.s_07_objects.coercion import (
     is_pdf_null,
     normalize_pdf_name,
@@ -20,7 +19,7 @@ from core_pdf.impl.engine.spec.s_07_syntax.tokens import (
     INLINE_IMAGE_KEY_MAP,
     WHITESPACE,
 )
-from core_pdf.impl.exceptions import PdfParseError, PdfUnsupportedError
+from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.objects import PdfName
 from core_pdf.impl.types import PdfDict
 
@@ -225,16 +224,7 @@ def recover_inline_image_position(
     return None
 
 
-def decode_inline_image_data(dictionary: PdfDict, data: bytes) -> bytes:
-    stream_spec = normalize_stream_decode_spec(dictionary)
-    try:
-        return decode_stream_data(data, stream_spec)
-    except (PdfParseError, PdfUnsupportedError):
-        return data
-
-
 __all__ = (
-    "decode_inline_image_data",
     "InlineImage",
     "parse_inline_image",
     "recover_inline_image_position",

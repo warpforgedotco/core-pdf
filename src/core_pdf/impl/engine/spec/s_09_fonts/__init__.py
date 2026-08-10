@@ -8,10 +8,8 @@ from core_pdf.impl.engine.spec.s_09_fonts.font_program import (
     CFFUnicodeRepairIndex,
     cff_font_for_data,
     cff_unicode_repair_index_for_data,
-    cff_unicode_repairs_for_data,
     glyph_feature_distance,
     is_repairable_to_unicode_label,
-    type2_glyph_bitmap,
 )
 from core_pdf.impl.engine.spec.s_09_fonts.truetype import (
     Point,
@@ -29,10 +27,8 @@ __all__ = (
     "cff_font_for_data",
     "cff_font_for_pdf_font",
     "cff_unicode_repair_index_for_data",
-    "cff_unicode_repairs_for_data",
     "glyph_feature_distance",
     "is_repairable_to_unicode_label",
     "rasterize_contours",
     "tt_font_for_data",
-    "type2_glyph_bitmap",
 )

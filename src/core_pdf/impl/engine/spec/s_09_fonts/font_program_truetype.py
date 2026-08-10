@@ -1,3 +1,5 @@
+"""TrueType font program parsing: cmap, glyf outlines, and metrics."""
+
 from __future__ import annotations
 
 import logging
@@ -9,8 +11,15 @@ from typing import Any
 from core_pdf._vendor.fontTools.pens.recordingPen import (
     DecomposingRecordingPen,
 )
-from core_pdf._vendor.fontTools.ttLib import TTFont, TTLibError
+from core_pdf._vendor.fontTools.ttLib import TTFont
 from core_pdf.impl.engine.spec.s_09_fonts.raster_kernel import Point, rasterize_contours
+
+# fontTools validates malformed tables with bare `assert` as well as by raising,
+# and it decompiles lazily, so a damaged table surfaces late and as almost any
+# exception type. Embedded font programs are untrusted input, so treat every
+# failure from the parser as "this font program is unusable" instead of trying
+# to enumerate what a corrupt one can raise.
+FONT_PROGRAM_ERRORS = Exception
 
 
 class internal_RecoverableFontTableWarningFilter(logging.Filter):
@@ -25,8 +34,13 @@ class internal_RecoverableFontTableWarningFilter(logging.Filter):
 
 
 internal_FONT_TABLE_WARNING_FILTER = internal_RecoverableFontTableWarningFilter()
-logging.getLogger("fontTools.ttLib.tables._p_o_s_t").addFilter(internal_FONT_TABLE_WARNING_FILTER)
-logging.getLogger("fontTools.ttLib.tables._h_e_a_d").addFilter(internal_FONT_TABLE_WARNING_FILTER)
+for logger_name in (
+    "fontTools.ttLib.tables._p_o_s_t",
+    "fontTools.ttLib.tables._h_e_a_d",
+    "core_pdf._vendor.fontTools.ttLib.tables._p_o_s_t",
+    "core_pdf._vendor.fontTools.ttLib.tables._h_e_a_d",
+):
+    logging.getLogger(logger_name).addFilter(internal_FONT_TABLE_WARNING_FILTER)
 
 
 def is_unicode_scalar(codepoint: int) -> bool:
@@ -62,7 +76,10 @@ class TrueTypeFontProgram:
         self.cid_to_gid = cid_to_gid
         self.unicode_cmap = internal_best_unicode_gid_cmap(self.font)
         self.glyph_to_unicode = internal_invert_unicode_cmap(self.unicode_cmap)
-        self.cmap = self.unicode_cmap if use_cmap else {}
+        if use_cmap:
+            self.cmap = self.unicode_cmap or internal_code_gid_cmap(self.font)
+        else:
+            self.cmap = {}
         self.internal_glyph_set: Any | None = None
         self.internal_glyph_contour_cache: dict[int, tuple[tuple[Point, ...], ...]] = {}
         self.internal_glyph_bitmap_cache: dict[tuple[int, int, int], tuple[int, ...]] = {}
@@ -131,14 +148,12 @@ class TrueTypeFontProgram:
                 glyph_set = self.font.getGlyphSet()
                 self.internal_glyph_set = glyph_set
             glyph = glyph_set[glyph_name]
-            pen = DecomposingRecordingPen(  # type: ignore[call-arg]
-                glyph_set, skipMissingComponents=True
-            )
+            pen = DecomposingRecordingPen(glyph_set, skipMissingComponents=True)
             glyph.draw(pen)
             contours = tuple(
                 tuple(contour) for contour in internal_recording_to_contours(pen.value)
             )
-        except (KeyError, TTLibError, AttributeError, IndexError, ValueError):
+        except FONT_PROGRAM_ERRORS:
             contours = ()
         if len(self.internal_glyph_contour_cache) >= 512:
             self.internal_glyph_contour_cache.clear()
@@ -168,28 +183,28 @@ class TrueTypeFontProgram:
                 else:
                     body_bbox = (xmin, ymin, xmax, ymax)
             return (body_bbox, has_dot)
-        except (KeyError, TTLibError, AttributeError, IndexError, ValueError):
+        except FONT_PROGRAM_ERRORS:
             return (None, False)
 
 
 def internal_tt_font_from_data(data: bytes) -> TTFont:
     try:
         return TTFont(BytesIO(data), lazy=True)
-    except (TTLibError, OSError, struct.error, ValueError) as exc:
+    except FONT_PROGRAM_ERRORS as exc:
         raise ValueError("invalid TrueType font program") from exc
 
 
 def internal_best_unicode_gid_cmap(font: TTFont) -> dict[int, int]:
     try:
         cmap_table = font["cmap"]
-    except (KeyError, TTLibError):
+        name_cmap = cmap_table.getBestCmap()
+        if name_cmap is None:
+            symbol_cmap = cmap_table.getcmap(3, 0)
+            name_cmap = symbol_cmap.cmap if symbol_cmap is not None else {}
+        reverse_glyph_map = font.getReverseGlyphMap()
+    except FONT_PROGRAM_ERRORS:
         return {}
-    name_cmap = cmap_table.getBestCmap()
-    if name_cmap is None:
-        symbol_cmap = cmap_table.getcmap(3, 0)
-        name_cmap = symbol_cmap.cmap if symbol_cmap is not None else {}
     mapping: dict[int, int] = {}
-    reverse_glyph_map = font.getReverseGlyphMap()
     for codepoint, glyph_name in name_cmap.items():
         if not is_unicode_scalar(codepoint):
             continue
@@ -205,6 +220,54 @@ def internal_best_unicode_gid_cmap(font: TTFont) -> dict[int, int]:
         if gid > 0:
             mapping[codepoint] = gid
     return mapping
+
+
+def internal_code_gid_cmap(font: TTFont) -> dict[int, int]:
+    """Map raw character codes to glyphs through non-Unicode cmap subtables.
+
+    Simple TrueType fonts written by macOS carry only a Macintosh (1,0)
+    subtable — often format 6 — and symbol fonts carry (3,0) with codes
+    offset into the 0xF000 private-use range. Neither is a Unicode table,
+    so the best-cmap lookup finds nothing and character codes would fall
+    through as glyph ids, which draws garbage from a subset. Per the PDF
+    text-showing rules for symbolic TrueType fonts, resolve the raw code
+    through (3,0) and then (1,0) directly.
+    """
+    try:
+        cmap_table = font["cmap"]
+        reverse_glyph_map = font.getReverseGlyphMap()
+    except FONT_PROGRAM_ERRORS:
+        return {}
+
+    def gid_for(glyph_name: str) -> int:
+        try:
+            return int(reverse_glyph_map[glyph_name])
+        except KeyError:
+            if glyph_name.startswith("glyph"):
+                try:
+                    return int(glyph_name[5:])
+                except ValueError:
+                    return 0
+            return 0
+
+    for platform, encoding in ((3, 0), (1, 0)):
+        try:
+            subtable = cmap_table.getcmap(platform, encoding)
+        except FONT_PROGRAM_ERRORS:
+            continue
+        if subtable is None:
+            continue
+        mapping: dict[int, int] = {}
+        for code, glyph_name in subtable.cmap.items():
+            gid = gid_for(glyph_name)
+            if gid <= 0:
+                continue
+            mapping.setdefault(code, gid)
+            if platform == 3 and 0xF000 <= code <= 0xF0FF:
+                mapping.setdefault(code - 0xF000, gid)
+        if mapping:
+            return mapping
+    return {}
 
 
 def internal_invert_unicode_cmap(cmap: dict[int, int]) -> dict[int, str]:

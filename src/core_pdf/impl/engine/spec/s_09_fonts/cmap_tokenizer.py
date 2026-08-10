@@ -209,18 +209,6 @@ def cmap_usecmap_name(data: bytes) -> str | None:
     return None
 
 
-def cmap_wmode(data: bytes) -> int | None:
-    words = cmap_noncomment_words(data)
-    for index, word in enumerate(words[:-2]):
-        if word == b"/WMode" and words[index + 2] == b"def":
-            try:
-                value = int(words[index + 1])
-            except ValueError:
-                return None
-            return value if value in {0, 1} else None
-    return None
-
-
 def cmap_metadata(data: bytes) -> tuple[str | None, int | None]:
     words = cmap_noncomment_words(data)
     usecmap_name: str | None = None

@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
+"""Spec-level document: catalog, trailer, and security setup."""
+
 from __future__ import annotations
 
 import contextlib
@@ -26,7 +28,8 @@ from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_07_objects.resolver import ObjectResolver
 from core_pdf.impl.engine.spec.s_07_syntax.xref import PdfXRefEntry
 from core_pdf.impl.engine.spec.s_14_structure.tree import StructureTree
-from core_pdf.impl.models import EmbeddedFileRecord, FieldRecord, NamedDestination
+from core_pdf.impl.exceptions import PdfDocumentClosedError
+from core_pdf.impl.models import RawEmbeddedFile, RawFormField, RawNamedDestination
 from core_pdf.impl.types import Decipher, PdfDict, PdfSource
 
 if TYPE_CHECKING:
@@ -60,6 +63,9 @@ class PdfDocument(
     DocumentFeaturesMixin,
     Generic[internal_PageT],
 ):
+    # Class-level default; subclasses assign their page factory per instance.
+    page_class: type | None = None
+
     __slots__ = (
         "source",
         "password",
@@ -109,11 +115,11 @@ class PdfDocument(
     page_dicts_cache: list[PdfDict] | None
     pages_cache: LazyPageList[internal_PageT] | None
     page_index_cache: dict[int, int] | None
-    named_destinations_cache: dict[str, NamedDestination] | None
-    embedded_files_cache: list[EmbeddedFileRecord] | None
+    named_destinations_cache: dict[str, RawNamedDestination] | None
+    embedded_files_cache: list[RawEmbeddedFile] | None
     oc_layers: dict[str, bool] | None
     acroform_cache: PdfDict | None
-    fields_cache: list[FieldRecord] | None
+    fields_cache: list[RawFormField] | None
     decoder_cache: dict[tuple[int, int] | int, FontDecoder]
     image_cache: ImageCache
     inherited_values_cache: InheritedValuesCache
@@ -155,7 +161,7 @@ class PdfDocument(
 
     def __enter__(self) -> Self:
         if self.closed:
-            raise ValueError("PDF document is closed")
+            raise PdfDocumentClosedError("PDF document is closed")
         return self
 
     def __exit__(
@@ -258,10 +264,16 @@ class PdfDocument(
             return mark_info
 
     def invalidate_document_extraction_cache(self) -> None:
-        if self.page_extraction_caches is not None:
-            for cache in self.page_extraction_caches.values():
-                cache.clear()
-        self.page_extraction_caches = None
+        """Clear every per-page extraction cache; the single home of page-cache clearing."""
+        with document_cache_lock(self):
+            if self.page_extraction_caches is not None:
+                for cache in self.page_extraction_caches.values():
+                    cache.clear()
+            self.page_extraction_caches = None
+            for page in tuple(self.pages_cache or ()):
+                page_cache = page.extraction_cache
+                if page_cache is not None:
+                    page_cache.clear()
 
     def _initialize_document_caches(self) -> None:
         for cache_name in DOCUMENT_CACHE_FIELDS:

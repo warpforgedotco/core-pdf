@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
+"""Assemble glyph runs into layout lines, words, and their reconstructed text."""
+
 from __future__ import annotations
 
 import re
@@ -115,7 +117,12 @@ def reconstruct_layout_line_text(
         elif run.text_is_space:
             has_explicit_spaces = True
 
-    is_table_like_line = len(sorted_runs) >= 4 and digit_text_runs >= 2
+    alnum_text_runs = sum(
+        1 for run in non_space_runs if any(ch.isalnum() for ch in run.stripped_text)
+    )
+    is_table_like_line = (len(sorted_runs) >= 4 and digit_text_runs >= 2) or (
+        len(non_space_runs) >= 3 and alnum_text_runs >= 3 and len(sorted_runs) >= 5
+    )
     is_all_caps_line = len(sorted_runs) >= 2 and all_text_runs_upper
     is_tracked_glyph_line = is_tracked_glyph_run_line(
         non_space_runs, has_explicit_spaces=has_explicit_spaces
@@ -134,10 +141,6 @@ def reconstruct_layout_line_text(
         is_formula_like_line=is_formula_like_line,
         suppress_tiny_page_footer=(len(sorted_runs) <= 3 and max_text_font_size <= 5.0),
     ).build()
-
-
-def render_layout_line_text(runs: list[TextRun], *, is_all_caps_text: bool | None = None) -> str:
-    return reconstruct_layout_line_text(runs, is_all_caps_text=is_all_caps_text).text
 
 
 def line_text_segment(
@@ -252,10 +255,6 @@ def rotated_table_run_gap(previous: TextRun, current: TextRun) -> float:
     if current.rotation_angle == 270:
         return previous.y0 - current.y1
     return current.y0 - previous.y1
-
-
-def render_rotated_table_line(sorted_runs: list[TextRun]) -> str:
-    return reconstruct_rotated_table_line(sorted_runs).text
 
 
 class GlyphLineBuilder:
@@ -1177,7 +1176,7 @@ class GlyphLineBuilder:
         if self.estimated_char_width is not None:
             threshold = min(threshold, max(self.estimated_char_width * 0.32, 0.75))
         if self.is_all_caps_line:
-            threshold = min(threshold, 0.5)
+            threshold = min(threshold, 0.40)
         if self.is_tracked_glyph_line:
             return (
                 self.tracked_word_gap
@@ -1271,7 +1270,7 @@ def has_interleaved_horizontal_overlap(runs: list[TextRun]) -> bool:
     previous: TextRun | None = None
     prev_x0 = 0.0
     prev_x1 = 0.0
-    prev_height = 0.0
+    prev_space_width = 0.0
     for idx in range(len(runs)):
         run = runs[idx]
         if not run.has_text:
@@ -1279,15 +1278,17 @@ def has_interleaved_horizontal_overlap(runs: list[TextRun]) -> bool:
         coords = run.coords
         x0 = coords[TextRun.X0]
         x1 = coords[TextRun.X1]
-        height = run.height_value
+        space_width = run.space_width
         if previous is not None:
             overlap = (prev_x1 if prev_x1 < x1 else x1) - (prev_x0 if prev_x0 > x0 else x0)
-            if overlap > (prev_height if prev_height < height else height) * 0.25:
+            min_width = min(prev_x1 - prev_x0, x1 - x0)
+            threshold = max(2.5, min_width * 0.45, max(prev_space_width, space_width) * 0.8)
+            if overlap > threshold:
                 return True
         previous = run
         prev_x0 = x0
         prev_x1 = x1
-        prev_height = height
+        prev_space_width = space_width
     return False
 
 
@@ -1644,18 +1645,26 @@ def should_split_glued_numeric_label(text: str, index: int) -> bool:
     prev = text[index - 1]
     if ch.isalpha() and prev.isdigit():
         left = text[max(0, index - 8) : index]
-        right = text[index : index + 8].casefold()
-        return any(c in left for c in "./,") and (
-            ch.isupper() or right.startswith(("date", "mid", "longitude", "oxygen"))
-        )
+        return any(c in left for c in "./,:") and ch.isupper()
     if ch.isdigit() and prev.isalpha():
         left = text[max(0, index - 4) : index].casefold()
-        return left.endswith((" m", "m", "g", "l"))
-    return False
+        return (
+            left.endswith((" m", " m.", " g", " g.", " l", " l."))
+            and len(text) > index + 1
+            and text[index + 1].isspace()
+        )
+    return bool(ch.isdigit() and prev == ":")
 
 
 def strip_private_use_chars(text: str) -> str:
-    return "".join(ch for ch in text if not is_private_use_or_control(ch))
+    cleaned = "".join(ch for ch in text if not is_private_use_or_control(ch) and ch not in "»«•·●")
+    if "...." in cleaned:
+        while "...." in cleaned:
+            cleaned = cleaned.replace("....", "..")
+    if "----" in cleaned:
+        while "----" in cleaned:
+            cleaned = cleaned.replace("----", "--")
+    return cleaned
 
 
 def collapse_repeated_spaces(text: str) -> str:

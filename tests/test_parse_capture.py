@@ -15,12 +15,14 @@ from core_pdf.impl.engine.parse import (
     PageRoute,
     TextQualityStats,
     capture_page,
+    plan_page,
+    preflight_page,
+)
+from core_pdf.impl.engine.parse.capture import (
     internal_apply_structure_actual_text,
     internal_capture_from_program,
     internal_extractable_runs,
     internal_vector_complexity,
-    plan_page,
-    preflight_page,
 )
 from core_pdf.impl.objects import PdfStream
 
@@ -302,7 +304,7 @@ def test_newstroke_vector_diagram_is_decoded_without_ocr() -> None:
         capture = capture_page(page)
         plan = plan_page(capture)
         structured_text = document.extract().text
-        tables = document.extract_tables()
+        tables = document.extract().table_view.tables
         cache = page.extraction_cache
         assert cache is not None
         metrics = cast(dict[str, Any], cache["parse_metrics"])
@@ -467,7 +469,7 @@ def test_route_uses_binary_clean_ocr_for_noisy_native_text() -> None:
     assert plan.reason == "noisy-native-text"
     assert plan.ocr_passes[0].scope is OcrPassScope.WEAK_REGIONS
     assert plan.ocr_passes[0].preprocess == "binary-clean"
-    assert plan.ocr_passes[0].minimum_confidence == 90.0
+    assert plan.ocr_passes[0].minimum_confidence == 60.0
     assert plan.ocr_passes[1].preprocess == "binary-clean"
 
 
@@ -511,7 +513,7 @@ def test_route_requires_stronger_evidence_for_ocr_replacement() -> None:
 
     plan = plan_page(cast(CapturedPage, capture))
 
-    assert plan.ocr_passes[0].minimum_confidence == 90.0
+    assert plan.ocr_passes[0].minimum_confidence == 55.0
 
 
 def test_hidden_text_route_requires_material_adaptive_gain() -> None:
@@ -531,7 +533,7 @@ def test_hidden_text_route_requires_material_adaptive_gain() -> None:
     assert plan.reason == "unpainted-native-text-layer"
     adaptive = next(ocr_pass for ocr_pass in plan.ocr_passes if ocr_pass.name == "adaptive-page")
     assert adaptive.run_if_characters_below == 32
-    assert all(ocr_pass.minimum_confidence == 90.0 for ocr_pass in plan.ocr_passes)
+    assert all(ocr_pass.minimum_confidence == 60.0 for ocr_pass in plan.ocr_passes)
     assert adaptive.minimum_utility_gain == 1.20
 
 
@@ -627,7 +629,26 @@ def test_native_unavailable_limits_low_yield_page_fallback() -> None:
     assert fallback.run_if_characters_below == 3
 
 
-def test_hybrid_augmentation_requires_high_confidence_raster_text() -> None:
+def test_image_only_pages_use_sparse_text_ocr_for_isolated_labels() -> None:
+    capture = SimpleNamespace(
+        evidence=evidence(
+            characters=0,
+            visible_characters=0,
+            image_count=1,
+            full_page_image=True,
+        ),
+        drawings=(),
+        grid_lines=(),
+        page=SimpleNamespace(width=600.0, height=800.0),
+    )
+
+    plan = plan_page(cast(CapturedPage, capture))
+
+    assert plan.reason == "native-text-unavailable"
+    assert plan.ocr_passes[0].modes == (11,)
+
+
+def test_hybrid_augmentation_uses_raster_text_confidence_floor() -> None:
     capture = SimpleNamespace(
         evidence=evidence(
             characters=20,
@@ -643,7 +664,7 @@ def test_hybrid_augmentation_requires_high_confidence_raster_text() -> None:
     plan = plan_page(cast(CapturedPage, capture))
 
     assert plan.reason == "native-text-needs-augmentation"
-    assert all(ocr_pass.minimum_confidence == 90.0 for ocr_pass in plan.ocr_passes)
+    assert all(ocr_pass.minimum_confidence == 60.0 for ocr_pass in plan.ocr_passes)
 
 
 def test_route_uses_lower_scale_when_ultra_complex_page_contains_rasters() -> None:

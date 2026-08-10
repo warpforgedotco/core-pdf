@@ -419,6 +419,7 @@ class ContentComponent:
         self.host = host
 
     def begin_with_properties(self, operands: Any) -> None:
+        """`BDC` — open a marked-content scope carrying a property list."""
         state = self.host
         tag = state.document.resolver.resolve_name(operands[0]) if operands else None
         layer = (
@@ -437,30 +438,26 @@ class ContentComponent:
         )
 
     def begin(self) -> None:
+        """`BMC` — open a marked-content scope with no property list."""
         self.host.marked_content_stack.append(MarkedContentEntry())
 
     def end(self) -> None:
+        """`EMC` — close the innermost scope opened by `BMC` or `BDC`."""
         state = self.host
         if state.marked_content_stack:
             state.emit_actual_text_span(state.marked_content_stack.pop())
 
     def mark_point(self) -> None:
-        self.host.marked_content_stack.append(MarkedContentEntry())
+        """`MP` — a marked-content point.
 
-    def mark_point_with_properties(self, operands: Any) -> None:
-        state = self.host
-        tag = state.document.resolver.resolve_name(operands[0]) if operands else None
-        layer = (
-            state.resolve_marked_content_layer(operands[1])
-            if tag == "OC" and len(operands) >= 2
-            else None
-        )
-        actual_text = (
-            state.resolve_marked_content_actual_text(operands[1])
-            if tag == "Span" and len(operands) >= 2
-            else None
-        )
-        mcid = state.resolve_marked_content_mcid(operands[1]) if len(operands) >= 2 else None
-        state.marked_content_stack.append(
-            MarkedContentEntry(layer=layer, actual_text=actual_text, mcid=mcid)
-        )
+        Points are not scopes: only `BMC` and `BDC` open one, and only `EMC`
+        closes one.  Pushing here would leave an entry that the next `EMC`
+        pops in place of its own, stranding the real scope on the stack.
+        """
+
+    def mark_point_with_properties(self, internal_operands: Any) -> None:
+        """`DP` — a marked-content point carrying a property list.
+
+        Opens no scope, so its `/OC` layer, `/ActualText`, and `/MCID` apply to
+        the point alone and must not be inherited by the content that follows.
+        """

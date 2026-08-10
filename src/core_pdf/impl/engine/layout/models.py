@@ -5,8 +5,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple, TypeAlias
 
-from core_pdf.impl.engine.layout.geometry import RectBox
-
 if TYPE_CHECKING:
     from core_pdf.impl.engine.layout.glyphs import GlyphCluster
     from core_pdf.impl.engine.layout.text_lines import (
@@ -22,7 +20,6 @@ class TextRun:
         "internal_layout_reconstruction_cache",
         "internal_layout_words_cache",
         "internal_geometry_issues_cache",
-        "internal_cache_tracking",
         "internal_revision",
         "text",
         "stripped_text",
@@ -91,16 +88,6 @@ class TextRun:
     internal_layout_reconstruction_cache: tuple[object, LayoutLineText] | None
     internal_layout_words_cache: tuple[object, tuple[str, tuple[LayoutWordSnapshot, ...]]] | None
     internal_geometry_issues_cache: tuple[object, tuple[object, ...]] | None
-    internal_cache_tracking: bool
-
-    def __setattr__(self, name: str, value: Any) -> None:
-        object.__setattr__(self, name, value)
-        if name == "internal_revision" or not object.__getattribute__(
-            self, "internal_cache_tracking"
-        ):
-            return
-        revision = object.__getattribute__(self, "internal_revision")
-        object.__setattr__(self, "internal_revision", revision + 1)
 
     @property
     def x0(self) -> float:
@@ -221,42 +208,39 @@ class TextRun:
         confidence: float | None = None,
         glyph_clusters: tuple[GlyphCluster, ...] = (),
     ) -> None:
-        set_untracked = object.__setattr__
-        set_untracked(self, "internal_cache_tracking", False)
-        set_untracked(self, "inside_active_clip", inside_active_clip)
-        set_untracked(self, "internal_layout_reconstruction_cache", None)
-        set_untracked(self, "internal_layout_words_cache", None)
-        set_untracked(self, "internal_geometry_issues_cache", None)
-        set_untracked(self, "internal_revision", 0)
-        set_untracked(self, "coords", [x0, y0, x1, y1, tx, ty, font_size, space_width])
-        set_untracked(self, "mid_x_value", (x0 + x1) * 0.5)
-        set_untracked(self, "mid_y_value", (y0 + y1) * 0.5)
-        set_untracked(self, "height_value", y1 - y0)
-        set_untracked(self, "text", text)
+        self.internal_revision = 0
+        self.inside_active_clip = inside_active_clip
+        self.internal_layout_reconstruction_cache = None
+        self.internal_layout_words_cache = None
+        self.internal_geometry_issues_cache = None
+        self.coords = [x0, y0, x1, y1, tx, ty, font_size, space_width]
+        self.mid_x_value = (x0 + x1) * 0.5
+        self.mid_y_value = (y0 + y1) * 0.5
+        self.height_value = y1 - y0
+        self.text = text
         stripped_text = text.strip()
-        set_untracked(self, "stripped_text", stripped_text)
+        self.stripped_text = stripped_text
         has_text = bool(stripped_text)
-        set_untracked(self, "has_text", has_text)
-        set_untracked(self, "text_is_space", not has_text and text.isspace())
-        set_untracked(self, "text_is_upper", has_text and stripped_text.isupper())
-        set_untracked(self, "font_name", font_name)
-        set_untracked(self, "order", order)
-        set_untracked(self, "stream_order", stream_order)
-        set_untracked(self, "xobject_depth", xobject_depth)
-        set_untracked(self, "is_vertical", is_vertical)
-        set_untracked(self, "rotation_angle", rotation_angle)
-        set_untracked(self, "visible", visible)
-        set_untracked(self, "line_break_before", line_break_before)
-        set_untracked(self, "seqno", seqno)
-        set_untracked(self, "fill_color", fill_color)
+        self.has_text = has_text
+        self.text_is_space = not has_text and text.isspace()
+        self.text_is_upper = has_text and stripped_text.isupper()
+        self.font_name = font_name
+        self.order = order
+        self.stream_order = stream_order
+        self.xobject_depth = xobject_depth
+        self.is_vertical = is_vertical
+        self.rotation_angle = rotation_angle
+        self.visible = visible
+        self.line_break_before = line_break_before
+        self.seqno = seqno
+        self.fill_color = fill_color
         resolved_advance_bbox = advance_bbox or (x0, y0, x1, y1)
-        set_untracked(self, "advance_bbox", resolved_advance_bbox)
-        set_untracked(self, "ink_bbox", ink_bbox or resolved_advance_bbox)
-        set_untracked(self, "baseline", baseline)
-        set_untracked(self, "provenance", provenance)
-        set_untracked(self, "confidence", confidence)
-        set_untracked(self, "glyph_clusters", glyph_clusters)
-        set_untracked(self, "internal_revision", 0)
+        self.advance_bbox = resolved_advance_bbox
+        self.ink_bbox = ink_bbox or resolved_advance_bbox
+        self.baseline = baseline
+        self.provenance = provenance
+        self.confidence = confidence
+        self.glyph_clusters = glyph_clusters
 
     def internal_sync_advance_bbox(self) -> None:
         c = self.coords
@@ -336,12 +320,13 @@ class TextRun:
     ) -> TextRun:
         resolved_advance_bbox = advance_bbox or (x0, y0, x1, y1)
         resolved_ink_bbox = ink_bbox or resolved_advance_bbox
-        set_untracked = object.__setattr__
         if existing is not None:
-            set_untracked(existing, "internal_cache_tracking", False)
-            set_untracked(existing, "internal_layout_reconstruction_cache", None)
-            set_untracked(existing, "internal_layout_words_cache", None)
-            set_untracked(existing, "internal_geometry_issues_cache", None)
+            if type(existing) is not TextRun:
+                existing.__class__ = TextRun
+            existing.internal_layout_reconstruction_cache = None
+            existing.internal_layout_words_cache = None
+            existing.internal_geometry_issues_cache = None
+            existing.internal_revision += 1
             c = existing.coords
             c[cls.X0] = x0
             c[cls.Y0] = y0
@@ -351,76 +336,74 @@ class TextRun:
             c[cls.TY] = ty
             c[cls.FONT_SIZE] = font_size
             c[cls.SPACE_WIDTH] = space_width
-            set_untracked(existing, "text", text)
-            set_untracked(existing, "font_name", font_name)
-            set_untracked(existing, "order", order)
-            set_untracked(existing, "stream_order", stream_order)
-            set_untracked(existing, "xobject_depth", xobject_depth)
-            set_untracked(existing, "is_vertical", is_vertical)
-            set_untracked(existing, "rotation_angle", rotation_angle)
-            set_untracked(existing, "visible", visible)
-            set_untracked(existing, "inside_active_clip", True)
-            set_untracked(existing, "line_break_before", line_break_before)
-            set_untracked(existing, "seqno", seqno)
-            set_untracked(existing, "fill_color", fill_color)
-            set_untracked(existing, "advance_bbox", resolved_advance_bbox)
-            set_untracked(existing, "ink_bbox", resolved_ink_bbox)
-            set_untracked(existing, "baseline", baseline)
-            set_untracked(existing, "provenance", provenance)
-            set_untracked(existing, "confidence", confidence)
-            set_untracked(existing, "glyph_clusters", glyph_clusters)
-            set_untracked(existing, "mid_x_value", (x0 + x1) * 0.5)
-            set_untracked(existing, "mid_y_value", (y0 + y1) * 0.5)
-            set_untracked(existing, "height_value", y1 - y0)
+            existing.text = text
+            existing.font_name = font_name
+            existing.order = order
+            existing.stream_order = stream_order
+            existing.xobject_depth = xobject_depth
+            existing.is_vertical = is_vertical
+            existing.rotation_angle = rotation_angle
+            existing.visible = visible
+            existing.inside_active_clip = True
+            existing.line_break_before = line_break_before
+            existing.seqno = seqno
+            existing.fill_color = fill_color
+            existing.advance_bbox = resolved_advance_bbox
+            existing.ink_bbox = resolved_ink_bbox
+            existing.baseline = baseline
+            existing.provenance = provenance
+            existing.confidence = confidence
+            existing.glyph_clusters = glyph_clusters
+            existing.mid_x_value = (x0 + x1) * 0.5
+            existing.mid_y_value = (y0 + y1) * 0.5
+            existing.height_value = y1 - y0
             if text and text[0] > " " and text[-1] > " ":
                 stripped_text = text
             else:
                 stripped_text = text.strip()
-            set_untracked(existing, "stripped_text", stripped_text)
+            existing.stripped_text = stripped_text
             has_text = bool(stripped_text)
-            set_untracked(existing, "has_text", has_text)
-            set_untracked(existing, "text_is_space", not has_text and text.isspace())
-            set_untracked(existing, "text_is_upper", has_text and stripped_text.isupper())
+            existing.has_text = has_text
+            existing.text_is_space = not has_text and text.isspace()
+            existing.text_is_upper = has_text and stripped_text.isupper()
             return existing
-        r = object.__new__(cls)
-        set_untracked(r, "internal_cache_tracking", False)
-        set_untracked(r, "internal_layout_reconstruction_cache", None)
-        set_untracked(r, "internal_layout_words_cache", None)
-        set_untracked(r, "internal_geometry_issues_cache", None)
-        set_untracked(r, "internal_revision", 0)
+        r = object.__new__(TextRun)
+        r.internal_revision = 0
+        r.internal_layout_reconstruction_cache = None
+        r.internal_layout_words_cache = None
+        r.internal_geometry_issues_cache = None
         c = [x0, y0, x1, y1, tx, ty, font_size, space_width]
-        set_untracked(r, "coords", c)
-        set_untracked(r, "mid_x_value", (x0 + x1) * 0.5)
-        set_untracked(r, "mid_y_value", (y0 + y1) * 0.5)
-        set_untracked(r, "height_value", y1 - y0)
-        set_untracked(r, "text", text)
+        r.coords = c
+        r.mid_x_value = (x0 + x1) * 0.5
+        r.mid_y_value = (y0 + y1) * 0.5
+        r.height_value = y1 - y0
+        r.text = text
         if text and text[0] > " " and text[-1] > " ":
             stripped_text = text
         else:
             stripped_text = text.strip()
-        set_untracked(r, "stripped_text", stripped_text)
+        r.stripped_text = stripped_text
         has_text = bool(stripped_text)
-        set_untracked(r, "has_text", has_text)
-        set_untracked(r, "text_is_space", not has_text and text.isspace())
-        set_untracked(r, "text_is_upper", has_text and stripped_text.isupper())
-        set_untracked(r, "font_name", font_name)
-        set_untracked(r, "order", order)
-        set_untracked(r, "stream_order", stream_order)
-        set_untracked(r, "xobject_depth", xobject_depth)
-        set_untracked(r, "is_vertical", is_vertical)
-        set_untracked(r, "rotation_angle", rotation_angle)
-        set_untracked(r, "visible", visible)
-        set_untracked(r, "inside_active_clip", True)
-        set_untracked(r, "line_break_before", line_break_before)
-        set_untracked(r, "seqno", seqno)
-        set_untracked(r, "fill_color", fill_color)
-        set_untracked(r, "advance_bbox", resolved_advance_bbox)
-        set_untracked(r, "ink_bbox", resolved_ink_bbox)
-        set_untracked(r, "baseline", baseline)
-        set_untracked(r, "provenance", provenance)
-        set_untracked(r, "confidence", confidence)
-        set_untracked(r, "glyph_clusters", glyph_clusters)
-        set_untracked(r, "internal_revision", 0)
+        r.has_text = has_text
+        r.text_is_space = not has_text and text.isspace()
+        r.text_is_upper = has_text and stripped_text.isupper()
+        r.font_name = font_name
+        r.order = order
+        r.stream_order = stream_order
+        r.xobject_depth = xobject_depth
+        r.is_vertical = is_vertical
+        r.rotation_angle = rotation_angle
+        r.visible = visible
+        r.inside_active_clip = True
+        r.line_break_before = line_break_before
+        r.seqno = seqno
+        r.fill_color = fill_color
+        r.advance_bbox = resolved_advance_bbox
+        r.ink_bbox = resolved_ink_bbox
+        r.baseline = baseline
+        r.provenance = provenance
+        r.confidence = confidence
+        r.glyph_clusters = glyph_clusters
         return r
 
     def replace(self, **kwargs: Any) -> TextRun:
@@ -471,51 +454,28 @@ class TextRun:
         )
         return r
 
-    def with_coords(self, x0: float, y0: float, x1: float, y1: float) -> TextRun:
-        r = object.__new__(TextRun)
-        r.internal_cache_tracking = False
-        r.internal_layout_reconstruction_cache = None
-        r.internal_layout_words_cache = None
-        r.internal_geometry_issues_cache = None
-        r.internal_revision = 0
-        coords = self.coords
-        r.coords = [
-            x0,
-            y0,
-            x1,
-            y1,
-            coords[self.TX],
-            coords[self.TY],
-            coords[self.FONT_SIZE],
-            coords[self.SPACE_WIDTH],
-        ]
-        r.mid_x_value = (x0 + x1) * 0.5
-        r.mid_y_value = (y0 + y1) * 0.5
-        r.height_value = y1 - y0
-        r.text = self.text
-        r.inside_active_clip = self.inside_active_clip
-        r.stripped_text = self.stripped_text
-        r.has_text = self.has_text
-        r.text_is_space = self.text_is_space
-        r.text_is_upper = self.text_is_upper
-        r.font_name = self.font_name
-        r.order = self.order
-        r.stream_order = self.stream_order
-        r.xobject_depth = self.xobject_depth
-        r.is_vertical = self.is_vertical
-        r.rotation_angle = self.rotation_angle
-        r.visible = self.visible
-        r.line_break_before = self.line_break_before
-        r.seqno = self.seqno
-        r.fill_color = self.fill_color
-        r.advance_bbox = (x0, y0, x1, y1)
-        r.ink_bbox = (x0, y0, x1, y1)
-        r.baseline = self.baseline
-        r.provenance = self.provenance
-        r.confidence = self.confidence
-        r.glyph_clusters = ()
-        r.internal_revision = 0
-        return r
+
+class TrackedTextRun(TextRun):
+    """A ``TextRun`` that maintains ``internal_revision`` for memo invalidation.
+
+    Promoted into, never instantiated directly: ``__setattr__`` reads
+    ``internal_revision``, which only exists on an already-initialized run.
+    """
+
+    __slots__ = ()
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        object.__setattr__(self, name, value)
+        if name == "internal_revision":
+            return
+        revision = object.__getattribute__(self, "internal_revision")
+        object.__setattr__(self, "internal_revision", revision + 1)
+
+
+def internal_track_text_run(run: TextRun) -> None:
+    """Promote a run so later attribute writes bump ``internal_revision``."""
+    if type(run) is TextRun:
+        run.__class__ = TrackedTextRun
 
 
 LayoutLineReconstructionKey: TypeAlias = tuple[
@@ -528,24 +488,6 @@ class LayoutWordSnapshot(NamedTuple):
     text: str
     bbox: tuple[float, float, float, float]
     start_index: int
-
-
-class LayoutWord:
-    __slots__ = ("text", "bbox", "start_index")
-
-    text: str
-    bbox: tuple[float, float, float, float]
-    start_index: int
-
-    def __init__(
-        self,
-        text: str,
-        bbox: tuple[float, float, float, float],
-        start_index: int,
-    ) -> None:
-        self.text = text
-        self.bbox = bbox
-        self.start_index = start_index
 
 
 class LayoutLine:
@@ -729,16 +671,13 @@ class LayoutLine:
                 is_all_caps_text=self.is_all_caps_text,
             )
             if first_run is not None:
-                object.__setattr__(first_run, "internal_cache_tracking", True)
+                internal_track_text_run(first_run)
                 object.__setattr__(
                     first_run, "internal_layout_reconstruction_cache", (key, reconstructed)
                 )
         self.internal_reconstructed_cache = reconstructed
         self.internal_reconstructed_cache_key = key
         return reconstructed
-
-    def text(self) -> str:
-        return self.reconstructed_text().text
 
     def internal_build_text_and_words(self) -> tuple[str, tuple[LayoutWordSnapshot, ...]]:
         reconstructed = self.reconstructed_text()
@@ -805,16 +744,9 @@ class LayoutLine:
             return cache[1]
         result = self.internal_build_text_and_words()
         if first_run is not None:
-            object.__setattr__(first_run, "internal_cache_tracking", True)
+            internal_track_text_run(first_run)
             object.__setattr__(first_run, "internal_layout_words_cache", (key, result))
         return result
-
-    def text_and_words(self) -> tuple[str, list[LayoutWord]]:
-        text, snapshots = self.cached_text_and_words()
-        return text, [LayoutWord(word.text, word.bbox, word.start_index) for word in snapshots]
-
-    def words(self) -> list[LayoutWord]:
-        return self.text_and_words()[1]
 
 
 def layout_line_segment_char_bbox(
@@ -873,10 +805,6 @@ class LayoutBox:
             max_depth=kwargs.get("max_depth", self.max_depth),
             mid_y=kwargs.get("mid_y", self.mid_y),
         )
-
-    @property
-    def bbox_rect(self) -> RectBox:
-        return RectBox(self.x0, self.y0, self.x1, self.y1)
 
     def add(self, line: LayoutLine) -> None:
         if not self.lines:

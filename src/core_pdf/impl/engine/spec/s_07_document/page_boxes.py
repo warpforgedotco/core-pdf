@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from core_pdf.impl.engine.layout.models import TextRun
-    from core_pdf.impl.engine.spec.s_07_content.capture import CapturedLine
 
 
 def rotate_page_point(
@@ -95,68 +94,7 @@ def rotate_page_runs(
     return transformed
 
 
-def rotate_page_lines(
-    lines: list[CapturedLine],
-    *,
-    rotate: int,
-    page_width: float,
-    page_height: float,
-) -> list[CapturedLine]:
-    rotate %= 360
-    if rotate == 0:
-        return lines
-
-    transformed: list[CapturedLine] = []
-    for line in lines:
-        x0, y0 = rotate_page_point(
-            line.x0,
-            line.y0,
-            rotate=rotate,
-            page_width=page_width,
-            page_height=page_height,
-        )
-        x1, y1 = rotate_page_point(
-            line.x1,
-            line.y1,
-            rotate=rotate,
-            page_width=page_width,
-            page_height=page_height,
-        )
-        transformed.append(
-            line.replace(
-                x0=x0,
-                y0=y0,
-                x1=x1,
-                y1=y1,
-            )
-        )
-    return transformed
-
-
-def rotate_page_rect(
-    x0: float,
-    y0: float,
-    x1: float,
-    y1: float,
-    *,
-    rotate: int,
-    page_width: float,
-    page_height: float,
-) -> tuple[float, float, float, float]:
-    points = [
-        rotate_page_point(x0, y0, rotate=rotate, page_width=page_width, page_height=page_height),
-        rotate_page_point(x0, y1, rotate=rotate, page_width=page_width, page_height=page_height),
-        rotate_page_point(x1, y0, rotate=rotate, page_width=page_width, page_height=page_height),
-        rotate_page_point(x1, y1, rotate=rotate, page_width=page_width, page_height=page_height),
-    ]
-    xs = [point[0] for point in points]
-    ys = [point[1] for point in points]
-    return (min(xs), min(ys), max(xs), max(ys))
-
-
 __all__ = (
-    "rotate_page_lines",
     "rotate_page_point",
-    "rotate_page_rect",
     "rotate_page_runs",
 )

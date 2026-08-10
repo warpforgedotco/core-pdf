@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
 
 import numpy
 
@@ -308,56 +307,9 @@ class JBIG2Image:
         stride = (width + 7) // 8
         return cls(width=width, height=height, stride=stride, data=bytearray(stride * height))
 
-    def set_pixel(self, x: int, y: int, value: int) -> None:
-        if x < 0 or y < 0 or x >= self.width or y >= self.height:
-            return
-        idx = y * self.stride + (x >> 3)
-        mask = 0x80 >> (x & 7)
-        if value:
-            self.data[idx] |= mask
-        else:
-            self.data[idx] &= ~mask
-
     def fill(self, value: int) -> None:
         fill_byte = 0xFF if value else 0x00
         self.data[:] = bytes([fill_byte]) * len(self.data)
-
-
-@dataclass(slots=True)
-class JBIG2BitReader:
-    data: bytes
-    bit_pos: int = 0
-
-    @property
-    def remaining_bits(self) -> int:
-        return max(0, len(self.data) * 8 - self.bit_pos)
-
-    def peek(self, width: int) -> int:
-        if width <= 0:
-            raise ValueError("invalid bit width")
-        if self.bit_pos + width > len(self.data) * 8:
-            raise EOFError("insufficient JBIG2 data")
-        byte_pos = self.bit_pos >> 3
-        bit_offset = self.bit_pos & 7
-        needed = (width + bit_offset + 7) >> 3
-        data = self.data
-        if needed == 1:
-            word = data[byte_pos]
-        elif needed == 2:
-            word = (data[byte_pos] << 8) | data[byte_pos + 1]
-        elif needed == 3:
-            word = (data[byte_pos] << 16) | (data[byte_pos + 1] << 8) | data[byte_pos + 2]
-        else:
-            word = 0
-            for i in range(needed):
-                word = (word << 8) | data[byte_pos + i]
-        shift = needed * 8 - width - bit_offset
-        return (word >> shift) & ((1 << width) - 1)
-
-    def advance(self, width: int) -> None:
-        if width < 0 or self.bit_pos + width > len(self.data) * 8:
-            raise EOFError("insufficient JBIG2 data")
-        self.bit_pos += width
 
 
 class JBIG2MQDecoder:
@@ -401,143 +353,6 @@ class JBIG2MQDecoder:
         if self.clow > 0xFFFF:
             self.chigh += self.clow >> 16
             self.clow &= 0xFFFF
-
-    def decode_bit(self, cx: int) -> int:
-        return self.decode_packed_context_bit(self.ctx, cx)
-
-    def decode_context_bit(self, contexts: dict[int, int], cx: int) -> int:
-        return self.decode_packed_context_bit(contexts, cx)
-
-    def decode_packed_context_bit(self, contexts: dict[int, int], cx: int) -> int:
-        packed = contexts.get(cx, 0)
-        idx = packed >> 1
-        mps = packed & 1
-        qe = MQ_QE[idx]
-        a = self.a - qe
-        if self.chigh < qe:
-            if a < qe:
-                a = qe
-                bit = mps
-                idx = MQ_NMPS[idx]
-            else:
-                a = qe
-                bit = 1 ^ mps
-                if MQ_SWITCH[idx]:
-                    mps = bit
-                idx = MQ_NLPS[idx]
-        else:
-            self.chigh -= qe
-            if a & 0x8000:
-                self.a = a
-                return mps
-            if a < qe:
-                bit = 1 ^ mps
-                if MQ_SWITCH[idx]:
-                    mps = bit
-                idx = MQ_NLPS[idx]
-            else:
-                bit = mps
-                idx = MQ_NMPS[idx]
-        while not (a & 0x8000):
-            if self.ct == 0:
-                self.byte_in()
-            a <<= 1
-            self.chigh = ((self.chigh << 1) & 0xFFFF) | ((self.clow >> 15) & 1)
-            self.clow = (self.clow << 1) & 0xFFFF
-            self.ct -= 1
-        self.a = a
-        contexts[cx] = (idx << 1) | mps
-        return bit
-
-
-class JBIG2ContextCache:
-    __slots__ = ("cache",)
-
-    def __init__(self) -> None:
-        self.cache: dict[Any, dict[int, tuple[int, int]]] = {}
-
-    def get_contexts(self, key: Any) -> dict[int, tuple[int, int]]:
-        contexts = self.cache.get(key)
-        if contexts is None:
-            contexts = {}
-            self.cache[key] = contexts
-        return contexts
-
-
-class JBIG2DecodingContext:
-    __slots__ = ("data", "start", "end", "decoder_cache", "cache")
-
-    def __init__(self, data: bytes, start: int = 0, end: int | None = None) -> None:
-        self.data = data
-        self.start = start
-        self.end = len(data) if end is None else end
-        self.decoder_cache: JBIG2MQDecoder | None = None
-        self.cache: JBIG2ContextCache | None = None
-
-    @property
-    def decoder(self) -> JBIG2MQDecoder:
-        if self.decoder_cache is None:
-            self.decoder_cache = JBIG2MQDecoder(self.data[self.start : self.end])
-        return self.decoder_cache
-
-    @property
-    def context_cache(self) -> JBIG2ContextCache:
-        if self.cache is None:
-            self.cache = JBIG2ContextCache()
-        return self.cache
-
-
-def decode_integer(
-    context_cache: JBIG2ContextCache, procedure: Any, decoder: JBIG2MQDecoder
-) -> int | None:
-    prev = 1
-
-    def read_bits(length: int) -> int:
-        nonlocal prev
-        value = 0
-        for bit_index in range(length):
-            bit = decoder.decode_bit(prev)
-            prev = prev < 256 and ((prev << 1) | bit) or ((((prev << 1) | bit) & 0x1FF) | 0x100)
-            value = (value << 1) | bit
-        return value
-
-    sign = read_bits(1)
-    if read_bits(1):
-        if read_bits(1):
-            if read_bits(1):
-                if read_bits(1):
-                    if read_bits(1):
-                        value = read_bits(32) + 4436
-                    else:
-                        value = read_bits(12) + 340
-                else:
-                    value = read_bits(8) + 84
-            else:
-                value = read_bits(6) + 20
-        else:
-            value = read_bits(4) + 4
-    else:
-        value = read_bits(2)
-    signed_value = value if sign == 0 else -value if value > 0 else 0
-    return signed_value
-
-
-def decode_iaid(context_cache: JBIG2ContextCache, decoder: JBIG2MQDecoder, code_length: int) -> int:
-    prev = 1
-    value = 0
-    for ignored in range(code_length):
-        bit = decoder.decode_bit(prev)
-        prev = (prev << 1) | bit
-        value = (value << 1) | bit
-    if code_length < 31:
-        return prev & ((1 << code_length) - 1)
-    return prev & 0x7FFFFFFF
-
-
-def read_u16(data: bytes, pos: int) -> tuple[int, int]:
-    if pos + 2 > len(data):
-        raise Jbig2ParseError("truncated JBIG2 data")
-    return (data[pos] << 8) | data[pos + 1], pos + 2
 
 
 def read_be_u32(data: bytes, pos: int) -> int:
@@ -1039,52 +854,10 @@ def compose_packed_bitmap_region(
     )
 
 
-def compose_bitmap_region(
-    region: JBIG2GenericRegion,
-    bitmap: list[bytearray],
-    image: JBIG2Image,
-    page_info: JBIG2PageInfo | None,
-) -> None:
-    operator = region_operator(region, page_info)
-    if operator in (0, 2) and region.width * len(bitmap) >= 1024:
-        pixels = numpy.asarray(bitmap, dtype=numpy.uint8)[:, : region.width]
-        packed = numpy.packbits(pixels != 0, axis=1, bitorder="big")
-        compose_packed_bitmap_data(
-            packed,
-            len(bitmap),
-            region.width,
-            region.x,
-            region.y,
-            image.width,
-            image.height,
-            image.stride,
-            image.data,
-            operator,
-        )
-        return
-    for row_index, row in enumerate(bitmap):
-        for col in range(region.width):
-            if row[col]:
-                compose_region_pixel(image, region.x + col, region.y + row_index, operator)
-
-
 def region_operator(region: JBIG2GenericRegion, page_info: JBIG2PageInfo | None) -> int:
     if jbig2_page_allows_region_operator(page_info):
         return region.flags & 7
     return jbig2_page_combination_operator(page_info)
-
-
-def compose_region_pixel(image: JBIG2Image, x: int, y: int, operator: int) -> None:
-    if operator == 0:
-        image.set_pixel(x, y, 1)
-        return
-    if operator == 2:
-        if x < 0 or y < 0 or x >= image.width or y >= image.height:
-            return
-        idx = y * image.stride + (x >> 3)
-        image.data[idx] ^= 0x80 >> (x & 7)
-        return
-    raise Jbig2UnsupportedError(f"unsupported JBIG2 combination operator {operator}")
 
 
 def assemble_embedded_jbig2(globals_data: bytes, page_data: bytes) -> bytes:

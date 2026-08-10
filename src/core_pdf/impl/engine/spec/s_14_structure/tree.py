@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
+"""The logical structure tree and queries over its elements."""
+
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Iterator, Sequence

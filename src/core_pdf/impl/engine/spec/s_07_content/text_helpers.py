@@ -62,13 +62,13 @@ def is_garbage_text(text: str) -> bool:
     return True
 
 
-NORMALIZE_EXTRACTED_TEXT_TABLE = {12: "\ufb01"} | dict.fromkeys(range(55296, 57344))
+# Lone surrogates cannot survive encoding to UTF-8, so drop them here rather
+# than letting them fail somewhere downstream.
+NORMALIZE_EXTRACTED_TEXT_TABLE = dict.fromkeys(range(0xD800, 0xE000))
 
 
 def normalize_extracted_text(text: str) -> str:
     if text.isascii():
-        if "\x0c" in text:
-            return text.replace("\x0c", "\ufb01")
         return text
     return text.translate(NORMALIZE_EXTRACTED_TEXT_TABLE)
 

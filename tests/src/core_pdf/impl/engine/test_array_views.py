@@ -4,7 +4,10 @@ import pytest
 from core_pdf.impl.engine.array_views import (
     contiguous_bytes,
     nearest_indices,
+    resample_bilinear,
+    resample_box,
     resample_nearest,
+    resample_smooth,
     typed_view,
     uint8_image_view,
     uint8_view,
@@ -88,3 +91,69 @@ def test_contiguous_bytes_copies_only_non_contiguous_arrays() -> None:
     encoded = contiguous_bytes(source)
 
     assert bytes(encoded) == b"\x00\x02\x04\x06"
+
+
+def test_resample_box_averages_the_covered_source_area() -> None:
+    source = numpy.asarray([[0, 100], [200, 255]], dtype=numpy.uint8)
+
+    result = resample_box(source, 1, 1)
+
+    assert result.shape == (1, 1)
+    # Point sampling would return one corner; the average keeps every stroke.
+    assert result[0, 0] == round((0 + 100 + 200 + 255) / 4)
+
+
+def test_resample_box_preserves_a_flat_field_at_awkward_ratios() -> None:
+    source = numpy.full((97, 53, 3), 200, dtype=numpy.uint8)
+
+    result = resample_box(source, 31, 17)
+
+    assert result.shape == (31, 17, 3)
+    assert result.min() == 200
+    assert result.max() == 200
+    assert result.dtype == numpy.uint8
+
+
+def test_resample_box_refuses_to_enlarge() -> None:
+    source = numpy.zeros((4, 4), dtype=numpy.uint8)
+
+    with pytest.raises(ValueError, match="only reduces"):
+        resample_box(source, 8, 8)
+
+
+def test_resample_bilinear_interpolates_between_neighbours() -> None:
+    source = numpy.asarray([[0, 200]], dtype=numpy.uint8)
+
+    result = resample_bilinear(source, 1, 4)
+
+    assert result.shape == (1, 4)
+    # Replication would give [0, 0, 200, 200]; interpolation ramps between them.
+    assert result[0, 0] < result[0, 1] < result[0, 2] < result[0, 3]
+
+
+def test_resample_bilinear_preserves_a_flat_field() -> None:
+    source = numpy.full((11, 7), 200, dtype=numpy.uint8)
+
+    result = resample_bilinear(source, 40, 26)
+
+    assert result.shape == (40, 26)
+    assert result.min() == 200
+    assert result.max() == 200
+    assert result.flags.c_contiguous
+
+
+def test_resample_smooth_picks_a_filter_per_direction() -> None:
+    source = numpy.full((40, 10, 3), 128, dtype=numpy.uint8)
+
+    reduced = resample_smooth(source, 20, 5)
+    enlarged = resample_smooth(source, 80, 20)
+    mixed = resample_smooth(source, 20, 20)
+
+    assert (reduced.shape, enlarged.shape, mixed.shape) == (
+        (20, 5, 3),
+        (80, 20, 3),
+        (20, 20, 3),
+    )
+    for result in (reduced, enlarged, mixed):
+        assert result.min() == 128
+        assert result.max() == 128

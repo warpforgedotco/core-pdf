@@ -1,20 +1,29 @@
 # SPDX-License-Identifier: AGPL-3.0-only
+"""Public record types returned by extraction.
+
+The ``Raw*`` records (:class:`RawAnnotation`, :class:`RawLink`, :class:`RawFormField`,
+:class:`RawEmbeddedFile`, :class:`RawOutlineItem`, :class:`RawNamedDestination`,
+:class:`RawTextSpan`) carry live ``PdfDict``/``PdfStream`` references so write-back
+paths can locate and mutate the originating PDF objects.  They are internal to the
+engine and never cross the ``api/v0`` boundary.
+"""
+
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from math import hypot
-from typing import TYPE_CHECKING, Generic, Protocol, TypeAlias, TypedDict, TypeVar, cast
+from typing import TYPE_CHECKING, Generic, Protocol, Self, TypeAlias, TypedDict, TypeVar, cast
 
 from core_pdf.impl.engine.layout.geometry import BBox
-from core_pdf.impl.objects import PdfStream
+from core_pdf.impl.objects import PdfName, PdfStream, PdfString
 from core_pdf.impl.types import PdfArray, PdfDict, PdfObject, Rectangle
 
 if TYPE_CHECKING:
     from core_pdf.impl.engine.layout.geometry import RectBox
 
 
-class TextSpan(TypedDict):
+class RawTextSpan(TypedDict):
     seqno: int
     color: tuple[float, ...] | None
     bbox: RectBox
@@ -49,39 +58,6 @@ class PageScoped(Generic[RecordT]):
 
 
 @dataclass(frozen=True, slots=True)
-class TextRunRecord:
-    text: str
-    bbox: tuple[float, float, float, float]
-    font_name: str | None
-    font_size: float
-    is_vertical: bool
-    visible: bool
-    rotation: int
-    seqno: int
-    geometry_issues: tuple[object, ...] = ()
-
-
-@dataclass(frozen=True, slots=True)
-class WordRecord:
-    text: str
-    bbox: tuple[float, float, float, float]
-    line_index: int
-    word_index: int
-    source: str
-
-
-@dataclass(frozen=True, slots=True)
-class LineRecord:
-    text: str
-    break_before: int
-    source: str
-    bbox: tuple[float, float, float, float] | None
-    confidence: float | None
-    contributing_sources: tuple[str, ...]
-    words: tuple[WordRecord, ...] = ()
-
-
-@dataclass(frozen=True, slots=True)
 class DrawingRecord:
     kind: str
     seqno: int
@@ -106,6 +82,18 @@ class DrawingRecord:
     items: tuple[object, ...]
     rect: tuple[float, float, float, float] | None
 
+    @classmethod
+    def from_captured(cls, source: object, **overrides: object) -> Self:
+        """Build a record by copying every ``DrawingRecord`` field off ``source``.
+
+        ``source`` is any object exposing the same attribute names (a
+        ``CapturedDrawing`` or another ``DrawingRecord``).  Call-site
+        transformations and subclass-only fields are passed as ``overrides``.
+        """
+        values = {f.name: getattr(source, f.name) for f in fields(DrawingRecord)}
+        values.update(overrides)
+        return cls(**values)
+
 
 @dataclass(frozen=True, slots=True)
 class ImageMetadata:
@@ -126,25 +114,7 @@ class ImageRecord(DrawingRecord):
     image_metadata: ImageMetadata | None = None
 
 
-@dataclass(frozen=True, slots=True)
-class AnnotationContentRecord:
-    subtype: str | None
-    bbox: tuple[float, float, float, float] | None
-    contents: str
-
-
-@dataclass(frozen=True, slots=True)
-class TableRecord:
-    table_index: int
-    rows: tuple[tuple[str, ...], ...]
-    spans: tuple[tuple[tuple[int, int], ...], ...]
-    bbox: tuple[float, float, float, float] | None
-
-
-ExtractionContent: TypeAlias = LineRecord | DrawingRecord | ImageRecord | AnnotationContentRecord
-
-
-class OutlineItem:
+class RawOutlineItem:
     """Resolved outline tree item from the document catalog."""
 
     __slots__ = ("title", "level", "dest", "page_index", "count")
@@ -164,7 +134,7 @@ class OutlineItem:
         self.count = count
 
 
-class NamedDestination:
+class RawNamedDestination:
     """Named destination record from a name tree or destination dictionary."""
 
     __slots__ = ("page_index", "type", "args", "raw")
@@ -182,7 +152,7 @@ class NamedDestination:
         self.raw = raw
 
 
-class EmbeddedFileRecord:
+class RawEmbeddedFile:
     """Embedded file specification and decoded file stream."""
 
     __slots__ = ("name", "filename", "filespec", "stream", "data")
@@ -202,7 +172,7 @@ class EmbeddedFileRecord:
         self.data = data
 
 
-class AnnotationRecord:
+class RawAnnotation:
     """Page annotation record resolved from an annotation dictionary."""
 
     __slots__ = ("subtype", "rect", "contents", "dest", "action", "dict")
@@ -224,7 +194,7 @@ class AnnotationRecord:
         self.dict = dict_
 
 
-class LinkRecord:
+class RawLink:
     """Link annotation projected into extracted page coordinates."""
 
     __slots__ = ("bbox", "url", "link_type", "page_number", "dict")
@@ -320,7 +290,7 @@ class LinkRecord:
     ) -> dict[str, object] | None:
         """Return link metadata for the words in ``line`` that overlap this link.
 
-        ``line`` is the dictionary shape returned by ``extract_lines(include_words=True)``.
+        ``line`` is the normalized line shape exposed by ``Page.text_view.lines``.
         Word records are expected to carry ``page_bbox`` values in the top-left page coordinate
         frame.
         """
@@ -356,7 +326,7 @@ class LinkRecord:
         return metadata
 
 
-class FieldRecord:
+class RawFormField:
     """Interactive form field with resolved value and widget metadata."""
 
     __slots__ = (
@@ -403,6 +373,36 @@ class FieldRecord:
         if start is not None:
             words.append((self.value_text[start:], start))
         return words
+
+    @property
+    def flags(self) -> int:
+        value = self.dict.get(PdfName.of("Ff"), 0)
+        return int(value) if isinstance(value, int) else 0
+
+    @property
+    def is_read_only(self) -> bool:
+        return bool(self.flags & 1)
+
+    @property
+    def is_required(self) -> bool:
+        return bool(self.flags & 2)
+
+    @property
+    def no_export(self) -> bool:
+        return bool(self.flags & 4)
+
+    @property
+    def options(self) -> tuple[str, ...]:
+        value = self.dict.get(PdfName.of("Opt"), ())
+        if not isinstance(value, list):
+            return ()
+        result: list[str] = []
+        for item in value:
+            if isinstance(item, PdfString):
+                result.append(item.data.decode("utf-8", errors="replace"))
+            elif isinstance(item, str):
+                result.append(item)
+        return tuple(result)
 
     def page_bbox(self, page_height: float) -> Rectangle | None:
         if self.rect is None:

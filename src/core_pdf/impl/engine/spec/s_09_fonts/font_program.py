@@ -82,6 +82,9 @@ STANDARD_GLYPH_SIDS = {
     )
 }
 CFF_STANDARD_STRING_COUNT = 391
+# Type 2 charstrings may call subroutines, which may call further subroutines. The spec
+# allows 10 levels; deeper than that means a malformed or maliciously recursive font.
+TYPE2_MAX_SUBR_DEPTH = 10
 internal_STANDARD_GLYPH_NAMES_AFTER_ASCII = """
 exclamdown cent sterling fraction yen florin section currency quotesingle quotedblleft
 guillemotleft guilsinglleft guilsinglright fi fl endash dagger daggerdbl periodcentered
@@ -355,6 +358,103 @@ class CFFFont:
             pass
         return cid_to_gid
 
+    def internal_read_encoding_codes(self, pos: int) -> dict[int, int]:
+        """Read a custom CFF Encoding into a code -> glyph id map.
+
+        Section 12 of the CFF specification defines two layouts, both assigning
+        codes to glyph ids in order from glyph 1 (glyph 0 is .notdef and is
+        always unencoded). Setting the high bit of the format byte appends
+        supplements, which give a second code to an already encoded glyph.
+        """
+        data = self.data
+        if pos <= 0 or pos >= len(data):
+            return {}
+        raw_format = data[pos]
+        fmt = raw_format & 0x7F
+        pos += 1
+        glyph_count = len(self.charstrings)
+        codes: dict[int, int] = {}
+        if fmt == 0:
+            if pos >= len(data):
+                return {}
+            n_codes = data[pos]
+            pos += 1
+            for index in range(n_codes):
+                if pos >= len(data):
+                    return codes
+                gid = index + 1
+                if gid < glyph_count:
+                    codes.setdefault(data[pos], gid)
+                pos += 1
+        elif fmt == 1:
+            if pos >= len(data):
+                return {}
+            n_ranges = data[pos]
+            pos += 1
+            gid = 1
+            for _ in range(n_ranges):
+                if pos + 2 > len(data):
+                    return codes
+                first = data[pos]
+                n_left = data[pos + 1]
+                pos += 2
+                for offset in range(n_left + 1):
+                    code = first + offset
+                    if code > 255:
+                        break
+                    if gid < glyph_count:
+                        codes.setdefault(code, gid)
+                    gid += 1
+        else:
+            return {}
+
+        if raw_format & 0x80:
+            if pos >= len(data):
+                return codes
+            n_sups = data[pos]
+            pos += 1
+            for _ in range(n_sups):
+                if pos + 3 > len(data):
+                    break
+                code = data[pos]
+                sid = int.from_bytes(data[pos + 1 : pos + 3], "big")
+                pos += 3
+                # Supplements are code to SID, so route them through the
+                # charset rather than treating the value as a glyph id.
+                supplement_gid = self.cid_to_gid.get(sid)
+                if supplement_gid is not None and supplement_gid < glyph_count:
+                    codes[code] = supplement_gid
+        return codes
+
+    def builtin_encoding(self) -> dict[int, str]:
+        """Return the font program's own code -> glyph name encoding.
+
+        9.6.6.1 makes this the encoding in force when the PDF font dictionary
+        supplies none. An empty result means the font uses one of the
+        predefined encodings, which the caller already applies by name.
+        """
+        if self.is_cid_keyed:
+            # A CIDFont specifies no encoding (CFF specification, section 12).
+            return {}
+        operand = self.top_dict.get(16, [0])[0]
+        if not isinstance(operand, (int, float)):
+            return {}
+        offset = int(operand)
+        if offset in (0, 1):
+            # Predefined: 0 is Standard and 1 is Expert.
+            return {}
+        sid_to_name = {sid: name for name, sid in STANDARD_GLYPH_SIDS.items()}
+        sid_to_name.update({sid: name for name, sid in self.custom_string_sids.items()})
+        gid_to_name = {
+            gid: sid_to_name[sid] for sid, gid in self.cid_to_gid.items() if sid in sid_to_name
+        }
+        encoding: dict[int, str] = {}
+        for code, gid in self.internal_read_encoding_codes(offset).items():
+            name = gid_to_name.get(gid)
+            if name is not None and name != ".notdef":
+                encoding[code] = name
+        return encoding
+
     def glyph_id_for_cid(self, cid: int) -> int:
         if self.is_cid_keyed:
             return self.cid_to_gid.get(cid, 0)
@@ -545,70 +645,6 @@ def internal_feature_from_contours(
     return CFFGlyphFeature(tuple(sorted(cells)), round(width / height, 2), len(contours), bitmap)
 
 
-def type2_glyph_feature(
-    charstring: bytes,
-    *,
-    local_subrs: tuple[bytes, ...] = (),
-    global_subrs: tuple[bytes, ...] = (),
-) -> CFFGlyphFeature:
-    contours = internal_type2_glyph_contours(
-        charstring,
-        local_subrs=local_subrs,
-        global_subrs=global_subrs,
-    )
-    if not contours:
-        return EMPTY_FEATURE
-    return internal_feature_from_contours(contours)
-
-
-def type2_glyph_bitmap(
-    charstring: bytes,
-    *,
-    width: int = 24,
-    height: int = 32,
-    local_subrs: tuple[bytes, ...] = (),
-    global_subrs: tuple[bytes, ...] = (),
-) -> tuple[int, ...]:
-    contours = internal_type2_glyph_contours(
-        charstring,
-        local_subrs=local_subrs,
-        global_subrs=global_subrs,
-    )
-    if not contours:
-        return ()
-    return rasterize_contours(contours, width=width, height=height)
-
-
-def internal_type2_glyph_contours(
-    charstring: bytes,
-    *,
-    local_subrs: tuple[bytes, ...] = (),
-    global_subrs: tuple[bytes, ...] = (),
-) -> list[list[tuple[float, float]]]:
-    contours, ignored_bbox = internal_type2_glyph_geometry(
-        charstring,
-        local_subrs=local_subrs,
-        global_subrs=global_subrs,
-        collect_contours=True,
-    )
-    return contours
-
-
-def internal_type2_glyph_bbox(
-    charstring: bytes,
-    *,
-    local_subrs: tuple[bytes, ...] = (),
-    global_subrs: tuple[bytes, ...] = (),
-) -> tuple[float, float, float, float] | None:
-    ignored_contours, bbox = internal_type2_glyph_geometry(
-        charstring,
-        local_subrs=local_subrs,
-        global_subrs=global_subrs,
-        collect_contours=False,
-    )
-    return bbox
-
-
 def internal_type2_glyph_geometry_impl(
     charstring: bytes,
     *,
@@ -697,8 +733,19 @@ def internal_type2_glyph_geometry_impl(
         del stack[:]
 
     def execute(program: bytes, depth: int = 0) -> bool:
+        """Interpret one Type 2 charstring, appending to the enclosing contour state.
+
+        Returns whether the caller still owns an unflushed contour: ``True`` when the
+        program simply ran out (so the caller must call ``flush_contour``), ``False``
+        when ``endchar`` already flushed it or the charstring was malformed. A
+        subroutine returning ``False`` aborts its caller the same way.
+
+        The branches below are keyed by raw Type 2 operator bytes; each carries the
+        operator's spec name. Operands are values above 31, plus 28 (a two-byte
+        integer) and 255 (a 16.16 fixed-point number).
+        """
         nonlocal stem_count
-        if depth > 10:
+        if depth > TYPE2_MAX_SUBR_DEPTH:
             return False
         pos = 0
         try:
@@ -709,108 +756,108 @@ def internal_type2_glyph_geometry_impl(
                     stack.append(value)
                     continue
                 pos += 1
-                if byte in (1, 3, 18, 23):
+                if byte in (1, 3, 18, 23):  # hstem, vstem, hstemhm, vstemhm
                     stem_count += len(stack) // 2
                     clear_stack()
-                elif byte in (19, 20):
+                elif byte in (19, 20):  # hintmask, cntrmask -- skip the trailing mask bytes
                     stem_count += len(stack) // 2
                     clear_stack()
                     pos += (stem_count + 7) // 8
-                elif byte == 4:
+                elif byte == 4:  # vmoveto
                     if len(stack) > 1:
                         del stack[:-1]
                     move(0.0, stack[-1] if stack else 0.0)
                     clear_stack()
-                elif byte == 21:
+                elif byte == 21:  # rmoveto
                     if len(stack) > 2:
                         del stack[:-2]
                     dx = stack[-2] if len(stack) >= 2 else 0.0
                     dy = stack[-1] if stack else 0.0
                     move(dx, dy)
                     clear_stack()
-                elif byte == 22:
+                elif byte == 22:  # hmoveto
                     if len(stack) > 1:
                         del stack[:-1]
                     move(stack[-1] if stack else 0.0, 0.0)
                     clear_stack()
-                elif byte == 5:
+                elif byte == 5:  # rlineto
                     for i in range(0, len(stack) - 1, 2):
                         line(stack[i], stack[i + 1])
                     clear_stack()
-                elif byte == 6:
+                elif byte == 6:  # hlineto -- alternates horizontal/vertical
                     horizontal = True
                     for value in stack:
                         line(value, 0.0) if horizontal else line(0.0, value)
                         horizontal = not horizontal
                     clear_stack()
-                elif byte == 7:
+                elif byte == 7:  # vlineto -- alternates vertical/horizontal
                     vertical = True
                     for value in stack:
                         line(0.0, value) if vertical else line(value, 0.0)
                         vertical = not vertical
                     clear_stack()
-                elif byte == 8:
+                elif byte == 8:  # rrcurveto
                     for i in range(0, len(stack) - 5, 6):
                         curve(*stack[i : i + 6])
                     clear_stack()
-                elif byte == 10:
+                elif byte == 10:  # callsubr (local)
                     if stack:
                         subr_index = int(stack.pop()) + subr_bias
                         if 0 <= subr_index < len(local_subrs) and not execute(
                             local_subrs[subr_index], depth + 1
                         ):
                             return False
-                elif byte == 11:
+                elif byte == 11:  # return -- leave this subroutine, caller keeps going
                     return True
-                elif byte == 14:
+                elif byte == 14:  # endchar -- glyph complete
                     flush_contour()
                     return False
-                elif byte == 24:
+                elif byte == 24:  # rcurveline -- lines then one curve
                     line_count = len(stack) - 6
                     for i in range(0, line_count - 1, 2):
                         line(stack[i], stack[i + 1])
                     if line_count >= 0:
                         curve(*stack[line_count : line_count + 6])
                     clear_stack()
-                elif byte == 25:
+                elif byte == 25:  # rlinecurve -- lines then curves
                     line_count = len(stack) % 6
                     for i in range(0, line_count - 1, 2):
                         line(stack[i], stack[i + 1])
                     for i in range(line_count, len(stack) - 5, 6):
                         curve(*stack[i : i + 6])
                     clear_stack()
-                elif byte == 26:
+                elif byte == 26:  # vvcurveto
                     if len(stack) % 2:
                         line(stack.pop(0), 0.0)
                     for i in range(0, len(stack) - 3, 4):
                         curve(0.0, stack[i], stack[i + 1], stack[i + 2], 0.0, stack[i + 3])
                     clear_stack()
-                elif byte == 27:
+                elif byte == 27:  # hhcurveto
                     if len(stack) % 2:
                         line(0.0, stack.pop(0))
                     for i in range(0, len(stack) - 3, 4):
                         curve(stack[i], 0.0, stack[i + 1], stack[i + 2], stack[i + 3], 0.0)
                     clear_stack()
-                elif byte == 29:
+                elif byte == 29:  # callgsubr (global)
                     if stack:
                         subr_index = int(stack.pop()) + gsubr_bias
                         if 0 <= subr_index < len(global_subrs) and not execute(
                             global_subrs[subr_index], depth + 1
                         ):
                             return False
-                elif byte in (30, 31):
+                elif byte in (30, 31):  # vhcurveto / hvcurveto -- alternating tangents
                     horizontal = byte == 31
                     args = list(stack)
                     clear_stack()
                     while len(args) >= 4:
-                        if horizontal:
+                        if horizontal:  # this segment starts horizontal
                             dx1 = args.pop(0)
                             dy1 = 0.0
                             dx2 = args.pop(0)
                             dy2 = args.pop(0)
                             dy3 = args.pop(0)
                             dx3 = args.pop(0) if len(args) == 1 else 0.0
-                        else:
+                        else:  # this segment starts vertical
                             dx1 = 0.0
                             dy1 = args.pop(0)
                             dx2 = args.pop(0)
@@ -819,7 +866,7 @@ def internal_type2_glyph_geometry_impl(
                             dy3 = args.pop(0) if len(args) == 1 else 0.0
                         curve(dx1, dy1, dx2, dy2, dx3, dy3)
                         horizontal = not horizontal
-                else:
+                else:  # unrecognized operator -- drop its operands and continue
                     clear_stack()
             return True
         except (IndexError, ValueError):
@@ -1054,14 +1101,6 @@ def cff_unicode_repair_index_for_data(
     return CFFUnicodeRepairIndex(cff_font_for_data(font_data), mapping_items)
 
 
-@lru_cache(maxsize=64)
-def cff_unicode_repairs_for_data(
-    font_data: bytes, mapping_items: tuple[tuple[bytes, int, str], ...]
-) -> tuple[tuple[bytes, str], ...]:
-    index = cff_unicode_repair_index_for_data(font_data, mapping_items)
-    return tuple(sorted(index.all_repairs().items()))
-
-
 def internal_type2_glyph_geometry(
     charstring: bytes,
     *,
@@ -1097,8 +1136,6 @@ __all__ = (
     "REPAIRABLE_TO_UNICODE",
     "cff_font_for_data",
     "cff_unicode_repair_index_for_data",
-    "cff_unicode_repairs_for_data",
     "glyph_feature_distance",
     "is_repairable_to_unicode_label",
-    "type2_glyph_bitmap",
 )

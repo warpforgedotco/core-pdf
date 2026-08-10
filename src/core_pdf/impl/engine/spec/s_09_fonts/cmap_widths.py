@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Mapping
 from contextlib import suppress
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    # numpy is imported lazily at each call site to keep module import cheap.
+    import numpy
 
 
 class FontWidthMap(Mapping[int, float]):
@@ -27,7 +31,7 @@ class FontWidthMap(Mapping[int, float]):
             for code in range(256)
         )
 
-    def fast_256_array(self, default_width: float):
+    def fast_256_array(self, default_width: float) -> numpy.ndarray[Any, Any]:
         """Return a dense NumPy table for bulk width indexing."""
         import numpy
 

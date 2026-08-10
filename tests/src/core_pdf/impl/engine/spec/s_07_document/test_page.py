@@ -7,7 +7,7 @@ from typing import Any, cast
 from core_pdf.impl.engine.document import PdfDocument
 from core_pdf.impl.engine.spec.s_07_document.page import PdfPage
 from core_pdf.impl.engine.spec.s_07_objects.coercion import parse_name
-from core_pdf.impl.models import FieldRecord
+from core_pdf.impl.models import RawFormField
 from core_pdf.impl.primitives import PdfName
 from core_pdf.impl.types import PdfArray, PdfDict, PdfObject
 
@@ -24,11 +24,11 @@ class FakeResolver:
 
 
 class FakeDocument:
-    def __init__(self, fields: list[FieldRecord]) -> None:
+    def __init__(self, fields: list[RawFormField]) -> None:
         self.resolver = FakeResolver()
         self.internal_fields = fields
 
-    def fields(self) -> list[FieldRecord]:
+    def fields(self) -> list[RawFormField]:
         return self.internal_fields
 
     def resolve(self, value: PdfObject) -> PdfObject:
@@ -46,7 +46,7 @@ def test_page_get_fields_matches_direct_widget_annotation_without_page_ref() -> 
         "V": b"Jane Doe",
         "Rect": [40, 700, 300, 720],
     }
-    field = FieldRecord(
+    field = RawFormField(
         "name",
         "Tx",
         b"Jane Doe",
@@ -72,7 +72,7 @@ def test_page_get_fields_matches_kid_widget_annotation_without_page_ref() -> Non
         "V": b"Jane Doe",
         "Kids": [widget],
     }
-    field = FieldRecord(
+    field = RawFormField(
         "name",
         "Tx",
         b"Jane Doe",

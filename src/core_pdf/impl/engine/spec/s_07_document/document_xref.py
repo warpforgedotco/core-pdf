@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
+"""Document-level cross-reference loading and repair."""
+
 from __future__ import annotations
 
 import struct
@@ -387,7 +389,7 @@ class DocumentXRefMixin:
                     candidate = lexer.parse_dictionary()
                 except Exception:
                     continue
-                yield cast(PdfDict, candidate)
+                yield candidate
         finally:
             lexer.close()
 

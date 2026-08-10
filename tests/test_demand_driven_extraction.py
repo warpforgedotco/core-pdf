@@ -6,7 +6,9 @@ from typing import cast
 import pytest
 
 from core_pdf import PdfDocument
-from core_pdf.impl.engine import parse as pipeline
+from core_pdf.impl.engine.parse import pipeline as parse_pipeline
+from core_pdf.impl.engine.parse import tables as parse_tables
+from core_pdf.impl.engine.parse.pipeline import ASSEMBLED_PAGE_CACHE_KEY
 
 FIXTURE = (
     Path(__file__).parent
@@ -17,30 +19,33 @@ FIXTURE = (
 )
 
 
-def test_extract_text_does_not_materialize_tables_or_emit(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    def fail_extract_tables(*internal_args: object, **internal_kwargs: object) -> object:
-        raise AssertionError("text extraction should not materialize tables")
-
-    def fail_emit(*internal_args: object, **internal_kwargs: object) -> object:
-        raise AssertionError("text extraction should not emit a structured page")
-
-    monkeypatch.setattr(pipeline, "extract_tables", fail_extract_tables)
-    monkeypatch.setattr(pipeline, "emit_page", fail_emit)
-
+def test_extract_text_uses_the_graph_text_view() -> None:
     with PdfDocument.open(FIXTURE) as document:
-        text = document.pages[0].extract_text()
+        text = document.extract().text
         cache = document.pages[0].extraction_cache
 
     assert text
     assert cache is not None
-    assert "emitted_page_v3" not in cache
+    assert ASSEMBLED_PAGE_CACHE_KEY in cache
 
 
-def test_extract_tables_does_not_materialize_layout_or_emit(
+def test_extract_tables_reconciles_with_the_emitted_page(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Table extraction reports the tables the emitted page keeps.
+
+    This deliberately gives up the older contract that extract_tables() would
+    not materialize layout or emit. A candidate table is only known to be a
+    table once it has been checked against the blocks and found not to be a
+    repeat of them, and that check needs the blocks -- so the cheap path could
+    only ever return candidates. Reporting those left the two table APIs
+    disagreeing on 53 of the 224 benchmark documents, always by reporting
+    tables the document itself does not carry: 109 candidates against 23 the
+    emitted page keeps.
+
+    The cost, measured over 40 documents, is roughly 5% on a table-only
+    extraction; capture dominates and both paths pay it.
+    """
     calls = 0
 
     def counted_extract_tables(
@@ -50,24 +55,21 @@ def test_extract_tables_does_not_materialize_layout_or_emit(
         calls += 1
         return ()
 
-    def fail_layout(*internal_args: object, **internal_kwargs: object) -> object:
-        raise AssertionError("table extraction should not materialize layout")
-
-    def fail_emit(*internal_args: object, **internal_kwargs: object) -> object:
-        raise AssertionError("table extraction should not emit a structured page")
-
-    monkeypatch.setattr(pipeline, "extract_tables", counted_extract_tables)
-    monkeypatch.setattr(pipeline, "layout_blocks", fail_layout)
-    monkeypatch.setattr(pipeline, "emit_page", fail_emit)
+    monkeypatch.setattr(parse_pipeline, "extract_tables", counted_extract_tables)
+    monkeypatch.setattr(parse_tables, "extract_tables", counted_extract_tables)
 
     with PdfDocument.open(FIXTURE) as document:
-        tables = document.pages[0].extract_tables()
-        cache = document.pages[0].extraction_cache
+        page = document.pages[0]
+        tables = page.extract().table_view.tables
+        emitted = page.extract().table_view.tables
+        cache = page.extraction_cache
 
-    assert tables == []
+    assert tables == ()
     assert calls == 1
+    assert len(tables) == len(emitted)
     assert cache is not None
-    assert "emitted_page_v3" not in cache
+    # The assembled page remains cached after the graph view is requested.
+    assert ASSEMBLED_PAGE_CACHE_KEY in cache
 
 
 def test_full_extract_still_populates_parse_metrics() -> None:

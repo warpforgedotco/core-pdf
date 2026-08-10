@@ -15,8 +15,45 @@ from core_pdf.impl.engine.spec.s_09_fonts.data.core14 import (
     MODIFIER_NAMES,
     SYMBOL_GLYPH_NAME_ALIASES,
 )
+from core_pdf.impl.engine.spec.s_09_fonts.data.zapf_dingbats import ZAPF_DINGBATS_GLYPHS
 
 HEX_DIGITS = frozenset("0123456789abcdefABCDEF")
+# The Adobe glyph list places the Symbol font's bracket, brace and parenthesis
+# pieces -- the segments a reader stacks to build a bracket taller than one
+# line -- in Adobe's corporate private-use area. Unicode 3.2 gave every one of
+# them a real codepoint, and a private-use character is never useful in
+# extracted text: it renders as a blank box and carries no meaning to any
+# consumer. Prefer the standard codepoints.
+ADOBE_PUA_GLYPH_ALIASES = {
+    "parenlefttp": "⎛",
+    "parenleftex": "⎜",
+    "parenleftbt": "⎝",
+    "parenrighttp": "⎞",
+    "parenrightex": "⎟",
+    "parenrightbt": "⎠",
+    "bracketlefttp": "⎡",
+    "bracketleftex": "⎢",
+    "bracketleftbt": "⎣",
+    "bracketrighttp": "⎤",
+    "bracketrightex": "⎥",
+    "bracketrightbt": "⎦",
+    "bracelefttp": "⎧",
+    "braceleftmid": "⎨",
+    "braceleftbt": "⎩",
+    "braceex": "⎪",
+    "bracerighttp": "⎫",
+    "bracerightmid": "⎬",
+    "bracerightbt": "⎭",
+    "integralex": "⎮",
+    "arrowhorizex": "⎯",
+    "arrowvertex": "⏐",
+    # Sans-serif variants of characters that already exist in Unicode; the
+    # distinction is a typeface, not a different character.
+    "registersans": "®",
+    "copyrightsans": "©",
+    "trademarksans": "™",
+}
+
 TEX_GLYPH_ALIASES = {
     "lscript": "\u2113",
     "integraltext": "\u222b",
@@ -51,6 +88,32 @@ TEX_GLYPH_ALIASES = {
     "bracerightbigg": "}",
     "bracerightBigg": "}",
     "slashbig": "/",
+    # Delimiter extension pieces: the segments TeX stacks to build a tall
+    # vertical bar. Unicode has an extension codepoint for the single rule;
+    # the double one is only ever read back as the character it draws.
+    "vextendsingle": "\u23d0",
+    "vextenddouble": "\u2016",
+    "bardbl": "\u2016",
+    # Wide accents, which cmex supplies in several widths for one character.
+    "hatwide": "\u02c6",
+    "hatwider": "\u02c6",
+    "hatwidest": "\u02c6",
+    "tildewide": "\u02dc",
+    "tildewider": "\u02dc",
+    "tildewidest": "\u02dc",
+    # cmsy relations and delimiters with exact Unicode counterparts.
+    "latticetop": "\u22a4",
+    "star": "\u22c6",
+    "mapsto": "\u21a6",
+    "floorleft": "\u230a",
+    "floorright": "\u230b",
+    "ceilingleft": "\u2308",
+    "ceilingright": "\u2309",
+    "angbracketleft": "\u27e8",
+    "angbracketright": "\u27e9",
+    # \not is drawn as an overlay, so the combining form composes with the
+    # relation it negates instead of landing beside it.
+    "negationslash": "\u0338",
     "radicalbig": "√",
     "radicalBig": "√",
     "radicalbigg": "√",
@@ -100,6 +163,12 @@ def glyph_name_to_unicode(name: str) -> str:
 def glyph_name_part_to_unicode(
     name: str, full: dict[str, str], *, unknown_name: str | None = None
 ) -> str:
+    result = ADOBE_PUA_GLYPH_ALIASES.get(name)
+    if result is not None:
+        return result
+    result = ZAPF_DINGBATS_GLYPHS.get(name)
+    if result is not None:
+        return result
     result = full.get(name)
     if result is not None:
         return result

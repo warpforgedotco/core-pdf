@@ -19,7 +19,6 @@ from core_pdf.impl.engine.spec.s_07_security.errors import (
 from core_pdf.impl.exceptions import PdfSourceError, PdfUnsupportedError
 from core_pdf.impl.objects import PdfReference
 from core_pdf.impl.types import (
-    BinaryReader,
     Decipher,
     PathSource,
     PdfByteBuffer,
@@ -76,7 +75,7 @@ class DocumentCoreMixin(DocumentXRefMixin):
         read = getattr(source, "read", None)
         if not callable(read):
             raise PdfSourceError(f"PDF source type {type(source).__name__} is not supported")
-        reader = cast(BinaryReader, source)
+        reader = source
         tell = getattr(source, "tell", None)
         seek = getattr(source, "seek", None)
         position: int | None = None
@@ -108,8 +107,8 @@ class DocumentCoreMixin(DocumentXRefMixin):
             return None
         try:
             return mmap.mmap(fd, 0, access=mmap.ACCESS_READ)
-        except ValueError:
-            raise PdfSourceError("PDF source is empty")
+        except ValueError as error:
+            raise PdfSourceError("PDF source is empty") from error
         except OSError:
             return None
 
@@ -121,7 +120,6 @@ class DocumentCoreMixin(DocumentXRefMixin):
         encrypt_dict = self.resolver.resolve_dict(encrypt_ref)
         if not isinstance(encrypt_dict, dict):
             raise PdfUnsupportedError("Invalid Encrypt dictionary")
-        encrypt_dict = cast(PdfDict, encrypt_dict)
 
         filter_name = self.resolver.resolve_name(lookup_dict_key(encrypt_dict, "Filter"))
         if filter_name is None:

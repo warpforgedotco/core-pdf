@@ -101,6 +101,8 @@ def apply_flate(data: bytes, parms: object) -> bytes:
         try:
             return bytes(imagecodecs.zlib_decode(data))
         except Exception:
+            # imagecodecs raises its own error types; any failure here just means
+            # this decoder cannot handle the stream, so try the wbits candidates.
             pass
 
     for wbits in candidates:

@@ -78,6 +78,43 @@ def test_table_scores_separate_topology_from_cell_content() -> None:
     assert content == 0.5
 
 
+def test_table_scores_match_reordered_tables_by_content() -> None:
+    truth = [
+        {
+            "type": "Table",
+            "text": [{"x": 0, "y": 0, "w": 1, "h": 1, "content": "first"}],
+        },
+        {
+            "type": "Table",
+            "text": [{"x": 0, "y": 0, "w": 1, "h": 1, "content": "second"}],
+        },
+    ]
+    predicted = [
+        {"rows": [["second"]], "spans": [[{}]]},
+        {"rows": [["first"]], "spans": [[{}]]},
+    ]
+
+    structure, content = score_bench["score_tables"](truth, predicted)
+
+    assert structure == 1.0
+    assert content == 1.0
+
+
+def test_table_scores_tolerate_one_cell_grid_offset() -> None:
+    truth = [
+        {
+            "type": "Table",
+            "text": [{"x": 1, "y": 1, "w": 1, "h": 1, "content": "alpha"}],
+        }
+    ]
+    predicted = [{"rows": [["alpha"]], "spans": [[{}]]}]
+
+    structure, content = score_bench["score_tables"](truth, predicted)
+
+    assert structure == 1.0
+    assert content == 1.0
+
+
 def test_score_document_candidates_identifies_oracle_gap() -> None:
     page = SimpleNamespace(
         extraction_cache={
@@ -95,6 +132,52 @@ def test_score_document_candidates_identifies_oracle_gap() -> None:
     assert candidates[0]["cct"] < 1.0
     assert candidates[1]["cct"] == 1.0
     assert candidates[1]["wer"] == 0.0
+
+
+def test_metric_report_distinguishes_text_and_table_timings() -> None:
+    score = score_bench["CaseScore"](
+        stem="timing.pdf",
+        status="ok",
+        cct=1.0,
+        percent_tokens_found=1.0,
+        percent_tokens_added=0.0,
+        precision=1.0,
+        gt_tokens=1,
+        predicted_tokens=1,
+        matched_tokens=1,
+        elapsed_seconds=3.0,
+        cer=0.0,
+        wer=0.0,
+        text_elapsed_seconds=2.0,
+        table_elapsed_seconds=0.5,
+    )
+
+    rows = score_bench["score_metric_rows"]([score])
+    values = {title: metrics for title, metrics, _suffix in rows}
+
+    assert values["Text extraction seconds"] == [2.0]
+    assert values["Table extraction seconds"] == [0.5]
+    assert values["CER"] == [0.0]
+    assert values["WER"] == [0.0]
+
+
+def test_bootstrap_intervals_are_deterministic_and_version_records() -> None:
+    interval = score_bench["bootstrap_interval"]([0.0, 1.0, 1.0], samples=100)
+
+    assert interval == score_bench["bootstrap_interval"]([0.0, 1.0, 1.0], samples=100)
+    score = score_bench["CaseScore"](
+        stem="versioned.pdf",
+        status="ok",
+        cct=1.0,
+        percent_tokens_found=1.0,
+        percent_tokens_added=0.0,
+        precision=1.0,
+        gt_tokens=1,
+        predicted_tokens=1,
+        matched_tokens=1,
+        elapsed_seconds=0.0,
+    )
+    assert score.scoring_schema_version == "2"
 
 
 def test_collect_document_extraction_analysis_is_opt_in(
@@ -121,7 +204,9 @@ def test_collect_document_extraction_analysis_is_opt_in(
     ]
 
 
-def test_case_progress_uses_plain_text(capsys: pytest.CaptureFixture[str]) -> None:
+def test_case_progress_is_suppressed_during_scoring(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     score = score_bench["CaseScore"](
         stem="example.pdf",
         status="ok",
@@ -141,10 +226,7 @@ def test_case_progress_uses_plain_text(capsys: pytest.CaptureFixture[str]) -> No
 
     benchmark.internal_print_progress(2, score)
 
-    assert capsys.readouterr().out == (
-        "[  2/4  ] example.pdf                                                ok          "
-        "cct 0.7500  f1 0.7500  rec 0.8000  prec 0.9000   0.50s\n"
-    )
+    assert capsys.readouterr().out == ""
 
 
 def test_score_failure_bucket_identifies_actionable_modes() -> None:
@@ -225,7 +307,7 @@ def test_score_hints_formats_missing_and_extra_tokens() -> None:
     assert score_bench["score_hints"](score) == "missing=alpha:3,beta:2,gamma:1 extra=noise:4"
 
 
-def test_result_table_wraps_long_review_fields(capsys: pytest.CaptureFixture[str]) -> None:
+def test_result_review_fields_survive_long_stems(capsys: pytest.CaptureFixture[str]) -> None:
     score = score_bench["CaseScore"](
         stem="very-long-file-name-that-would-otherwise-make-the-table-hard-to-review.pdf",
         status="ok",
@@ -243,14 +325,16 @@ def test_result_table_wraps_long_review_fields(capsys: pytest.CaptureFixture[str
         extra_top=[("verylongtoken", 4), ("noise", 1)],
     )
     result = score_bench["NumberedCaseScore"](3, score)
+    benchmark = score_bench["ScoreBench"]()
+    benchmark.total_cases = 1
+    benchmark.started_at = 0.0
 
-    score_bench["ScoreBench"].internal_print_results("Sample", [result])
-    output = capsys.readouterr().out
+    html_text = benchmark.internal_render_html([result], 1.0)
 
-    assert "Sample" in output
-    assert "very-long-file-name-that-would-" in output
-    assert "otherwise-make-the-table-hard-to-" in output
-    assert "missing=alpha:3,beta:2,gamma:1" in output
+    # A long stem and both hint columns must survive into the rendered report.
+    assert "very-long-file-name-that-would-otherwise-make-the-table-hard-to-review.pdf" in html_text
+    assert "missing=alpha:3,beta:2,gamma:1" in html_text
+    assert "extra=verylongtoken:4,noise:1" in html_text
 
 
 def sample_numbered_scores() -> list[object]:
@@ -310,13 +394,12 @@ def test_report_summarizes_score_distributions(capsys: pytest.CaptureFixture[str
     output = capsys.readouterr().out
 
     assert "Metrics" in output
-    assert "CCT                mean  0.5000" in output
-    assert "Recall             mean  0.7500" in output
-    assert "Precision          mean  0.7500" in output
+    assert "| CCT | 0.5000 | 0.5000 | 0.2500 | 0.7500 |" in output
+    assert "| Recall | 0.7500 | 0.7500 | 0.5000 | 1.0000 |" in output
+    assert "| Precision | 0.7500 | 0.7500 | 0.5000 | 1.0000 |" in output
     assert "E2E seconds" in output
-    assert "p95" in output
-    assert "p99" in output
-    assert "Table structure    mean  0.5000" in output
+    assert "| Table structure | 0.5000 | 0.5000 | 0.2500 | 0.7500 |" in output
+    assert "Bucket Breakdown" in output
 
 
 def test_html_report_renders_score_summary(tmp_path: Path) -> None:
@@ -390,7 +473,7 @@ def test_score_cases_preserve_case_order(
 def test_backend_is_thread_local(monkeypatch: pytest.MonkeyPatch) -> None:
     import tesserocr
 
-    from core_pdf.impl.engine import parse as ocr
+    from core_pdf.impl.engine.parse import ocr
 
     class FakeApi:
         def __init__(self, **internal_kwargs: object) -> None:

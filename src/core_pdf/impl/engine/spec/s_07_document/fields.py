@@ -7,12 +7,12 @@ from typing import Any, Literal, TypeAlias
 
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_09_fonts.encoding import decode_pdf_text_string
-from core_pdf.impl.models import FieldRecord
+from core_pdf.impl.models import RawFormField
 from core_pdf.impl.objects import PdfName, PdfReference, PdfString
 from core_pdf.impl.types import PdfDict
 
 FieldTraversalNode: TypeAlias = tuple[Literal["node"], object, str, str, object, int]
-FieldTraversalRecord: TypeAlias = tuple[Literal["record"], FieldRecord]
+FieldTraversalRecord: TypeAlias = tuple[Literal["record"], RawFormField]
 FieldTraversalEntry: TypeAlias = FieldTraversalNode | FieldTraversalRecord
 
 

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+from core_pdf.impl.engine.layout.geometry import overlap_ratio_min
 from core_pdf.impl.engine.layout.spatial import (
     SpatialIndex,
     bbox_intersection_area,
-    bbox_overlap_ratio,
 )
 
 
@@ -61,5 +61,5 @@ def test_spatial_index_ignores_empty_and_invalid_boxes() -> None:
     assert index.intersecting((0.0, 0.0, 3.0, 3.0)) == ("valid",)
 
 
-def test_bbox_overlap_ratio_uses_smaller_box_area() -> None:
-    assert bbox_overlap_ratio((0.0, 0.0, 10.0, 10.0), (0.0, 0.0, 5.0, 10.0)) == 1.0
+def test_overlap_ratio_min_uses_smaller_box_area() -> None:
+    assert overlap_ratio_min((0.0, 0.0, 10.0, 10.0), (0.0, 0.0, 5.0, 10.0)) == 1.0

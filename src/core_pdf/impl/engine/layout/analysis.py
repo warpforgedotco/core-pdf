@@ -121,28 +121,6 @@ def page_layout_items(page: Any) -> list[dict[str, Any]]:
     ]
 
 
-def page_plain_text(page: Any) -> str:
-    """Return the native block text without table or figure serialization."""
-
-    return "\n\n".join(element.text for element in page.elements if isinstance(element, Block))
-
-
-def page_layout_predictions(page: Any, page_number: int) -> list[dict[str, Any]]:
-    """Return normalized layout predictions for a structured page."""
-
-    return [
-        prediction
-        for element in getattr(page, "elements", ())
-        if not isinstance(element, Table)
-        and (
-            prediction := layout_prediction(
-                element, float(page.width), float(page.height), page_number
-            )
-        )
-        is not None
-    ]
-
-
 def chart_table_html(document: Any, extracted: Any | None = None) -> str:
     """Serialize generic positioned chart models as HTML tables."""
 
@@ -188,7 +166,5 @@ __all__ = (
     "chart_table_html",
     "layout_item",
     "layout_prediction",
-    "page_plain_text",
     "page_layout_items",
-    "page_layout_predictions",
 )

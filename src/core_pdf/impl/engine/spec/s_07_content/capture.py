@@ -477,9 +477,6 @@ class CapturedPath:
             edges.extend(subpath.edges(close_open=True))
         return edges
 
-    def stroke_subpaths(self) -> list[list[tuple[float, float, float, float]]]:
-        return [edges for subpath in self.subpaths if (edges := subpath.edges(close_open=False))]
-
     def derived_lines(self, line_width: float) -> list[CapturedLine]:
         lines: list[CapturedLine] = []
         append_line = lines.append

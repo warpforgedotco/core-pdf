@@ -24,3 +24,7 @@ class PdfContractError(PdfError, TypeError):
 
 class PdfRasterTooLargeError(PdfError, ValueError):
     pass
+
+
+class PdfDocumentClosedError(PdfError, ValueError):
+    """Raised when an operation is attempted on a closed document."""

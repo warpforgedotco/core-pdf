@@ -13,6 +13,7 @@ import pytest
 from core_pdf.impl.engine.document import PdfDocument
 from core_pdf.impl.engine.execution import ExecutionRuntime, RuntimeConfig, TaskScope, WorkStage
 from core_pdf.impl.engine.parse import ParsedPage
+from core_pdf.impl.engine.parse import pipeline as parse_pipeline
 
 TESTS_DIR = Path(__file__).parent / "fixtures"
 SAMPLE_PDF = TESTS_DIR / "SCORE-Bench" / "src" / "global-AIDS-strategy-p74-75-p001.pdf"
@@ -333,20 +334,18 @@ def test_resolver_is_safe_for_concurrent_same_object_reads() -> None:
 
 
 def test_same_document_extraction_is_single_flight(monkeypatch: pytest.MonkeyPatch) -> None:
-    from core_pdf.impl.engine import parse as pipeline
-
-    original = pipeline.internal_parse_page_locked
+    original = parse_pipeline.internal_parse_page_locked
     calls = 0
     calls_lock = threading.Lock()
 
-    def counted_parse(page: Any, context: TaskScope, cache: Any) -> ParsedPage:
+    def counted_parse(page: Any, context: TaskScope) -> ParsedPage:
         nonlocal calls
         with calls_lock:
             calls += 1
         time.sleep(0.05)
-        return original(page, context, cache)
+        return original(page, context)
 
-    monkeypatch.setattr(pipeline, "internal_parse_page_locked", counted_parse)
+    monkeypatch.setattr(parse_pipeline, "internal_parse_page_locked", counted_parse)
     with PdfDocument.open(SAMPLE_PDF) as document:
         with ThreadPoolExecutor(max_workers=4) as executor:
             results = list(executor.map(lambda internal_index: document.extract().text, range(4)))
@@ -398,16 +397,14 @@ def internal_multi_page_pdf() -> bytes:
 
 
 def test_document_extract_parses_only_the_selected_pages(monkeypatch: pytest.MonkeyPatch) -> None:
-    from core_pdf.impl.engine import parse as pipeline
-
-    original = pipeline.parse_page
+    original = parse_pipeline.parse_page
     parsed_page_numbers: list[int] = []
 
     def counted_parse(page: Any, context: TaskScope) -> ParsedPage:
         parsed_page_numbers.append(page.page_number)
         return original(page, context)
 
-    monkeypatch.setattr(pipeline, "parse_page", counted_parse)
+    monkeypatch.setattr(parse_pipeline, "parse_page", counted_parse)
     with PdfDocument.open(internal_multi_page_pdf()) as document:
         selected = document.extract(pages=2)
         cached = document.extract(pages=[2])
@@ -422,16 +419,14 @@ def test_document_extract_parses_only_the_selected_pages(monkeypatch: pytest.Mon
 def test_distinct_page_selections_can_extract_concurrently(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from core_pdf.impl.engine import parse as pipeline
-
-    original = pipeline.internal_parse_page_locked
+    original = parse_pipeline.internal_parse_page_locked
     rendezvous = threading.Barrier(2)
 
-    def concurrent_parse(page: Any, context: TaskScope, cache: Any) -> ParsedPage:
+    def concurrent_parse(page: Any, context: TaskScope) -> ParsedPage:
         rendezvous.wait(timeout=3)
-        return original(page, context, cache)
+        return original(page, context)
 
-    monkeypatch.setattr(pipeline, "internal_parse_page_locked", concurrent_parse)
+    monkeypatch.setattr(parse_pipeline, "internal_parse_page_locked", concurrent_parse)
     with PdfDocument.open(internal_multi_page_pdf()) as document:
         with ThreadPoolExecutor(max_workers=2) as executor:
             first = executor.submit(document.extract, pages=1)

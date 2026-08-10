@@ -1,0 +1,46 @@
+--------------------------------------------------- Unstructured Correct-Truth Note: derived from stock GT; removed the "Source: https://..." page-footer block, which is UCSF archive provenance metadata and not printed on the page (verified against a 3x render of the page bottom, which shows only the ATX02 0235774 stamp).
+--------------------------------------------------- Unstructured Plain Text Format 1.0.4
+--------------------------------------------------- Unstructured Title Begin
+--------------------------------------------------- Unstructured Handwriting Begin
+Methods Com. Report 1961
+Phila., Tobacco Chemists Conf.
+--------------------------------------------------- Unstructured Handwriting End
+--------------------------------------------------- Unstructured Title End
+
+
+--------------------------------------------------- Unstructured Caption Begin
+Table 1. Average weight of conditioned cigarettes
+--------------------------------------------------- Unstructured Caption End
+
+
+--------------------------------------------------- Unstructured Table Begin
+Collab. No. Type
+A B C D
+1 0.954 1.177 1.178 1.097
+2 0.978 1.193 1.182 1.080
+3 0.984 1.186 1.192 1.104
+5 0.988 1.173 1.181 1.088
+8 0.988 1.226 1.199 1.124
+9 0.988 1.187 1.159 1.082
+11 0.999 1.204 1.199 1.121
+20 0.963 1.196 1.172 1.081
+22 0.977 1.18 1.18 1.09
+23 0.994 1.221 1.163 1.095
+24 0.991 1.199 1.191 1.106
+Mean 0.982 1.195 1.181 1.097
+S. D. 0.014 0.017 0.013 0.015
+Coef. Var., % 1.4 1.4 1.1 1.4
+--------------------------------------------------- Unstructured Table End
+
+
+--------------------------------------------------- Unstructured Page Footer Begin
+--------------------------------------------------- Unstructured Page Image Begin
+
+
+--------------------------------------------------- Unstructured Seal Begin
+ATX02 0235774
+--------------------------------------------------- Unstructured Seal End
+
+
+--------------------------------------------------- Unstructured Page Image End
+--------------------------------------------------- Unstructured Page Footer End

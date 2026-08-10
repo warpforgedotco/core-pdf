@@ -1,10 +1,18 @@
 # SPDX-License-Identifier: AGPL-3.0-only
+"""Content-stream interpreter state.
+
+Holds the graphics and text state, the operator handlers, and glyph emission.
+"""
+
 from __future__ import annotations
 
 import contextlib
 import typing
 from math import ceil, hypot
-from typing import Any, TypeAlias, cast
+from typing import TYPE_CHECKING, Any, TypeAlias, cast
+
+if TYPE_CHECKING:
+    from core_pdf.impl.engine.spec.s_07_content.inline_images import InlineImage
 
 from core_pdf.impl.engine.image_cache import ImageCache
 from core_pdf.impl.engine.layout.geometry import RectBox
@@ -269,6 +277,7 @@ class TextState:
         "flatness",
         "render_intent",
         "clip_bbox",
+        "page_clip",
         "fill_color_space",
         "stroke_color_space",
         "compatibility_depth",
@@ -334,7 +343,6 @@ class TextState:
         "is_garbage",
         "operands",
         "run_pool",
-        "run_pool_idx",
         "inline_images",
     )
 
@@ -344,6 +352,7 @@ class TextState:
         page: PdfDict,
         hidden_layers: frozenset[str] = frozenset(),
         decoder_cache: dict[tuple[int, int] | int, "FontDecoder"] | None = None,
+        page_clip: tuple[float, float, float, float] | None = None,
     ):
         self.document = document
         self.page = page
@@ -386,6 +395,12 @@ class TextState:
         self.flatness = 0
         self.render_intent = None
         self.clip_bbox = None
+        # The page box bounds what can be displayed, but it is not a clip the
+        # content stream established, so it is kept out of the graphics state:
+        # recording it as one would give every unclipped mark the same clip
+        # identity as a mark genuinely clipped to the full page, and the
+        # provenance those identities feed is what layout groups runs by.
+        self.page_clip = page_clip
         self.fill_color_space = "DeviceGray"
         self.stroke_color_space = "DeviceGray"
         self.line_width = 1.0
@@ -485,7 +500,6 @@ class TextState:
         self.is_garbage = is_garbage_text
         self.operands: list[ContentOperand] = [None] * 16
         self.run_pool: list[TextRun] = []
-        self.run_pool_idx: int = 0
         self.inline_images: list[InlineImageRecord] = []
         self.graphics_component = GraphicsComponent(self)
         self.text_component = TextComponent(self)
@@ -637,24 +651,6 @@ class TextState:
         self.font_descent = decoder.descent * self.font_scale
         self.font_space_width = decoder.glyph_width(32) * self.font_size * 0.001
         self.font_widths = decoder.fast_widths
-
-    def shift_line(self, tx: float = 0.0, ty: float = 0.0, *, set_leading: bool = False) -> None:
-        if set_leading:
-            self.leading = -ty
-        self.tm_e += tx
-        self.tm_f += ty
-        self.lm_e = self.tm_e
-        self.lm_f = self.tm_f
-
-    def apply_operation(self, operation: tuple[str, ContentOperands], depth: int) -> None:
-        operator, operands = operation
-        handler = self.op_handlers.get(operator)
-        if handler is not None:
-            handler(
-                typing.cast(OperationTarget, self),
-                OperandWindow(list(operands), len(operands)),
-                depth,
-            )
 
     def compile_type3_char_proc(self, stream: PdfStream) -> Type3CharProcProgram:
         compiled: list[tuple[OperationHandler, ContentOperands]] = []
@@ -1177,10 +1173,10 @@ class TextState:
             self.update_font_metrics()
         return decoder
 
-    def op_Do(self: Any, o, d):
-        if not o:
+    def op_Do(self, operands: OperandWindow, depth: int) -> None:
+        if not operands:
             return
-        self.append_xobject(o[0], d)
+        self.append_xobject(operands[0], depth)
 
     def append_xobject(self: Any, name_obj: Any, depth: int) -> None:
         name = self.document.resolver.resolve_name(name_obj)
@@ -1414,6 +1410,10 @@ class TextState:
                     path=path,
                 )
             )
+            # A painted path must consume a sequence number like text does.
+            # Sharing one with the text that follows lets a seqno-ordered
+            # replay paint a cell background over the run's first glyphs.
+            self.sequence += 1
 
     def alloc_run(
         self: Any,
@@ -1531,7 +1531,30 @@ class TextState:
         )
         return r
 
+    def internal_is_clipped_away(self: Any, x0: float, y0: float, x1: float, y1: float) -> bool:
+        """Report whether a box falls entirely outside the active clip.
+
+        Text only survives if it overlaps the clip, so a form XObject's /BBox,
+        a `W n` clip path and the page box all suppress the marks they exclude.
+        Partially clipped text is kept whole: the glyph is on the page, and
+        reporting half of one would be worse than reporting it.
+        """
+        for clip in (self.clip_bbox, self.page_clip):
+            if clip is None:
+                continue
+            if x1 <= clip[0] or x0 >= clip[2] or y1 <= clip[1] or y0 >= clip[3]:
+                return True
+        return False
+
     def update_pending_run(self: Any, new_run: TextRun) -> None:
+        nc = new_run.coords
+        if self.internal_is_clipped_away(
+            nc[TextRun.X0], nc[TextRun.Y0], nc[TextRun.X1], nc[TextRun.Y1]
+        ):
+            if self.capture_glyphs:
+                self.run_pool.append(new_run)
+            return
+
         if not self.pending_run:
             self.pending_run = new_run
             return
@@ -1631,6 +1654,7 @@ class TextState:
         x0: float,
         x1: float,
         y0: float,
+        y1: float,
         font_size: float,
         font_name: str | None,
         visible: bool,
@@ -1638,6 +1662,10 @@ class TextState:
     ) -> bool:
         p = self.pending_run
         if p is None or self.pending_line_break:
+            return False
+        # Refuse the merge for clipped text so it takes the allocating path,
+        # where it is dropped rather than absorbed into a visible neighbour.
+        if self.internal_is_clipped_away(x0, y0, x1, y1):
             return False
 
         pc = p.coords
@@ -2188,6 +2216,7 @@ class TextState:
                 x0,
                 x1,
                 y0,
+                y1,
                 effective_font_size,
                 self.current_font,
                 prepared_visible,
@@ -3146,47 +3175,47 @@ class TextState:
         )
         self.update_pending_run(new_run)
 
-    def op_noop(self: Any, o, d):
+    def op_noop(self, operands: OperandWindow, depth: int) -> None:
         return
 
-    def op_BT(self: Any, o, d):
+    def op_BT(self, operands: OperandWindow, depth: int) -> None:
         self.text_component.begin()
 
-    def op_ET(self: Any, o, d):
+    def op_ET(self, operands: OperandWindow, depth: int) -> None:
         self.text_component.end()
 
-    def op_T_star(self: Any, o, d):
+    def op_T_star(self, operands: OperandWindow, depth: int) -> None:
         self.text_component.move(0.0, -self.leading)
 
-    def op_Td(self: Any, o, d):
-        self.text_component.move_operands(o)
+    def op_Td(self, operands: OperandWindow, depth: int) -> None:
+        self.text_component.move_operands(operands)
 
     def op_Td_values(self: Any, tx: float, ty: float) -> None:
         self.text_component.move(tx, ty)
 
-    def op_TD(self: Any, o, d):
-        self.text_component.move_operands(o, set_leading=True)
+    def op_TD(self, operands: OperandWindow, depth: int) -> None:
+        self.text_component.move_operands(operands, set_leading=True)
 
     def op_TD_values(self: Any, tx: float, ty: float) -> None:
         self.text_component.set_leading_and_move(tx, ty)
 
-    def op_Tj(self: Any, o, d):
-        if not o:
+    def op_Tj(self, operands: OperandWindow, depth: int) -> None:
+        if not operands:
             return
-        self.text_component.show(o[0])
+        self.text_component.show(operands[0])
 
-    def op_TJ(self: Any, o, d):
-        self.text_component.show_array(o)
+    def op_TJ(self, operands: OperandWindow, depth: int) -> None:
+        self.text_component.show_array(operands)
 
-    def op_Tm(self: Any, o, d):
-        if len(o) >= 6:
+    def op_Tm(self, operands: OperandWindow, depth: int) -> None:
+        if len(operands) >= 6:
             try:
-                a = self.as_float(o[0])
-                b = self.as_float(o[1])
-                c = self.as_float(o[2])
-                d_ = self.as_float(o[3])
-                e = self.as_float(o[4])
-                f = self.as_float(o[5])
+                a = self.as_float(operands[0])
+                b = self.as_float(operands[1])
+                c = self.as_float(operands[2])
+                d_ = self.as_float(operands[3])
+                e = self.as_float(operands[4])
+                f = self.as_float(operands[5])
             except (TypeError, ValueError):
                 return
             self.flush_run()
@@ -3203,11 +3232,11 @@ class TextState:
     ) -> None:
         self.text_component.set_matrix(a, b, c, d_, e, f)
 
-    def op_Tf(self: Any, o, d):
-        if len(o) < 2:
+    def op_Tf(self, operands: OperandWindow, depth: int) -> None:
+        if len(operands) < 2:
             return
-        font_operand = o[0]
-        font_size_operand = o[1]
+        font_operand = operands[0]
+        font_size_operand = operands[1]
         self.op_Tf_values(font_operand, font_size_operand)
 
     def op_Tf_values(self: Any, font_operand: Any, font_size_operand: Any) -> None:
@@ -3266,42 +3295,45 @@ class TextState:
         self.current_decoder = self.get_decoder(update_metrics=False)
         self.update_font_metrics()
 
-    def op_TL(self: Any, o, d):
-        self.text_component.set_leading_operand(o)
+    def op_TL(self, operands: OperandWindow, depth: int) -> None:
+        self.text_component.set_leading_operand(operands)
 
-    def op_Tc(self: Any, o, d):
-        self.text_component.set_char_space_operand(o)
+    def op_Tc(self, operands: OperandWindow, depth: int) -> None:
+        self.text_component.set_char_space_operand(operands)
 
     def op_Tc_values(self: Any, char_space: float) -> None:
         self.text_component.set_char_space(char_space)
 
-    def op_Tw(self: Any, o, d):
-        self.text_component.set_word_space_operand(o)
+    def op_Tw(self, operands: OperandWindow, depth: int) -> None:
+        self.text_component.set_word_space_operand(operands)
 
     def op_Tw_values(self: Any, word_space: float) -> None:
         self.text_component.set_word_space(word_space)
 
-    def op_Tr(self: Any, o, d):
-        self.text_component.set_render_mode_operand(o)
+    def op_Tr(self, operands: OperandWindow, depth: int) -> None:
+        self.text_component.set_render_mode_operand(operands)
 
-    def op_Tz(self: Any, o, d):
-        self.text_component.set_horizontal_scale_operand(o)
+    def op_Tz(self, operands: OperandWindow, depth: int) -> None:
+        self.text_component.set_horizontal_scale_operand(operands)
 
-    def op_Ts(self: Any, o, d):
-        self.text_component.set_rise_operand(o)
+    def op_Ts(self, operands: OperandWindow, depth: int) -> None:
+        self.text_component.set_rise_operand(operands)
 
-    def op_quote(self: Any, o, d):
-        self.text_component.quote(o)
+    def op_quote(self, operands: OperandWindow, depth: int) -> None:
+        self.text_component.quote(operands)
 
-    def op_double_quote(self: Any, o, d):
-        self.text_component.double_quote(o)
+    def op_double_quote(self, operands: OperandWindow, depth: int) -> None:
+        self.text_component.double_quote(operands)
 
-    def op_BI(self: Any, o, d):
-        if not o:
+    def op_BI(self, operands: OperandWindow, depth: int) -> None:
+        if not operands:
             return
-        image = o[0]
-        if not hasattr(image, "dictionary"):
+        operand = operands[0]
+        # Duck-typed on purpose: the inline-image parser yields an InlineImage, but any
+        # operand exposing ``dictionary`` is accepted here.
+        if not hasattr(operand, "dictionary"):
             return
+        image = cast("InlineImage", operand)
         if self.capture_images and self.is_graphics_visible():
             dictionary = dict(image.dictionary)
             data = getattr(image, "data", b"")
@@ -3350,61 +3382,62 @@ class TextState:
             cache_key=("xobject", key),
         )
 
-    def op_BDC(self: Any, o, d):
-        self.content_component.begin_with_properties(o)
+    def op_BDC(self, operands: OperandWindow, depth: int) -> None:
+        self.content_component.begin_with_properties(operands)
 
-    def op_BMC(self: Any, o, d):
+    def op_BMC(self, operands: OperandWindow, depth: int) -> None:
         self.content_component.begin()
 
-    def op_EMC(self: Any, o, d):
+    def op_EMC(self, operands: OperandWindow, depth: int) -> None:
         self.content_component.end()
 
-    def op_G(self: Any, o, d):
-        self.graphics_component.set_stroke_gray(o)
+    def op_G(self, operands: OperandWindow, depth: int) -> None:
+        self.graphics_component.set_stroke_gray(operands)
 
-    def op_RG(self: Any, o, d):
-        self.graphics_component.set_stroke_rgb(o)
+    def op_RG(self, operands: OperandWindow, depth: int) -> None:
+        self.graphics_component.set_stroke_rgb(operands)
 
     def op_RG_values(self: Any, red: int | float, green: int | float, blue: int | float) -> None:
         self.set_stroke_color(red, green, blue)
 
-    def op_K(self: Any, o, d):
-        self.graphics_component.set_stroke_cmyk(o)
+    def op_K(self, operands: OperandWindow, depth: int) -> None:
+        self.graphics_component.set_stroke_cmyk(operands)
 
-    def op_w(self: Any, o, d):
-        self.graphics_component.set_line_width(o)
+    def op_w(self, operands: OperandWindow, depth: int) -> None:
+        self.graphics_component.set_line_width(operands)
 
     def op_w_value(self: Any, line_width: int | float) -> None:
         self.line_width = max(0.0, self.as_float(line_width))
 
-    def op_J(self: Any, o, d):
-        self.graphics_component.set_line_cap(o)
+    def op_J(self, operands: OperandWindow, depth: int) -> None:
+        self.graphics_component.set_line_cap(operands)
 
     def op_J_value(self: Any, line_cap: int | float) -> None:
         self.line_cap = self.as_int(line_cap)
 
-    def op_j(self: Any, o, d):
-        self.graphics_component.set_line_join(o)
+    def op_j(self, operands: OperandWindow, depth: int) -> None:
+        self.graphics_component.set_line_join(operands)
 
     def op_j_value(self: Any, line_join: int | float) -> None:
         self.line_join = self.as_int(line_join)
 
-    def op_M(self: Any, o, d):
-        self.graphics_component.set_miter_limit(o)
+    def op_M(self, operands: OperandWindow, depth: int) -> None:
+        self.graphics_component.set_miter_limit(operands)
 
     def op_M_value(self: Any, miter_limit: int | float) -> None:
         self.miter_limit = max(1.0, self.as_float(miter_limit))
 
-    def op_d(self: Any, o, d):
-        self.graphics_component.set_dash_pattern(o)
+    def op_d(self, operands: OperandWindow, depth: int) -> None:
+        self.graphics_component.set_dash_pattern(operands)
 
-    def op_m(self: Any, o, d):
-        self.graphics_component.path_move(o, d)
+    def op_m(self, operands: OperandWindow, depth: int) -> None:
+        self.graphics_component.path_move(operands, depth)
 
-    def _op_m_impl(self: Any, o, d):
-        if len(o) >= 2:
+    def _op_m_impl(self, operands: OperandWindow, depth: int) -> None:
+        if len(operands) >= 2:
             try:
-                self.op_m_values(o[0], o[1])
+                # op_m_values coerces via as_float; the except below covers non-numerics.
+                self.op_m_values(cast("int | float", operands[0]), cast("int | float", operands[1]))
             except (TypeError, ValueError):
                 return
 
@@ -3419,13 +3452,14 @@ class TextState:
         self.current_point = point
         self.subpath_start = point
 
-    def op_l(self: Any, o, d):
-        self.graphics_component.path_line(o, d)
+    def op_l(self, operands: OperandWindow, depth: int) -> None:
+        self.graphics_component.path_line(operands, depth)
 
-    def _op_l_impl(self: Any, o, d):
-        if len(o) >= 2 and self.current_point is not None:
+    def _op_l_impl(self, operands: OperandWindow, depth: int) -> None:
+        if len(operands) >= 2 and self.current_point is not None:
             try:
-                self.op_l_values(o[0], o[1])
+                # op_l_values coerces via as_float; the except below covers non-numerics.
+                self.op_l_values(cast("int | float", operands[0]), cast("int | float", operands[1]))
             except (TypeError, ValueError):
                 return
 
@@ -3441,14 +3475,14 @@ class TextState:
             self.current_path.line_to(*point)
         self.current_point = point
 
-    def op_re(self: Any, o, d):
-        self.graphics_component.path_rectangle(o, d)
+    def op_re(self, operands: OperandWindow, depth: int) -> None:
+        self.graphics_component.path_rectangle(operands, depth)
 
-    def _op_re_impl(self: Any, o, d):
-        if len(o) >= 4:
+    def _op_re_impl(self, operands: OperandWindow, depth: int) -> None:
+        if len(operands) >= 4:
             try:
-                x, y = self.as_float(o[0]), self.as_float(o[1])
-                w, h = self.as_float(o[2]), self.as_float(o[3])
+                x, y = self.as_float(operands[0]), self.as_float(operands[1])
+                w, h = self.as_float(operands[2]), self.as_float(operands[3])
             except (TypeError, ValueError):
                 return
             if (
@@ -3460,10 +3494,10 @@ class TextState:
             self.current_point = (x, y)
             self.subpath_start = (x, y)
 
-    def op_h(self: Any, o, d):
-        self.graphics_component.path_close(o, d)
+    def op_h(self, operands: OperandWindow, depth: int) -> None:
+        self.graphics_component.path_close(operands, depth)
 
-    def _op_h_impl(self: Any, o, d):
+    def _op_h_impl(self, operands: OperandWindow, depth: int) -> None:
         if self.current_point is not None and self.subpath_start is not None:
             if (
                 self.capture_clipping
@@ -3473,60 +3507,61 @@ class TextState:
                 self.current_path.close()
             self.current_point = self.subpath_start
 
-    def op_c(self: Any, o, d):
-        self.graphics_component.path_curve(o, d)
+    def op_c(self, operands: OperandWindow, depth: int) -> None:
+        self.graphics_component.path_curve(operands, depth)
 
-    def _op_c_impl(self: Any, o, d):
-        if len(o) >= 6:
+    def _op_c_impl(self, operands: OperandWindow, depth: int) -> None:
+        if len(operands) >= 6:
             try:
-                x1 = self.as_float(o[0])
-                y1 = self.as_float(o[1])
-                x2 = self.as_float(o[2])
-                y2 = self.as_float(o[3])
-                x3 = self.as_float(o[4])
-                y3 = self.as_float(o[5])
+                x1 = self.as_float(operands[0])
+                y1 = self.as_float(operands[1])
+                x2 = self.as_float(operands[2])
+                y2 = self.as_float(operands[3])
+                x3 = self.as_float(operands[4])
+                y3 = self.as_float(operands[5])
             except (TypeError, ValueError):
                 return
             self.append_cubic_curve(x1, y1, x2, y2, x3, y3)
 
-    def op_v(self: Any, o, d):
-        self.graphics_component.path_curve_v(o, d)
+    def op_v(self, operands: OperandWindow, depth: int) -> None:
+        self.graphics_component.path_curve_v(operands, depth)
 
-    def _op_v_impl(self: Any, o, d):
-        if len(o) >= 4 and self.current_point is not None:
+    def _op_v_impl(self, operands: OperandWindow, depth: int) -> None:
+        if len(operands) >= 4 and self.current_point is not None:
             x0, y0 = self.current_point
             try:
-                x2 = self.as_float(o[0])
-                y2 = self.as_float(o[1])
-                x3 = self.as_float(o[2])
-                y3 = self.as_float(o[3])
+                x2 = self.as_float(operands[0])
+                y2 = self.as_float(operands[1])
+                x3 = self.as_float(operands[2])
+                y3 = self.as_float(operands[3])
             except (TypeError, ValueError):
                 return
             self.append_cubic_curve(x0, y0, x2, y2, x3, y3)
 
-    def op_y(self: Any, o, d):
-        self.graphics_component.path_curve_y(o, d)
+    def op_y(self, operands: OperandWindow, depth: int) -> None:
+        self.graphics_component.path_curve_y(operands, depth)
 
-    def _op_y_impl(self: Any, o, d):
-        if len(o) >= 4 and self.current_point is not None:
-            x0, y0 = self.current_point
+    def _op_y_impl(self, operands: OperandWindow, depth: int) -> None:
+        if len(operands) >= 4 and self.current_point is not None:
             try:
-                x1 = self.as_float(o[0])
-                y1 = self.as_float(o[1])
-                x3 = self.as_float(o[2])
-                y3 = self.as_float(o[3])
+                x1 = self.as_float(operands[0])
+                y1 = self.as_float(operands[1])
+                x3 = self.as_float(operands[2])
+                y3 = self.as_float(operands[3])
             except (TypeError, ValueError):
                 return
-            self.append_cubic_curve(x0, y0, x1, y1, x3, y3)
+            # `y` doubles the endpoint as the second control point, unlike `v`,
+            # which uses the current point as the first one.
+            self.append_cubic_curve(x1, y1, x3, y3, x3, y3)
 
-    def op_paint_stroke(self: Any, o, d):
-        self.graphics_component.paint_stroke(o, d)
+    def op_paint_stroke(self, operands: OperandWindow, depth: int) -> None:
+        self.graphics_component.paint_stroke(operands, depth)
 
-    def _op_paint_stroke_impl(self: Any, o, d):
+    def _op_paint_stroke_impl(self, operands: OperandWindow, depth: int) -> None:
         if (
             self.capture_graphics
             and self.is_graphics_visible()
-            and d == "s"
+            and depth == "s"
             and self.current_point is not None
             and self.subpath_start is not None
         ):
@@ -3535,34 +3570,34 @@ class TextState:
         self.current_point = None
         self.subpath_start = None
 
-    def op_paint_fill(self: Any, o, d):
-        self.graphics_component.paint_fill(o, d)
+    def op_paint_fill(self, operands: OperandWindow, depth: int) -> None:
+        self.graphics_component.paint_fill(operands, depth)
 
-    def _op_paint_fill_impl(self: Any, o, d):
-        self.flush_drawing("fill", "evenodd" if d == "f*" else "nonzero")
+    def _op_paint_fill_impl(self, operands: OperandWindow, depth: int) -> None:
+        self.flush_drawing("fill", "evenodd" if depth == "f*" else "nonzero")
         self.current_point = None
         self.subpath_start = None
 
-    def op_paint_fillstroke(self: Any, o, d):
-        self.graphics_component.paint_fillstroke(o, d)
+    def op_paint_fillstroke(self, operands: OperandWindow, depth: int) -> None:
+        self.graphics_component.paint_fillstroke(operands, depth)
 
-    def _op_paint_fillstroke_impl(self: Any, o, d):
+    def _op_paint_fillstroke_impl(self, operands: OperandWindow, depth: int) -> None:
         if (
             self.capture_graphics
             and self.is_graphics_visible()
-            and (d == "b" or d == "b*")
+            and (depth == "b" or depth == "b*")
             and self.current_point is not None
             and self.subpath_start is not None
         ):
             self.current_path.close()
-        self.flush_drawing("fillstroke", "evenodd" if d in {"B*", "b*"} else "nonzero")
+        self.flush_drawing("fillstroke", "evenodd" if depth in {"B*", "b*"} else "nonzero")
         self.current_point = None
         self.subpath_start = None
 
-    def op_paint_clear(self: Any, o, d):
-        self.graphics_component.paint_clear(o, d)
+    def op_paint_clear(self, operands: OperandWindow, depth: int) -> None:
+        self.graphics_component.paint_clear(operands, depth)
 
-    def _op_paint_clear_impl(self: Any, o, d):
+    def _op_paint_clear_impl(self, operands: OperandWindow, depth: int) -> None:
         self.current_path.clear()
         self.current_point = None
         self.subpath_start = None
@@ -3580,10 +3615,10 @@ class TextState:
             )
         )
 
-    def op_W(self: Any, o, d):
-        self.graphics_component.clip(o, d)
+    def op_W(self, operands: OperandWindow, depth: int) -> None:
+        self.graphics_component.clip(operands, depth)
 
-    def _op_W_impl(self: Any, o, d):
+    def _op_W_impl(self, operands: OperandWindow, depth: int) -> None:
         path = self.current_path.transformed(self.ctm)
         if not path.has_segments():
             return
@@ -3610,17 +3645,17 @@ class TextState:
                     line_cap=self.line_cap,
                     line_join=self.line_join,
                     dash_pattern=self.transformed_dash_pattern(),
-                    fill_rule="evenodd" if d == "W*" else "nonzero",
+                    fill_rule="evenodd" if depth == "W*" else "nonzero",
                     kind="clip",
                     path=path,
                 )
             )
 
-    def op_W_star(self: Any, o, d):
-        self.graphics_component.clip_even_odd(o, d)
+    def op_W_star(self, operands: OperandWindow, depth: int) -> None:
+        self.graphics_component.clip_even_odd(operands, depth)
 
-    def _op_W_star_impl(self: Any, o, d):
-        self.op_W(o, d)
+    def _op_W_star_impl(self, operands: OperandWindow, depth: int) -> None:
+        self.op_W(operands, depth)
 
     def normalize_colors(self: Any, *components: Any) -> tuple[float, ...] | None:
         cache_key = components
@@ -3653,7 +3688,9 @@ class TextState:
             self.fill_color = normalized
             self.fill_pattern = None
 
-    def normalize_color_operands(self: Any, o) -> tuple[float, ...] | None:
+    # `o` is an OperandWindow on the hot path and a plain list elsewhere, holding
+    # raw PDF operands; `Any` matches the deliberate looseness of `self: Any` here.
+    def normalize_color_operands(self: Any, o: Any) -> tuple[float, ...] | None:
         count = len(o)
         if count == 1:
             c0 = o[0]
@@ -3755,7 +3792,9 @@ class TextState:
             self.color_space_cache[cache_key] = resolved
         return resolved
 
-    def resolve_pattern_color(self: Any, operands: tuple[Any, ...]) -> PdfDict | None:
+    def resolve_pattern_color(
+        self: Any, operands: tuple[Any, ...] | OperandWindow
+    ) -> PdfDict | None:
         if not operands:
             return None
         pattern_name = self.document.resolver.resolve_name(operands[-1])
@@ -3896,118 +3935,118 @@ class TextState:
             },
         )
 
-    def op_CS(self: Any, o, d):
-        self.graphics_component.color_operator("CS", o, d)
+    def op_CS(self, operands: OperandWindow, depth: int) -> None:
+        self.graphics_component.color_operator("CS", operands, depth)
 
-    def _op_CS_impl(self: Any, o, d):
-        if o:
-            name_obj = o[0]
+    def _op_CS_impl(self, operands: OperandWindow, depth: int) -> None:
+        if operands:
+            name_obj = operands[0]
             try:
                 cached = self.color_space_cache.get((self.resources_id, name_obj, True), MISSING)
             except TypeError:
                 cached = MISSING
             if cached is not MISSING:
                 if cached is not None and self.stroke_color_space != cached:
-                    self.stroke_color_space = cached
+                    self.stroke_color_space = cast("str", cached)
                 return
             color_space = self.resolve_color_space(name_obj, default_fallback=True)
             if color_space is not None:
                 self.stroke_color_space = color_space
 
-    def op_cs(self: Any, o, d):
-        self.graphics_component.color_operator("cs", o, d)
+    def op_cs(self, operands: OperandWindow, depth: int) -> None:
+        self.graphics_component.color_operator("cs", operands, depth)
 
-    def _op_cs_impl(self: Any, o, d):
-        if o:
-            name_obj = o[0]
+    def _op_cs_impl(self, operands: OperandWindow, depth: int) -> None:
+        if operands:
+            name_obj = operands[0]
             try:
                 cached = self.color_space_cache.get((self.resources_id, name_obj, True), MISSING)
             except TypeError:
                 cached = MISSING
             if cached is not MISSING:
                 if cached is not None and self.fill_color_space != cached:
-                    self.fill_color_space = cached
+                    self.fill_color_space = cast("str", cached)
                 return
             color_space = self.resolve_color_space(name_obj, default_fallback=True)
             if color_space is not None:
                 self.fill_color_space = color_space
 
-    def op_SC(self: Any, o, d):
-        self.graphics_component.color_operator("SC", o, d)
+    def op_SC(self, operands: OperandWindow, depth: int) -> None:
+        self.graphics_component.color_operator("SC", operands, depth)
 
-    def _op_SC_impl(self: Any, o, d):
-        normalized = self.normalize_color_operands(o)
+    def _op_SC_impl(self, operands: OperandWindow, depth: int) -> None:
+        normalized = self.normalize_color_operands(operands)
         if normalized is not None:
             self.stroke_color = normalized
             self.stroke_pattern = None
 
-    def op_SCN(self: Any, o, d):
-        self.graphics_component.color_operator("SCN", o, d)
+    def op_SCN(self, operands: OperandWindow, depth: int) -> None:
+        self.graphics_component.color_operator("SCN", operands, depth)
 
-    def _op_SCN_impl(self: Any, o, d):
+    def _op_SCN_impl(self, operands: OperandWindow, depth: int) -> None:
         if self.stroke_color_space == "Pattern":
-            self.stroke_pattern = self.resolve_pattern_color(o)
-            if len(o) > 1:
-                normalized = self.normalize_color_operands(o[:-1])
+            self.stroke_pattern = self.resolve_pattern_color(operands)
+            if len(operands) > 1:
+                normalized = self.normalize_color_operands(operands[:-1])
                 if normalized is not None:
                     self.stroke_color = normalized
             return
-        normalized = self.normalize_color_operands(o)
+        normalized = self.normalize_color_operands(operands)
         if normalized is not None:
             self.stroke_color = normalized
             self.stroke_pattern = None
 
-    def op_sc(self: Any, o, d):
-        self.graphics_component.color_operator("sc", o, d)
+    def op_sc(self, operands: OperandWindow, depth: int) -> None:
+        self.graphics_component.color_operator("sc", operands, depth)
 
-    def _op_sc_impl(self: Any, o, d):
-        normalized = self.normalize_color_operands(o)
+    def _op_sc_impl(self, operands: OperandWindow, depth: int) -> None:
+        normalized = self.normalize_color_operands(operands)
         if normalized is not None:
             self.fill_color = normalized
             self.fill_pattern = None
 
-    def op_scN(self: Any, o, d):
-        self.graphics_component.color_operator("scN", o, d)
+    def op_scN(self, operands: OperandWindow, depth: int) -> None:
+        self.graphics_component.color_operator("scN", operands, depth)
 
-    def _op_scN_impl(self: Any, o, d):
+    def _op_scN_impl(self, operands: OperandWindow, depth: int) -> None:
         if self.fill_color_space == "Pattern":
-            self.fill_pattern = self.resolve_pattern_color(o)
-            if len(o) > 1:
-                normalized = self.normalize_color_operands(o[:-1])
+            self.fill_pattern = self.resolve_pattern_color(operands)
+            if len(operands) > 1:
+                normalized = self.normalize_color_operands(operands[:-1])
                 if normalized is not None:
                     self.fill_color = normalized
             return
-        normalized = self.normalize_color_operands(o)
+        normalized = self.normalize_color_operands(operands)
         if normalized is not None:
             self.fill_color = normalized
             self.fill_pattern = None
 
-    def op_i(self: Any, o, d):
-        self.graphics_component.color_operator("i", o, d)
+    def op_i(self, operands: OperandWindow, depth: int) -> None:
+        self.graphics_component.color_operator("i", operands, depth)
 
-    def _op_i_impl(self: Any, o, d):
-        if o:
+    def _op_i_impl(self, operands: OperandWindow, depth: int) -> None:
+        if operands:
             try:
-                value = self.as_float(o[0])
+                value = self.as_float(operands[0])
             except ValueError:
                 return
             self.flatness = max(0, min(100, int(value)))
 
-    def op_ri(self: Any, o, d):
-        self.graphics_component.color_operator("ri", o, d)
+    def op_ri(self, operands: OperandWindow, depth: int) -> None:
+        self.graphics_component.color_operator("ri", operands, depth)
 
-    def _op_ri_impl(self: Any, o, d):
-        if not o:
+    def _op_ri_impl(self, operands: OperandWindow, depth: int) -> None:
+        if not operands:
             return
-        value = self.document.resolver.resolve_name_like_value(o[0])
+        value = self.document.resolver.resolve_name_like_value(operands[0])
         if isinstance(value, str):
             self.render_intent = value
 
-    def op_MP(self: Any, o, d):
+    def op_MP(self, operands: OperandWindow, depth: int) -> None:
         self.content_component.mark_point()
 
-    def op_DP(self: Any, o, d):
-        self.content_component.mark_point_with_properties(o)
+    def op_DP(self, operands: OperandWindow, depth: int) -> None:
+        self.content_component.mark_point_with_properties(operands)
 
     def resolve_marked_content_actual_text(self: Any, value: Any) -> str | None:
         props = self.resolve_marked_content_properties(value)
@@ -4048,22 +4087,22 @@ class TextState:
             value
         )
 
-    def op_BX(self: Any, o, d):
+    def op_BX(self, operands: OperandWindow, depth: int) -> None:
         self.compatibility_depth += 1
 
-    def op_EX(self: Any, o, d):
+    def op_EX(self, operands: OperandWindow, depth: int) -> None:
         self.compatibility_depth = max(0, self.compatibility_depth - 1)
 
-    def op_d0(self: Any, o, d):
+    def op_d0(self, operands: OperandWindow, depth: int) -> None:
         return
 
-    def op_d1(self: Any, o, d):
+    def op_d1(self, operands: OperandWindow, depth: int) -> None:
         return
 
-    def op_sh(self: Any, o, d):
-        if not o or not self.capture_graphics or not self.is_graphics_visible():
+    def op_sh(self, operands: OperandWindow, depth: int) -> None:
+        if not operands or not self.capture_graphics or not self.is_graphics_visible():
             return
-        shading_ref = self.document.resolver.resolve_name(o[0])
+        shading_ref = self.document.resolver.resolve_name(operands[0])
         if not shading_ref:
             return
         shading = self.lookup_page_resource("Shading", shading_ref)
@@ -4123,25 +4162,23 @@ class TextState:
         self.extgstate_cache[cache_key] = resolved
         return resolved
 
-    def op_q(self: Any, o, d):
+    def op_q(self, operands: OperandWindow, depth: int) -> None:
         self.graphics_component.save()
 
-    def op_Q(self: Any, o, d):
+    def op_Q(self, operands: OperandWindow, depth: int) -> None:
         self.graphics_component.restore()
 
-    def op_cm(self: Any, o, d):
-        if not o or len(o) < 6:
+    def op_cm(self, operands: OperandWindow, depth: int) -> None:
+        if not operands or len(operands) < 6:
             return
-        if len(o) > 6:
-            o = o[:6]
         try:
             m_a, m_b, m_c, m_d, m_e, m_f = (
-                self.as_float(o[0]),
-                self.as_float(o[1]),
-                self.as_float(o[2]),
-                self.as_float(o[3]),
-                self.as_float(o[4]),
-                self.as_float(o[5]),
+                self.as_float(operands[0]),
+                self.as_float(operands[1]),
+                self.as_float(operands[2]),
+                self.as_float(operands[3]),
+                self.as_float(operands[4]),
+                self.as_float(operands[5]),
             )
         except (TypeError, ValueError):
             return
@@ -4159,22 +4196,22 @@ class TextState:
     ) -> None:
         self.graphics_component.concatenate((m_a, m_b, m_c, m_d, m_e, m_f))
 
-    def op_g(self: Any, o, d):
-        if o:
-            self.set_fill_color(o[0])
+    def op_g(self, operands: OperandWindow, depth: int) -> None:
+        if operands:
+            self.set_fill_color(operands[0])
 
-    def op_rg(self: Any, o, d):
-        if len(o) >= 3:
-            self.set_fill_color(o[0], o[1], o[2])
+    def op_rg(self, operands: OperandWindow, depth: int) -> None:
+        if len(operands) >= 3:
+            self.set_fill_color(operands[0], operands[1], operands[2])
 
-    def op_k(self: Any, o, d):
-        if len(o) >= 4:
-            self.set_fill_color(o[0], o[1], o[2], o[3])
+    def op_k(self, operands: OperandWindow, depth: int) -> None:
+        if len(operands) >= 4:
+            self.set_fill_color(operands[0], operands[1], operands[2], operands[3])
 
-    def op_gs(self: Any, o, d):
-        if not o:
+    def op_gs(self, operands: OperandWindow, depth: int) -> None:
+        if not operands:
             return
-        name = self.document.resolver.resolve_name(o[0])
+        name = self.document.resolver.resolve_name(operands[0])
         if not name:
             return
         extgstate = self.resolve_extgstate(name)

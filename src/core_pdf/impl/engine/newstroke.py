@@ -316,7 +316,8 @@ def internal_fit_match(
     nominal_size = scale * 21.0
     if not (MIN_FONT_SIZE <= nominal_size <= MAX_FONT_SIZE):
         return None
-    if min(x_scale, y_scale) <= 0.0 or scale / min(x_scale, y_scale) > 4.0:
+    min_scale = min(x_scale, y_scale)
+    if min_scale <= 0.0 or scale / min_scale > 4.0:
         return None
     orthogonality = abs(float(matrix[0] @ matrix[1])) / (x_scale * y_scale)
     if orthogonality > 0.25:
@@ -388,7 +389,10 @@ def internal_fixed_match(
     first = segments[start]
     if first is None:
         return None
-    raw_delta = numpy.asarray((first.x1 - first.x0, first.y1 - first.y0)) @ transform.inverse
+    # Avoid numpy.asarray for 2-element vector: dx*dx_inv + dy*dy_inv
+    dx = first.x1 - first.x0
+    dy = first.y1 - first.y0
+    raw_delta = dx * transform.inverse[0] + dy * transform.inverse[1]
     rounded_delta = numpy.rint(raw_delta)
     if float(numpy.max(numpy.abs(raw_delta - rounded_delta))) > 0.20:
         return None
@@ -425,9 +429,7 @@ def internal_fixed_match(
 
 
 def internal_cursor_follows(previous: internal_Match, current: internal_Match) -> bool:
-    expected = (
-        previous.translation + numpy.asarray((previous.width, 0.0)) @ previous.transform.matrix
-    )
+    expected = previous.translation + previous.width * previous.transform.matrix[0]
     offset = (current.translation - expected) @ previous.transform.inverse
     y_offset = abs(float(offset[1]))
     x_offset = float(offset[0])
@@ -486,6 +488,8 @@ def internal_decode_around(
     if first is None:
         return ()
     position = seed.start
+    # Use a separate prepend list to avoid O(n) insert(0) calls.
+    prepend: list[internal_Match] = []
     while position > minimum_start:
         candidates: list[internal_Match] = []
         for template in templates.all:
@@ -502,7 +506,8 @@ def internal_decode_around(
                 point_data,
                 style_data,
             )
-            if candidate is not None and internal_cursor_follows(candidate, result[0]):
+            anchor = prepend[-1] if prepend else result[0]
+            if candidate is not None and internal_cursor_follows(candidate, anchor):
                 candidates.append(candidate)
         if not candidates:
             break
@@ -515,9 +520,10 @@ def internal_decode_around(
             and candidates[1].error - best.error < 0.01
         ):
             break
-        result.insert(0, best)
+        prepend.append(best)
         position = best.start
-    return tuple(result)
+    prepend.reverse()
+    return tuple(prepend) + tuple(result)
 
 
 def internal_sequence_text(matches: tuple[internal_Match, ...]) -> str:
@@ -526,7 +532,7 @@ def internal_sequence_text(matches: tuple[internal_Match, ...]) -> str:
     parts = [matches[0].char]
     transform = matches[0].transform
     for previous, current in zip(matches, matches[1:], strict=False):
-        expected = previous.translation + numpy.asarray((previous.width, 0.0)) @ transform.matrix
+        expected = previous.translation + previous.width * transform.matrix[0]
         offset = (current.translation - expected) @ transform.inverse
         if float(offset[0]) > RAW_SPACE_WIDTH * 0.5:
             parts.append(" " * max(1, round(float(offset[0]) / RAW_SPACE_WIDTH)))
@@ -543,14 +549,39 @@ def internal_sequence_run(
     concrete = tuple(
         segment for segment in segments[matches[0].start : matches[-1].stop] if segment is not None
     )
-    padding = max(segment.line_width for segment in concrete) * 0.5
-    x0 = min(min(segment.x0, segment.x1) for segment in concrete) - padding
-    y0 = min(min(segment.y0, segment.y1) for segment in concrete) - padding
-    x1 = max(max(segment.x0, segment.x1) for segment in concrete) + padding
-    y1 = max(max(segment.y0, segment.y1) for segment in concrete) + padding
+    # Single pass instead of 5 separate generator passes over `concrete`.
+    max_line_width = concrete[0].line_width
+    min_x = min(concrete[0].x0, concrete[0].x1)
+    max_x = max(concrete[0].x0, concrete[0].x1)
+    min_y = min(concrete[0].y0, concrete[0].y1)
+    max_y = max(concrete[0].y0, concrete[0].y1)
+    for segment in concrete[1:]:
+        if segment.line_width > max_line_width:
+            max_line_width = segment.line_width
+        sx0 = segment.x0
+        sx1 = segment.x1
+        seg_min_x = sx0 if sx0 < sx1 else sx1
+        seg_max_x = sx1 if sx1 > sx0 else sx0
+        if seg_min_x < min_x:
+            min_x = seg_min_x
+        if seg_max_x > max_x:
+            max_x = seg_max_x
+        sy0 = segment.y0
+        sy1 = segment.y1
+        seg_min_y = sy0 if sy0 < sy1 else sy1
+        seg_max_y = sy1 if sy1 > sy0 else sy0
+        if seg_min_y < min_y:
+            min_y = seg_min_y
+        if seg_max_y > max_y:
+            max_y = seg_max_y
+    padding = max_line_width * 0.5
+    x0 = min_x - padding
+    y0 = min_y - padding
+    x1 = max_x + padding
+    y1 = max_y + padding
     transform = matches[0].transform
     origin = matches[0].translation
-    advance = matches[-1].translation + numpy.asarray((matches[-1].width, 0.0)) @ transform.matrix
+    advance = matches[-1].translation + matches[-1].width * transform.matrix[0]
     angle = (
         round(
             math.degrees(math.atan2(float(transform.matrix[0, 1]), float(transform.matrix[0, 0])))

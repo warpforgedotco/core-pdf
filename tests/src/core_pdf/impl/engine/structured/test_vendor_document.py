@@ -6,7 +6,6 @@ from core_pdf.impl.engine.structured import (
     Block,
     BlockKind,
     Document,
-    DocumentAdapter,
     DocumentEditor,
     Figure,
     Page,
@@ -44,16 +43,6 @@ def test_text_span_serialization_preserves_inline_styles() -> None:
 
     assert document.to_markdown() == "plain**bold**<u>underlined</u>\f"
     assert "plain<strong>bold</strong><u>underlined</u>" in document.to_html()
-
-
-def test_document_adapter_protocol_is_runtime_checkable_by_shape() -> None:
-    class Adapter:
-        def apply(self, document: Document) -> Document:
-            return document
-
-    adapter: DocumentAdapter = Adapter()
-
-    assert adapter.apply(Document()).pages == ()
 
 
 def test_document_editor_commits_without_mutating_the_original() -> None:
@@ -117,7 +106,7 @@ def test_document_serializes_to_versioned_json() -> None:
 
     payload = document.to_json_dict()
 
-    assert payload["schema_version"] == "2.0"
+    assert payload["schema_version"] == "3.0"
     payload_any = cast(Any, payload)
     assert payload_any["pages"][0]["blocks"][0]["kind"] == "heading"
 

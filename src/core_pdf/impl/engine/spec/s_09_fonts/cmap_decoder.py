@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from core_pdf.impl.engine.spec.s_09_fonts.cmap_encoding import BYTE_CACHE
 from core_pdf.impl.engine.spec.s_09_fonts.cmap_ranges import (
@@ -21,6 +22,12 @@ from core_pdf.impl.engine.spec.s_09_fonts.cmap_tokenizer import (
     decode_cmap_hex_token,
     iter_blocks,
 )
+
+if TYPE_CHECKING:
+    # numpy is imported lazily at each call site to keep module import cheap.
+    import numpy
+
+CodeRangeT = TypeVar("CodeRangeT", CIDRange, NotdefRange)
 
 
 class CMapDecoder:
@@ -107,10 +114,19 @@ class CMapDecoder:
             elif usecmap_name in {"OneByteIdentityH", "OneByteIdentityV"}:
                 self.code_space_ranges.append((b"\x00", b"\xff"))
                 self.default_to_identity = True
-        self.parse_cidchar(data)
-        self.parse_cidrange(data)
-        self.parse_notdefchar(data)
-        self.parse_notdefrange(data)
+        self.parse_char_blocks(data, b"begincidchar", b"endcidchar", self.cid_mappings)
+        self.parse_range_blocks(
+            data, b"begincidrange", b"endcidrange", self.cid_mappings, self.cid_ranges, CIDRange
+        )
+        self.parse_char_blocks(data, b"beginnotdefchar", b"endnotdefchar", self.notdef_mappings)
+        self.parse_range_blocks(
+            data,
+            b"beginnotdefrange",
+            b"endnotdefrange",
+            self.notdef_mappings,
+            self.notdef_ranges,
+            NotdefRange,
+        )
         self.decode_lengths = tuple(
             sorted(
                 (
@@ -141,8 +157,8 @@ class CMapDecoder:
         return cmap
 
     def freeze(self) -> None:
-        self.cid_ranges_by_length = index_cid_ranges_by_length(self.cid_ranges)
-        self.notdef_ranges_by_length = index_notdef_ranges_by_length(self.notdef_ranges)
+        self.cid_ranges_by_length = index_ranges_by_length(self.cid_ranges)
+        self.notdef_ranges_by_length = index_ranges_by_length(self.notdef_ranges)
         self.code_space_ranges_by_length = index_code_space_ranges(self.code_space_ranges)
 
     @staticmethod
@@ -178,8 +194,15 @@ class CMapDecoder:
         self.default_to_identity = parent.default_to_identity
         self.wmode = parent.wmode
 
-    def parse_cidchar(self, data: bytes) -> None:
-        for block in iter_blocks(data, b"begincidchar", b"endcidchar"):
+    def parse_char_blocks(
+        self,
+        data: bytes,
+        begin_keyword: bytes,
+        end_keyword: bytes,
+        mappings: dict[bytes, int],
+    ) -> None:
+        """Collect `<code> cid` pairs from every `begin…char`/`end…char` block."""
+        for block in iter_blocks(data, begin_keyword, end_keyword):
             items = cmap_noncomment_words(block)
             if len(items) % 2 != 0:
                 items = items[:-1]
@@ -192,10 +215,19 @@ class CMapDecoder:
                     cid = int(cid_token)
                 except (ValueError, UnicodeDecodeError):
                     continue
-                self.cid_mappings[code] = cid
+                mappings[code] = cid
 
-    def parse_cidrange(self, data: bytes) -> None:
-        for block in iter_blocks(data, b"begincidrange", b"endcidrange"):
+    def parse_range_blocks(
+        self,
+        data: bytes,
+        begin_keyword: bytes,
+        end_keyword: bytes,
+        mappings: dict[bytes, int],
+        ranges: list[CodeRangeT],
+        make_range: Callable[[bytes, bytes, int], CodeRangeT],
+    ) -> None:
+        """Collect `<start> <end> cid` triples, dropping codes the range subsumes."""
+        for block in iter_blocks(data, begin_keyword, end_keyword):
             items = cmap_noncomment_words(block)
             if len(items) % 3 != 0:
                 items = items[: len(items) - (len(items) % 3)]
@@ -212,56 +244,12 @@ class CMapDecoder:
                     start_bytes = decode_cmap_hex_token(start_token)
                     end_bytes = decode_cmap_hex_token(end_token)
                     cid = int(cid_token)
-                except (ValueError, UnicodeDecodeError):
-                    continue
-                if len(start_bytes) != len(end_bytes):
-                    continue
-                try:
-                    validate_codespace_range(start_bytes, end_bytes)
-                except ValueError:
-                    continue
-                remove_codes_in_range(self.cid_mappings, start_bytes, end_bytes)
-                self.cid_ranges.append(CIDRange(start_bytes, end_bytes, cid))
-
-    def parse_notdefchar(self, data: bytes) -> None:
-        for block in iter_blocks(data, b"beginnotdefchar", b"endnotdefchar"):
-            items = cmap_noncomment_words(block)
-            if len(items) % 2 != 0:
-                items = items[:-1]
-            for i in range(0, len(items), 2):
-                code_token, cid_token = items[i], items[i + 1]
-                if not (code_token.startswith(b"<") and code_token.endswith(b">")):
-                    continue
-                try:
-                    code = decode_cmap_hex_token(code_token)
-                    cid = int(cid_token)
-                except (ValueError, UnicodeDecodeError):
-                    continue
-                self.notdef_mappings[code] = cid
-
-    def parse_notdefrange(self, data: bytes) -> None:
-        for block in iter_blocks(data, b"beginnotdefrange", b"endnotdefrange"):
-            items = cmap_noncomment_words(block)
-            if len(items) % 3 != 0:
-                items = items[: len(items) - (len(items) % 3)]
-            for i in range(0, len(items), 3):
-                start_token, end_token, cid_token = items[i], items[i + 1], items[i + 2]
-                if not (
-                    start_token.startswith(b"<")
-                    and start_token.endswith(b">")
-                    and end_token.startswith(b"<")
-                    and end_token.endswith(b">")
-                ):
-                    continue
-                try:
-                    start_bytes = decode_cmap_hex_token(start_token)
-                    end_bytes = decode_cmap_hex_token(end_token)
-                    cid = int(cid_token)
+                    # Also rejects mismatched start/end lengths.
                     validate_codespace_range(start_bytes, end_bytes)
                 except (ValueError, UnicodeDecodeError):
                     continue
-                remove_codes_in_range(self.notdef_mappings, start_bytes, end_bytes)
-                self.notdef_ranges.append(NotdefRange(start_bytes, end_bytes, cid))
+                remove_codes_in_range(mappings, start_bytes, end_bytes)
+                ranges.append(make_range(start_bytes, end_bytes, cid))
 
     def mapped_cid(self, code: bytes) -> int | None:
         cid = self.cid_mappings.get(code)
@@ -363,7 +351,9 @@ class CMapDecoder:
                 pos += 1
         return out
 
-    def decode_cids_array(self, data: bytes | bytearray | memoryview):
+    def decode_cids_array(
+        self, data: bytes | bytearray | memoryview
+    ) -> numpy.ndarray[Any, Any] | None:
         """Decode uniform identity CMaps without allocating code-byte tuples.
 
         ``None`` signals that the CMap requires the general object-oriented
@@ -404,17 +394,9 @@ class CMapDecoder:
 CMapResourceResolver = Callable[[str], bytes | bytearray | memoryview | CMapDecoder | None]
 
 
-def index_cid_ranges_by_length(ranges: list[CIDRange]) -> dict[int, tuple[CIDRange, ...]]:
-    indexed: dict[int, list[CIDRange]] = {}
-    for item in reversed(ranges):
-        indexed.setdefault(len(item.start), []).append(item)
-    return {length: tuple(items) for length, items in indexed.items()}
-
-
-def index_notdef_ranges_by_length(
-    ranges: list[NotdefRange],
-) -> dict[int, tuple[NotdefRange, ...]]:
-    indexed: dict[int, list[NotdefRange]] = {}
+def index_ranges_by_length(ranges: list[CodeRangeT]) -> dict[int, tuple[CodeRangeT, ...]]:
+    """Bucket code ranges by code length, later definitions first."""
+    indexed: dict[int, list[CodeRangeT]] = {}
     for item in reversed(ranges):
         indexed.setdefault(len(item.start), []).append(item)
     return {length: tuple(items) for length, items in indexed.items()}

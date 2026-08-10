@@ -7,7 +7,11 @@ from functools import lru_cache
 from typing import Any, Callable
 
 from core_pdf.impl.engine.spec.s_07_objects.coercion import normalize_pdf_name
-from core_pdf.impl.engine.spec.s_09_fonts.data.core14 import STANDARD_ENCODING_OVERRIDES
+from core_pdf.impl.engine.spec.s_09_fonts.data.base_encodings import (
+    MAC_ROMAN_ENCODING,
+    STANDARD_ENCODING,
+    WIN_ANSI_ENCODING,
+)
 from core_pdf.impl.engine.spec.s_09_fonts.encoding import PDFDOC_ENCODING_TABLE
 from core_pdf.impl.engine.spec.s_09_fonts.glyphs import glyph_name_to_unicode
 
@@ -25,24 +29,26 @@ def fallback_with_pdfdoc(b: int) -> str:
     return normalize_ligature_text(PDFDOC_ENCODING_TABLE[b])
 
 
-def fallback_with_standard(b: int) -> str:
-    name = STANDARD_ENCODING_OVERRIDES.get(b)
-    if name is not None:
-        return glyph_name_to_unicode(name)
-    return chr(b) if 32 <= b <= 126 else ""
-
-
 def normalize_ligature_text(text: str) -> str:
     return LIGATURE_TEXT_OVERRIDES.get(text, text)
 
 
-@lru_cache(maxsize=256)
-def cached_translate_table(table: tuple[str, ...]) -> dict[int, str]:
-    return {i: text for i, text in enumerate(table) if text != chr(i)}
+def internal_resolve_base_encoding(table: tuple[str, ...]) -> tuple[str, ...]:
+    """Turn an Annex D.2 table into a decode table.
+
+    Undefined codes below 040 keep their raw value, matching how the control
+    range is treated everywhere else; above that they decode to nothing, since
+    the encoding genuinely assigns them no glyph.
+    """
+    return tuple(
+        normalize_ligature_text(text) if text else (chr(code) if code < 32 else "")
+        for code, text in enumerate(table)
+    )
 
 
-def decode_with_table(data: bytes, table: tuple[str, ...]) -> str:
-    return data.decode("latin-1").translate(cached_translate_table(table))
+STANDARD_ENCODING_TABLE = internal_resolve_base_encoding(STANDARD_ENCODING)
+WIN_ANSI_ENCODING_TABLE = internal_resolve_base_encoding(WIN_ANSI_ENCODING)
+MAC_ROMAN_ENCODING_TABLE = internal_resolve_base_encoding(MAC_ROMAN_ENCODING)
 
 
 def build_decode_table(
@@ -55,7 +61,13 @@ def build_decode_table(
     table = [fallback_fn(b) for b in range(256)]
     for code, glyph_name in differences.items():
         mapped = gtn(glyph_name)
-        table[code] = "" if mapped == glyph_name and len(glyph_name) != 1 else mapped
+        if mapped == glyph_name and len(glyph_name) != 1:
+            table[code] = ""
+            continue
+        # Expand ligatures here too, so a glyph reached through /Differences
+        # or a built-in encoding reads the same as one reached through a base
+        # encoding table.
+        table[code] = normalize_ligature_text(mapped)
     return tuple(table)
 
 
@@ -96,13 +108,11 @@ def parse_differences(
 
 
 ENCODING_FALLBACKS: dict[str, EncodingFallback] = {
-    "StandardEncoding": fallback_with_standard,
+    "StandardEncoding": STANDARD_ENCODING_TABLE.__getitem__,
     # Type3 fonts use StandardEncoding when /Encoding is omitted.  Keep this
     # fallback separate from the parser's default so explicitly supplied
     # Differences can still override individual character codes.
-    "Type3": fallback_with_standard,
-    "WinAnsiEncoding": lambda b: normalize_ligature_text(bytes([b]).decode("cp1252", "replace")),
-    "MacRomanEncoding": lambda b: normalize_ligature_text(
-        bytes([b]).decode("mac_roman", "replace")
-    ),
+    "Type3": STANDARD_ENCODING_TABLE.__getitem__,
+    "WinAnsiEncoding": WIN_ANSI_ENCODING_TABLE.__getitem__,
+    "MacRomanEncoding": MAC_ROMAN_ENCODING_TABLE.__getitem__,
 }

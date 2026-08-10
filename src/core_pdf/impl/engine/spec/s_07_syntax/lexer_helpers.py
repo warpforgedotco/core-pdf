@@ -166,12 +166,6 @@ def is_digit_bytes_from(value: memoryview | bytes, pos: int) -> bool:
     return value[pos:].isdigit()
 
 
-def is_pdf_number_bytes(value: memoryview | bytes) -> bool:
-    if type(value) is memoryview:
-        value = value.tobytes()
-    return is_number_word_bytes(value)
-
-
 def is_number_word_bytes(value: bytes) -> bool:
     if not value:
         return False
