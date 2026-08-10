@@ -1843,15 +1843,29 @@ class TextState:
                     provenance=common_provenance,
                 )
                 append_glyph(observation)
-                cluster = glyph_cluster_from_observations(
-                    cluster_id,
-                    chunk_text,
-                    (observation,),
-                    kind="single_glyph",
-                    provenance=common_provenance,
+                # Single-glyph fast path: glyph_cluster_from_observations, given one
+                # observation, only re-derives advance_bbox/ink_bbox/confidence/etc. from
+                # fields already sitting in locals here (rect, advance_rect,
+                # observation_confidence, baseline, writing_mode) -- construct the
+                # GlyphCluster directly instead of a round trip through GlyphObservation's
+                # advance_bbox/ink_bbox properties.
+                clusters.append(
+                    GlyphCluster(
+                        cluster_id=cluster_id,
+                        text=chunk_text,
+                        glyphs=(observation,),
+                        kind="single_glyph",
+                        advance_bbox=(advance_rect.x0, advance_rect.y0, advance_rect.x1, advance_rect.y1),
+                        ink_bbox=(rect.x0, rect.y0, rect.x1, rect.y1),
+                        baseline=baseline,
+                        writing_mode=writing_mode,
+                        rotation_angle=rotation_angle,
+                        font_name=observation.font_name,
+                        seqno=seqno,
+                        confidence=observation_confidence,
+                        provenance=common_provenance,
+                    )
                 )
-                if cluster is not None:
-                    clusters.append(cluster)
                 offset += advance
                 continue
 

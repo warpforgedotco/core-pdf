@@ -425,15 +425,18 @@ def internal_text_quality_stats(text: str) -> TextQualityStats:
     symbols = 0
     non_ascii = 0
     for token in tokens:
-        compact = [character for character in token if not character.isspace()]
-        if len(compact) <= 2:
+        # `tokens` comes from a `\S+` regex match, so every character in `token` already
+        # satisfies `not character.isspace()` (CPython's Unicode `\s`/`str.isspace()` share
+        # the same whitespace classification) -- iterate `token` directly instead of
+        # rebuilding an always-identical filtered copy.
+        if len(token) <= 2:
             short_tokens += 1
-        if any(character.isdigit() for character in compact):
+        if any(character.isdigit() for character in token):
             digit_tokens += 1
-        letters = [character for character in compact if character.isalpha()]
+        letters = [character for character in token if character.isalpha()]
         if len(letters) >= 3 and any(character.casefold() in "aeiou" for character in letters):
             wordlike += 1
-        for character in compact:
+        for character in token:
             nonspace += 1
             if not character.isalnum():
                 symbols += 1
