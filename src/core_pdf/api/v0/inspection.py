@@ -310,18 +310,17 @@ def object_graph(document: Any) -> ObjectGraphReport:
         visiting.remove(target)
 
     def visit_value(value: object, parent: int | None, key: str | None) -> None:
-        if isinstance(value, PdfReference):
-            visit_reference(value, parent, key)
-            return
-        if isinstance(value, PdfStream):
-            visit_value(value.dictionary, parent, key)
-            return
-        if isinstance(value, dict):
-            for item_key, child in value.items():
-                visit_value(child, parent, str(item_key).lstrip("/"))
-        elif isinstance(value, (list, tuple)):
-            for child in value:
-                visit_value(child, parent, key)
+        match value:
+            case PdfReference():
+                visit_reference(value, parent, key)
+            case PdfStream():
+                visit_value(value.dictionary, parent, key)
+            case dict():
+                for item_key, child in value.items():
+                    visit_value(child, parent, str(item_key).lstrip("/"))
+            case list() | tuple():
+                for child in value:
+                    visit_value(child, parent, key)
 
     root = document.trailer_dict.get("Root")
     root_objects: tuple[int, ...] = ()

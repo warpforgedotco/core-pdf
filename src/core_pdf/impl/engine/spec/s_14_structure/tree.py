@@ -447,9 +447,10 @@ class PageStructure(Sequence[StructureElement | None]):
             raise ValueError("invalid page structure parent entry")
         raise ValueError("invalid page structure parent entry")
 
-    def __iter__(self) -> Iterator[StructureElement | None]:
-        for i in range(len(self.parents)):
-            yield self[i]
+    # No explicit __iter__: Sequence's mixin already provides one from
+    # __len__ + __getitem__ (calling self[i] for i in range(len(self)),
+    # stopping on IndexError) -- identical to what this class used to
+    # define by hand.
 
     def find_all(self, matcher: str | MatchFunc | None = None) -> Iterator[StructureElement]:
         seen: set[int] = set()
