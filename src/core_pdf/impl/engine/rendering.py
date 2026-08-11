@@ -631,6 +631,73 @@ def internal_blend_normal_solid_array_numpy(
     destination[:] = destination_float.astype(numpy.uint8)
 
 
+def internal_blend_solid_array_numpy(
+    target: numpy.ndarray[Any, numpy.dtype[numpy.uint8]],
+    rgba: tuple[int, int, int, int],
+    blend_mode: str | None,
+) -> None:
+    """Blend a solid source into an RGBA view, replicating ``blend_px``'s
+    per-pixel math (Multiply/Screen premultiply, generic alpha compositing)
+    across every destination pixel in one pass.
+
+    Callers fold any transparency-group alpha into ``rgba``'s alpha before
+    calling -- ``blend_px`` reads that scale from state that is invariant
+    across the whole span, so it is computed once here instead of per pixel.
+    Uses float64 throughout (not float32, unlike the Normal-blend fast paths
+    above) so every intermediate matches ``blend_px``'s plain-Python-float
+    arithmetic bit for bit; the golden-raster digests depend on it.
+
+    Indexes ``target``'s last axis directly (``target[..., 0]`` etc.) rather
+    than ``target.reshape(-1, 4)``: callers pass both flat ``(n, 4)`` spans
+    and 2D ``(rows, cols, 4)`` boxes, and a box slice narrower than the full
+    row stride is not C-contiguous, so reshaping it silently returns a
+    disconnected copy and every write below would be lost.
+    """
+    sr, sg, sb, sa = rgba
+    if sa <= 0 or target.size == 0:
+        return
+    mode = blend_mode.lower() if isinstance(blend_mode, str) else None
+    if sa >= 255 and mode is None:
+        target[..., 0] = sr
+        target[..., 1] = sg
+        target[..., 2] = sb
+        target[..., 3] = 255
+        return
+    dr = target[..., 0].astype(numpy.float64)
+    dg = target[..., 1].astype(numpy.float64)
+    db = target[..., 2].astype(numpy.float64)
+    da = target[..., 3].astype(numpy.float64)
+    src_a = sa / 255.0
+    one_minus_src_a = 1.0 - src_a
+    dst_a = da / 255.0
+    src_r: numpy.ndarray | float = sr / 255.0
+    src_g: numpy.ndarray | float = sg / 255.0
+    src_b: numpy.ndarray | float = sb / 255.0
+    if mode == "multiply":
+        src_r = src_r * (dr / 255.0)
+        src_g = src_g * (dg / 255.0)
+        src_b = src_b * (db / 255.0)
+    elif mode == "screen":
+        src_r = 1.0 - (1.0 - src_r) * (1.0 - dr / 255.0)
+        src_g = 1.0 - (1.0 - src_g) * (1.0 - dg / 255.0)
+        src_b = 1.0 - (1.0 - src_b) * (1.0 - db / 255.0)
+    out_a = src_a + dst_a * one_minus_src_a
+    safe_out_a = numpy.where(out_a > 0.0, out_a, 1.0)
+    out_r = numpy.round(((src_r * 255.0) * src_a + dr * dst_a * one_minus_src_a) / safe_out_a)
+    out_g = numpy.round(((src_g * 255.0) * src_a + dg * dst_a * one_minus_src_a) / safe_out_a)
+    out_b = numpy.round(((src_b * 255.0) * src_a + db * dst_a * one_minus_src_a) / safe_out_a)
+    out_a_i = numpy.round(out_a * 255.0)
+    transparent = out_a <= 0.0
+    out_r = numpy.where(transparent, 0.0, out_r)
+    out_g = numpy.where(transparent, 0.0, out_g)
+    out_b = numpy.where(transparent, 0.0, out_b)
+    out_a_i = numpy.where(transparent, 0.0, out_a_i)
+    target[..., 0] = numpy.clip(out_r, 0.0, 255.0).astype(numpy.uint8)
+    target[..., 1] = numpy.clip(out_g, 0.0, 255.0).astype(numpy.uint8)
+    target[..., 2] = numpy.clip(out_b, 0.0, 255.0).astype(numpy.uint8)
+    target[..., 3] = numpy.clip(out_a_i, 0.0, 255.0).astype(numpy.uint8)
+
+
 def internal_blend_normal_alpha_array_numpy(
     target: numpy.ndarray[Any, numpy.dtype[numpy.uint8]],
     rgba: tuple[int, int, int, int],
@@ -1760,23 +1827,43 @@ class internal_RasterTarget:
                 rgba,
             )
             return
-        # Only the clipped / blended scanline path below needs these.
+        # Only the clipped / blended scanline path below needs these. A
+        # transparency-group alpha is invariant for this whole call (it comes
+        # from `buffer_stack`, which `fill_rect` never pushes/pops), so it is
+        # folded into `blended_rgba` once here instead of on every pixel the
+        # way `blend_px` does it -- mirrors the group-alpha scale it would
+        # otherwise redo per pixel, and lets wide spans go through one NumPy
+        # blend instead of a Python loop.
+        # `rectangular_clip and normal_fast` is unreachable below: the
+        # `page_box_to_pixels` result already guarantees ix1 > ix0 and
+        # iy1 > iy0, so that combination always takes the whole-box return
+        # above instead of reaching this scanline loop.
         width = self.width
         blend_px = self.blend_px
         blend_normal_pixel = self.blend_normal_pixel
-        blend_normal_solid_span = self.blend_normal_solid_span
         clip_row_visible_spans = self.clip_row_visible_spans
+        blended_rgba = rgba
+        if normal_target is None:
+            group_alpha = buffer_stack[-1][1]
+            if pdf_number(group_alpha):
+                sr, sg, sb, sa = rgba
+                sa = max(0, min(255, int(round(sa * float(group_alpha)))))
+                blended_rgba = (sr, sg, sb, sa)
+            if blended_rgba[3] <= 0:
+                return
+            blend_target = pixel_view(pixels)
+            if rectangular_clip:
+                # The whole ix0:ix1/iy0:iy1 box is visible with no gaps (same
+                # invariant the opaque/Normal fast paths above rely on), so
+                # one array-wide blend replaces a numpy call per row.
+                internal_blend_solid_array_numpy(
+                    blend_target[iy0:iy1, ix0:ix1], blended_rgba, blend_mode
+                )
+                return
         for y in range(iy0, iy1):
             row = y * width * 4
             visible_spans = clip_row_visible_spans(y)
             if not visible_spans:
-                continue
-            if rectangular_clip and normal_fast:
-                for start, end in visible_spans:
-                    start = max(ix0, start)
-                    end = min(ix1, end)
-                    if end > start:
-                        blend_normal_solid_span(row, start, end, rgba)
                 continue
             for start, end in visible_spans:
                 start = max(ix0, start)
@@ -1789,6 +1876,10 @@ class internal_RasterTarget:
                     else:
                         for x in range(start, end):
                             blend_normal_pixel(row + x * 4, *rgba)
+                elif end - start >= RASTER_NUMPY_SPAN_MIN_PIXELS:
+                    internal_blend_solid_array_numpy(
+                        blend_target[y, start:end], blended_rgba, blend_mode
+                    )
                 else:
                     for x in range(start, end):
                         blend_px(row + x * 4, rgba, blend_mode)
@@ -1828,6 +1919,18 @@ class internal_RasterTarget:
         )
         normal_fast = can_blend_normal_fast(blend_mode)
         normal_target = pixel_view(pixels) if normal_fast and not simple_opaque else None
+        # Same group-alpha hoist as `fill_rect`: invariant for this whole call,
+        # so folded into `blended_rgba` once instead of per pixel in `blend_px`.
+        blended_rgba = rgba
+        blend_target = None
+        if not normal_fast:
+            group_alpha = buffer_stack[-1][1]
+            if pdf_number(group_alpha):
+                sr, sg, sb, sa = rgba
+                sa = max(0, min(255, int(round(sa * float(group_alpha)))))
+                blended_rgba = (sr, sg, sb, sa)
+            if blended_rgba[3] > 0:
+                blend_target = pixel_view(pixels)
 
         def span_pixels(start_x: float, end_x: float) -> tuple[int, int] | None:
             if end_x <= start_x:
@@ -1901,6 +2004,16 @@ class internal_RasterTarget:
                         internal_blend_normal_solid_array_numpy(
                             normal_target[py, visible_start:visible_end],
                             rgba,
+                        )
+                        continue
+                    if (
+                        blend_target is not None
+                        and visible_end - visible_start >= RASTER_NUMPY_SPAN_MIN_PIXELS
+                    ):
+                        internal_blend_solid_array_numpy(
+                            blend_target[py, visible_start:visible_end],
+                            blended_rgba,
+                            blend_mode,
                         )
                         continue
                     for px in range(visible_start, visible_end):

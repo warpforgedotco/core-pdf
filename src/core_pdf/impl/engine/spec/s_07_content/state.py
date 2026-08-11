@@ -1855,7 +1855,12 @@ class TextState:
                         text=chunk_text,
                         glyphs=(observation,),
                         kind="single_glyph",
-                        advance_bbox=(advance_rect.x0, advance_rect.y0, advance_rect.x1, advance_rect.y1),
+                        advance_bbox=(
+                            advance_rect.x0,
+                            advance_rect.y0,
+                            advance_rect.x1,
+                            advance_rect.y1,
+                        ),
                         ink_bbox=(rect.x0, rect.y0, rect.x1, rect.y1),
                         baseline=baseline,
                         writing_mode=writing_mode,
@@ -3422,6 +3427,9 @@ class TextState:
     def op_RG_values(self: Any, red: int | float, green: int | float, blue: int | float) -> None:
         self.set_stroke_color(red, green, blue)
 
+    def op_rg_values(self: Any, red: int | float, green: int | float, blue: int | float) -> None:
+        self.set_fill_color(red, green, blue)
+
     def op_K(self, operands: OperandWindow, depth: int) -> None:
         self.graphics_component.set_stroke_cmyk(operands)
 
@@ -3507,14 +3515,21 @@ class TextState:
                 w, h = self.as_float(operands[2]), self.as_float(operands[3])
             except (TypeError, ValueError):
                 return
-            if (
-                self.capture_clipping
-                or (self.capture_graphics or self.capture_glyphs)
-                and self.is_graphics_visible()
-            ):
-                self.current_path.rect(x, y, w, h)
-            self.current_point = (x, y)
-            self.subpath_start = (x, y)
+            self.op_re_values(x, y, w, h)
+
+    def op_re_values(
+        self: Any, x: int | float, y: int | float, width: int | float, height: int | float
+    ) -> None:
+        x_float = float(x)
+        y_float = float(y)
+        if (
+            self.capture_clipping
+            or (self.capture_graphics or self.capture_glyphs)
+            and self.is_graphics_visible()
+        ):
+            self.current_path.rect(x_float, y_float, float(width), float(height))
+        self.current_point = (x_float, y_float)
+        self.subpath_start = (x_float, y_float)
 
     def op_h(self, operands: OperandWindow, depth: int) -> None:
         self.graphics_component.path_close(operands, depth)

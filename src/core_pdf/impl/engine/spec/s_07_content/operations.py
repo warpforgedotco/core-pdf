@@ -353,7 +353,13 @@ class OperationTarget(Protocol):
 
     def op_re(self, operands: OperandWindow, depth: int) -> None: ...
 
+    def op_re_values(
+        self, x: int | float, y: int | float, width: int | float, height: int | float
+    ) -> None: ...
+
     def op_RG_values(self, red: int | float, green: int | float, blue: int | float) -> None: ...
+
+    def op_rg_values(self, red: int | float, green: int | float, blue: int | float) -> None: ...
 
     def op_w_value(self, line_width: int | float) -> None: ...
 
@@ -368,6 +374,8 @@ class OperationTarget(Protocol):
     def op_l_values(self, x: int | float, y: int | float) -> None: ...
 
     def op_paint_stroke(self, operands: OperandWindow, depth: int) -> None: ...
+
+    def op_paint_fill(self, operands: OperandWindow, depth: int) -> None: ...
 
     def op_ET(self, operands: OperandWindow, depth: int) -> None: ...
 
@@ -644,6 +652,19 @@ def dispatch_operations(
                         b4 = raw_bytes[start_offset + 4]
                         if (
                             48 <= first <= 57
+                            and b1 == 46
+                            and 48 <= b2 <= 57
+                            and 48 <= b3 <= 57
+                            and 48 <= b4 <= 57
+                        ):
+                            if op_count < max_operands:
+                                operands[op_count] = (first - 48) + (
+                                    ((b2 - 48) * 100 + (b3 - 48) * 10 + (b4 - 48)) / 1000.0
+                                )
+                            op_count += 1
+                            continue
+                        if (
+                            48 <= first <= 57
                             and 48 <= b1 <= 57
                             and b2 == 46
                             and 48 <= b3 <= 57
@@ -675,6 +696,21 @@ def dispatch_operations(
                         b3 = raw_bytes[start_offset + 3]
                         b4 = raw_bytes[start_offset + 4]
                         b5 = raw_bytes[start_offset + 5]
+                        if (
+                            first == 45
+                            and 48 <= b1 <= 57
+                            and b2 == 46
+                            and 48 <= b3 <= 57
+                            and 48 <= b4 <= 57
+                            and 48 <= b5 <= 57
+                        ):
+                            if op_count < max_operands:
+                                operands[op_count] = -(
+                                    (b1 - 48)
+                                    + (((b3 - 48) * 100 + (b4 - 48) * 10 + (b5 - 48)) / 1000.0)
+                                )
+                            op_count += 1
+                            continue
                         if (
                             48 <= first <= 57
                             and 48 <= b1 <= 57
@@ -942,16 +978,50 @@ def dispatch_operations(
                             )
                             op_count = 0
                             continue
-                    elif op0 == 114 and op1 == 101:
-                        if (
-                            handler_target.capture_graphics
-                            or handler_target.capture_glyphs
-                            or handler_target.capture_clipping
-                        ):
-                            set_operand_count(op_count)
-                            handler_target.op_re(operand_window, depth)
-                        op_count = 0
-                        continue
+                    elif op0 == 114:
+                        if op1 == 103 and op_count >= 3:
+                            red, green, blue = operands[0], operands[1], operands[2]
+                            if (
+                                type(red) in exact_number_types
+                                and type(green) in exact_number_types
+                                and type(blue) in exact_number_types
+                            ):
+                                handler_target.op_rg_values(
+                                    cast(int | float, red),
+                                    cast(int | float, green),
+                                    cast(int | float, blue),
+                                )
+                                op_count = 0
+                                continue
+                        elif op1 == 101:
+                            if (
+                                handler_target.capture_graphics
+                                or handler_target.capture_glyphs
+                                or handler_target.capture_clipping
+                            ):
+                                if op_count >= 4:
+                                    rect_x, rect_y = operands[0], operands[1]
+                                    rect_width, rect_height = operands[2], operands[3]
+                                    if (
+                                        type(rect_x) in exact_number_types
+                                        and type(rect_y) in exact_number_types
+                                        and type(rect_width) in exact_number_types
+                                        and type(rect_height) in exact_number_types
+                                    ):
+                                        handler_target.op_re_values(
+                                            cast(int | float, rect_x),
+                                            cast(int | float, rect_y),
+                                            cast(int | float, rect_width),
+                                            cast(int | float, rect_height),
+                                        )
+                                    else:
+                                        set_operand_count(op_count)
+                                        handler_target.op_re(operand_window, depth)
+                                else:
+                                    set_operand_count(op_count)
+                                    handler_target.op_re(operand_window, depth)
+                            op_count = 0
+                            continue
                     elif op0 == 69 and op1 == 84:
                         handler_target.op_ET(operand_window, depth)
                         op_count = 0
@@ -1056,6 +1126,10 @@ def dispatch_operations(
                             continue
                     elif op0 == 83:
                         handler_target.op_paint_stroke(operand_window, depth)
+                        op_count = 0
+                        continue
+                    elif op0 == 102 or op0 == 70:
+                        handler_target.op_paint_fill(operand_window, depth)
                         op_count = 0
                         continue
                     if op0 == 113:
