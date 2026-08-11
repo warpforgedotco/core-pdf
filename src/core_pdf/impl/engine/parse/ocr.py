@@ -2833,8 +2833,9 @@ def internal_candidate_ocr_regions(capture: CapturedPage) -> tuple[internal_OcrR
                 (row + 1) * page_height / label_rows,
             )
             component_boxes = label_boxes[cell]
-            component_box = bbox_union(component_boxes)
-            assert component_box is not None
+            optional_component_box = bbox_union(component_boxes)
+            assert optional_component_box is not None
+            component_box = optional_component_box
             component_area = max(0.0, component_box[2] - component_box[0]) * max(
                 0.0, component_box[3] - component_box[1]
             )
