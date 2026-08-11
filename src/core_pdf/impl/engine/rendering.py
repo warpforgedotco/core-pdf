@@ -3028,8 +3028,6 @@ class internal_RasterTarget:
                 ix1,
                 iy1,
             )
-            return
-            return True
         if (
             alpha == 255
             and blend_mode is None
@@ -3187,8 +3185,6 @@ class internal_RasterTarget:
                 ix1,
                 iy1,
             )
-            return
-            return True
         for py in range(iy0, iy1):
             page_y_value = crop_y1 - (py + 0.5) / scale
             row = py * width * 4
@@ -3489,7 +3485,6 @@ class internal_RasterTarget:
                 height_px,
             )
             return
-            return
         if normal_fast:
             self.blit_image_rows_blended(
                 converted,
@@ -3510,7 +3505,6 @@ class internal_RasterTarget:
                 y_span,
                 width_px,
             )
-            return
             return
         for dy, py in enumerate(range(iy0, iy1)):
             src_y = src_y_map[dy]
