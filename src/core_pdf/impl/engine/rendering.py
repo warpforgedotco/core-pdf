@@ -1453,16 +1453,16 @@ def internal_soft_mask_samples(data: dict[str, Any]) -> tuple[bytes | memoryview
         samples = raw_bytes
     else:
         samples, sample_dict = sample_result
-    converted: ByteBuffer | None
-    try:
-        if isinstance(samples, DecodedImage):
-            converted = samples.array.reshape(-1)
-        else:
-            converted = ImageColorManager.convert_image_data(samples, sample_dict)
-    except Exception:
-        converted = samples.array.reshape(-1) if isinstance(samples, DecodedImage) else samples
-    if converted is None:
-        converted = samples.array.reshape(-1) if isinstance(samples, DecodedImage) else samples
+    converted: ByteBuffer
+    if isinstance(samples, DecodedImage):
+        converted = samples.array.reshape(-1)
+    else:
+        converted_or_none: ByteBuffer | None
+        try:
+            converted_or_none = ImageColorManager.convert_image_data(samples, sample_dict)
+        except Exception:
+            converted_or_none = None
+        converted = converted_or_none if converted_or_none is not None else samples
     pixel_count = mask_width * mask_height
     converted_array = uint8_view(converted)
     if len(converted_array) >= pixel_count * 3:
