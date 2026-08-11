@@ -161,6 +161,14 @@ def store_expensive_decode(key: tuple[object, ...], data: bytes, decoded: bytes)
             internal_EXPENSIVE_DECODE_CACHE_BYTES -= len(evicted[0]) + len(evicted[1])
 
 
+def internal_coerce_decoder_bytes(result: object) -> bytes:
+    if type(result) is bytearray:
+        return bytes(result)
+    if type(result) is not bytes:
+        raise ValueError("invalid stream decoder result type")
+    return result
+
+
 def decode_one_filter(
     data: bytes,
     filter_name: str,
@@ -181,11 +189,7 @@ def decode_one_filter(
             if filter_name == "JPXDecode"
             else parms
         )
-        result = fn(data, decoder_context)
-        if type(result) is bytearray:
-            result = bytes(result)
-        elif type(result) is not bytes:
-            raise ValueError("invalid stream decoder result type")
+        result = internal_coerce_decoder_bytes(fn(data, decoder_context))
         if filter_name in PREDICTOR_FILTERS:
             if (
                 allow_content_stream_passthrough
@@ -194,11 +198,7 @@ def decode_one_filter(
                 and looks_like_pdf_content_stream(result)
             ):
                 return result
-            result = apply_predictor(result, parms)
-            if type(result) is bytearray:
-                result = bytes(result)
-            elif type(result) is not bytes:
-                raise ValueError("invalid stream decoder result type")
+            result = internal_coerce_decoder_bytes(apply_predictor(result, parms))
         return result
     except ValueError as exc:
         raise FilterParseError("invalid stream data") from exc

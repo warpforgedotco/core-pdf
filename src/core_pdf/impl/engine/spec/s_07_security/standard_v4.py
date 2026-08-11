@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
-import struct
-from hashlib import md5
 from typing import Callable, cast
 
 from core_pdf.impl.engine.spec.s_07_filters.decode_spec import normalize_stream_decode_spec
@@ -113,10 +111,7 @@ class PdfStandardSecurityHandlerV4(PdfStandardSecurityHandler):
         return filter_name
 
     def decrypt_aes128(self, objid: int, genno: int, data: bytes) -> bytes:
-        assert self.key is not None
-        key = self.key + struct.pack("<L", objid)[:3] + struct.pack("<L", genno)[:2] + b"sAlT"
-        h = md5(key)
-        key = h.digest()[: min(len(key), 16)]
+        key = self.object_key(objid, genno, b"sAlT")
         initialization_vector = data[:16]
         ciphertext = data[16:]
         cipher = AES(key)

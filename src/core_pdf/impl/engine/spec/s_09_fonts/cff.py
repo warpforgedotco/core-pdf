@@ -21,9 +21,6 @@ from core_pdf.impl.engine.spec.s_09_fonts.font_program import (  # noqa: F401
     glyph_feature_distance,
     is_repairable_to_unicode_label,
 )
-from core_pdf.impl.engine.spec.s_09_fonts.font_program import (
-    internal_type2_glyph_geometry_impl as internal_type2_glyph_geometry,  # noqa: F401
-)
 from core_pdf.impl.engine.spec.s_09_fonts.font_program_truetype import FONT_PROGRAM_ERRORS
 from core_pdf.impl.engine.spec.s_09_fonts.widths import get_descendant
 from core_pdf.impl.objects import PdfStream

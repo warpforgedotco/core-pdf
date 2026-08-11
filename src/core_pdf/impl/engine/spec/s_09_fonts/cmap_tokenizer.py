@@ -23,7 +23,13 @@ def iter_blocks(data: bytes | memoryview, begin: bytes, end: bytes) -> typing.It
             block_start = None
 
 
-def skip_cmap_literal_string(data: bytes, pos: int) -> int:
+def internal_scan_cmap_literal_string_end(data: bytes, pos: int) -> tuple[int, bool]:
+    """Scan a ``(...)`` literal string starting at ``pos``.
+
+    Returns ``(end, terminated)``: ``end`` is the position just past the closing
+    unescaped ``)`` if the string is properly balanced, otherwise ``len(data)`` with
+    ``terminated=False``.
+    """
     end = pos + 1
     depth = 1
     n = len(data)
@@ -37,10 +43,20 @@ def skip_cmap_literal_string(data: bytes, pos: int) -> int:
         elif current == 41:
             depth -= 1
         end += 1
+    return end, depth == 0
+
+
+def skip_cmap_literal_string(data: bytes, pos: int) -> int:
+    end, ignored_terminated = internal_scan_cmap_literal_string_end(data, pos)
     return end
 
 
-def skip_cmap_array(data: bytes, pos: int) -> int:
+def internal_scan_cmap_array_end(data: bytes, pos: int) -> tuple[int, bool]:
+    """Scan a ``[...]`` array starting at ``pos``.
+
+    Returns ``(end, terminated)``: ``end`` is the position just past the matching
+    closing ``]`` if properly balanced, otherwise ``len(data)`` with ``terminated=False``.
+    """
     end = pos + 1
     depth = 1
     n = len(data)
@@ -51,12 +67,12 @@ def skip_cmap_array(data: bytes, pos: int) -> int:
                 end += 1
             continue
         if current == 40:
-            end = skip_cmap_literal_string(data, end)
+            end, ignored_terminated = internal_scan_cmap_literal_string_end(data, end)
             continue
         if current == 60:
             close = data.find(b">", end + 1)
             if close < 0:
-                return n
+                return n, False
             end = close + 1
             continue
         if current == 91:
@@ -64,6 +80,11 @@ def skip_cmap_array(data: bytes, pos: int) -> int:
         elif current == 93:
             depth -= 1
         end += 1
+    return end, depth == 0
+
+
+def skip_cmap_array(data: bytes, pos: int) -> int:
+    end, ignored_terminated = internal_scan_cmap_array_end(data, pos)
     return end
 
 
@@ -125,57 +146,14 @@ def cmap_tokens(
             pos = end + 1
             continue
         if byte == 40:
-            end = pos + 1
-            depth = 1
-            while end < n and depth:
-                current = data[end]
-                if current == 92:
-                    end += 2
-                    continue
-                if current == 40:
-                    depth += 1
-                elif current == 41:
-                    depth -= 1
-                end += 1
-            if depth == 0:
+            end, terminated = internal_scan_cmap_literal_string_end(data, pos)
+            if terminated:
                 tokens.append(data[pos:end])
             pos = end
             continue
         if include_arrays and byte == 91:
-            end = pos + 1
-            depth = 1
-            while end < n and depth:
-                current = data[end]
-                if current == 37:
-                    while end < n and data[end] not in (10, 13):
-                        end += 1
-                    continue
-                if current == 40:
-                    end += 1
-                    string_depth = 1
-                    while end < n and string_depth:
-                        current = data[end]
-                        if current == 92:
-                            end += 2
-                            continue
-                        if current == 40:
-                            string_depth += 1
-                        elif current == 41:
-                            string_depth -= 1
-                        end += 1
-                    continue
-                if current == 60:
-                    close = data.find(b">", end + 1)
-                    if close < 0:
-                        break
-                    end = close + 1
-                    continue
-                if current == 91:
-                    depth += 1
-                elif current == 93:
-                    depth -= 1
-                end += 1
-            if depth == 0:
+            end, terminated = internal_scan_cmap_array_end(data, pos)
+            if terminated:
                 tokens.append(data[pos:end])
                 pos = end
                 continue

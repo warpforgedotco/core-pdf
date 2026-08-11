@@ -21,7 +21,6 @@ from core_pdf.impl.engine.spec.s_07_syntax.lexer_helpers import (
     full_source_buffer,
     is_integer_word,
     is_number_word,
-    is_number_word_bytes,
     looks_like_indirect_object_header,
     matches_keyword_with_one_substitution,
     parse_float_token,
@@ -211,18 +210,6 @@ class PdfLexer:
 
     def scan_word(self, skip_ignored: bool = True) -> tuple[memoryview, int] | None:
         return self.scan_word_at(self.pos, skip_ignored=skip_ignored)
-
-    @staticmethod
-    def is_number_word_bytes(value: bytes) -> bool:
-        return is_number_word_bytes(value)
-
-    @staticmethod
-    def is_number_word(value: memoryview | bytes) -> bool:
-        return is_number_word(value)
-
-    @staticmethod
-    def is_integer_word(value: memoryview | bytes) -> bool:
-        return is_integer_word(value)
 
     @staticmethod
     def parse_number(value: memoryview | bytes) -> int | float:
@@ -418,7 +405,7 @@ class PdfLexer:
             raise
 
     def parse_number_or_keyword(self, raw: bytes) -> Any:
-        if self.is_number_word(raw):
+        if is_number_word(raw):
             return self.parse_number(raw)
         return self.parse_keyword(raw)
 
@@ -460,12 +447,12 @@ class PdfLexer:
         if len(raw) > 6 and raw[-6:] == b"endobj":
             raw = raw[:-6]
             self.pos = end - 6
-        if self.is_number_word(raw):
+        if is_number_word(raw):
             raw_is_integer = 46 not in raw
             next_token = self.scan_word_at(end)
             if next_token is not None:
                 next_raw, next_end = next_token
-                if raw_is_integer and self.is_integer_word(next_raw):
+                if raw_is_integer and is_integer_word(next_raw):
                     next_next = self.scan_word_at(next_end)
                     if next_next is not None and next_next[0] == b"R":
                         self.pos = next_next[1]
@@ -488,7 +475,7 @@ class PdfLexer:
 
     def parse_indirect_object(self) -> Any:
         scanned = self.scan_word(skip_ignored=True)
-        if scanned is None or not self.is_number_word(scanned[0]):
+        if scanned is None or not is_number_word(scanned[0]):
             raise PdfParseError("expected indirect object header")
         raw, end = scanned
         self.pos = end
@@ -500,7 +487,7 @@ class PdfLexer:
             raise PdfParseError("invalid indirect object header")
 
         gen_num_raw = self.scan_word(skip_ignored=True)
-        if gen_num_raw is None or not self.is_number_word(gen_num_raw[0]):
+        if gen_num_raw is None or not is_number_word(gen_num_raw[0]):
             raise PdfParseError("expected indirect object generation number")
         self.pos = gen_num_raw[1]
         try:
@@ -689,12 +676,12 @@ class PdfLexer:
                 raise PdfParseError("unexpected end of PDF input")
             raw, end = scanned
             self.pos = end
-            if self.is_number_word(raw):
+            if is_number_word(raw):
                 raw_is_integer = 46 not in raw
                 next_token = self.scan_word_at(end)
                 if next_token is not None:
                     next_raw, next_end = next_token
-                    if raw_is_integer and self.is_integer_word(next_raw):
+                    if raw_is_integer and is_integer_word(next_raw):
                         next_next = self.scan_word_at(next_end)
                         if next_next is not None and next_next[0] == b"R":
                             self.pos = next_next[1]

@@ -8,6 +8,7 @@ from typing import Any, cast
 from core_pdf.impl.engine.spec.s_07_document.document_lock import (
     document_cache_lock,
     document_recovery_enabled,
+    get_or_compute,
 )
 from core_pdf.impl.engine.spec.s_07_document.forms import FormsMixin
 from core_pdf.impl.engine.spec.s_07_document.name_trees import iter_name_tree_items
@@ -27,12 +28,7 @@ class DocumentFeaturesMixin(NavigationMixin, FormsMixin):
     oc_layers: dict[str, bool] | None
 
     def embedded_files(self: Any) -> list[RawEmbeddedFile]:
-        with document_cache_lock(self):
-            records = self.embedded_files_cache
-            if records is None:
-                records = self.build_embedded_files()
-                self.embedded_files_cache = records
-            return list(records)
+        return list(get_or_compute(self, "embedded_files_cache", self.build_embedded_files))
 
     def build_embedded_files(self: Any) -> list[RawEmbeddedFile]:
         names = self.resolver.resolve(lookup_dict_key(self.catalog(), "Names"))

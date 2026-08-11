@@ -6,7 +6,7 @@ from __future__ import annotations
 import contextlib
 import threading
 from collections import deque
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from typing import TYPE_CHECKING, Any, cast
 
 from core_pdf.impl.engine.cache import ExtractionCache
@@ -374,10 +374,6 @@ class PdfPage:
         return cast(PdfDict, self.resources_cache)
 
     @property
-    def resources(self) -> PdfDict:
-        return self.cached_resources
-
-    @property
     def content_streams(self) -> tuple[PdfStream, ...]:
         if self.content_streams_cache is None:
             self.content_streams_cache = self.collect_content_streams()
@@ -582,50 +578,49 @@ class PdfPage:
 
     def crop(self, bbox: tuple[float, float, float, float]) -> PdfPage:
         x0, y0, x1, y1 = bbox
-        new_page = self.__class__(self.document, self.page_dict, self.page_number)
-
-        graphics = self.get_page_program().products
-        products = graphics
-        runs = tuple(
-            r for r in graphics.runs if r.x1 > x0 and r.x0 < x1 and r.y1 > y0 and r.y0 < y1
+        return self.internal_derive_page(
+            bbox,
+            run_predicate=lambda r: r.x1 > x0 and r.x0 < x1 and r.y1 > y0 and r.y0 < y1,
+            line_predicate=lambda line: (
+                max(line.x0, line.x1) > x0
+                and min(line.x0, line.x1) < x1
+                and max(line.y0, line.y1) > y0
+                and min(line.y0, line.y1) < y1
+            ),
         )
-        new_page.page_program_cache = self.internal_filtered_products(
-            products, runs, x0, y0, x1, y1
-        )
-
-        grid_lines = self.get_grid_lines()
-        new_page.grid_lines = [
-            line
-            for line in grid_lines
-            if max(line.x0, line.x1) > x0
-            and min(line.x0, line.x1) < x1
-            and max(line.y0, line.y1) > y0
-            and min(line.y0, line.y1) < y1
-        ]
-        return new_page
 
     def within_bbox(self, bbox: tuple[float, float, float, float]) -> PdfPage:
+        x0, y0, x1, y1 = bbox
+        return self.internal_derive_page(
+            bbox,
+            run_predicate=lambda r: r.x0 >= x0 and r.x1 <= x1 and r.y0 >= y0 and r.y1 <= y1,
+            line_predicate=lambda line: (
+                min(line.x0, line.x1) >= x0
+                and max(line.x0, line.x1) <= x1
+                and min(line.y0, line.y1) >= y0
+                and max(line.y0, line.y1) <= y1
+            ),
+        )
+
+    def internal_derive_page(
+        self,
+        bbox: tuple[float, float, float, float],
+        *,
+        run_predicate: Callable[[Any], bool],
+        line_predicate: Callable[[Any], bool],
+    ) -> PdfPage:
         x0, y0, x1, y1 = bbox
         new_page = self.__class__(self.document, self.page_dict, self.page_number)
 
         graphics = self.get_page_program().products
         products = graphics
-        runs = tuple(
-            r for r in graphics.runs if r.x0 >= x0 and r.x1 <= x1 and r.y0 >= y0 and r.y1 <= y1
-        )
+        runs = tuple(r for r in graphics.runs if run_predicate(r))
         new_page.page_program_cache = self.internal_filtered_products(
             products, runs, x0, y0, x1, y1
         )
 
         grid_lines = self.get_grid_lines()
-        new_page.grid_lines = [
-            line
-            for line in grid_lines
-            if min(line.x0, line.x1) >= x0
-            and max(line.x0, line.x1) <= x1
-            and min(line.y0, line.y1) >= y0
-            and max(line.y0, line.y1) <= y1
-        ]
+        new_page.grid_lines = [line for line in grid_lines if line_predicate(line)]
         return new_page
 
     @staticmethod

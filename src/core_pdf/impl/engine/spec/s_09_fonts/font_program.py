@@ -573,7 +573,7 @@ class CFFFont:
         except IndexError:
             geometry = ((), None)
         else:
-            contours, bbox = internal_type2_glyph_geometry(
+            contours, bbox = internal_type2_glyph_geometry_impl(
                 charstring,
                 local_subrs=self.local_subrs_for_glyph(glyph_id),
                 global_subrs=self.global_subrs,
@@ -1099,33 +1099,6 @@ def cff_unicode_repair_index_for_data(
     mapping_items: tuple[tuple[bytes, int, str], ...],
 ) -> CFFUnicodeRepairIndex:
     return CFFUnicodeRepairIndex(cff_font_for_data(font_data), mapping_items)
-
-
-def internal_type2_glyph_geometry(
-    charstring: bytes,
-    *,
-    local_subrs: tuple[bytes, ...],
-    global_subrs: tuple[bytes, ...],
-    collect_contours: bool,
-) -> tuple[list[list[tuple[float, float]]], tuple[float, float, float, float] | None]:
-    """Dispatch through the domain adapter so existing instrumentation remains valid."""
-    import sys
-
-    adapter = sys.modules.get("core_pdf.impl.engine.spec.s_09_fonts.cff")
-    hooked = getattr(adapter, "internal_type2_glyph_geometry", None) if adapter else None
-    if hooked is not None and hooked is not internal_type2_glyph_geometry:
-        return hooked(
-            charstring,
-            local_subrs=local_subrs,
-            global_subrs=global_subrs,
-            collect_contours=collect_contours,
-        )
-    return internal_type2_glyph_geometry_impl(
-        charstring,
-        local_subrs=local_subrs,
-        global_subrs=global_subrs,
-        collect_contours=collect_contours,
-    )
 
 
 __all__ = (

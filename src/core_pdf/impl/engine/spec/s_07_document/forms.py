@@ -6,6 +6,7 @@ from typing import Any, cast
 from core_pdf.impl.engine.spec.s_07_document.document_lock import (
     document_cache_lock,
     document_recovery_enabled,
+    get_or_compute,
 )
 from core_pdf.impl.engine.spec.s_07_document.fields import (
     FieldTraversalEntry,
@@ -25,19 +26,17 @@ class FormsMixin:
 
     @property
     def acroform(self: Any) -> PdfDict | None:
-        with document_cache_lock(self):
-            if self.acroform_cache is None:
-                acroform_val = self.resolver.resolve(lookup_dict_key(self.catalog(), "AcroForm"))
-                recover = document_recovery_enabled(self)
-                if acroform_val is None:
-                    self.acroform_cache = None
-                elif isinstance(acroform_val, dict):
-                    self.acroform_cache = cast(PdfDict, acroform_val)
-                elif recover:
-                    self.acroform_cache = None
-                else:
-                    raise ValueError("invalid AcroForm dictionary")
-            return self.acroform_cache
+        def compute() -> PdfDict | None:
+            acroform_val = self.resolver.resolve(lookup_dict_key(self.catalog(), "AcroForm"))
+            if acroform_val is None:
+                return None
+            if isinstance(acroform_val, dict):
+                return cast(PdfDict, acroform_val)
+            if document_recovery_enabled(self):
+                return None
+            raise ValueError("invalid AcroForm dictionary")
+
+        return get_or_compute(self, "acroform_cache", compute)
 
     def collect_field_records(
         self: Any,

@@ -16,6 +16,7 @@ from core_pdf.impl.engine.spec.s_07_document.document_features import DocumentFe
 from core_pdf.impl.engine.spec.s_07_document.document_lock import (
     document_cache_lock,
     document_recovery_enabled,
+    get_or_compute,
 )
 from core_pdf.impl.engine.spec.s_07_document.document_pages import (
     DocumentPagesMixin,
@@ -202,30 +203,27 @@ class PdfDocument(
         return self.resolver.resolve(ref)
 
     def catalog(self) -> PdfDict:
-        with document_cache_lock(self):
-            catalog = self.catalog_cache
-            if catalog is None:
-                root_ref = lookup_dict_key(self.trailer_dict, "Root")
-                if root_ref is None:
-                    raise ValueError("missing catalog root")
-                root = self.resolve(root_ref)
-                if not isinstance(root, dict):
-                    raise ValueError("invalid catalog root")
-                catalog = cast(PdfDict, root)
-                self.catalog_cache = catalog
-            return catalog
+        def compute() -> PdfDict:
+            root_ref = lookup_dict_key(self.trailer_dict, "Root")
+            if root_ref is None:
+                raise ValueError("missing catalog root")
+            root = self.resolve(root_ref)
+            if not isinstance(root, dict):
+                raise ValueError("invalid catalog root")
+            return cast(PdfDict, root)
+
+        return get_or_compute(self, "catalog_cache", compute)
 
     def get_metadata(self) -> MetadataRecord:
-        with document_cache_lock(self):
-            metadata = self.metadata_cache
-            if metadata is None:
-                metadata = resolve_metadata(
-                    self.resolver,
-                    self.trailer_dict,
-                    recover=document_recovery_enabled(self),
-                )
-                self.metadata_cache = metadata
-            return metadata
+        return get_or_compute(
+            self,
+            "metadata_cache",
+            lambda: resolve_metadata(
+                self.resolver,
+                self.trailer_dict,
+                recover=document_recovery_enabled(self),
+            ),
+        )
 
     @property
     def structure(self) -> StructureTree | None:
