@@ -34,7 +34,7 @@ from core_pdf.impl.engine.array_views import (
 )
 from core_pdf.impl.engine.execution import RUNTIME, TaskScope, WorkStage
 from core_pdf.impl.engine.image_cache import ImageCacheKey
-from core_pdf.impl.engine.layout.geometry import rect_tuple
+from core_pdf.impl.engine.layout.geometry import bbox_union, rect_tuple
 from core_pdf.impl.engine.layout.spatial import (
     SpatialIndex,
     bbox_intersection_area,
@@ -2552,9 +2552,7 @@ def internal_ocr_region_overlap(
     left: tuple[float, float, float, float],
     right: tuple[float, float, float, float],
 ) -> float:
-    intersection = max(0.0, min(left[2], right[2]) - max(left[0], right[0])) * max(
-        0.0, min(left[3], right[3]) - max(left[1], right[1])
-    )
+    intersection = bbox_intersection_area(left, right)
     smaller = min(
         max(0.0, left[2] - left[0]) * max(0.0, left[3] - left[1]),
         max(0.0, right[2] - right[0]) * max(0.0, right[3] - right[1]),
@@ -2835,12 +2833,8 @@ def internal_candidate_ocr_regions(capture: CapturedPage) -> tuple[internal_OcrR
                 (row + 1) * page_height / label_rows,
             )
             component_boxes = label_boxes[cell]
-            component_box = (
-                min(box[0] for box in component_boxes),
-                min(box[1] for box in component_boxes),
-                max(box[2] for box in component_boxes),
-                max(box[3] for box in component_boxes),
-            )
+            component_box = bbox_union(component_boxes)
+            assert component_box is not None
             component_area = max(0.0, component_box[2] - component_box[0]) * max(
                 0.0, component_box[3] - component_box[1]
             )
@@ -2896,12 +2890,8 @@ def internal_has_distributed_outline_text(capture: CapturedPage) -> bool:
     )
     if len(boxes) < 200:
         return False
-    bounds = (
-        min(box[0] for box in boxes),
-        min(box[1] for box in boxes),
-        max(box[2] for box in boxes),
-        max(box[3] for box in boxes),
-    )
+    bounds = bbox_union(boxes)
+    assert bounds is not None
     width_ratio = (bounds[2] - bounds[0]) / max(1.0, page_width)
     height_ratio = (bounds[3] - bounds[1]) / max(1.0, page_height)
     return width_ratio >= 0.60 and height_ratio >= 0.60
@@ -3473,10 +3463,9 @@ def internal_safe_image_crop(capture: CapturedPage) -> tuple[float, float, float
         return None
     page_width = float(capture.page.width)
     page_height = float(capture.page.height)
-    x0 = min(box[0] for box in evidence.image_boxes)
-    y0 = min(box[1] for box in evidence.image_boxes)
-    x1 = max(box[2] for box in evidence.image_boxes)
-    y1 = max(box[3] for box in evidence.image_boxes)
+    bounds = bbox_union(evidence.image_boxes)
+    assert bounds is not None
+    x0, y0, x1, y1 = bounds
     crop = (max(0.0, x0), max(0.0, y0), min(page_width, x1), min(page_height, y1))
     if crop[2] <= crop[0] or crop[3] <= crop[1]:
         return None

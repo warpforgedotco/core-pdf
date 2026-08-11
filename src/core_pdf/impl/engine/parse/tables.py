@@ -11,6 +11,7 @@ from typing import Any, cast
 
 import numpy
 
+from core_pdf.impl.engine.layout.geometry import bbox_union
 from core_pdf.impl.engine.layout.spatial import (
     SpatialIndex,
 )
@@ -120,12 +121,7 @@ def extract_chart_table(capture: CapturedPage, observations: ObservationBatch) -
     return Table(
         order=-1,
         rows=rows,
-        bbox=(
-            min(box[0] for box in boxes),
-            min(box[1] for box in boxes),
-            max(box[2] for box in boxes),
-            max(box[3] for box in boxes),
-        ),
+        bbox=bbox_union(boxes),
         confidence=0.35,
         metadata={"source": "chart-ocr", "synthetic": True},
     )
@@ -471,16 +467,7 @@ def internal_merge_grid_cells(
         source_cells = [rows[row][column] for row, column in cells]
         text = " ".join(cell.text for cell in source_cells if cell.text).strip()
         boxes = [cell.bbox for cell in source_cells if cell.bbox is not None]
-        bbox = (
-            (
-                min(box[0] for box in boxes),
-                min(box[1] for box in boxes),
-                max(box[2] for box in boxes),
-                max(box[3] for box in boxes),
-            )
-            if boxes
-            else None
-        )
+        bbox = bbox_union(boxes)
         merged[min_row].append(
             TableCell(
                 row=min_row,
@@ -846,12 +833,7 @@ def internal_compact_stream_table(
     return Table(
         order=order,
         rows=tuple(table_rows),
-        bbox=(
-            min(box[0] for box in boxes),
-            min(box[1] for box in boxes),
-            max(box[2] for box in boxes),
-            max(box[3] for box in boxes),
-        ),
+        bbox=bbox_union(boxes),
         confidence=0.7,
         metadata={"source": "stream", "compact": True},
     )
@@ -1148,16 +1130,7 @@ def internal_split_semantic_table(table: Table) -> tuple[Table, ...]:
         if len(rows) < 2:
             continue
         boxes = [cell.bbox for row in rows for cell in row if cell.bbox is not None]
-        bbox = (
-            (
-                min(box[0] for box in boxes),
-                min(box[1] for box in boxes),
-                max(box[2] for box in boxes),
-                max(box[3] for box in boxes),
-            )
-            if boxes
-            else None
-        )
+        bbox = bbox_union(boxes)
         segments.append(
             Table(
                 order=table.order + segment_index,
@@ -1342,16 +1315,7 @@ def internal_merge_stream_text_columns(table: Table) -> Table:
             boxes = [cell.bbox for cell in cells if cell.bbox is not None]
             if not text and row_index == 0:
                 continue
-            bbox = (
-                (
-                    min(box[0] for box in boxes),
-                    min(box[1] for box in boxes),
-                    max(box[2] for box in boxes),
-                    max(box[3] for box in boxes),
-                )
-                if boxes
-                else None
-            )
+            bbox = bbox_union(boxes)
             merged.append(
                 TableCell(
                     row=row_index,
@@ -1463,14 +1427,7 @@ def internal_merge_wrapped_cell_rows(table: Table) -> Table:
                     column=column,
                     text=" ".join(parts),
                     column_span=span,
-                    bbox=(
-                        min(box[0] for box in cell_boxes),
-                        min(box[1] for box in cell_boxes),
-                        max(box[2] for box in cell_boxes),
-                        max(box[3] for box in cell_boxes),
-                    )
-                    if cell_boxes
-                    else None,
+                    bbox=bbox_union(cell_boxes),
                 )
             )
         merged_rows.append(tuple(cells))
@@ -1503,14 +1460,7 @@ def internal_merge_wrapped_stream_rows(table: Table) -> Table:
                 previous[index] = replace(
                     target,
                     text=" ".join(part for part in (target.text, cell.text) if part).strip(),
-                    bbox=(
-                        min(box[0] for box in boxes),
-                        min(box[1] for box in boxes),
-                        max(box[2] for box in boxes),
-                        max(box[3] for box in boxes),
-                    )
-                    if boxes
-                    else None,
+                    bbox=bbox_union(boxes),
                 )
             continue
         merged.append(cells)

@@ -219,10 +219,6 @@ def glyph_text_has_unsupported_codepoint(text: str) -> bool:
     return False
 
 
-def union_bboxes(boxes: tuple[BBox, ...]) -> BBox | None:
-    return bbox_union(boxes)
-
-
 def glyph_cluster_from_observations(
     cluster_id: int,
     text: str,
@@ -239,8 +235,8 @@ def glyph_cluster_from_observations(
         ink_bbox = first.ink_bbox
         confidence = first.confidence
     else:
-        aggregated_advance_bbox = union_bboxes(tuple(glyph.advance_bbox for glyph in glyphs))
-        aggregated_ink_bbox = union_bboxes(tuple(glyph.ink_bbox for glyph in glyphs))
+        aggregated_advance_bbox = bbox_union(tuple(glyph.advance_bbox for glyph in glyphs))
+        aggregated_ink_bbox = bbox_union(tuple(glyph.ink_bbox for glyph in glyphs))
         if aggregated_advance_bbox is None or aggregated_ink_bbox is None:
             return None
         advance_bbox = aggregated_advance_bbox

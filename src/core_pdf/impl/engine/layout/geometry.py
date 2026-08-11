@@ -113,6 +113,21 @@ def bbox_union(boxes: Iterable[Sequence[float]]) -> RectTuple | None:
     return result
 
 
+def bbox_intersects(left: Sequence[float], right: Sequence[float]) -> bool:
+    """True if ``left`` and ``right`` overlap with positive area on both axes."""
+    return bbox_intersection_area(left, right) > 0.0
+
+
+def bbox_contains(container: Sequence[float], subject: Sequence[float]) -> bool:
+    """True if ``subject`` lies entirely within ``container``."""
+    return (
+        subject[0] >= container[0]
+        and subject[2] <= container[2]
+        and subject[1] >= container[1]
+        and subject[3] <= container[3]
+    )
+
+
 def overlap_ratio_min(left: Sequence[float], right: Sequence[float]) -> float:
     """Intersection area relative to the smaller box (denominator floored at 1.0)."""
     intersection = bbox_intersection_area(left, right)
