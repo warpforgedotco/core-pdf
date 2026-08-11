@@ -17,7 +17,9 @@ from core_pdf.api.v0.compat._common import (
     FormField,
     Link,
     TextLine,
+    bbox_intersects,
     coerce_bbox,
+    encode_png,
     synthesize_characters,
     write_bytes,
 )
@@ -52,33 +54,7 @@ class Pixmap:
         del args, kwargs
         if output.casefold() != "png":
             raise ValueError("only PNG pixmaps are supported")
-        import struct
-        import zlib
-
-        if self.n not in (3, 4):
-            raise ValueError(f"unsupported pixmap channel count: {self.n}")
-        stride = self.width * self.n
-        scanlines = b"".join(
-            b"\x00" + self.samples[row * stride : (row + 1) * stride] for row in range(self.height)
-        )
-
-        def chunk(kind: bytes, value: bytes) -> bytes:
-            return (
-                struct.pack(">I", len(value))
-                + kind
-                + value
-                + struct.pack(">I", zlib.crc32(kind + value) & 0xFFFFFFFF)
-            )
-
-        header = struct.pack(
-            ">IIBBBBB", self.width, self.height, 8, 6 if self.n == 4 else 2, 0, 0, 0
-        )
-        return (
-            b"\x89PNG\r\n\x1a\n"
-            + chunk(b"IHDR", header)
-            + chunk(b"IDAT", zlib.compress(scanlines))
-            + chunk(b"IEND", b"")
-        )
+        return encode_png(self.width, self.height, self.n, self.samples)
 
     def save(self, filename: object, output: str = "png", **kwargs: object) -> None:
         del kwargs
@@ -158,15 +134,11 @@ class Page(PdfPageObject):
         if kind != "words" and clip is None:
             text_view = self._document.capability_page(self._page.page_number).structured_view
         if clip is not None:
-            x0, y0, x1, y1 = cast(tuple[float, float, float, float], clip)
+            clip_bbox = cast(tuple[float, float, float, float], clip)
             elements = tuple(
                 element
                 for element in text_view.elements
-                if element.bbox is not None
-                and element.bbox[0] < x1
-                and element.bbox[2] > x0
-                and element.bbox[1] < y1
-                and element.bbox[3] > y0
+                if element.bbox is not None and bbox_intersects(clip_bbox, element.bbox)
             )
             text_view = type(text_view)(elements, page_number=self._page.page_number)
         else:

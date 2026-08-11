@@ -28,19 +28,17 @@ def _metadata_text(metadata: dict[str, Any], excluded: frozenset[str], template:
     return template.format(metadata=rendered)
 
 
-@dataclass(frozen=True, slots=True)
-class Document:
-    text: str
-    metadata: dict[str, Any] = field(default_factory=dict)
-    id_: str = ""
-    excluded_llm_metadata_keys: frozenset[str] = frozenset()
-    excluded_embed_metadata_keys: frozenset[str] = frozenset()
-    metadata_template: str = "{metadata}"
-    text_template: str = "{metadata_str}\n\n{content}"
+class _MetadataMixin:
+    """Shared ``get_content``/``get_metadata_str`` for the Document and Node facades."""
 
-    @property
-    def doc_id(self) -> str:
-        return self.id_ or str(self.metadata.get("doc_id", ""))
+    __slots__ = ()
+
+    text: str
+    metadata: dict[str, Any]
+    excluded_llm_metadata_keys: frozenset[str]
+    excluded_embed_metadata_keys: frozenset[str]
+    metadata_template: str
+    text_template: str
 
     def get_content(self, metadata_mode: object = None) -> str:
         mode = str(getattr(metadata_mode, "value", metadata_mode or MetadataMode.NONE)).casefold()
@@ -63,12 +61,27 @@ class Document:
         )
         return _metadata_text(self.metadata, excluded, self.metadata_template)
 
+
+@dataclass(frozen=True, slots=True)
+class Document(_MetadataMixin):
+    text: str
+    metadata: dict[str, Any] = field(default_factory=dict)
+    id_: str = ""
+    excluded_llm_metadata_keys: frozenset[str] = frozenset()
+    excluded_embed_metadata_keys: frozenset[str] = frozenset()
+    metadata_template: str = "{metadata}"
+    text_template: str = "{metadata_str}\n\n{content}"
+
+    @property
+    def doc_id(self) -> str:
+        return self.id_ or str(self.metadata.get("doc_id", ""))
+
     def to_dict(self) -> dict[str, Any]:
         return {"id_": self.doc_id, "text": self.text, "metadata": dict(self.metadata)}
 
 
 @dataclass(frozen=True, slots=True)
-class Node:
+class Node(_MetadataMixin):
     text: str
     node_id: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
@@ -86,27 +99,6 @@ class Node:
     @property
     def ref_doc_id(self) -> str | None:
         return self.source_node
-
-    def get_content(self, metadata_mode: object = None) -> str:
-        mode = str(getattr(metadata_mode, "value", metadata_mode or MetadataMode.NONE)).casefold()
-        if mode in {"none", "metadata_mode.none"}:
-            return self.text
-        excluded = (
-            self.excluded_llm_metadata_keys
-            if mode.endswith("llm")
-            else self.excluded_embed_metadata_keys
-        )
-        metadata = _metadata_text(self.metadata, excluded, self.metadata_template)
-        return self.text_template.format(metadata_str=metadata, content=self.text).strip()
-
-    def get_metadata_str(self, mode: object = None) -> str:
-        value = str(getattr(mode, "value", mode or MetadataMode.ALL)).casefold()
-        excluded = (
-            self.excluded_llm_metadata_keys
-            if value.endswith("llm")
-            else (self.excluded_embed_metadata_keys if value.endswith("embed") else frozenset())
-        )
-        return _metadata_text(self.metadata, excluded, self.metadata_template)
 
     def to_dict(self) -> dict[str, Any]:
         return {

@@ -15,6 +15,8 @@ from core_pdf.impl.engine.structured.model import (
     Annotation,
     Block,
     BlockKind,
+    ContentNode,
+    Diagnostic,
     Document,
     Figure,
     FormField,
@@ -35,20 +37,30 @@ from core_pdf.impl.types import PageSelection
 ElementResultT = TypeVar("ElementResultT")
 
 
+def node_to_json_dict(node: ContentNode) -> dict[str, JsonValue]:
+    return {
+        "node_id": node.node_id,
+        "kind": node.kind,
+        "page_number": node.page_number,
+        "provenance": list(node.provenance),
+        "payload": element_to_json_dict(node.payload),
+    }
+
+
+def diagnostic_to_json_dict(diagnostic: Diagnostic) -> dict[str, JsonValue]:
+    return {
+        "code": diagnostic.code,
+        "message": diagnostic.message,
+        "severity": diagnostic.severity,
+        "page_number": diagnostic.page_number,
+    }
+
+
 def document_to_json_dict(document: Document) -> dict[str, JsonValue]:
     return {
         "schema_version": document.schema_version,
         "metadata": json_safe(document.metadata),
-        "nodes": [
-            {
-                "node_id": node.node_id,
-                "kind": node.kind,
-                "page_number": node.page_number,
-                "provenance": list(node.provenance),
-                "payload": element_to_json_dict(node.payload),
-            }
-            for node in document.nodes
-        ],
+        "nodes": [node_to_json_dict(node) for node in document.nodes],
         "table_references": [
             {
                 "page_number": reference.page_number,
@@ -66,15 +78,7 @@ def document_to_json_dict(document: Document) -> dict[str, JsonValue]:
             for reference in document.text_view.line_references
         ],
         "pages": [page_to_json_dict(page) for page in document.pages],
-        "diagnostics": [
-            {
-                "code": diagnostic.code,
-                "message": diagnostic.message,
-                "severity": diagnostic.severity,
-                "page_number": diagnostic.page_number,
-            }
-            for diagnostic in document.diagnostics
-        ],
+        "diagnostics": [diagnostic_to_json_dict(diagnostic) for diagnostic in document.diagnostics],
     }
 
 
@@ -88,16 +92,7 @@ def page_to_json_dict(page: Page) -> dict[str, JsonValue]:
         "page_class": page.page_class,
         "base_route": page.base_route,
         "confidence": page.confidence,
-        "nodes": [
-            {
-                "node_id": node.node_id,
-                "kind": node.kind,
-                "page_number": node.page_number,
-                "provenance": list(node.provenance),
-                "payload": element_to_json_dict(node.payload),
-            }
-            for node in page.nodes
-        ],
+        "nodes": [node_to_json_dict(node) for node in page.nodes],
         "elements": [element_to_json_dict(element) for element in page.elements],
         "blocks": [block_to_json_dict(block) for block in page.blocks],
         "tables": [table_to_json_dict(table) for table in page.tables],
@@ -108,15 +103,7 @@ def page_to_json_dict(page: Page) -> dict[str, JsonValue]:
         "form_fields": [field_to_json_dict(field) for field in page.form_fields],
         "header": page.header,
         "footer": page.footer,
-        "diagnostics": [
-            {
-                "code": diagnostic.code,
-                "message": diagnostic.message,
-                "severity": diagnostic.severity,
-                "page_number": diagnostic.page_number,
-            }
-            for diagnostic in page.diagnostics
-        ],
+        "diagnostics": [diagnostic_to_json_dict(diagnostic) for diagnostic in page.diagnostics],
     }
 
 
