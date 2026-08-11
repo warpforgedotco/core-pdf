@@ -7,9 +7,10 @@ verifies the requested invariants against the fresh document.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Iterator, Mapping
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from core_pdf import PdfDocument
 
@@ -23,6 +24,21 @@ from .models import (
     verify_preservation,
 )
 
+if TYPE_CHECKING:
+    from .adapters import PdfDocumentAdapter
+
+
+@contextmanager
+def _commit_and_reopen(
+    editor: Any, target: str | Path | Any
+) -> Iterator[tuple[bytes, "PdfDocumentAdapter"]]:
+    """Commit through `editor`, reopen the result, and adapt it for verification."""
+    from .adapters import adapt_document
+
+    data = editor.commit(target)
+    with PdfDocument.open(data) as reopened:
+        yield data, adapt_document(reopened)
+
 
 def commit_verified(
     editor: Any,
@@ -34,9 +50,8 @@ def commit_verified(
     from .adapters import adapt_document
 
     before = adapt_document(editor.document).fingerprint()
-    data = editor.commit(target)
-    with PdfDocument.open(data) as reopened:
-        after = adapt_document(reopened).fingerprint()
+    with _commit_and_reopen(editor, target) as (_data, document):
+        after = document.fingerprint()
     return verify_preservation(
         before,
         after,
@@ -58,10 +73,8 @@ def commit_redactions_verified(
     editor.apply_redactions(redactions)
     before = adapt_document(editor.document).fingerprint()
     before_graph = adapt_document(editor.document).object_graph()
-    data = editor.commit(target)
-    remaining_raw = tuple(query for query in requested if query.encode("utf-8") in data)
-    with PdfDocument.open(data) as reopened:
-        document = adapt_document(reopened)
+    with _commit_and_reopen(editor, target) as (data, document):
+        remaining_raw = tuple(query for query in requested if query.encode("utf-8") in data)
         remaining = tuple(query for query in requested if any(document.search(query)))
         after = document.fingerprint()
         graph_diff = compare_object_graphs(before_graph, document.object_graph())
@@ -109,9 +122,7 @@ def commit_sanitized_verified(
         editor.set_attachments({})
     if outlines:
         editor.set_outlines(())
-    data = editor.commit(target)
-    with PdfDocument.open(data) as reopened:
-        document = adapt_document(reopened)
+    with _commit_and_reopen(editor, target) as (_data, document):
         annotation_inventory = document.annotation_inventory()
         remaining_annotations = annotation_inventory.annotation_count
         remaining_links = annotation_inventory.link_count
@@ -155,17 +166,14 @@ def commit_accessibility_repair_verified(
     language: str | None = None,
 ) -> AccessibilityRepairVerification:
     """Write title/language metadata, commit, and verify the repair took."""
-    from .adapters import adapt_document
-
     values: dict[str, object] = {}
     if title is not None:
         values["Title"] = title
     if language is not None:
         values["Lang"] = language
     editor.set_metadata(values)
-    data = editor.commit(target)
-    with PdfDocument.open(data) as reopened:
-        inventory = adapt_document(reopened).accessibility_inventory()
+    with _commit_and_reopen(editor, target) as (_data, document):
+        inventory = document.accessibility_inventory()
     passed = (title is None or inventory.has_title) and (
         language is None or inventory.document_language == language
     )

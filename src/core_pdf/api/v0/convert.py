@@ -51,11 +51,9 @@ def item_bbox(value: object, space: CoordinateSpace) -> Rect | None:
                 space,
             )
         try:
-            raw_value = cast(Any, value)
-            x0, y0, x1, y1 = (float(item) for item in raw_value)
+            return to_rect(value, space)
         except (TypeError, ValueError):
             return None
-        return Rect(x0, y0, x1, y1, space)
     candidate = value
     if all(hasattr(candidate, name) for name in ("x0", "y0", "x1", "y1")):
         candidate = cast(Any, candidate)

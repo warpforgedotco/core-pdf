@@ -370,20 +370,44 @@ class RevisionObjectDiff:
     changed: tuple[tuple[int, int], ...] = ()
 
 
+def _set_diff(
+    before: Iterable[Any], after: Iterable[Any], *, key: Callable[[Any], Any] | None = None
+) -> tuple[tuple[Any, ...], tuple[Any, ...]]:
+    """Return (added, removed) items between two before/after collections."""
+    before_set = set(before)
+    after_set = set(after)
+    return (
+        tuple(sorted(after_set - before_set, key=key)),
+        tuple(sorted(before_set - after_set, key=key)),
+    )
+
+
+def _diff_keys(
+    before: Mapping[Any, Any], after: Mapping[Any, Any]
+) -> tuple[tuple[Any, ...], tuple[Any, ...], tuple[Any, ...]]:
+    """Return (added, removed, changed) keys between two before/after mappings."""
+    added, removed = _set_diff(before, after)
+    changed = tuple(
+        sorted(key for key in before.keys() & after.keys() if before[key] != after[key])
+    )
+    return added, removed, changed
+
+
+def _union_sorted(*groups: Iterable[Any]) -> tuple[Any, ...]:
+    """Return the sorted union of several key collections."""
+    merged: set[Any] = set()
+    for group in groups:
+        merged.update(group)
+    return tuple(sorted(merged))
+
+
 def compare_revision_objects(
     before: Iterable[RevisionObjectRecord], after: Iterable[RevisionObjectRecord]
 ) -> RevisionObjectDiff:
     before_map = {(record.object_number, record.generation): record.sha256 for record in before}
     after_map = {(record.object_number, record.generation): record.sha256 for record in after}
-    before_keys = set(before_map)
-    after_keys = set(after_map)
-    return RevisionObjectDiff(
-        added=tuple(sorted(after_keys - before_keys)),
-        removed=tuple(sorted(before_keys - after_keys)),
-        changed=tuple(
-            sorted(key for key in before_keys & after_keys if before_map[key] != after_map[key])
-        ),
-    )
+    added, removed, changed = _diff_keys(before_map, after_map)
+    return RevisionObjectDiff(added=added, removed=removed, changed=changed)
 
 
 @dataclass(frozen=True, slots=True)
@@ -530,9 +554,7 @@ def verify_preservation(
 
 def plan_incremental_analysis(diff: FingerprintDiff) -> IncrementalAnalysisPlan:
     """Select the smallest safe local analysis scope for a fingerprint diff."""
-    affected_objects = tuple(
-        sorted(set(diff.added_objects) | set(diff.removed_objects) | set(diff.changed_objects))
-    )
+    affected_objects = _union_sorted(diff.added_objects, diff.removed_objects, diff.changed_objects)
     return IncrementalAnalysisPlan(
         affected_pages=diff.changed_pages,
         affected_objects=affected_objects,
@@ -544,7 +566,7 @@ def plan_incremental_analysis(diff: FingerprintDiff) -> IncrementalAnalysisPlan:
 
 def plan_revision_analysis(diff: RevisionObjectDiff) -> IncrementalAnalysisPlan:
     """Select changed object units directly from an incremental revision diff."""
-    objects = tuple(sorted(set(diff.added) | set(diff.removed) | set(diff.changed)))
+    objects = _union_sorted(diff.added, diff.removed, diff.changed)
     return IncrementalAnalysisPlan(
         affected_objects=objects,
         revision_objects=objects,
@@ -569,18 +591,13 @@ def compare_fingerprints(
     after_objects = {
         (number, generation): digest for number, generation, digest in after.object_sha256
     }
-    before_keys = set(before_objects)
-    after_keys = set(after_objects)
+    added_objects, removed_objects, changed_objects = _diff_keys(before_objects, after_objects)
     return FingerprintDiff(
         document_changed=before.document_sha256 != after.document_sha256,
         changed_pages=changed_pages,
-        added_objects=tuple(sorted(after_keys - before_keys)),
-        removed_objects=tuple(sorted(before_keys - after_keys)),
-        changed_objects=tuple(
-            sorted(
-                key for key in before_keys & after_keys if before_objects[key] != after_objects[key]
-            )
-        ),
+        added_objects=added_objects,
+        removed_objects=removed_objects,
+        changed_objects=changed_objects,
     )
 
 
@@ -681,25 +698,21 @@ def compare_object_graphs(
     after_reachable = {node.object_number for node in after.nodes if node.reachable}
     before_objects = {node.object_number for node in before.nodes}
     after_objects = {node.object_number for node in after.nodes}
-    before_edges = set(before.edges)
-    after_edges = set(after.edges)
+    edge_key: Callable[[ObjectGraphEdge], Any] = lambda edge: (  # noqa: E731
+        edge.source_object,
+        edge.target_object,
+        edge.key or "",
+    )
+    became_reachable, became_unreachable = _set_diff(before_reachable, after_reachable)
+    added_objects, removed_objects = _set_diff(before_objects, after_objects)
+    added_edges, removed_edges = _set_diff(before.edges, after.edges, key=edge_key)
     return ObjectReachabilityDiff(
-        became_reachable=tuple(sorted(after_reachable - before_reachable)),
-        became_unreachable=tuple(sorted(before_reachable - after_reachable)),
-        added_objects=tuple(sorted(after_objects - before_objects)),
-        removed_objects=tuple(sorted(before_objects - after_objects)),
-        added_edges=tuple(
-            sorted(
-                after_edges - before_edges,
-                key=lambda edge: (edge.source_object, edge.target_object, edge.key or ""),
-            )
-        ),
-        removed_edges=tuple(
-            sorted(
-                before_edges - after_edges,
-                key=lambda edge: (edge.source_object, edge.target_object, edge.key or ""),
-            )
-        ),
+        became_reachable=became_reachable,
+        became_unreachable=became_unreachable,
+        added_objects=added_objects,
+        removed_objects=removed_objects,
+        added_edges=added_edges,
+        removed_edges=removed_edges,
     )
 
 

@@ -750,9 +750,13 @@ def adapt_structured(document: Any) -> PdfDocumentAdapter:
 class PdfEditorAdapter:
     editor: Any
 
-    def set_metadata(self, values: Mapping[str, object]) -> "PdfEditorAdapter":
-        self.editor.set_metadata(dict(values))
+    def _chain(self, name: str, /, *args: object, **kwargs: object) -> "PdfEditorAdapter":
+        """Call `editor.<name>(*args, **kwargs)` and return self for chaining."""
+        getattr(self.editor, name)(*args, **kwargs)
         return self
+
+    def set_metadata(self, values: Mapping[str, object]) -> "PdfEditorAdapter":
+        return self._chain("set_metadata", dict(values))
 
     def set_page_geometry(
         self,
@@ -761,74 +765,59 @@ class PdfEditorAdapter:
         rotation: int | None = None,
         cropbox: tuple[float, float, float, float] | None = None,
     ) -> "PdfEditorAdapter":
-        self.editor.set_page_geometry(page_number, rotation=rotation, cropbox=cropbox)
-        return self
+        return self._chain("set_page_geometry", page_number, rotation=rotation, cropbox=cropbox)
 
     def encrypt(
         self, user_password: str, *, owner_password: str | None = None
     ) -> "PdfEditorAdapter":
-        self.editor.encrypt(user_password, owner_password=owner_password)
-        return self
+        return self._chain("encrypt", user_password, owner_password=owner_password)
 
     def sign(self, provider: Any, *, contents_length: int = 8192) -> "PdfEditorAdapter":
-        self.editor.sign(provider, contents_length=contents_length)
-        return self
+        return self._chain("sign", provider, contents_length=contents_length)
 
     def replace_page(self, page_number: int, page: structured.Page) -> "PdfEditorAdapter":
-        self.editor.replace_page(page_number, page)
-        return self
+        return self._chain("replace_page", page_number, page)
 
     def insert_page(
         self, position: int, width: float = 595.0, height: float = 842.0
     ) -> "PdfEditorAdapter":
-        self.editor.insert_page(position, width, height)
-        return self
+        return self._chain("insert_page", position, width, height)
 
     def insert_structured_page(self, position: int, page: structured.Page) -> "PdfEditorAdapter":
-        self.editor.insert_structured_page(position, page)
-        return self
+        return self._chain("insert_structured_page", position, page)
 
     def update_form_field(self, name: str, value: str) -> "PdfEditorAdapter":
-        self.editor.update_form_field(name, value)
-        return self
+        return self._chain("update_form_field", name, value)
 
     def remove_form_fields(self, names: Iterable[str]) -> "PdfEditorAdapter":
-        self.editor.remove_form_fields(names)
-        return self
+        return self._chain("remove_form_fields", names)
 
     def apply_redactions(
         self, redactions: Mapping[int, Iterable[tuple[float, float, float, float]]]
     ) -> "PdfEditorAdapter":
-        self.editor.apply_redactions(redactions)
-        return self
+        return self._chain("apply_redactions", redactions)
 
     def remove_annotations(
         self, page_number: int, indices: Iterable[int] | None = None
     ) -> "PdfEditorAdapter":
-        self.editor.remove_annotations(page_number, indices)
-        return self
+        return self._chain("remove_annotations", page_number, indices)
 
     def remove_links(
         self, page_number: int, indices: Iterable[int] | None = None
     ) -> "PdfEditorAdapter":
-        self.editor.remove_links(page_number, indices)
-        return self
+        return self._chain("remove_links", page_number, indices)
 
     def delete_pages(self, selection: PageSelection) -> "PdfEditorAdapter":
-        self.editor.delete_pages(selection)
-        return self
+        return self._chain("delete_pages", selection)
 
     def set_attachments(self, values: Mapping[str, bytes]) -> "PdfEditorAdapter":
-        self.editor.set_attachments(dict(values))
-        return self
+        return self._chain("set_attachments", dict(values))
 
     def set_outlines(self, values: Iterable[Iterable[object]]) -> "PdfEditorAdapter":
-        self.editor.set_outlines(values)
-        return self
+        return self._chain("set_outlines", values)
 
     def replace_pages(self, pages: Iterable[structured.Page]) -> "PdfEditorAdapter":
-        self.editor.replace_pages(pages)
-        return self
+        return self._chain("replace_pages", pages)
 
     def add_annotation(
         self,
@@ -839,14 +828,9 @@ class PdfEditorAdapter:
         contents: str = "",
         destination: object = None,
     ) -> "PdfEditorAdapter":
-        self.editor.add_annotation(
-            page_number,
-            subtype,
-            bbox,
-            contents=contents,
-            destination=destination,
+        return self._chain(
+            "add_annotation", page_number, subtype, bbox, contents=contents, destination=destination
         )
-        return self
 
     def add_link(
         self,
@@ -857,14 +841,7 @@ class PdfEditorAdapter:
         link_type: str | None = None,
         text: str = "",
     ) -> "PdfEditorAdapter":
-        self.editor.add_link(
-            page_number,
-            bbox,
-            url=url,
-            link_type=link_type,
-            text=text,
-        )
-        return self
+        return self._chain("add_link", page_number, bbox, url=url, link_type=link_type, text=text)
 
     def commit(self, target: str | Path | Any) -> bytes:
         return self.editor.commit(target)
