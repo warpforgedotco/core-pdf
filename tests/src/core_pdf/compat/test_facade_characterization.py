@@ -16,8 +16,8 @@ from core_pdf.api.v0.compat.pdfplumber import open as open_pdfplumber
 from core_pdf.api.v0.compat.pymupdf import open as fitz_open
 from core_pdf.api.v0.compat.xray import inspect as inspect_xray
 
-FIXTURE = Path("vendor/pdfminer.six/samples/simple1.pdf")
-XRAY_FIXTURE = Path("vendor/x-ray/tests/assets/rectangles_yes_2.pdf")
+FIXTURE = Path("tests/fixtures/pdfminer.six/samples/simple1.pdf")
+XRAY_FIXTURE = Path("tests/fixtures/x-ray/tests/assets/rectangles_yes_2.pdf")
 
 pytestmark = pytest.mark.skipif(not FIXTURE.exists(), reason="vendor fixtures not present")
 
@@ -137,7 +137,7 @@ def test_xray_inspect_output_is_stable() -> None:
 )
 @pytest.mark.xfail(strict=True, reason="mirrored XObject vector text defeats redaction ordering")
 def test_xray_matches_real_xray_on_text_over_rect_forms(fixture_name: str) -> None:
-    fixture = Path("vendor/x-ray/tests/assets") / fixture_name
+    fixture = Path("tests/fixtures/x-ray/tests/assets") / fixture_name
     if not fixture.exists():
         pytest.skip()
 

@@ -102,7 +102,6 @@ exclude_also = [
 extend-exclude = [
     "src/core_pdf/_vendor/fontTools",
     "tests/fixtures",
-    "vendor/pdfplumber",
 ]
 line-length = 100
 
@@ -183,9 +182,6 @@ root = ["."]
 exclude = [
     "src/core_pdf/_vendor/fontTools",
     "tests/fixtures",
-    "vendor/x-ray",
-  "vendor/pdfminer.six",
-  "vendor/pdfplumber",
 ]
 
 [tool.setuptools]

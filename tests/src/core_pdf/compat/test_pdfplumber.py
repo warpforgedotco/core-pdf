@@ -69,7 +69,7 @@ def test_pdfplumber_table_finder_honors_explicit_lines() -> None:
 
 
 def test_pdfplumber_structure_tree_maps_native_structure() -> None:
-    structure_fixture = Path("vendor/pdfplumber/tests/pdfs/pdf_structure.pdf")
+    structure_fixture = Path("tests/fixtures/pdfplumber/tests/pdfs/pdf_structure.pdf")
     with open(structure_fixture) as pdf:
         tree = pdf.pages[0].structure_tree
     assert tree

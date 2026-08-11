@@ -1205,7 +1205,7 @@ def test_public_api_accepts_path_inputs_in_type_surface(tmp_path: Path) -> None:
 
 
 def test_adapter_exposes_native_character_geometry() -> None:
-    fixture = Path(__file__).parents[4] / "vendor/x-ray/tests/assets/rectangles_yes_2.pdf"
+    fixture = Path(__file__).parents[4] / "tests/fixtures/x-ray/tests/assets/rectangles_yes_2.pdf"
     if not fixture.exists():
         pytest.skip()
     with PdfDocument.open(fixture) as document:
@@ -1217,7 +1217,7 @@ def test_adapter_exposes_native_character_geometry() -> None:
 
 
 def test_adapter_exposes_canonical_words_and_search() -> None:
-    fixture = Path("vendor/pdfminer.six/samples/simple1.pdf")
+    fixture = Path("tests/fixtures/pdfminer.six/samples/simple1.pdf")
     with PdfDocument.open(fixture) as document:
         page = adapt_document(document).page(0)
         words = tuple(page.words())
@@ -1352,7 +1352,7 @@ def test_writer_emits_button_appearance_states() -> None:
 
 
 def test_adapter_exposes_structured_serialization() -> None:
-    with PdfDocument.open(Path("vendor/pdfminer.six/samples/simple1.pdf")) as document:
+    with PdfDocument.open(Path("tests/fixtures/pdfminer.six/samples/simple1.pdf")) as document:
         adapted = adapt_document(document)
         assert '"pages"' in adapted.to_json()
         assert '"pages"' in adapted.to_structured_json(pages=1)
@@ -1365,7 +1365,7 @@ def test_adapter_exposes_structured_serialization() -> None:
 
 
 def test_typed_text_capabilities_use_real_page_content() -> None:
-    fixture = Path("vendor/pdfminer.six/samples/simple1.pdf")
+    fixture = Path("tests/fixtures/pdfminer.six/samples/simple1.pdf")
     with PdfDocument.open(fixture) as document:
         adapted = adapt_document(document)
         page = adapted.page(0)
@@ -1423,7 +1423,7 @@ def test_xray_compatibility_facade_returns_xray_shape() -> None:
 
 
 def test_pdfminer_compatibility_facade_exposes_text_and_layout() -> None:
-    fixture = Path(__file__).parents[4] / "vendor/x-ray/tests/assets/rectangles_yes_2.pdf"
+    fixture = Path(__file__).parents[4] / "tests/fixtures/x-ray/tests/assets/rectangles_yes_2.pdf"
     if not fixture.exists():
         pytest.skip()
 
@@ -1459,7 +1459,7 @@ def test_pdfminer_compatibility_facade_exposes_text_and_layout() -> None:
 
 
 def test_pdfminer_facade_preserves_vertical_text_and_page_breaks() -> None:
-    fixture = Path(__file__).parents[4] / "vendor/pdfminer.six/samples/simple3.pdf"
+    fixture = Path(__file__).parents[4] / "tests/fixtures/pdfminer.six/samples/simple3.pdf"
     if not fixture.exists():
         pytest.skip()
 
