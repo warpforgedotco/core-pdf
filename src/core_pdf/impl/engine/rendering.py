@@ -1194,6 +1194,40 @@ def internal_cached_raster_coordinates(
     return coordinates
 
 
+def internal_blit_reshaped_channels(
+    target_region: numpy.ndarray[Any, Any],
+    sampled: numpy.ndarray[Any, Any],
+    valid: numpy.ndarray[Any, Any],
+    comps: int,
+) -> None:
+    """Copy gray/RGB(A) channels from a pre-reshaped source into ``target_region``."""
+    if comps == 1:
+        target_region[valid, 0:3] = sampled[valid, 0][:, None]
+    else:
+        target_region[valid, 0:3] = sampled[valid, :3]
+    target_region[..., 3][valid] = 255
+
+
+def internal_blit_indexed_channels(
+    target_region: numpy.ndarray[Any, Any],
+    source_bytes: numpy.ndarray[Any, Any],
+    safe_index: numpy.ndarray[Any, Any],
+    valid: numpy.ndarray[Any, Any],
+    comps: int,
+) -> None:
+    """Copy gray/RGB(A) channels looked up via ``safe_index`` into ``target_region``."""
+    if comps == 1:
+        gray_samples = source_bytes[safe_index]
+        target_region[:, :, 0][valid] = gray_samples[valid]
+        target_region[:, :, 1][valid] = gray_samples[valid]
+        target_region[:, :, 2][valid] = gray_samples[valid]
+    else:
+        target_region[:, :, 0][valid] = source_bytes[safe_index][valid]
+        target_region[:, :, 1][valid] = source_bytes[safe_index + 1][valid]
+        target_region[:, :, 2][valid] = source_bytes[safe_index + 2][valid]
+    target_region[:, :, 3][valid] = 255
+
+
 def internal_image_raw_bytes(raw: bytes | bytearray | memoryview) -> bytes | memoryview:
     """Return image source storage without copying it."""
     if type(raw) is bytes or type(raw) is memoryview:
@@ -4782,11 +4816,7 @@ class internal_RasterTarget:
                         numpy.maximum(src_x_map, 0)[None, :],
                     ]
                     valid = valid_y[:, None] & (src_x_map >= 0)[None, :]
-                    if comps == 1:
-                        target_region[valid, 0:3] = sampled[valid, 0][:, None]
-                    else:
-                        target_region[valid, 0:3] = sampled[valid, :3]
-                    target_region[..., 3][valid] = 255
+                    internal_blit_reshaped_channels(target_region, sampled, valid, comps)
                     return True
             target_region = pixel_view(pixels)[iy0:iy1, ix0:ix1]
             source_bytes = uint8_view(converted)
@@ -4802,16 +4832,9 @@ class internal_RasterTarget:
             target_region[src_y_map >= 0] = 0
             if converted_len > 0:
                 safe_index = numpy.where(valid, source_index, 0)
-                if comps == 1:
-                    gray_samples = source_bytes[safe_index]
-                    target_region[:, :, 0][valid] = gray_samples[valid]
-                    target_region[:, :, 1][valid] = gray_samples[valid]
-                    target_region[:, :, 2][valid] = gray_samples[valid]
-                else:
-                    target_region[:, :, 0][valid] = source_bytes[safe_index][valid]
-                    target_region[:, :, 1][valid] = source_bytes[safe_index + 1][valid]
-                    target_region[:, :, 2][valid] = source_bytes[safe_index + 2][valid]
-                target_region[:, :, 3][valid] = 255
+                internal_blit_indexed_channels(
+                    target_region, source_bytes, safe_index, valid, comps
+                )
             return True
         inv_uy = 1.0 / uy
         inv_vx = 1.0 / vx
@@ -4854,11 +4877,7 @@ class internal_RasterTarget:
                     numpy.maximum(src_y_map, 0)[None, :],
                 ]
                 valid = valid_rows[:, None] & (src_y_map >= 0)[None, :]
-                if comps == 1:
-                    target_region[valid, 0:3] = sampled[valid, 0][:, None]
-                else:
-                    target_region[valid, 0:3] = sampled[valid, :3]
-                target_region[..., 3][valid] = 255
+                internal_blit_reshaped_channels(target_region, sampled, valid, comps)
                 return True
         target_region = pixel_view(pixels)[iy0:iy1, ix0:ix1]
         source_bytes = uint8_view(converted)
@@ -4880,16 +4899,7 @@ class internal_RasterTarget:
         target_region[row_valid] = 0
         if converted_len > 0:
             safe_index = numpy.where(valid, source_index, 0)
-            if comps == 1:
-                gray_samples = source_bytes[safe_index]
-                target_region[:, :, 0][valid] = gray_samples[valid]
-                target_region[:, :, 1][valid] = gray_samples[valid]
-                target_region[:, :, 2][valid] = gray_samples[valid]
-            else:
-                target_region[:, :, 0][valid] = source_bytes[safe_index][valid]
-                target_region[:, :, 1][valid] = source_bytes[safe_index + 1][valid]
-                target_region[:, :, 2][valid] = source_bytes[safe_index + 2][valid]
-            target_region[:, :, 3][valid] = 255
+            internal_blit_indexed_channels(target_region, source_bytes, safe_index, valid, comps)
         return False
 
 

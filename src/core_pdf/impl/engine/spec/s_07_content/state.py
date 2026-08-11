@@ -515,10 +515,10 @@ class TextState:
         data: bytes | memoryview | None = None,
         decoder: FontDecoder | None = None,
     ) -> None:
-        self.text_component.append_text(operand, data=data, decoder=decoder)
+        self._append_text_impl(operand, data=data, decoder=decoder)
 
     def append_tj_array(self, array: Any) -> None:
-        self.text_component.append_tj_array(array)
+        self._append_tj_array_impl(array)
 
     @property
     def ctm(self) -> Matrix:
@@ -2010,7 +2010,7 @@ class TextState:
         if decoder.is_type3 and self.capture_graphics and data:
             text_matrix = self.text_matrix
             line_matrix = self.line_matrix
-            self.text_component.render_type3_glyphs(data, decoder)
+            self._render_type3_glyphs_impl(data, decoder)
             rendered_type3_glyphs = True
             self.text_matrix = text_matrix
             self.line_matrix = line_matrix
@@ -3126,11 +3126,9 @@ class TextState:
                 if pending_bytes:
                     self.tm_e, self.tm_f = te, tf
                     if zero_copy_flush:
-                        self.text_component.append_text(
-                            data=memoryview(pending_bytes), decoder=decoder
-                        )
+                        self._append_text_impl(data=memoryview(pending_bytes), decoder=decoder)
                     else:
-                        self.text_component.append_text(data=bytes(pending_bytes), decoder=decoder)
+                        self._append_text_impl(data=bytes(pending_bytes), decoder=decoder)
                     te, tf = self.tm_e, self.tm_f
                     pending_bytes.clear()
                 delta = -item * scale
@@ -3146,9 +3144,9 @@ class TextState:
         if pending_bytes:
             self.tm_e, self.tm_f = te, tf
             if zero_copy_flush:
-                self.text_component.append_text(data=memoryview(pending_bytes), decoder=decoder)
+                self._append_text_impl(data=memoryview(pending_bytes), decoder=decoder)
             else:
-                self.text_component.append_text(data=bytes(pending_bytes), decoder=decoder)
+                self._append_text_impl(data=bytes(pending_bytes), decoder=decoder)
             te, tf = self.tm_e, self.tm_f
 
         self.tm_e, self.tm_f = te, tf
@@ -3461,7 +3459,7 @@ class TextState:
         self.graphics_component.set_dash_pattern(operands)
 
     def op_m(self, operands: OperandWindow, depth: int) -> None:
-        self.graphics_component.path_move(operands, depth)
+        self._op_m_impl(operands, depth)
 
     def _op_m_impl(self, operands: OperandWindow, depth: int) -> None:
         if len(operands) >= 2:
@@ -3483,7 +3481,7 @@ class TextState:
         self.subpath_start = point
 
     def op_l(self, operands: OperandWindow, depth: int) -> None:
-        self.graphics_component.path_line(operands, depth)
+        self._op_l_impl(operands, depth)
 
     def _op_l_impl(self, operands: OperandWindow, depth: int) -> None:
         if len(operands) >= 2 and self.current_point is not None:
@@ -3506,7 +3504,7 @@ class TextState:
         self.current_point = point
 
     def op_re(self, operands: OperandWindow, depth: int) -> None:
-        self.graphics_component.path_rectangle(operands, depth)
+        self._op_re_impl(operands, depth)
 
     def _op_re_impl(self, operands: OperandWindow, depth: int) -> None:
         if len(operands) >= 4:
@@ -3532,7 +3530,7 @@ class TextState:
         self.subpath_start = (x_float, y_float)
 
     def op_h(self, operands: OperandWindow, depth: int) -> None:
-        self.graphics_component.path_close(operands, depth)
+        self._op_h_impl(operands, depth)
 
     def _op_h_impl(self, operands: OperandWindow, depth: int) -> None:
         if self.current_point is not None and self.subpath_start is not None:
@@ -3545,7 +3543,7 @@ class TextState:
             self.current_point = self.subpath_start
 
     def op_c(self, operands: OperandWindow, depth: int) -> None:
-        self.graphics_component.path_curve(operands, depth)
+        self._op_c_impl(operands, depth)
 
     def _op_c_impl(self, operands: OperandWindow, depth: int) -> None:
         if len(operands) >= 6:
@@ -3561,7 +3559,7 @@ class TextState:
             self.append_cubic_curve(x1, y1, x2, y2, x3, y3)
 
     def op_v(self, operands: OperandWindow, depth: int) -> None:
-        self.graphics_component.path_curve_v(operands, depth)
+        self._op_v_impl(operands, depth)
 
     def _op_v_impl(self, operands: OperandWindow, depth: int) -> None:
         if len(operands) >= 4 and self.current_point is not None:
@@ -3576,7 +3574,7 @@ class TextState:
             self.append_cubic_curve(x0, y0, x2, y2, x3, y3)
 
     def op_y(self, operands: OperandWindow, depth: int) -> None:
-        self.graphics_component.path_curve_y(operands, depth)
+        self._op_y_impl(operands, depth)
 
     def _op_y_impl(self, operands: OperandWindow, depth: int) -> None:
         if len(operands) >= 4 and self.current_point is not None:
@@ -3592,7 +3590,7 @@ class TextState:
             self.append_cubic_curve(x1, y1, x3, y3, x3, y3)
 
     def op_paint_stroke(self, operands: OperandWindow, depth: int) -> None:
-        self.graphics_component.paint_stroke(operands, depth)
+        self._op_paint_stroke_impl(operands, depth)
 
     def _op_paint_stroke_impl(self, operands: OperandWindow, depth: int) -> None:
         if (
@@ -3608,7 +3606,7 @@ class TextState:
         self.subpath_start = None
 
     def op_paint_fill(self, operands: OperandWindow, depth: int) -> None:
-        self.graphics_component.paint_fill(operands, depth)
+        self._op_paint_fill_impl(operands, depth)
 
     def _op_paint_fill_impl(self, operands: OperandWindow, depth: int) -> None:
         self.flush_drawing("fill", "evenodd" if depth == "f*" else "nonzero")
@@ -3616,7 +3614,7 @@ class TextState:
         self.subpath_start = None
 
     def op_paint_fillstroke(self, operands: OperandWindow, depth: int) -> None:
-        self.graphics_component.paint_fillstroke(operands, depth)
+        self._op_paint_fillstroke_impl(operands, depth)
 
     def _op_paint_fillstroke_impl(self, operands: OperandWindow, depth: int) -> None:
         if (
@@ -3632,7 +3630,7 @@ class TextState:
         self.subpath_start = None
 
     def op_paint_clear(self, operands: OperandWindow, depth: int) -> None:
-        self.graphics_component.paint_clear(operands, depth)
+        self._op_paint_clear_impl(operands, depth)
 
     def _op_paint_clear_impl(self, operands: OperandWindow, depth: int) -> None:
         self.current_path.clear()
@@ -3653,7 +3651,7 @@ class TextState:
         )
 
     def op_W(self, operands: OperandWindow, depth: int) -> None:
-        self.graphics_component.clip(operands, depth)
+        self._op_W_impl(operands, depth)
 
     def _op_W_impl(self, operands: OperandWindow, depth: int) -> None:
         path = self.current_path.transformed(self.ctm)
@@ -3689,7 +3687,7 @@ class TextState:
             )
 
     def op_W_star(self, operands: OperandWindow, depth: int) -> None:
-        self.graphics_component.clip_even_odd(operands, depth)
+        self._op_W_star_impl(operands, depth)
 
     def _op_W_star_impl(self, operands: OperandWindow, depth: int) -> None:
         self.op_W(operands, depth)
@@ -3973,7 +3971,7 @@ class TextState:
         )
 
     def op_CS(self, operands: OperandWindow, depth: int) -> None:
-        self.graphics_component.color_operator("CS", operands, depth)
+        self._op_CS_impl(operands, depth)
 
     def _op_CS_impl(self, operands: OperandWindow, depth: int) -> None:
         if operands:
@@ -3991,7 +3989,7 @@ class TextState:
                 self.stroke_color_space = color_space
 
     def op_cs(self, operands: OperandWindow, depth: int) -> None:
-        self.graphics_component.color_operator("cs", operands, depth)
+        self._op_cs_impl(operands, depth)
 
     def _op_cs_impl(self, operands: OperandWindow, depth: int) -> None:
         if operands:
@@ -4009,7 +4007,7 @@ class TextState:
                 self.fill_color_space = color_space
 
     def op_SC(self, operands: OperandWindow, depth: int) -> None:
-        self.graphics_component.color_operator("SC", operands, depth)
+        self._op_SC_impl(operands, depth)
 
     def _op_SC_impl(self, operands: OperandWindow, depth: int) -> None:
         normalized = self.normalize_color_operands(operands)
@@ -4018,7 +4016,7 @@ class TextState:
             self.stroke_pattern = None
 
     def op_SCN(self, operands: OperandWindow, depth: int) -> None:
-        self.graphics_component.color_operator("SCN", operands, depth)
+        self._op_SCN_impl(operands, depth)
 
     def _op_SCN_impl(self, operands: OperandWindow, depth: int) -> None:
         if self.stroke_color_space == "Pattern":
@@ -4034,7 +4032,7 @@ class TextState:
             self.stroke_pattern = None
 
     def op_sc(self, operands: OperandWindow, depth: int) -> None:
-        self.graphics_component.color_operator("sc", operands, depth)
+        self._op_sc_impl(operands, depth)
 
     def _op_sc_impl(self, operands: OperandWindow, depth: int) -> None:
         normalized = self.normalize_color_operands(operands)
@@ -4043,7 +4041,7 @@ class TextState:
             self.fill_pattern = None
 
     def op_scN(self, operands: OperandWindow, depth: int) -> None:
-        self.graphics_component.color_operator("scN", operands, depth)
+        self._op_scN_impl(operands, depth)
 
     def _op_scN_impl(self, operands: OperandWindow, depth: int) -> None:
         if self.fill_color_space == "Pattern":
@@ -4059,7 +4057,7 @@ class TextState:
             self.fill_pattern = None
 
     def op_i(self, operands: OperandWindow, depth: int) -> None:
-        self.graphics_component.color_operator("i", operands, depth)
+        self._op_i_impl(operands, depth)
 
     def _op_i_impl(self, operands: OperandWindow, depth: int) -> None:
         if operands:
@@ -4070,7 +4068,7 @@ class TextState:
             self.flatness = max(0, min(100, int(value)))
 
     def op_ri(self, operands: OperandWindow, depth: int) -> None:
-        self.graphics_component.color_operator("ri", operands, depth)
+        self._op_ri_impl(operands, depth)
 
     def _op_ri_impl(self, operands: OperandWindow, depth: int) -> None:
         if not operands:

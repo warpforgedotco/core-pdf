@@ -181,69 +181,12 @@ class GraphicsComponent:
             return
         self.host.dash_pattern = (dash_array, phase)
 
-    def path_move(self, operands: Any, depth: Any) -> None:
-        self.host._op_m_impl(operands, depth)
-
-    def path_line(self, operands: Any, depth: Any) -> None:
-        self.host._op_l_impl(operands, depth)
-
-    def path_rectangle(self, operands: Any, depth: Any) -> None:
-        self.host._op_re_impl(operands, depth)
-
-    def path_close(self, operands: Any, depth: Any) -> None:
-        self.host._op_h_impl(operands, depth)
-
-    def path_curve(self, operands: Any, depth: Any) -> None:
-        self.host._op_c_impl(operands, depth)
-
-    def path_curve_v(self, operands: Any, depth: Any) -> None:
-        self.host._op_v_impl(operands, depth)
-
-    def path_curve_y(self, operands: Any, depth: Any) -> None:
-        self.host._op_y_impl(operands, depth)
-
-    def paint_stroke(self, operands: Any, depth: Any) -> None:
-        self.host._op_paint_stroke_impl(operands, depth)
-
-    def paint_fill(self, operands: Any, depth: Any) -> None:
-        self.host._op_paint_fill_impl(operands, depth)
-
-    def paint_fillstroke(self, operands: Any, depth: Any) -> None:
-        self.host._op_paint_fillstroke_impl(operands, depth)
-
-    def paint_clear(self, operands: Any, depth: Any) -> None:
-        self.host._op_paint_clear_impl(operands, depth)
-
-    def clip(self, operands: Any, depth: Any) -> None:
-        self.host._op_W_impl(operands, depth)
-
-    def clip_even_odd(self, operands: Any, depth: Any) -> None:
-        self.host._op_W_star_impl(operands, depth)
-
-    def color_operator(self, operator: str, operands: Any, depth: Any) -> None:
-        getattr(self.host, f"_op_{operator}_impl")(operands, depth)
-
 
 class TextComponent:
     """Own the small, high-frequency text-state transitions."""
 
     def __init__(self, host: Any) -> None:
         self.host = host
-
-    def append_text(
-        self,
-        operand: Any = None,
-        *,
-        data: bytes | memoryview | None = None,
-        decoder: Any = None,
-    ) -> None:
-        self.host._append_text_impl(operand, data=data, decoder=decoder)
-
-    def render_type3_glyphs(self, data: bytes, decoder: Any) -> None:
-        self.host._render_type3_glyphs_impl(data, decoder)
-
-    def append_tj_array(self, array: Any) -> None:
-        self.host._append_tj_array_impl(array)
 
     def begin(self) -> None:
         state = self.host
