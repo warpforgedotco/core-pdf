@@ -273,30 +273,30 @@ def apply_glyph_geometry_to_run(
     ink_bbox: tuple[float, float, float, float] | None = None
     confidence: float | None = None
     for glyph in glyphs:
-        advance = glyph.advance_rect
-        advance_values = (advance.x0, advance.y0, advance.x1, advance.y1)
+        advance_values = glyph.advance_bbox
         if advance_bbox is None:
             advance_bbox = advance_values
         else:
             x0, y0, x1, y1 = advance_bbox
+            advance_x0, advance_y0, advance_x1, advance_y1 = advance_values
             advance_bbox = (
-                min(x0, advance.x0),
-                min(y0, advance.y0),
-                max(x1, advance.x1),
-                max(y1, advance.y1),
+                min(x0, advance_x0),
+                min(y0, advance_y0),
+                max(x1, advance_x1),
+                max(y1, advance_y1),
             )
 
-        ink = glyph.ink_rect
-        ink_values = (ink.x0, ink.y0, ink.x1, ink.y1)
+        ink_values = glyph.ink_bbox
         if ink_bbox is None:
             ink_bbox = ink_values
         else:
             x0, y0, x1, y1 = ink_bbox
+            ink_x0, ink_y0, ink_x1, ink_y1 = ink_values
             ink_bbox = (
-                min(x0, ink.x0),
-                min(y0, ink.y0),
-                max(x1, ink.x1),
-                max(y1, ink.y1),
+                min(x0, ink_x0),
+                min(y0, ink_y0),
+                max(x1, ink_x1),
+                max(y1, ink_y1),
             )
 
         glyph_confidence = glyph.confidence

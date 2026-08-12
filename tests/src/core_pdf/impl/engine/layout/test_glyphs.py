@@ -2,7 +2,6 @@ from dataclasses import replace
 
 import pytest
 
-from core_pdf.impl.engine.layout.geometry import RectBox
 from core_pdf.impl.engine.layout.glyphs import (
     GlyphObservation,
     GlyphUnicodeSemantics,
@@ -43,8 +42,8 @@ def test_single_glyph_cluster_reuses_observation_geometry_and_confidence(
 ) -> None:
     observation = GlyphObservation(
         text="A",
-        ink_rect=RectBox(1.0, 2.0, 3.0, 4.0),
-        advance_rect=RectBox(0.5, 1.5, 3.5, 4.5),
+        ink_bbox=(1.0, 2.0, 3.0, 4.0),
+        advance_bbox=(0.5, 1.5, 3.5, 4.5),
         seqno=7,
         font_name="Example",
         baseline=(0.5, 1.5, 3.5, 1.5),
@@ -69,8 +68,8 @@ def test_single_glyph_cluster_reuses_observation_geometry_and_confidence(
 def test_text_run_replacement_drops_clusters_that_describe_old_text() -> None:
     observation = GlyphObservation(
         text="A",
-        ink_rect=RectBox(1.0, 2.0, 3.0, 4.0),
-        advance_rect=RectBox(1.0, 2.0, 3.0, 4.0),
+        ink_bbox=(1.0, 2.0, 3.0, 4.0),
+        advance_bbox=(1.0, 2.0, 3.0, 4.0),
         seqno=7,
     )
     cluster = glyph_cluster_from_observations(

@@ -7,7 +7,6 @@ import numpy
 import pytest
 
 from core_pdf.impl.engine.image_cache import ImageCache
-from core_pdf.impl.engine.layout.geometry import RectBox
 from core_pdf.impl.engine.layout.glyphs import GlyphObservation
 from core_pdf.impl.engine.layout.models import TextRun
 from core_pdf.impl.engine.page import text_rotation_correction_for_runs
@@ -592,8 +591,8 @@ def test_text_free_composition_skips_glyph_paint_and_lazy_bitmap_resolution() ->
     decoder = Decoder()
     glyph = GlyphObservation(
         "A",
-        RectBox(1.0, 1.0, 2.0, 2.0),
-        RectBox(1.0, 1.0, 2.0, 2.0),
+        (1.0, 1.0, 2.0, 2.0),
+        (1.0, 1.0, 2.0, 2.0),
         1,
         bitmap_width=1,
         bitmap_height=1,

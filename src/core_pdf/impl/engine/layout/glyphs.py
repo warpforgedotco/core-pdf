@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from functools import lru_cache
 
-from core_pdf.impl.engine.layout.geometry import RectBox, bbox_union
+from core_pdf.impl.engine.layout.geometry import bbox_union
 
 BBox = tuple[float, float, float, float]
 Matrix6 = tuple[float, float, float, float, float, float]
@@ -55,8 +55,8 @@ class GlyphUnicodeSemantics(StrEnum):
 @dataclass(frozen=True, slots=True)
 class GlyphObservation:
     text: str
-    ink_rect: RectBox
-    advance_rect: RectBox
+    ink_bbox: BBox
+    advance_bbox: BBox
     seqno: int
     code_bytes: bytes = b""
     char_code: int | None = None
@@ -76,14 +76,6 @@ class GlyphObservation:
     bitmap_height: int = 0
     bitmap_code: int | None = None
     font_decoder: object | None = None
-
-    @property
-    def ink_bbox(self) -> BBox:
-        return rectbox_tuple(self.ink_rect)
-
-    @property
-    def advance_bbox(self) -> BBox:
-        return rectbox_tuple(self.advance_rect)
 
     @property
     def has_paint(self) -> bool:
@@ -123,10 +115,6 @@ class GlyphCluster:
     ink_bbox: BBox
     baseline: BBox | None
     confidence: float | None
-
-
-def rectbox_tuple(rect: RectBox) -> BBox:
-    return (rect.x0, rect.y0, rect.x1, rect.y1)
 
 
 @lru_cache(maxsize=512)

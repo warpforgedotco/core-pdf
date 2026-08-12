@@ -1857,8 +1857,13 @@ class TextState:
                     bitmap_code = glyph.bitmap_code
                 observation = GlyphObservation(
                     text=chunk_text,
-                    ink_rect=rect,
-                    advance_rect=advance_rect,
+                    ink_bbox=(rect.x0, rect.y0, rect.x1, rect.y1),
+                    advance_bbox=(
+                        advance_rect.x0,
+                        advance_rect.y0,
+                        advance_rect.x1,
+                        advance_rect.y1,
+                    ),
                     seqno=seqno,
                     code_bytes=glyph.code_bytes,
                     char_code=glyph.char_code,
@@ -1891,13 +1896,8 @@ class TextState:
                         cluster_id=cluster_id,
                         text=chunk_text,
                         glyphs=(observation,),
-                        advance_bbox=(
-                            advance_rect.x0,
-                            advance_rect.y0,
-                            advance_rect.x1,
-                            advance_rect.y1,
-                        ),
-                        ink_bbox=(rect.x0, rect.y0, rect.x1, rect.y1),
+                        advance_bbox=observation.advance_bbox,
+                        ink_bbox=observation.ink_bbox,
                         baseline=baseline,
                         confidence=observation_confidence,
                     )
@@ -1923,8 +1923,18 @@ class TextState:
                     cluster_observations.append(
                         GlyphObservation(
                             text=ch,
-                            ink_rect=char_advance_rect,
-                            advance_rect=char_advance_rect,
+                            ink_bbox=(
+                                char_advance_rect.x0,
+                                char_advance_rect.y0,
+                                char_advance_rect.x1,
+                                char_advance_rect.y1,
+                            ),
+                            advance_bbox=(
+                                char_advance_rect.x0,
+                                char_advance_rect.y0,
+                                char_advance_rect.x1,
+                                char_advance_rect.y1,
+                            ),
                             seqno=seqno,
                             code_bytes=glyph.code_bytes,
                             char_code=glyph.char_code,
@@ -1947,8 +1957,13 @@ class TextState:
                 cluster_observations.append(
                     GlyphObservation(
                         text=chunk_text,
-                        ink_rect=rect,
-                        advance_rect=advance_rect,
+                        ink_bbox=(rect.x0, rect.y0, rect.x1, rect.y1),
+                        advance_bbox=(
+                            advance_rect.x0,
+                            advance_rect.y0,
+                            advance_rect.x1,
+                            advance_rect.y1,
+                        ),
                         seqno=seqno,
                         code_bytes=glyph.code_bytes,
                         char_code=glyph.char_code,
@@ -3933,18 +3948,8 @@ class TextState:
                 "glyphs": [
                     {
                         "text": glyph.text,
-                        "bbox": (
-                            glyph.ink_rect.x0,
-                            glyph.ink_rect.y0,
-                            glyph.ink_rect.x1,
-                            glyph.ink_rect.y1,
-                        ),
-                        "advance_bbox": (
-                            glyph.advance_rect.x0,
-                            glyph.advance_rect.y0,
-                            glyph.advance_rect.x1,
-                            glyph.advance_rect.y1,
-                        ),
+                        "bbox": glyph.ink_bbox,
+                        "advance_bbox": glyph.advance_bbox,
                         "fill_color": glyph.fill,
                         "visible": glyph.visible,
                         "code": glyph.cid,
