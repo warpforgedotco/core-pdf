@@ -1004,6 +1004,15 @@ def internal_capture_from_program(
     )
     observations = internal_observations_from_runs(runs)
     visible_text = "".join(run.text for run in runs if run.visible)
+    if visible_text == raw_text:
+        visible_native_characters = native_characters
+        visible_text_quality = all_text_quality
+    elif visible_text == painted_text:
+        visible_native_characters = painted_native_characters
+        visible_text_quality = internal_text_quality_stats(visible_text)
+    else:
+        visible_native_characters = sum(not character.isspace() for character in visible_text)
+        visible_text_quality = internal_text_quality_stats(visible_text)
     drawings = tuple(products.drawings)
     inline_images = tuple(products.inline_images)
     page_width = float(page.width)
@@ -1078,7 +1087,7 @@ def internal_capture_from_program(
         evidence=PageEvidence(
             page_area=page_area,
             native_characters=native_characters,
-            visible_native_characters=sum(not character.isspace() for character in visible_text),
+            visible_native_characters=visible_native_characters,
             suspicious_characters=suspicious_characters,
             image_count=image_count,
             image_area_ratio=min(1.0, sum(visible_image_areas) / page_area),
@@ -1095,7 +1104,7 @@ def internal_capture_from_program(
             text_coverage=text_coverage,
             full_page_image=full_page_image,
             uncovered_vector_area=uncovered_vector_area,
-            text_quality=internal_text_quality_stats(visible_text),
+            text_quality=visible_text_quality,
             all_text_quality=all_text_quality,
             glyphs=glyph_evidence,
             painted_native_characters=painted_native_characters,
