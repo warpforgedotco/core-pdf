@@ -735,26 +735,36 @@ def internal_detect_ruling_grid(
     """
     array = numpy.asarray(image.array())
     if array.ndim == 3 and array.shape[2] >= 3:
-        gray = array[:, :, :3].min(axis=2)
+        color = array[:, :, :3]
+        gray = None
     elif array.ndim == 3 and array.shape[2] == 1:
-        gray = array[:, :, 0]
+        color = array[:, :, 0]
+        gray = color
     elif array.ndim == 2:
-        gray = array
+        color = array
+        gray = color
     else:
         return None
-    dark = gray < internal_GRID_DARK_THRESHOLD
-    height, width = dark.shape
+    height, width = color.shape[:2]
     if height < 100 or width < 100:
         return None
     # Detection runs on every recognized page, so work on a 3x max-pooled
     # mask: rules survive any-pooling and the +-3px edge error disappears
     # into the cell insets, while the shears and run scans cost a ninth.
     pool = internal_GRID_DETECT_POOL
-    pooled = (
-        dark[: height - height % pool, : width - width % pool]
-        .reshape(height // pool, pool, width // pool, pool)
-        .any(axis=(1, 3))
-    )
+    pooled_height = height // pool
+    pooled_width = width // pool
+    cropped = color[: pooled_height * pool, : pooled_width * pool]
+    if cropped.ndim == 3:
+        pooled = (
+            cropped.reshape(pooled_height, pool, pooled_width, pool, 3).min(axis=(1, 3, 4))
+            < internal_GRID_DARK_THRESHOLD
+        )
+    else:
+        pooled = (
+            cropped.reshape(pooled_height, pool, pooled_width, pool).min(axis=(1, 3))
+            < internal_GRID_DARK_THRESHOLD
+        )
     pooled_height, pooled_width = pooled.shape
     slope = internal_estimate_ruling_skew(pooled)
     straight = internal_vertical_shear(pooled, slope) if slope else pooled
@@ -779,6 +789,9 @@ def internal_detect_ruling_grid(
         return None
     scaled_x = [line * pool + pool // 2 for line in x_lines]
     scaled_y = [line * pool + pool // 2 for line in y_lines]
+    if gray is None:
+        gray = color.min(axis=2)
+    dark = gray < internal_GRID_DARK_THRESHOLD
     return scaled_x, scaled_y, dark, slope
 
 
