@@ -30,6 +30,30 @@ PAGE_CASES = (
         "Employee_Health_Benefits_Assess-p006.pdf",
         id="native",
     ),
+    pytest.param(
+        "NASA-SNA-8-D-027III-Rev2-CsmLmSpacecraftOperationalDataBook-Volume3-MassProperties-Pg54.pdf",
+        id="heavy-corrupt-native-ocr",
+    ),
+    pytest.param(
+        "153rd-Omaha-Pow-Wow-p001.pdf",
+        id="heavy-image-only-ocr",
+    ),
+    pytest.param(
+        "NASA-SNA-8-D-027III-Rev2-CsmLmSpacecraftOperationalDataBook-Volume3-MassProperties-pg856.pdf",
+        id="heavy-native-object-streams",
+    ),
+    pytest.param(
+        "Zhand-Ilavsky-p012.pdf",
+        id="heavy-hybrid-image-supplement",
+    ),
+    pytest.param(
+        "Index_to_Positions_table_vertical_text-p001.pdf",
+        id="heavy-hidden-vertical-text",
+    ),
+    pytest.param(
+        "Mission-costs_p27-35-p008.pdf",
+        id="heavy-wide-image-supplement",
+    ),
 )
 
 
