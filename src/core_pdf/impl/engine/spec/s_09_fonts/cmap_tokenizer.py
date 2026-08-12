@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
+import binascii
 import typing
 
 from core_pdf.impl.engine.spec.s_09_fonts.cmap_pdf_string import decode_pdf_literal_string
 
-HEX_BYTES = bytes([1 if byte in b"0123456789abcdefABCDEF" else 0 for byte in range(256)])
 PDF_WHITESPACE_BYTES = bytes([1 if byte in b"\x00\t\n\f\r " else 0 for byte in range(256)])
 
 
@@ -218,11 +218,12 @@ def cmap_metadata(data: bytes) -> tuple[str | None, int | None]:
 
 def decode_cmap_hex_token(token: bytes) -> bytes:
     raw = token[1:-1].translate(None, b"\x00\t\n\f\r ")
-    if not all(HEX_BYTES[item] for item in raw):
-        raise ValueError("invalid CMap hex string")
     if len(raw) & 1:
         raw += b"0"
-    return bytes.fromhex(raw.decode("ascii"))
+    try:
+        return binascii.unhexlify(raw)
+    except binascii.Error as exc:
+        raise ValueError("invalid CMap hex string") from exc
 
 
 def decode_cmap_token(token: bytes) -> bytes:
