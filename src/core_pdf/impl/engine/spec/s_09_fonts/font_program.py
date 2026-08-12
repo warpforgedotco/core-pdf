@@ -9,6 +9,10 @@ from math import inf
 from threading import RLock
 
 from core_pdf.impl.engine.spec.s_09_fonts.feature_distance_kernel import (
+    FeatureArrays,
+    internal_feature_arrays,
+)
+from core_pdf.impl.engine.spec.s_09_fonts.feature_distance_kernel import (
     feature_distance as compiled_feature_distance,
 )
 from core_pdf.impl.engine.spec.s_09_fonts.feature_distance_kernel import (
@@ -978,6 +982,7 @@ class CFFUnicodeRepairIndex:
 
     __slots__ = (
         "internal_candidate_gids",
+        "internal_candidate_arrays",
         "internal_code_to_gid",
         "internal_features",
         "internal_font",
@@ -1019,6 +1024,7 @@ class CFFUnicodeRepairIndex:
             for gid, label in labels.items()
             if len(label) == 1 and (label.isalnum() or label in ".-+")
         )
+        self.internal_candidate_arrays: FeatureArrays | None = None
         self.internal_features: dict[int, CFFGlyphFeature] = {}
         self.internal_repairs: dict[bytes, str] = {}
         self.internal_resolved_gids: set[int] = set()
@@ -1067,6 +1073,13 @@ class CFFUnicodeRepairIndex:
         ):
             target_features = [self.internal_features[gid] for gid in target_gids]
             candidate_features = [self.internal_features[gid] for gid in candidate_gids]
+            if self.internal_candidate_arrays is None:
+                self.internal_candidate_arrays = internal_feature_arrays(
+                    [feature.cells for feature in candidate_features],
+                    [feature.bitmap for feature in candidate_features],
+                    [feature.aspect for feature in candidate_features],
+                    [feature.contours for feature in candidate_features],
+                )
             distance_matrix = compiled_feature_distance_matrix(
                 [feature.cells for feature in target_features],
                 [feature.bitmap for feature in target_features],
@@ -1076,6 +1089,7 @@ class CFFUnicodeRepairIndex:
                 [feature.bitmap for feature in candidate_features],
                 [feature.aspect for feature in candidate_features],
                 [feature.contours for feature in candidate_features],
+                internal_right_arrays=self.internal_candidate_arrays,
             )
             distance_lookups = {
                 target_gid: {
