@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import binascii
+import re
 import typing
 
 from core_pdf.impl.engine.spec.s_09_fonts.cmap_pdf_string import decode_pdf_literal_string
 
 PDF_WHITESPACE_BYTES = bytes([1 if byte in b"\x00\t\n\f\r " else 0 for byte in range(256)])
+CMAP_HEX_TOKEN_RE = re.compile(rb"<(?!<)[^>]*>")
 
 
 def iter_blocks(data: bytes | memoryview, begin: bytes, end: bytes) -> typing.Iterator[bytes]:
@@ -130,6 +132,8 @@ def cmap_word_spans(data: bytes) -> typing.Iterator[tuple[bytes, int, int]]:
 def cmap_tokens(
     data: bytes, *, include_arrays: bool = False, include_words: bool = False
 ) -> list[bytes]:
+    if not include_arrays and not include_words and b"(" not in data and b"%" not in data:
+        return CMAP_HEX_TOKEN_RE.findall(data)
     tokens: list[bytes] = []
     pos = 0
     n = len(data)
