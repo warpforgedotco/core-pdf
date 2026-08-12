@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 
-from core_pdf.api.v0.document import internal_project_document
+from core_pdf.api.v0.compat._common import project_document
 from core_pdf.api.v0.operations import BadRedactionOperation
 from core_pdf.api.v0.types import PdfInput
 
@@ -14,7 +14,7 @@ _DATE_ONLY = re.compile(r"^[0-3]?\d[/\-][0-3]?\d[/\-]\d{2,4}$")
 def inspect(source: PdfInput) -> dict[int, list[dict[str, object]]]:
     """Return x-ray-shaped bad-redaction results using only core-pdf locally."""
     with open_source(source) as document:
-        report = BadRedactionOperation().run(internal_project_document(document))
+        report = BadRedactionOperation().run(project_document(document))
         output: dict[int, list[dict[str, object]]] = {}
         for finding in report.findings:
             bbox = finding.bbox

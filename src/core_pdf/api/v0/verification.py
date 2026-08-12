@@ -33,11 +33,11 @@ def _commit_and_reopen(
     editor: Any, target: str | Path | Any
 ) -> Iterator[tuple[bytes, "V0Document"]]:
     """Commit through `editor`, reopen the result, and adapt it for verification."""
-    from .document import internal_project_document
+    from .document import PdfDocument
 
     data = editor.commit(target)
     with EngineDocument.open(data) as reopened:
-        yield data, internal_project_document(reopened)
+        yield data, PdfDocument.internal_from_engine(reopened)
 
 
 def commit_verified(
@@ -47,9 +47,9 @@ def commit_verified(
     expected_unchanged_pages: tuple[int, ...] = (),
 ) -> PreservationManifest:
     """Commit and verify that untouched pages were preserved byte-for-byte."""
-    from .document import internal_project_document
+    from .document import PdfDocument
 
-    before = internal_project_document(editor.document).fingerprint()
+    before = PdfDocument.internal_from_engine(editor.document).fingerprint()
     with _commit_and_reopen(editor, target) as (_data, document):
         after = document.fingerprint()
     return verify_preservation(
@@ -67,12 +67,12 @@ def commit_redactions_verified(
     queries: Iterable[str] = (),
 ) -> RedactionVerification:
     """Apply redactions, commit, and verify the queries are unrecoverable."""
-    from .document import internal_project_document
+    from .document import PdfDocument
 
     requested = tuple(dict.fromkeys(queries))
     editor.apply_redactions(redactions)
-    before = internal_project_document(editor.document).fingerprint()
-    before_graph = internal_project_document(editor.document).object_graph()
+    before = PdfDocument.internal_from_engine(editor.document).fingerprint()
+    before_graph = PdfDocument.internal_from_engine(editor.document).object_graph()
     with _commit_and_reopen(editor, target) as (data, document):
         remaining_raw = tuple(query for query in requested if query.encode("utf-8") in data)
         remaining = tuple(query for query in requested if any(document.search(query)))
@@ -102,11 +102,11 @@ def commit_sanitized_verified(
     actions: bool = True,
 ) -> SanitizationVerification:
     """Strip the selected features, commit, and verify nothing remains."""
-    from .document import internal_project_document
+    from .document import PdfDocument
 
     if metadata:
         editor.set_metadata({})
-    current = internal_project_document(editor.document)
+    current = PdfDocument.internal_from_engine(editor.document)
     before_graph = current.object_graph()
     if annotations or links:
         for page in tuple(current.pages()):

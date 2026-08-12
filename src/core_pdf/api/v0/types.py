@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Sequence
 from os import PathLike
 from typing import Protocol, TypeAlias
 
 from .errors import OperationCancelled
 
-PageSelection: TypeAlias = int | str | range | Iterable[int]
+PageSelection: TypeAlias = int | str | range | Sequence[int]
 
 
 class ReadableSource(Protocol):

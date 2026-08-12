@@ -6,7 +6,7 @@ from html import escape
 from io import BytesIO
 from typing import Any, BinaryIO, TextIO, cast
 
-from core_pdf.api.v0.document import internal_project_document
+from core_pdf.api.v0.compat._common import project_document
 from core_pdf.api.v0.models import Rect, TextCharacter, TextSpan
 from core_pdf.api.v0.types import PdfInput
 
@@ -324,7 +324,7 @@ def extract_pages(
     params = laparams or LAParams()
     selected = set(page_numbers) if page_numbers is not None else None
     document = open_source(pdf_file, password=password)
-    adapted = internal_project_document(document)
+    adapted = project_document(document)
     try:
         yielded = 0
         for page in adapted.pages():

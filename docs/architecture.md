@@ -70,7 +70,8 @@ concrete v0 document directly. Facades should not recreate document/page ownersh
 Compat facades share a small utility kernel in `api/v0/compat/_common.py` and one state owner
 in `api/v0/compat/state.py`. The state owner handles both opened and synthetic snapshots;
 `OpenedState` and `SyntheticState` are compatibility markers, not parallel implementations.
-It also caches its v0 document/page projections so facades do not rebuild adapters per call.
+It owns the private engine-to-v0 projection hook and caches document/page projections so
+facades do not rebuild capability objects per call.
 Facade packages import engine types from the kernel (or from `api.v0.structured`) instead of
 drilling into `impl` directly.
 

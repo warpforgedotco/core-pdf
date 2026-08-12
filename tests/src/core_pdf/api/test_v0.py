@@ -12,18 +12,12 @@ from core_pdf import PdfDocument
 from core_pdf.api.v0 import (
     AccessibilityInventory,
     AccessibilityRepairVerification,
-    AccessibilityValidationOperation,
     ActionInventory,
     AnalysisCache,
     AnnotationInventory,
-    AnnotationValidationOperation,
     ArchivalManifest,
     ArchivalManifestDiff,
-    AttachmentValidationOperation,
-    BadRedactionOperation,
     ChunkRecord,
-    CitationAnalysisOperation,
-    CompliancePreflightOperation,
     CompliancePreflightSummary,
     ContentDependencyRecord,
     ContentEvent,
@@ -36,18 +30,8 @@ from core_pdf.api.v0 import (
     DrawingItem,
     EmbeddedResourceRecord,
     EvidenceGraph,
-    FigureCaptionAnalysisOperation,
-    FontValidationOperation,
-    ForensicAnalysisOperation,
     FormInventory,
-    FormValidationOperation,
-    GeometryValidationOperation,
-    IdentifierAnalysisOperation,
-    ImageValidationOperation,
     IncrementalAnalysisPlan,
-    LayerConsistencyOperation,
-    LayoutAnalysisOperation,
-    LinkValidationOperation,
     LocalExecutionContext,
     NativeFeatureInventory,
     ObjectInspection,
@@ -56,26 +40,20 @@ from core_pdf.api.v0 import (
     PageInfo,
     PageResourceInventory,
     PreservationManifest,
-    QualityPreflightOperation,
     Raster,
     ReadingOrderItem,
     Rect,
     RedactionVerification,
-    ReferenceEntryAnalysisOperation,
     ResourceDependencyGraph,
     ResourceDiagnostic,
     RevisionInventory,
     SanitizationVerification,
-    SectionHierarchyAnalysisOperation,
     SourceRef,
-    StructureAnalysisOperation,
     TextSpan,
     compare_archival_manifests,
     compare_fingerprints,
     compare_object_graphs,
     compare_revision_objects,
-    normalize_metadata,
-    plan_accessibility_remediation,
     plan_incremental_analysis,
     plan_revision_analysis,
     verify_preservation,
@@ -92,6 +70,30 @@ from core_pdf.api.v0.compat import (
     inspect_xray,
 )
 from core_pdf.api.v0.document import PdfPage
+from core_pdf.api.v0.operations import (
+    AccessibilityValidationOperation,
+    AnnotationValidationOperation,
+    AttachmentValidationOperation,
+    BadRedactionOperation,
+    CitationAnalysisOperation,
+    CompliancePreflightOperation,
+    FigureCaptionAnalysisOperation,
+    FontValidationOperation,
+    ForensicAnalysisOperation,
+    FormValidationOperation,
+    GeometryValidationOperation,
+    IdentifierAnalysisOperation,
+    ImageValidationOperation,
+    LayerConsistencyOperation,
+    LayoutAnalysisOperation,
+    LinkValidationOperation,
+    QualityPreflightOperation,
+    ReferenceEntryAnalysisOperation,
+    SectionHierarchyAnalysisOperation,
+    StructureAnalysisOperation,
+    normalize_metadata,
+    plan_accessibility_remediation,
+)
 from core_pdf.impl.engine.structured import (
     Block,
     BlockKind,
@@ -1246,6 +1248,8 @@ def test_concrete_v0_document_is_the_public_entrypoint() -> None:
         "PdfDocumentProtocol",
         "PdfPageProtocol",
         "PdfEditorProtocol",
+        "BadRedactionOperation",
+        "QualityPreflightOperation",
     )
     assert all(not hasattr(v0, name) for name in removed)
 
@@ -1446,7 +1450,7 @@ def test_adapter_exposes_canonical_tables() -> None:
         )
     )
     adapter = PdfPageAdapter(
-        SimpleNamespace(width=100, height=100, structured_view=structured.pages[0])
+        cast(Any, SimpleNamespace(width=100, height=100, structured_view=structured.pages[0]))
     )
     tables = tuple(adapter.tables())
 
@@ -1466,7 +1470,7 @@ def test_adapter_exposes_canonical_tables() -> None:
         page_count=lambda: 1,
         selected_page_indexes=lambda selection: (0,),
     )
-    document_adapter = PdfDocumentAdapter(engine_document)
+    document_adapter = PdfDocumentAdapter(cast(Any, engine_document))
     assert tuple(document_adapter.tables()) == tables
     assert tuple(document_adapter.drawings()) == ()
 

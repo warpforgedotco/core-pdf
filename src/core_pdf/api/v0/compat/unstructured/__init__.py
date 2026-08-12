@@ -5,8 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, cast
 
+from core_pdf.api.v0.compat._common import project_document
 from core_pdf.api.v0.compat.pypdf import PdfInput
-from core_pdf.api.v0.document import internal_project_document
 
 from .._common import open_source
 
@@ -93,7 +93,7 @@ def partition_pdf(filename: object, **kwargs: object) -> list[Element]:
     include_page_breaks = bool(kwargs.pop("include_page_breaks", False))
     include_metadata = bool(kwargs.pop("include_metadata", True))
     with open_source(cast(PdfInput, filename)) as document:
-        adapted = internal_project_document(document)
+        adapted = project_document(document)
         result: list[Element] = []
         items_by_page: dict[int, list[Any]] = {}
         for item in adapted.elements():

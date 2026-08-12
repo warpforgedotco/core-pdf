@@ -8,7 +8,7 @@ from io import BytesIO
 from typing import Any, TypeAlias, cast
 
 from core_pdf import PdfDocument
-from core_pdf.api.v0.document import PdfPage, internal_project_document
+from core_pdf.api.v0.document import PdfPage
 from core_pdf.api.v0.models import Drawing, TextCharacter
 from core_pdf.api.v0.types import PdfInput
 
@@ -22,6 +22,7 @@ from .._common import (
     flip_box,
     open_source,
     png_chunk,
+    project_document,
 )
 from .exceptions import PdfminerException
 
@@ -1441,7 +1442,7 @@ class PDF(ClosingMixin):
         if source is None:
             source = cast(PdfInput, document)
             document = _source(source)
-        self._document = internal_project_document(document)
+        self._document = project_document(document)
         self.doc = document
         self.source = source
         self.stream = source

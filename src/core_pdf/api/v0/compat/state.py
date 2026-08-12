@@ -9,7 +9,6 @@ from os import PathLike
 from typing import Any
 
 from core_pdf import PdfDocument
-from core_pdf.api.v0.document import internal_project_document
 from core_pdf.api.v0.types import PdfInput
 
 from ._common import (
@@ -20,7 +19,9 @@ from ._common import (
     Page,
     TextLine,
     open_source,
+    project_document,
     serialize_document_to_pdf,
+    structured_elements,
     write_bytes,
 )
 
@@ -66,50 +67,18 @@ class Chunk:
 
 
 def elements(document: Document) -> tuple[Element, ...]:
-    """Flatten the structured IR into normalized reading-order elements."""
-    result: list[Element] = []
-    for page in document.pages:
-        for index, item in enumerate(page.elements):
-            text = getattr(item, "text", "")
-            if not text and hasattr(item, "rows"):
-                rows = getattr(item, "rows", ())
-                text = "\n".join(" | ".join(cell.text for cell in row) for row in rows)
-            result.append(
-                Element(
-                    element_id=f"p{page.page_number}-e{index}",
-                    type=type(item).__name__.casefold(),
-                    text=text,
-                    page_number=page.page_number,
-                    bbox=getattr(item, "bbox", None),
-                    metadata={
-                        "order": getattr(item, "order", index),
-                        "kind": getattr(getattr(item, "kind", None), "value", None),
-                    },
-                )
-            )
-        result.extend(
-            Element(
-                element_id=f"p{page.page_number}-annotation-{index}",
-                type="annotation",
-                text=annotation.contents,
-                page_number=page.page_number,
-                bbox=annotation.bbox,
-                metadata={"subtype": annotation.subtype, "destination": annotation.destination},
-            )
-            for index, annotation in enumerate(page.annotations)
+    """Convert the canonical structured element projection to compatibility records."""
+    return tuple(
+        Element(
+            element_id=item.element_id,
+            type=item.kind,
+            text=item.text,
+            page_number=item.page_number,
+            bbox=item.bbox,
+            metadata=dict(item.metadata),
         )
-        result.extend(
-            Element(
-                element_id=f"p{page.page_number}-form-{index}",
-                type="form_field",
-                text=field.value_text,
-                page_number=page.page_number,
-                bbox=field.bbox,
-                metadata={"name": field.name, "field_type": field.field_type},
-            )
-            for index, field in enumerate(page.form_fields)
-        )
-    return tuple(result)
+        for item in structured_elements(document)
+    )
 
 
 def chunk_elements(items: Iterable[Element], *, max_characters: int = 2000) -> tuple[Chunk, ...]:
@@ -286,7 +255,7 @@ class StructuredState(ClosingMixin):
                     "data": item.data,
                 },
             )
-            for index, item in enumerate(internal_project_document(self.source_pdf).images())
+            for index, item in enumerate(project_document(self.source_pdf).images())
         )
 
     def chunks(self, *, max_characters: int = 2000) -> tuple[Chunk, ...]:
@@ -344,7 +313,7 @@ class StructuredState(ClosingMixin):
         else:
             document = PdfDocument.from_structured(self.structured)
             self.internal_owned_document = document
-        cached = internal_project_document(document)
+        cached = project_document(document)
         self.internal_capability_document = cached
         return cached
 

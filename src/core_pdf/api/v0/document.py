@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from dataclasses import field as dataclass_field
 from difflib import SequenceMatcher
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 from core_pdf.impl.text import collapse_ws, search_key
 
@@ -88,12 +88,22 @@ from .models import (
 )
 from .types import PageSelection, PdfInput
 
+if TYPE_CHECKING:
+    from core_pdf.impl.engine.document import (
+        PdfDocument as EngineDocument,
+    )
+    from core_pdf.impl.engine.document import (
+        PdfDocumentEditor as EngineEditor,
+    )
+    from core_pdf.impl.engine.layout import LayoutGeometryIssue
+    from core_pdf.impl.engine.page import PdfPage as EnginePage
+
 _SEARCH_MODES = frozenset({"exact", "normalized", "regex", "fuzzy"})
 
 
 @dataclass(slots=True)
 class PdfPage:
-    page: Any
+    page: EnginePage
 
     @property
     def structured_view(self) -> structured_ir.Page:
@@ -170,7 +180,10 @@ class PdfPage:
         space = page_space(self.page)
         diagnostics = self.page.text_diagnostics(include_invisible=include_invisible)
         for run in diagnostics.runs:
-            issues = tuple(to_geometry_issue(issue, space) for issue in run.geometry_issues)
+            issues = tuple(
+                to_geometry_issue(cast("LayoutGeometryIssue", issue), space)
+                for issue in run.geometry_issues
+            )
             yield TextDiagnosticRun(
                 text=run.text,
                 bbox=to_rect(run.bbox, space) or Rect(0.0, 0.0, 0.0, 0.0, space),
@@ -226,7 +239,7 @@ class PdfPage:
     def geometry_issues(self) -> Iterable[GeometryIssue]:
         space = page_space(self.page)
         for issue in self.page.extract_geometry_issues():
-            yield to_geometry_issue(issue, space)
+            yield to_geometry_issue(cast("LayoutGeometryIssue", issue), space)
 
     def geometry_summary(self) -> GeometrySummary:
         return to_geometry_summary(self.page.extract_geometry_summary())
@@ -381,7 +394,7 @@ class PdfPage:
 
 @dataclass(slots=True)
 class PdfDocument:
-    internal_document: Any
+    internal_document: EngineDocument
     internal_owned: bool = False
     internal_pages: dict[int, PdfPage] = dataclass_field(default_factory=dict)
 
@@ -398,11 +411,11 @@ class PdfDocument:
         return cls(EngineDocument.from_structured(document), internal_owned=True)
 
     @classmethod
-    def internal_from_engine(cls, document: Any) -> "PdfDocument":
+    def internal_from_engine(cls, document: EngineDocument) -> "PdfDocument":
         """Project an engine document without taking ownership of its lifecycle."""
         return cls(document)
 
-    def _doc(self) -> Any:
+    def _doc(self) -> EngineDocument:
         """Return the engine document, raising once if it has been closed."""
         if self.internal_document.closed:
             raise DocumentClosed("PDF document is closed")
@@ -776,19 +789,19 @@ class PdfDocument:
         self._doc()
         return self
 
-    def __exit__(self, *args: object) -> None:
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: object,
+    ) -> None:
         if self.internal_owned:
-            self.internal_document.__exit__(*args)
-
-
-def internal_project_document(document: Any) -> PdfDocument:
-    """Project an engine document for internal compatibility implementations."""
-    return PdfDocument.internal_from_engine(document)
+            self.internal_document.__exit__(exc_type, exc, cast(Any, traceback))
 
 
 @dataclass(slots=True)
 class PdfEditor:
-    editor: Any
+    editor: EngineEditor
 
     def _chain(self, name: str, /, *args: object, **kwargs: object) -> "PdfEditor":
         """Call `editor.<name>(*args, **kwargs)` and return self for chaining."""
@@ -946,5 +959,4 @@ __all__ = (
     "PdfDocument",
     "PdfEditor",
     "PdfPage",
-    "internal_project_document",
 )

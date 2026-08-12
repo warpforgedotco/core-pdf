@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import IO, Any, Self, TypeVar, cast
 
 from core_pdf import PdfDocument
+from core_pdf.api.v0.document import PdfDocument as CapabilityDocument
 from core_pdf.api.v0.structured import (
     Annotation,
     Block,
@@ -37,6 +38,12 @@ from core_pdf.impl.engine.layout.geometry import (
     flip_rect_vertical,
     rect_tuple,
 )
+from core_pdf.impl.engine.structured import (
+    chunk_elements as chunk_structured_elements,
+)
+from core_pdf.impl.engine.structured import (
+    document_elements as structured_elements,
+)
 from core_pdf.impl.engine.writing.encryption import StandardPdfEncryption
 from core_pdf.impl.engine.writing.semantic import serialize_document_to_pdf
 from core_pdf.impl.exceptions import PdfUnsupportedError
@@ -49,6 +56,13 @@ _T = TypeVar("_T")
 def open_source(source: PdfInput, *, password: str = "") -> PdfDocument:
     """Open any supported source through the engine's canonical normalization path."""
     return PdfDocument.open(source, password=password)
+
+
+def project_document(document: object) -> CapabilityDocument:
+    """Project an opened engine document for compatibility implementations."""
+    if not isinstance(document, PdfDocument):
+        raise TypeError("compatibility projection requires an opened PDF document")
+    return CapabilityDocument.internal_from_engine(document)
 
 
 def write_bytes(target: WriteTarget, data: bytes) -> None:
@@ -167,12 +181,15 @@ __all__ = (
     "bbox_intersects",
     "bbox_union",
     "cluster_by",
+    "chunk_structured_elements",
     "coerce_bbox",
     "encode_png",
     "flip_box",
     "open_source",
+    "project_document",
     "png_chunk",
     "serialize_document_to_pdf",
     "synthesize_characters",
+    "structured_elements",
     "write_bytes",
 )
