@@ -58,7 +58,6 @@ def test_single_glyph_cluster_reuses_observation_geometry_and_confidence(
         "A",
         (observation,),
         kind="single_glyph",
-        provenance=(("source", "test"),),
     )
 
     assert cluster is not None
@@ -69,7 +68,6 @@ def test_single_glyph_cluster_reuses_observation_geometry_and_confidence(
     assert cluster.font_name == observation.font_name
     assert cluster.seqno == observation.seqno
     assert cluster.confidence == confidence
-    assert cluster.provenance == (("source", "test"),)
 
 
 def test_text_run_replacement_drops_clusters_that_describe_old_text() -> None:

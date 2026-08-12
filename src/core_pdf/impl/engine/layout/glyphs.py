@@ -138,7 +138,6 @@ class GlyphCluster:
     font_name: str | None
     seqno: int
     confidence: float | None
-    provenance: tuple[tuple[str, object], ...] = ()
 
 
 def rectbox_tuple(rect: RectBox) -> BBox:
@@ -206,7 +205,6 @@ def glyph_cluster_from_observations(
     glyphs: tuple[GlyphObservation, ...],
     *,
     kind: str,
-    provenance: tuple[tuple[str, object], ...] = (),
 ) -> GlyphCluster | None:
     if not glyphs:
         return None
@@ -237,5 +235,4 @@ def glyph_cluster_from_observations(
         font_name=first.font_name,
         seqno=first.seqno,
         confidence=confidence,
-        provenance=provenance,
     )

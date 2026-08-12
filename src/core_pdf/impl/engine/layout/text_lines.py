@@ -430,12 +430,7 @@ class GlyphLineBuilder:
                     advance_bbox=cluster.advance_bbox,
                     ink_bbox=cluster.ink_bbox,
                     baseline=cluster.baseline,
-                    provenance=(
-                        *run.provenance,
-                        *cluster.provenance,
-                        ("glyph_cluster_id", cluster.cluster_id),
-                        ("glyph_cluster_kind", cluster.kind),
-                    ),
+                    provenance=run.provenance,
                     confidence=cluster.confidence,
                     visible=run.visible,
                     has_glyph_geometry=True,
