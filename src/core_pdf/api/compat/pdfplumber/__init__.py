@@ -7,10 +7,11 @@ from dataclasses import dataclass
 from io import BytesIO
 from typing import Any, TypeAlias, cast
 
-from core_pdf import PdfDocument
 from core_pdf.api.document import PdfPage
 from core_pdf.api.models import Drawing, TextCharacter
 from core_pdf.api.types import PdfInput
+
+from core_pdf import PdfDocument
 
 from .._common import (
     ClosingMixin,

@@ -8,7 +8,7 @@ from dataclasses import replace
 from html import escape
 from typing import Any, cast
 
-from core_pdf.api.v0.compat._common import (
+from core_pdf.api.compat._common import (
     Annotation,
     Block,
     BlockKind,
@@ -23,11 +23,12 @@ from core_pdf.api.v0.compat._common import (
     synthesize_characters,
     write_bytes,
 )
-from core_pdf.api.v0.compat._common import (
+from core_pdf.api.compat._common import (
     Page as StructuredPage,
 )
-from core_pdf.api.v0.compat.pypdf import PdfInput, PdfPageObject, PdfReader
-from core_pdf.api.v0.compat.state import StructuredState
+from core_pdf.api.compat.state import StructuredState
+
+from core_pdf.api.compat.pypdf import PdfInput, PdfPageObject, PdfReader
 
 BBox = tuple[float, float, float, float]
 

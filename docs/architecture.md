@@ -34,7 +34,7 @@ The two central objects:
 The canonical local capability surface is `core_pdf.api`. Its concrete document and page
 objects project engine-owned data into stable typed records. The engine owns structured
 extraction, high-level records (images, annotations, links, forms, outlines, and attachments),
-and the transactional `PdfDocumentEditor`. Compatibility facades under `core_pdf.api.v0.compat.*`
+and the transactional `PdfDocumentEditor`. Compatibility facades under `core_pdf.api.compat.*`
 are intentionally high-level projections; they may retain a structured snapshot for synthetic
 documents, but opened-document reads and page mutations should delegate to the engine surface.
 
@@ -68,8 +68,8 @@ an api-sanctioned path so compat code can name them without importing `core_pdf.
 compatibility facades use the private engine projection hook; application code opens the
 concrete public document directly. Facades should not recreate document/page ownership locally.
 
-Compat facades share a small utility kernel in `api/v0/compat/_common.py` and one state owner
-in `api/v0/compat/state.py`. The state owner handles both opened and synthetic snapshots;
+Compat facades share a small utility kernel in `api/compat/_common.py` and one state owner
+in `api/compat/state.py`. The state owner handles both opened and synthetic snapshots;
 `OpenedState` and `SyntheticState` are compatibility markers, not parallel implementations.
 It owns the private engine-to-capability projection hook and caches document/page projections so
 facades do not rebuild capability objects per call.

@@ -6,9 +6,9 @@ from html import escape
 from io import BytesIO
 from typing import Any, BinaryIO, TextIO, cast
 
+from core_pdf.api.compat._common import project_document
 from core_pdf.api.models import Rect, TextCharacter, TextSpan
 from core_pdf.api.types import PdfInput
-from core_pdf.api.v0.compat._common import project_document
 
 from .._common import bbox_union, open_source, synthesize_characters
 

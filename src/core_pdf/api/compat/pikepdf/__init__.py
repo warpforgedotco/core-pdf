@@ -6,9 +6,10 @@ from collections.abc import Iterable, Iterator, MutableMapping, MutableSequence
 from os import PathLike
 from typing import Any, BinaryIO, cast, overload
 
-from core_pdf.api.v0.compat._common import Document, PdfUnsupportedError
-from core_pdf.api.v0.compat.pypdf import PdfPageObject, PdfReader, PdfWriter
-from core_pdf.api.v0.compat.state import StructuredState
+from core_pdf.api.compat._common import Document, PdfUnsupportedError
+from core_pdf.api.compat.state import StructuredState
+
+from core_pdf.api.compat.pypdf import PdfPageObject, PdfReader, PdfWriter
 
 
 class Attachments(MutableMapping[str, bytes]):

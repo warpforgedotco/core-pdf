@@ -3,9 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from core_pdf.api.compat.state import Chunk, Element, StructuredState, chunk_elements
 
 from core_pdf import PdfDocument
-from core_pdf.api.v0.compat.state import Chunk, Element, StructuredState, chunk_elements
 from core_pdf.impl.engine.structured import Annotation, Block, BlockKind, Document, Page, TextLine
 
 LocalDocument = StructuredState

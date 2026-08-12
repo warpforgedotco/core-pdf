@@ -295,7 +295,7 @@ submodule for fixture and behavior reference. Core-pdf provides a local facade
 with the same result shape:
 
 ```python
-from core_pdf.api.v0.compat import inspect_xray
+from core_pdf.api.compat import inspect_xray
 
 findings = inspect_xray("document.pdf")
 ```
@@ -325,7 +325,7 @@ local facade exposes the common high-level entry points and LT-shaped layout
 objects:
 
 ```python
-from core_pdf.api.v0.compat import LAParams, extract_pages, extract_text
+from core_pdf.api.compat import LAParams, extract_pages, extract_text
 
 text = extract_text("document.pdf", laparams=LAParams())
 for page in extract_pages("document.pdf"):
@@ -341,16 +341,16 @@ pdfminer.six is retained as a compatibility reference and test corpus.
 The remaining local, high-level facades follow the same namespace layout:
 
 ```python
-from core_pdf.api.v0.compat.pdfplumber import open as open_pdf
-from core_pdf.api.v0.compat.pymupdf import open as open_fitz
-from core_pdf.api.v0.compat.pikepdf import Pdf
-from core_pdf.api.v0.compat.unstructured import partition_pdf
-from core_pdf.api.v0.compat.llamaindex import load_data
+from core_pdf.api.compat.pdfplumber import open as open_pdf
+from core_pdf.api.compat.pymupdf import open as open_fitz
+from core_pdf.api.compat.pikepdf import Pdf
+from core_pdf.api.compat.unstructured import partition_pdf
+from core_pdf.api.compat.llamaindex import load_data
 ```
 
 They are projections over core-pdf’s local parser and document model. They do not
 start a server, call a remote service, or require the reference projects at runtime.
-They share one kernel (`api/v0/compat/_common.py`) for document opening, byte writing,
+They share one kernel (`api/compat/_common.py`) for document opening, byte writing,
 lifecycle, and geometry coercion. Use `core_pdf.api` directly for typed records,
 structured JSON/HTML/Markdown output, geometry diagnostics, text diagnostics, and
 editing.

@@ -7,20 +7,20 @@ from typing import Any, cast
 import pytest
 
 from core_pdf import PdfDocument
-from core_pdf.api.v0.compat.llamaindex import (
+from core_pdf.api.compat.llamaindex import (
     MetadataMode,
     TextNode,
     get_nodes_from_documents,
     load_data,
 )
-from core_pdf.api.v0.compat.pdfminer import extract_text as extract_pdfminer_text
-from core_pdf.api.v0.compat.pdfplumber import open as open_pdfplumber
-from core_pdf.api.v0.compat.pikepdf import Pdf
-from core_pdf.api.v0.compat.pymupdf import Annot, Matrix
-from core_pdf.api.v0.compat.pymupdf import open as fitz_open
-from core_pdf.api.v0.compat.pypdf import Destination, PdfMerger, PdfReader, PdfWriter, Rectangle
-from core_pdf.api.v0.compat.unstructured import ElementMetadata, PageBreak, partition_pdf
-from core_pdf.api.v0.compat.xray import inspect as inspect_xray
+from core_pdf.api.compat.pdfminer import extract_text as extract_pdfminer_text
+from core_pdf.api.compat.pdfplumber import open as open_pdfplumber
+from core_pdf.api.compat.pikepdf import Pdf
+from core_pdf.api.compat.pymupdf import Annot, Matrix
+from core_pdf.api.compat.pymupdf import open as fitz_open
+from core_pdf.api.compat.pypdf import Destination, PdfMerger, PdfReader, PdfWriter, Rectangle
+from core_pdf.api.compat.unstructured import ElementMetadata, PageBreak, partition_pdf
+from core_pdf.api.compat.xray import inspect as inspect_xray
 from core_pdf.impl.exceptions import PdfUnsupportedError
 
 FIXTURE = Path("tests/fixtures/pdfminer.six/samples/simple1.pdf")
@@ -677,7 +677,7 @@ def test_unstructured_and_llamaindex_adapters_preserve_provenance() -> None:
 
 
 def test_ingestion_facades_accept_metadata_controls() -> None:
-    from core_pdf.api.v0.compat.llamaindex import load_data as llama_load_data
+    from core_pdf.api.compat.llamaindex import load_data as llama_load_data
 
     documents = llama_load_data(FIXTURE, extra_info={"source": "fixture"})
     assert documents[0].metadata["source"] == "fixture"
@@ -704,7 +704,7 @@ def test_unstructured_metadata_supports_mapping_and_attributes() -> None:
 
 
 def test_llamaindex_schema_supports_metadata_modes_and_text_nodes() -> None:
-    from core_pdf.api.v0.compat.llamaindex import Document
+    from core_pdf.api.compat.llamaindex import Document
 
     document = Document(
         "body",

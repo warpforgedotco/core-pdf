@@ -64,7 +64,7 @@ from core_pdf.api.models import (
     plan_revision_analysis,
     verify_preservation,
 )
-from core_pdf.api.v0.compat import (
+from core_pdf.api.compat import (
     LAParams,
     LTChar,
     extract_pages,

@@ -6,8 +6,7 @@ from io import BytesIO
 from pathlib import Path
 
 import pytest
-
-from core_pdf.api.v0.compat._common import (
+from core_pdf.api.compat._common import (
     cluster_by,
     coerce_bbox,
     flip_box,
@@ -15,7 +14,8 @@ from core_pdf.api.v0.compat._common import (
     synthesize_characters,
     write_bytes,
 )
-from core_pdf.api.v0.compat.state import OpenedState, StructuredState, SyntheticState
+from core_pdf.api.compat.state import OpenedState, StructuredState, SyntheticState
+
 from core_pdf.impl.engine.structured import Document, Page
 
 FIXTURE = Path("tests/fixtures/pdfminer.six/samples/simple1.pdf")
@@ -42,7 +42,7 @@ def test_open_source_forwards_password() -> None:
 
 @requires_encrypted
 def test_pdfminer_facade_forwards_password() -> None:
-    from core_pdf.api.v0.compat.pdfminer import extract_text
+    from core_pdf.api.compat.pdfminer import extract_text
 
     assert extract_text(ENCRYPTED_FIXTURE, password="foo").strip()
 

@@ -11,10 +11,10 @@ from typing import Any, cast
 
 import pytest
 
-from core_pdf.api.v0.compat.pdfminer import extract_text as extract_pdfminer_text
-from core_pdf.api.v0.compat.pdfplumber import open as open_pdfplumber
-from core_pdf.api.v0.compat.pymupdf import open as fitz_open
-from core_pdf.api.v0.compat.xray import inspect as inspect_xray
+from core_pdf.api.compat.pdfminer import extract_text as extract_pdfminer_text
+from core_pdf.api.compat.pdfplumber import open as open_pdfplumber
+from core_pdf.api.compat.pymupdf import open as fitz_open
+from core_pdf.api.compat.xray import inspect as inspect_xray
 
 FIXTURE = Path("tests/fixtures/pdfminer.six/samples/simple1.pdf")
 XRAY_FIXTURE = Path("tests/fixtures/x-ray/tests/assets/rectangles_yes_2.pdf")

@@ -28,7 +28,7 @@ def main() -> int:
     import pytest
     import xray  # ty: ignore[unresolved-import]
 
-    from core_pdf.api.v0.compat import inspect_xray
+    from core_pdf.api.compat import inspect_xray
 
     xray.inspect = inspect_xray  # type: ignore[assignment]
     xray_base = XRAY_ROOT

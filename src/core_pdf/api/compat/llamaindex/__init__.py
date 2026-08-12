@@ -7,8 +7,9 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, cast
 
-from core_pdf.api.v0.compat._common import project_document
-from core_pdf.api.v0.compat.pypdf import PdfInput
+from core_pdf.api.compat._common import project_document
+
+from core_pdf.api.compat.pypdf import PdfInput
 
 from .._common import open_source
 

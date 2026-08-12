@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from core_pdf.api.v0.compat.pdfplumber import PDF, open, utils
+from core_pdf.api.compat.pdfplumber import PDF, open, utils
 
 FIXTURE = Path("tests/fixtures/SCORE-Bench/src/executive-summary-2022-p1-7-p007.pdf")
 

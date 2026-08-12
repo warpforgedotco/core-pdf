@@ -8,7 +8,7 @@ from io import BytesIO
 from os import PathLike
 from typing import Any, BinaryIO, cast
 
-from core_pdf.api.v0.compat._common import (
+from core_pdf.api.compat._common import (
     Annotation,
     ClosingMixin,
     Document,
@@ -20,7 +20,7 @@ from core_pdf.api.v0.compat._common import (
     serialize_document_to_pdf,
     write_bytes,
 )
-from core_pdf.api.v0.compat.state import StructuredState
+from core_pdf.api.compat.state import StructuredState
 
 PdfInput = str | PathLike[str] | bytes | bytearray | BytesIO
 BBox = tuple[float, float, float, float]
