@@ -1070,10 +1070,16 @@ def test_adapter_exposes_document_text_elements_and_chunks() -> None:
         assert tuple(adapted.images()) == ()
         hits = tuple(adapted.search("missing"))
         assert hits == ()
-        assert tuple(adapted.elements()) == tuple(document.extract_elements())
-        assert tuple(chunk.text for chunk in adapted.chunks(max_characters=20)) == tuple(
-            str(chunk["text"]) for chunk in document.extract_chunks(max_characters=20)
-        )
+        assert tuple(adapted.elements()) == ()
+        assert tuple(adapted.chunks(max_characters=20)) == ()
+
+
+def test_structured_conveniences_live_on_v0_adapter_only() -> None:
+    with PdfDocument.open(simple_pdf()) as document:
+        adapted = adapt_document(document)
+        assert not hasattr(document, "to_markdown")
+        assert not hasattr(document, "extract_elements")
+        assert adapted.to_markdown()
 
 
 def test_engine_document_editor_commits_transactionally() -> None:

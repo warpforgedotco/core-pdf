@@ -42,8 +42,11 @@ Local cancellation and operation contexts are available from
 `structured_view` — `Document`, `Page`, `Block`, `Table`, and friends — are re-exported
 at `core_pdf.api.v0.structured` so callers can name them without importing internals.
 
-The existing root exports remain supported. Code importing `core_pdf.impl.*` is using
-internal APIs and should not be used as an extension contract.
+The root `PdfDocument` and `PdfPage` objects retain engine primitives such as `extract()` and
+`render()`. Structured serializers, element/chunk projections, and compatibility-shaped
+conveniences live on the v0 adapters so the same behavior is not maintained twice. Code
+importing `core_pdf.impl.*` is using internal APIs and should not be used as an extension
+contract.
 
 ## Native operations
 

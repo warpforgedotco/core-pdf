@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import json
 import threading
 from collections.abc import Callable, Iterable, Mapping
 from concurrent.futures import Future
@@ -20,10 +19,7 @@ from core_pdf.impl.engine.parse import parse_document
 from core_pdf.impl.engine.spec.s_07_document.document import PdfDocument as SpecPdfDocument
 from core_pdf.impl.engine.structured import (
     Annotation,
-    ElementRecord,
     Link,
-    chunk_elements,
-    document_elements,
 )
 from core_pdf.impl.engine.structured import (
     Document as StructuredDocument,
@@ -296,36 +292,12 @@ class PdfDocument(PdfDocumentWritingMixin, SpecPdfDocument["PdfPage"]):
             result = adapter.apply(result)
         return result
 
-    def extract_structured(
-        self,
-        *,
-        pages: PageSelection | None = None,
-    ) -> dict[str, object]:
-        selected = self.selected_page_indexes(pages)
-        document = self.extract(pages=tuple(index + 1 for index in selected))
-        return {
-            "schema_version": document.schema_version,
-            "document": document.to_json_dict(),
-            "metadata": self.get_metadata(),
-            "page_count": self.page_count(),
-            "summary": {
-                "page_count": self.page_count(),
-                "selected_page_count": len(document.pages),
-                "selected_pages": [index + 1 for index in selected],
-            },
-        }
-
     @property
     def structured_document(self) -> StructuredDocument:
         """Return the cached high-level structured view owned by this document."""
         if self.page_count() == 0:
             return StructuredDocument(metadata=self.metadata)
         return cast(StructuredDocument, self.extract())
-
-    @property
-    def structured_pages(self) -> tuple[StructuredPage, ...]:
-        """Return structured pages in stable document order."""
-        return tuple(self.structured_document.pages)
 
     @staticmethod
     def internal_scope(page_index: int, page: Any, record: Any) -> PageScoped[Any]:
@@ -351,40 +323,6 @@ class PdfDocument(PdfDocumentWritingMixin, SpecPdfDocument["PdfPage"]):
             ),
         )
 
-    def extract_element_records(
-        self,
-        *,
-        pages: PageSelection | None = None,
-    ) -> tuple[ElementRecord, ...]:
-        """Return typed normalized elements for the selected pages."""
-        return document_elements(
-            self.extract(pages=pages),
-            self.extract_images(pages=pages),
-        )
-
-    def extract_elements(
-        self,
-        *,
-        pages: PageSelection | None = None,
-    ) -> tuple[dict[str, object], ...]:
-        """Return normalized high-level elements without a compatibility wrapper."""
-        return tuple(record.to_dict() for record in self.extract_element_records(pages=pages))
-
-    def extract_chunks(
-        self,
-        *,
-        max_characters: int = 2000,
-        pages: PageSelection | None = None,
-    ) -> tuple[dict[str, object], ...]:
-        """Return deterministic page-aware chunks from normalized elements."""
-        return tuple(
-            chunk.to_dict()
-            for chunk in chunk_elements(
-                self.extract_element_records(pages=pages),
-                max_characters=max_characters,
-            )
-        )
-
     def extract_geometry_issues(
         self,
         *,
@@ -398,34 +336,6 @@ class PdfDocument(PdfDocumentWritingMixin, SpecPdfDocument["PdfPage"]):
         pages: PageSelection | None = None,
     ) -> tuple[PageScoped[LayoutGeometrySummary], ...]:
         return self._scoped_records(pages, lambda page: (page.extract_geometry_summary(),))
-
-    def to_structured_json_string(
-        self,
-        *,
-        pages: PageSelection | None = None,
-        indent: int | None = 2,
-        sort_keys: bool = True,
-    ) -> str:
-        return json.dumps(
-            self.extract_structured(pages=pages),
-            indent=indent,
-            sort_keys=sort_keys,
-        )
-
-    def to_json(self, *, indent: int | None = 2, sort_keys: bool = True) -> str:
-        return self.extract().to_json(indent=indent, sort_keys=sort_keys)
-
-    def to_html(self) -> str:
-        return self.extract().to_html()
-
-    def to_markdown(self) -> str:
-        return self.extract().to_markdown()
-
-    def to_csv(self, *, pages: PageSelection | None = None) -> str:
-        return self.extract().to_csv(pages=pages)
-
-    def to_tei(self, *, pages: PageSelection | None = None) -> str:
-        return self.extract().to_tei(pages=pages)
 
     def edit(self) -> "PdfDocumentEditor":
         return PdfDocumentEditor(self)

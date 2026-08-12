@@ -50,6 +50,12 @@ from core_pdf.impl.engine.parse.capture import (
     internal_promoted_hidden_observations,
     preflight_page,
 )
+from core_pdf.impl.engine.parse.diagnostics import (
+    HIDDEN_TEXT_VERIFICATION_KEY,
+    OCR_PASS_DIAGNOSTICS_KEY,
+    STROKED_VECTOR_DECODE_KEY,
+    STROKED_VECTOR_PACKED_KEY,
+)
 from core_pdf.impl.engine.parse.fusion import (
     internal_text_tokens,
     maximum_candidate_coverage,
@@ -3994,7 +4000,7 @@ def internal_recover_stroked_vector_text(
             accepted.append(observation)
             corrections += 1
 
-    cache["stroked_vector_decode"] = {
+    cache[STROKED_VECTOR_DECODE_KEY] = {
         "seconds": prior_decode_seconds + time.perf_counter() - started,
         "eligible_seeds": decoded.eligible_seeds,
         "aligned_seeds": decoded.aligned_seeds,
@@ -4153,12 +4159,12 @@ def internal_recognize_page_with_reserved_raster(
             **verification.as_record(),
         }
         pass_diagnostics.append(verification_record)
-        capture.page.extraction_cache["hidden_text_verification"] = {
+        capture.page.extraction_cache[HIDDEN_TEXT_VERIFICATION_KEY] = {
             "raster_pixels": raster_pixels,
             **verification.as_record(),
         }
         if verification.accepted:
-            capture.page.extraction_cache["ocr_pass_diagnostics"] = tuple(pass_diagnostics)
+            capture.page.extraction_cache[OCR_PASS_DIAGNOSTICS_KEY] = tuple(pass_diagnostics)
             return internal_promoted_hidden_observations(capture)
 
     for ocr_pass in plan.ocr_passes:
@@ -4438,7 +4444,7 @@ def internal_recognize_page_with_reserved_raster(
                     if fallback_region is not None
                     else 0
                 )
-                capture.page.extraction_cache["stroked_vector_packed"] = {
+                capture.page.extraction_cache[STROKED_VECTOR_PACKED_KEY] = {
                     "accepted": False,
                     "cells": 0,
                     "raster_pixels": 0,
@@ -4670,7 +4676,7 @@ def internal_recognize_page_with_reserved_raster(
                     region_boxes = (
                         (fallback_region.page_box,) if fallback_region is not None else region_boxes
                     )
-            capture.page.extraction_cache["stroked_vector_packed"] = {
+            capture.page.extraction_cache[STROKED_VECTOR_PACKED_KEY] = {
                 **packed_gate,
                 "raster_pixels": packed_pixels,
                 "unmapped_observations": unmapped_observations,
@@ -4871,12 +4877,12 @@ def internal_recognize_page_with_reserved_raster(
             selected_tasks = candidate_source_tasks
 
     if selected is None:
-        capture.page.extraction_cache["ocr_pass_diagnostics"] = tuple(pass_diagnostics)
+        capture.page.extraction_cache[OCR_PASS_DIAGNOSTICS_KEY] = tuple(pass_diagnostics)
         internal_record_candidates(capture, tuple(candidates), selected_name)
         return ObservationBatch.empty()
     for diagnostic in pass_diagnostics:
         diagnostic["selected"] = diagnostic["name"] == selected_name
-    capture.page.extraction_cache["ocr_pass_diagnostics"] = tuple(pass_diagnostics)
+    capture.page.extraction_cache[OCR_PASS_DIAGNOSTICS_KEY] = tuple(pass_diagnostics)
     internal_record_candidates(capture, tuple(candidates), selected_name)
     if selected_tasks:
         # Ruled scanned tables defeat Tesseract's page segmentation; when the

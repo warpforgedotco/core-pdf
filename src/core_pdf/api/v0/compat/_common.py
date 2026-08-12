@@ -11,7 +11,6 @@ from __future__ import annotations
 import struct
 import zlib
 from collections.abc import Callable, Iterable, Iterator, Sequence
-from io import BytesIO
 from operator import itemgetter
 from os import PathLike
 from pathlib import Path
@@ -48,16 +47,7 @@ _T = TypeVar("_T")
 
 
 def open_source(source: PdfInput, *, password: str = "") -> PdfDocument:
-    """Open any supported source shape through one normalization path.
-
-    bytes/bytearray/memoryview become an owned ``BytesIO``; objects exposing
-    ``read()`` are drained into one; paths and readers pass through.  The
-    password is always forwarded to the engine.
-    """
-    if isinstance(source, (bytes, bytearray, memoryview)):
-        return PdfDocument.open(BytesIO(bytes(source)), password=password)
-    if not isinstance(source, (str, PathLike)) and hasattr(source, "read"):
-        return PdfDocument.open(BytesIO(cast(Any, source).read()), password=password)
+    """Open any supported source through the engine's canonical normalization path."""
     return PdfDocument.open(source, password=password)
 
 

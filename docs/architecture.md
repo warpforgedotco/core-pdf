@@ -22,11 +22,11 @@ Everything under `core_pdf.impl.*` is internal and may change without notice.
 
 The two central objects:
 
-- **`PdfDocument`** (`impl/engine/document.py`) — `open`, page access, structured
-  extraction (`extract`, `extract_structured`, `extract_element_records`), and the
-  document-level serializers (`to_markdown`, `to_json`, …). Owns caches that must be
-  shared across pages, notably the image cache. The CLI drives it through
-  `process_pdf` in `cli.py`.
+- **`PdfDocument`** (`impl/engine/document.py`) — `open`, page access, canonical structured
+  extraction (`extract`), and engine-owned PDF capabilities. It owns caches that must be
+  shared across pages, notably the image cache. Structured serializers and element/chunk
+  projections are kept on the v0 adapter and structured IR instead of being duplicated here.
+  The CLI drives it through `process_pdf` in `cli.py`.
 - **`PdfPage`** (`impl/engine/page.py`, subclassing the spec-level page in
   `impl/engine/spec/s_07_document/page.py`) — per-page extraction and rendering.
 
@@ -69,11 +69,12 @@ facades should consume the adapter via `adapt_document` (or `adapt_structured` f
 structured escape hatch); they should not widen engine page values to `object` or recreate
 document/page ownership locally.
 
-Compat facades share one kernel, `api/v0/compat/_common.py` — document opening, byte
-writing, lifecycle mixins, bbox coercion/flipping, and the structured-IR bridge. It is the
-single sanctioned `core_pdf.impl` import site for compat code; facade packages import
-engine types from there (or from `api.v0.structured`) instead of drilling into `impl`
-directly.
+Compat facades share a small utility kernel in `api/v0/compat/_common.py` and one state owner
+in `api/v0/compat/state.py`. The state owner handles both opened and synthetic snapshots;
+`OpenedState` and `SyntheticState` are compatibility markers, not parallel implementations.
+It also caches its v0 document/page projections so facades do not rebuild adapters per call.
+Facade packages import engine types from the kernel (or from `api.v0.structured`) instead of
+drilling into `impl` directly.
 
 **Known defects.** The capture/render pipeline places some XObject-drawn vector text at
 vertically mirrored y coordinates. Because neither the content-stream sequence nor raster

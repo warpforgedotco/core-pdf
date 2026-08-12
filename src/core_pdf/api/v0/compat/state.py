@@ -6,7 +6,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from io import BytesIO
 from os import PathLike
-from typing import Any, cast
+from typing import Any
 
 from core_pdf import PdfDocument
 from core_pdf.api.v0.adapters import adapt_document
@@ -144,37 +144,30 @@ def _make_chunk(items: list[Element]) -> Chunk:
 class StructuredState(ClosingMixin):
     """Locally parsed document with extraction, form, annotation, and edit views.
 
-    ``StructuredState`` is the shared base of an explicit sum type:
-    :class:`OpenedState` carries a source-backed engine document, while
-    :class:`SyntheticState` is a snapshot-only view with no source PDF.  The
-    factories (:meth:`open`, :meth:`from_structured`, :meth:`synthetic`) return
-    the right variant; directly constructed base instances keep the historical
-    behavior by dispatching on ``self.pdf`` through :meth:`_concrete`.
+    One state owner handles source-backed and synthetic snapshots.  The named
+    subclasses remain as compatibility markers returned by the factories.
     """
 
     def __init__(self, document: PdfDocument | None, structured: Document) -> None:
         self.pdf = document
         self.structured = structured
-
-    def _concrete(self) -> StructuredState:
-        """View a directly constructed base instance through its concrete variant."""
-        if type(self) is not StructuredState:
-            return self
-        variant = SyntheticState if self.pdf is None else OpenedState
-        view = object.__new__(variant)
-        view.__dict__ = self.__dict__
-        return view
+        self.internal_capability_document: Any | None = None
+        self.internal_capability_pages: dict[int, Any] = {}
+        self.internal_owned_document: PdfDocument | None = None
 
     def _with_snapshot(self, structured: Document) -> StructuredState:
         """Return a same-variant state carrying ``structured`` as its snapshot."""
-        if self.pdf is None:
+        if getattr(self, "pdf", None) is None:
             return SyntheticState(None, structured)
         return OpenedState(self.pdf, structured)
 
     @property
     def source_pdf(self) -> PdfDocument:
         """Return the source-backed engine document, when one exists."""
-        return self._concrete().source_pdf
+        source = getattr(self, "pdf", None)
+        if source is None:
+            raise ValueError("synthetic snapshots do not have a source PDF")
+        return source
 
     @property
     def snapshot(self) -> Document:
@@ -271,7 +264,30 @@ class StructuredState(ClosingMixin):
     @property
     def images(self) -> tuple[Element, ...]:
         """Expose decoded image records as normalized, page-owned elements."""
-        return self._concrete().images
+        if getattr(self, "pdf", None) is None:
+            return ()
+        return tuple(
+            Element(
+                element_id=f"p{item.source.page_number or 0}-image-{index}",
+                type="image",
+                text="",
+                page_number=item.source.page_number or 0,
+                bbox=(
+                    (item.bbox.x0, item.bbox.y0, item.bbox.x1, item.bbox.y1)
+                    if item.bbox is not None
+                    else None
+                ),
+                metadata={
+                    "width": item.width,
+                    "height": item.height,
+                    "channels": item.channels,
+                    "color_model": item.color_model,
+                    "alpha": item.alpha,
+                    "data": item.data,
+                },
+            )
+            for index, item in enumerate(adapt_document(self.source_pdf).images())
+        )
 
     def chunks(self, *, max_characters: int = 2000) -> tuple[Chunk, ...]:
         return chunk_elements(self.elements, max_characters=max_characters)
@@ -313,21 +329,45 @@ class StructuredState(ClosingMixin):
 
     def engine_edit(self) -> Any:
         """Return the canonical engine editor for source-backed state."""
-        return self._concrete().engine_edit()
+        if getattr(self, "pdf", None) is None:
+            raise ValueError("synthetic snapshots do not have an engine editor")
+        return self.source_pdf.edit()
 
     def capability_document(self) -> Any:
         """Return a v0 document adapter, including pending snapshot edits."""
-        return self._concrete().capability_document()
+        cached = getattr(self, "internal_capability_document", None)
+        if cached is not None:
+            return cached
+        source = getattr(self, "pdf", None)
+        if source is not None and self.structured is source.structured_document:
+            document = source
+        else:
+            document = PdfDocument.from_structured(self.structured)
+            self.internal_owned_document = document
+        cached = adapt_document(document)
+        self.internal_capability_document = cached
+        return cached
 
     def capability_page(self, page_number: int) -> Any:
         """Return a canonical engine page, including pending snapshot edits."""
         if page_number < 1 or page_number > len(self.pages):
             raise IndexError(page_number)
-        return self.capability_document().page(page_number - 1)
+        pages = getattr(self, "internal_capability_pages", None)
+        if pages is None:
+            pages = self.internal_capability_pages = {}
+        if page_number not in pages:
+            pages[page_number] = self.capability_document().page(page_number - 1)
+        return pages[page_number]
 
     def insert_page(self, page: Page, position: int | None = None) -> StructuredState:
         """Return a copy with ``page`` inserted at a 1-based position."""
-        return self._concrete().insert_page(page, position)
+        if getattr(self, "pdf", None) is not None:
+            editor = self.engine_edit()
+            editor.insert_structured_page(position or len(self.pages) + 1, page)
+            return self._with_snapshot(editor.commit_document())
+        editor = self.structured.edit()
+        editor.insert_page(position or len(self.pages) + 1, page)
+        return self._with_snapshot(editor.commit())
 
     def delete_page(self, page_number: int) -> StructuredState:
         """Return a copy without the requested 1-based page."""
@@ -337,15 +377,40 @@ class StructuredState(ClosingMixin):
 
     def update_metadata(self, values: Mapping[str, Any]) -> StructuredState:
         """Return a copy with document metadata updated."""
-        return self._concrete().update_metadata(values)
+        if getattr(self, "pdf", None) is not None:
+            editor = self.engine_edit()
+            editor.set_metadata(dict(values))
+            return self._with_snapshot(editor.commit_document())
+        editor = self.structured.edit()
+        editor.update_metadata(values)
+        return self._with_snapshot(editor.commit())
 
     def replace_pages(self, pages: Sequence[Page]) -> StructuredState:
         """Return a snapshot with replacement pages through the engine editor."""
-        return self._concrete().replace_pages(pages)
+        if getattr(self, "pdf", None) is not None:
+            editor = self.engine_edit()
+            editor.replace_pages(pages)
+            return self._with_snapshot(editor.commit_document())
+        return self._with_snapshot(replace(self.structured, pages=tuple(pages)))
 
     def fill_form(self, name: str, value: str) -> StructuredState:
         """Set an AcroForm value in the structured representation."""
-        return self._concrete().fill_form(name, value)
+        if getattr(self, "pdf", None) is not None:
+            editor = self.engine_edit()
+            editor.update_form_field(name, value)
+            return self._with_snapshot(editor.commit_document())
+        changed = False
+        pages: list[Page] = []
+        for page in self.pages:
+            fields = tuple(
+                replace(field, value_text=value) if field.name == name else field
+                for field in page.form_fields
+            )
+            changed |= fields != page.form_fields
+            pages.append(replace(page, form_fields=fields))
+        if not changed:
+            raise KeyError(name)
+        return self._with_snapshot(replace(self.structured, pages=tuple(pages)))
 
     def save_form_value(
         self,
@@ -354,7 +419,7 @@ class StructuredState(ClosingMixin):
         target: str | PathLike[str] | BytesIO,
     ) -> bytes:
         """Persist an AcroForm value with an incremental update."""
-        return self._concrete().save_form_value(name, value, target)
+        return self.source_pdf.save_form_value(name, value, target)
 
     def save_annotation(
         self,
@@ -364,7 +429,7 @@ class StructuredState(ClosingMixin):
         contents: str | None = None,
     ) -> bytes:
         """Persist an annotation content update through an incremental revision."""
-        return self._concrete().save_annotation(index, target, contents=contents)
+        return self.source_pdf.save_annotation(index, target, contents=contents)
 
     def save_link(
         self,
@@ -374,14 +439,26 @@ class StructuredState(ClosingMixin):
         destination: str,
     ) -> bytes:
         """Persist a link destination in an incremental revision."""
-        return self._concrete().save_link(index, target, destination=destination)
+        return self.source_pdf.save_link(index, target, destination=destination)
 
     def save_redactions(
         self,
         target: str | PathLike[str] | BytesIO,
     ) -> bytes:
         """Persist redaction annotations; call ``apply_redactions`` for IR removal."""
-        return self._concrete().save_redactions(target)
+        if not self.redactions:
+            raise ValueError("document has no redaction annotations")
+        pdf = self.source_pdf
+        updates: dict[int, Any] = {}
+        for record in (record for page in pdf.pages for record in page.get_annotations()):
+            if (record.subtype or "").casefold() != "redact":
+                continue
+            reference = pdf.find_object_reference(record.dict)
+            if reference is not None:
+                updates[reference.object_number] = dict(record.dict)
+        if not updates:
+            raise ValueError("redaction annotations are not indirect PDF objects")
+        return pdf.save_incremental(target, updates)
 
     def apply_redactions(self) -> StructuredState:
         """Remove structured text blocks whose boxes are covered by redactions."""
@@ -471,204 +548,21 @@ class StructuredState(ClosingMixin):
         return data
 
     def close(self) -> None:
-        if self.pdf is not None:
-            self.pdf.close()
+        owned = getattr(self, "internal_owned_document", None)
+        if owned is not None:
+            owned.close()
+            self.internal_owned_document = None
+        source = getattr(self, "pdf", None)
+        if source is not None:
+            source.close()
 
 
 class OpenedState(StructuredState):
-    """Source-backed state: engine document plus its structured snapshot."""
-
-    @property
-    def source_pdf(self) -> PdfDocument:
-        """Return the source-backed engine document."""
-        return cast(PdfDocument, self.pdf)
-
-    @property
-    def images(self) -> tuple[Element, ...]:
-        """Expose decoded image records as normalized, page-owned elements."""
-        return tuple(
-            Element(
-                element_id=f"p{item.source.page_number or 0}-image-{index}",
-                type="image",
-                text="",
-                page_number=item.source.page_number or 0,
-                bbox=(
-                    (item.bbox.x0, item.bbox.y0, item.bbox.x1, item.bbox.y1)
-                    if item.bbox is not None
-                    else None
-                ),
-                metadata={
-                    "width": item.width,
-                    "height": item.height,
-                    "channels": item.channels,
-                    "color_model": item.color_model,
-                    "alpha": item.alpha,
-                    "data": item.data,
-                },
-            )
-            for index, item in enumerate(adapt_document(self.source_pdf).images())
-        )
-
-    def engine_edit(self) -> Any:
-        """Return the canonical engine editor for source-backed state."""
-        return self.source_pdf.edit()
-
-    def capability_document(self) -> Any:
-        """Return a v0 document adapter, including pending snapshot edits."""
-        pdf = self.source_pdf
-        if self.structured is pdf.structured_document:
-            document = pdf
-        else:
-            document = PdfDocument.from_structured(self.structured)
-        return adapt_document(document)
-
-    def insert_page(self, page: Page, position: int | None = None) -> StructuredState:
-        editor = self.engine_edit()
-        editor.insert_structured_page(position or len(self.pages) + 1, page)
-        return self._with_snapshot(editor.commit_document())
-
-    def update_metadata(self, values: Mapping[str, Any]) -> StructuredState:
-        editor = self.engine_edit()
-        editor.set_metadata(dict(values))
-        return self._with_snapshot(editor.commit_document())
-
-    def replace_pages(self, pages: Sequence[Page]) -> StructuredState:
-        editor = self.engine_edit()
-        editor.replace_pages(pages)
-        return self._with_snapshot(editor.commit_document())
-
-    def fill_form(self, name: str, value: str) -> StructuredState:
-        editor = self.engine_edit()
-        editor.update_form_field(name, value)
-        return self._with_snapshot(editor.commit_document())
-
-    def save_form_value(
-        self,
-        name: str,
-        value: str,
-        target: str | PathLike[str] | BytesIO,
-    ) -> bytes:
-        return self.source_pdf.save_form_value(name, value, target)
-
-    def save_annotation(
-        self,
-        index: int,
-        target: str | PathLike[str] | BytesIO,
-        *,
-        contents: str | None = None,
-    ) -> bytes:
-        return self.source_pdf.save_annotation(index, target, contents=contents)
-
-    def save_link(
-        self,
-        index: int,
-        target: str | PathLike[str] | BytesIO,
-        *,
-        destination: str,
-    ) -> bytes:
-        return self.source_pdf.save_link(index, target, destination=destination)
-
-    def save_redactions(
-        self,
-        target: str | PathLike[str] | BytesIO,
-    ) -> bytes:
-        if not self.redactions:
-            raise ValueError("document has no redaction annotations")
-        pdf = self.source_pdf
-        updates: dict[int, Any] = {}
-        records = [record for page in pdf.pages for record in page.get_annotations()]
-        for record in records:
-            if (record.subtype or "").casefold() != "redact":
-                continue
-            reference = pdf.find_object_reference(record.dict)
-            if reference is not None:
-                updates[reference.object_number] = dict(record.dict)
-        if not updates:
-            raise ValueError("redaction annotations are not indirect PDF objects")
-        return pdf.save_incremental(target, updates)
+    """Source-backed compatibility marker."""
 
 
 class SyntheticState(StructuredState):
-    """Snapshot-only state: structured IR with no source-backed engine document."""
-
-    @property
-    def source_pdf(self) -> PdfDocument:
-        """Synthetic snapshots have no source PDF."""
-        raise ValueError("synthetic snapshots do not have a source PDF")
-
-    @property
-    def images(self) -> tuple[Element, ...]:
-        """Synthetic snapshots carry no decoded image records."""
-        return ()
-
-    def engine_edit(self) -> Any:
-        """Synthetic snapshots have no engine editor."""
-        raise ValueError("synthetic snapshots do not have an engine editor")
-
-    def capability_document(self) -> Any:
-        """Return a v0 document adapter over the synthesized snapshot."""
-        return adapt_document(PdfDocument.from_structured(self.structured))
-
-    def insert_page(self, page: Page, position: int | None = None) -> StructuredState:
-        editor = self.structured.edit()
-        editor.insert_page(position or len(self.pages) + 1, page)
-        return self._with_snapshot(editor.commit())
-
-    def update_metadata(self, values: Mapping[str, Any]) -> StructuredState:
-        editor = self.structured.edit()
-        editor.update_metadata(values)
-        return self._with_snapshot(editor.commit())
-
-    def replace_pages(self, pages: Sequence[Page]) -> StructuredState:
-        return self._with_snapshot(replace(self.structured, pages=tuple(pages)))
-
-    def fill_form(self, name: str, value: str) -> StructuredState:
-        changed = False
-        pages: list[Page] = []
-        for page in self.pages:
-            fields = tuple(
-                replace(field, value_text=value) if field.name == name else field
-                for field in page.form_fields
-            )
-            changed |= fields != page.form_fields
-            pages.append(replace(page, form_fields=fields))
-        if not changed:
-            raise KeyError(name)
-        return self._with_snapshot(replace(self.structured, pages=tuple(pages)))
-
-    def save_form_value(
-        self,
-        name: str,
-        value: str,
-        target: str | PathLike[str] | BytesIO,
-    ) -> bytes:
-        raise ValueError("form persistence requires an opened source PDF")
-
-    def save_annotation(
-        self,
-        index: int,
-        target: str | PathLike[str] | BytesIO,
-        *,
-        contents: str | None = None,
-    ) -> bytes:
-        raise ValueError("annotation persistence requires an opened source PDF")
-
-    def save_link(
-        self,
-        index: int,
-        target: str | PathLike[str] | BytesIO,
-        *,
-        destination: str,
-    ) -> bytes:
-        raise ValueError("link persistence requires an opened source PDF")
-
-    def save_redactions(
-        self,
-        target: str | PathLike[str] | BytesIO,
-    ) -> bytes:
-        if not self.redactions:
-            raise ValueError("document has no redaction annotations")
-        raise ValueError("redaction persistence requires an opened source PDF")
+    """Snapshot-only compatibility marker."""
 
 
 __all__ = (

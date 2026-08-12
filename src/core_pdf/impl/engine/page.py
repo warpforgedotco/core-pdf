@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import replace
 from typing import Any, cast
 
@@ -211,21 +210,6 @@ class PdfPage(SpecPdfPage):
                 cached = compose_page(self, options, page_program=self.get_page_program())
                 cache[key] = cached
             return cached
-
-    def to_markdown(self) -> str:
-        return self.extract().to_markdown()
-
-    def to_json(self, *, indent: int | None = 2, sort_keys: bool = True) -> str:
-        from core_pdf.impl.engine.structured.serialization import page_to_json_dict
-
-        return json.dumps(
-            page_to_json_dict(self.extract()),
-            indent=indent,
-            sort_keys=sort_keys,
-        )
-
-    def to_html(self) -> str:
-        return self.extract().to_html()
 
 
 __all__ = ("PdfPage", "text_rotation_correction_for_runs")

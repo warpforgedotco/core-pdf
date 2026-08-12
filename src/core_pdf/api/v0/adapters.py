@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
@@ -365,13 +366,17 @@ class PdfPageAdapter(PdfPageProtocol):
         )
 
     def to_markdown(self) -> str:
-        return self.page.to_markdown()
+        return self.page.extract().to_markdown()
 
     def to_json(self, *, indent: int | None = 2, sort_keys: bool = True) -> str:
-        return self.page.to_json(indent=indent, sort_keys=sort_keys)
+        from core_pdf.impl.engine.structured.serialization import page_to_json_dict
+
+        return json.dumps(
+            page_to_json_dict(self.page.extract()), indent=indent, sort_keys=sort_keys
+        )
 
     def to_html(self) -> str:
-        return self.page.to_html()
+        return self.page.extract().to_html()
 
 
 @dataclass(slots=True)
@@ -398,7 +403,7 @@ class PdfDocumentAdapter(PdfDocumentProtocol):
 
     @property
     def structured_pages(self) -> tuple[structured.Page, ...]:
-        return tuple(self.document.structured_pages)
+        return tuple(self.document.structured_document.pages)
 
     def edit(self) -> "PdfEditorAdapter":
         return PdfEditorAdapter(self._doc().edit())
@@ -581,17 +586,33 @@ class PdfDocumentAdapter(PdfDocumentProtocol):
         return hits()
 
     def elements(self, *, pages: PageSelection | None = None) -> Iterable[Mapping[str, object]]:
-        return self._doc().extract_elements(pages=pages)
+        from core_pdf.impl.engine.structured import document_elements
+
+        document = self._doc()
+        return tuple(
+            record.to_dict()
+            for record in document_elements(
+                document.extract(pages=pages),
+                document.extract_images(pages=pages),
+            )
+        )
 
     def chunks(
         self, *, max_characters: int = 2000, pages: PageSelection | None = None
     ) -> Iterable[ChunkRecord]:
-        from core_pdf.impl.engine.structured import chunk_elements, document_section_paths
+        from core_pdf.impl.engine.structured import (
+            chunk_elements,
+            document_elements,
+            document_section_paths,
+        )
 
         document = self._doc()
         section_paths = document_section_paths(self.structured_document)
         records = chunk_elements(
-            document.extract_element_records(pages=pages),
+            document_elements(
+                document.extract(pages=pages),
+                document.extract_images(pages=pages),
+            ),
             max_characters=max_characters,
             section_paths=section_paths,
         )
@@ -660,7 +681,7 @@ class PdfDocumentAdapter(PdfDocumentProtocol):
         return inspection.accessibility_inventory(self, pages=pages)
 
     def to_json(self, *, indent: int | None = 2, sort_keys: bool = True) -> str:
-        return self._doc().to_json(indent=indent, sort_keys=sort_keys)
+        return self._doc().extract().to_json(indent=indent, sort_keys=sort_keys)
 
     def to_structured_json(
         self,
@@ -669,23 +690,33 @@ class PdfDocumentAdapter(PdfDocumentProtocol):
         indent: int | None = 2,
         sort_keys: bool = True,
     ) -> str:
-        return self._doc().to_structured_json_string(
-            pages=pages,
-            indent=indent,
-            sort_keys=sort_keys,
-        )
+        document = self._doc()
+        selected = document.selected_page_indexes(pages)
+        extracted = document.extract(pages=tuple(index + 1 for index in selected))
+        payload = {
+            "schema_version": extracted.schema_version,
+            "document": extracted.to_json_dict(),
+            "metadata": document.get_metadata(),
+            "page_count": document.page_count(),
+            "summary": {
+                "page_count": document.page_count(),
+                "selected_page_count": len(extracted.pages),
+                "selected_pages": [index + 1 for index in selected],
+            },
+        }
+        return json.dumps(payload, indent=indent, sort_keys=sort_keys)
 
     def to_html(self) -> str:
-        return self._doc().to_html()
+        return self._doc().extract().to_html()
 
     def to_markdown(self) -> str:
-        return self._doc().to_markdown()
+        return self._doc().extract().to_markdown()
 
     def to_csv(self, *, pages: PageSelection | None = None) -> str:
-        return self._doc().to_csv(pages=pages)
+        return self._doc().extract(pages=pages).to_csv()
 
     def to_tei(self, *, pages: PageSelection | None = None) -> str:
-        return self._doc().to_tei(pages=pages)
+        return self._doc().extract(pages=pages).to_tei()
 
     def annotations(self, *, pages: PageSelection | None = None) -> Iterable[AnnotationRecord]:
         for page in self.pages(pages):

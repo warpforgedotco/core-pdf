@@ -261,7 +261,7 @@ def revision_objects(document: Any) -> tuple[RevisionObjectRecord, ...]:
 def document_fingerprint(document: Any) -> DocumentFingerprint:
     """Hash the document bytes, page content, and every resolvable object."""
     page_hashes: list[tuple[int, str]] = []
-    for page in document.structured_pages:
+    for page in document.structured_document.pages:
         elements = tuple(
             (
                 type(element).__name__,
