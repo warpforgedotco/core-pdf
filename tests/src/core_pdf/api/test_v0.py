@@ -213,6 +213,26 @@ def test_geometry_records_carry_coordinate_space() -> None:
     assert rect.space.origin is CoordinateOrigin.BOTTOM_LEFT
 
 
+def test_rect_geometry_operations_preserve_space_and_exact_overlap() -> None:
+    space = CoordinateSpace("page", CoordinateOrigin.TOP_LEFT, width=10.0, height=10.0)
+    left = Rect(0.0, 0.0, 0.5, 0.5, space)
+    right = Rect(0.25, 0.0, 1.0, 0.5, space)
+
+    intersection = left.intersection(right)
+
+    assert intersection == Rect(0.25, 0.0, 0.5, 0.5, space)
+    assert left.area == 0.25
+    assert left.overlap_ratio_min(right) == 0.5
+
+
+def test_rect_intersection_rejects_mixed_coordinate_spaces() -> None:
+    top = CoordinateSpace("page", CoordinateOrigin.TOP_LEFT, height=10.0)
+    bottom = CoordinateSpace("page", CoordinateOrigin.BOTTOM_LEFT, height=10.0)
+
+    with pytest.raises(ValueError, match="different coordinate spaces"):
+        Rect(0.0, 0.0, 1.0, 1.0, top).intersection(Rect(0.0, 0.0, 1.0, 1.0, bottom))
+
+
 def test_current_document_conforms_through_v0_adapter() -> None:
     with PdfDocument.open(simple_pdf()) as document:
         adapted = adapt_document(document)

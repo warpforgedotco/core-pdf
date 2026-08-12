@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from core_pdf.impl.engine.spec.s_07_content.capture import CapturedDrawing
@@ -336,23 +337,20 @@ class TextComponent:
         self.host.pending_line_break = True
         self.show(operands[2])
 
-    def set_char_space_operand(self, operands: Any) -> None:
+    def set_spacing_operand(self, operands: Any, setter: Callable[[float], None]) -> None:
         if not operands:
             return
         try:
             value = self.host.as_float(operands[0])
         except (TypeError, ValueError):
             return
-        self.set_char_space(value)
+        setter(value)
+
+    def set_char_space_operand(self, operands: Any) -> None:
+        self.set_spacing_operand(operands, self.set_char_space)
 
     def set_word_space_operand(self, operands: Any) -> None:
-        if not operands:
-            return
-        try:
-            value = self.host.as_float(operands[0])
-        except (TypeError, ValueError):
-            return
-        self.set_word_space(value)
+        self.set_spacing_operand(operands, self.set_word_space)
 
 
 class ContentComponent:

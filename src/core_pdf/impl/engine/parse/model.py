@@ -11,7 +11,6 @@ from typing import Any, cast
 
 import numpy
 
-from core_pdf.impl.engine.layout.geometry import overlap_ratio_min
 from core_pdf.impl.engine.layout.models import TextRun
 from core_pdf.impl.engine.spec.s_07_content.capture import CapturedDrawing, CapturedInlineImage
 from core_pdf.impl.engine.spec.s_07_content.operations import (
@@ -902,7 +901,3 @@ def internal_candidate(
         candidate_seconds=candidate_seconds,
         recognition_status=recognition_status,
     )
-
-
-def internal_bbox_overlap_ratio(left: Sequence[float], right: Sequence[float]) -> float:
-    return overlap_ratio_min(left, right)

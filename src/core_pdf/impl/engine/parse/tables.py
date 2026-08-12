@@ -12,7 +12,7 @@ from typing import Any, cast
 import numpy
 
 from core_pdf.impl.engine.array_views import finite_median
-from core_pdf.impl.engine.layout.geometry import bbox_union
+from core_pdf.impl.engine.layout.geometry import bbox_union, overlap_ratio_min
 from core_pdf.impl.engine.layout.spatial import (
     SpatialIndex,
 )
@@ -20,7 +20,6 @@ from core_pdf.impl.engine.parse.model import (
     CapturedPage,
     ObservationBatch,
     ObservationSource,
-    internal_bbox_overlap_ratio,
 )
 from core_pdf.impl.engine.structured import (
     Table,
@@ -424,22 +423,43 @@ def internal_merge_grid_cells(
         )
     )
 
-    def vertical_boundary_present(x: float, y0: float, y1: float) -> bool:
-        query = (x - AXIS_TOLERANCE, y0 - AXIS_TOLERANCE, x + AXIS_TOLERANCE, y1 + AXIS_TOLERANCE)
+    def boundary_present(
+        position: float,
+        start: float,
+        end: float,
+        segments: numpy.ndarray[Any, Any],
+        index: SpatialIndex,
+        coordinate_indexes: tuple[int, int, int],
+        query: tuple[float, float, float, float],
+    ) -> bool:
+        position_index, start_index, end_index = coordinate_indexes
         return any(
-            abs(float(vertical[index, 0]) - x) <= AXIS_TOLERANCE
-            and float(vertical[index, 1]) <= y0 + AXIS_TOLERANCE
-            and float(vertical[index, 2]) >= y1 - AXIS_TOLERANCE
-            for index in vertical_index.intersecting(query)
+            abs(float(segments[segment_index, position_index]) - position) <= AXIS_TOLERANCE
+            and float(segments[segment_index, start_index]) <= start + AXIS_TOLERANCE
+            and float(segments[segment_index, end_index]) >= end - AXIS_TOLERANCE
+            for segment_index in index.intersecting(query)
+        )
+
+    def vertical_boundary_present(x: float, y0: float, y1: float) -> bool:
+        return boundary_present(
+            x,
+            y0,
+            y1,
+            vertical,
+            vertical_index,
+            (0, 1, 2),
+            (x - AXIS_TOLERANCE, y0 - AXIS_TOLERANCE, x + AXIS_TOLERANCE, y1 + AXIS_TOLERANCE),
         )
 
     def horizontal_boundary_present(y: float, x0: float, x1: float) -> bool:
-        query = (x0 - AXIS_TOLERANCE, y - AXIS_TOLERANCE, x1 + AXIS_TOLERANCE, y + AXIS_TOLERANCE)
-        return any(
-            abs(float(horizontal[index, 2]) - y) <= AXIS_TOLERANCE
-            and float(horizontal[index, 0]) <= x0 + AXIS_TOLERANCE
-            and float(horizontal[index, 1]) >= x1 - AXIS_TOLERANCE
-            for index in horizontal_index.intersecting(query)
+        return boundary_present(
+            y,
+            x0,
+            x1,
+            horizontal,
+            horizontal_index,
+            (2, 0, 1),
+            (x0 - AXIS_TOLERANCE, y - AXIS_TOLERANCE, x1 + AXIS_TOLERANCE, y + AXIS_TOLERANCE),
         )
 
     disjoint = internal_DisjointSet(row_count * column_count)
@@ -937,7 +957,7 @@ def internal_stream_tables(
         if any(
             table.bbox is not None
             and existing.bbox is not None
-            and internal_bbox_overlap_ratio(table.bbox, existing.bbox) >= 0.8
+            and overlap_ratio_min(table.bbox, existing.bbox) >= 0.8
             for existing in unique
         ):
             continue
@@ -1589,7 +1609,7 @@ def extract_tables(
             for table in tables
             if stream.bbox is not None
             and table.bbox is not None
-            and internal_bbox_overlap_ratio(stream.bbox, table.bbox) >= 0.5
+            and overlap_ratio_min(stream.bbox, table.bbox) >= 0.5
         ]
         if conflicts and internal_table_quality(stream) < max(
             map(internal_table_quality, conflicts)

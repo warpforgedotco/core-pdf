@@ -13,6 +13,7 @@ from typing import Any
 from core_pdf.impl.engine.layout.geometry import (
     bbox_area,
     bbox_intersection_area,
+    overlap_ratio_min,
     rect_tuple,
 )
 from core_pdf.impl.engine.layout.spatial import (
@@ -25,7 +26,6 @@ from core_pdf.impl.engine.parse.layout import (
 from core_pdf.impl.engine.parse.model import (
     ParsedLine,
     ParsedPage,
-    internal_bbox_overlap_ratio,
 )
 from core_pdf.impl.engine.parse.tables import (
     internal_character_spaced_cell,
@@ -196,7 +196,7 @@ def internal_overlapping_block_token_coverage(table: Table, blocks: list[Block])
     for block in blocks:
         if block.bbox is None or not block.text:
             continue
-        if internal_bbox_overlap_ratio(block.bbox, table.bbox) >= 0.45:
+        if overlap_ratio_min(block.bbox, table.bbox) >= 0.45:
             block_tokens.extend(internal_emitted_text_tokens(block.text))
     if not block_tokens:
         return 0.0
@@ -346,7 +346,7 @@ def internal_remove_block_duplicate_tables(
                 or (
                     internal_table_character_spaced_ratio(table) >= 0.20
                     and any(
-                        internal_bbox_overlap_ratio(block_box, table.bbox) >= 0.85
+                        overlap_ratio_min(block_box, table.bbox) >= 0.85
                         for block_box in block_boxes
                     )
                 )
@@ -382,8 +382,7 @@ def internal_remove_block_duplicate_table_rows(
         block_lines = [
             line
             for block in blocks
-            if block.bbox is not None
-            and internal_bbox_overlap_ratio(block.bbox, table.bbox) >= 0.45
+            if block.bbox is not None and overlap_ratio_min(block.bbox, table.bbox) >= 0.45
             for line in block.lines
         ]
         line_tokens = [
@@ -602,7 +601,7 @@ def internal_remove_table_duplicate_blocks(
         duplicate = False
         contained_line_boxes: list[tuple[float, float, float, float]] = []
         for table_bbox, tokens in table_boxes:
-            overlap_ratio = internal_bbox_overlap_ratio(block.bbox, table_bbox)
+            overlap_ratio = overlap_ratio_min(block.bbox, table_bbox)
             if overlap_ratio >= 0.9:
                 if sum(token in tokens for token in block_tokens) / len(block_tokens) >= 0.85:
                     duplicate = True
@@ -618,10 +617,7 @@ def internal_remove_table_duplicate_blocks(
                 line
                 for line in block.lines
                 if line.bbox is None
-                or not any(
-                    internal_bbox_overlap_ratio(line.bbox, box) >= 0.9
-                    for box in contained_line_boxes
-                )
+                or not any(overlap_ratio_min(line.bbox, box) >= 0.9 for box in contained_line_boxes)
             )
             if filtered and len(filtered) != len(block.lines):
                 deduplicated.append(replace(block, lines=filtered))

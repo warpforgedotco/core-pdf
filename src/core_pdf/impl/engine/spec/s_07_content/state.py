@@ -3980,7 +3980,7 @@ class TextState:
     def op_CS(self, operands: OperandWindow, depth: int) -> None:
         self._op_CS_impl(operands, depth)
 
-    def _op_CS_impl(self, operands: OperandWindow, depth: int) -> None:
+    def internal_set_color_space(self, operands: OperandWindow, *, stroke: bool) -> None:
         if operands:
             name_obj = operands[0]
             try:
@@ -3988,80 +3988,78 @@ class TextState:
             except TypeError:
                 cached = MISSING
             if cached is not MISSING:
-                if cached is not None and self.stroke_color_space != cached:
-                    self.stroke_color_space = cast("str", cached)
+                if cached is not None:
+                    if stroke and self.stroke_color_space != cached:
+                        self.stroke_color_space = cast("str", cached)
+                    elif not stroke and self.fill_color_space != cached:
+                        self.fill_color_space = cast("str", cached)
                 return
             color_space = self.resolve_color_space(name_obj, default_fallback=True)
             if color_space is not None:
-                self.stroke_color_space = color_space
+                if stroke:
+                    self.stroke_color_space = color_space
+                else:
+                    self.fill_color_space = color_space
+
+    def _op_CS_impl(self, operands: OperandWindow, depth: int) -> None:
+        self.internal_set_color_space(operands, stroke=True)
 
     def op_cs(self, operands: OperandWindow, depth: int) -> None:
         self._op_cs_impl(operands, depth)
 
     def _op_cs_impl(self, operands: OperandWindow, depth: int) -> None:
-        if operands:
-            name_obj = operands[0]
-            try:
-                cached = self.color_space_cache.get((self.resources_id, name_obj, True), MISSING)
-            except TypeError:
-                cached = MISSING
-            if cached is not MISSING:
-                if cached is not None and self.fill_color_space != cached:
-                    self.fill_color_space = cast("str", cached)
-                return
-            color_space = self.resolve_color_space(name_obj, default_fallback=True)
-            if color_space is not None:
-                self.fill_color_space = color_space
+        self.internal_set_color_space(operands, stroke=False)
 
     def op_SC(self, operands: OperandWindow, depth: int) -> None:
         self._op_SC_impl(operands, depth)
 
     def _op_SC_impl(self, operands: OperandWindow, depth: int) -> None:
-        normalized = self.normalize_color_operands(operands)
-        if normalized is not None:
-            self.stroke_color = normalized
-            self.stroke_pattern = None
+        self.internal_set_color(operands, stroke=True, allow_pattern=False)
 
     def op_SCN(self, operands: OperandWindow, depth: int) -> None:
         self._op_SCN_impl(operands, depth)
 
-    def _op_SCN_impl(self, operands: OperandWindow, depth: int) -> None:
-        if self.stroke_color_space == "Pattern":
-            self.stroke_pattern = self.resolve_pattern_color(operands)
+    def internal_set_color(
+        self, operands: OperandWindow, *, stroke: bool, allow_pattern: bool
+    ) -> None:
+        color_space = self.stroke_color_space if stroke else self.fill_color_space
+        if allow_pattern and color_space == "Pattern":
+            pattern = self.resolve_pattern_color(operands)
+            if stroke:
+                self.stroke_pattern = pattern
+            else:
+                self.fill_pattern = pattern
             if len(operands) > 1:
                 normalized = self.normalize_color_operands(operands[:-1])
                 if normalized is not None:
-                    self.stroke_color = normalized
+                    if stroke:
+                        self.stroke_color = normalized
+                    else:
+                        self.fill_color = normalized
             return
         normalized = self.normalize_color_operands(operands)
         if normalized is not None:
-            self.stroke_color = normalized
-            self.stroke_pattern = None
+            if stroke:
+                self.stroke_color = normalized
+                self.stroke_pattern = None
+            else:
+                self.fill_color = normalized
+                self.fill_pattern = None
+
+    def _op_SCN_impl(self, operands: OperandWindow, depth: int) -> None:
+        self.internal_set_color(operands, stroke=True, allow_pattern=True)
 
     def op_sc(self, operands: OperandWindow, depth: int) -> None:
         self._op_sc_impl(operands, depth)
 
     def _op_sc_impl(self, operands: OperandWindow, depth: int) -> None:
-        normalized = self.normalize_color_operands(operands)
-        if normalized is not None:
-            self.fill_color = normalized
-            self.fill_pattern = None
+        self.internal_set_color(operands, stroke=False, allow_pattern=False)
 
     def op_scN(self, operands: OperandWindow, depth: int) -> None:
         self._op_scN_impl(operands, depth)
 
     def _op_scN_impl(self, operands: OperandWindow, depth: int) -> None:
-        if self.fill_color_space == "Pattern":
-            self.fill_pattern = self.resolve_pattern_color(operands)
-            if len(operands) > 1:
-                normalized = self.normalize_color_operands(operands[:-1])
-                if normalized is not None:
-                    self.fill_color = normalized
-            return
-        normalized = self.normalize_color_operands(operands)
-        if normalized is not None:
-            self.fill_color = normalized
-            self.fill_pattern = None
+        self.internal_set_color(operands, stroke=False, allow_pattern=True)
 
     def op_i(self, operands: OperandWindow, depth: int) -> None:
         self._op_i_impl(operands, depth)

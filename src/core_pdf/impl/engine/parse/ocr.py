@@ -34,7 +34,13 @@ from core_pdf.impl.engine.array_views import (
 )
 from core_pdf.impl.engine.execution import RUNTIME, TaskScope, WorkStage
 from core_pdf.impl.engine.image_cache import ImageCacheKey
-from core_pdf.impl.engine.layout.geometry import bbox_union, rect_tuple
+from core_pdf.impl.engine.layout.geometry import (
+    bbox_union,
+    overlap_ratio_min,
+    overlap_ratio_min_exact,
+    overlap_ratio_of,
+    rect_tuple,
+)
 from core_pdf.impl.engine.layout.spatial import (
     SpatialIndex,
     bbox_intersection_area,
@@ -69,7 +75,6 @@ from core_pdf.impl.engine.parse.model import (
     OcrPass,
     OcrPassScope,
     WorkPlan,
-    internal_bbox_overlap_ratio,
     internal_Candidate,
     internal_candidate,
 )
@@ -2058,7 +2063,7 @@ def internal_merge_candidate_batches(
                         max(0, len(deduplicated) - 24), len(deduplicated)
                     )
                     if (
-                        internal_bbox_overlap_ratio(
+                        overlap_ratio_min(
                             combined.bbox[index],
                             combined.bbox[deduplicated[accepted_position]],
                         )
@@ -2569,12 +2574,7 @@ def internal_ocr_region_overlap(
     left: tuple[float, float, float, float],
     right: tuple[float, float, float, float],
 ) -> float:
-    intersection = bbox_intersection_area(left, right)
-    smaller = min(
-        max(0.0, left[2] - left[0]) * max(0.0, left[3] - left[1]),
-        max(0.0, right[2] - right[0]) * max(0.0, right[3] - right[1]),
-    )
-    return intersection / smaller if smaller else 0.0
+    return overlap_ratio_min_exact(left, right)
 
 
 def internal_ocr_region_coverage(
@@ -2582,8 +2582,7 @@ def internal_ocr_region_coverage(
     candidate: tuple[float, float, float, float],
 ) -> float:
     """Return how much of a requested OCR target is covered by a candidate raster."""
-    target_area = max(0.0, target[2] - target[0]) * max(0.0, target[3] - target[1])
-    return bbox_intersection_area(target, candidate) / target_area if target_area else 0.0
+    return overlap_ratio_of(target, candidate)
 
 
 def internal_merge_ocr_regions(regions: list[internal_OcrRegion]) -> tuple[internal_OcrRegion, ...]:

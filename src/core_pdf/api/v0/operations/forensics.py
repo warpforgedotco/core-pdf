@@ -18,20 +18,6 @@ from ..protocols import ExecutionContext, PdfDocumentProtocol
 from .base import AnalysisOperation, FindingCollector, OperationOptions
 
 
-def _area(rect: Rect) -> float:
-    return abs(rect.width * rect.height)
-
-
-def _intersection(a: Rect, b: Rect) -> Rect | None:
-    x0 = max(a.x0, b.x0)
-    y0 = max(a.y0, b.y0)
-    x1 = min(a.x1, b.x1)
-    y1 = min(a.y1, b.y1)
-    if x1 <= x0 or y1 <= y0:
-        return None
-    return Rect(x0, y0, x1, y1, a.space)
-
-
 def _is_uniform(raster: Any) -> bool:
     pixels = memoryview(raster.data).cast("B")
     channels = raster.channels
@@ -91,13 +77,7 @@ def _candidate_rectangles(drawing: Drawing) -> Iterable[Rect]:
 
 
 def _overlap_ratio(text: TextSpan, rectangle: Rect) -> float:
-    intersection = _intersection(text.bbox, rectangle)
-    text_area = _area(text.bbox)
-    rectangle_area = _area(rectangle)
-    if intersection is None or not text_area or not rectangle_area:
-        return 0.0
-    intersection_area = _area(intersection)
-    return max(intersection_area / text_area, intersection_area / rectangle_area)
+    return text.bbox.overlap_ratio_min(rectangle)
 
 
 def _covered_characters(text: TextSpan, rectangle: Rect, threshold: float) -> str:

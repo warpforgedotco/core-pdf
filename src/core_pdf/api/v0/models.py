@@ -123,6 +123,31 @@ class Rect:
     def height(self) -> float:
         return self.y1 - self.y0
 
+    @property
+    def area(self) -> float:
+        """Return the non-negative area of this rectangle."""
+        return max(0.0, self.width) * max(0.0, self.height)
+
+    def intersection(self, other: Rect) -> Rect | None:
+        """Return the positive-area intersection with a rectangle in the same space."""
+        if self.space != other.space:
+            raise ValueError("rectangles use different coordinate spaces")
+        x0 = max(self.x0, other.x0)
+        y0 = max(self.y0, other.y0)
+        x1 = min(self.x1, other.x1)
+        y1 = min(self.y1, other.y1)
+        if x1 <= x0 or y1 <= y0:
+            return None
+        return Rect(x0, y0, x1, y1, self.space)
+
+    def overlap_ratio_min(self, other: Rect) -> float:
+        """Return intersection area relative to the smaller positive rectangle."""
+        intersection = self.intersection(other)
+        smaller_area = min(self.area, other.area)
+        return (
+            intersection.area / smaller_area if intersection is not None and smaller_area else 0.0
+        )
+
     def to_origin(self, origin: CoordinateOrigin) -> Rect:
         """Return this rectangle expressed with the requested vertical origin."""
         if origin is self.space.origin:
