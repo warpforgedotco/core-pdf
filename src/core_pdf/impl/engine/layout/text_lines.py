@@ -863,6 +863,13 @@ class GlyphLineBuilder:
         first_char = text[:1]
         if not prev_last_char or not first_char:
             return "", "join"
+        if (
+            prev_run is run
+            and " " in run.text
+            and previous.has_glyph_geometry
+            and atom.has_glyph_geometry
+        ):
+            return "", "same_run_explicit_space_join"
 
         prev_x0, internal_prev_y0, prev_x1, internal_prev_y1 = previous.advance_bbox
         x0, y0, internal_x1, y1 = atom.advance_bbox
@@ -900,14 +907,6 @@ class GlyphLineBuilder:
 
         if self.is_column_gap(spacing_gap, height, space_width):
             return " ", "column_space"
-
-        if (
-            prev_run is run
-            and " " in run.text
-            and previous.has_glyph_geometry
-            and atom.has_glyph_geometry
-        ):
-            return "", "same_run_explicit_space_join"
 
         if prev_stripped is None:
             prev_stripped = prev_text.strip()
