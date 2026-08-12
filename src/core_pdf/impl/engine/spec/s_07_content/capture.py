@@ -50,7 +50,7 @@ SUSPICIOUS_GLYPH_BITMAP_TEXT = {"\ufffd", "\ufffc"}
 def should_capture_glyph_bitmap(text: str) -> bool:
     if len(text) != 1:
         return False
-    if len(text) == 1 and text in GLYPH_BITMAP_REPAIR_LABELS:
+    if text in GLYPH_BITMAP_REPAIR_LABELS:
         return True
     if text in SUSPICIOUS_GLYPH_BITMAP_TEXT:
         return True

@@ -1856,14 +1856,21 @@ class TextState:
                 alternates=glyph.alternates,
             )
 
-            if len(chunk_text) == 1 or should_capture_suspicious_multi_glyph_bitmap(chunk_text):
+            single_character = len(chunk_text) == 1
+            suspicious_multi = (
+                False
+                if single_character
+                else should_capture_suspicious_multi_glyph_bitmap(chunk_text)
+            )
+            if single_character or suspicious_multi:
                 bitmap: tuple[int, ...] = ()
                 bitmap_width = 0
                 bitmap_height = 0
                 bitmap_code: int | None = None
                 if self.capture_glyph_bitmaps and (
                     should_capture_glyph_bitmap(chunk_text)
-                    or should_capture_suspicious_multi_glyph_bitmap(chunk_text)
+                    if single_character
+                    else suspicious_multi
                 ):
                     bitmap_width, bitmap_height = glyph_bitmap_dimensions(
                         glyph_bbox,
