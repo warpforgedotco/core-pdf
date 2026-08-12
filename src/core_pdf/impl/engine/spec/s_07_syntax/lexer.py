@@ -112,7 +112,7 @@ class PdfLexer:
         if type(data) is memoryview:
             self.raw_data = (
                 memoryview(data)
-                if data.ndim == 1 and data.format == "B"
+                if data.ndim == 1 and data.format == "B" and data.c_contiguous
                 else memoryview(data.tobytes())
             )
         else:
@@ -217,7 +217,8 @@ class PdfLexer:
             return data[pos : pos + 1], pos + 1
 
         start = pos
-        pos = self.find_separator(start)
+        match = SEPARATOR_RE.search(data, start)
+        pos = self.data_len if match is None else match.start()
 
         return data[start:pos], pos
 
@@ -381,7 +382,8 @@ class PdfLexer:
 
     def read_name(self) -> memoryview:
         self.advance(1)
-        end = self.find_separator(self.pos)
+        match = SEPARATOR_RE.search(self.raw_data, self.pos)
+        end = self.data_len if match is None else match.start()
 
         start = self.pos
         self.pos = end
@@ -903,7 +905,8 @@ class PdfLexer:
             if data[pos : pos + 6] == b"endobj":
                 return False
             if byte == 47:
-                name_end = self.find_separator(pos + 1)
+                match = SEPARATOR_RE.search(data, pos + 1)
+                name_end = self.data_len if match is None else match.start()
                 name = bytes(data[pos + 1 : name_end])
                 if name not in RECOVERABLE_DICTIONARY_KEY_NAMES:
                     pos += 1
