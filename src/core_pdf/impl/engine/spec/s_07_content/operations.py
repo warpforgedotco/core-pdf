@@ -435,27 +435,38 @@ class CollectedOperationHandler:
 
 
 class CollectedStringHandlers:
-    __slots__ = ("callback",)
+    __slots__ = ("callback", "handlers")
 
     def __init__(self, callback: OperationCollector) -> None:
         self.callback = callback
+        self.handlers: dict[str, BoundOperationHandler] = {}
 
     def get(self, key: str) -> BoundOperationHandler:
-        return CollectedOperationHandler(self.callback, key)
+        handler = self.handlers.get(key)
+        if handler is None:
+            handler = CollectedOperationHandler(self.callback, key)
+            self.handlers[key] = handler
+        return handler
 
 
 class CollectedIntegerHandlers:
-    __slots__ = ("callback",)
+    __slots__ = ("callback", "handlers")
 
     def __init__(self, callback: OperationCollector) -> None:
         self.callback = callback
+        self.handlers: dict[int, BoundOperationHandler] = {}
 
     def __getitem__(self, key: int) -> BoundOperationHandler:
+        handler = self.handlers.get(key)
+        if handler is not None:
+            return handler
         if key > 255:
             op_name = chr(key >> 8) + chr(key & 0xFF)
         else:
             op_name = chr(key)
-        return CollectedOperationHandler(self.callback, op_name)
+        handler = CollectedOperationHandler(self.callback, op_name)
+        self.handlers[key] = handler
+        return handler
 
     def get(self, key: int) -> BoundOperationHandler:
         return self[key]
