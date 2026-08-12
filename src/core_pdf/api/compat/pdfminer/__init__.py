@@ -382,7 +382,7 @@ def _lines_are_neighbors(first: LTTextLine, second: LTTextLine, ratio: float) ->
     if isinstance(first, LTTextLineHorizontal) and isinstance(second, LTTextLineHorizontal):
         tolerance = ratio * first.height
         return (
-            not (second.y1 < first.y0 - tolerance or first.y1 + tolerance < second.y0)
+            not (second.y1 <= first.y0 - tolerance or first.y1 + tolerance <= second.y0)
             and abs(second.height - first.height) <= tolerance + slack
             and (
                 abs(second.x0 - first.x0) <= tolerance + slack
@@ -393,7 +393,7 @@ def _lines_are_neighbors(first: LTTextLine, second: LTTextLine, ratio: float) ->
     if isinstance(first, LTTextLineVertical) and isinstance(second, LTTextLineVertical):
         tolerance = ratio * first.width
         return (
-            not (second.x1 < first.x0 - tolerance or first.x1 + tolerance < second.x0)
+            not (second.x1 <= first.x0 - tolerance or first.x1 + tolerance <= second.x0)
             and abs(second.width - first.width) <= tolerance + slack
             and (
                 abs(second.y0 - first.y0) <= tolerance + slack
