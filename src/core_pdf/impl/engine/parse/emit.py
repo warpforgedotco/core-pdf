@@ -495,6 +495,14 @@ def internal_corrupt_native_block(block: Block) -> bool:
     if "native" not in block.provenance:
         return False
     tokens = internal_emitted_text_tokens(block.text)
+    token_count = len(tokens)
+    if token_count >= 24:
+        wordlike = sum(
+            token.isalpha() and len(token) >= 3 and any(character in "aeiou" for character in token)
+            for token in tokens
+        )
+        if wordlike / token_count >= 0.12:
+            return False
     nonspace = [character for character in block.text if not character.isspace()]
     if not nonspace:
         return False
@@ -520,22 +528,21 @@ def internal_corrupt_native_block(block: Block) -> bool:
     non_ascii = sum(ord(character) > 127 for character in nonspace)
     symbol_ratio = internal_symbol_characters(block.text) / len(nonspace)
     non_ascii_ratio = non_ascii / len(nonspace)
-    wordlike = sum(
-        token.isalpha() and len(token) >= 3 and any(character in "aeiou" for character in token)
-        for token in tokens
-    )
+    if token_count < 24:
+        wordlike = sum(
+            token.isalpha() and len(token) >= 3 and any(character in "aeiou" for character in token)
+            for token in tokens
+        )
     digit_bearing = sum(any(character.isdigit() for character in token) for token in tokens)
-    if len(tokens) < 24:
+    if token_count < 24:
         return (
             wordlike == 0
             and (symbol_ratio > 0.30 or non_ascii_ratio > 0.10)
             or non_ascii_ratio > 0.02
             and symbol_ratio > 0.10
-            and digit_bearing / max(1, len(tokens)) >= 0.30
+            and digit_bearing / max(1, token_count) >= 0.30
         )
-    if wordlike / len(tokens) >= 0.12:
-        return False
-    if digit_bearing / len(tokens) < 0.35:
+    if digit_bearing / token_count < 0.35:
         return False
     return symbol_ratio > 0.25 or non_ascii_ratio > 0.02
 
