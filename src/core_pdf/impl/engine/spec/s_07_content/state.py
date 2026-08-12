@@ -1801,7 +1801,7 @@ class TextState:
                     axis_baseline_y,
                 )
             else:
-                text_box, baseline_text, _ = glyph_text_space_boxes(
+                text_box, baseline_text = glyph_text_space_boxes(
                     self,
                     offset,
                     advance,
@@ -1915,7 +1915,7 @@ class TextState:
                         glyph.unicode_source,
                         glyph.alternates,
                     )
-                    char_box, char_baseline_text, _ = glyph_text_space_boxes(
+                    char_box, char_baseline_text = glyph_text_space_boxes(
                         self, char_offset, per_char_advance, decoder
                     )
                     char_advance_rect = transformed_text_rect(self, *char_box, text_basis)

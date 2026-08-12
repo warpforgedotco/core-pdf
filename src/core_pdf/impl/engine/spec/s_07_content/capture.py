@@ -15,7 +15,6 @@ from core_pdf.impl.engine.layout.geometry import RectBox
 from core_pdf.impl.engine.layout.glyphs import (
     GlyphCluster,
     GlyphObservation,
-    Matrix6,
     glyph_cluster_from_observations,
     glyph_unicode_confidence,
 )
@@ -217,7 +216,6 @@ def glyph_text_space_boxes(
 ) -> tuple[
     tuple[float, float, float, float],
     tuple[float, float, float, float],
-    Matrix6,
 ]:
     if decoder.is_vertical:
         position_x, position_y = position
@@ -232,34 +230,12 @@ def glyph_text_space_boxes(
         return (
             (x0, y0, x1, y1),
             (0.0, start_y, 0.0, end_y),
-            (
-                state.tm_a,
-                state.tm_b,
-                state.tm_c,
-                state.tm_d,
-                state.tm_e
-                + position_x * state.tm_a
-                - offset * state.tm_c
-                + position_y * state.tm_c,
-                state.tm_f
-                + position_x * state.tm_b
-                - offset * state.tm_d
-                + position_y * state.tm_d,
-            ),
         )
     ar = state.font_ascent + state.rise
     dr = state.font_descent + state.rise
     return (
         (offset, dr, offset + advance, ar),
         (offset, state.rise, offset + advance, state.rise),
-        (
-            state.tm_a,
-            state.tm_b,
-            state.tm_c,
-            state.tm_d,
-            state.tm_e + offset * state.tm_a,
-            state.tm_f + offset * state.tm_b,
-        ),
     )
 
 
