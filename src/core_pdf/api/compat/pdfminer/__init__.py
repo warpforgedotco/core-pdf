@@ -4,13 +4,56 @@ from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 from html import escape
 from io import BytesIO
-from typing import Any, BinaryIO, TextIO, cast
+from typing import Any, BinaryIO, TextIO, TypeAlias, cast
 
-from core_pdf.api.compat._common import project_document
-from core_pdf.api.models import Rect, TextCharacter, TextSpan
-from core_pdf.api.types import PdfInput
+from core_pdf import PdfDocument
+from core_pdf.impl.engine.layout.geometry import bbox_union
 
-from .._common import bbox_union, open_source, synthesize_characters
+PdfInput: TypeAlias = Any
+
+
+@dataclass(frozen=True, slots=True)
+class Rect:
+    x0: float
+    y0: float
+    x1: float
+    y1: float
+
+    @property
+    def width(self) -> float:
+        return self.x1 - self.x0
+
+    @property
+    def height(self) -> float:
+        return self.y1 - self.y0
+
+
+@dataclass(frozen=True, slots=True)
+class TextCharacter:
+    text: str
+    bbox: Rect
+    font_name: str | None = None
+    font_size: float | None = None
+    sequence: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class TextSpan:
+    text: str
+    bbox: Rect
+    characters: tuple[TextCharacter, ...] = ()
+    font_name: str | None = None
+    font_size: float | None = None
+    sequence: int | None = None
+
+
+def synthesize_characters(
+    text: str, box: tuple[float, float, float, float]
+) -> Iterator[tuple[str, tuple[float, float, float, float]]]:
+    x0, y0, x1, y1 = box
+    width = (x1 - x0) / max(1, len(text))
+    for index, character in enumerate(text):
+        yield character, (x0 + index * width, y0, x0 + (index + 1) * width, y1)
 
 
 @dataclass(slots=True)
@@ -146,12 +189,10 @@ def _characters(span: TextSpan) -> Iterable[TextCharacter]:
     return tuple(
         TextCharacter(
             text=character,
-            bbox=Rect(*sub_box, span.bbox.space),
+            bbox=Rect(*sub_box),
             font_name=span.font_name,
             font_size=span.font_size,
-            color=span.color,
             sequence=span.sequence,
-            source=span.source,
         )
         for character, sub_box in synthesize_characters(span.text, box)
     )
@@ -208,13 +249,11 @@ def _character_span(characters: list[TextCharacter], source: TextSpan) -> TextSp
         raise ValueError("cannot build a span from zero characters")
     return TextSpan(
         text="".join(character.text for character in characters),
-        bbox=Rect(*box, source.bbox.space),
+        bbox=Rect(*box),
         characters=tuple(characters),
         font_name=source.font_name,
         font_size=source.font_size,
-        color=source.color,
         sequence=characters[0].sequence,
-        source=source.source,
     )
 
 
@@ -323,17 +362,25 @@ def extract_pages(
     del caching
     params = laparams or LAParams()
     selected = set(page_numbers) if page_numbers is not None else None
-    document = open_source(pdf_file, password=password)
-    adapted = project_document(document)
+    document = PdfDocument.open(pdf_file, password=password)
     try:
         yielded = 0
-        for page in adapted.pages():
-            if selected is not None and page.info.index not in selected:
+        for page_index, page in enumerate(document.pages):
+            if selected is not None and page_index not in selected:
                 continue
             if maxpages and yielded >= maxpages:
                 break
             lines: list[LTTextLineHorizontal] = []
-            for span in page.text_spans():
+            for run in page.text_diagnostics().runs:
+                if run.bbox is None:
+                    continue
+                span = TextSpan(
+                    text=run.text,
+                    bbox=Rect(*run.bbox),
+                    font_name=run.font_name,
+                    font_size=run.font_size,
+                    sequence=run.seqno,
+                )
                 fragment_group = object()
                 if _is_vertical_span(span):
                     chars = tuple(_characters(span))
@@ -383,9 +430,9 @@ def extract_pages(
             )
             boxes: list[LTItem] = list(_group_lines(lines, params.line_margin))
             yield LTPage(
-                (0.0, 0.0, page.info.width, page.info.height),
-                page.info.number,
-                page.info.rotation,
+                (0.0, 0.0, page.width, page.height),
+                page.page_number,
+                page.rotation,
                 boxes,
             )
             yielded += 1

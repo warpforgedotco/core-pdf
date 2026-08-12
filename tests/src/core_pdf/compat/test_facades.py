@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from io import BytesIO
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
 import pytest
 
@@ -409,7 +409,7 @@ def test_pymupdf_new_page_supports_local_editing_and_save(tmp_path: Path) -> Non
 
 def test_pymupdf_pixmap_supports_matrix_dpi_and_png(tmp_path: Path) -> None:
     with fitz_open(FIXTURE) as document:
-        pixmap = cast(Any, document).load_page(0).get_pixmap(matrix=Matrix(0.5, 0.5), alpha=False)
+        pixmap = document.load_page(0).get_pixmap(matrix=Matrix(0.5, 0.5), alpha=False)
         assert pixmap.width > 0
         assert pixmap.height > 0
         assert pixmap.n == 3
@@ -420,7 +420,7 @@ def test_pymupdf_pixmap_supports_matrix_dpi_and_png(tmp_path: Path) -> None:
 
 def test_pymupdf_textpage_reuses_high_level_extraction() -> None:
     with fitz_open(FIXTURE) as document:
-        textpage = cast(Any, document).load_page(0).get_textpage()
+        textpage = document.load_page(0).get_textpage()
         assert "Hello" in textpage.extractText()
         assert textpage.extractWORDS()
         assert textpage.extractBLOCKS()
@@ -430,7 +430,7 @@ def test_pymupdf_textpage_reuses_high_level_extraction() -> None:
 
 def test_pymupdf_rawdict_exposes_character_records() -> None:
     with fitz_open(FIXTURE) as document:
-        raw = cast(Any, document).load_page(0).get_text("rawdict")
+        raw = document.load_page(0).get_text("rawdict")
         span = raw["blocks"][0]["lines"][0]["spans"][0]
         assert span["chars"]
         assert span["chars"][0]["c"]
@@ -438,7 +438,7 @@ def test_pymupdf_rawdict_exposes_character_records() -> None:
 
 def test_pymupdf_document_page_helpers_delegate_locally() -> None:
     with fitz_open(FIXTURE) as document:
-        facade = cast(Any, document)
+        facade = document
         assert isinstance(facade.get_page_images(0), list)
         assert facade.get_page_pixmap(0, matrix=Matrix(0.25, 0.25)).width > 0
         assert isinstance(facade.load_page(0).get_image_info(), list)
@@ -446,7 +446,7 @@ def test_pymupdf_document_page_helpers_delegate_locally() -> None:
 
 def test_pymupdf_textbox_and_text_length_helpers() -> None:
     with fitz_open(FIXTURE) as document:
-        page = cast(Any, document).load_page(0)
+        page = document.load_page(0)
         assert page.get_textbox((0, 0, page.mediabox.width, page.mediabox.height))
         assert page.get_text_length("Hello", fontsize=10) > 0
 
@@ -454,62 +454,62 @@ def test_pymupdf_textbox_and_text_length_helpers() -> None:
 def test_pymupdf_insert_text_persists_through_save(tmp_path: Path) -> None:
     output = tmp_path / "inserted.pdf"
     with fitz_open(FIXTURE) as document:
-        page = cast(Any, document).load_page(0)
+        page = document.load_page(0)
         assert page.insert_text((40, 40), "Inserted locally") > 0
-        cast(Any, document).save(output)
+        document.save(output)
     with fitz_open(output) as reopened:
-        assert "Inserted locally" in cast(Any, reopened).load_page(0).get_text()
+        assert "Inserted locally" in reopened.load_page(0).get_text()
 
 
 def test_pymupdf_draw_primitives_persist_through_save(tmp_path: Path) -> None:
     output = tmp_path / "drawn.pdf"
     with fitz_open(FIXTURE) as document:
-        page = cast(Any, document).load_page(0)
+        page = document.load_page(0)
         page.draw_rect((20, 20, 80, 80), color=(1, 0, 0), width=2)
         page.draw_line((20, 20), (80, 80), color=(0, 0, 1))
         assert {item["type"] for item in page.get_drawings()} >= {"rect", "line"}
-        cast(Any, document).save(output)
+        document.save(output)
     with fitz_open(output) as reopened:
-        drawings = cast(Any, reopened).load_page(0).get_drawings()
+        drawings = reopened.load_page(0).get_drawings()
         assert {item["type"] for item in drawings} >= {"rect", "line"}
 
 
 def test_pymupdf_annotation_creation_persists(tmp_path: Path) -> None:
     output = tmp_path / "created-annots.pdf"
     with fitz_open(FIXTURE) as document:
-        page = cast(Any, document).load_page(0)
+        page = document.load_page(0)
         page.add_text_annot((20, 20), "created note")
         page.add_highlight_annot((30, 30, 60, 45))
         page.add_underline_annot((30, 50, 60, 65))
         page.add_rect_annot((70, 70, 100, 100))
-        cast(Any, document).save(output)
+        document.save(output)
     with fitz_open(output) as reopened:
-        subtypes = {annot.type[0] for annot in cast(Any, reopened).load_page(0).annots()}
+        subtypes = {annot.type[0] for annot in reopened.load_page(0).annots()}
         assert subtypes >= {"Text", "Highlight", "Underline", "Square"}
 
 
 def test_pymupdf_widgets_update_persistently(tmp_path: Path) -> None:
     output = tmp_path / "widget.pdf"
     with fitz_open(FORM_FIXTURE) as document:
-        page = cast(Any, document).load_page(0)
+        page = document.load_page(0)
         widgets = page.widgets()
         assert widgets
         widgets[0].field_value = "widget value"
         assert widgets[0].update()
-        cast(Any, document).save(output)
+        document.save(output)
     with fitz_open(output) as reopened:
-        assert cast(Any, reopened).load_page(0).widgets()[0].field_value == "widget value"
+        assert reopened.load_page(0).widgets()[0].field_value == "widget value"
 
 
 def test_pymupdf_embedded_file_helpers_persist(tmp_path: Path) -> None:
     output = tmp_path / "embedded.pdf"
     with fitz_open(FIXTURE) as document:
-        facade = cast(Any, document)
+        facade = document
         facade.embfile_add("note.txt", b"local payload")
         assert facade.embfile_get("note.txt") == b"local payload"
         facade.save(output)
     with fitz_open(output) as reopened:
-        facade = cast(Any, reopened)
+        facade = reopened
         assert "note.txt" in facade.embfile_names()
         assert facade.embfile_get("note.txt") == b"local payload"
 
@@ -517,13 +517,13 @@ def test_pymupdf_embedded_file_helpers_persist(tmp_path: Path) -> None:
 def test_pymupdf_toc_round_trip_uses_high_level_rows(tmp_path: Path) -> None:
     output = tmp_path / "toc.pdf"
     with fitz_open(FIXTURE) as document:
-        facade = cast(Any, document)
+        facade = document
         facade.set_toc([[1, "Introduction", 1], [2, "Details", 1]])
         assert facade.get_toc() == [[1, "Introduction", 1], [2, "Details", 1]]
         assert facade.get_toc(simple=False)[0][3]["kind"] == "goto"
         facade.save(output)
     with fitz_open(output) as reopened:
-        assert cast(Any, reopened).get_toc() == [[1, "Introduction", 1], [2, "Details", 1]]
+        assert reopened.get_toc() == [[1, "Introduction", 1], [2, "Details", 1]]
     document.close()
     pdf = Pdf.open(FIXTURE)
     assert pdf.pages[0].extract_text()

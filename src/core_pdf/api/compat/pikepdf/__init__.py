@@ -6,10 +6,9 @@ from collections.abc import Iterable, Iterator, MutableMapping, MutableSequence
 from os import PathLike
 from typing import Any, BinaryIO, cast, overload
 
-from core_pdf.api.compat._common import Document, PdfUnsupportedError
-from core_pdf.api.compat.state import StructuredState
-
-from core_pdf.api.compat.pypdf import PdfPageObject, PdfReader, PdfWriter
+from core_pdf.api.compat.pypdf import PdfPageObject, PdfReader, PdfWriter, StructuredState
+from core_pdf.impl.engine.structured import Document
+from core_pdf.impl.exceptions import PdfUnsupportedError
 
 
 class Attachments(MutableMapping[str, bytes]):
@@ -92,7 +91,7 @@ class Pages(MutableSequence[PdfPageObject]):
 
     def _sync(self) -> None:
         pages = tuple(item._page for item in self._values)
-        self._owner._document = StructuredState.from_structured(
+        self._owner._document = StructuredState.synthetic(
             Document(pages=pages, metadata=self._owner._document.snapshot.metadata)
         )
         self._values = [PdfPageObject(self._owner._document, page) for page in pages]
@@ -104,7 +103,7 @@ class Pdf(PdfReader):
     @classmethod
     def new(cls) -> Pdf:
         instance = cls.__new__(cls)
-        instance._document = StructuredState.from_structured(Document())
+        instance._document = StructuredState.synthetic(Document())
         instance.__dict__["pages"] = Pages(instance)
         instance.metadata = {}
         instance.trailer = {}
@@ -133,7 +132,10 @@ class Pdf(PdfReader):
             if item.page is not None
         ]
         self._attachments = Attachments(
-            {embedded.filename: embedded.data for embedded in self._document.source_pdf.attachments}
+            {
+                embedded.filename: embedded.data
+                for embedded in self._document.source_pdf.embedded_files()
+            }
         )
 
     @property

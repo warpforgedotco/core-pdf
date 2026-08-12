@@ -2,33 +2,79 @@ from __future__ import annotations
 
 import builtins
 import math
+import struct
+import zlib
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from io import BytesIO
+from operator import itemgetter
+from types import SimpleNamespace
 from typing import Any, TypeAlias, cast
 
-from core_pdf.api.document import PdfPage
-from core_pdf.api.models import Drawing, TextCharacter
-from core_pdf.api.types import PdfInput
-
 from core_pdf import PdfDocument
-
-from .._common import (
-    ClosingMixin,
+from core_pdf.impl.engine.layout.geometry import (
     bbox_contains,
     bbox_intersects,
     bbox_union,
-    cluster_by,
-    encode_png,
-    flip_box,
-    open_source,
-    png_chunk,
-    project_document,
+    flip_rect_vertical,
 )
+
 from .exceptions import PdfminerException
 
 BBox: TypeAlias = tuple[float, float, float, float]
+PdfInput: TypeAlias = Any
 ObjectDict: TypeAlias = dict[str, Any]
+
+
+class ClosingMixin:
+    def close(self) -> None:
+        return None
+
+    def __enter__(self) -> Any:
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        self.close()
+
+
+def flip_box(box: object, height: float) -> BBox:
+    return flip_rect_vertical(cast(Any, box), height)
+
+
+def cluster_by(
+    values: Iterable[Any], key: Callable[[Any], Any] | str, tolerance: float = 0
+) -> list[list[Any]]:
+    getter = itemgetter(key) if isinstance(key, str) else key
+    groups: list[list[Any]] = []
+    for item in sorted(values, key=getter):
+        value = getter(item)
+        previous = getter(groups[-1][-1]) if groups else None
+        separated = bool(groups) and (
+            value - previous > tolerance
+            if isinstance(value, (int, float)) and isinstance(previous, (int, float))
+            else value != previous
+        )
+        if not groups or separated:
+            groups.append([item])
+        else:
+            groups[-1].append(item)
+    return groups
+
+
+def png_chunk(kind: bytes, data: bytes) -> bytes:
+    return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+
+
+def encode_png(width: int, height: int, channels: int, pixels: bytes | bytearray) -> bytes:
+    stride = width * channels
+    scanlines = b"".join(b"\0" + pixels[y * stride : (y + 1) * stride] for y in range(height))
+    header = struct.pack(">IIBBBBB", width, height, 8, 6 if channels == 4 else 2, 0, 0, 0)
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + png_chunk(b"IHDR", header)
+        + png_chunk(b"IDAT", zlib.compress(scanlines))
+        + png_chunk(b"IEND", b"")
+    )
 
 
 class TableSettings:
@@ -100,14 +146,99 @@ class TableSettings:
 
 def _source(value: PdfInput, password: str = "", unicode_norm: str | None = None) -> PdfDocument:
     try:
-        document = open_source(value, password=password)
+        document = PdfDocument.open(value, password=password)
     except Exception as exc:
         raise PdfminerException(exc) from exc
     cast(Any, document).compat_unicode_norm = unicode_norm
     return document
 
 
-def _bbox(page: PdfPage, box: Any) -> BBox:
+class EnginePageAdapter:
+    """pdfplumber-specific projection of one engine page."""
+
+    def __init__(self, page: Any) -> None:
+        self.page = page
+        self.info = SimpleNamespace(
+            index=page.page_number - 1,
+            number=page.page_number,
+            width=float(page.width),
+            height=float(page.height),
+            rotation=int(page.rotation),
+        )
+
+    def text_characters(self) -> Iterator[Any]:
+        for run in self.page.chars:
+            for cluster in run.glyph_clusters:
+                if cluster.ink_bbox is None or not cluster.text:
+                    continue
+                x0, y0, x1, y1 = cluster.ink_bbox
+                width = (x1 - x0) / len(cluster.text)
+                for index, character in enumerate(cluster.text):
+                    yield SimpleNamespace(
+                        text=character,
+                        bbox=SimpleNamespace(
+                            x0=x0 + index * width,
+                            y0=y0,
+                            x1=x0 + (index + 1) * width,
+                            y1=y1,
+                        ),
+                        font_name=run.font_name,
+                        font_size=run.font_size,
+                        color=run.fill_color,
+                        rotation_angle=run.rotation_angle,
+                        sequence=run.seqno,
+                    )
+
+    def drawings(self) -> Iterator[Any]:
+        for drawing in self.page.get_drawings():
+            box = drawing.rect
+            yield SimpleNamespace(
+                kind=drawing.kind,
+                bbox=(SimpleNamespace(x0=box[0], y0=box[1], x1=box[2], y1=box[3]) if box else None),
+                fill=drawing.fill,
+                stroke=drawing.stroke_color,
+                fill_opacity=drawing.fill_opacity,
+                stroke_opacity=drawing.stroke_opacity,
+                sequence=drawing.seqno,
+                items=(),
+                data={
+                    "path": None,
+                    "dash_pattern": drawing.dash_pattern,
+                    "line_width": drawing.line_width,
+                    "line_cap": drawing.line_cap,
+                    "line_join": drawing.line_join,
+                },
+            )
+
+    def images(self) -> Iterator[Any]:
+        for image in self.page.extract_images():
+            metadata = image.image_metadata
+            box = image.rect or image.image_clip
+            if metadata is None or box is None:
+                continue
+            data = image.data
+            yield SimpleNamespace(
+                bbox=SimpleNamespace(x0=box[0], y0=box[1], x1=box[2], y1=box[3]),
+                sequence=image.seqno,
+                width=metadata.width,
+                height=metadata.height,
+                channels=metadata.channels,
+                color_model=metadata.color_model,
+                data=bytes(data) if isinstance(data, (bytes, bytearray, memoryview)) else None,
+            )
+
+    def render(self, *, dpi: float) -> Any:
+        raster = self.page.render().rasterize(scale=max(0.01, dpi / 72.0))
+        return SimpleNamespace(
+            data=raster.pixels,
+            width=raster.width,
+            height=raster.height,
+            channels=raster.channels,
+            dpi=dpi,
+        )
+
+
+def _bbox(page: EnginePageAdapter, box: Any) -> BBox:
     return flip_box(box, page.info.height)
 
 
@@ -130,7 +261,7 @@ def _envelope(
     }
 
 
-def _char(page: PdfPage, item: TextCharacter, doctop: float) -> ObjectDict:
+def _char(page: EnginePageAdapter, item: Any, doctop: float) -> ObjectDict:
     x0, top, x1, bottom = _bbox(page, (item.bbox.x0, item.bbox.y0, item.bbox.x1, item.bbox.y1))
     if page.info.rotation % 360 == 90:
         rotated_width = max(page.info.width, page.info.height)
@@ -165,7 +296,7 @@ def _char(page: PdfPage, item: TextCharacter, doctop: float) -> ObjectDict:
     )
 
 
-def _drawing(page: PdfPage, item: Drawing, doctop: float) -> ObjectDict:
+def _drawing(page: EnginePageAdapter, item: Any, doctop: float) -> ObjectDict:
     box = item.bbox
     x0, top, x1, bottom = _bbox(page, (box.x0, box.y0, box.x1, box.y1)) if box else (0, 0, 0, 0)
     return _envelope(
@@ -196,7 +327,7 @@ class Page:
         self.pdf = pdf
         self.page_number = index + 1
         self.initial_doctop = doctop
-        self._adapter = pdf._document.page(index)
+        self._adapter = EnginePageAdapter(pdf._document.pages[index])
         self.rotation = self._adapter.info.rotation % 360
         self.mediabox = self._box_from_page("media_box") or (0.0, 0.0, self.width, self.height)
         self.cropbox = self._box_from_page("crop_box")
@@ -289,7 +420,17 @@ class Page:
                     continue
                 record = _drawing(
                     self._adapter,
-                    Drawing("image", image.bbox, image.sequence or 0),
+                    SimpleNamespace(
+                        kind="image",
+                        bbox=image.bbox,
+                        sequence=image.sequence or 0,
+                        fill=None,
+                        stroke=None,
+                        fill_opacity=None,
+                        stroke_opacity=None,
+                        items=(),
+                        data={},
+                    ),
                     self.initial_doctop,
                 )
                 record.update(
@@ -335,7 +476,7 @@ class Page:
 
     def _structured(self) -> Any:
         if self._structured_page is None:
-            result = self.pdf._document.internal_document.extract(pages=(self.page_number,))
+            result = self.pdf._document.extract(pages=(self.page_number,))
             self._structured_page = result.pages[0]
         return self._structured_page
 
@@ -363,7 +504,7 @@ class Page:
                         y0=top if self.rotation in {180, 270} else item.rect[1],
                         y1=bottom if self.rotation in {180, 270} else item.rect[3],
                         contents=item.contents,
-                        data=self.pdf._document.internal_document.resolver.deep_resolve(item.dict),
+                        data=self.pdf._document.resolver.deep_resolve(item.dict),
                         uri=None,
                     )
                 )
@@ -428,7 +569,7 @@ class Page:
 
     @property
     def structure_tree(self) -> list[ObjectDict]:
-        tree = getattr(self.pdf._document.internal_document, "structure", None)
+        tree = getattr(self.pdf._document, "structure", None)
         if tree is None:
             return []
 
@@ -633,7 +774,7 @@ class Page:
 
     def find_tables(self, table_settings: Mapping[str, Any] | None = None) -> list["Table"]:
         settings = TableSettings.resolve(table_settings)
-        result = self.pdf._document.internal_document.extract(pages=(self.page_number,))
+        result = self.pdf._document.extract(pages=(self.page_number,))
         page = result.pages[0]
         tables = getattr(page, "tables", ()) or getattr(page, "structured_tables", ())
         if tables:
@@ -1443,15 +1584,14 @@ class PDF(ClosingMixin):
         if source is None:
             source = cast(PdfInput, document)
             document = _source(source)
-        self._document = project_document(document)
+        self._document = cast(PdfDocument, document)
         self.doc = document
         self.source = source
         self.stream = source
         self.path = source if isinstance(source, (str, bytes)) else None
-        raw_metadata = dict(self._document.metadata)
-        value = raw_metadata.get("value")
-        info = value.get("info") if isinstance(value, dict) else None
-        self.metadata = dict(info) if isinstance(info, dict) else raw_metadata
+        raw_metadata = self._document.get_metadata()
+        info = raw_metadata.get("info") if isinstance(raw_metadata, dict) else None
+        self.metadata = dict(info) if isinstance(info, dict) else {}
         self.laparams = laparams
         self._page_selection = tuple(pages) if pages is not None else None
         self._pages: list[Page] | None = None
@@ -1476,7 +1616,7 @@ class PDF(ClosingMixin):
             try:
                 doctop = 0.0
                 self._pages = []
-                page_count = self._document.page_count
+                page_count = self._document.page_count()
                 indexes = self._page_selection or range(1, page_count + 1)
                 for page_number in indexes:
                     index = page_number - 1
@@ -1606,7 +1746,7 @@ class PDF(ClosingMixin):
 
     def close(self) -> None:
         self.flush_cache()
-        self._document.__exit__(None, None, None)
+        self._document.close()
 
     def flush_cache(self, *_: Any) -> None:
         self._rect_edges = None

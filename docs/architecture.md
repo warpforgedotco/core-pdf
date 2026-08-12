@@ -31,50 +31,13 @@ The two central objects:
 - **`PdfPage`** (`impl/engine/page.py`, subclassing the spec-level page in
   `impl/engine/spec/s_07_document/page.py`) — per-page extraction and rendering.
 
-The canonical local capability surface is `core_pdf.api`. Its concrete document and page
-objects project engine-owned data into stable typed records. The engine owns structured
-extraction, high-level records (images, annotations, links, forms, outlines, and attachments),
-and the transactional `PdfDocumentEditor`. Compatibility facades under `core_pdf.api.compat.*`
-are intentionally high-level projections; they may retain a structured snapshot for synthetic
-documents, but opened-document reads and page mutations should delegate to the engine surface.
+The canonical public surface is the lazy export table in `core_pdf.__init__`. Document, page,
+structured records, writers, runtime controls, and errors remain owned by their engine modules.
 
-The public API package is organized by role:
-
-- `document.py` — concrete `PdfDocument` / `PdfPage` capabilities and their sole-use record
-  conversion kernel. Record
-  methods use plain names (`annotations()`, `links()`,
-  `images()`, `tables()`, `form_fields()`, `chunks()`, `words()`) and return the typed
-  records from `models.py` exclusively — there are no parallel untyped variants. One
-  `search(query, mode=..., threshold=..., region=..., pages=...)` method covers exact,
-  normalized, regex, and fuzzy matching.
-- `models.py` — the frozen typed records, plus `Severity` (a `StrEnum`, so string
-  comparisons keep working) and `SourceRef` provenance.
-- `types.py` — input aliases and the small cancellation/signature callback contracts.
-- `v0/operations/` — the versioned analysis operations (`base.py` holds the
-  template-method `AnalysisOperation`; `checks.py`, `validation.py`, `content.py`,
-  `forensics.py`, `preflight.py`, `transform.py` hold the concrete operations).
-- `inspection.py` — the inventory/forensics algorithms (`document_inventory`,
-  `object_graph`, `evidence_graph`, `resource_diagnostics`, …). Algorithms that consume the
-  public document bind directly as document methods; raw-object algorithms unwrap the engine
-  document at one guarded boundary.
-- `editor.py` — the engine editor subclass and its verified commit workflows.
-- `structured.py` — public promotion of the engine's structured IR (see below).
-- `errors.py` — the stable error surface: `ApiError`, `InvalidRequest`,
-  `OperationCancelled`, `DocumentClosed`.
-
-`PdfDocument.structured` and `PdfPage.structured_view` return the engine IR types themselves —
-`core_pdf.api.structured` re-exports `Document`, `Page`, `Block`, `Table`, and friends at
-an api-sanctioned path so compat code can name them without importing `core_pdf.impl`. New
-compatibility facades use the private engine projection hook; application code opens the
-concrete public document directly. Facades should not recreate document/page ownership locally.
-
-Compat facades share a small utility kernel in `api/compat/_common.py` and one state owner
-in `api/compat/state.py`. The state owner handles both opened and synthetic snapshots;
-`OpenedState` and `SyntheticState` are compatibility markers, not parallel implementations.
-It owns the private engine-to-capability projection hook and caches document/page projections so
-facades do not rebuild capability objects per call.
-Facade packages import engine types from the kernel (or public types from `api.structured`) instead of
-drilling into `impl` directly.
+Compatibility facades under `core_pdf.api.compat.*` import those engine owners directly. There is
+no shared compatibility state or conversion kernel. Each facade owns only the projection needed
+for its target interface, and `compat.__init__` resolves convenience exports lazily so importing
+one facade does not initialize all of them.
 
 **Known defects.** The capture/render pipeline places some XObject-drawn vector text at
 vertically mirrored y coordinates. Because neither the content-stream sequence nor raster
@@ -151,14 +114,7 @@ src/core_pdf/
   __init__.py            lazy public export table
   cli.py, __main__.py    CLI entry point (also carries Nuitka build directives)
   api/
-    document, editor     concrete public capabilities
-    models, types        typed public records and contracts
-    inspection           inventory and forensic algorithms
-    structured           public promotion of the structured IR
-    errors, execution    stable errors and local operation primitives
-    v0/
-      operations/        versioned analysis operations
-      compat/            third-party facades + the shared _common kernel
+    compat/              independent third-party facades over engine owners
   impl/
     models.py            engine record types (DrawingRecord, ImageRecord, Raw* records)
     exceptions.py        the PdfError hierarchy (incl. PdfDocumentClosedError)

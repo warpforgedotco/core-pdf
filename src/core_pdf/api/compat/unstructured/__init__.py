@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, cast
+from typing import Any, TypeAlias, cast
 
-from core_pdf.api.compat._common import project_document
+from core_pdf import PdfDocument
+from core_pdf.impl.engine.structured import document_elements
 
-from core_pdf.api.compat.pypdf import PdfInput
-
-from .._common import open_source
+PdfInput: TypeAlias = Any
 
 
 class ElementMetadata(dict[str, Any]):
@@ -93,13 +92,13 @@ class PageBreak(Element):
 def partition_pdf(filename: object, **kwargs: object) -> list[Element]:
     include_page_breaks = bool(kwargs.pop("include_page_breaks", False))
     include_metadata = bool(kwargs.pop("include_metadata", True))
-    with open_source(cast(PdfInput, filename)) as document:
-        adapted = project_document(document)
+    with PdfDocument.open(cast(PdfInput, filename)) as document:
+        structured = document.structured_document
         result: list[Element] = []
         items_by_page: dict[int, list[Any]] = {}
-        for item in adapted.elements():
+        for item in document_elements(structured):
             items_by_page.setdefault(item.page_number, []).append(item)
-        for page_index, page in enumerate(adapted.structured.pages):
+        for page_index, page in enumerate(structured.pages):
             if include_page_breaks and page_index:
                 result.append(PageBreak("", ElementMetadata(page_number=page.page_number)))
             for item in items_by_page.get(page.page_number, []):

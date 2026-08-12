@@ -2,28 +2,174 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import replace
 from io import BytesIO
 from os import PathLike
+from pathlib import Path
 from typing import Any, BinaryIO, cast
 
-from core_pdf.api.compat._common import (
+from core_pdf import PdfDocument
+from core_pdf.impl.engine.layout.geometry import rect_tuple
+from core_pdf.impl.engine.structured import (
     Annotation,
-    ClosingMixin,
     Document,
     Link,
     Page,
-    PdfUnsupportedError,
-    StandardPdfEncryption,
-    coerce_bbox,
-    serialize_document_to_pdf,
-    write_bytes,
 )
-from core_pdf.api.compat.state import StructuredState
+from core_pdf.impl.engine.writing.encryption import StandardPdfEncryption
+from core_pdf.impl.engine.writing.semantic import serialize_document_to_pdf
+from core_pdf.impl.exceptions import PdfUnsupportedError
 
 PdfInput = str | PathLike[str] | bytes | bytearray | BytesIO
 BBox = tuple[float, float, float, float]
+
+
+class ClosingMixin:
+    def close(self) -> None:
+        return None
+
+    def __enter__(self) -> Any:
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        self.close()
+
+
+def coerce_bbox(value: object) -> BBox:
+    box = rect_tuple(value)
+    if box is None:
+        raise ValueError(f"value does not describe a rectangle: {value!r}")
+    return box
+
+
+def write_bytes(target: str | PathLike[str] | BinaryIO, data: bytes) -> None:
+    if isinstance(target, (str, PathLike)):
+        Path(target).write_bytes(data)
+    else:
+        target.write(data)
+
+
+class StructuredState(ClosingMixin):
+    """Facade-local ownership of an engine document or synthetic structured snapshot."""
+
+    def __init__(self, pdf: PdfDocument | None, structured: Document) -> None:
+        self.pdf = pdf
+        self.structured = structured
+        self.internal_projection: PdfDocument | None = None
+
+    @classmethod
+    def open(cls, source: PdfInput, *, password: str = "") -> "StructuredState":
+        pdf = PdfDocument.open(source, password=password)
+        return cls(pdf, pdf.structured_document)
+
+    @classmethod
+    def from_structured(cls, structured: Document) -> "StructuredState":
+        pdf = PdfDocument.from_structured(structured)
+        return cls(pdf, pdf.structured_document)
+
+    @classmethod
+    def synthetic(cls, structured: Document) -> "StructuredState":
+        return cls(None, structured)
+
+    @property
+    def source_pdf(self) -> PdfDocument:
+        if self.pdf is None:
+            raise ValueError("synthetic snapshots do not have a source PDF")
+        return self.pdf
+
+    @property
+    def snapshot(self) -> Document:
+        return self.structured
+
+    @property
+    def metadata(self) -> Mapping[str, Any]:
+        return self.structured.metadata
+
+    @property
+    def pages(self) -> tuple[Page, ...]:
+        return self.structured.pages
+
+    @property
+    def form_fields(self) -> tuple[Any, ...]:
+        return tuple(field for page in self.pages for field in page.form_fields)
+
+    def capability_document(self) -> PdfDocument:
+        if self.pdf is not None and self.structured is self.pdf.structured_document:
+            return self.pdf
+        if self.internal_projection is None:
+            self.internal_projection = PdfDocument.from_structured(self.structured)
+        return self.internal_projection
+
+    def capability_page(self, page_number: int) -> Any:
+        return self.capability_document().pages[page_number - 1]
+
+    def _with_pages(self, pages: Sequence[Page]) -> "StructuredState":
+        return StructuredState.synthetic(replace(self.structured, pages=tuple(pages)))
+
+    def replace_pages(self, pages: Sequence[Page]) -> "StructuredState":
+        return self._with_pages(pages)
+
+    def delete_page(self, page_number: int) -> "StructuredState":
+        return self._with_pages(
+            tuple(page for index, page in enumerate(self.pages, 1) if index != page_number)
+        )
+
+    def update_metadata(self, values: Mapping[str, Any]) -> "StructuredState":
+        return StructuredState.synthetic(
+            replace(self.structured, metadata={**self.structured.metadata, **values})
+        )
+
+    def apply_redactions(self) -> "StructuredState":
+        redactions = tuple(
+            annotation.bbox
+            for page in self.pages
+            for annotation in page.annotations
+            if (annotation.subtype or "").casefold() == "redact" and annotation.bbox
+        )
+
+        def covered(box: tuple[float, float, float, float] | None) -> bool:
+            return bool(
+                box
+                and any(
+                    box[0] >= redaction[0]
+                    and box[1] >= redaction[1]
+                    and box[2] <= redaction[2]
+                    and box[3] <= redaction[3]
+                    for redaction in redactions
+                )
+            )
+
+        return self._with_pages(
+            tuple(
+                replace(
+                    page,
+                    blocks=tuple(block for block in page.blocks if not covered(block.bbox)),
+                )
+                for page in self.pages
+            )
+        )
+
+    def write_redacted(
+        self,
+        target: str | PathLike[str] | BinaryIO,
+        *,
+        outlines: Sequence[Sequence[object]] | None = None,
+        attachments: Mapping[str, bytes] | None = None,
+    ) -> bytes:
+        data = serialize_document_to_pdf(
+            self.apply_redactions().structured,
+            outlines=outlines,
+            attachments=attachments,
+        )
+        write_bytes(target, data)
+        return data
+
+    def close(self) -> None:
+        if self.internal_projection is not None:
+            self.internal_projection.close()
+        if self.pdf is not None:
+            self.pdf.close()
 
 
 class Destination:
@@ -157,7 +303,7 @@ class PdfPageObject:
 
     @property
     def images(self) -> tuple[Any, ...]:
-        return tuple(self._document.capability_page(self._page.page_number).images())
+        return tuple(self._document.capability_page(self._page.page_number).extract_images())
 
 
 class PdfReader(ClosingMixin):
@@ -191,7 +337,7 @@ class PdfReader(ClosingMixin):
         """Materialize page objects and merge engine info metadata from ``document``."""
         self._document = document
         self.pages = tuple(PdfPageObject(document, page) for page in document.pages)
-        raw_metadata = document.source_pdf.metadata
+        raw_metadata = document.source_pdf.get_metadata()
         self.metadata = (
             dict(cast(Any, raw_metadata.get("info", {}))) if isinstance(raw_metadata, dict) else {}
         )
@@ -219,7 +365,7 @@ class PdfReader(ClosingMixin):
             return []
         return [
             Destination(item.title, item.page_index, item.level)
-            for item in self._document.source_pdf.outlines
+            for item in self._document.source_pdf.iter_outlines()
         ]
 
     @property

@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 import json
+import struct
+import zlib
 from collections.abc import Mapping
 from dataclasses import replace
 from html import escape
+from os import PathLike
+from pathlib import Path
 from typing import Any, cast
 
-from core_pdf.api.compat._common import (
+from core_pdf.api.compat.pypdf import PdfInput, PdfPageObject, PdfReader, StructuredState
+from core_pdf.impl.engine.layout.geometry import bbox_intersects, rect_tuple
+from core_pdf.impl.engine.structured import (
     Annotation,
     Block,
     BlockKind,
@@ -16,21 +22,55 @@ from core_pdf.api.compat._common import (
     FormField,
     Link,
     TextLine,
-    bbox_intersects,
-    coerce_bbox,
-    encode_png,
-    project_document,
-    synthesize_characters,
-    write_bytes,
 )
-from core_pdf.api.compat._common import (
+from core_pdf.impl.engine.structured import (
     Page as StructuredPage,
 )
-from core_pdf.api.compat.state import StructuredState
-
-from core_pdf.api.compat.pypdf import PdfInput, PdfPageObject, PdfReader
 
 BBox = tuple[float, float, float, float]
+
+
+def coerce_bbox(value: object) -> BBox:
+    box = rect_tuple(value)
+    if box is None:
+        raise ValueError(f"value does not describe a rectangle: {value!r}")
+    return box
+
+
+def synthesize_characters(text: str, box: BBox) -> list[tuple[str, BBox]]:
+    x0, y0, x1, y1 = box
+    width = (x1 - x0) / max(1, len(text))
+    return [
+        (character, (x0 + index * width, y0, x0 + (index + 1) * width, y1))
+        for index, character in enumerate(text)
+    ]
+
+
+def write_bytes(target: str | PathLike[str] | Any, data: bytes) -> None:
+    if isinstance(target, (str, PathLike)):
+        Path(target).write_bytes(data)
+    else:
+        target.write(data)
+
+
+def internal_png_chunk(kind: bytes, data: bytes) -> bytes:
+    return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+
+
+def encode_png(width: int, height: int, channels: int, pixels: bytes) -> bytes:
+    if channels not in (3, 4):
+        raise ValueError("PNG output requires RGB or RGBA pixels")
+    stride = width * channels
+    scanlines = b"".join(
+        b"\x00" + pixels[row * stride : (row + 1) * stride] for row in range(height)
+    )
+    header = struct.pack(">IIBBBBB", width, height, 8, 6 if channels == 4 else 2, 0, 0, 0)
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + internal_png_chunk(b"IHDR", header)
+        + internal_png_chunk(b"IDAT", zlib.compress(scanlines))
+        + internal_png_chunk(b"IEND", b"")
+    )
 
 
 class Matrix:
@@ -202,25 +242,21 @@ class Page(PdfPageObject):
             payload = {"width": self._page.width, "height": self._page.height, "blocks": blocks}
             return json.dumps(payload) if kind in {"json", "rawjson"} else payload
         if kind == "words":
-            words = self._document.capability_page(self._page.page_number).words()
+            words = self._page.text_view.words
             if clip is not None:
                 x0, y0, x1, y1 = cast(tuple[float, float, float, float], clip)
                 words = tuple(
                     word
                     for word in words
                     if word.bbox is not None
-                    and word.bbox.x0 < x1
-                    and word.bbox.x1 > x0
-                    and word.bbox.y0 < y1
-                    and word.bbox.y1 > y0
+                    and word.bbox[0] < x1
+                    and word.bbox[2] > x0
+                    and word.bbox[1] < y1
+                    and word.bbox[3] > y0
                 )
             return [
                 (
-                    *(
-                        (word.bbox.x0, word.bbox.y0, word.bbox.x1, word.bbox.y1)
-                        if word.bbox is not None
-                        else (0.0, 0.0, 0.0, 0.0)
-                    ),
+                    *(word.bbox if word.bbox is not None else (0.0, 0.0, 0.0, 0.0)),
                     word.text,
                     word.block_index,
                     word.line_index,
@@ -354,12 +390,9 @@ class Page(PdfPageObject):
         if matrix is not None and matrix.d != matrix.a:
             raise ValueError("non-uniform pixmap matrices are not supported")
         requested_dpi = float(dpi if dpi is not None else 72.0 * scale)
-        raster = (
-            project_document(self._document.pdf)
-            .page(self._page.page_number - 1)
-            .render(dpi=requested_dpi, crop=clip)
-        )
-        data = bytes(raster.data)
+        engine_page = self._document.capability_page(self._page.page_number)
+        raster = engine_page.render().rasterize(scale=max(0.01, requested_dpi / 72.0), crop=clip)
+        data = bytes(raster.pixels)
         if not alpha and raster.channels == 4:
             data = b"".join(data[index : index + 3] for index in range(0, len(data), 4))
         channels = 3 if not alpha and raster.channels == 4 else raster.channels
@@ -372,11 +405,11 @@ class Page(PdfPageObject):
         if not needle:
             return []
         clip = kwargs.get("clip")
+        query = needle.casefold()
         results = [
-            (hit.bbox.x0, hit.bbox.y0, hit.bbox.x1, hit.bbox.y1)
-            for hit in self._document.capability_document().search(
-                needle, pages=self._page.page_number
-            )
+            cast(BBox, item.bbox)
+            for item in self._page.elements
+            if item.bbox is not None and query in str(getattr(item, "text", "")).casefold()
         ]
         if clip is None:
             return list(results)
@@ -388,8 +421,7 @@ class Page(PdfPageObject):
         ]
 
     def get_links(self) -> list[dict[str, object]]:
-        page = self._document.capability_page(self._page.page_number).structured_view
-        links = self._page.links or page.links
+        links = self._page.links
         return [{"uri": link.url, "kind": link.link_type, "from": link.bbox} for link in links]
 
     def insert_link(self, link: Mapping[str, object]) -> None:
@@ -458,18 +490,24 @@ class Page(PdfPageObject):
 
     def get_images(self, full: bool = False) -> list[dict[str, object]]:
         del full
-        images = self._document.capability_page(self._page.page_number).images()
-        return [{"bbox": image.bbox, **dict(image.metadata)} for image in images]
+        images = self._document.capability_page(self._page.page_number).extract_images()
+        return [
+            {
+                "bbox": image.rect or image.image_clip,
+                "width": image.image_metadata.width if image.image_metadata else 0,
+                "height": image.image_metadata.height if image.image_metadata else 0,
+            }
+            for image in images
+        ]
 
     def get_image_info(self, hashes: bool = False, xrefs: bool = False) -> list[dict[str, object]]:
         del hashes, xrefs
-        images = self._document.capability_page(self._page.page_number).images()
+        images = self._document.capability_page(self._page.page_number).extract_images()
         return [
             {
-                "bbox": image.bbox,
-                "width": image.width,
-                "height": image.height,
-                **dict(image.metadata),
+                "bbox": image.rect or image.image_clip,
+                "width": image.image_metadata.width if image.image_metadata else 0,
+                "height": image.image_metadata.height if image.image_metadata else 0,
             }
             for image in images
         ]
@@ -553,7 +591,7 @@ class Document(PdfReader):
         self._pending_redactions: dict[int, list[tuple[float, float, float, float]]] = {}
         self._toc_override: list[list[object]] | None = None
         self._embedded_files = {
-            item.filename: item.data for item in self._document.source_pdf.attachments
+            item.filename: item.data for item in self._document.source_pdf.embedded_files()
         }
 
     def __getitem__(self, index: int) -> Page:
@@ -630,7 +668,7 @@ class Document(PdfReader):
                 for toc_row in rows:
                     toc_row.append({"kind": "goto", "page": toc_row[2]})
             return rows
-        outlines = self._document.source_pdf.outlines
+        outlines = self._document.source_pdf.iter_outlines()
         result: list[list[object]] = []
         for item in outlines:
             page = (item.page_index + 1) if item.page_index is not None else 0

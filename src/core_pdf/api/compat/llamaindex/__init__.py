@@ -5,13 +5,12 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any, cast
+from typing import Any, TypeAlias, cast
 
-from core_pdf.api.compat._common import project_document
+from core_pdf import PdfDocument
+from core_pdf.impl.engine.structured import chunk_elements, document_elements
 
-from core_pdf.api.compat.pypdf import PdfInput
-
-from .._common import open_source
+PdfInput: TypeAlias = Any
 
 
 class MetadataMode(StrEnum):
@@ -121,8 +120,11 @@ def load_data(
     **kwargs: object,
 ) -> list[Document]:
     del kwargs
-    with open_source(cast(PdfInput, source)) as document:
-        adapted = project_document(document)
+    with PdfDocument.open(cast(PdfInput, source)) as document:
+        chunks = chunk_elements(
+            document_elements(document.structured_document),
+            max_characters=max_characters,
+        )
         return [
             Document(
                 chunk.text,
@@ -132,7 +134,7 @@ def load_data(
                     "element_ids": chunk.element_ids,
                 },
             )
-            for chunk in adapted.chunks(max_characters=max_characters)
+            for chunk in chunks
         ]
 
 

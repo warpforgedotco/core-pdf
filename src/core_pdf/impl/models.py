@@ -4,8 +4,7 @@
 The ``Raw*`` records (:class:`RawAnnotation`, :class:`RawLink`, :class:`RawFormField`,
 :class:`RawEmbeddedFile`, :class:`RawOutlineItem`, :class:`RawNamedDestination`,
 :class:`RawTextSpan`) carry live ``PdfDict``/``PdfStream`` references so write-back
-paths can locate and mutate the originating PDF objects.  They are internal to the
-engine and never cross the ``api/v0`` boundary.
+paths can locate and mutate the originating PDF objects. They remain internal to the engine.
 """
 
 from __future__ import annotations
