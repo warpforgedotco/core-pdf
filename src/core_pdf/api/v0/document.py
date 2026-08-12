@@ -11,6 +11,7 @@ from difflib import SequenceMatcher
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
+from core_pdf.impl.engine.document import PdfDocumentEditor as EngineEditor
 from core_pdf.impl.text import collapse_ws, search_key
 
 from . import inspection, verification
@@ -91,9 +92,6 @@ from .types import PageSelection, PdfInput
 if TYPE_CHECKING:
     from core_pdf.impl.engine.document import (
         PdfDocument as EngineDocument,
-    )
-    from core_pdf.impl.engine.document import (
-        PdfDocumentEditor as EngineEditor,
     )
     from core_pdf.impl.engine.layout import LayoutGeometryIssue
     from core_pdf.impl.engine.page import PdfPage as EnginePage
@@ -426,7 +424,7 @@ class PdfDocument:
         return self.internal_document.structured_document
 
     def edit(self) -> "PdfEditor":
-        return PdfEditor(self._doc().edit())
+        return PdfEditor(self._doc())
 
     @property
     def closed(self) -> bool:
@@ -799,13 +797,10 @@ class PdfDocument:
             self.internal_document.__exit__(exc_type, exc, cast(Any, traceback))
 
 
-@dataclass(slots=True)
-class PdfEditor:
-    editor: EngineEditor
-
+class PdfEditor(EngineEditor):
     def _chain(self, name: str, /, *args: object, **kwargs: object) -> "PdfEditor":
-        """Call `editor.<name>(*args, **kwargs)` and return self for chaining."""
-        getattr(self.editor, name)(*args, **kwargs)
+        """Call the inherited engine operation and retain the concrete fluent type."""
+        getattr(super(), name)(*args, **kwargs)
         return self
 
     def set_metadata(self, values: Mapping[str, object]) -> "PdfEditor":
@@ -893,13 +888,13 @@ class PdfEditor:
         return self._chain("add_link", page_number, bbox, url=url, link_type=link_type, text=text)
 
     def commit(self, target: str | Path | Any) -> bytes:
-        return self.editor.commit(target)
+        return super().commit(target)
 
     def commit_verified(
         self, target: str | Path | Any, *, expected_unchanged_pages: tuple[int, ...] = ()
     ) -> PreservationManifest:
         return verification.commit_verified(
-            self.editor, target, expected_unchanged_pages=expected_unchanged_pages
+            self, target, expected_unchanged_pages=expected_unchanged_pages
         )
 
     def commit_redactions_verified(
@@ -909,9 +904,7 @@ class PdfEditor:
         *,
         queries: Iterable[str] = (),
     ) -> RedactionVerification:
-        return verification.commit_redactions_verified(
-            self.editor, target, redactions, queries=queries
-        )
+        return verification.commit_redactions_verified(self, target, redactions, queries=queries)
 
     def commit_sanitized_verified(
         self,
@@ -926,7 +919,7 @@ class PdfEditor:
         actions: bool = True,
     ) -> SanitizationVerification:
         return verification.commit_sanitized_verified(
-            self.editor,
+            self,
             target,
             metadata=metadata,
             annotations=annotations,
@@ -945,14 +938,14 @@ class PdfEditor:
         language: str | None = None,
     ) -> AccessibilityRepairVerification:
         return verification.commit_accessibility_repair_verified(
-            self.editor, target, title=title, language=language
+            self, target, title=title, language=language
         )
 
     def commit_document(self) -> structured_ir.Document:
-        return self.editor.commit_document()
+        return super().commit_document()
 
     def rollback(self) -> None:
-        self.editor.rollback()
+        super().rollback()
 
 
 __all__ = (

@@ -10,10 +10,26 @@ import pytest
 
 from core_pdf import PdfDocument
 from core_pdf.api.v0 import (
+    AnalysisCache,
+    DocumentClosed,
+    LocalExecutionContext,
+)
+from core_pdf.api.v0 import (
+    PdfDocument as V0PdfDocument,
+)
+from core_pdf.api.v0.compat import (
+    LAParams,
+    LTChar,
+    extract_pages,
+    extract_text,
+    extract_text_to_fp,
+    inspect_xray,
+)
+from core_pdf.api.v0.document import PdfPage
+from core_pdf.api.v0.models import (
     AccessibilityInventory,
     AccessibilityRepairVerification,
     ActionInventory,
-    AnalysisCache,
     AnnotationInventory,
     ArchivalManifest,
     ArchivalManifestDiff,
@@ -24,7 +40,6 @@ from core_pdf.api.v0 import (
     CoordinateOrigin,
     CoordinateSpace,
     DocumentAnalysisSnapshot,
-    DocumentClosed,
     DocumentFingerprint,
     Drawing,
     DrawingItem,
@@ -32,7 +47,6 @@ from core_pdf.api.v0 import (
     EvidenceGraph,
     FormInventory,
     IncrementalAnalysisPlan,
-    LocalExecutionContext,
     NativeFeatureInventory,
     ObjectInspection,
     OptionalContentLayerRecord,
@@ -58,18 +72,6 @@ from core_pdf.api.v0 import (
     plan_revision_analysis,
     verify_preservation,
 )
-from core_pdf.api.v0 import (
-    PdfDocument as V0PdfDocument,
-)
-from core_pdf.api.v0.compat import (
-    LAParams,
-    LTChar,
-    extract_pages,
-    extract_text,
-    extract_text_to_fp,
-    inspect_xray,
-)
-from core_pdf.api.v0.document import PdfPage
 from core_pdf.api.v0.operations import (
     AccessibilityValidationOperation,
     AnnotationValidationOperation,
