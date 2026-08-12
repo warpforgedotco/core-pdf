@@ -498,6 +498,7 @@ def dispatch_operations(
     raw_bytes = source_bytes if source_bytes is not None else raw_data
 
     word_break_or_ws = WORD_BREAK_OR_WS
+    ws_table = WS_TABLE
     is_word_start = IS_WORD_START
     op_get = op_handlers.get
     op_get_bytes = op_handlers_bytes.get if op_handlers_bytes is not None else None
@@ -522,9 +523,9 @@ def dispatch_operations(
     while pos < data_len:
         byte = raw_bytes[pos]
 
-        if WS_TABLE[byte]:
+        if ws_table[byte]:
             pos += 1
-            while pos < data_len and WS_TABLE[raw_bytes[pos]]:
+            while pos < data_len and ws_table[raw_bytes[pos]]:
                 pos += 1
             if pos >= data_len:
                 break
