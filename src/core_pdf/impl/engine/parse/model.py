@@ -430,17 +430,25 @@ def internal_text_quality_stats(text: str) -> TextQualityStats:
         # rebuilding an always-identical filtered copy.
         if len(token) <= 2:
             short_tokens += 1
-        if any(character.isdigit() for character in token):
-            digit_tokens += 1
-        letters = [character for character in token if character.isalpha()]
-        if len(letters) >= 3 and any(character.casefold() in "aeiou" for character in letters):
-            wordlike += 1
+        has_digit = False
+        letter_count = 0
+        has_vowel = False
         for character in token:
             nonspace += 1
+            if character.isdigit():
+                has_digit = True
+            if character.isalpha():
+                letter_count += 1
+                if not has_vowel and character.casefold() in "aeiou":
+                    has_vowel = True
             if not character.isalnum():
                 symbols += 1
             if ord(character) > 127:
                 non_ascii += 1
+        if has_digit:
+            digit_tokens += 1
+        if letter_count >= 3 and has_vowel:
+            wordlike += 1
     if not nonspace:
         return TextQualityStats(token_count=len(tokens))
     return TextQualityStats(
