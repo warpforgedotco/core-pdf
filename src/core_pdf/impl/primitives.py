@@ -60,6 +60,11 @@ class PdfName:
             return pdf_name_from_str(value)
 
         if type(value) is memoryview:
+            cache = PDF_NAME_CACHE
+            if value.readonly:
+                n = cache.get(value)
+                if n is not None:
+                    return n
             key_bytes = bytes(value)
         elif type(value) is bytes:
             key_bytes = value
