@@ -1743,6 +1743,8 @@ class TextState:
         cursor = 0
         is_vertical = decoder.is_vertical
         glyph_width = decoder.glyph_width
+        effective_font_name = decoder.font_name or font_name
+        capture_glyph_bitmaps = self.capture_glyph_bitmaps
         advance_scale = self.text_advance_scale
         char_space_scale = self.char_space_scale
         word_space_scale = self.word_space_scale
@@ -1783,7 +1785,8 @@ class TextState:
             chunk_text = glyph.unicode
             if not chunk_text:
                 chunk_text = text[cursor : cursor + 1]
-            cursor += max(1, len(chunk_text))
+            chunk_length = len(chunk_text)
+            cursor += max(1, chunk_length)
             if not chunk_text:
                 offset += advance
                 continue
@@ -1856,7 +1859,7 @@ class TextState:
                 alternates=glyph.alternates,
             )
 
-            single_character = len(chunk_text) == 1
+            single_character = chunk_length == 1
             suspicious_multi = (
                 False
                 if single_character
@@ -1867,7 +1870,7 @@ class TextState:
                 bitmap_width = 0
                 bitmap_height = 0
                 bitmap_code: int | None = None
-                if self.capture_glyph_bitmaps and (
+                if capture_glyph_bitmaps and (
                     should_capture_glyph_bitmap(chunk_text)
                     if single_character
                     else suspicious_multi
@@ -1886,7 +1889,7 @@ class TextState:
                     char_code=glyph.char_code,
                     cid=glyph.cid,
                     gid=glyph.gid,
-                    font_name=decoder.font_name or font_name,
+                    font_name=effective_font_name,
                     font_size=font_size,
                     space_width=space_width,
                     text_matrix=glyph_text_matrix,
