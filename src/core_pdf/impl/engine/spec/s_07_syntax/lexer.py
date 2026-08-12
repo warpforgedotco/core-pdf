@@ -212,15 +212,20 @@ class PdfLexer:
             return None
 
         byte = data[pos]
+        source_buffer = self.source_buffer
 
         if SEPARATOR_TABLE[byte]:
-            return data[pos : pos + 1], pos + 1
+            token = (
+                source_buffer[pos : pos + 1] if source_buffer is not None else data[pos : pos + 1]
+            )
+            return token, pos + 1
 
         start = pos
         match = SEPARATOR_RE.search(data, start)
         pos = self.data_len if match is None else match.start()
 
-        return data[start:pos], pos
+        token = source_buffer[start:pos] if source_buffer is not None else data[start:pos]
+        return token, pos
 
     def find_separator(self, start: int) -> int:
         data = self.raw_data
