@@ -535,7 +535,6 @@ def internal_unknown_decoder_counts(capture: CapturedPage) -> Counter[object]:
             decoder is None
             or not glyph.visible
             or not glyph.code_bytes
-            or internal_learned_glyph_text(glyph) is not None
             or (
                 not corrupt
                 and glyph.unicode_semantics
@@ -544,6 +543,7 @@ def internal_unknown_decoder_counts(capture: CapturedPage) -> Counter[object]:
                     GlyphUnicodeSemantics.UNSUPPORTED,
                 }
             )
+            or internal_learned_glyph_text(glyph) is not None
             or not callable(getattr(decoder, "install_learned_unicode", None))
         ):
             continue
