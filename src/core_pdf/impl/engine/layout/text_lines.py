@@ -383,6 +383,20 @@ class GlyphLineBuilder:
             and text == run.text
             and "".join(cluster.text for cluster in clusters) == run.text
         ):
+            # A text-showing operation that already carries whitespace has
+            # authoritative word boundaries. Keep it as one atom so ordinary
+            # authored lines do not get exploded into hundreds of glyph objects
+            # merely to join them back together unchanged.
+            if any(character.isspace() for character in text):
+                return (
+                    LayoutLineTextAtom(
+                        text=text,
+                        run=run,
+                        advance_bbox=self.advance_bbox(run),
+                        baseline=run.baseline,
+                        has_glyph_geometry=False,
+                    ),
+                )
             atoms = [
                 LayoutLineTextAtom(
                     text=cluster.text,
