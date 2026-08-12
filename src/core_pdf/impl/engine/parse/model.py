@@ -413,16 +413,24 @@ class TextQualityStats:
         }
 
 
-def internal_text_quality_analysis(text: str) -> tuple[TextQualityStats, int]:
+@dataclass(frozen=True, slots=True)
+class TextAnalysis:
+    quality: TextQualityStats = field(default_factory=TextQualityStats)
+    characters: int = 0
+    suspicious_characters: int = 0
+
+
+def internal_analyze_text(text: str) -> TextAnalysis:
     tokens = text.split()
     if not tokens:
-        return TextQualityStats(), 0
+        return TextAnalysis()
     wordlike = 0
     short_tokens = 0
     digit_tokens = 0
     nonspace = 0
     symbols = 0
     non_ascii = 0
+    suspicious = 0
     for token in tokens:
         # `tokens` comes from a `\S+` regex match, so every character in `token` already
         # satisfies `not character.isspace()` (CPython's Unicode `\s`/`str.isspace()` share
@@ -434,6 +442,7 @@ def internal_text_quality_analysis(text: str) -> tuple[TextQualityStats, int]:
         letter_count = 0
         has_vowel = False
         for character in token:
+            codepoint = ord(character)
             nonspace += 1
             if character.isdigit():
                 has_digit = True
@@ -443,16 +452,22 @@ def internal_text_quality_analysis(text: str) -> tuple[TextQualityStats, int]:
                     has_vowel = True
             if not character.isalnum():
                 symbols += 1
-            if ord(character) > 127:
+            if codepoint > 127:
                 non_ascii += 1
+            if (
+                character == "\ufffd"
+                or 0xE000 <= codepoint <= 0xF8FF
+                or (not character.isprintable() and not character.isspace())
+            ):
+                suspicious += 1
         if has_digit:
             digit_tokens += 1
         if letter_count >= 3 and has_vowel:
             wordlike += 1
     if not nonspace:
-        return TextQualityStats(token_count=len(tokens)), 0
-    return (
-        TextQualityStats(
+        return TextAnalysis(TextQualityStats(token_count=len(tokens)))
+    return TextAnalysis(
+        quality=TextQualityStats(
             token_count=len(tokens),
             wordlike_ratio=wordlike / len(tokens),
             short_token_ratio=short_tokens / len(tokens),
@@ -460,7 +475,8 @@ def internal_text_quality_analysis(text: str) -> tuple[TextQualityStats, int]:
             non_ascii_ratio=non_ascii / nonspace,
             digit_token_ratio=digit_tokens / len(tokens),
         ),
-        nonspace,
+        characters=nonspace,
+        suspicious_characters=suspicious,
     )
 
 

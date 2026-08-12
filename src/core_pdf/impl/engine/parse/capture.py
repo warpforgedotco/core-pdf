@@ -33,7 +33,7 @@ from core_pdf.impl.engine.parse.model import (
     PagePreflightRecommendation,
     StrokedVectorTextEvidence,
     TextQualityStats,
-    internal_text_quality_analysis,
+    internal_analyze_text,
 )
 from core_pdf.impl.engine.spec.s_07_content.operations import (
     ContentOperatorCounts,
@@ -62,15 +62,6 @@ PREFLIGHT_CACHE_KEY = "page_preflight_v1"
 DUPLICATE_LAYER_MIN_TOKENS = 24
 DUPLICATE_NESTED_LAYER_MIN_OVERLAP = 0.60
 DUPLICATE_CLIPPED_LAYER_MIN_OVERLAP = 0.50
-
-
-def internal_suspicious_character_count(text: str) -> int:
-    return sum(
-        character == "\ufffd"
-        or 0xE000 <= ord(character) <= 0xF8FF
-        or (not character.isprintable() and not character.isspace())
-        for character in text
-    )
 
 
 def internal_normalized_tokens(runs: tuple[Any, ...] | list[Any]) -> tuple[str, ...]:
@@ -922,12 +913,14 @@ def internal_capture_with_newstroke_text(
         1.0,
         float(numpy.sum(widths * heights, dtype=numpy.float64)) / capture.evidence.page_area,
     )
-    text_quality, characters = internal_text_quality_analysis(text)
+    analysis = internal_analyze_text(text)
+    text_quality = analysis.quality
+    characters = analysis.characters
     evidence = replace(
         capture.evidence,
         native_characters=characters,
         visible_native_characters=characters,
-        suspicious_characters=internal_suspicious_character_count(text),
+        suspicious_characters=analysis.suspicious_characters,
         text_coverage=text_coverage,
         uncovered_vector_area=internal_uncovered_vector_area(
             capture.drawings,
@@ -988,15 +981,17 @@ def internal_capture_from_program(
     )
     raw_text = "".join(run.text for run in raw_runs)
     painted_text = "".join(run.text for run in raw_runs if run.visible)
-    suspicious_characters = internal_suspicious_character_count(raw_text)
-    all_text_quality, native_characters = internal_text_quality_analysis(raw_text)
+    raw_analysis = internal_analyze_text(raw_text)
+    suspicious_characters = raw_analysis.suspicious_characters
+    all_text_quality = raw_analysis.quality
+    native_characters = raw_analysis.characters
     if painted_text == raw_text:
         painted_text_quality = all_text_quality
         painted_native_characters = native_characters
     else:
-        painted_text_quality, painted_native_characters = internal_text_quality_analysis(
-            painted_text
-        )
+        painted_analysis = internal_analyze_text(painted_text)
+        painted_text_quality = painted_analysis.quality
+        painted_native_characters = painted_analysis.characters
     glyph_evidence = internal_glyph_evidence(tuple(products.glyphs), raw_runs)
     trusted_hidden_text = internal_hidden_text_is_trusted(
         native_characters=native_characters,
@@ -1019,9 +1014,9 @@ def internal_capture_from_program(
         visible_native_characters = painted_native_characters
         visible_text_quality = painted_text_quality
     else:
-        visible_text_quality, visible_native_characters = internal_text_quality_analysis(
-            visible_text
-        )
+        visible_analysis = internal_analyze_text(visible_text)
+        visible_text_quality = visible_analysis.quality
+        visible_native_characters = visible_analysis.characters
     drawings = tuple(products.drawings)
     inline_images = tuple(products.inline_images)
     page_width = float(page.width)
