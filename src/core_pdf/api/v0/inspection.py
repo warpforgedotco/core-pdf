@@ -71,8 +71,15 @@ def _resolve_type_name(value: object, default: str) -> str:
     return default
 
 
+def _engine_document(document: Any) -> Any:
+    """Accept either the public document facade or its engine document."""
+    owner = getattr(document, "_doc", None)
+    return owner() if callable(owner) else document
+
+
 def document_inventory(document: Any) -> DocumentInventory:
     """Summarize the engine document's objects, markers, and recovery state."""
+    document = _engine_document(document)
     catalog = document.catalog()
     markers = {
         "JavaScript": False,
@@ -128,6 +135,7 @@ def document_inventory(document: Any) -> DocumentInventory:
 
 def native_features(document: Any) -> NativeFeatureInventory:
     """Report which native PDF features the engine document declares."""
+    document = _engine_document(document)
     catalog = document.catalog()
     names = {str(key).lstrip("/") for key in catalog}
     return NativeFeatureInventory(
@@ -147,6 +155,7 @@ def native_features(document: Any) -> NativeFeatureInventory:
 
 def action_inventory(document: Any) -> ActionInventory:
     """Count action attachment points and resolved action types."""
+    document = _engine_document(document)
     counts: dict[str, int] = {}
     typed_counts: dict[str, int] = {}
     source_objects: set[int] = set()
@@ -199,6 +208,7 @@ def action_inventory(document: Any) -> ActionInventory:
 
 def optional_content_layers(document: Any) -> tuple[OptionalContentLayerRecord, ...]:
     """List the optional-content layers declared by the engine document."""
+    document = _engine_document(document)
     document.load_oc_layers()
     return tuple(
         OptionalContentLayerRecord(name=name, enabled=enabled)
@@ -208,6 +218,7 @@ def optional_content_layers(document: Any) -> tuple[OptionalContentLayerRecord, 
 
 def revisions(document: Any) -> RevisionInventory:
     """Locate incremental-update revisions in the raw document bytes."""
+    document = _engine_document(document)
     data = bytes(document.raw_data)
     offsets = tuple(int(match.group(1)) for match in finditer(rb"startxref\s+(\d+)", data))
     eof_offsets = tuple(match.start() for match in re.finditer(rb"%%EOF", data))
@@ -229,6 +240,7 @@ def revisions(document: Any) -> RevisionInventory:
 
 def revision_objects(document: Any) -> tuple[RevisionObjectRecord, ...]:
     """Attribute in-use objects to the revision that wrote them."""
+    document = _engine_document(document)
     data = bytes(document.raw_data)
     ranges = revisions(document).revision_ranges
     entries = sorted(
@@ -263,6 +275,7 @@ def revision_objects(document: Any) -> tuple[RevisionObjectRecord, ...]:
 
 def document_fingerprint(document: Any) -> DocumentFingerprint:
     """Hash the document bytes, page content, and every resolvable object."""
+    document = _engine_document(document)
     page_hashes: list[tuple[int, str]] = []
     for page in document.structured_document.pages:
         elements = tuple(
@@ -297,11 +310,13 @@ def document_fingerprint(document: Any) -> DocumentFingerprint:
 
 def incremental_plan(document: Any, baseline: DocumentFingerprint) -> IncrementalAnalysisPlan:
     """Plan which analyses must rerun after the baseline fingerprint."""
+    document = _engine_document(document)
     return plan_incremental_analysis(compare_fingerprints(baseline, document_fingerprint(document)))
 
 
 def object_graph(document: Any) -> ObjectGraphReport:
     """Trace object reachability from the trailer root."""
+    document = _engine_document(document)
     reachable: set[int] = set()
     edges: set[tuple[int, int, str | None]] = set()
     visiting: set[int] = set()
@@ -360,6 +375,7 @@ def object_graph(document: Any) -> ObjectGraphReport:
 
 def inspect_object(document: Any, object_number: int) -> ObjectInspection:
     """Describe one indirect object, including its raw byte span."""
+    document = _engine_document(document)
     key = next(
         (
             key
@@ -405,6 +421,8 @@ def verify_object_roundtrip(document: Any, object_number: int) -> ObjectRoundTri
     """Reopen the raw bytes and compare one object's raw hash."""
     from core_pdf import PdfDocument
 
+    document = _engine_document(document)
+
     source_hash = inspect_object(document, object_number).raw_sha256
     with PdfDocument.open(bytes(document.raw_data)) as reopened:
         reopened_hash = inspect_object(reopened, object_number).raw_sha256
@@ -429,6 +447,7 @@ def verify_object_roundtrips(
 
 def embedded_resources(document: Any) -> tuple[EmbeddedResourceRecord, ...]:
     """List embedded files with sizes and content hashes."""
+    document = _engine_document(document)
     return tuple(
         EmbeddedResourceRecord(
             name=str(item.name),
@@ -447,6 +466,7 @@ def embedded_resources(document: Any) -> tuple[EmbeddedResourceRecord, ...]:
 
 def structure_elements(document: Any) -> Iterator[StructureElementRecord]:
     """Walk the tagged-structure tree into flat records."""
+    document = _engine_document(document)
     structure = getattr(document, "structure", None)
     if structure is None:
         return
@@ -481,6 +501,7 @@ def content_summaries(
     document: Any, *, pages: PageSelection | None = None
 ) -> Iterator[PageContentSummary]:
     """Summarize each page's content-stream operators and filters."""
+    document = _engine_document(document)
     for index in document.selected_page_indexes(pages):
         engine_page = document.pages[index]
         preflight = page_extraction(engine_page).preflight()

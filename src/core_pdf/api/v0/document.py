@@ -8,76 +8,38 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
 from difflib import SequenceMatcher
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
-from core_pdf.impl.engine.document import PdfDocumentEditor as EngineEditor
 from core_pdf.impl.text import collapse_ws, search_key
 
-from . import inspection, verification
+from . import inspection
 from . import structured as structured_ir
-from .convert import (
-    item_bbox,
-    page_space,
-    source_ref,
-    to_chunk_record,
-    to_geometry_issue,
-    to_geometry_summary,
-    to_rect,
-)
+from .editor import PdfEditor
 from .errors import DocumentClosed, InvalidRequest
 from .models import (
-    AccessibilityInventory,
-    AccessibilityRepairVerification,
-    ActionInventory,
-    AnnotationInventory,
     AnnotationRecord,
-    ArchivalManifest,
     AttachmentInfo,
     ChunkRecord,
-    ContentDependencyRecord,
     ContentEvent,
     ContentEventKind,
     CoordinateOrigin,
     CoordinateSpace,
-    DocumentAnalysisSnapshot,
-    DocumentFingerprint,
-    DocumentInventory,
     Drawing,
     DrawingItem,
     ElementRecord,
-    EmbeddedResourceRecord,
-    EvidenceGraph,
     FormFieldRecord,
-    FormInventory,
     GeometryIssue,
     GeometrySummary,
     ImageInfo,
-    IncrementalAnalysisPlan,
     LinkRecord,
-    NativeFeatureInventory,
-    ObjectGraphReport,
-    ObjectInspection,
-    ObjectRoundTripManifest,
-    ObjectRoundTripVerification,
-    OptionalContentLayerRecord,
     OutlineItem,
-    PageContentSummary,
     PageInfo,
-    PageResourceInventory,
-    PreservationManifest,
     Raster,
     ReadingOrderItem,
     Rect,
-    RedactionVerification,
-    ResourceDependencyGraph,
-    ResourceDiagnostic,
-    RevisionInventory,
-    RevisionObjectRecord,
-    SanitizationVerification,
     SearchHit,
+    Severity,
     SourceRef,
-    StructureElementRecord,
     TableCell,
     TableRecord,
     TextBlock,
@@ -93,10 +55,120 @@ if TYPE_CHECKING:
     from core_pdf.impl.engine.document import (
         PdfDocument as EngineDocument,
     )
-    from core_pdf.impl.engine.layout import LayoutGeometryIssue
+    from core_pdf.impl.engine.layout import LayoutGeometryIssue, LayoutGeometrySummary
     from core_pdf.impl.engine.page import PdfPage as EnginePage
+    from core_pdf.impl.engine.structured import ChunkRecord as EngineChunkRecord
 
 _SEARCH_MODES = frozenset({"exact", "normalized", "regex", "fuzzy"})
+
+
+def page_space(page: EnginePage) -> CoordinateSpace:
+    return CoordinateSpace(
+        name="pdf-page",
+        origin=CoordinateOrigin.BOTTOM_LEFT,
+        width=float(page.width),
+        height=float(page.height),
+    )
+
+
+def to_rect(value: object, space: CoordinateSpace) -> Rect | None:
+    if not isinstance(value, (tuple, list)) or len(value) != 4:
+        return None
+    raw_value = cast(Any, value)
+    x0, y0, x1, y1 = (float(item) for item in raw_value)
+    return Rect(x0, y0, x1, y1, space)
+
+
+def item_bbox(value: object, space: CoordinateSpace) -> Rect | None:
+    if isinstance(value, (tuple, list)) and len(value) == 4:
+        if all(isinstance(item, (tuple, list)) and len(item) == 2 for item in value):
+            raw_value = cast(Any, value)
+            points = [(float(item[0]), float(item[1])) for item in raw_value]
+            return Rect(
+                min(point[0] for point in points),
+                min(point[1] for point in points),
+                max(point[0] for point in points),
+                max(point[1] for point in points),
+                space,
+            )
+        try:
+            return to_rect(value, space)
+        except (TypeError, ValueError):
+            return None
+    candidate = value
+    if all(hasattr(candidate, name) for name in ("x0", "y0", "x1", "y1")):
+        candidate = cast(Any, candidate)
+        return Rect(
+            float(candidate.x0),
+            float(candidate.y0),
+            float(candidate.x1),
+            float(candidate.y1),
+            space,
+        )
+    return None
+
+
+def source_ref(
+    page: EnginePage, sequence: int | None = None, stage: str | None = None
+) -> SourceRef:
+    page_number = getattr(page, "page_number", page.structured_view.page_number)
+    page_label = getattr(page, "label", page.structured_view.page_label)
+    return SourceRef(
+        page_index=page_number - 1,
+        page_number=page_number,
+        page_label=page_label,
+        sequence=sequence,
+        stage=stage,
+    )
+
+
+def to_geometry_issue(issue: LayoutGeometryIssue, space: CoordinateSpace) -> GeometryIssue:
+    return GeometryIssue(
+        code=issue.code,
+        severity=Severity(issue.severity),
+        subject=issue.subject,
+        bbox=to_rect(issue.bbox, space),
+        message=issue.message,
+        details=dict(issue.details),
+        repairable=issue.repairable,
+    )
+
+
+def to_geometry_summary(summary: LayoutGeometrySummary) -> GeometrySummary:
+    return GeometrySummary(
+        issue_count=summary.issue_count,
+        error_count=summary.error_count,
+        warning_count=summary.warning_count,
+        repairable_count=summary.repairable_count,
+        text_run_count=summary.text_run_count,
+        line_count=summary.line_count,
+        issue_codes=summary.issue_codes,
+        suspicion_score=summary.suspicion_score,
+    )
+
+
+def to_chunk_record(chunk: EngineChunkRecord, spaces: Mapping[int, CoordinateSpace]) -> ChunkRecord:
+    element_bboxes = tuple(
+        Rect(float(x0), float(y0), float(x1), float(y1), spaces[page_number])
+        for page_number, (x0, y0, x1, y1) in chunk.element_geometry
+        if page_number in spaces
+    )
+    return ChunkRecord(
+        text=chunk.text,
+        page_numbers=chunk.page_numbers,
+        element_ids=chunk.element_ids,
+        element_types=chunk.element_types,
+        section_path=chunk.section_path,
+        metadata={
+            "element_types": chunk.element_types,
+            "element_geometry": chunk.element_geometry,
+        },
+        sources=tuple(
+            SourceRef(page_number=page_number, stage="retrieval-chunk")
+            for page_number in chunk.page_numbers
+        ),
+        element_bboxes=element_bboxes,
+    )
 
 
 @dataclass(slots=True)
@@ -457,47 +529,20 @@ class PdfDocument:
             return dict(metadata)
         return dict(vars(metadata)) if hasattr(metadata, "__dict__") else {"value": metadata}
 
-    def inventory(self) -> DocumentInventory:
-        return inspection.document_inventory(self._doc())
-
-    def analysis_snapshot(self) -> DocumentAnalysisSnapshot:
-        return inspection.analysis_snapshot(self)
-
-    def native_features(self) -> NativeFeatureInventory:
-        return inspection.native_features(self._doc())
-
-    def action_inventory(self) -> ActionInventory:
-        return inspection.action_inventory(self._doc())
-
-    def optional_content_layers(self) -> Iterable[OptionalContentLayerRecord]:
-        return inspection.optional_content_layers(self._doc())
-
-    def revisions(self) -> RevisionInventory:
-        return inspection.revisions(self._doc())
-
-    def revision_objects(self) -> Iterable[RevisionObjectRecord]:
-        return inspection.revision_objects(self._doc())
-
-    def fingerprint(self) -> DocumentFingerprint:
-        return inspection.document_fingerprint(self._doc())
-
-    def incremental_plan(self, baseline: DocumentFingerprint) -> IncrementalAnalysisPlan:
-        return inspection.incremental_plan(self._doc(), baseline)
-
-    def archival_manifest(self) -> ArchivalManifest:
-        return inspection.archival_manifest(self)
-
-    def object_graph(self) -> ObjectGraphReport:
-        return inspection.object_graph(self._doc())
-
-    def inspect_object(self, object_number: int) -> ObjectInspection:
-        return inspection.inspect_object(self._doc(), object_number)
-
-    def verify_object_roundtrip(self, object_number: int) -> ObjectRoundTripVerification:
-        return inspection.verify_object_roundtrip(self._doc(), object_number)
-
-    def verify_object_roundtrips(self, object_numbers: Iterable[int]) -> ObjectRoundTripManifest:
-        return inspection.verify_object_roundtrips(self._doc(), object_numbers)
+    inventory = inspection.document_inventory
+    analysis_snapshot = inspection.analysis_snapshot
+    native_features = inspection.native_features
+    action_inventory = inspection.action_inventory
+    optional_content_layers = inspection.optional_content_layers
+    revisions = inspection.revisions
+    revision_objects = inspection.revision_objects
+    fingerprint = inspection.document_fingerprint
+    incremental_plan = inspection.incremental_plan
+    archival_manifest = inspection.archival_manifest
+    object_graph = inspection.object_graph
+    inspect_object = inspection.inspect_object
+    verify_object_roundtrip = inspection.verify_object_roundtrip
+    verify_object_roundtrips = inspection.verify_object_roundtrips
 
     def text(self, *, pages: PageSelection | None = None) -> str:
         return "\f".join(page.structured_view.text for page in self.pages(pages)) + "\f"
@@ -651,35 +696,21 @@ class PdfDocument:
         for page in self.pages(pages):
             yield from page.images()
 
-    def resource_inventory(
-        self, *, pages: PageSelection | None = None
-    ) -> Iterable[PageResourceInventory]:
-        return inspection.resource_inventory(self, pages=pages)
+    resource_inventory = inspection.resource_inventory
 
-    def content_dependencies(
-        self, *, pages: PageSelection | None = None
-    ) -> Iterable[ContentDependencyRecord]:
-        return inspection.content_dependencies(self, pages=pages)
+    content_dependencies = inspection.content_dependencies
 
-    def resource_dependency_graph(self) -> ResourceDependencyGraph:
-        return inspection.resource_dependency_graph(self)
+    resource_dependency_graph = inspection.resource_dependency_graph
 
-    def evidence_graph(self, *, pages: PageSelection | None = None) -> EvidenceGraph:
-        return inspection.evidence_graph(self, pages=pages)
+    evidence_graph = inspection.evidence_graph
 
-    def resource_diagnostics(self) -> Iterable[ResourceDiagnostic]:
-        return inspection.resource_diagnostics(self)
+    resource_diagnostics = inspection.resource_diagnostics
 
-    def content_summaries(
-        self, *, pages: PageSelection | None = None
-    ) -> Iterable[PageContentSummary]:
-        return inspection.content_summaries(self._doc(), pages=pages)
+    content_summaries = inspection.content_summaries
 
-    def form_inventory(self, *, pages: PageSelection | None = None) -> FormInventory:
-        return inspection.form_inventory(self, pages=pages)
+    form_inventory = inspection.form_inventory
 
-    def annotation_inventory(self, *, pages: PageSelection | None = None) -> AnnotationInventory:
-        return inspection.annotation_inventory(self, pages=pages)
+    annotation_inventory = inspection.annotation_inventory
 
     def tables(self, *, pages: PageSelection | None = None) -> Iterable[TableRecord]:
         for page in self.pages(pages):
@@ -699,13 +730,9 @@ class PdfDocument:
         for page in self.pages(pages):
             yield page.geometry_summary()
 
-    def structure_elements(self) -> Iterable[StructureElementRecord]:
-        return inspection.structure_elements(self._doc())
+    structure_elements = inspection.structure_elements
 
-    def accessibility_inventory(
-        self, *, pages: PageSelection | None = None
-    ) -> AccessibilityInventory:
-        return inspection.accessibility_inventory(self, pages=pages)
+    accessibility_inventory = inspection.accessibility_inventory
 
     def to_json(self, *, indent: int | None = 2, sort_keys: bool = True) -> str:
         return self._doc().extract().to_json(indent=indent, sort_keys=sort_keys)
@@ -780,8 +807,7 @@ class PdfDocument:
             for item in self._doc().attachments
         )
 
-    def embedded_resources(self) -> Iterable[EmbeddedResourceRecord]:
-        return inspection.embedded_resources(self._doc())
+    embedded_resources = inspection.embedded_resources
 
     def __enter__(self) -> "PdfDocument":
         self._doc()
@@ -797,159 +823,7 @@ class PdfDocument:
             self.internal_document.__exit__(exc_type, exc, cast(Any, traceback))
 
 
-class PdfEditor(EngineEditor):
-    def _chain(self, name: str, /, *args: object, **kwargs: object) -> "PdfEditor":
-        """Call the inherited engine operation and retain the concrete fluent type."""
-        getattr(super(), name)(*args, **kwargs)
-        return self
-
-    def set_metadata(self, values: Mapping[str, object]) -> "PdfEditor":
-        return self._chain("set_metadata", dict(values))
-
-    def set_page_geometry(
-        self,
-        page_number: int,
-        *,
-        rotation: int | None = None,
-        cropbox: tuple[float, float, float, float] | None = None,
-    ) -> "PdfEditor":
-        return self._chain("set_page_geometry", page_number, rotation=rotation, cropbox=cropbox)
-
-    def encrypt(self, user_password: str, *, owner_password: str | None = None) -> "PdfEditor":
-        return self._chain("encrypt", user_password, owner_password=owner_password)
-
-    def sign(self, provider: Any, *, contents_length: int = 8192) -> "PdfEditor":
-        return self._chain("sign", provider, contents_length=contents_length)
-
-    def replace_page(self, page_number: int, page: structured_ir.Page) -> "PdfEditor":
-        return self._chain("replace_page", page_number, page)
-
-    def insert_page(
-        self, position: int, width: float = 595.0, height: float = 842.0
-    ) -> "PdfEditor":
-        return self._chain("insert_page", position, width, height)
-
-    def insert_structured_page(self, position: int, page: structured_ir.Page) -> "PdfEditor":
-        return self._chain("insert_structured_page", position, page)
-
-    def update_form_field(self, name: str, value: str) -> "PdfEditor":
-        return self._chain("update_form_field", name, value)
-
-    def remove_form_fields(self, names: Iterable[str]) -> "PdfEditor":
-        return self._chain("remove_form_fields", names)
-
-    def apply_redactions(
-        self, redactions: Mapping[int, Iterable[tuple[float, float, float, float]]]
-    ) -> "PdfEditor":
-        return self._chain("apply_redactions", redactions)
-
-    def remove_annotations(
-        self, page_number: int, indices: Iterable[int] | None = None
-    ) -> "PdfEditor":
-        return self._chain("remove_annotations", page_number, indices)
-
-    def remove_links(self, page_number: int, indices: Iterable[int] | None = None) -> "PdfEditor":
-        return self._chain("remove_links", page_number, indices)
-
-    def delete_pages(self, selection: PageSelection) -> "PdfEditor":
-        return self._chain("delete_pages", selection)
-
-    def set_attachments(self, values: Mapping[str, bytes]) -> "PdfEditor":
-        return self._chain("set_attachments", dict(values))
-
-    def set_outlines(self, values: Iterable[Iterable[object]]) -> "PdfEditor":
-        return self._chain("set_outlines", values)
-
-    def replace_pages(self, pages: Iterable[structured_ir.Page]) -> "PdfEditor":
-        return self._chain("replace_pages", pages)
-
-    def add_annotation(
-        self,
-        page_number: int,
-        subtype: str,
-        bbox: tuple[float, float, float, float] | None = None,
-        *,
-        contents: str = "",
-        destination: object = None,
-    ) -> "PdfEditor":
-        return self._chain(
-            "add_annotation", page_number, subtype, bbox, contents=contents, destination=destination
-        )
-
-    def add_link(
-        self,
-        page_number: int,
-        bbox: tuple[float, float, float, float] | None = None,
-        *,
-        url: str | None = None,
-        link_type: str | None = None,
-        text: str = "",
-    ) -> "PdfEditor":
-        return self._chain("add_link", page_number, bbox, url=url, link_type=link_type, text=text)
-
-    def commit(self, target: str | Path | Any) -> bytes:
-        return super().commit(target)
-
-    def commit_verified(
-        self, target: str | Path | Any, *, expected_unchanged_pages: tuple[int, ...] = ()
-    ) -> PreservationManifest:
-        return verification.commit_verified(
-            self, target, expected_unchanged_pages=expected_unchanged_pages
-        )
-
-    def commit_redactions_verified(
-        self,
-        target: str | Path | Any,
-        redactions: Mapping[int, Iterable[tuple[float, float, float, float]]],
-        *,
-        queries: Iterable[str] = (),
-    ) -> RedactionVerification:
-        return verification.commit_redactions_verified(self, target, redactions, queries=queries)
-
-    def commit_sanitized_verified(
-        self,
-        target: str | Path | Any,
-        *,
-        metadata: bool = True,
-        annotations: bool = True,
-        links: bool = True,
-        forms: bool = True,
-        attachments: bool = True,
-        outlines: bool = True,
-        actions: bool = True,
-    ) -> SanitizationVerification:
-        return verification.commit_sanitized_verified(
-            self,
-            target,
-            metadata=metadata,
-            annotations=annotations,
-            links=links,
-            forms=forms,
-            attachments=attachments,
-            outlines=outlines,
-            actions=actions,
-        )
-
-    def commit_accessibility_repair_verified(
-        self,
-        target: str | Path | Any,
-        *,
-        title: str | None = None,
-        language: str | None = None,
-    ) -> AccessibilityRepairVerification:
-        return verification.commit_accessibility_repair_verified(
-            self, target, title=title, language=language
-        )
-
-    def commit_document(self) -> structured_ir.Document:
-        return super().commit_document()
-
-    def rollback(self) -> None:
-        super().rollback()
-
-
 __all__ = (
     "PdfDocument",
-    "PdfEditor",
     "PdfPage",
 )

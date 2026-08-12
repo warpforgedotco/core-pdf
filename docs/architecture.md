@@ -39,14 +39,13 @@ documents, but opened-document reads and page mutations should delegate to the e
 
 The v0 package is organized by role:
 
-- `document.py` — concrete `PdfDocument` / `PdfPage` / `PdfEditor` capabilities. Record
+- `document.py` — concrete `PdfDocument` / `PdfPage` capabilities and their sole-use record
+  conversion kernel. Record
   methods use plain names (`annotations()`, `links()`,
   `images()`, `tables()`, `form_fields()`, `chunks()`, `words()`) and return the typed
   records from `models.py` exclusively — there are no parallel untyped variants. One
   `search(query, mode=..., threshold=..., region=..., pages=...)` method covers exact,
   normalized, regex, and fuzzy matching.
-- `convert.py` — the single IR→api conversion point (`page_space`, `to_rect`,
-  `to_*_record`); adapter methods delegate here rather than converting inline.
 - `models.py` — the frozen typed records, plus `Severity` (a `StrEnum`, so string
   comparisons keep working) and `SourceRef` provenance.
 - `types.py` — input aliases and the small cancellation/signature callback contracts.
@@ -54,9 +53,10 @@ The v0 package is organized by role:
   template-method `AnalysisOperation`; `checks.py`, `validation.py`, `content.py`,
   `forensics.py`, `preflight.py`, `transform.py` hold the concrete operations).
 - `inspection.py` — the inventory/forensics algorithms (`document_inventory`,
-  `object_graph`, `evidence_graph`, `resource_diagnostics`, …) as free functions the
-  adapter delegates to.
-- `verification.py` — the `commit_*_verified` bodies behind the editor facade.
+  `object_graph`, `evidence_graph`, `resource_diagnostics`, …). Algorithms that consume the
+  v0 document bind directly as document methods; raw-object algorithms unwrap the engine
+  document at one guarded boundary.
+- `editor.py` — the engine editor subclass and its v0-only verified commit workflows.
 - `structured.py` — public promotion of the engine's structured IR (see below).
 - `errors.py` — the stable error surface: `ApiError`, `InvalidRequest`,
   `OperationCancelled`, `DocumentClosed`.
@@ -151,8 +151,8 @@ src/core_pdf/
   cli.py, __main__.py    CLI entry point (also carries Nuitka build directives)
   api/
     v0/                  the versioned capability surface (see §1):
-                         adapters, convert, models, protocols, operations/,
-                         inspection, verification, structured, errors, execution
+                         document, editor, models, types, operations/,
+                         inspection, structured, errors, execution
       compat/            third-party facades + the shared _common kernel
   impl/
     models.py            engine record types (DrawingRecord, ImageRecord, Raw* records)

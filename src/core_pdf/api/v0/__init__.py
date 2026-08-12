@@ -5,7 +5,8 @@ Specialist records and operations live in :mod:`core_pdf.api.v0.models` and
 and cross-domain primitives.
 """
 
-from .document import PdfDocument, PdfEditor, PdfPage
+from .document import PdfDocument, PdfPage
+from .editor import PdfEditor
 from .errors import ApiError, DocumentClosed, InvalidRequest, OperationCancelled
 from .execution import AnalysisCache, LocalCancellationToken, LocalExecutionContext
 from .models import CoordinateOrigin, CoordinateSpace, Point, Rect, Severity, SourceRef
