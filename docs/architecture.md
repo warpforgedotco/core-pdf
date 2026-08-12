@@ -191,33 +191,6 @@ Subpackages under `spec/` mirror **chapters of the PDF specification**:
 | `s_09_fonts` | 9 — font programs, CMaps, glyph decoding |
 | `s_14_structure` | 14 — logical structure tree |
 
-The mapping is approximate at the edges: `s_07_document` has absorbed some Chapter 12
-(interactive features — forms, outlines, links) and Chapter 14 (metadata) material.
-
-## 5. Performance: what not to touch
-
-The engine ships compiled via **Nuitka**, with an optional PGO build
-(`scripts/build_pgo.sh`, trained on the PDFs under `tests/`). Nuitka preserves Python
-semantics, so `__slots__`, exact-type checks, and module-level constant tables all still
-matter after compilation — arguably more, since module constants are frozen into the binary.
-
-The following are **measured** optimizations, not incidental style. Several have commits
-quantifying the win. Restructuring them for readability will cost real throughput:
-
-| Location | What it is |
-| --- | --- |
-| `spec/s_07_content/operations.py:478-1347` | The content-stream dispatch loop. Caches every lookup in a local before the loop, reuses a preallocated 16-slot operand ring, and **hand-unrolls numeric parsing for token lengths 1–6** to avoid slicing and temporary allocation. Collapsing that to `float(token)` would be the most damaging single change available. The bound-target two-byte and one-byte operator dispatch chains use `match`/`case` on single int values (never a tuple subject — that allocates a temporary tuple per call and is strictly slower); everything else in the loop is plain `if`/`elif`. |
-| `spec/s_07_content/operator_tables.py` + `state.py:461-476` | Four parallel dispatch tables (by name, by bytes, by single opcode, by two-byte opcode), built once and memoized **onto the class object** so they are not rebuilt per page. |
-| `spec/s_07_filters/jbig2/codec.py:717-830` | `decode_arithmetic_generic_template0` hoists the whole MQ-decoder state into locals, **manually inlines `byte_in()`**, and pads rows with four sentinel bytes to eliminate bounds checks. The decoder's own `decode_bit` method is intentionally unused here. |
-| `layout/models.py` — `TextRun`, `TrackedTextRun`, `reinit` | An object freelist (`run_pool` in `state.py`) plus **class promotion**: runs are promoted to a `__slots__ = ()` subclass only when a memo is actually stored, so the `__setattr__` hook costs nothing in the common case. Commit `fe815871` measured 1.86M `__setattr__` calls eliminated. |
-| `rendering.py` — `internal_RasterTarget`, `internal_ClipState` | The rasterizer's state objects. Every method hoists the instance attributes it needs into locals on entry; `fill_rect` runs ~1.8M times over the corpus and hoists only its fast path. The clip methods are cached as bound attributes at construction because `self.clip.<name>` allocates a fresh bound method per call. `rasterize` binds all of them to locals of the same name so painting call sites cost one `LOAD_FAST` + `CALL`. |
-| `array_views.py:36-52` | `resample_nearest` uses **separable `take(axis=0)` then `take(axis=1)`** rather than 2D fancy indexing, plus an identity short-circuit. Commit `a12b6094` measured −6% end-to-end. |
-| `parse/model.py` `ObservationBatch`, `spec/s_07_content/page_program.py` `PageEventStream` | Columnar (structure-of-arrays) layouts with read-only numpy columns, so they can be shared without defensive copies. Pinned by a memory-profile benchmark. |
-| Module-level 256-byte lookup tables | `SEPARATOR_TABLE`, `WS_TABLE`, `HEX_VALUE`, `IS_WORD_START`, `BIT_IMAGE_MASK_ALPHA`, … Cheap as frozen constants; moving them inside functions makes them per-call work. |
-| `layout/word_frequencies.py:120-141` | Branches on `"__compiled__" in globals()` to locate its binary index in the Nuitka dist tree. Do not replace with plain `importlib.resources`. |
-| `__slots__` / `slots=True` everywhere | ~190 declarations. Adding an unslotted attribute silently reintroduces `__dict__`. |
-| Exact-type checks (`type(x) is bytes`) | Deliberate fast paths. `isinstance` is both slower and semantically different here. |
-
 ### Golden rasters
 
 `tests/test_rendering_golden.py` hashes the RGBA output of the corpus. The
