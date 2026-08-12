@@ -529,11 +529,16 @@ def internal_unknown_decoder_counts(capture: CapturedPage) -> Counter[object]:
         and quality.noise_score >= 0.20
         and quality.wordlike_ratio < 0.20
     )
+    glyph_evidence = capture.evidence.glyphs
+    if not corrupt and not glyph_evidence.unknown_glyphs and not glyph_evidence.unsupported_glyphs:
+        return counts
     for glyph in capture.program.products.glyphs:
         decoder = glyph.font_decoder
         if (
             decoder is None
             or not glyph.visible
+            or not glyph.text
+            or glyph.text.isspace()
             or not glyph.code_bytes
             or (
                 not corrupt
