@@ -186,6 +186,13 @@ class PdfLexer:
         byte = data[pos]
         if not WS_TABLE[byte] and byte != 37:
             return pos
+        if WS_TABLE[byte]:
+            pos += 1
+            if pos >= data_len:
+                return pos
+            byte = data[pos]
+            if not WS_TABLE[byte] and byte != 37:
+                return pos
         short_end = min(data_len, pos + 8)
         while pos < short_end and WS_TABLE[data[pos]]:
             pos += 1
