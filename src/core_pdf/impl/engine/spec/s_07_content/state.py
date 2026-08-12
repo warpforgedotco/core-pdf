@@ -1750,7 +1750,6 @@ class TextState:
         font_scale = self.font_scale
         font_ascent = self.font_ascent
         font_descent = self.font_descent
-        fill_opacity = self.fill_opacity
         if axis_aligned_horizontal:
             axis_advance_y0 = text_basis[1] + (font_descent + rise) * combined_d
             axis_advance_y1 = text_basis[1] + (font_ascent + rise) * combined_d
@@ -1785,14 +1784,11 @@ class TextState:
             if axis_aligned_horizontal:
                 advance_x0 = text_basis[0] + offset * combined_a
                 advance_x1 = text_basis[0] + (offset + advance) * combined_a
-                advance_rect = RectBox(
+                advance_bbox = (
                     advance_x0 if advance_x0 < advance_x1 else advance_x1,
                     axis_advance_y0,
                     advance_x1 if advance_x1 > advance_x0 else advance_x0,
                     axis_advance_y1,
-                    seqno=seqno,
-                    fill=fill,
-                    fill_opacity=fill_opacity,
                 )
                 baseline = (
                     advance_x0,
@@ -1810,7 +1806,13 @@ class TextState:
                     if is_vertical
                     else (0.0, 0.0),
                 )
-                advance_rect = transformed_text_rect(self, *text_box, text_basis)
+                transformed = transformed_text_rect(self, *text_box, text_basis)
+                advance_bbox = (
+                    transformed.x0,
+                    transformed.y0,
+                    transformed.x1,
+                    transformed.y1,
+                )
                 baseline = transformed_text_line(*baseline_text, text_basis)
             if is_vertical:
                 glyph_bbox = None
@@ -1822,7 +1824,7 @@ class TextState:
             rect = glyph_ink_rect(
                 glyph_bbox,
                 offset,
-                advance_rect,
+                advance_bbox,
                 text_basis,
                 advance_scale,
                 rise,
@@ -1858,12 +1860,7 @@ class TextState:
                 observation = GlyphObservation(
                     text=chunk_text,
                     ink_bbox=rect,
-                    advance_bbox=(
-                        advance_rect.x0,
-                        advance_rect.y0,
-                        advance_rect.x1,
-                        advance_rect.y1,
-                    ),
+                    advance_bbox=advance_bbox,
                     seqno=seqno,
                     code_bytes=glyph.code_bytes,
                     char_code=glyph.char_code,
@@ -1887,7 +1884,7 @@ class TextState:
                 append_glyph(observation)
                 # Single-glyph fast path: glyph_cluster_from_observations, given one
                 # observation, only re-derives advance_bbox/ink_bbox/confidence/etc. from
-                # fields already sitting in locals here (rect, advance_rect,
+                # fields already sitting in locals here (rect, advance_bbox,
                 # observation_confidence, baseline) -- construct the
                 # GlyphCluster directly instead of a round trip through GlyphObservation's
                 # advance_bbox/ink_bbox properties.
@@ -1958,12 +1955,7 @@ class TextState:
                     GlyphObservation(
                         text=chunk_text,
                         ink_bbox=rect,
-                        advance_bbox=(
-                            advance_rect.x0,
-                            advance_rect.y0,
-                            advance_rect.x1,
-                            advance_rect.y1,
-                        ),
+                        advance_bbox=advance_bbox,
                         seqno=seqno,
                         code_bytes=glyph.code_bytes,
                         char_code=glyph.char_code,

@@ -88,13 +88,12 @@ def glyph_bitmap_dimensions(
 def glyph_ink_rect(
     glyph_bbox: tuple[float, float, float, float] | None,
     advance_start: float,
-    fallback: RectBox,
+    fallback_bbox: tuple[float, float, float, float],
     text_basis: TextBasis,
     text_advance_scale: float,
     rise: float,
     font_scale: float,
 ) -> tuple[float, float, float, float]:
-    fallback_bbox = (fallback.x0, fallback.y0, fallback.x1, fallback.y1)
     if glyph_bbox is None:
         return fallback_bbox
     gx0, gy0, gx1, gy1 = glyph_bbox
@@ -131,8 +130,8 @@ def glyph_ink_rect(
             max(p00_x, p01_x, p10_x, p11_x),
             max(p00_y, p01_y, p10_y, p11_y),
         )
-    fallback_height = fallback.y1 - fallback.y0
-    fallback_width = fallback.x1 - fallback.x0
+    fallback_height = fallback_bbox[3] - fallback_bbox[1]
+    fallback_width = fallback_bbox[2] - fallback_bbox[0]
     rect_x0, rect_y0, rect_x1, rect_y1 = rect
     rect_height = rect_y1 - rect_y0
     rect_width = rect_x1 - rect_x0
