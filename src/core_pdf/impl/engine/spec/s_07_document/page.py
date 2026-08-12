@@ -633,7 +633,6 @@ class PdfPage:
         y1: float,
     ) -> Any:
         from core_pdf.impl.engine.spec.s_07_content.page_program import (
-            PageEventStream,
             PageProgram,
         )
 
@@ -644,4 +643,4 @@ class PdfPage:
             products.inline_images,
             products.lines,
         )
-        return PageProgram(PageEventStream.from_products(filtered), filtered)
+        return PageProgram(filtered)

@@ -336,7 +336,6 @@ class internal_PageExtraction:
                 "preflight_native_route_mismatch": preflight_native,
                 "preflight_image_route_mismatch": preflight_image,
                 "preflight_vector_route_mismatch": preflight_vector,
-                "page_program_events": len(capture.program.events.sequence),
                 "content_stream_passes": 1,
                 "capture_product_count": 1,
                 "capture_seconds": (self.internal_captured_at or self.started) - self.started,

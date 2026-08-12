@@ -24,7 +24,6 @@ from core_pdf.impl.engine.rendering import (
 from core_pdf.impl.engine.spec.s_07_content.capture import CapturedDrawing, CapturedPath
 from core_pdf.impl.engine.spec.s_07_content.page_program import (
     LineTable,
-    PageEventStream,
     PageProducts,
     PageProgram,
 )
@@ -557,10 +556,7 @@ def test_compose_page_requires_and_consumes_canonical_program() -> None:
             return None
 
     products = PageProducts((), (), (), (), LineTable.from_lines(()))
-    page_program = PageProgram(
-        PageEventStream.from_products(products),
-        products,
-    )
+    page_program = PageProgram(products)
 
     rendered = compose_page(Page(), page_program=page_program)
 
@@ -605,7 +601,7 @@ def test_text_free_composition_skips_glyph_paint_and_lazy_bitmap_resolution() ->
         font_decoder=decoder,
     )
     products = PageProducts((), (glyph,), (), (), LineTable.from_lines(()))
-    page_program = PageProgram(PageEventStream.from_products(products), products)
+    page_program = PageProgram(products)
 
     text_free = compose_page(
         Page(),
