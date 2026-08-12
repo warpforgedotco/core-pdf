@@ -25,16 +25,8 @@ FORMULA_MARKERS = frozenset("∂∑√∞∈θΦω")
 class LayoutLineTextSegment:
     text: str
     separator_before: str
-    spacing_decision: str
-    bbox: tuple[float, float, float, float]
     advance_bbox: tuple[float, float, float, float]
-    ink_bbox: tuple[float, float, float, float]
-    baseline: tuple[float, float, float, float] | None
-    writing_mode: str
     rotation_angle: int
-    provenance: tuple[tuple[str, object], ...]
-    confidence: float | None
-    visible: bool
 
 
 # Builder-only atoms are short-lived and never escape into the immutable layout result.
@@ -43,11 +35,7 @@ class LayoutLineTextAtom:
     text: str
     run: TextRun
     advance_bbox: tuple[float, float, float, float]
-    ink_bbox: tuple[float, float, float, float]
     baseline: tuple[float, float, float, float] | None
-    provenance: tuple[tuple[str, object], ...]
-    confidence: float | None
-    visible: bool
     has_glyph_geometry: bool
 
 
@@ -72,7 +60,7 @@ def reconstruct_layout_line_text(
         text = render_single_run_text(run)
         if not text:
             return EMPTY_LAYOUT_LINE_TEXT
-        return LayoutLineText(text, (line_text_segment(run, text, "", "single_run"),))
+        return LayoutLineText(text, (line_text_segment(run, text, ""),))
 
     angle = runs[0].rotation_angle
     if angle == 0 and len(runs) <= 3:
@@ -147,46 +135,26 @@ def line_text_segment(
     run: TextRun,
     text: str,
     separator_before: str,
-    spacing_decision: str,
 ) -> LayoutLineTextSegment:
     advance_bbox = GlyphLineBuilder.advance_bbox(run)
-    ink_bbox = run.ink_bbox
     return LayoutLineTextSegment(
         text=text,
         separator_before=separator_before,
-        spacing_decision=spacing_decision,
-        bbox=(run.x0, run.y0, run.x1, run.y1),
         advance_bbox=advance_bbox,
-        ink_bbox=ink_bbox,
-        baseline=run.baseline,
-        writing_mode="vertical" if run.is_vertical else "horizontal",
         rotation_angle=run.rotation_angle,
-        provenance=run.provenance,
-        confidence=run.confidence,
-        visible=run.visible,
     )
 
 
 def line_text_segment_from_atom(
     atom: LayoutLineTextAtom,
     separator_before: str,
-    spacing_decision: str,
 ) -> LayoutLineTextSegment:
     run = atom.run
-    bbox = atom.advance_bbox
     return LayoutLineTextSegment(
         text=atom.text,
         separator_before=separator_before,
-        spacing_decision=spacing_decision,
-        bbox=bbox,
         advance_bbox=atom.advance_bbox,
-        ink_bbox=atom.ink_bbox,
-        baseline=atom.baseline,
-        writing_mode="vertical" if run.is_vertical else "horizontal",
         rotation_angle=run.rotation_angle,
-        provenance=atom.provenance,
-        confidence=atom.confidence,
-        visible=atom.visible,
     )
 
 
@@ -217,7 +185,7 @@ def reconstruct_rotated_table_line(sorted_runs: list[TextRun]) -> LayoutLineText
         if text.isspace():
             if parts and parts[-1] != " ":
                 parts.append(" ")
-                segments.append(line_text_segment(run, " ", " ", "rotated_explicit_space"))
+                segments.append(line_text_segment(run, " ", " "))
             previous_run = run
             continue
         if not run.has_text:
@@ -229,21 +197,18 @@ def reconstruct_rotated_table_line(sorted_runs: list[TextRun]) -> LayoutLineText
         text = text.strip()
         if text:
             separator = ""
-            spacing_decision = "line_start"
-            if parts:
-                spacing_decision = "rotated_join"
-                if (
-                    parts[-1] != " "
-                    and geometric_cell_spacing
-                    and previous_run is not None
-                    and rotated_table_run_gap(previous_run, run)
-                    > max(1.0, min(previous_run.font_size, run.font_size) * 0.40)
-                ):
-                    parts.append(" ")
-                    separator = " "
-                    spacing_decision = "rotated_geometric_space"
+            if (
+                parts
+                and parts[-1] != " "
+                and geometric_cell_spacing
+                and previous_run is not None
+                and rotated_table_run_gap(previous_run, run)
+                > max(1.0, min(previous_run.font_size, run.font_size) * 0.40)
+            ):
+                parts.append(" ")
+                separator = " "
             parts.append(text)
-            segments.append(line_text_segment(run, text, separator, spacing_decision))
+            segments.append(line_text_segment(run, text, separator))
             previous_run = run
     combined = split_glued_numeric_label_boundaries("".join(parts))
     if not combined:
@@ -371,23 +336,18 @@ class GlyphLineBuilder:
                     continue
 
                 separator_before = ""
-                spacing_decision = "line_start" if prev_atom is None else "join"
                 if prev_atom is not None:
-                    separator_before, spacing_decision = self.atom_separator(
+                    separator_before, _ = self.atom_separator(
                         prev_atom,
                         atom,
                     )
                     if separator_before:
                         append_part(separator_before)
-                if atom_text.isspace():
-                    spacing_decision = "explicit_space"
-
                 append_part(atom_text)
                 append_segment(
                     line_text_segment_from_atom(
                         atom,
                         separator_before,
-                        spacing_decision,
                     )
                 )
                 prev_atom = atom
@@ -428,11 +388,7 @@ class GlyphLineBuilder:
                     text=cluster.text,
                     run=run,
                     advance_bbox=cluster.advance_bbox,
-                    ink_bbox=cluster.ink_bbox,
                     baseline=cluster.baseline,
-                    provenance=run.provenance,
-                    confidence=cluster.confidence,
-                    visible=run.visible,
                     has_glyph_geometry=True,
                 )
                 for cluster in clusters
@@ -445,11 +401,7 @@ class GlyphLineBuilder:
                 text=text,
                 run=run,
                 advance_bbox=self.advance_bbox(run),
-                ink_bbox=run.ink_bbox,
                 baseline=run.baseline,
-                provenance=run.provenance,
-                confidence=run.confidence,
-                visible=run.visible,
                 has_glyph_geometry=False,
             ),
         )
