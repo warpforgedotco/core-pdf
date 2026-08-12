@@ -413,10 +413,10 @@ class TextQualityStats:
         }
 
 
-def internal_text_quality_stats(text: str) -> TextQualityStats:
+def internal_text_quality_analysis(text: str) -> tuple[TextQualityStats, int]:
     tokens = text.split()
     if not tokens:
-        return TextQualityStats()
+        return TextQualityStats(), 0
     wordlike = 0
     short_tokens = 0
     digit_tokens = 0
@@ -450,14 +450,17 @@ def internal_text_quality_stats(text: str) -> TextQualityStats:
         if letter_count >= 3 and has_vowel:
             wordlike += 1
     if not nonspace:
-        return TextQualityStats(token_count=len(tokens))
-    return TextQualityStats(
-        token_count=len(tokens),
-        wordlike_ratio=wordlike / len(tokens),
-        short_token_ratio=short_tokens / len(tokens),
-        symbol_ratio=symbols / nonspace,
-        non_ascii_ratio=non_ascii / nonspace,
-        digit_token_ratio=digit_tokens / len(tokens),
+        return TextQualityStats(token_count=len(tokens)), 0
+    return (
+        TextQualityStats(
+            token_count=len(tokens),
+            wordlike_ratio=wordlike / len(tokens),
+            short_token_ratio=short_tokens / len(tokens),
+            symbol_ratio=symbols / nonspace,
+            non_ascii_ratio=non_ascii / nonspace,
+            digit_token_ratio=digit_tokens / len(tokens),
+        ),
+        nonspace,
     )
 
 

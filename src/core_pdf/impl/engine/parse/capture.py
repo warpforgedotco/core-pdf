@@ -33,7 +33,7 @@ from core_pdf.impl.engine.parse.model import (
     PagePreflightRecommendation,
     StrokedVectorTextEvidence,
     TextQualityStats,
-    internal_text_quality_stats,
+    internal_text_quality_analysis,
 )
 from core_pdf.impl.engine.spec.s_07_content.operations import (
     ContentOperatorCounts,
@@ -915,7 +915,6 @@ def internal_capture_with_newstroke_text(
     runs = decoded.runs
     observations = internal_observations_from_runs(runs)
     text = "".join(run.text for run in runs)
-    characters = sum(not character.isspace() for character in text)
     boxes = observations.bbox
     widths = numpy.maximum(0.0, boxes[:, 2] - boxes[:, 0])
     heights = numpy.maximum(0.0, boxes[:, 3] - boxes[:, 1])
@@ -923,7 +922,7 @@ def internal_capture_with_newstroke_text(
         1.0,
         float(numpy.sum(widths * heights, dtype=numpy.float64)) / capture.evidence.page_area,
     )
-    text_quality = internal_text_quality_stats(text)
+    text_quality, characters = internal_text_quality_analysis(text)
     evidence = replace(
         capture.evidence,
         native_characters=characters,
@@ -989,10 +988,15 @@ def internal_capture_from_program(
     )
     raw_text = "".join(run.text for run in raw_runs)
     painted_text = "".join(run.text for run in raw_runs if run.visible)
-    native_characters = sum(not character.isspace() for character in raw_text)
-    painted_native_characters = sum(not character.isspace() for character in painted_text)
     suspicious_characters = internal_suspicious_character_count(raw_text)
-    all_text_quality = internal_text_quality_stats(raw_text)
+    all_text_quality, native_characters = internal_text_quality_analysis(raw_text)
+    if painted_text == raw_text:
+        painted_text_quality = all_text_quality
+        painted_native_characters = native_characters
+    else:
+        painted_text_quality, painted_native_characters = internal_text_quality_analysis(
+            painted_text
+        )
     glyph_evidence = internal_glyph_evidence(tuple(products.glyphs), raw_runs)
     trusted_hidden_text = internal_hidden_text_is_trusted(
         native_characters=native_characters,
@@ -1013,10 +1017,11 @@ def internal_capture_from_program(
         visible_text_quality = all_text_quality
     elif visible_text == painted_text:
         visible_native_characters = painted_native_characters
-        visible_text_quality = internal_text_quality_stats(visible_text)
+        visible_text_quality = painted_text_quality
     else:
-        visible_native_characters = sum(not character.isspace() for character in visible_text)
-        visible_text_quality = internal_text_quality_stats(visible_text)
+        visible_text_quality, visible_native_characters = internal_text_quality_analysis(
+            visible_text
+        )
     drawings = tuple(products.drawings)
     inline_images = tuple(products.inline_images)
     page_width = float(page.width)
