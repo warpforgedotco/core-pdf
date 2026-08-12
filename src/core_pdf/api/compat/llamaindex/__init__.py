@@ -125,6 +125,18 @@ def load_data(
             document_elements(document.structured_document),
             max_characters=max_characters,
         )
+        if not chunks:
+            return [
+                Document(
+                    "",
+                    {
+                        **(dict(extra_info) if extra_info is not None else {}),
+                        "page_numbers": (page.page_number,),
+                        "element_ids": (),
+                    },
+                )
+                for page in document.structured_document.pages
+            ]
         return [
             Document(
                 chunk.text,

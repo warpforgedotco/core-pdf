@@ -163,6 +163,10 @@ class Page(PdfPageObject):
         super().__init__(document, page)
         self._owner = owner
 
+    @property
+    def rect(self) -> tuple[float, float, float, float]:
+        return self.mediabox
+
     def get_text(self, kind: str = "text", *args: object, **kwargs: object) -> object:
         del args
         clip = kwargs.pop("clip", None)

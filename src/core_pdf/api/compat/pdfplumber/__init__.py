@@ -167,27 +167,33 @@ class EnginePageAdapter:
         )
 
     def text_characters(self) -> Iterator[Any]:
-        for run in self.page.chars:
-            for cluster in run.glyph_clusters:
-                if cluster.ink_bbox is None or not cluster.text:
-                    continue
-                x0, y0, x1, y1 = cluster.ink_bbox
-                width = (x1 - x0) / len(cluster.text)
-                for index, character in enumerate(cluster.text):
-                    yield SimpleNamespace(
-                        text=character,
-                        bbox=SimpleNamespace(
-                            x0=x0 + index * width,
-                            y0=y0,
-                            x1=x0 + (index + 1) * width,
-                            y1=y1,
-                        ),
-                        font_name=run.font_name,
-                        font_size=run.font_size,
-                        color=run.fill_color,
-                        rotation_angle=run.rotation_angle,
-                        sequence=run.seqno,
-                    )
+        for glyph in self.page.get_page_program().products.glyphs:
+            if not glyph.text:
+                continue
+            x0, y0, x1, y1 = glyph.advance_bbox
+            width_code = glyph.char_code if glyph.char_code is not None else glyph.cid
+            width_lookup = getattr(glyph.font_decoder, "glyph_width", None)
+            if (
+                glyph.rotation_angle % 180 == 0
+                and glyph.font_size >= (y1 - y0) * 0.5
+                and width_code is not None
+                and callable(width_lookup)
+            ):
+                x1 = x0 + float(width_lookup(width_code)) * glyph.font_size * 0.001
+                y1 = y0 + glyph.font_size
+            elif glyph.rotation_angle % 360 == 90:
+                x0 = x1 - glyph.font_size
+            elif glyph.rotation_angle % 360 == 270:
+                x1 = x0 + glyph.font_size
+            yield SimpleNamespace(
+                text=glyph.text,
+                bbox=SimpleNamespace(x0=x0, y0=y0, x1=x1, y1=y1),
+                font_name=glyph.font_name,
+                font_size=glyph.font_size,
+                color=glyph.fill,
+                rotation_angle=glyph.rotation_angle,
+                sequence=glyph.seqno,
+            )
 
     def drawings(self) -> Iterator[Any]:
         for drawing in self.page.get_drawings():
@@ -290,7 +296,7 @@ def _char(page: EnginePageAdapter, item: Any, doctop: float) -> ObjectDict:
         size=item.font_size or 0.0,
         stroking_color=item.color,
         non_stroking_color=item.color,
-        upright=item.rotation_angle not in {90, 270},
+        upright=(item.rotation_angle - page.info.rotation) % 180 == 0,
         adv=x1 - x0,
         seqno=item.sequence,
     )
@@ -1962,60 +1968,33 @@ def _words(chars: Iterable[ObjectDict], **kwargs: Any) -> list[ObjectDict]:
     keep_blank = bool(kwargs.get("keep_blank_chars", False))
     ordered = list(chars)
     group_tolerance = y_tolerance if any(item["text"] == " " for item in ordered) else 25
-    line_spaces: dict[int, bool] = {}
-    for item in ordered:
-        key = round(float(item["top"]) / 10)
-        line_spaces[key] = line_spaces.get(key, False) or item["text"] == " "
     words: list[ObjectDict] = []
+    force_new = False
     for char in ordered:
         if not char["text"].strip() and not keep_blank:
+            force_new = True
             continue
         punctuation_boundary = bool(split_punctuation.intersection(char["text"]))
-        adjacent_punctuation = (
-            not split_punctuation and char["text"] in "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"
-        )
-        if (
-            adjacent_punctuation
-            and char["text"] in "([{"
-            and words
-            and words[-1]["chars"][-1]["text"].isalnum()
-        ):
-            adjacent_punctuation = False
-        if (
-            adjacent_punctuation
-            and words
-            and abs(char["top"] - words[-1]["top"]) <= max(group_tolerance, 25)
-        ):
-            word = words[-1]
-            word["text"] += char["text"]
-            word["x1"] = char["x1"]
-            word["bottom"] = max(word["bottom"], char["bottom"])
-            word["chars"].append(char)
-            continue
-        line_has_space = line_spaces.get(round(float(char["top"]) / 10), False)
         if (
             words
+            and not force_new
             and abs(char["top"] - words[-1]["top"]) <= group_tolerance
             and not punctuation_boundary
             and not split_punctuation.intersection(words[-1]["chars"][-1]["text"])
-            and (
-                char["x0"] - words[-1]["x1"]
-                <= max(
-                    tolerance,
-                    float(words[-1]["chars"][-1].get("size", 0)) * float(ratio or 0),
-                )
-                or (
-                    not line_has_space
-                    and words[-1]["chars"][-1]["text"].strip()
-                    and char["text"].strip()
-                )
-                or adjacent_punctuation
+            and char["x0"] - words[-1]["x1"]
+            <= max(
+                tolerance,
+                float(words[-1]["chars"][-1].get("size", 0)) * float(ratio or 0),
             )
         ):
             word = words[-1]
             word["text"] += char["text"]
-            word["x1"] = char["x1"]
+            word["x0"] = min(word["x0"], char["x0"])
+            word["x1"] = max(word["x1"], char["x1"])
             word["bottom"] = max(word["bottom"], char["bottom"])
+            word["top"] = min(word["top"], char["top"])
+            word["width"] = word["x1"] - word["x0"]
+            word["height"] = word["bottom"] - word["top"]
             word["chars"].append(char)
         else:
             words.append(
@@ -2036,6 +2015,7 @@ def _words(chars: Iterable[ObjectDict], **kwargs: Any) -> list[ObjectDict]:
             for attribute in kwargs.get("extra_attrs", ()):
                 if attribute in char:
                     words[-1][attribute] = char[attribute]
+        force_new = False
     if not kwargs.get("return_chars", False):
         for word in words:
             word.pop("chars", None)
@@ -2076,27 +2056,31 @@ def _line_text(
 ) -> str:
     ordered = sorted(chars, key=lambda item: item["x0"])
     attrs = tuple(extra_attrs)
-    has_explicit_space = any(char["text"] == " " for char in ordered)
     result: list[str] = []
     previous: ObjectDict | None = None
+    pending_space = False
     punctuation_only = all(not char["text"].isalnum() and char["text"] != " " for char in ordered)
     for char in ordered:
+        if char["text"].isspace():
+            pending_space = True
+            continue
         gap = char["x0"] - previous["x1"] if previous is not None else 0
-        width = previous["x1"] - previous["x0"] if previous is not None else 0
-        threshold = max(tolerance, width * 0.5)
+        threshold = tolerance
         if ratio is not None and previous is not None:
             threshold = max(tolerance, float(previous.get("size", 0)) * ratio)
         attrs_changed = previous is not None and any(
             char.get(attr) != previous.get(attr) for attr in attrs
         )
-        if (
+        insert_space = (
             previous is not None
-            and ((gap > threshold and has_explicit_space) or attrs_changed)
+            and (pending_space or gap > threshold or attrs_changed)
             and not punctuation_only
-        ):
+        )
+        if insert_space:
             result.append(" ")
         result.append(char["text"])
         previous = char
+        pending_space = False
     return "".join(result)
 
 

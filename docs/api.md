@@ -44,6 +44,14 @@ A nonzero core-pdf result identifies a compatibility gap; the upstream result di
 gaps from fixture or test-environment failures. Use `--implementation upstream` or
 `--implementation core-pdf` to run only one side.
 
+The remaining facades have direct differential tests against their installed reference
+libraries. Every facade is exercised against every PDF found recursively under
+`tests/fixtures`:
+
+```sh
+uv run --group vendor-test pytest tests/src/core_pdf/compat/test_library_differential.py
+```
+
 The x-ray facade performs its redaction inspection directly from engine drawing, glyph, and
 raster evidence:
 
