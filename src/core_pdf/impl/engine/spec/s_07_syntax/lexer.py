@@ -178,7 +178,23 @@ class PdfLexer:
         self.pos = self.skip_ignored_at(self.pos)
 
     def skip_ignored_at(self, position: int) -> int:
-        return skip_pdf_ignored(self.raw_data, position, self.data_len)
+        data_len = self.data_len
+        if position >= data_len:
+            return position
+        data = self.raw_data
+        pos = position
+        byte = data[pos]
+        if not WS_TABLE[byte] and byte != 37:
+            return pos
+        short_end = min(data_len, pos + 8)
+        while pos < short_end and WS_TABLE[data[pos]]:
+            pos += 1
+        if pos >= data_len:
+            return pos
+        byte = data[pos]
+        if byte != 37 and not WS_TABLE[byte]:
+            return pos
+        return skip_pdf_ignored(data, position, data_len)
 
     def scan_word_at(
         self, position: int, skip_ignored: bool = True
