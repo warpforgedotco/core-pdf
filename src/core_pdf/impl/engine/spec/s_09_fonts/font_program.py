@@ -634,13 +634,20 @@ def internal_feature_from_contours(
     min_y, max_y = min(ys), max(ys)
     width = max(max_x - min_x, 1.0)
     height = max(max_y - min_y, 1.0)
-    cells = {
-        (
-            max(0, min(17, round((px - min_x) / width * 17))),
-            max(0, min(23, round((py - min_y) / height * 23))),
-        )
-        for px, py in points
-    }
+    cells: set[tuple[int, int]] = set()
+    add_cell = cells.add
+    for px, py in points:
+        cell_x = round((px - min_x) / width * 17)
+        cell_y = round((py - min_y) / height * 23)
+        if cell_x < 0:
+            cell_x = 0
+        elif cell_x > 17:
+            cell_x = 17
+        if cell_y < 0:
+            cell_y = 0
+        elif cell_y > 23:
+            cell_y = 23
+        add_cell((cell_x, cell_y))
     bitmap = rasterize_contours(contours, width=18, height=24)
     return CFFGlyphFeature(tuple(sorted(cells)), round(width / height, 2), len(contours), bitmap)
 

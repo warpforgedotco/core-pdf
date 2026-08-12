@@ -27,9 +27,13 @@ def internal_cell_distance_map(cells: tuple[tuple[int, int], ...]) -> tuple[int,
             index = row + x
             best = distances[index]
             if x:
-                best = min(best, distances[index - 1] + 1)
+                candidate = distances[index - 1] + 1
+                if candidate < best:
+                    best = candidate
             if y:
-                best = min(best, distances[index - FEATURE_GRID_WIDTH] + 1)
+                candidate = distances[index - FEATURE_GRID_WIDTH] + 1
+                if candidate < best:
+                    best = candidate
             distances[index] = best
     for y in range(FEATURE_GRID_HEIGHT - 1, -1, -1):
         row = y * FEATURE_GRID_WIDTH
@@ -37,9 +41,13 @@ def internal_cell_distance_map(cells: tuple[tuple[int, int], ...]) -> tuple[int,
             index = row + x
             best = distances[index]
             if x + 1 < FEATURE_GRID_WIDTH:
-                best = min(best, distances[index + 1] + 1)
+                candidate = distances[index + 1] + 1
+                if candidate < best:
+                    best = candidate
             if y + 1 < FEATURE_GRID_HEIGHT:
-                best = min(best, distances[index + FEATURE_GRID_WIDTH] + 1)
+                candidate = distances[index + FEATURE_GRID_WIDTH] + 1
+                if candidate < best:
+                    best = candidate
             distances[index] = best
     return tuple(distances)
 
