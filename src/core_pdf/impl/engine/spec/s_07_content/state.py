@@ -1741,6 +1741,10 @@ class TextState:
             self.glyph_clusters = clusters
         cursor = 0
         is_vertical = decoder.is_vertical
+        glyph_width = decoder.glyph_width
+        advance_scale = self.text_advance_scale
+        char_space_scale = self.char_space_scale
+        word_space_scale = self.word_space_scale
         writing_mode = "vertical" if is_vertical else "horizontal"
         base_provenance = (
             ("source", "native_glyph"),
@@ -1750,10 +1754,19 @@ class TextState:
             ("xobject_depth", xobject_depth),
         )
         for decoded_index, glyph in enumerate(glyphs):
-            advance = chunk_advance(
-                glyph.width_code,
-                decoder,
-                char_code=glyph.char_code,
+            advance = (
+                chunk_advance(
+                    glyph.width_code,
+                    decoder,
+                    char_code=glyph.char_code,
+                )
+                if is_vertical
+                else (
+                    glyph_width(glyph.width_code)
+                    + char_space_scale
+                    + (word_space_scale if glyph.width_code == 32 else 0.0)
+                )
+                * advance_scale
             )
             chunk_text = glyph.unicode
             if not chunk_text:
