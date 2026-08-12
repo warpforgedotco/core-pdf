@@ -2,6 +2,8 @@
 
 High-Performance PDF Engine
 
+![core-pdf — High-Performance PDF Engine](.github/assets/core-pdf-social-preview.jpg)
+
 ## License
 
 core-pdf uses [Core License version 0.1.0](https://github.com/core-experiments/core-pdf/blob/main/docs/license/VERSION.md).
