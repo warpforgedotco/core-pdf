@@ -1734,6 +1734,7 @@ class TextState:
         append_glyph = self.glyphs.append
         chunk_advance = self.chunk_advance
         glyph_bbox_for_code = decoder.glyph_bbox
+        glyph_bbox_cache = decoder.glyph_bbox_cache
         vertical_position = decoder.vertical_glyph_position
         clusters = getattr(self, "glyph_clusters", None)
         if clusters is None:
@@ -1786,7 +1787,13 @@ class TextState:
             )
             advance_rect = transformed_text_rect(self, *text_box, text_basis)
             baseline = transformed_text_line(*baseline_text, text_basis)
-            glyph_bbox = glyph_bbox_for_code(glyph.bitmap_code) if not is_vertical else None
+            if is_vertical:
+                glyph_bbox = None
+            else:
+                glyph_code = glyph.bitmap_code
+                glyph_bbox = glyph_bbox_cache.get(glyph_code)
+                if glyph_bbox is None and glyph_code not in glyph_bbox_cache:
+                    glyph_bbox = glyph_bbox_for_code(glyph_code)
             rect = glyph_ink_rect(self, glyph_bbox, offset, advance_rect, text_basis)
             device_matrix = (
                 combined_a,
