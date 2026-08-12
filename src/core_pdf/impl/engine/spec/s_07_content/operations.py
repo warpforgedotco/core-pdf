@@ -220,23 +220,35 @@ def content_stream_may_show_text(data: bytes | memoryview) -> bool:
 def count_content_stream_operators(data: bytes | memoryview) -> ContentOperatorCounts:
     """Return coarse operator counts without constructing graphics or text state."""
     text = image = vector_path = vector_paint = graphics_state = unknown = 0
+
+    def collector(operands: OperandWindow, depth: int, operator: str) -> None:
+        nonlocal text, image, vector_path, vector_paint, graphics_state, unknown
+        if operator in TEXT_OPERATORS:
+            text += 1
+        elif operator in IMAGE_OPERATORS:
+            image += 1
+        elif operator in VECTOR_PATH_OPERATORS:
+            vector_path += 1
+        elif operator in VECTOR_PAINT_OPERATORS:
+            vector_paint += 1
+        elif operator in GRAPHICS_STATE_OPERATORS:
+            graphics_state += 1
+        elif operator in {"BT", "ET", "Tf", "Td", "TD", "Tm", "Tc", "Tw", "T*", "Tr"}:
+            text += 1
+        elif operator:
+            unknown += 1
+
     try:
-        operations = iter_content_operations(PdfLexer(data))
-        for operator, internal_operands in operations:
-            if operator in TEXT_OPERATORS:
-                text += 1
-            elif operator in IMAGE_OPERATORS:
-                image += 1
-            elif operator in VECTOR_PATH_OPERATORS:
-                vector_path += 1
-            elif operator in VECTOR_PAINT_OPERATORS:
-                vector_paint += 1
-            elif operator in GRAPHICS_STATE_OPERATORS:
-                graphics_state += 1
-            elif operator in {"BT", "ET", "Tf", "Td", "TD", "Tm", "Tc", "Tw", "T*", "Tr"}:
-                text += 1
-            elif operator:
-                unknown += 1
+        handlers = CollectedIntegerHandlers(collector)
+        dispatch_operations(
+            PdfLexer(data),
+            CollectedStringHandlers(collector),
+            None,
+            handlers,
+            handlers,
+            None,
+            0,
+        )
     except PdfParseError:
         return ContentOperatorCounts(malformed=1)
     return ContentOperatorCounts(
