@@ -5,8 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, cast
 
-from core_pdf.api.v0.adapters import adapt_document
 from core_pdf.api.v0.compat.pypdf import PdfInput
+from core_pdf.api.v0.document import internal_project_document
 
 from .._common import open_source
 
@@ -93,26 +93,36 @@ def partition_pdf(filename: object, **kwargs: object) -> list[Element]:
     include_page_breaks = bool(kwargs.pop("include_page_breaks", False))
     include_metadata = bool(kwargs.pop("include_metadata", True))
     with open_source(cast(PdfInput, filename)) as document:
-        adapted = adapt_document(document)
+        adapted = internal_project_document(document)
         result: list[Element] = []
-        items_by_page: dict[int, list[dict[str, Any]]] = {}
+        items_by_page: dict[int, list[Any]] = {}
         for item in adapted.elements():
-            page_number = item.get("page_number")
-            if isinstance(page_number, int):
-                items_by_page.setdefault(page_number, []).append(dict(item))
-        for page_index, page in enumerate(adapted.structured_pages):
+            items_by_page.setdefault(item.page_number, []).append(item)
+        for page_index, page in enumerate(adapted.structured.pages):
             if include_page_breaks and page_index:
                 result.append(PageBreak("", ElementMetadata(page_number=page.page_number)))
             for item in items_by_page.get(page.page_number, []):
-                element_type = str(item.get("type", "")).casefold()
+                element_type = item.kind.casefold()
                 element_class = {
                     "heading": Title,
                     "block": NarrativeText,
                     "table": Table,
                     "image": Image,
                 }.get(element_type, Element)
-                metadata = ElementMetadata(item) if include_metadata else ElementMetadata()
-                result.append(element_class(str(item.get("text", "")), metadata))
+                metadata = (
+                    ElementMetadata(
+                        {
+                            "element_id": item.element_id,
+                            "type": item.kind,
+                            "page_number": item.page_number,
+                            "bbox": item.bbox,
+                            **item.metadata,
+                        }
+                    )
+                    if include_metadata
+                    else ElementMetadata()
+                )
+                result.append(element_class(item.text, metadata))
         return result
 
 

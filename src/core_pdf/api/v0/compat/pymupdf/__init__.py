@@ -8,7 +8,6 @@ from dataclasses import replace
 from html import escape
 from typing import Any, cast
 
-from core_pdf.api.v0.adapters import adapt_document
 from core_pdf.api.v0.compat._common import (
     Annotation,
     Block,
@@ -28,6 +27,7 @@ from core_pdf.api.v0.compat._common import (
 )
 from core_pdf.api.v0.compat.pypdf import PdfInput, PdfPageObject, PdfReader
 from core_pdf.api.v0.compat.state import StructuredState
+from core_pdf.api.v0.document import internal_project_document
 
 BBox = tuple[float, float, float, float]
 
@@ -354,7 +354,7 @@ class Page(PdfPageObject):
             raise ValueError("non-uniform pixmap matrices are not supported")
         requested_dpi = float(dpi if dpi is not None else 72.0 * scale)
         raster = (
-            adapt_document(self._document.pdf)
+            internal_project_document(self._document.pdf)
             .page(self._page.page_number - 1)
             .render(dpi=requested_dpi, crop=clip)
         )

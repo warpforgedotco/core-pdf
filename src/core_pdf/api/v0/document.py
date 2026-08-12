@@ -1,4 +1,4 @@
-"""Adapters exposing the existing engine through the v0 contracts."""
+"""Concrete v0 document, page, and editor capability objects."""
 
 from __future__ import annotations
 
@@ -6,13 +6,15 @@ import json
 import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
+from dataclasses import field as dataclass_field
 from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
 
 from core_pdf.impl.text import collapse_ws, search_key
 
-from . import inspection, structured, verification
+from . import inspection, verification
+from . import structured as structured_ir
 from .convert import (
     item_bbox,
     page_space,
@@ -42,6 +44,7 @@ from .models import (
     DocumentInventory,
     Drawing,
     DrawingItem,
+    ElementRecord,
     EmbeddedResourceRecord,
     EvidenceGraph,
     FormFieldRecord,
@@ -72,6 +75,7 @@ from .models import (
     RevisionObjectRecord,
     SanitizationVerification,
     SearchHit,
+    SourceRef,
     StructureElementRecord,
     TableCell,
     TableRecord,
@@ -82,21 +86,17 @@ from .models import (
     TextSpan,
     TextWord,
 )
-from .protocols import (
-    PageSelection,
-    PdfDocumentProtocol,
-    PdfPageProtocol,
-)
+from .types import PageSelection, PdfInput
 
 _SEARCH_MODES = frozenset({"exact", "normalized", "regex", "fuzzy"})
 
 
 @dataclass(slots=True)
-class PdfPageAdapter(PdfPageProtocol):
+class PdfPage:
     page: Any
 
     @property
-    def structured_view(self) -> structured.Page:
+    def structured_view(self) -> structured_ir.Page:
         return self.page.structured_view
 
     @property
@@ -380,61 +380,67 @@ class PdfPageAdapter(PdfPageProtocol):
 
 
 @dataclass(slots=True)
-class PdfObjectResolverAdapter:
-    resolver: Any
+class PdfDocument:
+    internal_document: Any
+    internal_owned: bool = False
+    internal_pages: dict[int, PdfPage] = dataclass_field(default_factory=dict)
 
-    def resolve(self, value: object) -> object:
-        return self.resolver.resolve(value)
+    @classmethod
+    def open(cls, source: PdfInput, password: str = "") -> "PdfDocument":
+        from core_pdf.impl.engine.document import PdfDocument as EngineDocument
 
+        return cls(EngineDocument.open(source, password=password), internal_owned=True)
 
-@dataclass(slots=True)
-class PdfDocumentAdapter(PdfDocumentProtocol):
-    document: Any
+    @classmethod
+    def from_structured(cls, document: structured_ir.Document) -> "PdfDocument":
+        from core_pdf.impl.engine.document import PdfDocument as EngineDocument
+
+        return cls(EngineDocument.from_structured(document), internal_owned=True)
+
+    @classmethod
+    def internal_from_engine(cls, document: Any) -> "PdfDocument":
+        """Project an engine document without taking ownership of its lifecycle."""
+        return cls(document)
 
     def _doc(self) -> Any:
         """Return the engine document, raising once if it has been closed."""
-        if self.document.closed:
+        if self.internal_document.closed:
             raise DocumentClosed("PDF document is closed")
-        return self.document
+        return self.internal_document
 
     @property
-    def structured_document(self) -> structured.Document:
-        return self.document.structured_document
+    def structured(self) -> structured_ir.Document:
+        return self.internal_document.structured_document
 
-    @property
-    def structured_pages(self) -> tuple[structured.Page, ...]:
-        return tuple(self.document.structured_document.pages)
-
-    def edit(self) -> "PdfEditorAdapter":
-        return PdfEditorAdapter(self._doc().edit())
+    def edit(self) -> "PdfEditor":
+        return PdfEditor(self._doc().edit())
 
     @property
     def closed(self) -> bool:
-        return bool(self.document.closed)
+        return bool(self.internal_document.closed)
 
     def close(self) -> None:
-        self.document.close()
+        self.internal_document.close()
 
     @property
     def page_count(self) -> int:
-        return int(self.document.page_count())
+        return int(self.internal_document.page_count())
 
-    @property
-    def resolver(self) -> PdfObjectResolverAdapter:
-        return PdfObjectResolverAdapter(self._doc().resolver)
-
-    def page(self, index: int) -> PdfPageAdapter:
+    def page(self, index: int) -> PdfPage:
         document = self._doc()
         if index < 0 or index >= self.page_count:
             raise IndexError(index)
-        return PdfPageAdapter(document.pages[index])
+        if index not in self.internal_pages:
+            self.internal_pages[index] = PdfPage(document.pages[index])
+        return self.internal_pages[index]
 
-    def pages(self, selection: PageSelection | None = None) -> Iterable[PdfPageAdapter]:
+    def pages(self, selection: PageSelection | None = None) -> Iterable[PdfPage]:
         document = self._doc()
         indexes = document.selected_page_indexes(selection)
-        return (PdfPageAdapter(document.pages[index]) for index in indexes)
+        return (self.page(index) for index in indexes)
 
-    def get_metadata(self) -> Mapping[str, object]:
+    @property
+    def metadata(self) -> Mapping[str, object]:
         metadata = self._doc().get_metadata()
         if isinstance(metadata, dict):
             return dict(metadata)
@@ -585,12 +591,22 @@ class PdfDocumentAdapter(PdfDocumentProtocol):
 
         return hits()
 
-    def elements(self, *, pages: PageSelection | None = None) -> Iterable[Mapping[str, object]]:
+    def elements(self, *, pages: PageSelection | None = None) -> Iterable[ElementRecord]:
         from core_pdf.impl.engine.structured import document_elements
 
         document = self._doc()
+        spaces = {page.info.number: page.info.space for page in self.pages(pages)}
         return tuple(
-            record.to_dict()
+            ElementRecord(
+                element_id=record.element_id,
+                kind=record.kind,
+                text=record.text,
+                page_number=record.page_number,
+                bbox=to_rect(record.bbox, spaces[record.page_number]),
+                order=record.order,
+                metadata=dict(record.metadata),
+                source=SourceRef(page_number=record.page_number, stage="structured-element"),
+            )
             for record in document_elements(
                 document.extract(pages=pages),
                 document.extract_images(pages=pages),
@@ -607,7 +623,7 @@ class PdfDocumentAdapter(PdfDocumentProtocol):
         )
 
         document = self._doc()
-        section_paths = document_section_paths(self.structured_document)
+        section_paths = document_section_paths(self.structured)
         records = chunk_elements(
             document_elements(
                 document.extract(pages=pages),
@@ -756,37 +772,30 @@ class PdfDocumentAdapter(PdfDocumentProtocol):
     def embedded_resources(self) -> Iterable[EmbeddedResourceRecord]:
         return inspection.embedded_resources(self._doc())
 
-    def __enter__(self) -> PdfDocumentAdapter:
-        self.document.__enter__()
+    def __enter__(self) -> "PdfDocument":
+        self._doc()
         return self
 
     def __exit__(self, *args: object) -> None:
-        self.document.__exit__(*args)
+        if self.internal_owned:
+            self.internal_document.__exit__(*args)
 
 
-def adapt_document(document: Any) -> PdfDocumentAdapter:
-    """Expose a current core-pdf document through the v0 protocol surface."""
-
-    return PdfDocumentAdapter(document)
-
-
-def adapt_structured(document: Any) -> PdfDocumentAdapter:
-    """Materialize a structured snapshot and expose it through the v0 contract."""
-    from core_pdf.impl.engine.document import PdfDocument
-
-    return adapt_document(PdfDocument.from_structured(document))
+def internal_project_document(document: Any) -> PdfDocument:
+    """Project an engine document for internal compatibility implementations."""
+    return PdfDocument.internal_from_engine(document)
 
 
 @dataclass(slots=True)
-class PdfEditorAdapter:
+class PdfEditor:
     editor: Any
 
-    def _chain(self, name: str, /, *args: object, **kwargs: object) -> "PdfEditorAdapter":
+    def _chain(self, name: str, /, *args: object, **kwargs: object) -> "PdfEditor":
         """Call `editor.<name>(*args, **kwargs)` and return self for chaining."""
         getattr(self.editor, name)(*args, **kwargs)
         return self
 
-    def set_metadata(self, values: Mapping[str, object]) -> "PdfEditorAdapter":
+    def set_metadata(self, values: Mapping[str, object]) -> "PdfEditor":
         return self._chain("set_metadata", dict(values))
 
     def set_page_geometry(
@@ -795,59 +804,55 @@ class PdfEditorAdapter:
         *,
         rotation: int | None = None,
         cropbox: tuple[float, float, float, float] | None = None,
-    ) -> "PdfEditorAdapter":
+    ) -> "PdfEditor":
         return self._chain("set_page_geometry", page_number, rotation=rotation, cropbox=cropbox)
 
-    def encrypt(
-        self, user_password: str, *, owner_password: str | None = None
-    ) -> "PdfEditorAdapter":
+    def encrypt(self, user_password: str, *, owner_password: str | None = None) -> "PdfEditor":
         return self._chain("encrypt", user_password, owner_password=owner_password)
 
-    def sign(self, provider: Any, *, contents_length: int = 8192) -> "PdfEditorAdapter":
+    def sign(self, provider: Any, *, contents_length: int = 8192) -> "PdfEditor":
         return self._chain("sign", provider, contents_length=contents_length)
 
-    def replace_page(self, page_number: int, page: structured.Page) -> "PdfEditorAdapter":
+    def replace_page(self, page_number: int, page: structured_ir.Page) -> "PdfEditor":
         return self._chain("replace_page", page_number, page)
 
     def insert_page(
         self, position: int, width: float = 595.0, height: float = 842.0
-    ) -> "PdfEditorAdapter":
+    ) -> "PdfEditor":
         return self._chain("insert_page", position, width, height)
 
-    def insert_structured_page(self, position: int, page: structured.Page) -> "PdfEditorAdapter":
+    def insert_structured_page(self, position: int, page: structured_ir.Page) -> "PdfEditor":
         return self._chain("insert_structured_page", position, page)
 
-    def update_form_field(self, name: str, value: str) -> "PdfEditorAdapter":
+    def update_form_field(self, name: str, value: str) -> "PdfEditor":
         return self._chain("update_form_field", name, value)
 
-    def remove_form_fields(self, names: Iterable[str]) -> "PdfEditorAdapter":
+    def remove_form_fields(self, names: Iterable[str]) -> "PdfEditor":
         return self._chain("remove_form_fields", names)
 
     def apply_redactions(
         self, redactions: Mapping[int, Iterable[tuple[float, float, float, float]]]
-    ) -> "PdfEditorAdapter":
+    ) -> "PdfEditor":
         return self._chain("apply_redactions", redactions)
 
     def remove_annotations(
         self, page_number: int, indices: Iterable[int] | None = None
-    ) -> "PdfEditorAdapter":
+    ) -> "PdfEditor":
         return self._chain("remove_annotations", page_number, indices)
 
-    def remove_links(
-        self, page_number: int, indices: Iterable[int] | None = None
-    ) -> "PdfEditorAdapter":
+    def remove_links(self, page_number: int, indices: Iterable[int] | None = None) -> "PdfEditor":
         return self._chain("remove_links", page_number, indices)
 
-    def delete_pages(self, selection: PageSelection) -> "PdfEditorAdapter":
+    def delete_pages(self, selection: PageSelection) -> "PdfEditor":
         return self._chain("delete_pages", selection)
 
-    def set_attachments(self, values: Mapping[str, bytes]) -> "PdfEditorAdapter":
+    def set_attachments(self, values: Mapping[str, bytes]) -> "PdfEditor":
         return self._chain("set_attachments", dict(values))
 
-    def set_outlines(self, values: Iterable[Iterable[object]]) -> "PdfEditorAdapter":
+    def set_outlines(self, values: Iterable[Iterable[object]]) -> "PdfEditor":
         return self._chain("set_outlines", values)
 
-    def replace_pages(self, pages: Iterable[structured.Page]) -> "PdfEditorAdapter":
+    def replace_pages(self, pages: Iterable[structured_ir.Page]) -> "PdfEditor":
         return self._chain("replace_pages", pages)
 
     def add_annotation(
@@ -858,7 +863,7 @@ class PdfEditorAdapter:
         *,
         contents: str = "",
         destination: object = None,
-    ) -> "PdfEditorAdapter":
+    ) -> "PdfEditor":
         return self._chain(
             "add_annotation", page_number, subtype, bbox, contents=contents, destination=destination
         )
@@ -871,7 +876,7 @@ class PdfEditorAdapter:
         url: str | None = None,
         link_type: str | None = None,
         text: str = "",
-    ) -> "PdfEditorAdapter":
+    ) -> "PdfEditor":
         return self._chain("add_link", page_number, bbox, url=url, link_type=link_type, text=text)
 
     def commit(self, target: str | Path | Any) -> bytes:
@@ -930,7 +935,7 @@ class PdfEditorAdapter:
             self.editor, target, title=title, language=language
         )
 
-    def commit_document(self) -> structured.Document:
+    def commit_document(self) -> structured_ir.Document:
         return self.editor.commit_document()
 
     def rollback(self) -> None:
@@ -938,10 +943,8 @@ class PdfEditorAdapter:
 
 
 __all__ = (
-    "PdfDocumentAdapter",
-    "PdfEditorAdapter",
-    "PdfObjectResolverAdapter",
-    "PdfPageAdapter",
-    "adapt_document",
-    "adapt_structured",
+    "PdfDocument",
+    "PdfEditor",
+    "PdfPage",
+    "internal_project_document",
 )

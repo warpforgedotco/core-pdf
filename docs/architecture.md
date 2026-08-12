@@ -30,8 +30,8 @@ The two central objects:
 - **`PdfPage`** (`impl/engine/page.py`, subclassing the spec-level page in
   `impl/engine/spec/s_07_document/page.py`) — per-page extraction and rendering.
 
-The canonical local capability surface is `core_pdf.api.v0`. It adapts these engine-owned
-objects without introducing another PDF document implementation. `PdfDocument` owns structured
+The canonical local capability surface is `core_pdf.api.v0`. Its concrete document and page
+objects project engine-owned data into stable typed records. The engine owns structured
 extraction, high-level records (images, annotations, links, forms, outlines, and attachments),
 and the transactional `PdfDocumentEditor`. Compatibility facades under `core_pdf.api.v0.compat.*`
 are intentionally high-level projections; they may retain a structured snapshot for synthetic
@@ -39,8 +39,8 @@ documents, but opened-document reads and page mutations should delegate to the e
 
 The v0 package is organized by role:
 
-- `adapters.py` — `PdfDocumentAdapter` / `PdfPageAdapter` / `PdfEditorAdapter`, thin
-  translation over the engine. Record methods use plain names (`annotations()`, `links()`,
+- `document.py` — concrete `PdfDocument` / `PdfPage` / `PdfEditor` capabilities. Record
+  methods use plain names (`annotations()`, `links()`,
   `images()`, `tables()`, `form_fields()`, `chunks()`, `words()`) and return the typed
   records from `models.py` exclusively — there are no parallel untyped variants. One
   `search(query, mode=..., threshold=..., region=..., pages=...)` method covers exact,
@@ -49,7 +49,7 @@ The v0 package is organized by role:
   `to_*_record`); adapter methods delegate here rather than converting inline.
 - `models.py` — the frozen typed records, plus `Severity` (a `StrEnum`, so string
   comparisons keep working) and `SourceRef` provenance.
-- `protocols.py` — the versioned document/page/editor/resolver protocols.
+- `types.py` — input aliases and the small cancellation/signature callback contracts.
 - `operations/` — the analysis operations as a package (`base.py` holds the
   template-method `AnalysisOperation`; `checks.py`, `validation.py`, `content.py`,
   `forensics.py`, `preflight.py`, `transform.py` hold the concrete operations).
@@ -61,13 +61,11 @@ The v0 package is organized by role:
 - `errors.py` — the stable error surface: `ApiError`, `InvalidRequest`,
   `OperationCancelled`, `DocumentClosed`.
 
-For adapter work, `PdfDocumentAdapter.structured_document` and
-`PdfPageAdapter.structured_view` return the engine IR types themselves —
+`PdfDocument.structured` and `PdfPage.structured_view` return the engine IR types themselves —
 `core_pdf.api.v0.structured` re-exports `Document`, `Page`, `Block`, `Table`, and friends at
 an api-sanctioned path so compat code can name them without importing `core_pdf.impl`. New
-facades should consume the adapter via `adapt_document` (or `adapt_structured` for the
-structured escape hatch); they should not widen engine page values to `object` or recreate
-document/page ownership locally.
+compatibility facades use the private engine projection hook; application code opens the
+concrete v0 document directly. Facades should not recreate document/page ownership locally.
 
 Compat facades share a small utility kernel in `api/v0/compat/_common.py` and one state owner
 in `api/v0/compat/state.py`. The state owner handles both opened and synthetic snapshots;

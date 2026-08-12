@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from ..models import (
     Drawing,
@@ -14,7 +14,10 @@ from ..models import (
     SourceRef,
     TextSpan,
 )
-from ..protocols import ExecutionContext, PdfDocumentProtocol
+from ..types import ExecutionContext
+
+if TYPE_CHECKING:
+    from ..document import PdfDocument
 from .base import AnalysisOperation, FindingCollector, OperationOptions
 
 
@@ -117,7 +120,7 @@ class BadRedactionOperation(AnalysisOperation):
 
     def _analyze(
         self,
-        document: PdfDocumentProtocol,
+        document: PdfDocument,
         context: ExecutionContext,
         options: OperationOptions,
         out: FindingCollector,
@@ -191,7 +194,7 @@ class LayerConsistencyOperation(AnalysisOperation):
 
     def _analyze(
         self,
-        document: PdfDocumentProtocol,
+        document: PdfDocument,
         context: ExecutionContext,
         options: OperationOptions,
         out: FindingCollector,
@@ -234,7 +237,7 @@ class ForensicAnalysisOperation(AnalysisOperation):
 
     def _analyze(
         self,
-        document: PdfDocumentProtocol,
+        document: PdfDocument,
         context: ExecutionContext,
         options: OperationOptions,
         out: FindingCollector,

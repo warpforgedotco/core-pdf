@@ -12,7 +12,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from core_pdf import PdfDocument
+from core_pdf import PdfDocument as EngineDocument
 
 from .models import (
     AccessibilityRepairVerification,
@@ -25,19 +25,19 @@ from .models import (
 )
 
 if TYPE_CHECKING:
-    from .adapters import PdfDocumentAdapter
+    from .document import PdfDocument as V0Document
 
 
 @contextmanager
 def _commit_and_reopen(
     editor: Any, target: str | Path | Any
-) -> Iterator[tuple[bytes, "PdfDocumentAdapter"]]:
+) -> Iterator[tuple[bytes, "V0Document"]]:
     """Commit through `editor`, reopen the result, and adapt it for verification."""
-    from .adapters import adapt_document
+    from .document import internal_project_document
 
     data = editor.commit(target)
-    with PdfDocument.open(data) as reopened:
-        yield data, adapt_document(reopened)
+    with EngineDocument.open(data) as reopened:
+        yield data, internal_project_document(reopened)
 
 
 def commit_verified(
@@ -47,9 +47,9 @@ def commit_verified(
     expected_unchanged_pages: tuple[int, ...] = (),
 ) -> PreservationManifest:
     """Commit and verify that untouched pages were preserved byte-for-byte."""
-    from .adapters import adapt_document
+    from .document import internal_project_document
 
-    before = adapt_document(editor.document).fingerprint()
+    before = internal_project_document(editor.document).fingerprint()
     with _commit_and_reopen(editor, target) as (_data, document):
         after = document.fingerprint()
     return verify_preservation(
@@ -67,12 +67,12 @@ def commit_redactions_verified(
     queries: Iterable[str] = (),
 ) -> RedactionVerification:
     """Apply redactions, commit, and verify the queries are unrecoverable."""
-    from .adapters import adapt_document
+    from .document import internal_project_document
 
     requested = tuple(dict.fromkeys(queries))
     editor.apply_redactions(redactions)
-    before = adapt_document(editor.document).fingerprint()
-    before_graph = adapt_document(editor.document).object_graph()
+    before = internal_project_document(editor.document).fingerprint()
+    before_graph = internal_project_document(editor.document).object_graph()
     with _commit_and_reopen(editor, target) as (data, document):
         remaining_raw = tuple(query for query in requested if query.encode("utf-8") in data)
         remaining = tuple(query for query in requested if any(document.search(query)))
@@ -102,11 +102,11 @@ def commit_sanitized_verified(
     actions: bool = True,
 ) -> SanitizationVerification:
     """Strip the selected features, commit, and verify nothing remains."""
-    from .adapters import adapt_document
+    from .document import internal_project_document
 
     if metadata:
         editor.set_metadata({})
-    current = adapt_document(editor.document)
+    current = internal_project_document(editor.document)
     before_graph = current.object_graph()
     if annotations or links:
         for page in tuple(current.pages()):

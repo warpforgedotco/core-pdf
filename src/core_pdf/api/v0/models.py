@@ -743,6 +743,21 @@ def compare_object_graphs(
 
 @dataclass(frozen=True, slots=True)
 @freeze_mappings("metadata")
+class ElementRecord:
+    """One typed reading-order element with page geometry and provenance."""
+
+    element_id: str
+    kind: str
+    text: str
+    page_number: int
+    bbox: Rect | None = None
+    order: int | None = None
+    metadata: Mapping[str, object] = field(default_factory=dict)
+    source: SourceRef | None = None
+
+
+@dataclass(frozen=True, slots=True)
+@freeze_mappings("metadata")
 class ChunkRecord:
     """A bounded retrieval unit retaining its structural provenance."""
 

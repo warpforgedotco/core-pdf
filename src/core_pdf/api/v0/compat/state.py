@@ -9,8 +9,8 @@ from os import PathLike
 from typing import Any
 
 from core_pdf import PdfDocument
-from core_pdf.api.v0.adapters import adapt_document
-from core_pdf.api.v0.protocols import PdfInput
+from core_pdf.api.v0.document import internal_project_document
+from core_pdf.api.v0.types import PdfInput
 
 from ._common import (
     Block,
@@ -286,7 +286,7 @@ class StructuredState(ClosingMixin):
                     "data": item.data,
                 },
             )
-            for index, item in enumerate(adapt_document(self.source_pdf).images())
+            for index, item in enumerate(internal_project_document(self.source_pdf).images())
         )
 
     def chunks(self, *, max_characters: int = 2000) -> tuple[Chunk, ...]:
@@ -344,7 +344,7 @@ class StructuredState(ClosingMixin):
         else:
             document = PdfDocument.from_structured(self.structured)
             self.internal_owned_document = document
-        cached = adapt_document(document)
+        cached = internal_project_document(document)
         self.internal_capability_document = cached
         return cached
 

@@ -7,8 +7,8 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, cast
 
-from core_pdf.api.v0.adapters import adapt_document
 from core_pdf.api.v0.compat.pypdf import PdfInput
+from core_pdf.api.v0.document import internal_project_document
 
 from .._common import open_source
 
@@ -121,7 +121,7 @@ def load_data(
 ) -> list[Document]:
     del kwargs
     with open_source(cast(PdfInput, source)) as document:
-        adapted = adapt_document(document)
+        adapted = internal_project_document(document)
         return [
             Document(
                 chunk.text,

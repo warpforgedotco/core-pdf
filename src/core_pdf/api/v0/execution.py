@@ -8,9 +8,10 @@ from typing import TYPE_CHECKING
 
 from .errors import OperationCancelled
 from .models import AnalysisReport, IncrementalAnalysisPlan
-from .protocols import ExecutionContext, PdfDocumentProtocol
+from .types import ExecutionContext
 
 if TYPE_CHECKING:
+    from .document import PdfDocument
     from .operations.base import AnalysisOperation
 
 
@@ -34,9 +35,7 @@ class AnalysisCache:
     def misses(self) -> int:
         return self._misses
 
-    def get(
-        self, operation: AnalysisOperation, document: PdfDocumentProtocol
-    ) -> AnalysisReport | None:
+    def get(self, operation: AnalysisOperation, document: PdfDocument) -> AnalysisReport | None:
         fingerprint = document.fingerprint().document_sha256
         entry = self._reports.get((operation.operation_id, operation.version, fingerprint))
         return entry[0] if entry is not None else None
@@ -44,7 +43,7 @@ class AnalysisCache:
     def run(
         self,
         operation: AnalysisOperation,
-        document: PdfDocumentProtocol,
+        document: PdfDocument,
         context: ExecutionContext,
         options: dict[str, object] | None = None,
         *,

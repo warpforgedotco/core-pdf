@@ -2,7 +2,7 @@
 
 Functions here either consume the ENGINE document (``document: Any`` holding a
 ``core_pdf.impl`` document) or the protocol-level adapter surface
-(``document: PdfDocumentProtocol``) when the algorithm needs converted records.
+(``document: PdfDocument``) when the algorithm needs converted records.
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ from collections.abc import Iterable, Iterator, Mapping
 from contextlib import suppress
 from hashlib import sha256
 from re import finditer
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from core_pdf.impl.engine.parse.pipeline import page_extraction
 from core_pdf.impl.objects import PdfReference, PdfStream
@@ -55,7 +55,10 @@ from .models import (
     compare_fingerprints,
     plan_incremental_analysis,
 )
-from .protocols import PageSelection, PdfDocumentProtocol
+from .types import PageSelection
+
+if TYPE_CHECKING:
+    from .document import PdfDocument
 
 
 def _resolve_type_name(value: object, default: str) -> str:
@@ -503,11 +506,11 @@ def content_summaries(
         )
 
 
-def archival_manifest(document: PdfDocumentProtocol) -> ArchivalManifest:
+def archival_manifest(document: PdfDocument) -> ArchivalManifest:
     """Combine inventory, reachability, and metadata into one manifest."""
     inventory = document.inventory()
     graph = document.object_graph()
-    metadata = document.get_metadata()
+    metadata = document.metadata
     info = metadata.get("info", metadata)
     title = info.get("Title") if isinstance(info, Mapping) else None
     return ArchivalManifest(
@@ -525,7 +528,7 @@ def archival_manifest(document: PdfDocumentProtocol) -> ArchivalManifest:
 
 
 def resource_inventory(
-    document: PdfDocumentProtocol, *, pages: PageSelection | None = None
+    document: PdfDocument, *, pages: PageSelection | None = None
 ) -> Iterator[PageResourceInventory]:
     """Inventory fonts and images referenced by each page."""
     for page in document.pages(pages):
@@ -542,7 +545,7 @@ def resource_inventory(
 
 
 def content_dependencies(
-    document: PdfDocumentProtocol, *, pages: PageSelection | None = None
+    document: PdfDocument, *, pages: PageSelection | None = None
 ) -> Iterator[ContentDependencyRecord]:
     """Relate each content event to the resources it depends on."""
     for page in document.pages(pages):
@@ -567,7 +570,7 @@ def content_dependencies(
             )
 
 
-def resource_dependency_graph(document: PdfDocumentProtocol) -> ResourceDependencyGraph:
+def resource_dependency_graph(document: PdfDocument) -> ResourceDependencyGraph:
     """Aggregate content dependencies into a page-to-resource graph."""
     dependencies: dict[int, set[str]] = {}
     for dependency in content_dependencies(document):
@@ -580,9 +583,7 @@ def resource_dependency_graph(document: PdfDocumentProtocol) -> ResourceDependen
     )
 
 
-def evidence_graph(
-    document: PdfDocumentProtocol, *, pages: PageSelection | None = None
-) -> EvidenceGraph:
+def evidence_graph(document: PdfDocument, *, pages: PageSelection | None = None) -> EvidenceGraph:
     """Build the provenance graph tying pages, events, and structure together."""
     nodes: list[EvidenceNode] = []
     edges: list[EvidenceEdge] = []
@@ -658,7 +659,7 @@ def resource_diagnostics(document: Any) -> tuple[ResourceDiagnostic, ...]:
     records (spans, images) and raw engine surfaces (page dictionaries, the
     object resolver).
     """
-    engine = document.document
+    engine = document._doc()
     diagnostics: list[ResourceDiagnostic] = []
     if engine.xref_was_recovered:
         diagnostics.append(
@@ -801,9 +802,7 @@ def resource_diagnostics(document: Any) -> tuple[ResourceDiagnostic, ...]:
     return tuple(diagnostics)
 
 
-def form_inventory(
-    document: PdfDocumentProtocol, *, pages: PageSelection | None = None
-) -> FormInventory:
+def form_inventory(document: PdfDocument, *, pages: PageSelection | None = None) -> FormInventory:
     """Summarize form fields, their types, values, and duplicate names."""
     field_pages = tuple(
         (page.info.number, field) for page in document.pages(pages) for field in page.form_fields()
@@ -830,7 +829,7 @@ def form_inventory(
 
 
 def annotation_inventory(
-    document: PdfDocumentProtocol, *, pages: PageSelection | None = None
+    document: PdfDocument, *, pages: PageSelection | None = None
 ) -> AnnotationInventory:
     """Count annotations and links, grouped by subtype and page."""
     annotation_pages: set[int] = set()
@@ -862,7 +861,7 @@ def annotation_inventory(
 
 
 def accessibility_inventory(
-    document: PdfDocumentProtocol, *, pages: PageSelection | None = None
+    document: PdfDocument, *, pages: PageSelection | None = None
 ) -> AccessibilityInventory:
     """Measure tagged structure, alternate text, and document language."""
     selected: set[int] = set()
@@ -879,7 +878,7 @@ def accessibility_inventory(
     )
     figures = sum(element.role.casefold() in {"figure", "fig"} for element in elements)
     alternate = sum(bool(element.alternate_description) for element in elements)
-    metadata = document.get_metadata()
+    metadata = document.metadata
     info = metadata.get("info", metadata)
     language = info.get("Lang") if isinstance(info, Mapping) else None
     title = info.get("Title") if isinstance(info, Mapping) else None
@@ -896,7 +895,7 @@ def accessibility_inventory(
     )
 
 
-def analysis_snapshot(document: PdfDocumentProtocol) -> DocumentAnalysisSnapshot:
+def analysis_snapshot(document: PdfDocument) -> DocumentAnalysisSnapshot:
     """Capture the standard document-level analysis reports in one record."""
     return DocumentAnalysisSnapshot(
         inventory=document.inventory(),

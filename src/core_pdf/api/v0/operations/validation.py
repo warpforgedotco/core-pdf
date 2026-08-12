@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 from ..models import EvidenceLayer, EvidenceRecord, Severity, SourceRef
-from ..protocols import ExecutionContext, PdfDocumentProtocol
+from ..types import ExecutionContext
+
+if TYPE_CHECKING:
+    from ..document import PdfDocument
 from .base import AnalysisOperation, FindingCollector, OperationOptions
 from .checks import is_interactive_annotation
 
@@ -18,7 +22,7 @@ class AccessibilityValidationOperation(AnalysisOperation):
 
     def _analyze(
         self,
-        document: PdfDocumentProtocol,
+        document: PdfDocument,
         context: ExecutionContext,
         options: OperationOptions,
         out: FindingCollector,
@@ -117,7 +121,7 @@ class FormValidationOperation(AnalysisOperation):
 
     def _analyze(
         self,
-        document: PdfDocumentProtocol,
+        document: PdfDocument,
         context: ExecutionContext,
         options: OperationOptions,
         out: FindingCollector,
@@ -206,7 +210,7 @@ class LinkValidationOperation(AnalysisOperation):
 
     def _analyze(
         self,
-        document: PdfDocumentProtocol,
+        document: PdfDocument,
         context: ExecutionContext,
         options: OperationOptions,
         out: FindingCollector,
@@ -260,7 +264,7 @@ class AttachmentValidationOperation(AnalysisOperation):
 
     def _analyze(
         self,
-        document: PdfDocumentProtocol,
+        document: PdfDocument,
         context: ExecutionContext,
         options: OperationOptions,
         out: FindingCollector,
@@ -305,7 +309,7 @@ class FontValidationOperation(AnalysisOperation):
 
     def _analyze(
         self,
-        document: PdfDocumentProtocol,
+        document: PdfDocument,
         context: ExecutionContext,
         options: OperationOptions,
         out: FindingCollector,
@@ -353,7 +357,7 @@ class ImageValidationOperation(AnalysisOperation):
 
     def _analyze(
         self,
-        document: PdfDocumentProtocol,
+        document: PdfDocument,
         context: ExecutionContext,
         options: OperationOptions,
         out: FindingCollector,
@@ -390,7 +394,7 @@ class GeometryValidationOperation(AnalysisOperation):
 
     def _analyze(
         self,
-        document: PdfDocumentProtocol,
+        document: PdfDocument,
         context: ExecutionContext,
         options: OperationOptions,
         out: FindingCollector,
@@ -427,7 +431,7 @@ class AnnotationValidationOperation(AnalysisOperation):
 
     def _analyze(
         self,
-        document: PdfDocumentProtocol,
+        document: PdfDocument,
         context: ExecutionContext,
         options: OperationOptions,
         out: FindingCollector,
@@ -472,7 +476,7 @@ class DocumentIntegrityOperation(AnalysisOperation):
 
     def _analyze(
         self,
-        document: PdfDocumentProtocol,
+        document: PdfDocument,
         context: ExecutionContext,
         options: OperationOptions,
         out: FindingCollector,

@@ -7,20 +7,17 @@ same document and page capabilities. It is independent of the implementation mod
 `core_pdf.impl`.
 
 ```python
-from core_pdf import PdfDocument
-from core_pdf.api.v0 import adapt_document
+from core_pdf.api.v0 import PdfDocument
 
-with PdfDocument.open("document.pdf") as source:
-    document = adapt_document(source)
+with PdfDocument.open("document.pdf") as document:
     for page in document.pages():
         for event in page.content_events():
             print(event.kind, event.bbox)
 ```
 
-The contract is protocol-oriented. `PdfDocumentProtocol`, `PdfPageProtocol`,
-`PdfEditorProtocol`, and `PdfObjectResolverProtocol` cover content events, text,
-drawings, images, rendering, analysis operations, and editing without adding every
-future feature as a method on `PdfDocument`. Record methods use plain names —
+The contract uses concrete `PdfDocument`, `PdfPage`, and `PdfEditor` capability objects.
+They cover content events, text, drawings, images, rendering, analysis operations, and
+editing without exposing the engine object model. Record methods use plain names —
 `annotations()`, `links()`, `images()`, `tables()`, `form_fields()`, `chunks()` — and
 return typed records only.
 
@@ -55,14 +52,11 @@ options=None)` returns an `AnalysisReport` of typed `AnalysisFinding` records, a
 operations honour a `pages` option. The local bad-redaction analyzer, for example:
 
 ```python
-from core_pdf import PdfDocument
-from core_pdf.api.v0 import BadRedactionOperation, adapt_document
+from core_pdf.api.v0 import PdfDocument
+from core_pdf.api.v0.operations import BadRedactionOperation
 
-with PdfDocument.open("document.pdf") as source:
-    report = BadRedactionOperation().run(
-        adapt_document(source),
-        options={"inspect_raster": True},
-    )
+with PdfDocument.open("document.pdf") as document:
+    report = BadRedactionOperation().run(document, options={"inspect_raster": True})
     for finding in report.findings:
         print(finding.page_number, finding.bbox, finding.message)
 ```
@@ -76,10 +70,11 @@ feature-specific methods to the document object. Invalid option values raise
 Applications that want the standard local validation set run the aggregate operation:
 
 ```python
-from core_pdf.api.v0 import QualityPreflightOperation, Severity, adapt_document
+from core_pdf.api.v0 import PdfDocument, Severity
+from core_pdf.api.v0.operations import QualityPreflightOperation
 
-with PdfDocument.open("document.pdf") as source:
-    report = QualityPreflightOperation().run(adapt_document(source))
+with PdfDocument.open("document.pdf") as document:
+    report = QualityPreflightOperation().run(document)
     if report.metrics["error_count"]:
         for finding in report.findings:
             if finding.severity is Severity.ERROR:
@@ -281,8 +276,7 @@ semantic descriptions or mutate the source PDF.
 Transactional editors also support structured redaction application:
 
 ```python
-with PdfDocument.open("document.pdf") as source:
-    document = adapt_document(source)
+with PdfDocument.open("document.pdf") as document:
     document.edit().apply_redactions({1: ((72, 72, 180, 100),)}).commit("sanitized.pdf")
 ```
 

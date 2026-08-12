@@ -55,7 +55,6 @@ from core_pdf.api.v0 import (
     PageContentSummary,
     PageInfo,
     PageResourceInventory,
-    PdfDocumentAdapter,
     PreservationManifest,
     QualityPreflightOperation,
     Raster,
@@ -71,8 +70,6 @@ from core_pdf.api.v0 import (
     SourceRef,
     StructureAnalysisOperation,
     TextSpan,
-    adapt_document,
-    adapt_structured,
     compare_archival_manifests,
     compare_fingerprints,
     compare_object_graphs,
@@ -83,7 +80,9 @@ from core_pdf.api.v0 import (
     plan_revision_analysis,
     verify_preservation,
 )
-from core_pdf.api.v0.adapters import PdfPageAdapter
+from core_pdf.api.v0 import (
+    PdfDocument as V0PdfDocument,
+)
 from core_pdf.api.v0.compat import (
     LAParams,
     LTChar,
@@ -92,6 +91,7 @@ from core_pdf.api.v0.compat import (
     extract_text_to_fp,
     inspect_xray,
 )
+from core_pdf.api.v0.document import PdfPage
 from core_pdf.impl.engine.structured import (
     Block,
     BlockKind,
@@ -104,6 +104,13 @@ from core_pdf.impl.engine.structured import (
 )
 from core_pdf.impl.engine.writing import serialize_pdf_file
 from core_pdf.impl.objects import PdfName, PdfReference, PdfStream
+
+# Migration helpers for assertions that deliberately exercise an already-open engine document.
+# New application code enters through ``core_pdf.api.v0.PdfDocument.open`` instead.
+PdfDocumentAdapter = V0PdfDocument
+PdfPageAdapter = PdfPage
+adapt_document = V0PdfDocument.internal_from_engine
+adapt_structured = V0PdfDocument.from_structured
 
 
 def simple_pdf(*, annotation: bool = False, unreachable: bool = False) -> bytes:
@@ -251,12 +258,11 @@ def test_current_document_conforms_through_v0_adapter() -> None:
         assert tuple(page.form_fields()) == ()
         assert tuple(adapted.structure_elements()) == ()
         assert page.structured_view.page_number == 1
-        assert adapted.structured_document.pages[0].page_number == 1
-        assert adapted.structured_pages[0].page_number == 1
-        assert adapted.structured_document.text == adapted.text()
-        assert tuple(adapted.structured_document.lines) == tuple(adapted.text_lines())
-        assert tuple(adapted.structured_document.blocks) == tuple(adapted.text_blocks())
-        assert tuple(adapted.structured_document.words) == tuple(adapted.words())
+        assert adapted.structured.pages[0].page_number == 1
+        assert adapted.structured.text == adapted.text()
+        assert tuple(adapted.structured.lines) == tuple(adapted.text_lines())
+        assert tuple(adapted.structured.blocks) == tuple(adapted.text_blocks())
+        assert tuple(adapted.structured.words) == tuple(adapted.words())
         inventory = adapted.inventory()
         assert inventory.byte_count == len(simple_pdf())
         assert inventory.object_count >= 4
@@ -1046,7 +1052,7 @@ def test_adapter_exposes_engine_owned_high_level_records() -> None:
     with PdfDocument.open(simple_pdf()) as document:
         adapted = adapt_document(document)
 
-        assert adapted.get_metadata() == document.get_metadata()
+        assert adapted.metadata == document.get_metadata()
         assert tuple(adapted.images()) == ()
         assert tuple(adapted.annotations()) == ()
         assert tuple(adapted.links()) == ()
@@ -1186,7 +1192,7 @@ def test_adapter_rejects_access_after_close() -> None:
     calls: tuple[tuple[str, Callable[[], object]], ...] = (
         ("page", lambda: adapted.page(0)),
         ("pages", lambda: tuple(adapted.pages())),
-        ("get_metadata", adapted.get_metadata),
+        ("metadata", lambda: adapted.metadata),
         ("inventory", adapted.inventory),
         ("fingerprint", adapted.fingerprint),
         ("to_json", adapted.to_json),
@@ -1204,7 +1210,6 @@ def test_adapter_rejects_access_after_close() -> None:
         ("annotation_inventory", adapted.annotation_inventory),
         ("accessibility_inventory", adapted.accessibility_inventory),
         ("edit", adapted.edit),
-        ("resolver", lambda: adapted.resolver),
         ("outlines", lambda: tuple(adapted.outlines)),
         ("attachments", lambda: tuple(adapted.attachments)),
         ("embedded_resources", lambda: tuple(adapted.embedded_resources())),
@@ -1221,6 +1226,28 @@ def test_star_import_surface_matches_all() -> None:
     missing = [name for name in v0.__all__ if not hasattr(v0, name)]
 
     assert missing == []
+
+
+def test_concrete_v0_document_is_the_public_entrypoint() -> None:
+    from core_pdf.api import v0
+
+    with v0.PdfDocument.open(simple_pdf()) as document:
+        assert document.page_count == 1
+        assert document.page(0) is document.page(0)
+        assert document.structured.pages[0].page_number == 1
+        assert document.metadata["info"] == {}
+
+    removed = (
+        "adapt_document",
+        "adapt_structured",
+        "PdfDocumentAdapter",
+        "PdfPageAdapter",
+        "PdfEditorAdapter",
+        "PdfDocumentProtocol",
+        "PdfPageProtocol",
+        "PdfEditorProtocol",
+    )
+    assert all(not hasattr(v0, name) for name in removed)
 
 
 def test_public_api_accepts_path_inputs_in_type_surface(tmp_path: Path) -> None:

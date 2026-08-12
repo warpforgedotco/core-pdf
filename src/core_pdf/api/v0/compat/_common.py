@@ -17,7 +17,6 @@ from pathlib import Path
 from typing import IO, Any, Self, TypeVar, cast
 
 from core_pdf import PdfDocument
-from core_pdf.api.v0.protocols import PdfInput
 from core_pdf.api.v0.structured import (
     Annotation,
     Block,
@@ -29,6 +28,7 @@ from core_pdf.api.v0.structured import (
     Page,
     TextLine,
 )
+from core_pdf.api.v0.types import PdfInput
 from core_pdf.impl.engine.layout.geometry import (
     RectTuple,
     bbox_contains,

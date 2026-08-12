@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from core_pdf.impl.engine.layout.geometry import rect_tuple
 from core_pdf.impl.text import collapse_ws, search_key
 
 from ..models import EvidenceLayer, EvidenceRecord, Severity, SourceRef, TextSpan
-from ..protocols import ExecutionContext, PdfDocumentProtocol
+from ..types import ExecutionContext
+
+if TYPE_CHECKING:
+    from ..document import PdfDocument
 from .base import AnalysisOperation, FindingCollector, OperationOptions
 from .checks import AUTHOR_YEAR_PATTERN, DOI_PATTERN, REFERENCE_SECTION_HEADING_PATTERN
 
@@ -21,7 +24,7 @@ class LayoutAnalysisOperation(AnalysisOperation):
 
     def _analyze(
         self,
-        document: PdfDocumentProtocol,
+        document: PdfDocument,
         context: ExecutionContext,
         options: OperationOptions,
         out: FindingCollector,
@@ -104,7 +107,7 @@ class StructureAnalysisOperation(AnalysisOperation):
 
     def _analyze(
         self,
-        document: PdfDocumentProtocol,
+        document: PdfDocument,
         context: ExecutionContext,
         options: OperationOptions,
         out: FindingCollector,
@@ -153,7 +156,7 @@ class CitationAnalysisOperation(AnalysisOperation):
 
     def _analyze(
         self,
-        document: PdfDocumentProtocol,
+        document: PdfDocument,
         context: ExecutionContext,
         options: OperationOptions,
         out: FindingCollector,
@@ -229,7 +232,7 @@ class FigureCaptionAnalysisOperation(AnalysisOperation):
 
     def _analyze(
         self,
-        document: PdfDocumentProtocol,
+        document: PdfDocument,
         context: ExecutionContext,
         options: OperationOptions,
         out: FindingCollector,
@@ -307,7 +310,7 @@ class SectionHierarchyAnalysisOperation(AnalysisOperation):
 
     def _analyze(
         self,
-        document: PdfDocumentProtocol,
+        document: PdfDocument,
         context: ExecutionContext,
         options: OperationOptions,
         out: FindingCollector,
@@ -382,7 +385,7 @@ class IdentifierAnalysisOperation(AnalysisOperation):
 
     def _analyze(
         self,
-        document: PdfDocumentProtocol,
+        document: PdfDocument,
         context: ExecutionContext,
         options: OperationOptions,
         out: FindingCollector,
@@ -433,7 +436,7 @@ class ReferenceEntryAnalysisOperation(AnalysisOperation):
 
     def _analyze(
         self,
-        document: PdfDocumentProtocol,
+        document: PdfDocument,
         context: ExecutionContext,
         options: OperationOptions,
         out: FindingCollector,

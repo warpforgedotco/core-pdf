@@ -1,12 +1,9 @@
 """Version 0 of the public local core-pdf capability API."""
 
-from .adapters import (
-    PdfDocumentAdapter,
-    PdfEditorAdapter,
-    PdfObjectResolverAdapter,
-    PdfPageAdapter,
-    adapt_document,
-    adapt_structured,
+from .document import (
+    PdfDocument,
+    PdfEditor,
+    PdfPage,
 )
 from .errors import (
     ApiError,
@@ -43,6 +40,7 @@ from .models import (
     DocumentInventory,
     Drawing,
     DrawingItem,
+    ElementRecord,
     EmbeddedResourceRecord,
     EvidenceEdge,
     EvidenceGraph,
@@ -129,15 +127,11 @@ from .operations import (
     normalize_metadata,
     plan_accessibility_remediation,
 )
-from .protocols import (
+from .types import (
     CancellationToken,
     ExecutionContext,
     PageSelection,
-    PdfDocumentProtocol,
-    PdfEditorProtocol,
     PdfInput,
-    PdfObjectResolverProtocol,
-    PdfPageProtocol,
     ReadableSource,
     SignatureProvider,
 )
@@ -147,12 +141,9 @@ __all__ = (
     "DocumentClosed",
     "InvalidRequest",
     "OperationCancelled",
-    "PdfDocumentAdapter",
-    "PdfEditorAdapter",
-    "PdfObjectResolverAdapter",
-    "PdfPageAdapter",
-    "adapt_document",
-    "adapt_structured",
+    "PdfDocument",
+    "PdfEditor",
+    "PdfPage",
     "AnalysisCache",
     "LocalCancellationToken",
     "LocalExecutionContext",
@@ -238,6 +229,7 @@ __all__ = (
     "OutlineItem",
     "AttachmentInfo",
     "EmbeddedResourceRecord",
+    "ElementRecord",
     "BadRedactionOperation",
     "CitationAnalysisOperation",
     "CompliancePreflightOperation",
@@ -265,11 +257,7 @@ __all__ = (
     "CancellationToken",
     "ExecutionContext",
     "PageSelection",
-    "PdfDocumentProtocol",
-    "PdfEditorProtocol",
     "PdfInput",
-    "PdfObjectResolverProtocol",
-    "PdfPageProtocol",
     "ReadableSource",
     "SignatureProvider",
 )

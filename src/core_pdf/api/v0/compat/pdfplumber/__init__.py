@@ -8,9 +8,9 @@ from io import BytesIO
 from typing import Any, TypeAlias, cast
 
 from core_pdf import PdfDocument
-from core_pdf.api.v0.adapters import PdfPageAdapter, adapt_document
+from core_pdf.api.v0.document import PdfPage, internal_project_document
 from core_pdf.api.v0.models import Drawing, TextCharacter
-from core_pdf.api.v0.protocols import PdfInput
+from core_pdf.api.v0.types import PdfInput
 
 from .._common import (
     ClosingMixin,
@@ -105,7 +105,7 @@ def _source(value: PdfInput, password: str = "", unicode_norm: str | None = None
     return document
 
 
-def _bbox(page: PdfPageAdapter, box: Any) -> BBox:
+def _bbox(page: PdfPage, box: Any) -> BBox:
     return flip_box(box, page.info.height)
 
 
@@ -128,7 +128,7 @@ def _envelope(
     }
 
 
-def _char(page: PdfPageAdapter, item: TextCharacter, doctop: float) -> ObjectDict:
+def _char(page: PdfPage, item: TextCharacter, doctop: float) -> ObjectDict:
     x0, top, x1, bottom = _bbox(page, (item.bbox.x0, item.bbox.y0, item.bbox.x1, item.bbox.y1))
     if page.info.rotation % 360 == 90:
         rotated_width = max(page.info.width, page.info.height)
@@ -163,7 +163,7 @@ def _char(page: PdfPageAdapter, item: TextCharacter, doctop: float) -> ObjectDic
     )
 
 
-def _drawing(page: PdfPageAdapter, item: Drawing, doctop: float) -> ObjectDict:
+def _drawing(page: PdfPage, item: Drawing, doctop: float) -> ObjectDict:
     box = item.bbox
     x0, top, x1, bottom = _bbox(page, (box.x0, box.y0, box.x1, box.y1)) if box else (0, 0, 0, 0)
     return _envelope(
@@ -333,7 +333,7 @@ class Page:
 
     def _structured(self) -> Any:
         if self._structured_page is None:
-            result = self.pdf._document.document.extract(pages=(self.page_number,))
+            result = self.pdf._document.internal_document.extract(pages=(self.page_number,))
             self._structured_page = result.pages[0]
         return self._structured_page
 
@@ -361,7 +361,7 @@ class Page:
                         y0=top if self.rotation in {180, 270} else item.rect[1],
                         y1=bottom if self.rotation in {180, 270} else item.rect[3],
                         contents=item.contents,
-                        data=self.pdf._document.document.resolver.deep_resolve(item.dict),
+                        data=self.pdf._document.internal_document.resolver.deep_resolve(item.dict),
                         uri=None,
                     )
                 )
@@ -426,7 +426,7 @@ class Page:
 
     @property
     def structure_tree(self) -> list[ObjectDict]:
-        tree = getattr(self.pdf._document.document, "structure", None)
+        tree = getattr(self.pdf._document.internal_document, "structure", None)
         if tree is None:
             return []
 
@@ -631,7 +631,7 @@ class Page:
 
     def find_tables(self, table_settings: Mapping[str, Any] | None = None) -> list["Table"]:
         settings = TableSettings.resolve(table_settings)
-        result = self.pdf._document.document.extract(pages=(self.page_number,))
+        result = self.pdf._document.internal_document.extract(pages=(self.page_number,))
         page = result.pages[0]
         tables = getattr(page, "tables", ()) or getattr(page, "structured_tables", ())
         if tables:
@@ -1441,12 +1441,12 @@ class PDF(ClosingMixin):
         if source is None:
             source = cast(PdfInput, document)
             document = _source(source)
-        self._document = adapt_document(document)
+        self._document = internal_project_document(document)
         self.doc = document
         self.source = source
         self.stream = source
         self.path = source if isinstance(source, (str, bytes)) else None
-        raw_metadata = dict(self._document.get_metadata())
+        raw_metadata = dict(self._document.metadata)
         value = raw_metadata.get("value")
         info = value.get("info") if isinstance(value, dict) else None
         self.metadata = dict(info) if isinstance(info, dict) else raw_metadata

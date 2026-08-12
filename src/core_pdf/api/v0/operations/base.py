@@ -4,17 +4,15 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Iterator, Mapping
-from typing import ClassVar, cast
+from typing import TYPE_CHECKING, ClassVar, cast
 
 from ..errors import InvalidRequest
 from ..execution import LocalExecutionContext
 from ..models import AnalysisFinding, AnalysisReport, EvidenceRecord, Rect, Severity
-from ..protocols import (
-    ExecutionContext,
-    PageSelection,
-    PdfDocumentProtocol,
-    PdfPageProtocol,
-)
+from ..types import ExecutionContext, PageSelection
+
+if TYPE_CHECKING:
+    from ..document import PdfDocument, PdfPage
 
 
 class OperationOptions:
@@ -124,7 +122,7 @@ class AnalysisOperation(ABC):
 
     def run(
         self,
-        document: PdfDocumentProtocol,
+        document: PdfDocument,
         context: ExecutionContext | None = None,
         options: Mapping[str, object] | None = None,
     ) -> AnalysisReport:
@@ -137,7 +135,7 @@ class AnalysisOperation(ABC):
     @abstractmethod
     def _analyze(
         self,
-        document: PdfDocumentProtocol,
+        document: PdfDocument,
         context: ExecutionContext,
         options: OperationOptions,
         out: FindingCollector,
@@ -145,10 +143,10 @@ class AnalysisOperation(ABC):
 
     @staticmethod
     def _pages(
-        document: PdfDocumentProtocol,
+        document: PdfDocument,
         context: ExecutionContext,
         options: OperationOptions,
-    ) -> Iterator[PdfPageProtocol]:
+    ) -> Iterator[PdfPage]:
         """Iterate the selected pages, honouring cancellation between pages."""
         for page in document.pages(options.pages):
             context.cancellation.raise_if_cancelled()

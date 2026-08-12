@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from ..models import CompliancePreflightSummary, Severity
-from ..protocols import ExecutionContext, PdfDocumentProtocol
+from ..types import ExecutionContext
+
+if TYPE_CHECKING:
+    from ..document import PdfDocument
 from .base import AnalysisOperation, FindingCollector, OperationOptions
 from .validation import (
     AccessibilityValidationOperation,
@@ -31,7 +36,7 @@ class CompliancePreflightOperation(AnalysisOperation):
 
     def _analyze(
         self,
-        document: PdfDocumentProtocol,
+        document: PdfDocument,
         context: ExecutionContext,
         options: OperationOptions,
         out: FindingCollector,
@@ -112,7 +117,7 @@ class QualityPreflightOperation(AnalysisOperation):
 
     def _analyze(
         self,
-        document: PdfDocumentProtocol,
+        document: PdfDocument,
         context: ExecutionContext,
         options: OperationOptions,
         out: FindingCollector,
