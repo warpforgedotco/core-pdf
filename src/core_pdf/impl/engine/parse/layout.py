@@ -12,6 +12,7 @@ from typing import cast
 
 import numpy
 
+from core_pdf.impl.engine.array_views import finite_median
 from core_pdf.impl.engine.layout.models import TextRun
 from core_pdf.impl.engine.layout.spatial import (
     SpatialIndex,
@@ -241,9 +242,7 @@ def internal_build_lines(observations: ObservationBatch) -> tuple[ParsedLine, ..
                 ),
                 sequence=sequence,
                 rotation=int(observations.rotation[indexes[0]]),
-                font_size=(
-                    float(numpy.median(finite_font_sizes)) if len(finite_font_sizes) else None
-                ),
+                font_size=(finite_median(finite_font_sizes) if len(finite_font_sizes) else None),
                 bold=bold,
                 italic=italic,
                 spans=spans,
@@ -392,7 +391,7 @@ def internal_column_gap_minimum(region_boxes: numpy.ndarray) -> float:
     """
     if not len(region_boxes):
         return 12.0
-    median_width = float(numpy.median(region_boxes[:, 2] - region_boxes[:, 0]))
+    median_width = finite_median(region_boxes[:, 2] - region_boxes[:, 0])
     return max(12.0, median_width * 0.05)
 
 
@@ -413,8 +412,8 @@ def internal_narrow_column_gap_minimum(region_boxes: numpy.ndarray) -> float:
     """
     if not len(region_boxes):
         return 12.0
-    median_width = float(numpy.median(region_boxes[:, 2] - region_boxes[:, 0]))
-    median_height = float(numpy.median(region_boxes[:, 3] - region_boxes[:, 1]))
+    median_width = finite_median(region_boxes[:, 2] - region_boxes[:, 0])
+    median_height = finite_median(region_boxes[:, 3] - region_boxes[:, 1])
     return max(6.0, min(12.0, median_width * 0.08), median_height * 0.9)
 
 
@@ -437,13 +436,13 @@ def internal_columnar_split_alignment(region_boxes: numpy.ndarray, cut: float) -
 
     def aligned(side: numpy.ndarray) -> bool:
         starts = side[:, 0]
-        median_start = float(numpy.median(starts))
+        median_start = finite_median(starts)
         return float(numpy.mean(numpy.abs(starts - median_start) <= 3.0)) >= 0.6
 
     if not (aligned(left) and aligned(right)):
         return False
-    left_width = float(numpy.median(left[:, 2] - left[:, 0]))
-    right_width = float(numpy.median(right[:, 2] - right[:, 0]))
+    left_width = finite_median(left[:, 2] - left[:, 0])
+    right_width = finite_median(right[:, 2] - right[:, 0])
     return min(left_width, right_width) >= max(left_width, right_width) * 0.5
 
 
@@ -545,7 +544,7 @@ def internal_row_order_indexes(indexes: numpy.ndarray, boxes: numpy.ndarray) -> 
     if len(indexes) < 2:
         return indexes
     heights = numpy.maximum(1.0, region[:, 3] - region[:, 1])
-    tolerance = max(1.0, float(numpy.median(heights)) * 0.5)
+    tolerance = max(1.0, finite_median(heights) * 0.5)
     if not math.isfinite(tolerance):
         tolerance = 1.0
 
@@ -848,7 +847,7 @@ def internal_semantic_body_font_size(lines: tuple[ParsedLine, ...]) -> float | N
         [line.font_size for line in lines if line.font_size is not None and line.font_size > 0],
         dtype=numpy.float32,
     )
-    return float(numpy.median(sizes)) if len(sizes) else None
+    return finite_median(sizes) if len(sizes) else None
 
 
 def internal_display_boxes(
@@ -931,7 +930,7 @@ def layout_blocks(
             )
         )
     heights = numpy.maximum(1.0, boxes[:, 3] - boxes[:, 1])
-    median_height = max(1.0, float(numpy.median(heights)))
+    median_height = max(1.0, finite_median(heights))
     obstacle_index = (
         SpatialIndex(((index, obstacle) for index, obstacle in enumerate(obstacles)))
         if obstacles
@@ -1130,7 +1129,7 @@ def order_lines(lines: tuple[ParsedLine, ...]) -> tuple[ParsedLine, ...]:
         numpy.arange(len(lines), dtype=numpy.int64),
         boxes,
         (),
-        max(1.0, float(numpy.median(heights))),
+        max(1.0, finite_median(heights)),
     )
     return tuple(lines[int(index)] for region in regions for index in region)
 
@@ -1163,7 +1162,7 @@ def layout_element_order(
         numpy.arange(len(boxes), dtype=numpy.int64),
         values,
         obstacles,
-        max(1.0, float(numpy.median(heights))),
+        max(1.0, finite_median(heights)),
         obstacle_index=(
             SpatialIndex(((index, obstacle) for index, obstacle in enumerate(obstacles)))
             if obstacles

@@ -11,6 +11,7 @@ from typing import Any, cast
 
 import numpy
 
+from core_pdf.impl.engine.array_views import finite_median
 from core_pdf.impl.engine.layout.geometry import bbox_union
 from core_pdf.impl.engine.layout.spatial import (
     SpatialIndex,
@@ -572,7 +573,7 @@ def internal_aligned_column_clusters(
         )
         if (
             len(row_support) >= minimum_rows
-            and float(numpy.median(widths)) <= page_width * 0.48
+            and finite_median(numpy.asarray(widths, dtype=numpy.float32)) <= page_width * 0.48
             and alphanumeric * 2 >= len(cluster)
         ):
             candidates.append(cluster)
@@ -629,8 +630,11 @@ def internal_stream_table(
         return None
     column_centers = numpy.asarray(
         [
-            numpy.median(
-                [float(observations.bbox[index, 0]) for internal_row_index, index in column]
+            finite_median(
+                numpy.asarray(
+                    [float(observations.bbox[index, 0]) for internal_row_index, index in column],
+                    dtype=numpy.float32,
+                )
             )
             for column in columns
         ],
@@ -1386,11 +1390,12 @@ def internal_merge_wrapped_cell_rows(table: Table) -> Table:
     # alone is too weak a signal: a tightly set table of one-line records
     # separates its rows by less than a wrapped cell's leading, so inferring
     # wrapping from gaps regroups records that were already rows.
-    if max(heights) < float(numpy.median(heights)) * internal_LOGICAL_ROW_MIN_TALL_RATIO:
+    median_height = finite_median(numpy.asarray(heights, dtype=numpy.float32))
+    if max(heights) < median_height * internal_LOGICAL_ROW_MIN_TALL_RATIO:
         return table
     tolerance = max(
         internal_LOGICAL_ROW_MIN_GAP,
-        float(numpy.median(heights)) * internal_LOGICAL_ROW_GAP_RATIO,
+        median_height * internal_LOGICAL_ROW_GAP_RATIO,
     )
     groups: list[list[int]] = []
     running_bottom = 0.0
