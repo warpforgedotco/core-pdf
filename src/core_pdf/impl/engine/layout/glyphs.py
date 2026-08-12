@@ -166,6 +166,7 @@ def glyph_unicode_confidence(
     return internal_cached_glyph_unicode_confidence(text, unicode_source, alternates)
 
 
+@lru_cache(maxsize=512)
 def glyph_unicode_semantics(text: str, unicode_source: str) -> GlyphUnicodeSemantics:
     """Classify a decoded value without treating raw CIDs as real Unicode.
 
