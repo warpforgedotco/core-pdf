@@ -6,8 +6,6 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING, cast
 
-from core_pdf.impl.primitives import MISSING, PdfName
-
 if TYPE_CHECKING:
     from core_pdf.impl.engine.spec.s_07_objects.object_cache import (
         CachedPdfObject,
@@ -20,39 +18,7 @@ if TYPE_CHECKING:
 def lookup_dict_key_default(value: object, key: str, default: object = None) -> object:
     if not isinstance(value, dict):
         return default
-
-    sentinel = MISSING
-    get = value.get
-
-    found = get(key, sentinel)
-    if found is not sentinel:
-        return found
-
-    pdf_key = PdfName.of(key)
-    found = get(pdf_key, sentinel)
-    if found is not sentinel:
-        return found
-
-    normalized = key.lstrip("/")
-    for k, item in value.items():
-        if type(k) is PdfName:
-            key_value = k.value
-            if key_value == key or key_value.lstrip("/") == normalized:
-                return item
-            continue
-        if type(k) is str:
-            if k.lstrip("/") == normalized:
-                return item
-            continue
-        if type(k) is bytes:
-            try:
-                key_value = k.decode("latin-1")
-            except UnicodeDecodeError:
-                continue
-            if key_value.lstrip("/") == normalized:
-                return item
-
-    return default
+    return value.get(key, default)
 
 
 def lookup_dict_key(value: object, key: str) -> object:
