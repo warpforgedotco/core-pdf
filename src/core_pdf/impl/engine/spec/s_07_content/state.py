@@ -1716,9 +1716,6 @@ class TextState:
         fill = self.fill_color
         font_name = self.current_font
         font_size = self.font_size
-        space_width = self.font_space_width
-        stream_order = self.stream_order
-        xobject_depth = self.xobject_depth
         combined_a = self.combined_A
         combined_b = self.combined_B
         combined_c = self.combined_C
@@ -1748,18 +1745,11 @@ class TextState:
         advance_scale = self.text_advance_scale
         char_space_scale = self.char_space_scale
         word_space_scale = self.word_space_scale
-        writing_mode = "vertical" if is_vertical else "horizontal"
         axis_aligned_horizontal = not is_vertical and combined_b == 0.0 and combined_c == 0.0
         rise = self.rise
         font_scale = self.font_scale
         font_ascent = self.font_ascent
         font_descent = self.font_descent
-        tm_a = self.tm_a
-        tm_b = self.tm_b
-        tm_c = self.tm_c
-        tm_d = self.tm_d
-        tm_e = self.tm_e
-        tm_f = self.tm_f
         fill_opacity = self.fill_opacity
         if axis_aligned_horizontal:
             axis_advance_y0 = text_basis[1] + (font_descent + rise) * combined_d
@@ -1810,16 +1800,8 @@ class TextState:
                     advance_x1,
                     axis_baseline_y,
                 )
-                glyph_text_matrix = (
-                    tm_a,
-                    tm_b,
-                    tm_c,
-                    tm_d,
-                    tm_e + offset * tm_a,
-                    tm_f + offset * tm_b,
-                )
             else:
-                text_box, baseline_text, glyph_text_matrix = glyph_text_space_boxes(
+                text_box, baseline_text, _ = glyph_text_space_boxes(
                     self,
                     offset,
                     advance,
@@ -1845,14 +1827,6 @@ class TextState:
                 advance_scale,
                 rise,
                 font_scale,
-            )
-            device_matrix = (
-                combined_a,
-                combined_b,
-                combined_c,
-                combined_d,
-                baseline[0],
-                baseline[1],
             )
             observation_confidence = glyph_unicode_confidence(
                 chunk_text,
@@ -1892,22 +1866,13 @@ class TextState:
                     gid=glyph.gid,
                     font_name=effective_font_name,
                     font_size=font_size,
-                    space_width=space_width,
-                    text_matrix=glyph_text_matrix,
-                    device_matrix=device_matrix,
                     baseline=baseline,
-                    writing_mode=writing_mode,
                     rotation_angle=rotation_angle,
-                    stream_order=stream_order,
-                    xobject_depth=xobject_depth,
                     fill=fill,
                     visible=visible,
                     confidence=observation_confidence,
                     unicode_source=glyph.unicode_source,
                     alternates=glyph.alternates,
-                    cluster_id=cluster_id,
-                    cluster_index=0,
-                    cluster_size=1,
                     bitmap=bitmap,
                     bitmap_width=bitmap_width,
                     bitmap_height=bitmap_height,
@@ -1918,7 +1883,7 @@ class TextState:
                 # Single-glyph fast path: glyph_cluster_from_observations, given one
                 # observation, only re-derives advance_bbox/ink_bbox/confidence/etc. from
                 # fields already sitting in locals here (rect, advance_rect,
-                # observation_confidence, baseline, writing_mode) -- construct the
+                # observation_confidence, baseline) -- construct the
                 # GlyphCluster directly instead of a round trip through GlyphObservation's
                 # advance_bbox/ink_bbox properties.
                 clusters.append(
@@ -1944,26 +1909,17 @@ class TextState:
             if glyph.split_unicode:
                 per_char_advance = advance / len(chunk_text)
                 char_offset = offset
-                cluster_size = len(chunk_text)
-                for cluster_index, ch in enumerate(chunk_text):
+                for ch in chunk_text:
                     char_confidence = glyph_unicode_confidence(
                         ch,
                         glyph.unicode_source,
                         glyph.alternates,
                     )
-                    char_box, char_baseline_text, char_text_matrix = glyph_text_space_boxes(
+                    char_box, char_baseline_text, _ = glyph_text_space_boxes(
                         self, char_offset, per_char_advance, decoder
                     )
                     char_advance_rect = transformed_text_rect(self, *char_box, text_basis)
                     char_baseline = transformed_text_line(*char_baseline_text, text_basis)
-                    char_device_matrix = (
-                        combined_a,
-                        combined_b,
-                        combined_c,
-                        combined_d,
-                        char_baseline[0],
-                        char_baseline[1],
-                    )
                     cluster_observations.append(
                         GlyphObservation(
                             text=ch,
@@ -1976,22 +1932,13 @@ class TextState:
                             gid=glyph.gid,
                             font_name=decoder.font_name or font_name,
                             font_size=font_size,
-                            space_width=space_width,
-                            text_matrix=char_text_matrix,
-                            device_matrix=char_device_matrix,
                             baseline=char_baseline,
-                            writing_mode=writing_mode,
                             rotation_angle=rotation_angle,
-                            stream_order=stream_order,
-                            xobject_depth=xobject_depth,
                             fill=fill,
                             visible=visible,
                             confidence=char_confidence,
                             unicode_source=glyph.unicode_source,
                             alternates=glyph.alternates,
-                            cluster_id=cluster_id,
-                            cluster_index=cluster_index,
-                            cluster_size=cluster_size,
                             font_decoder=decoder,
                         )
                     )
@@ -2009,22 +1956,13 @@ class TextState:
                         gid=glyph.gid,
                         font_name=decoder.font_name or font_name,
                         font_size=font_size,
-                        space_width=space_width,
-                        text_matrix=glyph_text_matrix,
-                        device_matrix=device_matrix,
                         baseline=baseline,
-                        writing_mode=writing_mode,
                         rotation_angle=rotation_angle,
-                        stream_order=stream_order,
-                        xobject_depth=xobject_depth,
                         fill=fill,
                         visible=visible,
                         confidence=observation_confidence,
                         unicode_source=glyph.unicode_source,
                         alternates=glyph.alternates,
-                        cluster_id=cluster_id,
-                        cluster_index=0,
-                        cluster_size=1,
                         font_decoder=decoder,
                     )
                 )

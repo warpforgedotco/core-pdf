@@ -48,7 +48,6 @@ def test_single_glyph_cluster_reuses_observation_geometry_and_confidence(
         seqno=7,
         font_name="Example",
         baseline=(0.5, 1.5, 3.5, 1.5),
-        writing_mode="horizontal",
         rotation_angle=0,
         confidence=confidence,
     )

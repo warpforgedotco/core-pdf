@@ -64,28 +64,18 @@ class GlyphObservation:
     gid: int | None = None
     font_name: str | None = None
     font_size: float = 0.0
-    space_width: float = 0.0
-    text_matrix: Matrix6 | None = None
-    device_matrix: Matrix6 | None = None
     baseline: BBox | None = None
-    writing_mode: str = "horizontal"
     rotation_angle: int = 0
-    stream_order: int = -1
-    xobject_depth: int = 0
     fill: tuple[float, ...] | None = None
     visible: bool = True
     confidence: float | None = None
     unicode_source: str = ""
     alternates: tuple[str, ...] = ()
-    cluster_id: int = -1
-    cluster_index: int = 0
-    cluster_size: int = 1
     bitmap: tuple[int, ...] = ()
     bitmap_width: int = 0
     bitmap_height: int = 0
     bitmap_code: int | None = None
     font_decoder: object | None = None
-    provenance: tuple[tuple[str, object], ...] = ()
 
     @property
     def ink_bbox(self) -> BBox:
