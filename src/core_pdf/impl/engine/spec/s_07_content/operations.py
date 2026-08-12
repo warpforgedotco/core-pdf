@@ -523,6 +523,7 @@ def dispatch_operations(
         byte = raw_bytes[pos]
 
         if WS_TABLE[byte]:
+            pos += 1
             while pos < data_len and WS_TABLE[raw_bytes[pos]]:
                 pos += 1
             if pos >= data_len:
@@ -541,7 +542,7 @@ def dispatch_operations(
 
         if is_word_start[byte]:
             limit = pos + 1024 if pos + 1024 < data_len else data_len
-            end = pos
+            end = pos + 1
             while end < limit:
                 if word_break_or_ws[raw_bytes[end]]:
                     break
