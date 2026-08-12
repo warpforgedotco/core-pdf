@@ -435,7 +435,7 @@ class PdfLexer:
         return self.parse_keyword(raw)
 
     def parse_object(self) -> Any:
-        self.skip_ignored()
+        self.pos = self.skip_ignored_at(self.pos)
         data = self.raw_data
         pos = self.pos
         if pos >= self.data_len:
@@ -474,10 +474,14 @@ class PdfLexer:
             self.pos = end - 6
         if is_number_word(raw):
             raw_is_integer = 46 not in raw
-            next_token = self.scan_word_at(end)
-            if next_token is not None:
+            if not raw_is_integer:
+                return parse_float_token(raw)
+            next_pos = self.skip_ignored_at(end)
+            if next_pos < self.data_len and 48 <= data[next_pos] <= 57:
+                next_token = self.scan_word_at(next_pos, skip_ignored=False)
+                assert next_token is not None
                 next_raw, next_end = next_token
-                if raw_is_integer and is_integer_word(next_raw):
+                if is_integer_word(next_raw):
                     next_next = self.scan_word_at(next_end)
                     if next_next is not None and next_next[0] == b"R":
                         self.pos = next_next[1]
@@ -489,8 +493,6 @@ class PdfLexer:
                         if obj_num < 0 or gen_num < 0:
                             raise PdfParseError("invalid reference")
                         return PdfReference(obj_num, gen_num)
-            if not raw_is_integer:
-                return parse_float_token(raw)
             return parse_int_token(raw)
         return self.parse_keyword(raw)
 
@@ -530,7 +532,7 @@ class PdfLexer:
         self.current_obj_num = obj_num
         self.current_gen_num = gen_num
         try:
-            self.skip_ignored()
+            self.pos = self.skip_ignored_at(self.pos)
             if self.raw_data[self.pos : self.pos + 6] == b"endobj":
                 self.advance(6)
                 return None
@@ -538,7 +540,7 @@ class PdfLexer:
         finally:
             self.current_obj_num = previous_obj
             self.current_gen_num = previous_gen
-        self.skip_ignored()
+        self.pos = self.skip_ignored_at(self.pos)
         keyword = self.scan_word(skip_ignored=True)
         if keyword is None or keyword[0] != b"endobj":
             if (
@@ -665,7 +667,7 @@ class PdfLexer:
         should_decipher = self.decipher is not None and self.current_obj_num is not None
         apply_decipher = self.apply_decipher
         while True:
-            self.skip_ignored()
+            self.pos = self.skip_ignored_at(self.pos)
             if self.pos >= self.data_len:
                 raise PdfParseError("unterminated array")
             pos = self.pos
@@ -841,7 +843,7 @@ class PdfLexer:
         values: PdfDict = {}
         self.advance(2)
         while True:
-            self.skip_ignored()
+            self.pos = self.skip_ignored_at(self.pos)
             if self.pos >= self.data_len:
                 raise PdfParseError("unterminated dictionary")
             if (
@@ -969,7 +971,7 @@ class PdfLexer:
                 raw_data = self.raw_data[data_start:endstream_pos]
                 self.rewind(endstream_pos + 9)
         else:
-            self.skip_ignored()
+            self.pos = self.skip_ignored_at(self.pos)
             if self.raw_data[
                 self.pos : self.pos + 9
             ] == b"endstream" or matches_keyword_with_one_substitution(
@@ -1080,7 +1082,7 @@ class PdfLexer:
 
     def parse_dictionary_or_stream(self) -> Any:
         dictionary = self.parse_dictionary()
-        self.skip_ignored()
+        self.pos = self.skip_ignored_at(self.pos)
         if self.raw_data[self.pos : self.pos + 6] == b"stream" or (
             self.pos + 6 <= self.data_len
             and matches_keyword_with_one_substitution(self.raw_data, self.pos, b"stream")
