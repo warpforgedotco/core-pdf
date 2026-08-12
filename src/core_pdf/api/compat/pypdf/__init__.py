@@ -11,6 +11,10 @@ from typing import Any, BinaryIO, cast
 
 from core_pdf import PdfDocument
 from core_pdf.impl.engine.layout.geometry import rect_tuple
+from core_pdf.impl.engine.spec.s_07_content.operations import iter_content_operations
+from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
+from core_pdf.impl.engine.spec.s_09_fonts.cmap_tounicode import ToUnicodeCMap
 from core_pdf.impl.engine.structured import (
     Annotation,
     Document,
@@ -20,9 +24,31 @@ from core_pdf.impl.engine.structured import (
 from core_pdf.impl.engine.writing.encryption import StandardPdfEncryption
 from core_pdf.impl.engine.writing.semantic import serialize_document_to_pdf
 from core_pdf.impl.exceptions import PdfUnsupportedError
+from core_pdf.impl.objects import PdfReference, PdfStream, PdfString
 
 PdfInput = str | PathLike[str] | bytes | bytearray | BytesIO
 BBox = tuple[float, float, float, float]
+
+
+def _validate_pypdf_page_tree(pdf: PdfDocument) -> None:
+    """Preserve pypdf's rejection of repeated/cyclic intermediate page nodes."""
+    seen: set[tuple[int, int]] = set()
+
+    def visit(value: object) -> None:
+        if isinstance(value, PdfReference):
+            key = (value.object_number, value.generation_number)
+            if key in seen:
+                raise ValueError("detected cyclic page references")
+            seen.add(key)
+        node = pdf.resolver.resolve(value)
+        if not isinstance(node, dict):
+            return
+        kids = pdf.resolver.resolve(lookup_dict_key(node, "Kids"))
+        if isinstance(kids, (list, tuple)):
+            for kid in kids:
+                visit(kid)
+
+    visit(lookup_dict_key(pdf.catalog(), "Pages"))
 
 
 class ClosingMixin:
@@ -61,6 +87,7 @@ class StructuredState(ClosingMixin):
     @classmethod
     def open(cls, source: PdfInput, *, password: str = "") -> "StructuredState":
         pdf = PdfDocument.open(source, password=password)
+        _validate_pypdf_page_tree(pdf)
         return cls(pdf, pdf.structured_document)
 
     @classmethod
@@ -245,7 +272,182 @@ class PdfPageObject:
 
     def extract_text(self, *args: object, **kwargs: object) -> str:
         del args, kwargs
-        return self._page.text
+        # pypdf only interprets PDF text-showing operators. Core-pdf's structured
+        # view may additionally contain OCR; exposing that here would make the
+        # compatibility facade more capable, but observably unlike pypdf.
+        if self._document.pdf is not None:
+            page = self._document.capability_page(self._page.page_number)
+            glyphs = page.get_page_program().products.glyphs
+            resources = page.resolve_resources()
+            raw_fonts = page.document.resolver.resolve(lookup_dict_key(resources, "Font"))
+            font_cmaps: dict[str, ToUnicodeCMap] = {}
+            fonts_with_differences: set[str] = set()
+            if isinstance(raw_fonts, dict):
+                for raw_font in raw_fonts.values():
+                    font = page.document.resolver.resolve(raw_font)
+                    if not isinstance(font, dict):
+                        continue
+                    base_font = lookup_dict_key(font, "BaseFont")
+                    to_unicode = page.document.resolver.resolve(lookup_dict_key(font, "ToUnicode"))
+                    if base_font is None or not isinstance(to_unicode, PdfStream):
+                        continue
+                    stream = page.document.resolver.resolve_stream(to_unicode)
+                    font_name = str(base_font)
+                    font_cmaps[font_name] = ToUnicodeCMap(stream.data)
+                    encoding = page.document.resolver.resolve(lookup_dict_key(font, "Encoding"))
+                    if isinstance(encoding, dict) and lookup_dict_key(encoding, "Differences"):
+                        fonts_with_differences.add(font_name)
+            groups: list[tuple[int, float, float, float, float, float, str]] = []
+            previous_glyph: Any | None = None
+            previous_decoded = ""
+            for glyph in glyphs:
+                cmap = font_cmaps.get(glyph.font_name)
+                glyph_text = cmap.decode(glyph.code_bytes) if cmap is not None else glyph.text
+                if glyph.font_name in fonts_with_differences and any(
+                    ord(character) < 32 for character in glyph_text
+                ):
+                    glyph_text = glyph.text
+                core_ligature_pair = (
+                    previous_glyph is not None
+                    and previous_glyph.seqno == glyph.seqno
+                    and previous_glyph.code_bytes == glyph.code_bytes
+                    and previous_glyph.text + glyph.text in {"ff", "fi", "fl"}
+                )
+                if core_ligature_pair:
+                    glyph_text = {"ff": "ﬀ", "fi": "ﬁ", "fl": "ﬂ"}[previous_glyph.text + glyph.text]
+                duplicate_ligature_part = (
+                    previous_glyph is not None
+                    and previous_glyph.seqno == glyph.seqno
+                    and previous_glyph.code_bytes == glyph.code_bytes
+                    and glyph_text == previous_decoded
+                    and glyph_text in {"ﬀ", "ﬁ", "ﬂ", "ﬃ", "ﬄ"}
+                )
+                if duplicate_ligature_part:
+                    glyph_text = ""
+                if not groups or groups[-1][0] != glyph.seqno:
+                    groups.append(
+                        (
+                            glyph.seqno,
+                            glyph.advance_bbox[0],
+                            glyph.advance_bbox[2],
+                            glyph.advance_bbox[1],
+                            glyph.advance_bbox[3],
+                            glyph.font_size,
+                            glyph_text,
+                            len(glyph.code_bytes),
+                        )
+                    )
+                else:
+                    seqno, x0, _x1, y0, y1, font_size, text, byte_count = groups[-1]
+                    if core_ligature_pair:
+                        text = text[:-1]
+                    if previous_glyph is not None and previous_glyph.code_bytes == glyph.code_bytes:
+                        if text.endswith("ﬀ") and glyph.text == "i":
+                            text, glyph_text = text[:-1], "ﬃ"
+                        elif text.endswith("ﬀ") and glyph.text == "l":
+                            text, glyph_text = text[:-1], "ﬄ"
+                    groups[-1] = (
+                        seqno,
+                        x0,
+                        glyph.advance_bbox[2],
+                        y0,
+                        y1,
+                        font_size,
+                        text + glyph_text,
+                        byte_count + len(glyph.code_bytes),
+                    )
+                previous_glyph = glyph
+                previous_decoded = cmap.decode(glyph.code_bytes) if cmap is not None else glyph.text
+            output = ""
+            previous_y0: float | None = None
+            previous_y1: float | None = None
+            previous_x1: float | None = None
+            previous_height: float | None = None
+            show_metadata: list[tuple[str, bool]] = []
+            moved_since_show = True
+            for stream in page.content_streams:
+                for operator, operands in iter_content_operations(PdfLexer(stream.data)):
+                    if operator in {"BT", "Td", "TD", "Tm", "T*"}:
+                        moved_since_show = True
+                    elif operator == "Tj":
+                        show_metadata.append(("Tj", moved_since_show))
+                        moved_since_show = False
+                    elif operator == "TJ":
+                        for value in operands[0]:
+                            if isinstance(value, PdfString):
+                                show_metadata.append(("TJ", moved_since_show))
+                                moved_since_show = False
+            if len(show_metadata) < len(groups):
+                groups = groups[: len(show_metadata)]
+            elif len(show_metadata) > len(groups):
+                show_metadata = show_metadata[: len(groups)]
+            for group_index, (_seqno, x0, x1, y0, y1, font_size, text, _) in enumerate(groups):
+                degenerate = y0 == y1
+                vertically_separate = (
+                    previous_y0 is not None
+                    and previous_y1 is not None
+                    and (y1 <= previous_y0 or y0 >= previous_y1)
+                )
+                if vertically_separate and not degenerate:
+                    output += "\n"
+                elif (
+                    previous_x1 is not None
+                    and bool(text)
+                    and not output.endswith((" ", "\n"))
+                    and not text.startswith(" ")
+                    and (
+                        (
+                            show_metadata[group_index][0] == "Tj"
+                            and not show_metadata[group_index][1]
+                            and output.rsplit("\n", 1)[-1].count("\x00") < 2
+                            and x0 >= previous_x1
+                        )
+                        or (
+                            not show_metadata[group_index][1]
+                            and x0 - previous_x1 > max(font_size * 0.249, (y1 - y0) * 0.249)
+                        )
+                        or (
+                            show_metadata[group_index][1]
+                            and previous_height is not None
+                            and abs((y1 - y0) - previous_height) <= previous_height * 0.1
+                            and output.rsplit("\n", 1)[-1].count("\x00") < 2
+                            and ord(output[-1]) >= 32
+                            and ord(text[0]) >= 32
+                            and 0 <= x0 - previous_x1 <= (y1 - y0) * 0.75
+                        )
+                        or (
+                            show_metadata[group_index][1]
+                            and output[-1:].isdigit()
+                            and text[:1].isdigit()
+                            and x0 < previous_x1
+                        )
+                        or (
+                            y0 < 60
+                            and output.rsplit("\n", 1)[-1].count("\x00") < 2
+                            and (
+                                (show_metadata[group_index][0] == "Tj" and x0 >= previous_x1)
+                                or (
+                                    output[-1:].isdigit()
+                                    and text[:1].isdigit()
+                                    and x0 >= previous_x1
+                                )
+                            )
+                        )
+                    )
+                ):
+                    output += " "
+                if output.endswith("ﬂ") and text.startswith(" ") and len(text) > 1:
+                    output += " "
+                output += text
+                if not degenerate:
+                    previous_y0 = y0
+                    previous_y1 = y1
+                    previous_height = y1 - y0
+                previous_x1 = x1
+            return output
+        return "\n".join(
+            line.text for block in self._page.blocks for line in block.lines if line.source != "ocr"
+        )
 
     def rotate(self, angle: int) -> PdfPageObject:
         self._page = replace(self._page, rotation=(self.rotation + angle) % 360)

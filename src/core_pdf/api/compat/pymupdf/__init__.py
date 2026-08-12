@@ -30,6 +30,10 @@ from core_pdf.impl.engine.structured import (
 BBox = tuple[float, float, float, float]
 
 
+def _float32(value: float) -> float:
+    return struct.unpack("f", struct.pack("f", value))[0]
+
+
 def coerce_bbox(value: object) -> BBox:
     box = rect_tuple(value)
     if box is None:
@@ -165,7 +169,197 @@ class Page(PdfPageObject):
 
     @property
     def rect(self) -> tuple[float, float, float, float]:
-        return self.mediabox
+        x0, y0, x1, y1 = self.cropbox
+        return (0.0, 0.0, _float32(x1 - x0), _float32(y1 - y0))
+
+    def _native_text_view(self) -> Any:
+        """Return only text represented by PDF text operators, as MuPDF does by default."""
+        view = self._page.text_view
+        blocks: list[Block] = []
+        for block in view.blocks:
+            lines = tuple(line for line in block.lines if line.source != "ocr")
+            if lines:
+                blocks.append(replace(block, lines=lines))
+        return type(view)(tuple(blocks), page_number=self._page.page_number)
+
+    def _mupdf_plain_text(self) -> str:
+        runs = (
+            self._document.capability_page(self._page.page_number).get_page_program().products.runs
+        )
+        output = ""
+        previous: Any | None = None
+        for run in runs:
+            if not run.text:
+                continue
+            if previous is not None:
+                current_height = max(
+                    run.advance_bbox[3] - run.advance_bbox[1], run.coords[run.FONT_SIZE]
+                )
+                previous_height = max(
+                    previous.advance_bbox[3] - previous.advance_bbox[1],
+                    previous.coords[previous.FONT_SIZE],
+                )
+                degenerate = (
+                    run.advance_bbox[3] == run.advance_bbox[1]
+                    or previous.advance_bbox[3] == previous.advance_bbox[1]
+                )
+                vertically_separate = (
+                    run.baseline is not None
+                    and previous.baseline is not None
+                    and abs(run.baseline[1] - previous.baseline[1])
+                    > (
+                        max(current_height, previous_height)
+                        if degenerate
+                        else min(current_height, previous_height)
+                    )
+                    * 0.8
+                )
+                if vertically_separate and "\f" not in run.text and not output.endswith("\x00"):
+                    output += "\n"
+                elif (
+                    not output.endswith((" ", "\n"))
+                    and not run.text.startswith(" ")
+                    and run.advance_bbox[0] - previous.advance_bbox[2]
+                    > (run.advance_bbox[3] - run.advance_bbox[1]) * 0.2
+                ):
+                    output += " "
+            if not output and run.text.startswith(" "):
+                output = " \n" + run.text[1:]
+            else:
+                output += run.text
+            previous = run
+        return output + ("\n" if output else "")
+
+    def _mupdf_words(self) -> list[tuple[float, float, float, float, str, int, int, int]]:
+        page = self._document.capability_page(self._page.page_number)
+        products = page.get_page_program().products
+        crop_box = page.crop_box or page.media_box
+        crop_x0, _crop_y0, _crop_x1, crop_y1 = crop_box
+        glyphs_by_sequence: dict[int, list[Any]] = {}
+        for glyph in products.glyphs:
+            glyphs_by_sequence.setdefault(glyph.seqno, []).append(glyph)
+        indexed_words = list(self._native_text_view().words)
+        search_from = 0
+        output = []
+        fallback_block = 0
+        previous_raw_x1: float | None = None
+        previous_word_y: tuple[float, float] | None = None
+        previous_baseline: float | None = None
+        previous_mupdf_baseline: float | None = None
+        for run_index, run in enumerate(products.runs):
+            if not run.text or not run.visible or run.baseline is None:
+                continue
+            font_size = run.coords[run.FONT_SIZE]
+            ascent = (run.advance_bbox[3] - run.baseline[1]) / font_size
+            descent = (run.baseline[1] - run.advance_bbox[1]) / font_size
+            metric_height = ascent + descent
+            baseline = run.baseline[1]
+            mupdf_baseline = (
+                _float32(baseline)
+                if previous_baseline is None or previous_mupdf_baseline is None
+                else _float32(previous_mupdf_baseline + _float32(baseline - previous_baseline))
+            )
+            previous_baseline = baseline
+            previous_mupdf_baseline = mupdf_baseline
+            next_sequence = (
+                products.runs[run_index + 1].seqno
+                if run_index + 1 < len(products.runs)
+                else float("inf")
+            )
+            run_glyphs = [
+                glyph
+                for sequence, sequence_glyphs in glyphs_by_sequence.items()
+                if run.seqno <= sequence < next_sequence
+                for glyph in sequence_glyphs
+            ]
+            origin_y = _float32(_float32(float(crop_y1)) - mupdf_baseline)
+            if metric_height:
+                y0 = _float32(origin_y - _float32(font_size * _float32(ascent / metric_height)))
+                y1 = _float32(origin_y + _float32(font_size * _float32(descent / metric_height)))
+            else:
+                y0 = _float32(crop_y1 - max(glyph.ink_bbox[3] for glyph in run_glyphs))
+                y1 = _float32(crop_y1 - min(glyph.ink_bbox[1] for glyph in run_glyphs))
+            current: list[Any] = []
+            for glyph in (*run_glyphs, None):
+                if glyph is not None and not glyph.text.isspace():
+                    current.append(glyph)
+                    continue
+                if not current:
+                    continue
+                text = "".join(item.text for item in current)
+                raw_x0 = current[0].advance_bbox[0] - crop_x0
+                same_line = previous_word_y == (y0, y1)
+                if same_line and previous_raw_x1 is not None and output:
+                    x0 = _float32(output[-1][2] + _float32(raw_x0 - previous_raw_x1))
+                else:
+                    x0 = _float32(raw_x0)
+                x1 = x0
+                raw_previous_x1 = raw_x0
+                for item_index, item in enumerate(current):
+                    if item_index:
+                        x1 = _float32(
+                            x1 + _float32(item.advance_bbox[0] - crop_x0 - raw_previous_x1)
+                        )
+                    width_units = round(
+                        (item.advance_bbox[2] - item.advance_bbox[0]) / font_size * 1000
+                    )
+                    advance = _float32(
+                        _float32(font_size) * _float32(width_units * _float32(0.001))
+                    )
+                    x1 = _float32(x1 + advance)
+                    raw_previous_x1 = item.advance_bbox[2] - crop_x0
+                if len({item.seqno for item in current}) > 1:
+                    x1 = _float32(current[-1].advance_bbox[2] - crop_x0)
+                indices = None
+                for index in range(search_from, len(indexed_words)):
+                    candidate = indexed_words[index]
+                    if candidate.text == text:
+                        indices = (
+                            candidate.block_index,
+                            candidate.line_index,
+                            candidate.word_index,
+                        )
+                        search_from = index + 1
+                        break
+                if indices is None:
+                    if same_line and output:
+                        indices = (output[-1][5], output[-1][6], output[-1][7] + 1)
+                    else:
+                        indices = (fallback_block, 0, 0)
+                        fallback_block += 1
+                if same_line and output and x0 - output[-1][2] <= (y1 - y0) * 0.1:
+                    previous = output[-1]
+                    output[-1] = (
+                        *previous[:2],
+                        x1,
+                        previous[3],
+                        previous[4] + text,
+                        *previous[5:],
+                    )
+                else:
+                    output.append((x0, y0, x1, y1, text, *indices))
+                previous_raw_x1 = current[-1].advance_bbox[2] - crop_x0
+                previous_word_y = (y0, y1)
+                current = []
+        indexed: list[tuple[float, float, float, float, str, int, int, int]] = []
+        block_index = 0
+        line_index = 0
+        word_index = 0
+        previous_line: tuple[float, float] | None = None
+        for x0, y0, x1, y1, text, *_indices in output:
+            line = (y0, y1)
+            if previous_line is not None and line != previous_line:
+                gap = y0 - previous_line[1]
+                if gap > min(y1 - y0, previous_line[1] - previous_line[0]) * 0.25:
+                    block_index += 1
+                    line_index = 0
+                else:
+                    line_index += 1
+                word_index = 0
+            indexed.append((x0, y0, x1, y1, text, block_index, line_index, word_index))
+            word_index += 1
+            previous_line = line
+        return indexed
 
     def get_text(self, kind: str = "text", *args: object, **kwargs: object) -> object:
         del args
@@ -175,9 +369,7 @@ class Page(PdfPageObject):
             kwargs.pop(option, None)
         if kwargs:
             raise TypeError(f"unsupported text options: {', '.join(kwargs)}")
-        text_view = self._page.text_view
-        if kind != "words" and clip is None:
-            text_view = self._document.capability_page(self._page.page_number).structured_view
+        text_view = self._native_text_view()
         if clip is not None:
             clip_bbox = cast(tuple[float, float, float, float], clip)
             elements = tuple(
@@ -187,12 +379,12 @@ class Page(PdfPageObject):
             )
             text_view = type(text_view)(elements, page_number=self._page.page_number)
         else:
-            text_view = self._page.text_view
+            text_view = self._native_text_view()
         text = text_view.text
         if sort:
             text = "\n".join(sorted(text.splitlines(), key=str.casefold))
         if kind in {"text", "plain"}:
-            return text
+            return self._mupdf_plain_text() if clip is None and not sort else text
         if kind == "html":
             return "<div>" + escape(text).replace("\n", "<br>\n") + "</div>"
         if kind == "xhtml":
@@ -246,7 +438,9 @@ class Page(PdfPageObject):
             payload = {"width": self._page.width, "height": self._page.height, "blocks": blocks}
             return json.dumps(payload) if kind in {"json", "rawjson"} else payload
         if kind == "words":
-            words = self._page.text_view.words
+            if clip is None:
+                return self._mupdf_words()
+            words = self._native_text_view().words
             if clip is not None:
                 x0, y0, x1, y1 = cast(tuple[float, float, float, float], clip)
                 words = tuple(

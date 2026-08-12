@@ -5,9 +5,32 @@
 [submodule "tests/fixtures/x-ray"]
 	path = tests/fixtures/x-ray
 	url = https://github.com/freelawproject/x-ray.git
+	shallow = true
 [submodule "tests/fixtures/pdfminer.six"]
 	path = tests/fixtures/pdfminer.six
 	url = https://github.com/pdfminer/pdfminer.six.git
+	shallow = true
 [submodule "tests/fixtures/pdfplumber"]
 	path = tests/fixtures/pdfplumber
 	url = https://github.com/jsvine/pdfplumber.git
+	shallow = true
+[submodule "tests/fixtures/llama_index"]
+	path = tests/fixtures/llama_index
+	url = https://github.com/run-llama/llama_index.git
+	shallow = true
+[submodule "tests/fixtures/pikepdf"]
+	path = tests/fixtures/pikepdf
+	url = https://github.com/pikepdf/pikepdf.git
+	shallow = true
+[submodule "tests/fixtures/PyMuPDF"]
+	path = tests/fixtures/PyMuPDF
+	url = https://github.com/pymupdf/PyMuPDF.git
+	shallow = true
+[submodule "tests/fixtures/pypdf"]
+	path = tests/fixtures/pypdf
+	url = https://github.com/py-pdf/pypdf.git
+	shallow = true
+[submodule "tests/fixtures/unstructured"]
+	path = tests/fixtures/unstructured
+	url = https://github.com/Unstructured-IO/unstructured.git
+	shallow = true

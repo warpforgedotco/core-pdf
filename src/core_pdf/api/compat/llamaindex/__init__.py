@@ -7,8 +7,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, TypeAlias, cast
 
-from core_pdf import PdfDocument
-from core_pdf.impl.engine.structured import chunk_elements, document_elements
+from core_pdf.api.compat.pypdf import PdfReader
 
 PdfInput: TypeAlias = Any
 
@@ -119,34 +118,18 @@ def load_data(
     extra_info: Mapping[str, Any] | None = None,
     **kwargs: object,
 ) -> list[Document]:
-    del kwargs
-    with PdfDocument.open(cast(PdfInput, source)) as document:
-        chunks = chunk_elements(
-            document_elements(document.structured_document),
-            max_characters=max_characters,
-        )
-        if not chunks:
-            return [
-                Document(
-                    "",
-                    {
-                        **(dict(extra_info) if extra_info is not None else {}),
-                        "page_numbers": (page.page_number,),
-                        "element_ids": (),
-                    },
-                )
-                for page in document.structured_document.pages
-            ]
+    del kwargs, max_characters
+    with PdfReader(cast(PdfInput, source), strict=False) as reader:
         return [
             Document(
-                chunk.text,
+                page.extract_text(),
                 {
                     **(dict(extra_info) if extra_info is not None else {}),
-                    "page_numbers": chunk.page_numbers,
-                    "element_ids": chunk.element_ids,
+                    "page_numbers": (page_number,),
+                    "element_ids": (),
                 },
             )
-            for chunk in chunks
+            for page_number, page in enumerate(reader.pages, 1)
         ]
 
 

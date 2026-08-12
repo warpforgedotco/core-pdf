@@ -77,6 +77,10 @@ class NarrativeText(Element):
     pass
 
 
+class UncategorizedText(Element):
+    pass
+
+
 class Table(Element):
     pass
 
@@ -96,19 +100,53 @@ def partition_pdf(filename: object, **kwargs: object) -> list[Element]:
         structured = document.structured_document
         result: list[Element] = []
         items_by_page: dict[int, list[Any]] = {}
+        native_text_pages = {
+            page.page_number
+            for page in document.pages
+            if any(run.visible and run.text for run in page.get_page_program().products.runs)
+        }
         for item in document_elements(structured):
+            if item.page_number not in native_text_pages:
+                continue
+            page = structured.pages[item.page_number - 1]
+            source_item = next(
+                (
+                    value
+                    for index, value in enumerate(page.elements)
+                    if item.element_id == f"p{item.page_number}-e{index}"
+                ),
+                None,
+            )
+            lines = tuple(getattr(source_item, "lines", ()))
+            if not item.text or (lines and all(line.source == "ocr" for line in lines)):
+                continue
             items_by_page.setdefault(item.page_number, []).append(item)
         for page_index, page in enumerate(structured.pages):
             if include_page_breaks and page_index:
                 result.append(PageBreak("", ElementMetadata(page_number=page.page_number)))
             for item in items_by_page.get(page.page_number, []):
                 element_type = item.kind.casefold()
+                text = " ".join(item.text.split())
                 element_class = {
                     "heading": Title,
-                    "block": NarrativeText,
                     "table": Table,
                     "image": Image,
-                }.get(element_type, Element)
+                }.get(element_type)
+                if element_class is None:
+                    words = text.split()
+                    alphabetic = sum(character.isalpha() for character in text)
+                    element_class = (
+                        Title
+                        if words
+                        and len(words) <= 12
+                        and alphabetic >= len(text) * 0.6
+                        and not text.endswith((".", ":", ";", "?", "!"))
+                        else (
+                            NarrativeText
+                            if len(words) >= 3 and alphabetic >= len(text) * 0.6
+                            else UncategorizedText
+                        )
+                    )
                 metadata = (
                     ElementMetadata(
                         {
@@ -122,7 +160,7 @@ def partition_pdf(filename: object, **kwargs: object) -> list[Element]:
                     if include_metadata
                     else ElementMetadata()
                 )
-                result.append(element_class(item.text, metadata))
+                result.append(element_class(text, metadata))
         return result
 
 
@@ -134,5 +172,6 @@ __all__ = (
     "PageBreak",
     "Table",
     "Title",
+    "UncategorizedText",
     "partition_pdf",
 )

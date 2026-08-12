@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import sys
+from contextlib import ExitStack
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import pytest
 
@@ -16,7 +17,15 @@ def test_pdfplumber_matches_real_library_on_all_fixture_pdfs(pdf_path: Path) -> 
     real_pdfplumber = pytest.importorskip("pdfplumber")
     from core_pdf.api.compat import pdfplumber as compat_pdfplumber
 
-    with real_pdfplumber.open(pdf_path) as expected, compat_pdfplumber.open(pdf_path) as actual:
+    with ExitStack() as stack:
+        pair = _open_pair(
+            stack,
+            lambda: real_pdfplumber.open(pdf_path),
+            lambda: compat_pdfplumber.open(pdf_path),
+        )
+        if pair is None:
+            return
+        expected, actual = pair
         assert len(actual.pages) == len(expected.pages)
         for actual_page, expected_page in zip(actual.pages, expected.pages, strict=True):
             assert actual_page.extract_text() == expected_page.extract_text()
@@ -32,13 +41,19 @@ def test_pypdf_matches_real_library_on_all_fixture_pdfs(pdf_path: Path) -> None:
     real_pypdf = pytest.importorskip("pypdf")
     from core_pdf.api.compat import pypdf as compat_pypdf
 
-    expected = real_pypdf.PdfReader(pdf_path, strict=False)
-    actual = compat_pypdf.PdfReader(pdf_path, strict=False)
-    assert len(actual.pages) == len(expected.pages)
-    for actual_page, expected_page in zip(actual.pages, expected.pages, strict=True):
-        assert actual_page.extract_text() == expected_page.extract_text()
-        assert tuple(actual_page.mediabox) == tuple(expected_page.mediabox)
-        assert actual_page.rotation == expected_page.rotation
+    def snapshot(reader_type: Any) -> tuple[tuple[str, tuple[float, ...], int], ...]:
+        with reader_type(pdf_path, strict=False) as reader:
+            return tuple(
+                (page.extract_text(), tuple(page.mediabox), page.rotation) for page in reader.pages
+            )
+
+    pair = _call_pair(
+        lambda: snapshot(real_pypdf.PdfReader), lambda: snapshot(compat_pypdf.PdfReader)
+    )
+    if pair is None:
+        return
+    expected, actual = pair
+    assert actual == expected
 
 
 @pytest.mark.parametrize("pdf_path", ALL_PDFS, ids=lambda path: path.name)
@@ -46,7 +61,15 @@ def test_pymupdf_matches_real_library_on_all_fixture_pdfs(pdf_path: Path) -> Non
     real_pymupdf = pytest.importorskip("pymupdf")
     from core_pdf.api.compat import pymupdf as compat_pymupdf
 
-    with real_pymupdf.open(pdf_path) as expected, compat_pymupdf.open(pdf_path) as actual:
+    with ExitStack() as stack:
+        pair = _open_pair(
+            stack,
+            lambda: real_pymupdf.open(pdf_path),
+            lambda: compat_pymupdf.open(pdf_path),
+        )
+        if pair is None:
+            return
+        expected, actual = pair
         assert len(actual) == len(expected)
         for actual_page, expected_page in zip(actual, expected, strict=True):
             assert actual_page.get_text() == expected_page.get_text()
@@ -59,7 +82,15 @@ def test_pikepdf_matches_real_library_on_all_fixture_pdfs(pdf_path: Path) -> Non
     real_pikepdf = pytest.importorskip("pikepdf")
     from core_pdf.api.compat import pikepdf as compat_pikepdf
 
-    with real_pikepdf.Pdf.open(pdf_path) as expected, compat_pikepdf.Pdf.open(pdf_path) as actual:
+    with ExitStack() as stack:
+        pair = _open_pair(
+            stack,
+            lambda: real_pikepdf.Pdf.open(pdf_path),
+            lambda: compat_pikepdf.Pdf.open(pdf_path),
+        )
+        if pair is None:
+            return
+        expected, actual = pair
         assert len(actual.pages) == len(expected.pages)
         assert [tuple(page.mediabox) for page in actual.pages] == [
             tuple(page.mediabox) for page in expected.pages
@@ -72,8 +103,13 @@ def test_unstructured_matches_real_library_on_all_fixture_pdfs(pdf_path: Path) -
     real_partition = pytest.importorskip("unstructured.partition.pdf").partition_pdf
     from core_pdf.api.compat.unstructured import partition_pdf as compat_partition
 
-    expected = real_partition(filename=str(pdf_path), strategy="fast")
-    actual = compat_partition(pdf_path)
+    pair = _call_pair(
+        lambda: real_partition(filename=str(pdf_path), strategy="fast"),
+        lambda: compat_partition(pdf_path),
+    )
+    if pair is None:
+        return
+    expected, actual = pair
     assert [(item.category, item.text) for item in actual] == [
         (item.category, item.text) for item in expected
     ]
@@ -84,8 +120,13 @@ def test_llamaindex_matches_real_reader_on_all_fixture_pdfs(pdf_path: Path) -> N
     real_reader = pytest.importorskip("llama_index.readers.file").PDFReader
     from core_pdf.api.compat.llamaindex import load_data
 
-    expected = real_reader().load_data(file=pdf_path)
-    actual = load_data(pdf_path)
+    pair = _call_pair(
+        lambda: real_reader().load_data(file=pdf_path),
+        lambda: load_data(pdf_path),
+    )
+    if pair is None:
+        return
+    expected, actual = pair
     assert [document.text for document in actual] == [document.text for document in expected]
 
 
@@ -95,11 +136,58 @@ def test_xray_matches_real_library_on_all_fixture_pdfs(
     pdf_path: Path,
 ) -> None:
     monkeypatch.syspath_prepend(str(XRAY_ROOT))
-    sys.modules.pop("xray", None)
+    real_pymupdf = pytest.importorskip("pymupdf")
+    monkeypatch.setitem(sys.modules, "fitz", real_pymupdf)
+    for module_name in tuple(sys.modules):
+        if module_name == "xray" or module_name.startswith("xray."):
+            sys.modules.pop(module_name)
     real_xray = pytest.importorskip("xray")
     from core_pdf.api.compat.xray import inspect
 
-    assert inspect(pdf_path) == real_xray.inspect(pdf_path)
+    pair = _call_pair(lambda: real_xray.inspect(pdf_path), lambda: inspect(pdf_path))
+    if pair is None:
+        return
+    expected, actual = pair
+    assert actual == expected
+
+
+def _open_pair(
+    stack: ExitStack,
+    expected_factory: Callable[[], Any],
+    actual_factory: Callable[[], Any],
+) -> tuple[Any, Any] | None:
+    try:
+        expected = stack.enter_context(expected_factory())
+    except Exception:
+        try:
+            stack.enter_context(actual_factory())
+        except Exception:
+            return None
+        pytest.fail("reference rejected the PDF but compat accepted it")
+    try:
+        actual = stack.enter_context(actual_factory())
+    except Exception as error:
+        pytest.fail(f"reference accepted the PDF but compat rejected it: {error!r}")
+    return expected, actual
+
+
+def _call_pair(
+    expected_factory: Callable[[], Any],
+    actual_factory: Callable[[], Any],
+) -> tuple[Any, Any] | None:
+    try:
+        expected = expected_factory()
+    except Exception:
+        try:
+            actual_factory()
+        except Exception:
+            return None
+        pytest.fail("reference rejected the PDF but compat accepted it")
+    try:
+        actual = actual_factory()
+    except Exception as error:
+        pytest.fail(f"reference accepted the PDF but compat rejected it: {error!r}")
+    return expected, actual
 
 
 def _metadata(value: Any) -> dict[str, str]:
