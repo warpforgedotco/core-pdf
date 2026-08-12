@@ -32,6 +32,18 @@ Additional local facades are available for `pikepdf`, `unstructured`, `llamainde
 They reproduce useful high-level behavior, not every implementation detail or private API of the
 upstream libraries.
 
+The pdfminer facade can be checked against pdfminer.six's own high-level extraction tests. The
+runner executes the unchanged upstream test module in isolated interpreters: once with the
+vendored pdfminer.six checkout and once with its imports redirected to the core-pdf facade.
+
+```sh
+uv run python scripts/run_pdfminer_compat_tests.py -- -q
+```
+
+A nonzero core-pdf result identifies a compatibility gap; the upstream result distinguishes those
+gaps from fixture or test-environment failures. Use `--implementation upstream` or
+`--implementation core-pdf` to run only one side.
+
 The x-ray facade performs its redaction inspection directly from engine drawing, glyph, and
 raster evidence:
 

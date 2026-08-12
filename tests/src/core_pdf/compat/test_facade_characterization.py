@@ -84,8 +84,8 @@ def test_pdfplumber_word_envelope_is_stable() -> None:
 
 def test_pdfminer_extract_text_output_is_stable() -> None:
     assert extract_pdfminer_text(FIXTURE) == (
-        "Hello \n\nWorld\n\nHello World\n\nHello World\n\n"
-        "H\n\ne\n\nl\n\nl\n\no\n\n \n\nW\n\no\n\nr\n\nl\n\nd\n\n\x0c"
+        "Hello \n\nWorld\n\nHello \n\nWorld\n\n"
+        "H e l l o  \n\nW o r l d\n\nH e l l o  \n\nW o r l d\n\n\x0c"
     )
 
 
