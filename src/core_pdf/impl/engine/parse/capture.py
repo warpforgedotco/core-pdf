@@ -224,12 +224,22 @@ def internal_glyph_evidence(
     semantic_characters = 0
     sources: Counter[str] = Counter()
     glyph_count = 0
+    previous_decoder: object | None = None
+    learned: dict[bytes, str] | None = None
     for glyph in glyphs:
         if not glyph.text or glyph.text.isspace():
             continue
         glyph_count += 1
         visible += int(glyph.visible)
-        learned_text = internal_learned_glyph_text(glyph)
+        decoder = glyph.font_decoder
+        if decoder is not previous_decoder:
+            candidate = getattr(decoder, "learned_unicode", None)
+            learned = candidate if isinstance(candidate, dict) and candidate else None
+            previous_decoder = decoder
+        candidate_text = learned.get(glyph.code_bytes) if learned is not None else None
+        learned_text = (
+            candidate_text if isinstance(candidate_text, str) and len(candidate_text) == 1 else None
+        )
         source = "learned_ocr" if learned_text is not None else glyph.unicode_source
         text = learned_text or glyph.text
         sources[source or "unspecified"] += 1
