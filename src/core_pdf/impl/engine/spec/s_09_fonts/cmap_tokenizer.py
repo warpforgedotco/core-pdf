@@ -13,14 +13,19 @@ PDF_WHITESPACE_BYTES = bytes([1 if byte in b"\x00\t\n\f\r " else 0 for byte in r
 def iter_blocks(data: bytes | memoryview, begin: bytes, end: bytes) -> typing.Iterator[bytes]:
     if not isinstance(data, bytes):
         data = bytes(data)
-    block_start: int | None = None
-    for word, start, stop in cmap_word_spans(data):
-        if block_start is None:
-            if word == begin:
-                block_start = stop
-        elif word == end:
-            yield data[block_start:start]
-            block_start = None
+    search_start = 0
+    begin_length = len(begin)
+    end_length = len(end)
+    while True:
+        begin_pos = data.find(begin, search_start)
+        if begin_pos < 0:
+            return
+        block_start = begin_pos + begin_length
+        end_pos = data.find(end, block_start)
+        if end_pos < 0:
+            return
+        yield data[block_start:end_pos]
+        search_start = end_pos + end_length
 
 
 def internal_scan_cmap_literal_string_end(data: bytes, pos: int) -> tuple[int, bool]:
