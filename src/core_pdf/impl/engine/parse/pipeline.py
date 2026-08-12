@@ -11,7 +11,7 @@ from dataclasses import replace
 from typing import Any, cast
 
 from core_pdf.impl.engine.execution import TaskScope, WorkStage
-from core_pdf.impl.engine.layout.glyphs import GlyphUnicodeSemantics
+from core_pdf.impl.engine.layout.glyphs import GlyphUnicodeSemantics, glyph_unicode_semantics
 from core_pdf.impl.engine.parse.capture import (
     internal_capture_from_program,
     internal_learned_glyph_text,
@@ -537,7 +537,7 @@ def internal_unknown_decoder_counts(capture: CapturedPage) -> Counter[object]:
             or not glyph.code_bytes
             or (
                 not corrupt
-                and glyph.unicode_semantics
+                and glyph_unicode_semantics(glyph.text, glyph.unicode_source)
                 not in {
                     GlyphUnicodeSemantics.UNKNOWN_IDENTIFIER,
                     GlyphUnicodeSemantics.UNSUPPORTED,
@@ -615,7 +615,7 @@ def internal_font_mapping_votes(
         known_pairs = tuple(
             (glyph.text.casefold(), character.casefold())
             for glyph, character in zip(aligned, characters, strict=True)
-            if glyph.unicode_semantics
+            if glyph_unicode_semantics(glyph.text, glyph.unicode_source)
             in {GlyphUnicodeSemantics.AUTHORITATIVE, GlyphUnicodeSemantics.HEURISTIC}
         )
         if (
@@ -627,7 +627,7 @@ def internal_font_mapping_votes(
             decoder = glyph.font_decoder
             if (
                 decoder is None
-                or glyph.unicode_semantics
+                or glyph_unicode_semantics(glyph.text, glyph.unicode_source)
                 not in {
                     GlyphUnicodeSemantics.UNKNOWN_IDENTIFIER,
                     GlyphUnicodeSemantics.UNSUPPORTED,

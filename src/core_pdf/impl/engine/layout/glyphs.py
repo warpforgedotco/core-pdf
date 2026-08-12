@@ -108,10 +108,6 @@ class GlyphObservation:
             )
         )
 
-    @property
-    def unicode_semantics(self) -> GlyphUnicodeSemantics:
-        return glyph_unicode_semantics(self.text, self.unicode_source)
-
     def resolved_bitmap(self) -> tuple[int, ...]:
         """Resolve a glyph shape only when a text-inclusive renderer needs it.
 

@@ -14,7 +14,11 @@ from typing import Any
 import numpy
 
 from core_pdf.impl.engine.layout.geometry import rect_tuple
-from core_pdf.impl.engine.layout.glyphs import GlyphObservation, GlyphUnicodeSemantics
+from core_pdf.impl.engine.layout.glyphs import (
+    GlyphObservation,
+    GlyphUnicodeSemantics,
+    glyph_unicode_semantics,
+)
 from core_pdf.impl.engine.layout.models import TextRun
 from core_pdf.impl.engine.layout.spatial import (
     SpatialIndex,
@@ -235,7 +239,9 @@ def internal_glyph_evidence(
         text = learned_text or glyph.text
         sources[source or "unspecified"] += 1
         semantics = (
-            GlyphUnicodeSemantics.HEURISTIC if learned_text is not None else glyph.unicode_semantics
+            GlyphUnicodeSemantics.HEURISTIC
+            if learned_text is not None
+            else glyph_unicode_semantics(glyph.text, glyph.unicode_source)
         )
         if semantics is GlyphUnicodeSemantics.AUTHORITATIVE:
             authoritative += 1
