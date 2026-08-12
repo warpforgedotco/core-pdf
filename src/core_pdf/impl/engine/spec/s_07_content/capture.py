@@ -264,44 +264,38 @@ def apply_glyph_geometry_to_run(
 ) -> None:
     if glyph_clusters:
         run.glyph_clusters = glyph_clusters
-    advance_bbox: tuple[float, float, float, float] | None = None
-    ink_bbox: tuple[float, float, float, float] | None = None
-    confidence: float | None = None
-    for glyph in glyphs:
-        advance_values = glyph.advance_bbox
-        if advance_bbox is None:
-            advance_bbox = advance_values
-        else:
-            x0, y0, x1, y1 = advance_bbox
-            advance_x0, advance_y0, advance_x1, advance_y1 = advance_values
-            advance_bbox = (
-                min(x0, advance_x0),
-                min(y0, advance_y0),
-                max(x1, advance_x1),
-                max(y1, advance_y1),
-            )
-
-        ink_values = glyph.ink_bbox
-        if ink_bbox is None:
-            ink_bbox = ink_values
-        else:
-            x0, y0, x1, y1 = ink_bbox
-            ink_x0, ink_y0, ink_x1, ink_y1 = ink_values
-            ink_bbox = (
-                min(x0, ink_x0),
-                min(y0, ink_y0),
-                max(x1, ink_x1),
-                max(y1, ink_y1),
-            )
-
+    iterator = iter(glyphs)
+    first = next(iterator, None)
+    if first is None:
+        return
+    advance_x0, advance_y0, advance_x1, advance_y1 = first.advance_bbox
+    ink_x0, ink_y0, ink_x1, ink_y1 = first.ink_bbox
+    confidence = first.confidence
+    for glyph in iterator:
+        x0, y0, x1, y1 = glyph.advance_bbox
+        if x0 < advance_x0:
+            advance_x0 = x0
+        if y0 < advance_y0:
+            advance_y0 = y0
+        if x1 > advance_x1:
+            advance_x1 = x1
+        if y1 > advance_y1:
+            advance_y1 = y1
+        x0, y0, x1, y1 = glyph.ink_bbox
+        if x0 < ink_x0:
+            ink_x0 = x0
+        if y0 < ink_y0:
+            ink_y0 = y0
+        if x1 > ink_x1:
+            ink_x1 = x1
+        if y1 > ink_y1:
+            ink_y1 = y1
         glyph_confidence = glyph.confidence
         if glyph_confidence is not None and (confidence is None or glyph_confidence < confidence):
             confidence = glyph_confidence
 
-    if advance_bbox is not None:
-        run.advance_bbox = advance_bbox
-    if ink_bbox is not None:
-        run.ink_bbox = ink_bbox
+    run.advance_bbox = (advance_x0, advance_y0, advance_x1, advance_y1)
+    run.ink_bbox = (ink_x0, ink_y0, ink_x1, ink_y1)
     if confidence is not None:
         run.confidence = confidence
 
