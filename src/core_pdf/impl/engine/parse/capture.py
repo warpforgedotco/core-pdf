@@ -248,10 +248,14 @@ def internal_glyph_evidence(
         )
         if semantics is GlyphUnicodeSemantics.AUTHORITATIVE:
             authoritative += 1
-            semantic_characters += sum(not character.isspace() for character in text)
+            semantic_characters += (
+                1 if len(text) == 1 else sum(not character.isspace() for character in text)
+            )
         elif semantics is GlyphUnicodeSemantics.HEURISTIC:
             heuristic += 1
-            semantic_characters += sum(not character.isspace() for character in text)
+            semantic_characters += (
+                1 if len(text) == 1 else sum(not character.isspace() for character in text)
+            )
         elif semantics is GlyphUnicodeSemantics.UNSUPPORTED:
             unsupported += 1
         else:
