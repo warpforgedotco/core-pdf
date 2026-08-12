@@ -388,6 +388,14 @@ def test_compact_ocr_image_drops_only_opaque_alpha() -> None:
     assert compact.pixels == b"".join(bytes((value, 2 * value, 3 * value)) for value in range(16))
 
 
+def test_compact_ocr_image_keeps_large_rgba_buffer() -> None:
+    image = RasterImage(bytes((32, 64, 96, 255)) * 1_000_000, 1_000, 1_000, 4)
+
+    compact = ocr.internal_compact_ocr_image(image)
+
+    assert compact is image
+
+
 def test_raster_text_signal_rejects_blank_image() -> None:
     signal = ocr.internal_raster_text_signal(RasterImage(bytes([255]) * (200 * 100), 200, 100, 1))
 

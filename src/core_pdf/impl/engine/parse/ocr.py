@@ -1816,6 +1816,8 @@ def internal_compact_ocr_image(image: RasterImage, *, grayscale: bool = False) -
         ) >> 8
         gray = gray.astype(numpy.uint8)
         return RasterImage(contiguous_bytes(gray), image.width, image.height, 1)
+    if image.channels == 4 and image.width * image.height >= 1_000_000:
+        return image
     if image.channels not in {2, 4}:
         return image
     samples = image.array()
