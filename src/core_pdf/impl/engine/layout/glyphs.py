@@ -52,7 +52,7 @@ class GlyphUnicodeSemantics(StrEnum):
     UNSUPPORTED = "unsupported"
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class GlyphObservation:
     text: str
     ink_bbox: BBox
@@ -106,7 +106,7 @@ class GlyphObservation:
         return resolver(code, width=self.bitmap_width, height=self.bitmap_height)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class GlyphCluster:
     cluster_id: int
     text: str
