@@ -87,21 +87,23 @@ def glyph_bitmap_dimensions(
 
 
 def glyph_ink_rect(
-    state: Any,
     glyph_bbox: tuple[float, float, float, float] | None,
     advance_start: float,
     fallback: RectBox,
     text_basis: TextBasis,
+    text_advance_scale: float,
+    rise: float,
+    font_scale: float,
 ) -> RectBox:
     if glyph_bbox is None:
         return fallback
     gx0, gy0, gx1, gy1 = glyph_bbox
     if gx1 <= gx0 or gy1 <= gy0:
         return fallback
-    text_x0 = advance_start + gx0 * state.text_advance_scale
-    text_x1 = advance_start + gx1 * state.text_advance_scale
-    text_y0 = state.rise + gy0 * state.font_scale
-    text_y1 = state.rise + gy1 * state.font_scale
+    text_x0 = advance_start + gx0 * text_advance_scale
+    text_x1 = advance_start + gx1 * text_advance_scale
+    text_y0 = rise + gy0 * font_scale
+    text_y1 = rise + gy1 * font_scale
     base_x, base_y, a, b, c, d = text_basis
     if b == 0.0 and c == 0.0:
         px0 = base_x + text_x0 * a

@@ -1751,6 +1751,7 @@ class TextState:
         writing_mode = "vertical" if is_vertical else "horizontal"
         axis_aligned_horizontal = not is_vertical and combined_b == 0.0 and combined_c == 0.0
         rise = self.rise
+        font_scale = self.font_scale
         font_ascent = self.font_ascent
         font_descent = self.font_descent
         tm_a = self.tm_a
@@ -1839,7 +1840,15 @@ class TextState:
                 glyph_bbox = glyph_bbox_cache.get(glyph_code)
                 if glyph_bbox is None and glyph_code not in glyph_bbox_cache:
                     glyph_bbox = glyph_bbox_for_code(glyph_code)
-            rect = glyph_ink_rect(self, glyph_bbox, offset, advance_rect, text_basis)
+            rect = glyph_ink_rect(
+                glyph_bbox,
+                offset,
+                advance_rect,
+                text_basis,
+                advance_scale,
+                rise,
+                font_scale,
+            )
             device_matrix = (
                 combined_a,
                 combined_b,
