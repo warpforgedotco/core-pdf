@@ -1821,15 +1821,25 @@ class TextState:
                 glyph_bbox = glyph_bbox_cache.get(glyph_code)
                 if glyph_bbox is None and glyph_code not in glyph_bbox_cache:
                     glyph_bbox = glyph_bbox_for_code(glyph_code)
-            rect = glyph_ink_rect(
-                glyph_bbox,
-                offset,
-                advance_bbox,
-                text_basis,
-                advance_scale,
-                rise,
-                font_scale,
-            )
+            if (
+                axis_aligned_horizontal
+                and glyph_bbox is not None
+                and glyph_bbox[0] == 0.0
+                and glyph_bbox[1] * font_scale == font_descent
+                and glyph_bbox[2] * advance_scale == advance
+                and glyph_bbox[3] * font_scale == font_ascent
+            ):
+                rect = advance_bbox
+            else:
+                rect = glyph_ink_rect(
+                    glyph_bbox,
+                    offset,
+                    advance_bbox,
+                    text_basis,
+                    advance_scale,
+                    rise,
+                    font_scale,
+                )
             observation_confidence = glyph_unicode_confidence(
                 chunk_text,
                 glyph.unicode_source,
