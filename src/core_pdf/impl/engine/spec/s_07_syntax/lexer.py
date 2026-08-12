@@ -23,8 +23,6 @@ from core_pdf.impl.engine.spec.s_07_syntax.lexer_helpers import (
     is_number_word,
     looks_like_indirect_object_header,
     matches_keyword_with_one_substitution,
-    parse_float_token,
-    parse_int_token,
     skip_pdf_ignored,
 )
 from core_pdf.impl.engine.spec.s_07_syntax.tokens import (
@@ -244,8 +242,8 @@ class PdfLexer:
     def parse_number(value: memoryview | bytes) -> int | float:
         try:
             if 46 in value:
-                return parse_float_token(value)
-            return parse_int_token(value)
+                return float(value)
+            return int(value)
         except ValueError as exc:
             raise PdfParseError(f"invalid number {bytes(value)!r}") from exc
 
@@ -480,7 +478,7 @@ class PdfLexer:
         if is_number_word(raw):
             raw_is_integer = 46 not in raw
             if not raw_is_integer:
-                return parse_float_token(raw)
+                return float(raw)
             next_pos = self.skip_ignored_at(end)
             if next_pos < self.data_len and 48 <= data[next_pos] <= 57:
                 next_token = self.scan_word_at(next_pos, skip_ignored=False)
@@ -491,14 +489,14 @@ class PdfLexer:
                     if next_next is not None and next_next[0] == b"R":
                         self.pos = next_next[1]
                         try:
-                            obj_num = parse_int_token(raw)
-                            gen_num = parse_int_token(next_raw)
+                            obj_num = int(raw)
+                            gen_num = int(next_raw)
                         except ValueError as exc:
                             raise PdfParseError("invalid reference") from exc
                         if obj_num < 0 or gen_num < 0:
                             raise PdfParseError("invalid reference")
                         return PdfReference(obj_num, gen_num)
-            return parse_int_token(raw)
+            return int(raw)
         return self.parse_keyword(raw)
 
     def parse_object_at(self, position: int) -> Any:
@@ -512,7 +510,7 @@ class PdfLexer:
         raw, end = scanned
         self.pos = end
         try:
-            obj_num = parse_int_token(raw)
+            obj_num = int(raw)
         except ValueError as exc:
             raise PdfParseError("invalid indirect object header") from exc
         if obj_num < 0:
@@ -718,8 +716,8 @@ class PdfLexer:
                         if next_next is not None and next_next[0] == b"R":
                             self.pos = next_next[1]
                             try:
-                                obj_num = parse_int_token(raw)
-                                gen_num = parse_int_token(next_raw)
+                                obj_num = int(raw)
+                                gen_num = int(next_raw)
                             except ValueError as exc:
                                 raise PdfParseError("invalid reference") from exc
                             if obj_num < 0 or gen_num < 0:
@@ -727,9 +725,9 @@ class PdfLexer:
                             values.append(PdfReference(obj_num, gen_num))
                             continue
                 if not raw_is_integer:
-                    values.append(parse_float_token(raw))
+                    values.append(float(raw))
                 else:
-                    values.append(parse_int_token(raw))
+                    values.append(int(raw))
                 continue
             values.append(self.parse_keyword(raw))
 
@@ -830,7 +828,7 @@ class PdfLexer:
                 if has_decimal:
                     raw_token = data[pos:end]
                     try:
-                        values.append(parse_float_token(raw_token))
+                        values.append(float(raw_token))
                     except ValueError:
                         self.pos = start_pos
                         return None
