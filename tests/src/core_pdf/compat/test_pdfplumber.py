@@ -2,7 +2,7 @@ from pathlib import Path
 
 from core_pdf.api.v0.compat.pdfplumber import PDF, open, utils
 
-FIXTURE = next(Path("tests/fixtures").rglob("*.pdf"))
+FIXTURE = Path("tests/fixtures/SCORE-Bench/src/executive-summary-2022-p1-7-p007.pdf")
 
 
 def test_pdfplumber_page_objects_and_coordinates() -> None:
