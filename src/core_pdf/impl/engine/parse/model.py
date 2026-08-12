@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import re
 from collections import Counter
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
@@ -415,7 +414,7 @@ class TextQualityStats:
 
 
 def internal_text_quality_stats(text: str) -> TextQualityStats:
-    tokens = re.findall(r"\S+", text)
+    tokens = text.split()
     if not tokens:
         return TextQualityStats()
     wordlike = 0
