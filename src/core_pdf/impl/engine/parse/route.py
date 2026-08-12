@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 from core_pdf.impl.engine.parse.capture import (
     internal_hidden_text_needs_verification,
     internal_requires_high_resolution_vector_ocr,
@@ -111,6 +113,45 @@ def internal_native_mapping_is_usable(evidence: PageEvidence) -> bool:
         and glyphs.unknown_ratio <= 0.05
         and glyphs.unsupported_ratio <= 0.02
         and glyphs.low_confidence_ratio <= 0.02
+    )
+
+
+def internal_drawing_is_simple_rectangle(drawing: object) -> bool:
+    path = getattr(drawing, "path", None)
+    subpaths: object = getattr(path, "subpaths", None)
+    if not isinstance(subpaths, (list, tuple)) or len(subpaths) != 1:
+        return False
+    subpath = subpaths[0]
+    points: object = getattr(subpath, "points", None)
+    if (
+        not isinstance(points, (list, tuple))
+        or not getattr(subpath, "closed", False)
+        or len(points) != 4
+    ):
+        return False
+    rectangle_points = cast("list[tuple[float, float]] | tuple[tuple[float, float], ...]", points)
+    xs = {point[0] for point in rectangle_points}
+    ys = {point[1] for point in rectangle_points}
+    if len(xs) != 2 or len(ys) != 2:
+        return False
+    return all(
+        left[0] == right[0] or left[1] == right[1]
+        for left, right in zip(
+            rectangle_points,
+            (*rectangle_points[1:], rectangle_points[0]),
+            strict=True,
+        )
+    )
+
+
+def internal_has_only_simple_vector_rectangles(capture: CapturedPage) -> bool:
+    drawings = tuple(
+        drawing
+        for drawing in getattr(capture, "drawings", ())
+        if getattr(drawing, "kind", None) in {"fill", "fillstroke", "stroke"}
+    )
+    return len(drawings) >= 32 and all(
+        internal_drawing_is_simple_rectangle(drawing) for drawing in drawings
     )
 
 
@@ -267,6 +308,14 @@ def internal_base_plan_page(capture: CapturedPage) -> WorkPlan:
         )
 
     if evidence.uncovered_vector_area is not None and evidence.uncovered_vector_area >= 20_000.0:
+        if (
+            characters >= 32
+            and evidence.image_count == 0
+            and suspicious_ratio <= 0.02
+            and internal_native_mapping_is_usable(evidence)
+            and internal_has_only_simple_vector_rectangles(capture)
+        ):
+            return WorkPlan(PageRoute.NATIVE, reason="native-text-with-rectangular-vectors")
         if internal_vector_native_text_is_trusted(evidence):
             return WorkPlan(PageRoute.NATIVE, reason="glyph-trusted-vector-text")
         if (
