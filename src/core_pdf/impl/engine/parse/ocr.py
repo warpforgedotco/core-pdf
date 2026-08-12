@@ -2571,29 +2571,45 @@ def internal_ocr_region_coverage(
 
 def internal_merge_ocr_regions(regions: list[internal_OcrRegion]) -> tuple[internal_OcrRegion, ...]:
     merged: list[internal_OcrRegion] = []
+    merged_areas: list[float] = []
     for region in sorted(regions, key=lambda item: (-item.score, item.page_box)):
-        match = next(
-            (
-                index
-                for index, existing in enumerate(merged)
-                if internal_ocr_region_overlap(existing.page_box, region.page_box) >= 0.35
-            ),
-            None,
+        region_box = region.page_box
+        region_area = max(0.0, region_box[2] - region_box[0]) * max(
+            0.0, region_box[3] - region_box[1]
         )
+        match = None
+        for index, existing in enumerate(merged):
+            existing_box = existing.page_box
+            smaller = min(merged_areas[index], region_area)
+            if not smaller:
+                continue
+            intersection_width = max(
+                0.0, min(existing_box[2], region_box[2]) - max(existing_box[0], region_box[0])
+            )
+            intersection_height = max(
+                0.0, min(existing_box[3], region_box[3]) - max(existing_box[1], region_box[1])
+            )
+            if intersection_width * intersection_height >= smaller * 0.35:
+                match = index
+                break
         if match is None:
             merged.append(region)
+            merged_areas.append(region_area)
             continue
         existing = merged[match]
+        existing_box = existing.page_box
+        merged_box = (
+            min(existing_box[0], region_box[0]),
+            min(existing_box[1], region_box[1]),
+            max(existing_box[2], region_box[2]),
+            max(existing_box[3], region_box[3]),
+        )
         merged[match] = internal_OcrRegion(
-            (
-                min(existing.page_box[0], region.page_box[0]),
-                min(existing.page_box[1], region.page_box[1]),
-                max(existing.page_box[2], region.page_box[2]),
-                max(existing.page_box[3], region.page_box[3]),
-            ),
+            merged_box,
             max(existing.score, region.score) + min(existing.score, region.score) * 0.15,
             tuple(dict.fromkeys((*existing.reasons, *region.reasons))),
         )
+        merged_areas[match] = (merged_box[2] - merged_box[0]) * (merged_box[3] - merged_box[1])
     return tuple(sorted(merged, key=lambda item: (-item.score, item.page_box)))
 
 
