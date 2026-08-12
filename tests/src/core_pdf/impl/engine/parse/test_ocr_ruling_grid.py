@@ -16,13 +16,13 @@ def test_ruling_grid_detection_preserves_full_resolution_rgb_mask() -> None:
     result = internal_detect_ruling_grid(RasterImage(samples.tobytes(), width, height, 3))
 
     assert result is not None
-    x_lines, y_lines, dark, slope = result
+    x_lines, y_lines, source_samples, slope = result
     assert len(x_lines) == 5
     assert len(y_lines) == 5
-    assert dark.shape == (height, width)
-    assert dark[12, 100]
-    assert dark[100, 18]
-    assert not dark[100, 100]
+    assert source_samples.shape == (height, width, 3)
+    assert source_samples[12, 100].min() < 160
+    assert source_samples[100, 18].min() < 160
+    assert source_samples[100, 100].min() >= 160
     assert slope == 0.0
 
 

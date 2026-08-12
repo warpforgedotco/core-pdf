@@ -722,7 +722,7 @@ def internal_vertical_shear(dark: numpy.ndarray, slope: float) -> numpy.ndarray:
 def internal_detect_ruling_grid(
     image: RasterImage,
 ) -> tuple[list[int], list[int], numpy.ndarray, float] | None:
-    """Find a ruled table grid; return (x_edges, y_edges, dark mask, skew).
+    """Find a ruled table grid; return (x_edges, y_edges, source samples, skew).
 
     A ruling is a near-full-span dark run: project the longest dark run per
     row (and per column) after closing scan dropouts and straightening the
@@ -736,13 +736,10 @@ def internal_detect_ruling_grid(
     array = numpy.asarray(image.array())
     if array.ndim == 3 and array.shape[2] >= 3:
         color = array[:, :, :3]
-        gray = None
     elif array.ndim == 3 and array.shape[2] == 1:
         color = array[:, :, 0]
-        gray = color
     elif array.ndim == 2:
         color = array
-        gray = color
     else:
         return None
     height, width = color.shape[:2]
@@ -789,17 +786,14 @@ def internal_detect_ruling_grid(
         return None
     scaled_x = [line * pool + pool // 2 for line in x_lines]
     scaled_y = [line * pool + pool // 2 for line in y_lines]
-    if gray is None:
-        gray = color.min(axis=2)
-    dark = gray < internal_GRID_DARK_THRESHOLD
-    return scaled_x, scaled_y, dark, slope
+    return scaled_x, scaled_y, color, slope
 
 
 def internal_grid_cell_tasks(
     task: internal_OcrTask,
     x_lines: list[int],
     y_lines: list[int],
-    dark: numpy.ndarray,
+    source_samples: numpy.ndarray,
     slope: float,
 ) -> tuple[internal_OcrTask, ...]:
     """Build one single-line OCR task per populated ruled cell.
@@ -818,7 +812,7 @@ def internal_grid_cell_tasks(
     # thick: an inset smaller than the rule leaves box fragments inside every
     # crop, which single-line recognition reads as bars or rejects outright.
     inset = max(internal_GRID_CELL_INSET_PX, int(round(task.resolution / 40)))
-    height, width = dark.shape
+    height, width = source_samples.shape[:2]
     tasks: list[internal_OcrTask] = []
     for row_start, row_end in zip(y_lines, y_lines[1:]):
         if row_end - row_start < internal_GRID_CELL_MIN_PX + 2 * inset:
@@ -838,8 +832,16 @@ def internal_grid_cell_tasks(
                 internal_GRID_CELL_MIN_PX
             ):
                 continue
-            cell = dark[top:bottom, left:right]
-            if float(cell.mean()) < internal_GRID_CELL_MIN_INK:
+            cell = source_samples[top:bottom, left:right]
+            if cell.ndim == 3:
+                ink_ratio = float(
+                    numpy.count_nonzero(cell.min(axis=2) < internal_GRID_DARK_THRESHOLD)
+                ) / (cell.shape[0] * cell.shape[1])
+            else:
+                ink_ratio = float(numpy.count_nonzero(cell < internal_GRID_DARK_THRESHOLD)) / (
+                    cell.shape[0] * cell.shape[1]
+                )
+            if ink_ratio < internal_GRID_CELL_MIN_INK:
                 continue
             tasks.append(
                 internal_OcrTask(
@@ -889,7 +891,7 @@ def internal_grid_is_regular_table(
     column rules; a form has neither, and the words the page pass already
     read betray it by straddling the vertical lines.
     """
-    x_lines, y_lines, _dark, slope = grid
+    x_lines, y_lines, _source_samples, slope = grid
     if len(y_lines) - 1 < internal_GRID_MIN_ROWS or len(x_lines) - 1 < internal_GRID_MIN_COLUMNS:
         return False
     heights = numpy.diff(numpy.asarray(y_lines, dtype=numpy.float64))
@@ -4889,8 +4891,10 @@ def internal_recognize_page_with_reserved_raster(
         if grid is not None and internal_grid_is_regular_table(
             grid, selected.observations, source_task
         ):
-            x_lines, y_lines, dark, slope = grid
-            cell_tasks = internal_grid_cell_tasks(source_task, x_lines, y_lines, dark, slope)
+            x_lines, y_lines, source_samples, slope = grid
+            cell_tasks = internal_grid_cell_tasks(
+                source_task, x_lines, y_lines, source_samples, slope
+            )
             if len(cell_tasks) >= internal_GRID_MIN_CELLS:
                 cell_candidate = internal_merge_candidate_batches(recognize_tasks(cell_tasks))
                 cell_observations = internal_grid_row_observations(cell_candidate.observations)
