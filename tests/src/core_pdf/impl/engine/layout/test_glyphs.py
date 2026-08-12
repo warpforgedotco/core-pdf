@@ -57,7 +57,6 @@ def test_single_glyph_cluster_reuses_observation_geometry_and_confidence(
         12,
         "A",
         (observation,),
-        kind="single_glyph",
     )
 
     assert cluster is not None
@@ -65,8 +64,6 @@ def test_single_glyph_cluster_reuses_observation_geometry_and_confidence(
     assert cluster.advance_bbox == observation.advance_bbox
     assert cluster.ink_bbox == observation.ink_bbox
     assert cluster.baseline == observation.baseline
-    assert cluster.font_name == observation.font_name
-    assert cluster.seqno == observation.seqno
     assert cluster.confidence == confidence
 
 
@@ -81,7 +78,6 @@ def test_text_run_replacement_drops_clusters_that_describe_old_text() -> None:
         0,
         "A",
         (observation,),
-        kind="single_glyph",
     )
     assert cluster is not None
     run = TextRun(

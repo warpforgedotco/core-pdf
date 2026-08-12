@@ -1926,7 +1926,6 @@ class TextState:
                         cluster_id=cluster_id,
                         text=chunk_text,
                         glyphs=(observation,),
-                        kind="single_glyph",
                         advance_bbox=(
                             advance_rect.x0,
                             advance_rect.y0,
@@ -1935,10 +1934,6 @@ class TextState:
                         ),
                         ink_bbox=(rect.x0, rect.y0, rect.x1, rect.y1),
                         baseline=baseline,
-                        writing_mode=writing_mode,
-                        rotation_angle=rotation_angle,
-                        font_name=observation.font_name,
-                        seqno=seqno,
                         confidence=observation_confidence,
                     )
                 )
@@ -2035,18 +2030,10 @@ class TextState:
                 )
             for observation in cluster_observations:
                 append_glyph(observation)
-            kind = (
-                "single_glyph"
-                if len(cluster_observations) == 1 and len(chunk_text) == 1
-                else "ligature"
-                if glyph.split_unicode
-                else "multi_codepoint"
-            )
             cluster = glyph_cluster_from_observations(
                 cluster_id,
                 chunk_text,
                 tuple(cluster_observations),
-                kind=kind,
             )
             if cluster is not None:
                 clusters.append(cluster)

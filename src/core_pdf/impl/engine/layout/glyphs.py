@@ -129,14 +129,9 @@ class GlyphCluster:
     cluster_id: int
     text: str
     glyphs: tuple[GlyphObservation, ...]
-    kind: str
     advance_bbox: BBox
     ink_bbox: BBox
     baseline: BBox | None
-    writing_mode: str
-    rotation_angle: int
-    font_name: str | None
-    seqno: int
     confidence: float | None
 
 
@@ -203,8 +198,6 @@ def glyph_cluster_from_observations(
     cluster_id: int,
     text: str,
     glyphs: tuple[GlyphObservation, ...],
-    *,
-    kind: str,
 ) -> GlyphCluster | None:
     if not glyphs:
         return None
@@ -226,13 +219,8 @@ def glyph_cluster_from_observations(
         cluster_id=cluster_id,
         text=text,
         glyphs=glyphs,
-        kind=kind,
         advance_bbox=advance_bbox,
         ink_bbox=ink_bbox,
         baseline=first.baseline,
-        writing_mode=first.writing_mode,
-        rotation_angle=first.rotation_angle,
-        font_name=first.font_name,
-        seqno=first.seqno,
         confidence=confidence,
     )
