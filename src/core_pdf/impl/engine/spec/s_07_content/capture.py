@@ -93,12 +93,13 @@ def glyph_ink_rect(
     text_advance_scale: float,
     rise: float,
     font_scale: float,
-) -> RectBox:
+) -> tuple[float, float, float, float]:
+    fallback_bbox = (fallback.x0, fallback.y0, fallback.x1, fallback.y1)
     if glyph_bbox is None:
-        return fallback
+        return fallback_bbox
     gx0, gy0, gx1, gy1 = glyph_bbox
     if gx1 <= gx0 or gy1 <= gy0:
-        return fallback
+        return fallback_bbox
     text_x0 = advance_start + gx0 * text_advance_scale
     text_x1 = advance_start + gx1 * text_advance_scale
     text_y0 = rise + gy0 * font_scale
@@ -109,14 +110,11 @@ def glyph_ink_rect(
         px1 = base_x + text_x1 * a
         py0 = base_y + text_y0 * d
         py1 = base_y + text_y1 * d
-        rect = RectBox(
+        rect = (
             px0 if px0 < px1 else px1,
             py0 if py0 < py1 else py1,
             px1 if px1 > px0 else px0,
             py1 if py1 > py0 else py0,
-            seqno=fallback.seqno,
-            fill=fallback.fill,
-            fill_opacity=fallback.fill_opacity,
         )
     else:
         p00_x = base_x + text_x0 * a + text_y0 * c
@@ -127,25 +125,23 @@ def glyph_ink_rect(
         p10_y = base_y + text_x1 * b + text_y0 * d
         p11_x = base_x + text_x1 * a + text_y1 * c
         p11_y = base_y + text_x1 * b + text_y1 * d
-        rect = RectBox(
+        rect = (
             min(p00_x, p01_x, p10_x, p11_x),
             min(p00_y, p01_y, p10_y, p11_y),
             max(p00_x, p01_x, p10_x, p11_x),
             max(p00_y, p01_y, p10_y, p11_y),
-            seqno=fallback.seqno,
-            fill=fallback.fill,
-            fill_opacity=fallback.fill_opacity,
         )
     fallback_height = fallback.y1 - fallback.y0
     fallback_width = fallback.x1 - fallback.x0
-    rect_height = rect.y1 - rect.y0
-    rect_width = rect.x1 - rect.x0
+    rect_x0, rect_y0, rect_x1, rect_y1 = rect
+    rect_height = rect_y1 - rect_y0
+    rect_width = rect_x1 - rect_x0
     if rect_width <= 0.01 or rect_height <= 0.01:
-        return fallback
+        return fallback_bbox
     if fallback_width > 0.0 and rect_width > fallback_width * 4.0:
-        return fallback
+        return fallback_bbox
     if fallback_height > 0.0 and rect_height > fallback_height * 1.5:
-        return fallback
+        return fallback_bbox
     return rect
 
 

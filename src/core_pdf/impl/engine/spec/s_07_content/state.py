@@ -1857,7 +1857,7 @@ class TextState:
                     bitmap_code = glyph.bitmap_code
                 observation = GlyphObservation(
                     text=chunk_text,
-                    ink_bbox=(rect.x0, rect.y0, rect.x1, rect.y1),
+                    ink_bbox=rect,
                     advance_bbox=(
                         advance_rect.x0,
                         advance_rect.y0,
@@ -1897,7 +1897,7 @@ class TextState:
                         text=chunk_text,
                         glyphs=(observation,),
                         advance_bbox=observation.advance_bbox,
-                        ink_bbox=observation.ink_bbox,
+                        ink_bbox=rect,
                         baseline=baseline,
                         confidence=observation_confidence,
                     )
@@ -1957,7 +1957,7 @@ class TextState:
                 cluster_observations.append(
                     GlyphObservation(
                         text=chunk_text,
-                        ink_bbox=(rect.x0, rect.y0, rect.x1, rect.y1),
+                        ink_bbox=rect,
                         advance_bbox=(
                             advance_rect.x0,
                             advance_rect.y0,
