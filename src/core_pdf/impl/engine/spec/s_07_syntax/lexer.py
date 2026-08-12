@@ -166,7 +166,7 @@ class PdfLexer:
         self.current_gen_num = None
 
     def advance(self, count: int) -> None:
-        self.pos = max(0, min(self.pos + count, self.data_len))
+        self.pos += count
 
     def read_bytes(self, count: int) -> bytes | memoryview:
         start = self.pos
