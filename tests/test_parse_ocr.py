@@ -317,6 +317,24 @@ def test_ocr_groups_small_same_raster_tasks_but_splits_large_regions() -> None:
     assert ocr.internal_ocr_task_groups(large_tasks) == tuple((task,) for task in large_tasks)
 
 
+def test_ocr_groups_sixteen_small_regions_per_image_upload() -> None:
+    image = RasterImage(bytes(100 * 400), 100, 400, 1)
+    tasks = tuple(
+        ocr.internal_OcrTask(
+            mode=7,
+            image=image,
+            rectangle=(0, index * 10, 100, 10),
+            page_box=(0.0, float(index * 10), 100.0, float((index + 1) * 10)),
+            resolution=100,
+        )
+        for index in range(17)
+    )
+
+    groups = ocr.internal_ocr_task_groups(tasks)
+
+    assert tuple(map(len, groups)) == (16, 1)
+
+
 def test_recognize_group_reuses_api_and_image_setup(monkeypatch: pytest.MonkeyPatch) -> None:
     image = RasterImage(bytes(100 * 120), 100, 120, 1)
     tasks = tuple(
