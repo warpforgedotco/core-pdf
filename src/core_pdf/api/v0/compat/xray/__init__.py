@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import re
 
+from core_pdf.api.types import PdfInput
 from core_pdf.api.v0.compat._common import project_document
 from core_pdf.api.v0.operations import BadRedactionOperation
-from core_pdf.api.v0.types import PdfInput
 
 from .._common import flip_box, open_source
 

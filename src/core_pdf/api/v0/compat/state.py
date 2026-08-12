@@ -9,7 +9,7 @@ from os import PathLike
 from typing import Any
 
 from core_pdf import PdfDocument
-from core_pdf.api.v0.types import PdfInput
+from core_pdf.api.types import PdfInput
 
 from ._common import (
     Block,
@@ -303,7 +303,7 @@ class StructuredState(ClosingMixin):
         return self.source_pdf.edit()
 
     def capability_document(self) -> Any:
-        """Return a v0 document adapter, including pending snapshot edits."""
+        """Return a public document capability, including pending snapshot edits."""
         cached = getattr(self, "internal_capability_document", None)
         if cached is not None:
             return cached

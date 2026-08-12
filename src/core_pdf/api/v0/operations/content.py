@@ -8,11 +8,11 @@ from typing import TYPE_CHECKING, Any
 from core_pdf.impl.engine.layout.geometry import rect_tuple
 from core_pdf.impl.text import collapse_ws, search_key
 
-from ..models import EvidenceLayer, EvidenceRecord, Severity, SourceRef, TextSpan
-from ..types import ExecutionContext
+from ...models import EvidenceLayer, EvidenceRecord, Severity, SourceRef, TextSpan
+from ...types import ExecutionContext
 
 if TYPE_CHECKING:
-    from ..document import PdfDocument
+    from ...document import PdfDocument
 from .base import AnalysisOperation, FindingCollector, OperationOptions
 from .checks import AUTHOR_YEAR_PATTERN, DOI_PATTERN, REFERENCE_SECTION_HEADING_PATTERN
 

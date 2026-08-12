@@ -6,13 +6,13 @@ from abc import ABC, abstractmethod
 from collections.abc import Iterator, Mapping
 from typing import TYPE_CHECKING, ClassVar, cast
 
-from ..errors import InvalidRequest
-from ..execution import LocalExecutionContext
-from ..models import AnalysisFinding, AnalysisReport, EvidenceRecord, Rect, Severity
-from ..types import ExecutionContext, PageSelection
+from ...errors import InvalidRequest
+from ...execution import LocalExecutionContext
+from ...models import AnalysisFinding, AnalysisReport, EvidenceRecord, Rect, Severity
+from ...types import ExecutionContext, PageSelection
 
 if TYPE_CHECKING:
-    from ..document import PdfDocument, PdfPage
+    from ...document import PdfDocument, PdfPage
 
 
 class OperationOptions:

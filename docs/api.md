@@ -1,13 +1,13 @@
 # Public API and extension contracts
 
-The versioned extension surface is `core_pdf.api.v0`. It is the high-level contract for the
+The extension surface is `core_pdf.api`. It is the high-level contract for the
 all-in-one local PDF engine: parsing, extraction, search, rendering, analysis, validation,
 transformation, writing, inspection, and compatibility projections all operate through the
 same document and page capabilities. It is independent of the implementation modules under
 `core_pdf.impl`.
 
 ```python
-from core_pdf.api.v0 import PdfDocument
+from core_pdf.api import PdfDocument
 
 with PdfDocument.open("document.pdf") as document:
     for page in document.pages():
@@ -26,7 +26,7 @@ between coordinate origins); source provenance is represented by `SourceRef`. An
 findings carry a `Severity` value — a `StrEnum`, so comparisons against `"error"` and
 friends keep working.
 
-Both document and page adapters expose structured output through `to_json()`,
+Both document and page capabilities expose structured output through `to_json()`,
 `to_html()`, and `to_markdown()`. Documents additionally support page-selected
 structured JSON through `to_structured_json(pages=...)`; page and document records
 also expose typed geometry and text diagnostics.
@@ -34,14 +34,14 @@ Documents additionally provide deterministic `to_csv(pages=...)` text/layout row
 `to_tei(pages=...)` TEI-like XML with page-boundary markers for downstream tooling.
 
 Local cancellation and operation contexts are available from
-`core_pdf.api.v0.execution` (`LocalExecutionContext`, `LocalCancellationToken`,
+`core_pdf.api.execution` (`LocalExecutionContext`, `LocalCancellationToken`,
 `AnalysisCache`). The structured IR types behind `structured_document` and
 `structured_view` — `Document`, `Page`, `Block`, `Table`, and friends — are re-exported
-at `core_pdf.api.v0.structured` so callers can name them without importing internals.
+at `core_pdf.api.structured` so callers can name them without importing internals.
 
 The root `PdfDocument` and `PdfPage` objects retain engine primitives such as `extract()` and
 `render()`. Structured serializers, element/chunk projections, and compatibility-shaped
-conveniences live on the v0 adapters so the same behavior is not maintained twice. Code
+conveniences live on the capability objects so the same behavior is not maintained twice. Code
 importing `core_pdf.impl.*` is using internal APIs and should not be used as an extension
 contract.
 
@@ -52,7 +52,7 @@ options=None)` returns an `AnalysisReport` of typed `AnalysisFinding` records, a
 operations honour a `pages` option. The local bad-redaction analyzer, for example:
 
 ```python
-from core_pdf.api.v0 import PdfDocument
+from core_pdf.api import PdfDocument
 from core_pdf.api.v0.operations import BadRedactionOperation
 
 with PdfDocument.open("document.pdf") as document:
@@ -70,7 +70,7 @@ feature-specific methods to the document object. Invalid option values raise
 Applications that want the standard local validation set run the aggregate operation:
 
 ```python
-from core_pdf.api.v0 import PdfDocument, Severity
+from core_pdf.api import PdfDocument, Severity
 from core_pdf.api.v0.operations import QualityPreflightOperation
 
 with PdfDocument.open("document.pdf") as document:
@@ -91,7 +91,7 @@ available: `AccessibilityValidationOperation`, `FormValidationOperation`,
 severity, page/object provenance where available, and remediation guidance. The aggregate
 operation is local and deterministic; it does not invoke a server, LLM, or VLLM.
 
-The v0 adapter also exposes a deterministic structural inventory:
+The public document also exposes a deterministic structural inventory:
 
 ```python
 inventory = document.inventory()
@@ -351,7 +351,7 @@ from core_pdf.api.v0.compat.llamaindex import load_data
 They are projections over core-pdf’s local parser and document model. They do not
 start a server, call a remote service, or require the reference projects at runtime.
 They share one kernel (`api/v0/compat/_common.py`) for document opening, byte writing,
-lifecycle, and geometry coercion. Use `core_pdf.api.v0` directly for typed records,
+lifecycle, and geometry coercion. Use `core_pdf.api` directly for typed records,
 structured JSON/HTML/Markdown output, geometry diagnostics, text diagnostics, and
 editing.
 

@@ -2,7 +2,7 @@
 
 This module is the single sanctioned ``core_pdf.impl`` import site for the
 compatibility facades.  Facade packages import engine IR types, serializers,
-and cross-cutting plumbing from here (or from ``core_pdf.api.v0.structured``)
+and cross-cutting plumbing from here (or from ``core_pdf.api.structured``)
 instead of drilling into ``core_pdf.impl`` directly.
 """
 
@@ -17,8 +17,8 @@ from pathlib import Path
 from typing import IO, Any, Self, TypeVar, cast
 
 from core_pdf import PdfDocument
-from core_pdf.api.v0.document import PdfDocument as CapabilityDocument
-from core_pdf.api.v0.structured import (
+from core_pdf.api.document import PdfDocument as CapabilityDocument
+from core_pdf.api.structured import (
     Annotation,
     Block,
     BlockKind,
@@ -29,7 +29,7 @@ from core_pdf.api.v0.structured import (
     Page,
     TextLine,
 )
-from core_pdf.api.v0.types import PdfInput
+from core_pdf.api.types import PdfInput
 from core_pdf.impl.engine.layout.geometry import (
     RectTuple,
     bbox_contains,

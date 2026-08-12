@@ -1,4 +1,4 @@
-"""Concrete v0 document, page, and editor capability objects."""
+"""Concrete public document and page capability objects."""
 
 from __future__ import annotations
 

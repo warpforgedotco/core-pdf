@@ -1,4 +1,4 @@
-"""Inventory and forensic analysis algorithms behind the v0 document surface.
+"""Inventory and forensic analysis algorithms behind the public document surface.
 
 Functions here either consume the ENGINE document (``document: Any`` holding a
 ``core_pdf.impl`` document) or the protocol-level adapter surface
@@ -676,7 +676,7 @@ def evidence_graph(document: PdfDocument, *, pages: PageSelection | None = None)
 def resource_diagnostics(document: Any) -> tuple[ResourceDiagnostic, ...]:
     """Diagnose missing fonts, undecodable images, and risky graphics state.
 
-    ``document`` is the v0 document adapter: the checks need both converted
+    ``document`` is the public document capability: the checks need both converted
     records (spans, images) and raw engine surfaces (page dictionaries, the
     object resolver).
     """

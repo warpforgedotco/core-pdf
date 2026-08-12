@@ -1,4 +1,4 @@
-"""Input aliases and small callback contracts shared by the concrete v0 API."""
+"""Input aliases and small callback contracts shared by the public API."""
 
 from __future__ import annotations
 

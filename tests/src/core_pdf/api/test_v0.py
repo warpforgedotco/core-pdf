@@ -9,24 +9,16 @@ from typing import Any, cast
 import pytest
 
 from core_pdf import PdfDocument
-from core_pdf.api.v0 import (
+from core_pdf.api import (
     AnalysisCache,
     DocumentClosed,
     LocalExecutionContext,
 )
-from core_pdf.api.v0 import (
+from core_pdf.api import (
     PdfDocument as V0PdfDocument,
 )
-from core_pdf.api.v0.compat import (
-    LAParams,
-    LTChar,
-    extract_pages,
-    extract_text,
-    extract_text_to_fp,
-    inspect_xray,
-)
-from core_pdf.api.v0.document import PdfPage
-from core_pdf.api.v0.models import (
+from core_pdf.api.document import PdfPage
+from core_pdf.api.models import (
     AccessibilityInventory,
     AccessibilityRepairVerification,
     ActionInventory,
@@ -72,6 +64,14 @@ from core_pdf.api.v0.models import (
     plan_revision_analysis,
     verify_preservation,
 )
+from core_pdf.api.v0.compat import (
+    LAParams,
+    LTChar,
+    extract_pages,
+    extract_text,
+    extract_text_to_fp,
+    inspect_xray,
+)
 from core_pdf.api.v0.operations import (
     AccessibilityValidationOperation,
     AnnotationValidationOperation,
@@ -110,7 +110,7 @@ from core_pdf.impl.engine.writing import serialize_pdf_file
 from core_pdf.impl.objects import PdfName, PdfReference, PdfStream
 
 # Migration helpers for assertions that deliberately exercise an already-open engine document.
-# New application code enters through ``core_pdf.api.v0.PdfDocument.open`` instead.
+# New application code enters through ``core_pdf.api.PdfDocument.open`` instead.
 PdfDocumentAdapter = V0PdfDocument
 PdfPageAdapter = PdfPage
 adapt_document = V0PdfDocument.internal_from_engine
@@ -1225,17 +1225,17 @@ def test_adapter_rejects_access_after_close() -> None:
 
 
 def test_star_import_surface_matches_all() -> None:
-    from core_pdf.api import v0
+    from core_pdf import api
 
-    missing = [name for name in v0.__all__ if not hasattr(v0, name)]
+    missing = [name for name in api.__all__ if not hasattr(api, name)]
 
     assert missing == []
 
 
 def test_concrete_v0_document_is_the_public_entrypoint() -> None:
-    from core_pdf.api import v0
+    from core_pdf import api
 
-    with v0.PdfDocument.open(simple_pdf()) as document:
+    with api.PdfDocument.open(simple_pdf()) as document:
         assert document.page_count == 1
         assert document.page(0) is document.page(0)
         assert document.structured.pages[0].page_number == 1
@@ -1253,7 +1253,7 @@ def test_concrete_v0_document_is_the_public_entrypoint() -> None:
         "BadRedactionOperation",
         "QualityPreflightOperation",
     )
-    assert all(not hasattr(v0, name) for name in removed)
+    assert all(not hasattr(api, name) for name in removed)
 
 
 def test_public_api_accepts_path_inputs_in_type_surface(tmp_path: Path) -> None:

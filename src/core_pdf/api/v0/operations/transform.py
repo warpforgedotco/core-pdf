@@ -6,7 +6,7 @@ from collections.abc import Mapping
 
 from core_pdf.impl.text import collapse_ws
 
-from ..models import AnalysisReport, RemediationAction, SourceRef
+from ...models import AnalysisReport, RemediationAction, SourceRef
 
 _METADATA_KEYS = {
     "title": "Title",

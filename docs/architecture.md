@@ -25,19 +25,20 @@ The two central objects:
 - **`PdfDocument`** (`impl/engine/document.py`) — `open`, page access, canonical structured
   extraction (`extract`), and engine-owned PDF capabilities. It owns caches that must be
   shared across pages, notably the image cache. Structured serializers and element/chunk
-  projections are kept on the v0 adapter and structured IR instead of being duplicated here.
+  projections are kept on the public capability and structured IR instead of being duplicated
+  here.
   The CLI drives it through `process_pdf` in `cli.py`.
 - **`PdfPage`** (`impl/engine/page.py`, subclassing the spec-level page in
   `impl/engine/spec/s_07_document/page.py`) — per-page extraction and rendering.
 
-The canonical local capability surface is `core_pdf.api.v0`. Its concrete document and page
+The canonical local capability surface is `core_pdf.api`. Its concrete document and page
 objects project engine-owned data into stable typed records. The engine owns structured
 extraction, high-level records (images, annotations, links, forms, outlines, and attachments),
 and the transactional `PdfDocumentEditor`. Compatibility facades under `core_pdf.api.v0.compat.*`
 are intentionally high-level projections; they may retain a structured snapshot for synthetic
 documents, but opened-document reads and page mutations should delegate to the engine surface.
 
-The v0 package is organized by role:
+The public API package is organized by role:
 
 - `document.py` — concrete `PdfDocument` / `PdfPage` capabilities and their sole-use record
   conversion kernel. Record
@@ -49,30 +50,30 @@ The v0 package is organized by role:
 - `models.py` — the frozen typed records, plus `Severity` (a `StrEnum`, so string
   comparisons keep working) and `SourceRef` provenance.
 - `types.py` — input aliases and the small cancellation/signature callback contracts.
-- `operations/` — the analysis operations as a package (`base.py` holds the
+- `v0/operations/` — the versioned analysis operations (`base.py` holds the
   template-method `AnalysisOperation`; `checks.py`, `validation.py`, `content.py`,
   `forensics.py`, `preflight.py`, `transform.py` hold the concrete operations).
 - `inspection.py` — the inventory/forensics algorithms (`document_inventory`,
   `object_graph`, `evidence_graph`, `resource_diagnostics`, …). Algorithms that consume the
-  v0 document bind directly as document methods; raw-object algorithms unwrap the engine
+  public document bind directly as document methods; raw-object algorithms unwrap the engine
   document at one guarded boundary.
-- `editor.py` — the engine editor subclass and its v0-only verified commit workflows.
+- `editor.py` — the engine editor subclass and its verified commit workflows.
 - `structured.py` — public promotion of the engine's structured IR (see below).
 - `errors.py` — the stable error surface: `ApiError`, `InvalidRequest`,
   `OperationCancelled`, `DocumentClosed`.
 
 `PdfDocument.structured` and `PdfPage.structured_view` return the engine IR types themselves —
-`core_pdf.api.v0.structured` re-exports `Document`, `Page`, `Block`, `Table`, and friends at
+`core_pdf.api.structured` re-exports `Document`, `Page`, `Block`, `Table`, and friends at
 an api-sanctioned path so compat code can name them without importing `core_pdf.impl`. New
 compatibility facades use the private engine projection hook; application code opens the
-concrete v0 document directly. Facades should not recreate document/page ownership locally.
+concrete public document directly. Facades should not recreate document/page ownership locally.
 
 Compat facades share a small utility kernel in `api/v0/compat/_common.py` and one state owner
 in `api/v0/compat/state.py`. The state owner handles both opened and synthetic snapshots;
 `OpenedState` and `SyntheticState` are compatibility markers, not parallel implementations.
-It owns the private engine-to-v0 projection hook and caches document/page projections so
+It owns the private engine-to-capability projection hook and caches document/page projections so
 facades do not rebuild capability objects per call.
-Facade packages import engine types from the kernel (or from `api.v0.structured`) instead of
+Facade packages import engine types from the kernel (or public types from `api.structured`) instead of
 drilling into `impl` directly.
 
 **Known defects.** The capture/render pipeline places some XObject-drawn vector text at
@@ -150,9 +151,13 @@ src/core_pdf/
   __init__.py            lazy public export table
   cli.py, __main__.py    CLI entry point (also carries Nuitka build directives)
   api/
-    v0/                  the versioned capability surface (see §1):
-                         document, editor, models, types, operations/,
-                         inspection, structured, errors, execution
+    document, editor     concrete public capabilities
+    models, types        typed public records and contracts
+    inspection           inventory and forensic algorithms
+    structured           public promotion of the structured IR
+    errors, execution    stable errors and local operation primitives
+    v0/
+      operations/        versioned analysis operations
       compat/            third-party facades + the shared _common kernel
   impl/
     models.py            engine record types (DrawingRecord, ImageRecord, Raw* records)

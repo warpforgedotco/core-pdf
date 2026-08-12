@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ..models import CompliancePreflightSummary, Severity
-from ..types import ExecutionContext
+from ...models import CompliancePreflightSummary, Severity
+from ...types import ExecutionContext
 
 if TYPE_CHECKING:
-    from ..document import PdfDocument
+    from ...document import PdfDocument
 from .base import AnalysisOperation, FindingCollector, OperationOptions
 from .validation import (
     AccessibilityValidationOperation,

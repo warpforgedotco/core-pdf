@@ -12,7 +12,7 @@ from .types import ExecutionContext
 
 if TYPE_CHECKING:
     from .document import PdfDocument
-    from .operations.base import AnalysisOperation
+    from .v0.operations.base import AnalysisOperation
 
 
 class AnalysisCache:

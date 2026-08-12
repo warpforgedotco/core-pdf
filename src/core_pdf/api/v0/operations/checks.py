@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from ..models import AnnotationRecord
+from ...models import AnnotationRecord
 
 INTERACTIVE_ANNOTATION_SUBTYPES = frozenset({"link", "screen", "widget"})
 

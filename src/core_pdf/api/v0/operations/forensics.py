@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any, cast
 
-from ..models import (
+from ...models import (
     Drawing,
     EvidenceLayer,
     EvidenceRecord,
@@ -14,10 +14,10 @@ from ..models import (
     SourceRef,
     TextSpan,
 )
-from ..types import ExecutionContext
+from ...types import ExecutionContext
 
 if TYPE_CHECKING:
-    from ..document import PdfDocument
+    from ...document import PdfDocument
 from .base import AnalysisOperation, FindingCollector, OperationOptions
 
 

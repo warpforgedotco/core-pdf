@@ -1,4 +1,4 @@
-"""Concrete v0 editor with verified commit workflows."""
+"""Concrete public editor with verified commit workflows."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ from .models import (
 
 
 class PdfEditor(EngineEditor):
-    """Engine editor extended only with v0 verification workflows."""
+    """Engine editor extended only with public verification workflows."""
 
     @contextmanager
     def internal_commit_and_reopen(self, target: str | Path | Any) -> Iterator[tuple[bytes, Any]]:
