@@ -1747,6 +1747,17 @@ class TextState:
         char_space_scale = self.char_space_scale
         word_space_scale = self.word_space_scale
         writing_mode = "vertical" if is_vertical else "horizontal"
+        axis_aligned_horizontal = not is_vertical and combined_b == 0.0 and combined_c == 0.0
+        rise = self.rise
+        font_ascent = self.font_ascent
+        font_descent = self.font_descent
+        tm_a = self.tm_a
+        tm_b = self.tm_b
+        tm_c = self.tm_c
+        tm_d = self.tm_d
+        tm_e = self.tm_e
+        tm_f = self.tm_f
+        fill_opacity = self.fill_opacity
         base_provenance = (
             ("source", "native_glyph"),
             ("seqno", seqno),
@@ -1778,15 +1789,46 @@ class TextState:
                 continue
 
             cluster_id = len(clusters)
-            text_box, baseline_text, glyph_text_matrix = glyph_text_space_boxes(
-                self,
-                offset,
-                advance,
-                decoder,
-                vertical_position(glyph.cid, font_size=font_size) if is_vertical else (0.0, 0.0),
-            )
-            advance_rect = transformed_text_rect(self, *text_box, text_basis)
-            baseline = transformed_text_line(*baseline_text, text_basis)
+            if axis_aligned_horizontal:
+                advance_x0 = text_basis[0] + offset * combined_a
+                advance_x1 = text_basis[0] + (offset + advance) * combined_a
+                advance_y0 = text_basis[1] + (font_descent + rise) * combined_d
+                advance_y1 = text_basis[1] + (font_ascent + rise) * combined_d
+                advance_rect = RectBox(
+                    advance_x0 if advance_x0 < advance_x1 else advance_x1,
+                    advance_y0 if advance_y0 < advance_y1 else advance_y1,
+                    advance_x1 if advance_x1 > advance_x0 else advance_x0,
+                    advance_y1 if advance_y1 > advance_y0 else advance_y0,
+                    seqno=seqno,
+                    fill=fill,
+                    fill_opacity=fill_opacity,
+                )
+                baseline = (
+                    advance_x0,
+                    text_basis[1] + rise * combined_d,
+                    advance_x1,
+                    text_basis[1] + rise * combined_d,
+                )
+                glyph_text_matrix = (
+                    tm_a,
+                    tm_b,
+                    tm_c,
+                    tm_d,
+                    tm_e + offset * tm_a,
+                    tm_f + offset * tm_b,
+                )
+            else:
+                text_box, baseline_text, glyph_text_matrix = glyph_text_space_boxes(
+                    self,
+                    offset,
+                    advance,
+                    decoder,
+                    vertical_position(glyph.cid, font_size=font_size)
+                    if is_vertical
+                    else (0.0, 0.0),
+                )
+                advance_rect = transformed_text_rect(self, *text_box, text_basis)
+                baseline = transformed_text_line(*baseline_text, text_basis)
             if is_vertical:
                 glyph_bbox = None
             else:
