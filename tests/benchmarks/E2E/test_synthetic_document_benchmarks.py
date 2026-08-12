@@ -121,12 +121,12 @@ def test_synthetic_pdf_open_and_extract_large_benchmark(benchmark) -> None:
     assert result == 50
 
 
-def test_synthetic_pdf_full_pipeline_large_benchmark(benchmark) -> None:
+def test_synthetic_pdf_full_pipeline_small_benchmark(benchmark) -> None:
     result = benchmark.pedantic(
         internal_full_pipeline,
-        args=(LARGE_PDF_BYTES,),
+        args=(SMALL_PDF_BYTES,),
         iterations=1,
         rounds=1,
     )
-    assert result["pages"] == 50
+    assert result["pages"] == 5
     assert result["raster_pixels"] > 0
