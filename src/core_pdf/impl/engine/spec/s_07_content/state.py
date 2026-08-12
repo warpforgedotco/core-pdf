@@ -1768,6 +1768,12 @@ class TextState:
             ("stream_order", stream_order),
             ("xobject_depth", xobject_depth),
         )
+        if axis_aligned_horizontal:
+            axis_advance_y0 = text_basis[1] + (font_descent + rise) * combined_d
+            axis_advance_y1 = text_basis[1] + (font_ascent + rise) * combined_d
+            if axis_advance_y0 > axis_advance_y1:
+                axis_advance_y0, axis_advance_y1 = axis_advance_y1, axis_advance_y0
+            axis_baseline_y = text_basis[1] + rise * combined_d
         for decoded_index, glyph in enumerate(glyphs):
             advance = (
                 chunk_advance(
@@ -1796,22 +1802,20 @@ class TextState:
             if axis_aligned_horizontal:
                 advance_x0 = text_basis[0] + offset * combined_a
                 advance_x1 = text_basis[0] + (offset + advance) * combined_a
-                advance_y0 = text_basis[1] + (font_descent + rise) * combined_d
-                advance_y1 = text_basis[1] + (font_ascent + rise) * combined_d
                 advance_rect = RectBox(
                     advance_x0 if advance_x0 < advance_x1 else advance_x1,
-                    advance_y0 if advance_y0 < advance_y1 else advance_y1,
+                    axis_advance_y0,
                     advance_x1 if advance_x1 > advance_x0 else advance_x0,
-                    advance_y1 if advance_y1 > advance_y0 else advance_y0,
+                    axis_advance_y1,
                     seqno=seqno,
                     fill=fill,
                     fill_opacity=fill_opacity,
                 )
                 baseline = (
                     advance_x0,
-                    text_basis[1] + rise * combined_d,
+                    axis_baseline_y,
                     advance_x1,
-                    text_basis[1] + rise * combined_d,
+                    axis_baseline_y,
                 )
                 glyph_text_matrix = (
                     tm_a,
