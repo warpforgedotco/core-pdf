@@ -2,7 +2,6 @@ from dataclasses import replace
 
 import pytest
 
-from core_pdf.impl.engine.layout import glyphs
 from core_pdf.impl.engine.layout.geometry import RectBox
 from core_pdf.impl.engine.layout.glyphs import (
     GlyphObservation,
@@ -14,12 +13,12 @@ from core_pdf.impl.engine.layout.glyphs import (
 from core_pdf.impl.engine.layout.models import TextRun
 
 
-def test_unicode_confidence_is_independent_of_paint_visibility() -> None:
-    assert glyph_unicode_confidence("A", "to_unicode", visible=False) == 1.0
+def test_authoritative_unicode_has_full_confidence() -> None:
+    assert glyph_unicode_confidence("A", "to_unicode") == 1.0
 
 
-def test_hidden_unsupported_glyph_still_has_low_unicode_confidence() -> None:
-    assert glyph_unicode_confidence("\ue000", "to_unicode", visible=False) == 0.20
+def test_unsupported_glyph_has_low_unicode_confidence() -> None:
+    assert glyph_unicode_confidence("\ue000", "to_unicode") == 0.20
 
 
 def test_identity_cmap_value_remains_an_unknown_identifier() -> None:
@@ -27,13 +26,13 @@ def test_identity_cmap_value_remains_an_unknown_identifier() -> None:
     assert glyph_unicode_semantics("A", "to_unicode") is GlyphUnicodeSemantics.AUTHORITATIVE
 
 
-def test_unicode_confidence_reuses_semantic_result_across_paint_visibility() -> None:
-    glyphs.internal_cached_glyph_unicode_confidence.cache_clear()
+def test_unicode_confidence_reuses_cached_result() -> None:
+    glyph_unicode_confidence.cache_clear()
 
-    assert glyph_unicode_confidence("A", "to_unicode", visible=True) == 1.0
-    assert glyph_unicode_confidence("A", "to_unicode", visible=False) == 1.0
+    assert glyph_unicode_confidence("A", "to_unicode") == 1.0
+    assert glyph_unicode_confidence("A", "to_unicode") == 1.0
 
-    cache_info = glyphs.internal_cached_glyph_unicode_confidence.cache_info()
+    cache_info = glyph_unicode_confidence.cache_info()
     assert cache_info.hits == 1
     assert cache_info.misses == 1
 

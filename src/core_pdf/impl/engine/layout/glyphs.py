@@ -149,21 +149,25 @@ def rectbox_tuple(rect: RectBox) -> BBox:
     return (rect.x0, rect.y0, rect.x1, rect.y1)
 
 
+@lru_cache(maxsize=512)
 def glyph_unicode_confidence(
     text: str,
     unicode_source: str,
-    *,
-    visible: bool = True,
     alternates: tuple[str, ...] = (),
 ) -> float:
-    """Estimate Unicode decoding confidence independently of paint visibility.
-
-    ``visible`` is retained for call compatibility and provenance symmetry.  A
-    text-rendering mode or optional-content state says whether a glyph is
-    painted, not whether its character mapping is correct.
-    """
-    del visible
-    return internal_cached_glyph_unicode_confidence(text, unicode_source, alternates)
+    """Estimate Unicode decoding confidence from mapping evidence."""
+    if not text:
+        confidence = 0.0
+    else:
+        confidence = UNICODE_SOURCE_CONFIDENCE.get(unicode_source, 0.50)
+        if any(
+            alternate and not glyph_text_has_unsupported_codepoint(alternate)
+            for alternate in alternates
+        ):
+            confidence = max(confidence, 0.68)
+        if glyph_text_has_unsupported_codepoint(text):
+            confidence = min(confidence, 0.20)
+    return confidence
 
 
 @lru_cache(maxsize=512)
@@ -182,26 +186,6 @@ def glyph_unicode_semantics(text: str, unicode_source: str) -> GlyphUnicodeSeman
     if unicode_source in HEURISTIC_UNICODE_SOURCES:
         return GlyphUnicodeSemantics.HEURISTIC
     return GlyphUnicodeSemantics.UNKNOWN_IDENTIFIER
-
-
-@lru_cache(maxsize=512)
-def internal_cached_glyph_unicode_confidence(
-    text: str,
-    unicode_source: str,
-    alternates: tuple[str, ...],
-) -> float:
-    if not text:
-        confidence = 0.0
-    else:
-        confidence = UNICODE_SOURCE_CONFIDENCE.get(unicode_source, 0.50)
-        if any(
-            alternate and not glyph_text_has_unsupported_codepoint(alternate)
-            for alternate in alternates
-        ):
-            confidence = max(confidence, 0.68)
-        if glyph_text_has_unsupported_codepoint(text):
-            confidence = min(confidence, 0.20)
-    return confidence
 
 
 def glyph_text_has_unsupported_codepoint(text: str) -> bool:

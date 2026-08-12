@@ -1864,8 +1864,7 @@ class TextState:
             observation_confidence = glyph_unicode_confidence(
                 chunk_text,
                 glyph.unicode_source,
-                visible=visible,
-                alternates=glyph.alternates,
+                glyph.alternates,
             )
 
             single_character = chunk_length == 1
@@ -1964,8 +1963,7 @@ class TextState:
                     char_confidence = glyph_unicode_confidence(
                         ch,
                         glyph.unicode_source,
-                        visible=visible,
-                        alternates=glyph.alternates,
+                        glyph.alternates,
                     )
                     char_box, char_baseline_text, char_text_matrix = glyph_text_space_boxes(
                         self, char_offset, per_char_advance, decoder
