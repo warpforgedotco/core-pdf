@@ -1761,20 +1761,13 @@ class TextState:
         tm_e = self.tm_e
         tm_f = self.tm_f
         fill_opacity = self.fill_opacity
-        base_provenance = (
-            ("source", "native_glyph"),
-            ("seqno", seqno),
-            ("font_name", font_name),
-            ("stream_order", stream_order),
-            ("xobject_depth", xobject_depth),
-        )
         if axis_aligned_horizontal:
             axis_advance_y0 = text_basis[1] + (font_descent + rise) * combined_d
             axis_advance_y1 = text_basis[1] + (font_ascent + rise) * combined_d
             if axis_advance_y0 > axis_advance_y1:
                 axis_advance_y0, axis_advance_y1 = axis_advance_y1, axis_advance_y0
             axis_baseline_y = text_basis[1] + rise * combined_d
-        for decoded_index, glyph in enumerate(glyphs):
+        for glyph in glyphs:
             advance = (
                 chunk_advance(
                     glyph.width_code,
@@ -1861,10 +1854,6 @@ class TextState:
                 baseline[0],
                 baseline[1],
             )
-            common_provenance = (
-                *base_provenance,
-                ("decoded_glyph_index", decoded_index),
-            )
             observation_confidence = glyph_unicode_confidence(
                 chunk_text,
                 glyph.unicode_source,
@@ -1924,7 +1913,6 @@ class TextState:
                     bitmap_height=bitmap_height,
                     bitmap_code=bitmap_code,
                     font_decoder=decoder,
-                    provenance=common_provenance,
                 )
                 append_glyph(observation)
                 # Single-glyph fast path: glyph_cluster_from_observations, given one
@@ -1952,7 +1940,6 @@ class TextState:
                         font_name=observation.font_name,
                         seqno=seqno,
                         confidence=observation_confidence,
-                        provenance=common_provenance,
                     )
                 )
                 offset += advance
@@ -2011,7 +1998,6 @@ class TextState:
                             cluster_index=cluster_index,
                             cluster_size=cluster_size,
                             font_decoder=decoder,
-                            provenance=common_provenance,
                         )
                     )
                     char_offset += per_char_advance
@@ -2045,7 +2031,6 @@ class TextState:
                         cluster_index=0,
                         cluster_size=1,
                         font_decoder=decoder,
-                        provenance=common_provenance,
                     )
                 )
             for observation in cluster_observations:
@@ -2062,7 +2047,6 @@ class TextState:
                 chunk_text,
                 tuple(cluster_observations),
                 kind=kind,
-                provenance=common_provenance,
             )
             if cluster is not None:
                 clusters.append(cluster)
