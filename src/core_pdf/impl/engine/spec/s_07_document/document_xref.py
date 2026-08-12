@@ -336,6 +336,10 @@ class DocumentXRefMixin:
         ]
         if not missing_keys:
             return trailer
+        if not getattr(self, "xref_was_recovered", False) and not any(
+            self.raw_data.find(b"/" + key.encode("ascii")) >= 0 for key in missing_keys
+        ):
+            return trailer
         if missing_keys == ["Encrypt"] and not getattr(self, "xref_was_recovered", False):
             return trailer
         if missing_keys == ["Encrypt"] and self.raw_data.find(b"Encrypt") < 0:
