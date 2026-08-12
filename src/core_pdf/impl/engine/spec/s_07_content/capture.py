@@ -103,23 +103,38 @@ def glyph_ink_rect(
     text_y0 = state.rise + gy0 * state.font_scale
     text_y1 = state.rise + gy1 * state.font_scale
     base_x, base_y, a, b, c, d = text_basis
-    p00_x = base_x + text_x0 * a + text_y0 * c
-    p00_y = base_y + text_x0 * b + text_y0 * d
-    p01_x = base_x + text_x0 * a + text_y1 * c
-    p01_y = base_y + text_x0 * b + text_y1 * d
-    p10_x = base_x + text_x1 * a + text_y0 * c
-    p10_y = base_y + text_x1 * b + text_y0 * d
-    p11_x = base_x + text_x1 * a + text_y1 * c
-    p11_y = base_y + text_x1 * b + text_y1 * d
-    rect = RectBox(
-        min(p00_x, p01_x, p10_x, p11_x),
-        min(p00_y, p01_y, p10_y, p11_y),
-        max(p00_x, p01_x, p10_x, p11_x),
-        max(p00_y, p01_y, p10_y, p11_y),
-        seqno=fallback.seqno,
-        fill=fallback.fill,
-        fill_opacity=fallback.fill_opacity,
-    )
+    if b == 0.0 and c == 0.0:
+        px0 = base_x + text_x0 * a
+        px1 = base_x + text_x1 * a
+        py0 = base_y + text_y0 * d
+        py1 = base_y + text_y1 * d
+        rect = RectBox(
+            px0 if px0 < px1 else px1,
+            py0 if py0 < py1 else py1,
+            px1 if px1 > px0 else px0,
+            py1 if py1 > py0 else py0,
+            seqno=fallback.seqno,
+            fill=fallback.fill,
+            fill_opacity=fallback.fill_opacity,
+        )
+    else:
+        p00_x = base_x + text_x0 * a + text_y0 * c
+        p00_y = base_y + text_x0 * b + text_y0 * d
+        p01_x = base_x + text_x0 * a + text_y1 * c
+        p01_y = base_y + text_x0 * b + text_y1 * d
+        p10_x = base_x + text_x1 * a + text_y0 * c
+        p10_y = base_y + text_x1 * b + text_y0 * d
+        p11_x = base_x + text_x1 * a + text_y1 * c
+        p11_y = base_y + text_x1 * b + text_y1 * d
+        rect = RectBox(
+            min(p00_x, p01_x, p10_x, p11_x),
+            min(p00_y, p01_y, p10_y, p11_y),
+            max(p00_x, p01_x, p10_x, p11_x),
+            max(p00_y, p01_y, p10_y, p11_y),
+            seqno=fallback.seqno,
+            fill=fallback.fill,
+            fill_opacity=fallback.fill_opacity,
+        )
     fallback_height = fallback.y1 - fallback.y0
     fallback_width = fallback.x1 - fallback.x0
     rect_height = rect.y1 - rect.y0
@@ -142,6 +157,20 @@ def transformed_text_rect(
     text_basis: TextBasis,
 ) -> RectBox:
     base_x, base_y, a, b, c, d = text_basis
+    if b == 0.0 and c == 0.0:
+        px0 = base_x + x0 * a
+        px1 = base_x + x1 * a
+        py0 = base_y + y0 * d
+        py1 = base_y + y1 * d
+        return RectBox(
+            px0 if px0 < px1 else px1,
+            py0 if py0 < py1 else py1,
+            px1 if px1 > px0 else px0,
+            py1 if py1 > py0 else py0,
+            seqno=state.sequence,
+            fill=state.fill_color,
+            fill_opacity=state.fill_opacity,
+        )
     p00_x = base_x + x0 * a + y0 * c
     p00_y = base_y + x0 * b + y0 * d
     p01_x = base_x + x0 * a + y1 * c
