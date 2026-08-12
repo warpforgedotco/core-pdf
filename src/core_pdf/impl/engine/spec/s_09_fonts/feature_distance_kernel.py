@@ -4,12 +4,21 @@ from __future__ import annotations
 
 from functools import lru_cache
 from math import inf
-from typing import Any, Sequence
+from typing import Any, Sequence, TypeAlias
 
 import numpy
 
 FEATURE_GRID_WIDTH = 18
 FEATURE_GRID_HEIGHT = 24
+
+FeatureArrays: TypeAlias = tuple[
+    numpy.ndarray[Any, Any],
+    numpy.ndarray[Any, Any],
+    numpy.ndarray[Any, Any],
+    numpy.ndarray[Any, Any],
+    numpy.ndarray[Any, Any],
+    numpy.ndarray[Any, Any],
+]
 
 
 @lru_cache(maxsize=4096)
@@ -27,9 +36,13 @@ def internal_cell_distance_map(cells: tuple[tuple[int, int], ...]) -> tuple[int,
             index = row + x
             best = distances[index]
             if x:
-                best = min(best, distances[index - 1] + 1)
+                candidate = distances[index - 1] + 1
+                if candidate < best:
+                    best = candidate
             if y:
-                best = min(best, distances[index - FEATURE_GRID_WIDTH] + 1)
+                candidate = distances[index - FEATURE_GRID_WIDTH] + 1
+                if candidate < best:
+                    best = candidate
             distances[index] = best
     for y in range(FEATURE_GRID_HEIGHT - 1, -1, -1):
         row = y * FEATURE_GRID_WIDTH
@@ -37,9 +50,13 @@ def internal_cell_distance_map(cells: tuple[tuple[int, int], ...]) -> tuple[int,
             index = row + x
             best = distances[index]
             if x + 1 < FEATURE_GRID_WIDTH:
-                best = min(best, distances[index + 1] + 1)
+                candidate = distances[index + 1] + 1
+                if candidate < best:
+                    best = candidate
             if y + 1 < FEATURE_GRID_HEIGHT:
-                best = min(best, distances[index + FEATURE_GRID_WIDTH] + 1)
+                candidate = distances[index + FEATURE_GRID_WIDTH] + 1
+                if candidate < best:
+                    best = candidate
             distances[index] = best
     return tuple(distances)
 
@@ -97,14 +114,7 @@ def internal_feature_arrays(
     bitmaps: Sequence[tuple[int, ...]],
     aspects: Sequence[float],
     contours: Sequence[int],
-) -> tuple[
-    numpy.ndarray[Any, Any],
-    numpy.ndarray[Any, Any],
-    numpy.ndarray[Any, Any],
-    numpy.ndarray[Any, Any],
-    numpy.ndarray[Any, Any],
-    numpy.ndarray[Any, Any],
-]:
+) -> FeatureArrays:
     count = len(cells)
     masks = numpy.zeros((count, FEATURE_GRID_HEIGHT, FEATURE_GRID_WIDTH), dtype=numpy.float64)
     distance_maps = numpy.zeros_like(masks)
@@ -149,6 +159,8 @@ def feature_distance_matrix(
     right_bitmaps: Sequence[tuple[int, ...]],
     right_aspects: Sequence[float],
     right_contours: Sequence[int],
+    *,
+    internal_right_arrays: FeatureArrays | None = None,
 ) -> numpy.ndarray[Any, Any]:
     """Return pairwise feature distances for two feature collections."""
     (
@@ -159,6 +171,10 @@ def feature_distance_matrix(
         left_contours_array,
         left_bitmap_rows,
     ) = internal_feature_arrays(left_cells, left_bitmaps, left_aspects, left_contours)
+    if internal_right_arrays is None:
+        internal_right_arrays = internal_feature_arrays(
+            right_cells, right_bitmaps, right_aspects, right_contours
+        )
     (
         right_masks,
         right_maps,
@@ -166,7 +182,7 @@ def feature_distance_matrix(
         right_aspects_array,
         right_contours_array,
         right_bitmap_rows,
-    ) = internal_feature_arrays(right_cells, right_bitmaps, right_aspects, right_contours)
+    ) = internal_right_arrays
 
     distance = numpy.full((len(left_cells), len(right_cells)), numpy.inf, dtype=numpy.float64)
     valid = (left_counts[:, None] > 0) & (right_counts[None, :] > 0)

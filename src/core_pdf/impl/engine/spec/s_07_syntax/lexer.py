@@ -20,12 +20,9 @@ from core_pdf.impl.engine.spec.s_07_syntax.lexer_helpers import (
     FindableSizedBuffer,
     full_source_buffer,
     is_integer_word,
-    is_number_word,
     is_number_word_bytes,
     looks_like_indirect_object_header,
     matches_keyword_with_one_substitution,
-    parse_float_token,
-    parse_int_token,
     skip_pdf_ignored,
 )
 from core_pdf.impl.engine.spec.s_07_syntax.tokens import (
@@ -113,7 +110,7 @@ class PdfLexer:
         if type(data) is memoryview:
             self.raw_data = (
                 memoryview(data)
-                if data.ndim == 1 and data.format == "B"
+                if data.ndim == 1 and data.format == "B" and data.c_contiguous
                 else memoryview(data.tobytes())
             )
         else:
@@ -167,7 +164,7 @@ class PdfLexer:
         self.current_gen_num = None
 
     def advance(self, count: int) -> None:
-        self.pos = max(0, min(self.pos + count, self.data_len))
+        self.pos += count
 
     def read_bytes(self, count: int) -> bytes | memoryview:
         start = self.pos
@@ -179,25 +176,54 @@ class PdfLexer:
         self.pos = self.skip_ignored_at(self.pos)
 
     def skip_ignored_at(self, position: int) -> int:
-        return skip_pdf_ignored(self.raw_data, position, self.data_len)
+        data_len = self.data_len
+        if position >= data_len:
+            return position
+        data = self.raw_data
+        pos = position
+        byte = data[pos]
+        if not WS_TABLE[byte] and byte != 37:
+            return pos
+        if WS_TABLE[byte]:
+            pos += 1
+            if pos >= data_len:
+                return pos
+            byte = data[pos]
+            if not WS_TABLE[byte] and byte != 37:
+                return pos
+        short_end = min(data_len, pos + 8)
+        while pos < short_end and WS_TABLE[data[pos]]:
+            pos += 1
+        if pos >= data_len:
+            return pos
+        byte = data[pos]
+        if byte != 37 and not WS_TABLE[byte]:
+            return pos
+        return skip_pdf_ignored(data, position, data_len)
 
-    def scan_word_at(
-        self, position: int, skip_ignored: bool = True
-    ) -> tuple[memoryview, int] | None:
+    def scan_word_at(self, position: int, skip_ignored: bool = True) -> tuple[bytes, int] | None:
         data = self.raw_data
         pos = self.skip_ignored_at(position) if skip_ignored else position
         if pos >= self.data_len:
             return None
 
         byte = data[pos]
+        source_buffer = self.source_buffer
 
         if SEPARATOR_TABLE[byte]:
-            return data[pos : pos + 1], pos + 1
+            token = (
+                source_buffer[pos : pos + 1]
+                if source_buffer is not None
+                else bytes(data[pos : pos + 1])
+            )
+            return token, pos + 1
 
         start = pos
-        pos = self.find_separator(start)
+        match = SEPARATOR_RE.search(data, start)
+        pos = self.data_len if match is None else match.start()
 
-        return data[start:pos], pos
+        token = source_buffer[start:pos] if source_buffer is not None else bytes(data[start:pos])
+        return token, pos
 
     def find_separator(self, start: int) -> int:
         data = self.raw_data
@@ -209,27 +235,15 @@ class PdfLexer:
             pos += 1
         return pos
 
-    def scan_word(self, skip_ignored: bool = True) -> tuple[memoryview, int] | None:
+    def scan_word(self, skip_ignored: bool = True) -> tuple[bytes, int] | None:
         return self.scan_word_at(self.pos, skip_ignored=skip_ignored)
-
-    @staticmethod
-    def is_number_word_bytes(value: bytes) -> bool:
-        return is_number_word_bytes(value)
-
-    @staticmethod
-    def is_number_word(value: memoryview | bytes) -> bool:
-        return is_number_word(value)
-
-    @staticmethod
-    def is_integer_word(value: memoryview | bytes) -> bool:
-        return is_integer_word(value)
 
     @staticmethod
     def parse_number(value: memoryview | bytes) -> int | float:
         try:
             if 46 in value:
-                return parse_float_token(value)
-            return parse_int_token(value)
+                return float(value)
+            return int(value)
         except ValueError as exc:
             raise PdfParseError(f"invalid number {bytes(value)!r}") from exc
 
@@ -371,7 +385,8 @@ class PdfLexer:
 
     def read_name(self) -> memoryview:
         self.advance(1)
-        end = self.find_separator(self.pos)
+        match = SEPARATOR_RE.search(self.raw_data, self.pos)
+        end = self.data_len if match is None else match.start()
 
         start = self.pos
         self.pos = end
@@ -418,12 +433,12 @@ class PdfLexer:
             raise
 
     def parse_number_or_keyword(self, raw: bytes) -> Any:
-        if self.is_number_word(raw):
+        if is_number_word_bytes(raw):
             return self.parse_number(raw)
         return self.parse_keyword(raw)
 
     def parse_object(self) -> Any:
-        self.skip_ignored()
+        self.pos = self.skip_ignored_at(self.pos)
         data = self.raw_data
         pos = self.pos
         if pos >= self.data_len:
@@ -460,26 +475,28 @@ class PdfLexer:
         if len(raw) > 6 and raw[-6:] == b"endobj":
             raw = raw[:-6]
             self.pos = end - 6
-        if self.is_number_word(raw):
+        if is_number_word_bytes(raw):
             raw_is_integer = 46 not in raw
-            next_token = self.scan_word_at(end)
-            if next_token is not None:
+            if not raw_is_integer:
+                return float(raw)
+            next_pos = self.skip_ignored_at(end)
+            if next_pos < self.data_len and 48 <= data[next_pos] <= 57:
+                next_token = self.scan_word_at(next_pos, skip_ignored=False)
+                assert next_token is not None
                 next_raw, next_end = next_token
-                if raw_is_integer and self.is_integer_word(next_raw):
+                if is_integer_word(next_raw):
                     next_next = self.scan_word_at(next_end)
                     if next_next is not None and next_next[0] == b"R":
                         self.pos = next_next[1]
                         try:
-                            obj_num = parse_int_token(raw)
-                            gen_num = parse_int_token(next_raw)
+                            obj_num = int(raw)
+                            gen_num = int(next_raw)
                         except ValueError as exc:
                             raise PdfParseError("invalid reference") from exc
                         if obj_num < 0 or gen_num < 0:
                             raise PdfParseError("invalid reference")
                         return PdfReference(obj_num, gen_num)
-            if not raw_is_integer:
-                return parse_float_token(raw)
-            return parse_int_token(raw)
+            return int(raw)
         return self.parse_keyword(raw)
 
     def parse_object_at(self, position: int) -> Any:
@@ -488,19 +505,19 @@ class PdfLexer:
 
     def parse_indirect_object(self) -> Any:
         scanned = self.scan_word(skip_ignored=True)
-        if scanned is None or not self.is_number_word(scanned[0]):
+        if scanned is None or not is_number_word_bytes(scanned[0]):
             raise PdfParseError("expected indirect object header")
         raw, end = scanned
         self.pos = end
         try:
-            obj_num = parse_int_token(raw)
+            obj_num = int(raw)
         except ValueError as exc:
             raise PdfParseError("invalid indirect object header") from exc
         if obj_num < 0:
             raise PdfParseError("invalid indirect object header")
 
         gen_num_raw = self.scan_word(skip_ignored=True)
-        if gen_num_raw is None or not self.is_number_word(gen_num_raw[0]):
+        if gen_num_raw is None or not is_number_word_bytes(gen_num_raw[0]):
             raise PdfParseError("expected indirect object generation number")
         self.pos = gen_num_raw[1]
         try:
@@ -518,7 +535,7 @@ class PdfLexer:
         self.current_obj_num = obj_num
         self.current_gen_num = gen_num
         try:
-            self.skip_ignored()
+            self.pos = self.skip_ignored_at(self.pos)
             if self.raw_data[self.pos : self.pos + 6] == b"endobj":
                 self.advance(6)
                 return None
@@ -526,7 +543,7 @@ class PdfLexer:
         finally:
             self.current_obj_num = previous_obj
             self.current_gen_num = previous_gen
-        self.skip_ignored()
+        self.pos = self.skip_ignored_at(self.pos)
         keyword = self.scan_word(skip_ignored=True)
         if keyword is None or keyword[0] != b"endobj":
             if (
@@ -653,7 +670,7 @@ class PdfLexer:
         should_decipher = self.decipher is not None and self.current_obj_num is not None
         apply_decipher = self.apply_decipher
         while True:
-            self.skip_ignored()
+            self.pos = self.skip_ignored_at(self.pos)
             if self.pos >= self.data_len:
                 raise PdfParseError("unterminated array")
             pos = self.pos
@@ -689,18 +706,18 @@ class PdfLexer:
                 raise PdfParseError("unexpected end of PDF input")
             raw, end = scanned
             self.pos = end
-            if self.is_number_word(raw):
+            if is_number_word_bytes(raw):
                 raw_is_integer = 46 not in raw
                 next_token = self.scan_word_at(end)
                 if next_token is not None:
                     next_raw, next_end = next_token
-                    if raw_is_integer and self.is_integer_word(next_raw):
+                    if raw_is_integer and is_integer_word(next_raw):
                         next_next = self.scan_word_at(next_end)
                         if next_next is not None and next_next[0] == b"R":
                             self.pos = next_next[1]
                             try:
-                                obj_num = parse_int_token(raw)
-                                gen_num = parse_int_token(next_raw)
+                                obj_num = int(raw)
+                                gen_num = int(next_raw)
                             except ValueError as exc:
                                 raise PdfParseError("invalid reference") from exc
                             if obj_num < 0 or gen_num < 0:
@@ -708,9 +725,9 @@ class PdfLexer:
                             values.append(PdfReference(obj_num, gen_num))
                             continue
                 if not raw_is_integer:
-                    values.append(parse_float_token(raw))
+                    values.append(float(raw))
                 else:
-                    values.append(parse_int_token(raw))
+                    values.append(int(raw))
                 continue
             values.append(self.parse_keyword(raw))
 
@@ -811,7 +828,7 @@ class PdfLexer:
                 if has_decimal:
                     raw_token = data[pos:end]
                     try:
-                        values.append(parse_float_token(raw_token))
+                        values.append(float(raw_token))
                     except ValueError:
                         self.pos = start_pos
                         return None
@@ -829,7 +846,7 @@ class PdfLexer:
         values: PdfDict = {}
         self.advance(2)
         while True:
-            self.skip_ignored()
+            self.pos = self.skip_ignored_at(self.pos)
             if self.pos >= self.data_len:
                 raise PdfParseError("unterminated dictionary")
             if (
@@ -893,7 +910,8 @@ class PdfLexer:
             if data[pos : pos + 6] == b"endobj":
                 return False
             if byte == 47:
-                name_end = self.find_separator(pos + 1)
+                match = SEPARATOR_RE.search(data, pos + 1)
+                name_end = self.data_len if match is None else match.start()
                 name = bytes(data[pos + 1 : name_end])
                 if name not in RECOVERABLE_DICTIONARY_KEY_NAMES:
                     pos += 1
@@ -956,7 +974,7 @@ class PdfLexer:
                 raw_data = self.raw_data[data_start:endstream_pos]
                 self.rewind(endstream_pos + 9)
         else:
-            self.skip_ignored()
+            self.pos = self.skip_ignored_at(self.pos)
             if self.raw_data[
                 self.pos : self.pos + 9
             ] == b"endstream" or matches_keyword_with_one_substitution(
@@ -1067,7 +1085,7 @@ class PdfLexer:
 
     def parse_dictionary_or_stream(self) -> Any:
         dictionary = self.parse_dictionary()
-        self.skip_ignored()
+        self.pos = self.skip_ignored_at(self.pos)
         if self.raw_data[self.pos : self.pos + 6] == b"stream" or (
             self.pos + 6 <= self.data_len
             and matches_keyword_with_one_substitution(self.raw_data, self.pos, b"stream")

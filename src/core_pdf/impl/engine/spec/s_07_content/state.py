@@ -515,10 +515,10 @@ class TextState:
         data: bytes | memoryview | None = None,
         decoder: FontDecoder | None = None,
     ) -> None:
-        self.text_component.append_text(operand, data=data, decoder=decoder)
+        self._append_text_impl(operand, data=data, decoder=decoder)
 
     def append_tj_array(self, array: Any) -> None:
-        self.text_component.append_tj_array(array)
+        self._append_tj_array_impl(array)
 
     @property
     def ctm(self) -> Matrix:
@@ -1716,16 +1716,22 @@ class TextState:
         fill = self.fill_color
         font_name = self.current_font
         font_size = self.font_size
-        space_width = self.font_space_width
-        stream_order = self.stream_order
-        xobject_depth = self.xobject_depth
         combined_a = self.combined_A
         combined_b = self.combined_B
         combined_c = self.combined_C
         combined_d = self.combined_D
+        text_basis = (
+            self.tm_e * self.ca + self.tm_f * self.cc + self.ce,
+            self.tm_e * self.cb + self.tm_f * self.cd + self.cf,
+            combined_a,
+            combined_b,
+            combined_c,
+            combined_d,
+        )
         append_glyph = self.glyphs.append
         chunk_advance = self.chunk_advance
         glyph_bbox_for_code = decoder.glyph_bbox
+        glyph_bbox_cache = decoder.glyph_bbox_cache
         vertical_position = decoder.vertical_glyph_position
         clusters = getattr(self, "glyph_clusters", None)
         if clusters is None:
@@ -1733,67 +1739,128 @@ class TextState:
             self.glyph_clusters = clusters
         cursor = 0
         is_vertical = decoder.is_vertical
-        writing_mode = "vertical" if is_vertical else "horizontal"
-        base_provenance = (
-            ("source", "native_glyph"),
-            ("seqno", seqno),
-            ("font_name", font_name),
-            ("stream_order", stream_order),
-            ("xobject_depth", xobject_depth),
-        )
-        for decoded_index, glyph in enumerate(glyphs):
-            advance = chunk_advance(
-                glyph.width_code,
-                decoder,
-                char_code=glyph.char_code,
+        glyph_width = decoder.glyph_width
+        effective_font_name = decoder.font_name or font_name
+        capture_glyph_bitmaps = self.capture_glyph_bitmaps
+        advance_scale = self.text_advance_scale
+        char_space_scale = self.char_space_scale
+        word_space_scale = self.word_space_scale
+        axis_aligned_horizontal = not is_vertical and combined_b == 0.0 and combined_c == 0.0
+        rise = self.rise
+        font_scale = self.font_scale
+        font_ascent = self.font_ascent
+        font_descent = self.font_descent
+        if axis_aligned_horizontal:
+            axis_advance_y0 = text_basis[1] + (font_descent + rise) * combined_d
+            axis_advance_y1 = text_basis[1] + (font_ascent + rise) * combined_d
+            if axis_advance_y0 > axis_advance_y1:
+                axis_advance_y0, axis_advance_y1 = axis_advance_y1, axis_advance_y0
+            axis_baseline_y = text_basis[1] + rise * combined_d
+        for glyph in glyphs:
+            advance = (
+                chunk_advance(
+                    glyph.width_code,
+                    decoder,
+                    char_code=glyph.char_code,
+                )
+                if is_vertical
+                else (
+                    glyph_width(glyph.width_code)
+                    + char_space_scale
+                    + (word_space_scale if glyph.width_code == 32 else 0.0)
+                )
+                * advance_scale
             )
             chunk_text = glyph.unicode
             if not chunk_text:
                 chunk_text = text[cursor : cursor + 1]
-            cursor += max(1, len(chunk_text))
+            chunk_length = len(chunk_text)
+            cursor += max(1, chunk_length)
             if not chunk_text:
                 offset += advance
                 continue
 
             cluster_id = len(clusters)
-            text_box, baseline_text, glyph_text_matrix = glyph_text_space_boxes(
-                self,
-                offset,
-                advance,
-                decoder,
-                vertical_position(glyph.cid, font_size=font_size) if is_vertical else (0.0, 0.0),
-            )
-            advance_rect = transformed_text_rect(self, *text_box)
-            baseline = transformed_text_line(self, *baseline_text)
-            glyph_bbox = glyph_bbox_for_code(glyph.bitmap_code) if not is_vertical else None
-            rect = glyph_ink_rect(self, glyph_bbox, offset, advance_rect)
-            device_matrix = (
-                combined_a,
-                combined_b,
-                combined_c,
-                combined_d,
-                baseline[0],
-                baseline[1],
-            )
-            common_provenance = (
-                *base_provenance,
-                ("decoded_glyph_index", decoded_index),
-            )
+            if axis_aligned_horizontal:
+                advance_x0 = text_basis[0] + offset * combined_a
+                advance_x1 = text_basis[0] + (offset + advance) * combined_a
+                advance_bbox = (
+                    advance_x0 if advance_x0 < advance_x1 else advance_x1,
+                    axis_advance_y0,
+                    advance_x1 if advance_x1 > advance_x0 else advance_x0,
+                    axis_advance_y1,
+                )
+                baseline = (
+                    advance_x0,
+                    axis_baseline_y,
+                    advance_x1,
+                    axis_baseline_y,
+                )
+            else:
+                text_box, baseline_text = glyph_text_space_boxes(
+                    self,
+                    offset,
+                    advance,
+                    decoder,
+                    vertical_position(glyph.cid, font_size=font_size)
+                    if is_vertical
+                    else (0.0, 0.0),
+                )
+                transformed = transformed_text_rect(self, *text_box, text_basis)
+                advance_bbox = (
+                    transformed.x0,
+                    transformed.y0,
+                    transformed.x1,
+                    transformed.y1,
+                )
+                baseline = transformed_text_line(*baseline_text, text_basis)
+            if is_vertical:
+                glyph_bbox = None
+            else:
+                glyph_code = glyph.bitmap_code
+                glyph_bbox = glyph_bbox_cache.get(glyph_code)
+                if glyph_bbox is None and glyph_code not in glyph_bbox_cache:
+                    glyph_bbox = glyph_bbox_for_code(glyph_code)
+            if (
+                axis_aligned_horizontal
+                and glyph_bbox is not None
+                and glyph_bbox[0] == 0.0
+                and glyph_bbox[1] * font_scale == font_descent
+                and glyph_bbox[2] * advance_scale == advance
+                and glyph_bbox[3] * font_scale == font_ascent
+            ):
+                rect = advance_bbox
+            else:
+                rect = glyph_ink_rect(
+                    glyph_bbox,
+                    offset,
+                    advance_bbox,
+                    text_basis,
+                    advance_scale,
+                    rise,
+                    font_scale,
+                )
             observation_confidence = glyph_unicode_confidence(
                 chunk_text,
                 glyph.unicode_source,
-                visible=visible,
-                alternates=glyph.alternates,
+                glyph.alternates,
             )
 
-            if len(chunk_text) == 1 or should_capture_suspicious_multi_glyph_bitmap(chunk_text):
+            single_character = chunk_length == 1
+            suspicious_multi = (
+                False
+                if single_character
+                else should_capture_suspicious_multi_glyph_bitmap(chunk_text)
+            )
+            if single_character or suspicious_multi:
                 bitmap: tuple[int, ...] = ()
                 bitmap_width = 0
                 bitmap_height = 0
                 bitmap_code: int | None = None
-                if self.capture_glyph_bitmaps and (
+                if capture_glyph_bitmaps and (
                     should_capture_glyph_bitmap(chunk_text)
-                    or should_capture_suspicious_multi_glyph_bitmap(chunk_text)
+                    if single_character
+                    else suspicious_multi
                 ):
                     bitmap_width, bitmap_height = glyph_bitmap_dimensions(
                         glyph_bbox,
@@ -1801,49 +1868,47 @@ class TextState:
                     )
                     bitmap_code = glyph.bitmap_code
                 observation = GlyphObservation(
-                    text=chunk_text,
-                    ink_rect=rect,
-                    advance_rect=advance_rect,
-                    seqno=seqno,
-                    code_bytes=glyph.code_bytes,
-                    char_code=glyph.char_code,
-                    cid=glyph.cid,
-                    gid=glyph.gid,
-                    font_name=decoder.font_name or font_name,
-                    font_size=font_size,
-                    space_width=space_width,
-                    text_matrix=glyph_text_matrix,
-                    device_matrix=device_matrix,
-                    baseline=baseline,
-                    writing_mode=writing_mode,
-                    rotation_angle=rotation_angle,
-                    stream_order=stream_order,
-                    xobject_depth=xobject_depth,
-                    fill=fill,
-                    visible=visible,
-                    confidence=observation_confidence,
-                    unicode_source=glyph.unicode_source,
-                    alternates=glyph.alternates,
-                    cluster_id=cluster_id,
-                    cluster_index=0,
-                    cluster_size=1,
-                    bitmap=bitmap,
-                    bitmap_width=bitmap_width,
-                    bitmap_height=bitmap_height,
-                    bitmap_code=bitmap_code,
-                    font_decoder=decoder,
-                    provenance=common_provenance,
+                    chunk_text,
+                    rect,
+                    advance_bbox,
+                    seqno,
+                    glyph.code_bytes,
+                    glyph.char_code,
+                    glyph.cid,
+                    glyph.gid,
+                    effective_font_name,
+                    font_size,
+                    baseline,
+                    rotation_angle,
+                    fill,
+                    visible,
+                    observation_confidence,
+                    glyph.unicode_source,
+                    glyph.alternates,
+                    bitmap,
+                    bitmap_width,
+                    bitmap_height,
+                    bitmap_code,
+                    decoder,
                 )
                 append_glyph(observation)
-                cluster = glyph_cluster_from_observations(
-                    cluster_id,
-                    chunk_text,
-                    (observation,),
-                    kind="single_glyph",
-                    provenance=common_provenance,
+                # Single-glyph fast path: glyph_cluster_from_observations, given one
+                # observation, only re-derives advance_bbox/ink_bbox/confidence/etc. from
+                # fields already sitting in locals here (rect, advance_bbox,
+                # observation_confidence, baseline) -- construct the
+                # GlyphCluster directly instead of a round trip through GlyphObservation's
+                # advance_bbox/ink_bbox properties.
+                clusters.append(
+                    GlyphCluster(
+                        cluster_id=cluster_id,
+                        text=chunk_text,
+                        glyphs=(observation,),
+                        advance_bbox=observation.advance_bbox,
+                        ink_bbox=rect,
+                        baseline=baseline,
+                        confidence=observation_confidence,
+                    )
                 )
-                if cluster is not None:
-                    clusters.append(cluster)
                 offset += advance
                 continue
 
@@ -1851,108 +1916,87 @@ class TextState:
             if glyph.split_unicode:
                 per_char_advance = advance / len(chunk_text)
                 char_offset = offset
-                cluster_size = len(chunk_text)
-                for cluster_index, ch in enumerate(chunk_text):
+                for ch in chunk_text:
                     char_confidence = glyph_unicode_confidence(
                         ch,
                         glyph.unicode_source,
-                        visible=visible,
-                        alternates=glyph.alternates,
+                        glyph.alternates,
                     )
-                    char_box, char_baseline_text, char_text_matrix = glyph_text_space_boxes(
+                    char_box, char_baseline_text = glyph_text_space_boxes(
                         self, char_offset, per_char_advance, decoder
                     )
-                    char_advance_rect = transformed_text_rect(self, *char_box)
-                    char_baseline = transformed_text_line(self, *char_baseline_text)
-                    char_device_matrix = (
-                        combined_a,
-                        combined_b,
-                        combined_c,
-                        combined_d,
-                        char_baseline[0],
-                        char_baseline[1],
-                    )
+                    char_advance_rect = transformed_text_rect(self, *char_box, text_basis)
+                    char_baseline = transformed_text_line(*char_baseline_text, text_basis)
                     cluster_observations.append(
                         GlyphObservation(
-                            text=ch,
-                            ink_rect=char_advance_rect,
-                            advance_rect=char_advance_rect,
-                            seqno=seqno,
-                            code_bytes=glyph.code_bytes,
-                            char_code=glyph.char_code,
-                            cid=glyph.cid,
-                            gid=glyph.gid,
-                            font_name=decoder.font_name or font_name,
-                            font_size=font_size,
-                            space_width=space_width,
-                            text_matrix=char_text_matrix,
-                            device_matrix=char_device_matrix,
-                            baseline=char_baseline,
-                            writing_mode=writing_mode,
-                            rotation_angle=rotation_angle,
-                            stream_order=stream_order,
-                            xobject_depth=xobject_depth,
-                            fill=fill,
-                            visible=visible,
-                            confidence=char_confidence,
-                            unicode_source=glyph.unicode_source,
-                            alternates=glyph.alternates,
-                            cluster_id=cluster_id,
-                            cluster_index=cluster_index,
-                            cluster_size=cluster_size,
-                            font_decoder=decoder,
-                            provenance=common_provenance,
+                            ch,
+                            (
+                                char_advance_rect.x0,
+                                char_advance_rect.y0,
+                                char_advance_rect.x1,
+                                char_advance_rect.y1,
+                            ),
+                            (
+                                char_advance_rect.x0,
+                                char_advance_rect.y0,
+                                char_advance_rect.x1,
+                                char_advance_rect.y1,
+                            ),
+                            seqno,
+                            glyph.code_bytes,
+                            glyph.char_code,
+                            glyph.cid,
+                            glyph.gid,
+                            effective_font_name,
+                            font_size,
+                            char_baseline,
+                            rotation_angle,
+                            fill,
+                            visible,
+                            char_confidence,
+                            glyph.unicode_source,
+                            glyph.alternates,
+                            (),
+                            0,
+                            0,
+                            None,
+                            decoder,
                         )
                     )
                     char_offset += per_char_advance
             else:
                 cluster_observations.append(
                     GlyphObservation(
-                        text=chunk_text,
-                        ink_rect=rect,
-                        advance_rect=advance_rect,
-                        seqno=seqno,
-                        code_bytes=glyph.code_bytes,
-                        char_code=glyph.char_code,
-                        cid=glyph.cid,
-                        gid=glyph.gid,
-                        font_name=decoder.font_name or font_name,
-                        font_size=font_size,
-                        space_width=space_width,
-                        text_matrix=glyph_text_matrix,
-                        device_matrix=device_matrix,
-                        baseline=baseline,
-                        writing_mode=writing_mode,
-                        rotation_angle=rotation_angle,
-                        stream_order=stream_order,
-                        xobject_depth=xobject_depth,
-                        fill=fill,
-                        visible=visible,
-                        confidence=observation_confidence,
-                        unicode_source=glyph.unicode_source,
-                        alternates=glyph.alternates,
-                        cluster_id=cluster_id,
-                        cluster_index=0,
-                        cluster_size=1,
-                        font_decoder=decoder,
-                        provenance=common_provenance,
+                        chunk_text,
+                        rect,
+                        advance_bbox,
+                        seqno,
+                        glyph.code_bytes,
+                        glyph.char_code,
+                        glyph.cid,
+                        glyph.gid,
+                        effective_font_name,
+                        font_size,
+                        baseline,
+                        rotation_angle,
+                        fill,
+                        visible,
+                        observation_confidence,
+                        glyph.unicode_source,
+                        glyph.alternates,
+                        (),
+                        0,
+                        0,
+                        None,
+                        decoder,
                     )
                 )
             for observation in cluster_observations:
                 append_glyph(observation)
-            kind = (
-                "single_glyph"
-                if len(cluster_observations) == 1 and len(chunk_text) == 1
-                else "ligature"
-                if glyph.split_unicode
-                else "multi_codepoint"
-            )
             cluster = glyph_cluster_from_observations(
                 cluster_id,
                 chunk_text,
                 tuple(cluster_observations),
-                kind=kind,
-                provenance=common_provenance,
             )
             if cluster is not None:
                 clusters.append(cluster)
@@ -1983,7 +2027,7 @@ class TextState:
         if decoder.is_type3 and self.capture_graphics and data:
             text_matrix = self.text_matrix
             line_matrix = self.line_matrix
-            self.text_component.render_type3_glyphs(data, decoder)
+            self._render_type3_glyphs_impl(data, decoder)
             rendered_type3_glyphs = True
             self.text_matrix = text_matrix
             self.line_matrix = line_matrix
@@ -3099,11 +3143,9 @@ class TextState:
                 if pending_bytes:
                     self.tm_e, self.tm_f = te, tf
                     if zero_copy_flush:
-                        self.text_component.append_text(
-                            data=memoryview(pending_bytes), decoder=decoder
-                        )
+                        self._append_text_impl(data=memoryview(pending_bytes), decoder=decoder)
                     else:
-                        self.text_component.append_text(data=bytes(pending_bytes), decoder=decoder)
+                        self._append_text_impl(data=bytes(pending_bytes), decoder=decoder)
                     te, tf = self.tm_e, self.tm_f
                     pending_bytes.clear()
                 delta = -item * scale
@@ -3119,9 +3161,9 @@ class TextState:
         if pending_bytes:
             self.tm_e, self.tm_f = te, tf
             if zero_copy_flush:
-                self.text_component.append_text(data=memoryview(pending_bytes), decoder=decoder)
+                self._append_text_impl(data=memoryview(pending_bytes), decoder=decoder)
             else:
-                self.text_component.append_text(data=bytes(pending_bytes), decoder=decoder)
+                self._append_text_impl(data=bytes(pending_bytes), decoder=decoder)
             te, tf = self.tm_e, self.tm_f
 
         self.tm_e, self.tm_f = te, tf
@@ -3400,6 +3442,9 @@ class TextState:
     def op_RG_values(self: Any, red: int | float, green: int | float, blue: int | float) -> None:
         self.set_stroke_color(red, green, blue)
 
+    def op_rg_values(self: Any, red: int | float, green: int | float, blue: int | float) -> None:
+        self.set_fill_color(red, green, blue)
+
     def op_K(self, operands: OperandWindow, depth: int) -> None:
         self.graphics_component.set_stroke_cmyk(operands)
 
@@ -3431,7 +3476,7 @@ class TextState:
         self.graphics_component.set_dash_pattern(operands)
 
     def op_m(self, operands: OperandWindow, depth: int) -> None:
-        self.graphics_component.path_move(operands, depth)
+        self._op_m_impl(operands, depth)
 
     def _op_m_impl(self, operands: OperandWindow, depth: int) -> None:
         if len(operands) >= 2:
@@ -3453,7 +3498,7 @@ class TextState:
         self.subpath_start = point
 
     def op_l(self, operands: OperandWindow, depth: int) -> None:
-        self.graphics_component.path_line(operands, depth)
+        self._op_l_impl(operands, depth)
 
     def _op_l_impl(self, operands: OperandWindow, depth: int) -> None:
         if len(operands) >= 2 and self.current_point is not None:
@@ -3476,7 +3521,7 @@ class TextState:
         self.current_point = point
 
     def op_re(self, operands: OperandWindow, depth: int) -> None:
-        self.graphics_component.path_rectangle(operands, depth)
+        self._op_re_impl(operands, depth)
 
     def _op_re_impl(self, operands: OperandWindow, depth: int) -> None:
         if len(operands) >= 4:
@@ -3485,17 +3530,24 @@ class TextState:
                 w, h = self.as_float(operands[2]), self.as_float(operands[3])
             except (TypeError, ValueError):
                 return
-            if (
-                self.capture_clipping
-                or (self.capture_graphics or self.capture_glyphs)
-                and self.is_graphics_visible()
-            ):
-                self.current_path.rect(x, y, w, h)
-            self.current_point = (x, y)
-            self.subpath_start = (x, y)
+            self.op_re_values(x, y, w, h)
+
+    def op_re_values(
+        self: Any, x: int | float, y: int | float, width: int | float, height: int | float
+    ) -> None:
+        x_float = float(x)
+        y_float = float(y)
+        if (
+            self.capture_clipping
+            or (self.capture_graphics or self.capture_glyphs)
+            and self.is_graphics_visible()
+        ):
+            self.current_path.rect(x_float, y_float, float(width), float(height))
+        self.current_point = (x_float, y_float)
+        self.subpath_start = (x_float, y_float)
 
     def op_h(self, operands: OperandWindow, depth: int) -> None:
-        self.graphics_component.path_close(operands, depth)
+        self._op_h_impl(operands, depth)
 
     def _op_h_impl(self, operands: OperandWindow, depth: int) -> None:
         if self.current_point is not None and self.subpath_start is not None:
@@ -3508,7 +3560,7 @@ class TextState:
             self.current_point = self.subpath_start
 
     def op_c(self, operands: OperandWindow, depth: int) -> None:
-        self.graphics_component.path_curve(operands, depth)
+        self._op_c_impl(operands, depth)
 
     def _op_c_impl(self, operands: OperandWindow, depth: int) -> None:
         if len(operands) >= 6:
@@ -3524,7 +3576,7 @@ class TextState:
             self.append_cubic_curve(x1, y1, x2, y2, x3, y3)
 
     def op_v(self, operands: OperandWindow, depth: int) -> None:
-        self.graphics_component.path_curve_v(operands, depth)
+        self._op_v_impl(operands, depth)
 
     def _op_v_impl(self, operands: OperandWindow, depth: int) -> None:
         if len(operands) >= 4 and self.current_point is not None:
@@ -3539,7 +3591,7 @@ class TextState:
             self.append_cubic_curve(x0, y0, x2, y2, x3, y3)
 
     def op_y(self, operands: OperandWindow, depth: int) -> None:
-        self.graphics_component.path_curve_y(operands, depth)
+        self._op_y_impl(operands, depth)
 
     def _op_y_impl(self, operands: OperandWindow, depth: int) -> None:
         if len(operands) >= 4 and self.current_point is not None:
@@ -3555,7 +3607,7 @@ class TextState:
             self.append_cubic_curve(x1, y1, x3, y3, x3, y3)
 
     def op_paint_stroke(self, operands: OperandWindow, depth: int) -> None:
-        self.graphics_component.paint_stroke(operands, depth)
+        self._op_paint_stroke_impl(operands, depth)
 
     def _op_paint_stroke_impl(self, operands: OperandWindow, depth: int) -> None:
         if (
@@ -3571,7 +3623,7 @@ class TextState:
         self.subpath_start = None
 
     def op_paint_fill(self, operands: OperandWindow, depth: int) -> None:
-        self.graphics_component.paint_fill(operands, depth)
+        self._op_paint_fill_impl(operands, depth)
 
     def _op_paint_fill_impl(self, operands: OperandWindow, depth: int) -> None:
         self.flush_drawing("fill", "evenodd" if depth == "f*" else "nonzero")
@@ -3579,7 +3631,7 @@ class TextState:
         self.subpath_start = None
 
     def op_paint_fillstroke(self, operands: OperandWindow, depth: int) -> None:
-        self.graphics_component.paint_fillstroke(operands, depth)
+        self._op_paint_fillstroke_impl(operands, depth)
 
     def _op_paint_fillstroke_impl(self, operands: OperandWindow, depth: int) -> None:
         if (
@@ -3595,7 +3647,7 @@ class TextState:
         self.subpath_start = None
 
     def op_paint_clear(self, operands: OperandWindow, depth: int) -> None:
-        self.graphics_component.paint_clear(operands, depth)
+        self._op_paint_clear_impl(operands, depth)
 
     def _op_paint_clear_impl(self, operands: OperandWindow, depth: int) -> None:
         self.current_path.clear()
@@ -3616,7 +3668,7 @@ class TextState:
         )
 
     def op_W(self, operands: OperandWindow, depth: int) -> None:
-        self.graphics_component.clip(operands, depth)
+        self._op_W_impl(operands, depth)
 
     def _op_W_impl(self, operands: OperandWindow, depth: int) -> None:
         path = self.current_path.transformed(self.ctm)
@@ -3652,7 +3704,7 @@ class TextState:
             )
 
     def op_W_star(self, operands: OperandWindow, depth: int) -> None:
-        self.graphics_component.clip_even_odd(operands, depth)
+        self._op_W_star_impl(operands, depth)
 
     def _op_W_star_impl(self, operands: OperandWindow, depth: int) -> None:
         self.op_W(operands, depth)
@@ -3906,18 +3958,8 @@ class TextState:
                 "glyphs": [
                     {
                         "text": glyph.text,
-                        "bbox": (
-                            glyph.ink_rect.x0,
-                            glyph.ink_rect.y0,
-                            glyph.ink_rect.x1,
-                            glyph.ink_rect.y1,
-                        ),
-                        "advance_bbox": (
-                            glyph.advance_rect.x0,
-                            glyph.advance_rect.y0,
-                            glyph.advance_rect.x1,
-                            glyph.advance_rect.y1,
-                        ),
+                        "bbox": glyph.ink_bbox,
+                        "advance_bbox": glyph.advance_bbox,
                         "fill_color": glyph.fill,
                         "visible": glyph.visible,
                         "code": glyph.cid,
@@ -3936,7 +3978,7 @@ class TextState:
         )
 
     def op_CS(self, operands: OperandWindow, depth: int) -> None:
-        self.graphics_component.color_operator("CS", operands, depth)
+        self._op_CS_impl(operands, depth)
 
     def _op_CS_impl(self, operands: OperandWindow, depth: int) -> None:
         if operands:
@@ -3954,7 +3996,7 @@ class TextState:
                 self.stroke_color_space = color_space
 
     def op_cs(self, operands: OperandWindow, depth: int) -> None:
-        self.graphics_component.color_operator("cs", operands, depth)
+        self._op_cs_impl(operands, depth)
 
     def _op_cs_impl(self, operands: OperandWindow, depth: int) -> None:
         if operands:
@@ -3972,7 +4014,7 @@ class TextState:
                 self.fill_color_space = color_space
 
     def op_SC(self, operands: OperandWindow, depth: int) -> None:
-        self.graphics_component.color_operator("SC", operands, depth)
+        self._op_SC_impl(operands, depth)
 
     def _op_SC_impl(self, operands: OperandWindow, depth: int) -> None:
         normalized = self.normalize_color_operands(operands)
@@ -3981,7 +4023,7 @@ class TextState:
             self.stroke_pattern = None
 
     def op_SCN(self, operands: OperandWindow, depth: int) -> None:
-        self.graphics_component.color_operator("SCN", operands, depth)
+        self._op_SCN_impl(operands, depth)
 
     def _op_SCN_impl(self, operands: OperandWindow, depth: int) -> None:
         if self.stroke_color_space == "Pattern":
@@ -3997,7 +4039,7 @@ class TextState:
             self.stroke_pattern = None
 
     def op_sc(self, operands: OperandWindow, depth: int) -> None:
-        self.graphics_component.color_operator("sc", operands, depth)
+        self._op_sc_impl(operands, depth)
 
     def _op_sc_impl(self, operands: OperandWindow, depth: int) -> None:
         normalized = self.normalize_color_operands(operands)
@@ -4006,7 +4048,7 @@ class TextState:
             self.fill_pattern = None
 
     def op_scN(self, operands: OperandWindow, depth: int) -> None:
-        self.graphics_component.color_operator("scN", operands, depth)
+        self._op_scN_impl(operands, depth)
 
     def _op_scN_impl(self, operands: OperandWindow, depth: int) -> None:
         if self.fill_color_space == "Pattern":
@@ -4022,7 +4064,7 @@ class TextState:
             self.fill_pattern = None
 
     def op_i(self, operands: OperandWindow, depth: int) -> None:
-        self.graphics_component.color_operator("i", operands, depth)
+        self._op_i_impl(operands, depth)
 
     def _op_i_impl(self, operands: OperandWindow, depth: int) -> None:
         if operands:
@@ -4033,7 +4075,7 @@ class TextState:
             self.flatness = max(0, min(100, int(value)))
 
     def op_ri(self, operands: OperandWindow, depth: int) -> None:
-        self.graphics_component.color_operator("ri", operands, depth)
+        self._op_ri_impl(operands, depth)
 
     def _op_ri_impl(self, operands: OperandWindow, depth: int) -> None:
         if not operands:

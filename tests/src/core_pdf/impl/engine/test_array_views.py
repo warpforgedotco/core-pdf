@@ -3,6 +3,7 @@ import pytest
 
 from core_pdf.impl.engine.array_views import (
     contiguous_bytes,
+    finite_median,
     nearest_indices,
     resample_bilinear,
     resample_box,
@@ -12,6 +13,18 @@ from core_pdf.impl.engine.array_views import (
     uint8_image_view,
     uint8_view,
 )
+
+
+def test_finite_median_matches_numpy_without_mutating_input() -> None:
+    for values in (
+        numpy.asarray([3.0], dtype=numpy.float32),
+        numpy.asarray([4.0, 1.0], dtype=numpy.float32),
+        numpy.asarray([9.0, 2.0, 5.0], dtype=numpy.float32),
+        numpy.asarray([8.0, 2.0, 6.0, 4.0], dtype=numpy.float32),
+    ):
+        original = values.copy()
+        assert finite_median(values) == float(numpy.median(values))
+        numpy.testing.assert_array_equal(values, original)
 
 
 def test_uint8_view_borrows_bytes() -> None:

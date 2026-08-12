@@ -220,23 +220,35 @@ def content_stream_may_show_text(data: bytes | memoryview) -> bool:
 def count_content_stream_operators(data: bytes | memoryview) -> ContentOperatorCounts:
     """Return coarse operator counts without constructing graphics or text state."""
     text = image = vector_path = vector_paint = graphics_state = unknown = 0
+
+    def collector(operands: OperandWindow, depth: int, operator: str) -> None:
+        nonlocal text, image, vector_path, vector_paint, graphics_state, unknown
+        if operator in TEXT_OPERATORS:
+            text += 1
+        elif operator in IMAGE_OPERATORS:
+            image += 1
+        elif operator in VECTOR_PATH_OPERATORS:
+            vector_path += 1
+        elif operator in VECTOR_PAINT_OPERATORS:
+            vector_paint += 1
+        elif operator in GRAPHICS_STATE_OPERATORS:
+            graphics_state += 1
+        elif operator in {"BT", "ET", "Tf", "Td", "TD", "Tm", "Tc", "Tw", "T*", "Tr"}:
+            text += 1
+        elif operator:
+            unknown += 1
+
     try:
-        operations = iter_content_operations(PdfLexer(data))
-        for operator, internal_operands in operations:
-            if operator in TEXT_OPERATORS:
-                text += 1
-            elif operator in IMAGE_OPERATORS:
-                image += 1
-            elif operator in VECTOR_PATH_OPERATORS:
-                vector_path += 1
-            elif operator in VECTOR_PAINT_OPERATORS:
-                vector_paint += 1
-            elif operator in GRAPHICS_STATE_OPERATORS:
-                graphics_state += 1
-            elif operator in {"BT", "ET", "Tf", "Td", "TD", "Tm", "Tc", "Tw", "T*", "Tr"}:
-                text += 1
-            elif operator:
-                unknown += 1
+        handlers = CollectedIntegerHandlers(collector)
+        dispatch_operations(
+            PdfLexer(data),
+            CollectedStringHandlers(collector),
+            None,
+            handlers,
+            handlers,
+            None,
+            0,
+        )
     except PdfParseError:
         return ContentOperatorCounts(malformed=1)
     return ContentOperatorCounts(
@@ -353,7 +365,13 @@ class OperationTarget(Protocol):
 
     def op_re(self, operands: OperandWindow, depth: int) -> None: ...
 
+    def op_re_values(
+        self, x: int | float, y: int | float, width: int | float, height: int | float
+    ) -> None: ...
+
     def op_RG_values(self, red: int | float, green: int | float, blue: int | float) -> None: ...
+
+    def op_rg_values(self, red: int | float, green: int | float, blue: int | float) -> None: ...
 
     def op_w_value(self, line_width: int | float) -> None: ...
 
@@ -368,6 +386,8 @@ class OperationTarget(Protocol):
     def op_l_values(self, x: int | float, y: int | float) -> None: ...
 
     def op_paint_stroke(self, operands: OperandWindow, depth: int) -> None: ...
+
+    def op_paint_fill(self, operands: OperandWindow, depth: int) -> None: ...
 
     def op_ET(self, operands: OperandWindow, depth: int) -> None: ...
 
@@ -415,27 +435,38 @@ class CollectedOperationHandler:
 
 
 class CollectedStringHandlers:
-    __slots__ = ("callback",)
+    __slots__ = ("callback", "handlers")
 
     def __init__(self, callback: OperationCollector) -> None:
         self.callback = callback
+        self.handlers: dict[str, BoundOperationHandler] = {}
 
     def get(self, key: str) -> BoundOperationHandler:
-        return CollectedOperationHandler(self.callback, key)
+        handler = self.handlers.get(key)
+        if handler is None:
+            handler = CollectedOperationHandler(self.callback, key)
+            self.handlers[key] = handler
+        return handler
 
 
 class CollectedIntegerHandlers:
-    __slots__ = ("callback",)
+    __slots__ = ("callback", "handlers")
 
     def __init__(self, callback: OperationCollector) -> None:
         self.callback = callback
+        self.handlers: dict[int, BoundOperationHandler] = {}
 
     def __getitem__(self, key: int) -> BoundOperationHandler:
+        handler = self.handlers.get(key)
+        if handler is not None:
+            return handler
         if key > 255:
             op_name = chr(key >> 8) + chr(key & 0xFF)
         else:
             op_name = chr(key)
-        return CollectedOperationHandler(self.callback, op_name)
+        handler = CollectedOperationHandler(self.callback, op_name)
+        self.handlers[key] = handler
+        return handler
 
     def get(self, key: int) -> BoundOperationHandler:
         return self[key]
@@ -490,6 +521,7 @@ def dispatch_operations(
     raw_bytes = source_bytes if source_bytes is not None else raw_data
 
     word_break_or_ws = WORD_BREAK_OR_WS
+    ws_table = WS_TABLE
     is_word_start = IS_WORD_START
     op_get = op_handlers.get
     op_get_bytes = op_handlers_bytes.get if op_handlers_bytes is not None else None
@@ -514,8 +546,9 @@ def dispatch_operations(
     while pos < data_len:
         byte = raw_bytes[pos]
 
-        if WS_TABLE[byte]:
-            while pos < data_len and WS_TABLE[raw_bytes[pos]]:
+        if ws_table[byte]:
+            pos += 1
+            while pos < data_len and ws_table[raw_bytes[pos]]:
                 pos += 1
             if pos >= data_len:
                 break
@@ -533,7 +566,7 @@ def dispatch_operations(
 
         if is_word_start[byte]:
             limit = pos + 1024 if pos + 1024 < data_len else data_len
-            end = pos
+            end = pos + 1
             while end < limit:
                 if word_break_or_ws[raw_bytes[end]]:
                     break
@@ -644,6 +677,19 @@ def dispatch_operations(
                         b4 = raw_bytes[start_offset + 4]
                         if (
                             48 <= first <= 57
+                            and b1 == 46
+                            and 48 <= b2 <= 57
+                            and 48 <= b3 <= 57
+                            and 48 <= b4 <= 57
+                        ):
+                            if op_count < max_operands:
+                                operands[op_count] = (first - 48) + (
+                                    ((b2 - 48) * 100 + (b3 - 48) * 10 + (b4 - 48)) / 1000.0
+                                )
+                            op_count += 1
+                            continue
+                        if (
+                            48 <= first <= 57
                             and 48 <= b1 <= 57
                             and b2 == 46
                             and 48 <= b3 <= 57
@@ -675,6 +721,21 @@ def dispatch_operations(
                         b3 = raw_bytes[start_offset + 3]
                         b4 = raw_bytes[start_offset + 4]
                         b5 = raw_bytes[start_offset + 5]
+                        if (
+                            first == 45
+                            and 48 <= b1 <= 57
+                            and b2 == 46
+                            and 48 <= b3 <= 57
+                            and 48 <= b4 <= 57
+                            and 48 <= b5 <= 57
+                        ):
+                            if op_count < max_operands:
+                                operands[op_count] = -(
+                                    (b1 - 48)
+                                    + (((b3 - 48) * 100 + (b4 - 48) * 10 + (b5 - 48)) / 1000.0)
+                                )
+                            op_count += 1
+                            continue
                         if (
                             48 <= first <= 57
                             and 48 <= b1 <= 57
@@ -810,176 +871,226 @@ def dispatch_operations(
                 if handler_target is not None and n_raw == 2:
                     op0 = raw_bytes[pos - 2]
                     op1 = raw_bytes[pos - 1]
-                    if op0 == 84:
-                        if op1 == 66:
+                    match op0:
+                        case 66 if op1 == 84:  # 'B' 'T'
                             handler_target.op_BT(operand_window, depth)
                             op_count = 0
                             continue
-                        if op1 == 68:
-                            if op_count >= 2:
-                                tx, ty = operands[0], operands[1]
-                                if (
-                                    type(tx) in exact_number_types
-                                    and type(ty) in exact_number_types
-                                ):
-                                    handler_target.op_TD_values(
-                                        cast(int | float, tx), cast(int | float, ty)
-                                    )
-                                else:
-                                    set_operand_count(op_count)
-                                    handler_target.op_TD(operand_window, depth)
-                            else:
-                                set_operand_count(op_count)
-                                handler_target.op_TD(operand_window, depth)
-                            op_count = 0
-                            continue
-                        if op1 == 99:
-                            if op_count:
-                                char_space = operands[0]
-                                if type(char_space) in exact_number_types:
-                                    handler_target.op_Tc_values(cast(int | float, char_space))
-                                else:
-                                    set_operand_count(op_count)
-                                    handler_target.op_Tc(operand_window, depth)
-                            op_count = 0
-                            continue
-                        if op1 == 102:
-                            if op_count >= 2:
-                                handler_target.op_Tf_values(operands[0], operands[1])
-                            else:
-                                set_operand_count(op_count)
-                                handler_target.op_Tf(operand_window, depth)
-                            op_count = 0
-                            continue
-                        if op1 == 106:
-                            if op_count:
-                                decoder = (
-                                    handler_target.current_decoder
-                                    if handler_target.current_decoder is not None
-                                    else handler_target.get_decoder()
+                        case 84:  # 'T'
+                            match op1:
+                                case 68:  # 'D'
+                                    if op_count >= 2:
+                                        tx, ty = operands[0], operands[1]
+                                        if (
+                                            type(tx) in exact_number_types
+                                            and type(ty) in exact_number_types
+                                        ):
+                                            handler_target.op_TD_values(
+                                                cast(int | float, tx), cast(int | float, ty)
+                                            )
+                                        else:
+                                            set_operand_count(op_count)
+                                            handler_target.op_TD(operand_window, depth)
+                                    else:
+                                        set_operand_count(op_count)
+                                        handler_target.op_TD(operand_window, depth)
+                                    op_count = 0
+                                    continue
+                                case 99:  # 'c'
+                                    if op_count:
+                                        char_space = operands[0]
+                                        if type(char_space) in exact_number_types:
+                                            handler_target.op_Tc_values(
+                                                cast(int | float, char_space)
+                                            )
+                                        else:
+                                            set_operand_count(op_count)
+                                            handler_target.op_Tc(operand_window, depth)
+                                    op_count = 0
+                                    continue
+                                case 102:  # 'f'
+                                    if op_count >= 2:
+                                        handler_target.op_Tf_values(operands[0], operands[1])
+                                    else:
+                                        set_operand_count(op_count)
+                                        handler_target.op_Tf(operand_window, depth)
+                                    op_count = 0
+                                    continue
+                                case 106:  # 'j'
+                                    if op_count:
+                                        decoder = (
+                                            handler_target.current_decoder
+                                            if handler_target.current_decoder is not None
+                                            else handler_target.get_decoder()
+                                        )
+                                        operand = operands[0]
+                                        if type(operand) is PdfString:
+                                            handler_target.append_text(
+                                                data=operand.data, decoder=decoder
+                                            )
+                                        elif type(operand) is bytes:
+                                            handler_target.append_text(
+                                                data=operand, decoder=decoder
+                                            )
+                                        else:
+                                            handler_target.append_text(operand, decoder=decoder)
+                                    op_count = 0
+                                    continue
+                                case 109:  # 'm'
+                                    if op_count >= 6:
+                                        tm_a, tm_b, tm_c = operands[0], operands[1], operands[2]
+                                        tm_d, tm_e, tm_f = operands[3], operands[4], operands[5]
+                                        if (
+                                            type(tm_a) in exact_number_types
+                                            and type(tm_b) in exact_number_types
+                                            and type(tm_c) in exact_number_types
+                                            and type(tm_d) in exact_number_types
+                                            and type(tm_e) in exact_number_types
+                                            and type(tm_f) in exact_number_types
+                                        ):
+                                            handler_target.op_Tm_values(
+                                                cast(int | float, tm_a),
+                                                cast(int | float, tm_b),
+                                                cast(int | float, tm_c),
+                                                cast(int | float, tm_d),
+                                                cast(int | float, tm_e),
+                                                cast(int | float, tm_f),
+                                            )
+                                        else:
+                                            set_operand_count(op_count)
+                                            handler_target.op_Tm(operand_window, depth)
+                                    else:
+                                        set_operand_count(op_count)
+                                        handler_target.op_Tm(operand_window, depth)
+                                    op_count = 0
+                                    continue
+                                case 119:  # 'w'
+                                    if op_count:
+                                        word_space = operands[0]
+                                        if type(word_space) in exact_number_types:
+                                            handler_target.op_Tw_values(
+                                                cast(int | float, word_space)
+                                            )
+                                        else:
+                                            set_operand_count(op_count)
+                                            handler_target.op_Tw(operand_window, depth)
+                                    op_count = 0
+                                    continue
+                                case 74:  # 'J'
+                                    if op_count:
+                                        handler_target.append_tj_array(operands[0])
+                                    op_count = 0
+                                    continue
+                                case 100:  # 'd'
+                                    if op_count >= 2:
+                                        tx, ty = operands[0], operands[1]
+                                        if (
+                                            type(tx) in exact_number_types
+                                            and type(ty) in exact_number_types
+                                        ):
+                                            handler_target.op_Td_values(
+                                                cast(int | float, tx), cast(int | float, ty)
+                                            )
+                                        else:
+                                            set_operand_count(op_count)
+                                            handler_target.op_Td(operand_window, depth)
+                                    else:
+                                        set_operand_count(op_count)
+                                        handler_target.op_Td(operand_window, depth)
+                                    op_count = 0
+                                    continue
+                                # no case _: -- an unmatched op1 falls through to Stage D/E/F,
+                                # same as the original if-chain having no trailing `else`.
+                        case 82 if op1 == 71 and op_count >= 3:  # 'R' 'G'
+                            red, green, blue = operands[0], operands[1], operands[2]
+                            if (
+                                type(red) in exact_number_types
+                                and type(green) in exact_number_types
+                                and type(blue) in exact_number_types
+                            ):
+                                handler_target.op_RG_values(
+                                    cast(int | float, red),
+                                    cast(int | float, green),
+                                    cast(int | float, blue),
                                 )
-                                operand = operands[0]
-                                if type(operand) is PdfString:
-                                    handler_target.append_text(data=operand.data, decoder=decoder)
-                                elif type(operand) is bytes:
-                                    handler_target.append_text(data=operand, decoder=decoder)
-                                else:
-                                    handler_target.append_text(operand, decoder=decoder)
+                                op_count = 0
+                                continue
+                        case 114:  # 'r'
+                            match op1:
+                                case 103 if op_count >= 3:  # 'g'
+                                    red, green, blue = operands[0], operands[1], operands[2]
+                                    if (
+                                        type(red) in exact_number_types
+                                        and type(green) in exact_number_types
+                                        and type(blue) in exact_number_types
+                                    ):
+                                        handler_target.op_rg_values(
+                                            cast(int | float, red),
+                                            cast(int | float, green),
+                                            cast(int | float, blue),
+                                        )
+                                        op_count = 0
+                                        continue
+                                case 101:  # 'e'
+                                    if (
+                                        handler_target.capture_graphics
+                                        or handler_target.capture_glyphs
+                                        or handler_target.capture_clipping
+                                    ):
+                                        if op_count >= 4:
+                                            rect_x, rect_y = operands[0], operands[1]
+                                            rect_width, rect_height = operands[2], operands[3]
+                                            if (
+                                                type(rect_x) in exact_number_types
+                                                and type(rect_y) in exact_number_types
+                                                and type(rect_width) in exact_number_types
+                                                and type(rect_height) in exact_number_types
+                                            ):
+                                                handler_target.op_re_values(
+                                                    cast(int | float, rect_x),
+                                                    cast(int | float, rect_y),
+                                                    cast(int | float, rect_width),
+                                                    cast(int | float, rect_height),
+                                                )
+                                            else:
+                                                set_operand_count(op_count)
+                                                handler_target.op_re(operand_window, depth)
+                                        else:
+                                            set_operand_count(op_count)
+                                            handler_target.op_re(operand_window, depth)
+                                    op_count = 0
+                                    continue
+                                # no case _: here either -- e.g. `op1 == 103` with
+                                # `op_count < 3` must fall through, not be swallowed.
+                        case 69 if op1 == 84:  # 'E' 'T'
+                            handler_target.op_ET(operand_window, depth)
                             op_count = 0
                             continue
-                        if op1 == 109:
-                            if op_count >= 6:
-                                tm_a, tm_b, tm_c = operands[0], operands[1], operands[2]
-                                tm_d, tm_e, tm_f = operands[3], operands[4], operands[5]
-                                if (
-                                    type(tm_a) in exact_number_types
-                                    and type(tm_b) in exact_number_types
-                                    and type(tm_c) in exact_number_types
-                                    and type(tm_d) in exact_number_types
-                                    and type(tm_e) in exact_number_types
-                                    and type(tm_f) in exact_number_types
-                                ):
-                                    handler_target.op_Tm_values(
-                                        cast(int | float, tm_a),
-                                        cast(int | float, tm_b),
-                                        cast(int | float, tm_c),
-                                        cast(int | float, tm_d),
-                                        cast(int | float, tm_e),
-                                        cast(int | float, tm_f),
-                                    )
-                                else:
-                                    set_operand_count(op_count)
-                                    handler_target.op_Tm(operand_window, depth)
+                        case 99 if op1 == 109 and op_count >= 6:  # 'c' 'm'
+                            m_a, m_b, m_c = operands[0], operands[1], operands[2]
+                            m_d, m_e, m_f = operands[3], operands[4], operands[5]
+                            if (
+                                type(m_a) in exact_number_types
+                                and type(m_b) in exact_number_types
+                                and type(m_c) in exact_number_types
+                                and type(m_d) in exact_number_types
+                                and type(m_e) in exact_number_types
+                                and type(m_f) in exact_number_types
+                            ):
+                                handler_target.op_cm_values(
+                                    cast(int | float, m_a),
+                                    cast(int | float, m_b),
+                                    cast(int | float, m_c),
+                                    cast(int | float, m_d),
+                                    cast(int | float, m_e),
+                                    cast(int | float, m_f),
+                                )
                             else:
                                 set_operand_count(op_count)
-                                handler_target.op_Tm(operand_window, depth)
+                                handler_target.op_cm(operand_window, depth)
                             op_count = 0
                             continue
-                        if op1 == 119:
-                            if op_count:
-                                word_space = operands[0]
-                                if type(word_space) in exact_number_types:
-                                    handler_target.op_Tw_values(cast(int | float, word_space))
-                                else:
-                                    set_operand_count(op_count)
-                                    handler_target.op_Tw(operand_window, depth)
-                            op_count = 0
-                            continue
-                        if op1 == 74:
-                            if op_count:
-                                handler_target.append_tj_array(operands[0])
-                            op_count = 0
-                            continue
-                        if op1 == 100:
-                            if op_count >= 2:
-                                tx, ty = operands[0], operands[1]
-                                if (
-                                    type(tx) in exact_number_types
-                                    and type(ty) in exact_number_types
-                                ):
-                                    handler_target.op_Td_values(
-                                        cast(int | float, tx), cast(int | float, ty)
-                                    )
-                                else:
-                                    set_operand_count(op_count)
-                                    handler_target.op_Td(operand_window, depth)
-                            else:
-                                set_operand_count(op_count)
-                                handler_target.op_Td(operand_window, depth)
-                            op_count = 0
-                            continue
-                    elif op0 == 82 and op1 == 71 and op_count >= 3:
-                        red, green, blue = operands[0], operands[1], operands[2]
-                        if (
-                            type(red) in exact_number_types
-                            and type(green) in exact_number_types
-                            and type(blue) in exact_number_types
-                        ):
-                            handler_target.op_RG_values(
-                                cast(int | float, red),
-                                cast(int | float, green),
-                                cast(int | float, blue),
-                            )
-                            op_count = 0
-                            continue
-                    elif op0 == 114 and op1 == 101:
-                        if (
-                            handler_target.capture_graphics
-                            or handler_target.capture_glyphs
-                            or handler_target.capture_clipping
-                        ):
-                            set_operand_count(op_count)
-                            handler_target.op_re(operand_window, depth)
-                        op_count = 0
-                        continue
-                    elif op0 == 69 and op1 == 84:
-                        handler_target.op_ET(operand_window, depth)
-                        op_count = 0
-                        continue
-                    elif op0 == 99 and op1 == 109 and op_count >= 6:
-                        m_a, m_b, m_c = operands[0], operands[1], operands[2]
-                        m_d, m_e, m_f = operands[3], operands[4], operands[5]
-                        if (
-                            type(m_a) in exact_number_types
-                            and type(m_b) in exact_number_types
-                            and type(m_c) in exact_number_types
-                            and type(m_d) in exact_number_types
-                            and type(m_e) in exact_number_types
-                            and type(m_f) in exact_number_types
-                        ):
-                            handler_target.op_cm_values(
-                                cast(int | float, m_a),
-                                cast(int | float, m_b),
-                                cast(int | float, m_c),
-                                cast(int | float, m_d),
-                                cast(int | float, m_e),
-                                cast(int | float, m_f),
-                            )
-                        else:
-                            set_operand_count(op_count)
-                            handler_target.op_cm(operand_window, depth)
-                        op_count = 0
-                        continue
+                        # no case _: at the outer level either.
 
                 if text_only:
                     if n_raw == 1:
@@ -1006,66 +1117,71 @@ def dispatch_operations(
 
                 if handler_target is not None and n_raw == 1:
                     op0 = raw_bytes[pos - 1]
-                    if op0 == 119 and op_count:
-                        line_width = operands[0]
-                        if type(line_width) in exact_number_types:
-                            handler_target.op_w_value(cast(int | float, line_width))
+                    match op0:
+                        case 119 if op_count:  # 'w'
+                            line_width = operands[0]
+                            if type(line_width) in exact_number_types:
+                                handler_target.op_w_value(cast(int | float, line_width))
+                                op_count = 0
+                                continue
+                        case 74 if op_count:  # 'J'
+                            line_cap = operands[0]
+                            if type(line_cap) in exact_number_types:
+                                handler_target.op_J_value(cast(int | float, line_cap))
+                                op_count = 0
+                                continue
+                        case 106 if op_count:  # 'j'
+                            line_join = operands[0]
+                            if type(line_join) in exact_number_types:
+                                handler_target.op_j_value(cast(int | float, line_join))
+                                op_count = 0
+                                continue
+                        case 77 if op_count:  # 'M'
+                            miter_limit = operands[0]
+                            if type(miter_limit) in exact_number_types:
+                                handler_target.op_M_value(cast(int | float, miter_limit))
+                                op_count = 0
+                                continue
+                        case 109 if op_count >= 2:  # 'm'
+                            move_x, move_y = operands[0], operands[1]
+                            if (
+                                type(move_x) in exact_number_types
+                                and type(move_y) in exact_number_types
+                            ):
+                                handler_target.op_m_values(
+                                    cast(int | float, move_x),
+                                    cast(int | float, move_y),
+                                )
+                                op_count = 0
+                                continue
+                        case 108 if op_count >= 2:  # 'l'
+                            line_x, line_y = operands[0], operands[1]
+                            if (
+                                type(line_x) in exact_number_types
+                                and type(line_y) in exact_number_types
+                            ):
+                                handler_target.op_l_values(
+                                    cast(int | float, line_x),
+                                    cast(int | float, line_y),
+                                )
+                                op_count = 0
+                                continue
+                        case 83:  # 'S'
+                            handler_target.op_paint_stroke(operand_window, depth)
                             op_count = 0
                             continue
-                    elif op0 == 74 and op_count:
-                        line_cap = operands[0]
-                        if type(line_cap) in exact_number_types:
-                            handler_target.op_J_value(cast(int | float, line_cap))
+                        case 102 | 70:  # 'f' | 'F'
+                            handler_target.op_paint_fill(operand_window, depth)
                             op_count = 0
                             continue
-                    elif op0 == 106 and op_count:
-                        line_join = operands[0]
-                        if type(line_join) in exact_number_types:
-                            handler_target.op_j_value(cast(int | float, line_join))
+                        case 113:  # 'q'
+                            handler_target.op_q(operand_window, depth)
                             op_count = 0
                             continue
-                    elif op0 == 77 and op_count:
-                        miter_limit = operands[0]
-                        if type(miter_limit) in exact_number_types:
-                            handler_target.op_M_value(cast(int | float, miter_limit))
+                        case 81:  # 'Q'
+                            handler_target.op_Q(operand_window, depth)
                             op_count = 0
                             continue
-                    elif op0 == 109 and op_count >= 2:
-                        move_x, move_y = operands[0], operands[1]
-                        if (
-                            type(move_x) in exact_number_types
-                            and type(move_y) in exact_number_types
-                        ):
-                            handler_target.op_m_values(
-                                cast(int | float, move_x),
-                                cast(int | float, move_y),
-                            )
-                            op_count = 0
-                            continue
-                    elif op0 == 108 and op_count >= 2:
-                        line_x, line_y = operands[0], operands[1]
-                        if (
-                            type(line_x) in exact_number_types
-                            and type(line_y) in exact_number_types
-                        ):
-                            handler_target.op_l_values(
-                                cast(int | float, line_x),
-                                cast(int | float, line_y),
-                            )
-                            op_count = 0
-                            continue
-                    elif op0 == 83:
-                        handler_target.op_paint_stroke(operand_window, depth)
-                        op_count = 0
-                        continue
-                    if op0 == 113:
-                        handler_target.op_q(operand_window, depth)
-                        op_count = 0
-                        continue
-                    if op0 == 81:
-                        handler_target.op_Q(operand_window, depth)
-                        op_count = 0
-                        continue
 
                 handler = None
                 if n_raw == 1:

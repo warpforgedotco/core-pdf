@@ -11,7 +11,7 @@ from dataclasses import replace
 from typing import Any, cast
 
 from core_pdf.impl.engine.execution import TaskScope, WorkStage
-from core_pdf.impl.engine.layout.glyphs import GlyphUnicodeSemantics
+from core_pdf.impl.engine.layout.glyphs import GlyphUnicodeSemantics, glyph_unicode_semantics
 from core_pdf.impl.engine.parse.capture import (
     internal_capture_from_program,
     internal_learned_glyph_text,
@@ -336,7 +336,6 @@ class internal_PageExtraction:
                 "preflight_native_route_mismatch": preflight_native,
                 "preflight_image_route_mismatch": preflight_image,
                 "preflight_vector_route_mismatch": preflight_vector,
-                "page_program_events": len(capture.program.events.sequence),
                 "content_stream_passes": 1,
                 "capture_product_count": 1,
                 "capture_seconds": (self.internal_captured_at or self.started) - self.started,
@@ -529,21 +528,26 @@ def internal_unknown_decoder_counts(capture: CapturedPage) -> Counter[object]:
         and quality.noise_score >= 0.20
         and quality.wordlike_ratio < 0.20
     )
+    glyph_evidence = capture.evidence.glyphs
+    if not corrupt and not glyph_evidence.unknown_glyphs and not glyph_evidence.unsupported_glyphs:
+        return counts
     for glyph in capture.program.products.glyphs:
         decoder = glyph.font_decoder
         if (
             decoder is None
             or not glyph.visible
+            or not glyph.text
+            or glyph.text.isspace()
             or not glyph.code_bytes
-            or internal_learned_glyph_text(glyph) is not None
             or (
                 not corrupt
-                and glyph.unicode_semantics
+                and glyph_unicode_semantics(glyph.text, glyph.unicode_source)
                 not in {
                     GlyphUnicodeSemantics.UNKNOWN_IDENTIFIER,
                     GlyphUnicodeSemantics.UNSUPPORTED,
                 }
             )
+            or internal_learned_glyph_text(glyph) is not None
             or not callable(getattr(decoder, "install_learned_unicode", None))
         ):
             continue
@@ -615,7 +619,7 @@ def internal_font_mapping_votes(
         known_pairs = tuple(
             (glyph.text.casefold(), character.casefold())
             for glyph, character in zip(aligned, characters, strict=True)
-            if glyph.unicode_semantics
+            if glyph_unicode_semantics(glyph.text, glyph.unicode_source)
             in {GlyphUnicodeSemantics.AUTHORITATIVE, GlyphUnicodeSemantics.HEURISTIC}
         )
         if (
@@ -627,7 +631,7 @@ def internal_font_mapping_votes(
             decoder = glyph.font_decoder
             if (
                 decoder is None
-                or glyph.unicode_semantics
+                or glyph_unicode_semantics(glyph.text, glyph.unicode_source)
                 not in {
                     GlyphUnicodeSemantics.UNKNOWN_IDENTIFIER,
                     GlyphUnicodeSemantics.UNSUPPORTED,

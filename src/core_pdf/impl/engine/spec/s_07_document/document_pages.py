@@ -24,6 +24,7 @@ from core_pdf.impl.engine.spec.s_07_document.document_labels import (
 from core_pdf.impl.engine.spec.s_07_document.document_lock import (
     document_cache_lock,
     document_recovery_enabled,
+    get_or_compute,
 )
 from core_pdf.impl.engine.spec.s_07_document.name_trees import iter_number_tree_items
 from core_pdf.impl.engine.spec.s_07_objects.object_cache import (
@@ -448,18 +449,11 @@ class DocumentPagesMixin(Generic[internal_PageT]):
 
     @property
     def pages(self) -> LazyPageList[internal_PageT]:
-        with document_cache_lock(self):
-            if self.pages_cache is None:
-                self.pages_cache = LazyPageList(self)
-            pages = self.pages_cache
-            return pages
+        return get_or_compute(self, "pages_cache", lambda: LazyPageList(self))
 
     @property
     def page_labels(self) -> list[str] | None:
-        with document_cache_lock(self):
-            if self.page_labels_cache is None:
-                self.page_labels_cache = self.build_page_labels()
-            return self.page_labels_cache
+        return get_or_compute(self, "page_labels_cache", self.build_page_labels)
 
     def page_label(self, page_index: int) -> str | None:
         labels = self.page_labels

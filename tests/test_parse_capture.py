@@ -394,6 +394,36 @@ def test_route_adds_region_recovery_for_uncovered_vector_text() -> None:
     assert plan.ocr_passes[1].name == "primary-page"
 
 
+def test_route_skips_ocr_for_native_text_over_simple_rectangles() -> None:
+    rectangle = SimpleNamespace(
+        kind="fill",
+        path=SimpleNamespace(
+            subpaths=(
+                SimpleNamespace(
+                    closed=True,
+                    points=((0.0, 0.0), (8.0, 0.0), (8.0, 8.0), (0.0, 8.0)),
+                ),
+            ),
+        ),
+    )
+    capture = SimpleNamespace(
+        evidence=evidence(
+            characters=200,
+            visible_characters=200,
+            vector_complexity=2_400,
+            uncovered_vector_area=32_000.0,
+        ),
+        drawings=(rectangle,) * 32,
+        page=SimpleNamespace(width=600.0, height=800.0),
+    )
+
+    plan = plan_page(cast(CapturedPage, capture))
+
+    assert plan.route is PageRoute.NATIVE
+    assert plan.reason == "native-text-with-rectangular-vectors"
+    assert not plan.ocr_passes
+
+
 def test_route_skips_ocr_for_glyph_trusted_vector_text() -> None:
     capture = SimpleNamespace(
         evidence=evidence(

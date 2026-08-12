@@ -23,9 +23,9 @@ from core_pdf.api.v0.compat.unstructured import ElementMetadata, PageBreak, part
 from core_pdf.api.v0.compat.xray import inspect as inspect_xray
 from core_pdf.impl.exceptions import PdfUnsupportedError
 
-FIXTURE = Path("vendor/pdfminer.six/samples/simple1.pdf")
-ANNOTATION_FIXTURE = Path("vendor/pdfminer.six/samples/contrib/issue-1082-annotations.pdf")
-FORM_FIXTURE = Path("vendor/pdfminer.six/samples/acroform/AcroForm_TEST.pdf")
+FIXTURE = Path("tests/fixtures/pdfminer.six/samples/simple1.pdf")
+ANNOTATION_FIXTURE = Path("tests/fixtures/pdfminer.six/samples/contrib/issue-1082-annotations.pdf")
+FORM_FIXTURE = Path("tests/fixtures/pdfminer.six/samples/acroform/AcroForm_TEST.pdf")
 
 
 def test_pypdf_facade_reads_and_writes_high_level_pages() -> None:

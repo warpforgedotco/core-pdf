@@ -584,51 +584,127 @@ def internal_blend_normal_solid_array_numpy(
     target: numpy.ndarray[Any, numpy.dtype[numpy.uint8]],
     rgba: tuple[int, int, int, int],
 ) -> None:
-    """Blend a solid normal-alpha source into an existing RGBA view."""
+    """Blend a solid normal-alpha source into an existing RGBA view.
+
+    Indexes ``target`` directly (``target[..., i]`` / ``target[...]``) rather
+    than ``target.reshape(-1, 4)``: callers pass both flat ``(n, 4)`` spans
+    and 2D ``(rows, cols, 4)`` boxes (e.g. ``fill_rect``'s whole-rectangle
+    fast path), and a box slice narrower than the full row stride is not
+    C-contiguous, so reshaping it silently returns a disconnected copy and
+    every write below would be lost -- confirmed reproducible: a semi-
+    transparent, non-full-width, multi-row fill through that path painted
+    nothing.
+    """
     sr, sg, sb, sa = rgba
     if sa <= 0 or target.size == 0:
         return
-    destination = target.reshape(-1, 4)
     if sa >= 255:
-        destination[:] = rgba
+        target[...] = rgba
         return
-    if not numpy.any(destination[:, 3]):
-        destination[:, :3] = (sr, sg, sb)
-        destination[:, 3] = sa
+    if not numpy.any(target[..., 3]):
+        target[..., :3] = (sr, sg, sb)
+        target[..., 3] = sa
         return
     source_alpha = sa / 255.0
     inverse_source_alpha = 1.0 - source_alpha
-    if numpy.all(destination[:, 3] == 255):
-        destination_rgb = destination[:, :3].astype(numpy.float32)
-        destination_rgb[:, 0] = numpy.rint(
-            sr * source_alpha + destination_rgb[:, 0] * inverse_source_alpha
+    if numpy.all(target[..., 3] == 255):
+        destination_rgb = target[..., :3].astype(numpy.float32)
+        destination_rgb[..., 0] = numpy.rint(
+            sr * source_alpha + destination_rgb[..., 0] * inverse_source_alpha
         )
-        destination_rgb[:, 1] = numpy.rint(
-            sg * source_alpha + destination_rgb[:, 1] * inverse_source_alpha
+        destination_rgb[..., 1] = numpy.rint(
+            sg * source_alpha + destination_rgb[..., 1] * inverse_source_alpha
         )
-        destination_rgb[:, 2] = numpy.rint(
-            sb * source_alpha + destination_rgb[:, 2] * inverse_source_alpha
+        destination_rgb[..., 2] = numpy.rint(
+            sb * source_alpha + destination_rgb[..., 2] * inverse_source_alpha
         )
-        destination[:, :3] = numpy.clip(destination_rgb, 0.0, 255.0).astype(numpy.uint8)
+        target[..., :3] = numpy.clip(destination_rgb, 0.0, 255.0).astype(numpy.uint8)
         return
 
-    destination_float = destination.astype(numpy.float32)
-    destination_alpha = destination_float[:, 3] / 255.0
+    destination_float = target.astype(numpy.float32)
+    destination_alpha = destination_float[..., 3] / 255.0
     output_alpha = source_alpha + destination_alpha * inverse_source_alpha
-    destination_rgb = destination_float[:, :3]
-    destination_rgb[:, 0] = (
-        sr * source_alpha + destination_rgb[:, 0] * destination_alpha * inverse_source_alpha
+    destination_rgb = destination_float[..., :3]
+    destination_rgb[..., 0] = (
+        sr * source_alpha + destination_rgb[..., 0] * destination_alpha * inverse_source_alpha
     ) / output_alpha
-    destination_rgb[:, 1] = (
-        sg * source_alpha + destination_rgb[:, 1] * destination_alpha * inverse_source_alpha
+    destination_rgb[..., 1] = (
+        sg * source_alpha + destination_rgb[..., 1] * destination_alpha * inverse_source_alpha
     ) / output_alpha
-    destination_rgb[:, 2] = (
-        sb * source_alpha + destination_rgb[:, 2] * destination_alpha * inverse_source_alpha
+    destination_rgb[..., 2] = (
+        sb * source_alpha + destination_rgb[..., 2] * destination_alpha * inverse_source_alpha
     ) / output_alpha
-    destination_float[:, 3] = numpy.rint(output_alpha * 255.0)
+    destination_float[..., 3] = numpy.rint(output_alpha * 255.0)
     numpy.rint(destination_float, out=destination_float)
     numpy.clip(destination_float, 0.0, 255.0, out=destination_float)
-    destination[:] = destination_float.astype(numpy.uint8)
+    target[...] = destination_float.astype(numpy.uint8)
+
+
+def internal_blend_solid_array_numpy(
+    target: numpy.ndarray[Any, numpy.dtype[numpy.uint8]],
+    rgba: tuple[int, int, int, int],
+    blend_mode: str | None,
+) -> None:
+    """Blend a solid source into an RGBA view, replicating ``blend_px``'s
+    per-pixel math (Multiply/Screen premultiply, generic alpha compositing)
+    across every destination pixel in one pass.
+
+    Callers fold any transparency-group alpha into ``rgba``'s alpha before
+    calling -- ``blend_px`` reads that scale from state that is invariant
+    across the whole span, so it is computed once here instead of per pixel.
+    Uses float64 throughout (not float32, unlike the Normal-blend fast paths
+    above) so every intermediate matches ``blend_px``'s plain-Python-float
+    arithmetic bit for bit; the golden-raster digests depend on it.
+
+    Indexes ``target``'s last axis directly (``target[..., 0]`` etc.) rather
+    than ``target.reshape(-1, 4)``: callers pass both flat ``(n, 4)`` spans
+    and 2D ``(rows, cols, 4)`` boxes, and a box slice narrower than the full
+    row stride is not C-contiguous, so reshaping it silently returns a
+    disconnected copy and every write below would be lost.
+    """
+    sr, sg, sb, sa = rgba
+    if sa <= 0 or target.size == 0:
+        return
+    mode = blend_mode.lower() if isinstance(blend_mode, str) else None
+    if sa >= 255 and mode is None:
+        target[..., 0] = sr
+        target[..., 1] = sg
+        target[..., 2] = sb
+        target[..., 3] = 255
+        return
+    dr = target[..., 0].astype(numpy.float64)
+    dg = target[..., 1].astype(numpy.float64)
+    db = target[..., 2].astype(numpy.float64)
+    da = target[..., 3].astype(numpy.float64)
+    src_a = sa / 255.0
+    one_minus_src_a = 1.0 - src_a
+    dst_a = da / 255.0
+    src_r: numpy.ndarray | float = sr / 255.0
+    src_g: numpy.ndarray | float = sg / 255.0
+    src_b: numpy.ndarray | float = sb / 255.0
+    if mode == "multiply":
+        src_r = src_r * (dr / 255.0)
+        src_g = src_g * (dg / 255.0)
+        src_b = src_b * (db / 255.0)
+    elif mode == "screen":
+        src_r = 1.0 - (1.0 - src_r) * (1.0 - dr / 255.0)
+        src_g = 1.0 - (1.0 - src_g) * (1.0 - dg / 255.0)
+        src_b = 1.0 - (1.0 - src_b) * (1.0 - db / 255.0)
+    out_a = src_a + dst_a * one_minus_src_a
+    safe_out_a = numpy.where(out_a > 0.0, out_a, 1.0)
+    out_r = numpy.round(((src_r * 255.0) * src_a + dr * dst_a * one_minus_src_a) / safe_out_a)
+    out_g = numpy.round(((src_g * 255.0) * src_a + dg * dst_a * one_minus_src_a) / safe_out_a)
+    out_b = numpy.round(((src_b * 255.0) * src_a + db * dst_a * one_minus_src_a) / safe_out_a)
+    out_a_i = numpy.round(out_a * 255.0)
+    transparent = out_a <= 0.0
+    out_r = numpy.where(transparent, 0.0, out_r)
+    out_g = numpy.where(transparent, 0.0, out_g)
+    out_b = numpy.where(transparent, 0.0, out_b)
+    out_a_i = numpy.where(transparent, 0.0, out_a_i)
+    target[..., 0] = numpy.clip(out_r, 0.0, 255.0).astype(numpy.uint8)
+    target[..., 1] = numpy.clip(out_g, 0.0, 255.0).astype(numpy.uint8)
+    target[..., 2] = numpy.clip(out_b, 0.0, 255.0).astype(numpy.uint8)
+    target[..., 3] = numpy.clip(out_a_i, 0.0, 255.0).astype(numpy.uint8)
 
 
 def internal_blend_normal_alpha_array_numpy(
@@ -636,28 +712,34 @@ def internal_blend_normal_alpha_array_numpy(
     rgba: tuple[int, int, int, int],
     alpha: numpy.ndarray[Any, Any],
 ) -> None:
-    """Blend a normal source with one coverage alpha per target pixel."""
+    """Blend a normal source with one coverage alpha per target pixel.
+
+    Indexes ``target`` directly rather than ``target.reshape(-1, 4)`` -- see
+    ``internal_blend_normal_solid_array_numpy`` for why a reshaped box slice
+    can silently discard every write below.
+    """
     if target.size == 0 or not numpy.any(alpha):
         return
-    destination = target.reshape(-1, 4)
     source_alpha = numpy.minimum(alpha, rgba[3]).astype(numpy.float32) / 255.0
-    destination_float = destination.astype(numpy.float32)
-    destination_alpha = destination_float[:, 3] / 255.0
+    destination_float = target.astype(numpy.float32)
+    destination_alpha = destination_float[..., 3] / 255.0
     output_alpha = source_alpha + destination_alpha * (1.0 - source_alpha)
     safe_output_alpha = numpy.where(output_alpha > 0.0, output_alpha, 1.0)
-    destination_float[:, 0] = (
-        rgba[0] * source_alpha + destination_float[:, 0] * destination_alpha * (1.0 - source_alpha)
+    inverse_source_alpha = 1.0 - source_alpha
+    dst_weight = destination_alpha * inverse_source_alpha
+    destination_float[..., 0] = (
+        rgba[0] * source_alpha + destination_float[..., 0] * dst_weight
     ) / safe_output_alpha
-    destination_float[:, 1] = (
-        rgba[1] * source_alpha + destination_float[:, 1] * destination_alpha * (1.0 - source_alpha)
+    destination_float[..., 1] = (
+        rgba[1] * source_alpha + destination_float[..., 1] * dst_weight
     ) / safe_output_alpha
-    destination_float[:, 2] = (
-        rgba[2] * source_alpha + destination_float[:, 2] * destination_alpha * (1.0 - source_alpha)
+    destination_float[..., 2] = (
+        rgba[2] * source_alpha + destination_float[..., 2] * dst_weight
     ) / safe_output_alpha
-    destination_float[:, 3] = output_alpha * 255.0
+    destination_float[..., 3] = output_alpha * 255.0
     numpy.rint(destination_float, out=destination_float)
     numpy.clip(destination_float, 0.0, 255.0, out=destination_float)
-    destination[:] = destination_float.astype(numpy.uint8)
+    target[...] = destination_float.astype(numpy.uint8)
 
 
 def internal_composite_normal_group_numpy(
@@ -666,11 +748,22 @@ def internal_composite_normal_group_numpy(
     source_alpha_scale: float,
     target_alpha_scale: float = 1.0,
 ) -> None:
-    """Composite a straight-alpha normal group through two RGBA views."""
+    """Composite a straight-alpha normal group through two RGBA views.
+
+    Indexes both views directly (``[..., i]``) instead of reshaping to
+    ``(-1, 4)`` -- see ``internal_blend_normal_solid_array_numpy`` for why a
+    reshaped non-contiguous ``destination`` box slice silently discards
+    writes. ``source`` is read-only here, so reshaping it would be safe on
+    its own, but two of the early-return branches below wrote into a
+    reshaped *destination* view and returned without ever assigning back
+    into the real ``destination`` array -- kept both views in the same
+    (unflattened) shape so every write, including boolean-masked ones,
+    targets `destination` (or a scratch copy explicitly written back to it)
+    rather than a same-shaped-but-disconnected copy.
+    """
     if destination.size == 0 or source_alpha_scale <= 0.0:
         return
-    source_view = source.reshape(-1, 4)
-    source_alpha_u8 = source_view[:, 3]
+    source_alpha_u8 = source[..., 3]
     if not numpy.any(source_alpha_u8):
         return
     if (
@@ -678,9 +771,8 @@ def internal_composite_normal_group_numpy(
         and target_alpha_scale == 1.0
         and numpy.all(source_alpha_u8 == 255)
     ):
-        destination[:] = source
+        destination[...] = source
         return
-    destination_view = destination.reshape(-1, 4)
     effective_alpha = numpy.rint(source_alpha_u8 * source_alpha_scale)
     if target_alpha_scale != 1.0:
         effective_alpha = numpy.rint(effective_alpha * target_alpha_scale)
@@ -688,25 +780,25 @@ def internal_composite_normal_group_numpy(
     if (
         source_alpha_scale <= 1.0
         and target_alpha_scale <= 1.0
-        and numpy.all(destination_view[:, 3] == 255)
+        and numpy.all(destination[..., 3] == 255)
     ):
         source_alpha = effective_alpha / 255.0
-        source_rgb = source_view[:, :3].astype(numpy.float32)
-        destination_rgb = destination_view[:, :3].astype(numpy.float32)
-        destination_rgb[:] = numpy.rint(
-            source_rgb * source_alpha[:, None] + destination_rgb * (1.0 - source_alpha[:, None])
+        source_rgb = source[..., :3].astype(numpy.float32)
+        destination_rgb = destination[..., :3].astype(numpy.float32)
+        destination_rgb[...] = numpy.rint(
+            source_rgb * source_alpha[..., None] + destination_rgb * (1.0 - source_alpha[..., None])
         )
-        destination_view[:, :3] = numpy.clip(destination_rgb, 0.0, 255.0).astype(numpy.uint8)
+        destination[..., :3] = numpy.clip(destination_rgb, 0.0, 255.0).astype(numpy.uint8)
         return
-    if not numpy.any(destination_view[:, 3]):
+    if not numpy.any(destination[..., 3]):
         visible = effective_alpha > 0.0
         if numpy.any(visible):
-            destination_view[visible, :3] = source_view[visible, :3]
-            destination_view[visible, 3] = effective_alpha[visible]
+            destination[..., :3][visible] = source[..., :3][visible]
+            destination[..., 3][visible] = effective_alpha[visible]
         return
-    source_float = source.reshape(-1, 4).astype(numpy.float32)
-    destination_float = destination_view.astype(numpy.float32)
-    source_alpha = numpy.rint(source_float[:, 3] * source_alpha_scale)
+    source_float = source.astype(numpy.float32)
+    destination_float = destination.astype(numpy.float32)
+    source_alpha = numpy.rint(source_float[..., 3] * source_alpha_scale)
     if target_alpha_scale != 1.0:
         source_alpha = numpy.rint(source_alpha * target_alpha_scale)
     source_alpha = source_alpha / 255.0
@@ -714,18 +806,18 @@ def internal_composite_normal_group_numpy(
     if not numpy.any(visible):
         return
     source_a = source_alpha[visible]
-    destination_a = destination_float[visible, 3] / 255.0
+    destination_a = destination_float[..., 3][visible] / 255.0
     output_alpha = source_a + destination_a * (1.0 - source_a)
-    destination_rgb = destination_float[visible, :3]
+    destination_rgb = destination_float[..., :3][visible]
     output_rgb = (
-        source_float[visible, :3] * source_a[:, None]
+        source_float[..., :3][visible] * source_a[:, None]
         + destination_rgb * destination_a[:, None] * (1.0 - source_a)[:, None]
     ) / output_alpha[:, None]
-    destination_float[visible, :3] = numpy.rint(output_rgb)
-    destination_float[visible, 3] = numpy.rint(output_alpha * 255.0)
+    destination_float[..., :3][visible] = numpy.rint(output_rgb)
+    destination_float[..., 3][visible] = numpy.rint(output_alpha * 255.0)
     numpy.rint(destination_float, out=destination_float)
     numpy.clip(destination_float, 0.0, 255.0, out=destination_float)
-    destination[:] = destination_float.astype(numpy.uint8)
+    destination[...] = destination_float.astype(numpy.uint8)
 
 
 def internal_blend_normal_masked_array_numpy(
@@ -734,62 +826,69 @@ def internal_blend_normal_masked_array_numpy(
     source_mask: numpy.ndarray[Any, numpy.dtype[numpy.uint8]],
     alpha: int,
 ) -> None:
-    """Blend masked RGB samples into an RGBA destination view."""
+    """Blend masked RGB samples into an RGBA destination view.
+
+    ``source_rgb``/``source_mask`` must already be shaped to match
+    ``destination``'s leading (non-channel) dimensions -- callers no longer
+    flatten them before calling. ``destination`` is indexed directly
+    (``[..., i]``) rather than reshaped to ``(-1, 4)``: see
+    ``internal_blend_normal_solid_array_numpy`` for why reshaping a
+    non-contiguous box slice silently discards writes. ``source_rgb`` and
+    ``source_mask`` are read-only here, so their own shape is otherwise
+    unconstrained as long as it matches.
+    """
     if destination.size == 0:
         return
-    source_rgb = source_rgb.reshape(-1, 3)
-    source_mask_u8 = source_mask.reshape(-1)
-    if alpha <= 0 or not numpy.any(source_mask_u8):
+    if alpha <= 0 or not numpy.any(source_mask):
         return
-    destination_view = destination.reshape(-1, 4)
-    if alpha == 255 and numpy.all(source_mask_u8 == 255):
-        destination_view[:, :3] = source_rgb
-        destination_view[:, 3] = 255
+    if alpha == 255 and numpy.all(source_mask == 255):
+        destination[..., :3] = source_rgb
+        destination[..., 3] = 255
         return
     if alpha == 255:
-        partial_mask = (source_mask_u8 > 0) & (source_mask_u8 < 255)
+        partial_mask = (source_mask > 0) & (source_mask < 255)
         if not numpy.any(partial_mask):
-            opaque = source_mask_u8 == 255
-            destination_view[opaque, :3] = source_rgb[opaque]
-            destination_view[opaque, 3] = 255
+            opaque = source_mask == 255
+            destination[..., :3][opaque] = source_rgb[opaque]
+            destination[..., 3][opaque] = 255
             return
-    source_alpha = source_mask_u8.astype(numpy.float32)
+    source_alpha = source_mask.astype(numpy.float32)
     if alpha != 255:
         source_alpha = numpy.rint(source_alpha * (alpha / 255.0))
-    if not numpy.any(destination_view[:, 3]):
+    if not numpy.any(destination[..., 3]):
         visible = source_alpha > 0.0
         if numpy.any(visible):
-            destination_view[visible, :3] = source_rgb[visible]
-            destination_view[visible, 3] = source_alpha[visible]
+            destination[..., :3][visible] = source_rgb[visible]
+            destination[..., 3][visible] = source_alpha[visible]
         return
-    if numpy.all(destination_view[:, 3] == 255):
-        source_alpha /= 255.0
-        destination_rgb = destination_view[:, :3].astype(numpy.float32)
-        destination_rgb[:] = numpy.rint(
-            source_rgb * source_alpha[:, None] + destination_rgb * (1.0 - source_alpha[:, None])
+    if numpy.all(destination[..., 3] == 255):
+        source_alpha = source_alpha / 255.0
+        destination_rgb = destination[..., :3].astype(numpy.float32)
+        destination_rgb[...] = numpy.rint(
+            source_rgb * source_alpha[..., None] + destination_rgb * (1.0 - source_alpha[..., None])
         )
-        destination_view[:, :3] = numpy.clip(destination_rgb, 0.0, 255.0).astype(numpy.uint8)
+        destination[..., :3] = numpy.clip(destination_rgb, 0.0, 255.0).astype(numpy.uint8)
         return
-    destination_float = destination_view.astype(numpy.float32)
+    destination_float = destination.astype(numpy.float32)
     opaque = source_alpha >= 255.0
     if numpy.any(opaque):
-        destination_float[opaque, :3] = source_rgb[opaque]
-        destination_float[opaque, 3] = 255.0
+        destination_float[..., :3][opaque] = source_rgb[opaque]
+        destination_float[..., 3][opaque] = 255.0
     partial = (~opaque) & (source_alpha > 0.0)
     if numpy.any(partial):
         source_a = source_alpha[partial] / 255.0
-        destination_a = destination_float[partial, 3] / 255.0
+        destination_a = destination_float[..., 3][partial] / 255.0
         output_a = source_a + destination_a * (1.0 - source_a)
-        destination_rgb = destination_float[partial, :3]
+        destination_rgb = destination_float[..., :3][partial]
         output_rgb = (
             source_rgb[partial] * source_a[:, None]
             + destination_rgb * destination_a[:, None] * (1.0 - source_a)[:, None]
         ) / output_a[:, None]
-        destination_float[partial, :3] = numpy.rint(output_rgb)
-        destination_float[partial, 3] = numpy.rint(output_a * 255.0)
+        destination_float[..., :3][partial] = numpy.rint(output_rgb)
+        destination_float[..., 3][partial] = numpy.rint(output_a * 255.0)
     numpy.rint(destination_float, out=destination_float)
     numpy.clip(destination_float, 0, 255, out=destination_float)
-    destination[:] = destination_float.astype(numpy.uint8).reshape(destination.shape)
+    destination[...] = destination_float.astype(numpy.uint8)
 
 
 @dataclass(frozen=True, slots=True)
@@ -1095,6 +1194,40 @@ def internal_cached_raster_coordinates(
     return coordinates
 
 
+def internal_blit_reshaped_channels(
+    target_region: numpy.ndarray[Any, Any],
+    sampled: numpy.ndarray[Any, Any],
+    valid: numpy.ndarray[Any, Any],
+    comps: int,
+) -> None:
+    """Copy gray/RGB(A) channels from a pre-reshaped source into ``target_region``."""
+    if comps == 1:
+        target_region[valid, 0:3] = sampled[valid, 0][:, None]
+    else:
+        target_region[valid, 0:3] = sampled[valid, :3]
+    target_region[..., 3][valid] = 255
+
+
+def internal_blit_indexed_channels(
+    target_region: numpy.ndarray[Any, Any],
+    source_bytes: numpy.ndarray[Any, Any],
+    safe_index: numpy.ndarray[Any, Any],
+    valid: numpy.ndarray[Any, Any],
+    comps: int,
+) -> None:
+    """Copy gray/RGB(A) channels looked up via ``safe_index`` into ``target_region``."""
+    if comps == 1:
+        gray_samples = source_bytes[safe_index]
+        target_region[:, :, 0][valid] = gray_samples[valid]
+        target_region[:, :, 1][valid] = gray_samples[valid]
+        target_region[:, :, 2][valid] = gray_samples[valid]
+    else:
+        target_region[:, :, 0][valid] = source_bytes[safe_index][valid]
+        target_region[:, :, 1][valid] = source_bytes[safe_index + 1][valid]
+        target_region[:, :, 2][valid] = source_bytes[safe_index + 2][valid]
+    target_region[:, :, 3][valid] = 255
+
+
 def internal_image_raw_bytes(raw: bytes | bytearray | memoryview) -> bytes | memoryview:
     """Return image source storage without copying it."""
     if type(raw) is bytes or type(raw) is memoryview:
@@ -1354,16 +1487,16 @@ def internal_soft_mask_samples(data: dict[str, Any]) -> tuple[bytes | memoryview
         samples = raw_bytes
     else:
         samples, sample_dict = sample_result
-    converted: ByteBuffer | None
-    try:
-        if isinstance(samples, DecodedImage):
-            converted = samples.array.reshape(-1)
-        else:
-            converted = ImageColorManager.convert_image_data(samples, sample_dict)
-    except Exception:
-        converted = samples.array.reshape(-1) if isinstance(samples, DecodedImage) else samples
-    if converted is None:
-        converted = samples.array.reshape(-1) if isinstance(samples, DecodedImage) else samples
+    converted: ByteBuffer
+    if isinstance(samples, DecodedImage):
+        converted = samples.array.reshape(-1)
+    else:
+        converted_or_none: ByteBuffer | None
+        try:
+            converted_or_none = ImageColorManager.convert_image_data(samples, sample_dict)
+        except Exception:
+            converted_or_none = None
+        converted = converted_or_none if converted_or_none is not None else samples
     pixel_count = mask_width * mask_height
     converted_array = uint8_view(converted)
     if len(converted_array) >= pixel_count * 3:
@@ -1760,23 +1893,43 @@ class internal_RasterTarget:
                 rgba,
             )
             return
-        # Only the clipped / blended scanline path below needs these.
+        # Only the clipped / blended scanline path below needs these. A
+        # transparency-group alpha is invariant for this whole call (it comes
+        # from `buffer_stack`, which `fill_rect` never pushes/pops), so it is
+        # folded into `blended_rgba` once here instead of on every pixel the
+        # way `blend_px` does it -- mirrors the group-alpha scale it would
+        # otherwise redo per pixel, and lets wide spans go through one NumPy
+        # blend instead of a Python loop.
+        # `rectangular_clip and normal_fast` is unreachable below: the
+        # `page_box_to_pixels` result already guarantees ix1 > ix0 and
+        # iy1 > iy0, so that combination always takes the whole-box return
+        # above instead of reaching this scanline loop.
         width = self.width
         blend_px = self.blend_px
         blend_normal_pixel = self.blend_normal_pixel
-        blend_normal_solid_span = self.blend_normal_solid_span
         clip_row_visible_spans = self.clip_row_visible_spans
+        blended_rgba = rgba
+        if normal_target is None:
+            group_alpha = buffer_stack[-1][1]
+            if pdf_number(group_alpha):
+                sr, sg, sb, sa = rgba
+                sa = max(0, min(255, int(round(sa * float(group_alpha)))))
+                blended_rgba = (sr, sg, sb, sa)
+            if blended_rgba[3] <= 0:
+                return
+            blend_target = pixel_view(pixels)
+            if rectangular_clip:
+                # The whole ix0:ix1/iy0:iy1 box is visible with no gaps (same
+                # invariant the opaque/Normal fast paths above rely on), so
+                # one array-wide blend replaces a numpy call per row.
+                internal_blend_solid_array_numpy(
+                    blend_target[iy0:iy1, ix0:ix1], blended_rgba, blend_mode
+                )
+                return
         for y in range(iy0, iy1):
             row = y * width * 4
             visible_spans = clip_row_visible_spans(y)
             if not visible_spans:
-                continue
-            if rectangular_clip and normal_fast:
-                for start, end in visible_spans:
-                    start = max(ix0, start)
-                    end = min(ix1, end)
-                    if end > start:
-                        blend_normal_solid_span(row, start, end, rgba)
                 continue
             for start, end in visible_spans:
                 start = max(ix0, start)
@@ -1789,6 +1942,10 @@ class internal_RasterTarget:
                     else:
                         for x in range(start, end):
                             blend_normal_pixel(row + x * 4, *rgba)
+                elif end - start >= RASTER_NUMPY_SPAN_MIN_PIXELS:
+                    internal_blend_solid_array_numpy(
+                        blend_target[y, start:end], blended_rgba, blend_mode
+                    )
                 else:
                     for x in range(start, end):
                         blend_px(row + x * 4, rgba, blend_mode)
@@ -1828,6 +1985,18 @@ class internal_RasterTarget:
         )
         normal_fast = can_blend_normal_fast(blend_mode)
         normal_target = pixel_view(pixels) if normal_fast and not simple_opaque else None
+        # Same group-alpha hoist as `fill_rect`: invariant for this whole call,
+        # so folded into `blended_rgba` once instead of per pixel in `blend_px`.
+        blended_rgba = rgba
+        blend_target = None
+        if not normal_fast:
+            group_alpha = buffer_stack[-1][1]
+            if pdf_number(group_alpha):
+                sr, sg, sb, sa = rgba
+                sa = max(0, min(255, int(round(sa * float(group_alpha)))))
+                blended_rgba = (sr, sg, sb, sa)
+            if blended_rgba[3] > 0:
+                blend_target = pixel_view(pixels)
 
         def span_pixels(start_x: float, end_x: float) -> tuple[int, int] | None:
             if end_x <= start_x:
@@ -1901,6 +2070,16 @@ class internal_RasterTarget:
                         internal_blend_normal_solid_array_numpy(
                             normal_target[py, visible_start:visible_end],
                             rgba,
+                        )
+                        continue
+                    if (
+                        blend_target is not None
+                        and visible_end - visible_start >= RASTER_NUMPY_SPAN_MIN_PIXELS
+                    ):
+                        internal_blend_solid_array_numpy(
+                            blend_target[py, visible_start:visible_end],
+                            blended_rgba,
+                            blend_mode,
                         )
                         continue
                     for px in range(visible_start, visible_end):
@@ -2915,8 +3094,6 @@ class internal_RasterTarget:
                 ix1,
                 iy1,
             )
-            return
-            return True
         if (
             alpha == 255
             and blend_mode is None
@@ -3031,8 +3208,8 @@ class internal_RasterTarget:
             if valid.all():
                 internal_blend_normal_masked_array_numpy(
                     target_region,
-                    sampled_rgb.reshape(-1, 3),
-                    sampled_mask.reshape(-1),
+                    sampled_rgb,
+                    sampled_mask,
                     alpha,
                 )
             else:
@@ -3074,8 +3251,6 @@ class internal_RasterTarget:
                 ix1,
                 iy1,
             )
-            return
-            return True
         for py in range(iy0, iy1):
             page_y_value = crop_y1 - (py + 0.5) / scale
             row = py * width * 4
@@ -3376,7 +3551,6 @@ class internal_RasterTarget:
                 height_px,
             )
             return
-            return
         if normal_fast:
             self.blit_image_rows_blended(
                 converted,
@@ -3397,7 +3571,6 @@ class internal_RasterTarget:
                 y_span,
                 width_px,
             )
-            return
             return
         for dy, py in enumerate(range(iy0, iy1)):
             src_y = src_y_map[dy]
@@ -4643,11 +4816,7 @@ class internal_RasterTarget:
                         numpy.maximum(src_x_map, 0)[None, :],
                     ]
                     valid = valid_y[:, None] & (src_x_map >= 0)[None, :]
-                    if comps == 1:
-                        target_region[valid, 0:3] = sampled[valid, 0][:, None]
-                    else:
-                        target_region[valid, 0:3] = sampled[valid, :3]
-                    target_region[..., 3][valid] = 255
+                    internal_blit_reshaped_channels(target_region, sampled, valid, comps)
                     return True
             target_region = pixel_view(pixels)[iy0:iy1, ix0:ix1]
             source_bytes = uint8_view(converted)
@@ -4663,16 +4832,9 @@ class internal_RasterTarget:
             target_region[src_y_map >= 0] = 0
             if converted_len > 0:
                 safe_index = numpy.where(valid, source_index, 0)
-                if comps == 1:
-                    gray_samples = source_bytes[safe_index]
-                    target_region[:, :, 0][valid] = gray_samples[valid]
-                    target_region[:, :, 1][valid] = gray_samples[valid]
-                    target_region[:, :, 2][valid] = gray_samples[valid]
-                else:
-                    target_region[:, :, 0][valid] = source_bytes[safe_index][valid]
-                    target_region[:, :, 1][valid] = source_bytes[safe_index + 1][valid]
-                    target_region[:, :, 2][valid] = source_bytes[safe_index + 2][valid]
-                target_region[:, :, 3][valid] = 255
+                internal_blit_indexed_channels(
+                    target_region, source_bytes, safe_index, valid, comps
+                )
             return True
         inv_uy = 1.0 / uy
         inv_vx = 1.0 / vx
@@ -4715,11 +4877,7 @@ class internal_RasterTarget:
                     numpy.maximum(src_y_map, 0)[None, :],
                 ]
                 valid = valid_rows[:, None] & (src_y_map >= 0)[None, :]
-                if comps == 1:
-                    target_region[valid, 0:3] = sampled[valid, 0][:, None]
-                else:
-                    target_region[valid, 0:3] = sampled[valid, :3]
-                target_region[..., 3][valid] = 255
+                internal_blit_reshaped_channels(target_region, sampled, valid, comps)
                 return True
         target_region = pixel_view(pixels)[iy0:iy1, ix0:ix1]
         source_bytes = uint8_view(converted)
@@ -4741,16 +4899,7 @@ class internal_RasterTarget:
         target_region[row_valid] = 0
         if converted_len > 0:
             safe_index = numpy.where(valid, source_index, 0)
-            if comps == 1:
-                gray_samples = source_bytes[safe_index]
-                target_region[:, :, 0][valid] = gray_samples[valid]
-                target_region[:, :, 1][valid] = gray_samples[valid]
-                target_region[:, :, 2][valid] = gray_samples[valid]
-            else:
-                target_region[:, :, 0][valid] = source_bytes[safe_index][valid]
-                target_region[:, :, 1][valid] = source_bytes[safe_index + 1][valid]
-                target_region[:, :, 2][valid] = source_bytes[safe_index + 2][valid]
-            target_region[:, :, 3][valid] = 255
+            internal_blit_indexed_channels(target_region, source_bytes, safe_index, valid, comps)
         return False
 
 
@@ -5564,13 +5713,8 @@ def compose_page(
                 font_name=glyph.font_name,
                 unicode_source=glyph.unicode_source,
                 alternates=glyph.alternates,
-                bbox=(glyph.ink_rect.x0, glyph.ink_rect.y0, glyph.ink_rect.x1, glyph.ink_rect.y1),
-                advance_bbox=(
-                    glyph.advance_rect.x0,
-                    glyph.advance_rect.y0,
-                    glyph.advance_rect.x1,
-                    glyph.advance_rect.y1,
-                ),
+                bbox=glyph.ink_bbox,
+                advance_bbox=glyph.advance_bbox,
                 fill_color=glyph.fill,
                 visible=glyph.visible,
                 bitmap=bitmap,

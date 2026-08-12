@@ -14,7 +14,11 @@ from typing import Any
 import numpy
 
 from core_pdf.impl.engine.layout.geometry import rect_tuple
-from core_pdf.impl.engine.layout.glyphs import GlyphObservation, GlyphUnicodeSemantics
+from core_pdf.impl.engine.layout.glyphs import (
+    GlyphObservation,
+    GlyphUnicodeSemantics,
+    glyph_unicode_semantics,
+)
 from core_pdf.impl.engine.layout.models import TextRun
 from core_pdf.impl.engine.layout.spatial import (
     SpatialIndex,
@@ -33,7 +37,7 @@ from core_pdf.impl.engine.parse.model import (
     PagePreflightRecommendation,
     StrokedVectorTextEvidence,
     TextQualityStats,
-    internal_text_quality_stats,
+    internal_analyze_text,
 )
 from core_pdf.impl.engine.spec.s_07_content.operations import (
     ContentOperatorCounts,
@@ -62,15 +66,6 @@ PREFLIGHT_CACHE_KEY = "page_preflight_v1"
 DUPLICATE_LAYER_MIN_TOKENS = 24
 DUPLICATE_NESTED_LAYER_MIN_OVERLAP = 0.60
 DUPLICATE_CLIPPED_LAYER_MIN_OVERLAP = 0.50
-
-
-def internal_suspicious_character_count(text: str) -> int:
-    return sum(
-        character == "\ufffd"
-        or 0xE000 <= ord(character) <= 0xF8FF
-        or (not character.isprintable() and not character.isspace())
-        for character in text
-    )
 
 
 def internal_normalized_tokens(runs: tuple[Any, ...] | list[Any]) -> tuple[str, ...]:
@@ -224,24 +219,40 @@ def internal_glyph_evidence(
     semantic_characters = 0
     sources: Counter[str] = Counter()
     glyph_count = 0
+    previous_decoder: object | None = None
+    learned: dict[bytes, str] | None = None
     for glyph in glyphs:
         if not glyph.text or glyph.text.isspace():
             continue
         glyph_count += 1
         visible += int(glyph.visible)
-        learned_text = internal_learned_glyph_text(glyph)
+        decoder = glyph.font_decoder
+        if decoder is not previous_decoder:
+            candidate = getattr(decoder, "learned_unicode", None)
+            learned = candidate if isinstance(candidate, dict) and candidate else None
+            previous_decoder = decoder
+        candidate_text = learned.get(glyph.code_bytes) if learned is not None else None
+        learned_text = (
+            candidate_text if isinstance(candidate_text, str) and len(candidate_text) == 1 else None
+        )
         source = "learned_ocr" if learned_text is not None else glyph.unicode_source
         text = learned_text or glyph.text
         sources[source or "unspecified"] += 1
         semantics = (
-            GlyphUnicodeSemantics.HEURISTIC if learned_text is not None else glyph.unicode_semantics
+            GlyphUnicodeSemantics.HEURISTIC
+            if learned_text is not None
+            else glyph_unicode_semantics(glyph.text, glyph.unicode_source)
         )
         if semantics is GlyphUnicodeSemantics.AUTHORITATIVE:
             authoritative += 1
-            semantic_characters += sum(not character.isspace() for character in text)
+            semantic_characters += (
+                1 if len(text) == 1 else sum(not character.isspace() for character in text)
+            )
         elif semantics is GlyphUnicodeSemantics.HEURISTIC:
             heuristic += 1
-            semantic_characters += sum(not character.isspace() for character in text)
+            semantic_characters += (
+                1 if len(text) == 1 else sum(not character.isspace() for character in text)
+            )
         elif semantics is GlyphUnicodeSemantics.UNSUPPORTED:
             unsupported += 1
         else:
@@ -438,11 +449,18 @@ def internal_apply_learned_unicode_to_run(run: TextRun) -> TextRun:
     cursor = 0
     output: list[str] = []
     changed = False
+    previous_decoder: object | None = None
+    learned: dict[bytes, str] | None = None
     for cluster in run.glyph_clusters:
         for glyph in cluster.glyphs:
-            replacement = internal_learned_glyph_text(glyph)
+            decoder = glyph.font_decoder
+            if decoder is not previous_decoder:
+                candidate = getattr(decoder, "learned_unicode", None)
+                learned = candidate if isinstance(candidate, dict) and candidate else None
+                previous_decoder = decoder
+            replacement = learned.get(glyph.code_bytes) if learned is not None else None
             original = glyph.text
-            if replacement is None or not original:
+            if not isinstance(replacement, str) or len(replacement) != 1 or not original:
                 continue
             position = source.find(original, cursor)
             if position < 0:
@@ -894,7 +912,6 @@ def internal_capture_with_newstroke_text(
     runs = decoded.runs
     observations = internal_observations_from_runs(runs)
     text = "".join(run.text for run in runs)
-    characters = sum(not character.isspace() for character in text)
     boxes = observations.bbox
     widths = numpy.maximum(0.0, boxes[:, 2] - boxes[:, 0])
     heights = numpy.maximum(0.0, boxes[:, 3] - boxes[:, 1])
@@ -902,12 +919,14 @@ def internal_capture_with_newstroke_text(
         1.0,
         float(numpy.sum(widths * heights, dtype=numpy.float64)) / capture.evidence.page_area,
     )
-    text_quality = internal_text_quality_stats(text)
+    analysis = internal_analyze_text(text)
+    text_quality = analysis.quality
+    characters = analysis.characters
     evidence = replace(
         capture.evidence,
         native_characters=characters,
         visible_native_characters=characters,
-        suspicious_characters=internal_suspicious_character_count(text),
+        suspicious_characters=analysis.suspicious_characters,
         text_coverage=text_coverage,
         uncovered_vector_area=internal_uncovered_vector_area(
             capture.drawings,
@@ -968,10 +987,17 @@ def internal_capture_from_program(
     )
     raw_text = "".join(run.text for run in raw_runs)
     painted_text = "".join(run.text for run in raw_runs if run.visible)
-    native_characters = sum(not character.isspace() for character in raw_text)
-    painted_native_characters = sum(not character.isspace() for character in painted_text)
-    suspicious_characters = internal_suspicious_character_count(raw_text)
-    all_text_quality = internal_text_quality_stats(raw_text)
+    raw_analysis = internal_analyze_text(raw_text)
+    suspicious_characters = raw_analysis.suspicious_characters
+    all_text_quality = raw_analysis.quality
+    native_characters = raw_analysis.characters
+    if painted_text == raw_text:
+        painted_text_quality = all_text_quality
+        painted_native_characters = native_characters
+    else:
+        painted_analysis = internal_analyze_text(painted_text)
+        painted_text_quality = painted_analysis.quality
+        painted_native_characters = painted_analysis.characters
     glyph_evidence = internal_glyph_evidence(tuple(products.glyphs), raw_runs)
     trusted_hidden_text = internal_hidden_text_is_trusted(
         native_characters=native_characters,
@@ -987,6 +1013,16 @@ def internal_capture_from_program(
     )
     observations = internal_observations_from_runs(runs)
     visible_text = "".join(run.text for run in runs if run.visible)
+    if visible_text == raw_text:
+        visible_native_characters = native_characters
+        visible_text_quality = all_text_quality
+    elif visible_text == painted_text:
+        visible_native_characters = painted_native_characters
+        visible_text_quality = painted_text_quality
+    else:
+        visible_analysis = internal_analyze_text(visible_text)
+        visible_text_quality = visible_analysis.quality
+        visible_native_characters = visible_analysis.characters
     drawings = tuple(products.drawings)
     inline_images = tuple(products.inline_images)
     page_width = float(page.width)
@@ -1061,7 +1097,7 @@ def internal_capture_from_program(
         evidence=PageEvidence(
             page_area=page_area,
             native_characters=native_characters,
-            visible_native_characters=sum(not character.isspace() for character in visible_text),
+            visible_native_characters=visible_native_characters,
             suspicious_characters=suspicious_characters,
             image_count=image_count,
             image_area_ratio=min(1.0, sum(visible_image_areas) / page_area),
@@ -1078,7 +1114,7 @@ def internal_capture_from_program(
             text_coverage=text_coverage,
             full_page_image=full_page_image,
             uncovered_vector_area=uncovered_vector_area,
-            text_quality=internal_text_quality_stats(visible_text),
+            text_quality=visible_text_quality,
             all_text_quality=all_text_quality,
             glyphs=glyph_evidence,
             painted_native_characters=painted_native_characters,

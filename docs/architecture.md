@@ -69,26 +69,6 @@ facades should consume the adapter via `adapt_document` (or `adapt_structured` f
 structured escape hatch); they should not widen engine page values to `object` or recreate
 document/page ownership locally.
 
-Closed-document behavior is one story across both layers: the engine raises
-`PdfDocumentClosedError` (`impl/exceptions.py`), and the api-level `DocumentClosed`
-subclasses both `ApiError` and `PdfDocumentClosedError`, so `except` clauses written
-against either layer catch failures from both. Adapter entry points guard with a single
-`_doc()` check; option and argument validation raises `InvalidRequest`. Other engine
-`PdfError` subtypes pass through the versioned boundary as-is — they are exported at the
-package root and are part of the v0 contract.
-
-The same model is also the composition boundary for the all-in-one analysis surface. Local
-operations cover document integrity, fonts, images, geometry, annotations, links, forms,
-attachments, accessibility, compliance, forensics, layout, structure, citations, identifiers,
-references, and bad-redaction detection. All operations share the template-method base:
-`run(document, context=None, options=None)` returns an `AnalysisReport`, and every operation
-honours a `pages` option. `QualityPreflightOperation` runs the standard validation set as
-one deterministic report — `QualityPreflightOperation().run(adapt_document(doc))` is the
-entry point. The two transformations that produce plans rather than findings are plain
-functions: `normalize_metadata(values)` and `plan_accessibility_remediation(report)`.
-Operations remain separate classes so applications can selectively run or cache only the
-capabilities they need.
-
 Compat facades share one kernel, `api/v0/compat/_common.py` — document opening, byte
 writing, lifecycle mixins, bbox coercion/flipping, and the structured-IR bridge. It is the
 single sanctioned `core_pdf.impl` import site for compat code; facade packages import
@@ -109,7 +89,7 @@ pinning tests are marked `xfail` in
 The pipeline lives in the `parse/` package, one module per stage. The stages run in roughly
 this order:
 
-```
+```text
         ┌── capture ──┐
 bytes → │ capture_page│ → preflight_page → plan_page ──┐
         └─────────────┘     (classify)     (decide)    │
@@ -132,7 +112,7 @@ bytes → │ capture_page│ → preflight_page → plan_page ──┐
 ```
 
 | Module | Role |
-|---|---|
+| --- | --- |
 | `parse/model.py` | The dataclasses everything else speaks in: `ObservationBatch`, `PageEvidence`, `WorkPlan`, `ParsedPage`, `PagePreflight`, plus the OCR candidate record and its factory. Pure leaf — imports nothing from the other stages. |
 | `parse/capture.py` | Runs the content stream and turns it into evidence: glyphs, drawings, images. Also classifies the page (`preflight_page`). |
 | `parse/route.py` | Decides *how* to extract this page — native text, OCR, or both — producing a `WorkPlan`. |
@@ -145,24 +125,7 @@ bytes → │ capture_page│ → preflight_page → plan_page ──┐
 
 The modules form a strict layering in that order — each imports only from those above it, so
 there are no import cycles.
-
-**Patching in tests.** Patch the stage module that owns the operation. For example:
-
-```python
-from core_pdf.impl.engine.parse import pipeline as parse_pipeline
-
-monkeypatch.setattr(parse_pipeline, "assemble_page", fail_assemble)
-```
-
-`parse/__init__.py` is a small facade that re-exports only the pipeline entry points and
-shared stage models (~27 names); stage internals must be imported from the owning
-submodule. One hazard remains: a few names are bound in two stages (`assemble_page`,
-`extract_tables`, `layout_blocks`, `internal_stroked_text_profile` are each imported into
-`pipeline` as well as defined in their own module). Patch every stage that binds the name,
-or the call you care about may go through the copy you missed.
-
-Extraction results are cached per page (`ExtractionCache`, keyed and guarded by a per-page
-lock), so calling `extract_text()` after `extract_tables()` does not re-run the pipeline.
+act_text()` after `extract_tables()` does not re-run the pipeline.
 
 ### Table projections
 
@@ -182,7 +145,7 @@ falls back to.
 
 ## 3. Source layout
 
-```
+```text
 src/core_pdf/
   __init__.py            lazy public export table
   cli.py, __main__.py    CLI entry point (also carries Nuitka build directives)
@@ -217,7 +180,7 @@ src/core_pdf/
 Subpackages under `spec/` mirror **chapters of the PDF specification**:
 
 | Package | PDF chapter |
-|---|---|
+| --- | --- |
 | `s_07_syntax` | 7 — lexer, tokens, xref |
 | `s_07_objects` | 7 — object model, resolver, coercion |
 | `s_07_filters` | 7 — stream filters (Flate, LZW, CCITT, JBIG2, …) |
@@ -231,28 +194,6 @@ Subpackages under `spec/` mirror **chapters of the PDF specification**:
 The mapping is approximate at the edges: `s_07_document` has absorbed some Chapter 12
 (interactive features — forms, outlines, links) and Chapter 14 (metadata) material.
 
----
-
-## 4. Conventions
-
-**`internal_` prefix.** The codebase marks non-public module-level symbols with an `internal_`
-prefix instead of a leading underscore — about 490 distinct names. Treat anything so prefixed
-as private regardless of which module it lives in. Two caveats worth knowing:
-
-- Application is uneven. `impl/engine/` uses it for about half of its symbols;
-  `spec/s_07_content/` and `spec/s_07_security/` barely use it at all. Absence of the prefix
-  does **not** imply a symbol is public — under `impl/`, nothing is.
-- `internal_EXPORTS` in `__init__.py` is an exception to the spirit of the rule: it is the
-  public export table, and the prefix marks the *variable* as private, not its contents.
-
-Many modules also declare `__all__`; where present, that is the more reliable signal.
-
-**Style.** Four-space indent, 100-column lines, `snake_case` / `PascalCase` /
-`UPPER_SNAKE_CASE`. Ruff enforces formatting and import order at commit time; mypy and ty run
-at pre-push.
-
----
-
 ## 5. Performance: what not to touch
 
 The engine ships compiled via **Nuitka**, with an optional PGO build
@@ -264,8 +205,8 @@ The following are **measured** optimizations, not incidental style. Several have
 quantifying the win. Restructuring them for readability will cost real throughput:
 
 | Location | What it is |
-|---|---|
-| `spec/s_07_content/operations.py:469-660` | The content-stream dispatch loop. Caches every lookup in a local before the loop, reuses a preallocated 16-slot operand ring, and **hand-unrolls numeric parsing for token lengths 1–6** to avoid slicing and temporary allocation. Collapsing that to `float(token)` would be the most damaging single change available. |
+| --- | --- |
+| `spec/s_07_content/operations.py:478-1347` | The content-stream dispatch loop. Caches every lookup in a local before the loop, reuses a preallocated 16-slot operand ring, and **hand-unrolls numeric parsing for token lengths 1–6** to avoid slicing and temporary allocation. Collapsing that to `float(token)` would be the most damaging single change available. The bound-target two-byte and one-byte operator dispatch chains use `match`/`case` on single int values (never a tuple subject — that allocates a temporary tuple per call and is strictly slower); everything else in the loop is plain `if`/`elif`. |
 | `spec/s_07_content/operator_tables.py` + `state.py:461-476` | Four parallel dispatch tables (by name, by bytes, by single opcode, by two-byte opcode), built once and memoized **onto the class object** so they are not rebuilt per page. |
 | `spec/s_07_filters/jbig2/codec.py:717-830` | `decode_arithmetic_generic_template0` hoists the whole MQ-decoder state into locals, **manually inlines `byte_in()`**, and pads rows with four sentinel bytes to eliminate bounds checks. The decoder's own `decode_bit` method is intentionally unused here. |
 | `layout/models.py` — `TextRun`, `TrackedTextRun`, `reinit` | An object freelist (`run_pool` in `state.py`) plus **class promotion**: runs are promoted to a `__slots__ = ()` subclass only when a memo is actually stored, so the `__setattr__` hook costs nothing in the common case. Commit `fe815871` measured 1.86M `__setattr__` calls eliminated. |
@@ -305,7 +246,7 @@ Those assertions are the more trustworthy signal.
 consecutive runs of the *same* source produced these spreads:
 
 | Benchmark | Run-to-run spread |
-|---|---|
+| --- | --- |
 | `test_page_program_memory_profile_benchmark[native]` | 30.2% |
 | `test_cold_page_program_construction_benchmark[native]` | 9.3% |
 | `test_width_lookup_benchmark` | 5.6% |

@@ -293,7 +293,7 @@ occlusion, search, and layout analysis.
 
 ## x-ray compatibility
 
-The upstream FreelawProject x-ray repository is tracked as the `vendor/x-ray`
+The upstream FreelawProject x-ray repository is tracked as the `tests/fixtures/x-ray`
 submodule for fixture and behavior reference. Core-pdf provides a local facade
 with the same result shape:
 
@@ -323,7 +323,7 @@ core-pdf involved.
 
 ## pdfminer.six compatibility
 
-The pdfminer.six reference source is tracked at `vendor/pdfminer.six`. The
+The pdfminer.six reference source is tracked at `tests/fixtures/pdfminer.six`. The
 local facade exposes the common high-level entry points and LT-shaped layout
 objects:
 

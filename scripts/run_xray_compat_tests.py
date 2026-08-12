@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-XRAY_ROOT = ROOT / "vendor" / "x-ray"
+XRAY_ROOT = ROOT / "tests" / "fixtures" / "x-ray"
 
 
 # Upstream implementation tests that call x-ray's private PyMuPDF helpers

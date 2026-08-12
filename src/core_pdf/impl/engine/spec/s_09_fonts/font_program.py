@@ -9,6 +9,10 @@ from math import inf
 from threading import RLock
 
 from core_pdf.impl.engine.spec.s_09_fonts.feature_distance_kernel import (
+    FeatureArrays,
+    internal_feature_arrays,
+)
+from core_pdf.impl.engine.spec.s_09_fonts.feature_distance_kernel import (
     feature_distance as compiled_feature_distance,
 )
 from core_pdf.impl.engine.spec.s_09_fonts.feature_distance_kernel import (
@@ -573,7 +577,7 @@ class CFFFont:
         except IndexError:
             geometry = ((), None)
         else:
-            contours, bbox = internal_type2_glyph_geometry(
+            contours, bbox = internal_type2_glyph_geometry_impl(
                 charstring,
                 local_subrs=self.local_subrs_for_glyph(glyph_id),
                 global_subrs=self.global_subrs,
@@ -634,13 +638,20 @@ def internal_feature_from_contours(
     min_y, max_y = min(ys), max(ys)
     width = max(max_x - min_x, 1.0)
     height = max(max_y - min_y, 1.0)
-    cells = {
-        (
-            max(0, min(17, round((px - min_x) / width * 17))),
-            max(0, min(23, round((py - min_y) / height * 23))),
-        )
-        for px, py in points
-    }
+    cells: set[tuple[int, int]] = set()
+    add_cell = cells.add
+    for px, py in points:
+        cell_x = round((px - min_x) / width * 17)
+        cell_y = round((py - min_y) / height * 23)
+        if cell_x < 0:
+            cell_x = 0
+        elif cell_x > 17:
+            cell_x = 17
+        if cell_y < 0:
+            cell_y = 0
+        elif cell_y > 23:
+            cell_y = 23
+        add_cell((cell_x, cell_y))
     bitmap = rasterize_contours(contours, width=18, height=24)
     return CFFGlyphFeature(tuple(sorted(cells)), round(width / height, 2), len(contours), bitmap)
 
@@ -971,6 +982,7 @@ class CFFUnicodeRepairIndex:
 
     __slots__ = (
         "internal_candidate_gids",
+        "internal_candidate_arrays",
         "internal_code_to_gid",
         "internal_features",
         "internal_font",
@@ -1012,6 +1024,7 @@ class CFFUnicodeRepairIndex:
             for gid, label in labels.items()
             if len(label) == 1 and (label.isalnum() or label in ".-+")
         )
+        self.internal_candidate_arrays: FeatureArrays | None = None
         self.internal_features: dict[int, CFFGlyphFeature] = {}
         self.internal_repairs: dict[bytes, str] = {}
         self.internal_resolved_gids: set[int] = set()
@@ -1060,6 +1073,13 @@ class CFFUnicodeRepairIndex:
         ):
             target_features = [self.internal_features[gid] for gid in target_gids]
             candidate_features = [self.internal_features[gid] for gid in candidate_gids]
+            if self.internal_candidate_arrays is None:
+                self.internal_candidate_arrays = internal_feature_arrays(
+                    [feature.cells for feature in candidate_features],
+                    [feature.bitmap for feature in candidate_features],
+                    [feature.aspect for feature in candidate_features],
+                    [feature.contours for feature in candidate_features],
+                )
             distance_matrix = compiled_feature_distance_matrix(
                 [feature.cells for feature in target_features],
                 [feature.bitmap for feature in target_features],
@@ -1069,6 +1089,7 @@ class CFFUnicodeRepairIndex:
                 [feature.bitmap for feature in candidate_features],
                 [feature.aspect for feature in candidate_features],
                 [feature.contours for feature in candidate_features],
+                internal_right_arrays=self.internal_candidate_arrays,
             )
             distance_lookups = {
                 target_gid: {
@@ -1099,33 +1120,6 @@ def cff_unicode_repair_index_for_data(
     mapping_items: tuple[tuple[bytes, int, str], ...],
 ) -> CFFUnicodeRepairIndex:
     return CFFUnicodeRepairIndex(cff_font_for_data(font_data), mapping_items)
-
-
-def internal_type2_glyph_geometry(
-    charstring: bytes,
-    *,
-    local_subrs: tuple[bytes, ...],
-    global_subrs: tuple[bytes, ...],
-    collect_contours: bool,
-) -> tuple[list[list[tuple[float, float]]], tuple[float, float, float, float] | None]:
-    """Dispatch through the domain adapter so existing instrumentation remains valid."""
-    import sys
-
-    adapter = sys.modules.get("core_pdf.impl.engine.spec.s_09_fonts.cff")
-    hooked = getattr(adapter, "internal_type2_glyph_geometry", None) if adapter else None
-    if hooked is not None and hooked is not internal_type2_glyph_geometry:
-        return hooked(
-            charstring,
-            local_subrs=local_subrs,
-            global_subrs=global_subrs,
-            collect_contours=collect_contours,
-        )
-    return internal_type2_glyph_geometry_impl(
-        charstring,
-        local_subrs=local_subrs,
-        global_subrs=global_subrs,
-        collect_contours=collect_contours,
-    )
 
 
 __all__ = (

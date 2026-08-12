@@ -2,7 +2,7 @@ from pathlib import Path
 
 from core_pdf.api.v0.compat.pdfplumber import PDF, open, utils
 
-FIXTURE = next(Path("tests/fixtures").rglob("*.pdf"))
+FIXTURE = Path("tests/fixtures/SCORE-Bench/src/executive-summary-2022-p1-7-p007.pdf")
 
 
 def test_pdfplumber_page_objects_and_coordinates() -> None:
@@ -69,7 +69,7 @@ def test_pdfplumber_table_finder_honors_explicit_lines() -> None:
 
 
 def test_pdfplumber_structure_tree_maps_native_structure() -> None:
-    structure_fixture = Path("vendor/pdfplumber/tests/pdfs/pdf_structure.pdf")
+    structure_fixture = Path("tests/fixtures/pdfplumber/tests/pdfs/pdf_structure.pdf")
     with open(structure_fixture) as pdf:
         tree = pdf.pages[0].structure_tree
     assert tree

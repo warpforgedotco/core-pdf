@@ -2,28 +2,41 @@
 
 from __future__ import annotations
 
+import binascii
+import re
 import typing
 
 from core_pdf.impl.engine.spec.s_09_fonts.cmap_pdf_string import decode_pdf_literal_string
 
-HEX_BYTES = bytes([1 if byte in b"0123456789abcdefABCDEF" else 0 for byte in range(256)])
 PDF_WHITESPACE_BYTES = bytes([1 if byte in b"\x00\t\n\f\r " else 0 for byte in range(256)])
+CMAP_HEX_TOKEN_RE = re.compile(rb"<(?!<)[^>]*>")
 
 
 def iter_blocks(data: bytes | memoryview, begin: bytes, end: bytes) -> typing.Iterator[bytes]:
     if not isinstance(data, bytes):
         data = bytes(data)
-    block_start: int | None = None
-    for word, start, stop in cmap_word_spans(data):
-        if block_start is None:
-            if word == begin:
-                block_start = stop
-        elif word == end:
-            yield data[block_start:start]
-            block_start = None
+    search_start = 0
+    begin_length = len(begin)
+    end_length = len(end)
+    while True:
+        begin_pos = data.find(begin, search_start)
+        if begin_pos < 0:
+            return
+        block_start = begin_pos + begin_length
+        end_pos = data.find(end, block_start)
+        if end_pos < 0:
+            return
+        yield data[block_start:end_pos]
+        search_start = end_pos + end_length
 
 
-def skip_cmap_literal_string(data: bytes, pos: int) -> int:
+def internal_scan_cmap_literal_string_end(data: bytes, pos: int) -> tuple[int, bool]:
+    """Scan a ``(...)`` literal string starting at ``pos``.
+
+    Returns ``(end, terminated)``: ``end`` is the position just past the closing
+    unescaped ``)`` if the string is properly balanced, otherwise ``len(data)`` with
+    ``terminated=False``.
+    """
     end = pos + 1
     depth = 1
     n = len(data)
@@ -37,10 +50,20 @@ def skip_cmap_literal_string(data: bytes, pos: int) -> int:
         elif current == 41:
             depth -= 1
         end += 1
+    return end, depth == 0
+
+
+def skip_cmap_literal_string(data: bytes, pos: int) -> int:
+    end, ignored_terminated = internal_scan_cmap_literal_string_end(data, pos)
     return end
 
 
-def skip_cmap_array(data: bytes, pos: int) -> int:
+def internal_scan_cmap_array_end(data: bytes, pos: int) -> tuple[int, bool]:
+    """Scan a ``[...]`` array starting at ``pos``.
+
+    Returns ``(end, terminated)``: ``end`` is the position just past the matching
+    closing ``]`` if properly balanced, otherwise ``len(data)`` with ``terminated=False``.
+    """
     end = pos + 1
     depth = 1
     n = len(data)
@@ -51,12 +74,12 @@ def skip_cmap_array(data: bytes, pos: int) -> int:
                 end += 1
             continue
         if current == 40:
-            end = skip_cmap_literal_string(data, end)
+            end, ignored_terminated = internal_scan_cmap_literal_string_end(data, end)
             continue
         if current == 60:
             close = data.find(b">", end + 1)
             if close < 0:
-                return n
+                return n, False
             end = close + 1
             continue
         if current == 91:
@@ -64,6 +87,11 @@ def skip_cmap_array(data: bytes, pos: int) -> int:
         elif current == 93:
             depth -= 1
         end += 1
+    return end, depth == 0
+
+
+def skip_cmap_array(data: bytes, pos: int) -> int:
+    end, ignored_terminated = internal_scan_cmap_array_end(data, pos)
     return end
 
 
@@ -104,6 +132,8 @@ def cmap_word_spans(data: bytes) -> typing.Iterator[tuple[bytes, int, int]]:
 def cmap_tokens(
     data: bytes, *, include_arrays: bool = False, include_words: bool = False
 ) -> list[bytes]:
+    if not include_arrays and not include_words and b"(" not in data and b"%" not in data:
+        return CMAP_HEX_TOKEN_RE.findall(data)
     tokens: list[bytes] = []
     pos = 0
     n = len(data)
@@ -125,57 +155,14 @@ def cmap_tokens(
             pos = end + 1
             continue
         if byte == 40:
-            end = pos + 1
-            depth = 1
-            while end < n and depth:
-                current = data[end]
-                if current == 92:
-                    end += 2
-                    continue
-                if current == 40:
-                    depth += 1
-                elif current == 41:
-                    depth -= 1
-                end += 1
-            if depth == 0:
+            end, terminated = internal_scan_cmap_literal_string_end(data, pos)
+            if terminated:
                 tokens.append(data[pos:end])
             pos = end
             continue
         if include_arrays and byte == 91:
-            end = pos + 1
-            depth = 1
-            while end < n and depth:
-                current = data[end]
-                if current == 37:
-                    while end < n and data[end] not in (10, 13):
-                        end += 1
-                    continue
-                if current == 40:
-                    end += 1
-                    string_depth = 1
-                    while end < n and string_depth:
-                        current = data[end]
-                        if current == 92:
-                            end += 2
-                            continue
-                        if current == 40:
-                            string_depth += 1
-                        elif current == 41:
-                            string_depth -= 1
-                        end += 1
-                    continue
-                if current == 60:
-                    close = data.find(b">", end + 1)
-                    if close < 0:
-                        break
-                    end = close + 1
-                    continue
-                if current == 91:
-                    depth += 1
-                elif current == 93:
-                    depth -= 1
-                end += 1
-            if depth == 0:
+            end, terminated = internal_scan_cmap_array_end(data, pos)
+            if terminated:
                 tokens.append(data[pos:end])
                 pos = end
                 continue
@@ -240,11 +227,12 @@ def cmap_metadata(data: bytes) -> tuple[str | None, int | None]:
 
 def decode_cmap_hex_token(token: bytes) -> bytes:
     raw = token[1:-1].translate(None, b"\x00\t\n\f\r ")
-    if not all(HEX_BYTES[item] for item in raw):
-        raise ValueError("invalid CMap hex string")
     if len(raw) & 1:
         raw += b"0"
-    return bytes.fromhex(raw.decode("ascii"))
+    try:
+        return binascii.unhexlify(raw)
+    except binascii.Error as exc:
+        raise ValueError("invalid CMap hex string") from exc
 
 
 def decode_cmap_token(token: bytes) -> bytes:

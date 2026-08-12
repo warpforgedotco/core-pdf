@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import IntEnum
 from heapq import merge
 from typing import Any
@@ -238,7 +238,7 @@ class PageProducts:
         )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class PageProgram:
     """The canonical ordered program shared by extraction and rendering.
 
@@ -247,13 +247,21 @@ class PageProgram:
     different capture mode.
     """
 
-    events: PageEventStream
     products: PageProducts
+    internal_events: PageEventStream | None = field(default=None, init=False, repr=False)
+
+    @property
+    def events(self) -> PageEventStream:
+        events = self.internal_events
+        if events is None:
+            events = PageEventStream.from_products(self.products)
+            self.internal_events = events
+        return events
 
     @classmethod
     def from_state(cls, state: Any) -> PageProgram:
         products = PageProducts.from_state(state)
-        return cls(PageEventStream.from_products(products), products)
+        return cls(products)
 
 
 __all__ = (

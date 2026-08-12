@@ -87,3 +87,45 @@ jobs:
       - name: Prune uv cache
         if: always()
         run: uv cache prune --ci
+
+  codspeed:
+    name: CodSpeed benchmarks
+    needs: quality
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Fetch encrypted PDF fixture
+        run: git -C tests/fixtures/SCORE-Bench lfs pull
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: "0.11.28"
+          python-version: "3.13"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install English Tesseract data
+        run: sudo apt-get update && sudo apt-get install --yes tesseract-ocr-eng
+
+      - name: Run CodSpeed benchmarks
+        uses: CodSpeedHQ/action@v3
+        with:
+          run: >-
+            uv run --locked --package core-pdf --group benchmark pytest
+            tests/benchmarks
+            tests/src/core_pdf/impl/engine/spec/s_07_content/benchmarks
+            tests/src/core_pdf/impl/engine/spec/s_07_document/benchmarks
+            tests/src/core_pdf/impl/engine/spec/s_07_filters/benchmarks
+            tests/src/core_pdf/impl/engine/spec/s_07_objects/benchmarks
+            tests/src/core_pdf/impl/engine/spec/s_07_security/benchmarks
+            tests/src/core_pdf/impl/engine/spec/s_07_syntax/benchmarks
+            tests/src/core_pdf/impl/engine/spec/s_08_graphics/benchmarks
+            tests/src/core_pdf/impl/engine/spec/s_09_fonts/benchmarks
+            --codspeed
+          token: ${{ secrets.CODSPEED_TOKEN }}

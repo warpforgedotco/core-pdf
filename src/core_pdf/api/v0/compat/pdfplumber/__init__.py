@@ -3,7 +3,6 @@ from __future__ import annotations
 import builtins
 import math
 from collections.abc import Callable, Iterable, Iterator, Mapping
-from contextlib import suppress
 from dataclasses import dataclass
 from io import BytesIO
 from typing import Any, TypeAlias, cast
@@ -13,7 +12,17 @@ from core_pdf.api.v0.adapters import PdfPageAdapter, adapt_document
 from core_pdf.api.v0.models import Drawing, TextCharacter
 from core_pdf.api.v0.protocols import PdfInput
 
-from .._common import ClosingMixin, bbox_union, cluster_by, flip_box, open_source
+from .._common import (
+    ClosingMixin,
+    bbox_contains,
+    bbox_intersects,
+    bbox_union,
+    cluster_by,
+    encode_png,
+    flip_box,
+    open_source,
+    png_chunk,
+)
 from .exceptions import PdfminerException
 
 BBox: TypeAlias = tuple[float, float, float, float]
@@ -352,7 +361,7 @@ class Page:
                         y0=top if self.rotation in {180, 270} else item.rect[1],
                         y1=bottom if self.rotation in {180, 270} else item.rect[3],
                         contents=item.contents,
-                        data=_resolve_pdf_value(item.dict, self.pdf._document.document.resolver),
+                        data=self.pdf._document.document.resolver.deep_resolve(item.dict),
                         uri=None,
                     )
                 )
@@ -974,18 +983,11 @@ class CroppedPage(Page):
     @property
     def objects(self) -> dict[str, list[ObjectDict]]:
         objects = super().objects
-        x0, top, x1, bottom = self._filter_bbox
 
         def keep(obj: ObjectDict) -> bool:
-            inside = (
-                obj["x0"] >= x0
-                and obj["x1"] <= x1
-                and obj["top"] >= top
-                and obj["bottom"] <= bottom
-            )
-            intersects = (
-                obj["x1"] > x0 and obj["x0"] < x1 and obj["bottom"] > top and obj["top"] < bottom
-            )
+            obj_bbox = obj_to_bbox(obj)
+            inside = bbox_contains(self._filter_bbox, obj_bbox)
+            intersects = bbox_intersects(self._filter_bbox, obj_bbox)
             return (
                 inside
                 if self._crop_mode == "within"
@@ -1325,38 +1327,14 @@ class PageImage:
     def save(self, path: str | Any, format: str | None = None, **kwargs: Any) -> None:
         """Write a PNG using only the standard library."""
         del format
-        import struct
-        import zlib
-
         channels = self.raster.channels
         if channels not in (3, 4):
             raise ValueError("PNG output requires RGB or RGBA raster data")
         pixels = bytearray(self.raster.data)
         self._render_drawings(pixels)
-        stride = self.width * channels
-        scanlines = b"".join(
-            b"\x00" + pixels[row * stride : (row + 1) * stride] for row in range(self.height)
-        )
-
-        def chunk(kind: bytes, data: bytes) -> bytes:
-            return (
-                struct.pack(">I", len(data))
-                + kind
-                + data
-                + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
-            )
-
-        header = struct.pack(
-            ">IIBBBBB", self.width, self.height, 8, 6 if channels == 4 else 2, 0, 0, 0
-        )
-        png = (
-            b"\x89PNG\r\n\x1a\n"
-            + chunk(b"IHDR", header)
-            + chunk(b"IDAT", zlib.compress(scanlines))
-            + chunk(b"IEND", b"")
-        )
+        png = encode_png(self.width, self.height, channels, pixels)
         if kwargs.get("quantize") is False:
-            png += chunk(b"tEXt", b"quantize\x00false")
+            png += png_chunk(b"tEXt", b"quantize\x00false")
         if hasattr(path, "write"):
             cast(Any, path).write(png)
         else:
@@ -1673,10 +1651,7 @@ def intersects_bbox(obj: ObjectDict | Iterable[ObjectDict], bbox: BBox) -> bool 
     if not isinstance(obj, Mapping):
         return [item for item in obj if intersects_bbox(item, bbox)]
     obj = cast(ObjectDict, obj)
-    x0, top, x1, bottom = bbox
-    x_overlap = min(obj["x1"], x1) - max(obj["x0"], x0)
-    y_overlap = min(obj["bottom"], bottom) - max(obj["top"], top)
-    return x_overlap >= 0 and y_overlap >= 0 and (x_overlap > 0 or y_overlap > 0)
+    return bbox_intersects(bbox, obj_to_bbox(obj))
 
 
 def crop_to_bbox(objs: Iterable[ObjectDict], bbox: BBox) -> list[ObjectDict]:
@@ -1758,27 +1733,6 @@ def decode_psl_list(values: Iterable[Any]) -> list[Any]:
 def resolve(value: Any) -> Any:
     resolver = getattr(value, "resolve", None)
     return resolver() if callable(resolver) else value
-
-
-def _resolve_pdf_value(value: Any, resolver: Any, seen: set[int] | None = None) -> Any:
-    if seen is None:
-        seen = set()
-    if isinstance(value, (list, dict)):
-        if id(value) in seen:
-            return value
-        seen.add(id(value))
-    if hasattr(value, "object_number") and hasattr(value, "generation_number"):
-        with suppress(AttributeError, KeyError, TypeError, ValueError):
-            value = resolver.resolve(value)
-    if isinstance(value, (list, dict)):
-        if id(value) in seen:
-            return value
-        seen.add(id(value))
-    if isinstance(value, list):
-        return [_resolve_pdf_value(item, resolver, seen) for item in value]
-    if isinstance(value, dict):
-        return {key: _resolve_pdf_value(item, resolver, seen) for key, item in value.items()}
-    return value
 
 
 def resolve_all(value: Any) -> Any:
@@ -1966,16 +1920,10 @@ def _lines(chars: Iterable[ObjectDict], return_chars: bool = True) -> list[Objec
 
 
 def _group_chars(chars: Iterable[ObjectDict], tolerance: float = 3) -> list[list[ObjectDict]]:
-    grouped: list[list[ObjectDict]] = []
     ordered = sorted(chars, key=lambda item: (item["top"], item["x0"]))
     tiny_font = ordered and max(float(item.get("size", 1)) for item in ordered) <= 1
-    for char in ordered:
-        line_tolerance = 25 if tiny_font else tolerance
-        if not grouped or abs(char["top"] - grouped[-1][0]["top"]) > line_tolerance:
-            grouped.append([char])
-        else:
-            grouped[-1].append(char)
-    return grouped
+    line_tolerance = 25 if tiny_font else tolerance
+    return cluster_by(ordered, "top", line_tolerance)
 
 
 def _line_text(

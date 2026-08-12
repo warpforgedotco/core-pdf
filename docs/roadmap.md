@@ -2,20 +2,9 @@
 
 Core-pdf is intended to be the all-in-one, local PDF engine: one composable system for
 opening, parsing, extracting, searching, rendering, analyzing, validating, transforming,
-writing, and inspecting PDF documents. It should cover the practical high-level
-capabilities users currently assemble from projects such as pdfminer.six, pdfplumber,
-PyMuPDF, pypdf, pikepdf, Unstructured, LlamaIndex, and x-ray, while providing one shared
-`PdfDocument` / `PdfPage` model instead of separate document abstractions.
+writing, and inspecting PDF documents.
 
-The engine remains fully local and deterministic. Every capability should return typed
-records with provenance through the versioned public API, compose with the rest of the
-parser, and make transformations verifiable after writing. This
-roadmap contains only work that is not yet implemented; completed capabilities belong in
-the API and architecture documentation, not in this list.
-
-## Remaining delivery tracks
-
-### 1. Source-level secure transformations
+## 1. Source-level secure transformations
 
 - Remove redacted content from compressed streams, object streams, and every prior
   incremental revision, including encoded string representations.
@@ -79,16 +68,6 @@ OCR, NumPy, and image-codec stack. No LLM, VLLM, hosted API, vector database, or
 is required. Future non-generative local model adapters may be optional extensions, but
 they must not become dependencies of the core contracts.
 
-## Acceptance bar
-
-Every new analyzer and transformation needs focused tests, provenance assertions,
-post-write reopen/verification tests, and visual checks where rendering changes. The
-corpus must include native, scanned, multi-column, table-heavy, tagged, encrypted,
-incrementally updated, malformed, and adversarial PDFs. Performance-sensitive parser
-and raster code must retain its existing benchmark invariants.
-
-## Explicit non-goals
+### Explicit non-goals
 
 - Full command-line compatibility with every third-party PDF library.
-- Server-side processing or remote inference.
-- Mandatory generative models or model-weight distribution in the repository.

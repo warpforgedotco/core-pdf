@@ -18,8 +18,8 @@ from core_pdf.api.v0.compat._common import (
 from core_pdf.api.v0.compat.state import OpenedState, StructuredState, SyntheticState
 from core_pdf.impl.engine.structured import Document, Page
 
-FIXTURE = Path("vendor/pdfminer.six/samples/simple1.pdf")
-ENCRYPTED_FIXTURE = Path("vendor/pdfminer.six/samples/encryption/rc4-40.pdf")
+FIXTURE = Path("tests/fixtures/pdfminer.six/samples/simple1.pdf")
+ENCRYPTED_FIXTURE = Path("tests/fixtures/pdfminer.six/samples/encryption/rc4-40.pdf")
 
 pytestmark = pytest.mark.skipif(not FIXTURE.exists(), reason="vendor fixtures not present")
 requires_encrypted = pytest.mark.skipif(

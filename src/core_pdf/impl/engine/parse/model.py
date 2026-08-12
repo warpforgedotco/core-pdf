@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import re
 from collections import Counter
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
@@ -414,40 +413,70 @@ class TextQualityStats:
         }
 
 
-def internal_text_quality_stats(text: str) -> TextQualityStats:
-    tokens = re.findall(r"\S+", text)
+@dataclass(frozen=True, slots=True)
+class TextAnalysis:
+    quality: TextQualityStats = field(default_factory=TextQualityStats)
+    characters: int = 0
+    suspicious_characters: int = 0
+
+
+def internal_analyze_text(text: str) -> TextAnalysis:
+    tokens = text.split()
     if not tokens:
-        return TextQualityStats()
+        return TextAnalysis()
     wordlike = 0
     short_tokens = 0
     digit_tokens = 0
     nonspace = 0
     symbols = 0
     non_ascii = 0
+    suspicious = 0
     for token in tokens:
-        compact = [character for character in token if not character.isspace()]
-        if len(compact) <= 2:
+        # `tokens` comes from a `\S+` regex match, so every character in `token` already
+        # satisfies `not character.isspace()` (CPython's Unicode `\s`/`str.isspace()` share
+        # the same whitespace classification) -- iterate `token` directly instead of
+        # rebuilding an always-identical filtered copy.
+        if len(token) <= 2:
             short_tokens += 1
-        if any(character.isdigit() for character in compact):
-            digit_tokens += 1
-        letters = [character for character in compact if character.isalpha()]
-        if len(letters) >= 3 and any(character.casefold() in "aeiou" for character in letters):
-            wordlike += 1
-        for character in compact:
+        has_digit = False
+        letter_count = 0
+        has_vowel = False
+        for character in token:
+            codepoint = ord(character)
             nonspace += 1
+            if character.isdigit():
+                has_digit = True
+            if character.isalpha():
+                letter_count += 1
+                if not has_vowel and character.casefold() in "aeiou":
+                    has_vowel = True
             if not character.isalnum():
                 symbols += 1
-            if ord(character) > 127:
+            if codepoint > 127:
                 non_ascii += 1
+            if (
+                character == "\ufffd"
+                or 0xE000 <= codepoint <= 0xF8FF
+                or (not character.isprintable() and not character.isspace())
+            ):
+                suspicious += 1
+        if has_digit:
+            digit_tokens += 1
+        if letter_count >= 3 and has_vowel:
+            wordlike += 1
     if not nonspace:
-        return TextQualityStats(token_count=len(tokens))
-    return TextQualityStats(
-        token_count=len(tokens),
-        wordlike_ratio=wordlike / len(tokens),
-        short_token_ratio=short_tokens / len(tokens),
-        symbol_ratio=symbols / nonspace,
-        non_ascii_ratio=non_ascii / nonspace,
-        digit_token_ratio=digit_tokens / len(tokens),
+        return TextAnalysis(TextQualityStats(token_count=len(tokens)))
+    return TextAnalysis(
+        quality=TextQualityStats(
+            token_count=len(tokens),
+            wordlike_ratio=wordlike / len(tokens),
+            short_token_ratio=short_tokens / len(tokens),
+            symbol_ratio=symbols / nonspace,
+            non_ascii_ratio=non_ascii / nonspace,
+            digit_token_ratio=digit_tokens / len(tokens),
+        ),
+        characters=nonspace,
+        suspicious_characters=suspicious,
     )
 
 

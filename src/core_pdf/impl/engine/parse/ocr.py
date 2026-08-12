@@ -34,7 +34,7 @@ from core_pdf.impl.engine.array_views import (
 )
 from core_pdf.impl.engine.execution import RUNTIME, TaskScope, WorkStage
 from core_pdf.impl.engine.image_cache import ImageCacheKey
-from core_pdf.impl.engine.layout.geometry import rect_tuple
+from core_pdf.impl.engine.layout.geometry import bbox_union, rect_tuple
 from core_pdf.impl.engine.layout.spatial import (
     SpatialIndex,
     bbox_intersection_area,
@@ -137,7 +137,7 @@ OCR_TIMEOUT_RETRY_PIXELS = 4_000_000
 DIRECT_OCR_TARGET_RESOLUTION = 400
 DIRECT_OCR_MIN_UPSCALE = 1.05
 DIRECT_OCR_WHOLE_SCALE_TOLERANCE = 0.06
-OCR_BATCH_MAX_TASKS = 8
+OCR_BATCH_MAX_TASKS = 16
 OCR_BATCH_MAX_PIXELS = 8_000_000
 
 
@@ -722,7 +722,7 @@ def internal_vertical_shear(dark: numpy.ndarray, slope: float) -> numpy.ndarray:
 def internal_detect_ruling_grid(
     image: RasterImage,
 ) -> tuple[list[int], list[int], numpy.ndarray, float] | None:
-    """Find a ruled table grid; return (x_edges, y_edges, dark mask, skew).
+    """Find a ruled table grid; return (x_edges, y_edges, source samples, skew).
 
     A ruling is a near-full-span dark run: project the longest dark run per
     row (and per column) after closing scan dropouts and straightening the
@@ -735,26 +735,33 @@ def internal_detect_ruling_grid(
     """
     array = numpy.asarray(image.array())
     if array.ndim == 3 and array.shape[2] >= 3:
-        gray = array[:, :, :3].min(axis=2)
+        color = array[:, :, :3]
     elif array.ndim == 3 and array.shape[2] == 1:
-        gray = array[:, :, 0]
+        color = array[:, :, 0]
     elif array.ndim == 2:
-        gray = array
+        color = array
     else:
         return None
-    dark = gray < internal_GRID_DARK_THRESHOLD
-    height, width = dark.shape
+    height, width = color.shape[:2]
     if height < 100 or width < 100:
         return None
     # Detection runs on every recognized page, so work on a 3x max-pooled
     # mask: rules survive any-pooling and the +-3px edge error disappears
     # into the cell insets, while the shears and run scans cost a ninth.
     pool = internal_GRID_DETECT_POOL
-    pooled = (
-        dark[: height - height % pool, : width - width % pool]
-        .reshape(height // pool, pool, width // pool, pool)
-        .any(axis=(1, 3))
-    )
+    pooled_height = height // pool
+    pooled_width = width // pool
+    cropped = color[: pooled_height * pool, : pooled_width * pool]
+    if cropped.ndim == 3:
+        pooled = (
+            cropped.reshape(pooled_height, pool, pooled_width, pool, 3).min(axis=(1, 3, 4))
+            < internal_GRID_DARK_THRESHOLD
+        )
+    else:
+        pooled = (
+            cropped.reshape(pooled_height, pool, pooled_width, pool).min(axis=(1, 3))
+            < internal_GRID_DARK_THRESHOLD
+        )
     pooled_height, pooled_width = pooled.shape
     slope = internal_estimate_ruling_skew(pooled)
     straight = internal_vertical_shear(pooled, slope) if slope else pooled
@@ -779,14 +786,14 @@ def internal_detect_ruling_grid(
         return None
     scaled_x = [line * pool + pool // 2 for line in x_lines]
     scaled_y = [line * pool + pool // 2 for line in y_lines]
-    return scaled_x, scaled_y, dark, slope
+    return scaled_x, scaled_y, color, slope
 
 
 def internal_grid_cell_tasks(
     task: internal_OcrTask,
     x_lines: list[int],
     y_lines: list[int],
-    dark: numpy.ndarray,
+    source_samples: numpy.ndarray,
     slope: float,
 ) -> tuple[internal_OcrTask, ...]:
     """Build one single-line OCR task per populated ruled cell.
@@ -805,7 +812,7 @@ def internal_grid_cell_tasks(
     # thick: an inset smaller than the rule leaves box fragments inside every
     # crop, which single-line recognition reads as bars or rejects outright.
     inset = max(internal_GRID_CELL_INSET_PX, int(round(task.resolution / 40)))
-    height, width = dark.shape
+    height, width = source_samples.shape[:2]
     tasks: list[internal_OcrTask] = []
     for row_start, row_end in zip(y_lines, y_lines[1:]):
         if row_end - row_start < internal_GRID_CELL_MIN_PX + 2 * inset:
@@ -825,8 +832,16 @@ def internal_grid_cell_tasks(
                 internal_GRID_CELL_MIN_PX
             ):
                 continue
-            cell = dark[top:bottom, left:right]
-            if float(cell.mean()) < internal_GRID_CELL_MIN_INK:
+            cell = source_samples[top:bottom, left:right]
+            if cell.ndim == 3:
+                ink_ratio = float(
+                    numpy.count_nonzero(cell.min(axis=2) < internal_GRID_DARK_THRESHOLD)
+                ) / (cell.shape[0] * cell.shape[1])
+            else:
+                ink_ratio = float(numpy.count_nonzero(cell < internal_GRID_DARK_THRESHOLD)) / (
+                    cell.shape[0] * cell.shape[1]
+                )
+            if ink_ratio < internal_GRID_CELL_MIN_INK:
                 continue
             tasks.append(
                 internal_OcrTask(
@@ -876,7 +891,7 @@ def internal_grid_is_regular_table(
     column rules; a form has neither, and the words the page pass already
     read betray it by straddling the vertical lines.
     """
-    x_lines, y_lines, _dark, slope = grid
+    x_lines, y_lines, _source_samples, slope = grid
     if len(y_lines) - 1 < internal_GRID_MIN_ROWS or len(x_lines) - 1 < internal_GRID_MIN_COLUMNS:
         return False
     heights = numpy.diff(numpy.asarray(y_lines, dtype=numpy.float64))
@@ -1816,6 +1831,8 @@ def internal_compact_ocr_image(image: RasterImage, *, grayscale: bool = False) -
         ) >> 8
         gray = gray.astype(numpy.uint8)
         return RasterImage(contiguous_bytes(gray), image.width, image.height, 1)
+    if image.channels == 4 and image.width * image.height >= 1_000_000:
+        return image
     if image.channels not in {2, 4}:
         return image
     samples = image.array()
@@ -2552,9 +2569,7 @@ def internal_ocr_region_overlap(
     left: tuple[float, float, float, float],
     right: tuple[float, float, float, float],
 ) -> float:
-    intersection = max(0.0, min(left[2], right[2]) - max(left[0], right[0])) * max(
-        0.0, min(left[3], right[3]) - max(left[1], right[1])
-    )
+    intersection = bbox_intersection_area(left, right)
     smaller = min(
         max(0.0, left[2] - left[0]) * max(0.0, left[3] - left[1]),
         max(0.0, right[2] - right[0]) * max(0.0, right[3] - right[1]),
@@ -2573,29 +2588,45 @@ def internal_ocr_region_coverage(
 
 def internal_merge_ocr_regions(regions: list[internal_OcrRegion]) -> tuple[internal_OcrRegion, ...]:
     merged: list[internal_OcrRegion] = []
+    merged_areas: list[float] = []
     for region in sorted(regions, key=lambda item: (-item.score, item.page_box)):
-        match = next(
-            (
-                index
-                for index, existing in enumerate(merged)
-                if internal_ocr_region_overlap(existing.page_box, region.page_box) >= 0.35
-            ),
-            None,
+        region_box = region.page_box
+        region_area = max(0.0, region_box[2] - region_box[0]) * max(
+            0.0, region_box[3] - region_box[1]
         )
+        match = None
+        for index, existing in enumerate(merged):
+            existing_box = existing.page_box
+            smaller = min(merged_areas[index], region_area)
+            if not smaller:
+                continue
+            intersection_width = max(
+                0.0, min(existing_box[2], region_box[2]) - max(existing_box[0], region_box[0])
+            )
+            intersection_height = max(
+                0.0, min(existing_box[3], region_box[3]) - max(existing_box[1], region_box[1])
+            )
+            if intersection_width * intersection_height >= smaller * 0.35:
+                match = index
+                break
         if match is None:
             merged.append(region)
+            merged_areas.append(region_area)
             continue
         existing = merged[match]
+        existing_box = existing.page_box
+        merged_box = (
+            min(existing_box[0], region_box[0]),
+            min(existing_box[1], region_box[1]),
+            max(existing_box[2], region_box[2]),
+            max(existing_box[3], region_box[3]),
+        )
         merged[match] = internal_OcrRegion(
-            (
-                min(existing.page_box[0], region.page_box[0]),
-                min(existing.page_box[1], region.page_box[1]),
-                max(existing.page_box[2], region.page_box[2]),
-                max(existing.page_box[3], region.page_box[3]),
-            ),
+            merged_box,
             max(existing.score, region.score) + min(existing.score, region.score) * 0.15,
             tuple(dict.fromkeys((*existing.reasons, *region.reasons))),
         )
+        merged_areas[match] = (merged_box[2] - merged_box[0]) * (merged_box[3] - merged_box[1])
     return tuple(sorted(merged, key=lambda item: (-item.score, item.page_box)))
 
 
@@ -2835,12 +2866,9 @@ def internal_candidate_ocr_regions(capture: CapturedPage) -> tuple[internal_OcrR
                 (row + 1) * page_height / label_rows,
             )
             component_boxes = label_boxes[cell]
-            component_box = (
-                min(box[0] for box in component_boxes),
-                min(box[1] for box in component_boxes),
-                max(box[2] for box in component_boxes),
-                max(box[3] for box in component_boxes),
-            )
+            optional_component_box = bbox_union(component_boxes)
+            assert optional_component_box is not None
+            component_box = optional_component_box
             component_area = max(0.0, component_box[2] - component_box[0]) * max(
                 0.0, component_box[3] - component_box[1]
             )
@@ -2896,12 +2924,8 @@ def internal_has_distributed_outline_text(capture: CapturedPage) -> bool:
     )
     if len(boxes) < 200:
         return False
-    bounds = (
-        min(box[0] for box in boxes),
-        min(box[1] for box in boxes),
-        max(box[2] for box in boxes),
-        max(box[3] for box in boxes),
-    )
+    bounds = bbox_union(boxes)
+    assert bounds is not None
     width_ratio = (bounds[2] - bounds[0]) / max(1.0, page_width)
     height_ratio = (bounds[3] - bounds[1]) / max(1.0, page_height)
     return width_ratio >= 0.60 and height_ratio >= 0.60
@@ -3473,10 +3497,9 @@ def internal_safe_image_crop(capture: CapturedPage) -> tuple[float, float, float
         return None
     page_width = float(capture.page.width)
     page_height = float(capture.page.height)
-    x0 = min(box[0] for box in evidence.image_boxes)
-    y0 = min(box[1] for box in evidence.image_boxes)
-    x1 = max(box[2] for box in evidence.image_boxes)
-    y1 = max(box[3] for box in evidence.image_boxes)
+    bounds = bbox_union(evidence.image_boxes)
+    assert bounds is not None
+    x0, y0, x1, y1 = bounds
     crop = (max(0.0, x0), max(0.0, y0), min(page_width, x1), min(page_height, y1))
     if crop[2] <= crop[0] or crop[3] <= crop[1]:
         return None
@@ -4868,8 +4891,10 @@ def internal_recognize_page_with_reserved_raster(
         if grid is not None and internal_grid_is_regular_table(
             grid, selected.observations, source_task
         ):
-            x_lines, y_lines, dark, slope = grid
-            cell_tasks = internal_grid_cell_tasks(source_task, x_lines, y_lines, dark, slope)
+            x_lines, y_lines, source_samples, slope = grid
+            cell_tasks = internal_grid_cell_tasks(
+                source_task, x_lines, y_lines, source_samples, slope
+            )
             if len(cell_tasks) >= internal_GRID_MIN_CELLS:
                 cell_candidate = internal_merge_candidate_batches(recognize_tasks(cell_tasks))
                 cell_observations = internal_grid_row_observations(cell_candidate.observations)
@@ -4897,7 +4922,7 @@ def internal_recognize_page_with_reserved_raster(
                         # the cell reads; this grid's cells recognize worse
                         # than whole-page OCR, so keep the original.
                         return selected.observations
-                    retained = prior.take(tuple(numpy.flatnonzero(outside)))
+                    retained = prior.take(numpy.flatnonzero(outside))
                     capture.page.extraction_cache["grid_cell_ocr"] = {
                         "cells": len(cell_tasks),
                         "cell_observations": len(cell_observations),

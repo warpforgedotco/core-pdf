@@ -58,6 +58,16 @@ from .models import (
 from .protocols import PageSelection, PdfDocumentProtocol
 
 
+def _resolve_type_name(value: object, default: str) -> str:
+    """Resolve a PDF dict's ``/Type`` entry, stripped of its leading slash."""
+    if not isinstance(value, dict):
+        return default
+    for key, entry in value.items():
+        if str(key).lstrip("/") == "Type":
+            return str(entry).lstrip("/")
+    return default
+
+
 def document_inventory(document: Any) -> DocumentInventory:
     """Summarize the engine document's objects, markers, and recovery state."""
     catalog = document.catalog()
@@ -95,11 +105,7 @@ def document_inventory(document: Any) -> DocumentInventory:
             value = document.resolver.resolve(PdfReference(key >> 16, key & 0xFFFF))
         except (ValueError, KeyError):
             continue
-        type_name = "Untyped"
-        if isinstance(value, dict):
-            type_key = next((item for item in value if str(item).lstrip("/") == "Type"), None)
-            if type_key is not None:
-                type_name = str(value[type_key]).lstrip("/")
+        type_name = _resolve_type_name(value, "Untyped")
         type_counts[type_name] = type_counts.get(type_name, 0) + 1
     return DocumentInventory(
         byte_count=len(document.raw_data),
@@ -310,18 +316,17 @@ def object_graph(document: Any) -> ObjectGraphReport:
         visiting.remove(target)
 
     def visit_value(value: object, parent: int | None, key: str | None) -> None:
-        if isinstance(value, PdfReference):
-            visit_reference(value, parent, key)
-            return
-        if isinstance(value, PdfStream):
-            visit_value(value.dictionary, parent, key)
-            return
-        if isinstance(value, dict):
-            for item_key, child in value.items():
-                visit_value(child, parent, str(item_key).lstrip("/"))
-        elif isinstance(value, (list, tuple)):
-            for child in value:
-                visit_value(child, parent, key)
+        match value:
+            case PdfReference():
+                visit_reference(value, parent, key)
+            case PdfStream():
+                visit_value(value.dictionary, parent, key)
+            case dict():
+                for item_key, child in value.items():
+                    visit_value(child, parent, str(item_key).lstrip("/"))
+            case list() | tuple():
+                for child in value:
+                    visit_value(child, parent, key)
 
     root = document.trailer_dict.get("Root")
     root_objects: tuple[int, ...] = ()
@@ -337,11 +342,7 @@ def object_graph(document: Any) -> ObjectGraphReport:
             value = document.resolver.resolve(PdfReference(object_number, entry.generation))
         except (KeyError, ValueError):
             value = None
-        object_type = type(value).__name__
-        if isinstance(value, dict):
-            type_key = next((item for item in value if str(item).lstrip("/") == "Type"), None)
-            if type_key is not None:
-                object_type = str(value[type_key]).lstrip("/")
+        object_type = _resolve_type_name(value, type(value).__name__)
         nodes.append(
             ObjectGraphNode(
                 object_number, entry.generation, object_type, object_number in reachable
@@ -383,11 +384,7 @@ def inspect_object(document: Any, object_number: int) -> ObjectInspection:
         if isinstance(dictionary, dict)
         else ()
     )
-    object_type = type(value).__name__
-    if isinstance(dictionary, dict):
-        type_key = next((item for item in dictionary if str(item).lstrip("/") == "Type"), None)
-        if type_key is not None:
-            object_type = str(dictionary[type_key]).lstrip("/")
+    object_type = _resolve_type_name(dictionary, type(value).__name__)
     return ObjectInspection(
         object_number=object_number,
         generation=entry.generation,

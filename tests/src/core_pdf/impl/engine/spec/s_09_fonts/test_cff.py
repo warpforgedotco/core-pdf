@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-import core_pdf.impl.engine.spec.s_09_fonts.cff as cff_module
+import core_pdf.impl.engine.spec.s_09_fonts.font_program as font_program_module
 from core_pdf._vendor.fontTools.cffLib import cffStandardStrings
 from core_pdf.impl.engine.spec.s_09_fonts.cff import STANDARD_GLYPH_SIDS, CFFFont
 
@@ -34,7 +34,7 @@ def test_cff_geometry_is_reused_across_bbox_feature_and_bitmap(
     charstring = bytes([239, 239, 21, 239, 139, 5, 139, 239, 5, 39, 139, 5, 14])
     font = CFFFont(None)
     font.charstrings = [charstring]
-    original = cff_module.internal_type2_glyph_geometry
+    original = font_program_module.internal_type2_glyph_geometry_impl
     calls = 0
 
     def counting_geometry(
@@ -53,7 +53,9 @@ def test_cff_geometry_is_reused_across_bbox_feature_and_bitmap(
             collect_contours=collect_contours,
         )
 
-    monkeypatch.setattr(cff_module, "internal_type2_glyph_geometry", counting_geometry)
+    monkeypatch.setattr(
+        font_program_module, "internal_type2_glyph_geometry_impl", counting_geometry
+    )
 
     assert font.glyph_bbox_for_gid(0) == (100.0, 100.0, 200.0, 200.0)
     assert font.glyph_feature(0).contours == 1

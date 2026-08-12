@@ -49,6 +49,22 @@ def test_leading_dot_number_is_passed_to_operator() -> None:
     assert received == [0.5, 1]
 
 
+@pytest.mark.parametrize(("token", "expected"), [(b"0.123", 0.123), (b"-0.123", -0.123)])
+def test_three_decimal_number_is_passed_to_operator(token: bytes, expected: float) -> None:
+    received: list[object] = []
+
+    def move_to(operands: Sequence[object], internal_depth: int) -> None:
+        received.extend(operands)
+
+    fast_handlers: list[object] = [None] * 65536
+    fast_handlers[ord("m") << 8] = move_to
+    cast(Any, dispatch_operations)(
+        PdfLexer(token + b" 1 m"), {"m": move_to}, None, fast_handlers, {}, None, 0
+    )
+
+    assert received == [expected, 1]
+
+
 def test_cid_fast_path_applies_word_spacing() -> None:
     decoder = FontDecoder({})
     decoder.is_cid_font = True

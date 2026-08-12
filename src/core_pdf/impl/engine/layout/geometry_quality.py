@@ -7,12 +7,12 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
 from core_pdf.impl.engine.layout.geometry import (
+    bbox_union,
     finite_rect,
     overlap_ratio_of,
 )
 from core_pdf.impl.engine.layout.glyphs import (
     glyph_text_has_unsupported_codepoint,
-    union_bboxes,
 )
 from core_pdf.impl.engine.layout.models import internal_track_text_run
 
@@ -201,7 +201,7 @@ def internal_compute_text_run_geometry_issues(run: TextRun) -> tuple[LayoutGeome
                 )
             )
 
-    cluster_union = union_bboxes(tuple(cluster_bboxes))
+    cluster_union = bbox_union(tuple(cluster_bboxes))
     if cluster_union is None or not bbox_is_positive(run_bbox):
         return tuple(issues)
 
@@ -282,7 +282,7 @@ def layout_line_geometry_issues(line: LayoutLine) -> tuple[LayoutGeometryIssue, 
     word_bboxes = tuple(word.bbox for word in words if bbox_is_positive(word.bbox))
     if not word_bboxes:
         return tuple(issues)
-    word_union = union_bboxes(word_bboxes)
+    word_union = bbox_union(word_bboxes)
     if word_union is None:
         return tuple(issues)
     axis = "y" if line.rotation_angle in (90, 270) else "x"

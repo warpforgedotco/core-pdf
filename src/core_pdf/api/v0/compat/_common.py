@@ -8,6 +8,8 @@ instead of drilling into ``core_pdf.impl`` directly.
 
 from __future__ import annotations
 
+import struct
+import zlib
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from io import BytesIO
 from operator import itemgetter
@@ -30,6 +32,8 @@ from core_pdf.api.v0.structured import (
 )
 from core_pdf.impl.engine.layout.geometry import (
     RectTuple,
+    bbox_contains,
+    bbox_intersects,
     bbox_union,
     flip_rect_vertical,
     rect_tuple,
@@ -99,6 +103,33 @@ def synthesize_characters(text: str, box: Sequence[float]) -> Iterator[tuple[str
         yield character, (x0 + index * width, y0, x0 + (index + 1) * width, y1)
 
 
+def png_chunk(kind: bytes, data: bytes) -> bytes:
+    """Encode one length-prefixed, CRC-terminated PNG chunk."""
+    return (
+        struct.pack(">I", len(data))
+        + kind
+        + data
+        + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
+    )
+
+
+def encode_png(width: int, height: int, channels: int, pixels: bytes | bytearray) -> bytes:
+    """Encode raw RGB(A) pixel bytes as a minimal PNG using only the standard library."""
+    if channels not in (3, 4):
+        raise ValueError(f"PNG output requires RGB or RGBA pixel data, got {channels} channels")
+    stride = width * channels
+    scanlines = b"".join(
+        b"\x00" + pixels[row * stride : (row + 1) * stride] for row in range(height)
+    )
+    header = struct.pack(">IIBBBBB", width, height, 8, 6 if channels == 4 else 2, 0, 0, 0)
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + png_chunk(b"IHDR", header)
+        + png_chunk(b"IDAT", zlib.compress(scanlines))
+        + png_chunk(b"IEND", b"")
+    )
+
+
 def cluster_by(
     values: Iterable[_T], key: Callable[[_T], Any] | str, tolerance: float = 0
 ) -> list[list[_T]]:
@@ -142,11 +173,15 @@ __all__ = (
     "StandardPdfEncryption",
     "TextLine",
     "WriteTarget",
+    "bbox_contains",
+    "bbox_intersects",
     "bbox_union",
     "cluster_by",
     "coerce_bbox",
+    "encode_png",
     "flip_box",
     "open_source",
+    "png_chunk",
     "serialize_document_to_pdf",
     "synthesize_characters",
     "write_bytes",

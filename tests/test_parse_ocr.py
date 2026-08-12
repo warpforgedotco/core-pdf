@@ -317,6 +317,24 @@ def test_ocr_groups_small_same_raster_tasks_but_splits_large_regions() -> None:
     assert ocr.internal_ocr_task_groups(large_tasks) == tuple((task,) for task in large_tasks)
 
 
+def test_ocr_groups_sixteen_small_regions_per_image_upload() -> None:
+    image = RasterImage(bytes(100 * 400), 100, 400, 1)
+    tasks = tuple(
+        ocr.internal_OcrTask(
+            mode=7,
+            image=image,
+            rectangle=(0, index * 10, 100, 10),
+            page_box=(0.0, float(index * 10), 100.0, float((index + 1) * 10)),
+            resolution=100,
+        )
+        for index in range(17)
+    )
+
+    groups = ocr.internal_ocr_task_groups(tasks)
+
+    assert tuple(map(len, groups)) == (16, 1)
+
+
 def test_recognize_group_reuses_api_and_image_setup(monkeypatch: pytest.MonkeyPatch) -> None:
     image = RasterImage(bytes(100 * 120), 100, 120, 1)
     tasks = tuple(
@@ -386,6 +404,14 @@ def test_compact_ocr_image_drops_only_opaque_alpha() -> None:
 
     assert compact.channels == 3
     assert compact.pixels == b"".join(bytes((value, 2 * value, 3 * value)) for value in range(16))
+
+
+def test_compact_ocr_image_keeps_large_rgba_buffer() -> None:
+    image = RasterImage(bytes((32, 64, 96, 255)) * 1_000_000, 1_000, 1_000, 4)
+
+    compact = ocr.internal_compact_ocr_image(image)
+
+    assert compact is image
 
 
 def test_raster_text_signal_rejects_blank_image() -> None:

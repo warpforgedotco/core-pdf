@@ -7,7 +7,7 @@ from core_pdf.impl.engine.spec.s_07_syntax.lexer_helpers import (
     FindableSizedBuffer,
     full_source_buffer,
 )
-from core_pdf.impl.engine.spec.s_07_syntax.tokens import WS_TABLE
+from core_pdf.impl.engine.spec.s_07_syntax.xref import parse_object_marker_prefix
 
 
 def find_indirect_object_header(
@@ -42,29 +42,10 @@ def find_indirect_object_header(
 def parse_object_header_prefix(data: memoryview, marker: int) -> int | None:
     """Return the offset of the ``N G obj`` header ending at ``marker``, or None.
 
-    Deliberately mirrors ``s_07_syntax.xref.parse_object_marker_prefix``: the scan is
-    identical, but this variant only needs the start offset, so it skips that one's two
-    ``int()`` conversions and tuple allocation. Keep the two in sync.
+    Thin wrapper around ``s_07_syntax.xref.parse_object_marker_prefix``, which runs the
+    same scan; this variant only needs the start offset. Used on the corrupt-PDF
+    recovery path (``ObjectResolver.recover_indirect_object``), not the parse hot path,
+    so the extra int-parsing it does is not worth duplicating the scan to avoid.
     """
-    if marker + 3 < len(data) and not WS_TABLE[data[marker + 3]]:
-        return None
-    pos = marker - 1
-    while pos >= 0 and WS_TABLE[data[pos]]:
-        pos -= 1
-    gen_end = pos + 1
-    while pos >= 0 and 48 <= data[pos] <= 57:
-        pos -= 1
-    gen_start = pos + 1
-    if gen_start == gen_end:
-        return None
-    while pos >= 0 and WS_TABLE[data[pos]]:
-        pos -= 1
-    obj_end = pos + 1
-    while pos >= 0 and 48 <= data[pos] <= 57:
-        pos -= 1
-    obj_start = pos + 1
-    if obj_start == obj_end:
-        return None
-    if pos >= 0 and not WS_TABLE[data[pos]]:
-        return None
-    return obj_start
+    result = parse_object_marker_prefix(data, marker)
+    return None if result is None else result[0]

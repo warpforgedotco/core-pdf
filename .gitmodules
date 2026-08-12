@@ -2,12 +2,12 @@
 	path = tests/fixtures/SCORE-Bench
 	url = https://huggingface.co/datasets/unstructuredio/SCORE-Bench
 	shallow = true
-[submodule "vendor/x-ray"]
-	path = vendor/x-ray
+[submodule "tests/fixtures/x-ray"]
+	path = tests/fixtures/x-ray
 	url = https://github.com/freelawproject/x-ray.git
-[submodule "vendor/pdfminer.six"]
-	path = vendor/pdfminer.six
+[submodule "tests/fixtures/pdfminer.six"]
+	path = tests/fixtures/pdfminer.six
 	url = https://github.com/pdfminer/pdfminer.six.git
-[submodule "vendor/pdfplumber"]
-	path = vendor/pdfplumber
+[submodule "tests/fixtures/pdfplumber"]
+	path = tests/fixtures/pdfplumber
 	url = https://github.com/jsvine/pdfplumber.git

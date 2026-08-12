@@ -166,9 +166,10 @@ class PdfStandardSecurityHandler:
     ) -> bytes:
         return self.decrypt_rc4(objid, genno, data)
 
-    def decrypt_rc4(self, objid: int, genno: int, data: bytes) -> bytes:
+    def object_key(self, objid: int, genno: int, extra: bytes = b"") -> bytes:
         assert self.key is not None
-        key = self.key + struct.pack("<L", objid)[:3] + struct.pack("<L", genno)[:2]
-        h = md5(key)
-        key = h.digest()[: min(len(key), 16)]
-        return CryptRC4(key).decrypt(data)
+        key = self.key + struct.pack("<L", objid)[:3] + struct.pack("<L", genno)[:2] + extra
+        return md5(key).digest()[: min(len(key), 16)]
+
+    def decrypt_rc4(self, objid: int, genno: int, data: bytes) -> bytes:
+        return CryptRC4(self.object_key(objid, genno)).decrypt(data)

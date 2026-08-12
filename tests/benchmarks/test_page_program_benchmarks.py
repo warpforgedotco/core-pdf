@@ -226,7 +226,6 @@ def test_end_to_end_page_extraction_benchmark(benchmark, fixture_name: str) -> N
     )
 
     assert metrics["route"] in {"native", "hybrid", "ocr"}
-    assert metrics["page_program_events"] >= 0
     assert metrics["content_stream_passes"] == 1
     assert metrics["preflight_native_route_mismatch"] in {0, 1}
     assert metrics["preflight_image_route_mismatch"] in {0, 1}
@@ -237,7 +236,6 @@ def test_end_to_end_page_extraction_benchmark(benchmark, fixture_name: str) -> N
             "preflight_class": metrics.get("preflight_class"),
             "capture_seconds": metrics.get("capture_seconds"),
             "preflight_seconds": metrics.get("preflight_seconds"),
-            "page_program_events": metrics["page_program_events"],
             "ocr_seconds": metrics.get("ocr_seconds"),
             "preflight_native_route_mismatch": metrics["preflight_native_route_mismatch"],
             "preflight_image_route_mismatch": metrics["preflight_image_route_mismatch"],

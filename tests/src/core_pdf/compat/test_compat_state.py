@@ -82,7 +82,7 @@ def test_engine_edit_is_reserved_for_source_backed_state() -> None:
 
 
 def test_capability_page_is_backed_by_the_canonical_engine() -> None:
-    fixture = Path("vendor/pdfminer.six/samples/simple1.pdf")
+    fixture = Path("tests/fixtures/pdfminer.six/samples/simple1.pdf")
     with PdfDocument.open(fixture) as source:
         document = StructuredState(source, source.structured_document)
         page = document.capability_page(1)
@@ -107,7 +107,7 @@ def test_normalized_records_serialize_stably() -> None:
 
 
 def test_local_document_reads_acroform_widgets_from_real_fixture() -> None:
-    source = Path("vendor/pdfminer.six/samples/acroform/AcroForm_TEST.pdf")
+    source = Path("tests/fixtures/pdfminer.six/samples/acroform/AcroForm_TEST.pdf")
     with LocalDocument.open(source) as document:
         assert len(document.form_fields) == 7
         assert {field.field_type for field in document.form_fields} >= {"Btn", "Ch", "Tx"}
@@ -115,14 +115,14 @@ def test_local_document_reads_acroform_widgets_from_real_fixture() -> None:
 
 
 def test_local_document_reads_annotation_records_from_real_fixture() -> None:
-    source = Path("vendor/pdfminer.six/samples/acroform/AcroForm_TEST.pdf")
+    source = Path("tests/fixtures/pdfminer.six/samples/acroform/AcroForm_TEST.pdf")
     with LocalDocument.open(source) as document:
         assert document.annotations
         assert all(annotation.bbox is not None for annotation in document.annotations)
 
 
 def test_save_form_value_persists_through_incremental_update(tmp_path: Path) -> None:
-    source = Path("vendor/pdfminer.six/samples/acroform/AcroForm_TEST.pdf")
+    source = Path("tests/fixtures/pdfminer.six/samples/acroform/AcroForm_TEST.pdf")
     target = tmp_path / "filled.pdf"
     with LocalDocument.open(source) as document:
         updated = document.save_form_value("Combo Box0", "persisted", target)
@@ -133,7 +133,7 @@ def test_save_form_value_persists_through_incremental_update(tmp_path: Path) -> 
 
 
 def test_save_annotation_contents_persists_through_incremental_update(tmp_path: Path) -> None:
-    source = Path("vendor/pdfminer.six/samples/simple5.pdf")
+    source = Path("tests/fixtures/pdfminer.six/samples/simple5.pdf")
     target = tmp_path / "annotated.pdf"
     with LocalDocument.open(source) as document:
         assert document.highlights
@@ -144,7 +144,7 @@ def test_save_annotation_contents_persists_through_incremental_update(tmp_path: 
 
 
 def test_save_link_destination_persists_through_incremental_update(tmp_path: Path) -> None:
-    source = Path("vendor/pdfminer.six/samples/simple5.pdf")
+    source = Path("tests/fixtures/pdfminer.six/samples/simple5.pdf")
     target = tmp_path / "linked.pdf"
     with LocalDocument.open(source) as document:
         assert document.links
@@ -155,7 +155,7 @@ def test_save_link_destination_persists_through_incremental_update(tmp_path: Pat
 
 
 def test_save_comment_contents_persists_with_popup_fixture(tmp_path: Path) -> None:
-    source = Path("vendor/pdfminer.six/samples/contrib/issue-1082-annotations.pdf")
+    source = Path("tests/fixtures/pdfminer.six/samples/contrib/issue-1082-annotations.pdf")
     target = tmp_path / "commented.pdf"
     with LocalDocument.open(source) as document:
         comments = document.comments
@@ -174,7 +174,7 @@ def test_save_comment_contents_persists_with_popup_fixture(tmp_path: Path) -> No
 
 
 def test_stamp_overlay_split_and_merge_outputs_reopen(tmp_path: Path) -> None:
-    source = Path("vendor/pdfminer.six/samples/simple1.pdf")
+    source = Path("tests/fixtures/pdfminer.six/samples/simple1.pdf")
     with LocalDocument.open(source) as document:
         stamped = document.stamp("STAMP", bbox=(10, 10, 60, 25))
         split_paths = []
@@ -193,7 +193,7 @@ def test_stamp_overlay_split_and_merge_outputs_reopen(tmp_path: Path) -> None:
 
 
 def test_stamp_output_has_rendered_pixels(tmp_path: Path) -> None:
-    source = Path("vendor/pdfminer.six/samples/simple1.pdf")
+    source = Path("tests/fixtures/pdfminer.six/samples/simple1.pdf")
     with LocalDocument.open(source) as document:
         output = tmp_path / "stamped.pdf"
         document.stamp("STAMP", bbox=(10, 10, 60, 25)).write(output)

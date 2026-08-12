@@ -2,16 +2,15 @@
 
 from __future__ import annotations
 
+from functools import lru_cache
+
 BYTE_CACHE = [bytes([i]) for i in range(256)]
 
 
-def decode_utf16be(data: bytes | memoryview | str) -> str:
+@lru_cache(maxsize=4096)
+def decode_utf16be(data: bytes) -> str:
     if not data:
         return ""
-    if isinstance(data, memoryview):
-        data = data.tobytes()
-    if isinstance(data, str):
-        data = data.encode("latin-1")
     if data.startswith(b"\xfe\xff"):
         data = data[2:]
     if len(data) == 1:

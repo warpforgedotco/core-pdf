@@ -32,11 +32,11 @@ def test_find_separator_returns_data_length_without_separator(
     assert lexer.find_separator(8) == len(data)
 
 
-def test_reversed_memoryview_does_not_reuse_backing_buffer_for_native_search() -> None:
+def test_reversed_memoryview_is_copied_for_native_search() -> None:
     data = memoryview(b")abc(")[::-1]
     lexer = PdfLexer(data)
 
-    assert lexer.source_buffer is None
+    assert lexer.source_buffer == b"(cba)"
     assert lexer.parse_object() == PdfString(b"cba")
 
 

@@ -11,7 +11,7 @@ from core_pdf.impl.text import collapse_ws, search_key
 from ..models import EvidenceLayer, EvidenceRecord, Severity, SourceRef, TextSpan
 from ..protocols import ExecutionContext, PdfDocumentProtocol
 from .base import AnalysisOperation, FindingCollector, OperationOptions
-from .checks import AUTHOR_YEAR_PATTERN, DOI_PATTERN
+from .checks import AUTHOR_YEAR_PATTERN, DOI_PATTERN, REFERENCE_SECTION_HEADING_PATTERN
 
 
 class LayoutAnalysisOperation(AnalysisOperation):
@@ -149,9 +149,7 @@ class CitationAnalysisOperation(AnalysisOperation):
     operation_id = "analysis.citations"
     _numeric = re.compile(r"\[(\d+(?:\s*[,;–-]\s*\d+)*)\]")
     _author_year = AUTHOR_YEAR_PATTERN
-    _reference_heading = re.compile(
-        r"^(?:references|bibliography|works cited|literature cited)$", re.I
-    )
+    _reference_heading = REFERENCE_SECTION_HEADING_PATTERN
 
     def _analyze(
         self,
@@ -168,7 +166,7 @@ class CitationAnalysisOperation(AnalysisOperation):
                 text = collapse_ws(block.text)
                 if not text:
                     continue
-                if self._reference_heading.fullmatch(text.rstrip(":")):
+                if self._reference_heading.fullmatch(text):
                     reference_sections += 1
                     out.add(
                         "citation.reference-section",
@@ -428,7 +426,7 @@ class ReferenceEntryAnalysisOperation(AnalysisOperation):
     """Normalize common numbered bibliography entries without discarding source text."""
 
     operation_id = "analysis.reference-entries"
-    _heading = re.compile(r"^(?:references|bibliography|works cited|literature cited)\s*:?$", re.I)
+    _heading = REFERENCE_SECTION_HEADING_PATTERN
     _number = re.compile(r"^(?:\[(\d+)\]|(\d+)[.)])\s+(.*)$")
     _author_year = AUTHOR_YEAR_PATTERN
     _doi = DOI_PATTERN

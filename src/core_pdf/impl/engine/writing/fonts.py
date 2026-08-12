@@ -114,7 +114,7 @@ class TrueTypeFontProvider:
                 PdfName.of("ItalicAngle"): 0,
                 PdfName.of("Ascent"): internal_font_metric(font, "ascent", units_per_em),
                 PdfName.of("Descent"): internal_font_metric(font, "descent", units_per_em),
-                PdfName.of("CapHeight"): internal_font_metric(font, "ascent", units_per_em),
+                PdfName.of("CapHeight"): internal_font_cap_height(font, cmap, units_per_em),
                 PdfName.of("StemV"): 80,
                 PdfName.of("FontFile2"): font_file,
             }
@@ -171,6 +171,17 @@ def internal_font_bbox(font: Any, units_per_em: int) -> list[int]:
 def internal_font_metric(font: Any, name: str, units_per_em: int) -> int:
     value = getattr(font["hhea"], name, 0)
     return round(value * 1000 / units_per_em)
+
+
+def internal_font_cap_height(font: Any, cmap: dict[int, str], units_per_em: int) -> int:
+    """Derive cap height from the "H" glyph's top edge (no OS/2 table is vendored)."""
+    glyph_name = cmap.get(ord("H"))
+    if glyph_name is None or "glyf" not in font:
+        return internal_font_metric(font, "ascent", units_per_em)
+    y_max = getattr(font["glyf"][glyph_name], "yMax", None)
+    if y_max is None:
+        return internal_font_metric(font, "ascent", units_per_em)
+    return round(y_max * 1000 / units_per_em)
 
 
 def internal_widths_array(widths: list[tuple[int, int]]) -> list[object]:

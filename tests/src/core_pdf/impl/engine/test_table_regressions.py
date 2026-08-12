@@ -48,12 +48,12 @@ def test_table_structure_no_regression():
     """
     cases = {case.stem: case for case in s.iter_score_bench_cases()}
     if not cases:
-        pytest.skip("SCORE-Bench fixtures not present")  # ty: ignore[too-many-positional-arguments]
+        pytest.skip("SCORE-Bench fixtures not present")
 
     for stem, baseline in BASELINE.items():
         if stem not in cases:
             msg = f"Case {stem} not present in SCORE-Bench fixtures"
-            pytest.skip(msg)  # ty: ignore[too-many-positional-arguments]
+            pytest.skip(msg)
         case = cases[stem]
         score = s.score_case(case)
         # If ground truth had no table structure, baseline may be None; skip in that case.

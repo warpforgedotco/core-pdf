@@ -30,7 +30,6 @@ def test_parse_pipeline_records_route_and_stage_timings() -> None:
         "likely-malformed",
     }
     assert metrics["content_stream_passes"] == 1
-    assert metrics["page_program_events"] >= 0
     assert metrics["preflight_native_route_mismatch"] in {0, 1}
     assert metrics["preflight_image_route_mismatch"] in {0, 1}
     assert metrics["preflight_vector_route_mismatch"] in {0, 1}

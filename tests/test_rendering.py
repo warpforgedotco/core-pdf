@@ -7,7 +7,6 @@ import numpy
 import pytest
 
 from core_pdf.impl.engine.image_cache import ImageCache
-from core_pdf.impl.engine.layout.geometry import RectBox
 from core_pdf.impl.engine.layout.glyphs import GlyphObservation
 from core_pdf.impl.engine.layout.models import TextRun
 from core_pdf.impl.engine.page import text_rotation_correction_for_runs
@@ -24,7 +23,6 @@ from core_pdf.impl.engine.rendering import (
 from core_pdf.impl.engine.spec.s_07_content.capture import CapturedDrawing, CapturedPath
 from core_pdf.impl.engine.spec.s_07_content.page_program import (
     LineTable,
-    PageEventStream,
     PageProducts,
     PageProgram,
 )
@@ -557,10 +555,7 @@ def test_compose_page_requires_and_consumes_canonical_program() -> None:
             return None
 
     products = PageProducts((), (), (), (), LineTable.from_lines(()))
-    page_program = PageProgram(
-        PageEventStream.from_products(products),
-        products,
-    )
+    page_program = PageProgram(products)
 
     rendered = compose_page(Page(), page_program=page_program)
 
@@ -596,8 +591,8 @@ def test_text_free_composition_skips_glyph_paint_and_lazy_bitmap_resolution() ->
     decoder = Decoder()
     glyph = GlyphObservation(
         "A",
-        RectBox(1.0, 1.0, 2.0, 2.0),
-        RectBox(1.0, 1.0, 2.0, 2.0),
+        (1.0, 1.0, 2.0, 2.0),
+        (1.0, 1.0, 2.0, 2.0),
         1,
         bitmap_width=1,
         bitmap_height=1,
@@ -605,7 +600,7 @@ def test_text_free_composition_skips_glyph_paint_and_lazy_bitmap_resolution() ->
         font_decoder=decoder,
     )
     products = PageProducts((), (glyph,), (), (), LineTable.from_lines(()))
-    page_program = PageProgram(PageEventStream.from_products(products), products)
+    page_program = PageProgram(products)
 
     text_free = compose_page(
         Page(),

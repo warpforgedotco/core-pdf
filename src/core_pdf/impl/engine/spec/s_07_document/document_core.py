@@ -37,14 +37,6 @@ class DocumentCoreMixin(DocumentXRefMixin):
     decipher: Decipher | None
     resolver: PdfValueResolver
 
-    @property
-    def data(self) -> PdfByteBuffer:
-        return self.raw_data
-
-    @property
-    def trailer(self) -> PdfDict:
-        return self.trailer_dict
-
     def load_data(self, source: PdfSource) -> PdfByteBuffer:
         if isinstance(source, (str, PathLike)):
             if isinstance(source, str) and source.startswith("%PDF"):

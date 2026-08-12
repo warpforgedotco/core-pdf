@@ -15,7 +15,6 @@ from core_pdf.impl.engine.layout.geometry import RectBox
 from core_pdf.impl.engine.layout.glyphs import (
     GlyphCluster,
     GlyphObservation,
-    Matrix6,
     glyph_cluster_from_observations,
     glyph_unicode_confidence,
 )
@@ -35,6 +34,11 @@ from core_pdf.impl.objects import PdfName
 if typing.TYPE_CHECKING:
     pass
 
+# (base_x, base_y, combined_A, combined_B, combined_C, combined_D): invariant across every
+# glyph in one text-showing operation, so callers looping over glyphs compute it once and
+# pass it in rather than re-deriving it from `state` on every glyph.
+TextBasis = tuple[float, float, float, float, float, float]
+
 
 GLYPH_BITMAP_REPAIR_LABELS = frozenset(
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,-+/()[]{}<>|_~"
@@ -45,7 +49,7 @@ SUSPICIOUS_GLYPH_BITMAP_TEXT = {"\ufffd", "\ufffc"}
 def should_capture_glyph_bitmap(text: str) -> bool:
     if len(text) != 1:
         return False
-    if len(text) == 1 and text in GLYPH_BITMAP_REPAIR_LABELS:
+    if text in GLYPH_BITMAP_REPAIR_LABELS:
         return True
     if text in SUSPICIOUS_GLYPH_BITMAP_TEXT:
         return True
@@ -82,53 +86,61 @@ def glyph_bitmap_dimensions(
 
 
 def glyph_ink_rect(
-    state: Any,
     glyph_bbox: tuple[float, float, float, float] | None,
     advance_start: float,
-    fallback: RectBox,
-) -> RectBox:
+    fallback_bbox: tuple[float, float, float, float],
+    text_basis: TextBasis,
+    text_advance_scale: float,
+    rise: float,
+    font_scale: float,
+) -> tuple[float, float, float, float]:
     if glyph_bbox is None:
-        return fallback
+        return fallback_bbox
     gx0, gy0, gx1, gy1 = glyph_bbox
     if gx1 <= gx0 or gy1 <= gy0:
-        return fallback
-    text_x0 = advance_start + gx0 * state.text_advance_scale
-    text_x1 = advance_start + gx1 * state.text_advance_scale
-    text_y0 = state.rise + gy0 * state.font_scale
-    text_y1 = state.rise + gy1 * state.font_scale
-    base_x = state.tm_e * state.ca + state.tm_f * state.cc + state.ce
-    base_y = state.tm_e * state.cb + state.tm_f * state.cd + state.cf
-    a = state.combined_A
-    b = state.combined_B
-    c = state.combined_C
-    d = state.combined_D
-    p00_x = base_x + text_x0 * a + text_y0 * c
-    p00_y = base_y + text_x0 * b + text_y0 * d
-    p01_x = base_x + text_x0 * a + text_y1 * c
-    p01_y = base_y + text_x0 * b + text_y1 * d
-    p10_x = base_x + text_x1 * a + text_y0 * c
-    p10_y = base_y + text_x1 * b + text_y0 * d
-    p11_x = base_x + text_x1 * a + text_y1 * c
-    p11_y = base_y + text_x1 * b + text_y1 * d
-    rect = RectBox(
-        min(p00_x, p01_x, p10_x, p11_x),
-        min(p00_y, p01_y, p10_y, p11_y),
-        max(p00_x, p01_x, p10_x, p11_x),
-        max(p00_y, p01_y, p10_y, p11_y),
-        seqno=fallback.seqno,
-        fill=fallback.fill,
-        fill_opacity=fallback.fill_opacity,
-    )
-    fallback_height = fallback.y1 - fallback.y0
-    fallback_width = fallback.x1 - fallback.x0
-    rect_height = rect.y1 - rect.y0
-    rect_width = rect.x1 - rect.x0
+        return fallback_bbox
+    text_x0 = advance_start + gx0 * text_advance_scale
+    text_x1 = advance_start + gx1 * text_advance_scale
+    text_y0 = rise + gy0 * font_scale
+    text_y1 = rise + gy1 * font_scale
+    base_x, base_y, a, b, c, d = text_basis
+    if b == 0.0 and c == 0.0:
+        px0 = base_x + text_x0 * a
+        px1 = base_x + text_x1 * a
+        py0 = base_y + text_y0 * d
+        py1 = base_y + text_y1 * d
+        rect = (
+            px0 if px0 < px1 else px1,
+            py0 if py0 < py1 else py1,
+            px1 if px1 > px0 else px0,
+            py1 if py1 > py0 else py0,
+        )
+    else:
+        p00_x = base_x + text_x0 * a + text_y0 * c
+        p00_y = base_y + text_x0 * b + text_y0 * d
+        p01_x = base_x + text_x0 * a + text_y1 * c
+        p01_y = base_y + text_x0 * b + text_y1 * d
+        p10_x = base_x + text_x1 * a + text_y0 * c
+        p10_y = base_y + text_x1 * b + text_y0 * d
+        p11_x = base_x + text_x1 * a + text_y1 * c
+        p11_y = base_y + text_x1 * b + text_y1 * d
+        rect = (
+            min(p00_x, p01_x, p10_x, p11_x),
+            min(p00_y, p01_y, p10_y, p11_y),
+            max(p00_x, p01_x, p10_x, p11_x),
+            max(p00_y, p01_y, p10_y, p11_y),
+        )
+    fallback_height = fallback_bbox[3] - fallback_bbox[1]
+    fallback_width = fallback_bbox[2] - fallback_bbox[0]
+    rect_x0, rect_y0, rect_x1, rect_y1 = rect
+    rect_height = rect_y1 - rect_y0
+    rect_width = rect_x1 - rect_x0
     if rect_width <= 0.01 or rect_height <= 0.01:
-        return fallback
+        return fallback_bbox
     if fallback_width > 0.0 and rect_width > fallback_width * 4.0:
-        return fallback
+        return fallback_bbox
     if fallback_height > 0.0 and rect_height > fallback_height * 1.5:
-        return fallback
+        return fallback_bbox
     return rect
 
 
@@ -138,13 +150,23 @@ def transformed_text_rect(
     y0: float,
     x1: float,
     y1: float,
+    text_basis: TextBasis,
 ) -> RectBox:
-    base_x = state.tm_e * state.ca + state.tm_f * state.cc + state.ce
-    base_y = state.tm_e * state.cb + state.tm_f * state.cd + state.cf
-    a = state.combined_A
-    b = state.combined_B
-    c = state.combined_C
-    d = state.combined_D
+    base_x, base_y, a, b, c, d = text_basis
+    if b == 0.0 and c == 0.0:
+        px0 = base_x + x0 * a
+        px1 = base_x + x1 * a
+        py0 = base_y + y0 * d
+        py1 = base_y + y1 * d
+        return RectBox(
+            px0 if px0 < px1 else px1,
+            py0 if py0 < py1 else py1,
+            px1 if px1 > px0 else px0,
+            py1 if py1 > py0 else py0,
+            seqno=state.sequence,
+            fill=state.fill_color,
+            fill_opacity=state.fill_opacity,
+        )
     p00_x = base_x + x0 * a + y0 * c
     p00_y = base_y + x0 * b + y0 * d
     p01_x = base_x + x0 * a + y1 * c
@@ -165,18 +187,13 @@ def transformed_text_rect(
 
 
 def transformed_text_line(
-    state: Any,
     x0: float,
     y0: float,
     x1: float,
     y1: float,
+    text_basis: TextBasis,
 ) -> tuple[float, float, float, float]:
-    base_x = state.tm_e * state.ca + state.tm_f * state.cc + state.ce
-    base_y = state.tm_e * state.cb + state.tm_f * state.cd + state.cf
-    a = state.combined_A
-    b = state.combined_B
-    c = state.combined_C
-    d = state.combined_D
+    base_x, base_y, a, b, c, d = text_basis
     return (
         base_x + x0 * a + y0 * c,
         base_y + x0 * b + y0 * d,
@@ -194,7 +211,6 @@ def glyph_text_space_boxes(
 ) -> tuple[
     tuple[float, float, float, float],
     tuple[float, float, float, float],
-    Matrix6,
 ]:
     if decoder.is_vertical:
         position_x, position_y = position
@@ -209,34 +225,12 @@ def glyph_text_space_boxes(
         return (
             (x0, y0, x1, y1),
             (0.0, start_y, 0.0, end_y),
-            (
-                state.tm_a,
-                state.tm_b,
-                state.tm_c,
-                state.tm_d,
-                state.tm_e
-                + position_x * state.tm_a
-                - offset * state.tm_c
-                + position_y * state.tm_c,
-                state.tm_f
-                + position_x * state.tm_b
-                - offset * state.tm_d
-                + position_y * state.tm_d,
-            ),
         )
     ar = state.font_ascent + state.rise
     dr = state.font_descent + state.rise
     return (
         (offset, dr, offset + advance, ar),
         (offset, state.rise, offset + advance, state.rise),
-        (
-            state.tm_a,
-            state.tm_b,
-            state.tm_c,
-            state.tm_d,
-            state.tm_e + offset * state.tm_a,
-            state.tm_f + offset * state.tm_b,
-        ),
     )
 
 
@@ -270,44 +264,38 @@ def apply_glyph_geometry_to_run(
 ) -> None:
     if glyph_clusters:
         run.glyph_clusters = glyph_clusters
-    advance_bbox: tuple[float, float, float, float] | None = None
-    ink_bbox: tuple[float, float, float, float] | None = None
-    confidence: float | None = None
-    for glyph in glyphs:
-        advance = glyph.advance_rect
-        advance_values = (advance.x0, advance.y0, advance.x1, advance.y1)
-        if advance_bbox is None:
-            advance_bbox = advance_values
-        else:
-            x0, y0, x1, y1 = advance_bbox
-            advance_bbox = (
-                min(x0, advance.x0),
-                min(y0, advance.y0),
-                max(x1, advance.x1),
-                max(y1, advance.y1),
-            )
-
-        ink = glyph.ink_rect
-        ink_values = (ink.x0, ink.y0, ink.x1, ink.y1)
-        if ink_bbox is None:
-            ink_bbox = ink_values
-        else:
-            x0, y0, x1, y1 = ink_bbox
-            ink_bbox = (
-                min(x0, ink.x0),
-                min(y0, ink.y0),
-                max(x1, ink.x1),
-                max(y1, ink.y1),
-            )
-
+    iterator = iter(glyphs)
+    first = next(iterator, None)
+    if first is None:
+        return
+    advance_x0, advance_y0, advance_x1, advance_y1 = first.advance_bbox
+    ink_x0, ink_y0, ink_x1, ink_y1 = first.ink_bbox
+    confidence = first.confidence
+    for glyph in iterator:
+        x0, y0, x1, y1 = glyph.advance_bbox
+        if x0 < advance_x0:
+            advance_x0 = x0
+        if y0 < advance_y0:
+            advance_y0 = y0
+        if x1 > advance_x1:
+            advance_x1 = x1
+        if y1 > advance_y1:
+            advance_y1 = y1
+        x0, y0, x1, y1 = glyph.ink_bbox
+        if x0 < ink_x0:
+            ink_x0 = x0
+        if y0 < ink_y0:
+            ink_y0 = y0
+        if x1 > ink_x1:
+            ink_x1 = x1
+        if y1 > ink_y1:
+            ink_y1 = y1
         glyph_confidence = glyph.confidence
         if glyph_confidence is not None and (confidence is None or glyph_confidence < confidence):
             confidence = glyph_confidence
 
-    if advance_bbox is not None:
-        run.advance_bbox = advance_bbox
-    if ink_bbox is not None:
-        run.ink_bbox = ink_bbox
+    run.advance_bbox = (advance_x0, advance_y0, advance_x1, advance_y1)
+    run.ink_bbox = (ink_x0, ink_y0, ink_x1, ink_y1)
     if confidence is not None:
         run.confidence = confidence
 

@@ -1,7 +1,45 @@
+from core_pdf.impl.engine.layout.glyphs import (
+    GlyphObservation,
+    glyph_cluster_from_observations,
+)
+from core_pdf.impl.engine.layout.models import TextRun
 from core_pdf.impl.engine.layout.text_lines import (
+    GlyphLineBuilder,
     repair_table_split_word_boundaries,
     should_join_plausible_split_word,
 )
+
+
+def test_complete_whitespace_run_stays_one_text_atom() -> None:
+    clusters = []
+    for index, character in enumerate("A B"):
+        bbox = (float(index), 0.0, float(index + 1), 1.0)
+        observation = GlyphObservation(character, bbox, bbox, index)
+        cluster = glyph_cluster_from_observations(index, character, (observation,))
+        assert cluster is not None
+        clusters.append(cluster)
+    run = TextRun(
+        "A B",
+        0.0,
+        0.0,
+        3.0,
+        1.0,
+        0.0,
+        0.0,
+        12.0,
+        1.0,
+        0,
+        0,
+        0,
+        glyph_clusters=tuple(clusters),
+    )
+    builder = GlyphLineBuilder([run])
+
+    atoms = builder.text_atoms(run, run.text)
+
+    assert len(atoms) == 1
+    assert atoms[0].text == "A B"
+    assert builder.build().text == "A B"
 
 
 def test_table_word_fragments_can_join_when_the_gap_is_tight() -> None:

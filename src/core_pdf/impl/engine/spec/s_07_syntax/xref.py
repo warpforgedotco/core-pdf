@@ -741,11 +741,13 @@ def find_previous_object_marker(data: PdfByteBuffer, before: int) -> int | None:
         search_end = marker
 
 
-def parse_object_marker_prefix(data: PdfByteBuffer, marker: int) -> tuple[int, int, int] | None:
+def parse_object_marker_prefix(
+    data: PdfByteBuffer | memoryview, marker: int
+) -> tuple[int, int, int] | None:
     """Return ``(offset, object number, generation)`` for the ``N G obj`` header at ``marker``.
 
-    ``s_07_objects.indirect_headers.parse_object_header_prefix`` runs the same scan but
-    returns only the offset, avoiding the int conversions below. Keep the two in sync.
+    ``s_07_objects.indirect_headers.parse_object_header_prefix`` wraps this and takes
+    just the offset, for callers that don't need the parsed object/generation numbers.
     """
     if marker + 3 < len(data) and not WS_TABLE[data[marker + 3]]:
         return None

@@ -451,20 +451,17 @@ def _structured_output(
 ) -> str:
     pages = list(extract_pages(source, password, page_numbers, maxpages, True, laparams))
     if output_type == "html":
-        body = "".join(
-            '<div class="page" data-page="{}">{}</div>'.format(
-                page.pageid,
-                "".join(
-                    '<div class="textbox" data-bbox="{}">{}</div>'.format(
-                        ",".join(str(value) for value in cast(LTComponent, item).bbox),
-                        escape(item.get_text()),
+        html_parts: list[str] = []
+        for page in pages:
+            html_parts.append(f'<div class="page" data-page="{page.pageid}">')
+            for item in page:
+                if isinstance(item, LTText) and isinstance(item, LTComponent):
+                    bbox = ",".join(str(value) for value in item.bbox)
+                    html_parts.append(
+                        f'<div class="textbox" data-bbox="{bbox}">{escape(item.get_text())}</div>'
                     )
-                    for item in page
-                    if isinstance(item, LTText) and isinstance(item, LTComponent)
-                ),
-            )
-            for page in pages
-        )
+            html_parts.append("</div>")
+        body = "".join(html_parts)
         return f"<!doctype html><html><body>{body}</body></html>"
     xml_parts: list[str] = []
     for page in pages:
