@@ -11,6 +11,11 @@ from typing import Any, BinaryIO, TextIO, TypeAlias, cast
 from core_pdf import PdfDocument
 from core_pdf._vendor.fontTools.agl import AGL2UV, LEGACY_AGL2UV
 from core_pdf.impl.engine.layout.geometry import bbox_union
+from core_pdf.impl.engine.spec.s_09_fonts.data.base_encodings import (
+    MAC_ROMAN_ENCODING,
+    STANDARD_ENCODING,
+    WIN_ANSI_ENCODING,
+)
 from core_pdf.impl.exceptions import PdfError
 
 PdfInput: TypeAlias = Any
@@ -382,36 +387,26 @@ def _group_objects(chars: list[LTChar], params: LAParams) -> list[LTTextLine]:
 
 
 def _lines_are_neighbors(first: LTTextLine, second: LTTextLine, ratio: float) -> bool:
-    first_text = first.get_text().strip()
-    second_text = second.get_text().strip()
-    slack = (
-        1e-6
-        if any(
-            len(text) == 1 and ord(text) > 127 and line.height >= line.width * 0.8
-            for text, line in ((first_text, first), (second_text, second))
-        )
-        else 0.0
-    )
     if isinstance(first, LTTextLineHorizontal) and isinstance(second, LTTextLineHorizontal):
         tolerance = ratio * first.height
         return (
             not (second.y1 <= first.y0 - tolerance or first.y1 + tolerance <= second.y0)
-            and abs(second.height - first.height) <= tolerance + slack
+            and abs(second.height - first.height) <= tolerance
             and (
-                abs(second.x0 - first.x0) <= tolerance + slack
-                or abs(second.x1 - first.x1) <= tolerance + slack
-                or abs((second.x0 + second.x1 - first.x0 - first.x1) / 2) <= tolerance + slack
+                abs(second.x0 - first.x0) <= tolerance
+                or abs(second.x1 - first.x1) <= tolerance
+                or abs((second.x0 + second.x1 - first.x0 - first.x1) / 2) <= tolerance
             )
         )
     if isinstance(first, LTTextLineVertical) and isinstance(second, LTTextLineVertical):
         tolerance = ratio * first.width
         return (
             not (second.x1 <= first.x0 - tolerance or first.x1 + tolerance <= second.x0)
-            and abs(second.width - first.width) <= tolerance + slack
+            and abs(second.width - first.width) <= tolerance
             and (
-                abs(second.y0 - first.y0) <= tolerance + slack
-                or abs(second.y1 - first.y1) <= tolerance + slack
-                or abs((second.y0 + second.y1 - first.y0 - first.y1) / 2) <= tolerance + slack
+                abs(second.y0 - first.y0) <= tolerance
+                or abs(second.y1 - first.y1) <= tolerance
+                or abs((second.y0 + second.y1 - first.y0 - first.y1) / 2) <= tolerance
             )
         )
     return False
@@ -463,24 +458,7 @@ def _group_lines(
     boxes: list[LTTextBox] = []
     for members in groups:
         vertical = isinstance(members[0], LTTextLineVertical)
-        vertical_characters = [
-            item
-            for item in members
-            if len(item.get_text().strip()) == 1
-            and ord(item.get_text().strip()) > 127
-            and item.height >= item.width * 0.8
-        ]
-        if vertical_characters and len(vertical_characters) >= 3:
-            anchor_x = min(item.x0 for item in vertical_characters)
-            vertical_ids = {id(item) for item in vertical_characters}
-            members.sort(
-                key=lambda item: (
-                    1 if id(item) in vertical_ids else (0 if item.x0 < anchor_x else 2),
-                    -item.y1,
-                )
-            )
-        else:
-            members.sort(key=(lambda item: -item.x1) if vertical else (lambda item: -item.y1))
+        members.sort(key=(lambda item: -item.x1) if vertical else (lambda item: -item.y1))
         box = bbox_union(item.bbox for item in members) or members[0].bbox
         box_type = LTTextBoxVertical if vertical else LTTextBoxHorizontal
         boxes.append(box_type(box, members))
@@ -491,6 +469,7 @@ def _group_lines(
 class _TextGroup:
     children: list[LTTextBox | _TextGroup]
     bbox: tuple[float, float, float, float]
+    vertical: bool = False
 
 
 def _reading_order(
@@ -498,17 +477,6 @@ def _reading_order(
     boxes_flow: float | None,
     page_bbox: tuple[float, float, float, float] | None = None,
 ) -> list[LTTextBox]:
-    if any(
-        sum(
-            len(line.get_text().strip()) == 1
-            and ord(line.get_text().strip()) > 127
-            and line.height >= line.width * 0.8
-            for line in box
-        )
-        >= 3
-        for box in boxes
-    ):
-        return sorted(boxes, key=lambda box: box.x0)
     if boxes_flow is None:
         return sorted(
             boxes,
@@ -577,7 +545,15 @@ def _reading_order(
         if between and not skip_between:
             heapq.heappush(queue, (True, _distance, first_id, second_id))
             continue
-        group = _TextGroup([first, second], union)
+        vertical = (
+            isinstance(first, LTTextBoxVertical)
+            or isinstance(second, LTTextBoxVertical)
+            or isinstance(first, _TextGroup)
+            and first.vertical
+            or isinstance(second, _TextGroup)
+            and second.vertical
+        )
+        group = _TextGroup([first, second], union, vertical)
         del active[first_id], active[second_id]
         group_id = id(group)
         for other_id in plane_order:
@@ -593,98 +569,25 @@ def _reading_order(
     def flatten(item: LTTextBox | _TextGroup) -> list[LTTextBox]:
         if isinstance(item, LTTextBox):
             return [item]
-        ordered = sorted(
-            item.children,
-            key=lambda child: (
-                (1 - boxes_flow) * child.bbox[0]
-                - (1 + boxes_flow) * (child.bbox[1] + child.bbox[3])
-            ),
-        )
+        if item.vertical:
+            ordered = sorted(
+                item.children,
+                key=lambda child: (
+                    -(1 + boxes_flow) * (child.bbox[0] + child.bbox[2])
+                    - (1 - boxes_flow) * child.bbox[3]
+                ),
+            )
+        else:
+            ordered = sorted(
+                item.children,
+                key=lambda child: (
+                    (1 - boxes_flow) * child.bbox[0]
+                    - (1 + boxes_flow) * (child.bbox[1] + child.bbox[3])
+                ),
+            )
         return [box for child in ordered for box in flatten(child)]
 
-    ordered = flatten(root)
-    if len(ordered) < 50:
-        return ordered
-    repaired: list[LTTextBox] = []
-    for current in ordered:
-        text = current.get_text().strip()
-        insertion = len(repaired)
-        if text.replace(",", "").isdigit() and "," in text:
-            lower_bound = max(0, insertion - 2)
-            while insertion > lower_bound and current.y0 > repaired[insertion - 1].y1 + 50:
-                insertion -= 1
-        elif text.startswith("(cid:") and any(
-            box.get_text().count("\n") >= 3 for box in repaired[-2:]
-        ):
-            insertion = max(0, insertion - 2)
-        elif current.get_text().count("\n") >= 3 and repaired:
-            previous_text = repaired[-1].get_text().strip()
-            if len(previous_text) == 1 and previous_text.isalpha() and current.y0 > repaired[-1].y1:
-                insertion -= 1
-        repaired.insert(insertion, current)
-
-    # pdfminer keeps border labels with the drawing region they introduce, even when the
-    # hierarchical area metric places those labels just after the region.
-    left_labels = [
-        box
-        for box in repaired
-        if box.x0 < 30 and len(box.get_text().strip()) == 1 and box.get_text().strip().isalpha()
-    ]
-    if len(left_labels) >= 2:
-        final_label = min(left_labels, key=lambda box: box.y0)
-        preceding_label = min(
-            (box for box in left_labels if box is not final_label),
-            key=lambda box: abs(box.y0 - final_label.y0),
-        )
-        repaired.remove(final_label)
-        repaired.insert(repaired.index(preceding_label) + 1, final_label)
-
-    stacked_datums = [box for box in repaired if box.get_text().startswith("9\nH\n")]
-    datum_label = next(
-        (
-            box
-            for box in repaired
-            if box.get_text().startswith("(cid:")
-            and box.x0 > 600
-            and box.y0 < 600
-            and box.get_text().count("\n") == 1
-        ),
-        None,
-    )
-    if datum_label is not None and stacked_datums:
-        repaired.remove(datum_label)
-        repaired.insert(max(repaired.index(box) for box in stacked_datums) + 1, datum_label)
-
-    high_dimension = next(
-        (
-            box
-            for box in repaired
-            if box.x0 > 1000 and box.y0 > 1000 and box.get_text().startswith("+\n")
-        ),
-        None,
-    )
-    right_cid_labels = [
-        box for box in repaired if box.x0 > 1000 and box.get_text().startswith("(cid:")
-    ]
-    if high_dimension is not None and right_cid_labels:
-        repaired.remove(high_dimension)
-        cid_index = min(repaired.index(box) for box in right_cid_labels)
-        repaired.insert(cid_index, high_dimension)
-        right_decimal = next(
-            (
-                box
-                for box in repaired
-                if box.x0 > 1000
-                and box.y0 > 1000
-                and "," in box.get_text()
-                and box.get_text().strip().replace(",", "").isdigit()
-            ),
-            None,
-        )
-        if right_decimal is not None:
-            repaired.remove(right_decimal)
-            repaired.insert(repaired.index(high_dimension) + 1, right_decimal)
-    return repaired
+    return flatten(root)
 
 
 def _mapping_value(mapping: object, name: str) -> object | None:
@@ -699,25 +602,74 @@ def _pdfminer_glyph_text(glyph: Any) -> str:
     if glyph.unicode_source == "actual_text" and glyph.alternates:
         return glyph.alternates[0]
     to_unicode = getattr(glyph.font_decoder, "to_unicode", None)
+    decoder = glyph.font_decoder
+    glyph_name = (
+        getattr(decoder, "encoding_differences", {}).get(glyph.char_code)
+        if glyph.unicode_source == "encoding"
+        else None
+    )
+    if glyph_name and glyph_name.isdecimal():
+        glyph_name = None
+    if glyph_name and glyph_name not in AGL2UV and glyph_name not in LEGACY_AGL2UV:
+        return f"(cid:{glyph.cid})"
     if to_unicode is not None and glyph.code_bytes:
         mappings = getattr(to_unicode, "mappings", {})
         if glyph.code_bytes in mappings:
             mapped = mappings[glyph.code_bytes]
             if len(mapped) <= 1:
-                return mapped or "\x00"
+                return mapped or f"(cid:{glyph.cid})"
+        if (
+            glyph.unicode_source != "identity"
+            and not getattr(decoder, "is_cid_font", False)
+            and glyph.char_code is not None
+        ):
+            base_encoding = getattr(decoder, "base_encoding", None)
+            if base_encoding is None and str(_mapping_value(decoder.font, "Subtype")) == "TrueType":
+                base_encoding = "WinAnsiEncoding"
+            table = {
+                "MacRomanEncoding": MAC_ROMAN_ENCODING,
+                "WinAnsiEncoding": WIN_ANSI_ENCODING,
+            }.get(base_encoding, STANDARD_ENCODING)
+            encoded = table[glyph.char_code]
+            if encoded:
+                return encoded
     if glyph.cid is None:
         return glyph.text
-    if glyph.unicode_source == "identity" and to_unicode is None:
+    if glyph.unicode_source == "identity" and (
+        to_unicode is None or getattr(decoder, "is_cid_font", False)
+    ):
         return f"(cid:{glyph.cid})"
-    decoder = glyph.font_decoder
     if glyph.unicode_source in {"fallback_nul", "undefined"}:
+        base_tables = {
+            "MacRomanEncoding": MAC_ROMAN_ENCODING,
+            "StandardEncoding": STANDARD_ENCODING,
+            "WinAnsiEncoding": WIN_ANSI_ENCODING,
+        }
+        table = base_tables.get(getattr(decoder, "base_encoding", None))
+        if table is not None and glyph.char_code is not None:
+            base_text = table[glyph.char_code]
+            if base_text and not (
+                getattr(decoder, "base_encoding", None) == "WinAnsiEncoding"
+                and glyph.char_code in {129, 141, 143, 144, 157}
+            ):
+                return base_text
         return f"(cid:{glyph.cid})"
-    if glyph.unicode_source == "encoding" and glyph.char_code == 127:
+    if (
+        glyph.unicode_source == "encoding"
+        and not glyph_name
+        and (
+            glyph.char_code is not None
+            and (
+                glyph.char_code < 32
+                or glyph.char_code == 127
+                or (
+                    getattr(decoder, "base_encoding", None) == "WinAnsiEncoding"
+                    and glyph.char_code in {129, 141, 143, 144, 157}
+                )
+            )
+        )
+    ):
         return f"(cid:{glyph.cid})"
-    if to_unicode is not None and glyph.unicode_source == "encoding":
-        glyph_name = getattr(decoder, "encoding_differences", {}).get(glyph.char_code)
-        if glyph_name and glyph_name not in AGL2UV and glyph_name not in LEGACY_AGL2UV:
-            return f"(cid:{glyph.cid})"
     if glyph.unicode_source == "truetype_cmap" and getattr(decoder, "to_unicode", None) is None:
         descendants = _mapping_value(getattr(decoder, "font", None), "DescendantFonts")
         descendant = descendants[0] if isinstance(descendants, list) and descendants else None
@@ -778,6 +730,14 @@ def _legacy_ligature_overrides(
                 continue
         if glyph.char_code is None:
             continue
+        glyph_name = getattr(decoder, "encoding_differences", {}).get(glyph.char_code)
+        if glyph_name not in ligatures:
+            # A decomposed Unicode sequence is not sufficient evidence that
+            # pdfminer would emit a legacy presentation-form ligature.  Most
+            # commonly it came from /ActualText or a ToUnicode mapping, both
+            # of which pdfminer exposes as ordinary characters.  Recombine
+            # only when the PDF encoding itself names a ligature glyph.
+            continue
         cluster: tuple[Any, ...] | None = None
         legacy_text: str | None = None
         # Try the longest standard ligature first.  The engine emits one
@@ -790,8 +750,6 @@ def _legacy_ligature_overrides(
             decomposition = "".join(item.text for item in candidate)
             candidate_text = ligatures.get(decomposition)
             if candidate_text is None:
-                continue
-            if decomposition.startswith("ff") and glyph.code_bytes in {b"f", b"\x00f"}:
                 continue
             if any(
                 item.seqno != glyph.seqno
@@ -857,13 +815,42 @@ def extract_pages(
                     compatibility_glyphs.append(glyph)
             projected_glyphs = tuple(compatibility_glyphs)
             ligatures, skipped_ligature_parts = _legacy_ligature_overrides(projected_glyphs)
+            pdfminer_offsets: dict[int, tuple[float, float]] = {}
+            correction_x = 0.0
+            correction_y = 0.0
+            for glyph_index, glyph in enumerate(projected_glyphs):
+                pdfminer_offsets[id(glyph)] = (correction_x, correction_y)
+                if glyph_index + 1 >= len(projected_glyphs):
+                    continue
+                following = projected_glyphs[glyph_index + 1]
+                baseline = glyph.baseline
+                following_baseline = following.baseline
+                continuous = (
+                    baseline is not None
+                    and following_baseline is not None
+                    and abs(baseline[2] - following_baseline[0]) <= 1e-6
+                    and abs(baseline[3] - following_baseline[1]) <= 1e-6
+                )
+                if not continuous:
+                    correction_x = 0.0
+                    correction_y = 0.0
+                    continue
+                if glyph.seqno == following.seqno:
+                    continue
+                provenance = dict(glyph.provenance) if glyph.provenance else {}
+                char_space = float(provenance.get("char_space", 0.0))
+                text_matrix = provenance.get("text_matrix")
+                if char_space and isinstance(text_matrix, (tuple, list)) and len(text_matrix) == 4:
+                    matrix_a, matrix_b, _matrix_c, _matrix_d = (
+                        float(value) for value in text_matrix
+                    )
+                    horizontal_scale = float(provenance.get("horizontal_scale", 100.0)) * 0.01
+                    correction_x -= char_space * horizontal_scale * matrix_a
+                    correction_y -= char_space * horizontal_scale * matrix_b
             runs = sorted(products.runs, key=lambda run: run.seqno)
             run_sequences = [run.seqno for run in runs]
-            figure_chars: dict[
-                int,
-                list[tuple[LTChar, int]],
-            ] = {}
-            figure_boxes: dict[int, tuple[float, float, float, float]] = {}
+            figure_chars: dict[tuple[object, ...], list[tuple[LTChar, int]]] = {}
+            figure_boxes: dict[tuple[object, ...], tuple[float, float, float, float]] = {}
             try:
                 page_fields = page.get_fields()
             except (PdfError, ValueError):
@@ -892,6 +879,18 @@ def extract_pages(
                 ligature = ligatures.get(id(glyph))
                 x0, y0, x1, y1 = ligature[1] if ligature is not None else glyph.advance_bbox
                 baseline = ligature[2] if ligature is not None else glyph.baseline
+                offset_x, offset_y = pdfminer_offsets.get(id(glyph), (0.0, 0.0))
+                x0 += offset_x
+                x1 += offset_x
+                y0 += offset_y
+                y1 += offset_y
+                if baseline is not None and (offset_x or offset_y):
+                    baseline = (
+                        baseline[0] + offset_x,
+                        baseline[1] + offset_y,
+                        baseline[2] + offset_x,
+                        baseline[3] + offset_y,
+                    )
                 text = ligature[0] if ligature is not None else _pdfminer_glyph_text(glyph)
                 if not text:
                     continue
@@ -947,7 +946,14 @@ def extract_pages(
                 ):
                     matrix_a, matrix_b, matrix_c, matrix_d = (float(value) for value in text_matrix)
                     origin_x, origin_y = baseline[0], baseline[1]
-                    descent = float(getattr(glyph.font_decoder, "descent", -200.0)) * 0.001
+                    descent_scale = 0.001
+                    if getattr(glyph.font_decoder, "is_type3", False):
+                        font_matrix = _mapping_value(glyph.font_decoder.font, "FontMatrix")
+                        if isinstance(font_matrix, (tuple, list)) and len(font_matrix) == 6:
+                            font_matrix_c = float(font_matrix[2])
+                            font_matrix_d = float(font_matrix[3])
+                            descent_scale = (font_matrix_c**2 + font_matrix_d**2) ** 0.5
+                    descent = float(getattr(glyph.font_decoder, "descent", -200.0)) * descent_scale
                     # ``LTChar`` uses the font descent only to anchor horizontal
                     # glyphs; its box is always exactly one text-space unit tall.
                     # FontBBox/ascent describes ink, not pdfminer's layout box.
@@ -1031,12 +1037,17 @@ def extract_pages(
                     ):
                         continue
                 stream_order = int(provenance.get("stream_order", 0) or 0)
-                figure_chars.setdefault(stream_order, []).append((character, glyph.seqno))
                 layout_bbox = provenance.get("layout_form_bbox")
-                if not (isinstance(layout_bbox, (tuple, list)) and len(layout_bbox) == 4):
-                    layout_bbox = provenance.get("clip_bbox")
                 if isinstance(layout_bbox, (tuple, list)) and len(layout_bbox) == 4:
-                    figure_boxes[stream_order] = tuple(float(value) for value in layout_bbox)
+                    resolved_layout_bbox = tuple(float(value) for value in layout_bbox)
+                    figure_key: tuple[object, ...] = ("bbox", *resolved_layout_bbox)
+                    figure_boxes[figure_key] = resolved_layout_bbox
+                else:
+                    figure_key = ("stream", stream_order)
+                    layout_bbox = provenance.get("clip_bbox")
+                figure_chars.setdefault(figure_key, []).append((character, glyph.seqno))
+                if isinstance(layout_bbox, (tuple, list)) and len(layout_bbox) == 4:
+                    figure_boxes[figure_key] = tuple(float(value) for value in layout_bbox)
             lines = _group_objects(chars, params)
             layout_width, layout_height = (
                 (page_height, page_width) if int(page.rotation) % 180 else (page_width, page_height)
@@ -1053,7 +1064,7 @@ def extract_pages(
                 )
             )
             drawing_sequences = sorted(drawing.seqno for drawing in products.drawings)
-            for stream_order, entries in figure_chars.items():
+            for figure_index, (figure_key, entries) in enumerate(figure_chars.items()):
                 snippets: list[str] = []
                 current: list[str] = []
                 previous_sequence: int | None = None
@@ -1067,7 +1078,20 @@ def extract_pages(
                     previous_sequence = sequence
                 if current:
                     snippets.append("".join(current))
-                figure_box = figure_boxes.get(stream_order) or bbox_union(
+                merged_snippets: list[str] = []
+                for snippet in snippets:
+                    if (
+                        merged_snippets
+                        and snippet
+                        and not any(character.isalnum() for character in snippet)
+                        and not any(character.isalnum() for character in merged_snippets[-1])
+                        and merged_snippets[-1][-1] == snippet[0]
+                    ):
+                        merged_snippets[-1] += snippet
+                    else:
+                        merged_snippets.append(snippet)
+                snippets = merged_snippets
+                figure_box = figure_boxes.get(figure_key) or bbox_union(
                     character.bbox for character, _ in entries
                 )
                 if figure_box is not None:
@@ -1103,7 +1127,7 @@ def extract_pages(
                     boxes.append(
                         LTFigure(
                             (x0, y0, x1, y1),
-                            f"Form{stream_order}",
+                            f"Form{figure_index}",
                             [character for character, _ in entries],
                             selected_snippets,
                         )

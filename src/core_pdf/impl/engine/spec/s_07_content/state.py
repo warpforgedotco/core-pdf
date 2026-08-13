@@ -1766,6 +1766,7 @@ class TextState:
             ("layout_form_bbox", self.layout_form_bbox),
             ("text_matrix", (combined_a, combined_b, combined_c, combined_d)),
             ("horizontal_scale", self.horizontal_scale),
+            ("char_space", self.char_space),
         )
         text_basis = (
             self.tm_e * self.ca + self.tm_f * self.cc + self.ce,

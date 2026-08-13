@@ -375,6 +375,8 @@ def internal_region_order(
     regions: list[tuple[str, tuple[float, float, float, float]]],
     page_height: float,
 ) -> list[int]:
+    # The fast PDF pipeline always performs a basic top/left sort first for
+    # deterministic ties, then applies XY-cut to that sequence.
     basic_order = sorted(
         range(len(regions)),
         key=lambda index: (page_height - regions[index][1][3], regions[index][1][0]),
@@ -398,7 +400,7 @@ def internal_region_order(
         return []
     # Unstructured requires every coordinate to be non-negative before it
     # applies XY-cut. A single box extending beyond the media box makes it keep
-    # the deterministic basic (top, left) order for the entire page.
+    # the deterministic basic order for the entire page.
     if any(coordinate < 0 for box in boxes for coordinate in box):
         return basic_order
     result: list[int] = []
