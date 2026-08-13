@@ -211,6 +211,12 @@ class OperatorTextProjection:
             if not isinstance(font, dict):
                 continue
             self.internal_validate_font_files(font)
+            subtype = normalize_pdf_name(lookup_dict_key(font, "Subtype"))
+            if subtype not in {"Type1", "MMType1", "TrueType", "Type3"} and not isinstance(
+                self.resolver.resolve(lookup_dict_key(font, "DescendantFonts")),
+                (list, tuple),
+            ):
+                raise KeyError("DescendantFonts")
             resolved = self.resolver.resolve_font_dict(font)
             decoder = FontDecoder(cast(dict[str, object], resolved))
             widths, default_width = self.internal_widths(font)
@@ -404,6 +410,14 @@ class OperatorTextProjection:
             if glyph_name.isdigit():
                 table[code] = f"/{glyph_name}"
                 continue
+            if (
+                glyph_name.startswith("uni")
+                and len(glyph_name) > 3
+                and len(glyph_name[3:]) % 4 == 0
+                and all(character in "0123456789abcdefABCDEF" for character in glyph_name[3:])
+            ):
+                table[code] = f"/{glyph_name}"
+                continue
             mapped = glyph_name_to_unicode(glyph_name)
             table[code] = (
                 glyph_name
@@ -422,7 +436,14 @@ class OperatorTextProjection:
     @staticmethod
     def internal_character_map(decoder: FontDecoder) -> dict[str, str]:
         if decoder.to_unicode is None:
-            return {}
+            result: dict[str, str] = {}
+            if decoder.differences:
+                return result
+            for code, glyph_name in decoder.encoding_differences.items():
+                mapped = glyph_name_to_unicode(glyph_name)
+                if mapped != glyph_name:
+                    result[chr(code)] = mapped
+            return result
         return {
             chr(int.from_bytes(source, "big")): (
                 " " if int.from_bytes(source, "big") == 32 and text == "␣" else text
@@ -557,12 +578,11 @@ class OperatorTextProjection:
                     form_resources = self.resolver.resolve(
                         lookup_dict_key(form.dictionary, "Resources")
                     )
-                    if not isinstance(form_resources, dict):
-                        form_resources = resources
-                    nested = self.internal_extract(
-                        (self.resolver.resolve_stream(form),), form_resources
-                    )
-                    state.output += nested
+                    if isinstance(form_resources, dict):
+                        nested = self.internal_extract(
+                            (self.resolver.resolve_stream(form),), form_resources
+                        )
+                        state.output += nested
         state.flush()
         return state.output
 
