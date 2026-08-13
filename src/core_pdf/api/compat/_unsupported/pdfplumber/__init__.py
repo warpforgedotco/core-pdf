@@ -618,7 +618,7 @@ class Page:
     @property
     def layout(self) -> Any:
         if self._layout is None:
-            from ..pdfminer import LAParams, extract_pages
+            from ...pdfminer import LAParams, extract_pages
 
             laparams = self.pdf.laparams
             if isinstance(laparams, Mapping):

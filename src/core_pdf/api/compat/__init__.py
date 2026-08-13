@@ -9,9 +9,7 @@ from __future__ import annotations
 from importlib import import_module
 from typing import Any
 
-internal_MODULES = frozenset(
-    {"llamaindex", "pdfminer", "pdfplumber", "pikepdf", "unstructured", "xray"}
-)
+internal_MODULES = frozenset({"llamaindex", "pdfminer", "pikepdf", "unstructured", "xray"})
 internal_EXPORTS = {
     **{
         name: ("pdfminer", name)
@@ -34,26 +32,6 @@ internal_EXPORTS = {
             "extract_text_to_fp",
         )
     },
-    **{
-        name: ("pdfplumber", name)
-        for name in (
-            "CroppedPage",
-            "FilteredPage",
-            "PDF",
-            "Page",
-            "PageImage",
-            "Table",
-            "TableFinder",
-            "TableSettings",
-            "extract_words",
-            "open",
-            "outside_bbox",
-            "utils",
-            "within_bbox",
-        )
-    },
-    "extract_pdfplumber_text": ("pdfplumber", "extract_text"),
-    "open_pdf": ("pdfplumber", "open"),
     "Pdf": ("pikepdf", "Pdf"),
     "get_nodes_from_documents": ("llamaindex", "get_nodes_from_documents"),
     "load_data": ("llamaindex", "load_data"),
