@@ -1381,6 +1381,61 @@ def iter_content_operations(lexer: PdfLexer) -> Iterator[ContentOperation]:
     yield from results
 
 
+def validate_inline_images(data: bytes | memoryview) -> None:
+    """Validate inline-image boundaries without disabling normal stream recovery."""
+    raw_bytes = full_source_bytes(data)
+    if raw_bytes is None:
+        raw_bytes = bytes(data)
+    data_len = len(raw_bytes)
+    pos = 0
+    container_depth = 0
+    lexer = PdfLexer(raw_bytes)
+    while match := TEXT_OR_LEXICAL_MARKER_RE.search(raw_bytes, pos):
+        marker = match.start()
+        token = match.group()
+        if token == b"%":
+            pos = skip_comment(raw_bytes, marker, data_len)
+            continue
+        if token == b"(":
+            pos = skip_literal_string(raw_bytes, marker, data_len)
+            continue
+        if token == b"<":
+            if marker + 1 < data_len and raw_bytes[marker + 1] == 60:
+                container_depth += 1
+                pos = marker + 2
+            else:
+                pos = skip_hex_string(raw_bytes, marker, data_len)
+            continue
+        if token == b">":
+            if marker + 1 < data_len and raw_bytes[marker + 1] == 62:
+                container_depth = max(0, container_depth - 1)
+                pos = marker + 2
+            else:
+                pos = marker + 1
+            continue
+        if token == b"[":
+            container_depth += 1
+            pos = marker + 1
+            continue
+        if token == b"]":
+            container_depth = max(0, container_depth - 1)
+            pos = marker + 1
+            continue
+        if token == b"/":
+            pos = skip_name(raw_bytes, marker, data_len)
+            continue
+        after = match.end()
+        delimited = (marker == 0 or SEPARATOR_TABLE[raw_bytes[marker - 1]]) and (
+            after == data_len or SEPARATOR_TABLE[raw_bytes[after]]
+        )
+        if token != b"BI" or container_depth or not delimited:
+            pos = after
+            continue
+        lexer.pos = after
+        parse_inline_image(lexer)
+        pos = lexer.pos
+
+
 __all__ = (
     "ContentOperand",
     "ContentOperands",
@@ -1391,4 +1446,5 @@ __all__ = (
     "count_content_stream_operators",
     "dispatch_operations",
     "iter_content_operations",
+    "validate_inline_images",
 )

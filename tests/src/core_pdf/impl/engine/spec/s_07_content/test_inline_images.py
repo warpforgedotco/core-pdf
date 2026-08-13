@@ -7,7 +7,9 @@ from core_pdf.impl.engine.spec.s_07_content.inline_images import (
     parse_inline_image,
     recover_inline_image_position,
 )
+from core_pdf.impl.engine.spec.s_07_content.operations import validate_inline_images
 from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
+from core_pdf.impl.exceptions import PdfParseError
 
 
 @pytest.mark.parametrize(
@@ -115,3 +117,12 @@ def test_inline_image_recovery_supports_reversed_memoryview() -> None:
     position = recover_inline_image_position(lexer, 0, {b"EMC"}.__contains__)
 
     assert position == content.index(b"EMC")
+
+
+def test_inline_image_validation_rejects_unterminated_data() -> None:
+    with pytest.raises(PdfParseError, match="unterminated inline image data"):
+        validate_inline_images(b"q BI /W 1 /H 1 /BPC 8 /CS /G ID missing")
+
+
+def test_inline_image_validation_ignores_tokens_inside_strings() -> None:
+    validate_inline_images(b"BT (BI /W 1 ID missing) Tj ET")

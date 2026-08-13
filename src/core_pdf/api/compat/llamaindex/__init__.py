@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, TypeAlias, cast
 
 from core_pdf import PdfDocument
+from core_pdf.impl.engine.spec.s_07_content.operations import validate_inline_images
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.writing.api import find_startxref
 from core_pdf.impl.objects import PdfReference
@@ -147,9 +148,15 @@ def load_data(
 ) -> list[Document]:
     del kwargs, max_characters
     source_path = Path(cast(str | PathLike[str], source))
-    find_startxref(source_path.read_bytes())
+    source_data = source_path.read_bytes()
+    if b"startxref" not in source_data or b"%%EOF" not in source_data:
+        raise ValueError("incomplete PDF cross-reference terminator")
+    find_startxref(source_data)
     with PdfDocument.open(source_path) as pdf:
         _validate_page_tree(pdf)
+        for page in pdf.pages:
+            for stream in page.content_streams:
+                validate_inline_images(stream.data)
         return [
             Document(
                 OperatorTextProjection(page).extract_text(),
