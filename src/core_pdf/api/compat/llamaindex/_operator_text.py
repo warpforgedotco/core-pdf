@@ -204,7 +204,9 @@ class internal_TextState:
         """Insert layout whitespace without passing it through the active font CMap."""
         self.text += " "
         width = (
-            self.font.character_widths.get(32, self.font.default_width)
+            self.font.space_width
+            if self.font is not None and self.font.space_character == " "
+            else self.font.character_widths.get(32, self.font.default_width)
             if self.font is not None
             else 200.0
         )
