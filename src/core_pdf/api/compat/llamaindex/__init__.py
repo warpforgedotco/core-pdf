@@ -5,9 +5,13 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
+from os import PathLike
+from pathlib import Path
 from typing import Any, TypeAlias, cast
 
-from core_pdf.api.compat._unsupported.pypdf import PdfReader
+from core_pdf import PdfDocument
+from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
+from core_pdf.impl.objects import PdfReference
 
 PdfInput: TypeAlias = Any
 
@@ -111,6 +115,65 @@ class Node(_MetadataMixin):
 TextNode = Node
 
 
+def _validate_page_tree(pdf: PdfDocument) -> None:
+    seen: set[tuple[int, int]] = set()
+
+    def visit(value: object) -> None:
+        if isinstance(value, PdfReference):
+            key = (value.object_number, value.generation_number)
+            if key in seen:
+                raise ValueError("detected cyclic page references")
+            seen.add(key)
+        node = pdf.resolver.resolve(value)
+        if not isinstance(node, dict):
+            return
+        kids = pdf.resolver.resolve(lookup_dict_key(node, "Kids"))
+        if isinstance(kids, (list, tuple)):
+            for kid in kids:
+                visit(kid)
+
+    visit(lookup_dict_key(pdf.catalog(), "Pages"))
+
+
+def _native_page_text(page: Any) -> str:
+    """Project captured PDF text-show runs without including OCR output."""
+    output = ""
+    groups: list[list[Any]] = []
+    for glyph in page.get_page_program().products.glyphs:
+        x0, y0, x1, y1 = glyph.advance_bbox
+        if not groups or groups[-1][0] != glyph.seqno:
+            groups.append([glyph.seqno, x0, y0, x1, y1, glyph.text])
+        else:
+            group = groups[-1]
+            group[1] = min(group[1], x0)
+            group[2] = min(group[2], y0)
+            group[3] = max(group[3], x1)
+            group[4] = max(group[4], y1)
+            group[5] += glyph.text
+    previous: list[Any] | None = None
+    for group in groups:
+        _, x0, y0, x1, y1, text = group
+        if not text:
+            continue
+        if previous is not None:
+            _, _, previous_y0, previous_x1, previous_y1, _ = previous
+            height = max(y1 - y0, previous_y1 - previous_y0, 1.0)
+            different_baseline = abs(y0 - previous_y0) > height * 0.5
+            restarted_line = x0 < previous_x1 - height
+            if different_baseline or restarted_line:
+                if not output.endswith("\n"):
+                    output += "\n"
+            elif (
+                not output.endswith((" ", "\n"))
+                and not text.startswith(" ")
+                and x0 - previous_x1 > height * 0.2
+            ):
+                output += " "
+        output += text
+        previous = group
+    return output
+
+
 def load_data(
     source: object,
     *,
@@ -119,17 +182,19 @@ def load_data(
     **kwargs: object,
 ) -> list[Document]:
     del kwargs, max_characters
-    with PdfReader(cast(PdfInput, source), strict=False) as reader:
+    source_path = Path(cast(str | PathLike[str], source))
+    with PdfDocument.open(source_path) as pdf:
+        _validate_page_tree(pdf)
         return [
             Document(
-                page.extract_text(),
+                _native_page_text(page),
                 {
                     **(dict(extra_info) if extra_info is not None else {}),
-                    "page_numbers": (page_number,),
-                    "element_ids": (),
+                    "page_label": page.label or str(page_number),
+                    "file_name": source_path.name,
                 },
             )
-            for page_number, page in enumerate(reader.pages, 1)
+            for page_number, page in enumerate(pdf.pages, 1)
         ]
 
 
@@ -143,7 +208,7 @@ def get_nodes_from_documents(source: object, *, max_characters: int = 2000) -> l
             text=document.text,
             node_id=f"node-{index}",
             metadata=document.metadata,
-            relationships={"source": f"page-{document.metadata['page_numbers'][0]}"},
+            relationships={"source": f"page-{document.metadata.get('page_label', index + 1)}"},
         )
         for index, document in enumerate(documents)
     ]

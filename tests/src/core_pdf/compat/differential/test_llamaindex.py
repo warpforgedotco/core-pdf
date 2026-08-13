@@ -15,4 +15,6 @@ def test_matches_real_reader_on_all_fixture_pdfs(pdf_path: Path) -> None:
         lambda: load_data(pdf_path),
     )
     if pair is not None:
-        assert [document.text for document in pair[1]] == [document.text for document in pair[0]]
+        assert [(document.text, document.metadata) for document in pair[1]] == [
+            (document.text, document.metadata) for document in pair[0]
+        ]
