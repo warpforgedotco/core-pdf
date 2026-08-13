@@ -122,8 +122,12 @@ class internal_Font:
         return "".join(self.encoding[code] or chr(code) for code in data)
 
     def decode(self, data: bytes) -> str:
-        encoded = self.encoded(data)
-        return "".join(self.character_map.get(character, character) for character in encoded)
+        return "".join(self.display_chunks(data))
+
+    def display_chunks(self, data: bytes) -> tuple[str, ...]:
+        return tuple(
+            self.character_map.get(character, character) for character in self.encoded(data)
+        )
 
     def text_width(self, data: bytes) -> float:
         return sum(
@@ -197,24 +201,24 @@ class internal_TextState:
 
     def show(self, data: bytes) -> None:
         if self.font is None:
-            decoded = "�" * len(data)
+            chunks = ("�",) * len(data)
             width = 250.0 * len(data)
         else:
-            decoded = self.font.decode(data)
+            chunks = self.font.display_chunks(data)
             width = self.font.text_width(data)
-        for character in decoded:
-            if internal_neutral(character):
-                self.text = character + self.text if self.rtl else self.text + character
-            elif internal_rtl(character):
+        for chunk in chunks:
+            if len(chunk) != 1 or internal_neutral(chunk):
+                self.text = chunk + self.text if self.rtl else self.text + chunk
+            elif internal_rtl(chunk):
                 if not self.rtl:
                     self.rtl = True
                     self.text = ""
-                self.text = character + self.text
+                self.text = chunk + self.text
             else:
                 if self.rtl:
                     self.rtl = False
                     self.text = ""
-                self.text += character
+                self.text += chunk
         self.width += width * self.font_size
         self.height = self.font_size
         self.positioned(0.0)
