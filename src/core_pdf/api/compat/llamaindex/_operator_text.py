@@ -293,7 +293,7 @@ class OperatorTextProjection:
             resolved = self.resolver.resolve_font_dict(font)
             decoder = FontDecoder(cast(dict[str, object], resolved))
             to_unicode = self.internal_to_unicode(resolved, decoder)
-            widths, default_width = self.internal_widths(font)
+            widths, default_width = self.internal_widths(font, decoder)
             if subtype == "Type3" and not self.internal_type3_interpretable(font):
                 widths, default_width = {}, 0.0
             encoding = self.internal_encoding(font, decoder, to_unicode)
@@ -421,7 +421,11 @@ class OperatorTextProjection:
         )
         return int(flags) if isinstance(flags, (int, float)) else 0
 
-    def internal_widths(self, font: Mapping[object, object]) -> tuple[dict[int, float], float]:
+    def internal_widths(
+        self,
+        font: Mapping[object, object],
+        decoder: FontDecoder,
+    ) -> tuple[dict[int, float], float]:
         widths: dict[int, float] = {}
         default_width = 0.0
         descendants = self.resolver.resolve(lookup_dict_key(font, "DescendantFonts"))
@@ -473,6 +477,12 @@ class OperatorTextProjection:
                 missing = self.resolver.resolve(lookup_dict_key(descriptor, "MissingWidth"))
                 if isinstance(missing, (int, float)):
                     default_width = float(missing)
+            if not widths:
+                widths.update(
+                    (code, width)
+                    for code, width in decoder.widths.iter_explicit_widths()
+                    if 0 <= code < 256 and width > 0
+                )
         return widths, default_width
 
     def internal_encoding(
