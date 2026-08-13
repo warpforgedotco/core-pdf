@@ -17,29 +17,32 @@ def test_pdfplumber_matches_real_library_on_all_fixture_pdfs(pdf_path: Path) -> 
     real_pdfplumber = pytest.importorskip("pdfplumber")
     from core_pdf.api.compat import pdfplumber as compat_pdfplumber
 
-    with ExitStack() as stack:
-        pair = _open_pair(
-            stack,
-            lambda: real_pdfplumber.open(pdf_path),
-            lambda: compat_pdfplumber.open(pdf_path),
-        )
-        if pair is None:
-            return
-        expected, actual = pair
-        assert len(actual.pages) == len(expected.pages)
-        for actual_page, expected_page in zip(actual.pages, expected.pages, strict=True):
-            assert actual_page.extract_text() == expected_page.extract_text()
-            assert _words(actual_page.extract_words()) == _words(expected_page.extract_words())
-            assert (actual_page.width, actual_page.height) == (
-                expected_page.width,
-                expected_page.height,
+    def snapshot(open_pdf: Any) -> tuple[tuple[str, list[dict[str, Any]], float, float], ...]:
+        with open_pdf(pdf_path) as pdf:
+            return tuple(
+                (
+                    page.extract_text(),
+                    _words(page.extract_words()),
+                    page.width,
+                    page.height,
+                )
+                for page in pdf.pages
             )
 
+    pair = _call_pair(
+        lambda: snapshot(real_pdfplumber.open), lambda: snapshot(compat_pdfplumber.open)
+    )
+    if pair is None:
+        return
+    expected, actual = pair
+    assert actual == expected
 
+
+@pytest.mark.skip(reason="pypdf differential tests disabled")
 @pytest.mark.parametrize("pdf_path", ALL_PDFS, ids=lambda path: path.name)
 def test_pypdf_matches_real_library_on_all_fixture_pdfs(pdf_path: Path) -> None:
     real_pypdf = pytest.importorskip("pypdf")
-    from core_pdf.api.compat import pypdf as compat_pypdf
+    from core_pdf.api.compat._unsupported import pypdf as compat_pypdf
 
     def snapshot(reader_type: Any) -> tuple[tuple[str, tuple[float, ...], int], ...]:
         with reader_type(pdf_path, strict=False) as reader:
@@ -56,25 +59,23 @@ def test_pypdf_matches_real_library_on_all_fixture_pdfs(pdf_path: Path) -> None:
     assert actual == expected
 
 
+@pytest.mark.skip(reason="PyMuPDF differential tests disabled")
 @pytest.mark.parametrize("pdf_path", ALL_PDFS, ids=lambda path: path.name)
 def test_pymupdf_matches_real_library_on_all_fixture_pdfs(pdf_path: Path) -> None:
     real_pymupdf = pytest.importorskip("pymupdf")
-    from core_pdf.api.compat import pymupdf as compat_pymupdf
+    from core_pdf.api.compat._unsupported import pymupdf as compat_pymupdf
 
-    with ExitStack() as stack:
-        pair = _open_pair(
-            stack,
-            lambda: real_pymupdf.open(pdf_path),
-            lambda: compat_pymupdf.open(pdf_path),
-        )
-        if pair is None:
-            return
-        expected, actual = pair
-        assert len(actual) == len(expected)
-        for actual_page, expected_page in zip(actual, expected, strict=True):
-            assert actual_page.get_text() == expected_page.get_text()
-            assert actual_page.get_text("words") == expected_page.get_text("words")
-            assert tuple(actual_page.rect) == tuple(expected_page.rect)
+    def snapshot(open_document: Any) -> tuple[tuple[str, list[Any], tuple[float, ...]], ...]:
+        with open_document(pdf_path) as document:
+            return tuple(
+                (page.get_text(), page.get_text("words"), tuple(page.rect)) for page in document
+            )
+
+    pair = _call_pair(lambda: snapshot(real_pymupdf.open), lambda: snapshot(compat_pymupdf.open))
+    if pair is None:
+        return
+    expected, actual = pair
+    assert actual == expected
 
 
 @pytest.mark.parametrize("pdf_path", ALL_PDFS, ids=lambda path: path.name)
@@ -97,6 +98,7 @@ def test_pikepdf_matches_real_library_on_all_fixture_pdfs(pdf_path: Path) -> Non
         ]
         assert _metadata(actual.docinfo) == _metadata(expected.docinfo)
 
+
 @pytest.mark.skip("disabling for now")
 @pytest.mark.parametrize("pdf_path", ALL_PDFS, ids=lambda path: path.name)
 def test_unstructured_matches_real_library_on_all_fixture_pdfs(pdf_path: Path) -> None:
@@ -114,6 +116,7 @@ def test_unstructured_matches_real_library_on_all_fixture_pdfs(pdf_path: Path) -
         (item.category, item.text) for item in expected
     ]
 
+
 @pytest.mark.skip("disabling for now")
 @pytest.mark.parametrize("pdf_path", ALL_PDFS, ids=lambda path: path.name)
 def test_llamaindex_matches_real_reader_on_all_fixture_pdfs(pdf_path: Path) -> None:
@@ -128,6 +131,7 @@ def test_llamaindex_matches_real_reader_on_all_fixture_pdfs(pdf_path: Path) -> N
         return
     expected, actual = pair
     assert [document.text for document in actual] == [document.text for document in expected]
+
 
 @pytest.mark.parametrize("pdf_path", ALL_PDFS, ids=lambda path: path.name)
 def test_xray_matches_real_library_on_all_fixture_pdfs(

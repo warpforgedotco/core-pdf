@@ -12,7 +12,12 @@ from os import PathLike
 from pathlib import Path
 from typing import Any, cast
 
-from core_pdf.api.compat.pypdf import PdfInput, PdfPageObject, PdfReader, StructuredState
+from core_pdf.api.compat._unsupported.pypdf import (
+    PdfInput,
+    PdfPageObject,
+    PdfReader,
+    StructuredState,
+)
 from core_pdf.impl.engine.layout.geometry import bbox_intersects, rect_tuple
 from core_pdf.impl.engine.structured import (
     Annotation,
@@ -240,7 +245,7 @@ class Page(PdfPageObject):
             glyphs_by_sequence.setdefault(glyph.seqno, []).append(glyph)
         indexed_words = list(self._native_text_view().words)
         search_from = 0
-        output = []
+        output: list[tuple[float, float, float, float, str, int, int, int]] = []
         fallback_block = 0
         previous_raw_x1: float | None = None
         previous_word_y: tuple[float, float] | None = None

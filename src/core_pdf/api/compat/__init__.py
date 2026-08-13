@@ -10,7 +10,7 @@ from importlib import import_module
 from typing import Any
 
 internal_MODULES = frozenset(
-    {"llamaindex", "pdfminer", "pdfplumber", "pikepdf", "pymupdf", "pypdf", "unstructured", "xray"}
+    {"llamaindex", "pdfminer", "pdfplumber", "pikepdf", "unstructured", "xray"}
 )
 internal_EXPORTS = {
     **{
@@ -55,9 +55,6 @@ internal_EXPORTS = {
     "extract_pdfplumber_text": ("pdfplumber", "extract_text"),
     "open_pdf": ("pdfplumber", "open"),
     "Pdf": ("pikepdf", "Pdf"),
-    "FitzDocument": ("pymupdf", "Document"),
-    "open_fitz": ("pymupdf", "open"),
-    **{name: ("pypdf", name) for name in ("PdfMerger", "PdfPageObject", "PdfReader", "PdfWriter")},
     "get_nodes_from_documents": ("llamaindex", "get_nodes_from_documents"),
     "load_data": ("llamaindex", "load_data"),
     "partition_pdf": ("unstructured", "partition_pdf"),

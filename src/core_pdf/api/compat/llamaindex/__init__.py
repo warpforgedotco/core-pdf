@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, TypeAlias, cast
 
-from core_pdf.api.compat.pypdf import PdfReader
+from core_pdf.api.compat._unsupported.pypdf import PdfReader
 
 PdfInput: TypeAlias = Any
 

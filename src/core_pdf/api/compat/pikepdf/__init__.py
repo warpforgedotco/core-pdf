@@ -9,7 +9,12 @@ from os import PathLike
 from typing import Any, BinaryIO, cast, overload
 
 from core_pdf import PdfDocument
-from core_pdf.api.compat.pypdf import PdfPageObject, PdfReader, PdfWriter, StructuredState
+from core_pdf.api.compat._unsupported.pypdf import (
+    PdfPageObject,
+    PdfReader,
+    PdfWriter,
+    StructuredState,
+)
 from core_pdf.impl.engine.spec.s_07_document.document_labels import resolve_page_tree_node_type
 from core_pdf.impl.engine.spec.s_07_document.metadata import resolve_info_metadata
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key

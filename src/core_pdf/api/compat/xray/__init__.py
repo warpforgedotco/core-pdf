@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from math import ceil, floor
 from os import PathLike
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from core_pdf import PdfDocument
 from core_pdf._vendor.fontTools.ttLib import TTLibError
@@ -220,7 +220,9 @@ def _recover_font(page: Any, font_name: str) -> _RecoveredFont | None:
 
 def _page_redactions(page: Any) -> list[dict[str, object]]:
     source_crop_box = page.crop_box or page.media_box
-    crop_box = tuple(float(value) for value in source_crop_box)
+    crop_box = cast(
+        tuple[float, float, float, float], tuple(float(value) for value in source_crop_box)
+    )
     drawings = tuple(page.get_drawings())
     rectangles = [
         rectangle for drawing in drawings for rectangle in _path_rectangles(drawing, crop_box)
@@ -486,7 +488,10 @@ def _raw_highlight_redactions(page: Any) -> list[dict[str, object]]:
                 )
             )
             x = x1
-    crop_box = tuple(float(value) for value in (page.crop_box or page.media_box))
+    crop_box = cast(
+        tuple[float, float, float, float],
+        tuple(float(value) for value in (page.crop_box or page.media_box)),
+    )
     output: list[dict[str, object]] = []
     for highlight in highlights:
         text = "".join(
@@ -520,7 +525,7 @@ def _requires_password(document: PdfDocument) -> bool:
     """Match MuPDF's implicit empty-user-password authentication for AES-256 files."""
     if document.decipher is None:
         return False
-    handler = document.decipher.__self__
+    handler = cast(Any, document.decipher).__self__
     if getattr(handler, "r", 0) < 5:
         return False
     empty_hash = handler.password_hash(b"", handler.u_validation_salt)

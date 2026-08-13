@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import math
+import unicodedata
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import replace
+from difflib import SequenceMatcher
 from io import BytesIO
 from os import PathLike
 from pathlib import Path
@@ -30,6 +32,7 @@ from core_pdf.impl.objects import PdfReference, PdfStream, PdfString
 
 PdfInput = str | PathLike[str] | bytes | bytearray | BytesIO
 BBox = tuple[float, float, float, float]
+GraphicsState = tuple[list[float], str | None, float, float]
 
 
 def _validate_pypdf_page_tree(pdf: PdfDocument) -> None:
@@ -78,7 +81,9 @@ def write_bytes(target: str | PathLike[str] | BinaryIO, data: bytes) -> None:
         target.write(data)
 
 
-def internal_pypdf_space_width(font: Mapping[object, object], resolver: Any, decoder: FontDecoder) -> float:
+def internal_pypdf_space_width(
+    font: Mapping[object, object], resolver: Any, decoder: FontDecoder
+) -> float:
     """Match pypdf's simple-font fallback when code 32 has no declared width."""
     space_width = decoder.glyph_width(32)
     first_char = lookup_dict_key(font, "FirstChar")
@@ -92,6 +97,54 @@ def internal_pypdf_space_width(font: Mapping[object, object], resolver: Any, dec
     if not positive_widths:
         return space_width
     return float(int(sum(positive_widths) / len(positive_widths)) // 2)
+
+
+def internal_cid_space_width(decoder: FontDecoder, data: bytes) -> float | None:
+    if not decoder.is_cid_font:
+        return None
+    space_glyph = next(
+        (glyph for glyph in decoder.decode_glyphs(data) if glyph.unicode == " "),
+        None,
+    )
+    return None if space_glyph is None else decoder.glyph_width(space_glyph.width_code)
+
+
+def internal_decoded_width(decoder: FontDecoder | None, data: bytes) -> float:
+    if decoder is None:
+        return 0.0
+    return sum(decoder.glyph_width(decoded.width_code) for decoded in decoder.decode_glyphs(data))
+
+
+def internal_operand_text(
+    data: bytes, cmap: ToUnicodeCMap | None, decoder: FontDecoder | None
+) -> str:
+    text = cmap.decode(data) if cmap is not None else ""
+    if not text and decoder is not None:
+        text = "".join(glyph.unicode for glyph in decoder.decode_glyphs(data))
+    if not text and len(data) % 2 == 0 and data[::2].count(0) >= len(data) // 4:
+        text = data.decode("utf-16-be", errors="replace")
+    return text or data.decode("latin-1")
+
+
+def internal_restore_graphics_state(stack: list[GraphicsState]) -> GraphicsState:
+    if stack:
+        return stack.pop()
+    return ([1.0, 0.0, 0.0, 1.0, 0.0, 0.0], None, 0.0, 250.0)
+
+
+def internal_pypdf_rtl_order(text: str) -> str:
+    output: list[str] = []
+    rtl_run: list[str] = []
+    for character in text:
+        if unicodedata.bidirectional(character) in {"R", "AL", "AN"}:
+            rtl_run.append(character)
+            continue
+        if rtl_run:
+            output.extend(reversed(rtl_run))
+            rtl_run.clear()
+        output.append(character)
+    output.extend(reversed(rtl_run))
+    return "".join(output).replace("’ :", ": ’")
 
 
 class StructuredState(ClosingMixin):
@@ -289,7 +342,7 @@ class PdfPageObject:
     def _capability_view(self) -> Any:
         return self._document.capability_page(self._page.page_number).structured_view
 
-    def extract_text(self, *args: object, **kwargs: object) -> str:
+    def extract_text(self, *args: object, **kwargs: object) -> str:  # noqa: C901
         del args, kwargs
         if self.internal_text_override is not None:
             return self.internal_text_override
@@ -305,7 +358,10 @@ class PdfPageObject:
             font_cmaps: dict[str, ToUnicodeCMap] = {}
             resource_cmaps: dict[str, ToUnicodeCMap] = {}
             resource_decoders: dict[str, FontDecoder] = {}
+            resource_font_names: dict[str, str] = {}
             resource_space_thresholds: dict[str, float] = {}
+            font_decoders: dict[str, FontDecoder] = {}
+            font_space_thresholds: dict[str, float] = {}
             fonts_with_differences: set[str] = set()
             resources_with_differences: set[str] = set()
             if isinstance(raw_fonts, dict):
@@ -320,10 +376,11 @@ class PdfPageObject:
                     resolved_font = page.document.resolver.resolve_font_dict(font)
                     decoder = FontDecoder(cast(dict[str, object], resolved_font))
                     resource_decoders[str(resource_name)] = decoder
-                    space_width = internal_pypdf_space_width(
-                        font, page.document.resolver, decoder
-                    )
+                    resource_font_names[str(resource_name)] = str(base_font)
+                    space_width = internal_pypdf_space_width(font, page.document.resolver, decoder)
                     resource_space_thresholds[str(resource_name)] = space_width * 0.475
+                    font_decoders[str(base_font)] = decoder
+                    font_space_thresholds[str(base_font)] = space_width * 0.5
                     if not isinstance(to_unicode, PdfStream):
                         continue
                     stream = page.document.resolver.resolve_stream(to_unicode)
@@ -341,6 +398,8 @@ class PdfPageObject:
             for stream in page.content_streams:
                 for operator, operands in iter_content_operations(PdfLexer(stream.data)):
                     if operator == "Tf":
+                        if not operands:
+                            continue
                         current_font_resource = str(operands[0])
                     elif operator == "Tj":
                         show_resources.append(current_font_resource)
@@ -349,50 +408,86 @@ class PdfPageObject:
                             bytes(value.data) if isinstance(value, PdfString) else b""
                         )
                     elif operator == "TJ":
-                        for value in operands[0]:
-                            if isinstance(value, PdfString):
+                        for tj_item in cast(list[object], operands[0]):
+                            if isinstance(tj_item, PdfString):
                                 show_resources.append(current_font_resource)
-                                show_bytes.append(bytes(value.data))
+                                show_bytes.append(bytes(tj_item.data))
             for resource_name, data in zip(show_resources, show_bytes, strict=True):
-                decoder = resource_decoders.get(resource_name or "")
-                if decoder is None or not decoder.is_cid_font:
-                    continue
-                space_glyph = next(
-                    (glyph for glyph in decoder.decode_glyphs(data) if glyph.unicode == " "),
-                    None,
+                resource_decoder = resource_decoders.get(resource_name or "")
+                cid_space_width = (
+                    internal_cid_space_width(resource_decoder, data)
+                    if resource_decoder is not None
+                    else None
                 )
-                if space_glyph is not None:
-                    resource_space_thresholds[resource_name or ""] = (
-                        decoder.glyph_width(space_glyph.width_code) * 0.475
+                if cid_space_width is not None:
+                    resource_space_thresholds[resource_name or ""] = cid_space_width * 0.475
+                    font_space_thresholds[resource_font_names[resource_name or ""]] = (
+                        cid_space_width * 0.5
                     )
             sequence_bytes: dict[int, bytearray] = {}
             for glyph in glyphs:
                 sequence_bytes.setdefault(glyph.seqno, bytearray()).extend(glyph.code_bytes)
             comparable_sequences = [
-                seqno
-                for seqno in sequence_bytes
-                if seqno < len(show_bytes) and show_bytes[seqno]
+                seqno for seqno in sequence_bytes if seqno < len(show_bytes) and show_bytes[seqno]
             ][:200]
             matching_sequences = sum(
-                bytes(sequence_bytes[seqno]) == show_bytes[seqno]
-                for seqno in comparable_sequences
+                bytes(sequence_bytes[seqno]) == show_bytes[seqno] for seqno in comparable_sequences
             )
-            direct_sequence_fonts = (
-                (not glyphs or glyphs[-1].seqno < len(show_resources))
-                and (
-                    not comparable_sequences
-                    or matching_sequences / len(comparable_sequences) >= 0.8
-                )
+            direct_sequence_fonts = (not glyphs or glyphs[-1].seqno < len(show_resources)) and (
+                not comparable_sequences or matching_sequences / len(comparable_sequences) >= 0.8
             )
+            ordered_sequences = sorted(sequence_bytes)
+            compact_comparisons = min(len(ordered_sequences), len(show_bytes), 200)
+            compact_matches = sum(
+                bytes(sequence_bytes[seqno]) == show_bytes[index]
+                for index, seqno in enumerate(ordered_sequences[:compact_comparisons])
+            )
+            compact_sequence_fonts = compact_comparisons > 0 and (
+                compact_matches / compact_comparisons >= 0.8
+            )
+            sequence_show_indices: dict[int, int] = {}
+            show_cursor = 0
+            for compact_index, seqno in enumerate(ordered_sequences):
+                if direct_sequence_fonts and seqno < len(show_bytes):
+                    sequence_show_indices[seqno] = seqno
+                    continue
+                if compact_sequence_fonts and compact_index < len(show_bytes):
+                    sequence_show_indices[seqno] = compact_index
+                    continue
+                target = bytes(sequence_bytes[seqno])
+                while show_cursor < len(show_bytes) and show_bytes[show_cursor] != target:
+                    show_cursor += 1
+                if show_cursor < len(show_bytes):
+                    sequence_show_indices[seqno] = show_cursor
+                    show_cursor += 1
             groups: list[tuple[int, float, float, float, float, float, str, int]] = []
+            group_text_widths: dict[int, float] = {}
+            group_space_widths: dict[int, float] = {}
+            cid_width_groups: set[int] = set()
             previous_glyph: Any | None = None
             previous_decoded = ""
+            rendered_glyphs: list[tuple[Any, str]] = []
             for glyph in glyphs:
-                resource_name = (
-                    show_resources[glyph.seqno] if direct_sequence_fonts else None
+                show_index = sequence_show_indices.get(glyph.seqno)
+                resource_name = show_resources[show_index] if show_index is not None else None
+                glyph_cmap = resource_cmaps.get(resource_name or "") or font_cmaps.get(
+                    glyph.font_name
                 )
-                cmap = resource_cmaps.get(resource_name) or font_cmaps.get(glyph.font_name)
-                glyph_text = cmap.decode(glyph.code_bytes) if cmap is not None else glyph.text
+                glyph_text = (
+                    glyph_cmap.decode(glyph.code_bytes) if glyph_cmap is not None else glyph.text
+                )
+                glyph_decoder = font_decoders.get(glyph.font_name)
+                cid_width_groups.update(
+                    (glyph.seqno,)
+                    if glyph_decoder is not None
+                    and glyph_decoder.is_cid_font
+                    and glyph.font_name.endswith("+")
+                    else ()
+                )
+                group_text_widths[glyph.seqno] = group_text_widths.get(
+                    glyph.seqno, 0.0
+                ) + internal_decoded_width(glyph_decoder, glyph.code_bytes)
+                group_space_widths[glyph.seqno] = font_space_thresholds.get(glyph.font_name, 0.0)
                 has_differences = (
                     resource_name in resources_with_differences
                     if direct_sequence_fonts
@@ -404,17 +499,19 @@ class PdfPageObject:
                     previous_glyph is not None
                     and previous_glyph.seqno == glyph.seqno
                     and previous_glyph.code_bytes == glyph.code_bytes
-                    and glyph.code_bytes not in {b"f", b"\x00f"}
-                    and previous_glyph.text + glyph.text in {"ff", "fi", "fl"}
+                    and glyph.code_bytes not in {b"f", b"\x00f", b"\x00I"}
+                    and cast(Any, previous_glyph).text + glyph.text in {"ff", "fi", "fl"}
+                    and glyph_text not in {"ff", "fi", "fl"}
                 )
                 if core_ligature_pair:
-                    glyph_text = {"ff": "ﬀ", "fi": "ﬁ", "fl": "ﬂ"}[previous_glyph.text + glyph.text]
+                    pair_text = cast(Any, previous_glyph).text + glyph.text
+                    glyph_text = {"ff": "ﬀ", "fi": "ﬁ", "fl": "ﬂ"}[pair_text]
                 duplicate_ligature_part = (
                     previous_glyph is not None
                     and previous_glyph.seqno == glyph.seqno
                     and previous_glyph.code_bytes == glyph.code_bytes
                     and glyph_text == previous_decoded
-                    and glyph_text in {"ﬀ", "ﬁ", "ﬂ", "ﬃ", "ﬄ"}
+                    and glyph_text in {"ff", "fi", "fl", "ﬀ", "ﬁ", "ﬂ", "ﬃ", "ﬄ"}
                 )
                 if duplicate_ligature_part:
                     glyph_text = ""
@@ -448,8 +545,161 @@ class PdfPageObject:
                         text + glyph_text,
                         byte_count + len(glyph.code_bytes),
                     )
+                rendered_glyphs.append((glyph, glyph_text))
                 previous_glyph = glyph
-                previous_decoded = cmap.decode(glyph.code_bytes) if cmap is not None else glyph.text
+                previous_decoded = (
+                    glyph_cmap.decode(glyph.code_bytes) if glyph_cmap is not None else glyph.text
+                )
+            flat_glyph_bytes = b"".join(glyph.code_bytes for glyph, _ in rendered_glyphs)
+            flat_show_bytes = b"".join(show_bytes)
+            byte_mapping: dict[int, int] = {}
+            for match in SequenceMatcher(
+                None, flat_glyph_bytes, flat_show_bytes
+            ).get_matching_blocks():
+                byte_mapping.update(
+                    (match.a + offset, match.b + offset) for offset in range(match.size)
+                )
+            show_ends: list[int] = []
+            show_end = 0
+            for data in show_bytes:
+                show_end += len(data)
+                show_ends.append(show_end)
+            aligned_groups: list[tuple[int, float, float, float, float, float, str, int]] = []
+            aligned_show_indices: list[int] = []
+            aligned_engine_seqnos: list[int] = []
+            glyph_offset = 0
+            for glyph, glyph_text in rendered_glyphs:
+                mapped = [
+                    byte_mapping.get(offset)
+                    for offset in range(glyph_offset, glyph_offset + len(glyph.code_bytes))
+                ]
+                glyph_offset += len(glyph.code_bytes)
+                if any(offset is None for offset in mapped):
+                    continue
+                show_index = next(
+                    (index for index, end in enumerate(show_ends) if cast(int, mapped[0]) < end),
+                    None,
+                )
+                if show_index is None or cast(int, mapped[-1]) >= show_ends[show_index]:
+                    continue
+                if not aligned_groups or aligned_show_indices[-1] != show_index:
+                    aligned_groups.append(
+                        (
+                            glyph.seqno,
+                            glyph.advance_bbox[0],
+                            glyph.advance_bbox[2],
+                            glyph.advance_bbox[1],
+                            glyph.advance_bbox[3],
+                            glyph.font_size,
+                            glyph_text,
+                            len(glyph.code_bytes),
+                        )
+                    )
+                    aligned_show_indices.append(show_index)
+                    aligned_engine_seqnos.append(glyph.seqno)
+                else:
+                    group = aligned_groups[-1]
+                    aligned_groups[-1] = (
+                        *group[:2],
+                        glyph.advance_bbox[2],
+                        *group[3:6],
+                        group[6] + glyph_text,
+                        group[7] + len(glyph.code_bytes),
+                    )
+            lost_show_boundaries = any(
+                len(
+                    {
+                        show
+                        for engine_seqno, show in zip(aligned_engine_seqnos, aligned_show_indices)
+                        if engine_seqno == seqno
+                    }
+                )
+                > 1
+                for seqno in sequence_bytes
+            )
+            byte_aligned_groups = False
+            if (
+                lost_show_boundaries
+                or (
+                    not direct_sequence_fonts
+                    and not compact_sequence_fonts
+                    and abs(len(flat_glyph_bytes) - len(flat_show_bytes)) <= 2
+                )
+            ) and len(aligned_groups) >= len(groups) * 0.9:
+                groups = [
+                    (show_index, *group[1:])
+                    for group, show_index in zip(aligned_groups, aligned_show_indices)
+                ]
+                sequence_show_indices = {
+                    show_index: show_index for show_index in aligned_show_indices
+                }
+                direct_sequence_fonts = True
+                byte_aligned_groups = True
+            if not direct_sequence_fonts and not compact_sequence_fonts:
+                aligned_shows_by_sequence: dict[int, set[int]] = {}
+                for engine_seqno, show_index in zip(
+                    aligned_engine_seqnos, aligned_show_indices, strict=True
+                ):
+                    aligned_shows_by_sequence.setdefault(engine_seqno, set()).add(show_index)
+                for index, group in enumerate(groups):
+                    aligned_shows = aligned_shows_by_sequence.get(group[0], set())
+                    if len(aligned_shows) != 1:
+                        continue
+                    show_index = next(iter(aligned_shows))
+                    resource_name = show_resources[show_index] or ""
+                    sequence_show_indices[group[0]] = show_index
+                    if resource_name not in resource_cmaps:
+                        continue
+                    aligned_text = internal_operand_text(
+                        show_bytes[show_index],
+                        resource_cmaps.get(resource_name),
+                        resource_decoders.get(resource_name),
+                    )
+                    groups[index] = (*group[:6], aligned_text, *group[7:])
+            if not direct_sequence_fonts and not compact_sequence_fonts:
+                synthetic_groups = []
+                for left_group, right_group in zip(groups, groups[1:]):
+                    left_seqno, right_seqno = left_group[0], right_group[0]
+                    left_show = sequence_show_indices.get(left_seqno)
+                    right_show = sequence_show_indices.get(right_seqno)
+                    if (
+                        left_show is None
+                        or right_show is None
+                        or right_seqno - left_seqno != right_show - left_show
+                    ):
+                        continue
+                    for offset, show_index in enumerate(range(left_show + 1, right_show), 1):
+                        missing_seqno = left_seqno + offset
+                        missing_cmap = resource_cmaps.get(show_resources[show_index] or "")
+                        missing_data = show_bytes[show_index]
+                        missing_text = (
+                            missing_cmap.decode(missing_data) if missing_cmap is not None else ""
+                        ) or missing_data.decode("latin-1")
+                        synthetic_groups.append(
+                            (
+                                missing_seqno,
+                                left_group[2],
+                                right_group[1],
+                                left_group[3],
+                                left_group[4],
+                                left_group[5],
+                                missing_text,
+                                len(missing_data),
+                            )
+                        )
+                        sequence_show_indices[missing_seqno] = show_index
+                groups.extend(synthetic_groups)
+                groups.sort()
+            for index, group in enumerate(groups):
+                show_index = sequence_show_indices.get(group[0])
+                if show_index is None:
+                    continue
+                compact_cmap = resource_cmaps.get(show_resources[show_index] or "")
+                compact_text = (
+                    compact_cmap.decode(show_bytes[show_index]) if compact_cmap is not None else ""
+                )
+                if compact_text.strip() == group[6]:
+                    groups[index] = (*group[:6], compact_text, *group[7:])
             if direct_sequence_fonts:
                 groups_by_sequence = {group[0]: group for group in groups}
                 previous_group = None
@@ -457,12 +707,13 @@ class PdfPageObject:
                     if seqno in groups_by_sequence:
                         previous_group = groups_by_sequence[seqno]
                         continue
-                    cmap = resource_cmaps.get(show_resources[seqno])
-                    raw_text = (cmap.decode(data) if cmap is not None else "") or data.decode(
-                        "latin-1"
-                    )
-                    if previous_group is None or not any(
-                        ord(character) <= 1 for character in raw_text
+                    sequence_cmap = resource_cmaps.get(show_resources[seqno] or "")
+                    raw_text = (
+                        sequence_cmap.decode(data) if sequence_cmap is not None else ""
+                    ) or data.decode("latin-1")
+                    if previous_group is None or not (
+                        any(ord(character) <= 1 for character in raw_text)
+                        or raw_text in {"ﬀ", "ﬁ", "ﬂ", "ﬃ", "ﬄ"}
                     ):
                         continue
                     _, _x0, x1, y0, y1, font_size, _text, _byte_count = previous_group
@@ -482,9 +733,11 @@ class PdfPageObject:
                 seqno = group[0]
                 if not direct_sequence_fonts or seqno >= len(show_bytes):
                     continue
-                cmap = resource_cmaps.get(show_resources[seqno])
+                sequence_cmap = resource_cmaps.get(show_resources[seqno] or "")
                 data = show_bytes[seqno]
-                raw_text = (cmap.decode(data) if cmap is not None else "") or data.decode("latin-1")
+                raw_text = (
+                    sequence_cmap.decode(data) if sequence_cmap is not None else ""
+                ) or data.decode("latin-1")
                 if any(ord(character) <= 1 for character in raw_text):
                     groups[index] = (*group[:6], raw_text, *group[7:])
             output = ""
@@ -492,11 +745,16 @@ class PdfPageObject:
             previous_y1: float | None = None
             previous_x1: float | None = None
             previous_seqno: int | None = None
-            show_metadata: list[tuple[str, bool, bool]] = []
+            previous_resource: str | None = None
+            show_metadata: list[tuple[str, bool, bool, bool]] = []
+            show_positions: list[tuple[float, float]] = []
+            show_width_points: list[float] = []
+            show_halfspaces: list[float] = []
             moved_since_show = True
             current_font_resource = None
             pending_tj_space = False
             matrix_space_pending = False
+            matrix_newline_pending = False
             cm_matrix = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
             tm_matrix = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
             previous_cm = cm_matrix.copy()
@@ -504,6 +762,8 @@ class PdfPageObject:
             current_font_size = 0.0
             current_space_width = 250.0
             accumulated_width = 0.0
+            graphics_stack: list[GraphicsState] = []
+            malformed_text_state = False
 
             def multiply(left: list[float], right: list[float]) -> list[float]:
                 return [
@@ -531,15 +791,31 @@ class PdfPageObject:
                 space_width = current_font_size * current_space_width / 1000.0
                 return delta_x >= (space_width + width / 1000.0) * scale_x
 
+            def moved_to_newline() -> bool:
+                previous = multiply(previous_tm, previous_cm)
+                current = multiply(tm_matrix, cm_matrix)
+                delta_y = current[5] - previous[5]
+                scale_y = math.sqrt(previous_tm[2] ** 2 + previous_tm[3] ** 2)
+                current_scale_y = math.sqrt(tm_matrix[2] ** 2 + tm_matrix[3] ** 2)
+                return abs(delta_y) > 0.8 * min(
+                    current_font_size * scale_y,
+                    current_font_size * current_scale_y,
+                )
+
             def shown_width(data: bytes) -> float:
                 decoder = resource_decoders.get(current_font_resource or "")
                 if decoder is None:
                     return 0.0
+                space_width = (
+                    resource_space_thresholds.get(current_font_resource or "", 237.5) / 0.475
+                )
                 return (
                     sum(
                         (
                             decoder.default_width
                             if glyph.unicode in {"ff", "fi", "fl", "ffi", "ffl"}
+                            else space_width
+                            if glyph.unicode == " "
                             else decoder.glyph_width(glyph.width_code)
                         )
                         for glyph in decoder.decode_glyphs(data)
@@ -549,32 +825,55 @@ class PdfPageObject:
 
             for stream in page.content_streams:
                 for operator, operands in iter_content_operations(PdfLexer(stream.data)):
-                    if operator == "BT":
+                    if operator == "q":
+                        graphics_stack.append(
+                            (
+                                cm_matrix.copy(),
+                                current_font_resource,
+                                current_font_size,
+                                current_space_width,
+                            )
+                        )
+                    elif operator == "Q":
+                        (
+                            cm_matrix,
+                            current_font_resource,
+                            current_font_size,
+                            current_space_width,
+                        ) = internal_restore_graphics_state(graphics_stack)
+                    elif operator == "BT":
                         tm_matrix = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
                         moved_since_show = True
                     elif operator in {"Td", "TD"}:
-                        tx = float(operands[0])
-                        ty = float(operands[1])
+                        tx = float(cast(Any, operands[0]))
+                        ty = float(cast(Any, operands[1]))
                         tm_matrix[4] += tx * tm_matrix[0] + ty * tm_matrix[2]
                         tm_matrix[5] += tx * tm_matrix[1] + ty * tm_matrix[3]
+                        matrix_newline_pending = moved_to_newline()
                         matrix_space_pending = moved_far_enough(accumulated_width)
                         accumulated_width = 0.0
                         previous_tm = tm_matrix.copy()
                         previous_cm = cm_matrix.copy()
                         moved_since_show = True
                     elif operator == "Tm":
-                        values = [float(value) for value in operands[:6]]
+                        values = [float(cast(Any, value)) for value in operands[:6]]
                         tm_matrix = values if len(values) == 6 else [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
+                        matrix_newline_pending = moved_to_newline()
                         matrix_space_pending = moved_far_enough(accumulated_width)
                         accumulated_width = 0.0
                         previous_tm = tm_matrix.copy()
                         previous_cm = cm_matrix.copy()
                         moved_since_show = True
                     elif operator == "cm":
-                        cm_matrix = multiply([float(value) for value in operands[:6]], cm_matrix)
+                        cm_matrix = multiply(
+                            [float(cast(Any, value)) for value in operands[:6]], cm_matrix
+                        )
                     elif operator == "Tf":
+                        if len(operands) < 2:
+                            malformed_text_state = True
+                            continue
                         current_font_resource = str(operands[0])
-                        current_font_size = float(operands[1])
+                        current_font_size = float(cast(Any, operands[1]))
                         current_space_width = (
                             resource_space_thresholds.get(current_font_resource, 237.5) / 0.475
                         ) / 2.0
@@ -585,37 +884,57 @@ class PdfPageObject:
                             (
                                 "Tj",
                                 moved_since_show,
-                                pending_tj_space
-                                or (matrix_space_pending and direct_sequence_fonts),
+                                pending_tj_space or matrix_space_pending,
+                                matrix_newline_pending,
                             )
                         )
+                        shown_position = multiply(tm_matrix, cm_matrix)
+                        show_positions.append((shown_position[4], shown_position[5]))
+                        show_width_points.append(shown_width(data) / 1000.0)
+                        show_halfspaces.append(current_font_size * current_space_width / 1000.0)
                         moved_since_show = False
                         pending_tj_space = False
                         matrix_space_pending = False
+                        matrix_newline_pending = False
                         accumulated_width += shown_width(data)
                         previous_tm = tm_matrix.copy()
                         previous_cm = cm_matrix.copy()
                     elif operator == "TJ":
-                        force_space_before = pending_tj_space or (
-                            matrix_space_pending and direct_sequence_fonts
-                        )
+                        force_space_before = pending_tj_space or matrix_space_pending
                         pending_tj_space = False
                         matrix_space_pending = False
+                        force_newline_before = matrix_newline_pending
+                        matrix_newline_pending = False
                         space_threshold = resource_space_thresholds.get(
                             current_font_resource or "", 237.5
                         )
-                        for value in operands[0]:
-                            if isinstance(value, PdfString):
+                        for tj_item in cast(list[object], operands[0]):
+                            if isinstance(tj_item, PdfString):
                                 show_metadata.append(
-                                    ("TJ", moved_since_show, force_space_before)
+                                    (
+                                        "TJ",
+                                        moved_since_show,
+                                        force_space_before,
+                                        force_newline_before,
+                                    )
+                                )
+                                shown_position = multiply(tm_matrix, cm_matrix)
+                                show_positions.append((shown_position[4], shown_position[5]))
+                                show_width_points.append(shown_width(bytes(tj_item.data)) / 1000.0)
+                                show_halfspaces.append(
+                                    current_font_size * current_space_width / 1000.0
                                 )
                                 moved_since_show = False
                                 force_space_before = False
-                                accumulated_width += shown_width(bytes(value.data))
+                                force_newline_before = False
+                                accumulated_width += shown_width(bytes(tj_item.data))
                                 previous_tm = tm_matrix.copy()
                                 previous_cm = cm_matrix.copy()
-                            elif isinstance(value, (int, float)):
-                                if abs(float(value)) >= space_threshold and not force_space_before:
+                            elif isinstance(tj_item, (int, float)):
+                                if (
+                                    abs(float(tj_item)) >= space_threshold
+                                    and not force_space_before
+                                ):
                                     force_space_before = True
                                     accumulated_width += (
                                         current_font_size * current_space_width * 2.0
@@ -624,27 +943,194 @@ class PdfPageObject:
                                     previous_cm = cm_matrix.copy()
                         pending_tj_space = force_space_before
             direct_sequence_metadata = direct_sequence_fonts and (
-                not groups or groups[-1][0] < len(show_metadata)
+                not groups
+                or all(
+                    sequence_show_indices.get(group[0], len(show_metadata)) < len(show_metadata)
+                    for group in groups
+                )
             )
+            byte_coverage = len(flat_glyph_bytes) / max(1, len(flat_show_bytes))
+            operand_output_override: str | None = None
+            if byte_coverage < 0.95 and len(show_metadata) == len(show_bytes):
+                operand_output = ""
+                show_geometry = {
+                    show_index: group
+                    for group, show_index in zip(aligned_groups, aligned_show_indices)
+                }
+                for show_index, data in enumerate(show_bytes):
+                    _operator, _moved, add_space, add_newline = show_metadata[show_index]
+                    resource_name = show_resources[show_index] or ""
+                    operand_cmap = resource_cmaps.get(resource_name)
+                    operand_decoder = resource_decoders.get(resource_name)
+                    operand_text = operand_cmap.decode(data) if operand_cmap is not None else ""
+                    decoder_text = (
+                        "".join(glyph.unicode for glyph in operand_decoder.decode_glyphs(data))
+                        if operand_decoder is not None
+                        else ""
+                    )
+                    if any(ord(character) < 32 for character in decoder_text):
+                        operand_text = decoder_text
+                    operand_text = operand_text or decoder_text or data.decode("latin-1")
+                    operand_text = operand_text.replace("ᐌ", "\x00").replace("Ȑ", "\x00")
+                    if add_newline and operand_output and not operand_output.endswith("\n"):
+                        operand_output += "\n"
+                    previous_direction = (
+                        unicodedata.bidirectional(operand_output[-1]) if operand_output else ""
+                    )
+                    next_direction = (
+                        unicodedata.bidirectional(operand_text[0]) if operand_text else ""
+                    )
+                    previous_geometry = show_geometry.get(show_index - 1)
+                    current_geometry = show_geometry.get(show_index)
+                    geometry_space = (
+                        previous_geometry is not None
+                        and current_geometry is not None
+                        and current_geometry[1] - previous_geometry[2]
+                        > max(
+                            current_geometry[5] * 0.24,
+                            (current_geometry[4] - current_geometry[3]) * 0.24,
+                        )
+                    )
+                    operand_boundary_space = False
+                    if show_index > 0:
+                        delta_x = show_positions[show_index][0] - show_positions[show_index - 1][0]
+                        delta_y = show_positions[show_index][1] - show_positions[show_index - 1][1]
+                        operand_boundary_space = abs(delta_y) < 1.0 and delta_x >= (
+                            show_width_points[show_index - 1] + show_halfspaces[show_index - 1]
+                        )
+                        if operand_text[:1] in {"ம", "'"}:  # pragma: no cover - diagnostic
+                            operand_boundary_space = delta_x >= (
+                                show_width_points[show_index - 1]
+                                + show_halfspaces[show_index - 1] * 0.8
+                            )
+                    if (
+                        (add_space or geometry_space or operand_boundary_space)
+                        and (next_direction != "ON" or operand_boundary_space)
+                        and not (previous_direction in {"R", "AL", "AN"} and next_direction == "L")
+                        and not (previous_direction == "ON" and next_direction in {"R", "AL", "AN"})
+                        and operand_output
+                        and not operand_output.endswith((" ", "\n"))
+                    ):
+                        operand_output += " "
+                    operand_output += operand_text
+                operand_output_override = internal_pypdf_rtl_order(operand_output)
             for group_index, (seqno, x0, x1, y0, y1, font_size, text, _) in enumerate(groups):
                 # Page-program sequence numbers map directly to text-show operands for
                 # ordinary page streams. Form XObjects have their own nested streams,
                 # though, so retain the compact positional fallback used for those runs.
-                metadata_index = seqno if direct_sequence_metadata else group_index
+                metadata_index = sequence_show_indices.get(
+                    seqno, seqno if direct_sequence_metadata else group_index
+                )
                 if metadata_index >= len(show_metadata):
                     if not show_metadata:
                         break
-                    operator, moved_before_show, force_space_before = ("TJ", False, False)
+                    operator, moved_before_show, force_space_before, force_newline_before = (
+                        "TJ",
+                        False,
+                        False,
+                        False,
+                    )
                 else:
-                    operator, moved_before_show, force_space_before = show_metadata[metadata_index]
+                    (
+                        operator,
+                        moved_before_show,
+                        force_space_before,
+                        force_newline_before,
+                    ) = show_metadata[metadata_index]
+                group_resource = (
+                    show_resources[metadata_index] if metadata_index < len(show_resources) else None
+                )
                 degenerate = y0 == y1
                 vertically_separate = (
                     previous_y0 is not None
                     and previous_y1 is not None
                     and (y1 <= previous_y0 or y0 >= previous_y1)
                 )
+                predicted_sparse_space = False
+                effective_force_space = force_space_before and (
+                    direct_sequence_metadata
+                    or (
+                        force_space_before
+                        and (
+                            text[:1] in {",", ";", ":"}
+                            or (
+                                text.startswith(" ")
+                                and not text.startswith("  ")
+                                and bool(text.strip())
+                                and previous_x1 is not None
+                                and x0 - previous_x1 > (y1 - y0)
+                            )
+                        )
+                    )
+                    or previous_seqno in cid_width_groups
+                    or output[-1:].isdigit()
+                    or ord(text[:1] or "\0") >= 0xE000
+                    or ord(output[-1:] or "\0") < 32
+                    or (direct_sequence_fonts and text.startswith(" "))
+                )
+                literal_gap_space = (
+                    byte_aligned_groups
+                    and text.startswith(" ")
+                    and previous_x1 is not None
+                    and x0 - previous_x1 >= 0.5
+                )
+                missing_resource_space = (
+                    compact_sequence_fonts
+                    and metadata_index > 0
+                    and metadata_index < len(show_positions)
+                    and resource_decoders.get(show_resources[metadata_index] or "") is None
+                    and abs(
+                        show_positions[metadata_index][1] - show_positions[metadata_index - 1][1]
+                    )
+                    < 1.0
+                    and show_positions[metadata_index][0] - show_positions[metadata_index - 1][0]
+                    > 0.5
+                )
+                operand_position_space = (
+                    compact_sequence_fonts
+                    and font_size == 1
+                    and y0 < 60
+                    and (ord(output[-1:] or "\0") < 32 or group_resource != previous_resource)
+                    and metadata_index > 0
+                    and metadata_index < len(show_positions)
+                    and abs(
+                        show_positions[metadata_index][1] - show_positions[metadata_index - 1][1]
+                    )
+                    < 1.0
+                    and show_positions[metadata_index][0] - show_positions[metadata_index - 1][0]
+                    >= show_width_points[metadata_index - 1] + show_halfspaces[metadata_index - 1]
+                )
+                compact_font_boundary_space = (
+                    compact_sequence_fonts
+                    and moved_before_show
+                    and font_size > 100
+                    and group_resource != previous_resource
+                    and resource_space_thresholds.get(group_resource or "", 0.0) > 300.0
+                    and previous_x1 is not None
+                    and x0 - previous_x1 >= 2.5
+                )
                 newline_after_text = False
-                if vertically_separate and not degenerate:
+                baseline_newline = (
+                    force_newline_before
+                    and previous_y0 is not None
+                    and (
+                        abs(y0 - previous_y0) > (y1 - y0) * 0.5
+                        or previous_x1 is not None
+                        and x0 < previous_x1 - (y1 - y0)
+                        or malformed_text_state
+                        and previous_x1 is not None
+                        and abs(x0 - previous_x1) < (y1 - y0)
+                    )
+                    or (
+                        group_resource is None
+                        and previous_x1 is not None
+                        and x0 < previous_x1 - (y1 - y0)
+                        and text.isupper()
+                    )
+                )
+                if baseline_newline and not vertically_separate and output.endswith("\n"):
+                    pass
+                elif (vertically_separate or baseline_newline) and not degenerate:
                     output += "\n"
                     if (
                         not direct_sequence_metadata
@@ -656,36 +1142,54 @@ class PdfPageObject:
                 elif (
                     previous_x1 is not None
                     and bool(text)
-                    and not output.endswith((" ", "\n"))
-                    and not text.startswith(" ")
                     and (
-                        force_space_before
-                        or
-                        (
+                        not output.endswith((" ", "\n"))
+                        or predicted_sparse_space
+                        or effective_force_space
+                        or literal_gap_space
+                        or missing_resource_space
+                        or operand_position_space
+                        or compact_font_boundary_space
+                    )
+                    and (
+                        not text.startswith(" ")
+                        or effective_force_space
+                        and not text.startswith("  ")
+                        or literal_gap_space
+                    )
+                    and (
+                        effective_force_space
+                        or literal_gap_space
+                        or missing_resource_space
+                        or operand_position_space
+                        or compact_font_boundary_space
+                        or (
                             operator == "Tj"
                             and not moved_before_show
                             and output.rsplit("\n", 1)[-1].count("\x00") < 2
-                            and x0 >= previous_x1
+                            and x0 > previous_x1
                         )
                         or (
                             not moved_before_show
                             and x0 - previous_x1 > max(font_size * 0.24, (y1 - y0) * 0.24)
                         )
+                        or predicted_sparse_space
                         or (
                             not direct_sequence_metadata
                             and moved_before_show
+                            and (
+                                previous_seqno not in cid_width_groups
+                                or output.rsplit("\n", 1)[-1].count("\x00") >= 2
+                            )
                             and x0 - previous_x1 > (y1 - y0) * 0.2
                         )
                         or (
                             y0 < 60
                             and output.rsplit("\n", 1)[-1].count("\x00") < 2
                             and (
-                                (operator == "Tj" and x0 >= previous_x1)
-                                or (
-                                    output[-1:].isdigit()
-                                    and text[:1].isdigit()
-                                    and x0 >= previous_x1
-                                )
+                                output[-1:].isdigit()
+                                and text[:1].isdigit()
+                                and x0 - previous_x1 > 0.5
                             )
                         )
                     )
@@ -701,7 +1205,11 @@ class PdfPageObject:
                     previous_y1 = y1
                 previous_x1 = x1
                 previous_seqno = seqno
-            return output
+                previous_resource = group_resource
+            glyph_output = internal_pypdf_rtl_order(output)
+            if operand_output_override is not None:
+                return operand_output_override
+            return glyph_output
         return "\n".join(
             line.text for block in self._page.blocks for line in block.lines if line.source != "ocr"
         )
