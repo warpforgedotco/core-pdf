@@ -90,9 +90,12 @@ internal_LEGACY_GLYPH_ALIASES = {
     "f_f_i": "ﬃ",
     "f_f_l": "ﬄ",
     "negationslash": "⁄",
+    "notexistential": "∄",
     "lessmuch": "≪",
     "intercal": "⊺",
     "radicalbt": "√",
+    "uniontext": "⋃",
+    "triangleleft": "◁",
 }
 
 
@@ -308,21 +311,30 @@ class OperatorTextProjection:
                 # while their embedded program carries the actual subset code map.
                 # The program mapping describes the glyphs that will really render;
                 # explicit /Differences remain the final PDF-level override.
-                builtin_mapping = decoder.internal_builtin_font_encoding(resolved)
+                builtin_mapping = self.internal_type1_alternative(resolved)
+                character_map = {}
                 if not isinstance(encoding, str):
                     encoding_table = list(encoding)
                 for code, glyph_name in builtin_mapping.items():
-                    if code in decoder.differences:
-                        continue
-                    mapped = internal_glyph_name_to_unicode(glyph_name)
-                    if mapped and mapped != glyph_name:
+                    mapped = (
+                        chr(int(glyph_name[1:]))
+                        if glyph_name.startswith("a") and glyph_name[1:].isdigit()
+                        else internal_glyph_name_to_unicode(glyph_name)
+                    )
+                    if mapped and (mapped != glyph_name or len(glyph_name) == 1):
                         if not isinstance(encoding, str) and 0 <= code < len(encoding_table):
                             encoding_table[code] = chr(code)
                         character_map[chr(code)] = mapped
                 if not isinstance(encoding, str):
                     encoding = tuple(encoding_table)
             space_code = (
-                next((code for code, text in enumerate(encoding) if text == " "), 32)
+                next(
+                    (code for code, text in enumerate(encoding) if text == " "),
+                    next(
+                        (ord(code) for code, text in character_map.items() if text == " "),
+                        32,
+                    ),
+                )
                 if not isinstance(encoding, str)
                 else next(
                     (ord(code) for code, text in character_map.items() if text == " "),
@@ -330,11 +342,10 @@ class OperatorTextProjection:
                 )
             )
             declared_space_width = widths.get(space_code, 0.0)
+            flags = self.internal_font_flags(font)
             if default_width == 0:
                 if declared_space_width:
-                    default_width = declared_space_width * (
-                        1.0 if self.internal_font_flags(font) & 1 else 2.0
-                    )
+                    default_width = declared_space_width * (1.0 if flags & 1 else 2.0)
                 else:
                     positive = [width for width in widths.values() if width > 0]
                     default_width = sum(positive) // len(positive) if positive else 500.0
@@ -347,6 +358,39 @@ class OperatorTextProjection:
                 character_widths=widths,
                 default_width=default_width,
             )
+        return result
+
+    def internal_type1_alternative(
+        self, font: Mapping[object, object]
+    ) -> dict[int, str]:
+        """Read the conservative clear-text Type 1 encoding used by PDF readers."""
+        descriptor = self.resolver.resolve(lookup_dict_key(font, "FontDescriptor"))
+        if not isinstance(descriptor, dict):
+            return {}
+        font_file = self.resolver.resolve(lookup_dict_key(descriptor, "FontFile"))
+        if not isinstance(font_file, PdfStream):
+            return {}
+        try:
+            clear_text = font_file.data.split(b"eexec\n", 1)[0]
+        except FilterParseError:
+            return {}
+        encoding_parts = clear_text.split(b"/Encoding", 1)
+        if len(encoding_parts) != 2:
+            return {}
+        result: dict[int, str] = {}
+        for line in encoding_parts[1].replace(b"\r", b"\n").split(b"\n"):
+            if not line.startswith(b"dup"):
+                continue
+            words = [word for word in line.split(b" ") if word]
+            if len(words) < 3 or (len(words) > 3 and words[3] != b"put"):
+                continue
+            try:
+                code = int(words[1])
+                glyph_name = words[2].removeprefix(b"/").decode("latin-1")
+            except ValueError:
+                continue
+            if 0 <= code <= 255:
+                result[code] = glyph_name
         return result
 
     def internal_type3_interpretable(self, font: Mapping[object, object]) -> bool:

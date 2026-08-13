@@ -214,7 +214,6 @@ class DocumentXRefMixin:
             self.raw_data,
             self.xref,
             self.trailer_dict,
-            recover_missing=self.xref_was_recovered,
         )
         try:
             root = resolver.resolve(root_ref)
@@ -244,7 +243,6 @@ class DocumentXRefMixin:
             self.raw_data,
             self.xref,
             self.trailer_dict,
-            recover_missing=self.xref_was_recovered,
         )
         lexer = PdfLexer(data)
         entries_by_ref = {

@@ -179,6 +179,7 @@ def load_data(
     find_startxref(source_data)
     _validate_declared_trailer_root(source_data)
     with PdfDocument.open(source_path) as pdf:
+        pdf.resolver.recover_missing = pdf.xref_was_recovered
         _validate_page_tree(pdf)
         for page in pdf.pages:
             for stream in page.content_streams:
