@@ -193,6 +193,18 @@ class internal_TextState:
         self.height = self.font_size
         self.positioned(0.0)
 
+    def insert_space(self) -> None:
+        """Insert layout whitespace without passing it through the active font CMap."""
+        self.text += " "
+        width = (
+            self.font.character_widths.get(32, self.font.default_width)
+            if self.font is not None
+            else 200.0
+        )
+        self.width += width * self.font_size
+        self.height = self.font_size
+        self.positioned(0.0)
+
 
 class OperatorTextProjection:
     """Interpret page and form text operators using core-pdf's object and font engines."""
@@ -563,7 +575,7 @@ class OperatorTextProjection:
                         and state.text
                         and state.text[-1] != " "
                     ):
-                        state.show(b" ")
+                        state.insert_space()
             elif operator == "Do" and operands and isinstance(xobjects, dict):
                 state.flush()
                 if state.output and not state.output.endswith("\n"):
