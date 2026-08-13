@@ -22,7 +22,7 @@ from core_pdf.impl.engine.spec.s_09_fonts.data.base_encodings import (
 )
 from core_pdf.impl.engine.spec.s_09_fonts.decoder import FontDecoder
 from core_pdf.impl.engine.spec.s_09_fonts.glyphs import glyph_name_to_unicode
-from core_pdf.impl.objects import PdfStream, PdfString
+from core_pdf.impl.objects import PdfName, PdfStream, PdfString
 
 
 def internal_mult(left: list[float], right: list[float]) -> list[float]:
@@ -98,6 +98,27 @@ def internal_glyph_name_to_unicode(name: str) -> str:
     if "_" in name:
         return name
     return glyph_name_to_unicode(name)
+
+
+def internal_difference_text(glyph_name: str, code: int) -> str:
+    """Translate one PDF Encoding Differences name using Adobe semantics."""
+    if glyph_name == ".notdef":
+        return "□"
+    if glyph_name.startswith("a") and glyph_name[1:].isdigit():
+        return chr(code)
+    if glyph_name.isdigit():
+        return f"/{glyph_name}"
+    if (
+        glyph_name.startswith("uni")
+        and len(glyph_name) > 3
+        and len(glyph_name[3:]) % 4 == 0
+        and all(character in "0123456789abcdefABCDEF" for character in glyph_name[3:])
+    ):
+        return f"/{glyph_name}"
+    mapped = internal_glyph_name_to_unicode(glyph_name)
+    if len(glyph_name) == 1:
+        return glyph_name
+    return f"/{glyph_name}" if not mapped or mapped == glyph_name else mapped
 
 
 @dataclass(frozen=True, slots=True)
@@ -234,6 +255,14 @@ class internal_TextState:
             else 200.0
         )
         self.width += width * self.font_size
+        self.height = self.font_size
+        self.positioned(0.0)
+
+    def show_name(self, value: PdfName) -> None:
+        """Preserve a malformed name operand as its lexical PDF spelling."""
+        text = f"/{value.value}"
+        self.text += text
+        self.width += 250.0 * len(text) * self.font_size
         self.height = self.font_size
         self.positioned(0.0)
 
@@ -499,28 +528,7 @@ class OperatorTextProjection:
         for code, glyph_name in decoder.differences.items():
             if not 0 <= code < 256:
                 continue
-            if glyph_name.startswith("a") and glyph_name[1:].isdigit():
-                table[code] = chr(code)
-                continue
-            if glyph_name.isdigit():
-                table[code] = f"/{glyph_name}"
-                continue
-            if (
-                glyph_name.startswith("uni")
-                and len(glyph_name) > 3
-                and len(glyph_name[3:]) % 4 == 0
-                and all(character in "0123456789abcdefABCDEF" for character in glyph_name[3:])
-            ):
-                table[code] = f"/{glyph_name}"
-                continue
-            mapped = internal_glyph_name_to_unicode(glyph_name)
-            table[code] = (
-                glyph_name
-                if len(glyph_name) == 1
-                else f"/{glyph_name}"
-                if mapped == glyph_name
-                else mapped
-            )
+            table[code] = internal_difference_text(glyph_name, code)
         if to_unicode is not None:
             for source in to_unicode.mappings:
                 code = int.from_bytes(source, "big")
@@ -648,12 +656,17 @@ class OperatorTextProjection:
                     state.positioned(state.width / 1000.0)
                     state.width = 0.0
                 value = operands[-1] if operands else None
-                state.show(bytes(value.data) if isinstance(value, PdfString) else b"")
+                if isinstance(value, PdfString):
+                    state.show(bytes(value.data))
+                elif isinstance(value, PdfName):
+                    state.show_name(value)
             elif operator == "TJ" and operands and isinstance(operands[0], (list, tuple)):
                 threshold = state.half_space_width * 0.95
                 for item in operands[0]:
                     if isinstance(item, PdfString):
                         state.show(bytes(item.data))
+                    elif isinstance(item, PdfName):
+                        state.show_name(item)
                     elif (
                         isinstance(item, (int, float))
                         and abs(float(item)) >= threshold
