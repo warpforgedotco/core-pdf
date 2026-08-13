@@ -13,7 +13,7 @@ from core_pdf import PdfDocument
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.objects import PdfReference
 
-from ._native_text import NativeTextProjection
+from ._operator_text import OperatorTextProjection
 
 PdfInput: TypeAlias = Any
 
@@ -150,11 +150,7 @@ def load_data(
         _validate_page_tree(pdf)
         return [
             Document(
-                NativeTextProjection(
-                    pdf,
-                    page_number,
-                    pdf.structured_document.pages[page_number - 1],
-                ).extract_text(),
+                OperatorTextProjection(page).extract_text(),
                 {
                     **(dict(extra_info) if extra_info is not None else {}),
                     "page_label": page.label or str(page_number),
