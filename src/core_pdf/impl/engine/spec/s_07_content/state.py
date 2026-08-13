@@ -1054,7 +1054,7 @@ class TextState:
             )
             word = char_code == 32 if char_code is not None else code == 32
             extra = self.char_space_scale + (self.word_space_scale if word else 0.0)
-            return (metric[0] + extra) * self.font_size / 100000.0
+            return (metric[0] + extra) * self.font_size / 1000.0
         scale = self.text_advance_scale
         base = decoder.glyph_width(code)
         char_extra = self.char_space_scale
@@ -1765,6 +1765,7 @@ class TextState:
             ("clip_bbox", self.clip_bbox),
             ("layout_form_bbox", self.layout_form_bbox),
             ("text_matrix", (combined_a, combined_b, combined_c, combined_d)),
+            ("line_matrix_origin", (self.lm_e, self.lm_f)),
             ("horizontal_scale", self.horizontal_scale),
             ("char_space", self.char_space),
         )
@@ -1829,6 +1830,7 @@ class TextState:
                 continue
 
             cluster_id = len(clusters)
+            cluster_provenance_id = (seqno, cluster_id)
             if axis_aligned_horizontal:
                 advance_x0 = text_basis[0] + offset * combined_a
                 advance_x1 = text_basis[0] + (offset + advance) * combined_a
@@ -1940,7 +1942,7 @@ class TextState:
                     decoder,
                     effective_font_size,
                     effective_font_height,
-                    glyph_provenance,
+                    (*glyph_provenance, ("cluster_id", cluster_provenance_id)),
                 )
                 append_glyph(observation)
                 # Single-glyph fast path: glyph_cluster_from_observations, given one
@@ -2014,7 +2016,7 @@ class TextState:
                             decoder,
                             effective_font_size,
                             effective_font_height,
-                            glyph_provenance,
+                            (*glyph_provenance, ("cluster_id", cluster_provenance_id)),
                         )
                     )
                     char_offset += per_char_advance
@@ -2045,7 +2047,7 @@ class TextState:
                         decoder,
                         effective_font_size,
                         effective_font_height,
-                        glyph_provenance,
+                        (*glyph_provenance, ("cluster_id", cluster_provenance_id)),
                     )
                 )
             for observation in cluster_observations:

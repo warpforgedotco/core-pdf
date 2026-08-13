@@ -345,6 +345,10 @@ class DocumentPagesMixin(Generic[internal_PageT]):
         discovered = list(self.discover_page_dicts())
         if discovered:
             self.page_tree_was_recovered = True
+            # Publish the recovered page set before invalidating dependent
+            # extraction state. A LazyPageList consults page_count while it is
+            # cleared; without this cache, that re-enters page-tree recovery.
+            self.page_dicts_cache = discovered
             self.invalidate_document_extraction_cache()
         return discovered
 

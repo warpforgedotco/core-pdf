@@ -268,10 +268,12 @@ class PdfDocument(
                 for cache in self.page_extraction_caches.values():
                     cache.clear()
             self.page_extraction_caches = None
-            for page in tuple(self.pages_cache or ()):
-                page_cache = page.extraction_cache
-                if page_cache is not None:
-                    page_cache.clear()
+            pages_cache = self.pages_cache
+            if pages_cache is not None:
+                for page in tuple(pages_cache):
+                    page_cache = page.extraction_cache
+                    if page_cache is not None:
+                        page_cache.clear()
 
     def _initialize_document_caches(self) -> None:
         for cache_name in DOCUMENT_CACHE_FIELDS:

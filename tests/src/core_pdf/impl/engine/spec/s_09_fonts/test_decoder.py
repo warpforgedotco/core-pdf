@@ -613,7 +613,7 @@ def test_vertical_cid_advance_uses_w2_and_dw2() -> None:
     advance = decoder.text_advance_vector(
         b"\x00\x01\x00\x02", font_size=10, char_space=0, word_space=0, horizontal_scale=1
     )
-    assert advance == (0.0, -0.14)
+    assert advance == (0.0, -14.0)
 
 
 def test_vertical_cid_w2_range_overrides_dw2() -> None:
@@ -626,7 +626,7 @@ def test_vertical_cid_w2_range_overrides_dw2() -> None:
     advance = decoder.text_advance_vector(
         b"\x00\x03\x00\x05", font_size=10, char_space=0, word_space=0, horizontal_scale=1
     )
-    assert advance == (0.0, 0.16)
+    assert advance == (0.0, 16.0)
     assert decoder.vertical_metrics[3] == (-600.0, 250.0, 770.0)
 
 
@@ -638,7 +638,7 @@ def test_vertical_w2_position_vector_is_scaled_to_text_space() -> None:
 
     decoder = FontDecoder(font)
 
-    assert decoder.vertical_glyph_position(7, font_size=10) == pytest.approx((0.02, -0.045))
+    assert decoder.vertical_glyph_position(7, font_size=10) == pytest.approx((-2.0, 4.5))
 
 
 def test_to_unicode_is_authoritative_over_glyph_name_repairs() -> None:

@@ -13,7 +13,7 @@ import numpy
 
 from core_pdf import PdfDocument
 from core_pdf.api.compat.pdfminer import LAParams, LTChar, LTFigure, LTTextBox, extract_pages
-from core_pdf.impl.exceptions import PdfSourceError, PdfUnsupportedError
+from core_pdf.impl.exceptions import PdfError, PdfSourceError, PdfUnsupportedError
 
 PdfInput: TypeAlias = Any
 
@@ -401,7 +401,8 @@ def internal_region_order(
     # Unstructured requires every coordinate to be non-negative before it
     # applies XY-cut. A single box extending beyond the media box makes it keep
     # the deterministic basic order for the entire page.
-    if any(coordinate < 0 for box in boxes for coordinate in box):
+    int64_max = numpy.iinfo(numpy.int64).max
+    if any(coordinate < 0 or coordinate > int64_max for box in boxes for coordinate in box):
         return basic_order
     result: list[int] = []
     internal_recursive_xy_cut(
@@ -418,17 +419,21 @@ def internal_combine_list_regions(
 ) -> list[tuple[str, tuple[float, float, float, float]]]:
     """Apply Unstructured's pre-sort continuation merge for list elements."""
     combined: list[tuple[str, tuple[float, float, float, float]]] = []
-    active_index: int | None = None
+    anchor_text: str | None = None
+    anchor_bbox: tuple[float, float, float, float] | None = None
     active_bbox: tuple[float, float, float, float] | None = None
+    anchor_position: int | None = None
     for text, bbox in regions:
         element_class = internal_element_class(text, bbox, page_height)
         if element_class is ListItem:
-            active_index = len(combined)
+            anchor_text = text
+            anchor_bbox = bbox
             active_bbox = bbox
             combined.append((text, bbox))
+            anchor_position = len(combined) - 1
             continue
-        if active_index is not None and active_bbox is not None:
-            left, bottom, right, top = active_bbox
+        if anchor_text is not None and anchor_bbox is not None and active_bbox is not None:
+            left, bottom, right, top = anchor_bbox
             width = right - left
             height = top - bottom
             current_left, current_bottom, current_right, current_top = bbox
@@ -439,23 +444,29 @@ def internal_combine_list_regions(
             )
             within_y = current_top > bottom - 0.3 * height and current_top < top + 0.3 * height
             if within_x and within_y:
-                active_text, _ = combined[active_index]
+                active_left, active_bottom, active_right, active_top = active_bbox
                 merged_bbox = (
-                    min(left, current_left),
-                    min(bottom, current_bottom),
-                    max(right, current_right),
-                    max(top, current_top),
+                    min(active_left, current_left),
+                    min(active_bottom, current_bottom),
+                    max(active_right, current_right),
+                    max(active_top, current_top),
                 )
-                merged_region = (f"{active_text} {text}", merged_bbox)
-                combined[active_index] = merged_region
+                merged_region = (f"{anchor_text} {text}", merged_bbox)
+                if anchor_position is not None:
+                    # ``_combine_list_elements`` mutates its retained
+                    # ``tmp_element`` before deep-copying it. If another
+                    # element was emitted since the list anchor, that earlier
+                    # list entry therefore changes as well.
+                    combined[anchor_position] = merged_region
                 # Mirror the reference continuation loop exactly: it removes
                 # the most recently emitted element, which need not be the
                 # active list item when intervening columns were encountered,
                 # then appends a merged copy of that list item.
                 if combined:
+                    if anchor_position == len(combined) - 1:
+                        anchor_position = None
                     combined.pop()
                 combined.append(merged_region)
-                active_index = len(combined) - 1
                 active_bbox = merged_bbox
                 continue
         combined.append((text, bbox))
@@ -480,38 +491,66 @@ def partition_pdf(filename: object, **kwargs: object) -> list[Element]:
         raise
     result: list[Element] = []
     pages = extract_pages(filename, password=password, laparams=LAParams(word_margin=word_margin))
-    for page in pages:
-        text_boxes = [item for item in page if isinstance(item, LTTextBox)]
-        regions = internal_layout_regions(text_boxes, page.height)
-        for figure in (item for item in page if isinstance(item, LTFigure)):
-            regions.extend(
-                (
-                    snippet.strip() if "\n\t" in snippet else internal_clean_text(snippet),
-                    figure.bbox,
+    document = PdfDocument.open(filename, password=password)
+    try:
+        source_pages = iter(document.pages)
+        page_pairs = ((page, next(source_pages)) for page in pages)
+        for page, source_page in page_pairs:
+            text_boxes = [item for item in page if isinstance(item, LTTextBox)]
+            regions = internal_layout_regions(text_boxes, page.height)
+            for figure in (item for item in page if isinstance(item, LTFigure)):
+                figure_text = "".join(
+                    item.get_text() for item in figure if hasattr(item, "get_text")
                 )
-                for snippet in figure.text_snippets
-                if snippet.strip()
+                if cleaned_figure_text := internal_clean_text(figure_text):
+                    regions.append((cleaned_figure_text, figure.bbox))
+            try:
+                fields = source_page.get_fields()
+            except (PdfError, ValueError):
+                fields = ()
+            media_left, media_bottom, _media_right, _media_top = source_page.media_box or (
+                0.0,
+                0.0,
+                page.width,
+                page.height,
             )
-        regions = internal_combine_list_regions(regions, page.height)
-        for element_index in internal_region_order(regions, page.height):
-            text, bbox = regions[element_index]
-            element_class = internal_element_class(text, bbox, page.height)
-            if element_class is ListItem:
-                text = internal_BULLET.sub("", text, count=1).strip()
-            metadata = (
-                ElementMetadata(
-                    {
-                        "element_id": f"p{page.pageid}-e{element_index}",
-                        "page_number": page.pageid,
-                        "bbox": bbox,
-                    }
+            for field in fields:
+                if field.rect is None or field.type == "Btn" or not field.value_text:
+                    continue
+                left, bottom, right, top = (float(value) for value in field.rect)
+                regions.append(
+                    (
+                        field.value_text,
+                        (
+                            left - media_left,
+                            bottom - media_bottom,
+                            right - media_left,
+                            top - media_bottom,
+                        ),
+                    )
                 )
-                if include_metadata
-                else ElementMetadata()
-            )
-            result.append(element_class(text, metadata))
-        if include_page_breaks:
-            result.append(PageBreak("", ElementMetadata(page_number=page.pageid)))
+            regions = internal_combine_list_regions(regions, page.height)
+            for element_index in internal_region_order(regions, page.height):
+                text, bbox = regions[element_index]
+                element_class = internal_element_class(text, bbox, page.height)
+                if element_class is ListItem:
+                    text = internal_BULLET.sub("", text, count=1).strip()
+                metadata = (
+                    ElementMetadata(
+                        {
+                            "element_id": f"p{page.pageid}-e{element_index}",
+                            "page_number": page.pageid,
+                            "bbox": bbox,
+                        }
+                    )
+                    if include_metadata
+                    else ElementMetadata()
+                )
+                result.append(element_class(text, metadata))
+            if include_page_breaks:
+                result.append(PageBreak("", ElementMetadata(page_number=page.pageid)))
+    finally:
+        document.close()
     return result
 
 

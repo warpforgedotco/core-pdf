@@ -622,7 +622,20 @@ class XRefScanner:
                 obj = lexer.parse_indirect_object()
             except Exception:
                 continue
-            if lexer.pos >= 6 and data[lexer.pos - 6 : lexer.pos] == b"endobj":
+            # A damaged stream /Length can carry the lexer past an earlier
+            # endstream/endobj pair and over later, valid indirect objects. In
+            # that case keep scanning from the current marker. Otherwise skip
+            # the stream payload so object-like binary data cannot replace a
+            # genuine xref entry.
+            early_stream_end = (
+                isinstance(obj, PdfStream)
+                and data.find(b"endstream", offset, max(offset, lexer.pos - 9)) >= 0
+            )
+            if (
+                not early_stream_end
+                and lexer.pos >= 6
+                and data[lexer.pos - 6 : lexer.pos] == b"endobj"
+            ):
                 search_pos = max(search_pos, lexer.pos)
             if obj_num >= 10000000:
                 continue

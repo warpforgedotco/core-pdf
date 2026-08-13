@@ -186,6 +186,7 @@ class FontDecoder:
         "default_width",
         "vertical_widths",
         "default_vertical_width",
+        "default_vertical_origin_y",
         "vertical_metrics",
         "is_vertical",
         "ascent",
@@ -233,6 +234,7 @@ class FontDecoder:
     default_width: float
     vertical_widths: FontWidthMap
     default_vertical_width: float
+    default_vertical_origin_y: float
     vertical_metrics: dict[int, tuple[float, float, float]]
     is_vertical: bool
     ascent: float
@@ -310,6 +312,7 @@ class FontDecoder:
             is_vertical,
             vertical_widths,
             default_vertical_width,
+            default_vertical_origin_y,
             vertical_metrics,
         ) = parse_font_widths(font, subtype)
         is_cid_font = subtype == "Type0" and get_descendant(font) is not None
@@ -372,6 +375,7 @@ class FontDecoder:
         self.default_width = default_width
         self.vertical_widths = vertical_widths
         self.default_vertical_width = default_vertical_width
+        self.default_vertical_origin_y = default_vertical_origin_y
         self.vertical_metrics = vertical_metrics
         self.is_vertical = is_vertical
         self.ascent = ascent
@@ -955,10 +959,15 @@ class FontDecoder:
 
     def vertical_glyph_position(self, code: int, *, font_size: float) -> tuple[float, float]:
         metric = self.vertical_metrics.get(
-            code, (self.default_vertical_width, self.glyph_width(code) / 2.0, 0.0)
+            code,
+            (
+                self.default_vertical_width,
+                self.glyph_width(code) / 2.0,
+                self.default_vertical_origin_y,
+            ),
         )
-        scale = font_size / 100000.0
-        return (metric[1] * scale, metric[2] * scale)
+        scale = font_size / 1000.0
+        return (-metric[1] * scale, -metric[2] * scale)
 
     def glyph_bitmap(self, code: int, *, width: int = 24, height: int = 32) -> tuple[int, ...]:
         if code < 0:
@@ -1029,7 +1038,7 @@ class FontDecoder:
                     glyph.cid,
                     (self.default_vertical_width, self.glyph_width(glyph.cid) / 2.0, 0.0),
                 )
-                total += metric[0] * font_size / 100000.0 + char_space
+                total += metric[0] * font_size / 1000.0 + char_space
                 if glyph.char_code == 32:
                     total += word_space
             return (0.0, -total)

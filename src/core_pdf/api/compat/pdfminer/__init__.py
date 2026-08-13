@@ -9,7 +9,7 @@ from io import BytesIO
 from typing import Any, BinaryIO, TextIO, TypeAlias, cast
 
 from core_pdf import PdfDocument
-from core_pdf._vendor.fontTools.agl import AGL2UV, LEGACY_AGL2UV
+from core_pdf._vendor.fontTools.agl import toUnicode
 from core_pdf.impl.engine.layout.geometry import bbox_union
 from core_pdf.impl.engine.spec.s_09_fonts.data.base_encodings import (
     MAC_ROMAN_ENCODING,
@@ -387,29 +387,93 @@ def _group_objects(chars: list[LTChar], params: LAParams) -> list[LTTextLine]:
 
 
 def _lines_are_neighbors(first: LTTextLine, second: LTTextLine, ratio: float) -> bool:
+    epsilon = 1e-9
     if isinstance(first, LTTextLineHorizontal) and isinstance(second, LTTextLineHorizontal):
         tolerance = ratio * first.height
         return (
-            not (second.y1 <= first.y0 - tolerance or first.y1 + tolerance <= second.y0)
-            and abs(second.height - first.height) <= tolerance
+            # ``LTTextLineHorizontal.find_neighbors`` first queries a spatial
+            # plane over the line's own horizontal extent. Alignment alone is
+            # insufficient: lines separated along x are never candidates.
+            not (second.x1 <= first.x0 or first.x1 <= second.x0)
+            and not (second.y1 <= first.y0 - tolerance or first.y1 + tolerance <= second.y0)
+            and abs(second.height - first.height) <= tolerance + epsilon
             and (
-                abs(second.x0 - first.x0) <= tolerance
-                or abs(second.x1 - first.x1) <= tolerance
-                or abs((second.x0 + second.x1 - first.x0 - first.x1) / 2) <= tolerance
+                abs(second.x0 - first.x0) <= tolerance + epsilon
+                or abs(second.x1 - first.x1) <= tolerance + epsilon
+                or abs((second.x0 + second.x1 - first.x0 - first.x1) / 2) <= tolerance + epsilon
             )
         )
     if isinstance(first, LTTextLineVertical) and isinstance(second, LTTextLineVertical):
         tolerance = ratio * first.width
         return (
-            not (second.x1 <= first.x0 - tolerance or first.x1 + tolerance <= second.x0)
-            and abs(second.width - first.width) <= tolerance
+            # The vertical counterpart's plane query is restricted to the
+            # line's own vertical extent.
+            not (second.y1 <= first.y0 or first.y1 <= second.y0)
+            and not (second.x1 <= first.x0 - tolerance or first.x1 + tolerance <= second.x0)
+            and abs(second.width - first.width) <= tolerance + epsilon
             and (
-                abs(second.y0 - first.y0) <= tolerance
-                or abs(second.y1 - first.y1) <= tolerance
-                or abs((second.y0 + second.y1 - first.y0 - first.y1) / 2) <= tolerance
+                abs(second.y0 - first.y0) <= tolerance + epsilon
+                or abs(second.y1 - first.y1) <= tolerance + epsilon
+                or abs((second.y0 + second.y1 - first.y0 - first.y1) / 2) <= tolerance + epsilon
             )
         )
     return False
+
+
+class _LayoutPlane:
+    """Small identity-based spatial index matching pdfminer's layout plane."""
+
+    __slots__ = ("bbox", "grid", "gridsize", "objects", "sequence")
+
+    def __init__(self, bbox: tuple[float, float, float, float], gridsize: int = 50) -> None:
+        self.bbox = bbox
+        self.gridsize = gridsize
+        self.sequence: list[LTComponent | _TextGroup] = []
+        self.objects: dict[int, LTComponent | _TextGroup] = {}
+        self.grid: dict[tuple[int, int], list[LTComponent | _TextGroup]] = {}
+
+    def _range(self, bbox: tuple[float, float, float, float]) -> Iterator[tuple[int, int]]:
+        x0, y0, x1, y1 = bbox
+        left, bottom, right, top = self.bbox
+        if x1 <= left or right <= x0 or y1 <= bottom or top <= y0:
+            return
+        x0 = max(left, x0)
+        y0 = max(bottom, y0)
+        x1 = min(right, x1)
+        y1 = min(top, y1)
+        for grid_y in range(int(y0) // self.gridsize, int(y1 + self.gridsize) // self.gridsize):
+            for grid_x in range(int(x0) // self.gridsize, int(x1 + self.gridsize) // self.gridsize):
+                yield grid_x, grid_y
+
+    def add(self, item: LTComponent | _TextGroup) -> None:
+        for key in self._range(item.bbox):
+            self.grid.setdefault(key, []).append(item)
+        self.sequence.append(item)
+        self.objects[id(item)] = item
+
+    def remove(self, item: LTComponent | _TextGroup) -> None:
+        for key in self._range(item.bbox):
+            bucket = self.grid.get(key)
+            if bucket is not None:
+                self.grid[key] = [candidate for candidate in bucket if candidate is not item]
+        self.objects.pop(id(item), None)
+
+    def __iter__(self) -> Iterator[LTComponent | _TextGroup]:
+        return (item for item in self.sequence if id(item) in self.objects)
+
+    def find(self, bbox: tuple[float, float, float, float]) -> Iterator[LTComponent | _TextGroup]:
+        x0, y0, x1, y1 = bbox
+        seen: set[int] = set()
+        for key in self._range(bbox):
+            for item in self.grid.get(key, ()):
+                item_id = id(item)
+                if item_id in seen or item_id not in self.objects:
+                    continue
+                seen.add(item_id)
+                item_x0, item_y0, item_x1, item_y1 = item.bbox
+                if item_x1 <= x0 or x1 <= item_x0 or item_y1 <= y0 or y1 <= item_y0:
+                    continue
+                yield item
 
 
 def _group_lines(
@@ -417,44 +481,44 @@ def _group_lines(
     margin: float,
     page_bbox: tuple[float, float, float, float] | None = None,
 ) -> list[LTTextBox]:
-    groups_by_line: dict[int, list[int]] = {}
-    for index, line in enumerate(lines):
-        members = [index]
-        if page_bbox is not None and (
-            line.x1 <= page_bbox[0]
-            or page_bbox[2] <= line.x0
-            or line.y1 <= page_bbox[1]
-            or page_bbox[3] <= line.y0
-        ):
-            groups_by_line[index] = members
-            continue
-        for other_index, other in enumerate(lines):
-            if page_bbox is not None and (
-                other.x1 <= page_bbox[0]
-                or page_bbox[2] <= other.x0
-                or other.y1 <= page_bbox[1]
-                or page_bbox[3] <= other.y0
+    if not lines:
+        return []
+    plane_bbox = page_bbox or bbox_union(line.bbox for line in lines) or lines[0].bbox
+    plane = _LayoutPlane(plane_bbox)
+    for line in lines:
+        plane.add(line)
+    groups_by_line: dict[int, list[LTTextLine]] = {}
+    for line in lines:
+        tolerance = margin * (line.width if isinstance(line, LTTextLineVertical) else line.height)
+        query = (
+            (line.x0 - tolerance, line.y0, line.x1 + tolerance, line.y1)
+            if isinstance(line, LTTextLineVertical)
+            else (line.x0, line.y0 - tolerance, line.x1, line.y1 + tolerance)
+        )
+        members: list[LTTextLine] = [line]
+        for candidate in plane.find(query):
+            if not isinstance(candidate, LTTextLine) or not _lines_are_neighbors(
+                line, candidate, margin
             ):
                 continue
-            if not _lines_are_neighbors(line, other, margin):
-                continue
-            members.append(other_index)
-            if other_index in groups_by_line:
-                members.extend(groups_by_line.pop(other_index))
-        unique_members = list(dict.fromkeys(members))
+            members.append(candidate)
+            previous = groups_by_line.pop(id(candidate), None)
+            if previous is not None:
+                members.extend(previous)
+        unique_members = list({id(member): member for member in members}.values())
         for member in unique_members:
-            groups_by_line[member] = unique_members
+            groups_by_line[id(member)] = unique_members
     groups: list[list[LTTextLine]] = []
     seen: set[int] = set()
-    for index in range(len(lines)):
-        members = groups_by_line.get(index)
+    for line in lines:
+        members = groups_by_line.get(id(line))
         if members is None:
             continue
         group_key = id(members)
         if group_key in seen:
             continue
         seen.add(group_key)
-        groups.append([lines[member] for member in members])
+        groups.append(members)
     boxes: list[LTTextBox] = []
     for members in groups:
         vertical = isinstance(members[0], LTTextLineVertical)
@@ -603,21 +667,20 @@ def _pdfminer_glyph_text(glyph: Any) -> str:
         return glyph.alternates[0]
     to_unicode = getattr(glyph.font_decoder, "to_unicode", None)
     decoder = glyph.font_decoder
-    glyph_name = (
-        getattr(decoder, "encoding_differences", {}).get(glyph.char_code)
-        if glyph.unicode_source == "encoding"
-        else None
-    )
+    glyph_name = getattr(decoder, "encoding_differences", {}).get(glyph.char_code)
     if glyph_name and glyph_name.isdecimal():
         glyph_name = None
-    if glyph_name and glyph_name not in AGL2UV and glyph_name not in LEGACY_AGL2UV:
-        return f"(cid:{glyph.cid})"
+    glyph_name_text = toUnicode(glyph_name) if glyph_name else ""
     if to_unicode is not None and glyph.code_bytes:
         mappings = getattr(to_unicode, "mappings", {})
         if glyph.code_bytes in mappings:
             mapped = mappings[glyph.code_bytes]
             if len(mapped) <= 1:
                 return mapped or f"(cid:{glyph.cid})"
+        if glyph_name_text and (
+            glyph.unicode_source == "encoding" or not getattr(decoder, "is_cid_font", False)
+        ):
+            return glyph_name_text
         if (
             glyph.unicode_source != "identity"
             and not getattr(decoder, "is_cid_font", False)
@@ -633,6 +696,26 @@ def _pdfminer_glyph_text(glyph: Any) -> str:
             encoded = table[glyph.char_code]
             if encoded:
                 return encoded
+        if glyph_name and not glyph_name_text and not getattr(decoder, "is_type3", False):
+            return f"(cid:{glyph.cid})"
+    elif glyph_name_text and (
+        glyph.unicode_source == "encoding" or not getattr(decoder, "is_cid_font", False)
+    ):
+        return glyph_name_text
+    # pdfminer consults an explicit ToUnicode map first, then resolves a
+    # simple-font encoding name through its glyph list.  Core's font engine
+    # can recover useful Unicode from an embedded program when that name is
+    # private (for example TeX's ``suppress``), but pdfminer exposes the
+    # unresolved character as a CID marker instead.
+    if glyph_name and getattr(decoder, "is_type3", False) and glyph.char_code is not None:
+        base_table = {
+            "MacRomanEncoding": MAC_ROMAN_ENCODING,
+            "WinAnsiEncoding": WIN_ANSI_ENCODING,
+        }.get(getattr(decoder, "base_encoding", None), STANDARD_ENCODING)
+        if base_text := base_table[glyph.char_code]:
+            return base_text
+    if glyph_name:
+        return f"(cid:{glyph.cid})"
     if glyph.cid is None:
         return glyph.text
     if glyph.unicode_source == "identity" and (
@@ -716,27 +799,49 @@ def _legacy_ligature_overrides(
         if to_unicode is not None and glyph.code_bytes:
             mappings = getattr(to_unicode, "mappings", {})
             mapped = mappings.get(glyph.code_bytes)
-            if mapped is not None and len(mapped) > 1:
-                cluster = glyphs[index : index + len(mapped)]
-                if len(cluster) == len(mapped) and all(
-                    item.seqno == glyph.seqno
-                    and item.code_bytes == glyph.code_bytes
-                    and item.char_code == glyph.char_code
-                    for item in cluster
-                ):
-                    box = bbox_union(item.advance_bbox for item in cluster) or glyph.advance_bbox
-                    overrides[id(glyph)] = (mapped, box, glyph.baseline)
-                    skipped.update(id(item) for item in cluster[1:])
+            if mapped is not None:
+                cluster_id = dict(glyph.provenance or ()).get("cluster_id")
+                cluster = [glyph]
+                if cluster_id is not None:
+                    for item in glyphs[index + 1 :]:
+                        if dict(item.provenance or ()).get("cluster_id") != cluster_id:
+                            break
+                        cluster.append(item)
+                box = bbox_union(item.advance_bbox for item in cluster) or glyph.advance_bbox
+                overrides[id(glyph)] = (mapped, box, glyph.baseline)
+                skipped.update(id(item) for item in cluster[1:])
                 continue
         if glyph.char_code is None:
             continue
         glyph_name = getattr(decoder, "encoding_differences", {}).get(glyph.char_code)
-        if glyph_name not in ligatures:
+        glyph_name_text = toUnicode(glyph_name) if glyph_name else ""
+        if len(glyph_name_text) > 1:
+            cluster = glyphs[index : index + len(glyph_name_text)]
+            if len(cluster) == len(glyph_name_text) and all(
+                item.seqno == glyph.seqno
+                and item.code_bytes == glyph.code_bytes
+                and item.char_code == glyph.char_code
+                for item in cluster
+            ):
+                box = bbox_union(item.advance_bbox for item in cluster) or glyph.advance_bbox
+                overrides[id(glyph)] = (glyph_name_text, box, glyph.baseline)
+                skipped.update(id(item) for item in cluster[1:])
+                continue
+        base_table = {
+            "MacRomanEncoding": MAC_ROMAN_ENCODING,
+            "WinAnsiEncoding": WIN_ANSI_ENCODING,
+        }.get(getattr(decoder, "base_encoding", None), STANDARD_ENCODING)
+        encoded_ligature = (
+            base_table[glyph.char_code] if 0 <= glyph.char_code < len(base_table) else ""
+        )
+        expected_ligature = ligatures.get(glyph_name, encoded_ligature)
+        if expected_ligature not in ligatures.values():
             # A decomposed Unicode sequence is not sufficient evidence that
             # pdfminer would emit a legacy presentation-form ligature.  Most
             # commonly it came from /ActualText or a ToUnicode mapping, both
-            # of which pdfminer exposes as ordinary characters.  Recombine
-            # only when the PDF encoding itself names a ligature glyph.
+            # of which pdfminer exposes as ordinary characters. Recombine
+            # only when either the explicit glyph name or the applicable base
+            # encoding identifies the original code as a ligature.
             continue
         cluster: tuple[Any, ...] | None = None
         legacy_text: str | None = None
@@ -749,7 +854,7 @@ def _legacy_ligature_overrides(
                 continue
             decomposition = "".join(item.text for item in candidate)
             candidate_text = ligatures.get(decomposition)
-            if candidate_text is None:
+            if candidate_text is None or candidate_text != expected_ligature:
                 continue
             if any(
                 item.seqno != glyph.seqno
@@ -825,11 +930,15 @@ def extract_pages(
                 following = projected_glyphs[glyph_index + 1]
                 baseline = glyph.baseline
                 following_baseline = following.baseline
+                provenance = dict(glyph.provenance) if glyph.provenance else {}
+                following_provenance = dict(following.provenance) if following.provenance else {}
                 continuous = (
                     baseline is not None
                     and following_baseline is not None
                     and abs(baseline[2] - following_baseline[0]) <= 1e-6
                     and abs(baseline[3] - following_baseline[1]) <= 1e-6
+                    and provenance.get("line_matrix_origin")
+                    == following_provenance.get("line_matrix_origin")
                 )
                 if not continuous:
                     correction_x = 0.0
@@ -837,7 +946,6 @@ def extract_pages(
                     continue
                 if glyph.seqno == following.seqno:
                     continue
-                provenance = dict(glyph.provenance) if glyph.provenance else {}
                 char_space = float(provenance.get("char_space", 0.0))
                 text_matrix = provenance.get("text_matrix")
                 if char_space and isinstance(text_matrix, (tuple, list)) and len(text_matrix) == 4:
@@ -852,22 +960,14 @@ def extract_pages(
             figure_chars: dict[tuple[object, ...], list[tuple[LTChar, int]]] = {}
             figure_boxes: dict[tuple[object, ...], tuple[float, float, float, float]] = {}
             try:
-                page_fields = page.get_fields()
-            except (PdfError, ValueError):
-                page_fields = ()
-            field_values = {
-                tuple(float(value) for value in field.rect): field.value_text
-                for field in page_fields
-                if field.rect is not None and field.type != "Btn" and field.value_text
-            }
-            try:
                 page_annotations = page.get_annotations()
             except (PdfError, ValueError):
                 page_annotations = ()
             annotation_boxes = tuple(
                 tuple(annotation.rect)
                 for annotation in page_annotations
-                if annotation.rect is not None and annotation.subtype in {"FreeText", "Stamp"}
+                if annotation.rect is not None
+                and annotation.subtype in {"FreeText", "Stamp", "Widget"}
             )
             vertical_positions: dict[tuple[str | None, int], tuple[float, int]] = {}
             for glyph in projected_glyphs:
@@ -939,6 +1039,27 @@ def extract_pages(
                 text_matrix = glyph_provenance.get("text_matrix")
                 horizontal_scale = float(glyph_provenance.get("horizontal_scale", 100.0)) * 0.01
                 if (
+                    getattr(glyph.font_decoder, "is_vertical", False)
+                    and baseline is not None
+                    and width_code is not None
+                ):
+                    metric = glyph.font_decoder.vertical_metrics.get(
+                        width_code,
+                        (
+                            glyph.font_decoder.default_vertical_width,
+                            glyph.font_decoder.glyph_width(width_code) / 2.0,
+                            glyph.font_decoder.default_vertical_origin_y,
+                        ),
+                    )
+                    origin_x, origin_y = baseline[0], baseline[1]
+                    x0 = origin_x - float(metric[1]) * glyph.font_size / 1000.0
+                    x1 = x0 + glyph.font_size
+                    # Core's vertical baseline is already translated by v1y;
+                    # pdfminer's LTChar box starts at that displaced origin.
+                    y0 = origin_y
+                    y1 = y0 + glyph.font_size
+                    effective_font_height = glyph.font_size
+                elif (
                     baseline is not None
                     and normalized_width > 0
                     and isinstance(text_matrix, (tuple, list))
@@ -947,13 +1068,31 @@ def extract_pages(
                     matrix_a, matrix_b, matrix_c, matrix_d = (float(value) for value in text_matrix)
                     origin_x, origin_y = baseline[0], baseline[1]
                     descent_scale = 0.001
+                    descent_value = float(getattr(glyph.font_decoder, "descent", -200.0))
                     if getattr(glyph.font_decoder, "is_type3", False):
                         font_matrix = _mapping_value(glyph.font_decoder.font, "FontMatrix")
                         if isinstance(font_matrix, (tuple, list)) and len(font_matrix) == 6:
-                            font_matrix_c = float(font_matrix[2])
+                            font_matrix_b = float(font_matrix[1])
                             font_matrix_d = float(font_matrix[3])
-                            descent_scale = (font_matrix_c**2 + font_matrix_d**2) ** 0.5
-                    descent = float(getattr(glyph.font_decoder, "descent", -200.0)) * descent_scale
+                            descent_scale = font_matrix_b + font_matrix_d
+                        descriptor = _mapping_value(glyph.font_decoder.font, "FontDescriptor")
+                        descriptor_bbox = _mapping_value(descriptor, "FontBBox")
+                        if descriptor is not None:
+                            # PDFType3Font derives ascent/descent from the
+                            # descriptor's FontBBox and treats a missing or
+                            # malformed box as all zeros. It does not fall
+                            # back to the Type 3 font dictionary in this case.
+                            descent_value = (
+                                min(float(descriptor_bbox[1]), float(descriptor_bbox[3]))
+                                if isinstance(descriptor_bbox, (tuple, list))
+                                and len(descriptor_bbox) == 4
+                                else 0.0
+                            )
+                        else:
+                            font_bbox = _mapping_value(glyph.font_decoder.font, "FontBBox")
+                            if isinstance(font_bbox, (tuple, list)) and len(font_bbox) == 4:
+                                descent_value = min(float(font_bbox[1]), float(font_bbox[3]))
+                    descent = descent_value * descent_scale
                     # ``LTChar`` uses the font descent only to anchor horizontal
                     # glyphs; its box is always exactly one text-space unit tall.
                     # FontBBox/ascent describes ink, not pdfminer's layout box.
@@ -1095,14 +1234,6 @@ def extract_pages(
                     character.bbox for character, _ in entries
                 )
                 if figure_box is not None:
-                    field_value = next(
-                        (
-                            value
-                            for field_box, value in field_values.items()
-                            if all(abs(a - b) <= 0.5 for a, b in zip(field_box, figure_box))
-                        ),
-                        None,
-                    )
                     x0, y0, x1, y1 = figure_box
                     media_left, media_bottom, _media_right, _media_top = page.media_box
                     x0 -= media_left
@@ -1121,15 +1252,12 @@ def extract_pages(
                         )
                     elif rotation == 270:
                         x0, y0, x1, y1 = page_height - y1, x0, page_height - y0, x1
-                    selected_snippets = (
-                        (field_value,) if field_value is not None else tuple(snippets)
-                    )
                     boxes.append(
                         LTFigure(
                             (x0, y0, x1, y1),
                             f"Form{figure_index}",
                             [character for character, _ in entries],
-                            selected_snippets,
+                            tuple(snippets),
                         )
                     )
             yield LTPage(
