@@ -118,7 +118,6 @@ def test_unstructured_matches_real_library_on_all_fixture_pdfs(pdf_path: Path) -
     ]
 
 
-@pytest.mark.skip("disabling for now")
 @pytest.mark.parametrize("pdf_path", ALL_PDFS, ids=lambda path: path.name)
 def test_llamaindex_matches_real_reader_on_all_fixture_pdfs(pdf_path: Path) -> None:
     real_reader = pytest.importorskip("llama_index.readers.file").PDFReader
