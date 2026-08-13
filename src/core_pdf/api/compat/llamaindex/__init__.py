@@ -13,6 +13,8 @@ from core_pdf import PdfDocument
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.objects import PdfReference
 
+from ._native_text import NativeTextProjection
+
 PdfInput: TypeAlias = Any
 
 
@@ -135,45 +137,6 @@ def _validate_page_tree(pdf: PdfDocument) -> None:
     visit(lookup_dict_key(pdf.catalog(), "Pages"))
 
 
-def _native_page_text(page: Any) -> str:
-    """Project captured PDF text-show runs without including OCR output."""
-    output = ""
-    groups: list[list[Any]] = []
-    for glyph in page.get_page_program().products.glyphs:
-        x0, y0, x1, y1 = glyph.advance_bbox
-        if not groups or groups[-1][0] != glyph.seqno:
-            groups.append([glyph.seqno, x0, y0, x1, y1, glyph.text])
-        else:
-            group = groups[-1]
-            group[1] = min(group[1], x0)
-            group[2] = min(group[2], y0)
-            group[3] = max(group[3], x1)
-            group[4] = max(group[4], y1)
-            group[5] += glyph.text
-    previous: list[Any] | None = None
-    for group in groups:
-        _, x0, y0, x1, y1, text = group
-        if not text:
-            continue
-        if previous is not None:
-            _, _, previous_y0, previous_x1, previous_y1, _ = previous
-            height = max(y1 - y0, previous_y1 - previous_y0, 1.0)
-            different_baseline = abs(y0 - previous_y0) > height * 0.5
-            restarted_line = x0 < previous_x1 - height
-            if different_baseline or restarted_line:
-                if not output.endswith("\n"):
-                    output += "\n"
-            elif (
-                not output.endswith((" ", "\n"))
-                and not text.startswith(" ")
-                and x0 - previous_x1 > height * 0.2
-            ):
-                output += " "
-        output += text
-        previous = group
-    return output
-
-
 def load_data(
     source: object,
     *,
@@ -187,7 +150,11 @@ def load_data(
         _validate_page_tree(pdf)
         return [
             Document(
-                _native_page_text(page),
+                NativeTextProjection(
+                    pdf,
+                    page_number,
+                    pdf.structured_document.pages[page_number - 1],
+                ).extract_text(),
                 {
                     **(dict(extra_info) if extra_info is not None else {}),
                     "page_label": page.label or str(page_number),
