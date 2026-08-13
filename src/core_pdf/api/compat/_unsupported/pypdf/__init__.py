@@ -617,13 +617,20 @@ class PdfPageObject:
                 > 1
                 for seqno in sequence_bytes
             )
+            aligned_engine_sequences = set(aligned_engine_seqnos)
+            unmatched_text_groups = [
+                group
+                for group in groups
+                if group[0] not in aligned_engine_sequences and group[6].strip()
+            ]
             byte_aligned_groups = False
             if (
-                lost_show_boundaries
+                lost_show_boundaries and not unmatched_text_groups
                 or (
                     not direct_sequence_fonts
                     and not compact_sequence_fonts
                     and abs(len(flat_glyph_bytes) - len(flat_show_bytes)) <= 2
+                    and not unmatched_text_groups
                 )
             ) and len(aligned_groups) >= len(groups) * 0.9:
                 groups = [
@@ -1049,6 +1056,7 @@ class PdfPageObject:
                 predicted_sparse_space = False
                 effective_force_space = force_space_before and (
                     direct_sequence_metadata
+                    or output.endswith(".") and text[:1].isupper()
                     or (
                         force_space_before
                         and (
@@ -1117,9 +1125,17 @@ class PdfPageObject:
                         abs(y0 - previous_y0) > (y1 - y0) * 0.5
                         or previous_x1 is not None
                         and x0 < previous_x1 - (y1 - y0)
-                        or malformed_text_state
+                        or (malformed_text_state or not direct_sequence_fonts and not compact_sequence_fonts)
                         and previous_x1 is not None
                         and abs(x0 - previous_x1) < (y1 - y0)
+                        or previous_x1 is not None
+                        and abs(x0 - previous_x1) < (y1 - y0)
+                        and (
+                            output.endswith(".")
+                            and text[:1].isupper()
+                            or output.endswith("’")
+                            and text[:1].islower()
+                        )
                     )
                     or (
                         group_resource is None
@@ -1128,9 +1144,19 @@ class PdfPageObject:
                         and text.isupper()
                     )
                 )
+                unmapped_baseline_newline = (
+                    not direct_sequence_fonts
+                    and not compact_sequence_fonts
+                    and previous_y0 is not None
+                    and previous_x1 is not None
+                    and x0 < previous_x1
+                    and abs(y0 - previous_y0) > (y1 - y0) * 0.8
+                )
                 if baseline_newline and not vertically_separate and output.endswith("\n"):
                     pass
-                elif (vertically_separate or baseline_newline) and not degenerate:
+                elif (
+                    vertically_separate or baseline_newline or unmapped_baseline_newline
+                ) and not degenerate:
                     output += "\n"
                     if (
                         not direct_sequence_metadata
@@ -1156,6 +1182,10 @@ class PdfPageObject:
                         or effective_force_space
                         and not text.startswith("  ")
                         or literal_gap_space
+                        or text.isspace()
+                        and len(text) > 10
+                        and operator == "Tj"
+                        and not moved_before_show
                     )
                     and (
                         effective_force_space
@@ -1194,7 +1224,14 @@ class PdfPageObject:
                         )
                     )
                 ):
-                    output += " "
+                    output += (
+                        "  "
+                        if text.isspace()
+                        and len(text) > 10
+                        and operator == "Tj"
+                        and not moved_before_show
+                        else " "
+                    )
                 if output.endswith("ﬂ") and text.startswith(" ") and len(text) > 1:
                     output += " "
                 output += text
