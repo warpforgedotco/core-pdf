@@ -72,6 +72,7 @@ class TrueTypeFontProgram:
         self.font = internal_tt_font_from_data(data)
         if not {"maxp", "glyf", "loca", "head"} <= set(self.font.keys()):
             raise ValueError("invalid TrueType glyph tables")
+        internal_ensure_glyph_order(self.font)
         self.units_per_em = float(getattr(self.font["head"], "unitsPerEm", 1000) or 1000)
         self.cid_to_gid = cid_to_gid
         self.unicode_cmap = internal_best_unicode_gid_cmap(self.font)
@@ -192,6 +193,22 @@ def internal_tt_font_from_data(data: bytes) -> TTFont:
         return TTFont(BytesIO(data), lazy=True)
     except FONT_PROGRAM_ERRORS as exc:
         raise ValueError("invalid TrueType font program") from exc
+
+
+def internal_ensure_glyph_order(font: TTFont) -> None:
+    """Recover a stable glyph order when an embedded ``post`` table is corrupt."""
+    try:
+        font.getGlyphOrder()
+        return
+    except FONT_PROGRAM_ERRORS:
+        pass
+    try:
+        glyph_count = int(font["maxp"].numGlyphs)
+    except FONT_PROGRAM_ERRORS as exc:
+        raise ValueError("invalid TrueType glyph order") from exc
+    if glyph_count <= 0:
+        raise ValueError("invalid TrueType glyph order")
+    font.setGlyphOrder([".notdef", *(f"glyph{gid:05d}" for gid in range(1, glyph_count))])
 
 
 def internal_best_unicode_gid_cmap(font: TTFont) -> dict[int, int]:
