@@ -239,6 +239,8 @@ class OperatorTextProjection:
             decoder = FontDecoder(cast(dict[str, object], resolved))
             to_unicode = self.internal_to_unicode(resolved, decoder)
             widths, default_width = self.internal_widths(font)
+            if subtype == "Type3" and not self.internal_type3_interpretable(font):
+                widths, default_width = {}, 0.0
             encoding = self.internal_encoding(font, decoder, to_unicode)
             character_map = self.internal_character_map(decoder, to_unicode)
             space_code = (
@@ -267,6 +269,19 @@ class OperatorTextProjection:
                 default_width=default_width,
             )
         return result
+
+    def internal_type3_interpretable(self, font: Mapping[object, object]) -> bool:
+        if lookup_dict_key(font, "ToUnicode") is not None:
+            return True
+        char_procs = self.resolver.resolve(lookup_dict_key(font, "CharProcs"))
+        if not isinstance(char_procs, dict):
+            return True
+        return all(
+            (glyph_name := normalize_pdf_name(name)) is not None
+            and bool(mapped := glyph_name_to_unicode(glyph_name))
+            and mapped != glyph_name
+            for name in char_procs
+        )
 
     @staticmethod
     def internal_to_unicode(
