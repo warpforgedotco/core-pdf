@@ -11,6 +11,7 @@ from typing import Any, TypeAlias, cast
 
 from core_pdf import PdfDocument
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.writing.api import find_startxref
 from core_pdf.impl.objects import PdfReference
 
 from ._operator_text import OperatorTextProjection
@@ -146,6 +147,7 @@ def load_data(
 ) -> list[Document]:
     del kwargs, max_characters
     source_path = Path(cast(str | PathLike[str], source))
+    find_startxref(source_path.read_bytes())
     with PdfDocument.open(source_path) as pdf:
         _validate_page_tree(pdf)
         return [
