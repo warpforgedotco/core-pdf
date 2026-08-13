@@ -14,6 +14,7 @@ from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.engine.spec.s_09_fonts.cmap_tounicode import ToUnicodeCMap
 from core_pdf.impl.engine.spec.s_09_fonts.decoder import FontDecoder
+from core_pdf.impl.engine.spec.s_09_fonts.glyphs import ensure_glyph_map
 from core_pdf.impl.engine.structured import Page
 from core_pdf.impl.objects import PdfStream, PdfString
 
@@ -23,7 +24,7 @@ GraphicsState = tuple[list[float], str | None, float, float]
 def internal_llamaindex_space_width(
     font: Mapping[object, object], resolver: Any, decoder: FontDecoder
 ) -> float:
-    """Match the target reader's simple-font fallback for an undeclared code 32 width."""
+    """Return a simple-font space width suitable for engine geometry."""
     space_width = decoder.glyph_width(32)
     first_char = lookup_dict_key(font, "FirstChar")
     raw_widths = resolver.resolve(lookup_dict_key(font, "Widths"))
@@ -36,6 +37,42 @@ def internal_llamaindex_space_width(
     if not positive_widths:
         return space_width
     return float(int(sum(positive_widths) / len(positive_widths)) // 2)
+
+
+def internal_llamaindex_tj_space_width(
+    font: Mapping[object, object], resolver: Any, decoder: FontDecoder
+) -> float:
+    """Return the target reader's width threshold for explicit TJ adjustments."""
+    first_char = lookup_dict_key(font, "FirstChar")
+    raw_widths = resolver.resolve(lookup_dict_key(font, "Widths"))
+    if not isinstance(first_char, (int, float)) or not isinstance(raw_widths, (list, tuple)):
+        return 200.0
+    encoding = lookup_dict_key(font, "Encoding")
+    difference_space = next(
+        (code for code, glyph_name in decoder.differences.items() if glyph_name == "space"),
+        None,
+    )
+    cmap_space = next(
+        (
+            code[0]
+            for code, text in (
+                decoder.to_unicode.mappings.items() if decoder.to_unicode is not None else ()
+            )
+            if len(code) == 1 and text == " "
+        ),
+        None,
+    )
+    space_code = (
+        difference_space
+        if difference_space is not None
+        else cmap_space
+        if not isinstance(encoding, dict) and cmap_space is not None
+        else 32
+    )
+    space_index = space_code - int(first_char)
+    if 0 <= space_index < len(raw_widths):
+        return float(raw_widths[space_index])
+    return 200.0
 
 
 def internal_cid_space_width(decoder: FontDecoder, data: bytes) -> float | None:
@@ -105,10 +142,12 @@ class NativeTextProjection:
             resource_decoders: dict[str, FontDecoder] = {}
             resource_font_names: dict[str, str] = {}
             resource_space_thresholds: dict[str, float] = {}
+            resource_tj_space_thresholds: dict[str, float] = {}
             font_decoders: dict[str, FontDecoder] = {}
             font_space_thresholds: dict[str, float] = {}
             fonts_with_differences: set[str] = set()
             resources_with_differences: set[str] = set()
+            uninterpretable_type3_resources: set[str] = set()
             if isinstance(raw_fonts, dict):
                 for resource_name, raw_font in raw_fonts.items():
                     font = page.document.resolver.resolve(raw_font)
@@ -116,6 +155,14 @@ class NativeTextProjection:
                         continue
                     base_font = lookup_dict_key(font, "BaseFont")
                     to_unicode = page.document.resolver.resolve(lookup_dict_key(font, "ToUnicode"))
+                    char_procs = page.document.resolver.resolve(lookup_dict_key(font, "CharProcs"))
+                    if (
+                        str(lookup_dict_key(font, "Subtype")) == "Type3"
+                        and not isinstance(to_unicode, PdfStream)
+                        and isinstance(char_procs, dict)
+                        and any(str(name) not in ensure_glyph_map() for name in char_procs)
+                    ):
+                        uninterpretable_type3_resources.add(str(resource_name))
                     if base_font is None:
                         continue
                     resolved_font = page.document.resolver.resolve_font_dict(font)
@@ -126,6 +173,10 @@ class NativeTextProjection:
                         font, page.document.resolver, decoder
                     )
                     resource_space_thresholds[str(resource_name)] = space_width * 0.475
+                    resource_tj_space_thresholds[str(resource_name)] = (
+                        internal_llamaindex_tj_space_width(font, page.document.resolver, decoder)
+                        * 0.475
+                    )
                     font_decoders[str(base_font)] = decoder
                     font_space_thresholds[str(base_font)] = space_width * 0.5
                     if not isinstance(to_unicode, PdfStream):
@@ -168,6 +219,7 @@ class NativeTextProjection:
                 )
                 if cid_space_width is not None:
                     resource_space_thresholds[resource_name or ""] = cid_space_width * 0.475
+                    resource_tj_space_thresholds[resource_name or ""] = cid_space_width * 0.475
                     font_space_thresholds[resource_font_names[resource_name or ""]] = (
                         cid_space_width * 0.5
                     )
@@ -223,6 +275,8 @@ class NativeTextProjection:
                 glyph_text = (
                     glyph_cmap.decode(glyph.code_bytes) if glyph_cmap is not None else glyph.text
                 )
+                if resource_name in uninterpretable_type3_resources:
+                    glyph_text = glyph.code_bytes.decode("latin-1")
                 glyph_decoder = font_decoders.get(glyph.font_name)
                 cid_width_groups.update(
                     (glyph.seqno,)
@@ -248,7 +302,7 @@ class NativeTextProjection:
                     and previous_glyph.code_bytes == glyph.code_bytes
                     and glyph.code_bytes not in {b"f", b"\x00f", b"\x00I"}
                     and cast(Any, previous_glyph).text + glyph.text in {"ff", "fi", "fl"}
-                    and glyph_text not in {"ff", "fi", "fl"}
+                    and glyph_text not in {"ff", "fi", "fl", "ffi", "ffl", "ﬀ", "ﬁ", "ﬂ", "ﬃ", "ﬄ"}
                 )
                 if core_ligature_pair:
                     pair_text = cast(Any, previous_glyph).text + glyph.text
@@ -258,7 +312,19 @@ class NativeTextProjection:
                     and previous_glyph.seqno == glyph.seqno
                     and previous_glyph.code_bytes == glyph.code_bytes
                     and glyph_text == previous_decoded
-                    and glyph_text in {"ff", "fi", "fl", "ﬀ", "ﬁ", "ﬂ", "ﬃ", "ﬄ"}
+                    and glyph_text
+                    in {
+                        "ff",
+                        "fi",
+                        "fl",
+                        "ffi",
+                        "ffl",
+                        "ﬀ",
+                        "ﬁ",
+                        "ﬂ",
+                        "ﬃ",
+                        "ﬄ",
+                    }
                 )
                 if duplicate_ligature_part:
                     glyph_text = ""
@@ -660,7 +726,7 @@ class NativeTextProjection:
                         matrix_space_pending = False
                         force_newline_before = matrix_newline_pending
                         matrix_newline_pending = False
-                        space_threshold = resource_space_thresholds.get(
+                        space_threshold = resource_tj_space_thresholds.get(
                             current_font_resource or "", 237.5
                         )
                         for tj_item in cast(list[object], operands[0]):
@@ -804,6 +870,7 @@ class NativeTextProjection:
                 predicted_sparse_space = False
                 effective_force_space = force_space_before and (
                     direct_sequence_metadata
+                    or seqno in sequence_show_indices
                     or output.endswith(".")
                     and text[:1].isupper()
                     or (
@@ -838,14 +905,6 @@ class NativeTextProjection:
                     and text[:1].isdigit()
                     and y1 - y0 > 15
                     and x0 - previous_x1 > (y1 - y0) * 0.15
-                )
-                superscript_number_space = (
-                    previous_y0 is not None
-                    and previous_x1 is not None
-                    and output[-1:].isalpha()
-                    and text[:1].isdigit()
-                    and x0 >= previous_x1
-                    and y0 - previous_y0 > (y1 - y0) * 0.5
                 )
                 missing_resource_space = (
                     compact_sequence_fonts
@@ -953,13 +1012,11 @@ class NativeTextProjection:
                     and (
                         not output.endswith((" ", "\n"))
                         or predicted_sparse_space
-                        or effective_force_space
                         or literal_gap_space
                         or missing_resource_space
                         or operand_position_space
                         or compact_font_boundary_space
                         or heading_number_space
-                        or superscript_number_space
                     )
                     and (
                         not text.startswith(" ")
@@ -978,10 +1035,10 @@ class NativeTextProjection:
                         or operand_position_space
                         or compact_font_boundary_space
                         or heading_number_space
-                        or superscript_number_space
                         or (
                             operator == "Tj"
                             and not moved_before_show
+                            and output[-1:] not in {":", "/"}
                             and output.rsplit("\n", 1)[-1].count("\x00") < 2
                             and x0 > previous_x1
                         )
@@ -1010,15 +1067,10 @@ class NativeTextProjection:
                         )
                     )
                 ):
-                    output += (
-                        "  "
-                        if text.isspace()
-                        and len(text) > 10
-                        and operator == "Tj"
-                        and not moved_before_show
-                        else " "
-                    )
+                    output += " "
                 if output.endswith("ﬂ") and text.startswith(" ") and len(text) > 1:
+                    output += " "
+                if text.isspace() and len(text) > 10 and operator == "Tj":
                     output += " "
                 output += text
                 if newline_after_text:
