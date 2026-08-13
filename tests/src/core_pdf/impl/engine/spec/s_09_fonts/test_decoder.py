@@ -178,6 +178,34 @@ def test_font_decoder_does_not_emit_unknown_underscore_difference_parts() -> Non
     assert decoder.decode(b"A") == ""
 
 
+def test_type3_numeric_charproc_name_retains_base_encoding() -> None:
+    decoder = FontDecoder(
+        {
+            "Subtype": "Type3",
+            "Encoding": {"Differences": [65, "/65"]},
+        }
+    )
+
+    glyph = decoder.decode_glyphs(b"A")[0]
+
+    assert glyph.unicode == "A"
+    assert glyph.unicode_source == "encoding"
+
+
+def test_undefined_simple_font_code_retains_a_replacement_glyph() -> None:
+    decoder = FontDecoder(
+        {
+            "Subtype": "Type3",
+            "Encoding": {"Differences": [0, "/0"]},
+        }
+    )
+
+    glyph = decoder.decode_glyphs(b"\x00")[0]
+
+    assert glyph.unicode == "\ufffd"
+    assert glyph.unicode_source == "undefined"
+
+
 def test_font_decoder_keeps_single_character_difference_names() -> None:
     font = {
         "Subtype": "Type1",

@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import re
+import string
 from dataclasses import dataclass, field
+from functools import lru_cache
+from importlib import import_module
 from typing import Any, TypeAlias
 
 import numpy
 
 from core_pdf import PdfDocument
-from core_pdf.api.compat.pdfminer import LAParams, LTFigure, LTTextBox, extract_pages
+from core_pdf.api.compat.pdfminer import LAParams, LTChar, LTFigure, LTTextBox, extract_pages
 
 PdfInput: TypeAlias = Any
 
@@ -116,14 +119,28 @@ class Address(Element):
     pass
 
 
-internal_BULLET = re.compile(r"^\s*(?:\x95|•|‣|⁃|ㅤ|⁌|⁍|∙|○|●|◘|◦|☙|❥|❧|⦾|⦿|-|–|\uf0b7|\*|·)")
+internal_BULLET_CHARS = "\x95•‣⁃ㅤ⁌⁍∙○●◘◦☙❥❧⦾⦿-–\uf0b7*·"
+internal_BULLET = re.compile(
+    rf"^\s*[{re.escape(internal_BULLET_CHARS)}](?![{re.escape(internal_BULLET_CHARS)}])"
+)
 internal_NUMBERED = re.compile(r"^\s*\d+(?:\.|\))\s+.+")
 internal_EMAIL = re.compile(r"[a-z0-9.\-+_]+@[a-z0-9.\-+_]+\.[a-z]+", re.IGNORECASE)
-internal_ADDRESS = re.compile(r"\b[A-Z]{2}\s+\d{5}(?:-\d{4})?$")
+internal_ADDRESS = re.compile(
+    r"^(?:[A-Z][a-z.\-]{1,15} ?){1,5},\s?"
+    r"(?:AL|AK|AS|AZ|AR|CA|CO|CT|DE|DC|FM|FL|GA|GU|HI|ID|IL|IN|IA|KS|KY|LA|ME|MH|"
+    r"MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|MP|OH|OK|OR|PW|PA|PR|RI|SC|SD|"
+    r"TN|TX|UT|VT|VI|VA|WA|WV|WI|WY)(?:, |\s)?\d{5}(?:-\d{4})?\b",
+    re.IGNORECASE,
+)
 internal_VERB = re.compile(
     r"\b(?:am|are|be|been|being|can|could|did|do|does|had|has|have|is|may|might|must|"
     r"shall|should|was|were|will|would|suggest|suggests|include|includes|included|"
-    r"provide|provides|provided|show|shows|shown|use|uses|used|observations?)\b",
+    r"provide|provides|provided|show|shows|shown|use|uses|used|observations?|"
+    r"accepts?|agrees?|applies|built|clears?|closes?|consider|constructs?|contains?|"
+    r"convert|create|creates|declares?|define|describe|describes|determine|display|"
+    r"escape|explain|extract|gives?|inspect|install|live|looks|mail|make|makes|means|"
+    r"merge|needs?|note|observe|offer|perform|points|reads?|reference|refund|regain|"
+    r"represents?|run|save|saves|see|sign|supports?|take|transform|watch|wins?)\b",
     re.IGNORECASE,
 )
 internal_GRAPHICS_OPS = re.compile(
@@ -131,6 +148,45 @@ internal_GRAPHICS_OPS = re.compile(
     rb"Do|g|G|rg|RG|k|K|cs|CS|w|J|j|M|d|i|gs)(?=\s|$)"
 )
 internal_TEXT_OPS = re.compile(rb"(?:^|(?<=\s))(?:Tj|TJ|'|\"|Tf|Td|TD|Tm|T\*|BT|ET)(?=\s|$)")
+internal_POS_VERB_TAGS = frozenset({"VB", "VBG", "VBD", "VBN", "VBP", "VBZ"})
+internal_NLP: Any | None = None
+internal_NLP_UNAVAILABLE = False
+
+
+def internal_nlp() -> Any | None:
+    """Return an optional English POS pipeline without depending on Unstructured.
+
+    The compatibility package remains usable in core-pdf's minimal installation.
+    When the standard ``en_core_web_sm`` model is present, use its tokenizer,
+    sentence boundaries, and POS tagger to reproduce Unstructured's semantic
+    element classification instead of maintaining an ever-growing lexical
+    approximation here.
+    """
+    global internal_NLP, internal_NLP_UNAVAILABLE
+    if internal_NLP is not None:
+        return internal_NLP
+    if internal_NLP_UNAVAILABLE:
+        return None
+    try:
+        model = import_module("en_core_web_sm")
+        internal_NLP = model.load()
+    except (ImportError, OSError):
+        internal_NLP_UNAVAILABLE = True
+        return None
+    return internal_NLP
+
+
+@lru_cache(maxsize=4096)
+def internal_nlp_features(
+    text: str,
+) -> tuple[tuple[tuple[str, str], ...], tuple[str, ...]] | None:
+    nlp = internal_nlp()
+    if nlp is None:
+        return None
+    document = nlp(text[: nlp.max_length])
+    tokens = tuple((token.text, token.tag_) for token in document)
+    sentences = tuple(sentence.text for sentence in document.sents)
+    return tokens, sentences
 
 
 def internal_pdf_too_complex(filename: object, password: str) -> bool:
@@ -151,7 +207,13 @@ def internal_pdf_too_complex(filename: object, password: str) -> bool:
 
 
 def internal_clean_text(text: str) -> str:
-    return " ".join(text.replace("\x00", "(cid:0)").split())
+    # Match Unstructured's ``clean_extra_whitespace_with_index_run``: line
+    # endings and non-breaking spaces become ordinary spaces, repeated spaces
+    # collapse, but tabs remain meaningful (notably in table-like text boxes).
+    cleaned = text.translate(
+        {ord("\n"): ord(" "), ord("\xa0"): ord(" "), ord("\u2009"): ord(" ")}
+    )
+    return re.sub(r" {2,}", " ", cleaned).strip()
 
 
 def internal_layout_regions(
@@ -160,7 +222,45 @@ def internal_layout_regions(
 ) -> list[tuple[str, tuple[float, float, float, float]]]:
     """Project each canonical pdfminer text box to one Unstructured region."""
     del page_height
-    return [(text, item.bbox) for item in items if (text := internal_clean_text(item.get_text()))]
+    return [
+        (text, item.bbox)
+        for item in items
+        if (text := internal_clean_text(internal_deduplicated_box_text(item)))
+    ]
+
+
+def internal_duplicate_character(first: LTChar, second: LTChar, threshold: float = 2.0) -> bool:
+    if first.get_text() != second.get_text():
+        return False
+    if abs(first.x0 - second.x0) >= threshold or abs(first.y0 - second.y0) >= threshold:
+        return False
+    first_width = first.x1 - first.x0
+    second_width = second.x1 - second.x0
+    average_width = (first_width + second_width) / 2.0
+    if average_width <= 0:
+        return False
+    overlap = max(0.0, min(first.x1, second.x1) - max(first.x0, second.x0))
+    return overlap / average_width > 0.5
+
+
+def internal_deduplicated_box_text(box: LTTextBox) -> str:
+    parts: list[str] = []
+    for line in box:
+        previous: LTChar | None = None
+        for item in line:
+            if isinstance(item, LTChar):
+                if previous is not None and internal_duplicate_character(previous, item):
+                    continue
+                previous = item
+            parts.append(item.get_text())
+    return "".join(parts)
+
+
+def internal_sentence_count(sentences: tuple[str, ...], minimum_words: int) -> int:
+    punctuation = str.maketrans("", "", string.punctuation)
+    return sum(
+        len(sentence.translate(punctuation).split()) >= minimum_words for sentence in sentences
+    )
 
 
 def internal_element_class(
@@ -179,37 +279,32 @@ def internal_element_class(
         return EmailAddress
     if internal_ADDRESS.search(text):
         return Address
-    words = text.split()
     alphabetic = sum(character.isalpha() for character in text)
     non_space = sum(not character.isspace() for character in text)
     alpha_ratio = alphabetic / max(non_space, 1)
-    word_tokens = re.findall(r"[^\W\d_]+", text, re.UNICODE)
+    nlp_features = internal_nlp_features(text)
+    if nlp_features is None:
+        tagged_tokens: tuple[tuple[str, str], ...] = ()
+        sentences = tuple(part for part in re.split(r"(?<=[.!?])\s+", text) if part)
+        word_tokens = re.findall(r"[^\W\d_]+", text, re.UNICODE)
+    else:
+        tagged_tokens, sentences = nlp_features
+        word_tokens = [token for token, _tag in tagged_tokens if token.isalpha()]
     capitalized = sum(word.istitle() or word.isupper() for word in word_tokens)
-    exceeds_cap_ratio = text.isupper() or (
-        bool(word_tokens) and capitalized / len(word_tokens) > 0.5
+    long_sentence_count = internal_sentence_count(sentences, 3)
+    exceeds_cap_ratio = long_sentence_count <= 1 and (
+        text.isupper() or not word_tokens or capitalized / len(word_tokens) > 0.5
     )
-    has_verb = internal_VERB.search(text) is not None or bool(
-        re.search(
-            r"\b(?:(?:\w+(?:ed|ing))|given|using|located|detected|identified|checked|attached|"
-            r"stand|benefit|make|makes|assess|get|gets)\b",
-            text,
-            re.I,
-        )
-    )
-    sentences = [part for part in re.split(r"(?<=[.!?])\s+", text) if part]
-    long_sentence_count = sum(
-        len(re.sub(r"[^\w\s]", "", sentence).split()) >= 3 for sentence in sentences
-    )
-    has_non_latin_clause = (
-        len(words) >= 2
-        and alphabetic > 0
-        and not any("A" <= character.upper() <= "Z" for character in text if character.isalpha())
+    has_verb = (
+        any(tag in internal_POS_VERB_TAGS for _token, tag in tagged_tokens)
+        if nlp_features is not None
+        else internal_VERB.search(text) is not None
     )
     if (
         alpha_ratio >= 0.5
         and not text.isnumeric()
         and (long_sentence_count > 1 or not exceeds_cap_ratio)
-        and (has_verb or long_sentence_count >= 2 or has_non_latin_clause)
+        and (has_verb or long_sentence_count >= 2)
     ):
         return NarrativeText
     if (
@@ -218,7 +313,7 @@ def internal_element_class(
         and not text.isnumeric()
         and not text.endswith(",")
         and not (text.isupper() and re.search(r"[^\w\s]$", text))
-        and long_sentence_count <= 1
+        and internal_sentence_count(sentences, 5) <= 1
     ):
         return Title
     return UncategorizedText
@@ -291,6 +386,11 @@ def internal_region_order(
         )
     if not boxes:
         return []
+    # Unstructured requires every coordinate to be non-negative before it
+    # applies XY-cut. A single box extending beyond the media box makes it keep
+    # the deterministic basic (top, left) order for the entire page.
+    if any(coordinate < 0 for box in boxes for coordinate in box):
+        return basic_order
     result: list[int] = []
     internal_recursive_xy_cut(
         numpy.asarray(boxes, dtype=numpy.int64),
@@ -298,6 +398,58 @@ def internal_region_order(
         result,
     )
     return result
+
+
+def internal_combine_list_regions(
+    regions: list[tuple[str, tuple[float, float, float, float]]],
+    page_height: float,
+) -> list[tuple[str, tuple[float, float, float, float]]]:
+    """Apply Unstructured's pre-sort continuation merge for list elements."""
+    combined: list[tuple[str, tuple[float, float, float, float]]] = []
+    active_index: int | None = None
+    active_bbox: tuple[float, float, float, float] | None = None
+    for text, bbox in regions:
+        element_class = internal_element_class(text, bbox, page_height)
+        if element_class is ListItem:
+            active_index = len(combined)
+            active_bbox = bbox
+            combined.append((text, bbox))
+            continue
+        if active_index is not None and active_bbox is not None:
+            left, bottom, right, top = active_bbox
+            width = right - left
+            height = top - bottom
+            current_left, current_bottom, current_right, current_top = bbox
+            within_x = (
+                current_left > left - 0.2 * width
+                and current_right < right + 0.2 * width
+                and current_left >= left
+            )
+            within_y = (
+                current_top > bottom - 0.3 * height and current_top < top + 0.3 * height
+            )
+            if within_x and within_y:
+                active_text, _ = combined[active_index]
+                merged_bbox = (
+                    min(left, current_left),
+                    min(bottom, current_bottom),
+                    max(right, current_right),
+                    max(top, current_top),
+                )
+                merged_region = (f"{active_text} {text}", merged_bbox)
+                combined[active_index] = merged_region
+                # Mirror the reference continuation loop exactly: it removes
+                # the most recently emitted element, which need not be the
+                # active list item when intervening columns were encountered,
+                # then appends a merged copy of that list item.
+                if combined:
+                    combined.pop()
+                combined.append(merged_region)
+                active_index = len(combined) - 1
+                active_bbox = merged_bbox
+                continue
+        combined.append((text, bbox))
+    return combined
 
 
 def partition_pdf(filename: object, **kwargs: object) -> list[Element]:
@@ -318,6 +470,7 @@ def partition_pdf(filename: object, **kwargs: object) -> list[Element]:
                 for snippet in figure.text_snippets
                 if (text := internal_clean_text(snippet))
             )
+        regions = internal_combine_list_regions(regions, page.height)
         for element_index in internal_region_order(regions, page.height):
             text, bbox = regions[element_index]
             element_class = internal_element_class(text, bbox, page.height)

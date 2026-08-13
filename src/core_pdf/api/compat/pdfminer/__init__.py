@@ -650,12 +650,16 @@ def _mapping_value(mapping: object, name: str) -> object | None:
 
 
 def _pdfminer_glyph_text(glyph: Any) -> str:
+    if glyph.unicode_source == "actual_text" and glyph.alternates:
+        return glyph.alternates[0]
     if glyph.cid is None:
         return glyph.text
     to_unicode = getattr(glyph.font_decoder, "to_unicode", None)
     if glyph.unicode_source == "identity" and to_unicode is None:
         return f"(cid:{glyph.cid})"
     decoder = glyph.font_decoder
+    if glyph.unicode_source == "undefined":
+        return f"(cid:{glyph.cid})"
     if to_unicode is not None and glyph.unicode_source == "encoding":
         glyph_name = getattr(decoder, "encoding_differences", {}).get(glyph.char_code)
         if glyph_name and glyph_name not in AGL2UV and glyph_name not in LEGACY_AGL2UV:
@@ -764,7 +768,6 @@ def extract_pages(
                 list[tuple[LTChar, int]],
             ] = {}
             figure_boxes: dict[int, tuple[float, float, float, float]] = {}
-            outside_page_text: list[str] = []
             annotation_boxes = tuple(
                 tuple(annotation.rect)
                 for annotation in page.get_annotations()
@@ -788,9 +791,11 @@ def extract_pages(
                     continue
                 text = ligature[0] if ligature is not None else _pdfminer_glyph_text(glyph)
                 effective_font_size = glyph.effective_font_size or glyph.font_size
+                effective_font_height = glyph.effective_font_height or effective_font_size
                 if (
                     glyph.baseline is not None
                     and glyph.font_size > 0
+                    and not glyph.effective_font_size
                     and x1 - x0 >= glyph.font_size * 0.8
                     and y1 - y0 <= glyph.font_size * 0.1
                 ):
@@ -822,11 +827,34 @@ def extract_pages(
                             (baseline_x1 - baseline_x0) ** 2 + (baseline_y1 - baseline_y0) ** 2
                         ) ** 0.5
                         effective_font_size = baseline_length / normalized_width
-                if glyph.rotation_angle % 180 == 0:
-                    if width_code is not None and callable(width_lookup):
-                        normalized_width = float(width_lookup(width_code)) * 0.001
+                normalized_width = 0.0
+                if width_code is not None and callable(width_lookup):
+                    normalized_width = float(width_lookup(width_code)) * 0.001
+                orientation = glyph.rotation_angle % 360
+                if orientation == 0:
+                    if normalized_width > 0:
                         x1 = x0 + normalized_width * effective_font_size
-                    y1 = y0 + effective_font_size
+                    y1 = y0 + effective_font_height
+                elif orientation == 90:
+                    x0 = x1 - effective_font_height
+                    if normalized_width > 0:
+                        y1 = y0 + normalized_width * effective_font_size
+                elif orientation == 180:
+                    if normalized_width > 0:
+                        x0 = x1 - normalized_width * effective_font_size
+                    y0 = y1 - effective_font_height
+                elif orientation == 270:
+                    x1 = x0 + effective_font_height
+                    if normalized_width > 0:
+                        y0 = y1 - normalized_width * effective_font_size
+                # PDFMiner places the media-box lower-left at layout-space
+                # (0, 0). Core's canonical geometry remains in PDF user space,
+                # so normalize non-zero and negative media-box origins here.
+                media_left, media_bottom, _media_right, _media_top = page.media_box
+                x0 -= media_left
+                x1 -= media_left
+                y0 -= media_bottom
+                y1 -= media_bottom
                 rotation = int(page.rotation) % 360
                 if rotation == 90:
                     x0, y0, x1, y1 = y0, page.width - x1, y1, page.width - x0
@@ -843,16 +871,8 @@ def extract_pages(
                     (x0, y0, x1, y1),
                     text,
                     glyph.font_name,
-                    effective_font_size,
+                    effective_font_height,
                 )
-                if (
-                    character.x1 <= 0
-                    or character.y1 <= 0
-                    or character.x0 >= page.width
-                    or character.y0 >= page.height
-                ):
-                    outside_page_text.append(character.get_text())
-                    continue
                 run_index = bisect_right(run_sequences, glyph.seqno) - 1
                 provenance = dict(runs[run_index].provenance) if run_index >= 0 else {}
                 xobject_depth = int(provenance.get("xobject_depth", 0) or 0)
@@ -861,9 +881,11 @@ def extract_pages(
                     continue
                 stream_order = int(provenance.get("stream_order", 0) or 0)
                 figure_chars.setdefault(stream_order, []).append((character, glyph.seqno))
-                clip_bbox = provenance.get("clip_bbox")
-                if isinstance(clip_bbox, (tuple, list)) and len(clip_bbox) == 4:
-                    figure_boxes[stream_order] = tuple(float(value) for value in clip_bbox)
+                layout_bbox = provenance.get("layout_form_bbox")
+                if not (isinstance(layout_bbox, (tuple, list)) and len(layout_bbox) == 4):
+                    layout_bbox = provenance.get("clip_bbox")
+                if isinstance(layout_bbox, (tuple, list)) and len(layout_bbox) == 4:
+                    figure_boxes[stream_order] = tuple(float(value) for value in layout_bbox)
             lines = _group_objects(chars, params)
             boxes: list[LTItem] = list(
                 _reading_order(_group_lines(lines, params.line_margin), params.boxes_flow)
@@ -887,23 +909,32 @@ def extract_pages(
                     character.bbox for character, _ in entries
                 )
                 if figure_box is not None:
+                    x0, y0, x1, y1 = figure_box
+                    media_left, media_bottom, _media_right, _media_top = page.media_box
+                    x0 -= media_left
+                    x1 -= media_left
+                    y0 -= media_bottom
+                    y1 -= media_bottom
+                    rotation = int(page.rotation) % 360
+                    if rotation == 90:
+                        x0, y0, x1, y1 = y0, page.width - x1, y1, page.width - x0
+                    elif rotation == 180:
+                        x0, y0, x1, y1 = (
+                            page.width - x1,
+                            page.height - y1,
+                            page.width - x0,
+                            page.height - y0,
+                        )
+                    elif rotation == 270:
+                        x0, y0, x1, y1 = page.height - y1, x0, page.height - y0, x1
                     boxes.append(
                         LTFigure(
-                            figure_box,
+                            (x0, y0, x1, y1),
                             f"Form{stream_order}",
                             [character for character, _ in entries],
                             tuple(snippets),
                         )
                     )
-            if outside_page_text:
-                boxes.append(
-                    LTFigure(
-                        (0.0, page.height, page.width, page.height),
-                        "OutsidePage",
-                        [],
-                        ("".join(outside_page_text),),
-                    )
-                )
             page_width, page_height = (
                 (page.height, page.width) if int(page.rotation) % 180 else (page.width, page.height)
             )

@@ -768,7 +768,17 @@ class FontDecoder:
                 choice = self.internal_unicode_choice_for_code(chunk, code, gid)
             elif table is not None:
                 text = table[code]
-                choice = UnicodeChoice(text, "encoding")
+                # Preserve the glyph and its geometry even when neither the
+                # base encoding nor /Differences defines Unicode for this code.
+                # Facades can project this source as their native unknown-glyph
+                # spelling (pdfminer uses ``(cid:N)``); the engine retains the
+                # standard Unicode replacement character instead of silently
+                # losing painted content.
+                undefined = not text or (len(text) == 1 and ord(text) < 32)
+                choice = UnicodeChoice(
+                    "\ufffd" if undefined else text,
+                    "undefined" if undefined else "encoding",
+                )
             else:
                 choice = self.internal_unicode_choice_for_code(chunk, code, gid)
             choice = self.internal_apply_simple_unicode_overrides(choice, chunk)

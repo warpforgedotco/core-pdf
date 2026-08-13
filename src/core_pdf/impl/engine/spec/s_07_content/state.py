@@ -201,6 +201,7 @@ class TextState:
     flatness: int
     render_intent: str | None
     clip_bbox: tuple[float, float, float, float] | None
+    layout_form_bbox: tuple[float, float, float, float] | None
     fill_color_space: str
     stroke_color_space: str
     dash_pattern: tuple[list[float], float]
@@ -277,6 +278,7 @@ class TextState:
         "flatness",
         "render_intent",
         "clip_bbox",
+        "layout_form_bbox",
         "page_clip",
         "fill_color_space",
         "stroke_color_space",
@@ -395,6 +397,7 @@ class TextState:
         self.flatness = 0
         self.render_intent = None
         self.clip_bbox = None
+        self.layout_form_bbox = None
         # The page box bounds what can be displayed, but it is not a clip the
         # content stream established, so it is kept out of the graphics state:
         # recording it as one would give every unclipped mark the same clip
@@ -775,6 +778,7 @@ class TextState:
             flatness=self.flatness,
             render_intent=self.render_intent,
             clip_bbox=self.clip_bbox,
+            layout_form_bbox=self.layout_form_bbox,
             pending_line_break=self.pending_line_break,
             xobject_depth=self.xobject_depth,
             resource_cache=self.resource_cache,
@@ -809,6 +813,7 @@ class TextState:
         self.flatness = getattr(state, "flatness", 0)
         self.render_intent = getattr(state, "render_intent", None)
         self.clip_bbox = state.clip_bbox
+        self.layout_form_bbox = state.layout_form_bbox
         self.pending_line_break = state.pending_line_break
         self.xobject_depth = state.xobject_depth
         self.resource_cache = state.resource_cache
@@ -828,6 +833,7 @@ class TextState:
         depth: int,
         *,
         clip_bbox: tuple[float, float, float, float] | None = None,
+        layout_form_bbox: tuple[float, float, float, float] | None = None,
         group_alpha: float | None = None,
         stream_key: StreamKey | None = None,
         swallow_parse_errors: bool = False,
@@ -844,6 +850,7 @@ class TextState:
             depth,
             clip_bbox,
             group_alpha,
+            layout_form_bbox=layout_form_bbox,
             stream_key=execution_key,
             swallow_parse_errors=swallow_parse_errors,
         )
@@ -881,6 +888,7 @@ class TextState:
         self.resources_id = id(frame.resources)
         self.ctm = frame.ctm
         self.xobject_depth = frame.depth
+        self.layout_form_bbox = frame.layout_form_bbox
         if frame.clip_bbox is not None:
             if self.clip_bbox is None:
                 self.clip_bbox = frame.clip_bbox
@@ -1308,16 +1316,41 @@ class TextState:
         nested_ctm = (
             Matrix.from_operand(xobj_matrix) if xobj_matrix is not None else IDENTITY_MATRIX
         ).multiply(self.ctm)
-        form_bbox = self.document.resolver.resolve_box(lookup_dict_key(xobj_dict, "BBox"))
+        raw_form_bbox = lookup_dict_key(xobj_dict, "BBox")
+        form_bbox = self.document.resolver.resolve_box(raw_form_bbox)
         transformed_form_bbox = (
             transform_bbox(form_bbox, nested_ctm) if form_bbox is not None else None
         )
+        layout_form_bbox = None
+        if isinstance(raw_form_bbox, (list, tuple)) and len(raw_form_bbox) >= 4:
+            raw_values = tuple(
+                self.document.resolver.resolve_float(value, default=None)
+                for value in raw_form_bbox[:4]
+            )
+            if all(value is not None for value in raw_values):
+                raw_x, raw_y, raw_width, raw_height = typing.cast(
+                    tuple[float, float, float, float], raw_values
+                )
+                # PDFMiner's LTFigure constructor historically interprets the
+                # four /BBox values as x, y, width, height. Preserve that raw
+                # layout geometry separately from the spec-correct clipping
+                # rectangle so compatibility projections can reproduce it.
+                layout_form_bbox = transform_bbox(
+                    (
+                        raw_x,
+                        raw_y,
+                        raw_x + raw_width,
+                        raw_y + raw_height,
+                    ),
+                    nested_ctm,
+                )
         self.queue_stream(
             xobj,
             resources,
             nested_ctm,
             depth + 1,
             clip_bbox=transformed_form_bbox,
+            layout_form_bbox=layout_form_bbox,
             group_alpha=group_alpha,
             stream_key=stream_key,
             swallow_parse_errors=True,
@@ -1723,6 +1756,9 @@ class TextState:
         effective_font_size = font_size * (
             hypot(combined_c, combined_d) if decoder.is_vertical else hypot(combined_a, combined_b)
         )
+        effective_font_height = font_size * (
+            hypot(combined_a, combined_b) if decoder.is_vertical else hypot(combined_c, combined_d)
+        )
         text_basis = (
             self.tm_e * self.ca + self.tm_f * self.cc + self.ce,
             self.tm_e * self.cb + self.tm_f * self.cd + self.cf,
@@ -1894,6 +1930,7 @@ class TextState:
                     bitmap_code,
                     decoder,
                     effective_font_size,
+                    effective_font_height,
                 )
                 append_glyph(observation)
                 # Single-glyph fast path: glyph_cluster_from_observations, given one
@@ -1966,6 +2003,7 @@ class TextState:
                             None,
                             decoder,
                             effective_font_size,
+                            effective_font_height,
                         )
                     )
                     char_offset += per_char_advance
@@ -1995,6 +2033,7 @@ class TextState:
                         None,
                         decoder,
                         effective_font_size,
+                        effective_font_height,
                     )
                 )
             for observation in cluster_observations:
@@ -2182,6 +2221,9 @@ class TextState:
         ta, tb, tc, td = self.tm_a, self.tm_b, self.tm_c, self.tm_d
         scale_factor = hypot(C, D) if decoder.is_vertical else hypot(A, B)
         effective_font_size = fs * scale_factor
+        effective_font_height = fs * (
+            hypot(A, B) if decoder.is_vertical else hypot(C, D)
+        )
         effective_space_width = self.font_space_width * scale_factor
         baseline = (
             E,
@@ -2198,6 +2240,7 @@ class TextState:
             ("text_render_mode", self.render_mode),
             ("font_size", fs),
             ("clip_bbox", self.clip_bbox),
+            ("layout_form_bbox", self.layout_form_bbox),
             *(
                 (("mcid", mcid),)
                 if (mcid := self.current_marked_content_mcid()) is not None
@@ -2208,6 +2251,17 @@ class TextState:
 
         actual_text_span = self.current_actual_text_span()
         if actual_text_span is not None:
+            compatibility_parts: list[str] = []
+            for glyph in glyphs:
+                mapped = (
+                    decoder.to_unicode.decode(glyph.code_bytes)
+                    if decoder.to_unicode is not None and glyph.code_bytes
+                    else glyph.unicode
+                )
+                # pdfminer represents an explicitly empty ToUnicode target as
+                # U+0000 rather than dropping the source character.
+                compatibility_parts.append(mapped if mapped else "\x00")
+            compatibility_text = "".join(compatibility_parts)
             actual_text_span.add_extents(
                 x0=x0,
                 y0=y0,
@@ -2233,6 +2287,9 @@ class TextState:
                 baseline=baseline,
                 provenance=provenance,
                 confidence=1.0,
+                font_decoder=decoder,
+                effective_font_height=effective_font_height,
+                compatibility_text=compatibility_text,
             )
             self.sequence = seqno + 1
             self.tm_e = te + adv_x * ta + adv_y * tc
@@ -3189,39 +3246,61 @@ class TextState:
 
     def emit_actual_text_span(self: Any, entry: Any) -> None:
         actual_text = getattr(entry, "actual_text", None)
-        if (
-            actual_text is None
-            or not getattr(entry, "has_text_extents", False)
-            or not self.capture_runs
-        ):
+        if actual_text is None or not getattr(entry, "has_text_extents", False):
             return
-        new_run = self.alloc_run(
-            text=actual_text,
-            x0=entry.x0,
-            y0=entry.y0,
-            x1=entry.x1,
-            y1=entry.y1,
-            tx=entry.tx,
-            ty=entry.ty,
-            font_size=entry.font_size,
-            font_name=entry.font_name,
-            space_width=entry.space_width,
-            order=entry.order,
-            stream_order=entry.stream_order,
-            xobject_depth=entry.xobject_depth,
-            is_vertical=entry.is_vertical,
-            rotation_angle=entry.rotation_angle,
-            visible=entry.visible,
-            line_break_before=entry.line_break_before,
-            seqno=entry.seqno,
-            fill_color=entry.fill_color,
-            advance_bbox=entry.advance_bbox,
-            ink_bbox=entry.ink_bbox,
-            baseline=entry.baseline,
-            provenance=(*entry.provenance, ("unicode_source", "actual_text")),
-            confidence=entry.confidence,
-        )
-        self.update_pending_run(new_run)
+        if self.capture_runs:
+            new_run = self.alloc_run(
+                text=actual_text,
+                x0=entry.x0,
+                y0=entry.y0,
+                x1=entry.x1,
+                y1=entry.y1,
+                tx=entry.tx,
+                ty=entry.ty,
+                font_size=entry.font_size,
+                font_name=entry.font_name,
+                space_width=entry.space_width,
+                order=entry.order,
+                stream_order=entry.stream_order,
+                xobject_depth=entry.xobject_depth,
+                is_vertical=entry.is_vertical,
+                rotation_angle=entry.rotation_angle,
+                visible=entry.visible,
+                line_break_before=entry.line_break_before,
+                seqno=entry.seqno,
+                fill_color=entry.fill_color,
+                advance_bbox=entry.advance_bbox,
+                ink_bbox=entry.ink_bbox,
+                baseline=entry.baseline,
+                provenance=(*entry.provenance, ("unicode_source", "actual_text")),
+                confidence=entry.confidence,
+            )
+            self.update_pending_run(new_run)
+        if self.capture_glyphs and entry.advance_bbox is not None:
+            self.glyphs.append(
+                GlyphObservation(
+                    text=actual_text,
+                    ink_bbox=entry.ink_bbox or entry.advance_bbox,
+                    advance_bbox=entry.advance_bbox,
+                    seqno=entry.seqno,
+                    font_name=entry.font_name,
+                    font_size=entry.font_size,
+                    baseline=entry.baseline,
+                    rotation_angle=entry.rotation_angle,
+                    fill=entry.fill_color,
+                    visible=entry.visible,
+                    confidence=entry.confidence,
+                    unicode_source="actual_text",
+                    alternates=(
+                        (entry.compatibility_text,)
+                        if "\x00" in entry.compatibility_text
+                        else ()
+                    ),
+                    font_decoder=entry.font_decoder,
+                    effective_font_size=entry.font_size,
+                    effective_font_height=entry.effective_font_height,
+                )
+            )
 
     def op_noop(self, operands: OperandWindow, depth: int) -> None:
         return

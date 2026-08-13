@@ -100,6 +100,12 @@ def parse_font_metrics(
         if descriptor_descent is not None:
             with contextlib.suppress(ValueError):
                 descent = require_font_float(descriptor_descent, "invalid font Descent")
+    # ISO 32000 defines Descent below the baseline and therefore as non-positive.
+    # Some PDF producers (notably PScript5.dll) serialize its magnitude instead.
+    # Normalize that widespread malformed form once at the font boundary so every
+    # geometry consumer sees a consistent text coordinate system.
+    if descent > 0:
+        descent = -descent
     return ascent, descent
 
 

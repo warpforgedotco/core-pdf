@@ -61,7 +61,13 @@ def build_decode_table(
     table = [fallback_fn(b) for b in range(256)]
     for code, glyph_name in differences.items():
         mapped = gtn(glyph_name)
-        if mapped == glyph_name and len(glyph_name) != 1:
+        invalid_mapping = not mapped or (mapped == glyph_name and len(glyph_name) != 1)
+        if invalid_mapping:
+            if glyph_name.isdecimal() and int(glyph_name) == code:
+                # Producer-made Type 3 encodings commonly use the character
+                # code itself as the CharProc name (for example /65). It has no
+                # AGL meaning, so retain the inherited encoding for that code.
+                continue
             table[code] = ""
             continue
         # Expand ligatures here too, so a glyph reached through /Differences

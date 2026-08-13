@@ -77,6 +77,7 @@ class GlyphObservation:
     bitmap_code: int | None = None
     font_decoder: object | None = None
     effective_font_size: float = 0.0
+    effective_font_height: float = 0.0
 
     @property
     def has_paint(self) -> bool:
