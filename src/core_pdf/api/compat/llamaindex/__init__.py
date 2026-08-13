@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -11,7 +12,9 @@ from typing import Any, TypeAlias, cast
 
 from core_pdf import PdfDocument
 from core_pdf.impl.engine.spec.s_07_content.operations import validate_inline_images
+from core_pdf.impl.engine.spec.s_07_filters.errors import FilterParseError
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.engine.writing.api import find_startxref
 from core_pdf.impl.objects import PdfReference
 
@@ -119,6 +122,28 @@ class Node(_MetadataMixin):
 TextNode = Node
 
 
+def _validate_declared_trailer_root(data: bytes) -> None:
+    """Reject an explicitly non-catalog-shaped root before engine repair.
+
+    The engine deliberately reconstructs damaged trailers.  Strict reader compatibility
+    still needs to distinguish a missing/unreadable trailer from one that successfully
+    declares a value that cannot possibly be a catalog reference or dictionary.
+    """
+    trailer_offset = data.rfind(b"trailer")
+    if trailer_offset < 0:
+        return
+    lexer = PdfLexer(data)
+    try:
+        trailer = lexer.parse_object_at(trailer_offset + len(b"trailer"))
+    except (ValueError, IndexError):
+        return
+    if not isinstance(trailer, dict):
+        return
+    root = lookup_dict_key(trailer, "Root")
+    if root is not None and not isinstance(root, (dict, PdfReference)):
+        raise ValueError("invalid PDF trailer catalog root")
+
+
 def _validate_page_tree(pdf: PdfDocument) -> None:
     seen: set[tuple[int, int]] = set()
 
@@ -152,11 +177,13 @@ def load_data(
     if b"startxref" not in source_data or b"%%EOF" not in source_data:
         raise ValueError("incomplete PDF cross-reference terminator")
     find_startxref(source_data)
+    _validate_declared_trailer_root(source_data)
     with PdfDocument.open(source_path) as pdf:
         _validate_page_tree(pdf)
         for page in pdf.pages:
             for stream in page.content_streams:
-                validate_inline_images(stream.data)
+                with contextlib.suppress(FilterParseError):
+                    validate_inline_images(stream.data)
         return [
             Document(
                 OperatorTextProjection(page).extract_text(),

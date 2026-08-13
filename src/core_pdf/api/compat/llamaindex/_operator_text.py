@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Any, cast
 
 from core_pdf.impl.engine.spec.s_07_content.operations import iter_content_operations
+from core_pdf.impl.engine.spec.s_07_filters.errors import FilterParseError
 from core_pdf.impl.engine.spec.s_07_objects.coercion import normalize_pdf_name
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
@@ -83,11 +84,15 @@ internal_LEGACY_GLYPH_ALIASES = {
     "Ifractur": "ℑ",
     "Rfractur": "ℜ",
     "circlecopyrt": "©",
+    "check": "✓",
     "epsilon1": "ϵ",
     "f_f": "ﬀ",
     "f_f_i": "ﬃ",
     "f_f_l": "ﬄ",
     "negationslash": "⁄",
+    "lessmuch": "≪",
+    "intercal": "⊺",
+    "radicalbt": "√",
 }
 
 
@@ -298,6 +303,24 @@ class OperatorTextProjection:
                 widths, default_width = {}, 0.0
             encoding = self.internal_encoding(font, decoder, to_unicode)
             character_map = self.internal_character_map(decoder, to_unicode)
+            if subtype == "Type1" and to_unicode is None:
+                # Many subset Type 1 fonts retain an explicit generic PDF encoding
+                # while their embedded program carries the actual subset code map.
+                # The program mapping describes the glyphs that will really render;
+                # explicit /Differences remain the final PDF-level override.
+                builtin_mapping = decoder.internal_builtin_font_encoding(resolved)
+                if not isinstance(encoding, str):
+                    encoding_table = list(encoding)
+                for code, glyph_name in builtin_mapping.items():
+                    if code in decoder.differences:
+                        continue
+                    mapped = internal_glyph_name_to_unicode(glyph_name)
+                    if mapped and mapped != glyph_name:
+                        if not isinstance(encoding, str) and 0 <= code < len(encoding_table):
+                            encoding_table[code] = chr(code)
+                        character_map[chr(code)] = mapped
+                if not isinstance(encoding, str):
+                    encoding = tuple(encoding_table)
             space_code = (
                 next((code for code, text in enumerate(encoding) if text == " "), 32)
                 if not isinstance(encoding, str)
@@ -348,7 +371,13 @@ class OperatorTextProjection:
         raw_cmap = lookup_dict_key(font, "ToUnicode")
         if not isinstance(raw_cmap, PdfStream):
             return None
-        data = raw_cmap.data
+        try:
+            data = raw_cmap.data
+        except FilterParseError:
+            # A malformed optional ToUnicode map does not make the font unusable.
+            # Continue with its declared/base encoding, as ISO 32000 requires readers
+            # to do when this supplementary mapping cannot be interpreted.
+            return None
         try:
             return ToUnicodeCMap(data)
         except ValueError:
@@ -586,7 +615,15 @@ class OperatorTextProjection:
     ) -> str:
         state = internal_TextState(self.internal_fonts(resources))
         xobjects = self.resolver.resolve(lookup_dict_key(resources, "XObject"))
-        content = b"\n".join(stream.data for stream in streams)
+        decoded_streams: list[bytes] = []
+        for stream in streams:
+            try:
+                decoded_streams.append(stream.data)
+            except FilterParseError:
+                # An undecodable content stream contributes no operators.  Other page
+                # streams remain independently usable and must still be projected.
+                continue
+        content = b"\n".join(decoded_streams)
         for operator, raw_operands in iter_content_operations(PdfLexer(content)):
             operands = list(raw_operands)
             if operator == "BT":
@@ -614,11 +651,14 @@ class OperatorTextProjection:
             elif operator == "cm":
                 state.flush()
                 try:
-                    state.cm = internal_mult(
-                        [float(cast(Any, value)) for value in operands[:6]], state.cm
-                    )
+                    matrix = [float(cast(Any, value)) for value in operands[:6]]
                 except (TypeError, ValueError):
-                    state.cm = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
+                    matrix = []
+                state.cm = (
+                    internal_mult(matrix, state.cm)
+                    if len(matrix) == 6
+                    else [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
+                )
                 state.memo_cm = state.cm.copy()
                 state.memo_tm = state.tm.copy()
             elif operator == "TL":
@@ -665,7 +705,13 @@ class OperatorTextProjection:
                     state.tm[5] -= state.leading * state.tm[3]
                     state.positioned(state.width / 1000.0)
                     state.width = 0.0
-                value = operands[-1] if operands else None
+                value = (
+                    operands[2]
+                    if operator == '"' and len(operands) > 2
+                    else operands[0]
+                    if operands
+                    else None
+                )
                 if isinstance(value, PdfString):
                     state.show(bytes(value.data))
                 elif isinstance(value, PdfName):
