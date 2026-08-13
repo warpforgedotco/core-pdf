@@ -88,6 +88,33 @@ def test_type3_font_defaults_to_standard_encoding() -> None:
     assert decoder.decode(b"AZ ") == "AZ "
 
 
+def test_type3_font_without_descriptor_uses_font_bbox_metrics() -> None:
+    decoder = FontDecoder({"Subtype": "Type3", "FontBBox": [0, 0, 1, -1]})
+
+    assert decoder.descent == 0
+    assert decoder.ascent == -1
+
+
+def test_text_advance_applies_character_spacing_only_between_glyphs() -> None:
+    decoder = FontDecoder({"Subtype": "Type1", "BaseFont": "Helvetica"})
+
+    single_without_spacing = decoder.text_advance_vector(
+        b"A", font_size=10, char_space=0, word_space=0, horizontal_scale=1
+    )
+    single_with_spacing = decoder.text_advance_vector(
+        b"A", font_size=10, char_space=3, word_space=0, horizontal_scale=1
+    )
+    pair_without_spacing = decoder.text_advance_vector(
+        b"AB", font_size=10, char_space=0, word_space=0, horizontal_scale=1
+    )
+    pair_with_spacing = decoder.text_advance_vector(
+        b"AB", font_size=10, char_space=3, word_space=0, horizontal_scale=1
+    )
+
+    assert single_with_spacing == single_without_spacing
+    assert pair_with_spacing[0] - pair_without_spacing[0] == pytest.approx(0.03)
+
+
 def test_font_decoder_prefers_explicit_pdf_encoding_over_embedded_type1_encoding() -> None:
     font_program = b"""
     /Encoding 256 array

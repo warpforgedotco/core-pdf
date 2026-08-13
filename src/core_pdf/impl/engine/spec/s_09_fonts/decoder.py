@@ -1017,12 +1017,14 @@ class FontDecoder:
             if glyphs is None:
                 glyphs = self.decode_glyphs(data)
             total = 0.0
-            for glyph in glyphs:
+            for index, glyph in enumerate(glyphs):
                 metric = self.vertical_metrics.get(
                     glyph.cid,
                     (self.default_vertical_width, self.glyph_width(glyph.cid) / 2.0, 0.0),
                 )
-                total += metric[0] * font_size / 100000.0 + char_space
+                total += metric[0] * font_size / 100000.0
+                if index:
+                    total += char_space
                 if glyph.char_code == 32:
                     total += word_space
             return (0.0, -total)
@@ -1043,7 +1045,7 @@ class FontDecoder:
                 widths = self.fast_widths
                 total = sum(widths[b] for b in data)
                 space_count = data.count(32)
-            total += len(data) * cs + space_count * ws
+            total += max(0, len(data) - 1) * cs + space_count * ws
             return (total * scale, 0.0)
 
         n = len(data)
@@ -1057,7 +1059,6 @@ class FontDecoder:
                 total = fwc_single[code]
             else:
                 total = self.widths.width_for(code, space_w if code == 32 else dw_pos)
-            total += cs
             if code == 32:
                 total += ws
             if self.is_vertical:
@@ -1090,7 +1091,7 @@ class FontDecoder:
                         total += fwc[code]
                         if code == 32:
                             total += ws
-                total += (n >> 1) * cs
+                total += max(0, (n >> 1) - 1) * cs
 
                 if self.is_vertical:
                     return (0.0, -total * scale)
@@ -1141,7 +1142,7 @@ class FontDecoder:
                     total += w
                     if code == 32:
                         total += ws
-            total += (n >> 1) * cs
+            total += max(0, (n >> 1) - 1) * cs
 
             if self.is_vertical:
                 return (0.0, -total * scale)
@@ -1153,13 +1154,15 @@ class FontDecoder:
         total = 0.0
         fwc = self.fast_widths_cid
 
-        for glyph in glyphs:
+        for index, glyph in enumerate(glyphs):
             code = glyph.width_code
             if fwc is not None:
                 w = fwc[code] if 0 <= code < 65536 else dw_pos
             else:
                 w = self.widths.width_for(code, space_w if code == 32 else dw_pos)
-            total += w + cs
+            total += w
+            if index:
+                total += cs
             if code == 32:
                 total += ws
 

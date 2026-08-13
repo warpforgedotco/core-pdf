@@ -13,7 +13,7 @@ import numpy
 
 from core_pdf import PdfDocument
 from core_pdf.api.compat.pdfminer import LAParams, LTChar, LTFigure, LTTextBox, extract_pages
-from core_pdf.impl.exceptions import PdfUnsupportedError
+from core_pdf.impl.exceptions import PdfSourceError, PdfUnsupportedError
 
 PdfInput: TypeAlias = Any
 
@@ -464,6 +464,10 @@ def partition_pdf(filename: object, **kwargs: object) -> list[Element]:
             return []
     except PdfUnsupportedError as error:
         if str(error) == "Incorrect password":
+            return []
+        raise
+    except PdfSourceError as error:
+        if str(error) == "PDF source is empty":
             return []
         raise
     result: list[Element] = []

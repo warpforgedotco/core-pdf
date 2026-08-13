@@ -71,6 +71,15 @@ def parse_font_metrics(
 ) -> tuple[float, float]:
     ascent, descent = 800.0, -200.0
     descriptor = lookup_dict_key(font_dict, "FontDescriptor")
+    if subtype == "Type3" and not isinstance(descriptor, dict):
+        # Type 3 fonts need not have a FontDescriptor. Their FontBBox is in
+        # glyph space and supplies the vertical metrics directly; using the
+        # generic Latin fallback shifts every layout box below its baseline.
+        font_bbox = lookup_dict_key(font_dict, "FontBBox")
+        if isinstance(font_bbox, (list, tuple)) and len(font_bbox) >= 4:
+            with contextlib.suppress(ValueError):
+                descent = require_font_float(font_bbox[1], "invalid Type3 FontBBox")
+                ascent = require_font_float(font_bbox[3], "invalid Type3 FontBBox")
     if subtype == "Type0":
         descendant = get_descendant(font_dict)
         if isinstance(descendant, dict):

@@ -1765,6 +1765,7 @@ class TextState:
             ("clip_bbox", self.clip_bbox),
             ("layout_form_bbox", self.layout_form_bbox),
             ("text_matrix", (combined_a, combined_b, combined_c, combined_d)),
+            ("horizontal_scale", self.horizontal_scale),
         )
         text_basis = (
             self.tm_e * self.ca + self.tm_f * self.cc + self.ce,
@@ -1802,7 +1803,9 @@ class TextState:
             if axis_advance_y0 > axis_advance_y1:
                 axis_advance_y0, axis_advance_y1 = axis_advance_y1, axis_advance_y0
             axis_baseline_y = text_basis[1] + rise * combined_d
-        for glyph in glyphs:
+        for glyph_index, glyph in enumerate(glyphs):
+            if glyph_index and not is_vertical:
+                offset += char_space_scale * advance_scale
             advance = (
                 chunk_advance(
                     glyph.width_code,
@@ -1812,7 +1815,6 @@ class TextState:
                 if is_vertical
                 else (
                     glyph_width(glyph.width_code)
-                    + char_space_scale
                     + (word_space_scale if glyph.width_code == 32 else 0.0)
                 )
                 * advance_scale
@@ -2134,7 +2136,7 @@ class TextState:
             scale = self.text_advance_scale
             if data_len == 1:
                 byte = data[0]
-                total = widths[byte] + cs
+                total = widths[byte]
                 if byte == 32:
                     total += ws
             else:
@@ -2144,7 +2146,7 @@ class TextState:
                     total += widths[b]
                     if b == 32:
                         space_count += 1
-                total += data_len * cs + space_count * ws
+                total += max(0, data_len - 1) * cs + space_count * ws
             if decoder.is_vertical:
                 adv_x, adv_y = 0.0, -total * scale
             else:
@@ -3301,7 +3303,9 @@ class TextState:
                     unicode_source="actual_text",
                     alternates=(
                         (entry.compatibility_text,)
-                        if "\x00" in entry.compatibility_text or "\xad" in actual_text
+                        if "\x00" in entry.compatibility_text
+                        or "\xad" in actual_text
+                        or "\t" in actual_text
                         else ()
                     ),
                     font_decoder=entry.font_decoder,

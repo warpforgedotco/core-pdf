@@ -11,6 +11,7 @@ from typing import Any, BinaryIO, TextIO, TypeAlias, cast
 from core_pdf import PdfDocument
 from core_pdf._vendor.fontTools.agl import AGL2UV, LEGACY_AGL2UV
 from core_pdf.impl.engine.layout.geometry import bbox_union
+from core_pdf.impl.exceptions import PdfError
 
 PdfInput: TypeAlias = Any
 
@@ -492,7 +493,11 @@ class _TextGroup:
     bbox: tuple[float, float, float, float]
 
 
-def _reading_order(boxes: list[LTTextBox], boxes_flow: float | None) -> list[LTTextBox]:
+def _reading_order(
+    boxes: list[LTTextBox],
+    boxes_flow: float | None,
+    page_bbox: tuple[float, float, float, float] | None = None,
+) -> list[LTTextBox]:
     if any(
         sum(
             len(line.get_text().strip()) == 1
@@ -516,8 +521,8 @@ def _reading_order(boxes: list[LTTextBox], boxes_flow: float | None) -> list[LTT
     if len(boxes) < 2:
         return boxes
 
-    active: dict[int, LTTextBox | _TextGroup] = dict(enumerate(boxes))
-    next_group_id = len(active)
+    active: dict[int, LTTextBox | _TextGroup] = {id(box): box for box in boxes}
+    plane_order = list(active)
 
     def area_gap(first: LTTextBox | _TextGroup, second: LTTextBox | _TextGroup) -> float:
         x0 = min(first.bbox[0], second.bbox[0])
@@ -529,9 +534,10 @@ def _reading_order(boxes: list[LTTextBox], boxes_flow: float | None) -> list[LTT
         return (x1 - x0) * (y1 - y0) - first_area - second_area
 
     queue: list[tuple[bool, float, int, int]] = []
-    for first_id, first in active.items():
-        for second_id in range(first_id + 1, len(boxes)):
-            second = active[second_id]
+    for first_index, first in enumerate(boxes):
+        first_id = id(first)
+        for second in boxes[first_index + 1 :]:
+            second_id = id(second)
             heapq.heappush(queue, (False, area_gap(first, second), first_id, second_id))
     while queue:
         skip_between, _distance, first_id, second_id = heapq.heappop(queue)
@@ -540,27 +546,47 @@ def _reading_order(boxes: list[LTTextBox], boxes_flow: float | None) -> list[LTT
         first = active[first_id]
         second = active[second_id]
         union = bbox_union((first.bbox, second.bbox)) or first.bbox
-        between = [
-            item
-            for item_id, item in active.items()
-            if item_id not in {first_id, second_id}
-            and not (
-                item.bbox[2] < union[0]
-                or union[2] < item.bbox[0]
-                or item.bbox[3] < union[1]
-                or union[3] < item.bbox[1]
+        query = union
+        if page_bbox is not None:
+            query = (
+                max(query[0], page_bbox[0]),
+                max(query[1], page_bbox[1]),
+                min(query[2], page_bbox[2]),
+                min(query[3], page_bbox[3]),
             )
-        ]
+        between = []
+        if query[0] < query[2] and query[1] < query[3]:
+            for item_id in plane_order:
+                if item_id in {first_id, second_id} or item_id not in active:
+                    continue
+                item = active[item_id]
+                if page_bbox is not None and (
+                    item.bbox[2] <= page_bbox[0]
+                    or page_bbox[2] <= item.bbox[0]
+                    or item.bbox[3] <= page_bbox[1]
+                    or page_bbox[3] <= item.bbox[1]
+                ):
+                    continue
+                if not (
+                    item.bbox[2] <= query[0]
+                    or query[2] <= item.bbox[0]
+                    or item.bbox[3] <= query[1]
+                    or query[3] <= item.bbox[1]
+                ):
+                    between.append(item)
         if between and not skip_between:
             heapq.heappush(queue, (True, _distance, first_id, second_id))
             continue
         group = _TextGroup([first, second], union)
         del active[first_id], active[second_id]
-        group_id = next_group_id
-        next_group_id += 1
-        for other_id, other in active.items():
+        group_id = id(group)
+        for other_id in plane_order:
+            if other_id not in active:
+                continue
+            other = active[other_id]
             heapq.heappush(queue, (False, area_gap(group, other), group_id, other_id))
         active[group_id] = group
+        plane_order.append(group_id)
 
     root = next(iter(active.values()))
 
@@ -682,8 +708,6 @@ def _pdfminer_glyph_text(glyph: Any) -> str:
     if glyph.unicode_source == "identity" and to_unicode is None:
         return f"(cid:{glyph.cid})"
     decoder = glyph.font_decoder
-    if glyph.unicode_source == "undefined" and glyph.cid in {9, 10, 13}:
-        return chr(glyph.cid)
     if glyph.unicode_source in {"fallback_nul", "undefined"}:
         return f"(cid:{glyph.cid})"
     if glyph.unicode_source == "encoding" and glyph.char_code == 127:
@@ -795,6 +819,8 @@ def extract_pages(
                 continue
             if maxpages and yielded >= maxpages:
                 break
+            page_width = abs(page.width)
+            page_height = abs(page.height)
             chars: list[LTChar] = []
             products = page.get_page_program().products
             ligatures, skipped_ligature_parts = _legacy_ligature_overrides(products.glyphs)
@@ -805,14 +831,22 @@ def extract_pages(
                 list[tuple[LTChar, int]],
             ] = {}
             figure_boxes: dict[int, tuple[float, float, float, float]] = {}
+            try:
+                page_fields = page.get_fields()
+            except (PdfError, ValueError):
+                page_fields = ()
             field_values = {
                 tuple(float(value) for value in field.rect): field.value_text
-                for field in page.get_fields()
+                for field in page_fields
                 if field.rect is not None and field.type != "Btn" and field.value_text
             }
+            try:
+                page_annotations = page.get_annotations()
+            except (PdfError, ValueError):
+                page_annotations = ()
             annotation_boxes = tuple(
                 tuple(annotation.rect)
-                for annotation in page.get_annotations()
+                for annotation in page_annotations
                 if annotation.rect is not None and annotation.subtype in {"FreeText", "Stamp"}
             )
             vertical_positions: dict[tuple[str | None, int], tuple[float, int]] = {}
@@ -825,13 +859,6 @@ def extract_pages(
                 ligature = ligatures.get(id(glyph))
                 x0, y0, x1, y1 = ligature[1] if ligature is not None else glyph.advance_bbox
                 baseline = ligature[2] if ligature is not None else glyph.baseline
-                center_x = (x0 + x1) / 2.0
-                center_y = (y0 + y1) / 2.0
-                if any(
-                    left <= center_x <= right and bottom <= center_y <= top
-                    for left, bottom, right, top in annotation_boxes
-                ):
-                    continue
                 text = ligature[0] if ligature is not None else _pdfminer_glyph_text(glyph)
                 if not text:
                     continue
@@ -878,6 +905,7 @@ def extract_pages(
                 orientation = glyph.rotation_angle % 360
                 glyph_provenance = dict(glyph.provenance) if glyph.provenance else {}
                 text_matrix = glyph_provenance.get("text_matrix")
+                horizontal_scale = float(glyph_provenance.get("horizontal_scale", 100.0)) * 0.01
                 if (
                     baseline is not None
                     and normalized_width > 0
@@ -887,14 +915,17 @@ def extract_pages(
                     matrix_a, matrix_b, matrix_c, matrix_d = (float(value) for value in text_matrix)
                     origin_x, origin_y = baseline[0], baseline[1]
                     descent = float(getattr(glyph.font_decoder, "descent", -200.0)) * 0.001
-                    ascent = float(getattr(glyph.font_decoder, "ascent", 800.0)) * 0.001
+                    # ``LTChar`` uses the font descent only to anchor horizontal
+                    # glyphs; its box is always exactly one text-space unit tall.
+                    # FontBBox/ascent describes ink, not pdfminer's layout box.
+                    top = descent + 1.0
                     corners = tuple(
                         (
                             origin_x + glyph.font_size * (along * matrix_a + vertical * matrix_c),
                             origin_y + glyph.font_size * (along * matrix_b + vertical * matrix_d),
                         )
-                        for along in (0.0, normalized_width)
-                        for vertical in (descent, ascent)
+                        for along in (0.0, normalized_width * horizontal_scale)
+                        for vertical in (descent, top)
                     )
                     x0 = min(point[0] for point in corners)
                     y0 = min(point[1] for point in corners)
@@ -927,16 +958,16 @@ def extract_pages(
                 y1 -= media_bottom
                 rotation = int(page.rotation) % 360
                 if rotation == 90:
-                    x0, y0, x1, y1 = y0, page.width - x1, y1, page.width - x0
+                    x0, y0, x1, y1 = y0, page_width - x1, y1, page_width - x0
                 elif rotation == 180:
                     x0, y0, x1, y1 = (
-                        page.width - x1,
-                        page.height - y1,
-                        page.width - x0,
-                        page.height - y0,
+                        page_width - x1,
+                        page_height - y1,
+                        page_width - x0,
+                        page_height - y0,
                     )
                 elif rotation == 270:
-                    x0, y0, x1, y1 = page.height - y1, x0, page.height - y0, x1
+                    x0, y0, x1, y1 = page_height - y1, x0, page_height - y0, x1
                 character = LTChar(
                     (x0, y0, x1, y1),
                     text,
@@ -952,6 +983,20 @@ def extract_pages(
                 if xobject_depth <= 0:
                     chars.append(character)
                     continue
+                clip_bbox = provenance.get("clip_bbox")
+                if isinstance(clip_bbox, (tuple, list)) and len(clip_bbox) == 4:
+                    clip_left, clip_bottom, clip_right, clip_top = (
+                        float(value) for value in clip_bbox
+                    )
+                    clip_area = max(0.0, clip_right - clip_left) * max(0.0, clip_top - clip_bottom)
+                    if clip_area > 0 and any(
+                        max(0.0, min(clip_right, right) - max(clip_left, left))
+                        * max(0.0, min(clip_top, top) - max(clip_bottom, bottom))
+                        / clip_area
+                        > 0.5
+                        for left, bottom, right, top in annotation_boxes
+                    ):
+                        continue
                 stream_order = int(provenance.get("stream_order", 0) or 0)
                 figure_chars.setdefault(stream_order, []).append((character, glyph.seqno))
                 layout_bbox = provenance.get("layout_form_bbox")
@@ -961,7 +1006,9 @@ def extract_pages(
                     figure_boxes[stream_order] = tuple(float(value) for value in layout_bbox)
             lines = _group_objects(chars, params)
             layout_width, layout_height = (
-                (page.height, page.width) if int(page.rotation) % 180 else (page.width, page.height)
+                (page_height, page_width)
+                if int(page.rotation) % 180
+                else (page_width, page_height)
             )
             boxes: list[LTItem] = list(
                 _reading_order(
@@ -971,6 +1018,7 @@ def extract_pages(
                         (0.0, 0.0, layout_width, layout_height),
                     ),
                     params.boxes_flow,
+                    (0.0, 0.0, layout_width, layout_height),
                 )
             )
             drawing_sequences = sorted(drawing.seqno for drawing in products.drawings)
@@ -1008,16 +1056,16 @@ def extract_pages(
                     y1 -= media_bottom
                     rotation = int(page.rotation) % 360
                     if rotation == 90:
-                        x0, y0, x1, y1 = y0, page.width - x1, y1, page.width - x0
+                        x0, y0, x1, y1 = y0, page_width - x1, y1, page_width - x0
                     elif rotation == 180:
                         x0, y0, x1, y1 = (
-                            page.width - x1,
-                            page.height - y1,
-                            page.width - x0,
-                            page.height - y0,
+                            page_width - x1,
+                            page_height - y1,
+                            page_width - x0,
+                            page_height - y0,
                         )
                     elif rotation == 270:
-                        x0, y0, x1, y1 = page.height - y1, x0, page.height - y0, x1
+                        x0, y0, x1, y1 = page_height - y1, x0, page_height - y0, x1
                     selected_snippets = (
                         (field_value,) if field_value is not None else tuple(snippets)
                     )
