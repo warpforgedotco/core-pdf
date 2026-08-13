@@ -306,12 +306,66 @@ class OperatorTextProjection:
                 widths, default_width = {}, 0.0
             encoding = self.internal_encoding(font, decoder, to_unicode)
             character_map = self.internal_character_map(decoder, to_unicode)
+            builtin_mapping = (
+                self.internal_type1_alternative(resolved)
+                if subtype == "Type1" and to_unicode is None
+                else {}
+            )
+            # Preserve the raw space identity before Type 1 recovery rewrites the
+            # expanded extraction encoding. Explicit encodings take precedence;
+            # otherwise ToUnicode identifies the encoded glyph most precisely.
+            space_code: int | None = None
+            has_explicit_encoding = (
+                self.resolver.resolve(lookup_dict_key(font, "Encoding")) is not None
+            )
+            if has_explicit_encoding and not isinstance(encoding, str):
+                space_code = next(
+                    (code for code, text in enumerate(encoding) if text == " "),
+                    None,
+                )
+            if space_code is None and to_unicode is not None:
+                space_code = next(
+                    (
+                        int.from_bytes(source, "big")
+                        for source, text in to_unicode.mappings.items()
+                        if source and text == " "
+                    ),
+                    None,
+                )
+            if space_code is None:
+                space_code = next(
+                    (
+                        code
+                        for code, glyph_name in decoder.differences.items()
+                        if internal_difference_text(glyph_name, code) == " "
+                    ),
+                    None,
+                )
+            if space_code is None:
+                space_code = next(
+                    (
+                        code
+                        for code, glyph_name in builtin_mapping.items()
+                        if internal_glyph_name_to_unicode(glyph_name) == " "
+                    ),
+                    None,
+                )
+            if space_code is None:
+                space_code = next(
+                    (ord(code) for code, text in character_map.items() if text == " "),
+                    None,
+                )
+            if space_code is None:
+                space_code = (
+                    next((code for code, text in enumerate(encoding) if text == " "), 32)
+                    if not isinstance(encoding, str)
+                    else 32
+                )
             if subtype == "Type1" and to_unicode is None:
                 # Many subset Type 1 fonts retain an explicit generic PDF encoding
                 # while their embedded program carries the actual subset code map.
                 # The program mapping describes the glyphs that will really render;
                 # explicit /Differences remain the final PDF-level override.
-                builtin_mapping = self.internal_type1_alternative(resolved)
                 character_map = {}
                 if not isinstance(encoding, str):
                     encoding_table = list(encoding)
@@ -327,20 +381,6 @@ class OperatorTextProjection:
                         character_map[chr(code)] = mapped
                 if not isinstance(encoding, str):
                     encoding = tuple(encoding_table)
-            space_code = (
-                next(
-                    (code for code, text in enumerate(encoding) if text == " "),
-                    next(
-                        (ord(code) for code, text in character_map.items() if text == " "),
-                        32,
-                    ),
-                )
-                if not isinstance(encoding, str)
-                else next(
-                    (ord(code) for code, text in character_map.items() if text == " "),
-                    32,
-                )
-            )
             declared_space_width = widths.get(space_code, 0.0)
             flags = self.internal_font_flags(font)
             if default_width == 0:
@@ -360,9 +400,7 @@ class OperatorTextProjection:
             )
         return result
 
-    def internal_type1_alternative(
-        self, font: Mapping[object, object]
-    ) -> dict[int, str]:
+    def internal_type1_alternative(self, font: Mapping[object, object]) -> dict[int, str]:
         """Read the conservative clear-text Type 1 encoding used by PDF readers."""
         descriptor = self.resolver.resolve(lookup_dict_key(font, "FontDescriptor"))
         if not isinstance(descriptor, dict):
@@ -542,7 +580,7 @@ class OperatorTextProjection:
             raw_widths = self.resolver.resolve(lookup_dict_key(font, "Widths"))
             if isinstance(first_char, (int, float)) and isinstance(raw_widths, (list, tuple)):
                 widths.update(
-                    (int(first_char) + offset, float(self.resolver.resolve(value)))
+                    (int(first_char) + offset, float(int(self.resolver.resolve(value))))
                     for offset, value in enumerate(raw_widths)
                 )
             descriptor = self.resolver.resolve(lookup_dict_key(font, "FontDescriptor"))
