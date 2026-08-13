@@ -46,7 +46,11 @@ def field_value_text(document: Any, value: object) -> str:
         elif isinstance(current, str):
             item_text = current.strip()
         else:
-            item_text = str(current).strip()
+            # AcroForm values are text strings, names, or arrays of those
+            # values.  Signature fields instead store a signature dictionary
+            # in /V; coercing that dictionary (or another malformed composite
+            # value) to ``str`` leaks PDF object syntax into extracted text.
+            continue
         if item_text:
             parts.append(item_text)
     return "\n".join(parts)

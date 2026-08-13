@@ -192,6 +192,12 @@ def internal_nlp_features(
 
 def internal_pdf_too_complex(filename: object, password: str) -> bool:
     with PdfDocument.open(filename, password=password) as document:
+        # pdfminer refuses a cyclic /Prev xref chain and consequently exposes
+        # no pages.  Core-pdf deliberately recovers the document by scanning
+        # indirect objects; the compatibility projection must retain the
+        # reference library's empty result without weakening engine recovery.
+        if document.xref_recovery_reason == "xref section loop detected":
+            return True
         if len(document.raw_data) < 1_048_576:
             return False
         for page in document.pages:
@@ -499,37 +505,34 @@ def partition_pdf(filename: object, **kwargs: object) -> list[Element]:
             text_boxes = [item for item in page if isinstance(item, LTTextBox)]
             regions = internal_layout_regions(text_boxes, page.height)
             for figure in (item for item in page if isinstance(item, LTFigure)):
-                figure_text = "".join(
-                    item.get_text() for item in figure if hasattr(item, "get_text")
-                )
+                pending = list(reversed(list(figure)))
+                figure_parts: list[str] = []
+                while pending:
+                    item = pending.pop()
+                    if isinstance(item, LTFigure):
+                        pending.extend(reversed(list(item)))
+                    elif hasattr(item, "get_text"):
+                        figure_parts.append(item.get_text())
+                figure_text = "".join(figure_parts)
                 if cleaned_figure_text := internal_clean_text(figure_text):
                     regions.append((cleaned_figure_text, figure.bbox))
             try:
                 fields = source_page.get_fields()
             except (PdfError, ValueError):
                 fields = ()
-            media_left, media_bottom, _media_right, _media_top = source_page.media_box or (
-                0.0,
-                0.0,
-                page.width,
-                page.height,
-            )
+            field_regions: list[tuple[str, tuple[float, float, float, float]]] = []
             for field in fields:
                 if field.rect is None or field.type == "Btn" or not field.value_text:
                     continue
                 left, bottom, right, top = (float(value) for value in field.rect)
-                regions.append(
+                field_regions.append(
                     (
                         field.value_text,
-                        (
-                            left - media_left,
-                            bottom - media_bottom,
-                            right - media_left,
-                            top - media_bottom,
-                        ),
+                        (left, bottom, right, top),
                     )
                 )
             regions = internal_combine_list_regions(regions, page.height)
+            regions.extend(field_regions)
             for element_index in internal_region_order(regions, page.height):
                 text, bbox = regions[element_index]
                 element_class = internal_element_class(text, bbox, page.height)

@@ -96,6 +96,7 @@ class PdfDocument(
         "page_extraction_caches",
         "internal_cache_lock",
         "xref_was_recovered",
+        "xref_recovery_reason",
         "page_tree_was_recovered",
         "internal_closed",
     )
@@ -128,6 +129,7 @@ class PdfDocument(
     page_extraction_caches: dict[int, ExtractionCache] | None
     internal_cache_lock: threading.RLock
     xref_was_recovered: bool
+    xref_recovery_reason: str | None
     page_tree_was_recovered: bool
     internal_closed: bool
 
@@ -142,6 +144,7 @@ class PdfDocument(
         self.xref = {}
         self.trailer_dict = {}
         self.xref_was_recovered = False
+        self.xref_recovery_reason = None
         self.page_tree_was_recovered = False
         self._initialize_document_caches()
 

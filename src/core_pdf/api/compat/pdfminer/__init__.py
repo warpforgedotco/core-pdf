@@ -660,6 +660,57 @@ def _mapping_value(mapping: object, name: str) -> object | None:
     return next((value for key, value in mapping.items() if str(key) == name), None)
 
 
+def _pdfminer_base_encoding_text(decoder: Any, char_code: int) -> str:
+    base_encoding = getattr(decoder, "base_encoding", None)
+    table = {
+        "MacRomanEncoding": MAC_ROMAN_ENCODING,
+        "WinAnsiEncoding": WIN_ANSI_ENCODING,
+    }.get(base_encoding, STANDARD_ENCODING)
+    # pdfminer follows its Latin glyph-name database here rather than the
+    # Unicode-oriented tables used by core-pdf.  WinAnsi's soft hyphen maps to
+    # a space, while the five reserved bullet placeholders are undefined.
+    if base_encoding == "WinAnsiEncoding":
+        if char_code == 173:
+            return " "
+        if char_code in {127, 129, 141, 143, 144, 157}:
+            return ""
+    if base_encoding == "MacRomanEncoding" and char_code in {
+        173,
+        176,
+        178,
+        179,
+        182,
+        183,
+        184,
+        185,
+        186,
+        189,
+        195,
+        197,
+        198,
+        215,
+    }:
+        return ""
+    return table[char_code]
+
+
+def _pdfminer_to_unicode_text(glyph: Any, to_unicode: Any) -> str | None:
+    mappings = getattr(to_unicode, "mappings", {})
+    decoder = glyph.font_decoder
+    if not getattr(decoder, "is_cid_font", False):
+        return mappings.get(glyph.code_bytes)
+    cid = glyph.cid
+    if cid is None:
+        return None
+    for length in getattr(to_unicode, "decode_lengths", (1,)):
+        if cid >= 1 << (length * 8):
+            continue
+        mapped = mappings.get(cid.to_bytes(length, "big"))
+        if mapped is not None:
+            return mapped
+    return None
+
+
 def _pdfminer_glyph_text(glyph: Any) -> str:
     if glyph.unicode_source == "actual_text" and glyph.text == "\ufeff":
         return ""
@@ -672,11 +723,9 @@ def _pdfminer_glyph_text(glyph: Any) -> str:
         glyph_name = None
     glyph_name_text = toUnicode(glyph_name) if glyph_name else ""
     if to_unicode is not None and glyph.code_bytes:
-        mappings = getattr(to_unicode, "mappings", {})
-        if glyph.code_bytes in mappings:
-            mapped = mappings[glyph.code_bytes]
-            if len(mapped) <= 1:
-                return mapped or f"(cid:{glyph.cid})"
+        mapped = _pdfminer_to_unicode_text(glyph, to_unicode)
+        if mapped is not None and len(mapped) <= 1:
+            return mapped or f"(cid:{glyph.cid})"
         if glyph_name_text and (
             glyph.unicode_source == "encoding" or not getattr(decoder, "is_cid_font", False)
         ):
@@ -689,13 +738,11 @@ def _pdfminer_glyph_text(glyph: Any) -> str:
             base_encoding = getattr(decoder, "base_encoding", None)
             if base_encoding is None and str(_mapping_value(decoder.font, "Subtype")) == "TrueType":
                 base_encoding = "WinAnsiEncoding"
-            table = {
-                "MacRomanEncoding": MAC_ROMAN_ENCODING,
-                "WinAnsiEncoding": WIN_ANSI_ENCODING,
-            }.get(base_encoding, STANDARD_ENCODING)
-            encoded = table[glyph.char_code]
+            encoded = _pdfminer_base_encoding_text(decoder, glyph.char_code)
             if encoded:
                 return encoded
+        if getattr(decoder, "is_cid_font", False):
+            return f"(cid:{glyph.cid})"
         if glyph_name and not glyph_name_text and not getattr(decoder, "is_type3", False):
             return f"(cid:{glyph.cid})"
     elif glyph_name_text and (
@@ -707,13 +754,13 @@ def _pdfminer_glyph_text(glyph: Any) -> str:
     # can recover useful Unicode from an embedded program when that name is
     # private (for example TeX's ``suppress``), but pdfminer exposes the
     # unresolved character as a CID marker instead.
-    if glyph_name and getattr(decoder, "is_type3", False) and glyph.char_code is not None:
-        base_table = {
-            "MacRomanEncoding": MAC_ROMAN_ENCODING,
-            "WinAnsiEncoding": WIN_ANSI_ENCODING,
-        }.get(getattr(decoder, "base_encoding", None), STANDARD_ENCODING)
-        if base_text := base_table[glyph.char_code]:
-            return base_text
+    if (
+        glyph_name
+        and getattr(decoder, "is_type3", False)
+        and glyph.char_code is not None
+        and (base_text := _pdfminer_base_encoding_text(decoder, glyph.char_code))
+    ):
+        return base_text
     if glyph_name:
         return f"(cid:{glyph.cid})"
     if glyph.cid is None:
@@ -723,36 +770,17 @@ def _pdfminer_glyph_text(glyph: Any) -> str:
     ):
         return f"(cid:{glyph.cid})"
     if glyph.unicode_source in {"fallback_nul", "undefined"}:
-        base_tables = {
-            "MacRomanEncoding": MAC_ROMAN_ENCODING,
-            "StandardEncoding": STANDARD_ENCODING,
-            "WinAnsiEncoding": WIN_ANSI_ENCODING,
-        }
-        table = base_tables.get(getattr(decoder, "base_encoding", None))
-        if table is not None and glyph.char_code is not None:
-            base_text = table[glyph.char_code]
-            if base_text and not (
-                getattr(decoder, "base_encoding", None) == "WinAnsiEncoding"
-                and glyph.char_code in {129, 141, 143, 144, 157}
-            ):
+        base_encoding = getattr(decoder, "base_encoding", None)
+        if base_encoding in {"MacRomanEncoding", "StandardEncoding", "WinAnsiEncoding"} and (
+            glyph.char_code is not None
+        ):
+            base_text = _pdfminer_base_encoding_text(decoder, glyph.char_code)
+            if base_text:
                 return base_text
         return f"(cid:{glyph.cid})"
-    if (
-        glyph.unicode_source == "encoding"
-        and not glyph_name
-        and (
-            glyph.char_code is not None
-            and (
-                glyph.char_code < 32
-                or glyph.char_code == 127
-                or (
-                    getattr(decoder, "base_encoding", None) == "WinAnsiEncoding"
-                    and glyph.char_code in {129, 141, 143, 144, 157}
-                )
-            )
-        )
-    ):
-        return f"(cid:{glyph.cid})"
+    if glyph.unicode_source == "encoding" and not glyph_name and glyph.char_code is not None:
+        base_text = _pdfminer_base_encoding_text(decoder, glyph.char_code)
+        return base_text or f"(cid:{glyph.cid})"
     if glyph.unicode_source == "truetype_cmap" and getattr(decoder, "to_unicode", None) is None:
         descendants = _mapping_value(getattr(decoder, "font", None), "DescendantFonts")
         descendant = descendants[0] if isinstance(descendants, list) and descendants else None
@@ -797,8 +825,7 @@ def _legacy_ligature_overrides(
         decoder = glyph.font_decoder
         to_unicode = getattr(decoder, "to_unicode", None)
         if to_unicode is not None and glyph.code_bytes:
-            mappings = getattr(to_unicode, "mappings", {})
-            mapped = mappings.get(glyph.code_bytes)
+            mapped = _pdfminer_to_unicode_text(glyph, to_unicode)
             if mapped is not None:
                 cluster_id = dict(glyph.provenance or ()).get("cluster_id")
                 cluster = [glyph]
@@ -924,19 +951,28 @@ def extract_pages(
             correction_x = 0.0
             correction_y = 0.0
             for glyph_index, glyph in enumerate(projected_glyphs):
+                baseline = glyph.baseline
                 pdfminer_offsets[id(glyph)] = (correction_x, correction_y)
                 if glyph_index + 1 >= len(projected_glyphs):
                     continue
                 following = projected_glyphs[glyph_index + 1]
-                baseline = glyph.baseline
                 following_baseline = following.baseline
                 provenance = dict(glyph.provenance) if glyph.provenance else {}
                 following_provenance = dict(following.provenance) if following.provenance else {}
+                text_matrix = provenance.get("text_matrix")
+                along_is_x = not (
+                    isinstance(text_matrix, (tuple, list))
+                    and len(text_matrix) == 4
+                    and abs(float(text_matrix[1])) > abs(float(text_matrix[0]))
+                )
                 continuous = (
                     baseline is not None
                     and following_baseline is not None
-                    and abs(baseline[2] - following_baseline[0]) <= 1e-6
-                    and abs(baseline[3] - following_baseline[1]) <= 1e-6
+                    and (
+                        abs(baseline[2] - following_baseline[0]) <= 1e-6
+                        if along_is_x
+                        else abs(baseline[3] - following_baseline[1]) <= 1e-6
+                    )
                     and provenance.get("line_matrix_origin")
                     == following_provenance.get("line_matrix_origin")
                 )
@@ -947,7 +983,6 @@ def extract_pages(
                 if glyph.seqno == following.seqno:
                     continue
                 char_space = float(provenance.get("char_space", 0.0))
-                text_matrix = provenance.get("text_matrix")
                 if char_space and isinstance(text_matrix, (tuple, list)) and len(text_matrix) == 4:
                     matrix_a, matrix_b, _matrix_c, _matrix_d = (
                         float(value) for value in text_matrix
@@ -959,6 +994,7 @@ def extract_pages(
             run_sequences = [run.seqno for run in runs]
             figure_chars: dict[tuple[object, ...], list[tuple[LTChar, int]]] = {}
             figure_boxes: dict[tuple[object, ...], tuple[float, float, float, float]] = {}
+            figure_depths: dict[tuple[object, ...], int] = {}
             try:
                 page_annotations = page.get_annotations()
             except (PdfError, ValueError):
@@ -1015,7 +1051,13 @@ def extract_pages(
                 # PDF text size precedes the text matrix, so it can be much larger than the
                 # effective glyph size after horizontal scaling. Recover the transformed size
                 # from core's baseline advance; the advance box already has pdfminer's x bounds.
-                width_code = glyph.char_code if glyph.char_code is not None else glyph.cid
+                width_code = (
+                    glyph.cid
+                    if getattr(glyph.font_decoder, "is_cid_font", False)
+                    else glyph.char_code
+                    if glyph.char_code is not None
+                    else glyph.cid
+                )
                 width_lookup = getattr(glyph.font_decoder, "glyph_width", None)
                 if (
                     glyph.rotation_angle % 180 == 0
@@ -1034,6 +1076,20 @@ def extract_pages(
                 normalized_width = 0.0
                 if width_code is not None and callable(width_lookup):
                     normalized_width = float(width_lookup(width_code)) * 0.001
+                    base_font = str(_mapping_value(glyph.font_decoder.font, "BaseFont"))
+                    glyph_name = getattr(glyph.font_decoder, "encoding_differences", {}).get(
+                        glyph.char_code
+                    )
+                    if (
+                        glyph_name
+                        and _mapping_value(glyph.font_decoder.font, "Widths") is None
+                        and base_font.split("+")[-1] in {"Symbol", "ZapfDingbats"}
+                    ):
+                        # pdfminer indexes built-in Symbol/Zapf metrics by its
+                        # legacy encoded character keys. A Differences entry
+                        # resolves to Unicode and therefore has no built-in
+                        # width unless /Widths explicitly supplies one.
+                        normalized_width = 0.0
                 orientation = glyph.rotation_angle % 360
                 glyph_provenance = dict(glyph.provenance) if glyph.provenance else {}
                 text_matrix = glyph_provenance.get("text_matrix")
@@ -1061,7 +1117,6 @@ def extract_pages(
                     effective_font_height = glyph.font_size
                 elif (
                     baseline is not None
-                    and normalized_width > 0
                     and isinstance(text_matrix, (tuple, list))
                     and len(text_matrix) == 4
                 ):
@@ -1179,12 +1234,17 @@ def extract_pages(
                 layout_bbox = provenance.get("layout_form_bbox")
                 if isinstance(layout_bbox, (tuple, list)) and len(layout_bbox) == 4:
                     resolved_layout_bbox = tuple(float(value) for value in layout_bbox)
-                    figure_key: tuple[object, ...] = ("bbox", *resolved_layout_bbox)
+                    figure_key: tuple[object, ...] = (
+                        "stream",
+                        stream_order,
+                        *resolved_layout_bbox,
+                    )
                     figure_boxes[figure_key] = resolved_layout_bbox
                 else:
                     figure_key = ("stream", stream_order)
                     layout_bbox = provenance.get("clip_bbox")
                 figure_chars.setdefault(figure_key, []).append((character, glyph.seqno))
+                figure_depths[figure_key] = xobject_depth
                 if isinstance(layout_bbox, (tuple, list)) and len(layout_bbox) == 4:
                     figure_boxes[figure_key] = tuple(float(value) for value in layout_bbox)
             lines = _group_objects(chars, params)
@@ -1203,6 +1263,7 @@ def extract_pages(
                 )
             )
             drawing_sequences = sorted(drawing.seqno for drawing in products.drawings)
+            figures: list[tuple[LTFigure, int]] = []
             for figure_index, (figure_key, entries) in enumerate(figure_chars.items()):
                 snippets: list[str] = []
                 current: list[str] = []
@@ -1252,14 +1313,35 @@ def extract_pages(
                         )
                     elif rotation == 270:
                         x0, y0, x1, y1 = page_height - y1, x0, page_height - y0, x1
-                    boxes.append(
-                        LTFigure(
-                            (x0, y0, x1, y1),
-                            f"Form{figure_index}",
-                            [character for character, _ in entries],
-                            tuple(snippets),
+                    figures.append(
+                        (
+                            LTFigure(
+                                (x0, y0, x1, y1),
+                                f"Form{figure_index}",
+                                [character for character, _ in entries],
+                                tuple(snippets),
+                            ),
+                            figure_depths[figure_key],
                         )
                     )
+            for figure, depth in figures:
+                parent = min(
+                    (
+                        candidate
+                        for candidate, candidate_depth in figures
+                        if candidate_depth == depth - 1
+                        and candidate.x0 <= figure.x0
+                        and candidate.y0 <= figure.y0
+                        and candidate.x1 >= figure.x1
+                        and candidate.y1 >= figure.y1
+                    ),
+                    key=lambda candidate: candidate.width * candidate.height,
+                    default=None,
+                )
+                if parent is None:
+                    boxes.append(figure)
+                else:
+                    parent._objs.append(figure)
             yield LTPage(
                 (0.0, 0.0, layout_width, layout_height),
                 page.page_number,

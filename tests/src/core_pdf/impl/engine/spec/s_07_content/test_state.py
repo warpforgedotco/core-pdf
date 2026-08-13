@@ -53,6 +53,21 @@ def test_graphics_state_markers_are_emitted_only_for_clip_scopes() -> None:
     ]
 
 
+def test_graphics_state_restore_recomputes_derived_text_scales() -> None:
+    state = internal_consume(b"")
+    state.font_size = 9.0
+    state.horizontal_scale = 80.0
+    state.update_text_scales()
+    state.op_q((), 0)
+    state.font_size = 20.0
+    state.horizontal_scale = 50.0
+    state.update_text_scales()
+
+    state.op_Q((), 0)
+
+    assert state.text_advance_scale == 0.0072
+
+
 def test_curve_y_doubles_the_endpoint_as_its_second_control_point() -> None:
     # `x1 y1 x3 y3 y` is the cubic with control points (x1, y1) and (x3, y3).
     curve_y = internal_capture_path_points(b"0 0 m 10 80 90 10 y S")

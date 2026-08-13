@@ -37,6 +37,7 @@ class DocumentXRefMixin:
     xref: dict[int, PdfXRefEntry]
     trailer_dict: PdfDict
     xref_was_recovered: bool
+    xref_recovery_reason: str | None
 
     def scan_xref(self) -> None:
         data = self.raw_data
@@ -72,9 +73,10 @@ class DocumentXRefMixin:
                     self.trailer_dict = dict(self.trailer_dict)
                     self.trailer_dict["Root"] = catalog_ref
                 self.trailer_dict = self.merge_recovered_trailer_metadata(self.trailer_dict)
-        except (PdfParseError, PdfUnsupportedError, ValueError, struct.error, OSError):
+        except (PdfParseError, PdfUnsupportedError, ValueError, struct.error, OSError) as error:
             self.xref = XRefScanner.brute_force_scan(data)
             self.xref_was_recovered = True
+            self.xref_recovery_reason = str(error)
             if not self.xref:
                 self.trailer_dict = {}
                 return

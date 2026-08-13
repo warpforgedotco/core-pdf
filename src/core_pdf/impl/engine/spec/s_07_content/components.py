@@ -114,6 +114,13 @@ class GraphicsComponent:
             state.current_decoder,
         ) = state.stack.pop()
         state.update_combined()
+        # Text-state values are included in our graphics-state snapshot for
+        # compatibility with malformed producers that change them inside q/Q.
+        # Restore their derived scales and metrics together with the raw
+        # values; otherwise glyph advances continue using the inner state's
+        # font size or horizontal scale.
+        state.update_text_scales()
+        state.update_font_metrics()
 
     def concatenate(self, values: tuple[float, float, float, float, float, float]) -> None:
         state = self.host
