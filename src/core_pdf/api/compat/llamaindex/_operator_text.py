@@ -3,15 +3,19 @@
 from __future__ import annotations
 
 import math
-import unicodedata
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, cast
 
 from core_pdf.impl.engine.spec.s_07_content.operations import iter_content_operations
+from core_pdf.impl.engine.spec.s_07_objects.coercion import normalize_pdf_name
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
+from core_pdf.impl.engine.spec.s_09_fonts.data.base_encodings import (
+    STANDARD_ENCODING,
+)
 from core_pdf.impl.engine.spec.s_09_fonts.decoder import FontDecoder
+from core_pdf.impl.engine.spec.s_09_fonts.glyphs import glyph_name_to_unicode
 from core_pdf.impl.objects import PdfStream, PdfString
 
 
@@ -34,69 +38,73 @@ def internal_orientation(matrix: list[float]) -> int:
     return 90 if matrix[1] > 0 else 270
 
 
-def internal_space_width(
-    font: Mapping[object, object], resolver: Any, decoder: FontDecoder
-) -> float:
-    first_char = resolver.resolve(lookup_dict_key(font, "FirstChar"))
-    widths = resolver.resolve(lookup_dict_key(font, "Widths"))
-    if not isinstance(first_char, (int, float)) or not isinstance(widths, (list, tuple)):
-        return 200.0
-    encoding = resolver.resolve(lookup_dict_key(font, "Encoding"))
-    difference_space = next(
-        (code for code, glyph_name in decoder.differences.items() if glyph_name == "space"),
-        None,
+def internal_neutral(character: str) -> bool:
+    return any(
+        start <= character <= end
+        for start, end in (
+            ("\x00", "\x2f"),
+            ("\x3a", "\x40"),
+            ("\u2000", "\u206f"),
+            ("\u20a0", "\u21ff"),
+        )
     )
-    cmap_space = next(
-        (
-            code[0]
-            for code, text in (
-                decoder.to_unicode.mappings.items() if decoder.to_unicode is not None else ()
-            )
-            if len(code) == 1 and text == " "
-        ),
-        None,
+
+
+def internal_rtl(character: str) -> bool:
+    return any(
+        start <= character <= end
+        for start, end in (
+            ("\u0590", "\u08ff"),
+            ("\ufb1d", "\ufdff"),
+            ("\ufe70", "\ufeff"),
+        )
     )
-    code = (
-        difference_space
-        if difference_space is not None
-        else cmap_space
-        if not isinstance(encoding, dict) and cmap_space is not None
-        else 32
-    )
-    index = code - int(first_char)
-    return float(widths[index]) if 0 <= index < len(widths) else 200.0
+
+
+def internal_byte_encoding(name: str) -> tuple[str, ...]:
+    table: list[str] = []
+    for code in range(256):
+        try:
+            table.append(bytes((code,)).decode(name))
+        except UnicodeDecodeError:
+            table.append(chr(code))
+    return tuple(table)
+
+
+internal_WIN_ANSI_ENCODING = internal_byte_encoding("cp1252")
+internal_MAC_ROMAN_ENCODING = internal_byte_encoding("mac_roman")
 
 
 @dataclass(frozen=True, slots=True)
 class internal_Font:
     decoder: FontDecoder
     space_width: float
+    encoding: tuple[str, ...] | str
+    character_map: Mapping[str, str]
+    character_widths: Mapping[int, float]
+    default_width: float
+
+    def encoded(self, data: bytes) -> str:
+        if isinstance(self.encoding, str):
+            try:
+                return data.decode(self.encoding, errors="surrogatepass")
+            except (LookupError, UnicodeDecodeError):
+                return data.decode(
+                    "utf-16-be" if self.encoding == "charmap" else "latin-1",
+                    errors="surrogatepass",
+                )
+        return "".join(self.encoding[code] or chr(code) for code in data)
 
     def decode(self, data: bytes) -> str:
-        if self.decoder.to_unicode is not None:
-            if self.decoder.to_unicode.decode_lengths == (1,):
-                return "".join(
-                    " " if code == 32 else self.decoder.to_unicode.decode(bytes((code,)))
-                    for code in data
-                )
-            return self.decoder.to_unicode.decode(data)
-        output: list[str] = []
-        for glyph in self.decoder.decode_glyphs(data):
-            glyph_name = self.decoder.differences.get(glyph.char_code)
-            if self.decoder.is_type3 and glyph_name:
-                if glyph_name.isdigit():
-                    output.append(f"/{glyph_name}")
-                    continue
-                if glyph_name.startswith("a") and glyph_name[1:].isdigit():
-                    output.append(chr(glyph.char_code))
-                    continue
-            output.append(" " if glyph.code_bytes == b" " else glyph.unicode)
-        return "".join(output)
+        encoded = self.encoded(data)
+        return "".join(self.character_map.get(character, character) for character in encoded)
 
     def text_width(self, data: bytes) -> float:
         return sum(
-            self.space_width if glyph.unicode == " " else self.decoder.glyph_width(glyph.width_code)
-            for glyph in self.decoder.decode_glyphs(data)
+            self.space_width
+            if character == " "
+            else self.character_widths.get(ord(character), self.default_width)
+            for character in self.encoded(data)
         )
 
 
@@ -169,14 +177,15 @@ class internal_TextState:
             decoded = self.font.decode(data)
             width = self.font.text_width(data)
         for character in decoded:
-            direction = unicodedata.bidirectional(character)
-            if direction in {"R", "AL", "AN"}:
+            if internal_neutral(character):
+                self.text = character + self.text if self.rtl else self.text + character
+            elif internal_rtl(character):
                 if not self.rtl:
                     self.rtl = True
                     self.text = ""
                 self.text = character + self.text
             else:
-                if self.rtl and direction not in {"B", "S", "WS", "ON", "BN", "CS", "ES", "ET"}:
+                if self.rtl:
                     self.rtl = False
                     self.text = ""
                 self.text += character
@@ -201,13 +210,226 @@ class OperatorTextProjection:
             font = self.resolver.resolve(raw_font)
             if not isinstance(font, dict):
                 continue
+            self.internal_validate_font_files(font)
             resolved = self.resolver.resolve_font_dict(font)
             decoder = FontDecoder(cast(dict[str, object], resolved))
+            widths, default_width = self.internal_widths(font)
+            encoding = self.internal_encoding(font, decoder)
+            character_map = self.internal_character_map(decoder)
+            space_code = (
+                next((code for code, text in enumerate(encoding) if text == " "), 32)
+                if not isinstance(encoding, str)
+                else next(
+                    (ord(code) for code, text in character_map.items() if text == " "),
+                    32,
+                )
+            )
+            declared_space_width = widths.get(space_code, 0.0)
+            if default_width == 0:
+                if declared_space_width:
+                    default_width = declared_space_width * (
+                        1.0 if self.internal_font_flags(font) & 1 else 2.0
+                    )
+                else:
+                    positive = [width for width in widths.values() if width > 0]
+                    default_width = sum(positive) // len(positive) if positive else 500.0
             result[str(name)] = internal_Font(
                 decoder=decoder,
-                space_width=internal_space_width(font, self.resolver, decoder),
+                space_width=declared_space_width or 200.0,
+                encoding=encoding,
+                character_map=character_map,
+                character_widths=widths,
+                default_width=default_width,
             )
         return result
+
+    def internal_validate_font_files(self, font: Mapping[object, object]) -> None:
+        owners: list[Mapping[object, object]] = [font]
+        descendants = self.resolver.resolve(lookup_dict_key(font, "DescendantFonts"))
+        if isinstance(descendants, (list, tuple)):
+            owners.extend(
+                descendant
+                for raw_descendant in descendants
+                if isinstance((descendant := self.resolver.resolve(raw_descendant)), dict)
+            )
+        for owner in owners:
+            descriptor = self.resolver.resolve(lookup_dict_key(owner, "FontDescriptor"))
+            if not isinstance(descriptor, dict):
+                continue
+            embedded_files = sum(
+                lookup_dict_key(descriptor, key) is not None
+                for key in ("FontFile", "FontFile2", "FontFile3")
+            )
+            if embedded_files > 1:
+                raise ValueError("font descriptor declares more than one embedded font program")
+
+    def internal_font_flags(self, font: Mapping[object, object]) -> int:
+        descendants = self.resolver.resolve(lookup_dict_key(font, "DescendantFonts"))
+        owner: Mapping[object, object] = font
+        if isinstance(descendants, (list, tuple)) and descendants:
+            descendant = self.resolver.resolve(descendants[0])
+            if isinstance(descendant, dict):
+                owner = descendant
+        descriptor = self.resolver.resolve(lookup_dict_key(owner, "FontDescriptor"))
+        flags = (
+            self.resolver.resolve(lookup_dict_key(descriptor, "Flags"))
+            if isinstance(descriptor, dict)
+            else None
+        )
+        return int(flags) if isinstance(flags, (int, float)) else 0
+
+    def internal_widths(self, font: Mapping[object, object]) -> tuple[dict[int, float], float]:
+        widths: dict[int, float] = {}
+        default_width = 0.0
+        descendants = self.resolver.resolve(lookup_dict_key(font, "DescendantFonts"))
+        if isinstance(descendants, (list, tuple)):
+            for raw_descendant in descendants:
+                descendant = self.resolver.resolve(raw_descendant)
+                if not isinstance(descendant, dict):
+                    continue
+                raw_w = self.resolver.resolve(lookup_dict_key(descendant, "W"))
+                if isinstance(raw_w, (list, tuple)):
+                    index = 0
+                    while index < len(raw_w):
+                        start = self.resolver.resolve(raw_w[index])
+                        if not isinstance(start, (int, float)) or index + 1 >= len(raw_w):
+                            index += 1
+                            continue
+                        following = self.resolver.resolve(raw_w[index + 1])
+                        if isinstance(following, (list, tuple)):
+                            widths.update(
+                                (int(start) + offset, float(self.resolver.resolve(value)))
+                                for offset, value in enumerate(following)
+                            )
+                            index += 2
+                            continue
+                        if index + 2 < len(raw_w):
+                            stop = self.resolver.resolve(raw_w[index + 1])
+                            value = self.resolver.resolve(raw_w[index + 2])
+                            if isinstance(stop, (int, float)) and isinstance(value, (int, float)):
+                                widths.update(
+                                    (code, float(value))
+                                    for code in range(int(start), int(stop) + 1)
+                                )
+                                index += 3
+                                continue
+                        index += 1
+                raw_default = self.resolver.resolve(lookup_dict_key(descendant, "DW"))
+                if isinstance(raw_default, (int, float)):
+                    default_width = float(raw_default)
+        else:
+            first_char = self.resolver.resolve(lookup_dict_key(font, "FirstChar"))
+            raw_widths = self.resolver.resolve(lookup_dict_key(font, "Widths"))
+            if isinstance(first_char, (int, float)) and isinstance(raw_widths, (list, tuple)):
+                widths.update(
+                    (int(first_char) + offset, float(self.resolver.resolve(value)))
+                    for offset, value in enumerate(raw_widths)
+                )
+            descriptor = self.resolver.resolve(lookup_dict_key(font, "FontDescriptor"))
+            if isinstance(descriptor, dict):
+                missing = self.resolver.resolve(lookup_dict_key(descriptor, "MissingWidth"))
+                if isinstance(missing, (int, float)):
+                    default_width = float(missing)
+        return widths, default_width
+
+    def internal_encoding(
+        self, font: Mapping[object, object], decoder: FontDecoder
+    ) -> tuple[str, ...] | str:
+        raw_encoding = self.resolver.resolve(lookup_dict_key(font, "Encoding"))
+        encoding_name = normalize_pdf_name(raw_encoding)
+        if raw_encoding is None:
+            base_font = normalize_pdf_name(lookup_dict_key(font, "BaseFont")) or ""
+            if base_font.split("+", 1)[-1] not in {
+                "Courier",
+                "Courier-Bold",
+                "Courier-BoldOblique",
+                "Courier-Oblique",
+                "Helvetica",
+                "Helvetica-Bold",
+                "Helvetica-BoldOblique",
+                "Helvetica-Oblique",
+                "Times-Bold",
+                "Times-BoldItalic",
+                "Times-Italic",
+                "Times-Roman",
+            }:
+                return "charmap"
+            table = list(STANDARD_ENCODING)
+        elif encoding_name is not None:
+            name = encoding_name
+            codecs = {
+                "Identity-H": "utf-16-be",
+                "Identity-V": "utf-16-be",
+                "GB-EUC-H": "gbk",
+                "GB-EUC-V": "gbk",
+                "GBpc-EUC-H": "gb2312",
+                "GBpc-EUC-V": "gb2312",
+                "GBK-EUC-H": "gbk",
+                "GBK-EUC-V": "gbk",
+                "GBK2K-H": "gb18030",
+                "GBK2K-V": "gb18030",
+                "ETen-B5-H": "cp950",
+                "ETen-B5-V": "cp950",
+                "ETenms-B5-H": "cp950",
+                "ETenms-B5-V": "cp950",
+                "90ms-RKSJ-H": "cp932",
+                "90ms-RKSJ-V": "cp932",
+            }
+            if name in codecs or "-UCS2-" in name:
+                return codecs.get(name, "utf-16-be")
+            table = list(
+                internal_WIN_ANSI_ENCODING
+                if name == "WinAnsiEncoding"
+                else internal_MAC_ROMAN_ENCODING
+                if name == "MacRomanEncoding"
+                else STANDARD_ENCODING
+            )
+        elif isinstance(raw_encoding, dict):
+            base = normalize_pdf_name(lookup_dict_key(raw_encoding, "BaseEncoding"))
+            table = list(
+                internal_WIN_ANSI_ENCODING
+                if base == "WinAnsiEncoding"
+                else internal_MAC_ROMAN_ENCODING
+                if base == "MacRomanEncoding"
+                else STANDARD_ENCODING
+            )
+        else:
+            return "charmap"
+        for code, glyph_name in decoder.differences.items():
+            if not 0 <= code < 256:
+                continue
+            if glyph_name.startswith("a") and glyph_name[1:].isdigit():
+                table[code] = chr(code)
+                continue
+            if glyph_name.isdigit():
+                table[code] = f"/{glyph_name}"
+                continue
+            mapped = glyph_name_to_unicode(glyph_name)
+            table[code] = (
+                glyph_name
+                if len(glyph_name) == 1
+                else f"/{glyph_name}"
+                if mapped == glyph_name
+                else mapped
+            )
+        if decoder.to_unicode is not None:
+            for source in decoder.to_unicode.mappings:
+                code = int.from_bytes(source, "big")
+                if 0 <= code < 256:
+                    table[code] = chr(code)
+        return tuple(table)
+
+    @staticmethod
+    def internal_character_map(decoder: FontDecoder) -> dict[str, str]:
+        if decoder.to_unicode is None:
+            return {}
+        return {
+            chr(int.from_bytes(source, "big")): (
+                " " if int.from_bytes(source, "big") == 32 and text == "␣" else text
+            )
+            for source, text in decoder.to_unicode.mappings.items()
+            if source
+        }
 
     def internal_streams(self, value: object) -> tuple[PdfStream, ...]:
         resolved = self.resolver.resolve(value)
@@ -228,115 +450,119 @@ class OperatorTextProjection:
     ) -> str:
         state = internal_TextState(self.internal_fonts(resources))
         xobjects = self.resolver.resolve(lookup_dict_key(resources, "XObject"))
-        for stream in streams:
-            for operator, raw_operands in iter_content_operations(PdfLexer(stream.data)):
-                operands = list(raw_operands)
-                if operator == "BT":
-                    state.tm = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
-                    state.flush()
-                elif operator == "ET":
-                    state.flush()
-                elif operator == "q":
-                    state.stack.append(
-                        (
-                            state.cm.copy(),
-                            state.font,
-                            state.font_name,
-                            state.font_size,
-                            state.leading,
-                        )
+        content = b"\n".join(stream.data for stream in streams)
+        for operator, raw_operands in iter_content_operations(PdfLexer(content)):
+            operands = list(raw_operands)
+            if operator == "BT":
+                state.tm = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
+                state.flush()
+            elif operator == "ET":
+                state.flush()
+            elif operator == "q":
+                state.stack.append(
+                    (
+                        state.cm.copy(),
+                        state.font,
+                        state.font_name,
+                        state.font_size,
+                        state.leading,
                     )
-                elif operator == "Q":
-                    if state.stack:
-                        state.cm, state.font, state.font_name, state.font_size, state.leading = (
-                            state.stack.pop()
-                        )
-                    else:
-                        state.cm = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
-                elif operator == "cm":
-                    state.flush()
-                    try:
-                        state.cm = internal_mult([float(value) for value in operands[:6]], state.cm)
-                    except (TypeError, ValueError):
-                        state.cm = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
-                    state.memo_cm = state.cm.copy()
-                    state.memo_tm = state.tm.copy()
-                elif operator == "TL":
+                )
+            elif operator == "Q":
+                if state.stack:
+                    state.cm, state.font, state.font_name, state.font_size, state.leading = (
+                        state.stack.pop()
+                    )
+                else:
+                    state.cm = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
+            elif operator == "cm":
+                state.flush()
+                try:
+                    state.cm = internal_mult(
+                        [float(cast(Any, value)) for value in operands[:6]], state.cm
+                    )
+                except (TypeError, ValueError):
+                    state.cm = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
+                state.memo_cm = state.cm.copy()
+                state.memo_tm = state.tm.copy()
+            elif operator == "TL":
+                scale_x = math.hypot(state.tm[0], state.tm[2])
+                state.leading = (
+                    float(cast(Any, operands[0])) * state.font_size * scale_x if operands else 0.0
+                )
+            elif operator == "Tf":
+                state.flush()
+                if operands:
+                    state.font_name = str(operands[0])
+                    state.font = state.fonts.get(state.font_name)
+                if len(operands) > 1:
+                    state.font_size = float(cast(Any, operands[1]))
+                state.half_space_width = (
+                    state.font.space_width / 2.0 if state.font is not None else 125.0
+                )
+            elif operator in {"Td", "TD"}:
+                tx = float(cast(Any, operands[0])) if operands else 0.0
+                ty = float(cast(Any, operands[1])) if len(operands) > 1 else 0.0
+                if operator == "TD":
                     scale_x = math.hypot(state.tm[0], state.tm[2])
-                    state.leading = (
-                        float(operands[0]) * state.font_size * scale_x if operands else 0.0
-                    )
-                elif operator == "Tf":
-                    state.flush()
-                    if operands:
-                        state.font_name = str(operands[0])
-                        state.font = state.fonts.get(state.font_name)
-                    if len(operands) > 1:
-                        state.font_size = float(operands[1])
-                    state.half_space_width = (
-                        state.font.space_width / 2.0 if state.font is not None else 125.0
-                    )
-                elif operator in {"Td", "TD"}:
-                    tx = float(operands[0]) if operands else 0.0
-                    ty = float(operands[1]) if len(operands) > 1 else 0.0
-                    if operator == "TD":
-                        scale_x = math.hypot(state.tm[0], state.tm[2])
-                        state.leading = -ty * state.font_size * scale_x
-                    state.tm[4] += tx * state.tm[0] + ty * state.tm[2]
-                    state.tm[5] += tx * state.tm[1] + ty * state.tm[3]
-                    state.positioned(state.width / 1000.0)
-                    state.width = 0.0
-                elif operator == "Tm":
-                    try:
-                        matrix = [float(value) for value in operands[:6]]
-                    except (TypeError, ValueError):
-                        matrix = []
-                    state.tm = matrix if len(matrix) == 6 else [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
-                    state.positioned(state.width / 1000.0)
-                    state.width = 0.0
-                elif operator == "T*":
+                    state.leading = -ty * state.font_size * scale_x
+                state.tm[4] += tx * state.tm[0] + ty * state.tm[2]
+                state.tm[5] += tx * state.tm[1] + ty * state.tm[3]
+                state.positioned(state.width / 1000.0)
+                state.width = 0.0
+            elif operator == "Tm":
+                try:
+                    matrix = [float(cast(Any, value)) for value in operands[:6]]
+                except (TypeError, ValueError):
+                    matrix = []
+                state.tm = matrix if len(matrix) == 6 else [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
+                state.positioned(state.width / 1000.0)
+                state.width = 0.0
+            elif operator == "T*":
+                state.tm[4] -= state.leading * state.tm[2]
+                state.tm[5] -= state.leading * state.tm[3]
+                state.positioned(state.width / 1000.0)
+                state.width = 0.0
+            elif operator in {"Tj", "'", '"'}:
+                if operator in {"'", '"'}:
                     state.tm[4] -= state.leading * state.tm[2]
                     state.tm[5] -= state.leading * state.tm[3]
                     state.positioned(state.width / 1000.0)
                     state.width = 0.0
-                elif operator in {"Tj", "'", '"'}:
-                    if operator in {"'", '"'}:
-                        state.tm[4] -= state.leading * state.tm[2]
-                        state.tm[5] -= state.leading * state.tm[3]
-                        state.positioned(state.width / 1000.0)
-                        state.width = 0.0
-                    value = operands[-1] if operands else None
-                    state.show(bytes(value.data) if isinstance(value, PdfString) else b"")
-                elif operator == "TJ" and operands and isinstance(operands[0], (list, tuple)):
-                    threshold = state.half_space_width * 0.95
-                    for item in operands[0]:
-                        if isinstance(item, PdfString):
-                            state.show(bytes(item.data))
-                        elif (
-                            isinstance(item, (int, float))
-                            and abs(float(item)) >= threshold
-                            and state.text
-                            and state.text[-1] != " "
-                        ):
-                            state.show(b" ")
-                elif operator == "Do" and operands and isinstance(xobjects, dict):
-                    state.flush()
-                    form = self.resolver.resolve(xobjects.get(operands[0]))
-                    if not isinstance(form, PdfStream):
-                        form = self.resolver.resolve(xobjects.get(str(operands[0])))
-                    if (
-                        isinstance(form, PdfStream)
-                        and str(lookup_dict_key(form.dictionary, "Subtype")) != "Image"
+                value = operands[-1] if operands else None
+                state.show(bytes(value.data) if isinstance(value, PdfString) else b"")
+            elif operator == "TJ" and operands and isinstance(operands[0], (list, tuple)):
+                threshold = state.half_space_width * 0.95
+                for item in operands[0]:
+                    if isinstance(item, PdfString):
+                        state.show(bytes(item.data))
+                    elif (
+                        isinstance(item, (int, float))
+                        and abs(float(item)) >= threshold
+                        and state.text
+                        and state.text[-1] != " "
                     ):
-                        form_resources = self.resolver.resolve(
-                            lookup_dict_key(form.dictionary, "Resources")
-                        )
-                        if not isinstance(form_resources, dict):
-                            form_resources = resources
-                        nested = self.internal_extract(
-                            (self.resolver.resolve_stream(form),), form_resources
-                        )
-                        state.output += nested
+                        state.show(b" ")
+            elif operator == "Do" and operands and isinstance(xobjects, dict):
+                state.flush()
+                if state.output and not state.output.endswith("\n"):
+                    state.output += "\n"
+                form = self.resolver.resolve(xobjects.get(operands[0]))
+                if not isinstance(form, PdfStream):
+                    form = self.resolver.resolve(xobjects.get(str(operands[0])))
+                if (
+                    isinstance(form, PdfStream)
+                    and str(lookup_dict_key(form.dictionary, "Subtype")) != "Image"
+                ):
+                    form_resources = self.resolver.resolve(
+                        lookup_dict_key(form.dictionary, "Resources")
+                    )
+                    if not isinstance(form_resources, dict):
+                        form_resources = resources
+                    nested = self.internal_extract(
+                        (self.resolver.resolve_stream(form),), form_resources
+                    )
+                    state.output += nested
         state.flush()
         return state.output
 
