@@ -1720,6 +1720,9 @@ class TextState:
         combined_b = self.combined_B
         combined_c = self.combined_C
         combined_d = self.combined_D
+        effective_font_size = font_size * (
+            hypot(combined_c, combined_d) if decoder.is_vertical else hypot(combined_a, combined_b)
+        )
         text_basis = (
             self.tm_e * self.ca + self.tm_f * self.cc + self.ce,
             self.tm_e * self.cb + self.tm_f * self.cd + self.cf,
@@ -1890,6 +1893,7 @@ class TextState:
                     bitmap_height,
                     bitmap_code,
                     decoder,
+                    effective_font_size,
                 )
                 append_glyph(observation)
                 # Single-glyph fast path: glyph_cluster_from_observations, given one
@@ -1961,6 +1965,7 @@ class TextState:
                             0,
                             None,
                             decoder,
+                            effective_font_size,
                         )
                     )
                     char_offset += per_char_advance
@@ -1989,6 +1994,7 @@ class TextState:
                         0,
                         None,
                         decoder,
+                        effective_font_size,
                     )
                 )
             for observation in cluster_observations:

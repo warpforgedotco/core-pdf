@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import heapq
+import unicodedata
+from bisect import bisect_left, bisect_right
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 from html import escape
@@ -8,6 +10,7 @@ from io import BytesIO
 from typing import Any, BinaryIO, TextIO, TypeAlias, cast
 
 from core_pdf import PdfDocument
+from core_pdf._vendor.fontTools.agl import AGL2UV, LEGACY_AGL2UV
 from core_pdf.impl.engine.layout.geometry import bbox_union
 
 PdfInput: TypeAlias = Any
@@ -204,6 +207,16 @@ LTTextContainer = LTTextBox
 class LTImage(LTComponent):
     name: str = ""
     stream: object | None = None
+
+
+@dataclass(slots=True)
+class LTFigure(LTComponent):
+    name: str = ""
+    _objs: list[LTItem] = field(default_factory=list)
+    text_snippets: tuple[str, ...] = ()
+
+    def __iter__(self) -> Iterator[LTItem]:
+        return iter(self._objs)
 
 
 @dataclass(slots=True)
@@ -421,9 +434,12 @@ def _group_lines(lines: list[LTTextLine], margin: float) -> list[LTTextBox]:
     seen: set[int] = set()
     for index in range(len(lines)):
         members = groups_by_line.get(index)
-        if members is None or id(members) in seen:
+        if members is None:
             continue
-        seen.add(id(members))
+        group_key = id(members)
+        if group_key in seen:
+            continue
+        seen.add(group_key)
         groups.append([lines[member] for member in members])
     boxes: list[LTTextBox] = []
     for members in groups:
@@ -637,22 +653,13 @@ def _pdfminer_glyph_text(glyph: Any) -> str:
     if glyph.cid is None:
         return glyph.text
     to_unicode = getattr(glyph.font_decoder, "to_unicode", None)
-    if (
-        glyph.unicode_source == "identity"
-        and to_unicode is None
-    ):
-        return f"(cid:{glyph.cid})"
-    if (
-        to_unicode is not None
-        and glyph.text != chr(glyph.cid)
-        and not any(
-            glyph.cid < 1 << (width * 8)
-            and glyph.cid.to_bytes(width, "big") in to_unicode.mappings
-            for width in range(1, 5)
-        )
-    ):
+    if glyph.unicode_source == "identity" and to_unicode is None:
         return f"(cid:{glyph.cid})"
     decoder = glyph.font_decoder
+    if to_unicode is not None and glyph.unicode_source == "encoding":
+        glyph_name = getattr(decoder, "encoding_differences", {}).get(glyph.char_code)
+        if glyph_name and glyph_name not in AGL2UV and glyph_name not in LEGACY_AGL2UV:
+            return f"(cid:{glyph.cid})"
     if glyph.unicode_source == "truetype_cmap" and getattr(decoder, "to_unicode", None) is None:
         descendants = _mapping_value(getattr(decoder, "font", None), "DescendantFonts")
         descendant = descendants[0] if isinstance(descendants, list) and descendants else None
@@ -662,6 +669,69 @@ def _pdfminer_glyph_text(glyph: Any) -> str:
         if isinstance(registry_data, bytes) and registry_data.strip() == b"PDFAUTOCAD":
             return f"(cid:{glyph.cid})"
     return glyph.text
+
+
+def _legacy_ligature_overrides(
+    glyphs: tuple[Any, ...],
+) -> tuple[
+    dict[
+        int,
+        tuple[
+            str,
+            tuple[float, float, float, float],
+            tuple[float, float, float, float] | None,
+        ],
+    ],
+    set[int],
+]:
+    overrides: dict[
+        int,
+        tuple[
+            str,
+            tuple[float, float, float, float],
+            tuple[float, float, float, float] | None,
+        ],
+    ] = {}
+    skipped: set[int] = set()
+    for index, glyph in enumerate(glyphs):
+        decoder = glyph.font_decoder
+        glyph_name = getattr(decoder, "encoding_differences", {}).get(glyph.char_code)
+        codepoints = LEGACY_AGL2UV.get(glyph_name, ()) if glyph_name else ()
+        if len(codepoints) != 1:
+            continue
+        legacy_text = chr(codepoints[0])
+        decomposition = unicodedata.normalize("NFKD", legacy_text)
+        if len(decomposition) < 2:
+            continue
+        cluster = glyphs[index : index + len(decomposition)]
+        if (
+            len(cluster) != len(decomposition)
+            or "".join(item.text for item in cluster) != decomposition
+        ):
+            continue
+        if any(
+            item.seqno != glyph.seqno
+            or item.code_bytes != glyph.code_bytes
+            or item.char_code != glyph.char_code
+            for item in cluster[1:]
+        ):
+            continue
+        box = bbox_union(item.advance_bbox for item in cluster) or glyph.advance_bbox
+        first_baseline = cluster[0].baseline
+        last_baseline = cluster[-1].baseline
+        baseline = (
+            (
+                first_baseline[0],
+                first_baseline[1],
+                last_baseline[2],
+                last_baseline[3],
+            )
+            if first_baseline is not None and last_baseline is not None
+            else None
+        )
+        overrides[id(glyph)] = (legacy_text, box, baseline)
+        skipped.update(id(item) for item in cluster[1:])
+    return overrides, skipped
 
 
 def extract_pages(
@@ -685,16 +755,30 @@ def extract_pages(
             if maxpages and yielded >= maxpages:
                 break
             chars: list[LTChar] = []
+            products = page.get_page_program().products
+            ligatures, skipped_ligature_parts = _legacy_ligature_overrides(products.glyphs)
+            runs = sorted(products.runs, key=lambda run: run.seqno)
+            run_sequences = [run.seqno for run in runs]
+            figure_chars: dict[
+                int,
+                list[tuple[LTChar, int]],
+            ] = {}
+            figure_boxes: dict[int, tuple[float, float, float, float]] = {}
+            outside_page_text: list[str] = []
             annotation_boxes = tuple(
                 tuple(annotation.rect)
                 for annotation in page.get_annotations()
                 if annotation.rect is not None and annotation.subtype in {"FreeText", "Stamp"}
             )
             vertical_positions: dict[tuple[str | None, int], tuple[float, int]] = {}
-            for glyph in page.get_page_program().products.glyphs:
+            for glyph in products.glyphs:
+                if id(glyph) in skipped_ligature_parts:
+                    continue
                 if not glyph.text:
                     continue
-                x0, y0, x1, y1 = glyph.advance_bbox
+                ligature = ligatures.get(id(glyph))
+                x0, y0, x1, y1 = ligature[1] if ligature is not None else glyph.advance_bbox
+                baseline = ligature[2] if ligature is not None else glyph.baseline
                 center_x = (x0 + x1) / 2.0
                 center_y = (y0 + y1) / 2.0
                 if any(
@@ -702,7 +786,8 @@ def extract_pages(
                     for left, bottom, right, top in annotation_boxes
                 ):
                     continue
-                text = _pdfminer_glyph_text(glyph)
+                text = ligature[0] if ligature is not None else _pdfminer_glyph_text(glyph)
+                effective_font_size = glyph.effective_font_size or glyph.font_size
                 if (
                     glyph.baseline is not None
                     and glyph.font_size > 0
@@ -718,19 +803,30 @@ def extract_pages(
                     x1 = baseline_x + glyph.font_size * 0.5
                     y0 = baseline_y - glyph.font_size * 0.88
                     y1 = y0 + glyph.font_size
-                # Core's advance box includes character/word spacing. pdfminer keeps LTChar's
-                # box at the font's nominal advance and leaves that spacing before the next
-                # character, so recover the nominal width from the retained font decoder.
+                # PDF text size precedes the text matrix, so it can be much larger than the
+                # effective glyph size after horizontal scaling. Recover the transformed size
+                # from core's baseline advance; the advance box already has pdfminer's x bounds.
                 width_code = glyph.char_code if glyph.char_code is not None else glyph.cid
                 width_lookup = getattr(glyph.font_decoder, "glyph_width", None)
                 if (
                     glyph.rotation_angle % 180 == 0
-                    and glyph.font_size >= (y1 - y0) * 0.5
+                    and baseline is not None
+                    and not glyph.effective_font_size
                     and width_code is not None
                     and callable(width_lookup)
                 ):
-                    x1 = x0 + float(width_lookup(width_code)) * glyph.font_size * 0.001
-                    y1 = y0 + glyph.font_size
+                    normalized_width = float(width_lookup(width_code)) * 0.001
+                    if normalized_width > 0:
+                        baseline_x0, baseline_y0, baseline_x1, baseline_y1 = baseline
+                        baseline_length = (
+                            (baseline_x1 - baseline_x0) ** 2 + (baseline_y1 - baseline_y0) ** 2
+                        ) ** 0.5
+                        effective_font_size = baseline_length / normalized_width
+                if glyph.rotation_angle % 180 == 0:
+                    if width_code is not None and callable(width_lookup):
+                        normalized_width = float(width_lookup(width_code)) * 0.001
+                        x1 = x0 + normalized_width * effective_font_size
+                    y1 = y0 + effective_font_size
                 rotation = int(page.rotation) % 360
                 if rotation == 90:
                     x0, y0, x1, y1 = y0, page.width - x1, y1, page.width - x0
@@ -743,18 +839,71 @@ def extract_pages(
                     )
                 elif rotation == 270:
                     x0, y0, x1, y1 = page.height - y1, x0, page.height - y0, x1
-                chars.append(
-                    LTChar(
-                        (x0, y0, x1, y1),
-                        text,
-                        glyph.font_name,
-                        glyph.font_size,
-                    )
+                character = LTChar(
+                    (x0, y0, x1, y1),
+                    text,
+                    glyph.font_name,
+                    effective_font_size,
                 )
+                if (
+                    character.x1 <= 0
+                    or character.y1 <= 0
+                    or character.x0 >= page.width
+                    or character.y0 >= page.height
+                ):
+                    outside_page_text.append(character.get_text())
+                    continue
+                run_index = bisect_right(run_sequences, glyph.seqno) - 1
+                provenance = dict(runs[run_index].provenance) if run_index >= 0 else {}
+                xobject_depth = int(provenance.get("xobject_depth", 0) or 0)
+                if xobject_depth <= 0:
+                    chars.append(character)
+                    continue
+                stream_order = int(provenance.get("stream_order", 0) or 0)
+                figure_chars.setdefault(stream_order, []).append((character, glyph.seqno))
+                clip_bbox = provenance.get("clip_bbox")
+                if isinstance(clip_bbox, (tuple, list)) and len(clip_bbox) == 4:
+                    figure_boxes[stream_order] = tuple(float(value) for value in clip_bbox)
             lines = _group_objects(chars, params)
             boxes: list[LTItem] = list(
                 _reading_order(_group_lines(lines, params.line_margin), params.boxes_flow)
             )
+            drawing_sequences = sorted(drawing.seqno for drawing in products.drawings)
+            for stream_order, entries in figure_chars.items():
+                snippets: list[str] = []
+                current: list[str] = []
+                previous_sequence: int | None = None
+                for character, sequence in entries:
+                    if previous_sequence is not None and bisect_left(
+                        drawing_sequences, sequence
+                    ) > bisect_right(drawing_sequences, previous_sequence):
+                        snippets.append("".join(current))
+                        current = []
+                    current.append(character.get_text())
+                    previous_sequence = sequence
+                if current:
+                    snippets.append("".join(current))
+                figure_box = figure_boxes.get(stream_order) or bbox_union(
+                    character.bbox for character, _ in entries
+                )
+                if figure_box is not None:
+                    boxes.append(
+                        LTFigure(
+                            figure_box,
+                            f"Form{stream_order}",
+                            [character for character, _ in entries],
+                            tuple(snippets),
+                        )
+                    )
+            if outside_page_text:
+                boxes.append(
+                    LTFigure(
+                        (0.0, page.height, page.width, page.height),
+                        "OutsidePage",
+                        [],
+                        ("".join(outside_page_text),),
+                    )
+                )
             page_width, page_height = (
                 (page.height, page.width) if int(page.rotation) % 180 else (page.width, page.height)
             )
@@ -853,6 +1002,7 @@ __all__ = (
     "LAParams",
     "LTAnno",
     "LTChar",
+    "LTFigure",
     "LTImage",
     "LTItem",
     "LTPage",

@@ -6,7 +6,10 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, TypeAlias
 
-from core_pdf.api.compat.pdfminer import LAParams, LTTextBox, extract_pages
+import numpy
+
+from core_pdf import PdfDocument
+from core_pdf.api.compat.pdfminer import LAParams, LTFigure, LTTextBox, extract_pages
 
 PdfInput: TypeAlias = Any
 
@@ -113,9 +116,9 @@ class Address(Element):
     pass
 
 
-internal_BULLET = re.compile(r"^\s*(?:[•◦▪‣⁃●○■□◆◇‒–—]|[-*+]\s)")
-internal_NUMBERED = re.compile(r"^\s*(?:\(?\d+[.)]|[A-Za-z][.)])\s+")
-internal_EMAIL = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+internal_BULLET = re.compile(r"^\s*(?:\x95|•|‣|⁃|ㅤ|⁌|⁍|∙|○|●|◘|◦|☙|❥|❧|⦾|⦿|-|–|\uf0b7|\*|·)")
+internal_NUMBERED = re.compile(r"^\s*\d+(?:\.|\))\s+.+")
+internal_EMAIL = re.compile(r"[a-z0-9.\-+_]+@[a-z0-9.\-+_]+\.[a-z]+", re.IGNORECASE)
 internal_ADDRESS = re.compile(r"\b[A-Z]{2}\s+\d{5}(?:-\d{4})?$")
 internal_VERB = re.compile(
     r"\b(?:am|are|be|been|being|can|could|did|do|does|had|has|have|is|may|might|must|"
@@ -123,6 +126,28 @@ internal_VERB = re.compile(
     r"provide|provides|provided|show|shows|shown|use|uses|used|observations?)\b",
     re.IGNORECASE,
 )
+internal_GRAPHICS_OPS = re.compile(
+    rb"(?:^|(?<=\s))(?:m|l|c|v|y|h|re|S|s|f|F|f\*|B|B\*|b|b\*|n|W|W\*|cm|q|Q|"
+    rb"Do|g|G|rg|RG|k|K|cs|CS|w|J|j|M|d|i|gs)(?=\s|$)"
+)
+internal_TEXT_OPS = re.compile(rb"(?:^|(?<=\s))(?:Tj|TJ|'|\"|Tf|Td|TD|Tm|T\*|BT|ET)(?=\s|$)")
+
+
+def internal_pdf_too_complex(filename: object, password: str) -> bool:
+    with PdfDocument.open(filename, password=password) as document:
+        if len(document.raw_data) < 1_048_576:
+            return False
+        for page in document.pages:
+            raw_data = b"".join(stream.data for stream in page.content_streams)
+            if len(raw_data) < 100_000:
+                continue
+            graphics = len(internal_GRAPHICS_OPS.findall(raw_data))
+            if graphics <= 10_000:
+                continue
+            text = len(internal_TEXT_OPS.findall(raw_data))
+            if graphics / max(text, 1) > 20.0:
+                return True
+    return False
 
 
 def internal_clean_text(text: str) -> str:
@@ -133,63 +158,9 @@ def internal_layout_regions(
     items: list[LTTextBox],
     page_height: float,
 ) -> list[tuple[str, tuple[float, float, float, float]]]:
-    """Coalesce fragments that pdfminer places in the same text box."""
-    regions: list[tuple[list[tuple[float, str]], tuple[float, float, float, float]]] = []
-    for item in items:
-        text = internal_clean_text(item.get_text())
-        if not text:
-            continue
-        bbox = item.bbox
-        width = bbox[2] - bbox[0]
-        height = bbox[3] - bbox[1]
-        match: int | None = None
-        for index in range(len(regions) - 1, -1, -1):
-            previous_parts, previous = regions[index]
-            previous_height = previous[3] - previous[1]
-            previous_width = previous[2] - previous[0]
-            vertical_overlap = max(0.0, min(previous[3], bbox[3]) - max(previous[1], bbox[1]))
-            horizontal_gap = max(0.0, max(previous[0], bbox[0]) - min(previous[2], bbox[2]))
-            vertical_gap = max(0.0, max(previous[1], bbox[1]) - min(previous[3], bbox[3]))
-            same_line = (
-                vertical_overlap >= min(previous_height, height) * 0.5
-                and horizontal_gap <= max(previous_height, height) * 0.6
-                and (
-                    min(previous_width, width) <= max(previous_height, height) * 1.5
-                    or max(previous[3], bbox[3]) / max(page_height, 1.0) < 0.07
-                )
-            )
-            tiny_adjunct = (
-                height <= 2.0
-                and vertical_gap <= 4.0
-                and bbox[0] <= previous[2] + 2.0
-                and bbox[2] >= previous[0] - 2.0
-            )
-            continuation = (
-                vertical_gap <= max(previous_height, height) * 0.65
-                and abs(previous[2] - bbox[2]) <= max(previous_height, height) * 0.5
-                and bbox[0] >= previous[0]
-                and text.startswith(("»", "(", "["))
-            )
-            if same_line or tiny_adjunct or continuation:
-                match = index
-                break
-            if previous[1] - bbox[3] > max(previous_height, height) * 2.0:
-                break
-        if match is None:
-            regions.append(([(bbox[0], text)], bbox))
-            continue
-        previous_parts, previous = regions[match]
-        regions[match] = (
-            [*previous_parts, (bbox[0], text)],
-            (
-                min(previous[0], bbox[0]),
-                min(previous[1], bbox[1]),
-                max(previous[2], bbox[2]),
-                max(previous[3], bbox[3]),
-            ),
-        )
-    projected = [(" ".join(text for _, text in sorted(parts)), bbox) for parts, bbox in regions]
-    return projected
+    """Project each canonical pdfminer text box to one Unstructured region."""
+    del page_height
+    return [(text, item.bbox) for item in items if (text := internal_clean_text(item.get_text()))]
 
 
 def internal_element_class(
@@ -197,40 +168,136 @@ def internal_element_class(
     bbox: tuple[float, float, float, float],
     page_height: float,
 ) -> type[Element]:
-    top = page_height - bbox[3]
-    bottom = page_height - bbox[1]
-    header_threshold = 0.07 if "(cid:" in text else 0.075
-    if page_height > 0 and top / page_height < header_threshold:
+    height_percentage = 1.0 - (bbox[1] + bbox[3]) / (2.0 * page_height) if page_height else 0.5
+    if height_percentage < 0.07:
         return Header
-    if page_height > 0 and bottom / page_height > 0.93:
+    if height_percentage > 0.93:
         return Footer
     if internal_BULLET.match(text) or internal_NUMBERED.match(text):
         return ListItem
-    if internal_EMAIL.fullmatch(text):
+    if internal_EMAIL.match(text.strip()):
         return EmailAddress
     if internal_ADDRESS.search(text):
         return Address
     words = text.split()
     alphabetic = sum(character.isalpha() for character in text)
-    alpha_ratio = alphabetic / max(len(text), 1)
-    has_verb = internal_VERB.search(text) is not None or bool(
-        re.search(r"\b(?:given|using|located|detected|identified|checked|attached)\b", text, re.I)
+    non_space = sum(not character.isspace() for character in text)
+    alpha_ratio = alphabetic / max(non_space, 1)
+    word_tokens = re.findall(r"[^\W\d_]+", text, re.UNICODE)
+    capitalized = sum(word.istitle() or word.isupper() for word in word_tokens)
+    exceeds_cap_ratio = text.isupper() or (
+        bool(word_tokens) and capitalized / len(word_tokens) > 0.5
     )
-    sentence_count = len(re.findall(r"[.!?](?:\s|$)", text))
+    has_verb = internal_VERB.search(text) is not None or bool(
+        re.search(
+            r"\b(?:(?:\w+(?:ed|ing))|given|using|located|detected|identified|checked|attached|"
+            r"stand|benefit|make|makes|assess|get|gets)\b",
+            text,
+            re.I,
+        )
+    )
+    sentences = [part for part in re.split(r"(?<=[.!?])\s+", text) if part]
+    long_sentence_count = sum(
+        len(re.sub(r"[^\w\s]", "", sentence).split()) >= 3 for sentence in sentences
+    )
+    has_non_latin_clause = (
+        len(words) >= 2
+        and alphabetic > 0
+        and not any("A" <= character.upper() <= "Z" for character in text if character.isalpha())
+    )
     if (
         alpha_ratio >= 0.5
         and not text.isnumeric()
-        and not text.isupper()
-        and (
-            has_verb
-            or sentence_count >= 2
-            or (len(words) >= 5 and text.rstrip().endswith((".", "?", "!")))
-        )
+        and (long_sentence_count > 1 or not exceeds_cap_ratio)
+        and (has_verb or long_sentence_count >= 2 or has_non_latin_clause)
     ):
         return NarrativeText
-    if len(words) <= 12 and alpha_ratio >= 0.4 and not text.isnumeric() and not text.endswith(","):
+    if (
+        len(text.split(" ")) <= 12
+        and alpha_ratio >= 0.5
+        and not text.isnumeric()
+        and not text.endswith(",")
+        and not (text.isupper() and re.search(r"[^\w\s]$", text))
+        and long_sentence_count <= 1
+    ):
         return Title
     return UncategorizedText
+
+
+def internal_projection_segments(
+    boxes: numpy.ndarray[Any, Any], axis: int
+) -> list[tuple[int, int]]:
+    if not len(boxes):
+        return []
+    length = int(numpy.max(boxes[:, axis::2]))
+    projection = numpy.zeros(max(0, length), dtype=numpy.int64)
+    for box in boxes:
+        projection[int(box[axis]) : int(box[axis + 2])] += 1
+    occupied = numpy.where(projection > 0)[0]
+    if not len(occupied):
+        return []
+    gaps = numpy.where(occupied[1:] - occupied[:-1] > 1)[0]
+    starts = [int(occupied[0]), *(int(occupied[index + 1]) for index in gaps)]
+    ends = [*(int(occupied[index]) + 1 for index in gaps), int(occupied[-1]) + 1]
+    return list(zip(starts, ends))
+
+
+def internal_recursive_xy_cut(
+    boxes: numpy.ndarray[Any, Any],
+    indices: numpy.ndarray[Any, Any],
+    result: list[int],
+) -> None:
+    x_order = boxes[:, 0].argsort()
+    x_boxes = boxes[x_order]
+    x_indices = indices[x_order]
+    for x0, x1 in internal_projection_segments(x_boxes, 0):
+        x_mask = (x0 <= x_boxes[:, 0]) & (x_boxes[:, 0] < x1)
+        chunk = x_boxes[x_mask]
+        chunk_indices = x_indices[x_mask]
+        y_order = chunk[:, 1].argsort()
+        y_boxes = chunk[y_order]
+        y_indices = chunk_indices[y_order]
+        y_segments = internal_projection_segments(y_boxes, 1)
+        if len(y_segments) == 1:
+            result.extend(int(index) for index in y_indices)
+            continue
+        for y0, y1 in y_segments:
+            y_mask = (y0 <= y_boxes[:, 1]) & (y_boxes[:, 1] < y1)
+            internal_recursive_xy_cut(y_boxes[y_mask], y_indices[y_mask], result)
+
+
+def internal_region_order(
+    regions: list[tuple[str, tuple[float, float, float, float]]],
+    page_height: float,
+) -> list[int]:
+    basic_order = sorted(
+        range(len(regions)),
+        key=lambda index: (page_height - regions[index][1][3], regions[index][1][0]),
+    )
+    boxes = []
+    for index in basic_order:
+        x0, y0, x1, y1 = regions[index][1]
+        left = int(x0)
+        top = int(page_height - y1)
+        right = int(x1)
+        bottom = int(page_height - y0)
+        boxes.append(
+            (
+                left,
+                top,
+                int(right - (right - left) * 0.1),
+                int(bottom - (bottom - top) * 0.1),
+            )
+        )
+    if not boxes:
+        return []
+    result: list[int] = []
+    internal_recursive_xy_cut(
+        numpy.asarray(boxes, dtype=numpy.int64),
+        numpy.asarray(basic_order, dtype=numpy.int64),
+        result,
+    )
+    return result
 
 
 def partition_pdf(filename: object, **kwargs: object) -> list[Element]:
@@ -238,22 +305,20 @@ def partition_pdf(filename: object, **kwargs: object) -> list[Element]:
     include_metadata = bool(kwargs.pop("include_metadata", True))
     word_margin = float(kwargs.pop("pdfminer_word_margin", 0.185) or 0.185)
     password = str(kwargs.pop("password", "") or "")
+    if internal_pdf_too_complex(filename, password):
+        return []
     result: list[Element] = []
     pages = extract_pages(filename, password=password, laparams=LAParams(word_margin=word_margin))
     for page in pages:
-        items = [item for item in page if isinstance(item, LTTextBox)]
-        regions = internal_layout_regions(items, page.height)
-        # Core's pdfminer box geometry is not yet pixel-identical enough for recursive
-        # XY-cut partitions to be stable. Preserve its deterministic page-space order
-        # until those box boundaries converge.
-        order = sorted(
-            range(len(regions)),
-            key=lambda index: (
-                -(regions[index][1][1] + regions[index][1][3]) / 2.0,
-                regions[index][1][0],
-            ),
-        )
-        for element_index in order:
+        text_boxes = [item for item in page if isinstance(item, LTTextBox)]
+        regions = internal_layout_regions(text_boxes, page.height)
+        for figure in (item for item in page if isinstance(item, LTFigure)):
+            regions.extend(
+                (text, figure.bbox)
+                for snippet in figure.text_snippets
+                if (text := internal_clean_text(snippet))
+            )
+        for element_index in internal_region_order(regions, page.height):
             text, bbox = regions[element_index]
             element_class = internal_element_class(text, bbox, page.height)
             if element_class is ListItem:
