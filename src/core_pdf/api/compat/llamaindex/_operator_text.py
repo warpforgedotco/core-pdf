@@ -80,10 +80,14 @@ def internal_byte_encoding(name: str) -> tuple[str, ...]:
 internal_WIN_ANSI_ENCODING = internal_byte_encoding("cp1252")
 internal_MAC_ROMAN_ENCODING = internal_byte_encoding("mac_roman")
 internal_LEGACY_GLYPH_ALIASES = {
+    "Ifractur": "ℑ",
+    "Rfractur": "ℜ",
+    "circlecopyrt": "©",
     "epsilon1": "ϵ",
     "f_f": "ﬀ",
     "f_f_i": "ﬃ",
     "f_f_l": "ﬄ",
+    "negationslash": "⁄",
 }
 
 
@@ -447,23 +451,7 @@ class OperatorTextProjection:
         raw_encoding = self.resolver.resolve(lookup_dict_key(font, "Encoding"))
         encoding_name = normalize_pdf_name(raw_encoding)
         if raw_encoding is None:
-            base_font = normalize_pdf_name(lookup_dict_key(font, "BaseFont")) or ""
-            if base_font.split("+", 1)[-1] not in {
-                "Courier",
-                "Courier-Bold",
-                "Courier-BoldOblique",
-                "Courier-Oblique",
-                "Helvetica",
-                "Helvetica-Bold",
-                "Helvetica-BoldOblique",
-                "Helvetica-Oblique",
-                "Times-Bold",
-                "Times-BoldItalic",
-                "Times-Italic",
-                "Times-Roman",
-            }:
-                return "charmap"
-            table = list(STANDARD_ENCODING)
+            return "charmap"
         elif encoding_name is not None:
             name = encoding_name
             codecs = {
