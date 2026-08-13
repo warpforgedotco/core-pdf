@@ -83,6 +83,7 @@ class DocumentXRefMixin:
             self.trailer_dict = self.merge_recovered_trailer_metadata(self.trailer_dict)
 
     def repair_stale_xref_offsets(self) -> None:
+        header_offset = self.pdf_header_offset()
         recovered_xref: dict[int, PdfXRefEntry] | None = None
         repaired = False
         for key, entry in list(self.xref.items()):
@@ -90,6 +91,28 @@ class DocumentXRefMixin:
                 continue
             if self.xref_entry_matches_header(key, entry):
                 continue
+            if header_offset and self.xref_entry_matches_header(
+                key,
+                PdfXRefEntry(
+                    entry.offset + header_offset,
+                    entry.generation,
+                    entry.in_use,
+                    object_stream=entry.object_stream,
+                    index_in_stream=entry.index_in_stream,
+                ),
+            ):
+                entry.offset += header_offset
+                repaired = True
+                continue
+            if header_offset:
+                shifted_offset = self.find_xref_entry_header(
+                    key,
+                    entry.offset + header_offset,
+                )
+                if shifted_offset is not None:
+                    entry.offset = shifted_offset
+                    repaired = True
+                    continue
             if recovered_xref is None:
                 recovered_xref = XRefScanner.brute_force_scan(self.raw_data)
             replacement = recovered_xref.get(key)
@@ -105,6 +128,33 @@ class DocumentXRefMixin:
 
         if repaired:
             self.xref_was_recovered = True
+
+    def pdf_header_offset(self) -> int:
+        """Return the physical origin used by header-relative file offsets."""
+        data = self.raw_data
+        # ISO 32000 permits the header to occur within the first 1024 bytes. Some
+        # producers prepend diagnostics but still measure xref offsets from it.
+        return data.find(b"%PDF-", 0, min(len(data), 1024))
+
+    def find_xref_entry_header(self, key: int, offset: int) -> int | None:
+        """Find an expected object near a producer's approximate xref offset."""
+        data = self.raw_data
+        expected_object_number = key >> 16
+        expected_generation_number = key & 0xFFFF
+        search_start = max(0, offset - 1024)
+        search_end = min(len(data), offset + 1024)
+        marker = data.find(b"obj", search_start, search_end)
+        while marker >= 0:
+            parsed = parse_object_marker_prefix(data, marker)
+            if parsed is not None:
+                parsed_offset, object_number, generation_number = parsed
+                if (
+                    object_number == expected_object_number
+                    and generation_number == expected_generation_number
+                ):
+                    return parsed_offset
+            marker = data.find(b"obj", marker + 3, search_end)
+        return None
 
     def xref_entry_matches_header(self, key: int, entry: PdfXRefEntry) -> bool:
         data = self.raw_data
