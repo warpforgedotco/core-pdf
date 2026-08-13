@@ -636,9 +636,20 @@ def _mapping_value(mapping: object, name: str) -> object | None:
 def _pdfminer_glyph_text(glyph: Any) -> str:
     if glyph.cid is None:
         return glyph.text
+    to_unicode = getattr(glyph.font_decoder, "to_unicode", None)
     if (
         glyph.unicode_source == "identity"
-        and getattr(glyph.font_decoder, "to_unicode", None) is None
+        and to_unicode is None
+    ):
+        return f"(cid:{glyph.cid})"
+    if (
+        to_unicode is not None
+        and glyph.text != chr(glyph.cid)
+        and not any(
+            glyph.cid < 1 << (width * 8)
+            and glyph.cid.to_bytes(width, "big") in to_unicode.mappings
+            for width in range(1, 5)
+        )
     ):
         return f"(cid:{glyph.cid})"
     decoder = glyph.font_decoder
@@ -677,7 +688,7 @@ def extract_pages(
             annotation_boxes = tuple(
                 tuple(annotation.rect)
                 for annotation in page.get_annotations()
-                if annotation.rect is not None
+                if annotation.rect is not None and annotation.subtype in {"FreeText", "Stamp"}
             )
             vertical_positions: dict[tuple[str | None, int], tuple[float, int]] = {}
             for glyph in page.get_page_program().products.glyphs:
