@@ -79,6 +79,21 @@ def internal_byte_encoding(name: str) -> tuple[str, ...]:
 
 internal_WIN_ANSI_ENCODING = internal_byte_encoding("cp1252")
 internal_MAC_ROMAN_ENCODING = internal_byte_encoding("mac_roman")
+internal_LEGACY_GLYPH_ALIASES = {
+    "epsilon1": "ϵ",
+    "f_f": "ﬀ",
+    "f_f_i": "ﬃ",
+    "f_f_l": "ﬄ",
+}
+
+
+def internal_glyph_name_to_unicode(name: str) -> str:
+    alias = internal_LEGACY_GLYPH_ALIASES.get(name)
+    if alias is not None:
+        return alias
+    if "_" in name:
+        return name
+    return glyph_name_to_unicode(name)
 
 
 @dataclass(frozen=True, slots=True)
@@ -282,7 +297,7 @@ class OperatorTextProjection:
             return True
         return all(
             (glyph_name := normalize_pdf_name(name)) is not None
-            and bool(mapped := glyph_name_to_unicode(glyph_name))
+            and bool(mapped := internal_glyph_name_to_unicode(glyph_name))
             and mapped != glyph_name
             for name in char_procs
         )
@@ -506,7 +521,7 @@ class OperatorTextProjection:
             ):
                 table[code] = f"/{glyph_name}"
                 continue
-            mapped = glyph_name_to_unicode(glyph_name)
+            mapped = internal_glyph_name_to_unicode(glyph_name)
             table[code] = (
                 glyph_name
                 if len(glyph_name) == 1
@@ -530,7 +545,7 @@ class OperatorTextProjection:
             if decoder.differences:
                 return result
             for code, glyph_name in decoder.encoding_differences.items():
-                mapped = glyph_name_to_unicode(glyph_name)
+                mapped = internal_glyph_name_to_unicode(glyph_name)
                 if mapped != glyph_name:
                     result[chr(code)] = mapped
             return result
