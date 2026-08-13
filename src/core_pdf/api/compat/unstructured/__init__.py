@@ -13,6 +13,7 @@ import numpy
 
 from core_pdf import PdfDocument
 from core_pdf.api.compat.pdfminer import LAParams, LTChar, LTFigure, LTTextBox, extract_pages
+from core_pdf.impl.exceptions import PdfUnsupportedError
 
 PdfInput: TypeAlias = Any
 
@@ -207,11 +208,14 @@ def internal_pdf_too_complex(filename: object, password: str) -> bool:
 
 
 def internal_clean_text(text: str) -> str:
-    # Match Unstructured's ``clean_extra_whitespace_with_index_run``: line
-    # endings and non-breaking spaces become ordinary spaces, repeated spaces
-    # collapse, but tabs remain meaningful (notably in table-like text boxes).
+    # Match Unstructured's whitespace cleanup: only line endings, NBSPs, and
+    # thin spaces are normalized. Tabs remain meaningful in table-like text.
     cleaned = text.translate(
-        {ord("\n"): ord(" "), ord("\xa0"): ord(" "), ord("\u2009"): ord(" ")}
+        {
+            ord("\n"): ord(" "),
+            ord("\xa0"): ord(" "),
+            ord("\u2009"): ord(" "),
+        }
     )
     return re.sub(r" {2,}", " ", cleaned).strip()
 
@@ -425,9 +429,7 @@ def internal_combine_list_regions(
                 and current_right < right + 0.2 * width
                 and current_left >= left
             )
-            within_y = (
-                current_top > bottom - 0.3 * height and current_top < top + 0.3 * height
-            )
+            within_y = current_top > bottom - 0.3 * height and current_top < top + 0.3 * height
             if within_x and within_y:
                 active_text, _ = combined[active_index]
                 merged_bbox = (
@@ -457,8 +459,13 @@ def partition_pdf(filename: object, **kwargs: object) -> list[Element]:
     include_metadata = bool(kwargs.pop("include_metadata", True))
     word_margin = float(kwargs.pop("pdfminer_word_margin", 0.185) or 0.185)
     password = str(kwargs.pop("password", "") or "")
-    if internal_pdf_too_complex(filename, password):
-        return []
+    try:
+        if internal_pdf_too_complex(filename, password):
+            return []
+    except PdfUnsupportedError as error:
+        if str(error) == "Incorrect password":
+            return []
+        raise
     result: list[Element] = []
     pages = extract_pages(filename, password=password, laparams=LAParams(word_margin=word_margin))
     for page in pages:
@@ -466,9 +473,12 @@ def partition_pdf(filename: object, **kwargs: object) -> list[Element]:
         regions = internal_layout_regions(text_boxes, page.height)
         for figure in (item for item in page if isinstance(item, LTFigure)):
             regions.extend(
-                (text, figure.bbox)
+                (
+                    snippet.strip() if "\n\t" in snippet else internal_clean_text(snippet),
+                    figure.bbox,
+                )
                 for snippet in figure.text_snippets
-                if (text := internal_clean_text(snippet))
+                if snippet.strip()
             )
         regions = internal_combine_list_regions(regions, page.height)
         for element_index in internal_region_order(regions, page.height):

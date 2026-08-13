@@ -78,6 +78,7 @@ class GlyphObservation:
     font_decoder: object | None = None
     effective_font_size: float = 0.0
     effective_font_height: float = 0.0
+    provenance: tuple[tuple[str, object], ...] = ()
 
     @property
     def has_paint(self) -> bool:

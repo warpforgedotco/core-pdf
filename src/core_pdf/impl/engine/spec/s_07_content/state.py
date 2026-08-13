@@ -1759,6 +1759,13 @@ class TextState:
         effective_font_height = font_size * (
             hypot(combined_a, combined_b) if decoder.is_vertical else hypot(combined_c, combined_d)
         )
+        glyph_provenance = (
+            ("stream_order", self.stream_order),
+            ("xobject_depth", self.xobject_depth),
+            ("clip_bbox", self.clip_bbox),
+            ("layout_form_bbox", self.layout_form_bbox),
+            ("text_matrix", (combined_a, combined_b, combined_c, combined_d)),
+        )
         text_basis = (
             self.tm_e * self.ca + self.tm_f * self.cc + self.ce,
             self.tm_e * self.cb + self.tm_f * self.cd + self.cf,
@@ -1931,6 +1938,7 @@ class TextState:
                     decoder,
                     effective_font_size,
                     effective_font_height,
+                    glyph_provenance,
                 )
                 append_glyph(observation)
                 # Single-glyph fast path: glyph_cluster_from_observations, given one
@@ -2004,6 +2012,7 @@ class TextState:
                             decoder,
                             effective_font_size,
                             effective_font_height,
+                            glyph_provenance,
                         )
                     )
                     char_offset += per_char_advance
@@ -2034,6 +2043,7 @@ class TextState:
                         decoder,
                         effective_font_size,
                         effective_font_height,
+                        glyph_provenance,
                     )
                 )
             for observation in cluster_observations:
@@ -2221,9 +2231,7 @@ class TextState:
         ta, tb, tc, td = self.tm_a, self.tm_b, self.tm_c, self.tm_d
         scale_factor = hypot(C, D) if decoder.is_vertical else hypot(A, B)
         effective_font_size = fs * scale_factor
-        effective_font_height = fs * (
-            hypot(A, B) if decoder.is_vertical else hypot(C, D)
-        )
+        effective_font_height = fs * (hypot(A, B) if decoder.is_vertical else hypot(C, D))
         effective_space_width = self.font_space_width * scale_factor
         baseline = (
             E,
@@ -3293,12 +3301,13 @@ class TextState:
                     unicode_source="actual_text",
                     alternates=(
                         (entry.compatibility_text,)
-                        if "\x00" in entry.compatibility_text
+                        if "\x00" in entry.compatibility_text or "\xad" in actual_text
                         else ()
                     ),
                     font_decoder=entry.font_decoder,
                     effective_font_size=entry.font_size,
                     effective_font_height=entry.effective_font_height,
+                    provenance=entry.provenance,
                 )
             )
 
