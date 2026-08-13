@@ -84,6 +84,7 @@ internal_MAC_ROMAN_ENCODING = internal_byte_encoding("mac_roman")
 @dataclass(frozen=True, slots=True)
 class internal_Font:
     decoder: FontDecoder
+    space_character: str
     space_width: float
     encoding: tuple[str, ...] | str
     character_map: Mapping[str, str]
@@ -108,7 +109,7 @@ class internal_Font:
     def text_width(self, data: bytes) -> float:
         return sum(
             self.space_width
-            if character == " "
+            if character == self.space_character
             else self.character_widths.get(ord(character), self.default_width)
             for character in self.encoded(data)
         )
@@ -262,6 +263,7 @@ class OperatorTextProjection:
                     default_width = sum(positive) // len(positive) if positive else 500.0
             result[str(name)] = internal_Font(
                 decoder=decoder,
+                space_character=chr(space_code),
                 space_width=declared_space_width or 200.0,
                 encoding=encoding,
                 character_map=character_map,
