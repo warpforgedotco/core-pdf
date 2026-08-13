@@ -405,25 +405,28 @@ def _lines_are_neighbors(first: LTTextLine, second: LTTextLine, ratio: float) ->
 
 
 def _group_lines(lines: list[LTTextLine], margin: float) -> list[LTTextBox]:
-    parents = list(range(len(lines)))
-
-    def find(index: int) -> int:
-        while parents[index] != index:
-            parents[index] = parents[parents[index]]
-            index = parents[index]
-        return index
-
+    groups_by_line: dict[int, list[int]] = {}
     for index, line in enumerate(lines):
+        members = [index]
         for other_index, other in enumerate(lines):
-            if _lines_are_neighbors(line, other, margin):
-                first = find(index)
-                second = find(other_index)
-                parents[second] = first
-    groups: dict[int, list[LTTextLine]] = {}
-    for index, line in enumerate(lines):
-        groups.setdefault(find(index), []).append(line)
+            if not _lines_are_neighbors(line, other, margin):
+                continue
+            members.append(other_index)
+            if other_index in groups_by_line:
+                members.extend(groups_by_line.pop(other_index))
+        unique_members = list(dict.fromkeys(members))
+        for member in unique_members:
+            groups_by_line[member] = unique_members
+    groups: list[list[LTTextLine]] = []
+    seen: set[int] = set()
+    for index in range(len(lines)):
+        members = groups_by_line.get(index)
+        if members is None or id(members) in seen:
+            continue
+        seen.add(id(members))
+        groups.append([lines[member] for member in members])
     boxes: list[LTTextBox] = []
-    for members in groups.values():
+    for members in groups:
         vertical = isinstance(members[0], LTTextLineVertical)
         vertical_characters = [
             item
@@ -633,7 +636,10 @@ def _mapping_value(mapping: object, name: str) -> object | None:
 def _pdfminer_glyph_text(glyph: Any) -> str:
     if glyph.cid is None:
         return glyph.text
-    if glyph.unicode_source == "identity":
+    if (
+        glyph.unicode_source == "identity"
+        and getattr(glyph.font_decoder, "to_unicode", None) is None
+    ):
         return f"(cid:{glyph.cid})"
     decoder = glyph.font_decoder
     if glyph.unicode_source == "truetype_cmap" and getattr(decoder, "to_unicode", None) is None:
@@ -668,11 +674,23 @@ def extract_pages(
             if maxpages and yielded >= maxpages:
                 break
             chars: list[LTChar] = []
+            annotation_boxes = tuple(
+                tuple(annotation.rect)
+                for annotation in page.get_annotations()
+                if annotation.rect is not None
+            )
             vertical_positions: dict[tuple[str | None, int], tuple[float, int]] = {}
             for glyph in page.get_page_program().products.glyphs:
                 if not glyph.text:
                     continue
                 x0, y0, x1, y1 = glyph.advance_bbox
+                center_x = (x0 + x1) / 2.0
+                center_y = (y0 + y1) / 2.0
+                if any(
+                    left <= center_x <= right and bottom <= center_y <= top
+                    for left, bottom, right, top in annotation_boxes
+                ):
+                    continue
                 text = _pdfminer_glyph_text(glyph)
                 if (
                     glyph.baseline is not None
