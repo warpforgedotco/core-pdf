@@ -11,6 +11,12 @@ from core_pdf.impl.engine.spec.s_07_content.operations import iter_content_opera
 from core_pdf.impl.engine.spec.s_07_objects.coercion import normalize_pdf_name
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
+from core_pdf.impl.engine.spec.s_09_fonts.cmap_tokenizer import (
+    cmap_tokens,
+    decode_cmap_hex_token,
+    iter_blocks,
+)
+from core_pdf.impl.engine.spec.s_09_fonts.cmap_tounicode import ToUnicodeCMap
 from core_pdf.impl.engine.spec.s_09_fonts.data.base_encodings import (
     STANDARD_ENCODING,
 )
@@ -231,9 +237,10 @@ class OperatorTextProjection:
                 raise KeyError("DescendantFonts")
             resolved = self.resolver.resolve_font_dict(font)
             decoder = FontDecoder(cast(dict[str, object], resolved))
+            to_unicode = self.internal_to_unicode(resolved, decoder)
             widths, default_width = self.internal_widths(font)
-            encoding = self.internal_encoding(font, decoder)
-            character_map = self.internal_character_map(decoder)
+            encoding = self.internal_encoding(font, decoder, to_unicode)
+            character_map = self.internal_character_map(decoder, to_unicode)
             space_code = (
                 next((code for code, text in enumerate(encoding) if text == " "), 32)
                 if not isinstance(encoding, str)
@@ -260,6 +267,53 @@ class OperatorTextProjection:
                 default_width=default_width,
             )
         return result
+
+    @staticmethod
+    def internal_to_unicode(
+        font: Mapping[object, object], decoder: FontDecoder
+    ) -> ToUnicodeCMap | None:
+        if decoder.to_unicode is not None:
+            return decoder.to_unicode
+        raw_cmap = lookup_dict_key(font, "ToUnicode")
+        if not isinstance(raw_cmap, PdfStream):
+            return None
+        data = raw_cmap.data
+        try:
+            return ToUnicodeCMap(data)
+        except ValueError:
+            pass
+        begin = b"begincodespacerange"
+        end = b"endcodespacerange"
+        ranges: list[tuple[bytes, bytes]] = []
+        try:
+            for block in iter_blocks(data, begin, end):
+                tokens = cmap_tokens(block)
+                ranges.extend(
+                    (decode_cmap_hex_token(tokens[index]), decode_cmap_hex_token(tokens[index + 1]))
+                    for index in range(0, len(tokens) - 1, 2)
+                )
+        except (UnicodeDecodeError, ValueError):
+            return None
+        if len(ranges) != 1:
+            return None
+        range_start, range_end = ranges[0]
+        if (
+            len(range_start) != len(range_end)
+            or int.from_bytes(range_start, "big") > int.from_bytes(range_end, "big")
+            or all(left <= right for left, right in zip(range_start, range_end, strict=True))
+        ):
+            return None
+        while (start := data.find(begin)) >= 0:
+            line_start = data.rfind(b"\n", 0, start) + 1
+            stop = data.find(end, start + len(begin))
+            if stop < 0:
+                return None
+            line_end = data.find(b"\n", stop + len(end))
+            data = data[:line_start] + data[len(data) if line_end < 0 else line_end + 1 :]
+        try:
+            return ToUnicodeCMap(data)
+        except ValueError:
+            return None
 
     def internal_validate_font_files(self, font: Mapping[object, object]) -> None:
         owners: list[Mapping[object, object]] = [font]
@@ -351,7 +405,10 @@ class OperatorTextProjection:
         return widths, default_width
 
     def internal_encoding(
-        self, font: Mapping[object, object], decoder: FontDecoder
+        self,
+        font: Mapping[object, object],
+        decoder: FontDecoder,
+        to_unicode: ToUnicodeCMap | None,
     ) -> tuple[str, ...] | str:
         raw_encoding = self.resolver.resolve(lookup_dict_key(font, "Encoding"))
         encoding_name = normalize_pdf_name(raw_encoding)
@@ -438,16 +495,18 @@ class OperatorTextProjection:
                 if mapped == glyph_name
                 else mapped
             )
-        if decoder.to_unicode is not None:
-            for source in decoder.to_unicode.mappings:
+        if to_unicode is not None:
+            for source in to_unicode.mappings:
                 code = int.from_bytes(source, "big")
                 if 0 <= code < 256:
                     table[code] = chr(code)
         return tuple(table)
 
     @staticmethod
-    def internal_character_map(decoder: FontDecoder) -> dict[str, str]:
-        if decoder.to_unicode is None:
+    def internal_character_map(
+        decoder: FontDecoder, to_unicode: ToUnicodeCMap | None
+    ) -> dict[str, str]:
+        if to_unicode is None:
             result: dict[str, str] = {}
             if decoder.differences:
                 return result
@@ -460,7 +519,7 @@ class OperatorTextProjection:
             chr(int.from_bytes(source, "big")): (
                 " " if int.from_bytes(source, "big") == 32 and text == "␣" else text
             )
-            for source, text in decoder.to_unicode.mappings.items()
+            for source, text in to_unicode.mappings.items()
             if source
         }
 
