@@ -700,9 +700,11 @@ def _pdfminer_glyph_text(glyph: Any) -> str:
         return glyph.alternates[0]
     to_unicode = getattr(glyph.font_decoder, "to_unicode", None)
     if to_unicode is not None and glyph.code_bytes:
-        mapped = to_unicode.decode(glyph.code_bytes)
-        if len(mapped) <= 1:
-            return mapped or "\x00"
+        mappings = getattr(to_unicode, "mappings", {})
+        if glyph.code_bytes in mappings:
+            mapped = mappings[glyph.code_bytes]
+            if len(mapped) <= 1:
+                return mapped or "\x00"
     if glyph.cid is None:
         return glyph.text
     if glyph.unicode_source == "identity" and to_unicode is None:
@@ -740,7 +742,13 @@ def _legacy_ligature_overrides(
     ],
     set[int],
 ]:
-    ligatures = {"fi": "ﬁ", "fl": "ﬂ"}
+    ligatures = {
+        "ff": "ﬀ",
+        "fi": "ﬁ",
+        "fl": "ﬂ",
+        "ffi": "ﬃ",
+        "ffl": "ﬄ",
+    }
     overrides: dict[
         int,
         tuple[
@@ -754,8 +762,9 @@ def _legacy_ligature_overrides(
         decoder = glyph.font_decoder
         to_unicode = getattr(decoder, "to_unicode", None)
         if to_unicode is not None and glyph.code_bytes:
-            mapped = to_unicode.decode(glyph.code_bytes)
-            if len(mapped) > 1:
+            mappings = getattr(to_unicode, "mappings", {})
+            mapped = mappings.get(glyph.code_bytes)
+            if mapped is not None and len(mapped) > 1:
                 cluster = glyphs[index : index + len(mapped)]
                 if len(cluster) == len(mapped) and all(
                     item.seqno == glyph.seqno
@@ -766,20 +775,35 @@ def _legacy_ligature_overrides(
                     box = bbox_union(item.advance_bbox for item in cluster) or glyph.advance_bbox
                     overrides[id(glyph)] = (mapped, box, glyph.baseline)
                     skipped.update(id(item) for item in cluster[1:])
-            continue
+                continue
         if glyph.char_code is None:
             continue
-        cluster = glyphs[index : index + 2]
-        decomposition = "".join(item.text for item in cluster)
-        legacy_text = ligatures.get(decomposition)
-        if legacy_text is None or len(cluster) != 2:
-            continue
-        if any(
-            item.seqno != glyph.seqno
-            or item.code_bytes != glyph.code_bytes
-            or item.char_code != glyph.char_code
-            for item in cluster[1:]
-        ):
+        cluster: tuple[Any, ...] | None = None
+        legacy_text: str | None = None
+        # Try the longest standard ligature first.  The engine emits one
+        # observation per Unicode scalar, while pdfminer emits one LTChar for
+        # the original encoded character.
+        for cluster_size in (3, 2):
+            candidate = glyphs[index : index + cluster_size]
+            if len(candidate) != cluster_size:
+                continue
+            decomposition = "".join(item.text for item in candidate)
+            candidate_text = ligatures.get(decomposition)
+            if candidate_text is None:
+                continue
+            if decomposition.startswith("ff") and glyph.code_bytes in {b"f", b"\x00f"}:
+                continue
+            if any(
+                item.seqno != glyph.seqno
+                or item.code_bytes != glyph.code_bytes
+                or item.char_code != glyph.char_code
+                for item in candidate[1:]
+            ):
+                continue
+            cluster = candidate
+            legacy_text = candidate_text
+            break
+        if cluster is None or legacy_text is None:
             continue
         box = bbox_union(item.advance_bbox for item in cluster) or glyph.advance_bbox
         first_baseline = cluster[0].baseline
@@ -795,7 +819,7 @@ def _legacy_ligature_overrides(
             else None
         )
         overrides[id(glyph)] = (legacy_text, box, baseline)
-        skipped.add(id(cluster[1]))
+        skipped.update(id(item) for item in cluster[1:])
     return overrides, skipped
 
 
@@ -823,7 +847,16 @@ def extract_pages(
             page_height = abs(page.height)
             chars: list[LTChar] = []
             products = page.get_page_program().products
-            ligatures, skipped_ligature_parts = _legacy_ligature_overrides(products.glyphs)
+            compatibility_glyphs: list[Any] = []
+            for glyph in products.glyphs:
+                provenance = dict(glyph.provenance) if glyph.provenance else {}
+                underlying = provenance.get("compatibility_glyphs")
+                if glyph.unicode_source == "actual_text" and isinstance(underlying, tuple):
+                    compatibility_glyphs.extend(underlying)
+                else:
+                    compatibility_glyphs.append(glyph)
+            projected_glyphs = tuple(compatibility_glyphs)
+            ligatures, skipped_ligature_parts = _legacy_ligature_overrides(projected_glyphs)
             runs = sorted(products.runs, key=lambda run: run.seqno)
             run_sequences = [run.seqno for run in runs]
             figure_chars: dict[
@@ -850,7 +883,7 @@ def extract_pages(
                 if annotation.rect is not None and annotation.subtype in {"FreeText", "Stamp"}
             )
             vertical_positions: dict[tuple[str | None, int], tuple[float, int]] = {}
-            for glyph in products.glyphs:
+            for glyph in projected_glyphs:
                 run_index = bisect_right(run_sequences, glyph.seqno) - 1
                 if id(glyph) in skipped_ligature_parts:
                     continue
@@ -1006,9 +1039,7 @@ def extract_pages(
                     figure_boxes[stream_order] = tuple(float(value) for value in layout_bbox)
             lines = _group_objects(chars, params)
             layout_width, layout_height = (
-                (page_height, page_width)
-                if int(page.rotation) % 180
-                else (page_width, page_height)
+                (page_height, page_width) if int(page.rotation) % 180 else (page_width, page_height)
             )
             boxes: list[LTItem] = list(
                 _reading_order(

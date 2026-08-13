@@ -63,10 +63,11 @@ def build_decode_table(
         mapped = gtn(glyph_name)
         invalid_mapping = not mapped or (mapped == glyph_name and len(glyph_name) != 1)
         if invalid_mapping:
-            if glyph_name.isdecimal() and int(glyph_name) == code:
+            if glyph_name.isdecimal():
                 # Producer-made Type 3 encodings commonly use the character
-                # code itself as the CharProc name (for example /65). It has no
-                # AGL meaning, so retain the inherited encoding for that code.
+                # code (or a producer's neighboring internal identifier) as
+                # the CharProc name. It has no AGL meaning; PDF readers ignore
+                # that failed difference and retain the inherited encoding.
                 continue
             table[code] = ""
             continue

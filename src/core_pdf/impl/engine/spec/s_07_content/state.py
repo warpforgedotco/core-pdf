@@ -1803,9 +1803,7 @@ class TextState:
             if axis_advance_y0 > axis_advance_y1:
                 axis_advance_y0, axis_advance_y1 = axis_advance_y1, axis_advance_y0
             axis_baseline_y = text_basis[1] + rise * combined_d
-        for glyph_index, glyph in enumerate(glyphs):
-            if glyph_index and not is_vertical:
-                offset += char_space_scale * advance_scale
+        for glyph in glyphs:
             advance = (
                 chunk_advance(
                     glyph.width_code,
@@ -1815,6 +1813,7 @@ class TextState:
                 if is_vertical
                 else (
                     glyph_width(glyph.width_code)
+                    + char_space_scale
                     + (word_space_scale if glyph.width_code == 32 else 0.0)
                 )
                 * advance_scale
@@ -2136,7 +2135,7 @@ class TextState:
             scale = self.text_advance_scale
             if data_len == 1:
                 byte = data[0]
-                total = widths[byte]
+                total = widths[byte] + cs
                 if byte == 32:
                     total += ws
             else:
@@ -2146,7 +2145,7 @@ class TextState:
                     total += widths[b]
                     if b == 32:
                         space_count += 1
-                total += max(0, data_len - 1) * cs + space_count * ws
+                total += data_len * cs + space_count * ws
             if decoder.is_vertical:
                 adv_x, adv_y = 0.0, -total * scale
             else:
@@ -2272,6 +2271,20 @@ class TextState:
                 # U+0000 rather than dropping the source character.
                 compatibility_parts.append(mapped if mapped else "\x00")
             compatibility_text = "".join(compatibility_parts)
+            if self.capture_glyphs:
+                glyph_start = len(self.glyphs)
+                cluster_start = len(self.glyph_clusters)
+                self.record_glyph_observations(
+                    text,
+                    data,
+                    decoder,
+                    rot,
+                    visible,
+                    glyphs=glyphs,
+                )
+                actual_text_span.compatibility_glyphs.extend(self.glyphs[glyph_start:])
+                del self.glyphs[glyph_start:]
+                del self.glyph_clusters[cluster_start:]
             actual_text_span.add_extents(
                 x0=x0,
                 y0=y0,
@@ -3301,17 +3314,18 @@ class TextState:
                     visible=entry.visible,
                     confidence=entry.confidence,
                     unicode_source="actual_text",
-                    alternates=(
-                        (entry.compatibility_text,)
-                        if "\x00" in entry.compatibility_text
-                        or "\xad" in actual_text
-                        or "\t" in actual_text
-                        else ()
-                    ),
+                    # Preserve the text obtained from the font program as an
+                    # alternate.  Consumers such as pdfminer do not interpret
+                    # marked-content /ActualText and therefore need the font
+                    # projection rather than the accessible replacement text.
+                    alternates=(entry.compatibility_text,),
                     font_decoder=entry.font_decoder,
                     effective_font_size=entry.font_size,
                     effective_font_height=entry.effective_font_height,
-                    provenance=entry.provenance,
+                    provenance=(
+                        *entry.provenance,
+                        ("compatibility_glyphs", tuple(entry.compatibility_glyphs)),
+                    ),
                 )
             )
 

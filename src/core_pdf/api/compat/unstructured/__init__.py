@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-import string
+import unicodedata
 from dataclasses import dataclass, field
 from functools import lru_cache
 from importlib import import_module
@@ -208,13 +208,12 @@ def internal_pdf_too_complex(filename: object, password: str) -> bool:
 
 
 def internal_clean_text(text: str) -> str:
-    # Match Unstructured's whitespace cleanup: only line endings, NBSPs, and
-    # thin spaces are normalized. Tabs remain meaningful in table-like text.
+    # Match Unstructured's whitespace cleanup. Tabs and Unicode spacing
+    # characters other than NBSP remain meaningful.
     cleaned = text.translate(
         {
             ord("\n"): ord(" "),
             ord("\xa0"): ord(" "),
-            ord("\u2009"): ord(" "),
         }
     )
     return re.sub(r" {2,}", " ", cleaned).strip()
@@ -261,9 +260,16 @@ def internal_deduplicated_box_text(box: LTTextBox) -> str:
 
 
 def internal_sentence_count(sentences: tuple[str, ...], minimum_words: int) -> int:
-    punctuation = str.maketrans("", "", string.punctuation)
     return sum(
-        len(sentence.translate(punctuation).split()) >= minimum_words for sentence in sentences
+        len(
+            "".join(
+                character
+                for character in sentence
+                if not unicodedata.category(character).startswith("P")
+            ).split()
+        )
+        >= minimum_words
+        for sentence in sentences
     )
 
 

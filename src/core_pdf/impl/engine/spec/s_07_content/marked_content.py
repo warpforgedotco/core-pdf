@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from core_pdf.impl.engine.spec.s_07_content.geometry import (
     extend_baseline,
@@ -46,6 +46,7 @@ class MarkedContentEntry:
     font_decoder: object | None = None
     effective_font_height: float = 0.0
     compatibility_text: str = ""
+    compatibility_glyphs: list[object] = field(default_factory=list)
 
     def add_extents(
         self,

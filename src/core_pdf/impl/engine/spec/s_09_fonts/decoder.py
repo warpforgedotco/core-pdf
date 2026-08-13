@@ -774,7 +774,14 @@ class FontDecoder:
                 # spelling (pdfminer uses ``(cid:N)``); the engine retains the
                 # standard Unicode replacement character instead of silently
                 # losing painted content.
-                undefined = not text or (len(text) == 1 and ord(text) < 32)
+                # The predefined encodings intentionally preserve their raw
+                # C0 slots.  Those are legitimate byte-to-text mappings (for
+                # example form feed in WinAnsi), unlike an unknown numeric
+                # /Differences glyph name which happens to contain a control
+                # code.
+                undefined = not text or (
+                    code in self.differences and len(text) == 1 and ord(text) < 32
+                )
                 choice = UnicodeChoice(
                     "\ufffd" if undefined else text,
                     "undefined" if undefined else "encoding",
@@ -1017,14 +1024,12 @@ class FontDecoder:
             if glyphs is None:
                 glyphs = self.decode_glyphs(data)
             total = 0.0
-            for index, glyph in enumerate(glyphs):
+            for glyph in glyphs:
                 metric = self.vertical_metrics.get(
                     glyph.cid,
                     (self.default_vertical_width, self.glyph_width(glyph.cid) / 2.0, 0.0),
                 )
-                total += metric[0] * font_size / 100000.0
-                if index:
-                    total += char_space
+                total += metric[0] * font_size / 100000.0 + char_space
                 if glyph.char_code == 32:
                     total += word_space
             return (0.0, -total)
@@ -1045,7 +1050,7 @@ class FontDecoder:
                 widths = self.fast_widths
                 total = sum(widths[b] for b in data)
                 space_count = data.count(32)
-            total += max(0, len(data) - 1) * cs + space_count * ws
+            total += len(data) * cs + space_count * ws
             return (total * scale, 0.0)
 
         n = len(data)
@@ -1059,6 +1064,7 @@ class FontDecoder:
                 total = fwc_single[code]
             else:
                 total = self.widths.width_for(code, space_w if code == 32 else dw_pos)
+            total += cs
             if code == 32:
                 total += ws
             if self.is_vertical:
@@ -1091,7 +1097,7 @@ class FontDecoder:
                         total += fwc[code]
                         if code == 32:
                             total += ws
-                total += max(0, (n >> 1) - 1) * cs
+                total += (n >> 1) * cs
 
                 if self.is_vertical:
                     return (0.0, -total * scale)
@@ -1142,7 +1148,7 @@ class FontDecoder:
                     total += w
                     if code == 32:
                         total += ws
-            total += max(0, (n >> 1) - 1) * cs
+            total += (n >> 1) * cs
 
             if self.is_vertical:
                 return (0.0, -total * scale)
@@ -1154,15 +1160,13 @@ class FontDecoder:
         total = 0.0
         fwc = self.fast_widths_cid
 
-        for index, glyph in enumerate(glyphs):
+        for glyph in glyphs:
             code = glyph.width_code
             if fwc is not None:
                 w = fwc[code] if 0 <= code < 65536 else dw_pos
             else:
                 w = self.widths.width_for(code, space_w if code == 32 else dw_pos)
-            total += w
-            if index:
-                total += cs
+            total += w + cs
             if code == 32:
                 total += ws
 
