@@ -9,7 +9,7 @@ from html import escape
 from io import BytesIO
 from typing import Any, BinaryIO, TextIO, TypeAlias, cast
 
-from core_pdf import PdfDocument
+from core_pdf import PdfDocument, PdfPage
 from core_pdf._vendor.fontTools.agl import toUnicode
 from core_pdf.impl.engine.layout.geometry import bbox_union
 from core_pdf.impl.engine.spec.s_09_fonts.data.base_encodings import (
@@ -19,8 +19,30 @@ from core_pdf.impl.engine.spec.s_09_fonts.data.base_encodings import (
 )
 from core_pdf.impl.engine.spec.s_09_fonts.data.core14 import FONT_DATA
 from core_pdf.impl.exceptions import PdfError
+from core_pdf.impl.primitives import PdfReference
 
 PdfInput: TypeAlias = Any
+
+
+def _pdfminer_reference_is_resolvable(document: PdfDocument, value: object) -> bool:
+    if not document.xref_was_recovered:
+        return True
+    if isinstance(value, (list, tuple)):
+        return all(_pdfminer_reference_is_resolvable(document, item) for item in value)
+    if not isinstance(value, PdfReference):
+        return True
+    key = (value.object_number << 16) | value.generation_number
+    entry = document.xref.get(key)
+    if entry is None or not entry.in_use:
+        return False
+    return entry.object_stream is not None or document.xref_entry_matches_header(key, entry)
+
+
+def _pdfminer_resolvable_pages(document: PdfDocument) -> Iterator[tuple[int, PdfPage]]:
+    """Omit recovered pages whose content reference does not resolve as PDFMiner requires."""
+    for page_index, page in enumerate(document.pages):
+        if _pdfminer_reference_is_resolvable(document, page.contents):
+            yield page_index, page
 
 
 @dataclass(frozen=True, slots=True)
@@ -1119,7 +1141,7 @@ def extract_pages(
     )
     try:
         yielded = 0
-        for page_index, page in enumerate(document.pages):
+        for page_index, page in _pdfminer_resolvable_pages(document):
             if selected is not None and page_index not in selected:
                 continue
             if maxpages and yielded >= maxpages:
