@@ -90,6 +90,35 @@ def test_tounicode_retains_hex_prefix_before_corrupt_nested_delimiter() -> None:
     assert cmap.mappings == {b"\x01": "D", b"\x02": "\x00"}
 
 
+def test_tounicode_accepts_numeric_cid_ranges_as_unicode_scalars() -> None:
+    cmap = ToUnicodeCMap(
+        b"""
+        1 begincodespacerange <0000> <ffff> endcodespacerange
+        2 begincidrange
+        <4e00> <4e02> 19968
+        <00ff> <0100> 255
+        endcidrange
+        """
+    )
+
+    assert cmap.decode(b"\x4e\x00\x4e\x01\x4e\x02\x00\xff\x01\x00") == "一丁丂ÿĀ"
+
+
+def test_tounicode_retains_explicit_mappings_with_malformed_codespace() -> None:
+    cmap = ToUnicodeCMap(
+        b"""
+        1 begincodespacerange <0083> <020c> endcodespacerange
+        3 beginbfrange
+        <020b> <020b> <0028>
+        <0083> <0083> <0061>
+        <020c> <020c> <0029>
+        endbfrange
+        """
+    )
+
+    assert cmap.decode(b"\x02\x0b\x00\x83\x02\x0c") == "(a)"
+
+
 def test_japan1_unicode_map_disambiguates_and_covers_legacy_cids() -> None:
     horizontal = resolve_cid_unicode_map("Adobe", "Japan1")
     vertical = resolve_cid_unicode_map("Adobe", "Japan1", vertical=True)

@@ -662,8 +662,13 @@ def _mapping_value(mapping: object, name: str) -> object | None:
     return next((value for key, value in mapping.items() if str(key) == name), None)
 
 
-def _pdfminer_base_encoding_text(decoder: Any, char_code: int) -> str:
-    base_encoding = getattr(decoder, "base_encoding", None)
+def _pdfminer_base_encoding_text(
+    decoder: Any,
+    char_code: int,
+    base_encoding: str | None = None,
+) -> str:
+    if base_encoding is None:
+        base_encoding = getattr(decoder, "base_encoding", None)
     table = {
         "MacRomanEncoding": MAC_ROMAN_ENCODING,
         "WinAnsiEncoding": WIN_ANSI_ENCODING,
@@ -740,7 +745,7 @@ def _pdfminer_glyph_text(glyph: Any) -> str:
             base_encoding = getattr(decoder, "base_encoding", None)
             if base_encoding is None and str(_mapping_value(decoder.font, "Subtype")) == "TrueType":
                 base_encoding = "WinAnsiEncoding"
-            encoded = _pdfminer_base_encoding_text(decoder, glyph.char_code)
+            encoded = _pdfminer_base_encoding_text(decoder, glyph.char_code, base_encoding)
             if encoded:
                 return encoded
         if getattr(decoder, "is_cid_font", False):
@@ -940,11 +945,28 @@ def _pdfminer_literal_glyphs(
         wanted_index = 0
         offset_x = 0.0
         offset_y = 0.0
+        matched_cluster_id: object | None = None
+        matched_code_bytes: bytes | None = None
         for candidate in group:
             if wanted_index < len(wanted) and candidate.code_bytes == wanted[wanted_index]:
                 projected.append(candidate)
                 offsets[id(candidate)] = (offset_x, offset_y)
+                candidate_provenance = dict(candidate.provenance or ())
+                matched_cluster_id = candidate_provenance.get("cluster_id")
+                matched_code_bytes = candidate.code_bytes
                 wanted_index += 1
+            elif (
+                matched_cluster_id is not None
+                and candidate.code_bytes == matched_code_bytes
+                and dict(candidate.provenance or ()).get("cluster_id") == matched_cluster_id
+            ):
+                # A single encoded character can expand into several engine
+                # observations (most commonly a decomposed ligature). They
+                # are one source token, not parser-level byte loss. Retain the
+                # complete cluster at the same correction offset so the
+                # legacy ligature projection below can collapse it again.
+                projected.append(candidate)
+                offsets[id(candidate)] = (offset_x, offset_y)
             elif candidate.baseline is not None:
                 baseline = candidate.baseline
                 offset_x -= baseline[2] - baseline[0]
@@ -955,10 +977,18 @@ def _pdfminer_literal_glyphs(
 
 def _pdfminer_builtin_width(glyph: Any) -> float | None:
     """Return pdfminer's built-in width for a widthless Standard-14 font."""
-    projected_text = _pdfminer_glyph_text(glyph)
-    if len(projected_text) == 1 and ord(projected_text) < 32:
-        return 0.0
     decoder = glyph.font_decoder
+    projected_text = _pdfminer_glyph_text(glyph)
+    glyph_name = getattr(decoder, "encoding_differences", {}).get(glyph.char_code)
+    if (
+        not decoder.is_cid_font
+        and len(projected_text) == 1
+        and ord(projected_text) < 32
+        and glyph_name is not None
+        and bool(toUnicode(glyph_name))
+        and _mapping_value(decoder.font, "Widths") is None
+    ):
+        return 0.0
     if decoder.is_cid_font or decoder.is_type3:
         return None
     font = decoder.font
@@ -985,15 +1015,47 @@ def _pdfminer_glyph_is_clipped(glyph: Any) -> bool:
     if not isinstance(clip, (tuple, list)) or len(clip) != 4:
         return False
     left, bottom, right, top = (float(value) for value in clip)
-    glyph_left, glyph_bottom, glyph_right, glyph_top = glyph.advance_bbox
-    return (
-        right <= left
-        or top <= bottom
-        or glyph_right <= left
-        or glyph_left >= right
-        or glyph_top <= bottom
-        or glyph_bottom >= top
-    )
+    # PDFMiner does not apply ordinary clipping paths to text layout, so text
+    # outside a valid page/form clip remains observable.  It does, however,
+    # stop producing text after an empty clip.  Preserve that distinction
+    # rather than treating every recorded clip as a visibility filter.
+    return right <= left or top <= bottom
+
+
+def _pdfminer_layout_origin(
+    baseline: tuple[float, float, float, float],
+    *,
+    normalize_noise: bool,
+) -> tuple[float, float]:
+    origin_x, origin_y = baseline[0], baseline[1]
+    if normalize_noise:
+        return round(origin_x, 12), round(origin_y, 12)
+    return origin_x, origin_y
+
+
+def _pdfminer_rotated_text_matrix(
+    origin_x: float,
+    origin_y: float,
+    matrix: tuple[float, float, float, float],
+    rotation: int,
+    page_width: float,
+    page_height: float,
+) -> tuple[float, float, float, float, float, float]:
+    matrix_a, matrix_b, matrix_c, matrix_d = matrix
+    if rotation == 90:
+        return origin_y, page_width - origin_x, matrix_b, -matrix_a, matrix_d, -matrix_c
+    if rotation == 180:
+        return (
+            page_width - origin_x,
+            page_height - origin_y,
+            -matrix_a,
+            -matrix_b,
+            -matrix_c,
+            -matrix_d,
+        )
+    if rotation == 270:
+        return page_height - origin_y, origin_x, -matrix_b, matrix_a, -matrix_d, matrix_c
+    return origin_x, origin_y, matrix_a, matrix_b, matrix_c, matrix_d
 
 
 def extract_pages(
@@ -1104,7 +1166,7 @@ def extract_pages(
                 if annotation.rect is not None
             )
             vertical_positions: dict[tuple[str | None, int], tuple[float, int]] = {}
-            for glyph in projected_glyphs:
+            for glyph_index, glyph in enumerate(projected_glyphs):
                 if _pdfminer_glyph_is_clipped(glyph):
                     continue
                 run_index = bisect_right(run_sequences, glyph.seqno) - 1
@@ -1197,6 +1259,7 @@ def extract_pages(
                 glyph_provenance = dict(glyph.provenance) if glyph.provenance else {}
                 text_matrix = glyph_provenance.get("text_matrix")
                 horizontal_scale = float(glyph_provenance.get("horizontal_scale", 100.0)) * 0.01
+                coordinates_in_layout_space = False
                 if (
                     getattr(glyph.font_decoder, "is_vertical", False)
                     and baseline is not None
@@ -1210,21 +1273,44 @@ def extract_pages(
                             glyph.font_decoder.default_vertical_origin_y,
                         ),
                     )
-                    origin_x, origin_y = baseline[0], baseline[1]
-                    x0 = origin_x - float(metric[1]) * glyph.font_size / 1000.0
-                    x1 = x0 + glyph.font_size
+                    # The engine advances an entire text-show array in bulk,
+                    # while PDFMiner advances one token at a time. Normalize
+                    # the resulting sub-picopoint accumulation noise before
+                    # applying vertical displacement metrics; otherwise two
+                    # mathematically touching boxes can miss by one ULP.
+                    origin_x, origin_y = _pdfminer_layout_origin(
+                        baseline,
+                        normalize_noise=effective_font_size == glyph.font_size,
+                    )
+                    # Preserve PDFMiner's operation order here.  Its layout
+                    # grouping uses exact boundary comparisons, so replacing
+                    # the final ``* 0.001`` with division by 1000 can move a
+                    # touching vertical glyph by one floating-point ULP and
+                    # incorrectly split the surrounding text box.
+                    x0 = origin_x - float(metric[1]) * effective_font_size * 0.001
+                    x1 = x0 + effective_font_size
                     # Core's vertical baseline is already translated by v1y;
                     # pdfminer's LTChar box starts at that displaced origin.
                     y0 = origin_y
-                    y1 = y0 + glyph.font_size
-                    effective_font_height = glyph.font_size
+                    y1 = y0 + effective_font_size
+                    effective_font_height = effective_font_size
                 elif (
                     baseline is not None
                     and isinstance(text_matrix, (tuple, list))
                     and len(text_matrix) == 4
                 ):
                     matrix_a, matrix_b, matrix_c, matrix_d = (float(value) for value in text_matrix)
-                    origin_x, origin_y = baseline[0], baseline[1]
+                    # A horizontal show immediately following vertical writing
+                    # resumes at the vertical cursor. Normalize only that
+                    # hand-off; ordinary horizontal origins must retain
+                    # PDFMiner's native floating-point arithmetic.
+                    origin_x, origin_y = _pdfminer_layout_origin(
+                        baseline,
+                        normalize_noise=(
+                            bool(glyph_index)
+                            and projected_glyphs[glyph_index - 1].font_decoder.is_vertical
+                        ),
+                    )
                     descent_scale = 0.001
                     descent_value = float(getattr(glyph.font_decoder, "descent", -200.0))
                     if getattr(glyph.font_decoder, "is_type3", False):
@@ -1250,17 +1336,37 @@ def extract_pages(
                             font_bbox = _mapping_value(glyph.font_decoder.font, "FontBBox")
                             if isinstance(font_bbox, (tuple, list)) and len(font_bbox) == 4:
                                 descent_value = min(float(font_bbox[1]), float(font_bbox[3]))
-                    descent = descent_value * descent_scale
+                    descent = descent_value * descent_scale * glyph.font_size
                     # ``LTChar`` uses the font descent only to anchor horizontal
                     # glyphs; its box is always exactly one text-space unit tall.
                     # FontBBox/ascent describes ink, not pdfminer's layout box.
-                    top = descent + 1.0
+                    top = descent + glyph.font_size
+                    advance = normalized_width * horizontal_scale * glyph.font_size
+                    media_left, media_bottom, _media_right, _media_top = page.media_box
+                    layout_origin_x = origin_x - media_left
+                    layout_origin_y = origin_y - media_bottom
+                    page_rotation = int(page.rotation) % 360
+                    (
+                        layout_origin_x,
+                        layout_origin_y,
+                        matrix_a,
+                        matrix_b,
+                        matrix_c,
+                        matrix_d,
+                    ) = _pdfminer_rotated_text_matrix(
+                        layout_origin_x,
+                        layout_origin_y,
+                        (matrix_a, matrix_b, matrix_c, matrix_d),
+                        page_rotation,
+                        page_width,
+                        page_height,
+                    )
                     corners = tuple(
                         (
-                            origin_x + glyph.font_size * (along * matrix_a + vertical * matrix_c),
-                            origin_y + glyph.font_size * (along * matrix_b + vertical * matrix_d),
+                            layout_origin_x + along * matrix_a + vertical * matrix_c,
+                            layout_origin_y + along * matrix_b + vertical * matrix_d,
                         )
-                        for along in (0.0, normalized_width * horizontal_scale)
+                        for along in (0.0, advance)
                         for vertical in (descent, top)
                     )
                     x0 = min(point[0] for point in corners)
@@ -1268,6 +1374,7 @@ def extract_pages(
                     x1 = max(point[0] for point in corners)
                     y1 = max(point[1] for point in corners)
                     effective_font_height = x1 - x0 if orientation % 180 else y1 - y0
+                    coordinates_in_layout_space = True
                 elif orientation == 0:
                     if normalized_width > 0:
                         x1 = x0 + normalized_width * effective_font_size
@@ -1287,23 +1394,24 @@ def extract_pages(
                 # PDFMiner places the media-box lower-left at layout-space
                 # (0, 0). Core's canonical geometry remains in PDF user space,
                 # so normalize non-zero and negative media-box origins here.
-                media_left, media_bottom, _media_right, _media_top = page.media_box
-                x0 -= media_left
-                x1 -= media_left
-                y0 -= media_bottom
-                y1 -= media_bottom
-                rotation = int(page.rotation) % 360
-                if rotation == 90:
-                    x0, y0, x1, y1 = y0, page_width - x1, y1, page_width - x0
-                elif rotation == 180:
-                    x0, y0, x1, y1 = (
-                        page_width - x1,
-                        page_height - y1,
-                        page_width - x0,
-                        page_height - y0,
-                    )
-                elif rotation == 270:
-                    x0, y0, x1, y1 = page_height - y1, x0, page_height - y0, x1
+                if not coordinates_in_layout_space:
+                    media_left, media_bottom, _media_right, _media_top = page.media_box
+                    x0 -= media_left
+                    x1 -= media_left
+                    y0 -= media_bottom
+                    y1 -= media_bottom
+                    rotation = int(page.rotation) % 360
+                    if rotation == 90:
+                        x0, y0, x1, y1 = y0, page_width - x1, y1, page_width - x0
+                    elif rotation == 180:
+                        x0, y0, x1, y1 = (
+                            page_width - x1,
+                            page_height - y1,
+                            page_width - x0,
+                            page_height - y0,
+                        )
+                    elif rotation == 270:
+                        x0, y0, x1, y1 = page_height - y1, x0, page_height - y0, x1
                 character = LTChar(
                     (x0, y0, x1, y1),
                     text,
@@ -1334,12 +1442,13 @@ def extract_pages(
                     ):
                         continue
                 stream_order = int(provenance.get("stream_order", 0) or 0)
+                layout_form_id = provenance.get("layout_form_id")
                 layout_bbox = provenance.get("layout_form_bbox")
                 if isinstance(layout_bbox, (tuple, list)) and len(layout_bbox) == 4:
                     resolved_layout_bbox = tuple(float(value) for value in layout_bbox)
                     figure_key: tuple[object, ...] = (
-                        "stream",
-                        stream_order,
+                        "form",
+                        layout_form_id if layout_form_id is not None else stream_order,
                         *resolved_layout_bbox,
                     )
                     figure_boxes[figure_key] = resolved_layout_bbox

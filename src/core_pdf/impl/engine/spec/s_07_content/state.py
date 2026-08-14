@@ -202,6 +202,7 @@ class TextState:
     render_intent: str | None
     clip_bbox: tuple[float, float, float, float] | None
     layout_form_bbox: tuple[float, float, float, float] | None
+    layout_form_id: int | None
     fill_color_space: str
     stroke_color_space: str
     dash_pattern: tuple[list[float], float]
@@ -279,6 +280,7 @@ class TextState:
         "render_intent",
         "clip_bbox",
         "layout_form_bbox",
+        "layout_form_id",
         "page_clip",
         "fill_color_space",
         "stroke_color_space",
@@ -398,6 +400,7 @@ class TextState:
         self.render_intent = None
         self.clip_bbox = None
         self.layout_form_bbox = None
+        self.layout_form_id = None
         # The page box bounds what can be displayed, but it is not a clip the
         # content stream established, so it is kept out of the graphics state:
         # recording it as one would give every unclipped mark the same clip
@@ -787,6 +790,7 @@ class TextState:
             render_intent=self.render_intent,
             clip_bbox=self.clip_bbox,
             layout_form_bbox=self.layout_form_bbox,
+            layout_form_id=self.layout_form_id,
             pending_line_break=self.pending_line_break,
             xobject_depth=self.xobject_depth,
             resource_cache=self.resource_cache,
@@ -822,6 +826,7 @@ class TextState:
         self.render_intent = getattr(state, "render_intent", None)
         self.clip_bbox = state.clip_bbox
         self.layout_form_bbox = state.layout_form_bbox
+        self.layout_form_id = state.layout_form_id
         self.pending_line_break = state.pending_line_break
         self.xobject_depth = state.xobject_depth
         self.resource_cache = state.resource_cache
@@ -842,6 +847,7 @@ class TextState:
         *,
         clip_bbox: tuple[float, float, float, float] | None = None,
         layout_form_bbox: tuple[float, float, float, float] | None = None,
+        layout_form_id: int | None = None,
         group_alpha: float | None = None,
         stream_key: StreamKey | None = None,
         swallow_parse_errors: bool = False,
@@ -859,6 +865,7 @@ class TextState:
             clip_bbox,
             group_alpha,
             layout_form_bbox=layout_form_bbox,
+            layout_form_id=layout_form_id,
             stream_key=execution_key,
             swallow_parse_errors=swallow_parse_errors,
         )
@@ -897,6 +904,7 @@ class TextState:
         self.ctm = frame.ctm
         self.xobject_depth = frame.depth
         self.layout_form_bbox = frame.layout_form_bbox
+        self.layout_form_id = frame.layout_form_id
         if frame.clip_bbox is not None:
             if self.clip_bbox is None:
                 self.clip_bbox = frame.clip_bbox
@@ -1359,6 +1367,11 @@ class TextState:
             depth + 1,
             clip_bbox=transformed_form_bbox,
             layout_form_bbox=layout_form_bbox,
+            layout_form_id=(
+                self.layout_form_id
+                if self.layout_form_id is not None
+                else self.stream_order + 1
+            ),
             group_alpha=group_alpha,
             stream_key=stream_key,
             swallow_parse_errors=True,
@@ -1774,6 +1787,7 @@ class TextState:
             ("xobject_depth", self.xobject_depth),
             ("clip_bbox", self.clip_bbox),
             ("layout_form_bbox", self.layout_form_bbox),
+            ("layout_form_id", self.layout_form_id),
             ("text_matrix", (combined_a, combined_b, combined_c, combined_d)),
             ("line_matrix_origin", (self.lm_e, self.lm_f)),
             ("horizontal_scale", self.horizontal_scale),
@@ -2268,6 +2282,7 @@ class TextState:
             ("font_size", fs),
             ("clip_bbox", self.clip_bbox),
             ("layout_form_bbox", self.layout_form_bbox),
+            ("layout_form_id", self.layout_form_id),
             *(
                 (("mcid", mcid),)
                 if (mcid := self.current_marked_content_mcid()) is not None

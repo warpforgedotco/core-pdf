@@ -48,6 +48,7 @@ class StreamState:
         "render_intent",
         "clip_bbox",
         "layout_form_bbox",
+        "layout_form_id",
         "pending_line_break",
         "xobject_depth",
         "inline_images",
@@ -82,6 +83,7 @@ class StreamState:
     render_intent: str | None
     pending_line_break: bool
     xobject_depth: int
+    layout_form_id: int | None
 
     def __init__(
         self,
@@ -112,6 +114,7 @@ class StreamState:
         render_intent: str | None,
         clip_bbox: tuple[float, float, float, float] | None,
         layout_form_bbox: tuple[float, float, float, float] | None,
+        layout_form_id: int | None,
         pending_line_break: bool,
         xobject_depth: int,
         resource_cache: ResourceCache,
@@ -144,6 +147,7 @@ class StreamState:
         self.render_intent = render_intent
         self.clip_bbox = clip_bbox
         self.layout_form_bbox = layout_form_bbox
+        self.layout_form_id = layout_form_id
         self.pending_line_break = pending_line_break
         self.xobject_depth = xobject_depth
         self.resource_cache = resource_cache
@@ -158,6 +162,7 @@ class ContentStreamFrame:
         "depth",
         "clip_bbox",
         "layout_form_bbox",
+        "layout_form_id",
         "group_alpha",
         "swallow_parse_errors",
         "lexer",
@@ -173,6 +178,7 @@ class ContentStreamFrame:
     depth: int
     clip_bbox: tuple[float, float, float, float] | None
     layout_form_bbox: tuple[float, float, float, float] | None
+    layout_form_id: int | None
     group_alpha: float | None
     swallow_parse_errors: bool
     lexer: PdfLexer | None
@@ -191,6 +197,7 @@ class ContentStreamFrame:
         group_alpha: float | None = None,
         *,
         layout_form_bbox: tuple[float, float, float, float] | None = None,
+        layout_form_id: int | None = None,
         stream_key: StreamKey | None = None,
         swallow_parse_errors: bool = False,
     ) -> None:
@@ -200,6 +207,7 @@ class ContentStreamFrame:
         self.depth = depth
         self.clip_bbox = clip_bbox
         self.layout_form_bbox = layout_form_bbox
+        self.layout_form_id = layout_form_id
         self.group_alpha = group_alpha
         self.swallow_parse_errors = swallow_parse_errors
         self.lexer = None

@@ -213,3 +213,14 @@ def test_brute_force_xref_can_stop_at_first_trailer_revision() -> None:
 
     assert all_revisions[key_for(1)].offset == data.index(b"1 0 obj", 1)
     assert first_revision[key_for(1)].offset == 0
+
+
+def test_first_revision_scan_does_not_treat_binary_keyword_as_stream_start() -> None:
+    data = (
+        b"1 0 obj\x00binary-stream-marker\x00endobj\n"
+        b"2 0 obj\n[0 0 595 842]\nendobj\ntrailer\n<<>>\n"
+    )
+
+    entries = XRefScanner.brute_force_scan(data, stop_at_first_trailer=True)
+
+    assert entries[key_for(2)].offset == data.index(b"2 0 obj")

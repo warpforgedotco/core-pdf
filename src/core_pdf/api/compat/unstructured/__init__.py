@@ -7,6 +7,8 @@ import unicodedata
 from dataclasses import dataclass, field
 from functools import lru_cache
 from importlib import import_module
+from os import PathLike
+from pathlib import Path
 from typing import Any, TypeAlias
 
 import numpy
@@ -286,6 +288,19 @@ def internal_deduplicated_box_text(box: LTTextBox) -> str:
     return "".join(parts)
 
 
+def internal_figure_text_snippets(figure: LTFigure) -> list[str]:
+    """Return drawing-delimited text while preserving nested figure concatenation."""
+    snippets = list(figure.text_snippets)
+    for child in figure:
+        if not isinstance(child, LTFigure):
+            continue
+        child_snippets = internal_figure_text_snippets(child)
+        if snippets and child_snippets:
+            snippets[-1] += child_snippets.pop(0)
+        snippets.extend(child_snippets)
+    return snippets
+
+
 def internal_sentence_count(sentences: tuple[str, ...], minimum_words: int) -> int:
     return sum(
         len(
@@ -504,6 +519,14 @@ def internal_combine_list_regions(
 
 
 def partition_pdf(filename: object, **kwargs: object) -> list[Element]:
+    if (
+        isinstance(filename, (str, PathLike))
+        and not (isinstance(filename, str) and filename.startswith("%PDF"))
+        and not Path(filename).exists()
+    ):
+        # Unstructured's fast strategy treats an absent filename as an empty
+        # document. This also covers broken corpus symlinks.
+        return []
     include_page_breaks = bool(kwargs.pop("include_page_breaks", False))
     include_metadata = bool(kwargs.pop("include_metadata", True))
     word_margin = float(kwargs.pop("pdfminer_word_margin", 0.185) or 0.185)
@@ -534,17 +557,15 @@ def partition_pdf(filename: object, **kwargs: object) -> list[Element]:
             text_boxes = [item for item in page if isinstance(item, LTTextBox)]
             regions = internal_layout_regions(text_boxes, page.height)
             for figure in (item for item in page if isinstance(item, LTFigure)):
-                pending = list(reversed(list(figure)))
-                figure_parts: list[str] = []
-                while pending:
-                    item = pending.pop()
-                    if isinstance(item, LTFigure):
-                        pending.extend(reversed(list(item)))
-                    elif hasattr(item, "get_text"):
-                        figure_parts.append(item.get_text())
-                figure_text = "".join(figure_parts)
-                if cleaned_figure_text := internal_clean_text(figure_text):
-                    regions.append(internal_LayoutRegion(cleaned_figure_text, figure.bbox))
+                # PDFMiner's recursive figure extraction inserts a newline for
+                # every non-text drawing and Unstructured splits those runs
+                # before classification.  The compatibility layout preserves
+                # those drawing-delimited runs while constructing each figure.
+                # Keeping them separate here avoids collapsing an illustrated
+                # page into one document-wide paragraph.
+                for figure_text in internal_figure_text_snippets(figure):
+                    if cleaned_figure_text := internal_clean_text(figure_text):
+                        regions.append(internal_LayoutRegion(cleaned_figure_text, figure.bbox))
             try:
                 fields = source_page.get_fields()
             except (PdfError, ValueError):

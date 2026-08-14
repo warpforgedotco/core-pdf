@@ -640,11 +640,11 @@ class XRefScanner:
                     if stream_marker >= 0 and (
                         next_object_marker < 0 or stream_marker < next_object_marker
                     ):
-                        prefix = data[offset:stream_marker]
+                        prefix = data[marker + 3 : stream_marker]
                         uncommented = b"\n".join(
                             line.split(b"%", 1)[0] for line in prefix.splitlines()
                         )
-                        if b"<<" not in uncommented:
+                        if not uncommented.strip():
                             break
                 continue
             if stop_at_first_trailer and not isinstance(obj, PdfStream):
@@ -653,8 +653,12 @@ class XRefScanner:
                 if stream_marker >= 0 and (
                     next_object_marker < 0 or stream_marker < next_object_marker
                 ):
+                    prefix = data[marker + 3 : stream_marker]
+                    uncommented = b"\n".join(
+                        line.split(b"%", 1)[0] for line in prefix.splitlines()
+                    )
                     endstream = data.find(b"endstream", stream_marker + 6, scan_end)
-                    if endstream < 0:
+                    if not uncommented.strip() and endstream < 0:
                         # pdfminer's fallback parser treats the remainder of an
                         # unterminated, dictionary-less stream as that object's
                         # payload; later object-looking bytes are not xref entries.
