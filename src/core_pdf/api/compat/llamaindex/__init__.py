@@ -18,6 +18,7 @@ from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.engine.writing.api import find_startxref
 from core_pdf.impl.objects import PdfReference
 
+from .._strict_page_tree import internal_has_malformed_shadowed_definition
 from ._operator_text import OperatorTextProjection
 
 PdfInput: TypeAlias = Any
@@ -147,6 +148,21 @@ def _validate_declared_trailer_root(data: bytes) -> None:
 def _validate_page_tree(pdf: PdfDocument) -> None:
     seen: set[tuple[int, int]] = set()
 
+    root = lookup_dict_key(pdf.catalog(), "Pages")
+    root_node = pdf.resolver.resolve(root)
+    if not isinstance(root_node, dict):
+        raise ValueError("invalid PDF page tree root")
+    root_kids = pdf.resolver.resolve(lookup_dict_key(root_node, "Kids"))
+    if not isinstance(root_kids, (list, tuple)):
+        raise ValueError("invalid PDF page tree children")
+
+    # When xref recovery selected an earlier definition of the structural root,
+    # a later definition with the same object identity is the authoritative
+    # revision.  Strict readers reject the damaged later object instead of
+    # silently retaining the stale tree reconstructed by the engine.
+    if isinstance(root, PdfReference) and internal_has_malformed_shadowed_definition(pdf, root):
+        raise ValueError("shadowed PDF page tree root")
+
     def visit(value: object) -> None:
         if isinstance(value, PdfReference):
             key = (value.object_number, value.generation_number)
@@ -161,7 +177,7 @@ def _validate_page_tree(pdf: PdfDocument) -> None:
             for kid in kids:
                 visit(kid)
 
-    visit(lookup_dict_key(pdf.catalog(), "Pages"))
+    visit(root)
 
 
 def load_data(

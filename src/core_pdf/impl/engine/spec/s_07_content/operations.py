@@ -925,15 +925,10 @@ def dispatch_operations(
                                             if handler_target.current_decoder is not None
                                             else handler_target.get_decoder()
                                         )
-                                        operand = operands[
-                                            op_count - 1
-                                            if getattr(
-                                                handler_target.document,
-                                                "legacy_pdfminer_text_operators",
-                                                False,
-                                            )
-                                            else 0
-                                        ]
+                                        # Tj consumes the top value from the
+                                        # operand stack.  Earlier values are
+                                        # stale operands in malformed streams.
+                                        operand = operands[op_count - 1]
                                         if type(operand) is PdfString:
                                             handler_target.append_text(
                                                 data=operand.data,

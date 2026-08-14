@@ -3550,12 +3550,11 @@ class TextState:
     def op_Tj(self, operands: OperandWindow, depth: int) -> None:
         if not operands:
             return
-        # A well-formed Tj has one operand. PDFMiner's permissive interpreter
-        # consumes the most recently pushed string when malformed content
-        # leaves several operands on the stack; retain spec behavior for the
-        # engine while exposing that stack policy to its compatibility view.
-        operand_index = -1 if getattr(self.document, "legacy_pdfminer_text_operators", False) else 0
-        self.text_component.show(operands[operand_index])
+        # Operators consume their operands from the top of the operand stack.
+        # A well-formed Tj has exactly one string, but damaged streams sometimes
+        # leave older operands before it.  Those older values are not part of
+        # the text-showing operation.
+        self.text_component.show(operands[-1])
 
     def op_TJ(self, operands: OperandWindow, depth: int) -> None:
         self.text_component.show_array(operands)

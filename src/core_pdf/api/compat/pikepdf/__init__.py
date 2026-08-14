@@ -24,6 +24,8 @@ from core_pdf.impl.engine.structured import Page as StructuredPage
 from core_pdf.impl.exceptions import PdfParseError, PdfUnsupportedError
 from core_pdf.impl.objects import PdfName, PdfReference
 
+from .._strict_page_tree import internal_has_malformed_shadowed_definition
+
 
 class Rectangle(tuple[Decimal, Decimal, Decimal, Decimal]):
     """pikepdf-shaped numeric array preserving PDF decimal spelling semantics."""
@@ -136,6 +138,8 @@ def _validate_pikepdf_object_graph(document: StructuredState) -> None:
         ):
             raise PdfUnsupportedError("unable to find trailer dictionary")
     pages = lookup_dict_key(pdf.catalog(), "Pages")
+    if isinstance(pages, PdfReference) and internal_has_malformed_shadowed_definition(pdf, pages):
+        raise PdfUnsupportedError("shadowed page tree root")
     seen: set[tuple[str, int, int] | tuple[str, int]] = set()
 
     def visit(value: object) -> None:
