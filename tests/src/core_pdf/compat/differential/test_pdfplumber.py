@@ -6,7 +6,6 @@ import pytest
 from .support import ALL_PDFS, call_pair, words
 
 
-@pytest.mark.skip(reason="pdfplumber differential tests disabled")
 @pytest.mark.parametrize("pdf_path", ALL_PDFS, ids=lambda path: path.name)
 def test_matches_real_library_on_all_fixture_pdfs(pdf_path: Path) -> None:
     real_pdfplumber = pytest.importorskip("pdfplumber")
