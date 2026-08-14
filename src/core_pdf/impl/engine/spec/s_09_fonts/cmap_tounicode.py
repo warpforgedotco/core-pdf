@@ -126,6 +126,22 @@ class ToUnicodeCMap:
                     src = decode_cmap_token(src_tok)
                     dst = decode_utf16be(decode_cmap_token(dst_tok))
                 except (ValueError, UnicodeDecodeError):
+                    # PostScript hex strings pad an odd final nibble with zero.
+                    # If corruption starts another ``<`` before the closing
+                    # delimiter, pdfminer's parser retains the valid prefix as
+                    # the destination and abandons the now-misaligned operands
+                    # that follow in this bfchar block.
+                    if dst_tok.startswith(b"<") and b"<" in dst_tok[1:]:
+                        prefix = dst_tok[1 : dst_tok.find(b"<", 1)]
+                        try:
+                            src = decode_cmap_token(src_tok)
+                            if len(prefix) % 2:
+                                prefix += b"0"
+                            dst = decode_utf16be(bytes.fromhex(prefix.decode("ascii")))
+                        except (ValueError, UnicodeDecodeError):
+                            break
+                        self.mappings[src] = dst
+                        break
                     continue
 
                 self.mappings[src] = dst

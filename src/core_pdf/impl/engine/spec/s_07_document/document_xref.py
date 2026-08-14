@@ -38,6 +38,13 @@ class DocumentXRefMixin:
     trailer_dict: PdfDict
     xref_was_recovered: bool
     xref_recovery_reason: str | None
+    recovery_scan_all_revisions: bool
+
+    def brute_force_xref(self) -> dict[int, PdfXRefEntry]:
+        return XRefScanner.brute_force_scan(
+            self.raw_data,
+            stop_at_first_trailer=not self.recovery_scan_all_revisions,
+        )
 
     def scan_xref(self) -> None:
         data = self.raw_data
@@ -48,7 +55,7 @@ class DocumentXRefMixin:
         if start is None:
             if b"startxref" in data:
                 raise PdfParseError("missing startxref")
-            self.xref = XRefScanner.brute_force_scan(data)
+            self.xref = self.brute_force_xref()
             self.xref_was_recovered = True
             if not self.xref:
                 self.trailer_dict = {}
@@ -63,10 +70,16 @@ class DocumentXRefMixin:
         try:
             self.xref, self.trailer_dict = XRefScanner.load_section_chain(data, start, set())
             self.repair_stale_xref_offsets()
+            if self.xref_was_recovered and not self.recovery_scan_all_revisions:
+                # pdfminer's non-strict fallback abandons a damaged xref as a
+                # whole and scans objects only through the first trailer.
+                self.xref = self.brute_force_xref()
+                catalog_ref = self.infer_catalog_root()
+                self.trailer_dict = {"Root": catalog_ref} if catalog_ref is not None else {}
             self.trailer_dict = self.merge_recovered_trailer_metadata(self.trailer_dict)
             root_ref = lookup_dict_key(self.trailer_dict, "Root")
             if root_ref is None or not self.is_valid_catalog_root(root_ref):
-                self.xref.update(XRefScanner.brute_force_scan(data))
+                self.xref.update(self.brute_force_xref())
                 self.xref_was_recovered = True
                 catalog_ref = self.infer_catalog_root()
                 if catalog_ref is not None:
@@ -74,7 +87,7 @@ class DocumentXRefMixin:
                     self.trailer_dict["Root"] = catalog_ref
                 self.trailer_dict = self.merge_recovered_trailer_metadata(self.trailer_dict)
         except (PdfParseError, PdfUnsupportedError, ValueError, struct.error, OSError) as error:
-            self.xref = XRefScanner.brute_force_scan(data)
+            self.xref = self.brute_force_xref()
             self.xref_was_recovered = True
             self.xref_recovery_reason = str(error)
             if not self.xref:
@@ -116,7 +129,7 @@ class DocumentXRefMixin:
                     repaired = True
                     continue
             if recovered_xref is None:
-                recovered_xref = XRefScanner.brute_force_scan(self.raw_data)
+                recovered_xref = self.brute_force_xref()
             replacement = recovered_xref.get(key)
             if (
                 replacement is None

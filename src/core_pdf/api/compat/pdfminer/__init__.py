@@ -16,6 +16,7 @@ from core_pdf.impl.engine.spec.s_09_fonts.data.base_encodings import (
     STANDARD_ENCODING,
     WIN_ANSI_ENCODING,
 )
+from core_pdf.impl.engine.spec.s_09_fonts.data.core14 import FONT_DATA
 from core_pdf.impl.exceptions import PdfError
 
 PdfInput: TypeAlias = Any
@@ -383,11 +384,10 @@ def _group_objects(chars: list[LTChar], params: LAParams) -> list[LTTextLine]:
         previous = item
     if current:
         lines.append(_make_line(current, params))
-    return [line for line in lines if not line.get_text().isspace()]
+    return lines
 
 
 def _lines_are_neighbors(first: LTTextLine, second: LTTextLine, ratio: float) -> bool:
-    epsilon = 1e-9
     if isinstance(first, LTTextLineHorizontal) and isinstance(second, LTTextLineHorizontal):
         tolerance = ratio * first.height
         return (
@@ -396,11 +396,11 @@ def _lines_are_neighbors(first: LTTextLine, second: LTTextLine, ratio: float) ->
             # insufficient: lines separated along x are never candidates.
             not (second.x1 <= first.x0 or first.x1 <= second.x0)
             and not (second.y1 <= first.y0 - tolerance or first.y1 + tolerance <= second.y0)
-            and abs(second.height - first.height) <= tolerance + epsilon
+            and abs(second.height - first.height) <= tolerance
             and (
-                abs(second.x0 - first.x0) <= tolerance + epsilon
-                or abs(second.x1 - first.x1) <= tolerance + epsilon
-                or abs((second.x0 + second.x1 - first.x0 - first.x1) / 2) <= tolerance + epsilon
+                abs(second.x0 - first.x0) <= tolerance
+                or abs(second.x1 - first.x1) <= tolerance
+                or abs((second.x0 + second.x1 - first.x0 - first.x1) / 2) <= tolerance
             )
         )
     if isinstance(first, LTTextLineVertical) and isinstance(second, LTTextLineVertical):
@@ -410,11 +410,11 @@ def _lines_are_neighbors(first: LTTextLine, second: LTTextLine, ratio: float) ->
             # line's own vertical extent.
             not (second.y1 <= first.y0 or first.y1 <= second.y0)
             and not (second.x1 <= first.x0 - tolerance or first.x1 + tolerance <= second.x0)
-            and abs(second.width - first.width) <= tolerance + epsilon
+            and abs(second.width - first.width) <= tolerance
             and (
-                abs(second.y0 - first.y0) <= tolerance + epsilon
-                or abs(second.y1 - first.y1) <= tolerance + epsilon
-                or abs((second.y0 + second.y1 - first.y0 - first.y1) / 2) <= tolerance + epsilon
+                abs(second.y0 - first.y0) <= tolerance
+                or abs(second.y1 - first.y1) <= tolerance
+                or abs((second.y0 + second.y1 - first.y0 - first.y1) / 2) <= tolerance
             )
         )
     return False
@@ -525,7 +525,9 @@ def _group_lines(
         members.sort(key=(lambda item: -item.x1) if vertical else (lambda item: -item.y1))
         box = bbox_union(item.bbox for item in members) or members[0].bbox
         box_type = LTTextBoxVertical if vertical else LTTextBoxHorizontal
-        boxes.append(box_type(box, members))
+        text_box = box_type(box, members)
+        if not text_box.get_text().isspace():
+            boxes.append(text_box)
     return boxes
 
 
@@ -913,6 +915,87 @@ def _legacy_ligature_overrides(
     return overrides, skipped
 
 
+def _pdfminer_literal_glyphs(
+    glyphs: Iterable[Any],
+) -> tuple[tuple[Any, ...], dict[int, tuple[float, float]]]:
+    """Project parser-level byte loss from malformed literal-string escapes."""
+    source = tuple(glyphs)
+    projected: list[Any] = []
+    offsets: dict[int, tuple[float, float]] = {}
+    index = 0
+    while index < len(source):
+        glyph = source[index]
+        provenance = dict(glyph.provenance) if glyph.provenance else {}
+        compatibility_data = provenance.get("compatibility_data")
+        if not isinstance(compatibility_data, bytes):
+            projected.append(glyph)
+            offsets[id(glyph)] = (0.0, 0.0)
+            index += 1
+            continue
+        end = index + 1
+        while end < len(source) and source[end].seqno == glyph.seqno:
+            end += 1
+        group = source[index:end]
+        wanted = [item.code_bytes for item in glyph.font_decoder.decode_glyphs(compatibility_data)]
+        wanted_index = 0
+        offset_x = 0.0
+        offset_y = 0.0
+        for candidate in group:
+            if wanted_index < len(wanted) and candidate.code_bytes == wanted[wanted_index]:
+                projected.append(candidate)
+                offsets[id(candidate)] = (offset_x, offset_y)
+                wanted_index += 1
+            elif candidate.baseline is not None:
+                baseline = candidate.baseline
+                offset_x -= baseline[2] - baseline[0]
+                offset_y -= baseline[3] - baseline[1]
+        index = end
+    return tuple(projected), offsets
+
+
+def _pdfminer_builtin_width(glyph: Any) -> float | None:
+    """Return pdfminer's built-in width for a widthless Standard-14 font."""
+    projected_text = _pdfminer_glyph_text(glyph)
+    if len(projected_text) == 1 and ord(projected_text) < 32:
+        return 0.0
+    decoder = glyph.font_decoder
+    if decoder.is_cid_font or decoder.is_type3:
+        return None
+    font = decoder.font
+    if _mapping_value(font, "Widths") is not None:
+        return None
+    base_font = str(_mapping_value(font, "BaseFont") or "").split("+")[-1]
+    entry = FONT_DATA.get(base_font)
+    if not isinstance(entry, dict):
+        return None
+    widths = entry.get("widths")
+    code = glyph.char_code
+    if not isinstance(widths, dict) or code is None or not 0 <= code < 256:
+        return None
+    encoded_text = _pdfminer_base_encoding_text(decoder, code)
+    width = widths.get(encoded_text)
+    # pdfminer treats an encoded character absent from the base-font metrics
+    # as a zero-width glyph rather than applying PDF's MissingWidth fallback.
+    return 0.0 if width is None else float(width)
+
+
+def _pdfminer_glyph_is_clipped(glyph: Any) -> bool:
+    provenance = dict(glyph.provenance) if glyph.provenance else {}
+    clip = provenance.get("clip_bbox")
+    if not isinstance(clip, (tuple, list)) or len(clip) != 4:
+        return False
+    left, bottom, right, top = (float(value) for value in clip)
+    glyph_left, glyph_bottom, glyph_right, glyph_top = glyph.advance_bbox
+    return (
+        right <= left
+        or top <= bottom
+        or glyph_right <= left
+        or glyph_left >= right
+        or glyph_top <= bottom
+        or glyph_bottom >= top
+    )
+
+
 def extract_pages(
     pdf_file: PdfInput,
     password: str = "",
@@ -925,7 +1008,15 @@ def extract_pages(
     del caching
     params = laparams or LAParams()
     selected = set(page_numbers) if page_numbers is not None else None
-    document = PdfDocument.open(pdf_file, password=password)
+    # pdfminer's fallback xref loader stops at the first trailer it encounters.
+    # Keep the engine's default all-revision recovery for native callers, while
+    # selecting the legacy recovery policy for this compatibility projection.
+    document = PdfDocument.open(
+        pdf_file,
+        password=password,
+        recovery_scan_all_revisions=False,
+        legacy_pdfminer_text_operators=True,
+    )
     try:
         yielded = 0
         for page_index, page in enumerate(document.pages):
@@ -945,14 +1036,18 @@ def extract_pages(
                     compatibility_glyphs.extend(underlying)
                 else:
                     compatibility_glyphs.append(glyph)
-            projected_glyphs = tuple(compatibility_glyphs)
+            projected_glyphs, literal_offsets = _pdfminer_literal_glyphs(compatibility_glyphs)
             ligatures, skipped_ligature_parts = _legacy_ligature_overrides(projected_glyphs)
             pdfminer_offsets: dict[int, tuple[float, float]] = {}
             correction_x = 0.0
             correction_y = 0.0
             for glyph_index, glyph in enumerate(projected_glyphs):
                 baseline = glyph.baseline
-                pdfminer_offsets[id(glyph)] = (correction_x, correction_y)
+                literal_x, literal_y = literal_offsets.get(id(glyph), (0.0, 0.0))
+                pdfminer_offsets[id(glyph)] = (
+                    correction_x + literal_x,
+                    correction_y + literal_y,
+                )
                 if glyph_index + 1 >= len(projected_glyphs):
                     continue
                 following = projected_glyphs[glyph_index + 1]
@@ -980,6 +1075,10 @@ def extract_pages(
                     correction_x = 0.0
                     correction_y = 0.0
                     continue
+                builtin_width = _pdfminer_builtin_width(glyph)
+                if builtin_width == 0.0:
+                    correction_x -= baseline[2] - baseline[0]
+                    correction_y -= baseline[3] - baseline[1]
                 if glyph.seqno == following.seqno:
                     continue
                 char_space = float(provenance.get("char_space", 0.0))
@@ -1003,10 +1102,11 @@ def extract_pages(
                 tuple(annotation.rect)
                 for annotation in page_annotations
                 if annotation.rect is not None
-                and annotation.subtype in {"FreeText", "Stamp", "Widget"}
             )
             vertical_positions: dict[tuple[str | None, int], tuple[float, int]] = {}
             for glyph in projected_glyphs:
+                if _pdfminer_glyph_is_clipped(glyph):
+                    continue
                 run_index = bisect_right(run_sequences, glyph.seqno) - 1
                 if id(glyph) in skipped_ligature_parts:
                     continue
@@ -1076,6 +1176,9 @@ def extract_pages(
                 normalized_width = 0.0
                 if width_code is not None and callable(width_lookup):
                     normalized_width = float(width_lookup(width_code)) * 0.001
+                    builtin_width = _pdfminer_builtin_width(glyph)
+                    if builtin_width is not None:
+                        normalized_width = builtin_width * 0.001
                     base_font = str(_mapping_value(glyph.font_decoder.font, "BaseFont"))
                     glyph_name = getattr(glyph.font_decoder, "encoding_differences", {}).get(
                         glyph.char_code
@@ -1248,13 +1351,14 @@ def extract_pages(
                 if isinstance(layout_bbox, (tuple, list)) and len(layout_bbox) == 4:
                     figure_boxes[figure_key] = tuple(float(value) for value in layout_bbox)
             lines = _group_objects(chars, params)
+            empty_lines = [line for line in lines if line.get_text().isspace()]
             layout_width, layout_height = (
                 (page_height, page_width) if int(page.rotation) % 180 else (page_width, page_height)
             )
             boxes: list[LTItem] = list(
                 _reading_order(
                     _group_lines(
-                        lines,
+                        [line for line in lines if not line.get_text().isspace()],
                         params.line_margin,
                         (0.0, 0.0, layout_width, layout_height),
                     ),
@@ -1262,6 +1366,7 @@ def extract_pages(
                     (0.0, 0.0, layout_width, layout_height),
                 )
             )
+            boxes.extend(empty_lines)
             drawing_sequences = sorted(drawing.seqno for drawing in products.drawings)
             figures: list[tuple[LTFigure, int]] = []
             for figure_index, (figure_key, entries) in enumerate(figure_chars.items()):

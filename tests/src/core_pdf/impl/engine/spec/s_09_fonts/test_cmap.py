@@ -76,6 +76,20 @@ def test_tounicode_usecmap_inherits_and_allows_local_override() -> None:
     assert cmap.decode(b"AB") == "XB"
 
 
+def test_tounicode_retains_hex_prefix_before_corrupt_nested_delimiter() -> None:
+    cmap = ToUnicodeCMap(
+        b"""
+        3 beginbfchar
+        <01> <0044>
+        <02> <000<>
+        <03> <006d>
+        endbfchar
+        """
+    )
+
+    assert cmap.mappings == {b"\x01": "D", b"\x02": "\x00"}
+
+
 def test_japan1_unicode_map_disambiguates_and_covers_legacy_cids() -> None:
     horizontal = resolve_cid_unicode_map("Adobe", "Japan1")
     vertical = resolve_cid_unicode_map("Adobe", "Japan1", vertical=True)

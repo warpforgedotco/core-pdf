@@ -601,15 +601,28 @@ class XRefScanner:
         return PdfStream(dict_obj, raw_data, None, decoded_data=decoded_data)
 
     @staticmethod
-    def brute_force_scan(data: PdfByteBuffer, max_entries: int = 100000) -> XRefTable:
+    def brute_force_scan(
+        data: PdfByteBuffer,
+        max_entries: int = 100000,
+        *,
+        stop_at_first_trailer: bool = False,
+    ) -> XRefTable:
         entries: XRefTable = {}
         parsed_streams: dict[int, tuple[int, PdfStream]] = {}
         lexer = PdfLexer(data)
         search_pos = 0
-        while search_pos < len(data):
+        scan_end = len(data)
+        if stop_at_first_trailer:
+            trailer = data.find(b"trailer")
+            while trailer >= 0:
+                if trailer == 0 or data[trailer - 1] in (10, 13):
+                    scan_end = trailer
+                    break
+                trailer = data.find(b"trailer", trailer + 7)
+        while search_pos < scan_end:
             if len(entries) >= max_entries:
                 break
-            marker = data.find(b"obj", search_pos)
+            marker = data.find(b"obj", search_pos, scan_end)
             if marker < 0:
                 break
             search_pos = marker + 3
@@ -621,7 +634,31 @@ class XRefScanner:
             try:
                 obj = lexer.parse_indirect_object()
             except Exception:
+                if stop_at_first_trailer:
+                    stream_marker = data.find(b"stream", offset, scan_end)
+                    next_object_marker = data.find(b"obj", marker + 3, scan_end)
+                    if stream_marker >= 0 and (
+                        next_object_marker < 0 or stream_marker < next_object_marker
+                    ):
+                        prefix = data[offset:stream_marker]
+                        uncommented = b"\n".join(
+                            line.split(b"%", 1)[0] for line in prefix.splitlines()
+                        )
+                        if b"<<" not in uncommented:
+                            break
                 continue
+            if stop_at_first_trailer and not isinstance(obj, PdfStream):
+                stream_marker = data.find(b"stream", offset, scan_end)
+                next_object_marker = data.find(b"obj", marker + 3, scan_end)
+                if stream_marker >= 0 and (
+                    next_object_marker < 0 or stream_marker < next_object_marker
+                ):
+                    endstream = data.find(b"endstream", stream_marker + 6, scan_end)
+                    if endstream < 0:
+                        # pdfminer's fallback parser treats the remainder of an
+                        # unterminated, dictionary-less stream as that object's
+                        # payload; later object-looking bytes are not xref entries.
+                        break
             # A damaged stream /Length can carry the lexer past an earlier
             # endstream/endobj pair and over later, valid indirect objects. In
             # that case keep scanning from the current marker. Otherwise skip

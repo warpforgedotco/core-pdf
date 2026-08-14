@@ -13,6 +13,8 @@ import numpy
 
 from core_pdf import PdfDocument
 from core_pdf.api.compat.pdfminer import LAParams, LTChar, LTFigure, LTTextBox, extract_pages
+from core_pdf.impl.engine.spec.s_07_objects.coercion import normalize_pdf_name
+from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.exceptions import PdfError, PdfSourceError, PdfUnsupportedError
 
 PdfInput: TypeAlias = Any
@@ -120,6 +122,13 @@ class Address(Element):
     pass
 
 
+@dataclass(frozen=True, slots=True)
+class internal_LayoutRegion:
+    text: str
+    bbox: tuple[float, float, float, float]
+    element_class: type[Element] | None = None
+
+
 internal_BULLET_CHARS = "\x95•‣⁃ㅤ⁌⁍∙○●◘◦☙❥❧⦾⦿-–\uf0b7*·"
 internal_BULLET = re.compile(
     rf"^\s*[{re.escape(internal_BULLET_CHARS)}](?![{re.escape(internal_BULLET_CHARS)}])"
@@ -198,6 +207,18 @@ def internal_pdf_too_complex(filename: object, password: str) -> bool:
         # reference library's empty result without weakening engine recovery.
         if document.xref_recovery_reason == "xref section loop detected":
             return True
+        for page in document.pages:
+            fonts = lookup_dict_key(page.resolve_resources(), "Font")
+            if not isinstance(fonts, dict):
+                continue
+            for raw_font in fonts.values():
+                font = document.resolver.resolve(raw_font)
+                if (
+                    isinstance(font, dict)
+                    and normalize_pdf_name(lookup_dict_key(font, "Subtype")) == "Type0"
+                    and lookup_dict_key(font, "DescendantFonts") is None
+                ):
+                    return True
         if len(document.raw_data) < 1_048_576:
             return False
         for page in document.pages:
@@ -228,11 +249,11 @@ def internal_clean_text(text: str) -> str:
 def internal_layout_regions(
     items: list[LTTextBox],
     page_height: float,
-) -> list[tuple[str, tuple[float, float, float, float]]]:
+) -> list[internal_LayoutRegion]:
     """Project each canonical pdfminer text box to one Unstructured region."""
     del page_height
     return [
-        (text, item.bbox)
+        internal_LayoutRegion(text, item.bbox)
         for item in items
         if (text := internal_clean_text(internal_deduplicated_box_text(item)))
     ]
@@ -378,18 +399,18 @@ def internal_recursive_xy_cut(
 
 
 def internal_region_order(
-    regions: list[tuple[str, tuple[float, float, float, float]]],
+    regions: list[internal_LayoutRegion],
     page_height: float,
 ) -> list[int]:
     # The fast PDF pipeline always performs a basic top/left sort first for
     # deterministic ties, then applies XY-cut to that sequence.
     basic_order = sorted(
         range(len(regions)),
-        key=lambda index: (page_height - regions[index][1][3], regions[index][1][0]),
+        key=lambda index: (page_height - regions[index].bbox[3], regions[index].bbox[0]),
     )
     boxes = []
     for index in basic_order:
-        x0, y0, x1, y1 = regions[index][1]
+        x0, y0, x1, y1 = regions[index].bbox
         left = int(x0)
         top = int(page_height - y1)
         right = int(x1)
@@ -420,22 +441,23 @@ def internal_region_order(
 
 
 def internal_combine_list_regions(
-    regions: list[tuple[str, tuple[float, float, float, float]]],
+    regions: list[internal_LayoutRegion],
     page_height: float,
-) -> list[tuple[str, tuple[float, float, float, float]]]:
+) -> list[internal_LayoutRegion]:
     """Apply Unstructured's pre-sort continuation merge for list elements."""
-    combined: list[tuple[str, tuple[float, float, float, float]]] = []
+    combined: list[internal_LayoutRegion] = []
     anchor_text: str | None = None
     anchor_bbox: tuple[float, float, float, float] | None = None
     active_bbox: tuple[float, float, float, float] | None = None
     anchor_position: int | None = None
-    for text, bbox in regions:
+    for region in regions:
+        text, bbox = region.text, region.bbox
         element_class = internal_element_class(text, bbox, page_height)
         if element_class is ListItem:
-            anchor_text = text
+            anchor_text = internal_BULLET.sub("", text, count=1).strip()
             anchor_bbox = bbox
             active_bbox = bbox
-            combined.append((text, bbox))
+            combined.append(internal_LayoutRegion(anchor_text, bbox, ListItem))
             anchor_position = len(combined) - 1
             continue
         if anchor_text is not None and anchor_bbox is not None and active_bbox is not None:
@@ -457,7 +479,9 @@ def internal_combine_list_regions(
                     max(active_right, current_right),
                     max(active_top, current_top),
                 )
-                merged_region = (f"{anchor_text} {text}", merged_bbox)
+                merged_region = internal_LayoutRegion(
+                    f"{anchor_text} {text}", merged_bbox, ListItem
+                )
                 if anchor_position is not None:
                     # ``_combine_list_elements`` mutates its retained
                     # ``tmp_element`` before deep-copying it. If another
@@ -475,7 +499,7 @@ def internal_combine_list_regions(
                 combined.append(merged_region)
                 active_bbox = merged_bbox
                 continue
-        combined.append((text, bbox))
+        combined.append(region)
     return combined
 
 
@@ -497,7 +521,12 @@ def partition_pdf(filename: object, **kwargs: object) -> list[Element]:
         raise
     result: list[Element] = []
     pages = extract_pages(filename, password=password, laparams=LAParams(word_margin=word_margin))
-    document = PdfDocument.open(filename, password=password)
+    document = PdfDocument.open(
+        filename,
+        password=password,
+        recovery_scan_all_revisions=False,
+        legacy_pdfminer_text_operators=True,
+    )
     try:
         source_pages = iter(document.pages)
         page_pairs = ((page, next(source_pages)) for page in pages)
@@ -515,18 +544,18 @@ def partition_pdf(filename: object, **kwargs: object) -> list[Element]:
                         figure_parts.append(item.get_text())
                 figure_text = "".join(figure_parts)
                 if cleaned_figure_text := internal_clean_text(figure_text):
-                    regions.append((cleaned_figure_text, figure.bbox))
+                    regions.append(internal_LayoutRegion(cleaned_figure_text, figure.bbox))
             try:
                 fields = source_page.get_fields()
             except (PdfError, ValueError):
                 fields = ()
-            field_regions: list[tuple[str, tuple[float, float, float, float]]] = []
+            field_regions: list[internal_LayoutRegion] = []
             for field in fields:
                 if field.rect is None or field.type == "Btn" or not field.value_text:
                     continue
                 left, bottom, right, top = (float(value) for value in field.rect)
                 field_regions.append(
-                    (
+                    internal_LayoutRegion(
                         field.value_text,
                         (left, bottom, right, top),
                     )
@@ -534,9 +563,12 @@ def partition_pdf(filename: object, **kwargs: object) -> list[Element]:
             regions = internal_combine_list_regions(regions, page.height)
             regions.extend(field_regions)
             for element_index in internal_region_order(regions, page.height):
-                text, bbox = regions[element_index]
-                element_class = internal_element_class(text, bbox, page.height)
-                if element_class is ListItem:
+                region = regions[element_index]
+                text, bbox = region.text, region.bbox
+                element_class = region.element_class or internal_element_class(
+                    text, bbox, page.height
+                )
+                if element_class is ListItem and region.element_class is None:
                     text = internal_BULLET.sub("", text, count=1).strip()
                 metadata = (
                     ElementMetadata(

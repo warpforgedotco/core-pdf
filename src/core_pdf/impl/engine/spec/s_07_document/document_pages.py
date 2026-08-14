@@ -27,6 +27,7 @@ from core_pdf.impl.engine.spec.s_07_document.document_lock import (
     get_or_compute,
 )
 from core_pdf.impl.engine.spec.s_07_document.name_trees import iter_number_tree_items
+from core_pdf.impl.engine.spec.s_07_objects.coercion import normalize_pdf_name
 from core_pdf.impl.engine.spec.s_07_objects.object_cache import (
     CachedPdfObject,
     InheritedValueMap,
@@ -121,7 +122,7 @@ class LazyPageList(list[internal_PageT], Generic[internal_PageT]):
 
     def __iter__(self) -> Iterator[internal_PageT]:
         index = 0
-        while True:
+        while index < len(self):
             try:
                 yield self[index]
             except IndexError:
@@ -221,6 +222,17 @@ class DocumentPagesMixin(Generic[internal_PageT]):
     def page_candidate_score(self, obj: PdfDict) -> int:
         node_type = resolve_page_tree_node_type(self.resolver, obj)
         if node_type == "Pages" or node_type not in (None, "Page"):
+            return -100
+
+        # A recovered leaf without an explicit /Type needs page content or an
+        # annotation to distinguish it from outline destinations and other
+        # dictionaries that happen to carry /Parent, /MediaBox, or /Resources.
+        explicit_type = normalize_pdf_name(lookup_dict_key(obj, "Type"))
+        if (
+            explicit_type != "Page"
+            and lookup_dict_key(obj, "Contents") is None
+            and lookup_dict_key(obj, "Annots") is None
+        ):
             return -100
 
         score = 20 if node_type == "Page" else 0

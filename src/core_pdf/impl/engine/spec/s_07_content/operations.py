@@ -331,6 +331,8 @@ class OperationTarget(Protocol):
         *,
         data: bytes | memoryview | None = None,
         decoder: FontDecoder | None = None,
+        string_syntax: str | None = None,
+        compatibility_data: bytes | None = None,
     ) -> None: ...
 
     def append_tj_array(self, array: ContentOperand) -> None: ...
@@ -926,7 +928,12 @@ def dispatch_operations(
                                         operand = operands[0]
                                         if type(operand) is PdfString:
                                             handler_target.append_text(
-                                                data=operand.data, decoder=decoder
+                                                data=operand.data,
+                                                decoder=decoder,
+                                                string_syntax=(
+                                                    "literal" if operand.is_literal else "hex"
+                                                ),
+                                                compatibility_data=operand.compatibility_data,
                                             )
                                         elif type(operand) is bytes:
                                             handler_target.append_text(
@@ -1271,12 +1278,20 @@ def dispatch_operations(
             if pos + 1 < data_len and raw_bytes[pos + 1] == 60:
                 operand_start = pos
                 try:
-                    if op_count < max_operands:
-                        operands[op_count] = cast(
-                            ContentOperand, lexer.parse_dictionary_or_stream()
+                    parse_dictionary = (
+                        lexer.parse_dictionary
+                        if handler_target is not None
+                        and getattr(
+                            getattr(handler_target, "document", None),
+                            "legacy_pdfminer_text_operators",
+                            False,
                         )
+                        else lexer.parse_dictionary_or_stream
+                    )
+                    if op_count < max_operands:
+                        operands[op_count] = cast(ContentOperand, parse_dictionary())
                     else:
-                        lexer.parse_dictionary_or_stream()
+                        parse_dictionary()
                 except PdfParseError:
                     if lexer.pos >= data_len:
                         pos = data_len
@@ -1289,17 +1304,31 @@ def dispatch_operations(
                 raw_string = lexer.read_hex_string()
                 if should_decipher:
                     raw_string = lexer.apply_decipher(raw_string)
-                value = PdfString(raw_string)
+                value = PdfString(raw_string, is_literal=False)
                 if op_count < max_operands:
                     operands[op_count] = value
             pos = lexer.pos
             op_count += 1
             continue
         if byte == 40:
+            literal_start = lexer.pos
             raw_string = lexer.read_string()
+            literal_end = lexer.pos
+            lexer.pos = literal_start
+            compatibility_string = lexer.read_string(drop_unknown_escapes=True)
+            lexer.pos = literal_end
             if should_decipher:
                 raw_string = lexer.apply_decipher(raw_string)
-            string_value = raw_string if text_only else PdfString(raw_string)
+                compatibility_string = lexer.apply_decipher(compatibility_string)
+            string_value = (
+                raw_string
+                if text_only
+                else PdfString(
+                    raw_string,
+                    is_literal=True,
+                    compatibility_data=compatibility_string,
+                )
+            )
             if op_count < max_operands:
                 operands[op_count] = string_value
             pos = lexer.pos

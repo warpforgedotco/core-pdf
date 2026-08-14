@@ -517,8 +517,16 @@ class TextState:
         *,
         data: bytes | memoryview | None = None,
         decoder: FontDecoder | None = None,
+        string_syntax: str | None = None,
+        compatibility_data: bytes | None = None,
     ) -> None:
-        self._append_text_impl(operand, data=data, decoder=decoder)
+        self._append_text_impl(
+            operand,
+            data=data,
+            decoder=decoder,
+            string_syntax=string_syntax,
+            compatibility_data=compatibility_data,
+        )
 
     def append_tj_array(self, array: Any) -> None:
         self._append_tj_array_impl(array)
@@ -1736,6 +1744,8 @@ class TextState:
         rotation_angle: int,
         visible: bool,
         glyphs: tuple[DecodedGlyph, ...] | None = None,
+        string_syntax: str | None = None,
+        compatibility_data: bytes | None = None,
     ) -> None:
         if not self.capture_glyphs:
             return
@@ -1768,6 +1778,8 @@ class TextState:
             ("line_matrix_origin", (self.lm_e, self.lm_f)),
             ("horizontal_scale", self.horizontal_scale),
             ("char_space", self.char_space),
+            ("string_syntax", string_syntax),
+            ("compatibility_data", compatibility_data),
         )
         text_basis = (
             self.tm_e * self.ca + self.tm_f * self.cc + self.ce,
@@ -1864,6 +1876,7 @@ class TextState:
                     transformed.y1,
                 )
                 baseline = transformed_text_line(*baseline_text, text_basis)
+            observation_visible = visible and not self.internal_is_clipped_away(*advance_bbox)
             if is_vertical:
                 glyph_bbox = None
             else:
@@ -1931,7 +1944,7 @@ class TextState:
                     baseline,
                     rotation_angle,
                     fill,
-                    visible,
+                    observation_visible,
                     observation_confidence,
                     glyph.unicode_source,
                     glyph.alternates,
@@ -2005,7 +2018,7 @@ class TextState:
                             char_baseline,
                             rotation_angle,
                             fill,
-                            visible,
+                            observation_visible,
                             char_confidence,
                             glyph.unicode_source,
                             glyph.alternates,
@@ -2036,7 +2049,7 @@ class TextState:
                         baseline,
                         rotation_angle,
                         fill,
-                        visible,
+                        observation_visible,
                         observation_confidence,
                         glyph.unicode_source,
                         glyph.alternates,
@@ -2067,6 +2080,8 @@ class TextState:
         *,
         data: bytes | memoryview | None = None,
         decoder: FontDecoder | None = None,
+        string_syntax: str | None = None,
+        compatibility_data: bytes | None = None,
     ) -> None:
         decoder = decoder if decoder is not None else self.get_decoder()
 
@@ -2284,6 +2299,8 @@ class TextState:
                     rot,
                     visible,
                     glyphs=glyphs,
+                    string_syntax=string_syntax,
+                    compatibility_data=compatibility_data,
                 )
                 actual_text_span.compatibility_glyphs.extend(self.glyphs[glyph_start:])
                 del self.glyphs[glyph_start:]
@@ -2332,6 +2349,8 @@ class TextState:
                     rot,
                     visible,
                     glyphs=glyphs,
+                    string_syntax=string_syntax,
+                    compatibility_data=compatibility_data,
                 )
             self.sequence = seqno + 1
             self.pending_line_break = False
@@ -2425,6 +2444,8 @@ class TextState:
                 rot,
                 visible,
                 glyphs=glyphs,
+                string_syntax=string_syntax,
+                compatibility_data=compatibility_data,
             )
             apply_glyph_geometry_to_run(
                 new_run,

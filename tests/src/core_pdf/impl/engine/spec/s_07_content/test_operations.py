@@ -159,8 +159,15 @@ class internal_RecordingOperationTarget:
         return self.current_decoder
 
     def append_text(
-        self, operand: object = None, *, data: object = None, decoder: object = None
+        self,
+        operand: object = None,
+        *,
+        data: object = None,
+        decoder: object = None,
+        string_syntax: str | None = None,
+        compatibility_data: bytes | None = None,
     ) -> None:
+        del string_syntax, compatibility_data
         self.calls.append(("append_text", (operand, data, decoder is not None)))
 
     def append_tj_array(self, array: object) -> None:

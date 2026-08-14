@@ -73,7 +73,14 @@ class PdfDocument(PdfDocumentWritingMixin, SpecPdfDocument["PdfPage"]):
         data = serialize_document_to_pdf(document)
         return cls.open(BytesIO(data))
 
-    def __init__(self, source: PdfSource, password: str = "") -> None:
+    def __init__(
+        self,
+        source: PdfSource,
+        password: str = "",
+        *,
+        recovery_scan_all_revisions: bool = True,
+        legacy_pdfminer_text_operators: bool = False,
+    ) -> None:
         self.internal_operation_lock = threading.RLock()
         self.internal_page_locks: dict[int, threading.RLock] = {}
         self.internal_operation_cancelled = threading.Event()
@@ -83,7 +90,12 @@ class PdfDocument(PdfDocumentWritingMixin, SpecPdfDocument["PdfPage"]):
         self.internal_extraction_generation = 0
         self.internal_extracted_documents: dict[tuple[int, ...], Any] = {}
         self.internal_extraction_flights: dict[tuple[int, tuple[int, ...]], Future[Any]] = {}
-        super().__init__(source, password=password)
+        super().__init__(
+            source,
+            password=password,
+            recovery_scan_all_revisions=recovery_scan_all_revisions,
+            legacy_pdfminer_text_operators=legacy_pdfminer_text_operators,
+        )
         from core_pdf.impl.engine.page import PdfPage
 
         self.page_class = PdfPage

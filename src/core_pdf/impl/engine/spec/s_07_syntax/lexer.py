@@ -261,7 +261,7 @@ class PdfLexer:
             self.kw_cache[key] = decoded
         return decoded
 
-    def read_string(self) -> bytes:
+    def read_string(self, *, drop_unknown_escapes: bool = False) -> bytes:
         data = self.raw_data
         pos = self.pos + 1
         n = self.data_len
@@ -324,7 +324,8 @@ class PdfLexer:
                             case _:
                                 mapped = STRING_ESCAPE.get(esc)
                                 if mapped is None:
-                                    out.append(esc)
+                                    if not drop_unknown_escapes:
+                                        out.append(esc)
                                 else:
                                     out.extend(mapped)
                 case 13 | 10:

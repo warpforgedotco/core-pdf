@@ -97,6 +97,8 @@ class PdfDocument(
         "internal_cache_lock",
         "xref_was_recovered",
         "xref_recovery_reason",
+        "recovery_scan_all_revisions",
+        "legacy_pdfminer_text_operators",
         "page_tree_was_recovered",
         "internal_closed",
     )
@@ -130,10 +132,19 @@ class PdfDocument(
     internal_cache_lock: threading.RLock
     xref_was_recovered: bool
     xref_recovery_reason: str | None
+    recovery_scan_all_revisions: bool
+    legacy_pdfminer_text_operators: bool
     page_tree_was_recovered: bool
     internal_closed: bool
 
-    def __init__(self, source: PdfSource, password: str = "") -> None:
+    def __init__(
+        self,
+        source: PdfSource,
+        password: str = "",
+        *,
+        recovery_scan_all_revisions: bool = True,
+        legacy_pdfminer_text_operators: bool = False,
+    ) -> None:
         self.internal_closed = False
         self.internal_cache_lock = threading.RLock()
         self.source = source
@@ -145,6 +156,8 @@ class PdfDocument(
         self.trailer_dict = {}
         self.xref_was_recovered = False
         self.xref_recovery_reason = None
+        self.recovery_scan_all_revisions = recovery_scan_all_revisions
+        self.legacy_pdfminer_text_operators = legacy_pdfminer_text_operators
         self.page_tree_was_recovered = False
         self._initialize_document_caches()
 
@@ -160,8 +173,20 @@ class PdfDocument(
             raise
 
     @classmethod
-    def open(cls, source: PdfSource, password: str = "") -> Self:
-        return cls(source, password=password)
+    def open(
+        cls,
+        source: PdfSource,
+        password: str = "",
+        *,
+        recovery_scan_all_revisions: bool = True,
+        legacy_pdfminer_text_operators: bool = False,
+    ) -> Self:
+        return cls(
+            source,
+            password=password,
+            recovery_scan_all_revisions=recovery_scan_all_revisions,
+            legacy_pdfminer_text_operators=legacy_pdfminer_text_operators,
+        )
 
     def __enter__(self) -> Self:
         if self.closed:

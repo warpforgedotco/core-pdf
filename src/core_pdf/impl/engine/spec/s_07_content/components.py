@@ -280,7 +280,12 @@ class TextComponent:
             state.current_decoder if state.current_decoder is not None else state.get_decoder()
         )
         if type(operand) is PdfString:
-            state.append_text(data=operand.data, decoder=decoder)
+            state.append_text(
+                data=operand.data,
+                decoder=decoder,
+                string_syntax="literal" if operand.is_literal else "hex",
+                compatibility_data=operand.compatibility_data,
+            )
         else:
             state.append_text(operand, decoder=decoder)
 
@@ -340,8 +345,9 @@ class TextComponent:
         self.host.char_space = char_space
         self.host.update_char_space_scale()
         self.host.update_word_space_scale()
-        self.move(0.0, -self.host.leading)
-        self.host.pending_line_break = True
+        if not getattr(self.host.document, "legacy_pdfminer_text_operators", False):
+            self.move(0.0, -self.host.leading)
+            self.host.pending_line_break = True
         self.show(operands[2])
 
     def set_spacing_operand(self, operands: Any, setter: Callable[[float], None]) -> None:

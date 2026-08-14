@@ -200,3 +200,16 @@ def test_brute_force_xref_rejects_unparseable_object_markers() -> None:
 
     assert key_for(1) in entries
     assert key_for(2) not in entries
+
+
+def test_brute_force_xref_can_stop_at_first_trailer_revision() -> None:
+    data = (
+        b"1 0 obj\n(first)\nendobj\ntrailer\n<<>>\n"
+        b"1 0 obj\n(second)\nendobj\ntrailer\n<<>>\n"
+    )
+
+    all_revisions = XRefScanner.brute_force_scan(data)
+    first_revision = XRefScanner.brute_force_scan(data, stop_at_first_trailer=True)
+
+    assert all_revisions[key_for(1)].offset == data.index(b"1 0 obj", 1)
+    assert first_revision[key_for(1)].offset == 0

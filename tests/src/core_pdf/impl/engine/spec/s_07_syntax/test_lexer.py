@@ -303,3 +303,13 @@ def test_read_string_normalizes_all_supported_line_endings(line_ending: bytes) -
     lexer = PdfLexer(b"(first" + line_ending + b"second)")
 
     assert lexer.read_string() == b"first\nsecond"
+
+
+def test_read_string_can_project_pdfminer_unknown_escape_behavior() -> None:
+    source = b"(27\\ mm glandsizes\\/torque)"
+
+    native = PdfLexer(source)
+    compatibility = PdfLexer(source)
+
+    assert native.read_string() == b"27 mm glandsizes/torque"
+    assert compatibility.read_string(drop_unknown_escapes=True) == b"27mm glandsizestorque"
