@@ -206,6 +206,8 @@ class TextComponent:
         state.tm_d = state.lm_d = 1.0
         state.tm_e = state.lm_e = 0.0
         state.tm_f = state.lm_f = 0.0
+        state.compat_tj_cursor_x = 0.0
+        state.compat_tj_cursor_y = 0.0
         state.combined_A = state.ca
         state.combined_B = state.cb
         state.combined_C = state.cc
@@ -229,10 +231,14 @@ class TextComponent:
         if state.pending_run:
             state.runs.append(state.pending_run)
             state.pending_run = None
-        state.tm_e = state.lm_e + tx * state.lm_a + ty * state.lm_c
-        state.tm_f = state.lm_f + tx * state.lm_b + ty * state.lm_d
+        # Preserve the specification's affine operation order. Exact layout
+        # grouping can hinge on the final ULP at a character-margin boundary.
+        state.tm_e = tx * state.lm_a + ty * state.lm_c + state.lm_e
+        state.tm_f = tx * state.lm_b + ty * state.lm_d + state.lm_f
         state.lm_e = state.tm_e
         state.lm_f = state.tm_f
+        state.compat_tj_cursor_x = 0.0
+        state.compat_tj_cursor_y = 0.0
 
     def set_matrix(self, a: float, b: float, c: float, d: float, e: float, f: float) -> None:
         state = self.host
@@ -243,6 +249,8 @@ class TextComponent:
         state.tm_d = state.lm_d = d
         state.tm_e = state.lm_e = e
         state.tm_f = state.lm_f = f
+        state.compat_tj_cursor_x = 0.0
+        state.compat_tj_cursor_y = 0.0
         state.update_combined()
 
     def set_leading_and_move(self, tx: float, ty: float) -> None:

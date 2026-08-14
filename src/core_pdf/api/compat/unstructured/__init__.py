@@ -422,8 +422,8 @@ def internal_region_order(
     regions: list[internal_LayoutRegion],
     page_height: float,
 ) -> list[int]:
-    # The fast PDF pipeline always performs a basic top/left sort first for
-    # deterministic ties, then applies XY-cut to that sequence.
+    # The fast parser applies a stable basic top/left sort before XY-cut to
+    # make tie behavior deterministic across Python versions.
     basic_order = sorted(
         range(len(regions)),
         key=lambda index: (page_height - regions[index].bbox[3], regions[index].bbox[0]),
@@ -431,26 +431,32 @@ def internal_region_order(
     boxes = []
     for index in basic_order:
         x0, y0, x1, y1 = regions[index].bbox
-        left = int(x0)
-        top = int(page_height - y1)
-        right = int(x1)
-        bottom = int(page_height - y0)
+        left = x0
+        top = page_height - y1
+        right = x1
+        bottom = page_height - y0
+        int64_max = numpy.iinfo(numpy.int64).max
+        if any(
+            coordinate < 0 or coordinate > int64_max for coordinate in (left, top, right, bottom)
+        ):
+            # Unstructured validates the floating-point coordinates before
+            # casting them for XY-cut. On invalid geometry it preserves the
+            # PDFMiner layout iteration order verbatim.
+            return basic_order
+        left_int = int(left)
+        top_int = int(top)
+        right_int = int(right)
+        bottom_int = int(bottom)
         boxes.append(
             (
-                left,
-                top,
-                int(right - (right - left) * 0.1),
-                int(bottom - (bottom - top) * 0.1),
+                left_int,
+                top_int,
+                int(right_int - (right_int - left_int) * 0.1),
+                int(bottom_int - (bottom_int - top_int) * 0.1),
             )
         )
     if not boxes:
         return []
-    # Unstructured requires every coordinate to be non-negative before it
-    # applies XY-cut. A single box extending beyond the media box makes it keep
-    # the deterministic basic order for the entire page.
-    int64_max = numpy.iinfo(numpy.int64).max
-    if any(coordinate < 0 or coordinate > int64_max for box in boxes for coordinate in box):
-        return basic_order
     result: list[int] = []
     internal_recursive_xy_cut(
         numpy.asarray(boxes, dtype=numpy.int64),

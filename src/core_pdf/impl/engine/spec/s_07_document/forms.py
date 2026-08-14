@@ -146,6 +146,19 @@ class FormsMixin:
                     or ""
                 )
                 if subtype == "Widget":
+                    widget_type_value = lookup_dict_key(resolved_kid, "FT")
+                    widget_type = (
+                        self.resolver.resolve_name(widget_type_value)
+                        or self.resolver.resolve_name_like_value(widget_type_value)
+                        or self.resolver.resolve_str(widget_type_value)
+                        or field_type
+                    )
+                    widget_title = self.resolver.resolve_str(lookup_dict_key(resolved_kid, "T"))
+                    widget_name = (
+                        f"{current_name}.{widget_title}"
+                        if current_name and widget_title
+                        else widget_title or current_name
+                    )
                     widget_value = lookup_dict_key(resolved_kid, "V")
                     if widget_value is None:
                         widget_value = value
@@ -153,8 +166,8 @@ class FormsMixin:
                         (
                             "record",
                             RawFormField(
-                                current_name,
-                                field_type,
+                                widget_name,
+                                widget_type,
                                 cast(PdfObject, widget_value),
                                 field_value_text(self, widget_value),
                                 field_widget_rect(self, resolved_kid),
