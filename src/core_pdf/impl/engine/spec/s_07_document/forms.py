@@ -243,11 +243,11 @@ class FormsMixin:
 
     def internal_widget_field_root(self: Any, annot: PdfDict) -> PdfDict:
         node = annot
+        seen = {id(node)}
         for _ in range(50):
             parent = self.resolver.resolve(lookup_dict_key(node, "Parent"))
-            if not isinstance(parent, dict) or parent is node:
+            if not isinstance(parent, dict) or id(parent) in seen:
                 break
-            if lookup_dict_key(parent, "FT") is None and lookup_dict_key(parent, "T") is None:
-                break
+            seen.add(id(parent))
             node = cast(PdfDict, parent)
         return node

@@ -40,6 +40,22 @@ class DocumentXRefMixin:
     xref_recovery_reason: str | None
     recovery_scan_all_revisions: bool
 
+    def strict_xref_validation_error(self) -> str | None:
+        """Return the syntax error hidden by native xref/object recovery, if any."""
+        start = XRefScanner.find_startxref(self.raw_data)
+        if start is None:
+            return None
+        try:
+            XRefScanner.load_section_chain(
+                self.raw_data,
+                start,
+                set(),
+                recover_malformed_objects=False,
+            )
+        except (PdfParseError, PdfUnsupportedError, ValueError, struct.error, OSError) as error:
+            return str(error)
+        return None
+
     def brute_force_xref(self) -> dict[int, PdfXRefEntry]:
         return XRefScanner.brute_force_scan(
             self.raw_data,

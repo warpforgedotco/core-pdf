@@ -203,6 +203,11 @@ def internal_nlp_features(
 
 def internal_pdf_too_complex(filename: object, password: str) -> bool:
     with PdfDocument.open(filename, password=password) as document:
+        strict_xref_error = document.strict_xref_validation_error()
+        if strict_xref_error == "invalid hex string" or (
+            strict_xref_error is not None and document.raw_data.find(b"%%EOF") < 0
+        ):
+            return True
         # pdfminer refuses a cyclic /Prev xref chain and consequently exposes
         # no pages.  Core-pdf deliberately recovers the document by scanning
         # indirect objects; the compatibility projection must retain the
@@ -572,7 +577,7 @@ def partition_pdf(filename: object, **kwargs: object) -> list[Element]:
                 fields = ()
             field_regions: list[internal_LayoutRegion] = []
             for field in fields:
-                if field.rect is None or field.type == "Btn" or not field.value_text:
+                if field.rect is None or field.type not in {"Tx", "Ch"} or not field.value_text:
                     continue
                 left, bottom, right, top = (float(value) for value in field.rect)
                 field_regions.append(

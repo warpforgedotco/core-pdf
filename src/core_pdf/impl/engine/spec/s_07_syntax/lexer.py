@@ -85,6 +85,7 @@ class PdfLexer:
         "current_obj_num",
         "current_gen_num",
         "kw_cache",
+        "recover_malformed_objects",
     )
 
     raw_data: memoryview
@@ -97,6 +98,7 @@ class PdfLexer:
     current_obj_num: int | None
     current_gen_num: int | None
     kw_cache: dict[bytes, object]
+    recover_malformed_objects: bool
 
     def __init__(
         self,
@@ -105,6 +107,7 @@ class PdfLexer:
         reference_resolver: Callable[[PdfReference], object] | None = None,
         decipher: Decipher | None = None,
         kw_cache: dict[bytes, object] | None = None,
+        recover_malformed_objects: bool = True,
     ) -> None:
 
         if type(data) is memoryview:
@@ -123,6 +126,7 @@ class PdfLexer:
         self.decipher = decipher
         self.current_obj_num = None
         self.current_gen_num = None
+        self.recover_malformed_objects = recover_malformed_objects
 
         if kw_cache is not None:
             self.kw_cache = kw_cache
@@ -377,6 +381,8 @@ class PdfLexer:
         try:
             return binascii.unhexlify(filtered)
         except binascii.Error:
+            if not self.recover_malformed_objects:
+                raise PdfParseError("invalid hex string") from None
             recovered = bytes(byte for byte in filtered if HEX_VALUE[byte] != 255)
             if not recovered:
                 return b""
@@ -858,7 +864,10 @@ class PdfLexer:
                 self.advance(2)
                 return values
             if self.raw_data[self.pos] != 47:
-                if self.recover_dictionary_key_position():
+                if (
+                    self.recover_malformed_objects
+                    and self.recover_dictionary_key_position()
+                ):
                     if self.pos >= self.data_len:
                         raise PdfParseError("unterminated dictionary")
                     if (
@@ -879,7 +888,10 @@ class PdfLexer:
                 values[key] = self.parse_object()
             except PdfParseError:
                 self.pos = value_start
-                if not self.recover_dictionary_entry_position():
+                if (
+                    not self.recover_malformed_objects
+                    or not self.recover_dictionary_entry_position()
+                ):
                     raise
 
     def recover_dictionary_key_position(self) -> bool:

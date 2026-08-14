@@ -1792,6 +1792,7 @@ class TextState:
             ("line_matrix_origin", (self.lm_e, self.lm_f)),
             ("horizontal_scale", self.horizontal_scale),
             ("char_space", self.char_space),
+            ("text_rise", self.rise),
             ("string_syntax", string_syntax),
             ("compatibility_data", compatibility_data),
         )
@@ -2708,13 +2709,13 @@ class TextState:
 
                     pending_data = None
 
-                delta = -item * adjustment_scale
+                adjustment = item * adjustment_scale
                 if is_vert:
-                    te += delta * tc
-                    tf += delta * td
+                    te -= adjustment * tc
+                    tf -= adjustment * td
                 else:
-                    te += delta * ta
-                    tf += delta * tb
+                    te -= adjustment * ta
+                    tf -= adjustment * tb
                 continue
 
             if t is str:
@@ -3088,9 +3089,9 @@ class TextState:
 
                     pending_data = None
 
-                delta = -item * text_scale
-                te += delta * ta
-                tf += delta * tb
+                adjustment = item * text_scale
+                te -= adjustment * ta
+                tf -= adjustment * tb
 
         if pending_data:
             n_data = len(pending_data)
@@ -3273,13 +3274,13 @@ class TextState:
                         self._append_text_impl(data=bytes(pending_bytes), decoder=decoder)
                     te, tf = self.tm_e, self.tm_f
                     pending_bytes.clear()
-                delta = -item * scale
+                adjustment = item * scale
                 if is_vert:
-                    te += delta * tc
-                    tf += delta * td
+                    te -= adjustment * tc
+                    tf -= adjustment * td
                 else:
-                    te += delta * ta
-                    tf += delta * tb
+                    te -= adjustment * ta
+                    tf -= adjustment * tb
             elif t is str:
                 pending_bytes.extend(item.encode("latin-1"))
 

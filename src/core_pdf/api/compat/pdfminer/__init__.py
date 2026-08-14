@@ -1012,10 +1012,6 @@ def _pdfminer_builtin_width(glyph: Any) -> float | None:
     """Return pdfminer's built-in width for a widthless Standard-14 font."""
     decoder = glyph.font_decoder
     projected_text = _pdfminer_glyph_text(glyph)
-    if projected_text in {"\t", "\n", "\r"}:
-        # PDFMiner's LTChar geometry treats decoded layout-control scalars as
-        # zero-width even when the source code has an explicit font width.
-        return 0.0
     font_widths = _mapping_value(decoder.font, "Widths")
     first_char = _mapping_value(decoder.font, "FirstChar")
     if isinstance(font_widths, (list, tuple)) and isinstance(first_char, int):
@@ -1367,6 +1363,44 @@ def extract_pages(
                     y0 = origin_y
                     y1 = y0 + effective_font_size
                     effective_font_height = effective_font_size
+                    line_origin = glyph_provenance.get("line_matrix_origin")
+                    if isinstance(line_origin, (tuple, list)) and len(line_origin) == 2:
+                        matrix_a, matrix_b, matrix_c, matrix_d = (
+                            float(value) for value in text_matrix
+                        )
+                        determinant = matrix_a * matrix_d - matrix_b * matrix_c
+                        if determinant:
+                            translate_x, translate_y = (float(value) for value in line_origin)
+                            baseline_x0, baseline_y0, baseline_x1, baseline_y1 = baseline
+                            advance_x = baseline_x1 - baseline_x0
+                            advance_y = baseline_y1 - baseline_y0
+                            local_advance = (
+                                -matrix_b * advance_x + matrix_a * advance_y
+                            ) / determinant
+                            half_width = float(metric[1]) * glyph.font_size * 0.001
+                            local_top = (
+                                (1000.0 - float(metric[2])) * glyph.font_size * 0.001
+                                + float(glyph_provenance.get("text_rise", 0.0))
+                            )
+                            corners = tuple(
+                                (
+                                    matrix_a * local_horizontal
+                                    + matrix_c * local_vertical
+                                    + translate_x,
+                                    matrix_b * local_horizontal
+                                    + matrix_d * local_vertical
+                                    + translate_y,
+                                )
+                                for local_horizontal in (
+                                    -half_width,
+                                    -half_width + glyph.font_size,
+                                )
+                                for local_vertical in (local_top + local_advance, local_top)
+                            )
+                            x0 = min(point[0] for point in corners)
+                            y0 = min(point[1] for point in corners)
+                            x1 = max(point[0] for point in corners)
+                            y1 = max(point[1] for point in corners)
                 elif (
                     baseline is not None
                     and isinstance(text_matrix, (tuple, list))
@@ -1436,8 +1470,8 @@ def extract_pages(
                     )
                     corners = tuple(
                         (
-                            layout_origin_x + along * matrix_a + vertical * matrix_c,
-                            layout_origin_y + along * matrix_b + vertical * matrix_d,
+                            along * matrix_a + vertical * matrix_c + layout_origin_x,
+                            along * matrix_b + vertical * matrix_d + layout_origin_y,
                         )
                         for along in (0.0, advance)
                         for vertical in (descent, top)

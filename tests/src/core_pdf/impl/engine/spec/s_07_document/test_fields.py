@@ -7,6 +7,7 @@ from pathlib import Path
 
 from core_pdf import PdfDocument
 from core_pdf.impl.engine.spec.s_07_document.fields import field_value_text
+from core_pdf.impl.engine.spec.s_07_document.forms import FormsMixin
 from core_pdf.impl.objects import PdfName, PdfString
 
 
@@ -38,3 +39,11 @@ def test_widget_value_overrides_empty_parent_value() -> None:
         fields = document.pages[0].get_fields()
 
     assert any(field.value_text == "Controlled by: CUI Category: LDC: POC:" for field in fields)
+
+
+def test_widget_field_root_crosses_non_field_parent_nodes() -> None:
+    root = {PdfName.of("FT"): PdfName.of("Tx")}
+    middle = {PdfName.of("Parent"): root}
+    widget = {PdfName.of("Parent"): middle}
+
+    assert FormsMixin.internal_widget_field_root(Document(), widget) is root

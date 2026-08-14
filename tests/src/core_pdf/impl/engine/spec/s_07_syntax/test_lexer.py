@@ -5,6 +5,7 @@ import pytest
 
 from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.engine.spec.s_07_syntax.tokens import DELIMITERS, WHITESPACE
+from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.objects import PdfReference, PdfStream, PdfString
 
 
@@ -72,6 +73,11 @@ def test_hex_string_decode_supports_all_byte_views(
         data = content
 
     assert PdfLexer(data).parse_object() == PdfString(expected)
+
+
+def test_strict_object_parsing_rejects_recovered_hex_string_bytes() -> None:
+    with pytest.raises(PdfParseError, match="invalid hex string"):
+        PdfLexer(b"<4g86>", recover_malformed_objects=False).parse_object()
 
 
 @pytest.mark.parametrize(
