@@ -799,6 +799,12 @@ class TextState:
             font_size=self.font_size,
             font_operand=self.font_operand,
             font_size_operand=self.font_size_operand,
+            horizontal_scale=self.horizontal_scale,
+            char_space=self.char_space,
+            word_space=self.word_space,
+            rise=self.rise,
+            leading=self.leading,
+            render_mode=self.render_mode,
             current_font=self.current_font,
             current_decoder=self.current_decoder,
             current_decoder_resources_id=self.current_decoder_resources_id,
@@ -809,6 +815,12 @@ class TextState:
             fill_opacity=self.fill_opacity,
             stroke_color=self.stroke_color,
             stroke_pattern=self.stroke_pattern,
+            stroke_opacity=self.stroke_opacity,
+            line_width=self.line_width,
+            line_cap=self.line_cap,
+            line_join=self.line_join,
+            miter_limit=self.miter_limit,
+            dash_pattern=self.dash_pattern,
             compatibility_depth=self.compatibility_depth,
             fill_color_space=self.fill_color_space,
             stroke_color_space=self.stroke_color_space,
@@ -820,6 +832,9 @@ class TextState:
             layout_form_bbox=self.layout_form_bbox,
             layout_form_id=self.layout_form_id,
             pending_line_break=self.pending_line_break,
+            compat_tj_cursor_x=self.compat_tj_cursor_x,
+            compat_tj_cursor_y=self.compat_tj_cursor_y,
+            invisible_text_layer=self.invisible_text_layer,
             xobject_depth=self.xobject_depth,
             resource_cache=self.resource_cache,
             resolved_resource_categories=self.resolved_resource_categories,
@@ -834,6 +849,12 @@ class TextState:
         self.font_size = state.font_size
         self.font_operand = state.font_operand
         self.font_size_operand = state.font_size_operand
+        self.horizontal_scale = state.horizontal_scale
+        self.char_space = state.char_space
+        self.word_space = state.word_space
+        self.rise = state.rise
+        self.leading = state.leading
+        self.render_mode = state.render_mode
         self.current_font = state.current_font
         self.current_decoder = state.current_decoder
         self.current_decoder_resources_id = state.current_decoder_resources_id
@@ -845,6 +866,12 @@ class TextState:
         self.fill_opacity = state.fill_opacity
         self.stroke_color = state.stroke_color
         self.stroke_pattern = state.stroke_pattern
+        self.stroke_opacity = state.stroke_opacity
+        self.line_width = state.line_width
+        self.line_cap = state.line_cap
+        self.line_join = state.line_join
+        self.miter_limit = state.miter_limit
+        self.dash_pattern = state.dash_pattern
         self.fill_color_space = state.fill_color_space
         self.stroke_color_space = state.stroke_color_space
         self.compatibility_depth = state.compatibility_depth
@@ -856,6 +883,9 @@ class TextState:
         self.layout_form_bbox = state.layout_form_bbox
         self.layout_form_id = state.layout_form_id
         self.pending_line_break = state.pending_line_break
+        self.compat_tj_cursor_x = state.compat_tj_cursor_x
+        self.compat_tj_cursor_y = state.compat_tj_cursor_y
+        self.invisible_text_layer = state.invisible_text_layer
         self.xobject_depth = state.xobject_depth
         self.resource_cache = state.resource_cache
         self.resolved_resource_categories = state.resolved_resource_categories
@@ -1919,6 +1949,8 @@ class TextState:
                 observation_provenance = (
                     *glyph_provenance,
                     ("pdfminer_origin", pdfminer_origin),
+                    ("pdfminer_matrix_origin", (compat_origin_x, compat_origin_y)),
+                    ("pdfminer_cursor", (compat_cursor_x, compat_cursor_y)),
                 )
                 if is_vertical:
                     metric = decoder.vertical_metrics.get(

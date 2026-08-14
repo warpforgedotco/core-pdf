@@ -1011,8 +1011,10 @@ def _pdfminer_builtin_width(glyph: Any) -> float | None:
     projected_text = _pdfminer_glyph_text(glyph)
     font_widths = _mapping_value(decoder.font, "Widths")
     first_char = _mapping_value(decoder.font, "FirstChar")
+    legacy_widths: list[float] | None = None
+    width_index = -1
     if isinstance(font_widths, (list, tuple)) and isinstance(first_char, int):
-        legacy_widths: list[float] = []
+        legacy_widths = []
         recovered_malformed_token = False
         for width_value in font_widths:
             if isinstance(width_value, str):
@@ -1049,12 +1051,27 @@ def _pdfminer_builtin_width(glyph: Any) -> float | None:
     if decoder.is_cid_font or decoder.is_type3:
         return None
     font = decoder.font
-    if _mapping_value(font, "Widths") is not None:
+    if legacy_widths is not None:
+        if 0 <= width_index < len(legacy_widths):
+            return legacy_widths[width_index]
+        descriptor = _mapping_value(font, "FontDescriptor")
+        missing_width = _mapping_value(descriptor, "MissingWidth")
+        return float(missing_width) if isinstance(missing_width, (int, float)) else 0.0
+    if font_widths is not None:
         return None
-    base_font = str(_mapping_value(font, "BaseFont") or "").split("+")[-1]
+    # FontMetricsDB is keyed by the exact /BaseFont name.  A subset prefix is
+    # semantically significant here: ``ABCDEF+Helvetica`` must use its PDF
+    # descriptor and widths rather than Helvetica's built-in AFM metrics.
+    base_font = str(_mapping_value(font, "BaseFont") or "")
     entry = FONT_DATA.get(base_font)
     if not isinstance(entry, dict):
-        return None
+        descriptor = _mapping_value(font, "FontDescriptor")
+        missing_width = _mapping_value(descriptor, "MissingWidth")
+        # PDFSimpleFont constructs a zero-filled width table when /Widths is
+        # absent, then falls back to the descriptor's /MissingWidth. Native
+        # core extraction may recover a better width from the embedded font;
+        # the PDFMiner projection must retain the legacy layout metric.
+        return float(missing_width) if isinstance(missing_width, (int, float)) else 0.0
     widths = entry.get("widths")
     code = glyph.char_code
     if not isinstance(widths, dict) or code is None or not 0 <= code < 256:
@@ -1200,22 +1217,14 @@ def extract_pages(  # noqa: C901
                 following_baseline = following.baseline
                 provenance = dict(glyph.provenance) if glyph.provenance else {}
                 following_provenance = dict(following.provenance) if following.provenance else {}
-                text_matrix = provenance.get("text_matrix")
-                along_is_x = not (
-                    isinstance(text_matrix, (tuple, list))
-                    and len(text_matrix) == 4
-                    and abs(float(text_matrix[1])) > abs(float(text_matrix[0]))
-                )
                 continuous = (
                     baseline is not None
                     and following_baseline is not None
-                    and (
-                        abs(baseline[2] - following_baseline[0]) <= 1e-6
-                        if along_is_x
-                        else abs(baseline[3] - following_baseline[1]) <= 1e-6
-                    )
                     and provenance.get("line_matrix_origin")
                     == following_provenance.get("line_matrix_origin")
+                    and provenance.get("pdfminer_matrix_origin")
+                    == following_provenance.get("pdfminer_matrix_origin")
+                    and provenance.get("text_matrix") == following_provenance.get("text_matrix")
                 )
                 if not continuous:
                     correction_x = 0.0
@@ -1347,6 +1356,14 @@ def extract_pages(  # noqa: C901
                 orientation = glyph.rotation_angle % 360
                 glyph_provenance = dict(glyph.provenance) if glyph.provenance else {}
                 text_matrix = glyph_provenance.get("text_matrix")
+                pdfminer_matrix_origin = glyph_provenance.get("pdfminer_matrix_origin")
+                pdfminer_cursor = glyph_provenance.get("pdfminer_cursor")
+                exact_cursor_projection = (
+                    isinstance(pdfminer_matrix_origin, (tuple, list))
+                    and len(pdfminer_matrix_origin) == 2
+                    and isinstance(pdfminer_cursor, (tuple, list))
+                    and len(pdfminer_cursor) == 2
+                )
                 horizontal_scale = float(glyph_provenance.get("horizontal_scale", 100.0)) * 0.01
                 coordinates_in_layout_space = False
                 if (
@@ -1392,9 +1409,7 @@ def extract_pages(  # noqa: C901
                     local_top = (1000.0 - float(metric[2])) * local_font_size * 0.001 + float(
                         glyph_provenance.get("text_rise", 0.0)
                     )
-                    local_advance = (
-                        -float(metric[0]) * local_font_size * 0.001 * horizontal_scale
-                    )
+                    local_advance = -float(metric[0]) * local_font_size * 0.001 * horizontal_scale
                     corners = tuple(
                         (
                             local_horizontal * matrix_a + local_vertical * matrix_c + origin_x,
@@ -1478,9 +1493,10 @@ def extract_pages(  # noqa: C901
                         )
                     descent_scale = 0.001
                     descent_value = float(getattr(glyph.font_decoder, "descent", -200.0))
-                    base_font = str(
-                        _mapping_value(glyph.font_decoder.font, "BaseFont") or ""
-                    ).split("+")[-1]
+                    # Match FontMetricsDB's exact-name lookup. Subset fonts
+                    # retain their embedded descriptor instead of inheriting
+                    # the similarly named standard font's descent.
+                    base_font = str(_mapping_value(glyph.font_decoder.font, "BaseFont") or "")
                     builtin_metrics = FONT_DATA.get(base_font)
                     if (
                         not getattr(glyph.font_decoder, "is_cid_font", False)
@@ -1522,24 +1538,55 @@ def extract_pages(  # noqa: C901
                     top = descent + glyph.font_size
                     advance = normalized_width * horizontal_scale * glyph.font_size
                     media_left, media_bottom, _media_right, _media_top = page.media_box
-                    layout_origin_x = origin_x - media_left
-                    layout_origin_y = origin_y - media_bottom
                     page_rotation = int(page.rotation) % 360
-                    (
-                        layout_origin_x,
-                        layout_origin_y,
-                        matrix_a,
-                        matrix_b,
-                        matrix_c,
-                        matrix_d,
-                    ) = _pdfminer_rotated_text_matrix(
-                        layout_origin_x,
-                        layout_origin_y,
-                        (matrix_a, matrix_b, matrix_c, matrix_d),
-                        page_rotation,
-                        page_width,
-                        page_height,
-                    )
+                    if exact_cursor_projection:
+                        matrix_origin_x, matrix_origin_y = (
+                            float(value) for value in pdfminer_matrix_origin
+                        )
+                        cursor_x, cursor_y = (float(value) for value in pdfminer_cursor)
+                        (
+                            matrix_origin_x,
+                            matrix_origin_y,
+                            matrix_a,
+                            matrix_b,
+                            matrix_c,
+                            matrix_d,
+                        ) = _pdfminer_rotated_text_matrix(
+                            matrix_origin_x + offset_x - media_left,
+                            matrix_origin_y + offset_y - media_bottom,
+                            (matrix_a, matrix_b, matrix_c, matrix_d),
+                            page_rotation,
+                            page_width,
+                            page_height,
+                        )
+                        # Preserve PDFMiner's translate_matrix operation order:
+                        # rotate the text matrix first, then translate it by the
+                        # local line cursor. Exact layout grouping can depend on
+                        # the resulting final ULP.
+                        layout_origin_x = (
+                            cursor_x * matrix_a + cursor_y * matrix_c + matrix_origin_x
+                        )
+                        layout_origin_y = (
+                            cursor_x * matrix_b + cursor_y * matrix_d + matrix_origin_y
+                        )
+                    else:
+                        layout_origin_x = origin_x - media_left
+                        layout_origin_y = origin_y - media_bottom
+                        (
+                            layout_origin_x,
+                            layout_origin_y,
+                            matrix_a,
+                            matrix_b,
+                            matrix_c,
+                            matrix_d,
+                        ) = _pdfminer_rotated_text_matrix(
+                            layout_origin_x,
+                            layout_origin_y,
+                            (matrix_a, matrix_b, matrix_c, matrix_d),
+                            page_rotation,
+                            page_width,
+                            page_height,
+                        )
                     corners = tuple(
                         (
                             along * matrix_a + vertical * matrix_c + layout_origin_x,
