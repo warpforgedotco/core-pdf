@@ -3,6 +3,9 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
+from core_pdf import PdfDocument
 from core_pdf.impl.engine.spec.s_07_document.fields import field_value_text
 from core_pdf.impl.objects import PdfName, PdfString
 
@@ -26,3 +29,12 @@ def test_field_value_text_ignores_signature_dictionary() -> None:
     value = {PdfName.of("Type"): PdfName.of("Sig"), PdfName.of("Contents"): b"signature"}
 
     assert field_value_text(Document(), value) == ""
+
+
+def test_widget_value_overrides_empty_parent_value() -> None:
+    pdf_path = Path("tests/fixtures/pikepdf/tests/resources/form_dd0293.pdf")
+
+    with PdfDocument.open(pdf_path) as document:
+        fields = document.pages[0].get_fields()
+
+    assert any(field.value_text == "Controlled by: CUI Category: LDC: POC:" for field in fields)

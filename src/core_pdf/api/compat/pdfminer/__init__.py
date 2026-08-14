@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import heapq
+import re
 from bisect import bisect_left, bisect_right
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
@@ -741,6 +742,10 @@ def _pdfminer_glyph_text(glyph: Any) -> str:
             glyph.unicode_source != "identity"
             and not getattr(decoder, "is_cid_font", False)
             and glyph.char_code is not None
+            and (
+                not glyph_name
+                or getattr(decoder, "base_encoding", None) == "WinAnsiEncoding"
+            )
         ):
             base_encoding = getattr(decoder, "base_encoding", None)
             if base_encoding is None and str(_mapping_value(decoder.font, "Subtype")) == "TrueType":
@@ -751,6 +756,12 @@ def _pdfminer_glyph_text(glyph: Any) -> str:
         if getattr(decoder, "is_cid_font", False):
             return f"(cid:{glyph.cid})"
         if glyph_name and not glyph_name_text and not getattr(decoder, "is_type3", False):
+            return f"(cid:{glyph.cid})"
+        if glyph.unicode_source == "identity":
+            # An explicit ToUnicode CMap is authoritative to PDFMiner. When
+            # it omits a simple-font code and the encoding supplies no glyph
+            # name, PDFMiner exposes the unresolved code instead of applying
+            # Core's useful identity fallback.
             return f"(cid:{glyph.cid})"
     elif glyph_name_text and (
         glyph.unicode_source == "encoding" or not getattr(decoder, "is_cid_font", False)
@@ -979,6 +990,33 @@ def _pdfminer_builtin_width(glyph: Any) -> float | None:
     """Return pdfminer's built-in width for a widthless Standard-14 font."""
     decoder = glyph.font_decoder
     projected_text = _pdfminer_glyph_text(glyph)
+    if projected_text in {"\t", "\n", "\r"}:
+        # PDFMiner's LTChar geometry treats decoded layout-control scalars as
+        # zero-width even when the source code has an explicit font width.
+        return 0.0
+    font_widths = _mapping_value(decoder.font, "Widths")
+    first_char = _mapping_value(decoder.font, "FirstChar")
+    if isinstance(font_widths, (list, tuple)) and isinstance(first_char, int):
+        legacy_widths: list[float] = []
+        recovered_malformed_token = False
+        for width_value in font_widths:
+            if isinstance(width_value, str):
+                match = re.fullmatch(r"[^0-9+.-]+([+-]?(?:\d+(?:\.\d*)?|\.\d+))", width_value)
+                if match is not None:
+                    # PDFMiner's lexer separates a leading malformed control
+                    # token from trailing numeric bytes. Its numeric coercion
+                    # gives the former zero width and retains the latter as
+                    # the following array entry.
+                    legacy_widths.extend((0.0, float(match.group(1))))
+                    recovered_malformed_token = True
+                    continue
+            try:
+                legacy_widths.append(float(width_value))
+            except (TypeError, ValueError):
+                legacy_widths.append(0.0)
+        width_index = glyph.char_code - first_char if glyph.char_code is not None else -1
+        if recovered_malformed_token and 0 <= width_index < len(legacy_widths):
+            return legacy_widths[width_index]
     glyph_name = getattr(decoder, "encoding_differences", {}).get(glyph.char_code)
     if (
         not decoder.is_cid_font
@@ -1009,17 +1047,17 @@ def _pdfminer_builtin_width(glyph: Any) -> float | None:
     return 0.0 if width is None else float(width)
 
 
-def _pdfminer_glyph_is_clipped(glyph: Any) -> bool:
+def _pdfminer_form_glyph_is_clipped(glyph: Any) -> bool:
     provenance = dict(glyph.provenance) if glyph.provenance else {}
+    if int(provenance.get("xobject_depth", 0) or 0) <= 0:
+        return False
     clip = provenance.get("clip_bbox")
     if not isinstance(clip, (tuple, list)) or len(clip) != 4:
         return False
     left, bottom, right, top = (float(value) for value in clip)
-    # PDFMiner does not apply ordinary clipping paths to text layout, so text
-    # outside a valid page/form clip remains observable.  It does, however,
-    # stop producing text after an empty clip.  Preserve that distinction
-    # rather than treating every recorded clip as a visibility filter.
-    return right <= left or top <= bottom
+    # PDFMiner ignores page-content clipping during layout, but form
+    # traversal still rejects a form whose transformed bounds are empty.
+    return right <= left and top <= bottom
 
 
 def _pdfminer_layout_origin(
@@ -1138,9 +1176,20 @@ def extract_pages(
                     correction_y = 0.0
                     continue
                 builtin_width = _pdfminer_builtin_width(glyph)
-                if builtin_width == 0.0:
-                    correction_x -= baseline[2] - baseline[0]
-                    correction_y -= baseline[3] - baseline[1]
+                if builtin_width is not None:
+                    width_code = (
+                        glyph.cid
+                        if getattr(glyph.font_decoder, "is_cid_font", False)
+                        else glyph.char_code
+                    )
+                    source_width = (
+                        float(glyph.font_decoder.glyph_width(width_code))
+                        if width_code is not None
+                        else 0.0
+                    )
+                    retained_ratio = builtin_width / source_width if source_width else 0.0
+                    correction_x -= (baseline[2] - baseline[0]) * (1.0 - retained_ratio)
+                    correction_y -= (baseline[3] - baseline[1]) * (1.0 - retained_ratio)
                 if glyph.seqno == following.seqno:
                     continue
                 char_space = float(provenance.get("char_space", 0.0))
@@ -1167,7 +1216,7 @@ def extract_pages(
             )
             vertical_positions: dict[tuple[str | None, int], tuple[float, int]] = {}
             for glyph_index, glyph in enumerate(projected_glyphs):
-                if _pdfminer_glyph_is_clipped(glyph):
+                if _pdfminer_form_glyph_is_clipped(glyph):
                     continue
                 run_index = bisect_right(run_sequences, glyph.seqno) - 1
                 if id(glyph) in skipped_ligature_parts:
@@ -1280,6 +1329,8 @@ def extract_pages(
                     # mathematically touching boxes can miss by one ULP.
                     origin_x, origin_y = _pdfminer_layout_origin(
                         baseline,
+                        # Core advances complete show arrays in bulk whereas
+                        # PDFMiner updates the vertical cursor token by token.
                         normalize_noise=effective_font_size == glyph.font_size,
                     )
                     # Preserve PDFMiner's operation order here.  Its layout

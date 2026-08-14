@@ -146,14 +146,17 @@ class FormsMixin:
                     or ""
                 )
                 if subtype == "Widget":
+                    widget_value = lookup_dict_key(resolved_kid, "V")
+                    if widget_value is None:
+                        widget_value = value
                     stack.append(
                         (
                             "record",
                             RawFormField(
                                 current_name,
                                 field_type,
-                                cast(PdfObject, value),
-                                value_text,
+                                cast(PdfObject, widget_value),
+                                field_value_text(self, widget_value),
                                 field_widget_rect(self, resolved_kid),
                                 resolved_kid,
                                 kids=[],

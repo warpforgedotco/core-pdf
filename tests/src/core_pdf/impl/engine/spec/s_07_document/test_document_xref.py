@@ -1,3 +1,6 @@
+from pathlib import Path
+
+from core_pdf import PdfDocument
 from core_pdf.impl.engine.spec.s_07_document.document_xref import DocumentXRefMixin
 from core_pdf.impl.engine.spec.s_07_syntax.xref import PdfXRefEntry, key_for
 from core_pdf.impl.objects import PdfReference
@@ -80,3 +83,12 @@ def test_repairs_header_relative_xref_with_accumulated_producer_drift() -> None:
 
     assert document.xref[key_for(5)].offset == actual_offset
     assert document.xref_was_recovered is True
+
+
+def test_repaired_xref_keeps_later_objects_with_limited_recovery() -> None:
+    pdf_path = Path("tests/fixtures/pdfplumber/tests/pdfs/issue-848.pdf")
+
+    with PdfDocument.open(pdf_path, recovery_scan_all_revisions=False) as document:
+        assert document.xref_was_recovered
+        assert len(document.pages[0].content_streams) == 1
+        assert document.pages[0].get_page_program().products.glyphs

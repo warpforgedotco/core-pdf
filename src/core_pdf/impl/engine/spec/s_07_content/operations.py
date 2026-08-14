@@ -925,7 +925,15 @@ def dispatch_operations(
                                             if handler_target.current_decoder is not None
                                             else handler_target.get_decoder()
                                         )
-                                        operand = operands[0]
+                                        operand = operands[
+                                            op_count - 1
+                                            if getattr(
+                                                handler_target.document,
+                                                "legacy_pdfminer_text_operators",
+                                                False,
+                                            )
+                                            else 0
+                                        ]
                                         if type(operand) is PdfString:
                                             handler_target.append_text(
                                                 data=operand.data,

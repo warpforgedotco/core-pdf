@@ -70,12 +70,6 @@ class DocumentXRefMixin:
         try:
             self.xref, self.trailer_dict = XRefScanner.load_section_chain(data, start, set())
             self.repair_stale_xref_offsets()
-            if self.xref_was_recovered and not self.recovery_scan_all_revisions:
-                # pdfminer's non-strict fallback abandons a damaged xref as a
-                # whole and scans objects only through the first trailer.
-                self.xref = self.brute_force_xref()
-                catalog_ref = self.infer_catalog_root()
-                self.trailer_dict = {"Root": catalog_ref} if catalog_ref is not None else {}
             self.trailer_dict = self.merge_recovered_trailer_metadata(self.trailer_dict)
             root_ref = lookup_dict_key(self.trailer_dict, "Root")
             if root_ref is None or not self.is_valid_catalog_root(root_ref):
