@@ -55,20 +55,27 @@ def cluster_by(
     values: Iterable[Any], key: Callable[[Any], Any] | str, tolerance: float = 0
 ) -> list[list[Any]]:
     getter = itemgetter(key) if isinstance(key, str) else key
-    groups: list[list[Any]] = []
-    for item in sorted(values, key=getter):
-        value = getter(item)
-        previous = getter(groups[-1][-1]) if groups else None
-        separated = bool(groups) and (
-            value - previous > tolerance
-            if isinstance(value, (int, float)) and isinstance(previous, (int, float))
-            else value != previous
-        )
-        if not groups or separated:
-            groups.append([item])
-        else:
-            groups[-1].append(item)
-    return groups
+    items = list(values)
+    ordered_values = sorted({getter(item) for item in items})
+    cluster_ids: dict[Any, int] = {}
+    cluster = 0
+    previous: Any = None
+    for index, value in enumerate(ordered_values):
+        if index:
+            separated = (
+                value - previous > tolerance
+                if isinstance(value, (int, float)) and isinstance(previous, (int, float))
+                else value != previous
+            )
+            if separated:
+                cluster += 1
+        cluster_ids[value] = cluster
+        previous = value
+    # Sorting only by cluster id is intentionally stable. pdfplumber retains
+    # source order within a geometric line; sorting by the raw coordinate here
+    # changes where zero-width space glyphs split words.
+    ordered = sorted(items, key=lambda item: cluster_ids[getter(item)])
+    return [list(group) for _, group in groupby(ordered, lambda item: cluster_ids[getter(item)])]
 
 
 def cluster_by_preserving_order(
@@ -179,7 +186,15 @@ class TableSettings:
 
 def _source(value: PdfInput, password: str = "", unicode_norm: str | None = None) -> PdfDocument:
     try:
-        document = PdfDocument.open(value, password=password)
+        # pdfplumber consumes pdfminer.six's parser semantics.  Keep the
+        # engine's native recovery and text-operator behavior unchanged, but
+        # select the legacy policy at this compatibility boundary.
+        document = PdfDocument.open(
+            value,
+            password=password,
+            recovery_scan_all_revisions=False,
+            legacy_pdfminer_text_operators=True,
+        )
     except Exception as exc:
         raise PdfminerException(exc) from exc
     cast(Any, document).compat_unicode_norm = unicode_norm
@@ -206,6 +221,7 @@ class EnginePageAdapter:
             internal_pdfminer_ligature_overrides,
             internal_pdfminer_literal_glyphs,
             internal_pdfminer_normalized_width,
+            internal_pdfminer_offsets,
         )
 
         compatibility_glyphs: list[Any] = []
@@ -216,7 +232,8 @@ class EnginePageAdapter:
                 compatibility_glyphs.extend(underlying)
             else:
                 compatibility_glyphs.append(glyph)
-        projected_glyphs, _ = internal_pdfminer_literal_glyphs(compatibility_glyphs)
+        projected_glyphs, literal_offsets = internal_pdfminer_literal_glyphs(compatibility_glyphs)
+        pdfminer_offsets = internal_pdfminer_offsets(projected_glyphs, literal_offsets)
         ligatures, skipped_ligature_parts = internal_pdfminer_ligature_overrides(projected_glyphs)
         for glyph in projected_glyphs:
             if id(glyph) in skipped_ligature_parts:
@@ -226,12 +243,37 @@ class EnginePageAdapter:
             if not text or ("source", "annotation_appearance") in glyph.provenance:
                 continue
             x0, y0, x1, y1 = ligature[1] if ligature is not None else glyph.advance_bbox
+            offset_x, offset_y = pdfminer_offsets.get(id(glyph), (0.0, 0.0))
+            x0 += offset_x
+            x1 += offset_x
+            y0 += offset_y
+            y1 += offset_y
             font_height = glyph.effective_font_height or glyph.font_size
             width_code = glyph.char_code if glyph.char_code is not None else glyph.cid
             width_lookup = getattr(glyph.font_decoder, "glyph_width", None)
             provenance = dict(glyph.provenance) if glyph.provenance else {}
             matrix = provenance.get("text_matrix")
             origin = provenance.get("pdfminer_origin")
+            upright = glyph.rotation_angle % 180 == 0
+            advance = x1 - x0
+            if isinstance(matrix, (tuple, list)) and len(matrix) == 4:
+                a, b, c, d = (float(value) for value in matrix)
+                scaling = float(provenance.get("horizontal_scale", 100.0)) * 0.01
+                # The engine records the text matrix in unrotated page space,
+                # while pdfminer folds the page's rotation into LTChar.matrix.
+                # Apply that final coordinate transform before evaluating the
+                # orientation predicate.
+                if self.info.rotation % 360 == 90:
+                    a, b, c, d = b, -a, d, -c
+                elif self.info.rotation % 360 == 180:
+                    a, b, c, d = -a, -b, -c, -d
+                elif self.info.rotation % 360 == 270:
+                    a, b, c, d = -b, a, -d, c
+                # This is pdfminer's LTChar orientation test.  In particular, a
+                # quarter-turned text matrix can still be "upright": upright
+                # describes the matrix handedness used by word grouping, not
+                # whether the baseline is horizontal on the rendered page.
+                upright = a * d * scaling > 0.0 and b * c <= 0.0
             if (
                 getattr(glyph.font_decoder, "is_vertical", False)
                 and width_code is not None
@@ -250,20 +292,22 @@ class EnginePageAdapter:
                 )
                 a, b, c, d = (float(value) for value in matrix)
                 origin_x, origin_y = (float(value) for value in origin)
+                origin_x += offset_x
+                origin_y += offset_y
                 font_size = glyph.font_size
                 scaling = float(provenance.get("horizontal_scale", 100.0)) * 0.01
                 local_left = -float(metric[1]) * font_size * 0.001
                 local_top = (1000.0 - float(metric[2])) * font_size * 0.001 + float(
                     provenance.get("text_rise", 0.0)
                 )
-                local_advance = -float(metric[0]) * font_size * 0.001 * scaling
+                advance = -float(metric[0]) * font_size * 0.001 * scaling
                 corners = tuple(
                     (
                         horizontal * a + vertical * c + origin_x,
                         horizontal * b + vertical * d + origin_y,
                     )
                     for horizontal in (local_left, local_left + font_size)
-                    for vertical in (local_top + local_advance, local_top)
+                    for vertical in (local_top + advance, local_top)
                 )
                 x0 = min(point[0] for point in corners)
                 y0 = min(point[1] for point in corners)
@@ -283,6 +327,8 @@ class EnginePageAdapter:
                 ):
                     a, b, c, d = (float(value) for value in matrix)
                     origin_x, origin_y = (float(value) for value in origin)
+                    origin_x += offset_x
+                    origin_y += offset_y
                     font_size = glyph.font_size
                     scaling = float(provenance.get("horizontal_scale", 100.0)) * 0.01
                     advance = internal_pdfminer_normalized_width(glyph) * font_size * scaling
@@ -313,6 +359,8 @@ class EnginePageAdapter:
                 font_size=font_height,
                 color=glyph.fill,
                 rotation_angle=glyph.rotation_angle,
+                upright=upright,
+                advance=advance,
                 sequence=glyph.seqno,
             )
 
@@ -391,15 +439,22 @@ def _envelope(
 def _char(page: EnginePageAdapter, item: Any, doctop: float) -> ObjectDict:
     x0, top, x1, bottom = _bbox(page, (item.bbox.x0, item.bbox.y0, item.bbox.x1, item.bbox.y1))
     if page.info.rotation % 360 == 90:
-        rotated_width = max(page.info.width, page.info.height)
+        rotated_width = page.info.height
         x0, x1, top, bottom = (
             rotated_width - bottom,
             rotated_width - top,
             x0,
             x1,
         )
+    elif page.info.rotation % 360 == 180:
+        x0, x1, top, bottom = (
+            page.info.width - x1,
+            page.info.width - x0,
+            page.info.height - bottom,
+            page.info.height - top,
+        )
     elif page.info.rotation % 360 == 270:
-        rotated_height = max(page.info.width, page.info.height)
+        rotated_height = page.info.width
         x0, x1, top, bottom = top, bottom, rotated_height - x1, rotated_height - x0
     text = item.text
     document = getattr(page.page, "document", None)
@@ -417,8 +472,8 @@ def _char(page: EnginePageAdapter, item: Any, doctop: float) -> ObjectDict:
         size=item.font_size or 0.0,
         stroking_color=item.color,
         non_stroking_color=item.color,
-        upright=(item.rotation_angle - page.info.rotation) % 180 == 0,
-        adv=x1 - x0,
+        upright=item.upright,
+        adv=item.advance,
         seqno=item.sequence,
     )
 
@@ -1736,14 +1791,15 @@ class PDF(ClosingMixin):
     def pages(self) -> list[Page]:
         if self._pages is None:
             try:
+                from ...pdfminer import internal_pdfminer_resolvable_pages
+
                 doctop = 0.0
                 self._pages = []
-                page_count = self._document.page_count()
-                indexes = self._page_selection or range(1, page_count + 1)
-                for page_number in indexes:
-                    index = page_number - 1
-                    if index < 0 or index >= page_count:
-                        raise IndexError(page_number)
+                resolvable = tuple(internal_pdfminer_resolvable_pages(self._document))
+                selected = set(self._page_selection) if self._page_selection is not None else None
+                for page_number, (index, _page) in enumerate(resolvable, 1):
+                    if selected is not None and page_number not in selected:
+                        continue
                     page = Page(self, index, doctop)
                     self._pages.append(page)
                     doctop += page.height
@@ -2090,6 +2146,7 @@ def _words(chars: Iterable[ObjectDict], **kwargs: Any) -> list[ObjectDict]:
     def emit_word(word_chars: list[ObjectDict], direction: str) -> None:
         x0, top, x1, bottom = merge_bboxes(obj_to_bbox(char) for char in word_chars)
         first = word_chars[0]
+        doctop_adjustment = first["doctop"] - first["top"]
         word: ObjectDict = {
             "text": "".join(
                 LIGATURE_EXPANSIONS.get(char["text"], char["text"])
@@ -2100,7 +2157,7 @@ def _words(chars: Iterable[ObjectDict], **kwargs: Any) -> list[ObjectDict]:
             "x0": x0,
             "x1": x1,
             "top": top,
-            "doctop": top + first["doctop"] - first["top"],
+            "doctop": top + doctop_adjustment,
             "bottom": bottom,
             "upright": first.get("upright", True),
             "height": bottom - top,
@@ -2156,14 +2213,39 @@ def _words(chars: Iterable[ObjectDict], **kwargs: Any) -> list[ObjectDict]:
                         if ratio is not None
                         else tolerance
                     )
-                    if direction == "ltr":
-                        starts_new = (
-                            char["x0"] < previous["x0"]
-                            or char["x0"] > previous["x1"] + intra_tolerance
-                            or abs(char["top"] - previous["top"]) > y_tolerance
-                        )
+                    if direction in {"ltr", "rtl"}:
+                        cross_tolerance = y_tolerance
+                        previous_cross = previous["top"]
+                        current_cross = char["top"]
+                        if direction == "ltr":
+                            previous_start = previous["x0"]
+                            previous_end = previous["x1"]
+                            current_start = char["x0"]
+                        else:
+                            previous_start = -previous["x1"]
+                            previous_end = -previous["x0"]
+                            current_start = -char["x1"]
                     else:
-                        starts_new = abs(char[line_key] - previous[line_key]) > line_tolerance
+                        # pdfplumber swaps its x/y tolerances for rotated text:
+                        # the vertical distance is intraline and x is the
+                        # cross-line coordinate.
+                        intra_tolerance = y_tolerance
+                        cross_tolerance = tolerance
+                        previous_cross = previous["x0"]
+                        current_cross = char["x0"]
+                        if direction == "ttb":
+                            previous_start = previous["top"]
+                            previous_end = previous["bottom"]
+                            current_start = char["top"]
+                        else:
+                            previous_start = -previous["bottom"]
+                            previous_end = -previous["top"]
+                            current_start = -char["bottom"]
+                    starts_new = (
+                        current_start < previous_start
+                        or current_start > previous_end + intra_tolerance
+                        or abs(current_cross - previous_cross) > cross_tolerance
+                    )
                     if starts_new or punctuation_boundary:
                         emit_word(current, direction)
                         current = []

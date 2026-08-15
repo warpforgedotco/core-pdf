@@ -3,7 +3,7 @@ from __future__ import annotations
 import heapq
 import re
 from bisect import bisect_left, bisect_right
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
 from html import escape
 from io import BytesIO
@@ -12,6 +12,9 @@ from typing import Any, BinaryIO, TextIO, TypeAlias, cast
 from core_pdf import PdfDocument, PdfPage
 from core_pdf._vendor.fontTools.agl import toUnicode
 from core_pdf.impl.engine.layout.geometry import bbox_union
+from core_pdf.impl.engine.spec.s_07_objects.coercion import normalize_pdf_name
+from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_07_syntax.xref import XRefScanner
 from core_pdf.impl.engine.spec.s_09_fonts.data.base_encodings import (
     MAC_ROMAN_ENCODING,
     STANDARD_ENCODING,
@@ -24,25 +27,99 @@ from core_pdf.impl.primitives import PdfReference
 PdfInput: TypeAlias = Any
 
 
-def _pdfminer_reference_is_resolvable(document: PdfDocument, value: object) -> bool:
-    if not document.xref_was_recovered:
-        return True
-    if isinstance(value, (list, tuple)):
-        return all(_pdfminer_reference_is_resolvable(document, item) for item in value)
-    if not isinstance(value, PdfReference):
-        return True
-    key = (value.object_number << 16) | value.generation_number
-    entry = document.xref.get(key)
-    if entry is None or not entry.in_use:
-        return False
-    return entry.object_stream is not None or document.xref_entry_matches_header(key, entry)
-
-
-def _pdfminer_resolvable_pages(document: PdfDocument) -> Iterator[tuple[int, PdfPage]]:
-    """Omit recovered pages whose content reference does not resolve as PDFMiner requires."""
-    for page_index, page in enumerate(document.pages):
-        if _pdfminer_reference_is_resolvable(document, page.contents):
+def internal_pdfminer_resolvable_pages(document: PdfDocument) -> Iterator[tuple[int, PdfPage]]:
+    """Walk the declared page tree with pdfminer's stale-xref semantics."""
+    start = XRefScanner.find_startxref(document.raw_data)
+    if start is None:
+        return
+    try:
+        strict_xref, strict_trailer = XRefScanner.load_section_chain(
+            document.raw_data,
+            start,
+            set(),
+            recover_malformed_objects=False,
+        )
+    except Exception:
+        # pdfminer falls back to its brute-force xref reader for malformed
+        # sections that still expose a usable catalog. The engine has already
+        # performed the equivalent recovery in this case.
+        for page_index, page in enumerate(document.pages):
             yield page_index, page
+        return
+
+    data = bytes(document.raw_data)
+
+    def reference_is_resolvable(value: object) -> bool:
+        if not isinstance(value, PdfReference):
+            return True
+        key = (value.object_number << 16) | value.generation_number
+        entry = strict_xref.get(key)
+        if entry is None or not entry.in_use:
+            return False
+        if entry.object_stream is not None:
+            return True
+        # PDFParser tolerates junk between an xref offset and an indirect
+        # object header, but PDFObjRef rejects the first object if its number
+        # or generation does not match the requested reference.
+        search_end = min(len(data), entry.offset + 128)
+        header = re.search(rb"(?<!\d)(\d+)\s+(\d+)\s+obj", data[entry.offset:search_end])
+        if header is not None:
+            object_number, generation_number = (int(value) for value in header.groups())
+            return (
+                object_number == value.object_number
+                and generation_number == value.generation_number
+            )
+        return False
+
+    root_reference = lookup_dict_key(strict_trailer, "Root")
+    if not reference_is_resolvable(root_reference):
+        return
+    try:
+        catalog = document.resolver.resolve(root_reference)
+    except Exception:
+        return
+    if not isinstance(catalog, dict):
+        return
+    pages_reference = lookup_dict_key(catalog, "Pages")
+    page_index = 0
+    visited: set[tuple[str, int, int] | tuple[str, int]] = set()
+
+    def traverse(value: object, depth: int = 0) -> Iterator[tuple[int, PdfPage]]:
+        nonlocal page_index
+        if depth > 100:
+            return
+        valid_reference = reference_is_resolvable(value)
+        try:
+            node = document.resolver.resolve(value)
+        except Exception:
+            return
+        if not isinstance(node, dict):
+            return
+        marker: tuple[str, int, int] | tuple[str, int] = (
+            ("ref", value.object_number, value.generation_number)
+            if isinstance(value, PdfReference)
+            else ("dict", id(node))
+        )
+        duplicate = marker in visited
+        visited.add(marker)
+        node_type = normalize_pdf_name(lookup_dict_key(node, "Type"))
+        if node_type == "Pages":
+            if not valid_reference or duplicate:
+                return
+            kids = document.resolver.resolve(lookup_dict_key(node, "Kids"))
+            if not isinstance(kids, list):
+                return
+            for kid in kids:
+                yield from traverse(kid, depth + 1)
+            return
+        if node_type != "Page":
+            return
+        current_index = page_index
+        page_index += 1
+        if valid_reference and not duplicate and current_index < len(document.pages):
+            yield current_index, document.pages[current_index]
+
+    yield from traverse(pages_reference)
 
 
 @dataclass(frozen=True, slots=True)
@@ -1005,6 +1082,52 @@ def internal_pdfminer_literal_glyphs(
     return tuple(projected), offsets
 
 
+def internal_pdfminer_offsets(
+    glyphs: tuple[Any, ...], literal_offsets: Mapping[int, tuple[float, float]]
+) -> dict[int, tuple[float, float]]:
+    """Reproduce pdfminer's cursor after legacy decoding and width loss."""
+    offsets: dict[int, tuple[float, float]] = {}
+    correction_x = 0.0
+    correction_y = 0.0
+    for glyph_index, glyph in enumerate(glyphs):
+        baseline = glyph.baseline
+        literal_x, literal_y = literal_offsets.get(id(glyph), (0.0, 0.0))
+        offsets[id(glyph)] = (correction_x + literal_x, correction_y + literal_y)
+        if glyph_index + 1 >= len(glyphs):
+            continue
+        following = glyphs[glyph_index + 1]
+        following_baseline = following.baseline
+        provenance = dict(glyph.provenance) if glyph.provenance else {}
+        following_provenance = dict(following.provenance) if following.provenance else {}
+        continuous = (
+            baseline is not None
+            and following_baseline is not None
+            and provenance.get("line_matrix_origin")
+            == following_provenance.get("line_matrix_origin")
+            and provenance.get("pdfminer_matrix_origin")
+            == following_provenance.get("pdfminer_matrix_origin")
+            and provenance.get("text_matrix") == following_provenance.get("text_matrix")
+        )
+        if not continuous:
+            correction_x = 0.0
+            correction_y = 0.0
+            continue
+        builtin_width = _pdfminer_builtin_width(glyph)
+        if builtin_width is not None:
+            width_code = (
+                glyph.cid if getattr(glyph.font_decoder, "is_cid_font", False) else glyph.char_code
+            )
+            source_width = (
+                float(glyph.font_decoder.glyph_width(width_code)) if width_code is not None else 0.0
+            )
+            retained_ratio = builtin_width / source_width if source_width else 0.0
+            correction_x -= (baseline[2] - baseline[0]) * (1.0 - retained_ratio)
+            correction_y -= (baseline[3] - baseline[1]) * (1.0 - retained_ratio)
+        if glyph.seqno == following.seqno:
+            continue
+    return offsets
+
+
 def _pdfminer_builtin_width(glyph: Any) -> float | None:
     """Return pdfminer's built-in width for a widthless Standard-14 font."""
     decoder = glyph.font_decoder
@@ -1051,6 +1174,17 @@ def _pdfminer_builtin_width(glyph: Any) -> float | None:
     if decoder.is_cid_font or decoder.is_type3:
         return None
     font = decoder.font
+    # PDFType1Font consults FontMetricsDB before the PDF's descriptor and
+    # /Widths array. Exact Standard-14 names therefore use AFM metrics even
+    # when a producer embeds a contradictory width table.
+    base_font = str(_mapping_value(font, "BaseFont") or "")
+    entry = FONT_DATA.get(base_font)
+    if isinstance(entry, dict):
+        widths = entry.get("widths")
+        if not isinstance(widths, dict):
+            return None
+        width = widths.get(projected_text)
+        return 0.0 if width is None else float(width)
     if legacy_widths is not None:
         if 0 <= width_index < len(legacy_widths):
             return legacy_widths[width_index]
@@ -1059,28 +1193,12 @@ def _pdfminer_builtin_width(glyph: Any) -> float | None:
         return float(missing_width) if isinstance(missing_width, (int, float)) else 0.0
     if font_widths is not None:
         return None
-    # FontMetricsDB is keyed by the exact /BaseFont name.  A subset prefix is
-    # semantically significant here: ``ABCDEF+Helvetica`` must use its PDF
-    # descriptor and widths rather than Helvetica's built-in AFM metrics.
-    base_font = str(_mapping_value(font, "BaseFont") or "")
-    entry = FONT_DATA.get(base_font)
-    if not isinstance(entry, dict):
-        descriptor = _mapping_value(font, "FontDescriptor")
-        missing_width = _mapping_value(descriptor, "MissingWidth")
-        # PDFSimpleFont constructs a zero-filled width table when /Widths is
-        # absent, then falls back to the descriptor's /MissingWidth. Native
-        # core extraction may recover a better width from the embedded font;
-        # the PDFMiner projection must retain the legacy layout metric.
-        return float(missing_width) if isinstance(missing_width, (int, float)) else 0.0
-    widths = entry.get("widths")
-    code = glyph.char_code
-    if not isinstance(widths, dict) or code is None or not 0 <= code < 256:
-        return None
-    encoded_text = _pdfminer_base_encoding_text(decoder, code)
-    width = widths.get(encoded_text)
-    # pdfminer treats an encoded character absent from the base-font metrics
-    # as a zero-width glyph rather than applying PDF's MissingWidth fallback.
-    return 0.0 if width is None else float(width)
+    descriptor = _mapping_value(font, "FontDescriptor")
+    missing_width = _mapping_value(descriptor, "MissingWidth")
+    # PDFSimpleFont constructs a zero-filled width table when /Widths is
+    # absent, then falls back to the descriptor's /MissingWidth. Native core
+    # extraction may recover a better width from the embedded font.
+    return float(missing_width) if isinstance(missing_width, (int, float)) else 0.0
 
 
 def internal_pdfminer_normalized_width(glyph: Any) -> float:
@@ -1114,6 +1232,15 @@ def internal_pdfminer_descent(glyph: Any) -> float:
     descent_scale = 0.001
     descent_value = float(getattr(decoder, "descent", -200.0))
     base_font = str(_mapping_value(decoder.font, "BaseFont") or "")
+    if (
+        not getattr(decoder, "is_cid_font", False)
+        and not getattr(decoder, "is_type3", False)
+        and _mapping_value(decoder.font, "FontDescriptor") is None
+    ):
+        # PDFSimpleFont coerces a missing/null descriptor to an empty dict,
+        # whose default descent is zero. The native decoder uses a defensive
+        # -200 fallback for rendering, which must not leak into LTChar layout.
+        descent_value = 0.0
     builtin_metrics = FONT_DATA.get(base_font)
     if (
         not getattr(decoder, "is_cid_font", False)
@@ -1122,8 +1249,7 @@ def internal_pdfminer_descent(glyph: Any) -> float:
         and isinstance(builtin_metrics.get("props"), dict)
     ):
         builtin_descent = builtin_metrics["props"].get("Descent")
-        if isinstance(builtin_descent, (int, float)):
-            descent_value = float(builtin_descent)
+        descent_value = float(builtin_descent) if isinstance(builtin_descent, (int, float)) else 0.0
     if getattr(decoder, "is_type3", False):
         font_matrix = _mapping_value(decoder.font, "FontMatrix")
         if isinstance(font_matrix, (tuple, list)) and len(font_matrix) == 6:
@@ -1132,14 +1258,14 @@ def internal_pdfminer_descent(glyph: Any) -> float:
         descriptor_bbox = _mapping_value(descriptor, "FontBBox")
         if descriptor is not None:
             descent_value = (
-                min(float(descriptor_bbox[1]), float(descriptor_bbox[3]))
+                float(descriptor_bbox[1])
                 if isinstance(descriptor_bbox, (tuple, list)) and len(descriptor_bbox) == 4
                 else 0.0
             )
         else:
             font_bbox = _mapping_value(decoder.font, "FontBBox")
             if isinstance(font_bbox, (tuple, list)) and len(font_bbox) == 4:
-                descent_value = min(float(font_bbox[1]), float(font_bbox[3]))
+                descent_value = float(font_bbox[1])
     return descent_value * descent_scale
 
 
@@ -1242,7 +1368,7 @@ def extract_pages(  # noqa: C901
     )
     try:
         yielded = 0
-        for page_index, page in _pdfminer_resolvable_pages(document):
+        for page_index, page in internal_pdfminer_resolvable_pages(document):
             if selected is not None and page_index not in selected:
                 continue
             if maxpages and yielded >= maxpages:
@@ -1265,52 +1391,7 @@ def extract_pages(  # noqa: C901
             ligatures, skipped_ligature_parts = internal_pdfminer_ligature_overrides(
                 projected_glyphs
             )
-            pdfminer_offsets: dict[int, tuple[float, float]] = {}
-            correction_x = 0.0
-            correction_y = 0.0
-            for glyph_index, glyph in enumerate(projected_glyphs):
-                baseline = glyph.baseline
-                literal_x, literal_y = literal_offsets.get(id(glyph), (0.0, 0.0))
-                pdfminer_offsets[id(glyph)] = (
-                    correction_x + literal_x,
-                    correction_y + literal_y,
-                )
-                if glyph_index + 1 >= len(projected_glyphs):
-                    continue
-                following = projected_glyphs[glyph_index + 1]
-                following_baseline = following.baseline
-                provenance = dict(glyph.provenance) if glyph.provenance else {}
-                following_provenance = dict(following.provenance) if following.provenance else {}
-                continuous = (
-                    baseline is not None
-                    and following_baseline is not None
-                    and provenance.get("line_matrix_origin")
-                    == following_provenance.get("line_matrix_origin")
-                    and provenance.get("pdfminer_matrix_origin")
-                    == following_provenance.get("pdfminer_matrix_origin")
-                    and provenance.get("text_matrix") == following_provenance.get("text_matrix")
-                )
-                if not continuous:
-                    correction_x = 0.0
-                    correction_y = 0.0
-                    continue
-                builtin_width = _pdfminer_builtin_width(glyph)
-                if builtin_width is not None:
-                    width_code = (
-                        glyph.cid
-                        if getattr(glyph.font_decoder, "is_cid_font", False)
-                        else glyph.char_code
-                    )
-                    source_width = (
-                        float(glyph.font_decoder.glyph_width(width_code))
-                        if width_code is not None
-                        else 0.0
-                    )
-                    retained_ratio = builtin_width / source_width if source_width else 0.0
-                    correction_x -= (baseline[2] - baseline[0]) * (1.0 - retained_ratio)
-                    correction_y -= (baseline[3] - baseline[1]) * (1.0 - retained_ratio)
-                if glyph.seqno == following.seqno:
-                    continue
+            pdfminer_offsets = internal_pdfminer_offsets(projected_glyphs, literal_offsets)
             runs = sorted(products.runs, key=lambda run: run.seqno)
             run_sequences = [run.seqno for run in runs]
             figure_chars: dict[tuple[object, ...], list[tuple[LTChar, int]]] = {}
@@ -1557,6 +1638,12 @@ def extract_pages(  # noqa: C901
                         )
                     descent_scale = 0.001
                     descent_value = float(getattr(glyph.font_decoder, "descent", -200.0))
+                    if (
+                        not getattr(glyph.font_decoder, "is_cid_font", False)
+                        and not getattr(glyph.font_decoder, "is_type3", False)
+                        and _mapping_value(glyph.font_decoder.font, "FontDescriptor") is None
+                    ):
+                        descent_value = 0.0
                     # Match FontMetricsDB's exact-name lookup. Subset fonts
                     # retain their embedded descriptor instead of inheriting
                     # the similarly named standard font's descent.
@@ -1569,8 +1656,11 @@ def extract_pages(  # noqa: C901
                         and isinstance(builtin_metrics.get("props"), dict)
                     ):
                         builtin_descent = builtin_metrics["props"].get("Descent")
-                        if isinstance(builtin_descent, (int, float)):
-                            descent_value = float(builtin_descent)
+                        descent_value = (
+                            float(builtin_descent)
+                            if isinstance(builtin_descent, (int, float))
+                            else 0.0
+                        )
                     if getattr(glyph.font_decoder, "is_type3", False):
                         font_matrix = _mapping_value(glyph.font_decoder.font, "FontMatrix")
                         if isinstance(font_matrix, (tuple, list)) and len(font_matrix) == 6:
@@ -1585,7 +1675,7 @@ def extract_pages(  # noqa: C901
                             # malformed box as all zeros. It does not fall
                             # back to the Type 3 font dictionary in this case.
                             descent_value = (
-                                min(float(descriptor_bbox[1]), float(descriptor_bbox[3]))
+                                float(descriptor_bbox[1])
                                 if isinstance(descriptor_bbox, (tuple, list))
                                 and len(descriptor_bbox) == 4
                                 else 0.0
@@ -1593,7 +1683,7 @@ def extract_pages(  # noqa: C901
                         else:
                             font_bbox = _mapping_value(glyph.font_decoder.font, "FontBBox")
                             if isinstance(font_bbox, (tuple, list)) and len(font_bbox) == 4:
-                                descent_value = min(float(font_bbox[1]), float(font_bbox[3]))
+                                descent_value = float(font_bbox[1])
                     text_rise = float(glyph_provenance.get("text_rise", 0.0))
                     descent = descent_value * descent_scale * glyph.font_size + text_rise
                     # ``LTChar`` uses the font descent only to anchor horizontal
