@@ -25,6 +25,15 @@ from .exceptions import PdfminerException
 BBox: TypeAlias = tuple[float, float, float, float]
 PdfInput: TypeAlias = Any
 ObjectDict: TypeAlias = dict[str, Any]
+LIGATURE_EXPANSIONS = {
+    "ﬀ": "ff",
+    "ﬁ": "fi",
+    "ﬂ": "fl",
+    "ﬃ": "ffi",
+    "ﬄ": "ffl",
+    "ﬅ": "ft",
+    "ﬆ": "st",
+}
 
 
 class ClosingMixin:
@@ -59,6 +68,29 @@ def cluster_by(
             groups.append([item])
         else:
             groups[-1].append(item)
+    return groups
+
+
+def cluster_by_preserving_order(
+    values: Iterable[Any], key: Callable[[Any], Any] | str, tolerance: float = 0
+) -> list[list[Any]]:
+    getter = itemgetter(key) if isinstance(key, str) else key
+    items = list(values)
+    numeric_groups = cluster_by((getter(item) for item in items), lambda value: value, tolerance)
+    cluster_ids = {
+        value: cluster_index
+        for cluster_index, group in enumerate(numeric_groups)
+        for value in group
+    }
+    groups: list[list[Any]] = []
+    previous_cluster: int | None = None
+    for item in items:
+        cluster = cluster_ids[getter(item)]
+        if not groups or cluster != previous_cluster:
+            groups.append([item])
+        else:
+            groups[-1].append(item)
+        previous_cluster = cluster
     return groups
 
 
@@ -168,28 +200,114 @@ class EnginePageAdapter:
         )
 
     def text_characters(self) -> Iterator[Any]:
+        from ...pdfminer import (
+            internal_pdfminer_descent,
+            internal_pdfminer_glyph_text,
+            internal_pdfminer_ligature_overrides,
+            internal_pdfminer_literal_glyphs,
+            internal_pdfminer_normalized_width,
+        )
+
+        compatibility_glyphs: list[Any] = []
         for glyph in self.page.get_page_program().products.glyphs:
-            if not glyph.text or ("source", "annotation_appearance") in glyph.provenance:
+            provenance = dict(glyph.provenance) if glyph.provenance else {}
+            underlying = provenance.get("compatibility_glyphs")
+            if glyph.unicode_source == "actual_text" and isinstance(underlying, tuple):
+                compatibility_glyphs.extend(underlying)
+            else:
+                compatibility_glyphs.append(glyph)
+        projected_glyphs, _ = internal_pdfminer_literal_glyphs(compatibility_glyphs)
+        ligatures, skipped_ligature_parts = internal_pdfminer_ligature_overrides(projected_glyphs)
+        for glyph in projected_glyphs:
+            if id(glyph) in skipped_ligature_parts:
                 continue
-            x0, y0, x1, y1 = glyph.advance_bbox
-            font_width = glyph.effective_font_size or glyph.font_size
+            ligature = ligatures.get(id(glyph))
+            text = ligature[0] if ligature is not None else internal_pdfminer_glyph_text(glyph)
+            if not text or ("source", "annotation_appearance") in glyph.provenance:
+                continue
+            x0, y0, x1, y1 = ligature[1] if ligature is not None else glyph.advance_bbox
             font_height = glyph.effective_font_height or glyph.font_size
             width_code = glyph.char_code if glyph.char_code is not None else glyph.cid
             width_lookup = getattr(glyph.font_decoder, "glyph_width", None)
+            provenance = dict(glyph.provenance) if glyph.provenance else {}
+            matrix = provenance.get("text_matrix")
+            origin = provenance.get("pdfminer_origin")
             if (
-                glyph.rotation_angle % 180 == 0
-                and font_height >= (y1 - y0) * 0.5
+                getattr(glyph.font_decoder, "is_vertical", False)
+                and width_code is not None
+                and isinstance(matrix, (tuple, list))
+                and len(matrix) == 4
+                and isinstance(origin, (tuple, list))
+                and len(origin) == 2
+            ):
+                metric = glyph.font_decoder.vertical_metrics.get(
+                    width_code,
+                    (
+                        glyph.font_decoder.default_vertical_width,
+                        glyph.font_decoder.glyph_width(width_code) / 2.0,
+                        glyph.font_decoder.default_vertical_origin_y,
+                    ),
+                )
+                a, b, c, d = (float(value) for value in matrix)
+                origin_x, origin_y = (float(value) for value in origin)
+                font_size = glyph.font_size
+                scaling = float(provenance.get("horizontal_scale", 100.0)) * 0.01
+                local_left = -float(metric[1]) * font_size * 0.001
+                local_top = (1000.0 - float(metric[2])) * font_size * 0.001 + float(
+                    provenance.get("text_rise", 0.0)
+                )
+                local_advance = -float(metric[0]) * font_size * 0.001 * scaling
+                corners = tuple(
+                    (
+                        horizontal * a + vertical * c + origin_x,
+                        horizontal * b + vertical * d + origin_y,
+                    )
+                    for horizontal in (local_left, local_left + font_size)
+                    for vertical in (local_top + local_advance, local_top)
+                )
+                x0 = min(point[0] for point in corners)
+                y0 = min(point[1] for point in corners)
+                x1 = max(point[0] for point in corners)
+                y1 = max(point[1] for point in corners)
+                font_height = x1 - x0
+            elif (
+                not getattr(glyph.font_decoder, "is_vertical", False)
                 and width_code is not None
                 and callable(width_lookup)
             ):
-                x1 = x0 + float(width_lookup(width_code)) * font_width * 0.001
-                y1 = y0 + font_height
+                if (
+                    isinstance(matrix, (tuple, list))
+                    and len(matrix) == 4
+                    and isinstance(origin, (tuple, list))
+                    and len(origin) == 2
+                ):
+                    a, b, c, d = (float(value) for value in matrix)
+                    origin_x, origin_y = (float(value) for value in origin)
+                    font_size = glyph.font_size
+                    scaling = float(provenance.get("horizontal_scale", 100.0)) * 0.01
+                    advance = internal_pdfminer_normalized_width(glyph) * font_size * scaling
+                    descent = internal_pdfminer_descent(glyph)
+                    low = descent * font_size + float(provenance.get("text_rise", 0.0))
+                    high = low + font_size
+                    corners = tuple(
+                        (
+                            along * a + vertical * c + origin_x,
+                            along * b + vertical * d + origin_y,
+                        )
+                        for along in (0.0, advance)
+                        for vertical in (low, high)
+                    )
+                    x0 = min(point[0] for point in corners)
+                    y0 = min(point[1] for point in corners)
+                    x1 = max(point[0] for point in corners)
+                    y1 = max(point[1] for point in corners)
+                    font_height = y1 - y0
             elif glyph.rotation_angle % 360 == 90:
                 x0 = x1 - font_height
             elif glyph.rotation_angle % 360 == 270:
                 x1 = x0 + font_height
             yield SimpleNamespace(
-                text=glyph.text,
+                text=text,
                 bbox=SimpleNamespace(x0=x0, y0=y0, x1=x1, y1=y1),
                 font_name=glyph.font_name,
                 font_size=font_height,
@@ -721,17 +839,12 @@ class Page:
                 width_chars=int(kwargs.get("layout_width_chars", 80)),
                 height_chars=kwargs.get("layout_height_chars"),
             )
-        lines = _group_chars(self.chars, float(kwargs.get("y_tolerance", 3)))
-        extra_attrs = tuple(kwargs.get("extra_attrs", ()))
-        return "\n".join(
-            _line_text(
-                line,
-                float(kwargs.get("x_tolerance", 3)),
-                kwargs.get("x_tolerance_ratio"),
-                extra_attrs,
-            ).rstrip()
-            for line in lines
-        )
+        y_tolerance = float(kwargs.get("y_tolerance", 3))
+        word_options = dict(kwargs)
+        word_options["return_chars"] = True
+        words = _words(self.chars, **word_options)
+        lines = cluster_by_preserving_order(words, "top", y_tolerance)
+        return "\n".join(" ".join(word["text"] for word in line) for line in lines)
 
     def extract_text_simple(self, **kwargs: Any) -> str:
         return self.extract_text(**kwargs)
@@ -1978,7 +2091,12 @@ def _words(chars: Iterable[ObjectDict], **kwargs: Any) -> list[ObjectDict]:
         x0, top, x1, bottom = merge_bboxes(obj_to_bbox(char) for char in word_chars)
         first = word_chars[0]
         word: ObjectDict = {
-            "text": "".join(char["text"] for char in word_chars),
+            "text": "".join(
+                LIGATURE_EXPANSIONS.get(char["text"], char["text"])
+                if kwargs.get("expand_ligatures", True)
+                else char["text"]
+                for char in word_chars
+            ),
             "x0": x0,
             "x1": x1,
             "top": top,
@@ -2125,7 +2243,7 @@ def _line_text(
         )
         if insert_space:
             result.append(" ")
-        result.append(char["text"])
+        result.append(LIGATURE_EXPANSIONS.get(char["text"], char["text"]))
         previous = char
         pending_space = False
     return "".join(result)
