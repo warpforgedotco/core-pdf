@@ -554,7 +554,12 @@ def partition_pdf(filename: object, **kwargs: object) -> list[Element]:
             return []
         raise
     result: list[Element] = []
-    pages = extract_pages(filename, password=password, laparams=LAParams(word_margin=word_margin))
+    pages = extract_pages(
+        filename,
+        password=password,
+        laparams=LAParams(word_margin=word_margin),
+        _unstructured_mode=True,
+    )
     document = PdfDocument.open(
         filename,
         password=password,

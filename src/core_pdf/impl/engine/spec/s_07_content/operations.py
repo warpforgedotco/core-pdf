@@ -612,7 +612,7 @@ def dispatch_operations(
                             continue
                         if first == 46 and 48 <= b1 <= 57:
                             if op_count < max_operands:
-                                operands[op_count] = (b1 - 48) / 10.0
+                                operands[op_count] = float(raw_bytes[start_offset:pos])
                             op_count += 1
                             continue
 
@@ -666,9 +666,7 @@ def dispatch_operations(
 
                         if 48 <= first <= 57 and b1 == 46 and 48 <= b2 <= 57 and 48 <= b3 <= 57:
                             if op_count < max_operands:
-                                operands[op_count] = (first - 48) + (
-                                    ((b2 - 48) * 10 + (b3 - 48)) / 100.0
-                                )
+                                operands[op_count] = float(raw_bytes[start_offset:pos])
                             op_count += 1
                             continue
 
@@ -685,9 +683,7 @@ def dispatch_operations(
                             and 48 <= b4 <= 57
                         ):
                             if op_count < max_operands:
-                                operands[op_count] = (first - 48) + (
-                                    ((b2 - 48) * 100 + (b3 - 48) * 10 + (b4 - 48)) / 1000.0
-                                )
+                                operands[op_count] = float(raw_bytes[start_offset:pos])
                             op_count += 1
                             continue
                         if (
@@ -698,9 +694,7 @@ def dispatch_operations(
                             and 48 <= b4 <= 57
                         ):
                             if op_count < max_operands:
-                                operands[op_count] = ((first - 48) * 10 + (b1 - 48)) + (
-                                    ((b3 - 48) * 10 + (b4 - 48)) / 100.0
-                                )
+                                operands[op_count] = float(raw_bytes[start_offset:pos])
                             op_count += 1
                             continue
                         if (
@@ -711,9 +705,7 @@ def dispatch_operations(
                             and 48 <= b4 <= 57
                         ):
                             if op_count < max_operands:
-                                operands[op_count] = -(
-                                    (b1 - 48) + (((b3 - 48) * 10 + (b4 - 48)) / 100.0)
-                                )
+                                operands[op_count] = float(raw_bytes[start_offset:pos])
                             op_count += 1
                             continue
 
@@ -732,10 +724,7 @@ def dispatch_operations(
                             and 48 <= b5 <= 57
                         ):
                             if op_count < max_operands:
-                                operands[op_count] = -(
-                                    (b1 - 48)
-                                    + (((b3 - 48) * 100 + (b4 - 48) * 10 + (b5 - 48)) / 1000.0)
-                                )
+                                operands[op_count] = float(raw_bytes[start_offset:pos])
                             op_count += 1
                             continue
                         if (
@@ -747,9 +736,7 @@ def dispatch_operations(
                             and 48 <= b5 <= 57
                         ):
                             if op_count < max_operands:
-                                operands[op_count] = (
-                                    (first - 48) * 100 + (b1 - 48) * 10 + (b2 - 48)
-                                ) + (((b4 - 48) * 10 + (b5 - 48)) / 100.0)
+                                operands[op_count] = float(raw_bytes[start_offset:pos])
                             op_count += 1
                             continue
                         if (
@@ -761,10 +748,7 @@ def dispatch_operations(
                             and 48 <= b5 <= 57
                         ):
                             if op_count < max_operands:
-                                operands[op_count] = -(
-                                    ((b1 - 48) * 10 + (b2 - 48))
-                                    + (((b4 - 48) * 10 + (b5 - 48)) / 100.0)
-                                )
+                                operands[op_count] = float(raw_bytes[start_offset:pos])
                             op_count += 1
                             continue
 
@@ -785,12 +769,7 @@ def dispatch_operations(
                             and 48 <= b6 <= 57
                         ):
                             if op_count < max_operands:
-                                operands[op_count] = -(
-                                    (b1 - 48) * 100
-                                    + (b2 - 48) * 10
-                                    + (b3 - 48)
-                                    + (((b5 - 48) * 10 + (b6 - 48)) / 100.0)
-                                )
+                                operands[op_count] = float(raw_bytes[start_offset:pos])
                             op_count += 1
                             continue
 

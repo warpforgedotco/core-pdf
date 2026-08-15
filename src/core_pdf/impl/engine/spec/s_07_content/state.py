@@ -1954,6 +1954,7 @@ class TextState:
                     ("pdfminer_origin", pdfminer_origin),
                     ("pdfminer_matrix_origin", (compat_origin_x, compat_origin_y)),
                     ("pdfminer_cursor", (compat_cursor_x, compat_cursor_y)),
+                    ("pdfminer_need_charspace", compat_need_charspace),
                 )
                 if is_vertical:
                     metric = decoder.vertical_metrics.get(

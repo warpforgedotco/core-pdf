@@ -43,21 +43,24 @@ def internal_pdfminer_resolvable_pages(  # noqa: C901
             if object_number in seen:
                 continue
             seen.add(object_number)
-            try:
-                value = document.resolver.resolve(PdfReference(object_number, generation_number))
-            except Exception:
-                value = None
-            if not isinstance(value, dict):
-                entry = strict_xref.get((object_number << 16) | generation_number)
-                if entry is not None and entry.object_stream is None:
-                    lexer = PdfLexer(data, recover_malformed_objects=False)
-                    lexer.rewind(entry.offset)
-                    try:
-                        parsed = lexer.parse_indirect_object()
-                    except Exception:
-                        parsed = None
-                    if isinstance(parsed, dict):
-                        value = parsed
+            entry = strict_xref.get((object_number << 16) | generation_number)
+            value = None
+            if entry is not None and entry.object_stream is None:
+                lexer = PdfLexer(data, recover_malformed_objects=False)
+                lexer.rewind(entry.offset)
+                try:
+                    parsed = lexer.parse_indirect_object()
+                except Exception:
+                    parsed = None
+                if isinstance(parsed, dict):
+                    value = parsed
+            elif entry is not None and entry.object_stream is not None:
+                try:
+                    value = document.resolver.resolve(
+                        PdfReference(object_number, generation_number)
+                    )
+                except Exception:
+                    value = None
             if not isinstance(value, dict):
                 continue
             if normalize_pdf_name(lookup_dict_key(value, "Type")) != "Page":
@@ -87,9 +90,30 @@ def internal_pdfminer_resolvable_pages(  # noqa: C901
         for match in re.finditer(rb"(?m)^(\d+)\s+(\d+)\s+obj\b", data[: trailer_match.start()]):
             object_number = int(match.group(1))
             recovered[object_number] = (int(match.group(2)), match.start())
-        try:
-            catalog_pages = lookup_dict_key(document.catalog(), "Pages")
-        except Exception:
+        root_match = re.search(rb"/Root\s+(\d+)\s+(\d+)\s+R\b", trailer_data)
+        fallback_catalog: dict[Any, Any] | None = None
+        if root_match is not None:
+            root_number = int(root_match.group(1))
+            root_generation = int(root_match.group(2))
+            recovered_root = recovered.get(root_number)
+            if recovered_root is not None and recovered_root[0] == root_generation:
+                root_lexer = PdfLexer(data, recover_malformed_objects=True)
+                root_lexer.rewind(recovered_root[1])
+                try:
+                    root_value = root_lexer.parse_indirect_object()
+                except Exception:
+                    root_value = None
+                if (
+                    isinstance(root_value, dict)
+                    and normalize_pdf_name(lookup_dict_key(root_value, "Type")) == "Catalog"
+                ):
+                    fallback_catalog = root_value
+        if fallback_catalog is not None:
+            try:
+                catalog_pages = lookup_dict_key(document.catalog(), "Pages")
+            except Exception:
+                catalog_pages = lookup_dict_key(fallback_catalog, "Pages")
+        else:
             catalog_pages = None
 
         reachable_page_ids: set[int] = set()
@@ -158,11 +182,10 @@ def internal_pdfminer_resolvable_pages(  # noqa: C901
             try:
                 value = lexer.parse_indirect_object()
             except Exception:
-                if data[value_start : value_start + 2] == b"<<" and found < len(document.pages):
-                    value = {"Type": "Page"}
-                else:
-                    continue
+                continue
             if not isinstance(value, dict):
+                continue
+            if normalize_pdf_name(lookup_dict_key(value, "Type")) != "Page":
                 continue
             try:
                 resolved_value = document.resolver.resolve(
@@ -172,8 +195,6 @@ def internal_pdfminer_resolvable_pages(  # noqa: C901
                 resolved_value = None
             if isinstance(resolved_value, dict):
                 value = resolved_value
-            if normalize_pdf_name(lookup_dict_key(value, "Type")) != "Page":
-                continue
             if reachable_page_ids and object_number not in reachable_page_ids:
                 continue
             if not belongs_to_catalog_tree(value):
@@ -208,10 +229,27 @@ def internal_pdfminer_resolvable_pages(  # noqa: C901
         # dictionaries when no usable catalog tree was produced.
         yield from fallback_projection()
         return
+    section_start = start
+    section_pos = XRefScanner.skip_ws(data, section_start)
+    section_is_direct = data[section_pos : section_pos + 4] == b"xref"
+    section_is_stream = re.match(rb"\d+\s+\d+\s+obj\b", data[section_pos:]) is not None
+    if not section_is_direct and not section_is_stream:
+        # PDFParser can still enter a classic xref table when startxref lands
+        # a byte or two inside the literal ``xref`` token.  It does not scan
+        # an arbitrary nearby object, however; that case selects
+        # PDFXRefFallback instead.
+        preceding = data[max(0, section_pos - 3) : section_pos + 4]
+        relative = preceding.find(b"xref")
+        candidate = max(0, section_pos - 3) + relative if relative >= 0 else -1
+        if candidate >= 0 and candidate <= section_pos < candidate + 4:
+            section_start = candidate
+        else:
+            yield from fallback_projection()
+            return
     try:
         strict_xref, strict_trailer = XRefScanner.load_section_chain(
             document.raw_data,
-            start,
+            section_start,
             set(),
             recover_malformed_objects=False,
         )
@@ -222,7 +260,6 @@ def internal_pdfminer_resolvable_pages(  # noqa: C901
         return
 
     xref_sections: list[dict[int, Any]] = []
-    section_start = start
     section_seen: set[int] = set()
     try:
         while section_start not in section_seen:
@@ -1434,7 +1471,10 @@ class _PdfminerOffsetMap(dict[int, tuple[float, float]]):
 
 
 def internal_pdfminer_offsets(
-    glyphs: tuple[Any, ...], literal_offsets: Mapping[int, tuple[float, float]]
+    glyphs: tuple[Any, ...],
+    literal_offsets: Mapping[int, tuple[float, float]],
+    *,
+    discard_unusable_cmap: bool = True,
 ) -> _PdfminerOffsetMap:
     """Reproduce pdfminer's cursor after legacy decoding and width loss."""
     offsets = _PdfminerOffsetMap()
@@ -1493,7 +1533,11 @@ def internal_pdfminer_offsets(
         )
         if width_code is not None:
             source_width = float(glyph.font_decoder.glyph_width(width_code)) * 0.001
-            target_width = internal_pdfminer_normalized_width(glyph)
+            target_width = (
+                0.0
+                if discard_unusable_cmap and internal_pdfminer_embedded_cmap_is_unusable(glyph)
+                else internal_pdfminer_normalized_width(glyph)
+            )
         else:
             source_width = target_width = 0.0
         if source_width != target_width:
@@ -1504,6 +1548,16 @@ def internal_pdfminer_offsets(
                 * 0.01
             )
             correction_text_x -= scale
+        if (
+            discard_unusable_cmap
+            and internal_pdfminer_embedded_cmap_is_unusable(glyph)
+            and provenance.get("pdfminer_need_charspace") is True
+        ):
+            # Core decoded another glyph and therefore applied character
+            # spacing; pdfminer's unusable CMap decoded no CID at all.
+            correction_text_x -= float(provenance.get("char_space", 0.0)) * float(
+                provenance.get("horizontal_scale", 100.0)
+            ) * 0.01
         if glyph.seqno == following.seqno:
             continue
     return offsets
@@ -1767,6 +1821,7 @@ def extract_pages(  # noqa: C901
     maxpages: int = 0,
     caching: bool = True,
     laparams: LAParams | None = None,
+    _unstructured_mode: bool = False,
 ) -> Iterator[LTPage]:
     """Yield pdfminer.six-shaped pages using core-pdf extraction evidence."""
     del caching
@@ -1783,7 +1838,12 @@ def extract_pages(  # noqa: C901
     )
     try:
         yielded = 0
-        for page_index, page in internal_pdfminer_resolvable_pages(document):
+        page_source = (
+            enumerate(document.pages)
+            if _unstructured_mode
+            else internal_pdfminer_resolvable_pages(document)
+        )
+        for page_index, page in page_source:
             if selected is not None and page_index not in selected:
                 continue
             if maxpages and yielded >= maxpages:
@@ -1791,7 +1851,8 @@ def extract_pages(  # noqa: C901
             page_width = abs(page.width)
             page_height = abs(page.height)
             chars: list[LTChar] = []
-            internal_pdfminer_validate_page_resources(page)
+            if not _unstructured_mode:
+                internal_pdfminer_validate_page_resources(page)
             products = page.get_page_program().products
             compatibility_glyphs: list[Any] = []
             for glyph in products.glyphs:
@@ -1807,7 +1868,11 @@ def extract_pages(  # noqa: C901
             ligatures, skipped_ligature_parts = internal_pdfminer_ligature_overrides(
                 projected_glyphs
             )
-            pdfminer_offsets = internal_pdfminer_offsets(projected_glyphs, literal_offsets)
+            pdfminer_offsets = internal_pdfminer_offsets(
+                projected_glyphs,
+                literal_offsets,
+                discard_unusable_cmap=not _unstructured_mode,
+            )
             runs = sorted(products.runs, key=lambda run: run.seqno)
             run_sequences = [run.seqno for run in runs]
             figure_chars: dict[tuple[object, ...], list[tuple[LTChar, int]]] = {}
@@ -1826,7 +1891,10 @@ def extract_pages(  # noqa: C901
             )
             vertical_positions: dict[tuple[str | None, int], tuple[float, int]] = {}
             for glyph_index, glyph in enumerate(projected_glyphs):
-                if internal_pdfminer_embedded_cmap_is_unusable(glyph):
+                if (
+                    not _unstructured_mode
+                    and internal_pdfminer_embedded_cmap_is_unusable(glyph)
+                ):
                     continue
                 if _pdfminer_form_glyph_is_clipped(glyph):
                     continue
