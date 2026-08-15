@@ -111,6 +111,16 @@ def test_widget_appearance_text_reaches_extraction() -> None:
     assert "VisibleValue" in text
 
 
+def test_widget_appearance_glyphs_retain_their_capture_source() -> None:
+    with PdfDocument.open(io.BytesIO(form_pdf())) as document:
+        glyphs = document.pages[0].get_page_program().products.glyphs
+
+    page_glyph = next(glyph for glyph in glyphs if glyph.text == "P")
+    appearance_glyph = next(glyph for glyph in glyphs if glyph.text == "V")
+    assert ("source", "native_text") in page_glyph.provenance
+    assert ("source", "annotation_appearance") in appearance_glyph.provenance
+
+
 def test_hidden_annotations_are_not_extracted() -> None:
     runs, _ = page_runs(form_pdf())
     text = "".join(run.text for run in runs)

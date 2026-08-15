@@ -313,6 +313,7 @@ class TextState:
         "sequence",
         "stream_order",
         "xobject_depth",
+        "capture_source",
         "marked_content_stack",
         "active_streams",
         "queued_stream",
@@ -460,6 +461,7 @@ class TextState:
         self.sequence = 0
         self.stream_order = -1
         self.xobject_depth = 0
+        self.capture_source = "native_text"
         self.compatibility_depth = 0
         self.marked_content_stack = []
         self.active_streams = set()
@@ -1847,6 +1849,7 @@ class TextState:
             hypot(combined_a, combined_b) if decoder.is_vertical else hypot(combined_c, combined_d)
         )
         glyph_provenance = (
+            ("source", self.capture_source),
             ("stream_order", self.stream_order),
             ("xobject_depth", self.xobject_depth),
             ("clip_bbox", self.clip_bbox),
@@ -2397,7 +2400,7 @@ class TextState:
             F + adv_x * B + adv_y * D,
         )
         provenance = (
-            ("source", "native_text"),
+            ("source", self.capture_source),
             ("seqno", seqno),
             ("font_name", self.current_font),
             ("stream_order", self.stream_order),

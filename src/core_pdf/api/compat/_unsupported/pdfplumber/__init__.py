@@ -7,6 +7,7 @@ import zlib
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from io import BytesIO
+from itertools import groupby
 from operator import itemgetter
 from types import SimpleNamespace
 from typing import Any, TypeAlias, cast
@@ -168,28 +169,30 @@ class EnginePageAdapter:
 
     def text_characters(self) -> Iterator[Any]:
         for glyph in self.page.get_page_program().products.glyphs:
-            if not glyph.text:
+            if not glyph.text or ("source", "annotation_appearance") in glyph.provenance:
                 continue
             x0, y0, x1, y1 = glyph.advance_bbox
+            font_width = glyph.effective_font_size or glyph.font_size
+            font_height = glyph.effective_font_height or glyph.font_size
             width_code = glyph.char_code if glyph.char_code is not None else glyph.cid
             width_lookup = getattr(glyph.font_decoder, "glyph_width", None)
             if (
                 glyph.rotation_angle % 180 == 0
-                and glyph.font_size >= (y1 - y0) * 0.5
+                and font_height >= (y1 - y0) * 0.5
                 and width_code is not None
                 and callable(width_lookup)
             ):
-                x1 = x0 + float(width_lookup(width_code)) * glyph.font_size * 0.001
-                y1 = y0 + glyph.font_size
+                x1 = x0 + float(width_lookup(width_code)) * font_width * 0.001
+                y1 = y0 + font_height
             elif glyph.rotation_angle % 360 == 90:
-                x0 = x1 - glyph.font_size
+                x0 = x1 - font_height
             elif glyph.rotation_angle % 360 == 270:
-                x1 = x0 + glyph.font_size
+                x1 = x0 + font_height
             yield SimpleNamespace(
                 text=glyph.text,
                 bbox=SimpleNamespace(x0=x0, y0=y0, x1=x1, y1=y1),
                 font_name=glyph.font_name,
-                font_size=glyph.font_size,
+                font_size=font_height,
                 color=glyph.fill,
                 rotation_angle=glyph.rotation_angle,
                 sequence=glyph.seqno,
@@ -1966,56 +1969,92 @@ def _words(chars: Iterable[ObjectDict], **kwargs: Any) -> list[ObjectDict]:
         set("!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~") if split_value is True else set(split_value or "")
     )
     keep_blank = bool(kwargs.get("keep_blank_chars", False))
-    ordered = list(chars)
-    group_tolerance = y_tolerance if any(item["text"] == " " for item in ordered) else 25
     words: list[ObjectDict] = []
-    force_new = False
-    for char in ordered:
-        if not char["text"].strip() and not keep_blank:
-            force_new = True
-            continue
-        punctuation_boundary = bool(split_punctuation.intersection(char["text"]))
-        if (
-            words
-            and not force_new
-            and abs(char["top"] - words[-1]["top"]) <= group_tolerance
-            and not punctuation_boundary
-            and not split_punctuation.intersection(words[-1]["chars"][-1]["text"])
-            and char["x0"] - words[-1]["x1"]
-            <= max(
-                tolerance,
-                float(words[-1]["chars"][-1].get("size", 0)) * float(ratio or 0),
-            )
-        ):
-            word = words[-1]
-            word["text"] += char["text"]
-            word["x0"] = min(word["x0"], char["x0"])
-            word["x1"] = max(word["x1"], char["x1"])
-            word["bottom"] = max(word["bottom"], char["bottom"])
-            word["top"] = min(word["top"], char["top"])
-            word["width"] = word["x1"] - word["x0"]
-            word["height"] = word["bottom"] - word["top"]
-            word["chars"].append(char)
-        else:
-            words.append(
-                {
-                    "text": char["text"],
-                    "x0": char["x0"],
-                    "x1": char["x1"],
-                    "top": char["top"],
-                    "bottom": char["bottom"],
-                    "doctop": char["doctop"],
-                    "width": char["x1"] - char["x0"],
-                    "height": char["bottom"] - char["top"],
-                    "chars": [char],
-                    "direction": "rtl" if kwargs.get("horizontal_ltr") is False else "ltr",
-                    "upright": char.get("upright", True),
-                }
-            )
-            for attribute in kwargs.get("extra_attrs", ()):
-                if attribute in char:
-                    words[-1][attribute] = char[attribute]
-        force_new = False
+    extra_attrs = tuple(kwargs.get("extra_attrs", ()))
+    values = list(chars)
+    grouping_key = itemgetter("upright", *extra_attrs)
+
+    def emit_word(word_chars: list[ObjectDict], direction: str) -> None:
+        x0, top, x1, bottom = merge_bboxes(obj_to_bbox(char) for char in word_chars)
+        first = word_chars[0]
+        word: ObjectDict = {
+            "text": "".join(char["text"] for char in word_chars),
+            "x0": x0,
+            "x1": x1,
+            "top": top,
+            "doctop": top + first["doctop"] - first["top"],
+            "bottom": bottom,
+            "upright": first.get("upright", True),
+            "height": bottom - top,
+            "width": x1 - x0,
+            "direction": direction,
+            "chars": list(word_chars),
+        }
+        for attribute in extra_attrs:
+            word[attribute] = first[attribute]
+        words.append(word)
+
+    for _, char_group in groupby(values, grouping_key):
+        group = list(char_group)
+        upright = bool(group[0].get("upright", True))
+        direction = (
+            "rtl"
+            if upright and kwargs.get("horizontal_ltr") is False
+            else "btt"
+            if not upright and kwargs.get("vertical_ttb") is False
+            else "ltr"
+            if upright
+            else "ttb"
+        )
+        line_key = "top" if upright else "x0"
+        line_tolerance = y_tolerance if upright else tolerance
+        for line in cluster_by(group, line_key, line_tolerance):
+            if direction == "ltr":
+                char_key = itemgetter("x0")
+                reverse = False
+            elif direction == "rtl":
+                char_key = itemgetter("x1")
+                reverse = True
+            elif direction == "ttb":
+                char_key = itemgetter("top")
+                reverse = False
+            else:
+                char_key = itemgetter("bottom")
+                reverse = True
+            ordered = sorted(line, key=char_key, reverse=reverse)
+            current: list[ObjectDict] = []
+            for char in ordered:
+                text = char["text"]
+                if not keep_blank and text.isspace():
+                    if current:
+                        emit_word(current, direction)
+                        current = []
+                    continue
+                punctuation_boundary = text in split_punctuation
+                previous = current[-1] if current else None
+                if previous is not None:
+                    intra_tolerance = (
+                        float(previous.get("size", 0)) * float(ratio)
+                        if ratio is not None
+                        else tolerance
+                    )
+                    if direction == "ltr":
+                        starts_new = (
+                            char["x0"] < previous["x0"]
+                            or char["x0"] > previous["x1"] + intra_tolerance
+                            or abs(char["top"] - previous["top"]) > y_tolerance
+                        )
+                    else:
+                        starts_new = abs(char[line_key] - previous[line_key]) > line_tolerance
+                    if starts_new or punctuation_boundary:
+                        emit_word(current, direction)
+                        current = []
+                current.append(char)
+                if punctuation_boundary:
+                    emit_word(current, direction)
+                    current = []
+            if current:
+                emit_word(current, direction)
     if not kwargs.get("return_chars", False):
         for word in words:
             word.pop("chars", None)
@@ -2042,10 +2081,18 @@ def _lines(chars: Iterable[ObjectDict], return_chars: bool = True) -> list[Objec
 
 
 def _group_chars(chars: Iterable[ObjectDict], tolerance: float = 3) -> list[list[ObjectDict]]:
+    # pdfplumber's text map uses whitespace to separate words but does not let
+    # standalone space glyphs create layout lines of their own.  Keeping them
+    # in the clustering input produced empty lines whenever a space's nominal
+    # top differed slightly from the surrounding visible glyphs.
     ordered = sorted(chars, key=lambda item: (item["top"], item["x0"]))
     tiny_font = ordered and max(float(item.get("size", 1)) for item in ordered) <= 1
     line_tolerance = 25 if tiny_font else tolerance
-    return cluster_by(ordered, "top", line_tolerance)
+    return [
+        group
+        for group in cluster_by(ordered, "top", line_tolerance)
+        if any(item["text"].strip() for item in group)
+    ]
 
 
 def _line_text(
