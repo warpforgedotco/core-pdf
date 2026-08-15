@@ -1280,25 +1280,41 @@ def dispatch_operations(
         if byte == 60:
             if pos + 1 < data_len and raw_bytes[pos + 1] == 60:
                 operand_start = pos
+                legacy_pdfminer_mode = bool(
+                    handler_target is not None
+                    and getattr(
+                        getattr(handler_target, "document", None),
+                        "legacy_pdfminer_text_operators",
+                        False,
+                    )
+                )
                 try:
                     parse_dictionary = (
                         lexer.parse_dictionary
-                        if handler_target is not None
-                        and getattr(
-                            getattr(handler_target, "document", None),
-                            "legacy_pdfminer_text_operators",
-                            False,
-                        )
+                        if legacy_pdfminer_mode
                         else lexer.parse_dictionary_or_stream
                     )
-                    if op_count < max_operands:
-                        operands[op_count] = cast(ContentOperand, parse_dictionary())
-                    else:
-                        parse_dictionary()
-                except PdfParseError:
-                    if lexer.pos >= data_len:
+                    previous_recovery = lexer.recover_malformed_objects
+                    if legacy_pdfminer_mode:
+                        lexer.recover_malformed_objects = False
+                    try:
+                        if op_count < max_operands:
+                            operands[op_count] = cast(ContentOperand, parse_dictionary())
+                        else:
+                            parse_dictionary()
+                    finally:
+                        lexer.recover_malformed_objects = previous_recovery
+                except PdfParseError as exc:
+                    if lexer.pos >= data_len or str(exc) == "unexpected end of PDF input":
+                        trailing = raw_bytes[operand_start:]
+                        if legacy_pdfminer_mode and (
+                            b"endobj" in trailing or re.search(rb"(?m)^xref\b", trailing)
+                        ):
+                            raise ValueError("invalid pdfminer content dictionary") from exc
                         pos = data_len
                         break
+                    if legacy_pdfminer_mode:
+                        raise ValueError("invalid pdfminer content dictionary") from exc
                     if lexer.pos > operand_start:
                         pos = lexer.pos
                         continue

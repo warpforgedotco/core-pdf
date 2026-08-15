@@ -14,7 +14,9 @@ from core_pdf._vendor.fontTools.agl import toUnicode
 from core_pdf.impl.engine.layout.geometry import bbox_union
 from core_pdf.impl.engine.spec.s_07_objects.coercion import normalize_pdf_name
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.engine.spec.s_07_syntax.xref import XRefScanner
+from core_pdf.impl.engine.spec.s_09_fonts.cmap_resources import resolve_cmap_decoder
 from core_pdf.impl.engine.spec.s_09_fonts.data.base_encodings import (
     MAC_ROMAN_ENCODING,
     STANDARD_ENCODING,
@@ -27,10 +29,184 @@ from core_pdf.impl.primitives import PdfReference
 PdfInput: TypeAlias = Any
 
 
-def internal_pdfminer_resolvable_pages(document: PdfDocument) -> Iterator[tuple[int, PdfPage]]:
+def internal_pdfminer_resolvable_pages(  # noqa: C901
+    document: PdfDocument,
+) -> Iterator[tuple[int, PdfPage]]:
     """Walk the declared page tree with pdfminer's stale-xref semantics."""
-    start = XRefScanner.find_startxref(document.raw_data)
+    data = bytes(document.raw_data)
+
+    def fallback_pages(object_keys: Iterable[tuple[int, int]]) -> Iterator[tuple[int, PdfPage]]:
+        """Model PDFXRefFallback plus PDFPage's object-scan fallback."""
+        found = 0
+        seen: set[int] = set()
+        for object_number, generation_number in object_keys:
+            if object_number in seen:
+                continue
+            seen.add(object_number)
+            try:
+                value = document.resolver.resolve(PdfReference(object_number, generation_number))
+            except Exception:
+                value = None
+            if not isinstance(value, dict):
+                entry = strict_xref.get((object_number << 16) | generation_number)
+                if entry is not None and entry.object_stream is None:
+                    lexer = PdfLexer(data, recover_malformed_objects=False)
+                    lexer.rewind(entry.offset)
+                    try:
+                        parsed = lexer.parse_indirect_object()
+                    except Exception:
+                        parsed = None
+                    if isinstance(parsed, dict):
+                        value = parsed
+            if not isinstance(value, dict):
+                continue
+            if normalize_pdf_name(lookup_dict_key(value, "Type")) != "Page":
+                continue
+            if found >= len(document.pages):
+                raise PdfError("fallback page is unavailable in the native page list")
+            try:
+                page = document.pages[found]
+            except IndexError as exc:
+                raise PdfError("fallback page is not resolvable") from exc
+            yield found, page
+            found += 1
+
+    def fallback_projection() -> Iterator[tuple[int, PdfPage]]:
+        trailer_match = re.search(rb"(?m)^trailer\b", data)
+        if trailer_match is None:
+            raise PdfError("No /Root object")
+        trailer_data = re.split(
+            rb"(?m)^trailer\b|startxref|%%EOF",
+            data[trailer_match.end() :],
+            maxsplit=1,
+        )[0]
+        if re.search(rb"/Root\b", trailer_data) is None:
+            raise PdfError("No /Root object")
+        malformed_root = re.search(rb"/Root\s+\d+\s+\d+\s+R\b", trailer_data) is None
+        recovered: dict[int, tuple[int, int]] = {}
+        for match in re.finditer(rb"(?m)^(\d+)\s+(\d+)\s+obj\b", data[: trailer_match.start()]):
+            object_number = int(match.group(1))
+            recovered[object_number] = (int(match.group(2)), match.start())
+        try:
+            catalog_pages = lookup_dict_key(document.catalog(), "Pages")
+        except Exception:
+            catalog_pages = None
+
+        reachable_page_ids: set[int] = set()
+        visited_tree_nodes: set[tuple[int, int]] = set()
+
+        def collect_reachable_pages(node: Any) -> None:
+            node_reference = node if isinstance(node, PdfReference) else None
+            if node_reference is not None:
+                key = (node_reference.object_number, node_reference.generation_number)
+                if key in visited_tree_nodes:
+                    return
+                visited_tree_nodes.add(key)
+                try:
+                    node = document.resolver.resolve(node_reference)
+                except Exception:
+                    return
+            if not isinstance(node, dict):
+                return
+            node_type = normalize_pdf_name(lookup_dict_key(node, "Type"))
+            if node_type == "Page":
+                if node_reference is not None:
+                    reachable_page_ids.add(node_reference.object_number)
+                return
+            try:
+                kids = document.resolver.resolve(lookup_dict_key(node, "Kids"))
+            except Exception:
+                return
+            if isinstance(kids, (tuple, list)):
+                for child in kids:
+                    collect_reachable_pages(child)
+
+        collect_reachable_pages(catalog_pages)
+
+        def belongs_to_catalog_tree(value: dict[Any, Any]) -> bool:
+            if not isinstance(catalog_pages, PdfReference):
+                return True
+            parent = lookup_dict_key(value, "Parent")
+            seen_parents: set[tuple[int, int]] = set()
+            while isinstance(parent, PdfReference):
+                key = (parent.object_number, parent.generation_number)
+                if key == (catalog_pages.object_number, catalog_pages.generation_number):
+                    return True
+                if key in seen_parents:
+                    return False
+                seen_parents.add(key)
+                try:
+                    parent_value = document.resolver.resolve(parent)
+                except Exception:
+                    return False
+                if not isinstance(parent_value, dict):
+                    return False
+                parent = lookup_dict_key(parent_value, "Parent")
+            return False
+
+        found = 0
+        for object_number, (generation_number, offset) in recovered.items():
+            header_end = re.match(rb"\d+\s+\d+\s+obj\b", data[offset:])
+            if header_end is None:
+                continue
+            value_start = offset + header_end.end()
+            value_start += len(data[value_start:]) - len(data[value_start:].lstrip())
+            if data[value_start : value_start + 2] != b"<<" and not malformed_root:
+                continue
+            lexer = PdfLexer(data, recover_malformed_objects=True)
+            lexer.rewind(offset)
+            try:
+                value = lexer.parse_indirect_object()
+            except Exception:
+                if data[value_start : value_start + 2] == b"<<" and found < len(document.pages):
+                    value = {"Type": "Page"}
+                else:
+                    continue
+            if not isinstance(value, dict):
+                continue
+            try:
+                resolved_value = document.resolver.resolve(
+                    PdfReference(object_number, generation_number)
+                )
+            except Exception:
+                resolved_value = None
+            if isinstance(resolved_value, dict):
+                value = resolved_value
+            if normalize_pdf_name(lookup_dict_key(value, "Type")) != "Page":
+                continue
+            if reachable_page_ids and object_number not in reachable_page_ids:
+                continue
+            if not belongs_to_catalog_tree(value):
+                continue
+            # Resolve through the document so indirect inheritance and stream
+            # objects retain the engine's native representation, but only
+            # after the fallback parser itself recognized a Page dictionary.
+            try:
+                document.resolver.resolve(PdfReference(object_number, generation_number))
+                page = document.pages[found]
+            except Exception:
+                page = PdfPage(document, value, found + 1)
+            yield found, page
+            found += 1
+
+    previous_line = b""
+    start: int | None = None
+    for raw_line in reversed(data.splitlines()):
+        line = raw_line.strip()
+        if line == b"startxref":
+            if previous_line.isdigit():
+                candidate = int(previous_line)
+                if candidate < 2**31:
+                    start = candidate
+            break
+        if line:
+            previous_line = line
     if start is None:
+        # PDFXRefFallback scans indirect-object headers only up to the first
+        # trailer and lets later occurrences of an object number replace
+        # earlier ones. Preserve that ordering before PDFPage scans for Page
+        # dictionaries when no usable catalog tree was produced.
+        yield from fallback_projection()
         return
     try:
         strict_xref, strict_trailer = XRefScanner.load_section_chain(
@@ -41,45 +217,147 @@ def internal_pdfminer_resolvable_pages(document: PdfDocument) -> Iterator[tuple[
         )
     except Exception:
         # pdfminer falls back to its brute-force xref reader for malformed
-        # sections that still expose a usable catalog. The engine has already
-        # performed the equivalent recovery in this case.
-        for page_index, page in enumerate(document.pages):
-            yield page_index, page
+        # sections that still expose a usable catalog.
+        yield from fallback_projection()
         return
 
-    data = bytes(document.raw_data)
+    xref_sections: list[dict[int, Any]] = []
+    section_start = start
+    section_seen: set[int] = set()
+    try:
+        while section_start not in section_seen:
+            section_seen.add(section_start)
+            try:
+                entries, _trailer, previous, xref_stream = XRefScanner.parse_section_at(
+                    data,
+                    section_start,
+                    recover_malformed_objects=False,
+                )
+            except Exception as original_error:
+                recovered_section = None
+                for nearby in XRefScanner.find_nearby_sections(data, section_start):
+                    if nearby in section_seen:
+                        continue
+                    try:
+                        recovered_section = XRefScanner.parse_section_at(
+                            data,
+                            nearby,
+                            recover_malformed_objects=False,
+                        )
+                    except Exception:
+                        continue
+                    section_seen.add(nearby)
+                    break
+                if recovered_section is None:
+                    raise original_error
+                entries, _trailer, previous, xref_stream = recovered_section
+            if xref_stream is not None:
+                stream_entries, _ignored = XRefScanner.load_section_chain(
+                    data,
+                    xref_stream,
+                    set(section_seen),
+                    recover_malformed_objects=False,
+                )
+                entries = dict(entries)
+                entries.update(stream_entries)
+            xref_sections.append(entries)
+            if previous is None:
+                break
+            section_start = previous
+    except Exception:
+        xref_sections = [strict_xref]
+
+    info_reference = lookup_dict_key(strict_trailer, "Info")
+    if isinstance(info_reference, PdfReference):
+        info_key = (info_reference.object_number << 16) | info_reference.generation_number
+        info_entry = strict_xref.get(info_key)
+        if info_entry is not None and info_entry.in_use and info_entry.object_stream is None:
+            expected_header = re.compile(
+                rb"\s*"
+                + str(info_reference.object_number).encode("ascii")
+                + rb"\s+"
+                + str(info_reference.generation_number).encode("ascii")
+                + rb"\s+obj\b"
+            )
+            # PDFDocument ignores stale /Info entries that do not begin with
+            # the requested object.  Only apply its strict dictionary parser
+            # after confirming that the xref points at that object.
+            if expected_header.match(data, info_entry.offset):
+                info_lexer = PdfLexer(data, recover_malformed_objects=False)
+                info_lexer.rewind(info_entry.offset)
+                info_lexer.parse_indirect_object()
 
     def reference_is_resolvable(value: object) -> bool:
         if not isinstance(value, PdfReference):
             return True
         key = (value.object_number << 16) | value.generation_number
-        entry = strict_xref.get(key)
-        if entry is None or not entry.in_use:
+        candidates = [section[key] for section in xref_sections if key in section]
+        if not candidates:
             return False
-        if entry.object_stream is not None:
-            return True
-        # PDFParser tolerates junk between an xref offset and an indirect
-        # object header, but PDFObjRef rejects the first object if its number
-        # or generation does not match the requested reference.
-        search_end = min(len(data), entry.offset + 128)
-        header = re.search(rb"(?<!\d)(\d+)\s+(\d+)\s+obj", data[entry.offset:search_end])
-        if header is not None:
-            object_number, generation_number = (int(value) for value in header.groups())
-            return (
-                object_number == value.object_number
-                and generation_number == value.generation_number
+        # PDFParser tolerates arbitrary junk at the xref offset until it sees
+        # an indirect-object header. PDFDocument rejects that first header if
+        # its identity differs from the requested reference; it does not skip
+        # over a different object to find a later match.
+        for entry in candidates:
+            if not entry.in_use:
+                continue
+            if entry.object_stream is not None:
+                return True
+            search_end = min(len(data), entry.offset + 1_048_576)
+            header_pattern = re.compile(rb"(?<!\d)(\d+)\s+(\d+)\s+obj\b")
+            first_header = header_pattern.search(data, entry.offset, search_end)
+            expected_pattern = re.compile(
+                rb"(?<!\d)"
+                + str(value.object_number).encode("ascii")
+                + rb"\s+"
+                + str(value.generation_number).encode("ascii")
+                + rb"\s+obj\b"
             )
+            expected_header = expected_pattern.search(data, entry.offset, search_end)
+            if expected_header is None:
+                continue
+            offset_start = entry.offset
+            while offset_start < len(data) and data[offset_start] in b"\x00\t\n\x0c\r ":
+                offset_start += 1
+            if first_header is not None and first_header.start() == offset_start:
+                found_number, found_generation = (int(item) for item in first_header.groups())
+                if (
+                    found_number != value.object_number
+                    or found_generation != value.generation_number
+                ):
+                    continue
+            return True
         return False
 
     root_reference = lookup_dict_key(strict_trailer, "Root")
+    if root_reference is None:
+        raise PdfError("No /Root object")
     if not reference_is_resolvable(root_reference):
+        hard_mismatch = False
+        if isinstance(root_reference, PdfReference):
+            root_key = (root_reference.object_number << 16) | root_reference.generation_number
+            root_entry = strict_xref.get(root_key)
+            if root_entry is not None and root_entry.object_stream is None:
+                offset = root_entry.offset
+                while offset < len(data) and data[offset] in b"\x00\t\n\x0c\r ":
+                    offset += 1
+                header = re.match(rb"(\d+)\s+(\d+)\s+obj\b", data[offset:])
+                if header is not None:
+                    hard_mismatch = (int(header.group(1)), int(header.group(2))) != (
+                        root_reference.object_number,
+                        root_reference.generation_number,
+                    )
+        if not hard_mismatch:
+            yield from fallback_pages(
+                ((key >> 16, key & 0xFFFF) for key, entry in strict_xref.items() if entry.in_use)
+            )
         return
     try:
         catalog = document.resolver.resolve(root_reference)
     except Exception:
         return
     if not isinstance(catalog, dict):
-        return
+        raise PdfError("invalid /Root object")
     pages_reference = lookup_dict_key(catalog, "Pages")
     page_index = 0
     visited: set[tuple[str, int, int] | tuple[str, int]] = set()
@@ -119,7 +397,13 @@ def internal_pdfminer_resolvable_pages(document: PdfDocument) -> Iterator[tuple[
         if valid_reference and not duplicate and current_index < len(document.pages):
             yield current_index, document.pages[current_index]
 
-    yield from traverse(pages_reference)
+    declared_pages = tuple(traverse(pages_reference))
+    if declared_pages:
+        yield from declared_pages
+        return
+    yield from fallback_pages(
+        ((key >> 16, key & 0xFFFF) for key, entry in strict_xref.items() if entry.in_use)
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -906,6 +1190,65 @@ def internal_pdfminer_glyph_text(glyph: Any) -> str:
     return glyph.text
 
 
+def internal_pdfminer_embedded_cmap_is_unusable(glyph: Any) -> bool:
+    """Whether pdfminer's embedded encoding CMap decodes no character codes.
+
+    The CMap object used for a Type0 font implements ``add_code2cid`` but its
+    parser sends embedded ``cidchar``/``cidrange`` entries through
+    ``add_cid2unichr``.  That base-class hook is intentionally a no-op, so a
+    self-contained embedded encoding produces an empty code tree.  A CMap
+    using a named parent can still populate the tree through ``usecmap``.
+    """
+    decoder = glyph.font_decoder
+    if not getattr(decoder, "is_cid_font", False):
+        return False
+    descendants = _mapping_value(decoder.font, "DescendantFonts")
+    if not isinstance(descendants, list) or not descendants:
+        raise PdfError("Type0 font is missing /DescendantFonts")
+    encoding = _mapping_value(decoder.font, "Encoding")
+    try:
+        data = bytes(encoding.decoded_data)
+    except (AttributeError, TypeError, ValueError):
+        return False
+    cmap_name_match = re.search(rb"/CMapName\s*/([^\s<>\[\]()/%]+)", data)
+    if cmap_name_match is not None:
+        cmap_name = cmap_name_match.group(1).decode("latin-1")
+        if resolve_cmap_decoder(cmap_name) is not None:
+            return False
+    return re.search(rb"/[!-~]+\s+usecmap\b", data) is None
+
+
+def internal_pdfminer_validate_page_resources(page: PdfPage) -> None:
+    """Apply failures raised while pdfminer constructs a page resource map."""
+    resources = page.cached_resources
+    fonts = page.document.resolver.resolve(lookup_dict_key(resources, "Font"))
+    if isinstance(fonts, dict):
+        for font_value in fonts.values():
+            font = page.document.resolver.resolve(font_value)
+            if not isinstance(font, dict):
+                continue
+            if normalize_pdf_name(lookup_dict_key(font, "Subtype")) == "Type0":
+                descendants = page.document.resolver.resolve(
+                    lookup_dict_key(font, "DescendantFonts")
+                )
+                if not isinstance(descendants, list) or not descendants:
+                    raise PdfError("Type0 font is missing /DescendantFonts")
+
+    color_spaces = page.document.resolver.resolve(lookup_dict_key(resources, "ColorSpace"))
+    if not isinstance(color_spaces, dict):
+        return
+    for color_space_value in color_spaces.values():
+        color_space = page.document.resolver.resolve(color_space_value)
+        if not isinstance(color_space, list) or len(color_space) < 2:
+            continue
+        if normalize_pdf_name(color_space[0]) != "ICCBased":
+            continue
+        profile = page.document.resolver.resolve(color_space[1])
+        dictionary = getattr(profile, "dictionary", profile)
+        if not isinstance(dictionary, dict) or lookup_dict_key(dictionary, "N") is None:
+            raise PdfError("ICCBased color profile is missing /N")
+
+
 def internal_pdfminer_ligature_overrides(
     glyphs: tuple[Any, ...],
 ) -> tuple[
@@ -1082,22 +1425,55 @@ def internal_pdfminer_literal_glyphs(
     return tuple(projected), offsets
 
 
+class _PdfminerOffsetMap(dict[int, tuple[float, float]]):
+    """Device offsets plus exact projected origins for LTChar reconstruction."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.origins: dict[int, tuple[float, float]] = {}
+
+
 def internal_pdfminer_offsets(
     glyphs: tuple[Any, ...], literal_offsets: Mapping[int, tuple[float, float]]
-) -> dict[int, tuple[float, float]]:
+) -> _PdfminerOffsetMap:
     """Reproduce pdfminer's cursor after legacy decoding and width loss."""
-    offsets: dict[int, tuple[float, float]] = {}
-    correction_x = 0.0
-    correction_y = 0.0
+    offsets = _PdfminerOffsetMap()
+    correction_text_x = 0.0
+    correction_text_y = 0.0
     for glyph_index, glyph in enumerate(glyphs):
         baseline = glyph.baseline
         literal_x, literal_y = literal_offsets.get(id(glyph), (0.0, 0.0))
-        offsets[id(glyph)] = (correction_x + literal_x, correction_y + literal_y)
+        provenance = dict(glyph.provenance) if glyph.provenance else {}
+        cursor = provenance.get("pdfminer_cursor")
+        matrix_origin = provenance.get("pdfminer_matrix_origin")
+        text_matrix = provenance.get("text_matrix")
+        origin = provenance.get("pdfminer_origin")
+        if (
+            isinstance(cursor, (tuple, list))
+            and len(cursor) == 2
+            and isinstance(matrix_origin, (tuple, list))
+            and len(matrix_origin) == 2
+            and isinstance(text_matrix, (tuple, list))
+            and len(text_matrix) == 4
+            and isinstance(origin, (tuple, list))
+            and len(origin) == 2
+        ):
+            cursor_x = float(cursor[0]) + correction_text_x
+            cursor_y = float(cursor[1]) + correction_text_y
+            a, b, c, d = (float(value) for value in text_matrix)
+            expected_x = cursor_x * a + cursor_y * c + float(matrix_origin[0])
+            expected_y = cursor_x * b + cursor_y * d + float(matrix_origin[1])
+            offsets.origins[id(glyph)] = (expected_x + literal_x, expected_y + literal_y)
+            offsets[id(glyph)] = (
+                expected_x - float(origin[0]) + literal_x,
+                expected_y - float(origin[1]) + literal_y,
+            )
+        else:
+            offsets[id(glyph)] = (correction_text_x + literal_x, correction_text_y + literal_y)
         if glyph_index + 1 >= len(glyphs):
             continue
         following = glyphs[glyph_index + 1]
         following_baseline = following.baseline
-        provenance = dict(glyph.provenance) if glyph.provenance else {}
         following_provenance = dict(following.provenance) if following.provenance else {}
         continuous = (
             baseline is not None
@@ -1109,20 +1485,25 @@ def internal_pdfminer_offsets(
             and provenance.get("text_matrix") == following_provenance.get("text_matrix")
         )
         if not continuous:
-            correction_x = 0.0
-            correction_y = 0.0
+            correction_text_x = 0.0
+            correction_text_y = 0.0
             continue
-        builtin_width = _pdfminer_builtin_width(glyph)
-        if builtin_width is not None:
-            width_code = (
-                glyph.cid if getattr(glyph.font_decoder, "is_cid_font", False) else glyph.char_code
+        width_code = (
+            glyph.cid if getattr(glyph.font_decoder, "is_cid_font", False) else glyph.char_code
+        )
+        if width_code is not None:
+            source_width = float(glyph.font_decoder.glyph_width(width_code)) * 0.001
+            target_width = internal_pdfminer_normalized_width(glyph)
+        else:
+            source_width = target_width = 0.0
+        if source_width != target_width:
+            scale = (
+                (source_width - target_width)
+                * float(glyph.font_size)
+                * float(provenance.get("horizontal_scale", 100.0))
+                * 0.01
             )
-            source_width = (
-                float(glyph.font_decoder.glyph_width(width_code)) if width_code is not None else 0.0
-            )
-            retained_ratio = builtin_width / source_width if source_width else 0.0
-            correction_x -= (baseline[2] - baseline[0]) * (1.0 - retained_ratio)
-            correction_y -= (baseline[3] - baseline[1]) * (1.0 - retained_ratio)
+            correction_text_x -= scale
         if glyph.seqno == following.seqno:
             continue
     return offsets
@@ -1212,19 +1593,53 @@ def internal_pdfminer_normalized_width(glyph: Any) -> float:
     width_lookup = getattr(glyph.font_decoder, "glyph_width", None)
     if width_code is None or not callable(width_lookup):
         return 0.0
-    width = float(width_lookup(width_code)) * 0.001
+    width_scale = 0.001
+    if getattr(glyph.font_decoder, "is_type3", False):
+        font_matrix = _mapping_value(glyph.font_decoder.font, "FontMatrix")
+        if isinstance(font_matrix, (tuple, list)) and len(font_matrix) >= 4:
+            # PDFType3Font uses apply_matrix_norm(matrix, (1, 1)) and
+            # therefore scales horizontal widths by ``a + c`` rather than by
+            # the conventional fixed 1/1000 text-space factor.
+            width_scale = float(font_matrix[0]) + float(font_matrix[2])
+        raw_widths = _mapping_value(glyph.font_decoder.font, "Widths")
+        first_char = _mapping_value(glyph.font_decoder.font, "FirstChar")
+        if isinstance(raw_widths, (tuple, list)) and isinstance(first_char, int):
+            index = width_code - first_char
+            if 0 <= index < len(raw_widths):
+                try:
+                    return float(raw_widths[index]) * width_scale
+                except (TypeError, ValueError):
+                    return 0.0
+            return 0.0
+    width = float(width_lookup(width_code)) * width_scale
     builtin_width = _pdfminer_builtin_width(glyph)
     if builtin_width is not None:
         width = builtin_width * 0.001
-    base_font = str(_mapping_value(glyph.font_decoder.font, "BaseFont"))
+    base_font = normalize_pdf_name(_mapping_value(glyph.font_decoder.font, "BaseFont"))
     glyph_name = getattr(glyph.font_decoder, "encoding_differences", {}).get(glyph.char_code)
-    if (
-        glyph_name
-        and _mapping_value(glyph.font_decoder.font, "Widths") is None
-        and base_font.split("+")[-1] in {"Symbol", "ZapfDingbats"}
-    ):
+    if base_font in {"Symbol", "ZapfDingbats"} and glyph_name and not toUnicode(glyph_name):
         return 0.0
     return width
+
+
+def internal_pdfminer_font_name(glyph: Any) -> str:
+    """Return the name exposed by pdfminer's constructed font object.
+
+    FontMetricsDB includes aliases such as Arial whose metric record is the
+    corresponding Standard-14 font.  PDFType1Font/PDFTrueTypeFont replace the
+    PDF descriptor with that record before PDFFont derives ``fontname``.
+    Core keeps the source font name because it is useful to native callers, so
+    apply the legacy projection only at the compatibility boundary.
+    """
+    base_font = str(_mapping_value(glyph.font_decoder.font, "BaseFont") or "")
+    builtin_metrics = FONT_DATA.get(base_font)
+    if isinstance(builtin_metrics, dict):
+        props = builtin_metrics.get("props")
+        if isinstance(props, dict):
+            font_name = props.get("FontName")
+            if isinstance(font_name, str):
+                return font_name
+    return str(glyph.font_name)
 
 
 def internal_pdfminer_descent(glyph: Any) -> float:
@@ -1376,6 +1791,7 @@ def extract_pages(  # noqa: C901
             page_width = abs(page.width)
             page_height = abs(page.height)
             chars: list[LTChar] = []
+            internal_pdfminer_validate_page_resources(page)
             products = page.get_page_program().products
             compatibility_glyphs: list[Any] = []
             for glyph in products.glyphs:
@@ -1410,6 +1826,8 @@ def extract_pages(  # noqa: C901
             )
             vertical_positions: dict[tuple[str | None, int], tuple[float, int]] = {}
             for glyph_index, glyph in enumerate(projected_glyphs):
+                if internal_pdfminer_embedded_cmap_is_unusable(glyph):
+                    continue
                 if _pdfminer_form_glyph_is_clipped(glyph):
                     continue
                 run_index = bisect_right(run_sequences, glyph.seqno) - 1
@@ -1795,7 +2213,7 @@ def extract_pages(  # noqa: C901
                 character = LTChar(
                     (x0, y0, x1, y1),
                     text,
-                    glyph.font_name,
+                    internal_pdfminer_font_name(glyph),
                     effective_font_height,
                 )
                 provenance = (

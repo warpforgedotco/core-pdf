@@ -13,6 +13,7 @@ from core_pdf.impl.engine.spec.s_07_objects.coercion import (
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_07_objects.resolver_values import PdfValueResolver
 from core_pdf.impl.engine.spec.s_09_fonts.encoding import decode_pdf_text_string
+from core_pdf.impl.exceptions import PdfError
 from core_pdf.impl.objects import PdfName, PdfReference, PdfStream, PdfString
 from core_pdf.impl.types import PdfDict
 
@@ -56,7 +57,7 @@ def resolve_metadata(
     xmp: XmpNodeRecord | None
     try:
         xmp = resolve_metadata_stream(resolver, trailer, recover=True)
-    except (RecursionError, ValueError):
+    except (PdfError, RecursionError, ValueError):
         # XMP is optional metadata and malformed metadata must not block extraction.
         xmp = {"parse_error": "invalid XMP metadata"}
     return {
@@ -77,7 +78,12 @@ def resolve_info_metadata(
     info_ref = lookup_dict_key(trailer, "Info")
     if info_ref is None:
         return {}
-    info = resolver.resolve_dict(info_ref)
+    try:
+        info = resolver.resolve_dict(info_ref)
+    except (PdfError, RecursionError, ValueError):
+        if recover:
+            return {}
+        raise
     if not isinstance(info, dict):
         if recover:
             return {}

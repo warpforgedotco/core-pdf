@@ -19,6 +19,9 @@ from core_pdf.impl.engine.layout.geometry import (
     bbox_union,
     flip_rect_vertical,
 )
+from core_pdf.impl.engine.spec.s_07_objects.coercion import normalize_pdf_name
+from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
+from core_pdf.impl.primitives import PdfReference
 
 from .exceptions import PdfminerException
 
@@ -206,24 +209,96 @@ class EnginePageAdapter:
 
     def __init__(self, page: Any) -> None:
         self.page = page
+        width: int | float = page.width
+        height: int | float = page.height
+        media_left: int | float = 0
+        media_bottom: int | float = 0
+        media_x0: int | float = 0
+        media_top: int | float = 0
+
+        def resolve_all(value: Any, active: frozenset[tuple[int, int]] = frozenset()) -> Any:
+            if isinstance(value, PdfReference):
+                key = (value.object_number, value.generation_number)
+                if key in active:
+                    raise ValueError("cyclic indirect object while resolving page geometry")
+                resolved = page.document.resolver.resolve(value)
+                if (
+                    isinstance(resolved, dict)
+                    and normalize_pdf_name(lookup_dict_key(resolved, "Type")) == "Page"
+                ):
+                    return value
+                return resolve_all(resolved, active | {key})
+            if isinstance(value, (list, tuple)):
+                return type(value)(resolve_all(item, active) for item in value)
+            if isinstance(value, dict):
+                is_annotation = normalize_pdf_name(lookup_dict_key(value, "Type")) == "Annot"
+                return {
+                    key: item
+                    if is_annotation and normalize_pdf_name(key) == "Parent"
+                    else resolve_all(item, active)
+                    for key, item in value.items()
+                }
+            return value
+
+        try:
+            raw_box = lookup_dict_key(page.page_dict, "MediaBox")
+            if raw_box is None:
+                raw_box = page.inherited_values.get("MediaBox")
+            raw_box = resolve_all(raw_box)
+            if raw_box is None:
+                raise ValueError("MediaBox is missing")
+            if raw_box is not None and (
+                not isinstance(raw_box, (tuple, list))
+                or len(raw_box) != 4
+                or not all(
+                    isinstance(value, (int, float)) and not isinstance(value, bool)
+                    for value in raw_box
+                )
+            ):
+                raise ValueError(f"invalid MediaBox: {raw_box!r}")
+            if isinstance(raw_box, (tuple, list)):
+                media_left = raw_box[0]
+                media_bottom = raw_box[1]
+                width = abs(raw_box[2] - raw_box[0])
+                height = abs(raw_box[3] - raw_box[1])
+                normalized_x0 = min(raw_box[0], raw_box[2])
+                normalized_y0 = min(raw_box[1], raw_box[3])
+                if int(page.rotation) % 180:
+                    media_x0 = normalized_y0
+                    media_top = -normalized_x0
+                else:
+                    media_x0 = normalized_x0
+                    media_top = -normalized_y0
+        except ValueError:
+            raise
+        except Exception:
+            pass
         self.info = SimpleNamespace(
             index=page.page_number - 1,
             number=page.page_number,
-            width=float(page.width),
-            height=float(page.height),
+            width=width,
+            height=height,
+            media_left=media_left,
+            media_bottom=media_bottom,
+            media_x0=media_x0,
+            media_top=media_top,
             rotation=int(page.rotation),
         )
 
     def text_characters(self) -> Iterator[Any]:
         from ...pdfminer import (
             internal_pdfminer_descent,
+            internal_pdfminer_embedded_cmap_is_unusable,
+            internal_pdfminer_font_name,
             internal_pdfminer_glyph_text,
             internal_pdfminer_ligature_overrides,
             internal_pdfminer_literal_glyphs,
             internal_pdfminer_normalized_width,
             internal_pdfminer_offsets,
+            internal_pdfminer_validate_page_resources,
         )
 
+        internal_pdfminer_validate_page_resources(self.page)
         compatibility_glyphs: list[Any] = []
         for glyph in self.page.get_page_program().products.glyphs:
             provenance = dict(glyph.provenance) if glyph.provenance else {}
@@ -236,6 +311,8 @@ class EnginePageAdapter:
         pdfminer_offsets = internal_pdfminer_offsets(projected_glyphs, literal_offsets)
         ligatures, skipped_ligature_parts = internal_pdfminer_ligature_overrides(projected_glyphs)
         for glyph in projected_glyphs:
+            if internal_pdfminer_embedded_cmap_is_unusable(glyph):
+                continue
             if id(glyph) in skipped_ligature_parts:
                 continue
             ligature = ligatures.get(id(glyph))
@@ -244,6 +321,7 @@ class EnginePageAdapter:
                 continue
             x0, y0, x1, y1 = ligature[1] if ligature is not None else glyph.advance_bbox
             offset_x, offset_y = pdfminer_offsets.get(id(glyph), (0.0, 0.0))
+            projected_origin = pdfminer_offsets.origins.get(id(glyph))
             x0 += offset_x
             x1 += offset_x
             y0 += offset_y
@@ -291,9 +369,11 @@ class EnginePageAdapter:
                     ),
                 )
                 a, b, c, d = (float(value) for value in matrix)
-                origin_x, origin_y = (float(value) for value in origin)
-                origin_x += offset_x
-                origin_y += offset_y
+                origin_x, origin_y = (
+                    projected_origin
+                    if projected_origin is not None
+                    else (float(origin[0]) + offset_x, float(origin[1]) + offset_y)
+                )
                 font_size = glyph.font_size
                 scaling = float(provenance.get("horizontal_scale", 100.0)) * 0.01
                 local_left = -float(metric[1]) * font_size * 0.001
@@ -303,8 +383,8 @@ class EnginePageAdapter:
                 advance = -float(metric[0]) * font_size * 0.001 * scaling
                 corners = tuple(
                     (
-                        horizontal * a + vertical * c + origin_x,
-                        horizontal * b + vertical * d + origin_y,
+                        a * horizontal + c * vertical + origin_x,
+                        b * horizontal + d * vertical + origin_y,
                     )
                     for horizontal in (local_left, local_left + font_size)
                     for vertical in (local_top + advance, local_top)
@@ -326,9 +406,11 @@ class EnginePageAdapter:
                     and len(origin) == 2
                 ):
                     a, b, c, d = (float(value) for value in matrix)
-                    origin_x, origin_y = (float(value) for value in origin)
-                    origin_x += offset_x
-                    origin_y += offset_y
+                    origin_x, origin_y = (
+                        projected_origin
+                        if projected_origin is not None
+                        else (float(origin[0]) + offset_x, float(origin[1]) + offset_y)
+                    )
                     font_size = glyph.font_size
                     scaling = float(provenance.get("horizontal_scale", 100.0)) * 0.01
                     advance = internal_pdfminer_normalized_width(glyph) * font_size * scaling
@@ -337,8 +419,8 @@ class EnginePageAdapter:
                     high = low + font_size
                     corners = tuple(
                         (
-                            along * a + vertical * c + origin_x,
-                            along * b + vertical * d + origin_y,
+                            a * along + c * vertical + origin_x,
+                            b * along + d * vertical + origin_y,
                         )
                         for along in (0.0, advance)
                         for vertical in (low, high)
@@ -352,10 +434,14 @@ class EnginePageAdapter:
                 x0 = x1 - font_height
             elif glyph.rotation_angle % 360 == 270:
                 x1 = x0 + font_height
+            x0 -= self.info.media_left
+            x1 -= self.info.media_left
+            y0 -= self.info.media_bottom
+            y1 -= self.info.media_bottom
             yield SimpleNamespace(
                 text=text,
                 bbox=SimpleNamespace(x0=x0, y0=y0, x1=x1, y1=y1),
-                font_name=glyph.font_name,
+                font_name=internal_pdfminer_font_name(glyph),
                 font_size=font_height,
                 color=glyph.fill,
                 rotation_angle=glyph.rotation_angle,
@@ -456,6 +542,10 @@ def _char(page: EnginePageAdapter, item: Any, doctop: float) -> ObjectDict:
     elif page.info.rotation % 360 == 270:
         rotated_height = page.info.width
         x0, x1, top, bottom = top, bottom, rotated_height - x1, rotated_height - x0
+    x0 += page.info.media_x0
+    x1 += page.info.media_x0
+    top += page.info.media_top
+    bottom += page.info.media_top
     text = item.text
     document = getattr(page.page, "document", None)
     if getattr(document, "compat_unicode_norm", None) == "NFC" and text == "\u037e":
@@ -505,11 +595,15 @@ def _drawing(page: EnginePageAdapter, item: Any, doctop: float) -> ObjectDict:
 
 
 class Page:
-    def __init__(self, pdf: "PDF", index: int, doctop: float = 0.0) -> None:
+    def __init__(
+        self, pdf: "PDF", index: int, doctop: float = 0.0, engine_page: Any | None = None
+    ) -> None:
         self.pdf = pdf
         self.page_number = index + 1
         self.initial_doctop = doctop
-        self._adapter = EnginePageAdapter(pdf._document.pages[index])
+        self._adapter = EnginePageAdapter(
+            pdf._document.pages[index] if engine_page is None else engine_page
+        )
         self.rotation = self._adapter.info.rotation % 360
         self.mediabox = self._box_from_page("media_box") or (0.0, 0.0, self.width, self.height)
         self.cropbox = self._box_from_page("crop_box")
@@ -519,7 +613,7 @@ class Page:
                 if self.rotation % 180
                 else self.mediabox
             )
-        self.bbox = (0.0, 0.0, self.width, self.height)
+        self.bbox = (0, 0, self.width, self.height)
         self._objects: dict[str, list[ObjectDict]] | None = None
         self._structured_page: Any | None = None
         self._layout: Any | None = None
@@ -1797,10 +1891,10 @@ class PDF(ClosingMixin):
                 self._pages = []
                 resolvable = tuple(internal_pdfminer_resolvable_pages(self._document))
                 selected = set(self._page_selection) if self._page_selection is not None else None
-                for page_number, (index, _page) in enumerate(resolvable, 1):
+                for page_number, (index, engine_page) in enumerate(resolvable, 1):
                     if selected is not None and page_number not in selected:
                         continue
-                    page = Page(self, index, doctop)
+                    page = Page(self, index, doctop, engine_page)
                     self._pages.append(page)
                     doctop += page.height
             except (IndexError, PdfminerException):
