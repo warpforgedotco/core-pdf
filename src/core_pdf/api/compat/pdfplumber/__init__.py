@@ -1,3 +1,5 @@
+"""Supported high-level pdfplumber-shaped APIs backed by core-pdf."""
+
 from __future__ import annotations
 
 import builtins
@@ -286,7 +288,7 @@ class EnginePageAdapter:
         )
 
     def text_characters(self) -> Iterator[Any]:
-        from ...pdfminer import (
+        from ..pdfminer import (
             internal_pdfminer_descent,
             internal_pdfminer_embedded_cmap_is_unusable,
             internal_pdfminer_font_name,
@@ -888,7 +890,7 @@ class Page:
     @property
     def layout(self) -> Any:
         if self._layout is None:
-            from ...pdfminer import LAParams, extract_pages
+            from ..pdfminer import LAParams, extract_pages
 
             laparams = self.pdf.laparams
             if isinstance(laparams, Mapping):
@@ -1885,7 +1887,7 @@ class PDF(ClosingMixin):
     def pages(self) -> list[Page]:
         if self._pages is None:
             try:
-                from ...pdfminer import internal_pdfminer_resolvable_pages
+                from ..pdfminer import internal_pdfminer_resolvable_pages
 
                 doctop = 0.0
                 self._pages = []

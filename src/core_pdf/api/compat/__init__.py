@@ -9,7 +9,9 @@ from __future__ import annotations
 from importlib import import_module
 from typing import Any
 
-internal_MODULES = frozenset({"llamaindex", "pdfminer", "pikepdf", "pypdf", "unstructured", "xray"})
+internal_MODULES = frozenset(
+    {"llamaindex", "pdfminer", "pdfplumber", "pikepdf", "pypdf", "unstructured", "xray"}
+)
 internal_EXPORTS = {
     **{
         name: ("pdfminer", name)
