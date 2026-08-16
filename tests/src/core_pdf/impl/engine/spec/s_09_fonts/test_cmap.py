@@ -90,6 +90,21 @@ def test_tounicode_retains_hex_prefix_before_corrupt_nested_delimiter() -> None:
     assert cmap.mappings == {b"\x01": "D", b"\x02": "\x00"}
 
 
+def test_tounicode_can_distinguish_explicit_null_mappings() -> None:
+    cmap = ToUnicodeCMap(
+        b"""
+        1 begincodespacerange <0000> <ffff> endcodespacerange
+        2 beginbfchar
+        <0001> <0041>
+        <0002> <0000>
+        endbfchar
+        """
+    )
+
+    assert cmap.decode(b"\x00\x01\x00\x02") == "A"
+    assert cmap.decode(b"\x00\x01\x00\x02", preserve_nulls=True) == "A\x00"
+
+
 def test_tounicode_accepts_numeric_cid_ranges_as_unicode_scalars() -> None:
     cmap = ToUnicodeCMap(
         b"""

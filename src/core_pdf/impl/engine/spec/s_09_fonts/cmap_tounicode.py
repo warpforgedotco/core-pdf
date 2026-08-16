@@ -278,7 +278,7 @@ class ToUnicodeCMap:
         self.fast_decode_table_2byte = table2
         return table2
 
-    def decode(self, data: bytes) -> str:
+    def decode(self, data: bytes, *, preserve_nulls: bool = False) -> str:
         if not data:
             return ""
 
@@ -287,7 +287,7 @@ class ToUnicodeCMap:
         ):
             table = self.fast_decode_table
             result = "".join(map(table.__getitem__, data))
-            if "\x00" in result:
+            if not preserve_nulls and "\x00" in result:
                 return result.replace("\x00", "")
             return result
 
@@ -311,7 +311,7 @@ class ToUnicodeCMap:
                     out_small.append(table2[code])
                 result = "".join(out_small)
 
-            if "\x00" in result:
+            if not preserve_nulls and "\x00" in result:
                 return result.replace("\x00", "")
             return result
 
@@ -361,7 +361,7 @@ class ToUnicodeCMap:
                 pos += 1
 
         result = "".join(out)
-        if "\x00" in result:
+        if not preserve_nulls and "\x00" in result:
             return result.replace("\x00", "")
         return result
 

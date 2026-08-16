@@ -9,7 +9,7 @@ from __future__ import annotations
 from importlib import import_module
 from typing import Any
 
-internal_MODULES = frozenset({"llamaindex", "pdfminer", "pikepdf", "unstructured", "xray"})
+internal_MODULES = frozenset({"llamaindex", "pdfminer", "pikepdf", "pypdf", "unstructured", "xray"})
 internal_EXPORTS = {
     **{
         name: ("pdfminer", name)
@@ -33,6 +33,8 @@ internal_EXPORTS = {
         )
     },
     "Pdf": ("pikepdf", "Pdf"),
+    "PdfReader": ("pypdf", "PdfReader"),
+    "PdfWriter": ("pypdf", "PdfWriter"),
     "get_nodes_from_documents": ("llamaindex", "get_nodes_from_documents"),
     "load_data": ("llamaindex", "load_data"),
     "partition_pdf": ("unstructured", "partition_pdf"),

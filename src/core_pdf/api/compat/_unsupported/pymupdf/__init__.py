@@ -12,7 +12,7 @@ from os import PathLike
 from pathlib import Path
 from typing import Any, cast
 
-from core_pdf.api.compat._unsupported.pypdf import (
+from core_pdf.api.compat.pypdf import (
     PdfInput,
     PdfPageObject,
     PdfReader,

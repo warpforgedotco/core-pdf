@@ -1,4 +1,4 @@
-"""High-level pypdf-shaped APIs backed by core-pdf."""
+"""Supported high-level pypdf-shaped APIs backed by core-pdf."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ from typing import Any, BinaryIO, cast
 
 from core_pdf import PdfDocument
 from core_pdf.impl.engine.layout.geometry import rect_tuple
+from core_pdf.impl.engine.parse.legacy_text import extract_legacy_text
 from core_pdf.impl.engine.spec.s_07_content.operations import iter_content_operations
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
@@ -33,10 +34,21 @@ from core_pdf.impl.objects import PdfReference, PdfStream, PdfString
 PdfInput = str | PathLike[str] | bytes | bytearray | BytesIO
 BBox = tuple[float, float, float, float]
 GraphicsState = tuple[list[float], str | None, float, float]
+internal_INFERRED_SPACE = "\U000f0000"
 
 
 def _validate_pypdf_page_tree(pdf: PdfDocument) -> None:
     """Preserve pypdf's rejection of repeated/cyclic intermediate page nodes."""
+    literal_trailers = tuple(pdf.iter_literal_trailer_dictionaries())
+    if literal_trailers:
+        latest_root = lookup_dict_key(literal_trailers[-1], "Root")
+        if isinstance(latest_root, PdfReference):
+            root_key = (latest_root.object_number << 16) | latest_root.generation_number
+            if root_key not in pdf.xref:
+                raise ValueError("catalog root references a missing object generation")
+        elif latest_root is not None and not isinstance(latest_root, dict):
+            raise ValueError("invalid catalog root")
+
     seen: set[tuple[int, int]] = set()
 
     def visit(value: object) -> None:
@@ -47,7 +59,7 @@ def _validate_pypdf_page_tree(pdf: PdfDocument) -> None:
             seen.add(key)
         node = pdf.resolver.resolve(value)
         if not isinstance(node, dict):
-            return
+            raise ValueError("invalid object in page tree")
         kids = pdf.resolver.resolve(lookup_dict_key(node, "Kids"))
         if isinstance(kids, (list, tuple)):
             for kid in kids:
@@ -84,19 +96,21 @@ def write_bytes(target: str | PathLike[str] | BinaryIO, data: bytes) -> None:
 def internal_pypdf_space_width(
     font: Mapping[object, object], resolver: Any, decoder: FontDecoder
 ) -> float:
-    """Match pypdf's simple-font fallback when code 32 has no declared width."""
+    """Return pypdf's explicit space width or its extraction default."""
+    if decoder.is_cid_font:
+        # Composite-font widths are keyed by encoded character.  A space that
+        # actually occurs in a show operand is refined below after decoding;
+        # without one pypdf retains extract_text's default space width.
+        return 200.0
     space_width = decoder.glyph_width(32)
     first_char = lookup_dict_key(font, "FirstChar")
     raw_widths = resolver.resolve(lookup_dict_key(font, "Widths"))
     if not isinstance(first_char, (int, float)) or not isinstance(raw_widths, (list, tuple)):
-        return space_width
+        return 200.0
     space_index = 32 - int(first_char)
     if 0 <= space_index < len(raw_widths):
-        return space_width
-    positive_widths = [float(width) for width in raw_widths if float(width) > 0]
-    if not positive_widths:
-        return space_width
-    return float(int(sum(positive_widths) / len(positive_widths)) // 2)
+        return space_width if space_width != 0 else 200.0
+    return 200.0
 
 
 def internal_cid_space_width(decoder: FontDecoder, data: bytes) -> float | None:
@@ -109,6 +123,10 @@ def internal_cid_space_width(decoder: FontDecoder, data: bytes) -> float | None:
     return None if space_glyph is None else decoder.glyph_width(space_glyph.width_code)
 
 
+def internal_bidi(value: str) -> str:
+    return unicodedata.bidirectional(value[0]) if value else ""
+
+
 def internal_decoded_width(decoder: FontDecoder | None, data: bytes) -> float:
     if decoder is None:
         return 0.0
@@ -118,7 +136,7 @@ def internal_decoded_width(decoder: FontDecoder | None, data: bytes) -> float:
 def internal_operand_text(
     data: bytes, cmap: ToUnicodeCMap | None, decoder: FontDecoder | None
 ) -> str:
-    text = cmap.decode(data) if cmap is not None else ""
+    text = cmap.decode(data, preserve_nulls=True) if cmap is not None else ""
     if not text and decoder is not None:
         text = "".join(glyph.unicode for glyph in decoder.decode_glyphs(data))
     if not text and len(data) % 2 == 0 and data[::2].count(0) >= len(data) // 4:
@@ -134,17 +152,38 @@ def internal_restore_graphics_state(stack: list[GraphicsState]) -> GraphicsState
 
 def internal_pypdf_rtl_order(text: str) -> str:
     output: list[str] = []
-    rtl_run: list[str] = []
+    segment = ""
+    rtl = False
     for character in text:
-        if unicodedata.bidirectional(character) in {"R", "AL", "AN"}:
-            rtl_run.append(character)
+        if character == internal_INFERRED_SPACE:
+            output.append(segment)
+            output.append(" ")
+            segment = ""
+            rtl = False
             continue
-        if rtl_run:
-            output.extend(reversed(rtl_run))
-            rtl_run.clear()
-        output.append(character)
-    output.extend(reversed(rtl_run))
-    return "".join(output).replace("’ :", ": ’")
+        if character in {"\n", "\r"}:
+            output.append(segment)
+            output.append(character)
+            segment = ""
+            rtl = False
+            continue
+        direction = internal_bidi(character)
+        if direction in {"R", "AL", "AN"}:
+            if not rtl:
+                output.append(segment)
+                segment = ""
+                rtl = True
+            segment = character + segment
+        elif direction in {"L", "LRE", "LRO", "LRI"}:
+            if rtl:
+                output.append(segment)
+                segment = ""
+                rtl = False
+            segment += character
+        else:
+            segment = character + segment if rtl else segment + character
+    output.append(segment)
+    return "".join(output)
 
 
 class StructuredState(ClosingMixin):
@@ -158,8 +197,15 @@ class StructuredState(ClosingMixin):
     @classmethod
     def open(cls, source: PdfInput, *, password: str = "") -> "StructuredState":
         pdf = PdfDocument.open(source, password=password)
-        _validate_pypdf_page_tree(pdf)
-        return cls(pdf, pdf.structured_document)
+        try:
+            if pdf.raw_data.find(b"startxref") < 0:
+                raise ValueError("startxref not found")
+            _validate_pypdf_page_tree(pdf)
+            structured = pdf.structured_document
+        except Exception:
+            pdf.close()
+            raise
+        return cls(pdf, structured)
 
     @classmethod
     def from_structured(cls, structured: Document) -> "StructuredState":
@@ -335,9 +381,22 @@ class PdfPageObject:
         self._document = document
         self._page = page
         self.internal_text_override: str | None = None
-        self.mediabox = Rectangle(0, 0, page.width, page.height)
-        self.cropbox = Rectangle(*(page.cropbox or self.mediabox))
-        self.rotation = page.rotation
+        if document.pdf is not None and 0 < page.page_number <= len(document.pdf.pages):
+            source_page = document.pdf.pages[page.page_number - 1]
+            media_box = source_page.media_box or (0.0, 0.0, page.width, page.height)
+            crop_box = source_page.crop_box or media_box
+            self.mediabox = Rectangle(*media_box)
+            self.cropbox = Rectangle(*crop_box)
+            raw_rotation = lookup_dict_key(source_page.inherited_values, "Rotate")
+            self.rotation = (
+                int(raw_rotation)
+                if isinstance(raw_rotation, (int, float))
+                else source_page.rotation
+            )
+        else:
+            self.mediabox = Rectangle(0, 0, page.width, page.height)
+            self.cropbox = Rectangle(*(page.cropbox or self.mediabox))
+            self.rotation = page.rotation
 
     def _capability_view(self) -> Any:
         return self._document.capability_page(self._page.page_number).structured_view
@@ -352,7 +411,18 @@ class PdfPageObject:
         source_page = self._document.pages[self._page.page_number - 1]
         if self._document.pdf is not None and self._page is source_page:
             page = self._document.capability_page(self._page.page_number)
-            glyphs = page.get_page_program().products.glyphs
+            return extract_legacy_text(page)
+            engine_glyphs = page.get_page_program().products.glyphs
+            compatibility_glyphs: list[Any] = []
+            for glyph in engine_glyphs:
+                if dict(glyph.provenance or ()).get("source") == "annotation_appearance":
+                    continue
+                underlying = dict(glyph.provenance or ()).get("compatibility_glyphs")
+                if isinstance(underlying, tuple) and underlying:
+                    compatibility_glyphs.extend(underlying)
+                else:
+                    compatibility_glyphs.append(glyph)
+            glyphs = tuple(compatibility_glyphs)
             resources = page.resolve_resources()
             raw_fonts = page.document.resolver.resolve(lookup_dict_key(resources, "Font"))
             font_cmaps: dict[str, ToUnicodeCMap] = {}
@@ -474,7 +544,9 @@ class PdfPageObject:
                     glyph.font_name
                 )
                 glyph_text = (
-                    glyph_cmap.decode(glyph.code_bytes) if glyph_cmap is not None else glyph.text
+                    glyph_cmap.decode(glyph.code_bytes, preserve_nulls=True)
+                    if glyph_cmap is not None
+                    else glyph.text
                 )
                 glyph_decoder = font_decoders.get(glyph.font_name)
                 cid_width_groups.update(
@@ -548,7 +620,9 @@ class PdfPageObject:
                 rendered_glyphs.append((glyph, glyph_text))
                 previous_glyph = glyph
                 previous_decoded = (
-                    glyph_cmap.decode(glyph.code_bytes) if glyph_cmap is not None else glyph.text
+                    glyph_cmap.decode(glyph.code_bytes, preserve_nulls=True)
+                    if glyph_cmap is not None
+                    else glyph.text
                 )
             flat_glyph_bytes = b"".join(glyph.code_bytes for glyph, _ in rendered_glyphs)
             flat_show_bytes = b"".join(show_bytes)
@@ -574,7 +648,7 @@ class PdfPageObject:
                     for offset in range(glyph_offset, glyph_offset + len(glyph.code_bytes))
                 ]
                 glyph_offset += len(glyph.code_bytes)
-                if any(offset is None for offset in mapped):
+                if not mapped or any(offset is None for offset in mapped):
                     continue
                 show_index = next(
                     (index for index, end in enumerate(show_ends) if cast(int, mapped[0]) < end),
@@ -625,7 +699,8 @@ class PdfPageObject:
             ]
             byte_aligned_groups = False
             if (
-                lost_show_boundaries and not unmatched_text_groups
+                lost_show_boundaries
+                and not unmatched_text_groups
                 or (
                     not direct_sequence_fonts
                     and not compact_sequence_fonts
@@ -680,7 +755,9 @@ class PdfPageObject:
                         missing_cmap = resource_cmaps.get(show_resources[show_index] or "")
                         missing_data = show_bytes[show_index]
                         missing_text = (
-                            missing_cmap.decode(missing_data) if missing_cmap is not None else ""
+                            missing_cmap.decode(missing_data, preserve_nulls=True)
+                            if missing_cmap is not None
+                            else ""
                         ) or missing_data.decode("latin-1")
                         synthetic_groups.append(
                             (
@@ -703,7 +780,9 @@ class PdfPageObject:
                     continue
                 compact_cmap = resource_cmaps.get(show_resources[show_index] or "")
                 compact_text = (
-                    compact_cmap.decode(show_bytes[show_index]) if compact_cmap is not None else ""
+                    compact_cmap.decode(show_bytes[show_index], preserve_nulls=True)
+                    if compact_cmap is not None
+                    else ""
                 )
                 if compact_text.strip() == group[6]:
                     groups[index] = (*group[:6], compact_text, *group[7:])
@@ -716,7 +795,9 @@ class PdfPageObject:
                         continue
                     sequence_cmap = resource_cmaps.get(show_resources[seqno] or "")
                     raw_text = (
-                        sequence_cmap.decode(data) if sequence_cmap is not None else ""
+                        sequence_cmap.decode(data, preserve_nulls=True)
+                        if sequence_cmap is not None
+                        else ""
                     ) or data.decode("latin-1")
                     if previous_group is None or not (
                         any(ord(character) <= 1 for character in raw_text)
@@ -743,7 +824,9 @@ class PdfPageObject:
                 sequence_cmap = resource_cmaps.get(show_resources[seqno] or "")
                 data = show_bytes[seqno]
                 raw_text = (
-                    sequence_cmap.decode(data) if sequence_cmap is not None else ""
+                    sequence_cmap.decode(data, preserve_nulls=True)
+                    if sequence_cmap is not None
+                    else ""
                 ) or data.decode("latin-1")
                 if any(ord(character) <= 1 for character in raw_text):
                     groups[index] = (*group[:6], raw_text, *group[7:])
@@ -762,12 +845,14 @@ class PdfPageObject:
             pending_tj_space = False
             matrix_space_pending = False
             matrix_newline_pending = False
+            xobject_boundary_pending = False
             cm_matrix = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
             tm_matrix = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
             previous_cm = cm_matrix.copy()
             previous_tm = tm_matrix.copy()
             current_font_size = 0.0
             current_space_width = 250.0
+            text_leading = 0.0
             accumulated_width = 0.0
             graphics_stack: list[GraphicsState] = []
             malformed_text_state = False
@@ -851,11 +936,24 @@ class PdfPageObject:
                     elif operator == "BT":
                         tm_matrix = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
                         moved_since_show = True
+                    elif operator == "TL":
+                        text_leading = float(cast(Any, operands[0])) if operands else 0.0
                     elif operator in {"Td", "TD"}:
                         tx = float(cast(Any, operands[0]))
                         ty = float(cast(Any, operands[1]))
+                        if operator == "TD":
+                            text_leading = -ty
                         tm_matrix[4] += tx * tm_matrix[0] + ty * tm_matrix[2]
                         tm_matrix[5] += tx * tm_matrix[1] + ty * tm_matrix[3]
+                        matrix_newline_pending = moved_to_newline()
+                        matrix_space_pending = moved_far_enough(accumulated_width)
+                        accumulated_width = 0.0
+                        previous_tm = tm_matrix.copy()
+                        previous_cm = cm_matrix.copy()
+                        moved_since_show = True
+                    elif operator == "T*":
+                        tm_matrix[4] -= text_leading * tm_matrix[2]
+                        tm_matrix[5] -= text_leading * tm_matrix[3]
                         matrix_newline_pending = moved_to_newline()
                         matrix_space_pending = moved_far_enough(accumulated_width)
                         accumulated_width = 0.0
@@ -875,6 +973,8 @@ class PdfPageObject:
                         cm_matrix = multiply(
                             [float(cast(Any, value)) for value in operands[:6]], cm_matrix
                         )
+                    elif operator == "Do":
+                        xobject_boundary_pending = True
                     elif operator == "Tf":
                         if len(operands) < 2:
                             malformed_text_state = True
@@ -885,6 +985,7 @@ class PdfPageObject:
                             resource_space_thresholds.get(current_font_resource, 237.5) / 0.475
                         ) / 2.0
                     elif operator == "Tj":
+                        xobject_boundary_pending = False
                         value = operands[0]
                         data = bytes(value.data) if isinstance(value, PdfString) else b""
                         show_metadata.append(
@@ -907,6 +1008,7 @@ class PdfPageObject:
                         previous_tm = tm_matrix.copy()
                         previous_cm = cm_matrix.copy()
                     elif operator == "TJ":
+                        xobject_boundary_pending = False
                         force_space_before = pending_tj_space or matrix_space_pending
                         pending_tj_space = False
                         matrix_space_pending = False
@@ -969,7 +1071,11 @@ class PdfPageObject:
                     resource_name = show_resources[show_index] or ""
                     operand_cmap = resource_cmaps.get(resource_name)
                     operand_decoder = resource_decoders.get(resource_name)
-                    operand_text = operand_cmap.decode(data) if operand_cmap is not None else ""
+                    operand_text = (
+                        operand_cmap.decode(data, preserve_nulls=True)
+                        if operand_cmap is not None
+                        else ""
+                    )
                     decoder_text = (
                         "".join(glyph.unicode for glyph in operand_decoder.decode_glyphs(data))
                         if operand_decoder is not None
@@ -978,15 +1084,10 @@ class PdfPageObject:
                     if any(ord(character) < 32 for character in decoder_text):
                         operand_text = decoder_text
                     operand_text = operand_text or decoder_text or data.decode("latin-1")
-                    operand_text = operand_text.replace("ᐌ", "\x00").replace("Ȑ", "\x00")
                     if add_newline and operand_output and not operand_output.endswith("\n"):
                         operand_output += "\n"
-                    previous_direction = (
-                        unicodedata.bidirectional(operand_output[-1]) if operand_output else ""
-                    )
-                    next_direction = (
-                        unicodedata.bidirectional(operand_text[0]) if operand_text else ""
-                    )
+                    previous_direction = internal_bidi(operand_output[-1:])
+                    next_direction = internal_bidi(operand_text[:1])
                     previous_geometry = show_geometry.get(show_index - 1)
                     current_geometry = show_geometry.get(show_index)
                     geometry_space = (
@@ -1003,22 +1104,18 @@ class PdfPageObject:
                         delta_x = show_positions[show_index][0] - show_positions[show_index - 1][0]
                         delta_y = show_positions[show_index][1] - show_positions[show_index - 1][1]
                         operand_boundary_space = abs(delta_y) < 1.0 and delta_x >= (
-                            show_width_points[show_index - 1] + show_halfspaces[show_index - 1]
+                            show_width_points[show_index - 1]
+                            + show_halfspaces[show_index - 1] * 0.8
                         )
-                        if operand_text[:1] in {"ம", "'"}:  # pragma: no cover - diagnostic
-                            operand_boundary_space = delta_x >= (
-                                show_width_points[show_index - 1]
-                                + show_halfspaces[show_index - 1] * 0.8
-                            )
                     if (
                         (add_space or geometry_space or operand_boundary_space)
                         and (next_direction != "ON" or operand_boundary_space)
                         and not (previous_direction in {"R", "AL", "AN"} and next_direction == "L")
                         and not (previous_direction == "ON" and next_direction in {"R", "AL", "AN"})
                         and operand_output
-                        and not operand_output.endswith((" ", "\n"))
+                        and not operand_output.endswith((" ", "\n", internal_INFERRED_SPACE))
                     ):
-                        operand_output += " "
+                        operand_output += internal_INFERRED_SPACE
                     operand_output += operand_text
                 operand_output_override = internal_pypdf_rtl_order(operand_output)
             for group_index, (seqno, x0, x1, y0, y1, font_size, text, _) in enumerate(groups):
@@ -1056,7 +1153,14 @@ class PdfPageObject:
                 predicted_sparse_space = False
                 effective_force_space = force_space_before and (
                     direct_sequence_metadata
-                    or output.endswith(".") and text[:1].isupper()
+                    or (
+                        compact_sequence_fonts
+                        and not text.startswith(" ")
+                        and internal_bidi(text[:1]) not in {"R", "AL", "AN"}
+                        and internal_bidi(output[-1:]) not in {"R", "AL", "AN"}
+                    )
+                    or output.endswith(".")
+                    and text[:1].isupper()
                     or (
                         force_space_before
                         and (
@@ -1125,7 +1229,11 @@ class PdfPageObject:
                         abs(y0 - previous_y0) > (y1 - y0) * 0.5
                         or previous_x1 is not None
                         and x0 < previous_x1 - (y1 - y0)
-                        or (malformed_text_state or not direct_sequence_fonts and not compact_sequence_fonts)
+                        or (
+                            malformed_text_state
+                            or not direct_sequence_fonts
+                            and not compact_sequence_fonts
+                        )
                         and previous_x1 is not None
                         and abs(x0 - previous_x1) < (y1 - y0)
                         or previous_x1 is not None
@@ -1169,13 +1277,11 @@ class PdfPageObject:
                     previous_x1 is not None
                     and bool(text)
                     and (
-                        not output.endswith((" ", "\n"))
-                        or predicted_sparse_space
-                        or effective_force_space
-                        or literal_gap_space
-                        or missing_resource_space
-                        or operand_position_space
-                        or compact_font_boundary_space
+                        not output.endswith((" ", "\n", internal_INFERRED_SPACE))
+                        or (
+                            internal_bidi(text[:1]) in {"R", "AL", "AN"}
+                            and internal_bidi(output.rstrip()[-1:]) in {"R", "AL", "AN"}
+                        )
                     )
                     and (
                         not text.startswith(" ")
@@ -1225,15 +1331,15 @@ class PdfPageObject:
                     )
                 ):
                     output += (
-                        "  "
+                        internal_INFERRED_SPACE * 2
                         if text.isspace()
                         and len(text) > 10
                         and operator == "Tj"
                         and not moved_before_show
-                        else " "
+                        else internal_INFERRED_SPACE
                     )
                 if output.endswith("ﬂ") and text.startswith(" ") and len(text) > 1:
-                    output += " "
+                    output += internal_INFERRED_SPACE
                 output += text
                 if newline_after_text:
                     output += "\n"
@@ -1244,7 +1350,19 @@ class PdfPageObject:
                 previous_seqno = seqno
                 previous_resource = group_resource
             glyph_output = internal_pypdf_rtl_order(output)
+            if (
+                (matrix_newline_pending or xobject_boundary_pending)
+                and glyph_output
+                and not glyph_output.endswith("\n")
+            ):
+                glyph_output += "\n"
             if operand_output_override is not None:
+                if (
+                    (matrix_newline_pending or xobject_boundary_pending)
+                    and operand_output_override
+                    and not operand_output_override.endswith("\n")
+                ):
+                    operand_output_override += "\n"
                 return operand_output_override
             return glyph_output
         return "\n".join(
@@ -1313,6 +1431,18 @@ class PdfPageObject:
         return tuple(self._document.capability_page(self._page.page_number).extract_images())
 
 
+class internal_LockedPages:
+    def __iter__(self) -> Any:
+        raise PdfUnsupportedError("file has not been decrypted")
+
+    def __len__(self) -> int:
+        raise PdfUnsupportedError("file has not been decrypted")
+
+    def __getitem__(self, index: object) -> Any:
+        del index
+        raise PdfUnsupportedError("file has not been decrypted")
+
+
 class PdfReader(ClosingMixin):
     """Reader exposing the most-used pypdf page and metadata APIs."""
 
@@ -1331,7 +1461,7 @@ class PdfReader(ClosingMixin):
             if password:
                 raise
             self._document = cast(Any, None)
-            self.pages: tuple[PdfPageObject, ...] = ()
+            self.pages = cast(Any, internal_LockedPages())
             self.metadata: dict[str, Any] = {}
             self.trailer: dict[str, Any] = {}
             self._decryption_pending = True

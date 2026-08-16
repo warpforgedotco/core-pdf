@@ -9,7 +9,7 @@ from os import PathLike
 from typing import Any, BinaryIO, cast, overload
 
 from core_pdf import PdfDocument
-from core_pdf.api.compat._unsupported.pypdf import (
+from core_pdf.api.compat.pypdf import (
     PdfPageObject,
     PdfReader,
     PdfWriter,
