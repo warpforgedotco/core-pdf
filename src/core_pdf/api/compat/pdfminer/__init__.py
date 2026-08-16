@@ -1555,9 +1555,11 @@ def internal_pdfminer_offsets(
         ):
             # Core decoded another glyph and therefore applied character
             # spacing; pdfminer's unusable CMap decoded no CID at all.
-            correction_text_x -= float(provenance.get("char_space", 0.0)) * float(
-                provenance.get("horizontal_scale", 100.0)
-            ) * 0.01
+            correction_text_x -= (
+                float(provenance.get("char_space", 0.0))
+                * float(provenance.get("horizontal_scale", 100.0))
+                * 0.01
+            )
         if glyph.seqno == following.seqno:
             continue
     return offsets
@@ -1838,11 +1840,18 @@ def extract_pages(  # noqa: C901
     )
     try:
         yielded = 0
-        page_source = (
-            enumerate(document.pages)
-            if _unstructured_mode
-            else internal_pdfminer_resolvable_pages(document)
-        )
+        page_source: Iterable[tuple[int, PdfPage]]
+        if _unstructured_mode:
+            try:
+                page_source = tuple(internal_pdfminer_resolvable_pages(document))
+            except PdfError:
+                # Unstructured's fast path inherits pdfminer's object-scan
+                # recovery for documents without a usable catalog.  Prefer
+                # the declared tree when it exists so stale incremental
+                # revisions do not appear as duplicate pages.
+                page_source = tuple(enumerate(document.pages))
+        else:
+            page_source = internal_pdfminer_resolvable_pages(document)
         for page_index, page in page_source:
             if selected is not None and page_index not in selected:
                 continue
@@ -1891,10 +1900,7 @@ def extract_pages(  # noqa: C901
             )
             vertical_positions: dict[tuple[str | None, int], tuple[float, int]] = {}
             for glyph_index, glyph in enumerate(projected_glyphs):
-                if (
-                    not _unstructured_mode
-                    and internal_pdfminer_embedded_cmap_is_unusable(glyph)
-                ):
+                if not _unstructured_mode and internal_pdfminer_embedded_cmap_is_unusable(glyph):
                     continue
                 if _pdfminer_form_glyph_is_clipped(glyph):
                     continue

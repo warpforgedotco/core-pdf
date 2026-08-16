@@ -568,8 +568,8 @@ def partition_pdf(filename: object, **kwargs: object) -> list[Element]:
     )
     try:
         source_pages = iter(document.pages)
-        page_pairs = ((page, next(source_pages)) for page in pages)
-        for page, source_page in page_pairs:
+        for page in pages:
+            source_page = next(source_pages, None)
             text_boxes = [item for item in page if isinstance(item, LTTextBox)]
             regions = internal_layout_regions(text_boxes, page.height)
             for figure in (item for item in page if isinstance(item, LTFigure)):
@@ -582,10 +582,14 @@ def partition_pdf(filename: object, **kwargs: object) -> list[Element]:
                 for figure_text in internal_figure_text_snippets(figure):
                     if cleaned_figure_text := internal_clean_text(figure_text):
                         regions.append(internal_LayoutRegion(cleaned_figure_text, figure.bbox))
-            try:
-                fields = source_page.get_fields()
-            except (PdfError, ValueError):
+            fields: tuple[Any, ...] | list[Any]
+            if source_page is None:
                 fields = ()
+            else:
+                try:
+                    fields = source_page.get_fields()
+                except (PdfError, ValueError):
+                    fields = ()
             field_regions: list[internal_LayoutRegion] = []
             for field in fields:
                 if field.rect is None or field.type not in {"Tx", "Ch"} or not field.value_text:

@@ -140,6 +140,18 @@ def _validate_pikepdf_object_graph(document: StructuredState) -> None:
     pages = lookup_dict_key(pdf.catalog(), "Pages")
     if isinstance(pages, PdfReference) and internal_has_malformed_shadowed_definition(pdf, pages):
         raise PdfUnsupportedError("shadowed page tree root")
+    if isinstance(pages, PdfReference) and pdf.xref_was_recovered:
+        entry = pdf.xref.get((pages.object_number << 16) | pages.generation_number)
+        if (
+            pdf.strict_xref_validation_error() is not None
+            and entry is not None
+            and entry.object_stream is not None
+        ):
+            # qpdf's damaged-file reconstruction scans indirect objects but
+            # cannot use a malformed xref stream to locate compressed objects.
+            # Core's recovery can salvage that index, so preserve pikepdf's
+            # stricter boundary when the page-tree root exists only there.
+            raise PdfUnsupportedError("root of pages tree has no /Kids array")
     seen: set[tuple[str, int, int] | tuple[str, int]] = set()
 
     def visit(value: object) -> None:

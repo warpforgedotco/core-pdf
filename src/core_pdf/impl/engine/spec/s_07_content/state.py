@@ -180,6 +180,7 @@ class TextState:
     capture_glyph_bitmaps: bool
     capture_images: bool
     capture_graphics: bool
+    compat_tj_decoder: FontDecoder | None
     runs: list[TextRun]
     glyphs: list[GlyphObservation]
     glyph_clusters: list[GlyphCluster]
@@ -1949,7 +1950,7 @@ class TextState:
                     compat_cursor_x * combined_a + compat_cursor_y * combined_c + compat_origin_x,
                     compat_cursor_x * combined_b + compat_cursor_y * combined_d + compat_origin_y,
                 )
-                observation_provenance = (
+                observation_provenance: tuple[tuple[str, Any], ...] = (
                     *glyph_provenance,
                     ("pdfminer_origin", pdfminer_origin),
                     ("pdfminer_matrix_origin", (compat_origin_x, compat_origin_y)),
@@ -2421,6 +2422,7 @@ class TextState:
 
         actual_text_span = self.current_actual_text_span()
         if actual_text_span is not None:
+            assert glyphs is not None
             compatibility_parts: list[str] = []
             for glyph in glyphs:
                 mapped = (
