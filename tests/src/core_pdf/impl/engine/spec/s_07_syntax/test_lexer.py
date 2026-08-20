@@ -5,6 +5,7 @@ import pytest
 
 from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.engine.spec.s_07_syntax.tokens import DELIMITERS, WHITESPACE
+from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.objects import PdfReference, PdfStream, PdfString
 
 
@@ -72,6 +73,11 @@ def test_hex_string_decode_supports_all_byte_views(
         data = content
 
     assert PdfLexer(data).parse_object() == PdfString(expected)
+
+
+def test_strict_object_parsing_rejects_recovered_hex_string_bytes() -> None:
+    with pytest.raises(PdfParseError, match="invalid hex string"):
+        PdfLexer(b"<4g86>", recover_malformed_objects=False).parse_object()
 
 
 @pytest.mark.parametrize(
@@ -303,3 +309,13 @@ def test_read_string_normalizes_all_supported_line_endings(line_ending: bytes) -
     lexer = PdfLexer(b"(first" + line_ending + b"second)")
 
     assert lexer.read_string() == b"first\nsecond"
+
+
+def test_read_string_can_project_pdfminer_unknown_escape_behavior() -> None:
+    source = b"(27\\ mm glandsizes\\/torque)"
+
+    native = PdfLexer(source)
+    compatibility = PdfLexer(source)
+
+    assert native.read_string() == b"27 mm glandsizes/torque"
+    assert compatibility.read_string(drop_unknown_escapes=True) == b"27mm glandsizestorque"

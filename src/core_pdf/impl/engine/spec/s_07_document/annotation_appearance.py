@@ -160,13 +160,18 @@ def consume_annotation_appearances(page: Any, state: "TextState") -> None:
                 PdfDict, resolved_resources if resolved_resources else page.cached_resources
             )
 
-            state.consume_stream(
-                document.resolver.resolve_stream(stream),
-                resources,
-                nested_ctm,
-                1,
-                clip_bbox=clip,
-            )
+            previous_source = state.capture_source
+            state.capture_source = "annotation_appearance"
+            try:
+                state.consume_stream(
+                    document.resolver.resolve_stream(stream),
+                    resources,
+                    nested_ctm,
+                    1,
+                    clip_bbox=clip,
+                )
+            finally:
+                state.capture_source = previous_source
         except (PdfParseError, ValueError):
             continue
 

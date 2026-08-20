@@ -331,6 +331,8 @@ class OperationTarget(Protocol):
         *,
         data: bytes | memoryview | None = None,
         decoder: FontDecoder | None = None,
+        string_syntax: str | None = None,
+        compatibility_data: bytes | None = None,
     ) -> None: ...
 
     def append_tj_array(self, array: ContentOperand) -> None: ...
@@ -610,7 +612,7 @@ def dispatch_operations(
                             continue
                         if first == 46 and 48 <= b1 <= 57:
                             if op_count < max_operands:
-                                operands[op_count] = (b1 - 48) / 10.0
+                                operands[op_count] = float(raw_bytes[start_offset:pos])
                             op_count += 1
                             continue
 
@@ -664,9 +666,7 @@ def dispatch_operations(
 
                         if 48 <= first <= 57 and b1 == 46 and 48 <= b2 <= 57 and 48 <= b3 <= 57:
                             if op_count < max_operands:
-                                operands[op_count] = (first - 48) + (
-                                    ((b2 - 48) * 10 + (b3 - 48)) / 100.0
-                                )
+                                operands[op_count] = float(raw_bytes[start_offset:pos])
                             op_count += 1
                             continue
 
@@ -683,9 +683,7 @@ def dispatch_operations(
                             and 48 <= b4 <= 57
                         ):
                             if op_count < max_operands:
-                                operands[op_count] = (first - 48) + (
-                                    ((b2 - 48) * 100 + (b3 - 48) * 10 + (b4 - 48)) / 1000.0
-                                )
+                                operands[op_count] = float(raw_bytes[start_offset:pos])
                             op_count += 1
                             continue
                         if (
@@ -696,9 +694,7 @@ def dispatch_operations(
                             and 48 <= b4 <= 57
                         ):
                             if op_count < max_operands:
-                                operands[op_count] = ((first - 48) * 10 + (b1 - 48)) + (
-                                    ((b3 - 48) * 10 + (b4 - 48)) / 100.0
-                                )
+                                operands[op_count] = float(raw_bytes[start_offset:pos])
                             op_count += 1
                             continue
                         if (
@@ -709,9 +705,7 @@ def dispatch_operations(
                             and 48 <= b4 <= 57
                         ):
                             if op_count < max_operands:
-                                operands[op_count] = -(
-                                    (b1 - 48) + (((b3 - 48) * 10 + (b4 - 48)) / 100.0)
-                                )
+                                operands[op_count] = float(raw_bytes[start_offset:pos])
                             op_count += 1
                             continue
 
@@ -730,10 +724,7 @@ def dispatch_operations(
                             and 48 <= b5 <= 57
                         ):
                             if op_count < max_operands:
-                                operands[op_count] = -(
-                                    (b1 - 48)
-                                    + (((b3 - 48) * 100 + (b4 - 48) * 10 + (b5 - 48)) / 1000.0)
-                                )
+                                operands[op_count] = float(raw_bytes[start_offset:pos])
                             op_count += 1
                             continue
                         if (
@@ -745,9 +736,7 @@ def dispatch_operations(
                             and 48 <= b5 <= 57
                         ):
                             if op_count < max_operands:
-                                operands[op_count] = (
-                                    (first - 48) * 100 + (b1 - 48) * 10 + (b2 - 48)
-                                ) + (((b4 - 48) * 10 + (b5 - 48)) / 100.0)
+                                operands[op_count] = float(raw_bytes[start_offset:pos])
                             op_count += 1
                             continue
                         if (
@@ -759,10 +748,7 @@ def dispatch_operations(
                             and 48 <= b5 <= 57
                         ):
                             if op_count < max_operands:
-                                operands[op_count] = -(
-                                    ((b1 - 48) * 10 + (b2 - 48))
-                                    + (((b4 - 48) * 10 + (b5 - 48)) / 100.0)
-                                )
+                                operands[op_count] = float(raw_bytes[start_offset:pos])
                             op_count += 1
                             continue
 
@@ -783,12 +769,7 @@ def dispatch_operations(
                             and 48 <= b6 <= 57
                         ):
                             if op_count < max_operands:
-                                operands[op_count] = -(
-                                    (b1 - 48) * 100
-                                    + (b2 - 48) * 10
-                                    + (b3 - 48)
-                                    + (((b5 - 48) * 10 + (b6 - 48)) / 100.0)
-                                )
+                                operands[op_count] = float(raw_bytes[start_offset:pos])
                             op_count += 1
                             continue
 
@@ -897,7 +878,7 @@ def dispatch_operations(
                                     op_count = 0
                                     continue
                                 case 99:  # 'c'
-                                    if op_count:
+                                    if op_count and operands:
                                         char_space = operands[0]
                                         if type(char_space) in exact_number_types:
                                             handler_target.op_Tc_values(
@@ -923,10 +904,18 @@ def dispatch_operations(
                                             if handler_target.current_decoder is not None
                                             else handler_target.get_decoder()
                                         )
-                                        operand = operands[0]
+                                        # Tj consumes the top value from the
+                                        # operand stack.  Earlier values are
+                                        # stale operands in malformed streams.
+                                        operand = operands[min(op_count, len(operands)) - 1]
                                         if type(operand) is PdfString:
                                             handler_target.append_text(
-                                                data=operand.data, decoder=decoder
+                                                data=operand.data,
+                                                decoder=decoder,
+                                                string_syntax=(
+                                                    "literal" if operand.is_literal else "hex"
+                                                ),
+                                                compatibility_data=operand.compatibility_data,
                                             )
                                         elif type(operand) is bytes:
                                             handler_target.append_text(
@@ -1270,17 +1259,41 @@ def dispatch_operations(
         if byte == 60:
             if pos + 1 < data_len and raw_bytes[pos + 1] == 60:
                 operand_start = pos
+                legacy_pdfminer_mode = bool(
+                    handler_target is not None
+                    and getattr(
+                        getattr(handler_target, "document", None),
+                        "legacy_pdfminer_text_operators",
+                        False,
+                    )
+                )
                 try:
-                    if op_count < max_operands:
-                        operands[op_count] = cast(
-                            ContentOperand, lexer.parse_dictionary_or_stream()
-                        )
-                    else:
-                        lexer.parse_dictionary_or_stream()
-                except PdfParseError:
-                    if lexer.pos >= data_len:
+                    parse_dictionary = (
+                        lexer.parse_dictionary
+                        if legacy_pdfminer_mode
+                        else lexer.parse_dictionary_or_stream
+                    )
+                    previous_recovery = lexer.recover_malformed_objects
+                    if legacy_pdfminer_mode:
+                        lexer.recover_malformed_objects = False
+                    try:
+                        if op_count < max_operands:
+                            operands[op_count] = cast(ContentOperand, parse_dictionary())
+                        else:
+                            parse_dictionary()
+                    finally:
+                        lexer.recover_malformed_objects = previous_recovery
+                except PdfParseError as exc:
+                    if lexer.pos >= data_len or str(exc) == "unexpected end of PDF input":
+                        trailing = raw_bytes[operand_start:]
+                        if legacy_pdfminer_mode and (
+                            b"endobj" in trailing or re.search(rb"(?m)^xref\b", trailing)
+                        ):
+                            raise ValueError("invalid pdfminer content dictionary") from exc
                         pos = data_len
                         break
+                    if legacy_pdfminer_mode:
+                        raise ValueError("invalid pdfminer content dictionary") from exc
                     if lexer.pos > operand_start:
                         pos = lexer.pos
                         continue
@@ -1289,17 +1302,31 @@ def dispatch_operations(
                 raw_string = lexer.read_hex_string()
                 if should_decipher:
                     raw_string = lexer.apply_decipher(raw_string)
-                value = PdfString(raw_string)
+                value = PdfString(raw_string, is_literal=False)
                 if op_count < max_operands:
                     operands[op_count] = value
             pos = lexer.pos
             op_count += 1
             continue
         if byte == 40:
+            literal_start = lexer.pos
             raw_string = lexer.read_string()
+            literal_end = lexer.pos
+            lexer.pos = literal_start
+            compatibility_string = lexer.read_string(drop_unknown_escapes=True)
+            lexer.pos = literal_end
             if should_decipher:
                 raw_string = lexer.apply_decipher(raw_string)
-            string_value = raw_string if text_only else PdfString(raw_string)
+                compatibility_string = lexer.apply_decipher(compatibility_string)
+            string_value = (
+                raw_string
+                if text_only
+                else PdfString(
+                    raw_string,
+                    is_literal=True,
+                    compatibility_data=compatibility_string,
+                )
+            )
             if op_count < max_operands:
                 operands[op_count] = string_value
             pos = lexer.pos
@@ -1381,6 +1408,61 @@ def iter_content_operations(lexer: PdfLexer) -> Iterator[ContentOperation]:
     yield from results
 
 
+def validate_inline_images(data: bytes | memoryview) -> None:
+    """Validate inline-image boundaries without disabling normal stream recovery."""
+    raw_bytes = full_source_bytes(data)
+    if raw_bytes is None:
+        raw_bytes = bytes(data)
+    data_len = len(raw_bytes)
+    pos = 0
+    container_depth = 0
+    lexer = PdfLexer(raw_bytes)
+    while match := TEXT_OR_LEXICAL_MARKER_RE.search(raw_bytes, pos):
+        marker = match.start()
+        token = match.group()
+        if token == b"%":
+            pos = skip_comment(raw_bytes, marker, data_len)
+            continue
+        if token == b"(":
+            pos = skip_literal_string(raw_bytes, marker, data_len)
+            continue
+        if token == b"<":
+            if marker + 1 < data_len and raw_bytes[marker + 1] == 60:
+                container_depth += 1
+                pos = marker + 2
+            else:
+                pos = skip_hex_string(raw_bytes, marker, data_len)
+            continue
+        if token == b">":
+            if marker + 1 < data_len and raw_bytes[marker + 1] == 62:
+                container_depth = max(0, container_depth - 1)
+                pos = marker + 2
+            else:
+                pos = marker + 1
+            continue
+        if token == b"[":
+            container_depth += 1
+            pos = marker + 1
+            continue
+        if token == b"]":
+            container_depth = max(0, container_depth - 1)
+            pos = marker + 1
+            continue
+        if token == b"/":
+            pos = skip_name(raw_bytes, marker, data_len)
+            continue
+        after = match.end()
+        delimited = (marker == 0 or SEPARATOR_TABLE[raw_bytes[marker - 1]]) and (
+            after == data_len or SEPARATOR_TABLE[raw_bytes[after]]
+        )
+        if token != b"BI" or container_depth or not delimited:
+            pos = after
+            continue
+        lexer.pos = after
+        parse_inline_image(lexer)
+        pos = lexer.pos
+
+
 __all__ = (
     "ContentOperand",
     "ContentOperands",
@@ -1391,4 +1473,5 @@ __all__ = (
     "count_content_stream_operators",
     "dispatch_operations",
     "iter_content_operations",
+    "validate_inline_images",
 )

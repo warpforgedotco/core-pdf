@@ -55,6 +55,18 @@ ADOBE_PUA_GLYPH_ALIASES = {
 }
 
 TEX_GLYPH_ALIASES = {
+    "Ifractur": "ℑ",
+    "Rfractur": "ℜ",
+    # Adobe's legacy glyph list treats the common underscore ligature names
+    # as the corresponding presentation-form characters. Preserve that
+    # semantic identity before the generic component-name fallback runs.
+    "f_f": "ﬀ",
+    "f_f_i": "ﬃ",
+    "f_f_l": "ﬄ",
+    "epsilon1": "ϵ",
+    "check": "✓",
+    "circlecopyrt": "©",
+    "radicalbt": "√",
     "lscript": "\u2113",
     "integraltext": "\u222b",
     "integraldisplay": "\u222b",
@@ -63,6 +75,12 @@ TEX_GLYPH_ALIASES = {
     "oint": "\u222e",
     "smallint": "\u222b",
     "coprod": "\u2210",
+    "producttext": "\u220f",
+    "uniontext": "\u22c3",
+    "intersectiontext": "\u22c2",
+    "coproducttext": "\u2210",
+    "triangleleft": "\u25c1",
+    "notexistential": "\u2204",
     "parenleftbig": "(",
     "parenleftBig": "(",
     "parenleftbigg": "(",
@@ -111,6 +129,9 @@ TEX_GLYPH_ALIASES = {
     "ceilingright": "\u2309",
     "angbracketleft": "\u27e8",
     "angbracketright": "\u27e9",
+    "lessmuch": "\u226a",
+    "prime": "\u2032",
+    "intercal": "\u22ba",
     # \not is drawn as an overlay, so the combining form composes with the
     # relation it negates instead of landing beside it.
     "negationslash": "\u0338",
@@ -143,6 +164,9 @@ def glyph_name_to_unicode(name: str) -> str:
     full = ensure_glyph_map()
     original_name = name
     name = name.split(".", 1)[0]
+    alias = TEX_GLYPH_ALIASES.get(name)
+    if alias is not None:
+        return alias
     if name.isdigit() or (name.startswith("i") and name[1:].isdigit()):
         return ""
     if len(name) == 1:

@@ -60,7 +60,15 @@ def get_descendant(font: dict[Any, Any]) -> dict[Any, Any] | None:
 
 def parse_font_widths(
     font: dict[Any, Any], subtype: str | None
-) -> tuple[FontWidthMap, float, bool, FontWidthMap, float, dict[int, tuple[float, float, float]]]:
+) -> tuple[
+    FontWidthMap,
+    float,
+    bool,
+    FontWidthMap,
+    float,
+    float,
+    dict[int, tuple[float, float, float]],
+]:
     widths: FontWidthMap = SparseFontWidthMap()
     missing_width = lookup_dict_key(font, "MissingWidth")
     if missing_width is None:
@@ -70,6 +78,7 @@ def parse_font_widths(
     is_vertical = False
     vertical_widths: FontWidthMap = SparseFontWidthMap()
     default_vertical_width = 1000.0
+    default_vertical_origin_y = 880.0
     vertical_metrics: dict[int, tuple[float, float, float]] = {}
     descriptor = lookup_dict_key(font, "FontDescriptor")
     if subtype == "Type0":
@@ -80,6 +89,7 @@ def parse_font_widths(
                 default_width = parse_optional_font_float(descendant_dw, default_width)
             dw2 = lookup_dict_key(descendant, "DW2")
             if isinstance(dw2, (list, tuple)) and len(dw2) >= 2:
+                default_vertical_origin_y = parse_optional_font_float(dw2[0], 880.0)
                 default_vertical_width = parse_optional_font_float(dw2[1], 1000.0)
             w2 = lookup_dict_key(descendant, "W2")
             if isinstance(w2, (list, tuple)):
@@ -149,6 +159,7 @@ def parse_font_widths(
             is_vertical,
             vertical_widths,
             default_vertical_width,
+            default_vertical_origin_y,
             vertical_metrics,
         )
 
@@ -184,5 +195,6 @@ def parse_font_widths(
         is_vertical,
         vertical_widths,
         default_vertical_width,
+        default_vertical_origin_y,
         vertical_metrics,
     )

@@ -88,6 +88,40 @@ def test_type3_font_defaults_to_standard_encoding() -> None:
     assert decoder.decode(b"AZ ") == "AZ "
 
 
+def test_type3_font_without_descriptor_uses_font_bbox_metrics() -> None:
+    decoder = FontDecoder({"Subtype": "Type3", "FontBBox": [0, -200, 1000, 800]})
+
+    assert decoder.descent == -200
+    assert decoder.ascent == 800
+
+
+def test_type3_font_bbox_with_positive_ymin_keeps_its_sign() -> None:
+    decoder = FontDecoder({"Subtype": "Type3", "FontBBox": [0, 50, 1000, 700]})
+
+    assert decoder.descent == 50
+    assert decoder.ascent == 700
+
+
+def test_text_advance_applies_character_spacing_to_each_glyph() -> None:
+    decoder = FontDecoder({"Subtype": "Type1", "BaseFont": "Helvetica"})
+
+    single_without_spacing = decoder.text_advance_vector(
+        b"A", font_size=10, char_space=0, word_space=0, horizontal_scale=1
+    )
+    single_with_spacing = decoder.text_advance_vector(
+        b"A", font_size=10, char_space=3, word_space=0, horizontal_scale=1
+    )
+    pair_without_spacing = decoder.text_advance_vector(
+        b"AB", font_size=10, char_space=0, word_space=0, horizontal_scale=1
+    )
+    pair_with_spacing = decoder.text_advance_vector(
+        b"AB", font_size=10, char_space=3, word_space=0, horizontal_scale=1
+    )
+
+    assert single_with_spacing[0] - single_without_spacing[0] == pytest.approx(0.03)
+    assert pair_with_spacing[0] - pair_without_spacing[0] == pytest.approx(0.06)
+
+
 def test_font_decoder_prefers_explicit_pdf_encoding_over_embedded_type1_encoding() -> None:
     font_program = b"""
     /Encoding 256 array
@@ -176,6 +210,34 @@ def test_font_decoder_does_not_emit_unknown_underscore_difference_parts() -> Non
     decoder = FontDecoder(font)
 
     assert decoder.decode(b"A") == ""
+
+
+def test_type3_numeric_charproc_name_retains_base_encoding() -> None:
+    decoder = FontDecoder(
+        {
+            "Subtype": "Type3",
+            "Encoding": {"Differences": [65, "/65"]},
+        }
+    )
+
+    glyph = decoder.decode_glyphs(b"A")[0]
+
+    assert glyph.unicode == "A"
+    assert glyph.unicode_source == "encoding"
+
+
+def test_undefined_simple_font_code_retains_a_replacement_glyph() -> None:
+    decoder = FontDecoder(
+        {
+            "Subtype": "Type3",
+            "Encoding": {"Differences": [0, "/0"]},
+        }
+    )
+
+    glyph = decoder.decode_glyphs(b"\x00")[0]
+
+    assert glyph.unicode == "\ufffd"
+    assert glyph.unicode_source == "undefined"
 
 
 def test_font_decoder_keeps_single_character_difference_names() -> None:
@@ -558,7 +620,7 @@ def test_vertical_cid_advance_uses_w2_and_dw2() -> None:
     advance = decoder.text_advance_vector(
         b"\x00\x01\x00\x02", font_size=10, char_space=0, word_space=0, horizontal_scale=1
     )
-    assert advance == (0.0, -0.14)
+    assert advance == (0.0, -14.0)
 
 
 def test_vertical_cid_w2_range_overrides_dw2() -> None:
@@ -571,7 +633,7 @@ def test_vertical_cid_w2_range_overrides_dw2() -> None:
     advance = decoder.text_advance_vector(
         b"\x00\x03\x00\x05", font_size=10, char_space=0, word_space=0, horizontal_scale=1
     )
-    assert advance == (0.0, 0.16)
+    assert advance == (0.0, 16.0)
     assert decoder.vertical_metrics[3] == (-600.0, 250.0, 770.0)
 
 
@@ -583,7 +645,7 @@ def test_vertical_w2_position_vector_is_scaled_to_text_space() -> None:
 
     decoder = FontDecoder(font)
 
-    assert decoder.vertical_glyph_position(7, font_size=10) == pytest.approx((0.02, -0.045))
+    assert decoder.vertical_glyph_position(7, font_size=10) == pytest.approx((-2.0, 4.5))
 
 
 def test_to_unicode_is_authoritative_over_glyph_name_repairs() -> None:

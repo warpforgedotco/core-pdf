@@ -276,7 +276,10 @@ class XRefScanner:
 
     @staticmethod
     def parse_table_section(
-        data: PdfByteBuffer, start_pos: int
+        data: PdfByteBuffer,
+        start_pos: int,
+        *,
+        recover_malformed_objects: bool = True,
     ) -> tuple[XRefTable, PdfDict, int | None, int | None]:
         pos = XRefScanner.skip_ws(data, start_pos)
         if data[pos : pos + 4] != b"xref":
@@ -343,7 +346,10 @@ class XRefScanner:
             else:
                 raise PdfParseError("invalid xref table subsection")
 
-        lexer = PdfLexer(data)
+        lexer = PdfLexer(
+            data,
+            recover_malformed_objects=recover_malformed_objects,
+        )
         lexer.pos = XRefScanner.skip_ws(data, pos)
         trailer_dict = lexer.parse_dictionary()
         trailer_size = lookup_dict_key(trailer_dict, "Size")
@@ -365,21 +371,35 @@ class XRefScanner:
 
     @staticmethod
     def parse_section_at(
-        data: PdfByteBuffer, start: int
+        data: PdfByteBuffer,
+        start: int,
+        *,
+        recover_malformed_objects: bool = True,
     ) -> tuple[XRefTable, PdfDict, int | None, int | None]:
         if start < 0 or start >= len(data):
             raise PdfParseError("invalid xref section")
         pos = XRefScanner.skip_ws(data, start)
 
         if data[pos : pos + 4] == b"xref":
-            return XRefScanner.parse_table_section(data, pos)
+            return XRefScanner.parse_table_section(
+                data,
+                pos,
+                recover_malformed_objects=recover_malformed_objects,
+            )
 
-        lexer = PdfLexer(data)
+        lexer = PdfLexer(
+            data,
+            recover_malformed_objects=recover_malformed_objects,
+        )
         lexer.pos = pos
         try:
             obj = lexer.parse_indirect_object()
         except PdfParseError:
-            obj = XRefScanner.parse_xref_stream_salvage(data, pos)
+            obj = XRefScanner.parse_xref_stream_salvage(
+                data,
+                pos,
+                recover_malformed_objects=recover_malformed_objects,
+            )
             if obj is None:
                 raise
         if not isinstance(obj, PdfStream):
@@ -387,7 +407,11 @@ class XRefScanner:
         try:
             entries, trailer = XRefScanner.parse_stream(obj)
         except PdfParseError:
-            obj = XRefScanner.parse_xref_stream_salvage(data, pos)
+            obj = XRefScanner.parse_xref_stream_salvage(
+                data,
+                pos,
+                recover_malformed_objects=recover_malformed_objects,
+            )
             if obj is None:
                 raise
             entries, trailer = XRefScanner.parse_stream(obj)
@@ -398,7 +422,11 @@ class XRefScanner:
 
     @staticmethod
     def load_section_chain(
-        data: PdfByteBuffer, start: int, seen: set[int]
+        data: PdfByteBuffer,
+        start: int,
+        seen: set[int],
+        *,
+        recover_malformed_objects: bool = True,
     ) -> tuple[XRefTable, PdfDict]:
         section_start = start
         sections: list[XRefTable] = []
@@ -411,7 +439,9 @@ class XRefScanner:
 
             try:
                 entries, current_trailer, prev, xrefstm = XRefScanner.parse_section_at(
-                    data, section_start
+                    data,
+                    section_start,
+                    recover_malformed_objects=recover_malformed_objects,
                 )
             except PdfParseError as original_error:
                 recovered = None
@@ -419,7 +449,11 @@ class XRefScanner:
                     if nearby in seen:
                         continue
                     try:
-                        recovered = XRefScanner.parse_section_at(data, nearby)
+                        recovered = XRefScanner.parse_section_at(
+                            data,
+                            nearby,
+                            recover_malformed_objects=recover_malformed_objects,
+                        )
                     except PdfParseError:
                         continue
                     seen.add(nearby)
@@ -435,7 +469,12 @@ class XRefScanner:
                 raise PdfParseError("invalid xref section")
 
             if xrefstm is not None:
-                s_entries, ignored = XRefScanner.load_section_chain(data, xrefstm, seen)
+                s_entries, ignored = XRefScanner.load_section_chain(
+                    data,
+                    xrefstm,
+                    seen,
+                    recover_malformed_objects=recover_malformed_objects,
+                )
                 entries.update(s_entries)
             sections.append(entries)
 
@@ -532,8 +571,16 @@ class XRefScanner:
         return entries, typing.cast(PdfDict, dict_obj)
 
     @staticmethod
-    def parse_xref_stream_salvage(data: PdfByteBuffer, pos: int) -> PdfStream | None:
-        lexer = PdfLexer(data)
+    def parse_xref_stream_salvage(
+        data: PdfByteBuffer,
+        pos: int,
+        *,
+        recover_malformed_objects: bool = True,
+    ) -> PdfStream | None:
+        lexer = PdfLexer(
+            data,
+            recover_malformed_objects=recover_malformed_objects,
+        )
         header_marker = data.find(b"obj", pos, min(len(data), pos + 64))
         if header_marker < 0:
             return None
@@ -601,15 +648,31 @@ class XRefScanner:
         return PdfStream(dict_obj, raw_data, None, decoded_data=decoded_data)
 
     @staticmethod
-    def brute_force_scan(data: PdfByteBuffer, max_entries: int = 100000) -> XRefTable:
+    def brute_force_scan(
+        data: PdfByteBuffer,
+        max_entries: int = 100000,
+        *,
+        stop_at_first_trailer: bool = False,
+    ) -> XRefTable:
         entries: XRefTable = {}
         parsed_streams: dict[int, tuple[int, PdfStream]] = {}
         lexer = PdfLexer(data)
         search_pos = 0
-        while search_pos < len(data):
+        scan_end = len(data)
+        if stop_at_first_trailer:
+            trailer = data.find(b"trailer")
+            while trailer >= 0:
+                after = trailer + 7
+                if (trailer == 0 or data[trailer - 1] in (10, 13)) and (
+                    after >= len(data) or WS_TABLE[data[after]]
+                ):
+                    scan_end = trailer
+                    break
+                trailer = data.find(b"trailer", trailer + 7)
+        while search_pos < scan_end:
             if len(entries) >= max_entries:
                 break
-            marker = data.find(b"obj", search_pos)
+            marker = data.find(b"obj", search_pos, scan_end)
             if marker < 0:
                 break
             search_pos = marker + 3
@@ -621,8 +684,47 @@ class XRefScanner:
             try:
                 obj = lexer.parse_indirect_object()
             except Exception:
+                if stop_at_first_trailer:
+                    stream_marker = data.find(b"stream", offset, scan_end)
+                    next_object_marker = data.find(b"obj", marker + 3, scan_end)
+                    if stream_marker >= 0 and (
+                        next_object_marker < 0 or stream_marker < next_object_marker
+                    ):
+                        prefix = data[marker + 3 : stream_marker]
+                        uncommented = b"\n".join(
+                            line.split(b"%", 1)[0] for line in prefix.splitlines()
+                        )
+                        if not uncommented.strip():
+                            break
                 continue
-            if lexer.pos >= 6 and data[lexer.pos - 6 : lexer.pos] == b"endobj":
+            if stop_at_first_trailer and not isinstance(obj, PdfStream):
+                stream_marker = data.find(b"stream", offset, scan_end)
+                next_object_marker = data.find(b"obj", marker + 3, scan_end)
+                if stream_marker >= 0 and (
+                    next_object_marker < 0 or stream_marker < next_object_marker
+                ):
+                    prefix = data[marker + 3 : stream_marker]
+                    uncommented = b"\n".join(line.split(b"%", 1)[0] for line in prefix.splitlines())
+                    endstream = data.find(b"endstream", stream_marker + 6, scan_end)
+                    if not uncommented.strip() and endstream < 0:
+                        # pdfminer's fallback parser treats the remainder of an
+                        # unterminated, dictionary-less stream as that object's
+                        # payload; later object-looking bytes are not xref entries.
+                        break
+            # A damaged stream /Length can carry the lexer past an earlier
+            # endstream/endobj pair and over later, valid indirect objects. In
+            # that case keep scanning from the current marker. Otherwise skip
+            # the stream payload so object-like binary data cannot replace a
+            # genuine xref entry.
+            early_stream_end = (
+                isinstance(obj, PdfStream)
+                and data.find(b"endstream", offset, max(offset, lexer.pos - 9)) >= 0
+            )
+            if (
+                not early_stream_end
+                and lexer.pos >= 6
+                and data[lexer.pos - 6 : lexer.pos] == b"endobj"
+            ):
                 search_pos = max(search_pos, lexer.pos)
             if obj_num >= 10000000:
                 continue

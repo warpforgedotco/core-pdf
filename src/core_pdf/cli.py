@@ -90,7 +90,7 @@ def process_pdf(
 
         if output_format != "markdown":
             raise ValueError(f"unsupported output format: {output_format}")
-        content = document.to_markdown()
+        content = document.extract().to_markdown()
 
     if print_content:
         sys.stdout.write(content)

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import numpy
+import pytest
 
 from core_pdf.impl.engine.spec.s_09_fonts.feature_distance_kernel import (
     feature_distance,
@@ -13,6 +14,8 @@ from core_pdf.impl.engine.spec.s_09_fonts.glyphs import (
     glyph_name_to_unicode,
 )
 from core_pdf.impl.engine.spec.s_09_fonts.raster_kernel import rasterize_contours
+
+pytestmark = pytest.mark.benchmark_high_impact
 
 VARIED_GLYPH_NAMES = (
     "A",

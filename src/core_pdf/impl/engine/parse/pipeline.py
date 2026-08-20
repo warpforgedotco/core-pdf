@@ -17,6 +17,16 @@ from core_pdf.impl.engine.parse.capture import (
     internal_learned_glyph_text,
     preflight_page,
 )
+from core_pdf.impl.engine.parse.diagnostics import (
+    CAPTURE_DIAGNOSTICS_KEY,
+    DOCUMENT_STROKED_GLYPHS_KEY,
+    HIDDEN_TEXT_VERIFICATION_KEY,
+    OCR_PASS_DIAGNOSTICS_KEY,
+    PARSE_METRICS_KEY,
+    PARSE_PLAN_KEY,
+    STROKED_VECTOR_DECODE_KEY,
+    STROKED_VECTOR_PACKED_KEY,
+)
 from core_pdf.impl.engine.parse.emit import (
     assemble_page,
 )
@@ -175,7 +185,7 @@ class internal_PageExtraction:
         self.internal_plan = plan
         self.internal_route_mismatches = (native, image, vector)
         self.internal_planned_at = time.perf_counter()
-        self.page.extraction_cache["parse_plan"] = internal_plan_cache_record(plan)
+        self.page.extraction_cache[PARSE_PLAN_KEY] = internal_plan_cache_record(plan)
         return plan
 
     def ocr(self, context: TaskScope) -> ObservationBatch:
@@ -280,20 +290,20 @@ class internal_PageExtraction:
             0,
             0,
         )
-        ocr_diagnostics = cache.get("ocr_pass_diagnostics", ())
-        capture_diagnostics = cache.get("capture_diagnostics", {})
+        ocr_diagnostics = cache.get(OCR_PASS_DIAGNOSTICS_KEY, ())
+        capture_diagnostics = cache.get(CAPTURE_DIAGNOSTICS_KEY, {})
         newstroke_diagnostics = (
             capture_diagnostics.get("newstroke", {})
             if isinstance(capture_diagnostics, dict)
             else {}
         )
-        stroked_decode_diagnostics = cache.get("stroked_vector_decode", {})
+        stroked_decode_diagnostics = cache.get(STROKED_VECTOR_DECODE_KEY, {})
         if not isinstance(stroked_decode_diagnostics, dict):
             stroked_decode_diagnostics = {}
-        stroked_packed_diagnostics = cache.get("stroked_vector_packed", {})
+        stroked_packed_diagnostics = cache.get(STROKED_VECTOR_PACKED_KEY, {})
         if not isinstance(stroked_packed_diagnostics, dict):
             stroked_packed_diagnostics = {}
-        document_stroked_diagnostics = cache.get("document_stroked_glyphs", {})
+        document_stroked_diagnostics = cache.get(DOCUMENT_STROKED_GLYPHS_KEY, {})
         if not isinstance(document_stroked_diagnostics, dict):
             document_stroked_diagnostics = {}
         ocr_raster_pixels = sum(
@@ -420,14 +430,14 @@ class internal_PageExtraction:
                     stroked_decode_diagnostics.get("approximate_signatures", 0)
                 ),
                 "verified_hidden_text": int(
-                    bool(cache.get("hidden_text_verification", {}).get("accepted", False))
+                    bool(cache.get(HIDDEN_TEXT_VERIFICATION_KEY, {}).get("accepted", False))
                 ),
                 "full_page_image": capture.evidence.full_page_image,
                 "uncovered_vector_area": capture.evidence.uncovered_vector_area or 0.0,
             },
         )
         cache[PARSED_PAGE_CACHE_KEY] = parsed
-        cache["parse_metrics"] = parsed.metrics
+        cache[PARSE_METRICS_KEY] = parsed.metrics
         return parsed
 
     def assembled_page(self, context: TaskScope) -> Any:
@@ -790,7 +800,7 @@ def internal_install_document_stroked_decode_locked(
     extraction.internal_recognized_at = time.perf_counter()
     cache = page.extraction_cache
     bbox = extraction.capture().evidence.stroked_vector_text.bbox
-    cache["ocr_pass_diagnostics"] = (
+    cache[OCR_PASS_DIAGNOSTICS_KEY] = (
         {
             "name": "document-stroked-glyphs",
             "scope": OcrPassScope.STROKED_VECTOR_TEXT.value,
@@ -826,7 +836,7 @@ def internal_install_document_stroked_decode_locked(
             **candidate.metrics.as_record(),
         },
     )
-    cache["stroked_vector_decode"] = {
+    cache[STROKED_VECTOR_DECODE_KEY] = {
         "seconds": seconds,
         "eligible_seeds": 0,
         "aligned_seeds": 0,
@@ -843,7 +853,7 @@ def internal_install_document_stroked_decode_locked(
         "corrections": 0,
         "document_reuse": True,
     }
-    cache["stroked_vector_packed"] = {
+    cache[STROKED_VECTOR_PACKED_KEY] = {
         "accepted": True,
         "cells": 0,
         "raster_pixels": 0,
@@ -851,7 +861,7 @@ def internal_install_document_stroked_decode_locked(
         "fallback_used": False,
         "document_reuse": True,
     }
-    cache["document_stroked_glyphs"] = {
+    cache[DOCUMENT_STROKED_GLYPHS_KEY] = {
         "role": "reuse",
         "seed_pages": seed_pages,
         "alphabet_size": alphabet_size,
@@ -926,7 +936,7 @@ def internal_prepare_document_stroked_mappings(
                 cast(tuple[tuple[GlyphSignature, str], ...], learned),
             )
         seed_indexes.append(page_index)
-        page.extraction_cache["document_stroked_glyphs"] = {
+        page.extraction_cache[DOCUMENT_STROKED_GLYPHS_KEY] = {
             "role": "seed",
             "seed_pages": tuple(int(pages[index].page_number) for index in seed_indexes),
             "alphabet_size": len(alphabet),

@@ -3,11 +3,15 @@ from __future__ import annotations
 
 from typing import cast
 
+import pytest
+
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import (
     collect_inherited_values,
     lookup_dict_key,
 )
 from core_pdf.impl.types import PdfDict
+
+pytestmark = pytest.mark.benchmark_high_impact
 
 FAST_PATH_DICT = {
     "Type": "Page",

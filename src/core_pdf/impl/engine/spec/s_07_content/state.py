@@ -63,6 +63,7 @@ from core_pdf.impl.engine.spec.s_07_content.operator_tables import (
 from core_pdf.impl.engine.spec.s_07_content.operators import detect_rotation_from_linear
 from core_pdf.impl.engine.spec.s_07_content.stream_state import (
     ContentStreamFrame,
+    LayoutFormId,
     ResolvedResourceCache,
     ResourceCache,
     StreamKey,
@@ -180,6 +181,7 @@ class TextState:
     capture_glyph_bitmaps: bool
     capture_images: bool
     capture_graphics: bool
+    compat_tj_decoder: FontDecoder | None
     runs: list[TextRun]
     glyphs: list[GlyphObservation]
     glyph_clusters: list[GlyphCluster]
@@ -201,6 +203,8 @@ class TextState:
     flatness: int
     render_intent: str | None
     clip_bbox: tuple[float, float, float, float] | None
+    layout_form_bbox: tuple[float, float, float, float] | None
+    layout_form_id: LayoutFormId
     fill_color_space: str
     stroke_color_space: str
     dash_pattern: tuple[list[float], float]
@@ -277,6 +281,8 @@ class TextState:
         "flatness",
         "render_intent",
         "clip_bbox",
+        "layout_form_bbox",
+        "layout_form_id",
         "page_clip",
         "fill_color_space",
         "stroke_color_space",
@@ -309,6 +315,7 @@ class TextState:
         "sequence",
         "stream_order",
         "xobject_depth",
+        "capture_source",
         "marked_content_stack",
         "active_streams",
         "queued_stream",
@@ -327,6 +334,13 @@ class TextState:
         "kw_cache",
         "pending_line_break",
         "pending_run",
+        "compat_tj_active",
+        "compat_tj_cursor_x",
+        "compat_tj_cursor_y",
+        "compat_tj_origin_e",
+        "compat_tj_origin_f",
+        "compat_tj_decoder",
+        "compat_tj_need_charspace",
         "invisible_text_layer",
         "op_handlers",
         "op_handlers_bytes",
@@ -395,6 +409,8 @@ class TextState:
         self.flatness = 0
         self.render_intent = None
         self.clip_bbox = None
+        self.layout_form_bbox = None
+        self.layout_form_id = None
         # The page box bounds what can be displayed, but it is not a clip the
         # content stream established, so it is kept out of the graphics state:
         # recording it as one would give every unclipped mark the same clip
@@ -447,6 +463,7 @@ class TextState:
         self.sequence = 0
         self.stream_order = -1
         self.xobject_depth = 0
+        self.capture_source = "native_text"
         self.compatibility_depth = 0
         self.marked_content_stack = []
         self.active_streams = set()
@@ -473,6 +490,13 @@ class TextState:
         self.kw_cache = getattr(self.document.resolver, "kw_cache", {})
         self.pending_line_break = False
         self.pending_run = None
+        self.compat_tj_active = False
+        self.compat_tj_cursor_x = 0.0
+        self.compat_tj_cursor_y = 0.0
+        self.compat_tj_origin_e = 0.0
+        self.compat_tj_origin_f = 0.0
+        self.compat_tj_decoder = None
+        self.compat_tj_need_charspace = False
         self.invisible_text_layer = False
         cls = type(self)
         shared_attr = "shared_operator_tables_graphics"
@@ -514,8 +538,30 @@ class TextState:
         *,
         data: bytes | memoryview | None = None,
         decoder: FontDecoder | None = None,
+        string_syntax: str | None = None,
+        compatibility_data: bytes | None = None,
     ) -> None:
-        self._append_text_impl(operand, data=data, decoder=decoder)
+        effective_decoder = decoder if decoder is not None else self.get_decoder()
+        previous_compat_active = self.compat_tj_active
+        previous_compat_origin = (self.compat_tj_origin_e, self.compat_tj_origin_f)
+        previous_compat_decoder = self.compat_tj_decoder
+        previous_compat_need_charspace = self.compat_tj_need_charspace
+        self.compat_tj_active = self.capture_glyphs
+        self.compat_tj_origin_e = self.lm_e
+        self.compat_tj_origin_f = self.lm_f
+        self.compat_tj_decoder = effective_decoder
+        self.compat_tj_need_charspace = False
+        self._append_text_impl(
+            operand,
+            data=data,
+            decoder=effective_decoder,
+            string_syntax=string_syntax,
+            compatibility_data=compatibility_data,
+        )
+        self.compat_tj_active = previous_compat_active
+        self.compat_tj_origin_e, self.compat_tj_origin_f = previous_compat_origin
+        self.compat_tj_decoder = previous_compat_decoder
+        self.compat_tj_need_charspace = previous_compat_need_charspace
 
     def append_tj_array(self, array: Any) -> None:
         self._append_tj_array_impl(array)
@@ -757,6 +803,12 @@ class TextState:
             font_size=self.font_size,
             font_operand=self.font_operand,
             font_size_operand=self.font_size_operand,
+            horizontal_scale=self.horizontal_scale,
+            char_space=self.char_space,
+            word_space=self.word_space,
+            rise=self.rise,
+            leading=self.leading,
+            render_mode=self.render_mode,
             current_font=self.current_font,
             current_decoder=self.current_decoder,
             current_decoder_resources_id=self.current_decoder_resources_id,
@@ -767,6 +819,12 @@ class TextState:
             fill_opacity=self.fill_opacity,
             stroke_color=self.stroke_color,
             stroke_pattern=self.stroke_pattern,
+            stroke_opacity=self.stroke_opacity,
+            line_width=self.line_width,
+            line_cap=self.line_cap,
+            line_join=self.line_join,
+            miter_limit=self.miter_limit,
+            dash_pattern=self.dash_pattern,
             compatibility_depth=self.compatibility_depth,
             fill_color_space=self.fill_color_space,
             stroke_color_space=self.stroke_color_space,
@@ -775,7 +833,12 @@ class TextState:
             flatness=self.flatness,
             render_intent=self.render_intent,
             clip_bbox=self.clip_bbox,
+            layout_form_bbox=self.layout_form_bbox,
+            layout_form_id=self.layout_form_id,
             pending_line_break=self.pending_line_break,
+            compat_tj_cursor_x=self.compat_tj_cursor_x,
+            compat_tj_cursor_y=self.compat_tj_cursor_y,
+            invisible_text_layer=self.invisible_text_layer,
             xobject_depth=self.xobject_depth,
             resource_cache=self.resource_cache,
             resolved_resource_categories=self.resolved_resource_categories,
@@ -790,6 +853,12 @@ class TextState:
         self.font_size = state.font_size
         self.font_operand = state.font_operand
         self.font_size_operand = state.font_size_operand
+        self.horizontal_scale = state.horizontal_scale
+        self.char_space = state.char_space
+        self.word_space = state.word_space
+        self.rise = state.rise
+        self.leading = state.leading
+        self.render_mode = state.render_mode
         self.current_font = state.current_font
         self.current_decoder = state.current_decoder
         self.current_decoder_resources_id = state.current_decoder_resources_id
@@ -801,6 +870,12 @@ class TextState:
         self.fill_opacity = state.fill_opacity
         self.stroke_color = state.stroke_color
         self.stroke_pattern = state.stroke_pattern
+        self.stroke_opacity = state.stroke_opacity
+        self.line_width = state.line_width
+        self.line_cap = state.line_cap
+        self.line_join = state.line_join
+        self.miter_limit = state.miter_limit
+        self.dash_pattern = state.dash_pattern
         self.fill_color_space = state.fill_color_space
         self.stroke_color_space = state.stroke_color_space
         self.compatibility_depth = state.compatibility_depth
@@ -809,7 +884,12 @@ class TextState:
         self.flatness = getattr(state, "flatness", 0)
         self.render_intent = getattr(state, "render_intent", None)
         self.clip_bbox = state.clip_bbox
+        self.layout_form_bbox = state.layout_form_bbox
+        self.layout_form_id = state.layout_form_id
         self.pending_line_break = state.pending_line_break
+        self.compat_tj_cursor_x = state.compat_tj_cursor_x
+        self.compat_tj_cursor_y = state.compat_tj_cursor_y
+        self.invisible_text_layer = state.invisible_text_layer
         self.xobject_depth = state.xobject_depth
         self.resource_cache = state.resource_cache
         self.resolved_resource_categories = state.resolved_resource_categories
@@ -828,6 +908,8 @@ class TextState:
         depth: int,
         *,
         clip_bbox: tuple[float, float, float, float] | None = None,
+        layout_form_bbox: tuple[float, float, float, float] | None = None,
+        layout_form_id: LayoutFormId = None,
         group_alpha: float | None = None,
         stream_key: StreamKey | None = None,
         swallow_parse_errors: bool = False,
@@ -844,6 +926,8 @@ class TextState:
             depth,
             clip_bbox,
             group_alpha,
+            layout_form_bbox=layout_form_bbox,
+            layout_form_id=layout_form_id,
             stream_key=execution_key,
             swallow_parse_errors=swallow_parse_errors,
         )
@@ -881,6 +965,8 @@ class TextState:
         self.resources_id = id(frame.resources)
         self.ctm = frame.ctm
         self.xobject_depth = frame.depth
+        self.layout_form_bbox = frame.layout_form_bbox
+        self.layout_form_id = frame.layout_form_id
         if frame.clip_bbox is not None:
             if self.clip_bbox is None:
                 self.clip_bbox = frame.clip_bbox
@@ -1046,7 +1132,7 @@ class TextState:
             )
             word = char_code == 32 if char_code is not None else code == 32
             extra = self.char_space_scale + (self.word_space_scale if word else 0.0)
-            return (metric[0] + extra) * self.font_size / 100000.0
+            return (metric[0] + extra) * self.font_size / 1000.0
         scale = self.text_advance_scale
         base = decoder.glyph_width(code)
         char_extra = self.char_space_scale
@@ -1270,6 +1356,8 @@ class TextState:
                         image_clip=self.clip_bbox,
                         items=[("quad", quad)] if quad is not None else [],
                         bbox=bbox,
+                        stream_order=self.stream_order,
+                        xobject_depth=self.xobject_depth,
                     )
                 )
                 self.drawings[-1].raw_data = getattr(xobj, "raw_data", b"")
@@ -1308,16 +1396,48 @@ class TextState:
         nested_ctm = (
             Matrix.from_operand(xobj_matrix) if xobj_matrix is not None else IDENTITY_MATRIX
         ).multiply(self.ctm)
-        form_bbox = self.document.resolver.resolve_box(lookup_dict_key(xobj_dict, "BBox"))
+        raw_form_bbox = lookup_dict_key(xobj_dict, "BBox")
+        form_bbox = self.document.resolver.resolve_box(raw_form_bbox)
         transformed_form_bbox = (
             transform_bbox(form_bbox, nested_ctm) if form_bbox is not None else None
         )
+        layout_form_bbox = None
+        if isinstance(raw_form_bbox, (list, tuple)) and len(raw_form_bbox) >= 4:
+            raw_values = tuple(
+                self.document.resolver.resolve_float(value, default=None)
+                for value in raw_form_bbox[:4]
+            )
+            if all(value is not None for value in raw_values):
+                raw_x, raw_y, raw_width, raw_height = typing.cast(
+                    tuple[float, float, float, float], raw_values
+                )
+                # PDFMiner's LTFigure constructor historically interprets the
+                # four /BBox values as x, y, width, height. Preserve that raw
+                # layout geometry separately from the spec-correct clipping
+                # rectangle so compatibility projections can reproduce it.
+                layout_form_bbox = transform_bbox(
+                    (
+                        raw_x,
+                        raw_y,
+                        raw_x + raw_width,
+                        raw_y + raw_height,
+                    ),
+                    nested_ctm,
+                )
         self.queue_stream(
             xobj,
             resources,
             nested_ctm,
             depth + 1,
             clip_bbox=transformed_form_bbox,
+            layout_form_bbox=layout_form_bbox,
+            # Retain the invocation tree, not merely the outermost form. PDFMiner
+            # emits one nested LTFigure per Form XObject even when a child's
+            # historical figure bbox extends beyond its parent.
+            layout_form_id=(
+                *(self.layout_form_id if isinstance(self.layout_form_id, tuple) else ()),
+                (stream_key, layout_form_bbox),
+            ),
             group_alpha=group_alpha,
             stream_key=stream_key,
             swallow_parse_errors=True,
@@ -1408,6 +1528,8 @@ class TextState:
                     soft_mask_alpha=self.group_alpha,
                     kind=kind,
                     path=path,
+                    stream_order=self.stream_order,
+                    xobject_depth=self.xobject_depth,
                 )
             )
             # A painted path must consume a sequence number like text does.
@@ -1703,6 +1825,8 @@ class TextState:
         rotation_angle: int,
         visible: bool,
         glyphs: tuple[DecodedGlyph, ...] | None = None,
+        string_syntax: str | None = None,
+        compatibility_data: bytes | None = None,
     ) -> None:
         if not self.capture_glyphs:
             return
@@ -1720,6 +1844,43 @@ class TextState:
         combined_b = self.combined_B
         combined_c = self.combined_C
         combined_d = self.combined_D
+        effective_font_size = font_size * (
+            hypot(combined_c, combined_d) if decoder.is_vertical else hypot(combined_a, combined_b)
+        )
+        effective_font_height = font_size * (
+            hypot(combined_a, combined_b) if decoder.is_vertical else hypot(combined_c, combined_d)
+        )
+        glyph_provenance = (
+            ("source", self.capture_source),
+            ("stream_order", self.stream_order),
+            ("xobject_depth", self.xobject_depth),
+            ("clip_bbox", self.clip_bbox),
+            ("layout_form_bbox", self.layout_form_bbox),
+            ("layout_form_id", self.layout_form_id),
+            ("text_matrix", (combined_a, combined_b, combined_c, combined_d)),
+            ("line_matrix_origin", (self.lm_e, self.lm_f)),
+            ("horizontal_scale", self.horizontal_scale),
+            ("char_space", self.char_space),
+            ("text_rise", self.rise),
+            ("string_syntax", string_syntax),
+            ("compatibility_data", compatibility_data),
+        )
+        compat_tj_active = self.compat_tj_active and self.compat_tj_decoder is decoder
+        if compat_tj_active:
+            compat_cursor_x = self.compat_tj_cursor_x
+            compat_cursor_y = self.compat_tj_cursor_y
+            compat_need_charspace = self.compat_tj_need_charspace
+            compat_spacing_scale = self.horizontal_scale * 0.01
+            compat_charspace = self.char_space * compat_spacing_scale
+            compat_wordspace = (
+                0.0 if decoder.is_cid_font else self.word_space * compat_spacing_scale
+            )
+            compat_origin_x = (
+                self.compat_tj_origin_e * self.ca + self.compat_tj_origin_f * self.cc + self.ce
+            )
+            compat_origin_y = (
+                self.compat_tj_origin_e * self.cb + self.compat_tj_origin_f * self.cd + self.cf
+            )
         text_basis = (
             self.tm_e * self.ca + self.tm_f * self.cc + self.ce,
             self.tm_e * self.cb + self.tm_f * self.cd + self.cf,
@@ -1780,7 +1941,47 @@ class TextState:
                 offset += advance
                 continue
 
+            if compat_tj_active:
+                if compat_need_charspace:
+                    if is_vertical:
+                        compat_cursor_y += compat_charspace
+                    else:
+                        compat_cursor_x += compat_charspace
+                pdfminer_origin = (
+                    compat_cursor_x * combined_a + compat_cursor_y * combined_c + compat_origin_x,
+                    compat_cursor_x * combined_b + compat_cursor_y * combined_d + compat_origin_y,
+                )
+                observation_provenance: tuple[tuple[str, Any], ...] = (
+                    *glyph_provenance,
+                    ("pdfminer_origin", pdfminer_origin),
+                    ("pdfminer_matrix_origin", (compat_origin_x, compat_origin_y)),
+                    ("pdfminer_cursor", (compat_cursor_x, compat_cursor_y)),
+                    ("pdfminer_need_charspace", compat_need_charspace),
+                )
+                if is_vertical:
+                    metric = decoder.vertical_metrics.get(
+                        glyph.width_code,
+                        (
+                            decoder.default_vertical_width,
+                            glyph_width(glyph.width_code) / 2.0,
+                            0.0,
+                        ),
+                    )
+                    compat_cursor_y += -float(metric[0]) * 0.001 * font_size * compat_spacing_scale
+                    if glyph.char_code == 32:
+                        compat_cursor_y += compat_wordspace
+                else:
+                    compat_cursor_x += (
+                        glyph_width(glyph.width_code) * 0.001 * font_size * compat_spacing_scale
+                    )
+                    if glyph.char_code == 32:
+                        compat_cursor_x += compat_wordspace
+                compat_need_charspace = True
+            else:
+                observation_provenance = glyph_provenance
+
             cluster_id = len(clusters)
+            cluster_provenance_id = (seqno, cluster_id)
             if axis_aligned_horizontal:
                 advance_x0 = text_basis[0] + offset * combined_a
                 advance_x1 = text_basis[0] + (offset + advance) * combined_a
@@ -1814,6 +2015,7 @@ class TextState:
                     transformed.y1,
                 )
                 baseline = transformed_text_line(*baseline_text, text_basis)
+            observation_visible = visible and not self.internal_is_clipped_away(*advance_bbox)
             if is_vertical:
                 glyph_bbox = None
             else:
@@ -1881,7 +2083,7 @@ class TextState:
                     baseline,
                     rotation_angle,
                     fill,
-                    visible,
+                    observation_visible,
                     observation_confidence,
                     glyph.unicode_source,
                     glyph.alternates,
@@ -1890,6 +2092,9 @@ class TextState:
                     bitmap_height,
                     bitmap_code,
                     decoder,
+                    effective_font_size,
+                    effective_font_height,
+                    (*observation_provenance, ("cluster_id", cluster_provenance_id)),
                 )
                 append_glyph(observation)
                 # Single-glyph fast path: glyph_cluster_from_observations, given one
@@ -1952,7 +2157,7 @@ class TextState:
                             char_baseline,
                             rotation_angle,
                             fill,
-                            visible,
+                            observation_visible,
                             char_confidence,
                             glyph.unicode_source,
                             glyph.alternates,
@@ -1961,6 +2166,9 @@ class TextState:
                             0,
                             None,
                             decoder,
+                            effective_font_size,
+                            effective_font_height,
+                            (*observation_provenance, ("cluster_id", cluster_provenance_id)),
                         )
                     )
                     char_offset += per_char_advance
@@ -1980,7 +2188,7 @@ class TextState:
                         baseline,
                         rotation_angle,
                         fill,
-                        visible,
+                        observation_visible,
                         observation_confidence,
                         glyph.unicode_source,
                         glyph.alternates,
@@ -1989,6 +2197,9 @@ class TextState:
                         0,
                         None,
                         decoder,
+                        effective_font_size,
+                        effective_font_height,
+                        (*observation_provenance, ("cluster_id", cluster_provenance_id)),
                     )
                 )
             for observation in cluster_observations:
@@ -2002,12 +2213,19 @@ class TextState:
                 clusters.append(cluster)
             offset += advance
 
+        if compat_tj_active:
+            self.compat_tj_cursor_x = compat_cursor_x
+            self.compat_tj_cursor_y = compat_cursor_y
+            self.compat_tj_need_charspace = compat_need_charspace
+
     def _append_text_impl(
         self: Any,
         operand: Any = None,
         *,
         data: bytes | memoryview | None = None,
         decoder: FontDecoder | None = None,
+        string_syntax: str | None = None,
+        compatibility_data: bytes | None = None,
     ) -> None:
         decoder = decoder if decoder is not None else self.get_decoder()
 
@@ -2017,7 +2235,9 @@ class TextState:
             glyphs = None
             if self.capture_glyphs:
                 glyphs = decoder.decode_glyphs(data)
-                text = "".join(glyph.unicode for glyph in glyphs)
+                text = "".join(
+                    glyph.unicode for glyph in glyphs if glyph.unicode_source != "undefined"
+                )
             else:
                 text = decoder.decode(bytes(data))
         else:
@@ -2176,6 +2396,7 @@ class TextState:
         ta, tb, tc, td = self.tm_a, self.tm_b, self.tm_c, self.tm_d
         scale_factor = hypot(C, D) if decoder.is_vertical else hypot(A, B)
         effective_font_size = fs * scale_factor
+        effective_font_height = fs * (hypot(A, B) if decoder.is_vertical else hypot(C, D))
         effective_space_width = self.font_space_width * scale_factor
         baseline = (
             E,
@@ -2184,7 +2405,7 @@ class TextState:
             F + adv_x * B + adv_y * D,
         )
         provenance = (
-            ("source", "native_text"),
+            ("source", self.capture_source),
             ("seqno", seqno),
             ("font_name", self.current_font),
             ("stream_order", self.stream_order),
@@ -2192,6 +2413,8 @@ class TextState:
             ("text_render_mode", self.render_mode),
             ("font_size", fs),
             ("clip_bbox", self.clip_bbox),
+            ("layout_form_bbox", self.layout_form_bbox),
+            ("layout_form_id", self.layout_form_id),
             *(
                 (("mcid", mcid),)
                 if (mcid := self.current_marked_content_mcid()) is not None
@@ -2202,6 +2425,34 @@ class TextState:
 
         actual_text_span = self.current_actual_text_span()
         if actual_text_span is not None:
+            compatibility_glyphs = glyphs if glyphs is not None else decoder.decode_glyphs(data)
+            compatibility_parts: list[str] = []
+            for glyph in compatibility_glyphs:
+                mapped = (
+                    decoder.to_unicode.decode(glyph.code_bytes)
+                    if decoder.to_unicode is not None and glyph.code_bytes
+                    else glyph.unicode
+                )
+                # pdfminer represents an explicitly empty ToUnicode target as
+                # U+0000 rather than dropping the source character.
+                compatibility_parts.append(mapped if mapped else "\x00")
+            compatibility_text = "".join(compatibility_parts)
+            if self.capture_glyphs:
+                glyph_start = len(self.glyphs)
+                cluster_start = len(self.glyph_clusters)
+                self.record_glyph_observations(
+                    text,
+                    data,
+                    decoder,
+                    rot,
+                    visible,
+                    glyphs=glyphs,
+                    string_syntax=string_syntax,
+                    compatibility_data=compatibility_data,
+                )
+                actual_text_span.compatibility_glyphs.extend(self.glyphs[glyph_start:])
+                del self.glyphs[glyph_start:]
+                del self.glyph_clusters[cluster_start:]
             actual_text_span.add_extents(
                 x0=x0,
                 y0=y0,
@@ -2227,6 +2478,9 @@ class TextState:
                 baseline=baseline,
                 provenance=provenance,
                 confidence=1.0,
+                font_decoder=decoder,
+                effective_font_height=effective_font_height,
+                compatibility_text=compatibility_text,
             )
             self.sequence = seqno + 1
             self.tm_e = te + adv_x * ta + adv_y * tc
@@ -2243,6 +2497,8 @@ class TextState:
                     rot,
                     visible,
                     glyphs=glyphs,
+                    string_syntax=string_syntax,
+                    compatibility_data=compatibility_data,
                 )
             self.sequence = seqno + 1
             self.pending_line_break = False
@@ -2336,6 +2592,8 @@ class TextState:
                 rot,
                 visible,
                 glyphs=glyphs,
+                string_syntax=string_syntax,
+                compatibility_data=compatibility_data,
             )
             apply_glyph_geometry_to_run(
                 new_run,
@@ -2583,13 +2841,13 @@ class TextState:
 
                     pending_data = None
 
-                delta = -item * adjustment_scale
+                adjustment = item * adjustment_scale
                 if is_vert:
-                    te += delta * tc
-                    tf += delta * td
+                    te -= adjustment * tc
+                    tf -= adjustment * td
                 else:
-                    te += delta * ta
-                    tf += delta * tb
+                    te -= adjustment * ta
+                    tf -= adjustment * tb
                 continue
 
             if t is str:
@@ -2963,9 +3221,9 @@ class TextState:
 
                     pending_data = None
 
-                delta = -item * text_scale
-                te += delta * ta
-                tf += delta * tb
+                adjustment = item * text_scale
+                te -= adjustment * ta
+                tf -= adjustment * tb
 
         if pending_data:
             n_data = len(pending_data)
@@ -3132,6 +3390,20 @@ class TextState:
 
         te, tf = self.tm_e, self.tm_f
         ta, tb, tc, td = self.tm_a, self.tm_b, self.tm_c, self.tm_d
+        previous_compat_tj = (
+            self.compat_tj_active,
+            self.compat_tj_cursor_x,
+            self.compat_tj_cursor_y,
+            self.compat_tj_origin_e,
+            self.compat_tj_origin_f,
+            self.compat_tj_decoder,
+            self.compat_tj_need_charspace,
+        )
+        self.compat_tj_active = self.capture_glyphs
+        self.compat_tj_origin_e = self.lm_e
+        self.compat_tj_origin_f = self.lm_f
+        self.compat_tj_decoder = decoder
+        self.compat_tj_need_charspace = False
 
         for item in array:
             t = type(item)
@@ -3148,13 +3420,17 @@ class TextState:
                         self._append_text_impl(data=bytes(pending_bytes), decoder=decoder)
                     te, tf = self.tm_e, self.tm_f
                     pending_bytes.clear()
-                delta = -item * scale
+                adjustment = item * scale
+                compat_adjustment = item * (0.001 * self.font_size * (self.horizontal_scale * 0.01))
                 if is_vert:
-                    te += delta * tc
-                    tf += delta * td
+                    te -= adjustment * tc
+                    tf -= adjustment * td
+                    self.compat_tj_cursor_y -= compat_adjustment
                 else:
-                    te += delta * ta
-                    tf += delta * tb
+                    te -= adjustment * ta
+                    tf -= adjustment * tb
+                    self.compat_tj_cursor_x -= compat_adjustment
+                self.compat_tj_need_charspace = True
             elif t is str:
                 pending_bytes.extend(item.encode("latin-1"))
 
@@ -3167,6 +3443,19 @@ class TextState:
             te, tf = self.tm_e, self.tm_f
 
         self.tm_e, self.tm_f = te, tf
+        compat_cursor_x = self.compat_tj_cursor_x
+        compat_cursor_y = self.compat_tj_cursor_y
+        (
+            self.compat_tj_active,
+            self.compat_tj_cursor_x,
+            self.compat_tj_cursor_y,
+            self.compat_tj_origin_e,
+            self.compat_tj_origin_f,
+            self.compat_tj_decoder,
+            self.compat_tj_need_charspace,
+        ) = previous_compat_tj
+        self.compat_tj_cursor_x = compat_cursor_x
+        self.compat_tj_cursor_y = compat_cursor_y
 
     def current_actual_text_span(self: Any) -> Any | None:
         for entry in reversed(self.marked_content_stack):
@@ -3183,39 +3472,65 @@ class TextState:
 
     def emit_actual_text_span(self: Any, entry: Any) -> None:
         actual_text = getattr(entry, "actual_text", None)
-        if (
-            actual_text is None
-            or not getattr(entry, "has_text_extents", False)
-            or not self.capture_runs
-        ):
+        if actual_text is None or not getattr(entry, "has_text_extents", False):
             return
-        new_run = self.alloc_run(
-            text=actual_text,
-            x0=entry.x0,
-            y0=entry.y0,
-            x1=entry.x1,
-            y1=entry.y1,
-            tx=entry.tx,
-            ty=entry.ty,
-            font_size=entry.font_size,
-            font_name=entry.font_name,
-            space_width=entry.space_width,
-            order=entry.order,
-            stream_order=entry.stream_order,
-            xobject_depth=entry.xobject_depth,
-            is_vertical=entry.is_vertical,
-            rotation_angle=entry.rotation_angle,
-            visible=entry.visible,
-            line_break_before=entry.line_break_before,
-            seqno=entry.seqno,
-            fill_color=entry.fill_color,
-            advance_bbox=entry.advance_bbox,
-            ink_bbox=entry.ink_bbox,
-            baseline=entry.baseline,
-            provenance=(*entry.provenance, ("unicode_source", "actual_text")),
-            confidence=entry.confidence,
-        )
-        self.update_pending_run(new_run)
+        if self.capture_runs:
+            new_run = self.alloc_run(
+                text=actual_text,
+                x0=entry.x0,
+                y0=entry.y0,
+                x1=entry.x1,
+                y1=entry.y1,
+                tx=entry.tx,
+                ty=entry.ty,
+                font_size=entry.font_size,
+                font_name=entry.font_name,
+                space_width=entry.space_width,
+                order=entry.order,
+                stream_order=entry.stream_order,
+                xobject_depth=entry.xobject_depth,
+                is_vertical=entry.is_vertical,
+                rotation_angle=entry.rotation_angle,
+                visible=entry.visible,
+                line_break_before=entry.line_break_before,
+                seqno=entry.seqno,
+                fill_color=entry.fill_color,
+                advance_bbox=entry.advance_bbox,
+                ink_bbox=entry.ink_bbox,
+                baseline=entry.baseline,
+                provenance=(*entry.provenance, ("unicode_source", "actual_text")),
+                confidence=entry.confidence,
+            )
+            self.update_pending_run(new_run)
+        if self.capture_glyphs and entry.advance_bbox is not None:
+            self.glyphs.append(
+                GlyphObservation(
+                    text=actual_text,
+                    ink_bbox=entry.ink_bbox or entry.advance_bbox,
+                    advance_bbox=entry.advance_bbox,
+                    seqno=entry.seqno,
+                    font_name=entry.font_name,
+                    font_size=entry.font_size,
+                    baseline=entry.baseline,
+                    rotation_angle=entry.rotation_angle,
+                    fill=entry.fill_color,
+                    visible=entry.visible,
+                    confidence=entry.confidence,
+                    unicode_source="actual_text",
+                    # Preserve the text obtained from the font program as an
+                    # alternate.  Consumers such as pdfminer do not interpret
+                    # marked-content /ActualText and therefore need the font
+                    # projection rather than the accessible replacement text.
+                    alternates=(entry.compatibility_text,) if entry.compatibility_text else (),
+                    font_decoder=entry.font_decoder,
+                    effective_font_size=entry.font_size,
+                    effective_font_height=entry.effective_font_height,
+                    provenance=(
+                        *entry.provenance,
+                        ("compatibility_glyphs", tuple(entry.compatibility_glyphs)),
+                    ),
+                )
+            )
 
     def op_noop(self, operands: OperandWindow, depth: int) -> None:
         return
@@ -3244,7 +3559,11 @@ class TextState:
     def op_Tj(self, operands: OperandWindow, depth: int) -> None:
         if not operands:
             return
-        self.text_component.show(operands[0])
+        # Operators consume their operands from the top of the operand stack.
+        # A well-formed Tj has exactly one string, but damaged streams sometimes
+        # leave older operands before it.  Those older values are not part of
+        # the text-showing operation.
+        self.text_component.show(operands[-1])
 
     def op_TJ(self, operands: OperandWindow, depth: int) -> None:
         self.text_component.show_array(operands)
@@ -3267,6 +3586,8 @@ class TextState:
             self.tm_d = self.lm_d = d_
             self.tm_e = self.lm_e = e
             self.tm_f = self.lm_f = f
+            self.compat_tj_cursor_x = 0.0
+            self.compat_tj_cursor_y = 0.0
             self.update_combined()
 
     def op_Tm_values(
@@ -3408,6 +3729,8 @@ class TextState:
                     image_clip=self.clip_bbox,
                     dash_pattern=self.transformed_dash_pattern(),
                     items=[],
+                    stream_order=self.stream_order,
+                    xobject_depth=self.xobject_depth,
                 )
             )
 
@@ -3980,7 +4303,7 @@ class TextState:
     def op_CS(self, operands: OperandWindow, depth: int) -> None:
         self._op_CS_impl(operands, depth)
 
-    def _op_CS_impl(self, operands: OperandWindow, depth: int) -> None:
+    def internal_set_color_space(self, operands: OperandWindow, *, stroke: bool) -> None:
         if operands:
             name_obj = operands[0]
             try:
@@ -3988,80 +4311,78 @@ class TextState:
             except TypeError:
                 cached = MISSING
             if cached is not MISSING:
-                if cached is not None and self.stroke_color_space != cached:
-                    self.stroke_color_space = cast("str", cached)
+                if cached is not None:
+                    if stroke and self.stroke_color_space != cached:
+                        self.stroke_color_space = cast("str", cached)
+                    elif not stroke and self.fill_color_space != cached:
+                        self.fill_color_space = cast("str", cached)
                 return
             color_space = self.resolve_color_space(name_obj, default_fallback=True)
             if color_space is not None:
-                self.stroke_color_space = color_space
+                if stroke:
+                    self.stroke_color_space = color_space
+                else:
+                    self.fill_color_space = color_space
+
+    def _op_CS_impl(self, operands: OperandWindow, depth: int) -> None:
+        self.internal_set_color_space(operands, stroke=True)
 
     def op_cs(self, operands: OperandWindow, depth: int) -> None:
         self._op_cs_impl(operands, depth)
 
     def _op_cs_impl(self, operands: OperandWindow, depth: int) -> None:
-        if operands:
-            name_obj = operands[0]
-            try:
-                cached = self.color_space_cache.get((self.resources_id, name_obj, True), MISSING)
-            except TypeError:
-                cached = MISSING
-            if cached is not MISSING:
-                if cached is not None and self.fill_color_space != cached:
-                    self.fill_color_space = cast("str", cached)
-                return
-            color_space = self.resolve_color_space(name_obj, default_fallback=True)
-            if color_space is not None:
-                self.fill_color_space = color_space
+        self.internal_set_color_space(operands, stroke=False)
 
     def op_SC(self, operands: OperandWindow, depth: int) -> None:
         self._op_SC_impl(operands, depth)
 
     def _op_SC_impl(self, operands: OperandWindow, depth: int) -> None:
-        normalized = self.normalize_color_operands(operands)
-        if normalized is not None:
-            self.stroke_color = normalized
-            self.stroke_pattern = None
+        self.internal_set_color(operands, stroke=True, allow_pattern=False)
 
     def op_SCN(self, operands: OperandWindow, depth: int) -> None:
         self._op_SCN_impl(operands, depth)
 
-    def _op_SCN_impl(self, operands: OperandWindow, depth: int) -> None:
-        if self.stroke_color_space == "Pattern":
-            self.stroke_pattern = self.resolve_pattern_color(operands)
+    def internal_set_color(
+        self, operands: OperandWindow, *, stroke: bool, allow_pattern: bool
+    ) -> None:
+        color_space = self.stroke_color_space if stroke else self.fill_color_space
+        if allow_pattern and color_space == "Pattern":
+            pattern = self.resolve_pattern_color(operands)
+            if stroke:
+                self.stroke_pattern = pattern
+            else:
+                self.fill_pattern = pattern
             if len(operands) > 1:
                 normalized = self.normalize_color_operands(operands[:-1])
                 if normalized is not None:
-                    self.stroke_color = normalized
+                    if stroke:
+                        self.stroke_color = normalized
+                    else:
+                        self.fill_color = normalized
             return
         normalized = self.normalize_color_operands(operands)
         if normalized is not None:
-            self.stroke_color = normalized
-            self.stroke_pattern = None
+            if stroke:
+                self.stroke_color = normalized
+                self.stroke_pattern = None
+            else:
+                self.fill_color = normalized
+                self.fill_pattern = None
+
+    def _op_SCN_impl(self, operands: OperandWindow, depth: int) -> None:
+        self.internal_set_color(operands, stroke=True, allow_pattern=True)
 
     def op_sc(self, operands: OperandWindow, depth: int) -> None:
         self._op_sc_impl(operands, depth)
 
     def _op_sc_impl(self, operands: OperandWindow, depth: int) -> None:
-        normalized = self.normalize_color_operands(operands)
-        if normalized is not None:
-            self.fill_color = normalized
-            self.fill_pattern = None
+        self.internal_set_color(operands, stroke=False, allow_pattern=False)
 
     def op_scN(self, operands: OperandWindow, depth: int) -> None:
         self._op_scN_impl(operands, depth)
 
     def _op_scN_impl(self, operands: OperandWindow, depth: int) -> None:
-        if self.fill_color_space == "Pattern":
-            self.fill_pattern = self.resolve_pattern_color(operands)
-            if len(operands) > 1:
-                normalized = self.normalize_color_operands(operands[:-1])
-                if normalized is not None:
-                    self.fill_color = normalized
-            return
-        normalized = self.normalize_color_operands(operands)
-        if normalized is not None:
-            self.fill_color = normalized
-            self.fill_pattern = None
+        self.internal_set_color(operands, stroke=False, allow_pattern=True)
 
     def op_i(self, operands: OperandWindow, depth: int) -> None:
         self._op_i_impl(operands, depth)
@@ -4166,6 +4487,8 @@ class TextState:
                 kind="shading",
                 items=[],
                 dictionary=dict(shading),
+                stream_order=self.stream_order,
+                xobject_depth=self.xobject_depth,
             )
         )
 

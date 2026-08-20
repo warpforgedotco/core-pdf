@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import json
 import threading
 from collections.abc import Callable, Iterable, Mapping
 from concurrent.futures import Future
@@ -12,7 +11,7 @@ from dataclasses import replace
 from io import BytesIO
 from os import PathLike
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Self, cast
 
 from core_pdf.impl.engine.execution import RUNTIME, TaskScope
 from core_pdf.impl.engine.layout import LayoutGeometryIssue, LayoutGeometrySummary
@@ -20,10 +19,7 @@ from core_pdf.impl.engine.parse import parse_document
 from core_pdf.impl.engine.spec.s_07_document.document import PdfDocument as SpecPdfDocument
 from core_pdf.impl.engine.structured import (
     Annotation,
-    ElementRecord,
     Link,
-    chunk_elements,
-    document_elements,
 )
 from core_pdf.impl.engine.structured import (
     Document as StructuredDocument,
@@ -77,7 +73,14 @@ class PdfDocument(PdfDocumentWritingMixin, SpecPdfDocument["PdfPage"]):
         data = serialize_document_to_pdf(document)
         return cls.open(BytesIO(data))
 
-    def __init__(self, source: PdfSource, password: str = "") -> None:
+    def __init__(
+        self,
+        source: PdfSource,
+        password: str = "",
+        *,
+        recovery_scan_all_revisions: bool = True,
+        legacy_pdfminer_text_operators: bool = False,
+    ) -> None:
         self.internal_operation_lock = threading.RLock()
         self.internal_page_locks: dict[int, threading.RLock] = {}
         self.internal_operation_cancelled = threading.Event()
@@ -87,7 +90,12 @@ class PdfDocument(PdfDocumentWritingMixin, SpecPdfDocument["PdfPage"]):
         self.internal_extraction_generation = 0
         self.internal_extracted_documents: dict[tuple[int, ...], Any] = {}
         self.internal_extraction_flights: dict[tuple[int, tuple[int, ...]], Future[Any]] = {}
-        super().__init__(source, password=password)
+        super().__init__(
+            source,
+            password=password,
+            recovery_scan_all_revisions=recovery_scan_all_revisions,
+            legacy_pdfminer_text_operators=legacy_pdfminer_text_operators,
+        )
         from core_pdf.impl.engine.page import PdfPage
 
         self.page_class = PdfPage
@@ -296,36 +304,12 @@ class PdfDocument(PdfDocumentWritingMixin, SpecPdfDocument["PdfPage"]):
             result = adapter.apply(result)
         return result
 
-    def extract_structured(
-        self,
-        *,
-        pages: PageSelection | None = None,
-    ) -> dict[str, object]:
-        selected = self.selected_page_indexes(pages)
-        document = self.extract(pages=tuple(index + 1 for index in selected))
-        return {
-            "schema_version": document.schema_version,
-            "document": document.to_json_dict(),
-            "metadata": self.get_metadata(),
-            "page_count": self.page_count(),
-            "summary": {
-                "page_count": self.page_count(),
-                "selected_page_count": len(document.pages),
-                "selected_pages": [index + 1 for index in selected],
-            },
-        }
-
     @property
     def structured_document(self) -> StructuredDocument:
         """Return the cached high-level structured view owned by this document."""
         if self.page_count() == 0:
             return StructuredDocument(metadata=self.metadata)
         return cast(StructuredDocument, self.extract())
-
-    @property
-    def structured_pages(self) -> tuple[StructuredPage, ...]:
-        """Return structured pages in stable document order."""
-        return tuple(self.structured_document.pages)
 
     @staticmethod
     def internal_scope(page_index: int, page: Any, record: Any) -> PageScoped[Any]:
@@ -351,40 +335,6 @@ class PdfDocument(PdfDocumentWritingMixin, SpecPdfDocument["PdfPage"]):
             ),
         )
 
-    def extract_element_records(
-        self,
-        *,
-        pages: PageSelection | None = None,
-    ) -> tuple[ElementRecord, ...]:
-        """Return typed normalized elements for the selected pages."""
-        return document_elements(
-            self.extract(pages=pages),
-            self.extract_images(pages=pages),
-        )
-
-    def extract_elements(
-        self,
-        *,
-        pages: PageSelection | None = None,
-    ) -> tuple[dict[str, object], ...]:
-        """Return normalized high-level elements without a compatibility wrapper."""
-        return tuple(record.to_dict() for record in self.extract_element_records(pages=pages))
-
-    def extract_chunks(
-        self,
-        *,
-        max_characters: int = 2000,
-        pages: PageSelection | None = None,
-    ) -> tuple[dict[str, object], ...]:
-        """Return deterministic page-aware chunks from normalized elements."""
-        return tuple(
-            chunk.to_dict()
-            for chunk in chunk_elements(
-                self.extract_element_records(pages=pages),
-                max_characters=max_characters,
-            )
-        )
-
     def extract_geometry_issues(
         self,
         *,
@@ -398,34 +348,6 @@ class PdfDocument(PdfDocumentWritingMixin, SpecPdfDocument["PdfPage"]):
         pages: PageSelection | None = None,
     ) -> tuple[PageScoped[LayoutGeometrySummary], ...]:
         return self._scoped_records(pages, lambda page: (page.extract_geometry_summary(),))
-
-    def to_structured_json_string(
-        self,
-        *,
-        pages: PageSelection | None = None,
-        indent: int | None = 2,
-        sort_keys: bool = True,
-    ) -> str:
-        return json.dumps(
-            self.extract_structured(pages=pages),
-            indent=indent,
-            sort_keys=sort_keys,
-        )
-
-    def to_json(self, *, indent: int | None = 2, sort_keys: bool = True) -> str:
-        return self.extract().to_json(indent=indent, sort_keys=sort_keys)
-
-    def to_html(self) -> str:
-        return self.extract().to_html()
-
-    def to_markdown(self) -> str:
-        return self.extract().to_markdown()
-
-    def to_csv(self, *, pages: PageSelection | None = None) -> str:
-        return self.extract().to_csv(pages=pages)
-
-    def to_tei(self, *, pages: PageSelection | None = None) -> str:
-        return self.extract().to_tei(pages=pages)
 
     def edit(self) -> "PdfDocumentEditor":
         return PdfDocumentEditor(self)
@@ -445,21 +367,19 @@ class PdfDocumentEditor:
         self.internal_geometry_updates: dict[int, tuple[int | None, tuple[float, ...] | None]] = {}
         self.internal_annotation_removals: dict[int, tuple[set[int] | None, set[int] | None]] = {}
 
-    def encrypt(
-        self, user_password: str, *, owner_password: str | None = None
-    ) -> "PdfDocumentEditor":
+    def encrypt(self, user_password: str, *, owner_password: str | None = None) -> Self:
         self.internal_ensure_active()
         if not user_password:
             raise ValueError("user password must not be empty")
         self.internal_encryption = StandardPdfEncryption(user_password, owner_password)
         return self
 
-    def sign(self, provider: Any, *, contents_length: int = 8192) -> "PdfDocumentEditor":
+    def sign(self, provider: Any, *, contents_length: int = 8192) -> Self:
         self.internal_ensure_active()
         self.internal_signature = PdfSignaturePlan(provider, contents_length)
         return self
 
-    def set_metadata(self, values: dict[str, object]) -> "PdfDocumentEditor":
+    def set_metadata(self, values: dict[str, object]) -> Self:
         self.internal_ensure_active()
         self.internal_editor.update_metadata(values)
         return self
@@ -470,7 +390,7 @@ class PdfDocumentEditor:
         *,
         rotation: int | None = None,
         cropbox: tuple[float, float, float, float] | None = None,
-    ) -> "PdfDocumentEditor":
+    ) -> Self:
         self.internal_ensure_active()
         if rotation is not None and rotation % 90 != 0:
             raise ValueError("page rotation must be a multiple of 90 degrees")
@@ -491,17 +411,17 @@ class PdfDocumentEditor:
         )
         return self
 
-    def replace_page(self, page_number: int, page: StructuredPage) -> "PdfDocumentEditor":
+    def replace_page(self, page_number: int, page: StructuredPage) -> Self:
         self.internal_ensure_active()
         self.internal_editor.replace_page(page_number, page)
         return self
 
-    def replace_pages(self, pages: Iterable[StructuredPage]) -> "PdfDocumentEditor":
+    def replace_pages(self, pages: Iterable[StructuredPage]) -> Self:
         self.internal_ensure_active()
         self.internal_editor.internal_pages = list(pages)
         return self
 
-    def update_form_field(self, name: str, value: str) -> "PdfDocumentEditor":
+    def update_form_field(self, name: str, value: str) -> Self:
         self.internal_ensure_active()
         pages = []
         changed = False
@@ -517,7 +437,7 @@ class PdfDocumentEditor:
         self.internal_editor.internal_pages = pages
         return self
 
-    def remove_form_fields(self, names: Iterable[str]) -> "PdfDocumentEditor":
+    def remove_form_fields(self, names: Iterable[str]) -> Self:
         self.internal_ensure_active()
         selected = set(names)
         self.internal_editor.internal_pages = [
@@ -533,7 +453,7 @@ class PdfDocumentEditor:
 
     def apply_redactions(
         self, redactions: Mapping[int, Iterable[tuple[float, float, float, float]]]
-    ) -> "PdfDocumentEditor":
+    ) -> Self:
         self.internal_ensure_active()
 
         def redact_line(
@@ -594,9 +514,7 @@ class PdfDocumentEditor:
         self.internal_editor.internal_pages = pages
         return self
 
-    def remove_annotations(
-        self, page_number: int, indices: Iterable[int] | None = None
-    ) -> "PdfDocumentEditor":
+    def remove_annotations(self, page_number: int, indices: Iterable[int] | None = None) -> Self:
         self.internal_ensure_active()
         page = self.internal_editor.internal_pages[page_number - 1]
         selected = set(indices) if indices is not None else None
@@ -613,9 +531,7 @@ class PdfDocumentEditor:
         self.internal_record_removal(page_number, selected, links=False)
         return self
 
-    def remove_links(
-        self, page_number: int, indices: Iterable[int] | None = None
-    ) -> "PdfDocumentEditor":
+    def remove_links(self, page_number: int, indices: Iterable[int] | None = None) -> Self:
         self.internal_ensure_active()
         page = self.internal_editor.internal_pages[page_number - 1]
         selected = set(indices) if indices is not None else None
@@ -648,7 +564,7 @@ class PdfDocumentEditor:
         *,
         contents: str = "",
         destination: object = None,
-    ) -> "PdfDocumentEditor":
+    ) -> Self:
         self.internal_ensure_active()
         page = self.internal_editor.internal_pages[page_number - 1]
         self.internal_editor.replace_page(
@@ -668,7 +584,7 @@ class PdfDocumentEditor:
         url: str | None = None,
         link_type: str | None = None,
         text: str = "",
-    ) -> "PdfDocumentEditor":
+    ) -> Self:
         self.internal_ensure_active()
         page = self.internal_editor.internal_pages[page_number - 1]
         self.internal_editor.replace_page(
@@ -680,12 +596,12 @@ class PdfDocumentEditor:
         )
         return self
 
-    def set_attachments(self, values: dict[str, bytes]) -> "PdfDocumentEditor":
+    def set_attachments(self, values: dict[str, bytes]) -> Self:
         self.internal_ensure_active()
         self.internal_attachments = dict(values)
         return self
 
-    def set_outlines(self, values: Iterable[Iterable[object]]) -> "PdfDocumentEditor":
+    def set_outlines(self, values: Iterable[Iterable[object]]) -> Self:
         self.internal_ensure_active()
         self.internal_outlines = tuple(tuple(item) for item in values)
         return self
@@ -695,7 +611,7 @@ class PdfDocumentEditor:
         position: int,
         width: float = 595.0,
         height: float = 842.0,
-    ) -> "PdfDocumentEditor":
+    ) -> Self:
         self.internal_ensure_active()
         self.internal_editor.insert_page(
             position,
@@ -703,12 +619,12 @@ class PdfDocumentEditor:
         )
         return self
 
-    def insert_structured_page(self, position: int, page: StructuredPage) -> "PdfDocumentEditor":
+    def insert_structured_page(self, position: int, page: StructuredPage) -> Self:
         self.internal_ensure_active()
         self.internal_editor.insert_page(position, page)
         return self
 
-    def delete_pages(self, selection: PageSelection) -> "PdfDocumentEditor":
+    def delete_pages(self, selection: PageSelection) -> Self:
         self.internal_ensure_active()
         page_numbers = sorted(
             (index + 1 for index in self.document.selected_page_indexes(selection)),

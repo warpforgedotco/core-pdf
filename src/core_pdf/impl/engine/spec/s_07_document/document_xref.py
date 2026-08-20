@@ -37,6 +37,30 @@ class DocumentXRefMixin:
     xref: dict[int, PdfXRefEntry]
     trailer_dict: PdfDict
     xref_was_recovered: bool
+    xref_recovery_reason: str | None
+    recovery_scan_all_revisions: bool
+
+    def strict_xref_validation_error(self) -> str | None:
+        """Return the syntax error hidden by native xref/object recovery, if any."""
+        start = XRefScanner.find_startxref(self.raw_data)
+        if start is None:
+            return None
+        try:
+            XRefScanner.load_section_chain(
+                self.raw_data,
+                start,
+                set(),
+                recover_malformed_objects=False,
+            )
+        except (PdfParseError, PdfUnsupportedError, ValueError, struct.error, OSError) as error:
+            return str(error)
+        return None
+
+    def brute_force_xref(self) -> dict[int, PdfXRefEntry]:
+        return XRefScanner.brute_force_scan(
+            self.raw_data,
+            stop_at_first_trailer=not self.recovery_scan_all_revisions,
+        )
 
     def scan_xref(self) -> None:
         data = self.raw_data
@@ -47,7 +71,7 @@ class DocumentXRefMixin:
         if start is None:
             if b"startxref" in data:
                 raise PdfParseError("missing startxref")
-            self.xref = XRefScanner.brute_force_scan(data)
+            self.xref = self.brute_force_xref()
             self.xref_was_recovered = True
             if not self.xref:
                 self.trailer_dict = {}
@@ -65,16 +89,17 @@ class DocumentXRefMixin:
             self.trailer_dict = self.merge_recovered_trailer_metadata(self.trailer_dict)
             root_ref = lookup_dict_key(self.trailer_dict, "Root")
             if root_ref is None or not self.is_valid_catalog_root(root_ref):
-                self.xref.update(XRefScanner.brute_force_scan(data))
+                self.xref.update(self.brute_force_xref())
                 self.xref_was_recovered = True
                 catalog_ref = self.infer_catalog_root()
                 if catalog_ref is not None:
                     self.trailer_dict = dict(self.trailer_dict)
                     self.trailer_dict["Root"] = catalog_ref
                 self.trailer_dict = self.merge_recovered_trailer_metadata(self.trailer_dict)
-        except (PdfParseError, PdfUnsupportedError, ValueError, struct.error, OSError):
-            self.xref = XRefScanner.brute_force_scan(data)
+        except (PdfParseError, PdfUnsupportedError, ValueError, struct.error, OSError) as error:
+            self.xref = self.brute_force_xref()
             self.xref_was_recovered = True
+            self.xref_recovery_reason = str(error)
             if not self.xref:
                 self.trailer_dict = {}
                 return
@@ -83,6 +108,7 @@ class DocumentXRefMixin:
             self.trailer_dict = self.merge_recovered_trailer_metadata(self.trailer_dict)
 
     def repair_stale_xref_offsets(self) -> None:
+        header_offset = self.pdf_header_offset()
         recovered_xref: dict[int, PdfXRefEntry] | None = None
         repaired = False
         for key, entry in list(self.xref.items()):
@@ -90,8 +116,30 @@ class DocumentXRefMixin:
                 continue
             if self.xref_entry_matches_header(key, entry):
                 continue
+            if header_offset and self.xref_entry_matches_header(
+                key,
+                PdfXRefEntry(
+                    entry.offset + header_offset,
+                    entry.generation,
+                    entry.in_use,
+                    object_stream=entry.object_stream,
+                    index_in_stream=entry.index_in_stream,
+                ),
+            ):
+                entry.offset += header_offset
+                repaired = True
+                continue
+            if header_offset:
+                shifted_offset = self.find_xref_entry_header(
+                    key,
+                    entry.offset + header_offset,
+                )
+                if shifted_offset is not None:
+                    entry.offset = shifted_offset
+                    repaired = True
+                    continue
             if recovered_xref is None:
-                recovered_xref = XRefScanner.brute_force_scan(self.raw_data)
+                recovered_xref = self.brute_force_xref()
             replacement = recovered_xref.get(key)
             if (
                 replacement is None
@@ -105,6 +153,34 @@ class DocumentXRefMixin:
 
         if repaired:
             self.xref_was_recovered = True
+
+    def pdf_header_offset(self) -> int:
+        """Return the physical origin used by header-relative file offsets."""
+        data = self.raw_data
+        # ISO 32000 permits the header to occur within the first 1024 bytes. Some
+        # producers prepend diagnostics but still measure xref offsets from it.
+        offset = data.find(b"%PDF-", 0, min(len(data), 1024))
+        return offset if offset > 0 else 0
+
+    def find_xref_entry_header(self, key: int, offset: int) -> int | None:
+        """Find an expected object near a producer's approximate xref offset."""
+        data = self.raw_data
+        expected_object_number = key >> 16
+        expected_generation_number = key & 0xFFFF
+        search_start = max(0, offset - 1024)
+        search_end = min(len(data), offset + 1024)
+        marker = data.find(b"obj", search_start, search_end)
+        while marker >= 0:
+            parsed = parse_object_marker_prefix(data, marker)
+            if parsed is not None:
+                parsed_offset, object_number, generation_number = parsed
+                if (
+                    object_number == expected_object_number
+                    and generation_number == expected_generation_number
+                ):
+                    return parsed_offset
+            marker = data.find(b"obj", marker + 3, search_end)
+        return None
 
     def xref_entry_matches_header(self, key: int, entry: PdfXRefEntry) -> bool:
         data = self.raw_data
@@ -160,7 +236,11 @@ class DocumentXRefMixin:
         return False
 
     def is_valid_catalog_root(self, root_ref: object) -> bool:
-        resolver = ObjectResolver(self.raw_data, self.xref, self.trailer_dict)
+        resolver = ObjectResolver(
+            self.raw_data,
+            self.xref,
+            self.trailer_dict,
+        )
         try:
             root = resolver.resolve(root_ref)
             if not isinstance(root, dict):
@@ -185,7 +265,11 @@ class DocumentXRefMixin:
     def infer_catalog_root(self) -> PdfReference | None:
         data = self.raw_data
         object_cache: ResolvedObjectCache = {}
-        resolver = ObjectResolver(self.raw_data, self.xref, self.trailer_dict)
+        resolver = ObjectResolver(
+            self.raw_data,
+            self.xref,
+            self.trailer_dict,
+        )
         lexer = PdfLexer(data)
         entries_by_ref = {
             (k >> 16, k & 0xFFFF): entry for k, entry in self.xref.items() if entry.in_use

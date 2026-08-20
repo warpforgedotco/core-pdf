@@ -33,7 +33,24 @@ def internal_shadowed_modules() -> list[tuple[pathlib.Path, pathlib.Path]]:
     return shadowed
 
 
+def internal_disable_benchmarks_by_default(config: pytest.Config) -> None:
+    """Make ``--benchmark-disable`` the default for plain ``pytest`` runs.
+
+    Benchmarked tests then execute once as ordinary tests with no timing
+    rounds or stats. Pass ``--benchmark-enable`` or ``--benchmark-only`` to
+    opt back in. Done here rather than in ``addopts`` because pytest-benchmark
+    lives in the optional ``benchmark`` dependency group: an ``addopts`` flag
+    would fail as unrecognised whenever the plugin is not installed.
+    """
+    if not config.pluginmanager.hasplugin("benchmark"):
+        return
+    if config.getoption("benchmark_enable") or config.getoption("benchmark_only"):
+        return
+    config.option.benchmark_disable = True
+
+
 def pytest_configure(config: pytest.Config) -> None:
+    internal_disable_benchmarks_by_default(config)
     shadowed = internal_shadowed_modules()
     if not shadowed:
         return

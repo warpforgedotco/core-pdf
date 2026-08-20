@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import pytest
+
 from core_pdf.impl.engine.spec.s_09_fonts.cid_unicode import resolve_cid_unicode_map
 from core_pdf.impl.engine.spec.s_09_fonts.cmap_decoder import CMapDecoder
 from core_pdf.impl.engine.spec.s_09_fonts.cmap_resources import resolve_cmap_decoder
 from core_pdf.impl.engine.spec.s_09_fonts.cmap_tokenizer import cmap_tokens, cmap_word_spans
 from core_pdf.impl.engine.spec.s_09_fonts.cmap_tounicode import ToUnicodeCMap
 from core_pdf.impl.engine.spec.s_09_fonts.cmap_widths import parse_cid_widths
+
+pytestmark = pytest.mark.benchmark_high_impact
 
 
 def cmap_program() -> bytes:

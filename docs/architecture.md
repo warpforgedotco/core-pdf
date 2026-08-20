@@ -22,58 +22,22 @@ Everything under `core_pdf.impl.*` is internal and may change without notice.
 
 The two central objects:
 
-- **`PdfDocument`** (`impl/engine/document.py`) — `open`, page access, structured
-  extraction (`extract`, `extract_structured`, `extract_element_records`), and the
-  document-level serializers (`to_markdown`, `to_json`, …). Owns caches that must be
-  shared across pages, notably the image cache. The CLI drives it through
-  `process_pdf` in `cli.py`.
+- **`PdfDocument`** (`impl/engine/document.py`) — `open`, page access, canonical structured
+  extraction (`extract`), and engine-owned PDF capabilities. It owns caches that must be
+  shared across pages, notably the image cache. Structured serializers and element/chunk
+  projections are kept on the public capability and structured IR instead of being duplicated
+  here.
+  The CLI drives it through `process_pdf` in `cli.py`.
 - **`PdfPage`** (`impl/engine/page.py`, subclassing the spec-level page in
   `impl/engine/spec/s_07_document/page.py`) — per-page extraction and rendering.
 
-The canonical local capability surface is `core_pdf.api.v0`. It adapts these engine-owned
-objects without introducing another PDF document implementation. `PdfDocument` owns structured
-extraction, high-level records (images, annotations, links, forms, outlines, and attachments),
-and the transactional `PdfDocumentEditor`. Compatibility facades under `core_pdf.api.v0.compat.*`
-are intentionally high-level projections; they may retain a structured snapshot for synthetic
-documents, but opened-document reads and page mutations should delegate to the engine surface.
+The canonical public surface is the lazy export table in `core_pdf.__init__`. Document, page,
+structured records, writers, runtime controls, and errors remain owned by their engine modules.
 
-The v0 package is organized by role:
-
-- `adapters.py` — `PdfDocumentAdapter` / `PdfPageAdapter` / `PdfEditorAdapter`, thin
-  translation over the engine. Record methods use plain names (`annotations()`, `links()`,
-  `images()`, `tables()`, `form_fields()`, `chunks()`, `words()`) and return the typed
-  records from `models.py` exclusively — there are no parallel untyped variants. One
-  `search(query, mode=..., threshold=..., region=..., pages=...)` method covers exact,
-  normalized, regex, and fuzzy matching.
-- `convert.py` — the single IR→api conversion point (`page_space`, `to_rect`,
-  `to_*_record`); adapter methods delegate here rather than converting inline.
-- `models.py` — the frozen typed records, plus `Severity` (a `StrEnum`, so string
-  comparisons keep working) and `SourceRef` provenance.
-- `protocols.py` — the versioned document/page/editor/resolver protocols.
-- `operations/` — the analysis operations as a package (`base.py` holds the
-  template-method `AnalysisOperation`; `checks.py`, `validation.py`, `content.py`,
-  `forensics.py`, `preflight.py`, `transform.py` hold the concrete operations).
-- `inspection.py` — the inventory/forensics algorithms (`document_inventory`,
-  `object_graph`, `evidence_graph`, `resource_diagnostics`, …) as free functions the
-  adapter delegates to.
-- `verification.py` — the `commit_*_verified` bodies behind the editor facade.
-- `structured.py` — public promotion of the engine's structured IR (see below).
-- `errors.py` — the stable error surface: `ApiError`, `InvalidRequest`,
-  `OperationCancelled`, `DocumentClosed`.
-
-For adapter work, `PdfDocumentAdapter.structured_document` and
-`PdfPageAdapter.structured_view` return the engine IR types themselves —
-`core_pdf.api.v0.structured` re-exports `Document`, `Page`, `Block`, `Table`, and friends at
-an api-sanctioned path so compat code can name them without importing `core_pdf.impl`. New
-facades should consume the adapter via `adapt_document` (or `adapt_structured` for the
-structured escape hatch); they should not widen engine page values to `object` or recreate
-document/page ownership locally.
-
-Compat facades share one kernel, `api/v0/compat/_common.py` — document opening, byte
-writing, lifecycle mixins, bbox coercion/flipping, and the structured-IR bridge. It is the
-single sanctioned `core_pdf.impl` import site for compat code; facade packages import
-engine types from there (or from `api.v0.structured`) instead of drilling into `impl`
-directly.
+Compatibility facades under `core_pdf.api.compat.*` import those engine owners directly. There is
+no shared compatibility state or conversion kernel. Each facade owns only the projection needed
+for its target interface, and `compat.__init__` resolves convenience exports lazily so importing
+one facade does not initialize all of them.
 
 **Known defects.** The capture/render pipeline places some XObject-drawn vector text at
 vertically mirrored y coordinates. Because neither the content-stream sequence nor raster
@@ -150,10 +114,7 @@ src/core_pdf/
   __init__.py            lazy public export table
   cli.py, __main__.py    CLI entry point (also carries Nuitka build directives)
   api/
-    v0/                  the versioned capability surface (see §1):
-                         adapters, convert, models, protocols, operations/,
-                         inspection, verification, structured, errors, execution
-      compat/            third-party facades + the shared _common kernel
+    compat/              independent third-party facades over engine owners
   impl/
     models.py            engine record types (DrawingRecord, ImageRecord, Raw* records)
     exceptions.py        the PdfError hierarchy (incl. PdfDocumentClosedError)
@@ -191,33 +152,6 @@ Subpackages under `spec/` mirror **chapters of the PDF specification**:
 | `s_09_fonts` | 9 — font programs, CMaps, glyph decoding |
 | `s_14_structure` | 14 — logical structure tree |
 
-The mapping is approximate at the edges: `s_07_document` has absorbed some Chapter 12
-(interactive features — forms, outlines, links) and Chapter 14 (metadata) material.
-
-## 5. Performance: what not to touch
-
-The engine ships compiled via **Nuitka**, with an optional PGO build
-(`scripts/build_pgo.sh`, trained on the PDFs under `tests/`). Nuitka preserves Python
-semantics, so `__slots__`, exact-type checks, and module-level constant tables all still
-matter after compilation — arguably more, since module constants are frozen into the binary.
-
-The following are **measured** optimizations, not incidental style. Several have commits
-quantifying the win. Restructuring them for readability will cost real throughput:
-
-| Location | What it is |
-| --- | --- |
-| `spec/s_07_content/operations.py:478-1347` | The content-stream dispatch loop. Caches every lookup in a local before the loop, reuses a preallocated 16-slot operand ring, and **hand-unrolls numeric parsing for token lengths 1–6** to avoid slicing and temporary allocation. Collapsing that to `float(token)` would be the most damaging single change available. The bound-target two-byte and one-byte operator dispatch chains use `match`/`case` on single int values (never a tuple subject — that allocates a temporary tuple per call and is strictly slower); everything else in the loop is plain `if`/`elif`. |
-| `spec/s_07_content/operator_tables.py` + `state.py:461-476` | Four parallel dispatch tables (by name, by bytes, by single opcode, by two-byte opcode), built once and memoized **onto the class object** so they are not rebuilt per page. |
-| `spec/s_07_filters/jbig2/codec.py:717-830` | `decode_arithmetic_generic_template0` hoists the whole MQ-decoder state into locals, **manually inlines `byte_in()`**, and pads rows with four sentinel bytes to eliminate bounds checks. The decoder's own `decode_bit` method is intentionally unused here. |
-| `layout/models.py` — `TextRun`, `TrackedTextRun`, `reinit` | An object freelist (`run_pool` in `state.py`) plus **class promotion**: runs are promoted to a `__slots__ = ()` subclass only when a memo is actually stored, so the `__setattr__` hook costs nothing in the common case. Commit `fe815871` measured 1.86M `__setattr__` calls eliminated. |
-| `rendering.py` — `internal_RasterTarget`, `internal_ClipState` | The rasterizer's state objects. Every method hoists the instance attributes it needs into locals on entry; `fill_rect` runs ~1.8M times over the corpus and hoists only its fast path. The clip methods are cached as bound attributes at construction because `self.clip.<name>` allocates a fresh bound method per call. `rasterize` binds all of them to locals of the same name so painting call sites cost one `LOAD_FAST` + `CALL`. |
-| `array_views.py:36-52` | `resample_nearest` uses **separable `take(axis=0)` then `take(axis=1)`** rather than 2D fancy indexing, plus an identity short-circuit. Commit `a12b6094` measured −6% end-to-end. |
-| `parse/model.py` `ObservationBatch`, `spec/s_07_content/page_program.py` `PageEventStream` | Columnar (structure-of-arrays) layouts with read-only numpy columns, so they can be shared without defensive copies. Pinned by a memory-profile benchmark. |
-| Module-level 256-byte lookup tables | `SEPARATOR_TABLE`, `WS_TABLE`, `HEX_VALUE`, `IS_WORD_START`, `BIT_IMAGE_MASK_ALPHA`, … Cheap as frozen constants; moving them inside functions makes them per-call work. |
-| `layout/word_frequencies.py:120-141` | Branches on `"__compiled__" in globals()` to locate its binary index in the Nuitka dist tree. Do not replace with plain `importlib.resources`. |
-| `__slots__` / `slots=True` everywhere | ~190 declarations. Adding an unslotted attribute silently reintroduces `__dict__`. |
-| Exact-type checks (`type(x) is bytes`) | Deliberate fast paths. `isinstance` is both slower and semantically different here. |
-
 ### Golden rasters
 
 `tests/test_rendering_golden.py` hashes the RGBA output of the corpus. The
@@ -232,9 +166,17 @@ with `scripts/raster_cover.py` after large structural changes.
 ### Verifying a performance-sensitive change
 
 ```sh
-uv run --group benchmark pytest --benchmark-only --benchmark-save=baseline   # before
-uv run --group benchmark pytest --benchmark-only --benchmark-compare=baseline # after
+uv run --group benchmark pytest --benchmark-only -m benchmark_high_impact \
+  --benchmark-save=baseline                                                   # before
+uv run --group benchmark pytest --benchmark-only -m benchmark_high_impact \
+  --benchmark-compare=baseline                                                # after
 ```
+
+The high-impact tier is the routine local and pull-request suite. It combines the inexpensive
+spec hot paths, focused synthetic stresses, page-program invariants, and one native, hybrid, and
+OCR real-PDF end-to-end case. Run `uv run --group benchmark pytest --benchmark-only` when an
+exhaustive local comparison is justified. The same complete inventory runs weekly in CI; the
+224-document real-PDF sweep is divided into eight deterministic shards.
 
 The benchmark suite asserts **invariants as well as timings** — that a page is extracted in a
 single content-stream pass, that an image is decoded exactly once, that Type3 glyph caching
@@ -253,7 +195,8 @@ consecutive runs of the *same* source produced these spreads:
 | `test_cmap_construction_benchmark` | 5.4% |
 | `test_end_to_end_page_extraction_benchmark[ocr]` | 5.3% |
 
-Five of thirty benchmarks vary by more than 5% on identical code, so
+Five benchmarks in the original thirty-case repeatability sample varied by more than 5% on
+identical code, so
 `--benchmark-compare-fail=mean:5%` produces false alarms. The heavy page-program, OCR, and
 rasterization benchmarks run few rounds and are dominated by scheduling noise; the micro
 benchmarks (cmap, tokenizer, tounicode, color) are comparatively stable.
@@ -261,7 +204,3 @@ benchmarks (cmap, tokenizer, tounicode, color) are comparatively stable.
 For a change to anything in the table above, do what the existing perf commits did rather than
 trusting a single benchmark run: cProfile before and after, compare corpus wall time across
 repeated runs, and confirm SCORE-Bench accuracy is unchanged across all 224 cases.
-
-For changes to anything in the table above, also profile with cProfile and confirm
-SCORE-Bench accuracy is unchanged across all 224 cases — that is the bar the existing perf
-commits held themselves to.

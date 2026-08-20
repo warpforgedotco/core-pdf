@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from core_pdf.impl.engine.spec.s_07_content.capture import CapturedDrawing
@@ -113,6 +114,13 @@ class GraphicsComponent:
             state.current_decoder,
         ) = state.stack.pop()
         state.update_combined()
+        # Text-state values are included in our graphics-state snapshot for
+        # compatibility with malformed producers that change them inside q/Q.
+        # Restore their derived scales and metrics together with the raw
+        # values; otherwise glyph advances continue using the inner state's
+        # font size or horizontal scale.
+        state.update_text_scales()
+        state.update_font_metrics()
 
     def concatenate(self, values: tuple[float, float, float, float, float, float]) -> None:
         state = self.host
@@ -198,6 +206,8 @@ class TextComponent:
         state.tm_d = state.lm_d = 1.0
         state.tm_e = state.lm_e = 0.0
         state.tm_f = state.lm_f = 0.0
+        state.compat_tj_cursor_x = 0.0
+        state.compat_tj_cursor_y = 0.0
         state.combined_A = state.ca
         state.combined_B = state.cb
         state.combined_C = state.cc
@@ -221,10 +231,14 @@ class TextComponent:
         if state.pending_run:
             state.runs.append(state.pending_run)
             state.pending_run = None
-        state.tm_e = state.lm_e + tx * state.lm_a + ty * state.lm_c
-        state.tm_f = state.lm_f + tx * state.lm_b + ty * state.lm_d
+        # Preserve the specification's affine operation order. Exact layout
+        # grouping can hinge on the final ULP at a character-margin boundary.
+        state.tm_e = tx * state.lm_a + ty * state.lm_c + state.lm_e
+        state.tm_f = tx * state.lm_b + ty * state.lm_d + state.lm_f
         state.lm_e = state.tm_e
         state.lm_f = state.tm_f
+        state.compat_tj_cursor_x = 0.0
+        state.compat_tj_cursor_y = 0.0
 
     def set_matrix(self, a: float, b: float, c: float, d: float, e: float, f: float) -> None:
         state = self.host
@@ -235,6 +249,8 @@ class TextComponent:
         state.tm_d = state.lm_d = d
         state.tm_e = state.lm_e = e
         state.tm_f = state.lm_f = f
+        state.compat_tj_cursor_x = 0.0
+        state.compat_tj_cursor_y = 0.0
         state.update_combined()
 
     def set_leading_and_move(self, tx: float, ty: float) -> None:
@@ -272,7 +288,12 @@ class TextComponent:
             state.current_decoder if state.current_decoder is not None else state.get_decoder()
         )
         if type(operand) is PdfString:
-            state.append_text(data=operand.data, decoder=decoder)
+            state.append_text(
+                data=operand.data,
+                decoder=decoder,
+                string_syntax="literal" if operand.is_literal else "hex",
+                compatibility_data=operand.compatibility_data,
+            )
         else:
             state.append_text(operand, decoder=decoder)
 
@@ -332,27 +353,25 @@ class TextComponent:
         self.host.char_space = char_space
         self.host.update_char_space_scale()
         self.host.update_word_space_scale()
-        self.move(0.0, -self.host.leading)
-        self.host.pending_line_break = True
+        if not getattr(self.host.document, "legacy_pdfminer_text_operators", False):
+            self.move(0.0, -self.host.leading)
+            self.host.pending_line_break = True
         self.show(operands[2])
 
-    def set_char_space_operand(self, operands: Any) -> None:
+    def set_spacing_operand(self, operands: Any, setter: Callable[[float], None]) -> None:
         if not operands:
             return
         try:
             value = self.host.as_float(operands[0])
         except (TypeError, ValueError):
             return
-        self.set_char_space(value)
+        setter(value)
+
+    def set_char_space_operand(self, operands: Any) -> None:
+        self.set_spacing_operand(operands, self.set_char_space)
 
     def set_word_space_operand(self, operands: Any) -> None:
-        if not operands:
-            return
-        try:
-            value = self.host.as_float(operands[0])
-        except (TypeError, ValueError):
-            return
-        self.set_word_space(value)
+        self.set_spacing_operand(operands, self.set_word_space)
 
 
 class ContentComponent:

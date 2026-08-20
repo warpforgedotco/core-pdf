@@ -1,6 +1,8 @@
 from types import SimpleNamespace
 from typing import Any, cast
 
+from core_pdf.impl.engine.spec.s_07_content.components import TextComponent
+from core_pdf.impl.engine.spec.s_07_content.operations import OperandWindow
 from core_pdf.impl.engine.spec.s_07_content.state import TextState
 from core_pdf.impl.engine.spec.s_08_graphics.matrix import IDENTITY_MATRIX
 from core_pdf.impl.objects import PdfStream
@@ -51,6 +53,73 @@ def test_graphics_state_markers_are_emitted_only_for_clip_scopes() -> None:
         "stroke",
         "state-pop",
     ]
+
+
+def test_graphics_state_restore_recomputes_derived_text_scales() -> None:
+    state = internal_consume(b"")
+    state.font_size = 9.0
+    state.horizontal_scale = 80.0
+    state.update_text_scales()
+    state.op_q(OperandWindow(()), 0)
+    state.font_size = 20.0
+    state.horizontal_scale = 50.0
+    state.update_text_scales()
+
+    state.op_Q(OperandWindow(()), 0)
+
+    assert state.text_advance_scale == 0.0072
+
+
+def test_pdfminer_double_quote_policy_omits_next_line_move() -> None:
+    class InternalTextComponent(TextComponent):
+        def show(self, operand: Any) -> None:
+            del operand
+
+    def host(legacy: bool) -> Any:
+        return SimpleNamespace(
+            document=SimpleNamespace(legacy_pdfminer_text_operators=legacy),
+            word_space=0.0,
+            char_space=0.0,
+            leading=12.0,
+            pending_line_break=False,
+            pending_run=None,
+            lm_a=1.0,
+            lm_b=0.0,
+            lm_c=0.0,
+            lm_d=1.0,
+            lm_e=10.0,
+            lm_f=20.0,
+            tm_e=10.0,
+            tm_f=20.0,
+            as_float=float,
+            update_char_space_scale=lambda: None,
+            update_word_space_scale=lambda: None,
+        )
+
+    native = host(False)
+    legacy = host(True)
+    InternalTextComponent(native).double_quote((2, 3, b"text"))
+    InternalTextComponent(legacy).double_quote((2, 3, b"text"))
+
+    assert (native.tm_e, native.tm_f) == (10.0, 8.0)
+    assert (legacy.tm_e, legacy.tm_f) == (10.0, 20.0)
+
+
+def test_text_showing_consumes_the_top_operand_from_a_malformed_stack() -> None:
+    class InternalTextComponent(TextComponent):
+        def __init__(self) -> None:
+            self.shown: object = None
+
+        def show(self, operand: Any) -> None:
+            self.shown = operand
+
+    state = internal_consume(b"")
+    component = InternalTextComponent()
+    state.text_component = component
+
+    state.op_Tj(OperandWindow((b"stale", b"visible"), 2), 0)
+
+    assert component.shown == b"visible"
 
 
 def test_curve_y_doubles_the_endpoint_as_its_second_control_point() -> None:

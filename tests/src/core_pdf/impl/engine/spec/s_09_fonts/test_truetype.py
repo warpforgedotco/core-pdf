@@ -3,6 +3,36 @@ from typing import Any, Protocol, cast
 from core_pdf.impl.engine.spec.s_09_fonts.truetype import TrueTypeFontProgram
 
 
+def test_corrupt_post_table_uses_synthetic_glyph_order() -> None:
+    from core_pdf.impl.engine.spec.s_09_fonts.font_program_truetype import (
+        internal_ensure_glyph_order,
+    )
+
+    class Maxp:
+        numGlyphs = 3
+
+    class Font:
+        glyph_order: list[str] | None = None
+
+        def getGlyphOrder(self) -> list[str]:
+            if self.glyph_order is None:
+                raise ValueError("unsupported post table")
+            return self.glyph_order
+
+        def __getitem__(self, key: str) -> Maxp:
+            assert key == "maxp"
+            return Maxp()
+
+        def setGlyphOrder(self, glyph_order: list[str]) -> None:
+            self.glyph_order = glyph_order
+
+    font = Font()
+
+    internal_ensure_glyph_order(cast(Any, font))
+
+    assert font.glyph_order == [".notdef", "glyph00001", "glyph00002"]
+
+
 class internal_Pen(Protocol):
     def moveTo(self, point: tuple[int, int]) -> None: ...
 

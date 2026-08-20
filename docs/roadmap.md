@@ -54,7 +54,7 @@ writing, and inspecting PDF documents.
 
 ### 6. Compatibility and corpus maturity
 
-- Continue high-level API coverage for `core_pdf.api.v0.compat.pdfminer`, `pdfplumber`,
+- Continue high-level API coverage for `core_pdf.api.compat.pdfminer`, `pdfplumber`,
   `pymupdf`, `pypdf`, `pikepdf`, `unstructured`, `llamaindex`, and `xray` only where it
   maps cleanly to the shared capability model.
 - Run compatibility behavior matrices against each vendored/reference test corpus.

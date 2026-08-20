@@ -4,8 +4,11 @@ from __future__ import annotations
 import zlib
 
 import numpy
+import pytest
 
 from core_pdf.impl.engine.spec.s_07_filters.flate import apply_flate, looks_like_pdf_content_stream
+
+pytestmark = pytest.mark.benchmark_high_impact
 
 
 def build_content_stream(operations: int) -> bytes:

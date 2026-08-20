@@ -54,7 +54,13 @@ class LayoutGeometrySummary:
 
 
 def text_run_geometry_issues(run: TextRun) -> tuple[LayoutGeometryIssue, ...]:
-    key = (run.internal_revision, tuple(run.coords))
+    key = (
+        run.internal_revision,
+        tuple(run.coords),
+        run.advance_bbox,
+        run.ink_bbox,
+        id(run.glyph_clusters),
+    )
     cache = run.internal_geometry_issues_cache
     if cache is not None and cache[0] == key:
         return cast(tuple[LayoutGeometryIssue, ...], cache[1])
@@ -202,19 +208,26 @@ def internal_compute_text_run_geometry_issues(run: TextRun) -> tuple[LayoutGeome
             )
 
     cluster_union = bbox_union(tuple(cluster_bboxes))
-    if cluster_union is None or not bbox_is_positive(run_bbox):
+    if cluster_union is None or advance_bbox is None or not bbox_is_positive(advance_bbox):
         return tuple(issues)
 
-    cluster_inside_run = overlap_ratio_of(cluster_union, run_bbox)
-    if cluster_inside_run < 0.80:
+    # Glyph clusters are derived from glyph advance geometry, which is also the
+    # canonical page-space extent used by layout.  The legacy run coordinates
+    # can describe the text origin and nominal font box instead, notably for
+    # vertical writing where those boxes are intentionally offset.
+    cluster_inside_advance = overlap_ratio_of(cluster_union, advance_bbox)
+    if cluster_inside_advance < 0.80:
         issues.append(
             LayoutGeometryIssue(
-                code="glyph_clusters_outside_run_bbox",
+                code="glyph_clusters_outside_advance_bbox",
                 severity="error",
                 subject="text_run.glyph_clusters",
                 bbox=cluster_union,
-                message="Glyph cluster geometry does not overlap the owning run bbox.",
-                details=(("overlap_ratio", round(cluster_inside_run, 4)),),
+                message="Glyph cluster geometry does not overlap the owning advance bbox.",
+                details=(
+                    ("overlap_ratio", round(cluster_inside_advance, 4)),
+                    ("reference_region", "advance_bbox"),
+                ),
             )
         )
 

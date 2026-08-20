@@ -146,14 +146,30 @@ class FormsMixin:
                     or ""
                 )
                 if subtype == "Widget":
+                    widget_type_value = lookup_dict_key(resolved_kid, "FT")
+                    widget_type = (
+                        self.resolver.resolve_name(widget_type_value)
+                        or self.resolver.resolve_name_like_value(widget_type_value)
+                        or self.resolver.resolve_str(widget_type_value)
+                        or field_type
+                    )
+                    widget_title = self.resolver.resolve_str(lookup_dict_key(resolved_kid, "T"))
+                    widget_name = (
+                        f"{current_name}.{widget_title}"
+                        if current_name and widget_title
+                        else widget_title or current_name
+                    )
+                    widget_value = lookup_dict_key(resolved_kid, "V")
+                    if widget_value is None:
+                        widget_value = value
                     stack.append(
                         (
                             "record",
                             RawFormField(
-                                current_name,
-                                field_type,
-                                cast(PdfObject, value),
-                                value_text,
+                                widget_name,
+                                widget_type,
+                                cast(PdfObject, widget_value),
+                                field_value_text(self, widget_value),
                                 field_widget_rect(self, resolved_kid),
                                 resolved_kid,
                                 kids=[],
@@ -240,11 +256,11 @@ class FormsMixin:
 
     def internal_widget_field_root(self: Any, annot: PdfDict) -> PdfDict:
         node = annot
+        seen = {id(node)}
         for _ in range(50):
             parent = self.resolver.resolve(lookup_dict_key(node, "Parent"))
-            if not isinstance(parent, dict) or parent is node:
+            if not isinstance(parent, dict) or id(parent) in seen:
                 break
-            if lookup_dict_key(parent, "FT") is None and lookup_dict_key(parent, "T") is None:
-                break
+            seen.add(id(parent))
             node = cast(PdfDict, parent)
         return node

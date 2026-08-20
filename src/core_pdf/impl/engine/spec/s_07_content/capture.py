@@ -505,6 +505,8 @@ class CapturedDrawing:
         "bbox",
         "internal_rect_cache",
         "kind",
+        "stream_order",
+        "xobject_depth",
     )
 
     def __init__(
@@ -531,6 +533,8 @@ class CapturedDrawing:
         items: list[DrawingItem] | None = None,
         path: CapturedPath | None = None,
         bbox: RectBox | None = None,
+        stream_order: int = 0,
+        xobject_depth: int = 0,
     ) -> None:
         self.seqno = seqno
         self.fill = fill
@@ -555,6 +559,8 @@ class CapturedDrawing:
         self.path = path
         self.bbox = bbox
         self.internal_rect_cache: RectBox | None = None
+        self.stream_order = stream_order
+        self.xobject_depth = xobject_depth
 
     def replace(self, **kwargs: Any) -> CapturedDrawing:
         return CapturedDrawing(
@@ -580,6 +586,8 @@ class CapturedDrawing:
             items=kwargs.get("items", self.items),
             path=kwargs.get("path", self.path),
             bbox=kwargs.get("bbox", self.bbox),
+            stream_order=kwargs.get("stream_order", self.stream_order),
+            xobject_depth=kwargs.get("xobject_depth", self.xobject_depth),
         )
 
     @property

@@ -85,6 +85,7 @@ class PdfLexer:
         "current_obj_num",
         "current_gen_num",
         "kw_cache",
+        "recover_malformed_objects",
     )
 
     raw_data: memoryview
@@ -97,6 +98,7 @@ class PdfLexer:
     current_obj_num: int | None
     current_gen_num: int | None
     kw_cache: dict[bytes, object]
+    recover_malformed_objects: bool
 
     def __init__(
         self,
@@ -105,6 +107,7 @@ class PdfLexer:
         reference_resolver: Callable[[PdfReference], object] | None = None,
         decipher: Decipher | None = None,
         kw_cache: dict[bytes, object] | None = None,
+        recover_malformed_objects: bool = True,
     ) -> None:
 
         if type(data) is memoryview:
@@ -123,6 +126,7 @@ class PdfLexer:
         self.decipher = decipher
         self.current_obj_num = None
         self.current_gen_num = None
+        self.recover_malformed_objects = recover_malformed_objects
 
         if kw_cache is not None:
             self.kw_cache = kw_cache
@@ -261,7 +265,7 @@ class PdfLexer:
             self.kw_cache[key] = decoded
         return decoded
 
-    def read_string(self) -> bytes:
+    def read_string(self, *, drop_unknown_escapes: bool = False) -> bytes:
         data = self.raw_data
         pos = self.pos + 1
         n = self.data_len
@@ -324,7 +328,8 @@ class PdfLexer:
                             case _:
                                 mapped = STRING_ESCAPE.get(esc)
                                 if mapped is None:
-                                    out.append(esc)
+                                    if not drop_unknown_escapes:
+                                        out.append(esc)
                                 else:
                                     out.extend(mapped)
                 case 13 | 10:
@@ -376,6 +381,8 @@ class PdfLexer:
         try:
             return binascii.unhexlify(filtered)
         except binascii.Error:
+            if not self.recover_malformed_objects:
+                raise PdfParseError("invalid hex string") from None
             recovered = bytes(byte for byte in filtered if HEX_VALUE[byte] != 255)
             if not recovered:
                 return b""
@@ -450,14 +457,14 @@ class PdfLexer:
                 value = self.read_string()
                 if self.decipher is not None and self.current_obj_num is not None:
                     value = self.apply_decipher(value)
-                return PdfString(value)
+                return PdfString(value, is_literal=True)
             case 60:
                 if pos + 1 < self.data_len and data[pos + 1] == 60:
                     return self.parse_dictionary_or_stream()
                 value = self.read_hex_string()
                 if self.decipher is not None and self.current_obj_num is not None:
                     value = self.apply_decipher(value)
-                return PdfString(value)
+                return PdfString(value, is_literal=False)
             case 91:
                 return self.parse_array()
             case 47:
@@ -683,7 +690,7 @@ class PdfLexer:
                     value = self.read_string()
                     if should_decipher:
                         value = apply_decipher(value)
-                    values.append(PdfString(value))
+                    values.append(PdfString(value, is_literal=True))
                     continue
                 case 91:
                     values.append(self.parse_array())
@@ -695,7 +702,7 @@ class PdfLexer:
                         value = self.read_hex_string()
                         if should_decipher:
                             value = apply_decipher(value)
-                        values.append(PdfString(value))
+                        values.append(PdfString(value, is_literal=False))
                     continue
                 case 47:
                     values.append(PdfName_of(self.read_name()))
@@ -857,7 +864,7 @@ class PdfLexer:
                 self.advance(2)
                 return values
             if self.raw_data[self.pos] != 47:
-                if self.recover_dictionary_key_position():
+                if self.recover_malformed_objects and self.recover_dictionary_key_position():
                     if self.pos >= self.data_len:
                         raise PdfParseError("unterminated dictionary")
                     if (
@@ -878,7 +885,10 @@ class PdfLexer:
                 values[key] = self.parse_object()
             except PdfParseError:
                 self.pos = value_start
-                if not self.recover_dictionary_entry_position():
+                if (
+                    not self.recover_malformed_objects
+                    or not self.recover_dictionary_entry_position()
+                ):
                     raise
 
     def recover_dictionary_key_position(self) -> bool:

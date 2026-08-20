@@ -6,6 +6,7 @@ import typing
 from dataclasses import dataclass
 
 CodeSpaceRanges = list[tuple[bytes, bytes]] | tuple[tuple[bytes, bytes], ...]
+MAX_CMAP_RANGE_SPAN = 65536
 
 
 def unicode_scalar_or_replacement(codepoint: int) -> str:
@@ -16,7 +17,12 @@ def unicode_scalar_or_replacement(codepoint: int) -> str:
 
 def expand_range(start: int, end: int, source_hex_len: int, base_dst: str) -> dict[bytes, str]:
     mapping: dict[bytes, str] = {}
-    if source_hex_len <= 0 or end >= 1 << (source_hex_len * 8):
+    if (
+        source_hex_len <= 0
+        or end >= 1 << (source_hex_len * 8)
+        or end < start
+        or end - start + 1 > MAX_CMAP_RANGE_SPAN
+    ):
         raise ValueError("invalid ToUnicode CMap bfrange")
     for i in range(start, end + 1):
         offset = i - start

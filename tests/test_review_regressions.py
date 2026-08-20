@@ -49,7 +49,17 @@ def test_leading_dot_number_is_passed_to_operator() -> None:
     assert received == [0.5, 1]
 
 
-@pytest.mark.parametrize(("token", "expected"), [(b"0.123", 0.123), (b"-0.123", -0.123)])
+@pytest.mark.parametrize(
+    ("token", "expected"),
+    [
+        (b"0.123", 0.123),
+        (b"-0.123", -0.123),
+        (b"3.728", 3.728),
+        (b"7.6993", 7.6993),
+        (b"-12.345", -12.345),
+        (b"123.45", 123.45),
+    ],
+)
 def test_three_decimal_number_is_passed_to_operator(token: bytes, expected: float) -> None:
     received: list[object] = []
 

@@ -9,9 +9,13 @@ which is covered separately by ``test_dense_content_stream_benchmarks.py``.
 
 from __future__ import annotations
 
+import pytest
+
 from core_pdf import PdfDocument
 from core_pdf.impl.engine.writing import serialize_pdf_file
 from core_pdf.impl.objects import PdfName, PdfReference, PdfStream
+
+pytestmark = pytest.mark.benchmark_high_impact
 
 FONT_OBJECT_NUMBER = 3
 

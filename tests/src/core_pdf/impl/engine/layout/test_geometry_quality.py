@@ -1,6 +1,7 @@
 from core_pdf.impl.engine.layout.geometry_quality import (
     text_run_geometry_issues,
 )
+from core_pdf.impl.engine.layout.glyphs import GlyphCluster
 from core_pdf.impl.engine.layout.models import TextRun, TrackedTextRun
 
 
@@ -51,6 +52,16 @@ def test_text_run_geometry_issue_cache_tracks_attributes_and_direct_coordinates(
     after_direct_coordinate_change = text_run_geometry_issues(run)
     assert after_direct_coordinate_change is not after_confidence_change
     assert "run_nonpositive_bbox" in {issue.code for issue in after_direct_coordinate_change}
+
+
+def test_glyph_clusters_are_validated_against_canonical_advance_geometry() -> None:
+    run = text_run()
+    run.advance_bbox = (-5.0, -4.0, 5.0, 6.0)
+    run.glyph_clusters = (GlyphCluster(0, "A", (), run.advance_bbox, run.advance_bbox, None, 1.0),)
+
+    issues = text_run_geometry_issues(run)
+
+    assert "glyph_clusters_outside_run_bbox" not in {issue.code for issue in issues}
 
 
 def test_untracked_text_run_does_not_pay_revision_bookkeeping() -> None:

@@ -2,12 +2,15 @@
 from __future__ import annotations
 
 import numpy
+import pytest
 
 from core_pdf.impl.engine.spec.s_07_filters.decode_spec import FilterParams
 from core_pdf.impl.engine.spec.s_07_filters.predictors import (
     apply_png_predictor,
     apply_tiff_predictor,
 )
+
+pytestmark = pytest.mark.benchmark_high_impact
 
 COLUMNS = 512
 COLORS = 3

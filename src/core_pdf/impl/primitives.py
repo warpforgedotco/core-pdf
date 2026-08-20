@@ -138,14 +138,24 @@ class PdfReference:
 class PdfString:
     """PDF string object containing the raw byte representation."""
 
-    __slots__ = ("data",)
+    __slots__ = ("data", "is_literal", "compatibility_data")
 
     data: bytes
+    is_literal: bool | None
+    compatibility_data: bytes | None
 
-    def __init__(self, data: bytes) -> None:
+    def __init__(
+        self,
+        data: bytes,
+        *,
+        is_literal: bool | None = None,
+        compatibility_data: bytes | None = None,
+    ) -> None:
         if not isinstance(data, bytes):
             raise ValueError("invalid PDF string")
         self.data = data
+        self.is_literal = is_literal
+        self.compatibility_data = compatibility_data
 
     def __eq__(self, other: object) -> bool:
         if type(other) is PdfString:

@@ -1,8 +1,12 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
+import pytest
+
 from core_pdf.impl.engine.spec.s_07_objects.coercion import coerce_value, parse_float, parse_int
 from core_pdf.impl.primitives import PdfString
+
+pytestmark = pytest.mark.benchmark_high_impact
 
 NESTED_VALUE = {
     "Type": "Page",

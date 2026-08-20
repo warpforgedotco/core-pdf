@@ -25,6 +25,7 @@ from core_pdf.impl.engine.layout.spatial import (
     bbox_intersection_area,
 )
 from core_pdf.impl.engine.newstroke import NewstrokeDecode, decode_newstroke_drawings
+from core_pdf.impl.engine.parse.diagnostics import CAPTURE_DIAGNOSTICS_KEY
 from core_pdf.impl.engine.parse.model import (
     CapturedPage,
     GlyphEvidence,
@@ -1142,7 +1143,7 @@ def internal_capture_from_program(
             evidence=replace(captured.evidence, stroked_vector_text=stroked_vector_text),
         )
     if cache is not None:
-        diagnostics = cache.setdefault("capture_diagnostics", {})
+        diagnostics = cache.setdefault(CAPTURE_DIAGNOSTICS_KEY, {})
         diagnostics["text_quality"] = captured.evidence.text_quality.as_cache_dict()
         diagnostics["all_text_quality"] = captured.evidence.all_text_quality.as_cache_dict()
         diagnostics["glyph_evidence"] = captured.evidence.glyphs.as_cache_dict()

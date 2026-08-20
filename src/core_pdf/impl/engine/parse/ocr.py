@@ -34,7 +34,13 @@ from core_pdf.impl.engine.array_views import (
 )
 from core_pdf.impl.engine.execution import RUNTIME, TaskScope, WorkStage
 from core_pdf.impl.engine.image_cache import ImageCacheKey
-from core_pdf.impl.engine.layout.geometry import bbox_union, rect_tuple
+from core_pdf.impl.engine.layout.geometry import (
+    bbox_union,
+    overlap_ratio_min,
+    overlap_ratio_min_exact,
+    overlap_ratio_of,
+    rect_tuple,
+)
 from core_pdf.impl.engine.layout.spatial import (
     SpatialIndex,
     bbox_intersection_area,
@@ -43,6 +49,12 @@ from core_pdf.impl.engine.parse.capture import (
     VECTOR_PAINT_KINDS,
     internal_promoted_hidden_observations,
     preflight_page,
+)
+from core_pdf.impl.engine.parse.diagnostics import (
+    HIDDEN_TEXT_VERIFICATION_KEY,
+    OCR_PASS_DIAGNOSTICS_KEY,
+    STROKED_VECTOR_DECODE_KEY,
+    STROKED_VECTOR_PACKED_KEY,
 )
 from core_pdf.impl.engine.parse.fusion import (
     internal_text_tokens,
@@ -69,7 +81,6 @@ from core_pdf.impl.engine.parse.model import (
     OcrPass,
     OcrPassScope,
     WorkPlan,
-    internal_bbox_overlap_ratio,
     internal_Candidate,
     internal_candidate,
 )
@@ -2058,7 +2069,7 @@ def internal_merge_candidate_batches(
                         max(0, len(deduplicated) - 24), len(deduplicated)
                     )
                     if (
-                        internal_bbox_overlap_ratio(
+                        overlap_ratio_min(
                             combined.bbox[index],
                             combined.bbox[deduplicated[accepted_position]],
                         )
@@ -2569,12 +2580,7 @@ def internal_ocr_region_overlap(
     left: tuple[float, float, float, float],
     right: tuple[float, float, float, float],
 ) -> float:
-    intersection = bbox_intersection_area(left, right)
-    smaller = min(
-        max(0.0, left[2] - left[0]) * max(0.0, left[3] - left[1]),
-        max(0.0, right[2] - right[0]) * max(0.0, right[3] - right[1]),
-    )
-    return intersection / smaller if smaller else 0.0
+    return overlap_ratio_min_exact(left, right)
 
 
 def internal_ocr_region_coverage(
@@ -2582,8 +2588,7 @@ def internal_ocr_region_coverage(
     candidate: tuple[float, float, float, float],
 ) -> float:
     """Return how much of a requested OCR target is covered by a candidate raster."""
-    target_area = max(0.0, target[2] - target[0]) * max(0.0, target[3] - target[1])
-    return bbox_intersection_area(target, candidate) / target_area if target_area else 0.0
+    return overlap_ratio_of(target, candidate)
 
 
 def internal_merge_ocr_regions(regions: list[internal_OcrRegion]) -> tuple[internal_OcrRegion, ...]:
@@ -3995,7 +4000,7 @@ def internal_recover_stroked_vector_text(
             accepted.append(observation)
             corrections += 1
 
-    cache["stroked_vector_decode"] = {
+    cache[STROKED_VECTOR_DECODE_KEY] = {
         "seconds": prior_decode_seconds + time.perf_counter() - started,
         "eligible_seeds": decoded.eligible_seeds,
         "aligned_seeds": decoded.aligned_seeds,
@@ -4154,12 +4159,12 @@ def internal_recognize_page_with_reserved_raster(
             **verification.as_record(),
         }
         pass_diagnostics.append(verification_record)
-        capture.page.extraction_cache["hidden_text_verification"] = {
+        capture.page.extraction_cache[HIDDEN_TEXT_VERIFICATION_KEY] = {
             "raster_pixels": raster_pixels,
             **verification.as_record(),
         }
         if verification.accepted:
-            capture.page.extraction_cache["ocr_pass_diagnostics"] = tuple(pass_diagnostics)
+            capture.page.extraction_cache[OCR_PASS_DIAGNOSTICS_KEY] = tuple(pass_diagnostics)
             return internal_promoted_hidden_observations(capture)
 
     for ocr_pass in plan.ocr_passes:
@@ -4439,7 +4444,7 @@ def internal_recognize_page_with_reserved_raster(
                     if fallback_region is not None
                     else 0
                 )
-                capture.page.extraction_cache["stroked_vector_packed"] = {
+                capture.page.extraction_cache[STROKED_VECTOR_PACKED_KEY] = {
                     "accepted": False,
                     "cells": 0,
                     "raster_pixels": 0,
@@ -4671,7 +4676,7 @@ def internal_recognize_page_with_reserved_raster(
                     region_boxes = (
                         (fallback_region.page_box,) if fallback_region is not None else region_boxes
                     )
-            capture.page.extraction_cache["stroked_vector_packed"] = {
+            capture.page.extraction_cache[STROKED_VECTOR_PACKED_KEY] = {
                 **packed_gate,
                 "raster_pixels": packed_pixels,
                 "unmapped_observations": unmapped_observations,
@@ -4872,12 +4877,12 @@ def internal_recognize_page_with_reserved_raster(
             selected_tasks = candidate_source_tasks
 
     if selected is None:
-        capture.page.extraction_cache["ocr_pass_diagnostics"] = tuple(pass_diagnostics)
+        capture.page.extraction_cache[OCR_PASS_DIAGNOSTICS_KEY] = tuple(pass_diagnostics)
         internal_record_candidates(capture, tuple(candidates), selected_name)
         return ObservationBatch.empty()
     for diagnostic in pass_diagnostics:
         diagnostic["selected"] = diagnostic["name"] == selected_name
-    capture.page.extraction_cache["ocr_pass_diagnostics"] = tuple(pass_diagnostics)
+    capture.page.extraction_cache[OCR_PASS_DIAGNOSTICS_KEY] = tuple(pass_diagnostics)
     internal_record_candidates(capture, tuple(candidates), selected_name)
     if selected_tasks:
         # Ruled scanned tables defeat Tesseract's page segmentation; when the

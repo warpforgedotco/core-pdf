@@ -96,6 +96,9 @@ class PdfDocument(
         "page_extraction_caches",
         "internal_cache_lock",
         "xref_was_recovered",
+        "xref_recovery_reason",
+        "recovery_scan_all_revisions",
+        "legacy_pdfminer_text_operators",
         "page_tree_was_recovered",
         "internal_closed",
     )
@@ -128,10 +131,20 @@ class PdfDocument(
     page_extraction_caches: dict[int, ExtractionCache] | None
     internal_cache_lock: threading.RLock
     xref_was_recovered: bool
+    xref_recovery_reason: str | None
+    recovery_scan_all_revisions: bool
+    legacy_pdfminer_text_operators: bool
     page_tree_was_recovered: bool
     internal_closed: bool
 
-    def __init__(self, source: PdfSource, password: str = "") -> None:
+    def __init__(
+        self,
+        source: PdfSource,
+        password: str = "",
+        *,
+        recovery_scan_all_revisions: bool = True,
+        legacy_pdfminer_text_operators: bool = False,
+    ) -> None:
         self.internal_closed = False
         self.internal_cache_lock = threading.RLock()
         self.source = source
@@ -142,6 +155,9 @@ class PdfDocument(
         self.xref = {}
         self.trailer_dict = {}
         self.xref_was_recovered = False
+        self.xref_recovery_reason = None
+        self.recovery_scan_all_revisions = recovery_scan_all_revisions
+        self.legacy_pdfminer_text_operators = legacy_pdfminer_text_operators
         self.page_tree_was_recovered = False
         self._initialize_document_caches()
 
@@ -157,8 +173,20 @@ class PdfDocument(
             raise
 
     @classmethod
-    def open(cls, source: PdfSource, password: str = "") -> Self:
-        return cls(source, password=password)
+    def open(
+        cls,
+        source: PdfSource,
+        password: str = "",
+        *,
+        recovery_scan_all_revisions: bool = True,
+        legacy_pdfminer_text_operators: bool = False,
+    ) -> Self:
+        return cls(
+            source,
+            password=password,
+            recovery_scan_all_revisions=recovery_scan_all_revisions,
+            legacy_pdfminer_text_operators=legacy_pdfminer_text_operators,
+        )
 
     def __enter__(self) -> Self:
         if self.closed:
@@ -268,10 +296,12 @@ class PdfDocument(
                 for cache in self.page_extraction_caches.values():
                     cache.clear()
             self.page_extraction_caches = None
-            for page in tuple(self.pages_cache or ()):
-                page_cache = page.extraction_cache
-                if page_cache is not None:
-                    page_cache.clear()
+            pages_cache = self.pages_cache
+            if pages_cache is not None:
+                for page in tuple(pages_cache):
+                    page_cache = page.extraction_cache
+                    if page_cache is not None:
+                        page_cache.clear()
 
     def _initialize_document_caches(self) -> None:
         for cache_name in DOCUMENT_CACHE_FIELDS:
