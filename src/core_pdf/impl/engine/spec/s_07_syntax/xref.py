@@ -701,9 +701,7 @@ class XRefScanner:
                     next_object_marker < 0 or stream_marker < next_object_marker
                 ):
                     prefix = data[marker + 3 : stream_marker]
-                    uncommented = b"\n".join(
-                        line.split(b"%", 1)[0] for line in prefix.splitlines()
-                    )
+                    uncommented = b"\n".join(line.split(b"%", 1)[0] for line in prefix.splitlines())
                     endstream = data.find(b"endstream", stream_marker + 6, scan_end)
                     if not uncommented.strip() and endstream < 0:
                         # pdfminer's fallback parser treats the remainder of an

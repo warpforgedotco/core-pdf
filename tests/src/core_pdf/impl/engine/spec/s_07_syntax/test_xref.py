@@ -203,10 +203,7 @@ def test_brute_force_xref_rejects_unparseable_object_markers() -> None:
 
 
 def test_brute_force_xref_can_stop_at_first_trailer_revision() -> None:
-    data = (
-        b"1 0 obj\n(first)\nendobj\ntrailer\n<<>>\n"
-        b"1 0 obj\n(second)\nendobj\ntrailer\n<<>>\n"
-    )
+    data = b"1 0 obj\n(first)\nendobj\ntrailer\n<<>>\n1 0 obj\n(second)\nendobj\ntrailer\n<<>>\n"
 
     all_revisions = XRefScanner.brute_force_scan(data)
     first_revision = XRefScanner.brute_force_scan(data, stop_at_first_trailer=True)

@@ -864,10 +864,7 @@ class PdfLexer:
                 self.advance(2)
                 return values
             if self.raw_data[self.pos] != 47:
-                if (
-                    self.recover_malformed_objects
-                    and self.recover_dictionary_key_position()
-                ):
+                if self.recover_malformed_objects and self.recover_dictionary_key_position():
                     if self.pos >= self.data_len:
                         raise PdfParseError("unterminated dictionary")
                     if (

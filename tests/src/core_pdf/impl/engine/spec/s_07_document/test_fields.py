@@ -9,6 +9,7 @@ from core_pdf import PdfDocument
 from core_pdf.impl.engine.spec.s_07_document.fields import field_value_text
 from core_pdf.impl.engine.spec.s_07_document.forms import FormsMixin
 from core_pdf.impl.objects import PdfName, PdfString
+from core_pdf.impl.types import PdfDict
 
 
 class IdentityResolver:
@@ -42,8 +43,8 @@ def test_widget_value_overrides_empty_parent_value() -> None:
 
 
 def test_widget_field_root_crosses_non_field_parent_nodes() -> None:
-    root = {PdfName.of("FT"): PdfName.of("Tx")}
-    middle = {PdfName.of("Parent"): root}
-    widget = {PdfName.of("Parent"): middle}
+    root: PdfDict = {PdfName.of("FT"): PdfName.of("Tx")}
+    middle: PdfDict = {PdfName.of("Parent"): root}
+    widget: PdfDict = {PdfName.of("Parent"): middle}
 
     assert FormsMixin.internal_widget_field_root(Document(), widget) is root

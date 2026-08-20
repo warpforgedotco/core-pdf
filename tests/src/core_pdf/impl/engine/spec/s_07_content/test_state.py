@@ -60,12 +60,12 @@ def test_graphics_state_restore_recomputes_derived_text_scales() -> None:
     state.font_size = 9.0
     state.horizontal_scale = 80.0
     state.update_text_scales()
-    state.op_q((), 0)
+    state.op_q(OperandWindow(()), 0)
     state.font_size = 20.0
     state.horizontal_scale = 50.0
     state.update_text_scales()
 
-    state.op_Q((), 0)
+    state.op_Q(OperandWindow(()), 0)
 
     assert state.text_advance_scale == 0.0072
 

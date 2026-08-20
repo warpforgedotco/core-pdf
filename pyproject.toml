@@ -187,6 +187,7 @@ root = ["."]
 
 [tool.ty.src]
 exclude = [
+    "src/core_pdf/api/compat",
     "src/core_pdf/_vendor/fontTools",
     "tests/fixtures",
 ]
