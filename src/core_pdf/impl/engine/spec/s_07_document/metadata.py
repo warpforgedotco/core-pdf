@@ -80,20 +80,18 @@ def resolve_info_metadata(
         return {}
     try:
         info = resolver.resolve_dict(info_ref)
+        if not isinstance(info, dict):
+            raise ValueError("invalid trailer Info dictionary")
+        return {
+            str(normalize_pdf_name(key) or key): cast(
+                MetadataValue, coerce_value(value, decode_pdf_text_string)
+            )
+            for key, value in info.items()
+        }
     except (PdfError, RecursionError, ValueError):
         if recover:
             return {}
         raise
-    if not isinstance(info, dict):
-        if recover:
-            return {}
-        raise ValueError("invalid trailer Info dictionary")
-    return {
-        str(normalize_pdf_name(key) or key): cast(
-            MetadataValue, coerce_value(value, decode_pdf_text_string)
-        )
-        for key, value in info.items()
-    }
 
 
 def xml_node_shell(node: ET.Element) -> XmpNodeRecord:

@@ -120,7 +120,7 @@ def internal_llamaindex_rtl_order(text: str) -> str:
             rtl_run.clear()
         output.append(character)
     output.extend(reversed(rtl_run))
-    return "".join(output).replace("’ :", ": ’")
+    return "".join(output)
 
 
 class NativeTextProjection:
@@ -267,32 +267,33 @@ class NativeTextProjection:
             previous_decoded = ""
             rendered_glyphs: list[tuple[Any, str]] = []
             for glyph in glyphs:
+                glyph_font_name = glyph.font_name or ""
                 show_index = sequence_show_indices.get(glyph.seqno)
                 resource_name = show_resources[show_index] if show_index is not None else None
                 glyph_cmap = resource_cmaps.get(resource_name or "") or font_cmaps.get(
-                    glyph.font_name
+                    glyph_font_name
                 )
                 glyph_text = (
                     glyph_cmap.decode(glyph.code_bytes) if glyph_cmap is not None else glyph.text
                 )
                 if resource_name in uninterpretable_type3_resources:
                     glyph_text = glyph.code_bytes.decode("latin-1")
-                glyph_decoder = font_decoders.get(glyph.font_name)
+                glyph_decoder = font_decoders.get(glyph_font_name)
                 cid_width_groups.update(
                     (glyph.seqno,)
                     if glyph_decoder is not None
                     and glyph_decoder.is_cid_font
-                    and glyph.font_name.endswith("+")
+                    and glyph_font_name.endswith("+")
                     else ()
                 )
                 group_text_widths[glyph.seqno] = group_text_widths.get(
                     glyph.seqno, 0.0
                 ) + internal_decoded_width(glyph_decoder, glyph.code_bytes)
-                group_space_widths[glyph.seqno] = font_space_thresholds.get(glyph.font_name, 0.0)
+                group_space_widths[glyph.seqno] = font_space_thresholds.get(glyph_font_name, 0.0)
                 has_differences = (
                     resource_name in resources_with_differences
                     if direct_sequence_fonts
-                    else glyph.font_name in fonts_with_differences
+                    else glyph_font_name in fonts_with_differences
                 )
                 if has_differences and glyph.code_bytes in {b"'", b"\x15"}:
                     glyph_text = glyph.text
@@ -792,7 +793,6 @@ class NativeTextProjection:
                     if any(ord(character) < 32 for character in decoder_text):
                         operand_text = decoder_text
                     operand_text = operand_text or decoder_text or data.decode("latin-1")
-                    operand_text = operand_text.replace("ᐌ", "\x00").replace("Ȑ", "\x00")
                     if add_newline and operand_output and not operand_output.endswith("\n"):
                         operand_output += "\n"
                     previous_direction = (
@@ -819,11 +819,6 @@ class NativeTextProjection:
                         operand_boundary_space = abs(delta_y) < 1.0 and delta_x >= (
                             show_width_points[show_index - 1] + show_halfspaces[show_index - 1]
                         )
-                        if operand_text[:1] in {"ம", "'"}:  # pragma: no cover - diagnostic
-                            operand_boundary_space = delta_x >= (
-                                show_width_points[show_index - 1]
-                                + show_halfspaces[show_index - 1] * 0.8
-                            )
                     if (
                         (add_space or geometry_space or operand_boundary_space)
                         and (next_direction != "ON" or operand_boundary_space)

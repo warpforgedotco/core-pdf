@@ -1,5 +1,5 @@
 default_install_hook_types = ["pre-commit", "pre-push"]
-exclude = "^src/core_pdf/api/compat/"
+exclude = "^src/core_pdf/api/compat/_unsupported/"
 
 [[repos]]
 repo = "https://github.com/pre-commit/pre-commit-hooks"
@@ -32,7 +32,7 @@ hooks = [
 [[repos]]
 repo = "local"
 hooks = [
-  { id = "mypy", name = "mypy", entry = "uv run --group lint mypy --exclude ^src/core_pdf/api/compat/", language = "system", pass_filenames = false, files = "^src/core_pdf/.*\\.py$", stages = [
+  { id = "mypy", name = "mypy", entry = "uv run --group lint mypy --exclude ^src/core_pdf/api/compat/_unsupported/", language = "system", pass_filenames = false, files = "^src/core_pdf/.*\\.py$", stages = [
     "pre-push",
     "manual",
   ], require_serial = true },

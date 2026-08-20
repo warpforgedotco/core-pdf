@@ -23,6 +23,7 @@ from core_pdf.impl.engine.structured import Document
 from core_pdf.impl.engine.structured import Page as StructuredPage
 from core_pdf.impl.exceptions import PdfParseError, PdfUnsupportedError
 from core_pdf.impl.objects import PdfName, PdfReference
+from core_pdf.impl.types import PdfDict
 
 from .._strict_page_tree import internal_has_malformed_shadowed_definition
 
@@ -169,7 +170,7 @@ def _validate_pikepdf_object_graph(document: StructuredState) -> None:
         resolved = pdf.resolver.resolve(value)
         if not isinstance(resolved, dict):
             return
-        if resolve_page_tree_node_type(pdf.resolver, resolved) != "Pages":
+        if resolve_page_tree_node_type(pdf.resolver, cast(PdfDict, resolved)) != "Pages":
             return
         kids = pdf.resolver.resolve(lookup_dict_key(resolved, "Kids"))
         if not isinstance(kids, list):
@@ -187,8 +188,9 @@ def _raw_indirect_object(pdf: PdfDocument, reference: PdfReference) -> bytes:
         return b""
     if entry.object_stream is None:
         start = entry.offset
-        end = bytes(pdf.raw_data).find(b"endobj", start)
-        return bytes(pdf.raw_data[start : end if end >= 0 else len(pdf.raw_data)])
+        data = bytes(pdf.raw_data)
+        end = data.find(b"endobj", start)
+        return data[start : end if end >= 0 else len(data)]
     pdf.resolver.resolve(reference)
     container = pdf.resolver.object_streams.get(entry.object_stream)
     if container is None or reference.object_number not in container.index:
@@ -238,7 +240,7 @@ def _pikepdf_page_boxes(
         resolved = pdf.resolver.resolve(value)
         if not isinstance(resolved, dict):
             return
-        node_type = resolve_page_tree_node_type(pdf.resolver, resolved)
+        node_type = resolve_page_tree_node_type(pdf.resolver, cast(PdfDict, resolved))
         if node_type == "Page":
             boxes.append(box)
             return
@@ -377,38 +379,40 @@ class Pdf(PdfReader):
                 for index, page in enumerate(pdf.pages, 1)
             )
             metadata = _pikepdf_info_metadata(pdf)
+            self._document = StructuredState(pdf, Document(pages=pages, metadata=metadata))
+            self.metadata = dict(metadata)
+            self.trailer = {}
+            _validate_pikepdf_object_graph(self._document)
+            media_boxes = _pikepdf_page_boxes(pdf)
+            self.__dict__["pages"] = Pages(
+                self,
+                tuple(
+                    Page(
+                        self._document,
+                        page,
+                        media_boxes[index] if index < len(media_boxes) else None,
+                    )
+                    for index, page in enumerate(pages)
+                ),
+            )
+            try:
+                outline = self.outline
+            except (KeyError, TypeError, ValueError):
+                outline = []
+            self._outlines = [
+                [item.level + 1, item.title, item.page + 1]
+                for item in outline
+                if item.page is not None
+            ]
+            self._attachments = Attachments(
+                {
+                    embedded.filename: embedded.data
+                    for embedded in self._document.source_pdf.embedded_files()
+                }
+            )
         except Exception:
             pdf.close()
             raise
-        self._document = StructuredState(pdf, Document(pages=pages, metadata=metadata))
-        self.metadata = dict(metadata)
-        self.trailer = {}
-        _validate_pikepdf_object_graph(self._document)
-        media_boxes = _pikepdf_page_boxes(pdf)
-        self.__dict__["pages"] = Pages(
-            self,
-            tuple(
-                Page(
-                    self._document,
-                    page,
-                    media_boxes[index] if index < len(media_boxes) else None,
-                )
-                for index, page in enumerate(pages)
-            ),
-        )
-        try:
-            outline = self.outline
-        except (KeyError, TypeError, ValueError):
-            outline = []
-        self._outlines = [
-            [item.level + 1, item.title, item.page + 1] for item in outline if item.page is not None
-        ]
-        self._attachments = Attachments(
-            {
-                embedded.filename: embedded.data
-                for embedded in self._document.source_pdf.embedded_files()
-            }
-        )
 
     @property
     def docinfo(self) -> DocumentInfo:

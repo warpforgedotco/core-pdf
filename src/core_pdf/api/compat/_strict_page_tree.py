@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from core_pdf import PdfDocument
 from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
+from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.objects import PdfReference
 
 
@@ -27,20 +28,21 @@ def internal_has_malformed_shadowed_definition(
     data = bytes(pdf.raw_data)
     header = f"{reference.object_number} {reference.generation_number} obj".encode()
     position = data.find(header, entry.offset + len(header))
-    while position >= 0:
-        lexer = PdfLexer(
-            pdf.raw_data,
-            reference_resolver=pdf.resolver.resolve,
-            decipher=pdf.decipher,
-        )
-        try:
+    lexer = PdfLexer(
+        pdf.raw_data,
+        reference_resolver=pdf.resolver.resolve,
+        decipher=pdf.decipher,
+    )
+    try:
+        while position >= 0:
             lexer.rewind(position)
-            lexer.parse_indirect_object()
-        except (TypeError, ValueError):
-            return True
-        finally:
-            lexer.close()
-        position = data.find(header, position + len(header))
+            try:
+                lexer.parse_indirect_object()
+            except (PdfParseError, TypeError, ValueError):
+                return True
+            position = data.find(header, position + len(header))
+    finally:
+        lexer.close()
     return False
 
 

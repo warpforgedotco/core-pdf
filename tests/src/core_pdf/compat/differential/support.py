@@ -6,9 +6,11 @@ from typing import Any, Callable
 
 import pytest
 
-FIXTURES_ROOT = Path("tests/fixtures")
+FIXTURES_ROOT = Path(__file__).resolve().parents[4] / "fixtures"
 ALL_PDFS = tuple(sorted(FIXTURES_ROOT.rglob("*.pdf")))
-XRAY_ROOT = Path("tests/fixtures/x-ray").resolve()
+if not ALL_PDFS:
+    raise RuntimeError(f"no PDF fixtures found under {FIXTURES_ROOT}")
+XRAY_ROOT = FIXTURES_ROOT / "x-ray"
 
 
 def open_pair(

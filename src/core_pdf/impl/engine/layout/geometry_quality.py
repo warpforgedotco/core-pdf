@@ -59,7 +59,7 @@ def text_run_geometry_issues(run: TextRun) -> tuple[LayoutGeometryIssue, ...]:
         tuple(run.coords),
         run.advance_bbox,
         run.ink_bbox,
-        run.glyph_clusters,
+        id(run.glyph_clusters),
     )
     cache = run.internal_geometry_issues_cache
     if cache is not None and cache[0] == key:
@@ -215,16 +215,19 @@ def internal_compute_text_run_geometry_issues(run: TextRun) -> tuple[LayoutGeome
     # canonical page-space extent used by layout.  The legacy run coordinates
     # can describe the text origin and nominal font box instead, notably for
     # vertical writing where those boxes are intentionally offset.
-    cluster_inside_run = overlap_ratio_of(cluster_union, advance_bbox)
-    if cluster_inside_run < 0.80:
+    cluster_inside_advance = overlap_ratio_of(cluster_union, advance_bbox)
+    if cluster_inside_advance < 0.80:
         issues.append(
             LayoutGeometryIssue(
-                code="glyph_clusters_outside_run_bbox",
+                code="glyph_clusters_outside_advance_bbox",
                 severity="error",
                 subject="text_run.glyph_clusters",
                 bbox=cluster_union,
-                message="Glyph cluster geometry does not overlap the owning run bbox.",
-                details=(("overlap_ratio", round(cluster_inside_run, 4)),),
+                message="Glyph cluster geometry does not overlap the owning advance bbox.",
+                details=(
+                    ("overlap_ratio", round(cluster_inside_advance, 4)),
+                    ("reference_region", "advance_bbox"),
+                ),
             )
         )
 

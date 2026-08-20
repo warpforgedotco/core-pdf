@@ -195,7 +195,3 @@ benchmarks (cmap, tokenizer, tounicode, color) are comparatively stable.
 For a change to anything in the table above, do what the existing perf commits did rather than
 trusting a single benchmark run: cProfile before and after, compare corpus wall time across
 repeated runs, and confirm SCORE-Bench accuracy is unchanged across all 224 cases.
-
-For changes to anything in the table above, also profile with cProfile and confirm
-SCORE-Bench accuracy is unchanged across all 224 cases — that is the bar the existing perf
-commits held themselves to.

@@ -277,13 +277,17 @@ class Page(PdfPageObject):
                 if run.seqno <= sequence < next_sequence
                 for glyph in sequence_glyphs
             ]
+            if not font_size:
+                continue
             origin_y = _float32(_float32(float(crop_y1)) - mupdf_baseline)
             if metric_height:
                 y0 = _float32(origin_y - _float32(font_size * _float32(ascent / metric_height)))
                 y1 = _float32(origin_y + _float32(font_size * _float32(descent / metric_height)))
-            else:
+            elif run_glyphs:
                 y0 = _float32(crop_y1 - max(glyph.ink_bbox[3] for glyph in run_glyphs))
                 y1 = _float32(crop_y1 - min(glyph.ink_bbox[1] for glyph in run_glyphs))
+            else:
+                continue
             current: list[Any] = []
             for glyph in (*run_glyphs, None):
                 if glyph is not None and not glyph.text.isspace():
@@ -383,8 +387,6 @@ class Page(PdfPageObject):
                 if element.bbox is not None and bbox_intersects(clip_bbox, element.bbox)
             )
             text_view = type(text_view)(elements, page_number=self._page.page_number)
-        else:
-            text_view = self._native_text_view()
         text = text_view.text
         if sort:
             text = "\n".join(sorted(text.splitlines(), key=str.casefold))
@@ -705,15 +707,7 @@ class Page(PdfPageObject):
 
     def get_image_info(self, hashes: bool = False, xrefs: bool = False) -> list[dict[str, object]]:
         del hashes, xrefs
-        images = self._document.capability_page(self._page.page_number).extract_images()
-        return [
-            {
-                "bbox": image.rect or image.image_clip,
-                "width": image.image_metadata.width if image.image_metadata else 0,
-                "height": image.image_metadata.height if image.image_metadata else 0,
-            }
-            for image in images
-        ]
+        return self.get_images(full=True)
 
     def get_image_rects(self, image: object, transform: bool = False) -> list[object]:
         del transform

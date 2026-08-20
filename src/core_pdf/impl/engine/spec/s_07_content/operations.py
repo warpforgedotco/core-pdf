@@ -878,7 +878,7 @@ def dispatch_operations(
                                     op_count = 0
                                     continue
                                 case 99:  # 'c'
-                                    if op_count:
+                                    if op_count and operands:
                                         char_space = operands[0]
                                         if type(char_space) in exact_number_types:
                                             handler_target.op_Tc_values(
@@ -907,7 +907,7 @@ def dispatch_operations(
                                         # Tj consumes the top value from the
                                         # operand stack.  Earlier values are
                                         # stale operands in malformed streams.
-                                        operand = operands[op_count - 1]
+                                        operand = operands[min(op_count, len(operands)) - 1]
                                         if type(operand) is PdfString:
                                             handler_target.append_text(
                                                 data=operand.data,

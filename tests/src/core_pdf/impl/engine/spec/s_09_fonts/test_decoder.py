@@ -89,10 +89,17 @@ def test_type3_font_defaults_to_standard_encoding() -> None:
 
 
 def test_type3_font_without_descriptor_uses_font_bbox_metrics() -> None:
-    decoder = FontDecoder({"Subtype": "Type3", "FontBBox": [0, 0, 1, -1]})
+    decoder = FontDecoder({"Subtype": "Type3", "FontBBox": [0, -200, 1000, 800]})
 
-    assert decoder.descent == 0
-    assert decoder.ascent == -1
+    assert decoder.descent == -200
+    assert decoder.ascent == 800
+
+
+def test_type3_font_bbox_with_positive_ymin_keeps_its_sign() -> None:
+    decoder = FontDecoder({"Subtype": "Type3", "FontBBox": [0, 50, 1000, 700]})
+
+    assert decoder.descent == 50
+    assert decoder.ascent == 700
 
 
 def test_text_advance_applies_character_spacing_to_each_glyph() -> None:

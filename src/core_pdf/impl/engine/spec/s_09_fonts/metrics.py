@@ -78,8 +78,9 @@ def parse_font_metrics(
         font_bbox = lookup_dict_key(font_dict, "FontBBox")
         if isinstance(font_bbox, (list, tuple)) and len(font_bbox) >= 4:
             with contextlib.suppress(ValueError):
-                descent = require_font_float(font_bbox[1], "invalid Type3 FontBBox")
-                ascent = require_font_float(font_bbox[3], "invalid Type3 FontBBox")
+                bbox_descent = require_font_float(font_bbox[1], "invalid Type3 FontBBox")
+                bbox_ascent = require_font_float(font_bbox[3], "invalid Type3 FontBBox")
+                descent, ascent = bbox_descent, bbox_ascent
     if subtype == "Type0":
         descendant = get_descendant(font_dict)
         if isinstance(descendant, dict):
@@ -100,6 +101,7 @@ def parse_font_metrics(
                 raise ValueError("invalid font Descent")
             descent = float(descent_value)
 
+    descriptor_descent_applied = False
     if isinstance(descriptor, dict):
         descriptor_ascent = lookup_dict_key(descriptor, "Ascent")
         if descriptor_ascent is not None:
@@ -109,11 +111,12 @@ def parse_font_metrics(
         if descriptor_descent is not None:
             with contextlib.suppress(ValueError):
                 descent = require_font_float(descriptor_descent, "invalid font Descent")
+                descriptor_descent_applied = True
     # ISO 32000 defines Descent below the baseline and therefore as non-positive.
     # Some PDF producers (notably PScript5.dll) serialize its magnitude instead.
     # Normalize that widespread malformed form once at the font boundary so every
     # geometry consumer sees a consistent text coordinate system.
-    if descent > 0:
+    if descriptor_descent_applied and descent > 0:
         descent = -descent
     return ascent, descent
 

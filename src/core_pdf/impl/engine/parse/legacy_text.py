@@ -151,7 +151,8 @@ class LegacyFont:
             if not glyphs:
                 parts = tuple(self.cmap.decode(data, preserve_nulls=True))
         elif self.encoding_codec is not None:
-            parts = tuple(data.decode(self.encoding_codec, errors="surrogatepass"))
+            errors = "surrogatepass" if self.encoding_codec.startswith("utf-") else "replace"
+            parts = tuple(data.decode(self.encoding_codec, errors=errors))
         else:
             parts = tuple(self.internal_glyph_text(glyph) for glyph in glyphs)
         if not any(parts):
@@ -706,7 +707,15 @@ class LegacyTextExtractor:
                 self.cm = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
         elif operator == "cm":
             self.flush()
-            self.cm = internal_mult([float(cast(Any, value)) for value in operands[:6]], self.cm)
+            try:
+                values = [float(cast(Any, value)) for value in operands[:6]]
+            except (TypeError, ValueError):
+                values = []
+            self.cm = (
+                internal_mult(values, self.cm)
+                if len(values) == 6
+                else [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
+            )
         elif operator == "Tf":
             self.flush()
             if operands:

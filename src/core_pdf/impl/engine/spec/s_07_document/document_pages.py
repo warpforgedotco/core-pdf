@@ -122,7 +122,8 @@ class LazyPageList(list[internal_PageT], Generic[internal_PageT]):
 
     def __iter__(self) -> Iterator[internal_PageT]:
         index = 0
-        while index < len(self):
+        count = len(self)
+        while index < count:
             try:
                 yield self[index]
             except IndexError:

@@ -104,11 +104,10 @@ def _uniform(page: Any, box: tuple[float, float, float, float]) -> bool:
     pixels = memoryview(raster.pixels).cast("B")
     if not pixels or raster.channels <= 0:
         return False
-    first = pixels[: raster.channels].tobytes()
-    return all(
-        pixels[index : index + raster.channels].tobytes() == first
-        for index in range(0, len(pixels), raster.channels)
-    )
+    data = pixels.tobytes()
+    first = data[: raster.channels]
+    count, remainder = divmod(len(data), raster.channels)
+    return remainder == 0 and data == first * count
 
 
 def _pixmap_crop(
@@ -209,7 +208,7 @@ def _recover_font(page: Any, font_name: str) -> _RecoveredFont | None:
                 return _RecoveredFont(
                     ToUnicodeCMap(stream.data),
                     first_char,
-                    tuple(float(width) for width in widths),
+                    tuple(float(cast(Any, width)) for width in widths),
                 )
         except (TypeError, ValueError):
             continue
@@ -336,7 +335,7 @@ def _page_redactions(page: Any) -> list[dict[str, object]]:
             glyph.seqno >= rectangle.seqno
             and glyph.ink_bbox is not None
             and _intersection_area(glyph.ink_bbox, rectangle.bbox) > 0
-            for glyph in page.get_page_program().products.glyphs
+            for glyph in glyphs
         )
         outside_page = (
             fitz_box[2] <= 0
@@ -515,7 +514,7 @@ def _source_bytes(source: object) -> bytes | None:
         return source
     if isinstance(source, (str, PathLike)) and not str(source).startswith("https://"):
         try:
-            return Path(source).read_bytes()
+            return Path(cast(str | PathLike[str], source)).read_bytes()
         except OSError:
             return None
     return None

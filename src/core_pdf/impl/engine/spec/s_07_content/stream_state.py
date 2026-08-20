@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypeAlias
 
 from core_pdf.impl.engine.spec.s_08_graphics.matrix import Matrix
 from core_pdf.impl.objects import PdfStream
@@ -17,6 +17,7 @@ ResourceCategoryCache = dict[str, object]
 ResourceCache = dict[tuple[int, str], ResourceCategoryCache]
 ResolvedResourceCache = dict[tuple[int, str], object]
 StreamKey = tuple[str, int, int]
+LayoutFormId: TypeAlias = tuple[tuple[StreamKey, tuple[float, float, float, float]], ...] | None
 
 
 class StreamState:
@@ -110,7 +111,7 @@ class StreamState:
     render_intent: str | None
     pending_line_break: bool
     xobject_depth: int
-    layout_form_id: int | None
+    layout_form_id: LayoutFormId
 
     def __init__(
         self,
@@ -153,7 +154,7 @@ class StreamState:
         render_intent: str | None,
         clip_bbox: tuple[float, float, float, float] | None,
         layout_form_bbox: tuple[float, float, float, float] | None,
-        layout_form_id: int | None,
+        layout_form_id: LayoutFormId,
         pending_line_break: bool,
         compat_tj_cursor_x: float,
         compat_tj_cursor_y: float,
@@ -235,7 +236,7 @@ class ContentStreamFrame:
     depth: int
     clip_bbox: tuple[float, float, float, float] | None
     layout_form_bbox: tuple[float, float, float, float] | None
-    layout_form_id: int | None
+    layout_form_id: LayoutFormId
     group_alpha: float | None
     swallow_parse_errors: bool
     lexer: PdfLexer | None
@@ -254,7 +255,7 @@ class ContentStreamFrame:
         group_alpha: float | None = None,
         *,
         layout_form_bbox: tuple[float, float, float, float] | None = None,
-        layout_form_id: int | None = None,
+        layout_form_id: LayoutFormId = None,
         stream_key: StreamKey | None = None,
         swallow_parse_errors: bool = False,
     ) -> None:

@@ -31,12 +31,15 @@ def resolve_page_tree_node_type(resolver: PdfValueResolver, node: PdfDict) -> st
     node_type = resolver.resolve_name(lookup_dict_key(node, "Type"))
     if node_type is not None:
         return node_type
+    inferred = infer_page_tree_node_type(node, include_page_properties=False)
+    if inferred is not None:
+        return inferred
     # A parent pointer is the defining structural signal for an untyped leaf.
     # Content/media/resource keys alone also occur in Form XObjects and other
     # dictionaries and must not promote those objects into the page tree.
     if lookup_dict_key(node, "Parent") is not None:
         return "Page"
-    return infer_page_tree_node_type(node, include_page_properties=False)
+    return None
 
 
 def format_page_label(

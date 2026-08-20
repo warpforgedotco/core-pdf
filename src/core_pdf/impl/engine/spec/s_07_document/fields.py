@@ -45,6 +45,8 @@ def field_value_text(document: Any, value: object) -> str:
             item_text = decode_pdf_text_string(current).strip()
         elif isinstance(current, str):
             item_text = current.strip()
+        elif isinstance(current, (int, float)) and not isinstance(current, bool):
+            item_text = str(current)
         else:
             # AcroForm values are text strings, names, or arrays of those
             # values.  Signature fields instead store a signature dictionary

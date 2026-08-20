@@ -662,7 +662,10 @@ class XRefScanner:
         if stop_at_first_trailer:
             trailer = data.find(b"trailer")
             while trailer >= 0:
-                if trailer == 0 or data[trailer - 1] in (10, 13):
+                after = trailer + 7
+                if (trailer == 0 or data[trailer - 1] in (10, 13)) and (
+                    after >= len(data) or WS_TABLE[data[after]]
+                ):
                     scan_end = trailer
                     break
                 trailer = data.find(b"trailer", trailer + 7)

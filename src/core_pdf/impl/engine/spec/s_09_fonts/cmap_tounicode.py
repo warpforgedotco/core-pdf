@@ -10,6 +10,7 @@ import numpy
 
 from core_pdf.impl.engine.spec.s_09_fonts.cmap_encoding import BYTE_CACHE, decode_utf16be
 from core_pdf.impl.engine.spec.s_09_fonts.cmap_ranges import (
+    MAX_CMAP_RANGE_SPAN,
     CodeSpaceRanges,
     expand_range,
     ranges_overlap,
@@ -246,7 +247,7 @@ class ToUnicodeCMap:
                     continue
                 start = int.from_bytes(start_bytes, "big")
                 end = int.from_bytes(end_bytes, "big")
-                if start > end:
+                if start > end or end - start + 1 > MAX_CMAP_RANGE_SPAN:
                     continue
                 source_length = len(start_bytes)
                 for offset, source in enumerate(range(start, end + 1)):

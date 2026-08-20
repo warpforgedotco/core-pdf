@@ -9,7 +9,7 @@ from functools import lru_cache
 from importlib import import_module
 from os import PathLike
 from pathlib import Path
-from typing import Any, TypeAlias
+from typing import Any, TypeAlias, cast
 
 import numpy
 
@@ -202,7 +202,7 @@ def internal_nlp_features(
 
 
 def internal_pdf_too_complex(filename: object, password: str) -> bool:
-    with PdfDocument.open(filename, password=password) as document:
+    with PdfDocument.open(cast(Any, filename), password=password) as document:
         strict_xref_error = document.strict_xref_validation_error()
         if strict_xref_error == "invalid hex string" or (
             strict_xref_error is not None and document.raw_data.find(b"%%EOF") < 0
@@ -435,9 +435,10 @@ def internal_region_order(
         top = page_height - y1
         right = x1
         bottom = page_height - y0
-        int64_max = numpy.iinfo(numpy.int64).max
+        coordinate_limit = max(1.0, page_height) * 64.0
         if any(
-            coordinate < 0 or coordinate > int64_max for coordinate in (left, top, right, bottom)
+            coordinate < 0 or coordinate > coordinate_limit
+            for coordinate in (left, top, right, bottom)
         ):
             # Unstructured validates the floating-point coordinates before
             # casting them for XY-cut. On invalid geometry it preserves the
@@ -533,14 +534,14 @@ def partition_pdf(filename: object, **kwargs: object) -> list[Element]:
     if (
         isinstance(filename, (str, PathLike))
         and not (isinstance(filename, str) and filename.startswith("%PDF"))
-        and not Path(filename).exists()
+        and not Path(cast(str | PathLike[str], filename)).exists()
     ):
         # Unstructured's fast strategy treats an absent filename as an empty
         # document. This also covers broken corpus symlinks.
         return []
     include_page_breaks = bool(kwargs.pop("include_page_breaks", False))
     include_metadata = bool(kwargs.pop("include_metadata", True))
-    word_margin = float(kwargs.pop("pdfminer_word_margin", 0.185) or 0.185)
+    word_margin = float(cast(Any, kwargs.pop("pdfminer_word_margin", 0.185) or 0.185))
     password = str(kwargs.pop("password", "") or "")
     try:
         if internal_pdf_too_complex(filename, password):
@@ -555,13 +556,13 @@ def partition_pdf(filename: object, **kwargs: object) -> list[Element]:
         raise
     result: list[Element] = []
     pages = extract_pages(
-        filename,
+        cast(Any, filename),
         password=password,
         laparams=LAParams(word_margin=word_margin),
         _unstructured_mode=True,
     )
     document = PdfDocument.open(
-        filename,
+        cast(Any, filename),
         password=password,
         recovery_scan_all_revisions=False,
         legacy_pdfminer_text_operators=True,

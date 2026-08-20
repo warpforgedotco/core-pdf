@@ -159,7 +159,8 @@ class DocumentXRefMixin:
         data = self.raw_data
         # ISO 32000 permits the header to occur within the first 1024 bytes. Some
         # producers prepend diagnostics but still measure xref offsets from it.
-        return data.find(b"%PDF-", 0, min(len(data), 1024))
+        offset = data.find(b"%PDF-", 0, min(len(data), 1024))
+        return offset if offset > 0 else 0
 
     def find_xref_entry_header(self, key: int, offset: int) -> int | None:
         """Find an expected object near a producer's approximate xref offset."""

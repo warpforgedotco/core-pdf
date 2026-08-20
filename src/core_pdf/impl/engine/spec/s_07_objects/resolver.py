@@ -109,6 +109,7 @@ class ObjectResolver(ResolverValueMixin):
         "lock",
         "thread_state",
         "recover_missing",
+        "recovery_offsets",
     )
 
     def __init__(
@@ -128,6 +129,7 @@ class ObjectResolver(ResolverValueMixin):
         self.trailer = trailer
         self.decipher = decipher
         self.recover_missing = recover_missing
+        self.recovery_offsets: dict[int, tuple[int, ...]] | None = None
         self.objects: ObjectCache = {}
 
         max_obj = 0
@@ -184,6 +186,7 @@ class ObjectResolver(ResolverValueMixin):
         self.deep_cache.clear()
         self.kw_cache.clear()
         self.decipher = None
+        self.recovery_offsets = None
         with contextlib.suppress(ValueError):
             self.data.release()
         self.data = memoryview(b"")
@@ -323,27 +326,40 @@ class ObjectResolver(ResolverValueMixin):
         lexer.rewind(marker)
         return lexer.parse_indirect_object()
 
-    def recover_missing_indirect_object(self, lexer: PdfLexer, ref: PdfReference) -> object:
-        """Resolve a demanded object omitted by a damaged cross-reference table."""
+    def internal_recovery_offsets(self, lexer: PdfLexer) -> dict[int, tuple[int, ...]]:
+        """Index indirect-object headers once for damaged-xref recovery."""
+        with self.lock:
+            if self.recovery_offsets is not None:
+                return self.recovery_offsets
         source_buffer = lexer.source_buffer
         data = (
             bytes(lexer.raw_data)
             if source_buffer is None
             else cast(bytes | mmap.mmap, source_buffer)
         )
+        offsets: dict[int, list[int]] = {}
         search_pos = 0
-        recovered: object = None
         while (marker := data.find(b"obj", search_pos)) >= 0:
             search_pos = marker + 3
             parsed = parse_object_marker_prefix(data, marker)
             if parsed is None:
                 continue
             offset, object_number, generation_number = parsed
-            if object_number != ref.object_number or generation_number != ref.generation_number:
-                continue
+            key = (object_number << 16) | generation_number
+            offsets.setdefault(key, []).append(offset)
+        indexed = {key: tuple(values) for key, values in offsets.items()}
+        with self.lock:
+            if self.recovery_offsets is None:
+                self.recovery_offsets = indexed
+            return self.recovery_offsets
+
+    def recover_missing_indirect_object(self, lexer: PdfLexer, ref: PdfReference) -> object:
+        """Resolve a demanded object omitted by a damaged cross-reference table."""
+        key = (ref.object_number << 16) | ref.generation_number
+        for offset in reversed(self.internal_recovery_offsets(lexer).get(key, ())):
             lexer.rewind(offset)
             try:
-                recovered = lexer.parse_indirect_object()
+                return lexer.parse_indirect_object()
             except Exception:
                 continue
-        return recovered
+        return None

@@ -615,7 +615,7 @@ class Page:
                 if self.rotation % 180
                 else self.mediabox
             )
-        self.bbox = (0, 0, self.width, self.height)
+        self.bbox: BBox = (0.0, 0.0, self.width, self.height)
         self._objects: dict[str, list[ObjectDict]] | None = None
         self._structured_page: Any | None = None
         self._layout: Any | None = None
@@ -1115,7 +1115,7 @@ class Page:
                     if line[0]["top"] - table_lines[-1][0]["top"] > 20:
                         break
                     table_lines.append(line)
-                boundaries = [self.bbox[0]]
+                boundaries: list[float] = [self.bbox[0]]
                 boundaries.extend(
                     (left["x1"] + right["x0"]) / 2 for left, right in zip(header, header[1:])
                 )
@@ -1370,7 +1370,7 @@ class Page:
 
 class CroppedPage(Page):
     def __init__(self, parent: Page, bbox: BBox, relative: bool, strict: bool, mode: str) -> None:
-        target = (
+        target: BBox = (
             (
                 parent.bbox[0] + bbox[0],
                 parent.bbox[1] + bbox[1],
@@ -2237,7 +2237,9 @@ def _words(chars: Iterable[ObjectDict], **kwargs: Any) -> list[ObjectDict]:
     words: list[ObjectDict] = []
     extra_attrs = tuple(kwargs.get("extra_attrs", ()))
     values = list(chars)
-    grouping_key = itemgetter("upright", *extra_attrs)
+
+    def grouping_key(char: ObjectDict) -> tuple[Any, ...]:
+        return (char.get("upright", True), *(char[name] for name in extra_attrs))
 
     def emit_word(word_chars: list[ObjectDict], direction: str) -> None:
         x0, top, x1, bottom = merge_bboxes(obj_to_bbox(char) for char in word_chars)
@@ -2245,9 +2247,9 @@ def _words(chars: Iterable[ObjectDict], **kwargs: Any) -> list[ObjectDict]:
         doctop_adjustment = first["doctop"] - first["top"]
         word: ObjectDict = {
             "text": "".join(
-                LIGATURE_EXPANSIONS.get(char["text"], char["text"])
+                LIGATURE_EXPANSIONS.get(str(char["text"] or ""), str(char["text"] or ""))
                 if kwargs.get("expand_ligatures", True)
-                else char["text"]
+                else str(char["text"] or "")
                 for char in word_chars
             ),
             "x0": x0,
@@ -2421,7 +2423,8 @@ def _line_text(
         )
         if insert_space:
             result.append(" ")
-        result.append(LIGATURE_EXPANSIONS.get(char["text"], char["text"]))
+        char_text = str(char["text"] or "")
+        result.append(LIGATURE_EXPANSIONS.get(char_text, char_text))
         previous = char
         pending_space = False
     return "".join(result)

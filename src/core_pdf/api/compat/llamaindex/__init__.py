@@ -164,18 +164,23 @@ def _validate_page_tree(pdf: PdfDocument) -> None:
         raise ValueError("shadowed PDF page tree root")
 
     def visit(value: object) -> None:
+        key: tuple[int, int] | None = None
         if isinstance(value, PdfReference):
             key = (value.object_number, value.generation_number)
             if key in seen:
                 raise ValueError("detected cyclic page references")
             seen.add(key)
-        node = pdf.resolver.resolve(value)
-        if not isinstance(node, dict):
-            return
-        kids = pdf.resolver.resolve(lookup_dict_key(node, "Kids"))
-        if isinstance(kids, (list, tuple)):
-            for kid in kids:
-                visit(kid)
+        try:
+            node = pdf.resolver.resolve(value)
+            if not isinstance(node, dict):
+                return
+            kids = pdf.resolver.resolve(lookup_dict_key(node, "Kids"))
+            if isinstance(kids, (list, tuple)):
+                for kid in kids:
+                    visit(kid)
+        finally:
+            if key is not None:
+                seen.discard(key)
 
     visit(root)
 

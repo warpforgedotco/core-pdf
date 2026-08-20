@@ -63,6 +63,7 @@ from core_pdf.impl.engine.spec.s_07_content.operator_tables import (
 from core_pdf.impl.engine.spec.s_07_content.operators import detect_rotation_from_linear
 from core_pdf.impl.engine.spec.s_07_content.stream_state import (
     ContentStreamFrame,
+    LayoutFormId,
     ResolvedResourceCache,
     ResourceCache,
     StreamKey,
@@ -203,7 +204,7 @@ class TextState:
     render_intent: str | None
     clip_bbox: tuple[float, float, float, float] | None
     layout_form_bbox: tuple[float, float, float, float] | None
-    layout_form_id: int | None
+    layout_form_id: LayoutFormId
     fill_color_space: str
     stroke_color_space: str
     dash_pattern: tuple[list[float], float]
@@ -908,7 +909,7 @@ class TextState:
         *,
         clip_bbox: tuple[float, float, float, float] | None = None,
         layout_form_bbox: tuple[float, float, float, float] | None = None,
-        layout_form_id: int | None = None,
+        layout_form_id: LayoutFormId = None,
         group_alpha: float | None = None,
         stream_key: StreamKey | None = None,
         swallow_parse_errors: bool = False,
@@ -2234,7 +2235,9 @@ class TextState:
             glyphs = None
             if self.capture_glyphs:
                 glyphs = decoder.decode_glyphs(data)
-                text = "".join(glyph.unicode for glyph in glyphs)
+                text = "".join(
+                    glyph.unicode for glyph in glyphs if glyph.unicode_source != "undefined"
+                )
             else:
                 text = decoder.decode(bytes(data))
         else:
@@ -2422,9 +2425,9 @@ class TextState:
 
         actual_text_span = self.current_actual_text_span()
         if actual_text_span is not None:
-            assert glyphs is not None
+            compatibility_glyphs = glyphs if glyphs is not None else decoder.decode_glyphs(data)
             compatibility_parts: list[str] = []
-            for glyph in glyphs:
+            for glyph in compatibility_glyphs:
                 mapped = (
                     decoder.to_unicode.decode(glyph.code_bytes)
                     if decoder.to_unicode is not None and glyph.code_bytes
@@ -3518,7 +3521,7 @@ class TextState:
                     # alternate.  Consumers such as pdfminer do not interpret
                     # marked-content /ActualText and therefore need the font
                     # projection rather than the accessible replacement text.
-                    alternates=(entry.compatibility_text,),
+                    alternates=(entry.compatibility_text,) if entry.compatibility_text else (),
                     font_decoder=entry.font_decoder,
                     effective_font_size=entry.font_size,
                     effective_font_height=entry.effective_font_height,

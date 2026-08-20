@@ -58,6 +58,13 @@ def internal_install_core_pdf_facade() -> None:
 
 def internal_run_one(implementation: str, pytest_args: list[str]) -> int:
     """Run one implementation in the current process."""
+    if not UPSTREAM_TEST.is_file():
+        print(
+            "pdfminer.six fixture is missing; run "
+            "`git submodule update --init --depth 1 tests/fixtures/pdfminer.six`",
+            file=sys.stderr,
+        )
+        return 1
     if implementation == "upstream" and not os.environ.get(UPSTREAM_ENV_MARKER):
         environment = os.environ.copy()
         environment[UPSTREAM_ENV_MARKER] = "1"

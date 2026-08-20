@@ -7,6 +7,12 @@ from core_pdf.impl.engine.spec.s_09_fonts.cmap_resources import resolve_cmap_dec
 from core_pdf.impl.engine.spec.s_09_fonts.cmap_tounicode import ToUnicodeCMap
 
 
+def test_cidrange_rejects_unbounded_expansion() -> None:
+    cmap = ToUnicodeCMap(b"1 begincidrange <00000000> <ffffffff> 32 endcidrange")
+
+    assert cmap.mappings == {}
+
+
 def test_iter_codespace_range_carries_across_ff() -> None:
     assert list(iter_codespace_range(b"\x00\xfe", b"\x01\xff")) == [
         b"\x00\xfe",
