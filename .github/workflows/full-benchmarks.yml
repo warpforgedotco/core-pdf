@@ -1,0 +1,105 @@
+name: Full benchmarks
+
+on:
+  schedule:
+    - cron: "0 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  core:
+    name: Full non-corpus benchmarks
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Fetch encrypted PDF fixture
+        run: git -C tests/fixtures/SCORE-Bench lfs pull
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: "0.11.28"
+          python-version: "3.13"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install English Tesseract data
+        run: sudo apt-get update && sudo apt-get install --yes tesseract-ocr-eng
+
+      - name: Run full non-corpus benchmarks
+        uses: CodSpeedHQ/action@v3
+        with:
+          run: >-
+            uv run --locked --package core-pdf --group benchmark pytest
+            tests/benchmarks/E2E/test_dense_content_stream_benchmarks.py
+            tests/benchmarks/E2E/test_large_object_graph_benchmarks.py
+            tests/benchmarks/E2E/test_multicolumn_layout_benchmarks.py
+            tests/benchmarks/E2E/test_synthetic_document_benchmarks.py
+            tests/benchmarks/test_page_program_benchmarks.py
+            tests/src/core_pdf/impl/engine/spec/s_07_content/benchmarks
+            tests/src/core_pdf/impl/engine/spec/s_07_document/benchmarks
+            tests/src/core_pdf/impl/engine/spec/s_07_filters/benchmarks
+            tests/src/core_pdf/impl/engine/spec/s_07_objects/benchmarks
+            tests/src/core_pdf/impl/engine/spec/s_07_security/benchmarks
+            tests/src/core_pdf/impl/engine/spec/s_07_syntax/benchmarks
+            tests/src/core_pdf/impl/engine/spec/s_08_graphics/benchmarks
+            tests/src/core_pdf/impl/engine/spec/s_09_fonts/benchmarks
+            --codspeed
+          token: ${{ secrets.CODSPEED_TOKEN }}
+
+      - name: Prune uv cache
+        if: always()
+        run: uv cache prune --ci
+
+  corpus:
+    name: Full corpus benchmarks / shard ${{ matrix.shard }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+    env:
+      CORE_PDF_BENCHMARK_SHARD_COUNT: "8"
+      CORE_PDF_BENCHMARK_SHARD_INDEX: ${{ matrix.shard }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Fetch encrypted PDF fixture
+        run: git -C tests/fixtures/SCORE-Bench lfs pull
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: "0.11.28"
+          python-version: "3.13"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install English Tesseract data
+        run: sudo apt-get update && sudo apt-get install --yes tesseract-ocr-eng
+
+      - name: Run full corpus benchmark shard
+        uses: CodSpeedHQ/action@v3
+        with:
+          run: >-
+            uv run --locked --package core-pdf --group benchmark pytest
+            tests/benchmarks/E2E/test_real_pdf_e2e_benchmarks.py
+            --codspeed
+          token: ${{ secrets.CODSPEED_TOKEN }}
+
+      - name: Prune uv cache
+        if: always()
+        run: uv cache prune --ci

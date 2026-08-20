@@ -11,8 +11,12 @@ alone, which is one of the most expensive parts of native text extraction.
 
 from __future__ import annotations
 
+import pytest
+
 from core_pdf import PdfDocument, serialize_document_to_pdf
 from core_pdf.impl.engine.structured import Block, BlockKind, Document, Page, TextLine
+
+pytestmark = pytest.mark.benchmark_high_impact
 
 PAGE_WIDTH = 612.0
 PAGE_HEIGHT = 792.0

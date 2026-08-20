@@ -61,9 +61,15 @@ a typing change is an improvement.
 For performance-sensitive changes, capture a benchmark baseline first:
 
 ```sh
-uv run --group benchmark pytest --benchmark-only --benchmark-save=baseline
-uv run --group benchmark pytest --benchmark-only --benchmark-compare=baseline
+uv run --group benchmark pytest --benchmark-only -m benchmark_high_impact \
+  --benchmark-save=baseline
+uv run --group benchmark pytest --benchmark-only -m benchmark_high_impact \
+  --benchmark-compare=baseline
 ```
+
+The `benchmark_high_impact` tier is the routine pull-request suite. Run the complete benchmark
+inventory explicitly with `uv run --group benchmark pytest --benchmark-only`; CI also runs it
+weekly, with the real-PDF corpus split across shards.
 
 Timings on the heavy page-program and OCR benchmarks are noisy — several vary by more than 5% between runs of identical code — so treat a single run as weak evidence and rely on the invariants those benchmarks assert. See `docs/architecture.md` for details.
 

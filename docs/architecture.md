@@ -166,9 +166,17 @@ with `scripts/raster_cover.py` after large structural changes.
 ### Verifying a performance-sensitive change
 
 ```sh
-uv run --group benchmark pytest --benchmark-only --benchmark-save=baseline   # before
-uv run --group benchmark pytest --benchmark-only --benchmark-compare=baseline # after
+uv run --group benchmark pytest --benchmark-only -m benchmark_high_impact \
+  --benchmark-save=baseline                                                   # before
+uv run --group benchmark pytest --benchmark-only -m benchmark_high_impact \
+  --benchmark-compare=baseline                                                # after
 ```
+
+The high-impact tier is the routine local and pull-request suite. It combines the inexpensive
+spec hot paths, focused synthetic stresses, page-program invariants, and one native, hybrid, and
+OCR real-PDF end-to-end case. Run `uv run --group benchmark pytest --benchmark-only` when an
+exhaustive local comparison is justified. The same complete inventory runs weekly in CI; the
+224-document real-PDF sweep is divided into eight deterministic shards.
 
 The benchmark suite asserts **invariants as well as timings** — that a page is extracted in a
 single content-stream pass, that an image is decoded exactly once, that Type3 glyph caching
@@ -187,7 +195,8 @@ consecutive runs of the *same* source produced these spreads:
 | `test_cmap_construction_benchmark` | 5.4% |
 | `test_end_to_end_page_extraction_benchmark[ocr]` | 5.3% |
 
-Five of thirty benchmarks vary by more than 5% on identical code, so
+Five benchmarks in the original thirty-case repeatability sample varied by more than 5% on
+identical code, so
 `--benchmark-compare-fail=mean:5%` produces false alarms. The heavy page-program, OCR, and
 rasterization benchmarks run few rounds and are dominated by scheduling noise; the micro
 benchmarks (cmap, tokenizer, tounicode, color) are comparatively stable.

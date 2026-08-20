@@ -1,8 +1,12 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
+import pytest
+
 from core_pdf.impl.engine.spec.s_07_content.operations import iter_content_operations
 from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
+
+pytestmark = pytest.mark.benchmark_high_impact
 
 PAGE_DICT_OBJECT = b"""\
 << /Type /Page

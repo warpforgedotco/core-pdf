@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
+
 from core_pdf import PdfDocument, serialize_document_to_pdf
 from core_pdf.impl.engine.rendering import RenderOptions
 from core_pdf.impl.engine.structured import (
@@ -96,6 +98,7 @@ def test_synthetic_pdf_serialize_small_benchmark(benchmark) -> None:
     assert result
 
 
+@pytest.mark.benchmark_high_impact
 def test_synthetic_pdf_serialize_large_benchmark(benchmark) -> None:
     result = benchmark(serialize_document_to_pdf, LARGE_DOCUMENT)
     assert result
@@ -111,6 +114,7 @@ def test_synthetic_pdf_open_and_extract_small_benchmark(benchmark) -> None:
     assert result == 5
 
 
+@pytest.mark.benchmark_high_impact
 def test_synthetic_pdf_open_and_extract_large_benchmark(benchmark) -> None:
     result = benchmark.pedantic(
         internal_open_and_extract,
@@ -121,6 +125,7 @@ def test_synthetic_pdf_open_and_extract_large_benchmark(benchmark) -> None:
     assert result == 50
 
 
+@pytest.mark.benchmark_high_impact
 def test_synthetic_pdf_full_pipeline_small_benchmark(benchmark) -> None:
     result = benchmark.pedantic(
         internal_full_pipeline,

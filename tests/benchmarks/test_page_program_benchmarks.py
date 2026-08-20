@@ -204,6 +204,7 @@ def internal_profile_page_program(
     )
 
 
+@pytest.mark.benchmark_high_impact
 @pytest.mark.parametrize("fixture_name", PAGE_CASES)
 def test_cold_page_program_construction_benchmark(benchmark, fixture_name: str) -> None:
     event_count = benchmark.pedantic(
@@ -216,6 +217,7 @@ def test_cold_page_program_construction_benchmark(benchmark, fixture_name: str) 
     assert event_count > 0
 
 
+@pytest.mark.benchmark_high_impact
 @pytest.mark.parametrize("fixture_name", PAGE_CASES)
 def test_end_to_end_page_extraction_benchmark(benchmark, fixture_name: str) -> None:
     metrics = benchmark.pedantic(
@@ -244,6 +246,7 @@ def test_end_to_end_page_extraction_benchmark(benchmark, fixture_name: str) -> N
     )
 
 
+@pytest.mark.benchmark_high_impact
 @pytest.mark.parametrize("fixture_name", TYPE3_VECTOR_OCR_CASES)
 def test_type3_vector_ocr_raster_benchmark(benchmark, fixture_name: str) -> None:
     metrics = benchmark.pedantic(
@@ -338,6 +341,7 @@ def internal_consume_image_page(path: Path) -> dict[str, Any]:
         }
 
 
+@pytest.mark.benchmark_high_impact
 @pytest.mark.parametrize("fixture_name", IMAGE_CONSUMER_CASES)
 def test_shared_image_consumers_benchmark(benchmark, fixture_name: str) -> None:
     result = benchmark.pedantic(

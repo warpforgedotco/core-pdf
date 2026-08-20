@@ -17,11 +17,14 @@ regression in exactly where that jump moves.
 from __future__ import annotations
 
 import numpy
+import pytest
 
 from core_pdf import PdfDocument
 from core_pdf.impl.engine.rendering import RenderOptions
 from core_pdf.impl.engine.writing import serialize_pdf_file
 from core_pdf.impl.objects import PdfName, PdfReference, PdfStream
+
+pytestmark = pytest.mark.benchmark_high_impact
 
 PAGE_WIDTH = 612.0
 PAGE_HEIGHT = 792.0

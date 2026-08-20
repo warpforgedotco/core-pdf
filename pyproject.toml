@@ -82,6 +82,9 @@ vendor-test = [
 testpaths = ["tests"]
 norecursedirs = ["tests/fixtures"]
 pythonpath = ["."]
+markers = [
+    "benchmark_high_impact: benchmarks run routinely in pull-request performance CI",
+]
 
 [tool.coverage.run]
 source = ["src/core_pdf"]

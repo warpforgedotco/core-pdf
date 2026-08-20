@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import numpy
+import pytest
 
 from core_pdf.impl.engine.spec.s_08_graphics import IccTransform
 from core_pdf.impl.engine.spec.s_08_graphics.icc_profiles import (
@@ -8,6 +9,8 @@ from core_pdf.impl.engine.spec.s_08_graphics.icc_profiles import (
     IccLutProfile,
     IccMatrixProfile,
 )
+
+pytestmark = pytest.mark.benchmark_high_impact
 
 
 def matrix_transform() -> IccTransform:
