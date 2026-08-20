@@ -1,4 +1,5 @@
 default_install_hook_types = ["pre-commit", "pre-push"]
+exclude = "^src/core_pdf/api/compat/_unsupported/"
 
 [[repos]]
 repo = "https://github.com/pre-commit/pre-commit-hooks"
@@ -31,7 +32,7 @@ hooks = [
 [[repos]]
 repo = "local"
 hooks = [
-  { id = "mypy", name = "mypy", entry = "uv run --group lint mypy", language = "system", pass_filenames = false, files = "^src/core_pdf/.*\\.py$", stages = [
+  { id = "mypy", name = "mypy", entry = "uv run --group lint mypy --exclude ^src/core_pdf/api/compat/_unsupported/", language = "system", pass_filenames = false, files = "^src/core_pdf/.*\\.py$", stages = [
     "pre-push",
     "manual",
   ], require_serial = true },
@@ -41,7 +42,12 @@ hooks = [
 repo = "https://github.com/astral-sh/ty-pre-commit"
 rev = "v0.0.59"
 hooks = [
-  { id = "ty", args = ["--isolated"], stages = [
+  { id = "ty", args = [
+    "--isolated",
+    "--force-exclude",
+    "--exclude",
+    "src/core_pdf/api/compat/_unsupported/",
+  ], stages = [
     "pre-commit",
     "pre-push",
     "manual",
