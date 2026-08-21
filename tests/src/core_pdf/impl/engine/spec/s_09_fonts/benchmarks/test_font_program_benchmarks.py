@@ -10,6 +10,7 @@ import pytest
 from core_pdf import PdfDocument
 from core_pdf.impl.engine.rendering import RenderOptions
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_09_fonts.decoder import FontDecoder
 from core_pdf.impl.engine.spec.s_09_fonts.font_program_opentype import OpenTypeFontProgram
 from core_pdf.impl.engine.spec.s_09_fonts.font_program_type1 import Type1FontProgram
 from core_pdf.impl.objects import PdfStream
@@ -24,6 +25,7 @@ CFF2_HEX = FIXTURES / "font_programs" / "cff2-a.otf.zlib.hex"
 def internal_type1_data() -> tuple[bytes, int | None]:
     with PdfDocument.open(TYPE1_PDF) as document:
         decoder = document.pages[0].get_page_program().products.glyphs[0].font_decoder
+        assert isinstance(decoder, FontDecoder)
         descriptor = lookup_dict_key(decoder.font, "FontDescriptor")
         assert isinstance(descriptor, dict)
         stream = lookup_dict_key(descriptor, "FontFile")
