@@ -1,11 +1,11 @@
 """Differential raster coverage for embedded PDF font programs."""
 
+import gzip
 import hashlib
 import zlib
 from pathlib import Path
 
 import numpy
-from PIL import Image
 
 from core_pdf import PdfDocument, PdfRasterFontRequest
 from core_pdf.impl.engine.rendering import RenderOptions
@@ -17,7 +17,11 @@ FIXTURES = Path(__file__).parent / "fixtures"
 
 def internal_poppler_rgb(name: str) -> numpy.ndarray:
     reference = FIXTURES / "font_programs" / "poppler" / name
-    return numpy.asarray(Image.open(reference).convert("RGB"))
+    header, dimensions, maximum, pixels = gzip.decompress(reference.read_bytes()).split(b"\n", 3)
+    assert header == b"P6"
+    assert maximum == b"255"
+    width, height = (int(value) for value in dimensions.split())
+    return numpy.frombuffer(pixels, dtype=numpy.uint8).reshape(height, width, 3)
 
 
 def test_embedded_type3_raster_matches_poppler_foreground_mask() -> None:
@@ -31,7 +35,7 @@ def test_embedded_type3_raster_matches_poppler_foreground_mask() -> None:
     foreground = numpy.any(pixels[..., :3] < 250, axis=-1)
     rows, columns = numpy.where(foreground)
 
-    poppler = internal_poppler_rgb("type3font-144dpi.png")
+    poppler = internal_poppler_rgb("type3font-144dpi.ppm.gz")
     assert poppler.shape == pixels[..., :3].shape
     color_error = numpy.abs(pixels[..., :3].astype(int) - poppler.astype(int))
 
@@ -78,7 +82,7 @@ def test_embedded_type1_uses_actual_outlines_without_fallback() -> None:
     foreground = numpy.any(pixels[..., :3] < 250, axis=-1)
     rows, columns = numpy.where(foreground)
 
-    poppler = internal_poppler_rgb("simple5-type1-72dpi.png")
+    poppler = internal_poppler_rgb("simple5-type1-72dpi.ppm.gz")
     assert poppler.shape == pixels[..., :3].shape
     color_error = numpy.abs(pixels[..., :3].astype(int) - poppler.astype(int))
 
