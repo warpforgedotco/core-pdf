@@ -345,20 +345,22 @@ def test_context_tracks_scheduler_metrics_and_worker_state() -> None:
 
 def test_document_extraction_chunks_capture_and_parses_native_pages_inline() -> None:
     runtime = ExecutionRuntime(RuntimeConfig(parent_workers=4))
-    page_count = 128
-    with PdfDocument.open(internal_many_page_pdf(page_count)) as document:
-        with runtime.task_scope(metrics=True) as context:
-            extracted = document.extract(context=context)
-            metrics = context.metrics()
+    try:
+        page_count = 128
+        with PdfDocument.open(internal_many_page_pdf(page_count)) as document:
+            with runtime.task_scope(metrics=True) as context:
+                extracted = document.extract(context=context)
+                metrics = context.metrics()
 
-    assert len(extracted.pages) == page_count
-    assert extracted.pages[0].text == "Page 0"
-    assert extracted.pages[-1].text == f"Page {page_count - 1}"
-    assert metrics.submitted == len(
-        parse_pipeline.internal_page_chunks(tuple(range(page_count)), runtime.max_workers)
-    )
-    assert metrics.submitted < page_count
-    runtime.shutdown()
+        assert len(extracted.pages) == page_count
+        assert extracted.pages[0].text == "Page 0"
+        assert extracted.pages[-1].text == f"Page {page_count - 1}"
+        assert metrics.submitted == len(
+            parse_pipeline.internal_page_chunks(tuple(range(page_count)), runtime.max_workers)
+        )
+        assert metrics.submitted < page_count
+    finally:
+        runtime.shutdown()
 
 
 def test_close_defers_resource_release_until_operation_finishes() -> None:

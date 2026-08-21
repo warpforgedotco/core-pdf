@@ -70,8 +70,6 @@ from core_pdf.impl.engine.parse.model import (
     MAX_OCR_RASTER_BYTES,
     OCR_PARALLEL_TILE_MIN_VECTOR_COMPLEXITY,
     OCR_PREFLIGHT_PIXELS,
-    OCR_RESCUE_DENSE_MIN_CHARACTERS,
-    OCR_RESCUE_DENSE_MIN_CONFIDENCE,
     OCR_RESCUE_LARGE_TEXT_HEIGHT,
     OCR_RESCUE_MIN_CONFIDENCE,
     OCR_RESCUE_MIN_WEAK_INK_RATIO,
@@ -85,6 +83,8 @@ from core_pdf.impl.engine.parse.model import (
     WorkPlan,
     internal_Candidate,
     internal_candidate,
+    internal_OCR_RESCUE_DENSE_MIN_CHARACTERS,
+    internal_OCR_RESCUE_DENSE_MIN_CONFIDENCE,
 )
 from core_pdf.impl.engine.parse.route import (
     PSM_SPARSE_TEXT,
@@ -1803,8 +1803,8 @@ def internal_adaptive_rescue_decision(
     elif coverage.mean_ink >= OCR_RESCUE_SATURATED_MEAN_INK and (
         (metrics.characters >= 1_000 and metrics.mean_confidence >= OCR_RESCUE_MIN_CONFIDENCE)
         or (
-            metrics.characters >= OCR_RESCUE_DENSE_MIN_CHARACTERS
-            and metrics.mean_confidence >= OCR_RESCUE_DENSE_MIN_CONFIDENCE
+            metrics.characters >= internal_OCR_RESCUE_DENSE_MIN_CHARACTERS
+            and metrics.mean_confidence >= internal_OCR_RESCUE_DENSE_MIN_CONFIDENCE
         )
     ):
         # A nearly solid source gives the coarse ink grid no useful localization
