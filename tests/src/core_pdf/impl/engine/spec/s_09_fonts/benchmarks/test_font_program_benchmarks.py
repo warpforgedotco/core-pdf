@@ -15,8 +15,6 @@ from core_pdf.impl.engine.spec.s_09_fonts.font_program_opentype import OpenTypeF
 from core_pdf.impl.engine.spec.s_09_fonts.font_program_type1 import Type1FontProgram
 from core_pdf.impl.objects import PdfStream
 
-pytestmark = pytest.mark.benchmark_high_impact
-
 FIXTURES = Path(__file__).parents[7] / "fixtures"
 TYPE1_PDF = FIXTURES / "pdfminer.six" / "samples" / "simple5.pdf"
 CFF2_HEX = FIXTURES / "font_programs" / "cff2-a.otf.zlib.hex"
@@ -39,12 +37,14 @@ TYPE1_DATA, TYPE1_LENGTH1 = internal_type1_data()
 CFF2_DATA = zlib.decompress(bytes.fromhex(CFF2_HEX.read_text().strip()))
 
 
+@pytest.mark.benchmark_high_impact
 def test_type1_cold_program_parse_benchmark(benchmark) -> None:
     program = benchmark(Type1FontProgram, TYPE1_DATA, length1=TYPE1_LENGTH1)
     assert program.charstrings
     assert len(program.internal_contour_cache) == 0
 
 
+@pytest.mark.benchmark_high_impact
 def test_type1_cached_glyph_reuse_benchmark(benchmark) -> None:
     program = Type1FontProgram(TYPE1_DATA, length1=TYPE1_LENGTH1)
     expected = program.glyph_contours("H")

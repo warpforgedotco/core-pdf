@@ -2,12 +2,9 @@
 from __future__ import annotations
 
 import numpy
-import pytest
 
 from core_pdf.impl.engine.spec.s_07_security.aes import AES, key_expansion
 from core_pdf.impl.engine.spec.s_07_security.rc4 import CryptRC4
-
-pytestmark = pytest.mark.benchmark_high_impact
 
 PLAINTEXT = numpy.random.default_rng(1).bytes(64 * 1024)
 RC4_KEY = b"stream-object-key-0123456789"

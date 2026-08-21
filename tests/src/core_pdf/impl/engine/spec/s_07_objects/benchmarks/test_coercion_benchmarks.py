@@ -6,8 +6,6 @@ import pytest
 from core_pdf.impl.engine.spec.s_07_objects.coercion import coerce_value, parse_float, parse_int
 from core_pdf.impl.primitives import PdfString
 
-pytestmark = pytest.mark.benchmark_high_impact
-
 NESTED_VALUE = {
     "Type": "Page",
     "MediaBox": [0, 0, 612, 792],
@@ -24,6 +22,7 @@ def decode_pdf_string(data: bytes) -> str:
     return data.decode("latin-1")
 
 
+@pytest.mark.benchmark_high_impact
 def test_parse_int_fast_path_benchmark(benchmark) -> None:
     result = benchmark(parse_int, 1234, None)
     assert result == 1234
@@ -39,6 +38,7 @@ def test_parse_float_from_bytes_benchmark(benchmark) -> None:
     assert result == 1234.5
 
 
+@pytest.mark.benchmark_high_impact
 def test_coerce_value_nested_benchmark(benchmark) -> None:
     result = benchmark(coerce_value, NESTED_VALUE, decode_pdf_string)
     assert result["Annots"][0]["Contents"] == "note-1"

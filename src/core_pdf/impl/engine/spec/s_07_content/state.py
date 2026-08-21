@@ -1918,6 +1918,8 @@ class TextState:
         font_scale = self.font_scale
         font_ascent = self.font_ascent
         font_descent = self.font_descent
+        glyph_line_width = self.transformed_line_width()
+        glyph_dash_pattern = self.transformed_dash_pattern()
 
         def glyph_transform(
             glyph_offset: float,
@@ -2136,10 +2138,10 @@ class TextState:
                     fill_opacity=self.fill_opacity,
                     stroke_color=self.stroke_color,
                     stroke_opacity=self.stroke_opacity,
-                    line_width=self.transformed_line_width(),
+                    line_width=glyph_line_width,
                     line_cap=self.line_cap,
                     line_join=self.line_join,
-                    dash_pattern=self.transformed_dash_pattern(),
+                    dash_pattern=glyph_dash_pattern,
                     blend_mode=self.blend_mode,
                     soft_mask_alpha=self.group_alpha,
                     text_object_id=self.text_object_id,

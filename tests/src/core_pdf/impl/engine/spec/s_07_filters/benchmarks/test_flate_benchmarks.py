@@ -8,8 +8,6 @@ import pytest
 
 from core_pdf.impl.engine.spec.s_07_filters.flate import apply_flate, looks_like_pdf_content_stream
 
-pytestmark = pytest.mark.benchmark_high_impact
-
 
 def build_content_stream(operations: int) -> bytes:
     rng = numpy.random.default_rng(7)
@@ -27,6 +25,7 @@ RAW_DEFLATE_COMPRESSED = zlib.compress(CONTENT_STREAM, level=6, wbits=-15)
 BINARY_NOISE = numpy.random.default_rng(9).integers(0, 256, size=1024, dtype=numpy.uint8).tobytes()
 
 
+@pytest.mark.benchmark_high_impact
 def test_apply_flate_zlib_wrapped_benchmark(benchmark) -> None:
     result = benchmark(apply_flate, FLATE_COMPRESSED, None)
     assert result == CONTENT_STREAM
@@ -42,6 +41,7 @@ def test_looks_like_pdf_content_stream_positive_benchmark(benchmark) -> None:
     assert result is True
 
 
+@pytest.mark.benchmark_high_impact
 def test_looks_like_pdf_content_stream_negative_benchmark(benchmark) -> None:
     result = benchmark(looks_like_pdf_content_stream, BINARY_NOISE)
     assert result is False

@@ -1030,6 +1030,35 @@ def test_adaptive_rescue_skips_when_primary_covers_visual_ink() -> None:
     assert decision["weak_ink_ratio"] == 0.0
 
 
+def test_adaptive_rescue_skips_saturated_ink_for_dense_reliable_text() -> None:
+    width = 60
+    height = 60
+    task = ocr.internal_OcrTask(
+        mode=3,
+        image=RasterImage(bytes(width * height), width, height, 1),
+        rectangle=(0, 0, width, height),
+        page_box=(0.0, 0.0, 60.0, 60.0),
+        resolution=72,
+    )
+    candidate = ocr.internal_candidate(
+        3,
+        ObservationBatch.from_columns(
+            ("x" * 2_000,),
+            ((0.0, 0.0, 60.0, 60.0),),
+            source=ObservationSource.OCR,
+            confidence=(92.0,),
+        ),
+        median_text_height=20.0,
+    )
+    ocr_pass = OcrPass("primary", OcrPassScope.PAGE, 1.0, (3,), adaptive_scale=True)
+
+    run, decision = ocr.internal_adaptive_rescue_decision(candidate, (task,), ocr_pass)
+
+    assert run is False
+    assert decision["reason"] == "ink-map-saturated"
+    assert decision["mean_ink"] == 1.0
+
+
 def test_estimated_text_height_uses_repeated_horizontal_bands() -> None:
     width = 120
     height = 100

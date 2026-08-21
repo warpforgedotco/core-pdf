@@ -83,6 +83,8 @@ from core_pdf.impl.engine.parse.model import (
     WorkPlan,
     internal_Candidate,
     internal_candidate,
+    internal_OCR_RESCUE_DENSE_MIN_CHARACTERS,
+    internal_OCR_RESCUE_DENSE_MIN_CONFIDENCE,
 )
 from core_pdf.impl.engine.parse.route import (
     PSM_SPARSE_TEXT,
@@ -1798,10 +1800,12 @@ def internal_adaptive_rescue_decision(
     if internal_primary_text_is_sufficient(candidate):
         run = False
         reason = "primary-text-already-large"
-    elif (
-        metrics.characters >= 1_000
-        and metrics.mean_confidence >= OCR_RESCUE_MIN_CONFIDENCE
-        and coverage.mean_ink >= OCR_RESCUE_SATURATED_MEAN_INK
+    elif coverage.mean_ink >= OCR_RESCUE_SATURATED_MEAN_INK and (
+        (metrics.characters >= 1_000 and metrics.mean_confidence >= OCR_RESCUE_MIN_CONFIDENCE)
+        or (
+            metrics.characters >= internal_OCR_RESCUE_DENSE_MIN_CHARACTERS
+            and metrics.mean_confidence >= internal_OCR_RESCUE_DENSE_MIN_CONFIDENCE
+        )
     ):
         # A nearly solid source gives the coarse ink grid no useful localization
         # signal.  Reprocessing arbitrary cells cannot target missing text.

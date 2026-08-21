@@ -11,8 +11,6 @@ from core_pdf.impl.engine.spec.s_07_objects.pdfdict import (
 )
 from core_pdf.impl.types import PdfDict
 
-pytestmark = pytest.mark.benchmark_high_impact
-
 FAST_PATH_DICT = {
     "Type": "Page",
     "MediaBox": [0, 0, 612, 792],
@@ -41,6 +39,7 @@ def identity_resolve(value: object) -> object:
     return value
 
 
+@pytest.mark.benchmark_high_impact
 def test_lookup_dict_key_fast_path_benchmark(benchmark) -> None:
     result = benchmark(lookup_dict_key, FAST_PATH_DICT, "MediaBox")
     assert result == [0, 0, 612, 792]
@@ -51,6 +50,7 @@ def test_lookup_dict_key_missing_benchmark(benchmark) -> None:
     assert result is None
 
 
+@pytest.mark.benchmark_high_impact
 def test_collect_inherited_values_benchmark(benchmark) -> None:
     result = benchmark(collect_inherited_values, PAGE_NODE, INHERITED_KEYS, identity_resolve)
     assert "Resources" in result

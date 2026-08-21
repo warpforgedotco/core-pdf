@@ -63,6 +63,9 @@ class internal_Template:
     segments: numpy.ndarray[Any, numpy.dtype[numpy.float64]]
     continuity: tuple[bool, ...]
     solver: numpy.ndarray[Any, numpy.dtype[numpy.float64]]
+    points: numpy.ndarray[Any, numpy.dtype[numpy.float64]]
+    centroid_x: float
+    centroid_y: float
 
 
 @dataclass(frozen=True, slots=True)
@@ -150,6 +153,9 @@ def internal_templates() -> internal_TemplateSet:
             segments,
             continuity,
             numpy.linalg.pinv(design),
+            source,
+            float(numpy.mean(source[:, 0])),
+            float(numpy.mean(source[:, 1])),
         )
         templates.append(template)
         delta = segments[0, 1] - segments[0, 0]
@@ -305,13 +311,17 @@ def internal_fit_match(
     )
     if actual is None:
         return None
-    source = template.segments.reshape((-1, 2))
+    source = template.points
     target = actual.reshape((-1, 2))
     coefficients = template.solver @ target
     matrix = coefficients[:2]
     translation = coefficients[2]
-    x_scale = float(numpy.linalg.norm(matrix[0]))
-    y_scale = float(numpy.linalg.norm(matrix[1]))
+    a = float(matrix[0, 0])
+    b = float(matrix[0, 1])
+    c = float(matrix[1, 0])
+    d = float(matrix[1, 1])
+    x_scale = math.hypot(a, b)
+    y_scale = math.hypot(c, d)
     scale = max(x_scale, y_scale)
     nominal_size = scale * 21.0
     if not (MIN_FONT_SIZE <= nominal_size <= MAX_FONT_SIZE):
@@ -319,17 +329,23 @@ def internal_fit_match(
     min_scale = min(x_scale, y_scale)
     if min_scale <= 0.0 or scale / min_scale > 4.0:
         return None
-    orthogonality = abs(float(matrix[0] @ matrix[1])) / (x_scale * y_scale)
+    orthogonality = abs(a * c + b * d) / (x_scale * y_scale)
     if orthogonality > 0.25:
         return None
     predicted = source @ matrix + translation
-    error = float(numpy.max(numpy.linalg.norm(predicted - target, axis=1))) / scale
+    residual = predicted - target
+    error = (
+        math.sqrt(
+            float(numpy.max(residual[:, 0] * residual[:, 0] + residual[:, 1] * residual[:, 1]))
+        )
+        / scale
+    )
     if error > FIT_ERROR:
         return None
-    try:
-        inverse = numpy.linalg.inv(matrix)
-    except numpy.linalg.LinAlgError:
+    determinant = a * d - b * c
+    if determinant == 0.0:
         return None
+    inverse = numpy.asarray(((d, -b), (-c, a)), dtype=numpy.float64) / determinant
     transform = internal_Transform(matrix, inverse, scale, x_scale, y_scale)
     return internal_Match(
         template.char,
@@ -358,11 +374,26 @@ def internal_fixed_template_match(
     actual = internal_window(segments, start, size, style, point_data, style_data)
     if actual is None:
         return None
-    source = template.segments.reshape((-1, 2))
+    source = template.points
     target = actual.reshape((-1, 2))
-    translation = numpy.mean(target - source @ transform.matrix, axis=0)
+    target_x = float(numpy.mean(target[:, 0]))
+    target_y = float(numpy.mean(target[:, 1]))
+    matrix = transform.matrix
+    translation = numpy.asarray(
+        (
+            target_x - template.centroid_x * matrix[0, 0] - template.centroid_y * matrix[1, 0],
+            target_y - template.centroid_x * matrix[0, 1] - template.centroid_y * matrix[1, 1],
+        ),
+        dtype=numpy.float64,
+    )
     predicted = source @ transform.matrix + translation
-    error = float(numpy.max(numpy.linalg.norm(predicted - target, axis=1))) / transform.scale
+    residual = predicted - target
+    error = (
+        math.sqrt(
+            float(numpy.max(residual[:, 0] * residual[:, 0] + residual[:, 1] * residual[:, 1]))
+        )
+        / transform.scale
+    )
     if error > FIXED_ERROR:
         return None
     return internal_Match(
@@ -392,14 +423,15 @@ def internal_fixed_match(
     # Avoid numpy.asarray for 2-element vector: dx*dx_inv + dy*dy_inv
     dx = first.x1 - first.x0
     dy = first.y1 - first.y0
-    raw_delta = dx * transform.inverse[0] + dy * transform.inverse[1]
-    rounded_delta = numpy.rint(raw_delta)
-    if float(numpy.max(numpy.abs(raw_delta - rounded_delta))) > 0.20:
+    inverse = transform.inverse
+    raw_dx = dx * inverse[0, 0] + dy * inverse[1, 0]
+    raw_dy = dx * inverse[0, 1] + dy * inverse[1, 1]
+    rounded_dx = round(raw_dx)
+    rounded_dy = round(raw_dy)
+    if max(abs(raw_dx - rounded_dx), abs(raw_dy - rounded_dy)) > 0.20:
         return None
     candidates: list[internal_Match] = []
-    for template in templates.by_first_delta.get(
-        (int(rounded_delta[0]), int(rounded_delta[1])), ()
-    ):
+    for template in templates.by_first_delta.get((rounded_dx, rounded_dy), ()):
         candidate = internal_fixed_template_match(
             segments,
             continuity,

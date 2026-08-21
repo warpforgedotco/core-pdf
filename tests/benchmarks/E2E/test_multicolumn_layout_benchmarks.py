@@ -21,8 +21,6 @@ from core_pdf.impl.engine.parse.layout import internal_reading_order_evidence
 from core_pdf.impl.engine.parse.model import ParsedBlock, ParsedLine
 from core_pdf.impl.engine.structured import Block, BlockKind, Document, Page, TextLine
 
-pytestmark = pytest.mark.benchmark_high_impact
-
 PAGE_WIDTH = 612.0
 PAGE_HEIGHT = 792.0
 MARGIN = 36.0
@@ -85,6 +83,7 @@ def internal_open_and_extract(pdf_bytes: bytes) -> int:
         return len(extracted.pages)
 
 
+@pytest.mark.benchmark_high_impact
 def test_multicolumn_layout_reconstruction_benchmark(benchmark) -> None:
     result = benchmark.pedantic(
         internal_open_and_extract,

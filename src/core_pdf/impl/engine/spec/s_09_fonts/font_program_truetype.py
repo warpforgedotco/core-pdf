@@ -124,16 +124,19 @@ class TrueTypeFontProgram:
         return bitmap
 
     def glyph_bbox(self, code: int) -> tuple[float, float, float, float] | None:
-        contours = self.internal_glyph_contours_for_gid(self.glyph_id_for_code(code))
-        if not contours:
-            return None
-        points = [point for contour in contours for point in contour]
-        if not points:
+        gid = self.glyph_id_for_code(code)
+        try:
+            glyph_name = self.font.getGlyphName(gid)
+            bbox = internal_glyph_bbox(self.font["glyf"], glyph_name)
+        except FONT_PROGRAM_ERRORS:
+            bbox = None
+        if bbox is None:
             return None
         scale = 1000.0 / self.units_per_em if self.units_per_em else 1.0
-        xs = [point[0] * scale for point in points]
-        ys = [point[1] * scale for point in points]
-        return (min(xs), min(ys), max(xs), max(ys))
+        if scale == 1.0:
+            return bbox
+        x0, y0, x1, y1 = bbox
+        return (x0 * scale, y0 * scale, x1 * scale, y1 * scale)
 
     def glyph_contours(self, gid: int) -> list[list[Point]]:
         return [list(contour) for contour in self.internal_glyph_contours_for_gid(gid)]

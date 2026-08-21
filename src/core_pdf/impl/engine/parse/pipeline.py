@@ -7,6 +7,7 @@ import math
 import time
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Sequence
+from concurrent.futures import Future
 from dataclasses import replace
 from typing import Any, cast
 
@@ -982,6 +983,69 @@ def internal_prepare_document_stroked_mappings(
     return len(seed_indexes), reused_pages
 
 
+def internal_page_chunks(
+    pages: tuple[Any, ...],
+    worker_count: int,
+) -> tuple[tuple[int, tuple[Any, ...]], ...]:
+    """Bound scheduler overhead while retaining enough chunks for load balancing."""
+    chunk_size = max(1, min(32, math.ceil(len(pages) / max(1, worker_count * 4))))
+    return tuple(
+        (start, pages[start : start + chunk_size]) for start in range(0, len(pages), chunk_size)
+    )
+
+
+def internal_capture_document_pages(
+    pages: tuple[Any, ...],
+    context: TaskScope,
+) -> tuple[CapturedPage, ...]:
+    captures_by_index: list[CapturedPage | None] = [None] * len(pages)
+
+    def capture_chunk(
+        indexed_pages: tuple[int, tuple[Any, ...]],
+    ) -> tuple[int, tuple[CapturedPage, ...]]:
+        start, chunk = indexed_pages
+        captures: list[CapturedPage] = []
+        for page in chunk:
+            context.raise_if_cancelled()
+            captures.append(page_extraction(page).capture())
+        return start, tuple(captures)
+
+    chunks = internal_page_chunks(pages, context.runtime.max_workers)
+    for completed in context.map_completed(capture_chunk, chunks, stage=WorkStage.PAGE):
+        start, captures = completed.value
+        captures_by_index[start : start + len(captures)] = captures
+    return tuple(capture for capture in captures_by_index if capture is not None)
+
+
+def internal_parse_document_pages(
+    pages: tuple[Any, ...],
+    context: TaskScope,
+) -> tuple[ParsedPage, ...]:
+    parsed_by_index: list[ParsedPage | None] = [None] * len(pages)
+    futures: dict[int, Future[ParsedPage]] = {}
+    direct_indexes: list[int] = []
+    for index, page in enumerate(pages):
+        extraction = page_extraction(page)
+        plan = extraction.plan()
+        requires_ocr = extraction.internal_ocr is None and (
+            bool(plan.ocr_passes) or plan.verify_hidden_text
+        )
+        if requires_ocr:
+            futures[index] = context.submit(parse_page, page, context, stage=WorkStage.PAGE)
+        else:
+            direct_indexes.append(index)
+    try:
+        for index in direct_indexes:
+            context.raise_if_cancelled()
+            parsed_by_index[index] = parse_page(pages[index], context)
+        for index, future in futures.items():
+            parsed_by_index[index] = future.result()
+    finally:
+        for future in futures.values():
+            future.cancel()
+    return tuple(page for page in parsed_by_index if page is not None)
+
+
 def parse_document(
     document: Any,
     context: TaskScope,
@@ -992,25 +1056,11 @@ def parse_document(
     if len(pages) == 1:
         parsed_pages = (parse_page(pages[0], context),)
     else:
-        captures_by_index: list[CapturedPage | None] = [None] * len(pages)
-        for capture_completed in context.map_completed(
-            lambda page: page_extraction(page).capture(),
-            pages,
-            stage=WorkStage.PAGE,
-        ):
-            captures_by_index[capture_completed.index] = capture_completed.value
-        captures = tuple(capture for capture in captures_by_index if capture is not None)
+        captures = internal_capture_document_pages(pages, context)
         if len(captures) == len(pages):
             internal_prepare_document_font_mappings(pages, captures, context)
             internal_prepare_document_stroked_mappings(pages, captures, context)
-        parsed_by_index: list[ParsedPage | None] = [None] * len(pages)
-        for parse_completed in context.map_completed(
-            lambda page: parse_page(page, context),
-            pages,
-            stage=WorkStage.PAGE,
-        ):
-            parsed_by_index[parse_completed.index] = parse_completed.value
-        parsed_pages = tuple(page for page in parsed_by_index if page is not None)
+        parsed_pages = internal_parse_document_pages(pages, context)
     diagnostics = tuple(
         Diagnostic("parse", message, page_number=page.page_number)
         for page in parsed_pages

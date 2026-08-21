@@ -238,6 +238,25 @@ def test_stroked_vector_text_uses_one_packed_seed_raster() -> None:
     assert {"D5", "D6", "D7", "D10", "D12", "R16", "R32", "1k"} <= set(text.split())
 
 
+def test_dense_scan_skips_unproductive_adaptive_rescue() -> None:
+    fixture = (
+        Path(__file__).parent / "fixtures" / "SCORE-Bench" / "src" / "153rd-Omaha-Pow-Wow-p001.pdf"
+    )
+    with PdfDocument.open(fixture) as document:
+        text = document.pages[0].extract().text
+        cache = document.pages[0].extraction_cache
+        assert cache is not None
+        diagnostics = cast(tuple[dict[str, object], ...], cache["ocr_pass_diagnostics"])
+
+    primary = diagnostics[0]
+    decision = cast(dict[str, object], primary["adaptive_rescue_decision"])
+    assert "153rd Annual" in text
+    assert primary["adaptive_rescue"] is None
+    assert decision["reason"] == "ink-map-saturated"
+    assert cast(int, decision["characters"]) >= 2_000
+    assert cast(float, decision["mean_confidence"]) >= 92.0
+
+
 def test_layered_soft_mask_scan_uses_one_composited_word_pass() -> None:
     fixture = (
         Path(__file__).parent

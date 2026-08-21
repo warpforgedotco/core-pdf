@@ -83,6 +83,63 @@ def test_glyph_contours_reuses_glyph_set_and_returns_fresh_lists() -> None:
     assert len(font.internal_glyph_contour_cache) == 1
 
 
+def test_glyph_bbox_uses_scaled_glyf_bounds_without_decomposing_outline() -> None:
+    class Glyph:
+        numberOfContours = -1
+        xMin = -20
+        yMin = -40
+        xMax = 600
+        yMax = 1400
+
+    class Font:
+        def getGlyphName(self, gid: int) -> str:
+            assert gid == 7
+            return "composite"
+
+        def __getitem__(self, key: str) -> dict[str, Glyph]:
+            assert key == "glyf"
+            return {"composite": Glyph()}
+
+    font = object.__new__(TrueTypeFontProgram)
+    font.cid_to_gid = b"\x00\x07"
+    font.cmap = {}
+    font.font = cast(Any, Font())
+    font.units_per_em = 2000.0
+    font.internal_glyph_contour_cache = {}
+
+    assert font.glyph_bbox(0) == (-10.0, -20.0, 300.0, 700.0)
+    assert font.internal_glyph_contour_cache == {}
+
+
+def test_glyph_bbox_returns_none_for_empty_or_malformed_glyph() -> None:
+    class EmptyGlyph:
+        numberOfContours = 0
+
+    class Font:
+        def __init__(self, glyph: object) -> None:
+            self.glyph = glyph
+
+        def getGlyphName(self, gid: int) -> str:
+            assert gid == 0
+            return "empty"
+
+        def __getitem__(self, key: str) -> dict[str, object]:
+            assert key == "glyf"
+            return {"empty": self.glyph}
+
+    font = object.__new__(TrueTypeFontProgram)
+    font.cid_to_gid = None
+    font.cmap = {}
+    font.units_per_em = 1000.0
+    font.font = cast(Any, Font(EmptyGlyph()))
+
+    assert font.glyph_bbox(0) is None
+
+    font.font = cast(Any, Font(object()))
+
+    assert font.glyph_bbox(0) is None
+
+
 def test_corrupt_font_tables_do_not_escape_as_assertion_errors() -> None:
     """fontTools guards malformed tables with bare `assert`, not just raises.
 

@@ -15,8 +15,6 @@ from core_pdf.impl.engine.spec.s_09_fonts.glyphs import (
 )
 from core_pdf.impl.engine.spec.s_09_fonts.raster_kernel import rasterize_contours
 
-pytestmark = pytest.mark.benchmark_high_impact
-
 VARIED_GLYPH_NAMES = (
     "A",
     "space",
@@ -97,6 +95,7 @@ LEFT_CELLS, LEFT_BITMAPS, LEFT_ASPECTS, LEFT_CONTOURS = build_feature_set(seed=1
 RIGHT_CELLS, RIGHT_BITMAPS, RIGHT_ASPECTS, RIGHT_CONTOURS = build_feature_set(seed=11, count=30)
 
 
+@pytest.mark.benchmark_high_impact
 def test_rasterize_glyph_contours_benchmark(benchmark) -> None:
     result = benchmark(rasterize_contours, GLYPH_CONTOURS, width=24, height=32)
     assert any(result)
@@ -122,6 +121,7 @@ def test_feature_distance_pair_benchmark(benchmark) -> None:
     assert result >= 0.0
 
 
+@pytest.mark.benchmark_high_impact
 def test_feature_distance_matrix_benchmark(benchmark) -> None:
     result = benchmark(
         feature_distance_matrix,
