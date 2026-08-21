@@ -8,18 +8,15 @@ import re
 import unicodedata
 from collections import Counter, defaultdict
 from collections.abc import Iterable
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from typing import cast
 
 import numpy
 
 from core_pdf.impl.engine.array_views import finite_median
-from core_pdf.impl.engine.layout.models import TextRun
+from core_pdf.impl.engine.layout.models import TextRun, reconstruct_cached_layout_line_text
 from core_pdf.impl.engine.layout.spatial import (
     SpatialIndex,
-)
-from core_pdf.impl.engine.layout.text_lines import (
-    reconstruct_layout_line_text,
 )
 from core_pdf.impl.engine.parse.model import (
     ObservationBatch,
@@ -37,9 +34,23 @@ internal_NATIVE_DOTTED_LEADER_RE = re.compile(r"\.{2,}")
 internal_NATIVE_DASH_RULE_RE = re.compile(r"(?:\s*-\s*){2,}")
 
 
-def internal_line_group_indexes(observations: ObservationBatch) -> list[list[int]]:
+@dataclass(frozen=True, slots=True)
+class internal_LineGroupPlan:
+    indexes: numpy.ndarray
+    starts: numpy.ndarray
+    stops: numpy.ndarray
+
+
+@dataclass(frozen=True, slots=True)
+class internal_BuiltLines:
+    lines: tuple[ParsedLine, ...]
+    boxes: numpy.ndarray
+
+
+def internal_line_group_indexes(observations: ObservationBatch) -> internal_LineGroupPlan:
     if not len(observations):
-        return []
+        empty = numpy.empty(0, dtype=numpy.int64)
+        return internal_LineGroupPlan(empty, empty, empty)
     visible_indexes = numpy.flatnonzero(observations.visible)
     indexes = (
         visible_indexes
@@ -67,12 +78,14 @@ def internal_line_group_indexes(observations: ObservationBatch) -> list[list[int
             | (rotations[1:] != rotations[:-1])
             | (numpy.abs(centers[1:] - centers[:-1]) > tolerance)
         )
-    # Split at the already-vectorized break positions instead of rebuilding
-    # every group through a Python loop over all observations.
-    return [group.tolist() for group in numpy.split(indexes, numpy.flatnonzero(breaks)[1:])]
+    starts = numpy.flatnonzero(breaks).astype(numpy.int64, copy=False)
+    stops = numpy.empty_like(starts)
+    stops[:-1] = starts[1:]
+    stops[-1] = len(indexes)
+    return internal_LineGroupPlan(indexes, starts, stops)
 
 
-def internal_group_text(observations: ObservationBatch, indexes: list[int]) -> str:
+def internal_group_text(observations: ObservationBatch, indexes: numpy.ndarray) -> str:
     if any(int(observations.source[index]) == int(ObservationSource.OCR) for index in indexes):
         rotation = int(observations.rotation[indexes[0]]) % 360
 
@@ -96,11 +109,11 @@ def internal_group_text(observations: ObservationBatch, indexes: list[int]) -> s
             for index in indexes
             for character in observations.text[index]
         )
-        indexes = sorted(indexes, key=baseline_position, reverse=rtl > ltr)
+        indexes = numpy.asarray(sorted(indexes, key=baseline_position, reverse=rtl > ltr))
     references = tuple(observations.references[index] for index in indexes)
     if references and all(reference is not None for reference in references):
         runs = cast(list[TextRun], list(references))
-        return reconstruct_layout_line_text(runs).text.strip()
+        return reconstruct_cached_layout_line_text(runs).text.strip()
     parts: list[str] = []
     for index in indexes:
         text = observations.text[index].strip()
@@ -141,7 +154,7 @@ def internal_looks_like_native_artifact(text: str) -> bool:
 
 def internal_repeated_native_label_tokens(
     observations: ObservationBatch,
-    indexes: list[int],
+    indexes: numpy.ndarray,
 ) -> frozenset[str]:
     counts: Counter[str] = Counter()
     for index in indexes:
@@ -173,37 +186,55 @@ def internal_color_is_emphasis(color: object) -> bool:
     return max(components) - min(components) >= 0.15
 
 
-def internal_build_lines(observations: ObservationBatch) -> tuple[ParsedLine, ...]:
+def internal_build_lines(observations: ObservationBatch) -> internal_BuiltLines:
     line_groups = internal_line_group_indexes(observations)
+    if not len(line_groups.starts):
+        return internal_BuiltLines((), numpy.empty((0, 4), dtype=numpy.float32))
+    selected = line_groups.indexes
+    starts = line_groups.starts
+    selected_boxes = observations.bbox[selected]
+    group_boxes = numpy.column_stack(
+        (
+            numpy.minimum.reduceat(selected_boxes[:, 0], starts),
+            numpy.minimum.reduceat(selected_boxes[:, 1], starts),
+            numpy.maximum.reduceat(selected_boxes[:, 2], starts),
+            numpy.maximum.reduceat(selected_boxes[:, 3], starts),
+        )
+    ).astype(numpy.float32, copy=False)
+    selected_sources = observations.source[selected]
+    source_minimum = numpy.minimum.reduceat(selected_sources, starts)
+    source_maximum = numpy.maximum.reduceat(selected_sources, starts)
+    group_sequences = numpy.minimum.reduceat(observations.sequence[selected], starts)
     repeated_native_labels = internal_repeated_native_label_tokens(
         observations,
-        [index for group in line_groups for index in group],
+        selected,
     )
     output: list[ParsedLine] = []
-    for indexes in line_groups:
+    output_boxes: list[numpy.ndarray] = []
+    for group_index, (start, stop) in enumerate(
+        zip(line_groups.starts, line_groups.stops, strict=True)
+    ):
+        indexes = selected[int(start) : int(stop)]
         text = internal_group_text(observations, indexes)
         if not text:
             continue
-        if all(
-            int(source) == int(ObservationSource.NATIVE) for source in observations.source[indexes]
-        ) and internal_looks_like_native_artifact(text):
+        all_native = (
+            source_minimum[group_index]
+            == source_maximum[group_index]
+            == int(ObservationSource.NATIVE)
+        )
+        if all_native and internal_looks_like_native_artifact(text):
             continue
         if (
             repeated_native_labels
-            and all(
-                int(source) == int(ObservationSource.NATIVE)
-                for source in observations.source[indexes]
-            )
+            and all_native
             and internal_is_repeated_native_label(text, repeated_native_labels)
         ):
             continue
-        if all(
-            int(source) == int(ObservationSource.NATIVE) for source in observations.source[indexes]
-        ):
+        if all_native:
             text = internal_clean_native_punctuation_runs(text)
             if not text:
                 continue
-        boxes = observations.bbox[indexes]
         confidences = observations.confidence[indexes]
         font_sizes = observations.font_size[indexes]
         finite_confidences = confidences[numpy.isfinite(confidences)]
@@ -251,27 +282,29 @@ def internal_build_lines(observations: ObservationBatch) -> tuple[ParsedLine, ..
         spans = tuple(span_values)
         if not spans or "".join(span.text for span in spans) != text:
             spans = ()
-        sources = {int(value) for value in observations.source[indexes]}
-        if sources == {int(ObservationSource.NATIVE)}:
+        source_low = int(source_minimum[group_index])
+        source_high = int(source_maximum[group_index])
+        if source_low == source_high == int(ObservationSource.NATIVE):
             source = "native"
-        elif sources == {int(ObservationSource.OCR)}:
+        elif source_low == source_high == int(ObservationSource.OCR):
             source = "ocr"
         else:
             source = "hybrid"
+        group_box = group_boxes[group_index]
         output.append(
             ParsedLine(
                 text=text,
                 bbox=(
-                    float(numpy.min(boxes[:, 0])),
-                    float(numpy.min(boxes[:, 1])),
-                    float(numpy.max(boxes[:, 2])),
-                    float(numpy.max(boxes[:, 3])),
+                    float(group_box[0]),
+                    float(group_box[1]),
+                    float(group_box[2]),
+                    float(group_box[3]),
                 ),
                 source=source,
                 confidence=(
                     float(numpy.mean(finite_confidences)) if len(finite_confidences) else None
                 ),
-                sequence=int(numpy.min(observations.sequence[indexes])),
+                sequence=int(group_sequences[group_index]),
                 rotation=int(observations.rotation[indexes[0]]),
                 font_size=(finite_median(finite_font_sizes) if len(finite_font_sizes) else None),
                 bold=bold,
@@ -279,7 +312,13 @@ def internal_build_lines(observations: ObservationBatch) -> tuple[ParsedLine, ..
                 spans=spans,
             )
         )
-    return tuple(output)
+        output_boxes.append(group_box)
+    boxes = (
+        numpy.asarray(output_boxes, dtype=numpy.float32).reshape((-1, 4))
+        if output_boxes
+        else numpy.empty((0, 4), dtype=numpy.float32)
+    )
+    return internal_BuiltLines(tuple(output), boxes)
 
 
 def internal_best_projection_gap(
@@ -926,11 +965,12 @@ def layout_blocks(
     page_height: float = 0.0,
 ) -> tuple[ParsedBlock, ...]:
     """Reduce fused observations into geometrically ordered, structured blocks."""
-    lines = internal_build_lines(observations)
+    built_lines = internal_build_lines(observations)
+    lines = built_lines.lines
     if not lines:
         return ()
     boxes = internal_display_boxes(
-        numpy.asarray(tuple(line.bbox for line in lines), dtype=numpy.float32),
+        built_lines.boxes,
         rotation,
         page_width,
         page_height,
@@ -977,7 +1017,12 @@ def layout_blocks(
     blocks = [
         ParsedBlock(
             lines=tuple(lines[int(index)] for index in region),
-            bbox=internal_block_bbox(tuple(lines[int(index)] for index in region)),
+            bbox=(
+                float(numpy.min(built_lines.boxes[region, 0])),
+                float(numpy.min(built_lines.boxes[region, 1])),
+                float(numpy.max(built_lines.boxes[region, 2])),
+                float(numpy.max(built_lines.boxes[region, 3])),
+            ),
         )
         for region in regions
     ]
