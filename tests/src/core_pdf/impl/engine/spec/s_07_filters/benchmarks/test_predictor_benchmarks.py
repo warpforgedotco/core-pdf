@@ -10,8 +10,6 @@ from core_pdf.impl.engine.spec.s_07_filters.predictors import (
     apply_tiff_predictor,
 )
 
-pytestmark = pytest.mark.benchmark_high_impact
-
 COLUMNS = 512
 COLORS = 3
 ROWS = 256
@@ -75,6 +73,7 @@ def test_png_predictor_average_benchmark(benchmark) -> None:
     assert len(result) == ROWS * ROW_LENGTH
 
 
+@pytest.mark.benchmark_high_impact
 def test_png_predictor_paeth_benchmark(benchmark) -> None:
     result = benchmark(apply_png_predictor, PNG_PAETH, PNG_PARAMS)
     assert len(result) == ROWS * ROW_LENGTH
@@ -90,6 +89,7 @@ def test_tiff_predictor_4bit_scalar_benchmark(benchmark) -> None:
     assert result
 
 
+@pytest.mark.benchmark_high_impact
 def test_tiff_predictor_4bit_numpy_benchmark(benchmark) -> None:
     result = benchmark(apply_tiff_predictor, TIFF_4BIT_DATA_LARGE, TIFF_4BIT_PARAMS_LARGE)
     assert result

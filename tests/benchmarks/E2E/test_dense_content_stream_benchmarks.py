@@ -24,8 +24,6 @@ from core_pdf.impl.engine.rendering import RenderOptions
 from core_pdf.impl.engine.writing import serialize_pdf_file
 from core_pdf.impl.objects import PdfName, PdfReference, PdfStream
 
-pytestmark = pytest.mark.benchmark_high_impact
-
 PAGE_WIDTH = 612.0
 PAGE_HEIGHT = 792.0
 RECT_SIZE = 8.0
@@ -108,6 +106,7 @@ def test_dense_content_stream_moderate_benchmark(benchmark) -> None:
     assert result["raster_pixels"] > 0
 
 
+@pytest.mark.benchmark_high_impact
 def test_dense_content_stream_dense_benchmark(benchmark) -> None:
     result = benchmark.pedantic(
         internal_open_extract_render,

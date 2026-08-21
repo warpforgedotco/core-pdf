@@ -172,12 +172,13 @@ uv run --group benchmark pytest --benchmark-only -m benchmark_high_impact \
   --benchmark-compare=baseline                                                # after
 ```
 
-The high-impact marker is the routine local comparison tier. Pull-request CI runs its inexpensive
-spec hot paths, focused scaling stresses, and one hybrid real-PDF end-to-end sentinel, while
-deferring the synthetic-document and page-program modules because their OCR and raster workloads
-dominate wall time. Run `uv run --group benchmark pytest --benchmark-only` when an exhaustive local
-comparison is justified. The same complete inventory, including the deferred modules, runs weekly
-in CI; the 224-document real-PDF sweep is divided into eight deterministic shards.
+The high-impact marker is the routine local comparison tier. Pull-request CI runs 27 representative
+spec hot paths, focused scaling stresses, and one hybrid real-PDF end-to-end sentinel. It defers
+redundant scale points, pure-Python crypto and predictor variants, synthetic-document and
+page-program modules, and other expensive component permutations whose CodSpeed instrumentation
+dominates wall time. Run `uv run --group benchmark pytest --benchmark-only` when an exhaustive local
+comparison is justified. The same complete inventory, including every deferred benchmark, runs
+weekly in CI; the 224-document real-PDF sweep is divided into eight deterministic shards.
 
 The benchmark suite asserts **invariants as well as timings** — that a page is extracted in a
 single content-stream pass, that an image is decoded exactly once, that Type3 glyph caching

@@ -1,14 +1,10 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
-import pytest
-
 from core_pdf.impl.engine.spec.s_07_document.name_trees import (
     iter_name_tree_items,
     iter_number_tree_items,
 )
-
-pytestmark = pytest.mark.benchmark_high_impact
 
 LEAF_FANOUT = 8
 INTERMEDIATE_FANOUT = 8

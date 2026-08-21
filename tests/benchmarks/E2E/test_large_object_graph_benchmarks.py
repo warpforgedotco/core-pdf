@@ -15,8 +15,6 @@ from core_pdf import PdfDocument
 from core_pdf.impl.engine.writing import serialize_pdf_file
 from core_pdf.impl.objects import PdfName, PdfReference, PdfStream
 
-pytestmark = pytest.mark.benchmark_high_impact
-
 FONT_OBJECT_NUMBER = 3
 
 
@@ -83,6 +81,7 @@ def test_large_page_tree_open_benchmark(benchmark) -> None:
     assert result == OPEN_PAGE_COUNT
 
 
+@pytest.mark.benchmark_high_impact
 def test_large_page_tree_extract_all_benchmark(benchmark) -> None:
     result = benchmark.pedantic(
         internal_open_and_extract_all,

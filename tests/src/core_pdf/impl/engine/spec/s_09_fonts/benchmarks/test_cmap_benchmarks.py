@@ -9,8 +9,6 @@ from core_pdf.impl.engine.spec.s_09_fonts.cmap_tokenizer import cmap_tokens, cma
 from core_pdf.impl.engine.spec.s_09_fonts.cmap_tounicode import ToUnicodeCMap
 from core_pdf.impl.engine.spec.s_09_fonts.cmap_widths import parse_cid_widths
 
-pytestmark = pytest.mark.benchmark_high_impact
-
 
 def cmap_program() -> bytes:
     return b"""\
@@ -52,11 +50,13 @@ def test_token_collection_benchmark(benchmark) -> None:
     assert result
 
 
+@pytest.mark.benchmark_high_impact
 def test_tounicode_construction_benchmark(benchmark) -> None:
     result = benchmark(ToUnicodeCMap, TO_UNICODE_DATA)
     assert result.decode(b"\x01")
 
 
+@pytest.mark.benchmark_high_impact
 def test_cmap_construction_benchmark(benchmark) -> None:
     result = benchmark(CMapDecoder, CMAP_DATA)
     assert result.decode_entries(b"\x01") == [(b"\x01", 1)]
@@ -67,6 +67,7 @@ def test_tounicode_decode_benchmark(benchmark) -> None:
     assert result
 
 
+@pytest.mark.benchmark_high_impact
 def test_cmap_decode_benchmark(benchmark) -> None:
     result = benchmark(CMAP.decode_entries, DECODE_DATA)
     assert result
@@ -84,6 +85,7 @@ def test_warm_cid_unicode_lookup_benchmark(benchmark) -> None:
     assert result is not None
 
 
+@pytest.mark.benchmark_high_impact
 def test_width_lookup_benchmark(benchmark) -> None:
     result = benchmark(WIDTH_MAP.fast_256, 1000.0)
     assert len(result) == 256
