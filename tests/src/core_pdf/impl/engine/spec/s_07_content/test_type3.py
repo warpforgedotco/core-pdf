@@ -1,6 +1,8 @@
 from types import SimpleNamespace
 from typing import Any, cast
 
+import pytest
+
 from core_pdf.impl.engine.spec.s_07_content.capture import type3_glyph_names
 from core_pdf.impl.engine.spec.s_07_content.state import TextState
 from core_pdf.impl.engine.spec.s_09_fonts.decoder import FontDecoder, Type3CharProcProgram
@@ -91,3 +93,25 @@ def test_type3_char_proc_caches_unsupported_stream_fallback() -> None:
     assert decoder.type3_charproc_compiled_programs == 0
     assert decoder.type3_charproc_unsafe_fallbacks == 2
     assert not state.active_streams
+
+
+@pytest.mark.parametrize(
+    ("metrics_operator", "expected_fill"),
+    [
+        ("500 0 d0", (1.0, 0.0, 0.0)),
+        ("500 0 0 0 1 1 d1", (0.0, 1.0, 0.0)),
+    ],
+)
+def test_type3_colorized_and_uncolored_glyph_semantics(
+    metrics_operator: str, expected_fill: tuple[float, ...]
+) -> None:
+    """Honor d0 colors while d1 glyphs inherit the text fill color."""
+    stream = PdfStream(raw_data=(f"{metrics_operator} 1 0 0 rg 0 0 1 1 re f").encode("ascii"))
+    state, decoder = internal_type3_state(stream)
+    state.fill_color = (0.0, 1.0, 0.0)
+
+    state._render_type3_glyphs_impl(b"A", decoder)
+
+    assert len(state.drawings) == 1
+    assert state.drawings[0].fill == expected_fill
+    assert state.type3_uncolored is False

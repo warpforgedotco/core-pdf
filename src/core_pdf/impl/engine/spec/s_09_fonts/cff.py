@@ -60,7 +60,7 @@ def cff_font_for_pdf_font(font: dict[str, Any]) -> CFFFont | None:
     if not isinstance(font_file, PdfStream):
         return None
     subtype = normalize_pdf_name(lookup_dict_key(font_file.dictionary, "Subtype"))
-    if descendant is None and subtype != "Type1C":
+    if descendant is None and subtype not in {"Type1C", "OpenType"}:
         return None
     font_data: bytes | None = font_file.data
     if subtype == "OpenType":
@@ -118,7 +118,7 @@ def internal_extract_cff_table(data: bytes) -> bytes | None:
         if reader is None:
             return None
         table = reader.tables.get("CFF ")
-        return getattr(table, "data") if table is not None else None
+        return table.loadData(reader.file) if table is not None else None
     except FONT_PROGRAM_ERRORS:
         return None
     finally:
