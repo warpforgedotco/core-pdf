@@ -59,6 +59,26 @@ def test_emit_attaches_caption_and_section_to_table() -> None:
     assert any(block.kind is BlockKind.HEADING for block in page.blocks)
 
 
+def test_emit_preserves_structured_reading_order_diagnostic() -> None:
+    parsed = ParsedPage(
+        page_number=2,
+        width=200.0,
+        height=300.0,
+        rotation=0,
+        route=PageRoute.NATIVE,
+        blocks=(block("Mixed direction", (10.0, 250.0, 100.0, 270.0)),),
+        diagnostics=("reading-order-ambiguous",),
+    )
+
+    page = emit_page(parsed)
+
+    assert len(page.diagnostics) == 1
+    diagnostic = page.diagnostics[0]
+    assert diagnostic.code == "reading-order-ambiguous"
+    assert diagnostic.page_number == 2
+    assert "differently rotated text" in diagnostic.message
+
+
 def test_line_decoration_flags_support_partial_underlines() -> None:
     line = ParsedLine("prefix B suffix", (10.0, 100.0, 110.0, 110.0), "native")
     drawing = type("Drawing", (), {"kind": "fill", "bbox": (50.0, 99.5, 56.0, 100.5)})()

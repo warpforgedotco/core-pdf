@@ -1131,5 +1131,18 @@ def assemble_page(
         figures=tuple(ordered_figures),
         header="\n".join(header_parts),
         footer="\n".join(footer_parts),
+        diagnostics=tuple(
+            Diagnostic(
+                code=message,
+                message=(
+                    "Reading order is ambiguous because differently rotated text shares "
+                    "one layout block."
+                    if message == "reading-order-ambiguous"
+                    else message
+                ),
+                page_number=parsed.page_number,
+            )
+            for message in parsed.diagnostics
+        ),
     )
     return assembly.page()

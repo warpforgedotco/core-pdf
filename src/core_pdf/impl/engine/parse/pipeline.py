@@ -343,6 +343,11 @@ class internal_PageExtraction:
                 internal_annotate_table_associations(table, observations) for table in tables
             ),
             figures=figures,
+            diagnostics=(
+                ("reading-order-ambiguous",)
+                if order_evidence is not None and order_evidence.ambiguous
+                else ()
+            ),
             metrics={
                 "route": plan.route.value,
                 "preflight_class": preflight.recommendation.page_class.value,
