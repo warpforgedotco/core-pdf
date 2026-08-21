@@ -15,7 +15,6 @@ from core_pdf.impl.engine.spec.s_09_fonts.font_program_truetype import (
 from core_pdf.impl.engine.spec.s_09_fonts.raster_kernel import Point
 from core_pdf.impl.objects import PdfStream
 
-
 internal_LEN_IV_RE = re.compile(rb"/lenIV\s+(-?\d+)\s+def\b")
 internal_FONT_MATRIX_RE = re.compile(
     rb"/FontMatrix\s*\[\s*([-+.\dEe]+)\s+([-+.\dEe]+)\s+"
@@ -58,9 +57,7 @@ def internal_eexec_payload(data: bytes, length1: int | None) -> bytes:
     return decrypted[4:]
 
 
-def internal_extract_binary_entries(
-    data: bytes, pattern: re.Pattern[bytes]
-) -> dict[str, bytes]:
+def internal_extract_binary_entries(data: bytes, pattern: re.Pattern[bytes]) -> dict[str, bytes]:
     entries: dict[str, bytes] = {}
     for match in pattern.finditer(data):
         name = match.group(1).decode("latin-1")

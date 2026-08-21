@@ -6,6 +6,7 @@ import numpy
 
 from core_pdf import PdfDocument, PdfRasterFontRequest
 from core_pdf.impl.engine.spec.s_09_fonts.decoder import FontDecoder
+from core_pdf.impl.objects import PdfStream
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -57,3 +58,27 @@ def test_embedded_type1_uses_actual_outlines_without_fallback() -> None:
     pixels = numpy.asarray(raster.pixels).reshape(raster.height, raster.width, 4)
     dark_pixels = numpy.all(pixels[..., :3] < 200, axis=-1)
     assert int(dark_pixels.sum()) == 3666
+
+
+def test_opentype_cff_program_exposes_actual_outlines() -> None:
+    """Extract the CFF table from a real OpenType wrapper and resolve by encoding."""
+    otf = FIXTURES / "PyMuPDF" / "tests" / "resources" / "PragmaticaC.otf"
+    font = {
+        "Subtype": "Type1",
+        "BaseFont": "PragmaticaC",
+        "Encoding": "WinAnsiEncoding",
+        "FontDescriptor": {
+            "FontFile3": PdfStream(
+                {"Subtype": "OpenType"},
+                decoded_data=otf.read_bytes(),
+            )
+        },
+    }
+
+    decoder = FontDecoder(font)
+    contours = decoder.glyph_outline(ord("A"), text="A")
+
+    assert decoder.cff_font is not None
+    assert decoder.tt_font is None
+    assert len(contours) == 2
+    assert all(len(contour) >= 3 for contour in contours)
