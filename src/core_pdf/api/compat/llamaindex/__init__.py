@@ -13,12 +13,9 @@ from typing import Any, TypeAlias, cast
 from core_pdf import PdfDocument
 from core_pdf.impl.engine.spec.s_07_content.operations import validate_inline_images
 from core_pdf.impl.engine.spec.s_07_filters.errors import FilterParseError
-from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
-from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.engine.writing.api import find_startxref
-from core_pdf.impl.objects import PdfReference
 
-from .._strict_page_tree import internal_has_malformed_shadowed_definition
+from ..pypdf import internal_validate_pypdf_page_tree
 from ._operator_text import OperatorTextProjection
 
 PdfInput: TypeAlias = Any
@@ -123,68 +120,6 @@ class Node(_MetadataMixin):
 TextNode = Node
 
 
-def _validate_declared_trailer_root(data: bytes) -> None:
-    """Reject an explicitly non-catalog-shaped root before engine repair.
-
-    The engine deliberately reconstructs damaged trailers.  Strict reader compatibility
-    still needs to distinguish a missing/unreadable trailer from one that successfully
-    declares a value that cannot possibly be a catalog reference or dictionary.
-    """
-    trailer_offset = data.rfind(b"trailer")
-    if trailer_offset < 0:
-        return
-    lexer = PdfLexer(data)
-    try:
-        trailer = lexer.parse_object_at(trailer_offset + len(b"trailer"))
-    except (ValueError, IndexError):
-        return
-    if not isinstance(trailer, dict):
-        return
-    root = lookup_dict_key(trailer, "Root")
-    if root is not None and not isinstance(root, (dict, PdfReference)):
-        raise ValueError("invalid PDF trailer catalog root")
-
-
-def _validate_page_tree(pdf: PdfDocument) -> None:
-    seen: set[tuple[int, int]] = set()
-
-    root = lookup_dict_key(pdf.catalog(), "Pages")
-    root_node = pdf.resolver.resolve(root)
-    if not isinstance(root_node, dict):
-        raise ValueError("invalid PDF page tree root")
-    root_kids = pdf.resolver.resolve(lookup_dict_key(root_node, "Kids"))
-    if not isinstance(root_kids, (list, tuple)):
-        raise ValueError("invalid PDF page tree children")
-
-    # When xref recovery selected an earlier definition of the structural root,
-    # a later definition with the same object identity is the authoritative
-    # revision.  Strict readers reject the damaged later object instead of
-    # silently retaining the stale tree reconstructed by the engine.
-    if isinstance(root, PdfReference) and internal_has_malformed_shadowed_definition(pdf, root):
-        raise ValueError("shadowed PDF page tree root")
-
-    def visit(value: object) -> None:
-        key: tuple[int, int] | None = None
-        if isinstance(value, PdfReference):
-            key = (value.object_number, value.generation_number)
-            if key in seen:
-                raise ValueError("detected cyclic page references")
-            seen.add(key)
-        try:
-            node = pdf.resolver.resolve(value)
-            if not isinstance(node, dict):
-                return
-            kids = pdf.resolver.resolve(lookup_dict_key(node, "Kids"))
-            if isinstance(kids, (list, tuple)):
-                for kid in kids:
-                    visit(kid)
-        finally:
-            if key is not None:
-                seen.discard(key)
-
-    visit(root)
-
-
 def load_data(
     source: object,
     *,
@@ -198,10 +133,8 @@ def load_data(
     if b"startxref" not in source_data or b"%%EOF" not in source_data:
         raise ValueError("incomplete PDF cross-reference terminator")
     find_startxref(source_data)
-    _validate_declared_trailer_root(source_data)
     with PdfDocument.open(source_path) as pdf:
-        pdf.resolver.recover_missing = pdf.xref_was_recovered
-        _validate_page_tree(pdf)
+        internal_validate_pypdf_page_tree(pdf)
         for page in pdf.pages:
             for stream in page.content_streams:
                 with contextlib.suppress(FilterParseError):

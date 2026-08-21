@@ -33,7 +33,7 @@ GraphicsState = tuple[list[float], str | None, float, float]
 internal_INFERRED_SPACE = "\U000f0000"
 
 
-def _validate_pypdf_page_tree(pdf: PdfDocument) -> None:
+def internal_validate_pypdf_page_tree(pdf: PdfDocument) -> None:
     """Preserve pypdf's rejection of repeated/cyclic intermediate page nodes."""
     literal_trailers = tuple(pdf.iter_literal_trailer_dictionaries())
     if literal_trailers:
@@ -196,7 +196,7 @@ class StructuredState(ClosingMixin):
         try:
             if pdf.raw_data.find(b"startxref") < 0:
                 raise ValueError("startxref not found")
-            _validate_pypdf_page_tree(pdf)
+            internal_validate_pypdf_page_tree(pdf)
             structured = pdf.structured_document
         except Exception:
             pdf.close()
