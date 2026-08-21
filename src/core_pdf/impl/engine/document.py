@@ -80,6 +80,7 @@ class PdfDocument(PdfDocumentWritingMixin, SpecPdfDocument["PdfPage"]):
         *,
         recovery_scan_all_revisions: bool = True,
         legacy_pdfminer_text_operators: bool = False,
+        raster_font_provider: Any | None = None,
     ) -> None:
         self.internal_operation_lock = threading.RLock()
         self.internal_page_locks: dict[int, threading.RLock] = {}
@@ -95,6 +96,7 @@ class PdfDocument(PdfDocumentWritingMixin, SpecPdfDocument["PdfPage"]):
             password=password,
             recovery_scan_all_revisions=recovery_scan_all_revisions,
             legacy_pdfminer_text_operators=legacy_pdfminer_text_operators,
+            raster_font_provider=raster_font_provider,
         )
         from core_pdf.impl.engine.page import PdfPage
 

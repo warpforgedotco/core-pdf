@@ -24,7 +24,7 @@ from core_pdf.impl.engine.array_views import (
 )
 from core_pdf.impl.engine.image_cache import ImageCache, ImageCacheKey
 from core_pdf.impl.engine.layout.geometry import RectBox, rect_tuple
-from core_pdf.impl.engine.spec.s_07_content.capture import CapturedPath
+from core_pdf.impl.engine.spec.s_07_content.capture import CapturedPath, CapturedSubpath
 from core_pdf.impl.engine.spec.s_07_content.page_program import PageEventKind, PageProgram
 from core_pdf.impl.engine.spec.s_07_content.state import TextState
 from core_pdf.impl.engine.spec.s_07_filters.models import DecodedImage
@@ -5656,6 +5656,68 @@ class RenderedPage:
 # ===== page =====
 
 
+def internal_glyph_outline_path(glyph: Any) -> CapturedPath | None:
+    """Resolve and transform one captured embedded-font outline."""
+    if not getattr(glyph, "paint_glyph", True):
+        return None
+    transform = getattr(glyph, "glyph_transform", None)
+    decoder = getattr(glyph, "font_decoder", None)
+    resolver = getattr(decoder, "glyph_outline", None)
+    if transform is None or not callable(resolver):
+        return None
+    code = glyph.bitmap_code
+    if code is None:
+        code = glyph.cid if glyph.cid is not None else glyph.char_code
+    if code is None:
+        return None
+    contours = resolver(code, glyph.gid, glyph.text)
+    if not contours:
+        return None
+    a, b, c, d, e, f = transform
+    subpaths: list[CapturedSubpath] = []
+    for contour in contours:
+        if len(contour) < 2:
+            continue
+        points = [(x * a + y * c + e, x * b + y * d + f) for x, y in contour]
+        if len(points) >= 2 and points[0] == points[-1]:
+            points.pop()
+        if len(points) >= 2:
+            subpaths.append(CapturedSubpath(points, closed=True))
+    return CapturedPath(subpaths) if subpaths else None
+
+
+def internal_append_glyph_paint(
+    display_list: DisplayList, glyph: Any, clipping_subpaths: list[CapturedSubpath]
+) -> bool:
+    path = internal_glyph_outline_path(glyph)
+    if path is None:
+        return False
+    mode = int(getattr(glyph, "text_render_mode", 0))
+    if mode >= 4:
+        clipping_subpaths.extend(path.subpaths)
+    if mode in {3, 7}:
+        return True
+    paint_kind = "fill" if mode in {0, 4} else "stroke" if mode in {1, 5} else "fillstroke"
+    display_list.append(
+        paint_kind,
+        glyph.seqno,
+        bbox=path.bbox(),
+        path=path,
+        fill=glyph.fill,
+        fill_opacity=getattr(glyph, "fill_opacity", None),
+        stroke_color=getattr(glyph, "stroke_color", None),
+        stroke_opacity=getattr(glyph, "stroke_opacity", None),
+        line_width=getattr(glyph, "line_width", 1.0),
+        line_cap=0,
+        line_join=0,
+        dash_pattern=([], 0.0),
+        fill_rule="nonzero",
+        blend_mode=getattr(glyph, "blend_mode", None),
+        soft_mask_alpha=getattr(glyph, "soft_mask_alpha", None),
+    )
+    return True
+
+
 def compose_page(
     page: Any,
     options: RenderOptions | None = None,
@@ -5680,6 +5742,19 @@ def compose_page(
         if options.include_text
         else page_program.events.non_text_indexes
     )
+    text_clipping_subpaths: list[CapturedSubpath] = []
+
+    def flush_text_clip(seqno: int) -> None:
+        if not text_clipping_subpaths:
+            return
+        display_list.append(
+            "clip",
+            seqno,
+            path=CapturedPath(list(text_clipping_subpaths)),
+            fill_rule="nonzero",
+        )
+        text_clipping_subpaths.clear()
+
     for event_index in event_indexes:
         event_index = int(event_index)
         kind = PageEventKind(int(page_program.events.kind[event_index]))
@@ -5701,6 +5776,8 @@ def compose_page(
             )
         elif kind is PageEventKind.GLYPH:
             glyph = products.glyphs[payload]
+            if internal_append_glyph_paint(display_list, glyph, text_clipping_subpaths):
+                continue
             bitmap = glyph.resolved_bitmap()
             if not bitmap:
                 continue
@@ -5722,9 +5799,11 @@ def compose_page(
                 bitmap_height=glyph.bitmap_height,
             )
         elif kind in {PageEventKind.DRAWING, PageEventKind.IMAGE}:
+            flush_text_clip(products.drawings[payload].seqno)
             display_list.append_captured_drawing(products.drawings[payload])
         elif kind is PageEventKind.INLINE_IMAGE:
             inline_image = products.inline_images[payload]
+            flush_text_clip(inline_image.seqno)
             display_list.append(
                 "inline-image",
                 inline_image.seqno,
@@ -5737,6 +5816,7 @@ def compose_page(
                 bbox=None,
                 raw_data=inline_image.data,
             )
+    flush_text_clip(len(page_program.events.sequence))
 
     def append_capture(state: TextState) -> None:
         if options.include_text:

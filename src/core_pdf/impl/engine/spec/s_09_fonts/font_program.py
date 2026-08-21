@@ -622,6 +622,10 @@ class CFFFont:
         geometry = self.internal_glyph_geometry_for_gid(glyph_id)
         return geometry[1]
 
+    def glyph_contours_for_gid(self, glyph_id: int) -> tuple[tuple[tuple[float, float], ...], ...]:
+        """Return the Type 2 outline in its native 1000-unit glyph space."""
+        return self.internal_glyph_geometry_for_gid(glyph_id)[0]
+
 
 def internal_feature_from_contours(
     contours: tuple[tuple[tuple[float, float], ...], ...] | list[list[tuple[float, float]]],

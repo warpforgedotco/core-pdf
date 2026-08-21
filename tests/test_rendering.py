@@ -17,10 +17,15 @@ from core_pdf.impl.engine.rendering import (
     RenderedPage,
     RenderOptions,
     compose_page,
+    internal_append_glyph_paint,
     rasterize_packed_stroked_paths,
     rasterize_unclipped_line_normal,
 )
-from core_pdf.impl.engine.spec.s_07_content.capture import CapturedDrawing, CapturedPath
+from core_pdf.impl.engine.spec.s_07_content.capture import (
+    CapturedDrawing,
+    CapturedPath,
+    CapturedSubpath,
+)
 from core_pdf.impl.engine.spec.s_07_content.page_program import (
     LineTable,
     PageProducts,
@@ -614,6 +619,58 @@ def test_text_free_composition_skips_glyph_paint_and_lazy_bitmap_resolution() ->
     assert decoder.calls == 1
 
     assert text_free.cache_identity != with_text.cache_identity
+
+
+@pytest.mark.parametrize(
+    ("render_mode", "paint_kind", "clips"),
+    [
+        (0, "fill", False),
+        (1, "stroke", False),
+        (2, "fillstroke", False),
+        (3, None, False),
+        (4, "fill", True),
+        (5, "stroke", True),
+        (6, "fillstroke", True),
+        (7, None, True),
+    ],
+)
+def test_vector_glyph_honors_text_rendering_modes(
+    render_mode: int, paint_kind: str | None, clips: bool
+) -> None:
+    class Decoder:
+        def glyph_outline(
+            self, code: int, gid: int | None, text: str
+        ) -> tuple[tuple[tuple[float, float], ...], ...]:
+            assert (code, gid, text) == (65, 7, "A")
+            return (((0.0, 0.0), (1000.0, 0.0), (1000.0, 1000.0), (0.0, 1000.0)),)
+
+    glyph = GlyphObservation(
+        "A",
+        (10.0, 20.0, 12.0, 23.0),
+        (10.0, 20.0, 12.0, 23.0),
+        1,
+        gid=7,
+        bitmap_code=65,
+        font_decoder=Decoder(),
+        glyph_transform=(0.002, 0.001, -0.001, 0.003, 10.0, 20.0),
+        text_render_mode=render_mode,
+    )
+    display_list = DisplayList(100.0, 100.0)
+    clipping_subpaths: list[CapturedSubpath] = []
+
+    assert internal_append_glyph_paint(display_list, glyph, clipping_subpaths) is True
+    expected_kinds = [] if paint_kind is None else [paint_kind]
+    assert [item.kind for item in display_list.items] == expected_kinds
+    assert bool(clipping_subpaths) is clips
+    if paint_kind is not None:
+        item = display_list.items[0]
+        assert isinstance(item, PathPaintItem)
+        assert item.path.subpaths[0].points == [
+            (10.0, 20.0),
+            (12.0, 21.0),
+            (11.0, 24.0),
+            (9.0, 23.0),
+        ]
 
 
 def test_shared_page_raster_cache_reuses_identical_crop() -> None:

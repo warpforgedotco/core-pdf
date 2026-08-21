@@ -79,6 +79,15 @@ class GlyphObservation:
     effective_font_size: float = 0.0
     effective_font_height: float = 0.0
     provenance: tuple[tuple[str, object], ...] = ()
+    glyph_transform: Matrix6 | None = None
+    text_render_mode: int = 0
+    fill_opacity: float | None = None
+    stroke_color: tuple[float, ...] | None = None
+    stroke_opacity: float | None = None
+    line_width: float = 1.0
+    blend_mode: str | None = None
+    soft_mask_alpha: float | None = None
+    paint_glyph: bool = True
 
     @property
     def has_paint(self) -> bool:

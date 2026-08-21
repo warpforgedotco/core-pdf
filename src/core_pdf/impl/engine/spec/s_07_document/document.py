@@ -35,6 +35,7 @@ from core_pdf.impl.types import Decipher, PdfDict, PdfSource
 
 if TYPE_CHECKING:
     from core_pdf.impl.engine.spec.s_09_fonts.decoder import FontDecoder
+    from core_pdf.impl.engine.spec.s_09_fonts.fallback import RasterFontProviderLike
 
 
 internal_PageT = TypeVar("internal_PageT", bound=PageListItem)
@@ -99,6 +100,7 @@ class PdfDocument(
         "xref_recovery_reason",
         "recovery_scan_all_revisions",
         "legacy_pdfminer_text_operators",
+        "raster_font_provider",
         "page_tree_was_recovered",
         "internal_closed",
     )
@@ -134,6 +136,7 @@ class PdfDocument(
     xref_recovery_reason: str | None
     recovery_scan_all_revisions: bool
     legacy_pdfminer_text_operators: bool
+    raster_font_provider: RasterFontProviderLike | None
     page_tree_was_recovered: bool
     internal_closed: bool
 
@@ -144,6 +147,7 @@ class PdfDocument(
         *,
         recovery_scan_all_revisions: bool = True,
         legacy_pdfminer_text_operators: bool = False,
+        raster_font_provider: RasterFontProviderLike | None = None,
     ) -> None:
         self.internal_closed = False
         self.internal_cache_lock = threading.RLock()
@@ -158,6 +162,7 @@ class PdfDocument(
         self.xref_recovery_reason = None
         self.recovery_scan_all_revisions = recovery_scan_all_revisions
         self.legacy_pdfminer_text_operators = legacy_pdfminer_text_operators
+        self.raster_font_provider = raster_font_provider
         self.page_tree_was_recovered = False
         self._initialize_document_caches()
 
@@ -180,12 +185,14 @@ class PdfDocument(
         *,
         recovery_scan_all_revisions: bool = True,
         legacy_pdfminer_text_operators: bool = False,
+        raster_font_provider: RasterFontProviderLike | None = None,
     ) -> Self:
         return cls(
             source,
             password=password,
             recovery_scan_all_revisions=recovery_scan_all_revisions,
             legacy_pdfminer_text_operators=legacy_pdfminer_text_operators,
+            raster_font_provider=raster_font_provider,
         )
 
     def __enter__(self) -> Self:

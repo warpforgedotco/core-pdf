@@ -138,6 +138,18 @@ class TrueTypeFontProgram:
     def glyph_contours(self, gid: int) -> list[list[Point]]:
         return [list(contour) for contour in self.internal_glyph_contours_for_gid(gid)]
 
+    def normalized_glyph_contours(self, gid: int) -> tuple[tuple[Point, ...], ...]:
+        """Return an immutable outline in PDF's 1000-unit glyph space."""
+        contours = self.internal_glyph_contours_for_gid(gid)
+        if not contours:
+            return ()
+        scale = 1000.0 / self.units_per_em if self.units_per_em else 1.0
+        if scale == 1.0:
+            return contours
+        return tuple(
+            tuple((point[0] * scale, point[1] * scale) for point in contour) for contour in contours
+        )
+
     def internal_glyph_contours_for_gid(self, gid: int) -> tuple[tuple[Point, ...], ...]:
         cached = self.internal_glyph_contour_cache.get(gid)
         if cached is not None:
