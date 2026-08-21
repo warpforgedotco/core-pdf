@@ -5,6 +5,7 @@ import pytest
 from core_pdf.api import compat
 from core_pdf.api.compat.pdfminer import (
     LTChar,
+    LTTextBox,
     LTTextBoxHorizontal,
     LTTextLineHorizontal,
     _reading_order,
@@ -59,7 +60,7 @@ def test_pdfplumber_words_defaults_missing_upright_to_true() -> None:
 
 
 def test_pdfminer_reading_order_retains_every_merged_box() -> None:
-    boxes = []
+    boxes: list[LTTextBox] = []
     for index in range(100):
         bbox = (
             float(index % 10),
