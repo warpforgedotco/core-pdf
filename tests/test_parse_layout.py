@@ -4,9 +4,14 @@ import numpy
 
 from core_pdf.impl.engine.parse import ObservationBatch, ObservationSource, layout_blocks
 from core_pdf.impl.engine.parse.layout import (
+    internal_best_projection_gap,
+    internal_best_region_projection_gap,
     internal_column_major_prose,
     internal_interval_crossing_counts,
+    internal_LayoutGeometry,
     internal_reading_order_evidence,
+    internal_row_order_indexes,
+    internal_row_order_region,
     internal_topological_block_order,
     internal_topological_block_order_quadratic,
     layout_blocks_with_evidence,
@@ -38,6 +43,29 @@ def test_interval_crossing_counts_match_strict_broadcast_oracle() -> None:
     )
 
     numpy.testing.assert_array_equal(internal_interval_crossing_counts(boxes, positions), expected)
+
+
+def test_reusable_region_orders_match_independent_sorting() -> None:
+    random = numpy.random.default_rng(21082026)
+    starts = random.uniform(0.0, 500.0, (300, 2))
+    sizes = random.uniform(1.0, 80.0, (300, 2))
+    boxes = numpy.column_stack((starts, starts + sizes)).reshape(300, 4)[:, (0, 1, 2, 3)]
+    # column_stack above produces x0, y0, x1, y1 for the two-column operands.
+    geometry = internal_LayoutGeometry.create(boxes)
+    root_indexes = numpy.arange(len(boxes))
+    root = geometry.region(root_indexes)
+
+    for _sample in range(50):
+        indexes = numpy.sort(random.choice(root_indexes, size=100, replace=False))
+        region = geometry.region(indexes, root)
+        for axis in (0, 1):
+            assert internal_best_region_projection_gap(geometry, region, axis, 0.0) == (
+                internal_best_projection_gap(boxes[indexes], axis, 0.0)
+            )
+        numpy.testing.assert_array_equal(
+            internal_row_order_region(geometry, region),
+            internal_row_order_indexes(indexes, boxes),
+        )
 
 
 def test_xy_cut_reads_columns_before_moving_right() -> None:

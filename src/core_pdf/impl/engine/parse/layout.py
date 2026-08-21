@@ -49,6 +49,57 @@ class internal_BuiltLines:
     boxes: numpy.ndarray
 
 
+@dataclass(frozen=True, slots=True)
+class internal_LayoutRegion:
+    indexes: numpy.ndarray
+    x_start_order: numpy.ndarray
+    y_start_order: numpy.ndarray
+    y_center_order: numpy.ndarray
+
+
+@dataclass(slots=True)
+class internal_LayoutGeometry:
+    boxes: numpy.ndarray
+    x_centers: numpy.ndarray
+    y_centers: numpy.ndarray
+    heights: numpy.ndarray
+    marks: numpy.ndarray
+    row_ids: numpy.ndarray
+
+    @classmethod
+    def create(cls, boxes: numpy.ndarray) -> internal_LayoutGeometry:
+        x_centers = (boxes[:, 0] + boxes[:, 2]) * 0.5
+        y_centers = (boxes[:, 1] + boxes[:, 3]) * 0.5
+        return cls(
+            boxes=boxes,
+            x_centers=x_centers,
+            y_centers=y_centers,
+            heights=numpy.maximum(1.0, boxes[:, 3] - boxes[:, 1]),
+            marks=numpy.zeros(len(boxes), dtype=numpy.bool_),
+            row_ids=numpy.empty(len(boxes), dtype=numpy.int64),
+        )
+
+    def region(
+        self, indexes: numpy.ndarray, parent: internal_LayoutRegion | None = None
+    ) -> internal_LayoutRegion:
+        if parent is None:
+            return internal_LayoutRegion(
+                indexes=indexes,
+                x_start_order=indexes[numpy.argsort(self.boxes[indexes, 0], kind="stable")],
+                y_start_order=indexes[numpy.argsort(self.boxes[indexes, 1], kind="stable")],
+                y_center_order=indexes[numpy.argsort(-self.y_centers[indexes], kind="stable")],
+            )
+        self.marks[indexes] = True
+        region = internal_LayoutRegion(
+            indexes=indexes,
+            x_start_order=parent.x_start_order[self.marks[parent.x_start_order]],
+            y_start_order=parent.y_start_order[self.marks[parent.y_start_order]],
+            y_center_order=parent.y_center_order[self.marks[parent.y_center_order]],
+        )
+        self.marks[indexes] = False
+        return region
+
+
 def internal_line_group_indexes(observations: ObservationBatch) -> internal_LineGroupPlan:
     if not len(observations):
         empty = numpy.empty(0, dtype=numpy.int64)
@@ -340,6 +391,27 @@ def internal_best_projection_gap(
     # PDF page space is bottom-left based.  For equal horizontal whitespace,
     # split at the uppermost gap first so a full-width header is detached before
     # column detection runs on the body below it.
+    best_index = (
+        len(gaps) - 1 - int(numpy.argmax(gaps[::-1])) if axis == 1 else int(numpy.argmax(gaps))
+    )
+    best_gap = float(gaps[best_index])
+    best_cut = float((sorted_starts[best_index + 1] + previous_ends[best_index]) * 0.5)
+    return (best_gap, best_cut) if best_gap >= minimum_gap else None
+
+
+def internal_best_region_projection_gap(
+    geometry: internal_LayoutGeometry,
+    region: internal_LayoutRegion,
+    axis: int,
+    minimum_gap: float,
+) -> tuple[float, float] | None:
+    order = region.x_start_order if axis == 0 else region.y_start_order
+    sorted_starts = geometry.boxes[order, axis]
+    sorted_ends = geometry.boxes[order, axis + 2]
+    previous_ends = numpy.maximum.accumulate(sorted_ends)[:-1]
+    gaps = sorted_starts[1:] - previous_ends
+    if not len(gaps):
+        return None
     best_index = (
         len(gaps) - 1 - int(numpy.argmax(gaps[::-1])) if axis == 1 else int(numpy.argmax(gaps))
     )
@@ -650,6 +722,30 @@ def internal_row_order_indexes(indexes: numpy.ndarray, boxes: numpy.ndarray) -> 
     return indexes[numpy.lexsort((region[:, 0], row_ids))]
 
 
+def internal_row_order_region(
+    geometry: internal_LayoutGeometry, region: internal_LayoutRegion
+) -> numpy.ndarray:
+    indexes = region.indexes
+    if len(indexes) < 2:
+        return indexes
+    boxes = geometry.boxes
+    tolerance = max(1.0, finite_median(geometry.heights[indexes]) * 0.5)
+    if not math.isfinite(tolerance):
+        tolerance = 1.0
+    order = region.y_center_order
+    centers = geometry.y_centers
+    current_row = 0
+    row_center = float(centers[order[0]])
+    for position, raw_item in enumerate(order):
+        item = int(raw_item)
+        center = float(centers[item])
+        if position and row_center - center > tolerance:
+            current_row += 1
+            row_center = center
+        geometry.row_ids[item] = current_row
+    return indexes[numpy.lexsort((boxes[indexes, 0], geometry.row_ids[indexes]))]
+
+
 def internal_obstacle_partition(
     indexes: numpy.ndarray,
     boxes: numpy.ndarray,
@@ -712,9 +808,14 @@ def internal_xy_cut_regions(
     depth: int = 0,
     obstacle_index: SpatialIndex[int] | None = None,
     used_obstacles: frozenset[int] = frozenset(),
+    geometry: internal_LayoutGeometry | None = None,
+    parent_region: internal_LayoutRegion | None = None,
 ) -> list[numpy.ndarray]:
+    if geometry is None:
+        geometry = internal_LayoutGeometry.create(boxes)
+    current_region = geometry.region(indexes, parent_region)
     if len(indexes) <= 2 or depth >= 32:
-        return [internal_row_order_indexes(indexes, boxes)]
+        return [internal_row_order_region(geometry, current_region)]
 
     obstacle_partition = internal_obstacle_partition(
         indexes,
@@ -737,13 +838,17 @@ def internal_xy_cut_regions(
                 depth=depth + 1,
                 obstacle_index=obstacle_index,
                 used_obstacles=next_used_obstacles,
+                geometry=geometry,
+                parent_region=current_region,
             )
         ]
 
     region_boxes = boxes[indexes]
-    horizontal = internal_best_projection_gap(region_boxes, 1, max(3.0, median_height * 0.90))
-    vertical = internal_best_projection_gap(
-        region_boxes, 0, internal_column_gap_minimum(region_boxes)
+    horizontal = internal_best_region_projection_gap(
+        geometry, current_region, 1, max(3.0, median_height * 0.90)
+    )
+    vertical = internal_best_region_projection_gap(
+        geometry, current_region, 0, internal_column_gap_minimum(region_boxes)
     )
     if vertical is None:
         vertical = internal_narrow_projection_gap(region_boxes)
@@ -757,7 +862,7 @@ def internal_xy_cut_regions(
             region_boxes, internal_column_gap_minimum(region_boxes)
         )
         if tolerant_cut is not None:
-            centers_x = (region_boxes[:, 0] + region_boxes[:, 2]) * 0.5
+            centers_x = geometry.x_centers[indexes]
             left = indexes[centers_x < tolerant_cut]
             right = indexes[centers_x >= tolerant_cut]
             if len(left) and len(right):
@@ -772,13 +877,15 @@ def internal_xy_cut_regions(
                         depth=depth + 1,
                         obstacle_index=obstacle_index,
                         used_obstacles=used_obstacles,
+                        geometry=geometry,
+                        parent_region=current_region,
                     )
                 ]
         peeled = internal_peel_spanning_band(indexes, boxes, median_height)
         if peeled is not None:
             band, remainder = peeled
             return [
-                internal_row_order_indexes(band, boxes),
+                internal_row_order_region(geometry, geometry.region(band, current_region)),
                 *internal_xy_cut_regions(
                     remainder,
                     boxes,
@@ -787,6 +894,8 @@ def internal_xy_cut_regions(
                     depth=depth + 1,
                     obstacle_index=obstacle_index,
                     used_obstacles=used_obstacles,
+                    geometry=geometry,
+                    parent_region=current_region,
                 ),
             ]
         peeled = internal_peel_spanning_band(indexes, boxes, median_height, from_bottom=True)
@@ -801,17 +910,19 @@ def internal_xy_cut_regions(
                     depth=depth + 1,
                     obstacle_index=obstacle_index,
                     used_obstacles=used_obstacles,
+                    geometry=geometry,
+                    parent_region=current_region,
                 ),
-                internal_row_order_indexes(band, boxes),
+                internal_row_order_region(geometry, geometry.region(band, current_region)),
             ]
-        return [internal_row_order_indexes(indexes, boxes)]
+        return [internal_row_order_region(geometry, current_region)]
 
     internal_score, axis, cut = max(candidates, key=lambda item: item[0])
-    centers = (region_boxes[:, axis] + region_boxes[:, axis + 2]) * 0.5
+    centers = (geometry.x_centers if axis == 0 else geometry.y_centers)[indexes]
     first = indexes[centers < cut]
     second = indexes[centers >= cut]
     if not len(first) or not len(second):
-        return [internal_row_order_indexes(indexes, boxes)]
+        return [internal_row_order_region(geometry, current_region)]
     ordered_groups = (second, first) if axis == 1 else (first, second)
     return [
         region
@@ -824,6 +935,8 @@ def internal_xy_cut_regions(
             depth=depth + 1,
             obstacle_index=obstacle_index,
             used_obstacles=used_obstacles,
+            geometry=geometry,
+            parent_region=current_region,
         )
     ]
 
