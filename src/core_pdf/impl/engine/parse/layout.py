@@ -180,7 +180,7 @@ def internal_build_lines(observations: ObservationBatch) -> tuple[ParsedLine, ..
         [index for group in line_groups for index in group],
     )
     output: list[ParsedLine] = []
-    for sequence, indexes in enumerate(line_groups):
+    for indexes in line_groups:
         text = internal_group_text(observations, indexes)
         if not text:
             continue
@@ -271,7 +271,7 @@ def internal_build_lines(observations: ObservationBatch) -> tuple[ParsedLine, ..
                 confidence=(
                     float(numpy.mean(finite_confidences)) if len(finite_confidences) else None
                 ),
-                sequence=sequence,
+                sequence=int(numpy.min(observations.sequence[indexes])),
                 rotation=int(observations.rotation[indexes[0]]),
                 font_size=(finite_median(finite_font_sizes) if len(finite_font_sizes) else None),
                 bold=bold,
@@ -1014,7 +1014,9 @@ def internal_inversion_count(values: tuple[int, ...]) -> int:
     return inversions
 
 
-def reading_order_evidence(blocks: tuple[ParsedBlock, ...]) -> ReadingOrderEvidence:
+def internal_reading_order_evidence(
+    blocks: tuple[ParsedBlock, ...],
+) -> ReadingOrderEvidence:
     """Summarize repair strength and ambiguity for an ordered block sequence."""
     lines = tuple(line for block in blocks for line in block.lines)
     sequences = tuple(line.sequence for line in lines)
@@ -1059,7 +1061,7 @@ def layout_blocks_with_evidence(
         page_width=page_width,
         page_height=page_height,
     )
-    return blocks, reading_order_evidence(blocks)
+    return blocks, internal_reading_order_evidence(blocks)
 
 
 def internal_topological_block_order(blocks: list[ParsedBlock]) -> list[ParsedBlock]:

@@ -3,6 +3,7 @@ from __future__ import annotations
 from core_pdf.impl.engine.parse import ObservationBatch, ObservationSource, layout_blocks
 from core_pdf.impl.engine.parse.layout import (
     internal_column_major_prose,
+    internal_reading_order_evidence,
     layout_blocks_with_evidence,
 )
 from core_pdf.impl.engine.parse.model import ParsedBlock, ParsedLine
@@ -70,6 +71,29 @@ def test_reading_order_evidence_records_geometric_column_repair() -> None:
     assert not evidence.ambiguous
 
 
+def test_reading_order_evidence_preserves_authored_observation_sequence() -> None:
+    batch = ObservationBatch.from_columns(
+        ("left one", "right one", "left two", "right two"),
+        (
+            (0.0, 60.0, 40.0, 70.0),
+            (60.0, 60.0, 100.0, 70.0),
+            (0.0, 40.0, 40.0, 50.0),
+            (60.0, 40.0, 100.0, 50.0),
+        ),
+        source=ObservationSource.OCR,
+        sequence=(10, 30, 20, 40),
+        confidence=(90.0, 90.0, 90.0, 90.0),
+        line_break_before=(True, True, True, True),
+    )
+
+    blocks, evidence = layout_blocks_with_evidence(batch)
+
+    assert [line.sequence for block in blocks for line in block.lines] == [10, 20, 30, 40]
+    assert evidence.source_inversions == 0
+    assert not evidence.repaired
+    assert evidence.strategy == "source-stable"
+
+
 def test_rotated_ocr_words_group_on_vertical_baseline() -> None:
     batch = ObservationBatch.from_columns(
         ("top", "bottom"),
@@ -113,9 +137,7 @@ def test_mixed_rotations_in_one_block_are_reported_as_ambiguous() -> None:
         bbox=(0.0, 0.0, 60.0, 40.0),
     )
 
-    from core_pdf.impl.engine.parse.layout import reading_order_evidence
-
-    evidence = reading_order_evidence((block,))
+    evidence = internal_reading_order_evidence((block,))
 
     assert evidence.ambiguous
     assert evidence.confidence == 0.5

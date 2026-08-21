@@ -14,9 +14,10 @@ from __future__ import annotations
 import tracemalloc
 
 import pytest
+from pytest_benchmark.fixture import BenchmarkFixture
 
 from core_pdf import PdfDocument, serialize_document_to_pdf
-from core_pdf.impl.engine.parse.layout import reading_order_evidence
+from core_pdf.impl.engine.parse.layout import internal_reading_order_evidence
 from core_pdf.impl.engine.parse.model import ParsedBlock, ParsedLine
 from core_pdf.impl.engine.structured import Block, BlockKind, Document, Page, TextLine
 
@@ -94,9 +95,9 @@ def test_multicolumn_layout_reconstruction_benchmark(benchmark) -> None:
     assert result == 5
 
 
-def test_reading_order_validation_benchmark(benchmark) -> None:
+def test_reading_order_validation_benchmark(benchmark: BenchmarkFixture) -> None:
     tracemalloc.start()
-    evidence = reading_order_evidence(READING_ORDER_BLOCKS)
+    evidence = internal_reading_order_evidence(READING_ORDER_BLOCKS)
     _current, peak = tracemalloc.get_traced_memory()
     tracemalloc.stop()
 
@@ -104,5 +105,5 @@ def test_reading_order_validation_benchmark(benchmark) -> None:
     assert evidence.source_inversions == 23_994_000
     assert peak < 3_000_000
 
-    result = benchmark(reading_order_evidence, READING_ORDER_BLOCKS)
+    result = benchmark(internal_reading_order_evidence, READING_ORDER_BLOCKS)
     assert result == evidence
