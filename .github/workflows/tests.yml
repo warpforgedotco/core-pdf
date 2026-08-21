@@ -129,6 +129,7 @@ jobs:
             tests/src/core_pdf/impl/engine/spec/s_08_graphics/benchmarks
             tests/src/core_pdf/impl/engine/spec/s_09_fonts/benchmarks
             --ignore=tests/benchmarks/E2E/test_synthetic_document_benchmarks.py
+            --ignore=tests/benchmarks/test_page_program_benchmarks.py
             -m benchmark_high_impact
             --codspeed
           token: ${{ secrets.CODSPEED_TOKEN }}
