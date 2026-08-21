@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import numpy
+
 from core_pdf.impl.engine.parse import ObservationBatch, ObservationSource, layout_blocks
 from core_pdf.impl.engine.parse.layout import (
     internal_column_major_prose,
+    internal_interval_crossing_counts,
     internal_reading_order_evidence,
     layout_blocks_with_evidence,
 )
@@ -19,6 +22,20 @@ def observations(
         confidence=(90.0 for internal_item in items),
         line_break_before=(True for internal_item in items),
     )
+
+
+def test_interval_crossing_counts_match_strict_broadcast_oracle() -> None:
+    random = numpy.random.default_rng(20260821)
+    starts = random.uniform(-50.0, 500.0, 1_000)
+    ends = starts + random.uniform(0.0, 120.0, len(starts))
+    boxes = numpy.column_stack((starts, starts, ends, ends))
+    positions = numpy.concatenate((random.uniform(-100.0, 650.0, 300), starts, ends))
+
+    expected = ((starts[None, :] < positions[:, None]) & (ends[None, :] > positions[:, None])).sum(
+        axis=1
+    )
+
+    numpy.testing.assert_array_equal(internal_interval_crossing_counts(boxes, positions), expected)
 
 
 def test_xy_cut_reads_columns_before_moving_right() -> None:

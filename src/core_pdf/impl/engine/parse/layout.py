@@ -370,10 +370,10 @@ def internal_gutter_tolerating_contained_boxes(
     if right - left <= minimum_gap * 2:
         return None
     positions = numpy.linspace(left, right, 256)
-    crossing = (
-        (region_boxes[:, 0][None, :] < positions[:, None])
-        & (region_boxes[:, 2][None, :] > positions[:, None])
-    ).sum(axis=1)
+    # Count intervals crossing each sample without materializing a 256 x N
+    # boolean matrix. Strict inequalities match the former broadcast exactly:
+    # starts below the position minus ends at or below the position.
+    crossing = internal_interval_crossing_counts(region_boxes, positions)
     # "Almost nothing" has to stay a small share of the region, or a page with
     # few lines would split on a single crossing.
     allowed = max(1, count // 20)
@@ -444,6 +444,17 @@ def internal_gutter_tolerating_contained_boxes(
     if best is None:
         return None
     return (best[0] + best[1]) * 0.5
+
+
+def internal_interval_crossing_counts(
+    boxes: numpy.ndarray, positions: numpy.ndarray
+) -> numpy.ndarray:
+    """Count horizontal box intervals that strictly cross each position."""
+    sorted_starts = numpy.sort(boxes[:, 0])
+    sorted_ends = numpy.sort(boxes[:, 2])
+    return numpy.searchsorted(sorted_starts, positions, side="left") - numpy.searchsorted(
+        sorted_ends, positions, side="right"
+    )
 
 
 def internal_column_gap_minimum(region_boxes: numpy.ndarray) -> float:
