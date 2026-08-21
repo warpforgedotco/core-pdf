@@ -1,5 +1,7 @@
 """Differential raster coverage for embedded PDF font programs."""
 
+import hashlib
+import zlib
 from pathlib import Path
 
 import numpy
@@ -79,6 +81,33 @@ def test_opentype_cff_program_exposes_actual_outlines() -> None:
     contours = decoder.glyph_outline(ord("A"), text="A")
 
     assert decoder.cff_font is not None
+    assert decoder.opentype_font is not None
     assert decoder.tt_font is None
     assert len(contours) == 2
+    assert all(len(contour) >= 3 for contour in contours)
+    glyph_id = decoder.opentype_font.glyph_id_for_name("A")
+    assert glyph_id is not None
+    assert decoder.opentype_font.normalized_glyph_contours(glyph_id)
+
+
+def test_opentype_cff2_program_exposes_actual_outlines() -> None:
+    """Render a real variable CFF2 glyph through the generic OpenType path."""
+    encoded = FIXTURES / "font_programs" / "cff2-a.otf.zlib.hex"
+    font_data = zlib.decompress(bytes.fromhex(encoded.read_text().strip()))
+    assert hashlib.sha256(font_data).hexdigest() == (
+        "9c5c093c83c461f39e01e00d0ad1647d2165b0e5d4754260a225a7ba788c5594"
+    )
+    font = {
+        "Subtype": "Type1",
+        "BaseFont": "HintOrderTest",
+        "Encoding": {"Differences": [65, "/A"]},
+        "FontDescriptor": {"FontFile3": PdfStream({"Subtype": "OpenType"}, decoded_data=font_data)},
+    }
+
+    decoder = FontDecoder(font)
+    contours = decoder.glyph_outline(ord("A"), text="A")
+
+    assert decoder.cff_font is None
+    assert decoder.opentype_font is not None
+    assert len(contours) == 5
     assert all(len(contour) >= 3 for contour in contours)
