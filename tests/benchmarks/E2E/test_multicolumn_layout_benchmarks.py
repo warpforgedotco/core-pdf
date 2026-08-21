@@ -11,9 +11,14 @@ alone, which is one of the most expensive parts of native text extraction.
 
 from __future__ import annotations
 
+import tracemalloc
+
 import pytest
+from pytest_benchmark.fixture import BenchmarkFixture
 
 from core_pdf import PdfDocument, serialize_document_to_pdf
+from core_pdf.impl.engine.parse.layout import internal_reading_order_evidence
+from core_pdf.impl.engine.parse.model import ParsedBlock, ParsedLine
 from core_pdf.impl.engine.structured import Block, BlockKind, Document, Page, TextLine
 
 pytestmark = pytest.mark.benchmark_high_impact
@@ -56,6 +61,22 @@ def build_multicolumn_document(*, page_count: int, columns: int, lines_per_colum
 
 MULTICOLUMN_DOCUMENT = build_multicolumn_document(page_count=5, columns=3, lines_per_column=50)
 MULTICOLUMN_PDF_BYTES = serialize_document_to_pdf(MULTICOLUMN_DOCUMENT)
+READING_ORDER_BLOCKS = tuple(
+    ParsedBlock(
+        lines=tuple(
+            ParsedLine(
+                text=f"column {column} line {line}",
+                bbox=(column * 100.0, 10_000.0 - line, column * 100.0 + 80.0, 10_010.0 - line),
+                source="native",
+                sequence=line * 3 + column,
+            )
+            for line in range(4_000)
+        ),
+        bbox=(column * 100.0, 6_000.0, column * 100.0 + 80.0, 10_010.0),
+        column_index=column,
+    )
+    for column in range(3)
+)
 
 
 def internal_open_and_extract(pdf_bytes: bytes) -> int:
@@ -72,3 +93,17 @@ def test_multicolumn_layout_reconstruction_benchmark(benchmark) -> None:
         rounds=3,
     )
     assert result == 5
+
+
+def test_reading_order_validation_benchmark(benchmark: BenchmarkFixture) -> None:
+    tracemalloc.start()
+    evidence = internal_reading_order_evidence(READING_ORDER_BLOCKS)
+    _current, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+
+    assert evidence.line_count == 12_000
+    assert evidence.source_inversions == 23_994_000
+    assert peak < 3_000_000
+
+    result = benchmark(internal_reading_order_evidence, READING_ORDER_BLOCKS)
+    assert result == evidence

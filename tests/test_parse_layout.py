@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 from core_pdf.impl.engine.parse import ObservationBatch, ObservationSource, layout_blocks
-from core_pdf.impl.engine.parse.layout import internal_column_major_prose
+from core_pdf.impl.engine.parse.layout import (
+    internal_column_major_prose,
+    internal_reading_order_evidence,
+    layout_blocks_with_evidence,
+)
 from core_pdf.impl.engine.parse.model import ParsedBlock, ParsedLine
 
 
@@ -39,6 +43,111 @@ def test_xy_cut_reads_columns_before_moving_right() -> None:
     ]
     assert blocks[0].column_index is None
     assert {block.column_index for block in blocks[1:]} == {0, 1}
+
+
+def test_reading_order_evidence_records_geometric_column_repair() -> None:
+    batch = observations(
+        (
+            ("left one", (0.0, 60.0, 40.0, 70.0)),
+            ("right one", (60.0, 60.0, 100.0, 70.0)),
+            ("left two", (0.0, 40.0, 40.0, 50.0)),
+            ("right two", (60.0, 40.0, 100.0, 50.0)),
+        )
+    )
+
+    blocks, evidence = layout_blocks_with_evidence(batch)
+
+    assert [line.text for block in blocks for line in block.lines] == [
+        "left one",
+        "left two",
+        "right one",
+        "right two",
+    ]
+    assert evidence.repaired
+    assert evidence.source_inversions == 1
+    assert evidence.source_inversion_ratio == 1 / 6
+    assert evidence.column_count == 2
+    assert evidence.confidence == 1.0
+    assert not evidence.ambiguous
+
+
+def test_reading_order_evidence_preserves_authored_observation_sequence() -> None:
+    batch = ObservationBatch.from_columns(
+        ("left one", "right one", "left two", "right two"),
+        (
+            (0.0, 60.0, 40.0, 70.0),
+            (60.0, 60.0, 100.0, 70.0),
+            (0.0, 40.0, 40.0, 50.0),
+            (60.0, 40.0, 100.0, 50.0),
+        ),
+        source=ObservationSource.OCR,
+        sequence=(10, 30, 20, 40),
+        confidence=(90.0, 90.0, 90.0, 90.0),
+        line_break_before=(True, True, True, True),
+    )
+
+    blocks, evidence = layout_blocks_with_evidence(batch)
+
+    assert [(line.text, line.sequence) for block in blocks for line in block.lines] == [
+        ("left one", 10),
+        ("left two", 20),
+        ("right one", 30),
+        ("right two", 40),
+    ]
+    assert evidence.source_inversions == 0
+    assert not evidence.repaired
+    assert evidence.strategy == "source-stable"
+
+
+def test_rotated_ocr_words_group_on_vertical_baseline() -> None:
+    batch = ObservationBatch.from_columns(
+        ("top", "bottom"),
+        ((10.0, 30.0, 20.0, 40.0), (10.0, 10.0, 20.0, 20.0)),
+        source=ObservationSource.OCR,
+        confidence=(90.0, 90.0),
+        rotation=(90, 90),
+    )
+
+    blocks, evidence = layout_blocks_with_evidence(batch)
+
+    assert [line.text for block in blocks for line in block.lines] == ["bottom top"]
+    assert evidence.rotation_count == 1
+
+
+def test_rtl_ocr_words_read_right_to_left_within_line() -> None:
+    batch = ObservationBatch.from_columns(
+        ("עולם", "שלום"),
+        ((10.0, 10.0, 30.0, 20.0), (40.0, 10.0, 60.0, 20.0)),
+        source=ObservationSource.OCR,
+        confidence=(90.0, 90.0),
+    )
+
+    blocks = layout_blocks(batch)
+
+    assert [line.text for block in blocks for line in block.lines] == ["שלום עולם"]
+
+
+def test_mixed_rotations_in_one_block_are_reported_as_ambiguous() -> None:
+    block = ParsedBlock(
+        lines=(
+            ParsedLine("body", (0.0, 20.0, 40.0, 30.0), "native", sequence=0),
+            ParsedLine(
+                "margin note",
+                (50.0, 0.0, 60.0, 40.0),
+                "native",
+                sequence=1,
+                rotation=90,
+            ),
+        ),
+        bbox=(0.0, 0.0, 60.0, 40.0),
+    )
+
+    evidence = internal_reading_order_evidence((block,))
+
+    assert evidence.ambiguous
+    assert evidence.confidence == 0.5
+    assert evidence.rotation_count == 2
+    assert evidence.column_count == 1
 
 
 def test_column_major_prose_recovers_two_columns_with_a_header_cluster() -> None:

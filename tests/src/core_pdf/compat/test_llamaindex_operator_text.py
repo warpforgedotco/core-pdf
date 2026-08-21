@@ -1,7 +1,13 @@
+from pathlib import Path
+
+import pytest
+
+from core_pdf.api.compat.llamaindex import load_data
 from core_pdf.api.compat.llamaindex._operator_text import (
     internal_difference_text,
     internal_TextState,
 )
+from core_pdf.impl.engine.parse import layout as native_layout
 from core_pdf.impl.objects import PdfName
 
 
@@ -20,3 +26,16 @@ def test_name_text_operand_preserves_its_pdf_lexical_form() -> None:
     state.show_name(PdfName.of("BOGUS"))
 
     assert state.text == "/BOGUS"
+
+
+def test_load_data_does_not_call_native_layout(monkeypatch: pytest.MonkeyPatch) -> None:
+    def reject_native_layout(*args: object, **kwargs: object) -> None:
+        del args, kwargs
+        raise AssertionError("compat projection called the native layout pipeline")
+
+    monkeypatch.setattr(native_layout, "layout_blocks", reject_native_layout)
+    monkeypatch.setattr(native_layout, "layout_blocks_with_evidence", reject_native_layout)
+
+    documents = load_data(Path("tests/fixtures/pypdf/resources/hello-world.pdf"))
+
+    assert documents

@@ -756,6 +756,21 @@ class ParsedBlock:
 
 
 @dataclass(frozen=True, slots=True)
+class ReadingOrderEvidence:
+    """Explain how geometry changed authored line order on one page."""
+
+    line_count: int
+    source_inversions: int
+    source_inversion_ratio: float
+    column_count: int
+    rotation_count: int
+    repaired: bool
+    ambiguous: bool
+    confidence: float
+    strategy: str
+
+
+@dataclass(frozen=True, slots=True)
 class ParsedPage:
     page_number: int
     width: float

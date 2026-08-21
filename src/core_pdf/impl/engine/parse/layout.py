@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import math
 import re
+import unicodedata
 from collections import Counter, defaultdict
 from collections.abc import Iterable
 from dataclasses import replace
@@ -25,6 +26,7 @@ from core_pdf.impl.engine.parse.model import (
     ObservationSource,
     ParsedBlock,
     ParsedLine,
+    ReadingOrderEvidence,
 )
 from core_pdf.impl.engine.structured import (
     TextSpan,
@@ -45,14 +47,21 @@ def internal_line_group_indexes(observations: ObservationBatch) -> list[list[int
         else numpy.arange(len(observations), dtype=numpy.int64)
     )
     boxes = observations.bbox[indexes]
-    heights = numpy.maximum(1.0, boxes[:, 3] - boxes[:, 1])
-    centers = (boxes[:, 1] + boxes[:, 3]) * 0.5
     rotations = observations.rotation[indexes]
+    vertical = numpy.mod(rotations, 180) != 0
+    widths = numpy.maximum(1.0, boxes[:, 2] - boxes[:, 0])
+    heights = numpy.maximum(1.0, boxes[:, 3] - boxes[:, 1])
+    spans = numpy.where(vertical, widths, heights)
+    centers = numpy.where(
+        vertical,
+        (boxes[:, 0] + boxes[:, 2]) * 0.5,
+        (boxes[:, 1] + boxes[:, 3]) * 0.5,
+    )
     explicit = observations.line_break_before[indexes]
     breaks = numpy.zeros(len(indexes), dtype=numpy.bool_)
     breaks[0] = True
     if len(indexes) > 1:
-        tolerance = numpy.maximum(2.0, numpy.minimum(heights[:-1], heights[1:]) * 0.65)
+        tolerance = numpy.maximum(2.0, numpy.minimum(spans[:-1], spans[1:]) * 0.65)
         breaks[1:] = (
             explicit[1:]
             | (rotations[1:] != rotations[:-1])
@@ -65,7 +74,29 @@ def internal_line_group_indexes(observations: ObservationBatch) -> list[list[int
 
 def internal_group_text(observations: ObservationBatch, indexes: list[int]) -> str:
     if any(int(observations.source[index]) == int(ObservationSource.OCR) for index in indexes):
-        indexes = sorted(indexes, key=lambda index: float(observations.bbox[index, 0]))
+        rotation = int(observations.rotation[indexes[0]]) % 360
+
+        def baseline_position(index: int) -> float:
+            box = observations.bbox[index]
+            if rotation == 90:
+                return float((box[1] + box[3]) * 0.5)
+            if rotation == 180:
+                return -float((box[0] + box[2]) * 0.5)
+            if rotation == 270:
+                return -float((box[1] + box[3]) * 0.5)
+            return float((box[0] + box[2]) * 0.5)
+
+        rtl = sum(
+            unicodedata.bidirectional(character) in {"R", "AL", "AN"}
+            for index in indexes
+            for character in observations.text[index]
+        )
+        ltr = sum(
+            unicodedata.bidirectional(character) == "L"
+            for index in indexes
+            for character in observations.text[index]
+        )
+        indexes = sorted(indexes, key=baseline_position, reverse=rtl > ltr)
     references = tuple(observations.references[index] for index in indexes)
     if references and all(reference is not None for reference in references):
         runs = cast(list[TextRun], list(references))
@@ -149,7 +180,7 @@ def internal_build_lines(observations: ObservationBatch) -> tuple[ParsedLine, ..
         [index for group in line_groups for index in group],
     )
     output: list[ParsedLine] = []
-    for sequence, indexes in enumerate(line_groups):
+    for indexes in line_groups:
         text = internal_group_text(observations, indexes)
         if not text:
             continue
@@ -240,7 +271,7 @@ def internal_build_lines(observations: ObservationBatch) -> tuple[ParsedLine, ..
                 confidence=(
                     float(numpy.mean(finite_confidences)) if len(finite_confidences) else None
                 ),
-                sequence=sequence,
+                sequence=int(numpy.min(observations.sequence[indexes])),
                 rotation=int(observations.rotation[indexes[0]]),
                 font_size=(finite_median(finite_font_sizes) if len(finite_font_sizes) else None),
                 bold=bold,
@@ -959,6 +990,78 @@ def layout_blocks(
             internal_assign_columns(blocks), body_font_size=internal_semantic_body_font_size(lines)
         )
     )
+
+
+def internal_inversion_count(values: tuple[int, ...]) -> int:
+    """Count source-order inversions in O(n log n) time and O(n) memory."""
+    if len(values) < 2:
+        return 0
+    ranks = {value: rank + 1 for rank, value in enumerate(sorted(values))}
+    tree = [0] * (len(values) + 1)
+    inversions = 0
+    for seen, value in enumerate(values):
+        rank = ranks[value]
+        prefix = 0
+        index = rank
+        while index:
+            prefix += tree[index]
+            index -= index & -index
+        inversions += seen - prefix
+        index = rank
+        while index < len(tree):
+            tree[index] += 1
+            index += index & -index
+    return inversions
+
+
+def internal_reading_order_evidence(
+    blocks: tuple[ParsedBlock, ...],
+) -> ReadingOrderEvidence:
+    """Summarize repair strength and ambiguity for an ordered block sequence."""
+    lines = tuple(line for block in blocks for line in block.lines)
+    sequences = tuple(line.sequence for line in lines)
+    inversions = internal_inversion_count(sequences)
+    maximum = len(lines) * (len(lines) - 1) // 2
+    rotations = {line.rotation % 360 for line in lines}
+    mixed_rotation_block = any(
+        len({line.rotation % 360 for line in block.lines}) > 1 for block in blocks
+    )
+    columns = {block.column_index for block in blocks if block.column_index is not None}
+    repaired = inversions > 0
+    ambiguous = mixed_rotation_block
+    confidence = 0.5 if ambiguous else (0.85 if len(rotations) > 1 else 1.0)
+    return ReadingOrderEvidence(
+        line_count=len(lines),
+        source_inversions=inversions,
+        source_inversion_ratio=inversions / maximum if maximum else 0.0,
+        column_count=max(1, len(columns)) if lines else 0,
+        rotation_count=len(rotations),
+        repaired=repaired,
+        ambiguous=ambiguous,
+        confidence=confidence,
+        strategy="geometric-repair" if repaired else "source-stable",
+    )
+
+
+def layout_blocks_with_evidence(
+    observations: ObservationBatch,
+    *,
+    obstacles: tuple[tuple[float, float, float, float], ...] = (),
+    use_xy_cut: bool = True,
+    rotation: int = 0,
+    page_width: float = 0.0,
+    page_height: float = 0.0,
+) -> tuple[tuple[ParsedBlock, ...], ReadingOrderEvidence]:
+    """Return ordered blocks together with validation evidence."""
+    blocks = layout_blocks(
+        observations,
+        obstacles=obstacles,
+        use_xy_cut=use_xy_cut,
+        rotation=rotation,
+        page_width=page_width,
+        page_height=page_height,
+    )
+    return blocks, internal_reading_order_evidence(blocks)
 
 
 def internal_topological_block_order(blocks: list[ParsedBlock]) -> list[ParsedBlock]:

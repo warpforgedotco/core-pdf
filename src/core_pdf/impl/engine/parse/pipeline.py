@@ -33,7 +33,7 @@ from core_pdf.impl.engine.parse.emit import (
 from core_pdf.impl.engine.parse.fusion import (
     fuse_observations,
 )
-from core_pdf.impl.engine.parse.layout import layout_blocks
+from core_pdf.impl.engine.parse.layout import layout_blocks_with_evidence
 from core_pdf.impl.engine.parse.model import (
     CapturedPage,
     ObservationBatch,
@@ -43,6 +43,7 @@ from core_pdf.impl.engine.parse.model import (
     PageRoute,
     ParsedBlock,
     ParsedPage,
+    ReadingOrderEvidence,
     WorkPlan,
     internal_candidate,
 )
@@ -133,7 +134,9 @@ class internal_PageExtraction:
         self.internal_fused_at: float | None = None
         self.internal_tables: tuple[Table, ...] | None = None
         self.internal_tabled_at: float | None = None
-        self.internal_layout: tuple[tuple[ParsedBlock, ...], str] | None = None
+        self.internal_layout: tuple[tuple[ParsedBlock, ...], str, ReadingOrderEvidence] | None = (
+            None
+        )
         self.internal_layout_finished_at: float | None = None
 
     def preflight(self) -> PagePreflight:
@@ -251,7 +254,7 @@ class internal_PageExtraction:
         use_xy_cut = not (
             capture.evidence.image_count >= 8 and 0.05 <= capture.evidence.image_area_ratio < 0.65
         )
-        blocks = layout_blocks(
+        blocks, order_evidence = layout_blocks_with_evidence(
             observations,
             obstacles=(*table_obstacles, *self.internal_image_obstacles()),
             use_xy_cut=use_xy_cut,
@@ -260,7 +263,11 @@ class internal_PageExtraction:
             page_height=float(capture.page.height),
         )
         if include_table_obstacles:
-            self.internal_layout = (blocks, "xy-cut" if use_xy_cut else "row-order")
+            self.internal_layout = (
+                blocks,
+                "xy-cut" if use_xy_cut else "row-order",
+                order_evidence,
+            )
             self.internal_layout_finished_at = time.perf_counter()
         return blocks
 
@@ -319,6 +326,7 @@ class internal_PageExtraction:
             )
         )
         layout_strategy = self.internal_layout[1] if self.internal_layout is not None else "xy-cut"
+        order_evidence = self.internal_layout[2] if self.internal_layout is not None else None
         image_cache = getattr(self.page.document, "image_cache", None)
         image_cache_stats = image_cache.stats() if image_cache is not None else None
         decoder_cache = getattr(self.page.document, "decoder_cache", {})
@@ -335,6 +343,11 @@ class internal_PageExtraction:
                 internal_annotate_table_associations(table, observations) for table in tables
             ),
             figures=figures,
+            diagnostics=(
+                ("reading-order-ambiguous",)
+                if order_evidence is not None and order_evidence.ambiguous
+                else ()
+            ),
             metrics={
                 "route": plan.route.value,
                 "preflight_class": preflight.recommendation.page_class.value,
@@ -387,6 +400,30 @@ class internal_PageExtraction:
                 ),
                 "fused_observations": len(observations),
                 "layout_strategy": layout_strategy,
+                "reading_order_strategy": (
+                    order_evidence.strategy if order_evidence is not None else "source-stable"
+                ),
+                "reading_order_repaired": int(
+                    order_evidence.repaired if order_evidence is not None else False
+                ),
+                "reading_order_ambiguous": int(
+                    order_evidence.ambiguous if order_evidence is not None else False
+                ),
+                "reading_order_confidence": (
+                    order_evidence.confidence if order_evidence is not None else 1.0
+                ),
+                "reading_order_source_inversions": (
+                    order_evidence.source_inversions if order_evidence is not None else 0
+                ),
+                "reading_order_source_inversion_ratio": (
+                    order_evidence.source_inversion_ratio if order_evidence is not None else 0.0
+                ),
+                "reading_order_columns": (
+                    order_evidence.column_count if order_evidence is not None else 0
+                ),
+                "reading_order_rotations": (
+                    order_evidence.rotation_count if order_evidence is not None else 0
+                ),
                 "text_coverage": capture.evidence.text_coverage,
                 "painted_text_coverage": capture.evidence.painted_text_coverage or 0.0,
                 "glyph_mapped_ratio": capture.evidence.glyphs.mapped_ratio,
