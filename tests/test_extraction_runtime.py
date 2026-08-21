@@ -14,10 +14,44 @@ from core_pdf.impl.engine.document import PdfDocument
 from core_pdf.impl.engine.execution import ExecutionRuntime, RuntimeConfig, TaskScope, WorkStage
 from core_pdf.impl.engine.parse import ParsedPage
 from core_pdf.impl.engine.parse import pipeline as parse_pipeline
+from core_pdf.impl.engine.writing import serialize_pdf_file
+from core_pdf.impl.objects import PdfName, PdfReference, PdfStream
 
 TESTS_DIR = Path(__file__).parent / "fixtures"
 SAMPLE_PDF = TESTS_DIR / "SCORE-Bench" / "src" / "global-AIDS-strategy-p74-75-p001.pdf"
 ADAPTIVE_OCR_PDF = TESTS_DIR / "SCORE-Bench" / "src" / "SFG-Content-Marketing-2021-p001.pdf"
+
+
+def internal_many_page_pdf(page_count: int) -> bytes:
+    objects: dict[int, object] = {
+        1: {PdfName.of("Type"): PdfName.of("Catalog"), PdfName.of("Pages"): PdfReference(2)},
+        3: {
+            PdfName.of("Type"): PdfName.of("Font"),
+            PdfName.of("Subtype"): PdfName.of("Type1"),
+            PdfName.of("BaseFont"): PdfName.of("Helvetica"),
+        },
+    }
+    kids = []
+    for page_index in range(page_count):
+        page_object = 4 + page_index * 2
+        content_object = page_object + 1
+        kids.append(PdfReference(page_object))
+        objects[page_object] = {
+            PdfName.of("Type"): PdfName.of("Page"),
+            PdfName.of("Parent"): PdfReference(2),
+            PdfName.of("MediaBox"): [0, 0, 612, 792],
+            PdfName.of("Resources"): {PdfName.of("Font"): {PdfName.of("F1"): PdfReference(3)}},
+            PdfName.of("Contents"): PdfReference(content_object),
+        }
+        objects[content_object] = PdfStream(
+            {}, f"BT /F1 10 Tf 36 750 Tm (Page {page_index}) Tj ET".encode()
+        )
+    objects[2] = {
+        PdfName.of("Type"): PdfName.of("Pages"),
+        PdfName.of("Kids"): kids,
+        PdfName.of("Count"): page_count,
+    }
+    return serialize_pdf_file(objects, trailer={PdfName.of("Root"): PdfReference(1)})
 
 
 def test_first_extraction_can_start_in_an_application_worker() -> None:
@@ -306,6 +340,24 @@ def test_context_tracks_scheduler_metrics_and_worker_state() -> None:
     assert metrics.submitted == 4
     assert metrics.completed == 4
     assert metrics.peak_workers > 0
+    runtime.shutdown()
+
+
+def test_document_extraction_chunks_capture_and_parses_native_pages_inline() -> None:
+    runtime = ExecutionRuntime(RuntimeConfig(parent_workers=4))
+    page_count = 128
+    with PdfDocument.open(internal_many_page_pdf(page_count)) as document:
+        with runtime.task_scope(metrics=True) as context:
+            extracted = document.extract(context=context)
+            metrics = context.metrics()
+
+    assert len(extracted.pages) == page_count
+    assert extracted.pages[0].text == "Page 0"
+    assert extracted.pages[-1].text == f"Page {page_count - 1}"
+    assert metrics.submitted == len(
+        parse_pipeline.internal_page_chunks(tuple(range(page_count)), runtime.max_workers)
+    )
+    assert metrics.submitted < page_count
     runtime.shutdown()
 
 
