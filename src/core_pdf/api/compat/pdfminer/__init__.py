@@ -979,6 +979,10 @@ def _reading_order(
 
     active: dict[int, LTTextBox | _TextGroup] = {id(box): box for box in boxes}
     plane_order = list(active)
+    # Heap entries use object identity like pdfminer itself. Keep merged groups
+    # alive until ordering completes so CPython cannot recycle an id while a
+    # stale entry for the former object is still queued.
+    retained_groups: list[_TextGroup] = []
 
     def area_gap(first: LTTextBox | _TextGroup, second: LTTextBox | _TextGroup) -> float:
         x0 = min(first.bbox[0], second.bbox[0])
@@ -1034,14 +1038,15 @@ def _reading_order(
             heapq.heappush(queue, (True, _distance, first_id, second_id))
             continue
         vertical = (
-            isinstance(first, LTTextBoxVertical)
-            or isinstance(second, LTTextBoxVertical)
-            or isinstance(first, _TextGroup)
-            and first.vertical
-            or isinstance(second, _TextGroup)
-            and second.vertical
+            isinstance(active_first, LTTextBoxVertical)
+            or isinstance(active_second, LTTextBoxVertical)
+            or isinstance(active_first, _TextGroup)
+            and active_first.vertical
+            or isinstance(active_second, _TextGroup)
+            and active_second.vertical
         )
-        group = _TextGroup([first, second], union, vertical)
+        group = _TextGroup([active_first, active_second], union, vertical)
+        retained_groups.append(group)
         del active[first_id], active[second_id]
         group_id = id(group)
         for other_id in plane_order:
