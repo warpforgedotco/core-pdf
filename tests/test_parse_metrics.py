@@ -33,6 +33,14 @@ def test_parse_pipeline_records_route_and_stage_timings() -> None:
     assert metrics["preflight_native_route_mismatch"] in {0, 1}
     assert metrics["preflight_image_route_mismatch"] in {0, 1}
     assert metrics["preflight_vector_route_mismatch"] in {0, 1}
+    assert metrics["reading_order_strategy"] in {"source-stable", "geometric-repair"}
+    assert metrics["reading_order_repaired"] in {0, 1}
+    assert metrics["reading_order_ambiguous"] in {0, 1}
+    assert 0.0 <= metrics["reading_order_confidence"] <= 1.0
+    assert 0.0 <= metrics["reading_order_source_inversion_ratio"] <= 1.0
+    assert metrics["reading_order_source_inversions"] >= 0
+    assert metrics["reading_order_columns"] >= 0
+    assert metrics["reading_order_rotations"] >= 0
     assert "preflight" in cache
     for key in ("capture_seconds", "layout_seconds", "ocr_seconds"):
         value = metrics[key]

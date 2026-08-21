@@ -39,6 +39,14 @@ class ParseMetrics(TypedDict, total=False):
     fused_observations: int
     ocr_raster_pixels: int
     layout_strategy: str
+    reading_order_strategy: str
+    reading_order_repaired: int
+    reading_order_ambiguous: int
+    reading_order_confidence: float
+    reading_order_source_inversions: int
+    reading_order_source_inversion_ratio: float
+    reading_order_columns: int
+    reading_order_rotations: int
 
 
 __all__ = (
