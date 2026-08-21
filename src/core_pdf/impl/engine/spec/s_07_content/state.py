@@ -2304,9 +2304,11 @@ class TextState:
             glyphs = None
             if self.capture_glyphs:
                 glyphs = decoder.decode_glyphs(data)
-                text = "".join(
-                    glyph.unicode for glyph in glyphs if glyph.unicode_source != "undefined"
-                )
+                # Keep undecodable painted glyphs in the page program. Native
+                # consumers can retain the replacement marker, while legacy
+                # facades project the source code as their exact ``(cid:N)``
+                # spelling. Dropping them here also lost their cursor advance.
+                text = "".join(glyph.unicode for glyph in glyphs)
             else:
                 text = decoder.decode(bytes(data))
         else:
