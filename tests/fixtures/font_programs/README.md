@@ -14,6 +14,26 @@ license is recorded at
 
 The textual encoding keeps the small binary fixture reviewable without Git LFS.
 
+The `poppler/` directory contains committed differential reference rasters made
+with `pdftoppm` from Poppler 26.07.0. They are intentionally compared with
+foreground-mask geometry and mean absolute color-error tolerances because Core
+PDF uses hard glyph edges while Poppler antialiases them.
+
+- `simple5-type1-72dpi.png`: page 1 of the existing `simple5.pdf` fixture at
+  72 DPI; SHA-256
+  `54167e9c781fe03214d74d22d94756742bf33ad71ed5eeff003b8c156edccce4`.
+- `type3font-144dpi.png`: page 1 of the existing `type3font.pdf` fixture at
+  144 DPI; SHA-256
+  `c9d35b2964e9335502bd22a2c4075f9885c24246aea3da384d6cd2825c611028`.
+
+The source PDFs retain their upstream provenance and licenses in their owning
+fixture corpora. Reproduce the references with:
+
+```sh
+pdftoppm -f 1 -singlefile -r 72 -png simple5.pdf simple5-type1-72dpi
+pdftoppm -f 1 -singlefile -r 144 -png type3font.pdf type3font-144dpi
+```
+
 `cjk-provider.ttf.zlib.hex` is a test-only subset derived from the bundled
 Liberation Sans 2.1.5 font. Its `A` outline is deliberately mapped to U+65E5
 (`日`) so provider behavior can be tested without bundling a pan-CJK font. It is

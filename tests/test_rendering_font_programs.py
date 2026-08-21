@@ -5,6 +5,7 @@ import zlib
 from pathlib import Path
 
 import numpy
+from PIL import Image
 
 from core_pdf import PdfDocument, PdfRasterFontRequest
 from core_pdf.impl.engine.rendering import RenderOptions
@@ -12,6 +13,11 @@ from core_pdf.impl.engine.spec.s_09_fonts.decoder import FontDecoder
 from core_pdf.impl.objects import PdfStream
 
 FIXTURES = Path(__file__).parent / "fixtures"
+
+
+def internal_poppler_rgb(name: str) -> numpy.ndarray:
+    reference = FIXTURES / "font_programs" / "poppler" / name
+    return numpy.asarray(Image.open(reference).convert("RGB"))
 
 
 def test_embedded_type3_raster_matches_poppler_foreground_mask() -> None:
@@ -25,9 +31,14 @@ def test_embedded_type3_raster_matches_poppler_foreground_mask() -> None:
     foreground = numpy.any(pixels[..., :3] < 250, axis=-1)
     rows, columns = numpy.where(foreground)
 
-    # Poppler 26.08.0 at 144 DPI paints 380 foreground pixels in the same
+    poppler = internal_poppler_rgb("type3font-144dpi.png")
+    assert poppler.shape == pixels[..., :3].shape
+    color_error = numpy.abs(pixels[..., :3].astype(int) - poppler.astype(int))
+
+    # Poppler 26.07.0 at 144 DPI paints 380 foreground pixels in the same
     # half-open bounding box. Permit only the two antialiasing-edge pixels by
     # comparing the stable mask statistics instead of requiring byte identity.
+    assert float(color_error.mean()) < 0.38
     assert int(foreground.sum()) == 378
     assert (
         int(columns.min()),
@@ -67,10 +78,15 @@ def test_embedded_type1_uses_actual_outlines_without_fallback() -> None:
     foreground = numpy.any(pixels[..., :3] < 250, axis=-1)
     rows, columns = numpy.where(foreground)
 
-    # Poppler 26.08.0 at 72 DPI produces 3,761 antialiased foreground pixels
+    poppler = internal_poppler_rgb("simple5-type1-72dpi.png")
+    assert poppler.shape == pixels[..., :3].shape
+    color_error = numpy.abs(pixels[..., :3].astype(int) - poppler.astype(int))
+
+    # Poppler 26.07.0 at 72 DPI produces 3,761 antialiased foreground pixels
     # in (134, 124, 381, 702). The engine intentionally emits a hard-edged
     # 4,844-pixel mask with the same horizontal and top extent; its final edge
     # lands one pixel lower because it does not partially cover edge pixels.
+    assert float(color_error.mean()) < 1.57
     assert int(foreground.sum()) == 4844
     assert (
         int(columns.min()),
