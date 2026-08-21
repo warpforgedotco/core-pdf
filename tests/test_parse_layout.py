@@ -98,6 +98,31 @@ def test_rtl_ocr_words_read_right_to_left_within_line() -> None:
     assert [line.text for block in blocks for line in block.lines] == ["שלום עולם"]
 
 
+def test_mixed_rotations_in_one_block_are_reported_as_ambiguous() -> None:
+    block = ParsedBlock(
+        lines=(
+            ParsedLine("body", (0.0, 20.0, 40.0, 30.0), "native", sequence=0),
+            ParsedLine(
+                "margin note",
+                (50.0, 0.0, 60.0, 40.0),
+                "native",
+                sequence=1,
+                rotation=90,
+            ),
+        ),
+        bbox=(0.0, 0.0, 60.0, 40.0),
+    )
+
+    from core_pdf.impl.engine.parse.layout import reading_order_evidence
+
+    evidence = reading_order_evidence((block,))
+
+    assert evidence.ambiguous
+    assert evidence.confidence == 0.5
+    assert evidence.rotation_count == 2
+    assert evidence.column_count == 1
+
+
 def test_column_major_prose_recovers_two_columns_with_a_header_cluster() -> None:
     lines = [
         ParsedLine(

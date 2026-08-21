@@ -1032,7 +1032,7 @@ def reading_order_evidence(blocks: tuple[ParsedBlock, ...]) -> ReadingOrderEvide
         line_count=len(lines),
         source_inversions=inversions,
         source_inversion_ratio=inversions / maximum if maximum else 0.0,
-        column_count=len(columns),
+        column_count=max(1, len(columns)) if lines else 0,
         rotation_count=len(rotations),
         repaired=repaired,
         ambiguous=ambiguous,

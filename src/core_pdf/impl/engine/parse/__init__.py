@@ -10,7 +10,7 @@ from __future__ import annotations
 from core_pdf.impl.engine.parse.capture import capture_page, preflight_page
 from core_pdf.impl.engine.parse.emit import assemble_page
 from core_pdf.impl.engine.parse.fusion import fuse_observations, maximum_candidate_coverage
-from core_pdf.impl.engine.parse.layout import layout_blocks
+from core_pdf.impl.engine.parse.layout import layout_blocks, layout_blocks_with_evidence
 from core_pdf.impl.engine.parse.model import (
     CapturedPage,
     GlyphEvidence,
@@ -24,6 +24,7 @@ from core_pdf.impl.engine.parse.model import (
     ParsedBlock,
     ParsedLine,
     ParsedPage,
+    ReadingOrderEvidence,
     TextQualityStats,
     WorkPlan,
 )
@@ -50,6 +51,7 @@ __all__ = (
     "ParsedBlock",
     "ParsedLine",
     "ParsedPage",
+    "ReadingOrderEvidence",
     "TextQualityStats",
     "WorkPlan",
     "assemble_page",
@@ -58,6 +60,7 @@ __all__ = (
     "extract_tables",
     "fuse_observations",
     "layout_blocks",
+    "layout_blocks_with_evidence",
     "maximum_candidate_coverage",
     "page_extraction",
     "parse_document",
