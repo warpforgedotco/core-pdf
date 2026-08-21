@@ -52,3 +52,32 @@ def test_custom_raster_font_provider_is_consulted_only_for_rendering() -> None:
 def test_symbol_and_zapf_fallbacks_cover_representative_glyphs() -> None:
     assert fallback_glyph_outline("Symbol", "Ω", is_cid_font=False, is_vertical=False)
     assert fallback_glyph_outline("ZapfDingbats", "✂", is_cid_font=False, is_vertical=False)
+
+
+def test_cid_provider_receives_collection_and_writing_mode() -> None:
+    requests: list[PdfRasterFontRequest] = []
+
+    def provider(request: PdfRasterFontRequest) -> None:
+        requests.append(request)
+        return None
+
+    fallback_glyph_outline(
+        "HeiseiKakuGo-W5",
+        "日",
+        is_cid_font=True,
+        is_vertical=True,
+        cid_registry="Adobe",
+        cid_ordering="Japan1",
+        provider=provider,
+    )
+
+    assert requests == [
+        PdfRasterFontRequest(
+            "HeiseiKakuGo-W5",
+            "日",
+            True,
+            True,
+            "Adobe",
+            "Japan1",
+        )
+    ]

@@ -21,6 +21,8 @@ class PdfRasterFontRequest:
     text: str
     is_cid_font: bool
     is_vertical: bool
+    cid_registry: str | None = None
+    cid_ordering: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,12 +103,21 @@ def fallback_glyph_outline(
     *,
     is_cid_font: bool,
     is_vertical: bool,
+    cid_registry: str | None = None,
+    cid_ordering: str | None = None,
     provider: RasterFontProviderLike | None = None,
 ) -> tuple[tuple[tuple[float, float], ...], ...]:
     """Resolve one Unicode scalar through a custom provider, then bundled fonts."""
     if len(text) != 1:
         return ()
-    request = PdfRasterFontRequest(font_name, text, is_cid_font, is_vertical)
+    request = PdfRasterFontRequest(
+        font_name,
+        text,
+        is_cid_font,
+        is_vertical,
+        cid_registry,
+        cid_ordering,
+    )
     face = internal_provider_face(provider, request)
     programs: list[TrueTypeFontProgram] = []
     if face is not None:

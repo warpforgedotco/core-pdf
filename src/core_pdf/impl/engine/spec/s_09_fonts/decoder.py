@@ -178,6 +178,8 @@ class FontDecoder:
         "cmap",
         "cid_unicode_map",
         "cid_unicode_map_resolved",
+        "cid_registry",
+        "cid_ordering",
         "base_encoding",
         "differences",
         "encoding_differences",
@@ -228,6 +230,8 @@ class FontDecoder:
     cmap: CMapDecoder | None
     cid_unicode_map: Mapping[int, str] | CIDUnicodeMap | None
     cid_unicode_map_resolved: bool
+    cid_registry: str | None
+    cid_ordering: str | None
     base_encoding: str | None
     differences: dict[int, str]
     is_cid_font: bool
@@ -365,6 +369,7 @@ class FontDecoder:
         self.cmap = cmap
         self.cid_unicode_map = None
         self.cid_unicode_map_resolved = not is_cid_font
+        self.cid_registry, self.cid_ordering = self.internal_cid_system_info(font)
         self.base_encoding = base_encoding
         self.differences = differences
         # The decode table layers explicit /Differences over the font
@@ -414,22 +419,28 @@ class FontDecoder:
         return None
 
     @classmethod
+    def internal_cid_system_info(
+        cls,
+        font: dict[str, Any],
+    ) -> tuple[str | None, str | None]:
+        descendant = get_descendant(font)
+        system_info = lookup_dict_key(descendant, "CIDSystemInfo") if descendant else None
+        if not isinstance(system_info, dict):
+            system_info = lookup_dict_key(font, "CIDSystemInfo")
+        if not isinstance(system_info, dict):
+            return None, None
+        registry = cls.internal_cid_system_info_string(lookup_dict_key(system_info, "Registry"))
+        ordering = cls.internal_cid_system_info_string(lookup_dict_key(system_info, "Ordering"))
+        return registry, ordering
+
+    @classmethod
     def internal_cid_unicode_map(
         cls,
         font: dict[str, Any],
         *,
         vertical: bool,
     ) -> Mapping[int, str] | CIDUnicodeMap | None:
-        descendant = get_descendant(font)
-        if descendant is None:
-            return None
-        system_info = lookup_dict_key(descendant, "CIDSystemInfo")
-        if not isinstance(system_info, dict):
-            system_info = lookup_dict_key(font, "CIDSystemInfo")
-        if not isinstance(system_info, dict):
-            return None
-        registry = cls.internal_cid_system_info_string(lookup_dict_key(system_info, "Registry"))
-        ordering = cls.internal_cid_system_info_string(lookup_dict_key(system_info, "Ordering"))
+        registry, ordering = cls.internal_cid_system_info(font)
         if registry is None or ordering is None:
             return None
         return resolve_cid_unicode_map(registry, ordering, vertical=vertical)
@@ -1032,6 +1043,8 @@ class FontDecoder:
             text,
             is_cid_font=self.is_cid_font,
             is_vertical=self.is_vertical,
+            cid_registry=self.cid_registry,
+            cid_ordering=self.cid_ordering,
             provider=self.raster_font_provider,
         )
 
