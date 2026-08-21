@@ -169,6 +169,7 @@ class TextDocument(typing.Protocol):
     decoder_cache: dict[tuple[int, int] | int, FontDecoder]
     image_cache: ImageCache
     internal_cache_lock: Any
+    raster_font_provider: Any
 
     def resolve(self, value: object) -> object: ...
 
@@ -313,6 +314,7 @@ class TextState:
         "current_decoder",
         "current_decoder_resources_id",
         "sequence",
+        "text_object_id",
         "stream_order",
         "xobject_depth",
         "capture_source",
@@ -461,6 +463,7 @@ class TextState:
         self.current_decoder = None
         self.current_decoder_resources_id = None
         self.sequence = 0
+        self.text_object_id = 0
         self.stream_order = -1
         self.xobject_depth = 0
         self.capture_source = "native_text"
@@ -1251,6 +1254,7 @@ class TextState:
                 ligature_overrides=detect_ligature_overrides(
                     self.document, self.resources, resolved_font
                 ),
+                raster_font_provider=self.document.raster_font_provider,
             )
             decoder = self.current_decoder
             self.current_decoder_resources_id = self.resources_id
@@ -1911,6 +1915,31 @@ class TextState:
         font_scale = self.font_scale
         font_ascent = self.font_ascent
         font_descent = self.font_descent
+
+        def glyph_transform(
+            glyph_offset: float,
+            vertical_offset: tuple[float, float] | None = None,
+        ) -> tuple[float, float, float, float, float, float]:
+            if vertical_offset is None:
+                origin_x = glyph_offset
+                origin_y = rise
+            else:
+                position_x, position_y = vertical_offset
+                origin_x = position_x
+                origin_y = rise + position_y - glyph_offset
+            glyph_a = advance_scale * combined_a
+            glyph_b = advance_scale * combined_b
+            glyph_c = font_scale * combined_c
+            glyph_d = font_scale * combined_d
+            return (
+                glyph_a,
+                glyph_b,
+                glyph_c,
+                glyph_d,
+                text_basis[0] + origin_x * combined_a + origin_y * combined_c,
+                text_basis[1] + origin_x * combined_b + origin_y * combined_d,
+            )
+
         if axis_aligned_horizontal:
             axis_advance_y0 = text_basis[1] + (font_descent + rise) * combined_d
             axis_advance_y1 = text_basis[1] + (font_ascent + rise) * combined_d
@@ -2015,6 +2044,10 @@ class TextState:
                     transformed.y1,
                 )
                 baseline = transformed_text_line(*baseline_text, text_basis)
+            outline_transform = glyph_transform(
+                offset,
+                vertical_position(glyph.cid, font_size=font_size) if is_vertical else None,
+            )
             observation_visible = visible and not self.internal_is_clipped_away(*advance_bbox)
             if is_vertical:
                 glyph_bbox = None
@@ -2095,6 +2128,18 @@ class TextState:
                     effective_font_size,
                     effective_font_height,
                     (*observation_provenance, ("cluster_id", cluster_provenance_id)),
+                    glyph_transform=outline_transform,
+                    text_render_mode=self.render_mode,
+                    fill_opacity=self.fill_opacity,
+                    stroke_color=self.stroke_color,
+                    stroke_opacity=self.stroke_opacity,
+                    line_width=self.transformed_line_width(),
+                    line_cap=self.line_cap,
+                    line_join=self.line_join,
+                    dash_pattern=self.transformed_dash_pattern(),
+                    blend_mode=self.blend_mode,
+                    soft_mask_alpha=self.group_alpha,
+                    text_object_id=self.text_object_id,
                 )
                 append_glyph(observation)
                 # Single-glyph fast path: glyph_cluster_from_observations, given one
@@ -2121,7 +2166,7 @@ class TextState:
             if glyph.split_unicode:
                 per_char_advance = advance / len(chunk_text)
                 char_offset = offset
-                for ch in chunk_text:
+                for char_index, ch in enumerate(chunk_text):
                     char_confidence = glyph_unicode_confidence(
                         ch,
                         glyph.unicode_source,
@@ -2169,6 +2214,16 @@ class TextState:
                             effective_font_size,
                             effective_font_height,
                             (*observation_provenance, ("cluster_id", cluster_provenance_id)),
+                            glyph_transform=outline_transform,
+                            text_render_mode=self.render_mode,
+                            fill_opacity=self.fill_opacity,
+                            stroke_color=self.stroke_color,
+                            stroke_opacity=self.stroke_opacity,
+                            line_width=self.line_width,
+                            blend_mode=self.blend_mode,
+                            soft_mask_alpha=self.group_alpha,
+                            paint_glyph=char_index == 0,
+                            text_object_id=self.text_object_id,
                         )
                     )
                     char_offset += per_char_advance
@@ -2200,6 +2255,15 @@ class TextState:
                         effective_font_size,
                         effective_font_height,
                         (*observation_provenance, ("cluster_id", cluster_provenance_id)),
+                        glyph_transform=outline_transform,
+                        text_render_mode=self.render_mode,
+                        fill_opacity=self.fill_opacity,
+                        stroke_color=self.stroke_color,
+                        stroke_opacity=self.stroke_opacity,
+                        line_width=self.line_width,
+                        blend_mode=self.blend_mode,
+                        soft_mask_alpha=self.group_alpha,
+                        text_object_id=self.text_object_id,
                     )
                 )
             for observation in cluster_observations:
@@ -3536,6 +3600,7 @@ class TextState:
         return
 
     def op_BT(self, operands: OperandWindow, depth: int) -> None:
+        self.text_object_id += 1
         self.text_component.begin()
 
     def op_ET(self, operands: OperandWindow, depth: int) -> None:

@@ -79,12 +79,30 @@ class GlyphObservation:
     effective_font_size: float = 0.0
     effective_font_height: float = 0.0
     provenance: tuple[tuple[str, object], ...] = ()
+    glyph_transform: Matrix6 | None = None
+    text_render_mode: int = 0
+    fill_opacity: float | None = None
+    stroke_color: tuple[float, ...] | None = None
+    stroke_opacity: float | None = None
+    line_width: float = 1.0
+    blend_mode: str | None = None
+    soft_mask_alpha: float | None = None
+    paint_glyph: bool = True
+    text_object_id: int = 0
+    line_cap: int = 0
+    line_join: int = 0
+    dash_pattern: tuple[list[float], float] | None = None
 
     @property
     def has_paint(self) -> bool:
         """Whether this glyph can contribute paint to a text-inclusive render."""
         return bool(
             self.bitmap
+            or (
+                self.paint_glyph
+                and self.glyph_transform is not None
+                and self.font_decoder is not None
+            )
             or (
                 self.font_decoder is not None
                 and self.bitmap_code is not None

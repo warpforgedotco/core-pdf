@@ -16,6 +16,11 @@ if TYPE_CHECKING:
     )
     from core_pdf.impl.engine.page import PdfPage
     from core_pdf.impl.engine.parse import prewarm_runtime
+    from core_pdf.impl.engine.spec.s_09_fonts.fallback import (
+        PdfRasterFontFace,
+        PdfRasterFontProvider,
+        PdfRasterFontRequest,
+    )
     from core_pdf.impl.engine.structured import (
         ContentNode,
         DocumentTableView,
@@ -63,6 +68,18 @@ internal_EXPORTS = {
         "serialize_document_to_pdf",
     ),
     "PdfFontProvider": ("core_pdf.impl.engine.writing.fonts", "PdfFontProvider"),
+    "PdfRasterFontFace": (
+        "core_pdf.impl.engine.spec.s_09_fonts.fallback",
+        "PdfRasterFontFace",
+    ),
+    "PdfRasterFontProvider": (
+        "core_pdf.impl.engine.spec.s_09_fonts.fallback",
+        "PdfRasterFontProvider",
+    ),
+    "PdfRasterFontRequest": (
+        "core_pdf.impl.engine.spec.s_09_fonts.fallback",
+        "PdfRasterFontRequest",
+    ),
     "PdfSignaturePlan": (
         "core_pdf.impl.engine.writing.signatures",
         "PdfSignaturePlan",
@@ -173,6 +190,9 @@ __all__ = (
     "PdfUnsupportedError",
     "serialize_document_to_pdf",
     "PdfFontProvider",
+    "PdfRasterFontFace",
+    "PdfRasterFontProvider",
+    "PdfRasterFontRequest",
     "PdfSignaturePlan",
     "PdfSignatureProvider",
     "StandardPdfEncryption",

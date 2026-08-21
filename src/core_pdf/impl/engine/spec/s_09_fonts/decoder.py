@@ -73,6 +73,8 @@ from core_pdf.impl.primitives import PdfString
 if typing.TYPE_CHECKING:
     from typing import Any
 
+    from core_pdf.impl.engine.spec.s_09_fonts.fallback import RasterFontProviderLike
+
 
 LEGITIMATE_MULTI_CHAR_GLYPHS = frozenset({"ff", "fi", "fl", "ffi", "ffl", "st"})
 TYPE1_ENCODING_ENTRY_RE = re.compile(rb"\bdup\s+(\d{1,3})\s+/([A-Za-z0-9_.]+)\s+put\b")
@@ -176,6 +178,8 @@ class FontDecoder:
         "cmap",
         "cid_unicode_map",
         "cid_unicode_map_resolved",
+        "cid_registry",
+        "cid_ordering",
         "base_encoding",
         "differences",
         "encoding_differences",
@@ -215,6 +219,7 @@ class FontDecoder:
         "cff_unicode_repairs",
         "cff_font",
         "tt_font",
+        "raster_font_provider",
         "learned_unicode",
         "lazy_initialized",
     )
@@ -225,6 +230,8 @@ class FontDecoder:
     cmap: CMapDecoder | None
     cid_unicode_map: Mapping[int, str] | CIDUnicodeMap | None
     cid_unicode_map_resolved: bool
+    cid_registry: str | None
+    cid_ordering: str | None
     base_encoding: str | None
     differences: dict[int, str]
     is_cid_font: bool
@@ -260,14 +267,17 @@ class FontDecoder:
     cff_unicode_repairs: dict[bytes, str]
     cff_font: CFFFont | None
     tt_font: TrueTypeFontProgram | None
+    raster_font_provider: RasterFontProviderLike | None
 
     def __init__(
         self,
         font: dict[str, Any],
         ligature_overrides: dict[int, str] | None = None,
+        raster_font_provider: RasterFontProviderLike | None = None,
     ) -> None:
         self.font = font
         self.ligature_overrides = ligature_overrides if ligature_overrides is not None else {}
+        self.raster_font_provider = raster_font_provider
         self.decode_cache: dict[bytes, str] = {}
         self.glyphs_cache: dict[bytes, tuple[DecodedGlyph, ...]] = {}
         self.simple_glyph_cache = {}
@@ -359,6 +369,7 @@ class FontDecoder:
         self.cmap = cmap
         self.cid_unicode_map = None
         self.cid_unicode_map_resolved = not is_cid_font
+        self.cid_registry, self.cid_ordering = self.internal_cid_system_info(font)
         self.base_encoding = base_encoding
         self.differences = differences
         # The decode table layers explicit /Differences over the font
@@ -408,22 +419,28 @@ class FontDecoder:
         return None
 
     @classmethod
+    def internal_cid_system_info(
+        cls,
+        font: dict[str, Any],
+    ) -> tuple[str | None, str | None]:
+        descendant = get_descendant(font)
+        system_info = lookup_dict_key(descendant, "CIDSystemInfo") if descendant else None
+        if not isinstance(system_info, dict):
+            system_info = lookup_dict_key(font, "CIDSystemInfo")
+        if not isinstance(system_info, dict):
+            return None, None
+        registry = cls.internal_cid_system_info_string(lookup_dict_key(system_info, "Registry"))
+        ordering = cls.internal_cid_system_info_string(lookup_dict_key(system_info, "Ordering"))
+        return registry, ordering
+
+    @classmethod
     def internal_cid_unicode_map(
         cls,
         font: dict[str, Any],
         *,
         vertical: bool,
     ) -> Mapping[int, str] | CIDUnicodeMap | None:
-        descendant = get_descendant(font)
-        if descendant is None:
-            return None
-        system_info = lookup_dict_key(descendant, "CIDSystemInfo")
-        if not isinstance(system_info, dict):
-            system_info = lookup_dict_key(font, "CIDSystemInfo")
-        if not isinstance(system_info, dict):
-            return None
-        registry = cls.internal_cid_system_info_string(lookup_dict_key(system_info, "Registry"))
-        ordering = cls.internal_cid_system_info_string(lookup_dict_key(system_info, "Ordering"))
+        registry, ordering = cls.internal_cid_system_info(font)
         if registry is None or ordering is None:
             return None
         return resolve_cid_unicode_map(registry, ordering, vertical=vertical)
@@ -998,6 +1015,38 @@ class FontDecoder:
             self.glyph_bitmap_cache.clear()
         self.glyph_bitmap_cache[cache_key] = bitmap
         return bitmap
+
+    def glyph_outline(
+        self, code: int, gid: int | None = None, text: str = ""
+    ) -> tuple[tuple[tuple[float, float], ...], ...]:
+        """Resolve an embedded glyph outline without rasterizing it.
+
+        The returned points use PDF's conventional 1000-unit glyph space so
+        capture can apply the exact text matrix at composition time. Missing or
+        malformed font programs deliberately return no outline.
+        """
+        if code < 0:
+            return ()
+        glyph_id = gid if gid is not None else self.glyph_id_for_code(code)
+        if glyph_id is None:
+            return ()
+        cff_font = self.cff_font
+        if cff_font is not None:
+            return cff_font.glyph_contours_for_gid(glyph_id)
+        tt_font = self.tt_font
+        if tt_font is not None:
+            return tt_font.normalized_glyph_contours(glyph_id)
+        from core_pdf.impl.engine.spec.s_09_fonts.fallback import fallback_glyph_outline
+
+        return fallback_glyph_outline(
+            self.font_name,
+            text,
+            is_cid_font=self.is_cid_font,
+            is_vertical=self.is_vertical,
+            cid_registry=self.cid_registry,
+            cid_ordering=self.cid_ordering,
+            provider=self.raster_font_provider,
+        )
 
     def glyph_width(self, code: int) -> float:
         if self.fast_widths_cid is not None:

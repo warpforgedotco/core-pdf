@@ -214,4 +214,5 @@ core_pdf = ["py.typed"]
 ]
 "core_pdf.impl.engine.spec.s_09_fonts" = [
     "data/cmaps/**",
+    "data/raster_fonts/**",
 ]
