@@ -9,6 +9,8 @@ import unicodedata
 from collections import Counter, defaultdict
 from collections.abc import Iterable
 from dataclasses import dataclass, replace
+from heapq import heappop, heappush
+from itertools import combinations
 from typing import cast
 
 import numpy
@@ -1120,7 +1122,44 @@ def layout_blocks_with_evidence(
     return blocks, internal_reading_order_evidence(blocks)
 
 
-def internal_topological_block_order(blocks: list[ParsedBlock]) -> list[ParsedBlock]:
+def internal_interval_overlap_pairs(
+    starts: numpy.ndarray, ends: numpy.ndarray
+) -> set[tuple[int, int]]:
+    """Return index pairs whose open intervals overlap, using a sweep line."""
+    order = numpy.argsort(starts, kind="stable")
+    active: set[int] = set()
+    ending: list[tuple[float, int]] = []
+    pairs: set[tuple[int, int]] = set()
+    for raw_index in order:
+        index = int(raw_index)
+        start = float(starts[index])
+        while ending and ending[0][0] <= start:
+            _end, expired = heappop(ending)
+            active.discard(expired)
+        for other in active:
+            pairs.add((other, index) if other < index else (index, other))
+        active.add(index)
+        heappush(ending, (float(ends[index]), index))
+    return pairs
+
+
+def internal_sparse_block_candidate_pairs(
+    blocks: list[ParsedBlock], full_width: list[bool]
+) -> list[tuple[int, int]]:
+    boxes = numpy.asarray(tuple(block.bbox for block in blocks), dtype=numpy.float64)
+    pairs = internal_interval_overlap_pairs(boxes[:, 0], boxes[:, 2])
+    pairs.update(internal_interval_overlap_pairs(boxes[:, 1], boxes[:, 3]))
+    full_width_indexes = [index for index, value in enumerate(full_width) if value]
+    for index in full_width_indexes:
+        pairs.update(
+            (min(index, other), max(index, other)) for other in range(len(blocks)) if other != index
+        )
+    return sorted(pairs)
+
+
+def internal_topological_block_order_from_pairs(
+    blocks: list[ParsedBlock], pairs: Iterable[tuple[int, int]]
+) -> list[ParsedBlock]:
     """Sort blocks into topological reading order using a spatial predecessor DAG.
 
     Full-width header blocks enforce strict vertical precedence over all child columns,
@@ -1134,60 +1173,82 @@ def internal_topological_block_order(blocks: list[ParsedBlock]) -> list[ParsedBl
     page_width = max(1.0, page_x1 - page_x0)
 
     n = len(blocks)
+    full_width = [(block.bbox[2] - block.bbox[0]) / page_width >= 0.70 for block in blocks]
     in_degree = [0] * n
     graph: dict[int, list[int]] = defaultdict(list)
 
-    for i in range(n):
+    for i, j in pairs:
         ax0, ay0, ax1, ay1 = blocks[i].bbox
         awidth = ax1 - ax0
-        a_is_full_width = (awidth / page_width) >= 0.70
-        for j in range(i + 1, n):
-            bx0, by0, bx1, by1 = blocks[j].bbox
-            bwidth = bx1 - bx0
-            b_is_full_width = (bwidth / page_width) >= 0.70
+        a_is_full_width = full_width[i]
+        bx0, by0, bx1, by1 = blocks[j].bbox
+        bwidth = bx1 - bx0
+        b_is_full_width = full_width[j]
 
-            # Rule 1: Full-width header preceding child blocks below it
-            if a_is_full_width and not b_is_full_width and ay0 >= by1 - 2.0:
-                graph[i].append(j)
-                in_degree[j] += 1
-            elif b_is_full_width and not a_is_full_width and by0 >= ay1 - 2.0:
-                graph[j].append(i)
-                in_degree[i] += 1
-            elif not a_is_full_width and not b_is_full_width:
-                overlap_x = max(0.0, min(ax1, bx1) - max(ax0, bx0))
-                min_w = max(1.0, min(awidth, bwidth))
-                if overlap_x / min_w >= 0.45:
-                    if ay0 >= by1 - 2.0:
-                        graph[i].append(j)
-                        in_degree[j] += 1
-                    elif by0 >= ay1 - 2.0:
-                        graph[j].append(i)
-                        in_degree[i] += 1
-                elif ax1 <= bx0 + 2.0 and max(0.0, min(ay1, by1) - max(ay0, by0)) > 4.0:
-                    # Column A is strictly left of Column B with vertical overlap
+        # Rule 1: Full-width header preceding child blocks below it
+        if a_is_full_width and not b_is_full_width and ay0 >= by1 - 2.0:
+            graph[i].append(j)
+            in_degree[j] += 1
+        elif b_is_full_width and not a_is_full_width and by0 >= ay1 - 2.0:
+            graph[j].append(i)
+            in_degree[i] += 1
+        elif not a_is_full_width and not b_is_full_width:
+            overlap_x = max(0.0, min(ax1, bx1) - max(ax0, bx0))
+            min_w = max(1.0, min(awidth, bwidth))
+            if overlap_x / min_w >= 0.45:
+                if ay0 >= by1 - 2.0:
                     graph[i].append(j)
                     in_degree[j] += 1
-                elif bx1 <= ax0 + 2.0 and max(0.0, min(ay1, by1) - max(ay0, by0)) > 4.0:
-                    # Column B is strictly left of Column A with vertical overlap
+                elif by0 >= ay1 - 2.0:
                     graph[j].append(i)
                     in_degree[i] += 1
+            elif ax1 <= bx0 + 2.0 and max(0.0, min(ay1, by1) - max(ay0, by0)) > 4.0:
+                # Column A is strictly left of Column B with vertical overlap
+                graph[i].append(j)
+                in_degree[j] += 1
+            elif bx1 <= ax0 + 2.0 and max(0.0, min(ay1, by1) - max(ay0, by0)) > 4.0:
+                # Column B is strictly left of Column A with vertical overlap
+                graph[j].append(i)
+                in_degree[i] += 1
 
-    # Kahn's algorithm with priority tie-breaker (highest Y top-down, then left-to-right)
-    ready = [i for i in range(n) if in_degree[i] == 0]
+    # Kahn's algorithm with the same stable top-down, left-to-right priority as
+    # the former repeatedly sorted list, but O(log N) queue operations.
+    ready: list[tuple[float, float, int, int]] = []
+    serial = 0
+    for index in range(n):
+        if in_degree[index] == 0:
+            heappush(ready, (-blocks[index].bbox[3], blocks[index].bbox[0], serial, index))
+            serial += 1
     result: list[int] = []
 
     while ready:
-        ready.sort(key=lambda idx: (-blocks[idx].bbox[3], blocks[idx].bbox[0]))
-        curr = ready.pop(0)
+        _negative_top, _left, _serial, curr = heappop(ready)
         result.append(curr)
         for nxt in graph[curr]:
             in_degree[nxt] -= 1
             if in_degree[nxt] == 0:
-                ready.append(nxt)
+                heappush(ready, (-blocks[nxt].bbox[3], blocks[nxt].bbox[0], serial, nxt))
+                serial += 1
 
     if len(result) == n:
         return [blocks[i] for i in result]
     return blocks
+
+
+def internal_topological_block_order_quadratic(blocks: list[ParsedBlock]) -> list[ParsedBlock]:
+    """Reference implementation used for small inputs and equivalence tests."""
+    return internal_topological_block_order_from_pairs(blocks, combinations(range(len(blocks)), 2))
+
+
+def internal_topological_block_order(blocks: list[ParsedBlock]) -> list[ParsedBlock]:
+    if len(blocks) < 64:
+        return internal_topological_block_order_quadratic(blocks)
+    page_x0 = min(block.bbox[0] for block in blocks)
+    page_x1 = max(block.bbox[2] for block in blocks)
+    page_width = max(1.0, page_x1 - page_x0)
+    full_width = [(block.bbox[2] - block.bbox[0]) / page_width >= 0.70 for block in blocks]
+    pairs = internal_sparse_block_candidate_pairs(blocks, full_width)
+    return internal_topological_block_order_from_pairs(blocks, pairs)
 
 
 def internal_interleave_columnar_blocks(blocks: list[ParsedBlock]) -> list[ParsedBlock]:
