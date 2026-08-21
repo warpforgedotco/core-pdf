@@ -353,8 +353,9 @@ def test_document_extraction_chunks_capture_and_parses_native_pages_inline() -> 
                 metrics = context.metrics()
 
         assert len(extracted.pages) == page_count
-        assert extracted.pages[0].text == "Page 0"
-        assert extracted.pages[-1].text == f"Page {page_count - 1}"
+        assert [page.text for page in extracted.pages] == [
+            f"Page {page_index}" for page_index in range(page_count)
+        ]
         assert metrics.submitted == len(
             parse_pipeline.internal_page_chunks(tuple(range(page_count)), runtime.max_workers)
         )
