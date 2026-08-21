@@ -389,7 +389,11 @@ class OperatorTextProjection:
                     default_width = declared_space_width * (1.0 if flags & 1 else 2.0)
                 else:
                     positive = [width for width in widths.values() if width > 0]
-                    default_width = sum(positive) / len(positive) if positive else 500.0
+                    default_width = (
+                        float(sum(int(width) for width in positive) // len(positive))
+                        if positive
+                        else 500.0
+                    )
             result[str(name)] = internal_Font(
                 decoder=decoder,
                 space_character=chr(space_code),
@@ -581,14 +585,17 @@ class OperatorTextProjection:
             raw_widths = self.resolver.resolve(lookup_dict_key(font, "Widths"))
             if isinstance(first_char, (int, float)) and isinstance(raw_widths, (list, tuple)):
                 widths.update(
-                    (int(first_char) + offset, float(self.resolver.resolve(value)))
+                    (
+                        int(first_char) + offset,
+                        float(int(float(self.resolver.resolve(value)))),
+                    )
                     for offset, value in enumerate(raw_widths)
                 )
             descriptor = self.resolver.resolve(lookup_dict_key(font, "FontDescriptor"))
             if isinstance(descriptor, dict):
                 missing = self.resolver.resolve(lookup_dict_key(descriptor, "MissingWidth"))
                 if isinstance(missing, (int, float)):
-                    default_width = float(missing)
+                    default_width = float(int(missing))
             if not widths:
                 widths.update(
                     (code, width)

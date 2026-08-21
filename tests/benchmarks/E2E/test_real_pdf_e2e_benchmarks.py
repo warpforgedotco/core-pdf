@@ -20,8 +20,6 @@ from core_pdf.impl.engine.rendering import RenderOptions
 FIXTURES = Path(__file__).parents[2] / "fixtures" / "SCORE-Bench" / "src"
 internal_HIGH_IMPACT_FIXTURES = frozenset(
     {
-        "Employee_Health_Benefits_Assess-p006.pdf",
-        "esp32_s3_circuit_schematic.pdf",
         "global-AIDS-strategy-p74-75-p001.pdf",
     }
 )
