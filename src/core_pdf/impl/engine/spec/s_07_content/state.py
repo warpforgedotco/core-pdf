@@ -314,6 +314,7 @@ class TextState:
         "current_decoder",
         "current_decoder_resources_id",
         "sequence",
+        "text_object_id",
         "stream_order",
         "xobject_depth",
         "capture_source",
@@ -462,6 +463,7 @@ class TextState:
         self.current_decoder = None
         self.current_decoder_resources_id = None
         self.sequence = 0
+        self.text_object_id = 0
         self.stream_order = -1
         self.xobject_depth = 0
         self.capture_source = "native_text"
@@ -2134,6 +2136,7 @@ class TextState:
                     line_width=self.line_width,
                     blend_mode=self.blend_mode,
                     soft_mask_alpha=self.group_alpha,
+                    text_object_id=self.text_object_id,
                 )
                 append_glyph(observation)
                 # Single-glyph fast path: glyph_cluster_from_observations, given one
@@ -2217,6 +2220,7 @@ class TextState:
                             blend_mode=self.blend_mode,
                             soft_mask_alpha=self.group_alpha,
                             paint_glyph=char_index == 0,
+                            text_object_id=self.text_object_id,
                         )
                     )
                     char_offset += per_char_advance
@@ -2256,6 +2260,7 @@ class TextState:
                         line_width=self.line_width,
                         blend_mode=self.blend_mode,
                         soft_mask_alpha=self.group_alpha,
+                        text_object_id=self.text_object_id,
                     )
                 )
             for observation in cluster_observations:
@@ -3592,6 +3597,7 @@ class TextState:
         return
 
     def op_BT(self, operands: OperandWindow, depth: int) -> None:
+        self.text_object_id += 1
         self.text_component.begin()
 
     def op_ET(self, operands: OperandWindow, depth: int) -> None:

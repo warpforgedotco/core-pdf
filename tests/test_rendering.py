@@ -673,6 +673,59 @@ def test_vector_glyph_honors_text_rendering_modes(
         ]
 
 
+def test_text_clip_is_committed_before_the_next_text_object() -> None:
+    class Decoder:
+        def glyph_outline(
+            self, code: int, gid: int | None, text: str
+        ) -> tuple[tuple[tuple[float, float], ...], ...]:
+            return (((0.0, 0.0), (1000.0, 0.0), (1000.0, 1000.0), (0.0, 1000.0)),)
+
+    class Page:
+        media_box = (0.0, 0.0, 20.0, 20.0)
+        width = 20.0
+        height = 20.0
+        page_number = 1
+        rotation = 0
+
+        def get_fields(self) -> list[object]:
+            return []
+
+        def get_annotations(self) -> list[object]:
+            return []
+
+        def resolve_transparency_group_alpha(self) -> None:
+            return None
+
+    decoder = Decoder()
+    clipping = GlyphObservation(
+        "A",
+        (1.0, 1.0, 6.0, 6.0),
+        (1.0, 1.0, 6.0, 6.0),
+        1,
+        text_render_mode=7,
+        text_object_id=1,
+        bitmap_code=65,
+        font_decoder=decoder,
+        glyph_transform=(0.005, 0.0, 0.0, 0.005, 1.0, 1.0),
+    )
+    painted = GlyphObservation(
+        "A",
+        (1.0, 1.0, 6.0, 6.0),
+        (1.0, 1.0, 6.0, 6.0),
+        2,
+        text_render_mode=0,
+        text_object_id=2,
+        bitmap_code=65,
+        font_decoder=decoder,
+        glyph_transform=(0.005, 0.0, 0.0, 0.005, 1.0, 1.0),
+    )
+    products = PageProducts((), (clipping, painted), (), (), LineTable.from_lines(()))
+
+    rendered = compose_page(Page(), page_program=PageProgram(products))
+
+    assert [item.kind for item in rendered.display_list.items] == ["clip", "fill"]
+
+
 def test_shared_page_raster_cache_reuses_identical_crop() -> None:
     cache = ImageCache(max_bytes=1024 * 1024)
     first = rendered_page(width=20, height=20)

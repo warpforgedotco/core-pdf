@@ -88,6 +88,7 @@ class GlyphObservation:
     blend_mode: str | None = None
     soft_mask_alpha: float | None = None
     paint_glyph: bool = True
+    text_object_id: int = 0
 
     @property
     def has_paint(self) -> bool:

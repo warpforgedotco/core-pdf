@@ -5743,6 +5743,7 @@ def compose_page(
         else page_program.events.non_text_indexes
     )
     text_clipping_subpaths: list[CapturedSubpath] = []
+    current_text_object_id: int | None = None
 
     def flush_text_clip(seqno: int) -> None:
         if not text_clipping_subpaths:
@@ -5776,6 +5777,13 @@ def compose_page(
             )
         elif kind is PageEventKind.GLYPH:
             glyph = products.glyphs[payload]
+            glyph_text_object_id = getattr(glyph, "text_object_id", 0)
+            if (
+                current_text_object_id is not None
+                and glyph_text_object_id != current_text_object_id
+            ):
+                flush_text_clip(glyph.seqno)
+            current_text_object_id = glyph_text_object_id
             if internal_append_glyph_paint(display_list, glyph, text_clipping_subpaths):
                 continue
             bitmap = glyph.resolved_bitmap()
