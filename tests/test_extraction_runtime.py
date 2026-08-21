@@ -31,7 +31,7 @@ def internal_many_page_pdf(page_count: int) -> bytes:
             PdfName.of("BaseFont"): PdfName.of("Helvetica"),
         },
     }
-    kids = []
+    kids: list[PdfReference] = []
     for page_index in range(page_count):
         page_object = 4 + page_index * 2
         content_object = page_object + 1
