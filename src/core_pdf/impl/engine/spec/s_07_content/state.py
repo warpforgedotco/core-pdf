@@ -321,6 +321,7 @@ class TextState:
         "marked_content_stack",
         "active_streams",
         "queued_stream",
+        "type3_uncolored",
         "resources",
         "resources_id",
         "hidden_layers",
@@ -471,6 +472,7 @@ class TextState:
         self.marked_content_stack = []
         self.active_streams = set()
         self.queued_stream = None
+        self.type3_uncolored = False
         self.resources = {}
         self.resources_id = 0
         self.hidden_layers = hidden_layers
@@ -2704,16 +2706,21 @@ class TextState:
                     self.tm_e * self.ca + self.tm_f * self.cc + self.ce,
                     self.tm_e * self.cb + self.tm_f * self.cd + self.cf,
                 ).multiply(font_matrix)
-                if program.operations is None:
-                    decoder.type3_charproc_unsafe_fallbacks += 1
-                    self.consume_stream(char_proc, resources, glyph_ctm, self.xobject_depth + 1)
-                else:
-                    self.consume_compiled_type3_char_proc(
-                        program,
-                        resources,
-                        glyph_ctm,
-                        self.xobject_depth + 1,
-                    )
+                previous_type3_uncolored = self.type3_uncolored
+                self.type3_uncolored = False
+                try:
+                    if program.operations is None:
+                        decoder.type3_charproc_unsafe_fallbacks += 1
+                        self.consume_stream(char_proc, resources, glyph_ctm, self.xobject_depth + 1)
+                    else:
+                        self.consume_compiled_type3_char_proc(
+                            program,
+                            resources,
+                            glyph_ctm,
+                            self.xobject_depth + 1,
+                        )
+                finally:
+                    self.type3_uncolored = previous_type3_uncolored
 
             total = widths[code] + cs
             if code == 32:
@@ -4117,12 +4124,16 @@ class TextState:
         return normalized
 
     def set_stroke_color(self: Any, *components: Any) -> None:
+        if self.type3_uncolored:
+            return
         normalized = self.normalize_colors(*components)
         if normalized is not None:
             self.stroke_color = normalized
             self.stroke_pattern = None
 
     def set_fill_color(self: Any, *components: Any) -> None:
+        if self.type3_uncolored:
+            return
         normalized = self.normalize_colors(*components)
         if normalized is not None:
             self.fill_color = normalized
@@ -4410,6 +4421,8 @@ class TextState:
     def internal_set_color(
         self, operands: OperandWindow, *, stroke: bool, allow_pattern: bool
     ) -> None:
+        if self.type3_uncolored:
+            return
         color_space = self.stroke_color_space if stroke else self.fill_color_space
         if allow_pattern and color_space == "Pattern":
             pattern = self.resolve_pattern_color(operands)
@@ -4522,10 +4535,10 @@ class TextState:
         self.compatibility_depth = max(0, self.compatibility_depth - 1)
 
     def op_d0(self, operands: OperandWindow, depth: int) -> None:
-        return
+        self.type3_uncolored = False
 
     def op_d1(self, operands: OperandWindow, depth: int) -> None:
-        return
+        self.type3_uncolored = True
 
     def op_sh(self, operands: OperandWindow, depth: int) -> None:
         if not operands or not self.capture_graphics or not self.is_graphics_visible():
