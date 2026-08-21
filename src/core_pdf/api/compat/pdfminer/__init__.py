@@ -2004,11 +2004,12 @@ def extract_pages(  # noqa: C901
                 orientation = glyph.rotation_angle % 360
                 glyph_provenance = dict(glyph.provenance) if glyph.provenance else {}
                 text_matrix = glyph_provenance.get("text_matrix")
-                resolved_text_matrix = (
-                    text_matrix
-                    if isinstance(text_matrix, (tuple, list)) and len(text_matrix) == 6
-                    else (1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
-                )
+                if isinstance(text_matrix, (tuple, list)) and len(text_matrix) == 6:
+                    resolved_text_matrix = text_matrix
+                elif isinstance(text_matrix, (tuple, list)) and len(text_matrix) == 4:
+                    resolved_text_matrix = (*text_matrix, 0.0, 0.0)
+                else:
+                    resolved_text_matrix = (1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
                 pdfminer_matrix_origin = glyph_provenance.get("pdfminer_matrix_origin")
                 pdfminer_cursor = glyph_provenance.get("pdfminer_cursor")
                 exact_cursor_projection = (
