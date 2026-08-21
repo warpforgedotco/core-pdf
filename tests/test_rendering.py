@@ -673,6 +673,43 @@ def test_vector_glyph_honors_text_rendering_modes(
         ]
 
 
+def test_vector_glyph_preserves_stroke_state_and_visibility() -> None:
+    class Decoder:
+        def glyph_outline(
+            self, code: int, gid: int | None, text: str
+        ) -> tuple[tuple[tuple[float, float], ...], ...]:
+            return (((0.0, 0.0), (1000.0, 0.0), (1000.0, 1000.0)),)
+
+    glyph = GlyphObservation(
+        "A",
+        (0.0, 0.0, 2.0, 3.0),
+        (0.0, 0.0, 2.0, 3.0),
+        1,
+        bitmap_code=65,
+        font_decoder=Decoder(),
+        glyph_transform=(0.002, 0.0, 0.0, 0.003, 0.0, 0.0),
+        text_render_mode=1,
+        line_width=4.0,
+        line_cap=2,
+        line_join=1,
+        dash_pattern=([6.0, 2.0], 1.0),
+    )
+    display_list = DisplayList(10.0, 10.0)
+
+    assert internal_append_glyph_paint(display_list, glyph, []) is True
+    item = display_list.items[0]
+    assert isinstance(item, PathPaintItem)
+    assert item.line_width == 4.0
+    assert item.line_cap == 2
+    assert item.line_join == 1
+    assert item.dash_pattern == ([6.0, 2.0], 1.0)
+
+    glyph.visible = False
+    hidden_display_list = DisplayList(10.0, 10.0)
+    assert internal_append_glyph_paint(hidden_display_list, glyph, []) is True
+    assert hidden_display_list.items == []
+
+
 def test_text_clip_is_committed_before_the_next_text_object() -> None:
     class Decoder:
         def glyph_outline(

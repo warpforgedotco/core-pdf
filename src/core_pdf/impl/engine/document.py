@@ -41,6 +41,7 @@ from core_pdf.impl.types import PageSelection, PdfSource
 
 if TYPE_CHECKING:
     from core_pdf.impl.engine.page import PdfPage as PdfPage
+    from core_pdf.impl.engine.spec.s_09_fonts.fallback import RasterFontProviderLike
 
 
 class DocumentOperation(AbstractContextManager["DocumentOperation"]):
@@ -80,7 +81,7 @@ class PdfDocument(PdfDocumentWritingMixin, SpecPdfDocument["PdfPage"]):
         *,
         recovery_scan_all_revisions: bool = True,
         legacy_pdfminer_text_operators: bool = False,
-        raster_font_provider: Any | None = None,
+        raster_font_provider: RasterFontProviderLike | None = None,
     ) -> None:
         self.internal_operation_lock = threading.RLock()
         self.internal_page_locks: dict[int, threading.RLock] = {}

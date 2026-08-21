@@ -89,6 +89,9 @@ class GlyphObservation:
     soft_mask_alpha: float | None = None
     paint_glyph: bool = True
     text_object_id: int = 0
+    line_cap: int = 0
+    line_join: int = 0
+    dash_pattern: tuple[list[float], float] | None = None
 
     @property
     def has_paint(self) -> bool:
