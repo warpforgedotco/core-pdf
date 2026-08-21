@@ -225,6 +225,17 @@ Several compact implementation details trade some obviousness for materially low
 - Adaptive OCR rescue rejects a saturated ink map when the primary pass already contains dense,
   reliable text. A saturated grid provides no localization signal; preserve the conservative
   character and confidence thresholds because less complete scans can still benefit from rescue.
+- Layout line aggregation keeps observation indexes columnar and reduces group bounds, source
+  ranges, and sequence minima with NumPy ``reduceat`` operations. Rebuilding small arrays for each
+  line is slower than reducing all line groups together.
+- Recursive XY-cut carries stable x/y coordinate orders in a page-local geometry state. Child
+  regions filter those orders instead of sorting again, and sampled gutter coverage uses sorted
+  interval endpoints plus ``searchsorted`` rather than a sample-by-box boolean matrix.
+- Block precedence uses a spatial interval sweep above 64 blocks and a heap-based topological
+  queue. The quadratic implementation is deliberately retained as the exact oracle for small
+  inputs and randomized equivalence tests.
+- Layout text reconstruction is revision-aware and shared through the first ``TextRun`` in a line.
+  Parse and analysis callers must use that cache rather than reconstructing the same run group.
 
 These optimizations are covered by correctness tests and extraction-output checks. Performance
 changes to them should retain those invariants and capture a before/after benchmark.

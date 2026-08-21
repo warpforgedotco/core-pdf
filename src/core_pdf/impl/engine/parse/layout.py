@@ -1391,20 +1391,30 @@ def internal_column_major_prose(blocks: list[ParsedBlock]) -> list[ParsedBlock]:
         if len(block.lines) < 80:
             output.append(block)
             continue
-        alphabetic = sum(character.isalpha() for line in block.lines for character in line.text)
-        total = sum(character.isalnum() for line in block.lines for character in line.text)
-        starts = sorted(line.bbox[0] for line in block.lines)
+        alphabetic = 0
+        total = 0
+        for line in block.lines:
+            for character in line.text:
+                is_alpha = character.isalpha()
+                alphabetic += is_alpha
+                total += is_alpha or character.isdigit()
+        line_starts = numpy.fromiter((line.bbox[0] for line in block.lines), dtype=numpy.float64)
+        starts = numpy.sort(line_starts)
         clusters: list[float] = []
         for start in starts:
             if not clusters or start - clusters[-1] > 40.0:
-                clusters.append(start)
+                clusters.append(float(start))
         if len(clusters) < 3 or alphabetic / max(1, total) < 0.45:
             output.append(block)
             continue
-        line_clusters = [
-            min(range(len(clusters)), key=lambda index: abs(line.bbox[0] - clusters[index]))
-            for line in block.lines
-        ]
+        cluster_values = numpy.asarray(clusters, dtype=numpy.float64)
+        insertion = numpy.searchsorted(cluster_values, line_starts)
+        left = numpy.maximum(0, insertion - 1)
+        right = numpy.minimum(len(cluster_values) - 1, insertion)
+        choose_right = numpy.abs(line_starts - cluster_values[right]) < numpy.abs(
+            line_starts - cluster_values[left]
+        )
+        line_clusters = numpy.where(choose_right, right, left)
         transitions = sum(
             left != right for left, right in zip(line_clusters, line_clusters[1:], strict=False)
         )
@@ -1414,17 +1424,11 @@ def internal_column_major_prose(blocks: list[ParsedBlock]) -> list[ParsedBlock]:
         # Stable column-major ordering from the nearest-column assignment.
         # Re-deriving membership with a fixed window emitted lines close to
         # two columns twice and silently dropped lines close to none.
+        columns: list[list[ParsedLine]] = [[] for internal_cluster in clusters]
+        for line, assigned in zip(block.lines, line_clusters, strict=True):
+            columns[int(assigned)].append(line)
         ordered = tuple(
-            line
-            for column_index in range(len(clusters))
-            for line in sorted(
-                (
-                    line
-                    for line, assigned in zip(block.lines, line_clusters, strict=True)
-                    if assigned == column_index
-                ),
-                key=lambda line: -line.bbox[1],
-            )
+            line for column in columns for line in sorted(column, key=lambda item: -item.bbox[1])
         )
         output.append(replace(block, lines=ordered))
     return output
