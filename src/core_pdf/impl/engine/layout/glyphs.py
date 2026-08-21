@@ -95,6 +95,11 @@ class GlyphObservation:
         return bool(
             self.bitmap
             or (
+                self.paint_glyph
+                and self.glyph_transform is not None
+                and self.font_decoder is not None
+            )
+            or (
                 self.font_decoder is not None
                 and self.bitmap_code is not None
                 and self.bitmap_width > 0

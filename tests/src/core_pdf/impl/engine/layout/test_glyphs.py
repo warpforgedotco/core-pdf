@@ -36,6 +36,19 @@ def test_unicode_confidence_reuses_cached_result() -> None:
     assert cache_info.misses == 1
 
 
+def test_vector_outline_counts_as_glyph_paint() -> None:
+    observation = GlyphObservation(
+        "A",
+        (0.0, 0.0, 1.0, 1.0),
+        (0.0, 0.0, 1.0, 1.0),
+        1,
+        font_decoder=object(),
+        glyph_transform=(0.01, 0.0, 0.0, 0.01, 0.0, 0.0),
+    )
+
+    assert observation.has_paint is True
+
+
 @pytest.mark.parametrize("confidence", [None, 0.84])
 def test_single_glyph_cluster_reuses_observation_geometry_and_confidence(
     confidence: float | None,
