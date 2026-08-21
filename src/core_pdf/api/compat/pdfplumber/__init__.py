@@ -615,7 +615,10 @@ class Page:
                 if self.rotation % 180
                 else self.mediabox
             )
-        self.bbox: BBox = (0.0, 0.0, self.width, self.height)
+        # pdfplumber preserves integer MediaBox dimensions, including values
+        # larger than IEEE-754 can represent exactly. Integer zeroes keep the
+        # subsequent bbox subtraction in that same numeric domain.
+        self.bbox: BBox = (0, 0, self.width, self.height)
         self._objects: dict[str, list[ObjectDict]] | None = None
         self._structured_page: Any | None = None
         self._layout: Any | None = None
