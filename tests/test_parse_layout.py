@@ -88,7 +88,12 @@ def test_reading_order_evidence_preserves_authored_observation_sequence() -> Non
 
     blocks, evidence = layout_blocks_with_evidence(batch)
 
-    assert [line.sequence for block in blocks for line in block.lines] == [10, 20, 30, 40]
+    assert [(line.text, line.sequence) for block in blocks for line in block.lines] == [
+        ("left one", 10),
+        ("left two", 20),
+        ("right one", 30),
+        ("right two", 40),
+    ]
     assert evidence.source_inversions == 0
     assert not evidence.repaired
     assert evidence.strategy == "source-stable"
