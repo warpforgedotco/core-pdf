@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Callable
 from dataclasses import dataclass
 from functools import lru_cache
@@ -53,8 +54,16 @@ def internal_provider_face(
     return callback(request)
 
 
-def internal_builtin_face_name(font_name: str | None) -> str:
+def internal_builtin_face_names(font_name: str | None) -> tuple[str, ...]:
     name = (font_name or "").split("+", 1)[-1].lower()
+    if "zapfdingbats" in name:
+        return ("NotoSansSymbols2-Regular.ttf",)
+    if "symbol" in name:
+        return (
+            "NotoSansSymbols-Regular.ttf",
+            "NotoSansSymbols2-Regular.ttf",
+            "LiberationSerif-Regular.ttf",
+        )
     bold = "bold" in name
     italic = "italic" in name or "oblique" in name
     if bold and italic:
@@ -67,11 +76,11 @@ def internal_builtin_face_name(font_name: str | None) -> str:
         style = "Regular"
     if "courier" in name or "mono" in name:
         family = "LiberationMono"
-    elif "times" in name or "serif" in name or "symbol" in name or "zapfdingbats" in name:
+    elif "times" in name or "serif" in name:
         family = "LiberationSerif"
     else:
         family = "LiberationSans"
-    return f"{family}-{style}.ttf"
+    return (f"{family}-{style}.ttf",)
 
 
 @lru_cache(maxsize=12)
@@ -99,18 +108,20 @@ def fallback_glyph_outline(
         return ()
     request = PdfRasterFontRequest(font_name, text, is_cid_font, is_vertical)
     face = internal_provider_face(provider, request)
-    try:
-        program = (
-            internal_custom_font(face.identifier, face.data)
-            if face is not None
-            else internal_builtin_font(internal_builtin_face_name(font_name))
-        )
-    except (OSError, ValueError):
-        return ()
-    glyph_id = program.glyph_id_for_unicode(ord(text))
-    if glyph_id == 0:
-        return ()
-    return program.normalized_glyph_contours(glyph_id)
+    programs: list[TrueTypeFontProgram] = []
+    if face is not None:
+        with contextlib.suppress(OSError, ValueError):
+            programs.append(internal_custom_font(face.identifier, face.data))
+    for face_name in internal_builtin_face_names(font_name):
+        try:
+            programs.append(internal_builtin_font(face_name))
+        except (OSError, ValueError):
+            continue
+    for program in programs:
+        glyph_id = program.glyph_id_for_unicode(ord(text))
+        if glyph_id != 0:
+            return program.normalized_glyph_contours(glyph_id)
+    return ()
 
 
 __all__ = ("PdfRasterFontFace", "PdfRasterFontProvider", "PdfRasterFontRequest")

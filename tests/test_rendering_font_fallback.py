@@ -6,6 +6,7 @@ import numpy
 
 from core_pdf import PdfDocument, PdfRasterFontRequest
 from core_pdf.impl.engine.rendering import RasterImage, RenderOptions
+from core_pdf.impl.engine.spec.s_09_fonts.fallback import fallback_glyph_outline
 
 SIMPLE1 = Path(__file__).parent / "fixtures" / "pdfminer.six" / "samples" / "simple1.pdf"
 
@@ -46,3 +47,8 @@ def test_custom_raster_font_provider_is_consulted_only_for_rendering() -> None:
     assert text
     assert requests
     assert all(request.font_name == "Helvetica" for request in requests)
+
+
+def test_symbol_and_zapf_fallbacks_cover_representative_glyphs() -> None:
+    assert fallback_glyph_outline("Symbol", "Ω", is_cid_font=False, is_vertical=False)
+    assert fallback_glyph_outline("ZapfDingbats", "✂", is_cid_font=False, is_vertical=False)
