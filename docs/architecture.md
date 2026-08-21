@@ -205,3 +205,25 @@ benchmarks (cmap, tokenizer, tounicode, color) are comparatively stable.
 For a change to anything in the table above, do what the existing perf commits did rather than
 trusting a single benchmark run: cProfile before and after, compare corpus wall time across
 repeated runs, and confirm SCORE-Bench accuracy is unchanged across all 224 cases.
+
+### Deliberate extraction hot-path optimizations
+
+Several compact implementation details trade some obviousness for materially lower runtime:
+
+- Content-stream glyph capture computes the transformed line width and dash pattern once per
+  text-show operation. They are paint-state invariants, not per-glyph values.
+- TrueType glyph bounds come from the `glyf` table headers, including the bounds stored for
+  composite glyphs. Do not replace this with contour decomposition unless an operation actually
+  needs outlines.
+- Multi-page extraction captures bounded chunks and schedules only pages that may run OCR. Native
+  pages run inline while OCR-capable pages occupy workers; submitting every cheap native page as
+  its own future adds substantial synchronization overhead on large documents.
+- Newstroke templates retain flattened points and centroids, and their matcher uses specialized
+  2x2 transform math. General-purpose norm, inverse, and reduction calls are disproportionately
+  expensive for the tiny arrays evaluated across tens of thousands of candidates.
+- Adaptive OCR rescue rejects a saturated ink map when the primary pass already contains dense,
+  reliable text. A saturated grid provides no localization signal; preserve the conservative
+  character and confidence thresholds because less complete scans can still benefit from rescue.
+
+These optimizations are covered by correctness tests and extraction-output checks. Performance
+changes to them should retain those invariants and capture a before/after benchmark.
