@@ -1031,7 +1031,7 @@ def internal_parse_document_pages(
             bool(plan.ocr_passes) or plan.verify_hidden_text
         )
         if requires_ocr:
-            futures[index] = context.submit(parse_page, page, stage=WorkStage.PAGE)
+            futures[index] = context.submit(parse_page, page, context, stage=WorkStage.PAGE)
         else:
             direct_indexes.append(index)
     try:
