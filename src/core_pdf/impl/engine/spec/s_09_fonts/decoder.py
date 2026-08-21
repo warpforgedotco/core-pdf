@@ -45,6 +45,10 @@ from core_pdf.impl.engine.spec.s_09_fonts.cmap_resources import (
 from core_pdf.impl.engine.spec.s_09_fonts.cmap_tounicode import ToUnicodeCMap
 from core_pdf.impl.engine.spec.s_09_fonts.cmap_widths import FontWidthMap
 from core_pdf.impl.engine.spec.s_09_fonts.font_names import resolve_base_font_name
+from core_pdf.impl.engine.spec.s_09_fonts.font_program_type1 import (
+    Type1FontProgram,
+    type1_font_for_pdf_font,
+)
 from core_pdf.impl.engine.spec.s_09_fonts.glyph_decode import (
     build_glyph_decode_table,
     has_invalid_unicode_mapping,
@@ -219,6 +223,7 @@ class FontDecoder:
         "cff_unicode_repairs",
         "cff_font",
         "tt_font",
+        "type1_font",
         "raster_font_provider",
         "learned_unicode",
         "lazy_initialized",
@@ -267,6 +272,7 @@ class FontDecoder:
     cff_unicode_repairs: dict[bytes, str]
     cff_font: CFFFont | None
     tt_font: TrueTypeFontProgram | None
+    type1_font: Type1FontProgram | None
     raster_font_provider: RasterFontProviderLike | None
 
     def __init__(
@@ -400,6 +406,7 @@ class FontDecoder:
             self.glyph_decode_table, self.glyph_decode_table_authoritative = glyph_decode
         self.cff_font = cff_font_for_pdf_font(font)
         self.tt_font = tt_font_for_pdf_font(font)
+        self.type1_font = type1_font_for_pdf_font(font)
         self.cff_unicode_repair_index = build_cff_unicode_repair_index(font, to_unicode, cmap)
         self.cff_unicode_repairs = {}
 
@@ -1036,6 +1043,9 @@ class FontDecoder:
         tt_font = self.tt_font
         if tt_font is not None:
             return tt_font.normalized_glyph_contours(glyph_id)
+        type1_font = self.type1_font
+        if type1_font is not None:
+            return type1_font.glyph_contours(self.internal_simple_glyph_name(code))
         from core_pdf.impl.engine.spec.s_09_fonts.fallback import fallback_glyph_outline
 
         return fallback_glyph_outline(
