@@ -897,6 +897,8 @@ class FontDecoder:
             return self.cff_font.has_glyph_id(gid)
         if self.tt_font is not None:
             return self.tt_font.has_glyph_id(gid)
+        if self.opentype_font is not None:
+            return self.opentype_font.has_glyph_id(gid)
         return True
 
     def get_fast_widths_cid(self) -> list[float] | None:

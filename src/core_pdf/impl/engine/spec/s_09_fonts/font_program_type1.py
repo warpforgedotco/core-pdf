@@ -23,6 +23,7 @@ internal_FONT_MATRIX_RE = re.compile(
 internal_SUBR_RE = re.compile(rb"\bdup\s+(\d+)\s+(\d+)\s+(?:RD|-\|)[ \t\r\n]")
 internal_CHARSTRING_RE = re.compile(rb"/([^\s/]+)\s+(\d+)\s+(?:RD|-\|)[ \t\r\n]")
 internal_HEX_BYTES = frozenset(b"0123456789abcdefABCDEF \t\r\n")
+internal_MAX_SUBROUTINES = 4096
 
 
 def internal_decrypt(data: bytes, key: int) -> bytes:
@@ -95,6 +96,8 @@ class Type1FontProgram:
 
         subr_data = internal_extract_subrs(private)
         subr_count = max(subr_data, default=-1) + 1
+        if subr_count > internal_MAX_SUBROUTINES:
+            raise ValueError("Type 1 subroutine index exceeds decoder limit")
         empty = T1CharString(b"\x0b", subrs=[])
         subrs = [empty for _ in range(subr_count)]
         for index, encrypted in subr_data.items():

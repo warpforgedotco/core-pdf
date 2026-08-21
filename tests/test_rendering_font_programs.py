@@ -120,11 +120,14 @@ def test_opentype_cff_program_exposes_actual_outlines() -> None:
 
     assert decoder.cff_font is not None
     assert decoder.opentype_font is not None
+    glyph_id = decoder.opentype_font.glyph_id_for_name("A")
+    assert glyph_id is not None
+    assert decoder.opentype_font.has_glyph_id(glyph_id)
+    assert not decoder.opentype_font.has_glyph_id(-1)
+    assert not decoder.opentype_font.has_glyph_id(decoder.opentype_font.glyph_count)
     assert decoder.tt_font is None
     assert len(contours) == 2
     assert all(len(contour) >= 3 for contour in contours)
-    glyph_id = decoder.opentype_font.glyph_id_for_name("A")
-    assert glyph_id is not None
     assert decoder.opentype_font.normalized_glyph_contours(glyph_id)
 
 

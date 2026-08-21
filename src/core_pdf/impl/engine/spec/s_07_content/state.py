@@ -218,6 +218,7 @@ class TextState:
     marked_content_stack: list[MarkedContentEntry]
     active_streams: set[StreamKey]
     queued_stream: ContentStreamFrame | None
+    type3_uncolored: bool
     resources: PdfDict
     resolved_resource_categories: ResolvedResourceCache
     resource_cache: ResourceCache

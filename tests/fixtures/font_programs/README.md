@@ -5,8 +5,7 @@
 [`cff2-hint-ordering-test`](https://github.com/adobe-fonts/cff2-hint-ordering-test)
 repository. The upstream font is Copyright 2014-2023 Adobe with Reserved Font
 Name `Source` and is distributed under the SIL Open Font License 1.1. The full
-license is recorded at
-`src/core_pdf/impl/engine/spec/s_09_fonts/data/raster_fonts/LICENSE-Noto-Symbols.txt`.
+license is recorded at `tests/fixtures/font_programs/LICENSE-Adobe-Source.txt`.
 
 - Upstream SHA-256: `69349a374bd5cdcdba5d13a8ce87a37acd967bb714e7030a3fef271a443f207e`
 - Decoded subset SHA-256: `9c5c093c83c461f39e01e00d0ad1647d2165b0e5d4754260a225a7ba788c5594`
@@ -27,11 +26,13 @@ PDF uses hard glyph edges while Poppler antialiases them.
   `19f58806a820459f1b8b998c30a2f656c03e4a45285f4707e9be3666a5d78d6e`.
 
 The source PDFs retain their upstream provenance and licenses in their owning
-fixture corpora. Reproduce the references with:
+fixture corpora. From the repository root, reproduce the references with:
 
 ```sh
-pdftoppm -f 1 -singlefile -r 72 simple5.pdf simple5-type1-72dpi
-pdftoppm -f 1 -singlefile -r 144 type3font.pdf type3font-144dpi
+pdftoppm -f 1 -singlefile -r 72 \
+  tests/fixtures/pdfminer.six/samples/simple5.pdf simple5-type1-72dpi
+pdftoppm -f 1 -singlefile -r 144 \
+  tests/fixtures/PyMuPDF/tests/resources/type3font.pdf type3font-144dpi
 gzip -n simple5-type1-72dpi.ppm type3font-144dpi.ppm
 ```
 

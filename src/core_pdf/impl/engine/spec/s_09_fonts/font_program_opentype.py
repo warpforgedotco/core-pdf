@@ -23,6 +23,7 @@ class OpenTypeFontProgram:
 
     __slots__ = (
         "font",
+        "glyph_count",
         "internal_contour_cache",
         "internal_glyph_set",
         "reverse_glyph_map",
@@ -40,6 +41,7 @@ class OpenTypeFontProgram:
             if not ({"CFF ", "CFF2"} & set(self.font.keys())):
                 raise ValueError("OpenType font has no CFF outline table")
             self.reverse_glyph_map = self.font.getReverseGlyphMap()
+            self.glyph_count = len(self.font.getGlyphOrder())
             self.units_per_em = float(getattr(self.font["head"], "unitsPerEm", 1000) or 1000)
             # The renderer resolves variable CFF2 fonts at their default
             # instance. A default glyph set does not need axis metadata, and
@@ -54,6 +56,9 @@ class OpenTypeFontProgram:
 
     def glyph_id_for_name(self, glyph_name: str) -> int | None:
         return self.reverse_glyph_map.get(glyph_name)
+
+    def has_glyph_id(self, glyph_id: int) -> bool:
+        return 0 <= glyph_id < self.glyph_count
 
     def normalized_glyph_contours(self, glyph_id: int) -> tuple[tuple[Point, ...], ...]:
         cached = self.internal_contour_cache.get(glyph_id)
