@@ -7,6 +7,7 @@ from pathlib import Path
 import numpy
 
 from core_pdf import PdfDocument, PdfRasterFontRequest
+from core_pdf.impl.engine.rendering import RenderOptions
 from core_pdf.impl.engine.spec.s_09_fonts.decoder import FontDecoder
 from core_pdf.impl.objects import PdfStream
 
@@ -47,9 +48,14 @@ def test_embedded_type1_uses_actual_outlines_without_fallback() -> None:
         page = document.pages[0]
         program = page.get_page_program()
         glyphs = program.products.glyphs
-        raster = page.render().rasterize(cache=False)
+        raster = page.render(RenderOptions(include_annotations=False)).rasterize(cache=False)
 
     assert len(glyphs) == 119
+    assert "".join(glyph.text for glyph in glyphs) == (
+        "HeadingLinktoheadingthatisworkingwithvim-pandoc."
+        "Linktoheading“thatis”notworkingwithvim-pandoc."
+        "SubheadingSome“moretext”1"
+    )
     assert all(getattr(glyph.font_decoder, "type1_font", None) is not None for glyph in glyphs)
     heading = glyphs[0]
     assert heading.text == "H"
@@ -58,8 +64,20 @@ def test_embedded_type1_uses_actual_outlines_without_fallback() -> None:
     assert heading.font_decoder.type1_font.glyph_contours("H")
 
     pixels = numpy.asarray(raster.pixels).reshape(raster.height, raster.width, 4)
-    dark_pixels = numpy.all(pixels[..., :3] < 200, axis=-1)
-    assert int(dark_pixels.sum()) == 3666
+    foreground = numpy.any(pixels[..., :3] < 250, axis=-1)
+    rows, columns = numpy.where(foreground)
+
+    # Poppler 26.08.0 at 72 DPI produces 3,761 antialiased foreground pixels
+    # in (134, 124, 381, 702). The engine intentionally emits a hard-edged
+    # 4,844-pixel mask with the same horizontal and top extent; its final edge
+    # lands one pixel lower because it does not partially cover edge pixels.
+    assert int(foreground.sum()) == 4844
+    assert (
+        int(columns.min()),
+        int(rows.min()),
+        int(columns.max()) + 1,
+        int(rows.max()) + 1,
+    ) == (134, 124, 381, 703)
 
 
 def test_opentype_cff_program_exposes_actual_outlines() -> None:
