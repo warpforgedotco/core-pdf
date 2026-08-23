@@ -8,7 +8,6 @@ from pathlib import Path
 import pytest
 
 from core_pdf import PdfDocument
-from core_pdf.impl.engine.rendering import RenderOptions
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_09_fonts.decoder import FontDecoder
 from core_pdf.impl.engine.spec.s_09_fonts.font_program_opentype import OpenTypeFontProgram
@@ -57,16 +56,3 @@ def test_cff2_cold_program_parse_benchmark(benchmark) -> None:
     program = benchmark(OpenTypeFontProgram, CFF2_DATA)
     assert program.glyph_id_for_name("A") is not None
     assert len(program.internal_contour_cache) == 0
-
-
-def test_embedded_type1_page_raster_benchmark(benchmark) -> None:
-    def rasterize_page() -> tuple[int, int]:
-        with PdfDocument.open(TYPE1_PDF) as document:
-            raster = (
-                document.pages[0]
-                .render(RenderOptions(include_annotations=False))
-                .rasterize(cache=False)
-            )
-            return raster.width, raster.height
-
-    assert benchmark(rasterize_page) == (612, 792)

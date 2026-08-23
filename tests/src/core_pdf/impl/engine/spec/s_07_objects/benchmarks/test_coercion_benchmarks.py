@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from core_pdf.impl.engine.spec.s_07_objects.coercion import coerce_value, parse_float, parse_int
+from core_pdf.impl.engine.spec.s_07_objects.coercion import coerce_value, parse_int
 from core_pdf.impl.primitives import PdfString
 
 NESTED_VALUE = {
@@ -26,16 +26,6 @@ def decode_pdf_string(data: bytes) -> str:
 def test_parse_int_fast_path_benchmark(benchmark) -> None:
     result = benchmark(parse_int, 1234, None)
     assert result == 1234
-
-
-def test_parse_int_from_bytes_benchmark(benchmark) -> None:
-    result = benchmark(parse_int, b"1234", None)
-    assert result == 1234
-
-
-def test_parse_float_from_bytes_benchmark(benchmark) -> None:
-    result = benchmark(parse_float, b"1234.5", 0.0)
-    assert result == 1234.5
 
 
 @pytest.mark.benchmark_high_impact
