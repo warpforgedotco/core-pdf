@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-This is a Python 3.13+ PDF parsing engine using the `src` layout. Production code is in `src/core_pdf`; public entry points include `cli.py`, `__main__.py`, and `__init__.py`. The versioned capability surface lives in `src/core_pdf/api/v0` (typed records, adapters, analysis operations, and the third-party compat facades). Internal implementation is organized under `src/core_pdf/impl`:
+This is a Python 3.13+ PDF parsing engine using the `src` layout. Production code is in `src/core_pdf`; public entry points include `cli.py`, `__main__.py`, and `__init__.py`. Third-party compatibility facades live in `src/core_pdf/api/compat`. Internal implementation is organized under `src/core_pdf/impl`:
 
 - `impl/engine/spec/` implements the PDF specification, one subpackage per spec chapter (`s_07_syntax`, `s_08_graphics`, `s_09_fonts`, …).
 - `impl/engine/parse/` is the extraction pipeline, one module per stage (capture → route → fusion → tables → OCR → layout → emit). `parse/__init__.py` re-exports only the pipeline entry points and shared stage models; import stage internals from the owning submodule.

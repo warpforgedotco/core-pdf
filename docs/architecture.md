@@ -5,7 +5,7 @@ structured evidence, how parsing, rendering, analysis, compatibility, and writin
 document model, how the source tree is organized, the naming conventions in use, and — most
 importantly — **which code is deliberately optimized and must not be "cleaned up"**.
 
-Roughly 68k lines of non-vendor Python live under `src/core_pdf/`, plus a vendored copy of
+Roughly 87k lines of non-vendor Python live under `src/core_pdf/`, plus a vendored copy of
 fontTools in `src/core_pdf/_vendor/` that is excluded from linting, typing, and formatting.
 
 ---

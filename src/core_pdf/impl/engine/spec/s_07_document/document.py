@@ -35,10 +35,6 @@ from core_pdf.impl.engine.spec.s_07_document.fields import (
     field_widget_rect,
 )
 from core_pdf.impl.engine.spec.s_07_document.metadata import MetadataRecord, resolve_metadata
-from core_pdf.impl.engine.spec.s_07_document.name_trees import (
-    iter_name_tree_items,
-    iter_number_tree_items,
-)
 from core_pdf.impl.engine.spec.s_07_document.records import (
     RawEmbeddedFile,
     RawFormField,
@@ -56,6 +52,10 @@ from core_pdf.impl.engine.spec.s_07_objects.pdfdict import (
     lookup_dict_key,
 )
 from core_pdf.impl.engine.spec.s_07_objects.resolver import ObjectResolver
+from core_pdf.impl.engine.spec.s_07_objects.trees import (
+    iter_name_tree_items,
+    iter_number_tree_items,
+)
 from core_pdf.impl.engine.spec.s_07_security.crypto_handlers import SECURITY_HANDLER_REGISTRY
 from core_pdf.impl.engine.spec.s_07_security.errors import (
     PDFEncryptionError,
@@ -1367,7 +1367,7 @@ class PdfDocument(
                 # kid. Collect from the root of the chain either way, so the
                 # /FT, /T and /V a split field keeps on the parent still reach
                 # the record.
-                root = self.internal_widget_field_root(annot)
+                root = self.internal_widget_field_root(cast(PdfDict, annot))
                 if id(root) in seen_widgets:
                     continue
                 seen_widgets.add(id(root))

@@ -157,7 +157,7 @@ class PdfDocument(SpecPdfDocument["PdfPage"]):
             previous_size=previous_object_count(self.xref, base_trailer),
         )
         if isinstance(target, (str, PathLike)):
-            Path(target).write_bytes(updated)
+            Path(cast(str | PathLike[str], target)).write_bytes(updated)
         else:
             target.write(updated)
         return updated

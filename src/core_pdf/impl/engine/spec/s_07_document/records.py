@@ -3,21 +3,9 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, TypedDict
-
 from core_pdf.impl.objects import PdfStream
 from core_pdf.impl.primitives import PdfName, PdfString
 from core_pdf.impl.types import PdfArray, PdfDict, PdfObject, Rectangle
-
-if TYPE_CHECKING:
-    from core_pdf.impl.engine.layout.geometry import RectBox
-
-
-class RawTextSpan(TypedDict):
-    seqno: int
-    color: tuple[float, ...] | None
-    bbox: RectBox
-    chars: list[tuple[int, int, int, RectBox]]
 
 
 class RawOutlineItem:
@@ -180,5 +168,4 @@ __all__ = (
     "RawLink",
     "RawNamedDestination",
     "RawOutlineItem",
-    "RawTextSpan",
 )

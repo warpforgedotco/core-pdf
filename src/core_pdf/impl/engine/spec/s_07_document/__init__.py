@@ -16,11 +16,11 @@ if TYPE_CHECKING:
         normalize_page_label_style,
     )
     from core_pdf.impl.engine.spec.s_07_document.metadata import resolve_metadata
-    from core_pdf.impl.engine.spec.s_07_document.name_trees import (
+    from core_pdf.impl.engine.spec.s_07_document.page import PdfPage
+    from core_pdf.impl.engine.spec.s_07_objects.trees import (
         iter_name_tree_items,
         iter_number_tree_items,
     )
-    from core_pdf.impl.engine.spec.s_07_document.page import PdfPage
 
 internal_EXPORTS = {
     "PdfDocument": ("core_pdf.impl.engine.spec.s_07_document.document", "PdfDocument"),
@@ -46,11 +46,11 @@ internal_EXPORTS = {
         "infer_page_tree_node_type",
     ),
     "iter_name_tree_items": (
-        "core_pdf.impl.engine.spec.s_07_document.name_trees",
+        "core_pdf.impl.engine.spec.s_07_objects.trees",
         "iter_name_tree_items",
     ),
     "iter_number_tree_items": (
-        "core_pdf.impl.engine.spec.s_07_document.name_trees",
+        "core_pdf.impl.engine.spec.s_07_objects.trees",
         "iter_number_tree_items",
     ),
     "normalize_page_label_style": (
