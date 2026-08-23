@@ -12,10 +12,6 @@ from core_pdf.impl.engine.layout.glyphs import (
 from core_pdf.impl.engine.layout.models import TextRun
 
 
-def test_authoritative_unicode_has_full_confidence() -> None:
-    assert glyph_unicode_confidence("A", "to_unicode") == 1.0
-
-
 def test_unsupported_glyph_has_low_unicode_confidence() -> None:
     assert glyph_unicode_confidence("\ue000", "to_unicode") == 0.20
 

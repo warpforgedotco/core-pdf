@@ -81,7 +81,7 @@ def internal_recognize_with_report(
 
 def internal_report_mapping(value: object) -> Mapping[str, object]:
     assert isinstance(value, Mapping)
-    return value
+    return cast(Mapping[str, object], value)
 
 
 def test_tessdata_prefix_takes_precedence(

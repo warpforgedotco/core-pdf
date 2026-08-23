@@ -3,16 +3,18 @@ from pathlib import Path
 
 import pytest
 
-from .support import ALL_PDFS, XRAY_ROOT, call_pair
+from .support import XRAY_ROOT, call_pair, differential_pdfs, pdf_id
+
+real_pymupdf = pytest.importorskip("pymupdf")
+pytestmark = pytest.mark.compat_differential
 
 
-@pytest.mark.parametrize("pdf_path", ALL_PDFS, ids=lambda path: path.name)
-def test_matches_real_library_on_all_fixture_pdfs(
+@pytest.mark.parametrize("pdf_path", differential_pdfs("xray"), ids=pdf_id)
+def test_matches_real_library_on_fixture_corpus(
     monkeypatch: pytest.MonkeyPatch,
     pdf_path: Path,
 ) -> None:
     monkeypatch.syspath_prepend(str(XRAY_ROOT))
-    real_pymupdf = pytest.importorskip("pymupdf")
     monkeypatch.setitem(sys.modules, "fitz", real_pymupdf)
     for module_name in tuple(sys.modules):
         if module_name == "xray" or module_name.startswith("xray."):

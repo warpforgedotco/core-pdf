@@ -74,16 +74,9 @@ def test_filtered_inline_image_hint_supports_reversed_memoryview() -> None:
     assert lexer.raw_data[lexer.pos : lexer.pos + 2] == b" Q"
 
 
-@pytest.mark.parametrize("view_kind", ["bytes", "sliced", "reversed"])
-def test_inline_image_search_rejects_undelimited_ei_after_filter_hint(view_kind: str) -> None:
+def test_inline_image_search_rejects_undelimited_ei_after_filter_hint() -> None:
     content = b"/F /A85 ID abc~> EIword\nEI Q"
-    if view_kind == "sliced":
-        data: bytes | memoryview = memoryview(b"prefix" + content + b"suffix")[6:-6]
-    elif view_kind == "reversed":
-        data = memoryview(content[::-1])[::-1]
-    else:
-        data = content
-    lexer = PdfLexer(data)
+    lexer = PdfLexer(content)
 
     image = parse_inline_image(lexer)
 

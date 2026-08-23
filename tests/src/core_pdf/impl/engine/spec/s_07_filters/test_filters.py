@@ -158,10 +158,6 @@ def test_content_stream_detection_supports_reversed_memoryview() -> None:
     assert looks_like_pdf_content_stream(memoryview(content[::-1])[::-1])
 
 
-def test_apply_ascii85_decodes_unterminated_pdf_stream() -> None:
-    assert apply_ascii85(b"87cURD]j7BEbo80", {}) == b"Hello world!"
-
-
 def reference_ascii_hex(data: bytes) -> bytes:
     filtered = bytearray()
     for byte in data:

@@ -2,12 +2,14 @@ from pathlib import Path
 
 import pytest
 
-from .support import ALL_PDFS, call_pair
+from .support import call_pair, differential_pdfs, pdf_id
+
+real_reader = pytest.importorskip("llama_index.readers.file").PDFReader
+pytestmark = pytest.mark.compat_differential
 
 
-@pytest.mark.parametrize("pdf_path", ALL_PDFS, ids=lambda path: path.name)
-def test_matches_real_reader_on_all_fixture_pdfs(pdf_path: Path) -> None:
-    real_reader = pytest.importorskip("llama_index.readers.file").PDFReader
+@pytest.mark.parametrize("pdf_path", differential_pdfs("llamaindex"), ids=pdf_id)
+def test_matches_real_reader_on_fixture_corpus(pdf_path: Path) -> None:
     from core_pdf.api.compat.llamaindex import load_data
 
     pair = call_pair(

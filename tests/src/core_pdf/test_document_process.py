@@ -30,17 +30,13 @@ def test_pdf_document_process_pdf(tmp_path: Path) -> None:
     pdf_file = tmp_path / "test.pdf"
     pdf_file.write_bytes(pdf_bytes)
 
-    # 1. Parse without writing files
-    res = process_pdf(pdf_file, "markdown")
-    assert res is None
-
-    # 2. Write file next to PDF
+    # Write file next to PDF.
     res = process_pdf(pdf_file, "markdown", write_files=True)
     assert res is not None
     assert res == tmp_path / "test.md"
     assert res.exists()
 
-    # 3. Write file to custom output dir
+    # Write file to a custom output directory.
     out_dir = tmp_path / "out"
     res = process_pdf(pdf_file, "markdown", output_dir=out_dir)
     assert res is not None

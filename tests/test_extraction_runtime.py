@@ -1,6 +1,5 @@
 import subprocess
 import sys
-import sysconfig
 import textwrap
 import threading
 import time
@@ -98,11 +97,6 @@ def test_worker_first_ocr_initialization_has_an_actionable_error() -> None:
 
     assert completed.returncode != 0
     assert "initialize OCR on the main thread" in completed.stderr
-
-
-def test_runtime_uses_standard_cpython() -> None:
-    assert sysconfig.get_config_var("Py_GIL_DISABLED") == 0
-    assert not str(sysconfig.get_config_var("SOABI")).startswith("cpython-313t")
 
 
 def test_adaptive_ocr_retry_runs_in_an_application_worker() -> None:

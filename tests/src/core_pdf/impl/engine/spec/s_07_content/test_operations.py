@@ -91,12 +91,13 @@ def test_content_operations_support_reversed_memoryview() -> None:
     ]
 
 
-@pytest.mark.parametrize("view_kind", ["bytes", "sliced", "reversed"])
 @pytest.mark.parametrize(
-    ("content", "expected"),
+    ("view_kind", "content", "expected"),
     [
-        (b"q \t% fake Do\n\r % fake Tj\r\n Q", [("q", ()), ("Q", ())]),
-        (b"q % fake Do", [("q", ())]),
+        ("bytes", b"q \t% fake Do\n\r % fake Tj\r\n Q", [("q", ()), ("Q", ())]),
+        ("bytes", b"q % fake Do", [("q", ())]),
+        ("sliced", b"q \t% fake Do\n\r % fake Tj\r\n Q", [("q", ()), ("Q", ())]),
+        ("reversed", b"q % fake Do", [("q", ())]),
     ],
 )
 def test_content_operations_skip_comments_after_whitespace(

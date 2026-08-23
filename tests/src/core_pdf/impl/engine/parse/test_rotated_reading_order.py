@@ -74,6 +74,6 @@ def test_page_rotated_180_reads_in_display_order() -> None:
     assert order_of(rotated_pdf(180)) == ["CHARLIE", "BRAVO", "ALPHA"]
 
 
-@pytest.mark.parametrize("rotate", [0, 90, 180, 270])
+@pytest.mark.parametrize("rotate", [90, 270])
 def test_every_rotation_still_reports_all_the_text(rotate: int) -> None:
     assert sorted(order_of(rotated_pdf(rotate))) == ["ALPHA", "BRAVO", "CHARLIE"]

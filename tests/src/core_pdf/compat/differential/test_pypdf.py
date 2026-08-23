@@ -3,12 +3,14 @@ from typing import Any
 
 import pytest
 
-from .support import ALL_PDFS, call_pair
+from .support import call_pair, differential_pdfs, pdf_id
+
+real_pypdf = pytest.importorskip("pypdf")
+pytestmark = pytest.mark.compat_differential
 
 
-@pytest.mark.parametrize("pdf_path", ALL_PDFS, ids=lambda path: path.name)
-def test_matches_real_library_on_all_fixture_pdfs(pdf_path: Path) -> None:
-    real_pypdf = pytest.importorskip("pypdf")
+@pytest.mark.parametrize("pdf_path", differential_pdfs("pypdf"), ids=pdf_id)
+def test_matches_real_library_on_fixture_corpus(pdf_path: Path) -> None:
     from core_pdf.api.compat import pypdf as compat_pypdf
 
     def snapshot(reader_type: Any) -> tuple[tuple[str, tuple[float, ...], int], ...]:

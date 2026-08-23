@@ -3,12 +3,14 @@ from pathlib import Path
 
 import pytest
 
-from .support import ALL_PDFS, metadata, open_pair
+from .support import differential_pdfs, metadata, open_pair, pdf_id
+
+real_pikepdf = pytest.importorskip("pikepdf")
+pytestmark = pytest.mark.compat_differential
 
 
-@pytest.mark.parametrize("pdf_path", ALL_PDFS, ids=lambda path: path.name)
-def test_matches_real_library_on_all_fixture_pdfs(pdf_path: Path) -> None:
-    real_pikepdf = pytest.importorskip("pikepdf")
+@pytest.mark.parametrize("pdf_path", differential_pdfs("pikepdf"), ids=pdf_id)
+def test_matches_real_library_on_fixture_corpus(pdf_path: Path) -> None:
     from core_pdf.api.compat import pikepdf as compat_pikepdf
 
     with ExitStack() as stack:

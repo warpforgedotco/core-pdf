@@ -10,7 +10,6 @@ from core_pdf.cli import build_parser, main, resolve_pdf_paths
 
 def test_cli_parser_defaults(tmp_path: Path) -> None:
     pdf_file = tmp_path / "sample.pdf"
-    pdf_file.write_bytes(b"%PDF-1.4...")
     parser = build_parser()
     args = parser.parse_args([str(pdf_file)])
     assert args.paths == [pdf_file]
@@ -23,18 +22,10 @@ def test_cli_parser_defaults(tmp_path: Path) -> None:
 
 def test_cli_parser_flags(tmp_path: Path) -> None:
     pdf_file = tmp_path / "sample.pdf"
-    pdf_file.write_bytes(b"%PDF-1.4...")
     parser = build_parser()
     args = parser.parse_args(["-p", "-w", str(pdf_file)])
     assert args.print_content
     assert args.write
-
-
-def test_resolve_pdf_paths_single_file(tmp_path: Path) -> None:
-    pdf_file = tmp_path / "test.pdf"
-    pdf_file.write_bytes(b"%PDF-1.4...")
-    resolved = resolve_pdf_paths([pdf_file])
-    assert resolved == [pdf_file]
 
 
 def test_resolve_pdf_paths_directory(tmp_path: Path) -> None:
@@ -46,6 +37,8 @@ def test_resolve_pdf_paths_directory(tmp_path: Path) -> None:
     pdf1.write_bytes(b"%PDF-1.4...")
     pdf2.write_bytes(b"%PDF-1.4...")
     non_pdf.write_text("hello")
+
+    assert resolve_pdf_paths([pdf1]) == [pdf1]
 
     shallow = resolve_pdf_paths([tmp_path], recursive=False)
     assert shallow == [pdf1]
