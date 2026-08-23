@@ -14,7 +14,7 @@ from concurrent.futures import (
     ThreadPoolExecutor,
     wait,
 )
-from contextlib import AbstractContextManager
+from contextlib import AbstractContextManager, suppress
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Generic, TypeVar
@@ -376,6 +376,44 @@ class ExecutionRuntime:
     def prewarm(self) -> None:
         """Start the shared executor before latency-sensitive work arrives."""
         self.internal_get_executor()
+
+    def run_on_each_worker(
+        self,
+        function: Callable[[], object],
+        *,
+        timeout: float = 60.0,
+    ) -> int:
+        """Run ``function`` once on every pooled worker thread.
+
+        Used to move thread-local setup — a Tesseract API costs a few tens of
+        milliseconds per thread — off the critical path of the first page that
+        needs it. Each task waits on a barrier so no thread can claim two of
+        them and leave another cold.
+
+        A worker already busy with other work never reaches the barrier, so the
+        wait is bounded: on timeout the barrier breaks, every queued task runs
+        anyway, and the threads that were busy stay cold. ``function`` must
+        therefore be idempotent per thread. Returns the number of tasks that
+        completed without raising.
+        """
+        workers = self.internal_max_workers
+        executor = self.internal_get_executor()
+        barrier = threading.Barrier(workers)
+
+        def internal_warm() -> None:
+            with suppress(threading.BrokenBarrierError, threading.ThreadError):
+                barrier.wait(timeout=timeout)
+            function()
+
+        futures = [executor.submit(internal_warm) for _ in range(workers)]
+        warmed = 0
+        for future in futures:
+            try:
+                future.result(timeout=timeout)
+            except Exception:
+                continue
+            warmed += 1
+        return warmed
 
     def internal_run(
         self,

@@ -476,10 +476,20 @@ def internal_api(mode: int) -> Any:
 
 
 def internal_prepare_ocr() -> None:
-    """Validate OCR startup and construct the caller thread's reusable API."""
+    """Validate OCR startup and construct a reusable API on every worker.
+
+    ``internal_api`` caches its ``PyTessBaseAPI`` in thread-local storage, so
+    each worker that recognizes a page pays the Tesseract model load itself:
+    measured at ~363 ms for the first build in a process and ~40 ms per
+    additional thread once tessdata is in the page cache. Warming the pool here
+    keeps that off the critical path of the first page each worker handles,
+    which matters most for the single-page documents that make up the bulk of
+    OCR work and cannot amortize it over later pages.
+    """
     if threading.current_thread() is not threading.main_thread():
         raise RuntimeError("prewarm_runtime() must be called on the main thread")
     internal_api(3)
+    RUNTIME.run_on_each_worker(lambda: internal_api(3))
 
 
 def prewarm_runtime() -> None:

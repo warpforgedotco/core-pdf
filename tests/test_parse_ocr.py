@@ -152,6 +152,30 @@ def test_prewarm_runtime_starts_workers_and_initializes_ocr(
     assert calls == ["workers", "ocr"]
 
 
+def test_prepare_ocr_builds_an_api_on_every_pooled_worker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A worker that builds its Tesseract API lazily pays the model load on the
+    first page it recognizes; prewarming moves that off the critical path."""
+    import threading
+
+    threads: list[str] = []
+    lock = threading.Lock()
+
+    def record(mode: int) -> object:
+        with lock:
+            threads.append(threading.current_thread().name)
+        return SimpleNamespace(SetPageSegMode=lambda internal_mode: None)
+
+    monkeypatch.setattr(parse_ocr, "internal_api", record)
+
+    parse_ocr.internal_prepare_ocr()
+
+    assert "MainThread" in threads
+    pooled = {name for name in threads if name != "MainThread"}
+    assert len(pooled) == ocr.RUNTIME.max_workers
+
+
 def test_low_confidence_standalone_punctuation_is_rejected() -> None:
     assert not ocr.internal_acceptable_text("|", 65.0)
     assert ocr.internal_acceptable_text("R1", 65.0)
