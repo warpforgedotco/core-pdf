@@ -1588,19 +1588,25 @@ def internal_detect_tables(
     horizontal = internal_merge_collinear_segments(horizontal, coordinate=2, start=0, end=1)
     vertical = internal_merge_collinear_segments(vertical, coordinate=0, start=1, end=2)
     components = internal_grid_components(horizontal, vertical)
-    visible_indices = numpy.flatnonzero(observations.visible)
-    observation_index = SpatialIndex((int(idx), observations.bbox[idx]) for idx in visible_indices)
     ruled_tables: list[Table] = []
-    for component in components:
-        for component_part in internal_split_grid_component(*component):
-            table = internal_table_from_component(
-                len(ruled_tables),
-                *component_part,
-                observations,
-                observation_index,
-            )
-            if table is not None:
-                ruled_tables.append(table)
+    # Only the ruled-grid loop consults this index, and a page with fewer than two
+    # segments on either axis yields no components at all.  Building it over every
+    # visible observation before that check is wasted on any page without a ruled grid.
+    if components:
+        visible_indices = numpy.flatnonzero(observations.visible)
+        observation_index = SpatialIndex(
+            (int(idx), observations.bbox[idx]) for idx in visible_indices
+        )
+        for component in components:
+            for component_part in internal_split_grid_component(*component):
+                table = internal_table_from_component(
+                    len(ruled_tables),
+                    *component_part,
+                    observations,
+                    observation_index,
+                )
+                if table is not None:
+                    ruled_tables.append(table)
     ruled = tuple(ruled_tables)
     tables = list(ruled)
     for stream in internal_stream_tables(capture, observations, len(tables)):
