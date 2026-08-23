@@ -143,6 +143,11 @@ def internal_line_group_indexes(observations: ObservationBatch) -> internal_Line
     return internal_LineGroupPlan(indexes, starts, stops)
 
 
+def internal_style_enabled(reference: object, name: str) -> bool:
+    value = getattr(reference, name, False)
+    return bool(value() if callable(value) else value)
+
+
 def internal_group_text(
     observations: ObservationBatch,
     indexes: numpy.ndarray,
@@ -308,20 +313,26 @@ def internal_build_lines(observations: ObservationBatch) -> internal_BuiltLines:
             for reference in (observations.references[index] for index in indexes)
             if reference is not None
         ]
-
-        def style_enabled(reference: object, name: str) -> bool:
-            value = getattr(reference, name, False)
-            return bool(value() if callable(value) else value)
-
-        bold = bool(native_references) and sum(
-            style_enabled(reference, "is_bold") for reference in native_references
-        ) * 2 >= len(native_references)
-        italic = bool(native_references) and sum(
-            style_enabled(reference, "is_italic") for reference in native_references
-        ) * 2 >= len(native_references)
+        # Each reference's bold/italic state was resolved four times below -- twice for
+        # the majority vote and twice when its span is built.  Resolve each once.
+        reference_styles = [
+            (
+                internal_style_enabled(reference, "is_bold"),
+                internal_style_enabled(reference, "is_italic"),
+            )
+            for reference in native_references
+        ]
+        bold = bool(native_references) and sum(style[0] for style in reference_styles) * 2 >= len(
+            native_references
+        )
+        italic = bool(native_references) and sum(style[1] for style in reference_styles) * 2 >= len(
+            native_references
+        )
         span_values: list[TextSpan] = []
         pending_space = False
-        for reference in native_references:
+        for reference, (reference_bold, reference_italic) in zip(
+            native_references, reference_styles, strict=True
+        ):
             reference_text = reference.text.strip()
             if not reference_text:
                 pending_space = True
@@ -337,8 +348,8 @@ def internal_build_lines(observations: ObservationBatch) -> internal_BuiltLines:
             span_values.append(
                 TextSpan(
                     text=prefix + reference_text,
-                    bold=style_enabled(reference, "is_bold"),
-                    italic=style_enabled(reference, "is_italic"),
+                    bold=reference_bold,
+                    italic=reference_italic,
                     mark=internal_color_is_emphasis(getattr(reference, "fill_color", None)),
                 )
             )

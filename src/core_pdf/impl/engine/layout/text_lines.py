@@ -1227,6 +1227,9 @@ def runs_are_right_to_left(runs: list[TextRun]) -> bool:
 
 
 def has_interleaved_horizontal_overlap(runs: list[TextRun]) -> bool:
+    x0_idx = TextRun.X0
+    x1_idx = TextRun.X1
+
     previous: TextRun | None = None
     prev_x0 = 0.0
     prev_x1 = 0.0
@@ -1236,8 +1239,8 @@ def has_interleaved_horizontal_overlap(runs: list[TextRun]) -> bool:
         if not run.has_text:
             continue
         coords = run.coords
-        x0 = coords[TextRun.X0]
-        x1 = coords[TextRun.X1]
+        x0 = coords[x0_idx]
+        x1 = coords[x1_idx]
         space_width = run.space_width
         if previous is not None:
             overlap = (prev_x1 if prev_x1 < x1 else x1) - (prev_x0 if prev_x0 > x0 else x0)
