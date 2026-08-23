@@ -86,6 +86,10 @@ def reconstruct_layout_line_text(
     is_formula_like_line = formula_like_runs(sorted_runs)
     if angle == 0 and is_formula_like_line:
         sorted_runs = reorder_stacked_formula_numerators(sorted_runs)
+        # Reordering rewrites the run sequence, so the classification is re-derived from
+        # it.  Every other line keeps the value computed above rather than rebuilding the
+        # joined line text a second time.
+        is_formula_like_line = formula_like_runs(sorted_runs)
 
     digit_text_runs = 0
     all_text_runs_upper = True if is_all_caps_text is None else is_all_caps_text
@@ -115,7 +119,6 @@ def reconstruct_layout_line_text(
     is_tracked_glyph_line = is_tracked_glyph_run_line(
         non_space_runs, has_explicit_spaces=has_explicit_spaces
     )
-    is_formula_like_line = formula_like_runs(sorted_runs)
 
     if angle in {90, 270} and len(non_space_runs) >= 8:
         return reconstruct_rotated_table_line(sorted_runs)
