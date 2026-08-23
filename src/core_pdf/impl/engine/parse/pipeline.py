@@ -228,7 +228,23 @@ class internal_PageExtraction:
         image_cache = getattr(self.page.document, "image_cache", None)
         image_cache_stats = image_cache.stats() if image_cache is not None else None
         decoder_cache = getattr(self.page.document, "decoder_cache", {})
-        decoders = tuple(decoder_cache.values()) if isinstance(decoder_cache, dict) else ()
+        decoders = decoder_cache.values() if isinstance(decoder_cache, dict) else ()
+        # One pass over the decoders for all five Type3 counters.  This runs for every
+        # page, so five separate generator passes over the same values were five times
+        # the iteration and attribute lookups for the same result.
+        type3_cache_hits = 0
+        type3_cache_misses = 0
+        type3_compiled_programs = 0
+        type3_compiled_operations = 0
+        type3_unsafe_fallbacks = 0
+        for decoder in decoders:
+            type3_cache_hits += int(getattr(decoder, "type3_charproc_cache_hits", 0))
+            type3_cache_misses += int(getattr(decoder, "type3_charproc_cache_misses", 0))
+            type3_compiled_programs += int(getattr(decoder, "type3_charproc_compiled_programs", 0))
+            type3_compiled_operations += int(
+                getattr(decoder, "type3_charproc_compiled_operations", 0)
+            )
+            type3_unsafe_fallbacks += int(getattr(decoder, "type3_charproc_unsafe_fallbacks", 0))
         metrics: dict[str, float | int | str | bool] = {
             "route": plan.route.value,
             "page_program_seconds": (self.internal_captured_at or self.started) - self.started,
@@ -253,22 +269,11 @@ class internal_PageExtraction:
             "image_cache_evictions": image_cache_stats.evictions if image_cache_stats else 0,
             "image_cache_bytes": image_cache_stats.bytes if image_cache_stats else 0,
             "image_cache_peak_bytes": image_cache_stats.peak_bytes if image_cache_stats else 0,
-            "type3_charproc_cache_hits": sum(
-                int(getattr(decoder, "type3_charproc_cache_hits", 0)) for decoder in decoders
-            ),
-            "type3_charproc_cache_misses": sum(
-                int(getattr(decoder, "type3_charproc_cache_misses", 0)) for decoder in decoders
-            ),
-            "type3_charproc_compiled_programs": sum(
-                int(getattr(decoder, "type3_charproc_compiled_programs", 0)) for decoder in decoders
-            ),
-            "type3_charproc_compiled_operations": sum(
-                int(getattr(decoder, "type3_charproc_compiled_operations", 0))
-                for decoder in decoders
-            ),
-            "type3_charproc_unsafe_fallbacks": sum(
-                int(getattr(decoder, "type3_charproc_unsafe_fallbacks", 0)) for decoder in decoders
-            ),
+            "type3_charproc_cache_hits": type3_cache_hits,
+            "type3_charproc_cache_misses": type3_cache_misses,
+            "type3_charproc_compiled_programs": type3_compiled_programs,
+            "type3_charproc_compiled_operations": type3_compiled_operations,
+            "type3_charproc_unsafe_fallbacks": type3_unsafe_fallbacks,
             "fused_observations": len(observations),
             "layout_strategy": layout_strategy,
             "reading_order_strategy": (
