@@ -32,6 +32,11 @@ from core_pdf.impl.engine.structured import (
 )
 from core_pdf.impl.text import collapse_ws
 
+# ``ObservationBatch.source`` is a ``uint8`` column, so the OCR test is a vectorized
+# comparison against a preconverted scalar rather than a per-observation Python loop.
+internal_OCR_SOURCE = numpy.uint8(ObservationSource.OCR)
+internal_NATIVE_SOURCE = int(ObservationSource.NATIVE)
+
 internal_NATIVE_DOTTED_LEADER_RE = re.compile(r"\.{2,}")
 internal_NATIVE_DASH_RULE_RE = re.compile(r"(?:\s*-\s*){2,}")
 
@@ -138,8 +143,16 @@ def internal_line_group_indexes(observations: ObservationBatch) -> internal_Line
     return internal_LineGroupPlan(indexes, starts, stops)
 
 
-def internal_group_text(observations: ObservationBatch, indexes: numpy.ndarray) -> str:
-    if any(int(observations.source[index]) == int(ObservationSource.OCR) for index in indexes):
+def internal_group_text(
+    observations: ObservationBatch,
+    indexes: numpy.ndarray,
+    *,
+    may_contain_ocr: bool = True,
+) -> str:
+    # A group whose source range collapses to NATIVE cannot hold an OCR observation,
+    # and the caller already has that range from its columnar reduction.  Native pages
+    # therefore reach the reordering test without touching the source column at all.
+    if may_contain_ocr and bool((observations.source[indexes] == internal_OCR_SOURCE).any()):
         rotation = int(observations.rotation[indexes[0]]) % 360
 
         def baseline_position(index: int) -> float:
@@ -268,14 +281,12 @@ def internal_build_lines(observations: ObservationBatch) -> internal_BuiltLines:
         zip(line_groups.starts, line_groups.stops, strict=True)
     ):
         indexes = selected[int(start) : int(stop)]
-        text = internal_group_text(observations, indexes)
+        all_native = (
+            source_minimum[group_index] == source_maximum[group_index] == internal_NATIVE_SOURCE
+        )
+        text = internal_group_text(observations, indexes, may_contain_ocr=not all_native)
         if not text:
             continue
-        all_native = (
-            source_minimum[group_index]
-            == source_maximum[group_index]
-            == int(ObservationSource.NATIVE)
-        )
         if all_native and internal_looks_like_native_artifact(text):
             continue
         if (
