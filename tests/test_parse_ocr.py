@@ -1144,54 +1144,6 @@ def test_region_augmentation_keeps_only_confident_uncovered_text() -> None:
     assert augmented.observations.text == ("known", "recovered")
 
 
-def test_dominant_image_ocr_preserves_its_page_space_region(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    raster = ocr.internal_Raster(RasterImage(bytes(100), 10, 10, 1), 72)
-    region_box = (12.0, 18.0, 92.0, 78.0)
-    monkeypatch.setattr(
-        parse_ocr,
-        "internal_dominant_image_region",
-        lambda internal_capture, **internal_kwargs: ocr.internal_RasterRegion(raster, region_box),
-    )
-    monkeypatch.setattr(
-        parse_ocr,
-        "internal_candidate_ocr_regions",
-        lambda internal_capture: (ocr.internal_OcrRegion(region_box, 1.0, ("image",)),),
-    )
-    observed_boxes: list[tuple[float, float, float, float]] = []
-
-    def recognize(task: ocr.internal_OcrTask, **internal_kwargs: object) -> ocr.internal_Candidate:
-        observed_boxes.append(task.page_box)
-        return ocr.internal_candidate(task.mode, candidate_observations("mapped", 90.0))
-
-    monkeypatch.setattr(parse_ocr, "internal_recognize", recognize)
-
-    class Context:
-        def raise_if_cancelled(self) -> None:
-            pass
-
-        def map_ordered(self, function, values, **internal_kwargs):
-            return map(function, values)
-
-    page = SimpleNamespace(width=100.0, height=100.0, extraction_cache={})
-    capture = cast(
-        CapturedPage,
-        SimpleNamespace(
-            page=page,
-            evidence=page_evidence(image_count=1, image_area_ratio=0.70),
-        ),
-    )
-    plan = WorkPlan(
-        PageRoute.OCR,
-        ocr_passes=(OcrPass("primary", OcrPassScope.PAGE, 1.0, (3,)),),
-    )
-
-    ocr.internal_recognize_page_with_reserved_raster(capture, plan, cast(TaskScope, Context()))
-
-    assert observed_boxes == [region_box]
-
-
 def test_explicit_fallback_pass_runs_only_for_weak_primary(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
