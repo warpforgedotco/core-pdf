@@ -917,7 +917,7 @@ def internal_xy_cut_regions(
             ]
         return [internal_row_order_region(geometry, current_region)]
 
-    internal_score, axis, cut = max(candidates, key=lambda item: item[0])
+    _, axis, cut = max(candidates, key=lambda item: item[0])
     centers = (geometry.x_centers if axis == 0 else geometry.y_centers)[indexes]
     first = indexes[centers < cut]
     second = indexes[centers >= cut]

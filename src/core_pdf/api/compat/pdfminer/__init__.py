@@ -1040,10 +1040,8 @@ def _reading_order(
         vertical = (
             isinstance(active_first, LTTextBoxVertical)
             or isinstance(active_second, LTTextBoxVertical)
-            or isinstance(active_first, _TextGroup)
-            and active_first.vertical
-            or isinstance(active_second, _TextGroup)
-            and active_second.vertical
+            or (isinstance(active_first, _TextGroup) and active_first.vertical)
+            or (isinstance(active_second, _TextGroup) and active_second.vertical)
         )
         group = _TextGroup([active_first, active_second], union, vertical)
         retained_groups.append(group)
