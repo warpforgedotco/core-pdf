@@ -12,6 +12,7 @@ from core_pdf.impl.engine.spec.s_07_content.operations import iter_content_opera
 from core_pdf.impl.engine.spec.s_07_objects.coercion import normalize_pdf_name
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
+from core_pdf.impl.engine.spec.s_08_graphics.matrix import multiply_affine
 from core_pdf.impl.engine.spec.s_09_fonts.cmap_tounicode import ToUnicodeCMap
 from core_pdf.impl.engine.spec.s_09_fonts.cmap_widths import FontWidthMap, SparseFontWidthMap
 from core_pdf.impl.engine.spec.s_09_fonts.decoder import FontDecoder
@@ -23,6 +24,7 @@ from core_pdf.impl.engine.spec.s_09_fonts.helpers import cached_decode_table
 from core_pdf.impl.engine.spec.s_09_fonts.widths import parse_font_widths
 from core_pdf.impl.objects import PdfStream
 from core_pdf.impl.primitives import PdfName, PdfString
+from core_pdf.impl.text import is_neutral_character, is_rtl_character
 
 Matrix = list[float]
 internal_LIGATURES = {"ff": "ﬀ", "fi": "ﬁ", "fl": "ﬂ", "ffi": "ﬃ", "ffl": "ﬄ"}
@@ -73,17 +75,6 @@ def internal_legacy_base_table(name: str) -> list[str]:
     return table
 
 
-def internal_mult(left: Matrix, right: Matrix) -> Matrix:
-    return [
-        left[0] * right[0] + left[1] * right[2],
-        left[0] * right[1] + left[1] * right[3],
-        left[2] * right[0] + left[3] * right[2],
-        left[2] * right[1] + left[3] * right[3],
-        left[4] * right[0] + left[5] * right[2] + right[4],
-        left[4] * right[1] + left[5] * right[3] + right[5],
-    ]
-
-
 def internal_orientation(matrix: Matrix) -> int:
     if matrix[3] > 1e-6:
         return 0
@@ -92,29 +83,6 @@ def internal_orientation(matrix: Matrix) -> int:
     if matrix[1] > 0:
         return 90
     return 270
-
-
-def internal_is_rtl(character: str) -> bool:
-    return any(
-        start <= character <= end
-        for start, end in (
-            ("\u0590", "\u08ff"),
-            ("\ufb1d", "\ufdff"),
-            ("\ufe70", "\ufeff"),
-        )
-    )
-
-
-def internal_is_neutral(character: str) -> bool:
-    return any(
-        start <= character <= end
-        for start, end in (
-            ("\x00", "\x2f"),
-            ("\x3a", "\x40"),
-            ("\u2000", "\u206f"),
-            ("\u20a0", "\u21ff"),
-        )
-    )
 
 
 @dataclass(slots=True)
@@ -635,9 +603,9 @@ class LegacyTextExtractor:
             self.add_text_unit(character)
 
     def add_text_unit(self, value: str) -> None:
-        if len(value) != 1 or internal_is_neutral(value):
+        if len(value) != 1 or is_neutral_character(value):
             self.text = value + self.text if self.rtl else self.text + value
-        elif internal_is_rtl(value):
+        elif is_rtl_character(value):
             if not self.rtl:
                 self.rtl = True
                 # Native pypdf sends the preceding directional run only to
@@ -652,8 +620,8 @@ class LegacyTextExtractor:
             self.text += value
 
     def check_position(self, string_width: float) -> None:
-        previous = internal_mult(self.previous_tm, self.previous_cm)
-        current = internal_mult(self.tm, self.cm)
+        previous = multiply_affine(self.previous_tm, self.previous_cm)
+        current = multiply_affine(self.tm, self.cm)
         orientation = internal_orientation(current)
         delta_x = current[4] - previous[4]
         delta_y = current[5] - previous[5]
@@ -729,7 +697,7 @@ class LegacyTextExtractor:
             except (TypeError, ValueError):
                 values = []
             self.cm = (
-                internal_mult(values, self.cm)
+                multiply_affine(values, self.cm)
                 if len(values) == 6
                 else [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
             )

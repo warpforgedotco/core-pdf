@@ -1479,20 +1479,6 @@ def internal_transpose_numeric_table_blocks(blocks: list[ParsedBlock]) -> list[P
     return output
 
 
-def order_lines(lines: tuple[ParsedLine, ...]) -> tuple[ParsedLine, ...]:
-    if len(lines) < 2:
-        return lines
-    boxes = numpy.asarray(tuple(line.bbox for line in lines), dtype=numpy.float32)
-    heights = numpy.maximum(1.0, boxes[:, 3] - boxes[:, 1])
-    regions = internal_xy_cut_regions(
-        numpy.arange(len(lines), dtype=numpy.int64),
-        boxes,
-        (),
-        max(1.0, finite_median(heights)),
-    )
-    return tuple(lines[int(index)] for region in regions for index in region)
-
-
 def layout_element_order(
     boxes: tuple[tuple[float, float, float, float], ...],
     rotation: int = 0,

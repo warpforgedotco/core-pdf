@@ -413,25 +413,26 @@ def parse_symbol_dictionary(data: bytes) -> JBIG2SymbolDictionary:
     )
 
 
-def parse_text_region(data: bytes) -> JBIG2TextRegion:
+def internal_region_fields(data: bytes, kind: str) -> tuple[int, int, int, int, int]:
+    """Read the region segment information field shared by every region type."""
     if len(data) < 17:
-        raise Jbig2ParseError("truncated JBIG2 text region")
-    width = read_be_u32(data, 0)
-    height = read_be_u32(data, 4)
-    x = read_be_i32(data, 8)
-    y = read_be_i32(data, 12)
-    flags = data[16]
+        raise Jbig2ParseError(f"truncated JBIG2 {kind} region")
+    return (
+        read_be_u32(data, 0),
+        read_be_u32(data, 4),
+        read_be_i32(data, 8),
+        read_be_i32(data, 12),
+        data[16],
+    )
+
+
+def parse_text_region(data: bytes) -> JBIG2TextRegion:
+    width, height, x, y, flags = internal_region_fields(data, "text")
     return JBIG2TextRegion(width=width, height=height, x=x, y=y, flags=flags, raw=data)
 
 
 def parse_generic_region(data: bytes) -> JBIG2GenericRegion:
-    if len(data) < 17:
-        raise Jbig2ParseError("truncated JBIG2 generic region")
-    width = read_be_u32(data, 0)
-    height = read_be_u32(data, 4)
-    x = read_be_i32(data, 8)
-    y = read_be_i32(data, 12)
-    flags = data[16]
+    width, height, x, y, flags = internal_region_fields(data, "generic")
     return JBIG2GenericRegion(width=width, height=height, x=x, y=y, flags=flags, raw=data)
 
 

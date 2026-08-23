@@ -7,7 +7,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass, field
 from enum import IntEnum
 from heapq import merge
-from typing import Any, cast
+from typing import Any
 
 import numpy
 
@@ -27,6 +27,14 @@ class PageEventKind(IntEnum):
     DRAWING = 3
     IMAGE = 4
     INLINE_IMAGE = 5
+
+
+LineColumns = tuple[
+    "numpy.ndarray[Any, numpy.dtype[numpy.float64]]",
+    "numpy.ndarray[Any, numpy.dtype[numpy.float64]]",
+    "numpy.ndarray[Any, numpy.dtype[numpy.float64]]",
+    "numpy.ndarray[Any, numpy.dtype[numpy.float64]]",
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,16 +64,27 @@ class LineTable:
     def __len__(self) -> int:
         return len(self.x0)
 
+    def coordinate_columns(self) -> LineColumns:
+        """Return the ``x0, y0, x1, y1`` columns without materializing rows.
+
+        Callers that only need coordinates should prefer this over iteration:
+        the columns already exist, so rebuilding one ``CapturedLine`` per row
+        only to read the same four values back out is pure overhead.
+        """
+        return self.x0, self.y0, self.x1, self.y1
+
     def __iter__(self) -> Iterator[CapturedLine]:
+        # Unbox each column once with ``tolist``; zipping the arrays directly
+        # allocates a numpy scalar per field per row.
         return (
-            CapturedLine(
-                cast(float, x0),
-                cast(float, y0),
-                cast(float, x1),
-                cast(float, y1),
-                cast(float, width),
+            CapturedLine(x0, y0, x1, y1, width)
+            for x0, y0, x1, y1, width in zip(
+                self.x0.tolist(),
+                self.y0.tolist(),
+                self.x1.tolist(),
+                self.y1.tolist(),
+                self.width.tolist(),
             )
-            for x0, y0, x1, y1, width in zip(self.x0, self.y0, self.x1, self.y1, self.width)
         )
 
     @property
@@ -270,10 +289,29 @@ class PageProgram:
         return cls(products)
 
 
+def line_coordinate_columns(lines: Any) -> LineColumns:
+    """Return ``(x0, y0, x1, y1)`` float64 columns for any line collection.
+
+    A ``LineTable`` already stores those columns, so this returns them
+    directly.  Other sequences are folded into an array once.
+    """
+    if isinstance(lines, LineTable):
+        return lines.coordinate_columns()
+    values = tuple(lines)
+    coordinates = numpy.fromiter(
+        (value for line in values for value in (line.x0, line.y0, line.x1, line.y1)),
+        dtype=numpy.float64,
+        count=len(values) * 4,
+    ).reshape((-1, 4))
+    return coordinates[:, 0], coordinates[:, 1], coordinates[:, 2], coordinates[:, 3]
+
+
 __all__ = (
+    "LineColumns",
     "LineTable",
     "PageEventKind",
     "PageEventStream",
     "PageProducts",
     "PageProgram",
+    "line_coordinate_columns",
 )

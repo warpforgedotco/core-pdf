@@ -893,24 +893,6 @@ def internal_fill_path_sample_crossings_numpy(
     return crossings_rows
 
 
-def internal_fill_path_crossings_contain_point(
-    crossings: list[tuple[float, int]],
-    page_x: float,
-    fill_rule: str,
-) -> bool:
-    if fill_rule == "evenodd":
-        odd = False
-        for x_intersection, internal_delta in crossings:
-            if x_intersection > page_x:
-                odd = not odd
-        return odd
-    winding = 0
-    for x_intersection, delta in crossings:
-        if x_intersection > page_x:
-            winding += delta
-    return winding != 0
-
-
 def internal_fill_path_crossing_spans(
     crossings: list[tuple[float, int]],
     fill_rule: str,

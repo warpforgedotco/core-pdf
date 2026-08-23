@@ -12,6 +12,7 @@ from core_pdf.impl.engine.spec.s_07_filters.errors import FilterParseError
 from core_pdf.impl.engine.spec.s_07_objects.coercion import normalize_pdf_name
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
+from core_pdf.impl.engine.spec.s_08_graphics.matrix import multiply_affine
 from core_pdf.impl.engine.spec.s_09_fonts.cmap_tokenizer import (
     cmap_tokens,
     decode_cmap_hex_token,
@@ -25,17 +26,7 @@ from core_pdf.impl.engine.spec.s_09_fonts.decoder import FontDecoder
 from core_pdf.impl.engine.spec.s_09_fonts.glyphs import glyph_name_to_unicode
 from core_pdf.impl.objects import PdfStream
 from core_pdf.impl.primitives import PdfName, PdfString
-
-
-def internal_mult(left: list[float], right: list[float]) -> list[float]:
-    return [
-        left[0] * right[0] + left[1] * right[2],
-        left[0] * right[1] + left[1] * right[3],
-        left[2] * right[0] + left[3] * right[2],
-        left[2] * right[1] + left[3] * right[3],
-        left[4] * right[0] + left[5] * right[2] + right[4],
-        left[4] * right[1] + left[5] * right[3] + right[5],
-    ]
+from core_pdf.impl.text import is_neutral_character, is_rtl_character
 
 
 def internal_orientation(matrix: list[float]) -> int:
@@ -44,29 +35,6 @@ def internal_orientation(matrix: list[float]) -> int:
     if matrix[3] < -1e-6:
         return 180
     return 90 if matrix[1] > 0 else 270
-
-
-def internal_neutral(character: str) -> bool:
-    return any(
-        start <= character <= end
-        for start, end in (
-            ("\x00", "\x2f"),
-            ("\x3a", "\x40"),
-            ("\u2000", "\u206f"),
-            ("\u20a0", "\u21ff"),
-        )
-    )
-
-
-def internal_rtl(character: str) -> bool:
-    return any(
-        start <= character <= end
-        for start, end in (
-            ("\u0590", "\u08ff"),
-            ("\ufb1d", "\ufdff"),
-            ("\ufe70", "\ufeff"),
-        )
-    )
 
 
 def internal_byte_encoding(name: str) -> tuple[str, ...]:
@@ -196,8 +164,8 @@ class internal_TextState:
         self.memo_tm = self.tm.copy()
 
     def positioned(self, string_width: float) -> None:
-        previous = internal_mult(self.previous_tm, self.previous_cm)
-        current = internal_mult(self.tm, self.cm)
+        previous = multiply_affine(self.previous_tm, self.previous_cm)
+        current = multiply_affine(self.tm, self.cm)
         orientation = internal_orientation(current)
         delta_x = current[4] - previous[4]
         delta_y = current[5] - previous[5]
@@ -237,9 +205,9 @@ class internal_TextState:
             chunks = self.font.display_chunks(data)
             width = self.font.text_width(data)
         for chunk in chunks:
-            if len(chunk) != 1 or internal_neutral(chunk):
+            if len(chunk) != 1 or is_neutral_character(chunk):
                 self.text = chunk + self.text if self.rtl else self.text + chunk
-            elif internal_rtl(chunk):
+            elif is_rtl_character(chunk):
                 if not self.rtl:
                     self.rtl = True
                     self.text = ""
@@ -746,7 +714,7 @@ class OperatorTextProjection:
                 except (TypeError, ValueError):
                     matrix = []
                 state.cm = (
-                    internal_mult(matrix, state.cm)
+                    multiply_affine(matrix, state.cm)
                     if len(matrix) == 6
                     else [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
                 )

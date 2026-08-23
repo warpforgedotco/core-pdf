@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import unicodedata
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import replace
 from io import BytesIO
@@ -89,46 +88,6 @@ def write_bytes(target: str | PathLike[str] | BinaryIO, data: bytes) -> None:
         target.write(data)
 
 
-def internal_pypdf_space_width(
-    font: Mapping[object, object], resolver: Any, decoder: FontDecoder
-) -> float:
-    """Return pypdf's explicit space width or its extraction default."""
-    if decoder.is_cid_font:
-        # Composite-font widths are keyed by encoded character.  A space that
-        # actually occurs in a show operand is refined below after decoding;
-        # without one pypdf retains extract_text's default space width.
-        return 200.0
-    space_width = decoder.glyph_width(32)
-    first_char = lookup_dict_key(font, "FirstChar")
-    raw_widths = resolver.resolve(lookup_dict_key(font, "Widths"))
-    if not isinstance(first_char, (int, float)) or not isinstance(raw_widths, (list, tuple)):
-        return 200.0
-    space_index = 32 - int(first_char)
-    if 0 <= space_index < len(raw_widths):
-        return space_width if space_width != 0 else 200.0
-    return 200.0
-
-
-def internal_cid_space_width(decoder: FontDecoder, data: bytes) -> float | None:
-    if not decoder.is_cid_font:
-        return None
-    space_glyph = next(
-        (glyph for glyph in decoder.decode_glyphs(data) if glyph.unicode == " "),
-        None,
-    )
-    return None if space_glyph is None else decoder.glyph_width(space_glyph.width_code)
-
-
-def internal_bidi(value: str) -> str:
-    return unicodedata.bidirectional(value[0]) if value else ""
-
-
-def internal_decoded_width(decoder: FontDecoder | None, data: bytes) -> float:
-    if decoder is None:
-        return 0.0
-    return sum(decoder.glyph_width(decoded.width_code) for decoded in decoder.decode_glyphs(data))
-
-
 def internal_operand_text(
     data: bytes, cmap: ToUnicodeCMap | None, decoder: FontDecoder | None
 ) -> str:
@@ -144,42 +103,6 @@ def internal_restore_graphics_state(stack: list[GraphicsState]) -> GraphicsState
     if stack:
         return stack.pop()
     return ([1.0, 0.0, 0.0, 1.0, 0.0, 0.0], None, 0.0, 250.0)
-
-
-def internal_pypdf_rtl_order(text: str) -> str:
-    output: list[str] = []
-    segment = ""
-    rtl = False
-    for character in text:
-        if character == internal_INFERRED_SPACE:
-            output.append(segment)
-            output.append(" ")
-            segment = ""
-            rtl = False
-            continue
-        if character in {"\n", "\r"}:
-            output.append(segment)
-            output.append(character)
-            segment = ""
-            rtl = False
-            continue
-        direction = internal_bidi(character)
-        if direction in {"R", "AL", "AN"}:
-            if not rtl:
-                output.append(segment)
-                segment = ""
-                rtl = True
-            segment = character + segment
-        elif direction in {"L", "LRE", "LRO", "LRI"}:
-            if rtl:
-                output.append(segment)
-                segment = ""
-                rtl = False
-            segment += character
-        else:
-            segment = character + segment if rtl else segment + character
-    output.append(segment)
-    return "".join(output)
 
 
 class StructuredState(ClosingMixin):

@@ -12,6 +12,7 @@ from core_pdf import PdfDocument
 from core_pdf.impl.engine.spec.s_07_content.operations import iter_content_operations
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
+from core_pdf.impl.engine.spec.s_08_graphics.matrix import multiply_affine
 from core_pdf.impl.engine.spec.s_09_fonts.cmap_tounicode import ToUnicodeCMap
 from core_pdf.impl.engine.spec.s_09_fonts.decoder import FontDecoder
 from core_pdf.impl.engine.spec.s_09_fonts.glyphs import ensure_glyph_map
@@ -588,19 +589,9 @@ class NativeTextProjection:
             graphics_stack: list[GraphicsState] = []
             malformed_text_state = False
 
-            def multiply(left: list[float], right: list[float]) -> list[float]:
-                return [
-                    left[0] * right[0] + left[1] * right[2],
-                    left[0] * right[1] + left[1] * right[3],
-                    left[2] * right[0] + left[3] * right[2],
-                    left[2] * right[1] + left[3] * right[3],
-                    left[4] * right[0] + left[5] * right[2] + right[4],
-                    left[4] * right[1] + left[5] * right[3] + right[5],
-                ]
-
             def moved_far_enough(width: float) -> bool:
-                previous = multiply(previous_tm, previous_cm)
-                current = multiply(tm_matrix, cm_matrix)
+                previous = multiply_affine(previous_tm, previous_cm)
+                current = multiply_affine(tm_matrix, cm_matrix)
                 delta_x = current[4] - previous[4]
                 delta_y = current[5] - previous[5]
                 scale_x = math.sqrt(previous_tm[0] ** 2 + previous_tm[1] ** 2)
@@ -615,8 +606,8 @@ class NativeTextProjection:
                 return delta_x >= (space_width + width / 1000.0) * scale_x
 
             def moved_to_newline() -> bool:
-                previous = multiply(previous_tm, previous_cm)
-                current = multiply(tm_matrix, cm_matrix)
+                previous = multiply_affine(previous_tm, previous_cm)
+                current = multiply_affine(tm_matrix, cm_matrix)
                 delta_y = current[5] - previous[5]
                 scale_y = math.sqrt(previous_tm[2] ** 2 + previous_tm[3] ** 2)
                 current_scale_y = math.sqrt(tm_matrix[2] ** 2 + tm_matrix[3] ** 2)
@@ -688,7 +679,7 @@ class NativeTextProjection:
                         previous_cm = cm_matrix.copy()
                         moved_since_show = True
                     elif operator == "cm":
-                        cm_matrix = multiply(
+                        cm_matrix = multiply_affine(
                             [float(cast(Any, value)) for value in operands[:6]], cm_matrix
                         )
                     elif operator == "Tf":
@@ -711,7 +702,7 @@ class NativeTextProjection:
                                 matrix_newline_pending,
                             )
                         )
-                        shown_position = multiply(tm_matrix, cm_matrix)
+                        shown_position = multiply_affine(tm_matrix, cm_matrix)
                         show_positions.append((shown_position[4], shown_position[5]))
                         show_width_points.append(shown_width(data) / 1000.0)
                         show_halfspaces.append(current_font_size * current_space_width / 1000.0)
@@ -741,7 +732,7 @@ class NativeTextProjection:
                                         force_newline_before,
                                     )
                                 )
-                                shown_position = multiply(tm_matrix, cm_matrix)
+                                shown_position = multiply_affine(tm_matrix, cm_matrix)
                                 show_positions.append((shown_position[4], shown_position[5]))
                                 show_width_points.append(shown_width(bytes(tj_item.data)) / 1000.0)
                                 show_halfspaces.append(

@@ -114,20 +114,12 @@ def internal_curve_table_arrays(
     return axis, table
 
 
-@lru_cache(maxsize=128)
-def internal_matrix_array(
-    matrix: tuple[tuple[float, ...], ...],
+@lru_cache(maxsize=256)
+def internal_readonly_float32(
+    values: tuple[tuple[float, ...], ...],
 ) -> numpy.ndarray[Any, Any]:
-    result = numpy.asarray(matrix, dtype=numpy.float32)
-    result.flags.writeable = False
-    return result
-
-
-@lru_cache(maxsize=128)
-def internal_clut_array(
-    clut: tuple[tuple[float, ...], ...],
-) -> numpy.ndarray[Any, Any]:
-    result = numpy.asarray(clut, dtype=numpy.float32)
+    """Cache one read-only float32 array per distinct matrix or CLUT."""
+    result = numpy.asarray(values, dtype=numpy.float32)
     result.flags.writeable = False
     return result
 
@@ -166,7 +158,7 @@ def apply_matrix_transform(profile: IccMatrixProfile, samples: ColorSamples) -> 
     if profile.color_space == "GRAY":
         xyz = curves * numpy.asarray(profile.white_point, dtype=numpy.float32)
     else:
-        xyz = curves @ internal_matrix_array(profile.matrix)
+        xyz = curves @ internal_readonly_float32(profile.matrix)
     return numpy.clip(xyz_to_srgb(adapt_d50_to_d65(xyz)), 0.0, 1.0).astype(
         numpy.float32,
         copy=False,
@@ -246,12 +238,12 @@ def apply_lut_transform(profile: IccLutProfile, samples: ColorSamples) -> ColorS
     ).astype(numpy.float32)
     if profile.color_space == "XYZ" and profile.input_channels == 3:
         values = numpy.clip(
-            values @ internal_matrix_array(profile.matrix).T,
+            values @ internal_readonly_float32(profile.matrix).T,
             0.0,
             1.0,
         )
     clut = interpolate_lut_array(
-        internal_clut_array(profile.clut),
+        internal_readonly_float32(profile.clut),
         profile.grid_points,
         values,
     )

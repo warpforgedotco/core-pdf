@@ -21,6 +21,7 @@ from core_pdf.impl.engine.parse.model import (
     ObservationBatch,
     ObservationSource,
 )
+from core_pdf.impl.engine.spec.s_07_content.page_program import line_coordinate_columns
 from core_pdf.impl.engine.structured import (
     Table,
     TableAssociatedText,
@@ -174,15 +175,10 @@ def internal_axis_segments(
         empty = numpy.empty((0, 3), dtype=numpy.float32)
         return empty, empty
 
-    # Materialize the four coordinates once, then classify and normalize all
-    # segments with array operations.  The old loop repeatedly performed the
-    # same Python branching and tuple construction for every grid line.
-    coordinates = numpy.fromiter(
-        (value for line in lines for value in (line.x0, line.y0, line.x1, line.y1)),
-        dtype=numpy.float64,
-        count=len(lines) * 4,
-    ).reshape((-1, 4))
-    x0, y0, x1, y1 = coordinates.T
+    # Read the four coordinate columns straight off the capture, then classify
+    # and normalize all segments with array operations.  ``LineTable`` already
+    # stores them, so no per-line Python object is built here.
+    x0, y0, x1, y1 = line_coordinate_columns(lines)
     horizontal_mask = (numpy.abs(y1 - y0) <= AXIS_TOLERANCE) & (
         numpy.abs(x1 - x0) >= page_width * 0.02
     )
