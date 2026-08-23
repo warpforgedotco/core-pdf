@@ -72,18 +72,6 @@ jobs:
       - name: Run core-pdf tests
         run: uv run --locked --package core-pdf --group test pytest
 
-      - name: Capture OCR batching benchmark baseline
-        run: >-
-          uv run --locked --package core-pdf --group benchmark pytest
-          tests/benchmarks/test_page_program_benchmarks.py::test_multi_region_ocr_batch_benchmark
-          --benchmark-only --benchmark-json=ocr-batching-benchmark.json
-
-      - name: Upload OCR batching benchmark baseline
-        uses: actions/upload-artifact@v4
-        with:
-          name: ocr-batching-benchmark-${{ matrix.python-version }}
-          path: ocr-batching-benchmark.json
-
       - name: Prune uv cache
         if: always()
         run: uv cache prune --ci
@@ -121,15 +109,12 @@ jobs:
             uv run --locked --package core-pdf --group benchmark pytest
             tests/benchmarks
             tests/src/core_pdf/impl/engine/spec/s_07_content/benchmarks
-            tests/src/core_pdf/impl/engine/spec/s_07_document/benchmarks
             tests/src/core_pdf/impl/engine/spec/s_07_filters/benchmarks
             tests/src/core_pdf/impl/engine/spec/s_07_objects/benchmarks
             tests/src/core_pdf/impl/engine/spec/s_07_security/benchmarks
             tests/src/core_pdf/impl/engine/spec/s_07_syntax/benchmarks
             tests/src/core_pdf/impl/engine/spec/s_08_graphics/benchmarks
             tests/src/core_pdf/impl/engine/spec/s_09_fonts/benchmarks
-            --ignore=tests/benchmarks/E2E/test_synthetic_document_benchmarks.py
-            --ignore=tests/benchmarks/test_page_program_benchmarks.py
             -m benchmark_high_impact
             --codspeed
           token: ${{ secrets.CODSPEED_TOKEN }}

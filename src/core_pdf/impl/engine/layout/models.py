@@ -479,9 +479,32 @@ def internal_track_text_run(run: TextRun) -> None:
 
 
 LayoutLineReconstructionKey: TypeAlias = tuple[
-    bool,
+    bool | None,
     tuple[tuple[TextRun, int, tuple[float, ...]], ...],
 ]
+
+
+def reconstruct_cached_layout_line_text(
+    runs: list[TextRun],
+    *,
+    is_all_caps_text: bool | None = None,
+) -> LayoutLineText:
+    """Reconstruct a line once for every revision of its constituent runs."""
+    from core_pdf.impl.engine.layout.text_lines import reconstruct_layout_line_text
+
+    key: LayoutLineReconstructionKey = (
+        is_all_caps_text,
+        tuple((run, run.internal_revision, tuple(run.coords)) for run in runs),
+    )
+    first_run = runs[0] if runs else None
+    shared_cache = first_run.internal_layout_reconstruction_cache if first_run is not None else None
+    if shared_cache is not None and shared_cache[0] == key:
+        return shared_cache[1]
+    reconstructed = reconstruct_layout_line_text(runs, is_all_caps_text=is_all_caps_text)
+    if first_run is not None:
+        internal_track_text_run(first_run)
+        object.__setattr__(first_run, "internal_layout_reconstruction_cache", (key, reconstructed))
+    return reconstructed
 
 
 class LayoutWordSnapshot(NamedTuple):
@@ -651,30 +674,14 @@ class LayoutLine:
         )
 
     def reconstructed_text(self) -> LayoutLineText:
-        from core_pdf.impl.engine.layout.text_lines import (
-            reconstruct_layout_line_text,
-        )
-
         key = self.reconstruction_key()
         cached = self.internal_reconstructed_cache
         if cached is not None and key == self.internal_reconstructed_cache_key:
             return cached
-        first_run = self.runs[0] if self.runs else None
-        shared_cache = (
-            first_run.internal_layout_reconstruction_cache if first_run is not None else None
+        reconstructed = reconstruct_cached_layout_line_text(
+            self.runs,
+            is_all_caps_text=self.is_all_caps_text,
         )
-        if shared_cache is not None and shared_cache[0] == key:
-            reconstructed = shared_cache[1]
-        else:
-            reconstructed = reconstruct_layout_line_text(
-                self.runs,
-                is_all_caps_text=self.is_all_caps_text,
-            )
-            if first_run is not None:
-                internal_track_text_run(first_run)
-                object.__setattr__(
-                    first_run, "internal_layout_reconstruction_cache", (key, reconstructed)
-                )
         self.internal_reconstructed_cache = reconstructed
         self.internal_reconstructed_cache_key = key
         return reconstructed

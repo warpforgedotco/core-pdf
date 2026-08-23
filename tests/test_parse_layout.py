@@ -1,9 +1,19 @@
 from __future__ import annotations
 
+import numpy
+
 from core_pdf.impl.engine.parse import ObservationBatch, ObservationSource, layout_blocks
 from core_pdf.impl.engine.parse.layout import (
+    internal_best_projection_gap,
+    internal_best_region_projection_gap,
     internal_column_major_prose,
+    internal_interval_crossing_counts,
+    internal_LayoutGeometry,
     internal_reading_order_evidence,
+    internal_row_order_indexes,
+    internal_row_order_region,
+    internal_topological_block_order,
+    internal_topological_block_order_quadratic,
     layout_blocks_with_evidence,
 )
 from core_pdf.impl.engine.parse.model import ParsedBlock, ParsedLine
@@ -19,6 +29,43 @@ def observations(
         confidence=(90.0 for internal_item in items),
         line_break_before=(True for internal_item in items),
     )
+
+
+def test_interval_crossing_counts_match_strict_broadcast_oracle() -> None:
+    random = numpy.random.default_rng(20260821)
+    starts = random.uniform(-50.0, 500.0, 1_000)
+    ends = starts + random.uniform(0.0, 120.0, len(starts))
+    boxes = numpy.column_stack((starts, starts, ends, ends))
+    positions = numpy.concatenate((random.uniform(-100.0, 650.0, 300), starts, ends))
+
+    expected = ((starts[None, :] < positions[:, None]) & (ends[None, :] > positions[:, None])).sum(
+        axis=1
+    )
+
+    numpy.testing.assert_array_equal(internal_interval_crossing_counts(boxes, positions), expected)
+
+
+def test_reusable_region_orders_match_independent_sorting() -> None:
+    random = numpy.random.default_rng(21082026)
+    starts = random.uniform(0.0, 500.0, (300, 2))
+    sizes = random.uniform(1.0, 80.0, (300, 2))
+    boxes = numpy.column_stack((starts, starts + sizes)).reshape(300, 4)[:, (0, 1, 2, 3)]
+    # column_stack above produces x0, y0, x1, y1 for the two-column operands.
+    geometry = internal_LayoutGeometry.create(boxes)
+    root_indexes = numpy.arange(len(boxes))
+    root = geometry.region(root_indexes)
+
+    for _sample in range(50):
+        indexes = numpy.sort(random.choice(root_indexes, size=100, replace=False))
+        region = geometry.region(indexes, root)
+        for axis in (0, 1):
+            assert internal_best_region_projection_gap(geometry, region, axis, 0.0) == (
+                internal_best_projection_gap(boxes[indexes], axis, 0.0)
+            )
+        numpy.testing.assert_array_equal(
+            internal_row_order_region(geometry, region),
+            internal_row_order_indexes(indexes, boxes),
+        )
 
 
 def test_xy_cut_reads_columns_before_moving_right() -> None:
@@ -250,3 +297,43 @@ def test_layout_assigns_conservative_semantic_block_roles() -> None:
     blocks = layout_blocks(batch, use_xy_cut=False)
 
     assert [block.kind for block in blocks] == ["heading", "paragraph", "caption", "list"]
+
+
+def test_sparse_block_order_matches_quadratic_oracle() -> None:
+    random = numpy.random.default_rng(27032026)
+    for sample in range(40):
+        count = int(random.integers(64, 160))
+        x0 = random.uniform(0.0, 500.0, count)
+        y0 = random.uniform(0.0, 800.0, count)
+        widths = random.uniform(5.0, 180.0, count)
+        heights = random.uniform(4.0, 80.0, count)
+        blocks = [
+            ParsedBlock(
+                lines=(
+                    ParsedLine(
+                        text=f"{sample}:{index}",
+                        bbox=(
+                            float(x0[index]),
+                            float(y0[index]),
+                            float(x0[index] + widths[index]),
+                            float(y0[index] + heights[index]),
+                        ),
+                        source="native",
+                    ),
+                ),
+                bbox=(
+                    float(x0[index]),
+                    float(y0[index]),
+                    float(x0[index] + widths[index]),
+                    float(y0[index] + heights[index]),
+                ),
+            )
+            for index in range(count)
+        ]
+
+        expected = internal_topological_block_order_quadratic(blocks)
+        actual = internal_topological_block_order(blocks)
+
+        assert [block.lines[0].text for block in actual] == [
+            block.lines[0].text for block in expected
+        ]

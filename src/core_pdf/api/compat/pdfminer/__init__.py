@@ -979,6 +979,10 @@ def _reading_order(
 
     active: dict[int, LTTextBox | _TextGroup] = {id(box): box for box in boxes}
     plane_order = list(active)
+    # Heap entries use object identity like pdfminer itself. Keep merged groups
+    # alive until ordering completes so CPython cannot recycle an id while a
+    # stale entry for the former object is still queued.
+    retained_groups: list[_TextGroup] = []
 
     def area_gap(first: LTTextBox | _TextGroup, second: LTTextBox | _TextGroup) -> float:
         x0 = min(first.bbox[0], second.bbox[0])
@@ -1034,14 +1038,13 @@ def _reading_order(
             heapq.heappush(queue, (True, _distance, first_id, second_id))
             continue
         vertical = (
-            isinstance(first, LTTextBoxVertical)
-            or isinstance(second, LTTextBoxVertical)
-            or isinstance(first, _TextGroup)
-            and first.vertical
-            or isinstance(second, _TextGroup)
-            and second.vertical
+            isinstance(active_first, LTTextBoxVertical)
+            or isinstance(active_second, LTTextBoxVertical)
+            or (isinstance(active_first, _TextGroup) and active_first.vertical)
+            or (isinstance(active_second, _TextGroup) and active_second.vertical)
         )
-        group = _TextGroup([first, second], union, vertical)
+        group = _TextGroup([active_first, active_second], union, vertical)
+        retained_groups.append(group)
         del active[first_id], active[second_id]
         group_id = id(group)
         for other_id in plane_order:
@@ -1999,11 +2002,12 @@ def extract_pages(  # noqa: C901
                 orientation = glyph.rotation_angle % 360
                 glyph_provenance = dict(glyph.provenance) if glyph.provenance else {}
                 text_matrix = glyph_provenance.get("text_matrix")
-                resolved_text_matrix = (
-                    text_matrix
-                    if isinstance(text_matrix, (tuple, list)) and len(text_matrix) == 6
-                    else (1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
-                )
+                if isinstance(text_matrix, (tuple, list)) and len(text_matrix) == 6:
+                    resolved_text_matrix = text_matrix
+                elif isinstance(text_matrix, (tuple, list)) and len(text_matrix) == 4:
+                    resolved_text_matrix = (*text_matrix, 0.0, 0.0)
+                else:
+                    resolved_text_matrix = (1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
                 pdfminer_matrix_origin = glyph_provenance.get("pdfminer_matrix_origin")
                 pdfminer_cursor = glyph_provenance.get("pdfminer_cursor")
                 exact_cursor_projection = (

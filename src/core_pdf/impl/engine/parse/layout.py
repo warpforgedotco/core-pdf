@@ -8,18 +8,17 @@ import re
 import unicodedata
 from collections import Counter, defaultdict
 from collections.abc import Iterable
-from dataclasses import replace
+from dataclasses import dataclass, replace
+from heapq import heappop, heappush
+from itertools import combinations
 from typing import cast
 
 import numpy
 
 from core_pdf.impl.engine.array_views import finite_median
-from core_pdf.impl.engine.layout.models import TextRun
+from core_pdf.impl.engine.layout.models import TextRun, reconstruct_cached_layout_line_text
 from core_pdf.impl.engine.layout.spatial import (
     SpatialIndex,
-)
-from core_pdf.impl.engine.layout.text_lines import (
-    reconstruct_layout_line_text,
 )
 from core_pdf.impl.engine.parse.model import (
     ObservationBatch,
@@ -37,9 +36,74 @@ internal_NATIVE_DOTTED_LEADER_RE = re.compile(r"\.{2,}")
 internal_NATIVE_DASH_RULE_RE = re.compile(r"(?:\s*-\s*){2,}")
 
 
-def internal_line_group_indexes(observations: ObservationBatch) -> list[list[int]]:
+@dataclass(frozen=True, slots=True)
+class internal_LineGroupPlan:
+    indexes: numpy.ndarray
+    starts: numpy.ndarray
+    stops: numpy.ndarray
+
+
+@dataclass(frozen=True, slots=True)
+class internal_BuiltLines:
+    lines: tuple[ParsedLine, ...]
+    boxes: numpy.ndarray
+
+
+@dataclass(frozen=True, slots=True)
+class internal_LayoutRegion:
+    indexes: numpy.ndarray
+    x_start_order: numpy.ndarray
+    y_start_order: numpy.ndarray
+    y_center_order: numpy.ndarray
+
+
+@dataclass(slots=True)
+class internal_LayoutGeometry:
+    boxes: numpy.ndarray
+    x_centers: numpy.ndarray
+    y_centers: numpy.ndarray
+    heights: numpy.ndarray
+    marks: numpy.ndarray
+    row_ids: numpy.ndarray
+
+    @classmethod
+    def create(cls, boxes: numpy.ndarray) -> internal_LayoutGeometry:
+        x_centers = (boxes[:, 0] + boxes[:, 2]) * 0.5
+        y_centers = (boxes[:, 1] + boxes[:, 3]) * 0.5
+        return cls(
+            boxes=boxes,
+            x_centers=x_centers,
+            y_centers=y_centers,
+            heights=numpy.maximum(1.0, boxes[:, 3] - boxes[:, 1]),
+            marks=numpy.zeros(len(boxes), dtype=numpy.bool_),
+            row_ids=numpy.empty(len(boxes), dtype=numpy.int64),
+        )
+
+    def region(
+        self, indexes: numpy.ndarray, parent: internal_LayoutRegion | None = None
+    ) -> internal_LayoutRegion:
+        if parent is None:
+            return internal_LayoutRegion(
+                indexes=indexes,
+                x_start_order=indexes[numpy.argsort(self.boxes[indexes, 0], kind="stable")],
+                y_start_order=indexes[numpy.argsort(self.boxes[indexes, 1], kind="stable")],
+                y_center_order=indexes[numpy.argsort(-self.y_centers[indexes], kind="stable")],
+            )
+        self.marks[indexes] = True
+        region = internal_LayoutRegion(
+            indexes=indexes,
+            x_start_order=parent.x_start_order[self.marks[parent.x_start_order]],
+            y_start_order=parent.y_start_order[self.marks[parent.y_start_order]],
+            y_center_order=parent.y_center_order[self.marks[parent.y_center_order]],
+        )
+        self.marks[indexes] = False
+        return region
+
+
+def internal_line_group_indexes(observations: ObservationBatch) -> internal_LineGroupPlan:
     if not len(observations):
-        return []
+        empty = numpy.empty(0, dtype=numpy.int64)
+        return internal_LineGroupPlan(empty, empty, empty)
     visible_indexes = numpy.flatnonzero(observations.visible)
     indexes = (
         visible_indexes
@@ -67,12 +131,14 @@ def internal_line_group_indexes(observations: ObservationBatch) -> list[list[int
             | (rotations[1:] != rotations[:-1])
             | (numpy.abs(centers[1:] - centers[:-1]) > tolerance)
         )
-    # Split at the already-vectorized break positions instead of rebuilding
-    # every group through a Python loop over all observations.
-    return [group.tolist() for group in numpy.split(indexes, numpy.flatnonzero(breaks)[1:])]
+    starts = numpy.flatnonzero(breaks).astype(numpy.int64, copy=False)
+    stops = numpy.empty_like(starts)
+    stops[:-1] = starts[1:]
+    stops[-1] = len(indexes)
+    return internal_LineGroupPlan(indexes, starts, stops)
 
 
-def internal_group_text(observations: ObservationBatch, indexes: list[int]) -> str:
+def internal_group_text(observations: ObservationBatch, indexes: numpy.ndarray) -> str:
     if any(int(observations.source[index]) == int(ObservationSource.OCR) for index in indexes):
         rotation = int(observations.rotation[indexes[0]]) % 360
 
@@ -96,11 +162,11 @@ def internal_group_text(observations: ObservationBatch, indexes: list[int]) -> s
             for index in indexes
             for character in observations.text[index]
         )
-        indexes = sorted(indexes, key=baseline_position, reverse=rtl > ltr)
+        indexes = numpy.asarray(sorted(indexes, key=baseline_position, reverse=rtl > ltr))
     references = tuple(observations.references[index] for index in indexes)
     if references and all(reference is not None for reference in references):
         runs = cast(list[TextRun], list(references))
-        return reconstruct_layout_line_text(runs).text.strip()
+        return reconstruct_cached_layout_line_text(runs).text.strip()
     parts: list[str] = []
     for index in indexes:
         text = observations.text[index].strip()
@@ -141,7 +207,7 @@ def internal_looks_like_native_artifact(text: str) -> bool:
 
 def internal_repeated_native_label_tokens(
     observations: ObservationBatch,
-    indexes: list[int],
+    indexes: numpy.ndarray,
 ) -> frozenset[str]:
     counts: Counter[str] = Counter()
     for index in indexes:
@@ -173,37 +239,55 @@ def internal_color_is_emphasis(color: object) -> bool:
     return max(components) - min(components) >= 0.15
 
 
-def internal_build_lines(observations: ObservationBatch) -> tuple[ParsedLine, ...]:
+def internal_build_lines(observations: ObservationBatch) -> internal_BuiltLines:
     line_groups = internal_line_group_indexes(observations)
+    if not len(line_groups.starts):
+        return internal_BuiltLines((), numpy.empty((0, 4), dtype=numpy.float32))
+    selected = line_groups.indexes
+    starts = line_groups.starts
+    selected_boxes = observations.bbox[selected]
+    group_boxes = numpy.column_stack(
+        (
+            numpy.minimum.reduceat(selected_boxes[:, 0], starts),
+            numpy.minimum.reduceat(selected_boxes[:, 1], starts),
+            numpy.maximum.reduceat(selected_boxes[:, 2], starts),
+            numpy.maximum.reduceat(selected_boxes[:, 3], starts),
+        )
+    ).astype(numpy.float32, copy=False)
+    selected_sources = observations.source[selected]
+    source_minimum = numpy.minimum.reduceat(selected_sources, starts)
+    source_maximum = numpy.maximum.reduceat(selected_sources, starts)
+    group_sequences = numpy.minimum.reduceat(observations.sequence[selected], starts)
     repeated_native_labels = internal_repeated_native_label_tokens(
         observations,
-        [index for group in line_groups for index in group],
+        selected,
     )
     output: list[ParsedLine] = []
-    for indexes in line_groups:
+    output_boxes: list[numpy.ndarray] = []
+    for group_index, (start, stop) in enumerate(
+        zip(line_groups.starts, line_groups.stops, strict=True)
+    ):
+        indexes = selected[int(start) : int(stop)]
         text = internal_group_text(observations, indexes)
         if not text:
             continue
-        if all(
-            int(source) == int(ObservationSource.NATIVE) for source in observations.source[indexes]
-        ) and internal_looks_like_native_artifact(text):
+        all_native = (
+            source_minimum[group_index]
+            == source_maximum[group_index]
+            == int(ObservationSource.NATIVE)
+        )
+        if all_native and internal_looks_like_native_artifact(text):
             continue
         if (
             repeated_native_labels
-            and all(
-                int(source) == int(ObservationSource.NATIVE)
-                for source in observations.source[indexes]
-            )
+            and all_native
             and internal_is_repeated_native_label(text, repeated_native_labels)
         ):
             continue
-        if all(
-            int(source) == int(ObservationSource.NATIVE) for source in observations.source[indexes]
-        ):
+        if all_native:
             text = internal_clean_native_punctuation_runs(text)
             if not text:
                 continue
-        boxes = observations.bbox[indexes]
         confidences = observations.confidence[indexes]
         font_sizes = observations.font_size[indexes]
         finite_confidences = confidences[numpy.isfinite(confidences)]
@@ -251,27 +335,29 @@ def internal_build_lines(observations: ObservationBatch) -> tuple[ParsedLine, ..
         spans = tuple(span_values)
         if not spans or "".join(span.text for span in spans) != text:
             spans = ()
-        sources = {int(value) for value in observations.source[indexes]}
-        if sources == {int(ObservationSource.NATIVE)}:
+        source_low = int(source_minimum[group_index])
+        source_high = int(source_maximum[group_index])
+        if source_low == source_high == int(ObservationSource.NATIVE):
             source = "native"
-        elif sources == {int(ObservationSource.OCR)}:
+        elif source_low == source_high == int(ObservationSource.OCR):
             source = "ocr"
         else:
             source = "hybrid"
+        group_box = group_boxes[group_index]
         output.append(
             ParsedLine(
                 text=text,
                 bbox=(
-                    float(numpy.min(boxes[:, 0])),
-                    float(numpy.min(boxes[:, 1])),
-                    float(numpy.max(boxes[:, 2])),
-                    float(numpy.max(boxes[:, 3])),
+                    float(group_box[0]),
+                    float(group_box[1]),
+                    float(group_box[2]),
+                    float(group_box[3]),
                 ),
                 source=source,
                 confidence=(
                     float(numpy.mean(finite_confidences)) if len(finite_confidences) else None
                 ),
-                sequence=int(numpy.min(observations.sequence[indexes])),
+                sequence=int(group_sequences[group_index]),
                 rotation=int(observations.rotation[indexes[0]]),
                 font_size=(finite_median(finite_font_sizes) if len(finite_font_sizes) else None),
                 bold=bold,
@@ -279,7 +365,13 @@ def internal_build_lines(observations: ObservationBatch) -> tuple[ParsedLine, ..
                 spans=spans,
             )
         )
-    return tuple(output)
+        output_boxes.append(group_box)
+    boxes = (
+        numpy.asarray(output_boxes, dtype=numpy.float32).reshape((-1, 4))
+        if output_boxes
+        else numpy.empty((0, 4), dtype=numpy.float32)
+    )
+    return internal_BuiltLines(tuple(output), boxes)
 
 
 def internal_best_projection_gap(
@@ -299,6 +391,27 @@ def internal_best_projection_gap(
     # PDF page space is bottom-left based.  For equal horizontal whitespace,
     # split at the uppermost gap first so a full-width header is detached before
     # column detection runs on the body below it.
+    best_index = (
+        len(gaps) - 1 - int(numpy.argmax(gaps[::-1])) if axis == 1 else int(numpy.argmax(gaps))
+    )
+    best_gap = float(gaps[best_index])
+    best_cut = float((sorted_starts[best_index + 1] + previous_ends[best_index]) * 0.5)
+    return (best_gap, best_cut) if best_gap >= minimum_gap else None
+
+
+def internal_best_region_projection_gap(
+    geometry: internal_LayoutGeometry,
+    region: internal_LayoutRegion,
+    axis: int,
+    minimum_gap: float,
+) -> tuple[float, float] | None:
+    order = region.x_start_order if axis == 0 else region.y_start_order
+    sorted_starts = geometry.boxes[order, axis]
+    sorted_ends = geometry.boxes[order, axis + 2]
+    previous_ends = numpy.maximum.accumulate(sorted_ends)[:-1]
+    gaps = sorted_starts[1:] - previous_ends
+    if not len(gaps):
+        return None
     best_index = (
         len(gaps) - 1 - int(numpy.argmax(gaps[::-1])) if axis == 1 else int(numpy.argmax(gaps))
     )
@@ -331,10 +444,10 @@ def internal_gutter_tolerating_contained_boxes(
     if right - left <= minimum_gap * 2:
         return None
     positions = numpy.linspace(left, right, 256)
-    crossing = (
-        (region_boxes[:, 0][None, :] < positions[:, None])
-        & (region_boxes[:, 2][None, :] > positions[:, None])
-    ).sum(axis=1)
+    # Count intervals crossing each sample without materializing a 256 x N
+    # boolean matrix. Strict inequalities match the former broadcast exactly:
+    # starts below the position minus ends at or below the position.
+    crossing = internal_interval_crossing_counts(region_boxes, positions)
     # "Almost nothing" has to stay a small share of the region, or a page with
     # few lines would split on a single crossing.
     allowed = max(1, count // 20)
@@ -405,6 +518,17 @@ def internal_gutter_tolerating_contained_boxes(
     if best is None:
         return None
     return (best[0] + best[1]) * 0.5
+
+
+def internal_interval_crossing_counts(
+    boxes: numpy.ndarray, positions: numpy.ndarray
+) -> numpy.ndarray:
+    """Count horizontal box intervals that strictly cross each position."""
+    sorted_starts = numpy.sort(boxes[:, 0])
+    sorted_ends = numpy.sort(boxes[:, 2])
+    return numpy.searchsorted(sorted_starts, positions, side="left") - numpy.searchsorted(
+        sorted_ends, positions, side="right"
+    )
 
 
 def internal_column_gap_minimum(region_boxes: numpy.ndarray) -> float:
@@ -598,6 +722,30 @@ def internal_row_order_indexes(indexes: numpy.ndarray, boxes: numpy.ndarray) -> 
     return indexes[numpy.lexsort((region[:, 0], row_ids))]
 
 
+def internal_row_order_region(
+    geometry: internal_LayoutGeometry, region: internal_LayoutRegion
+) -> numpy.ndarray:
+    indexes = region.indexes
+    if len(indexes) < 2:
+        return indexes
+    boxes = geometry.boxes
+    tolerance = max(1.0, finite_median(geometry.heights[indexes]) * 0.5)
+    if not math.isfinite(tolerance):
+        tolerance = 1.0
+    order = region.y_center_order
+    centers = geometry.y_centers
+    current_row = 0
+    row_center = float(centers[order[0]])
+    for position, raw_item in enumerate(order):
+        item = int(raw_item)
+        center = float(centers[item])
+        if position and row_center - center > tolerance:
+            current_row += 1
+            row_center = center
+        geometry.row_ids[item] = current_row
+    return indexes[numpy.lexsort((boxes[indexes, 0], geometry.row_ids[indexes]))]
+
+
 def internal_obstacle_partition(
     indexes: numpy.ndarray,
     boxes: numpy.ndarray,
@@ -660,9 +808,14 @@ def internal_xy_cut_regions(
     depth: int = 0,
     obstacle_index: SpatialIndex[int] | None = None,
     used_obstacles: frozenset[int] = frozenset(),
+    geometry: internal_LayoutGeometry | None = None,
+    parent_region: internal_LayoutRegion | None = None,
 ) -> list[numpy.ndarray]:
+    if geometry is None:
+        geometry = internal_LayoutGeometry.create(boxes)
+    current_region = geometry.region(indexes, parent_region)
     if len(indexes) <= 2 or depth >= 32:
-        return [internal_row_order_indexes(indexes, boxes)]
+        return [internal_row_order_region(geometry, current_region)]
 
     obstacle_partition = internal_obstacle_partition(
         indexes,
@@ -685,13 +838,17 @@ def internal_xy_cut_regions(
                 depth=depth + 1,
                 obstacle_index=obstacle_index,
                 used_obstacles=next_used_obstacles,
+                geometry=geometry,
+                parent_region=current_region,
             )
         ]
 
     region_boxes = boxes[indexes]
-    horizontal = internal_best_projection_gap(region_boxes, 1, max(3.0, median_height * 0.90))
-    vertical = internal_best_projection_gap(
-        region_boxes, 0, internal_column_gap_minimum(region_boxes)
+    horizontal = internal_best_region_projection_gap(
+        geometry, current_region, 1, max(3.0, median_height * 0.90)
+    )
+    vertical = internal_best_region_projection_gap(
+        geometry, current_region, 0, internal_column_gap_minimum(region_boxes)
     )
     if vertical is None:
         vertical = internal_narrow_projection_gap(region_boxes)
@@ -705,7 +862,7 @@ def internal_xy_cut_regions(
             region_boxes, internal_column_gap_minimum(region_boxes)
         )
         if tolerant_cut is not None:
-            centers_x = (region_boxes[:, 0] + region_boxes[:, 2]) * 0.5
+            centers_x = geometry.x_centers[indexes]
             left = indexes[centers_x < tolerant_cut]
             right = indexes[centers_x >= tolerant_cut]
             if len(left) and len(right):
@@ -720,13 +877,15 @@ def internal_xy_cut_regions(
                         depth=depth + 1,
                         obstacle_index=obstacle_index,
                         used_obstacles=used_obstacles,
+                        geometry=geometry,
+                        parent_region=current_region,
                     )
                 ]
         peeled = internal_peel_spanning_band(indexes, boxes, median_height)
         if peeled is not None:
             band, remainder = peeled
             return [
-                internal_row_order_indexes(band, boxes),
+                internal_row_order_region(geometry, geometry.region(band, current_region)),
                 *internal_xy_cut_regions(
                     remainder,
                     boxes,
@@ -735,6 +894,8 @@ def internal_xy_cut_regions(
                     depth=depth + 1,
                     obstacle_index=obstacle_index,
                     used_obstacles=used_obstacles,
+                    geometry=geometry,
+                    parent_region=current_region,
                 ),
             ]
         peeled = internal_peel_spanning_band(indexes, boxes, median_height, from_bottom=True)
@@ -749,17 +910,19 @@ def internal_xy_cut_regions(
                     depth=depth + 1,
                     obstacle_index=obstacle_index,
                     used_obstacles=used_obstacles,
+                    geometry=geometry,
+                    parent_region=current_region,
                 ),
-                internal_row_order_indexes(band, boxes),
+                internal_row_order_region(geometry, geometry.region(band, current_region)),
             ]
-        return [internal_row_order_indexes(indexes, boxes)]
+        return [internal_row_order_region(geometry, current_region)]
 
-    internal_score, axis, cut = max(candidates, key=lambda item: item[0])
-    centers = (region_boxes[:, axis] + region_boxes[:, axis + 2]) * 0.5
+    _, axis, cut = max(candidates, key=lambda item: item[0])
+    centers = (geometry.x_centers if axis == 0 else geometry.y_centers)[indexes]
     first = indexes[centers < cut]
     second = indexes[centers >= cut]
     if not len(first) or not len(second):
-        return [internal_row_order_indexes(indexes, boxes)]
+        return [internal_row_order_region(geometry, current_region)]
     ordered_groups = (second, first) if axis == 1 else (first, second)
     return [
         region
@@ -772,6 +935,8 @@ def internal_xy_cut_regions(
             depth=depth + 1,
             obstacle_index=obstacle_index,
             used_obstacles=used_obstacles,
+            geometry=geometry,
+            parent_region=current_region,
         )
     ]
 
@@ -926,11 +1091,12 @@ def layout_blocks(
     page_height: float = 0.0,
 ) -> tuple[ParsedBlock, ...]:
     """Reduce fused observations into geometrically ordered, structured blocks."""
-    lines = internal_build_lines(observations)
+    built_lines = internal_build_lines(observations)
+    lines = built_lines.lines
     if not lines:
         return ()
     boxes = internal_display_boxes(
-        numpy.asarray(tuple(line.bbox for line in lines), dtype=numpy.float32),
+        built_lines.boxes,
         rotation,
         page_width,
         page_height,
@@ -977,7 +1143,12 @@ def layout_blocks(
     blocks = [
         ParsedBlock(
             lines=tuple(lines[int(index)] for index in region),
-            bbox=internal_block_bbox(tuple(lines[int(index)] for index in region)),
+            bbox=(
+                float(numpy.min(built_lines.boxes[region, 0])),
+                float(numpy.min(built_lines.boxes[region, 1])),
+                float(numpy.max(built_lines.boxes[region, 2])),
+                float(numpy.max(built_lines.boxes[region, 3])),
+            ),
         )
         for region in regions
     ]
@@ -1064,7 +1235,44 @@ def layout_blocks_with_evidence(
     return blocks, internal_reading_order_evidence(blocks)
 
 
-def internal_topological_block_order(blocks: list[ParsedBlock]) -> list[ParsedBlock]:
+def internal_interval_overlap_pairs(
+    starts: numpy.ndarray, ends: numpy.ndarray
+) -> set[tuple[int, int]]:
+    """Return index pairs whose open intervals overlap, using a sweep line."""
+    order = numpy.argsort(starts, kind="stable")
+    active: set[int] = set()
+    ending: list[tuple[float, int]] = []
+    pairs: set[tuple[int, int]] = set()
+    for raw_index in order:
+        index = int(raw_index)
+        start = float(starts[index])
+        while ending and ending[0][0] <= start:
+            _end, expired = heappop(ending)
+            active.discard(expired)
+        for other in active:
+            pairs.add((other, index) if other < index else (index, other))
+        active.add(index)
+        heappush(ending, (float(ends[index]), index))
+    return pairs
+
+
+def internal_sparse_block_candidate_pairs(
+    blocks: list[ParsedBlock], full_width: list[bool]
+) -> list[tuple[int, int]]:
+    boxes = numpy.asarray(tuple(block.bbox for block in blocks), dtype=numpy.float64)
+    pairs = internal_interval_overlap_pairs(boxes[:, 0], boxes[:, 2])
+    pairs.update(internal_interval_overlap_pairs(boxes[:, 1], boxes[:, 3]))
+    full_width_indexes = [index for index, value in enumerate(full_width) if value]
+    for index in full_width_indexes:
+        pairs.update(
+            (min(index, other), max(index, other)) for other in range(len(blocks)) if other != index
+        )
+    return sorted(pairs)
+
+
+def internal_topological_block_order_from_pairs(
+    blocks: list[ParsedBlock], pairs: Iterable[tuple[int, int]]
+) -> list[ParsedBlock]:
     """Sort blocks into topological reading order using a spatial predecessor DAG.
 
     Full-width header blocks enforce strict vertical precedence over all child columns,
@@ -1078,60 +1286,82 @@ def internal_topological_block_order(blocks: list[ParsedBlock]) -> list[ParsedBl
     page_width = max(1.0, page_x1 - page_x0)
 
     n = len(blocks)
+    full_width = [(block.bbox[2] - block.bbox[0]) / page_width >= 0.70 for block in blocks]
     in_degree = [0] * n
     graph: dict[int, list[int]] = defaultdict(list)
 
-    for i in range(n):
+    for i, j in pairs:
         ax0, ay0, ax1, ay1 = blocks[i].bbox
         awidth = ax1 - ax0
-        a_is_full_width = (awidth / page_width) >= 0.70
-        for j in range(i + 1, n):
-            bx0, by0, bx1, by1 = blocks[j].bbox
-            bwidth = bx1 - bx0
-            b_is_full_width = (bwidth / page_width) >= 0.70
+        a_is_full_width = full_width[i]
+        bx0, by0, bx1, by1 = blocks[j].bbox
+        bwidth = bx1 - bx0
+        b_is_full_width = full_width[j]
 
-            # Rule 1: Full-width header preceding child blocks below it
-            if a_is_full_width and not b_is_full_width and ay0 >= by1 - 2.0:
-                graph[i].append(j)
-                in_degree[j] += 1
-            elif b_is_full_width and not a_is_full_width and by0 >= ay1 - 2.0:
-                graph[j].append(i)
-                in_degree[i] += 1
-            elif not a_is_full_width and not b_is_full_width:
-                overlap_x = max(0.0, min(ax1, bx1) - max(ax0, bx0))
-                min_w = max(1.0, min(awidth, bwidth))
-                if overlap_x / min_w >= 0.45:
-                    if ay0 >= by1 - 2.0:
-                        graph[i].append(j)
-                        in_degree[j] += 1
-                    elif by0 >= ay1 - 2.0:
-                        graph[j].append(i)
-                        in_degree[i] += 1
-                elif ax1 <= bx0 + 2.0 and max(0.0, min(ay1, by1) - max(ay0, by0)) > 4.0:
-                    # Column A is strictly left of Column B with vertical overlap
+        # Rule 1: Full-width header preceding child blocks below it
+        if a_is_full_width and not b_is_full_width and ay0 >= by1 - 2.0:
+            graph[i].append(j)
+            in_degree[j] += 1
+        elif b_is_full_width and not a_is_full_width and by0 >= ay1 - 2.0:
+            graph[j].append(i)
+            in_degree[i] += 1
+        elif not a_is_full_width and not b_is_full_width:
+            overlap_x = max(0.0, min(ax1, bx1) - max(ax0, bx0))
+            min_w = max(1.0, min(awidth, bwidth))
+            if overlap_x / min_w >= 0.45:
+                if ay0 >= by1 - 2.0:
                     graph[i].append(j)
                     in_degree[j] += 1
-                elif bx1 <= ax0 + 2.0 and max(0.0, min(ay1, by1) - max(ay0, by0)) > 4.0:
-                    # Column B is strictly left of Column A with vertical overlap
+                elif by0 >= ay1 - 2.0:
                     graph[j].append(i)
                     in_degree[i] += 1
+            elif ax1 <= bx0 + 2.0 and max(0.0, min(ay1, by1) - max(ay0, by0)) > 4.0:
+                # Column A is strictly left of Column B with vertical overlap
+                graph[i].append(j)
+                in_degree[j] += 1
+            elif bx1 <= ax0 + 2.0 and max(0.0, min(ay1, by1) - max(ay0, by0)) > 4.0:
+                # Column B is strictly left of Column A with vertical overlap
+                graph[j].append(i)
+                in_degree[i] += 1
 
-    # Kahn's algorithm with priority tie-breaker (highest Y top-down, then left-to-right)
-    ready = [i for i in range(n) if in_degree[i] == 0]
+    # Kahn's algorithm with the same stable top-down, left-to-right priority as
+    # the former repeatedly sorted list, but O(log N) queue operations.
+    ready: list[tuple[float, float, int, int]] = []
+    serial = 0
+    for index in range(n):
+        if in_degree[index] == 0:
+            heappush(ready, (-blocks[index].bbox[3], blocks[index].bbox[0], serial, index))
+            serial += 1
     result: list[int] = []
 
     while ready:
-        ready.sort(key=lambda idx: (-blocks[idx].bbox[3], blocks[idx].bbox[0]))
-        curr = ready.pop(0)
+        _negative_top, _left, _serial, curr = heappop(ready)
         result.append(curr)
         for nxt in graph[curr]:
             in_degree[nxt] -= 1
             if in_degree[nxt] == 0:
-                ready.append(nxt)
+                heappush(ready, (-blocks[nxt].bbox[3], blocks[nxt].bbox[0], serial, nxt))
+                serial += 1
 
     if len(result) == n:
         return [blocks[i] for i in result]
     return blocks
+
+
+def internal_topological_block_order_quadratic(blocks: list[ParsedBlock]) -> list[ParsedBlock]:
+    """Reference implementation used for small inputs and equivalence tests."""
+    return internal_topological_block_order_from_pairs(blocks, combinations(range(len(blocks)), 2))
+
+
+def internal_topological_block_order(blocks: list[ParsedBlock]) -> list[ParsedBlock]:
+    if len(blocks) < 64:
+        return internal_topological_block_order_quadratic(blocks)
+    page_x0 = min(block.bbox[0] for block in blocks)
+    page_x1 = max(block.bbox[2] for block in blocks)
+    page_width = max(1.0, page_x1 - page_x0)
+    full_width = [(block.bbox[2] - block.bbox[0]) / page_width >= 0.70 for block in blocks]
+    pairs = internal_sparse_block_candidate_pairs(blocks, full_width)
+    return internal_topological_block_order_from_pairs(blocks, pairs)
 
 
 def internal_interleave_columnar_blocks(blocks: list[ParsedBlock]) -> list[ParsedBlock]:
@@ -1161,20 +1391,30 @@ def internal_column_major_prose(blocks: list[ParsedBlock]) -> list[ParsedBlock]:
         if len(block.lines) < 80:
             output.append(block)
             continue
-        alphabetic = sum(character.isalpha() for line in block.lines for character in line.text)
-        total = sum(character.isalnum() for line in block.lines for character in line.text)
-        starts = sorted(line.bbox[0] for line in block.lines)
+        alphabetic = 0
+        total = 0
+        for line in block.lines:
+            for character in line.text:
+                is_alpha = character.isalpha()
+                alphabetic += is_alpha
+                total += is_alpha or character.isdigit()
+        line_starts = numpy.fromiter((line.bbox[0] for line in block.lines), dtype=numpy.float64)
+        starts = numpy.sort(line_starts)
         clusters: list[float] = []
         for start in starts:
             if not clusters or start - clusters[-1] > 40.0:
-                clusters.append(start)
+                clusters.append(float(start))
         if len(clusters) < 3 or alphabetic / max(1, total) < 0.45:
             output.append(block)
             continue
-        line_clusters = [
-            min(range(len(clusters)), key=lambda index: abs(line.bbox[0] - clusters[index]))
-            for line in block.lines
-        ]
+        cluster_values = numpy.asarray(clusters, dtype=numpy.float64)
+        insertion = numpy.searchsorted(cluster_values, line_starts)
+        left = numpy.maximum(0, insertion - 1)
+        right = numpy.minimum(len(cluster_values) - 1, insertion)
+        choose_right = numpy.abs(line_starts - cluster_values[right]) < numpy.abs(
+            line_starts - cluster_values[left]
+        )
+        line_clusters = numpy.where(choose_right, right, left)
         transitions = sum(
             left != right for left, right in zip(line_clusters, line_clusters[1:], strict=False)
         )
@@ -1184,17 +1424,11 @@ def internal_column_major_prose(blocks: list[ParsedBlock]) -> list[ParsedBlock]:
         # Stable column-major ordering from the nearest-column assignment.
         # Re-deriving membership with a fixed window emitted lines close to
         # two columns twice and silently dropped lines close to none.
+        columns: list[list[ParsedLine]] = [[] for internal_cluster in clusters]
+        for line, assigned in zip(block.lines, line_clusters, strict=True):
+            columns[int(assigned)].append(line)
         ordered = tuple(
-            line
-            for column_index in range(len(clusters))
-            for line in sorted(
-                (
-                    line
-                    for line, assigned in zip(block.lines, line_clusters, strict=True)
-                    if assigned == column_index
-                ),
-                key=lambda line: -line.bbox[1],
-            )
+            line for column in columns for line in sorted(column, key=lambda item: -item.bbox[1])
         )
         output.append(replace(block, lines=ordered))
     return output

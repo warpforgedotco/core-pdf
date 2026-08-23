@@ -4,46 +4,8 @@ from __future__ import annotations
 import numpy
 import pytest
 
-from core_pdf.impl.engine.spec.s_09_fonts.feature_distance_kernel import (
-    feature_distance,
-    feature_distance_matrix,
-)
-from core_pdf.impl.engine.spec.s_09_fonts.glyphs import (
-    ensure_glyph_map,
-    glyph_name_part_to_unicode,
-    glyph_name_to_unicode,
-)
+from core_pdf.impl.engine.spec.s_09_fonts.feature_distance_kernel import feature_distance_matrix
 from core_pdf.impl.engine.spec.s_09_fonts.raster_kernel import rasterize_contours
-
-VARIED_GLYPH_NAMES = (
-    "A",
-    "space",
-    "quotedblleft",
-    "quoteright",
-    "bullet",
-    "emdash",
-    "ff",
-    "ffi",
-    "f_f_i",
-    "uniFB01",
-    "uniFB02",
-    "u1F600",
-    "aacute",
-    "eacute",
-    "ntilde",
-    "Ccedilla",
-    "registersans",
-    "parenlefttp",
-    "lscript",
-    "integraltext",
-    "one.oldstyle",
-    "Asmall",
-    "totallyunknownglyphname123abc",
-    "g123",
-    "i7",
-)
-for internal_name in VARIED_GLYPH_NAMES:
-    glyph_name_to_unicode(internal_name)
 
 
 def glyph_shape_contours(
@@ -101,26 +63,6 @@ def test_rasterize_glyph_contours_benchmark(benchmark) -> None:
     assert any(result)
 
 
-def test_rasterize_feature_grid_benchmark(benchmark) -> None:
-    result = benchmark(rasterize_contours, GLYPH_CONTOURS, width=18, height=24)
-    assert any(result)
-
-
-def test_feature_distance_pair_benchmark(benchmark) -> None:
-    result = benchmark(
-        feature_distance,
-        LEFT_CELLS[0],
-        LEFT_BITMAPS[0],
-        LEFT_ASPECTS[0],
-        LEFT_CONTOURS[0],
-        RIGHT_CELLS[0],
-        RIGHT_BITMAPS[0],
-        RIGHT_ASPECTS[0],
-        RIGHT_CONTOURS[0],
-    )
-    assert result >= 0.0
-
-
 @pytest.mark.benchmark_high_impact
 def test_feature_distance_matrix_benchmark(benchmark) -> None:
     result = benchmark(
@@ -135,16 +77,3 @@ def test_feature_distance_matrix_benchmark(benchmark) -> None:
         RIGHT_CONTOURS,
     )
     assert result.shape == (30, 30)
-
-
-def test_glyph_name_to_unicode_warm_benchmark(benchmark) -> None:
-    result = benchmark(lambda: [glyph_name_to_unicode(name) for name in VARIED_GLYPH_NAMES])
-    assert len(result) == len(VARIED_GLYPH_NAMES)
-
-
-def test_glyph_name_part_to_unicode_uncached_benchmark(benchmark) -> None:
-    full = ensure_glyph_map()
-    result = benchmark(
-        lambda: [glyph_name_part_to_unicode(name, full) for name in VARIED_GLYPH_NAMES]
-    )
-    assert len(result) == len(VARIED_GLYPH_NAMES)

@@ -172,13 +172,18 @@ uv run --group benchmark pytest --benchmark-only -m benchmark_high_impact \
   --benchmark-compare=baseline                                                # after
 ```
 
-The high-impact marker is the routine local comparison tier. Pull-request CI runs 27 representative
-spec hot paths, focused scaling stresses, and one hybrid real-PDF end-to-end sentinel. It defers
-redundant scale points, pure-Python crypto and predictor variants, synthetic-document and
-page-program modules, and other expensive component permutations whose CodSpeed instrumentation
-dominates wall time. Run `uv run --group benchmark pytest --benchmark-only` when an exhaustive local
-comparison is justified. The same complete inventory, including every deferred benchmark, runs
-weekly in CI; the 224-document real-PDF sweep is divided into eight deterministic shards.
+The high-impact marker is the routine local and pull-request comparison tier. It selects 27
+representative spec hot paths, focused scaling stresses, and one hybrid real-PDF extraction
+sentinel. A targeted 44-case inventory runs weekly and adds the slower page-program, OCR,
+serialization, and alternate implementation-path benchmarks. Run
+`uv run --group benchmark pytest --benchmark-only` when the complete targeted comparison is
+justified.
+
+Add a benchmark only when it isolates an actionable hot path, represents a distinct implementation
+path, or enforces an explicit resource invariant. Prefer one representative workload per path;
+correctness variants belong in ordinary tests, and corpus-wide diagnostics belong in the
+SCORE-Bench precision and raster-golden workflows. In particular, do not turn every corpus fixture
+or every scale point into a separately timed test.
 
 The benchmark suite asserts **invariants as well as timings** — that a page is extracted in a
 single content-stream pass, that an image is decoded exactly once, that Type3 glyph caching
@@ -191,8 +196,6 @@ consecutive runs of the *same* source produced these spreads:
 
 | Benchmark | Run-to-run spread |
 | --- | --- |
-| `test_page_program_memory_profile_benchmark[native]` | 30.2% |
-| `test_cold_page_program_construction_benchmark[native]` | 9.3% |
 | `test_width_lookup_benchmark` | 5.6% |
 | `test_cmap_construction_benchmark` | 5.4% |
 | `test_end_to_end_page_extraction_benchmark[ocr]` | 5.3% |
@@ -201,7 +204,7 @@ Five benchmarks in the original thirty-case repeatability sample varied by more 
 identical code, so
 `--benchmark-compare-fail=mean:5%` produces false alarms. The heavy page-program, OCR, and
 rasterization benchmarks run few rounds and are dominated by scheduling noise; the micro
-benchmarks (cmap, tokenizer, tounicode, color) are comparatively stable.
+benchmarks (cmap, ToUnicode, and color) are comparatively stable.
 
 For a change to anything in the table above, do what the existing perf commits did rather than
 trusting a single benchmark run: cProfile before and after, compare corpus wall time across
@@ -225,6 +228,17 @@ Several compact implementation details trade some obviousness for materially low
 - Adaptive OCR rescue rejects a saturated ink map when the primary pass already contains dense,
   reliable text. A saturated grid provides no localization signal; preserve the conservative
   character and confidence thresholds because less complete scans can still benefit from rescue.
+- Layout line aggregation keeps observation indexes columnar and reduces group bounds, source
+  ranges, and sequence minima with NumPy ``reduceat`` operations. Rebuilding small arrays for each
+  line is slower than reducing all line groups together.
+- Recursive XY-cut carries stable x/y coordinate orders in a page-local geometry state. Child
+  regions filter those orders instead of sorting again, and sampled gutter coverage uses sorted
+  interval endpoints plus ``searchsorted`` rather than a sample-by-box boolean matrix.
+- Block precedence uses a spatial interval sweep above 64 blocks and a heap-based topological
+  queue. The quadratic implementation is deliberately retained as the exact oracle for small
+  inputs and randomized equivalence tests.
+- Layout text reconstruction is revision-aware and shared through the first ``TextRun`` in a line.
+  Parse and analysis callers must use that cache rather than reconstructing the same run group.
 
 These optimizations are covered by correctness tests and extraction-output checks. Performance
 changes to them should retain those invariants and capture a before/after benchmark.
