@@ -7,7 +7,8 @@ from pathlib import Path
 import numpy
 
 from core_pdf import PdfDocument, PdfRasterFontFace, PdfRasterFontRequest
-from core_pdf.impl.engine.rendering import RasterImage, RenderOptions
+from core_pdf.impl.engine.render.display import RenderOptions
+from core_pdf.impl.engine.render.raster_image import RasterImage
 from core_pdf.impl.engine.spec.s_09_fonts.fallback import fallback_glyph_outline
 
 SIMPLE1 = Path(__file__).parent / "fixtures" / "pdfminer.six" / "samples" / "simple1.pdf"

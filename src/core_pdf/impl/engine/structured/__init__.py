@@ -2,17 +2,9 @@
 """Immutable structured document records and derived views."""
 
 from core_pdf.impl.engine.structured.editor import DocumentEditor
-from core_pdf.impl.engine.structured.elements import (
-    ChunkRecord,
-    ElementRecord,
-    chunk_elements,
-    document_elements,
-    document_section_paths,
-)
 from core_pdf.impl.engine.structured.model import (
     SCHEMA_VERSION,
     Annotation,
-    BBox,
     Block,
     BlockKind,
     ContentNode,
@@ -41,14 +33,8 @@ from core_pdf.impl.engine.structured.model import (
 )
 
 __all__ = (
-    "BBox",
     "SCHEMA_VERSION",
     "Annotation",
-    "ChunkRecord",
-    "ElementRecord",
-    "chunk_elements",
-    "document_elements",
-    "document_section_paths",
     "Block",
     "BlockKind",
     "ContentNode",

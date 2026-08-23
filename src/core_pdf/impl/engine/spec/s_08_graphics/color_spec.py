@@ -15,11 +15,12 @@ from core_pdf.impl.engine.spec.s_07_objects.pdfdict import (
     lookup_dict_key,
     lookup_dict_key_default,
 )
-from core_pdf.impl.engine.spec.s_08_graphics import IccProfileError, parse_icc_transform
-from core_pdf.impl.objects import (
-    MISSING,
-    PdfStream,
+from core_pdf.impl.engine.spec.s_08_graphics.icc_profiles import (
+    IccProfileError,
+    parse_icc_transform,
 )
+from core_pdf.impl.objects import PdfStream
+from core_pdf.impl.primitives import MISSING
 
 ColorParams: TypeAlias = dict[str, object]
 ColorNameList: TypeAlias = list[object] | tuple[object, ...]

@@ -3,9 +3,13 @@
 
 from __future__ import annotations
 
-from typing import TypeAlias, cast
+from typing import TypeAlias
 
 from core_pdf.impl.engine.spec.s_07_filters.errors import FilterParseError
+from core_pdf.impl.engine.spec.s_07_filters.registry import (
+    CCITT_FILTERS,
+    FILTER_NAME_ALIASES,
+)
 from core_pdf.impl.engine.spec.s_07_objects.coercion import (
     is_pdf_null,
     normalize_pdf_name,
@@ -69,26 +73,6 @@ class FilterParams:
         self.encoded_byte_align = encoded_byte_align
         self.has_columns = has_columns
         self.jbig2_globals = jbig2_globals
-
-    def replace(self, **kwargs: object) -> "FilterParams":
-        return FilterParams(
-            early_change=cast(int, kwargs.get("early_change", self.early_change)),
-            predictor=cast(int, kwargs.get("predictor", self.predictor)),
-            columns=cast(int, kwargs.get("columns", self.columns)),
-            colors=cast(int, kwargs.get("colors", self.colors)),
-            bits_per_component=cast(int, kwargs.get("bits_per_component", self.bits_per_component)),
-            k=cast(int, kwargs.get("k", self.k)),
-            damaged_rows_before_error=cast(
-                bool,
-                kwargs.get("damaged_rows_before_error", self.damaged_rows_before_error),
-            ),
-            rows=cast(int, kwargs.get("rows", self.rows)),
-            encoded_byte_align=cast(
-                bool, kwargs.get("encoded_byte_align", self.encoded_byte_align)
-            ),
-            has_columns=cast(bool, kwargs.get("has_columns", self.has_columns)),
-            jbig2_globals=kwargs.get("jbig2_globals", self.jbig2_globals),
-        )
 
     @classmethod
     def from_parms(cls, parms: object) -> "FilterParams":
@@ -183,38 +167,7 @@ class StreamDecodeSpec:
         self.filters = filters
         self.params = params
 
-    def replace(self, **kwargs: object) -> "StreamDecodeSpec":
-        return StreamDecodeSpec(
-            filters=cast(tuple[str, ...], kwargs.get("filters", self.filters)),
-            params=cast(tuple[DecodeParam, ...], kwargs.get("params", self.params)),
-        )
 
-
-FILTER_NAME_ALIASES = {
-    "a85": "A85",
-    "ahx": "AHx",
-    "ascii85decode": "ASCII85Decode",
-    "asciihexdecode": "ASCIIHexDecode",
-    "ccf": "CCF",
-    "ccitt": "CCITTFaxDecode",
-    "ccittfaxdecode": "CCITTFaxDecode",
-    "crypt": "Crypt",
-    "dct": "DCT",
-    "dctdecode": "DCTDecode",
-    "flatedecode": "FlateDecode",
-    "fl": "Fl",
-    "identity": "Identity",
-    "jbig2decode": "JBIG2Decode",
-    "jpxdecode": "JPXDecode",
-    "platedecode": "FlateDecode",
-    "rl": "RL",
-    "runlengthdecode": "RunLengthDecode",
-    "runlength": "RunLengthDecode",
-    "none": "None",
-    "lzwdecode": "LZWDecode",
-    "lzw": "LZW",
-}
-CCITT_FILTERS = {"CCITTFaxDecode", "CCF"}
 normalize_filter_name = normalize_pdf_name
 
 

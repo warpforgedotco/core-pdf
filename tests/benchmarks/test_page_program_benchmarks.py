@@ -7,8 +7,9 @@ from typing import Any, cast
 import pytest
 
 from core_pdf import PdfDocument
-from core_pdf.impl.engine.parse import ocr
-from core_pdf.impl.engine.rendering import RasterImage, RenderOptions
+from core_pdf.impl.engine.parse import ParseReport, ocr
+from core_pdf.impl.engine.render.display import RenderOptions
+from core_pdf.impl.engine.render.raster_image import RasterImage
 from core_pdf.impl.engine.spec.s_08_graphics import image_decode
 
 FIXTURES = Path(__file__).parents[1] / "fixtures" / "SCORE-Bench" / "src"
@@ -53,9 +54,9 @@ def internal_extract_page(path: Path) -> dict[str, Any]:
         page.extract()
         cache = page.extraction_cache
         assert cache is not None
-        metrics = cache.get("parse_metrics")
-        assert isinstance(metrics, dict)
-        return cast(dict[str, Any], metrics)
+        report = cache.get("parse_report_v1")
+        assert isinstance(report, ParseReport)
+        return cast(dict[str, Any], dict(report.metrics))
 
 
 def internal_render_type3_vector_ocr_page(path: Path) -> dict[str, int]:
@@ -111,19 +112,11 @@ def test_end_to_end_page_extraction_benchmark(benchmark, fixture_name: str) -> N
 
     assert metrics["route"] in {"native", "hybrid", "ocr"}
     assert metrics["content_stream_passes"] == 1
-    assert metrics["preflight_native_route_mismatch"] in {0, 1}
-    assert metrics["preflight_image_route_mismatch"] in {0, 1}
-    assert metrics["preflight_vector_route_mismatch"] in {0, 1}
     benchmark.extra_info.update(
         {
             "route": metrics["route"],
-            "preflight_class": metrics.get("preflight_class"),
             "capture_seconds": metrics.get("capture_seconds"),
-            "preflight_seconds": metrics.get("preflight_seconds"),
             "ocr_seconds": metrics.get("ocr_seconds"),
-            "preflight_native_route_mismatch": metrics["preflight_native_route_mismatch"],
-            "preflight_image_route_mismatch": metrics["preflight_image_route_mismatch"],
-            "preflight_vector_route_mismatch": metrics["preflight_vector_route_mismatch"],
         }
     )
 

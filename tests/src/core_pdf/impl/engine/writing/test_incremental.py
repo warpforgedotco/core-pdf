@@ -7,7 +7,8 @@ from core_pdf import (
 )
 from core_pdf.impl.engine.structured import Block, BlockKind, Document, Page, TextLine
 from core_pdf.impl.engine.writing import append_incremental_update, serialize_pdf_file
-from core_pdf.impl.objects import PdfName, PdfReference, PdfStream, PdfString
+from core_pdf.impl.objects import PdfStream
+from core_pdf.impl.primitives import PdfName, PdfReference, PdfString
 
 
 def test_append_incremental_update_preserves_and_reopens_original_file() -> None:

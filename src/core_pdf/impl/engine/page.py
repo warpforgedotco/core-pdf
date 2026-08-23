@@ -16,9 +16,10 @@ from core_pdf.impl.engine.layout import (
     page_layout_geometry_summary,
     text_run_geometry_issues,
 )
-from core_pdf.impl.engine.layout.geometry import BBox, rect_tuple
+from core_pdf.impl.engine.layout.geometry import rect_tuple
 from core_pdf.impl.engine.parse import extract_page
-from core_pdf.impl.engine.rendering import RenderOptions, compose_page
+from core_pdf.impl.engine.render.display import RenderOptions
+from core_pdf.impl.engine.render.page import compose_page
 from core_pdf.impl.engine.spec.s_07_document.page import PdfPage as SpecPdfPage
 from core_pdf.impl.engine.spec.s_08_graphics.image_decode import ImageSource
 from core_pdf.impl.engine.structured import TextDiagnostics
@@ -184,11 +185,7 @@ class PdfPage(SpecPdfPage):
                         stride=raster.stride,
                         source_rect=(0.0, 0.0, raster.width, raster.height),
                         transform=None,
-                        clipping=(
-                            BBox.from_rect(image.image_clip)
-                            if image.image_clip is not None
-                            else None
-                        ),
+                        clipping=rect_tuple(image.image_clip),
                     ),
                 )
         return tuple(images)

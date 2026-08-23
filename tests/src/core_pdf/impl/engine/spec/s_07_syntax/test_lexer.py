@@ -6,7 +6,8 @@ import pytest
 from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.engine.spec.s_07_syntax.tokens import DELIMITERS, WHITESPACE
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.objects import PdfReference, PdfStream, PdfString
+from core_pdf.impl.objects import PdfStream
+from core_pdf.impl.primitives import PdfReference, PdfString
 
 
 @pytest.mark.parametrize("separator", WHITESPACE + DELIMITERS)

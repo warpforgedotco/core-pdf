@@ -31,8 +31,7 @@ from core_pdf.impl.engine.structured.model import (
     TableRowBand,
     TextLine,
 )
-from core_pdf.impl.pages import resolve_page_selection
-from core_pdf.impl.types import PageSelection
+from core_pdf.impl.pages import PageSelection, resolve_page_selection
 
 ElementResultT = TypeVar("ElementResultT")
 
@@ -96,7 +95,6 @@ def page_to_json_dict(page: Page) -> dict[str, JsonValue]:
         "elements": [element_to_json_dict(element) for element in page.elements],
         "blocks": [block_to_json_dict(block) for block in page.blocks],
         "tables": [table_to_json_dict(table) for table in page.tables],
-        "structured_tables": [table_to_json_dict(table) for table in page.structured_tables],
         "figures": [figure_to_json_dict(figure) for figure in page.figures],
         "links": [link_to_json_dict(link) for link in page.links],
         "annotations": [annotation_to_json_dict(annotation) for annotation in page.annotations],
@@ -442,16 +440,10 @@ def page_to_html(page: Page) -> str:
 
 
 def internal_serialization_elements(page: Page) -> tuple[PageElement, ...]:
-    """Order page elements for rendering.
-
-    The parse pipeline merges the annotated structured tables into
-    ``page.tables`` at assembly time (see ``internal_merge_structured_tables``),
-    so rendering only sorts the merged elements.  Hand-built pages may populate
-    ``structured_tables`` alone, hence the fallback.
-    """
+    """Order canonical page elements for rendering."""
     source_elements: tuple[PageElement, ...] = (
         *page.blocks,
-        *(page.tables or page.structured_tables),
+        *page.tables,
         *page.figures,
     )
     return tuple(sorted(source_elements, key=lambda item: item.order))

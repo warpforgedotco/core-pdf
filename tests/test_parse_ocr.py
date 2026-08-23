@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
 from threading import RLock
@@ -17,7 +18,10 @@ from core_pdf.impl.engine.parse import (
     OcrPass,
     OcrPassScope,
     PageEvidence,
+    PagePlanReason,
     PageRoute,
+    RecognitionReport,
+    RecognitionResult,
     WorkPlan,
     ocr,
 )
@@ -25,7 +29,7 @@ from core_pdf.impl.engine.parse import capture as parse_capture
 from core_pdf.impl.engine.parse import ocr as parse_ocr
 from core_pdf.impl.engine.parse import pipeline as parse_pipeline
 from core_pdf.impl.engine.parse.model import StrokedVectorTextEvidence
-from core_pdf.impl.engine.rendering import RasterImage
+from core_pdf.impl.engine.render.raster_image import RasterImage
 
 
 def raster(
@@ -58,6 +62,26 @@ def token_observations(
         source=source,
         confidence=(95.0 for _ in tokens),
     )
+
+
+def internal_recognize_with_report(
+    capture: CapturedPage,
+    plan: WorkPlan,
+    context: TaskScope,
+) -> tuple[ObservationBatch, RecognitionReport]:
+    trace = ocr.internal_RecognitionTrace.create()
+    observations = ocr.internal_recognize_page_with_reserved_raster(
+        capture,
+        plan,
+        context,
+        trace=trace,
+    )
+    return observations, trace.report()
+
+
+def internal_report_mapping(value: object) -> Mapping[str, object]:
+    assert isinstance(value, Mapping)
+    return value
 
 
 def test_tessdata_prefix_takes_precedence(
@@ -805,12 +829,15 @@ def test_candidate_diagnostics_are_typed_and_identify_selection() -> None:
         11,
         candidate_observations("noise", 40.0),
     )
-    page = SimpleNamespace(extraction_cache={})
-    capture = cast(CapturedPage, SimpleNamespace(page=page))
+    trace = ocr.internal_RecognitionTrace.create()
 
-    ocr.internal_record_candidates(capture, (("primary", first), ("fallback", second)), "primary")
+    ocr.internal_record_candidates(
+        (("primary", first), ("fallback", second)),
+        "primary",
+        trace,
+    )
 
-    diagnostics = page.extraction_cache["ocr_candidate_diagnostics"]
+    diagnostics = trace.report().candidates
     assert diagnostics[0]["selected"] is True
     assert diagnostics[0]["characters"] == len("alpha + beta")
     assert diagnostics[0]["mean_confidence"] == 80.0
@@ -906,7 +933,7 @@ def test_verified_hidden_text_bypasses_full_ocr(
         verify_hidden_text=True,
     )
 
-    result = ocr.internal_recognize_page_with_reserved_raster(
+    result, report = internal_recognize_with_report(
         capture,
         plan,
         cast(TaskScope, Context()),
@@ -916,8 +943,8 @@ def test_verified_hidden_text_bypasses_full_ocr(
     assert result.text == tokens
     assert result.visible.tolist() == [True] * len(tokens)
     assert result.source.tolist() == [int(ObservationSource.NATIVE)] * len(tokens)
-    assert page.extraction_cache["hidden_text_verification"]["accepted"] is True
-    diagnostics = page.extraction_cache["ocr_pass_diagnostics"]
+    assert report.hidden_text_verification["accepted"] is True
+    diagnostics = report.passes
     assert [item["name"] for item in diagnostics] == ["hidden-text-verification"]
     assert diagnostics[0]["raster_pixels"] == 100
 
@@ -1203,11 +1230,11 @@ def test_explicit_fallback_pass_runs_only_for_weak_primary(
     )
 
     context = cast(TaskScope, Context())
-    observations = ocr.internal_recognize_page_with_reserved_raster(capture, plan, context)
+    observations, report = internal_recognize_with_report(capture, plan, context)
 
     assert executed_modes == [3, 6]
     assert observations.text[0] == "strong fallback"
-    diagnostics = page.extraction_cache["ocr_pass_diagnostics"]
+    diagnostics = report.passes
     assert diagnostics[0]["selected"] is False
     assert diagnostics[1]["selected"] is True
 
@@ -1263,7 +1290,7 @@ def test_large_high_confidence_primary_skips_full_page_fallback(
         ),
     )
 
-    observations = ocr.internal_recognize_page_with_reserved_raster(
+    observations, report = internal_recognize_with_report(
         capture,
         plan,
         cast(TaskScope, Context()),
@@ -1271,7 +1298,7 @@ def test_large_high_confidence_primary_skips_full_page_fallback(
 
     assert executed_modes == [3]
     assert observations.text == ("large heading",)
-    assert [item["name"] for item in page.extraction_cache["ocr_pass_diagnostics"]] == ["primary"]
+    assert [item["name"] for item in report.passes] == ["primary"]
 
 
 def test_named_fallback_page_runs_when_primary_is_empty(
@@ -1406,14 +1433,14 @@ def test_weak_region_pass_augments_instead_of_replacing_primary(
         ),
     )
 
-    observations = ocr.internal_recognize_page_with_reserved_raster(
+    observations, report = internal_recognize_with_report(
         capture,
         plan,
         cast(TaskScope, Context()),
     )
 
     assert observations.text == ("x", "recovered")
-    diagnostics = page.extraction_cache["ocr_pass_diagnostics"]
+    diagnostics = report.passes
     assert diagnostics[1]["accepted_additions"] == 1
     assert diagnostics[1]["region_stage"] == "weak-region-crops"
 
@@ -1490,7 +1517,7 @@ def test_adaptive_rescue_uses_high_resolution_only_for_undersampled_regions(
         ),
     )
 
-    result = ocr.internal_recognize_page_with_reserved_raster(
+    result, report = internal_recognize_with_report(
         capture,
         plan,
         cast(TaskScope, Context()),
@@ -1499,10 +1526,12 @@ def test_adaptive_rescue_uses_high_resolution_only_for_undersampled_regions(
     assert "recovered" in result.text
     assert render_budgets
     assert set(render_budgets) == {ocr.MAX_OCR_PIXELS}
-    diagnostic = page.extraction_cache["ocr_pass_diagnostics"][0]
-    assert diagnostic["adaptive_rescue_decision"]["run"] is True
-    assert diagnostic["adaptive_rescue"]["scope"] == "weak-regions"
-    assert diagnostic["adaptive_rescue"]["region_boxes"]
+    diagnostic = report.passes[0]
+    rescue_decision = internal_report_mapping(diagnostic["adaptive_rescue_decision"])
+    rescue = internal_report_mapping(diagnostic["adaptive_rescue"])
+    assert rescue_decision["run"] is True
+    assert rescue["scope"] == "weak-regions"
+    assert rescue["region_boxes"]
 
 
 def test_adaptive_rescue_skips_high_resolution_for_large_primary_text(
@@ -1562,16 +1591,17 @@ def test_adaptive_rescue_skips_high_resolution_for_large_primary_text(
         ),
     )
 
-    result = ocr.internal_recognize_page_with_reserved_raster(
+    result, report = internal_recognize_with_report(
         capture,
         plan,
         cast(TaskScope, Context()),
     )
 
     assert result.text == ("heading",)
-    diagnostic = page.extraction_cache["ocr_pass_diagnostics"][0]
+    diagnostic = report.passes[0]
     assert diagnostic["adaptive_rescue"] is None
-    assert diagnostic["adaptive_rescue_decision"]["reason"] == "primary-text-already-large"
+    rescue_decision = internal_report_mapping(diagnostic["adaptive_rescue_decision"])
+    assert rescue_decision["reason"] == "primary-text-already-large"
 
 
 def test_adaptive_rescue_defers_to_scheduled_fallback_below_character_floor(
@@ -1639,7 +1669,7 @@ def test_adaptive_rescue_defers_to_scheduled_fallback_below_character_floor(
         ),
     )
 
-    result = ocr.internal_recognize_page_with_reserved_raster(
+    result, report = internal_recognize_with_report(
         capture,
         plan,
         cast(TaskScope, Context()),
@@ -1647,7 +1677,7 @@ def test_adaptive_rescue_defers_to_scheduled_fallback_below_character_floor(
 
     assert executed_modes == [12, 11]
     assert result.text == ("complete fallback text",)
-    diagnostics = page.extraction_cache["ocr_pass_diagnostics"]
+    diagnostics = report.passes
     assert diagnostics[0]["adaptive_rescue"] is None
     assert diagnostics[1]["selected"] is True
 
@@ -1722,15 +1752,16 @@ def test_vector_preflight_skips_known_undersampled_primary_pass(
         ),
     )
 
-    ocr.internal_recognize_page_with_reserved_raster(
+    _, report = internal_recognize_with_report(
         capture,
         plan,
         cast(TaskScope, Context()),
     )
 
     assert render_budgets == [ocr.OCR_PREFLIGHT_PIXELS, ocr.MAX_OCR_PIXELS]
-    diagnostic = page.extraction_cache["ocr_pass_diagnostics"][0]
-    assert diagnostic["adaptive_preflight"]["source"] == "vector-render"
+    diagnostic = report.passes[0]
+    adaptive_preflight = internal_report_mapping(diagnostic["adaptive_preflight"])
+    assert adaptive_preflight["source"] == "vector-render"
 
 
 def test_candidate_regions_combine_images_vectors_and_sparse_labels() -> None:
@@ -1871,11 +1902,12 @@ def test_stroked_vector_decoder_corrects_one_character_ocr_error(
         confidence=(95.0,),
     )
 
-    recovered = ocr.internal_recover_stroked_vector_text(capture, observations)
+    trace = ocr.internal_RecognitionTrace.create()
+    recovered = ocr.internal_recover_stroked_vector_text(capture, observations, trace)
 
     assert recovered.text == ("D7",)
     assert recovered.source.tolist() == [int(ObservationSource.STRUCTURE)]
-    assert page.extraction_cache["stroked_vector_decode"]["corrections"] == 1
+    assert trace.report().stroked_vector_decode["corrections"] == 1
 
 
 def test_stroked_vector_substitution_repairs_only_anchored_low_confidence_edits() -> None:
@@ -2103,7 +2135,7 @@ def test_weak_packed_stroked_vector_seed_uses_full_layer_fallback(
         ocr_passes=(OcrPass("stroked", OcrPassScope.STROKED_VECTOR_TEXT, 6.0, (11,)),),
     )
 
-    observations = ocr.internal_recognize_page_with_reserved_raster(
+    observations, report = internal_recognize_with_report(
         capture,
         plan,
         cast(TaskScope, Context()),
@@ -2111,11 +2143,11 @@ def test_weak_packed_stroked_vector_seed_uses_full_layer_fallback(
 
     assert recognized == [True, False]
     assert observations.text == ("full fallback",)
-    diagnostic = page.extraction_cache["ocr_pass_diagnostics"][0]
+    diagnostic = report.passes[0]
     assert diagnostic["region_stage"] == "stroked-vector-text-fallback"
     assert diagnostic["task_count"] == 2
     assert diagnostic["raster_pixels"] == 200
-    assert page.extraction_cache["stroked_vector_packed"]["fallback_used"] is True
+    assert report.stroked_vector_packed["fallback_used"] is True
 
 
 def test_document_stroked_alphabet_uses_richest_page_as_only_ocr_seed(
@@ -2156,7 +2188,7 @@ def test_document_stroked_alphabet_uses_richest_page_as_only_ocr_seed(
     class Extraction:
         def __init__(self, page: SimpleNamespace, capture: CapturedPage) -> None:
             self.page = page
-            self.internal_ocr: ObservationBatch | None = None
+            self.internal_recognition: RecognitionResult | None = None
             self.internal_recognized_at: float | None = None
             self.internal_capture = capture
 
@@ -2165,13 +2197,16 @@ def test_document_stroked_alphabet_uses_richest_page_as_only_ocr_seed(
 
         def plan(self) -> WorkPlan:
             plan_calls.append(int(self.page.page_number))
-            return WorkPlan(PageRoute.OCR, reason="stroked-vector-text")
+            return WorkPlan(PageRoute.OCR, reason=PagePlanReason.STROKED_VECTOR_TEXT)
 
         def ocr(self, context: object) -> ObservationBatch:
             ocr_calls.append(int(self.page.page_number))
-            self.internal_ocr = candidate_observations("seed", 99.0)
-            self.page.extraction_cache["_stroked_vector_alphabet"] = alphabet
-            return self.internal_ocr
+            observations = candidate_observations("seed", 99.0)
+            self.internal_recognition = RecognitionResult(
+                observations,
+                RecognitionReport(stroked_vector_alphabet=alphabet),
+            )
+            return observations
 
     extractions = {
         id(page): Extraction(page, capture) for page, capture in zip(pages, captures, strict=True)
@@ -2208,10 +2243,13 @@ def test_document_stroked_alphabet_uses_richest_page_as_only_ocr_seed(
     assert (seeds, reused) == (1, 1)
     assert ocr_calls == [2]
     assert plan_calls == [1]
-    assert pages[1].extraction_cache["document_stroked_glyphs"]["role"] == "seed"
-    assert pages[0].extraction_cache["document_stroked_glyphs"]["role"] == "reuse"
-    assert pages[0].extraction_cache["ocr_pass_diagnostics"][0]["raster_pixels"] == 0
-    assert extractions[id(pages[0])].internal_ocr is not None
+    seed_recognition = extractions[id(pages[1])].internal_recognition
+    reused_recognition = extractions[id(pages[0])].internal_recognition
+    assert seed_recognition is not None
+    assert reused_recognition is not None
+    assert seed_recognition.report.document_stroked_glyphs["role"] == "seed"
+    assert reused_recognition.report.document_stroked_glyphs["role"] == "reuse"
+    assert reused_recognition.report.passes[0]["raster_pixels"] == 0
     assert not parse_pipeline.internal_document_stroked_decode_is_sufficient(
         replace(decoded, decoded_candidate_runs=19)
     )
@@ -2255,7 +2293,7 @@ def test_document_stroked_alphabet_falls_back_to_page_ocr_when_coverage_is_low(
     class Extraction:
         def __init__(self, page: SimpleNamespace, capture: CapturedPage) -> None:
             self.page = page
-            self.internal_ocr: ObservationBatch | None = None
+            self.internal_recognition: RecognitionResult | None = None
             self.internal_capture = capture
 
         def capture(self) -> CapturedPage:
@@ -2263,13 +2301,16 @@ def test_document_stroked_alphabet_falls_back_to_page_ocr_when_coverage_is_low(
 
         def plan(self) -> WorkPlan:
             plan_calls.append(int(self.page.page_number))
-            return WorkPlan(PageRoute.OCR, reason="stroked-vector-text")
+            return WorkPlan(PageRoute.OCR, reason=PagePlanReason.STROKED_VECTOR_TEXT)
 
         def ocr(self, context: object) -> ObservationBatch:
             ocr_calls.append(int(self.page.page_number))
-            self.internal_ocr = candidate_observations("seed", 99.0)
-            self.page.extraction_cache["_stroked_vector_alphabet"] = alphabet
-            return self.internal_ocr
+            observations = candidate_observations("seed", 99.0)
+            self.internal_recognition = RecognitionResult(
+                observations,
+                RecognitionReport(stroked_vector_alphabet=alphabet),
+            )
+            return observations
 
     extractions = {
         id(page): Extraction(page, capture) for page, capture in zip(pages, captures, strict=True)
@@ -2297,10 +2338,12 @@ def test_document_stroked_alphabet_falls_back_to_page_ocr_when_coverage_is_low(
     assert (seeds, reused) == (2, 0)
     assert ocr_calls == [2, 1]
     assert plan_calls == [1]
-    assert tuple(page.extraction_cache["document_stroked_glyphs"]["role"] for page in pages) == (
-        "seed",
-        "seed",
-    )
+    roles: list[object] = []
+    for page in pages:
+        recognition = extractions[id(page)].internal_recognition
+        assert recognition is not None
+        roles.append(recognition.report.document_stroked_glyphs["role"])
+    assert tuple(roles) == ("seed", "seed")
 
 
 def test_document_stroked_alphabet_blacklists_conflicting_signatures() -> None:
@@ -2560,7 +2603,7 @@ def test_distributed_outline_text_uses_one_full_page_region(
         ),
     )
 
-    observations = ocr.internal_recognize_page_with_reserved_raster(
+    observations, report = internal_recognize_with_report(
         capture,
         plan,
         cast(TaskScope, Context()),
@@ -2572,7 +2615,7 @@ def test_distributed_outline_text_uses_one_full_page_region(
         (ocr.internal_OcrRegion(page_box, float("inf"), ("distributed-outline-text",)),)
     ]
     assert requested_budgets == [ocr.PRIMARY_OCR_PIXELS]
-    diagnostic = page.extraction_cache["ocr_pass_diagnostics"][0]
+    diagnostic = report.passes[0]
     assert diagnostic["region_stage"] == "distributed-outline-page"
     assert diagnostic["region_boxes"] == (page_box,)
 
@@ -2702,7 +2745,7 @@ def test_direct_scan_allowed_for_a_full_page_image_without_native_text() -> None
         }
         return SimpleNamespace(evidence=SimpleNamespace(**(defaults | evidence)))
 
-    plan = WorkPlan(PageRoute.OCR, reason="native-text-unavailable")
+    plan = WorkPlan(PageRoute.OCR, reason=PagePlanReason.NATIVE_TEXT_UNAVAILABLE)
 
     assert parse_ocr.internal_direct_scan_allowed(capture_for(), plan)
     # Content the dominant image cannot account for keeps the compositor render.
@@ -2711,7 +2754,12 @@ def test_direct_scan_allowed_for_a_full_page_image_without_native_text() -> None
         capture_for(visible_native_characters=5), plan
     )
     assert not parse_ocr.internal_direct_scan_allowed(
-        capture_for(), WorkPlan(PageRoute.OCR, reason="native-text-corrupt")
+        capture_for(),
+        WorkPlan(
+            PageRoute.OCR,
+            reason=PagePlanReason.NATIVE_TEXT_CORRUPT,
+            allow_direct_image_ocr=False,
+        ),
     )
     # Pages with native text or no images keep their existing behaviour.
     assert parse_ocr.internal_direct_scan_allowed(capture_for(visible_native_characters=50), plan)

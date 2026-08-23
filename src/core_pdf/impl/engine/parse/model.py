@@ -4,8 +4,8 @@
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Iterable, Sequence
-from dataclasses import dataclass, field
+from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import dataclass, field, fields
 from enum import IntEnum, StrEnum
 from typing import Any, cast
 
@@ -13,9 +13,6 @@ import numpy
 
 from core_pdf.impl.engine.layout.models import TextRun
 from core_pdf.impl.engine.spec.s_07_content.capture import CapturedDrawing, CapturedInlineImage
-from core_pdf.impl.engine.spec.s_07_content.operations import (
-    ContentOperatorCounts,
-)
 from core_pdf.impl.engine.spec.s_07_content.page_program import PageProgram
 from core_pdf.impl.engine.structured import (
     TextSpan,
@@ -36,6 +33,14 @@ OCR_RESCUE_SATURATED_MEAN_INK = 0.85
 OCR_RESCUE_MIN_CONFIDENCE = 95.0
 internal_OCR_RESCUE_DENSE_MIN_CHARACTERS: int = 2_000
 internal_OCR_RESCUE_DENSE_MIN_CONFIDENCE: float = 92.0
+
+
+def internal_bbox_tuple(row: object) -> tuple[float, float, float, float]:
+    """Narrow one four-column NumPy bbox row without allocating an intermediate list."""
+    values = cast(numpy.ndarray[Any, Any], row)
+    return (float(values[0]), float(values[1]), float(values[2]), float(values[3]))
+
+
 OCR_RESCUE_LARGE_TEXT_HEIGHT = 32.0
 OCR_PARALLEL_TILE_MIN_VECTOR_COMPLEXITY = 100_000
 HIDDEN_TEXT_VERIFY_MIN_CONFIDENCE = 80.0
@@ -69,12 +74,41 @@ class OcrPassScope(StrEnum):
     STROKED_VECTOR_TEXT = "stroked-vector-text"
 
 
-class PagePreflightClass(StrEnum):
-    NATIVE_TEXT = "native-text"
-    IMAGE_ONLY = "image-only"
-    VECTOR_DIAGRAM = "vector-diagram"
-    MIXED = "mixed"
-    LIKELY_MALFORMED = "likely-malformed"
+class PagePlanReason(StrEnum):
+    """Stable explanations for why the router chose a page plan."""
+
+    UNSPECIFIED = "unspecified"
+    NATIVE_TEXT_CORRUPT = "native-text-corrupt"
+    NEWSTROKE_VECTOR_TEXT = "newstroke-vector-text"
+    TRUSTED_HIDDEN_NATIVE_TEXT = "trusted-hidden-native-text"
+    UNPAINTED_NATIVE_TEXT_LAYER = "unpainted-native-text-layer"
+    STROKED_VECTOR_TEXT = "stroked-vector-text"
+    NATIVE_TEXT_WITH_RECTANGULAR_VECTORS = "native-text-with-rectangular-vectors"
+    GLYPH_TRUSTED_VECTOR_TEXT = "glyph-trusted-vector-text"
+    FULL_PAGE_IMAGE_NATIVE_TEXT = "full-page-image-native-text"
+    MOSTLY_COVERED_NATIVE_TEXT = "mostly-covered-native-text"
+    NATIVE_TEXT_WITHOUT_IMAGES = "native-text-without-images"
+    DENSE_NATIVE_TEXT = "dense-native-text"
+    UNCOVERED_VECTOR_TEXT = "uncovered-vector-text"
+    NOISY_NATIVE_TEXT = "noisy-native-text"
+    EMBEDDED_IMAGE_TEXT_SUPPLEMENT = "embedded-image-text-supplement"
+    GLYPH_TRUSTED_ROTATED_TEXT = "glyph-trusted-rotated-text"
+    MINOR_ROTATED_NATIVE_TEXT = "minor-rotated-native-text"
+    ROTATED_NATIVE_TEXT = "rotated-native-text"
+    HEALTHY_NATIVE_TEXT = "healthy-native-text"
+    USABLE_NATIVE_TEXT = "usable-native-text"
+    CLEAN_SHORT_NATIVE_TEXT = "clean-short-native-text"
+    NATIVE_TEXT_UNAVAILABLE = "native-text-unavailable"
+    NATIVE_TEXT_NEEDS_AUGMENTATION = "native-text-needs-augmentation"
+
+
+class FusionPolicy(StrEnum):
+    """How hybrid OCR observations interact with the native text layer."""
+
+    DEFAULT = "default"
+    SPARSE_NATIVE = "sparse-native"
+    NOISY_NATIVE = "noisy-native"
+    UNCOVERED_VECTOR = "uncovered-vector"
 
 
 def internal_readonly(array: numpy.ndarray[Any, Any]) -> numpy.ndarray[Any, Any]:
@@ -567,6 +601,7 @@ class PageEvidence:
     image_area_ratio: float
     vector_complexity: int
     image_boxes: tuple[tuple[float, float, float, float], ...] = ()
+    image_filters: tuple[str, ...] = ()
     text_coverage: float = 0.0
     full_page_image: bool = False
     uncovered_vector_area: float | None = None
@@ -620,71 +655,7 @@ class CapturedPage:
     grid_lines: Any
     inline_images: tuple[CapturedInlineImage, ...]
     evidence: PageEvidence
-
-
-@dataclass(frozen=True, slots=True)
-class PagePreflightFeatures:
-    """Cheap page signals gathered before full content interpretation."""
-
-    page_area: float
-    stream_count: int
-    decoded_stream_bytes: int
-    raw_stream_bytes: int
-    stream_filters: tuple[str, ...]
-    has_fonts: bool
-    font_count: int
-    image_xobject_count: int
-    form_xobject_count: int
-    image_pixels: int
-    image_raw_bytes: int
-    image_filters: tuple[str, ...]
-    operator_counts: ContentOperatorCounts
-
-
-@dataclass(frozen=True, slots=True)
-class PagePreflightRecommendation:
-    page_class: PagePreflightClass
-    capture: str
-    ocr: str
-    reason: str
-
-
-@dataclass(frozen=True, slots=True)
-class PagePreflight:
-    features: PagePreflightFeatures
-    recommendation: PagePreflightRecommendation
-
-    def as_cache_dict(self) -> dict[str, object]:
-        counts = self.features.operator_counts
-        return {
-            "class": self.recommendation.page_class.value,
-            "capture": self.recommendation.capture,
-            "ocr": self.recommendation.ocr,
-            "reason": self.recommendation.reason,
-            "features": {
-                "page_area": self.features.page_area,
-                "stream_count": self.features.stream_count,
-                "decoded_stream_bytes": self.features.decoded_stream_bytes,
-                "raw_stream_bytes": self.features.raw_stream_bytes,
-                "stream_filters": self.features.stream_filters,
-                "has_fonts": self.features.has_fonts,
-                "font_count": self.features.font_count,
-                "image_xobject_count": self.features.image_xobject_count,
-                "form_xobject_count": self.features.form_xobject_count,
-                "image_pixels": self.features.image_pixels,
-                "image_raw_bytes": self.features.image_raw_bytes,
-                "image_filters": self.features.image_filters,
-                "operators": {
-                    "text": counts.text,
-                    "image": counts.image,
-                    "vector_path": counts.vector_path,
-                    "vector_paint": counts.vector_paint,
-                    "graphics_state": counts.graphics_state,
-                    "unknown": counts.unknown,
-                    "malformed": counts.malformed,
-                },
-            },
-        }
+    newstroke_report: Mapping[str, object] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -718,15 +689,98 @@ class OcrPass:
 @dataclass(frozen=True, slots=True)
 class WorkPlan:
     route: PageRoute
-    reason: str = ""
+    reason: PagePlanReason = PagePlanReason.UNSPECIFIED
     ocr_passes: tuple[OcrPass, ...] = ()
     verify_hidden_text: bool = False
+    fusion_policy: FusionPolicy = FusionPolicy.DEFAULT
+    allow_direct_image_ocr: bool = True
+    augment_page_candidates: bool = False
+
+    def __post_init__(self) -> None:
+        # Keep direct construction ergonomic for tests and downstream internal
+        # callers while guaranteeing that the stored contract is typed.
+        if not isinstance(self.reason, PagePlanReason):
+            object.__setattr__(self, "reason", PagePlanReason(self.reason))
 
     @property
     def image_regions_only(self) -> bool:
         return bool(self.ocr_passes) and all(
             ocr_pass.scope is OcrPassScope.IMAGE_REGIONS for ocr_pass in self.ocr_passes
         )
+
+    def as_record(self) -> dict[str, object]:
+        return {
+            "route": self.route.value,
+            "reason": self.reason.value,
+            "verify_hidden_text": self.verify_hidden_text,
+            "fusion_policy": self.fusion_policy.value,
+            "allow_direct_image_ocr": self.allow_direct_image_ocr,
+            "augment_page_candidates": self.augment_page_candidates,
+            "ocr_passes": tuple(
+                {
+                    item.name: (value.value if isinstance(value, StrEnum) else value)
+                    for item in fields(ocr_pass)
+                    for value in (getattr(ocr_pass, item.name),)
+                }
+                for ocr_pass in self.ocr_passes
+            ),
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class RecognitionReport:
+    """One explicit diagnostic product returned by the recognition stage."""
+
+    passes: tuple[Mapping[str, object], ...] = ()
+    candidates: tuple[Mapping[str, object], ...] = ()
+    candidate_analysis: tuple[Mapping[str, object], ...] = ()
+    hidden_text_verification: Mapping[str, object] = field(default_factory=dict)
+    stroked_vector_decode: Mapping[str, object] = field(default_factory=dict)
+    stroked_vector_packed: Mapping[str, object] = field(default_factory=dict)
+    document_stroked_glyphs: Mapping[str, object] = field(default_factory=dict)
+    render_timings: Mapping[str, object] = field(default_factory=dict)
+    grid_cell_ocr: Mapping[str, object] = field(default_factory=dict)
+    render_error: str | None = None
+    stroked_vector_alphabet: tuple[tuple[Any, str], ...] = ()
+
+    def as_record(self) -> dict[str, object]:
+        return {
+            "passes": self.passes,
+            "candidates": self.candidates,
+            "candidate_analysis": self.candidate_analysis,
+            "hidden_text_verification": dict(self.hidden_text_verification),
+            "stroked_vector_decode": dict(self.stroked_vector_decode),
+            "stroked_vector_packed": dict(self.stroked_vector_packed),
+            "document_stroked_glyphs": dict(self.document_stroked_glyphs),
+            "render_timings": dict(self.render_timings),
+            "grid_cell_ocr": dict(self.grid_cell_ocr),
+            "render_error": self.render_error,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class RecognitionResult:
+    observations: ObservationBatch
+    report: RecognitionReport = field(default_factory=RecognitionReport)
+
+
+MetricValue = float | int | str | bool
+
+
+@dataclass(frozen=True, slots=True)
+class ParseReport:
+    """Typed analysis product for one completed page pipeline."""
+
+    plan: WorkPlan
+    recognition: RecognitionReport = field(default_factory=RecognitionReport)
+    metrics: Mapping[str, MetricValue] = field(default_factory=dict)
+
+    def as_record(self) -> dict[str, object]:
+        return {
+            "plan": self.plan.as_record(),
+            "recognition": self.recognition.as_record(),
+            "metrics": dict(self.metrics),
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -781,10 +835,10 @@ class ParsedPage:
     route: PageRoute
     blocks: tuple[ParsedBlock, ...]
     tables: tuple[Any, ...] = ()
-    structured_tables: tuple[Any, ...] = ()
     figures: tuple[Any, ...] = ()
     diagnostics: tuple[str, ...] = ()
-    metrics: dict[str, float | int | str] = field(default_factory=dict)
+    full_page_image: bool = False
+    report: ParseReport | None = None
 
     @property
     def lines(self) -> tuple[ParsedLine, ...]:
@@ -902,7 +956,7 @@ def internal_candidate(
         internal_CandidateMetrics(
             characters=characters,
             alphanumeric_characters=alphanumeric,
-            tokens=sum(len(text.split()) for text in observations.text),
+            tokens=tokens,
             line_count=len(observations),
             mean_confidence=mean_confidence,
             symbol_ratio=symbol_characters / max(1, nonspace_characters),

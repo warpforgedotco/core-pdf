@@ -32,10 +32,10 @@ from core_pdf.impl.engine.spec.s_07_syntax.tokens import (
     WS_TABLE,
 )
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.objects import (
+from core_pdf.impl.objects import PdfStream
+from core_pdf.impl.primitives import (
     PdfName,
     PdfReference,
-    PdfStream,
     PdfString,
 )
 from core_pdf.impl.types import Decipher, PdfDict

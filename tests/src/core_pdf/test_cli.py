@@ -63,7 +63,8 @@ def test_cli_main_nonexistent_path(capsys: pytest.CaptureFixture[str]) -> None:
 
 def test_cli_main_summary_output(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     from core_pdf.impl.engine.writing import serialize_pdf_file
-    from core_pdf.impl.objects import PdfName, PdfReference, PdfStream
+    from core_pdf.impl.objects import PdfStream
+    from core_pdf.impl.primitives import PdfName, PdfReference
 
     objects = {
         1: {PdfName.of("Type"): PdfName.of("Catalog"), PdfName.of("Pages"): PdfReference(2)},

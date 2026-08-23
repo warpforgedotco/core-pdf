@@ -6,8 +6,8 @@ from typing import Any, cast
 
 from core_pdf.impl.engine.document import PdfDocument
 from core_pdf.impl.engine.spec.s_07_document.page import PdfPage
+from core_pdf.impl.engine.spec.s_07_document.records import RawFormField
 from core_pdf.impl.engine.spec.s_07_objects.coercion import parse_name
-from core_pdf.impl.models import RawFormField
 from core_pdf.impl.primitives import PdfName
 from core_pdf.impl.types import PdfArray, PdfDict, PdfObject
 

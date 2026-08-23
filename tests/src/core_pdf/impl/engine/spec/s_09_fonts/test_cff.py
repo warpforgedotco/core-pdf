@@ -4,7 +4,7 @@ import pytest
 
 import core_pdf.impl.engine.spec.s_09_fonts.font_program as font_program_module
 from core_pdf._vendor.fontTools.cffLib import cffStandardStrings
-from core_pdf.impl.engine.spec.s_09_fonts.cff import STANDARD_GLYPH_SIDS, CFFFont
+from core_pdf.impl.engine.spec.s_09_fonts.font_program import STANDARD_GLYPH_SIDS, CFFFont
 
 
 def authoritative_standard_strings() -> list[str]:

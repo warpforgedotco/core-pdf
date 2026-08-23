@@ -17,6 +17,7 @@ from time import perf_counter
 from typing import Any, Iterable, cast
 
 from core_pdf import PdfDocument
+from core_pdf.impl.engine.parse import ParseReport
 
 ROOT = Path(__file__).resolve().parents[1]
 SCORE_BENCH_ROOT = ROOT / "tests" / "fixtures" / "SCORE-Bench"
@@ -566,7 +567,8 @@ def score_document_candidates(document: PdfDocument, gt_text: str) -> list[dict[
     scored: list[dict[str, Any]] = []
     for page_number, page in enumerate(document.pages, start=1):
         cache = getattr(page, "extraction_cache", None)
-        records = cache.get("ocr_candidate_analysis", ()) if cache is not None else ()
+        report = cache.get("parse_report_v1") if cache is not None else None
+        records = report.recognition.candidate_analysis if isinstance(report, ParseReport) else ()
         for record in records:
             if not isinstance(record, dict):
                 continue
@@ -598,23 +600,6 @@ def score_document_candidates(document: PdfDocument, gt_text: str) -> list[dict[
     return scored
 
 
-EXTRACTION_ANALYSIS_CACHE_KEYS = (
-    "extraction_stage_trace",
-    "ocr_stage_timings_ns",
-    "ocr_candidate_diagnostics",
-    "ocr_pass_diagnostics",
-    "hidden_text_verification",
-    "ocr_requests",
-    "ocr_budget",
-    "page_complexity",
-    "ocr_plan",
-    "ocr_execution",
-    "ocr_render_timings",
-    "parse_plan",
-    "parse_metrics",
-)
-
-
 def collect_document_extraction_analysis(document: PdfDocument) -> list[dict[str, Any]]:
     """Collect opt-in extraction diagnostics in a JSON-friendly page envelope."""
     if os.environ.get("CORE_PDF_EXTRACTION_ANALYSIS", "").casefold() not in {
@@ -629,9 +614,9 @@ def collect_document_extraction_analysis(document: PdfDocument) -> list[dict[str
         cache = getattr(page, "extraction_cache", None)
         if cache is None:
             continue
-        record = {key: cache[key] for key in EXTRACTION_ANALYSIS_CACHE_KEYS if key in cache}
-        if record:
-            records.append({"page": page_number, **record})
+        report = cache.get("parse_report_v1")
+        if isinstance(report, ParseReport):
+            records.append({"page": page_number, **report.as_record()})
     return records
 
 

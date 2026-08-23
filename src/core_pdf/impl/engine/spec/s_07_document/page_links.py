@@ -9,7 +9,7 @@ from core_pdf.impl.engine.spec.s_07_objects.coercion import parse_float_strict
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_07_objects.resolver_values import PdfValueResolver
 from core_pdf.impl.engine.spec.s_09_fonts.encoding import decode_pdf_text_string
-from core_pdf.impl.objects import PdfName, PdfReference, PdfString
+from core_pdf.impl.primitives import PdfName, PdfReference, PdfString
 from core_pdf.impl.types import PdfDict
 
 LinkResolver = PdfValueResolver

@@ -5,7 +5,7 @@ from __future__ import annotations
 from core_pdf import PdfDocument
 from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.objects import PdfReference
+from core_pdf.impl.primitives import PdfReference
 
 
 def internal_has_malformed_shadowed_definition(

@@ -4,9 +4,9 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any, cast
+from typing import Any, TypeAlias, cast
 
-from core_pdf.impl.types import PageSelection
+PageSelection: TypeAlias = int | str | range | Sequence[int]
 
 
 def resolve_page_selection(pages: PageSelection | None, page_count: int) -> list[int]:
@@ -62,4 +62,4 @@ def resolve_page_selection(pages: PageSelection | None, page_count: int) -> list
     return normalized
 
 
-__all__ = ("resolve_page_selection",)
+__all__ = ("PageSelection", "resolve_page_selection")

@@ -4,6 +4,15 @@ from pathlib import Path
 from typing import Any, cast
 
 from core_pdf import PdfDocument
+from core_pdf.impl.engine.parse import ParseReport
+
+
+def internal_parse_report(page: Any) -> ParseReport:
+    cache = page.extraction_cache
+    assert cache is not None
+    report = cache["parse_report_v1"]
+    assert isinstance(report, ParseReport)
+    return report
 
 
 def test_parse_pipeline_records_route_and_stage_timings() -> None:
@@ -17,22 +26,12 @@ def test_parse_pipeline_records_route_and_stage_timings() -> None:
     with PdfDocument.open(fixture) as document:
         page = document.pages[0]
         page.extract()
-        cache = page.extraction_cache
-        assert cache is not None
-        metrics = cast(dict[str, Any], cache["parse_metrics"])
+        report = internal_parse_report(page)
+        metrics = cast(dict[str, Any], dict(report.metrics))
 
     assert metrics["route"] in {"native", "hybrid", "ocr"}
-    assert metrics["preflight_class"] in {
-        "native-text",
-        "image-only",
-        "vector-diagram",
-        "mixed",
-        "likely-malformed",
-    }
     assert metrics["content_stream_passes"] == 1
-    assert metrics["preflight_native_route_mismatch"] in {0, 1}
-    assert metrics["preflight_image_route_mismatch"] in {0, 1}
-    assert metrics["preflight_vector_route_mismatch"] in {0, 1}
+    assert report.plan.route.value == metrics["route"]
     assert metrics["reading_order_strategy"] in {"source-stable", "geometric-repair"}
     assert metrics["reading_order_repaired"] in {0, 1}
     assert metrics["reading_order_ambiguous"] in {0, 1}
@@ -41,7 +40,6 @@ def test_parse_pipeline_records_route_and_stage_timings() -> None:
     assert metrics["reading_order_source_inversions"] >= 0
     assert metrics["reading_order_columns"] >= 0
     assert metrics["reading_order_rotations"] >= 0
-    assert "preflight" in cache
     for key in ("capture_seconds", "layout_seconds", "ocr_seconds"):
         value = metrics[key]
         assert isinstance(value, (int, float))
@@ -59,9 +57,7 @@ def test_minor_rotated_native_text_does_not_force_page_ocr() -> None:
     with PdfDocument.open(fixture) as document:
         page = document.pages[0]
         page.extract()
-        cache = page.extraction_cache
-        assert cache is not None
-        metrics = cast(dict[str, Any], cache["parse_metrics"])
+        metrics = cast(dict[str, Any], dict(internal_parse_report(page).metrics))
 
     assert metrics["route"] == "native"
     assert metrics["ocr_raster_pixels"] == 0
@@ -73,6 +69,7 @@ def test_high_confidence_image_region_supplement_skips_fallback() -> None:
     from core_pdf.impl.engine.parse import (
         OcrPass,
         OcrPassScope,
+        PagePlanReason,
         PageRoute,
         WorkPlan,
     )
@@ -91,7 +88,7 @@ def test_high_confidence_image_region_supplement_skips_fallback() -> None:
         page = document.pages[0]
         mock_plan = WorkPlan(
             PageRoute.HYBRID,
-            reason="embedded-image-text-supplement",
+            reason=PagePlanReason.EMBEDDED_IMAGE_TEXT_SUPPLEMENT,
             ocr_passes=(
                 OcrPass(
                     "image-regions",
@@ -109,10 +106,9 @@ def test_high_confidence_image_region_supplement_skips_fallback() -> None:
             "core_pdf.impl.engine.parse.route.internal_base_plan_page", return_value=mock_plan
         ):
             page.extract()
-        cache = page.extraction_cache
-        assert cache is not None
-        diagnostics = cast(tuple[dict[str, object], ...], cache["ocr_pass_diagnostics"])
-        metrics = cast(dict[str, Any], cache["parse_metrics"])
+        report = internal_parse_report(page)
+        diagnostics = report.recognition.passes
+        metrics = cast(dict[str, Any], dict(report.metrics))
 
     assert [item["name"] for item in diagnostics] == [
         "image-regions",
@@ -135,10 +131,9 @@ def test_near_axis_photo_supplement_decodes_source_image() -> None:
     with PdfDocument.open(fixture) as document:
         page = document.pages[0]
         text = page.extract().text
-        cache = page.extraction_cache
-        assert cache is not None
-        diagnostics = cast(tuple[dict[str, object], ...], cache["ocr_pass_diagnostics"])
-        metrics = cast(dict[str, Any], cache["parse_metrics"])
+        report = internal_parse_report(page)
+        diagnostics = report.recognition.passes
+        metrics = cast(dict[str, Any], dict(report.metrics))
 
     assert [item["name"] for item in diagnostics] == ["image-regions"]
     assert diagnostics[0]["region_stage"] == "direct-image-regions"
@@ -161,10 +156,9 @@ def test_blank_image_supplement_is_rejected_before_ocr() -> None:
     with PdfDocument.open(fixture) as document:
         page = document.pages[0]
         page.extract()
-        cache = page.extraction_cache
-        assert cache is not None
-        diagnostics = cast(tuple[dict[str, object], ...], cache["ocr_pass_diagnostics"])
-        metrics = cast(dict[str, Any], cache["parse_metrics"])
+        report = internal_parse_report(page)
+        diagnostics = report.recognition.passes
+        metrics = cast(dict[str, Any], dict(report.metrics))
 
     assert [item["name"] for item in diagnostics] == ["image-regions"]
     assert diagnostics[0]["region_stage"] == "image-text-preflight"
@@ -181,10 +175,9 @@ def test_opaque_grayscale_soft_mask_uses_one_direct_ocr_pass() -> None:
     with PdfDocument.open(fixture) as document:
         page = document.pages[0]
         page.extract()
-        cache = page.extraction_cache
-        assert cache is not None
-        diagnostics = cast(tuple[dict[str, object], ...], cache["ocr_pass_diagnostics"])
-        metrics = cast(dict[str, Any], cache["parse_metrics"])
+        report = internal_parse_report(page)
+        diagnostics = report.recognition.passes
+        metrics = cast(dict[str, Any], dict(report.metrics))
 
     assert [item["name"] for item in diagnostics] == ["primary-page"]
     assert cast(int, diagnostics[0]["characters"]) >= 32
@@ -200,12 +193,11 @@ def test_stroked_vector_text_uses_one_packed_seed_raster() -> None:
         page = document.pages[0]
         text = page.extract().text
         tables = page.extract().table_view.tables
-        cache = page.extraction_cache
-        assert cache is not None
-        diagnostics = cast(tuple[dict[str, object], ...], cache["ocr_pass_diagnostics"])
-        metrics = cast(dict[str, Any], cache["parse_metrics"])
-        plan = cast(dict[str, Any], cache["parse_plan"])
-        packed = cast(dict[str, Any], cache["stroked_vector_packed"])
+        report = internal_parse_report(page)
+        diagnostics = report.recognition.passes
+        metrics = cast(dict[str, Any], dict(report.metrics))
+        plan = report.plan.as_record()
+        packed = report.recognition.stroked_vector_packed
 
     assert plan["reason"] == "stroked-vector-text"
     assert [item["name"] for item in diagnostics] == ["stroked-vector-text"]
@@ -244,9 +236,7 @@ def test_dense_scan_skips_unproductive_adaptive_rescue() -> None:
     )
     with PdfDocument.open(fixture) as document:
         text = document.pages[0].extract().text
-        cache = document.pages[0].extraction_cache
-        assert cache is not None
-        diagnostics = cast(tuple[dict[str, object], ...], cache["ocr_pass_diagnostics"])
+        diagnostics = internal_parse_report(document.pages[0]).recognition.passes
 
     primary = diagnostics[0]
     decision = cast(dict[str, object], primary["adaptive_rescue_decision"])
@@ -268,10 +258,9 @@ def test_layered_soft_mask_scan_uses_one_composited_word_pass() -> None:
     with PdfDocument.open(fixture) as document:
         page = document.pages[0]
         page.extract()
-        cache = page.extraction_cache
-        assert cache is not None
-        diagnostics = cast(tuple[dict[str, object], ...], cache["ocr_pass_diagnostics"])
-        metrics = cast(dict[str, Any], cache["parse_metrics"])
+        report = internal_parse_report(page)
+        diagnostics = report.recognition.passes
+        metrics = cast(dict[str, Any], dict(report.metrics))
 
     assert [item["name"] for item in diagnostics] == ["primary-page"]
     assert diagnostics[0]["recognize_words"] is True

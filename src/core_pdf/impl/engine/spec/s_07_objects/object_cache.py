@@ -3,11 +3,11 @@ from __future__ import annotations
 
 from typing import TypeAlias
 
-from core_pdf.impl.objects import (
+from core_pdf.impl.objects import PdfStream
+from core_pdf.impl.primitives import (
     MissingObject,
     PdfName,
     PdfReference,
-    PdfStream,
     PdfString,
 )
 

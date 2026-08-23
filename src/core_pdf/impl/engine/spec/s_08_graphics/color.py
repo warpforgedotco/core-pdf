@@ -14,13 +14,6 @@ from core_pdf.impl.engine.spec.s_07_objects.coercion import (
     parse_float,
 )
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
-from core_pdf.impl.engine.spec.s_08_graphics import (
-    IccProfileError,
-    adapt_d50_to_d65,
-    lab_to_xyz,
-    parse_icc_transform,
-    xyz_to_srgb,
-)
 from core_pdf.impl.engine.spec.s_08_graphics.color_kernels import (
     apply_decode_array_8bit as internal_native_apply_decode_array_8bit,
 )
@@ -39,12 +32,21 @@ from core_pdf.impl.engine.spec.s_08_graphics.color_kernels import (
 from core_pdf.impl.engine.spec.s_08_graphics.color_kernels import (
     unpack_subbyte_image_samples as internal_native_unpack_subbyte_image_samples,
 )
+from core_pdf.impl.engine.spec.s_08_graphics.color_math import (
+    adapt_d50_to_d65,
+    lab_to_xyz,
+    xyz_to_srgb,
+)
 from core_pdf.impl.engine.spec.s_08_graphics.color_spec import (
     ImageColorSpec,
     cs_name,
     cs_param,
     cs_param_floats,
     normalize_image_color_spec,
+)
+from core_pdf.impl.engine.spec.s_08_graphics.icc_profiles import (
+    IccProfileError,
+    parse_icc_transform,
 )
 from core_pdf.impl.objects import PdfStream
 

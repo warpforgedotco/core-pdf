@@ -5,11 +5,35 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
+from core_pdf.impl.engine.spec.s_07_syntax.xref import XRefScanner
 from core_pdf.impl.engine.writing.objects import (
+    internal_append_indirect_objects,
+    internal_classic_xref_entry,
     serialize_pdf_dictionary,
-    serialize_pdf_object,
 )
 from core_pdf.impl.primitives import PdfName
+
+
+def find_startxref(data: bytes) -> int:
+    """Return the final classic-xref offset or reject a malformed source PDF."""
+    offset = XRefScanner.find_startxref(data)
+    if offset is None:
+        raise ValueError("PDF does not contain a startxref marker")
+    return offset
+
+
+def previous_object_count(
+    xref: Mapping[int, object],
+    trailer: Mapping[object, object],
+) -> int:
+    """Return the next available object number for an incremental update."""
+    raw_size = trailer.get("Size")
+    if raw_size is None:
+        raw_size = trailer.get(b"Size")
+    if type(raw_size) is int and raw_size > 0:
+        return raw_size
+    object_numbers = [key >> 16 for key in xref if key > 0]
+    return max(object_numbers, default=0) + 1
 
 
 def append_incremental_update(
@@ -27,27 +51,17 @@ def append_incremental_update(
         raise ValueError("an incremental update must contain at least one object")
     if previous_xref_offset < 0 or previous_size < 1:
         raise ValueError("invalid previous xref metadata")
-    if any(type(number) is not int or number <= 0 for number in objects):
-        raise ValueError("PDF object numbers must be positive integers")
 
     output = bytearray(original)
     if not output.endswith((b"\n", b"\r")):
         output.extend(b"\n")
-    offsets: dict[int, int] = {}
-    for number in sorted(objects):
-        offsets[number] = len(output)
-        output.extend(f"{number} 0 obj\n".encode("ascii"))
-        output.extend(serialize_pdf_object(objects[number]))
-        output.extend(b"\nendobj\n")
+    offsets = internal_append_indirect_objects(output, objects)
 
     xref_offset = len(output)
     output.extend(b"xref\n")
     for number in sorted(offsets):
         output.extend(f"{number} 1\n".encode("ascii"))
-        offset = offsets[number]
-        if offset >= 10_000_000_000:
-            raise ValueError("PDF file is too large for a classic xref table")
-        output.extend(f"{offset:010d} 00000 n \n".encode("ascii"))
+        output.extend(internal_classic_xref_entry(offsets[number]))
 
     trailer_dict = dict(trailer)
     trailer_dict[PdfName.of("Size")] = max(previous_size, max(objects) + 1)
@@ -58,4 +72,4 @@ def append_incremental_update(
     return bytes(output)
 
 
-__all__ = ("append_incremental_update",)
+__all__ = ("append_incremental_update", "find_startxref", "previous_object_count")

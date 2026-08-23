@@ -8,7 +8,8 @@ from core_pdf.cli import process_pdf
 
 def test_pdf_document_process_pdf(tmp_path: Path) -> None:
     from core_pdf.impl.engine.writing import serialize_pdf_file
-    from core_pdf.impl.objects import PdfName, PdfReference, PdfStream
+    from core_pdf.impl.objects import PdfStream
+    from core_pdf.impl.primitives import PdfName, PdfReference
 
     objects = {
         1: {PdfName.of("Type"): PdfName.of("Catalog"), PdfName.of("Pages"): PdfReference(2)},

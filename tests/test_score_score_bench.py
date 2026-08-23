@@ -7,6 +7,13 @@ from types import SimpleNamespace
 
 import pytest
 
+from core_pdf.impl.engine.parse import (
+    PageRoute,
+    ParseReport,
+    RecognitionReport,
+    WorkPlan,
+)
+
 score_bench = run_path(
     str(Path(__file__).parents[1] / "scripts" / "score_unstructured_bench.py"),
     run_name="score_score_bench_tests",
@@ -116,14 +123,16 @@ def test_table_scores_tolerate_one_cell_grid_offset() -> None:
 
 
 def test_score_document_candidates_identifies_oracle_gap() -> None:
-    page = SimpleNamespace(
-        extraction_cache={
-            "ocr_candidate_analysis": (
+    report = ParseReport(
+        plan=WorkPlan(PageRoute.OCR),
+        recognition=RecognitionReport(
+            candidate_analysis=(
                 {"name": "selected", "selected": True, "text": "alpha noise"},
                 {"name": "oracle", "selected": False, "text": "alpha beta"},
             )
-        }
+        ),
     )
+    page = SimpleNamespace(extraction_cache={"parse_report_v1": report})
     document = SimpleNamespace(pages=[page])
 
     candidates = score_bench["score_document_candidates"](document, "alpha beta")
@@ -184,24 +193,23 @@ def test_collect_document_extraction_analysis_is_opt_in(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     collect = score_bench["collect_document_extraction_analysis"]
-    page = SimpleNamespace(
-        extraction_cache={
-            "ocr_requests": ({"source": "page", "elapsed_seconds": 1.25},),
-            "unrelated": object(),
-        }
+    report = ParseReport(
+        plan=WorkPlan(PageRoute.OCR),
+        recognition=RecognitionReport(passes=({"name": "primary", "elapsed_seconds": 1.25},)),
+        metrics={"route": "ocr"},
     )
+    page = SimpleNamespace(extraction_cache={"parse_report_v1": report, "unrelated": object()})
     document = SimpleNamespace(pages=[page])
 
     monkeypatch.delenv("CORE_PDF_EXTRACTION_ANALYSIS", raising=False)
     assert collect(document) == []
 
     monkeypatch.setenv("CORE_PDF_EXTRACTION_ANALYSIS", "1")
-    assert collect(document) == [
-        {
-            "page": 1,
-            "ocr_requests": ({"source": "page", "elapsed_seconds": 1.25},),
-        }
-    ]
+    records = collect(document)
+    assert len(records) == 1
+    assert records[0]["page"] == 1
+    assert records[0]["metrics"] == {"route": "ocr"}
+    assert records[0]["recognition"]["passes"] == ({"name": "primary", "elapsed_seconds": 1.25},)
 
 
 def test_case_progress_is_suppressed_during_scoring(

@@ -17,7 +17,7 @@ from core_pdf.impl.engine.spec.s_07_security.errors import PDFEncryptionError
 from core_pdf.impl.engine.spec.s_07_security.standard import PdfStandardSecurityHandler
 from core_pdf.impl.engine.spec.s_07_security.values import get_name
 from core_pdf.impl.exceptions import PdfParseError, PdfUnsupportedError
-from core_pdf.impl.objects import MISSING
+from core_pdf.impl.primitives import MISSING
 from core_pdf.impl.types import PdfDict
 
 

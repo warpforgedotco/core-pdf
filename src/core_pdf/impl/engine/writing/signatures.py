@@ -6,8 +6,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
-from core_pdf.impl.objects import PdfByteRangePlaceholder, PdfSignatureContentsPlaceholder
-
 
 class PdfSignatureProvider(Protocol):
     """Produce a detached CMS/PKCS#7 signature for PDF ByteRange data."""
@@ -17,7 +15,7 @@ class PdfSignatureProvider(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class PdfSignaturePlan:
-    """Signature placeholders and provider used while building a PDF."""
+    """External signer and reserved contents size used while building a PDF."""
 
     provider: PdfSignatureProvider
     contents_length: int = 8192
@@ -25,14 +23,6 @@ class PdfSignaturePlan:
     def __post_init__(self) -> None:
         if self.contents_length <= 0:
             raise ValueError("signature contents length must be positive")
-
-    @property
-    def byte_range_placeholder(self) -> PdfByteRangePlaceholder:
-        return PdfByteRangePlaceholder()
-
-    @property
-    def contents_placeholder(self) -> PdfSignatureContentsPlaceholder:
-        return PdfSignatureContentsPlaceholder(self.contents_length)
 
 
 def apply_signature_plan(

@@ -1,7 +1,7 @@
 from typing import cast
 
 from core_pdf.impl.engine.spec.s_07_objects.resolver import ObjectResolver
-from core_pdf.impl.objects import PdfReference
+from core_pdf.impl.primitives import PdfReference
 from core_pdf.impl.types import PdfDict
 
 

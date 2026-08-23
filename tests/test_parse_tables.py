@@ -9,9 +9,10 @@ from core_pdf.impl.engine.parse import (
     CapturedPage,
     ObservationBatch,
     ObservationSource,
-    extract_tables,
+    PageEvidence,
 )
 from core_pdf.impl.engine.parse.tables import (
+    extract_tables,
     internal_compact_stream_table,
     internal_merge_adjacent_tables,
     internal_merge_grid_cells,
@@ -22,6 +23,18 @@ from core_pdf.impl.engine.parse.tables import (
     internal_table_character_spaced_prose,
 )
 from core_pdf.impl.engine.structured import Table, TableCell
+
+
+def page_evidence() -> PageEvidence:
+    return PageEvidence(
+        page_area=10_000.0,
+        native_characters=0,
+        visible_native_characters=0,
+        suspicious_characters=0,
+        image_count=0,
+        image_area_ratio=0.0,
+        vector_complexity=0,
+    )
 
 
 def test_split_grid_component_separates_vertical_table_regions() -> None:
@@ -313,6 +326,7 @@ def test_extract_tables_assigns_runs_to_ruled_cells() -> None:
         CapturedPage,
         SimpleNamespace(
             page=SimpleNamespace(width=100.0, height=100.0),
+            evidence=page_evidence(),
             grid_lines=(
                 line(10.0, 90.0, 90.0, 90.0),
                 line(10.0, 50.0, 90.0, 50.0),
@@ -392,6 +406,7 @@ def test_extract_tables_ignores_many_observations_outside_ruled_component() -> N
         CapturedPage,
         SimpleNamespace(
             page=SimpleNamespace(width=4_000.0, height=4_000.0),
+            evidence=page_evidence(),
             grid_lines=(
                 line(10.0, 90.0, 90.0, 90.0),
                 line(10.0, 50.0, 90.0, 50.0),
@@ -418,6 +433,7 @@ def test_extract_tables_detects_aligned_borderless_rows() -> None:
         CapturedPage,
         SimpleNamespace(
             page=SimpleNamespace(width=100.0, height=100.0),
+            evidence=page_evidence(),
             grid_lines=(),
             runs=tuple(
                 run
@@ -484,6 +500,7 @@ def test_extract_tables_rejects_aligned_bullet_prose() -> None:
         CapturedPage,
         SimpleNamespace(
             page=SimpleNamespace(width=100.0, height=100.0),
+            evidence=page_evidence(),
             grid_lines=(),
             runs=tuple(
                 run

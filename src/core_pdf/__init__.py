@@ -57,11 +57,11 @@ if TYPE_CHECKING:
         ImageRecord,
         PageScoped,
     )
-    from core_pdf.impl.types import PageSelection
+    from core_pdf.impl.pages import PageSelection
 
 internal_EXPORTS = {
     "Document": ("core_pdf.impl.engine.structured", "Document"),
-    "PageSelection": ("core_pdf.impl.types", "PageSelection"),
+    "PageSelection": ("core_pdf.impl.pages", "PageSelection"),
     "PdfDocument": ("core_pdf.impl.engine.document", "PdfDocument"),
     "serialize_document_to_pdf": (
         "core_pdf.impl.engine.writing.semantic",
@@ -137,10 +137,6 @@ internal_EXPORTS = {
         "core_pdf.impl.engine.execution",
         "RuntimeConfig",
     ),
-    "SharedMemoryPdfBuffer": (
-        "core_pdf.impl.engine.execution",
-        "SharedMemoryPdfBuffer",
-    ),
     "prewarm_runtime": (
         "core_pdf.impl.engine.parse",
         "prewarm_runtime",
@@ -201,7 +197,6 @@ __all__ = (
     "configure_runtime",
     "RuntimeConfig",
     "RuntimeMetrics",
-    "SharedMemoryPdfBuffer",
     "prewarm_runtime",
     "runtime_metrics",
     "shutdown_runtime",

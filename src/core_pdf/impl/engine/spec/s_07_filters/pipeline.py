@@ -67,42 +67,32 @@ from core_pdf.impl.engine.spec.s_07_filters.models import DecodedImage
 from core_pdf.impl.engine.spec.s_07_filters.predictors import (
     apply_predictor as apply_predictor,
 )
+from core_pdf.impl.engine.spec.s_07_filters.registry import (
+    EXPENSIVE_DECODE_CACHE_FILTERS,
+    FILTER_DESCRIPTOR_BY_NAME,
+    FILTER_DESCRIPTORS,
+    PREDICTOR_FILTERS,
+)
 from core_pdf.impl.engine.spec.s_07_objects.coercion import normalize_pdf_name
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_07_syntax.lexer_helpers import full_source_bytes
 
-FILTER_MAP: dict[str, FilterFn] = {
-    "FlateDecode": apply_flate,
-    "Fl": apply_flate,
-    "ASCIIHexDecode": apply_ascii_hex,
-    "AHx": apply_ascii_hex,
-    "ASCII85Decode": apply_ascii85,
-    "A85": apply_ascii85,
-    "RunLengthDecode": apply_run_length,
-    "RL": apply_run_length,
-    "LZWDecode": apply_lzw,
-    "LZW": apply_lzw,
-    "DCT": decode_jpeg,
-    "CCITTFaxDecode": decode_ccitt_fax,
-    "CCF": decode_ccitt_fax,
-    "DCTDecode": decode_jpeg,
-    "Crypt": decode_crypt,
-    "JPXDecode": decode_jpx,
-    "JBIG2Decode": decode_jbig2,
+internal_FILTER_DECODERS: dict[str, FilterFn] = {
+    "flate": apply_flate,
+    "ascii_hex": apply_ascii_hex,
+    "ascii85": apply_ascii85,
+    "run_length": apply_run_length,
+    "lzw": apply_lzw,
+    "jpeg": decode_jpeg,
+    "ccitt": decode_ccitt_fax,
+    "crypt": decode_crypt,
+    "jpx": decode_jpx,
+    "jbig2": decode_jbig2,
 }
-
-PREDICTOR_FILTERS = {"FlateDecode", "Fl", "LZWDecode", "LZW"}
-EXPENSIVE_DECODE_CACHE_FILTERS = {
-    "CCF",
-    "CCITTFaxDecode",
-    "DCT",
-    "DCTDecode",
-    "Fl",
-    "FlateDecode",
-    "JBIG2Decode",
-    "LZW",
-    "LZWDecode",
-    "JPXDecode",
+FILTER_MAP: dict[str, FilterFn] = {
+    descriptor.name: internal_FILTER_DECODERS[descriptor.decoder]
+    for descriptor in FILTER_DESCRIPTORS
+    if descriptor.decoder is not None
 }
 EXPENSIVE_DECODE_CACHE_MAX_BYTES = int(
     os.environ.get("CORE_PDF_EXPENSIVE_DECODE_CACHE_BYTES", str(384 * 1024 * 1024))
@@ -180,13 +170,14 @@ def decode_one_filter(
 ) -> bytes:
     if filter_name in {"None", "Identity"}:
         return data
+    descriptor = FILTER_DESCRIPTOR_BY_NAME.get(filter_name)
     fn = FILTER_MAP.get(filter_name)
     if fn is None:
         raise FilterUnsupportedError(f"stream filter {filter_name} is not implemented yet")
     try:
         decoder_context = (
             (parent_dictionary if parent_dictionary is not None else dictionary)
-            if filter_name == "JPXDecode"
+            if descriptor is not None and descriptor.decoder == "jpx"
             else parms
         )
         result = internal_coerce_decoder_bytes(fn(data, decoder_context))
@@ -265,6 +256,8 @@ def decode_stream_image_data(
     if len(spec.filters) != 1 or (spec.params and len(spec.params) != 1):
         return None
     filter_name = spec.filters[0]
+    descriptor = FILTER_DESCRIPTOR_BY_NAME.get(filter_name)
+    decoder = descriptor.decoder if descriptor is not None else None
     if not image_decode_is_identity(dictionary) or not image_native_parameters_are_safe(
         dictionary, filter_name
     ):
@@ -272,15 +265,15 @@ def decode_stream_image_data(
     params = spec.params[0] if spec.params else None
     source = data
     try:
-        if filter_name in {"DCT", "DCTDecode"}:
+        if decoder == "jpeg":
             output_shape = native_image_output_shape(dictionary, filter_name)
             output = numpy.empty(output_shape, dtype=numpy.uint8) if output_shape else None
             return DecodedImage(decode_jpeg_image(source, out=output), "jpeg")
-        if filter_name == "JPXDecode":
+        if decoder == "jpx":
             output_shape = native_image_output_shape(dictionary, filter_name)
             output = numpy.empty(output_shape, dtype=numpy.uint8) if output_shape else None
             return DecodedImage(decode_jpx_image(source, out=output), "jpx")
-        if filter_name in {"CCF", "CCITTFaxDecode"}:
+        if decoder == "ccitt":
             filter_params = (
                 params if type(params) is FilterParams else FilterParams.from_parms(params)
             )
@@ -293,7 +286,7 @@ def decode_stream_image_data(
                 decode_ccitt_fax_image(source, filter_params, out=output),
                 "ccitt",
             )
-        if filter_name in {"FlateDecode", "Fl", "LZWDecode", "LZW"}:
+        if decoder in {"flate", "lzw"}:
             output_shape = native_image_output_shape(dictionary, filter_name)
             if output_shape is None:
                 return None
@@ -302,7 +295,7 @@ def decode_stream_image_data(
             if len(decoded) != expected_size:
                 return None
             array = numpy.frombuffer(decoded, dtype=numpy.uint8).reshape(output_shape)
-            return DecodedImage(array, "flate" if filter_name in {"FlateDecode", "Fl"} else "lzw")
+            return DecodedImage(array, decoder)
     except Exception:
         return None
     return None
@@ -313,6 +306,8 @@ def native_image_output_shape(
     filter_name: str,
 ) -> tuple[int, ...] | None:
     """Return a safe preallocated shape for a native image decoder."""
+    descriptor = FILTER_DESCRIPTOR_BY_NAME.get(filter_name)
+    decoder = descriptor.decoder if descriptor is not None else None
     width = lookup_dict_key(dictionary, "Width")
     height = lookup_dict_key(dictionary, "Height")
     if type(width) is not int or type(height) is not int or width <= 0 or height <= 0:
@@ -323,19 +318,19 @@ def native_image_output_shape(
         if color_space is None or isinstance(color_space, (list, tuple, dict))
         else normalize_pdf_name(color_space)
     )
-    if filter_name in {"DCT", "DCTDecode"}:
+    if decoder == "jpeg":
         if color_name == "DeviceGray":
             return height, width
         if color_name == "DeviceRGB":
             return height, width, 3
         if color_name == "DeviceCMYK":
             return height, width, 4
-    if filter_name == "JPXDecode":
+    if decoder == "jpx":
         if color_name == "DeviceGray":
             return height, width
         if color_name == "DeviceRGB":
             return height, width, 3
-    if filter_name in {"FlateDecode", "Fl", "LZWDecode", "LZW"}:
+    if decoder in {"flate", "lzw"}:
         if color_name is None or color_name == "DeviceGray":
             return height, width
         if color_name == "DeviceRGB":
@@ -364,6 +359,9 @@ def image_decode_is_identity(dictionary: object) -> bool:
 def image_native_parameters_are_safe(dictionary: object, filter_name: str) -> bool:
     """Check the image metadata supported by the array fast path."""
 
+    descriptor = FILTER_DESCRIPTOR_BY_NAME.get(filter_name)
+    decoder = descriptor.decoder if descriptor is not None else None
+
     color_space = lookup_dict_key(dictionary, "ColorSpace")
     if color_space is None:
         color_name = None
@@ -372,15 +370,15 @@ def image_native_parameters_are_safe(dictionary: object, filter_name: str) -> bo
     else:
         color_name = normalize_pdf_name(color_space)
     bits = lookup_dict_key(dictionary, "BitsPerComponent")
-    if filter_name in {"DCT", "DCTDecode"}:
+    if decoder == "jpeg":
         return color_name in {None, "DeviceGray", "DeviceRGB", "DeviceCMYK"} and bits in {
             None,
             8,
         }
-    if filter_name == "JPXDecode":
+    if decoder == "jpx":
         return color_name in {None, "DeviceGray", "DeviceRGB"}
-    if filter_name in {"CCF", "CCITTFaxDecode"}:
+    if decoder == "ccitt":
         return color_name in {None, "DeviceGray"} and bits in {None, 1}
-    if filter_name in {"FlateDecode", "Fl", "LZWDecode", "LZW"}:
+    if decoder in {"flate", "lzw"}:
         return color_name in {None, "DeviceGray", "DeviceRGB"} and bits in {None, 8}
     return False

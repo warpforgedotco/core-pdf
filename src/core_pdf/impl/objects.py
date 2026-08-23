@@ -2,44 +2,15 @@
 from __future__ import annotations
 
 import threading
-from dataclasses import dataclass
 from typing import TypeAlias, cast
 
 from core_pdf.impl.engine.spec.s_07_filters import decode_spec as stream_decode_spec
-from core_pdf.impl.primitives import (
-    MISSING,
-    MissingObject,
-    PdfName,
-    PdfReference,
-    PdfString,
-)
 
 PdfStreamDictionary: TypeAlias = dict[object, object]
 PdfStreamDecodeSpec: TypeAlias = stream_decode_spec.StreamDecodeSpec | PdfStreamDictionary | None
 
 
-__all__ = (
-    "MISSING",
-    "MissingObject",
-    "PdfName",
-    "PdfReference",
-    "PdfStream",
-    "PdfString",
-    "PdfByteRangePlaceholder",
-    "PdfSignatureContentsPlaceholder",
-)
-
-
-@dataclass(frozen=True, slots=True)
-class PdfByteRangePlaceholder:
-    """Marker serialized into a fixed-width PDF signature ByteRange."""
-
-
-@dataclass(frozen=True, slots=True)
-class PdfSignatureContentsPlaceholder:
-    """Marker reserving hexadecimal space for an external signature."""
-
-    length: int
+__all__ = ("PdfStream",)
 
 
 class PdfStream:

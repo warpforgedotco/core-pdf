@@ -10,13 +10,11 @@ from core_pdf.impl.engine.layout.spatial import (
     bbox_intersection_area,
 )
 from core_pdf.impl.engine.parse.model import (
+    FusionPolicy,
     ObservationBatch,
     PageRoute,
     WorkPlan,
     internal_candidate,
-)
-from core_pdf.impl.engine.parse.route import (
-    PSM_SPARSE_TEXT,
 )
 
 # Confidence a recognized pass must reach before it may displace or
@@ -122,15 +120,15 @@ def fuse_observations(
     if route is PageRoute.OCR or not len(native):
         return ocr
     if (
-        plan.reason == "native-text-needs-augmentation"
+        plan.fusion_policy is FusionPolicy.SPARSE_NATIVE
         and len(native) < 16
         and len(ocr) >= len(native) * 4
         and sum(character.isalnum() for text in native.text for character in text) <= 4
     ):
         return ocr
-    if plan.reason == "noisy-native-text":
-        native_candidate = internal_candidate(PSM_SPARSE_TEXT, native)
-        ocr_candidate = internal_candidate(PSM_SPARSE_TEXT, ocr)
+    if plan.fusion_policy is FusionPolicy.NOISY_NATIVE:
+        native_candidate = internal_candidate(-1, native)
+        ocr_candidate = internal_candidate(-1, ocr)
         if (
             len(ocr) >= 4
             and ocr_candidate.metrics.mean_confidence >= FUSION_NOISY_NATIVE_MIN_CONFIDENCE
@@ -144,13 +142,13 @@ def fuse_observations(
         75.0
         if plan.image_regions_only
         else FUSION_NOISY_NATIVE_MIN_CONFIDENCE
-        if plan.reason == "noisy-native-text"
+        if plan.fusion_policy is FusionPolicy.NOISY_NATIVE
         else 30.0
-        if plan.reason == "uncovered-vector-text"
+        if plan.fusion_policy is FusionPolicy.UNCOVERED_VECTOR
         else 45.0
     )
     confidence_mask = ocr.confidence >= minimum_confidence
-    if plan.image_regions_only or plan.reason == "uncovered-vector-text":
+    if plan.image_regions_only or plan.fusion_policy is FusionPolicy.UNCOVERED_VECTOR:
         alphanumeric_mask = numpy.fromiter(
             (sum(character.isalnum() for character in text) >= 1 for text in ocr.text),
             dtype=numpy.bool_,

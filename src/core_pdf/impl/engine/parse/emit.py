@@ -7,12 +7,10 @@ import math
 import re
 import unicodedata
 from collections import Counter
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from typing import Any
 
 from core_pdf.impl.engine.layout.geometry import (
-    bbox_area,
-    bbox_intersection_area,
     overlap_ratio_min,
     rect_tuple,
 )
@@ -44,55 +42,6 @@ from core_pdf.impl.engine.structured import (
     TextLine,
 )
 from core_pdf.impl.text import collapse_character_spaced
-
-
-@dataclass(frozen=True, slots=True)
-class TextProjection:
-    """Normalized text blocks selected for reading-order extraction."""
-
-    blocks: tuple[Block, ...]
-
-
-@dataclass(frozen=True, slots=True)
-class TableProjection:
-    """Structured tables selected independently from text blocks."""
-
-    tables: tuple[Table, ...]
-
-
-@dataclass(frozen=True, slots=True)
-class PageAssembly:
-    """The complete page assembly before serialization."""
-
-    page_number: int
-    width: float
-    height: float
-    rotation: int
-    route: str
-    text: TextProjection
-    table: TableProjection
-    structured_tables: tuple[Table, ...]
-    figures: tuple[Figure, ...]
-    header: str
-    footer: str
-    diagnostics: tuple[Diagnostic, ...] = ()
-
-    def page(self) -> Page:
-        return Page(
-            page_number=self.page_number,
-            width=self.width,
-            height=self.height,
-            rotation=self.rotation,
-            blocks=self.text.blocks,
-            page_class=self.route,
-            base_route=self.route,
-            tables=self.table.tables,
-            structured_tables=self.structured_tables,
-            figures=self.figures,
-            header=self.header,
-            footer=self.footer,
-            diagnostics=self.diagnostics,
-        )
 
 
 def internal_horizontal_overlap(
@@ -982,60 +931,6 @@ def internal_normalized_blocks(
     return blocks
 
 
-def internal_merge_structured_tables(
-    projected: tuple[Table, ...],
-    structured: tuple[Table, ...],
-) -> tuple[Table, ...]:
-    """Merge annotated structured tables into the projected layout tables.
-
-    Projected tables carry the page-wide layout order while structured tables
-    keep their parse-time order, so the two numbering spaces never agree.
-    Match each projected table to its annotated structured counterpart by
-    geometry, keep the projected table when nothing coincides, and stamp the
-    projected layout order onto every match so one merged tuple carries both
-    the reading order and the structured annotations.  Metadata merges with
-    the structured side winning: rendering reads only ``TableAssociatedText``
-    values, which live on the structured side, while the projected side
-    contributes the emit-attached semantic context (section, caption text).
-    """
-    candidates = [table for table in structured if table.bbox is not None]
-
-    def structured_for(table: Table) -> Table:
-        if table.bbox is None:
-            return table
-        best: Table | None = None
-        best_ratio = 0.0
-        for candidate in candidates:
-            assert candidate.bbox is not None
-            intersection = bbox_intersection_area(table.bbox, candidate.bbox)
-            if intersection <= 0.0:
-                continue
-            smaller = min(
-                max(1e-6, bbox_area(table.bbox)),
-                max(1e-6, bbox_area(candidate.bbox)),
-            )
-            ratio = intersection / smaller
-            if ratio > best_ratio:
-                best_ratio = ratio
-                best = candidate
-        return best if best is not None and best_ratio >= 0.9 else table
-
-    merged: list[Table] = []
-    for table in projected:
-        match = structured_for(table)
-        if match is table:
-            merged.append(table)
-        else:
-            merged.append(
-                replace(
-                    match,
-                    order=table.order,
-                    metadata={**table.metadata, **match.metadata},
-                )
-            )
-    return tuple(merged)
-
-
 def internal_project_text_and_tables(
     blocks: list[Block],
     parsed_tables: tuple[Table, ...],
@@ -1073,7 +968,7 @@ def assemble_page(
     ordered_figures: list[Figure] = []
     element_boxes = tuple(item[2] for item in elements)
     if (
-        parsed.metrics.get("full_page_image")
+        parsed.full_page_image
         and len(element_boxes) > 1
         and internal_has_repeated_block_columns(parsed.blocks)
     ):
@@ -1117,17 +1012,15 @@ def assemble_page(
         and block.bbox[3] - block.bbox[1] <= parsed.height * 0.08
         and len(block.text) <= 240
     ]
-    structured_annotated: tuple[Table, ...] = tuple(parsed.structured_tables or parsed.tables)
-    merged_tables = internal_merge_structured_tables(tuple(ordered_tables), structured_annotated)
-    assembly = PageAssembly(
+    return Page(
         page_number=parsed.page_number,
         width=parsed.width,
         height=parsed.height,
         rotation=parsed.rotation,
-        route=parsed.route.value,
-        text=TextProjection(tuple(ordered_blocks)),
-        table=TableProjection(merged_tables),
-        structured_tables=merged_tables or structured_annotated,
+        blocks=tuple(ordered_blocks),
+        page_class=parsed.route.value,
+        base_route=parsed.route.value,
+        tables=tuple(ordered_tables),
         figures=tuple(ordered_figures),
         header="\n".join(header_parts),
         footer="\n".join(footer_parts),
@@ -1145,4 +1038,3 @@ def assemble_page(
             for message in parsed.diagnostics
         ),
     )
-    return assembly.page()

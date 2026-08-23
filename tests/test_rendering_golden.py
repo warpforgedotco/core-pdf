@@ -9,8 +9,8 @@ through: any change to a painted pixel changes the digest.
 Two layers:
 
 * The always-on layer renders :data:`COVERING_SUBSET` — 24 corpus documents
-  chosen by greedy set cover so that together they execute *every* line of
-  ``rendering.py`` that the full 224-document corpus reaches.  It runs in a
+  chosen by greedy set cover so that together they execute *every* line of the
+  ``engine/render/`` package that the full 224-document corpus reaches. It runs in a
   few seconds.
 * A slow layer over the whole corpus, gated behind
   ``CORE_PDF_RASTER_GOLDEN_FULL``, catches the rest.
@@ -44,7 +44,7 @@ SNAPSHOT = (
 RASTER_SCALE = 1.0
 RASTER_BACKGROUND = (255, 255, 255, 255)
 
-# Greedy line-cover of rendering.py over the corpus: these 24 documents reach
+# Greedy line-cover of engine/render/ over the corpus: these 24 documents reach
 # 100% of the lines that all 224 reach. Recompute with scripts/raster_cover.py
 # if the corpus or the rasterizer's structure changes substantially.
 COVERING_SUBSET = (

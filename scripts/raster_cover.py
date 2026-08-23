@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Recompute the covering subset used by ``tests/test_rendering_golden.py``.
 
-Traces which lines of ``rendering.py`` each corpus document executes while its
+Traces which lines of ``engine/render/`` each corpus document executes while its
 first page is rasterized, then greedily picks the smallest set of documents that
 between them reach every line the whole corpus reaches.  That subset is what the
 always-on golden layer renders, so it stays fast without losing reach.
@@ -23,21 +23,25 @@ from types import FrameType
 from typing import Any
 
 from core_pdf import PdfDocument
-from core_pdf.impl.engine import rendering
+from core_pdf.impl.engine.render import display, kernels, page, raster_image, target
 
 CORPUS = pathlib.Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "SCORE-Bench" / "src"
-TARGET_FILE = rendering.__file__
+TARGET_FILES = frozenset(
+    module.__file__ for module in (display, kernels, page, raster_image, target)
+)
+RenderLine = tuple[str, int]
 
 
-def trace_document(pdf: pathlib.Path) -> set[int]:
-    """Return the set of rendering.py line numbers executed rasterizing page 1."""
-    hits: set[int] = set()
+def trace_document(pdf: pathlib.Path) -> set[RenderLine]:
+    """Return the rendering source lines executed while rasterizing page 1."""
+    hits: set[RenderLine] = set()
 
     def tracer(frame: FrameType, event: str, arg: Any) -> Any:
-        if frame.f_code.co_filename != TARGET_FILE:
+        filename = frame.f_code.co_filename
+        if filename not in TARGET_FILES:
             return None
         if event == "line":
-            hits.add(frame.f_lineno)
+            hits.add((filename, frame.f_lineno))
         return tracer
 
     sys.settrace(tracer)
@@ -53,10 +57,10 @@ def trace_document(pdf: pathlib.Path) -> set[int]:
     return hits
 
 
-def greedy_cover(per_document: dict[str, set[int]]) -> list[str]:
-    universe: set[int] = set().union(*per_document.values()) if per_document else set()
+def greedy_cover(per_document: dict[str, set[RenderLine]]) -> list[str]:
+    universe: set[RenderLine] = set().union(*per_document.values()) if per_document else set()
     chosen: list[str] = []
-    covered: set[int] = set()
+    covered: set[RenderLine] = set()
     while covered != universe:
         best = max(per_document, key=lambda name: len(per_document[name] - covered))
         gain = len(per_document[best] - covered)

@@ -10,15 +10,11 @@ from core_pdf.impl.engine.spec.s_07_objects.coercion import normalize_pdf_name
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_09_fonts.cmap_decoder import CMapDecoder
 from core_pdf.impl.engine.spec.s_09_fonts.cmap_tounicode import ToUnicodeCMap
-from core_pdf.impl.engine.spec.s_09_fonts.font_program import (  # noqa: F401
-    EMPTY_FEATURE,
-    STANDARD_GLYPH_SIDS,
+from core_pdf.impl.engine.spec.s_09_fonts.font_program import (
     CFFFont,
-    CFFGlyphFeature,
     CFFUnicodeRepairIndex,
     cff_font_for_data,
     cff_unicode_repair_index_for_data,
-    glyph_feature_distance,
     is_repairable_to_unicode_label,
 )
 from core_pdf.impl.engine.spec.s_09_fonts.font_program_truetype import FONT_PROGRAM_ERRORS

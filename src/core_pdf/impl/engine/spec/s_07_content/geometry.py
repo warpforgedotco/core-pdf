@@ -4,11 +4,10 @@
 from __future__ import annotations
 
 from core_pdf.impl.engine.spec.s_08_graphics.matrix import Matrix
+from core_pdf.impl.types import Rectangle
 
-BBox = tuple[float, float, float, float]
 
-
-def transform_bbox(bbox: BBox, matrix: Matrix) -> BBox:
+def transform_bbox(bbox: Rectangle, matrix: Matrix) -> Rectangle:
     x0, y0, x1, y1 = bbox
     a, b, c, d, e, f = matrix
     points = (
@@ -25,7 +24,7 @@ def transform_bbox(bbox: BBox, matrix: Matrix) -> BBox:
     )
 
 
-def union_bbox(left: BBox | None, right: BBox | None) -> BBox | None:
+def union_bbox(left: Rectangle | None, right: Rectangle | None) -> Rectangle | None:
     if left is None:
         return right
     if right is None:
@@ -38,7 +37,7 @@ def union_bbox(left: BBox | None, right: BBox | None) -> BBox | None:
     )
 
 
-def extend_baseline(left: BBox | None, right: BBox | None) -> BBox | None:
+def extend_baseline(left: Rectangle | None, right: Rectangle | None) -> Rectangle | None:
     if left is None:
         return right
     if right is None:

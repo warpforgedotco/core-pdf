@@ -4,13 +4,14 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
 from core_pdf import PdfDocument
+from core_pdf.impl.engine.spec.s_07_document.document import PdfDocument as SpecPdfDocument
 from core_pdf.impl.engine.spec.s_07_document.fields import field_value_text
-from core_pdf.impl.engine.spec.s_07_document.forms import FormsMixin
-from core_pdf.impl.objects import PdfName, PdfString
+from core_pdf.impl.primitives import PdfName, PdfString
 from core_pdf.impl.types import PdfDict
 
 
@@ -54,4 +55,4 @@ def test_widget_field_root_crosses_non_field_parent_nodes() -> None:
     middle: PdfDict = {PdfName.of("Parent"): root}
     widget: PdfDict = {PdfName.of("Parent"): middle}
 
-    assert FormsMixin.internal_widget_field_root(Document(), widget) is root
+    assert SpecPdfDocument.internal_widget_field_root(cast(Any, Document()), widget) is root

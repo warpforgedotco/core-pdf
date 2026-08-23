@@ -23,7 +23,8 @@ from core_pdf.impl.engine.spec.s_09_fonts.data.base_encodings import (
 )
 from core_pdf.impl.engine.spec.s_09_fonts.decoder import FontDecoder
 from core_pdf.impl.engine.spec.s_09_fonts.glyphs import glyph_name_to_unicode
-from core_pdf.impl.objects import PdfName, PdfStream, PdfString
+from core_pdf.impl.objects import PdfStream
+from core_pdf.impl.primitives import PdfName, PdfString
 
 
 def internal_mult(left: list[float], right: list[float]) -> list[float]:

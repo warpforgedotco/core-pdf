@@ -3,7 +3,7 @@ from pathlib import Path
 from core_pdf import PdfDocument
 from core_pdf.impl.engine.spec.s_07_document.document_xref import DocumentXRefMixin
 from core_pdf.impl.engine.spec.s_07_syntax.xref import PdfXRefEntry, key_for
-from core_pdf.impl.objects import PdfReference
+from core_pdf.impl.primitives import PdfReference
 
 
 class internal_MetadataRecoveryDocument(DocumentXRefMixin):

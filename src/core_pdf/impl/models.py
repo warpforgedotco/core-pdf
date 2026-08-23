@@ -1,47 +1,13 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Public record types returned by extraction.
-
-The ``Raw*`` records (:class:`RawAnnotation`, :class:`RawLink`, :class:`RawFormField`,
-:class:`RawEmbeddedFile`, :class:`RawOutlineItem`, :class:`RawNamedDestination`,
-:class:`RawTextSpan`) carry live ``PdfDict``/``PdfStream`` references so write-back
-paths can locate and mutate the originating PDF objects. They remain internal to the engine.
-"""
+"""Public records returned by extraction."""
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass, fields
-from math import hypot
-from typing import TYPE_CHECKING, Generic, Protocol, Self, TypeAlias, TypedDict, TypeVar, cast
+from typing import Generic, Self, TypeVar
 
-from core_pdf.impl.engine.layout.geometry import BBox
-from core_pdf.impl.objects import PdfName, PdfStream, PdfString
-from core_pdf.impl.types import PdfArray, PdfDict, PdfObject, Rectangle
-
-if TYPE_CHECKING:
-    from core_pdf.impl.engine.layout.geometry import RectBox
-
-
-class RawTextSpan(TypedDict):
-    seqno: int
-    color: tuple[float, ...] | None
-    bbox: RectBox
-    chars: list[tuple[int, int, int, RectBox]]
-
-
-class LinkTextWordRecord(TypedDict):
-    bbox: Rectangle
-    text: str
-    start_index: int
-
-
-class LinkTextWordObject(Protocol):
-    bbox: Rectangle
-    text: str
-    start_index: int
-
-
-LinkTextWord: TypeAlias = LinkTextWordRecord | LinkTextWordObject
+from core_pdf.impl.types import Rectangle
 
 RecordT = TypeVar("RecordT")
 
@@ -76,20 +42,15 @@ class DrawingRecord:
     raw_data: bytes | memoryview | None
     dictionary: Mapping[object, object] | None
     image_source: object | None
-    image_clip: tuple[float, float, float, float] | None
+    image_clip: Rectangle | None
     path: object | None
     items: tuple[object, ...]
-    rect: tuple[float, float, float, float] | None
+    rect: Rectangle | None
 
     @classmethod
     def from_captured(cls, source: object, **overrides: object) -> Self:
-        """Build a record by copying every ``DrawingRecord`` field off ``source``.
-
-        ``source`` is any object exposing the same attribute names (a
-        ``CapturedDrawing`` or another ``DrawingRecord``).  Call-site
-        transformations and subclass-only fields are passed as ``overrides``.
-        """
-        values = {f.name: getattr(source, f.name) for f in fields(DrawingRecord)}
+        """Build a record from an object exposing the same fields."""
+        values = {field.name: getattr(source, field.name) for field in fields(DrawingRecord)}
         values.update(overrides)
         return cls(**values)
 
@@ -102,9 +63,9 @@ class ImageMetadata:
     color_model: str
     alpha: bool
     stride: int
-    source_rect: tuple[float, float, float, float]
+    source_rect: Rectangle
     transform: object | None
-    clipping: BBox | None
+    clipping: Rectangle | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,297 +74,4 @@ class ImageRecord(DrawingRecord):
     image_metadata: ImageMetadata | None = None
 
 
-class RawOutlineItem:
-    """Resolved outline tree item from the document catalog."""
-
-    __slots__ = ("title", "level", "dest", "page_index", "count")
-
-    def __init__(
-        self,
-        title: str,
-        level: int,
-        dest: PdfObject | str | None,
-        page_index: int | None,
-        count: int,
-    ) -> None:
-        self.title = title
-        self.level = level
-        self.dest = dest
-        self.page_index = page_index
-        self.count = count
-
-
-class RawNamedDestination:
-    """Named destination record from a name tree or destination dictionary."""
-
-    __slots__ = ("page_index", "type", "args", "raw")
-
-    def __init__(
-        self,
-        page_index: int | None,
-        type: str | None,
-        args: PdfArray,
-        raw: PdfObject | str,
-    ) -> None:
-        self.page_index = page_index
-        self.type = type
-        self.args = args
-        self.raw = raw
-
-
-class RawEmbeddedFile:
-    """Embedded file specification and decoded file stream."""
-
-    __slots__ = ("name", "filename", "filespec", "stream", "data")
-
-    def __init__(
-        self,
-        name: str,
-        filename: str,
-        filespec: PdfDict,
-        stream: PdfStream,
-        data: bytes,
-    ) -> None:
-        self.name = name
-        self.filename = filename
-        self.filespec = filespec
-        self.stream = stream
-        self.data = data
-
-
-class RawAnnotation:
-    """Page annotation record resolved from an annotation dictionary."""
-
-    __slots__ = ("subtype", "rect", "contents", "dest", "action", "dict")
-
-    def __init__(
-        self,
-        subtype: str | None,
-        rect: Rectangle | None,
-        contents: str,
-        dict_: PdfDict,
-        dest: PdfObject | None = None,
-        action: PdfDict | None = None,
-    ) -> None:
-        self.subtype = subtype
-        self.rect = rect
-        self.contents = contents
-        self.dest = dest
-        self.action = action
-        self.dict = dict_
-
-
-class RawLink:
-    """Link annotation projected into extracted page coordinates."""
-
-    __slots__ = ("bbox", "url", "link_type", "page_number", "dict")
-
-    def __init__(
-        self,
-        bbox: Rectangle,
-        page_number: int,
-        url: str | None = None,
-        link_type: str | None = None,
-        dict_: PdfDict | None = None,
-    ) -> None:
-        self.bbox = bbox
-        self.url = url
-        self.link_type = link_type
-        self.page_number = page_number
-        self.dict = dict_
-
-    def page_bbox(self, page_height: float) -> Rectangle:
-        return BBox.from_page_rect(BBox.from_rect(self.bbox), page_height)
-
-    def overlaps_page_bbox(
-        self,
-        bbox: Rectangle,
-        page_height: float,
-        threshold: float = 0.5,
-    ) -> bool:
-        link_bbox = self.page_bbox(page_height)
-        link_box = BBox.from_rect(link_bbox)
-        link_area = link_box.area()
-        return bool(
-            link_area and BBox.from_rect(bbox).intersection_area(link_box) / link_area > threshold
-        )
-
-    def text_span(
-        self, words: Iterable[LinkTextWord], page_height: float | None = None
-    ) -> tuple[str, int]:
-        word_list = list(words)
-        if not word_list:
-            return "", -1
-
-        bbox = self.page_bbox(page_height) if page_height is not None else self.bbox
-        bboxes = [
-            cast(LinkTextWordRecord, word)["bbox"]
-            if isinstance(word, dict)
-            else cast(LinkTextWordObject, word).bbox
-            for word in word_list
-        ]
-        start_index = min(
-            range(len(bboxes)),
-            key=lambda i: hypot(bbox[0] - bboxes[i][0], bbox[1] - bboxes[i][1]),
-        )
-        end_index = min(
-            range(len(bboxes)),
-            key=lambda i: hypot(bbox[2] - bboxes[i][2], bbox[3] - bboxes[i][3]),
-        )
-        if end_index >= start_index:
-            selected_words = word_list[start_index : end_index + 1]
-        else:
-            selected_words = [word_list[start_index]]
-        text = " ".join(
-            cast(LinkTextWordRecord, word)["text"]
-            if isinstance(word, dict)
-            else cast(LinkTextWordObject, word).text
-            for word in selected_words
-        )
-        first_word = word_list[start_index]
-        return (
-            text.strip(),
-            cast(LinkTextWordRecord, first_word)["start_index"]
-            if isinstance(first_word, dict)
-            else cast(LinkTextWordObject, first_word).start_index,
-        )
-
-    def text_metadata(
-        self, words: Iterable[LinkTextWord], page_height: float | None = None
-    ) -> dict[str, object]:
-        text, start_index = self.text_span(words, page_height)
-        bbox = self.page_bbox(page_height) if page_height is not None else self.bbox
-        return {
-            "bbox": bbox,
-            "text": text,
-            "uri": self.url,
-            "url": self.url,
-            "start_index": start_index,
-        }
-
-    def text_metadata_for_line(
-        self,
-        line: Mapping[str, object],
-        page_height: float,
-        threshold: float = 0.5,
-    ) -> dict[str, object] | None:
-        """Return link metadata for the words in ``line`` that overlap this link.
-
-        ``line`` is the normalized line shape exposed by ``Page.text_view.lines``.
-        Word records are expected to carry ``page_bbox`` values in the top-left page coordinate
-        frame.
-        """
-
-        raw_words = line.get("words")
-        if not isinstance(raw_words, Iterable) or isinstance(raw_words, (str, bytes)):
-            return None
-
-        linked_words: list[LinkTextWordRecord] = []
-        for raw_word in raw_words:
-            if not isinstance(raw_word, Mapping):
-                continue
-            bbox = raw_word.get("page_bbox")
-            if not isinstance(bbox, (list, tuple)) or len(bbox) != 4:
-                continue
-            if not self.overlaps_page_bbox(cast(Rectangle, tuple(bbox)), page_height, threshold):
-                continue
-
-            linked_words.append(
-                {
-                    "bbox": cast(Rectangle, tuple(bbox)),
-                    "text": str(raw_word.get("text", "")),
-                    "start_index": int(cast(int, raw_word.get("start_index", 0))),
-                }
-            )
-
-        if not linked_words:
-            return None
-
-        metadata = self.text_metadata(linked_words, page_height)
-        if isinstance(source_text := line.get("text"), str):
-            metadata["source_text"] = source_text
-        return metadata
-
-
-class RawFormField:
-    """Interactive form field with resolved value and widget metadata."""
-
-    __slots__ = (
-        "name",
-        "type",
-        "value",
-        "value_text",
-        "rect",
-        "dict",
-        "kids",
-        "widget",
-    )
-
-    def __init__(
-        self,
-        name: str,
-        type: str,
-        value: PdfObject,
-        value_text: str,
-        rect: Rectangle | None,
-        dict_: PdfDict,
-        kids: PdfArray | None = None,
-        widget: PdfDict | None = None,
-    ) -> None:
-        self.name = name
-        self.type = type
-        self.value = value
-        self.value_text = value_text
-        self.rect = rect
-        self.dict = dict_
-        self.kids = kids if kids is not None else []
-        self.widget = widget
-
-    def value_words(self) -> list[tuple[str, int]]:
-        words = []
-        start = None
-        for index, char in enumerate(self.value_text):
-            if char.isspace():
-                if start is not None:
-                    words.append((self.value_text[start:index], start))
-                    start = None
-            elif start is None:
-                start = index
-        if start is not None:
-            words.append((self.value_text[start:], start))
-        return words
-
-    @property
-    def flags(self) -> int:
-        value = self.dict.get(PdfName.of("Ff"), 0)
-        return int(value) if isinstance(value, int) else 0
-
-    @property
-    def is_read_only(self) -> bool:
-        return bool(self.flags & 1)
-
-    @property
-    def is_required(self) -> bool:
-        return bool(self.flags & 2)
-
-    @property
-    def no_export(self) -> bool:
-        return bool(self.flags & 4)
-
-    @property
-    def options(self) -> tuple[str, ...]:
-        value = self.dict.get(PdfName.of("Opt"), ())
-        if not isinstance(value, list):
-            return ()
-        result: list[str] = []
-        for item in value:
-            if isinstance(item, PdfString):
-                result.append(item.data.decode("utf-8", errors="replace"))
-            elif isinstance(item, str):
-                result.append(item)
-        return tuple(result)
-
-    def page_bbox(self, page_height: float) -> Rectangle | None:
-        if self.rect is None:
-            return None
-        return BBox.from_page_rect(BBox.from_rect(self.rect), page_height)
+__all__ = ("DrawingRecord", "ImageMetadata", "ImageRecord", "PageScoped")

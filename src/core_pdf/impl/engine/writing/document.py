@@ -7,8 +7,9 @@ from collections.abc import Mapping
 
 from core_pdf.impl.engine.writing.encryption import StandardPdfEncryption
 from core_pdf.impl.engine.writing.objects import (
+    internal_append_indirect_objects,
+    internal_classic_xref_entry,
     serialize_pdf_dictionary,
-    serialize_pdf_object,
 )
 from core_pdf.impl.primitives import PdfName, PdfReference
 
@@ -23,30 +24,20 @@ def serialize_pdf_file(
     validate_pdf_version(version)
     if not objects:
         raise ValueError("a PDF file must contain at least one indirect object")
-    if any(type(number) is not int or number <= 0 for number in objects):
-        raise ValueError("PDF object numbers must be positive integers")
 
-    highest_object_number = max(objects)
     output = bytearray(f"%PDF-{version}\n%\xe2\xe3\xcf\xd3\n".encode("latin-1"))
-    offsets: dict[int, int] = {}
-    for number in sorted(objects):
-        offsets[number] = len(output)
-        output.extend(f"{number} 0 obj\n".encode("ascii"))
-        output.extend(serialize_pdf_object(objects[number]))
-        output.extend(b"\nendobj\n")
+    offsets = internal_append_indirect_objects(output, objects)
 
     xref_offset = len(output)
-    size = highest_object_number + 1
+    size = max(offsets) + 1
     output.extend(f"xref\n0 {size}\n".encode("ascii"))
     output.extend(b"0000000000 65535 f \n")
     for number in range(1, size):
         offset = offsets.get(number)
         if offset is None:
             output.extend(b"0000000000 00000 f \n")
-        elif offset >= 10_000_000_000:
-            raise ValueError("PDF file is too large for a classic xref table")
         else:
-            output.extend(f"{offset:010d} 00000 n \n".encode("ascii"))
+            output.extend(internal_classic_xref_entry(offset))
 
     trailer_dict = dict(trailer)
     trailer_dict[PdfName.of("Size")] = size

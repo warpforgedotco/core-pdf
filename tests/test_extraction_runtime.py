@@ -15,7 +15,8 @@ from core_pdf.impl.engine.execution import ExecutionRuntime, RuntimeConfig, Task
 from core_pdf.impl.engine.parse import ParsedPage
 from core_pdf.impl.engine.parse import pipeline as parse_pipeline
 from core_pdf.impl.engine.writing import serialize_pdf_file
-from core_pdf.impl.objects import PdfName, PdfReference, PdfStream
+from core_pdf.impl.objects import PdfStream
+from core_pdf.impl.primitives import PdfName, PdfReference
 
 TESTS_DIR = Path(__file__).parent / "fixtures"
 SAMPLE_PDF = TESTS_DIR / "SCORE-Bench" / "src" / "global-AIDS-strategy-p74-75-p001.pdf"
@@ -443,7 +444,7 @@ def test_resolver_is_safe_for_concurrent_same_object_reads() -> None:
 
 
 def test_same_document_extraction_is_single_flight(monkeypatch: pytest.MonkeyPatch) -> None:
-    original = parse_pipeline.internal_parse_page_locked
+    original = parse_pipeline.parse_page
     calls = 0
     calls_lock = threading.Lock()
 
@@ -454,7 +455,7 @@ def test_same_document_extraction_is_single_flight(monkeypatch: pytest.MonkeyPat
         time.sleep(0.05)
         return original(page, context)
 
-    monkeypatch.setattr(parse_pipeline, "internal_parse_page_locked", counted_parse)
+    monkeypatch.setattr(parse_pipeline, "parse_page", counted_parse)
     with PdfDocument.open(SAMPLE_PDF) as document:
         with ThreadPoolExecutor(max_workers=4) as executor:
             results = list(executor.map(lambda internal_index: document.extract().text, range(4)))
@@ -528,14 +529,14 @@ def test_document_extract_parses_only_the_selected_pages(monkeypatch: pytest.Mon
 def test_distinct_page_selections_can_extract_concurrently(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    original = parse_pipeline.internal_parse_page_locked
+    original = parse_pipeline.parse_page
     rendezvous = threading.Barrier(2)
 
     def concurrent_parse(page: Any, context: TaskScope) -> ParsedPage:
         rendezvous.wait(timeout=3)
         return original(page, context)
 
-    monkeypatch.setattr(parse_pipeline, "internal_parse_page_locked", concurrent_parse)
+    monkeypatch.setattr(parse_pipeline, "parse_page", concurrent_parse)
     with PdfDocument.open(internal_multi_page_pdf()) as document:
         with ThreadPoolExecutor(max_workers=2) as executor:
             first = executor.submit(document.extract, pages=1)

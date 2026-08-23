@@ -13,8 +13,10 @@ from core_pdf.impl.engine.spec.s_09_fonts.decoder import (
     parse_type1_font_program_encoding,
 )
 from core_pdf.impl.engine.spec.s_09_fonts.encoding import decode_pdf_text_string
+from core_pdf.impl.engine.spec.s_09_fonts.font_program_truetype import (
+    internal_invert_unicode_cmap,
+)
 from core_pdf.impl.engine.spec.s_09_fonts.glyphs import glyph_name_to_unicode
-from core_pdf.impl.engine.spec.s_09_fonts.truetype import internal_invert_unicode_cmap
 from core_pdf.impl.objects import PdfStream
 from core_pdf.impl.primitives import PdfString
 
@@ -30,6 +32,11 @@ def test_glyph_name_to_unicode_handles_computer_modern_delimiter_aliases() -> No
     assert glyph_name_to_unicode("radicalBigg") == "√"
     assert glyph_name_to_unicode("integraldisplay") == "∫"
     assert glyph_name_to_unicode("oint") == "∮"
+
+
+@pytest.mark.parametrize("name", ["Helvetica", "Helveticasmall", "SYMBOL_ENCODING"])
+def test_glyph_name_lookup_does_not_leak_non_glyph_font_data(name: str) -> None:
+    assert glyph_name_to_unicode(name) == name
 
 
 def test_parse_type1_font_program_encoding_reads_custom_array() -> None:

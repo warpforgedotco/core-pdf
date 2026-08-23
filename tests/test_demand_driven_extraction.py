@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import cast
 
 import pytest
 
 from core_pdf import PdfDocument
+from core_pdf.impl.engine.parse import ParseReport
 from core_pdf.impl.engine.parse import pipeline as parse_pipeline
 from core_pdf.impl.engine.parse import tables as parse_tables
 from core_pdf.impl.engine.parse.pipeline import ASSEMBLED_PAGE_CACHE_KEY
@@ -72,7 +72,7 @@ def test_extract_tables_reconciles_with_the_emitted_page(
     assert ASSEMBLED_PAGE_CACHE_KEY in cache
 
 
-def test_full_extract_still_populates_parse_metrics() -> None:
+def test_full_extract_populates_the_typed_parse_report() -> None:
     with PdfDocument.open(FIXTURE) as document:
         page = document.pages[0]
         extracted = page.extract()
@@ -80,6 +80,8 @@ def test_full_extract_still_populates_parse_metrics() -> None:
 
     assert extracted.text
     assert cache is not None
-    metrics = cast(dict[str, object], cache["parse_metrics"])
+    report = cache["parse_report_v1"]
+    assert isinstance(report, ParseReport)
+    metrics = report.metrics
     assert metrics["route"] in {"native", "hybrid", "ocr"}
     assert isinstance(metrics["table_seconds"], (int, float))

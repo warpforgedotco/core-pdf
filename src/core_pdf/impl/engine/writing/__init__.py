@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 """PDF writing primitives."""
 
-from core_pdf.impl.engine.writing.api import PdfDocumentWritingMixin
 from core_pdf.impl.engine.writing.document import (
     serialize_encrypted_pdf_file,
     serialize_pdf_file,
@@ -27,7 +26,6 @@ from core_pdf.impl.engine.writing.signatures import (
 )
 
 __all__ = (
-    "PdfDocumentWritingMixin",
     "PdfObjectGraph",
     "PdfFontProvider",
     "PdfFontResource",

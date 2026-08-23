@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Shared lock access for document mixins and lightweight document doubles."""
+"""Shared lock access for documents and lightweight document doubles."""
 
 from __future__ import annotations
 

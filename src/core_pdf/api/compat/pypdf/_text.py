@@ -21,7 +21,8 @@ from core_pdf.impl.engine.spec.s_09_fonts.glyphs import (
 )
 from core_pdf.impl.engine.spec.s_09_fonts.helpers import cached_decode_table
 from core_pdf.impl.engine.spec.s_09_fonts.widths import parse_font_widths
-from core_pdf.impl.objects import PdfName, PdfStream, PdfString
+from core_pdf.impl.objects import PdfStream
+from core_pdf.impl.primitives import PdfName, PdfString
 
 Matrix = list[float]
 internal_LIGATURES = {"ff": "ﬀ", "fi": "ﬁ", "fl": "ﬂ", "ffi": "ﬃ", "ffl": "ﬄ"}

@@ -29,6 +29,7 @@ from core_pdf.impl.engine.spec.s_07_document.page_links import (
     pdf_name_direct,
     resolve_annotation_dict,
 )
+from core_pdf.impl.engine.spec.s_07_document.records import RawAnnotation, RawLink
 from core_pdf.impl.engine.spec.s_07_objects.object_cache import (
     CachedPdfObject,
     InheritedValueMap,
@@ -39,19 +40,18 @@ from core_pdf.impl.engine.spec.s_07_objects.pdfdict import (
 )
 from core_pdf.impl.engine.spec.s_14_structure.tree import PageStructure
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.models import RawAnnotation, RawLink
-from core_pdf.impl.objects import (
+from core_pdf.impl.objects import PdfStream
+from core_pdf.impl.primitives import (
     MISSING,
     MissingObject,
     PdfReference,
-    PdfStream,
 )
 from core_pdf.impl.types import PdfDict, PdfObject, Rectangle
 
 if TYPE_CHECKING:
     from core_pdf.impl.engine.layout.models import LayoutLine, TextRun
     from core_pdf.impl.engine.spec.s_07_document.document import PdfDocument
-    from core_pdf.impl.models import RawFormField, RawTextSpan
+    from core_pdf.impl.engine.spec.s_07_document.records import RawFormField, RawTextSpan
 
 PageBoxCacheValue = Rectangle | None | MissingObject
 

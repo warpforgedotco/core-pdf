@@ -7,24 +7,24 @@ stage internals live in (and are imported from) the owning submodule.
 
 from __future__ import annotations
 
-from core_pdf.impl.engine.parse.capture import capture_page, preflight_page
-from core_pdf.impl.engine.parse.emit import assemble_page
-from core_pdf.impl.engine.parse.fusion import fuse_observations, maximum_candidate_coverage
-from core_pdf.impl.engine.parse.layout import layout_blocks, layout_blocks_with_evidence
 from core_pdf.impl.engine.parse.model import (
     CapturedPage,
+    FusionPolicy,
     GlyphEvidence,
     ObservationBatch,
     ObservationSource,
     OcrPass,
     OcrPassScope,
     PageEvidence,
-    PagePreflightClass,
+    PagePlanReason,
     PageRoute,
     ParsedBlock,
     ParsedLine,
     ParsedPage,
+    ParseReport,
     ReadingOrderEvidence,
+    RecognitionReport,
+    RecognitionResult,
     TextQualityStats,
     WorkPlan,
 )
@@ -35,37 +35,30 @@ from core_pdf.impl.engine.parse.pipeline import (
     parse_document,
     parse_page,
 )
-from core_pdf.impl.engine.parse.route import plan_page
-from core_pdf.impl.engine.parse.tables import extract_tables
 
 __all__ = (
     "CapturedPage",
+    "FusionPolicy",
     "GlyphEvidence",
     "ObservationBatch",
     "ObservationSource",
     "OcrPass",
     "OcrPassScope",
     "PageEvidence",
-    "PagePreflightClass",
+    "PagePlanReason",
     "PageRoute",
+    "ParseReport",
     "ParsedBlock",
     "ParsedLine",
     "ParsedPage",
     "ReadingOrderEvidence",
+    "RecognitionReport",
+    "RecognitionResult",
     "TextQualityStats",
     "WorkPlan",
-    "assemble_page",
-    "capture_page",
     "extract_page",
-    "extract_tables",
-    "fuse_observations",
-    "layout_blocks",
-    "layout_blocks_with_evidence",
-    "maximum_candidate_coverage",
     "page_extraction",
     "parse_document",
     "parse_page",
-    "plan_page",
-    "preflight_page",
     "prewarm_runtime",
 )

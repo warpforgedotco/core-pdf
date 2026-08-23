@@ -29,10 +29,8 @@ from core_pdf.impl.engine.spec.s_07_content.text_helpers import (
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_08_graphics.image_decode import ImageSource
 from core_pdf.impl.engine.spec.s_08_graphics.matrix import Matrix
-from core_pdf.impl.objects import PdfName
-
-if typing.TYPE_CHECKING:
-    pass
+from core_pdf.impl.primitives import PdfName
+from core_pdf.impl.types import Rectangle
 
 # (base_x, base_y, combined_A, combined_B, combined_C, combined_D): invariant across every
 # glyph in one text-showing operation, so callers looping over glyphs compute it once and
@@ -70,7 +68,7 @@ def should_capture_suspicious_multi_glyph_bitmap(text: str) -> bool:
 
 @lru_cache(maxsize=4096)
 def glyph_bitmap_dimensions(
-    glyph_bbox: tuple[float, float, float, float] | None,
+    glyph_bbox: Rectangle | None,
     font_size: float,
 ) -> tuple[int, int]:
     if glyph_bbox is None:
@@ -86,14 +84,14 @@ def glyph_bitmap_dimensions(
 
 
 def glyph_ink_rect(
-    glyph_bbox: tuple[float, float, float, float] | None,
+    glyph_bbox: Rectangle | None,
     advance_start: float,
-    fallback_bbox: tuple[float, float, float, float],
+    fallback_bbox: Rectangle,
     text_basis: TextBasis,
     text_advance_scale: float,
     rise: float,
     font_scale: float,
-) -> tuple[float, float, float, float]:
+) -> Rectangle:
     if glyph_bbox is None:
         return fallback_bbox
     gx0, gy0, gx1, gy1 = glyph_bbox
@@ -209,7 +207,7 @@ def glyph_text_space_boxes(
     decoder: Any,
     position: tuple[float, float] = (0.0, 0.0),
 ) -> tuple[
-    tuple[float, float, float, float],
+    Rectangle,
     tuple[float, float, float, float],
 ]:
     if decoder.is_vertical:
@@ -322,15 +320,6 @@ class CapturedLine:
         self.y1 = y1
         self.line_width = line_width
 
-    def replace(self, **kwargs: Any) -> CapturedLine:
-        return CapturedLine(
-            x0=kwargs.get("x0", self.x0),
-            y0=kwargs.get("y0", self.y0),
-            x1=kwargs.get("x1", self.x1),
-            y1=kwargs.get("y1", self.y1),
-            line_width=kwargs.get("line_width", self.line_width),
-        )
-
 
 @dataclass(frozen=True, slots=True)
 class CapturedInlineImage:
@@ -340,7 +329,7 @@ class CapturedInlineImage:
     dictionary: dict[Any, Any]
     data: bytes
     image_source: ImageSource
-    image_clip: tuple[float, float, float, float] | None
+    image_clip: Rectangle | None
     ctm: Matrix
     xobject_depth: int
 
@@ -385,7 +374,7 @@ class CapturedSubpath:
     def has_segments(self) -> bool:
         return len(self.points) > 1
 
-    def bbox(self) -> tuple[float, float, float, float] | None:
+    def bbox(self) -> Rectangle | None:
         if not self.points:
             return None
         xs = [point[0] for point in self.points]
@@ -448,7 +437,7 @@ class CapturedPath:
     def has_segments(self) -> bool:
         return any(subpath.has_segments() for subpath in self.subpaths)
 
-    def bbox(self) -> tuple[float, float, float, float] | None:
+    def bbox(self) -> Rectangle | None:
         boxes = [box for subpath in self.subpaths if (box := subpath.bbox())]
         if not boxes:
             return None
@@ -528,7 +517,7 @@ class CapturedDrawing:
         raw_data: bytes | memoryview | None = None,
         dictionary: dict[Any, Any] | None = None,
         image_source: ImageSource | None = None,
-        image_clip: tuple[float, float, float, float] | None = None,
+        image_clip: Rectangle | None = None,
         kind: str = "fill",
         items: list[DrawingItem] | None = None,
         path: CapturedPath | None = None,

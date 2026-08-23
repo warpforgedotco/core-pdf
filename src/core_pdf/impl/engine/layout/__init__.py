@@ -1,6 +1,6 @@
 """Shared geometry, text-layout, and layout-quality components."""
 
-from core_pdf.impl.engine.layout.geometry import BBox, RectBox
+from core_pdf.impl.engine.layout.geometry import RectBox
 from core_pdf.impl.engine.layout.geometry_quality import (
     LayoutGeometryIssue,
     LayoutGeometrySummary,
@@ -18,7 +18,6 @@ from core_pdf.impl.engine.layout.spatial import (
 )
 
 __all__ = (
-    "BBox",
     "GlyphCluster",
     "GlyphObservation",
     "LayoutBox",
