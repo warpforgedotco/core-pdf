@@ -134,6 +134,12 @@ class PdfReference:
     def __hash__(self) -> int:
         return hash((self.object_number, self.generation_number))
 
+    def __str__(self) -> str:
+        return f"{self.object_number} {self.generation_number} R"
+
+    def __repr__(self) -> str:
+        return f"PdfReference({self.object_number}, {self.generation_number})"
+
 
 class PdfString:
     """PDF string object containing the raw byte representation."""

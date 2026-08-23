@@ -70,10 +70,43 @@ def link_target_resolved(
     return resolver.resolve_str(lookup_dict_key(action, key))
 
 
+def resolve_destination_value(resolver: LinkResolver, value: object, depth: int = 0) -> object:
+    """Resolve an annotation destination into plain serializable values.
+
+    A URI action holds its target behind an indirect reference, so the raw
+    action dictionary carries a ``PdfReference`` where the URL belongs.  This
+    resolves references to scalars and unwraps PDF strings and names.
+
+    References to composite objects are deliberately left as references: a
+    GoTo destination points at a page, and inlining a page dictionary here
+    would drag the object graph into the structured document.
+    """
+    if depth > 8:
+        return value
+    if isinstance(value, PdfReference):
+        resolved = resolver.resolve(value)
+        if resolved is None or isinstance(resolved, (dict, list, tuple)):
+            return value
+        return resolve_destination_value(resolver, resolved, depth + 1)
+    if isinstance(value, PdfString):
+        return decode_pdf_text_string(value.data)
+    if isinstance(value, PdfName):
+        return value.value
+    if isinstance(value, dict):
+        return {
+            str(key): resolve_destination_value(resolver, item, depth + 1)
+            for key, item in value.items()
+        }
+    if isinstance(value, (list, tuple)):
+        return [resolve_destination_value(resolver, item, depth + 1) for item in value]
+    return value
+
+
 __all__ = (
     "link_target_direct",
     "link_target_resolved",
     "pdf_box_direct",
     "pdf_name_direct",
     "resolve_annotation_dict",
+    "resolve_destination_value",
 )
