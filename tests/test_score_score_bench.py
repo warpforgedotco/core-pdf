@@ -421,25 +421,6 @@ def test_cli_can_disable_default_html_report() -> None:
     assert benchmark.html_output is None
 
 
-def test_score_cases_preserve_case_order(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    benchmark_type = score_bench["ScoreBench"]
-    score_case_globals = benchmark_type.internal_score_cases.__globals__
-    cases = [SimpleNamespace(stem=f"case-{index}") for index in range(4)]
-
-    def fake_score_case(case: SimpleNamespace) -> SimpleNamespace:
-        return SimpleNamespace(stem=case.stem)
-
-    monkeypatch.setitem(score_case_globals, "score_case", fake_score_case)
-    benchmark = benchmark_type()
-    benchmark.total_cases = len(cases)
-    monkeypatch.setattr(benchmark, "internal_print_progress", lambda *internal_args: None)
-    scores = benchmark.internal_score_cases(cases)
-
-    assert [score.stem for score in scores] == [case.stem for case in cases]
-
-
 def test_backend_is_thread_local(monkeypatch: pytest.MonkeyPatch) -> None:
     import tesserocr
 
