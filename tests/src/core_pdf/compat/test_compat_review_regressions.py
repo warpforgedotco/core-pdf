@@ -47,16 +47,23 @@ def test_pypdf_merger_inserts_at_flattened_page_position() -> None:
 
 
 def test_pdfplumber_words_defaults_missing_upright_to_true() -> None:
-    char = {
-        "text": "A",
-        "x0": 0.0,
-        "x1": 5.0,
-        "top": 0.0,
-        "bottom": 10.0,
-        "doctop": 0.0,
-    }
+    chars = [
+        {
+            "text": text,
+            "x0": x0,
+            "x1": x0 + 5.0,
+            "top": 0.0,
+            "bottom": 10.0,
+            "doctop": 0.0,
+        }
+        for text, x0 in (("A", 0.0), ("B", 5.0))
+    ]
 
-    assert _words([char])[0]["text"] == "A"
+    word = _words(chars)[0]
+
+    assert word["text"] == "AB"
+    assert word["upright"] is True
+    assert word["direction"] == "ltr"
 
 
 def test_pdfminer_reading_order_retains_every_merged_box() -> None:

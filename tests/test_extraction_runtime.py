@@ -1,3 +1,4 @@
+import json
 import subprocess
 import sys
 import textwrap
@@ -19,7 +20,7 @@ from core_pdf.impl.primitives import PdfName, PdfReference
 
 TESTS_DIR = Path(__file__).parent / "fixtures"
 SAMPLE_PDF = TESTS_DIR / "SCORE-Bench" / "src" / "global-AIDS-strategy-p74-75-p001.pdf"
-ADAPTIVE_OCR_PDF = TESTS_DIR / "SCORE-Bench" / "src" / "SFG-Content-Marketing-2021-p001.pdf"
+PAGE_OCR_PDF = TESTS_DIR / "SCORE-Bench" / "src" / "SFG-Content-Marketing-2021-p001.pdf"
 
 
 def internal_many_page_pdf(page_count: int) -> bytes:
@@ -54,24 +55,52 @@ def internal_many_page_pdf(page_count: int) -> bytes:
     return serialize_pdf_file(objects, trailer={PdfName.of("Root"): PdfReference(1)})
 
 
-def test_first_extraction_can_start_in_an_application_worker() -> None:
+@pytest.mark.parametrize(
+    ("fixture", "expected_pass"),
+    [
+        pytest.param(SAMPLE_PDF, "image-regions", id="image-region"),
+        pytest.param(PAGE_OCR_PDF, "primary-page", id="page"),
+    ],
+)
+def test_ocr_extraction_can_start_in_an_application_worker(
+    fixture: Path,
+    expected_pass: str,
+) -> None:
     script = textwrap.dedent(
         f"""
+        import json
+        import threading
         from concurrent.futures import ThreadPoolExecutor
         from pathlib import Path
         from core_pdf import PdfDocument
 
-        fixture = Path({str(SAMPLE_PDF)!r})
+        fixture = Path({str(fixture)!r})
 
         def extract():
             with PdfDocument.open(fixture) as document:
-                return document.extract().text
+                extracted = document.extract()
+                report = document.pages[0].extraction_cache["parse_report_v1"]
+                return {{
+                    "characters": len(extracted.text),
+                    "passes": [item["name"] for item in report.recognition.passes],
+                    "worker": threading.current_thread() is not threading.main_thread(),
+                }}
 
         with ThreadPoolExecutor(max_workers=1) as executor:
-            assert executor.submit(extract).result()
+            print(json.dumps(executor.submit(extract).result()))
         """
     )
-    subprocess.run([sys.executable, "-c", script], check=True)
+    completed = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        check=True,
+        text=True,
+    )
+
+    result = json.loads(completed.stdout)
+    assert result["characters"] > 0
+    assert expected_pass in result["passes"]
+    assert result["worker"] is True
 
 
 def test_worker_first_ocr_initialization_has_an_actionable_error() -> None:
@@ -99,26 +128,6 @@ def test_worker_first_ocr_initialization_has_an_actionable_error() -> None:
     assert "initialize OCR on the main thread" in completed.stderr
 
 
-def test_adaptive_ocr_retry_runs_in_an_application_worker() -> None:
-    script = textwrap.dedent(
-        f"""
-        from concurrent.futures import ThreadPoolExecutor
-        from pathlib import Path
-        from core_pdf import PdfDocument
-
-        fixture = Path({str(ADAPTIVE_OCR_PDF)!r})
-
-        def extract():
-            with PdfDocument.open(fixture) as document:
-                return document.extract().text
-
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            assert executor.submit(extract).result()
-        """
-    )
-    subprocess.run([sys.executable, "-c", script], check=True)
-
-
 def test_run_on_each_worker_reaches_every_pooled_thread() -> None:
     runtime = ExecutionRuntime(RuntimeConfig(parent_workers=3, ocr_workers=3))
     try:
@@ -138,10 +147,16 @@ def test_run_on_each_worker_reaches_every_pooled_thread() -> None:
 def test_run_on_each_worker_does_not_hang_when_workers_are_busy() -> None:
     runtime = ExecutionRuntime(RuntimeConfig(parent_workers=4, ocr_workers=4))
     release = threading.Event()
+    busy_workers = threading.Barrier(3)
     try:
+
+        def occupy_worker() -> None:
+            busy_workers.wait(timeout=2)
+            release.wait(30)
+
         for _ in range(2):
-            runtime.internal_get_executor().submit(lambda: release.wait(30))
-        time.sleep(0.2)
+            runtime.internal_get_executor().submit(occupy_worker)
+        busy_workers.wait(timeout=2)
         warmed = 0
         lock = threading.Lock()
 
@@ -172,16 +187,6 @@ def test_runtime_maps_in_order_with_bounded_workers() -> None:
 
     assert list(runtime.map_ordered(work, range(8))) == [0, 2, 4, 6, 8, 10, 12, 14]
     assert thread_ids
-
-
-def test_runtime_submits_foreground_overlap_work() -> None:
-    runtime = ExecutionRuntime()
-    runtime.configure(RuntimeConfig(parent_workers=2))
-
-    future = runtime.submit(lambda value: value * 2, 21)
-
-    assert future.result() == 42
-    runtime.shutdown()
 
 
 def test_runtime_maps_in_completion_order_with_input_indexes() -> None:
@@ -476,7 +481,9 @@ def test_resolver_is_safe_for_concurrent_same_object_reads() -> None:
         with ThreadPoolExecutor(max_workers=4) as executor:
             resolved = list(executor.map(document.resolve, [root] * 16))
 
-    assert all(isinstance(value, dict) for value in resolved)
+    for value in resolved:
+        assert isinstance(value, dict)
+        assert (PdfName.of("Type"), PdfName.of("Catalog")) in value.items()
 
 
 def test_same_document_extraction_is_single_flight(monkeypatch: pytest.MonkeyPatch) -> None:

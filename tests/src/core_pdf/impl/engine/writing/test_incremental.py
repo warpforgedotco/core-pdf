@@ -31,10 +31,11 @@ def test_append_incremental_update_preserves_and_reopens_original_file() -> None
         trailer={PdfName.of("Root"): PdfReference(1)},
     )
     previous_xref_offset = original.rfind(b"xref\n")
+    updated_content = b"q\n0 0 1 rg\n0 0 5 5 re f\nQ\n"
 
     updated = append_incremental_update(
         original,
-        {4: PdfStream({}, b"q\n0 0 1 rg\nQ\n")},
+        {4: PdfStream({}, updated_content)},
         trailer={PdfName.of("Root"): PdfReference(1)},
         previous_xref_offset=previous_xref_offset,
         previous_size=5,
@@ -45,6 +46,9 @@ def test_append_incremental_update_preserves_and_reopens_original_file() -> None
     assert b"/Prev " + str(previous_xref_offset).encode("ascii") in updated
     with PdfDocument.open(updated) as document:
         assert len(document.pages) == 1
+        contents = document.resolve(PdfReference(4))
+        assert isinstance(contents, PdfStream)
+        assert contents.data == updated_content
 
 
 def test_pdf_document_save_incremental_writes_to_binary_target() -> None:
@@ -100,3 +104,4 @@ def test_pdf_document_encrypts_incremental_objects_for_encrypted_input() -> None
     assert b"incremental secret" not in updated
     with PdfDocument.open(updated, password="open") as document:
         assert len(document.pages) == 1
+        assert document.resolve(PdfReference(99)) == PdfString(b"incremental secret")

@@ -32,7 +32,6 @@ from core_pdf.impl.engine.parse.layout import (
     internal_peel_spanning_band,
 )
 from core_pdf.impl.engine.parse.model import (
-    HIDDEN_TEXT_VERIFY_MIN_TOKEN_OVERLAP,
     ParsedBlock,
     ParsedLine,
 )
@@ -143,7 +142,6 @@ def test_column_major_reorder_partitions_lines_exactly() -> None:
 
     reordered = internal_column_major_prose([block])[0]
 
-    assert len(reordered.lines) == len(block.lines)
     assert sorted(line.text for line in reordered.lines) == sorted(
         line.text for line in block.lines
     )
@@ -173,7 +171,7 @@ def test_bottom_spanner_peel_exposes_hidden_gutter() -> None:
     peeled = internal_peel_spanning_band(indexes, boxes, 12.0, from_bottom=True)
     assert peeled is not None
     band, remainder = peeled
-    assert len(band) == 1
+    assert band.tolist() == [len(boxes) - 1]
     assert len(remainder) == len(boxes) - 1
 
 
@@ -242,8 +240,14 @@ def test_wrapped_cells_group_into_logical_rows() -> None:
     the content is entirely present and entirely in the wrong place.
     """
     merged = internal_merge_wrapped_cell_rows(internal_wrapped_cell_table())
-    assert len(merged.rows) == 4
-    assert "long wrapped description" in merged.rows[0][1].text
+    assert [row[0].text for row in merged.rows] == [
+        "label alpha label beta label gamma",
+        "label beta label gamma label delta",
+        "label gamma label delta label epsilon",
+        "label delta label epsilon label zeta",
+    ]
+    assert all(len(row) == 5 for row in merged.rows)
+    assert all(row[1].text.startswith("long wrapped description") for row in merged.rows)
 
 
 def test_numeric_table_rows_are_never_regrouped() -> None:
@@ -313,15 +317,6 @@ def test_sparse_long_celled_narrow_table_is_not_a_table() -> None:
             cells.append(internal_cell(index, 1, "", (320.0, top - 12.0, 560.0, top)))
         rows.append(tuple(cells))
     assert internal_stream_table_reads_like_prose(internal_stream_table(tuple(rows)))
-
-
-def test_hidden_layer_promotion_requires_a_faithful_match() -> None:
-    """A borderline hidden layer must be re-recognized, not promoted.
-
-    Promoting replaces recognition wholesale, so a layer agreeing with the
-    preview on two words in three ships its own errors as the page text.
-    """
-    assert HIDDEN_TEXT_VERIFY_MIN_TOKEN_OVERLAP > 0.664
 
 
 def test_numeric_table_reaches_the_page() -> None:

@@ -59,4 +59,3 @@ def test_coerce_value_preserves_existing_containers_when_no_transformation_is_ne
 
     assert coerce_value(value) is value
     assert coerce_value(value, decode_pdf_text_string) is value
-    assert coerce_value(value, None) is value

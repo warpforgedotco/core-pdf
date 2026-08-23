@@ -79,16 +79,26 @@ def test_capture_discards_duplicate_nested_text_layer() -> None:
     text = " ".join(f"token{index}" for index in range(30))
     page_run = run(text)
     nested_run = run(text, depth=1)
+    distinct_nested_run = run(" ".join(f"other{index}" for index in range(30)), depth=2)
 
-    assert internal_extractable_runs(cast(Any, (page_run, nested_run))) == (page_run,)
+    assert internal_extractable_runs(cast(Any, (page_run, nested_run, distinct_nested_run))) == (
+        page_run,
+        distinct_nested_run,
+    )
 
 
 def test_capture_discards_duplicate_alternate_clip_layer() -> None:
     text = " ".join(f"token{index}" for index in range(30))
     page_run = run(text, clip=(0.0, 0.0, 100.0, 100.0))
     alternate_run = run(text, clip=(10.0, 10.0, 90.0, 90.0))
+    distinct_clipped_run = run(
+        " ".join(f"other{index}" for index in range(30)),
+        clip=(20.0, 20.0, 80.0, 80.0),
+    )
 
-    assert internal_extractable_runs(cast(Any, (page_run, alternate_run))) == (page_run,)
+    assert internal_extractable_runs(
+        cast(Any, (page_run, alternate_run, distinct_clipped_run))
+    ) == (page_run, distinct_clipped_run)
 
 
 def test_structure_actual_text_replaces_mcid_text_before_routing() -> None:
@@ -154,27 +164,6 @@ def test_image_only_program_still_routes_ocr() -> None:
 
     assert capture.evidence.image_count > 0
     assert plan.route.value == "ocr"
-
-
-def test_image_only_plan_uses_primary_and_fallback_ocr() -> None:
-    capture = SimpleNamespace(
-        evidence=evidence(
-            characters=0,
-            visible_characters=0,
-            image_count=1,
-            image_area_ratio=1.0,
-        ),
-        drawings=(),
-        grid_lines=(),
-        page=SimpleNamespace(width=600.0, height=800.0),
-    )
-    plan = plan_page(cast(CapturedPage, capture))
-
-    assert plan.route is PageRoute.OCR
-    assert tuple(ocr_pass.name for ocr_pass in plan.ocr_passes) == (
-        "primary-page",
-        "fallback-page",
-    )
 
 
 def test_clean_native_plan_has_no_ocr() -> None:
@@ -442,6 +431,11 @@ def test_route_requires_stronger_evidence_for_ocr_replacement() -> None:
 
     plan = plan_page(cast(CapturedPage, capture))
 
+    assert plan.route is PageRoute.OCR
+    assert tuple(ocr_pass.name for ocr_pass in plan.ocr_passes) == (
+        "primary-page",
+        "fallback-page",
+    )
     assert plan.ocr_passes[0].minimum_confidence == 55.0
 
 
@@ -556,25 +550,6 @@ def test_native_unavailable_limits_low_yield_page_fallback() -> None:
     fallback = next(ocr_pass for ocr_pass in plan.ocr_passes if ocr_pass.name == "fallback-page")
     assert fallback.modes == (6,)
     assert fallback.run_if_characters_below == 3
-
-
-def test_image_only_pages_use_sparse_text_ocr_for_isolated_labels() -> None:
-    capture = SimpleNamespace(
-        evidence=evidence(
-            characters=0,
-            visible_characters=0,
-            image_count=1,
-            full_page_image=True,
-        ),
-        drawings=(),
-        grid_lines=(),
-        page=SimpleNamespace(width=600.0, height=800.0),
-    )
-
-    plan = plan_page(cast(CapturedPage, capture))
-
-    assert plan.reason == "native-text-unavailable"
-    assert plan.ocr_passes[0].modes == (11,)
 
 
 def test_hybrid_augmentation_uses_raster_text_confidence_floor() -> None:

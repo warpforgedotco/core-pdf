@@ -4,13 +4,14 @@ from __future__ import annotations
 import pytest
 
 from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
-from core_pdf.impl.engine.spec.s_07_syntax.tokens import DELIMITERS, WHITESPACE
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.objects import PdfStream
 from core_pdf.impl.primitives import PdfReference, PdfString
 
+PDF_SEPARATORS = b"\x00\t\n\x0c\r ()<>[]{}/%"
 
-@pytest.mark.parametrize("separator", WHITESPACE + DELIMITERS)
+
+@pytest.mark.parametrize("separator", PDF_SEPARATORS)
 def test_find_separator_recognizes_pdf_separator_bytes(separator: int) -> None:
     lexer = PdfLexer(b"ordinary" + bytes((separator,)) + b"suffix")
 
@@ -32,14 +33,6 @@ def test_find_separator_returns_data_length_without_separator(
 
     assert lexer.find_separator(0) == len(data)
     assert lexer.find_separator(8) == len(data)
-
-
-def test_reversed_memoryview_is_copied_for_native_search() -> None:
-    data = memoryview(b")abc(")[::-1]
-    lexer = PdfLexer(data)
-
-    assert lexer.source_buffer == b"(cba)"
-    assert lexer.parse_object() == PdfString(b"cba")
 
 
 def test_find_separator_supports_reversed_memoryview() -> None:

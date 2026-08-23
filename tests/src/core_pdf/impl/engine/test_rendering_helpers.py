@@ -14,7 +14,6 @@ from core_pdf.impl.engine.layout.geometry import RectBox
 from core_pdf.impl.engine.render.kernels import (
     RASTER_COORDINATE_CACHE_MAX_ENTRIES,
     internal_cached_raster_coordinates,
-    internal_clamp01,
     internal_color_component,
     internal_fill_path_crossing_spans,
     internal_fill_path_crossings_contain_point,
@@ -24,6 +23,7 @@ from core_pdf.impl.engine.render.kernels import (
     internal_image_quad,
     internal_image_raw_bytes,
     internal_intersect_box,
+    internal_shading_color_rgba,
     internal_soft_mask_alpha_at,
     internal_translate_rect,
 )
@@ -82,10 +82,13 @@ class TestColorComponent:
         assert internal_color_component(None, default=7) == 7
 
 
-def test_clamp01_bounds_its_input() -> None:
-    assert internal_clamp01(-1.0) == 0.0
-    assert internal_clamp01(0.25) == 0.25
-    assert internal_clamp01(4.0) == 1.0
+def test_shading_cmyk_clamps_components_before_conversion() -> None:
+    assert internal_shading_color_rgba("DeviceCMYK", [-1.0, 0.5, 2.0, 0.0], 0.25) == (
+        255,
+        128,
+        0,
+        64,
+    )
 
 
 class TestImageRawBytes:
@@ -201,16 +204,6 @@ class TestCrossingSpans:
     def test_evenodd_drops_zero_width_spans(self) -> None:
         assert internal_fill_path_crossing_spans([(2.0, 1), (2.0, 1)], "evenodd") == []
 
-    def test_nonzero_emits_one_span_per_interval_rather_than_coalescing(self) -> None:
-        # Winding stays nonzero from x=1 to x=7, but the spans are reported
-        # interval by interval; nothing merges the adjacent runs.
-        crossings = [(1.0, 1), (3.0, 1), (5.0, -1), (7.0, -1)]
-        assert internal_fill_path_crossing_spans(crossings, "nonzero") == [
-            (1.0, 3.0),
-            (3.0, 5.0),
-            (5.0, 7.0),
-        ]
-
     def test_nonzero_closes_a_span_where_winding_returns_to_zero(self) -> None:
         crossings = [(1.0, 1), (3.0, -1), (5.0, 1), (7.0, -1)]
         assert internal_fill_path_crossing_spans(crossings, "nonzero") == [(1.0, 3.0), (5.0, 7.0)]
@@ -230,18 +223,15 @@ class TestCachedRasterCoordinates:
         first = internal_cached_raster_coordinates(cache, 0, 4)
         assert internal_cached_raster_coordinates(cache, 0, 4) is first
 
-    def test_the_cache_stops_growing_at_its_cap(self) -> None:
+    def test_cache_cap_stops_growth_without_changing_results(self) -> None:
         cache: dict[tuple[int, int], numpy.ndarray] = {}
         for start in range(RASTER_COORDINATE_CACHE_MAX_ENTRIES + 10):
             internal_cached_raster_coordinates(cache, start, start + 1)
-        assert len(cache) == RASTER_COORDINATE_CACHE_MAX_ENTRIES
 
-    def test_results_stay_correct_after_the_cap_is_reached(self) -> None:
-        cache: dict[tuple[int, int], numpy.ndarray] = {}
-        for start in range(RASTER_COORDINATE_CACHE_MAX_ENTRIES + 5):
-            internal_cached_raster_coordinates(cache, start, start + 1)
+        assert len(cache) == RASTER_COORDINATE_CACHE_MAX_ENTRIES
         assert list(internal_cached_raster_coordinates(cache, 9_000, 9_003)) == [
             9000.0,
             9001.0,
             9002.0,
         ]
+        assert len(cache) == RASTER_COORDINATE_CACHE_MAX_ENTRIES

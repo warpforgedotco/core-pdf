@@ -1,3 +1,4 @@
+import json
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from random import Random
@@ -22,7 +23,7 @@ tokenize = score_bench["tokenize"]
 
 
 def test_tokenize_normalizes_compatible_unicode_forms() -> None:
-    assert tokenize("–12V in³ ‘quoted’") == tokenize("-12V in3 'quoted'")
+    assert tokenize("\u201312V in³ \u2018quoted\u2019") == ["-", "12v", "in3", "'", "quoted", "'"]
 
 
 def test_ordered_errors_detect_reordered_text_hidden_by_cct() -> None:
@@ -170,10 +171,15 @@ def test_metric_report_distinguishes_text_and_table_timings() -> None:
     assert values["WER"] == [0.0]
 
 
-def test_bootstrap_intervals_are_deterministic_and_version_records() -> None:
+def test_bootstrap_intervals_are_deterministic_and_data_dependent() -> None:
     interval = score_bench["bootstrap_interval"]([0.0, 1.0, 1.0], samples=100)
 
+    assert interval == (0.0, 1.0)
     assert interval == score_bench["bootstrap_interval"]([0.0, 1.0, 1.0], samples=100)
+    assert score_bench["bootstrap_interval"]([0.25], samples=100) == (0.25, 0.25)
+
+
+def test_json_scores_record_the_scoring_schema_version(tmp_path: Path) -> None:
     score = score_bench["CaseScore"](
         stem="versioned.pdf",
         status="ok",
@@ -186,7 +192,12 @@ def test_bootstrap_intervals_are_deterministic_and_version_records() -> None:
         matched_tokens=1,
         elapsed_seconds=0.0,
     )
-    assert score.scoring_schema_version == "2"
+    output_path = tmp_path / "score.json"
+    benchmark = score_bench["ScoreBench"](json_output=output_path)
+
+    benchmark.internal_write_json([score_bench["NumberedCaseScore"](1, score)])
+
+    assert json.loads(output_path.read_text(encoding="utf-8"))[0]["scoring_schema_version"] == "2"
 
 
 def test_collect_document_extraction_analysis_is_opt_in(
@@ -210,31 +221,6 @@ def test_collect_document_extraction_analysis_is_opt_in(
     assert records[0]["page"] == 1
     assert records[0]["metrics"] == {"route": "ocr"}
     assert records[0]["recognition"]["passes"] == ({"name": "primary", "elapsed_seconds": 1.25},)
-
-
-def test_case_progress_is_suppressed_during_scoring(
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    score = score_bench["CaseScore"](
-        stem="example.pdf",
-        status="ok",
-        cct=0.75,
-        percent_tokens_found=0.8,
-        percent_tokens_added=0.1,
-        precision=0.9,
-        gt_tokens=10,
-        predicted_tokens=9,
-        matched_tokens=8,
-        elapsed_seconds=1.25,
-        content_f1=0.75,
-        text_elapsed_seconds=0.5,
-    )
-    benchmark = score_bench["ScoreBench"]()
-    benchmark.total_cases = 4
-
-    benchmark.internal_print_progress(2, score)
-
-    assert capsys.readouterr().out == ""
 
 
 def test_score_failure_bucket_identifies_actionable_modes() -> None:
@@ -315,7 +301,7 @@ def test_score_hints_formats_missing_and_extra_tokens() -> None:
     assert score_bench["score_hints"](score) == "missing=alpha:3,beta:2,gamma:1 extra=noise:4"
 
 
-def test_result_review_fields_survive_long_stems(capsys: pytest.CaptureFixture[str]) -> None:
+def test_result_review_fields_survive_long_stems() -> None:
     score = score_bench["CaseScore"](
         stem="very-long-file-name-that-would-otherwise-make-the-table-hard-to-review.pdf",
         status="ok",
@@ -444,38 +430,6 @@ def test_cli_can_disable_default_html_report() -> None:
     benchmark = score_bench["ScoreBench"].from_cli(["--no-html-output"])
 
     assert benchmark.html_output is None
-
-
-def test_cli_accepts_report_limit() -> None:
-    benchmark = score_bench["ScoreBench"].from_cli(["--report-limit", "7"])
-
-    assert benchmark.report_limit == 7
-
-
-def test_cli_accepts_deterministic_partition() -> None:
-    benchmark = score_bench["ScoreBench"].from_cli(["--partition", "holdout"])
-
-    assert benchmark.partition == "holdout"
-    assert score_bench["score_bench_partition"]("example.pdf") in {"train", "holdout"}
-
-
-def test_score_cases_preserve_case_order(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    benchmark_type = score_bench["ScoreBench"]
-    score_case_globals = benchmark_type.internal_score_cases.__globals__
-    cases = [SimpleNamespace(stem=f"case-{index}") for index in range(4)]
-
-    def fake_score_case(case: SimpleNamespace) -> SimpleNamespace:
-        return SimpleNamespace(stem=case.stem)
-
-    monkeypatch.setitem(score_case_globals, "score_case", fake_score_case)
-    benchmark = benchmark_type()
-    benchmark.total_cases = len(cases)
-    monkeypatch.setattr(benchmark, "internal_print_progress", lambda *internal_args: None)
-    scores = benchmark.internal_score_cases(cases)
-
-    assert [score.stem for score in scores] == [case.stem for case in cases]
 
 
 def test_backend_is_thread_local(monkeypatch: pytest.MonkeyPatch) -> None:

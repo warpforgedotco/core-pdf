@@ -117,5 +117,17 @@ def test_inline_image_validation_rejects_unterminated_data() -> None:
         validate_inline_images(b"q BI /W 1 /H 1 /BPC 8 /CS /G ID missing")
 
 
-def test_inline_image_validation_ignores_tokens_inside_strings() -> None:
-    validate_inline_images(b"BT (BI /W 1 ID missing) Tj ET")
+@pytest.mark.parametrize(
+    "prefix",
+    [
+        b"BT (BI /W 1 ID missing) Tj ET",
+        b"% BI /W 1 ID missing\nq Q",
+        b"/BI /ID /missing q Q",
+        b"[BI /W 1 ID missing] q Q",
+        b"<< /Key BI /W 1 ID missing >> q Q",
+    ],
+)
+def test_inline_image_validation_ignores_tokens_in_lexical_operands(prefix: bytes) -> None:
+    valid_image = b" BI /W 1 /H 1 /BPC 8 /CS /G ID \x00\nEI Q"
+
+    assert validate_inline_images(prefix + valid_image) is None

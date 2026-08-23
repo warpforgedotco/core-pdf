@@ -26,6 +26,9 @@ def test_finite_median_matches_numpy_without_mutating_input() -> None:
         assert finite_median(values) == float(numpy.median(values))
         numpy.testing.assert_array_equal(values, original)
 
+    with pytest.raises(ValueError, match="at least one"):
+        finite_median(numpy.asarray([], dtype=numpy.float32))
+
 
 def test_uint8_view_borrows_bytes() -> None:
     source = b"abcd"
@@ -98,12 +101,20 @@ def test_resample_nearest_handles_channel_arrays() -> None:
     assert result.flags.c_contiguous
 
 
-def test_contiguous_bytes_copies_only_non_contiguous_arrays() -> None:
+def test_contiguous_bytes_borrows_contiguous_and_copies_non_contiguous_arrays() -> None:
+    contiguous = numpy.arange(4, dtype=numpy.uint8).reshape(2, 2)
+    borrowed = contiguous_bytes(contiguous)
+    borrowed[0] = 99
+
+    assert contiguous[0, 0] == 99
+
     source = numpy.arange(8, dtype=numpy.uint8).reshape(2, 4)[:, ::2]
 
     encoded = contiguous_bytes(source)
+    encoded[0] = 99
 
-    assert bytes(encoded) == b"\x00\x02\x04\x06"
+    assert bytes(encoded) == b"\x63\x02\x04\x06"
+    assert source[0, 0] == 0
 
 
 def test_resample_box_averages_the_covered_source_area() -> None:
@@ -139,9 +150,8 @@ def test_resample_bilinear_interpolates_between_neighbours() -> None:
 
     result = resample_bilinear(source, 1, 4)
 
-    assert result.shape == (1, 4)
     # Replication would give [0, 0, 200, 200]; interpolation ramps between them.
-    assert result[0, 0] < result[0, 1] < result[0, 2] < result[0, 3]
+    numpy.testing.assert_array_equal(result, ((0, 50, 150, 200),))
 
 
 def test_resample_bilinear_preserves_a_flat_field() -> None:
@@ -155,18 +165,16 @@ def test_resample_bilinear_preserves_a_flat_field() -> None:
     assert result.flags.c_contiguous
 
 
-def test_resample_smooth_picks_a_filter_per_direction() -> None:
-    source = numpy.full((40, 10, 3), 128, dtype=numpy.uint8)
+def test_resample_smooth_dispatches_by_resize_direction() -> None:
+    source = numpy.arange(24, dtype=numpy.uint8).reshape(4, 2, 3)
 
-    reduced = resample_smooth(source, 20, 5)
-    enlarged = resample_smooth(source, 80, 20)
-    mixed = resample_smooth(source, 20, 20)
+    reduced = resample_smooth(source, 2, 1)
+    enlarged = resample_smooth(source, 8, 4)
+    mixed = resample_smooth(source, 2, 4)
 
-    assert (reduced.shape, enlarged.shape, mixed.shape) == (
-        (20, 5, 3),
-        (80, 20, 3),
-        (20, 20, 3),
+    numpy.testing.assert_array_equal(reduced, resample_box(source, 2, 1))
+    numpy.testing.assert_array_equal(enlarged, resample_bilinear(source, 8, 4))
+    numpy.testing.assert_array_equal(
+        mixed,
+        resample_bilinear(resample_box(source, 2, 2), 2, 4),
     )
-    for result in (reduced, enlarged, mixed):
-        assert result.min() == 128
-        assert result.max() == 128

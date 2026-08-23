@@ -19,6 +19,8 @@ def test_feature_distance_matrix_matches_scalar_distance() -> None:
     features = (
         CFFGlyphFeature(((0, 0), (3, 4)), 1.0, 1, (1, 3, 7)),
         CFFGlyphFeature(((1, 1), (4, 5)), 1.2, 2, (1, 2, 8)),
+        CFFGlyphFeature(((8, 8),), 1.0, 1, (15,)),
+        CFFGlyphFeature(((8, 8),), 1.0, 1, (15, 0)),
         CFFGlyphFeature(((20, 30),), 1.5, 1, (1,)),
         CFFGlyphFeature((), 0.0, 0, ()),
     )
@@ -40,23 +42,6 @@ def test_feature_distance_matrix_matches_scalar_distance() -> None:
                 assert numpy.isinf(matrix[left_index, right_index])
             else:
                 assert matrix[left_index, right_index] == pytest.approx(expected)
-
-
-def test_feature_distance_matrix_preserves_mismatched_bitmap_semantics() -> None:
-    left = CFFGlyphFeature(((0, 0),), 1.0, 1, (15,))
-    right = CFFGlyphFeature(((0, 0),), 1.0, 1, (15, 0))
-    matrix = feature_distance_matrix(
-        [left.cells],
-        [left.bitmap],
-        [left.aspect],
-        [left.contours],
-        [right.cells],
-        [right.bitmap],
-        [right.aspect],
-        [right.contours],
-    )
-
-    assert matrix[0, 0] == pytest.approx(glyph_feature_distance(left, right))
 
 
 def test_cff_unicode_repair_index_only_computes_requested_glyphs() -> None:

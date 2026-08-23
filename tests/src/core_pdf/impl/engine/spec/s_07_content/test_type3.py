@@ -96,6 +96,25 @@ def test_type3_char_proc_caches_unsupported_stream_fallback() -> None:
     assert not state.active_streams
 
 
+def test_type3_dash_operator_uses_safe_fallback_and_preserves_dash() -> None:
+    # Dash operands contain an array and cannot use the direct replay representation.
+    stream = PdfStream(raw_data=b"500 0 d0 [3 2] 1 d 0 0 m 10 0 l S")
+    state, decoder = internal_type3_state(stream)
+
+    state._render_type3_glyphs_impl(b"A", decoder)
+
+    cached = decoder.type3_charproc_cache[65]
+    assert cached is not None
+    assert cached.operations is None
+    assert decoder.type3_charproc_unsafe_fallbacks == 1
+    assert len(state.drawings) == 1
+    dash_pattern = state.drawings[0].dash_pattern
+    assert dash_pattern is not None
+    dash_array, dash_phase = dash_pattern
+    assert dash_array == pytest.approx([0.003, 0.002])
+    assert dash_phase == pytest.approx(0.001)
+
+
 @pytest.mark.parametrize(
     ("metrics_operator", "expected_fill"),
     [

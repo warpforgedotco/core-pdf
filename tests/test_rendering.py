@@ -371,12 +371,10 @@ def test_vectorized_line_kernel_matches_scalar_antialias_samples() -> None:
     assert pixels == expected
 
 
-def test_cmyk_conversion_matches_scalar_channel_formula() -> None:
-    samples = bytes((0, 0, 0, 0, 10, 20, 30, 40, 255, 128, 64, 32))
-    expected = bytearray()
-    for index in range(0, len(samples), 4):
-        c, m, y, k = samples[index : index + 4]
-        expected.extend(int(255 * (1 - value / 255.0) * (1 - k / 255.0)) for value in (c, m, y))
+def test_cmyk_conversion_handles_process_inks_and_black() -> None:
+    samples = bytes.fromhex("00000000 ff000000 00ff0000 0000ff00 0a141e28 000000ff")
+    expected = bytes.fromhex("ffffff 00ffff ff00ff ffff00 cec6bd 000000")
+
     numpy.testing.assert_array_equal(
         ImageColorManager.convert_cmyk(samples),
         numpy.frombuffer(expected, dtype=numpy.uint8),
@@ -554,31 +552,6 @@ def test_text_display_items_do_not_fabricate_raster_pixels() -> None:
     raster = page.rasterize(background=(255, 255, 255, 255))
 
     assert raster.pixels == bytes((255, 255, 255, 255)) * 5 * 7
-
-
-def test_compose_page_requires_and_consumes_canonical_program() -> None:
-    class Page:
-        media_box = (0.0, 0.0, 10.0, 20.0)
-        width = 10.0
-        height = 20.0
-        page_number = 1
-        rotation = 0
-
-        def get_fields(self) -> list[object]:
-            return []
-
-        def get_annotations(self) -> list[object]:
-            return []
-
-        def resolve_transparency_group_alpha(self) -> None:
-            return None
-
-    products = PageProducts((), (), (), (), LineTable.from_lines(()))
-    page_program = PageProgram(products)
-
-    rendered = compose_page(Page(), page_program=page_program)
-
-    assert rendered.raster_size() == (10, 20)
 
 
 def test_text_free_composition_skips_glyph_paint_and_lazy_bitmap_resolution() -> None:
@@ -819,10 +792,10 @@ def test_axis_aligned_image_rasterizes_native_array_samples() -> None:
 
     raster = page.rasterize(background=(255, 255, 255, 255))
 
-    pixels = raster.array()
-    assert raster.nbytes == 2 * 2 * 4
-    assert numpy.all(pixels[:, :, 3] == 255)
-    assert numpy.any(pixels[:, :, :3] != 255)
+    decoded = numpy.asarray(imagecodecs.jpeg_decode(encoded), dtype=numpy.uint8)
+    expected = numpy.full((2, 2, 4), 255, dtype=numpy.uint8)
+    expected[:, :, :3] = decoded
+    numpy.testing.assert_array_equal(raster.array(), expected)
 
 
 def test_image_decode_recovers_unambiguous_samples_from_malformed_icc() -> None:
@@ -1052,8 +1025,9 @@ def test_orthogonal_image_quad_rasterizes_rotated_samples() -> None:
         dtype=numpy.uint8,
     ).reshape(2, 3, 4)
 
-    assert numpy.any(actual[:, :, :3] != 255)
-    numpy.testing.assert_array_equal(actual[:, :, 3], numpy.full((2, 3), 255))
+    expected = numpy.full((2, 3, 4), 255, dtype=numpy.uint8)
+    expected[:, :, :3] = numpy.rot90(samples, k=3)
+    numpy.testing.assert_array_equal(actual, expected)
 
 
 def test_image_mask_opaque_region_uses_masked_page_view() -> None:

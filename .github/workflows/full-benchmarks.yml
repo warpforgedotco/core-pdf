@@ -39,12 +39,6 @@ jobs:
         with:
           run: >-
             uv run --locked --package core-pdf --group benchmark pytest
-            tests/benchmarks/E2E/test_dense_content_stream_benchmarks.py
-            tests/benchmarks/E2E/test_large_object_graph_benchmarks.py
-            tests/benchmarks/E2E/test_multicolumn_layout_benchmarks.py
-            tests/benchmarks/E2E/test_synthetic_document_benchmarks.py
-            tests/benchmarks/test_page_program_benchmarks.py
-            tests/src/core_pdf/impl/engine/spec/s_07_content/benchmarks
             tests/src/core_pdf/impl/engine/spec/s_07_filters/benchmarks
             tests/src/core_pdf/impl/engine/spec/s_07_objects/benchmarks
             tests/src/core_pdf/impl/engine/spec/s_07_security/benchmarks

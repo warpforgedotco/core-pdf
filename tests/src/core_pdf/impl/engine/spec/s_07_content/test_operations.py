@@ -12,14 +12,8 @@ from core_pdf.impl.engine.spec.s_07_content.operations import (
     dispatch_operations,
     iter_content_operations,
 )
-from core_pdf.impl.engine.spec.s_07_syntax.content_operators import (
-    CACHED_OPERATOR_KEYWORDS,
-    OPERATOR_SPECS,
-    TEXT_ONLY_NOOP_OPS,
-    TEXT_OP,
-    TYPE3_REPLAY_OPERATORS,
-)
 from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
+from core_pdf.impl.primitives import PdfName, PdfString
 
 
 @pytest.mark.parametrize(
@@ -145,29 +139,6 @@ def test_content_operator_counts_classify_all_text_state_operators(
 
     assert counts.text == 1
     assert counts.unknown == 0
-
-
-def test_operator_metadata_derives_dispatch_and_specialized_sets() -> None:
-    assert {name: descriptor.handler for name, descriptor in OPERATOR_SPECS.items()} == TEXT_OP
-    assert (
-        frozenset(name for name, descriptor in OPERATOR_SPECS.items() if descriptor.text_only_noop)
-        == TEXT_ONLY_NOOP_OPS
-    )
-    assert (
-        frozenset(name for name, descriptor in OPERATOR_SPECS.items() if descriptor.type3_replay)
-        == TYPE3_REPLAY_OPERATORS
-    )
-    # Dash operands contain an array, so Type3 compilation must retain its
-    # established safe fallback instead of admitting `d` to direct replay.
-    assert "d" not in TYPE3_REPLAY_OPERATORS
-    assert (
-        tuple(
-            name.encode("latin-1")
-            for name, descriptor in OPERATOR_SPECS.items()
-            if descriptor.cache_keyword
-        )
-        == CACHED_OPERATOR_KEYWORDS
-    )
 
 
 class internal_RecordingOperationTarget:
@@ -398,10 +369,7 @@ def test_stage_c_tc_wrong_type_falls_back_to_generic_handler() -> None:
 def test_stage_c_tf_value_fast_path_has_no_type_check() -> None:
     target = internal_run_dispatch(b"/F1 12 Tf")
 
-    assert len(target.calls) == 1
-    name, args = target.calls[0]
-    assert name == "op_Tf_values"
-    assert args[1] == 12
+    assert target.calls == [("op_Tf_values", (PdfName.of("F1"), 12))]
 
 
 def test_stage_c_tf_falls_back_to_generic_handler_with_too_few_operands() -> None:
@@ -448,10 +416,9 @@ def test_stage_c_tw_without_operand_falls_through_silently() -> None:
 
 
 def test_stage_c_tj_array_calls_append_tj_array() -> None:
-    target = internal_run_dispatch(b"[(hi)] TJ")
+    target = internal_run_dispatch(b"[(hi) -20 (there)] TJ")
 
-    assert len(target.calls) == 1
-    assert target.calls[0][0] == "append_tj_array"
+    assert target.calls == [("append_tj_array", [PdfString(b"hi"), -20, PdfString(b"there")])]
 
 
 def test_stage_c_tj_array_without_operand_falls_through_silently() -> None:

@@ -38,7 +38,9 @@ def test_load_data_does_not_call_native_layout(monkeypatch: pytest.MonkeyPatch) 
 
     documents = load_data(Path("tests/fixtures/pypdf/resources/hello-world.pdf"))
 
-    assert documents
+    assert len(documents) == 1
+    assert "Hello World" in documents[0].text
+    assert "こんにちは世界" in documents[0].text
 
 
 @pytest.mark.parametrize(

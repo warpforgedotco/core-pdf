@@ -224,8 +224,11 @@ def test_column_major_prose_recovers_two_columns_with_a_header_cluster() -> None
 
     ordered = internal_column_major_prose([block])[0].lines
 
-    assert ordered[0].text == "left line 0"
-    assert ordered[81].text == "right line 0"
+    assert [line.text for line in ordered] == [
+        *(f"left line {index}" for index in range(80)),
+        "Centered heading",
+        *(f"right line {index}" for index in range(80)),
+    ]
 
 
 def test_full_width_obstacle_keeps_surrounding_regions_separate() -> None:

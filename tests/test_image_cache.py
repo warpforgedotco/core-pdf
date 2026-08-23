@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 from core_pdf.impl.engine.image_cache import ImageCache, ImageCacheKey
 
@@ -11,15 +12,20 @@ def key(name: str) -> ImageCacheKey:
 
 
 def test_image_cache_evicts_by_bytes_and_tracks_stats() -> None:
-    cache = ImageCache(max_bytes=6)
+    cache = ImageCache(max_bytes=8)
     cache.put(key("a"), b"1234")
     cache.put(key("b"), b"5678")
+    assert cache.get(key("a")) == b"1234"
 
-    assert cache.get(key("a")) is None
-    assert cache.get(key("b")) == b"5678"
+    cache.put(key("c"), b"9012")
+
+    assert cache.get(key("a")) == b"1234"
+    assert cache.get(key("b")) is None
+    assert cache.get(key("c")) == b"9012"
     stats = cache.stats()
     assert stats.evictions == 1
-    assert stats.bytes == 4
+    assert stats.entries == 2
+    assert stats.bytes == 8
 
 
 def test_image_cache_bypasses_values_larger_than_budget() -> None:
@@ -32,28 +38,38 @@ def test_image_cache_bypasses_values_larger_than_budget() -> None:
 
 def test_image_cache_single_flights_concurrent_factory() -> None:
     cache = ImageCache(max_bytes=100)
+    workers = 4
     calls = 0
     calls_lock = threading.Lock()
+    start = threading.Barrier(workers + 1)
+    release_factory = threading.Event()
 
     def factory() -> bytes:
         nonlocal calls
         with calls_lock:
             calls += 1
-        time.sleep(0.01)
+        assert release_factory.wait(timeout=2)
         return b"shared"
 
-    values: list[bytes] = []
-    threads = [
-        threading.Thread(target=lambda: values.append(cache.get_or_create(key("x"), factory)))
-        for _ in range(4)
-    ]
-    for thread in threads:
-        thread.start()
-    for thread in threads:
-        thread.join()
+    def load() -> bytes:
+        start.wait()
+        return cache.get_or_create(key("x"), factory)
+
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = [executor.submit(load) for _ in range(workers)]
+        start.wait()
+        deadline = time.monotonic() + 2.0
+        while cache.stats().misses < workers and time.monotonic() < deadline:
+            time.sleep(0.001)
+        try:
+            assert cache.stats().misses == workers
+        finally:
+            release_factory.set()
+        values = [future.result(timeout=2) for future in futures]
 
     assert values == [b"shared"] * 4
     assert calls == 1
+    assert cache.stats().hits == workers - 1
 
 
 def test_image_cache_invalidate_prefix() -> None:

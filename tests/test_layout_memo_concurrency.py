@@ -39,7 +39,9 @@ def test_concurrent_geometry_extraction_on_one_page_is_consistent() -> None:
 
     assert all(result == issue_results[0] for result in issue_results)
     assert all(result == summary_results[0] for result in summary_results)
-    assert all(len(result) == len(run_results[0]) for result in run_results)
+    assert run_results[0]
+    assert all(result == run_results[0] for result in run_results)
+    assert summary_results[0].text_run_count == len(run_results[0])
 
 
 def test_get_text_lines_returns_one_shared_list_under_concurrency(monkeypatch) -> None:

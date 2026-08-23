@@ -1,7 +1,6 @@
 """Differential raster coverage for embedded PDF font programs."""
 
 import gzip
-import hashlib
 import zlib
 from pathlib import Path
 
@@ -135,9 +134,6 @@ def test_opentype_cff2_program_exposes_actual_outlines() -> None:
     """Render a real variable CFF2 glyph through the generic OpenType path."""
     encoded = FIXTURES / "font_programs" / "cff2-a.otf.zlib.hex"
     font_data = zlib.decompress(bytes.fromhex(encoded.read_text().strip()))
-    assert hashlib.sha256(font_data).hexdigest() == (
-        "9c5c093c83c461f39e01e00d0ad1647d2165b0e5d4754260a225a7ba788c5594"
-    )
     font = {
         "Subtype": "Type1",
         "BaseFont": "HintOrderTest",

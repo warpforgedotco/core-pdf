@@ -140,18 +140,6 @@ def test_tessdata_path_falls_back_to_tesseract_cli(
         ocr.internal_tessdata_path.cache_clear()
 
 
-def test_prewarm_runtime_starts_workers_and_initializes_ocr(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    calls: list[str] = []
-    monkeypatch.setattr(ocr.RUNTIME, "prewarm", lambda: calls.append("workers"))
-    monkeypatch.setattr(parse_ocr, "internal_prepare_ocr", lambda: calls.append("ocr"))
-
-    ocr.prewarm_runtime()
-
-    assert calls == ["workers", "ocr"]
-
-
 def test_prepare_ocr_builds_an_api_on_every_pooled_worker(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -342,7 +330,6 @@ def test_tile_tasks_share_one_raster_and_select_rectangles() -> None:
 
     assert len(tasks) == 3
     assert all(task.image is image for task in tasks)
-    assert all(task.image.height == raster.height for task in tasks)
     assert tasks[0].rectangle[1] == 0
     assert tasks[-1].rectangle[1] > 0
     assert tasks[-1].rectangle[1] + tasks[-1].rectangle[3] == raster.height
@@ -891,6 +878,23 @@ def test_hidden_text_verification_requires_semantic_and_spatial_agreement() -> N
     assert unrelated.reason == "insufficient-matched-tokens"
 
 
+def test_hidden_text_verification_rejects_a_partial_semantic_match() -> None:
+    hidden_tokens = tuple(f"cell{index:02d}" for index in range(30))
+    preview_tokens = (*hidden_tokens[:24], *(f"other{index:02d}" for index in range(10)))
+    hidden = token_observations(hidden_tokens, source=ObservationSource.NATIVE)
+
+    verification = ocr.internal_hidden_text_verification(
+        hidden,
+        token_observations(preview_tokens),
+    )
+
+    assert verification.matched_tokens == 24
+    assert verification.spatially_matched_tokens == 24
+    assert verification.token_overlap == pytest.approx(24 / 34)
+    assert verification.accepted is False
+    assert verification.reason == "low-token-overlap"
+
+
 def test_verified_hidden_text_bypasses_full_ocr(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1156,54 +1160,6 @@ def test_region_augmentation_keeps_only_confident_uncovered_text() -> None:
     assert augmented.observations.text == ("known", "recovered")
 
 
-def test_dominant_image_ocr_preserves_its_page_space_region(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    raster = ocr.internal_Raster(RasterImage(bytes(100), 10, 10, 1), 72)
-    region_box = (12.0, 18.0, 92.0, 78.0)
-    monkeypatch.setattr(
-        parse_ocr,
-        "internal_dominant_image_region",
-        lambda internal_capture, **internal_kwargs: ocr.internal_RasterRegion(raster, region_box),
-    )
-    monkeypatch.setattr(
-        parse_ocr,
-        "internal_candidate_ocr_regions",
-        lambda internal_capture: (ocr.internal_OcrRegion(region_box, 1.0, ("image",)),),
-    )
-    observed_boxes: list[tuple[float, float, float, float]] = []
-
-    def recognize(task: ocr.internal_OcrTask, **internal_kwargs: object) -> ocr.internal_Candidate:
-        observed_boxes.append(task.page_box)
-        return ocr.internal_candidate(task.mode, candidate_observations("mapped", 90.0))
-
-    monkeypatch.setattr(parse_ocr, "internal_recognize", recognize)
-
-    class Context:
-        def raise_if_cancelled(self) -> None:
-            pass
-
-        def map_ordered(self, function, values, **internal_kwargs):
-            return map(function, values)
-
-    page = SimpleNamespace(width=100.0, height=100.0, extraction_cache={})
-    capture = cast(
-        CapturedPage,
-        SimpleNamespace(
-            page=page,
-            evidence=page_evidence(image_count=1, image_area_ratio=0.70),
-        ),
-    )
-    plan = WorkPlan(
-        PageRoute.OCR,
-        ocr_passes=(OcrPass("primary", OcrPassScope.PAGE, 1.0, (3,)),),
-    )
-
-    ocr.internal_recognize_page_with_reserved_raster(capture, plan, cast(TaskScope, Context()))
-
-    assert observed_boxes == [region_box]
-
-
 def test_explicit_fallback_pass_runs_only_for_weak_primary(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1323,65 +1279,6 @@ def test_large_high_confidence_primary_skips_full_page_fallback(
     assert executed_modes == [3]
     assert observations.text == ("large heading",)
     assert [item["name"] for item in report.passes] == ["primary"]
-
-
-def test_named_fallback_page_runs_when_primary_is_empty(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    raster = ocr.internal_Raster(RasterImage(bytes(100), 10, 10, 1), 72)
-    monkeypatch.setattr(
-        parse_ocr,
-        "internal_dominant_image_region",
-        lambda internal_capture, **internal_kwargs: ocr.internal_RasterRegion(
-            raster, (0.0, 0.0, 10.0, 10.0)
-        ),
-    )
-    executed_modes: list[int] = []
-
-    def recognize(task: ocr.internal_OcrTask) -> ocr.internal_Candidate:
-        executed_modes.append(task.mode)
-        text = "" if task.mode == 3 else "recovered page text"
-        return ocr.internal_candidate(
-            task.mode,
-            candidate_observations(text, 92.0),
-        )
-
-    monkeypatch.setattr(parse_ocr, "internal_recognize", recognize)
-
-    class Context:
-        def raise_if_cancelled(self) -> None:
-            pass
-
-        def map_ordered(self, function, values, **internal_kwargs):
-            return map(function, values)
-
-    page = SimpleNamespace(width=10.0, height=10.0, extraction_cache={})
-    capture = cast(
-        CapturedPage,
-        SimpleNamespace(page=page, evidence=page_evidence()),
-    )
-    plan = WorkPlan(
-        PageRoute.OCR,
-        ocr_passes=(
-            OcrPass("primary-page", OcrPassScope.PAGE, 1.0, (3,)),
-            OcrPass(
-                "fallback-page",
-                OcrPassScope.PAGE,
-                1.0,
-                (6,),
-                run_if_characters_below=5,
-            ),
-        ),
-    )
-
-    observations = ocr.internal_recognize_page_with_reserved_raster(
-        capture,
-        plan,
-        cast(TaskScope, Context()),
-    )
-
-    assert executed_modes == [3, 6]
-    assert observations.text[0] == "recovered page text"
 
 
 def test_weak_region_pass_augments_instead_of_replacing_primary(

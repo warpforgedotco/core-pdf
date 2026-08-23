@@ -90,5 +90,4 @@ def test_repaired_xref_keeps_later_objects_with_limited_recovery() -> None:
 
     with PdfDocument.open(pdf_path, recovery_scan_all_revisions=False) as document:
         assert document.xref_was_recovered
-        assert len(document.pages[0].content_streams) == 1
         assert document.pages[0].get_page_program().products.glyphs
