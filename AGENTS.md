@@ -11,7 +11,7 @@ This is a Python 3.13+ PDF parsing engine using the `src` layout. Production cod
 
 Tests live under `tests/`: `tests/src` mirrors the package structure, while broader pipeline tests (`test_parse_*.py`, `test_rendering.py`, …) sit at the top level. Corpus fixtures are in `tests/fixtures`. `docs/` holds `architecture.md`, `api.md`, `roadmap.md`, and licensing material; maintenance scripts are in `scripts/`.
 
-Start with `docs/architecture.md` — it describes the pipeline and, importantly, inventories the deliberate performance optimizations that must not be "simplified".
+Start with `docs/architecture.md` — it describes the pipeline and how the source tree is organized.
 
 ## Build, Test, and Development Commands
 
@@ -69,7 +69,7 @@ uv run --group benchmark pytest --benchmark-only -m benchmark_high_impact \
 
 The `benchmark_high_impact` tier is the routine pull-request suite. Run the complete benchmark
 inventory explicitly with `uv run --group benchmark pytest --benchmark-only`; CI also runs it
-weekly, with the real-PDF corpus split across shards.
+weekly.
 
 Timings on the heavy page-program and OCR benchmarks are noisy — several vary by more than 5% between runs of identical code — so treat a single run as weak evidence and rely on the invariants those benchmarks assert. See `docs/architecture.md` for details.
 

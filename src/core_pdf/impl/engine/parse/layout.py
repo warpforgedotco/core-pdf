@@ -32,6 +32,11 @@ from core_pdf.impl.engine.structured import (
 )
 from core_pdf.impl.text import collapse_ws
 
+# ``ObservationBatch.source`` is a ``uint8`` column, so the OCR test is a vectorized
+# comparison against a preconverted scalar rather than a per-observation Python loop.
+internal_OCR_SOURCE = numpy.uint8(ObservationSource.OCR)
+internal_NATIVE_SOURCE = int(ObservationSource.NATIVE)
+
 internal_NATIVE_DOTTED_LEADER_RE = re.compile(r"\.{2,}")
 internal_NATIVE_DASH_RULE_RE = re.compile(r"(?:\s*-\s*){2,}")
 
@@ -138,8 +143,21 @@ def internal_line_group_indexes(observations: ObservationBatch) -> internal_Line
     return internal_LineGroupPlan(indexes, starts, stops)
 
 
-def internal_group_text(observations: ObservationBatch, indexes: numpy.ndarray) -> str:
-    if any(int(observations.source[index]) == int(ObservationSource.OCR) for index in indexes):
+def internal_style_enabled(reference: object, name: str) -> bool:
+    value = getattr(reference, name, False)
+    return bool(value() if callable(value) else value)
+
+
+def internal_group_text(
+    observations: ObservationBatch,
+    indexes: numpy.ndarray,
+    *,
+    may_contain_ocr: bool = True,
+) -> str:
+    # A group whose source range collapses to NATIVE cannot hold an OCR observation,
+    # and the caller already has that range from its columnar reduction.  Native pages
+    # therefore reach the reordering test without touching the source column at all.
+    if may_contain_ocr and bool((observations.source[indexes] == internal_OCR_SOURCE).any()):
         rotation = int(observations.rotation[indexes[0]]) % 360
 
         def baseline_position(index: int) -> float:
@@ -268,14 +286,12 @@ def internal_build_lines(observations: ObservationBatch) -> internal_BuiltLines:
         zip(line_groups.starts, line_groups.stops, strict=True)
     ):
         indexes = selected[int(start) : int(stop)]
-        text = internal_group_text(observations, indexes)
+        all_native = (
+            source_minimum[group_index] == source_maximum[group_index] == internal_NATIVE_SOURCE
+        )
+        text = internal_group_text(observations, indexes, may_contain_ocr=not all_native)
         if not text:
             continue
-        all_native = (
-            source_minimum[group_index]
-            == source_maximum[group_index]
-            == int(ObservationSource.NATIVE)
-        )
         if all_native and internal_looks_like_native_artifact(text):
             continue
         if (
@@ -297,20 +313,26 @@ def internal_build_lines(observations: ObservationBatch) -> internal_BuiltLines:
             for reference in (observations.references[index] for index in indexes)
             if reference is not None
         ]
-
-        def style_enabled(reference: object, name: str) -> bool:
-            value = getattr(reference, name, False)
-            return bool(value() if callable(value) else value)
-
-        bold = bool(native_references) and sum(
-            style_enabled(reference, "is_bold") for reference in native_references
-        ) * 2 >= len(native_references)
-        italic = bool(native_references) and sum(
-            style_enabled(reference, "is_italic") for reference in native_references
-        ) * 2 >= len(native_references)
+        # Each reference's bold/italic state was resolved four times below -- twice for
+        # the majority vote and twice when its span is built.  Resolve each once.
+        reference_styles = [
+            (
+                internal_style_enabled(reference, "is_bold"),
+                internal_style_enabled(reference, "is_italic"),
+            )
+            for reference in native_references
+        ]
+        bold = bool(native_references) and sum(style[0] for style in reference_styles) * 2 >= len(
+            native_references
+        )
+        italic = bool(native_references) and sum(style[1] for style in reference_styles) * 2 >= len(
+            native_references
+        )
         span_values: list[TextSpan] = []
         pending_space = False
-        for reference in native_references:
+        for reference, (reference_bold, reference_italic) in zip(
+            native_references, reference_styles, strict=True
+        ):
             reference_text = reference.text.strip()
             if not reference_text:
                 pending_space = True
@@ -326,8 +348,8 @@ def internal_build_lines(observations: ObservationBatch) -> internal_BuiltLines:
             span_values.append(
                 TextSpan(
                     text=prefix + reference_text,
-                    bold=style_enabled(reference, "is_bold"),
-                    italic=style_enabled(reference, "is_italic"),
+                    bold=reference_bold,
+                    italic=reference_italic,
                     mark=internal_color_is_emphasis(getattr(reference, "fill_color", None)),
                 )
             )

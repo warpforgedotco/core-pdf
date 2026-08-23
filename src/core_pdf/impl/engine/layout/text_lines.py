@@ -86,6 +86,10 @@ def reconstruct_layout_line_text(
     is_formula_like_line = formula_like_runs(sorted_runs)
     if angle == 0 and is_formula_like_line:
         sorted_runs = reorder_stacked_formula_numerators(sorted_runs)
+        # Reordering rewrites the run sequence, so the classification is re-derived from
+        # it.  Every other line keeps the value computed above rather than rebuilding the
+        # joined line text a second time.
+        is_formula_like_line = formula_like_runs(sorted_runs)
 
     digit_text_runs = 0
     all_text_runs_upper = True if is_all_caps_text is None else is_all_caps_text
@@ -115,7 +119,6 @@ def reconstruct_layout_line_text(
     is_tracked_glyph_line = is_tracked_glyph_run_line(
         non_space_runs, has_explicit_spaces=has_explicit_spaces
     )
-    is_formula_like_line = formula_like_runs(sorted_runs)
 
     if angle in {90, 270} and len(non_space_runs) >= 8:
         return reconstruct_rotated_table_line(sorted_runs)
@@ -1227,6 +1230,9 @@ def runs_are_right_to_left(runs: list[TextRun]) -> bool:
 
 
 def has_interleaved_horizontal_overlap(runs: list[TextRun]) -> bool:
+    x0_idx = TextRun.X0
+    x1_idx = TextRun.X1
+
     previous: TextRun | None = None
     prev_x0 = 0.0
     prev_x1 = 0.0
@@ -1236,8 +1242,8 @@ def has_interleaved_horizontal_overlap(runs: list[TextRun]) -> bool:
         if not run.has_text:
             continue
         coords = run.coords
-        x0 = coords[TextRun.X0]
-        x1 = coords[TextRun.X1]
+        x0 = coords[x0_idx]
+        x1 = coords[x1_idx]
         space_width = run.space_width
         if previous is not None:
             overlap = (prev_x1 if prev_x1 < x1 else x1) - (prev_x0 if prev_x0 > x0 else x0)
