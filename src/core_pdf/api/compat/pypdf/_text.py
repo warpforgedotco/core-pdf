@@ -139,15 +139,20 @@ class LegacyFont:
     def decode_parts(self, data: bytes) -> tuple[tuple[str, ...], float]:
         glyphs = self.decoder.decode_glyphs(data)
         width = sum(self.internal_glyph_width(glyph) for glyph in glyphs)
+        mapped_every_glyph = False
         if not self.decoder.is_cid_font and self.encoding_table is not None:
             parts = tuple(self.internal_simple_glyph_text(glyph) for glyph in glyphs)
         elif self.cmap is not None:
+            mappings = self.cmap.mappings
             parts = tuple(
-                self.cmap.mappings.get(
+                mappings.get(
                     glyph.code_bytes,
                     self.internal_glyph_text(glyph),
                 )
                 for glyph in glyphs
+            )
+            mapped_every_glyph = bool(glyphs) and all(
+                glyph.code_bytes in mappings for glyph in glyphs
             )
             if not glyphs:
                 parts = tuple(self.cmap.decode(data, preserve_nulls=True))
@@ -156,7 +161,12 @@ class LegacyFont:
             parts = tuple(data.decode(self.encoding_codec, errors=errors))
         else:
             parts = tuple(self.internal_glyph_text(glyph) for glyph in glyphs)
-        if not any(parts):
+        # A ToUnicode CMap may deliberately map codes to no text at all: Arabic
+        # shaping glyphs whose letters are emitted by a different run do exactly
+        # that. Reading the bytes back as latin-1 would then paste raw CIDs into
+        # the page, so only treat an empty result as a failed decode when the
+        # CMap had nothing to say about it.
+        if not any(parts) and not mapped_every_glyph:
             parts = tuple(data.decode("latin-1"))
         return parts, width
 
@@ -491,6 +501,12 @@ class LegacyTextExtractor:
     def internal_legacy_glyph_name(name: str, *, unknown: str | None = None) -> str:
         if name == "negationslash":
             return "⁄"
+        # The engine reads cmex's wide tilde accents as U+02DC, which is the
+        # accent rather than the ASCII punctuation. pypdf reports a plain tilde,
+        # and this facade reports what pypdf reports. Its wide circumflexes
+        # already agree, so only the tildes need saying.
+        if name in {"tildewide", "tildewider", "tildewidest"}:
+            return "~"
         if name == ".notdef":
             return "□"
         if name.startswith("a") and name[1:].isdecimal():
