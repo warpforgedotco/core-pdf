@@ -327,6 +327,60 @@ def test_raster_budget_blocks_until_the_active_lease_is_released() -> None:
     runtime.shutdown()
 
 
+def test_page_workers_waiting_on_ocr_do_not_nest_page_work_holding_raster_leases() -> None:
+    """Regression: a page worker blocked on its OCR groups must not "help" by
+    nesting another page parse on the same thread. Each page parse holds a raster
+    lease across that wait, so with ``workers * lease == budget`` every worker
+    would end up waiting for a lease held only by the waiting workers themselves.
+    """
+    lease = 16
+    workers = 2
+    runtime = ExecutionRuntime()
+    runtime.configure(
+        RuntimeConfig(
+            parent_workers=workers,
+            ocr_workers=workers,
+            raster_budget_bytes=workers * lease,
+        )
+    )
+    stop = threading.Event()
+    nesting = threading.local()
+    nested_page_parses = 0
+    nested_lock = threading.Lock()
+
+    with runtime.task_scope(cancelled=stop.is_set) as context:
+
+        def ocr_group(value: int) -> int:
+            time.sleep(0.005)
+            return value
+
+        def parse_page(value: int) -> list[int]:
+            nonlocal nested_page_parses
+            if getattr(nesting, "depth", 0):
+                with nested_lock:
+                    nested_page_parses += 1
+            nesting.depth = getattr(nesting, "depth", 0) + 1
+            try:
+                with context.reserve_raster(lease):
+                    return list(context.map_ordered(ocr_group, (value,), stage=WorkStage.OCR))
+            finally:
+                nesting.depth -= 1
+
+        try:
+            futures = [
+                context.submit(parse_page, index, stage=WorkStage.PAGE)
+                for index in range(workers * 3)
+            ]
+            assert [future.result(timeout=5) for future in futures] == [
+                [index] for index in range(workers * 3)
+            ]
+        finally:
+            stop.set()
+
+    assert nested_page_parses == 0
+    runtime.shutdown()
+
+
 def test_context_tracks_scheduler_metrics_and_worker_state() -> None:
     runtime = ExecutionRuntime()
     runtime.configure(RuntimeConfig(parent_workers=2))

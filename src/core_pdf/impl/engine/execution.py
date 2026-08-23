@@ -500,7 +500,18 @@ class ExecutionRuntime:
         self,
         *,
         helping: bool,
+        stage: WorkStage | None = None,
     ) -> tuple[internal_QueuedWork, bool] | None:
+        """Select one queued task.
+
+        A helping worker is a pool thread blocked on futures of ``stage``. It may
+        only run work of that stage: running anything else nests an unrelated
+        task on a thread that may still hold that task's exclusive resources (a
+        page worker waiting on its OCR groups holds a raster lease; nesting a
+        second page parse on it would wait for a lease that only the waiting
+        workers hold). Work of the helper's own stage bypasses the stage limit
+        because the helper already occupies one of that stage's slots.
+        """
         current_stage = self.current_stage if helping else None
         remaining_contexts = len(self.internal_round_robin)
         while remaining_contexts:
@@ -515,6 +526,9 @@ class ExecutionRuntime:
             for internal_position in range(len(queue)):
                 work = queue.popleft()
                 if work.future.cancelled():
+                    continue
+                if helping and work.stage is not stage:
+                    queue.append(work)
                     continue
                 same_stage_help = helping and current_stage is work.stage
                 if same_stage_help or (
@@ -535,10 +549,13 @@ class ExecutionRuntime:
             remaining_contexts -= 1
         return None
 
-    def internal_take_pending_for_help(self) -> tuple[internal_QueuedWork, bool] | None:
-        """Take one fair queued task for cooperative execution by a waiting worker."""
+    def internal_take_pending_for_help(
+        self,
+        stage: WorkStage,
+    ) -> tuple[internal_QueuedWork, bool] | None:
+        """Take one fair queued task of ``stage`` for cooperative execution by a waiting worker."""
         with self.internal_lock:
-            return self.internal_take_eligible_locked(helping=True)
+            return self.internal_take_eligible_locked(helping=True, stage=stage)
 
     def internal_execute_helped(self, work: internal_QueuedWork, stage_acquired: bool) -> bool:
         if not work.future.set_running_or_notify_cancel():
@@ -563,15 +580,19 @@ class ExecutionRuntime:
                 self.internal_stage_slot_released(work.stage)
         return True
 
-    def internal_help_once(self) -> bool:
-        selected = self.internal_take_pending_for_help()
+    def internal_help_once(self, stage: WorkStage) -> bool:
+        selected = self.internal_take_pending_for_help(stage)
         return selected is not None and self.internal_execute_helped(*selected)
 
-    def internal_result(self, future: Future[internal_ResultT]) -> internal_ResultT:
+    def internal_result(
+        self,
+        future: Future[internal_ResultT],
+        stage: WorkStage,
+    ) -> internal_ResultT:
         if not self.in_worker:
             return future.result()
         while not future.done():
-            if not self.internal_help_once():
+            if not self.internal_help_once(stage):
                 wait((future,), timeout=0.001, return_when=FIRST_COMPLETED)
         return future.result()
 
@@ -639,7 +660,7 @@ class ExecutionRuntime:
                     break
                 futures.append(self.submit(function, value, context=context, stage=stage))
             while futures:
-                yield self.internal_result(futures.popleft())
+                yield self.internal_result(futures.popleft(), stage)
                 try:
                     value = next(iterator)
                 except StopIteration:
@@ -671,7 +692,7 @@ class ExecutionRuntime:
             while pending:
                 done = {future for future in pending if future.done()}
                 while not done:
-                    if self.in_worker and self.internal_help_once():
+                    if self.in_worker and self.internal_help_once(stage):
                         done = {future for future in pending if future.done()}
                         continue
                     done, internal_not_done = wait(
@@ -681,7 +702,7 @@ class ExecutionRuntime:
                     )
                 future = next(iter(done))
                 index = pending.pop(future)
-                yield CompletedResult(index, self.internal_result(future))
+                yield CompletedResult(index, self.internal_result(future, stage))
                 try:
                     value = next(iterator)
                 except StopIteration:
