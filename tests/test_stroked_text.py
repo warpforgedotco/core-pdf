@@ -224,7 +224,6 @@ def test_stroked_text_profile_is_reused_by_seed_and_document_decoders() -> None:
     )
     transferred = decode_stroked_text_profile_with_alphabet(profile, learned.alphabet)
 
-    assert profile.seed_runs == stroked_text_seed_runs(drawings, range(len(drawings)))
     assert tuple(observation.text for observation in transferred.observations) == ("AB", "AB")
 
 

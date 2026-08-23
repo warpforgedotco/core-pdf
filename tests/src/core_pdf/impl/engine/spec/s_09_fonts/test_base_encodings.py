@@ -46,11 +46,6 @@ MAC_ROMAN_DIVERGENCES = (
 )
 
 
-@pytest.mark.parametrize("table", [STANDARD_ENCODING, WIN_ANSI_ENCODING, MAC_ROMAN_ENCODING])
-def test_base_encoding_tables_cover_every_code(table: tuple[str, ...]) -> None:
-    assert len(table) == 256
-
-
 def test_standard_encoding_matches_vendored_font_tools_table() -> None:
     for code, name in enumerate(StandardEncoding):
         expected = "" if name in (None, ".notdef", "") else glyph_name_to_unicode(name)

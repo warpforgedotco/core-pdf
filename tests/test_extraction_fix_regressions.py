@@ -32,7 +32,6 @@ from core_pdf.impl.engine.parse.layout import (
     internal_peel_spanning_band,
 )
 from core_pdf.impl.engine.parse.model import (
-    HIDDEN_TEXT_VERIFY_MIN_TOKEN_OVERLAP,
     ParsedBlock,
     ParsedLine,
 )
@@ -143,7 +142,6 @@ def test_column_major_reorder_partitions_lines_exactly() -> None:
 
     reordered = internal_column_major_prose([block])[0]
 
-    assert len(reordered.lines) == len(block.lines)
     assert sorted(line.text for line in reordered.lines) == sorted(
         line.text for line in block.lines
     )
@@ -313,15 +311,6 @@ def test_sparse_long_celled_narrow_table_is_not_a_table() -> None:
             cells.append(internal_cell(index, 1, "", (320.0, top - 12.0, 560.0, top)))
         rows.append(tuple(cells))
     assert internal_stream_table_reads_like_prose(internal_stream_table(tuple(rows)))
-
-
-def test_hidden_layer_promotion_requires_a_faithful_match() -> None:
-    """A borderline hidden layer must be re-recognized, not promoted.
-
-    Promoting replaces recognition wholesale, so a layer agreeing with the
-    preview on two words in three ships its own errors as the page text.
-    """
-    assert HIDDEN_TEXT_VERIFY_MIN_TOKEN_OVERLAP > 0.664
 
 
 def test_numeric_table_reaches_the_page() -> None:

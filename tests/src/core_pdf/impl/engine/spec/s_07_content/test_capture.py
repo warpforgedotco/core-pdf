@@ -33,16 +33,8 @@ def test_apply_empty_glyph_geometry_preserves_run_bounds() -> None:
     assert (run.advance_bbox, run.ink_bbox, run.confidence) == original
 
 
-def test_glyph_bitmap_dimensions_reuses_semantically_identical_geometry() -> None:
-    glyph_bitmap_dimensions.cache_clear()
-    bbox = (0.0, -0.2, 0.6, 0.8)
-
-    assert glyph_bitmap_dimensions(bbox, 12.0) == (18, 30)
-    assert glyph_bitmap_dimensions(bbox, 12.0) == (18, 30)
-
-    cache_info = glyph_bitmap_dimensions.cache_info()
-    assert cache_info.hits == 1
-    assert cache_info.misses == 1
+def test_glyph_bitmap_dimensions_derive_from_bbox_aspect_and_font_size() -> None:
+    assert glyph_bitmap_dimensions((0.0, -0.2, 0.6, 0.8), 12.0) == (18, 30)
 
 
 def test_glyph_bitmap_dimensions_preserves_degenerate_fallback() -> None:

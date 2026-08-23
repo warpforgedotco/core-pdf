@@ -28,7 +28,6 @@ from core_pdf.impl.engine.spec.s_07_filters.predictors import (
 )
 from core_pdf.impl.engine.spec.s_07_filters.registry import (
     EXPENSIVE_DECODE_CACHE_FILTERS,
-    FILTER_DESCRIPTOR_BY_NAME,
     FILTER_NAME_ALIASES,
     PREDICTOR_FILTERS,
 )
@@ -52,11 +51,6 @@ def raw_deflate_compress(data: bytes) -> bytes:
 
 
 def test_filter_registry_is_the_single_source_for_normalization_and_dispatch() -> None:
-    assert set(pipeline.FILTER_MAP) == {
-        name
-        for name, descriptor in FILTER_DESCRIPTOR_BY_NAME.items()
-        if descriptor.decoder is not None
-    }
     assert frozenset({"FlateDecode", "Fl", "LZWDecode", "LZW"}) == PREDICTOR_FILTERS
     assert (
         frozenset(

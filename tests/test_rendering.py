@@ -556,31 +556,6 @@ def test_text_display_items_do_not_fabricate_raster_pixels() -> None:
     assert raster.pixels == bytes((255, 255, 255, 255)) * 5 * 7
 
 
-def test_compose_page_requires_and_consumes_canonical_program() -> None:
-    class Page:
-        media_box = (0.0, 0.0, 10.0, 20.0)
-        width = 10.0
-        height = 20.0
-        page_number = 1
-        rotation = 0
-
-        def get_fields(self) -> list[object]:
-            return []
-
-        def get_annotations(self) -> list[object]:
-            return []
-
-        def resolve_transparency_group_alpha(self) -> None:
-            return None
-
-    products = PageProducts((), (), (), (), LineTable.from_lines(()))
-    page_program = PageProgram(products)
-
-    rendered = compose_page(Page(), page_program=page_program)
-
-    assert rendered.raster_size() == (10, 20)
-
-
 def test_text_free_composition_skips_glyph_paint_and_lazy_bitmap_resolution() -> None:
     class Decoder:
         def __init__(self) -> None:

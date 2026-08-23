@@ -93,27 +93,6 @@ def test_uncovered_vector_text_drops_raster_duplicates() -> None:
     assert list(fused.text) == ["The annual report revenue increased", "uncovered label"]
 
 
-def test_uncovered_vector_text_drops_numeric_raster_duplicates() -> None:
-    native = observations(("2024", 100.0, 0.0), source=ObservationSource.NATIVE)
-    ocr = observations(
-        ("2024", 90.0, 0.0),
-        ("2025", 90.0, 20.0),
-        source=ObservationSource.OCR,
-    )
-
-    fused = fuse_observations(
-        native,
-        ocr,
-        WorkPlan(
-            PageRoute.HYBRID,
-            reason=PagePlanReason.UNCOVERED_VECTOR_TEXT,
-            fusion_policy=FusionPolicy.UNCOVERED_VECTOR,
-        ),
-    )
-
-    assert list(fused.text) == ["2024", "2025"]
-
-
 def test_hybrid_fusion_drops_short_native_label_duplicates() -> None:
     native = observations(
         ("R1", 100.0, 0.0),

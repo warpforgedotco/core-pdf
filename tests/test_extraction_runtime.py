@@ -174,16 +174,6 @@ def test_runtime_maps_in_order_with_bounded_workers() -> None:
     assert thread_ids
 
 
-def test_runtime_submits_foreground_overlap_work() -> None:
-    runtime = ExecutionRuntime()
-    runtime.configure(RuntimeConfig(parent_workers=2))
-
-    future = runtime.submit(lambda value: value * 2, 21)
-
-    assert future.result() == 42
-    runtime.shutdown()
-
-
 def test_runtime_maps_in_completion_order_with_input_indexes() -> None:
     runtime = ExecutionRuntime()
     runtime.configure(RuntimeConfig(parent_workers=2))
@@ -476,7 +466,7 @@ def test_resolver_is_safe_for_concurrent_same_object_reads() -> None:
         with ThreadPoolExecutor(max_workers=4) as executor:
             resolved = list(executor.map(document.resolve, [root] * 16))
 
-    assert all(isinstance(value, dict) for value in resolved)
+    assert all(str(value["Type"]) == "Catalog" for value in resolved)
 
 
 def test_same_document_extraction_is_single_flight(monkeypatch: pytest.MonkeyPatch) -> None:

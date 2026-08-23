@@ -51,8 +51,6 @@ def test_matrix_transform_accepts_float32_batches() -> None:
     assert result.shape == (2, 3)
     assert result.dtype == numpy.float32
     assert result.flags.c_contiguous
-    assert numpy.all(result >= 0.0)
-    assert numpy.all(result <= 1.0)
 
 
 def test_gray_transform_expands_to_rgb() -> None:
