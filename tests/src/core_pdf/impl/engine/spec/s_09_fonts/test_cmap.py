@@ -71,7 +71,10 @@ def test_numeric_decode_falls_back_for_explicit_cmap_mappings() -> None:
 def test_tounicode_usecmap_inherits_and_allows_local_override() -> None:
     parent = b"""
         1 begincodespacerange <00> <ff> endcodespacerange
-        1 beginbfchar <41> <0041> endbfchar
+        2 beginbfchar
+        <41> <0041>
+        <43> <0043>
+        endbfchar
     """
     child = b"""
         /Parent usecmap
@@ -81,7 +84,7 @@ def test_tounicode_usecmap_inherits_and_allows_local_override() -> None:
 
     cmap = ToUnicodeCMap(child, usecmap_resolver=lambda name: parent if name == "Parent" else None)
 
-    assert cmap.decode(b"AB") == "XB"
+    assert cmap.decode(b"ABC") == "XBC"
 
 
 def test_tounicode_retains_hex_prefix_before_corrupt_nested_delimiter() -> None:

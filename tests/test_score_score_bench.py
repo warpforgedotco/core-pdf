@@ -23,7 +23,7 @@ tokenize = score_bench["tokenize"]
 
 
 def test_tokenize_normalizes_compatible_unicode_forms() -> None:
-    assert tokenize("–12V in³ ‘quoted’") == ["-", "12v", "in3", "'", "quoted", "'"]
+    assert tokenize("\u201312V in³ \u2018quoted\u2019") == ["-", "12v", "in3", "'", "quoted", "'"]
 
 
 def test_ordered_errors_detect_reordered_text_hidden_by_cct() -> None:

@@ -481,7 +481,9 @@ def test_resolver_is_safe_for_concurrent_same_object_reads() -> None:
         with ThreadPoolExecutor(max_workers=4) as executor:
             resolved = list(executor.map(document.resolve, [root] * 16))
 
-    assert all(isinstance(value, dict) and str(value["Type"]) == "Catalog" for value in resolved)
+    for value in resolved:
+        assert isinstance(value, dict)
+        assert (PdfName.of("Type"), PdfName.of("Catalog")) in value.items()
 
 
 def test_same_document_extraction_is_single_flight(monkeypatch: pytest.MonkeyPatch) -> None:
