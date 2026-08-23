@@ -79,16 +79,26 @@ def test_capture_discards_duplicate_nested_text_layer() -> None:
     text = " ".join(f"token{index}" for index in range(30))
     page_run = run(text)
     nested_run = run(text, depth=1)
+    distinct_nested_run = run(" ".join(f"other{index}" for index in range(30)), depth=2)
 
-    assert internal_extractable_runs(cast(Any, (page_run, nested_run))) == (page_run,)
+    assert internal_extractable_runs(cast(Any, (page_run, nested_run, distinct_nested_run))) == (
+        page_run,
+        distinct_nested_run,
+    )
 
 
 def test_capture_discards_duplicate_alternate_clip_layer() -> None:
     text = " ".join(f"token{index}" for index in range(30))
     page_run = run(text, clip=(0.0, 0.0, 100.0, 100.0))
     alternate_run = run(text, clip=(10.0, 10.0, 90.0, 90.0))
+    distinct_clipped_run = run(
+        " ".join(f"other{index}" for index in range(30)),
+        clip=(20.0, 20.0, 80.0, 80.0),
+    )
 
-    assert internal_extractable_runs(cast(Any, (page_run, alternate_run))) == (page_run,)
+    assert internal_extractable_runs(
+        cast(Any, (page_run, alternate_run, distinct_clipped_run))
+    ) == (page_run, distinct_clipped_run)
 
 
 def test_structure_actual_text_replaces_mcid_text_before_routing() -> None:

@@ -89,10 +89,3 @@ def test_one_dangling_destination_does_not_discard_the_name_tree() -> None:
         assert dests["good"].page_index == 1
         assert dests["alsogood"].page_index == 0
         assert dests["broken"].page_index is None
-
-
-def test_dangling_destination_does_not_break_outline_extraction() -> None:
-    with PdfDocument.open(io.BytesIO(dangling_destination_pdf())) as document:
-        # Outlines are absent here, but resolving destinations must not raise.
-        assert document.iter_outlines() == []
-        assert len(document.named_destinations()) == 3

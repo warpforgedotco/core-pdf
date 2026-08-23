@@ -57,7 +57,10 @@ def test_split_grid_component_separates_vertical_table_regions() -> None:
     regions = internal_split_grid_component(horizontal, vertical)
 
     assert len(regions) == 2
-    assert [len(region[0]) for region in regions] == [3, 3]
+    assert {
+        tuple(sorted(float(line[2]) for line in region_horizontal))
+        for region_horizontal, ignored_vertical in regions
+    } == {(30.0, 40.0, 50.0), (80.0, 90.0, 100.0)}
 
 
 def test_merge_grid_cells_infers_horizontal_span_from_missing_rule() -> None:
@@ -486,7 +489,7 @@ def test_stream_tables_prefer_horizontal_observations_over_rotated_noise() -> No
         0,
     )
 
-    assert tables
+    assert len(tables) == 1
     assert [[cell.text for cell in row] for row in tables[0].rows] == [
         ["label-0", "1"],
         ["label-1", "2"],

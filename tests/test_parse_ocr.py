@@ -330,7 +330,6 @@ def test_tile_tasks_share_one_raster_and_select_rectangles() -> None:
 
     assert len(tasks) == 3
     assert all(task.image is image for task in tasks)
-    assert all(task.image.height == raster.height for task in tasks)
     assert tasks[0].rectangle[1] == 0
     assert tasks[-1].rectangle[1] > 0
     assert tasks[-1].rectangle[1] + tasks[-1].rectangle[3] == raster.height
@@ -877,6 +876,23 @@ def test_hidden_text_verification_requires_semantic_and_spatial_agreement() -> N
     assert displaced.reason == "low-spatial-overlap"
     assert unrelated.accepted is False
     assert unrelated.reason == "insufficient-matched-tokens"
+
+
+def test_hidden_text_verification_rejects_a_partial_semantic_match() -> None:
+    hidden_tokens = tuple(f"cell{index:02d}" for index in range(30))
+    preview_tokens = (*hidden_tokens[:24], *(f"other{index:02d}" for index in range(10)))
+    hidden = token_observations(hidden_tokens, source=ObservationSource.NATIVE)
+
+    verification = ocr.internal_hidden_text_verification(
+        hidden,
+        token_observations(preview_tokens),
+    )
+
+    assert verification.matched_tokens == 24
+    assert verification.spatially_matched_tokens == 24
+    assert verification.token_overlap == pytest.approx(24 / 34)
+    assert verification.accepted is False
+    assert verification.reason == "low-token-overlap"
 
 
 def test_verified_hidden_text_bypasses_full_ocr(

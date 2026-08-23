@@ -2,7 +2,7 @@ from core_pdf.impl.engine.layout.geometry_quality import (
     text_run_geometry_issues,
 )
 from core_pdf.impl.engine.layout.glyphs import GlyphCluster
-from core_pdf.impl.engine.layout.models import TextRun, TrackedTextRun
+from core_pdf.impl.engine.layout.models import TextRun
 
 
 def text_run() -> TextRun:
@@ -61,60 +61,15 @@ def test_glyph_clusters_are_validated_against_canonical_advance_geometry() -> No
 
     issues = text_run_geometry_issues(run)
 
-    assert "glyph_clusters_outside_run_bbox" not in {issue.code for issue in issues}
+    assert issues == ()
 
 
-def test_untracked_text_run_does_not_pay_revision_bookkeeping() -> None:
+def test_recycled_text_run_does_not_reuse_diagnostics_from_its_previous_life() -> None:
     run = text_run()
+    run.confidence = 0.2
+    assert {issue.code for issue in text_run_geometry_issues(run)} == {"low_confidence_text_run"}
 
-    assert type(run) is TextRun
-    run.confidence = 0.5
-    run.visible = False
-    assert run.internal_revision == 0
-
-
-def test_storing_a_memo_promotes_the_run_and_later_writes_bump_the_revision() -> None:
-    run = text_run()
-    assert type(run) is TextRun
-
-    text_run_geometry_issues(run)
-
-    assert type(run) is TrackedTextRun
-    assert isinstance(run, TextRun)
-
-    before = run.internal_revision
-    run.confidence = 0.25
-    assert run.internal_revision == before + 1
-
-
-def test_recycling_a_promoted_run_demotes_it_back_to_plain_textrun() -> None:
-    run = text_run()
-    text_run_geometry_issues(run)
-    assert type(run) is TrackedTextRun
-
-    recycled = recycle(run)
+    recycled = recycle(run, text="B", x1=10.0)
 
     assert recycled is run
-    assert type(recycled) is TextRun
-    assert recycled.internal_geometry_issues_cache is None
-
-    revision = recycled.internal_revision
-    recycled.confidence = 0.75
-    assert recycled.internal_revision == revision
-
-
-def test_recycling_invalidates_memo_keys_captured_in_a_previous_life() -> None:
-    run = text_run()
-    stale_key = (run.internal_revision, tuple(run.coords))
-
-    recycled = recycle(run, text="A", x1=10.0)
-    recycled.coords[TextRun.X0] = 0.0
-    recycled.coords[TextRun.Y0] = 0.0
-    recycled.coords[TextRun.Y1] = 10.0
-    recycled.coords[TextRun.TX] = 0.0
-    recycled.coords[TextRun.TY] = 0.0
-    recycled.coords[TextRun.FONT_SIZE] = 10.0
-    recycled.coords[TextRun.SPACE_WIDTH] = 4.0
-
-    assert tuple(recycled.coords) == stale_key[1]
-    assert (recycled.internal_revision, tuple(recycled.coords)) != stale_key
+    assert text_run_geometry_issues(recycled) == ()

@@ -39,8 +39,6 @@ def test_lazy_pages_are_read_only_and_realize_only_requested_items() -> None:
     pages = LazyPageList[FakePage](FakeDocument())
 
     assert len(pages) == 3
-    assert pages
-    assert pages != []
     assert not hasattr(pages, "append")
     assert FakePage.created == 0
 

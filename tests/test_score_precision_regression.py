@@ -76,9 +76,7 @@ def test_tokenize_treats_orphan_symbol_as_own_token() -> None:
     # block (e.g. Braille "⠭") in the prediction is counted as an extra
     # token against precision.  Dropping such blocks (see
     # ``internal_corrupt_native_block``) is therefore what protects precision.
-    tokens = tokenize("Amendment 110\n\u282d\n")
-    assert "\u282d" in tokens
-    assert tokens.count("amendment") == 1
+    assert tokenize("Amendment 110\n\u282d\n") == ["amendment", "110", "\u282d"]
 
 
 @pytest.mark.skipif(

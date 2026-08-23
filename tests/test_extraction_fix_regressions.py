@@ -171,7 +171,7 @@ def test_bottom_spanner_peel_exposes_hidden_gutter() -> None:
     peeled = internal_peel_spanning_band(indexes, boxes, 12.0, from_bottom=True)
     assert peeled is not None
     band, remainder = peeled
-    assert len(band) == 1
+    assert band.tolist() == [len(boxes) - 1]
     assert len(remainder) == len(boxes) - 1
 
 
@@ -240,8 +240,14 @@ def test_wrapped_cells_group_into_logical_rows() -> None:
     the content is entirely present and entirely in the wrong place.
     """
     merged = internal_merge_wrapped_cell_rows(internal_wrapped_cell_table())
-    assert len(merged.rows) == 4
-    assert "long wrapped description" in merged.rows[0][1].text
+    assert [row[0].text for row in merged.rows] == [
+        "label alpha label beta label gamma",
+        "label beta label gamma label delta",
+        "label gamma label delta label epsilon",
+        "label delta label epsilon label zeta",
+    ]
+    assert all(len(row) == 5 for row in merged.rows)
+    assert all(row[1].text.startswith("long wrapped description") for row in merged.rows)
 
 
 def test_numeric_table_rows_are_never_regrouped() -> None:

@@ -1,3 +1,4 @@
+import json
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from random import Random
@@ -22,7 +23,7 @@ tokenize = score_bench["tokenize"]
 
 
 def test_tokenize_normalizes_compatible_unicode_forms() -> None:
-    assert tokenize("–12V in³ ‘quoted’") == tokenize("-12V in3 'quoted'")
+    assert tokenize("–12V in³ ‘quoted’") == ["-", "12v", "in3", "'", "quoted", "'"]
 
 
 def test_ordered_errors_detect_reordered_text_hidden_by_cct() -> None:
@@ -170,10 +171,15 @@ def test_metric_report_distinguishes_text_and_table_timings() -> None:
     assert values["WER"] == [0.0]
 
 
-def test_bootstrap_intervals_are_deterministic_and_version_records() -> None:
+def test_bootstrap_intervals_are_deterministic_and_data_dependent() -> None:
     interval = score_bench["bootstrap_interval"]([0.0, 1.0, 1.0], samples=100)
 
+    assert interval == (0.0, 1.0)
     assert interval == score_bench["bootstrap_interval"]([0.0, 1.0, 1.0], samples=100)
+    assert score_bench["bootstrap_interval"]([0.25], samples=100) == (0.25, 0.25)
+
+
+def test_json_scores_record_the_scoring_schema_version(tmp_path: Path) -> None:
     score = score_bench["CaseScore"](
         stem="versioned.pdf",
         status="ok",
@@ -186,7 +192,12 @@ def test_bootstrap_intervals_are_deterministic_and_version_records() -> None:
         matched_tokens=1,
         elapsed_seconds=0.0,
     )
-    assert score.scoring_schema_version == "2"
+    output_path = tmp_path / "score.json"
+    benchmark = score_bench["ScoreBench"](json_output=output_path)
+
+    benchmark.internal_write_json([score_bench["NumberedCaseScore"](1, score)])
+
+    assert json.loads(output_path.read_text(encoding="utf-8"))[0]["scoring_schema_version"] == "2"
 
 
 def test_collect_document_extraction_analysis_is_opt_in(
@@ -290,7 +301,7 @@ def test_score_hints_formats_missing_and_extra_tokens() -> None:
     assert score_bench["score_hints"](score) == "missing=alpha:3,beta:2,gamma:1 extra=noise:4"
 
 
-def test_result_review_fields_survive_long_stems(capsys: pytest.CaptureFixture[str]) -> None:
+def test_result_review_fields_survive_long_stems() -> None:
     score = score_bench["CaseScore"](
         stem="very-long-file-name-that-would-otherwise-make-the-table-hard-to-review.pdf",
         status="ok",

@@ -53,19 +53,22 @@ def test_image_filter_can_return_array_backed_jpeg_samples() -> None:
     assert decoded.source == "jpeg"
     assert decoded.array.shape == (1, 2, 3)
     assert decoded.array.dtype == numpy.uint8
+    numpy.testing.assert_allclose(decoded.array, source, atol=2)
 
 
-def test_imagecodecs_decoders_reuse_preallocated_output() -> None:
-    source = numpy.zeros((2, 3), dtype=numpy.uint8)
+def test_imagecodecs_decoders_reuse_preallocated_output_without_losing_samples() -> None:
+    source = numpy.arange(6, dtype=numpy.uint8).reshape(2, 3) * 20
     jpeg = bytes(imagecodecs.jpeg_encode(source))
     jpeg_output = numpy.empty_like(source)
     jpeg_decoded = decode_jpeg_image(memoryview(jpeg), out=jpeg_output)
     assert jpeg_decoded is jpeg_output
+    numpy.testing.assert_allclose(jpeg_decoded, source, atol=2)
 
     jpx = bytes(imagecodecs.jpeg2k_encode(source))
     jpx_output = numpy.empty_like(source)
     jpx_decoded = decode_jpx_image(memoryview(jpx), out=jpx_output)
     assert jpx_decoded is jpx_output
+    numpy.testing.assert_array_equal(jpx_decoded, source)
 
 
 def test_jpx_thread_count_is_bounded_and_configurable(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -109,10 +112,11 @@ def test_image_filter_can_return_array_backed_cmyk_jpeg_samples() -> None:
     assert decoded is not None
     assert decoded.source == "jpeg"
     assert decoded.array.shape == (1, 1, 4)
+    numpy.testing.assert_allclose(decoded.array, source, atol=2)
 
 
 def test_image_filter_can_return_array_backed_jpx_samples() -> None:
-    source = numpy.zeros((1, 2, 3), dtype=numpy.uint8)
+    source = numpy.array([[[10, 20, 30], [40, 50, 60]]], dtype=numpy.uint8)
     encoded = bytes(imagecodecs.jpeg2k_encode(source))
 
     decoded = decode_stream_image_data(
@@ -123,6 +127,7 @@ def test_image_filter_can_return_array_backed_jpx_samples() -> None:
     assert decoded is not None
     assert decoded.source == "jpx"
     assert decoded.array.shape == (1, 2, 3)
+    numpy.testing.assert_array_equal(decoded.array, source)
 
 
 def test_image_filter_can_return_array_backed_ccitt_samples() -> None:

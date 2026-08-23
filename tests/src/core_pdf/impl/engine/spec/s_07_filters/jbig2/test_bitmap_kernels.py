@@ -47,9 +47,9 @@ def test_packed_compositor_accepts_numpy_row_matrix_with_clipping() -> None:
 
     compose_packed_bitmap_data(rows, 8, width, 0, 0, width, height, stride, initial, 0)
 
-    assert all(
-        row[0] == 0xFF
-        for row in numpy.frombuffer(initial, dtype=numpy.uint8).reshape(height, stride)
+    numpy.testing.assert_array_equal(
+        numpy.frombuffer(initial, dtype=numpy.uint8).reshape(height, stride),
+        rows,
     )
 
 

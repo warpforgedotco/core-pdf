@@ -17,9 +17,21 @@ def test_unicode_confidence_scores_authoritative_and_unsupported_glyphs() -> Non
     assert glyph_unicode_confidence("\ue000", "to_unicode") == 0.20
 
 
-def test_identity_cmap_value_remains_an_unknown_identifier() -> None:
-    assert glyph_unicode_semantics("A", "identity") is GlyphUnicodeSemantics.UNKNOWN_IDENTIFIER
-    assert glyph_unicode_semantics("A", "to_unicode") is GlyphUnicodeSemantics.AUTHORITATIVE
+@pytest.mark.parametrize(
+    ("text", "source", "expected"),
+    [
+        ("A", "to_unicode", GlyphUnicodeSemantics.AUTHORITATIVE),
+        ("A", "encoding", GlyphUnicodeSemantics.HEURISTIC),
+        ("A", "identity", GlyphUnicodeSemantics.UNKNOWN_IDENTIFIER),
+        ("\ue000", "to_unicode", GlyphUnicodeSemantics.UNSUPPORTED),
+    ],
+)
+def test_unicode_semantics_distinguish_mapping_evidence(
+    text: str,
+    source: str,
+    expected: GlyphUnicodeSemantics,
+) -> None:
+    assert glyph_unicode_semantics(text, source) is expected
 
 
 def test_vector_outline_counts_as_glyph_paint() -> None:
@@ -33,6 +45,10 @@ def test_vector_outline_counts_as_glyph_paint() -> None:
     )
 
     assert observation.has_paint is True
+
+    observation.paint_glyph = False
+
+    assert observation.has_paint is False
 
 
 @pytest.mark.parametrize("confidence", [None, 0.84])
@@ -62,6 +78,33 @@ def test_single_glyph_cluster_reuses_observation_geometry_and_confidence(
     assert cluster.ink_bbox == observation.ink_bbox
     assert cluster.baseline == observation.baseline
     assert cluster.confidence == confidence
+
+
+def test_multi_glyph_cluster_unions_geometry_and_uses_weakest_confidence() -> None:
+    first = GlyphObservation(
+        "A",
+        (1.0, 2.0, 3.0, 4.0),
+        (0.5, 1.5, 3.5, 4.5),
+        1,
+        baseline=(0.5, 1.5, 3.5, 1.5),
+        confidence=0.9,
+    )
+    second = GlyphObservation(
+        "B",
+        (3.0, 2.0, 5.0, 4.0),
+        (2.5, 1.5, 5.5, 4.5),
+        2,
+        baseline=(2.5, 1.5, 5.5, 1.5),
+        confidence=0.7,
+    )
+
+    cluster = glyph_cluster_from_observations(4, "AB", (first, second))
+
+    assert cluster is not None
+    assert cluster.advance_bbox == (0.5, 1.5, 5.5, 4.5)
+    assert cluster.ink_bbox == (1.0, 2.0, 5.0, 4.0)
+    assert cluster.baseline == first.baseline
+    assert cluster.confidence == 0.7
 
 
 def test_text_run_replacement_drops_clusters_that_describe_old_text() -> None:

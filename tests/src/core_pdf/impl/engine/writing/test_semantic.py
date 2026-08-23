@@ -209,7 +209,14 @@ def test_semantic_writer_rejects_text_outside_standard_encoding() -> None:
 
 
 def test_semantic_writer_accepts_a_font_provider() -> None:
-    document = Document(pages=(Page(page_number=1),))
+    document = Document(
+        pages=(
+            Page(
+                page_number=1,
+                blocks=(Block(1, BlockKind.PARAGRAPH, (TextLine("Provider text"),)),),
+            ),
+        )
+    )
 
     output = serialize_document_to_pdf(
         document,
@@ -217,6 +224,8 @@ def test_semantic_writer_accepts_a_font_provider() -> None:
     )
 
     assert b"/BaseFont /Times-Roman" in output
+    with PdfDocument.open(output) as parsed:
+        assert "Provider text" in parsed.extract().text
 
 
 def test_semantic_writer_supports_standard_pdf_encryption() -> None:

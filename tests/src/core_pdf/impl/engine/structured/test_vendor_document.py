@@ -154,7 +154,11 @@ def test_document_serializes_tables_in_all_views() -> None:
     assert "<table><thead><tr><th>Name</th><th>Value</th></tr></thead>" in document.to_markdown()
     assert "<th>Name</th>" in document.to_html()
     payload = cast(Any, document.to_json_dict())
-    assert payload["pages"][0]["tables"]
+    rows = payload["pages"][0]["tables"][0]["rows"]
+    assert [[cell["text"] for cell in row] for row in rows] == [
+        ["Name", "Value"],
+        ["A", "1"],
+    ]
 
 
 def test_document_serializes_table_spans_without_losing_them_in_markdown() -> None:

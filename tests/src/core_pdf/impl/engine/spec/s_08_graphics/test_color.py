@@ -51,6 +51,11 @@ def test_matrix_transform_accepts_float32_batches() -> None:
     assert result.shape == (2, 3)
     assert result.dtype == numpy.float32
     assert result.flags.c_contiguous
+    numpy.testing.assert_allclose(
+        result,
+        ((0.0, 0.99651, 1.0), (1.0, 0.0, 0.68244)),
+        atol=2e-5,
+    )
 
 
 def test_gray_transform_expands_to_rgb() -> None:
@@ -62,14 +67,24 @@ def test_gray_transform_expands_to_rgb() -> None:
     assert numpy.allclose(result[1], 1.0, atol=2e-3)
 
 
-def test_lut_transform_is_vectorized() -> None:
+def test_lut_transform_interpolates_a_batch() -> None:
     transform = IccTransform(lut_profile())
-    samples = numpy.asarray([[0.0, 0.0, 0.0], [1.0, 1.0, 1.0]], dtype=numpy.float32)
+    samples = numpy.asarray(
+        [[0.0, 0.0, 0.0], [1.0, 1.0, 1.0], [0.25, 0.5, 0.75]],
+        dtype=numpy.float32,
+    )
 
     result = transform.apply(samples)
 
-    assert result.shape == (2, 3)
-    assert numpy.all(numpy.isfinite(result))
+    numpy.testing.assert_allclose(
+        result,
+        (
+            (0.0, 0.0, 0.0),
+            (1.0, 0.98733, 1.0),
+            (1.0, 0.51948, 0.57567),
+        ),
+        atol=2e-5,
+    )
 
 
 @pytest.mark.parametrize(

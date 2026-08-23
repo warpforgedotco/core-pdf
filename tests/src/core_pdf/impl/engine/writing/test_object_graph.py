@@ -2,7 +2,7 @@ import pytest
 
 from core_pdf import PdfDocument
 from core_pdf.impl.engine.writing import PdfObjectGraph
-from core_pdf.impl.primitives import PdfName
+from core_pdf.impl.primitives import PdfName, PdfReference
 
 
 def test_pdf_object_graph_allocates_references_and_freezes() -> None:
@@ -14,9 +14,13 @@ def test_pdf_object_graph_allocates_references_and_freezes() -> None:
             PdfName.of("Count"): 0,
         }
     )
-    graph.add({PdfName.of("Type"): PdfName.of("Catalog"), PdfName.of("Pages"): pages})
+    catalog = graph.add({PdfName.of("Type"): PdfName.of("Catalog"), PdfName.of("Pages"): pages})
 
-    graph.freeze()
+    frozen = graph.freeze()
+
+    assert pages == PdfReference(1)
+    assert catalog == PdfReference(2)
+    assert tuple(frozen) == (1, 2)
 
     with pytest.raises(RuntimeError, match="frozen"):
         graph.add(None)

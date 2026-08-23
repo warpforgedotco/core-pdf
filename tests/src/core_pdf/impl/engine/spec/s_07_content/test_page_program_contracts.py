@@ -5,24 +5,27 @@ from types import SimpleNamespace
 import pytest
 
 from core_pdf import PdfContractError
+from core_pdf.impl.engine.spec.s_07_content.capture import CapturedDrawing, CapturedLine
 from core_pdf.impl.engine.spec.s_07_content.page_program import PageProducts
 
 
-def test_page_program_products_accept_empty_typed_state() -> None:
+def test_page_program_products_filter_inline_image_drawings_and_materialize_lines() -> None:
+    drawing = CapturedDrawing(1, None, None, kind="stroke")
+    legacy_inline_image = CapturedDrawing(2, None, None, kind="inline-image")
     products = PageProducts.from_state(
         SimpleNamespace(
             runs=(),
             glyphs=(),
-            drawings=(),
+            drawings=(drawing, legacy_inline_image),
             inline_images=(),
-            lines=(),
+            lines=(CapturedLine(1.0, 2.0, 3.0, 4.0, 0.5),),
         )
     )
 
-    assert products.runs == ()
-    assert products.glyphs == ()
-    assert products.drawings == ()
-    assert products.inline_images == ()
+    assert products.drawings == (drawing,)
+    assert [(line.x0, line.y0, line.x1, line.y1, line.line_width) for line in products.lines] == [
+        (1.0, 2.0, 3.0, 4.0, 0.5)
+    ]
 
 
 @pytest.mark.parametrize(

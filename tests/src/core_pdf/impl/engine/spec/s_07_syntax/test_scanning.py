@@ -9,7 +9,8 @@ from core_pdf.impl.engine.spec.s_07_syntax.scanning import (
     skip_literal_string,
     skip_name,
 )
-from core_pdf.impl.engine.spec.s_07_syntax.tokens import DELIMITERS, WHITESPACE
+
+PDF_SEPARATORS = b"\x00\t\n\x0c\r ()<>[]{}/%"
 
 
 def reference_skip_literal_string(data: bytes) -> int:
@@ -40,7 +41,7 @@ def test_skip_literal_string_matches_reference_exhaustively() -> None:
 
 
 def test_skip_name_uses_canonical_pdf_separators() -> None:
-    for separator in WHITESPACE + DELIMITERS:
+    for separator in PDF_SEPARATORS:
         data = b"/Name" + bytes((separator,)) + b"suffix"
 
         assert skip_name(data, 0, len(data)) == len(b"/Name")

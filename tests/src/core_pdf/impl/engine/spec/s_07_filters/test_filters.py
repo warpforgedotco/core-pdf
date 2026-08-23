@@ -28,7 +28,6 @@ from core_pdf.impl.engine.spec.s_07_filters.predictors import (
 )
 from core_pdf.impl.engine.spec.s_07_filters.registry import (
     EXPENSIVE_DECODE_CACHE_FILTERS,
-    FILTER_NAME_ALIASES,
     PREDICTOR_FILTERS,
 )
 from core_pdf.impl.engine.spec.s_07_security.standard_v4 import PdfStandardSecurityHandlerV4
@@ -50,7 +49,7 @@ def raw_deflate_compress(data: bytes) -> bytes:
     return compressor.compress(data) + compressor.flush()
 
 
-def test_filter_registry_is_the_single_source_for_normalization_and_dispatch() -> None:
+def test_filter_registry_pins_predictor_and_expensive_decode_policy() -> None:
     assert frozenset({"FlateDecode", "Fl", "LZWDecode", "LZW"}) == PREDICTOR_FILTERS
     assert (
         frozenset(
@@ -76,7 +75,6 @@ def test_filter_registry_preserves_flate_compatibility_aliases(alias: str) -> No
     spec = normalize_stream_decode_spec({"Filter": PdfName.of(alias)})
 
     assert spec.filters == ("FlateDecode",)
-    assert FILTER_NAME_ALIASES[alias.lower()] == "FlateDecode"
 
 
 def test_apply_flate_decodes_gzip_wrapped_stream() -> None:

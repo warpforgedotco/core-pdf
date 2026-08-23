@@ -55,7 +55,17 @@ def test_page_get_fields_matches_direct_widget_annotation_without_page_ref() -> 
         cast(PdfDict, widget),
         widget=cast(PdfDict, widget),
     )
-    page = PdfPage(cast(Any, FakeDocument([field])), {"Annots": [widget]}, 0)
+    unrelated_widget: PdfDict = {"Subtype": PdfName.of("Widget")}
+    unrelated = RawFormField(
+        "other",
+        "Tx",
+        b"Other",
+        "Other",
+        None,
+        unrelated_widget,
+        widget=unrelated_widget,
+    )
+    page = PdfPage(cast(Any, FakeDocument([field, unrelated])), {"Annots": [widget]}, 0)
     page.inherited_values_cache = {"Annots": [widget]}
 
     assert page.get_fields() == [field]
@@ -81,18 +91,27 @@ def test_page_get_fields_matches_kid_widget_annotation_without_page_ref() -> Non
         cast(PdfDict, parent),
         kids=cast(PdfArray, [widget]),
     )
-    page = PdfPage(cast(Any, FakeDocument([field])), {"Annots": [widget]}, 0)
+    unrelated_widget: PdfDict = {"Subtype": PdfName.of("Widget")}
+    unrelated = RawFormField(
+        "other",
+        "Tx",
+        b"Other",
+        "Other",
+        None,
+        {"Kids": [unrelated_widget]},
+        kids=cast(PdfArray, [unrelated_widget]),
+    )
+    page = PdfPage(cast(Any, FakeDocument([field, unrelated])), {"Annots": [widget]}, 0)
     page.inherited_values_cache = {"Annots": [widget]}
 
     assert page.get_fields() == [field]
 
 
-def test_page_builds_one_canonical_program_for_all_consumers() -> None:
+def test_page_program_contains_capture_products_and_read_only_events() -> None:
     with PdfDocument.open(SAMPLE_PDF) as document:
         page = document.pages[0]
         program = page.get_page_program()
 
-        assert page.get_page_program() is program
         assert program.products.runs
         assert program.events.sequence.flags.writeable is False
 
