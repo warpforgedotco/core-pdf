@@ -1580,7 +1580,7 @@ def internal_table_from_component(
     )
 
 
-def extract_tables(
+def internal_detect_tables(
     capture: CapturedPage,
     observations: ObservationBatch,
 ) -> tuple[Table, ...]:
@@ -1711,3 +1711,26 @@ def internal_annotate_table_associations(
                 kind="title",
             )
     return replace(table, metadata=metadata) if metadata != table.metadata else table
+
+
+def extract_tables(
+    capture: CapturedPage,
+    observations: ObservationBatch,
+) -> tuple[Table, ...]:
+    """Run the complete table stage and return one annotated table product."""
+    # Dense schematic wiring creates large false ruled tables. Vector decoders
+    # already supply text geometry, and normal layout preserves those labels
+    # without another geometric pass.
+    if capture.evidence.vector_text_trusted or capture.evidence.stroked_vector_text.trusted:
+        return ()
+    tables = internal_detect_tables(capture, observations)
+    chart_table = extract_chart_table(capture, observations)
+    if chart_table is not None:
+        tables = (*tables, chart_table)
+    return tuple(
+        internal_annotate_table_associations(
+            replace(table, order=order) if table.order != order else table,
+            observations,
+        )
+        for order, table in enumerate(tables)
+    )

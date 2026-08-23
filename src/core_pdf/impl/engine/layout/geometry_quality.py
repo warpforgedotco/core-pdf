@@ -15,11 +15,10 @@ from core_pdf.impl.engine.layout.glyphs import (
     glyph_text_has_unsupported_codepoint,
 )
 from core_pdf.impl.engine.layout.models import internal_track_text_run
+from core_pdf.impl.types import Rectangle
 
 if TYPE_CHECKING:
     from core_pdf.impl.engine.layout.models import LayoutLine, TextRun
-
-BBoxTuple = tuple[float, float, float, float]
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,7 +26,7 @@ class LayoutGeometryIssue:
     code: str
     severity: str
     subject: str
-    bbox: BBoxTuple | None = None
+    bbox: Rectangle | None = None
     message: str = ""
     details: tuple[tuple[str, object], ...] = ()
     repairable: bool = False
@@ -157,7 +156,7 @@ def internal_compute_text_run_geometry_issues(run: TextRun) -> tuple[LayoutGeome
             )
         )
 
-    cluster_bboxes: list[BBoxTuple] = []
+    cluster_bboxes: list[Rectangle] = []
     for cluster_index, cluster in enumerate(clusters):
         cluster_bbox = numeric_bbox(cluster.advance_bbox)
         if cluster_bbox is None or not bbox_is_positive(cluster_bbox):
@@ -413,21 +412,21 @@ def with_issue_detail(
     )
 
 
-def numeric_bbox(value: Any) -> BBoxTuple | None:
+def numeric_bbox(value: Any) -> Rectangle | None:
     if not isinstance(value, (list, tuple)) or len(value) != 4:
         return None
     return finite_rect(value, require_positive=False)
 
 
-def bbox_is_positive(bbox: BBoxTuple | None) -> bool:
+def bbox_is_positive(bbox: Rectangle | None) -> bool:
     return bbox is not None and bbox[2] > bbox[0] and bbox[3] > bbox[1]
 
 
-def bbox_width(bbox: BBoxTuple) -> float:
+def bbox_width(bbox: Rectangle) -> float:
     return bbox[2] - bbox[0]
 
 
-def bbox_height(bbox: BBoxTuple) -> float:
+def bbox_height(bbox: Rectangle) -> float:
     return bbox[3] - bbox[1]
 
 

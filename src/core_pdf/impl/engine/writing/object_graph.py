@@ -7,7 +7,7 @@ from collections.abc import Mapping
 from types import MappingProxyType
 
 from core_pdf.impl.engine.writing.document import serialize_pdf_file
-from core_pdf.impl.objects import PdfReference
+from core_pdf.impl.primitives import PdfReference
 
 
 class PdfObjectGraph:

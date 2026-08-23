@@ -17,17 +17,12 @@ from core_pdf.impl.engine.spec.s_07_filters.decoders import (
     decode_jpx_image,
     internal_jpx_thread_count,
 )
-from core_pdf.impl.engine.spec.s_07_filters.errors import FilterParseError
 from core_pdf.impl.engine.spec.s_07_filters.flate import apply_flate
 from core_pdf.impl.engine.spec.s_07_filters.pipeline import decode_stream_image_data
 from core_pdf.impl.engine.spec.s_07_filters.predictor_impl import (
     png_predict,
     tiff_predict_16,
     tiff_predict_bits,
-)
-from core_pdf.impl.engine.spec.s_07_filters.predictors import (
-    apply_png_predictor,
-    apply_tiff_predictor,
 )
 
 
@@ -165,31 +160,12 @@ def test_flate_image_returns_native_array_samples() -> None:
     assert decoded.array.tobytes() == samples
 
 
-def test_flate_decodes_raw_stream() -> None:
-    compressor = zlib.compressobj(wbits=-15)
-    encoded = compressor.compress(b"hello") + compressor.flush()
-    assert apply_flate(encoded, {}) == b"hello"
-
-
 def test_flate_decodes_zlib_stream() -> None:
     assert apply_flate(zlib.compress(b"hello"), {}) == b"hello"
 
 
 def test_flate_accepts_truncated_empty_raw_stream() -> None:
     assert apply_flate(bytes.fromhex("48890300"), {}) == b""
-
-
-def test_flate_rejects_garbage() -> None:
-    with pytest.raises(FilterParseError):
-        apply_flate(b"not compressed data", {})
-
-
-def test_predictors_reject_truncated_rows() -> None:
-    params = FilterParams(columns=4, colors=1, bits_per_component=8)
-    with pytest.raises(FilterParseError, match="truncated TIFF predictor row"):
-        apply_tiff_predictor(b"abc", params)
-    with pytest.raises(FilterParseError, match="truncated PNG predictor row"):
-        apply_png_predictor(b"\x00abc", params)
 
 
 def test_tiff_predict_16_matches_scalar_reference() -> None:

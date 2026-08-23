@@ -84,6 +84,7 @@ norecursedirs = ["tests/fixtures"]
 pythonpath = ["."]
 markers = [
     "benchmark_high_impact: benchmarks run routinely in pull-request performance CI",
+    "compat_differential: compares supported facades against reference libraries",
 ]
 
 [tool.coverage.run]
@@ -94,8 +95,8 @@ parallel = true
 show_missing = true
 skip_covered = true
 # A ratchet, not a target. Set just below the measured figure so coverage cannot
-# silently regress; raise it as gaps close. `rendering.py` is at 73% now that the
-# rasterizer is decomposed, up from 52% when its internals were unreachable.
+# silently regress; raise it as gaps close. The rendering package is at 73% now
+# that the rasterizer is decomposed, up from 52% when its internals were unreachable.
 # Vendored fontTools (src/core_pdf/_vendor) is included in `source` above and no
 # longer omitted, so this ratchet was recalibrated after pruning ~57k lines of
 # unreachable vendored code (confirmed 0% across the full test suite AND a

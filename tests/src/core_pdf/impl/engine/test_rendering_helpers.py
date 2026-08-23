@@ -1,8 +1,8 @@
 """Unit tests for the pure helpers lifted out of ``RenderedPage.rasterize``.
 
 These were closures until the rasterizer decomposition began, which made them
-unreachable from tests and left ``rendering.py`` at roughly half coverage. Now
-that they are module-level, pin their edge cases directly.
+unreachable from tests and left the raster kernels at roughly half coverage.
+Now that they are module-level, pin their edge cases directly.
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ import numpy
 import pytest
 
 from core_pdf.impl.engine.layout.geometry import RectBox
-from core_pdf.impl.engine.rendering import (
+from core_pdf.impl.engine.render.kernels import (
     RASTER_COORDINATE_CACHE_MAX_ENTRIES,
     internal_cached_raster_coordinates,
     internal_clamp01,

@@ -1,15 +1,16 @@
 from __future__ import annotations
 
 from core_pdf.impl.engine.parse import (
+    FusionPolicy,
     ObservationBatch,
     ObservationSource,
     OcrPass,
     OcrPassScope,
+    PagePlanReason,
     PageRoute,
     WorkPlan,
-    fuse_observations,
-    maximum_candidate_coverage,
 )
+from core_pdf.impl.engine.parse.fusion import fuse_observations, maximum_candidate_coverage
 
 
 def observations(
@@ -58,7 +59,11 @@ def test_uncovered_vector_text_keeps_low_confidence_labeled_ocr() -> None:
     fused = fuse_observations(
         native,
         ocr,
-        WorkPlan(PageRoute.HYBRID, reason="uncovered-vector-text"),
+        WorkPlan(
+            PageRoute.HYBRID,
+            reason=PagePlanReason.UNCOVERED_VECTOR_TEXT,
+            fusion_policy=FusionPolicy.UNCOVERED_VECTOR,
+        ),
     )
 
     assert list(fused.text) == ["native", "R1"]
@@ -78,7 +83,11 @@ def test_uncovered_vector_text_drops_raster_duplicates() -> None:
     fused = fuse_observations(
         native,
         ocr,
-        WorkPlan(PageRoute.HYBRID, reason="uncovered-vector-text"),
+        WorkPlan(
+            PageRoute.HYBRID,
+            reason=PagePlanReason.UNCOVERED_VECTOR_TEXT,
+            fusion_policy=FusionPolicy.UNCOVERED_VECTOR,
+        ),
     )
 
     assert list(fused.text) == ["The annual report revenue increased", "uncovered label"]
@@ -95,7 +104,11 @@ def test_uncovered_vector_text_drops_numeric_raster_duplicates() -> None:
     fused = fuse_observations(
         native,
         ocr,
-        WorkPlan(PageRoute.HYBRID, reason="uncovered-vector-text"),
+        WorkPlan(
+            PageRoute.HYBRID,
+            reason=PagePlanReason.UNCOVERED_VECTOR_TEXT,
+            fusion_policy=FusionPolicy.UNCOVERED_VECTOR,
+        ),
     )
 
     assert list(fused.text) == ["2024", "2025"]
@@ -132,7 +145,11 @@ def test_dense_native_uncovered_vector_text_keeps_uncovered_ocr_supplement() -> 
     fused = fuse_observations(
         native,
         ocr,
-        WorkPlan(PageRoute.HYBRID, reason="uncovered-vector-text"),
+        WorkPlan(
+            PageRoute.HYBRID,
+            reason=PagePlanReason.UNCOVERED_VECTOR_TEXT,
+            fusion_policy=FusionPolicy.UNCOVERED_VECTOR,
+        ),
     )
 
     assert list(fused.text) == [*native.text, "new label"]
@@ -151,7 +168,11 @@ def test_sparse_native_augmentation_prefers_dense_ocr() -> None:
     fused = fuse_observations(
         native,
         ocr,
-        WorkPlan(PageRoute.HYBRID, reason="native-text-needs-augmentation"),
+        WorkPlan(
+            PageRoute.HYBRID,
+            reason=PagePlanReason.NATIVE_TEXT_NEEDS_AUGMENTATION,
+            fusion_policy=FusionPolicy.SPARSE_NATIVE,
+        ),
     )
 
     assert list(fused.text) == list(ocr.text)
@@ -173,7 +194,11 @@ def test_noisy_native_text_prefers_better_ocr_candidate() -> None:
     fused = fuse_observations(
         native,
         ocr,
-        WorkPlan(PageRoute.HYBRID, reason="noisy-native-text"),
+        WorkPlan(
+            PageRoute.HYBRID,
+            reason=PagePlanReason.NOISY_NATIVE_TEXT,
+            fusion_policy=FusionPolicy.NOISY_NATIVE,
+        ),
     )
 
     assert list(fused.text) == list(ocr.text)
@@ -193,7 +218,11 @@ def test_noisy_native_text_keeps_native_when_ocr_is_weaker() -> None:
     fused = fuse_observations(
         native,
         ocr,
-        WorkPlan(PageRoute.HYBRID, reason="noisy-native-text"),
+        WorkPlan(
+            PageRoute.HYBRID,
+            reason=PagePlanReason.NOISY_NATIVE_TEXT,
+            fusion_policy=FusionPolicy.NOISY_NATIVE,
+        ),
     )
 
     assert list(fused.text) == list(native.text)

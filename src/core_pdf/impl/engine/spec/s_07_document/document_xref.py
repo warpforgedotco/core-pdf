@@ -26,7 +26,8 @@ from core_pdf.impl.engine.spec.s_07_syntax.xref import (
     parse_object_marker_prefix,
 )
 from core_pdf.impl.exceptions import PdfParseError, PdfUnsupportedError
-from core_pdf.impl.objects import PdfReference, PdfStream
+from core_pdf.impl.objects import PdfStream
+from core_pdf.impl.primitives import PdfReference
 from core_pdf.impl.types import PdfByteBuffer, PdfDict, PdfObject
 
 TRAILER_METADATA_KEYS = ("Info", "ID", "Encrypt")

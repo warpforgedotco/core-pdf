@@ -6,7 +6,8 @@ import pytest
 from core_pdf.impl.engine.spec.s_07_content.capture import type3_glyph_names
 from core_pdf.impl.engine.spec.s_07_content.state import TextState
 from core_pdf.impl.engine.spec.s_09_fonts.decoder import FontDecoder, Type3CharProcProgram
-from core_pdf.impl.objects import PdfName, PdfStream
+from core_pdf.impl.objects import PdfStream
+from core_pdf.impl.primitives import PdfName
 
 
 def internal_type3_state(program: PdfStream) -> tuple[TextState, FontDecoder]:

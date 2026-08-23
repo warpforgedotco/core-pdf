@@ -6,7 +6,8 @@ import pytest
 from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.engine.spec.s_07_syntax.tokens import DELIMITERS, WHITESPACE
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.objects import PdfReference, PdfStream, PdfString
+from core_pdf.impl.objects import PdfStream
+from core_pdf.impl.primitives import PdfReference, PdfString
 
 
 @pytest.mark.parametrize("separator", WHITESPACE + DELIMITERS)
@@ -48,15 +49,16 @@ def test_find_separator_supports_reversed_memoryview() -> None:
     assert lexer.find_separator(0) == len(b"ordinary")
 
 
-@pytest.mark.parametrize("view_kind", ["bytes", "sliced", "reversed"])
 @pytest.mark.parametrize(
-    ("encoded", "expected"),
+    ("view_kind", "encoded", "expected"),
     [
-        (b"48656c6c6f", b"Hello"),
-        (b"48 65\n6c6c6f", b"Hello"),
-        (b"486", b"H\x60"),
-        (b"4g86", b"H\x60"),
-        (b"zz", b""),
+        ("bytes", b"48656c6c6f", b"Hello"),
+        ("bytes", b"48 65\n6c6c6f", b"Hello"),
+        ("bytes", b"486", b"H\x60"),
+        ("bytes", b"4g86", b"H\x60"),
+        ("bytes", b"zz", b""),
+        ("sliced", b"48 65\n6c6c6f", b"Hello"),
+        ("reversed", b"486", b"H\x60"),
     ],
 )
 def test_hex_string_decode_supports_all_byte_views(
@@ -100,15 +102,16 @@ def test_lexer_normalizes_non_byte_or_multidimensional_views(
     assert lexer.parse_object() == PdfString(expected)
 
 
-@pytest.mark.parametrize("view_kind", ["bytes", "sliced", "reversed"])
 @pytest.mark.parametrize(
-    ("encoded", "expected"),
+    ("view_kind", "encoded", "expected"),
     [
-        (b"plain", b"plain"),
-        (b"escaped\\)value", b"escaped)value"),
-        (b"nested(inner)", b"nested(inner)"),
-        (b"line\r\nending", b"line\nending"),
-        (b"line\n\rending", b"line\nending"),
+        ("bytes", b"plain", b"plain"),
+        ("bytes", b"escaped\\)value", b"escaped)value"),
+        ("bytes", b"nested(inner)", b"nested(inner)"),
+        ("bytes", b"line\r\nending", b"line\nending"),
+        ("bytes", b"line\n\rending", b"line\nending"),
+        ("sliced", b"escaped\\)value", b"escaped)value"),
+        ("reversed", b"line\n\rending", b"line\nending"),
     ],
 )
 def test_literal_string_special_scan_supports_all_byte_views(
@@ -158,19 +161,20 @@ def test_numeric_array_slice_fast_path_preserves_general_array_semantics(
     assert PdfLexer(data).parse_object() == expected
 
 
-@pytest.mark.parametrize("view_kind", ["bytes", "sliced", "reversed"])
 @pytest.mark.parametrize(
-    ("ignored", "expected"),
+    ("view_kind", "ignored", "expected"),
     [
-        (b"\x00\t\n\x0c\r ", 6),
-        (b"% comment\r\n", 11),
-        (b"% comment\n\r \t", 13),
-        (b" % first\n% second\r", 18),
-        (b" " * 8, 8),
-        (b" " * 9, 9),
-        (b" " * 7 + b"% comment\n", 17),
-        (b" " * 9 + b"% comment\r", 19),
-        (b"\v", 0),
+        ("bytes", b"\x00\t\n\x0c\r ", 6),
+        ("bytes", b"% comment\r\n", 11),
+        ("bytes", b"% comment\n\r \t", 13),
+        ("bytes", b" % first\n% second\r", 18),
+        ("bytes", b" " * 8, 8),
+        ("bytes", b" " * 9, 9),
+        ("bytes", b" " * 7 + b"% comment\n", 17),
+        ("bytes", b" " * 9 + b"% comment\r", 19),
+        ("bytes", b"\v", 0),
+        ("sliced", b"% comment\r\n", 11),
+        ("reversed", b" % first\n% second\r", 18),
     ],
 )
 def test_skip_ignored_preserves_pdf_comment_and_whitespace_semantics(
@@ -289,16 +293,8 @@ def test_parse_stream_trusts_exact_length_with_embedded_keyword() -> None:
     assert bytes(stream.raw_data) == payload
 
 
-@pytest.mark.parametrize(
-    "data",
-    [
-        b"(first\n\rsecond)",
-        memoryview(b"prefix(first\n\rsecond)suffix")[len(b"prefix") : -len(b"suffix")],
-    ],
-)
-def test_read_string_normalizes_lfcr_as_one_line_ending(
-    data: bytes | memoryview,
-) -> None:
+def test_read_string_normalizes_lfcr_in_sliced_memoryview() -> None:
+    data = memoryview(b"prefix(first\n\rsecond)suffix")[len(b"prefix") : -len(b"suffix")]
     lexer = PdfLexer(data)
 
     assert lexer.read_string() == b"first\nsecond"

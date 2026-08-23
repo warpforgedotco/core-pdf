@@ -2,7 +2,7 @@ import pytest
 
 from core_pdf import PdfDocument
 from core_pdf.impl.engine.writing import PdfObjectGraph
-from core_pdf.impl.objects import PdfName
+from core_pdf.impl.primitives import PdfName
 
 
 def test_pdf_object_graph_allocates_references_and_freezes() -> None:

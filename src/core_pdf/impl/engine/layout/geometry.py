@@ -5,9 +5,9 @@ from __future__ import annotations
 
 import math
 from collections.abc import Iterable, Iterator, Sequence
-from typing import Any, NamedTuple, Protocol, TypeAlias, TypedDict, Unpack, cast
+from typing import Any, Protocol, TypedDict, Unpack, cast
 
-RectTuple: TypeAlias = tuple[float, float, float, float]
+from core_pdf.impl.types import Rectangle
 
 
 class RectLike(Protocol):
@@ -38,7 +38,7 @@ def internal_float_value(value: object) -> float:
     raise TypeError(f"expected float-compatible value, got {type(value).__name__}")
 
 
-def rect_tuple(value: object) -> RectTuple | None:
+def rect_tuple(value: object) -> Rectangle | None:
     if isinstance(value, (list, tuple)) and len(value) == 4:
         rect = cast(Sequence[object], value)
         try:
@@ -82,7 +82,7 @@ def bbox_intersection_area(left: Sequence[float], right: Sequence[float]) -> flo
     return (w if w > 0.0 else 0.0) * (h if h > 0.0 else 0.0)
 
 
-def finite_rect(box: object, *, require_positive: bool = True) -> RectTuple | None:
+def finite_rect(box: object, *, require_positive: bool = True) -> Rectangle | None:
     """Coerce a 4-item box to finite floats, or None if it cannot represent one."""
     try:
         rect = cast("Sequence[Any]", box)
@@ -96,9 +96,9 @@ def finite_rect(box: object, *, require_positive: bool = True) -> RectTuple | No
     return (x0, y0, x1, y1)
 
 
-def bbox_union(boxes: Iterable[Sequence[float]]) -> RectTuple | None:
+def bbox_union(boxes: Iterable[Sequence[float]]) -> Rectangle | None:
     """Return the smallest rectangle containing every box, or None for no boxes."""
-    result: RectTuple | None = None
+    result: Rectangle | None = None
     for box in boxes:
         x0, y0, x1, y1 = (float(box[0]), float(box[1]), float(box[2]), float(box[3]))
         if result is None:
@@ -152,7 +152,7 @@ def overlap_ratio_of(subject: Sequence[float], container: Sequence[float]) -> fl
     return bbox_intersection_area(subject, container) / subject_area
 
 
-def flip_rect_vertical(rect: Sequence[float], page_height: float) -> RectTuple:
+def flip_rect_vertical(rect: Sequence[float], page_height: float) -> Rectangle:
     """Convert between bottom-left- and top-left-origin page coordinates."""
     return (
         float(rect[0]),
@@ -160,57 +160,6 @@ def flip_rect_vertical(rect: Sequence[float], page_height: float) -> RectTuple:
         float(rect[2]),
         page_height - float(rect[1]),
     )
-
-
-class BBox(NamedTuple):
-    x0: float
-    y0: float
-    x1: float
-    y1: float
-
-    @classmethod
-    def from_rect(cls, rect: RectTuple | RectLike) -> BBox:
-        if isinstance(rect, BBox):
-            return rect
-        if isinstance(rect, tuple) and len(rect) == 4:
-            t = cast(tuple[Any, Any, Any, Any], rect)
-            return cls(float(t[0]), float(t[1]), float(t[2]), float(t[3]))
-        return cls(rect.x0, rect.y0, rect.x1, rect.y1)
-
-    @classmethod
-    def from_page_rect(cls, rect: BBox, page_height: float) -> BBox:
-        return cls(rect[0], page_height - rect[3], rect[2], page_height - rect[1])
-
-    def merge(self, other: BBox) -> BBox:
-        return BBox(
-            self.x0 if self.x0 < other.x0 else other.x0,
-            self.y0 if self.y0 < other.y0 else other.y0,
-            self.x1 if self.x1 > other.x1 else other.x1,
-            self.y1 if self.y1 > other.y1 else other.y1,
-        )
-
-    def area(self) -> float:
-        return (self.x1 - self.x0) * (self.y1 - self.y0)
-
-    def intersection_lengths(self, other: BBox) -> tuple[float, float, float]:
-        x0 = self.x0 if self.x0 > other.x0 else other.x0
-        y0 = self.y0 if self.y0 > other.y0 else other.y0
-        x1 = self.x1 if self.x1 < other.x1 else other.x1
-        y1 = self.y1 if self.y1 < other.y1 else other.y1
-        if x1 <= x0 or y1 <= y0:
-            return 0.0, 0.0, 0.0
-        dx = x1 - x0
-        dy = y1 - y0
-        return dx, dy, dx * dy
-
-    def intersection_area(self, other: BBox) -> float:
-        x0 = self.x0 if self.x0 > other.x0 else other.x0
-        y0 = self.y0 if self.y0 > other.y0 else other.y0
-        x1 = self.x1 if self.x1 < other.x1 else other.x1
-        y1 = self.y1 if self.y1 < other.y1 else other.y1
-        if x1 <= x0 or y1 <= y0:
-            return 0.0
-        return (x1 - x0) * (y1 - y0)
 
 
 class RectBox:
@@ -235,7 +184,7 @@ class RectBox:
         self.fill_opacity = fill_opacity
 
     @classmethod
-    def from_bbox(cls, bbox: RectTuple, **kwargs: Unpack[RectBoxInitKwargs]) -> RectBox:
+    def from_bbox(cls, bbox: Rectangle, **kwargs: Unpack[RectBoxInitKwargs]) -> RectBox:
         return cls(bbox[0], bbox[1], bbox[2], bbox[3], **kwargs)
 
     @property

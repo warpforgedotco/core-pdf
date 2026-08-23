@@ -5,25 +5,55 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Any, cast
 
-from core_pdf.impl.objects import (
-    PdfByteRangePlaceholder,
-    PdfName,
-    PdfReference,
-    PdfSignatureContentsPlaceholder,
-    PdfStream,
-    PdfString,
-)
+from core_pdf.impl.objects import PdfStream
+from core_pdf.impl.primitives import PdfName, PdfReference, PdfString
+
+
+@dataclass(frozen=True, slots=True)
+class internal_PdfByteRangePlaceholder:
+    """Marker serialized into a fixed-width PDF signature ByteRange."""
+
+
+@dataclass(frozen=True, slots=True)
+class internal_PdfSignatureContentsPlaceholder:
+    """Marker reserving hexadecimal space for an external signature."""
+
+    length: int
+
+
+def internal_append_indirect_objects(
+    output: bytearray,
+    objects: Mapping[int, object],
+) -> dict[int, int]:
+    """Append numbered indirect objects and return their byte offsets."""
+    if any(type(number) is not int or number <= 0 for number in objects):
+        raise ValueError("PDF object numbers must be positive integers")
+    offsets: dict[int, int] = {}
+    for number in sorted(objects):
+        offsets[number] = len(output)
+        output.extend(f"{number} 0 obj\n".encode("ascii"))
+        output.extend(serialize_pdf_object(objects[number]))
+        output.extend(b"\nendobj\n")
+    return offsets
+
+
+def internal_classic_xref_entry(offset: int) -> bytes:
+    """Serialize one in-use classic-xref entry."""
+    if offset >= 10_000_000_000:
+        raise ValueError("PDF file is too large for a classic xref table")
+    return f"{offset:010d} 00000 n \n".encode("ascii")
 
 
 def serialize_pdf_object(value: object) -> bytes:
     """Return valid PDF syntax for one direct or indirect object."""
     if value is None:
         return b"null"
-    if isinstance(value, PdfByteRangePlaceholder):
+    if isinstance(value, internal_PdfByteRangePlaceholder):
         return b"[0 0000000000 0000000000 0000000000]"
-    if isinstance(value, PdfSignatureContentsPlaceholder):
+    if isinstance(value, internal_PdfSignatureContentsPlaceholder):
         if value.length <= 0:
             raise ValueError("signature placeholder length must be positive")
         return b"<" + b"0" * (value.length * 2) + b">"

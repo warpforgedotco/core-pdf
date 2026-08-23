@@ -17,12 +17,17 @@ from core_pdf.impl.engine.writing.fonts import (
     StandardType1FontProvider,
 )
 from core_pdf.impl.engine.writing.object_graph import PdfObjectGraph
-from core_pdf.impl.engine.writing.objects import serialize_pdf_string
+from core_pdf.impl.engine.writing.objects import (
+    internal_PdfByteRangePlaceholder,
+    internal_PdfSignatureContentsPlaceholder,
+    serialize_pdf_string,
+)
 from core_pdf.impl.engine.writing.signatures import (
     PdfSignaturePlan,
     apply_signature_plan,
 )
-from core_pdf.impl.objects import PdfName, PdfReference, PdfStream, PdfString
+from core_pdf.impl.objects import PdfStream
+from core_pdf.impl.primitives import PdfName, PdfReference, PdfString
 
 
 def serialize_document_to_pdf(
@@ -45,8 +50,10 @@ def serialize_document_to_pdf(
     graph = PdfObjectGraph()
     pages_reference = graph.add(None)
     font = font_provider or StandardType1FontProvider(font_name)
-    page_lines = tuple(tuple(internal_page_lines(page)) for page in document.pages)
     page_tagged_lines = tuple(tuple(internal_tagged_lines(page)) for page in document.pages)
+    page_lines = tuple(
+        tuple(line for _, line in tagged_lines) for tagged_lines in page_tagged_lines
+    )
     font_resource = font.add_to_graph(
         graph,
         (line.text for lines in page_lines for line in lines),
@@ -218,8 +225,10 @@ def serialize_document_to_pdf(
                 PdfName.of("Type"): PdfName.of("Sig"),
                 PdfName.of("Filter"): PdfName.of("Adobe.PPKLite"),
                 PdfName.of("SubFilter"): PdfName.of("adbe.pkcs7.detached"),
-                PdfName.of("ByteRange"): signature.byte_range_placeholder,
-                PdfName.of("Contents"): signature.contents_placeholder,
+                PdfName.of("ByteRange"): internal_PdfByteRangePlaceholder(),
+                PdfName.of("Contents"): internal_PdfSignatureContentsPlaceholder(
+                    signature.contents_length
+                ),
             }
         )
         signature_field = graph.add(
@@ -234,9 +243,16 @@ def serialize_document_to_pdf(
             }
         )
         first_page_reference, first_page = page_objects[0]
+        existing_annotations = first_page.get(PdfName.of("Annots"))
+        if isinstance(existing_annotations, (list, tuple)):
+            first_page_annotations = [*existing_annotations, signature_field]
+        elif existing_annotations is None:
+            first_page_annotations = [signature_field]
+        else:
+            first_page_annotations = [existing_annotations, signature_field]
         graph.replace(
             first_page_reference,
-            {**first_page, PdfName.of("Annots"): [signature_field]},
+            {**first_page, PdfName.of("Annots"): first_page_annotations},
         )
     graph.replace(
         pages_reference,
@@ -340,9 +356,7 @@ def serialize_document_to_pdf(
         )
         structure_kids: list[PdfReference] = []
         parent_tree_entries: list[object] = []
-        for page_number, (page_reference, lines) in enumerate(
-            zip(page_references, page_lines, strict=True), 1
-        ):
+        for page_number, page_reference in enumerate(page_references, 1):
             page_group = graph.add(
                 {
                     PdfName.of("Type"): PdfName.of("StructElem"),
@@ -582,11 +596,8 @@ def content_stream_for_page(
 
 
 def internal_page_lines(page: Page) -> Iterable[TextLine]:
-    for block in page.blocks:
-        yield from block.lines
-    for table in page.tables:
-        for row in table.rows:
-            yield TextLine(" | ".join(cell.text for cell in row))
+    for _, line in internal_tagged_lines(page):
+        yield line
 
 
 def internal_tagged_lines(page: Page) -> Iterable[tuple[str, TextLine]]:

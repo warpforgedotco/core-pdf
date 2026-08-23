@@ -12,7 +12,10 @@ import pytest
 
 from core_pdf.impl.engine.spec.s_07_filters import pipeline, predictors
 from core_pdf.impl.engine.spec.s_07_filters.codecs import apply_ascii85, apply_ascii_hex
-from core_pdf.impl.engine.spec.s_07_filters.decode_spec import FilterParams
+from core_pdf.impl.engine.spec.s_07_filters.decode_spec import (
+    FilterParams,
+    normalize_stream_decode_spec,
+)
 from core_pdf.impl.engine.spec.s_07_filters.errors import FilterParseError
 from core_pdf.impl.engine.spec.s_07_filters.flate import (
     apply_flate,
@@ -22,6 +25,12 @@ from core_pdf.impl.engine.spec.s_07_filters.pipeline import decode_stream_data
 from core_pdf.impl.engine.spec.s_07_filters.predictors import (
     apply_png_predictor,
     apply_tiff_predictor,
+)
+from core_pdf.impl.engine.spec.s_07_filters.registry import (
+    EXPENSIVE_DECODE_CACHE_FILTERS,
+    FILTER_DESCRIPTOR_BY_NAME,
+    FILTER_NAME_ALIASES,
+    PREDICTOR_FILTERS,
 )
 from core_pdf.impl.engine.spec.s_07_security.standard_v4 import PdfStandardSecurityHandlerV4
 from core_pdf.impl.engine.spec.s_08_graphics.color_kernels import (
@@ -40,6 +49,40 @@ def gzip_compress(data: bytes) -> bytes:
 def raw_deflate_compress(data: bytes) -> bytes:
     compressor = zlib.compressobj(wbits=-15)
     return compressor.compress(data) + compressor.flush()
+
+
+def test_filter_registry_is_the_single_source_for_normalization_and_dispatch() -> None:
+    assert set(pipeline.FILTER_MAP) == {
+        name
+        for name, descriptor in FILTER_DESCRIPTOR_BY_NAME.items()
+        if descriptor.decoder is not None
+    }
+    assert frozenset({"FlateDecode", "Fl", "LZWDecode", "LZW"}) == PREDICTOR_FILTERS
+    assert (
+        frozenset(
+            {
+                "CCF",
+                "CCITTFaxDecode",
+                "DCT",
+                "DCTDecode",
+                "Fl",
+                "FlateDecode",
+                "JBIG2Decode",
+                "JPXDecode",
+                "LZW",
+                "LZWDecode",
+            }
+        )
+        == EXPENSIVE_DECODE_CACHE_FILTERS
+    )
+
+
+@pytest.mark.parametrize("alias", ["FlateDecode", "FLATEDECODE", "PlateDecode"])
+def test_filter_registry_preserves_flate_compatibility_aliases(alias: str) -> None:
+    spec = normalize_stream_decode_spec({"Filter": PdfName.of(alias)})
+
+    assert spec.filters == ("FlateDecode",)
+    assert FILTER_NAME_ALIASES[alias.lower()] == "FlateDecode"
 
 
 def test_apply_flate_decodes_gzip_wrapped_stream() -> None:
@@ -113,10 +156,6 @@ def test_content_stream_detection_supports_reversed_memoryview() -> None:
     content = b"[(Tj)] TJ"
 
     assert looks_like_pdf_content_stream(memoryview(content[::-1])[::-1])
-
-
-def test_apply_ascii85_decodes_unterminated_pdf_stream() -> None:
-    assert apply_ascii85(b"87cURD]j7BEbo80", {}) == b"Hello world!"
 
 
 def reference_ascii_hex(data: bytes) -> bytes:

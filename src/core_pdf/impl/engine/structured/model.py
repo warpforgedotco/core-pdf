@@ -10,15 +10,15 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Mapping, TypeAlias
 
 from core_pdf.impl.engine.layout.geometry import bbox_union
-from core_pdf.impl.types import PageSelection
+from core_pdf.impl.pages import PageSelection
+from core_pdf.impl.types import Rectangle
 
 if TYPE_CHECKING:
     from core_pdf.impl.engine.structured.editor import DocumentEditor
 
-SCHEMA_VERSION = "3.0"
+SCHEMA_VERSION = "4.0"
 """Schema version stamped on every structured :class:`Document`."""
 
-BBox: TypeAlias = tuple[float, float, float, float]
 JsonValue: TypeAlias = str | int | float | bool | None | list["JsonValue"] | dict[str, "JsonValue"]
 
 
@@ -52,13 +52,13 @@ class TableCell:
     text: str
     row_span: int = 1
     column_span: int = 1
-    bbox: BBox | None = None
+    bbox: Rectangle | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class TableRowBand:
     index: int
-    bbox: BBox | None = None
+    bbox: Rectangle | None = None
     kind: str = "body"
     confidence: float | None = None
 
@@ -66,14 +66,14 @@ class TableRowBand:
 @dataclass(frozen=True, slots=True)
 class TableColumnBand:
     index: int
-    bbox: BBox | None = None
+    bbox: Rectangle | None = None
     confidence: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class TableAssociatedText:
     text: str
-    bbox: BBox | None = None
+    bbox: Rectangle | None = None
     kind: str = "caption"
     confidence: float | None = None
 
@@ -82,7 +82,7 @@ class TableAssociatedText:
 class Table:
     order: int
     rows: tuple[tuple[TableCell, ...], ...] = ()
-    bbox: BBox | None = None
+    bbox: Rectangle | None = None
     confidence: float | None = None
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
@@ -100,20 +100,20 @@ class Table:
         return value if isinstance(value, TableAssociatedText) else None
 
     @property
-    def layout_bbox(self) -> BBox | None:
+    def layout_bbox(self) -> Rectangle | None:
         boxes = [box for box in (self.bbox, self.title_bbox, self.caption_bbox) if box is not None]
         return bbox_union(boxes)
 
     @property
-    def title_bbox(self) -> BBox | None:
+    def title_bbox(self) -> Rectangle | None:
         return self.title.bbox if self.title is not None else None
 
     @property
-    def caption_bbox(self) -> BBox | None:
+    def caption_bbox(self) -> Rectangle | None:
         return self.caption.bbox if self.caption is not None else None
 
     @property
-    def content_bbox(self) -> BBox | None:
+    def content_bbox(self) -> Rectangle | None:
         boxes = [cell.bbox for row in self.rows for cell in row if cell.bbox is not None]
         if not boxes:
             return self.bbox
@@ -185,7 +185,7 @@ class Table:
 @dataclass(frozen=True, slots=True)
 class Figure:
     order: int
-    bbox: BBox | None = None
+    bbox: Rectangle | None = None
     kind: str = "figure"
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
@@ -195,7 +195,7 @@ class Figure:
 
 @dataclass(frozen=True, slots=True)
 class Link:
-    bbox: BBox | None = None
+    bbox: Rectangle | None = None
     url: str | None = None
     link_type: str | None = None
     text: str = ""
@@ -204,7 +204,7 @@ class Link:
 @dataclass(frozen=True, slots=True)
 class Annotation:
     subtype: str | None = None
-    bbox: BBox | None = None
+    bbox: Rectangle | None = None
     contents: str = ""
     destination: Any = None
 
@@ -217,7 +217,7 @@ class FormField:
     name: str
     field_type: str
     value_text: str = ""
-    bbox: BBox | None = None
+    bbox: Rectangle | None = None
     field_index: int | None = None
     required: bool = False
     read_only: bool = False
@@ -241,13 +241,13 @@ class TextSpan:
 class TextLine:
     text: str
     break_before: int = 1
-    bbox: BBox | None = None
-    advance_bbox: BBox | None = None
-    ink_bbox: BBox | None = None
+    bbox: Rectangle | None = None
+    advance_bbox: Rectangle | None = None
+    ink_bbox: Rectangle | None = None
     kind: str = "text-line"
     source: str = "unknown"
     confidence: float | None = None
-    baseline: BBox | None = None
+    baseline: Rectangle | None = None
     contributing_sources: tuple[str, ...] = ()
     bold: bool = False
     italic: bool = False
@@ -289,7 +289,7 @@ class Block:
     order: int
     kind: BlockKind
     lines: tuple[TextLine, ...] = ()
-    bbox: BBox | None = None
+    bbox: Rectangle | None = None
     column_index: int | None = None
     rotation: int = 0
     confidence: float | None = None
@@ -319,7 +319,7 @@ class ContentNode:
     page_number: int | None = None
 
     @property
-    def bbox(self) -> BBox | None:
+    def bbox(self) -> Rectangle | None:
         return self.payload.bbox
 
     @property
@@ -388,7 +388,7 @@ class TextWord:
     """A word projection derived from a normalized text line."""
 
     text: str
-    bbox: BBox | None = None
+    bbox: Rectangle | None = None
     line_index: int = 0
     word_index: int = 0
     block_index: int = 0
@@ -410,7 +410,7 @@ class TextRun:
     """Raw font-level text evidence exposed only through diagnostics."""
 
     text: str
-    bbox: BBox
+    bbox: Rectangle
     font_name: str | None
     font_size: float
     is_vertical: bool
@@ -517,7 +517,6 @@ class Page:
     base_route: str = "unknown"
     confidence: float | None = None
     tables: tuple[Table, ...] = ()
-    structured_tables: tuple[Table, ...] = ()
     figures: tuple[Figure, ...] = ()
     links: tuple[Link, ...] = ()
     annotations: tuple[Annotation, ...] = ()
@@ -525,7 +524,7 @@ class Page:
     header: str = ""
     footer: str = ""
     diagnostics: tuple[Diagnostic, ...] = ()
-    cropbox: BBox | None = None
+    cropbox: Rectangle | None = None
 
     @property
     def elements(self) -> tuple[PageElement, ...]:
@@ -556,7 +555,7 @@ class Page:
 
     @property
     def table_view(self) -> TableView:
-        return TableView(self.structured_tables or self.tables, page_number=self.page_number)
+        return TableView(self.tables, page_number=self.page_number)
 
     @property
     def text(self) -> str:

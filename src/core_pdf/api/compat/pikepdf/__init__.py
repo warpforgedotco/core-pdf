@@ -22,7 +22,7 @@ from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.engine.structured import Document
 from core_pdf.impl.engine.structured import Page as StructuredPage
 from core_pdf.impl.exceptions import PdfParseError, PdfUnsupportedError
-from core_pdf.impl.objects import PdfName, PdfReference
+from core_pdf.impl.primitives import PdfName, PdfReference
 from core_pdf.impl.types import PdfDict
 
 from .._strict_page_tree import internal_has_malformed_shadowed_definition

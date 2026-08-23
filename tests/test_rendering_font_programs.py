@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy
 
 from core_pdf import PdfDocument, PdfRasterFontRequest
-from core_pdf.impl.engine.rendering import RenderOptions
+from core_pdf.impl.engine.render.display import RenderOptions
 from core_pdf.impl.engine.spec.s_09_fonts.decoder import FontDecoder
 from core_pdf.impl.objects import PdfStream
 

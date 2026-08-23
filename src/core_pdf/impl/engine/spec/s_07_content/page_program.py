@@ -7,7 +7,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass, field
 from enum import IntEnum
 from heapq import merge
-from typing import Any
+from typing import Any, cast
 
 import numpy
 
@@ -58,7 +58,13 @@ class LineTable:
 
     def __iter__(self) -> Iterator[CapturedLine]:
         return (
-            CapturedLine(x0, y0, x1, y1, width)
+            CapturedLine(
+                cast(float, x0),
+                cast(float, y0),
+                cast(float, x1),
+                cast(float, y1),
+                cast(float, width),
+            )
             for x0, y0, x1, y1, width in zip(self.x0, self.y0, self.x1, self.y1, self.width)
         )
 

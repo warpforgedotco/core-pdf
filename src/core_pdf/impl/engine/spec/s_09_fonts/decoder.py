@@ -18,11 +18,6 @@ from core_pdf._vendor.fontTools.agl import UV2AGL
 from core_pdf._vendor.fontTools.encodings.StandardEncoding import StandardEncoding
 from core_pdf.impl.engine.spec.s_07_objects.coercion import normalize_pdf_name
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
-from core_pdf.impl.engine.spec.s_09_fonts import (
-    CFFFont,
-    CFFUnicodeRepairIndex,
-    TrueTypeFontProgram,
-)
 from core_pdf.impl.engine.spec.s_09_fonts.cff import (
     build_cff_unicode_repair_index,
     cff_font_for_pdf_font,
@@ -45,9 +40,16 @@ from core_pdf.impl.engine.spec.s_09_fonts.cmap_resources import (
 from core_pdf.impl.engine.spec.s_09_fonts.cmap_tounicode import ToUnicodeCMap
 from core_pdf.impl.engine.spec.s_09_fonts.cmap_widths import FontWidthMap
 from core_pdf.impl.engine.spec.s_09_fonts.font_names import resolve_base_font_name
+from core_pdf.impl.engine.spec.s_09_fonts.font_program import (
+    CFFFont,
+    CFFUnicodeRepairIndex,
+)
 from core_pdf.impl.engine.spec.s_09_fonts.font_program_opentype import (
     OpenTypeFontProgram,
     opentype_font_for_pdf_font,
+)
+from core_pdf.impl.engine.spec.s_09_fonts.font_program_truetype import (
+    TrueTypeFontProgram,
 )
 from core_pdf.impl.engine.spec.s_09_fonts.font_program_type1 import (
     Type1FontProgram,
@@ -77,6 +79,7 @@ from core_pdf.impl.engine.spec.s_09_fonts.widths import (
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.objects import PdfStream
 from core_pdf.impl.primitives import PdfString
+from core_pdf.impl.types import Rectangle
 
 if typing.TYPE_CHECKING:
     from typing import Any
@@ -259,7 +262,7 @@ class FontDecoder:
     fast_widths_cache: tuple[float, ...] | None
     fast_widths_array_cache: Any | None
     simple_glyph_cache: dict[int, DecodedGlyph]
-    glyph_bbox_cache: dict[int, tuple[float, float, float, float] | None]
+    glyph_bbox_cache: dict[int, Rectangle | None]
     fast_widths_cid: list[float] | None
     fast_widths_cid_array: Any | None
     fast_widths_cid_unavailable: bool
@@ -967,7 +970,7 @@ class FontDecoder:
             return ".notdef"
         return UV2AGL.get(ord(text), f"uni{ord(text):04X}")
 
-    def glyph_bbox(self, code: int) -> tuple[float, float, float, float] | None:
+    def glyph_bbox(self, code: int) -> Rectangle | None:
         if code < 0:
             return None
         cache = self.glyph_bbox_cache

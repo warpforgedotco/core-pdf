@@ -13,9 +13,11 @@ from core_pdf.impl.engine.parse.model import (
     MAX_OCR_PIXELS,
     PRIMARY_OCR_PIXELS,
     CapturedPage,
+    FusionPolicy,
     OcrPass,
     OcrPassScope,
     PageEvidence,
+    PagePlanReason,
     PageRoute,
     WorkPlan,
 )
@@ -201,7 +203,7 @@ def internal_base_plan_page(capture: CapturedPage) -> WorkPlan:
         high_resolution_vector = schematic and internal_requires_high_resolution_vector_ocr(capture)
         return WorkPlan(
             PageRoute.OCR,
-            reason="native-text-corrupt",
+            reason=PagePlanReason.NATIVE_TEXT_CORRUPT,
             ocr_passes=(
                 OcrPass(
                     "primary-page",
@@ -237,16 +239,18 @@ def internal_base_plan_page(capture: CapturedPage) -> WorkPlan:
                     include_native_text=True,
                 ),
             ),
+            allow_direct_image_ocr=False,
+            augment_page_candidates=True,
         )
     if evidence.vector_text_trusted:
-        return WorkPlan(PageRoute.NATIVE, reason="newstroke-vector-text")
+        return WorkPlan(PageRoute.NATIVE, reason=PagePlanReason.NEWSTROKE_VECTOR_TEXT)
     if evidence.trusted_hidden_text:
-        return WorkPlan(PageRoute.NATIVE, reason="trusted-hidden-native-text")
+        return WorkPlan(PageRoute.NATIVE, reason=PagePlanReason.TRUSTED_HIDDEN_NATIVE_TEXT)
     if evidence.hidden_text_layer:
         hidden_text_scale = 2.0 if evidence.full_page_image and 20 <= characters < 32 else 3.0
         return WorkPlan(
             PageRoute.OCR,
-            reason="unpainted-native-text-layer",
+            reason=PagePlanReason.UNPAINTED_NATIVE_TEXT_LAYER,
             ocr_passes=(
                 OcrPass(
                     "primary-page",
@@ -293,7 +297,7 @@ def internal_base_plan_page(capture: CapturedPage) -> WorkPlan:
     if evidence.stroked_vector_text.trusted:
         return WorkPlan(
             PageRoute.HYBRID if characters else PageRoute.OCR,
-            reason="stroked-vector-text",
+            reason=PagePlanReason.STROKED_VECTOR_TEXT,
             ocr_passes=(
                 OcrPass(
                     "stroked-vector-text",
@@ -315,15 +319,18 @@ def internal_base_plan_page(capture: CapturedPage) -> WorkPlan:
             and internal_native_mapping_is_usable(evidence)
             and internal_has_only_simple_vector_rectangles(capture)
         ):
-            return WorkPlan(PageRoute.NATIVE, reason="native-text-with-rectangular-vectors")
+            return WorkPlan(
+                PageRoute.NATIVE,
+                reason=PagePlanReason.NATIVE_TEXT_WITH_RECTANGULAR_VECTORS,
+            )
         if internal_vector_native_text_is_trusted(evidence):
-            return WorkPlan(PageRoute.NATIVE, reason="glyph-trusted-vector-text")
+            return WorkPlan(PageRoute.NATIVE, reason=PagePlanReason.GLYPH_TRUSTED_VECTOR_TEXT)
         if (
             evidence.full_page_image
             and characters >= 1_000
             and internal_native_mapping_is_usable(evidence)
         ):
-            return WorkPlan(PageRoute.NATIVE, reason="full-page-image-native-text")
+            return WorkPlan(PageRoute.NATIVE, reason=PagePlanReason.FULL_PAGE_IMAGE_NATIVE_TEXT)
         if (
             characters >= 1_000
             and evidence.text_coverage >= 0.15
@@ -331,7 +338,7 @@ def internal_base_plan_page(capture: CapturedPage) -> WorkPlan:
             and suspicious_ratio <= 0.02
             and internal_native_mapping_is_usable(evidence)
         ):
-            return WorkPlan(PageRoute.NATIVE, reason="mostly-covered-native-text")
+            return WorkPlan(PageRoute.NATIVE, reason=PagePlanReason.MOSTLY_COVERED_NATIVE_TEXT)
         if (
             characters >= 1_500
             and evidence.image_count == 0
@@ -339,17 +346,17 @@ def internal_base_plan_page(capture: CapturedPage) -> WorkPlan:
             and suspicious_ratio <= 0.02
             and internal_native_mapping_is_usable(evidence)
         ):
-            return WorkPlan(PageRoute.NATIVE, reason="native-text-without-images")
+            return WorkPlan(PageRoute.NATIVE, reason=PagePlanReason.NATIVE_TEXT_WITHOUT_IMAGES)
         if (
             characters >= 3_000
             and evidence.text_coverage >= 0.18
             and suspicious_ratio <= 0.02
             and internal_native_mapping_is_usable(evidence)
         ):
-            return WorkPlan(PageRoute.NATIVE, reason="dense-native-text")
+            return WorkPlan(PageRoute.NATIVE, reason=PagePlanReason.DENSE_NATIVE_TEXT)
         return WorkPlan(
             PageRoute.HYBRID if characters else PageRoute.OCR,
-            reason="uncovered-vector-text",
+            reason=PagePlanReason.UNCOVERED_VECTOR_TEXT,
             ocr_passes=(
                 OcrPass(
                     "schematic-regions",
@@ -394,6 +401,7 @@ def internal_base_plan_page(capture: CapturedPage) -> WorkPlan:
                     include_native_text=True,
                 ),
             ),
+            fusion_policy=FusionPolicy.UNCOVERED_VECTOR,
         )
 
     if internal_noisy_native_text(evidence):
@@ -406,7 +414,7 @@ def internal_base_plan_page(capture: CapturedPage) -> WorkPlan:
         )
         return WorkPlan(
             PageRoute.HYBRID,
-            reason="noisy-native-text",
+            reason=PagePlanReason.NOISY_NATIVE_TEXT,
             ocr_passes=(
                 OcrPass(
                     "clean-regions",
@@ -437,6 +445,7 @@ def internal_base_plan_page(capture: CapturedPage) -> WorkPlan:
                     include_native_text=True,
                 ),
             ),
+            fusion_policy=FusionPolicy.NOISY_NATIVE,
         )
 
     image_text_supplement = (
@@ -448,7 +457,7 @@ def internal_base_plan_page(capture: CapturedPage) -> WorkPlan:
     if image_text_supplement:
         return WorkPlan(
             PageRoute.HYBRID,
-            reason="embedded-image-text-supplement",
+            reason=PagePlanReason.EMBEDDED_IMAGE_TEXT_SUPPLEMENT,
             ocr_passes=(
                 OcrPass(
                     "image-regions",
@@ -469,16 +478,16 @@ def internal_base_plan_page(capture: CapturedPage) -> WorkPlan:
             and text_coverage >= 0.15
             and internal_native_mapping_is_usable(evidence)
         ):
-            return WorkPlan(PageRoute.NATIVE, reason="glyph-trusted-rotated-text")
+            return WorkPlan(PageRoute.NATIVE, reason=PagePlanReason.GLYPH_TRUSTED_ROTATED_TEXT)
         if (
             characters >= 500
             and suspicious_ratio <= 0.05
             and rotated_characters <= max(80, int(characters * 0.03))
         ):
-            return WorkPlan(PageRoute.NATIVE, reason="minor-rotated-native-text")
+            return WorkPlan(PageRoute.NATIVE, reason=PagePlanReason.MINOR_ROTATED_NATIVE_TEXT)
         return WorkPlan(
             PageRoute.HYBRID,
-            reason="rotated-native-text",
+            reason=PagePlanReason.ROTATED_NATIVE_TEXT,
             ocr_passes=(
                 OcrPass(
                     "orientation-page",
@@ -508,14 +517,14 @@ def internal_base_plan_page(capture: CapturedPage) -> WorkPlan:
 
     mapping_usable = internal_native_mapping_is_usable(evidence)
     if characters >= 80 and suspicious_ratio <= 0.02 and mapping_usable:
-        return WorkPlan(PageRoute.NATIVE, reason="healthy-native-text")
+        return WorkPlan(PageRoute.NATIVE, reason=PagePlanReason.HEALTHY_NATIVE_TEXT)
     if (
         characters >= 32
         and suspicious_ratio <= 0.05
         and evidence.image_count == 0
         and mapping_usable
     ):
-        return WorkPlan(PageRoute.NATIVE, reason="usable-native-text")
+        return WorkPlan(PageRoute.NATIVE, reason=PagePlanReason.USABLE_NATIVE_TEXT)
     if (
         characters > 0
         and characters == total_characters
@@ -524,7 +533,7 @@ def internal_base_plan_page(capture: CapturedPage) -> WorkPlan:
         and vector_complexity < 30
         and mapping_usable
     ):
-        return WorkPlan(PageRoute.NATIVE, reason="clean-short-native-text")
+        return WorkPlan(PageRoute.NATIVE, reason=PagePlanReason.CLEAN_SHORT_NATIVE_TEXT)
 
     schematic = vector_complexity >= 180 and text_density < 0.0015
     schematic = schematic or (text_coverage < 0.05 and vector_complexity >= 180)
@@ -536,7 +545,7 @@ def internal_base_plan_page(capture: CapturedPage) -> WorkPlan:
         high_resolution_vector = schematic and internal_requires_high_resolution_vector_ocr(capture)
         return WorkPlan(
             PageRoute.OCR,
-            reason="native-text-unavailable",
+            reason=PagePlanReason.NATIVE_TEXT_UNAVAILABLE,
             ocr_passes=(
                 OcrPass(
                     "primary-page",
@@ -585,7 +594,7 @@ def internal_base_plan_page(capture: CapturedPage) -> WorkPlan:
         )
     return WorkPlan(
         PageRoute.HYBRID,
-        reason="native-text-needs-augmentation",
+        reason=PagePlanReason.NATIVE_TEXT_NEEDS_AUGMENTATION,
         ocr_passes=(
             OcrPass(
                 "primary-page",
@@ -610,6 +619,7 @@ def internal_base_plan_page(capture: CapturedPage) -> WorkPlan:
                 include_native_text=True,
             ),
         ),
+        fusion_policy=FusionPolicy.SPARSE_NATIVE,
     )
 
 

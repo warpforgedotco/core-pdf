@@ -11,8 +11,7 @@ from core_pdf.impl.engine.spec.s_07_objects.coercion import (
     parse_int,
 )
 from core_pdf.impl.engine.spec.s_09_fonts.encoding import decode_pdf_text_string
-from core_pdf.impl.objects import PdfString
-from core_pdf.impl.primitives import PdfName
+from core_pdf.impl.primitives import PdfName, PdfString
 
 
 class ConversionHook:

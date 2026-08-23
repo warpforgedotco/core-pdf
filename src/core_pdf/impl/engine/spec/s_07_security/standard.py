@@ -17,7 +17,7 @@ from core_pdf.impl.engine.spec.s_07_security.errors import (
 )
 from core_pdf.impl.engine.spec.s_07_security.rc4 import CryptRC4
 from core_pdf.impl.engine.spec.s_07_security.values import get_int, get_uint
-from core_pdf.impl.objects import MISSING
+from core_pdf.impl.primitives import MISSING
 from core_pdf.impl.types import PdfDict
 
 

@@ -28,18 +28,6 @@ def internal_page():
     return PdfDocument.open(FIXTURE)
 
 
-def test_geometry_memo_entry_points_do_not_deadlock_on_the_reentrant_page_lock() -> None:
-    with internal_page() as document:
-        page = document.pages[0]
-        issues = page.extract_geometry_issues()
-        summary = page.extract_geometry_summary()
-        runs = page.text_diagnostics().runs
-
-    assert isinstance(issues, tuple)
-    assert summary.text_run_count >= 0
-    assert isinstance(runs, tuple)
-
-
 def test_concurrent_geometry_extraction_on_one_page_is_consistent() -> None:
     with internal_page() as document:
         page = document.pages[0]

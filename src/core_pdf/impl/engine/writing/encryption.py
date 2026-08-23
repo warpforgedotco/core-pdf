@@ -10,7 +10,8 @@ from typing import Any
 
 from core_pdf.impl.engine.spec.s_07_security.crypto_constants import PDF_PADDING
 from core_pdf.impl.engine.spec.s_07_security.rc4 import CryptRC4
-from core_pdf.impl.objects import PdfName, PdfStream, PdfString
+from core_pdf.impl.objects import PdfStream
+from core_pdf.impl.primitives import PdfName, PdfString
 
 
 @dataclass(frozen=True, slots=True)

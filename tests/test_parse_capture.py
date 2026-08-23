@@ -11,20 +11,18 @@ from core_pdf.impl.engine.parse import (
     GlyphEvidence,
     OcrPassScope,
     PageEvidence,
-    PagePreflightClass,
     PageRoute,
+    ParseReport,
     TextQualityStats,
-    capture_page,
-    plan_page,
-    preflight_page,
 )
 from core_pdf.impl.engine.parse.capture import (
+    capture_page,
     internal_apply_structure_actual_text,
     internal_capture_from_program,
     internal_extractable_runs,
     internal_vector_complexity,
 )
-from core_pdf.impl.objects import PdfStream
+from core_pdf.impl.engine.parse.route import plan_page
 
 
 def run(
@@ -77,48 +75,6 @@ def evidence(
     )
 
 
-class FakeCache(dict):
-    def get_as(self, internal_key: str, internal_kind: object) -> object:
-        return None
-
-
-class FakePage:
-    page_number = 1
-    rotation = 0
-
-    def __init__(
-        self,
-        content: bytes,
-        *,
-        resources: dict[object, object] | None = None,
-        width: float = 600.0,
-        height: float = 800.0,
-    ) -> None:
-        self.width = width
-        self.height = height
-        self.content_streams: tuple[PdfStream, ...] = (PdfStream(decoded_data=content),)
-        self.cached_resources = resources or {}
-        self.extraction_cache = FakeCache()
-
-
-def semantic_capture(
-    *,
-    runs: tuple[object, ...] = (),
-    drawings: tuple[object, ...] = (),
-    grid_lines: tuple[object, ...] = (),
-    inline_images: tuple[object, ...] = (),
-) -> CapturedPage:
-    return cast(
-        CapturedPage,
-        SimpleNamespace(
-            runs=runs,
-            drawings=drawings,
-            grid_lines=grid_lines,
-            inline_images=inline_images,
-        ),
-    )
-
-
 def test_capture_discards_duplicate_nested_text_layer() -> None:
     text = " ".join(f"token{index}" for index in range(30))
     page_run = run(text)
@@ -168,55 +124,7 @@ def test_vector_complexity_ignores_graphics_state_control_records() -> None:
     assert internal_vector_complexity(drawings, (object(), object())) == 5
 
 
-def test_preflight_classifies_native_text_page() -> None:
-    page = FakePage(b"BT /F1 12 Tf (hello) Tj ET", resources={"Font": {"F1": object()}})
-
-    preflight = preflight_page(page, semantic_capture(runs=(object(),)))
-
-    assert preflight.recommendation.page_class is PagePreflightClass.NATIVE_TEXT
-    assert preflight.recommendation.capture == "text-only"
-    assert page.extraction_cache["preflight"]["class"] == "native-text"
-
-
-def test_preflight_classifies_image_only_page() -> None:
-    image = PdfStream(
-        {"Subtype": "Image", "Width": 100, "Height": 200, "Filter": "DCTDecode"},
-        raw_data=b"jpeg",
-    )
-    page = FakePage(b"q /Im1 Do Q", resources={"XObject": {"Im1": image}})
-
-    preflight = preflight_page(
-        page,
-        semantic_capture(drawings=(SimpleNamespace(kind="image"),)),
-    )
-
-    assert preflight.recommendation.page_class is PagePreflightClass.IMAGE_ONLY
-    assert preflight.features.image_xobject_count == 1
-    assert preflight.features.image_pixels == 20_000
-
-
-def test_preflight_classifies_vector_diagram_page() -> None:
-    vector_ops = b"\n".join(b"0 0 10 10 re S" for _ in range(20))
-    page = FakePage(vector_ops)
-
-    drawings = tuple(SimpleNamespace(kind="stroke") for _ in range(20))
-    preflight = preflight_page(page, semantic_capture(drawings=drawings))
-
-    assert preflight.recommendation.page_class is PagePreflightClass.VECTOR_DIAGRAM
-    assert preflight.recommendation.ocr == "schematic-regions"
-
-
-def test_preflight_classifies_empty_unrecoverable_page() -> None:
-    page = FakePage(b"")
-    page.content_streams = ()
-
-    preflight = preflight_page(page, semantic_capture())
-
-    assert preflight.recommendation.page_class is PagePreflightClass.LIKELY_MALFORMED
-    assert preflight.recommendation.ocr == "fallback-page"
-
-
-def test_native_text_preflight_reuses_canonical_program() -> None:
+def test_native_text_capture_reuses_canonical_program() -> None:
     fixture = (
         Path(__file__).parent
         / "fixtures"
@@ -226,9 +134,6 @@ def test_native_text_preflight_reuses_canonical_program() -> None:
     )
     with PdfDocument.open(fixture) as document:
         page = document.pages[0]
-        preflight = preflight_page(page)
-        assert preflight.recommendation.page_class is PagePreflightClass.NATIVE_TEXT
-
         program = page.get_page_program()
         first = internal_capture_from_program(page, program)
         second = capture_page(page)
@@ -244,9 +149,6 @@ def test_image_only_program_still_routes_ocr() -> None:
     )
     with PdfDocument.open(fixture) as document:
         page = document.pages[0]
-        preflight = preflight_page(page)
-        assert preflight.recommendation.page_class is PagePreflightClass.IMAGE_ONLY
-
         capture = capture_page(page)
         plan = plan_page(capture)
 
@@ -298,16 +200,13 @@ def test_newstroke_vector_diagram_is_decoded_without_ocr() -> None:
     )
     with PdfDocument.open(fixture) as document:
         page = document.pages[0]
-        preflight = preflight_page(page)
-        assert preflight.recommendation.page_class is PagePreflightClass.VECTOR_DIAGRAM
-
         capture = capture_page(page)
         plan = plan_page(capture)
         structured_text = document.extract().text
         tables = document.extract().table_view.tables
         cache = page.extraction_cache
         assert cache is not None
-        metrics = cast(dict[str, Any], cache["parse_metrics"])
+        metrics = cast(ParseReport, cache["parse_report_v1"]).metrics
 
     assert capture.evidence.vector_complexity > 0
     assert capture.evidence.vector_text_trusted is True

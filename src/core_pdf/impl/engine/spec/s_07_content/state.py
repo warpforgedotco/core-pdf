@@ -39,11 +39,6 @@ from core_pdf.impl.engine.spec.s_07_content.capture import (
     type3_font_matrix,
     type3_glyph_names,
 )
-from core_pdf.impl.engine.spec.s_07_content.components import (
-    ContentComponent,
-    GraphicsComponent,
-    TextComponent,
-)
 from core_pdf.impl.engine.spec.s_07_content.geometry import transform_bbox
 from core_pdf.impl.engine.spec.s_07_content.marked_content import MarkedContentEntry
 from core_pdf.impl.engine.spec.s_07_content.operations import (
@@ -57,9 +52,7 @@ from core_pdf.impl.engine.spec.s_07_content.operations import (
     dispatch_operations,
     iter_content_operations,
 )
-from core_pdf.impl.engine.spec.s_07_content.operator_tables import (
-    build_operator_tables,
-)
+from core_pdf.impl.engine.spec.s_07_content.operator_tables import build_operator_tables
 from core_pdf.impl.engine.spec.s_07_content.operators import detect_rotation_from_linear
 from core_pdf.impl.engine.spec.s_07_content.stream_state import (
     ContentStreamFrame,
@@ -84,6 +77,7 @@ from core_pdf.impl.engine.spec.s_07_objects.coercion import (
 )
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_07_objects.resolver_values import PdfValueResolver
+from core_pdf.impl.engine.spec.s_07_syntax.content_operators import TYPE3_REPLAY_OPERATORS
 from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.engine.spec.s_08_graphics.image_decode import ImageSource
 from core_pdf.impl.engine.spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
@@ -93,68 +87,58 @@ from core_pdf.impl.engine.spec.s_09_fonts.decoder import (
     Type3CharProcProgram,
 )
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.objects import (
+from core_pdf.impl.objects import PdfStream
+from core_pdf.impl.primitives import (
     MISSING,
     PdfName,
     PdfReference,
-    PdfStream,
     PdfString,
 )
-from core_pdf.impl.types import PdfDict
+from core_pdf.impl.types import PdfDict, Rectangle
 
 OperationHandler: TypeAlias = StateOperationHandler
 ObjectCache: TypeAlias = dict[object, object]
 InlineImageRecord = CapturedInlineImage
 DecodedGlyphs: TypeAlias = tuple[DecodedGlyph, ...] | None
+internal_GraphicsState: TypeAlias = tuple[
+    float,
+    float,
+    float,
+    float,
+    float,
+    float,
+    tuple[float, ...] | None,
+    PdfDict | None,
+    float | None,
+    tuple[float, ...] | None,
+    PdfDict | None,
+    float | None,
+    str,
+    str,
+    int,
+    str | None,
+    float | None,
+    int,
+    str | None,
+    Rectangle | None,
+    float,
+    int,
+    int,
+    float,
+    tuple[list[float], float],
+    float,
+    object,
+    object,
+    float,
+    float,
+    float,
+    float,
+    float,
+    int,
+    str | None,
+    FontDecoder | None,
+]
 
-TYPE3_REPLAY_OPERATORS = frozenset(
-    {
-        "B",
-        "B*",
-        "F",
-        "G",
-        "J",
-        "K",
-        "M",
-        "Q",
-        "RG",
-        "S",
-        "SC",
-        "SCN",
-        "W",
-        "W*",
-        "b",
-        "b*",
-        "c",
-        "cm",
-        "cs",
-        "CS",
-        "d0",
-        "d1",
-        "f",
-        "f*",
-        "g",
-        "gs",
-        "h",
-        "i",
-        "j",
-        "k",
-        "l",
-        "m",
-        "n",
-        "q",
-        "re",
-        "rg",
-        "ri",
-        "s",
-        "sc",
-        "scn",
-        "sh",
-        "v",
-        "w",
-        "y",
-    }
-)
 TYPE3_REPLAY_OPERAND_TYPES = (int, float, PdfName, PdfString)
 
 
@@ -191,7 +175,7 @@ class TextState:
     current_path: CapturedPath
     current_point: tuple[float, float] | None
     subpath_start: tuple[float, float] | None
-    stack: list[StreamState]
+    stack: list[internal_GraphicsState]
     clip_scope_stack: list[bool]
     fill_color: tuple[float, ...] | None
     fill_pattern: PdfDict | None
@@ -203,8 +187,8 @@ class TextState:
     group_alpha: float | None
     flatness: int
     render_intent: str | None
-    clip_bbox: tuple[float, float, float, float] | None
-    layout_form_bbox: tuple[float, float, float, float] | None
+    clip_bbox: Rectangle | None
+    layout_form_bbox: Rectangle | None
     layout_form_id: LayoutFormId
     fill_color_space: str
     stroke_color_space: str
@@ -350,9 +334,6 @@ class TextState:
         "op_handlers_bytes",
         "single_op_handlers",
         "double_op_handlers",
-        "graphics_component",
-        "text_component",
-        "content_component",
         "combined_A",
         "combined_B",
         "combined_C",
@@ -370,7 +351,7 @@ class TextState:
         page: PdfDict,
         hidden_layers: frozenset[str] = frozenset(),
         decoder_cache: dict[tuple[int, int] | int, "FontDecoder"] | None = None,
-        page_clip: tuple[float, float, float, float] | None = None,
+        page_clip: Rectangle | None = None,
     ):
         self.document = document
         self.page = page
@@ -531,9 +512,6 @@ class TextState:
         self.operands: list[ContentOperand] = [None] * 16
         self.run_pool: list[TextRun] = []
         self.inline_images: list[InlineImageRecord] = []
-        self.graphics_component = GraphicsComponent(self)
-        self.text_component = TextComponent(self)
-        self.content_component = ContentComponent(self)
 
     def detect_rotation(self, a: float, b: float, c: float, d: float) -> int:
         return detect_rotation_from_linear(a, b, c, d)
@@ -913,8 +891,8 @@ class TextState:
         ctm: Matrix,
         depth: int,
         *,
-        clip_bbox: tuple[float, float, float, float] | None = None,
-        layout_form_bbox: tuple[float, float, float, float] | None = None,
+        clip_bbox: Rectangle | None = None,
+        layout_form_bbox: Rectangle | None = None,
         layout_form_id: LayoutFormId = None,
         group_alpha: float | None = None,
         stream_key: StreamKey | None = None,
@@ -1017,7 +995,7 @@ class TextState:
         ctm: Matrix,
         depth: int,
         *,
-        clip_bbox: tuple[float, float, float, float] | None = None,
+        clip_bbox: Rectangle | None = None,
     ) -> None:
         stream_stack = [
             ContentStreamFrame(stream, resources, ctm, depth, clip_bbox),
@@ -1415,9 +1393,7 @@ class TextState:
                 for value in raw_form_bbox[:4]
             )
             if all(value is not None for value in raw_values):
-                raw_x, raw_y, raw_width, raw_height = typing.cast(
-                    tuple[float, float, float, float], raw_values
-                )
+                raw_x, raw_y, raw_width, raw_height = typing.cast(Rectangle, raw_values)
                 # PDFMiner's LTFigure constructor historically interprets the
                 # four /BBox values as x, y, width, height. Preserve that raw
                 # layout geometry separately from the spec-correct clipping
@@ -1565,8 +1541,8 @@ class TextState:
         line_break_before: bool,
         seqno: int,
         fill_color: tuple[float, ...] | None,
-        advance_bbox: tuple[float, float, float, float] | None = None,
-        ink_bbox: tuple[float, float, float, float] | None = None,
+        advance_bbox: Rectangle | None = None,
+        ink_bbox: Rectangle | None = None,
         baseline: tuple[float, float, float, float] | None = None,
         provenance: tuple[tuple[str, object], ...] = (),
         confidence: float | None = None,
@@ -1622,8 +1598,8 @@ class TextState:
         line_break_before: bool,
         seqno: int,
         fill_color: tuple[float, ...] | None,
-        advance_bbox: tuple[float, float, float, float] | None = None,
-        ink_bbox: tuple[float, float, float, float] | None = None,
+        advance_bbox: Rectangle | None = None,
+        ink_bbox: Rectangle | None = None,
         baseline: tuple[float, float, float, float] | None = None,
         provenance: tuple[tuple[str, object], ...] = (),
         confidence: float | None = None,
@@ -3608,30 +3584,98 @@ class TextState:
                 )
             )
 
+    def internal_begin_text(self) -> None:
+        if self.pending_run:
+            self.flush_run()
+        self.tm_a = self.lm_a = 1.0
+        self.tm_b = self.lm_b = 0.0
+        self.tm_c = self.lm_c = 0.0
+        self.tm_d = self.lm_d = 1.0
+        self.tm_e = self.lm_e = 0.0
+        self.tm_f = self.lm_f = 0.0
+        self.compat_tj_cursor_x = 0.0
+        self.compat_tj_cursor_y = 0.0
+        self.combined_A = self.ca
+        self.combined_B = self.cb
+        self.combined_C = self.cc
+        self.combined_D = self.cd
+        if self.ca == 1.0 and self.cb == 0.0 and self.cc == 0.0 and self.cd == 1.0:
+            self.cached_rotation = 0
+        else:
+            self.cached_rotation = self.detect_rotation(self.ca, self.cb, self.cc, self.cd)
+        self.invisible_text_layer = False
+
+    def internal_end_text(self) -> None:
+        pending = self.pending_run
+        if pending:
+            if self.capture_runs:
+                self.runs.append(pending)
+            self.pending_run = None
+
+    def internal_move_text(self, tx: float, ty: float) -> None:
+        if self.pending_run:
+            self.runs.append(self.pending_run)
+            self.pending_run = None
+        # Preserve the specification's affine operation order. Exact layout
+        # grouping can hinge on the final ULP at a character-margin boundary.
+        self.tm_e = tx * self.lm_a + ty * self.lm_c + self.lm_e
+        self.tm_f = tx * self.lm_b + ty * self.lm_d + self.lm_f
+        self.lm_e = self.tm_e
+        self.lm_f = self.tm_f
+        self.compat_tj_cursor_x = 0.0
+        self.compat_tj_cursor_y = 0.0
+
+    def internal_show_text(self, operand: ContentOperand) -> None:
+        decoder = self.current_decoder if self.current_decoder is not None else self.get_decoder()
+        if type(operand) is PdfString:
+            self.append_text(
+                data=operand.data,
+                decoder=decoder,
+                string_syntax="literal" if operand.is_literal else "hex",
+                compatibility_data=operand.compatibility_data,
+            )
+        else:
+            self.append_text(operand, decoder=decoder)
+
     def op_noop(self, operands: OperandWindow, depth: int) -> None:
         return
 
     def op_BT(self, operands: OperandWindow, depth: int) -> None:
         self.text_object_id += 1
-        self.text_component.begin()
+        self.internal_begin_text()
 
     def op_ET(self, operands: OperandWindow, depth: int) -> None:
-        self.text_component.end()
+        self.internal_end_text()
 
     def op_T_star(self, operands: OperandWindow, depth: int) -> None:
-        self.text_component.move(0.0, -self.leading)
+        self.internal_move_text(0.0, -self.leading)
 
     def op_Td(self, operands: OperandWindow, depth: int) -> None:
-        self.text_component.move_operands(operands)
+        if len(operands) < 2:
+            return
+        try:
+            tx = self.as_float(operands[0])
+            ty = self.as_float(operands[1])
+        except (TypeError, ValueError):
+            return
+        self.op_Td_values(tx, ty)
 
     def op_Td_values(self: Any, tx: float, ty: float) -> None:
-        self.text_component.move(tx, ty)
+        self.internal_move_text(tx, ty)
 
     def op_TD(self, operands: OperandWindow, depth: int) -> None:
-        self.text_component.move_operands(operands, set_leading=True)
+        if len(operands) < 2:
+            return
+        try:
+            tx = self.as_float(operands[0])
+            ty = self.as_float(operands[1])
+        except (TypeError, ValueError):
+            return
+        self.op_TD_values(tx, ty)
 
     def op_TD_values(self: Any, tx: float, ty: float) -> None:
-        self.text_component.set_leading_and_move(tx, ty)
+        self.leading = -ty
+        self.internal_move_text(tx, ty)
 
     def op_Tj(self, operands: OperandWindow, depth: int) -> None:
         if not operands:
@@ -3640,37 +3684,39 @@ class TextState:
         # A well-formed Tj has exactly one string, but damaged streams sometimes
         # leave older operands before it.  Those older values are not part of
         # the text-showing operation.
-        self.text_component.show(operands[-1])
+        self.internal_show_text(operands[-1])
 
     def op_TJ(self, operands: OperandWindow, depth: int) -> None:
-        self.text_component.show_array(operands)
+        if operands:
+            self.append_tj_array(operands[0])
 
     def op_Tm(self, operands: OperandWindow, depth: int) -> None:
-        if len(operands) >= 6:
-            try:
-                a = self.as_float(operands[0])
-                b = self.as_float(operands[1])
-                c = self.as_float(operands[2])
-                d_ = self.as_float(operands[3])
-                e = self.as_float(operands[4])
-                f = self.as_float(operands[5])
-            except (TypeError, ValueError):
-                return
-            self.flush_run()
-            self.tm_a = self.lm_a = a
-            self.tm_b = self.lm_b = b
-            self.tm_c = self.lm_c = c
-            self.tm_d = self.lm_d = d_
-            self.tm_e = self.lm_e = e
-            self.tm_f = self.lm_f = f
-            self.compat_tj_cursor_x = 0.0
-            self.compat_tj_cursor_y = 0.0
-            self.update_combined()
+        if len(operands) < 6:
+            return
+        try:
+            a = self.as_float(operands[0])
+            b = self.as_float(operands[1])
+            c = self.as_float(operands[2])
+            d_ = self.as_float(operands[3])
+            e = self.as_float(operands[4])
+            f = self.as_float(operands[5])
+        except (TypeError, ValueError):
+            return
+        self.op_Tm_values(a, b, c, d_, e, f)
 
     def op_Tm_values(
         self: Any, a: float, b: float, c: float, d_: float, e: float, f: float
     ) -> None:
-        self.text_component.set_matrix(a, b, c, d_, e, f)
+        self.flush_run()
+        self.tm_a = self.lm_a = a
+        self.tm_b = self.lm_b = b
+        self.tm_c = self.lm_c = c
+        self.tm_d = self.lm_d = d_
+        self.tm_e = self.lm_e = e
+        self.tm_f = self.lm_f = f
+        self.compat_tj_cursor_x = 0.0
+        self.compat_tj_cursor_y = 0.0
+        self.update_combined()
 
     def op_Tf(self, operands: OperandWindow, depth: int) -> None:
         if len(operands) < 2:
@@ -3736,34 +3782,89 @@ class TextState:
         self.update_font_metrics()
 
     def op_TL(self, operands: OperandWindow, depth: int) -> None:
-        self.text_component.set_leading_operand(operands)
+        if not operands:
+            return
+        try:
+            self.leading = self.as_float(operands[0])
+        except (TypeError, ValueError):
+            return
 
     def op_Tc(self, operands: OperandWindow, depth: int) -> None:
-        self.text_component.set_char_space_operand(operands)
+        if not operands:
+            return
+        try:
+            char_space = self.as_float(operands[0])
+        except (TypeError, ValueError):
+            return
+        self.op_Tc_values(char_space)
 
     def op_Tc_values(self: Any, char_space: float) -> None:
-        self.text_component.set_char_space(char_space)
+        self.char_space = char_space
+        self.update_char_space_scale()
 
     def op_Tw(self, operands: OperandWindow, depth: int) -> None:
-        self.text_component.set_word_space_operand(operands)
+        if not operands:
+            return
+        try:
+            word_space = self.as_float(operands[0])
+        except (TypeError, ValueError):
+            return
+        self.op_Tw_values(word_space)
 
     def op_Tw_values(self: Any, word_space: float) -> None:
-        self.text_component.set_word_space(word_space)
+        if self.word_space == word_space:
+            return
+        self.word_space = word_space
+        self.update_word_space_scale()
 
     def op_Tr(self, operands: OperandWindow, depth: int) -> None:
-        self.text_component.set_render_mode_operand(operands)
+        if not operands:
+            return
+        try:
+            self.render_mode = self.as_int(operands[0])
+        except (TypeError, ValueError):
+            return
 
     def op_Tz(self, operands: OperandWindow, depth: int) -> None:
-        self.text_component.set_horizontal_scale_operand(operands)
+        if not operands:
+            return
+        try:
+            self.horizontal_scale = self.as_float(operands[0])
+        except (TypeError, ValueError):
+            return
+        self.update_horizontal_text_scale()
 
     def op_Ts(self, operands: OperandWindow, depth: int) -> None:
-        self.text_component.set_rise_operand(operands)
+        if not operands:
+            return
+        try:
+            self.rise = self.as_float(operands[0])
+        except (TypeError, ValueError):
+            return
 
     def op_quote(self, operands: OperandWindow, depth: int) -> None:
-        self.text_component.quote(operands)
+        if not operands:
+            return
+        self.internal_move_text(0.0, -self.leading)
+        self.pending_line_break = True
+        self.internal_show_text(operands[0])
 
     def op_double_quote(self, operands: OperandWindow, depth: int) -> None:
-        self.text_component.double_quote(operands)
+        if len(operands) < 3:
+            return
+        try:
+            word_space = self.as_float(operands[0])
+            char_space = self.as_float(operands[1])
+        except (TypeError, ValueError):
+            return
+        self.word_space = word_space
+        self.char_space = char_space
+        self.update_char_space_scale()
+        self.update_word_space_scale()
+        if not getattr(self.document, "legacy_pdfminer_text_operators", False):
+            self.internal_move_text(0.0, -self.leading)
+            self.pending_line_break = True
+        self.internal_show_text(operands[2])
 
     def op_BI(self, operands: OperandWindow, depth: int) -> None:
         if not operands:
@@ -3825,19 +3926,36 @@ class TextState:
         )
 
     def op_BDC(self, operands: OperandWindow, depth: int) -> None:
-        self.content_component.begin_with_properties(operands)
+        tag = self.document.resolver.resolve_name(operands[0]) if operands else None
+        layer = (
+            self.resolve_marked_content_layer(operands[1])
+            if tag == "OC" and len(operands) >= 2
+            else None
+        )
+        actual_text = (
+            self.resolve_marked_content_actual_text(operands[1])
+            if tag == "Span" and len(operands) >= 2
+            else None
+        )
+        mcid = self.resolve_marked_content_mcid(operands[1]) if len(operands) >= 2 else None
+        self.marked_content_stack.append(
+            MarkedContentEntry(layer=layer, actual_text=actual_text, mcid=mcid)
+        )
 
     def op_BMC(self, operands: OperandWindow, depth: int) -> None:
-        self.content_component.begin()
+        self.marked_content_stack.append(MarkedContentEntry())
 
     def op_EMC(self, operands: OperandWindow, depth: int) -> None:
-        self.content_component.end()
+        if self.marked_content_stack:
+            self.emit_actual_text_span(self.marked_content_stack.pop())
 
     def op_G(self, operands: OperandWindow, depth: int) -> None:
-        self.graphics_component.set_stroke_gray(operands)
+        if operands:
+            self.set_stroke_color(operands[0])
 
     def op_RG(self, operands: OperandWindow, depth: int) -> None:
-        self.graphics_component.set_stroke_rgb(operands)
+        if len(operands) >= 3:
+            self.set_stroke_color(operands[0], operands[1], operands[2])
 
     def op_RG_values(self: Any, red: int | float, green: int | float, blue: int | float) -> None:
         self.set_stroke_color(red, green, blue)
@@ -3846,34 +3964,63 @@ class TextState:
         self.set_fill_color(red, green, blue)
 
     def op_K(self, operands: OperandWindow, depth: int) -> None:
-        self.graphics_component.set_stroke_cmyk(operands)
+        if len(operands) >= 4:
+            self.set_stroke_color(operands[0], operands[1], operands[2], operands[3])
 
     def op_w(self, operands: OperandWindow, depth: int) -> None:
-        self.graphics_component.set_line_width(operands)
+        if operands:
+            try:
+                self.line_width = max(0.0, self.as_float(operands[0]))
+            except (TypeError, ValueError):
+                return
 
     def op_w_value(self: Any, line_width: int | float) -> None:
         self.line_width = max(0.0, self.as_float(line_width))
 
     def op_J(self, operands: OperandWindow, depth: int) -> None:
-        self.graphics_component.set_line_cap(operands)
+        if operands:
+            try:
+                self.line_cap = self.as_int(operands[0])
+            except (TypeError, ValueError):
+                return
 
     def op_J_value(self: Any, line_cap: int | float) -> None:
         self.line_cap = self.as_int(line_cap)
 
     def op_j(self, operands: OperandWindow, depth: int) -> None:
-        self.graphics_component.set_line_join(operands)
+        if operands:
+            try:
+                self.line_join = self.as_int(operands[0])
+            except (TypeError, ValueError):
+                return
 
     def op_j_value(self: Any, line_join: int | float) -> None:
         self.line_join = self.as_int(line_join)
 
     def op_M(self, operands: OperandWindow, depth: int) -> None:
-        self.graphics_component.set_miter_limit(operands)
+        if operands:
+            try:
+                self.miter_limit = max(1.0, self.as_float(operands[0]))
+            except (TypeError, ValueError):
+                return
 
     def op_M_value(self: Any, miter_limit: int | float) -> None:
         self.miter_limit = max(1.0, self.as_float(miter_limit))
 
     def op_d(self, operands: OperandWindow, depth: int) -> None:
-        self.graphics_component.set_dash_pattern(operands)
+        if not operands or len(operands) < 2:
+            return
+        try:
+            phase = self.as_float(operands[1])
+            array_obj = operands[0]
+            dash_array = (
+                [self.as_float(value) for value in array_obj]
+                if isinstance(array_obj, (list, tuple))
+                else []
+            )
+        except (TypeError, ValueError):
+            return
+        self.dash_pattern = (dash_array, phase)
 
     def op_m(self, operands: OperandWindow, depth: int) -> None:
         self._op_m_impl(operands, depth)
@@ -4489,10 +4636,12 @@ class TextState:
             self.render_intent = value
 
     def op_MP(self, operands: OperandWindow, depth: int) -> None:
-        self.content_component.mark_point()
+        # A marked-content point is not a scope. Only BMC/BDC push and EMC pops.
+        return
 
     def op_DP(self, operands: OperandWindow, depth: int) -> None:
-        self.content_component.mark_point_with_properties(operands)
+        # A property-bearing marked-content point likewise has no lasting state.
+        return
 
     def resolve_marked_content_actual_text(self: Any, value: Any) -> str | None:
         props = self.resolve_marked_content_properties(value)
@@ -4611,10 +4760,105 @@ class TextState:
         return resolved
 
     def op_q(self, operands: OperandWindow, depth: int) -> None:
-        self.graphics_component.save()
+        self.clip_scope_stack.append(False)
+        self.stack.append(
+            (
+                self.ca,
+                self.cb,
+                self.cc,
+                self.cd,
+                self.ce,
+                self.cf,
+                self.fill_color,
+                self.fill_pattern,
+                self.fill_opacity,
+                self.stroke_color,
+                self.stroke_pattern,
+                self.stroke_opacity,
+                self.fill_color_space,
+                self.stroke_color_space,
+                self.compatibility_depth,
+                self.blend_mode,
+                self.group_alpha,
+                self.flatness,
+                self.render_intent,
+                self.clip_bbox,
+                self.line_width,
+                self.line_cap,
+                self.line_join,
+                self.miter_limit,
+                self.dash_pattern,
+                self.font_size,
+                self.font_operand,
+                self.font_size_operand,
+                self.horizontal_scale,
+                self.char_space,
+                self.word_space,
+                self.rise,
+                self.leading,
+                self.render_mode,
+                self.current_font,
+                self.current_decoder,
+            )
+        )
 
     def op_Q(self, operands: OperandWindow, depth: int) -> None:
-        self.graphics_component.restore()
+        clip_scope_emitted = self.clip_scope_stack.pop() if self.clip_scope_stack else False
+        if self.capture_graphics and clip_scope_emitted:
+            self.drawings.append(
+                CapturedDrawing(
+                    seqno=self.sequence,
+                    fill=None,
+                    fill_opacity=None,
+                    kind="state-pop",
+                )
+            )
+        if not self.stack:
+            return
+        (
+            self.ca,
+            self.cb,
+            self.cc,
+            self.cd,
+            self.ce,
+            self.cf,
+            self.fill_color,
+            self.fill_pattern,
+            self.fill_opacity,
+            self.stroke_color,
+            self.stroke_pattern,
+            self.stroke_opacity,
+            self.fill_color_space,
+            self.stroke_color_space,
+            self.compatibility_depth,
+            self.blend_mode,
+            self.group_alpha,
+            self.flatness,
+            self.render_intent,
+            self.clip_bbox,
+            self.line_width,
+            self.line_cap,
+            self.line_join,
+            self.miter_limit,
+            self.dash_pattern,
+            self.font_size,
+            self.font_operand,
+            self.font_size_operand,
+            self.horizontal_scale,
+            self.char_space,
+            self.word_space,
+            self.rise,
+            self.leading,
+            self.render_mode,
+            self.current_font,
+            self.current_decoder,
+        ) = self.stack.pop()
+        self.update_combined()
+        # Text-state values are included in our graphics-state snapshot for
+        # compatibility with malformed producers that change them inside q/Q.
+        # Restore their derived scales and metrics together with the raw values.
+        self.update_text_scales()
+        self.update_font_metrics()
 
     def op_cm(self, operands: OperandWindow, depth: int) -> None:
         if not operands or len(operands) < 6:
@@ -4642,7 +4886,14 @@ class TextState:
         m_e: float,
         m_f: float,
     ) -> None:
-        self.graphics_component.concatenate((m_a, m_b, m_c, m_d, m_e, m_f))
+        ca, cb, cc, cd, ce, cf = self.ca, self.cb, self.cc, self.cd, self.ce, self.cf
+        self.ca = m_a * ca + m_b * cc
+        self.cb = m_a * cb + m_b * cd
+        self.cc = m_c * ca + m_d * cc
+        self.cd = m_c * cb + m_d * cd
+        self.ce = m_e * ca + m_f * cc + ce
+        self.cf = m_e * cb + m_f * cd + cf
+        self.update_combined()
 
     def op_g(self, operands: OperandWindow, depth: int) -> None:
         if operands:

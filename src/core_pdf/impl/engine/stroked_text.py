@@ -17,8 +17,8 @@ from dataclasses import dataclass
 from typing import Any, Iterable, Mapping, TypeAlias
 
 from core_pdf.impl.engine.layout.geometry import rect_tuple
+from core_pdf.impl.types import Rectangle
 
-BBox: TypeAlias = tuple[float, float, float, float]
 GlyphSignature: TypeAlias = tuple[tuple[tuple[bool, tuple[tuple[int, int], ...]], ...], ...]
 GlyphTopology: TypeAlias = tuple[tuple[tuple[bool, int], ...], ...]
 
@@ -40,7 +40,7 @@ class StrokedTextSeed:
     """One OCR token that may label a sequence of vector glyphs."""
 
     text: str
-    bbox: BBox
+    bbox: Rectangle
     confidence: float
     sequence: int
 
@@ -50,7 +50,7 @@ class StrokedTextObservation:
     """Text decoded directly from a consecutive vector-path run."""
 
     text: str
-    bbox: BBox
+    bbox: Rectangle
     first_drawing: int
     last_drawing: int
     confidence: float = 96.0
@@ -86,7 +86,7 @@ class StrokedTextDecode:
 class StrokedTextRun:
     """One compact horizontal path run suitable for seeding raster OCR."""
 
-    bbox: BBox
+    bbox: Rectangle
     drawing_indexes: tuple[int, ...]
     glyph_count: int
 
@@ -95,7 +95,7 @@ class StrokedTextRun:
 class internal_PathRecord:
     index: int
     drawing: Any
-    bbox: BBox
+    bbox: Rectangle
 
 
 internal_Glyph: TypeAlias = tuple[internal_PathRecord, ...]
@@ -128,7 +128,7 @@ class internal_StrokedTextRunProfile:
 
     glyphs: tuple[internal_Glyph, ...]
     signatures: tuple[GlyphSignature | None, ...]
-    bbox: BBox
+    bbox: Rectangle
     first_drawing: int
     last_drawing: int
     seed_run: StrokedTextRun | None
@@ -232,8 +232,8 @@ def internal_seed_text(seed: StrokedTextSeed) -> str | None:
 
 
 def internal_seed_run_overlap(
-    seed_box: BBox,
-    run_box: BBox,
+    seed_box: Rectangle,
+    run_box: Rectangle,
 ) -> float:
     """Return containment-style overlap for a remapped packed OCR token."""
     intersection_width = max(0.0, min(seed_box[2], run_box[2]) - max(seed_box[0], run_box[0]))
@@ -370,7 +370,7 @@ def internal_consensus_mapping(
     return mapping, initial, len(accepted_sequences)
 
 
-def internal_glyph_bbox(glyph: internal_Glyph) -> BBox:
+def internal_glyph_bbox(glyph: internal_Glyph) -> Rectangle:
     return (
         min(record.bbox[0] for record in glyph),
         min(record.bbox[1] for record in glyph),

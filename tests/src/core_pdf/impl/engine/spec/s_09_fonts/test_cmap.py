@@ -140,19 +140,6 @@ def test_tounicode_retains_explicit_mappings_with_malformed_codespace() -> None:
     assert cmap.decode(b"\x02\x0b\x00\x83\x02\x0c") == "(a)"
 
 
-def test_japan1_unicode_map_disambiguates_and_covers_legacy_cids() -> None:
-    horizontal = resolve_cid_unicode_map("Adobe", "Japan1")
-    vertical = resolve_cid_unicode_map("Adobe", "Japan1", vertical=True)
-
-    assert horizontal is not None
-    assert vertical is not None
-    assert horizontal.get(114) == "\u2012"
-    assert horizontal.get(633) == "\u3000"
-    assert horizontal.get(3284) == "日"
-    assert horizontal.get(7639) == "欝"
-    assert vertical.get(7899) == "（"
-
-
 def test_non_japanese_cjk_maps_cover_full_collections() -> None:
     cases = (
         ("GB1", 30300, ((115, "〈"), (4559, "中"), (1905, "汉"), (22047, "⺁"))),

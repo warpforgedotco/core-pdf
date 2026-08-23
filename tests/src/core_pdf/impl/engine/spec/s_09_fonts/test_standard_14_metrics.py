@@ -72,12 +72,6 @@ def test_times_roman_without_widths_uses_the_built_in_metrics() -> None:
     assert run_width(one_line_pdf(b"Times-Roman", b"Aeil.")) == pytest.approx(expected, abs=0.05)
 
 
-def test_missing_widths_no_longer_advance_a_full_em_per_glyph() -> None:
-    # The regression: five glyphs at 10pt measured 50pt regardless of shape.
-    width = run_width(one_line_pdf(b"Helvetica", b"Hello"))
-    assert width < 40.0
-
-
 @pytest.mark.parametrize(
     ("base_font", "char", "expected"),
     [

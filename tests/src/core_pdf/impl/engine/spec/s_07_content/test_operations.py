@@ -12,6 +12,13 @@ from core_pdf.impl.engine.spec.s_07_content.operations import (
     dispatch_operations,
     iter_content_operations,
 )
+from core_pdf.impl.engine.spec.s_07_syntax.content_operators import (
+    CACHED_OPERATOR_KEYWORDS,
+    OPERATOR_SPECS,
+    TEXT_ONLY_NOOP_OPS,
+    TEXT_OP,
+    TYPE3_REPLAY_OPERATORS,
+)
 from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
 
 
@@ -84,12 +91,13 @@ def test_content_operations_support_reversed_memoryview() -> None:
     ]
 
 
-@pytest.mark.parametrize("view_kind", ["bytes", "sliced", "reversed"])
 @pytest.mark.parametrize(
-    ("content", "expected"),
+    ("view_kind", "content", "expected"),
     [
-        (b"q \t% fake Do\n\r % fake Tj\r\n Q", [("q", ()), ("Q", ())]),
-        (b"q % fake Do", [("q", ())]),
+        ("bytes", b"q \t% fake Do\n\r % fake Tj\r\n Q", [("q", ()), ("Q", ())]),
+        ("bytes", b"q % fake Do", [("q", ())]),
+        ("sliced", b"q \t% fake Do\n\r % fake Tj\r\n Q", [("q", ()), ("Q", ())]),
+        ("reversed", b"q % fake Do", [("q", ())]),
     ],
 )
 def test_content_operations_skip_comments_after_whitespace(
@@ -126,6 +134,40 @@ def test_content_operator_counts_group_text_image_and_vector_operators() -> None
     assert counts.image == 1
     assert counts.vector_path == 1
     assert counts.vector_paint == 1
+
+
+@pytest.mark.parametrize(("operator", "operands"), [("TL", "12"), ("Tz", "90"), ("Ts", "2")])
+def test_content_operator_counts_classify_all_text_state_operators(
+    operator: str,
+    operands: str,
+) -> None:
+    counts = count_content_stream_operators(f"{operands} {operator}".encode("ascii"))
+
+    assert counts.text == 1
+    assert counts.unknown == 0
+
+
+def test_operator_metadata_derives_dispatch_and_specialized_sets() -> None:
+    assert {name: descriptor.handler for name, descriptor in OPERATOR_SPECS.items()} == TEXT_OP
+    assert (
+        frozenset(name for name, descriptor in OPERATOR_SPECS.items() if descriptor.text_only_noop)
+        == TEXT_ONLY_NOOP_OPS
+    )
+    assert (
+        frozenset(name for name, descriptor in OPERATOR_SPECS.items() if descriptor.type3_replay)
+        == TYPE3_REPLAY_OPERATORS
+    )
+    # Dash operands contain an array, so Type3 compilation must retain its
+    # established safe fallback instead of admitting `d` to direct replay.
+    assert "d" not in TYPE3_REPLAY_OPERATORS
+    assert (
+        tuple(
+            name.encode("latin-1")
+            for name, descriptor in OPERATOR_SPECS.items()
+            if descriptor.cache_keyword
+        )
+        == CACHED_OPERATOR_KEYWORDS
+    )
 
 
 class internal_RecordingOperationTarget:

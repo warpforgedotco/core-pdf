@@ -15,22 +15,17 @@ from core_pdf import PdfDocument as PublicPdfDocument
 from core_pdf import PdfSourceError
 from core_pdf.impl.engine.spec.s_07_content.operations import dispatch_operations
 from core_pdf.impl.engine.spec.s_07_document.document import PdfDocument
-from core_pdf.impl.engine.spec.s_07_document.document_features import (
-    DocumentFeaturesMixin,
-)
 from core_pdf.impl.engine.spec.s_07_document.document_labels import (
     format_alpha,
     format_page_label,
 )
-from core_pdf.impl.engine.spec.s_07_document.document_pages import DocumentPagesMixin
 from core_pdf.impl.engine.spec.s_07_document.metadata import (
     MetadataResolver,
     resolve_info_metadata,
 )
-from core_pdf.impl.engine.spec.s_07_objects.resolver_values import PdfValueResolver
 from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.engine.spec.s_09_fonts.decoder import FontDecoder
-from core_pdf.impl.primitives import PdfName
+from core_pdf.impl.primitives import MISSING, PdfName
 from core_pdf.impl.types import PdfDict
 
 
@@ -148,7 +143,7 @@ def test_page_label_without_style_is_prefix_only() -> None:
     assert format_page_label({"P": b"Appendix-"}, 17, lambda value: value) == "Appendix-"
 
 
-class internal_PageLabelDocument(DocumentPagesMixin):
+class internal_PageLabelDocument(PdfDocument):
     def __init__(self, *, recovered: bool) -> None:
         self.internal_cache_lock = threading.RLock()
         self.page_labels_cache = None
@@ -207,7 +202,7 @@ def test_nested_form_rebinds_same_named_font_resource() -> None:
 
 
 def test_document_close_releases_owned_path_resources() -> None:
-    document = PdfDocument(simple_pdf_fixture())
+    document: PdfDocument[Any] = PdfDocument(simple_pdf_fixture())
     mapping = document.raw_data
     file_handle = document.file_handle
 
@@ -224,7 +219,7 @@ def test_document_close_releases_owned_path_resources() -> None:
 
 def test_document_close_preserves_caller_owned_reader() -> None:
     reader = BytesIO(simple_pdf_fixture().read_bytes())
-    document = PdfDocument(reader)
+    document: PdfDocument[Any] = PdfDocument(reader)
 
     document.close()
 
@@ -233,7 +228,7 @@ def test_document_close_preserves_caller_owned_reader() -> None:
 
 
 def test_document_close_defers_unmap_for_external_view() -> None:
-    document = PdfDocument(simple_pdf_fixture())
+    document: PdfDocument[Any] = PdfDocument(simple_pdf_fixture())
     mapping = document.raw_data
     assert isinstance(mapping, mmap.mmap)
     external_view = memoryview(mapping)
@@ -321,10 +316,10 @@ class internal_TestResolver:
         return value if isinstance(value, int) else default
 
 
-class internal_NavigationDocument(DocumentFeaturesMixin):
+class internal_NavigationDocument(PdfDocument[Any]):
     def __init__(self, page: dict[object, object]) -> None:
         self.page = page
-        self.resolver = cast(PdfValueResolver, internal_TestResolver())
+        self.resolver = cast(Any, internal_TestResolver())
         self.xref_was_recovered = False
         self.page_tree_was_recovered = False
         self.named_destinations_cache = None
@@ -339,7 +334,7 @@ def test_outline_links_are_resolved_shallowly() -> None:
     child = {"Title": "Child", "Dest": [page, PdfName.of("Fit")], "Next": sibling}
     first = {"Title": "First", "First": child}
 
-    result = DocumentFeaturesMixin.walk_outlines(internal_NavigationDocument(page), first, 0)
+    result = PdfDocument.walk_outlines(internal_NavigationDocument(page), first, 0)
 
     assert [item.title for item in result] == ["First", "Child", "Sibling"]
     assert result[1].page_index == 0
@@ -347,11 +342,10 @@ def test_outline_links_are_resolved_shallowly() -> None:
 
 def test_structure_root_keeps_catalog_object_identity() -> None:
     root: dict[str, object] = {}
-    document = object.__new__(PdfDocument)
-    document.resolver = internal_TestResolver()
+    document: PdfDocument[Any] = object.__new__(PdfDocument)
+    document.resolver = cast(Any, internal_TestResolver())
     document.catalog_cache = cast(PdfDict, {"StructTreeRoot": root})
-    document.structure_cache = None
-    document.structure_root_cache = None
+    document.structure_cache = MISSING
 
     structure = document.structure
 

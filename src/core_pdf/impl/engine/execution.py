@@ -14,7 +14,7 @@ from concurrent.futures import (
     ThreadPoolExecutor,
     wait,
 )
-from contextlib import AbstractContextManager, suppress
+from contextlib import AbstractContextManager
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Generic, TypeVar
@@ -62,48 +62,12 @@ def internal_ocr_worker_count() -> int:
     return max(1, min(os.process_cpu_count() or 1, 4))
 
 
-class SharedMemoryPdfBuffer(AbstractContextManager["SharedMemoryPdfBuffer"]):
-    """Zero-copy IPC shared memory wrapper for raw PDF bytes across multi-core processes."""
-
-    __slots__ = ("shm", "name", "size", "closed")
-
-    def __init__(self, data: bytes | memoryview) -> None:
-        raw = bytes(data) if isinstance(data, memoryview) else data
-        self.size = len(raw)
-        from multiprocessing.shared_memory import SharedMemory
-
-        self.shm = SharedMemory(create=True, size=self.size)
-        self.name = self.shm.name
-        assert self.shm.buf is not None
-        self.shm.buf[: self.size] = raw
-        self.closed = False
-
-    def get_buffer(self) -> memoryview:
-        assert self.shm.buf is not None
-        return memoryview(self.shm.buf)[: self.size]
-
-    def close(self) -> None:
-        if not self.closed:
-            self.closed = True
-            with suppress(FileNotFoundError, BufferError):
-                self.shm.close()
-            with suppress(FileNotFoundError, BufferError):
-                self.shm.unlink()
-
-    def __enter__(self) -> SharedMemoryPdfBuffer:
-        return self
-
-    def __exit__(self, *args: object) -> None:
-        self.close()
-
-
 @dataclass(frozen=True, slots=True)
 class RuntimeConfig:
-    """Explicit resource limits for the shared thread and process runtime."""
+    """Explicit resource limits for the shared thread runtime."""
 
     parent_workers: int = field(default_factory=internal_worker_count)
     ocr_workers: int = field(default_factory=internal_ocr_worker_count)
-    process_workers: int = field(default_factory=internal_worker_count)
     raster_budget_bytes: int = field(default_factory=internal_raster_budget_bytes)
     prewarm: bool = False
 
@@ -112,8 +76,6 @@ class RuntimeConfig:
             raise ValueError("parent_workers must be positive")
         if self.ocr_workers < 1:
             raise ValueError("ocr_workers must be positive")
-        if self.process_workers < 1:
-            raise ValueError("process_workers must be positive")
         if self.raster_budget_bytes < 1:
             raise ValueError("raster_budget_bytes must be positive")
 
@@ -767,7 +729,6 @@ __all__ = (
     "RUNTIME",
     "RuntimeConfig",
     "RuntimeMetrics",
-    "SharedMemoryPdfBuffer",
     "TaskScope",
     "WorkStage",
     "configure_runtime",

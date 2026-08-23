@@ -11,8 +11,8 @@ from pathlib import Path
 from typing import Any, BinaryIO, cast
 
 from core_pdf import PdfDocument
+from core_pdf.api.compat.pypdf._text import extract_legacy_text
 from core_pdf.impl.engine.layout.geometry import rect_tuple
-from core_pdf.impl.engine.parse.legacy_text import extract_legacy_text
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_09_fonts.cmap_tounicode import ToUnicodeCMap
 from core_pdf.impl.engine.spec.s_09_fonts.decoder import FontDecoder
@@ -25,7 +25,7 @@ from core_pdf.impl.engine.structured import (
 from core_pdf.impl.engine.writing.encryption import StandardPdfEncryption
 from core_pdf.impl.engine.writing.semantic import serialize_document_to_pdf
 from core_pdf.impl.exceptions import PdfUnsupportedError
-from core_pdf.impl.objects import PdfReference
+from core_pdf.impl.primitives import PdfReference
 
 PdfInput = str | PathLike[str] | bytes | bytearray | BytesIO
 BBox = tuple[float, float, float, float]

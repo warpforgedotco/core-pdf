@@ -2,12 +2,14 @@ from pathlib import Path
 
 import pytest
 
-from .support import ALL_PDFS, call_pair
+from .support import call_pair, differential_pdfs, pdf_id
+
+real_partition = pytest.importorskip("unstructured.partition.pdf").partition_pdf
+pytestmark = pytest.mark.compat_differential
 
 
-@pytest.mark.parametrize("pdf_path", ALL_PDFS, ids=lambda path: path.name)
-def test_matches_real_library_on_all_fixture_pdfs(pdf_path: Path) -> None:
-    real_partition = pytest.importorskip("unstructured.partition.pdf").partition_pdf
+@pytest.mark.parametrize("pdf_path", differential_pdfs("unstructured"), ids=pdf_id)
+def test_matches_real_library_on_fixture_corpus(pdf_path: Path) -> None:
     from core_pdf.api.compat.unstructured import partition_pdf as compat_partition
 
     pair = call_pair(

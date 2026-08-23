@@ -19,6 +19,9 @@ from core_pdf.impl.engine.spec.s_07_objects.object_cache import (
     ObjectCache,
 )
 from core_pdf.impl.engine.spec.s_07_objects.resolver_values import ResolverValueMixin
+from core_pdf.impl.engine.spec.s_07_syntax.content_operators import (
+    CACHED_OPERATOR_KEYWORDS,
+)
 from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.engine.spec.s_07_syntax.objects import PdfObjectStream
 from core_pdf.impl.engine.spec.s_07_syntax.xref import (
@@ -27,54 +30,12 @@ from core_pdf.impl.engine.spec.s_07_syntax.xref import (
     parse_object_marker_prefix,
 )
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.objects import MISSING, PdfReference, PdfStream
+from core_pdf.impl.objects import PdfStream
+from core_pdf.impl.primitives import MISSING, PdfReference
 from core_pdf.impl.types import Decipher, PdfDict
 
 COMMON_KEYWORDS: tuple[bytes, ...] = (
-    b"BT",
-    b"ET",
-    b"T*",
-    b"Td",
-    b"TD",
-    b"Tj",
-    b"TJ",
-    b"Tm",
-    b"Tf",
-    b"TL",
-    b"Tc",
-    b"Tw",
-    b"Tz",
-    b"Tr",
-    b"Ts",
-    b"'",
-    b'"',
-    b"Do",
-    b"BI",
-    b"BDC",
-    b"BMC",
-    b"EMC",
-    b"q",
-    b"Q",
-    b"cm",
-    b"g",
-    b"rg",
-    b"k",
-    b"G",
-    b"RG",
-    b"K",
-    b"CS",
-    b"cs",
-    b"SC",
-    b"SCN",
-    b"sc",
-    b"scn",
-    b"sh",
-    b"i",
-    b"ri",
-    b"MP",
-    b"DP",
-    b"BX",
-    b"EX",
+    *CACHED_OPERATOR_KEYWORDS,
     b"true",
     b"false",
     b"null",

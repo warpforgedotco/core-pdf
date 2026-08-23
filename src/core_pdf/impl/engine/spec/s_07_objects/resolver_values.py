@@ -14,7 +14,8 @@ from core_pdf.impl.engine.spec.s_07_objects.object_cache import (
     DeepObjectCache,
 )
 from core_pdf.impl.engine.spec.s_09_fonts.encoding import decode_pdf_text_string
-from core_pdf.impl.objects import MISSING, PdfName, PdfReference, PdfStream, PdfString
+from core_pdf.impl.objects import PdfStream
+from core_pdf.impl.primitives import MISSING, PdfName, PdfReference, PdfString
 from core_pdf.impl.types import PdfDict, PdfObject
 
 TERMINAL_TYPES = {int, float, str, bool, type(None), PdfName, bytes}

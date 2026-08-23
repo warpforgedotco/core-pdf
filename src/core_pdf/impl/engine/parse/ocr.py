@@ -48,13 +48,6 @@ from core_pdf.impl.engine.layout.spatial import (
 from core_pdf.impl.engine.parse.capture import (
     VECTOR_PAINT_KINDS,
     internal_promoted_hidden_observations,
-    preflight_page,
-)
-from core_pdf.impl.engine.parse.diagnostics import (
-    HIDDEN_TEXT_VERIFICATION_KEY,
-    OCR_PASS_DIAGNOSTICS_KEY,
-    STROKED_VECTOR_DECODE_KEY,
-    STROKED_VECTOR_PACKED_KEY,
 )
 from core_pdf.impl.engine.parse.fusion import (
     internal_text_tokens,
@@ -80,7 +73,10 @@ from core_pdf.impl.engine.parse.model import (
     ObservationSource,
     OcrPass,
     OcrPassScope,
+    RecognitionReport,
+    RecognitionResult,
     WorkPlan,
+    internal_bbox_tuple,
     internal_Candidate,
     internal_candidate,
     internal_OCR_RESCUE_DENSE_MIN_CHARACTERS,
@@ -94,16 +90,17 @@ from core_pdf.impl.engine.parse.tables import (
     internal_grid_components,
     internal_split_grid_component,
 )
-from core_pdf.impl.engine.rendering import (
+from core_pdf.impl.engine.render.display import (
     DisplayList,
     PathPaintItem,
     PathPaintKind,
-    RasterImage,
-    RenderedPage,
     RenderOptions,
-    compose_page,
+)
+from core_pdf.impl.engine.render.kernels import (
     rasterize_packed_stroked_paths,
 )
+from core_pdf.impl.engine.render.page import RenderedPage, compose_page
+from core_pdf.impl.engine.render.raster_image import RasterImage
 from core_pdf.impl.engine.spec.s_08_graphics.image_decode import decode_pdf_image
 from core_pdf.impl.engine.stroked_text import (
     StrokedTextDecode,
@@ -171,6 +168,43 @@ internal_OCR_TOKEN_TRANSLATION = str.maketrans(
 )
 
 
+@dataclass(slots=True)
+class internal_RecognitionTrace:
+    """Mutable stage-local collector finalized as one immutable recognition report."""
+
+    passes: list[dict[str, object]]
+    candidates: tuple[dict[str, object], ...] = ()
+    candidate_analysis: tuple[dict[str, object], ...] = ()
+    hidden_text_verification: dict[str, object] | None = None
+    stroked_vector_decode: dict[str, object] | None = None
+    stroked_vector_packed: dict[str, object] | None = None
+    document_stroked_glyphs: dict[str, object] | None = None
+    render_timings: dict[str, object] | None = None
+    grid_cell_ocr: dict[str, object] | None = None
+    render_error: str | None = None
+    pending_stroked_decode: tuple[int, StrokedTextDecode, float] | None = None
+    stroked_vector_alphabet: tuple[tuple[object, str], ...] = ()
+
+    @classmethod
+    def create(cls) -> internal_RecognitionTrace:
+        return cls([])
+
+    def report(self) -> RecognitionReport:
+        return RecognitionReport(
+            passes=tuple(self.passes),
+            candidates=self.candidates,
+            candidate_analysis=self.candidate_analysis,
+            hidden_text_verification=self.hidden_text_verification or {},
+            stroked_vector_decode=self.stroked_vector_decode or {},
+            stroked_vector_packed=self.stroked_vector_packed or {},
+            document_stroked_glyphs=self.document_stroked_glyphs or {},
+            render_timings=self.render_timings or {},
+            grid_cell_ocr=self.grid_cell_ocr or {},
+            render_error=self.render_error,
+            stroked_vector_alphabet=self.stroked_vector_alphabet,
+        )
+
+
 def internal_normalized_ocr_token_key(text: str) -> str:
     return unicodedata.normalize("NFKC", text).translate(internal_OCR_TOKEN_TRANSLATION).casefold()
 
@@ -206,12 +240,12 @@ def internal_hidden_text_verification(
     """Compare a word-level raster preview with hidden text and its page geometry."""
     hidden_by_token: dict[str, list[tuple[float, float, float, float]]] = defaultdict(list)
     for text, raw_box in zip(hidden.text, hidden.bbox, strict=True):
-        box = cast(tuple[float, float, float, float], tuple(float(value) for value in raw_box))
+        box = internal_bbox_tuple(raw_box)
         for token in internal_text_tokens(text):
             hidden_by_token[token].append(box)
 
     preview_entries = tuple(
-        (token, cast(tuple[float, float, float, float], tuple(float(value) for value in raw_box)))
+        (token, internal_bbox_tuple(raw_box))
         for text, raw_box in zip(preview.text, preview.bbox, strict=True)
         for token in internal_text_tokens(text)
     )
@@ -287,6 +321,7 @@ def internal_hidden_text_verification(
 class internal_Raster:
     image: RasterImage
     resolution: int
+    render_report: dict[str, object] | None = None
 
     @property
     def width(self) -> int:
@@ -1502,10 +1537,11 @@ def internal_observation_coverage_grid(
         observations.bbox,
         strict=True,
     ):
-        box_x0 = max(x0, float(raw_box[0]))
-        box_y0 = max(y0, float(raw_box[1]))
-        box_x1 = min(x1, float(raw_box[2]))
-        box_y1 = min(y1, float(raw_box[3]))
+        raw_x0, raw_y0, raw_x1, raw_y1 = internal_bbox_tuple(raw_box)
+        box_x0 = max(x0, raw_x0)
+        box_y0 = max(y0, raw_y0)
+        box_x1 = min(x1, raw_x1)
+        box_y1 = min(y1, raw_y1)
         box_width = box_x1 - box_x0
         box_height = box_y1 - box_y0
         if box_width <= 0.0 or box_height <= 0.0:
@@ -2009,6 +2045,7 @@ def internal_adaptive_ocr_raster(raster: internal_Raster) -> internal_Raster:
     return internal_Raster(
         RasterImage(contiguous_bytes(binary), raster.width, raster.height, 1),
         raster.resolution,
+        raster.render_report,
     )
 
 
@@ -2169,12 +2206,11 @@ def internal_augment_candidate(
 
 
 def internal_record_candidates(
-    capture: CapturedPage,
     candidates: tuple[tuple[str, internal_Candidate], ...],
     selected_name: str,
+    trace: internal_RecognitionTrace,
 ) -> None:
-    cache = capture.page.extraction_cache
-    cache["ocr_candidate_diagnostics"] = tuple(
+    trace.candidates = tuple(
         {
             "name": name,
             "mode": candidate.mode,
@@ -2189,7 +2225,7 @@ def internal_record_candidates(
         "yes",
         "on",
     }:
-        cache["ocr_candidate_analysis"] = tuple(
+        trace.candidate_analysis = tuple(
             {
                 "name": name,
                 "mode": candidate.mode,
@@ -2785,9 +2821,10 @@ def internal_candidate_ocr_regions(capture: CapturedPage) -> tuple[internal_OcrR
         vector_density[row * columns + column] += 0.5
 
     native_counts = numpy.zeros(rows * columns, dtype=numpy.float32)
-    for text, box in zip(native.text, native.bbox, strict=True):
-        center_x = (float(box[0]) + float(box[2])) * 0.5
-        center_y = (float(box[1]) + float(box[3])) * 0.5
+    for text, raw_box in zip(native.text, native.bbox, strict=True):
+        box = internal_bbox_tuple(raw_box)
+        center_x = (box[0] + box[2]) * 0.5
+        center_y = (box[1] + box[3]) * 0.5
         column = min(columns - 1, max(0, int(center_x * columns / max(1.0, page_width))))
         row = min(rows - 1, max(0, int(center_y * rows / max(1.0, page_height))))
         native_counts[row * columns + column] += sum(not char.isspace() for char in text)
@@ -2949,7 +2986,7 @@ def internal_direct_scan_allowed(capture: CapturedPage, plan: WorkPlan) -> bool:
     content the dominant image does not cover.
     """
     evidence = capture.evidence
-    if plan.reason == "native-text-corrupt":
+    if not plan.allow_direct_image_ocr:
         return False
     if evidence.visible_native_characters >= 10 or not evidence.image_count:
         return True
@@ -2967,6 +3004,7 @@ def internal_rendered_page_raster(
     cache: bool = True,
     max_pixels: int = MAX_OCR_PIXELS,
     include_native_text: bool = False,
+    trace: internal_RecognitionTrace | None = None,
 ) -> internal_Raster | None:
     page = capture.page
     compose_started = time.perf_counter()
@@ -2997,9 +3035,10 @@ def internal_rendered_page_raster(
         # A malformed embedded image can produce a source sample outside its
         # decoded raster during compositing.  Keep native extraction usable and
         # let OCR continue without the rendered-page fallback.
-        page.extraction_cache["ocr_render_error"] = str(error)
+        if trace is not None:
+            trace.render_error = str(error)
         return None
-    page.extraction_cache["ocr_render_timings"] = {
+    render_report: dict[str, object] = {
         "compose_seconds": compose_seconds,
         "rasterize_seconds": time.perf_counter() - raster_started,
         "raster_mode": "region" if crop is not None else "page",
@@ -3021,7 +3060,13 @@ def internal_rendered_page_raster(
             if getattr(item, "kind", None) in {"image", "inline-image"}
         ),
     }
-    return internal_Raster(data, max(70, int(round(72.0 * scale))))
+    if trace is not None:
+        trace.render_timings = render_report
+    return internal_Raster(
+        data,
+        max(70, int(round(72.0 * scale))),
+        render_report,
+    )
 
 
 STROKED_VECTOR_PACK_WIDTH = 240.0
@@ -3118,6 +3163,7 @@ def internal_stroked_vector_text_raster(
     *,
     max_pixels: int = MAX_OCR_PIXELS,
     variant: str = "seed",
+    trace: internal_RecognitionTrace | None = None,
 ) -> internal_PackedStrokedTextRaster | None:
     """Pack vector words into a compact seed raster with piecewise page mapping."""
     evidence = capture.evidence.stroked_vector_text
@@ -3163,6 +3209,8 @@ def internal_stroked_vector_text_raster(
     if cache is not None:
         cached = cache.get(cache_key)
         if isinstance(cached, internal_PackedStrokedTextRaster):
+            if trace is not None and variant == "seed" and cached.raster.render_report is not None:
+                trace.render_timings = cached.raster.render_report
             return cached
 
     compose_started = time.perf_counter()
@@ -3257,7 +3305,29 @@ def internal_stroked_vector_text_raster(
             cache=False,
         )
     raster_seconds = time.perf_counter() - raster_started
-    raster = internal_Raster(data, max(70, int(round(72.0 * scale))))
+    render_report: dict[str, object] = {
+        "compose_seconds": compose_seconds,
+        "rasterize_seconds": raster_seconds,
+        "raster_mode": "packed-stroked-vector-text",
+        "raster_kernel": "wu" if fast_path else "general",
+        "crop": (0.0, 0.0, packed_width, packed_height),
+        "raster_pixels": data.width * data.height,
+        "pixel_budget": max_pixels,
+        "include_native_text": False,
+        "image_timings": {},
+        "display_items": len(display_list.items),
+        "display_item_kinds": {"compact-stroke": len(display_list.items)},
+        "image_filters": (),
+        "packed_cells": len(cells),
+        "horizontal_padding": horizontal_padding,
+        "vertical_padding": vertical_padding,
+        "source_bbox": evidence.bbox,
+    }
+    raster = internal_Raster(
+        data,
+        max(70, int(round(72.0 * scale))),
+        render_report,
+    )
     packed = internal_PackedStrokedTextRaster(
         raster=raster,
         packed_box=(0.0, 0.0, packed_width, packed_height),
@@ -3265,25 +3335,11 @@ def internal_stroked_vector_text_raster(
     )
     if cache is not None:
         cache[cache_key] = packed
-        timings_key = "ocr_render_timings" if variant == "seed" else "ocr_render_timings_isolated"
-        cache[timings_key] = {
-            "compose_seconds": compose_seconds,
-            "rasterize_seconds": raster_seconds,
-            "raster_mode": "packed-stroked-vector-text",
-            "raster_kernel": "wu" if fast_path else "general",
-            "crop": packed.packed_box,
-            "raster_pixels": raster.width * raster.height,
-            "pixel_budget": max_pixels,
-            "include_native_text": False,
-            "image_timings": {},
-            "display_items": len(display_list.items),
-            "display_item_kinds": {"compact-stroke": len(display_list.items)},
-            "image_filters": (),
-            "packed_cells": len(cells),
-            "horizontal_padding": horizontal_padding,
-            "vertical_padding": vertical_padding,
-            "source_bbox": evidence.bbox,
-        }
+    # The isolated-glyph supplement uses the general renderer by design. Keep
+    # the pass-level timing tied to the seed atlas, matching the actual primary
+    # recognition path and preserving the Wu-kernel performance invariant.
+    if trace is not None and variant == "seed":
+        trace.render_timings = render_report
     return packed
 
 
@@ -3292,6 +3348,7 @@ def internal_full_stroked_vector_text_raster(
     requested_scale: float,
     *,
     max_pixels: int = MAX_OCR_PIXELS,
+    trace: internal_RecognitionTrace | None = None,
 ) -> internal_RasterRegion | None:
     """Render the full compact-stroke layer when packed seed OCR is insufficient."""
     evidence = capture.evidence.stroked_vector_text
@@ -3316,6 +3373,8 @@ def internal_full_stroked_vector_text_raster(
     if cache is not None:
         cached = cache.get(cache_key)
         if isinstance(cached, internal_RasterRegion):
+            if trace is not None and cached.raster.render_report is not None:
+                trace.render_timings = cached.raster.render_report
             return cached
 
     compose_started = time.perf_counter()
@@ -3355,23 +3414,29 @@ def internal_full_stroked_vector_text_raster(
         crop=crop,
         cache=False,
     )
-    raster = internal_Raster(data, max(70, int(round(72.0 * scale))))
+    render_report: dict[str, object] = {
+        "compose_seconds": compose_seconds,
+        "rasterize_seconds": time.perf_counter() - raster_started,
+        "raster_mode": "stroked-vector-text-fallback",
+        "crop": crop,
+        "raster_pixels": data.width * data.height,
+        "pixel_budget": max_pixels,
+        "include_native_text": False,
+        "image_timings": {},
+        "display_items": len(display_list.items),
+        "display_item_kinds": {"compact-stroke": len(display_list.items)},
+        "image_filters": (),
+    }
+    raster = internal_Raster(
+        data,
+        max(70, int(round(72.0 * scale))),
+        render_report,
+    )
     region = internal_RasterRegion(raster, crop)
     if cache is not None:
         cache[cache_key] = region
-        cache["ocr_render_timings"] = {
-            "compose_seconds": compose_seconds,
-            "rasterize_seconds": time.perf_counter() - raster_started,
-            "raster_mode": "stroked-vector-text-fallback",
-            "crop": crop,
-            "raster_pixels": raster.width * raster.height,
-            "pixel_budget": max_pixels,
-            "include_native_text": False,
-            "image_timings": {},
-            "display_items": len(display_list.items),
-            "display_item_kinds": {"compact-stroke": len(display_list.items)},
-            "image_filters": (),
-        }
+    if trace is not None:
+        trace.render_timings = render_report
     return region
 
 
@@ -3387,7 +3452,7 @@ def internal_remap_stroked_vector_observations(
     sequences: list[int] = []
     references: list[Any | None] = []
     for index, packed_box in enumerate(observations.bbox):
-        box = cast(tuple[float, float, float, float], tuple(float(value) for value in packed_box))
+        box = internal_bbox_tuple(packed_box)
         center_x = (box[0] + box[2]) * 0.5
         center_y = (box[1] + box[3]) * 0.5
         cells = tuple(
@@ -3552,6 +3617,7 @@ def internal_candidate_region_tasks(
     *,
     rendered: Any | None,
     compact_image: bool | str,
+    trace: internal_RecognitionTrace | None = None,
 ) -> tuple[
     tuple[internal_OcrTask, ...], int, Any | None, tuple[tuple[float, float, float, float], ...]
 ]:
@@ -3624,6 +3690,7 @@ def internal_candidate_region_tasks(
                 cache=True,
                 max_pixels=ocr_pass.pixel_budget,
                 include_native_text=ocr_pass.include_native_text,
+                trace=trace,
             )
             raster_box = region.page_box
         if raster is None:
@@ -3696,6 +3763,7 @@ def internal_high_resolution_weak_region_tasks(
     *,
     rendered: Any | None,
     compact_image: bool | str,
+    trace: internal_RecognitionTrace | None = None,
 ) -> tuple[
     tuple[internal_OcrTask, ...], int, Any | None, tuple[tuple[float, float, float, float], ...]
 ]:
@@ -3743,6 +3811,7 @@ def internal_high_resolution_weak_region_tasks(
             cache=True,
             max_pixels=ocr_pass.pixel_budget,
             include_native_text=ocr_pass.include_native_text,
+            trace=trace,
         )
         if raster is None:
             continue
@@ -3844,7 +3913,7 @@ def internal_stroked_vector_symbol_seeds(
         int,
         list[tuple[float, str, float]],
     ] = defaultdict(list)
-    for text, box, confidence, raw_sequence in zip(
+    for text, raw_box, confidence, raw_sequence in zip(
         symbols.text,
         symbols.bbox,
         symbols.confidence,
@@ -3855,7 +3924,7 @@ def internal_stroked_vector_symbol_seeds(
         sequence = int(raw_sequence)
         if len(character) != 1 or sequence not in runs_by_sequence:
             continue
-        grouped[sequence].append((float(box[0]), character, float(confidence)))
+        grouped[sequence].append((internal_bbox_tuple(raw_box)[0], character, float(confidence)))
 
     seeds: list[StrokedTextSeed] = []
     for sequence, items in grouped.items():
@@ -3886,7 +3955,7 @@ def internal_decode_stroked_vector_text(
     word_seeds = tuple(
         StrokedTextSeed(
             text=text,
-            bbox=(float(box[0]), float(box[1]), float(box[2]), float(box[3])),
+            bbox=internal_bbox_tuple(box),
             confidence=float(confidence),
             sequence=int(sequence),
         )
@@ -3948,14 +4017,15 @@ def internal_packed_stroked_vector_decode_gate(
 def internal_recover_stroked_vector_text(
     capture: CapturedPage,
     ocr: ObservationBatch,
+    trace: internal_RecognitionTrace | None = None,
 ) -> ObservationBatch:
     """Augment one OCR pass with text decoded from repeated vector glyphs."""
     evidence = capture.evidence.stroked_vector_text
     if not evidence.trusted or not evidence.drawing_indexes or not len(ocr):
         return ocr
+    trace = trace or internal_RecognitionTrace.create()
     started = time.perf_counter()
-    cache = capture.page.extraction_cache
-    cached_decode = cache.pop("_stroked_vector_decode_preview", None)
+    cached_decode = trace.pending_stroked_decode
     if (
         isinstance(cached_decode, tuple)
         and len(cached_decode) == 3
@@ -4004,7 +4074,7 @@ def internal_recover_stroked_vector_text(
             accepted.append(observation)
             corrections += 1
 
-    cache[STROKED_VECTOR_DECODE_KEY] = {
+    trace.stroked_vector_decode = {
         "seconds": prior_decode_seconds + time.perf_counter() - started,
         "eligible_seeds": decoded.eligible_seeds,
         "aligned_seeds": decoded.aligned_seeds,
@@ -4020,7 +4090,7 @@ def internal_recover_stroked_vector_text(
         "additions": additions,
         "corrections": corrections,
     }
-    cache["_stroked_vector_alphabet"] = decoded.alphabet
+    trace.stroked_vector_alphabet = tuple(decoded.alphabet)
     if not accepted:
         return ocr
     retained = ocr.take(tuple(index for index in range(len(ocr)) if index not in replacements))
@@ -4034,25 +4104,35 @@ def recognize_page(
     capture: CapturedPage,
     plan: WorkPlan,
     context: TaskScope,
-) -> ObservationBatch:
+) -> RecognitionResult:
+    trace = internal_RecognitionTrace.create()
     if not plan.ocr_passes:
-        return ObservationBatch.empty()
+        return RecognitionResult(ObservationBatch.empty(), trace.report())
     with context.reserve_raster(MAX_OCR_RASTER_BYTES):
         context.raise_if_cancelled()
-        observations = internal_recognize_page_with_reserved_raster(capture, plan, context)
-    return internal_recover_stroked_vector_text(capture, observations)
+        observations = internal_recognize_page_with_reserved_raster(
+            capture,
+            plan,
+            context,
+            trace=trace,
+        )
+    observations = internal_recover_stroked_vector_text(capture, observations, trace)
+    return RecognitionResult(observations, trace.report())
 
 
 def internal_recognize_page_with_reserved_raster(
     capture: CapturedPage,
     plan: WorkPlan,
     context: TaskScope,
+    *,
+    trace: internal_RecognitionTrace | None = None,
 ) -> ObservationBatch:
+    trace = trace or internal_RecognitionTrace.create()
     page = capture.page
     page_box = (0.0, 0.0, float(page.width), float(page.height))
     compact_image: bool | str = True
     if capture.evidence.full_page_image:
-        image_filters = preflight_page(page, capture).features.image_filters
+        image_filters = capture.evidence.image_filters
         if any("JPX" in str(filter_name).upper() for filter_name in image_filters):
             compact_image = "grayscale"
     dominant_regions: dict[int, internal_RasterRegion | None] = {}
@@ -4060,7 +4140,7 @@ def internal_recognize_page_with_reserved_raster(
     rendered_page: Any | None = None
     candidate_regions: tuple[internal_OcrRegion, ...] | None = None
     candidates: list[tuple[str, internal_Candidate]] = []
-    pass_diagnostics: list[dict[str, object]] = []
+    pass_diagnostics = trace.passes
     selected_name = ""
     selected: internal_Candidate | None = None
     selected_tasks: tuple[internal_OcrTask, ...] = ()
@@ -4133,7 +4213,7 @@ def internal_recognize_page_with_reserved_raster(
             ),
             "full_page_fallback": False,
             "elapsed_seconds": time.perf_counter() - started,
-            "render_timings": capture.page.extraction_cache.get("ocr_render_timings", {}),
+            "render_timings": trace.render_timings or {},
             "recognition_seconds": sum(
                 candidate.recognition_seconds for candidate in verification_candidates
             ),
@@ -4163,12 +4243,11 @@ def internal_recognize_page_with_reserved_raster(
             **verification.as_record(),
         }
         pass_diagnostics.append(verification_record)
-        capture.page.extraction_cache[HIDDEN_TEXT_VERIFICATION_KEY] = {
+        trace.hidden_text_verification = {
             "raster_pixels": raster_pixels,
             **verification.as_record(),
         }
         if verification.accepted:
-            capture.page.extraction_cache[OCR_PASS_DIAGNOSTICS_KEY] = tuple(pass_diagnostics)
             return internal_promoted_hidden_observations(capture)
 
     for ocr_pass in plan.ocr_passes:
@@ -4272,6 +4351,7 @@ def internal_recognize_page_with_reserved_raster(
                     cache=True,
                     max_pixels=OCR_PREFLIGHT_PIXELS,
                     include_native_text=ocr_pass.include_native_text,
+                    trace=trace,
                 )
             if preview_raster is not None:
                 preview_height = internal_estimated_text_height(preview_raster)
@@ -4344,6 +4424,7 @@ def internal_recognize_page_with_reserved_raster(
                 ocr_pass,
                 rendered=rendered_page,
                 compact_image=compact_image,
+                trace=trace,
             )
             region_stage = (
                 "distributed-outline-page" if distributed_outline_text else "initial-regions"
@@ -4362,6 +4443,7 @@ def internal_recognize_page_with_reserved_raster(
                         selected.observations,
                         rendered=rendered_page,
                         compact_image=compact_image,
+                        trace=trace,
                     )
                 )
                 region_stage = "weak-region-crops"
@@ -4386,6 +4468,7 @@ def internal_recognize_page_with_reserved_raster(
                             ocr_pass.scale,
                             max_pixels=ocr_pass.pixel_budget,
                             include_native_text=ocr_pass.include_native_text,
+                            trace=trace,
                         )
                     raster = rendered_rasters[raster_key]
                     raster_page_box = page_box
@@ -4410,6 +4493,7 @@ def internal_recognize_page_with_reserved_raster(
                 capture,
                 ocr_pass.scale,
                 max_pixels=ocr_pass.pixel_budget,
+                trace=trace,
             )
             if packed_stroked is not None:
                 region_stage = "packed-stroked-vector-text"
@@ -4430,6 +4514,7 @@ def internal_recognize_page_with_reserved_raster(
                     capture,
                     ocr_pass.scale,
                     max_pixels=ocr_pass.pixel_budget,
+                    trace=trace,
                 )
                 region_stage = "stroked-vector-text-fallback"
                 region_boxes = (fallback_region.page_box,) if fallback_region is not None else ()
@@ -4448,7 +4533,7 @@ def internal_recognize_page_with_reserved_raster(
                     if fallback_region is not None
                     else 0
                 )
-                capture.page.extraction_cache[STROKED_VECTOR_PACKED_KEY] = {
+                trace.stroked_vector_packed = {
                     "accepted": False,
                     "cells": 0,
                     "raster_pixels": 0,
@@ -4514,6 +4599,7 @@ def internal_recognize_page_with_reserved_raster(
                     crop=image_crop,
                     max_pixels=ocr_pass.pixel_budget,
                     include_native_text=ocr_pass.include_native_text,
+                    trace=trace,
                 )
                 raster_page_box = image_crop or page_box
                 tasks = (
@@ -4551,6 +4637,7 @@ def internal_recognize_page_with_reserved_raster(
                         ocr_pass.scale,
                         max_pixels=ocr_pass.pixel_budget,
                         include_native_text=ocr_pass.include_native_text,
+                        trace=trace,
                     )
                 raster = rendered_rasters[raster_key]
                 raster_page_box = page_box
@@ -4608,6 +4695,7 @@ def internal_recognize_page_with_reserved_raster(
                     ocr_pass.scale,
                     max_pixels=ocr_pass.pixel_budget,
                     variant="isolated",
+                    trace=trace,
                 )
                 isolated_tasks = (
                     internal_tile_tasks(
@@ -4643,7 +4731,7 @@ def internal_recognize_page_with_reserved_raster(
                     tasks = (*tasks, *isolated_tasks)
                     packed_candidate = internal_merge_candidate_batches(task_candidates)
                     raster_pixels += isolated_packed.raster.width * isolated_packed.raster.height
-                capture.page.extraction_cache["_stroked_vector_decode_preview"] = (
+                trace.pending_stroked_decode = (
                     id(packed_candidate.observations),
                     packed_decode,
                     decode_seconds,
@@ -4653,6 +4741,7 @@ def internal_recognize_page_with_reserved_raster(
                     capture,
                     ocr_pass.scale,
                     max_pixels=ocr_pass.pixel_budget,
+                    trace=trace,
                 )
                 fallback_tasks = (
                     internal_tile_tasks(
@@ -4680,7 +4769,7 @@ def internal_recognize_page_with_reserved_raster(
                     region_boxes = (
                         (fallback_region.page_box,) if fallback_region is not None else region_boxes
                     )
-            capture.page.extraction_cache[STROKED_VECTOR_PACKED_KEY] = {
+            trace.stroked_vector_packed = {
                 **packed_gate,
                 "raster_pixels": packed_pixels,
                 "unmapped_observations": unmapped_observations,
@@ -4692,7 +4781,7 @@ def internal_recognize_page_with_reserved_raster(
             candidate = internal_merge_candidate_batches(task_candidates)
         if (
             selected is not None
-            and plan.reason == "native-text-corrupt"
+            and plan.augment_page_candidates
             and ocr_pass.scope is OcrPassScope.PAGE
             and not capture.evidence.vector_complexity >= 180
         ):
@@ -4743,6 +4832,7 @@ def internal_recognize_page_with_reserved_raster(
                     adaptive_retry_scale,
                     max_pixels=MAX_OCR_PIXELS,
                     include_native_text=ocr_pass.include_native_text,
+                    trace=trace,
                 )
                 retry_tasks = (
                     internal_tile_tasks(
@@ -4773,6 +4863,7 @@ def internal_recognize_page_with_reserved_raster(
                         candidate.observations,
                         rendered=rendered_page,
                         compact_image=compact_image,
+                        trace=trace,
                     )
                 )
             if retry_tasks:
@@ -4830,7 +4921,7 @@ def internal_recognize_page_with_reserved_raster(
                     region_stage == "page" and ocr_pass.scope is OcrPassScope.PAGE
                 ),
                 "elapsed_seconds": elapsed,
-                "render_timings": capture.page.extraction_cache.get("ocr_render_timings", {}),
+                "render_timings": trace.render_timings or {},
                 "recognition_seconds": sum(
                     task_candidate.recognition_seconds for task_candidate in task_candidates
                 ),
@@ -4881,13 +4972,11 @@ def internal_recognize_page_with_reserved_raster(
             selected_tasks = candidate_source_tasks
 
     if selected is None:
-        capture.page.extraction_cache[OCR_PASS_DIAGNOSTICS_KEY] = tuple(pass_diagnostics)
-        internal_record_candidates(capture, tuple(candidates), selected_name)
+        internal_record_candidates(tuple(candidates), selected_name, trace)
         return ObservationBatch.empty()
     for diagnostic in pass_diagnostics:
         diagnostic["selected"] = diagnostic["name"] == selected_name
-    capture.page.extraction_cache[OCR_PASS_DIAGNOSTICS_KEY] = tuple(pass_diagnostics)
-    internal_record_candidates(capture, tuple(candidates), selected_name)
+    internal_record_candidates(tuple(candidates), selected_name, trace)
     if selected_tasks:
         # Ruled scanned tables defeat Tesseract's page segmentation; when the
         # page raster shows a full ruling grid, re-recognize cell by cell and
@@ -4932,7 +5021,7 @@ def internal_recognize_page_with_reserved_raster(
                         # than whole-page OCR, so keep the original.
                         return selected.observations
                     retained = prior.take(numpy.flatnonzero(outside))
-                    capture.page.extraction_cache["grid_cell_ocr"] = {
+                    trace.grid_cell_ocr = {
                         "cells": len(cell_tasks),
                         "cell_observations": len(cell_observations),
                         "replaced_observations": int(numpy.count_nonzero(~outside)),

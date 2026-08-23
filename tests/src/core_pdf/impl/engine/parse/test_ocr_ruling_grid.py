@@ -1,7 +1,7 @@
 import numpy
 
 from core_pdf.impl.engine.parse.ocr import internal_detect_ruling_grid
-from core_pdf.impl.engine.rendering import RasterImage
+from core_pdf.impl.engine.render.raster_image import RasterImage
 
 
 def test_ruling_grid_detection_preserves_full_resolution_rgb_mask() -> None:

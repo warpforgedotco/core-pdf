@@ -4,6 +4,7 @@ from core_pdf import PdfDocument, PdfSignaturePlan, PdfUnsupportedError
 from core_pdf import StandardPdfEncryption as PublicEncryption
 from core_pdf import serialize_document_to_pdf as public_writer
 from core_pdf.impl.engine.structured import (
+    Annotation,
     Block,
     BlockKind,
     Document,
@@ -298,6 +299,33 @@ def test_semantic_writer_delegates_detached_signature_to_external_provider() -> 
     assert signer.data == output[:contents_start] + output[contents_end:]
     assert b"/SubFilter /adbe.pkcs7.detached" in output
     assert b"636D732D7369676E6174757265" in output
+
+
+def test_semantic_writer_preserves_page_annotations_when_signing() -> None:
+    class Signer:
+        def sign(self, data: bytes) -> bytes:
+            return data[:16]
+
+    document = Document(
+        pages=(
+            Page(
+                page_number=1,
+                annotations=(
+                    Annotation(subtype="Text", bbox=(10.0, 10.0, 20.0, 20.0), contents="note"),
+                ),
+            ),
+        )
+    )
+
+    output = serialize_document_to_pdf(
+        document,
+        signature=PdfSignaturePlan(Signer(), contents_length=32),
+    )
+
+    with PdfDocument.open(output) as parsed:
+        annotations = parsed.pages[0].get_annotations()
+        assert [annotation.subtype for annotation in annotations] == ["Text", "Widget"]
+        assert annotations[0].contents == "note"
 
 
 def test_semantic_writer_rejects_combined_encryption_and_signature() -> None:

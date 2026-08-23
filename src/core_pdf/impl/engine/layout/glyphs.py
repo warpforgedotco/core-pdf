@@ -6,8 +6,8 @@ from enum import StrEnum
 from functools import lru_cache
 
 from core_pdf.impl.engine.layout.geometry import bbox_union
+from core_pdf.impl.types import Rectangle
 
-BBox = tuple[float, float, float, float]
 Matrix6 = tuple[float, float, float, float, float, float]
 
 
@@ -55,8 +55,8 @@ class GlyphUnicodeSemantics(StrEnum):
 @dataclass(slots=True)
 class GlyphObservation:
     text: str
-    ink_bbox: BBox
-    advance_bbox: BBox
+    ink_bbox: Rectangle
+    advance_bbox: Rectangle
     seqno: int
     code_bytes: bytes = b""
     char_code: int | None = None
@@ -64,7 +64,7 @@ class GlyphObservation:
     gid: int | None = None
     font_name: str | None = None
     font_size: float = 0.0
-    baseline: BBox | None = None
+    baseline: Rectangle | None = None
     rotation_angle: int = 0
     fill: tuple[float, ...] | None = None
     visible: bool = True
@@ -132,9 +132,9 @@ class GlyphCluster:
     cluster_id: int
     text: str
     glyphs: tuple[GlyphObservation, ...]
-    advance_bbox: BBox
-    ink_bbox: BBox
-    baseline: BBox | None
+    advance_bbox: Rectangle
+    ink_bbox: Rectangle
+    baseline: Rectangle | None
     confidence: float | None
 
 

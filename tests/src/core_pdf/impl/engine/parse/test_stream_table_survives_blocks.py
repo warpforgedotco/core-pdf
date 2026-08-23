@@ -96,15 +96,3 @@ def test_a_two_row_fragment_is_not_mistaken_for_a_table() -> None:
     table = table_of(PROSE_CELLS[:2])
 
     assert not internal_stream_table_is_tabular(table)
-
-
-def test_a_numeric_stream_table_is_still_kept_by_the_existing_test() -> None:
-    numeric = table_of(
-        (
-            ("Region", "2023", "2024"),
-            ("North", "1,204", "1,318"),
-            ("South", "987", "1,043"),
-        )
-    )
-
-    assert not internal_stream_table_duplicated_by_blocks(numeric, blocks_covering(numeric))

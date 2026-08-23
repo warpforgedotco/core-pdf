@@ -2,11 +2,12 @@
 from __future__ import annotations
 
 import mmap
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from os import PathLike
 from typing import TypeAlias
 
-from core_pdf.impl.objects import PdfName, PdfReference, PdfStream, PdfString
+from core_pdf.impl.objects import PdfStream
+from core_pdf.impl.primitives import PdfName, PdfReference, PdfString
 from core_pdf.impl.protocols import BinaryReader, SeekableBinaryReader
 
 PdfNull: TypeAlias = None
@@ -31,14 +32,10 @@ PdfSource: TypeAlias = (
 )
 Point: TypeAlias = tuple[float, float]
 Rectangle: TypeAlias = tuple[float, float, float, float]
-BBox: TypeAlias = Rectangle
-PageSelection: TypeAlias = int | str | range | Sequence[int]
 
 __all__ = (
     "BinaryReader",
-    "BBox",
     "Decipher",
-    "PageSelection",
     "PathSource",
     "PdfArray",
     "PdfBoolean",

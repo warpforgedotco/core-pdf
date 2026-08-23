@@ -5,13 +5,13 @@ from typing import Any, cast
 import numpy
 import pytest
 
-from core_pdf.impl.engine.spec.s_09_fonts.cff import (
+from core_pdf.impl.engine.spec.s_09_fonts.feature_distance_kernel import (
+    feature_distance_matrix,
+)
+from core_pdf.impl.engine.spec.s_09_fonts.font_program import (
     CFFGlyphFeature,
     CFFUnicodeRepairIndex,
     glyph_feature_distance,
-)
-from core_pdf.impl.engine.spec.s_09_fonts.feature_distance_kernel import (
-    feature_distance_matrix,
 )
 
 

@@ -25,37 +25,26 @@ from core_pdf.impl.engine.layout.spatial import (
     bbox_intersection_area,
 )
 from core_pdf.impl.engine.newstroke import NewstrokeDecode, decode_newstroke_drawings
-from core_pdf.impl.engine.parse.diagnostics import CAPTURE_DIAGNOSTICS_KEY
 from core_pdf.impl.engine.parse.model import (
     CapturedPage,
     GlyphEvidence,
     ObservationBatch,
     ObservationSource,
     PageEvidence,
-    PagePreflight,
-    PagePreflightClass,
-    PagePreflightFeatures,
-    PagePreflightRecommendation,
     StrokedVectorTextEvidence,
     TextQualityStats,
     internal_analyze_text,
 )
-from core_pdf.impl.engine.spec.s_07_content.operations import (
-    ContentOperatorCounts,
-)
 from core_pdf.impl.engine.spec.s_07_content.page_program import PageProgram
-from core_pdf.impl.engine.spec.s_07_objects.coercion import normalize_pdf_name
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_08_graphics.image_metadata import (
     image_filter_names,
-    pdf_positive_int,
 )
-from core_pdf.impl.objects import PdfStream
 
 WORD_TOKEN_RE = re.compile(r"\w+")
 VECTOR_PAINT_KINDS = frozenset({"fill", "fillstroke", "shading", "stroke"})
 VECTOR_PAINT_OPERATION_WEIGHT = 3
-PREFLIGHT_CACHE_KEY = "page_preflight_v1"
+CAPTURED_PAGE_CACHE_KEY = "captured_page_program_v4"
 
 # Thresholds for discarding a text layer that merely repeats another one. A layer needs
 # enough tokens for an overlap ratio to mean anything, then enough overlap to be judged a
@@ -493,204 +482,6 @@ def internal_vector_complexity(drawings: tuple[Any, ...], grid_lines: Any) -> in
     return len(grid_lines) + paint_operations * VECTOR_PAINT_OPERATION_WEIGHT
 
 
-def internal_resource_dict(page: Any) -> dict[Any, Any]:
-    try:
-        resources = getattr(page, "cached_resources", {})
-    except Exception:
-        return {}
-    return resources if isinstance(resources, dict) else {}
-
-
-def internal_resolve_pdf_object(page: Any, value: object) -> object:
-    resolver = getattr(getattr(page, "document", None), "resolver", None)
-    resolve = getattr(resolver, "resolve", None)
-    if callable(resolve):
-        try:
-            return resolve(value)
-        except Exception:
-            return None
-    return value
-
-
-def internal_resolve_pdf_stream(page: Any, value: object) -> PdfStream | None:
-    resolved = internal_resolve_pdf_object(page, value)
-    return resolved if isinstance(resolved, PdfStream) else None
-
-
-def internal_preflight_resource_features(
-    page: Any,
-) -> tuple[int, int, int, int, int, tuple[str, ...]]:
-    resources = internal_resource_dict(page)
-    fonts = lookup_dict_key(resources, "Font")
-    font_count = len(fonts) if isinstance(fonts, dict) else 0
-    xobjects = lookup_dict_key(resources, "XObject")
-    if not isinstance(xobjects, dict):
-        return font_count, 0, 0, 0, 0, ()
-
-    image_count = 0
-    form_count = 0
-    image_pixels = 0
-    image_raw_bytes = 0
-    filters: list[str] = []
-    for value in xobjects.values():
-        stream = internal_resolve_pdf_stream(page, value)
-        if stream is None:
-            continue
-        dictionary = stream.dictionary
-        subtype = normalize_pdf_name(lookup_dict_key(dictionary, "Subtype"))
-        if subtype == "Image":
-            image_count += 1
-            width = pdf_positive_int(lookup_dict_key(dictionary, "Width"))
-            height = pdf_positive_int(lookup_dict_key(dictionary, "Height"))
-            image_pixels += width * height
-            image_raw_bytes += len(stream.raw_data)
-            filters.extend(image_filter_names(lookup_dict_key(dictionary, "Filter")))
-        elif subtype == "Form":
-            form_count += 1
-    return font_count, image_count, form_count, image_pixels, image_raw_bytes, tuple(filters)
-
-
-def internal_preflight_stream_features(
-    page: Any,
-) -> tuple[int, int, int, tuple[str, ...]]:
-    stream_count = 0
-    decoded_bytes = 0
-    raw_bytes = 0
-    filters: list[str] = []
-    try:
-        content_streams = tuple(getattr(page, "content_streams", ()))
-    except Exception:
-        return 0, 0, 0, ()
-    for stream in content_streams:
-        if not isinstance(stream, PdfStream):
-            continue
-        stream_count += 1
-        raw_bytes += len(stream.raw_data)
-        filters.extend(image_filter_names(lookup_dict_key(stream.dictionary, "Filter")))
-        try:
-            view = stream.data_view
-            decoded_bytes += len(view)
-        except Exception:
-            continue
-    return stream_count, decoded_bytes, raw_bytes, tuple(filters)
-
-
-def internal_program_operator_counts(capture: CapturedPage) -> ContentOperatorCounts:
-    """Derive routing counts from the already interpreted page program.
-
-    These are deliberately semantic counts rather than raw token counts.  They
-    avoid a second lexical pass and better describe the work downstream
-    extraction and rendering will actually perform.
-    """
-    drawings = capture.drawings
-    products = getattr(getattr(capture, "program", None), "products", None)
-    program_runs = getattr(products, "runs", None)
-    operator_runs = capture.runs if program_runs is None else program_runs
-    return ContentOperatorCounts(
-        # Capture can synthesize deterministic text from vector paths. Keep
-        # preflight about the actual PDF operators rather than derived runs.
-        text=len(operator_runs),
-        image=len(capture.inline_images)
-        + sum(getattr(drawing, "kind", None) == "image" for drawing in drawings),
-        vector_path=len(capture.grid_lines),
-        vector_paint=sum(
-            getattr(drawing, "kind", None) in VECTOR_PAINT_KINDS for drawing in drawings
-        ),
-        graphics_state=sum(
-            getattr(drawing, "kind", None)
-            in {"state-push", "state-pop", "clip", "group-begin", "group-end"}
-            for drawing in drawings
-        ),
-    )
-
-
-def internal_classify_preflight(features: PagePreflightFeatures) -> PagePreflightRecommendation:
-    counts = features.operator_counts
-    has_images = features.image_xobject_count > 0 or counts.image > 0
-    has_vectors = counts.vector >= 12 or counts.vector_paint >= 3
-    has_text = counts.text > 0 or features.has_fonts
-    if counts.malformed or (
-        features.stream_count == 0 and not features.has_fonts and features.image_xobject_count == 0
-    ):
-        return PagePreflightRecommendation(
-            PagePreflightClass.LIKELY_MALFORMED,
-            "text-only",
-            "fallback-page",
-            "stream-scan-malformed-or-empty",
-        )
-    if (
-        has_text
-        and not has_images
-        and not has_vectors
-        and counts.unknown <= max(5, counts.total // 4)
-    ):
-        return PagePreflightRecommendation(
-            PagePreflightClass.NATIVE_TEXT,
-            "text-only",
-            "none",
-            "text-operators-with-font-resources",
-        )
-    if has_images and not has_text and not has_vectors:
-        return PagePreflightRecommendation(
-            PagePreflightClass.IMAGE_ONLY,
-            "images-only",
-            "page-or-image-regions",
-            "image-resources-without-text-or-vector-paint",
-        )
-    if has_vectors and not has_images and counts.text <= 4:
-        return PagePreflightRecommendation(
-            PagePreflightClass.VECTOR_DIAGRAM,
-            "graphics",
-            "schematic-regions",
-            "vector-paint-dominates-stream",
-        )
-    return PagePreflightRecommendation(
-        PagePreflightClass.MIXED,
-        "render",
-        "current-plan",
-        "mixed-or-ambiguous-preflight-signals",
-    )
-
-
-def preflight_page(page: Any, capture: CapturedPage | None = None) -> PagePreflight:
-    cache = getattr(page, "extraction_cache", None)
-    if cache is not None:
-        cached = cache.get(PREFLIGHT_CACHE_KEY)
-        if isinstance(cached, PagePreflight):
-            return cached
-
-    capture = capture if capture is not None else capture_page(page)
-    stream_count, decoded_bytes, raw_bytes, stream_filters = internal_preflight_stream_features(
-        page
-    )
-    counts = internal_program_operator_counts(capture)
-    font_count, image_count, form_count, image_pixels, image_raw_bytes, image_filters = (
-        internal_preflight_resource_features(page)
-    )
-    page_width = float(getattr(page, "width", 0.0))
-    page_height = float(getattr(page, "height", 0.0))
-    features = PagePreflightFeatures(
-        page_area=max(1.0, page_width * page_height),
-        stream_count=stream_count,
-        decoded_stream_bytes=decoded_bytes,
-        raw_stream_bytes=raw_bytes,
-        stream_filters=stream_filters,
-        has_fonts=font_count > 0,
-        font_count=font_count,
-        image_xobject_count=image_count,
-        form_xobject_count=form_count,
-        image_pixels=image_pixels,
-        image_raw_bytes=image_raw_bytes,
-        image_filters=image_filters,
-        operator_counts=counts,
-    )
-    preflight = PagePreflight(features, internal_classify_preflight(features))
-    if cache is not None:
-        cache[PREFLIGHT_CACHE_KEY] = preflight
-        cache["preflight"] = preflight.as_cache_dict()
-    return preflight
-
-
 STROKED_VECTOR_COMPACT_DIMENSION = 4.0
 STROKED_VECTOR_RENDER_DIMENSION = 5.0
 STROKED_VECTOR_MIN_DOMINANT_PATHS = 300
@@ -953,7 +744,7 @@ def internal_capture_from_program(
     program: PageProgram,
 ) -> CapturedPage:
     cache = getattr(page, "extraction_cache", None)
-    cache_key = "captured_page_program_v3"
+    cache_key = CAPTURED_PAGE_CACHE_KEY
     if cache is not None:
         cached = cache.get(cache_key)
         if isinstance(cached, CapturedPage) and cached.program is program:
@@ -1026,6 +817,24 @@ def internal_capture_from_program(
         visible_native_characters = visible_analysis.characters
     drawings = tuple(products.drawings)
     inline_images = tuple(products.inline_images)
+    image_filters = tuple(
+        filter_name
+        for drawing in drawings
+        if getattr(drawing, "kind", None) in {"image", "inline-image"}
+        and isinstance(getattr(drawing, "dictionary", None), dict)
+        for filter_name in image_filter_names(
+            lookup_dict_key(getattr(drawing, "dictionary", None), "Filter")
+        )
+    )
+    if inline_images:
+        image_filters = (
+            *image_filters,
+            *(
+                filter_name
+                for image in inline_images
+                for filter_name in image_filter_names(lookup_dict_key(image.dictionary, "Filter"))
+            ),
+        )
     page_width = float(page.width)
     page_height = float(page.height)
     page_area = max(1.0, page_width * page_height)
@@ -1112,6 +921,7 @@ def internal_capture_from_program(
                 )
                 if area >= page_area * 0.001
             ),
+            image_filters=image_filters,
             text_coverage=text_coverage,
             full_page_image=full_page_image,
             uncovered_vector_area=uncovered_vector_area,
@@ -1142,25 +952,10 @@ def internal_capture_from_program(
             captured,
             evidence=replace(captured.evidence, stroked_vector_text=stroked_vector_text),
         )
-    if cache is not None:
-        diagnostics = cache.setdefault(CAPTURE_DIAGNOSTICS_KEY, {})
-        diagnostics["text_quality"] = captured.evidence.text_quality.as_cache_dict()
-        diagnostics["all_text_quality"] = captured.evidence.all_text_quality.as_cache_dict()
-        diagnostics["glyph_evidence"] = captured.evidence.glyphs.as_cache_dict()
-        diagnostics["trusted_hidden_text"] = captured.evidence.trusted_hidden_text
-        diagnostics["painted_native_characters"] = captured.evidence.painted_native_characters or 0
-        diagnostics["painted_text_coverage"] = captured.evidence.painted_text_coverage or 0.0
-        diagnostics["stroked_vector_text"] = {
-            "accepted": captured.evidence.stroked_vector_text.trusted,
-            "dominant_compact_paths": (
-                captured.evidence.stroked_vector_text.dominant_compact_paths
-            ),
-            "candidate_paths": captured.evidence.stroked_vector_text.candidate_paths,
-            "style_count": captured.evidence.stroked_vector_text.style_count,
-            "bbox": captured.evidence.stroked_vector_text.bbox,
-        }
-        if newstroke_decode is not None:
-            diagnostics["newstroke"] = {
+    if newstroke_decode is not None:
+        captured = replace(
+            captured,
+            newstroke_report={
                 "accepted": newstroke_decode.trusted,
                 "candidate_segments": newstroke_decode.candidate_segments,
                 "matched_segments": newstroke_decode.matched_segments,
@@ -1170,7 +965,8 @@ def internal_capture_from_program(
                 "sequences": newstroke_decode.sequences,
                 "maximum_error": newstroke_decode.maximum_error,
                 "seconds": newstroke_seconds,
-            }
+            },
+        )
     if cache is not None:
         cache[cache_key] = captured
     return captured

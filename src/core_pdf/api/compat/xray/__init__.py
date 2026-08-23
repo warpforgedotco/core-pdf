@@ -15,7 +15,8 @@ from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.engine.spec.s_09_fonts.cmap_tounicode import ToUnicodeCMap
 from core_pdf.impl.exceptions import PdfUnsupportedError
-from core_pdf.impl.objects import PdfReference, PdfStream
+from core_pdf.impl.objects import PdfStream
+from core_pdf.impl.primitives import PdfReference
 
 _DATE = re.compile(r"[0-3]?\d[/\-][0-3]?\d[/\-]\d{2,4}")
 _OK_WORDS = re.compile(

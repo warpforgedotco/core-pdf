@@ -11,11 +11,12 @@ from core_pdf.impl.engine.spec.s_07_objects.coercion import (
     normalize_pdf_name,
 )
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_07_objects.trees import iter_number_tree_items
 from core_pdf.impl.engine.spec.s_14_structure.content import (
     StructureContentItem,
     StructureContentObject,
 )
-from core_pdf.impl.objects import MISSING, PdfReference
+from core_pdf.impl.primitives import MISSING, PdfReference
 from core_pdf.impl.types import PdfArray, PdfDict
 
 if TYPE_CHECKING:
@@ -264,9 +265,6 @@ class StructureElement:
     def find(self, matcher: str | MatchFunc | None = None) -> StructureElement | None:
         return find_first(self.find_all(matcher))
 
-    def __hash__(self) -> int:
-        return hash((id(self.document), repr(self.props)))
-
 
 class StructureTree(Iterable[StructureElement | StructureContentItem | StructureContentObject]):
     """Document logical structure tree rooted at StructTreeRoot."""
@@ -335,34 +333,17 @@ class StructureTree(Iterable[StructureElement | StructureContentItem | Structure
             self.document.xref_was_recovered or self.document.page_tree_was_recovered
         )
 
-        def walk(node: Any, depth: int = 0) -> None:
-            if depth > MAX_PARENT_TREE_DEPTH:
-                raise ValueError("invalid parent tree depth")
-            node = self.document.resolver.resolve(node)
-            if not isinstance(node, dict):
-                raise ValueError("invalid parent tree node")
-            nums = lookup_dict_key(node, "Nums")
-            if isinstance(nums, list):
-                if len(nums) % 2 != 0 and not recover_parent_tree:
-                    raise ValueError("invalid parent tree Nums array")
-                nums_len = len(nums) - (len(nums) % 2)
-                for i in range(0, nums_len, 2):
-                    key = self.document.resolver.resolve_int(nums[i])
-                    if type(key) is not int:
-                        if recover_parent_tree:
-                            continue
-                        raise ValueError("invalid parent tree key")
-                    results[key] = nums[i + 1]
-            elif nums is not None:
-                raise ValueError("invalid parent tree Nums array")
-            kids = lookup_dict_key(node, "Kids")
-            if isinstance(kids, list):
-                for kid in kids:
-                    walk(kid, depth + 1)
-            elif kids is not None:
-                raise ValueError("invalid parent tree Kids array")
-
-        walk(resolved)
+        results.update(
+            iter_number_tree_items(
+                resolved,
+                self.document.resolver.resolve,
+                decode_number=self.document.resolver.resolve_int,
+                recover_entries=recover_parent_tree,
+                resolve_values=False,
+                tree_name="parent",
+                max_depth=MAX_PARENT_TREE_DEPTH,
+            )
+        )
         self.parent_tree_value = results
         return results
 

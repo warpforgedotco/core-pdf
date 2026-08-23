@@ -14,6 +14,15 @@ from core_pdf.impl.engine.spec.s_07_content.inline_images import (
     recover_inline_image_position,
 )
 from core_pdf.impl.engine.spec.s_07_objects.object_cache import CachedPdfObject
+from core_pdf.impl.engine.spec.s_07_syntax.content_operators import (
+    GRAPHICS_STATE_OPERATORS,
+    IMAGE_OPERATORS,
+    TEXT_ONLY_SKIP_DOUBLE,
+    TEXT_ONLY_SKIP_SINGLE,
+    TEXT_OPERATORS,
+    VECTOR_PAINT_OPERATORS,
+    VECTOR_PATH_OPERATORS,
+)
 from core_pdf.impl.engine.spec.s_07_syntax.lexer import (
     EMPTY_SIMPLE_TJ_ARRAY,
     PdfLexer,
@@ -28,7 +37,7 @@ from core_pdf.impl.engine.spec.s_07_syntax.scanning import (
 from core_pdf.impl.engine.spec.s_07_syntax.tokens import SEPARATOR_TABLE, WS_TABLE
 from core_pdf.impl.engine.spec.s_09_fonts.decoder import FontDecoder
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.objects import PdfName, PdfString
+from core_pdf.impl.primitives import PdfName, PdfString
 
 PdfName_of = PdfName.of
 FONT_DIGIT_NAMES = tuple(PdfName_of(b"F" + bytes((48 + i,))) for i in range(10))
@@ -41,45 +50,6 @@ ContentOperands: TypeAlias = tuple[ContentOperand, ...]
 ContentOperation: TypeAlias = tuple[str, ContentOperands]
 
 WORD_BREAK_OR_WS = SEPARATOR_TABLE
-
-TEXT_ONLY_SKIP_SINGLE = bytes(
-    [
-        1
-        if i
-        in (
-            66,
-            70,
-            71,
-            74,
-            77,
-            78,
-            83,
-            87,
-            98,
-            99,
-            100,
-            102,
-            103,
-            104,
-            105,
-            106,
-            108,
-            109,
-            110,
-            115,
-            118,
-            119,
-            121,
-        )
-        else 0
-        for i in range(256)
-    ]
-)
-TEXT_ONLY_SKIP_DOUBLE = bytearray(65536)
-op = b""
-for op in (b"re", b"W*", b"f*", b"B*", b"b*", b"BX", b"EX", b"MP", b"DP"):
-    TEXT_ONLY_SKIP_DOUBLE[(op[0] << 8) | op[1]] = 1
-del op
 
 IS_WORD_START = bytes([0 if SEPARATOR_TABLE[i] else 1 for i in range(256)])
 
@@ -97,12 +67,6 @@ CONTAINER_LEXICAL_MARKER_RE = re.compile(rb"[%(<>\[\]]")
 GRAPHICS_PAINT_RE = re.compile(
     rb"(?:^|[\x00\t\n\f\r ])(?:S|s|f|F|f\*|B|b|B\*|b\*|sh)(?=$|[\x00\t\n\f\r ])"
 )
-
-TEXT_OPERATORS = frozenset({"Tj", "TJ", "'", '"'})
-IMAGE_OPERATORS = frozenset({"BI", "ID", "EI", "Do"})
-VECTOR_PATH_OPERATORS = frozenset({"m", "l", "c", "v", "y", "h", "re"})
-VECTOR_PAINT_OPERATORS = frozenset({"S", "s", "f", "F", "f*", "B", "B*", "b", "b*", "sh"})
-GRAPHICS_STATE_OPERATORS = frozenset({"q", "Q", "cm", "w", "J", "j", "M", "d", "gs"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -233,8 +197,6 @@ def count_content_stream_operators(data: bytes | memoryview) -> ContentOperatorC
             vector_paint += 1
         elif operator in GRAPHICS_STATE_OPERATORS:
             graphics_state += 1
-        elif operator in {"BT", "ET", "Tf", "Td", "TD", "Tm", "Tc", "Tw", "T*", "Tr"}:
-            text += 1
         elif operator:
             unknown += 1
 

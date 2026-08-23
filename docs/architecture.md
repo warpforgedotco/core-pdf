@@ -5,7 +5,7 @@ structured evidence, how parsing, rendering, analysis, compatibility, and writin
 document model, how the source tree is organized, the naming conventions in use, and — most
 importantly — **which code is deliberately optimized and must not be "cleaned up"**.
 
-Roughly 68k lines of non-vendor Python live under `src/core_pdf/`, plus a vendored copy of
+Roughly 87k lines of non-vendor Python live under `src/core_pdf/`, plus a vendored copy of
 fontTools in `src/core_pdf/_vendor/` that is excluded from linting, typing, and formatting.
 
 ---
@@ -24,9 +24,8 @@ The two central objects:
 
 - **`PdfDocument`** (`impl/engine/document.py`) — `open`, page access, canonical structured
   extraction (`extract`), and engine-owned PDF capabilities. It owns caches that must be
-  shared across pages, notably the image cache. Structured serializers and element/chunk
-  projections are kept on the public capability and structured IR instead of being duplicated
-  here.
+  shared across pages, notably the image cache. Structured serializers are kept on the
+  structured IR instead of being duplicated here.
   The CLI drives it through `process_pdf` in `cli.py`.
 - **`PdfPage`** (`impl/engine/page.py`, subclassing the spec-level page in
   `impl/engine/spec/s_07_document/page.py`) — per-page extraction and rendering.
@@ -55,55 +54,51 @@ this order:
 
 ```text
         ┌── capture ──┐
-bytes → │ capture_page│ → preflight_page → plan_page ──┐
-        └─────────────┘     (classify)     (decide)    │
+bytes → │ capture_page│ → plan_page ─────────────────┐
+        └─────────────┘    (evidence)       (decision)       │
                                                        ▼
                               ┌───────────────── WorkPlan ──────────────────┐
                               │                                             │
                     native text is trusted                        text is missing/untrusted
                               │                                             │
-                              │                                    recognize_page  (ocr)
+                              │                    recognize_page → RecognitionResult
                               │                                             │
                               └──────────► fuse_observations ◄──────────────┘
                                                   │
-                                    extract_tables (tables)
+                                    extract_tables (complete table stage)
                                                   │
-                                     layout_blocks (layout)
+                                layout_blocks_with_evidence (layout)
                                                   │
-                                     assemble_page (emit)
+                                  ParsedPage + ParseReport (parse_page)
                                                   │
-                                     parse_page / extract_page (pipeline)
+                                    assemble_page → Page (extract_page)
 ```
 
 | Module | Role |
 | --- | --- |
-| `parse/model.py` | The dataclasses everything else speaks in: `ObservationBatch`, `PageEvidence`, `WorkPlan`, `ParsedPage`, `PagePreflight`, plus the OCR candidate record and its factory. Pure leaf — imports nothing from the other stages. |
-| `parse/capture.py` | Runs the content stream and turns it into evidence: glyphs, drawings, images. Also classifies the page (`preflight_page`). |
-| `parse/route.py` | Decides *how* to extract this page — native text, OCR, or both — producing a `WorkPlan`. |
+| `parse/model.py` | Shared stage contracts: `ObservationBatch`, `PageEvidence`, typed route/fusion policies, `WorkPlan`, `RecognitionResult`, `RecognitionReport`, `ParsedPage`, and `ParseReport`. |
+| `parse/capture.py` | Runs the canonical page program once and produces one cached `CapturedPage`: glyphs, drawings, images, observations, and routing evidence. |
+| `parse/route.py` | Decides *how* to extract this page — native text, OCR, or both — producing a typed `WorkPlan`. |
 | `parse/fusion.py` | Merges observations from multiple sources (native + OCR) into one coherent set. |
-| `parse/tables.py` | Grid and stream table detection, cell merging, deduplication. |
-| `parse/ocr.py` | Tesseract integration: rasterization, region selection, hOCR parsing, adaptive rescue passes, and stroked-vector-text recovery. The largest stage by far. |
+| `parse/tables.py` | Owns the complete table stage: grid, stream, and chart detection; cell merging; ordering; and nearby title/caption association. |
+| `parse/ocr.py` | Tesseract integration: rasterization, region selection, hOCR parsing, adaptive rescue passes, and stroked-vector-text recovery. It returns observations and a `RecognitionReport`; caches hold reusable raster artifacts, not diagnostic side channels. |
 | `parse/layout.py` | Groups runs into lines and blocks; column detection and reading order. |
-| `parse/emit.py` | Text normalization and artifact removal; assembles the final structured `Page`. |
-| `parse/pipeline.py` | Orchestration and caching: `parse_page`, `extract_page`, `page_extraction`. |
+| `parse/emit.py` | Text normalization, artifact removal, table/block reconciliation, and direct assembly of the canonical structured `Page`. |
+| `parse/pipeline.py` | Lazy orchestration, single-flight locking, and product caching: `parse_page`, `extract_page`, and `page_extraction`. It assembles the typed `ParseReport` once per parsed page. |
 
-The modules form a strict layering in that order — each imports only from those above it, so
-there are no import cycles.
-act_text()` after `extract_tables()` does not re-run the pipeline.
+`parse/__init__.py` exposes only pipeline entry points and shared stage models. Stage-specific
+helpers are imported from their owner module. `internal_PageExtraction` memoizes each materialized
+stage, so asking for text after tables (or tables after text) reuses capture, recognition, fusion,
+layout, and emission products rather than running the content stream or OCR again.
 
 ### Table projections
 
-Table extraction produces one merged view. During assembly
-(`internal_merge_structured_tables` in `parse/emit.py`), each layout-projected table is
-geometry-matched to its annotated structured counterpart; the merged table carries the
-page-wide layout `order` together with the structured annotations — derived `row_bands`
-and `column_bands`, and nearby `TableAssociatedText` records associated as `title` or
-`caption` (annotations never rewrite cell topology). `Page.tables`,
-`Page.structured_tables`, and `Document.table_view` all expose this merged tuple, and
-JSON and HTML/Markdown rendering consume it directly. The one asymmetry: when emission
-removes every projected table as duplicate text, `Page.tables` is empty while
-`Page.structured_tables` retains the raw annotated parse-time tuple, which rendering
-falls back to.
+Table extraction produces one canonical view. `parse/tables.py` attaches derived row and column
+bands plus nearby `TableAssociatedText` records (title or caption) without rewriting cell
+topology. Emission reconciles those tables with text blocks, removes duplicate or rejected
+candidates, and assigns page-wide element order. `Page.tables`, `Document.table_view`, JSON, and
+HTML/Markdown all consume that same final tuple. Structured JSON schema 4.0 therefore has one
+`tables` field and no fallback table projection.
 
 ---
 
@@ -116,24 +111,26 @@ src/core_pdf/
   api/
     compat/              independent third-party facades over engine owners
   impl/
-    models.py            engine record types (DrawingRecord, ImageRecord, Raw* records)
+    models.py            public extraction records (DrawingRecord, ImageRecord)
+    objects.py           PdfStream and its lazy decoded-data cache
     exceptions.py        the PdfError hierarchy (incl. PdfDocumentClosedError)
     primitives.py        PdfName and friends (interned, precomputed hash)
     text.py              shared text kernel: collapse_ws, search_key,
                          collapse_character_spaced
-    pages.py             the single page-selection resolver (resolve_page_selection)
+    pages.py             PageSelection and its single normalization implementation
     engine/
       parse/             the extraction pipeline, one module per stage (see §2)
-      rendering.py       rasterization
+      render/            display lists, raster kernels, targets, and page composition
       page.py            PdfPage
       document.py        PdfDocument
-      execution.py       worker pools, shared memory, runtime config
+      execution.py       bounded thread runtime, resource budgets, runtime config
       array_views.py     zero-copy numpy/memoryview helpers
       image_cache.py     byte-budgeted LRU with single-flight decoding
       layout/            lines, spatial index, geometry kernel, word frequencies
       structured/        document IR → markdown/HTML/JSON/CSV/TEI
       writing/           PDF output: objects, fonts, encryption, signatures
-      spec/              PDF specification implementation (see below)
+      spec/              PDF specification implementation (see below); document-local
+                         Raw* records live in s_07_document/records.py
 ```
 
 ### The `spec/s_NN_*` scheme
@@ -152,11 +149,27 @@ Subpackages under `spec/` mirror **chapters of the PDF specification**:
 | `s_09_fonts` | 9 — font programs, CMaps, glyph decoding |
 | `s_14_structure` | 14 — logical structure tree |
 
+Operator and filter metadata each have one declarative owner. Content-operator categories,
+dispatch names, text-only scan tables, Type 3 replay membership, and cached lexer keywords derive
+from `s_07_syntax/content_operators.py`; stream-filter aliases, decoders, predictor support, and
+decode-cache policy derive from `s_07_filters/registry.py`. Add metadata there instead of creating
+another parallel table.
+
+The spec-level `s_07_document/document.py` is the concrete owner of catalog, page-tree, labels,
+navigation, forms, attachments, and optional-content behavior. `document_xref.py` remains a
+separate cohesive base for xref scanning/recovery, while `document_pages.py` contains only the
+read-only lazy page sequence and shared inherited-page constants.
+
 ### Golden rasters
+
+Rendering uses direct module owners rather than a barrel module: display-list records and options
+live in `render/display.py`, pure raster kernels in `render/kernels.py`, the mutable paint target in
+`render/target.py`, page composition in `render/page.py`, and the raster value object in
+`render/raster_image.py`.
 
 `tests/test_rendering_golden.py` hashes the RGBA output of the corpus. The
 always-on layer renders 24 documents chosen by greedy line-cover — together they
-execute every line of `rendering.py` the full 224 reach — and
+exercise the rendering modules across the full 224-document reach — and
 `CORE_PDF_RASTER_GOLDEN_FULL=1` sweeps all of them. A refactor that is meant to
 preserve behavior must leave `tests/snapshots/raster/first_page_scale1.json`
 untouched; regenerate it with `CORE_PDF_UPDATE_RASTER_GOLDEN=1` only when an

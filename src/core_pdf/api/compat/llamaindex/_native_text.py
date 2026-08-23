@@ -16,7 +16,8 @@ from core_pdf.impl.engine.spec.s_09_fonts.cmap_tounicode import ToUnicodeCMap
 from core_pdf.impl.engine.spec.s_09_fonts.decoder import FontDecoder
 from core_pdf.impl.engine.spec.s_09_fonts.glyphs import ensure_glyph_map
 from core_pdf.impl.engine.structured import Page
-from core_pdf.impl.objects import PdfStream, PdfString
+from core_pdf.impl.objects import PdfStream
+from core_pdf.impl.primitives import PdfString
 
 GraphicsState = tuple[list[float], str | None, float, float]
 

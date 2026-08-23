@@ -8,8 +8,8 @@ from core_pdf.impl.engine.spec.s_07_content.geometry import (
     min_optional_confidence,
     union_bbox,
 )
+from core_pdf.impl.types import Rectangle
 
-BBox = tuple[float, float, float, float]
 Provenance = tuple[tuple[str, object], ...]
 
 
@@ -38,9 +38,9 @@ class MarkedContentEntry:
     line_break_before: bool = False
     seqno: int = 0
     fill_color: tuple[float, ...] | None = None
-    advance_bbox: BBox | None = None
-    ink_bbox: BBox | None = None
-    baseline: BBox | None = None
+    advance_bbox: Rectangle | None = None
+    ink_bbox: Rectangle | None = None
+    baseline: Rectangle | None = None
     provenance: Provenance = ()
     confidence: float | None = None
     font_decoder: object | None = None
@@ -70,9 +70,9 @@ class MarkedContentEntry:
         line_break_before: bool,
         seqno: int,
         fill_color: tuple[float, ...] | None,
-        advance_bbox: BBox | None = None,
-        ink_bbox: BBox | None = None,
-        baseline: BBox | None = None,
+        advance_bbox: Rectangle | None = None,
+        ink_bbox: Rectangle | None = None,
+        baseline: Rectangle | None = None,
         provenance: Provenance = (),
         confidence: float | None = None,
         font_decoder: object | None = None,

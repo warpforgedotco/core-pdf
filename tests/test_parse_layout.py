@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy
 
-from core_pdf.impl.engine.parse import ObservationBatch, ObservationSource, layout_blocks
+from core_pdf.impl.engine.parse import ObservationBatch, ObservationSource
 from core_pdf.impl.engine.parse.layout import (
     internal_best_projection_gap,
     internal_best_region_projection_gap,
@@ -14,6 +14,7 @@ from core_pdf.impl.engine.parse.layout import (
     internal_row_order_region,
     internal_topological_block_order,
     internal_topological_block_order_quadratic,
+    layout_blocks,
     layout_blocks_with_evidence,
 )
 from core_pdf.impl.engine.parse.model import ParsedBlock, ParsedLine

@@ -144,7 +144,7 @@ def test_reference_ownership_preserves_zero_page_numbers() -> None:
             Page(
                 page_number=0,
                 blocks=(Block(0, BlockKind.PARAGRAPH, (line,)),),
-                structured_tables=(table,),
+                tables=(table,),
             ),
         )
     )
@@ -155,7 +155,7 @@ def test_reference_ownership_preserves_zero_page_numbers() -> None:
 
 def test_document_table_view_preserves_table_page_ownership() -> None:
     table = Table(order=0, rows=((TableCell(0, 0, "cell"),),))
-    document = Document(pages=(Page(page_number=4, structured_tables=(table,)),))
+    document = Document(pages=(Page(page_number=4, tables=(table,)),))
 
     references = document.table_view.references
 
@@ -184,16 +184,16 @@ def test_node_provenance_and_page_diagnostics_are_serializable() -> None:
     assert payload["nodes"][0]["page_number"] == 1
 
 
-def test_structured_table_projection_is_serializable() -> None:
+def test_canonical_table_projection_is_serializable() -> None:
     table = Table(
         order=0,
         rows=((TableCell(row=0, column=0, text="cell"),),),
     )
-    page = Page(page_number=1, structured_tables=(table,))
+    page = Page(page_number=1, tables=(table,))
 
     payload = cast(Any, Document(pages=(page,)).to_json_dict())
 
-    assert payload["pages"][0]["structured_tables"] == [
+    assert payload["pages"][0]["tables"] == [
         {
             "order": 0,
             "bbox": None,
@@ -234,9 +234,9 @@ def test_structured_table_serializes_associations_and_band_geometry() -> None:
         },
     )
 
-    document = Document(pages=(Page(page_number=1, structured_tables=(table,)),))
+    document = Document(pages=(Page(page_number=1, tables=(table,)),))
     payload = cast(Any, document.to_json_dict())
-    serialized = payload["pages"][0]["structured_tables"][0]
+    serialized = payload["pages"][0]["tables"][0]
 
     assert serialized["layout_bbox"] == [0.0, 0.0, 20.0, 30.0]
     assert serialized["content_bbox"] == [0.0, 0.0, 20.0, 20.0]
@@ -264,7 +264,7 @@ def test_structured_table_rendering_uses_associations_and_row_kinds() -> None:
         },
     )
 
-    html = Page(page_number=1, structured_tables=(table,)).to_html()
+    html = Page(page_number=1, tables=(table,)).to_html()
 
     assert '<div data-table-associated="title">Table title</div>' in html
     assert '<tr data-row-kind="header"><th>Name</th><th>Value</th></tr>' in html

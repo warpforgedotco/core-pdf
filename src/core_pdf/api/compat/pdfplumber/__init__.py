@@ -1052,7 +1052,7 @@ class Page:
         settings = TableSettings.resolve(table_settings)
         result = self.pdf._document.extract(pages=(self.page_number,))
         page = result.pages[0]
-        tables = getattr(page, "tables", ()) or getattr(page, "structured_tables", ())
+        tables = page.tables
         if tables:
             if len(tables) == 1:
                 table_box = getattr(tables[0], "bbox", None)

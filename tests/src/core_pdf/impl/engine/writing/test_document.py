@@ -2,7 +2,8 @@ import pytest
 
 from core_pdf import PdfDocument
 from core_pdf.impl.engine.writing import serialize_pdf_file
-from core_pdf.impl.objects import PdfName, PdfReference, PdfStream
+from core_pdf.impl.objects import PdfStream
+from core_pdf.impl.primitives import PdfName, PdfReference
 
 
 def test_serialize_pdf_file_builds_a_parseable_classic_xref_pdf() -> None:

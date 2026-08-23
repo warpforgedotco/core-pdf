@@ -29,6 +29,7 @@ from core_pdf.impl.engine.spec.s_07_document.page_links import (
     pdf_name_direct,
     resolve_annotation_dict,
 )
+from core_pdf.impl.engine.spec.s_07_document.records import RawAnnotation, RawLink
 from core_pdf.impl.engine.spec.s_07_objects.object_cache import (
     CachedPdfObject,
     InheritedValueMap,
@@ -39,19 +40,18 @@ from core_pdf.impl.engine.spec.s_07_objects.pdfdict import (
 )
 from core_pdf.impl.engine.spec.s_14_structure.tree import PageStructure
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.models import RawAnnotation, RawLink
-from core_pdf.impl.objects import (
+from core_pdf.impl.objects import PdfStream
+from core_pdf.impl.primitives import (
     MISSING,
     MissingObject,
     PdfReference,
-    PdfStream,
 )
 from core_pdf.impl.types import PdfDict, PdfObject, Rectangle
 
 if TYPE_CHECKING:
     from core_pdf.impl.engine.layout.models import LayoutLine, TextRun
     from core_pdf.impl.engine.spec.s_07_document.document import PdfDocument
-    from core_pdf.impl.models import RawFormField, RawTextSpan
+    from core_pdf.impl.engine.spec.s_07_document.records import RawFormField
 
 PageBoxCacheValue = Rectangle | None | MissingObject
 
@@ -66,7 +66,6 @@ class PdfPage:
     page_program_cache: PageProgram | None
     grid_lines: list[CapturedLine] | None
     text_lines: list[LayoutLine] | None
-    text_spans: list[RawTextSpan] | None
     links: list[RawLink] | MissingObject
     page_box_cache: dict[str, PageBoxCacheValue]
     rotation_cache: int | MissingObject
@@ -91,7 +90,6 @@ class PdfPage:
         self.content_streams_cache = None
         self.page_program_cache = None
         self.grid_lines = None
-        self.text_spans = None
         self.links = MISSING
         self.text_lines = None
         self.page_box_cache = {}

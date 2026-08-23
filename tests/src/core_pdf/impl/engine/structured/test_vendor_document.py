@@ -106,7 +106,7 @@ def test_document_serializes_to_versioned_json() -> None:
 
     payload = document.to_json_dict()
 
-    assert payload["schema_version"] == "3.0"
+    assert payload["schema_version"] == "4.0"
     payload_any = cast(Any, payload)
     assert payload_any["pages"][0]["blocks"][0]["kind"] == "heading"
 

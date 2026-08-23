@@ -10,16 +10,20 @@ from core_pdf.impl.engine.image_cache import ImageCache
 from core_pdf.impl.engine.layout.glyphs import GlyphObservation
 from core_pdf.impl.engine.layout.models import TextRun
 from core_pdf.impl.engine.page import text_rotation_correction_for_runs
-from core_pdf.impl.engine.rendering import (
+from core_pdf.impl.engine.render.display import (
     CompiledRenderPlan,
     DisplayList,
     PathPaintItem,
-    RenderedPage,
     RenderOptions,
-    compose_page,
-    internal_append_glyph_paint,
+)
+from core_pdf.impl.engine.render.kernels import (
     rasterize_packed_stroked_paths,
     rasterize_unclipped_line_normal,
+)
+from core_pdf.impl.engine.render.page import (
+    RenderedPage,
+    compose_page,
+    internal_append_glyph_paint,
 )
 from core_pdf.impl.engine.spec.s_07_content.capture import (
     CapturedDrawing,
@@ -31,7 +35,7 @@ from core_pdf.impl.engine.spec.s_07_content.page_program import (
     PageProducts,
     PageProgram,
 )
-from core_pdf.impl.engine.spec.s_07_document.document_core import DocumentCoreMixin
+from core_pdf.impl.engine.spec.s_07_document.document import PdfDocument
 from core_pdf.impl.engine.spec.s_07_document.page import PdfPage
 from core_pdf.impl.engine.spec.s_08_graphics.color import (
     ImageColorManager,
@@ -85,6 +89,16 @@ def rendered_page(*, width: float = 5, height: float = 7, rotate: int = 0) -> Re
         rotate=rotate,
         display_list=DisplayList(width=width, height=height),
     )
+
+
+@pytest.mark.parametrize(("value", "normalized"), [(-90, 270), (360, 0), (450, 90)])
+def test_render_options_normalizes_orthogonal_rotation(value: int, normalized: int) -> None:
+    assert RenderOptions(rotate=value).rotate == normalized
+
+
+def test_render_options_rejects_non_orthogonal_rotation() -> None:
+    with pytest.raises(ValueError, match="multiple of 90"):
+        RenderOptions(rotate=45)
 
 
 def test_raster_size_accounts_for_rotation_crop_and_scale() -> None:
@@ -469,7 +483,7 @@ def test_rasterize_rejects_oversized_canvas_before_allocation() -> None:
 def test_seekable_source_is_read_from_start_and_restored() -> None:
     source = BytesIO(b"complete PDF source")
     source.seek(9)
-    loader = DocumentCoreMixin()
+    loader = object.__new__(PdfDocument)
 
     data = loader.load_data(source)
 

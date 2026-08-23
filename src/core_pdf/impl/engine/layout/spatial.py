@@ -15,15 +15,15 @@ from core_pdf.impl.engine.layout.geometry import (
     bbox_intersection_area,
     finite_rect,
 )
+from core_pdf.impl.types import Rectangle
 
-RectTuple = tuple[float, float, float, float]
 T = TypeVar("T")
 
 
 @dataclass(frozen=True, slots=True)
 class SpatialHit(Generic[T]):
     item: T
-    bbox: RectTuple
+    bbox: Rectangle
 
 
 class SpatialIndex(Generic[T]):
@@ -200,7 +200,7 @@ class SpatialIndex(Generic[T]):
     def internal_candidate_indexes(
         self,
         box: Sequence[float],
-        normalized: RectTuple | None = None,
+        normalized: Rectangle | None = None,
     ) -> list[int]:
         if not self.internal_entries:
             return []
@@ -251,7 +251,6 @@ class SpatialIndex(Generic[T]):
 
 
 __all__ = (
-    "RectTuple",
     "SpatialHit",
     "SpatialIndex",
     "bbox_area",

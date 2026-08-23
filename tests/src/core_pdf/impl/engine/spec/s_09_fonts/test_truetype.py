@@ -1,6 +1,6 @@
 from typing import Any, Protocol, cast
 
-from core_pdf.impl.engine.spec.s_09_fonts.truetype import TrueTypeFontProgram
+from core_pdf.impl.engine.spec.s_09_fonts.font_program_truetype import TrueTypeFontProgram
 
 
 def test_corrupt_post_table_uses_synthetic_glyph_order() -> None:
@@ -70,7 +70,7 @@ def test_glyph_contours_reuses_glyph_set_and_returns_fresh_lists() -> None:
 
     font = object.__new__(TrueTypeFontProgram)
     fake_font = FakeFont()
-    font.font = fake_font
+    font.font = cast(Any, fake_font)
     font.internal_glyph_set = None
     font.internal_glyph_contour_cache = {}
 

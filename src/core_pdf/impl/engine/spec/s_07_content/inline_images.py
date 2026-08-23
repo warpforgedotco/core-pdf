@@ -20,7 +20,7 @@ from core_pdf.impl.engine.spec.s_07_syntax.tokens import (
     WHITESPACE,
 )
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.objects import PdfName
+from core_pdf.impl.primitives import PdfName
 from core_pdf.impl.types import PdfDict
 
 
