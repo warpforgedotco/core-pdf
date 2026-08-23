@@ -2,8 +2,7 @@
 
 An orientation guide for the all-in-one local PDF parsing engine. It covers how a PDF becomes
 structured evidence, how parsing, rendering, analysis, compatibility, and writing share one
-document model, how the source tree is organized, the naming conventions in use, and — most
-importantly — **which code is deliberately optimized and must not be "cleaned up"**.
+document model, how the source tree is organized, the naming conventions in use.
 
 Roughly 87k lines of non-vendor Python live under `src/core_pdf/`, plus a vendored copy of
 fontTools in `src/core_pdf/_vendor/` that is excluded from linting, typing, and formatting.
@@ -175,83 +174,3 @@ preserve behavior must leave `tests/snapshots/raster/first_page_scale1.json`
 untouched; regenerate it with `CORE_PDF_UPDATE_RASTER_GOLDEN=1` only when an
 output change is intended, and review the diff. Recompute the covering subset
 with `scripts/raster_cover.py` after large structural changes.
-
-### Verifying a performance-sensitive change
-
-```sh
-uv run --group benchmark pytest --benchmark-only -m benchmark_high_impact \
-  --benchmark-save=baseline                                                   # before
-uv run --group benchmark pytest --benchmark-only -m benchmark_high_impact \
-  --benchmark-compare=baseline                                                # after
-```
-
-The high-impact marker is the routine local and pull-request comparison tier. It selects 27
-representative spec hot paths, focused scaling stresses, and one hybrid real-PDF extraction
-sentinel. A targeted 44-case inventory runs weekly and adds the slower page-program, OCR,
-serialization, and alternate implementation-path benchmarks. Run
-`uv run --group benchmark pytest --benchmark-only` when the complete targeted comparison is
-justified.
-
-Add a benchmark only when it isolates an actionable hot path, represents a distinct implementation
-path, or enforces an explicit resource invariant. Prefer one representative workload per path;
-correctness variants belong in ordinary tests, and corpus-wide diagnostics belong in the
-SCORE-Bench precision and raster-golden workflows. In particular, do not turn every corpus fixture
-or every scale point into a separately timed test.
-
-The benchmark suite asserts **invariants as well as timings** — that a page is extracted in a
-single content-stream pass, that an image is decoded exactly once, that Type3 glyph caching
-hits more than it misses, and that tiled affine blitting stays under a 1 MiB scratch budget.
-A refactor that introduces a redundant pass will fail there rather than merely running slower.
-Those assertions are the more trustworthy signal.
-
-**Timings are noisy — do not gate on them naively.** Measured on an unloaded dev machine, two
-consecutive runs of the *same* source produced these spreads:
-
-| Benchmark | Run-to-run spread |
-| --- | --- |
-| `test_width_lookup_benchmark` | 5.6% |
-| `test_cmap_construction_benchmark` | 5.4% |
-| `test_end_to_end_page_extraction_benchmark[ocr]` | 5.3% |
-
-Five benchmarks in the original thirty-case repeatability sample varied by more than 5% on
-identical code, so
-`--benchmark-compare-fail=mean:5%` produces false alarms. The heavy page-program, OCR, and
-rasterization benchmarks run few rounds and are dominated by scheduling noise; the micro
-benchmarks (cmap, ToUnicode, and color) are comparatively stable.
-
-For a change to anything in the table above, do what the existing perf commits did rather than
-trusting a single benchmark run: cProfile before and after, compare corpus wall time across
-repeated runs, and confirm SCORE-Bench accuracy is unchanged across all 224 cases.
-
-### Deliberate extraction hot-path optimizations
-
-Several compact implementation details trade some obviousness for materially lower runtime:
-
-- Content-stream glyph capture computes the transformed line width and dash pattern once per
-  text-show operation. They are paint-state invariants, not per-glyph values.
-- TrueType glyph bounds come from the `glyf` table headers, including the bounds stored for
-  composite glyphs. Do not replace this with contour decomposition unless an operation actually
-  needs outlines.
-- Multi-page extraction captures bounded chunks and schedules only pages that may run OCR. Native
-  pages run inline while OCR-capable pages occupy workers; submitting every cheap native page as
-  its own future adds substantial synchronization overhead on large documents.
-- Newstroke templates retain flattened points and centroids, and their matcher uses specialized
-  2x2 transform math. General-purpose norm, inverse, and reduction calls are disproportionately
-  expensive for the tiny arrays evaluated across tens of thousands of candidates.
-- Adaptive OCR rescue rejects a saturated ink map when the primary pass already contains dense,
-  reliable text. A saturated grid provides no localization signal; preserve the conservative
-  character and confidence thresholds because less complete scans can still benefit from rescue.
-- Layout line aggregation keeps observation indexes columnar and reduces group bounds, source
-  ranges, and sequence minima with NumPy ``reduceat`` operations. Rebuilding small arrays for each
-  line is slower than reducing all line groups together.
-- Recursive XY-cut carries stable x/y coordinate orders in a page-local geometry state. Child
-  regions filter those orders instead of sorting again, and sampled gutter coverage uses sorted
-  interval endpoints plus ``searchsorted`` rather than a sample-by-box boolean matrix.
-- Block precedence uses a spatial interval sweep above 64 blocks and a heap-based topological
-  queue. The quadratic implementation is deliberately retained as the exact oracle for small
-  inputs and randomized equivalence tests.
-- Layout text reconstruction is revision-aware and shared through the first ``TextRun`` in a line.
-  Parse and analysis callers must use that cache rather than reconstructing the same run group.
-
-These optimizations are covered by correctness tests and extraction-output checks. Performance
-changes to them should retain those invariants and capture a before/after benchmark.
