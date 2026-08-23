@@ -119,6 +119,48 @@ def test_adaptive_ocr_retry_runs_in_an_application_worker() -> None:
     subprocess.run([sys.executable, "-c", script], check=True)
 
 
+def test_run_on_each_worker_reaches_every_pooled_thread() -> None:
+    runtime = ExecutionRuntime(RuntimeConfig(parent_workers=3, ocr_workers=3))
+    try:
+        threads: set[int] = set()
+        lock = threading.Lock()
+
+        def record() -> None:
+            with lock:
+                threads.add(threading.get_ident())
+
+        assert runtime.run_on_each_worker(record) == 3
+        assert len(threads) == 3
+    finally:
+        runtime.shutdown()
+
+
+def test_run_on_each_worker_does_not_hang_when_workers_are_busy() -> None:
+    runtime = ExecutionRuntime(RuntimeConfig(parent_workers=4, ocr_workers=4))
+    release = threading.Event()
+    try:
+        for _ in range(2):
+            runtime.internal_get_executor().submit(lambda: release.wait(30))
+        time.sleep(0.2)
+        warmed = 0
+        lock = threading.Lock()
+
+        def record() -> None:
+            nonlocal warmed
+            with lock:
+                warmed += 1
+
+        started = time.perf_counter()
+        # The barrier can never fill while two workers are blocked, so the wait
+        # must break rather than deadlock the pool.
+        runtime.run_on_each_worker(record, timeout=1.0)
+        assert time.perf_counter() - started < 10.0
+        assert warmed >= 1
+    finally:
+        release.set()
+        runtime.shutdown()
+
+
 def test_runtime_maps_in_order_with_bounded_workers() -> None:
     runtime = ExecutionRuntime()
     runtime.configure(RuntimeConfig(parent_workers=2))

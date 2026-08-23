@@ -82,6 +82,7 @@ from core_pdf.impl.engine.parse.model import (
     internal_OCR_RESCUE_DENSE_MIN_CHARACTERS,
     internal_OCR_RESCUE_DENSE_MIN_CONFIDENCE,
 )
+from core_pdf.impl.engine.parse.ocr_bootstrap import internal_prepare_ocr_signals
 from core_pdf.impl.engine.parse.route import (
     PSM_SPARSE_TEXT,
 )
@@ -121,16 +122,29 @@ os.environ["OMP_THREAD_LIMIT"] = "1"
 
 
 def internal_import_tesserocr() -> Any:
-    """Initialize cysignals from the main thread before OCR workers use it."""
-    if "tesserocr" not in sys.modules and threading.current_thread() is not threading.main_thread():
-        raise RuntimeError(
-            "core_pdf must initialize OCR on the main thread; import PdfDocument or call "
-            "prewarm_runtime() during application startup"
-        )
+    """Import tesserocr once cysignals' main-thread setup is in place."""
+    if "tesserocr" not in sys.modules:
+        internal_prepare_ocr_signals()
     return import_module("tesserocr")
 
 
-internal_TESSEROCR = internal_import_tesserocr()
+# Importing tesserocr costs ~25 ms and drags in PIL, so it is bound on first use
+# rather than at import time: a native-text document never needs either.
+# parse.ocr_bootstrap has already installed cysignals' handlers on the main
+# thread, so an OCR worker can safely be the one to import it.
+internal_TESSEROCR_MODULE: Any | None = None
+
+
+def internal_ensure_tesserocr() -> Any:
+    """Bind tesserocr once, from whichever thread first needs recognition."""
+    global internal_TESSEROCR_MODULE
+    module = internal_TESSEROCR_MODULE
+    if module is None:
+        module = internal_import_tesserocr()
+        internal_TESSEROCR_MODULE = module
+    return module
+
+
 internal_OCR_LOCAL = threading.local()
 OCR_TIMEOUT_MILLISECONDS = 12_000
 # Recognition cost grows with the raster, so a flat budget starves exactly the
@@ -409,7 +423,7 @@ def internal_tessdata_path() -> str:
         return str(resolved)
 
     try:
-        default_path, languages = internal_TESSEROCR.get_languages()
+        default_path, languages = internal_ensure_tesserocr().get_languages()
     except RuntimeError:
         default_path, languages = "", ()
     if "eng" in languages:
@@ -447,10 +461,11 @@ def internal_api(mode: int) -> Any:
     api = getattr(internal_OCR_LOCAL, "api", None)
     if api is None:
         psm = mode
-        api = internal_TESSEROCR.PyTessBaseAPI(
+        tesserocr = internal_ensure_tesserocr()
+        api = tesserocr.PyTessBaseAPI(
             path=internal_tessdata_path(),
             psm=psm,
-            oem=internal_TESSEROCR.OEM.LSTM_ONLY,
+            oem=tesserocr.OEM.LSTM_ONLY,
         )
         api.SetVariable("preserve_interword_spaces", "0")
         api.SetVariable("textord_tablefind_recognize_tables", "0")
@@ -461,10 +476,20 @@ def internal_api(mode: int) -> Any:
 
 
 def internal_prepare_ocr() -> None:
-    """Validate OCR startup and construct the caller thread's reusable API."""
+    """Validate OCR startup and construct a reusable API on every worker.
+
+    ``internal_api`` caches its ``PyTessBaseAPI`` in thread-local storage, so
+    each worker that recognizes a page pays the Tesseract model load itself:
+    measured at ~363 ms for the first build in a process and ~40 ms per
+    additional thread once tessdata is in the page cache. Warming the pool here
+    keeps that off the critical path of the first page each worker handles,
+    which matters most for the single-page documents that make up the bulk of
+    OCR work and cannot amortize it over later pages.
+    """
     if threading.current_thread() is not threading.main_thread():
         raise RuntimeError("prewarm_runtime() must be called on the main thread")
     internal_api(3)
+    RUNTIME.run_on_each_worker(lambda: internal_api(3))
 
 
 def prewarm_runtime() -> None:
@@ -1037,7 +1062,7 @@ def internal_recognized_symbols(api: Any, task: internal_OcrTask) -> Observation
     iterator = api.GetIterator()
     if iterator is None:
         return ObservationBatch.empty()
-    level = internal_TESSEROCR.RIL.SYMBOL
+    level = internal_ensure_tesserocr().RIL.SYMBOL
     texts: list[str] = []
     boxes: list[tuple[float, float, float, float]] = []
     confidences: list[float] = []
@@ -1102,7 +1127,7 @@ def internal_recognize(
     api_override: Any | None = None,
     image_prepared: bool = False,
 ) -> internal_Candidate:
-    tesserocr = internal_TESSEROCR
+    tesserocr = internal_ensure_tesserocr()
     api_started = time.perf_counter()
     api = api_override if api_override is not None else internal_api(task.mode)
     api_seconds = time.perf_counter() - api_started if api_override is None else 0.0

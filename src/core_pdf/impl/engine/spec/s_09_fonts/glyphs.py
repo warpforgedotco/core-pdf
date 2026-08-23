@@ -139,6 +139,30 @@ TEX_GLYPH_ALIASES = {
     "radicalBig": "√",
     "radicalbigg": "√",
     "radicalBigg": "√",
+    # Display-size variants of operators the table already carries in their
+    # text size. cmex supplies one glyph per size; they are the same character.
+    "uniondisplay": "\u22c3",
+    "intersectiondisplay": "\u22c2",
+    "productdisplay": "\u220f",
+    # Big angle brackets, following the parenleftbigg/bracketleftbigg pattern
+    # above: a delimiter grown for display maths is still the delimiter.
+    "angbracketleftbigg": "\u27e8",
+    "angbracketleftBigg": "\u27e8",
+    "angbracketrightbigg": "\u27e9",
+    "angbracketrightBigg": "\u27e9",
+    # AMS symbol fonts (msam/msbm) reached through their builtin encodings.
+    "measuredangle": "\u2221",
+    "squaresolid": "\u25a0",
+    "subsetnoteql": "\u228a",
+    "owner": "\u220b",
+    # Named for the hook it draws on the left of the stem, not for its
+    # direction: cmsy's arrowhookleft is TeX's \hookrightarrow.
+    "arrowhookleft": "\u21aa",
+    # cmsy names a variant Greek letter with a trailing 1, as with epsilon1.
+    "rho1": "\u03f1",
+    # cmsy's "triangle" is read as the increment sign rather than the geometric
+    # shape, following Adobe's reading of Delta. pypdf reports it the same way.
+    "triangle": "\u2206",
 }
 internal_GLYPH_MAP_LOCK = threading.Lock()
 

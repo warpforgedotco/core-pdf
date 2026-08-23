@@ -40,11 +40,6 @@ from core_pdf.impl.engine.parse.model import (
     internal_bbox_tuple,
     internal_candidate,
 )
-from core_pdf.impl.engine.parse.ocr import (
-    internal_stroked_text_profile,
-    internal_stroked_vector_decoded_batch,
-    recognize_page,
-)
 from core_pdf.impl.engine.parse.route import (
     plan_page,
 )
@@ -120,7 +115,18 @@ class internal_PageExtraction:
 
     def recognition(self, context: TaskScope) -> RecognitionResult:
         if self.internal_recognition is None:
-            self.internal_recognition = recognize_page(self.capture(), self.plan(), context)
+            plan = self.plan()
+            if plan.ocr_passes:
+                from core_pdf.impl.engine.parse.ocr import recognize_page
+
+                self.internal_recognition = recognize_page(self.capture(), plan, context)
+            else:
+                # recognize_page() returns exactly this for a plan with no OCR
+                # passes. Short-circuiting keeps parse.ocr — and with it
+                # tesserocr, PIL and the rasterizer — off the native-text path.
+                self.internal_recognition = RecognitionResult(
+                    ObservationBatch.empty(), RecognitionReport()
+                )
             self.internal_recognized_at = time.perf_counter()
         return self.internal_recognition
 
@@ -701,6 +707,8 @@ def internal_install_document_stroked_decode_locked(
     seed_pages: tuple[int, ...],
     alphabet_size: int,
 ) -> None:
+    from core_pdf.impl.engine.parse.ocr import internal_stroked_vector_decoded_batch
+
     observations = internal_stroked_vector_decoded_batch(decoded.observations)
     candidate = internal_candidate(-1, observations)
     bbox = extraction.capture().evidence.stroked_vector_text.bbox
@@ -806,6 +814,8 @@ def internal_prepare_document_stroked_mappings(
     )
     if len(indexes) < 2:
         return 0, 0
+    from core_pdf.impl.engine.parse.ocr import internal_stroked_text_profile
+
     ordered = tuple(
         sorted(
             indexes,

@@ -122,7 +122,7 @@ def test_tessdata_path_falls_back_to_tesseract_cli(
     tessdata.mkdir()
     (tessdata / "eng.traineddata").write_bytes(b"test")
     monkeypatch.delenv("TESSDATA_PREFIX", raising=False)
-    monkeypatch.setattr(ocr.internal_TESSEROCR, "get_languages", lambda: ("./", ()))
+    monkeypatch.setattr(ocr.internal_ensure_tesserocr(), "get_languages", lambda: ("./", ()))
     monkeypatch.setattr(ocr.shutil, "which", lambda internal_name: "/usr/bin/tesseract")
     monkeypatch.setattr(
         ocr.subprocess,
@@ -150,6 +150,30 @@ def test_prewarm_runtime_starts_workers_and_initializes_ocr(
     ocr.prewarm_runtime()
 
     assert calls == ["workers", "ocr"]
+
+
+def test_prepare_ocr_builds_an_api_on_every_pooled_worker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A worker that builds its Tesseract API lazily pays the model load on the
+    first page it recognizes; prewarming moves that off the critical path."""
+    import threading
+
+    threads: list[str] = []
+    lock = threading.Lock()
+
+    def record(mode: int) -> object:
+        with lock:
+            threads.append(threading.current_thread().name)
+        return SimpleNamespace(SetPageSegMode=lambda internal_mode: None)
+
+    monkeypatch.setattr(parse_ocr, "internal_api", record)
+
+    parse_ocr.internal_prepare_ocr()
+
+    assert "MainThread" in threads
+    pooled = {name for name in threads if name != "MainThread"}
+    assert len(pooled) == ocr.RUNTIME.max_workers
 
 
 def test_low_confidence_standalone_punctuation_is_rejected() -> None:
@@ -645,7 +669,7 @@ def test_recognize_words_uses_word_level_confidence_and_geometry(
 
     candidate = ocr.internal_recognize(task)
 
-    word_level = ocr.internal_TESSEROCR.RIL.WORD
+    word_level = ocr.internal_ensure_tesserocr().RIL.WORD
     assert levels == [word_level] * 4
     assert candidate.observations.text == ("GPIO12",)
     assert tuple(candidate.observations.bbox[0]) == (20.0, 120.0, 100.0, 160.0)
@@ -2011,11 +2035,6 @@ def test_stroked_vector_symbol_seeds_require_exact_cell_glyph_count(
     )
     monkeypatch.setattr(
         parse_ocr,
-        "internal_stroked_text_profile",
-        lambda capture: ocr.StrokedTextProfile(seed_runs=(run,)),
-    )
-    monkeypatch.setattr(
-        parse_pipeline,
         "internal_stroked_text_profile",
         lambda capture: ocr.StrokedTextProfile(seed_runs=(run,)),
     )
