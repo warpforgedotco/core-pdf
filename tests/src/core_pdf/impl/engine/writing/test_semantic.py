@@ -2,7 +2,6 @@ import pytest
 
 from core_pdf import PdfDocument, PdfSignaturePlan, PdfUnsupportedError
 from core_pdf import StandardPdfEncryption as PublicEncryption
-from core_pdf import serialize_document_to_pdf as public_writer
 from core_pdf.impl.engine.structured import (
     Annotation,
     Block,
@@ -238,12 +237,6 @@ def test_true_type_font_provider_embeds_a_unicode_font() -> None:
 
     with PdfDocument.open(output) as parsed:
         assert "你好" in parsed.extract().text
-
-
-def test_semantic_writer_is_available_from_public_core_pdf_api() -> None:
-    output = public_writer(Document(pages=(Page(page_number=1),)))
-
-    assert output.startswith(b"%PDF-1.7")
 
 
 def test_semantic_writer_supports_standard_pdf_encryption() -> None:

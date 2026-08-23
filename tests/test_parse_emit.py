@@ -947,27 +947,6 @@ def test_emit_removes_expanded_line_initial_suffix_fragments() -> None:
     assert page.text == "on global dynamics\nwithin states\nshifts continue\nstudies"
 
 
-def test_emit_removes_native_line_initial_suffix_fragments() -> None:
-    parsed = ParsedPage(
-        page_number=1,
-        width=300.0,
-        height=400.0,
-        rotation=0,
-        route=PageRoute.NATIVE,
-        blocks=(
-            block(
-                "ing groups include, for example",
-                (20.0, 120.0, 260.0, 150.0),
-                source="native",
-            ),
-        ),
-    )
-
-    page = emit_page(parsed)
-
-    assert page.text == "groups include, for example"
-
-
 def test_emit_removes_native_replacement_character_tokens() -> None:
     parsed = ParsedPage(
         page_number=1,

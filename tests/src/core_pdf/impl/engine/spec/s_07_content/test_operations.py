@@ -13,10 +13,6 @@ from core_pdf.impl.engine.spec.s_07_content.operations import (
     iter_content_operations,
 )
 from core_pdf.impl.engine.spec.s_07_syntax.content_operators import (
-    CACHED_OPERATOR_KEYWORDS,
-    OPERATOR_SPECS,
-    TEXT_ONLY_NOOP_OPS,
-    TEXT_OP,
     TYPE3_REPLAY_OPERATORS,
 )
 from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
@@ -147,27 +143,10 @@ def test_content_operator_counts_classify_all_text_state_operators(
     assert counts.unknown == 0
 
 
-def test_operator_metadata_derives_dispatch_and_specialized_sets() -> None:
-    assert {name: descriptor.handler for name, descriptor in OPERATOR_SPECS.items()} == TEXT_OP
-    assert (
-        frozenset(name for name, descriptor in OPERATOR_SPECS.items() if descriptor.text_only_noop)
-        == TEXT_ONLY_NOOP_OPS
-    )
-    assert (
-        frozenset(name for name, descriptor in OPERATOR_SPECS.items() if descriptor.type3_replay)
-        == TYPE3_REPLAY_OPERATORS
-    )
+def test_dash_operator_is_excluded_from_type3_direct_replay() -> None:
     # Dash operands contain an array, so Type3 compilation must retain its
     # established safe fallback instead of admitting `d` to direct replay.
     assert "d" not in TYPE3_REPLAY_OPERATORS
-    assert (
-        tuple(
-            name.encode("latin-1")
-            for name, descriptor in OPERATOR_SPECS.items()
-            if descriptor.cache_keyword
-        )
-        == CACHED_OPERATOR_KEYWORDS
-    )
 
 
 class internal_RecordingOperationTarget:

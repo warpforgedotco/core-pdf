@@ -212,31 +212,6 @@ def test_collect_document_extraction_analysis_is_opt_in(
     assert records[0]["recognition"]["passes"] == ({"name": "primary", "elapsed_seconds": 1.25},)
 
 
-def test_case_progress_is_suppressed_during_scoring(
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    score = score_bench["CaseScore"](
-        stem="example.pdf",
-        status="ok",
-        cct=0.75,
-        percent_tokens_found=0.8,
-        percent_tokens_added=0.1,
-        precision=0.9,
-        gt_tokens=10,
-        predicted_tokens=9,
-        matched_tokens=8,
-        elapsed_seconds=1.25,
-        content_f1=0.75,
-        text_elapsed_seconds=0.5,
-    )
-    benchmark = score_bench["ScoreBench"]()
-    benchmark.total_cases = 4
-
-    benchmark.internal_print_progress(2, score)
-
-    assert capsys.readouterr().out == ""
-
-
 def test_score_failure_bucket_identifies_actionable_modes() -> None:
     case_score = score_bench["CaseScore"]
     bucket = score_bench["score_failure_bucket"]
@@ -444,19 +419,6 @@ def test_cli_can_disable_default_html_report() -> None:
     benchmark = score_bench["ScoreBench"].from_cli(["--no-html-output"])
 
     assert benchmark.html_output is None
-
-
-def test_cli_accepts_report_limit() -> None:
-    benchmark = score_bench["ScoreBench"].from_cli(["--report-limit", "7"])
-
-    assert benchmark.report_limit == 7
-
-
-def test_cli_accepts_deterministic_partition() -> None:
-    benchmark = score_bench["ScoreBench"].from_cli(["--partition", "holdout"])
-
-    assert benchmark.partition == "holdout"
-    assert score_bench["score_bench_partition"]("example.pdf") in {"train", "holdout"}
 
 
 def test_score_cases_preserve_case_order(

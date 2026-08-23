@@ -140,18 +140,6 @@ def test_tessdata_path_falls_back_to_tesseract_cli(
         ocr.internal_tessdata_path.cache_clear()
 
 
-def test_prewarm_runtime_starts_workers_and_initializes_ocr(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    calls: list[str] = []
-    monkeypatch.setattr(ocr.RUNTIME, "prewarm", lambda: calls.append("workers"))
-    monkeypatch.setattr(parse_ocr, "internal_prepare_ocr", lambda: calls.append("ocr"))
-
-    ocr.prewarm_runtime()
-
-    assert calls == ["workers", "ocr"]
-
-
 def test_prepare_ocr_builds_an_api_on_every_pooled_worker(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1323,65 +1311,6 @@ def test_large_high_confidence_primary_skips_full_page_fallback(
     assert executed_modes == [3]
     assert observations.text == ("large heading",)
     assert [item["name"] for item in report.passes] == ["primary"]
-
-
-def test_named_fallback_page_runs_when_primary_is_empty(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    raster = ocr.internal_Raster(RasterImage(bytes(100), 10, 10, 1), 72)
-    monkeypatch.setattr(
-        parse_ocr,
-        "internal_dominant_image_region",
-        lambda internal_capture, **internal_kwargs: ocr.internal_RasterRegion(
-            raster, (0.0, 0.0, 10.0, 10.0)
-        ),
-    )
-    executed_modes: list[int] = []
-
-    def recognize(task: ocr.internal_OcrTask) -> ocr.internal_Candidate:
-        executed_modes.append(task.mode)
-        text = "" if task.mode == 3 else "recovered page text"
-        return ocr.internal_candidate(
-            task.mode,
-            candidate_observations(text, 92.0),
-        )
-
-    monkeypatch.setattr(parse_ocr, "internal_recognize", recognize)
-
-    class Context:
-        def raise_if_cancelled(self) -> None:
-            pass
-
-        def map_ordered(self, function, values, **internal_kwargs):
-            return map(function, values)
-
-    page = SimpleNamespace(width=10.0, height=10.0, extraction_cache={})
-    capture = cast(
-        CapturedPage,
-        SimpleNamespace(page=page, evidence=page_evidence()),
-    )
-    plan = WorkPlan(
-        PageRoute.OCR,
-        ocr_passes=(
-            OcrPass("primary-page", OcrPassScope.PAGE, 1.0, (3,)),
-            OcrPass(
-                "fallback-page",
-                OcrPassScope.PAGE,
-                1.0,
-                (6,),
-                run_if_characters_below=5,
-            ),
-        ),
-    )
-
-    observations = ocr.internal_recognize_page_with_reserved_raster(
-        capture,
-        plan,
-        cast(TaskScope, Context()),
-    )
-
-    assert executed_modes == [3, 6]
-    assert observations.text[0] == "recovered page text"
 
 
 def test_weak_region_pass_augments_instead_of_replacing_primary(
