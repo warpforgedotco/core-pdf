@@ -739,7 +739,15 @@ def internal_normalize_latin_confusables(text: str) -> str:
         text = internal_remove_nonword_bullet_lines(text)
     if any(fragment in text for fragment in internal_LINE_INITIAL_OCR_SUFFIX_FRAGMENTS):
         text = internal_remove_line_initial_suffix_fragments(text)
-    latin_letters = sum("a" <= character.casefold() <= "z" for character in text)
+    # The test only asks whether at least three Latin letters are present, so stop
+    # there rather than folding every character in the line.  ASCII letters answer
+    # themselves without folding, which is the overwhelmingly common case.
+    latin_letters = 0
+    for character in text:
+        if "a" <= character <= "z" or "A" <= character <= "Z" or "a" <= character.casefold() <= "z":
+            latin_letters += 1
+            if latin_letters == 3:
+                break
     if latin_letters < 3:
         return text
     normalized = text.translate(internal_ARABIC_INDIC_DIGITS).replace("؛", "")
