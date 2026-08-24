@@ -249,8 +249,6 @@ class ObjectResolver(ResolverValueMixin):
                     resolved = lexer.parse_indirect_object()
                 except Exception:
                     resolved = self.recover_indirect_object(lexer, entry.offset)
-                else:
-                    pass
                 finally:
                     self.release_lexer(lexer)
 

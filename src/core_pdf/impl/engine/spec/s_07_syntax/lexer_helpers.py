@@ -138,22 +138,6 @@ def looks_like_indirect_object_header(data: memoryview, position: int, data_len:
     return pos + 3 <= data_len and data[pos : pos + 3] == b"obj"
 
 
-def number_bytes(value: memoryview | bytes) -> bytes:
-    return value.tobytes() if type(value) is memoryview else value
-
-
-def parse_float_token(value: memoryview | bytes) -> float:
-    if isinstance(value, bytes):
-        return float(value)
-    return float(bytes(value) if not value.c_contiguous else value)
-
-
-def parse_int_token(value: memoryview | bytes) -> int:
-    if isinstance(value, bytes):
-        return int(value)
-    return int(bytes(value) if not value.c_contiguous else value)
-
-
 def is_digit_bytes(value: memoryview | bytes) -> bool:
     if type(value) is memoryview:
         value = value.tobytes()
@@ -195,12 +179,6 @@ def is_number_word_bytes(value: bytes) -> bool:
         else:
             return False
     return saw_digit
-
-
-def is_number_word(value: memoryview | bytes) -> bool:
-    if type(value) is memoryview:
-        value = value.tobytes()
-    return is_number_word_bytes(value)
 
 
 def is_integer_word(value: memoryview | bytes) -> bool:
