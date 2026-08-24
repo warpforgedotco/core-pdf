@@ -13,7 +13,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, BinaryIO, cast
 
 from core_pdf.impl.engine.execution import RUNTIME, TaskScope
-from core_pdf.impl.engine.layout import LayoutGeometryIssue, LayoutGeometrySummary
 from core_pdf.impl.engine.parse import parse_document
 from core_pdf.impl.engine.spec.s_07_document.document import PdfDocument as SpecPdfDocument
 from core_pdf.impl.engine.structured import (
@@ -28,7 +27,6 @@ from core_pdf.impl.engine.writing.incremental import (
 from core_pdf.impl.engine.writing.semantic import serialize_document_to_pdf
 from core_pdf.impl.exceptions import (
     PdfDocumentClosedError,
-    PdfParseError,
     PdfUnsupportedError,
 )
 from core_pdf.impl.models import (
@@ -36,7 +34,6 @@ from core_pdf.impl.models import (
     PageScoped,
 )
 from core_pdf.impl.pages import PageSelection
-from core_pdf.impl.primitives import PdfName, PdfReference, PdfString
 from core_pdf.impl.types import PdfSource
 
 if TYPE_CHECKING:
@@ -119,11 +116,6 @@ class PdfDocument(SpecPdfDocument["PdfPage"]):
         """Return resolved outline entries owned by the engine."""
         return tuple(self.iter_outlines())
 
-    @property
-    def attachments(self) -> tuple[Any, ...]:
-        """Return embedded files without exposing the PDF object model."""
-        return tuple(self.embedded_files())
-
     def save_incremental(
         self,
         target: str | PathLike[str] | BinaryIO,
@@ -174,85 +166,10 @@ class PdfDocument(SpecPdfDocument["PdfPage"]):
             for record in per_page(page)
         )
 
-    def extract_annotations(
-        self, *, pages: PageSelection | None = None
-    ) -> tuple[PageScoped[Any], ...]:
-        return self._scoped_records(pages, lambda page: page.get_annotations())
-
-    def extract_links(self, *, pages: PageSelection | None = None) -> tuple[PageScoped[Any], ...]:
-        return self._scoped_records(pages, lambda page: page.get_links())
-
     def extract_form_fields(
         self, *, pages: PageSelection | None = None
     ) -> tuple[PageScoped[Any], ...]:
         return self._scoped_records(pages, lambda page: page.get_fields())
-
-    def save_form_value(
-        self, name: str, value: str, target: str | PathLike[str] | BytesIO
-    ) -> bytes:
-        records = [record for page in self.pages for record in page.get_fields()]
-        record = next((item for item in records if item.name == name), None)
-        if record is None:
-            raise KeyError(name)
-        reference = self.find_object_reference(record.dict)
-        if reference is None:
-            raise ValueError(f"form field {name!r} is not an indirect PDF object")
-        updated = dict(cast(Any, record.dict))
-        updated[PdfName.of("V")] = PdfString(value.encode("utf-8"))
-        return self.save_incremental(target, {reference.object_number: updated})
-
-    def save_annotation(
-        self,
-        index: int,
-        target: str | PathLike[str] | BytesIO,
-        *,
-        contents: str | None = None,
-    ) -> bytes:
-        records = [record for page in self.pages for record in page.get_annotations()]
-        try:
-            record = records[index]
-        except IndexError as exc:
-            raise IndexError(index) from exc
-        reference = self.find_object_reference(record.dict)
-        if reference is None:
-            raise ValueError("annotation is not an indirect PDF object")
-        updated = dict(record.dict)
-        if contents is not None:
-            updated[PdfName.of("Contents")] = PdfString(contents.encode("utf-8"))
-        return self.save_incremental(target, {reference.object_number: updated})
-
-    def save_link(
-        self,
-        index: int,
-        target: str | PathLike[str] | BytesIO,
-        *,
-        destination: str,
-    ) -> bytes:
-        records = [record for page in self.pages for record in page.get_links()]
-        try:
-            record = records[index]
-        except IndexError as exc:
-            raise IndexError(index) from exc
-        reference = self.find_object_reference(record.dict)
-        if reference is None:
-            raise ValueError("link is not an indirect PDF object")
-        updated = dict(cast(Any, record.dict))
-        action = updated.get(PdfName.of("A"))
-        action = dict(cast(Any, action)) if isinstance(action, dict) else {}
-        action[PdfName.of("D")] = PdfString(destination.encode("utf-8"))
-        updated[PdfName.of("A")] = action
-        return self.save_incremental(target, {reference.object_number: updated})
-
-    def find_object_reference(self, value: object) -> PdfReference | None:
-        for key in self.xref:
-            reference = PdfReference(key >> 16, key & 0xFFFF)
-            try:
-                candidate = self.resolver.resolve(reference)
-            except (ValueError, PdfParseError):
-                continue
-            if candidate is value or candidate == value:
-                return reference
-        return None
 
     def acquire_operation(self) -> DocumentOperation:
         with self.internal_operation_lock:
@@ -376,20 +293,6 @@ class PdfDocument(SpecPdfDocument["PdfPage"]):
                 include_xobjects=include_xobjects,
             ),
         )
-
-    def extract_geometry_issues(
-        self,
-        *,
-        pages: PageSelection | None = None,
-    ) -> tuple[PageScoped[LayoutGeometryIssue], ...]:
-        return self._scoped_records(pages, lambda page: page.extract_geometry_issues())
-
-    def extract_geometry_summary(
-        self,
-        *,
-        pages: PageSelection | None = None,
-    ) -> tuple[PageScoped[LayoutGeometrySummary], ...]:
-        return self._scoped_records(pages, lambda page: (page.extract_geometry_summary(),))
 
 
 __all__ = ("DocumentOperation", "PdfDocument")
