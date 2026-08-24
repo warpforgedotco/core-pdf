@@ -114,26 +114,7 @@ class ImageSource:
         with self.internal_lock:
             if self.internal_decoded:
                 return self.internal_raster
-            decoded = (
-                self.internal_decode_mask()
-                if lookup_dict_key(self.dictionary, "ImageMask") is True
-                else decode_pdf_image(self.raw, self.dictionary)
-            )
-            if decoded is not None:
-                array: numpy.ndarray[Any, Any]
-                if isinstance(decoded.data, numpy.ndarray):
-                    decoded_array = cast(numpy.ndarray[Any, Any], decoded.data)
-                    array = decoded_array.reshape((decoded.height, decoded.width, decoded.channels))
-                else:
-                    flat_array = numpy.frombuffer(decoded.data, dtype=numpy.uint8)
-                    array = flat_array.reshape(decoded.height, decoded.width, decoded.channels)
-                color_model = "gray" if decoded.channels in {1, 2} else "rgb"
-                raster = ImageRaster(
-                    array,
-                    color_model,
-                    has_alpha=decoded.channels in {2, 4},
-                )
-                self.internal_raster = self.internal_apply_soft_mask(raster)
+            self.internal_raster = self.internal_decode()
             self.internal_decoded = True
             return self.internal_raster
 
