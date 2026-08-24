@@ -1155,8 +1155,6 @@ class FontDecoder:
             total += cs
             if code == 32:
                 total += ws
-            if self.is_vertical:
-                return (0.0, -total * scale)
             return (total * scale, 0.0)
 
         cmap_has_explicit_mapping = bool(

@@ -301,14 +301,6 @@ class ObservationBatch:
     def select(self, mask: BoolArray) -> ObservationBatch:
         return self.take(numpy.flatnonzero(mask))
 
-    def view(self, mask: BoolArray | None = None) -> ObservationView:
-        indexes = (
-            numpy.arange(len(self), dtype=numpy.int64)
-            if mask is None
-            else numpy.flatnonzero(mask).astype(numpy.int64, copy=False)
-        )
-        return ObservationView(self, indexes)
-
     @classmethod
     def concatenate(cls, *batches: ObservationBatch) -> ObservationBatch:
         batches = tuple(batch for batch in batches if len(batch))
@@ -389,29 +381,6 @@ class ObservationBatch:
 
 
 @dataclass(frozen=True, slots=True)
-class ObservationView:
-    """An immutable zero-copy selection over an observation batch.
-
-    The index vector is tiny compared with copying every geometry column. Consumers
-    materialize only when they must hand ownership to another stage.
-    """
-
-    batch: ObservationBatch
-    indexes: IntArray
-
-    def __post_init__(self) -> None:
-        if self.indexes.ndim != 1:
-            raise ValueError("observation view indexes must be one-dimensional")
-        internal_readonly(self.indexes)
-
-    def __len__(self) -> int:
-        return len(self.indexes)
-
-    def materialize(self) -> ObservationBatch:
-        return self.batch.take(self.indexes)
-
-
-@dataclass(frozen=True, slots=True)
 class TextQualityStats:
     """Shape-only text quality signals used for routing and diagnostics."""
 
@@ -435,17 +404,6 @@ class TextQualityStats:
                 - self.wordlike_ratio * 0.25,
             ),
         )
-
-    def as_cache_dict(self) -> dict[str, float | int]:
-        return {
-            "token_count": self.token_count,
-            "wordlike_ratio": self.wordlike_ratio,
-            "short_token_ratio": self.short_token_ratio,
-            "symbol_ratio": self.symbol_ratio,
-            "non_ascii_ratio": self.non_ascii_ratio,
-            "digit_token_ratio": self.digit_token_ratio,
-            "noise_score": self.noise_score,
-        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -556,25 +514,6 @@ class GlyphEvidence:
 
     def inflation(self, characters: int) -> float:
         return self.glyph_count / max(1, characters)
-
-    def as_cache_dict(self) -> dict[str, object]:
-        return {
-            "glyph_count": self.glyph_count,
-            "visible_glyphs": self.visible_glyphs,
-            "semantic_characters": self.semantic_characters,
-            "authoritative_glyphs": self.authoritative_glyphs,
-            "heuristic_glyphs": self.heuristic_glyphs,
-            "unknown_glyphs": self.unknown_glyphs,
-            "unsupported_glyphs": self.unsupported_glyphs,
-            "low_confidence_glyphs": self.low_confidence_glyphs,
-            "actual_text_characters": self.actual_text_characters,
-            "mapped_ratio": self.mapped_ratio,
-            "authoritative_ratio": self.authoritative_ratio,
-            "unknown_ratio": self.unknown_ratio,
-            "low_confidence_ratio": self.low_confidence_ratio,
-            "unsupported_ratio": self.unsupported_ratio,
-            "source_counts": dict(self.source_counts),
-        }
 
 
 @dataclass(frozen=True, slots=True)

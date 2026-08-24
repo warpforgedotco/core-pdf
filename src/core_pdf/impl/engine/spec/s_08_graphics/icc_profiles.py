@@ -10,9 +10,8 @@ from typing import Any, TypedDict
 import numpy
 
 from core_pdf.impl.engine.spec.s_08_graphics.color_math import (
-    adapt_d50_to_d65,
+    d50_xyz_to_srgb,
     lab_to_xyz,
-    xyz_to_srgb,
 )
 
 ColorSamples = numpy.ndarray[Any, numpy.dtype[numpy.float32]]
@@ -149,17 +148,23 @@ def validate_color_samples(samples: ColorSamples, channels: int) -> None:
 
 
 def apply_matrix_transform(profile: IccMatrixProfile, samples: ColorSamples) -> ColorSamples:
-    curves = numpy.column_stack(
-        [
-            apply_curve_array(profile.curves[index], samples[:, index])
-            for index in range(len(profile.curves))
-        ]
-    ).astype(numpy.float32)
+    first_curve = profile.curves[0]
+    if all(curve == first_curve for curve in profile.curves):
+        # One contiguous pass over the whole block; identical TRCs on every
+        # channel is the overwhelmingly common profile shape.
+        curves = apply_curve_array(first_curve, samples).astype(numpy.float32, copy=False)
+    else:
+        curves = numpy.column_stack(
+            [
+                apply_curve_array(profile.curves[index], samples[:, index])
+                for index in range(len(profile.curves))
+            ]
+        ).astype(numpy.float32)
     if profile.color_space == "GRAY":
         xyz = curves * numpy.asarray(profile.white_point, dtype=numpy.float32)
     else:
         xyz = curves @ internal_readonly_float32(profile.matrix)
-    return numpy.clip(xyz_to_srgb(adapt_d50_to_d65(xyz)), 0.0, 1.0).astype(
+    return numpy.clip(d50_xyz_to_srgb(xyz), 0.0, 1.0).astype(
         numpy.float32,
         copy=False,
     )
@@ -264,7 +269,7 @@ def apply_lut_transform(profile: IccLutProfile, samples: ColorSamples) -> ColorS
         xyz = lab_to_xyz(output, (0.9642, 1.0, 0.8249))
     else:
         xyz = output
-    return numpy.clip(xyz_to_srgb(adapt_d50_to_d65(xyz)), 0.0, 1.0).astype(
+    return numpy.clip(d50_xyz_to_srgb(xyz), 0.0, 1.0).astype(
         numpy.float32,
         copy=False,
     )
@@ -280,7 +285,8 @@ def interpolate_lut_array(
     channels = values.shape[1]
     scaled = numpy.clip(values, 0.0, 1.0) * (grid_points - 1)
     base = numpy.minimum(scaled.astype(numpy.intp), grid_points - 2)
-    fraction = scaled - base
+    fraction = numpy.asarray(scaled - base, dtype=numpy.float32)
+    inverse = 1.0 - fraction
     result = numpy.zeros((len(values), clut.shape[1]), dtype=numpy.float32)
     strides = numpy.empty(channels, dtype=numpy.intp)
     stride = 1
@@ -288,18 +294,21 @@ def interpolate_lut_array(
         strides[axis] = stride
         stride *= grid_points
     base_indices = numpy.sum(base * strides[None, :], axis=1, dtype=numpy.intp)
+    weight = numpy.empty(len(values), dtype=numpy.float32)
     for corner in range(1 << channels):
-        weight = numpy.ones(len(values), dtype=numpy.float32)
         index_offset = 0
-        for axis in range(channels):
-            high = bool(corner & (1 << axis))
-            if high:
+        numpy.copyto(weight, fraction[:, 0] if corner & 1 else inverse[:, 0])
+        if corner & 1:
+            index_offset += int(strides[0])
+        for axis in range(1, channels):
+            if corner & (1 << axis):
                 index_offset += int(strides[axis])
                 weight *= fraction[:, axis]
             else:
-                weight *= 1.0 - fraction[:, axis]
-        indices = base_indices + index_offset
-        result += clut[indices] * weight[:, None]
+                weight *= inverse[:, axis]
+        gathered = clut.take(base_indices + index_offset, axis=0)
+        gathered *= weight[:, None]
+        result += gathered
     return result
 
 

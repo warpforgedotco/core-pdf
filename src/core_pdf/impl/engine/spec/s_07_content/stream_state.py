@@ -67,7 +67,6 @@ class StreamState:
         "compat_tj_cursor_y",
         "invisible_text_layer",
         "xobject_depth",
-        "inline_images",
         "resource_cache",
         "resolved_resource_categories",
     )

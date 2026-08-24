@@ -175,7 +175,7 @@ def internal_vector_native_text_is_trusted(evidence: PageEvidence) -> bool:
     )
 
 
-def internal_base_plan_page(capture: CapturedPage) -> WorkPlan:
+def plan_page(capture: CapturedPage) -> WorkPlan:
     evidence = capture.evidence
     total_characters = evidence.native_characters
     characters = evidence.visible_native_characters
@@ -621,7 +621,3 @@ def internal_base_plan_page(capture: CapturedPage) -> WorkPlan:
         ),
         fusion_policy=FusionPolicy.SPARSE_NATIVE,
     )
-
-
-def plan_page(capture: CapturedPage) -> WorkPlan:
-    return internal_base_plan_page(capture)

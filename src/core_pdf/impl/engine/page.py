@@ -108,25 +108,23 @@ class PdfPage(SpecPdfPage):
 
     def get_drawings(self) -> tuple[DrawingRecord, ...]:
         cache_key = "page_drawing_records_v2"
-        cache = self.internal_cache()
-        cached = cache.get(cache_key)
-        if isinstance(cached, tuple):
-            cached_drawings = tuple(item for item in cached if isinstance(item, DrawingRecord))
-            if len(cached_drawings) == len(cached):
-                return cached_drawings
-        records = [
-            DrawingRecord.from_captured(
-                drawing,
-                raw_data=bytes(drawing.raw_data) if drawing.raw_data is not None else None,
-                image_clip=rect_tuple(drawing.image_clip),
-                items=tuple(drawing.items),
-                rect=rect_tuple(drawing.rect),
+        with self.internal_page_lock:
+            cache = self.internal_cache()
+            cached = cache.get_as(cache_key, tuple)
+            if cached is not None:
+                return cached
+            result = tuple(
+                DrawingRecord.from_captured(
+                    drawing,
+                    raw_data=bytes(drawing.raw_data) if drawing.raw_data is not None else None,
+                    image_clip=rect_tuple(drawing.image_clip),
+                    items=tuple(drawing.items),
+                    rect=rect_tuple(drawing.rect),
+                )
+                for drawing in self.get_page_program().products.drawings
             )
-            for drawing in self.get_page_program().products.drawings
-        ]
-        result = tuple(records)
-        cache[cache_key] = result
-        return result
+            cache[cache_key] = result
+            return result
 
     def extract_images(
         self,

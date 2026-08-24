@@ -27,6 +27,11 @@ D50_TO_D65_MATRIX = numpy.asarray(
 )
 
 
+# One matmul for the ubiquitous xyz_to_srgb(adapt_d50_to_d65(x)) tail:
+# x @ D50.T @ SRGB.T == x @ (SRGB @ D50).T.
+D50_XYZ_TO_SRGB_MATRIX = (SRGB_MATRIX @ D50_TO_D65_MATRIX).astype(numpy.float32)
+
+
 def linear_to_srgb(values: ColorSamples) -> ColorSamples:
     clipped = numpy.clip(values, 0.0, None)
     return numpy.where(
@@ -63,3 +68,8 @@ def lab_to_xyz(
 
 def adapt_d50_to_d65(values: ColorSamples) -> ColorSamples:
     return (values @ D50_TO_D65_MATRIX.T).astype(numpy.float32, copy=False)
+
+
+def d50_xyz_to_srgb(values: ColorSamples) -> ColorSamples:
+    """Convert D50 XYZ straight to normalized sRGB with a single matmul."""
+    return linear_to_srgb(values @ D50_XYZ_TO_SRGB_MATRIX.T)

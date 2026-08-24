@@ -29,7 +29,6 @@ from core_pdf.impl.engine.structured import (
 )
 from core_pdf.impl.text import collapse_character_spaced, collapse_ws
 
-MAX_GRID_INTERSECTIONS = 4_000_000
 AXIS_TOLERANCE = 1.5
 COLUMN_TOLERANCE = 14.0  # loosen tolerance for column edge alignment to reduce split tables
 TABLE_REGION_GAP = 22.0  # loosened to allow adjacent table regions with modest gaps to merge

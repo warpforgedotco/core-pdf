@@ -39,7 +39,6 @@ from core_pdf.impl.engine.spec.s_08_graphics.color_math import (
 )
 from core_pdf.impl.engine.spec.s_08_graphics.color_spec import (
     ImageColorSpec,
-    cs_name,
     cs_param,
     cs_param_floats,
     normalize_image_color_spec,
@@ -50,11 +49,7 @@ from core_pdf.impl.engine.spec.s_08_graphics.icc_profiles import (
 )
 from core_pdf.impl.objects import PdfStream
 
-if typing.TYPE_CHECKING:
-    from collections.abc import Callable
-
 ImageDict: TypeAlias = dict[str, object]
-ColorSpaceSequence: TypeAlias = list[object] | tuple[object, ...]
 ColorComponents: TypeAlias = list[float]
 ImageBuffer: TypeAlias = ByteBuffer
 
@@ -279,20 +274,9 @@ class ImageColorManager:
         return internal_native_apply_decode_array_subbyte(samples, tuple(pairs), max_sample)
 
     @staticmethod
-    def convert_separation(
-        raw: ImageBuffer, color_space: ImageColorSpec | ColorSpaceSequence
-    ) -> ImageBuffer | None:
-        if isinstance(color_space, ImageColorSpec):
-            alt_name = color_space.alt or "DeviceGray"
-            tint_fn = color_space.tint_fn
-        else:
-            if len(color_space) < 4:
-                raise ValueError("invalid Separation color space")
-            alt_cs = color_space[2]
-            if not isinstance(alt_cs, dict):
-                raise ValueError("invalid Separation color space")
-            alt_name = cs_name(lookup_dict_key(alt_cs, "ColorSpace"), "DeviceGray") or "DeviceGray"
-            tint_fn = color_space[3] if len(color_space) > 3 else None
+    def convert_separation(raw: ImageBuffer, color_space: ImageColorSpec) -> ImageBuffer | None:
+        alt_name = color_space.alt or "DeviceGray"
+        tint_fn = color_space.tint_fn
 
         expected = internal_alternate_color_component_count(alt_name)
         if isinstance(tint_fn, PdfStream):
@@ -333,21 +317,10 @@ class ImageColorManager:
         return numpy.frombuffer(fallback_result, dtype=numpy.uint8)
 
     @staticmethod
-    def convert_devicen(
-        raw: ImageBuffer, color_space: ImageColorSpec | ColorSpaceSequence
-    ) -> ImageBuffer | None:
-        if isinstance(color_space, ImageColorSpec):
-            alt_name = color_space.alt or ""
-            n = color_space.channels
-            tint_fn = color_space.tint_fn
-        else:
-            if len(color_space) < 4:
-                raise ValueError("invalid DeviceN color space")
-            names = color_space[1]
-            alt_cs_name = color_space[2]
-            alt_name = cs_name(alt_cs_name, "") or ""
-            n = len(names) if isinstance(names, (list, tuple)) else 1
-            tint_fn = color_space[3] if len(color_space) > 3 else None
+    def convert_devicen(raw: ImageBuffer, color_space: ImageColorSpec) -> ImageBuffer | None:
+        alt_name = color_space.alt or ""
+        n = color_space.channels
+        tint_fn = color_space.tint_fn
         if n <= 0:
             raise ValueError("invalid DeviceN color space")
         if len(raw) % n != 0:
@@ -446,30 +419,9 @@ class ImageColorManager:
             raise ValueError("invalid Indexed color space")
 
     @staticmethod
-    def convert_to_rgb(
-        raw: ImageBuffer, fn: Callable[..., tuple[float, float, float]], channels: int = 1
-    ) -> ImageBuffer:
-        if channels <= 0:
-            raise ValueError("invalid color channel count")
-        if len(raw) % channels != 0:
-            raise ValueError("invalid color sample data")
-        result = bytearray((len(raw) // channels) * 3)
-        inv255 = 1.0 / 255.0
-        for i in range(0, len(raw), channels):
-            out = (i // channels) * 3
-            if channels == 1:
-                r, g, b = fn(raw[i] * inv255)
-            elif i + channels - 1 < len(raw):
-                r, g, b = fn(*(raw[i + j] * inv255 for j in range(channels)))
-            else:
-                raise ValueError("invalid color sample data")
-            result[out] = max(0, min(255, int(r * 255.0)))
-            result[out + 1] = max(0, min(255, int(g * 255.0)))
-            result[out + 2] = max(0, min(255, int(b * 255.0)))
-        return numpy.frombuffer(result, dtype=numpy.uint8)
-
-    @staticmethod
     def convert_calgray(raw: ImageBuffer, params: object) -> ImageBuffer:
+        # Gamma is parsed only to reject malformed parameters; the conversion
+        # itself intentionally treats CalGray as DeviceGray.
         gamma_raw = cs_param(params, "Gamma", 1.0)
         gamma = parse_float(gamma_raw, None)
         if gamma is None:

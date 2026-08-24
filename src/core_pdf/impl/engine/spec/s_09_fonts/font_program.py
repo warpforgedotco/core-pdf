@@ -30,8 +30,6 @@ class CFFGlyphFeature:
 
 
 EMPTY_FEATURE = CFFGlyphFeature((), 0.0, 0, ())
-FEATURE_GRID_WIDTH = 18
-FEATURE_GRID_HEIGHT = 24
 STANDARD_GLYPH_SIDS = {
     name: sid
     for sid, name in enumerate(
@@ -596,9 +594,6 @@ class CFFFont:
             return EMPTY_FEATURE
         return internal_feature_from_contours(contours)
 
-    def glyph_feature_for_cid(self, cid: int) -> CFFGlyphFeature:
-        return self.glyph_feature(self.glyph_id_for_cid(cid))
-
     def glyph_bitmap(self, cid: int, width: int = 24, height: int = 32) -> tuple[int, ...]:
         return self.glyph_bitmap_for_gid(
             self.glyph_id_for_cid(cid),
@@ -1056,9 +1051,6 @@ class CFFUnicodeRepairIndex:
                 if (replacement := self.internal_repairs.get(code)) is not None
             }
 
-    def all_repairs(self) -> dict[bytes, str]:
-        return self.repairs_for_codes(self.internal_code_to_gid)
-
     def internal_resolve_gids(self, requested_gids: tuple[int, ...]) -> None:
         feature_gids = (*self.internal_candidate_gids, *requested_gids)
         for gid in feature_gids:
@@ -1131,7 +1123,6 @@ __all__ = (
     "CFFFont",
     "CFFGlyphFeature",
     "CFFUnicodeRepairIndex",
-    "REPAIRABLE_TO_UNICODE",
     "cff_font_for_data",
     "cff_unicode_repair_index_for_data",
     "glyph_feature_distance",

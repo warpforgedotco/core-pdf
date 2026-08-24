@@ -416,12 +416,13 @@ def internal_observations_from_runs(runs: tuple[TextRun, ...]) -> ObservationBat
     )
 
 
+def internal_promoted_hidden_runs(runs: tuple[TextRun, ...]) -> tuple[TextRun, ...]:
+    return tuple(internal_promote_hidden_run(run) if not run.visible else run for run in runs)
+
+
 def internal_promoted_hidden_observations(capture: CapturedPage) -> ObservationBatch:
     """Expose a verified hidden layer while preserving its original geometry and ordering."""
-    runs = tuple(
-        internal_promote_hidden_run(run) if not run.visible else run for run in capture.runs
-    )
-    return internal_observations_from_runs(runs)
+    return internal_observations_from_runs(internal_promoted_hidden_runs(capture.runs))
 
 
 def internal_learned_glyph_text(glyph: GlyphObservation) -> str | None:
@@ -798,11 +799,7 @@ def internal_capture_from_program(
         quality=all_text_quality,
         glyphs=glyph_evidence,
     )
-    runs = (
-        tuple(internal_promote_hidden_run(run) if not run.visible else run for run in raw_runs)
-        if trusted_hidden_text
-        else raw_runs
-    )
+    runs = internal_promoted_hidden_runs(raw_runs) if trusted_hidden_text else raw_runs
     observations = internal_observations_from_runs(runs)
     visible_text = "".join(run.text for run in runs if run.visible)
     if visible_text == raw_text:

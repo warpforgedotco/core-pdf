@@ -9,6 +9,11 @@ from hashlib import md5
 from typing import Any
 
 from core_pdf.impl.engine.spec.s_07_security.crypto_constants import PDF_PADDING
+from core_pdf.impl.engine.spec.s_07_security.key_derivation import (
+    md5_50_rounds,
+    pad_password,
+    rc4_xor_cascade,
+)
 from core_pdf.impl.engine.spec.s_07_security.rc4 import CryptRC4
 from core_pdf.impl.objects import PdfStream
 from core_pdf.impl.primitives import PdfName, PdfString
@@ -148,18 +153,13 @@ def internal_password_bytes(password: str) -> bytes:
 
 
 def internal_password_key(password: str) -> bytes:
-    digest = md5((internal_password_bytes(password) + PDF_PADDING)[:32]).digest()
-    for _ in range(50):
-        digest = md5(digest).digest()
-    return digest[:16]
+    digest = md5(pad_password(internal_password_bytes(password))).digest()
+    return md5_50_rounds(digest)[:16]
 
 
 def internal_owner_entry(owner_key: bytes, user_password: bytes) -> bytes:
-    value = (user_password + PDF_PADDING)[:32]
-    encrypted = CryptRC4(owner_key).encrypt(value)
-    for index in range(1, 20):
-        encrypted = CryptRC4(bytes(byte ^ index for byte in owner_key)).encrypt(encrypted)
-    return encrypted
+    encrypted = CryptRC4(owner_key).encrypt(pad_password(user_password))
+    return rc4_xor_cascade(owner_key, encrypted, range(1, 20))
 
 
 def internal_file_key(
@@ -170,24 +170,19 @@ def internal_file_key(
     encrypt_metadata: bool,
 ) -> bytes:
     digest = md5()
-    digest.update((user_password + PDF_PADDING)[:32])
+    digest.update(pad_password(user_password))
     digest.update(owner_entry)
     digest.update(struct.pack("<L", permissions & 0xFFFFFFFF))
     digest.update(file_id)
     if not encrypt_metadata:
         digest.update(b"\xff\xff\xff\xff")
-    value = digest.digest()
-    for _ in range(50):
-        value = md5(value).digest()
-    return value[:16]
+    return md5_50_rounds(digest.digest())[:16]
 
 
 def internal_user_entry(key: bytes, file_id: bytes) -> bytes:
     value = md5(PDF_PADDING + file_id).digest()
     value = CryptRC4(key).encrypt(value)
-    for index in range(1, 20):
-        value = CryptRC4(bytes(byte ^ index for byte in key)).encrypt(value)
-    return value + b"\0" * 16
+    return rc4_xor_cascade(key, value, range(1, 20)) + b"\0" * 16
 
 
 __all__ = ("StandardPdfEncryption", "StandardPdfEncryptionContext")

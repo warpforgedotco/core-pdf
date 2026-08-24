@@ -49,14 +49,15 @@ def find_all(
     matcher: str | MatchFunc | None = None,
 ) -> Iterator[StructureElement]:
     match_func = make_match_func(matcher)
-    elements.reverse()
-    while elements:
-        el = elements.pop()
+    stack = list(elements)
+    stack.reverse()
+    while stack:
+        el = stack.pop()
         if match_func(el):
             yield el
         for child in reversed(list(el)):
             if isinstance(child, StructureElement):
-                elements.append(child)
+                stack.append(child)
 
 
 def find_first(elements: Iterable[StructureElement]) -> StructureElement | None:

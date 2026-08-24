@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Iterable, Iterator, Sequence
-from typing import Any, Protocol, TypedDict, Unpack, cast
+from typing import Any, Protocol, TypedDict, cast
 
 from core_pdf.impl.types import Rectangle
 
@@ -21,13 +21,6 @@ class RectBoxInitKwargs(TypedDict, total=False):
     seqno: int
     fill: tuple[float, ...] | None
     fill_opacity: float | None
-
-
-class RectBoxReplaceKwargs(RectBoxInitKwargs, total=False):
-    x0: float
-    y0: float
-    x1: float
-    y1: float
 
 
 def internal_float_value(value: object) -> float:
@@ -183,10 +176,6 @@ class RectBox:
         self.fill = fill
         self.fill_opacity = fill_opacity
 
-    @classmethod
-    def from_bbox(cls, bbox: Rectangle, **kwargs: Unpack[RectBoxInitKwargs]) -> RectBox:
-        return cls(bbox[0], bbox[1], bbox[2], bbox[3], **kwargs)
-
     @property
     def width(self) -> float:
         return self.x1 - self.x0
@@ -214,15 +203,6 @@ class RectBox:
             fill=self.fill,
             fill_opacity=self.fill_opacity,
         )
-
-    def get_intersection_area(self, other: RectBox) -> float:
-        x0 = max(self.x0, other.x0)
-        y0 = max(self.y0, other.y0)
-        x1 = min(self.x1, other.x1)
-        y1 = min(self.y1, other.y1)
-        if x1 <= x0 or y1 <= y0:
-            return 0.0
-        return (x1 - x0) * (y1 - y0)
 
     def intersects(self, other: RectBox, occlusion_threshold: float = 0.0) -> bool:
 
@@ -254,28 +234,6 @@ class RectBox:
 
     def __abs__(self) -> float:
         return abs(self.get_area())
-
-    def contains_point(self, x: float, y: float) -> bool:
-        return self.x0 <= x <= self.x1 and self.y0 <= y <= self.y1
-
-    def contains_rect(self, other: RectBox) -> bool:
-        return (
-            self.x0 <= other.x0
-            and self.y0 <= other.y0
-            and self.x1 >= other.x1
-            and self.y1 >= other.y1
-        )
-
-    def replace(self, **kwargs: Unpack[RectBoxReplaceKwargs]) -> RectBox:
-        return RectBox(
-            x0=kwargs.get("x0", self.x0),
-            y0=kwargs.get("y0", self.y0),
-            x1=kwargs.get("x1", self.x1),
-            y1=kwargs.get("y1", self.y1),
-            seqno=kwargs.get("seqno", self.seqno),
-            fill=kwargs.get("fill", self.fill),
-            fill_opacity=kwargs.get("fill_opacity", self.fill_opacity),
-        )
 
     def __and__(self, other: RectBox) -> RectBox:
         x0 = max(self.x0, other.x0)

@@ -53,11 +53,6 @@ def internal_scan_cmap_literal_string_end(data: bytes, pos: int) -> tuple[int, b
     return end, depth == 0
 
 
-def skip_cmap_literal_string(data: bytes, pos: int) -> int:
-    end, ignored_terminated = internal_scan_cmap_literal_string_end(data, pos)
-    return end
-
-
 def internal_scan_cmap_array_end(data: bytes, pos: int) -> tuple[int, bool]:
     """Scan a ``[...]`` array starting at ``pos``.
 
@@ -88,11 +83,6 @@ def internal_scan_cmap_array_end(data: bytes, pos: int) -> tuple[int, bool]:
             depth -= 1
         end += 1
     return end, depth == 0
-
-
-def skip_cmap_array(data: bytes, pos: int) -> int:
-    end, ignored_terminated = internal_scan_cmap_array_end(data, pos)
-    return end
 
 
 def cmap_tokens(

@@ -423,15 +423,6 @@ def test_indexed_conversion_uses_rgb_lookup_entries() -> None:
     )
 
 
-def test_multi_channel_rgb_conversion_allocates_one_output_pixel_per_sample() -> None:
-    raw = bytes((0, 1, 2, 3, 4, 5))
-
-    result = ImageColorManager.convert_to_rgb(raw, lambda r, g, b: (r, g, b), channels=3)
-
-    assert len(result) == len(raw)
-    numpy.testing.assert_array_equal(result, numpy.frombuffer(raw, dtype=numpy.uint8))
-
-
 @pytest.mark.parametrize("rotation", [90, 180, 270])
 def test_rasterize_rotation_preserves_rgba_pixel_order(rotation: int) -> None:
     page = rendered_page(width=2, height=3, rotate=rotation)

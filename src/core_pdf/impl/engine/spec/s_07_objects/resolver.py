@@ -241,7 +241,7 @@ class ObjectResolver(ResolverValueMixin):
                         candidate = PdfObjectStream(stream_obj, kw_cache=dict(self.kw_cache))
                         with self.lock:
                             container = self.object_streams.setdefault(stream_num, candidate)
-                resolved = container.get(obj_num, self.resolve) if container is not None else None
+                resolved = container.get(obj_num) if container is not None else None
             else:
                 lexer = self.get_lexer()
                 lexer.rewind(entry.offset)
@@ -249,8 +249,6 @@ class ObjectResolver(ResolverValueMixin):
                     resolved = lexer.parse_indirect_object()
                 except Exception:
                     resolved = self.recover_indirect_object(lexer, entry.offset)
-                else:
-                    pass
                 finally:
                     self.release_lexer(lexer)
 

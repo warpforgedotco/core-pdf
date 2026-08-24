@@ -40,10 +40,7 @@ from core_pdf.impl.primitives import (
 )
 from core_pdf.impl.types import Decipher, PdfDict
 
-PdfParseError = PdfParseError
 PdfName_of = PdfName.of
-PdfReference = PdfReference
-PdfString = PdfString
 RECOVERABLE_DICTIONARY_KEY_NAMES = {
     b"Type",
     b"Subtype",
@@ -142,14 +139,6 @@ class PdfLexer:
                 b"R": R_SENTINEL,
             }
 
-    @property
-    def data(self) -> memoryview:
-        return self.raw_data
-
-    @property
-    def position(self) -> int:
-        return self.pos
-
     def close(self) -> None:
         self.source_buffer = None
         self.reference_resolver = None
@@ -228,16 +217,6 @@ class PdfLexer:
 
         token = source_buffer[start:pos] if source_buffer is not None else bytes(data[start:pos])
         return token, pos
-
-    def find_separator(self, start: int) -> int:
-        data = self.raw_data
-        if data.c_contiguous:
-            match = SEPARATOR_RE.search(data, start)
-            return self.data_len if match is None else match.start()
-        pos = start
-        while pos < self.data_len and not SEPARATOR_TABLE[data[pos]]:
-            pos += 1
-        return pos
 
     def scan_word(self, skip_ignored: bool = True) -> tuple[bytes, int] | None:
         return self.scan_word_at(self.pos, skip_ignored=skip_ignored)
@@ -438,11 +417,6 @@ class PdfLexer:
             if str(exc) == "Invalid PKCS7 padding":
                 return value
             raise
-
-    def parse_number_or_keyword(self, raw: bytes) -> Any:
-        if is_number_word_bytes(raw):
-            return self.parse_number(raw)
-        return self.parse_keyword(raw)
 
     def parse_object(self) -> Any:
         self.pos = self.skip_ignored_at(self.pos)
