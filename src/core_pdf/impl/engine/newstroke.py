@@ -276,32 +276,21 @@ def internal_window(
     start: int,
     size: int,
     style: int,
-    point_data: numpy.ndarray[Any, numpy.dtype[numpy.float64]] | None = None,
-    style_data: numpy.ndarray[Any, numpy.dtype[numpy.int16]] | None = None,
+    point_data: numpy.ndarray[Any, numpy.dtype[numpy.float64]],
+    style_data: numpy.ndarray[Any, numpy.dtype[numpy.int16]],
 ) -> numpy.ndarray[Any, numpy.dtype[numpy.float64]] | None:
-    if point_data is not None and style_data is not None:
-        stop = start + size
-        if stop > len(segments) or not numpy.all(style_data[start:stop] == style):
-            return None
-        return point_data[start:stop]
-    if start + size > len(segments):
+    stop = start + size
+    if stop > len(segments) or not numpy.all(style_data[start:stop] == style):
         return None
-    result = numpy.empty((size, 2, 2), dtype=numpy.float64)
-    for offset in range(size):
-        segment = segments[start + offset]
-        if segment is None or segment.style != style:
-            return None
-        result[offset, 0] = (segment.x0, segment.y0)
-        result[offset, 1] = (segment.x1, segment.y1)
-    return result
+    return point_data[start:stop]
 
 
 def internal_fit_match(
     segments: tuple[internal_Segment | None, ...],
     start: int,
     template: internal_Template,
-    point_data: numpy.ndarray[Any, numpy.dtype[numpy.float64]] | None = None,
-    style_data: numpy.ndarray[Any, numpy.dtype[numpy.int16]] | None = None,
+    point_data: numpy.ndarray[Any, numpy.dtype[numpy.float64]],
+    style_data: numpy.ndarray[Any, numpy.dtype[numpy.int16]],
 ) -> internal_Match | None:
     first = segments[start]
     if first is None:
@@ -365,8 +354,8 @@ def internal_fixed_template_match(
     start: int,
     transform: internal_Transform,
     style: int,
-    point_data: numpy.ndarray[Any, numpy.dtype[numpy.float64]] | None = None,
-    style_data: numpy.ndarray[Any, numpy.dtype[numpy.int16]] | None = None,
+    point_data: numpy.ndarray[Any, numpy.dtype[numpy.float64]],
+    style_data: numpy.ndarray[Any, numpy.dtype[numpy.int16]],
 ) -> internal_Match | None:
     size = len(template.segments)
     if continuity[start : start + size - 1] != template.continuity:
@@ -414,8 +403,8 @@ def internal_fixed_match(
     start: int,
     transform: internal_Transform,
     style: int,
-    point_data: numpy.ndarray[Any, numpy.dtype[numpy.float64]] | None = None,
-    style_data: numpy.ndarray[Any, numpy.dtype[numpy.int16]] | None = None,
+    point_data: numpy.ndarray[Any, numpy.dtype[numpy.float64]],
+    style_data: numpy.ndarray[Any, numpy.dtype[numpy.int16]],
 ) -> internal_Match | None:
     first = segments[start]
     if first is None:
@@ -478,8 +467,8 @@ def internal_decode_forward(
     continuity: tuple[bool, ...],
     templates: internal_TemplateSet,
     seed: internal_Match,
-    point_data: numpy.ndarray[Any, numpy.dtype[numpy.float64]] | None = None,
-    style_data: numpy.ndarray[Any, numpy.dtype[numpy.int16]] | None = None,
+    point_data: numpy.ndarray[Any, numpy.dtype[numpy.float64]],
+    style_data: numpy.ndarray[Any, numpy.dtype[numpy.int16]],
 ) -> tuple[internal_Match, ...]:
     result = [seed]
     first = segments[seed.start]
@@ -510,8 +499,8 @@ def internal_decode_around(
     templates: internal_TemplateSet,
     seed: internal_Match,
     minimum_start: int,
-    point_data: numpy.ndarray[Any, numpy.dtype[numpy.float64]] | None = None,
-    style_data: numpy.ndarray[Any, numpy.dtype[numpy.int16]] | None = None,
+    point_data: numpy.ndarray[Any, numpy.dtype[numpy.float64]],
+    style_data: numpy.ndarray[Any, numpy.dtype[numpy.int16]],
 ) -> tuple[internal_Match, ...]:
     result = list(
         internal_decode_forward(segments, continuity, templates, seed, point_data, style_data)

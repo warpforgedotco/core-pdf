@@ -193,7 +193,6 @@ class internal_RecognitionTrace:
     hidden_text_verification: dict[str, object] | None = None
     stroked_vector_decode: dict[str, object] | None = None
     stroked_vector_packed: dict[str, object] | None = None
-    document_stroked_glyphs: dict[str, object] | None = None
     render_timings: dict[str, object] | None = None
     grid_cell_ocr: dict[str, object] | None = None
     render_error: str | None = None
@@ -212,7 +211,9 @@ class internal_RecognitionTrace:
             hidden_text_verification=self.hidden_text_verification or {},
             stroked_vector_decode=self.stroked_vector_decode or {},
             stroked_vector_packed=self.stroked_vector_packed or {},
-            document_stroked_glyphs=self.document_stroked_glyphs or {},
+            # Filled in by the pipeline once document-level stroked-glyph
+            # aggregation is known; the trace never learns it.
+            document_stroked_glyphs={},
             render_timings=self.render_timings or {},
             grid_cell_ocr=self.grid_cell_ocr or {},
             render_error=self.render_error,
@@ -345,10 +346,6 @@ class internal_Raster:
     @property
     def height(self) -> int:
         return self.image.height
-
-    @property
-    def nbytes(self) -> int:
-        return self.image.nbytes
 
 
 @dataclass(frozen=True, slots=True)
