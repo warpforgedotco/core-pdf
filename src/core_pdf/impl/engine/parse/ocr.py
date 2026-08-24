@@ -3523,12 +3523,8 @@ def internal_remap_stroked_vector_observations(
         cells = tuple(
             cell
             for cell in cell_index.candidates(query_box)
-            if cell.packed_box[0] - tolerance
-            <= center_x
-            <= cell.packed_box[2] + tolerance
-            and cell.packed_box[1] - tolerance
-            <= center_y
-            <= cell.packed_box[3] + tolerance
+            if cell.packed_box[0] - tolerance <= center_x <= cell.packed_box[2] + tolerance
+            and cell.packed_box[1] - tolerance <= center_y <= cell.packed_box[3] + tolerance
         )
         if len(cells) != 1:
             continue

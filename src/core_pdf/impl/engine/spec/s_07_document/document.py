@@ -1360,7 +1360,7 @@ class PdfDocument(
         grouped: dict[int, list[RawFormField]] = {}
         annot_page_index: dict[int, int] | None = None
 
-        def widget_page_index(widget: PdfDict) -> int | None:
+        def widget_page_index(widget: object) -> int | None:
             nonlocal annot_page_index
             pg_ref = lookup_dict_key(widget, "P")
             if pg_ref is not None:
