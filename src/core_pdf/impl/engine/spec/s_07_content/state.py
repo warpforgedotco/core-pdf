@@ -4153,50 +4153,59 @@ class TextState:
             # which uses the current point as the first one.
             self.append_cubic_curve(x1, y1, x3, y3, x3, y3)
 
-    def op_paint_stroke(self, operands: OperandWindow, depth: int) -> None:
-        self._op_paint_stroke_impl(operands, depth)
-
-    def _op_paint_stroke_impl(self, operands: OperandWindow, depth: int) -> None:
+    def internal_close_current_subpath(self: Any) -> None:
         if (
             self.capture_graphics
             and self.is_graphics_visible()
-            and depth == "s"
             and self.current_point is not None
             and self.subpath_start is not None
         ):
             self.current_path.close()
+
+    def op_paint_stroke(self, operands: OperandWindow, depth: int) -> None:
+        self.flush_drawing("stroke")
+        self.current_point = None
+        self.subpath_start = None
+
+    def op_paint_close_stroke(self, operands: OperandWindow, depth: int) -> None:
+        self.internal_close_current_subpath()
         self.flush_drawing("stroke")
         self.current_point = None
         self.subpath_start = None
 
     def op_paint_fill(self, operands: OperandWindow, depth: int) -> None:
-        self._op_paint_fill_impl(operands, depth)
+        self.flush_drawing("fill", "nonzero")
+        self.current_point = None
+        self.subpath_start = None
 
-    def _op_paint_fill_impl(self, operands: OperandWindow, depth: int) -> None:
-        self.flush_drawing("fill", "evenodd" if depth == "f*" else "nonzero")
+    def op_paint_fill_evenodd(self, operands: OperandWindow, depth: int) -> None:
+        self.flush_drawing("fill", "evenodd")
         self.current_point = None
         self.subpath_start = None
 
     def op_paint_fillstroke(self, operands: OperandWindow, depth: int) -> None:
-        self._op_paint_fillstroke_impl(operands, depth)
+        self.flush_drawing("fillstroke", "nonzero")
+        self.current_point = None
+        self.subpath_start = None
 
-    def _op_paint_fillstroke_impl(self, operands: OperandWindow, depth: int) -> None:
-        if (
-            self.capture_graphics
-            and self.is_graphics_visible()
-            and (depth == "b" or depth == "b*")
-            and self.current_point is not None
-            and self.subpath_start is not None
-        ):
-            self.current_path.close()
-        self.flush_drawing("fillstroke", "evenodd" if depth in {"B*", "b*"} else "nonzero")
+    def op_paint_fillstroke_evenodd(self, operands: OperandWindow, depth: int) -> None:
+        self.flush_drawing("fillstroke", "evenodd")
+        self.current_point = None
+        self.subpath_start = None
+
+    def op_paint_close_fillstroke(self, operands: OperandWindow, depth: int) -> None:
+        self.internal_close_current_subpath()
+        self.flush_drawing("fillstroke", "nonzero")
+        self.current_point = None
+        self.subpath_start = None
+
+    def op_paint_close_fillstroke_evenodd(self, operands: OperandWindow, depth: int) -> None:
+        self.internal_close_current_subpath()
+        self.flush_drawing("fillstroke", "evenodd")
         self.current_point = None
         self.subpath_start = None
 
     def op_paint_clear(self, operands: OperandWindow, depth: int) -> None:
-        self._op_paint_clear_impl(operands, depth)
-
-    def _op_paint_clear_impl(self, operands: OperandWindow, depth: int) -> None:
         self.current_path.clear()
         self.current_point = None
         self.subpath_start = None
@@ -4215,9 +4224,9 @@ class TextState:
         )
 
     def op_W(self, operands: OperandWindow, depth: int) -> None:
-        self._op_W_impl(operands, depth)
+        self.internal_record_clip("nonzero")
 
-    def _op_W_impl(self, operands: OperandWindow, depth: int) -> None:
+    def internal_record_clip(self: Any, fill_rule: str) -> None:
         path = self.current_path.transformed(self.ctm)
         if not path.has_segments():
             return
@@ -4244,17 +4253,14 @@ class TextState:
                     line_cap=self.line_cap,
                     line_join=self.line_join,
                     dash_pattern=self.transformed_dash_pattern(),
-                    fill_rule="evenodd" if depth == "W*" else "nonzero",
+                    fill_rule=fill_rule,
                     kind="clip",
                     path=path,
                 )
             )
 
     def op_W_star(self, operands: OperandWindow, depth: int) -> None:
-        self._op_W_star_impl(operands, depth)
-
-    def _op_W_star_impl(self, operands: OperandWindow, depth: int) -> None:
-        self.op_W(operands, depth)
+        self.internal_record_clip("evenodd")
 
     def normalize_colors(self: Any, *components: Any) -> tuple[float, ...] | None:
         cache_key = components

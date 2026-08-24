@@ -121,3 +121,39 @@ def test_curve_y_is_not_interpreted_as_curve_v() -> None:
     midpoint_y = curve_y[len(curve_y) // 2]
     midpoint_v = curve_v[len(curve_v) // 2]
     assert abs(midpoint_y[0] - midpoint_v[0]) > 10.0
+
+
+def internal_first_drawing(content: bytes) -> Any:
+    state = internal_consume(content)
+    assert state.drawings
+    return state.drawings[0]
+
+
+def test_starred_paint_operators_record_evenodd_fill_rule() -> None:
+    assert internal_first_drawing(b"0 0 10 10 re f").fill_rule == "nonzero"
+    assert internal_first_drawing(b"0 0 10 10 re f*").fill_rule == "evenodd"
+    assert internal_first_drawing(b"0 0 10 10 re B").fill_rule == "nonzero"
+    assert internal_first_drawing(b"0 0 10 10 re B*").fill_rule == "evenodd"
+    assert internal_first_drawing(b"0 0 10 10 re b*").fill_rule == "evenodd"
+
+
+def test_starred_clip_records_evenodd_fill_rule() -> None:
+    state = internal_consume(b"q 0 0 10 10 re W* n Q")
+    clips = [drawing for drawing in state.drawings if drawing.kind == "clip"]
+    assert [clip.fill_rule for clip in clips] == ["evenodd"]
+
+    state = internal_consume(b"q 0 0 10 10 re W n Q")
+    clips = [drawing for drawing in state.drawings if drawing.kind == "clip"]
+    assert [clip.fill_rule for clip in clips] == ["nonzero"]
+
+
+def internal_first_subpath_closed(content: bytes) -> bool:
+    path = internal_first_drawing(content).path
+    assert path is not None
+    return bool(path.subpaths[0].closed)
+
+
+def test_close_stroke_operators_close_the_subpath() -> None:
+    assert not internal_first_subpath_closed(b"0 0 m 10 0 l 10 10 l S")
+    assert internal_first_subpath_closed(b"0 0 m 10 0 l 10 10 l s")
+    assert internal_first_subpath_closed(b"0 0 m 10 0 l 10 10 l b")

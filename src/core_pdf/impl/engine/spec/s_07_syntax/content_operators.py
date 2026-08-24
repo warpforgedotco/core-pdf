@@ -162,7 +162,7 @@ OPERATOR_SPECS = {
         cache_keyword=False,
     ),
     "s": OperatorSpec(
-        "op_paint_stroke",
+        "op_paint_close_stroke",
         category="vector_paint",
         text_only_noop=True,
         type3_replay=True,
@@ -183,7 +183,7 @@ OPERATOR_SPECS = {
         cache_keyword=False,
     ),
     "f*": OperatorSpec(
-        "op_paint_fill",
+        "op_paint_fill_evenodd",
         category="vector_paint",
         text_only_noop=True,
         type3_replay=True,
@@ -197,21 +197,21 @@ OPERATOR_SPECS = {
         cache_keyword=False,
     ),
     "b": OperatorSpec(
-        "op_paint_fillstroke",
+        "op_paint_close_fillstroke",
         category="vector_paint",
         text_only_noop=True,
         type3_replay=True,
         cache_keyword=False,
     ),
     "B*": OperatorSpec(
-        "op_paint_fillstroke",
+        "op_paint_fillstroke_evenodd",
         category="vector_paint",
         text_only_noop=True,
         type3_replay=True,
         cache_keyword=False,
     ),
     "b*": OperatorSpec(
-        "op_paint_fillstroke",
+        "op_paint_close_fillstroke_evenodd",
         category="vector_paint",
         text_only_noop=True,
         type3_replay=True,
