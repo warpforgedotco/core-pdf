@@ -9,7 +9,7 @@ from core_pdf.impl.engine.layout.geometry_quality import (
     text_run_geometry_issues,
 )
 from core_pdf.impl.engine.layout.glyphs import GlyphCluster, GlyphObservation
-from core_pdf.impl.engine.layout.models import LayoutBox, LayoutLine, TableGrid, TextRun
+from core_pdf.impl.engine.layout.models import LayoutLine, TextRun
 from core_pdf.impl.engine.layout.spatial import (
     SpatialHit,
     SpatialIndex,
@@ -20,14 +20,12 @@ from core_pdf.impl.engine.layout.spatial import (
 __all__ = (
     "GlyphCluster",
     "GlyphObservation",
-    "LayoutBox",
     "LayoutGeometryIssue",
     "LayoutGeometrySummary",
     "LayoutLine",
     "RectBox",
     "SpatialHit",
     "SpatialIndex",
-    "TableGrid",
     "TextRun",
     "bbox_area",
     "bbox_intersection_area",
