@@ -30,4 +30,35 @@ def collapse_character_spaced(text: str, *, min_tokens: int, single_char_ratio: 
     return text.replace(" ", "").replace("\t", " ")
 
 
-__all__ = ("collapse_character_spaced", "collapse_ws", "search_key")
+def is_rtl_character(character: str) -> bool:
+    """True for characters in the right-to-left script ranges."""
+    return any(
+        start <= character <= end
+        for start, end in (
+            ("\u0590", "\u08ff"),
+            ("\ufb1d", "\ufdff"),
+            ("\ufe70", "\ufeff"),
+        )
+    )
+
+
+def is_neutral_character(character: str) -> bool:
+    """True for characters that take their direction from their neighbours."""
+    return any(
+        start <= character <= end
+        for start, end in (
+            ("\x00", "\x2f"),
+            ("\x3a", "\x40"),
+            ("\u2000", "\u206f"),
+            ("\u20a0", "\u21ff"),
+        )
+    )
+
+
+__all__ = (
+    "collapse_character_spaced",
+    "collapse_ws",
+    "is_neutral_character",
+    "is_rtl_character",
+    "search_key",
+)

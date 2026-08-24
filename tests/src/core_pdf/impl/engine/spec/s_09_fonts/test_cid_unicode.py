@@ -1,20 +1,9 @@
 from core_pdf.impl.engine.spec.s_09_fonts.cid_unicode import (
     CompactCMap,
-    code_for_cid,
     remove_codes_covered_by_ranges,
     resolve_cid_unicode_map,
 )
 from core_pdf.impl.engine.spec.s_09_fonts.cmap_ranges import CIDRange
-
-
-def test_code_for_cid_uses_cmap_mixed_radix_ranges() -> None:
-    cid_range = CIDRange(b"\x81\x40", b"\x82\x42", 100)
-
-    assert code_for_cid(cid_range, 100) == b"\x81\x40"
-    assert code_for_cid(cid_range, 102) == b"\x81\x42"
-    assert code_for_cid(cid_range, 103) == b"\x82\x40"
-    assert code_for_cid(cid_range, 105) == b"\x82\x42"
-    assert code_for_cid(cid_range, 106) is None
 
 
 def test_compact_cmap_preserves_explicit_and_later_range_precedence() -> None:

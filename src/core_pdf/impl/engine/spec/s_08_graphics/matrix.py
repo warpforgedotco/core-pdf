@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any, Final, NamedTuple
 
 
@@ -47,3 +48,20 @@ class Matrix(NamedTuple):
 
 
 IDENTITY_MATRIX: Final = Matrix(1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
+
+
+def multiply_affine(left: Sequence[float], right: Sequence[float]) -> list[float]:
+    """Affine product in the flat six-element list form.
+
+    ``Matrix.multiply`` is the canonical native form.  Compatibility facades
+    model the CTM as a mutable list to match the interfaces they emulate, so
+    they need the same product without boxing a ``Matrix`` per operator.
+    """
+    return [
+        left[0] * right[0] + left[1] * right[2],
+        left[0] * right[1] + left[1] * right[3],
+        left[2] * right[0] + left[3] * right[2],
+        left[2] * right[1] + left[3] * right[3],
+        left[4] * right[0] + left[5] * right[2] + right[4],
+        left[4] * right[1] + left[5] * right[3] + right[5],
+    ]

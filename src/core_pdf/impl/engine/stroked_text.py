@@ -518,14 +518,6 @@ def internal_path_runs(
     return tuple(runs)
 
 
-def stroked_text_seed_runs(
-    drawings: tuple[Any, ...],
-    drawing_indexes: Iterable[int],
-) -> tuple[StrokedTextRun, ...]:
-    """Return multi-glyph runs that can be densely packed for one seed OCR pass."""
-    return profile_stroked_text(drawings, drawing_indexes).seed_runs
-
-
 STROKED_TEXT_ISOLATED_MIN_ASPECT_RATIO = 0.12
 
 
@@ -788,18 +780,6 @@ def decode_stroked_text_profile_with_supplemental_seeds(
     )
 
 
-def decode_stroked_text(
-    drawings: tuple[Any, ...],
-    drawing_indexes: Iterable[int],
-    seeds: tuple[StrokedTextSeed, ...],
-) -> StrokedTextDecode:
-    """Learn and decode a page-local single-line vector font."""
-    return decode_stroked_text_profile(
-        profile_stroked_text(drawings, drawing_indexes),
-        seeds,
-    )
-
-
 def decode_stroked_text_profile_with_alphabet(
     profile: StrokedTextProfile,
     alphabet: Mapping[GlyphSignature, str] | Iterable[tuple[GlyphSignature, str]],
@@ -823,16 +803,4 @@ def decode_stroked_text_profile_with_alphabet(
         decoded_candidate_runs=decoded_candidates,
         candidate_glyphs=glyphs,
         decoded_candidate_glyphs=decoded_glyphs,
-    )
-
-
-def decode_stroked_text_with_alphabet(
-    drawings: tuple[Any, ...],
-    drawing_indexes: Iterable[int],
-    alphabet: Mapping[GlyphSignature, str] | Iterable[tuple[GlyphSignature, str]],
-) -> StrokedTextDecode:
-    """Decode a page from an exact glyph alphabet learned elsewhere in the document."""
-    return decode_stroked_text_profile_with_alphabet(
-        profile_stroked_text(drawings, drawing_indexes),
-        alphabet,
     )

@@ -677,48 +677,6 @@ def _characters(span: TextSpan) -> Iterable[TextCharacter]:
     )
 
 
-def _span_fragments(span: TextSpan, char_margin: float = 2.0) -> Iterable[TextSpan]:
-    characters = tuple(_characters(span))
-    if not characters:
-        return (span,)
-    fragments: list[TextSpan] = []
-    current: list[TextCharacter] = []
-    current_sequence: int | None = None
-    sequence_run_length = 0
-    for character in characters:
-        vertical_fragment = False
-        if current:
-            previous = current[-1].bbox
-            current_box = character.bbox
-            x_overlap = min(previous.x1, current_box.x1) - max(previous.x0, current_box.x0)
-            vertical_fragment = x_overlap > 0 and abs(previous.y0 - current_box.y0) > (
-                0.5 * min(previous.height, current_box.height)
-            )
-            horizontal_gap = current_box.x0 - previous.x1
-            horizontal_fragment = horizontal_gap > char_margin * max(
-                previous.height, current_box.height
-            )
-        else:
-            horizontal_fragment = False
-        sequence_fragment = (
-            character.sequence != current_sequence and sequence_run_length >= 2
-            if current
-            else False
-        )
-        if current and (sequence_fragment or vertical_fragment or horizontal_fragment):
-            fragments.append(_character_span(current, span))
-            current = []
-        if character.sequence == current_sequence:
-            sequence_run_length += 1
-        else:
-            current_sequence = character.sequence
-            sequence_run_length = 1
-        current.append(character)
-    if current:
-        fragments.append(_character_span(current, span))
-    return tuple(fragments)
-
-
 def _character_span(characters: list[TextCharacter], source: TextSpan) -> TextSpan:
     box = bbox_union(
         (character.bbox.x0, character.bbox.y0, character.bbox.x1, character.bbox.y1)
@@ -734,15 +692,6 @@ def _character_span(characters: list[TextCharacter], source: TextSpan) -> TextSp
         font_size=source.font_size,
         sequence=characters[0].sequence,
     )
-
-
-def _is_vertical_span(span: TextSpan) -> bool:
-    characters = tuple(_characters(span))
-    if len(characters) < 2:
-        return False
-    x_values = [character.bbox.x0 for character in characters]
-    y_values = [character.bbox.y0 for character in characters]
-    return max(x_values) - min(x_values) <= 1.0 and max(y_values) - min(y_values) > 1.0
 
 
 def _make_line(items: list[LTChar], params: LAParams) -> LTTextLine:

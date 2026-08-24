@@ -38,23 +38,6 @@ class CompactCMap:
         return self.effective_codes_by_cid.get(cid, ())
 
 
-def code_for_cid(cid_range: CIDRange, cid: int) -> bytes | None:
-    offset = cid - cid_range.first_cid
-    if offset < 0:
-        return None
-    widths = tuple(end - start + 1 for start, end in zip(cid_range.start, cid_range.end))
-    size = 1
-    for width in widths:
-        size *= width
-    if offset >= size:
-        return None
-    code = bytearray(cid_range.start)
-    for index in range(len(code) - 1, -1, -1):
-        offset, digit = divmod(offset, widths[index])
-        code[index] += digit
-    return bytes(code)
-
-
 def cid_range_size(cid_range: CIDRange) -> int:
     size = 1
     for start, end in zip(cid_range.start, cid_range.end):

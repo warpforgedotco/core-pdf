@@ -102,6 +102,7 @@ from core_pdf.impl.engine.render.kernels import (
 )
 from core_pdf.impl.engine.render.page import RenderedPage, compose_page
 from core_pdf.impl.engine.render.raster_image import RasterImage
+from core_pdf.impl.engine.spec.s_07_content.page_program import line_coordinate_columns
 from core_pdf.impl.engine.spec.s_08_graphics.image_decode import decode_pdf_image
 from core_pdf.impl.engine.stroked_text import (
     StrokedTextDecode,
@@ -2838,12 +2839,28 @@ def internal_candidate_ocr_regions(capture: CapturedPage) -> tuple[internal_OcrR
         column = min(columns - 1, max(0, int(center_x * columns / max(1.0, page_width))))
         row = min(rows - 1, max(0, int(center_y * rows / max(1.0, page_height))))
         vector_density[row * columns + column] += 1.0
-    for line in getattr(capture, "grid_lines", ()):
-        center_x = (float(line.x0) + float(line.x1)) * 0.5
-        center_y = (float(line.y0) + float(line.y1)) * 0.5
-        column = min(columns - 1, max(0, int(center_x * columns / max(1.0, page_width))))
-        row = min(rows - 1, max(0, int(center_y * rows / max(1.0, page_height))))
-        vector_density[row * columns + column] += 0.5
+    grid_lines = getattr(capture, "grid_lines", ())
+    if len(grid_lines):
+        # Bin every grid line at once.  Iterating the capture would rebuild one
+        # Python object per line just to read its four coordinates back out.
+        line_x0, line_y0, line_x1, line_y1 = line_coordinate_columns(grid_lines)
+        line_columns = numpy.clip(
+            ((line_x0 + line_x1) * 0.5 * columns / max(1.0, page_width)).astype(numpy.int64),
+            0,
+            columns - 1,
+        )
+        line_rows = numpy.clip(
+            ((line_y0 + line_y1) * 0.5 * rows / max(1.0, page_height)).astype(numpy.int64),
+            0,
+            rows - 1,
+        )
+        vector_density += (
+            numpy.bincount(
+                line_rows * columns + line_columns,
+                minlength=rows * columns,
+            ).astype(numpy.float32)
+            * 0.5
+        )
 
     native_counts = numpy.zeros(rows * columns, dtype=numpy.float32)
     for text, raw_box in zip(native.text, native.bbox, strict=True):

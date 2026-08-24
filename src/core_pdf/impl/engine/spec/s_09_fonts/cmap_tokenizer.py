@@ -95,40 +95,6 @@ def skip_cmap_array(data: bytes, pos: int) -> int:
     return end
 
 
-def cmap_word_spans(data: bytes) -> typing.Iterator[tuple[bytes, int, int]]:
-    pos = 0
-    n = len(data)
-    while pos < n:
-        byte = data[pos]
-        if byte == 37:
-            while pos < n and data[pos] not in (10, 13):
-                pos += 1
-            continue
-        if byte == 40:
-            pos = skip_cmap_literal_string(data, pos)
-            continue
-        if byte == 60:
-            if pos + 1 < n and data[pos + 1] == 60:
-                pos += 2
-                continue
-            close = data.find(b">", pos + 1)
-            if close < 0:
-                return
-            pos = close + 1
-            continue
-        if byte == 91:
-            pos = skip_cmap_array(data, pos)
-            continue
-        if PDF_WHITESPACE_BYTES[byte] or byte in b"[]<>()/%":
-            pos += 1
-            continue
-        start = pos
-        pos += 1
-        while pos < n and not PDF_WHITESPACE_BYTES[data[pos]] and data[pos] not in b"[]<>()/%":
-            pos += 1
-        yield data[start:pos], start, pos
-
-
 def cmap_tokens(
     data: bytes, *, include_arrays: bool = False, include_words: bool = False
 ) -> list[bytes]:

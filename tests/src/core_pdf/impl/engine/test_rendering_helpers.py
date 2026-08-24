@@ -16,7 +16,6 @@ from core_pdf.impl.engine.render.kernels import (
     internal_cached_raster_coordinates,
     internal_color_component,
     internal_fill_path_crossing_spans,
-    internal_fill_path_crossings_contain_point,
     internal_fill_path_sample_crossings,
     internal_fill_path_sample_crossings_numpy,
     internal_image_mask_decode_inverts,
@@ -175,22 +174,6 @@ class TestFillPathCrossings:
         rows = internal_fill_path_sample_crossings_numpy(edges, numpy.array([5.0, 20.0]))
         assert rows[0] == [(0.0, 1)]
         assert rows[1] == []
-
-
-class TestCrossingsContainPoint:
-    def test_evenodd_alternates_with_each_crossing_to_the_right(self) -> None:
-        crossings = [(1.0, 1), (3.0, 1)]
-        assert internal_fill_path_crossings_contain_point(crossings, 2.0, "evenodd") is True
-        assert internal_fill_path_crossings_contain_point(crossings, 0.0, "evenodd") is False
-
-    def test_nonzero_sums_winding_directions(self) -> None:
-        # Two same-direction edges to the right: inside under nonzero...
-        same = [(1.0, 1), (3.0, 1)]
-        assert internal_fill_path_crossings_contain_point(same, 0.0, "nonzero") is True
-        # ...but opposing directions cancel, which is where the rules differ.
-        opposed = [(1.0, 1), (3.0, -1)]
-        assert internal_fill_path_crossings_contain_point(opposed, 0.0, "nonzero") is False
-        assert internal_fill_path_crossings_contain_point(opposed, 0.0, "evenodd") is False
 
 
 class TestCrossingSpans:

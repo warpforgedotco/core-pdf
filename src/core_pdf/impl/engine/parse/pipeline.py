@@ -46,6 +46,7 @@ from core_pdf.impl.engine.parse.route import (
 from core_pdf.impl.engine.parse.tables import (
     extract_tables,
 )
+from core_pdf.impl.engine.spec.s_07_document.page_links import resolve_destination_value
 from core_pdf.impl.engine.stroked_text import (
     GlyphSignature,
     StrokedTextDecode,
@@ -380,12 +381,15 @@ class internal_PageExtraction:
         if assembled is None:
             assembled = assemble_page(self.parsed_page(context), self.capture().drawings)
             try:
+                resolver = self.page.document.resolver
                 annotations = tuple(
                     Annotation(
                         subtype=record.subtype,
                         bbox=record.rect,
                         contents=record.contents,
-                        destination=record.dest or record.action,
+                        destination=resolve_destination_value(
+                            resolver, record.dest or record.action
+                        ),
                     )
                     for record in self.page.get_annotations()
                 )

@@ -6,14 +6,11 @@ from types import SimpleNamespace
 from core_pdf.impl.engine.spec.s_07_content.capture import CapturedPath, CapturedSubpath
 from core_pdf.impl.engine.stroked_text import (
     StrokedTextSeed,
-    decode_stroked_text,
     decode_stroked_text_profile,
     decode_stroked_text_profile_with_alphabet,
     decode_stroked_text_profile_with_supplemental_seeds,
-    decode_stroked_text_with_alphabet,
     internal_signature_distance,
     profile_stroked_text,
-    stroked_text_seed_runs,
 )
 
 GLYPHS = {
@@ -48,9 +45,8 @@ def test_page_local_glyph_decoder_bootstraps_unique_shapes() -> None:
     unseeded, _ = vector_word("ABC", y=30.0, scale=0.75, shapes=variant)
     drawings = (*first, *second, *anchored, *unseeded)
 
-    decoded = decode_stroked_text(
-        drawings,
-        range(len(drawings)),
+    decoded = decode_stroked_text_profile(
+        profile_stroked_text(drawings, range(len(drawings))),
         (
             StrokedTextSeed("AB", first_box, 99.0, 0),
             StrokedTextSeed("AB", second_box, 99.0, 1),
@@ -84,7 +80,9 @@ def test_page_local_glyph_decoder_rejects_ambiguous_signatures() -> None:
         )
     )
 
-    decoded = decode_stroked_text(drawings, range(len(drawings)), seeds)
+    decoded = decode_stroked_text_profile(
+        profile_stroked_text(drawings, range(len(drawings))), seeds
+    )
 
     assert decoded.aligned_seeds == 4
     assert decoded.learned_signatures == 0
@@ -96,17 +94,15 @@ def test_page_local_glyph_decoder_accepts_repeated_85_percent_seeds() -> None:
     second, second_box = vector_word("AB", y=10.0, scale=2.0)
     drawings = (*first, *second)
 
-    accepted = decode_stroked_text(
-        drawings,
-        range(len(drawings)),
+    accepted = decode_stroked_text_profile(
+        profile_stroked_text(drawings, range(len(drawings))),
         (
             StrokedTextSeed("AB", first_box, 85.0, 0),
             StrokedTextSeed("AB", second_box, 85.0, 1),
         ),
     )
-    rejected = decode_stroked_text(
-        drawings,
-        range(len(drawings)),
+    rejected = decode_stroked_text_profile(
+        profile_stroked_text(drawings, range(len(drawings))),
         (
             StrokedTextSeed("AB", first_box, 84.9, 0),
             StrokedTextSeed("AB", second_box, 84.9, 1),
@@ -154,9 +150,8 @@ def test_page_local_glyph_decoder_rejects_degenerate_single_strokes() -> None:
     standalone, _ = vector_word("I", y=20.0, shapes=shapes)
     drawings = (*first, *second, *standalone)
 
-    decoded = decode_stroked_text(
-        drawings,
-        range(len(drawings)),
+    decoded = decode_stroked_text_profile(
+        profile_stroked_text(drawings, range(len(drawings))),
         (
             StrokedTextSeed("II", first_box, 99.0, 0),
             StrokedTextSeed("II", second_box, 99.0, 1),
@@ -172,7 +167,7 @@ def test_seed_runs_retain_only_compact_multi_glyph_words() -> None:
     oversized, _ = vector_word("AB", y=30.0, scale=10.0)
     drawings = (*word, *single, *oversized)
 
-    runs = stroked_text_seed_runs(drawings, range(len(drawings)))
+    runs = profile_stroked_text(drawings, range(len(drawings))).seed_runs
 
     assert len(runs) == 1
     assert runs[0].bbox == word_box
@@ -185,9 +180,8 @@ def test_document_alphabet_decodes_scaled_glyphs_without_ocr_seeds() -> None:
     second, second_box = vector_word("AB", y=10.0, scale=2.0)
     anchored, anchored_box = vector_word("ABC", y=20.0, scale=1.5)
     source = (*first, *second, *anchored)
-    learned = decode_stroked_text(
-        source,
-        range(len(source)),
+    learned = decode_stroked_text_profile(
+        profile_stroked_text(source, range(len(source))),
         (
             StrokedTextSeed("AB", first_box, 99.0, 0),
             StrokedTextSeed("AB", second_box, 99.0, 1),
@@ -196,9 +190,8 @@ def test_document_alphabet_decodes_scaled_glyphs_without_ocr_seeds() -> None:
     )
     target, _ = vector_word("ABC", y=30.0, scale=1.25)
 
-    decoded = decode_stroked_text_with_alphabet(
-        target,
-        range(len(target)),
+    decoded = decode_stroked_text_profile_with_alphabet(
+        profile_stroked_text(target, range(len(target))),
         learned.alphabet,
     )
 
