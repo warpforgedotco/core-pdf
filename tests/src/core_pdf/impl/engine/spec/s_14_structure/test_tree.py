@@ -50,11 +50,12 @@ def test_parent_tree_uses_shared_number_tree_walker() -> None:
 
 
 def test_find_all_leaves_the_caller_owned_list_intact() -> None:
-    element = StructureElement(cast(Any, Document()), cast(Any, {}))
-    elements = [element]
+    first = StructureElement(cast(Any, Document()), cast(Any, {}))
+    second = StructureElement(cast(Any, Document()), cast(Any, {}))
+    elements = [first, second]
 
-    assert list(find_all(elements)) == [element]
-    assert elements == [element]
+    assert list(find_all(elements)) == [first, second]
+    assert elements == [first, second]
 
 
 def test_structure_element_hash_stays_stable_when_properties_are_cached() -> None:
