@@ -3,7 +3,6 @@ from __future__ import annotations
 import numpy
 
 from core_pdf.impl.engine.spec.s_07_filters.jbig2.bitmap_kernels import (
-    compose_packed_bitmap,
     compose_packed_bitmap_data,
 )
 from core_pdf.impl.engine.spec.s_07_filters.jbig2.codec import jbig2_bitmap_to_pdf_image
@@ -11,12 +10,13 @@ from core_pdf.impl.engine.spec.s_07_filters.jbig2.codec import jbig2_bitmap_to_p
 
 def test_packed_compositor_handles_clipping_and_xor() -> None:
     rows = [b"\xff\x80\x00", b"\x81\x00\x00", b"\x00\x7f\x80"]
+    packed = b"".join(rows)
     width = 17
     height = 5
     stride = (width + 7) // 8
     initial = bytearray(stride * height)
 
-    compose_packed_bitmap(rows, 17, -3, 1, width, height, stride, initial, 0)
+    compose_packed_bitmap_data(packed, len(rows), 17, -3, 1, width, height, stride, initial, 0)
     expected = bytearray(stride * height)
     for row_index, source in enumerate(rows):
         y = row_index + 1
@@ -27,7 +27,7 @@ def test_packed_compositor_handles_clipping_and_xor() -> None:
                     expected[y * stride + (x >> 3)] |= 0x80 >> (x & 7)
     assert initial == expected
 
-    compose_packed_bitmap(rows, 17, -3, 1, width, height, stride, initial, 2)
+    compose_packed_bitmap_data(packed, len(rows), 17, -3, 1, width, height, stride, initial, 2)
     assert initial == bytearray(stride * height)
 
 

@@ -252,16 +252,6 @@ class JBIG2PageInfo:
 
 
 @dataclass(slots=True)
-class JBIG2SymbolDictionary:
-    sbatx: int
-    sbridge: int
-    referred_to_count: int
-    referred_to_segments: list[int]
-    flags: int
-    raw: bytes
-
-
-@dataclass(slots=True)
 class JBIG2TextRegion:
     width: int
     height: int
@@ -388,28 +378,6 @@ def parse_page_info(data: bytes) -> JBIG2PageInfo:
         x_resolution=x_resolution,
         y_resolution=y_resolution,
         flags=flags,
-    )
-
-
-def parse_symbol_dictionary(data: bytes) -> JBIG2SymbolDictionary:
-    if len(data) < 8:
-        raise Jbig2ParseError("truncated JBIG2 symbol dictionary")
-    sbatx = read_be_i16(data, 0)
-    sbridge = read_be_i16(data, 2)
-    referred_to_count = data[4]
-    if len(data) < 6 + referred_to_count:
-        raise Jbig2ParseError("truncated JBIG2 symbol dictionary")
-    referred_to_segments = list(data[5 : 5 + referred_to_count])
-    flags = data[5 + referred_to_count] if 5 + referred_to_count < len(data) else 0
-    if 5 + referred_to_count >= len(data):
-        raise Jbig2ParseError("truncated JBIG2 symbol dictionary")
-    return JBIG2SymbolDictionary(
-        sbatx=sbatx,
-        sbridge=sbridge,
-        referred_to_count=referred_to_count,
-        referred_to_segments=referred_to_segments,
-        flags=flags,
-        raw=data,
     )
 
 
@@ -571,7 +539,6 @@ def parse_jbig2_file(data: bytes) -> list[JBIG2Segment]:
 def decode_jbig2_segments(segments: list[JBIG2Segment]) -> bytes:
     page_info: JBIG2PageInfo | None = None
     image: JBIG2Image | None = None
-    symbol_dictionaries: dict[int, JBIG2SymbolDictionary] = {}
     max_x = 0
     max_y = 0
     inferred_width = 0
@@ -605,15 +572,13 @@ def decode_jbig2_segments(segments: list[JBIG2Segment]) -> bytes:
             image.fill(jbig2_page_default_pixel(page_info))
             inferred_width = page_info.width
             inferred_height = page_info.height
-        elif segment.segment_type == 0:
-            symbol_dictionaries[segment.number] = parse_symbol_dictionary(segment.data)
         elif segment.segment_type == 6:
             text_region = parse_text_region(segment.data)
             max_x = max(max_x, text_region.x + text_region.width)
             max_y = max(max_y, text_region.y + text_region.height)
             ensure_image(max_x, max_y)
             if image is not None:
-                decode_text_region(segment.data, image, symbol_dictionaries)
+                decode_text_region(segment.data, image)
         elif segment.segment_type in {
             JBIG2_IMMEDIATE_GENERIC_REGION,
             JBIG2_IMMEDIATE_LOSSLESS_GENERIC_REGION,
@@ -653,10 +618,9 @@ def jbig2_bitmap_to_pdf_image(data: bytes | bytearray) -> bytes:
     return numpy.bitwise_xor(uint8_view(data), 0xFF).tobytes()
 
 
-def decode_text_region(
-    data: bytes, image: JBIG2Image, symbols: dict[int, JBIG2SymbolDictionary]
-) -> None:
-
+def decode_text_region(data: bytes, image: JBIG2Image) -> None:
+    # Symbol-dictionary-based text regions are not implemented: the region's
+    # trailing bytes are composited as a raw packed bitmap.
     region = parse_text_region(data)
     if len(region.raw) < 20:
         raise Jbig2ParseError("truncated JBIG2 text region")
@@ -823,11 +787,6 @@ def decode_arithmetic_generic_template0(data: bytes, width: int, height: int) ->
             )
         previous_previous_row = previous_row
         previous_row = row
-    decoder.a = a
-    decoder.chigh = chigh
-    decoder.clow = clow
-    decoder.ct = ct
-    decoder.bp = bp
     return bitmap
 
 

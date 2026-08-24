@@ -176,48 +176,4 @@ def compose_packed_bitmap_data(
     )
 
 
-def compose_packed_bitmap(
-    rows: list[bytes],
-    region_width: int,
-    region_x: int,
-    region_y: int,
-    image_width: int,
-    image_height: int,
-    image_stride: int,
-    image_data: bytearray,
-    operator: int,
-) -> None:
-    """Composite packed one-bit rows into an image buffer.
-
-    This compatibility wrapper accepts the historical row-list representation.
-    Region decoders should use :func:`compose_packed_bitmap_data` to avoid
-    materializing each row before composition.
-    """
-    if region_width * len(rows) < PACKED_COMPOSE_NUMPY_THRESHOLD:
-        internal_compose_packed_bitmap_scalar(
-            rows,
-            region_width,
-            region_x,
-            region_y,
-            image_width,
-            image_height,
-            image_stride,
-            image_data,
-            operator,
-        )
-        return
-    compose_packed_bitmap_data(
-        b"".join(rows),
-        len(rows),
-        region_width,
-        region_x,
-        region_y,
-        image_width,
-        image_height,
-        image_stride,
-        image_data,
-        operator,
-    )
-
-
-__all__ = ("compose_packed_bitmap", "compose_packed_bitmap_data")
+__all__ = ("compose_packed_bitmap_data",)
