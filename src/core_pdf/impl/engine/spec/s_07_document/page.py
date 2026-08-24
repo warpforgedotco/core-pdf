@@ -302,47 +302,7 @@ class PdfPage:
         return records
 
     def get_fields(self) -> list[RawFormField]:
-        all_fields = self.document.fields()
-        page_fields = []
-        page_annot_ids = {id(annot) for annot in self.annotation_dicts()}
-
-        for field in all_fields:
-            if field.widget:
-                if not isinstance(field.widget, dict):
-                    raise ValueError("invalid field widget entry")
-                pg_ref = lookup_dict_key(field.widget, "P")
-                if pg_ref is not None:
-                    pg_obj = self.document.resolver.resolve(pg_ref)
-                    if (
-                        isinstance(pg_obj, dict)
-                        and self.document.page_index_for(pg_obj) == self.page_number - 1
-                    ):
-                        page_fields.append(field)
-                elif id(field.widget) in page_annot_ids:
-                    page_fields.append(field)
-            elif field.kids:
-                if not isinstance(field.kids, list):
-                    raise ValueError("invalid field kids array")
-                for kid_ref in field.kids:
-                    kid = self.document.resolver.resolve(kid_ref)
-                    if (
-                        isinstance(kid, dict)
-                        and self.document.resolver.resolve_name(lookup_dict_key(kid, "Subtype"))
-                        == "Widget"
-                    ):
-                        pg_ref = lookup_dict_key(kid, "P")
-                        if pg_ref is not None:
-                            pg_obj = self.document.resolver.resolve(pg_ref)
-                            if (
-                                isinstance(pg_obj, dict)
-                                and self.document.page_index_for(pg_obj) == self.page_number - 1
-                            ):
-                                page_fields.append(field)
-                                break
-                        elif id(kid) in page_annot_ids:
-                            page_fields.append(field)
-                            break
-        return page_fields
+        return list(self.document.fields_by_page().get(self.page_number - 1, ()))
 
     @property
     def art_box(self) -> tuple[float, float, float, float] | None:

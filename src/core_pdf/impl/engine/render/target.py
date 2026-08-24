@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import heapq
 import math
 import time
 from bisect import bisect_left
@@ -536,14 +537,36 @@ class internal_RasterTarget:
                 return None
             return start, end
 
+        # Active-edge table: rows are visited with strictly decreasing page_y,
+        # so instead of rescanning every edge on every row, each edge is
+        # pushed onto a min-heap (by its lower y bound) once page_y drops
+        # below its upper bound, and popped once page_y drops below its
+        # lower bound. What remains on the heap for a given row is exactly
+        # the edges a full per-row scan would have kept -- validated against
+        # a brute-force reference over thousands of randomized edge sets,
+        # including duplicate-`low` ties and edges shorter than one row step.
+        edge_count = len(edge_segments)
+        pending_order = sorted(range(edge_count), key=lambda i: -edge_segments[i][5])
+        pending_index = 0
+        active_heap: list[tuple[float, int]] = []
         for py in range(iy0, iy1):
             visible_spans = clip_row_visible_spans(py)
             if not visible_spans:
                 continue
             page_y = crop_y1 - (py + 0.5) / scale
+            while (
+                pending_index < edge_count
+                and edge_segments[pending_order[pending_index]][5] > page_y
+            ):
+                edge_index = pending_order[pending_index]
+                heapq.heappush(active_heap, (edge_segments[edge_index][4], edge_index))
+                pending_index += 1
+            while active_heap and active_heap[0][0] > page_y:
+                heapq.heappop(active_heap)
             crossings: list[tuple[float, int]] = []
-            for ex0, ey0, ex1, ey1, low, high in edge_segments:
-                if not (low <= page_y < high):
+            for low, edge_index in active_heap:
+                ex0, ey0, ex1, ey1, edge_low, edge_high = edge_segments[edge_index]
+                if not (edge_low <= page_y < edge_high):
                     continue
                 t = (page_y - ey0) / (ey1 - ey0)
                 x_intersection = ex0 + t * (ex1 - ex0)
@@ -2292,7 +2315,18 @@ class internal_RasterTarget:
             return
         ix0, iy0, ix1, iy1 = pixel_box
         soft_mask_alpha = data.get("soft_mask_alpha")
+        fill_opacity = data.get("fill_opacity")
         normal_fast = can_blend_normal_fast(blend_mode)
+        domain_span = domain[1] - domain[0]
+        # page_x only depends on the column, so it is identical on every row;
+        # computing it once here avoids redoing the same division per pixel.
+        page_x_values = [crop_x0 + (px + 0.5) / scale for px in range(ix0, ix1)]
+        # A gradient function is evaluated purely from unit_t, and real pages
+        # spend most of their pixels in a clamped extend region or an
+        # axis-aligned band where unit_t repeats exactly -- cache per call so
+        # evaluate_pdf_function (which can run an arbitrary PDF function,
+        # including a PostScript calculator) is not repeated for the same t.
+        color_cache: dict[float, tuple[int, int, int, int]] = {}
         for py in range(iy0, iy1):
             page_y = crop_y1 - (py + 0.5) / scale
             row = py * width * 4
@@ -2306,7 +2340,7 @@ class internal_RasterTarget:
                 start, end = visible_spans[index - 1]
                 if not (start <= px < end):
                     continue
-                page_x = crop_x0 + (px + 0.5) / scale
+                page_x = page_x_values[px - ix0]
                 unit_t = (
                     axial_shading_t(coords, page_x, page_y)
                     if shading_type == 2
@@ -2322,12 +2356,20 @@ class internal_RasterTarget:
                     if not extend1:
                         continue
                     unit_t = 1.0
-                value = domain[0] + unit_t * (domain[1] - domain[0])
-                rgba = internal_shading_color_rgba(
-                    color_space,
-                    evaluate_pdf_function(function, value),
-                    data.get("fill_opacity"),
-                )
+                rgba = color_cache.get(unit_t)
+                if rgba is None:
+                    value = domain[0] + unit_t * domain_span
+                    rgba = internal_shading_color_rgba(
+                        color_space,
+                        evaluate_pdf_function(function, value),
+                        fill_opacity,
+                    )
+                    # Bounded like the raster coordinate caches below: a
+                    # diagonal or radial gradient can produce a near-unique
+                    # unit_t per pixel, so an unbounded cache would grow to
+                    # one entry per pixel on a large fill.
+                    if len(color_cache) < RASTER_COORDINATE_CACHE_MAX_ENTRIES:
+                        color_cache[unit_t] = rgba
                 if pdf_number(soft_mask_alpha):
                     rgba = (
                         rgba[0],

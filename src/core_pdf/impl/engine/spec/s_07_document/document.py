@@ -103,6 +103,7 @@ DOCUMENT_CACHE_FIELDS = (
     "oc_layers",
     "acroform_cache",
     "fields_cache",
+    "fields_by_page_cache",
     "page_labels_cache",
     "page_extraction_caches",
 )
@@ -143,6 +144,7 @@ class PdfDocument(
         "oc_layers",
         "acroform_cache",
         "fields_cache",
+        "fields_by_page_cache",
         "decoder_cache",
         "image_cache",
         "inherited_values_cache",
@@ -178,6 +180,7 @@ class PdfDocument(
     oc_layers: dict[str, bool] | None
     acroform_cache: PdfDict | None | MissingObject
     fields_cache: list[RawFormField] | None
+    fields_by_page_cache: dict[int, list[RawFormField]] | None
     decoder_cache: dict[tuple[int, int] | int, FontDecoder]
     image_cache: ImageCache
     inherited_values_cache: InheritedValuesCache
@@ -1341,6 +1344,60 @@ class PdfDocument(
                 records.extend(self.discover_widget_field_records(records))
             self.fields_cache = records
             return records
+
+    def fields_by_page(self) -> dict[int, list[RawFormField]]:
+        return get_or_compute(self, "fields_by_page_cache", self.build_fields_by_page)
+
+    def build_fields_by_page(self) -> dict[int, list[RawFormField]]:
+        """Group every document field by the page index its widget(s) sit on.
+
+        Computed once for the whole document instead of once per page: a page's
+        ``get_fields()`` used to rescan every field in the document on every call,
+        which is O(pages x fields) for multi-page forms. This groups in one pass.
+        """
+        from core_pdf.impl.engine.spec.s_07_document.page import PdfPage
+
+        grouped: dict[int, list[RawFormField]] = {}
+        annot_page_index: dict[int, int] | None = None
+
+        def widget_page_index(widget: object) -> int | None:
+            nonlocal annot_page_index
+            pg_ref = lookup_dict_key(widget, "P")
+            if pg_ref is not None:
+                pg_obj = self.resolver.resolve(pg_ref)
+                return self.page_index_for(pg_obj) if isinstance(pg_obj, dict) else None
+            if annot_page_index is None:
+                annot_page_index = {
+                    id(annot): index
+                    for index, page in enumerate(self.pages)
+                    if isinstance(page, PdfPage)
+                    for annot in page.annotation_dicts()
+                }
+            return annot_page_index.get(id(widget))
+
+        for field in self.fields():
+            page_indexes: set[int] = set()
+            if field.widget:
+                if not isinstance(field.widget, dict):
+                    raise ValueError("invalid field widget entry")
+                page_index = widget_page_index(field.widget)
+                if page_index is not None:
+                    page_indexes.add(page_index)
+            elif field.kids:
+                if not isinstance(field.kids, list):
+                    raise ValueError("invalid field kids array")
+                for kid_ref in field.kids:
+                    kid = self.resolver.resolve(kid_ref)
+                    if (
+                        isinstance(kid, dict)
+                        and self.resolver.resolve_name(lookup_dict_key(kid, "Subtype")) == "Widget"
+                    ):
+                        page_index = widget_page_index(kid)
+                        if page_index is not None:
+                            page_indexes.add(page_index)
+            for page_index in page_indexes:
+                grouped.setdefault(page_index, []).append(field)
+        return grouped
 
     def discover_widget_field_records(self, existing: list[RawFormField]) -> list[RawFormField]:
         seen_widgets = {id(record.widget) for record in existing if isinstance(record.widget, dict)}
