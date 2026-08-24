@@ -45,6 +45,8 @@ def test_rc4_known_vector() -> None:
         ("\u00aa", "a"),
         ("\u2168", "IX"),
         ("\u0627\u0628", "\u0627\u0628"),
+        ("", ""),
+        ("\u00ad", ""),
     ],
 )
 def test_saslprep_maps_and_normalizes_valid_passwords(value: str, expected: str) -> None:

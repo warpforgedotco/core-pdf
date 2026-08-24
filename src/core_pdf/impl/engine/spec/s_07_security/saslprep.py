@@ -30,6 +30,8 @@ def saslprep(data: str) -> str:
     )
 
     data = unicodedata.ucd_3_2_0.normalize("NFKC", data)
+    if not data:
+        return data
 
     in_table_d1 = stringprep.in_table_d1
     if in_table_d1(data[0]):
