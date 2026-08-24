@@ -278,6 +278,10 @@ def field_to_json_dict(field: FormField) -> dict[str, JsonValue]:
         "value_text": field.value_text,
         "bbox": bbox_to_json(field.bbox),
         "field_index": field.field_index,
+        "required": field.required,
+        "read_only": field.read_only,
+        "no_export": field.no_export,
+        "options": list(field.options),
     }
 
 
