@@ -3,15 +3,13 @@
 
 from __future__ import annotations
 
-import contextlib
 import threading
 from collections import deque
-from collections.abc import Callable, Iterator
 from typing import TYPE_CHECKING, Any, cast
 
 from core_pdf.impl.engine.cache import ExtractionCache
 from core_pdf.impl.engine.spec.s_07_content.capture import CapturedLine
-from core_pdf.impl.engine.spec.s_07_content.page_program import PageProducts, PageProgram
+from core_pdf.impl.engine.spec.s_07_content.page_program import PageProgram
 from core_pdf.impl.engine.spec.s_07_content.state import TextState
 from core_pdf.impl.engine.spec.s_07_document.annotation_appearance import (
     consume_annotation_appearances,
@@ -95,21 +93,12 @@ class PdfPage:
         self.page_box_cache = {}
         self.rotation_cache = MISSING
         self.resources_cache = MISSING
-        cache_lock = document_cache_lock(document)
-        if cache_lock is None:
+        with document_cache_lock(document):
             page_caches = getattr(document, "page_extraction_caches", None)
             if page_caches is None:
                 page_caches = {}
-                with contextlib.suppress(AttributeError):
-                    document.page_extraction_caches = page_caches
+                document.page_extraction_caches = page_caches
             self.extraction_cache = page_caches.setdefault(page_number, ExtractionCache())
-        else:
-            with cache_lock:
-                page_caches = getattr(document, "page_extraction_caches", None)
-                if page_caches is None:
-                    page_caches = {}
-                    document.page_extraction_caches = page_caches
-                self.extraction_cache = page_caches.setdefault(page_number, ExtractionCache())
 
     @property
     def inherited_values(self) -> InheritedValueMap:
@@ -132,47 +121,6 @@ class PdfPage:
     @property
     def trim_box(self) -> tuple[float, float, float, float] | None:
         return self._cached_page_box("TrimBox")
-
-    def find_text_near(
-        self,
-        target_box: tuple[float, float, float, float],
-        direction: str = "left",
-        distance: float = 100.0,
-    ) -> list[TextRun]:
-        x0, y0, x1, y1 = target_box
-        mid_x = (x0 + x1) * 0.5
-        mid_y = (y0 + y1) * 0.5
-        candidates: list[tuple[float, TextRun]] = []
-        for run in self.chars:
-            if not run.text.strip():
-                continue
-            delta = -1.0
-            if direction == "left" and run.x1 <= x0:
-                if abs(run.mid_y - mid_y) < max(run.height, y1 - y0, 10.0):
-                    delta = x0 - run.x1
-            elif direction == "right" and run.x0 >= x1:
-                if abs(run.mid_y - mid_y) < max(run.height, y1 - y0, 10.0):
-                    delta = run.x0 - x1
-            elif direction == "above" and run.y0 >= y1:
-                if abs(run.mid_x - mid_x) < max(run.x1 - run.x0, x1 - x0, 20.0):
-                    delta = run.y0 - y1
-            elif (
-                direction == "below"
-                and run.y1 <= y0
-                and abs(run.mid_x - mid_x) < max(run.x1 - run.x0, x1 - x0, 20.0)
-            ):
-                delta = y0 - run.y1
-            if 0.0 <= delta <= distance:
-                candidates.append((delta, run))
-        candidates.sort(key=lambda candidate: candidate[0])
-        return [run for _, run in candidates]
-
-    def has_annotation_subtype(self, subtype_name: str) -> bool:
-        for annot in self.annotation_dicts():
-            subtype = self.document.resolver.resolve_name(lookup_dict_key(annot, "Subtype"))
-            if subtype == subtype_name:
-                return True
-        return False
 
     def annotation_dicts(self) -> list[PdfDict]:
         return self._annotation_dicts(strict=False)
@@ -200,21 +148,6 @@ class PdfPage:
             elif strict and not recover_annotations:
                 raise ValueError("invalid page annotation entry")
         return resolved_annots
-
-    def has_destination_annotation(self) -> bool:
-        for annot in self.annotation_dicts():
-            if lookup_dict_key(annot, "Dest") is not None:
-                return True
-            action = lookup_dict_key(annot, "A")
-            if isinstance(action, PdfReference):
-                action = self.document.resolver.resolve(action)
-            if not isinstance(action, dict):
-                continue
-            if self.document.resolver.resolve_name(lookup_dict_key(action, "S")) != "GoTo":
-                continue
-            if lookup_dict_key(action, "D") is not None:
-                return True
-        return False
 
     def get_annotations(self) -> list[RawAnnotation]:
         recover_annotations = document_recovery_enabled(self.document)
@@ -359,9 +292,6 @@ class PdfPage:
             if isinstance(stream, PdfStream):
                 streams.append(self.document.resolver.resolve_stream(stream))
         return tuple(streams)
-
-    def iter_content_streams(self) -> Iterator[PdfStream]:
-        yield from self.content_streams
 
     def consume_contents(self, state: TextState) -> None:
         if self.contents is None:
@@ -533,72 +463,3 @@ class PdfPage:
     @property
     def lines(self) -> list[CapturedLine]:
         return self.get_grid_lines()
-
-    def crop(self, bbox: tuple[float, float, float, float]) -> PdfPage:
-        x0, y0, x1, y1 = bbox
-        return self.internal_derive_page(
-            bbox,
-            run_predicate=lambda r: r.x1 > x0 and r.x0 < x1 and r.y1 > y0 and r.y0 < y1,
-            line_predicate=lambda line: (
-                max(line.x0, line.x1) > x0
-                and min(line.x0, line.x1) < x1
-                and max(line.y0, line.y1) > y0
-                and min(line.y0, line.y1) < y1
-            ),
-        )
-
-    def within_bbox(self, bbox: tuple[float, float, float, float]) -> PdfPage:
-        x0, y0, x1, y1 = bbox
-        return self.internal_derive_page(
-            bbox,
-            run_predicate=lambda r: r.x0 >= x0 and r.x1 <= x1 and r.y0 >= y0 and r.y1 <= y1,
-            line_predicate=lambda line: (
-                min(line.x0, line.x1) >= x0
-                and max(line.x0, line.x1) <= x1
-                and min(line.y0, line.y1) >= y0
-                and max(line.y0, line.y1) <= y1
-            ),
-        )
-
-    def internal_derive_page(
-        self,
-        bbox: tuple[float, float, float, float],
-        *,
-        run_predicate: Callable[[Any], bool],
-        line_predicate: Callable[[Any], bool],
-    ) -> PdfPage:
-        x0, y0, x1, y1 = bbox
-        new_page = self.__class__(self.document, self.page_dict, self.page_number)
-
-        graphics = self.get_page_program().products
-        products = graphics
-        runs = tuple(r for r in graphics.runs if run_predicate(r))
-        new_page.page_program_cache = self.internal_filtered_products(
-            products, runs, x0, y0, x1, y1
-        )
-
-        grid_lines = self.get_grid_lines()
-        new_page.grid_lines = [line for line in grid_lines if line_predicate(line)]
-        return new_page
-
-    @staticmethod
-    def internal_filtered_products(
-        products: PageProducts,
-        runs: tuple[Any, ...],
-        x0: float,
-        y0: float,
-        x1: float,
-        y1: float,
-    ) -> Any:
-        from core_pdf.impl.engine.spec.s_07_content.page_program import (
-            PageProgram,
-        )
-
-        filtered = PageProducts(
-            runs,
-            products.glyphs,
-            products.drawings,
-            products.inline_images,
-            products.lines,
-        )
-        return PageProgram(filtered)
