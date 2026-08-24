@@ -3493,19 +3493,42 @@ def internal_remap_stroked_vector_observations(
     confidences: list[float] = []
     sequences: list[int] = []
     references: list[Any | None] = []
+    tolerance = STROKED_VECTOR_PACK_REMAP_TOLERANCE
+    cell_index = SpatialIndex.from_items(
+        packed.cells,
+        bbox=lambda cell: (
+            cell.packed_box[0] - tolerance,
+            cell.packed_box[1] - tolerance,
+            cell.packed_box[2] + tolerance,
+            cell.packed_box[3] + tolerance,
+        ),
+    )
     for index, packed_box in enumerate(observations.bbox):
         box = internal_bbox_tuple(packed_box)
         center_x = (box[0] + box[2]) * 0.5
         center_y = (box[1] + box[3]) * 0.5
+        # Broad-phase grid lookup narrows to spatially nearby cells; the exact
+        # tolerance check below is unchanged so results are identical to a
+        # full scan, just without touching every cell on the page per glyph.
+        # The query box needs a positive area (SpatialIndex rejects a
+        # degenerate point), so pad it by a fixed epsilon far smaller than
+        # any real geometry difference -- it only widens the broad-phase
+        # candidate set, never the final exact-tolerance result.
+        query_box = (
+            center_x - 1e-6,
+            center_y - 1e-6,
+            center_x + 1e-6,
+            center_y + 1e-6,
+        )
         cells = tuple(
             cell
-            for cell in packed.cells
-            if cell.packed_box[0] - STROKED_VECTOR_PACK_REMAP_TOLERANCE
+            for cell in cell_index.candidates(query_box)
+            if cell.packed_box[0] - tolerance
             <= center_x
-            <= cell.packed_box[2] + STROKED_VECTOR_PACK_REMAP_TOLERANCE
-            and cell.packed_box[1] - STROKED_VECTOR_PACK_REMAP_TOLERANCE
+            <= cell.packed_box[2] + tolerance
+            and cell.packed_box[1] - tolerance
             <= center_y
-            <= cell.packed_box[3] + STROKED_VECTOR_PACK_REMAP_TOLERANCE
+            <= cell.packed_box[3] + tolerance
         )
         if len(cells) != 1:
             continue
