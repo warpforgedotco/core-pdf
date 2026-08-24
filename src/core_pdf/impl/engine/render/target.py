@@ -2292,7 +2292,18 @@ class internal_RasterTarget:
             return
         ix0, iy0, ix1, iy1 = pixel_box
         soft_mask_alpha = data.get("soft_mask_alpha")
+        fill_opacity = data.get("fill_opacity")
         normal_fast = can_blend_normal_fast(blend_mode)
+        domain_span = domain[1] - domain[0]
+        # page_x only depends on the column, so it is identical on every row;
+        # computing it once here avoids redoing the same division per pixel.
+        page_x_values = [crop_x0 + (px + 0.5) / scale for px in range(ix0, ix1)]
+        # A gradient function is evaluated purely from unit_t, and real pages
+        # spend most of their pixels in a clamped extend region or an
+        # axis-aligned band where unit_t repeats exactly -- cache per call so
+        # evaluate_pdf_function (which can run an arbitrary PDF function,
+        # including a PostScript calculator) is not repeated for the same t.
+        color_cache: dict[float, tuple[int, int, int, int]] = {}
         for py in range(iy0, iy1):
             page_y = crop_y1 - (py + 0.5) / scale
             row = py * width * 4
@@ -2306,7 +2317,7 @@ class internal_RasterTarget:
                 start, end = visible_spans[index - 1]
                 if not (start <= px < end):
                     continue
-                page_x = crop_x0 + (px + 0.5) / scale
+                page_x = page_x_values[px - ix0]
                 unit_t = (
                     axial_shading_t(coords, page_x, page_y)
                     if shading_type == 2
@@ -2322,12 +2333,15 @@ class internal_RasterTarget:
                     if not extend1:
                         continue
                     unit_t = 1.0
-                value = domain[0] + unit_t * (domain[1] - domain[0])
-                rgba = internal_shading_color_rgba(
-                    color_space,
-                    evaluate_pdf_function(function, value),
-                    data.get("fill_opacity"),
-                )
+                rgba = color_cache.get(unit_t)
+                if rgba is None:
+                    value = domain[0] + unit_t * domain_span
+                    rgba = internal_shading_color_rgba(
+                        color_space,
+                        evaluate_pdf_function(function, value),
+                        fill_opacity,
+                    )
+                    color_cache[unit_t] = rgba
                 if pdf_number(soft_mask_alpha):
                     rgba = (
                         rgba[0],
