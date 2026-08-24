@@ -1673,6 +1673,7 @@ def internal_detect_tables(
 def internal_annotate_table_associations(
     table: Table,
     observations: ObservationBatch,
+    text_rows: list[list[int]],
 ) -> Table:
     """Annotate spanning rows and nearby aligned text without changing cells."""
     metadata = dict(table.metadata)
@@ -1687,7 +1688,7 @@ def internal_annotate_table_associations(
         return replace(table, metadata=metadata) if metadata != table.metadata else table
     x0, _y0, x1, y1 = table.bbox
     candidates: list[tuple[float, tuple[int, ...]]] = []
-    for row in internal_text_rows(observations):
+    for row in text_rows:
         boxes = [observations.bbox[index] for index in row]
         row_x0 = min(float(box[0]) for box in boxes)
         row_x1 = max(float(box[2]) for box in boxes)
@@ -1729,10 +1730,14 @@ def extract_tables(
     chart_table = extract_chart_table(capture, observations)
     if chart_table is not None:
         tables = (*tables, chart_table)
+    if not tables:
+        return ()
+    text_rows = internal_text_rows(observations)
     return tuple(
         internal_annotate_table_associations(
             replace(table, order=order) if table.order != order else table,
             observations,
+            text_rows,
         )
         for order, table in enumerate(tables)
     )
