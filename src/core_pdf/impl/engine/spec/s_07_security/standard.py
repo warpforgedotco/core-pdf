@@ -15,6 +15,11 @@ from core_pdf.impl.engine.spec.s_07_security.errors import (
     PDFEncryptionError,
     PDFPasswordIncorrect,
 )
+from core_pdf.impl.engine.spec.s_07_security.key_derivation import (
+    md5_50_rounds,
+    pad_password,
+    rc4_xor_cascade,
+)
 from core_pdf.impl.engine.spec.s_07_security.rc4 import CryptRC4
 from core_pdf.impl.engine.spec.s_07_security.values import get_int, get_uint
 from core_pdf.impl.primitives import MISSING
@@ -95,15 +100,12 @@ class PdfStandardSecurityHandler:
             first_id = coerce_to_bytes(docid_list[0]) if docid_list and len(docid_list) > 0 else b""
             h.update(first_id)
             result = CryptRC4(key).encrypt(h.digest())
-            for i in range(1, 20):
-                k = bytes(c ^ i for c in key)
-                result = CryptRC4(k).encrypt(result)
+            result = rc4_xor_cascade(key, result, range(1, 20))
             result += result
             return result
 
     def compute_encryption_key(self, password: bytes) -> bytes:
-        password = (password + PDF_PADDING)[:32]
-        h = md5(password)
+        h = md5(pad_password(password))
         h.update(self.o)
         h.update(struct.pack("<L", self.p))
         docid_list = self.docid
@@ -115,8 +117,7 @@ class PdfStandardSecurityHandler:
         n = 5
         if self.r >= 3:
             n = self.length // 8
-            for ignored in range(50):
-                result = md5(result[:n]).digest()
+            result = md5_50_rounds(result, n)
         return result[:n]
 
     def authenticate(self, password: str) -> bytes | None:
@@ -139,22 +140,16 @@ class PdfStandardSecurityHandler:
         return u[:16] == self.u[:16]
 
     def authenticate_owner_password(self, password: bytes) -> bytes | None:
-        password = (password + PDF_PADDING)[:32]
-        h = md5(password)
-        if self.r >= 3:
-            for ignored in range(50):
-                h = md5(h.digest())
+        digest = md5(pad_password(password)).digest()
         n = 5
         if self.r >= 3:
+            digest = md5_50_rounds(digest)
             n = self.length // 8
-        key = h.digest()[:n]
+        key = digest[:n]
         if self.r == 2:
             user_password = CryptRC4(key).decrypt(self.o)
         else:
-            user_password = self.o
-            for i in range(19, -1, -1):
-                k = bytes(c ^ i for c in key)
-                user_password = CryptRC4(k).decrypt(user_password)
+            user_password = rc4_xor_cascade(key, self.o, range(19, -1, -1))
         return self.authenticate_user_password(user_password)
 
     def decrypt(
