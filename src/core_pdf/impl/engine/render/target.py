@@ -2364,7 +2364,12 @@ class internal_RasterTarget:
                         evaluate_pdf_function(function, value),
                         fill_opacity,
                     )
-                    color_cache[unit_t] = rgba
+                    # Bounded like the raster coordinate caches below: a
+                    # diagonal or radial gradient can produce a near-unique
+                    # unit_t per pixel, so an unbounded cache would grow to
+                    # one entry per pixel on a large fill.
+                    if len(color_cache) < RASTER_COORDINATE_CACHE_MAX_ENTRIES:
+                        color_cache[unit_t] = rgba
                 if pdf_number(soft_mask_alpha):
                     rgba = (
                         rgba[0],
