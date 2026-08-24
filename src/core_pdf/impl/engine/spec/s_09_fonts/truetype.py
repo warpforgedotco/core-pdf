@@ -11,13 +11,8 @@ from core_pdf.impl.engine.spec.s_09_fonts.font_program_truetype import (
     rasterize_contours,
     tt_font_for_data,
 )
-from core_pdf.impl.engine.spec.s_09_fonts.font_program_truetype import (
-    internal_invert_unicode_cmap as internal_invert_unicode_cmap_impl,
-)
 from core_pdf.impl.engine.spec.s_09_fonts.widths import get_descendant
 from core_pdf.impl.objects import PdfStream
-
-internal_invert_unicode_cmap = internal_invert_unicode_cmap_impl
 
 
 def tt_font_for_pdf_font(font: dict[str, Any]) -> TrueTypeFontProgram | None:
@@ -44,7 +39,6 @@ def tt_font_for_pdf_font(font: dict[str, Any]) -> TrueTypeFontProgram | None:
 
 
 __all__ = (
-    "internal_invert_unicode_cmap",
     "Point",
     "TrueTypeFontProgram",
     "rasterize_contours",
