@@ -3,7 +3,11 @@ from __future__ import annotations
 
 from typing import Any, cast
 
-from core_pdf.impl.engine.spec.s_14_structure.tree import StructureElement, StructureTree
+from core_pdf.impl.engine.spec.s_14_structure.tree import (
+    StructureElement,
+    StructureTree,
+    find_all,
+)
 
 
 class Resolver:
@@ -43,6 +47,14 @@ def test_parent_tree_uses_shared_number_tree_walker() -> None:
     )
 
     assert structure.parent_tree == {1: first_parent, 2: second_parent}
+
+
+def test_find_all_leaves_the_caller_owned_list_intact() -> None:
+    element = StructureElement(cast(Any, Document()), cast(Any, {}))
+    elements = [element]
+
+    assert list(find_all(elements)) == [element]
+    assert elements == [element]
 
 
 def test_structure_element_hash_stays_stable_when_properties_are_cached() -> None:
