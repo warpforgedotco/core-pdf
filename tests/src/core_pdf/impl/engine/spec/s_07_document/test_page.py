@@ -27,6 +27,8 @@ class FakeDocument:
     def __init__(self, fields: list[RawFormField]) -> None:
         self.resolver = FakeResolver()
         self.internal_fields = fields
+        self.pages: list[Any] = []
+        self.fields_by_page_cache: dict[int, list[RawFormField]] | None = None
 
     def fields(self) -> list[RawFormField]:
         return self.internal_fields
@@ -36,6 +38,11 @@ class FakeDocument:
 
     def page_index_for(self, page_obj: object) -> int | None:
         return 0 if isinstance(page_obj, dict) else None
+
+    def fields_by_page(self) -> dict[int, list[RawFormField]]:
+        if self.fields_by_page_cache is None:
+            self.fields_by_page_cache = PdfDocument.build_fields_by_page(cast(Any, self))
+        return self.fields_by_page_cache
 
 
 def test_page_get_fields_matches_direct_widget_annotation_without_page_ref() -> None:
@@ -65,8 +72,10 @@ def test_page_get_fields_matches_direct_widget_annotation_without_page_ref() -> 
         unrelated_widget,
         widget=unrelated_widget,
     )
-    page = PdfPage(cast(Any, FakeDocument([field, unrelated])), {"Annots": [widget]}, 0)
+    document = FakeDocument([field, unrelated])
+    page = PdfPage(cast(Any, document), {"Annots": [widget]}, 1)
     page.inherited_values_cache = {"Annots": [widget]}
+    document.pages = [page]
 
     assert page.get_fields() == [field]
 
@@ -101,8 +110,10 @@ def test_page_get_fields_matches_kid_widget_annotation_without_page_ref() -> Non
         {"Kids": [unrelated_widget]},
         kids=cast(PdfArray, [unrelated_widget]),
     )
-    page = PdfPage(cast(Any, FakeDocument([field, unrelated])), {"Annots": [widget]}, 0)
+    document = FakeDocument([field, unrelated])
+    page = PdfPage(cast(Any, document), {"Annots": [widget]}, 1)
     page.inherited_values_cache = {"Annots": [widget]}
+    document.pages = [page]
 
     assert page.get_fields() == [field]
 
