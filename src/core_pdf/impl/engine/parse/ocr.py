@@ -661,21 +661,31 @@ def internal_select_character_filtered_candidate(
     return filtered
 
 
+def internal_pixel_box_to_page_box(
+    bbox: tuple[int, int, int, int],
+    image_width: int,
+    image_height: int,
+    page_box: tuple[float, float, float, float],
+) -> tuple[float, float, float, float]:
+    """Map a top-left-origin pixel box into bottom-left PDF page space."""
+    x0, y0, x1, y1 = bbox
+    page_x0, page_y0, page_x1, page_y1 = page_box
+    page_width = page_x1 - page_x0
+    page_height = page_y1 - page_y0
+    return (
+        page_x0 + x0 * page_width / image_width,
+        page_y1 - y1 * page_height / image_height,
+        page_x0 + x1 * page_width / image_width,
+        page_y1 - y0 * page_height / image_height,
+    )
+
+
 def internal_map_ocr_box(
     task: internal_OcrTask,
     bbox: tuple[int, int, int, int],
 ) -> tuple[float, float, float, float]:
     """Map one Tesseract pixel box into the task's PDF coordinate space."""
-    x0, y0, x1, y1 = bbox
-    page_x0, page_y0, page_x1, page_y1 = task.page_box
-    page_width = page_x1 - page_x0
-    page_height = page_y1 - page_y0
-    return (
-        page_x0 + x0 * page_width / task.image.width,
-        page_y1 - y1 * page_height / task.image.height,
-        page_x0 + x1 * page_width / task.image.width,
-        page_y1 - y0 * page_height / task.image.height,
-    )
+    return internal_pixel_box_to_page_box(bbox, task.image.width, task.image.height, task.page_box)
 
 
 internal_GRID_DARK_THRESHOLD = 160
@@ -932,14 +942,11 @@ def internal_grid_region_page_box(
     x_lines: list[int],
     y_lines: list[int],
 ) -> tuple[float, float, float, float]:
-    page_x0, page_y0, page_x1, page_y1 = task.page_box
-    page_width = page_x1 - page_x0
-    page_height = page_y1 - page_y0
-    return (
-        page_x0 + x_lines[0] * page_width / task.image.width,
-        page_y1 - y_lines[-1] * page_height / task.image.height,
-        page_x0 + x_lines[-1] * page_width / task.image.width,
-        page_y1 - y_lines[0] * page_height / task.image.height,
+    return internal_pixel_box_to_page_box(
+        (x_lines[0], y_lines[0], x_lines[-1], y_lines[-1]),
+        task.image.width,
+        task.image.height,
+        task.page_box,
     )
 
 
@@ -3802,14 +3809,8 @@ def internal_raster_rectangle_page_box(
 ) -> tuple[float, float, float, float]:
     """Map a top-left raster rectangle into bottom-left PDF page space."""
     x, y, width, height = rectangle
-    page_x0, page_y0, page_x1, page_y1 = page_box
-    page_width = page_x1 - page_x0
-    page_height = page_y1 - page_y0
-    return (
-        page_x0 + x * page_width / raster.width,
-        page_y1 - (y + height) * page_height / raster.height,
-        page_x0 + (x + width) * page_width / raster.width,
-        page_y1 - y * page_height / raster.height,
+    return internal_pixel_box_to_page_box(
+        (x, y, x + width, y + height), raster.width, raster.height, page_box
     )
 
 
