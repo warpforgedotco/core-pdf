@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from itertools import islice
 from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple, TypeAlias
 
 if TYPE_CHECKING:
@@ -79,7 +80,9 @@ class TextRun:
     baseline: tuple[float, float, float, float] | None
     provenance: Provenance
     confidence: float | None
-    glyph_clusters: tuple[GlyphCluster, ...]
+    # A pending run may hold a list while merges accumulate; finalized runs
+    # always carry the tuple form (see freeze_glyph_clusters).
+    glyph_clusters: tuple[GlyphCluster, ...] | list[GlyphCluster]
     coords: list[float]
     mid_x_value: float
     mid_y_value: float
@@ -206,7 +209,7 @@ class TextRun:
         baseline: tuple[float, float, float, float] | None = None,
         provenance: Provenance = (),
         confidence: float | None = None,
-        glyph_clusters: tuple[GlyphCluster, ...] = (),
+        glyph_clusters: tuple[GlyphCluster, ...] | list[GlyphCluster] = (),
     ) -> None:
         self.internal_revision = 0
         self.inside_active_clip = inside_active_clip
@@ -257,12 +260,24 @@ class TextRun:
         )
 
     def extend_glyph_clusters(self, clusters: tuple[GlyphCluster, ...]) -> None:
+        # While a run is pending, accumulate clusters in a list so repeated
+        # merges stay linear; freeze_glyph_clusters restores the tuple form
+        # (and a fresh identity for id()-keyed caches) at finalization.
         if not clusters:
             return
-        if not self.glyph_clusters:
+        existing = self.glyph_clusters
+        if not existing:
             self.glyph_clusters = clusters
-            return
-        self.glyph_clusters = (*self.glyph_clusters, *clusters)
+        elif type(existing) is list:
+            existing.extend(clusters)
+        else:
+            combined = list(existing)
+            combined.extend(clusters)
+            self.glyph_clusters = combined
+
+    def freeze_glyph_clusters(self) -> None:
+        if type(self.glyph_clusters) is list:
+            self.glyph_clusters = tuple(self.glyph_clusters)
 
     def set_text(self, text: str) -> None:
         self.text = text
@@ -316,7 +331,7 @@ class TextRun:
         baseline: tuple[float, float, float, float] | None = None,
         provenance: Provenance = (),
         confidence: float | None = None,
-        glyph_clusters: tuple[GlyphCluster, ...] = (),
+        glyph_clusters: tuple[GlyphCluster, ...] | list[GlyphCluster] = (),
     ) -> TextRun:
         resolved_advance_bbox = advance_bbox or (x0, y0, x1, y1)
         resolved_ink_bbox = ink_bbox or resolved_advance_bbox
@@ -488,13 +503,18 @@ def reconstruct_cached_layout_line_text(
     runs: list[TextRun],
     *,
     is_all_caps_text: bool | None = None,
+    internal_key: LayoutLineReconstructionKey | None = None,
 ) -> LayoutLineText:
     """Reconstruct a line once for every revision of its constituent runs."""
     from core_pdf.impl.engine.layout.text_lines import reconstruct_layout_line_text
 
     key: LayoutLineReconstructionKey = (
-        is_all_caps_text,
-        tuple((run, run.internal_revision, tuple(run.coords)) for run in runs),
+        internal_key
+        if internal_key is not None
+        else (
+            is_all_caps_text,
+            tuple((run, run.internal_revision, tuple(run.coords)) for run in runs),
+        )
     )
     first_run = runs[0] if runs else None
     shared_cache = first_run.internal_layout_reconstruction_cache if first_run is not None else None
@@ -603,7 +623,7 @@ class LayoutLine:
             text_run_y1 = TextRun.Y1
             text_run_font_size = TextRun.FONT_SIZE
 
-            for run in run_list[1:]:
+            for run in islice(run_list, 1, None):
                 coords = run.coords
                 run_x0 = coords[text_run_x0]
                 run_y0 = coords[text_run_y0]
@@ -663,6 +683,7 @@ class LayoutLine:
         reconstructed = reconstruct_cached_layout_line_text(
             self.runs,
             is_all_caps_text=self.is_all_caps_text,
+            internal_key=key,
         )
         self.internal_reconstructed_cache = reconstructed
         self.internal_reconstructed_cache_key = key

@@ -92,6 +92,10 @@ class GlyphObservation:
     line_cap: int = 0
     line_join: int = 0
     dash_pattern: tuple[list[float], float] | None = None
+    # (seqno, cluster index) identity shared by observations decoded from one
+    # source glyph; a dedicated slot so the per-call provenance tuple can be
+    # shared by reference across every glyph of a text-showing op.
+    cluster_key: tuple[int, int] | None = None
 
     @property
     def has_paint(self) -> bool:

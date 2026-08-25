@@ -271,6 +271,62 @@ def test_subbyte_image_samples_match_expected_values(bits_per_component: int) ->
     )
 
 
+@pytest.mark.parametrize(
+    ("columns", "colors", "bits_per_component"),
+    [
+        (64, 1, 8),
+        (64, 3, 8),
+        (64, 4, 8),
+        (64, 1, 16),
+        (32, 3, 16),
+        (64, 1, 1),
+        (64, 1, 2),
+        (64, 1, 4),
+    ],
+)
+def test_png_predictor_codec_path_matches_scalar_path(
+    monkeypatch: pytest.MonkeyPatch, columns: int, colors: int, bits_per_component: int
+) -> None:
+    from core_pdf.impl.engine.spec.s_07_filters import predictor_impl
+
+    row_length = max(1, (columns * colors * bits_per_component + 7) // 8)
+    rng = numpy.random.default_rng(columns * 31 + colors * 7 + bits_per_component)
+    row_count = max(24, predictor_impl.PNG_CODEC_THRESHOLD // (row_length + 1) + 1)
+    rows = rng.integers(0, 256, size=(row_count, row_length), dtype=numpy.uint8)
+    encoded = bytearray()
+    for index, row in enumerate(rows):
+        encoded.append(index % 5)
+        encoded.extend(row.tobytes())
+    data = bytes(encoded)
+    assert len(data) >= predictor_impl.PNG_CODEC_THRESHOLD
+
+    codec = predictor_impl.png_predict(
+        data, columns=columns, colors=colors, bits_per_component=bits_per_component
+    )
+    monkeypatch.setattr(predictor_impl, "PNG_CODEC_THRESHOLD", len(data) + 1)
+    scalar = predictor_impl.png_predict(
+        data, columns=columns, colors=colors, bits_per_component=bits_per_component
+    )
+    assert codec == scalar
+
+
+def test_png_predictor_codec_path_falls_back_on_damaged_filter_byte() -> None:
+    from core_pdf.impl.engine.spec.s_07_filters import predictor_impl
+
+    columns, colors = 512, 1
+    good_row = b"\x02" + bytes(columns)
+    bad_row = b"\x09" + bytes(columns)
+    data = good_row * 2 + bad_row + good_row
+    assert len(data) >= predictor_impl.PNG_CODEC_THRESHOLD
+
+    recovered = predictor_impl.png_predict(
+        data, columns=columns, colors=colors, bits_per_component=8, damaged_rows_before_error=True
+    )
+    assert recovered == bytes(columns * 2)
+    with pytest.raises(predictor_impl.UnsupportedPngFilterError):
+        predictor_impl.png_predict(data, columns=columns, colors=colors, bits_per_component=8)
+
+
 def test_empty_png_predictor_avoids_row_allocation(monkeypatch: pytest.MonkeyPatch) -> None:
     params = FilterParams(columns=10**9, colors=4, bits_per_component=16)
 

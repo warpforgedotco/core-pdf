@@ -445,12 +445,9 @@ def page_to_html(page: Page) -> str:
 
 def internal_serialization_elements(page: Page) -> tuple[PageElement, ...]:
     """Order canonical page elements for rendering."""
-    source_elements: tuple[PageElement, ...] = (
-        *page.blocks,
-        *page.tables,
-        *page.figures,
-    )
-    return tuple(sorted(source_elements, key=lambda item: item.order))
+    # Page.elements sorts the same blocks/tables/figures with the same key
+    # and memoizes the result.
+    return page.elements
 
 
 def block_to_html(block: Block) -> str:

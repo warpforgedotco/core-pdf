@@ -42,6 +42,7 @@ class CMapDecoder:
     code_space_ranges_by_length: dict[int, tuple[tuple[bytes, bytes], ...]]
     default_to_identity: bool
     wmode: int
+    internal_entry_cache: dict[int | bytes, tuple[tuple[bytes, int], int]]
 
     __slots__ = (
         "code_space_ranges",
@@ -55,6 +56,7 @@ class CMapDecoder:
         "code_space_ranges_by_length",
         "default_to_identity",
         "wmode",
+        "internal_entry_cache",
     )
 
     def __init__(
@@ -75,6 +77,7 @@ class CMapDecoder:
         self.code_space_ranges_by_length = {}
         self.default_to_identity = False
         self.wmode = 0
+        self.internal_entry_cache = {}
         if internal_empty:
             self.decode_lengths = ()
             return
@@ -324,9 +327,28 @@ class CMapDecoder:
         pos = 0
         n = len(data)
         ranges = self.code_space_ranges_by_length
+        decode_lengths = self.decode_lengths
+        # Resolution is a pure function of the bytes at pos (up to the longest
+        # decode length), so memoize it per decoder. Near the end of the data,
+        # longer lengths get skipped, so those positions bypass the cache.
+        max_length = max(decode_lengths, default=1)
+        cache = self.internal_entry_cache
+        cache_get = cache.get
+        single_byte = max_length == 1
+        cache_limit = n - max_length
+        key: int | bytes | None
         while pos < n:
+            if pos <= cache_limit:
+                key = data[pos] if single_byte else data[pos : pos + max_length]
+                cached = cache_get(key)
+                if cached is not None:
+                    out.append(cached[0])
+                    pos += cached[1]
+                    continue
+            else:
+                key = None
             matched = False
-            for length in self.decode_lengths:
+            for length in decode_lengths:
                 if pos + length > n:
                     continue
                 chunk = BYTE_CACHE[data[pos]] if length == 1 else data[pos : pos + length]
@@ -342,12 +364,18 @@ class CMapDecoder:
                     cid = self.mapped_notdef(chunk)
                 if cid is None:
                     cid = int.from_bytes(chunk, "big") if self.default_to_identity and chunk else 0
-                out.append((chunk, cid))
+                entry = (chunk, cid)
+                if key is not None and len(cache) < 65536:
+                    cache[key] = (entry, length)
+                out.append(entry)
                 pos += length
                 matched = True
                 break
             if not matched:
-                out.append((BYTE_CACHE[data[pos]], 0))
+                entry = (BYTE_CACHE[data[pos]], 0)
+                if key is not None and len(cache) < 65536:
+                    cache[key] = (entry, 1)
+                out.append(entry)
                 pos += 1
         return out
 

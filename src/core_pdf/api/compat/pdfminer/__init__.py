@@ -1274,11 +1274,11 @@ def internal_pdfminer_ligature_overrides(
         if to_unicode is not None and glyph.code_bytes:
             mapped = _pdfminer_to_unicode_text(glyph, to_unicode)
             if mapped is not None:
-                cluster_id = dict(glyph.provenance or ()).get("cluster_id")
+                cluster_id = glyph.cluster_key
                 cluster = [glyph]
                 if cluster_id is not None:
                     for item in glyphs[index + 1 :]:
-                        if dict(item.provenance or ()).get("cluster_id") != cluster_id:
+                        if item.cluster_key != cluster_id:
                             break
                         cluster.append(item)
                 box = bbox_union(item.advance_bbox for item in cluster) or glyph.advance_bbox
@@ -1395,14 +1395,13 @@ def internal_pdfminer_literal_glyphs(
             if wanted_index < len(wanted) and candidate.code_bytes == wanted[wanted_index]:
                 projected.append(candidate)
                 offsets[id(candidate)] = (offset_x, offset_y)
-                candidate_provenance = dict(candidate.provenance or ())
-                matched_cluster_id = candidate_provenance.get("cluster_id")
+                matched_cluster_id = candidate.cluster_key
                 matched_code_bytes = candidate.code_bytes
                 wanted_index += 1
             elif (
                 matched_cluster_id is not None
                 and candidate.code_bytes == matched_code_bytes
-                and dict(candidate.provenance or ()).get("cluster_id") == matched_cluster_id
+                and candidate.cluster_key == matched_cluster_id
             ):
                 # A single encoded character can expand into several engine
                 # observations (most commonly a decomposed ligature). They

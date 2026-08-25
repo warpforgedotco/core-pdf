@@ -215,7 +215,10 @@ class LegacyTextExtractor:
         self.half_space_width = 125.0
         self.leading = 0.0
         self.text = ""
-        self.output = ""
+        # Accumulated page output as parts plus its trailing character; joining
+        # or copying the whole output per operator is quadratic.
+        self.output_parts: list[str] = []
+        self.output_last = ""
         self.rtl = False
         self.accumulated_width = 0.0
         self.actual_height = 0.0
@@ -593,8 +596,10 @@ class LegacyTextExtractor:
         return widths, default_width, 200.0
 
     def flush(self) -> None:
-        self.output += self.text
-        self.text = ""
+        if self.text:
+            self.output_parts.append(self.text)
+            self.output_last = self.text[-1]
+            self.text = ""
         self.memo_cm = self.cm.copy()
         self.memo_tm = self.tm.copy()
 
@@ -636,14 +641,15 @@ class LegacyTextExtractor:
                 self.actual_height * previous_scale_y,
                 self.font_size * current_scale_y,
             ):
-                if (self.output + self.text)[-1] != "\n":
-                    self.output += self.text + "\n"
+                if (self.text or self.output_last)[-1] != "\n":
+                    self.output_parts.append(self.text + "\n")
+                    self.output_last = "\n"
                     self.text = ""
             elif (
                 moved_width
                 >= (self.font_size * self.current_space_width / 1000.0 + string_width)
                 * previous_scale_x
-                and (self.output + self.text)[-1] != " "
+                and (self.text or self.output_last)[-1] != " "
             ):
                 self.text += " "
         except (IndexError, ValueError):
@@ -776,8 +782,9 @@ class LegacyTextExtractor:
         for operator, operands in iter_content_operations(PdfLexer(data)):
             if operator == "Do":
                 self.flush()
-                if self.output and not self.output.endswith("\n"):
-                    self.output += "\n"
+                if self.output_last and self.output_last != "\n":
+                    self.output_parts.append("\n")
+                    self.output_last = "\n"
                 self.internal_form(operands)
                 self.text = ""
                 self.memo_cm = self.cm.copy()
@@ -785,7 +792,7 @@ class LegacyTextExtractor:
             else:
                 self.process(operator, operands)
         self.flush()
-        return self.output
+        return "".join(self.output_parts)
 
     def internal_form(self, operands: tuple[object, ...]) -> None:
         if not operands:
@@ -811,7 +818,10 @@ class LegacyTextExtractor:
         self.known_forms.add(form_id)
         try:
             child = LegacyTextExtractor(self.page, form_resources, self.known_forms)
-            self.output += child.extract((stream,))
+            child_text = child.extract((stream,))
+            if child_text:
+                self.output_parts.append(child_text)
+                self.output_last = child_text[-1]
         finally:
             self.known_forms.discard(form_id)
 

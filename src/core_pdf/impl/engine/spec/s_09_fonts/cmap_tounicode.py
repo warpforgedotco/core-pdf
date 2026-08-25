@@ -303,8 +303,8 @@ class ToUnicodeCMap:
             if table2 is None:
                 return ""
             if n > 64:
-                cids = numpy.frombuffer(data, dtype=">u2")
-                result = "".join(table2[int(cid)] for cid in cids)
+                cids = numpy.frombuffer(data, dtype=">u2").tolist()
+                result = "".join([table2[cid] for cid in cids])
             else:
                 out_small = []
                 for i in range(0, n, 2):

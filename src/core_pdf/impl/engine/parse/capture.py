@@ -376,30 +376,37 @@ def internal_observations_from_runs(runs: tuple[TextRun, ...]) -> ObservationBat
         return ObservationBatch.empty()
     n = len(runs)
     texts = [run.text for run in runs]
-    boxes = numpy.empty((n, 4), dtype=numpy.float32)
     polygons = numpy.full((n, 8), numpy.nan, dtype=numpy.float32)
     source = numpy.full(n, int(ObservationSource.NATIVE), dtype=numpy.uint8)
-    confidence = numpy.empty(n, dtype=numpy.float32)
-    sequence = numpy.empty(n, dtype=numpy.int64)
-    visible = numpy.empty(n, dtype=numpy.bool_)
-    rotation = numpy.empty(n, dtype=numpy.int64)
-    font_size = numpy.empty(n, dtype=numpy.float32)
-    line_break_before = numpy.empty(n, dtype=numpy.bool_)
 
+    # Build columns from Python lists in one pass; per-element numpy stores
+    # cost a dispatch each.
+    box_rows: list[tuple[float, float, float, float]] = []
+    confidence_values: list[float] = []
+    sequence_values: list[int] = []
+    visible_values: list[bool] = []
+    rotation_values: list[int] = []
+    font_size_values: list[float] = []
+    line_break_values: list[bool] = []
     for i, run in enumerate(runs):
         c = run.coords
-        boxes[i, 0] = c[0]
-        boxes[i, 1] = c[1]
-        boxes[i, 2] = c[2]
-        boxes[i, 3] = c[3]
+        box_rows.append((c[0], c[1], c[2], c[3]))
         conf = run.confidence
-        confidence[i] = conf if conf is not None else math.nan
+        confidence_values.append(conf if conf is not None else math.nan)
         seq = run.seqno
-        sequence[i] = seq if seq >= 0 else i
-        visible[i] = run.visible
-        rotation[i] = run.rotation_angle
-        font_size[i] = c[6]
-        line_break_before[i] = run.line_break_before
+        sequence_values.append(seq if seq >= 0 else i)
+        visible_values.append(run.visible)
+        rotation_values.append(run.rotation_angle)
+        font_size_values.append(c[6])
+        line_break_values.append(run.line_break_before)
+
+    boxes = numpy.asarray(box_rows, dtype=numpy.float32)
+    confidence = numpy.asarray(confidence_values, dtype=numpy.float32)
+    sequence = numpy.asarray(sequence_values, dtype=numpy.int64)
+    visible = numpy.asarray(visible_values, dtype=numpy.bool_)
+    rotation = numpy.asarray(rotation_values, dtype=numpy.int64)
+    font_size = numpy.asarray(font_size_values, dtype=numpy.float32)
+    line_break_before = numpy.asarray(line_break_values, dtype=numpy.bool_)
 
     return ObservationBatch(
         text=tuple(texts),
@@ -764,15 +771,31 @@ def internal_capture_from_program(
         )
         lo = bisect_left(glyph_seqnos, run.seqno)
         hi = bisect_left(glyph_seqnos, next_seqno)
-        font_counts = Counter(
-            font_name for seqno in glyph_seqnos[lo:hi] for font_name in glyphs_by_seqno[seqno]
-        )
-        if font_counts:
-            enriched = internal_copy_run(run)
-            enriched.font_name = font_counts.most_common(1)[0][0]
-            enriched_runs.append(enriched)
-        else:
+        # Runs are overwhelmingly single-font: find the majority name without
+        # a Counter unless a second distinct name actually appears, and skip
+        # the run copy when the name would not change.
+        majority: str | None = None
+        mixed = False
+        for seqno in glyph_seqnos[lo:hi]:
+            for font_name in glyphs_by_seqno[seqno]:
+                if majority is None:
+                    majority = font_name
+                elif font_name != majority:
+                    mixed = True
+                    break
+            if mixed:
+                break
+        if mixed:
+            font_counts = Counter(
+                font_name for seqno in glyph_seqnos[lo:hi] for font_name in glyphs_by_seqno[seqno]
+            )
+            majority = font_counts.most_common(1)[0][0]
+        if majority is None or majority == run.font_name:
             enriched_runs.append(run)
+        else:
+            enriched = internal_copy_run(run)
+            enriched.font_name = majority
+            enriched_runs.append(enriched)
     structured_runs = internal_apply_structure_actual_text(page, tuple(enriched_runs))
     raw_runs = tuple(
         internal_apply_learned_unicode_to_run(run)

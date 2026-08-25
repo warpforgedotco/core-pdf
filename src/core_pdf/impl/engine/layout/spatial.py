@@ -231,6 +231,23 @@ class SpatialIndex(Generic[T]):
         indexes = self.internal_candidate_indexes(box, normalized)
         if normalized is None or not indexes:
             return ()
+        if len(indexes) <= 64:
+            # Small candidate sets are cheaper with plain float comparisons
+            # than with ~7 numpy dispatches.
+            query_x0, query_y0, query_x1, query_y1 = normalized
+            entries = self.internal_entries
+            hits: list[SpatialHit[T]] = []
+            for index in indexes:
+                hit = entries[index]
+                hit_x0, hit_y0, hit_x1, hit_y1 = hit.bbox
+                if (
+                    hit_x0 < query_x1
+                    and hit_x1 > query_x0
+                    and hit_y0 < query_y1
+                    and hit_y1 > query_y0
+                ):
+                    hits.append(hit)
+            return tuple(hits)
         # Avoid double numpy array conversion by creating intp array once.
         np_indexes = numpy.asarray(indexes, dtype=numpy.intp)
         candidates = self.internal_bbox_array[np_indexes]

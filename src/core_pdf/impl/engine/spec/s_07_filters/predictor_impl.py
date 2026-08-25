@@ -1,8 +1,17 @@
 from __future__ import annotations
 
+import struct
+import zlib
+
+import imagecodecs
 import numpy
 
 TIFF_BITS_NUMPY_THRESHOLD = 1024
+PNG_CODEC_THRESHOLD = 1024
+# PDF predictor Colors -> PNG color type with identical sample layout.
+internal_PNG_COLOR_TYPES = {1: 0, 3: 2, 4: 6}
+internal_PNG_MAX_DIMENSION = 1_000_000
+internal_PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 internal_TIFF_SAMPLE_LUTS = {
     bits: numpy.asarray(
         [
@@ -151,14 +160,25 @@ def internal_tiff_predict_bits_numpy(
         count=complete_rows * row_byte_length,
     ).reshape(complete_rows, row_byte_length)
     samples = internal_TIFF_SAMPLE_LUTS[bits][encoded].reshape(complete_rows, -1)[:, :sample_count]
-    decoded_samples = numpy.cumsum(
-        samples.reshape(complete_rows, columns, colors),
-        axis=1,
-        dtype=numpy.uint16,
-    ) & ((1 << bits) - 1)
-    shifts = numpy.arange(bits - 1, -1, -1, dtype=numpy.uint16)
-    sample_bits = ((decoded_samples[..., None] >> shifts) & 1).reshape(complete_rows, -1)
-    return numpy.packbits(sample_bits, axis=1, bitorder="big").tobytes()
+    decoded_samples = (
+        numpy.cumsum(
+            samples.reshape(complete_rows, columns, colors),
+            axis=1,
+            dtype=numpy.uint16,
+        )
+        & ((1 << bits) - 1)
+    ).reshape(complete_rows, -1)
+    # Pack samples arithmetically (samples-per-byte shifted and ORed) instead
+    # of expanding to one array element per bit for packbits.
+    samples_per_byte = 8 // bits
+    pad = (-decoded_samples.shape[1]) % samples_per_byte
+    if pad:
+        decoded_samples = numpy.pad(decoded_samples, ((0, 0), (0, pad)))
+    grouped = decoded_samples.reshape(complete_rows, -1, samples_per_byte)
+    packed = numpy.zeros(grouped.shape[:2], dtype=numpy.uint16)
+    for sample_index in range(samples_per_byte):
+        packed |= grouped[:, :, sample_index] << (bits * (samples_per_byte - 1 - sample_index))
+    return packed.astype(numpy.uint8).tobytes()
 
 
 def tiff_predict(
@@ -173,6 +193,73 @@ def tiff_predict(
     return tiff_predict_bits(data, columns, colors, bits_per_component)
 
 
+def internal_png_chunk(tag: bytes, payload: bytes) -> bytes:
+    return (
+        struct.pack(">I", len(payload))
+        + tag
+        + payload
+        + struct.pack(">I", zlib.crc32(tag + payload))
+    )
+
+
+def internal_png_predict_codec(
+    data: bytes | memoryview,
+    *,
+    columns: int,
+    colors: int,
+    bits_per_component: int,
+) -> bytes | None:
+    """Unfilter PNG-predicted rows with libpng via a minimal PNG container.
+
+    The filtered stream is byte-for-byte PNG scanline data, so wrapping it in
+    IHDR/IDAT/IEND (stored-mode zlib, ~memcpy cost) lets imagecodecs run the
+    row unfilter in C. Returns ``None`` when the parameter combination has no
+    PNG equivalent; damaged data raises and the caller falls back to the
+    scalar path, which reproduces the exact error/partial-output semantics.
+    """
+    color_type = internal_PNG_COLOR_TYPES.get(colors)
+    if color_type is None:
+        return None
+    # Sub-byte depths exist only for grayscale, and the decoder's sample
+    # expansion drops row padding bits, so require byte-aligned rows to
+    # stay byte-identical with the scalar path.
+    if bits_per_component not in (8, 16) and (
+        color_type != 0 or (columns * bits_per_component) % 8
+    ):
+        return None
+    if not 1 <= columns <= internal_PNG_MAX_DIMENSION:
+        return None
+    row_length = max(1, (colors * columns * bits_per_component + 7) // 8)
+    rows = len(data) // (row_length + 1)
+    if not 1 <= rows <= internal_PNG_MAX_DIMENSION:
+        return None
+    body = memoryview(data)[: rows * (row_length + 1)]
+    header = struct.pack(">IIBBBBB", columns, rows, bits_per_component, color_type, 0, 0, 0)
+    png = b"".join(
+        (
+            internal_PNG_SIGNATURE,
+            internal_png_chunk(b"IHDR", header),
+            internal_png_chunk(b"IDAT", zlib.compress(body, 0)),
+            internal_png_chunk(b"IEND", b""),
+        )
+    )
+    decoded = numpy.asarray(imagecodecs.png_decode(png))
+    if bits_per_component == 16:
+        return decoded.astype(">u2", copy=False).tobytes()
+    if bits_per_component == 8:
+        return decoded.tobytes()
+    # Sub-byte gray comes back expanded to one byte per sample, scaled by the
+    # exact factor 255 // (2**bits - 1); undo the scaling and repack.
+    bits = bits_per_component
+    samples = decoded.reshape(rows, columns) // (255 // ((1 << bits) - 1))
+    per_byte = 8 // bits
+    grouped = samples.reshape(rows, -1, per_byte)
+    packed = numpy.zeros(grouped.shape[:2], dtype=numpy.uint8)
+    for sample_index in range(per_byte):
+        packed |= grouped[:, :, sample_index] << (bits * (per_byte - 1 - sample_index))
+    return packed.tobytes()
+
+
 def png_predict(
     data: bytes | memoryview,
     *,
@@ -183,6 +270,18 @@ def png_predict(
 ) -> bytes:
     if bits_per_component not in {1, 2, 4, 8, 16}:
         raise PredictorError(f"invalid PNG predictor bits {bits_per_component}")
+    if len(data) >= PNG_CODEC_THRESHOLD:
+        try:
+            decoded = internal_png_predict_codec(
+                data,
+                columns=columns,
+                colors=colors,
+                bits_per_component=bits_per_component,
+            )
+        except Exception:
+            decoded = None
+        if decoded is not None:
+            return decoded
     bytes_per_pixel = max(1, (colors * bits_per_component + 7) // 8)
     row_length = max(1, (colors * columns * bits_per_component + 7) // 8)
     n = len(data)

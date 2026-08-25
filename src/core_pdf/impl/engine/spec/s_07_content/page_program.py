@@ -49,13 +49,23 @@ class LineTable:
 
     @classmethod
     def from_lines(cls, lines: Any) -> LineTable:
-        values = tuple(lines)
+        x0_values: list[float] = []
+        y0_values: list[float] = []
+        x1_values: list[float] = []
+        y1_values: list[float] = []
+        width_values: list[float] = []
+        for line in lines:
+            x0_values.append(line.x0)
+            y0_values.append(line.y0)
+            x1_values.append(line.x1)
+            y1_values.append(line.y1)
+            width_values.append(line.line_width)
         table = cls(
-            numpy.asarray([line.x0 for line in values], dtype=numpy.float64),
-            numpy.asarray([line.y0 for line in values], dtype=numpy.float64),
-            numpy.asarray([line.x1 for line in values], dtype=numpy.float64),
-            numpy.asarray([line.y1 for line in values], dtype=numpy.float64),
-            numpy.asarray([line.line_width for line in values], dtype=numpy.float64),
+            numpy.asarray(x0_values, dtype=numpy.float64),
+            numpy.asarray(y0_values, dtype=numpy.float64),
+            numpy.asarray(x1_values, dtype=numpy.float64),
+            numpy.asarray(y1_values, dtype=numpy.float64),
+            numpy.asarray(width_values, dtype=numpy.float64),
         )
         for column in (table.x0, table.y0, table.x1, table.y1, table.width):
             internal_readonly(column)
@@ -196,21 +206,29 @@ class PageEventStream:
             ],
         )
         for stream in streams:
-            if any(left[0] > right[0] for left, right in zip(stream, stream[1:], strict=False)):
+            if any(stream[index][0] > stream[index + 1][0] for index in range(len(stream) - 1)):
                 stream.sort(key=lambda entry: entry[0])
-        size = sum(len(stream) for stream in streams)
-        sequence = numpy.empty(size, dtype=numpy.int64)
-        kind = numpy.empty(size, dtype=numpy.uint8)
-        bbox = numpy.empty((size, 4), dtype=numpy.float64)
-        payload = numpy.empty(size, dtype=numpy.int64)
-        visible = numpy.empty(size, dtype=numpy.bool_)
-        entries = merge(*streams, key=lambda entry: (entry[0], entry[1]))
-        for position, entry in enumerate(entries):
-            sequence[position] = entry[0]
-            kind[position] = int(entry[2])
-            payload[position] = entry[3]
-            bbox[position] = entry[4]
-            visible[position] = entry[5]
+        # Collect columns as Python lists and convert once; per-element numpy
+        # stores (including a 4-wide bbox broadcast) cost a dispatch each.
+        sequence_values: list[int] = []
+        kind_values: list[int] = []
+        bbox_values: list[Any] = []
+        payload_values: list[int] = []
+        visible_values: list[bool] = []
+        for entry in merge(*streams, key=lambda entry: (entry[0], entry[1])):
+            sequence_values.append(entry[0])
+            kind_values.append(int(entry[2]))
+            payload_values.append(entry[3])
+            bbox_values.append(entry[4])
+            visible_values.append(entry[5])
+        sequence = numpy.asarray(sequence_values, dtype=numpy.int64)
+        kind = numpy.asarray(kind_values, dtype=numpy.uint8)
+        if bbox_values:
+            bbox = numpy.asarray(bbox_values, dtype=numpy.float64)
+        else:
+            bbox = numpy.empty((0, 4), dtype=numpy.float64)
+        payload = numpy.asarray(payload_values, dtype=numpy.int64)
+        visible = numpy.asarray(visible_values, dtype=numpy.bool_)
         non_text_indexes = numpy.flatnonzero(
             (kind != int(PageEventKind.TEXT)) & (kind != int(PageEventKind.GLYPH))
         ).astype(numpy.int64, copy=False)
