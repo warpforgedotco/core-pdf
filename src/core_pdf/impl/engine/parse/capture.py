@@ -771,15 +771,31 @@ def internal_capture_from_program(
         )
         lo = bisect_left(glyph_seqnos, run.seqno)
         hi = bisect_left(glyph_seqnos, next_seqno)
-        font_counts = Counter(
-            font_name for seqno in glyph_seqnos[lo:hi] for font_name in glyphs_by_seqno[seqno]
-        )
-        if font_counts:
-            enriched = internal_copy_run(run)
-            enriched.font_name = font_counts.most_common(1)[0][0]
-            enriched_runs.append(enriched)
-        else:
+        # Runs are overwhelmingly single-font: find the majority name without
+        # a Counter unless a second distinct name actually appears, and skip
+        # the run copy when the name would not change.
+        majority: str | None = None
+        mixed = False
+        for seqno in glyph_seqnos[lo:hi]:
+            for font_name in glyphs_by_seqno[seqno]:
+                if majority is None:
+                    majority = font_name
+                elif font_name != majority:
+                    mixed = True
+                    break
+            if mixed:
+                break
+        if mixed:
+            font_counts = Counter(
+                font_name for seqno in glyph_seqnos[lo:hi] for font_name in glyphs_by_seqno[seqno]
+            )
+            majority = font_counts.most_common(1)[0][0]
+        if majority is None or majority == run.font_name:
             enriched_runs.append(run)
+        else:
+            enriched = internal_copy_run(run)
+            enriched.font_name = majority
+            enriched_runs.append(enriched)
     structured_runs = internal_apply_structure_actual_text(page, tuple(enriched_runs))
     raw_runs = tuple(
         internal_apply_learned_unicode_to_run(run)
