@@ -360,6 +360,132 @@ def internal_blend_solid_array_numpy(
     target[..., 3] = numpy.clip(out_a_i, 0.0, 255.0).astype(numpy.uint8)
 
 
+def internal_group_offsets(
+    counts: numpy.ndarray[Any, Any],
+) -> tuple[numpy.ndarray[Any, Any], numpy.ndarray[Any, Any]]:
+    """Expand per-group counts into (group index, index within group) pairs."""
+    total = int(counts.sum())
+    if total == 0:
+        empty = numpy.empty(0, numpy.int64)
+        return empty, empty
+    group = numpy.repeat(numpy.arange(counts.size, dtype=numpy.int64), counts)
+    starts = numpy.zeros(counts.size, dtype=numpy.int64)
+    numpy.cumsum(counts[:-1], out=starts[1:])
+    return group, numpy.arange(total, dtype=numpy.int64) - starts[group]
+
+
+def internal_signed_area_coverage(
+    edges: numpy.ndarray[Any, Any],
+    width: int,
+    height: int,
+) -> numpy.ndarray[Any, Any]:
+    """Exact analytic coverage for a nonzero-wound polygon, in one vectorized pass.
+
+    Accumulates signed area per pixel the way font-rs and stb_truetype do, then
+    prefix-sums along x. Two properties matter here:
+
+    * Cost is O(sum of edge extents), not O(rows x edges). The sampling
+      rasterizer this replaces tested every edge against every sample row, so a
+      30-pixel glyph with 84 edges did ~2,000 intersections; here each edge
+      touches only the cells it actually crosses.
+    * Coverage is exact rather than quantized to the 17 levels a 4x4 sample grid
+      can express, so edges are smoother, not just cheaper.
+
+    ``edges`` is (n, 4) of x0, y0, x1, y1 in device pixels with y increasing
+    downward, already translated so the box origin is (0, 0). Returns an
+    (height, width) float array in [0, 1]. Nonzero winding only -- the
+    abs-and-clamp at the end is what makes it nonzero, and even-odd needs the
+    span-based path.
+    """
+    if height <= 0 or width <= 0 or edges.size == 0:
+        return numpy.zeros((max(height, 0), max(width, 0)), numpy.float64)
+    start_y = edges[:, 1]
+    end_y = edges[:, 3]
+    sloped = start_y != end_y
+    if not sloped.any():
+        return numpy.zeros((height, width), numpy.float64)
+    start_x = edges[sloped, 0]
+    end_x = edges[sloped, 2]
+    start_y = start_y[sloped]
+    end_y = end_y[sloped]
+
+    downward = end_y > start_y
+    direction = numpy.where(downward, 1.0, -1.0)
+    top_x = numpy.where(downward, start_x, end_x)
+    top_y = numpy.where(downward, start_y, end_y)
+    bottom_x = numpy.where(downward, end_x, start_x)
+    bottom_y = numpy.where(downward, end_y, start_y)
+    x_per_y = (bottom_x - top_x) / (bottom_y - top_y)
+
+    first_row = numpy.maximum(0.0, numpy.floor(top_y)).astype(numpy.int64)
+    last_row = numpy.minimum(float(height), numpy.ceil(bottom_y)).astype(numpy.int64)
+    edge_index, row_offset = internal_group_offsets(numpy.maximum(last_row - first_row, 0))
+    if edge_index.size == 0:
+        return numpy.zeros((height, width), numpy.float64)
+
+    row = first_row[edge_index] + row_offset
+    row_top = numpy.maximum(top_y[edge_index], row)
+    row_bottom = numpy.minimum(bottom_y[edge_index], row + 1.0)
+    row_height = row_bottom - row_top
+    inside = row_height > 0.0
+    if not inside.all():
+        edge_index = edge_index[inside]
+        row = row[inside]
+        row_top = row_top[inside]
+        row_bottom = row_bottom[inside]
+        row_height = row_height[inside]
+        if edge_index.size == 0:
+            return numpy.zeros((height, width), numpy.float64)
+
+    slope = x_per_y[edge_index]
+    origin_x = top_x[edge_index]
+    origin_y = top_y[edge_index]
+    entry_x = origin_x + (row_top - origin_y) * slope
+    exit_x = origin_x + (row_bottom - origin_y) * slope
+    left_x = numpy.minimum(entry_x, exit_x)
+    right_x = numpy.maximum(entry_x, exit_x)
+
+    # Split each row piece again at column boundaries so every fragment lies in
+    # one cell; the midpoint split below is exact only within a single cell.
+    column_count = (numpy.floor(right_x) - numpy.floor(left_x) + 1.0).astype(numpy.int64)
+    piece_index, column_offset = internal_group_offsets(column_count)
+    column_start = numpy.floor(left_x)[piece_index] + column_offset
+    fragment_left = numpy.maximum(left_x[piece_index], column_start)
+    fragment_right = numpy.minimum(right_x[piece_index], column_start + 1.0)
+    piece_span = (right_x - left_x)[piece_index]
+    vertical = piece_span <= 0.0
+    share = numpy.where(
+        vertical,
+        1.0,
+        (fragment_right - fragment_left) / numpy.where(vertical, 1.0, piece_span),
+    )
+    fragment_height = row_height[piece_index] * share
+    keep = vertical | (fragment_right > fragment_left)
+    if not keep.all():
+        piece_index = piece_index[keep]
+        fragment_left = fragment_left[keep]
+        fragment_right = fragment_right[keep]
+        fragment_height = fragment_height[keep]
+        if piece_index.size == 0:
+            return numpy.zeros((height, width), numpy.float64)
+
+    midpoint = (fragment_left + fragment_right) * 0.5
+    column = numpy.clip(numpy.floor(midpoint), 0, width).astype(numpy.int64)
+    offset_in_cell = numpy.clip(midpoint - column, 0.0, 1.0)
+    signed_height = direction[edge_index][piece_index] * fragment_height
+
+    stride = width + 2
+    flat_row = row[piece_index] * stride
+    accumulator = numpy.bincount(
+        numpy.concatenate([flat_row + column, flat_row + column + 1]),
+        weights=numpy.concatenate(
+            [signed_height * (1.0 - offset_in_cell), signed_height * offset_in_cell]
+        ),
+        minlength=height * stride,
+    )[: height * stride].reshape(height, stride)
+    return numpy.minimum(numpy.abs(numpy.cumsum(accumulator, axis=1)[:, :width]), 1.0)
+
+
 def internal_blend_normal_alpha_array_numpy(
     target: numpy.ndarray[Any, numpy.dtype[numpy.uint8]],
     rgba: tuple[int, int, int, int],
@@ -392,7 +518,11 @@ def internal_blend_normal_alpha_array_numpy(
     destination_float[..., 3] = output_alpha * 255.0
     numpy.rint(destination_float, out=destination_float)
     numpy.clip(destination_float, 0.0, 255.0, out=destination_float)
-    target[...] = destination_float.astype(numpy.uint8)
+    # Only touch pixels the source actually covers. Blending zero coverage is
+    # meant to be a no-op, but the arithmetic above drives RGB to zero when the
+    # destination is fully transparent, which discards colour a later blend
+    # would need -- and it is what stopped a whole box being blended in one call.
+    numpy.copyto(target, destination_float.astype(numpy.uint8), where=(alpha > 0)[..., None])
 
 
 def internal_composite_normal_group_numpy(

@@ -56,6 +56,7 @@ from core_pdf.impl.engine.render.kernels import (
     internal_intersect_box,
     internal_make_page_geometry,
     internal_shading_color_rgba,
+    internal_signed_area_coverage,
     internal_soft_mask_alpha_at,
     internal_soft_mask_samples,
     internal_translate_rect,
@@ -960,6 +961,32 @@ class internal_RasterTarget:
         if pixel_box is None:
             return
         ix0, iy0, ix1, iy1 = pixel_box
+        pixel_area = (ix1 - ix0) * (iy1 - iy0)
+        rectangular_clip = clip_paths_are_axis_aligned_rects()
+        normal_fast = can_blend_normal_fast(blend_mode)
+        if normal_fast and rectangular_clip and fill_rule == "nonzero" and pixel_area < 10_000:
+            # Analytic coverage for the whole box in one pass, then one blend.
+            # Cost follows the edges' extents rather than rows x edges, and the
+            # result is exact rather than quantized to a 4x4 sample grid. This
+            # runs first because it needs neither the y-extent columns nor the
+            # sample-path array built below, and it takes ~99% of fills.
+            source = numpy.asarray(edges, dtype=numpy.float64)
+            sloped = source[:, 1] != source[:, 3]
+            if not sloped.any():
+                return
+            source = source[sloped]
+            device_edges = numpy.empty(source.shape, dtype=numpy.float64)
+            device_edges[:, 0] = (source[:, 0] - crop_x0) * scale - ix0
+            device_edges[:, 1] = (crop_y1 - source[:, 1]) * scale - iy0
+            device_edges[:, 2] = (source[:, 2] - crop_x0) * scale - ix0
+            device_edges[:, 3] = (crop_y1 - source[:, 3]) * scale - iy0
+            coverage = internal_signed_area_coverage(device_edges, ix1 - ix0, iy1 - iy0)
+            internal_blend_normal_alpha_array_numpy(
+                pixel_view(pixels)[iy0:iy1, ix0:ix1],
+                rgba,
+                numpy.rint(coverage * rgba[3]).astype(numpy.uint8),
+            )
+            return
         edge_segments = [
             (
                 ex0,
@@ -977,13 +1004,10 @@ class internal_RasterTarget:
         edge_segments_array = (
             numpy.asarray(edge_segments, dtype=numpy.float64) if len(edge_segments) >= 8 else None
         )
-        pixel_area = (ix1 - ix0) * (iy1 - iy0)
         if pixel_area >= 10_000:
             fill_path_scanlines(edge_segments, pixel_box, rgba, blend_mode, fill_rule)
             return
         samples = 4
-        rectangular_clip = clip_paths_are_axis_aligned_rects()
-        normal_fast = can_blend_normal_fast(blend_mode)
         # Sample every scanline of the box up front. Called per pixel row this
         # handed the kernel four y values at a time, so the numpy work was pure
         # call overhead; one call per fill amortizes it over the whole box.
