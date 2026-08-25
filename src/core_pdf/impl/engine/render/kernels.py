@@ -31,6 +31,9 @@ from core_pdf.impl.engine.spec.s_08_graphics.color import ImageColorManager
 from core_pdf.impl.engine.spec.s_08_graphics.color_kernels import (
     evaluate_sampled_tint_function,
 )
+from core_pdf.impl.engine.spec.s_08_graphics.device_profiles import (
+    cmyk_floats_to_srgb,
+)
 from core_pdf.impl.engine.spec.s_08_graphics.image_decode import (
     decode_pdf_image_samples,
 )
@@ -1264,12 +1267,8 @@ def internal_color_rgba(color: Any, opacity: Any) -> tuple[int, int, int, int]:
                 cyan, magenta, yellow, black = (internal_clamp01(float(c)) for c in color)
             except (TypeError, ValueError):
                 return 0, 0, 0, alpha
-            return (
-                max(0, min(255, int(round(255.0 * (1.0 - cyan) * (1.0 - black))))),
-                max(0, min(255, int(round(255.0 * (1.0 - magenta) * (1.0 - black))))),
-                max(0, min(255, int(round(255.0 * (1.0 - yellow) * (1.0 - black))))),
-                alpha,
-            )
+            red, green, blue = cmyk_floats_to_srgb(cyan, magenta, yellow, black)
+            return red, green, blue, alpha
         rgb = [internal_color_component(c) for c in color[:3]]
         while len(rgb) < 3:
             rgb.append(rgb[-1] if rgb else 0)
@@ -1287,12 +1286,8 @@ def internal_shading_color_rgba(
         return gray, gray, gray, alpha
     if name.endswith("DeviceCMYK") and len(components) >= 4:
         c, m, y, k = (internal_clamp01(v) for v in components[:4])
-        return (
-            max(0, min(255, int(round(255.0 * (1.0 - c) * (1.0 - k))))),
-            max(0, min(255, int(round(255.0 * (1.0 - m) * (1.0 - k))))),
-            max(0, min(255, int(round(255.0 * (1.0 - y) * (1.0 - k))))),
-            alpha,
-        )
+        red, green, blue = cmyk_floats_to_srgb(c, m, y, k)
+        return red, green, blue, alpha
     rgb = [internal_color_component(c) for c in components[:3]]
     while len(rgb) < 3:
         rgb.append(rgb[-1] if rgb else 0)

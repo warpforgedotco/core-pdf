@@ -43,6 +43,10 @@ from core_pdf.impl.engine.spec.s_08_graphics.color_spec import (
     cs_param_floats,
     normalize_image_color_spec,
 )
+from core_pdf.impl.engine.spec.s_08_graphics.device_profiles import (
+    cmyk_bytes_to_srgb,
+    cmyk_floats_to_srgb,
+)
 from core_pdf.impl.engine.spec.s_08_graphics.icc_profiles import (
     IccProfileError,
     parse_icc_transform,
@@ -52,17 +56,6 @@ from core_pdf.impl.objects import PdfStream
 ImageDict: TypeAlias = dict[str, object]
 ColorComponents: TypeAlias = list[float]
 ImageBuffer: TypeAlias = ByteBuffer
-
-
-@lru_cache(maxsize=1)
-def internal_cmyk_channel_table() -> numpy.ndarray[Any, numpy.dtype[numpy.uint8]]:
-    """Return the exact scalar CMYK channel conversion table."""
-    values = numpy.arange(256, dtype=numpy.float64) / 255.0
-    table = numpy.floor(255.0 * (1.0 - values[:, None]) * (1.0 - values[None, :])).astype(
-        numpy.uint8
-    )
-    table.flags.writeable = False
-    return table
 
 
 def internal_alternate_color_component_count(alt_name: str) -> int:
@@ -288,10 +281,10 @@ class ImageColorManager:
             result = numpy.empty((len(samples), 3), dtype=numpy.uint8)
             if alt_name in {"DeviceGray", "DeviceRGB"}:
                 result[:] = samples[:, None]
-            else:
-                result[:, 0] = 255 - samples
-                result[:, 1:] = 255
-            return result.reshape(-1)
+                return result.reshape(-1)
+            inks = numpy.zeros((len(samples), 4), dtype=numpy.uint8)
+            inks[:, 0] = samples
+            return cmyk_bytes_to_srgb(inks).reshape(-1)
 
         fallback_result = bytearray()
         for byte in raw:
@@ -336,17 +329,13 @@ class ImageColorManager:
                 result[:, 1] = samples[:, 1] if n >= 2 else samples[:, 0]
                 result[:, 2] = samples[:, 2] if n >= 3 else samples[:, 0]
                 return result.reshape(-1)
-            table = internal_cmyk_channel_table()
-            zero = numpy.zeros(len(samples), dtype=numpy.uint8) if n < 4 else None
-            cyan = samples[:, 0]
-            magenta = samples[:, 1] if n >= 2 else zero
-            yellow = samples[:, 2] if n >= 3 else zero
-            black = samples[:, 3] if n >= 4 else zero
-            result = numpy.empty((len(samples), 3), dtype=numpy.uint8)
-            result[:, 0] = table[cyan, black]
-            result[:, 1] = table[magenta, black]
-            result[:, 2] = table[yellow, black]
-            return result.reshape(-1)
+            # A DeviceN with no tint function is malformed; the salvage is to
+            # read the first four channels as process inks and leave any the
+            # colour space is short of at zero.
+            carried = min(n, 4)
+            inks = numpy.zeros((len(samples), 4), dtype=numpy.uint8)
+            inks[:, :carried] = samples[:, :carried]
+            return cmyk_bytes_to_srgb(inks).reshape(-1)
 
         fallback_result = bytearray()
         step = n
@@ -388,13 +377,7 @@ class ImageColorManager:
         n = len(raw)
         if n % 4 != 0:
             raise ValueError("invalid color sample data")
-        samples = uint8_view(raw).reshape(-1, 4)
-        table = internal_cmyk_channel_table()
-        result = numpy.empty((len(samples), 3), dtype=numpy.uint8)
-        result[:, 0] = table[samples[:, 0], samples[:, 3]]
-        result[:, 1] = table[samples[:, 1], samples[:, 3]]
-        result[:, 2] = table[samples[:, 2], samples[:, 3]]
-        return result.reshape(-1)
+        return cmyk_bytes_to_srgb(uint8_view(raw).reshape(-1, 4)).reshape(-1)
 
     @staticmethod
     def convert_indexed(raw: ImageBuffer, spec: ImageColorSpec) -> ImageBuffer | None:
@@ -490,8 +473,5 @@ class ImageColorManager:
             m = components[1] if len(components) >= 2 else 0.0
             y = components[2] if len(components) >= 3 else 0.0
             k = components[3] if len(components) >= 4 else 0.0
-            red = int(255 * (1 - c) * (1 - k))
-            green = int(255 * (1 - m) * (1 - k))
-            blue = int(255 * (1 - y) * (1 - k))
-            return bytes([max(0, min(255, red)), max(0, min(255, green)), max(0, min(255, blue))])
+            return bytes(cmyk_floats_to_srgb(c, m, y, k))
         return None

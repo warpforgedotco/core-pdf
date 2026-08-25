@@ -213,6 +213,7 @@ where = ["src"]
 [tool.setuptools.package-data]
 core_pdf = ["py.typed"]
 "core_pdf._vendor.fontTools" = ["LICENSE.txt", "LICENSE.external.txt"]
+"core_pdf._vendor.icc" = ["*.icc", "README.md"]
 "core_pdf._vendor.fontTools.ttLib.tables" = ["table_API_readme.txt"]
 "core_pdf.impl.engine.layout.data.wordlists" = [
     "*.txt.gz",

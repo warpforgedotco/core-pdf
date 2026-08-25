@@ -373,13 +373,38 @@ def test_vectorized_line_kernel_matches_scalar_antialias_samples() -> None:
 
 
 def test_cmyk_conversion_handles_process_inks_and_black() -> None:
+    # Solid inks come out as the colours a SWOP press actually prints, not as
+    # the saturated (0, 255, 255) / (255, 0, 255) / (255, 255, 0) the naive
+    # 255*(1-ink)*(1-black) formula produces. 100% K is the profile's black
+    # after black point compensation, which is a near-neutral very dark grey.
     samples = bytes.fromhex("00000000 ff000000 00ff0000 0000ff00 0a141e28 000000ff")
-    expected = bytes.fromhex("ffffff 00ffff ff00ff ffff00 cec6bd 000000")
+    expected = bytes.fromhex("ffffff 00aef0 ec0a8d fff300 d6cdc6 292728")
 
     numpy.testing.assert_array_equal(
         ImageColorManager.convert_cmyk(samples),
         numpy.frombuffer(expected, dtype=numpy.uint8),
     )
+
+
+def test_cmyk_conversion_is_monotonic_in_ink_and_black() -> None:
+    """Properties any usable CMYK profile has, independent of which one ships."""
+    no_ink = ImageColorManager.convert_cmyk(bytes(4))
+    assert tuple(no_ink) == (255, 255, 255)
+
+    for channel in range(4):
+        ramp = bytearray()
+        for level in (0, 64, 128, 192, 255):
+            ink = [0, 0, 0, 0]
+            ink[channel] = level
+            ramp.extend(ink)
+        luminance = ImageColorManager.convert_cmyk(bytes(ramp)).reshape(-1, 3).sum(axis=1)
+        assert list(luminance) == sorted(luminance, reverse=True), (
+            f"channel {channel} does not darken monotonically: {luminance}"
+        )
+
+    black = ImageColorManager.convert_cmyk(bytes.fromhex("000000ff")).reshape(3)
+    assert black.max() < 64
+    assert int(black.max()) - int(black.min()) <= 8
 
 
 def test_sampled_separation_conversion_reuses_exact_rgb_lut() -> None:
