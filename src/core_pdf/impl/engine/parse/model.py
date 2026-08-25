@@ -413,6 +413,9 @@ class TextAnalysis:
     suspicious_characters: int = 0
 
 
+internal_ASCII_VOWELS = frozenset("aeiouAEIOU")
+
+
 def internal_analyze_text(text: str) -> TextAnalysis:
     tokens = text.split()
     if not tokens:
@@ -431,6 +434,36 @@ def internal_analyze_text(text: str) -> TextAnalysis:
         # rebuilding an always-identical filtered copy.
         if len(token) <= 2:
             short_tokens += 1
+        if token.isascii() and token.isprintable():
+            # Printable ASCII contributes no non-ASCII or suspicious counts,
+            # and the common all-letter / all-digit tokens resolve with
+            # whole-string C checks instead of six method calls per character.
+            nonspace += len(token)
+            if token.isalpha():
+                if len(token) >= 3 and not internal_ASCII_VOWELS.isdisjoint(token):
+                    wordlike += 1
+                continue
+            if token.isdigit():
+                digit_tokens += 1
+                continue
+            has_digit = False
+            letter_count = 0
+            has_vowel = False
+            for character in token:
+                if character.isalnum():
+                    if character.isdigit():
+                        has_digit = True
+                    else:
+                        letter_count += 1
+                        if not has_vowel and character in "aeiouAEIOU":
+                            has_vowel = True
+                else:
+                    symbols += 1
+            if has_digit:
+                digit_tokens += 1
+            if letter_count >= 3 and has_vowel:
+                wordlike += 1
+            continue
         has_digit = False
         letter_count = 0
         has_vowel = False
@@ -829,17 +862,15 @@ class internal_Candidate:
 
 def internal_text_utility_stats(text: str, confidence: float) -> tuple[int, int, float]:
     """Return non-space count, alphanumeric count, and utility in one character scan."""
-    counts: Counter[str] = Counter()
-    nonspace = 0
-    alphanumeric = 0
-    for character in text:
-        if character.isspace():
-            continue
-        nonspace += 1
-        alphanumeric += character.isalnum()
-        counts[character.casefold()] += 1
+    # str.split() removes exactly the isspace() characters, and Counter over
+    # a map counts in C; per-character casefold keeps expanding folds (one
+    # count under a multi-character key) identical to the previous loop.
+    stripped = "".join(text.split())
+    nonspace = len(stripped)
     if not nonspace:
         return 0, 0, 0.0
+    alphanumeric = sum(map(str.isalnum, stripped))
+    counts = Counter(map(str.casefold, stripped))
     symbols = nonspace - alphanumeric
     symbol_credit = min(symbols, max(2.0, alphanumeric * 0.5)) * 0.30
     confidence_factor = 0.25 + 0.75 * min(100.0, max(0.0, confidence)) / 100.0
