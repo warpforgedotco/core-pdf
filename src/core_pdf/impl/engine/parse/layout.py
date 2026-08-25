@@ -189,7 +189,8 @@ def internal_group_text(
         order = sorted(
             range(len(position_values)), key=position_values.__getitem__, reverse=rtl > ltr
         )
-        indexes = numpy.asarray([indexes[position] for position in order])
+        index_values = indexes.tolist()
+        indexes = cast(numpy.ndarray, numpy.asarray([index_values[position] for position in order]))
     references = tuple(observations.references[index] for index in indexes)
     if references and all(reference is not None for reference in references):
         runs = cast(list[TextRun], list(references))
