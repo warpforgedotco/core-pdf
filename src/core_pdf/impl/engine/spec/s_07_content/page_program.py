@@ -11,7 +11,7 @@ from typing import Any
 
 import numpy
 
-from core_pdf.impl.engine.layout.glyph_table import GlyphTable
+from core_pdf.impl.engine.layout.glyph_table import GlyphTable, GlyphTableBuilder
 from core_pdf.impl.engine.layout.models import TextRun
 from core_pdf.impl.engine.spec.s_07_content.capture import (
     CapturedDrawing,
@@ -162,15 +162,22 @@ class PageEventStream:
             ],
             [
                 (
-                    glyph.seqno,
+                    seqno,
                     1,
                     PageEventKind.GLYPH,
                     index,
-                    glyph.ink_bbox or missing_box,
-                    glyph.visible,
+                    ink_bbox or missing_box,
+                    visible,
                 )
-                for index, glyph in enumerate(products.glyphs)
-                if glyph.has_paint
+                for index, seqno, ink_bbox, visible, has_paint in (
+                    products.glyphs.iter_event_rows()
+                    if isinstance(products.glyphs, GlyphTable)
+                    else (
+                        (index, glyph.seqno, glyph.ink_bbox, glyph.visible, glyph.has_paint)
+                        for index, glyph in enumerate(products.glyphs)
+                    )
+                )
+                if has_paint
             ],
             [
                 (
@@ -260,7 +267,12 @@ class PageProducts:
     @classmethod
     def from_state(cls, state: Any) -> PageProducts:
         runs = tuple(state.runs)
-        glyphs = GlyphTable.from_rows(state.glyphs)
+        raw_glyphs = state.glyphs
+        if isinstance(raw_glyphs, GlyphTableBuilder):
+            # Builder rows are typed by construction; no per-glyph scan needed.
+            glyphs = raw_glyphs.build()
+        else:
+            glyphs = GlyphTable.from_rows(raw_glyphs)
         raw_drawings = tuple(state.drawings)
         if not all(isinstance(drawing, CapturedDrawing) for drawing in raw_drawings):
             raise PdfContractError("page state emitted an invalid drawing product")

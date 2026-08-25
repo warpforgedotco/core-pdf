@@ -8,12 +8,14 @@ import re
 import time
 from bisect import bisect_left
 from collections import Counter, defaultdict
+from collections.abc import Iterable
 from dataclasses import replace
 from typing import Any
 
 import numpy
 
 from core_pdf.impl.engine.layout.geometry import rect_tuple
+from core_pdf.impl.engine.layout.glyph_table import GlyphTable
 from core_pdf.impl.engine.layout.glyphs import (
     GlyphObservation,
     GlyphUnicodeSemantics,
@@ -200,6 +202,26 @@ def internal_glyph_evidence(
     glyphs: tuple[GlyphObservation, ...],
     runs: tuple[TextRun, ...],
 ) -> GlyphEvidence:
+    return internal_glyph_evidence_fields(
+        (
+            (
+                glyph.text,
+                glyph.visible,
+                glyph.font_decoder,
+                glyph.code_bytes,
+                glyph.unicode_source,
+                glyph.confidence,
+            )
+            for glyph in glyphs
+        ),
+        runs,
+    )
+
+
+def internal_glyph_evidence_fields(
+    glyph_fields: Iterable[tuple[str, bool, object, bytes, str, float | None]],
+    runs: tuple[TextRun, ...],
+) -> GlyphEvidence:
     authoritative = 0
     heuristic = 0
     unknown = 0
@@ -211,27 +233,26 @@ def internal_glyph_evidence(
     glyph_count = 0
     previous_decoder: object | None = None
     learned: dict[bytes, str] | None = None
-    for glyph in glyphs:
-        if not glyph.text or glyph.text.isspace():
+    for glyph_text, glyph_visible, decoder, code_bytes, unicode_source, confidence in glyph_fields:
+        if not glyph_text or glyph_text.isspace():
             continue
         glyph_count += 1
-        visible += int(glyph.visible)
-        decoder = glyph.font_decoder
+        visible += int(glyph_visible)
         if decoder is not previous_decoder:
             candidate = getattr(decoder, "learned_unicode", None)
             learned = candidate if isinstance(candidate, dict) and candidate else None
             previous_decoder = decoder
-        candidate_text = learned.get(glyph.code_bytes) if learned is not None else None
+        candidate_text = learned.get(code_bytes) if learned is not None else None
         learned_text = (
             candidate_text if isinstance(candidate_text, str) and len(candidate_text) == 1 else None
         )
-        source = "learned_ocr" if learned_text is not None else glyph.unicode_source
-        text = learned_text or glyph.text
+        source = "learned_ocr" if learned_text is not None else unicode_source
+        text = learned_text or glyph_text
         sources[source or "unspecified"] += 1
         semantics = (
             GlyphUnicodeSemantics.HEURISTIC
             if learned_text is not None
-            else glyph_unicode_semantics(glyph.text, glyph.unicode_source)
+            else glyph_unicode_semantics(glyph_text, unicode_source)
         )
         if semantics is GlyphUnicodeSemantics.AUTHORITATIVE:
             authoritative += 1
@@ -247,7 +268,7 @@ def internal_glyph_evidence(
             unsupported += 1
         else:
             unknown += 1
-        if learned_text is None and (glyph.confidence is None or glyph.confidence < 0.50):
+        if learned_text is None and (confidence is None or confidence < 0.50):
             low_confidence += 1
     actual_text_characters = sum(
         sum(not character.isspace() for character in run.text)
@@ -759,10 +780,15 @@ def internal_capture_from_program(
             return cached
     products = program.products
     program_runs = tuple(products.runs)
+    glyph_source = products.glyphs
+    if isinstance(glyph_source, GlyphTable):
+        font_name_pairs: Iterable[tuple[int, str | None]] = glyph_source.iter_font_names()
+    else:
+        font_name_pairs = ((glyph.seqno, glyph.font_name) for glyph in glyph_source)
     glyphs_by_seqno: dict[int, list[str]] = defaultdict(list)
-    for glyph in products.glyphs:
-        if glyph.font_name:
-            glyphs_by_seqno[int(glyph.seqno)].append(glyph.font_name)
+    for glyph_seqno, glyph_font_name in font_name_pairs:
+        if glyph_font_name:
+            glyphs_by_seqno[int(glyph_seqno)].append(glyph_font_name)
     glyph_seqnos = tuple(sorted(glyphs_by_seqno))
     enriched_runs: list[TextRun] = []
     for index, run in enumerate(program_runs):
@@ -814,7 +840,10 @@ def internal_capture_from_program(
         painted_analysis = internal_analyze_text(painted_text)
         painted_text_quality = painted_analysis.quality
         painted_native_characters = painted_analysis.characters
-    glyph_evidence = internal_glyph_evidence(tuple(products.glyphs), raw_runs)
+    if isinstance(glyph_source, GlyphTable):
+        glyph_evidence = internal_glyph_evidence_fields(glyph_source.iter_evidence_rows(), raw_runs)
+    else:
+        glyph_evidence = internal_glyph_evidence(tuple(glyph_source), raw_runs)
     trusted_hidden_text = internal_hidden_text_is_trusted(
         native_characters=native_characters,
         painted_characters=painted_native_characters,

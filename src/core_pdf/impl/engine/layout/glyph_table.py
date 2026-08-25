@@ -1,12 +1,197 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Columnar page glyph storage behind a sequence-compatible boundary."""
+"""Columnar page glyph storage behind a sequence-compatible boundary.
+
+The capture hot loop appends one compact row tuple per glyph plus one
+:class:`GlyphSegment` per text-showing operation carrying the op-constant
+fields, instead of constructing a full :class:`GlyphObservation` per glyph.
+Row-level consumers (the renderer, compat facades, tests) still receive real
+observations, materialized once per table on first row access; engine
+extraction reads the per-field iterators and never materializes rows.
+"""
 
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator
+from typing import Any
 
 from core_pdf.impl.engine.layout.glyphs import GlyphObservation
 from core_pdf.impl.exceptions import PdfContractError
+
+# Fast-path row tuple layout. Only values that vary per glyph are stored;
+# everything else lives once on the row's GlyphSegment (element 0).
+internal_ROW_SEGMENT = 0
+internal_ROW_TEXT = 1
+internal_ROW_INK_BBOX = 2
+internal_ROW_ADVANCE_BBOX = 3
+internal_ROW_BASELINE = 4
+internal_ROW_CODE_BYTES = 5
+internal_ROW_CHAR_CODE = 6
+internal_ROW_CID = 7
+internal_ROW_GID = 8
+internal_ROW_VISIBLE = 9
+internal_ROW_CONFIDENCE = 10
+internal_ROW_UNICODE_SOURCE = 11
+internal_ROW_ALTERNATES = 12
+internal_ROW_BITMAP_WIDTH = 13
+internal_ROW_BITMAP_HEIGHT = 14
+internal_ROW_BITMAP_CODE = 15
+internal_ROW_GLYPH_TRANSFORM = 16
+internal_ROW_PROVENANCE = 17
+internal_ROW_CLUSTER_ID = 18
+
+internal_GlyphEntry = tuple[Any, ...] | GlyphObservation
+
+
+class GlyphSegment:
+    """Fields shared by every fast-path glyph of one text-showing operation."""
+
+    __slots__ = (
+        "seqno",
+        "font_name",
+        "font_size",
+        "effective_font_size",
+        "effective_font_height",
+        "fill",
+        "rotation_angle",
+        "font_decoder",
+        "text_render_mode",
+        "fill_opacity",
+        "stroke_color",
+        "stroke_opacity",
+        "line_width",
+        "line_cap",
+        "line_join",
+        "dash_pattern",
+        "blend_mode",
+        "soft_mask_alpha",
+        "text_object_id",
+    )
+
+    def __init__(
+        self,
+        seqno: int,
+        font_name: str | None,
+        font_size: float,
+        effective_font_size: float,
+        effective_font_height: float,
+        fill: tuple[float, ...] | None,
+        rotation_angle: int,
+        font_decoder: object,
+        text_render_mode: int,
+        fill_opacity: float | None,
+        stroke_color: tuple[float, ...] | None,
+        stroke_opacity: float | None,
+        line_width: float,
+        line_cap: int,
+        line_join: int,
+        dash_pattern: tuple[list[float], float] | None,
+        blend_mode: str | None,
+        soft_mask_alpha: float | None,
+        text_object_id: int,
+    ) -> None:
+        self.seqno = seqno
+        self.font_name = font_name
+        self.font_size = font_size
+        self.effective_font_size = effective_font_size
+        self.effective_font_height = effective_font_height
+        self.fill = fill
+        self.rotation_angle = rotation_angle
+        self.font_decoder = font_decoder
+        self.text_render_mode = text_render_mode
+        self.fill_opacity = fill_opacity
+        self.stroke_color = stroke_color
+        self.stroke_opacity = stroke_opacity
+        self.line_width = line_width
+        self.line_cap = line_cap
+        self.line_join = line_join
+        self.dash_pattern = dash_pattern
+        self.blend_mode = blend_mode
+        self.soft_mask_alpha = soft_mask_alpha
+        self.text_object_id = text_object_id
+
+
+def internal_materialize(entry: internal_GlyphEntry) -> GlyphObservation:
+    """Build the full observation for one table entry (prebuilt rows pass through)."""
+    if isinstance(entry, GlyphObservation):
+        return entry
+    segment: GlyphSegment = entry[0]
+    return GlyphObservation(
+        entry[1],  # text
+        entry[2],  # ink_bbox (may alias advance_bbox, preserved by reference)
+        entry[3],  # advance_bbox
+        segment.seqno,
+        entry[5],  # code_bytes
+        entry[6],  # char_code
+        entry[7],  # cid
+        entry[8],  # gid
+        segment.font_name,
+        segment.font_size,
+        entry[4],  # baseline
+        segment.rotation_angle,
+        segment.fill,
+        entry[9],  # visible
+        entry[10],  # confidence
+        entry[11],  # unicode_source
+        entry[12],  # alternates
+        (),  # bitmap is never populated at capture time
+        entry[13],  # bitmap_width
+        entry[14],  # bitmap_height
+        entry[15],  # bitmap_code
+        segment.font_decoder,
+        segment.effective_font_size,
+        segment.effective_font_height,
+        entry[17],  # provenance
+        glyph_transform=entry[16],
+        text_render_mode=segment.text_render_mode,
+        fill_opacity=segment.fill_opacity,
+        stroke_color=segment.stroke_color,
+        stroke_opacity=segment.stroke_opacity,
+        line_width=segment.line_width,
+        line_cap=segment.line_cap,
+        line_join=segment.line_join,
+        dash_pattern=segment.dash_pattern,
+        blend_mode=segment.blend_mode,
+        soft_mask_alpha=segment.soft_mask_alpha,
+        text_object_id=segment.text_object_id,
+        cluster_key=(segment.seqno, entry[18]),
+    )
+
+
+class GlyphTableBuilder:
+    """Mutable capture-time glyph storage owned by one ``TextState``.
+
+    The hot loop appends row tuples directly through ``rows.append``; the
+    slower construction paths append prebuilt observations. The ActualText
+    branch uses ``__len__`` as a mark with ``extract_rows``/``truncate``, and
+    nested capture states (tiling patterns, annotation appearances) iterate
+    materialized rows.
+    """
+
+    __slots__ = ("rows",)
+
+    def __init__(self) -> None:
+        self.rows: list[internal_GlyphEntry] = []
+
+    def append_row(self, observation: GlyphObservation) -> None:
+        self.rows.append(observation)
+
+    def __len__(self) -> int:
+        return len(self.rows)
+
+    def __bool__(self) -> bool:
+        return bool(self.rows)
+
+    def __iter__(self) -> Iterator[GlyphObservation]:
+        return (internal_materialize(entry) for entry in self.rows)
+
+    def extract_rows(self, start: int) -> list[GlyphObservation]:
+        return [internal_materialize(entry) for entry in self.rows[start:]]
+
+    def truncate(self, start: int) -> None:
+        del self.rows[start:]
+
+    def build(self) -> GlyphTable:
+        return GlyphTable(tuple(self.rows))
 
 
 class GlyphTable:
@@ -18,13 +203,16 @@ class GlyphTable:
     deliberately unsupported — no consumer slices the page table.
 
     Row identity is stable for the lifetime of the table (materialize-once),
-    so facades that hold rows and key maps by ``id()`` keep working.
+    so facades that hold rows and key maps by ``id()`` keep working. The
+    engine extraction pipeline reads the ``iter_*`` field iterators instead
+    and never triggers materialization.
     """
 
-    __slots__ = ("internal_rows",)
+    __slots__ = ("internal_entries", "internal_materialized")
 
-    def __init__(self, rows: tuple[GlyphObservation, ...]) -> None:
-        self.internal_rows = rows
+    def __init__(self, entries: tuple[internal_GlyphEntry, ...]) -> None:
+        self.internal_entries = entries
+        self.internal_materialized: tuple[GlyphObservation, ...] | None = None
 
     @classmethod
     def from_rows(cls, rows: Iterable[GlyphObservation], *, validate: bool = True) -> GlyphTable:
@@ -33,21 +221,85 @@ class GlyphTable:
             isinstance(observation, GlyphObservation) for observation in materialized
         ):
             raise PdfContractError("page state emitted an invalid glyph product")
-        return cls(materialized)
+        table = cls(materialized)
+        table.internal_materialized = materialized
+        return table
+
+    def internal_rows(self) -> tuple[GlyphObservation, ...]:
+        materialized = self.internal_materialized
+        if materialized is None:
+            materialized = tuple(internal_materialize(entry) for entry in self.internal_entries)
+            self.internal_materialized = materialized
+        return materialized
 
     def __iter__(self) -> Iterator[GlyphObservation]:
-        return iter(self.internal_rows)
+        return iter(self.internal_rows())
 
     def __len__(self) -> int:
-        return len(self.internal_rows)
+        return len(self.internal_entries)
 
     def __bool__(self) -> bool:
-        return bool(self.internal_rows)
+        return bool(self.internal_entries)
 
     def __getitem__(self, index: int) -> GlyphObservation:
         if isinstance(index, slice):
             raise TypeError("GlyphTable does not support slicing")
-        return self.internal_rows[index]
+        return self.internal_rows()[index]
+
+    def iter_event_rows(self) -> Iterator[tuple[int, int, Any, bool, bool]]:
+        """Yield ``(index, seqno, ink_bbox, visible, has_paint)`` per glyph.
+
+        ``has_paint`` replicates ``GlyphObservation.has_paint`` over columns;
+        capture-time rows never carry an eager bitmap, so that property term
+        is statically false for them.
+        """
+        for index, entry in enumerate(self.internal_entries):
+            if isinstance(entry, GlyphObservation):
+                yield index, entry.seqno, entry.ink_bbox, entry.visible, entry.has_paint
+                continue
+            segment: GlyphSegment = entry[0]
+            decoder = segment.font_decoder
+            has_paint = decoder is not None and (
+                entry[16] is not None or (entry[15] is not None and entry[13] > 0 and entry[14] > 0)
+            )
+            yield index, segment.seqno, entry[2], entry[9], has_paint
+
+    def iter_font_names(self) -> Iterator[tuple[int, str | None]]:
+        """Yield ``(seqno, font_name)`` per glyph without materializing rows."""
+        for entry in self.internal_entries:
+            if isinstance(entry, GlyphObservation):
+                yield entry.seqno, entry.font_name
+            else:
+                segment: GlyphSegment = entry[0]
+                yield segment.seqno, segment.font_name
+
+    def iter_evidence_rows(
+        self,
+    ) -> Iterator[tuple[str, bool, object, bytes, str, float | None]]:
+        """Yield ``(text, visible, font_decoder, code_bytes, unicode_source, confidence)``."""
+        for entry in self.internal_entries:
+            if isinstance(entry, GlyphObservation):
+                yield (
+                    entry.text,
+                    entry.visible,
+                    entry.font_decoder,
+                    entry.code_bytes,
+                    entry.unicode_source,
+                    entry.confidence,
+                )
+            else:
+                yield (
+                    entry[1],
+                    entry[9],
+                    entry[0].font_decoder,
+                    entry[5],
+                    entry[11],
+                    entry[10],
+                )
 
 
-__all__ = ("GlyphTable",)
+__all__ = (
+    "GlyphSegment",
+    "GlyphTable",
+    "GlyphTableBuilder",
+)

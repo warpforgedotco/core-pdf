@@ -16,6 +16,7 @@ if TYPE_CHECKING:
 
 from core_pdf.impl.engine.image_cache import ImageCache
 from core_pdf.impl.engine.layout.geometry import RectBox
+from core_pdf.impl.engine.layout.glyph_table import GlyphSegment, GlyphTableBuilder
 from core_pdf.impl.engine.layout.glyphs import GlyphCluster, GlyphObservation
 from core_pdf.impl.engine.layout.models import TextRun
 from core_pdf.impl.engine.spec.s_07_content.capture import (
@@ -167,7 +168,7 @@ class TextState:
     capture_graphics: bool
     compat_tj_decoder: FontDecoder | None
     runs: list[TextRun]
-    glyphs: list[GlyphObservation]
+    glyphs: GlyphTableBuilder
     glyph_clusters: list[GlyphCluster]
     lines: list[CapturedLine]
     drawings: list[CapturedDrawing]
@@ -419,7 +420,7 @@ class TextState:
         self.capture_graphics = True
         self.capture_clipping = True
         self.runs = []
-        self.glyphs = []
+        self.glyphs = GlyphTableBuilder()
         self.glyph_clusters = []
         self.lines = []
         self.drawings = []
@@ -1900,7 +1901,8 @@ class TextState:
             combined_c,
             combined_d,
         )
-        append_glyph = self.glyphs.append
+        append_glyph = self.glyphs.append_row
+        append_glyph_row = self.glyphs.rows.append
         chunk_advance = self.chunk_advance
         glyph_bbox_for_code = decoder.glyph_bbox
         glyph_bbox_cache = decoder.glyph_bbox_cache
@@ -1976,6 +1978,30 @@ class TextState:
             if axis_advance_y0 > axis_advance_y1:
                 axis_advance_y0, axis_advance_y1 = axis_advance_y1, axis_advance_y0
             axis_baseline_y = text_basis[1] + rise * combined_d
+        # One segment carries every op-constant observation field for this
+        # text-showing operation; fast-path glyphs append compact row tuples
+        # that reference it instead of full observations.
+        segment = GlyphSegment(
+            seqno,
+            effective_font_name,
+            font_size,
+            effective_font_size,
+            effective_font_height,
+            fill,
+            rotation_angle,
+            decoder,
+            render_mode,
+            fill_opacity,
+            stroke_color,
+            stroke_opacity,
+            glyph_line_width,
+            line_cap,
+            line_join,
+            glyph_dash_pattern,
+            blend_mode,
+            group_alpha,
+            text_object_id,
+        )
         # Running union of the appended observations' geometry, mirroring
         # apply_glyph_geometry_to_run so the caller need not rescan the slice.
         run_geometry_started = False
@@ -2211,7 +2237,29 @@ class TextState:
                     text_object_id=text_object_id,
                     cluster_key=cluster_provenance_id,
                 )
-                append_glyph(observation)
+                append_glyph_row(
+                    (
+                        segment,
+                        chunk_text,
+                        rect,
+                        advance_bbox,
+                        baseline,
+                        glyph.code_bytes,
+                        glyph.char_code,
+                        glyph.cid,
+                        glyph.gid,
+                        observation_visible,
+                        observation_confidence,
+                        glyph.unicode_source,
+                        glyph.alternates,
+                        bitmap_width,
+                        bitmap_height,
+                        bitmap_code,
+                        outline_transform,
+                        observation_provenance,
+                        cluster_id,
+                    )
+                )
                 # Single-glyph fast path: glyph_cluster_from_observations, given one
                 # observation, only re-derives advance_bbox/ink_bbox/confidence/etc. from
                 # fields already sitting in locals here (rect, advance_bbox,
@@ -2654,8 +2702,8 @@ class TextState:
                     string_syntax=string_syntax,
                     compatibility_data=compatibility_data,
                 )
-                actual_text_span.compatibility_glyphs.extend(self.glyphs[glyph_start:])
-                del self.glyphs[glyph_start:]
+                actual_text_span.compatibility_glyphs.extend(self.glyphs.extract_rows(glyph_start))
+                self.glyphs.truncate(glyph_start)
                 del self.glyph_clusters[cluster_start:]
             actual_text_span.add_extents(
                 x0=x0,
@@ -3715,7 +3763,7 @@ class TextState:
             )
             self.update_pending_run(new_run)
         if self.capture_glyphs and entry.advance_bbox is not None:
-            self.glyphs.append(
+            self.glyphs.append_row(
                 GlyphObservation(
                     text=actual_text,
                     ink_bbox=entry.ink_bbox or entry.advance_bbox,
