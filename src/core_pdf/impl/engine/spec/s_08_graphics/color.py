@@ -415,6 +415,15 @@ class ImageColorManager:
                 raise ValueError("invalid Indexed color lookup")
             values = uint8_view(lookup)[samples]
             return numpy.repeat(values[:, None], 3, axis=1).reshape(-1)
+        elif spec.base == "DeviceCMYK":
+            # A CMYK palette used to raise here, and the caller's recovery path
+            # then handed the raw palette indexes on as DeviceGray -- index
+            # numbers rendered as grey levels. Look the entry up, then convert
+            # it the same way any other CMYK sample is converted.
+            if len(lookup) < (hival + 1) * 4:
+                raise ValueError("invalid Indexed color lookup")
+            table = uint8_view(lookup)[: (hival + 1) * 4].reshape(-1, 4)
+            return ImageColorManager.convert_cmyk(table[samples].reshape(-1))
         else:
             raise ValueError("invalid Indexed color space")
 

@@ -42,6 +42,7 @@ from core_pdf.impl.engine.render.kernels import (
     internal_blend_solid_array_numpy,
     internal_blit_indexed_channels,
     internal_blit_reshaped_channels,
+    internal_box_downsample,
     internal_cached_raster_coordinates,
     internal_color_rgba,
     internal_composite_normal_group_numpy,
@@ -2110,6 +2111,56 @@ class internal_RasterTarget:
                     return
                 if numpy.all(alpha_view == 255) and internal_soft_mask_samples(data) is None:
                     source_alpha = None
+        # Average before sampling when the image is being shrunk. Both blit
+        # paths below resample with nearest-neighbour, which at a 4x reduction
+        # keeps about one source pixel in sixteen -- enough to drop the thin
+        # rules and letter stems of a scanned page. This sits ahead of the
+        # affine dispatch so the rotated path gets an averaged source too.
+        #
+        # Both source axes are held to the *larger* device extent rather than
+        # matched to width and height separately: a quad may rotate the image,
+        # in which case its height runs along the box's width, and reducing per
+        # axis would shrink the wrong one. Taking the maximum can only reduce
+        # less than strictly necessary, never more.
+        scale = self.scale
+        device_extent = max(
+            1,
+            int(math.ceil((box[2] - box[0]) * scale)),
+            int(math.ceil((box[3] - box[1]) * scale)),
+        )
+        target_width = device_extent
+        target_height = device_extent
+        if width_px > target_width or height_px > target_height:
+            source_samples = (
+                converted
+                if isinstance(converted, numpy.ndarray)
+                else numpy.frombuffer(converted, dtype=numpy.uint8)
+            )
+            pixel_total = width_px * height_px
+            if pixel_total and source_samples.size % pixel_total == 0:
+                reduced, reduced_width, reduced_height = internal_box_downsample(
+                    source_samples,
+                    width_px,
+                    height_px,
+                    source_samples.size // pixel_total,
+                    target_width,
+                    target_height,
+                )
+                if reduced_width != width_px or reduced_height != height_px:
+                    if source_alpha is not None:
+                        alpha_samples = numpy.asarray(source_alpha, dtype=numpy.uint8)
+                        if alpha_samples.size == pixel_total:
+                            source_alpha = internal_box_downsample(
+                                alpha_samples,
+                                width_px,
+                                height_px,
+                                1,
+                                target_width,
+                                target_height,
+                            )[0]
+                    converted = reduced
+                    width_px = reduced_width
+                    height_px = reduced_height
         quad = internal_image_quad(data)
         comps = source_channels or (3 if len(converted) >= width_px * height_px * 3 else 1)
         raster_metrics.image_count += 1
