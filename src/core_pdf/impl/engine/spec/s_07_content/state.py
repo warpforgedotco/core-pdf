@@ -212,6 +212,7 @@ class TextState:
     font_setting_cache: ObjectCache
     operand_decode_cache: ObjectCache
     decoder_cache: dict[tuple[int, int] | int, FontDecoder]
+    decoder_memo: dict[tuple[int, str | None], FontDecoder]
     kw_cache: dict[bytes, object]
     pending_run: TextRun | None
     op_handlers: dict[str, OperationHandler]
@@ -319,6 +320,7 @@ class TextState:
         "font_setting_cache",
         "operand_decode_cache",
         "decoder_cache",
+        "decoder_memo",
         "kw_cache",
         "pending_line_break",
         "pending_run",
@@ -474,6 +476,7 @@ class TextState:
         self.font_setting_cache = {}
         self.operand_decode_cache = {}
         self.decoder_cache = decoder_cache if decoder_cache is not None else {}
+        self.decoder_memo = {}
         self.kw_cache = getattr(self.document.resolver, "kw_cache", {})
         self.pending_line_break = False
         self.pending_run = None
@@ -1191,6 +1194,18 @@ class TextState:
         if self.current_decoder is not None:
             return self.current_decoder
 
+        # Pages routinely alternate between a few fonts; remember resolved
+        # decoders per (resources, font name) so switching back skips the
+        # resource walk, reference resolution, and document cache lock.
+        memo_key = (self.resources_id, self.current_font)
+        memoized = self.decoder_memo.get(memo_key)
+        if memoized is not None:
+            # Mirrors the document-cache hit below, including its metrics
+            # behavior (callers refresh metrics themselves after a hit).
+            self.current_decoder = memoized
+            self.current_decoder_resources_id = self.resources_id
+            return memoized
+
         try:
             font_obj_ref = (
                 self.lookup_page_resource("Font", self.current_font) if self.current_font else None
@@ -1226,6 +1241,7 @@ class TextState:
                 decoder = typing.cast("FontDecoder", cached_decoder)
                 self.current_decoder = decoder
                 self.current_decoder_resources_id = self.resources_id
+                self.decoder_memo[memo_key] = decoder
                 return decoder
 
             font_dict = typing.cast(PdfDict, font_obj)
@@ -1240,6 +1256,7 @@ class TextState:
             decoder = self.current_decoder
             self.current_decoder_resources_id = self.resources_id
             doc_cache[cache_key] = decoder
+            self.decoder_memo[memo_key] = decoder
         if update_metrics:
             self.update_font_metrics()
         return decoder
