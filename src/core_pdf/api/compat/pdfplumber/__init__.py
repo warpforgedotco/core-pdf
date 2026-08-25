@@ -994,9 +994,7 @@ class Page:
                 height_chars=kwargs.get("layout_height_chars"),
             )
         y_tolerance = float(kwargs.get("y_tolerance", 3))
-        word_options = dict(kwargs)
-        word_options["return_chars"] = True
-        words = _words(self.chars, **word_options)
+        words = _words(self.chars, **kwargs)
         lines = cluster_by_preserving_order(words, "top", y_tolerance)
         return "\n".join(" ".join(word["text"] for word in line) for line in lines)
 
@@ -1344,22 +1342,37 @@ class Page:
     def dedupe_chars(self, **kwargs: Any) -> "FilteredPage":
         tolerance = float(kwargs.get("tolerance", 1))
         extra_attrs = tuple(kwargs.get("extra_attrs", ()))
-        seen: list[ObjectDict] = []
+        # Bucket kept chars by (text, tolerance grid cell) so each candidate
+        # only compares against near-coincident neighbours instead of every
+        # previously kept char on the page.
+        buckets: dict[tuple[Any, Any, Any], list[ObjectDict]] = {}
 
         def keep(char: ObjectDict) -> bool:
             if char.get("object_type") != "char":
                 return True
-            for previous in seen:
-                if char.get("text") != previous.get("text"):
-                    continue
-                if abs(char.get("x0", 0) - previous.get("x0", 0)) > tolerance:
-                    continue
-                if abs(char.get("top", 0) - previous.get("top", 0)) > tolerance:
-                    continue
-                if any(char.get(name) != previous.get(name) for name in extra_attrs):
-                    continue
-                return False
-            seen.append(char)
+            text = char.get("text")
+            x0 = char.get("x0", 0)
+            top = char.get("top", 0)
+            if tolerance > 0:
+                cell_x = math.floor(x0 / tolerance)
+                cell_y = math.floor(top / tolerance)
+                candidate_keys = [
+                    (text, cell_x + dx, cell_y + dy) for dx in (-1, 0, 1) for dy in (-1, 0, 1)
+                ]
+                home_key = (text, cell_x, cell_y)
+            else:
+                home_key = (text, x0, top)
+                candidate_keys = [home_key]
+            for key in candidate_keys:
+                for previous in buckets.get(key, ()):
+                    if abs(x0 - previous.get("x0", 0)) > tolerance:
+                        continue
+                    if abs(top - previous.get("top", 0)) > tolerance:
+                        continue
+                    if any(char.get(name) != previous.get(name) for name in extra_attrs):
+                        continue
+                    return False
+            buckets.setdefault(home_key, []).append(char)
             return True
 
         return FilteredPage(
@@ -2242,6 +2255,8 @@ def _words(chars: Iterable[ObjectDict], **kwargs: Any) -> list[ObjectDict]:
         set("!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~") if split_value is True else set(split_value or "")
     )
     keep_blank = bool(kwargs.get("keep_blank_chars", False))
+    expand_ligatures = bool(kwargs.get("expand_ligatures", True))
+    return_chars = bool(kwargs.get("return_chars", False))
     words: list[ObjectDict] = []
     extra_attrs = tuple(kwargs.get("extra_attrs", ()))
     values = list(chars)
@@ -2256,7 +2271,7 @@ def _words(chars: Iterable[ObjectDict], **kwargs: Any) -> list[ObjectDict]:
         word: ObjectDict = {
             "text": "".join(
                 LIGATURE_EXPANSIONS.get(str(char["text"] or ""), str(char["text"] or ""))
-                if kwargs.get("expand_ligatures", True)
+                if expand_ligatures
                 else str(char["text"] or "")
                 for char in word_chars
             ),
@@ -2269,8 +2284,9 @@ def _words(chars: Iterable[ObjectDict], **kwargs: Any) -> list[ObjectDict]:
             "height": bottom - top,
             "width": x1 - x0,
             "direction": direction,
-            "chars": list(word_chars),
         }
+        if return_chars:
+            word["chars"] = list(word_chars)
         for attribute in extra_attrs:
             word[attribute] = first[attribute]
         words.append(word)
@@ -2361,9 +2377,6 @@ def _words(chars: Iterable[ObjectDict], **kwargs: Any) -> list[ObjectDict]:
                     current = []
             if current:
                 emit_word(current, direction)
-    if not kwargs.get("return_chars", False):
-        for word in words:
-            word.pop("chars", None)
     return words
 
 
