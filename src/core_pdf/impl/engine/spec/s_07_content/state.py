@@ -1431,6 +1431,7 @@ class TextState:
             self.pending_run = None
             return
         if self.pending_run:
+            self.pending_run.freeze_glyph_clusters()
             self.runs.append(self.pending_run)
             self.pending_run = None
 
@@ -1746,6 +1747,7 @@ class TextState:
                         merged = True
 
         if not merged:
+            p.freeze_glyph_clusters()
             self.runs.append(p)
             self.pending_run = new_run
         else:
@@ -3612,11 +3614,13 @@ class TextState:
         pending = self.pending_run
         if pending:
             if self.capture_runs:
+                pending.freeze_glyph_clusters()
                 self.runs.append(pending)
             self.pending_run = None
 
     def internal_move_text(self, tx: float, ty: float) -> None:
         if self.pending_run:
+            self.pending_run.freeze_glyph_clusters()
             self.runs.append(self.pending_run)
             self.pending_run = None
         # Preserve the specification's affine operation order. Exact layout

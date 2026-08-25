@@ -79,7 +79,9 @@ class TextRun:
     baseline: tuple[float, float, float, float] | None
     provenance: Provenance
     confidence: float | None
-    glyph_clusters: tuple[GlyphCluster, ...]
+    # A pending run may hold a list while merges accumulate; finalized runs
+    # always carry the tuple form (see freeze_glyph_clusters).
+    glyph_clusters: tuple[GlyphCluster, ...] | list[GlyphCluster]
     coords: list[float]
     mid_x_value: float
     mid_y_value: float
@@ -206,7 +208,7 @@ class TextRun:
         baseline: tuple[float, float, float, float] | None = None,
         provenance: Provenance = (),
         confidence: float | None = None,
-        glyph_clusters: tuple[GlyphCluster, ...] = (),
+        glyph_clusters: tuple[GlyphCluster, ...] | list[GlyphCluster] = (),
     ) -> None:
         self.internal_revision = 0
         self.inside_active_clip = inside_active_clip
@@ -257,12 +259,24 @@ class TextRun:
         )
 
     def extend_glyph_clusters(self, clusters: tuple[GlyphCluster, ...]) -> None:
+        # While a run is pending, accumulate clusters in a list so repeated
+        # merges stay linear; freeze_glyph_clusters restores the tuple form
+        # (and a fresh identity for id()-keyed caches) at finalization.
         if not clusters:
             return
-        if not self.glyph_clusters:
+        existing = self.glyph_clusters
+        if not existing:
             self.glyph_clusters = clusters
-            return
-        self.glyph_clusters = (*self.glyph_clusters, *clusters)
+        elif type(existing) is list:
+            existing.extend(clusters)
+        else:
+            combined = list(existing)
+            combined.extend(clusters)
+            self.glyph_clusters = combined
+
+    def freeze_glyph_clusters(self) -> None:
+        if type(self.glyph_clusters) is list:
+            self.glyph_clusters = tuple(self.glyph_clusters)
 
     def set_text(self, text: str) -> None:
         self.text = text
@@ -316,7 +330,7 @@ class TextRun:
         baseline: tuple[float, float, float, float] | None = None,
         provenance: Provenance = (),
         confidence: float | None = None,
-        glyph_clusters: tuple[GlyphCluster, ...] = (),
+        glyph_clusters: tuple[GlyphCluster, ...] | list[GlyphCluster] = (),
     ) -> TextRun:
         resolved_advance_bbox = advance_bbox or (x0, y0, x1, y1)
         resolved_ink_bbox = ink_bbox or resolved_advance_bbox
