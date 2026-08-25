@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from functools import lru_cache
+from typing import Any
 
 from core_pdf._vendor.fontTools.misc.psCharStrings import T1CharString
 from core_pdf._vendor.fontTools.pens.recordingPen import RecordingPen
@@ -24,9 +25,60 @@ internal_SUBR_RE = re.compile(rb"\bdup\s+(\d+)\s+(\d+)\s+(?:RD|-\|)[ \t\r\n]")
 internal_CHARSTRING_RE = re.compile(rb"/([^\s/]+)\s+(\d+)\s+(?:RD|-\|)[ \t\r\n]")
 internal_HEX_BYTES = frozenset(b"0123456789abcdefABCDEF \t\r\n")
 internal_MAX_SUBROUTINES = 4096
+internal_DECRYPT_NUMPY_THRESHOLD = 1024
+# Lazily built (powers of 52845, powers of its inverse) numpy arrays mod 2**16.
+internal_DECRYPT_POWER_CYCLES: tuple[Any, Any] | None = None
+
+
+def internal_decrypt_numpy(data: bytes, key: int) -> bytes:
+    """Vectorized eexec decryption via the recurrence's affine closed form.
+
+    The state update r' = (c + r)*52845 + 22719 (mod 2**16) is affine in r, so
+    r_i = a**i * (r_0 + sum_{j<i} a**-(j+1) * (a*c_j + b)) with a = 52845 and
+    b = 22719. a is odd, hence invertible mod 2**16, and its power cycle is
+    precomputed once; the prefix sum stays exact in uint64.
+    """
+    import numpy
+
+    global internal_DECRYPT_POWER_CYCLES
+    if internal_DECRYPT_POWER_CYCLES is None:
+        cycle = []
+        value = 1
+        while True:
+            cycle.append(value)
+            value = (value * 52845) & 0xFFFF
+            if value == 1:
+                break
+        inverse = pow(52845, -1, 1 << 16)
+        inverse_cycle = []
+        value = 1
+        while True:
+            inverse_cycle.append(value)
+            value = (value * inverse) & 0xFFFF
+            if value == 1:
+                break
+        internal_DECRYPT_POWER_CYCLES = (
+            numpy.asarray(cycle, dtype=numpy.uint64),
+            numpy.asarray(inverse_cycle, dtype=numpy.uint64),
+        )
+    power_cycle, inverse_cycle_array = internal_DECRYPT_POWER_CYCLES
+    n = len(data)
+    cipher = numpy.frombuffer(data, dtype=numpy.uint8).astype(numpy.uint64)
+    cycle_length = len(power_cycle)
+    indices = numpy.arange(n, dtype=numpy.int64)
+    powers = power_cycle[indices % cycle_length]
+    inverse_powers = inverse_cycle_array[(indices + 1) % cycle_length]
+    scaled = ((52845 * cipher + 22719) & 0xFFFF) * inverse_powers % 65536
+    prefix = numpy.cumsum(scaled)
+    state = numpy.empty(n, dtype=numpy.uint64)
+    state[0] = key
+    state[1:] = powers[1:] * ((key + prefix[:-1]) % 65536) % 65536
+    return (cipher ^ (state >> numpy.uint64(8))).astype(numpy.uint8).tobytes()
 
 
 def internal_decrypt(data: bytes, key: int) -> bytes:
+    if len(data) >= internal_DECRYPT_NUMPY_THRESHOLD:
+        return internal_decrypt_numpy(data, key)
     output = bytearray(len(data))
     state = key
     for index, cipher in enumerate(data):
