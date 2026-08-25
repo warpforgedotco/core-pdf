@@ -1760,6 +1760,7 @@ def chemical_subscript_prefix_text(text: str) -> bool:
     return bool(stripped) and stripped[-1:].isalpha() and stripped[-1:].isupper()
 
 
+@lru_cache(maxsize=1024)
 def is_private_use_or_control(ch: str) -> bool:
     codepoint = ord(ch)
     if ch in "\t\n\r":

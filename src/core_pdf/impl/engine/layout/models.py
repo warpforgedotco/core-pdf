@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from itertools import islice
 from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple, TypeAlias
 
 if TYPE_CHECKING:
@@ -502,13 +503,18 @@ def reconstruct_cached_layout_line_text(
     runs: list[TextRun],
     *,
     is_all_caps_text: bool | None = None,
+    internal_key: LayoutLineReconstructionKey | None = None,
 ) -> LayoutLineText:
     """Reconstruct a line once for every revision of its constituent runs."""
     from core_pdf.impl.engine.layout.text_lines import reconstruct_layout_line_text
 
     key: LayoutLineReconstructionKey = (
-        is_all_caps_text,
-        tuple((run, run.internal_revision, tuple(run.coords)) for run in runs),
+        internal_key
+        if internal_key is not None
+        else (
+            is_all_caps_text,
+            tuple((run, run.internal_revision, tuple(run.coords)) for run in runs),
+        )
     )
     first_run = runs[0] if runs else None
     shared_cache = first_run.internal_layout_reconstruction_cache if first_run is not None else None
@@ -617,7 +623,7 @@ class LayoutLine:
             text_run_y1 = TextRun.Y1
             text_run_font_size = TextRun.FONT_SIZE
 
-            for run in run_list[1:]:
+            for run in islice(run_list, 1, None):
                 coords = run.coords
                 run_x0 = coords[text_run_x0]
                 run_y0 = coords[text_run_y0]
@@ -677,6 +683,7 @@ class LayoutLine:
         reconstructed = reconstruct_cached_layout_line_text(
             self.runs,
             is_all_caps_text=self.is_all_caps_text,
+            internal_key=key,
         )
         self.internal_reconstructed_cache = reconstructed
         self.internal_reconstructed_cache_key = key
