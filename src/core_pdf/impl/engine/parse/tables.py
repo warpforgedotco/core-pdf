@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import re
+from bisect import bisect_right
 from collections import Counter, defaultdict
 from dataclasses import replace
 from itertools import combinations
@@ -300,17 +301,17 @@ def internal_split_grid_component(
 
 
 def internal_cell_text(observations: ObservationBatch, indexes: list[int]) -> str:
+    boxes = observations.bbox[indexes]
+    centers = ((boxes[:, 1] + boxes[:, 3]) * 0.5).tolist()
+    lefts = boxes[:, 0].tolist()
+    sequences = observations.sequence[indexes].tolist()
     ordered = sorted(
-        indexes,
-        key=lambda index: (
-            -float((observations.bbox[index, 1] + observations.bbox[index, 3]) * 0.5),
-            float(observations.bbox[index, 0]),
-            int(observations.sequence[index]),
-        ),
+        range(len(indexes)),
+        key=lambda position: (-centers[position], lefts[position], sequences[position]),
     )
     parts = []
-    for index in ordered:
-        part = collapse_ws(observations.text[index])
+    for position in ordered:
+        part = collapse_ws(observations.text[indexes[position]])
         if part and not (len(part) >= 4 and set(part) <= {".", "…"}):
             parts.append(part)
     return " ".join(parts)
@@ -498,32 +499,32 @@ def internal_merge_grid_cells(
 
 
 def internal_text_rows(observations: ObservationBatch) -> list[list[int]]:
-    visible = tuple(
+    visible_flags = observations.visible.tolist()
+    rotations = observations.rotation.tolist()
+    visible = [
         index
         for index, text in enumerate(observations.text)
-        if bool(observations.visible[index])
-        and text.strip()
-        and int(observations.rotation[index]) == 0
-    )
+        if visible_flags[index] and text.strip() and rotations[index] == 0
+    ]
     if not visible:
         return []
+    # Unbox the sort/grouping columns once; per-element numpy indexing in sort
+    # keys costs a scalar box per access.
+    bbox = observations.bbox
+    all_centers = ((bbox[:, 1] + bbox[:, 3]) * 0.5).tolist()
+    all_lefts = bbox[:, 0].tolist()
+    all_heights = (bbox[:, 3] - bbox[:, 1]).tolist()
+    sequences = observations.sequence.tolist()
     ordered = sorted(
         visible,
-        key=lambda index: (
-            -float((observations.bbox[index, 1] + observations.bbox[index, 3]) * 0.5),
-            float(observations.bbox[index, 0]),
-            int(observations.sequence[index]),
-        ),
+        key=lambda index: (-all_centers[index], all_lefts[index], sequences[index]),
     )
     rows: list[list[int]] = []
     centers: list[float] = []
     heights: list[float] = []
     for index in ordered:
-        center = float((observations.bbox[index, 1] + observations.bbox[index, 3]) * 0.5)
-        height = max(
-            1.0,
-            float(observations.bbox[index, 3] - observations.bbox[index, 1]),
-        )
+        center = all_centers[index]
+        height = max(1.0, all_heights[index])
         if rows and abs(center - centers[-1]) <= max(2.0, min(height, heights[-1]) * 0.5):
             count = len(rows[-1])
             rows[-1].append(index)
@@ -533,16 +534,7 @@ def internal_text_rows(observations: ObservationBatch) -> list[list[int]]:
             rows.append([index])
             centers.append(center)
             heights.append(height)
-    return [
-        sorted(
-            row,
-            key=lambda index: (
-                float(observations.bbox[index, 0]),
-                int(observations.sequence[index]),
-            ),
-        )
-        for row in rows
-    ]
+    return [sorted(row, key=lambda index: (all_lefts[index], sequences[index])) for row in rows]
 
 
 def internal_row_center(observations: ObservationBatch, row: list[int]) -> float:
@@ -559,12 +551,13 @@ def internal_aligned_column_clusters(
     minimum_rows: int = 2,
 ) -> list[list[tuple[int, int]]]:
     tolerance = max(COLUMN_TOLERANCE, min(24.0, page_width * 0.04))
+    all_lefts = observations.bbox[:, 0].tolist()
+    all_widths = (observations.bbox[:, 2] - observations.bbox[:, 0]).tolist()
+    sequences = observations.sequence.tolist()
     positions = [
-        (float(observations.bbox[index, 0]), row_index, index)
-        for row_index, row in enumerate(rows)
-        for index in row
+        (all_lefts[index], row_index, index) for row_index, row in enumerate(rows) for index in row
     ]
-    positions.sort(key=lambda item: (item[0], item[1], int(observations.sequence[item[2]])))
+    positions.sort(key=lambda item: (item[0], item[1], sequences[item[2]]))
     clusters: list[list[tuple[int, int]]] = []
     means: list[float] = []
     for x, row_index, index in positions:
@@ -578,10 +571,7 @@ def internal_aligned_column_clusters(
     candidates = []
     for cluster in clusters:
         row_support = {row_index for row_index, internal_index in cluster}
-        widths = [
-            float(observations.bbox[index, 2] - observations.bbox[index, 0])
-            for internal_row_index, index in cluster
-        ]
+        widths = [all_widths[index] for internal_row_index, index in cluster]
         alphanumeric = sum(
             any(character.isalnum() for character in observations.text[index])
             for internal_row_index, index in cluster
@@ -643,11 +633,15 @@ def internal_stream_table(
     ]
     if len(columns) < 2:
         return None
+    all_x0 = observations.bbox[:, 0].tolist()
+    all_y0 = observations.bbox[:, 1].tolist()
+    all_x1 = observations.bbox[:, 2].tolist()
+    all_y1 = observations.bbox[:, 3].tolist()
     column_centers = numpy.asarray(
         [
             finite_median(
                 numpy.asarray(
-                    [float(observations.bbox[index, 0]) for internal_row_index, index in column],
+                    [all_x0[index] for internal_row_index, index in column],
                     dtype=numpy.float32,
                 )
             )
@@ -667,9 +661,9 @@ def internal_stream_table(
         return None
     edges = numpy.empty(len(columns) + 1, dtype=numpy.float32)
     edges[1:-1] = (column_centers[:-1] + column_centers[1:]) * 0.5
-    edges[0] = min(float(observations.bbox[index, 0]) for row in selected for index in row)
+    edges[0] = min(all_x0[index] for row in selected for index in row)
     edges[-1] = max(
-        float(observations.bbox[index, 2])
+        all_x1[index]
         for column in columns
         for row_index, index in column
         if support[0] <= row_index <= support[-1]
@@ -677,31 +671,34 @@ def internal_stream_table(
     if numpy.any(numpy.diff(edges) <= 2.0):
         return None
 
+    edge_list = edges.tolist()
+    right_edge_limit = edge_list[-1] + COLUMN_TOLERANCE
+    column_count = len(columns)
     table_rows: list[tuple[TableCell, ...]] = []
     populated = 0
-    numeric_by_column = [0] * len(columns)
+    numeric_by_column = [0] * column_count
     text_lengths = 0
     for row_index, row in enumerate(selected):
         cells: list[list[int]] = [[] for internal_column in columns]
         for index in row:
-            x0 = float(observations.bbox[index, 0])
-            x1 = float(observations.bbox[index, 2])
+            x0 = all_x0[index]
+            x1 = all_x1[index]
             x_center = (x0 + x1) * 0.5
-            column = int(numpy.searchsorted(edges, x_center, side="right") - 1)
-            if not (0 <= column < len(columns)):
+            column = bisect_right(edge_list, x_center) - 1
+            if not (0 <= column < column_count):
                 # Fallback to max interval overlap or left-edge proximity
                 best_col = 0
                 max_ov = -1.0
-                for c_idx in range(len(columns)):
-                    ov = max(0.0, min(x1, float(edges[c_idx + 1])) - max(x0, float(edges[c_idx])))
+                for c_idx in range(column_count):
+                    ov = max(0.0, min(x1, edge_list[c_idx + 1]) - max(x0, edge_list[c_idx]))
                     if ov > max_ov:
                         max_ov = ov
                         best_col = c_idx
                 if max_ov > 0.0:
                     column = best_col
-                elif column < 0 and x0 <= float(edges[-1]) + COLUMN_TOLERANCE:
+                elif column < 0 and x0 <= right_edge_limit:
                     column = 0
-            if 0 <= column < len(columns) and x0 <= float(edges[-1]) + COLUMN_TOLERANCE:
+            if 0 <= column < column_count and x0 <= right_edge_limit:
                 cells[column].append(index)
         texts = [internal_cell_text(observations, cell) for cell in cells]
         if not any(texts):
@@ -711,15 +708,15 @@ def internal_stream_table(
         for column, is_numeric in enumerate(numeric_cells):
             numeric_by_column[column] += int(is_numeric)
         text_lengths += sum(len(text) for text in texts)
-        y0 = min(float(observations.bbox[index, 1]) for index in row)
-        y1 = max(float(observations.bbox[index, 3]) for index in row)
+        y0 = min(all_y0[index] for index in row)
+        y1 = max(all_y1[index] for index in row)
         table_rows.append(
             tuple(
                 TableCell(
                     row=len(table_rows),
                     column=column,
                     text=text,
-                    bbox=(float(edges[column]), y0, float(edges[column + 1]), y1),
+                    bbox=(edge_list[column], y0, edge_list[column + 1], y1),
                 )
                 for column, text in enumerate(texts)
             )
@@ -1510,21 +1507,26 @@ def internal_table_from_component(
     x0, x1 = float(x_edges[0]), float(x_edges[-1])
     y0, y1 = float(y_edges[-1]), float(y_edges[0])
     cell_observations: dict[tuple[int, int], list[int]] = defaultdict(list)
-    candidate_indexes = (
-        observation_index.intersecting((x0, y0, x1, y1))
-        if observation_index is not None
-        else range(len(observations))
-    )
-    for index in candidate_indexes:
-        index = int(index)
-        if observation_index is None and not bool(observations.visible[index]):
-            continue
-        center_x = float((observations.bbox[index, 0] + observations.bbox[index, 2]) * 0.5)
-        center_y = float((observations.bbox[index, 1] + observations.bbox[index, 3]) * 0.5)
+    if observation_index is not None:
+        candidate_indexes = [
+            int(index) for index in observation_index.intersecting((x0, y0, x1, y1))
+        ]
+    else:
+        visible = observations.visible.tolist()
+        candidate_indexes = [index for index in range(len(observations)) if visible[index]]
+    # Compute centers vectorized (keeping the bbox dtype's rounding) and search
+    # edges with bisect on plain lists; scalar numpy searchsorted costs a full
+    # dispatch per call.
+    candidate_boxes = observations.bbox[candidate_indexes]
+    center_xs = ((candidate_boxes[:, 0] + candidate_boxes[:, 2]) * 0.5).tolist()
+    center_ys = ((candidate_boxes[:, 1] + candidate_boxes[:, 3]) * 0.5).tolist()
+    x_edge_list = x_edges.tolist()
+    negated_y_edges = (-y_edges).tolist()
+    for index, center_x, center_y in zip(candidate_indexes, center_xs, center_ys):
         if not (x0 <= center_x <= x1 and y0 <= center_y <= y1):
             continue
-        column = int(numpy.searchsorted(x_edges, center_x, side="right") - 1)
-        row = int(numpy.searchsorted(-y_edges, -center_y, side="right") - 1)
+        column = bisect_right(x_edge_list, center_x) - 1
+        row = bisect_right(negated_y_edges, -center_y) - 1
         if column == columns:
             column -= 1
         if row == row_count:
