@@ -394,6 +394,44 @@ class internal_RasterTarget:
         ix0, iy0, ix1, iy1 = pixel_box
         rectangular_clip = self.clip_paths_are_axis_aligned_rects()
         pixels = self.pixels
+        # page_box_to_pixels expands outward (floor left/top, ceil right/bottom),
+        # so filling ix0:ix1 solid paints whole pixels the rectangle only partly
+        # covers. Every axis-aligned fill went through here unantialiased: on
+        # IRS-2023-Form-1095-A the three 1.57px-wide "I" glyphs of "Part III",
+        # 1.39px apart, each grew to three whole pixels and merged into one solid
+        # white block. A rectangle that lands on pixel boundaries still takes the
+        # memset path below; one that does not gets its exact coverage, which is
+        # separable -- full in the interior, fractional in the edge row/column.
+        scale = self.scale
+        left = (x0 - self.crop_x0) * scale
+        right = (x1 - self.crop_x0) * scale
+        top = (self.crop_y1 - y1) * scale
+        bottom = (self.crop_y1 - y0) * scale
+        if (
+            rectangular_clip
+            and blend_mode is None
+            and buffer_stack[-1][1] is None
+            and not (
+                left <= ix0 + 1e-9
+                and right >= ix1 - 1e-9
+                and top <= iy0 + 1e-9
+                and bottom >= iy1 - 1e-9
+            )
+        ):
+            columns = numpy.arange(ix0, ix1, dtype=numpy.float64)
+            rows = numpy.arange(iy0, iy1, dtype=numpy.float64)
+            x_coverage = numpy.clip(
+                numpy.minimum(columns + 1.0, right) - numpy.maximum(columns, left), 0.0, 1.0
+            )
+            y_coverage = numpy.clip(
+                numpy.minimum(rows + 1.0, bottom) - numpy.maximum(rows, top), 0.0, 1.0
+            )
+            internal_blend_normal_alpha_array_numpy(
+                self.pixel_view(pixels)[iy0:iy1, ix0:ix1],
+                rgba,
+                numpy.rint(numpy.outer(y_coverage, x_coverage) * rgba[3]).astype(numpy.uint8),
+            )
+            return
         if (
             rgba[3] == 255
             and blend_mode is None
