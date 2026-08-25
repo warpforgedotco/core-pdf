@@ -11,6 +11,7 @@ extraction reads the per-field iterators and never materializes rows.
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Iterable, Iterator
 from typing import Any
 
@@ -203,16 +204,20 @@ class GlyphTable:
     deliberately unsupported — no consumer slices the page table.
 
     Row identity is stable for the lifetime of the table (materialize-once),
-    so facades that hold rows and key maps by ``id()`` keep working. The
-    engine extraction pipeline reads the ``iter_*`` field iterators instead
-    and never triggers materialization.
+    so facades that hold rows and key maps by ``id()`` keep working. Page
+    programs are cached per page and pages are interpreted on pool workers,
+    so the first materialization is guarded: without it two workers could
+    each build a row tuple and the surviving identity would be whichever
+    stored last. The engine extraction pipeline reads the ``iter_*`` field
+    iterators instead and never triggers materialization.
     """
 
-    __slots__ = ("internal_entries", "internal_materialized")
+    __slots__ = ("internal_entries", "internal_materialized", "internal_lock")
 
     def __init__(self, entries: tuple[internal_GlyphEntry, ...]) -> None:
         self.internal_entries = entries
         self.internal_materialized: tuple[GlyphObservation, ...] | None = None
+        self.internal_lock = threading.Lock()
 
     @classmethod
     def from_rows(cls, rows: Iterable[GlyphObservation], *, validate: bool = True) -> GlyphTable:
@@ -226,10 +231,17 @@ class GlyphTable:
         return table
 
     def internal_rows(self) -> tuple[GlyphObservation, ...]:
+        # Double-checked: once materialized every later access is a single
+        # attribute read, so the renderer's per-glyph indexing pays no lock.
         materialized = self.internal_materialized
         if materialized is None:
-            materialized = tuple(internal_materialize(entry) for entry in self.internal_entries)
-            self.internal_materialized = materialized
+            with self.internal_lock:
+                materialized = self.internal_materialized
+                if materialized is None:
+                    materialized = tuple(
+                        internal_materialize(entry) for entry in self.internal_entries
+                    )
+                    self.internal_materialized = materialized
         return materialized
 
     def __iter__(self) -> Iterator[GlyphObservation]:
