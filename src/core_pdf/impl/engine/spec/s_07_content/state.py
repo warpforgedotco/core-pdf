@@ -16,6 +16,7 @@ if TYPE_CHECKING:
 
 from core_pdf.impl.engine.image_cache import ImageCache
 from core_pdf.impl.engine.layout.geometry import RectBox
+from core_pdf.impl.engine.layout.glyph_table import GlyphSegment, GlyphTableBuilder
 from core_pdf.impl.engine.layout.glyphs import GlyphCluster, GlyphObservation
 from core_pdf.impl.engine.layout.models import TextRun
 from core_pdf.impl.engine.spec.s_07_content.capture import (
@@ -23,7 +24,6 @@ from core_pdf.impl.engine.spec.s_07_content.capture import (
     CapturedInlineImage,
     CapturedLine,
     CapturedPath,
-    apply_glyph_geometry_to_run,
     can_merge_cross_font_word,
     gap_separator,
     glyph_bitmap_dimensions,
@@ -168,7 +168,7 @@ class TextState:
     capture_graphics: bool
     compat_tj_decoder: FontDecoder | None
     runs: list[TextRun]
-    glyphs: list[GlyphObservation]
+    glyphs: GlyphTableBuilder
     glyph_clusters: list[GlyphCluster]
     lines: list[CapturedLine]
     drawings: list[CapturedDrawing]
@@ -420,7 +420,7 @@ class TextState:
         self.capture_graphics = True
         self.capture_clipping = True
         self.runs = []
-        self.glyphs = []
+        self.glyphs = GlyphTableBuilder()
         self.glyph_clusters = []
         self.lines = []
         self.drawings = []
@@ -1829,13 +1829,23 @@ class TextState:
         glyphs: tuple[DecodedGlyph, ...] | None = None,
         string_syntax: str | None = None,
         compatibility_data: bytes | None = None,
-    ) -> None:
+    ) -> (
+        tuple[tuple[float, float, float, float], tuple[float, float, float, float], float | None]
+        | None
+    ):
+        """Record observations and return their (advance union, ink union, min
+        confidence) aggregate, or ``None`` when nothing was recorded.
+
+        The aggregate replicates ``apply_glyph_geometry_to_run`` exactly —
+        same comparison operators over the same values in append order — so
+        the caller can skip re-scanning the appended slice.
+        """
         if not self.capture_glyphs:
-            return
+            return None
         if glyphs is None:
             glyphs = decoder.decode_glyphs(data)
         if not glyphs:
-            return
+            return None
 
         offset = 0.0
         seqno = self.sequence
@@ -1891,7 +1901,9 @@ class TextState:
             combined_c,
             combined_d,
         )
-        append_glyph = self.glyphs.append
+        append_glyph = self.glyphs.append_row
+        glyph_rows = self.glyphs.rows
+        append_glyph_row = glyph_rows.append
         chunk_advance = self.chunk_advance
         glyph_bbox_for_code = decoder.glyph_bbox
         glyph_bbox_cache = decoder.glyph_bbox_cache
@@ -1967,6 +1979,36 @@ class TextState:
             if axis_advance_y0 > axis_advance_y1:
                 axis_advance_y0, axis_advance_y1 = axis_advance_y1, axis_advance_y0
             axis_baseline_y = text_basis[1] + rise * combined_d
+        # One segment carries every op-constant observation field for this
+        # text-showing operation; fast-path glyphs append compact row tuples
+        # that reference it instead of full observations.
+        segment = GlyphSegment(
+            seqno,
+            effective_font_name,
+            font_size,
+            effective_font_size,
+            effective_font_height,
+            fill,
+            rotation_angle,
+            decoder,
+            render_mode,
+            fill_opacity,
+            stroke_color,
+            stroke_opacity,
+            glyph_line_width,
+            line_cap,
+            line_join,
+            glyph_dash_pattern,
+            blend_mode,
+            group_alpha,
+            text_object_id,
+        )
+        # Running union of the appended observations' geometry, mirroring
+        # apply_glyph_geometry_to_run so the caller need not rescan the slice.
+        run_geometry_started = False
+        run_advance_x0 = run_advance_y0 = run_advance_x1 = run_advance_y1 = 0.0
+        run_ink_x0 = run_ink_y0 = run_ink_x1 = run_ink_y1 = 0.0
+        run_confidence: float | None = None
         for glyph in glyphs:
             advance = (
                 chunk_advance(
@@ -2142,7 +2184,6 @@ class TextState:
                 else should_capture_suspicious_multi_glyph_bitmap(chunk_text)
             )
             if single_character or suspicious_multi:
-                bitmap: tuple[int, ...] = ()
                 bitmap_width = 0
                 bitmap_height = 0
                 bitmap_code: int | None = None
@@ -2156,64 +2197,72 @@ class TextState:
                         font_size,
                     )
                     bitmap_code = glyph.bitmap_code
-                observation = GlyphObservation(
-                    chunk_text,
-                    rect,
-                    advance_bbox,
-                    seqno,
-                    glyph.code_bytes,
-                    glyph.char_code,
-                    glyph.cid,
-                    glyph.gid,
-                    effective_font_name,
-                    font_size,
-                    baseline,
-                    rotation_angle,
-                    fill,
-                    observation_visible,
-                    observation_confidence,
-                    glyph.unicode_source,
-                    glyph.alternates,
-                    bitmap,
-                    bitmap_width,
-                    bitmap_height,
-                    bitmap_code,
-                    decoder,
-                    effective_font_size,
-                    effective_font_height,
-                    observation_provenance,
-                    glyph_transform=outline_transform,
-                    text_render_mode=render_mode,
-                    fill_opacity=fill_opacity,
-                    stroke_color=stroke_color,
-                    stroke_opacity=stroke_opacity,
-                    line_width=glyph_line_width,
-                    line_cap=line_cap,
-                    line_join=line_join,
-                    dash_pattern=glyph_dash_pattern,
-                    blend_mode=blend_mode,
-                    soft_mask_alpha=group_alpha,
-                    text_object_id=text_object_id,
-                    cluster_key=cluster_provenance_id,
-                )
-                append_glyph(observation)
-                # Single-glyph fast path: glyph_cluster_from_observations, given one
-                # observation, only re-derives advance_bbox/ink_bbox/confidence/etc. from
-                # fields already sitting in locals here (rect, advance_bbox,
-                # observation_confidence, baseline) -- construct the
-                # GlyphCluster directly instead of a round trip through GlyphObservation's
-                # advance_bbox/ink_bbox properties.
-                clusters.append(
-                    GlyphCluster(
-                        cluster_id=cluster_id,
-                        text=chunk_text,
-                        glyphs=(observation,),
-                        advance_bbox=observation.advance_bbox,
-                        ink_bbox=rect,
-                        baseline=baseline,
-                        confidence=observation_confidence,
+                # Single-glyph fast path: append one compact row and a cluster
+                # referencing it; the full GlyphObservation materializes only
+                # if a row-level consumer asks for it.
+                append_glyph_row(
+                    (
+                        segment,
+                        chunk_text,
+                        rect,
+                        advance_bbox,
+                        baseline,
+                        glyph.code_bytes,
+                        glyph.char_code,
+                        glyph.cid,
+                        glyph.gid,
+                        observation_visible,
+                        observation_confidence,
+                        glyph.unicode_source,
+                        glyph.alternates,
+                        bitmap_width,
+                        bitmap_height,
+                        bitmap_code,
+                        outline_transform,
+                        observation_provenance,
+                        cluster_id,
                     )
                 )
+                clusters.append(
+                    GlyphCluster.from_row(
+                        glyph_rows,
+                        len(glyph_rows) - 1,
+                        cluster_id,
+                        chunk_text,
+                        advance_bbox,
+                        rect,
+                        baseline,
+                        observation_confidence,
+                    )
+                )
+                if run_geometry_started:
+                    box_x0, box_y0, box_x1, box_y1 = advance_bbox
+                    if box_x0 < run_advance_x0:
+                        run_advance_x0 = box_x0
+                    if box_y0 < run_advance_y0:
+                        run_advance_y0 = box_y0
+                    if box_x1 > run_advance_x1:
+                        run_advance_x1 = box_x1
+                    if box_y1 > run_advance_y1:
+                        run_advance_y1 = box_y1
+                    box_x0, box_y0, box_x1, box_y1 = rect
+                    if box_x0 < run_ink_x0:
+                        run_ink_x0 = box_x0
+                    if box_y0 < run_ink_y0:
+                        run_ink_y0 = box_y0
+                    if box_x1 > run_ink_x1:
+                        run_ink_x1 = box_x1
+                    if box_y1 > run_ink_y1:
+                        run_ink_y1 = box_y1
+                    if observation_confidence is not None and (
+                        run_confidence is None or observation_confidence < run_confidence
+                    ):
+                        run_confidence = observation_confidence
+                else:
+                    run_geometry_started = True
+                    run_advance_x0, run_advance_y0, run_advance_x1, run_advance_y1 = advance_bbox
+                    run_ink_x0, run_ink_y0, run_ink_x1, run_ink_y1 = rect
+                    run_confidence = observation_confidence
                 offset += advance
                 continue
 
@@ -2325,6 +2374,37 @@ class TextState:
                 )
             for observation in cluster_observations:
                 append_glyph(observation)
+                if run_geometry_started:
+                    box_x0, box_y0, box_x1, box_y1 = observation.advance_bbox
+                    if box_x0 < run_advance_x0:
+                        run_advance_x0 = box_x0
+                    if box_y0 < run_advance_y0:
+                        run_advance_y0 = box_y0
+                    if box_x1 > run_advance_x1:
+                        run_advance_x1 = box_x1
+                    if box_y1 > run_advance_y1:
+                        run_advance_y1 = box_y1
+                    box_x0, box_y0, box_x1, box_y1 = observation.ink_bbox
+                    if box_x0 < run_ink_x0:
+                        run_ink_x0 = box_x0
+                    if box_y0 < run_ink_y0:
+                        run_ink_y0 = box_y0
+                    if box_x1 > run_ink_x1:
+                        run_ink_x1 = box_x1
+                    if box_y1 > run_ink_y1:
+                        run_ink_y1 = box_y1
+                    glyph_confidence = observation.confidence
+                    if glyph_confidence is not None and (
+                        run_confidence is None or glyph_confidence < run_confidence
+                    ):
+                        run_confidence = glyph_confidence
+                else:
+                    run_geometry_started = True
+                    run_advance_x0, run_advance_y0, run_advance_x1, run_advance_y1 = (
+                        observation.advance_bbox
+                    )
+                    run_ink_x0, run_ink_y0, run_ink_x1, run_ink_y1 = observation.ink_bbox
+                    run_confidence = observation.confidence
             cluster = glyph_cluster_from_observations(
                 cluster_id,
                 chunk_text,
@@ -2338,6 +2418,13 @@ class TextState:
             self.compat_tj_cursor_x = compat_cursor_x
             self.compat_tj_cursor_y = compat_cursor_y
             self.compat_tj_need_charspace = compat_need_charspace
+        if not run_geometry_started:
+            return None
+        return (
+            (run_advance_x0, run_advance_y0, run_advance_x1, run_advance_y1),
+            (run_ink_x0, run_ink_y0, run_ink_x1, run_ink_y1),
+            run_confidence,
+        )
 
     def _append_text_impl(
         self: Any,
@@ -2573,8 +2660,8 @@ class TextState:
                     string_syntax=string_syntax,
                     compatibility_data=compatibility_data,
                 )
-                actual_text_span.compatibility_glyphs.extend(self.glyphs[glyph_start:])
-                del self.glyphs[glyph_start:]
+                actual_text_span.compatibility_glyphs.extend(self.glyphs.extract_rows(glyph_start))
+                self.glyphs.truncate(glyph_start)
                 del self.glyph_clusters[cluster_start:]
             actual_text_span.add_extents(
                 x0=x0,
@@ -2706,9 +2793,8 @@ class TextState:
                 confidence=None,
             )
         if self.capture_glyphs:
-            glyph_start = len(self.glyphs)
             cluster_start = len(self.glyph_clusters)
-            self.record_glyph_observations(
+            run_geometry = self.record_glyph_observations(
                 text,
                 data,
                 decoder,
@@ -2718,11 +2804,15 @@ class TextState:
                 string_syntax=string_syntax,
                 compatibility_data=compatibility_data,
             )
-            apply_glyph_geometry_to_run(
-                new_run,
-                self.glyphs[glyph_start:],
-                tuple(self.glyph_clusters[cluster_start:]),
-            )
+            recorded_clusters = tuple(self.glyph_clusters[cluster_start:])
+            if recorded_clusters:
+                new_run.glyph_clusters = recorded_clusters
+            if run_geometry is not None:
+                run_advance_bbox, run_ink_bbox, run_confidence = run_geometry
+                new_run.advance_bbox = run_advance_bbox
+                new_run.ink_bbox = run_ink_bbox
+                if run_confidence is not None:
+                    new_run.confidence = run_confidence
 
         self.update_pending_run(new_run)
 
@@ -3631,7 +3721,7 @@ class TextState:
             )
             self.update_pending_run(new_run)
         if self.capture_glyphs and entry.advance_bbox is not None:
-            self.glyphs.append(
+            self.glyphs.append_row(
                 GlyphObservation(
                     text=actual_text,
                     ink_bbox=entry.ink_bbox or entry.advance_bbox,
