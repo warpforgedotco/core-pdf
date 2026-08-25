@@ -29,7 +29,6 @@ from core_pdf.impl.primitives import PdfReference
 PdfInput = str | PathLike[str] | bytes | bytearray | BytesIO
 BBox = tuple[float, float, float, float]
 GraphicsState = tuple[list[float], str | None, float, float]
-internal_INFERRED_SPACE = "\U000f0000"
 
 
 def internal_validate_pypdf_page_tree(pdf: PdfDocument) -> None:

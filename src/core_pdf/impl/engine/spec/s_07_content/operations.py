@@ -49,7 +49,6 @@ ContentOperand: TypeAlias = CachedPdfObject | InlineImage
 ContentOperands: TypeAlias = tuple[ContentOperand, ...]
 ContentOperation: TypeAlias = tuple[str, ContentOperands]
 
-WORD_BREAK_OR_WS = SEPARATOR_TABLE
 
 IS_WORD_START = bytes([0 if SEPARATOR_TABLE[i] else 1 for i in range(256)])
 
@@ -64,9 +63,6 @@ TEXT_CLIP_PREFIX_RE = re.compile(
 TEXT_SHOWING_CANDIDATES = (b'"', b"'", b"Tj", b"TJ", b"Do")
 TEXT_OR_LEXICAL_MARKER_RE = re.compile(rb"""[%(/<>\[\]"']|T[jJ]|Do|BI""")
 CONTAINER_LEXICAL_MARKER_RE = re.compile(rb"[%(<>\[\]]")
-GRAPHICS_PAINT_RE = re.compile(
-    rb"(?:^|[\x00\t\n\f\r ])(?:S|s|f|F|f\*|B|b|B\*|b\*|sh)(?=$|[\x00\t\n\f\r ])"
-)
 
 
 @dataclass(frozen=True, slots=True)
@@ -223,7 +219,7 @@ def count_content_stream_operators(data: bytes | memoryview) -> ContentOperatorC
     )
 
 
-def skip_text_clip_prefix(raw_bytes: bytes | memoryview, pos: int, data_len: int) -> int | None:
+def skip_text_clip_prefix(raw_bytes: bytes | memoryview, pos: int) -> int | None:
     match = TEXT_CLIP_PREFIX_RE.match(raw_bytes, pos)
     if match is None:
         return None
@@ -484,7 +480,7 @@ def dispatch_operations(
     source_bytes = full_source_bytes(raw_data)
     raw_bytes = source_bytes if source_bytes is not None else raw_data
 
-    word_break_or_ws = WORD_BREAK_OR_WS
+    word_break_or_ws = SEPARATOR_TABLE
     ws_table = WS_TABLE
     is_word_start = IS_WORD_START
     op_get = op_handlers.get
@@ -1047,7 +1043,7 @@ def dispatch_operations(
                     if n_raw == 1:
                         op0 = raw_bytes[pos - 1]
                         if op0 == 113 and op_count == 0:
-                            skipped_pos = skip_text_clip_prefix(raw_bytes, pos, data_len)
+                            skipped_pos = skip_text_clip_prefix(raw_bytes, pos)
                             if skipped_pos is not None:
                                 skipped_clip_q_count += 1
                                 pos = skipped_pos

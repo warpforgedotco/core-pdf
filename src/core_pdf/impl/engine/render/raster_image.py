@@ -25,7 +25,6 @@ class RasterImage:
     width: int
     height: int
     channels: int
-    raw_jpeg_bytes: bytes | None = None
     internal_tesseract_pixels: bytes | None = field(
         default=None, init=False, repr=False, compare=False
     )

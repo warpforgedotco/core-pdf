@@ -479,15 +479,6 @@ class TextSpan:
     sequence: int | None = None
 
 
-def synthesize_characters(
-    text: str, box: tuple[float, float, float, float]
-) -> Iterator[tuple[str, tuple[float, float, float, float]]]:
-    x0, y0, x1, y1 = box
-    width = (x1 - x0) / max(1, len(text))
-    for index, character in enumerate(text):
-        yield character, (x0 + index * width, y0, x0 + (index + 1) * width, y1)
-
-
 @dataclass(slots=True)
 class LAParams:
     """pdfminer.six layout parameters accepted by the compatibility facade."""
@@ -592,7 +583,6 @@ class LTChar(LTComponent, LTText):
 @dataclass(slots=True)
 class LTTextLine(LTComponent, LTText):
     _objs: list[LTText | LTChar] = field(default_factory=list)
-    fragment_group: object | None = None
 
     def __iter__(self) -> Iterator[LTText | LTChar]:
         return iter(self._objs)
@@ -659,39 +649,6 @@ class LTPage(LTComponent):
 
 def _bbox(rect: Rect) -> tuple[float, float, float, float]:
     return (rect.x0, rect.y0, rect.x1, rect.y1)
-
-
-def _characters(span: TextSpan) -> Iterable[TextCharacter]:
-    if span.characters:
-        return span.characters
-    box = (span.bbox.x0, span.bbox.y0, span.bbox.x1, span.bbox.y1)
-    return tuple(
-        TextCharacter(
-            text=character,
-            bbox=Rect(*sub_box),
-            font_name=span.font_name,
-            font_size=span.font_size,
-            sequence=span.sequence,
-        )
-        for character, sub_box in synthesize_characters(span.text, box)
-    )
-
-
-def _character_span(characters: list[TextCharacter], source: TextSpan) -> TextSpan:
-    box = bbox_union(
-        (character.bbox.x0, character.bbox.y0, character.bbox.x1, character.bbox.y1)
-        for character in characters
-    )
-    if box is None:
-        raise ValueError("cannot build a span from zero characters")
-    return TextSpan(
-        text="".join(character.text for character in characters),
-        bbox=Rect(*box),
-        characters=tuple(characters),
-        font_name=source.font_name,
-        font_size=source.font_size,
-        sequence=characters[0].sequence,
-    )
 
 
 def _make_line(items: list[LTChar], params: LAParams) -> LTTextLine:

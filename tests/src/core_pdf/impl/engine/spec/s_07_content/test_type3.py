@@ -135,3 +135,71 @@ def test_type3_colorized_and_uncolored_glyph_semantics(
     assert len(state.drawings) == 1
     assert state.drawings[0].fill == expected_fill
     assert state.type3_uncolored is False
+
+
+@pytest.mark.parametrize(
+    ("operator", "operands", "attribute", "expected_space"),
+    [
+        ("op_g", (0,), "fill_color_space", "DeviceGray"),
+        ("op_rg", (0, 0, 1), "fill_color_space", "DeviceRGB"),
+        ("op_k", (0, 0, 0, 1), "fill_color_space", "DeviceCMYK"),
+        ("op_G", (0,), "stroke_color_space", "DeviceGray"),
+        ("op_RG", (0, 0, 1), "stroke_color_space", "DeviceRGB"),
+        ("op_K", (0, 0, 0, 1), "stroke_color_space", "DeviceCMYK"),
+    ],
+)
+def test_uncolored_type3_glyph_ignores_device_color_operators(
+    operator: str, operands: tuple[float, ...], attribute: str, expected_space: str
+) -> None:
+    """9.6.5.2: colour operators are ignored inside a d1 glyph, label included.
+
+    The colour setters already refuse to move the colour itself, so a colour
+    space that moved anyway would be a label describing a colour it does not
+    belong to. Nothing downstream reads the pair together today -- `scn` is
+    blocked by the same flag, and the stream frame restores both on the way
+    out -- so this pins an invariant rather than a visible defect.
+    """
+    state, _ = internal_type3_state(PdfStream(raw_data=b"500 0 d0"))
+    state.fill_color = (0.0, 1.0, 0.0)
+    state.stroke_color = (0.0, 1.0, 0.0)
+    state.fill_color_space = "DeviceRGB"
+    state.stroke_color_space = "DeviceRGB"
+    handler = getattr(state, operator)
+
+    state.type3_uncolored = True
+    handler(cast(Any, list(operands)), 0)
+
+    assert getattr(state, attribute) == "DeviceRGB"
+    assert state.fill_color == (0.0, 1.0, 0.0)
+    assert state.stroke_color == (0.0, 1.0, 0.0)
+
+    state.type3_uncolored = False
+    handler(cast(Any, list(operands)), 0)
+
+    assert getattr(state, attribute) == expected_space
+
+
+def test_uncolored_type3_glyph_ignores_the_color_space_operators() -> None:
+    """`cs` and `CS` are colour operators too, and were never guarded."""
+    state, _ = internal_type3_state(PdfStream(raw_data=b"500 0 d0"))
+    state.fill_color_space = "DeviceRGB"
+    state.stroke_color_space = "DeviceRGB"
+    state.type3_uncolored = True
+
+    state.op_cs(cast(Any, [PdfName(b"DeviceCMYK")]), 0)
+    state.op_CS(cast(Any, [PdfName(b"DeviceCMYK")]), 0)
+
+    assert state.fill_color_space == "DeviceRGB"
+    assert state.stroke_color_space == "DeviceRGB"
+
+
+def test_colored_type3_glyph_still_takes_its_own_color() -> None:
+    """The d0 counterpart must keep working: a coloured glyph owns its colour."""
+    stream = PdfStream(raw_data=b"500 0 d0 0 0 0 1 k 0 0 1 1 re f")
+    state, decoder = internal_type3_state(stream)
+    state.fill_color = (0.0, 1.0, 0.0)
+
+    state._render_type3_glyphs_impl(b"A", decoder)
+
+    assert len(state.drawings) == 1
+    assert state.drawings[0].fill == (0.0, 0.0, 0.0, 1.0)

@@ -171,10 +171,6 @@ class TextRun:
         self.internal_revision += 1
 
     @property
-    def mid_x(self) -> float:
-        return self.mid_x_value
-
-    @property
     def mid_y(self) -> float:
         return self.mid_y_value
 
@@ -530,7 +526,6 @@ def reconstruct_cached_layout_line_text(
 class LayoutWordSnapshot(NamedTuple):
     text: str
     bbox: tuple[float, float, float, float]
-    start_index: int
 
 
 class LayoutLine:
@@ -694,8 +689,6 @@ class LayoutLine:
         parts: list[str] = []
         words: list[LayoutWordSnapshot] = []
         word = ""
-        word_start = 0
-        text_len = 0
         word_x0 = word_y0 = word_x1 = word_y1 = 0.0
         append_part = parts.append
         append_word = words.append
@@ -704,13 +697,12 @@ class LayoutLine:
             nonlocal word, word_x0, word_y0, word_x1, word_y1
             if not word:
                 return
-            append_word(LayoutWordSnapshot(word, (word_x0, word_y0, word_x1, word_y1), word_start))
+            append_word(LayoutWordSnapshot(word, (word_x0, word_y0, word_x1, word_y1)))
             word = ""
 
         def extend_word(char: str, bbox: tuple[float, float, float, float]) -> None:
-            nonlocal word, word_start, word_x0, word_y0, word_x1, word_y1
+            nonlocal word, word_x0, word_y0, word_x1, word_y1
             if not word:
-                word_start = text_len
                 word_x0, word_y0, word_x1, word_y1 = bbox
             else:
                 word_x0 = min(word_x0, bbox[0])
@@ -720,12 +712,10 @@ class LayoutLine:
             word += char
 
         def append_space() -> None:
-            nonlocal text_len
             if parts and parts[-1] == " ":
                 return
             flush_word()
             append_part(" ")
-            text_len += 1
 
         for segment in reconstructed.segments:
             if segment.separator_before:
@@ -741,7 +731,6 @@ class LayoutLine:
                     flush_word()
                 extend_word(char, bbox)
                 append_part(char)
-                text_len += 1
 
         flush_word()
         return "".join(parts).rstrip(), tuple(words)

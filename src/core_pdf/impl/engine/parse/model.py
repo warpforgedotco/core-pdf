@@ -7,7 +7,7 @@ from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, fields
 from enum import IntEnum, StrEnum
-from typing import Any, cast
+from typing import Any, NamedTuple, cast
 
 import numpy
 
@@ -516,7 +516,6 @@ class GlyphEvidence:
     """Page-level evidence about whether glyph identifiers carry real Unicode."""
 
     glyph_count: int = 0
-    visible_glyphs: int = 0
     semantic_characters: int = 0
     authoritative_glyphs: int = 0
     heuristic_glyphs: int = 0
@@ -524,7 +523,6 @@ class GlyphEvidence:
     unsupported_glyphs: int = 0
     low_confidence_glyphs: int = 0
     actual_text_characters: int = 0
-    source_counts: tuple[tuple[str, int], ...] = ()
 
     @property
     def mapped_glyphs(self) -> int:
@@ -561,9 +559,7 @@ class StrokedVectorTextEvidence:
     trusted: bool = False
     drawing_indexes: tuple[int, ...] = ()
     bbox: tuple[float, float, float, float] | None = None
-    dominant_compact_paths: int = 0
     candidate_paths: int = 0
-    style_count: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -582,8 +578,6 @@ class PageEvidence:
     text_coverage: float = 0.0
     full_page_image: bool = False
     uncovered_vector_area: float | None = None
-    annotation_text: bool = False
-    layout_reasons: tuple[str, ...] = ()
     text_quality: TextQualityStats = field(default_factory=TextQualityStats)
     all_text_quality: TextQualityStats = field(default_factory=TextQualityStats)
     glyphs: GlyphEvidence = field(default_factory=GlyphEvidence)
@@ -865,7 +859,13 @@ class internal_Candidate:
     recognition_status: str = "not-run"
 
 
-def internal_text_utility_stats(text: str, confidence: float) -> tuple[int, int, float]:
+class internal_TextUtility(NamedTuple):
+    nonspace: int
+    alphanumeric: int
+    utility: float
+
+
+def internal_text_utility_stats(text: str, confidence: float) -> internal_TextUtility:
     """Return non-space count, alphanumeric count, and utility in one character scan."""
     # str.split() removes exactly the isspace() characters, and Counter over
     # a map counts in C; per-character casefold keeps expanding folds (one
@@ -873,7 +873,7 @@ def internal_text_utility_stats(text: str, confidence: float) -> tuple[int, int,
     stripped = "".join(text.split())
     nonspace = len(stripped)
     if not nonspace:
-        return 0, 0, 0.0
+        return internal_TextUtility(0, 0, 0.0)
     alphanumeric = sum(map(str.isalnum, stripped))
     counts = Counter(map(str.casefold, stripped))
     symbols = nonspace - alphanumeric
@@ -885,7 +885,7 @@ def internal_text_utility_stats(text: str, confidence: float) -> tuple[int, int,
         if dominant_ratio > 0.60:
             repetition_penalty = max(0.20, 1.0 - (dominant_ratio - 0.60) * 2.0)
     utility = (alphanumeric + symbol_credit) * confidence_factor * repetition_penalty
-    return nonspace, alphanumeric, utility
+    return internal_TextUtility(nonspace, alphanumeric, utility)
 
 
 def internal_candidate(

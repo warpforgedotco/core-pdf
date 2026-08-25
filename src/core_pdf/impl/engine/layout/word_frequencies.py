@@ -27,7 +27,7 @@ class WordFrequency:
 class WordRankIndex(Mapping[str, int]):
     """Read-only binary-search index backed directly by packaged byte buffer."""
 
-    __slots__ = ("internal_cm", "internal_count", "internal_data_start", "internal_mmap")
+    __slots__ = ("internal_count", "internal_data_start", "internal_mmap")
 
     def __init__(self, path_or_bytes: str | bytes) -> None:
         if isinstance(path_or_bytes, bytes):

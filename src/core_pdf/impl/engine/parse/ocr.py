@@ -81,6 +81,7 @@ from core_pdf.impl.engine.parse.model import (
     internal_candidate,
     internal_OCR_RESCUE_DENSE_MIN_CHARACTERS,
     internal_OCR_RESCUE_DENSE_MIN_CONFIDENCE,
+    internal_text_utility_stats,
 )
 from core_pdf.impl.engine.parse.ocr_bootstrap import internal_prepare_ocr_signals
 from core_pdf.impl.engine.parse.route import (
@@ -630,28 +631,6 @@ def internal_acceptable_text(
     return not (length >= 8 and same_char_count == length)
 
 
-def internal_observation_utility(text: str, confidence: float) -> float:
-    """Estimate useful recovered content without rewarding punctuation noise."""
-    nonspace_characters = [character for character in text if not character.isspace()]
-    if not nonspace_characters:
-        return 0.0
-    alphanumeric = sum(character.isalnum() for character in nonspace_characters)
-    symbols = len(nonspace_characters) - alphanumeric
-    # Symbols are useful in forms and schematics, but an unlimited symbol reward lets
-    # noisy segmentation beat a smaller, readable pass. Cap their contribution relative
-    # to actual text while preserving short labels such as "+5V" and "R/C".
-    symbol_credit = min(symbols, max(2.0, alphanumeric * 0.5)) * 0.30
-    confidence_factor = 0.25 + 0.75 * min(100.0, max(0.0, confidence)) / 100.0
-    repetition_penalty = 1.0
-    if len(nonspace_characters) >= 6:
-        dominant_ratio = max(
-            Counter(character.casefold() for character in nonspace_characters).values()
-        ) / len(nonspace_characters)
-        if dominant_ratio > 0.60:
-            repetition_penalty = max(0.20, 1.0 - (dominant_ratio - 0.60) * 2.0)
-    return (alphanumeric + symbol_credit) * confidence_factor * repetition_penalty
-
-
 def internal_select_character_filtered_candidate(
     raw: internal_Candidate,
     filtered: internal_Candidate,
@@ -715,9 +694,6 @@ internal_GRID_MAX_CELLS = 1200
 internal_GRID_MIN_CELLS = 12
 internal_GRID_CELL_MIN_CONFIDENCE = 50.0
 internal_PSM_SINGLE_LINE = 7
-
-
-internal_GRID_RULE_GAP_PX = 6
 
 
 def internal_close_row_gaps(mask: numpy.ndarray, gap: int) -> numpy.ndarray:
@@ -1591,7 +1567,7 @@ def internal_observation_coverage_grid(
         box_height = box_y1 - box_y0
         if box_width <= 0.0 or box_height <= 0.0:
             continue
-        utility = internal_observation_utility(text, float(confidence))
+        utility = internal_text_utility_stats(text, float(confidence)).utility
         if utility <= 0.0:
             continue
         column_start = max(0, min(columns - 1, int((box_x0 - x0) * columns / width)))
@@ -1651,7 +1627,7 @@ def internal_observation_utility_grid(
     )
     utility = numpy.fromiter(
         (
-            internal_observation_utility(text, float(confidence))
+            internal_text_utility_stats(text, float(confidence)).utility
             for text, confidence in zip(
                 (
                     text
@@ -2135,7 +2111,7 @@ def internal_merge_candidate_batches(
         )
         observation_utility = numpy.fromiter(
             (
-                internal_observation_utility(text, float(confidence))
+                internal_text_utility_stats(text, float(confidence)).utility
                 for text, confidence in zip(
                     combined.text,
                     combined.confidence,
@@ -2224,7 +2200,7 @@ def internal_augment_candidate(
     useful = numpy.fromiter(
         (
             (
-                internal_observation_utility(text, float(value)) >= 2.0
+                internal_text_utility_stats(text, float(value)).utility >= 2.0
                 or (len(text.strip()) == 1 and text.strip().isalnum() and float(value) >= 85.0)
             )
             for text, value in zip(observations.text, confidence, strict=True)

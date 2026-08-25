@@ -86,11 +86,12 @@ def test_embedded_type1_uses_actual_outlines_without_fallback() -> None:
     color_error = numpy.abs(pixels[..., :3].astype(int) - poppler.astype(int))
 
     # Poppler 26.07.0 at 72 DPI produces 3,761 antialiased foreground pixels
-    # in (134, 124, 381, 702). The engine intentionally emits a hard-edged
-    # 4,844-pixel mask with the same horizontal and top extent; its final edge
-    # lands one pixel lower because it does not partially cover edge pixels.
+    # in (134, 124, 381, 702). The engine now computes analytic coverage rather
+    # than sampling a 4x4 grid, so it does partially cover edge pixels: 3,975,
+    # down from the 4,844 of the hard-edged mask this used to assert and within
+    # 6% of Poppler instead of 29%.
     assert float(color_error.mean()) < 1.57
-    assert int(foreground.sum()) == 4844
+    assert int(foreground.sum()) == 3975
     assert (
         int(columns.min()),
         int(rows.min()),

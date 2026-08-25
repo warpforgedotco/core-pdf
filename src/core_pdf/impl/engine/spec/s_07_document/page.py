@@ -8,7 +8,6 @@ from collections import deque
 from typing import TYPE_CHECKING, Any, cast
 
 from core_pdf.impl.engine.cache import ExtractionCache
-from core_pdf.impl.engine.spec.s_07_content.capture import CapturedLine
 from core_pdf.impl.engine.spec.s_07_content.page_program import PageProgram
 from core_pdf.impl.engine.spec.s_07_content.state import TextState
 from core_pdf.impl.engine.spec.s_07_document.annotation_appearance import (
@@ -62,7 +61,6 @@ class PdfPage:
     contents: CachedPdfObject | None
     content_streams_cache: tuple[PdfStream, ...] | None
     page_program_cache: PageProgram | None
-    grid_lines: list[CapturedLine] | None
     text_lines: list[LayoutLine] | None
     links: list[RawLink] | MissingObject
     page_box_cache: dict[str, PageBoxCacheValue]
@@ -87,7 +85,6 @@ class PdfPage:
         self.contents = cast(CachedPdfObject | None, lookup_dict_key(self.page_dict, "Contents"))
         self.content_streams_cache = None
         self.page_program_cache = None
-        self.grid_lines = None
         self.links = MISSING
         self.text_lines = None
         self.page_box_cache = {}
@@ -345,11 +342,6 @@ class PdfPage:
             self.page_program_cache = program
             return program
 
-    def get_grid_lines(self) -> list[CapturedLine]:
-        if self.grid_lines is None:
-            self.grid_lines = list(self.get_page_program().products.lines)
-        return self.grid_lines
-
     def collect_inherited_values(self) -> InheritedValueMap:
         with document_cache_lock(self.document):
             return collect_inherited_values(
@@ -459,7 +451,3 @@ class PdfPage:
             page_width=self.width,
             page_height=self.height,
         )
-
-    @property
-    def lines(self) -> list[CapturedLine]:
-        return self.get_grid_lines()

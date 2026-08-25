@@ -31,7 +31,7 @@ def test_unembedded_base14_font_renders_deterministically() -> None:
     foreground = numpy.any(pixels[:, :, :3] != 255, axis=2)
     rows, columns = numpy.where(foreground)
 
-    assert internal_nonwhite_pixels(raster) == 3148
+    assert internal_nonwhite_pixels(raster) == 2997
     assert (
         int(columns.min()),
         int(rows.min()),

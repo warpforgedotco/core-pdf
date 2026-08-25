@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable
+from operator import itemgetter
 from typing import Any
 
 import numpy
@@ -29,6 +30,9 @@ from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_08_graphics.color import ImageColorManager
 from core_pdf.impl.engine.spec.s_08_graphics.color_kernels import (
     evaluate_sampled_tint_function,
+)
+from core_pdf.impl.engine.spec.s_08_graphics.device_profiles import (
+    cmyk_floats_to_srgb,
 )
 from core_pdf.impl.engine.spec.s_08_graphics.image_decode import (
     decode_pdf_image_samples,
@@ -359,6 +363,190 @@ def internal_blend_solid_array_numpy(
     target[..., 3] = numpy.clip(out_a_i, 0.0, 255.0).astype(numpy.uint8)
 
 
+def internal_group_offsets(
+    counts: numpy.ndarray[Any, Any],
+) -> tuple[numpy.ndarray[Any, Any], numpy.ndarray[Any, Any]]:
+    """Expand per-group counts into (group index, index within group) pairs."""
+    total = int(counts.sum())
+    if total == 0:
+        empty = numpy.empty(0, numpy.int64)
+        return empty, empty
+    group = numpy.repeat(numpy.arange(counts.size, dtype=numpy.int64), counts)
+    starts = numpy.zeros(counts.size, dtype=numpy.int64)
+    numpy.cumsum(counts[:-1], out=starts[1:])
+    return group, numpy.arange(total, dtype=numpy.int64) - starts[group]
+
+
+def internal_signed_area_coverage(
+    edges: numpy.ndarray[Any, Any],
+    width: int,
+    height: int,
+) -> numpy.ndarray[Any, Any]:
+    """Exact analytic coverage for a nonzero-wound polygon, in one vectorized pass.
+
+    Accumulates signed area per pixel the way font-rs and stb_truetype do, then
+    prefix-sums along x. Two properties matter here:
+
+    * Cost is O(sum of edge extents), not O(rows x edges). The sampling
+      rasterizer this replaces tested every edge against every sample row, so a
+      30-pixel glyph with 84 edges did ~2,000 intersections; here each edge
+      touches only the cells it actually crosses.
+    * Coverage is exact rather than quantized to the 17 levels a 4x4 sample grid
+      can express, so edges are smoother, not just cheaper.
+
+    ``edges`` is (n, 4) of x0, y0, x1, y1 in device pixels with y increasing
+    downward, already translated so the box origin is (0, 0). Returns an
+    (height, width) float array in [0, 1]. Nonzero winding only -- the
+    abs-and-clamp at the end is what makes it nonzero, and even-odd needs the
+    span-based path.
+    """
+    if height <= 0 or width <= 0 or edges.size == 0:
+        return numpy.zeros((max(height, 0), max(width, 0)), numpy.float64)
+    start_y = edges[:, 1]
+    end_y = edges[:, 3]
+    sloped = start_y != end_y
+    if not sloped.any():
+        return numpy.zeros((height, width), numpy.float64)
+    start_x = edges[sloped, 0]
+    end_x = edges[sloped, 2]
+    start_y = start_y[sloped]
+    end_y = end_y[sloped]
+
+    downward = end_y > start_y
+    direction = numpy.where(downward, 1.0, -1.0)
+    top_x = numpy.where(downward, start_x, end_x)
+    top_y = numpy.where(downward, start_y, end_y)
+    bottom_x = numpy.where(downward, end_x, start_x)
+    bottom_y = numpy.where(downward, end_y, start_y)
+    x_per_y = (bottom_x - top_x) / (bottom_y - top_y)
+
+    first_row = numpy.maximum(0.0, numpy.floor(top_y)).astype(numpy.int64)
+    last_row = numpy.minimum(float(height), numpy.ceil(bottom_y)).astype(numpy.int64)
+    edge_index, row_offset = internal_group_offsets(numpy.maximum(last_row - first_row, 0))
+    if edge_index.size == 0:
+        return numpy.zeros((height, width), numpy.float64)
+
+    row = first_row[edge_index] + row_offset
+    row_top = numpy.maximum(top_y[edge_index], row)
+    row_bottom = numpy.minimum(bottom_y[edge_index], row + 1.0)
+    row_height = row_bottom - row_top
+    inside = row_height > 0.0
+    if not inside.all():
+        edge_index = edge_index[inside]
+        row = row[inside]
+        row_top = row_top[inside]
+        row_bottom = row_bottom[inside]
+        row_height = row_height[inside]
+        if edge_index.size == 0:
+            return numpy.zeros((height, width), numpy.float64)
+
+    slope = x_per_y[edge_index]
+    origin_x = top_x[edge_index]
+    origin_y = top_y[edge_index]
+    entry_x = origin_x + (row_top - origin_y) * slope
+    exit_x = origin_x + (row_bottom - origin_y) * slope
+    left_x = numpy.minimum(entry_x, exit_x)
+    right_x = numpy.maximum(entry_x, exit_x)
+
+    # Split each row piece again at column boundaries so every fragment lies in
+    # one cell; the midpoint split below is exact only within a single cell.
+    #
+    # The walk is bounded to one cell either side of the box. A fill clipped to
+    # a small box still arrives with the whole path's edges, so a near-
+    # horizontal edge can cross millions of columns that the box never shows --
+    # one fragment each, gigabytes of them. Everything left of the box already
+    # lands on column 0 and everything right of it past the visible slice, so
+    # collapsing those runs into the first and last fragment changes nothing.
+    # Those two keep the piece's original extents, which is what holds the
+    # coverage weights identical to the unbounded walk (and bit-identical when
+    # the piece lies inside the box, where the clamp does not bite).
+    walk_left = numpy.clip(left_x, -1.0, width + 1.0)
+    walk_right = numpy.clip(right_x, -1.0, width + 1.0)
+    column_count = (numpy.floor(walk_right) - numpy.floor(walk_left) + 1.0).astype(numpy.int64)
+    piece_index, column_offset = internal_group_offsets(column_count)
+    column_start = numpy.floor(walk_left)[piece_index] + column_offset
+    fragment_left = numpy.where(column_offset == 0, left_x[piece_index], column_start)
+    fragment_right = numpy.where(
+        column_offset == column_count[piece_index] - 1,
+        right_x[piece_index],
+        column_start + 1.0,
+    )
+    piece_span = (right_x - left_x)[piece_index]
+    vertical = piece_span <= 0.0
+    share = numpy.where(
+        vertical,
+        1.0,
+        (fragment_right - fragment_left) / numpy.where(vertical, 1.0, piece_span),
+    )
+    fragment_height = row_height[piece_index] * share
+    keep = vertical | (fragment_right > fragment_left)
+    if not keep.all():
+        piece_index = piece_index[keep]
+        fragment_left = fragment_left[keep]
+        fragment_right = fragment_right[keep]
+        fragment_height = fragment_height[keep]
+        if piece_index.size == 0:
+            return numpy.zeros((height, width), numpy.float64)
+
+    midpoint = (fragment_left + fragment_right) * 0.5
+    column = numpy.clip(numpy.floor(midpoint), 0, width).astype(numpy.int64)
+    offset_in_cell = numpy.clip(midpoint - column, 0.0, 1.0)
+    signed_height = direction[edge_index][piece_index] * fragment_height
+
+    stride = width + 2
+    flat_row = row[piece_index] * stride
+    accumulator = numpy.bincount(
+        numpy.concatenate([flat_row + column, flat_row + column + 1]),
+        weights=numpy.concatenate(
+            [signed_height * (1.0 - offset_in_cell), signed_height * offset_in_cell]
+        ),
+        minlength=height * stride,
+    )[: height * stride].reshape(height, stride)
+    return numpy.minimum(numpy.abs(numpy.cumsum(accumulator, axis=1)[:, :width]), 1.0)
+
+
+def internal_box_downsample(
+    samples: numpy.ndarray[Any, Any],
+    source_width: int,
+    source_height: int,
+    channels: int,
+    target_width: int,
+    target_height: int,
+) -> tuple[numpy.ndarray[Any, Any], int, int]:
+    """Area-average an image down to about (target_width, target_height).
+
+    Sampling a shrunk image with nearest-neighbour throws away most of it: a
+    2544x3296 scan placed on a 612x792 page keeps roughly one source pixel in
+    eighteen, so the thin rules and letter stems of a scanned form fall between
+    samples and the page renders visibly faint. Averaging the block each output
+    pixel covers keeps that ink.
+
+    Bin edges are ``i * source // target`` so the blocks tile the source exactly
+    even when the ratio is not integral; ``add.reduceat`` then sums each block in
+    one pass per axis. Returns the reduced samples with their new dimensions, so
+    the caller's existing nearest-neighbour map resamples an already-averaged
+    image.
+    """
+    if target_width <= 0 or target_height <= 0:
+        return samples, source_width, source_height
+    if source_width <= target_width and source_height <= target_height:
+        return samples, source_width, source_height
+    target_width = min(target_width, source_width)
+    target_height = min(target_height, source_height)
+    grid = samples.reshape(source_height, source_width, channels)
+    row_edges = (numpy.arange(target_height + 1, dtype=numpy.int64) * source_height) // (
+        target_height
+    )
+    column_edges = (numpy.arange(target_width + 1, dtype=numpy.int64) * source_width) // (
+        target_width
+    )
+    totals = numpy.add.reduceat(grid.astype(numpy.uint32), row_edges[:-1], axis=0)
+    totals = numpy.add.reduceat(totals, column_edges[:-1], axis=1)
+    counts = numpy.diff(row_edges)[:, None, None] * numpy.diff(column_edges)[None, :, None]
+    reduced = (totals // numpy.maximum(counts, 1)).astype(numpy.uint8)
+    return reduced.reshape(-1), target_width, target_height
+
+
 def internal_blend_normal_alpha_array_numpy(
     target: numpy.ndarray[Any, numpy.dtype[numpy.uint8]],
     rgba: tuple[int, int, int, int],
@@ -391,7 +579,11 @@ def internal_blend_normal_alpha_array_numpy(
     destination_float[..., 3] = output_alpha * 255.0
     numpy.rint(destination_float, out=destination_float)
     numpy.clip(destination_float, 0.0, 255.0, out=destination_float)
-    target[...] = destination_float.astype(numpy.uint8)
+    # Only touch pixels the source actually covers. Blending zero coverage is
+    # meant to be a no-op, but the arithmetic above drives RGB to zero when the
+    # destination is fully transparent, which discards colour a later blend
+    # would need -- and it is what stopped a whole box being blended in one call.
+    numpy.copyto(target, destination_float.astype(numpy.uint8), where=(alpha > 0)[..., None])
 
 
 def internal_composite_normal_group_numpy(
@@ -874,35 +1066,107 @@ def internal_fill_path_sample_crossings(
     return crossings
 
 
+# Above this many (row, edge) pairs the activity mask below costs more memory
+# than the per-row loop costs time, so the loop stays the fallback.
+INTERNAL_CROSSING_MASK_CELL_LIMIT = 1 << 24
+
+
 def internal_fill_path_sample_crossings_numpy(
     edge_segments: numpy.ndarray[Any, Any],
     page_ys: numpy.ndarray[Any, Any],
 ) -> list[list[tuple[float, int]]]:
+    """Intersect every edge with every scanline, one row per returned list.
+
+    Solves all rows in a single pass rather than looping in Python: this runs
+    once per scanline per filled path, and at a handful of numpy calls on a
+    few-element array per row it was pure call overhead.
+
+    The per-element arithmetic is spelled exactly as the row-at-a-time form
+    below it -- ``ex0 + ((y - ey0) / dy * (ex1 - ex0))`` -- because these are
+    elementwise IEEE double operations that numpy does not reassociate, so
+    batching them cannot move a bit. ``nonzero`` walks the mask in C order, so
+    each row keeps its edges in edge_segments order, matching the loop.
+    """
+    row_count = len(page_ys)
+    if row_count == 0:
+        return []
+    edge_count = len(edge_segments)
+    if edge_count == 0:
+        return [[] for _ in range(row_count)]
+    if row_count * edge_count > INTERNAL_CROSSING_MASK_CELL_LIMIT:
+        return [
+            internal_fill_path_sample_crossings_row(edge_segments, float(page_y))
+            for page_y in page_ys
+        ]
+
+    ys = page_ys.reshape(-1, 1)
+    active = (edge_segments[:, 4].reshape(1, -1) <= ys) & (ys < edge_segments[:, 5].reshape(1, -1))
+    row_indexes, edge_indexes = numpy.nonzero(active)
+    if row_indexes.size == 0:
+        return [[] for _ in range(row_count)]
+
+    edge_x0 = edge_segments[edge_indexes, 0]
+    edge_y0 = edge_segments[edge_indexes, 1]
+    delta_y = edge_segments[edge_indexes, 3] - edge_y0
+    intersections = edge_x0 + (
+        (page_ys[row_indexes] - edge_y0) / delta_y * (edge_segments[edge_indexes, 2] - edge_x0)
+    )
+    directions = numpy.where(delta_y > 0.0, 1, -1)
+
+    xs = intersections.tolist()
+    ds = directions.tolist()
+    counts = numpy.bincount(row_indexes, minlength=row_count).tolist()
     crossings_rows: list[list[tuple[float, int]]] = []
-    for page_y in page_ys:
-        active = edge_segments[(edge_segments[:, 4] <= page_y) & (page_y < edge_segments[:, 5])]
-        if not len(active):
+    start = 0
+    for count in counts:
+        if count:
+            stop = start + count
+            crossings_rows.append(list(zip(xs[start:stop], ds[start:stop], strict=True)))
+            start = stop
+        else:
             crossings_rows.append([])
-            continue
-        delta_y = active[:, 3] - active[:, 1]
-        intersections = active[:, 0] + (
-            (page_y - active[:, 1]) / delta_y * (active[:, 2] - active[:, 0])
-        )
-        directions = numpy.where(delta_y > 0.0, 1, -1)
-        crossings_rows.append(list(zip(intersections.tolist(), directions.tolist(), strict=True)))
     return crossings_rows
+
+
+def internal_fill_path_sample_crossings_row(
+    edge_segments: numpy.ndarray[Any, Any],
+    page_y: float,
+) -> list[tuple[float, int]]:
+    active = edge_segments[(edge_segments[:, 4] <= page_y) & (page_y < edge_segments[:, 5])]
+    if not len(active):
+        return []
+    delta_y = active[:, 3] - active[:, 1]
+    intersections = active[:, 0] + (
+        (page_y - active[:, 1]) / delta_y * (active[:, 2] - active[:, 0])
+    )
+    directions = numpy.where(delta_y > 0.0, 1, -1)
+    return list(zip(intersections.tolist(), directions.tolist(), strict=True))
+
+
+internal_first_item = itemgetter(0)
 
 
 def internal_fill_path_crossing_spans(
     crossings: list[tuple[float, int]],
     fill_rule: str,
 ) -> list[tuple[float, float]]:
-    if not crossings:
+    count = len(crossings)
+    if not count:
         return []
+    if count == 2:
+        # 44% of calls on a text-heavy page: a single edge pair. Both rules
+        # collapse to one comparison -- even-odd pairs the two sorted crossings,
+        # and nonzero's sweep opens a span iff the winding after the first is
+        # non-zero, which it always is because directions are only ever +/-1.
+        first_x = crossings[0][0]
+        second_x = crossings[1][0]
+        if second_x < first_x:
+            first_x, second_x = second_x, first_x
+        return [(first_x, second_x)] if second_x > first_x else []
     if fill_rule == "evenodd":
-        xs = sorted(x for x, internal_delta in crossings)
+        xs = sorted(map(internal_first_item, crossings))
         return [(start, end) for start, end in zip(xs[0::2], xs[1::2], strict=False) if end > start]
-    crossings.sort(key=lambda item: item[0])
+    crossings.sort(key=internal_first_item)
     spans: list[tuple[float, float]] = []
     winding = 0
     previous_x: float | None = None
@@ -1008,6 +1272,19 @@ def internal_color_rgba(color: Any, opacity: Any) -> tuple[int, int, int, int]:
         if len(color) == 1:
             gray = internal_color_component(color[0])
             return gray, gray, gray, alpha
+        if len(color) == 4:
+            # DeviceCMYK. The component count is the colour space here --
+            # normalize_colors clamps and preserves arity, and folds in no alpha
+            # -- so four components is CMYK and nothing else. Without this the
+            # tuple fell through to the RGB branch below, which read the first
+            # three components as red/green/blue: `1 1 1 1 k` (rich black)
+            # painted white and `0 0 0 0 k` (white) painted black.
+            try:
+                cyan, magenta, yellow, black = (internal_clamp01(float(c)) for c in color)
+            except (TypeError, ValueError):
+                return 0, 0, 0, alpha
+            red, green, blue = cmyk_floats_to_srgb(cyan, magenta, yellow, black)
+            return red, green, blue, alpha
         rgb = [internal_color_component(c) for c in color[:3]]
         while len(rgb) < 3:
             rgb.append(rgb[-1] if rgb else 0)
@@ -1025,12 +1302,8 @@ def internal_shading_color_rgba(
         return gray, gray, gray, alpha
     if name.endswith("DeviceCMYK") and len(components) >= 4:
         c, m, y, k = (internal_clamp01(v) for v in components[:4])
-        return (
-            max(0, min(255, int(round(255.0 * (1.0 - c) * (1.0 - k))))),
-            max(0, min(255, int(round(255.0 * (1.0 - m) * (1.0 - k))))),
-            max(0, min(255, int(round(255.0 * (1.0 - y) * (1.0 - k))))),
-            alpha,
-        )
+        red, green, blue = cmyk_floats_to_srgb(c, m, y, k)
+        return red, green, blue, alpha
     rgb = [internal_color_component(c) for c in components[:3]]
     while len(rgb) < 3:
         rgb.append(rgb[-1] if rgb else 0)

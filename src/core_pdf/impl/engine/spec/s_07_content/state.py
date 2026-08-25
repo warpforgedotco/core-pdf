@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import contextlib
 import typing
+from collections.abc import Sequence
 from math import ceil, hypot
 from typing import TYPE_CHECKING, Any, TypeAlias, cast
 
@@ -98,7 +99,6 @@ from core_pdf.impl.types import PdfDict, Rectangle
 
 OperationHandler: TypeAlias = StateOperationHandler
 ObjectCache: TypeAlias = dict[object, object]
-InlineImageRecord = CapturedInlineImage
 DecodedGlyphs: TypeAlias = tuple[DecodedGlyph, ...] | None
 internal_GraphicsState: TypeAlias = tuple[
     float,
@@ -140,6 +140,94 @@ internal_GraphicsState: TypeAlias = tuple[
 ]
 
 TYPE3_REPLAY_OPERAND_TYPES = (int, float, PdfName, PdfString)
+
+
+def internal_quad_bounds(
+    c0_x: float,
+    c0_y: float,
+    c1_x: float,
+    c1_y: float,
+    c2_x: float,
+    c2_y: float,
+    c3_x: float,
+    c3_y: float,
+) -> tuple[float, float, float, float]:
+    """Axis-aligned bounds of a text quad's four transformed corners.
+
+    Written as comparison chains rather than min()/max() so the hot text path
+    pays no builtin lookup per corner.
+    """
+    x0 = c0_x if c0_x < c1_x else c1_x
+    if c2_x < x0:
+        x0 = c2_x
+    if c3_x < x0:
+        x0 = c3_x
+    y0 = c0_y if c0_y < c1_y else c1_y
+    if c2_y < y0:
+        y0 = c2_y
+    if c3_y < y0:
+        y0 = c3_y
+    x1 = c0_x if c0_x > c1_x else c1_x
+    if c2_x > x1:
+        x1 = c2_x
+    if c3_x > x1:
+        x1 = c3_x
+    y1 = c0_y if c0_y > c1_y else c1_y
+    if c2_y > y1:
+        y1 = c2_y
+    if c3_y > y1:
+        y1 = c3_y
+    return x0, y0, x1, y1
+
+
+def internal_decode_pending_run(
+    pending_data: bytes | bytearray,
+    table: Sequence[str],
+    widths: Sequence[float],
+    cs: float,
+    ws: float,
+) -> tuple[str, float]:
+    """Decode simple-font bytes to text plus total advance in glyph-space units.
+
+    The 1-, 2-, and 3-byte arms are hand-unrolled on purpose: they cover the
+    overwhelming majority of TJ elements, and skipping the loop and the join
+    is worth the repetition on this path.
+    """
+    n_data = len(pending_data)
+    if n_data == 1:
+        byte = pending_data[0]
+        total = widths[byte] + cs
+        if byte == 32:
+            total += ws
+        return table[byte], total
+    if n_data == 2:
+        b0 = pending_data[0]
+        b1 = pending_data[1]
+        total = widths[b0] + widths[b1] + (2 * cs)
+        if b0 == 32:
+            total += ws
+        if b1 == 32:
+            total += ws
+        return table[b0] + table[b1], total
+    if n_data == 3:
+        b0 = pending_data[0]
+        b1 = pending_data[1]
+        b2 = pending_data[2]
+        total = widths[b0] + widths[b1] + widths[b2] + (3 * cs)
+        if b0 == 32:
+            total += ws
+        if b1 == 32:
+            total += ws
+        if b2 == 32:
+            total += ws
+        return table[b0] + table[b1] + table[b2], total
+    total = 0.0
+    space_count = 0
+    for byte in pending_data:
+        total += widths[byte]
+        if byte == 32:
+            space_count += 1
+    return "".join(map(table.__getitem__, pending_data)), total + n_data * cs + space_count * ws
 
 
 class TextResolver(PdfValueResolver, typing.Protocol):
@@ -514,10 +602,7 @@ class TextState:
         self.is_garbage = is_garbage_text
         self.operands: list[ContentOperand] = [None] * 16
         self.run_pool: list[TextRun] = []
-        self.inline_images: list[InlineImageRecord] = []
-
-    def detect_rotation(self, a: float, b: float, c: float, d: float) -> int:
-        return detect_rotation_from_linear(a, b, c, d)
+        self.inline_images: list[CapturedInlineImage] = []
 
     def append_text(
         self,
@@ -945,7 +1030,11 @@ class TextState:
                     kind="group-begin",
                 )
             )
-            self.group_alpha = frame.group_alpha
+            # The group buffer carries the constant alpha: it is applied once,
+            # when the finished group composites into its backdrop. Propagating
+            # it to each drawing inside as well would square it -- a 0.34 group
+            # would paint its contents at 0.12.
+            self.group_alpha = None
 
         frame.old_state = self.capture_stream_state()
         self.resources = frame.resources
@@ -1338,6 +1427,16 @@ class TextState:
                             if total > 0:
                                 smask_alpha = sum(smask_data[:total]) / (255.0 * total)
                 source_dictionary = dict(xobj_dict)
+                # The colour manager reads the palette and base space straight
+                # off this dictionary, so an indirect /ColorSpace (or one whose
+                # Indexed lookup table is indirect) left it unable to convert
+                # the samples and the whole image was dropped. deep_resolve is
+                # cached, so repeated XObjects pay for this once.
+                color_space = lookup_dict_key(source_dictionary, "ColorSpace")
+                if color_space is not None:
+                    source_dictionary[PdfName.of("ColorSpace")] = (
+                        self.document.resolver.deep_resolve(color_space)
+                    )
                 if soft_mask_raw_data is not None:
                     source_dictionary["__soft_mask_raw_data__"] = soft_mask_raw_data
                     source_dictionary["__soft_mask_dictionary__"] = soft_mask_dictionary or {}
@@ -1381,11 +1480,20 @@ class TextState:
                 and self.document.resolver.resolve_name(lookup_dict_key(group_dict, "S"))
                 == "Transparency"
             ):
-                group_alpha_val = self.document.resolver.resolve_float(
-                    lookup_dict_key(group_dict, "ca"), default=None
-                )
-                if group_alpha_val is not None:
-                    group_alpha = max(0.0, min(1.0, group_alpha_val))
+                # PDF 32000-1 Table 147: a transparency group dictionary holds
+                # S/CS/I/K and nothing else. The constant alpha and blend mode
+                # that composite the finished group into its backdrop come from
+                # the graphics state in effect at the `Do` (11.6.6), so reading
+                # a /ca off the group dictionary found nothing and dropped the
+                # group entirely -- the contents then painted straight onto the
+                # page at full opacity in Normal mode, losing the blend.
+                #
+                # Only isolate the group when compositing would actually differ;
+                # at ca == 1 in Normal mode a group buffer is a no-op, and
+                # painting directly stays the cheaper path.
+                blend = self.blend_mode
+                if self.fill_opacity < 1.0 or (blend is not None and blend != "Normal"):
+                    group_alpha = max(0.0, min(1.0, self.fill_opacity))
         raw_resources = lookup_dict_key(xobj_dict, "Resources")
         resources = (
             raw_resources
@@ -2577,29 +2685,7 @@ class TextState:
             c3_x = adv_A + c1_x
             c3_y = adv_B + c1_y
 
-        x0 = c0_x if c0_x < c1_x else c1_x
-        if c2_x < x0:
-            x0 = c2_x
-        if c3_x < x0:
-            x0 = c3_x
-
-        y0 = c0_y if c0_y < c1_y else c1_y
-        if c2_y < y0:
-            y0 = c2_y
-        if c3_y < y0:
-            y0 = c3_y
-
-        x1 = c0_x if c0_x > c1_x else c1_x
-        if c2_x > x1:
-            x1 = c2_x
-        if c3_x > x1:
-            x1 = c3_x
-
-        y1 = c0_y if c0_y > c1_y else c1_y
-        if c2_y > y1:
-            y1 = c2_y
-        if c3_y > y1:
-            y1 = c3_y
+        x0, y0, x1, y1 = internal_quad_bounds(c0_x, c0_y, c1_x, c1_y, c2_x, c2_y, c3_x, c3_y)
 
         rot = self.cached_rotation
         seqno = self.sequence
@@ -2951,43 +3037,7 @@ class TextState:
 
             if t is int or t is float:
                 if pending_data:
-                    n_data = len(pending_data)
-                    if n_data == 1:
-                        byte = pending_data[0]
-                        text = table[byte]
-                        total = widths[byte] + cs
-                        if byte == 32:
-                            total += ws
-                    elif n_data == 2:
-                        b0 = pending_data[0]
-                        b1 = pending_data[1]
-                        text = table[b0] + table[b1]
-                        total = widths[b0] + widths[b1] + (2 * cs)
-                        if b0 == 32:
-                            total += ws
-                        if b1 == 32:
-                            total += ws
-                    elif n_data == 3:
-                        b0 = pending_data[0]
-                        b1 = pending_data[1]
-                        b2 = pending_data[2]
-                        text = table[b0] + table[b1] + table[b2]
-                        total = widths[b0] + widths[b1] + widths[b2] + (3 * cs)
-                        if b0 == 32:
-                            total += ws
-                        if b1 == 32:
-                            total += ws
-                        if b2 == 32:
-                            total += ws
-                    else:
-                        text = "".join(map(table.__getitem__, pending_data))
-                        total = 0.0
-                        space_count = 0
-                        for byte in pending_data:
-                            total += widths[byte]
-                            if byte == 32:
-                                space_count += 1
-                        total += n_data * cs + space_count * ws
+                    text, total = internal_decode_pending_run(pending_data, table, widths, cs, ws)
 
                     if text:
                         visible = self.is_text_visible(text)
@@ -3009,26 +3059,9 @@ class TextState:
                         c3_x = adv_A + c1_x
                         c3_y = adv_B + c1_y
 
-                        x0 = c0_x if c0_x < c1_x else c1_x
-                        if c2_x < x0:
-                            x0 = c2_x
-                        if c3_x < x0:
-                            x0 = c3_x
-                        y0 = c0_y if c0_y < c1_y else c1_y
-                        if c2_y < y0:
-                            y0 = c2_y
-                        if c3_y < y0:
-                            y0 = c3_y
-                        x1 = c0_x if c0_x > c1_x else c1_x
-                        if c2_x > x1:
-                            x1 = c2_x
-                        if c3_x > x1:
-                            x1 = c3_x
-                        y1 = c0_y if c0_y > c1_y else c1_y
-                        if c2_y > y1:
-                            y1 = c2_y
-                        if c3_y > y1:
-                            y1 = c3_y
+                        x0, y0, x1, y1 = internal_quad_bounds(
+                            c0_x, c0_y, c1_x, c1_y, c2_x, c2_y, c3_x, c3_y
+                        )
 
                         new_run = self.alloc_run(
                             text=text,
@@ -3080,43 +3113,7 @@ class TextState:
                     pending_data = merged
 
         if pending_data:
-            n_data = len(pending_data)
-            if n_data == 1:
-                byte = pending_data[0]
-                text = table[byte]
-                total = widths[byte] + cs
-                if byte == 32:
-                    total += ws
-            elif n_data == 2:
-                b0 = pending_data[0]
-                b1 = pending_data[1]
-                text = table[b0] + table[b1]
-                total = widths[b0] + widths[b1] + (2 * cs)
-                if b0 == 32:
-                    total += ws
-                if b1 == 32:
-                    total += ws
-            elif n_data == 3:
-                b0 = pending_data[0]
-                b1 = pending_data[1]
-                b2 = pending_data[2]
-                text = table[b0] + table[b1] + table[b2]
-                total = widths[b0] + widths[b1] + widths[b2] + (3 * cs)
-                if b0 == 32:
-                    total += ws
-                if b1 == 32:
-                    total += ws
-                if b2 == 32:
-                    total += ws
-            else:
-                text = "".join(map(table.__getitem__, pending_data))
-                total = 0.0
-                space_count = 0
-                for byte in pending_data:
-                    total += widths[byte]
-                    if byte == 32:
-                        space_count += 1
-                total += n_data * cs + space_count * ws
+            text, total = internal_decode_pending_run(pending_data, table, widths, cs, ws)
             if text:
                 visible = self.is_text_visible(text)
                 if is_vert:
@@ -3136,26 +3133,9 @@ class TextState:
                 c3_x = adv_A + c1_x
                 c3_y = adv_B + c1_y
 
-                x0 = c0_x if c0_x < c1_x else c1_x
-                if c2_x < x0:
-                    x0 = c2_x
-                if c3_x < x0:
-                    x0 = c3_x
-                y0 = c0_y if c0_y < c1_y else c1_y
-                if c2_y < y0:
-                    y0 = c2_y
-                if c3_y < y0:
-                    y0 = c3_y
-                x1 = c0_x if c0_x > c1_x else c1_x
-                if c2_x > x1:
-                    x1 = c2_x
-                if c3_x > x1:
-                    x1 = c3_x
-                y1 = c0_y if c0_y > c1_y else c1_y
-                if c2_y > y1:
-                    y1 = c2_y
-                if c3_y > y1:
-                    y1 = c3_y
+                x0, y0, x1, y1 = internal_quad_bounds(
+                    c0_x, c0_y, c1_x, c1_y, c2_x, c2_y, c3_x, c3_y
+                )
 
                 new_run = self.alloc_run(
                     text=text,
@@ -3306,43 +3286,7 @@ class TextState:
 
             if t is int or t is float:
                 if pending_data:
-                    n_data = len(pending_data)
-                    if n_data == 1:
-                        byte = pending_data[0]
-                        text = table[byte]
-                        total = widths[byte] + cs
-                        if byte == 32:
-                            total += ws
-                    elif n_data == 2:
-                        b0 = pending_data[0]
-                        b1 = pending_data[1]
-                        text = table[b0] + table[b1]
-                        total = widths[b0] + widths[b1] + (2 * cs)
-                        if b0 == 32:
-                            total += ws
-                        if b1 == 32:
-                            total += ws
-                    elif n_data == 3:
-                        b0 = pending_data[0]
-                        b1 = pending_data[1]
-                        b2 = pending_data[2]
-                        text = table[b0] + table[b1] + table[b2]
-                        total = widths[b0] + widths[b1] + widths[b2] + (3 * cs)
-                        if b0 == 32:
-                            total += ws
-                        if b1 == 32:
-                            total += ws
-                        if b2 == 32:
-                            total += ws
-                    else:
-                        text = "".join(map(table.__getitem__, pending_data))
-                        total = 0.0
-                        space_count = 0
-                        for byte in pending_data:
-                            total += widths[byte]
-                            if byte == 32:
-                                space_count += 1
-                        total += n_data * cs + space_count * ws
+                    text, total = internal_decode_pending_run(pending_data, table, widths, cs, ws)
 
                     if text:
                         visible = self.is_text_visible(text)
@@ -3361,26 +3305,9 @@ class TextState:
                         c3_x = adv_A + c1_x
                         c3_y = adv_B + c1_y
 
-                        x0 = c0_x if c0_x < c1_x else c1_x
-                        if c2_x < x0:
-                            x0 = c2_x
-                        if c3_x < x0:
-                            x0 = c3_x
-                        y0 = c0_y if c0_y < c1_y else c1_y
-                        if c2_y < y0:
-                            y0 = c2_y
-                        if c3_y < y0:
-                            y0 = c3_y
-                        x1 = c0_x if c0_x > c1_x else c1_x
-                        if c2_x > x1:
-                            x1 = c2_x
-                        if c3_x > x1:
-                            x1 = c3_x
-                        y1 = c0_y if c0_y > c1_y else c1_y
-                        if c2_y > y1:
-                            y1 = c2_y
-                        if c3_y > y1:
-                            y1 = c3_y
+                        x0, y0, x1, y1 = internal_quad_bounds(
+                            c0_x, c0_y, c1_x, c1_y, c2_x, c2_y, c3_x, c3_y
+                        )
 
                         if batch_parts is None:
                             batch_parts = [text]
@@ -3444,43 +3371,7 @@ class TextState:
                 tf -= adjustment * tb
 
         if pending_data:
-            n_data = len(pending_data)
-            if n_data == 1:
-                byte = pending_data[0]
-                text = table[byte]
-                total = widths[byte] + cs
-                if byte == 32:
-                    total += ws
-            elif n_data == 2:
-                b0 = pending_data[0]
-                b1 = pending_data[1]
-                text = table[b0] + table[b1]
-                total = widths[b0] + widths[b1] + (2 * cs)
-                if b0 == 32:
-                    total += ws
-                if b1 == 32:
-                    total += ws
-            elif n_data == 3:
-                b0 = pending_data[0]
-                b1 = pending_data[1]
-                b2 = pending_data[2]
-                text = table[b0] + table[b1] + table[b2]
-                total = widths[b0] + widths[b1] + widths[b2] + (3 * cs)
-                if b0 == 32:
-                    total += ws
-                if b1 == 32:
-                    total += ws
-                if b2 == 32:
-                    total += ws
-            else:
-                text = "".join(map(table.__getitem__, pending_data))
-                total = 0.0
-                space_count = 0
-                for byte in pending_data:
-                    total += widths[byte]
-                    if byte == 32:
-                        space_count += 1
-                total += n_data * cs + space_count * ws
+            text, total = internal_decode_pending_run(pending_data, table, widths, cs, ws)
 
             if text:
                 visible = is_text_visible(text)
@@ -3498,26 +3389,9 @@ class TextState:
                 c3_x = adv_A + c1_x
                 c3_y = adv_B + c1_y
 
-                x0 = c0_x if c0_x < c1_x else c1_x
-                if c2_x < x0:
-                    x0 = c2_x
-                if c3_x < x0:
-                    x0 = c3_x
-                y0 = c0_y if c0_y < c1_y else c1_y
-                if c2_y < y0:
-                    y0 = c2_y
-                if c3_y < y0:
-                    y0 = c3_y
-                x1 = c0_x if c0_x > c1_x else c1_x
-                if c2_x > x1:
-                    x1 = c2_x
-                if c3_x > x1:
-                    x1 = c3_x
-                y1 = c0_y if c0_y > c1_y else c1_y
-                if c2_y > y1:
-                    y1 = c2_y
-                if c3_y > y1:
-                    y1 = c3_y
+                x0, y0, x1, y1 = internal_quad_bounds(
+                    c0_x, c0_y, c1_x, c1_y, c2_x, c2_y, c3_x, c3_y
+                )
 
                 if batch_parts is None:
                     batch_parts = [text]
@@ -3768,7 +3642,7 @@ class TextState:
         if self.ca == 1.0 and self.cb == 0.0 and self.cc == 0.0 and self.cd == 1.0:
             self.cached_rotation = 0
         else:
-            self.cached_rotation = self.detect_rotation(self.ca, self.cb, self.cc, self.cd)
+            self.cached_rotation = detect_rotation_from_linear(self.ca, self.cb, self.cc, self.cd)
         self.invisible_text_layer = False
 
     def internal_end_text(self) -> None:
@@ -4118,21 +3992,30 @@ class TextState:
             self.emit_actual_text_span(self.marked_content_stack.pop())
 
     def op_G(self, operands: OperandWindow, depth: int) -> None:
-        if operands:
+        if operands and not self.type3_uncolored:
+            self.stroke_color_space = "DeviceGray"
             self.set_stroke_color(operands[0])
 
     def op_RG(self, operands: OperandWindow, depth: int) -> None:
-        if len(operands) >= 3:
+        if len(operands) >= 3 and not self.type3_uncolored:
+            self.stroke_color_space = "DeviceRGB"
             self.set_stroke_color(operands[0], operands[1], operands[2])
 
     def op_RG_values(self: Any, red: int | float, green: int | float, blue: int | float) -> None:
+        if self.type3_uncolored:
+            return
+        self.stroke_color_space = "DeviceRGB"
         self.set_stroke_color(red, green, blue)
 
     def op_rg_values(self: Any, red: int | float, green: int | float, blue: int | float) -> None:
+        if self.type3_uncolored:
+            return
+        self.fill_color_space = "DeviceRGB"
         self.set_fill_color(red, green, blue)
 
     def op_K(self, operands: OperandWindow, depth: int) -> None:
-        if len(operands) >= 4:
+        if len(operands) >= 4 and not self.type3_uncolored:
+            self.stroke_color_space = "DeviceCMYK"
             self.set_stroke_color(operands[0], operands[1], operands[2], operands[3])
 
     def op_w(self, operands: OperandWindow, depth: int) -> None:
@@ -4706,6 +4589,12 @@ class TextState:
         self._op_CS_impl(operands, depth)
 
     def internal_set_color_space(self, operands: OperandWindow, *, stroke: bool) -> None:
+        if self.type3_uncolored:
+            # 9.6.5.2: every colour operator is ignored inside an uncoloured
+            # Type 3 glyph, `cs`/`CS` included. The colour setters already
+            # refuse to move the colour, so without this the glyph would carry
+            # a colour space describing a colour it was not allowed to set.
+            return
         if operands:
             name_obj = operands[0]
             try:
@@ -5070,15 +4959,18 @@ class TextState:
         self.update_combined()
 
     def op_g(self, operands: OperandWindow, depth: int) -> None:
-        if operands:
+        if operands and not self.type3_uncolored:
+            self.fill_color_space = "DeviceGray"
             self.set_fill_color(operands[0])
 
     def op_rg(self, operands: OperandWindow, depth: int) -> None:
-        if len(operands) >= 3:
+        if len(operands) >= 3 and not self.type3_uncolored:
+            self.fill_color_space = "DeviceRGB"
             self.set_fill_color(operands[0], operands[1], operands[2])
 
     def op_k(self, operands: OperandWindow, depth: int) -> None:
-        if len(operands) >= 4:
+        if len(operands) >= 4 and not self.type3_uncolored:
+            self.fill_color_space = "DeviceCMYK"
             self.set_fill_color(operands[0], operands[1], operands[2], operands[3])
 
     def op_gs(self, operands: OperandWindow, depth: int) -> None:

@@ -82,15 +82,6 @@ class PdfStandardSecurityHandler:
         if self.key is None:
             raise PDFPasswordIncorrect("Incorrect password")
 
-    def is_printable(self) -> bool:
-        return bool(self.p & 4)
-
-    def is_modifiable(self) -> bool:
-        return bool(self.p & 8)
-
-    def is_extractable(self) -> bool:
-        return bool(self.p & 16)
-
     def compute_u(self, key: bytes) -> bytes:
         if self.r == 2:
             return CryptRC4(key).encrypt(PDF_PADDING)

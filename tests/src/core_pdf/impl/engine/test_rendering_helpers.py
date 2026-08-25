@@ -82,12 +82,13 @@ class TestColorComponent:
 
 
 def test_shading_cmyk_clamps_components_before_conversion() -> None:
-    assert internal_shading_color_rgba("DeviceCMYK", [-1.0, 0.5, 2.0, 0.0], 0.25) == (
-        255,
-        128,
-        0,
-        64,
-    )
+    # Out-of-range components must clamp into [0, 1] before the profile sees
+    # them: the CMYK lookup table has no nodes outside the unit hypercube, so an
+    # unclamped -1.0 would extrapolate off the end of it.
+    out_of_range = internal_shading_color_rgba("DeviceCMYK", [-1.0, 0.5, 2.0, 0.0], 0.25)
+
+    assert out_of_range == internal_shading_color_rgba("DeviceCMYK", [0.0, 0.5, 1.0, 0.0], 0.25)
+    assert out_of_range == (248, 150, 37, 64)
 
 
 class TestImageRawBytes:

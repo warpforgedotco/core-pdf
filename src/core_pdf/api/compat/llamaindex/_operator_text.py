@@ -148,8 +148,6 @@ class internal_TextState:
         self.tm = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
         self.previous_cm = self.cm.copy()
         self.previous_tm = self.tm.copy()
-        self.memo_cm = self.cm.copy()
-        self.memo_tm = self.tm.copy()
         self.stack: list[tuple[list[float], internal_Font | None, str | None, float, float]] = []
         self.text = ""
         self.output = ""
@@ -160,8 +158,6 @@ class internal_TextState:
     def flush(self) -> None:
         self.output += self.text
         self.text = ""
-        self.memo_cm = self.cm.copy()
-        self.memo_tm = self.tm.copy()
 
     def positioned(self, string_width: float) -> None:
         previous = multiply_affine(self.previous_tm, self.previous_cm)
@@ -193,9 +189,6 @@ class internal_TextState:
             pass
         self.previous_tm = self.tm.copy()
         self.previous_cm = self.cm.copy()
-        if not self.text:
-            self.memo_tm = self.tm.copy()
-            self.memo_cm = self.cm.copy()
 
     def show(self, data: bytes) -> None:
         if self.font is None:
@@ -718,8 +711,6 @@ class OperatorTextProjection:
                     if len(matrix) == 6
                     else [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
                 )
-                state.memo_cm = state.cm.copy()
-                state.memo_tm = state.tm.copy()
             elif operator == "TL":
                 scale_x = math.hypot(state.tm[0], state.tm[2])
                 state.leading = (

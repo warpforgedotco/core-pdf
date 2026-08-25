@@ -197,26 +197,6 @@ def internal_apply_structure_actual_text(
     return tuple(output)
 
 
-def internal_glyph_evidence(
-    glyphs: tuple[GlyphObservation, ...],
-    runs: tuple[TextRun, ...],
-) -> GlyphEvidence:
-    return internal_glyph_evidence_fields(
-        (
-            (
-                glyph.text,
-                glyph.visible,
-                glyph.font_decoder,
-                glyph.code_bytes,
-                glyph.unicode_source,
-                glyph.confidence,
-            )
-            for glyph in glyphs
-        ),
-        runs,
-    )
-
-
 def internal_glyph_evidence_fields(
     glyph_fields: Iterable[tuple[str, bool, object, bytes, str, float | None]],
     runs: tuple[TextRun, ...],
@@ -226,17 +206,21 @@ def internal_glyph_evidence_fields(
     unknown = 0
     unsupported = 0
     low_confidence = 0
-    visible = 0
     semantic_characters = 0
-    sources: Counter[str] = Counter()
     glyph_count = 0
     previous_decoder: object | None = None
     learned: dict[bytes, str] | None = None
-    for glyph_text, glyph_visible, decoder, code_bytes, unicode_source, confidence in glyph_fields:
+    for (
+        glyph_text,
+        ignored_visible,
+        decoder,
+        code_bytes,
+        unicode_source,
+        confidence,
+    ) in glyph_fields:
         if not glyph_text or glyph_text.isspace():
             continue
         glyph_count += 1
-        visible += int(glyph_visible)
         if decoder is not previous_decoder:
             candidate = getattr(decoder, "learned_unicode", None)
             learned = candidate if isinstance(candidate, dict) and candidate else None
@@ -245,9 +229,7 @@ def internal_glyph_evidence_fields(
         learned_text = (
             candidate_text if isinstance(candidate_text, str) and len(candidate_text) == 1 else None
         )
-        source = "learned_ocr" if learned_text is not None else unicode_source
         text = learned_text or glyph_text
-        sources[source or "unspecified"] += 1
         semantics = (
             GlyphUnicodeSemantics.HEURISTIC
             if learned_text is not None
@@ -276,7 +258,6 @@ def internal_glyph_evidence_fields(
     )
     return GlyphEvidence(
         glyph_count=glyph_count,
-        visible_glyphs=visible,
         semantic_characters=semantic_characters,
         authoritative_glyphs=authoritative,
         heuristic_glyphs=heuristic,
@@ -284,7 +265,6 @@ def internal_glyph_evidence_fields(
         unsupported_glyphs=unsupported,
         low_confidence_glyphs=low_confidence,
         actual_text_characters=actual_text_characters,
-        source_counts=tuple(sorted(sources.items())),
     )
 
 
@@ -617,7 +597,7 @@ def internal_stroked_vector_text_evidence(
         or width_coverage < STROKED_VECTOR_MIN_AXIS_COVERAGE
         or height_coverage < STROKED_VECTOR_MIN_AXIS_COVERAGE
     ):
-        return StrokedVectorTextEvidence(dominant_compact_paths=dominant_paths)
+        return StrokedVectorTextEvidence()
 
     selected_styles = {
         style
@@ -631,7 +611,7 @@ def internal_stroked_vector_text_evidence(
         if style in selected_styles and maximum_dimension <= STROKED_VECTOR_RENDER_DIMENSION
     )
     if len(selected) < STROKED_VECTOR_MIN_DOMINANT_PATHS:
-        return StrokedVectorTextEvidence(dominant_compact_paths=dominant_paths)
+        return StrokedVectorTextEvidence()
     bbox = (
         min(box[0] for _, box in selected),
         min(box[1] for _, box in selected),
@@ -642,9 +622,7 @@ def internal_stroked_vector_text_evidence(
         trusted=True,
         drawing_indexes=tuple(index for index, _ in selected),
         bbox=bbox,
-        dominant_compact_paths=dominant_paths,
         candidate_paths=len(selected),
-        style_count=len(selected_styles),
     )
 
 

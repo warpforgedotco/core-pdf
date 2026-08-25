@@ -32,8 +32,6 @@ class PdfValueResolver(Protocol):
 
     def resolve_font_dict(self, font: PdfDict) -> PdfDict: ...
 
-    def resolve_list(self, value: object) -> list[object] | None: ...
-
     def resolve_float(self, value: object, default: float | None = 0.0) -> float | None: ...
 
     def resolve_name(self, value: object) -> str | None: ...
@@ -170,10 +168,6 @@ class ResolverValueMixin:
         if not isinstance(resolved_font, dict):
             raise ValueError("invalid font dictionary")
         return cast(PdfDict, resolved_font)
-
-    def resolve_list(self, value: object) -> list[object] | None:
-        resolved = self.deep_resolve(value)
-        return cast(list[object], resolved) if isinstance(resolved, list) else None
 
     def resolve_float(self, value: object, default: float | None = 0.0) -> float | None:
         if type(value) is int:

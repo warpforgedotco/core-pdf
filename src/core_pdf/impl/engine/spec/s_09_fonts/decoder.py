@@ -63,6 +63,7 @@ from core_pdf.impl.engine.spec.s_09_fonts.glyph_decode import (
     should_prefer_glyph_name_mapping,
 )
 from core_pdf.impl.engine.spec.s_09_fonts.helpers import (
+    ENCODING_FALLBACKS,
     cached_decode_table,
     parse_differences,
 )
@@ -962,8 +963,20 @@ class FontDecoder:
         name = self.differences.get(code)
         if name is not None:
             return name
-        if self.base_encoding in {None, "StandardEncoding"} and 0 <= code < 256:
-            return StandardEncoding[code]
+        if 0 <= code < 256:
+            if self.base_encoding in {None, "StandardEncoding"}:
+                return StandardEncoding[code]
+            # byte_decode_table is only built for fonts without a ToUnicode
+            # CMap, so it cannot carry the base encoding here. Annex D.2 names
+            # the encoding, so read the code straight off that table: without
+            # this, every simple Type1/CFF font that has both WinAnsi (or
+            # MacRoman) encoding and a ToUnicode CMap resolved every code to
+            # .notdef and rendered as the font's own box glyph.
+            fallback = ENCODING_FALLBACKS.get(self.base_encoding or "")
+            if fallback is not None:
+                base_text = fallback(code)
+                if len(base_text) == 1:
+                    return UV2AGL.get(ord(base_text), f"uni{ord(base_text):04X}")
         table = self.byte_decode_table
         text = table[code] if table is not None and 0 <= code < len(table) else ""
         if len(text) != 1:
@@ -1185,8 +1198,6 @@ class FontDecoder:
                             total += ws
                 total += (n >> 1) * cs
 
-                if self.is_vertical:
-                    return (0.0, -total * scale)
                 return (total * scale, 0.0)
 
         cmap = self.to_unicode or self.cmap
@@ -1236,8 +1247,6 @@ class FontDecoder:
                         total += ws
             total += (n >> 1) * cs
 
-            if self.is_vertical:
-                return (0.0, -total * scale)
             return (total * scale, 0.0)
 
         if glyphs is None:
@@ -1256,8 +1265,6 @@ class FontDecoder:
             if code == 32:
                 total += ws
 
-        if self.is_vertical:
-            return (0.0, -total * scale)
         return (total * scale, 0.0)
 
 

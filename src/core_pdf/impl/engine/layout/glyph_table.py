@@ -19,26 +19,14 @@ from core_pdf.impl.engine.layout.glyphs import GlyphObservation
 from core_pdf.impl.exceptions import PdfContractError
 
 # Fast-path row tuple layout. Only values that vary per glyph are stored;
-# everything else lives once on the row's GlyphSegment (element 0).
-internal_ROW_SEGMENT = 0
-internal_ROW_TEXT = 1
-internal_ROW_INK_BBOX = 2
-internal_ROW_ADVANCE_BBOX = 3
-internal_ROW_BASELINE = 4
-internal_ROW_CODE_BYTES = 5
-internal_ROW_CHAR_CODE = 6
-internal_ROW_CID = 7
-internal_ROW_GID = 8
-internal_ROW_VISIBLE = 9
-internal_ROW_CONFIDENCE = 10
-internal_ROW_UNICODE_SOURCE = 11
-internal_ROW_ALTERNATES = 12
-internal_ROW_BITMAP_WIDTH = 13
-internal_ROW_BITMAP_HEIGHT = 14
-internal_ROW_BITMAP_CODE = 15
-internal_ROW_GLYPH_TRANSFORM = 16
-internal_ROW_PROVENANCE = 17
-internal_ROW_CLUSTER_ID = 18
+# everything else lives once on the row's GlyphSegment (element 0). Rows are
+# indexed with integer literals on the hot path, so this table is the contract:
+#
+#   0 segment          5 code_bytes      10 confidence      15 bitmap_code
+#   1 text             6 char_code       11 unicode_source  16 glyph_transform
+#   2 ink_bbox         7 cid             12 alternates      17 provenance
+#   3 advance_bbox     8 gid             13 bitmap_width    18 cluster_id
+#   4 baseline         9 visible         14 bitmap_height
 
 internal_GlyphEntry = tuple[Any, ...] | GlyphObservation
 

@@ -16,6 +16,28 @@ from core_pdf.impl.engine.spec.s_08_graphics.color_math import (
 
 ColorSamples = numpy.ndarray[Any, numpy.dtype[numpy.float32]]
 
+# The profile connection space is always D50-relative.
+INTERNAL_D50_WHITE = (0.9642, 1.0, 0.8249)
+
+# ICC v2 lut8/lut16 tags carry Lab in the "legacy" encoding, where 0xFF00 -- not
+# 0xFFFF -- is L*=100 and a*=b*=+127. Parsing divides every 16-bit sample by
+# 0xFFFF, so legacy Lab has to be scaled back up by this ratio afterwards. Left
+# out, pure white decodes to L*=99.6 and paints (252, 254, 255) instead of white.
+INTERNAL_LEGACY_LAB_SCALE = 65535.0 / 65280.0
+
+# Rows per block when applying a LUT transform. Multilinear interpolation holds
+# 2**input_channels intermediate arrays of (rows, 3) float32 at once, so a
+# full-page CMYK scan applied in one shot would allocate hundreds of megabytes.
+INTERNAL_TRANSFORM_BLOCK_ROWS = 1 << 18
+
+# Deduplicating a byte batch costs one sort, and pays for itself many times over
+# on real images: a CMYK page photograph runs around 10% distinct colours, so
+# the LUT walk shrinks by an order of magnitude. Below the row floor the sort is
+# not worth setting up, and above the ratio floor the batch is close enough to
+# all-distinct that deduplicating would be pure overhead.
+INTERNAL_DEDUPLICATE_MIN_ROWS = 4096
+INTERNAL_DEDUPLICATE_MIN_RATIO = 2
+
 
 class IccProfileError(ValueError):
     """Raised when an ICC profile cannot be converted by core-color."""
@@ -51,9 +73,12 @@ class IccLutProfile:
     input_tables: tuple[tuple[float, ...], ...]
     clut: tuple[tuple[float, ...], ...]
     output_tables: tuple[tuple[float, ...], ...]
+    legacy_lab: bool = False
+    black_point: tuple[float, float, float] | None = None
 
 
 class IccLutTag(TypedDict):
+    sample_bytes: int
     input_channels: int
     output_channels: int
     grid_points: int
@@ -97,9 +122,65 @@ class IccTransform:
 
     def apply(self, samples: ColorSamples) -> ColorSamples:
         validate_color_samples(samples, self.input_channels)
-        if isinstance(self.profile, IccMatrixProfile):
-            return apply_matrix_transform(self.profile, samples)
-        return apply_lut_transform(self.profile, samples)
+        profile = self.profile
+        if isinstance(profile, IccMatrixProfile):
+            return apply_matrix_transform(profile, samples)
+        rows = len(samples)
+        if rows <= INTERNAL_TRANSFORM_BLOCK_ROWS:
+            return apply_lut_transform(profile, samples)
+        result = numpy.empty((rows, 3), dtype=numpy.float32)
+        for start in range(0, rows, INTERNAL_TRANSFORM_BLOCK_ROWS):
+            stop = min(start + INTERNAL_TRANSFORM_BLOCK_ROWS, rows)
+            result[start:stop] = apply_lut_transform(
+                profile,
+                numpy.ascontiguousarray(samples[start:stop]),
+            )
+        return result
+
+    def apply_uint8(
+        self,
+        samples: numpy.ndarray[Any, numpy.dtype[numpy.uint8]],
+    ) -> numpy.ndarray[Any, numpy.dtype[numpy.uint8]]:
+        """Convert 8-bit device samples to 8-bit sRGB.
+
+        Byte inputs are the overwhelmingly common case -- every image sample
+        arrives this way -- and they buy two things a float batch cannot. The
+        per-channel input curves collapse into a 256-entry gather instead of an
+        interpolation over the batch, and a byte tuple is small enough to
+        deduplicate: real images repeat colours heavily, so only the distinct
+        ones need to walk the LUT.
+        """
+        channels = self.input_channels
+        if samples.dtype != numpy.dtype(numpy.uint8):
+            raise IccSampleError("samples must have uint8 dtype")
+        if samples.ndim != 2 or samples.shape[1] != channels:
+            raise IccSampleError(f"samples must have shape (count, {channels})")
+        if channels <= 4 and len(samples) > INTERNAL_DEDUPLICATE_MIN_ROWS:
+            distinct, inverse = internal_distinct_byte_rows(samples)
+            if len(distinct) * INTERNAL_DEDUPLICATE_MIN_RATIO < len(samples):
+                # `distinct` is all-distinct by construction, so the ratio test
+                # fails on the way back in and this recurses exactly once.
+                return self.apply_uint8(distinct)[inverse]
+        profile = self.profile
+        rows = len(samples)
+        result = numpy.empty((rows, 3), dtype=numpy.uint8)
+        for start in range(0, rows, INTERNAL_TRANSFORM_BLOCK_ROWS):
+            stop = min(start + INTERNAL_TRANSFORM_BLOCK_ROWS, rows)
+            block = samples[start:stop]
+            if isinstance(profile, IccMatrixProfile):
+                rgb = apply_matrix_transform(
+                    profile,
+                    numpy.ascontiguousarray(block, dtype=numpy.float32) / numpy.float32(255.0),
+                )
+            else:
+                curves = internal_byte_input_curves(profile.input_tables)
+                values = numpy.column_stack(
+                    [curve[block[:, index]] for index, curve in enumerate(curves)]
+                ).astype(numpy.float32, copy=False)
+                rgb = internal_lut_transform_from_curved(profile, values)
+            numpy.rint(rgb * numpy.float32(255.0), out=rgb)
+            result[start:stop] = rgb.astype(numpy.uint8)
+        return result
 
 
 @lru_cache(maxsize=256)
@@ -241,6 +322,14 @@ def apply_lut_transform(profile: IccLutProfile, samples: ColorSamples) -> ColorS
             for index, (axis, table) in enumerate(input_table_arrays)
         ]
     ).astype(numpy.float32)
+    return internal_lut_transform_from_curved(profile, values)
+
+
+def internal_lut_transform_from_curved(
+    profile: IccLutProfile,
+    values: ColorSamples,
+) -> ColorSamples:
+    """Finish a LUT transform whose input curves have already been applied."""
     if profile.color_space == "XYZ" and profile.input_channels == 3:
         values = numpy.clip(
             values @ internal_readonly_float32(profile.matrix).T,
@@ -266,13 +355,70 @@ def apply_lut_transform(profile: IccLutProfile, samples: ColorSamples) -> ColorS
         ]
     ).astype(numpy.float32)
     if profile.pcs == "Lab":
-        xyz = lab_to_xyz(output, (0.9642, 1.0, 0.8249))
+        if profile.legacy_lab:
+            output *= numpy.float32(INTERNAL_LEGACY_LAB_SCALE)
+        xyz = lab_to_xyz(output, INTERNAL_D50_WHITE)
     else:
         xyz = output
+    if profile.black_point is not None:
+        xyz = internal_compensate_black_point(xyz, profile.black_point)
     return numpy.clip(d50_xyz_to_srgb(xyz), 0.0, 1.0).astype(
         numpy.float32,
         copy=False,
     )
+
+
+def internal_compensate_black_point(
+    xyz: ColorSamples,
+    black_point: tuple[float, float, float],
+) -> ColorSamples:
+    """Scale PCS values so the profile's darkest colour lands on true black.
+
+    Relative colorimetric alone reproduces the press black as the dark grey it
+    actually is on paper, so a CMYK page renders washed out on a screen that can
+    show real black. Every colour-managed renderer therefore pairs relative
+    colorimetric with black point compensation by default, and so do we: the
+    source black is mapped to the destination black (0, sRGB can reach it) and
+    everything between is scaled linearly, keeping white fixed.
+    """
+    white = numpy.asarray(INTERNAL_D50_WHITE, dtype=numpy.float32)
+    black = numpy.asarray(black_point, dtype=numpy.float32)
+    return ((xyz - black) * (white / (white - black))).astype(numpy.float32, copy=False)
+
+
+def internal_distinct_byte_rows(
+    samples: numpy.ndarray[Any, numpy.dtype[numpy.uint8]],
+) -> tuple[numpy.ndarray[Any, numpy.dtype[numpy.uint8]], numpy.ndarray[Any, Any]]:
+    """Split a byte batch into its distinct rows plus the index that rebuilds it.
+
+    Reduces "unique rows" to a single sort over a flat integer array by packing
+    the channels into one key. Callers must hold the batch to at most four
+    channels, which is what fits in the 32-bit key.
+    """
+    channels = samples.shape[1]
+    if channels > 4:
+        raise IccSampleError("cannot pack more than four channels into one key")
+    keys = numpy.zeros(len(samples), dtype=numpy.uint32)
+    for index in range(channels):
+        keys <<= numpy.uint32(8)
+        keys |= samples[:, index]
+    ignored_keys, first, inverse = numpy.unique(keys, return_index=True, return_inverse=True)
+    return numpy.ascontiguousarray(samples[first]), inverse
+
+
+@lru_cache(maxsize=64)
+def internal_byte_input_curves(
+    input_tables: tuple[tuple[float, ...], ...],
+) -> tuple[numpy.ndarray[Any, Any], ...]:
+    """Collapse each input curve into a 256-entry table indexed by a raw byte."""
+    positions = numpy.linspace(0.0, 1.0, 256, dtype=numpy.float32)
+    curves: list[numpy.ndarray[Any, Any]] = []
+    for table in input_tables:
+        axis, values = internal_curve_table_arrays(table)
+        curve = numpy.interp(positions, axis, values).astype(numpy.float32)
+        curve.flags.writeable = False
+        curves.append(curve)
+    return tuple(curves)
 
 
 def interpolate_lut_array(
@@ -367,12 +513,10 @@ def parse_icc_lut_profile(profile: bytes) -> IccLutProfile | None:
     if color_space is None or pcs is None:
         return None
     tags = parse_icc_tags(profile)
-    intent = parse_icc_rendering_intent(profile)
-    lut = parse_icc_lut_tag(
-        select_icc_device_to_pcs_lut_tag(tags, intent),
-    )
+    lut = parse_icc_lut_tag(select_icc_lut_tag(tags, b"A2B"))
     if lut is None:
         return None
+    legacy_lab = pcs == "Lab" and profile[8] < 4
     return IccLutProfile(
         color_space=color_space,
         pcs=pcs,
@@ -383,7 +527,83 @@ def parse_icc_lut_profile(profile: bytes) -> IccLutProfile | None:
         input_tables=lut["input_tables"],
         clut=lut["clut"],
         output_tables=lut["output_tables"],
+        legacy_lab=legacy_lab,
+        black_point=internal_detect_black_point(tags, lut, pcs, legacy_lab),
     )
+
+
+def internal_detect_black_point(
+    tags: dict[bytes, bytes],
+    device_to_pcs: IccLutTag,
+    pcs: str,
+    legacy_lab: bool,
+) -> tuple[float, float, float] | None:
+    """Find the darkest colour the profile can actually reproduce.
+
+    This is the black point detection from the ICC's own white paper, and it is
+    not the same as "100% K": on a CMYK press the darkest reachable colour is a
+    rich black mixing all four inks. Ask the profile which device values it
+    would use for L*=0, clamp them to what the device can hold, then ask what
+    that ink combination really measures. Returns None when the profile has no
+    PCS-to-device table to ask, or when the answer is already black.
+    """
+    pcs_to_device = parse_icc_lut_tag(select_icc_lut_tag(tags, b"B2A"))
+    if pcs_to_device is None:
+        return None
+    if pcs_to_device["input_channels"] != 3:
+        return None
+    if pcs_to_device["output_channels"] != device_to_pcs["input_channels"]:
+        return None
+    if pcs == "Lab":
+        # L* = 0 sits at the bottom of the range, but a* = b* = 0 sits at the
+        # neutral midpoint, which is 128 of 255 for an 8-bit table and 0x8000 of
+        # 0xFFFF for a legacy 16-bit one.
+        neutral = 128.0 / 255.0 if pcs_to_device["sample_bytes"] == 1 else 32768.0 / 65535.0
+        black_pcs = numpy.asarray([[0.0, neutral, neutral]], dtype=numpy.float32)
+    else:
+        black_pcs = numpy.zeros((1, 3), dtype=numpy.float32)
+    device = numpy.clip(internal_evaluate_lut_tag(pcs_to_device, black_pcs), 0.0, 1.0)
+    measured = internal_evaluate_lut_tag(device_to_pcs, numpy.ascontiguousarray(device))
+    if pcs == "Lab":
+        if legacy_lab:
+            measured *= numpy.float32(INTERNAL_LEGACY_LAB_SCALE)
+        xyz = lab_to_xyz(measured, INTERNAL_D50_WHITE)
+    else:
+        xyz = measured
+    black = tuple(float(value) for value in xyz[0][:3])
+    if not all(0.0 < value < 0.5 for value in black):
+        # A black point at or below the origin leaves compensation as a no-op,
+        # and an implausibly light one means the tables disagree; skip both.
+        return None
+    return (black[0], black[1], black[2])
+
+
+def internal_evaluate_lut_tag(tag: IccLutTag, values: ColorSamples) -> ColorSamples:
+    """Run samples through one parsed LUT tag: input curves, CLUT, output curves.
+
+    The tag's matrix is deliberately skipped. It only applies to an XYZ-encoded
+    PCS input, and the one caller feeds either Lab or the XYZ origin, which the
+    matrix maps to itself.
+    """
+    input_tables = tuple(internal_curve_table_arrays(table) for table in tag["input_tables"])
+    curved = numpy.column_stack(
+        [
+            numpy.interp(values[:, index], axis, table)
+            for index, (axis, table) in enumerate(input_tables)
+        ]
+    ).astype(numpy.float32)
+    clut = interpolate_lut_array(
+        internal_readonly_float32(tag["clut"]),
+        tag["grid_points"],
+        curved,
+    )
+    output_tables = tuple(internal_curve_table_arrays(table) for table in tag["output_tables"])
+    return numpy.column_stack(
+        [
+            numpy.interp(clut[:, index], axis, table)
+            for index, (axis, table) in enumerate(output_tables)
+        ]
+    ).astype(numpy.float32)
 
 
 def parse_icc_tags(profile: bytes) -> dict[bytes, bytes]:
@@ -452,24 +672,19 @@ def parse_icc_curve_tag(payload: bytes | None) -> IccCurve | None:
     return None
 
 
-def parse_icc_rendering_intent(profile: bytes) -> int:
-    if len(profile) < 68:
-        return 0
-    return int.from_bytes(profile[64:68], "big")
+def select_icc_lut_tag(tags: dict[bytes, bytes], direction: bytes) -> bytes | None:
+    """Pick a LUT tag, preferring the relative colorimetric one.
 
-
-def select_icc_device_to_pcs_lut_tag(
-    tags: dict[bytes, bytes],
-    intent: int,
-) -> bytes | None:
-    preferred = {
-        0: (b"A2B0", b"A2B1", b"A2B2"),
-        1: (b"A2B1", b"A2B0", b"A2B2"),
-        2: (b"A2B2", b"A2B1", b"A2B0"),
-        3: (b"A2B1", b"A2B0", b"A2B2"),
-    }.get(intent, (b"A2B0", b"A2B1", b"A2B2"))
-    for signature in preferred:
-        payload = tags.get(signature)
+    PDF 32000-1 8.6.5.8 makes RelativeColorimetric the default rendering intent,
+    which is a different table from the one the profile header nominates -- and
+    the difference is not cosmetic. A perceptual table black-points its output,
+    reporting L* = 0 for the darkest ink mix, so black point detection reads a
+    profile that already reaches true black and compensation silently does
+    nothing. The relative colorimetric table reports the ink as the dark grey it
+    measures, which is the number compensation needs.
+    """
+    for suffix in (b"1", b"0", b"2"):
+        payload = tags.get(direction + suffix)
         if payload is not None:
             return payload
     return None
@@ -531,6 +746,7 @@ def parse_icc_lut_tag(payload: bytes | None) -> IccLutTag | None:
     if input_tables is None or clut is None or output_tables is None:
         return None
     tag: IccLutTag = {
+        "sample_bytes": 1 if tag_type == b"mft1" else 2,
         "input_channels": input_channels,
         "output_channels": output_channels,
         "grid_points": grid_points,
@@ -552,21 +768,18 @@ def parse_icc_lut_grid(
 ) -> tuple[tuple[tuple[float, ...], ...] | None, int]:
     if sample_bytes not in (1, 2):
         raise ValueError("ICC LUT samples must be one or two bytes")
+    if rows < 0 or columns < 0:
+        return None, offset
+    end = offset + rows * columns * sample_bytes
+    if end > len(payload):
+        return None, offset
+    # A press profile's colour table runs to tens of thousands of grid nodes, so
+    # decode the whole block at once rather than a sample at a time.
+    dtype = numpy.dtype(numpy.uint8) if sample_bytes == 1 else numpy.dtype(">u2")
     scale = 255.0 if sample_bytes == 1 else 65535.0
-    values: list[tuple[float, ...]] = []
-    for _ in range(rows):
-        row: list[float] = []
-        for _ in range(columns):
-            end = offset + sample_bytes
-            if end > len(payload):
-                return None, offset
-            sample = (
-                payload[offset] if sample_bytes == 1 else int.from_bytes(payload[offset:end], "big")
-            )
-            row.append(sample / scale)
-            offset = end
-        values.append(tuple(row))
-    return tuple(values), offset
+    samples = numpy.frombuffer(payload[offset:end], dtype=dtype)
+    grid = (samples.astype(numpy.float64) / scale).reshape(rows, columns)
+    return tuple(map(tuple, grid.tolist())), end
 
 
 def icc_color_space_name(signature: bytes) -> str | None:

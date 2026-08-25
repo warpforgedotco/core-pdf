@@ -159,6 +159,37 @@ navigation, forms, attachments, and optional-content behavior. `document_xref.py
 separate cohesive base for xref scanning/recovery, while `document_pages.py` contains only the
 read-only lazy page sequence and shared inherited-page constants.
 
+### Device colour and the default CMYK profile
+
+PDF 32000-1 leaves all three Device spaces device-dependent. Treating
+DeviceGray and DeviceRGB as sRGB is renderer behaviour rather than anything the
+spec defines, but it is what viewers do and it costs nothing: the components
+map straight onto the components of the output space. DeviceCMYK has no such
+correspondence, and the spec gives no conversion to RGB at all. The
+uncalibrated `255*(1-ink)*(1-black)` formula that fills the gap is visibly
+wrong -- it renders the process inks as saturated screen primaries and 100% K as
+pure black -- so `s_08_graphics/device_profiles.py` runs DeviceCMYK through a
+real press profile vendored in `_vendor/icc/`, and keeps the ink formula only as
+a fallback for an install where that file is missing.
+
+Two details in `s_08_graphics/icc_profiles.py` are load-bearing and easy to get
+wrong. LUT tags are selected by **relative colorimetric** intent
+(`select_icc_lut_tag` prefers the `1` suffix) because PDF 8.6.5.8 makes that the
+default rendering intent, and because a perceptual table already black-points
+its output, which silently disables the next step. That step is **black point
+compensation**: relative colorimetric alone reproduces press black as the dark
+grey it measures on paper, so a CMYK page renders washed out on a screen that
+can show real black. `internal_detect_black_point` finds the darkest colour the
+profile can actually reach -- a rich black mixing all four inks, not 100% K --
+by asking the profile's `B2A` table which inks it would use for L\* = 0, and
+`internal_compensate_black_point` scales the connection space so that lands on
+zero. Together these reproduce lcms2 to within 0.21 of 255 mean.
+
+Anything reaching an ICC LUT from an image should call `apply_uint8` rather than
+`apply`: it collapses the input curves into a byte-indexed gather and
+deduplicates repeated colours, which is worth roughly an order of magnitude on
+photographic CMYK.
+
 ### Golden rasters
 
 Rendering uses direct module owners rather than a barrel module: display-list records and options
@@ -169,7 +200,11 @@ live in `render/display.py`, pure raster kernels in `render/kernels.py`, the mut
 `tests/test_rendering_golden.py` hashes the RGBA output of the corpus. The
 always-on layer renders 24 documents chosen by greedy line-cover — together they
 exercise the rendering modules across the full 224-document reach — and
-`CORE_PDF_RASTER_GOLDEN_FULL=1` sweeps all of them. A refactor that is meant to
+`CORE_PDF_RASTER_GOLDEN_FULL=1` sweeps all of them. CI sets that variable, so
+the whole corpus gates a merge; run the subset locally while iterating and the
+sweep before pushing. Reaching every *line* of `engine/render/` is not the same
+as pinning every *pixel*: four digests once sat in the snapshot that no commit
+could produce, unnoticed because only the subset ran in CI. A refactor that is meant to
 preserve behavior must leave `tests/snapshots/raster/first_page_scale1.json`
 untouched; regenerate it with `CORE_PDF_UPDATE_RASTER_GOLDEN=1` only when an
 output change is intended, and review the diff. Recompute the covering subset

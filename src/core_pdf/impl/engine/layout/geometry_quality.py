@@ -40,16 +40,6 @@ class LayoutGeometrySummary:
     repairable_count: int
     text_run_count: int
     line_count: int
-    issue_codes: tuple[tuple[str, int], ...]
-    suspicion_score: float
-
-    @property
-    def has_issues(self) -> bool:
-        return self.issue_count > 0
-
-    @property
-    def has_repairable_issues(self) -> bool:
-        return self.repairable_count > 0
 
 
 def text_run_geometry_issues(run: TextRun) -> tuple[LayoutGeometryIssue, ...]:
@@ -344,7 +334,6 @@ def page_layout_geometry_summary(lines: list[LayoutLine]) -> LayoutGeometrySumma
     warning_count = 0
     repairable_count = 0
     text_run_count = 0
-    counts: dict[str, int] = {}
     for issue in issues:
         if issue.severity == "error":
             error_count += 1
@@ -352,7 +341,6 @@ def page_layout_geometry_summary(lines: list[LayoutLine]) -> LayoutGeometrySumma
             warning_count += 1
         if issue.repairable:
             repairable_count += 1
-        counts[issue.code] = counts.get(issue.code, 0) + 1
     for line in lines:
         text_run_count += len(line.runs)
     return LayoutGeometrySummary(
@@ -362,38 +350,7 @@ def page_layout_geometry_summary(lines: list[LayoutLine]) -> LayoutGeometrySumma
         repairable_count=repairable_count,
         text_run_count=text_run_count,
         line_count=len(lines),
-        issue_codes=tuple(sorted(counts.items())),
-        suspicion_score=layout_geometry_suspicion_score(issues),
     )
-
-
-def layout_geometry_suspicion_score(
-    issues: tuple[LayoutGeometryIssue, ...],
-) -> float:
-    score = 0.0
-    for issue in issues:
-        if issue.severity == "error":
-            score += 2.5
-        elif issue.severity == "warning":
-            score += 1.0
-        else:
-            score += 0.5
-        if issue.repairable:
-            score += 1.5
-        if issue.code in {
-            "unsupported_text_run",
-            "glyph_cluster_text_mismatch",
-            "unsupported_glyph_cluster_text",
-            "low_confidence_text_run",
-        }:
-            score += 1.5
-        elif issue.code in {
-            "glyph_clusters_outside_run_bbox",
-            "run_bbox_oversized_for_glyph_clusters",
-            "line_bbox_oversized_for_words",
-        }:
-            score += 0.75
-    return round(score, 4)
 
 
 def with_issue_detail(

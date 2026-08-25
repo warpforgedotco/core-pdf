@@ -818,3 +818,66 @@ def test_font_decoder_recovers_adobe_kr_unicode_encoding() -> None:
     assert glyph.unicode == "한"
     assert glyph.cid == 2835
     assert glyph.unicode_source == "predefined_cmap"
+
+
+TO_UNICODE_WA = b"""
+/CIDInit /ProcSet findresource begin
+12 dict begin
+begincmap
+1 begincodespacerange
+<00> <ff>
+endcodespacerange
+1 beginbfrange
+<20> <7e> <0020>
+endbfrange
+endcmap
+CMapName currentdict /CMap defineresource pop
+end end
+"""
+
+
+@pytest.mark.parametrize(
+    ("encoding", "code", "expected"),
+    [
+        ("WinAnsiEncoding", ord("W"), "W"),
+        ("WinAnsiEncoding", ord("r"), "r"),
+        ("WinAnsiEncoding", 0xA9, "copyright"),
+        ("MacRomanEncoding", ord("W"), "W"),
+        ("MacRomanEncoding", 0xA9, "copyright"),
+    ],
+)
+def test_named_base_encoding_names_glyphs_even_with_a_tounicode_cmap(
+    encoding: str, code: int, expected: str
+) -> None:
+    """A ToUnicode CMap must not cost the font its glyph names.
+
+    ``byte_decode_table`` is only built when a simple font has no ToUnicode
+    CMap, so glyph-name lookup cannot read the base encoding off it. Before
+    this was handled, every code in a WinAnsi/MacRoman simple font resolved to
+    ``.notdef``, and CFF/Type1 outlines rendered as the font's own box glyph.
+    """
+    font = {
+        "Subtype": "Type1",
+        "BaseFont": "FSElliotPro",
+        "Encoding": encoding,
+        "ToUnicode": PdfStream(decoded_data=TO_UNICODE_WA),
+    }
+
+    decoder = FontDecoder(cast(Any, font))
+
+    assert decoder.byte_decode_table is None
+    assert decoder.internal_simple_glyph_name(code) == expected
+
+
+def test_differences_still_win_over_the_named_base_encoding() -> None:
+    font = {
+        "Subtype": "Type1",
+        "BaseFont": "FSElliotPro",
+        "Encoding": {"BaseEncoding": "WinAnsiEncoding", "Differences": [ord("W"), "alpha"]},
+        "ToUnicode": PdfStream(decoded_data=TO_UNICODE_WA),
+    }
+
+    decoder = FontDecoder(cast(Any, font))
+
+    assert decoder.internal_simple_glyph_name(ord("W")) == "alpha"
+    assert decoder.internal_simple_glyph_name(ord("r")) == "r"

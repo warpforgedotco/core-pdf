@@ -20,9 +20,9 @@ from core_pdf.impl.engine.spec.s_07_document.document_labels import (
     format_page_label,
 )
 from core_pdf.impl.engine.spec.s_07_document.metadata import (
-    MetadataResolver,
     resolve_info_metadata,
 )
+from core_pdf.impl.engine.spec.s_07_objects.resolver_values import PdfValueResolver
 from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.engine.spec.s_09_fonts.decoder import FontDecoder
 from core_pdf.impl.primitives import MISSING, PdfName
@@ -280,7 +280,7 @@ def test_trapped_info_value_accepts_pdf_name() -> None:
     info = {"Trapped": PdfName.of("False")}
 
     result = resolve_info_metadata(
-        cast(MetadataResolver, internal_TestResolver()), cast(PdfDict, {"Info": info})
+        cast(PdfValueResolver, internal_TestResolver()), cast(PdfDict, {"Info": info})
     )
 
     assert result["Trapped"] == PdfName.of("False")

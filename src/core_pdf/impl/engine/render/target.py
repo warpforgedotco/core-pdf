@@ -42,6 +42,7 @@ from core_pdf.impl.engine.render.kernels import (
     internal_blend_solid_array_numpy,
     internal_blit_indexed_channels,
     internal_blit_reshaped_channels,
+    internal_box_downsample,
     internal_cached_raster_coordinates,
     internal_color_rgba,
     internal_composite_normal_group_numpy,
@@ -56,6 +57,7 @@ from core_pdf.impl.engine.render.kernels import (
     internal_intersect_box,
     internal_make_page_geometry,
     internal_shading_color_rgba,
+    internal_signed_area_coverage,
     internal_soft_mask_alpha_at,
     internal_soft_mask_samples,
     internal_translate_rect,
@@ -393,6 +395,44 @@ class internal_RasterTarget:
         ix0, iy0, ix1, iy1 = pixel_box
         rectangular_clip = self.clip_paths_are_axis_aligned_rects()
         pixels = self.pixels
+        # page_box_to_pixels expands outward (floor left/top, ceil right/bottom),
+        # so filling ix0:ix1 solid paints whole pixels the rectangle only partly
+        # covers. Every axis-aligned fill went through here unantialiased: on
+        # IRS-2023-Form-1095-A the three 1.57px-wide "I" glyphs of "Part III",
+        # 1.39px apart, each grew to three whole pixels and merged into one solid
+        # white block. A rectangle that lands on pixel boundaries still takes the
+        # memset path below; one that does not gets its exact coverage, which is
+        # separable -- full in the interior, fractional in the edge row/column.
+        scale = self.scale
+        left = (x0 - self.crop_x0) * scale
+        right = (x1 - self.crop_x0) * scale
+        top = (self.crop_y1 - y1) * scale
+        bottom = (self.crop_y1 - y0) * scale
+        if (
+            rectangular_clip
+            and blend_mode is None
+            and buffer_stack[-1][1] is None
+            and not (
+                left <= ix0 + 1e-9
+                and right >= ix1 - 1e-9
+                and top <= iy0 + 1e-9
+                and bottom >= iy1 - 1e-9
+            )
+        ):
+            columns = numpy.arange(ix0, ix1, dtype=numpy.float64)
+            rows = numpy.arange(iy0, iy1, dtype=numpy.float64)
+            x_coverage = numpy.clip(
+                numpy.minimum(columns + 1.0, right) - numpy.maximum(columns, left), 0.0, 1.0
+            )
+            y_coverage = numpy.clip(
+                numpy.minimum(rows + 1.0, bottom) - numpy.maximum(rows, top), 0.0, 1.0
+            )
+            internal_blend_normal_alpha_array_numpy(
+                self.pixel_view(pixels)[iy0:iy1, ix0:ix1],
+                rgba,
+                numpy.rint(numpy.outer(y_coverage, x_coverage) * rgba[3]).astype(numpy.uint8),
+            )
+            return
         if (
             rgba[3] == 255
             and blend_mode is None
@@ -960,6 +1000,32 @@ class internal_RasterTarget:
         if pixel_box is None:
             return
         ix0, iy0, ix1, iy1 = pixel_box
+        pixel_area = (ix1 - ix0) * (iy1 - iy0)
+        rectangular_clip = clip_paths_are_axis_aligned_rects()
+        normal_fast = can_blend_normal_fast(blend_mode)
+        if normal_fast and rectangular_clip and fill_rule == "nonzero" and pixel_area < 10_000:
+            # Analytic coverage for the whole box in one pass, then one blend.
+            # Cost follows the edges' extents rather than rows x edges, and the
+            # result is exact rather than quantized to a 4x4 sample grid. This
+            # runs first because it needs neither the y-extent columns nor the
+            # sample-path array built below, and it takes ~99% of fills.
+            source = numpy.asarray(edges, dtype=numpy.float64)
+            sloped = source[:, 1] != source[:, 3]
+            if not sloped.any():
+                return
+            source = source[sloped]
+            device_edges = numpy.empty(source.shape, dtype=numpy.float64)
+            device_edges[:, 0] = (source[:, 0] - crop_x0) * scale - ix0
+            device_edges[:, 1] = (crop_y1 - source[:, 1]) * scale - iy0
+            device_edges[:, 2] = (source[:, 2] - crop_x0) * scale - ix0
+            device_edges[:, 3] = (crop_y1 - source[:, 3]) * scale - iy0
+            coverage = internal_signed_area_coverage(device_edges, ix1 - ix0, iy1 - iy0)
+            internal_blend_normal_alpha_array_numpy(
+                pixel_view(pixels)[iy0:iy1, ix0:ix1],
+                rgba,
+                numpy.rint(coverage * rgba[3]).astype(numpy.uint8),
+            )
+            return
         edge_segments = [
             (
                 ex0,
@@ -977,46 +1043,68 @@ class internal_RasterTarget:
         edge_segments_array = (
             numpy.asarray(edge_segments, dtype=numpy.float64) if len(edge_segments) >= 8 else None
         )
-        pixel_area = (ix1 - ix0) * (iy1 - iy0)
         if pixel_area >= 10_000:
             fill_path_scanlines(edge_segments, pixel_box, rgba, blend_mode, fill_rule)
             return
         samples = 4
-        rectangular_clip = clip_paths_are_axis_aligned_rects()
-        normal_fast = can_blend_normal_fast(blend_mode)
+        # Sample every scanline of the box up front. Called per pixel row this
+        # handed the kernel four y values at a time, so the numpy work was pure
+        # call overhead; one call per fill amortizes it over the whole box.
+        # The y values are spelled exactly as the per-row form below to keep
+        # each sample bit-identical.
+        all_row_crossings = None
+        if edge_segments_array is not None:
+            row_count = iy1 - iy0
+            sample_offsets = (numpy.arange(samples, dtype=numpy.float64) + 0.5) / samples
+            page_ys = (
+                crop_y1
+                - (
+                    numpy.repeat(numpy.arange(iy0, iy1, dtype=numpy.float64), samples)
+                    + numpy.tile(sample_offsets, row_count)
+                )
+                / scale
+            )
+            all_row_crossings = internal_fill_path_sample_crossings_numpy(
+                edge_segments_array, page_ys
+            )
         for py in range(iy0, iy1):
             row = py * width * 4
             sample_spans = []
-            if edge_segments_array is not None:
-                page_ys = numpy.empty(samples, dtype=numpy.float64)
+            if all_row_crossings is not None:
+                base = (py - iy0) * samples
                 for sy in range(samples):
-                    page_ys[sy] = crop_y1 - (py + (sy + 0.5) / samples) / scale
-                for crossings in internal_fill_path_sample_crossings_numpy(
-                    edge_segments_array, page_ys
-                ):
-                    sample_spans.append(internal_fill_path_crossing_spans(crossings, fill_rule))
+                    sample_spans.append(
+                        internal_fill_path_crossing_spans(all_row_crossings[base + sy], fill_rule)
+                    )
             else:
                 for sy in range(samples):
                     page_y = crop_y1 - (py + (sy + 0.5) / samples) / scale
                     crossings = internal_fill_path_sample_crossings(edge_segments, page_y)
                     sample_spans.append(internal_fill_path_crossing_spans(crossings, fill_rule))
             if normal_fast and rectangular_clip:
-                coverage = numpy.zeros(ix1 - ix0, dtype=numpy.uint8)
-                for sy, spans in enumerate(sample_spans):
-                    for sx in range(samples):
-                        sample_offset = (sx + 0.5) / samples
-                        for start_x, end_x in spans:
-                            start = max(
-                                ix0,
-                                math.ceil((start_x - crop_x0) * scale - sample_offset),
-                            )
-                            end = min(
-                                ix1,
-                                math.ceil((end_x - crop_x0) * scale - sample_offset),
-                            )
+                # Accumulate into a difference array: each covered span is two
+                # integer updates instead of a numpy slice-add, and the row is
+                # summed once at the end. Coverage never exceeds samples**2, so
+                # it still fits uint8, and integer addition is commutative --
+                # reordering the sample loops cannot change the totals.
+                deltas = [0] * (ix1 - ix0 + 1)
+                covered_any = False
+                for spans in sample_spans:
+                    for start_x, end_x in spans:
+                        span_start = (start_x - crop_x0) * scale
+                        span_end = (end_x - crop_x0) * scale
+                        for sx in range(samples):
+                            sample_offset = (sx + 0.5) / samples
+                            start = max(ix0, math.ceil(span_start - sample_offset))
+                            end = min(ix1, math.ceil(span_end - sample_offset))
                             if end > start:
-                                coverage[start - ix0 : end - ix0] += 1
-                if numpy.any(coverage):
+                                deltas[start - ix0] += 1
+                                deltas[end - ix0] -= 1
+                                covered_any = True
+                if covered_any:
+                    coverage = numpy.cumsum(numpy.asarray(deltas[:-1], dtype=numpy.int16)).astype(
+                        numpy.uint8
+                    )
                     target = pixel_view(pixels)[py, ix0:ix1]
                     internal_blend_normal_alpha_array_numpy(
                         target,
@@ -2023,6 +2111,62 @@ class internal_RasterTarget:
                     return
                 if numpy.all(alpha_view == 255) and internal_soft_mask_samples(data) is None:
                     source_alpha = None
+        # Average before sampling when the image is being shrunk. Both blit
+        # paths below resample with nearest-neighbour, which at a 4x reduction
+        # keeps about one source pixel in sixteen -- enough to drop the thin
+        # rules and letter stems of a scanned page. This sits ahead of the
+        # affine dispatch so the rotated path gets an averaged source too.
+        #
+        # Both source axes are held to the *larger* device extent rather than
+        # matched to width and height separately: a quad may rotate the image,
+        # in which case its height runs along the box's width, and reducing per
+        # axis would shrink the wrong one. Taking the maximum can only reduce
+        # less than strictly necessary, never more.
+        scale = self.scale
+        device_extent = max(
+            1,
+            int(math.ceil((box[2] - box[0]) * scale)),
+            int(math.ceil((box[3] - box[1]) * scale)),
+        )
+        target_width = device_extent
+        target_height = device_extent
+        if width_px > target_width or height_px > target_height:
+            source_samples = (
+                converted
+                if isinstance(converted, numpy.ndarray)
+                else numpy.frombuffer(converted, dtype=numpy.uint8)
+            )
+            pixel_total = width_px * height_px
+            alpha_samples = (
+                numpy.asarray(source_alpha, dtype=numpy.uint8) if source_alpha is not None else None
+            )
+            # Colour and alpha reduce together or not at all. A decoded alpha
+            # plane that does not match Width x Height cannot be reduced with
+            # them, and reducing only the colour would leave the alpha indexed
+            # by the old width -- every sample below reads the wrong offset.
+            reducible = alpha_samples is None or alpha_samples.size == pixel_total
+            if pixel_total and reducible and source_samples.size % pixel_total == 0:
+                reduced, reduced_width, reduced_height = internal_box_downsample(
+                    source_samples,
+                    width_px,
+                    height_px,
+                    source_samples.size // pixel_total,
+                    target_width,
+                    target_height,
+                )
+                if reduced_width != width_px or reduced_height != height_px:
+                    if alpha_samples is not None:
+                        source_alpha = internal_box_downsample(
+                            alpha_samples,
+                            width_px,
+                            height_px,
+                            1,
+                            target_width,
+                            target_height,
+                        )[0]
+                    converted = reduced
+                    width_px = reduced_width
+                    height_px = reduced_height
         quad = internal_image_quad(data)
         comps = source_channels or (3 if len(converted) >= width_px * height_px * 3 else 1)
         raster_metrics.image_count += 1
