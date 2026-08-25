@@ -159,28 +159,37 @@ def internal_group_text(
     # therefore reach the reordering test without touching the source column at all.
     if may_contain_ocr and bool((observations.source[indexes] == internal_OCR_SOURCE).any()):
         rotation = int(observations.rotation[indexes[0]]) % 360
+        boxes = observations.bbox[indexes]
+        if rotation == 90:
+            positions = (boxes[:, 1] + boxes[:, 3]) * 0.5
+        elif rotation == 180:
+            positions = -(boxes[:, 0] + boxes[:, 2]) * 0.5
+        elif rotation == 270:
+            positions = -(boxes[:, 1] + boxes[:, 3]) * 0.5
+        else:
+            positions = (boxes[:, 0] + boxes[:, 2]) * 0.5
+        position_values = positions.tolist()
 
-        def baseline_position(index: int) -> float:
-            box = observations.bbox[index]
-            if rotation == 90:
-                return float((box[1] + box[3]) * 0.5)
-            if rotation == 180:
-                return -float((box[0] + box[2]) * 0.5)
-            if rotation == 270:
-                return -float((box[1] + box[3]) * 0.5)
-            return float((box[0] + box[2]) * 0.5)
-
-        rtl = sum(
-            unicodedata.bidirectional(character) in {"R", "AL", "AN"}
-            for index in indexes
-            for character in observations.text[index]
+        # One pass over the text counts both directions; ASCII text can only
+        # contribute L characters, and only letters carry a strong class.
+        rtl = 0
+        ltr = 0
+        bidirectional = unicodedata.bidirectional
+        for index in indexes:
+            observation_text = observations.text[index]
+            if observation_text.isascii():
+                ltr += sum(map(str.isalpha, observation_text))
+                continue
+            for character in observation_text:
+                direction_class = bidirectional(character)
+                if direction_class == "L":
+                    ltr += 1
+                elif direction_class in {"R", "AL", "AN"}:
+                    rtl += 1
+        order = sorted(
+            range(len(position_values)), key=position_values.__getitem__, reverse=rtl > ltr
         )
-        ltr = sum(
-            unicodedata.bidirectional(character) == "L"
-            for index in indexes
-            for character in observations.text[index]
-        )
-        indexes = numpy.asarray(sorted(indexes, key=baseline_position, reverse=rtl > ltr))
+        indexes = numpy.asarray([indexes[position] for position in order])
     references = tuple(observations.references[index] for index in indexes)
     if references and all(reference is not None for reference in references):
         runs = cast(list[TextRun], list(references))
@@ -212,15 +221,21 @@ def internal_looks_like_native_artifact(text: str) -> bool:
     # Unicode punctuation and scripts can be valid standalone text runs.  The
     # damaged mappings this targets are emitted as ASCII-looking rules and
     # dotted leaders, so leave non-ASCII lines untouched.
-    if any(ord(character) > 127 for character in text):
+    if not text.isascii():
         return False
-    nonspace = [character for character in text if not character.isspace()]
-    if not nonspace:
+    nonspace_count = 0
+    alphanumeric = 0
+    for character in text:
+        if character.isspace():
+            continue
+        nonspace_count += 1
+        if character.isalnum():
+            alphanumeric += 1
+            if alphanumeric >= 12:
+                return False
+    if not nonspace_count:
         return False
-    alphanumeric = sum(character.isalnum() for character in nonspace)
-    if alphanumeric >= 12:
-        return False
-    return (len(nonspace) - alphanumeric) / len(nonspace) >= 0.60
+    return (nonspace_count - alphanumeric) / nonspace_count >= 0.60
 
 
 def internal_repeated_native_label_tokens(
@@ -1035,6 +1050,7 @@ def internal_classify_blocks(
         },
         reverse=True,
     )
+    heading_rank = {size: rank for rank, size in enumerate(heading_sizes, start=1)}
     for block in blocks:
         text = " ".join(line.text for line in block.lines)
         normalized = collapse_ws(text)
@@ -1051,11 +1067,11 @@ def internal_classify_blocks(
             body_font_size is not None
             and len(block.lines) <= 3
             and len(normalized) <= 240
-            and max((line.font_size or 0.0) for line in block.lines) >= body_font_size * 1.2
+            and (size := max((line.font_size or 0.0) for line in block.lines))
+            >= body_font_size * 1.2
         ):
             kind = "heading"
-            size = max((line.font_size or 0.0) for line in block.lines)
-            level = min(3, heading_sizes.index(size) + 1) if size in heading_sizes else 1
+            level = min(3, heading_rank.get(size, 1))
         classified.append(replace(block, kind=kind, level=level))
     return classified
 
