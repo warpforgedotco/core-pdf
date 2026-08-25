@@ -1401,6 +1401,8 @@ class CroppedPage(Page):
 
     @property
     def objects(self) -> dict[str, list[ObjectDict]]:
+        if self._objects is not None:
+            return self._objects
         objects = super().objects
 
         def keep(obj: ObjectDict) -> bool:
@@ -1424,9 +1426,12 @@ class FilteredPage(Page):
         self.__dict__.update(parent.__dict__)
         self._parent = parent
         self._test = test
+        self._objects = None
 
     @property
     def objects(self) -> dict[str, list[ObjectDict]]:
+        if self._objects is not None:
+            return self._objects
         result = {
             kind: [obj for obj in values if self._test(obj)]
             for kind, values in self._parent.objects.items()
