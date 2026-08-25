@@ -408,17 +408,31 @@ def internal_valid_tessdata_path(path: str | os.PathLike[str]) -> Path | None:
     return None
 
 
-@cache
 def internal_tessdata_path() -> str:
-    """Resolve English traineddata without relying on wheel build prefixes."""
+    """Resolve English traineddata without relying on wheel build prefixes.
+
+    Success and failure are both memoized: ``functools.cache`` alone would not
+    store a raised error, so a machine without tessdata re-ran the full
+    resolution — directory probes plus a ``tesseract --list-langs``
+    subprocess — on every OCR attempt.
+    """
+    resolved_path, error_message = internal_resolve_tessdata_path()
+    if resolved_path is None:
+        raise RuntimeError(error_message)
+    return resolved_path
+
+
+@cache
+def internal_resolve_tessdata_path() -> tuple[str | None, str]:
     configured = os.environ.get("TESSDATA_PREFIX")
     if configured:
         resolved = internal_valid_tessdata_path(configured)
         if resolved is None:
-            raise RuntimeError(
-                "TESSDATA_PREFIX must name a tessdata directory containing eng.traineddata"
+            return (
+                None,
+                "TESSDATA_PREFIX must name a tessdata directory containing eng.traineddata",
             )
-        return str(resolved)
+        return str(resolved), ""
 
     try:
         default_path, languages = internal_ensure_tesserocr().get_languages()
@@ -427,7 +441,7 @@ def internal_tessdata_path() -> str:
     if "eng" in languages:
         resolved = internal_valid_tessdata_path(default_path)
         if resolved is not None:
-            return str(resolved)
+            return str(resolved), ""
 
     executable = shutil.which("tesseract")
     if executable is not None:
@@ -447,11 +461,12 @@ def internal_tessdata_path() -> str:
             if match is not None:
                 resolved = internal_valid_tessdata_path(match.group(1))
                 if resolved is not None:
-                    return str(resolved)
+                    return str(resolved), ""
 
-    raise RuntimeError(
+    return (
+        None,
         "English Tesseract data was not found; set TESSDATA_PREFIX to a tessdata directory "
-        "containing eng.traineddata"
+        "containing eng.traineddata",
     )
 
 

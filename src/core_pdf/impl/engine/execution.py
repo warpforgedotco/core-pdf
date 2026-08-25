@@ -305,6 +305,11 @@ class ExecutionRuntime:
         self.internal_stage_active = dict.fromkeys(WorkStage, 0)
         self.internal_executor: ThreadPoolExecutor | None = None
         self.internal_lock = threading.RLock()
+        # Progress signal for workers waiting on futures while helping: bumped
+        # and notified whenever queued work, stage eligibility, or a future's
+        # resolution changes, so waiters block instead of polling.
+        self.internal_progress = threading.Condition(threading.Lock())
+        self.internal_progress_generation = 0
         self.internal_local = threading.local()
         self.internal_anonymous_context = object()
         self.internal_pending: dict[object, deque[internal_QueuedWork]] = {}
@@ -485,7 +490,13 @@ class ExecutionRuntime:
                 self.internal_round_robin.append(key)
             queue.append(work)
             self.internal_dispatch_locked()
+        self.internal_signal_progress()
         return future
+
+    def internal_signal_progress(self) -> None:
+        with self.internal_progress:
+            self.internal_progress_generation += 1
+            self.internal_progress.notify_all()
 
     def internal_dispatch_locked(self) -> None:
         while self.internal_active < self.internal_max_workers and self.internal_round_robin:
@@ -578,6 +589,7 @@ class ExecutionRuntime:
         finally:
             if stage_acquired:
                 self.internal_stage_slot_released(work.stage)
+            self.internal_signal_progress()
         return True
 
     def internal_help_once(self, stage: WorkStage) -> bool:
@@ -591,9 +603,19 @@ class ExecutionRuntime:
     ) -> internal_ResultT:
         if not self.in_worker:
             return future.result()
+        progress = self.internal_progress
         while not future.done():
-            if not self.internal_help_once(stage):
-                wait((future,), timeout=0.001, return_when=FIRST_COMPLETED)
+            with progress:
+                generation = self.internal_progress_generation
+            if self.internal_help_once(stage):
+                continue
+            # Nothing helpable right now: sleep until progress is signalled
+            # (new work, a freed stage slot, or a resolved future). Every
+            # resolution path bumps the generation, so a change since the help
+            # attempt means "look again"; the timeout is only a backstop.
+            with progress:
+                if not future.done() and generation == self.internal_progress_generation:
+                    progress.wait(timeout=0.05)
         return future.result()
 
     def internal_execute_queued(self, work: internal_QueuedWork) -> None:
@@ -619,17 +641,20 @@ class ExecutionRuntime:
             work.future.set_exception(error)
         else:
             work.future.set_result(result)
+        self.internal_signal_progress()
 
     def internal_stage_slot_released(self, stage: WorkStage) -> None:
         with self.internal_lock:
             self.internal_stage_active[stage] = max(0, self.internal_stage_active[stage] - 1)
             self.internal_dispatch_locked()
+        self.internal_signal_progress()
 
     def internal_worker_slot_released(self, stage: WorkStage) -> None:
         with self.internal_lock:
             self.internal_active = max(0, self.internal_active - 1)
             self.internal_stage_active[stage] = max(0, self.internal_stage_active[stage] - 1)
             self.internal_dispatch_locked()
+        self.internal_signal_progress()
 
     def internal_close_context(self, context: TaskScope) -> None:
         with self.internal_lock:
@@ -641,6 +666,7 @@ class ExecutionRuntime:
             )
             for work in queue:
                 work.future.cancel()
+        self.internal_signal_progress()
 
     def map_ordered(
         self,
@@ -689,17 +715,25 @@ class ExecutionRuntime:
                     break
                 pending[self.submit(function, value, context=context, stage=stage)] = next_index
                 next_index += 1
+            progress = self.internal_progress
             while pending:
                 done = {future for future in pending if future.done()}
                 while not done:
-                    if self.in_worker and self.internal_help_once(stage):
+                    if not self.in_worker:
+                        completed, internal_not_done = wait(
+                            tuple(pending), return_when=FIRST_COMPLETED
+                        )
+                        done = set(completed)
+                        continue
+                    with progress:
+                        generation = self.internal_progress_generation
+                    if self.internal_help_once(stage):
                         done = {future for future in pending if future.done()}
                         continue
-                    done, internal_not_done = wait(
-                        tuple(pending),
-                        timeout=0.001 if self.in_worker else None,
-                        return_when=FIRST_COMPLETED,
-                    )
+                    with progress:
+                        if generation == self.internal_progress_generation:
+                            progress.wait(timeout=0.05)
+                    done = {future for future in pending if future.done()}
                 future = next(iter(done))
                 index = pending.pop(future)
                 yield CompletedResult(index, self.internal_result(future, stage))
