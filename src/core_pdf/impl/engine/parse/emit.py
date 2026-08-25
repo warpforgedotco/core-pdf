@@ -8,6 +8,7 @@ import re
 import unicodedata
 from collections import Counter
 from dataclasses import replace
+from functools import lru_cache
 from typing import Any
 
 from core_pdf.impl.engine.layout.geometry import (
@@ -120,8 +121,13 @@ def internal_attach_semantic_context(
 internal_EMITTED_TEXT_TOKEN_RE = re.compile(r"\w+")
 
 
-def internal_emitted_text_tokens(text: str) -> list[str]:
-    return [match.group(0).casefold() for match in internal_EMITTED_TEXT_TOKEN_RE.finditer(text)]
+@lru_cache(maxsize=256)
+def internal_emitted_text_tokens(text: str) -> tuple[str, ...]:
+    # The same table/block text is tokenized by many dedup heuristics per
+    # page; the memo returns an immutable tuple every caller only reads.
+    return tuple(
+        match.group(0).casefold() for match in internal_EMITTED_TEXT_TOKEN_RE.finditer(text)
+    )
 
 
 def internal_table_text(table: Table) -> str:
@@ -344,6 +350,7 @@ def internal_remove_block_duplicate_table_rows(
             filtered.append(table)
             continue
         block_counts = Counter(token for tokens in line_tokens for token in tokens)
+        line_sets = [set(tokens) for tokens in line_tokens]
         kept_rows: list[tuple[TableCell, ...]] = []
         for row in table.rows:
             cells = [cell for cell in row if cell.text]
@@ -352,21 +359,17 @@ def internal_remove_block_duplicate_table_rows(
                 kept_rows.append(row)
                 continue
             duplicated = False
-            for line in line_tokens:
-                line_set = set(line)
+            for line, line_set in zip(line_tokens, line_sets):
                 matched = sum(1 for token in row_tokens if token in line_set)
                 if matched / len(row_tokens) >= 0.9 and matched / len(line) >= 0.9:
                     duplicated = True
                     break
             if not duplicated:
-                remaining = block_counts.copy()
-                matched = 0
-                for token in row_tokens:
-                    if remaining[token] > 0:
-                        matched += 1
-                        remaining[token] -= 1
+                matched = sum(
+                    min(count, block_counts[token]) for token, count in Counter(row_tokens).items()
+                )
                 fragment = any(
-                    all(token in set(line) for token in row_tokens) for line in line_tokens
+                    all(token in line_set for token in row_tokens) for line_set in line_sets
                 )
                 duplicated = matched / len(row_tokens) >= 0.9 and not fragment
             if not duplicated:
@@ -442,7 +445,8 @@ def internal_symbol_characters(text: str) -> int:
 def internal_corrupt_native_block(block: Block) -> bool:
     if "native" not in block.provenance:
         return False
-    tokens = internal_emitted_text_tokens(block.text)
+    text = block.text
+    tokens = internal_emitted_text_tokens(text)
     token_count = len(tokens)
     if token_count >= 24:
         wordlike = sum(
@@ -451,16 +455,35 @@ def internal_corrupt_native_block(block: Block) -> bool:
         )
         if wordlike / token_count >= 0.12:
             return False
-    nonspace = [character for character in block.text if not character.isspace()]
-    if not nonspace:
+    # One pass over the text collects every per-character count; separate
+    # comprehensions per statistic walked the block text five times.
+    is_ascii = text.isascii()
+    nonspace_count = 0
+    alphabetic = 0
+    non_latin_alphabetic = 0
+    alphanumeric = 0
+    non_ascii = 0
+    for character in text:
+        if character.isspace():
+            continue
+        nonspace_count += 1
+        if character.isalpha():
+            alphabetic += 1
+            if not is_ascii:
+                if not ("a" <= character.casefold() <= "z"):
+                    non_latin_alphabetic += 1
+                if ord(character) > 127:
+                    non_ascii += 1
+            alphanumeric += 1
+        else:
+            if character.isalnum():
+                alphanumeric += 1
+            if not is_ascii and ord(character) > 127:
+                non_ascii += 1
+    if not nonspace_count:
         return False
-    alphabetic = [character for character in nonspace if character.isalpha()]
-    non_latin_alphabetic = [
-        character for character in alphabetic if not ("a" <= character.casefold() <= "z")
-    ]
-    if non_latin_alphabetic and len(non_latin_alphabetic) / len(alphabetic) >= 0.50:
+    if non_latin_alphabetic and non_latin_alphabetic / alphabetic >= 0.50:
         return False
-    alphanumeric = sum(character.isalnum() for character in nonspace)
     if not alphanumeric:
         # A native block with no alphanumeric content is pure punctuation or
         # symbols.  Blocks made up solely of symbols/marks are semantic
@@ -470,12 +493,13 @@ def internal_corrupt_native_block(block: Block) -> bool:
         # which drops short symbol-only OCR blocks.  Pure letter-like
         # punctuation (e.g. CJK fullwidth brackets "（）") and longer symbol
         # runs (which may be diagrams or math notation) are preserved.
-        return len(nonspace) <= 4 and any(
-            unicodedata.category(character)[0] in ("S", "M") for character in nonspace
+        return nonspace_count <= 4 and any(
+            unicodedata.category(character)[0] in ("S", "M")
+            for character in text
+            if not character.isspace()
         )
-    non_ascii = sum(ord(character) > 127 for character in nonspace)
-    symbol_ratio = internal_symbol_characters(block.text) / len(nonspace)
-    non_ascii_ratio = non_ascii / len(nonspace)
+    symbol_ratio = internal_symbol_characters(text) / nonspace_count
+    non_ascii_ratio = non_ascii / nonspace_count
     if token_count < 24:
         wordlike = sum(
             token.isalpha() and len(token) >= 3 and any(character in "aeiou" for character in token)
