@@ -23,7 +23,6 @@ from core_pdf.impl.engine.spec.s_07_content.capture import (
     CapturedInlineImage,
     CapturedLine,
     CapturedPath,
-    apply_glyph_geometry_to_run,
     can_merge_cross_font_word,
     gap_separator,
     glyph_bitmap_dimensions,
@@ -1829,13 +1828,23 @@ class TextState:
         glyphs: tuple[DecodedGlyph, ...] | None = None,
         string_syntax: str | None = None,
         compatibility_data: bytes | None = None,
-    ) -> None:
+    ) -> (
+        tuple[tuple[float, float, float, float], tuple[float, float, float, float], float | None]
+        | None
+    ):
+        """Record observations and return their (advance union, ink union, min
+        confidence) aggregate, or ``None`` when nothing was recorded.
+
+        The aggregate replicates ``apply_glyph_geometry_to_run`` exactly —
+        same comparison operators over the same values in append order — so
+        the caller can skip re-scanning the appended slice.
+        """
         if not self.capture_glyphs:
-            return
+            return None
         if glyphs is None:
             glyphs = decoder.decode_glyphs(data)
         if not glyphs:
-            return
+            return None
 
         offset = 0.0
         seqno = self.sequence
@@ -1967,6 +1976,12 @@ class TextState:
             if axis_advance_y0 > axis_advance_y1:
                 axis_advance_y0, axis_advance_y1 = axis_advance_y1, axis_advance_y0
             axis_baseline_y = text_basis[1] + rise * combined_d
+        # Running union of the appended observations' geometry, mirroring
+        # apply_glyph_geometry_to_run so the caller need not rescan the slice.
+        run_geometry_started = False
+        run_advance_x0 = run_advance_y0 = run_advance_x1 = run_advance_y1 = 0.0
+        run_ink_x0 = run_ink_y0 = run_ink_x1 = run_ink_y1 = 0.0
+        run_confidence: float | None = None
         for glyph in glyphs:
             advance = (
                 chunk_advance(
@@ -2214,6 +2229,34 @@ class TextState:
                         confidence=observation_confidence,
                     )
                 )
+                if run_geometry_started:
+                    box_x0, box_y0, box_x1, box_y1 = advance_bbox
+                    if box_x0 < run_advance_x0:
+                        run_advance_x0 = box_x0
+                    if box_y0 < run_advance_y0:
+                        run_advance_y0 = box_y0
+                    if box_x1 > run_advance_x1:
+                        run_advance_x1 = box_x1
+                    if box_y1 > run_advance_y1:
+                        run_advance_y1 = box_y1
+                    box_x0, box_y0, box_x1, box_y1 = rect
+                    if box_x0 < run_ink_x0:
+                        run_ink_x0 = box_x0
+                    if box_y0 < run_ink_y0:
+                        run_ink_y0 = box_y0
+                    if box_x1 > run_ink_x1:
+                        run_ink_x1 = box_x1
+                    if box_y1 > run_ink_y1:
+                        run_ink_y1 = box_y1
+                    if observation_confidence is not None and (
+                        run_confidence is None or observation_confidence < run_confidence
+                    ):
+                        run_confidence = observation_confidence
+                else:
+                    run_geometry_started = True
+                    run_advance_x0, run_advance_y0, run_advance_x1, run_advance_y1 = advance_bbox
+                    run_ink_x0, run_ink_y0, run_ink_x1, run_ink_y1 = rect
+                    run_confidence = observation_confidence
                 offset += advance
                 continue
 
@@ -2325,6 +2368,37 @@ class TextState:
                 )
             for observation in cluster_observations:
                 append_glyph(observation)
+                if run_geometry_started:
+                    box_x0, box_y0, box_x1, box_y1 = observation.advance_bbox
+                    if box_x0 < run_advance_x0:
+                        run_advance_x0 = box_x0
+                    if box_y0 < run_advance_y0:
+                        run_advance_y0 = box_y0
+                    if box_x1 > run_advance_x1:
+                        run_advance_x1 = box_x1
+                    if box_y1 > run_advance_y1:
+                        run_advance_y1 = box_y1
+                    box_x0, box_y0, box_x1, box_y1 = observation.ink_bbox
+                    if box_x0 < run_ink_x0:
+                        run_ink_x0 = box_x0
+                    if box_y0 < run_ink_y0:
+                        run_ink_y0 = box_y0
+                    if box_x1 > run_ink_x1:
+                        run_ink_x1 = box_x1
+                    if box_y1 > run_ink_y1:
+                        run_ink_y1 = box_y1
+                    glyph_confidence = observation.confidence
+                    if glyph_confidence is not None and (
+                        run_confidence is None or glyph_confidence < run_confidence
+                    ):
+                        run_confidence = glyph_confidence
+                else:
+                    run_geometry_started = True
+                    run_advance_x0, run_advance_y0, run_advance_x1, run_advance_y1 = (
+                        observation.advance_bbox
+                    )
+                    run_ink_x0, run_ink_y0, run_ink_x1, run_ink_y1 = observation.ink_bbox
+                    run_confidence = observation.confidence
             cluster = glyph_cluster_from_observations(
                 cluster_id,
                 chunk_text,
@@ -2338,6 +2412,13 @@ class TextState:
             self.compat_tj_cursor_x = compat_cursor_x
             self.compat_tj_cursor_y = compat_cursor_y
             self.compat_tj_need_charspace = compat_need_charspace
+        if not run_geometry_started:
+            return None
+        return (
+            (run_advance_x0, run_advance_y0, run_advance_x1, run_advance_y1),
+            (run_ink_x0, run_ink_y0, run_ink_x1, run_ink_y1),
+            run_confidence,
+        )
 
     def _append_text_impl(
         self: Any,
@@ -2706,9 +2787,8 @@ class TextState:
                 confidence=None,
             )
         if self.capture_glyphs:
-            glyph_start = len(self.glyphs)
             cluster_start = len(self.glyph_clusters)
-            self.record_glyph_observations(
+            run_geometry = self.record_glyph_observations(
                 text,
                 data,
                 decoder,
@@ -2718,11 +2798,15 @@ class TextState:
                 string_syntax=string_syntax,
                 compatibility_data=compatibility_data,
             )
-            apply_glyph_geometry_to_run(
-                new_run,
-                self.glyphs[glyph_start:],
-                tuple(self.glyph_clusters[cluster_start:]),
-            )
+            recorded_clusters = tuple(self.glyph_clusters[cluster_start:])
+            if recorded_clusters:
+                new_run.glyph_clusters = recorded_clusters
+            if run_geometry is not None:
+                run_advance_bbox, run_ink_bbox, run_confidence = run_geometry
+                new_run.advance_bbox = run_advance_bbox
+                new_run.ink_bbox = run_ink_bbox
+                if run_confidence is not None:
+                    new_run.confidence = run_confidence
 
         self.update_pending_run(new_run)
 
