@@ -2117,6 +2117,10 @@ class TextState:
         run_advance_x0 = run_advance_y0 = run_advance_x1 = run_advance_y1 = 0.0
         run_ink_x0 = run_ink_y0 = run_ink_x1 = run_ink_y1 = 0.0
         run_confidence: float | None = None
+        # Only the vertical branch below writes and reads this; bound here so
+        # the horizontal path does not pay a store per glyph for a value it
+        # never looks at.
+        glyph_vertical_position: tuple[float, float] | None = None
         for glyph in glyphs:
             advance = (
                 chunk_advance(
@@ -2198,14 +2202,20 @@ class TextState:
                     axis_baseline_y,
                 )
             else:
+                # A vertical glyph needs this for the text-space boxes and again
+                # for the outline transform below. It is a pure function of the
+                # code and the loop-invariant font size, so it is computed once.
+                # `is_vertical` implies this branch, since axis_aligned_horizontal
+                # requires `not is_vertical`.
+                glyph_vertical_position = (
+                    vertical_position(glyph.cid, font_size=font_size) if is_vertical else (0.0, 0.0)
+                )
                 text_box, baseline_text = glyph_text_space_boxes(
                     self,
                     offset,
                     advance,
                     decoder,
-                    vertical_position(glyph.cid, font_size=font_size)
-                    if is_vertical
-                    else (0.0, 0.0),
+                    glyph_vertical_position,
                 )
                 transformed = transformed_text_rect(self, *text_box, text_basis)
                 advance_bbox = (
@@ -2216,10 +2226,7 @@ class TextState:
                 )
                 baseline = transformed_text_line(*baseline_text, text_basis)
             if is_vertical:
-                outline_transform = glyph_transform(
-                    offset,
-                    vertical_position(glyph.cid, font_size=font_size),
-                )
+                outline_transform = glyph_transform(offset, glyph_vertical_position)
             else:
                 # Inlined glyph_transform for the horizontal case; the sums
                 # keep the closure's left-to-right evaluation order so the

@@ -106,6 +106,13 @@ def parse_type1_font_program_encoding(font_program: bytes | memoryview) -> dict[
     return differences
 
 
+# Distinct CID codes memoized per decoder. A simple font's cache is bounded by
+# its 256 single-byte codes; a CID font's code space is not, so this bounds the
+# dictionary while still covering the few thousand distinct codes a dense CJK
+# page can carry.
+CID_GLYPH_CACHE_LIMIT = 4096
+
+
 @dataclass(frozen=True, slots=True)
 class DecodedGlyph:
     code_bytes: bytes
@@ -210,6 +217,7 @@ class FontDecoder:
         "decode_cache",
         "glyphs_cache",
         "simple_glyph_cache",
+        "cid_glyph_cache",
         "fast_widths_cache",
         "fast_widths_array_cache",
         "glyph_bbox_cache",
@@ -263,6 +271,7 @@ class FontDecoder:
     fast_widths_cache: tuple[float, ...] | None
     fast_widths_array_cache: Any | None
     simple_glyph_cache: dict[int, DecodedGlyph]
+    cid_glyph_cache: dict[bytes, DecodedGlyph]
     glyph_bbox_cache: dict[int, Rectangle | None]
     fast_widths_cid: list[float] | None
     fast_widths_cid_array: Any | None
@@ -297,6 +306,7 @@ class FontDecoder:
         self.decode_cache: dict[bytes, str] = {}
         self.glyphs_cache: dict[bytes, tuple[DecodedGlyph, ...]] = {}
         self.simple_glyph_cache = {}
+        self.cid_glyph_cache = {}
         self.fast_widths_cache = None
         self.fast_widths_array_cache = None
         self.glyph_bbox_cache = {}
@@ -709,6 +719,7 @@ class FontDecoder:
             self.decode_cache.clear()
             self.glyphs_cache.clear()
             self.simple_glyph_cache.clear()
+            self.cid_glyph_cache.clear()
         return additions
 
     def internal_resolved_cid_unicode_map(self) -> Mapping[int, str] | CIDUnicodeMap | None:
@@ -845,6 +856,7 @@ class FontDecoder:
         return glyphs
 
     def internal_decode_cid_glyphs(self, data: bytes) -> list[DecodedGlyph]:
+        glyph_cache = self.cid_glyph_cache
         entries = self.cmap.decode_entries(data) if self.cmap is not None else []
         if not entries:
             chunks = split_code_bytes(data, self.to_unicode)
@@ -860,9 +872,21 @@ class FontDecoder:
                 and has_invalid_unicode_mapping(mapped)
             )
             if repairs:
+                # The same invalid mappings are recomputed on every call, so
+                # only a repair that actually moves the table can invalidate
+                # glyphs already decoded under the old one.
+                changed = any(
+                    self.cff_unicode_repairs.get(code) != text for code, text in repairs.items()
+                )
                 self.cff_unicode_repairs.update(repairs)
+                if changed:
+                    glyph_cache.clear()
         glyphs: list[DecodedGlyph] = []
         for code_bytes, cid in entries:
+            cached_glyph = glyph_cache.get(code_bytes)
+            if cached_glyph is not None:
+                glyphs.append(cached_glyph)
+                continue
             char_code = int.from_bytes(code_bytes, "big") if code_bytes else 0
             gid = self.glyph_id_for_code(cid)
             if gid is not None and gid != 0 and not self.internal_glyph_exists(gid):
@@ -880,20 +904,21 @@ class FontDecoder:
                         "ligature_override",
                         dedupe_alternates((choice.text, *choice.alternates), text),
                     )
-            glyphs.append(
-                DecodedGlyph(
-                    code_bytes=code_bytes,
-                    char_code=char_code,
-                    cid=cid,
-                    gid=gid,
-                    unicode=choice.text,
-                    unicode_source=choice.source,
-                    alternates=choice.alternates,
-                    width_code=cid,
-                    bitmap_code=cid,
-                    split_unicode=choice.text in LEGITIMATE_MULTI_CHAR_GLYPHS,
-                )
+            glyph = DecodedGlyph(
+                code_bytes=code_bytes,
+                char_code=char_code,
+                cid=cid,
+                gid=gid,
+                unicode=choice.text,
+                unicode_source=choice.source,
+                alternates=choice.alternates,
+                width_code=cid,
+                bitmap_code=cid,
+                split_unicode=choice.text in LEGITIMATE_MULTI_CHAR_GLYPHS,
             )
+            if len(glyph_cache) < CID_GLYPH_CACHE_LIMIT:
+                glyph_cache[code_bytes] = glyph
+            glyphs.append(glyph)
         return glyphs
 
     def internal_glyph_exists(self, gid: int) -> bool:
@@ -1012,14 +1037,16 @@ class FontDecoder:
         return bbox
 
     def vertical_glyph_position(self, code: int, *, font_size: float) -> tuple[float, float]:
-        metric = self.vertical_metrics.get(
-            code,
-            (
+        # Looked up in two steps rather than with a `get` default: the default
+        # calls glyph_width, which the eager argument would have paid for on
+        # every hit as well as every miss.
+        metric = self.vertical_metrics.get(code)
+        if metric is None:
+            metric = (
                 self.default_vertical_width,
                 self.glyph_width(code) / 2.0,
                 self.default_vertical_origin_y,
-            ),
-        )
+            )
         scale = font_size / 1000.0
         return (-metric[1] * scale, -metric[2] * scale)
 
