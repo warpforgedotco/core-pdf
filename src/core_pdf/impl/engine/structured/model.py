@@ -85,6 +85,15 @@ class Table:
     bbox: Rectangle | None = None
     confidence: float | None = None
     metadata: Mapping[str, Any] = field(default_factory=dict)
+    internal_row_bands_cache: tuple[TableRowBand, ...] | None = field(
+        default=None, init=False, repr=False, compare=False
+    )
+    internal_column_bands_cache: tuple[TableColumnBand, ...] | None = field(
+        default=None, init=False, repr=False, compare=False
+    )
+    internal_content_bbox_cache: tuple[Rectangle | None] | None = field(
+        default=None, init=False, repr=False, compare=False
+    )
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "metadata", internal_freeze(self.metadata))
@@ -114,13 +123,19 @@ class Table:
 
     @property
     def content_bbox(self) -> Rectangle | None:
+        cached = self.internal_content_bbox_cache
+        if cached is not None:
+            return cached[0]
         boxes = [cell.bbox for row in self.rows for cell in row if cell.bbox is not None]
-        if not boxes:
-            return self.bbox
-        return bbox_union(boxes)
+        result = bbox_union(boxes) if boxes else self.bbox
+        object.__setattr__(self, "internal_content_bbox_cache", (result,))
+        return result
 
     @property
     def row_bands(self) -> tuple[TableRowBand, ...]:
+        cached = self.internal_row_bands_cache
+        if cached is not None:
+            return cached
         bands: list[TableRowBand] = []
         associated = {
             text.kind: text.text.casefold()
@@ -157,29 +172,36 @@ class Table:
                     kind=kind,
                 )
             )
-        return tuple(bands)
+        result = tuple(bands)
+        object.__setattr__(self, "internal_row_bands_cache", result)
+        return result
 
     @property
     def column_bands(self) -> tuple[TableColumnBand, ...]:
+        cached = self.internal_column_bands_cache
+        if cached is not None:
+            return cached
         columns = max(
             (cell.column + cell.column_span for row in self.rows for cell in row),
             default=0,
         )
-        bands: list[TableColumnBand] = []
-        for index in range(columns):
-            boxes = [
-                cell.bbox
-                for row in self.rows
-                for cell in row
-                if cell.bbox is not None and cell.column <= index < cell.column + cell.column_span
-            ]
-            bands.append(
-                TableColumnBand(
-                    index=index,
-                    bbox=bbox_union(boxes),
-                )
-            )
-        return tuple(bands)
+        # One pass bucketing each cell's bbox into the columns it spans;
+        # rescanning every cell per column index is O(rows * columns**2).
+        buckets: list[list[Rectangle]] = [[] for _ in range(columns)]
+        for row in self.rows:
+            for cell in row:
+                if cell.bbox is None:
+                    continue
+                for index in range(
+                    max(cell.column, 0), min(cell.column + cell.column_span, columns)
+                ):
+                    buckets[index].append(cell.bbox)
+        result = tuple(
+            TableColumnBand(index=index, bbox=bbox_union(boxes))
+            for index, boxes in enumerate(buckets)
+        )
+        object.__setattr__(self, "internal_column_bands_cache", result)
+        return result
 
 
 @dataclass(frozen=True, slots=True)
@@ -295,15 +317,21 @@ class Block:
     confidence: float | None = None
     level: int | None = None
     provenance: tuple[str, ...] = ()
+    internal_text_cache: str | None = field(default=None, init=False, repr=False, compare=False)
 
     @property
     def text(self) -> str:
+        cached = self.internal_text_cache
+        if cached is not None:
+            return cached
         parts: list[str] = []
         for line in self.lines:
             if parts:
                 parts.append("\n" * max(1, line.break_before))
             parts.append(line.text)
-        return "".join(parts)
+        joined = "".join(parts)
+        object.__setattr__(self, "internal_text_cache", joined)
+        return joined
 
 
 PageElement: TypeAlias = Block | Table | Figure
@@ -525,12 +553,21 @@ class Page:
     footer: str = ""
     diagnostics: tuple[Diagnostic, ...] = ()
     cropbox: Rectangle | None = None
+    internal_elements_cache: tuple[PageElement, ...] | None = field(
+        default=None, init=False, repr=False, compare=False
+    )
 
     @property
     def elements(self) -> tuple[PageElement, ...]:
-        return tuple(
-            sorted((*self.blocks, *self.tables, *self.figures), key=lambda item: item.order)
+        cached = self.internal_elements_cache
+        if cached is not None:
+            return cached
+        ordered: list[PageElement] = sorted(
+            (*self.blocks, *self.tables, *self.figures), key=lambda item: item.order
         )
+        result = tuple(ordered)
+        object.__setattr__(self, "internal_elements_cache", result)
+        return result
 
     @property
     def nodes(self) -> tuple[ContentNode, ...]:
