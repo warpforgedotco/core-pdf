@@ -1915,6 +1915,27 @@ class TextState:
         font_descent = self.font_descent
         glyph_line_width = self.transformed_line_width()
         glyph_dash_pattern = self.transformed_dash_pattern()
+        # Per-glyph invariants hoisted out of the loop: clip rectangles for the
+        # inlined visibility test, graphics-state fields copied into every
+        # observation, and the constant part of the outline transform.
+        clip_primary = self.clip_bbox
+        clip_page = self.page_clip
+        render_mode = self.render_mode
+        fill_opacity = self.fill_opacity
+        stroke_color = self.stroke_color
+        stroke_opacity = self.stroke_opacity
+        line_cap = self.line_cap
+        line_join = self.line_join
+        blend_mode = self.blend_mode
+        group_alpha = self.group_alpha
+        text_object_id = self.text_object_id
+        state_line_width = self.line_width
+        transform_a = advance_scale * combined_a
+        transform_b = advance_scale * combined_b
+        transform_c = font_scale * combined_c
+        transform_d = font_scale * combined_d
+        rise_offset_x = rise * combined_c
+        rise_offset_y = rise * combined_d
 
         def glyph_transform(
             glyph_offset: float,
@@ -2044,11 +2065,44 @@ class TextState:
                     transformed.y1,
                 )
                 baseline = transformed_text_line(*baseline_text, text_basis)
-            outline_transform = glyph_transform(
-                offset,
-                vertical_position(glyph.cid, font_size=font_size) if is_vertical else None,
-            )
-            observation_visible = visible and not self.internal_is_clipped_away(*advance_bbox)
+            if is_vertical:
+                outline_transform = glyph_transform(
+                    offset,
+                    vertical_position(glyph.cid, font_size=font_size),
+                )
+            else:
+                # Inlined glyph_transform for the horizontal case; the sums
+                # keep the closure's left-to-right evaluation order so the
+                # floats are bit-identical.
+                outline_transform = (
+                    transform_a,
+                    transform_b,
+                    transform_c,
+                    transform_d,
+                    text_basis[0] + offset * combined_a + rise_offset_x,
+                    text_basis[1] + offset * combined_b + rise_offset_y,
+                )
+            observation_visible = visible
+            if observation_visible:
+                box_x0, box_y0, box_x1, box_y1 = advance_bbox
+                if (
+                    clip_primary is not None
+                    and (
+                        box_x1 <= clip_primary[0]
+                        or box_x0 >= clip_primary[2]
+                        or box_y1 <= clip_primary[1]
+                        or box_y0 >= clip_primary[3]
+                    )
+                ) or (
+                    clip_page is not None
+                    and (
+                        box_x1 <= clip_page[0]
+                        or box_x0 >= clip_page[2]
+                        or box_y1 <= clip_page[1]
+                        or box_y0 >= clip_page[3]
+                    )
+                ):
+                    observation_visible = False
             if is_vertical:
                 glyph_bbox = None
             else:
@@ -2129,17 +2183,17 @@ class TextState:
                     effective_font_height,
                     observation_provenance,
                     glyph_transform=outline_transform,
-                    text_render_mode=self.render_mode,
-                    fill_opacity=self.fill_opacity,
-                    stroke_color=self.stroke_color,
-                    stroke_opacity=self.stroke_opacity,
+                    text_render_mode=render_mode,
+                    fill_opacity=fill_opacity,
+                    stroke_color=stroke_color,
+                    stroke_opacity=stroke_opacity,
                     line_width=glyph_line_width,
-                    line_cap=self.line_cap,
-                    line_join=self.line_join,
+                    line_cap=line_cap,
+                    line_join=line_join,
                     dash_pattern=glyph_dash_pattern,
-                    blend_mode=self.blend_mode,
-                    soft_mask_alpha=self.group_alpha,
-                    text_object_id=self.text_object_id,
+                    blend_mode=blend_mode,
+                    soft_mask_alpha=group_alpha,
+                    text_object_id=text_object_id,
                     cluster_key=cluster_provenance_id,
                 )
                 append_glyph(observation)
@@ -2216,15 +2270,15 @@ class TextState:
                             effective_font_height,
                             observation_provenance,
                             glyph_transform=outline_transform,
-                            text_render_mode=self.render_mode,
-                            fill_opacity=self.fill_opacity,
-                            stroke_color=self.stroke_color,
-                            stroke_opacity=self.stroke_opacity,
-                            line_width=self.line_width,
-                            blend_mode=self.blend_mode,
-                            soft_mask_alpha=self.group_alpha,
+                            text_render_mode=render_mode,
+                            fill_opacity=fill_opacity,
+                            stroke_color=stroke_color,
+                            stroke_opacity=stroke_opacity,
+                            line_width=state_line_width,
+                            blend_mode=blend_mode,
+                            soft_mask_alpha=group_alpha,
                             paint_glyph=char_index == 0,
-                            text_object_id=self.text_object_id,
+                            text_object_id=text_object_id,
                             cluster_key=cluster_provenance_id,
                         )
                     )
@@ -2258,14 +2312,14 @@ class TextState:
                         effective_font_height,
                         observation_provenance,
                         glyph_transform=outline_transform,
-                        text_render_mode=self.render_mode,
-                        fill_opacity=self.fill_opacity,
-                        stroke_color=self.stroke_color,
-                        stroke_opacity=self.stroke_opacity,
-                        line_width=self.line_width,
-                        blend_mode=self.blend_mode,
-                        soft_mask_alpha=self.group_alpha,
-                        text_object_id=self.text_object_id,
+                        text_render_mode=render_mode,
+                        fill_opacity=fill_opacity,
+                        stroke_color=stroke_color,
+                        stroke_opacity=stroke_opacity,
+                        line_width=state_line_width,
+                        blend_mode=blend_mode,
+                        soft_mask_alpha=group_alpha,
+                        text_object_id=text_object_id,
                         cluster_key=cluster_provenance_id,
                     )
                 )
