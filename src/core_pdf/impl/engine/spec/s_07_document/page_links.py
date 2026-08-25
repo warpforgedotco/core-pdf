@@ -12,8 +12,6 @@ from core_pdf.impl.engine.spec.s_09_fonts.encoding import decode_pdf_text_string
 from core_pdf.impl.primitives import PdfName, PdfReference, PdfString
 from core_pdf.impl.types import PdfDict
 
-LinkResolver = PdfValueResolver
-
 
 def pdf_name_direct(value: object) -> str | None:
     if isinstance(value, PdfName):
@@ -47,7 +45,7 @@ def pdf_string_direct(value: object) -> str | None:
     return None
 
 
-def resolve_annotation_dict(resolver: LinkResolver, value: object) -> PdfDict | None:
+def resolve_annotation_dict(resolver: PdfValueResolver, value: object) -> PdfDict | None:
     if isinstance(value, PdfReference):
         value = resolver.resolve(value)
     return cast(PdfDict, value) if isinstance(value, dict) else None
@@ -62,7 +60,7 @@ def link_target_direct(action: PdfDict, link_type: str | None) -> str | None:
 
 
 def link_target_resolved(
-    resolver: LinkResolver, action: PdfDict, link_type: str | None
+    resolver: PdfValueResolver, action: PdfDict, link_type: str | None
 ) -> str | None:
     key = "URI" if link_type == "URI" else "D" if link_type == "GoTo" else None
     if key is None:
@@ -70,7 +68,7 @@ def link_target_resolved(
     return resolver.resolve_str(lookup_dict_key(action, key))
 
 
-def resolve_destination_value(resolver: LinkResolver, value: object, depth: int = 0) -> object:
+def resolve_destination_value(resolver: PdfValueResolver, value: object, depth: int = 0) -> object:
     """Resolve an annotation destination into plain serializable values.
 
     A URI action holds its target behind an indirect reference, so the raw

@@ -49,7 +49,6 @@ ContentOperand: TypeAlias = CachedPdfObject | InlineImage
 ContentOperands: TypeAlias = tuple[ContentOperand, ...]
 ContentOperation: TypeAlias = tuple[str, ContentOperands]
 
-WORD_BREAK_OR_WS = SEPARATOR_TABLE
 
 IS_WORD_START = bytes([0 if SEPARATOR_TABLE[i] else 1 for i in range(256)])
 
@@ -481,7 +480,7 @@ def dispatch_operations(
     source_bytes = full_source_bytes(raw_data)
     raw_bytes = source_bytes if source_bytes is not None else raw_data
 
-    word_break_or_ws = WORD_BREAK_OR_WS
+    word_break_or_ws = SEPARATOR_TABLE
     ws_table = WS_TABLE
     is_word_start = IS_WORD_START
     op_get = op_handlers.get

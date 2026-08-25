@@ -168,9 +168,6 @@ class StreamDecodeSpec:
         self.params = params
 
 
-normalize_filter_name = normalize_pdf_name
-
-
 def with_ccitt_image_rows(parms: object, dictionary: object) -> object:
     if type(parms) is FilterParams:
         return parms
@@ -210,20 +207,20 @@ def normalize_stream_decode_spec(dictionary: object) -> StreamDecodeSpec:
     names: list[str] = []
     kept_filter_indexes: list[int] = []
     for filter_index, item in enumerate(filters):
-        if is_pdf_null(item) or normalize_filter_name(item) == "null":
+        if is_pdf_null(item) or normalize_pdf_name(item) == "null":
             continue
-        name = normalize_filter_name(item)
+        name = normalize_pdf_name(item)
         if name is None:
             raise FilterParseError("invalid stream decode filter")
         name = FILTER_NAME_ALIASES.get(name.lower(), name)
         names.append(name)
         kept_filter_indexes.append(filter_index)
 
-    if is_pdf_null(parms_raw) or normalize_filter_name(parms_raw) == "null":
+    if is_pdf_null(parms_raw) or normalize_pdf_name(parms_raw) == "null":
         decode_parms: list[object] = []
     elif raw_param_items is not None:
         decode_parms = [
-            None if is_pdf_null(item) or normalize_filter_name(item) == "null" else item
+            None if is_pdf_null(item) or normalize_pdf_name(item) == "null" else item
             for item in raw_param_items
         ]
         if len(decode_parms) >= len(filters):

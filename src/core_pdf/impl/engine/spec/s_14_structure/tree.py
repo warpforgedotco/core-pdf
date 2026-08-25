@@ -76,10 +76,6 @@ def structure_key_name(key: Any) -> str:
     return normalize_pdf_name(key) or str(key)
 
 
-def coerce_attr_value(value: Any) -> Any:
-    return coerce_value(value)
-
-
 class StructureElement:
     """Logical structure element dictionary from the structure tree."""
 
@@ -187,7 +183,7 @@ class StructureElement:
         attrs = lookup_dict_key(self.props, "A")
         if isinstance(attrs, dict):
             self.attributes_value = {
-                structure_key_name(key): coerce_attr_value(val) for key, val in attrs.items()
+                structure_key_name(key): coerce_value(val) for key, val in attrs.items()
             }
             return self.attributes_value
         if isinstance(attrs, list):
@@ -204,8 +200,7 @@ class StructureElement:
                     raise ValueError("invalid structure attribute revision")
                 if latest is None or revision > latest_revision:
                     latest = {
-                        structure_key_name(key): coerce_attr_value(val)
-                        for key, val in attrdict.items()
+                        structure_key_name(key): coerce_value(val) for key, val in attrdict.items()
                     }
                     latest_revision = revision
             self.attributes_value = latest

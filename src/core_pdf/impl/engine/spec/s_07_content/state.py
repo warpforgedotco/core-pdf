@@ -99,7 +99,6 @@ from core_pdf.impl.types import PdfDict, Rectangle
 
 OperationHandler: TypeAlias = StateOperationHandler
 ObjectCache: TypeAlias = dict[object, object]
-InlineImageRecord = CapturedInlineImage
 DecodedGlyphs: TypeAlias = tuple[DecodedGlyph, ...] | None
 internal_GraphicsState: TypeAlias = tuple[
     float,
@@ -182,7 +181,7 @@ def internal_quad_bounds(
 
 
 def internal_decode_pending_run(
-    pending_data: bytes,
+    pending_data: bytes | bytearray,
     table: Sequence[str],
     widths: Sequence[float],
     cs: float,
@@ -603,10 +602,7 @@ class TextState:
         self.is_garbage = is_garbage_text
         self.operands: list[ContentOperand] = [None] * 16
         self.run_pool: list[TextRun] = []
-        self.inline_images: list[InlineImageRecord] = []
-
-    def detect_rotation(self, a: float, b: float, c: float, d: float) -> int:
-        return detect_rotation_from_linear(a, b, c, d)
+        self.inline_images: list[CapturedInlineImage] = []
 
     def append_text(
         self,
@@ -3623,7 +3619,7 @@ class TextState:
         if self.ca == 1.0 and self.cb == 0.0 and self.cc == 0.0 and self.cd == 1.0:
             self.cached_rotation = 0
         else:
-            self.cached_rotation = self.detect_rotation(self.ca, self.cb, self.cc, self.cd)
+            self.cached_rotation = detect_rotation_from_linear(self.ca, self.cb, self.cc, self.cd)
         self.invisible_text_layer = False
 
     def internal_end_text(self) -> None:

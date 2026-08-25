@@ -18,7 +18,6 @@ from core_pdf.impl.objects import PdfStream
 from core_pdf.impl.primitives import PdfName, PdfReference, PdfString
 from core_pdf.impl.types import PdfDict
 
-MetadataResolver = PdfValueResolver
 MetadataScalar: TypeAlias = (
     str
     | bytes
@@ -53,7 +52,7 @@ class MetadataRecord(TypedDict):
 
 
 def resolve_metadata(
-    resolver: MetadataResolver, trailer: PdfDict, *, recover: bool = False
+    resolver: PdfValueResolver, trailer: PdfDict, *, recover: bool = False
 ) -> MetadataRecord:
     xmp: XmpNodeRecord | None
     try:
@@ -74,7 +73,7 @@ def local_name(tag: str) -> str:
 
 
 def resolve_info_metadata(
-    resolver: MetadataResolver, trailer: PdfDict, *, recover: bool = False
+    resolver: PdfValueResolver, trailer: PdfDict, *, recover: bool = False
 ) -> InfoMetadataRecord:
     info_ref = lookup_dict_key(trailer, "Info")
     if info_ref is None:
@@ -147,7 +146,7 @@ def parse_xmp_metadata(stream: object, *, recover: bool = False) -> XmpNodeRecor
 
 
 def resolve_metadata_stream(
-    resolver: MetadataResolver, trailer: PdfDict, *, recover: bool = False
+    resolver: PdfValueResolver, trailer: PdfDict, *, recover: bool = False
 ) -> XmpNodeRecord | None:
     root = resolver.resolve_dict(lookup_dict_key(trailer, "Root"))
     if root is None:
