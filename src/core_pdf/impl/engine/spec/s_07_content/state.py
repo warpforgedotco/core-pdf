@@ -1030,7 +1030,11 @@ class TextState:
                     kind="group-begin",
                 )
             )
-            self.group_alpha = frame.group_alpha
+            # The group buffer carries the constant alpha: it is applied once,
+            # when the finished group composites into its backdrop. Propagating
+            # it to each drawing inside as well would square it -- a 0.34 group
+            # would paint its contents at 0.12.
+            self.group_alpha = None
 
         frame.old_state = self.capture_stream_state()
         self.resources = frame.resources
@@ -1423,6 +1427,16 @@ class TextState:
                             if total > 0:
                                 smask_alpha = sum(smask_data[:total]) / (255.0 * total)
                 source_dictionary = dict(xobj_dict)
+                # The colour manager reads the palette and base space straight
+                # off this dictionary, so an indirect /ColorSpace (or one whose
+                # Indexed lookup table is indirect) left it unable to convert
+                # the samples and the whole image was dropped. deep_resolve is
+                # cached, so repeated XObjects pay for this once.
+                color_space = lookup_dict_key(source_dictionary, "ColorSpace")
+                if color_space is not None:
+                    source_dictionary[PdfName.of("ColorSpace")] = (
+                        self.document.resolver.deep_resolve(color_space)
+                    )
                 if soft_mask_raw_data is not None:
                     source_dictionary["__soft_mask_raw_data__"] = soft_mask_raw_data
                     source_dictionary["__soft_mask_dictionary__"] = soft_mask_dictionary or {}
@@ -1466,11 +1480,20 @@ class TextState:
                 and self.document.resolver.resolve_name(lookup_dict_key(group_dict, "S"))
                 == "Transparency"
             ):
-                group_alpha_val = self.document.resolver.resolve_float(
-                    lookup_dict_key(group_dict, "ca"), default=None
-                )
-                if group_alpha_val is not None:
-                    group_alpha = max(0.0, min(1.0, group_alpha_val))
+                # PDF 32000-1 Table 147: a transparency group dictionary holds
+                # S/CS/I/K and nothing else. The constant alpha and blend mode
+                # that composite the finished group into its backdrop come from
+                # the graphics state in effect at the `Do` (11.6.6), so reading
+                # a /ca off the group dictionary found nothing and dropped the
+                # group entirely -- the contents then painted straight onto the
+                # page at full opacity in Normal mode, losing the blend.
+                #
+                # Only isolate the group when compositing would actually differ;
+                # at ca == 1 in Normal mode a group buffer is a no-op, and
+                # painting directly stays the cheaper path.
+                blend = self.blend_mode
+                if self.fill_opacity < 1.0 or (blend is not None and blend != "Normal"):
+                    group_alpha = max(0.0, min(1.0, self.fill_opacity))
         raw_resources = lookup_dict_key(xobj_dict, "Resources")
         resources = (
             raw_resources

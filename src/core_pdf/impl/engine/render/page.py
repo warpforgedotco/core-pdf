@@ -246,8 +246,12 @@ class RenderedPage:
                     mark_clip_metadata_dirty()
                 continue
             if generic_item.kind == "group-begin":
+                # A transparency group starts from a transparent backdrop, not
+                # the page background: composite_group skips zero-alpha pixels,
+                # so an opaque buffer would blend the whole page as though the
+                # group had painted every pixel, flattening what it did paint.
                 raster_target.push_group(
-                    bytearray(background_bytes * (width * height)),
+                    bytearray(width * height * 4),
                     data.get("fill_opacity"),
                     data.get("blend_mode"),
                 )
