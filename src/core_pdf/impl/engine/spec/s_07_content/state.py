@@ -3992,25 +3992,29 @@ class TextState:
             self.emit_actual_text_span(self.marked_content_stack.pop())
 
     def op_G(self, operands: OperandWindow, depth: int) -> None:
-        if operands:
+        if operands and not self.type3_uncolored:
             self.stroke_color_space = "DeviceGray"
             self.set_stroke_color(operands[0])
 
     def op_RG(self, operands: OperandWindow, depth: int) -> None:
-        if len(operands) >= 3:
+        if len(operands) >= 3 and not self.type3_uncolored:
             self.stroke_color_space = "DeviceRGB"
             self.set_stroke_color(operands[0], operands[1], operands[2])
 
     def op_RG_values(self: Any, red: int | float, green: int | float, blue: int | float) -> None:
+        if self.type3_uncolored:
+            return
         self.stroke_color_space = "DeviceRGB"
         self.set_stroke_color(red, green, blue)
 
     def op_rg_values(self: Any, red: int | float, green: int | float, blue: int | float) -> None:
+        if self.type3_uncolored:
+            return
         self.fill_color_space = "DeviceRGB"
         self.set_fill_color(red, green, blue)
 
     def op_K(self, operands: OperandWindow, depth: int) -> None:
-        if len(operands) >= 4:
+        if len(operands) >= 4 and not self.type3_uncolored:
             self.stroke_color_space = "DeviceCMYK"
             self.set_stroke_color(operands[0], operands[1], operands[2], operands[3])
 
@@ -4585,6 +4589,12 @@ class TextState:
         self._op_CS_impl(operands, depth)
 
     def internal_set_color_space(self, operands: OperandWindow, *, stroke: bool) -> None:
+        if self.type3_uncolored:
+            # 9.6.5.2: every colour operator is ignored inside an uncoloured
+            # Type 3 glyph, `cs`/`CS` included. The colour setters already
+            # refuse to move the colour, so without this the glyph would carry
+            # a colour space describing a colour it was not allowed to set.
+            return
         if operands:
             name_obj = operands[0]
             try:
@@ -4949,17 +4959,17 @@ class TextState:
         self.update_combined()
 
     def op_g(self, operands: OperandWindow, depth: int) -> None:
-        if operands:
+        if operands and not self.type3_uncolored:
             self.fill_color_space = "DeviceGray"
             self.set_fill_color(operands[0])
 
     def op_rg(self, operands: OperandWindow, depth: int) -> None:
-        if len(operands) >= 3:
+        if len(operands) >= 3 and not self.type3_uncolored:
             self.fill_color_space = "DeviceRGB"
             self.set_fill_color(operands[0], operands[1], operands[2])
 
     def op_k(self, operands: OperandWindow, depth: int) -> None:
-        if len(operands) >= 4:
+        if len(operands) >= 4 and not self.type3_uncolored:
             self.fill_color_space = "DeviceCMYK"
             self.set_fill_color(operands[0], operands[1], operands[2], operands[3])
 
