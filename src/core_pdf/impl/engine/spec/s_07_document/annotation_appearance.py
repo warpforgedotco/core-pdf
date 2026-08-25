@@ -47,29 +47,40 @@ def internal_inheritable(document: Any, node: object, key: str) -> object:
     return None
 
 
-def internal_appearance_stream(document: Any, annot: dict) -> PdfStream | None:
-    """Return the normal appearance stream, resolving an appearance substate."""
-    appearances = document.resolver.resolve(lookup_dict_key(annot, "AP"))
+def select_appearance_stream(
+    resolver: Any, appearance: object, appearance_state: object
+) -> PdfStream | None:
+    """Pick the normal appearance to draw, per 12.5.5.
+
+    ``/AS`` names the substate to use. When it names one ``/N`` does not
+    contain, nothing is drawn: a reader must not substitute some other state,
+    because doing so renders an unchecked box as checked. Without ``/AS`` the
+    choice is unambiguous only when ``/N`` holds exactly one substate.
+    """
+    appearances = resolver.resolve(appearance)
     if not isinstance(appearances, dict):
         return None
-    normal = document.resolver.resolve(lookup_dict_key(appearances, "N"))
+    normal = resolver.resolve(lookup_dict_key(appearances, "N"))
     if isinstance(normal, PdfStream):
         return normal
     if not isinstance(normal, dict):
         return None
-    # /N may instead hold one stream per appearance state, picked by /AS.
-    state_name = document.resolver.resolve_name(lookup_dict_key(annot, "AS"))
+    state_name = resolver.resolve_name(appearance_state)
     if state_name is not None:
-        selected = document.resolver.resolve(lookup_dict_key(normal, state_name))
-        if isinstance(selected, PdfStream):
-            return selected
-        return None
-    # Without /AS the choice is only unambiguous when there is one substate.
+        selected = resolver.resolve(lookup_dict_key(normal, state_name))
+        return selected if isinstance(selected, PdfStream) else None
     if len(normal) == 1:
-        only = document.resolver.resolve(next(iter(normal.values())))
+        only = resolver.resolve(next(iter(normal.values())))
         if isinstance(only, PdfStream):
             return only
     return None
+
+
+def internal_appearance_stream(document: Any, annot: dict) -> PdfStream | None:
+    """Return the normal appearance stream, resolving an appearance substate."""
+    return select_appearance_stream(
+        document.resolver, lookup_dict_key(annot, "AP"), lookup_dict_key(annot, "AS")
+    )
 
 
 def internal_should_render(document: Any, annot: dict) -> bool:
@@ -176,4 +187,4 @@ def consume_annotation_appearances(page: Any, state: "TextState") -> None:
             continue
 
 
-__all__ = ("consume_annotation_appearances",)
+__all__ = ("consume_annotation_appearances", "select_appearance_stream")

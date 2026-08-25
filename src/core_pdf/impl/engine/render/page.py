@@ -31,14 +31,15 @@ from core_pdf.impl.engine.render.target import (
 from core_pdf.impl.engine.spec.s_07_content.capture import CapturedPath, CapturedSubpath
 from core_pdf.impl.engine.spec.s_07_content.page_program import PageEventKind, PageProgram
 from core_pdf.impl.engine.spec.s_07_content.state import TextState
-from core_pdf.impl.engine.spec.s_07_objects.coercion import normalize_pdf_name
+from core_pdf.impl.engine.spec.s_07_document.annotation_appearance import (
+    select_appearance_stream,
+)
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_08_graphics.image_metadata import (
     pdf_number,
 )
 from core_pdf.impl.engine.spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 from core_pdf.impl.exceptions import PdfRasterTooLargeError
-from core_pdf.impl.objects import PdfStream
 
 
 @dataclass(slots=True)
@@ -201,7 +202,6 @@ class RenderedPage:
         # LOAD_FAST + CALL; each method re-reads self.pixels, so group push/pop
         # still redirects painting the way the closures' cell did.
         composite_group = raster_target.composite_group
-        fill_rect = raster_target.fill_rect
         draw_glyph_bitmap = raster_target.draw_glyph_bitmap
         fill_path = raster_target.fill_path
         blit_image = raster_target.blit_image
@@ -367,12 +367,14 @@ class RenderedPage:
                         int(data.get("line_cap") or 0),
                         int(data.get("line_join") or 0),
                     )
-            elif generic_item.kind == "annotation":
-                if not data.get("appearance_rendered"):
-                    fill_rect(data.get("rect"), (255, 215, 0, 96))
-            elif generic_item.kind == "widget":
-                if not data.get("appearance_rendered"):
-                    fill_rect(data.get("rect"), (80, 160, 255, 72))
+            # An annotation whose appearance stream could not be rendered paints
+            # nothing. This used to drop a translucent gold rectangle over every
+            # such annotation and a blue one over every widget -- diagnostic
+            # scaffolding, not page content. On a fillable form that tinted every
+            # field: composited over white the pair produce (224, 226, 159),
+            # which is exactly the wash that covered IRS-2023-Form-1095-A.
+            # Readers draw nothing here, so neither do we; the items stay in the
+            # display list because their /Rect still carries annotation geometry.
         if rotate == 0:
             record_image_timings()
             result = RasterImage(raster_target.pixels, width, height, 4)
@@ -664,29 +666,13 @@ def compose_page(
         rect: tuple[float, float, float, float],
         appearance_state: Any | None = None,
     ) -> bool:
-        if not isinstance(appearance, dict):
-            return False
-        normal = lookup_dict_key(appearance, "N")
-        if isinstance(normal, dict):
-            selected = None
-            if appearance_state is not None:
-                state_name = normalize_pdf_name(appearance_state)
-                if state_name is not None:
-                    selected = lookup_dict_key(normal, state_name)
-            if selected is None:
-                off_appearance = lookup_dict_key(normal, "Off")
-                yes_appearance = lookup_dict_key(normal, "Yes")
-                selected = (
-                    off_appearance
-                    if off_appearance is not None
-                    else yes_appearance
-                    if yes_appearance is not None
-                    else next(iter(normal.values()), None)
-                )
-            normal = selected
-        if not isinstance(normal, PdfStream):
-            normal = page.document.resolver.resolve(normal)
-        if not isinstance(normal, PdfStream):
+        # One implementation of 12.5.5's substate rule, shared with the capture
+        # path. This used to have its own, which fell back to Off, then Yes,
+        # then whatever /N happened to hold first when /AS named a state /N did
+        # not contain -- so a checkbox with /AS /Off whose /N carries only the
+        # checked stream rendered as checked. It must render as nothing.
+        normal = select_appearance_stream(page.document.resolver, appearance, appearance_state)
+        if normal is None:
             return False
         form_dict = page.document.resolver.resolve_dict(normal.dictionary) or {}
         bbox = page.document.resolver.resolve_box(lookup_dict_key(form_dict, "BBox"))
