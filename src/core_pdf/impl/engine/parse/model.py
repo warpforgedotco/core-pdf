@@ -516,7 +516,6 @@ class GlyphEvidence:
     """Page-level evidence about whether glyph identifiers carry real Unicode."""
 
     glyph_count: int = 0
-    visible_glyphs: int = 0
     semantic_characters: int = 0
     authoritative_glyphs: int = 0
     heuristic_glyphs: int = 0
@@ -524,7 +523,6 @@ class GlyphEvidence:
     unsupported_glyphs: int = 0
     low_confidence_glyphs: int = 0
     actual_text_characters: int = 0
-    source_counts: tuple[tuple[str, int], ...] = ()
 
     @property
     def mapped_glyphs(self) -> int:
@@ -561,9 +559,7 @@ class StrokedVectorTextEvidence:
     trusted: bool = False
     drawing_indexes: tuple[int, ...] = ()
     bbox: tuple[float, float, float, float] | None = None
-    dominant_compact_paths: int = 0
     candidate_paths: int = 0
-    style_count: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -582,8 +578,6 @@ class PageEvidence:
     text_coverage: float = 0.0
     full_page_image: bool = False
     uncovered_vector_area: float | None = None
-    annotation_text: bool = False
-    layout_reasons: tuple[str, ...] = ()
     text_quality: TextQualityStats = field(default_factory=TextQualityStats)
     all_text_quality: TextQualityStats = field(default_factory=TextQualityStats)
     glyphs: GlyphEvidence = field(default_factory=GlyphEvidence)

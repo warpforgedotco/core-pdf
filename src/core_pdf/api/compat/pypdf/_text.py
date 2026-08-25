@@ -206,8 +206,6 @@ class LegacyTextExtractor:
         self.tm: Matrix = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
         self.previous_cm = self.cm.copy()
         self.previous_tm = self.tm.copy()
-        self.memo_cm = self.cm.copy()
-        self.memo_tm = self.tm.copy()
         self.stack: list[tuple[Matrix, str | None, LegacyFont | None, float, float]] = []
         self.font_name: str | None = None
         self.font: LegacyFont | None = None
@@ -600,8 +598,6 @@ class LegacyTextExtractor:
             self.output_parts.append(self.text)
             self.output_last = self.text[-1]
             self.text = ""
-        self.memo_cm = self.cm.copy()
-        self.memo_tm = self.tm.copy()
 
     def add_text(self, value: str) -> None:
         for character in value:
@@ -656,9 +652,6 @@ class LegacyTextExtractor:
             pass
         self.previous_tm = self.tm.copy()
         self.previous_cm = self.cm.copy()
-        if not self.text:
-            self.memo_tm = self.tm.copy()
-            self.memo_cm = self.cm.copy()
 
     @property
     def current_space_width(self) -> float:
@@ -787,8 +780,6 @@ class LegacyTextExtractor:
                     self.output_last = "\n"
                 self.internal_form(operands)
                 self.text = ""
-                self.memo_cm = self.cm.copy()
-                self.memo_tm = self.tm.copy()
             else:
                 self.process(operator, operands)
         self.flush()

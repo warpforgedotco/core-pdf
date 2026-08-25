@@ -64,9 +64,6 @@ TEXT_CLIP_PREFIX_RE = re.compile(
 TEXT_SHOWING_CANDIDATES = (b'"', b"'", b"Tj", b"TJ", b"Do")
 TEXT_OR_LEXICAL_MARKER_RE = re.compile(rb"""[%(/<>\[\]"']|T[jJ]|Do|BI""")
 CONTAINER_LEXICAL_MARKER_RE = re.compile(rb"[%(<>\[\]]")
-GRAPHICS_PAINT_RE = re.compile(
-    rb"(?:^|[\x00\t\n\f\r ])(?:S|s|f|F|f\*|B|b|B\*|b\*|sh)(?=$|[\x00\t\n\f\r ])"
-)
 
 
 @dataclass(frozen=True, slots=True)
@@ -223,7 +220,7 @@ def count_content_stream_operators(data: bytes | memoryview) -> ContentOperatorC
     )
 
 
-def skip_text_clip_prefix(raw_bytes: bytes | memoryview, pos: int, data_len: int) -> int | None:
+def skip_text_clip_prefix(raw_bytes: bytes | memoryview, pos: int) -> int | None:
     match = TEXT_CLIP_PREFIX_RE.match(raw_bytes, pos)
     if match is None:
         return None
@@ -1047,7 +1044,7 @@ def dispatch_operations(
                     if n_raw == 1:
                         op0 = raw_bytes[pos - 1]
                         if op0 == 113 and op_count == 0:
-                            skipped_pos = skip_text_clip_prefix(raw_bytes, pos, data_len)
+                            skipped_pos = skip_text_clip_prefix(raw_bytes, pos)
                             if skipped_pos is not None:
                                 skipped_clip_q_count += 1
                                 pos = skipped_pos

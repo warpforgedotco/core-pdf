@@ -717,9 +717,6 @@ internal_GRID_CELL_MIN_CONFIDENCE = 50.0
 internal_PSM_SINGLE_LINE = 7
 
 
-internal_GRID_RULE_GAP_PX = 6
-
-
 def internal_close_row_gaps(mask: numpy.ndarray, gap: int) -> numpy.ndarray:
     """Bridge horizontal gaps up to ``gap`` pixels inside each row.
 

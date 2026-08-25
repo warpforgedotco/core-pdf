@@ -354,11 +354,6 @@ def read_be_i32(data: bytes, pos: int) -> int:
     return value - 0x100000000 if value & 0x80000000 else value
 
 
-def read_be_i16(data: bytes, pos: int) -> int:
-    value = (data[pos] << 8) | data[pos + 1]
-    return value - 0x10000 if value & 0x8000 else value
-
-
 def read_be_i8(data: bytes, pos: int) -> int:
     value = data[pos]
     return value - 0x100 if value & 0x80 else value

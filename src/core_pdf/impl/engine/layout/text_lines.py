@@ -116,9 +116,7 @@ def reconstruct_layout_line_text(
         len(non_space_runs) >= 3 and alnum_text_runs >= 3 and len(sorted_runs) >= 5
     )
     is_all_caps_line = len(sorted_runs) >= 2 and all_text_runs_upper
-    is_tracked_glyph_line = is_tracked_glyph_run_line(
-        non_space_runs, has_explicit_spaces=has_explicit_spaces
-    )
+    is_tracked_glyph_line = is_tracked_glyph_run_line(non_space_runs)
 
     if angle in {90, 270} and len(non_space_runs) >= 8:
         return reconstruct_rotated_table_line(sorted_runs)
@@ -471,9 +469,7 @@ class GlyphLineBuilder:
             return ""
         if self.is_trademark_marker_run(run, index):
             return "™"
-        if self.is_superscript_like_numeric_run(run, index) or self.is_unit_exponent_run(
-            run, index
-        ):
+        if self.is_superscript_like_numeric_run(run, index) or self.is_unit_exponent_run(run):
             return text.translate(SUPERSCRIPT_DIGIT_TRANSLATION)
         if self.is_subscript_like_numeric_run(run, index) or (
             self.is_formula_like_line and self.is_formula_subscript_like_numeric_run(run, index)
@@ -642,7 +638,7 @@ class GlyphLineBuilder:
         attach_gap = max(run.space_width * 0.5, previous_height * 0.2, 2.0)
         return run.x0 - previous.x1 <= attach_gap
 
-    def is_unit_exponent_run(self, run: TextRun, index: int) -> bool:
+    def is_unit_exponent_run(self, run: TextRun) -> bool:
         stripped = run.stripped_text
         if (
             not stripped
@@ -1258,7 +1254,7 @@ def has_interleaved_horizontal_overlap(runs: list[TextRun]) -> bool:
     return False
 
 
-def is_tracked_glyph_run_line(non_space_runs: list[TextRun], *, has_explicit_spaces: bool) -> bool:
+def is_tracked_glyph_run_line(non_space_runs: list[TextRun]) -> bool:
     if len(non_space_runs) < 6:
         return False
 

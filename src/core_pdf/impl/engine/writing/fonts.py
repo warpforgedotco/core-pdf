@@ -102,7 +102,7 @@ class TrueTypeFontProvider:
             (cid, round(hmetrics[glyph_order[glyph_ids[cid]]][0] * 1000 / units_per_em))
             for cid in sorted(glyph_ids)
         ]
-        font_name = internal_font_name(font)
+        font_name = "CoreTTFont"
         font_file = graph.add(
             PdfStream({PdfName.of("Length1"): len(self.font_data)}, self.font_data)
         )
@@ -156,10 +156,6 @@ class TrueTypeFontProvider:
             type0,
             lambda text: b"".join(cid_by_codepoint[ord(char)].to_bytes(2, "big") for char in text),
         )
-
-
-def internal_font_name(font: Any) -> str:
-    return "CoreTTFont"
 
 
 def internal_font_bbox(font: Any, units_per_em: int) -> list[int]:

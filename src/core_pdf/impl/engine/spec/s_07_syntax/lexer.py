@@ -221,15 +221,6 @@ class PdfLexer:
     def scan_word(self, skip_ignored: bool = True) -> tuple[bytes, int] | None:
         return self.scan_word_at(self.pos, skip_ignored=skip_ignored)
 
-    @staticmethod
-    def parse_number(value: memoryview | bytes) -> int | float:
-        try:
-            if 46 in value:
-                return float(value)
-            return int(value)
-        except ValueError as exc:
-            raise PdfParseError(f"invalid number {bytes(value)!r}") from exc
-
     def parse_keyword(self, value: memoryview | bytes) -> Any:
         key: bytes = value.tobytes() if type(value) is memoryview else value
 

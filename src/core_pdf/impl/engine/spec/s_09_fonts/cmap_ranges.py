@@ -46,9 +46,6 @@ class CIDRange:
     def contains(self, code: bytes) -> bool:
         return code_in_range(code, self.start, self.end)
 
-    def cid_for(self, code: bytes) -> int:
-        return self.first_cid + range_offset(code, self.start, self.end)
-
 
 @dataclass(frozen=True, slots=True)
 class NotdefRange:

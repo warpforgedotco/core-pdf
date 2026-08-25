@@ -5,22 +5,9 @@ from __future__ import annotations
 
 import math
 from collections.abc import Iterable, Iterator, Sequence
-from typing import Any, Protocol, TypedDict, cast
+from typing import Any, cast
 
 from core_pdf.impl.types import Rectangle
-
-
-class RectLike(Protocol):
-    x0: float
-    y0: float
-    x1: float
-    y1: float
-
-
-class RectBoxInitKwargs(TypedDict, total=False):
-    seqno: int
-    fill: tuple[float, ...] | None
-    fill_opacity: float | None
 
 
 def internal_float_value(value: object) -> float:
@@ -183,10 +170,6 @@ class RectBox:
     @property
     def height(self) -> float:
         return self.y1 - self.y0
-
-    @property
-    def is_infinite(self) -> bool:
-        return False
 
     def get_area(self) -> float:
         return self.width * self.height

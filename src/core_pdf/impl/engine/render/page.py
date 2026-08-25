@@ -56,7 +56,6 @@ class RenderedPage:
     image_conversion_cache: dict[
         tuple[int, int, int], bytes | memoryview | numpy.ndarray[Any, Any]
     ] = field(default_factory=dict, repr=False)
-    ppm_cache: bytes | None = field(default=None, repr=False)
 
     def internal_render_items(
         self,
@@ -438,30 +437,6 @@ class RenderedPage:
                 self.image_cache.put(cache_key, result)
             else:
                 self.raster_cache[raster_options] = result
-        return result
-
-    def to_ppm(self) -> bytes:
-        ppm_key = ImageCacheKey("page-ppm", self.cache_identity or (id(self),))
-        if self.image_cache is not None:
-            cached = self.image_cache.get(ppm_key)
-            if isinstance(cached, bytes):
-                return cached
-        elif self.ppm_cache is not None:
-            return self.ppm_cache
-        raster = self.rasterize()
-        rgba = raster.pixels
-        width, height = raster.width, raster.height
-        header = f"P6\n{width} {height}\n255\n".encode("ascii")
-        pixel_count = len(rgba) // 4
-        out = bytearray(len(header) + pixel_count * 3)
-        out[: len(header)] = header
-        rgb = numpy.frombuffer(rgba, dtype=numpy.uint8, count=pixel_count * 4)
-        out[len(header) :] = rgb.reshape(pixel_count, 4)[:, :3].tobytes()
-        result = bytes(out)
-        if self.image_cache is not None:
-            self.image_cache.put(ppm_key, result)
-        else:
-            self.ppm_cache = result
         return result
 
     def to_dict(self) -> dict[str, Any]:

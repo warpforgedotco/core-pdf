@@ -46,10 +46,6 @@ def cs_param_floats(params: object, key: str, count: int, default: list[float]) 
     return default
 
 
-def cs_name(value: object, default: str | None = None) -> str | None:
-    return normalize_pdf_name(value, default)
-
-
 class ImageColorSpec:
     __slots__ = (
         "kind",
