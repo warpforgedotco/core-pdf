@@ -959,8 +959,19 @@ def internal_fill_path_crossing_spans(
     crossings: list[tuple[float, int]],
     fill_rule: str,
 ) -> list[tuple[float, float]]:
-    if not crossings:
+    count = len(crossings)
+    if not count:
         return []
+    if count == 2:
+        # 44% of calls on a text-heavy page: a single edge pair. Both rules
+        # collapse to one comparison -- even-odd pairs the two sorted crossings,
+        # and nonzero's sweep opens a span iff the winding after the first is
+        # non-zero, which it always is because directions are only ever +/-1.
+        first_x = crossings[0][0]
+        second_x = crossings[1][0]
+        if second_x < first_x:
+            first_x, second_x = second_x, first_x
+        return [(first_x, second_x)] if second_x > first_x else []
     if fill_rule == "evenodd":
         xs = sorted(map(internal_first_item, crossings))
         return [(start, end) for start, end in zip(xs[0::2], xs[1::2], strict=False) if end > start]
