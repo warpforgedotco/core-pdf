@@ -1,9 +1,11 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass
 from enum import StrEnum
 from functools import lru_cache
+from typing import Any
 
 from core_pdf.impl.engine.layout.geometry import bbox_union
 from core_pdf.impl.types import Rectangle
@@ -131,15 +133,116 @@ class GlyphObservation:
         return resolver(code, width=self.bitmap_width, height=self.bitmap_height)
 
 
-@dataclass(slots=True)
 class GlyphCluster:
-    cluster_id: int
-    text: str
-    glyphs: tuple[GlyphObservation, ...]
-    advance_bbox: Rectangle
-    ink_bbox: Rectangle
-    baseline: Rectangle | None
-    confidence: float | None
+    """One decoded source glyph's text plus the observations it produced.
+
+    The single-glyph capture fast path constructs clusters without
+    materializing their observation: ``from_row`` stores a reference into the
+    page's glyph-row storage and the ``glyphs`` property materializes once on
+    first access. Clusters built from real observation tuples (the split and
+    multi-glyph paths, and tests) behave exactly as the former dataclass.
+    """
+
+    __slots__ = (
+        "cluster_id",
+        "text",
+        "advance_bbox",
+        "ink_bbox",
+        "baseline",
+        "confidence",
+        "internal_glyph_rows",
+        "internal_row_source",
+        "internal_row_index",
+    )
+
+    def __init__(
+        self,
+        cluster_id: int,
+        text: str,
+        glyphs: tuple[GlyphObservation, ...],
+        advance_bbox: Rectangle,
+        ink_bbox: Rectangle,
+        baseline: Rectangle | None,
+        confidence: float | None,
+    ) -> None:
+        self.cluster_id = cluster_id
+        self.text = text
+        self.advance_bbox = advance_bbox
+        self.ink_bbox = ink_bbox
+        self.baseline = baseline
+        self.confidence = confidence
+        self.internal_glyph_rows: tuple[GlyphObservation, ...] | None = glyphs
+        self.internal_row_source: list[Any] | None = None
+        self.internal_row_index = -1
+
+    @classmethod
+    def from_row(
+        cls,
+        row_source: list[Any],
+        row_index: int,
+        cluster_id: int,
+        text: str,
+        advance_bbox: Rectangle,
+        ink_bbox: Rectangle,
+        baseline: Rectangle | None,
+        confidence: float | None,
+    ) -> GlyphCluster:
+        cluster = cls.__new__(cls)
+        cluster.cluster_id = cluster_id
+        cluster.text = text
+        cluster.advance_bbox = advance_bbox
+        cluster.ink_bbox = ink_bbox
+        cluster.baseline = baseline
+        cluster.confidence = confidence
+        cluster.internal_glyph_rows = None
+        cluster.internal_row_source = row_source
+        cluster.internal_row_index = row_index
+        return cluster
+
+    @property
+    def glyphs(self) -> tuple[GlyphObservation, ...]:
+        materialized = self.internal_glyph_rows
+        if materialized is None:
+            from core_pdf.impl.engine.layout.glyph_table import internal_materialize
+
+            source = self.internal_row_source
+            assert source is not None
+            materialized = (internal_materialize(source[self.internal_row_index]),)
+            self.internal_glyph_rows = materialized
+        return materialized
+
+    def iter_decode_fields(self) -> Iterator[tuple[object, bytes, str]]:
+        """Yield ``(font_decoder, code_bytes, text)`` without materializing rows."""
+        if self.internal_glyph_rows is None and self.internal_row_source is not None:
+            entry = self.internal_row_source[self.internal_row_index]
+            if type(entry) is tuple:
+                yield entry[0].font_decoder, entry[5], entry[1]
+                return
+        for glyph in self.glyphs:
+            yield glyph.font_decoder, glyph.code_bytes, glyph.text
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, GlyphCluster):
+            return NotImplemented
+        return (
+            self.cluster_id == other.cluster_id
+            and self.text == other.text
+            and self.glyphs == other.glyphs
+            and self.advance_bbox == other.advance_bbox
+            and self.ink_bbox == other.ink_bbox
+            and self.baseline == other.baseline
+            and self.confidence == other.confidence
+        )
+
+    __hash__ = None  # type: ignore[assignment]  # matches the former eq-only dataclass
+
+    def __repr__(self) -> str:
+        return (
+            f"GlyphCluster(cluster_id={self.cluster_id!r}, text={self.text!r}, "
+            f"glyphs={self.glyphs!r}, advance_bbox={self.advance_bbox!r}, "
+            f"ink_bbox={self.ink_bbox!r}, baseline={self.baseline!r}, "
+            f"confidence={self.confidence!r})"
+        )
 
 
 @lru_cache(maxsize=512)

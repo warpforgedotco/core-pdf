@@ -1902,7 +1902,8 @@ class TextState:
             combined_d,
         )
         append_glyph = self.glyphs.append_row
-        append_glyph_row = self.glyphs.rows.append
+        glyph_rows = self.glyphs.rows
+        append_glyph_row = glyph_rows.append
         chunk_advance = self.chunk_advance
         glyph_bbox_for_code = decoder.glyph_bbox
         glyph_bbox_cache = decoder.glyph_bbox_cache
@@ -2183,7 +2184,6 @@ class TextState:
                 else should_capture_suspicious_multi_glyph_bitmap(chunk_text)
             )
             if single_character or suspicious_multi:
-                bitmap: tuple[int, ...] = ()
                 bitmap_width = 0
                 bitmap_height = 0
                 bitmap_code: int | None = None
@@ -2197,46 +2197,9 @@ class TextState:
                         font_size,
                     )
                     bitmap_code = glyph.bitmap_code
-                observation = GlyphObservation(
-                    chunk_text,
-                    rect,
-                    advance_bbox,
-                    seqno,
-                    glyph.code_bytes,
-                    glyph.char_code,
-                    glyph.cid,
-                    glyph.gid,
-                    effective_font_name,
-                    font_size,
-                    baseline,
-                    rotation_angle,
-                    fill,
-                    observation_visible,
-                    observation_confidence,
-                    glyph.unicode_source,
-                    glyph.alternates,
-                    bitmap,
-                    bitmap_width,
-                    bitmap_height,
-                    bitmap_code,
-                    decoder,
-                    effective_font_size,
-                    effective_font_height,
-                    observation_provenance,
-                    glyph_transform=outline_transform,
-                    text_render_mode=render_mode,
-                    fill_opacity=fill_opacity,
-                    stroke_color=stroke_color,
-                    stroke_opacity=stroke_opacity,
-                    line_width=glyph_line_width,
-                    line_cap=line_cap,
-                    line_join=line_join,
-                    dash_pattern=glyph_dash_pattern,
-                    blend_mode=blend_mode,
-                    soft_mask_alpha=group_alpha,
-                    text_object_id=text_object_id,
-                    cluster_key=cluster_provenance_id,
-                )
+                # Single-glyph fast path: append one compact row and a cluster
+                # referencing it; the full GlyphObservation materializes only
+                # if a row-level consumer asks for it.
                 append_glyph_row(
                     (
                         segment,
@@ -2260,21 +2223,16 @@ class TextState:
                         cluster_id,
                     )
                 )
-                # Single-glyph fast path: glyph_cluster_from_observations, given one
-                # observation, only re-derives advance_bbox/ink_bbox/confidence/etc. from
-                # fields already sitting in locals here (rect, advance_bbox,
-                # observation_confidence, baseline) -- construct the
-                # GlyphCluster directly instead of a round trip through GlyphObservation's
-                # advance_bbox/ink_bbox properties.
                 clusters.append(
-                    GlyphCluster(
-                        cluster_id=cluster_id,
-                        text=chunk_text,
-                        glyphs=(observation,),
-                        advance_bbox=observation.advance_bbox,
-                        ink_bbox=rect,
-                        baseline=baseline,
-                        confidence=observation_confidence,
+                    GlyphCluster.from_row(
+                        glyph_rows,
+                        len(glyph_rows) - 1,
+                        cluster_id,
+                        chunk_text,
+                        advance_bbox,
+                        rect,
+                        baseline,
+                        observation_confidence,
                     )
                 )
                 if run_geometry_started:

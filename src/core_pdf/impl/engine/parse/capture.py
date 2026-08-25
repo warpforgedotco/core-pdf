@@ -471,14 +471,13 @@ def internal_apply_learned_unicode_to_run(run: TextRun) -> TextRun:
     previous_decoder: object | None = None
     learned: dict[bytes, str] | None = None
     for cluster in run.glyph_clusters:
-        for glyph in cluster.glyphs:
-            decoder = glyph.font_decoder
+        for decoder, code_bytes, glyph_text in cluster.iter_decode_fields():
             if decoder is not previous_decoder:
                 candidate = getattr(decoder, "learned_unicode", None)
                 learned = candidate if isinstance(candidate, dict) and candidate else None
                 previous_decoder = decoder
-            replacement = learned.get(glyph.code_bytes) if learned is not None else None
-            original = glyph.text
+            replacement = learned.get(code_bytes) if learned is not None else None
+            original = glyph_text
             if not isinstance(replacement, str) or len(replacement) != 1 or not original:
                 continue
             position = source.find(original, cursor)

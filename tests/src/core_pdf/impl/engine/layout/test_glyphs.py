@@ -1,8 +1,7 @@
-from dataclasses import replace
-
 import pytest
 
 from core_pdf.impl.engine.layout.glyphs import (
+    GlyphCluster,
     GlyphObservation,
     GlyphUnicodeSemantics,
     glyph_cluster_from_observations,
@@ -137,7 +136,15 @@ def test_text_run_replacement_drops_clusters_that_describe_old_text() -> None:
     )
 
     replacement = run.replace(text="B")
-    repaired_cluster = replace(cluster, text="B")
+    repaired_cluster = GlyphCluster(
+        cluster.cluster_id,
+        "B",
+        cluster.glyphs,
+        cluster.advance_bbox,
+        cluster.ink_bbox,
+        cluster.baseline,
+        cluster.confidence,
+    )
     repaired = run.replace(text="B", glyph_clusters=(repaired_cluster,))
 
     assert replacement.text == "B"
