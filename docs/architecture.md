@@ -169,7 +169,11 @@ live in `render/display.py`, pure raster kernels in `render/kernels.py`, the mut
 `tests/test_rendering_golden.py` hashes the RGBA output of the corpus. The
 always-on layer renders 24 documents chosen by greedy line-cover — together they
 exercise the rendering modules across the full 224-document reach — and
-`CORE_PDF_RASTER_GOLDEN_FULL=1` sweeps all of them. A refactor that is meant to
+`CORE_PDF_RASTER_GOLDEN_FULL=1` sweeps all of them. CI sets that variable, so
+the whole corpus gates a merge; run the subset locally while iterating and the
+sweep before pushing. Reaching every *line* of `engine/render/` is not the same
+as pinning every *pixel*: four digests once sat in the snapshot that no commit
+could produce, unnoticed because only the subset ran in CI. A refactor that is meant to
 preserve behavior must leave `tests/snapshots/raster/first_page_scale1.json`
 untouched; regenerate it with `CORE_PDF_UPDATE_RASTER_GOLDEN=1` only when an
 output change is intended, and review the diff. Recompute the covering subset

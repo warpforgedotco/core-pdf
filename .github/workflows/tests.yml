@@ -70,6 +70,13 @@ jobs:
           "import sysconfig; assert sysconfig.get_config_var('Py_GIL_DISABLED') == 0"
 
       - name: Run core-pdf tests
+        env:
+          # Raster every corpus document, not just the 24-document covering
+          # subset. The subset reaches every line of engine/render/, but it
+          # cannot see output drift on the other 200: four snapshot digests
+          # stayed unreachable for weeks precisely because only the subset ran
+          # here. The full sweep costs a few minutes.
+          CORE_PDF_RASTER_GOLDEN_FULL: "1"
         run: uv run --locked --package core-pdf --group test pytest
 
       - name: Prune uv cache
