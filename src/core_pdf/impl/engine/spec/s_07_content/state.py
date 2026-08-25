@@ -2108,7 +2108,7 @@ class TextState:
                     decoder,
                     effective_font_size,
                     effective_font_height,
-                    (*observation_provenance, ("cluster_id", cluster_provenance_id)),
+                    observation_provenance,
                     glyph_transform=outline_transform,
                     text_render_mode=self.render_mode,
                     fill_opacity=self.fill_opacity,
@@ -2121,6 +2121,7 @@ class TextState:
                     blend_mode=self.blend_mode,
                     soft_mask_alpha=self.group_alpha,
                     text_object_id=self.text_object_id,
+                    cluster_key=cluster_provenance_id,
                 )
                 append_glyph(observation)
                 # Single-glyph fast path: glyph_cluster_from_observations, given one
@@ -2194,7 +2195,7 @@ class TextState:
                             decoder,
                             effective_font_size,
                             effective_font_height,
-                            (*observation_provenance, ("cluster_id", cluster_provenance_id)),
+                            observation_provenance,
                             glyph_transform=outline_transform,
                             text_render_mode=self.render_mode,
                             fill_opacity=self.fill_opacity,
@@ -2205,6 +2206,7 @@ class TextState:
                             soft_mask_alpha=self.group_alpha,
                             paint_glyph=char_index == 0,
                             text_object_id=self.text_object_id,
+                            cluster_key=cluster_provenance_id,
                         )
                     )
                     char_offset += per_char_advance
@@ -2235,7 +2237,7 @@ class TextState:
                         decoder,
                         effective_font_size,
                         effective_font_height,
-                        (*observation_provenance, ("cluster_id", cluster_provenance_id)),
+                        observation_provenance,
                         glyph_transform=outline_transform,
                         text_render_mode=self.render_mode,
                         fill_opacity=self.fill_opacity,
@@ -2245,6 +2247,7 @@ class TextState:
                         blend_mode=self.blend_mode,
                         soft_mask_alpha=self.group_alpha,
                         text_object_id=self.text_object_id,
+                        cluster_key=cluster_provenance_id,
                     )
                 )
             for observation in cluster_observations:
