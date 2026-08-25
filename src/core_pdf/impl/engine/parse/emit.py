@@ -641,6 +641,9 @@ internal_ARABIC_INDIC_DIGITS = str.maketrans(
 
 internal_NUMERIC_PIPE_TOKEN = re.compile(r"^[($+-]?\d+(?:[.,]\d+)?[%)]?$")
 internal_STANDALONE_ARTIFACT_TOKENS = frozenset({"]", "_", "□", "☐", "☒", "❖"})
+internal_ARTIFACT_PROBE_TOKENS = (*internal_STANDALONE_ARTIFACT_TOKENS, ";", "�")
+internal_BRACKET_JOIN_RE = re.compile(r"(?<=[0-9A-Za-z])\[(?=[0-9A-Za-z])")
+internal_EXCLAMATION_NOISE_RE = re.compile(r"(?<=[%([])!(?=\s|$)")
 internal_LINE_INITIAL_OCR_SUFFIX_FRAGMENTS = frozenset(
     {
         "able",
@@ -757,7 +760,7 @@ def internal_standalone_artifact_token(token: str) -> bool:
 def internal_normalize_latin_confusables(text: str) -> str:
     if not text:
         return text
-    if any(token in text for token in (*internal_STANDALONE_ARTIFACT_TOKENS, ";", "�")):
+    if any(token in text for token in internal_ARTIFACT_PROBE_TOKENS):
         text = internal_remove_standalone_artifact_tokens(text)
     if "•" in text:
         text = internal_remove_nonword_bullet_lines(text)
@@ -786,10 +789,8 @@ def internal_normalize_latin_confusables(text: str) -> str:
 def internal_normalize_intrusive_punctuation(text: str) -> str:
     if not text or not any(character in text for character in "!["):
         return text
-    normalized = (
-        re.sub(r"(?<=[0-9A-Za-z])\[(?=[0-9A-Za-z])", "", text) if text.count("[") == 1 else text
-    )
-    normalized = re.sub(r"(?<=[%([])!(?=\s|$)", "", normalized)
+    normalized = internal_BRACKET_JOIN_RE.sub("", text) if text.count("[") == 1 else text
+    normalized = internal_EXCLAMATION_NOISE_RE.sub("", normalized)
     return normalized
 
 
