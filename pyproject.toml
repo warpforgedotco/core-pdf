@@ -90,6 +90,10 @@ markers = [
 [tool.coverage.run]
 source = ["src/core_pdf"]
 parallel = true
+# The pymupdf facade is quarantined (see api/compat/_unsupported) and nothing
+# imports it, so it can only ever measure 0%. Keeping it in `source` weighed the
+# ratchet below down by a constant that has nothing to do with live code.
+omit = ["src/core_pdf/api/compat/_unsupported/*"]
 
 [tool.coverage.report]
 show_missing = true
@@ -101,7 +105,10 @@ skip_covered = true
 # longer omitted, so this ratchet was recalibrated after pruning ~57k lines of
 # unreachable vendored code (confirmed 0% across the full test suite AND a
 # 2377-document real-world PDF corpus): 77 -> 64.
-fail_under = 64
+# Raised 64 -> 66 after omitting the quarantined pymupdf facade (which nothing
+# imports, so it could only ever read 0%) and deleting ~1.5k lines of dead code;
+# measured 66.98%.
+fail_under = 66
 exclude_also = [
     "if TYPE_CHECKING:",
     "raise NotImplementedError",
