@@ -26,6 +26,9 @@ internal_CHARSTRING_RE = re.compile(rb"/([^\s/]+)\s+(\d+)\s+(?:RD|-\|)[ \t\r\n]"
 internal_HEX_BYTES = frozenset(b"0123456789abcdefABCDEF \t\r\n")
 internal_MAX_SUBROUTINES = 4096
 internal_DECRYPT_NUMPY_THRESHOLD = 1024
+# Ciphertext bytes decrypted per vectorized block; the working uint64 arrays
+# are ~56x the block size, so this bounds peak memory regardless of payload.
+internal_DECRYPT_BLOCK_SIZE = 1 << 20
 # Lazily built (powers of 52845, powers of its inverse) numpy arrays mod 2**16.
 internal_DECRYPT_POWER_CYCLES: tuple[Any, Any] | None = None
 
@@ -36,7 +39,10 @@ def internal_decrypt_numpy(data: bytes, key: int) -> bytes:
     The state update r' = (c + r)*52845 + 22719 (mod 2**16) is affine in r, so
     r_i = a**i * (r_0 + sum_{j<i} a**-(j+1) * (a*c_j + b)) with a = 52845 and
     b = 22719. a is odd, hence invertible mod 2**16, and its power cycle is
-    precomputed once; the prefix sum stays exact in uint64.
+    precomputed once; the prefix sum stays exact in uint64. The input is
+    processed in fixed-size blocks with the state carried across block
+    boundaries (r after m bytes is a**m * (r_0 + prefix_m)), so an adversarial
+    multi-megabyte payload cannot balloon the working arrays.
     """
     import numpy
 
@@ -62,18 +68,27 @@ def internal_decrypt_numpy(data: bytes, key: int) -> bytes:
             numpy.asarray(inverse_cycle, dtype=numpy.uint64),
         )
     power_cycle, inverse_cycle_array = internal_DECRYPT_POWER_CYCLES
-    n = len(data)
-    cipher = numpy.frombuffer(data, dtype=numpy.uint8).astype(numpy.uint64)
     cycle_length = len(power_cycle)
-    indices = numpy.arange(n, dtype=numpy.int64)
-    powers = power_cycle[indices % cycle_length]
-    inverse_powers = inverse_cycle_array[(indices + 1) % cycle_length]
-    scaled = ((52845 * cipher + 22719) & 0xFFFF) * inverse_powers % 65536
-    prefix = numpy.cumsum(scaled)
-    state = numpy.empty(n, dtype=numpy.uint64)
-    state[0] = key
-    state[1:] = powers[1:] * ((key + prefix[:-1]) % 65536) % 65536
-    return (cipher ^ (state >> numpy.uint64(8))).astype(numpy.uint8).tobytes()
+    block_size = internal_DECRYPT_BLOCK_SIZE
+    view = memoryview(data)
+    plain_blocks: list[bytes] = []
+    state_value = key
+    for start in range(0, len(data), block_size):
+        block = view[start : start + block_size]
+        block_length = len(block)
+        cipher = numpy.frombuffer(block, dtype=numpy.uint8).astype(numpy.uint64)
+        indices = numpy.arange(block_length, dtype=numpy.int64)
+        powers = power_cycle[indices % cycle_length]
+        inverse_powers = inverse_cycle_array[(indices + 1) % cycle_length]
+        scaled = ((52845 * cipher + 22719) & 0xFFFF) * inverse_powers % 65536
+        prefix = numpy.cumsum(scaled)
+        state = numpy.empty(block_length, dtype=numpy.uint64)
+        state[0] = state_value
+        state[1:] = powers[1:] * ((state_value + prefix[:-1]) % 65536) % 65536
+        plain_blocks.append((cipher ^ (state >> numpy.uint64(8))).astype(numpy.uint8).tobytes())
+        carried = (state_value + int(prefix[-1])) % 65536
+        state_value = (int(power_cycle[block_length % cycle_length]) * carried) % 65536
+    return b"".join(plain_blocks)
 
 
 def internal_decrypt(data: bytes, key: int) -> bytes:
