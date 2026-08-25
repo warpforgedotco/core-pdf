@@ -171,11 +171,6 @@ class PageEventStream:
                 )
                 for index, seqno, ink_bbox, visible, has_paint in (
                     products.glyphs.iter_event_rows()
-                    if isinstance(products.glyphs, GlyphTable)
-                    else (
-                        (index, glyph.seqno, glyph.ink_bbox, glyph.visible, glyph.has_paint)
-                        for index, glyph in enumerate(products.glyphs)
-                    )
                 )
                 if has_paint
             ],

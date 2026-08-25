@@ -15,7 +15,6 @@ from typing import Any
 import numpy
 
 from core_pdf.impl.engine.layout.geometry import rect_tuple
-from core_pdf.impl.engine.layout.glyph_table import GlyphTable
 from core_pdf.impl.engine.layout.glyphs import (
     GlyphObservation,
     GlyphUnicodeSemantics,
@@ -779,13 +778,8 @@ def internal_capture_from_program(
             return cached
     products = program.products
     program_runs = tuple(products.runs)
-    glyph_source = products.glyphs
-    if isinstance(glyph_source, GlyphTable):
-        font_name_pairs: Iterable[tuple[int, str | None]] = glyph_source.iter_font_names()
-    else:
-        font_name_pairs = ((glyph.seqno, glyph.font_name) for glyph in glyph_source)
     glyphs_by_seqno: dict[int, list[str]] = defaultdict(list)
-    for glyph_seqno, glyph_font_name in font_name_pairs:
+    for glyph_seqno, glyph_font_name in products.glyphs.iter_font_names():
         if glyph_font_name:
             glyphs_by_seqno[int(glyph_seqno)].append(glyph_font_name)
     glyph_seqnos = tuple(sorted(glyphs_by_seqno))
@@ -839,10 +833,7 @@ def internal_capture_from_program(
         painted_analysis = internal_analyze_text(painted_text)
         painted_text_quality = painted_analysis.quality
         painted_native_characters = painted_analysis.characters
-    if isinstance(glyph_source, GlyphTable):
-        glyph_evidence = internal_glyph_evidence_fields(glyph_source.iter_evidence_rows(), raw_runs)
-    else:
-        glyph_evidence = internal_glyph_evidence(tuple(glyph_source), raw_runs)
+    glyph_evidence = internal_glyph_evidence_fields(products.glyphs.iter_evidence_rows(), raw_runs)
     trusted_hidden_text = internal_hidden_text_is_trusted(
         native_characters=native_characters,
         painted_characters=painted_native_characters,
