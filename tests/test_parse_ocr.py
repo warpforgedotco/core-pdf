@@ -92,12 +92,12 @@ def test_tessdata_prefix_takes_precedence(
     tessdata.mkdir()
     (tessdata / "eng.traineddata").write_bytes(b"test")
     monkeypatch.setenv("TESSDATA_PREFIX", str(tessdata))
-    ocr.internal_tessdata_path.cache_clear()
+    ocr.internal_resolve_tessdata_path.cache_clear()
 
     try:
         assert ocr.internal_tessdata_path() == str(tessdata)
     finally:
-        ocr.internal_tessdata_path.cache_clear()
+        ocr.internal_resolve_tessdata_path.cache_clear()
 
 
 def test_invalid_tessdata_prefix_has_an_actionable_error(
@@ -105,13 +105,13 @@ def test_invalid_tessdata_prefix_has_an_actionable_error(
     tmp_path: Path,
 ) -> None:
     monkeypatch.setenv("TESSDATA_PREFIX", str(tmp_path))
-    ocr.internal_tessdata_path.cache_clear()
+    ocr.internal_resolve_tessdata_path.cache_clear()
 
     try:
         with pytest.raises(RuntimeError, match="eng.traineddata"):
             ocr.internal_tessdata_path()
     finally:
-        ocr.internal_tessdata_path.cache_clear()
+        ocr.internal_resolve_tessdata_path.cache_clear()
 
 
 def test_tessdata_path_falls_back_to_tesseract_cli(
@@ -132,12 +132,12 @@ def test_tessdata_path_falls_back_to_tesseract_cli(
             stderr="",
         ),
     )
-    ocr.internal_tessdata_path.cache_clear()
+    ocr.internal_resolve_tessdata_path.cache_clear()
 
     try:
         assert ocr.internal_tessdata_path() == str(tessdata)
     finally:
-        ocr.internal_tessdata_path.cache_clear()
+        ocr.internal_resolve_tessdata_path.cache_clear()
 
 
 def test_prepare_ocr_builds_an_api_on_every_pooled_worker(
