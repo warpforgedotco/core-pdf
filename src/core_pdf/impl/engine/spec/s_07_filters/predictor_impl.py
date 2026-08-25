@@ -160,14 +160,25 @@ def internal_tiff_predict_bits_numpy(
         count=complete_rows * row_byte_length,
     ).reshape(complete_rows, row_byte_length)
     samples = internal_TIFF_SAMPLE_LUTS[bits][encoded].reshape(complete_rows, -1)[:, :sample_count]
-    decoded_samples = numpy.cumsum(
-        samples.reshape(complete_rows, columns, colors),
-        axis=1,
-        dtype=numpy.uint16,
-    ) & ((1 << bits) - 1)
-    shifts = numpy.arange(bits - 1, -1, -1, dtype=numpy.uint16)
-    sample_bits = ((decoded_samples[..., None] >> shifts) & 1).reshape(complete_rows, -1)
-    return numpy.packbits(sample_bits, axis=1, bitorder="big").tobytes()
+    decoded_samples = (
+        numpy.cumsum(
+            samples.reshape(complete_rows, columns, colors),
+            axis=1,
+            dtype=numpy.uint16,
+        )
+        & ((1 << bits) - 1)
+    ).reshape(complete_rows, -1)
+    # Pack samples arithmetically (samples-per-byte shifted and ORed) instead
+    # of expanding to one array element per bit for packbits.
+    samples_per_byte = 8 // bits
+    pad = (-decoded_samples.shape[1]) % samples_per_byte
+    if pad:
+        decoded_samples = numpy.pad(decoded_samples, ((0, 0), (0, pad)))
+    grouped = decoded_samples.reshape(complete_rows, -1, samples_per_byte)
+    packed = numpy.zeros(grouped.shape[:2], dtype=numpy.uint16)
+    for sample_index in range(samples_per_byte):
+        packed |= grouped[:, :, sample_index] << (bits * (samples_per_byte - 1 - sample_index))
+    return packed.astype(numpy.uint8).tobytes()
 
 
 def tiff_predict(
