@@ -450,11 +450,27 @@ def internal_signed_area_coverage(
 
     # Split each row piece again at column boundaries so every fragment lies in
     # one cell; the midpoint split below is exact only within a single cell.
-    column_count = (numpy.floor(right_x) - numpy.floor(left_x) + 1.0).astype(numpy.int64)
+    #
+    # The walk is bounded to one cell either side of the box. A fill clipped to
+    # a small box still arrives with the whole path's edges, so a near-
+    # horizontal edge can cross millions of columns that the box never shows --
+    # one fragment each, gigabytes of them. Everything left of the box already
+    # lands on column 0 and everything right of it past the visible slice, so
+    # collapsing those runs into the first and last fragment changes nothing.
+    # Those two keep the piece's original extents, which is what holds the
+    # coverage weights identical to the unbounded walk (and bit-identical when
+    # the piece lies inside the box, where the clamp does not bite).
+    walk_left = numpy.clip(left_x, -1.0, width + 1.0)
+    walk_right = numpy.clip(right_x, -1.0, width + 1.0)
+    column_count = (numpy.floor(walk_right) - numpy.floor(walk_left) + 1.0).astype(numpy.int64)
     piece_index, column_offset = internal_group_offsets(column_count)
-    column_start = numpy.floor(left_x)[piece_index] + column_offset
-    fragment_left = numpy.maximum(left_x[piece_index], column_start)
-    fragment_right = numpy.minimum(right_x[piece_index], column_start + 1.0)
+    column_start = numpy.floor(walk_left)[piece_index] + column_offset
+    fragment_left = numpy.where(column_offset == 0, left_x[piece_index], column_start)
+    fragment_right = numpy.where(
+        column_offset == column_count[piece_index] - 1,
+        right_x[piece_index],
+        column_start + 1.0,
+    )
     piece_span = (right_x - left_x)[piece_index]
     vertical = piece_span <= 0.0
     share = numpy.where(

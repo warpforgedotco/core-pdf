@@ -2137,7 +2137,15 @@ class internal_RasterTarget:
                 else numpy.frombuffer(converted, dtype=numpy.uint8)
             )
             pixel_total = width_px * height_px
-            if pixel_total and source_samples.size % pixel_total == 0:
+            alpha_samples = (
+                numpy.asarray(source_alpha, dtype=numpy.uint8) if source_alpha is not None else None
+            )
+            # Colour and alpha reduce together or not at all. A decoded alpha
+            # plane that does not match Width x Height cannot be reduced with
+            # them, and reducing only the colour would leave the alpha indexed
+            # by the old width -- every sample below reads the wrong offset.
+            reducible = alpha_samples is None or alpha_samples.size == pixel_total
+            if pixel_total and reducible and source_samples.size % pixel_total == 0:
                 reduced, reduced_width, reduced_height = internal_box_downsample(
                     source_samples,
                     width_px,
@@ -2147,17 +2155,15 @@ class internal_RasterTarget:
                     target_height,
                 )
                 if reduced_width != width_px or reduced_height != height_px:
-                    if source_alpha is not None:
-                        alpha_samples = numpy.asarray(source_alpha, dtype=numpy.uint8)
-                        if alpha_samples.size == pixel_total:
-                            source_alpha = internal_box_downsample(
-                                alpha_samples,
-                                width_px,
-                                height_px,
-                                1,
-                                target_width,
-                                target_height,
-                            )[0]
+                    if alpha_samples is not None:
+                        source_alpha = internal_box_downsample(
+                            alpha_samples,
+                            width_px,
+                            height_px,
+                            1,
+                            target_width,
+                            target_height,
+                        )[0]
                     converted = reduced
                     width_px = reduced_width
                     height_px = reduced_height

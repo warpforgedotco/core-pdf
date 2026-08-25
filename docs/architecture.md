@@ -161,8 +161,11 @@ read-only lazy page sequence and shared inherited-page constants.
 
 ### Device colour and the default CMYK profile
 
-PDF 32000-1 defines DeviceGray and DeviceRGB in terms of sRGB, but leaves
-DeviceCMYK device-dependent and gives no conversion to RGB at all. The
+PDF 32000-1 leaves all three Device spaces device-dependent. Treating
+DeviceGray and DeviceRGB as sRGB is renderer behaviour rather than anything the
+spec defines, but it is what viewers do and it costs nothing: the components
+map straight onto the components of the output space. DeviceCMYK has no such
+correspondence, and the spec gives no conversion to RGB at all. The
 uncalibrated `255*(1-ink)*(1-black)` formula that fills the gap is visibly
 wrong -- it renders the process inks as saturated screen primaries and 100% K as
 pure black -- so `s_08_graphics/device_profiles.py` runs DeviceCMYK through a
