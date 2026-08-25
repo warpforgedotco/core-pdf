@@ -131,6 +131,11 @@ class ObservationBatch:
     font_size: FloatArray
     line_break_before: BoolArray
     references: tuple[Any | None, ...]
+    # Memo for table-detection cell text keyed by the observation indexes of a
+    # cell; hypotheses re-derive the same cells many times per page.
+    internal_cell_text_cache: dict[tuple[int, ...], str] = field(
+        default_factory=dict, init=False, repr=False, compare=False
+    )
 
     def __post_init__(self) -> None:
         size = len(self.text)

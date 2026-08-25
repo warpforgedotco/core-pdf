@@ -301,6 +301,10 @@ def internal_split_grid_component(
 
 
 def internal_cell_text(observations: ObservationBatch, indexes: list[int]) -> str:
+    cache_key = tuple(indexes)
+    cached = observations.internal_cell_text_cache.get(cache_key)
+    if cached is not None:
+        return cached
     boxes = observations.bbox[indexes]
     centers = ((boxes[:, 1] + boxes[:, 3]) * 0.5).tolist()
     lefts = boxes[:, 0].tolist()
@@ -314,7 +318,9 @@ def internal_cell_text(observations: ObservationBatch, indexes: list[int]) -> st
         part = collapse_ws(observations.text[indexes[position]])
         if part and not (len(part) >= 4 and set(part) <= {".", "…"}):
             parts.append(part)
-    return " ".join(parts)
+    result = " ".join(parts)
+    observations.internal_cell_text_cache[cache_key] = result
+    return result
 
 
 internal_TABLE_LEADER_CHARS = frozenset(".-–—~…")
