@@ -136,7 +136,7 @@ class NativeTextProjection:
         # structured view may additionally contain OCR, which must stay excluded.
         page = self._pdf.pages[self._page_number - 1]
         if self._page is self._pdf.structured_document.pages[self._page_number - 1]:
-            glyphs = page.get_page_program().products.glyphs
+            glyphs = tuple(page.get_page_program().products.glyphs)
             resources = page.resolve_resources()
             raw_fonts = page.document.resolver.resolve(lookup_dict_key(resources, "Font"))
             font_cmaps: dict[str, ToUnicodeCMap] = {}

@@ -11,7 +11,7 @@ from typing import Any
 
 import numpy
 
-from core_pdf.impl.engine.layout.glyphs import GlyphObservation
+from core_pdf.impl.engine.layout.glyph_table import GlyphTable
 from core_pdf.impl.engine.layout.models import TextRun
 from core_pdf.impl.engine.spec.s_07_content.capture import (
     CapturedDrawing,
@@ -123,7 +123,7 @@ class PageEventStream:
     visible: numpy.ndarray[Any, numpy.dtype[numpy.bool_]]
     non_text_indexes: numpy.ndarray[Any, numpy.dtype[numpy.int64]]
     runs: tuple[TextRun, ...]
-    glyphs: tuple[GlyphObservation, ...]
+    glyphs: GlyphTable
     drawings: tuple[CapturedDrawing, ...]
     inline_images: tuple[CapturedInlineImage, ...]
     lines: LineTable
@@ -252,7 +252,7 @@ class PageProducts:
     """Typed payload columns owned by the canonical page program."""
 
     runs: tuple[TextRun, ...]
-    glyphs: tuple[GlyphObservation, ...]
+    glyphs: GlyphTable
     drawings: tuple[CapturedDrawing, ...]
     inline_images: tuple[CapturedInlineImage, ...]
     lines: LineTable
@@ -260,7 +260,7 @@ class PageProducts:
     @classmethod
     def from_state(cls, state: Any) -> PageProducts:
         runs = tuple(state.runs)
-        glyphs = tuple(state.glyphs)
+        glyphs = GlyphTable.from_rows(state.glyphs)
         raw_drawings = tuple(state.drawings)
         if not all(isinstance(drawing, CapturedDrawing) for drawing in raw_drawings):
             raise PdfContractError("page state emitted an invalid drawing product")
@@ -268,8 +268,6 @@ class PageProducts:
         inline_images = tuple(state.inline_images)
         if not all(isinstance(run, TextRun) for run in runs):
             raise PdfContractError("page state emitted an invalid text-run product")
-        if not all(isinstance(glyph, GlyphObservation) for glyph in glyphs):
-            raise PdfContractError("page state emitted an invalid glyph product")
         if not all(isinstance(image, CapturedInlineImage) for image in inline_images):
             raise PdfContractError("page state emitted an invalid inline-image product")
         return cls(
