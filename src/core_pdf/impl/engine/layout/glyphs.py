@@ -143,7 +143,6 @@ class GlyphCluster:
 
 
 @lru_cache(maxsize=512)
-@lru_cache(maxsize=4096)
 def glyph_unicode_confidence(
     text: str,
     unicode_source: str,
