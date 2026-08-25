@@ -984,39 +984,64 @@ class internal_RasterTarget:
         samples = 4
         rectangular_clip = clip_paths_are_axis_aligned_rects()
         normal_fast = can_blend_normal_fast(blend_mode)
+        # Sample every scanline of the box up front. Called per pixel row this
+        # handed the kernel four y values at a time, so the numpy work was pure
+        # call overhead; one call per fill amortizes it over the whole box.
+        # The y values are spelled exactly as the per-row form below to keep
+        # each sample bit-identical.
+        all_row_crossings = None
+        if edge_segments_array is not None:
+            row_count = iy1 - iy0
+            sample_offsets = (numpy.arange(samples, dtype=numpy.float64) + 0.5) / samples
+            page_ys = (
+                crop_y1
+                - (
+                    numpy.repeat(numpy.arange(iy0, iy1, dtype=numpy.float64), samples)
+                    + numpy.tile(sample_offsets, row_count)
+                )
+                / scale
+            )
+            all_row_crossings = internal_fill_path_sample_crossings_numpy(
+                edge_segments_array, page_ys
+            )
         for py in range(iy0, iy1):
             row = py * width * 4
             sample_spans = []
-            if edge_segments_array is not None:
-                page_ys = numpy.empty(samples, dtype=numpy.float64)
+            if all_row_crossings is not None:
+                base = (py - iy0) * samples
                 for sy in range(samples):
-                    page_ys[sy] = crop_y1 - (py + (sy + 0.5) / samples) / scale
-                for crossings in internal_fill_path_sample_crossings_numpy(
-                    edge_segments_array, page_ys
-                ):
-                    sample_spans.append(internal_fill_path_crossing_spans(crossings, fill_rule))
+                    sample_spans.append(
+                        internal_fill_path_crossing_spans(all_row_crossings[base + sy], fill_rule)
+                    )
             else:
                 for sy in range(samples):
                     page_y = crop_y1 - (py + (sy + 0.5) / samples) / scale
                     crossings = internal_fill_path_sample_crossings(edge_segments, page_y)
                     sample_spans.append(internal_fill_path_crossing_spans(crossings, fill_rule))
             if normal_fast and rectangular_clip:
-                coverage = numpy.zeros(ix1 - ix0, dtype=numpy.uint8)
-                for sy, spans in enumerate(sample_spans):
-                    for sx in range(samples):
-                        sample_offset = (sx + 0.5) / samples
-                        for start_x, end_x in spans:
-                            start = max(
-                                ix0,
-                                math.ceil((start_x - crop_x0) * scale - sample_offset),
-                            )
-                            end = min(
-                                ix1,
-                                math.ceil((end_x - crop_x0) * scale - sample_offset),
-                            )
+                # Accumulate into a difference array: each covered span is two
+                # integer updates instead of a numpy slice-add, and the row is
+                # summed once at the end. Coverage never exceeds samples**2, so
+                # it still fits uint8, and integer addition is commutative --
+                # reordering the sample loops cannot change the totals.
+                deltas = [0] * (ix1 - ix0 + 1)
+                covered_any = False
+                for spans in sample_spans:
+                    for start_x, end_x in spans:
+                        span_start = (start_x - crop_x0) * scale
+                        span_end = (end_x - crop_x0) * scale
+                        for sx in range(samples):
+                            sample_offset = (sx + 0.5) / samples
+                            start = max(ix0, math.ceil(span_start - sample_offset))
+                            end = min(ix1, math.ceil(span_end - sample_offset))
                             if end > start:
-                                coverage[start - ix0 : end - ix0] += 1
-                if numpy.any(coverage):
+                                deltas[start - ix0] += 1
+                                deltas[end - ix0] -= 1
+                                covered_any = True
+                if covered_any:
+                    coverage = numpy.cumsum(numpy.asarray(deltas[:-1], dtype=numpy.int16)).astype(
+                        numpy.uint8
+                    )
                     target = pixel_view(pixels)[py, ix0:ix1]
                     internal_blend_normal_alpha_array_numpy(
                         target,

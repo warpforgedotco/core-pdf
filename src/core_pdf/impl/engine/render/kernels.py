@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable
+from operator import itemgetter
 from typing import Any
 
 import numpy
@@ -874,23 +875,84 @@ def internal_fill_path_sample_crossings(
     return crossings
 
 
+# Above this many (row, edge) pairs the activity mask below costs more memory
+# than the per-row loop costs time, so the loop stays the fallback.
+INTERNAL_CROSSING_MASK_CELL_LIMIT = 1 << 24
+
+
 def internal_fill_path_sample_crossings_numpy(
     edge_segments: numpy.ndarray[Any, Any],
     page_ys: numpy.ndarray[Any, Any],
 ) -> list[list[tuple[float, int]]]:
+    """Intersect every edge with every scanline, one row per returned list.
+
+    Solves all rows in a single pass rather than looping in Python: this runs
+    once per scanline per filled path, and at a handful of numpy calls on a
+    few-element array per row it was pure call overhead.
+
+    The per-element arithmetic is spelled exactly as the row-at-a-time form
+    below it -- ``ex0 + ((y - ey0) / dy * (ex1 - ex0))`` -- because these are
+    elementwise IEEE double operations that numpy does not reassociate, so
+    batching them cannot move a bit. ``nonzero`` walks the mask in C order, so
+    each row keeps its edges in edge_segments order, matching the loop.
+    """
+    row_count = len(page_ys)
+    if row_count == 0:
+        return []
+    edge_count = len(edge_segments)
+    if edge_count == 0:
+        return [[] for _ in range(row_count)]
+    if row_count * edge_count > INTERNAL_CROSSING_MASK_CELL_LIMIT:
+        return [
+            internal_fill_path_sample_crossings_row(edge_segments, float(page_y))
+            for page_y in page_ys
+        ]
+
+    ys = page_ys.reshape(-1, 1)
+    active = (edge_segments[:, 4].reshape(1, -1) <= ys) & (ys < edge_segments[:, 5].reshape(1, -1))
+    row_indexes, edge_indexes = numpy.nonzero(active)
+    if row_indexes.size == 0:
+        return [[] for _ in range(row_count)]
+
+    edge_x0 = edge_segments[edge_indexes, 0]
+    edge_y0 = edge_segments[edge_indexes, 1]
+    delta_y = edge_segments[edge_indexes, 3] - edge_y0
+    intersections = edge_x0 + (
+        (page_ys[row_indexes] - edge_y0) / delta_y * (edge_segments[edge_indexes, 2] - edge_x0)
+    )
+    directions = numpy.where(delta_y > 0.0, 1, -1)
+
+    xs = intersections.tolist()
+    ds = directions.tolist()
+    counts = numpy.bincount(row_indexes, minlength=row_count).tolist()
     crossings_rows: list[list[tuple[float, int]]] = []
-    for page_y in page_ys:
-        active = edge_segments[(edge_segments[:, 4] <= page_y) & (page_y < edge_segments[:, 5])]
-        if not len(active):
+    start = 0
+    for count in counts:
+        if count:
+            stop = start + count
+            crossings_rows.append(list(zip(xs[start:stop], ds[start:stop], strict=True)))
+            start = stop
+        else:
             crossings_rows.append([])
-            continue
-        delta_y = active[:, 3] - active[:, 1]
-        intersections = active[:, 0] + (
-            (page_y - active[:, 1]) / delta_y * (active[:, 2] - active[:, 0])
-        )
-        directions = numpy.where(delta_y > 0.0, 1, -1)
-        crossings_rows.append(list(zip(intersections.tolist(), directions.tolist(), strict=True)))
     return crossings_rows
+
+
+def internal_fill_path_sample_crossings_row(
+    edge_segments: numpy.ndarray[Any, Any],
+    page_y: float,
+) -> list[tuple[float, int]]:
+    active = edge_segments[(edge_segments[:, 4] <= page_y) & (page_y < edge_segments[:, 5])]
+    if not len(active):
+        return []
+    delta_y = active[:, 3] - active[:, 1]
+    intersections = active[:, 0] + (
+        (page_y - active[:, 1]) / delta_y * (active[:, 2] - active[:, 0])
+    )
+    directions = numpy.where(delta_y > 0.0, 1, -1)
+    return list(zip(intersections.tolist(), directions.tolist(), strict=True))
+
+
+internal_first_item = itemgetter(0)
 
 
 def internal_fill_path_crossing_spans(
@@ -900,9 +962,9 @@ def internal_fill_path_crossing_spans(
     if not crossings:
         return []
     if fill_rule == "evenodd":
-        xs = sorted(x for x, internal_delta in crossings)
+        xs = sorted(map(internal_first_item, crossings))
         return [(start, end) for start, end in zip(xs[0::2], xs[1::2], strict=False) if end > start]
-    crossings.sort(key=lambda item: item[0])
+    crossings.sort(key=internal_first_item)
     spans: list[tuple[float, float]] = []
     winding = 0
     previous_x: float | None = None
