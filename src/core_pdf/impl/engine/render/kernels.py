@@ -1211,6 +1211,23 @@ def internal_color_rgba(color: Any, opacity: Any) -> tuple[int, int, int, int]:
         if len(color) == 1:
             gray = internal_color_component(color[0])
             return gray, gray, gray, alpha
+        if len(color) == 4:
+            # DeviceCMYK. The component count is the colour space here --
+            # normalize_colors clamps and preserves arity, and folds in no alpha
+            # -- so four components is CMYK and nothing else. Without this the
+            # tuple fell through to the RGB branch below, which read the first
+            # three components as red/green/blue: `1 1 1 1 k` (rich black)
+            # painted white and `0 0 0 0 k` (white) painted black.
+            try:
+                cyan, magenta, yellow, black = (internal_clamp01(float(c)) for c in color)
+            except (TypeError, ValueError):
+                return 0, 0, 0, alpha
+            return (
+                max(0, min(255, int(round(255.0 * (1.0 - cyan) * (1.0 - black))))),
+                max(0, min(255, int(round(255.0 * (1.0 - magenta) * (1.0 - black))))),
+                max(0, min(255, int(round(255.0 * (1.0 - yellow) * (1.0 - black))))),
+                alpha,
+            )
         rgb = [internal_color_component(c) for c in color[:3]]
         while len(rgb) < 3:
             rgb.append(rgb[-1] if rgb else 0)

@@ -3993,20 +3993,25 @@ class TextState:
 
     def op_G(self, operands: OperandWindow, depth: int) -> None:
         if operands:
+            self.stroke_color_space = "DeviceGray"
             self.set_stroke_color(operands[0])
 
     def op_RG(self, operands: OperandWindow, depth: int) -> None:
         if len(operands) >= 3:
+            self.stroke_color_space = "DeviceRGB"
             self.set_stroke_color(operands[0], operands[1], operands[2])
 
     def op_RG_values(self: Any, red: int | float, green: int | float, blue: int | float) -> None:
+        self.stroke_color_space = "DeviceRGB"
         self.set_stroke_color(red, green, blue)
 
     def op_rg_values(self: Any, red: int | float, green: int | float, blue: int | float) -> None:
+        self.fill_color_space = "DeviceRGB"
         self.set_fill_color(red, green, blue)
 
     def op_K(self, operands: OperandWindow, depth: int) -> None:
         if len(operands) >= 4:
+            self.stroke_color_space = "DeviceCMYK"
             self.set_stroke_color(operands[0], operands[1], operands[2], operands[3])
 
     def op_w(self, operands: OperandWindow, depth: int) -> None:
@@ -4945,14 +4950,17 @@ class TextState:
 
     def op_g(self, operands: OperandWindow, depth: int) -> None:
         if operands:
+            self.fill_color_space = "DeviceGray"
             self.set_fill_color(operands[0])
 
     def op_rg(self, operands: OperandWindow, depth: int) -> None:
         if len(operands) >= 3:
+            self.fill_color_space = "DeviceRGB"
             self.set_fill_color(operands[0], operands[1], operands[2])
 
     def op_k(self, operands: OperandWindow, depth: int) -> None:
         if len(operands) >= 4:
+            self.fill_color_space = "DeviceCMYK"
             self.set_fill_color(operands[0], operands[1], operands[2], operands[3])
 
     def op_gs(self, operands: OperandWindow, depth: int) -> None:
