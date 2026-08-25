@@ -7,7 +7,7 @@ from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, fields
 from enum import IntEnum, StrEnum
-from typing import Any, cast
+from typing import Any, NamedTuple, cast
 
 import numpy
 
@@ -859,7 +859,13 @@ class internal_Candidate:
     recognition_status: str = "not-run"
 
 
-def internal_text_utility_stats(text: str, confidence: float) -> tuple[int, int, float]:
+class internal_TextUtility(NamedTuple):
+    nonspace: int
+    alphanumeric: int
+    utility: float
+
+
+def internal_text_utility_stats(text: str, confidence: float) -> internal_TextUtility:
     """Return non-space count, alphanumeric count, and utility in one character scan."""
     # str.split() removes exactly the isspace() characters, and Counter over
     # a map counts in C; per-character casefold keeps expanding folds (one
@@ -867,7 +873,7 @@ def internal_text_utility_stats(text: str, confidence: float) -> tuple[int, int,
     stripped = "".join(text.split())
     nonspace = len(stripped)
     if not nonspace:
-        return 0, 0, 0.0
+        return internal_TextUtility(0, 0, 0.0)
     alphanumeric = sum(map(str.isalnum, stripped))
     counts = Counter(map(str.casefold, stripped))
     symbols = nonspace - alphanumeric
@@ -879,7 +885,7 @@ def internal_text_utility_stats(text: str, confidence: float) -> tuple[int, int,
         if dominant_ratio > 0.60:
             repetition_penalty = max(0.20, 1.0 - (dominant_ratio - 0.60) * 2.0)
     utility = (alphanumeric + symbol_credit) * confidence_factor * repetition_penalty
-    return nonspace, alphanumeric, utility
+    return internal_TextUtility(nonspace, alphanumeric, utility)
 
 
 def internal_candidate(

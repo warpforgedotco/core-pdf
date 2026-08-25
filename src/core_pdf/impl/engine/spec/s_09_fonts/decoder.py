@@ -1185,8 +1185,6 @@ class FontDecoder:
                             total += ws
                 total += (n >> 1) * cs
 
-                if self.is_vertical:
-                    return (0.0, -total * scale)
                 return (total * scale, 0.0)
 
         cmap = self.to_unicode or self.cmap
@@ -1236,8 +1234,6 @@ class FontDecoder:
                         total += ws
             total += (n >> 1) * cs
 
-            if self.is_vertical:
-                return (0.0, -total * scale)
             return (total * scale, 0.0)
 
         if glyphs is None:
@@ -1256,8 +1252,6 @@ class FontDecoder:
             if code == 32:
                 total += ws
 
-        if self.is_vertical:
-            return (0.0, -total * scale)
         return (total * scale, 0.0)
 
 

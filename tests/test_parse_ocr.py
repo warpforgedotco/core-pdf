@@ -1048,7 +1048,7 @@ def test_observation_coverage_spreads_line_utility_across_intersected_cells() ->
 
     assert coverage[0] == pytest.approx(coverage[1])
     assert float(coverage.sum()) == pytest.approx(
-        ocr.internal_observation_utility("long recognized line", 95.0)
+        ocr.internal_text_utility_stats("long recognized line", 95.0).utility
     )
 
 
