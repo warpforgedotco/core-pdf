@@ -72,6 +72,7 @@ def test_type1_bbox_uses_exact_transformed_bezier_extrema() -> None:
     # The curve's native y maximum is 400/9 at t=1/3. The Type 1 FontMatrix
     # rotates and translates it to x = 10-y, whose exact minimum does not lie
     # on the contour flattener's eight-point sampling grid.
+    assert bbox is not None
     assert bbox == pytest.approx((-310 / 9, -20, 10, 180))
     assert sampled_x_min > bbox[0]
 
@@ -84,5 +85,6 @@ def test_opentype_bbox_uses_exact_normalized_bezier_extrema() -> None:
     bbox = program.glyph_bbox_for_gid(0)
 
     # Normalizing a 2000-unit em scales the exact 400/9 native maximum by 1/2.
+    assert bbox is not None
     assert bbox == pytest.approx((0, 0, 50, 200 / 9))
     assert sampled_y_max < bbox[3]

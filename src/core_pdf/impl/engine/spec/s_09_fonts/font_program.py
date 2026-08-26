@@ -558,16 +558,39 @@ class CFFFont:
             pass
         return tuple(fd_select)
 
-    def internal_read_local_subrs(self) -> tuple[tuple[bytes, ...], ...]:
+    def internal_read_font_dicts(
+        self,
+    ) -> tuple[dict[int | tuple[int, int], list[float]], ...]:
+        """Read the CID font dictionaries while preserving their FD indices."""
+        if not self.is_cid_keyed:
+            return ()
         fdarray_off = self.top_dict.get((12, 36), [None])[0]
-        if isinstance(fdarray_off, (int, float)):
+        if (
+            not isinstance(fdarray_off, (int, float))
+            or not isfinite(fdarray_off)
+            or fdarray_off < 0
+            or fdarray_off != int(fdarray_off)
+        ):
+            return ()
+        try:
+            raw_font_dicts, ignored_pos = self.internal_read_index(int(fdarray_off))
+        except ValueError:
+            return ()
+
+        font_dicts: list[dict[int | tuple[int, int], list[float]]] = []
+        for raw_font_dict in raw_font_dicts:
             try:
-                fd_dicts_raw, ignored_pos = self.internal_read_index(int(fdarray_off))
-            except ValueError:
-                fd_dicts_raw = []
+                font_dicts.append(self.internal_parse_dict(raw_font_dict))
+            except (IndexError, ValueError):
+                # An invalid entry must retain its position because FDSelect
+                # addresses this INDEX by ordinal.
+                font_dicts.append({})
+        return tuple(font_dicts)
+
+    def internal_read_local_subrs(self) -> tuple[tuple[bytes, ...], ...]:
+        if self.is_cid_keyed:
             return tuple(
-                tuple(self.internal_read_private_subrs(self.internal_parse_dict(fd_dict_raw)))
-                for fd_dict_raw in fd_dicts_raw
+                tuple(self.internal_read_private_subrs(font_dict)) for font_dict in self.font_dicts
             )
         return (tuple(self.internal_read_private_subrs(self.top_dict)),)
 
@@ -602,22 +625,25 @@ class CFFFont:
             return self.local_subrs[fd_index]
         return ()
 
-    def internal_font_matrix(self) -> tuple[float, float, float, float, float, float]:
-        default = (0.001, 0.0, 0.0, 0.001, 0.0, 0.0)
-        values = self.top_dict.get((12, 7))
-        if not isinstance(values, list) or len(values) != 6:
-            return default
-        matrix = tuple(float(value) for value in values)
-        if not all(isfinite(value) for value in matrix):
-            return default
-        return matrix  # type: ignore[return-value]
+    def internal_font_matrix(self, glyph_id: int) -> CFFMatrix:
+        top_matrix = internal_cff_font_matrix(self.top_dict)
+        fd_index = self.fd_select[glyph_id] if 0 <= glyph_id < len(self.fd_select) else 0
+        font_dict = self.font_dicts[fd_index] if 0 <= fd_index < len(self.font_dicts) else None
+        font_dict_matrix = internal_cff_font_matrix(font_dict) if font_dict is not None else None
+
+        if top_matrix is None:
+            return font_dict_matrix or internal_DEFAULT_CFF_FONT_MATRIX
+        if font_dict_matrix is None:
+            return top_matrix
+        return internal_compose_cff_matrices(top_matrix, font_dict_matrix)
 
     def internal_normalize_contours(
         self,
+        glyph_id: int,
         contours: tuple[tuple[tuple[float, float], ...], ...],
     ) -> tuple[tuple[tuple[float, float], ...], ...]:
-        matrix = self.internal_font_matrix()
-        if matrix == (0.001, 0.0, 0.0, 0.001, 0.0, 0.0):
+        matrix = self.internal_font_matrix(glyph_id)
+        if matrix == internal_DEFAULT_CFF_FONT_MATRIX:
             return contours
         a, b, c, d, e, f = matrix
         return tuple(
@@ -690,7 +716,7 @@ class CFFFont:
                 seac_resolver=self.internal_seac_contours,
             )
             normalized = self.internal_normalize_contours(
-                tuple(tuple(contour) for contour in contours)
+                glyph_id, tuple(tuple(contour) for contour in contours)
             )
             geometry = (normalized, internal_contours_bbox(normalized))
         if len(self.internal_glyph_geometry_cache) >= 512:
