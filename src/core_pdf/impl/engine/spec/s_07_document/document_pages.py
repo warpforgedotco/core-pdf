@@ -13,10 +13,10 @@ from typing import (
     overload,
 )
 
-from core_pdf.impl.engine.cache import ExtractionCache
 from core_pdf.impl.engine.spec.s_07_document.document_lock import (
     document_cache_lock,
 )
+from core_pdf.impl.runtime.cache import ExtractionCache
 from core_pdf.impl.types import PdfDict
 
 PAGE_INHERITED_KEYS = (

@@ -8,10 +8,6 @@ from typing import Any, cast
 
 import numpy
 
-from core_pdf.impl.engine.array_views import (
-    uint8_image_view,
-)
-from core_pdf.impl.engine.image_cache import ImageCache, ImageCacheKey
 from core_pdf.impl.engine.layout.geometry import rect_tuple
 from core_pdf.impl.engine.render.display import (
     CompiledRenderPlan,
@@ -40,6 +36,10 @@ from core_pdf.impl.engine.spec.s_08_graphics.image_metadata import (
 )
 from core_pdf.impl.engine.spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 from core_pdf.impl.exceptions import PdfRasterTooLargeError
+from core_pdf.impl.runtime.array_views import (
+    uint8_image_view,
+)
+from core_pdf.impl.runtime.image_cache import ImageCache, ImageCacheKey
 
 
 @dataclass(slots=True)

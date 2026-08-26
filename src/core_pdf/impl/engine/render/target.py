@@ -11,14 +11,6 @@ from typing import TYPE_CHECKING, Any, cast
 
 import numpy
 
-from core_pdf.impl.engine.array_views import (
-    ByteBuffer,
-    nearest_indices,
-    uint8_image_view,
-    uint8_view,
-    unit_sample_positions,
-)
-from core_pdf.impl.engine.image_cache import ImageCacheKey
 from core_pdf.impl.engine.layout.geometry import RectBox
 from core_pdf.impl.engine.render.display import (
     LineCap,
@@ -73,6 +65,14 @@ from core_pdf.impl.engine.spec.s_08_graphics.image_metadata import (
     pdf_int,
     pdf_number,
 )
+from core_pdf.impl.runtime.array_views import (
+    ByteBuffer,
+    nearest_indices,
+    uint8_image_view,
+    uint8_view,
+    unit_sample_positions,
+)
+from core_pdf.impl.runtime.image_cache import ImageCacheKey
 
 if TYPE_CHECKING:
     from core_pdf.impl.engine.render.page import RenderedPage

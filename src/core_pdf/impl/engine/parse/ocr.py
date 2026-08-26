@@ -25,15 +25,6 @@ from typing import Any, cast
 
 import numpy
 
-from core_pdf.impl.engine.array_views import (
-    contiguous_bytes,
-    resample_bilinear,
-    resample_nearest,
-    resample_smooth,
-    uint8_image_view,
-)
-from core_pdf.impl.engine.execution import RUNTIME, TaskScope, WorkStage
-from core_pdf.impl.engine.image_cache import ImageCacheKey
 from core_pdf.impl.engine.layout.geometry import (
     bbox_union,
     overlap_ratio_min,
@@ -116,6 +107,15 @@ from core_pdf.impl.engine.stroked_text import (
     profile_stroked_text,
     stroked_text_isolated_runs,
 )
+from core_pdf.impl.runtime.array_views import (
+    contiguous_bytes,
+    resample_bilinear,
+    resample_nearest,
+    resample_smooth,
+    uint8_image_view,
+)
+from core_pdf.impl.runtime.execution import RUNTIME, TaskScope, WorkStage
+from core_pdf.impl.runtime.image_cache import ImageCacheKey
 from core_pdf.impl.text import collapse_ws, search_key
 
 # OCR already has an explicit worker limit. Prevent Tesseract's OpenMP kernels

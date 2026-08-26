@@ -7,7 +7,6 @@ import threading
 from collections import deque
 from typing import TYPE_CHECKING, Any, cast
 
-from core_pdf.impl.engine.cache import ExtractionCache
 from core_pdf.impl.engine.spec.s_07_content.page_program import PageProgram
 from core_pdf.impl.engine.spec.s_07_content.state import TextState
 from core_pdf.impl.engine.spec.s_07_document.annotation_appearance import (
@@ -43,6 +42,7 @@ from core_pdf.impl.primitives import (
     MissingObject,
     PdfReference,
 )
+from core_pdf.impl.runtime.cache import ExtractionCache
 from core_pdf.impl.types import PdfDict, PdfObject, Rectangle
 
 if TYPE_CHECKING:

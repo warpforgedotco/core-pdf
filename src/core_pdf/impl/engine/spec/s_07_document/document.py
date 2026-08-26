@@ -11,8 +11,6 @@ from os import PathLike
 from types import TracebackType
 from typing import TYPE_CHECKING, BinaryIO, Generic, Self, TypeVar, cast
 
-from core_pdf.impl.engine.cache import ExtractionCache
-from core_pdf.impl.engine.image_cache import ImageCache
 from core_pdf.impl.engine.spec.s_07_document.document_labels import (
     MAX_PAGE_TREE_DEPTH,
     format_page_label,
@@ -72,6 +70,8 @@ from core_pdf.impl.exceptions import (
 from core_pdf.impl.objects import PdfStream
 from core_pdf.impl.pages import PageSelection, resolve_page_selection
 from core_pdf.impl.primitives import MISSING, MissingObject, PdfReference
+from core_pdf.impl.runtime.cache import ExtractionCache
+from core_pdf.impl.runtime.image_cache import ImageCache
 from core_pdf.impl.types import (
     Decipher,
     PathSource,

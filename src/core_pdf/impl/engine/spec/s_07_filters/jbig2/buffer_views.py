@@ -7,7 +7,7 @@ from typing import Any
 
 import numpy
 
-from core_pdf.impl.engine.array_views import uint8_view
+from core_pdf.impl.runtime.array_views import uint8_view
 
 
 def uint8_matrix_view(

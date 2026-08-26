@@ -11,12 +11,12 @@ from typing import Any
 import pytest
 
 from core_pdf.impl.engine.document import PdfDocument
-from core_pdf.impl.engine.execution import ExecutionRuntime, RuntimeConfig, TaskScope, WorkStage
 from core_pdf.impl.engine.parse import ParsedPage
 from core_pdf.impl.engine.parse import pipeline as parse_pipeline
 from core_pdf.impl.engine.writing import serialize_pdf_file
 from core_pdf.impl.objects import PdfStream
 from core_pdf.impl.primitives import PdfName, PdfReference
+from core_pdf.impl.runtime.execution import ExecutionRuntime, RuntimeConfig, TaskScope, WorkStage
 
 TESTS_DIR = Path(__file__).parent / "fixtures"
 SAMPLE_PDF = TESTS_DIR / "SCORE-Bench" / "src" / "global-AIDS-strategy-p74-75-p001.pdf"
@@ -347,7 +347,7 @@ def test_runtime_round_robins_pending_document_work() -> None:
 
 
 def test_raster_budget_blocks_until_the_active_lease_is_released() -> None:
-    from core_pdf.impl.engine import execution as runtime_module
+    from core_pdf.impl.runtime import execution as runtime_module
 
     runtime = ExecutionRuntime()
     runtime.internal_raster_budget = runtime_module.internal_ResourceBudget(10)

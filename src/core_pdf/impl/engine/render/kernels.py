@@ -10,11 +10,6 @@ from typing import Any
 
 import numpy
 
-from core_pdf.impl.engine.array_views import (
-    ByteBuffer,
-    contiguous_bytes,
-    uint8_view,
-)
 from core_pdf.impl.engine.layout.geometry import RectBox
 from core_pdf.impl.engine.render.display import (
     DisplayItem,
@@ -44,6 +39,11 @@ from core_pdf.impl.engine.spec.s_08_graphics.image_metadata import (
     pdf_number,
 )
 from core_pdf.impl.objects import PdfStream
+from core_pdf.impl.runtime.array_views import (
+    ByteBuffer,
+    contiguous_bytes,
+    uint8_view,
+)
 
 # ===== raster_kernel =====
 

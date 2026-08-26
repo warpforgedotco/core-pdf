@@ -4,7 +4,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 
-from core_pdf.impl.engine.image_cache import ImageCache, ImageCacheKey
+from core_pdf.impl.runtime.image_cache import ImageCache, ImageCacheKey
 
 
 def key(name: str) -> ImageCacheKey:

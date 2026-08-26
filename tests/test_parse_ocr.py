@@ -9,7 +9,6 @@ from typing import cast
 
 import pytest
 
-from core_pdf.impl.engine.execution import TaskScope
 from core_pdf.impl.engine.layout.models import TextRun
 from core_pdf.impl.engine.parse import (
     CapturedPage,
@@ -30,6 +29,7 @@ from core_pdf.impl.engine.parse import ocr as parse_ocr
 from core_pdf.impl.engine.parse import pipeline as parse_pipeline
 from core_pdf.impl.engine.parse.model import StrokedVectorTextEvidence
 from core_pdf.impl.engine.render.raster_image import RasterImage
+from core_pdf.impl.runtime.execution import TaskScope
 
 
 def raster(

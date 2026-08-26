@@ -15,7 +15,6 @@ from typing import TYPE_CHECKING, Any, TypeAlias, cast
 if TYPE_CHECKING:
     from core_pdf.impl.engine.spec.s_07_content.inline_images import InlineImage
 
-from core_pdf.impl.engine.image_cache import ImageCache
 from core_pdf.impl.engine.layout.geometry import RectBox
 from core_pdf.impl.engine.layout.glyph_table import GlyphSegment, GlyphTableBuilder
 from core_pdf.impl.engine.layout.glyphs import GlyphCluster, GlyphObservation
@@ -95,6 +94,7 @@ from core_pdf.impl.primitives import (
     PdfReference,
     PdfString,
 )
+from core_pdf.impl.runtime.image_cache import ImageCache
 from core_pdf.impl.types import PdfDict, Rectangle
 
 OperationHandler: TypeAlias = StateOperationHandler

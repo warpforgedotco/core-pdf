@@ -6,8 +6,6 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Any, cast
 
-from core_pdf.impl.engine.cache import ExtractionCache
-from core_pdf.impl.engine.execution import RUNTIME
 from core_pdf.impl.engine.layout import (
     LayoutGeometrySummary,
     LayoutLine,
@@ -30,6 +28,8 @@ from core_pdf.impl.models import (
     ImageMetadata,
     ImageRecord,
 )
+from core_pdf.impl.runtime.cache import ExtractionCache
+from core_pdf.impl.runtime.execution import RUNTIME
 
 
 def text_rotation_correction_for_runs(runs: list[TextRun], threshold: float = 0.95) -> int:
