@@ -1,0 +1,15 @@
+# Benchmark suites handed to CodSpeed, shared by both workflows:
+#   tests.yml           runs these with -m benchmark_high_impact on every PR
+#   full-benchmarks.yml runs all benchmarks in these directories, weekly
+#
+# This is deliberately a subset, NOT every directory matching
+# tests/src/core_pdf/impl/engine/**/benchmarks. Three suites that exist on disk
+# are absent here: s_07_content, s_07_document and s_07_objects. Do not replace
+# this list with a glob -- that silently widens what CI measures, and CodSpeed
+# comparisons are only meaningful against a stable benchmark set.
+tests/src/core_pdf/impl/engine/render/benchmarks
+tests/src/core_pdf/impl/engine/spec/s_07_filters/benchmarks
+tests/src/core_pdf/impl/engine/spec/s_07_syntax/benchmarks
+tests/src/core_pdf/impl/engine/spec/s_07_security/benchmarks
+tests/src/core_pdf/impl/engine/spec/s_08_graphics/benchmarks
+tests/src/core_pdf/impl/engine/spec/s_09_fonts/benchmarks
