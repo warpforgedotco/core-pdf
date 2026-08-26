@@ -203,9 +203,11 @@ class Type1FontProgram:
         )
         self.internal_contour_cache: dict[str, tuple[tuple[Point, ...], ...]] = {}
 
-    def glyph_id_for_name(self, glyph_name: str) -> int:
-        notdef = self.glyph_name_to_id.get(".notdef", 0)
-        return self.glyph_name_to_id.get(glyph_name, notdef)
+    def glyph_id_for_name(self, glyph_name: str) -> int | None:
+        glyph_id = self.glyph_name_to_id.get(glyph_name)
+        if glyph_id is not None:
+            return glyph_id
+        return self.glyph_name_to_id.get(".notdef")
 
     def has_glyph_id(self, glyph_id: int) -> bool:
         return 0 <= glyph_id < len(self.glyph_names)
