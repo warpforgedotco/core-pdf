@@ -110,7 +110,7 @@ def parse_type1_font_program_encoding(font_program: bytes | memoryview) -> dict[
 # its 256 single-byte codes; a CID font's code space is not, so this bounds the
 # dictionary while still covering the few thousand distinct codes a dense CJK
 # page can carry.
-CID_GLYPH_CACHE_LIMIT = 4096
+internal_CID_GLYPH_CACHE_LIMIT = 4096
 
 
 @dataclass(frozen=True, slots=True)
@@ -916,7 +916,7 @@ class FontDecoder:
                 bitmap_code=cid,
                 split_unicode=choice.text in LEGITIMATE_MULTI_CHAR_GLYPHS,
             )
-            if len(glyph_cache) < CID_GLYPH_CACHE_LIMIT:
+            if len(glyph_cache) < internal_CID_GLYPH_CACHE_LIMIT:
                 glyph_cache[code_bytes] = glyph
             glyphs.append(glyph)
         return glyphs

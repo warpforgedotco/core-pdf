@@ -2207,16 +2207,25 @@ class TextState:
                 # code and the loop-invariant font size, so it is computed once.
                 # `is_vertical` implies this branch, since axis_aligned_horizontal
                 # requires `not is_vertical`.
-                glyph_vertical_position = (
-                    vertical_position(glyph.cid, font_size=font_size) if is_vertical else (0.0, 0.0)
-                )
-                text_box, baseline_text = glyph_text_space_boxes(
-                    self,
-                    offset,
-                    advance,
-                    decoder,
-                    glyph_vertical_position,
-                )
+                if is_vertical:
+                    glyph_vertical_position = vertical_position(
+                        glyph.cid,
+                        font_size=font_size,
+                    )
+                    text_box, baseline_text = glyph_text_space_boxes(
+                        self,
+                        offset,
+                        advance,
+                        decoder,
+                        glyph_vertical_position,
+                    )
+                else:
+                    text_box, baseline_text = glyph_text_space_boxes(
+                        self,
+                        offset,
+                        advance,
+                        decoder,
+                    )
                 transformed = transformed_text_rect(self, *text_box, text_basis)
                 advance_bbox = (
                     transformed.x0,
