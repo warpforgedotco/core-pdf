@@ -283,6 +283,39 @@ ignore_imports = [                                              # PdfStream wart
 ]
 
 [[tool.importlinter.contracts]]
+name = "Pipeline stages run in order"
+type = "layers"
+containers = ["core_pdf.impl.engine.parse"]
+# Each stage may use the stages before it and the shared model, never a later one.
+# pipeline is the orchestrator and sits above all of them.
+layers = [
+    "pipeline",
+    "emit",
+    "ocr",
+    "tables",
+    "fusion",
+    "layout",
+    "route",
+    "capture",
+    "model",
+]
+
+[[tool.importlinter.contracts]]
+name = "OCR stage layers"
+type = "layers"
+containers = ["core_pdf.impl.engine.parse"]
+# The recognition stage is itself layered: ocr.py orchestrates, the modules under
+# it produce rasters, pick regions and talk to Tesseract, and all of them share
+# one record vocabulary at the bottom.
+layers = [
+    "ocr",
+    "ocr_regions",
+    "ocr_raster",
+    "ocr_stroked_vector : ocr_tesseract",
+    "ocr_model",
+]
+
+[[tool.importlinter.contracts]]
 name = "impl/runtime is the floor"
 type = "forbidden"
 source_modules = ["core_pdf.impl.runtime"]

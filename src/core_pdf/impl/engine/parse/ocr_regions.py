@@ -29,6 +29,11 @@ from core_pdf.impl.engine.model.geometry import (
     bbox_union,
     rect_tuple,
 )
+from core_pdf.impl.engine.parse.grid_geometry import (
+    internal_axis_segments,
+    internal_grid_components,
+    internal_split_grid_component,
+)
 from core_pdf.impl.engine.parse.model import (
     MAX_OCR_PIXELS,
     OCR_PARALLEL_TILE_MIN_VECTOR_COMPLEXITY,
@@ -69,11 +74,6 @@ from core_pdf.impl.engine.parse.ocr_raster import (
     internal_orient_direct_image_raster,
     internal_raster_ink_grid,
     internal_rendered_page_raster,
-)
-from core_pdf.impl.engine.parse.tables import (
-    internal_axis_segments,
-    internal_grid_components,
-    internal_split_grid_component,
 )
 from core_pdf.impl.engine.render.display import RenderOptions
 from core_pdf.impl.engine.render.page import compose_page
