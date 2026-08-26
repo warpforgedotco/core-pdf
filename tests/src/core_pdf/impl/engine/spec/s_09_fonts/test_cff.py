@@ -433,6 +433,30 @@ def test_top_dict_font_matrix_normalizes_shared_cff_geometry() -> None:
     assert transformed_font.glyph_bitmap_for_gid(0) != default_font.glyph_bitmap_for_gid(0)
 
 
+def test_cid_font_dict_matrix_is_complete_when_top_dict_matrix_is_omitted() -> None:
+    charstring = bytes([239, 239, 21, 239, 139, 5, 139, 239, 5, 39, 139, 5, 14])
+    matrix = [0.002, 0.001, 0.0, 0.003, 0.01, -0.02]
+    cid_font = CFFFont(None)
+    cid_font.charstrings = [charstring]
+    cid_font.fd_select = (0,)
+    cid_font.font_dicts = ({(12, 7): matrix},)
+    top_matrix_font = CFFFont(None)
+    top_matrix_font.charstrings = [charstring]
+    top_matrix_font.top_dict = {(12, 7): matrix}
+
+    # PLRM 5.11 scales an FD matrix by 1000 when it inserts the omitted
+    # 0.001 Top DICT matrix, so those operations cancel. The FD matrix is
+    # therefore already the complete transform and must not be scaled again.
+    assert cid_font.internal_font_matrix(0) == tuple(matrix)
+    for actual, expected in zip(
+        cid_font.glyph_contours_for_gid(0)[0],
+        top_matrix_font.glyph_contours_for_gid(0)[0],
+        strict=True,
+    ):
+        assert actual == pytest.approx(expected)
+    assert cid_font.glyph_bbox_for_gid(0) == pytest.approx(top_matrix_font.glyph_bbox_for_gid(0))
+
+
 def test_deprecated_endchar_seac_builds_standard_encoding_components() -> None:
     base = internal_type2_program(
         0,
