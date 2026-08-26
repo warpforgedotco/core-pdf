@@ -197,16 +197,38 @@ live in `render/display.py`, pure raster kernels in `render/kernels.py`, the mut
 `render/target.py`, page composition in `render/page.py`, and the raster value object in
 `render/raster_image.py`.
 
-`tests/test_rendering_golden.py` hashes the RGBA output of the corpus. The
-always-on layer renders 24 documents chosen by greedy line-cover — together they
-exercise the rendering modules across the full 224-document reach — and
-`CORE_PDF_RASTER_GOLDEN_FULL=1` sweeps all of them. CI sets that variable, so
-the whole corpus gates a merge; run the subset locally while iterating and the
-sweep before pushing. Reaching every *line* of `engine/render/` is not the same
-as pinning every *pixel*: four digests once sat in the snapshot that no commit
-could produce, unnoticed because only the subset ran in CI. A refactor that is meant to
-preserve behavior must leave `tests/snapshots/raster/first_page_scale1.json`
-untouched; regenerate it with `uv run python scripts/update_raster_golden.py`
-only when an output change is intended, and review the diff. The standalone
-updater renders each corpus PDF once and does not invoke pytest. Recompute the
+`tests/test_rendering_golden.py` pins the RGBA output of the corpus. The versioned
+manifest in `tests/snapshots/raster/first_page_scale1.json` has two contracts:
+ordinary pages retain exact SHA-256 digests, while pages that paint irreversible
+JPEG 2000 images retain a lossless canonical PNG plus measured RGB error limits.
+OpenJPEG implements that lossy 9/7 transform with different floating-point paths
+on x86 and ARM, so requiring an exact digest there would characterize a wheel's
+CPU implementation rather than the renderer. Tolerant entries still require
+identical dimensions and alpha, and separately bound the maximum channel error,
+changed RGB samples, and total RGB error. Their PNG digest is also recorded for
+an exact fast path and fixture-integrity check.
+
+The always-on layer renders 24 documents chosen by greedy line-cover — together
+they exercise the rendering modules across the full 224-document reach — plus
+every irreversible-JPX page. `CORE_PDF_RASTER_GOLDEN_FULL=1` sweeps the complete
+corpus as one independently schedulable test per document. CI sets that variable
+and uses two pytest workers, so the whole corpus gates a merge without serializing
+all raster work; a focused macOS ARM job exercises the portable JPX contract as
+well. Reaching every *line* of `engine/render/` is not the same as pinning every
+*pixel*: four digests once
+sat in the snapshot that no commit could produce, unnoticed because only the
+subset ran in CI.
+
+A refactor that preserves behavior must leave the manifest and PNG references
+untouched. Regenerate them with
+`uv run python scripts/update_raster_golden.py` only when an output change is
+intentional and review the complete diff. Reference regeneration is restricted
+to the pinned Ubuntu x86_64 codec environment; `--allow-noncanonical-write` is
+an explicitly destructive bootstrap escape hatch, not the normal workflow. It
+records noncanonical provenance, so the resulting tree intentionally fails its
+provenance test until regenerated canonically. The updater records its
+environment in the manifest, renders documents in two isolated
+worker processes, classifies the page's JPEG 2000 codestreams, preserves
+calibrated limits, and refuses to invent a tolerance for a newly encountered
+irreversible stream. Recompute the
 covering subset with `scripts/raster_cover.py` after large structural changes.
