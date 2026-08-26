@@ -456,22 +456,37 @@ def test_compact_ocr_image_composites_grayscale_alpha_onto_white() -> None:
     assert gray.pixels == bytes((255, 0, 191, 255))
 
 
-def test_compact_ocr_image_drops_only_opaque_alpha() -> None:
+def test_compact_ocr_image_reduces_opaque_rgba_to_luma() -> None:
     samples = b"".join(bytes((value, 2 * value, 3 * value, 255)) for value in range(16))
     image = RasterImage(samples, 4, 4, 4)
 
     compact = ocr_regions.internal_compact_ocr_image(image)
 
-    assert compact.channels == 3
-    assert compact.pixels == b"".join(bytes((value, 2 * value, 3 * value)) for value in range(16))
+    assert compact.channels == 1
+    # BT.601 fixed-point luma: (77R + 150G + 29B + 128) >> 8.
+    assert compact.pixels == bytes((0, 2, 4, 5, 7, 9, 11, 13, 15, 16, 18, 20, 22, 24, 25, 27))
 
 
-def test_compact_ocr_image_keeps_large_rgba_buffer() -> None:
+def test_compact_ocr_image_flattens_translucent_rgba_onto_white() -> None:
+    # Black at half alpha must land mid-grey, the same result Tesseract's own
+    # pixRemoveAlpha would produce, rather than being passed through as RGBA.
+    image = RasterImage(bytes((0, 0, 0, 128)) * 16, 4, 4, 4)
+
+    compact = ocr_regions.internal_compact_ocr_image(image)
+
+    assert compact.channels == 1
+    assert compact.pixels == bytes([127]) * 16
+
+
+def test_compact_ocr_image_reduces_large_rgba_buffers() -> None:
+    # The rasters big enough for the conversion to pay for itself are exactly the
+    # ones an earlier size guard let through untouched.
     image = RasterImage(bytes((32, 64, 96, 255)) * 1_000_000, 1_000, 1_000, 4)
 
     compact = ocr_regions.internal_compact_ocr_image(image)
 
-    assert compact is image
+    assert compact.channels == 1
+    assert compact.nbytes * 4 == image.nbytes
 
 
 def test_raster_text_signal_rejects_blank_image() -> None:
