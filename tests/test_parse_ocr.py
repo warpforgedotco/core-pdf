@@ -24,6 +24,7 @@ from core_pdf.impl.engine.parse import (
     WorkPlan,
     ocr,
     ocr_raster,
+    ocr_regions,
     ocr_stroked_vector,
     ocr_tesseract,
 )
@@ -40,6 +41,18 @@ from core_pdf.impl.engine.parse.stroked_text import (
 )
 from core_pdf.impl.engine.render.raster_image import RasterImage
 from core_pdf.impl.runtime.execution import TaskScope
+
+
+def patch_ocr_helper(monkeypatch: pytest.MonkeyPatch, name: str, value: object) -> None:
+    """Patch ``name`` in every OCR module that binds it.
+
+    The stage is split across modules that each bind imported helpers into their
+    own namespace, so patching one module intercepts only that module's calls.
+    Tests here mean "make this helper behave differently wherever it runs".
+    """
+    for module in (ocr, ocr_raster, ocr_regions, ocr_stroked_vector, ocr_tesseract):
+        if hasattr(module, name):
+            monkeypatch.setattr(module, name, value)
 
 
 def raster(
@@ -213,8 +226,8 @@ def test_dominant_image_prefers_source_resolution_for_equal_display_area(
     background = raster(bytes((255, 255, 255)), 1, 1, 3, 70)
     scan = raster(bytes(300 * 400 * 3), 300, 400, 3, 100)
     page_box = (0.0, 0.0, 600.0, 800.0)
-    monkeypatch.setattr(
-        parse_ocr,
+    patch_ocr_helper(
+        monkeypatch,
         "internal_page_image_regions",
         lambda capture, minimum_area_ratio, **internal_kwargs: (
             ocr.internal_RasterRegion(background, page_box),
@@ -245,7 +258,7 @@ def test_decoded_image_falls_back_when_shared_source_cannot_decode(monkeypatch) 
         ),
     )
 
-    decoded = ocr.internal_decoded_image_raster(image, 2.0)
+    decoded = ocr_regions.internal_decoded_image_raster(image, 2.0)
 
     assert decoded is not None
     assert (decoded.width, decoded.height, decoded.image.channels) == (11, 5, 3)
@@ -255,8 +268,8 @@ def test_dominant_image_defers_layered_scans_to_compositor(monkeypatch) -> None:
     left = raster(bytes(300 * 400 * 3), 300, 400, 3, 100)
     right = raster(bytes(600 * 800 * 3), 600, 800, 3, 100)
     page_box = (0.0, 0.0, 600.0, 800.0)
-    monkeypatch.setattr(
-        parse_ocr,
+    patch_ocr_helper(
+        monkeypatch,
         "internal_page_image_regions",
         lambda capture, minimum_area_ratio, **internal_kwargs: (
             ocr.internal_RasterRegion(left, page_box),
@@ -293,8 +306,8 @@ def test_direct_image_mapping_accepts_orthogonal_orientation() -> None:
         items=(("quad", ((0.0, 200.0), (0.0, 0.0), (100.0, 200.0), (100.0, 0.0))),)
     )
 
-    assert ocr.internal_direct_image_orientation(normal) == "identity"
-    assert ocr.internal_direct_image_orientation(rotated) == "transpose-flip-y"
+    assert ocr_regions.internal_direct_image_orientation(normal) == "identity"
+    assert ocr_regions.internal_direct_image_orientation(rotated) == "transpose-flip-y"
 
 
 def test_direct_image_mapping_accepts_bounded_near_axis_orientation() -> None:
@@ -305,16 +318,16 @@ def test_direct_image_mapping_accepts_bounded_near_axis_orientation() -> None:
         items=(("quad", ((0.0, 4.0), (100.0, 0.0), (1.0, 201.0), (101.0, 197.0))),)
     )
 
-    assert ocr.internal_direct_image_orientation(near_axis) is None
+    assert ocr_regions.internal_direct_image_orientation(near_axis) is None
     assert (
-        ocr.internal_direct_image_orientation(
+        ocr_regions.internal_direct_image_orientation(
             near_axis,
             maximum_axis_deviation=0.01,
         )
         == "identity"
     )
     assert (
-        ocr.internal_direct_image_orientation(
+        ocr_regions.internal_direct_image_orientation(
             skewed,
             maximum_axis_deviation=0.01,
         )
@@ -326,7 +339,7 @@ def test_direct_image_raster_normalizes_orthogonal_orientation() -> None:
     image = SimpleNamespace(items=(("quad", ((0.0, 3.0), (0.0, 0.0), (2.0, 3.0), (2.0, 0.0))),))
     source = raster(bytes((1, 2, 3, 4, 5, 6)), 3, 2, 1, 72)
 
-    oriented = ocr.internal_orient_direct_image_raster(image, source)
+    oriented = ocr_regions.internal_orient_direct_image_raster(image, source)
 
     assert (oriented.width, oriented.height) == (2, 3)
     assert oriented.image.array()[:, :, 0].tolist() == [[4, 1], [5, 2], [6, 3]]
@@ -418,7 +431,7 @@ def test_compact_ocr_image_removes_redundant_channels() -> None:
     samples = b"".join(bytes((value, value, value, 255)) for value in range(4) for _ in range(4))
     image = RasterImage(samples, 4, 4, 4)
 
-    gray = ocr.internal_compact_ocr_image(image)
+    gray = ocr_regions.internal_compact_ocr_image(image)
 
     assert gray.channels == 1
     assert gray.pixels == bytes(value for value in range(4) for _ in range(4))
@@ -428,7 +441,7 @@ def test_compact_ocr_image_removes_opaque_grayscale_alpha() -> None:
     samples = b"".join(bytes((value, 255)) for value in range(16))
     image = RasterImage(samples, 4, 4, 2)
 
-    gray = ocr.internal_compact_ocr_image(image)
+    gray = ocr_regions.internal_compact_ocr_image(image)
 
     assert gray.channels == 1
     assert gray.pixels == bytes(range(16))
@@ -437,7 +450,7 @@ def test_compact_ocr_image_removes_opaque_grayscale_alpha() -> None:
 def test_compact_ocr_image_composites_grayscale_alpha_onto_white() -> None:
     image = RasterImage(bytes((0, 0, 0, 255, 128, 128, 255, 0)), 2, 2, 2)
 
-    gray = ocr.internal_compact_ocr_image(image)
+    gray = ocr_regions.internal_compact_ocr_image(image)
 
     assert gray.channels == 1
     assert gray.pixels == bytes((255, 0, 191, 255))
@@ -447,7 +460,7 @@ def test_compact_ocr_image_drops_only_opaque_alpha() -> None:
     samples = b"".join(bytes((value, 2 * value, 3 * value, 255)) for value in range(16))
     image = RasterImage(samples, 4, 4, 4)
 
-    compact = ocr.internal_compact_ocr_image(image)
+    compact = ocr_regions.internal_compact_ocr_image(image)
 
     assert compact.channels == 3
     assert compact.pixels == b"".join(bytes((value, 2 * value, 3 * value)) for value in range(16))
@@ -456,7 +469,7 @@ def test_compact_ocr_image_drops_only_opaque_alpha() -> None:
 def test_compact_ocr_image_keeps_large_rgba_buffer() -> None:
     image = RasterImage(bytes((32, 64, 96, 255)) * 1_000_000, 1_000, 1_000, 4)
 
-    compact = ocr.internal_compact_ocr_image(image)
+    compact = ocr_regions.internal_compact_ocr_image(image)
 
     assert compact is image
 
@@ -932,8 +945,8 @@ def test_verified_hidden_text_bypasses_full_ocr(
     )
     hidden = parse_capture.internal_observations_from_runs(runs)
     raster = ocr.internal_Raster(RasterImage(bytes(100), 10, 10, 1), 72)
-    monkeypatch.setattr(
-        parse_ocr,
+    patch_ocr_helper(
+        monkeypatch,
         "internal_dominant_image_region",
         lambda internal_capture, **internal_kwargs: ocr.internal_RasterRegion(
             raster,
@@ -1051,7 +1064,7 @@ def test_observation_coverage_spreads_line_utility_across_intersected_cells() ->
         confidence=(95.0,),
     )
 
-    coverage = ocr.internal_observation_coverage_grid(
+    coverage = ocr_regions.internal_observation_coverage_grid(
         observations,
         (0.0, 0.0, 100.0, 10.0),
         1,
@@ -1141,7 +1154,7 @@ def test_estimated_text_height_uses_repeated_horizontal_bands() -> None:
 def test_raster_rectangle_maps_top_left_pixels_to_pdf_page_space() -> None:
     raster = ocr.internal_Raster(RasterImage(bytes(100 * 200), 100, 200, 1), 72)
 
-    page_box = ocr.internal_raster_rectangle_page_box(
+    page_box = ocr_regions.internal_raster_rectangle_page_box(
         raster,
         (10.0, 20.0, 210.0, 420.0),
         (25, 50, 50, 100),
@@ -1176,8 +1189,8 @@ def test_explicit_fallback_pass_runs_only_for_weak_primary(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     raster = ocr.internal_Raster(RasterImage(bytes(100), 10, 10, 1), 72)
-    monkeypatch.setattr(
-        parse_ocr,
+    patch_ocr_helper(
+        monkeypatch,
         "internal_dominant_image_region",
         lambda internal_capture, **internal_kwargs: ocr.internal_RasterRegion(
             raster, (0.0, 0.0, 10.0, 10.0)
@@ -1235,8 +1248,8 @@ def test_large_high_confidence_primary_skips_full_page_fallback(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     raster = ocr.internal_Raster(RasterImage(bytes(100), 10, 10, 1), 72)
-    monkeypatch.setattr(
-        parse_ocr,
+    patch_ocr_helper(
+        monkeypatch,
         "internal_dominant_image_region",
         lambda internal_capture, **internal_kwargs: ocr.internal_RasterRegion(
             raster, (0.0, 0.0, 10.0, 10.0)
@@ -1297,8 +1310,8 @@ def test_weak_region_pass_augments_instead_of_replacing_primary(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     raster = ocr.internal_Raster(RasterImage(bytes(100), 10, 10, 1), 72)
-    monkeypatch.setattr(
-        parse_ocr,
+    patch_ocr_helper(
+        monkeypatch,
         "internal_dominant_image_region",
         lambda internal_capture, **internal_kwargs: ocr.internal_RasterRegion(
             raster, (0.0, 0.0, 10.0, 10.0)
@@ -1336,7 +1349,7 @@ def test_weak_region_pass_augments_instead_of_replacing_primary(
         )
         return (task,), 100, None, ((0.0, 0.0, 10.0, 10.0),)
 
-    monkeypatch.setattr(parse_ocr, "internal_high_resolution_weak_region_tasks", weak_region_crops)
+    patch_ocr_helper(monkeypatch, "internal_high_resolution_weak_region_tasks", weak_region_crops)
 
     class Context:
         def raise_if_cancelled(self) -> None:
@@ -1383,15 +1396,15 @@ def test_adaptive_rescue_uses_high_resolution_only_for_undersampled_regions(
 ) -> None:
     primary_raster = ocr.internal_Raster(RasterImage(bytes(100), 10, 10, 1), 72)
     rescue_raster = ocr.internal_Raster(RasterImage(bytes(400), 20, 20, 1), 144)
-    monkeypatch.setattr(
-        parse_ocr,
+    patch_ocr_helper(
+        monkeypatch,
         "internal_dominant_image_region",
         lambda internal_capture, **internal_kwargs: ocr.internal_RasterRegion(
             primary_raster, (0.0, 0.0, 10.0, 10.0)
         ),
     )
-    monkeypatch.setattr(
-        parse_ocr, "compose_page", lambda *internal_args, **internal_kwargs: object()
+    patch_ocr_helper(
+        monkeypatch, "compose_page", lambda *internal_args, **internal_kwargs: object()
     )
     render_budgets: list[int] = []
 
@@ -1399,7 +1412,7 @@ def test_adaptive_rescue_uses_high_resolution_only_for_undersampled_regions(
         render_budgets.append(internal_kwargs["max_pixels"])
         return rescue_raster
 
-    monkeypatch.setattr(parse_ocr, "internal_rendered_page_raster", render)
+    patch_ocr_helper(monkeypatch, "internal_rendered_page_raster", render)
     calls = 0
 
     def recognize(task: ocr.internal_OcrTask, **internal_kwargs: object) -> ocr.internal_Candidate:
@@ -1471,8 +1484,8 @@ def test_adaptive_rescue_skips_high_resolution_for_large_primary_text(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     primary_raster = ocr.internal_Raster(RasterImage(bytes([255]) * 100, 10, 10, 1), 72)
-    monkeypatch.setattr(
-        parse_ocr,
+    patch_ocr_helper(
+        monkeypatch,
         "internal_dominant_image_region",
         lambda internal_capture, **internal_kwargs: ocr.internal_RasterRegion(
             primary_raster, (0.0, 0.0, 10.0, 10.0)
@@ -1482,8 +1495,8 @@ def test_adaptive_rescue_skips_high_resolution_for_large_primary_text(
     def unexpected_render(*internal_args: object, **internal_kwargs: object) -> None:
         raise AssertionError("unexpected rescue raster")
 
-    monkeypatch.setattr(
-        parse_ocr,
+    patch_ocr_helper(
+        monkeypatch,
         "internal_rendered_page_raster",
         unexpected_render,
     )
@@ -1541,8 +1554,8 @@ def test_adaptive_rescue_defers_to_scheduled_fallback_below_character_floor(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     raster = ocr.internal_Raster(RasterImage(bytes(100), 10, 10, 1), 72)
-    monkeypatch.setattr(
-        parse_ocr,
+    patch_ocr_helper(
+        monkeypatch,
         "internal_dominant_image_region",
         lambda internal_capture, **internal_kwargs: ocr.internal_RasterRegion(
             raster, (0.0, 0.0, 10.0, 10.0)
@@ -1552,7 +1565,7 @@ def test_adaptive_rescue_defers_to_scheduled_fallback_below_character_floor(
     def unexpected_render(*internal_args: object, **internal_kwargs: object) -> None:
         raise AssertionError("orientation rescue should defer to the fallback")
 
-    monkeypatch.setattr(parse_ocr, "internal_rendered_page_raster", unexpected_render)
+    patch_ocr_helper(monkeypatch, "internal_rendered_page_raster", unexpected_render)
     executed_modes: list[int] = []
 
     def recognize(task: ocr.internal_OcrTask) -> ocr.internal_Candidate:
@@ -1630,11 +1643,11 @@ def test_vector_preflight_skips_known_undersampled_primary_pass(
     )
     high_resolution = ocr.internal_Raster(RasterImage(bytes(400), 20, 20, 1), 288)
     render_budgets: list[int] = []
-    monkeypatch.setattr(
-        parse_ocr, "compose_page", lambda *internal_args, **internal_kwargs: object()
+    patch_ocr_helper(
+        monkeypatch, "compose_page", lambda *internal_args, **internal_kwargs: object()
     )
-    monkeypatch.setattr(
-        parse_ocr,
+    patch_ocr_helper(
+        monkeypatch,
         "internal_dominant_image_region",
         lambda *internal_args, **internal_kwargs: None,
     )
@@ -1644,7 +1657,7 @@ def test_vector_preflight_skips_known_undersampled_primary_pass(
         render_budgets.append(budget)
         return preview if budget == ocr.OCR_PREFLIGHT_PIXELS else high_resolution
 
-    monkeypatch.setattr(parse_ocr, "internal_rendered_page_raster", render)
+    patch_ocr_helper(monkeypatch, "internal_rendered_page_raster", render)
     monkeypatch.setattr(
         ocr_tesseract,
         "internal_recognize",
@@ -2006,21 +2019,21 @@ def test_weak_packed_stroked_vector_seed_uses_full_layer_fallback(
             ),
         ),
     )
-    monkeypatch.setattr(
-        parse_ocr, "internal_stroked_vector_text_raster", lambda *args, **kwargs: packed
+    patch_ocr_helper(
+        monkeypatch, "internal_stroked_vector_text_raster", lambda *args, **kwargs: packed
     )
-    monkeypatch.setattr(
-        parse_ocr,
+    patch_ocr_helper(
+        monkeypatch,
         "internal_full_stroked_vector_text_raster",
         lambda *args, **kwargs: ocr.internal_RasterRegion(raster, (0.0, 0.0, 100.0, 100.0)),
     )
-    monkeypatch.setattr(
-        parse_ocr,
+    patch_ocr_helper(
+        monkeypatch,
         "internal_remap_stroked_vector_candidate",
         lambda candidate, internal_packed: (candidate, 0),
     )
-    monkeypatch.setattr(
-        parse_ocr,
+    patch_ocr_helper(
+        monkeypatch,
         "internal_decode_stroked_vector_text",
         lambda capture, observations, symbols=None: StrokedTextDecode(),
     )
@@ -2346,9 +2359,9 @@ def test_ocr_region_coverage_is_directional_for_contained_images() -> None:
     target = (0.0, 0.0, 100.0, 100.0)
     contained_image = (0.0, 0.0, 100.0, 10.0)
 
-    assert ocr.internal_ocr_region_overlap(target, contained_image) == 1.0
-    assert ocr.internal_ocr_region_coverage(target, contained_image) == 0.1
-    assert ocr.internal_ocr_region_coverage(contained_image, target) == 1.0
+    assert ocr_regions.internal_ocr_region_overlap(target, contained_image) == 1.0
+    assert ocr_regions.internal_ocr_region_coverage(target, contained_image) == 0.1
+    assert ocr_regions.internal_ocr_region_coverage(contained_image, target) == 1.0
 
 
 def test_candidate_region_does_not_use_an_image_that_covers_only_a_small_part(
@@ -2359,8 +2372,8 @@ def test_candidate_region_does_not_use_an_image_that_covers_only_a_small_part(
         (0.0, 0.0, 100.0, 10.0),
     )
     rendered_raster = ocr.internal_Raster(RasterImage(bytes(10_000), 100, 100, 1), 72)
-    monkeypatch.setattr(
-        parse_ocr,
+    patch_ocr_helper(
+        monkeypatch,
         "internal_page_image_regions",
         lambda *internal_args, **internal_kwargs: (direct,),
     )
@@ -2370,7 +2383,7 @@ def test_candidate_region_does_not_use_an_image_that_covers_only_a_small_part(
         rendered_crops.append(internal_kwargs["crop"])
         return rendered_raster
 
-    monkeypatch.setattr(parse_ocr, "internal_rendered_page_raster", render)
+    patch_ocr_helper(monkeypatch, "internal_rendered_page_raster", render)
     capture = cast(
         CapturedPage,
         SimpleNamespace(page=SimpleNamespace(width=100.0, height=100.0)),
@@ -2407,8 +2420,8 @@ def test_candidate_region_defers_layered_images_to_compositor(
         ),
     )
     rendered_raster = ocr.internal_Raster(RasterImage(bytes(10_000), 100, 100, 1), 72)
-    monkeypatch.setattr(
-        parse_ocr,
+    patch_ocr_helper(
+        monkeypatch,
         "internal_page_image_regions",
         lambda *internal_args, **internal_kwargs: direct_regions,
     )
@@ -2418,7 +2431,7 @@ def test_candidate_region_defers_layered_images_to_compositor(
         rendered_crops.append(internal_kwargs["crop"])
         return rendered_raster
 
-    monkeypatch.setattr(parse_ocr, "internal_rendered_page_raster", render)
+    patch_ocr_helper(monkeypatch, "internal_rendered_page_raster", render)
     capture = cast(
         CapturedPage,
         SimpleNamespace(page=SimpleNamespace(width=100.0, height=100.0)),
@@ -2476,10 +2489,10 @@ def test_distributed_outline_text_uses_one_full_page_region(
     proposed = ocr.internal_OcrRegion((0.0, 0.0, 100.0, 20.0), 1.0, ("image",))
     requested_batches: list[tuple[ocr.internal_OcrRegion, ...]] = []
     requested_budgets: list[int] = []
-    monkeypatch.setattr(
-        parse_ocr, "internal_candidate_ocr_regions", lambda internal_capture: (proposed,)
+    patch_ocr_helper(
+        monkeypatch, "internal_candidate_ocr_regions", lambda internal_capture: (proposed,)
     )
-    monkeypatch.setattr(parse_ocr, "internal_has_distributed_outline_text", lambda capture: True)
+    patch_ocr_helper(monkeypatch, "internal_has_distributed_outline_text", lambda capture: True)
 
     def candidate_tasks(
         internal_capture: CapturedPage,
@@ -2498,7 +2511,7 @@ def test_distributed_outline_text_uses_one_full_page_region(
         )
         return (task,), raster.width * raster.height, None, (regions[0].page_box,)
 
-    monkeypatch.setattr(parse_ocr, "internal_candidate_region_tasks", candidate_tasks)
+    patch_ocr_helper(monkeypatch, "internal_candidate_region_tasks", candidate_tasks)
     monkeypatch.setattr(
         ocr_tesseract,
         "internal_recognize",
@@ -2713,8 +2726,8 @@ def test_decoded_image_enlarges_low_resolution_scans_toward_the_ocr_target(monke
     # 200x100 samples over a 200x100 point area is 72 DPI.
     display_area = 200.0 * 100.0
 
-    decoded = parse_ocr.internal_decoded_image_raster(image, display_area)
-    unscaled = parse_ocr.internal_decoded_image_raster(image, display_area, upscale=False)
+    decoded = ocr_regions.internal_decoded_image_raster(image, display_area)
+    unscaled = ocr_regions.internal_decoded_image_raster(image, display_area, upscale=False)
 
     assert decoded is not None
     assert unscaled is not None
