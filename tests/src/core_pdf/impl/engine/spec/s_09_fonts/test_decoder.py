@@ -162,6 +162,37 @@ def test_simple_font_decoder_reuses_glyphs_across_distinct_text_operands() -> No
     assert all(glyph is first[0] for glyph in second if glyph.char_code == ord("A"))
 
 
+def test_font_decoder_slots_follow_its_annotated_state() -> None:
+    decoder = FontDecoder({"Subtype": "Type1"})
+
+    assert FontDecoder.__slots__ == tuple(FontDecoder.__annotations__)
+    assert not hasattr(decoder, "__dict__")
+
+
+def test_cid_font_decoder_reuses_glyphs_across_distinct_long_operands() -> None:
+    decoder = FontDecoder(cid_type0_font("Identity-H"))
+
+    first = decoder.decode_glyphs(b"\x00A" * 9)
+    second = decoder.decode_glyphs(b"\x00B\x00A" * 5)
+
+    assert all(glyph is first[0] for glyph in first)
+    assert all(glyph is first[0] for glyph in second if glyph.cid == ord("A"))
+
+
+def test_cid_glyph_cache_stops_accepting_new_codes_at_its_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(decoder_module, "internal_CID_GLYPH_CACHE_LIMIT", 1)
+    decoder = FontDecoder(cid_type0_font("Identity-H"))
+
+    cached = decoder.internal_decode_cid_glyphs(b"\x00A")[0]
+    uncached_first = decoder.internal_decode_cid_glyphs(b"\x00B")[0]
+    uncached_second = decoder.internal_decode_cid_glyphs(b"\x00B")[0]
+
+    assert decoder.internal_decode_cid_glyphs(b"\x00A")[0] is cached
+    assert uncached_second is not uncached_first
+
+
 def test_font_decoder_caches_cff_glyph_bboxes_including_missing_glyphs() -> None:
     class FakeCFFFont:
         def __init__(self) -> None:
@@ -311,8 +342,14 @@ def test_font_decoder_applies_learned_mapping_to_unknown_identity_code() -> None
     decoder = FontDecoder(cid_type0_font("Identity-H", ordering="Unknown"))
     encoded = b"\x00A"
 
-    assert decoder.decode_glyphs(encoded)[0].unicode_source == "identity"
+    assert decoder.decode(encoded) == "A"
+    assert decoder.decode_cache
+    assert decoder.glyphs_cache
+    assert decoder.cid_glyph_cache
     assert decoder.install_learned_unicode({encoded: "Z"}) == 1
+    assert not decoder.decode_cache
+    assert not decoder.glyphs_cache
+    assert not decoder.cid_glyph_cache
 
     glyph = decoder.decode_glyphs(encoded)[0]
     assert glyph.unicode == "Z"
@@ -585,6 +622,49 @@ def test_cff_unicode_repair_is_batched_on_first_suspicious_code(
     assert repair_index.calls == [(b"\x00A",)]
 
 
+def test_cff_unicode_repair_invalidates_cid_glyphs_only_when_changed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeRepairIndex:
+        repair = "X"
+
+        def repairs_for_codes(self, codes: object) -> dict[bytes, str]:
+            assert tuple(cast(Any, codes)) == (b"\x00A",)
+            return {b"\x00A": self.repair}
+
+    repair_index = FakeRepairIndex()
+    monkeypatch.setattr(
+        decoder_module,
+        "build_cff_unicode_repair_index",
+        lambda *internal_args: repair_index,
+    )
+    font = cid_type0_font("Identity-H")
+    font["ToUnicode"] = PdfStream(
+        decoded_data=b"""
+        /CIDInit /ProcSet findresource begin 12 dict begin begincmap
+        1 begincodespacerange <0000> <ffff> endcodespacerange
+        1 beginbfchar <0041> <fffd> endbfchar
+        endcmap end
+        """
+    )
+    decoder = FontDecoder(font)
+
+    first = decoder.internal_decode_cid_glyphs(b"\x00A")[0]
+    unchanged = decoder.internal_decode_cid_glyphs(b"\x00A")[0]
+    decoder.decode(b"\x00A")
+    assert decoder.decode_cache
+    assert decoder.glyphs_cache
+    repair_index.repair = "Y"
+    changed = decoder.internal_decode_cid_glyphs(b"\x00A")[0]
+
+    assert first.unicode == "X"
+    assert unchanged is first
+    assert changed.unicode == "Y"
+    assert changed is not first
+    assert not decoder.decode_cache
+    assert not decoder.glyphs_cache
+
+
 def test_cid_collection_map_resolves_once_on_first_unmapped_code(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -652,7 +732,18 @@ def test_vertical_w2_position_vector_is_scaled_to_text_space() -> None:
 
     decoder = FontDecoder(font)
 
+    assert decoder.vertical_glyph_metric(7) == (600.0, 200.0, -450.0)
     assert decoder.vertical_glyph_position(7, font_size=10) == pytest.approx((-2.0, 4.5))
+
+
+def test_vertical_glyph_metric_uses_dw2_and_horizontal_width_fallback() -> None:
+    font = cid_type0_font("Identity-V")
+    descendant = cast(dict[str, object], cast(list[object], font["DescendantFonts"])[0])
+    assert isinstance(descendant, dict)
+    descendant.update({"DW": 400, "DW2": [750, -900]})
+    decoder = FontDecoder(font)
+
+    assert decoder.vertical_glyph_metric(7) == (-900.0, 200.0, 750.0)
 
 
 def test_to_unicode_is_authoritative_over_glyph_name_repairs() -> None:

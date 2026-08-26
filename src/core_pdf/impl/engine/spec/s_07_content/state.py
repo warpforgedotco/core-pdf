@@ -1203,9 +1203,7 @@ class TextState:
         self, code: int, decoder: "FontDecoder", *, char_code: int | None = None
     ) -> float:
         if decoder.is_vertical:
-            metric = decoder.vertical_metrics.get(
-                code, (decoder.default_vertical_width, decoder.glyph_width(code) / 2.0, 0.0)
-            )
+            metric = decoder.vertical_glyph_metric(code)
             word = char_code == 32 if char_code is not None else code == 32
             extra = self.char_space_scale + (self.word_space_scale if word else 0.0)
             return (metric[0] + extra) * self.font_size / 1000.0
@@ -2016,6 +2014,7 @@ class TextState:
         glyph_bbox_for_code = decoder.glyph_bbox
         glyph_bbox_cache = decoder.glyph_bbox_cache
         vertical_position = decoder.vertical_glyph_position
+        vertical_metric = decoder.vertical_glyph_metric
         clusters = getattr(self, "glyph_clusters", None)
         if clusters is None:
             clusters = []
@@ -2117,10 +2116,6 @@ class TextState:
         run_advance_x0 = run_advance_y0 = run_advance_x1 = run_advance_y1 = 0.0
         run_ink_x0 = run_ink_y0 = run_ink_x1 = run_ink_y1 = 0.0
         run_confidence: float | None = None
-        # Only the vertical branch below writes and reads this; bound here so
-        # the horizontal path does not pay a store per glyph for a value it
-        # never looks at.
-        glyph_vertical_position: tuple[float, float] | None = None
         for glyph in glyphs:
             advance = (
                 chunk_advance(
@@ -2163,14 +2158,7 @@ class TextState:
                     ("pdfminer_need_charspace", compat_need_charspace),
                 )
                 if is_vertical:
-                    metric = decoder.vertical_metrics.get(
-                        glyph.width_code,
-                        (
-                            decoder.default_vertical_width,
-                            glyph_width(glyph.width_code) / 2.0,
-                            0.0,
-                        ),
-                    )
+                    metric = vertical_metric(glyph.width_code)
                     compat_cursor_y += -float(metric[0]) * 0.001 * font_size * compat_spacing_scale
                     if glyph.char_code == 32:
                         compat_cursor_y += compat_wordspace
@@ -2186,46 +2174,18 @@ class TextState:
 
             cluster_id = len(clusters)
             cluster_provenance_id = (seqno, cluster_id)
-            if axis_aligned_horizontal:
-                advance_x0 = text_basis[0] + offset * combined_a
-                advance_x1 = text_basis[0] + (offset + advance) * combined_a
-                advance_bbox = (
-                    advance_x0 if advance_x0 < advance_x1 else advance_x1,
-                    axis_advance_y0,
-                    advance_x1 if advance_x1 > advance_x0 else advance_x0,
-                    axis_advance_y1,
+            if is_vertical:
+                glyph_vertical_position = vertical_position(
+                    glyph.cid,
+                    font_size=font_size,
                 )
-                baseline = (
-                    advance_x0,
-                    axis_baseline_y,
-                    advance_x1,
-                    axis_baseline_y,
+                text_box, baseline_text = glyph_text_space_boxes(
+                    self,
+                    offset,
+                    advance,
+                    decoder,
+                    glyph_vertical_position,
                 )
-            else:
-                # A vertical glyph needs this for the text-space boxes and again
-                # for the outline transform below. It is a pure function of the
-                # code and the loop-invariant font size, so it is computed once.
-                # `is_vertical` implies this branch, since axis_aligned_horizontal
-                # requires `not is_vertical`.
-                if is_vertical:
-                    glyph_vertical_position = vertical_position(
-                        glyph.cid,
-                        font_size=font_size,
-                    )
-                    text_box, baseline_text = glyph_text_space_boxes(
-                        self,
-                        offset,
-                        advance,
-                        decoder,
-                        glyph_vertical_position,
-                    )
-                else:
-                    text_box, baseline_text = glyph_text_space_boxes(
-                        self,
-                        offset,
-                        advance,
-                        decoder,
-                    )
                 transformed = transformed_text_rect(self, *text_box, text_basis)
                 advance_bbox = (
                     transformed.x0,
@@ -2234,12 +2194,10 @@ class TextState:
                     transformed.y1,
                 )
                 baseline = transformed_text_line(*baseline_text, text_basis)
-            if is_vertical:
                 outline_transform = glyph_transform(offset, glyph_vertical_position)
             else:
-                # Inlined glyph_transform for the horizontal case; the sums
-                # keep the closure's left-to-right evaluation order so the
-                # floats are bit-identical.
+                # Inlined glyph_transform for horizontal text; the sums keep
+                # the closure's evaluation order so floats stay bit-identical.
                 outline_transform = (
                     transform_a,
                     transform_b,
@@ -2248,6 +2206,36 @@ class TextState:
                     text_basis[0] + offset * combined_a + rise_offset_x,
                     text_basis[1] + offset * combined_b + rise_offset_y,
                 )
+                if axis_aligned_horizontal:
+                    advance_x0 = text_basis[0] + offset * combined_a
+                    advance_x1 = text_basis[0] + (offset + advance) * combined_a
+                    advance_bbox = (
+                        advance_x0 if advance_x0 < advance_x1 else advance_x1,
+                        axis_advance_y0,
+                        advance_x1 if advance_x1 > advance_x0 else advance_x0,
+                        axis_advance_y1,
+                    )
+                    baseline = (
+                        advance_x0,
+                        axis_baseline_y,
+                        advance_x1,
+                        axis_baseline_y,
+                    )
+                else:
+                    text_box, baseline_text = glyph_text_space_boxes(
+                        self,
+                        offset,
+                        advance,
+                        decoder,
+                    )
+                    transformed = transformed_text_rect(self, *text_box, text_basis)
+                    advance_bbox = (
+                        transformed.x0,
+                        transformed.y0,
+                        transformed.x1,
+                        transformed.y1,
+                    )
+                    baseline = transformed_text_line(*baseline_text, text_basis)
             observation_visible = visible
             if observation_visible:
                 box_x0, box_y0, box_x1, box_y1 = advance_bbox

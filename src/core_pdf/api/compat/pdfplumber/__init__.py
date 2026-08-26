@@ -362,14 +362,7 @@ class EnginePageAdapter:
                 and isinstance(origin, (tuple, list))
                 and len(origin) == 2
             ):
-                metric = glyph.font_decoder.vertical_metrics.get(
-                    width_code,
-                    (
-                        glyph.font_decoder.default_vertical_width,
-                        glyph.font_decoder.glyph_width(width_code) / 2.0,
-                        glyph.font_decoder.default_vertical_origin_y,
-                    ),
-                )
+                metric = glyph.font_decoder.vertical_glyph_metric(width_code)
                 a, b, c, d = (float(value) for value in matrix)
                 origin_x, origin_y = (
                     projected_origin

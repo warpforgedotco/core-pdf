@@ -189,63 +189,8 @@ def uses_fixed_two_byte_codes(cmap: CMapDecoder | ToUnicodeCMap | None, data: by
     return first_in_range
 
 
+@dataclass(init=False, repr=False, eq=False, slots=True, match_args=False)
 class FontDecoder:
-    __slots__ = (
-        "font",
-        "ligature_overrides",
-        "to_unicode",
-        "cmap",
-        "cid_unicode_map",
-        "cid_unicode_map_resolved",
-        "cid_registry",
-        "cid_ordering",
-        "base_encoding",
-        "differences",
-        "encoding_differences",
-        "is_cid_font",
-        "is_type3",
-        "byte_decode_table",
-        "widths",
-        "default_width",
-        "vertical_widths",
-        "default_vertical_width",
-        "default_vertical_origin_y",
-        "vertical_metrics",
-        "is_vertical",
-        "ascent",
-        "descent",
-        "decode_cache",
-        "glyphs_cache",
-        "simple_glyph_cache",
-        "cid_glyph_cache",
-        "fast_widths_cache",
-        "fast_widths_array_cache",
-        "glyph_bbox_cache",
-        "glyph_bitmap_cache",
-        "type3_glyph_names",
-        "type3_charproc_cache",
-        "type3_charproc_cache_hits",
-        "type3_charproc_cache_misses",
-        "type3_charproc_compiled_programs",
-        "type3_charproc_compiled_operations",
-        "type3_charproc_unsafe_fallbacks",
-        "fast_widths_cid",
-        "fast_widths_cid_array",
-        "fast_widths_cid_unavailable",
-        "font_name",
-        "glyph_decode_table",
-        "glyph_decode_table_authoritative",
-        "cff_unicode_repair_index",
-        "cff_unicode_repairs",
-        "cff_font",
-        "tt_font",
-        "type1_font",
-        "opentype_font",
-        "raster_font_provider",
-        "learned_unicode",
-        "lazy_initialized",
-    )
-
     font: dict[str, Any]
     ligature_overrides: dict[int, str]
     to_unicode: ToUnicodeCMap | None
@@ -256,6 +201,7 @@ class FontDecoder:
     cid_ordering: str | None
     base_encoding: str | None
     differences: dict[int, str]
+    encoding_differences: dict[int, str]
     is_cid_font: bool
     is_type3: bool
     byte_decode_table: tuple[str, ...] | None
@@ -268,11 +214,14 @@ class FontDecoder:
     is_vertical: bool
     ascent: float
     descent: float
+    decode_cache: dict[bytes, str]
+    glyphs_cache: dict[bytes, tuple[DecodedGlyph, ...]]
     fast_widths_cache: tuple[float, ...] | None
     fast_widths_array_cache: Any | None
     simple_glyph_cache: dict[int, DecodedGlyph]
     cid_glyph_cache: dict[bytes, DecodedGlyph]
     glyph_bbox_cache: dict[int, Rectangle | None]
+    glyph_bitmap_cache: dict[tuple[int, int, int], tuple[int, ...]]
     fast_widths_cid: list[float] | None
     fast_widths_cid_array: Any | None
     fast_widths_cid_unavailable: bool
@@ -293,6 +242,8 @@ class FontDecoder:
     type1_font: Type1FontProgram | None
     opentype_font: OpenTypeFontProgram | None
     raster_font_provider: RasterFontProviderLike | None
+    learned_unicode: dict[bytes, str]
+    lazy_initialized: bool
 
     def __init__(
         self,
@@ -716,11 +667,28 @@ class FontDecoder:
             self.learned_unicode[bytes(code_bytes)] = text
             additions += 1
         if additions:
-            self.decode_cache.clear()
-            self.glyphs_cache.clear()
-            self.simple_glyph_cache.clear()
-            self.cid_glyph_cache.clear()
+            self.internal_clear_unicode_caches()
         return additions
+
+    def internal_clear_unicode_caches(self) -> None:
+        """Clear every memo whose value can depend on a Unicode mapping."""
+        self.internal_clear_cid_unicode_caches()
+        self.simple_glyph_cache.clear()
+
+    def internal_clear_cid_unicode_caches(self) -> None:
+        """Clear text and glyph memos derived from CID Unicode mappings."""
+        self.decode_cache.clear()
+        self.glyphs_cache.clear()
+        self.cid_glyph_cache.clear()
+
+    def internal_update_cff_unicode_repairs(self, repairs: Mapping[bytes, str]) -> bool:
+        """Install changed CFF repairs and invalidate CID glyphs built without them."""
+        changed = any(self.cff_unicode_repairs.get(code) != text for code, text in repairs.items())
+        if not changed:
+            return False
+        self.cff_unicode_repairs.update(repairs)
+        self.internal_clear_cid_unicode_caches()
+        return True
 
     def internal_resolved_cid_unicode_map(self) -> Mapping[int, str] | CIDUnicodeMap | None:
         if not self.cid_unicode_map_resolved:
@@ -875,51 +843,50 @@ class FontDecoder:
                 # The same invalid mappings are recomputed on every call, so
                 # only a repair that actually moves the table can invalidate
                 # glyphs already decoded under the old one.
-                changed = any(
-                    self.cff_unicode_repairs.get(code) != text for code, text in repairs.items()
-                )
-                self.cff_unicode_repairs.update(repairs)
-                if changed:
-                    glyph_cache.clear()
+                self.internal_update_cff_unicode_repairs(repairs)
         glyphs: list[DecodedGlyph] = []
         for code_bytes, cid in entries:
             cached_glyph = glyph_cache.get(code_bytes)
             if cached_glyph is not None:
                 glyphs.append(cached_glyph)
                 continue
-            char_code = int.from_bytes(code_bytes, "big") if code_bytes else 0
-            gid = self.glyph_id_for_code(cid)
-            if gid is not None and gid != 0 and not self.internal_glyph_exists(gid):
-                notdef_cid = self.cmap.mapped_notdef(code_bytes) if self.cmap else None
-                if notdef_cid is not None:
-                    cid = notdef_cid
-                    gid = self.glyph_id_for_code(cid)
-            choice = self.internal_unicode_choice_for_code(code_bytes, cid, gid)
-            if self.ligature_overrides:
-                lo = self.ligature_overrides
-                text = "".join(lo.get(ord(ch), ch) for ch in choice.text)
-                if text != choice.text:
-                    choice = UnicodeChoice(
-                        text,
-                        "ligature_override",
-                        dedupe_alternates((choice.text, *choice.alternates), text),
-                    )
-            glyph = DecodedGlyph(
-                code_bytes=code_bytes,
-                char_code=char_code,
-                cid=cid,
-                gid=gid,
-                unicode=choice.text,
-                unicode_source=choice.source,
-                alternates=choice.alternates,
-                width_code=cid,
-                bitmap_code=cid,
-                split_unicode=choice.text in LEGITIMATE_MULTI_CHAR_GLYPHS,
-            )
+            glyph = self.internal_build_cid_glyph(code_bytes, cid)
             if len(glyph_cache) < internal_CID_GLYPH_CACHE_LIMIT:
                 glyph_cache[code_bytes] = glyph
             glyphs.append(glyph)
         return glyphs
+
+    def internal_build_cid_glyph(self, code_bytes: bytes, cid: int) -> DecodedGlyph:
+        """Build one CID glyph after the caller has missed the per-code cache."""
+        char_code = int.from_bytes(code_bytes, "big") if code_bytes else 0
+        gid = self.glyph_id_for_code(cid)
+        if gid is not None and gid != 0 and not self.internal_glyph_exists(gid):
+            notdef_cid = self.cmap.mapped_notdef(code_bytes) if self.cmap else None
+            if notdef_cid is not None:
+                cid = notdef_cid
+                gid = self.glyph_id_for_code(cid)
+        choice = self.internal_unicode_choice_for_code(code_bytes, cid, gid)
+        if self.ligature_overrides:
+            lo = self.ligature_overrides
+            text = "".join(lo.get(ord(ch), ch) for ch in choice.text)
+            if text != choice.text:
+                choice = UnicodeChoice(
+                    text,
+                    "ligature_override",
+                    dedupe_alternates((choice.text, *choice.alternates), text),
+                )
+        return DecodedGlyph(
+            code_bytes=code_bytes,
+            char_code=char_code,
+            cid=cid,
+            gid=gid,
+            unicode=choice.text,
+            unicode_source=choice.source,
+            alternates=choice.alternates,
+            width_code=cid,
+            bitmap_code=cid,
+            split_unicode=choice.text in LEGITIMATE_MULTI_CHAR_GLYPHS,
+        )
 
     def internal_glyph_exists(self, gid: int) -> bool:
         if self.cff_font is not None:
@@ -1036,10 +1003,8 @@ class FontDecoder:
         cache[code] = bbox
         return bbox
 
-    def vertical_glyph_position(self, code: int, *, font_size: float) -> tuple[float, float]:
-        # Looked up in two steps rather than with a `get` default: the default
-        # calls glyph_width, which the eager argument would have paid for on
-        # every hit as well as every miss.
+    def vertical_glyph_metric(self, code: int) -> tuple[float, float, float]:
+        """Return the explicit W2 metric or the DW2/width-derived fallback."""
         metric = self.vertical_metrics.get(code)
         if metric is None:
             metric = (
@@ -1047,6 +1012,10 @@ class FontDecoder:
                 self.glyph_width(code) / 2.0,
                 self.default_vertical_origin_y,
             )
+        return metric
+
+    def vertical_glyph_position(self, code: int, *, font_size: float) -> tuple[float, float]:
+        metric = self.vertical_glyph_metric(code)
         scale = font_size / 1000.0
         return (-metric[1] * scale, -metric[2] * scale)
 
@@ -1152,11 +1121,9 @@ class FontDecoder:
             if glyphs is None:
                 glyphs = self.decode_glyphs(data)
             total = 0.0
+            vertical_glyph_metric = self.vertical_glyph_metric
             for glyph in glyphs:
-                metric = self.vertical_metrics.get(
-                    glyph.cid,
-                    (self.default_vertical_width, self.glyph_width(glyph.cid) / 2.0, 0.0),
-                )
+                metric = vertical_glyph_metric(glyph.cid)
                 total += metric[0] * font_size / 1000.0 + char_space
                 if glyph.char_code == 32:
                     total += word_space
