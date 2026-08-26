@@ -69,7 +69,6 @@ from core_pdf.impl.engine.spec.s_07_content.text_helpers import (
     detect_ligature_overrides,
     is_garbage_text,
 )
-from core_pdf.impl.engine.spec.s_07_document.document_lock import document_cache_lock
 from core_pdf.impl.engine.spec.s_07_syntax.coercion import (
     normalize_pdf_name,
     parse_float,
@@ -94,6 +93,7 @@ from core_pdf.impl.primitives import (
     PdfReference,
     PdfString,
 )
+from core_pdf.impl.runtime.cache_lock import document_cache_lock
 from core_pdf.impl.runtime.image_cache import ImageCache
 from core_pdf.impl.types import PdfDict, Rectangle
 

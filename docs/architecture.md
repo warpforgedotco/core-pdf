@@ -122,7 +122,8 @@ src/core_pdf/
                          collapse_character_spaced
     pages.py             PageSelection and its single normalization implementation
     engine/
-      parse/             the extraction pipeline, one module per stage (see §2)
+      parse/             the extraction pipeline, one module per stage (see §2),
+                         plus newstroke and stroked_text, which only it uses
       render/            display lists, raster kernels, targets, and page composition
       page.py            PdfPage
       document.py        PdfDocument
@@ -138,18 +139,26 @@ src/core_pdf/
 
 ### Dependency direction
 
+**There are no runtime import cycles between packages.** Keep it that way; the
+remaining known knots are listed at the end of this section.
+
 Three packages exist to be depended *upon* and must not depend upward:
 
 | Package | May import | Status |
 | --- | --- | --- |
 | `impl/runtime/` | nothing internal | zero internal imports |
-| `impl/engine/model/` | `impl/` base modules | one documented exception, below |
+| `impl/engine/model/` | `impl/` base modules | clean |
 | `spec/s_07_syntax` | `impl/` base modules | clean |
 
-`model/runs.py` is the exception: `TextRun` carries two private memo slots for results
-the layout heuristics compute, and their annotations name types from `layout/`. Both
-imports are under `TYPE_CHECKING`, so the runtime graph stays acyclic; an import
-contract should list those two explicitly rather than relaxing the rule.
+The line-text records (`LayoutLineText`, `LayoutLineTextSegment`,
+`LayoutWordSnapshot`) live in `model/line_text.py` rather than with the heuristics
+that build them, because `TextRun` memoizes reconstruction results on itself and the
+record layer must not name a type from `layout/`.
+
+Two helpers moved down for the same reason and should stay put: the generic cache-lock
+helpers are `impl/runtime/cache_lock.py`, not a document module, because the
+content-stream interpreter needs them; and `newstroke`/`stroked_text` are
+`parse/` modules, not engine-root ones, because only the pipeline uses them.
 
 `layout/` is heuristics only and re-exports nothing — import from the owning module.
 `LayoutLine` lives in `layout/lines.py` because it is what line grouping *produces*;
@@ -157,6 +166,17 @@ contract should list those two explicitly rather than relaxing the rule.
 `model/glyphs.py` owns the glyph records (including `GlyphSegment` and
 `internal_materialize`) and `model/glyph_table.py` owns only the columnar storage that
 consumes them, so the two no longer import each other.
+
+**Two known knots**, both deliberate and neither a runtime package cycle:
+
+- `s_14_structure/tree.py` names `PdfDocument` and `PdfPage` in eleven signatures,
+  under `TYPE_CHECKING` only, while `s_07_document` imports the structure tree for
+  real. Replacing those annotations with protocols would add more indirection than
+  the cycle costs, so an import contract should record it as an allowed exception.
+- `structured/{model,editor,serialization}` form a three-module cycle because the
+  serializers hang off the structured IR (`Page.to_markdown()` and friends) via
+  function-local imports. That is the documented design — the alternative duplicates
+  serializer entry points — so the cycle stays inside the package.
 
 ### The `spec/s_NN_*` scheme
 

@@ -1,19 +1,19 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 """The capture text-run records: TextRun and its revision-tracked subclass.
 
-TextRun carries two memo slots for results the layout heuristics compute
+TextRun memoizes two results the layout heuristics compute
 (``internal_layout_reconstruction_cache``, ``internal_layout_words_cache``). Their
-annotations name types from ``layout/``, imported under ``TYPE_CHECKING`` only, so
-this module has no runtime dependency on the layer above it.
+record types live beside this module in ``model/line_text.py``, so nothing here
+names a type from ``layout/``.
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, ClassVar, TypeAlias
 
+from core_pdf.impl.engine.model.line_text import LayoutLineText, LayoutWordSnapshot
+
 if TYPE_CHECKING:
-    from core_pdf.impl.engine.layout.lines import LayoutWordSnapshot
-    from core_pdf.impl.engine.layout.text_lines import LayoutLineText
     from core_pdf.impl.engine.model.glyphs import GlyphCluster
 
 Provenance: TypeAlias = tuple[tuple[str, object], ...]

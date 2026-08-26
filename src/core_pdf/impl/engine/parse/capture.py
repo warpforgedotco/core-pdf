@@ -25,7 +25,6 @@ from core_pdf.impl.engine.model.glyphs import (
     glyph_unicode_semantics,
 )
 from core_pdf.impl.engine.model.runs import TextRun
-from core_pdf.impl.engine.newstroke import NewstrokeDecode, decode_newstroke_drawings
 from core_pdf.impl.engine.parse.model import (
     CapturedPage,
     GlyphEvidence,
@@ -36,6 +35,7 @@ from core_pdf.impl.engine.parse.model import (
     TextQualityStats,
     internal_analyze_text,
 )
+from core_pdf.impl.engine.parse.newstroke import NewstrokeDecode, decode_newstroke_drawings
 from core_pdf.impl.engine.spec.s_07_content.page_program import PageProgram
 from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_08_graphics.image_metadata import (

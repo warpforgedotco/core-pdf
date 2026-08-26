@@ -8,8 +8,9 @@ emits, so it lives here rather than with the capture records in ``engine/model``
 from __future__ import annotations
 
 from itertools import islice
-from typing import TYPE_CHECKING, NamedTuple, TypeAlias
+from typing import TYPE_CHECKING, TypeAlias
 
+from core_pdf.impl.engine.model.line_text import LayoutWordSnapshot
 from core_pdf.impl.engine.model.runs import TextRun, internal_track_text_run
 
 if TYPE_CHECKING:
@@ -51,11 +52,6 @@ def reconstruct_cached_layout_line_text(
         internal_track_text_run(first_run)
         object.__setattr__(first_run, "internal_layout_reconstruction_cache", (key, reconstructed))
     return reconstructed
-
-
-class LayoutWordSnapshot(NamedTuple):
-    text: str
-    bbox: tuple[float, float, float, float]
 
 
 class LayoutLine:

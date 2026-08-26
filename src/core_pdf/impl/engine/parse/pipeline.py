@@ -42,15 +42,15 @@ from core_pdf.impl.engine.parse.model import (
 from core_pdf.impl.engine.parse.route import (
     plan_page,
 )
-from core_pdf.impl.engine.parse.tables import (
-    extract_tables,
-)
-from core_pdf.impl.engine.spec.s_07_document.page_links import resolve_destination_value
-from core_pdf.impl.engine.stroked_text import (
+from core_pdf.impl.engine.parse.stroked_text import (
     GlyphSignature,
     StrokedTextDecode,
     decode_stroked_text_profile_with_alphabet,
 )
+from core_pdf.impl.engine.parse.tables import (
+    extract_tables,
+)
+from core_pdf.impl.engine.spec.s_07_document.page_links import resolve_destination_value
 from core_pdf.impl.engine.structured import (
     SCHEMA_VERSION,
     Annotation,

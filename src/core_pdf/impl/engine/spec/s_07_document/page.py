@@ -12,11 +12,7 @@ from core_pdf.impl.engine.spec.s_07_content.state import TextState
 from core_pdf.impl.engine.spec.s_07_document.annotation_appearance import (
     consume_annotation_appearances,
 )
-from core_pdf.impl.engine.spec.s_07_document.document_lock import (
-    document_cache_lock,
-    document_recovery_enabled,
-)
-from core_pdf.impl.engine.spec.s_07_document.document_pages import PAGE_INHERITED_KEYS
+from core_pdf.impl.engine.spec.s_07_document.document_recovery import document_recovery_enabled
 from core_pdf.impl.engine.spec.s_07_document.page_boxes import rotate_page_runs
 from core_pdf.impl.engine.spec.s_07_document.page_links import (
     link_target_direct,
@@ -43,7 +39,20 @@ from core_pdf.impl.primitives import (
     PdfReference,
 )
 from core_pdf.impl.runtime.cache import ExtractionCache
+from core_pdf.impl.runtime.cache_lock import document_cache_lock
 from core_pdf.impl.types import PdfDict, PdfObject, Rectangle
+
+PAGE_INHERITED_KEYS = (
+    "MediaBox",
+    "CropBox",
+    "BleedBox",
+    "TrimBox",
+    "ArtBox",
+    "Rotate",
+    "Resources",
+    "Annots",
+)
+
 
 if TYPE_CHECKING:
     from core_pdf.impl.engine.layout.lines import LayoutLine

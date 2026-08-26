@@ -16,16 +16,11 @@ from core_pdf.impl.engine.spec.s_07_document.document_labels import (
     format_page_label,
     resolve_page_tree_node_type,
 )
-from core_pdf.impl.engine.spec.s_07_document.document_lock import (
-    document_cache_lock,
-    document_recovery_enabled,
-    get_or_compute,
-)
 from core_pdf.impl.engine.spec.s_07_document.document_pages import (
-    PAGE_INHERITED_KEYS,
     LazyPageList,
     PageListItem,
 )
+from core_pdf.impl.engine.spec.s_07_document.document_recovery import document_recovery_enabled
 from core_pdf.impl.engine.spec.s_07_document.document_xref import DocumentXRefMixin
 from core_pdf.impl.engine.spec.s_07_document.fields import (
     FieldTraversalEntry,
@@ -33,6 +28,7 @@ from core_pdf.impl.engine.spec.s_07_document.fields import (
     field_widget_rect,
 )
 from core_pdf.impl.engine.spec.s_07_document.metadata import MetadataRecord, resolve_metadata
+from core_pdf.impl.engine.spec.s_07_document.page import PAGE_INHERITED_KEYS
 from core_pdf.impl.engine.spec.s_07_document.records import (
     RawEmbeddedFile,
     RawFormField,
@@ -71,6 +67,10 @@ from core_pdf.impl.objects import PdfStream
 from core_pdf.impl.pages import PageSelection, resolve_page_selection
 from core_pdf.impl.primitives import MISSING, MissingObject, PdfReference
 from core_pdf.impl.runtime.cache import ExtractionCache
+from core_pdf.impl.runtime.cache_lock import (
+    document_cache_lock,
+    get_or_compute,
+)
 from core_pdf.impl.runtime.image_cache import ImageCache
 from core_pdf.impl.types import (
     Decipher,

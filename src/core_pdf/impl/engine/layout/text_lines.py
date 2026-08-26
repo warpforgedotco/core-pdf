@@ -10,6 +10,11 @@ from functools import lru_cache
 from statistics import median_low
 
 from core_pdf.impl.engine.layout.word_frequencies import word_rank
+from core_pdf.impl.engine.model.line_text import (
+    EMPTY_LAYOUT_LINE_TEXT,
+    LayoutLineText,
+    LayoutLineTextSegment,
+)
 from core_pdf.impl.engine.model.runs import TextRun
 
 FOOTER_RE = re.compile(r"^\s*page\s*\d+\s*$", re.IGNORECASE)
@@ -21,14 +26,6 @@ INLINE_MARKERS = frozenset({"™", "℠", "®", "©"})
 FORMULA_MARKERS = frozenset("∂∑√∞∈θΦω")
 
 
-@dataclass(frozen=True, slots=True)
-class LayoutLineTextSegment:
-    text: str
-    separator_before: str
-    advance_bbox: tuple[float, float, float, float]
-    rotation_angle: int
-
-
 # Builder-only atoms are short-lived and never escape into the immutable layout result.
 @dataclass(slots=True)
 class LayoutLineTextAtom:
@@ -37,15 +34,6 @@ class LayoutLineTextAtom:
     advance_bbox: tuple[float, float, float, float]
     baseline: tuple[float, float, float, float] | None
     has_glyph_geometry: bool
-
-
-@dataclass(frozen=True, slots=True)
-class LayoutLineText:
-    text: str
-    segments: tuple[LayoutLineTextSegment, ...]
-
-
-EMPTY_LAYOUT_LINE_TEXT = LayoutLineText("", ())
 
 
 def reconstruct_layout_line_text(
