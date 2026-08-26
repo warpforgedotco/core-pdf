@@ -37,20 +37,34 @@ DOCUMENTS: dict[str, dict[str, str]] = {
         "Conforming-to-PDFA-and-PDFUA.pdf": f"{PUB}/Conforming-to-both-PDFA-&#038;-PDFUA.pdf",
         "PDF-Declarations-1.0.pdf": f"{SPEC}/PDF-Declarations.pdf",
         "BPG-Math-in-PDF.pdf": f"{PUB}/BPG-Math-in-PDF.pdf",
-        "Custom-Metadata-Structures-in-PDF.pdf": f"{PUB}/Including-custom-metadata-structures-in-PDF.pdf",
+        "Custom-Metadata-Structures-in-PDF.pdf": (
+            f"{PUB}/Including-custom-metadata-structures-in-PDF.pdf"
+        ),
         "PDF-Extension-Brotli.pdf": f"{PUB}/pdf-extension-brotli.pdf",
         "EA-PDF-v1.pdf": f"{SPEC}/EA-PDF-v1.pdf",
     },
     # The PDF/A Competence Center TechNotes state that redistribution requires
     # written approval; the WTPDF examples carry no licence grant at all.
     "restricted": {
-        "TN0001-PDFA1-and-Namespaces.pdf": f"{UPL}/2011/08/tn0001_pdfa-1_and_namespaces_2008-03-182.pdf",
-        "TN0003-Metadata-in-PDFA1.pdf": f"{UPL}/2011/08/tn0003_metadata_in_pdfa-1_2008-03-182.pdf",
-        "TN0008-Predefined-XMP-Properties.pdf": f"{UPL}/2011/08/tn0008_predefined_xmp_properties_in_pdfa-1_2008-03-20.pdf",
-        "TN0009-XMP-Extension-Schemas.pdf": f"{UPL}/2011/09/tn0009_xmp_extension_schemas_in_pdfa-1_2008-03-20.pdf",
+        "TN0001-PDFA1-and-Namespaces.pdf": (
+            f"{UPL}/2011/08/tn0001_pdfa-1_and_namespaces_2008-03-182.pdf"
+        ),
+        "TN0003-Metadata-in-PDFA1.pdf": (
+            f"{UPL}/2011/08/tn0003_metadata_in_pdfa-1_2008-03-182.pdf"
+        ),
+        "TN0008-Predefined-XMP-Properties.pdf": (
+            f"{UPL}/2011/08/tn0008_predefined_xmp_properties_in_pdfa-1_2008-03-20.pdf"
+        ),
+        "TN0009-XMP-Extension-Schemas.pdf": (
+            f"{UPL}/2011/09/tn0009_xmp_extension_schemas_in_pdfa-1_2008-03-20.pdf"
+        ),
         "TN0010-Clarifications-ISO19005.pdf": f"{UPL}/2017/07/TechNote0010.pdf",
-        "example-WTPDF-apryse-itext.pdf": "https://pdfa.org/download-area/examples/WTPDF/apryse-itext-wtpdf.pdf",
-        "example-WTPDF-BFO-PDFUA2.pdf": "https://pdfa.org/download-area/examples/WTPDF/2024-03-04_BFO-WTPDF-PDFua2.pdf",
+        "example-WTPDF-apryse-itext.pdf": (
+            "https://pdfa.org/download-area/examples/WTPDF/apryse-itext-wtpdf.pdf"
+        ),
+        "example-WTPDF-BFO-PDFUA2.pdf": (
+            "https://pdfa.org/download-area/examples/WTPDF/2024-03-04_BFO-WTPDF-PDFua2.pdf"
+        ),
     },
 }
 
@@ -66,7 +80,7 @@ UA = (
 
 def main() -> int:
     try:
-        from playwright.sync_api import sync_playwright
+        from playwright.sync_api import sync_playwright  # ty: ignore[unresolved-import]
     except ImportError:
         print(
             "playwright is not installed. Run:\n"
