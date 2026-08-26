@@ -1,0 +1,62 @@
+name: Restore fixture submodules
+description: >-
+  Initialise the tests/fixtures submodules, restoring their object stores from
+  the Actions cache so the runner does not re-clone them on every job.
+
+  Must run AFTER actions/checkout, which is what makes this action's own file
+  available and creates the .git directory the cache is restored into. The
+  calling checkout step must NOT set submodules, or it will clone them before
+  the cache can be consulted.
+
+inputs:
+  lfs:
+    description: >-
+      Pull SCORE-Bench's LFS-backed corpus documents. The Quality job lints and
+      type-checks only, so it leaves these as pointer files, which is what it
+      got before this action existed.
+    required: false
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    # The gitlink SHAs pin every submodule exactly, so a cache built from them
+    # can never be stale: moving any submodule changes the key. Read straight
+    # out of the tree, which works before the submodules exist. `git hash-object`
+    # stands in for sha256sum/shasum, which differ across Linux and macOS.
+    - name: Derive submodule cache key
+      id: key
+      shell: bash
+      run: |
+        set -euo pipefail
+        gitlinks=$(git ls-tree HEAD tests/fixtures/ | grep '^160000')
+        test -n "$gitlinks"
+        echo "value=$(printf '%s' "$gitlinks" | git hash-object --stdin | cut -c1-16)" >> "$GITHUB_OUTPUT"
+
+    # .git/modules holds every submodule's object store, including SCORE-Bench's
+    # LFS objects (105 MB of its 109 MB), so this covers the LFS pull too.
+    - name: Restore submodule object stores
+      id: cache
+      uses: actions/cache@v4
+      with:
+        path: .git/modules
+        key: submodules-${{ runner.os }}-${{ steps.key.outputs.value }}
+
+    # On a hit this writes the working trees from local objects and touches the
+    # network not at all. On a miss git falls back to cloning, so a cold or
+    # evicted cache costs only what the old checkout cost.
+    - name: Initialise submodules
+      shell: bash
+      run: git submodule update --init --recursive --depth 1
+
+    # A no-op when the cache supplied the LFS objects; a real fetch on a miss.
+    - name: Fetch LFS-backed corpus documents
+      if: inputs.lfs == 'true'
+      shell: bash
+      run: git -C tests/fixtures/SCORE-Bench lfs pull
+
+    - name: Report cache outcome
+      shell: bash
+      run: |
+        echo "submodule cache hit: ${{ steps.cache.outputs.cache-hit || 'false' }}"
+        du -sh .git/modules 2>/dev/null || true

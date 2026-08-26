@@ -20,8 +20,11 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
+
+      - name: Restore fixture submodules
+        uses: ./.github/actions/cache-submodules
         with:
-          submodules: recursive
+          lfs: "false"
 
       - name: Install uv
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
@@ -53,11 +56,9 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
-        with:
-          submodules: recursive
 
-      - name: Fetch encrypted PDF fixture
-        run: git -C tests/fixtures/SCORE-Bench lfs pull
+      - name: Restore fixture submodules
+        uses: ./.github/actions/cache-submodules
 
       - name: Install uv
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
@@ -97,11 +98,9 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
-        with:
-          submodules: recursive
 
-      - name: Fetch encrypted PDF fixture
-        run: git -C tests/fixtures/SCORE-Bench lfs pull
+      - name: Restore fixture submodules
+        uses: ./.github/actions/cache-submodules
 
       - name: Install uv
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
@@ -133,11 +132,9 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
-        with:
-          submodules: recursive
 
-      - name: Fetch encrypted PDF fixture
-        run: git -C tests/fixtures/SCORE-Bench lfs pull
+      - name: Restore fixture submodules
+        uses: ./.github/actions/cache-submodules
 
       - name: Install uv
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
