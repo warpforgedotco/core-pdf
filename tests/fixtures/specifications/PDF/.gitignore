@@ -1,0 +1,5 @@
+# The PDF specification documents in this directory are Adobe/ISO copyrighted
+# and are NOT licensed for redistribution -- see README.md. They are fetched
+# locally by scripts/fetch_pdf_specs.sh and must never be committed.
+*.pdf
+*.pdf.part

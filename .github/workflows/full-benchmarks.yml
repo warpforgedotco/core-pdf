@@ -8,6 +8,12 @@ on:
 permissions:
   contents: read
 
+# Queue rather than cancel: these runs upload to CodSpeed, and a cancelled or
+# overlapping run would leave a partial benchmark set behind.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
 jobs:
   targeted:
     name: Targeted benchmark inventory
@@ -39,12 +45,7 @@ jobs:
         with:
           run: >-
             uv run --locked --package core-pdf --group benchmark pytest
-            tests/src/core_pdf/impl/engine/render/benchmarks
-            tests/src/core_pdf/impl/engine/spec/s_07_filters/benchmarks
-            tests/src/core_pdf/impl/engine/spec/s_07_syntax/benchmarks
-            tests/src/core_pdf/impl/engine/spec/s_07_security/benchmarks
-            tests/src/core_pdf/impl/engine/spec/s_08_graphics/benchmarks
-            tests/src/core_pdf/impl/engine/spec/s_09_fonts/benchmarks
+            $(grep -v '^#' .github/benchmark-paths.txt | tr '\n' ' ')
             --codspeed
           token: ${{ secrets.CODSPEED_TOKEN }}
 

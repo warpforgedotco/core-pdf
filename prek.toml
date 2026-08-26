@@ -1,5 +1,8 @@
 default_install_hook_types = ["pre-commit", "pre-push"]
-exclude = "^src/core_pdf/api/compat/_unsupported/"
+# The reference specifications are redistributed verbatim under licences that
+# require it (CC BY-ND forbids distributing modified copies), so the
+# whitespace and end-of-file fixers must not touch them.
+exclude = "^(src/core_pdf/api/compat/_unsupported/|tests/fixtures/specifications/)"
 
 [[repos]]
 repo = "https://github.com/pre-commit/pre-commit-hooks"

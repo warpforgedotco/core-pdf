@@ -6,6 +6,12 @@ on:
 permissions:
   contents: read
 
+# A PR that is pushed to again supersedes its own in-flight run. Without this
+# every push kept four jobs alive, one of them on a macOS runner.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   quality:
     name: Quality
@@ -77,6 +83,9 @@ jobs:
           # stayed unreachable for weeks precisely because only the subset ran
           # here. The full sweep costs a few minutes.
           CORE_PDF_RASTER_GOLDEN_FULL: "1"
+        # -n auto was measured and reverted: 108s against 106s and 118s for
+        # -n 2 on the same suite, i.e. inside the run-to-run noise. The job is
+        # not CPU-parallel-bound, so widening the worker pool buys nothing.
         run: uv run --locked --package core-pdf --group test pytest -n 2
 
       - name: Prune uv cache
@@ -149,12 +158,11 @@ jobs:
         with:
           run: >-
             uv run --locked --package core-pdf --group benchmark pytest
-            tests/src/core_pdf/impl/engine/render/benchmarks
-            tests/src/core_pdf/impl/engine/spec/s_07_filters/benchmarks
-            tests/src/core_pdf/impl/engine/spec/s_07_syntax/benchmarks
-            tests/src/core_pdf/impl/engine/spec/s_07_security/benchmarks
-            tests/src/core_pdf/impl/engine/spec/s_08_graphics/benchmarks
-            tests/src/core_pdf/impl/engine/spec/s_09_fonts/benchmarks
+            $(grep -v '^#' .github/benchmark-paths.txt | tr '\n' ' ')
             -m benchmark_high_impact
             --codspeed
           token: ${{ secrets.CODSPEED_TOKEN }}
+
+      - name: Prune uv cache
+        if: always()
+        run: uv cache prune --ci

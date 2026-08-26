@@ -34,3 +34,6 @@
 	path = tests/fixtures/unstructured
 	url = https://github.com/Unstructured-IO/unstructured.git
 	shallow = true
+[submodule "tests/fixtures/pdf20examples"]
+	path = tests/fixtures/pdf20examples
+	url = https://github.com/pdf-association/pdf20examples.git
