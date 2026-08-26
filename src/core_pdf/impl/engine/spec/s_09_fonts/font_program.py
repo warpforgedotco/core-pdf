@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from functools import lru_cache
-from math import inf
+from math import inf, isfinite, sqrt
 from threading import RLock
 
+from core_pdf._vendor.fontTools.cffLib import (
+    cffExpertSubsetStrings,
+    cffIExpertStrings,
+    cffISOAdobeStrings,
+    cffStandardStrings,
+)
+from core_pdf._vendor.fontTools.encodings.StandardEncoding import StandardEncoding
 from core_pdf.impl.engine.spec.s_09_fonts.feature_distance_kernel import (
     FeatureArrays,
     internal_feature_arrays,
@@ -30,103 +37,86 @@ class CFFGlyphFeature:
 
 
 EMPTY_FEATURE = CFFGlyphFeature((), 0.0, 0, ())
-STANDARD_GLYPH_SIDS = {
-    name: sid
-    for sid, name in enumerate(
-        (
-            ".notdef",
-            "space",
-            "exclam",
-            "quotedbl",
-            "numbersign",
-            "dollar",
-            "percent",
-            "ampersand",
-            "quoteright",
-            "parenleft",
-            "parenright",
-            "asterisk",
-            "plus",
-            "comma",
-            "hyphen",
-            "period",
-            "slash",
-            "zero",
-            "one",
-            "two",
-            "three",
-            "four",
-            "five",
-            "six",
-            "seven",
-            "eight",
-            "nine",
-            "colon",
-            "semicolon",
-            "less",
-            "equal",
-            "greater",
-            "question",
-            "at",
-            *tuple("ABCDEFGHIJKLMNOPQRSTUVWXYZ"),
-            "bracketleft",
-            "backslash",
-            "bracketright",
-            "asciicircum",
-            "underscore",
-            "quoteleft",
-            *tuple("abcdefghijklmnopqrstuvwxyz"),
-            "braceleft",
-            "bar",
-            "braceright",
-            "asciitilde",
-        )
-    )
-}
-CFF_STANDARD_STRING_COUNT = 391
+CFFMatrix = tuple[float, float, float, float, float, float]
+STANDARD_GLYPH_SIDS = {name: sid for sid, name in enumerate(cffStandardStrings)}
+CFF_STANDARD_STRING_COUNT = len(cffStandardStrings)
 # Type 2 charstrings may call subroutines, which may call further subroutines. The spec
 # allows 10 levels; deeper than that means a malformed or maliciously recursive font.
 TYPE2_MAX_SUBR_DEPTH = 10
-internal_STANDARD_GLYPH_NAMES_AFTER_ASCII = """
-exclamdown cent sterling fraction yen florin section currency quotesingle quotedblleft
-guillemotleft guilsinglleft guilsinglright fi fl endash dagger daggerdbl periodcentered
-paragraph bullet quotesinglbase quotedblbase quotedblright guillemotright ellipsis perthousand
-questiondown grave acute circumflex tilde macron breve dotaccent dieresis ring cedilla
-hungarumlaut ogonek caron emdash AE ordfeminine Lslash Oslash OE ordmasculine ae dotlessi
-lslash oslash oe germandbls onesuperior logicalnot mu trademark Eth onehalf plusminus Thorn
-onequarter divide brokenbar degree thorn threequarters twosuperior registered minus eth
-multiply threesuperior copyright Aacute Acircumflex Adieresis Agrave Aring Atilde Ccedilla
-Eacute Ecircumflex Edieresis Egrave Iacute Icircumflex Idieresis Igrave Ntilde Oacute
-Ocircumflex Odieresis Ograve Otilde Scaron Uacute Ucircumflex Udieresis Ugrave Yacute
-Ydieresis Zcaron aacute acircumflex adieresis agrave aring atilde ccedilla eacute
-ecircumflex edieresis egrave iacute icircumflex idieresis igrave ntilde oacute ocircumflex
-odieresis ograve otilde scaron uacute ucircumflex udieresis ugrave yacute ydieresis zcaron
-exclamsmall Hungarumlautsmall dollaroldstyle dollarsuperior ampersandsmall Acutesmall
-parenleftsuperior parenrightsuperior twodotenleader onedotenleader zerooldstyle oneoldstyle
-twooldstyle threeoldstyle fouroldstyle fiveoldstyle sixoldstyle sevenoldstyle eightoldstyle
-nineoldstyle commasuperior threequartersemdash periodsuperior questionsmall asuperior bsuperior
-centsuperior dsuperior esuperior isuperior lsuperior msuperior nsuperior osuperior rsuperior
-ssuperior tsuperior ff ffi ffl parenleftinferior parenrightinferior Circumflexsmall
-hyphensuperior Gravesmall Asmall Bsmall Csmall Dsmall Esmall Fsmall Gsmall Hsmall Ismall Jsmall
-Ksmall Lsmall Msmall Nsmall Osmall Psmall Qsmall Rsmall Ssmall Tsmall Usmall Vsmall Wsmall
-Xsmall Ysmall Zsmall colonmonetary onefitted rupiah Tildesmall exclamdownsmall centoldstyle
-Lslashsmall Scaronsmall Zcaronsmall Dieresissmall Brevesmall Caronsmall Dotaccentsmall
-Macronsmall figuredash hypheninferior Ogoneksmall Ringsmall Cedillasmall questiondownsmall
-oneeighth threeeighths fiveeighths seveneighths onethird twothirds zerosuperior foursuperior
-fivesuperior sixsuperior sevensuperior eightsuperior ninesuperior zeroinferior oneinferior
-twoinferior threeinferior fourinferior fiveinferior sixinferior seveninferior eightinferior
-nineinferior centinferior dollarinferior periodinferior commainferior Agravesmall Aacutesmall
-Acircumflexsmall Atildesmall Adieresissmall Aringsmall AEsmall Ccedillasmall Egravesmall
-Eacutesmall Ecircumflexsmall Edieresissmall Igravesmall Iacutesmall Icircumflexsmall
-Idieresissmall Ethsmall Ntildesmall Ogravesmall Oacutesmall Ocircumflexsmall Otildesmall
-Odieresissmall OEsmall Oslashsmall Ugravesmall Uacutesmall Ucircumflexsmall Udieresissmall
-Yacutesmall Thornsmall Ydieresissmall 001.000 001.001 001.002 001.003 Black Bold Book Light
-Medium Regular Roman Semibold
-""".split()  # noqa: SIM905 - compact ordered copy of the CFF specification table
-STANDARD_GLYPH_SIDS.update(
-    {name: sid for sid, name in enumerate(internal_STANDARD_GLYPH_NAMES_AFTER_ASCII, start=96)}
-)
 assert len(STANDARD_GLYPH_SIDS) == CFF_STANDARD_STRING_COUNT
+
+internal_TYPE2_MAX_STACK = 48
+internal_TYPE2_TRANSIENT_SIZE = 32
+internal_TYPE2_RANDOM_INITIAL_STATE = 0x1234ABCD
+internal_CUBIC_FLATNESS = 0.25
+internal_CUBIC_MAX_DEPTH = 12
+internal_DEFAULT_CFF_FONT_MATRIX: CFFMatrix = (0.001, 0.0, 0.0, 0.001, 0.0, 0.0)
+
+# Appendix B of the CFF specification assigns the non-.notdef entries of the
+# predefined ExpertEncoding to the Expert charset names in this order. Keeping
+# only the occupied codes lets the authoritative names continue to come from
+# vendored fontTools instead of duplicating another 165-name table here.
+internal_CFF_EXPERT_ENCODING_CODES = tuple(
+    code
+    for code in (*range(32, 127), *range(161, 256))
+    if code
+    not in {
+        35,
+        64,
+        70,
+        71,
+        72,
+        74,
+        75,
+        80,
+        81,
+        85,
+        92,
+        164,
+        165,
+        171,
+        173,
+        174,
+        176,
+        177,
+        180,
+        181,
+        185,
+        186,
+        187,
+        198,
+        199,
+    }
+)
+assert len(internal_CFF_EXPERT_ENCODING_CODES) == len(cffIExpertStrings) - 1
+
+
+def internal_cff_font_matrix(
+    font_dict: dict[int | tuple[int, int], list[float]],
+) -> CFFMatrix | None:
+    values = font_dict.get((12, 7))
+    if not isinstance(values, list) or len(values) != 6:
+        return None
+    try:
+        a, b, c, d, e, f = (float(value) for value in values)
+    except (TypeError, ValueError):
+        return None
+    matrix = (a, b, c, d, e, f)
+    return matrix if all(isfinite(value) for value in matrix) else None
+
+
+def internal_compose_cff_matrices(outer: CFFMatrix, inner: CFFMatrix) -> CFFMatrix:
+    """Compose CFF matrices so that ``inner`` is applied before ``outer``."""
+    oa, ob, oc, od, oe, of = outer
+    ia, ib, ic, id_, ie, if_ = inner
+    return (
+        oa * ia + oc * ib,
+        ob * ia + od * ib,
+        oa * ic + oc * id_,
+        ob * ic + od * id_,
+        oa * ie + oc * if_ + oe,
+        ob * ie + od * if_ + of,
+    )
 
 
 class CFFFont:
@@ -140,6 +130,7 @@ class CFFFont:
         "global_subrs",
         "local_subrs",
         "fd_select",
+        "font_dicts",
         "internal_glyph_geometry_cache",
     )
 
@@ -154,6 +145,7 @@ class CFFFont:
             self.global_subrs: tuple[bytes, ...] = ()
             self.local_subrs: tuple[tuple[bytes, ...], ...] = ()
             self.fd_select: tuple[int, ...] = ()
+            self.font_dicts: tuple[dict[int | tuple[int, int], list[float]], ...] = ()
             self.internal_glyph_geometry_cache: dict[
                 int,
                 tuple[
@@ -192,6 +184,7 @@ class CFFFont:
             len(self.charstrings),
         )
         self.fd_select = self.internal_read_fd_select()
+        self.font_dicts = self.internal_read_font_dicts()
         self.local_subrs = self.internal_read_local_subrs()
         self.internal_glyph_geometry_cache = {}
 
@@ -286,6 +279,10 @@ class CFFFont:
                     parts.append("e")
                 elif nibble == 12:
                     parts.append("e-")
+                elif nibble == 13:
+                    # 0xd is reserved by the CFF real-number encoding. Treating
+                    # it as whitespace silently joins the surrounding digits.
+                    raise ValueError("invalid CFF real number")
                 elif nibble == 14:
                     parts.append("-")
         raise ValueError("invalid CFF real number")
@@ -315,8 +312,30 @@ class CFFFont:
     def internal_read_charset(self, pos: int, glyph_count: int) -> dict[int, int]:
         if glyph_count <= 0:
             return {}
-        if glyph_count == 1 or pos in {0, 1, 2}:
-            return {gid: gid for gid in range(glyph_count)}
+        if self.is_cid_keyed and pos in {0, 1, 2}:
+            # Section 18 explicitly forbids predefined charsets for CIDFonts:
+            # their charset values are CIDs, not the SIDs in these tables.
+            raise ValueError("CID-keyed CFF font uses a predefined charset")
+        if glyph_count == 1:
+            return {0: 0}
+        glyph_names: list[str] | None
+        match pos:
+            case 0:
+                glyph_names = cffISOAdobeStrings
+            case 1:
+                glyph_names = cffIExpertStrings
+            case 2:
+                glyph_names = cffExpertSubsetStrings
+            case _:
+                glyph_names = None
+        if glyph_names is not None:
+            # Predefined charsets are name/SID sequences in GID order, not
+            # identity SID-to-GID maps. Malformed fonts that declare more
+            # glyphs than the selected charset simply leave the excess GIDs
+            # unreachable by name.
+            return {
+                STANDARD_GLYPH_SIDS[name]: gid for gid, name in enumerate(glyph_names[:glyph_count])
+            }
         data = self.data
         if pos >= len(data):
             return {gid: gid for gid in range(glyph_count)}
@@ -432,8 +451,8 @@ class CFFFont:
         """Return the font program's own code -> glyph name encoding.
 
         9.6.6.1 makes this the encoding in force when the PDF font dictionary
-        supplies none. An empty result means the font uses one of the
-        predefined encodings, which the caller already applies by name.
+        supplies none. StandardEncoding may be left to the caller's standard
+        fallback, while predefined ExpertEncoding is exposed explicitly.
         """
         if self.is_cid_keyed:
             # A CIDFont specifies no encoding (CFF specification, section 12).
@@ -442,9 +461,20 @@ class CFFFont:
         if not isinstance(operand, (int, float)):
             return {}
         offset = int(operand)
-        if offset in (0, 1):
-            # Predefined: 0 is Standard and 1 is Expert.
+        if offset == 0:
+            # The caller already applies StandardEncoding as its implicit base.
             return {}
+        if offset == 1:
+            sid_to_gid = self.cid_to_gid
+            return {
+                code: name
+                for code, name in zip(
+                    internal_CFF_EXPERT_ENCODING_CODES,
+                    cffIExpertStrings[1:],
+                    strict=True,
+                )
+                if STANDARD_GLYPH_SIDS[name] in sid_to_gid
+            }
         sid_to_name = {sid: name for name, sid in STANDARD_GLYPH_SIDS.items()}
         sid_to_name.update({sid: name for name, sid in self.custom_string_sids.items()})
         gid_to_name = {
@@ -456,6 +486,21 @@ class CFFFont:
             if name is not None and name != ".notdef":
                 encoding[code] = name
         return encoding
+
+    def builtin_encoding_is_authoritative(self) -> bool:
+        """Return whether the CFF encoding completely governs its code space.
+
+        StandardEncoding is already represented by the decoder's named base.
+        ExpertEncoding and custom encodings are authoritative even when a
+        subset happens to expose no encoded glyphs: all unspecified codes are
+        unencoded rather than inherited from StandardEncoding.
+        """
+        if self.is_cid_keyed:
+            return False
+        operand = self.top_dict.get(16, [0])[0]
+        if not isinstance(operand, (int, float)):
+            return False
+        return int(operand) != 0
 
     def glyph_id_for_cid(self, cid: int) -> int:
         if self.is_cid_keyed:
@@ -557,6 +602,68 @@ class CFFFont:
             return self.local_subrs[fd_index]
         return ()
 
+    def internal_font_matrix(self) -> tuple[float, float, float, float, float, float]:
+        default = (0.001, 0.0, 0.0, 0.001, 0.0, 0.0)
+        values = self.top_dict.get((12, 7))
+        if not isinstance(values, list) or len(values) != 6:
+            return default
+        matrix = tuple(float(value) for value in values)
+        if not all(isfinite(value) for value in matrix):
+            return default
+        return matrix  # type: ignore[return-value]
+
+    def internal_normalize_contours(
+        self,
+        contours: tuple[tuple[tuple[float, float], ...], ...],
+    ) -> tuple[tuple[tuple[float, float], ...], ...]:
+        matrix = self.internal_font_matrix()
+        if matrix == (0.001, 0.0, 0.0, 0.001, 0.0, 0.0):
+            return contours
+        a, b, c, d, e, f = matrix
+        return tuple(
+            tuple(
+                (
+                    (x * a + y * c + e) * 1000.0,
+                    (x * b + y * d + f) * 1000.0,
+                )
+                for x, y in contour
+            )
+            for contour in contours
+        )
+
+    def internal_seac_contours(
+        self,
+        base_code: int,
+        accent_code: int,
+        accent_dx: float,
+        accent_dy: float,
+    ) -> tuple[tuple[tuple[float, float], ...], ...]:
+        """Resolve deprecated endchar components in raw charstring coordinates."""
+        if self.is_cid_keyed:
+            return ()
+        contours: list[tuple[tuple[float, float], ...]] = []
+        for code, offset_x, offset_y in (
+            (base_code, 0.0, 0.0),
+            (accent_code, accent_dx, accent_dy),
+        ):
+            if not 0 <= code < len(StandardEncoding):
+                continue
+            sid = STANDARD_GLYPH_SIDS.get(StandardEncoding[code])
+            glyph_id = self.cid_to_gid.get(sid) if sid is not None else None
+            if glyph_id is None or not 0 <= glyph_id < len(self.charstrings):
+                continue
+            component_contours, ignored_bbox = internal_type2_glyph_geometry_impl(
+                self.charstrings[glyph_id],
+                local_subrs=self.local_subrs_for_glyph(glyph_id),
+                global_subrs=self.global_subrs,
+                collect_contours=True,
+            )
+            contours.extend(
+                tuple((x + offset_x, y + offset_y) for x, y in contour)
+                for contour in component_contours
+            )
+        return tuple(contours)
+
     def internal_glyph_geometry_for_gid(
         self, glyph_id: int
     ) -> tuple[
@@ -575,13 +682,17 @@ class CFFFont:
         except IndexError:
             geometry = ((), None)
         else:
-            contours, bbox = internal_type2_glyph_geometry_impl(
+            contours, ignored_bbox = internal_type2_glyph_geometry_impl(
                 charstring,
                 local_subrs=self.local_subrs_for_glyph(glyph_id),
                 global_subrs=self.global_subrs,
                 collect_contours=True,
+                seac_resolver=self.internal_seac_contours,
             )
-            geometry = (tuple(tuple(contour) for contour in contours), bbox)
+            normalized = self.internal_normalize_contours(
+                tuple(tuple(contour) for contour in contours)
+            )
+            geometry = (normalized, internal_contours_bbox(normalized))
         if len(self.internal_glyph_geometry_cache) >= 512:
             self.internal_glyph_geometry_cache.clear()
         self.internal_glyph_geometry_cache[glyph_id] = geometry
@@ -618,8 +729,28 @@ class CFFFont:
         return geometry[1]
 
     def glyph_contours_for_gid(self, glyph_id: int) -> tuple[tuple[tuple[float, float], ...], ...]:
-        """Return the Type 2 outline in its native 1000-unit glyph space."""
+        """Return the Type 2 outline normalized into PDF's 1000-unit glyph space."""
         return self.internal_glyph_geometry_for_gid(glyph_id)[0]
+
+    def normalized_glyph_contours(
+        self, glyph_id: int
+    ) -> tuple[tuple[tuple[float, float], ...], ...]:
+        """Return contours through the shared embedded-program geometry contract."""
+        return self.glyph_contours_for_gid(glyph_id)
+
+
+def internal_contours_bbox(
+    contours: tuple[tuple[tuple[float, float], ...], ...],
+) -> tuple[float, float, float, float] | None:
+    points = tuple(point for contour in contours for point in contour)
+    if not points:
+        return None
+    return (
+        min(point[0] for point in points),
+        min(point[1] for point in points),
+        max(point[0] for point in points),
+        max(point[1] for point in points),
+    )
 
 
 def internal_feature_from_contours(
@@ -655,14 +786,173 @@ def internal_feature_from_contours(
     return CFFGlyphFeature(tuple(sorted(cells)), round(width / height, 2), len(contours), bitmap)
 
 
-def internal_type2_glyph_geometry_impl(
+def internal_cubic_extrema_times(p0: float, p1: float, p2: float, p3: float) -> tuple[float, ...]:
+    """Return the interior extrema parameters of one cubic coordinate."""
+    a = -p0 + 3.0 * p1 - 3.0 * p2 + p3
+    b = 2.0 * (p0 - 2.0 * p1 + p2)
+    c = p1 - p0
+    epsilon = 1e-12
+    if abs(a) <= epsilon:
+        if abs(b) <= epsilon:
+            return ()
+        root = -c / b
+        return (root,) if 0.0 < root < 1.0 else ()
+    discriminant = b * b - 4.0 * a * c
+    if discriminant < 0.0:
+        return ()
+    root_delta = sqrt(discriminant)
+    roots = ((-b - root_delta) / (2.0 * a), (-b + root_delta) / (2.0 * a))
+    return tuple(dict.fromkeys(root for root in roots if 0.0 < root < 1.0))
+
+
+def internal_cubic_point(
+    p0: tuple[float, float],
+    p1: tuple[float, float],
+    p2: tuple[float, float],
+    p3: tuple[float, float],
+    t: float,
+) -> tuple[float, float]:
+    mt = 1.0 - t
+    return (
+        mt**3 * p0[0] + 3.0 * mt * mt * t * p1[0] + 3.0 * mt * t * t * p2[0] + t**3 * p3[0],
+        mt**3 * p0[1] + 3.0 * mt * mt * t * p1[1] + 3.0 * mt * t * t * p2[1] + t**3 * p3[1],
+    )
+
+
+def internal_cubic_is_flat(
+    p0: tuple[float, float],
+    p1: tuple[float, float],
+    p2: tuple[float, float],
+    p3: tuple[float, float],
+) -> bool:
+    dx = p3[0] - p0[0]
+    dy = p3[1] - p0[1]
+    chord_squared = dx * dx + dy * dy
+    tolerance_squared = internal_CUBIC_FLATNESS * internal_CUBIC_FLATNESS
+    if chord_squared <= 1e-18:
+        return (
+            max(
+                (p1[0] - p0[0]) ** 2 + (p1[1] - p0[1]) ** 2,
+                (p2[0] - p0[0]) ** 2 + (p2[1] - p0[1]) ** 2,
+            )
+            <= tolerance_squared
+        )
+    cross1 = dx * (p1[1] - p0[1]) - dy * (p1[0] - p0[0])
+    cross2 = dx * (p2[1] - p0[1]) - dy * (p2[0] - p0[0])
+    return max(cross1 * cross1, cross2 * cross2) <= tolerance_squared * chord_squared
+
+
+def internal_cubic_sample_times(
+    p0: tuple[float, float],
+    p1: tuple[float, float],
+    p2: tuple[float, float],
+    p3: tuple[float, float],
+) -> tuple[float, ...]:
+    """Adaptively flatten a cubic while retaining its exact coordinate extrema."""
+    times = {
+        1.0,
+        *internal_cubic_extrema_times(p0[0], p1[0], p2[0], p3[0]),
+        *internal_cubic_extrema_times(p0[1], p1[1], p2[1], p3[1]),
+    }
+
+    def subdivide(
+        start: tuple[float, float],
+        control1: tuple[float, float],
+        control2: tuple[float, float],
+        end: tuple[float, float],
+        start_t: float,
+        end_t: float,
+        depth: int,
+    ) -> None:
+        if depth >= internal_CUBIC_MAX_DEPTH or internal_cubic_is_flat(
+            start, control1, control2, end
+        ):
+            times.add(end_t)
+            return
+        point01 = ((start[0] + control1[0]) / 2.0, (start[1] + control1[1]) / 2.0)
+        point12 = (
+            (control1[0] + control2[0]) / 2.0,
+            (control1[1] + control2[1]) / 2.0,
+        )
+        point23 = ((control2[0] + end[0]) / 2.0, (control2[1] + end[1]) / 2.0)
+        point012 = ((point01[0] + point12[0]) / 2.0, (point01[1] + point12[1]) / 2.0)
+        point123 = ((point12[0] + point23[0]) / 2.0, (point12[1] + point23[1]) / 2.0)
+        midpoint = (
+            (point012[0] + point123[0]) / 2.0,
+            (point012[1] + point123[1]) / 2.0,
+        )
+        middle_t = (start_t + end_t) / 2.0
+        subdivide(start, point01, point012, midpoint, start_t, middle_t, depth + 1)
+        subdivide(midpoint, point123, point23, end, middle_t, end_t, depth + 1)
+
+    subdivide(p0, p1, p2, p3, 0.0, 1.0, 0)
+    return tuple(sorted(times))
+
+
+def internal_execute_type2_flex(
+    operator: int,
+    operands: list[float],
+    curve: Callable[[float, float, float, float, float, float], None],
+) -> None:
+    """Execute one of the four escaped Type 2 flex operators."""
+    match operator:
+        case 34:  # hflex
+            dx1, dx2, dy2, dx3, dx4, dx5, dx6 = operands
+            curve(dx1, 0.0, dx2, dy2, dx3, 0.0)
+            curve(dx4, 0.0, dx5, -dy2, dx6, 0.0)
+        case 35:  # flex
+            (
+                dx1,
+                dy1,
+                dx2,
+                dy2,
+                dx3,
+                dy3,
+                dx4,
+                dy4,
+                dx5,
+                dy5,
+                dx6,
+                dy6,
+                ignored_flex_depth,
+            ) = operands
+            curve(dx1, dy1, dx2, dy2, dx3, dy3)
+            curve(dx4, dy4, dx5, dy5, dx6, dy6)
+        case 36:  # hflex1
+            dx1, dy1, dx2, dy2, dx3, dx4, dx5, dy5, dx6 = operands
+            dy6 = -(dy1 + dy2 + dy5)
+            curve(dx1, dy1, dx2, dy2, dx3, 0.0)
+            curve(dx4, 0.0, dx5, dy5, dx6, dy6)
+        case 37:  # flex1
+            dx1, dy1, dx2, dy2, dx3, dy3, dx4, dy4, dx5, dy5, d6 = operands
+            dx = dx1 + dx2 + dx3 + dx4 + dx5
+            dy = dy1 + dy2 + dy3 + dy4 + dy5
+            if abs(dx) > abs(dy):
+                dx6, dy6 = d6, -dy
+            else:
+                dx6, dy6 = -dx, d6
+            curve(dx1, dy1, dx2, dy2, dx3, dy3)
+            curve(dx4, dy4, dx5, dy5, dx6, dy6)
+        case _:
+            raise ValueError("invalid Type 2 flex operator")
+
+
+def internal_type2_glyph_geometry_impl(  # noqa: C901 - direct dispatch mirrors Type 2's spec table
     charstring: bytes,
     *,
     local_subrs: tuple[bytes, ...],
     global_subrs: tuple[bytes, ...],
     collect_contours: bool,
+    seac_resolver: (
+        Callable[
+            [int, int, float, float],
+            tuple[tuple[tuple[float, float], ...], ...],
+        ]
+        | None
+    ) = None,
 ) -> tuple[list[list[tuple[float, float]]], tuple[float, float, float, float] | None]:
     stack: list[float] = []
+    transient = [0.0] * internal_TYPE2_TRANSIENT_SIZE
     contours: list[list[tuple[float, float]]] = []
     current: list[tuple[float, float]] = []
     current_min_x = inf
@@ -678,6 +968,8 @@ def internal_type2_glyph_geometry_impl(
     x = 0.0
     y = 0.0
     stem_count = 0
+    width_resolved = False
+    random_state = internal_TYPE2_RANDOM_INITIAL_STATE
     subr_bias = internal_type2_subr_bias(len(local_subrs))
     gsubr_bias = internal_type2_subr_bias(len(global_subrs))
 
@@ -700,6 +992,18 @@ def internal_type2_glyph_geometry_impl(
             current_max_x = -inf
             current_max_y = -inf
             current_has_points = False
+
+    def append_completed_contour(points: tuple[tuple[float, float], ...]) -> None:
+        nonlocal bbox_min_x, bbox_min_y, bbox_max_x, bbox_max_y, bbox_has_points
+        if not points:
+            return
+        if collect_contours:
+            contours.append(list(points))
+        bbox_min_x = min(bbox_min_x, *(point[0] for point in points))
+        bbox_min_y = min(bbox_min_y, *(point[1] for point in points))
+        bbox_max_x = max(bbox_max_x, *(point[0] for point in points))
+        bbox_max_y = max(bbox_max_y, *(point[1] for point in points))
+        bbox_has_points = True
 
     def record_point(px: float, py: float) -> None:
         nonlocal current_min_x, current_min_y, current_max_x, current_max_y
@@ -727,22 +1031,119 @@ def internal_type2_glyph_geometry_impl(
 
     def curve(dx1: float, dy1: float, dx2: float, dy2: float, dx3: float, dy3: float) -> None:
         nonlocal x, y
-        x0, y0 = x, y
-        x1, y1 = x + dx1, y + dy1
-        x2, y2 = x1 + dx2, y1 + dy2
-        x3, y3 = x2 + dx3, y2 + dy3
-        for t in (0.25, 0.5, 0.75, 1.0):
-            mt = 1.0 - t
-            record_point(
-                mt**3 * x0 + 3 * mt * mt * t * x1 + 3 * mt * t * t * x2 + t**3 * x3,
-                mt**3 * y0 + 3 * mt * mt * t * y1 + 3 * mt * t * t * y2 + t**3 * y3,
-            )
-        x, y = x3, y3
+        point0 = (x, y)
+        point1 = (x + dx1, y + dy1)
+        point2 = (point1[0] + dx2, point1[1] + dy2)
+        point3 = (point2[0] + dx3, point2[1] + dy3)
+        for t in internal_cubic_sample_times(point0, point1, point2, point3):
+            record_point(*internal_cubic_point(point0, point1, point2, point3, t))
+        x, y = point3
 
     def clear_stack() -> None:
         del stack[:]
 
-    def execute(program: bytes, depth: int = 0) -> bool:
+    def push(value: float) -> None:
+        if len(stack) >= internal_TYPE2_MAX_STACK or not isfinite(value):
+            raise ValueError("invalid Type 2 operand stack")
+        stack.append(float(value))
+
+    def require_integer(value: float) -> int:
+        integer = int(value)
+        if value != integer:
+            raise ValueError("Type 2 operator requires an integer")
+        return integer
+
+    def pop_integer() -> int:
+        return require_integer(stack.pop())
+
+    def execute_escaped_operator(operator: int) -> None:
+        nonlocal random_state
+        match operator:
+            case 0:  # dotsection -- deprecated no-op with a clearing stack contract
+                clear_stack()
+            case 3:  # and
+                second = stack.pop()
+                first = stack.pop()
+                push(float(first != 0.0 and second != 0.0))
+            case 4:  # or
+                second = stack.pop()
+                first = stack.pop()
+                push(float(first != 0.0 or second != 0.0))
+            case 5:  # not
+                push(float(stack.pop() == 0.0))
+            case 9:  # abs
+                push(abs(stack.pop()))
+            case 10:  # add
+                second = stack.pop()
+                push(stack.pop() + second)
+            case 11:  # sub
+                second = stack.pop()
+                push(stack.pop() - second)
+            case 12:  # div
+                second = stack.pop()
+                push(stack.pop() / second)
+            case 14:  # neg
+                push(-stack.pop())
+            case 15:  # eq
+                second = stack.pop()
+                push(float(stack.pop() == second))
+            case 18:  # drop
+                stack.pop()
+            case 20:  # put
+                index = pop_integer()
+                value = stack.pop()
+                if not 0 <= index < len(transient):
+                    raise ValueError("invalid Type 2 transient-array index")
+                transient[index] = value
+            case 21:  # get
+                index = pop_integer()
+                if not 0 <= index < len(transient):
+                    raise ValueError("invalid Type 2 transient-array index")
+                push(transient[index])
+            case 22:  # ifelse
+                value2 = stack.pop()
+                value1 = stack.pop()
+                choice2 = stack.pop()
+                choice1 = stack.pop()
+                push(choice1 if value1 <= value2 else choice2)
+            case 23:  # random
+                random_state = (1103515245 * random_state + 12345) & 0x7FFFFFFF
+                push((random_state + 1) / 0x80000000)
+            case 24:  # mul
+                second = stack.pop()
+                push(stack.pop() * second)
+            case 26:  # sqrt
+                push(sqrt(stack.pop()))
+            case 27:  # dup
+                push(stack[-1])
+            case 28:  # exch
+                stack[-1], stack[-2] = stack[-2], stack[-1]
+            case 29:  # index
+                index = max(pop_integer(), 0)
+                if index >= len(stack):
+                    raise ValueError("invalid Type 2 stack index")
+                push(stack[-index - 1])
+            case 30:  # roll
+                shift = pop_integer()
+                count = pop_integer()
+                if count < 0 or count > len(stack):
+                    raise ValueError("invalid Type 2 roll count")
+                if count:
+                    shift %= count
+                    if shift:
+                        values = stack[-count:]
+                        stack[-count:] = values[-shift:] + values[:-shift]
+            case 34 | 35 | 36 | 37:  # hflex / flex / hflex1 / flex1
+                if not current_has_points:
+                    raise ValueError("Type 2 flex operator has no current point")
+                internal_execute_type2_flex(operator, stack, curve)
+                clear_stack()
+            case _:
+                raise ValueError("unsupported Type 2 escaped operator")
+
+    def execute(  # noqa: C901 - keeping operator cases together makes the bytecode contract auditable
+        program: bytes, depth: int = 0
+    ) -> bool:
         """Interpret one Type 2 charstring, appending to the enclosing contour state.
 
         Returns whether the caller still owns an unflushed contour: ``True`` when the
@@ -754,7 +1155,7 @@ def internal_type2_glyph_geometry_impl(
         operator's spec name. Operands are values above 31, plus 28 (a two-byte
         integer) and 255 (a 16.16 fixed-point number).
         """
-        nonlocal stem_count
+        nonlocal stem_count, width_resolved
         if depth > TYPE2_MAX_SUBR_DEPTH:
             return False
         pos = 0
@@ -763,123 +1164,214 @@ def internal_type2_glyph_geometry_impl(
                 byte = program[pos]
                 if byte > 31 or byte in {28, 255}:
                     value, pos = CFFFont.internal_parse_number(program, pos)
-                    stack.append(value)
+                    push(value)
                     continue
                 pos += 1
-                if byte in (1, 3, 18, 23):  # hstem, vstem, hstemhm, vstemhm
-                    stem_count += len(stack) // 2
-                    clear_stack()
-                elif byte in (19, 20):  # hintmask, cntrmask -- skip the trailing mask bytes
-                    stem_count += len(stack) // 2
-                    clear_stack()
-                    pos += (stem_count + 7) // 8
-                elif byte == 4:  # vmoveto
-                    if len(stack) > 1:
-                        del stack[:-1]
-                    move(0.0, stack[-1] if stack else 0.0)
-                    clear_stack()
-                elif byte == 21:  # rmoveto
-                    if len(stack) > 2:
-                        del stack[:-2]
-                    dx = stack[-2] if len(stack) >= 2 else 0.0
-                    dy = stack[-1] if stack else 0.0
-                    move(dx, dy)
-                    clear_stack()
-                elif byte == 22:  # hmoveto
-                    if len(stack) > 1:
-                        del stack[:-1]
-                    move(stack[-1] if stack else 0.0, 0.0)
-                    clear_stack()
-                elif byte == 5:  # rlineto
-                    for i in range(0, len(stack) - 1, 2):
-                        line(stack[i], stack[i + 1])
-                    clear_stack()
-                elif byte == 6:  # hlineto -- alternates horizontal/vertical
-                    horizontal = True
-                    for value in stack:
-                        line(value, 0.0) if horizontal else line(0.0, value)
-                        horizontal = not horizontal
-                    clear_stack()
-                elif byte == 7:  # vlineto -- alternates vertical/horizontal
-                    vertical = True
-                    for value in stack:
-                        line(0.0, value) if vertical else line(value, 0.0)
-                        vertical = not vertical
-                    clear_stack()
-                elif byte == 8:  # rrcurveto
-                    for i in range(0, len(stack) - 5, 6):
-                        curve(*stack[i : i + 6])
-                    clear_stack()
-                elif byte == 10:  # callsubr (local)
-                    if stack:
-                        subr_index = int(stack.pop()) + subr_bias
-                        if 0 <= subr_index < len(local_subrs) and not execute(
+                match byte:
+                    case 1 | 3 | 18 | 23:  # hstem, vstem, hstemhm, vstemhm
+                        operand_count = len(stack)
+                        if not width_resolved and operand_count % 2:
+                            operand_count -= 1
+                        if operand_count < 2 or operand_count % 2:
+                            return False
+                        stem_count += operand_count // 2
+                        if stem_count > 96:
+                            return False
+                        width_resolved = True
+                        clear_stack()
+                    case 4:  # vmoveto
+                        if len(stack) == 1:
+                            dy = stack[0]
+                        elif not width_resolved and len(stack) == 2:
+                            dy = stack[1]
+                        else:
+                            return False
+                        width_resolved = True
+                        move(0.0, dy)
+                        clear_stack()
+                    case 5:  # rlineto
+                        if not current_has_points or len(stack) < 2 or len(stack) % 2:
+                            return False
+                        for i in range(0, len(stack) - 1, 2):
+                            line(stack[i], stack[i + 1])
+                        clear_stack()
+                    case 6:  # hlineto -- alternates horizontal/vertical
+                        if not current_has_points or not stack:
+                            return False
+                        horizontal = True
+                        for value in stack:
+                            line(value, 0.0) if horizontal else line(0.0, value)
+                            horizontal = not horizontal
+                        clear_stack()
+                    case 7:  # vlineto -- alternates vertical/horizontal
+                        if not current_has_points or not stack:
+                            return False
+                        vertical = True
+                        for value in stack:
+                            line(0.0, value) if vertical else line(value, 0.0)
+                            vertical = not vertical
+                        clear_stack()
+                    case 8:  # rrcurveto
+                        if not current_has_points or len(stack) < 6 or len(stack) % 6:
+                            return False
+                        for i in range(0, len(stack) - 5, 6):
+                            curve(*stack[i : i + 6])
+                        clear_stack()
+                    case 10:  # callsubr (local)
+                        if not stack:
+                            return False
+                        subr_index = pop_integer() + subr_bias
+                        if not 0 <= subr_index < len(local_subrs) or not execute(
                             local_subrs[subr_index], depth + 1
                         ):
                             return False
-                elif byte == 11:  # return -- leave this subroutine, caller keeps going
-                    return True
-                elif byte == 14:  # endchar -- glyph complete
-                    flush_contour()
-                    return False
-                elif byte == 24:  # rcurveline -- lines then one curve
-                    line_count = len(stack) - 6
-                    for i in range(0, line_count - 1, 2):
-                        line(stack[i], stack[i + 1])
-                    if line_count >= 0:
-                        curve(*stack[line_count : line_count + 6])
-                    clear_stack()
-                elif byte == 25:  # rlinecurve -- lines then curves
-                    line_count = len(stack) % 6
-                    for i in range(0, line_count - 1, 2):
-                        line(stack[i], stack[i + 1])
-                    for i in range(line_count, len(stack) - 5, 6):
-                        curve(*stack[i : i + 6])
-                    clear_stack()
-                elif byte == 26:  # vvcurveto
-                    if len(stack) % 2:
-                        line(stack.pop(0), 0.0)
-                    for i in range(0, len(stack) - 3, 4):
-                        curve(0.0, stack[i], stack[i + 1], stack[i + 2], 0.0, stack[i + 3])
-                    clear_stack()
-                elif byte == 27:  # hhcurveto
-                    if len(stack) % 2:
-                        line(0.0, stack.pop(0))
-                    for i in range(0, len(stack) - 3, 4):
-                        curve(stack[i], 0.0, stack[i + 1], stack[i + 2], stack[i + 3], 0.0)
-                    clear_stack()
-                elif byte == 29:  # callgsubr (global)
-                    if stack:
-                        subr_index = int(stack.pop()) + gsubr_bias
-                        if 0 <= subr_index < len(global_subrs) and not execute(
+                    case 11:  # return -- leave this subroutine, caller keeps going
+                        return True
+                    case 12:  # two-byte escaped operator
+                        if pos >= len(program):
+                            return False
+                        escaped_operator = program[pos]
+                        pos += 1
+                        execute_escaped_operator(escaped_operator)
+                    case 14:  # endchar -- glyph complete
+                        arguments = list(stack)
+                        if not width_resolved:
+                            if len(arguments) in {1, 5}:
+                                arguments = arguments[1:]
+                            elif len(arguments) not in {0, 4}:
+                                return False
+                            width_resolved = True
+                        elif len(arguments) not in {0, 4}:
+                            return False
+                        clear_stack()
+                        flush_contour()
+                        if arguments and seac_resolver is not None:
+                            base_code = require_integer(arguments[2])
+                            accent_code = require_integer(arguments[3])
+                            for component in seac_resolver(
+                                base_code,
+                                accent_code,
+                                arguments[0],
+                                arguments[1],
+                            ):
+                                append_completed_contour(component)
+                        return False
+                    case 19 | 20:  # hintmask, cntrmask -- skip trailing mask bytes
+                        operand_count = len(stack)
+                        if not width_resolved and operand_count % 2:
+                            operand_count -= 1
+                        if operand_count % 2:
+                            return False
+                        stem_count += operand_count // 2
+                        if stem_count <= 0 or stem_count > 96:
+                            return False
+                        mask_bytes = (stem_count + 7) // 8
+                        if pos + mask_bytes > len(program):
+                            return False
+                        width_resolved = True
+                        clear_stack()
+                        pos += mask_bytes
+                    case 21:  # rmoveto
+                        if len(stack) == 2:
+                            dx, dy = stack
+                        elif not width_resolved and len(stack) == 3:
+                            dx, dy = stack[1:]
+                        else:
+                            return False
+                        width_resolved = True
+                        move(dx, dy)
+                        clear_stack()
+                    case 22:  # hmoveto
+                        if len(stack) == 1:
+                            dx = stack[0]
+                        elif not width_resolved and len(stack) == 2:
+                            dx = stack[1]
+                        else:
+                            return False
+                        width_resolved = True
+                        move(dx, 0.0)
+                        clear_stack()
+                    case 24:  # rcurveline -- curves followed by exactly one line
+                        if not current_has_points or len(stack) < 8 or (len(stack) - 2) % 6:
+                            return False
+                        curve_args = stack[:-2]
+                        for i in range(0, len(curve_args) - 5, 6):
+                            curve(*curve_args[i : i + 6])
+                        line(stack[-2], stack[-1])
+                        clear_stack()
+                    case 25:  # rlinecurve -- lines followed by exactly one curve
+                        if not current_has_points or len(stack) < 8 or (len(stack) - 6) % 2:
+                            return False
+                        line_args = stack[:-6]
+                        for i in range(0, len(line_args) - 1, 2):
+                            line(line_args[i], line_args[i + 1])
+                        curve(*stack[-6:])
+                        clear_stack()
+                    case 26:  # vvcurveto
+                        if not current_has_points or len(stack) < 4 or len(stack) % 4 not in {0, 1}:
+                            return False
+                        dx1 = stack.pop(0) if len(stack) % 2 else 0.0
+                        for i in range(0, len(stack) - 3, 4):
+                            curve(
+                                dx1,
+                                stack[i],
+                                stack[i + 1],
+                                stack[i + 2],
+                                0.0,
+                                stack[i + 3],
+                            )
+                            dx1 = 0.0
+                        clear_stack()
+                    case 27:  # hhcurveto
+                        if not current_has_points or len(stack) < 4 or len(stack) % 4 not in {0, 1}:
+                            return False
+                        dy1 = stack.pop(0) if len(stack) % 2 else 0.0
+                        for i in range(0, len(stack) - 3, 4):
+                            curve(
+                                stack[i],
+                                dy1,
+                                stack[i + 1],
+                                stack[i + 2],
+                                stack[i + 3],
+                                0.0,
+                            )
+                            dy1 = 0.0
+                        clear_stack()
+                    case 29:  # callgsubr (global)
+                        if not stack:
+                            return False
+                        subr_index = pop_integer() + gsubr_bias
+                        if not 0 <= subr_index < len(global_subrs) or not execute(
                             global_subrs[subr_index], depth + 1
                         ):
                             return False
-                elif byte in (30, 31):  # vhcurveto / hvcurveto -- alternating tangents
-                    horizontal = byte == 31
-                    args = list(stack)
-                    clear_stack()
-                    while len(args) >= 4:
-                        if horizontal:  # this segment starts horizontal
-                            dx1 = args.pop(0)
-                            dy1 = 0.0
-                            dx2 = args.pop(0)
-                            dy2 = args.pop(0)
-                            dy3 = args.pop(0)
-                            dx3 = args.pop(0) if len(args) == 1 else 0.0
-                        else:  # this segment starts vertical
-                            dx1 = 0.0
-                            dy1 = args.pop(0)
-                            dx2 = args.pop(0)
-                            dy2 = args.pop(0)
-                            dx3 = args.pop(0)
-                            dy3 = args.pop(0) if len(args) == 1 else 0.0
-                        curve(dx1, dy1, dx2, dy2, dx3, dy3)
-                        horizontal = not horizontal
-                else:  # unrecognized operator -- drop its operands and continue
-                    clear_stack()
+                    case 30 | 31:  # vhcurveto / hvcurveto -- alternating tangents
+                        if not current_has_points or len(stack) < 4 or len(stack) % 4 not in {0, 1}:
+                            return False
+                        horizontal = byte == 31
+                        args = list(stack)
+                        clear_stack()
+                        while len(args) >= 4:
+                            if horizontal:  # this segment starts horizontal
+                                dx1 = args.pop(0)
+                                dy1 = 0.0
+                                dx2 = args.pop(0)
+                                dy2 = args.pop(0)
+                                dy3 = args.pop(0)
+                                dx3 = args.pop(0) if len(args) == 1 else 0.0
+                            else:  # this segment starts vertical
+                                dx1 = 0.0
+                                dy1 = args.pop(0)
+                                dx2 = args.pop(0)
+                                dy2 = args.pop(0)
+                                dx3 = args.pop(0)
+                                dy3 = args.pop(0) if len(args) == 1 else 0.0
+                            curve(dx1, dy1, dx2, dy2, dx3, dy3)
+                            horizontal = not horizontal
+                    case _:
+                        return False
             return True
-        except (IndexError, ValueError):
+        except (ArithmeticError, IndexError, ValueError):
             return False
 
     if not execute(charstring):

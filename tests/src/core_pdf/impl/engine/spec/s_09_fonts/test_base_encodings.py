@@ -19,8 +19,11 @@ from core_pdf.impl.engine.spec.s_09_fonts.data.base_encodings import (
 )
 from core_pdf.impl.engine.spec.s_09_fonts.glyphs import glyph_name_to_unicode
 from core_pdf.impl.engine.spec.s_09_fonts.helpers import (
+    MAC_ROMAN_ENCODING_GLYPH_NAMES,
     MAC_ROMAN_ENCODING_TABLE,
+    STANDARD_ENCODING_GLYPH_NAMES,
     STANDARD_ENCODING_TABLE,
+    WIN_ANSI_ENCODING_GLYPH_NAMES,
     WIN_ANSI_ENCODING_TABLE,
 )
 
@@ -112,3 +115,21 @@ def test_decode_tables_keep_raw_values_for_the_control_range() -> None:
     for table in (STANDARD_ENCODING_TABLE, WIN_ANSI_ENCODING_TABLE, MAC_ROMAN_ENCODING_TABLE):
         assert table[0x00] == "\x00"
         assert table[0x0C] == "\x0c"
+
+
+def test_glyph_name_tables_do_not_invent_names_for_undefined_controls() -> None:
+    for table in (
+        STANDARD_ENCODING_GLYPH_NAMES,
+        WIN_ANSI_ENCODING_GLYPH_NAMES,
+        MAC_ROMAN_ENCODING_GLYPH_NAMES,
+    ):
+        assert table[0] == ".notdef"
+        assert table[0x0C] == ".notdef"
+
+
+def test_glyph_name_tables_preserve_annex_d_names() -> None:
+    assert STANDARD_ENCODING_GLYPH_NAMES[0x27] == "quoteright"
+    assert WIN_ANSI_ENCODING_GLYPH_NAMES[0x80] == "Euro"
+    assert WIN_ANSI_ENCODING_GLYPH_NAMES[0xB2] == "twosuperior"
+    assert MAC_ROMAN_ENCODING_GLYPH_NAMES[0xBD] == "Omega"
+    assert MAC_ROMAN_ENCODING_GLYPH_NAMES[0xDB] == "currency"

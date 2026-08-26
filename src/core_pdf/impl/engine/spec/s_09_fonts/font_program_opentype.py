@@ -5,7 +5,9 @@ from __future__ import annotations
 from io import BytesIO
 from typing import Any
 
+from core_pdf._vendor.fontTools.pens.boundsPen import BoundsPen
 from core_pdf._vendor.fontTools.pens.recordingPen import DecomposingRecordingPen
+from core_pdf._vendor.fontTools.pens.transformPen import TransformPen
 from core_pdf._vendor.fontTools.ttLib import TTFont
 from core_pdf.impl.engine.spec.s_07_objects.coercion import normalize_pdf_name
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
@@ -13,7 +15,7 @@ from core_pdf.impl.engine.spec.s_09_fonts.font_program_truetype import (
     FONT_PROGRAM_ERRORS,
     internal_recording_to_contours,
 )
-from core_pdf.impl.engine.spec.s_09_fonts.raster_kernel import Point
+from core_pdf.impl.engine.spec.s_09_fonts.raster_kernel import Point, rasterize_contours
 from core_pdf.impl.engine.spec.s_09_fonts.widths import get_descendant
 from core_pdf.impl.objects import PdfStream
 
@@ -83,6 +85,31 @@ class OpenTypeFontProgram:
             self.internal_contour_cache.clear()
         self.internal_contour_cache[glyph_id] = result
         return result
+
+    def glyph_bbox_for_gid(self, glyph_id: int) -> tuple[float, float, float, float] | None:
+        try:
+            glyph_name = self.font.getGlyphName(glyph_id)
+            glyph_set = self.internal_glyph_set
+            if glyph_set is None:
+                glyph_set = self.font.getGlyphSet()
+                self.internal_glyph_set = glyph_set
+            bounds_pen = BoundsPen(glyph_set)
+            scale = 1000.0 / self.units_per_em if self.units_per_em else 1.0
+            normalized_pen = TransformPen(bounds_pen, (scale, 0.0, 0.0, scale, 0.0, 0.0))
+            glyph_set[glyph_name].draw(normalized_pen)
+        except FONT_PROGRAM_ERRORS:
+            return None
+        bounds = bounds_pen.bounds
+        if bounds is None:
+            return None
+        x_min, y_min, x_max, y_max = bounds
+        return (float(x_min), float(y_min), float(x_max), float(y_max))
+
+    def glyph_bitmap_for_gid(
+        self, glyph_id: int, *, width: int = 24, height: int = 32
+    ) -> tuple[int, ...]:
+        contours = self.normalized_glyph_contours(glyph_id)
+        return rasterize_contours(contours, width=width, height=height) if contours else ()
 
 
 def opentype_font_for_pdf_font(font: dict[str, object]) -> OpenTypeFontProgram | None:

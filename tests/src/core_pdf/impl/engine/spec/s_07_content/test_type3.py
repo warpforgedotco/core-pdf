@@ -47,15 +47,47 @@ def internal_drawing_signature(state: TextState) -> list[tuple[object, ...]]:
 
 
 def test_type3_names_include_base_encoding_and_differences() -> None:
-    decoder = SimpleNamespace(base_encoding="StandardEncoding")
-    names = type3_glyph_names(
-        {"Encoding": {"BaseEncoding": "StandardEncoding", "Differences": [65, PdfName(b"custom")]}},
-        decoder,
-    )
+    font = {
+        "Subtype": "Type3",
+        "Encoding": {
+            "BaseEncoding": "StandardEncoding",
+            "Differences": [65, PdfName(b"custom")],
+        },
+    }
+    names = type3_glyph_names(font, FontDecoder(font))
 
     assert names[32] == "space"
     assert names[65] == "custom"
     assert 1 not in names
+
+
+def test_type3_win_ansi_euro_char_proc_is_rendered() -> None:
+    stream = PdfStream(raw_data=b"500 0 d0 0 0 1 1 re f")
+    resolver = SimpleNamespace(
+        kw_cache={},
+        resolve=lambda value: value,
+        resolve_name=lambda value: None,
+    )
+    document = cast(Any, SimpleNamespace(resolver=resolver, decoder_cache={}))
+    state = TextState(document, {})
+    state.font_widths = (500.0,) * 256
+    font = {
+        "Subtype": "Type3",
+        "Encoding": "WinAnsiEncoding",
+        "CharProcs": {"Euro": stream},
+        "FontMatrix": [0.001, 0, 0, 0.001, 0, 0],
+    }
+    decoder = FontDecoder(font)
+
+    state._render_type3_glyphs_impl(b"\x80", decoder)
+
+    assert decoder.type3_glyph_names is not None
+    assert 0 not in decoder.type3_glyph_names
+    assert decoder.type3_glyph_names[128] == "Euro"
+    assert decoder.type3_charproc_cache[128] is not None
+    assert len(state.drawings) == 1
+    assert state.drawings[0].path is not None
+    assert state.drawings[0].path.bbox() == pytest.approx((0.0, 0.0, 0.001, 0.001))
 
 
 def test_type3_char_proc_compiles_once_and_replays_exactly() -> None:

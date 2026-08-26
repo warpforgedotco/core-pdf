@@ -108,7 +108,11 @@ class TrueTypeFontProgram:
         return self.glyph_to_unicode.get(gid, "")
 
     def glyph_bitmap(self, code: int, *, width: int = 24, height: int = 32) -> tuple[int, ...]:
-        gid = self.glyph_id_for_code(code)
+        return self.glyph_bitmap_for_gid(self.glyph_id_for_code(code), width=width, height=height)
+
+    def glyph_bitmap_for_gid(
+        self, gid: int, *, width: int = 24, height: int = 32
+    ) -> tuple[int, ...]:
         cache_key = (gid, width, height)
         cached = self.internal_glyph_bitmap_cache.get(cache_key)
         if cached is not None:
@@ -124,7 +128,9 @@ class TrueTypeFontProgram:
         return bitmap
 
     def glyph_bbox(self, code: int) -> tuple[float, float, float, float] | None:
-        gid = self.glyph_id_for_code(code)
+        return self.glyph_bbox_for_gid(self.glyph_id_for_code(code))
+
+    def glyph_bbox_for_gid(self, gid: int) -> tuple[float, float, float, float] | None:
         try:
             glyph_name = self.font.getGlyphName(gid)
             bbox = internal_glyph_bbox(self.font["glyf"], glyph_name)
@@ -377,25 +383,26 @@ def internal_recording_to_contours(
     current: Point | None = None
     start: Point | None = None
     for operator, operands in recording:
-        if operator == "moveTo":
-            if contour:
-                contours.append(internal_close_contour(contour))
-            start = internal_point(operands[0])
-            current = start
-            contour = [start]
-        elif operator == "lineTo" and current is not None:
-            current = internal_point(operands[0])
-            contour.append(current)
-        elif operator == "qCurveTo" and current is not None:
-            current = internal_append_quadratic(contour, current, start, operands)
-        elif operator == "curveTo" and current is not None:
-            current = internal_append_cubic(contour, current, operands)
-        elif operator in {"closePath", "endPath"}:
-            if contour:
-                contours.append(internal_close_contour(contour))
-                contour = []
-                current = None
-                start = None
+        match operator:
+            case "moveTo":
+                if contour:
+                    contours.append(internal_close_contour(contour))
+                start = internal_point(operands[0])
+                current = start
+                contour = [start]
+            case "lineTo" if current is not None:
+                current = internal_point(operands[0])
+                contour.append(current)
+            case "qCurveTo" if current is not None:
+                current = internal_append_quadratic(contour, current, start, operands)
+            case "curveTo" if current is not None:
+                current = internal_append_cubic(contour, current, operands)
+            case "closePath" | "endPath":
+                if contour:
+                    contours.append(internal_close_contour(contour))
+                    contour = []
+                    current = None
+                    start = None
     if contour:
         contours.append(internal_close_contour(contour))
     return [contour for contour in contours if len(contour) >= 3]

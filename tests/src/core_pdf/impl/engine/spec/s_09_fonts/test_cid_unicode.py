@@ -1,16 +1,13 @@
 from core_pdf.impl.engine.spec.s_09_fonts.cid_unicode import (
     CompactCMap,
-    remove_codes_covered_by_ranges,
+    internal_compact_cmap,
     resolve_cid_unicode_map,
 )
-from core_pdf.impl.engine.spec.s_09_fonts.cmap_ranges import CIDRange
+from core_pdf.impl.engine.spec.s_09_fonts.cmap_decoder import CMapDecoder
 
 
-def test_compact_cmap_preserves_explicit_and_later_range_precedence() -> None:
+def test_compact_cmap_returns_only_effective_codes() -> None:
     cmap = CompactCMap(
-        mappings_by_cid={300: (b"B",)},
-        mapped_codes=frozenset({b"B"}),
-        ranges=(CIDRange(b"A", b"C", 100), CIDRange(b"B", b"B", 200)),
         effective_codes_by_cid={100: (b"A",), 102: (b"C",), 300: (b"B",)},
     )
 
@@ -20,12 +17,55 @@ def test_compact_cmap_preserves_explicit_and_later_range_precedence() -> None:
     assert cmap.codes_for_cid(300) == (b"B",)
 
 
-def test_remove_codes_covered_by_ranges_handles_mixed_radix_range() -> None:
-    mappings = {b"\x81\x40": 1, b"\x81\x41": 2, b"\x82\x42": 3, b"\x82\x43": 4}
+def test_compact_cmap_uses_decoder_effective_usecmap_precedence() -> None:
+    parent = b"""
+        1 begincidchar <41> 100 endcidchar
+        1 begincidrange <42> <43> 200 endcidrange
+    """
+    child = b"""
+        /Parent usecmap
+        1 begincidchar <43> 400 endcidchar
+        1 begincidrange <41> <42> 300 endcidrange
+    """
+    decoder = CMapDecoder(child, usecmap_resolver=lambda name: parent if name == "Parent" else None)
 
-    assert remove_codes_covered_by_ranges(mappings, [CIDRange(b"\x81\x40", b"\x82\x42", 100)]) == {
-        b"\x82\x43": 4
-    }
+    cmap = internal_compact_cmap(decoder)
+
+    assert cmap.codes_for_cid(100) == ()
+    assert cmap.codes_for_cid(200) == ()
+    assert cmap.codes_for_cid(300) == (b"A",)
+    assert cmap.codes_for_cid(301) == (b"B",)
+    assert cmap.codes_for_cid(400) == (b"C",)
+
+
+def test_compact_cmap_preserves_later_explicit_mapping_over_range() -> None:
+    decoder = CMapDecoder(
+        b"1 begincidrange <41> <41> 100 endcidrange 1 begincidchar <41> 200 endcidchar"
+    )
+
+    cmap = internal_compact_cmap(decoder)
+
+    assert cmap.codes_for_cid(100) == ()
+    assert cmap.codes_for_cid(200) == (b"A",)
+
+
+def test_compact_cmap_excludes_mappings_outside_declared_codespace() -> None:
+    decoder = CMapDecoder(
+        b"1 begincodespacerange <00> <7f> endcodespacerange "
+        b"1 begincidchar <ff> 99 endcidchar "
+        b"1 begincidrange <7f> <80> 100 endcidrange"
+    )
+
+    cmap = internal_compact_cmap(decoder)
+
+    assert decoder.decode_entries(b"\x7f\x80\xff") == [
+        (b"\x7f", 100),
+        (b"\x80", 0),
+        (b"\xff", 0),
+    ]
+    assert cmap.codes_for_cid(99) == ()
+    assert cmap.codes_for_cid(100) == (b"\x7f",)
+    assert cmap.codes_for_cid(101) == ()
 
 
 def test_compact_japan1_map_preserves_legacy_and_vertical_choices() -> None:

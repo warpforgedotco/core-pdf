@@ -1200,18 +1200,20 @@ class TextState:
         return None
 
     def chunk_advance(
-        self, code: int, decoder: "FontDecoder", *, char_code: int | None = None
+        self, code: int, decoder: "FontDecoder", *, word_space: bool = False
     ) -> float:
-        if decoder.is_vertical:
-            metric = decoder.vertical_glyph_metric(code)
-            word = char_code == 32 if char_code is not None else code == 32
-            extra = self.char_space_scale + (self.word_space_scale if word else 0.0)
-            return (metric[0] + extra) * self.font_size / 1000.0
-        scale = self.text_advance_scale
-        base = decoder.glyph_width(code)
-        char_extra = self.char_space_scale
-        word_extra = self.word_space_scale if code == 32 else 0.0
-        return (base + char_extra + word_extra) * scale
+        advance_x, advance_y = decoder.glyph_advance_vector(
+            code,
+            font_size=self.font_size,
+            char_space=self.char_space,
+            word_space=self.word_space,
+            horizontal_scale=self.horizontal_scale,
+            encoded_space=word_space,
+        )
+        # Capture's vertical geometry uses a positive distance down the writing
+        # line, while the PDF text matrix uses the signed (normally negative)
+        # y displacement returned above.
+        return -advance_y if decoder.is_vertical else advance_x
 
     def decode_operand(
         self, operand: object, decoder: FontDecoder
@@ -2121,13 +2123,13 @@ class TextState:
                 chunk_advance(
                     glyph.width_code,
                     decoder,
-                    char_code=glyph.char_code,
+                    word_space=glyph.code_bytes == b" ",
                 )
                 if is_vertical
                 else (
                     glyph_width(glyph.width_code)
                     + char_space_scale
-                    + (word_space_scale if glyph.width_code == 32 else 0.0)
+                    + (word_space_scale if glyph.code_bytes == b" " else 0.0)
                 )
                 * advance_scale
             )
@@ -2159,7 +2161,7 @@ class TextState:
                 )
                 if is_vertical:
                     metric = vertical_metric(glyph.width_code)
-                    compat_cursor_y += -float(metric[0]) * 0.001 * font_size * compat_spacing_scale
+                    compat_cursor_y += float(metric[0]) * 0.001 * font_size * compat_spacing_scale
                     if glyph.char_code == 32:
                         compat_cursor_y += compat_wordspace
                 else:

@@ -10,7 +10,6 @@ from functools import lru_cache
 from math import ceil
 from typing import Any
 
-from core_pdf._vendor.fontTools.encodings.StandardEncoding import StandardEncoding
 from core_pdf.impl.engine.layout.geometry import RectBox
 from core_pdf.impl.engine.layout.glyphs import (
     GlyphCluster,
@@ -29,7 +28,6 @@ from core_pdf.impl.engine.spec.s_07_content.text_helpers import (
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_08_graphics.image_decode import ImageSource
 from core_pdf.impl.engine.spec.s_08_graphics.matrix import Matrix
-from core_pdf.impl.primitives import PdfName
 from core_pdf.impl.types import Rectangle
 
 # (base_x, base_y, combined_A, combined_B, combined_C, combined_D): invariant across every
@@ -233,26 +231,16 @@ def glyph_text_space_boxes(
 
 
 def type3_glyph_names(font: dict[Any, Any], decoder: Any) -> dict[int, str]:
-    encoding = lookup_dict_key(font, "Encoding")
-    differences_obj = (
-        lookup_dict_key(encoding, "Differences") if isinstance(encoding, dict) else None
-    )
-    glyph_names = {code: name for code, name in enumerate(StandardEncoding) if name != ".notdef"}
-    if decoder.base_encoding == "MacRomanEncoding":
-        from core_pdf._vendor.fontTools.encodings.MacRoman import MacRoman
-
-        glyph_names = {code: name for code, name in enumerate(MacRoman) if name != ".notdef"}
-    if isinstance(differences_obj, (list, tuple)):
-        code = 0
-        for item in differences_obj:
-            if type(item) is int:
-                code = item
-                continue
-            name = str(item) if isinstance(item, PdfName) else None
-            if name is not None and 0 <= code <= 255:
-                glyph_names[code] = name
-                code += 1
-    return glyph_names
+    """Project the decoder's normalized simple-font encoding onto byte codes."""
+    # Keep ``font`` in the API until Type 3 program-cache ownership moves out of
+    # FontDecoder. The decoder was constructed from this dictionary and already
+    # normalized its base encoding and Differences.
+    del font
+    return {
+        code: name
+        for code in range(256)
+        if (name := decoder.internal_simple_glyph_name(code)) not in {"", ".notdef"}
+    }
 
 
 def apply_glyph_geometry_to_run(

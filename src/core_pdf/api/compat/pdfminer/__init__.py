@@ -1961,7 +1961,7 @@ def extract_pages(  # noqa: C901
                     local_top = (1000.0 - float(metric[2])) * local_font_size * 0.001 + float(
                         glyph_provenance.get("text_rise", 0.0)
                     )
-                    local_advance = -float(metric[0]) * local_font_size * 0.001 * horizontal_scale
+                    local_advance = float(metric[0]) * local_font_size * 0.001 * horizontal_scale
                     corners = tuple(
                         (
                             local_horizontal * matrix_a + local_vertical * matrix_c + origin_x,

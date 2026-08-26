@@ -375,7 +375,7 @@ class EnginePageAdapter:
                 local_top = (1000.0 - float(metric[2])) * font_size * 0.001 + float(
                     provenance.get("text_rise", 0.0)
                 )
-                advance = -float(metric[0]) * font_size * 0.001 * scaling
+                advance = float(metric[0]) * font_size * 0.001 * scaling
                 corners = tuple(
                     (
                         a * horizontal + c * vertical + origin_x,

@@ -3,31 +3,103 @@
 from __future__ import annotations
 
 import binascii
-import re
 import typing
+from dataclasses import dataclass
 
 from core_pdf.impl.engine.spec.s_09_fonts.cmap_pdf_string import decode_pdf_literal_string
 
 PDF_WHITESPACE_BYTES = bytes([1 if byte in b"\x00\t\n\f\r " else 0 for byte in range(256)])
-CMAP_HEX_TOKEN_RE = re.compile(rb"<(?!<)[^>]*>")
+CMAP_DELIMITER_BYTES = b"[]<>()/%{}"
+
+CMapTokenKind = typing.Literal["array", "delimiter", "hex", "literal", "procedure", "word"]
+
+
+@dataclass(frozen=True, slots=True)
+class CMapToken:
+    """One lexical CMap token and its location in the source program."""
+
+    value: bytes
+    start: int
+    end: int
+    kind: CMapTokenKind
+
+
+@dataclass(frozen=True, slots=True)
+class CMapBlock:
+    """The operands between an exact ``begin*``/``end*`` operator pair."""
+
+    data: bytes
+    tokens: tuple[CMapToken, ...]
+
+    def token_values(
+        self, *, include_arrays: bool = False, include_words: bool = False
+    ) -> list[bytes]:
+        kinds: set[CMapTokenKind] = {"hex", "literal"}
+        if include_arrays:
+            kinds.add("array")
+        if include_words:
+            kinds.update(("delimiter", "word"))
+        return [token.value for token in self.tokens if token.kind in kinds]
+
+
+@dataclass(frozen=True, slots=True)
+class CMapProgram:
+    """A tokenized CMap program shared by its semantic compilers."""
+
+    data: bytes
+    tokens: tuple[CMapToken, ...]
+
+    @classmethod
+    def parse(cls, data: bytes | bytearray | memoryview) -> "CMapProgram":
+        source = data if type(data) is bytes else bytes(data)
+        tokens = tuple(internal_cmap_token_spans(source, group_arrays=True))
+        return cls(source, internal_scoped_cmap_tokens(tokens))
+
+    def blocks(self, begin: bytes, end: bytes) -> typing.Iterator[CMapBlock]:
+        """Yield blocks delimited by exact word tokens.
+
+        Grouped array and string tokens ensure that operator-looking contents do
+        not accidentally terminate a surrounding CMap section.
+        """
+        for ignored_begin, block in self.blocks_in_order({begin: end}):
+            yield block
+
+    def blocks_in_order(
+        self, delimiters: dict[bytes, bytes]
+    ) -> typing.Iterator[tuple[bytes, CMapBlock]]:
+        """Yield selected block kinds in their original program order."""
+        begin_keyword: bytes | None = None
+        end_keyword: bytes | None = None
+        block_start: int | None = None
+        block_tokens: list[CMapToken] = []
+        for token in self.tokens:
+            if block_start is None:
+                if (
+                    token.kind == "word"
+                    and (matched_end := delimiters.get(token.value)) is not None
+                ):
+                    begin_keyword = token.value
+                    end_keyword = matched_end
+                    block_start = token.end
+                continue
+            if token.kind == "word" and token.value == end_keyword:
+                assert begin_keyword is not None
+                yield (
+                    begin_keyword,
+                    CMapBlock(self.data[block_start : token.start], tuple(block_tokens)),
+                )
+                begin_keyword = None
+                end_keyword = None
+                block_start = None
+                block_tokens.clear()
+                continue
+            block_tokens.append(token)
 
 
 def iter_blocks(data: bytes | memoryview, begin: bytes, end: bytes) -> typing.Iterator[bytes]:
-    if not isinstance(data, bytes):
-        data = bytes(data)
-    search_start = 0
-    begin_length = len(begin)
-    end_length = len(end)
-    while True:
-        begin_pos = data.find(begin, search_start)
-        if begin_pos < 0:
-            return
-        block_start = begin_pos + begin_length
-        end_pos = data.find(end, block_start)
-        if end_pos < 0:
-            return
-        yield data[block_start:end_pos]
-        search_start = end_pos + end_length
+    """Yield CMap blocks delimited by exact, non-comment operator tokens."""
+    for block in CMapProgram.parse(data).blocks(begin, end):
+        yield block.data
 
 
 def internal_scan_cmap_literal_string_end(data: bytes, pos: int) -> tuple[int, bool]:
@@ -43,117 +115,164 @@ def internal_scan_cmap_literal_string_end(data: bytes, pos: int) -> tuple[int, b
     while end < n and depth:
         current = data[end]
         if current == 92:
-            end += 2
+            end += 1
+            if end < n:
+                if data[end] == 13 and end + 1 < n and data[end + 1] == 10:
+                    end += 2
+                else:
+                    end += 1
             continue
         if current == 40:
             depth += 1
         elif current == 41:
             depth -= 1
         end += 1
-    return end, depth == 0
+    return min(end, n), depth == 0
 
 
-def internal_scan_cmap_array_end(data: bytes, pos: int) -> tuple[int, bool]:
-    """Scan a ``[...]`` array starting at ``pos``.
-
-    Returns ``(end, terminated)``: ``end`` is the position just past the matching
-    closing ``]`` if properly balanced, otherwise ``len(data)`` with ``terminated=False``.
-    """
+def internal_scan_cmap_composite_end(data: bytes, pos: int) -> tuple[int, bool]:
+    """Scan a ``[...]`` array or ``{...}`` procedure as one composite object."""
+    opening = data[pos]
+    match opening:
+        case 91:
+            closing = 93
+        case 123:
+            closing = 125
+        case _:
+            raise ValueError("invalid CMap composite opener")
     end = pos + 1
-    depth = 1
     n = len(data)
-    while end < n and depth:
+    while end < n:
         current = data[end]
-        if current == 37:
-            while end < n and data[end] not in (10, 13):
+        match current:
+            case 37:  # comment
+                while end < n and data[end] not in (10, 13):
+                    end += 1
+            case 40:  # literal string
+                end, ignored_terminated = internal_scan_cmap_literal_string_end(data, end)
+            case 60:  # hex string or dictionary opener
+                if end + 1 < n and data[end + 1] == 60:
+                    end += 2
+                    continue
+                close = data.find(b">", end + 1)
+                if close < 0:
+                    return n, False
+                end = close + 1
+            case 91 | 123:  # nested array or procedure
+                end, terminated = internal_scan_cmap_composite_end(data, end)
+                if not terminated:
+                    return n, False
+            case _ if current == closing:
+                return end + 1, True
+            case _:
                 end += 1
+    return n, False
+
+
+def internal_scoped_cmap_tokens(tokens: tuple[CMapToken, ...]) -> tuple[CMapToken, ...]:
+    """Restrict a CMap program to its top-level ``begincmap`` region when present."""
+    begin_index = next(
+        (
+            index
+            for index, token in enumerate(tokens)
+            if token.kind == "word" and token.value == b"begincmap"
+        ),
+        None,
+    )
+    scope_start = begin_index + 1 if begin_index is not None else 0
+    end_index = next(
+        (
+            index
+            for index, token in enumerate(tokens[scope_start:], start=scope_start)
+            if token.kind == "word" and token.value == b"endcmap"
+        ),
+        len(tokens),
+    )
+    return tokens[scope_start:end_index]
+
+
+def internal_cmap_token_spans(data: bytes, *, group_arrays: bool) -> typing.Iterator[CMapToken]:
+    pos = 0
+    n = len(data)
+    while pos < n:
+        byte = data[pos]
+        if PDF_WHITESPACE_BYTES[byte]:
+            pos += 1
             continue
-        if current == 40:
-            end, ignored_terminated = internal_scan_cmap_literal_string_end(data, end)
-            continue
-        if current == 60:
-            close = data.find(b">", end + 1)
-            if close < 0:
-                return n, False
-            end = close + 1
-            continue
-        if current == 91:
-            depth += 1
-        elif current == 93:
-            depth -= 1
-        end += 1
-    return end, depth == 0
+        match byte:
+            case 37:  # comment
+                while pos < n and data[pos] not in (10, 13):
+                    pos += 1
+            case 40:  # literal string
+                end, terminated = internal_scan_cmap_literal_string_end(data, pos)
+                if terminated:
+                    yield CMapToken(data[pos:end], pos, end, "literal")
+                pos = end
+            case 60:  # hex string or dictionary opener
+                if pos + 1 < n and data[pos + 1] == 60:
+                    yield CMapToken(b"<<", pos, pos + 2, "delimiter")
+                    pos += 2
+                    continue
+                end = data.find(b">", pos + 1)
+                if end < 0:
+                    return
+                end += 1
+                yield CMapToken(data[pos:end], pos, end, "hex")
+                pos = end
+            case 62:  # dictionary closer or stray delimiter
+                end = pos + (2 if pos + 1 < n and data[pos + 1] == 62 else 1)
+                yield CMapToken(data[pos:end], pos, end, "delimiter")
+                pos = end
+            case 91 if group_arrays:
+                end, terminated = internal_scan_cmap_composite_end(data, pos)
+                if terminated:
+                    yield CMapToken(data[pos:end], pos, end, "array")
+                pos = end
+            case 123:  # procedure
+                end, terminated = internal_scan_cmap_composite_end(data, pos)
+                if terminated:
+                    yield CMapToken(data[pos:end], pos, end, "procedure")
+                pos = end
+            case 47:  # name object
+                end = pos + 1
+                while (
+                    end < n
+                    and not PDF_WHITESPACE_BYTES[data[end]]
+                    and data[end] not in CMAP_DELIMITER_BYTES
+                ):
+                    end += 1
+                yield CMapToken(data[pos:end], pos, end, "word")
+                pos = end
+            case 91 | 93 | 41 | 125:
+                yield CMapToken(data[pos : pos + 1], pos, pos + 1, "delimiter")
+                pos += 1
+            case _:
+                end = pos + 1
+                while (
+                    end < n
+                    and not PDF_WHITESPACE_BYTES[data[end]]
+                    and data[end] not in CMAP_DELIMITER_BYTES
+                ):
+                    end += 1
+                yield CMapToken(data[pos:end], pos, end, "word")
+                pos = end
 
 
 def cmap_tokens(
     data: bytes, *, include_arrays: bool = False, include_words: bool = False
 ) -> list[bytes]:
-    if not include_arrays and not include_words and b"(" not in data and b"%" not in data:
-        return CMAP_HEX_TOKEN_RE.findall(data)
-    tokens: list[bytes] = []
-    pos = 0
-    n = len(data)
-    while pos < n:
-        byte = data[pos]
-        if byte == 37:
-            while pos < n and data[pos] not in (10, 13):
-                pos += 1
-            continue
-        if byte == 60:
-            if pos + 1 < n and data[pos + 1] == 60:
-                pos += 2
-                continue
-            end = data.find(b">", pos + 1)
-            if end < 0:
-                break
-            candidate = data[pos : end + 1]
-            tokens.append(candidate)
-            pos = end + 1
-            continue
-        if byte == 40:
-            end, terminated = internal_scan_cmap_literal_string_end(data, pos)
-            if terminated:
-                tokens.append(data[pos:end])
-            pos = end
-            continue
-        if include_arrays and byte == 91:
-            end, terminated = internal_scan_cmap_array_end(data, pos)
-            if terminated:
-                tokens.append(data[pos:end])
-                pos = end
-                continue
-        if include_words and not PDF_WHITESPACE_BYTES[byte]:
-            end = pos + 1
-            while end < n and not PDF_WHITESPACE_BYTES[data[end]] and data[end] not in b"[]<>()/%":
-                end += 1
-            tokens.append(data[pos:end])
-            pos = end
-            continue
-        pos += 1
-    return tokens
+    tokens = internal_cmap_token_spans(data, group_arrays=include_arrays)
+    kinds: set[CMapTokenKind] = {"hex", "literal"}
+    if include_arrays:
+        kinds.add("array")
+    if include_words:
+        kinds.update(("delimiter", "word"))
+    return [token.value for token in tokens if token.kind in kinds]
 
 
-def cmap_noncomment_words(data: bytes) -> list[bytes]:
-    return cmap_tokens(data, include_words=True)
-
-
-def cmap_usecmap_name(data: bytes) -> str | None:
-    words = cmap_noncomment_words(data)
-    for index, word in enumerate(words[1:], start=1):
-        if word != b"usecmap":
-            continue
-        name = words[index - 1]
-        if not name.startswith(b"/"):
-            continue
-        try:
-            return name[1:].decode("latin-1")
-        except UnicodeDecodeError:
-            return None
-    return None
-
-
-def cmap_metadata(data: bytes) -> tuple[str | None, int | None]:
-    words = cmap_noncomment_words(data)
+def cmap_metadata(data: bytes | CMapProgram) -> tuple[str | None, int | None]:
+    program = data if isinstance(data, CMapProgram) else CMapProgram.parse(data)
+    words = [token.value for token in program.tokens if token.kind == "word"]
     usecmap_name: str | None = None
     wmode: int | None = None
     usecmap_checked = False
