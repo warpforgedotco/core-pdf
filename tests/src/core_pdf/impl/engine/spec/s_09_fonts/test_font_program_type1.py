@@ -13,3 +13,15 @@ def test_sparse_type1_subroutine_index_is_rejected(monkeypatch: pytest.MonkeyPat
 
     with pytest.raises(ValueError, match="subroutine index exceeds decoder limit"):
         font_program_type1.Type1FontProgram(b"embedded font")
+
+
+def test_unknown_glyph_name_requires_an_available_notdef() -> None:
+    program = object.__new__(font_program_type1.Type1FontProgram)
+    program.glyph_name_to_id = {"visible": 0, ".notdef": 1}
+
+    assert program.glyph_id_for_name("visible") == 0
+    assert program.glyph_id_for_name("missing") == 1
+
+    program.glyph_name_to_id = {"visible": 0}
+
+    assert program.glyph_id_for_name("missing") is None

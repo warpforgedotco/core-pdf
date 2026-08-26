@@ -9,6 +9,9 @@ import numpy
 from core_pdf import PdfDocument, PdfRasterFontRequest
 from core_pdf.impl.engine.render.display import RenderOptions
 from core_pdf.impl.engine.spec.s_09_fonts.decoder import FontDecoder
+from core_pdf.impl.engine.spec.s_09_fonts.font_program import CFFFont
+from core_pdf.impl.engine.spec.s_09_fonts.font_program_opentype import OpenTypeFontProgram
+from core_pdf.impl.engine.spec.s_09_fonts.font_program_type1 import Type1FontProgram
 from core_pdf.impl.objects import PdfStream
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -70,12 +73,15 @@ def test_embedded_type1_uses_actual_outlines_without_fallback() -> None:
         "Linktoheading“thatis”notworkingwithvim-pandoc."
         "SubheadingSome“moretext”1"
     )
-    assert all(getattr(glyph.font_decoder, "type1_font", None) is not None for glyph in glyphs)
+    assert all(
+        isinstance(getattr(glyph.font_decoder, "font_program", None), Type1FontProgram)
+        for glyph in glyphs
+    )
     heading = glyphs[0]
     assert heading.text == "H"
     assert isinstance(heading.font_decoder, FontDecoder)
-    assert heading.font_decoder.type1_font is not None
-    assert heading.font_decoder.type1_font.glyph_contours("H")
+    assert isinstance(heading.font_decoder.font_program, Type1FontProgram)
+    assert heading.font_decoder.font_program.glyph_contours("H")
 
     pixels = numpy.asarray(raster.pixels).reshape(raster.height, raster.width, 4)
     foreground = numpy.any(pixels[..., :3] < 250, axis=-1)
@@ -118,17 +124,13 @@ def test_opentype_cff_program_exposes_actual_outlines() -> None:
     decoder = FontDecoder(font)
     contours = decoder.glyph_outline(ord("A"), text="A")
 
-    assert decoder.cff_font is not None
-    assert decoder.opentype_font is not None
-    glyph_id = decoder.opentype_font.glyph_id_for_name("A")
-    assert glyph_id is not None
-    assert decoder.opentype_font.has_glyph_id(glyph_id)
-    assert not decoder.opentype_font.has_glyph_id(-1)
-    assert not decoder.opentype_font.has_glyph_id(decoder.opentype_font.glyph_count)
-    assert decoder.tt_font is None
+    assert isinstance(decoder.font_program, CFFFont)
+    glyph_id = decoder.font_program.glyph_id_for_name("A")
+    assert decoder.font_program.has_glyph_id(glyph_id)
+    assert not decoder.font_program.has_glyph_id(-1)
     assert len(contours) == 2
     assert all(len(contour) >= 3 for contour in contours)
-    assert decoder.opentype_font.normalized_glyph_contours(glyph_id)
+    assert decoder.font_program.normalized_glyph_contours(glyph_id)
 
 
 def test_opentype_cff2_program_exposes_actual_outlines() -> None:
@@ -145,7 +147,8 @@ def test_opentype_cff2_program_exposes_actual_outlines() -> None:
     decoder = FontDecoder(font)
     contours = decoder.glyph_outline(ord("A"), text="A")
 
-    assert decoder.cff_font is None
-    assert decoder.opentype_font is not None
+    assert isinstance(decoder.font_program, OpenTypeFontProgram)
     assert len(contours) == 5
     assert all(len(contour) >= 3 for contour in contours)
+    assert decoder.glyph_bbox(ord("A")) == (5.0, 0.0, 904.0, 675.0)
+    assert decoder.glyph_bitmap(ord("A"))

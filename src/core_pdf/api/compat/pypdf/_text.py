@@ -541,7 +541,7 @@ class LegacyTextExtractor:
             # The legacy API compares unscaled Widths values. The canonical
             # engine scales Type3 metrics through FontMatrix for geometry.
             with suppress(ValueError):
-                widths = parse_font_widths(cast(Any, font), subtype)[0]
+                widths = parse_font_widths(cast(Any, font), subtype).widths
 
         default_width = decoder.default_width
         if not decoder.is_cid_font:

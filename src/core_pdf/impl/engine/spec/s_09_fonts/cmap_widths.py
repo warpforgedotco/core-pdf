@@ -4,11 +4,23 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Mapping
 from contextlib import suppress
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
-if TYPE_CHECKING:
-    # numpy is imported lazily at each call site to keep module import cheap.
-    import numpy
+internal_MIN_CID = 0
+internal_MAX_CID = 0xFFFF
+
+
+def internal_clipped_cid_bounds(first: int, last: int) -> tuple[int, int] | None:
+    """Return the valid part of a recovery-parsed CID range.
+
+    PDF CIDs are limited to 0 through 65535. Width arrays are parsed
+    tolerantly elsewhere in this module, so a partially overlapping range
+    keeps its valid portion while a reversed or wholly invalid range is
+    ignored.
+    """
+    if last < first or last < internal_MIN_CID or first > internal_MAX_CID:
+        return None
+    return (max(first, internal_MIN_CID), min(last, internal_MAX_CID))
 
 
 class FontWidthMap(Mapping[int, float]):
@@ -30,12 +42,6 @@ class FontWidthMap(Mapping[int, float]):
             self.width_for(code, space_width if code == 32 else default_positive)
             for code in range(256)
         )
-
-    def fast_256_array(self, default_width: float) -> numpy.ndarray[Any, Any]:
-        """Return a dense NumPy table for bulk width indexing."""
-        import numpy
-
-        return numpy.asarray(self.fast_256(default_width), dtype=numpy.float64)
 
 
 class SparseFontWidthMap(FontWidthMap):
@@ -168,7 +174,20 @@ def parse_cid_widths(value: Any) -> FontWidthMap:
         if isinstance(contiguous_widths, (list, tuple)) and set(
             map(type, contiguous_widths)
         ).issubset({int, float}):
-            return CompactCIDWidthMap(value[0], tuple(contiguous_widths))
+            first = value[0]
+            bounds = internal_clipped_cid_bounds(
+                first,
+                first + len(contiguous_widths) - 1,
+            )
+            if bounds is None:
+                return SparseFontWidthMap()
+            clipped_first, clipped_last = bounds
+            offset = clipped_first - first
+            count = clipped_last - clipped_first + 1
+            return CompactCIDWidthMap(
+                clipped_first,
+                tuple(contiguous_widths[offset : offset + count]),
+            )
     widths: dict[int, float] = {}
     index = 0
     while index < len(value):
@@ -184,13 +203,14 @@ def parse_cid_widths(value: Any) -> FontWidthMap:
         if isinstance(nxt, (list, tuple)):
             code = first
             for w in nxt:
-                if type(w) is int:
-                    widths[code] = float(w)
-                elif type(w) is float:
-                    widths[code] = w
-                else:
-                    with suppress(ValueError):
-                        widths[code] = require_cid_float(w, "invalid CID widths array")
+                if internal_MIN_CID <= code <= internal_MAX_CID:
+                    if type(w) is int:
+                        widths[code] = float(w)
+                    elif type(w) is float:
+                        widths[code] = w
+                    else:
+                        with suppress(ValueError):
+                            widths[code] = require_cid_float(w, "invalid CID widths array")
                 code += 1
             index += 1
         else:
@@ -202,10 +222,12 @@ def parse_cid_widths(value: Any) -> FontWidthMap:
             except ValueError:
                 index += 2
                 continue
-            if last < first:
+            bounds = internal_clipped_cid_bounds(first, last)
+            if bounds is None:
                 index += 2
                 continue
-            for i in range(first, last + 1):
+            clipped_first, clipped_last = bounds
+            for i in range(clipped_first, clipped_last + 1):
                 widths[i] = width
             index += 2
     return SparseFontWidthMap(widths)

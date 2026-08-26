@@ -96,13 +96,12 @@ def test_reads_supplements_appended_to_an_encoding() -> None:
     assert font.builtin_encoding() == {0x41: "alpha", 0x42: "beta", 0x5A: "alpha"}
 
 
-def test_predefined_encoding_ids_report_no_custom_encoding() -> None:
-    # 0 is Standard and 1 is Expert; neither is a custom table, and the caller
-    # applies those by name.
-    for operand in (0, 1):
-        font = CFFFont(build_cff(bytes([0, 1]) + bytes([0x41]), ["alpha"]))
-        font.top_dict[16] = [float(operand)]
-        assert font.builtin_encoding() == {}
+def test_predefined_standard_encoding_reports_no_custom_encoding() -> None:
+    # The decoder already applies StandardEncoding as the implicit base.
+    font = CFFFont(build_cff(bytes([0, 1]) + bytes([0x41]), ["alpha"]))
+    font.top_dict[16] = [0.0]
+
+    assert font.builtin_encoding() == {}
 
 
 def test_builtin_encoding_is_the_implicit_base_for_a_type1_font() -> None:
@@ -143,6 +142,45 @@ def test_an_explicit_base_encoding_still_wins() -> None:
     decoder = FontDecoder(font)
     # Naming a base encoding overrides the program's own table (Table 114).
     assert decoder.decode(bytes([65])) == "A"
+
+
+def test_sparse_cff_encoding_drives_text_and_outline_selection() -> None:
+    cff_data = build_cff(bytes([0, 1, 0x41]), ["alpha", "beta"])
+    font = {
+        "Subtype": "Type1",
+        "BaseFont": "EmbeddedGreek",
+        "FontDescriptor": {"FontFile3": PdfStream({"Subtype": "Type1C"}, decoded_data=cff_data)},
+    }
+
+    decoder = FontDecoder(font)
+    glyphs = decoder.decode_glyphs(b"AB")
+
+    assert isinstance(decoder.font_program, CFFFont)
+    assert decoder.internal_simple_glyph_name(0x41) == "alpha"
+    assert glyphs[0].unicode == "α"
+    assert glyphs[0].gid == decoder.font_program.glyph_id_for_name("alpha") == 1
+    # A custom CFF encoding is authoritative and sparse. Code 0x42 does not
+    # inherit StandardEncoding's B merely because the font has a beta glyph.
+    assert decoder.internal_simple_glyph_name(0x42) == ".notdef"
+    assert glyphs[1].unicode == "�"
+    assert glyphs[1].gid == 0
+
+
+def test_pdf_differences_override_sparse_cff_encoding_for_text_and_outline() -> None:
+    cff_data = build_cff(bytes([0, 1, 0x41]), ["alpha", "beta"])
+    font = {
+        "Subtype": "Type1",
+        "BaseFont": "EmbeddedGreek",
+        "Encoding": {"Differences": [0x42, "beta"]},
+        "FontDescriptor": {"FontFile3": PdfStream({"Subtype": "Type1C"}, decoded_data=cff_data)},
+    }
+
+    decoder = FontDecoder(font)
+    glyph = decoder.decode_glyphs(b"B")[0]
+
+    assert isinstance(decoder.font_program, CFFFont)
+    assert glyph.unicode == "β"
+    assert glyph.gid == decoder.font_program.glyph_id_for_name("beta") == 2
 
 
 def test_computer_modern_math_glyph_names_beat_a_useless_tounicode() -> None:

@@ -1928,14 +1928,7 @@ def extract_pages(  # noqa: C901
                     and baseline is not None
                     and width_code is not None
                 ):
-                    metric = glyph.font_decoder.vertical_metrics.get(
-                        width_code,
-                        (
-                            glyph.font_decoder.default_vertical_width,
-                            glyph.font_decoder.glyph_width(width_code) / 2.0,
-                            glyph.font_decoder.default_vertical_origin_y,
-                        ),
-                    )
+                    metric = glyph.font_decoder.vertical_glyph_metric(width_code)
                     # The engine advances an entire text-show array in bulk,
                     # while PDFMiner advances one token at a time. Normalize
                     # the resulting sub-picopoint accumulation noise before
@@ -1968,7 +1961,7 @@ def extract_pages(  # noqa: C901
                     local_top = (1000.0 - float(metric[2])) * local_font_size * 0.001 + float(
                         glyph_provenance.get("text_rise", 0.0)
                     )
-                    local_advance = -float(metric[0]) * local_font_size * 0.001 * horizontal_scale
+                    local_advance = float(metric[0]) * local_font_size * 0.001 * horizontal_scale
                     corners = tuple(
                         (
                             local_horizontal * matrix_a + local_vertical * matrix_c + origin_x,

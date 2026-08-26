@@ -7,13 +7,15 @@ from functools import lru_cache
 from typing import Any
 
 from core_pdf._vendor.fontTools.misc.psCharStrings import T1CharString
+from core_pdf._vendor.fontTools.pens.boundsPen import BoundsPen
 from core_pdf._vendor.fontTools.pens.recordingPen import RecordingPen
+from core_pdf._vendor.fontTools.pens.transformPen import TransformPen
 from core_pdf.impl.engine.spec.s_07_objects.coercion import normalize_pdf_name
 from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_09_fonts.font_program_truetype import (
     internal_recording_to_contours,
 )
-from core_pdf.impl.engine.spec.s_09_fonts.raster_kernel import Point
+from core_pdf.impl.engine.spec.s_09_fonts.raster_kernel import Point, rasterize_contours
 from core_pdf.impl.objects import PdfStream
 
 internal_LEN_IV_RE = re.compile(rb"/lenIV\s+(-?\d+)\s+def\b")
@@ -152,7 +154,14 @@ def internal_extract_subrs(data: bytes) -> dict[int, bytes]:
 class Type1FontProgram:
     """A bounded decoder for the outlines in one embedded Type 1 program."""
 
-    __slots__ = ("charstrings", "font_matrix", "internal_contour_cache", "subrs")
+    __slots__ = (
+        "charstrings",
+        "font_matrix",
+        "glyph_names",
+        "glyph_name_to_id",
+        "internal_contour_cache",
+        "subrs",
+    )
 
     def __init__(self, data: bytes, *, length1: int | None = None) -> None:
         private = internal_eexec_payload(data, length1)
@@ -183,6 +192,8 @@ class Type1FontProgram:
             self.charstrings[name] = T1CharString(bytecode, subrs=subrs)
         if not self.charstrings:
             raise ValueError("Type 1 CharStrings are missing")
+        self.glyph_names = tuple(self.charstrings)
+        self.glyph_name_to_id = {name: gid for gid, name in enumerate(self.glyph_names)}
 
         matrix_match = internal_FONT_MATRIX_RE.search(data)
         self.font_matrix = (
@@ -191,6 +202,49 @@ class Type1FontProgram:
             else (0.001, 0.0, 0.0, 0.001, 0.0, 0.0)
         )
         self.internal_contour_cache: dict[str, tuple[tuple[Point, ...], ...]] = {}
+
+    def glyph_id_for_name(self, glyph_name: str) -> int | None:
+        glyph_id = self.glyph_name_to_id.get(glyph_name)
+        if glyph_id is not None:
+            return glyph_id
+        return self.glyph_name_to_id.get(".notdef")
+
+    def has_glyph_id(self, glyph_id: int) -> bool:
+        return 0 <= glyph_id < len(self.glyph_names)
+
+    def normalized_glyph_contours(self, glyph_id: int) -> tuple[tuple[Point, ...], ...]:
+        if not self.has_glyph_id(glyph_id):
+            return ()
+        return self.glyph_contours(self.glyph_names[glyph_id])
+
+    def glyph_bbox_for_gid(self, glyph_id: int) -> tuple[float, float, float, float] | None:
+        if not self.has_glyph_id(glyph_id):
+            return None
+        glyph_name = self.glyph_names[glyph_id]
+        charstring = self.charstrings.get(glyph_name) or self.charstrings.get(".notdef")
+        if charstring is None:
+            return None
+        try:
+            bounds_pen = BoundsPen(self.charstrings)
+            a, b, c, d, e, f = self.font_matrix
+            normalized_pen = TransformPen(
+                bounds_pen,
+                (a * 1000.0, b * 1000.0, c * 1000.0, d * 1000.0, e * 1000.0, f * 1000.0),
+            )
+            charstring.draw(normalized_pen)
+        except Exception:
+            return None
+        bounds = bounds_pen.bounds
+        if bounds is None:
+            return None
+        x_min, y_min, x_max, y_max = bounds
+        return (float(x_min), float(y_min), float(x_max), float(y_max))
+
+    def glyph_bitmap_for_gid(
+        self, glyph_id: int, *, width: int = 24, height: int = 32
+    ) -> tuple[int, ...]:
+        contours = self.normalized_glyph_contours(glyph_id)
+        return rasterize_contours(contours, width=width, height=height) if contours else ()
 
     def glyph_contours(self, glyph_name: str) -> tuple[tuple[Point, ...], ...]:
         cached = self.internal_contour_cache.get(glyph_name)

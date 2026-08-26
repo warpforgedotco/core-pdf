@@ -70,20 +70,20 @@ def test_three_decimal_number_is_passed_to_operator(token: bytes, expected: floa
     assert received == [expected, 1]
 
 
-def test_cid_fast_path_applies_word_spacing() -> None:
-    decoder = FontDecoder({})
-    decoder.is_cid_font = True
-    decoder.to_unicode = None
-    decoder.cmap = None
-    decoder.fast_widths_cid = [500.0] * 65536
-    decoder.is_vertical = False
-    decoder.default_width = 500.0
+def test_multibyte_cid_code_does_not_apply_word_spacing() -> None:
+    decoder = FontDecoder(
+        {
+            "Subtype": "Type0",
+            "Encoding": "Identity-H",
+            "DescendantFonts": [{"Subtype": "CIDFontType0", "DW": 500}],
+        }
+    )
 
     advance = decoder.text_advance_vector(
         b"\x00 \x00A", font_size=10.0, char_space=0.0, word_space=2.0, horizontal_scale=1.0
     )
 
-    assert isclose(advance[0], 0.12)
+    assert isclose(advance[0], 0.1)
     assert advance[1] == 0.0
 
 

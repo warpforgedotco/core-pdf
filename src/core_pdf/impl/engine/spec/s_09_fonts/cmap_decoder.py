@@ -16,11 +16,10 @@ from core_pdf.impl.engine.spec.s_09_fonts.cmap_ranges import (
     validate_codespace_range,
 )
 from core_pdf.impl.engine.spec.s_09_fonts.cmap_tokenizer import (
+    CMapBlock,
+    CMapProgram,
     cmap_metadata,
-    cmap_noncomment_words,
-    cmap_tokens,
     decode_cmap_hex_token,
-    iter_blocks,
 )
 
 if TYPE_CHECKING:
@@ -28,6 +27,12 @@ if TYPE_CHECKING:
     import numpy
 
 CodeRangeT = TypeVar("CodeRangeT", CIDRange, NotdefRange)
+internal_MIN_CID = 0
+internal_MAX_CID = 0xFFFF
+
+
+def internal_valid_cid(cid: int) -> bool:
+    return internal_MIN_CID <= cid <= internal_MAX_CID
 
 
 class CMapDecoder:
@@ -84,7 +89,8 @@ class CMapDecoder:
         if internal_depth > 5:
             raise ValueError("CMap usecmap nesting too deep")
         data = bytes(data)
-        usecmap_name, local_wmode = cmap_metadata(data)
+        program = CMapProgram.parse(data)
+        usecmap_name, local_wmode = cmap_metadata(program)
         if usecmap_name is not None:
             parent = self.resolve_usecmap(
                 usecmap_name, usecmap_resolver=usecmap_resolver, depth=internal_depth + 1
@@ -94,8 +100,8 @@ class CMapDecoder:
         if local_wmode is not None:
             self.wmode = local_wmode
 
-        for block in iter_blocks(data, b"begincodespacerange", b"endcodespacerange"):
-            tokens = cmap_tokens(block)
+        for block in program.blocks(b"begincodespacerange", b"endcodespacerange"):
+            tokens = block.token_values()
             if len(tokens) % 2 != 0:
                 raise ValueError("invalid CMap codespacerange")
             for i in range(0, len(tokens), 2):
@@ -117,31 +123,20 @@ class CMapDecoder:
             elif usecmap_name in {"OneByteIdentityH", "OneByteIdentityV"}:
                 self.code_space_ranges.append((b"\x00", b"\xff"))
                 self.default_to_identity = True
-        self.parse_char_blocks(data, b"begincidchar", b"endcidchar", self.cid_mappings)
-        self.parse_range_blocks(
-            data, b"begincidrange", b"endcidrange", self.cid_mappings, self.cid_ranges, CIDRange
-        )
-        self.parse_char_blocks(data, b"beginnotdefchar", b"endnotdefchar", self.notdef_mappings)
-        self.parse_range_blocks(
-            data,
-            b"beginnotdefrange",
-            b"endnotdefrange",
-            self.notdef_mappings,
-            self.notdef_ranges,
-            NotdefRange,
-        )
+        self.parse_mapping_blocks(program)
         self.decode_lengths = tuple(
             sorted(
-                (
+                length
+                for length in (
                     {len(end) for ignored, end in self.code_space_ranges}
                     | {len(k) for k in self.cid_mappings}
                     | {len(item.end) for item in self.cid_ranges}
                     | {len(k) for k in self.notdef_mappings}
                     | {len(item.end) for item in self.notdef_ranges}
                 )
-                or {1},
-                reverse=False,
+                if length > 0
             )
+            or (1,)
         )
         self.freeze()
 
@@ -197,62 +192,94 @@ class CMapDecoder:
         self.default_to_identity = parent.default_to_identity
         self.wmode = parent.wmode
 
-    def parse_char_blocks(
+    def parse_mapping_blocks(self, program: CMapProgram) -> None:
+        """Compile mapping sections in order so succeeding definitions win."""
+        delimiters = {
+            b"begincidchar": b"endcidchar",
+            b"begincidrange": b"endcidrange",
+            b"beginnotdefchar": b"endnotdefchar",
+            b"beginnotdefrange": b"endnotdefrange",
+        }
+        for begin_keyword, block in program.blocks_in_order(delimiters):
+            match begin_keyword:
+                case b"begincidchar":
+                    self.parse_char_block(block, self.cid_mappings)
+                case b"begincidrange":
+                    self.parse_range_block(block, self.cid_mappings, self.cid_ranges, CIDRange)
+                case b"beginnotdefchar":
+                    self.parse_char_block(block, self.notdef_mappings)
+                case b"beginnotdefrange":
+                    self.parse_range_block(
+                        block,
+                        self.notdef_mappings,
+                        self.notdef_ranges,
+                        NotdefRange,
+                    )
+
+    def parse_char_block(
         self,
-        data: bytes,
-        begin_keyword: bytes,
-        end_keyword: bytes,
+        block: CMapBlock,
         mappings: dict[bytes, int],
     ) -> None:
-        """Collect `<code> cid` pairs from every `begin…char`/`end…char` block."""
-        for block in iter_blocks(data, begin_keyword, end_keyword):
-            items = cmap_noncomment_words(block)
-            if len(items) % 2 != 0:
-                items = items[:-1]
-            for i in range(0, len(items), 2):
-                code_token, cid_token = items[i], items[i + 1]
-                if not (code_token.startswith(b"<") and code_token.endswith(b">")):
-                    continue
-                try:
-                    code = decode_cmap_hex_token(code_token)
-                    cid = int(cid_token)
-                except (ValueError, UnicodeDecodeError):
-                    continue
-                mappings[code] = cid
+        """Collect the `<code> cid` pairs from one character-mapping block."""
+        items = block.token_values(include_words=True)
+        if len(items) % 2 != 0:
+            items = items[:-1]
+        for i in range(0, len(items), 2):
+            code_token, cid_token = items[i], items[i + 1]
+            if not (code_token.startswith(b"<") and code_token.endswith(b">")):
+                continue
+            try:
+                code = decode_cmap_hex_token(code_token)
+                cid = int(cid_token)
+            except (ValueError, UnicodeDecodeError):
+                continue
+            if not code or not internal_valid_cid(cid):
+                continue
+            mappings[code] = cid
 
-    def parse_range_blocks(
+    def parse_range_block(
         self,
-        data: bytes,
-        begin_keyword: bytes,
-        end_keyword: bytes,
+        block: CMapBlock,
         mappings: dict[bytes, int],
         ranges: list[CodeRangeT],
         make_range: Callable[[bytes, bytes, int], CodeRangeT],
     ) -> None:
-        """Collect `<start> <end> cid` triples, dropping codes the range subsumes."""
-        for block in iter_blocks(data, begin_keyword, end_keyword):
-            items = cmap_noncomment_words(block)
-            if len(items) % 3 != 0:
-                items = items[: len(items) - (len(items) % 3)]
-            for i in range(0, len(items), 3):
-                start_token, end_token, cid_token = items[i], items[i + 1], items[i + 2]
-                if not (
-                    start_token.startswith(b"<")
-                    and start_token.endswith(b">")
-                    and end_token.startswith(b"<")
-                    and end_token.endswith(b">")
-                ):
+        """Collect range triples, dropping explicit codes the range supersedes."""
+        items = block.token_values(include_words=True)
+        if len(items) % 3 != 0:
+            items = items[: len(items) - (len(items) % 3)]
+        for i in range(0, len(items), 3):
+            start_token, end_token, cid_token = items[i], items[i + 1], items[i + 2]
+            if not (
+                start_token.startswith(b"<")
+                and start_token.endswith(b">")
+                and end_token.startswith(b"<")
+                and end_token.endswith(b">")
+            ):
+                continue
+            try:
+                start_bytes = decode_cmap_hex_token(start_token)
+                end_bytes = decode_cmap_hex_token(end_token)
+                cid = int(cid_token)
+                # Also rejects empty or mismatched start/end lengths.
+                validate_codespace_range(start_bytes, end_bytes)
+            except (ValueError, UnicodeDecodeError):
+                continue
+            if not internal_valid_cid(cid):
+                continue
+            if make_range is CIDRange:
+                last_cid = cid + range_offset(
+                    end_bytes,
+                    start_bytes,
+                    end_bytes,
+                    validate_range=False,
+                    validate_code=False,
+                )
+                if not internal_valid_cid(last_cid):
                     continue
-                try:
-                    start_bytes = decode_cmap_hex_token(start_token)
-                    end_bytes = decode_cmap_hex_token(end_token)
-                    cid = int(cid_token)
-                    # Also rejects mismatched start/end lengths.
-                    validate_codespace_range(start_bytes, end_bytes)
-                except (ValueError, UnicodeDecodeError):
-                    continue
-                remove_codes_in_range(mappings, start_bytes, end_bytes)
-                ranges.append(make_range(start_bytes, end_bytes, cid))
+            remove_codes_in_range(mappings, start_bytes, end_bytes)
+            ranges.append(make_range(start_bytes, end_bytes, cid))
 
     def mapped_cid(self, code: bytes) -> int | None:
         cid = self.cid_mappings.get(code)
@@ -349,7 +376,7 @@ class CMapDecoder:
                 key = None
             matched = False
             for length in decode_lengths:
-                if pos + length > n:
+                if length <= 0 or pos + length > n:
                     continue
                 chunk = BYTE_CACHE[data[pos]] if length == 1 else data[pos : pos + length]
                 length_ranges = ranges.get(length)
