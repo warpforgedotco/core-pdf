@@ -23,6 +23,7 @@ uv run pytest tests/ -n auto          # run the full test suite in parallel
 uv run --group lint ruff check .     # lint Python files
 uv run --group lint ruff format --check .
 uv run --group lint mypy             # static type checking
+uv run --group lint lint-imports     # architecture: layer and dependency contracts
 uv run --group lint --group test --group benchmark ty check
 prek run --all-files                 # run repository hooks across all files
 ```
@@ -82,6 +83,8 @@ Never edit `pyproject.toml` or `uv.lock` manually when adding or removing depend
 Write Python with four-space indentation, clear type annotations, and lines no longer than 100 characters. Ruff handles import sorting, linting, and formatting; run it before submitting. Use `snake_case` for modules, functions, and variables, `PascalCase` for classes, and `UPPER_SNAKE_CASE` for constants.
 
 Module-level symbols that are not part of a module's interface are prefixed `internal_` rather than with a leading underscore — about 490 of them. Treat anything so prefixed as private. The convention is applied unevenly across subpackages, so its *absence* does not imply a symbol is public; nothing under `impl/` is. Where a module declares `__all__`, that is the more reliable signal. Two wrinkles worth knowing: `internal_EXPORTS` in `__init__.py` is the public export table (the prefix marks the variable as private, not its contents), and a handful of constants are spelled `internal_UPPER_CASE`.
+
+Dependency direction is enforced, not conventional. `import-linter` contracts in `[tool.importlinter]` (`pyproject.toml`) pin the engine layering, the spec layering, and the three packages that must not depend upward (`impl/runtime/`, `impl/engine/model/`, `spec/s_07_syntax`). They run in the `pre-push` prek stage that CI executes. If a change needs a new edge that a contract forbids, the edge is usually the bug -- read the "Dependency direction" section of `docs/architecture.md` before editing the contract.
 
 Third-party code belongs in `src/core_pdf/_vendor/`; do not add new third-party implementations elsewhere in `core-pdf`.
 

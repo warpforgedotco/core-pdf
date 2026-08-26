@@ -139,8 +139,15 @@ src/core_pdf/
 
 ### Dependency direction
 
-**There are no runtime import cycles between packages.** Keep it that way; the
-remaining known knots are listed at the end of this section.
+**There are no runtime import cycles between packages, and `import-linter` enforces
+it.** Seven contracts live in `[tool.importlinter]` in `pyproject.toml`; run them with
+`uv run --group lint lint-imports`. They also run in the `pre-push` prek stage, which
+is what CI's quality job executes, so a violation fails the build rather than review.
+
+`exclude_type_checking_imports` is on, so the contracts check the runtime graph. That
+is deliberate: annotation-only imports create no cycle at import time, and two of them
+are load-bearing (see the knots below). Adding a layer means adding it to the
+contract; the contracts are the specification, this prose is the explanation.
 
 Three packages exist to be depended *upon* and must not depend upward:
 
@@ -166,6 +173,15 @@ content-stream interpreter needs them; and `newstroke`/`stroked_text` are
 `model/glyphs.py` owns the glyph records (including `GlyphSegment` and
 `internal_materialize`) and `model/glyph_table.py` owns only the columnar storage that
 consumes them, so the two no longer import each other.
+
+**One piece of layering debt is named in the config rather than hidden.** `PdfStream`
+lives in `impl/objects.py`, a base module, but decodes through `s_07_filters`, so every
+module that touches a stream has a transitive path up into the engine. Four contracts
+would trip on that one edge, so each ignores it explicitly — and only it. The fix is to
+move `PdfStream` into the COS layer, which first needs the syntax *primitives*
+(`coercion`, `pdfdict`, `lexer_helpers`, `scanning`) separated from the COS objects that
+depend on the filters. The filter package's imports already imply that boundary: it
+reaches into `s_07_syntax` for exactly those four modules and nothing else.
 
 **Two known knots**, both deliberate and neither a runtime package cycle:
 
