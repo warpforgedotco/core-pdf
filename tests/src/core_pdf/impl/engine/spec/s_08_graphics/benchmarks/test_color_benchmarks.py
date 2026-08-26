@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import numpy
+import pytest
 
 from core_pdf.impl.engine.spec.s_08_graphics import IccTransform
 from core_pdf.impl.engine.spec.s_08_graphics.icc_profiles import (
@@ -9,24 +10,25 @@ from core_pdf.impl.engine.spec.s_08_graphics.icc_profiles import (
     IccMatrixProfile,
 )
 
-# Deliberately NOT benchmark_high_impact, so these stay out of the pull-request
-# CodSpeed run. Both benchmarks push 65,536x3 float32 through IccTransform.apply,
-# and profiling that payload puts almost all of it in numpy elementwise work --
-# linear_to_srgb dominates, and its hot operation is
-# `numpy.power(clipped, 1.0 / 2.4)`, a transcendental ufunc that numpy
-# runtime-dispatches to CPU-specific SIMD kernels.
+# These two were demoted out of the pull-request set for swinging 282ms to 2s on
+# unchanged code, on the theory that `numpy.power` in linear_to_srgb was being
+# dispatched to CPU-specific SIMD kernels. That was wrong. The other 24
+# benchmarks agree to three significant figures across the very same runs, and
+# several of them also go through numpy -- a per-CPU dispatch would not have
+# spared them.
 #
-# CodSpeed measures here in Simulation mode, counting instructions under
-# Valgrind. Different SIMD kernels are genuinely different instruction streams,
-# so on a heterogeneous runner pool these numbers move with the CPU that
-# happened to pick up the job rather than with any change to core-pdf.
-# Observed: 2.9s / 2.0s / 1.2s / 0.93s across four runs on code that never
-# touched ICC, and once a "x3.1 improvement" attributed to a tables-only change.
+# The cause is OpenBLAS. Both benchmarks reach sgemm (apply_matrix_transform
+# does `curves @ matrix`), and CodSpeed counts instructions on a simulated CPU
+# that serializes threads, so the thread pool's idle spin-waiting is counted in
+# full rather than overlapping with real work. Three iterations of MATRIX.apply
+# under callgrind: 766M instructions on one thread, 41.9B on two, 159.4B on
+# eight, and 80.1B then 77.7B on two runs of the same binary.
 #
-# This is not flaky measurement to be re-run until it settles; the benchmark is
-# faithfully measuring code that differs per machine. Re-running cannot fix it
-# and neither can a tolerance. They still run in the weekly full sweep, where a
-# human reads CodSpeed's "Environment Differences / CPU" block alongside them.
+# The benchmark job now pins OPENBLAS_NUM_THREADS and OMP_NUM_THREADS to 1,
+# which makes these reproducible (18.81ms twice running under the simulator), so
+# they are back in the high-impact set. Read any ICC benchmark history from
+# before that pinning as noise.
+pytestmark = pytest.mark.benchmark_high_impact
 
 
 def matrix_transform() -> IccTransform:
