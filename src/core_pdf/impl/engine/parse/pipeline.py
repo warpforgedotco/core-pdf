@@ -716,7 +716,7 @@ def internal_install_document_stroked_decode_locked(
     seed_pages: tuple[int, ...],
     alphabet_size: int,
 ) -> None:
-    from core_pdf.impl.engine.parse.ocr import internal_stroked_vector_decoded_batch
+    from core_pdf.impl.engine.parse.ocr_stroked_vector import internal_stroked_vector_decoded_batch
 
     observations = internal_stroked_vector_decoded_batch(decoded.observations)
     candidate = internal_candidate(-1, observations)
@@ -823,7 +823,7 @@ def internal_prepare_document_stroked_mappings(
     )
     if len(indexes) < 2:
         return 0, 0
-    from core_pdf.impl.engine.parse.ocr import internal_stroked_text_profile
+    from core_pdf.impl.engine.parse.ocr_stroked_vector import internal_stroked_text_profile
 
     ordered = tuple(
         sorted(
