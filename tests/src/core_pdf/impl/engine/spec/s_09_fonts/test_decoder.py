@@ -54,7 +54,6 @@ def test_parse_type1_font_program_encoding_reads_custom_array() -> None:
     assert parse_type1_font_program_encoding(font_program) == {12: "fi", 65: "A"}
 
 
-
 def test_font_decoder_uses_embedded_type1_encoding_without_pdf_encoding() -> None:
     font_program = b"""
     /Encoding 256 array
