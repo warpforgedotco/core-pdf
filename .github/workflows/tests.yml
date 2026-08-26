@@ -83,7 +83,10 @@ jobs:
           # stayed unreachable for weeks precisely because only the subset ran
           # here. The full sweep costs a few minutes.
           CORE_PDF_RASTER_GOLDEN_FULL: "1"
-        run: uv run --locked --package core-pdf --group test pytest -n auto
+        # -n auto was measured and reverted: 108s against 106s and 118s for
+        # -n 2 on the same suite, i.e. inside the run-to-run noise. The job is
+        # not CPU-parallel-bound, so widening the worker pool buys nothing.
+        run: uv run --locked --package core-pdf --group test pytest -n 2
 
       - name: Prune uv cache
         if: always()
