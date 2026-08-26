@@ -80,7 +80,8 @@ bytes → │ capture_page│ → plan_page ────────────
 | `parse/route.py` | Decides *how* to extract this page — native text, OCR, or both — producing a typed `WorkPlan`. |
 | `parse/fusion.py` | Merges observations from multiple sources (native + OCR) into one coherent set. |
 | `parse/tables.py` | Owns the complete table stage: grid, stream, and chart detection; cell merging; ordering; and nearby title/caption association. |
-| `parse/ocr.py` | Tesseract integration: rasterization, region selection, hOCR parsing, adaptive rescue passes, and stroked-vector-text recovery. It returns observations and a `RecognitionReport`; caches hold reusable raster artifacts, not diagnostic side channels. |
+| `parse/ocr*.py` | The recognition stage, itself layered. `ocr.py` orchestrates; `ocr_regions.py` picks what to recognize and batches it; `ocr_raster.py` produces the pixels; `ocr_tesseract.py` is the only module that talks to Tesseract; `ocr_stroked_vector.py` recovers text drawn as vector strokes; `ocr_model.py` holds the records they all share. It returns observations and a `RecognitionReport`; caches hold reusable raster artifacts, not diagnostic side channels. |
+| `parse/grid_geometry.py` | Ruled-grid segment classification and connected components, shared by `tables.py` (vector rulings) and the OCR stage (rulings detected in a raster). |
 | `parse/layout.py` | Groups runs into lines and blocks; column detection and reading order. |
 | `parse/emit.py` | Text normalization, artifact removal, table/block reconciliation, and direct assembly of the canonical structured `Page`. |
 | `parse/pipeline.py` | Lazy orchestration, single-flight locking, and product caching: `parse_page`, `extract_page`, and `page_extraction`. It assembles the typed `ParseReport` once per parsed page. |
