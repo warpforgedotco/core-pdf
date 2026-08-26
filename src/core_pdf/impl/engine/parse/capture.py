@@ -37,7 +37,7 @@ from core_pdf.impl.engine.parse.model import (
     internal_analyze_text,
 )
 from core_pdf.impl.engine.spec.s_07_content.page_program import PageProgram
-from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_08_graphics.image_metadata import (
     image_filter_names,
 )

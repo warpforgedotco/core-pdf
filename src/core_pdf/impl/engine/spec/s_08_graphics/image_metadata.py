@@ -6,12 +6,12 @@ from __future__ import annotations
 from typing import Any, TypeGuard
 
 from core_pdf.impl.engine.layout.geometry import rect_tuple
-from core_pdf.impl.engine.spec.s_07_objects.coercion import (
+from core_pdf.impl.engine.spec.s_07_syntax.coercion import (
     normalize_pdf_name,
     parse_float,
     parse_int,
 )
-from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import lookup_dict_key
 
 
 def pdf_int(value: Any, default: int) -> int:

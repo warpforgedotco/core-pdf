@@ -41,25 +41,25 @@ from core_pdf.impl.engine.spec.s_07_document.records import (
     RawNamedDestination,
     RawOutlineItem,
 )
-from core_pdf.impl.engine.spec.s_07_objects.coercion import normalize_pdf_name
-from core_pdf.impl.engine.spec.s_07_objects.object_cache import (
-    CachedPdfObject,
-    InheritedValueMap,
-    InheritedValuesCache,
-)
-from core_pdf.impl.engine.spec.s_07_objects.pdfdict import (
-    collect_inherited_values,
-    lookup_dict_key,
-)
-from core_pdf.impl.engine.spec.s_07_objects.resolver import ObjectResolver
-from core_pdf.impl.engine.spec.s_07_objects.trees import (
-    iter_name_tree_items,
-    iter_number_tree_items,
-)
 from core_pdf.impl.engine.spec.s_07_security.crypto_handlers import SECURITY_HANDLER_REGISTRY
 from core_pdf.impl.engine.spec.s_07_security.errors import (
     PDFEncryptionError,
     PDFPasswordIncorrect,
+)
+from core_pdf.impl.engine.spec.s_07_syntax.coercion import normalize_pdf_name
+from core_pdf.impl.engine.spec.s_07_syntax.object_cache import (
+    CachedPdfObject,
+    InheritedValueMap,
+    InheritedValuesCache,
+)
+from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import (
+    collect_inherited_values,
+    lookup_dict_key,
+)
+from core_pdf.impl.engine.spec.s_07_syntax.resolver import ObjectResolver
+from core_pdf.impl.engine.spec.s_07_syntax.trees import (
+    iter_name_tree_items,
+    iter_number_tree_items,
 )
 from core_pdf.impl.engine.spec.s_07_syntax.xref import PdfXRefEntry
 from core_pdf.impl.engine.spec.s_14_structure.tree import StructureTree

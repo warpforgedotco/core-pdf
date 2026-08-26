@@ -10,13 +10,13 @@ from typing import Any, Callable
 from core_pdf._vendor.fontTools.agl import UV2AGL
 from core_pdf._vendor.fontTools.encodings.MacRoman import MacRoman
 from core_pdf._vendor.fontTools.encodings.StandardEncoding import StandardEncoding
-from core_pdf.impl.engine.spec.s_07_objects.coercion import normalize_pdf_name
+from core_pdf.impl.engine.spec.s_07_syntax.coercion import normalize_pdf_name
 from core_pdf.impl.engine.spec.s_09_fonts.data.base_encodings import (
     MAC_ROMAN_ENCODING,
     STANDARD_ENCODING,
     WIN_ANSI_ENCODING,
 )
-from core_pdf.impl.engine.spec.s_09_fonts.encoding import PDFDOC_ENCODING_TABLE
+from core_pdf.impl.engine.spec.s_07_syntax.text_string import PDFDOC_ENCODING_TABLE
 from core_pdf.impl.engine.spec.s_09_fonts.glyphs import glyph_name_to_unicode
 
 EncodingFallback = Callable[[int], str]

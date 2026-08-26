@@ -12,7 +12,6 @@ from core_pdf.impl.engine.spec.s_09_fonts.decoder import (
     FontDecoder,
     parse_type1_font_program_encoding,
 )
-from core_pdf.impl.engine.spec.s_09_fonts.encoding import decode_pdf_text_string
 from core_pdf.impl.engine.spec.s_09_fonts.font_program import CFFFont
 from core_pdf.impl.engine.spec.s_09_fonts.font_program_truetype import (
     TrueTypeFontProgram,
@@ -54,14 +53,6 @@ def test_parse_type1_font_program_encoding_reads_custom_array() -> None:
 
     assert parse_type1_font_program_encoding(font_program) == {12: "fi", 65: "A"}
 
-
-def test_decode_pdfdoc_encoding_accent_and_quote_bytes() -> None:
-    assert decode_pdf_text_string(bytes(range(0x18, 0x20))) == "˘ˇˆ˙˝˛˚˜"
-    assert decode_pdf_text_string(bytes(range(0x8D, 0x91))) == "“”‘’"
-
-
-def test_decode_pdf_text_string_accepts_utf8_bom() -> None:
-    assert decode_pdf_text_string(b"\xef\xbb\xbfPrice \xe2\x82\xac") == "Price €"
 
 
 def test_font_decoder_uses_embedded_type1_encoding_without_pdf_encoding() -> None:

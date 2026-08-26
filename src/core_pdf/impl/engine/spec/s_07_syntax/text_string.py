@@ -1,9 +1,50 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Native PDF string encoding helpers."""
+"""PDF 7.9.2.2 text strings: PDFDocEncoding and the BOM-prefixed encodings."""
 
 from __future__ import annotations
 
-from core_pdf.impl.engine.spec.s_09_fonts.data.core14 import PDFDOC_ENCODING_OVERRIDES
+PDFDOC_ENCODING_OVERRIDES: dict[int, str] = {
+    24: "˘",
+    25: "ˇ",
+    26: "ˆ",
+    27: "˙",
+    28: "˝",
+    29: "˛",
+    30: "˚",
+    31: "˜",
+    128: "•",
+    129: "†",
+    130: "‡",
+    131: "…",
+    132: "—",
+    133: "–",
+    134: "ƒ",
+    135: "⁄",
+    136: "‹",
+    137: "›",
+    138: "−",
+    139: "‰",
+    140: "„",
+    141: "“",
+    142: "”",
+    143: "‘",
+    144: "’",
+    145: "‚",
+    146: "™",
+    147: "ﬁ",
+    148: "ﬂ",
+    149: "Ł",
+    150: "Œ",
+    151: "Š",
+    152: "Ÿ",
+    153: "Ž",
+    154: "ı",
+    155: "ł",
+    156: "œ",
+    157: "š",
+    158: "ž",
+    160: "€",
+}
 
 CHR_TABLE: list[str] = [chr(i) for i in range(256)]
 PDFDOC_ENCODING_TABLE: list[str] = [

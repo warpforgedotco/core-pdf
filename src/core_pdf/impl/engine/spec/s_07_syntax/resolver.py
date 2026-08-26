@@ -8,22 +8,22 @@ import mmap
 import threading
 from typing import cast
 
-from core_pdf.impl.engine.spec.s_07_objects.coercion import normalize_pdf_name
-from core_pdf.impl.engine.spec.s_07_objects.indirect_headers import (
+from core_pdf.impl.engine.spec.s_07_syntax.coercion import normalize_pdf_name
+from core_pdf.impl.engine.spec.s_07_syntax.content_operators import (
+    CACHED_OPERATOR_KEYWORDS,
+)
+from core_pdf.impl.engine.spec.s_07_syntax.indirect_headers import (
     find_indirect_object_header,
 )
-from core_pdf.impl.engine.spec.s_07_objects.object_cache import (
+from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
+from core_pdf.impl.engine.spec.s_07_syntax.object_cache import (
     CachedPdfObject,
     DeepObjectCache,
     GenerationZeroObjectCache,
     ObjectCache,
 )
-from core_pdf.impl.engine.spec.s_07_objects.resolver_values import ResolverValueMixin
-from core_pdf.impl.engine.spec.s_07_syntax.content_operators import (
-    CACHED_OPERATOR_KEYWORDS,
-)
-from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.engine.spec.s_07_syntax.objects import PdfObjectStream
+from core_pdf.impl.engine.spec.s_07_syntax.resolver_values import ResolverValueMixin
 from core_pdf.impl.engine.spec.s_07_syntax.xref import (
     PdfXRefEntry,
     key_for,

@@ -22,8 +22,8 @@ from core_pdf.impl.engine.spec.s_07_document.document_labels import (
 from core_pdf.impl.engine.spec.s_07_document.metadata import (
     resolve_info_metadata,
 )
-from core_pdf.impl.engine.spec.s_07_objects.resolver_values import PdfValueResolver
 from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
+from core_pdf.impl.engine.spec.s_07_syntax.resolver_values import PdfValueResolver
 from core_pdf.impl.engine.spec.s_09_fonts.decoder import FontDecoder
 from core_pdf.impl.primitives import MISSING, PdfName
 from core_pdf.impl.types import PdfDict

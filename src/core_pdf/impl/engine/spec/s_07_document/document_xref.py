@@ -12,14 +12,14 @@ from core_pdf.impl.engine.spec.s_07_document.document_labels import (
     infer_page_tree_node_type,
     resolve_page_tree_node_type,
 )
-from core_pdf.impl.engine.spec.s_07_objects.coercion import normalize_pdf_name
-from core_pdf.impl.engine.spec.s_07_objects.object_cache import (
+from core_pdf.impl.engine.spec.s_07_syntax.coercion import normalize_pdf_name
+from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
+from core_pdf.impl.engine.spec.s_07_syntax.object_cache import (
     CachedPdfObject,
     ResolvedObjectCache,
 )
-from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
-from core_pdf.impl.engine.spec.s_07_objects.resolver import ObjectResolver
-from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
+from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_07_syntax.resolver import ObjectResolver
 from core_pdf.impl.engine.spec.s_07_syntax.xref import (
     PdfXRefEntry,
     XRefScanner,

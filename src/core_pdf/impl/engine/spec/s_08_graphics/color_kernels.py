@@ -8,8 +8,8 @@ from functools import lru_cache
 import numpy
 
 from core_pdf.impl.engine.array_views import ByteBuffer, uint8_view
-from core_pdf.impl.engine.spec.s_07_objects.coercion import parse_float, parse_int
-from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_07_syntax.coercion import parse_float, parse_int
+from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_08_graphics.color_spec import ImageColorSpec
 from core_pdf.impl.objects import PdfStream
 

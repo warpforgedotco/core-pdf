@@ -6,8 +6,8 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Any, Protocol, cast
 
-from core_pdf.impl.engine.spec.s_07_objects.coercion import normalize_pdf_name
-from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_07_syntax.coercion import normalize_pdf_name
+from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_09_fonts.font_program_truetype import TrueTypeFontProgram
 from core_pdf.impl.engine.spec.s_09_fonts.widths import (
     require_font_float,

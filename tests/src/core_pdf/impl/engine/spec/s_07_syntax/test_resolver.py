@@ -1,6 +1,6 @@
 from typing import cast
 
-from core_pdf.impl.engine.spec.s_07_objects.resolver import ObjectResolver
+from core_pdf.impl.engine.spec.s_07_syntax.resolver import ObjectResolver
 from core_pdf.impl.engine.spec.s_07_syntax.xref import PdfXRefEntry, key_for
 from core_pdf.impl.primitives import PdfReference
 from core_pdf.impl.types import PdfDict

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from core_pdf.impl.engine.spec.s_07_objects.trees import iter_number_tree_items
+from core_pdf.impl.engine.spec.s_07_syntax.trees import iter_number_tree_items
 
 
 def identity(value: object) -> object:

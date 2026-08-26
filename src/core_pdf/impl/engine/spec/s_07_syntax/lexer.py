@@ -10,7 +10,6 @@ import re
 from collections.abc import Callable
 from typing import Any
 
-from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_07_syntax.lexer_helpers import (
     EMPTY_TRANSLATE_TABLE,
     HEX_VALUE,
@@ -25,6 +24,7 @@ from core_pdf.impl.engine.spec.s_07_syntax.lexer_helpers import (
     matches_keyword_with_one_substitution,
     skip_pdf_ignored,
 )
+from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_07_syntax.tokens import (
     DELIMITERS,
     SEPARATOR_TABLE,

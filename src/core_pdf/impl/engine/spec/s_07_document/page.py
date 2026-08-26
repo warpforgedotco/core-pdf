@@ -27,11 +27,11 @@ from core_pdf.impl.engine.spec.s_07_document.page_links import (
     resolve_annotation_dict,
 )
 from core_pdf.impl.engine.spec.s_07_document.records import RawAnnotation, RawLink
-from core_pdf.impl.engine.spec.s_07_objects.object_cache import (
+from core_pdf.impl.engine.spec.s_07_syntax.object_cache import (
     CachedPdfObject,
     InheritedValueMap,
 )
-from core_pdf.impl.engine.spec.s_07_objects.pdfdict import (
+from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import (
     collect_inherited_values,
     lookup_dict_key,
 )

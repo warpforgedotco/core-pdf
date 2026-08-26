@@ -17,7 +17,7 @@ from core_pdf.impl.engine.spec.s_07_filters.jbig2 import (
     decode_embedded_jbig2,
     parse_jbig2_file,
 )
-from core_pdf.impl.engine.spec.s_07_objects.coercion import coerce_to_bytes, is_pdf_null
+from core_pdf.impl.engine.spec.s_07_syntax.coercion import coerce_to_bytes, is_pdf_null
 
 
 def raise_pdf_parse(exc: BaseException) -> NoReturn:

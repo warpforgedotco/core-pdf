@@ -73,9 +73,9 @@ from core_pdf.impl.engine.spec.s_07_filters.registry import (
     FILTER_DESCRIPTORS,
     PREDICTOR_FILTERS,
 )
-from core_pdf.impl.engine.spec.s_07_objects.coercion import normalize_pdf_name
-from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_07_syntax.coercion import normalize_pdf_name
 from core_pdf.impl.engine.spec.s_07_syntax.lexer_helpers import full_source_bytes
+from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import lookup_dict_key
 
 internal_FILTER_DECODERS: dict[str, FilterFn] = {
     "flate": apply_flate,

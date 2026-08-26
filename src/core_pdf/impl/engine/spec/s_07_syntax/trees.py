@@ -6,7 +6,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator
 from typing import TypeVar
 
-from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import lookup_dict_key
 
 ResolveFn = Callable[[object], object]
 NameDecodeFn = Callable[[object], str | None]

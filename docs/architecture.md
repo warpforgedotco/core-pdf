@@ -138,8 +138,7 @@ Subpackages under `spec/` mirror **chapters of the PDF specification**:
 
 | Package | PDF chapter |
 | --- | --- |
-| `s_07_syntax` | 7 — lexer, tokens, xref |
-| `s_07_objects` | 7 — object model, resolver, coercion |
+| `s_07_syntax` | 7 — lexer, tokens, xref, object model, resolver, coercion, text strings |
 | `s_07_filters` | 7 — stream filters (Flate, LZW, CCITT, JBIG2, …) |
 | `s_07_content` | 7 — content streams, operators, text state |
 | `s_07_document` | 7 — catalog, page tree, metadata |
@@ -147,6 +146,13 @@ Subpackages under `spec/` mirror **chapters of the PDF specification**:
 | `s_08_graphics` | 8 — color spaces, ICC, images, matrices |
 | `s_09_fonts` | 9 — font programs, CMaps, glyph decoding |
 | `s_14_structure` | 14 — logical structure tree |
+
+`s_07_syntax` is the COS layer — lexing, the object model, xref, and resolution are one
+cohesive unit and were merged into a single package. Splitting them across `s_07_syntax` and a
+separate `s_07_objects` produced a package-level import cycle (six edges each way) even though the
+modules themselves form an acyclic graph. The package now depends only on `impl/exceptions`,
+`impl/objects`, `impl/primitives`, and `impl/types`; keep it that way — nothing in `s_07_syntax`
+may import from another `spec/` subpackage or from `impl/engine/`.
 
 Operator and filter metadata each have one declarative owner. Content-operator categories,
 dispatch names, text-only scan tables, Type 3 replay membership, and cached lexer keywords derive

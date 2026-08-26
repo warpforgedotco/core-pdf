@@ -6,12 +6,12 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from typing import TYPE_CHECKING, Any, TypeAlias, cast, overload
 
-from core_pdf.impl.engine.spec.s_07_objects.coercion import (
+from core_pdf.impl.engine.spec.s_07_syntax.coercion import (
     coerce_value,
     normalize_pdf_name,
 )
-from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
-from core_pdf.impl.engine.spec.s_07_objects.trees import iter_number_tree_items
+from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_07_syntax.trees import iter_number_tree_items
 from core_pdf.impl.engine.spec.s_14_structure.content import (
     StructureContentItem,
     StructureContentObject,

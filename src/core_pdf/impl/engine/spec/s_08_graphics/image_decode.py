@@ -15,7 +15,7 @@ from core_pdf.impl.engine.spec.s_07_filters.pipeline import (
     decode_stream_data,
     decode_stream_image_data,
 )
-from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_08_graphics.color import ImageColorManager
 from core_pdf.impl.engine.spec.s_08_graphics.image_metadata import pdf_int
 

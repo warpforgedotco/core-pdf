@@ -7,13 +7,13 @@ import typing
 import zlib
 from typing import cast
 
-from core_pdf.impl.engine.spec.s_07_objects.coercion import (
+from core_pdf.impl.engine.spec.s_07_syntax.coercion import (
     normalize_pdf_name,
     parse_int_strict,
 )
-from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_07_syntax.lexer import WS_TABLE, PdfLexer
 from core_pdf.impl.engine.spec.s_07_syntax.objects import PdfObjectStream
+from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import lookup_dict_key
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.objects import PdfStream
 from core_pdf.impl.types import PdfByteBuffer, PdfDict
@@ -848,7 +848,7 @@ def parse_object_marker_prefix(
 ) -> tuple[int, int, int] | None:
     """Return ``(offset, object number, generation)`` for the ``N G obj`` header at ``marker``.
 
-    ``s_07_objects.indirect_headers.parse_object_header_prefix`` wraps this and takes
+    ``s_07_syntax.indirect_headers.parse_object_header_prefix`` wraps this and takes
     just the offset, for callers that don't need the parsed object/generation numbers.
     """
     if marker + 3 < len(data) and not WS_TABLE[data[marker + 3]]:

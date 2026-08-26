@@ -10,8 +10,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Iterable
 
-from core_pdf.impl.engine.spec.s_07_objects.coercion import normalize_pdf_name
-from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_07_syntax.coercion import normalize_pdf_name
+from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_09_fonts.cff import (
     build_cff_unicode_repair_index,
     cff_font_for_pdf_font,
