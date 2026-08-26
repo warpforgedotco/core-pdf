@@ -44,17 +44,26 @@ should be arranged with ISO."
 | `PDFReference-1.6-Adobe-2004.pdf` | PDF 1.6 | 2004 | Adobe |
 | `PDFReference-1.7-Adobe-2006.pdf` | PDF 1.7 | 2006 | Adobe |
 | `ISO32000-1-2008-PDF-1.7.pdf` | ISO 32000-1 (PDF 1.7) | 2008 | ISO, authorized Adobe copy |
+| `ISO32000-2-2020-PDF-2.0-EC3.pdf` | ISO 32000-2 (PDF 2.0), Errata Collection 3 | 2020 | ISO, sponsored access |
+| `ISO-TS-32001-2022-Hash-Algorithms-EC3.pdf` | ISO/TS 32001 — hash algorithms (SHA-3) | 2022 | ISO, sponsored access |
+| `ISO-TS-32002-2022-Digital-Signatures-EC3.pdf` | ISO/TS 32002 — digital signatures (EdDSA) | 2022 | ISO, sponsored access |
+| `ISO-TS-32003-2023-AES-GCM.pdf` | ISO/TS 32003 — AES-GCM encryption | 2023 | ISO, sponsored access |
+| `ISO-TS-32004-2024-Integrity-Protection.pdf` | ISO/TS 32004 — integrity protection | 2024 | ISO, sponsored access |
+| `ISO-TS-32005-2023-Structure-Namespaces.pdf` | ISO/TS 32005 — structure namespaces | 2023 | ISO, sponsored access |
 
 PDF 1.1 is not among them: Adobe does not host that edition, and no
-authoritative copy is publicly served.
+authoritative copy is publicly served. Every other published version of PDF,
+1.0 through 2.0, is present.
 
 ## Not obtainable
 
-- **ISO 32000-2 (PDF 2.0)** -- the PDF Association publishes it at no charge,
-  but only through a browser-gated form on <https://pdfa.org>, under terms that
-  permit personal use and not redistribution. Fetch it by hand if you need it;
-  drop it in as `ISO32000-2-2020-PDF-2.0.pdf` and it will be ignored like the
-  rest.
+- **The ISO 32000-2 bundle is a manual step.** The PDF Association sponsors free
+  access to PDF 2.0 and its five extensions, but only through a cart and
+  checkout on <https://www.pdfa-inc.org/product/iso-32000-2-pdf-2-0-bundle-sponsored-access/>,
+  which cannot be scripted. The bundle is already in place here; re-download it
+  by hand if this directory is ever rebuilt from scratch. ISO reserves all
+  rights over these documents -- "no part of this publication may be reproduced"
+  -- so they are gitignored like everything else in this tier.
 - **The conformance subsets** -- PDF/A (ISO 19005), PDF/X (ISO 15930), PDF/UA
   (ISO 14289), PDF/E (ISO 24517), PDF/VT (ISO 16612), PDF/raster (ISO 23504).
   All are sold by ISO at roughly CHF 200 per part and none may be redistributed.

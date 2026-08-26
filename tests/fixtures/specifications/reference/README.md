@@ -41,6 +41,9 @@ Re-fetch with:
 | `pdfa/BPG-Math-in-PDF.pdf` | CC BY 4.0 | formula tagging, text extraction |
 | `pdfa/PDF-Extension-Brotli.pdf` | CC BY 4.0 | proposed Brotli stream filter |
 | `pdfa/EA-PDF-v1.pdf` | CC BY 4.0 | email-archiving profile (context only) |
+| `pdfa/PDF20-AN001-Black-Point-Compensation.pdf` | CC BY 4.0 | BPC in graphics state, `s_08_graphics` |
+| `pdfa/PDF20-AN002-Associated-Files.pdf` | CC BY 4.0 | `/AF` associated files, PDF 2.0 |
+| `pdfa/PDF20-AN003-Object-Metadata-Locations.pdf` | CC BY 4.0 | where object metadata may live |
 
 The glyph lists are worth calling out: unmapped glyph names are a known source
 of text-extraction divergence against other engines, and `glyphlist.txt` is the
@@ -55,7 +58,7 @@ authoritative mapping.
   functions. Adobe no longer serves a stable copy.
 - **UAX #9 / #14 / #29** — the algorithm reports themselves are HTML-only and
   versioned; the UCD data files above carry the property tables they operate on.
-- **ISO 32000-2 (PDF 2.0)** — the PDF Association gives it away, but only through
-  a cart/checkout on pdfa-inc.org rather than a direct link, so it cannot be
-  scripted. `pdfa/Well-Tagged-PDF-WTPDF-1.0.pdf` covers the PDF 2.0 tagging
-  rules; the base specification still has to be fetched by hand.
+- **ISO 32000-2 (PDF 2.0)** — obtained, but it lives in `../PDF/` rather than
+  here: ISO reserves all reproduction rights even under the PDF Association's
+  sponsored access. The three `pdfa/PDF20-AN*` application notes above are the
+  CC BY 4.0 companions to it and *are* committed.
