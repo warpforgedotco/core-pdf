@@ -1440,11 +1440,16 @@ class TextState:
                 if soft_mask_raw_data is not None:
                     source_dictionary["__soft_mask_raw_data__"] = soft_mask_raw_data
                     source_dictionary["__soft_mask_dictionary__"] = soft_mask_dictionary or {}
+                # A stencil mask carries no colour samples: PDF 8.9.6.2 paints its
+                # set bits in the current fill colour. Every other image ignores
+                # the fill, so recording it is only meaningful for the mask case,
+                # but it costs nothing to carry and the renderer decides.
+                image_is_stencil = lookup_dict_key(xobj_dict, "ImageMask") is True
                 self.drawings.append(
                     CapturedDrawing(
                         seqno=self.sequence,
-                        fill=None,
-                        fill_opacity=None,
+                        fill=self.fill_color if image_is_stencil else None,
+                        fill_opacity=self.fill_opacity if image_is_stencil else None,
                         blend_mode=self.blend_mode,
                         dash_pattern=self.transformed_dash_pattern(),
                         soft_mask_alpha=smask_alpha,

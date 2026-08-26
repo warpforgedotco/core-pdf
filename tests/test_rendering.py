@@ -1075,6 +1075,64 @@ def test_image_mask_opaque_region_uses_masked_page_view() -> None:
     numpy.testing.assert_array_equal(actual, expected)
 
 
+def test_image_mask_paints_the_current_fill_colour() -> None:
+    # PDF 8.9.6.2: a stencil mask carries no colour samples of its own, so its set
+    # bits take the fill colour that was current when it was drawn. Painting them
+    # black regardless is only correct by accident, because black is the default
+    # fill -- which is why every stencil in the corpus hid this.
+    page = rendered_page(width=2, height=2)
+    page.display_list.append(
+        "image",
+        1,
+        raw_data=b"\x80\x40",
+        dictionary={
+            "ImageMask": True,
+            "Width": 2,
+            "Height": 2,
+            "BitsPerComponent": 1,
+        },
+        bbox=(0, 0, 2, 2),
+        fill=(1.0, 0.0, 0.0),
+    )
+
+    actual = numpy.frombuffer(
+        page.rasterize(background=(255, 255, 255, 255)).pixels,
+        dtype=numpy.uint8,
+    ).reshape(2, 2, 4)
+    expected = numpy.full((2, 2, 4), 255, dtype=numpy.uint8)
+    expected[0, 0, :3] = (255, 0, 0)
+    expected[1, 1, :3] = (255, 0, 0)
+
+    numpy.testing.assert_array_equal(actual, expected)
+
+
+def test_image_mask_without_a_recorded_fill_stays_black() -> None:
+    # No fill recorded means the drawing never set one, so the PDF default applies.
+    page = rendered_page(width=2, height=2)
+    page.display_list.append(
+        "image",
+        1,
+        raw_data=b"\x80\x40",
+        dictionary={
+            "ImageMask": True,
+            "Width": 2,
+            "Height": 2,
+            "BitsPerComponent": 1,
+        },
+        bbox=(0, 0, 2, 2),
+    )
+
+    actual = numpy.frombuffer(
+        page.rasterize(background=(255, 255, 255, 255)).pixels,
+        dtype=numpy.uint8,
+    ).reshape(2, 2, 4)
+    expected = numpy.full((2, 2, 4), 255, dtype=numpy.uint8)
+    expected[0, 0, :3] = 0
+    expected[1, 1, :3] = 0
+
+    numpy.testing.assert_array_equal(actual, expected)
+
+
 def test_aligned_opaque_glyph_bitmap_expands_through_page_view() -> None:
     page = rendered_page(width=4, height=4)
     page.display_list.append(

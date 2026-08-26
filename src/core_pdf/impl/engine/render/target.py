@@ -2951,7 +2951,12 @@ class internal_RasterTarget:
         """Paint a stencil-mask image: 1 bit per sample selecting the fill colour.
 
         Split out of :meth:`blit_image`, which dispatches to it before any
-        decode work — an ImageMask carries no colour samples of its own."""
+        decode work — an ImageMask carries no colour samples of its own.
+
+        PDF 8.9.6.2: the set samples are painted in the fill colour that was
+        current when the image was drawn. Capture records that colour on the
+        drawing for stencil masks only; when it is absent the PDF default of
+        black applies, which is what every mask in the corpus resolves to."""
 
         # Captured target state hoisted into locals, as elsewhere in this class.
         blend_normal_pixel = self.blend_normal_pixel
@@ -2966,6 +2971,9 @@ class internal_RasterTarget:
         pixel_view = self.pixel_view
         pixels = self.pixels
         width = self.width
+        stencil_red, stencil_green, stencil_blue, stencil_alpha = internal_color_rgba(
+            data.get("fill") or data.get("fill_color"), data.get("fill_opacity")
+        )
         width_px = pdf_int(lookup_dict_key(dictionary, "Width"), 0)
         height_px = pdf_int(lookup_dict_key(dictionary, "Height"), 0)
         if width_px <= 0 or height_px <= 0:
@@ -3021,7 +3029,7 @@ class internal_RasterTarget:
                 target_pixels = pixel_view(pixels)
                 target_region = target_pixels[iy0:iy1, ix0:ix1]
                 visible = sampled_mask != 0
-                target_region[visible, :3] = 0
+                target_region[visible, :3] = (stencil_red, stencil_green, stencil_blue)
                 target_region[visible, 3] = sampled_mask[visible]
                 return
             for dy, py in enumerate(range(iy0, iy1)):
@@ -3035,9 +3043,9 @@ class internal_RasterTarget:
                     alpha = 255 - mask[src_idx] if invert else mask[src_idx]
                     if alpha:
                         idx = row + px * 4
-                        pixels[idx] = 0
-                        pixels[idx + 1] = 0
-                        pixels[idx + 2] = 0
+                        pixels[idx] = stencil_red
+                        pixels[idx + 1] = stencil_green
+                        pixels[idx + 2] = stencil_blue
                         pixels[idx + 3] = alpha
             return
         normal_fast = can_blend_normal_fast(blend_mode)
@@ -3062,9 +3070,15 @@ class internal_RasterTarget:
                 if invert:
                     alpha = 255 - alpha
                 if normal_fast:
-                    blend_normal_pixel(row + px * 4, 0, 0, 0, alpha)
+                    blend_normal_pixel(
+                        row + px * 4, stencil_red, stencil_green, stencil_blue, alpha
+                    )
                 else:
-                    blend_px(row + px * 4, (0, 0, 0, alpha), blend_mode)
+                    blend_px(
+                        row + px * 4,
+                        (stencil_red, stencil_green, stencil_blue, alpha),
+                        blend_mode,
+                    )
         return
 
     def blit_image_rows_blended(
