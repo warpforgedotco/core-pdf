@@ -55,10 +55,26 @@ def is_neutral_character(character: str) -> bool:
     )
 
 
+def compact_text(text: str) -> str:
+    """Casefolded alphanumeric-only form, for comparing text across sources."""
+    return "".join(character.casefold() for character in text if character.isalnum())
+
+
+def text_tokens(text: str) -> tuple[str, ...]:
+    """Compacted tokens of two or more characters, for overlap and duplicate checks."""
+    return tuple(
+        token
+        for token in (compact_text(part) for part in text.casefold().split())
+        if len(token) >= 2
+    )
+
+
 __all__ = (
     "collapse_character_spaced",
     "collapse_ws",
+    "compact_text",
     "is_neutral_character",
     "is_rtl_character",
     "search_key",
+    "text_tokens",
 )

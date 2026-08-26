@@ -26,6 +26,7 @@ from core_pdf.impl.engine.model.glyphs import (
 )
 from core_pdf.impl.engine.model.runs import TextRun
 from core_pdf.impl.engine.parse.model import (
+    VECTOR_PAINT_KINDS,
     CapturedPage,
     GlyphEvidence,
     ObservationBatch,
@@ -43,7 +44,6 @@ from core_pdf.impl.engine.spec.s_08_graphics.image_metadata import (
 )
 
 WORD_TOKEN_RE = re.compile(r"\w+")
-VECTOR_PAINT_KINDS = frozenset({"fill", "fillstroke", "shading", "stroke"})
 VECTOR_PAINT_OPERATION_WEIGHT = 3
 CAPTURED_PAGE_CACHE_KEY = "captured_page_program_v4"
 
