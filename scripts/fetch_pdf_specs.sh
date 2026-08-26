@@ -11,7 +11,11 @@
 #   restricted  ITU-T and ICC specs; free to download, NOT redistributable,
 #               so gitignored
 #
-# Usage: scripts/fetch_pdf_specs.sh [all|reference|pdf|restricted]
+# The PDF Association's documents live behind Cloudflare, which rejects curl even
+# for direct PDF URLs, so they are fetched separately by scripts/fetch_pdfa_docs.py
+# (Playwright). This script delegates to it.
+#
+# Usage: scripts/fetch_pdf_specs.sh [all|reference|pdf|restricted|pdfa]
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -123,3 +127,14 @@ done
 echo
 echo "tier=${TIER}: ${fetched} fetched, ${cached} cached, ${failed} failed"
 (( failed == 0 )) || echo "Some documents need manual download; see the tier README."
+
+# The pdfa.org documents need a browser engine; hand them to the Playwright
+# fetcher, which sorts them into the reference and restricted tiers itself.
+if [[ "${TIER}" == "all" || "${TIER}" == "pdfa" ]]; then
+  echo
+  echo "==> PDF Association documents (via Playwright)"
+  if ! uv run --with playwright python "${SCRIPT_DIR}/fetch_pdfa_docs.py" all; then
+    echo "    Some PDF Association documents were not fetched." >&2
+    echo "    Ensure the browser is installed: uvx --from playwright playwright install chromium" >&2
+  fi
+fi

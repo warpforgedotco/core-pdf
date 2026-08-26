@@ -7,6 +7,12 @@ real-world PDFs produced by the tooling of their era.
 They are split into three tiers by redistribution rights. Fetch a tier with
 `./scripts/fetch_pdf_specs.sh <tier>`, or all of them with no argument.
 
+The PDF Association's documents sit behind Cloudflare, which rejects curl even
+for direct PDF URLs, so they are fetched by `scripts/fetch_pdfa_docs.py` using
+Playwright. `fetch_pdf_specs.sh` delegates to it; run
+`uvx --from playwright playwright install chromium` first. Those documents land
+in `reference/pdfa/` or `restricted/pdfa/` according to their own licences.
+
 | Tier | Committed? | Why |
 | --- | --- | --- |
 | `reference/` | **yes** | CC BY-ND / BSD / IETF / Unicode / W3C — verbatim redistribution permitted |

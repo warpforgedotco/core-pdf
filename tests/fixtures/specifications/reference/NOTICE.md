@@ -18,6 +18,16 @@ distributing modified versions. Do not edit these files — re-fetch them.
 `glyph-lists/LICENSE-AGL.md`, from
 <https://github.com/adobe-type-tools/agl-aglfn>.
 
+## PDF Association specifications and guides — `pdfa/`
+
+© PDF Association. Redistributed under
+**Creative Commons Attribution 4.0 International (CC BY 4.0)**, as stated in each
+document, from <https://pdfa.org>.
+
+CC BY permits redistribution and adaptation with attribution. Unlike the Adobe
+font notes above, these may be modified — but keep them verbatim so they can be
+re-fetched.
+
 ## IETF RFCs — `rfc/`
 
 © IETF Trust and the persons identified as document authors. Redistributed under

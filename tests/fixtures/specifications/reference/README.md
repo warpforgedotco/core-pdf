@@ -32,6 +32,15 @@ Re-fetch with:
 | `unicode/UnicodeData.txt` | Unicode | `ToUnicode` normalisation |
 | `unicode/LineBreak.txt` | Unicode | line/word segmentation |
 | `png/png-3rd-edition.html` | W3C Document | `FlateDecode` PNG predictors |
+| `pdfa/Matterhorn-Protocol-1.1.pdf` | CC BY 4.0 | PDF/UA failure conditions, `s_14_structure` |
+| `pdfa/Tagged-PDF-Best-Practice-Guide-Syntax.pdf` | CC BY 4.0 | structure tree, `s_14_structure` |
+| `pdfa/Well-Tagged-PDF-WTPDF-1.0.pdf` | CC BY 4.0 | tagged PDF 2.0 |
+| `pdfa/Conforming-to-PDFA-and-PDFUA.pdf` | CC BY 4.0 | overlapping subset constraints |
+| `pdfa/Custom-Metadata-Structures-in-PDF.pdf` | CC BY 4.0 | XMP and metadata extraction |
+| `pdfa/PDF-Declarations-1.0.pdf` | CC BY 4.0 | declaration/attestation dictionaries |
+| `pdfa/BPG-Math-in-PDF.pdf` | CC BY 4.0 | formula tagging, text extraction |
+| `pdfa/PDF-Extension-Brotli.pdf` | CC BY 4.0 | proposed Brotli stream filter |
+| `pdfa/EA-PDF-v1.pdf` | CC BY 4.0 | email-archiving profile (context only) |
 
 The glyph lists are worth calling out: unmapped glyph names are a known source
 of text-extraction divergence against other engines, and `glyphlist.txt` is the
@@ -46,3 +55,7 @@ authoritative mapping.
   functions. Adobe no longer serves a stable copy.
 - **UAX #9 / #14 / #29** — the algorithm reports themselves are HTML-only and
   versioned; the UCD data files above carry the property tables they operate on.
+- **ISO 32000-2 (PDF 2.0)** — the PDF Association gives it away, but only through
+  a cart/checkout on pdfa-inc.org rather than a direct link, so it cannot be
+  scripted. `pdfa/Well-Tagged-PDF-WTPDF-1.0.pdf` covers the PDF 2.0 tagging
+  rules; the base specification still has to be fetched by hand.
