@@ -3,14 +3,14 @@ from __future__ import annotations
 
 import pytest
 
-from core_pdf.impl.engine.spec.s_07_objects.coercion import (
+from core_pdf.impl.engine.spec.s_07_syntax.coercion import (
     coerce_to_bytes,
     coerce_value,
     normalize_pdf_name,
     parse_float,
     parse_int,
 )
-from core_pdf.impl.engine.spec.s_09_fonts.encoding import decode_pdf_text_string
+from core_pdf.impl.engine.spec.s_07_syntax.text_string import decode_pdf_text_string
 from core_pdf.impl.primitives import PdfName, PdfString
 
 

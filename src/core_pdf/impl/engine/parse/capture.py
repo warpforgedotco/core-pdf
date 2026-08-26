@@ -14,18 +14,17 @@ from typing import Any
 
 import numpy
 
-from core_pdf.impl.engine.layout.geometry import rect_tuple
-from core_pdf.impl.engine.layout.glyphs import (
-    GlyphObservation,
-    GlyphUnicodeSemantics,
-    glyph_unicode_semantics,
-)
-from core_pdf.impl.engine.layout.models import TextRun
 from core_pdf.impl.engine.layout.spatial import (
     SpatialIndex,
     bbox_intersection_area,
 )
-from core_pdf.impl.engine.newstroke import NewstrokeDecode, decode_newstroke_drawings
+from core_pdf.impl.engine.model.geometry import rect_tuple
+from core_pdf.impl.engine.model.glyphs import (
+    GlyphObservation,
+    GlyphUnicodeSemantics,
+    glyph_unicode_semantics,
+)
+from core_pdf.impl.engine.model.runs import TextRun
 from core_pdf.impl.engine.parse.model import (
     CapturedPage,
     GlyphEvidence,
@@ -36,8 +35,9 @@ from core_pdf.impl.engine.parse.model import (
     TextQualityStats,
     internal_analyze_text,
 )
+from core_pdf.impl.engine.parse.newstroke import NewstrokeDecode, decode_newstroke_drawings
 from core_pdf.impl.engine.spec.s_07_content.page_program import PageProgram
-from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_08_graphics.image_metadata import (
     image_filter_names,
 )

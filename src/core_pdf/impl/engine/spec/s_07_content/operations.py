@@ -13,7 +13,6 @@ from core_pdf.impl.engine.spec.s_07_content.inline_images import (
     parse_inline_image,
     recover_inline_image_position,
 )
-from core_pdf.impl.engine.spec.s_07_objects.object_cache import CachedPdfObject
 from core_pdf.impl.engine.spec.s_07_syntax.content_operators import (
     GRAPHICS_STATE_OPERATORS,
     IMAGE_OPERATORS,
@@ -28,6 +27,7 @@ from core_pdf.impl.engine.spec.s_07_syntax.lexer import (
     PdfLexer,
 )
 from core_pdf.impl.engine.spec.s_07_syntax.lexer_helpers import full_source_bytes
+from core_pdf.impl.engine.spec.s_07_syntax.object_cache import CachedPdfObject
 from core_pdf.impl.engine.spec.s_07_syntax.scanning import (
     skip_comment,
     skip_hex_string,

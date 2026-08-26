@@ -7,7 +7,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
-    from core_pdf.impl.engine.spec.s_07_objects.object_cache import (
+    from core_pdf.impl.engine.spec.s_07_syntax.object_cache import (
         CachedPdfObject,
         InheritedValueMap,
         InheritedValuesCache,

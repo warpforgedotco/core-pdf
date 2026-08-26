@@ -10,12 +10,7 @@ from typing import Any
 
 import numpy
 
-from core_pdf.impl.engine.array_views import (
-    ByteBuffer,
-    contiguous_bytes,
-    uint8_view,
-)
-from core_pdf.impl.engine.layout.geometry import RectBox
+from core_pdf.impl.engine.model.geometry import RectBox
 from core_pdf.impl.engine.render.display import (
     DisplayItem,
     PathPaintItem,
@@ -25,8 +20,8 @@ from core_pdf.impl.engine.render.raster_image import RasterImage
 from core_pdf.impl.engine.spec.s_07_content.capture import CapturedPath
 from core_pdf.impl.engine.spec.s_07_filters.models import DecodedImage
 from core_pdf.impl.engine.spec.s_07_filters.pipeline import decode_stream_data
-from core_pdf.impl.engine.spec.s_07_objects.coercion import parse_float
-from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_07_syntax.coercion import parse_float
+from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_08_graphics.color import ImageColorManager
 from core_pdf.impl.engine.spec.s_08_graphics.color_kernels import (
     evaluate_sampled_tint_function,
@@ -44,6 +39,11 @@ from core_pdf.impl.engine.spec.s_08_graphics.image_metadata import (
     pdf_number,
 )
 from core_pdf.impl.objects import PdfStream
+from core_pdf.impl.runtime.array_views import (
+    ByteBuffer,
+    contiguous_bytes,
+    uint8_view,
+)
 
 # ===== raster_kernel =====
 

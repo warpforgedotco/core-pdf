@@ -9,12 +9,12 @@ from typing import Any
 from core_pdf.impl.engine.spec.s_07_filters.decode_spec import (
     normalize_stream_decode_spec,
 )
-from core_pdf.impl.engine.spec.s_07_objects.coercion import (
+from core_pdf.impl.engine.spec.s_07_syntax.coercion import (
     is_pdf_null,
     normalize_pdf_name,
 )
-from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
+from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_07_syntax.tokens import (
     INLINE_IMAGE_KEY_MAP,
     WHITESPACE,

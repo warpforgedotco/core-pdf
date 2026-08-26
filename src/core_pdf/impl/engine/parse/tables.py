@@ -12,11 +12,10 @@ from typing import Any, cast
 
 import numpy
 
-from core_pdf.impl.engine.array_views import finite_median
-from core_pdf.impl.engine.layout.geometry import bbox_union, overlap_ratio_min
 from core_pdf.impl.engine.layout.spatial import (
     SpatialIndex,
 )
+from core_pdf.impl.engine.model.geometry import bbox_union, overlap_ratio_min
 from core_pdf.impl.engine.parse.model import (
     CapturedPage,
     ObservationBatch,
@@ -28,6 +27,7 @@ from core_pdf.impl.engine.structured import (
     TableAssociatedText,
     TableCell,
 )
+from core_pdf.impl.runtime.array_views import finite_median
 from core_pdf.impl.text import collapse_character_spaced, collapse_ws
 
 AXIS_TOLERANCE = 1.5

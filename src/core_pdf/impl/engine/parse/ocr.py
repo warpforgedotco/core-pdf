@@ -25,25 +25,16 @@ from typing import Any, cast
 
 import numpy
 
-from core_pdf.impl.engine.array_views import (
-    contiguous_bytes,
-    resample_bilinear,
-    resample_nearest,
-    resample_smooth,
-    uint8_image_view,
+from core_pdf.impl.engine.layout.spatial import (
+    SpatialIndex,
+    bbox_intersection_area,
 )
-from core_pdf.impl.engine.execution import RUNTIME, TaskScope, WorkStage
-from core_pdf.impl.engine.image_cache import ImageCacheKey
-from core_pdf.impl.engine.layout.geometry import (
+from core_pdf.impl.engine.model.geometry import (
     bbox_union,
     overlap_ratio_min,
     overlap_ratio_min_exact,
     overlap_ratio_of,
     rect_tuple,
-)
-from core_pdf.impl.engine.layout.spatial import (
-    SpatialIndex,
-    bbox_intersection_area,
 )
 from core_pdf.impl.engine.parse.capture import (
     VECTOR_PAINT_KINDS,
@@ -87,6 +78,17 @@ from core_pdf.impl.engine.parse.ocr_bootstrap import internal_prepare_ocr_signal
 from core_pdf.impl.engine.parse.route import (
     PSM_SPARSE_TEXT,
 )
+from core_pdf.impl.engine.parse.stroked_text import (
+    StrokedTextDecode,
+    StrokedTextObservation,
+    StrokedTextProfile,
+    StrokedTextRun,
+    StrokedTextSeed,
+    decode_stroked_text_profile,
+    decode_stroked_text_profile_with_supplemental_seeds,
+    profile_stroked_text,
+    stroked_text_isolated_runs,
+)
 from core_pdf.impl.engine.parse.tables import (
     internal_axis_segments,
     internal_grid_components,
@@ -105,17 +107,15 @@ from core_pdf.impl.engine.render.page import RenderedPage, compose_page
 from core_pdf.impl.engine.render.raster_image import RasterImage
 from core_pdf.impl.engine.spec.s_07_content.page_program import line_coordinate_columns
 from core_pdf.impl.engine.spec.s_08_graphics.image_decode import decode_pdf_image
-from core_pdf.impl.engine.stroked_text import (
-    StrokedTextDecode,
-    StrokedTextObservation,
-    StrokedTextProfile,
-    StrokedTextRun,
-    StrokedTextSeed,
-    decode_stroked_text_profile,
-    decode_stroked_text_profile_with_supplemental_seeds,
-    profile_stroked_text,
-    stroked_text_isolated_runs,
+from core_pdf.impl.runtime.array_views import (
+    contiguous_bytes,
+    resample_bilinear,
+    resample_nearest,
+    resample_smooth,
+    uint8_image_view,
 )
+from core_pdf.impl.runtime.execution import RUNTIME, TaskScope, WorkStage
+from core_pdf.impl.runtime.image_cache import ImageCacheKey
 from core_pdf.impl.text import collapse_ws, search_key
 
 # OCR already has an explicit worker limit. Prevent Tesseract's OpenMP kernels

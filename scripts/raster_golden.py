@@ -41,8 +41,8 @@ from core_pdf.impl.engine.spec.s_07_filters.jpeg2000 import (
 )
 from core_pdf.impl.engine.spec.s_07_filters.pipeline import decode_one_filter
 from core_pdf.impl.engine.spec.s_07_filters.registry import FILTER_DESCRIPTOR_BY_NAME
-from core_pdf.impl.engine.spec.s_07_objects.coercion import normalize_pdf_name
-from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_07_syntax.coercion import normalize_pdf_name
+from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import lookup_dict_key
 
 internal_ROOT = pathlib.Path(__file__).resolve().parents[1]
 CORPUS = internal_ROOT / "tests" / "fixtures" / "SCORE-Bench" / "src"

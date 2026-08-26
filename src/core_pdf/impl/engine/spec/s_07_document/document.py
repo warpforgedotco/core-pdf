@@ -11,23 +11,16 @@ from os import PathLike
 from types import TracebackType
 from typing import TYPE_CHECKING, BinaryIO, Generic, Self, TypeVar, cast
 
-from core_pdf.impl.engine.cache import ExtractionCache
-from core_pdf.impl.engine.image_cache import ImageCache
 from core_pdf.impl.engine.spec.s_07_document.document_labels import (
     MAX_PAGE_TREE_DEPTH,
     format_page_label,
     resolve_page_tree_node_type,
 )
-from core_pdf.impl.engine.spec.s_07_document.document_lock import (
-    document_cache_lock,
-    document_recovery_enabled,
-    get_or_compute,
-)
 from core_pdf.impl.engine.spec.s_07_document.document_pages import (
-    PAGE_INHERITED_KEYS,
     LazyPageList,
     PageListItem,
 )
+from core_pdf.impl.engine.spec.s_07_document.document_recovery import document_recovery_enabled
 from core_pdf.impl.engine.spec.s_07_document.document_xref import DocumentXRefMixin
 from core_pdf.impl.engine.spec.s_07_document.fields import (
     FieldTraversalEntry,
@@ -35,31 +28,32 @@ from core_pdf.impl.engine.spec.s_07_document.fields import (
     field_widget_rect,
 )
 from core_pdf.impl.engine.spec.s_07_document.metadata import MetadataRecord, resolve_metadata
+from core_pdf.impl.engine.spec.s_07_document.page import PAGE_INHERITED_KEYS
 from core_pdf.impl.engine.spec.s_07_document.records import (
     RawEmbeddedFile,
     RawFormField,
     RawNamedDestination,
     RawOutlineItem,
 )
-from core_pdf.impl.engine.spec.s_07_objects.coercion import normalize_pdf_name
-from core_pdf.impl.engine.spec.s_07_objects.object_cache import (
-    CachedPdfObject,
-    InheritedValueMap,
-    InheritedValuesCache,
-)
-from core_pdf.impl.engine.spec.s_07_objects.pdfdict import (
-    collect_inherited_values,
-    lookup_dict_key,
-)
-from core_pdf.impl.engine.spec.s_07_objects.resolver import ObjectResolver
-from core_pdf.impl.engine.spec.s_07_objects.trees import (
-    iter_name_tree_items,
-    iter_number_tree_items,
-)
 from core_pdf.impl.engine.spec.s_07_security.crypto_handlers import SECURITY_HANDLER_REGISTRY
 from core_pdf.impl.engine.spec.s_07_security.errors import (
     PDFEncryptionError,
     PDFPasswordIncorrect,
+)
+from core_pdf.impl.engine.spec.s_07_syntax.coercion import normalize_pdf_name
+from core_pdf.impl.engine.spec.s_07_syntax.object_cache import (
+    CachedPdfObject,
+    InheritedValueMap,
+    InheritedValuesCache,
+)
+from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import (
+    collect_inherited_values,
+    lookup_dict_key,
+)
+from core_pdf.impl.engine.spec.s_07_syntax.resolver import ObjectResolver
+from core_pdf.impl.engine.spec.s_07_syntax.trees import (
+    iter_name_tree_items,
+    iter_number_tree_items,
 )
 from core_pdf.impl.engine.spec.s_07_syntax.xref import PdfXRefEntry
 from core_pdf.impl.engine.spec.s_14_structure.tree import StructureTree
@@ -72,6 +66,12 @@ from core_pdf.impl.exceptions import (
 from core_pdf.impl.objects import PdfStream
 from core_pdf.impl.pages import PageSelection, resolve_page_selection
 from core_pdf.impl.primitives import MISSING, MissingObject, PdfReference
+from core_pdf.impl.runtime.cache import ExtractionCache
+from core_pdf.impl.runtime.cache_lock import (
+    document_cache_lock,
+    get_or_compute,
+)
+from core_pdf.impl.runtime.image_cache import ImageCache
 from core_pdf.impl.types import (
     Decipher,
     PathSource,

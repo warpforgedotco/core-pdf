@@ -5,11 +5,6 @@ import struct
 from hashlib import md5
 from typing import Sequence
 
-from core_pdf.impl.engine.spec.s_07_objects.coercion import coerce_to_bytes
-from core_pdf.impl.engine.spec.s_07_objects.pdfdict import (
-    lookup_dict_key,
-    lookup_dict_key_default,
-)
 from core_pdf.impl.engine.spec.s_07_security.crypto_constants import PDF_PADDING
 from core_pdf.impl.engine.spec.s_07_security.errors import (
     PDFEncryptionError,
@@ -22,6 +17,11 @@ from core_pdf.impl.engine.spec.s_07_security.key_derivation import (
 )
 from core_pdf.impl.engine.spec.s_07_security.rc4 import CryptRC4
 from core_pdf.impl.engine.spec.s_07_security.values import get_int, get_uint
+from core_pdf.impl.engine.spec.s_07_syntax.coercion import coerce_to_bytes
+from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import (
+    lookup_dict_key,
+    lookup_dict_key_default,
+)
 from core_pdf.impl.primitives import MISSING
 from core_pdf.impl.types import PdfDict
 

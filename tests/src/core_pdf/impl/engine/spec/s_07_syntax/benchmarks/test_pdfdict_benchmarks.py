@@ -5,7 +5,7 @@ from typing import cast
 
 import pytest
 
-from core_pdf.impl.engine.spec.s_07_objects.pdfdict import (
+from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import (
     collect_inherited_values,
     lookup_dict_key,
 )

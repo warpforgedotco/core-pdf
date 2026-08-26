@@ -8,11 +8,7 @@ from typing import Any, cast
 
 import numpy
 
-from core_pdf.impl.engine.array_views import (
-    uint8_image_view,
-)
-from core_pdf.impl.engine.image_cache import ImageCache, ImageCacheKey
-from core_pdf.impl.engine.layout.geometry import rect_tuple
+from core_pdf.impl.engine.model.geometry import rect_tuple
 from core_pdf.impl.engine.render.display import (
     CompiledRenderPlan,
     DisplayItem,
@@ -34,12 +30,16 @@ from core_pdf.impl.engine.spec.s_07_content.state import TextState
 from core_pdf.impl.engine.spec.s_07_document.annotation_appearance import (
     select_appearance_stream,
 )
-from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_08_graphics.image_metadata import (
     pdf_number,
 )
 from core_pdf.impl.engine.spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 from core_pdf.impl.exceptions import PdfRasterTooLargeError
+from core_pdf.impl.runtime.array_views import (
+    uint8_image_view,
+)
+from core_pdf.impl.runtime.image_cache import ImageCache, ImageCacheKey
 
 
 @dataclass(slots=True)

@@ -15,11 +15,10 @@ from typing import TYPE_CHECKING, Any, TypeAlias, cast
 if TYPE_CHECKING:
     from core_pdf.impl.engine.spec.s_07_content.inline_images import InlineImage
 
-from core_pdf.impl.engine.image_cache import ImageCache
-from core_pdf.impl.engine.layout.geometry import RectBox
-from core_pdf.impl.engine.layout.glyph_table import GlyphSegment, GlyphTableBuilder
-from core_pdf.impl.engine.layout.glyphs import GlyphCluster, GlyphObservation
-from core_pdf.impl.engine.layout.models import TextRun
+from core_pdf.impl.engine.model.geometry import RectBox
+from core_pdf.impl.engine.model.glyph_table import GlyphTableBuilder
+from core_pdf.impl.engine.model.glyphs import GlyphCluster, GlyphObservation, GlyphSegment
+from core_pdf.impl.engine.model.runs import TextRun
 from core_pdf.impl.engine.spec.s_07_content.capture import (
     CapturedDrawing,
     CapturedInlineImage,
@@ -70,16 +69,15 @@ from core_pdf.impl.engine.spec.s_07_content.text_helpers import (
     detect_ligature_overrides,
     is_garbage_text,
 )
-from core_pdf.impl.engine.spec.s_07_document.document_lock import document_cache_lock
-from core_pdf.impl.engine.spec.s_07_objects.coercion import (
+from core_pdf.impl.engine.spec.s_07_syntax.coercion import (
     normalize_pdf_name,
     parse_float,
     parse_int,
 )
-from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
-from core_pdf.impl.engine.spec.s_07_objects.resolver_values import PdfValueResolver
 from core_pdf.impl.engine.spec.s_07_syntax.content_operators import TYPE3_REPLAY_OPERATORS
 from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
+from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_07_syntax.resolver_values import PdfValueResolver
 from core_pdf.impl.engine.spec.s_08_graphics.image_decode import ImageSource
 from core_pdf.impl.engine.spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 from core_pdf.impl.engine.spec.s_09_fonts.decoder import (
@@ -95,6 +93,8 @@ from core_pdf.impl.primitives import (
     PdfReference,
     PdfString,
 )
+from core_pdf.impl.runtime.cache_lock import document_cache_lock
+from core_pdf.impl.runtime.image_cache import ImageCache
 from core_pdf.impl.types import PdfDict, Rectangle
 
 OperationHandler: TypeAlias = StateOperationHandler

@@ -6,10 +6,9 @@ import imagecodecs
 import numpy
 import pytest
 
-from core_pdf.impl.engine.image_cache import ImageCache
-from core_pdf.impl.engine.layout.glyph_table import GlyphTable
-from core_pdf.impl.engine.layout.glyphs import GlyphObservation
-from core_pdf.impl.engine.layout.models import TextRun
+from core_pdf.impl.engine.model.glyph_table import GlyphTable
+from core_pdf.impl.engine.model.glyphs import GlyphObservation
+from core_pdf.impl.engine.model.runs import TextRun
 from core_pdf.impl.engine.page import text_rotation_correction_for_runs
 from core_pdf.impl.engine.render.display import (
     CompiledRenderPlan,
@@ -49,6 +48,7 @@ from core_pdf.impl.engine.spec.s_08_graphics.image_decode import (
 )
 from core_pdf.impl.exceptions import PdfRasterTooLargeError
 from core_pdf.impl.objects import PdfStream
+from core_pdf.impl.runtime.image_cache import ImageCache
 
 
 class StaticDisplayPage(PdfPage):

@@ -110,6 +110,10 @@ src/core_pdf/
   api/
     compat/              independent third-party facades over engine owners
   impl/
+    runtime/             engine-independent infrastructure beneath the whole engine:
+                         array_views (zero-copy numpy/memoryview), cache,
+                         image_cache (byte-budgeted LRU, single-flight decoding),
+                         execution (bounded thread runtime, budgets, runtime config)
     models.py            public extraction records (DrawingRecord, ImageRecord)
     objects.py           PdfStream and its lazy decoded-data cache
     exceptions.py        the PdfError hierarchy (incl. PdfDocumentClosedError)
@@ -118,19 +122,77 @@ src/core_pdf/
                          collapse_character_spaced
     pages.py             PageSelection and its single normalization implementation
     engine/
-      parse/             the extraction pipeline, one module per stage (see §2)
+      parse/             the extraction pipeline, one module per stage (see §2),
+                         plus newstroke and stroked_text, which only it uses
       render/            display lists, raster kernels, targets, and page composition
       page.py            PdfPage
       document.py        PdfDocument
-      execution.py       bounded thread runtime, resource budgets, runtime config
-      array_views.py     zero-copy numpy/memoryview helpers
-      image_cache.py     byte-budgeted LRU with single-flight decoding
-      layout/            lines, spatial index, geometry kernel, word frequencies
+      model/             the capture data model: geometry kernel, TextRun, glyph
+                         records, columnar glyph storage. Beneath spec/ and layout/.
+      layout/            heuristics only: line grouping, spatial index, geometry
+                         quality, word frequencies
       structured/        document IR → markdown/HTML/JSON/CSV/TEI
       writing/           PDF output: objects, fonts, encryption, signatures
       spec/              PDF specification implementation (see below); document-local
                          Raw* records live in s_07_document/records.py
 ```
+
+### Dependency direction
+
+**There are no runtime import cycles between packages, and `import-linter` enforces
+it.** Seven contracts live in `[tool.importlinter]` in `pyproject.toml`; run them with
+`uv run --group lint lint-imports`. They also run in the `pre-push` prek stage, which
+is what CI's quality job executes, so a violation fails the build rather than review.
+
+`exclude_type_checking_imports` is on, so the contracts check the runtime graph. That
+is deliberate: annotation-only imports create no cycle at import time, and two of them
+are load-bearing (see the knots below). Adding a layer means adding it to the
+contract; the contracts are the specification, this prose is the explanation.
+
+Three packages exist to be depended *upon* and must not depend upward:
+
+| Package | May import | Status |
+| --- | --- | --- |
+| `impl/runtime/` | nothing internal | zero internal imports |
+| `impl/engine/model/` | `impl/` base modules | clean |
+| `spec/s_07_syntax` | `impl/` base modules | clean |
+
+The line-text records (`LayoutLineText`, `LayoutLineTextSegment`,
+`LayoutWordSnapshot`) live in `model/line_text.py` rather than with the heuristics
+that build them, because `TextRun` memoizes reconstruction results on itself and the
+record layer must not name a type from `layout/`.
+
+Two helpers moved down for the same reason and should stay put: the generic cache-lock
+helpers are `impl/runtime/cache_lock.py`, not a document module, because the
+content-stream interpreter needs them; and `newstroke`/`stroked_text` are
+`parse/` modules, not engine-root ones, because only the pipeline uses them.
+
+`layout/` is heuristics only and re-exports nothing — import from the owning module.
+`LayoutLine` lives in `layout/lines.py` because it is what line grouping *produces*;
+`TextRun` lives in `model/runs.py` because it is what capture *emits*. Likewise
+`model/glyphs.py` owns the glyph records (including `GlyphSegment` and
+`internal_materialize`) and `model/glyph_table.py` owns only the columnar storage that
+consumes them, so the two no longer import each other.
+
+**One piece of layering debt is named in the config rather than hidden.** `PdfStream`
+lives in `impl/objects.py`, a base module, but decodes through `s_07_filters`, so every
+module that touches a stream has a transitive path up into the engine. Four contracts
+would trip on that one edge, so each ignores it explicitly — and only it. The fix is to
+move `PdfStream` into the COS layer, which first needs the syntax *primitives*
+(`coercion`, `pdfdict`, `lexer_helpers`, `scanning`) separated from the COS objects that
+depend on the filters. The filter package's imports already imply that boundary: it
+reaches into `s_07_syntax` for exactly those four modules and nothing else.
+
+**Two known knots**, both deliberate and neither a runtime package cycle:
+
+- `s_14_structure/tree.py` names `PdfDocument` and `PdfPage` in eleven signatures,
+  under `TYPE_CHECKING` only, while `s_07_document` imports the structure tree for
+  real. Replacing those annotations with protocols would add more indirection than
+  the cycle costs, so an import contract should record it as an allowed exception.
+- `structured/{model,editor,serialization}` form a three-module cycle because the
+  serializers hang off the structured IR (`Page.to_markdown()` and friends) via
+  function-local imports. That is the documented design — the alternative duplicates
+  serializer entry points — so the cycle stays inside the package.
 
 ### The `spec/s_NN_*` scheme
 
@@ -138,8 +200,7 @@ Subpackages under `spec/` mirror **chapters of the PDF specification**:
 
 | Package | PDF chapter |
 | --- | --- |
-| `s_07_syntax` | 7 — lexer, tokens, xref |
-| `s_07_objects` | 7 — object model, resolver, coercion |
+| `s_07_syntax` | 7 — lexer, tokens, xref, object model, resolver, coercion, text strings |
 | `s_07_filters` | 7 — stream filters (Flate, LZW, CCITT, JBIG2, …) |
 | `s_07_content` | 7 — content streams, operators, text state |
 | `s_07_document` | 7 — catalog, page tree, metadata |
@@ -147,6 +208,13 @@ Subpackages under `spec/` mirror **chapters of the PDF specification**:
 | `s_08_graphics` | 8 — color spaces, ICC, images, matrices |
 | `s_09_fonts` | 9 — font programs, CMaps, glyph decoding |
 | `s_14_structure` | 14 — logical structure tree |
+
+`s_07_syntax` is the COS layer — lexing, the object model, xref, and resolution are one
+cohesive unit and were merged into a single package. Splitting them across `s_07_syntax` and a
+separate `s_07_objects` produced a package-level import cycle (six edges each way) even though the
+modules themselves form an acyclic graph. The package now depends only on `impl/exceptions`,
+`impl/objects`, `impl/primitives`, and `impl/types`; keep it that way — nothing in `s_07_syntax`
+may import from another `spec/` subpackage or from `impl/engine/`.
 
 Operator and filter metadata each have one declarative owner. Content-operator categories,
 dispatch names, text-only scan tables, Type 3 replay membership, and cached lexer keywords derive

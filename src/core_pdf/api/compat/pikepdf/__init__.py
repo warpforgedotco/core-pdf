@@ -17,8 +17,8 @@ from core_pdf.api.compat.pypdf import (
 )
 from core_pdf.impl.engine.spec.s_07_document.document_labels import resolve_page_tree_node_type
 from core_pdf.impl.engine.spec.s_07_document.metadata import resolve_info_metadata
-from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
+from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.structured import Document
 from core_pdf.impl.engine.structured import Page as StructuredPage
 from core_pdf.impl.exceptions import PdfParseError, PdfUnsupportedError

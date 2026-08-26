@@ -15,14 +15,14 @@ from types import SimpleNamespace
 from typing import Any, TypeAlias, cast
 
 from core_pdf import PdfDocument
-from core_pdf.impl.engine.layout.geometry import (
+from core_pdf.impl.engine.model.geometry import (
     bbox_contains,
     bbox_intersects,
     bbox_union,
     flip_rect_vertical,
 )
-from core_pdf.impl.engine.spec.s_07_objects.coercion import normalize_pdf_name
-from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_07_syntax.coercion import normalize_pdf_name
+from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import lookup_dict_key
 from core_pdf.impl.primitives import PdfReference
 
 from .exceptions import PdfminerException

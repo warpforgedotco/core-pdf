@@ -15,11 +15,11 @@ from typing import cast
 
 import numpy
 
-from core_pdf.impl.engine.array_views import finite_median
-from core_pdf.impl.engine.layout.models import TextRun, reconstruct_cached_layout_line_text
+from core_pdf.impl.engine.layout.lines import reconstruct_cached_layout_line_text
 from core_pdf.impl.engine.layout.spatial import (
     SpatialIndex,
 )
+from core_pdf.impl.engine.model.runs import TextRun
 from core_pdf.impl.engine.parse.model import (
     ObservationBatch,
     ObservationSource,
@@ -30,6 +30,7 @@ from core_pdf.impl.engine.parse.model import (
 from core_pdf.impl.engine.structured import (
     TextSpan,
 )
+from core_pdf.impl.runtime.array_views import finite_median
 from core_pdf.impl.text import collapse_ws
 
 # ``ObservationBatch.source`` is a ``uint8`` column, so the OCR test is a vectorized

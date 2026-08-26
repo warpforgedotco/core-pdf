@@ -13,22 +13,9 @@ from typing import (
     overload,
 )
 
-from core_pdf.impl.engine.cache import ExtractionCache
-from core_pdf.impl.engine.spec.s_07_document.document_lock import (
-    document_cache_lock,
-)
+from core_pdf.impl.runtime.cache import ExtractionCache
+from core_pdf.impl.runtime.cache_lock import document_cache_lock
 from core_pdf.impl.types import PdfDict
-
-PAGE_INHERITED_KEYS = (
-    "MediaBox",
-    "CropBox",
-    "BleedBox",
-    "TrimBox",
-    "ArtBox",
-    "Rotate",
-    "Resources",
-    "Annots",
-)
 
 
 class PageListItem(Protocol):
@@ -133,6 +120,5 @@ class LazyPageList(Sequence[internal_PageT], Generic[internal_PageT]):
 
 __all__ = (
     "LazyPageList",
-    "PAGE_INHERITED_KEYS",
     "PageListItem",
 )

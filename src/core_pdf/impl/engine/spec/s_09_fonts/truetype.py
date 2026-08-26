@@ -3,8 +3,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from core_pdf.impl.engine.spec.s_07_objects.coercion import normalize_pdf_name
-from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_07_syntax.coercion import normalize_pdf_name
+from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_09_fonts.font_program_truetype import (
     Point,
     TrueTypeFontProgram,

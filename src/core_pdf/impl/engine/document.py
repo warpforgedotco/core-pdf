@@ -12,7 +12,6 @@ from os import PathLike
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, BinaryIO, cast
 
-from core_pdf.impl.engine.execution import RUNTIME, TaskScope
 from core_pdf.impl.engine.parse import parse_document
 from core_pdf.impl.engine.spec.s_07_document.document import PdfDocument as SpecPdfDocument
 from core_pdf.impl.engine.structured import (
@@ -34,6 +33,7 @@ from core_pdf.impl.models import (
     PageScoped,
 )
 from core_pdf.impl.pages import PageSelection
+from core_pdf.impl.runtime.execution import RUNTIME, TaskScope
 from core_pdf.impl.types import PdfSource
 
 if TYPE_CHECKING:

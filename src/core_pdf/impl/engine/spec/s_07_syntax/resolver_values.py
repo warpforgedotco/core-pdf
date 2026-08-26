@@ -3,17 +3,17 @@ from __future__ import annotations
 
 from typing import Protocol, cast
 
-from core_pdf.impl.engine.spec.s_07_objects.coercion import (
+from core_pdf.impl.engine.spec.s_07_syntax.coercion import (
     normalize_pdf_name,
     parse_float,
     parse_float_strict,
     parse_int,
 )
-from core_pdf.impl.engine.spec.s_07_objects.object_cache import (
+from core_pdf.impl.engine.spec.s_07_syntax.object_cache import (
     CachedPdfObject,
     DeepObjectCache,
 )
-from core_pdf.impl.engine.spec.s_09_fonts.encoding import decode_pdf_text_string
+from core_pdf.impl.engine.spec.s_07_syntax.text_string import decode_pdf_text_string
 from core_pdf.impl.objects import PdfStream
 from core_pdf.impl.primitives import MISSING, PdfName, PdfReference, PdfString
 from core_pdf.impl.types import PdfDict, PdfObject

@@ -10,7 +10,7 @@ from typing import Generic, TypeVar
 
 import numpy
 
-from core_pdf.impl.engine.layout.geometry import (
+from core_pdf.impl.engine.model.geometry import (
     bbox_area,
     bbox_intersection_area,
     finite_rect,

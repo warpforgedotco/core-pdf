@@ -11,15 +11,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 import numpy
 
-from core_pdf.impl.engine.array_views import (
-    ByteBuffer,
-    nearest_indices,
-    uint8_image_view,
-    uint8_view,
-    unit_sample_positions,
-)
-from core_pdf.impl.engine.image_cache import ImageCacheKey
-from core_pdf.impl.engine.layout.geometry import RectBox
+from core_pdf.impl.engine.model.geometry import RectBox
 from core_pdf.impl.engine.render.display import (
     LineCap,
     LineJoin,
@@ -67,12 +59,20 @@ from core_pdf.impl.engine.render.kernels import (
 )
 from core_pdf.impl.engine.spec.s_07_content.capture import CapturedPath
 from core_pdf.impl.engine.spec.s_07_filters.models import DecodedImage
-from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_08_graphics.color import ImageColorManager
 from core_pdf.impl.engine.spec.s_08_graphics.image_metadata import (
     pdf_int,
     pdf_number,
 )
+from core_pdf.impl.runtime.array_views import (
+    ByteBuffer,
+    nearest_indices,
+    uint8_image_view,
+    uint8_view,
+    unit_sample_positions,
+)
+from core_pdf.impl.runtime.image_cache import ImageCacheKey
 
 if TYPE_CHECKING:
     from core_pdf.impl.engine.render.page import RenderedPage

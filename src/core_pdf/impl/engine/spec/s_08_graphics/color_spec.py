@@ -5,13 +5,13 @@ from __future__ import annotations
 
 from typing import TypeAlias, cast
 
-from core_pdf.impl.engine.spec.s_07_objects.coercion import (
+from core_pdf.impl.engine.spec.s_07_syntax.coercion import (
     coerce_to_bytes,
     normalize_pdf_name,
     parse_float,
     parse_int,
 )
-from core_pdf.impl.engine.spec.s_07_objects.pdfdict import (
+from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import (
     lookup_dict_key,
     lookup_dict_key_default,
 )

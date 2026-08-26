@@ -9,7 +9,7 @@ from enum import StrEnum
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Mapping, TypeAlias
 
-from core_pdf.impl.engine.layout.geometry import bbox_union
+from core_pdf.impl.engine.model.geometry import bbox_union
 from core_pdf.impl.pages import PageSelection
 from core_pdf.impl.types import Rectangle
 

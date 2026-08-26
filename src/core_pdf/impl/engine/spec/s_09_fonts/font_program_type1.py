@@ -10,8 +10,8 @@ from core_pdf._vendor.fontTools.misc.psCharStrings import T1CharString
 from core_pdf._vendor.fontTools.pens.boundsPen import BoundsPen
 from core_pdf._vendor.fontTools.pens.recordingPen import RecordingPen
 from core_pdf._vendor.fontTools.pens.transformPen import TransformPen
-from core_pdf.impl.engine.spec.s_07_objects.coercion import normalize_pdf_name
-from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_07_syntax.coercion import normalize_pdf_name
+from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_09_fonts.font_program_truetype import (
     internal_recording_to_contours,
 )

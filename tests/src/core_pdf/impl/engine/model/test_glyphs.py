@@ -1,6 +1,6 @@
 import pytest
 
-from core_pdf.impl.engine.layout.glyphs import (
+from core_pdf.impl.engine.model.glyphs import (
     GlyphCluster,
     GlyphObservation,
     GlyphUnicodeSemantics,
@@ -8,7 +8,7 @@ from core_pdf.impl.engine.layout.glyphs import (
     glyph_unicode_confidence,
     glyph_unicode_semantics,
 )
-from core_pdf.impl.engine.layout.models import TextRun
+from core_pdf.impl.engine.model.runs import TextRun
 
 
 def test_unicode_confidence_scores_authoritative_and_unsupported_glyphs() -> None:

@@ -7,13 +7,6 @@ from core_pdf.impl import install_lazy_module_exports
 
 if TYPE_CHECKING:
     from core_pdf.impl.engine.document import PdfDocument
-    from core_pdf.impl.engine.execution import (
-        RuntimeConfig,
-        RuntimeMetrics,
-        configure_runtime,
-        runtime_metrics,
-        shutdown_runtime,
-    )
     from core_pdf.impl.engine.page import PdfPage
     from core_pdf.impl.engine.parse import prewarm_runtime
     from core_pdf.impl.engine.spec.s_09_fonts.fallback import (
@@ -58,6 +51,13 @@ if TYPE_CHECKING:
         PageScoped,
     )
     from core_pdf.impl.pages import PageSelection
+    from core_pdf.impl.runtime.execution import (
+        RuntimeConfig,
+        RuntimeMetrics,
+        configure_runtime,
+        runtime_metrics,
+        shutdown_runtime,
+    )
 
 internal_EXPORTS = {
     "Document": ("core_pdf.impl.engine.structured", "Document"),
@@ -126,15 +126,15 @@ internal_EXPORTS = {
     "PdfSourceError": ("core_pdf.impl.exceptions", "PdfSourceError"),
     "PdfUnsupportedError": ("core_pdf.impl.exceptions", "PdfUnsupportedError"),
     "configure_runtime": (
-        "core_pdf.impl.engine.execution",
+        "core_pdf.impl.runtime.execution",
         "configure_runtime",
     ),
     "RuntimeMetrics": (
-        "core_pdf.impl.engine.execution",
+        "core_pdf.impl.runtime.execution",
         "RuntimeMetrics",
     ),
     "RuntimeConfig": (
-        "core_pdf.impl.engine.execution",
+        "core_pdf.impl.runtime.execution",
         "RuntimeConfig",
     ),
     "prewarm_runtime": (
@@ -142,11 +142,11 @@ internal_EXPORTS = {
         "prewarm_runtime",
     ),
     "runtime_metrics": (
-        "core_pdf.impl.engine.execution",
+        "core_pdf.impl.runtime.execution",
         "runtime_metrics",
     ),
     "shutdown_runtime": (
-        "core_pdf.impl.engine.execution",
+        "core_pdf.impl.runtime.execution",
         "shutdown_runtime",
     ),
 }

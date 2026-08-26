@@ -4,18 +4,18 @@ from __future__ import annotations
 from typing import Callable, cast
 
 from core_pdf.impl.engine.spec.s_07_filters.decode_spec import normalize_stream_decode_spec
-from core_pdf.impl.engine.spec.s_07_objects.coercion import (
-    is_pdf_null,
-    normalize_pdf_name,
-)
-from core_pdf.impl.engine.spec.s_07_objects.pdfdict import (
-    lookup_dict_key,
-    lookup_dict_key_default,
-)
 from core_pdf.impl.engine.spec.s_07_security.aes import AES
 from core_pdf.impl.engine.spec.s_07_security.errors import PDFEncryptionError
 from core_pdf.impl.engine.spec.s_07_security.standard import PdfStandardSecurityHandler
 from core_pdf.impl.engine.spec.s_07_security.values import get_name
+from core_pdf.impl.engine.spec.s_07_syntax.coercion import (
+    is_pdf_null,
+    normalize_pdf_name,
+)
+from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import (
+    lookup_dict_key,
+    lookup_dict_key_default,
+)
 from core_pdf.impl.exceptions import PdfParseError, PdfUnsupportedError
 from core_pdf.impl.primitives import MISSING
 from core_pdf.impl.types import PdfDict

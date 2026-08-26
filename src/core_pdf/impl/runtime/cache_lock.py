@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Shared lock access for documents and lightweight document doubles."""
+"""Shared cache-lock access for documents and lightweight document doubles."""
 
 from __future__ import annotations
 
@@ -27,10 +27,3 @@ def get_or_compute(document: Any, cache_attr: str, compute: Callable[[], interna
             value = compute()
             setattr(document, cache_attr, value)
         return value
-
-
-def document_recovery_enabled(document: Any) -> bool:
-    return bool(
-        getattr(document, "xref_was_recovered", False)
-        or getattr(document, "page_tree_was_recovered", False)
-    )

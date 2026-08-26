@@ -6,14 +6,14 @@ import typing
 if typing.TYPE_CHECKING:
     from typing import Any
 
-from core_pdf.impl.engine.spec.s_07_objects.coercion import (
+from core_pdf.impl.engine.spec.s_07_syntax.coercion import (
     normalize_pdf_name,
     parse_int,
     parse_int_strict,
 )
-from core_pdf.impl.engine.spec.s_07_objects.object_cache import ObjectCache
-from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
+from core_pdf.impl.engine.spec.s_07_syntax.object_cache import ObjectCache
+from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import lookup_dict_key
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.objects import PdfStream
 from core_pdf.impl.primitives import PdfReference

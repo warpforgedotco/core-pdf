@@ -9,11 +9,10 @@ from typing import Any, TypeAlias, cast
 
 import numpy
 
-from core_pdf.impl.engine.array_views import ByteBuffer, uint8_view
-from core_pdf.impl.engine.spec.s_07_objects.coercion import (
+from core_pdf.impl.engine.spec.s_07_syntax.coercion import (
     parse_float,
 )
-from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_08_graphics.color_kernels import (
     apply_decode_array_8bit as internal_native_apply_decode_array_8bit,
 )
@@ -52,6 +51,7 @@ from core_pdf.impl.engine.spec.s_08_graphics.icc_profiles import (
     parse_icc_transform,
 )
 from core_pdf.impl.objects import PdfStream
+from core_pdf.impl.runtime.array_views import ByteBuffer, uint8_view
 
 ImageDict: TypeAlias = dict[str, object]
 ColorComponents: TypeAlias = list[float]

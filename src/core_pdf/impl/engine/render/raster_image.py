@@ -9,7 +9,7 @@ from typing import Any
 
 import numpy
 
-from core_pdf.impl.engine.array_views import uint8_image_view
+from core_pdf.impl.runtime.array_views import uint8_image_view
 
 
 @dataclass(frozen=True, slots=True)

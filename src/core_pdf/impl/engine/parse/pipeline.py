@@ -11,8 +11,7 @@ from concurrent.futures import Future
 from dataclasses import replace
 from typing import Any, cast
 
-from core_pdf.impl.engine.execution import TaskScope, WorkStage
-from core_pdf.impl.engine.layout.glyphs import GlyphUnicodeSemantics, glyph_unicode_semantics
+from core_pdf.impl.engine.model.glyphs import GlyphUnicodeSemantics, glyph_unicode_semantics
 from core_pdf.impl.engine.parse.capture import (
     CAPTURED_PAGE_CACHE_KEY,
     capture_page,
@@ -43,15 +42,15 @@ from core_pdf.impl.engine.parse.model import (
 from core_pdf.impl.engine.parse.route import (
     plan_page,
 )
-from core_pdf.impl.engine.parse.tables import (
-    extract_tables,
-)
-from core_pdf.impl.engine.spec.s_07_document.page_links import resolve_destination_value
-from core_pdf.impl.engine.stroked_text import (
+from core_pdf.impl.engine.parse.stroked_text import (
     GlyphSignature,
     StrokedTextDecode,
     decode_stroked_text_profile_with_alphabet,
 )
+from core_pdf.impl.engine.parse.tables import (
+    extract_tables,
+)
+from core_pdf.impl.engine.spec.s_07_document.page_links import resolve_destination_value
 from core_pdf.impl.engine.structured import (
     SCHEMA_VERSION,
     Annotation,
@@ -62,6 +61,7 @@ from core_pdf.impl.engine.structured import (
     Link,
     Table,
 )
+from core_pdf.impl.runtime.execution import TaskScope, WorkStage
 
 PARSED_PAGE_CACHE_KEY = "parsed_page_v5"
 PARSE_REPORT_CACHE_KEY = "parse_report_v1"

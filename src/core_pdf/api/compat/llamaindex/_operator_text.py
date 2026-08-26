@@ -9,9 +9,9 @@ from typing import Any, cast
 
 from core_pdf.impl.engine.spec.s_07_content.operations import iter_content_operations
 from core_pdf.impl.engine.spec.s_07_filters.errors import FilterParseError
-from core_pdf.impl.engine.spec.s_07_objects.coercion import normalize_pdf_name
-from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_07_syntax.coercion import normalize_pdf_name
 from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
+from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_08_graphics.matrix import multiply_affine
 from core_pdf.impl.engine.spec.s_09_fonts.cmap_tokenizer import (
     cmap_tokens,

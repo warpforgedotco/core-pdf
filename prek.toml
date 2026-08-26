@@ -36,6 +36,10 @@ hooks = [
     "pre-push",
     "manual",
   ], require_serial = true },
+  { id = "import-linter", name = "import-linter", entry = "uv run --group lint lint-imports", language = "system", pass_filenames = false, files = "^(src/core_pdf/.*\\.py|pyproject\\.toml)$", stages = [
+    "pre-push",
+    "manual",
+  ], require_serial = true },
 ]
 
 [[repos]]

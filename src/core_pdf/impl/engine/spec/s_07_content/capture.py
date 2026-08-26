@@ -10,14 +10,14 @@ from functools import lru_cache
 from math import ceil
 from typing import Any
 
-from core_pdf.impl.engine.layout.geometry import RectBox
-from core_pdf.impl.engine.layout.glyphs import (
+from core_pdf.impl.engine.model.geometry import RectBox
+from core_pdf.impl.engine.model.glyphs import (
     GlyphCluster,
     GlyphObservation,
     glyph_cluster_from_observations,
     glyph_unicode_confidence,
 )
-from core_pdf.impl.engine.layout.models import TextRun
+from core_pdf.impl.engine.model.runs import TextRun
 from core_pdf.impl.engine.spec.s_07_content.text_helpers import (
     NO_SPACE_AFTER,
     NO_SPACE_BEFORE,
@@ -25,7 +25,7 @@ from core_pdf.impl.engine.spec.s_07_content.text_helpers import (
     gap_separator,
     normalize_extracted_text,
 )
-from core_pdf.impl.engine.spec.s_07_objects.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_08_graphics.image_decode import ImageSource
 from core_pdf.impl.engine.spec.s_08_graphics.matrix import Matrix
 from core_pdf.impl.types import Rectangle

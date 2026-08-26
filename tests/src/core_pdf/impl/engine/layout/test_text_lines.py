@@ -1,13 +1,13 @@
-from core_pdf.impl.engine.layout.glyphs import (
-    GlyphObservation,
-    glyph_cluster_from_observations,
-)
-from core_pdf.impl.engine.layout.models import TextRun
 from core_pdf.impl.engine.layout.text_lines import (
     GlyphLineBuilder,
     repair_table_split_word_boundaries,
     should_join_plausible_split_word,
 )
+from core_pdf.impl.engine.model.glyphs import (
+    GlyphObservation,
+    glyph_cluster_from_observations,
+)
+from core_pdf.impl.engine.model.runs import TextRun
 
 
 def test_complete_whitespace_run_stays_one_text_atom() -> None:
