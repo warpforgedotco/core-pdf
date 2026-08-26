@@ -13,6 +13,7 @@ from core_pdf.impl.engine.parse import (
     ParseReport,
     RecognitionReport,
     WorkPlan,
+    ocr_tesseract,
 )
 
 score_bench = run_path(
@@ -435,8 +436,6 @@ def test_cli_can_disable_default_html_report() -> None:
 def test_backend_is_thread_local(monkeypatch: pytest.MonkeyPatch) -> None:
     import tesserocr
 
-    from core_pdf.impl.engine.parse import ocr
-
     class FakeApi:
         def __init__(self, **internal_kwargs: object) -> None:
             pass
@@ -447,13 +446,13 @@ def test_backend_is_thread_local(monkeypatch: pytest.MonkeyPatch) -> None:
         def SetPageSegMode(self, internal_mode: int) -> None:
             pass
 
-    ocr.internal_OCR_LOCAL.__dict__.clear()
+    ocr_tesseract.internal_OCR_LOCAL.__dict__.clear()
     monkeypatch.setattr(tesserocr, "PyTessBaseAPI", FakeApi)
     barrier = Barrier(2)
 
     def worker() -> tuple[int, int]:
-        first = ocr.internal_api(3)
-        second = ocr.internal_api(3)
+        first = ocr_tesseract.internal_api(3)
+        second = ocr_tesseract.internal_api(3)
         barrier.wait(timeout=5)
         return (id(first), id(second))
 

@@ -23,6 +23,7 @@ from core_pdf.impl.engine.parse import (
     RecognitionResult,
     WorkPlan,
     ocr,
+    ocr_tesseract,
 )
 from core_pdf.impl.engine.parse import capture as parse_capture
 from core_pdf.impl.engine.parse import ocr as parse_ocr
@@ -92,12 +93,12 @@ def test_tessdata_prefix_takes_precedence(
     tessdata.mkdir()
     (tessdata / "eng.traineddata").write_bytes(b"test")
     monkeypatch.setenv("TESSDATA_PREFIX", str(tessdata))
-    ocr.internal_resolve_tessdata_path.cache_clear()
+    ocr_tesseract.internal_resolve_tessdata_path.cache_clear()
 
     try:
-        assert ocr.internal_tessdata_path() == str(tessdata)
+        assert ocr_tesseract.internal_tessdata_path() == str(tessdata)
     finally:
-        ocr.internal_resolve_tessdata_path.cache_clear()
+        ocr_tesseract.internal_resolve_tessdata_path.cache_clear()
 
 
 def test_invalid_tessdata_prefix_has_an_actionable_error(
@@ -105,13 +106,13 @@ def test_invalid_tessdata_prefix_has_an_actionable_error(
     tmp_path: Path,
 ) -> None:
     monkeypatch.setenv("TESSDATA_PREFIX", str(tmp_path))
-    ocr.internal_resolve_tessdata_path.cache_clear()
+    ocr_tesseract.internal_resolve_tessdata_path.cache_clear()
 
     try:
         with pytest.raises(RuntimeError, match="eng.traineddata"):
-            ocr.internal_tessdata_path()
+            ocr_tesseract.internal_tessdata_path()
     finally:
-        ocr.internal_resolve_tessdata_path.cache_clear()
+        ocr_tesseract.internal_resolve_tessdata_path.cache_clear()
 
 
 def test_tessdata_path_falls_back_to_tesseract_cli(
@@ -122,22 +123,24 @@ def test_tessdata_path_falls_back_to_tesseract_cli(
     tessdata.mkdir()
     (tessdata / "eng.traineddata").write_bytes(b"test")
     monkeypatch.delenv("TESSDATA_PREFIX", raising=False)
-    monkeypatch.setattr(ocr.internal_ensure_tesserocr(), "get_languages", lambda: ("./", ()))
-    monkeypatch.setattr(ocr.shutil, "which", lambda internal_name: "/usr/bin/tesseract")
     monkeypatch.setattr(
-        ocr.subprocess,
+        ocr_tesseract.internal_ensure_tesserocr(), "get_languages", lambda: ("./", ())
+    )
+    monkeypatch.setattr(ocr_tesseract.shutil, "which", lambda internal_name: "/usr/bin/tesseract")
+    monkeypatch.setattr(
+        ocr_tesseract.subprocess,
         "run",
         lambda *internal_args, **internal_kwargs: SimpleNamespace(
             stdout=f'List of available languages in "{tessdata}" (1):\neng\n',
             stderr="",
         ),
     )
-    ocr.internal_resolve_tessdata_path.cache_clear()
+    ocr_tesseract.internal_resolve_tessdata_path.cache_clear()
 
     try:
-        assert ocr.internal_tessdata_path() == str(tessdata)
+        assert ocr_tesseract.internal_tessdata_path() == str(tessdata)
     finally:
-        ocr.internal_resolve_tessdata_path.cache_clear()
+        ocr_tesseract.internal_resolve_tessdata_path.cache_clear()
 
 
 def test_prepare_ocr_builds_an_api_on_every_pooled_worker(
@@ -155,32 +158,32 @@ def test_prepare_ocr_builds_an_api_on_every_pooled_worker(
             threads.append(threading.current_thread().name)
         return SimpleNamespace(SetPageSegMode=lambda internal_mode: None)
 
-    monkeypatch.setattr(parse_ocr, "internal_api", record)
+    monkeypatch.setattr(ocr_tesseract, "internal_api", record)
 
-    parse_ocr.internal_prepare_ocr()
+    ocr_tesseract.internal_prepare_ocr()
 
     assert "MainThread" in threads
     pooled = {name for name in threads if name != "MainThread"}
-    assert len(pooled) == ocr.RUNTIME.max_workers
+    assert len(pooled) == ocr_tesseract.RUNTIME.max_workers
 
 
 def test_low_confidence_standalone_punctuation_is_rejected() -> None:
-    assert not ocr.internal_acceptable_text("|", 65.0)
-    assert ocr.internal_acceptable_text("R1", 65.0)
-    assert ocr.internal_acceptable_text("R-1", 65.0)
+    assert not ocr_tesseract.internal_acceptable_text("|", 65.0)
+    assert ocr_tesseract.internal_acceptable_text("R1", 65.0)
+    assert ocr_tesseract.internal_acceptable_text("R-1", 65.0)
 
 
 def test_single_non_ascii_symbol_observations_are_rejected() -> None:
     # Braille cells and other non-ASCII symbols are common OCR garbage from
     # blank/decorative regions and should never form their own observations.
-    assert not ocr.internal_acceptable_text("⠭", 99.0)
-    assert not ocr.internal_acceptable_text("⠬", 90.0)
-    assert not ocr.internal_acceptable_text("©", 99.0)
+    assert not ocr_tesseract.internal_acceptable_text("⠭", 99.0)
+    assert not ocr_tesseract.internal_acceptable_text("⠬", 90.0)
+    assert not ocr_tesseract.internal_acceptable_text("©", 99.0)
     # Acute-accented letters are alphanumeric and remain acceptable.
-    assert ocr.internal_acceptable_text("é", 99.0)
+    assert ocr_tesseract.internal_acceptable_text("é", 99.0)
     # ASCII punctuation keeps the existing confidence gate (no behavior change).
-    assert not ocr.internal_acceptable_text("|", 65.0)
-    assert ocr.internal_acceptable_text("|", 75.0)
+    assert not ocr_tesseract.internal_acceptable_text("|", 65.0)
+    assert ocr_tesseract.internal_acceptable_text("|", 75.0)
 
 
 def page_evidence(*, image_count: int = 0, image_area_ratio: float = 0.0) -> PageEvidence:
@@ -385,7 +388,7 @@ def test_recognize_group_reuses_api_and_image_setup(monkeypatch: pytest.MonkeyPa
     api = object()
     calls: list[tuple[object | None, bool]] = []
 
-    monkeypatch.setattr(parse_ocr, "internal_api", lambda internal_mode: api)
+    monkeypatch.setattr(ocr_tesseract, "internal_api", lambda internal_mode: api)
 
     def recognize(
         task: ocr.internal_OcrTask,
@@ -396,7 +399,7 @@ def test_recognize_group_reuses_api_and_image_setup(monkeypatch: pytest.MonkeyPa
         calls.append((api_override, image_prepared))
         return task
 
-    monkeypatch.setattr(parse_ocr, "internal_recognize", recognize)
+    monkeypatch.setattr(ocr_tesseract, "internal_recognize", recognize)
 
     assert ocr.internal_recognize_group(tasks) == tasks
     assert calls == [(api, False), (api, True), (api, True)]
@@ -507,8 +510,8 @@ def test_raster_image_normalizes_to_read_only_zero_copy_view() -> None:
 
 
 def test_text_acceptance_uses_route_confidence_floor() -> None:
-    assert ocr.internal_acceptable_text("readable text", 39.0, 20.0)
-    assert not ocr.internal_acceptable_text("readable text", 39.0, 40.0)
+    assert ocr_tesseract.internal_acceptable_text("readable text", 39.0, 20.0)
+    assert not ocr_tesseract.internal_acceptable_text("readable text", 39.0, 40.0)
 
 
 def test_recognize_maps_rectangle_bounding_boxes_from_full_raster(
@@ -551,7 +554,7 @@ def test_recognize_maps_rectangle_bounding_boxes_from_full_raster(
             pass
 
     api = Api()
-    monkeypatch.setattr(parse_ocr, "internal_api", lambda internal_mode: api)
+    monkeypatch.setattr(ocr_tesseract, "internal_api", lambda internal_mode: api)
     data = bytes(100 * 100)
     task = ocr.internal_OcrTask(
         mode=3,
@@ -561,7 +564,7 @@ def test_recognize_maps_rectangle_bounding_boxes_from_full_raster(
         resolution=144,
     )
 
-    candidate = ocr.internal_recognize(task)
+    candidate = ocr_tesseract.internal_recognize(task)
 
     assert api.image == data
     assert api.rectangle == (0, 40, 100, 60)
@@ -591,7 +594,7 @@ def test_recognize_clamps_rectangle_before_tesseract(
             pass
 
     api = Api()
-    monkeypatch.setattr(parse_ocr, "internal_api", lambda internal_mode: api)
+    monkeypatch.setattr(ocr_tesseract, "internal_api", lambda internal_mode: api)
     task = ocr.internal_OcrTask(
         mode=3,
         image=RasterImage(bytes(100 * 100), 100, 100, 1),
@@ -600,7 +603,7 @@ def test_recognize_clamps_rectangle_before_tesseract(
         resolution=144,
     )
 
-    ocr.internal_recognize(task)
+    ocr_tesseract.internal_recognize(task)
 
     assert api.rectangle == (0, 0, 80, 40)
 
@@ -643,7 +646,7 @@ def test_recognize_words_uses_word_level_confidence_and_geometry(
         def GetIterator(self) -> Iterator:
             return Iterator()
 
-    monkeypatch.setattr(parse_ocr, "internal_api", lambda internal_mode: Api())
+    monkeypatch.setattr(ocr_tesseract, "internal_api", lambda internal_mode: Api())
     task = ocr.internal_OcrTask(
         mode=11,
         image=RasterImage(bytes(100 * 100), 100, 100, 1),
@@ -654,9 +657,9 @@ def test_recognize_words_uses_word_level_confidence_and_geometry(
         recognize_words=True,
     )
 
-    candidate = ocr.internal_recognize(task)
+    candidate = ocr_tesseract.internal_recognize(task)
 
-    word_level = ocr.internal_ensure_tesserocr().RIL.WORD
+    word_level = ocr_tesseract.internal_ensure_tesserocr().RIL.WORD
     assert levels == [word_level] * 4
     assert candidate.observations.text == ("GPIO12",)
     assert tuple(candidate.observations.bbox[0]) == (20.0, 120.0, 100.0, 160.0)
@@ -710,7 +713,7 @@ def test_recognize_words_collects_symbols_without_another_recognition(
             )
 
     api = Api()
-    monkeypatch.setattr(parse_ocr, "internal_api", lambda internal_mode: api)
+    monkeypatch.setattr(ocr_tesseract, "internal_api", lambda internal_mode: api)
     task = ocr.internal_OcrTask(
         mode=11,
         image=RasterImage(bytes(100 * 100), 100, 100, 1),
@@ -721,7 +724,7 @@ def test_recognize_words_collects_symbols_without_another_recognition(
         collect_symbols=True,
     )
 
-    candidate = ocr.internal_recognize(task)
+    candidate = ocr_tesseract.internal_recognize(task)
 
     assert api.recognitions == 1
     assert api.iterators == 2
@@ -772,7 +775,7 @@ def test_recognize_words_preserves_tesseract_line_boundaries(
         def GetIterator(self) -> Iterator:
             return Iterator()
 
-    monkeypatch.setattr(parse_ocr, "internal_api", lambda internal_mode: Api())
+    monkeypatch.setattr(ocr_tesseract, "internal_api", lambda internal_mode: Api())
     task = ocr.internal_OcrTask(
         mode=11,
         image=RasterImage(bytes(100 * 100), 100, 100, 1),
@@ -782,7 +785,7 @@ def test_recognize_words_preserves_tesseract_line_boundaries(
         recognize_words=True,
     )
 
-    candidate = ocr.internal_recognize(task)
+    candidate = ocr_tesseract.internal_recognize(task)
 
     assert candidate.observations.text == ("first", "line", "second")
     assert candidate.observations.line_break_before.tolist() == [True, False, True]
@@ -810,7 +813,7 @@ def test_recognize_does_not_reset_tesseract_rectangle_for_full_page(
         def Clear(self) -> None:
             pass
 
-    monkeypatch.setattr(parse_ocr, "internal_api", lambda internal_mode: Api())
+    monkeypatch.setattr(ocr_tesseract, "internal_api", lambda internal_mode: Api())
     task = ocr.internal_OcrTask(
         mode=3,
         image=RasterImage(bytes(100), 10, 10, 1),
@@ -819,7 +822,7 @@ def test_recognize_does_not_reset_tesseract_rectangle_for_full_page(
         resolution=72,
     )
 
-    assert not len(ocr.internal_recognize(task).observations)
+    assert not len(ocr_tesseract.internal_recognize(task).observations)
 
 
 def test_candidate_merge_prefers_complete_overlapping_text() -> None:
@@ -936,7 +939,7 @@ def test_verified_hidden_text_bypasses_full_ocr(
         recognized_word_passes += 1
         return ocr.internal_candidate(task.mode, token_observations(tokens))
 
-    monkeypatch.setattr(parse_ocr, "internal_recognize", recognize)
+    monkeypatch.setattr(ocr_tesseract, "internal_recognize", recognize)
 
     class Context:
         def raise_if_cancelled(self) -> None:
@@ -988,7 +991,7 @@ def test_character_filtered_candidate_preserves_recall_when_filtering_is_costly(
     raw = ocr.internal_candidate(3, candidate_observations("schematic +5V R1", 80.0))
     filtered = ocr.internal_candidate(3, candidate_observations("schematic +5V", 80.0))
 
-    assert ocr.internal_select_character_filtered_candidate(raw, filtered) is raw
+    assert ocr_tesseract.internal_select_character_filtered_candidate(raw, filtered) is raw
 
 
 def test_character_filtered_candidate_accepts_bounded_utility_gain() -> None:
@@ -998,7 +1001,7 @@ def test_character_filtered_candidate_accepts_bounded_utility_gain() -> None:
         metrics=replace(raw.metrics, utility=raw.metrics.utility * 1.05),
     )
 
-    assert ocr.internal_select_character_filtered_candidate(raw, filtered) is filtered
+    assert ocr_tesseract.internal_select_character_filtered_candidate(raw, filtered) is filtered
 
 
 def test_weak_region_tasks_target_ink_without_primary_text() -> None:
@@ -1181,7 +1184,7 @@ def test_explicit_fallback_pass_runs_only_for_weak_primary(
             candidate_observations(text, 90.0),
         )
 
-    monkeypatch.setattr(parse_ocr, "internal_recognize", recognize)
+    monkeypatch.setattr(ocr_tesseract, "internal_recognize", recognize)
 
     class Context:
         def raise_if_cancelled(self) -> None:
@@ -1242,7 +1245,7 @@ def test_large_high_confidence_primary_skips_full_page_fallback(
             median_text_height=40.0,
         )
 
-    monkeypatch.setattr(parse_ocr, "internal_recognize", recognize)
+    monkeypatch.setattr(ocr_tesseract, "internal_recognize", recognize)
 
     class Context:
         def raise_if_cancelled(self) -> None:
@@ -1306,7 +1309,7 @@ def test_weak_region_pass_augments_instead_of_replacing_primary(
             ),
         )
 
-    monkeypatch.setattr(parse_ocr, "internal_recognize", recognize)
+    monkeypatch.setattr(ocr_tesseract, "internal_recognize", recognize)
 
     def weak_region_crops(
         internal_capture,
@@ -1409,7 +1412,7 @@ def test_adaptive_rescue_uses_high_resolution_only_for_undersampled_regions(
             ),
         )
 
-    monkeypatch.setattr(parse_ocr, "internal_recognize", recognize)
+    monkeypatch.setattr(ocr_tesseract, "internal_recognize", recognize)
 
     class Context:
         def raise_if_cancelled(self) -> None:
@@ -1476,7 +1479,7 @@ def test_adaptive_rescue_skips_high_resolution_for_large_primary_text(
         unexpected_render,
     )
     monkeypatch.setattr(
-        parse_ocr,
+        ocr_tesseract,
         "internal_recognize",
         lambda task, **internal_kwargs: ocr.internal_candidate(
             task.mode,
@@ -1552,7 +1555,7 @@ def test_adaptive_rescue_defers_to_scheduled_fallback_below_character_floor(
             median_text_height=18.0,
         )
 
-    monkeypatch.setattr(parse_ocr, "internal_recognize", recognize)
+    monkeypatch.setattr(ocr_tesseract, "internal_recognize", recognize)
 
     class Context:
         def raise_if_cancelled(self) -> None:
@@ -1634,7 +1637,7 @@ def test_vector_preflight_skips_known_undersampled_primary_pass(
 
     monkeypatch.setattr(parse_ocr, "internal_rendered_page_raster", render)
     monkeypatch.setattr(
-        parse_ocr,
+        ocr_tesseract,
         "internal_recognize",
         lambda task, **internal_kwargs: ocr.internal_candidate(
             task.mode,
@@ -2022,7 +2025,7 @@ def test_weak_packed_stroked_vector_seed_uses_full_layer_fallback(
         text = "packed" if task.recognize_words else "full fallback"
         return ocr.internal_candidate(task.mode, candidate_observations(text, 95.0))
 
-    monkeypatch.setattr(parse_ocr, "internal_recognize", recognize)
+    monkeypatch.setattr(ocr_tesseract, "internal_recognize", recognize)
 
     class Context:
         def raise_if_cancelled(self) -> None:
@@ -2488,7 +2491,7 @@ def test_distributed_outline_text_uses_one_full_page_region(
 
     monkeypatch.setattr(parse_ocr, "internal_candidate_region_tasks", candidate_tasks)
     monkeypatch.setattr(
-        parse_ocr,
+        ocr_tesseract,
         "internal_recognize",
         lambda task, **internal_kwargs: ocr.internal_candidate(
             task.mode,
@@ -2572,12 +2575,12 @@ def test_recognition_timeout_scales_with_raster_size() -> None:
             resolution=300,
         )
 
-    small = parse_ocr.internal_recognition_timeout(task_for(1_000, 1_000))
-    large = parse_ocr.internal_recognition_timeout(task_for(4_000, 4_000))
+    small = ocr_tesseract.internal_recognition_timeout(task_for(1_000, 1_000))
+    large = ocr_tesseract.internal_recognition_timeout(task_for(4_000, 4_000))
 
-    assert small == parse_ocr.OCR_TIMEOUT_MILLISECONDS
+    assert small == ocr_tesseract.OCR_TIMEOUT_MILLISECONDS
     assert large > small
-    assert large <= parse_ocr.OCR_TIMEOUT_MAX_MILLISECONDS
+    assert large <= ocr_tesseract.OCR_TIMEOUT_MAX_MILLISECONDS
 
 
 def test_timeout_recovery_task_reduces_the_raster_and_keeps_page_mapping() -> None:
@@ -2590,11 +2593,11 @@ def test_timeout_recovery_task_reduces_the_raster_and_keeps_page_mapping() -> No
         resolution=400,
     )
 
-    reduced = parse_ocr.internal_timeout_recovery_task(task)
+    reduced = ocr_tesseract.internal_timeout_recovery_task(task)
 
     assert reduced is not None
     pixels = reduced.rectangle[2] * reduced.rectangle[3]
-    assert pixels <= parse_ocr.OCR_TIMEOUT_RETRY_PIXELS
+    assert pixels <= ocr_tesseract.OCR_TIMEOUT_RETRY_PIXELS
     assert reduced.rectangle == (0, 0, reduced.image.width, reduced.image.height)
     # The reduced raster still stands for the same area of the page.
     assert reduced.page_box == pytest.approx(task.page_box)
@@ -2610,7 +2613,7 @@ def test_timeout_recovery_task_skips_rasters_already_small_enough() -> None:
         resolution=300,
     )
 
-    assert parse_ocr.internal_timeout_recovery_task(task) is None
+    assert ocr_tesseract.internal_timeout_recovery_task(task) is None
 
 
 def test_recover_timed_out_tasks_only_reruns_empty_timeouts() -> None:
