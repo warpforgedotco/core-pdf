@@ -11,7 +11,7 @@ from concurrent.futures import Future
 from dataclasses import replace
 from typing import Any, cast
 
-from core_pdf.impl.engine.layout.glyphs import GlyphUnicodeSemantics, glyph_unicode_semantics
+from core_pdf.impl.engine.model.glyphs import GlyphUnicodeSemantics, glyph_unicode_semantics
 from core_pdf.impl.engine.parse.capture import (
     CAPTURED_PAGE_CACHE_KEY,
     capture_page,

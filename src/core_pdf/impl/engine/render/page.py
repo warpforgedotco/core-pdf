@@ -8,7 +8,7 @@ from typing import Any, cast
 
 import numpy
 
-from core_pdf.impl.engine.layout.geometry import rect_tuple
+from core_pdf.impl.engine.model.geometry import rect_tuple
 from core_pdf.impl.engine.render.display import (
     CompiledRenderPlan,
     DisplayItem,

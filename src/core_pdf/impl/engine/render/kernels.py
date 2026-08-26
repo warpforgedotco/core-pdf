@@ -10,7 +10,7 @@ from typing import Any
 
 import numpy
 
-from core_pdf.impl.engine.layout.geometry import RectBox
+from core_pdf.impl.engine.model.geometry import RectBox
 from core_pdf.impl.engine.render.display import (
     DisplayItem,
     PathPaintItem,

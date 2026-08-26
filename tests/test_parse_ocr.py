@@ -9,7 +9,7 @@ from typing import cast
 
 import pytest
 
-from core_pdf.impl.engine.layout.models import TextRun
+from core_pdf.impl.engine.model.runs import TextRun
 from core_pdf.impl.engine.parse import (
     CapturedPage,
     ObservationBatch,

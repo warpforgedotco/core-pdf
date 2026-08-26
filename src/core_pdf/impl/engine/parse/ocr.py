@@ -25,16 +25,16 @@ from typing import Any, cast
 
 import numpy
 
-from core_pdf.impl.engine.layout.geometry import (
+from core_pdf.impl.engine.layout.spatial import (
+    SpatialIndex,
+    bbox_intersection_area,
+)
+from core_pdf.impl.engine.model.geometry import (
     bbox_union,
     overlap_ratio_min,
     overlap_ratio_min_exact,
     overlap_ratio_of,
     rect_tuple,
-)
-from core_pdf.impl.engine.layout.spatial import (
-    SpatialIndex,
-    bbox_intersection_area,
 )
 from core_pdf.impl.engine.parse.capture import (
     VECTOR_PAINT_KINDS,

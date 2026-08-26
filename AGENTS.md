@@ -6,7 +6,7 @@ This is a Python 3.13+ PDF parsing engine using the `src` layout. Production cod
 
 - `impl/engine/spec/` implements the PDF specification, one subpackage per spec chapter (`s_07_syntax`, `s_08_graphics`, `s_09_fonts`, …).
 - `impl/engine/parse/` is the extraction pipeline, one module per stage (capture → route → fusion → tables → OCR → layout → emit). `parse/__init__.py` re-exports only the pipeline entry points and shared stage models; import stage internals from the owning submodule.
-- `impl/engine/render/` rasterizes; `impl/engine/writing/` produces PDF output; `impl/engine/structured/` serializes to markdown/HTML/JSON; `impl/engine/layout/` holds line, glyph, and geometry helpers.
+- `impl/engine/render/` rasterizes; `impl/engine/writing/` produces PDF output; `impl/engine/structured/` serializes to markdown/HTML/JSON; `impl/engine/model/` holds the capture records (geometry, text runs, glyphs) and `impl/engine/layout/` holds the heuristics that consume them. `impl/runtime/` holds engine-independent infrastructure and must not import from `impl/engine/`.
 - `src/core_pdf/_vendor/fontTools` is vendored third-party code, excluded from linting, typing, and formatting.
 
 Tests live under `tests/`: `tests/src` mirrors the package structure, while broader pipeline tests (`test_parse_*.py`, `test_rendering.py`, …) sit at the top level. Corpus fixtures are in `tests/fixtures`. `docs/` holds `architecture.md`, `api.md`, `roadmap.md`, and licensing material; maintenance scripts are in `scripts/`.
@@ -27,7 +27,7 @@ uv run --group lint --group test --group benchmark ty check
 prek run --all-files                 # run repository hooks across all files
 ```
 
-After making broad changes, run the full suite with `uv run pytest tests/ -n auto`. Otherwise, test a subset covering the code and behavior affected by the changes, for example `uv run pytest tests/src/core_pdf/impl/engine/layout/test_glyphs.py`. CI checks the lockfile, runs `prek` at the `pre-push` stage, and runs the test suite on Python 3.13 on Ubuntu.
+After making broad changes, run the full suite with `uv run pytest tests/ -n auto`. Otherwise, test a subset covering the code and behavior affected by the changes, for example `uv run pytest tests/src/core_pdf/impl/engine/model/test_glyphs.py`. CI checks the lockfile, runs `prek` at the `pre-push` stage, and runs the test suite on Python 3.13 on Ubuntu.
 
 ### Coverage
 

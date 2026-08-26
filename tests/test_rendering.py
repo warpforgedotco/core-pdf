@@ -6,9 +6,9 @@ import imagecodecs
 import numpy
 import pytest
 
-from core_pdf.impl.engine.layout.glyph_table import GlyphTable
-from core_pdf.impl.engine.layout.glyphs import GlyphObservation
-from core_pdf.impl.engine.layout.models import TextRun
+from core_pdf.impl.engine.model.glyph_table import GlyphTable
+from core_pdf.impl.engine.model.glyphs import GlyphObservation
+from core_pdf.impl.engine.model.runs import TextRun
 from core_pdf.impl.engine.page import text_rotation_correction_for_runs
 from core_pdf.impl.engine.render.display import (
     CompiledRenderPlan,

@@ -46,7 +46,8 @@ from core_pdf.impl.runtime.cache import ExtractionCache
 from core_pdf.impl.types import PdfDict, PdfObject, Rectangle
 
 if TYPE_CHECKING:
-    from core_pdf.impl.engine.layout.models import LayoutLine, TextRun
+    from core_pdf.impl.engine.layout.lines import LayoutLine
+    from core_pdf.impl.engine.model.runs import TextRun
     from core_pdf.impl.engine.spec.s_07_document.document import PdfDocument
     from core_pdf.impl.engine.spec.s_07_document.records import RawFormField
 

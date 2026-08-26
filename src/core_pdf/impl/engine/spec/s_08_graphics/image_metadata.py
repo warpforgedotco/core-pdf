@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from typing import Any, TypeGuard
 
-from core_pdf.impl.engine.layout.geometry import rect_tuple
+from core_pdf.impl.engine.model.geometry import rect_tuple
 from core_pdf.impl.engine.spec.s_07_syntax.coercion import (
     normalize_pdf_name,
     parse_float,

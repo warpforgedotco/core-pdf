@@ -10,7 +10,7 @@ from typing import Any, cast
 
 from core_pdf import PdfDocument
 from core_pdf._vendor.fontTools.ttLib import TTLibError
-from core_pdf.impl.engine.layout.geometry import flip_rect_vertical
+from core_pdf.impl.engine.model.geometry import flip_rect_vertical
 from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_09_fonts.cmap_tounicode import ToUnicodeCMap

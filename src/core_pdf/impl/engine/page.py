@@ -6,15 +6,15 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Any, cast
 
-from core_pdf.impl.engine.layout import (
+from core_pdf.impl.engine.layout.geometry_quality import (
     LayoutGeometrySummary,
-    LayoutLine,
-    TextRun,
     page_layout_geometry_issues,
     page_layout_geometry_summary,
     text_run_geometry_issues,
 )
-from core_pdf.impl.engine.layout.geometry import rect_tuple
+from core_pdf.impl.engine.layout.lines import LayoutLine
+from core_pdf.impl.engine.model.geometry import rect_tuple
+from core_pdf.impl.engine.model.runs import TextRun
 from core_pdf.impl.engine.parse import extract_page
 from core_pdf.impl.engine.render.display import RenderOptions
 from core_pdf.impl.engine.render.page import compose_page

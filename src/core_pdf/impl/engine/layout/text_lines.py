@@ -9,8 +9,8 @@ from dataclasses import dataclass
 from functools import lru_cache
 from statistics import median_low
 
-from core_pdf.impl.engine.layout.models import TextRun
 from core_pdf.impl.engine.layout.word_frequencies import word_rank
+from core_pdf.impl.engine.model.runs import TextRun
 
 FOOTER_RE = re.compile(r"^\s*page\s*\d+\s*$", re.IGNORECASE)
 LEADER_START_CHARS = "._~-–—"

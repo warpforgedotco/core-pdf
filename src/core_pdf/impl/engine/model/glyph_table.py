@@ -15,135 +15,13 @@ import threading
 from collections.abc import Iterable, Iterator
 from typing import Any
 
-from core_pdf.impl.engine.layout.glyphs import GlyphObservation
+from core_pdf.impl.engine.model.glyphs import (
+    GlyphObservation,
+    GlyphSegment,
+    internal_GlyphEntry,
+    internal_materialize,
+)
 from core_pdf.impl.exceptions import PdfContractError
-
-# Fast-path row tuple layout. Only values that vary per glyph are stored;
-# everything else lives once on the row's GlyphSegment (element 0). Rows are
-# indexed with integer literals on the hot path, so this table is the contract:
-#
-#   0 segment          5 code_bytes      10 confidence      15 bitmap_code
-#   1 text             6 char_code       11 unicode_source  16 glyph_transform
-#   2 ink_bbox         7 cid             12 alternates      17 provenance
-#   3 advance_bbox     8 gid             13 bitmap_width    18 cluster_id
-#   4 baseline         9 visible         14 bitmap_height
-
-internal_GlyphEntry = tuple[Any, ...] | GlyphObservation
-
-
-class GlyphSegment:
-    """Fields shared by every fast-path glyph of one text-showing operation."""
-
-    __slots__ = (
-        "seqno",
-        "font_name",
-        "font_size",
-        "effective_font_size",
-        "effective_font_height",
-        "fill",
-        "rotation_angle",
-        "font_decoder",
-        "text_render_mode",
-        "fill_opacity",
-        "stroke_color",
-        "stroke_opacity",
-        "line_width",
-        "line_cap",
-        "line_join",
-        "dash_pattern",
-        "blend_mode",
-        "soft_mask_alpha",
-        "text_object_id",
-    )
-
-    def __init__(
-        self,
-        seqno: int,
-        font_name: str | None,
-        font_size: float,
-        effective_font_size: float,
-        effective_font_height: float,
-        fill: tuple[float, ...] | None,
-        rotation_angle: int,
-        font_decoder: object,
-        text_render_mode: int,
-        fill_opacity: float | None,
-        stroke_color: tuple[float, ...] | None,
-        stroke_opacity: float | None,
-        line_width: float,
-        line_cap: int,
-        line_join: int,
-        dash_pattern: tuple[list[float], float] | None,
-        blend_mode: str | None,
-        soft_mask_alpha: float | None,
-        text_object_id: int,
-    ) -> None:
-        self.seqno = seqno
-        self.font_name = font_name
-        self.font_size = font_size
-        self.effective_font_size = effective_font_size
-        self.effective_font_height = effective_font_height
-        self.fill = fill
-        self.rotation_angle = rotation_angle
-        self.font_decoder = font_decoder
-        self.text_render_mode = text_render_mode
-        self.fill_opacity = fill_opacity
-        self.stroke_color = stroke_color
-        self.stroke_opacity = stroke_opacity
-        self.line_width = line_width
-        self.line_cap = line_cap
-        self.line_join = line_join
-        self.dash_pattern = dash_pattern
-        self.blend_mode = blend_mode
-        self.soft_mask_alpha = soft_mask_alpha
-        self.text_object_id = text_object_id
-
-
-def internal_materialize(entry: internal_GlyphEntry) -> GlyphObservation:
-    """Build the full observation for one table entry (prebuilt rows pass through)."""
-    if isinstance(entry, GlyphObservation):
-        return entry
-    segment: GlyphSegment = entry[0]
-    return GlyphObservation(
-        entry[1],  # text
-        entry[2],  # ink_bbox (may alias advance_bbox, preserved by reference)
-        entry[3],  # advance_bbox
-        segment.seqno,
-        entry[5],  # code_bytes
-        entry[6],  # char_code
-        entry[7],  # cid
-        entry[8],  # gid
-        segment.font_name,
-        segment.font_size,
-        entry[4],  # baseline
-        segment.rotation_angle,
-        segment.fill,
-        entry[9],  # visible
-        entry[10],  # confidence
-        entry[11],  # unicode_source
-        entry[12],  # alternates
-        (),  # bitmap is never populated at capture time
-        entry[13],  # bitmap_width
-        entry[14],  # bitmap_height
-        entry[15],  # bitmap_code
-        segment.font_decoder,
-        segment.effective_font_size,
-        segment.effective_font_height,
-        entry[17],  # provenance
-        glyph_transform=entry[16],
-        text_render_mode=segment.text_render_mode,
-        fill_opacity=segment.fill_opacity,
-        stroke_color=segment.stroke_color,
-        stroke_opacity=segment.stroke_opacity,
-        line_width=segment.line_width,
-        line_cap=segment.line_cap,
-        line_join=segment.line_join,
-        dash_pattern=segment.dash_pattern,
-        blend_mode=segment.blend_mode,
-        soft_mask_alpha=segment.soft_mask_alpha,
-        text_object_id=segment.text_object_id,
-        cluster_key=(segment.seqno, entry[18]),
-    )
 
 
 class GlyphTableBuilder:
@@ -299,7 +177,6 @@ class GlyphTable:
 
 
 __all__ = (
-    "GlyphSegment",
     "GlyphTable",
     "GlyphTableBuilder",
 )

@@ -15,10 +15,10 @@ from typing import TYPE_CHECKING, Any, TypeAlias, cast
 if TYPE_CHECKING:
     from core_pdf.impl.engine.spec.s_07_content.inline_images import InlineImage
 
-from core_pdf.impl.engine.layout.geometry import RectBox
-from core_pdf.impl.engine.layout.glyph_table import GlyphSegment, GlyphTableBuilder
-from core_pdf.impl.engine.layout.glyphs import GlyphCluster, GlyphObservation
-from core_pdf.impl.engine.layout.models import TextRun
+from core_pdf.impl.engine.model.geometry import RectBox
+from core_pdf.impl.engine.model.glyph_table import GlyphTableBuilder
+from core_pdf.impl.engine.model.glyphs import GlyphCluster, GlyphObservation, GlyphSegment
+from core_pdf.impl.engine.model.runs import TextRun
 from core_pdf.impl.engine.spec.s_07_content.capture import (
     CapturedDrawing,
     CapturedInlineImage,

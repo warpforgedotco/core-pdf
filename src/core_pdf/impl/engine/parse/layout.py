@@ -15,10 +15,11 @@ from typing import cast
 
 import numpy
 
-from core_pdf.impl.engine.layout.models import TextRun, reconstruct_cached_layout_line_text
+from core_pdf.impl.engine.layout.lines import reconstruct_cached_layout_line_text
 from core_pdf.impl.engine.layout.spatial import (
     SpatialIndex,
 )
+from core_pdf.impl.engine.model.runs import TextRun
 from core_pdf.impl.engine.parse.model import (
     ObservationBatch,
     ObservationSource,

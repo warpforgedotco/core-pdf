@@ -5,7 +5,7 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 from core_pdf import PdfDocument
-from core_pdf.impl.engine.layout.models import TextRun
+from core_pdf.impl.engine.model.runs import TextRun
 from core_pdf.impl.engine.parse import (
     CapturedPage,
     GlyphEvidence,

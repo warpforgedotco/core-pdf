@@ -110,6 +110,10 @@ src/core_pdf/
   api/
     compat/              independent third-party facades over engine owners
   impl/
+    runtime/             engine-independent infrastructure beneath the whole engine:
+                         array_views (zero-copy numpy/memoryview), cache,
+                         image_cache (byte-budgeted LRU, single-flight decoding),
+                         execution (bounded thread runtime, budgets, runtime config)
     models.py            public extraction records (DrawingRecord, ImageRecord)
     objects.py           PdfStream and its lazy decoded-data cache
     exceptions.py        the PdfError hierarchy (incl. PdfDocumentClosedError)
@@ -122,15 +126,37 @@ src/core_pdf/
       render/            display lists, raster kernels, targets, and page composition
       page.py            PdfPage
       document.py        PdfDocument
-      execution.py       bounded thread runtime, resource budgets, runtime config
-      array_views.py     zero-copy numpy/memoryview helpers
-      image_cache.py     byte-budgeted LRU with single-flight decoding
-      layout/            lines, spatial index, geometry kernel, word frequencies
+      model/             the capture data model: geometry kernel, TextRun, glyph
+                         records, columnar glyph storage. Beneath spec/ and layout/.
+      layout/            heuristics only: line grouping, spatial index, geometry
+                         quality, word frequencies
       structured/        document IR → markdown/HTML/JSON/CSV/TEI
       writing/           PDF output: objects, fonts, encryption, signatures
       spec/              PDF specification implementation (see below); document-local
                          Raw* records live in s_07_document/records.py
 ```
+
+### Dependency direction
+
+Three packages exist to be depended *upon* and must not depend upward:
+
+| Package | May import | Status |
+| --- | --- | --- |
+| `impl/runtime/` | nothing internal | zero internal imports |
+| `impl/engine/model/` | `impl/` base modules | one documented exception, below |
+| `spec/s_07_syntax` | `impl/` base modules | clean |
+
+`model/runs.py` is the exception: `TextRun` carries two private memo slots for results
+the layout heuristics compute, and their annotations name types from `layout/`. Both
+imports are under `TYPE_CHECKING`, so the runtime graph stays acyclic; an import
+contract should list those two explicitly rather than relaxing the rule.
+
+`layout/` is heuristics only and re-exports nothing — import from the owning module.
+`LayoutLine` lives in `layout/lines.py` because it is what line grouping *produces*;
+`TextRun` lives in `model/runs.py` because it is what capture *emits*. Likewise
+`model/glyphs.py` owns the glyph records (including `GlyphSegment` and
+`internal_materialize`) and `model/glyph_table.py` owns only the columnar storage that
+consumes them, so the two no longer import each other.
 
 ### The `spec/s_NN_*` scheme
 
