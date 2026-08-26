@@ -18,6 +18,17 @@ from core_pdf.impl.engine.structured import (
     TextSpan,
 )
 
+# Tesseract page-segmentation modes. Shared stage vocabulary: route.py chooses a
+# mode, ocr.py applies it, so neither owns the constants.
+PSM_AUTO = 3
+PSM_SPARSE_TEXT = 11
+PSM_SPARSE_TEXT_OSD = 12
+
+# Drawing paint kinds that put ink on the page. capture.py classifies with these,
+# ocr.py filters with them.
+VECTOR_PAINT_KINDS = frozenset({"fill", "fillstroke", "shading", "stroke"})
+
+
 FloatArray = numpy.ndarray[Any, numpy.dtype[numpy.float32]]
 IntArray = numpy.ndarray[Any, numpy.dtype[numpy.int64]]
 ByteArray = numpy.ndarray[Any, numpy.dtype[numpy.uint8]]

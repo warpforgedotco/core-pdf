@@ -28,6 +28,7 @@ import numpy
 from core_pdf.impl.engine.layout.spatial import (
     SpatialIndex,
     bbox_intersection_area,
+    maximum_candidate_coverage,
 )
 from core_pdf.impl.engine.model.geometry import (
     bbox_union,
@@ -36,14 +37,7 @@ from core_pdf.impl.engine.model.geometry import (
     overlap_ratio_of,
     rect_tuple,
 )
-from core_pdf.impl.engine.parse.capture import (
-    VECTOR_PAINT_KINDS,
-    internal_promoted_hidden_observations,
-)
-from core_pdf.impl.engine.parse.fusion import (
-    internal_text_tokens,
-    maximum_candidate_coverage,
-)
+from core_pdf.impl.engine.parse.capture import internal_promoted_hidden_observations
 from core_pdf.impl.engine.parse.model import (
     HIDDEN_TEXT_VERIFY_MIN_CONFIDENCE,
     HIDDEN_TEXT_VERIFY_MIN_MATCHED_TOKENS,
@@ -59,6 +53,8 @@ from core_pdf.impl.engine.parse.model import (
     OCR_RESCUE_MIN_WEAK_INK_RATIO,
     OCR_RESCUE_SATURATED_MEAN_INK,
     PRIMARY_OCR_PIXELS,
+    PSM_SPARSE_TEXT,
+    VECTOR_PAINT_KINDS,
     CapturedPage,
     ObservationBatch,
     ObservationSource,
@@ -75,9 +71,6 @@ from core_pdf.impl.engine.parse.model import (
     internal_text_utility_stats,
 )
 from core_pdf.impl.engine.parse.ocr_bootstrap import internal_prepare_ocr_signals
-from core_pdf.impl.engine.parse.route import (
-    PSM_SPARSE_TEXT,
-)
 from core_pdf.impl.engine.parse.stroked_text import (
     StrokedTextDecode,
     StrokedTextObservation,
@@ -116,7 +109,7 @@ from core_pdf.impl.runtime.array_views import (
 )
 from core_pdf.impl.runtime.execution import RUNTIME, TaskScope, WorkStage
 from core_pdf.impl.runtime.image_cache import ImageCacheKey
-from core_pdf.impl.text import collapse_ws, search_key
+from core_pdf.impl.text import collapse_ws, search_key, text_tokens
 
 # OCR already has an explicit worker limit. Prevent Tesseract's OpenMP kernels
 # from creating another layer of workers on top of it.
@@ -258,13 +251,13 @@ def internal_hidden_text_verification(
     hidden_by_token: dict[str, list[tuple[float, float, float, float]]] = defaultdict(list)
     for text, raw_box in zip(hidden.text, hidden.bbox, strict=True):
         box = internal_bbox_tuple(raw_box)
-        for token in internal_text_tokens(text):
+        for token in text_tokens(text):
             hidden_by_token[token].append(box)
 
     preview_entries = tuple(
         (token, internal_bbox_tuple(raw_box))
         for text, raw_box in zip(preview.text, preview.bbox, strict=True)
-        for token in internal_text_tokens(text)
+        for token in text_tokens(text)
     )
     used: dict[str, set[int]] = defaultdict(set)
     matched = 0

@@ -12,6 +12,9 @@ from core_pdf.impl.engine.parse.capture import (
 from core_pdf.impl.engine.parse.model import (
     MAX_OCR_PIXELS,
     PRIMARY_OCR_PIXELS,
+    PSM_AUTO,
+    PSM_SPARSE_TEXT,
+    PSM_SPARSE_TEXT_OSD,
     CapturedPage,
     FusionPolicy,
     OcrPass,
@@ -21,10 +24,6 @@ from core_pdf.impl.engine.parse.model import (
     PageRoute,
     WorkPlan,
 )
-
-PSM_AUTO = 3
-PSM_SPARSE_TEXT = 11
-PSM_SPARSE_TEXT_OSD = 12
 
 # Precision-first extraction thresholds.  Raster text below these confidence
 # levels is more likely to be a layout artifact than a useful observation on
