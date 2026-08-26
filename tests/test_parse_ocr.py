@@ -23,6 +23,7 @@ from core_pdf.impl.engine.parse import (
     RecognitionResult,
     WorkPlan,
     ocr,
+    ocr_raster,
     ocr_stroked_vector,
     ocr_tesseract,
 )
@@ -234,7 +235,7 @@ def test_decoded_image_falls_back_when_shared_source_cannot_decode(monkeypatch) 
         dictionary={"Width": 2, "Height": 1},
     )
     monkeypatch.setattr(
-        parse_ocr,
+        ocr_raster,
         "decode_pdf_image",
         lambda internal_raw, internal_dictionary: SimpleNamespace(
             data=bytes((1, 2, 3, 4, 5, 6)),
@@ -2700,7 +2701,7 @@ def test_decoded_image_enlarges_low_resolution_scans_toward_the_ocr_target(monke
         dictionary={"Width": 200, "Height": 100},
     )
     monkeypatch.setattr(
-        parse_ocr,
+        ocr_raster,
         "decode_pdf_image",
         lambda internal_raw, internal_dictionary: SimpleNamespace(
             data=bytes(200 * 100),
@@ -2717,6 +2718,6 @@ def test_decoded_image_enlarges_low_resolution_scans_toward_the_ocr_target(monke
 
     assert decoded is not None
     assert unscaled is not None
-    assert decoded.resolution == pytest.approx(parse_ocr.DIRECT_OCR_TARGET_RESOLUTION, abs=8)
+    assert decoded.resolution == pytest.approx(ocr_raster.DIRECT_OCR_TARGET_RESOLUTION, abs=8)
     assert decoded.width > unscaled.width
     assert (unscaled.width, unscaled.height) == (200, 100)
