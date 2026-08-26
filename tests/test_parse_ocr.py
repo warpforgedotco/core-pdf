@@ -234,7 +234,9 @@ def test_decoded_image_falls_back_when_shared_source_cannot_decode(monkeypatch) 
         raw_data=b"encoded",
         dictionary={"Width": 2, "Height": 1},
     )
-    monkeypatch.setattr(ocr_raster, "decode_pdf_image",
+    monkeypatch.setattr(
+        ocr_raster,
+        "decode_pdf_image",
         lambda internal_raw, internal_dictionary: SimpleNamespace(
             data=bytes((1, 2, 3, 4, 5, 6)),
             width=2,
@@ -2698,7 +2700,9 @@ def test_decoded_image_enlarges_low_resolution_scans_toward_the_ocr_target(monke
         raw_data=b"encoded",
         dictionary={"Width": 200, "Height": 100},
     )
-    monkeypatch.setattr(ocr_raster, "decode_pdf_image",
+    monkeypatch.setattr(
+        ocr_raster,
+        "decode_pdf_image",
         lambda internal_raw, internal_dictionary: SimpleNamespace(
             data=bytes(200 * 100),
             width=200,
