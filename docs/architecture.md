@@ -206,6 +206,7 @@ sweep before pushing. Reaching every *line* of `engine/render/` is not the same
 as pinning every *pixel*: four digests once sat in the snapshot that no commit
 could produce, unnoticed because only the subset ran in CI. A refactor that is meant to
 preserve behavior must leave `tests/snapshots/raster/first_page_scale1.json`
-untouched; regenerate it with `CORE_PDF_UPDATE_RASTER_GOLDEN=1` only when an
-output change is intended, and review the diff. Recompute the covering subset
-with `scripts/raster_cover.py` after large structural changes.
+untouched; regenerate it with `uv run python scripts/update_raster_golden.py`
+only when an output change is intended, and review the diff. The standalone
+updater renders each corpus PDF once and does not invoke pytest. Recompute the
+covering subset with `scripts/raster_cover.py` after large structural changes.

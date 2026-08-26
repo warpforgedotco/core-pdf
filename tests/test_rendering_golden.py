@@ -19,9 +19,10 @@ Two layers:
   the subset reaches every line of ``engine/render/`` and still cannot see a
   changed pixel in the other 200 documents.
 
-Regenerate the digests after an *intentional* rendering change::
+Regenerate the digests after an *intentional* rendering change, without
+running the corpus through pytest a second time::
 
-    CORE_PDF_UPDATE_RASTER_GOLDEN=1 uv run pytest tests/test_rendering_golden.py -q
+    uv run python scripts/update_raster_golden.py
 
 Review the resulting diff to ``first_page_scale1.json`` before committing it.
 A refactor that is supposed to preserve behavior must produce no diff at all.
@@ -29,24 +30,18 @@ A refactor that is supposed to preserve behavior must produce no diff at all.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
-import pathlib
 from typing import Any, cast
 
 import pytest
 
-from core_pdf import PdfDocument
-
-CORPUS = pathlib.Path(__file__).resolve().parent / "fixtures" / "SCORE-Bench" / "src"
-SNAPSHOT = (
-    pathlib.Path(__file__).resolve().parent / "snapshots" / "raster" / "first_page_scale1.json"
+from scripts.update_raster_golden import (
+    CORPUS,
+    SNAPSHOT,
+    corpus_pdfs,
+    raster_digest,
 )
-
-# Fixed so the digest is reproducible; do not vary these without regenerating.
-RASTER_SCALE = 1.0
-RASTER_BACKGROUND = (255, 255, 255, 255)
 
 # Greedy line-cover of engine/render/ over the corpus: these 24 documents reach
 # 100% of the lines that all 224 reach. Recompute with scripts/raster_cover.py
@@ -79,42 +74,10 @@ COVERING_SUBSET = (
 )
 
 
-def raster_digest(pdf: pathlib.Path) -> str:
-    """Render page 1 and hash the RGBA buffer."""
-    with PdfDocument.open(pdf) as document:
-        rendered = document.pages[0].render()
-        raster = rendered.rasterize(
-            scale=RASTER_SCALE,
-            background=RASTER_BACKGROUND,
-            cache=False,
-        )
-        return hashlib.sha256(raster.pixels.tobytes()).hexdigest()
-
-
 def load_snapshot() -> dict[str, str]:
     if not SNAPSHOT.is_file():
         cast(Any, pytest.skip)(f"raster snapshot not present at {SNAPSHOT}")
     return json.loads(SNAPSHOT.read_text())
-
-
-def corpus_pdfs() -> list[pathlib.Path]:
-    if not CORPUS.is_dir():
-        return []
-    return sorted(CORPUS.glob("*.pdf"))
-
-
-@pytest.mark.skipif(
-    not os.environ.get("CORE_PDF_UPDATE_RASTER_GOLDEN"),
-    reason="set CORE_PDF_UPDATE_RASTER_GOLDEN=1 to rewrite the raster snapshot",
-)
-def test_regenerate_raster_snapshot() -> None:
-    """Not a test — the documented way to rewrite the snapshot after a change."""
-    pdfs = corpus_pdfs()
-    if not pdfs:
-        cast(Any, pytest.skip)(f"SCORE-Bench corpus not present at {CORPUS}")
-    digests = {pdf.name: raster_digest(pdf) for pdf in pdfs}
-    SNAPSHOT.parent.mkdir(parents=True, exist_ok=True)
-    SNAPSHOT.write_text(json.dumps(digests, indent=1, sort_keys=True) + "\n")
 
 
 @pytest.mark.parametrize("name", COVERING_SUBSET)
@@ -127,7 +90,7 @@ def test_first_page_raster_matches_snapshot(name: str) -> None:
         cast(Any, pytest.fail)(f"no snapshot digest recorded for {name}")
     assert raster_digest(pdf) == expected, (
         f"raster output changed for {name}. If the change is intentional, "
-        f"regenerate with CORE_PDF_UPDATE_RASTER_GOLDEN=1 and review the diff."
+        f"run scripts/update_raster_golden.py and review the diff."
     )
 
 
