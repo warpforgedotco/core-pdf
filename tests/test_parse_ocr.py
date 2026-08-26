@@ -23,12 +23,20 @@ from core_pdf.impl.engine.parse import (
     RecognitionResult,
     WorkPlan,
     ocr,
+    ocr_stroked_vector,
     ocr_tesseract,
 )
 from core_pdf.impl.engine.parse import capture as parse_capture
 from core_pdf.impl.engine.parse import ocr as parse_ocr
 from core_pdf.impl.engine.parse import pipeline as parse_pipeline
 from core_pdf.impl.engine.parse.model import StrokedVectorTextEvidence
+from core_pdf.impl.engine.parse.stroked_text import (
+    StrokedTextDecode,
+    StrokedTextObservation,
+    StrokedTextProfile,
+    StrokedTextRun,
+    StrokedTextSeed,
+)
 from core_pdf.impl.engine.render.raster_image import RasterImage
 from core_pdf.impl.runtime.execution import TaskScope
 
@@ -1786,9 +1794,9 @@ def test_stroked_vector_text_evidence_requires_distributed_compact_paths() -> No
 def test_stroked_vector_decoder_corrects_one_character_ocr_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    decoded = ocr.StrokedTextDecode(
+    decoded = StrokedTextDecode(
         observations=(
-            ocr.StrokedTextObservation(
+            StrokedTextObservation(
                 text="D7",
                 bbox=(0.1, 0.1, 3.9, 1.9),
                 first_drawing=0,
@@ -1803,7 +1811,7 @@ def test_stroked_vector_decoder_corrects_one_character_ocr_error(
         learned_signatures=3,
         approximate_signatures=0,
     )
-    monkeypatch.setattr(parse_ocr, "decode_stroked_text_profile", lambda *args: decoded)
+    monkeypatch.setattr(ocr_stroked_vector, "decode_stroked_text_profile", lambda *args: decoded)
     page = SimpleNamespace(extraction_cache={})
     capture = cast(
         CapturedPage,
@@ -1835,25 +1843,25 @@ def test_stroked_vector_decoder_corrects_one_character_ocr_error(
 
 
 def test_stroked_vector_substitution_repairs_only_anchored_low_confidence_edits() -> None:
-    assert ocr.internal_stroked_vector_substitution(
+    assert ocr_stroked_vector.internal_stroked_vector_substitution(
         "cn",
         "C11",
         confidence=80.0,
         overlap=1.0,
     )
-    assert not ocr.internal_stroked_vector_substitution(
+    assert not ocr_stroked_vector.internal_stroked_vector_substitution(
         "cn",
         "C11",
         confidence=95.0,
         overlap=1.0,
     )
-    assert not ocr.internal_stroked_vector_substitution(
+    assert not ocr_stroked_vector.internal_stroked_vector_substitution(
         "cn",
         "C11",
         confidence=80.0,
         overlap=0.70,
     )
-    assert not ocr.internal_stroked_vector_substitution(
+    assert not ocr_stroked_vector.internal_stroked_vector_substitution(
         "R1",
         "D7",
         confidence=80.0,
@@ -1863,11 +1871,11 @@ def test_stroked_vector_substitution_repairs_only_anchored_low_confidence_edits(
 
 def test_stroked_vector_pack_uses_independent_horizontal_and_vertical_padding() -> None:
     runs = (
-        ocr.StrokedTextRun((0.0, 0.0, 10.0, 2.0), (0, 1), 2),
-        ocr.StrokedTextRun((20.0, 0.0, 30.0, 2.0), (2, 3), 2),
+        StrokedTextRun((0.0, 0.0, 10.0, 2.0), (0, 1), 2),
+        StrokedTextRun((20.0, 0.0, 30.0, 2.0), (2, 3), 2),
     )
 
-    cells, height = ocr.internal_pack_stroked_text_runs(
+    cells, height = ocr_stroked_vector.internal_pack_stroked_text_runs(
         runs,
         width=100.0,
         horizontal_padding=4.0,
@@ -1887,7 +1895,7 @@ def test_packed_stroked_vector_candidate_maps_each_cell_back_to_page() -> None:
         raster=ocr.internal_Raster(image, 432),
         packed_box=(0.0, 0.0, 40.0, 20.0),
         cells=(
-            ocr.internal_StrokedTextCell(
+            ocr_stroked_vector.internal_StrokedTextCell(
                 source_box=(100.0, 200.0, 110.0, 205.0),
                 packed_box=(10.0, 10.0, 20.0, 15.0),
                 drawing_indexes=(7, 8),
@@ -1928,15 +1936,15 @@ def test_packed_stroked_vector_candidate_maps_each_cell_back_to_page() -> None:
 def test_stroked_vector_symbol_seeds_require_exact_cell_glyph_count(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    run = ocr.StrokedTextRun(
+    run = StrokedTextRun(
         bbox=(100.0, 200.0, 110.0, 205.0),
         drawing_indexes=(7, 8),
         glyph_count=2,
     )
     monkeypatch.setattr(
-        parse_ocr,
+        ocr_stroked_vector,
         "internal_stroked_text_profile",
-        lambda capture: ocr.StrokedTextProfile(seed_runs=(run,)),
+        lambda capture: StrokedTextProfile(seed_runs=(run,)),
     )
     capture = cast(
         CapturedPage,
@@ -1961,17 +1969,17 @@ def test_stroked_vector_symbol_seeds_require_exact_cell_glyph_count(
     )
     incomplete = exact.take((0,))
 
-    seeds = ocr.internal_stroked_vector_symbol_seeds(capture, exact)
+    seeds = ocr_stroked_vector.internal_stroked_vector_symbol_seeds(capture, exact)
 
-    assert seeds == (ocr.StrokedTextSeed("R7", run.bbox, 91.0, 7),)
-    assert ocr.internal_stroked_vector_symbol_seeds(capture, incomplete) == ()
+    assert seeds == (StrokedTextSeed("R7", run.bbox, 91.0, 7),)
+    assert ocr_stroked_vector.internal_stroked_vector_symbol_seeds(capture, incomplete) == ()
 
 
 def test_packed_stroked_vector_decode_gate_requires_reusable_alphabet() -> None:
-    weak = ocr.StrokedTextDecode(aligned_seeds=11, learned_signatures=30)
-    strong = ocr.StrokedTextDecode(
+    weak = StrokedTextDecode(aligned_seeds=11, learned_signatures=30)
+    strong = StrokedTextDecode(
         observations=tuple(
-            ocr.StrokedTextObservation("R1", (0.0, 0.0, 1.0, 1.0), 0, 1) for _ in range(16)
+            StrokedTextObservation("R1", (0.0, 0.0, 1.0, 1.0), 0, 1) for _ in range(16)
         ),
         aligned_seeds=12,
         learned_signatures=16,
@@ -1990,7 +1998,7 @@ def test_weak_packed_stroked_vector_seed_uses_full_layer_fallback(
         raster=raster,
         packed_box=(0.0, 0.0, 10.0, 10.0),
         cells=(
-            ocr.internal_StrokedTextCell(
+            ocr_stroked_vector.internal_StrokedTextCell(
                 source_box=(20.0, 20.0, 25.0, 23.0),
                 packed_box=(2.0, 2.0, 7.0, 5.0),
                 drawing_indexes=(0, 1),
@@ -2013,7 +2021,7 @@ def test_weak_packed_stroked_vector_seed_uses_full_layer_fallback(
     monkeypatch.setattr(
         parse_ocr,
         "internal_decode_stroked_vector_text",
-        lambda capture, observations, symbols=None: ocr.StrokedTextDecode(),
+        lambda capture, observations, symbols=None: StrokedTextDecode(),
     )
     recognized: list[bool] = []
 
@@ -2131,9 +2139,9 @@ def test_document_stroked_alphabet_uses_richest_page_as_only_ocr_seed(
         id(page): Extraction(page, capture) for page, capture in zip(pages, captures, strict=True)
     }
     monkeypatch.setattr(parse_pipeline, "page_extraction", lambda page: extractions[id(page)])
-    decoded = ocr.StrokedTextDecode(
+    decoded = StrokedTextDecode(
         observations=tuple(
-            ocr.StrokedTextObservation(
+            StrokedTextObservation(
                 "A",
                 (float(index), 0.0, float(index + 1), 1.0),
                 index,
@@ -2238,8 +2246,8 @@ def test_document_stroked_alphabet_falls_back_to_page_ocr_when_coverage_is_low(
     monkeypatch.setattr(
         parse_pipeline,
         "decode_stroked_text_profile_with_alphabet",
-        lambda profile, learned: ocr.StrokedTextDecode(
-            observations=(ocr.StrokedTextObservation("A", (0.0, 0.0, 1.0, 1.0), 0, 0),),
+        lambda profile, learned: StrokedTextDecode(
+            observations=(StrokedTextObservation("A", (0.0, 0.0, 1.0, 1.0), 0, 0),),
             alphabet=alphabet,
             candidate_runs=20,
             decoded_candidate_runs=1,
@@ -2283,9 +2291,9 @@ def test_stroked_text_profile_is_cached_per_capture_drawings(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: list[tuple[object, ...]] = []
-    profile = ocr.StrokedTextProfile()
+    profile = StrokedTextProfile()
     monkeypatch.setattr(
-        parse_ocr,
+        ocr_stroked_vector,
         "profile_stroked_text",
         lambda drawings, indexes: calls.append(drawings) or profile,
     )
@@ -2308,9 +2316,9 @@ def test_stroked_text_profile_is_cached_per_capture_drawings(
         SimpleNamespace(page=page, drawings=second_drawings, evidence=evidence),
     )
 
-    assert ocr.internal_stroked_text_profile(first) is profile
-    assert ocr.internal_stroked_text_profile(first) is profile
-    assert ocr.internal_stroked_text_profile(second) is profile
+    assert ocr_stroked_vector.internal_stroked_text_profile(first) is profile
+    assert ocr_stroked_vector.internal_stroked_text_profile(first) is profile
+    assert ocr_stroked_vector.internal_stroked_text_profile(second) is profile
     assert calls == [first_drawings, second_drawings]
 
 
