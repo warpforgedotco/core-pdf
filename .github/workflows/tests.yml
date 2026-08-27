@@ -152,6 +152,18 @@ jobs:
 
       - name: Run high-impact CodSpeed benchmarks
         uses: CodSpeedHQ/action@v3
+        env:
+          # CodSpeed counts instructions on a simulated CPU that serializes
+          # threads, so OpenBLAS's thread pool contributes its spin-wait loops
+          # to the measurement instead of overlapping with real work. The two
+          # ICC benchmarks call sgemm and were paying for it: three iterations
+          # of test_matrix_transform_benchmark measure 766M instructions with
+          # one thread and 42-159 billion with two to eight, varying by 2x
+          # between identical runs. That is what made them swing from 282ms to
+          # 2s on unchanged code while the other 24 benchmarks held to three
+          # significant figures. One thread measures our own code.
+          OPENBLAS_NUM_THREADS: "1"
+          OMP_NUM_THREADS: "1"
         with:
           run: >-
             uv run --locked --package core-pdf --group benchmark pytest

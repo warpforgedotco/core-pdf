@@ -40,6 +40,13 @@ jobs:
 
       - name: Run targeted benchmarks
         uses: CodSpeedHQ/action@v3
+        env:
+          # Same reason as the CodSpeed job in tests.yml: the simulator
+          # serializes threads, so a multi-threaded OpenBLAS measures its own
+          # spin-waiting rather than our code, by up to three orders of
+          # magnitude and nondeterministically.
+          OPENBLAS_NUM_THREADS: "1"
+          OMP_NUM_THREADS: "1"
         with:
           run: >-
             uv run --locked --package core-pdf --group benchmark pytest
