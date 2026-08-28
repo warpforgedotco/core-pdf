@@ -8,7 +8,7 @@ import os
 import re
 import time
 from collections import defaultdict
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 import numpy
@@ -769,6 +769,1217 @@ def internal_record_candidates(
 # recompose and rasterize the entire page around an otherwise usable source image.
 OCR_IMAGE_REGIONS_MAX_AXIS_DEVIATION = 0.01
 
+internal_PageBox = tuple[float, float, float, float]
+
+
+@dataclass(slots=True)
+class internal_OcrSession:
+    """Shared services and raster caches for one page-recognition attempt."""
+
+    capture: CapturedPage
+    plan: WorkPlan
+    context: TaskScope
+    trace: internal_RecognitionTrace
+    page_box: internal_PageBox
+    compact_image: bool | str
+    dominant_regions: dict[int, internal_RasterRegion | None] = field(default_factory=dict)
+    rendered_rasters: dict[tuple[float, int, bool], internal_Raster | None] = field(
+        default_factory=dict
+    )
+    rendered_page: Any | None = None
+    candidate_regions: tuple[internal_OcrRegion, ...] | None = None
+    adaptive_rescue_used: bool = False
+
+    @classmethod
+    def create(
+        cls,
+        capture: CapturedPage,
+        plan: WorkPlan,
+        context: TaskScope,
+        trace: internal_RecognitionTrace,
+    ) -> internal_OcrSession:
+        page = capture.page
+        compact_image: bool | str = True
+        if capture.evidence.full_page_image and any(
+            "JPX" in str(filter_name).upper() for filter_name in capture.evidence.image_filters
+        ):
+            compact_image = "grayscale"
+        return cls(
+            capture,
+            plan,
+            context,
+            trace,
+            (0.0, 0.0, float(page.width), float(page.height)),
+            compact_image,
+        )
+
+    def recognize_batch(
+        self,
+        tasks: tuple[internal_OcrTask, ...],
+    ) -> tuple[internal_Candidate, ...]:
+        groups = internal_ocr_task_groups(tasks)
+        results = self.context.map_ordered(
+            internal_recognize_group,
+            groups,
+            stage=WorkStage.OCR,
+        )
+        return tuple(candidate for group in results for candidate in group)
+
+    def recognize_tasks(
+        self,
+        tasks: tuple[internal_OcrTask, ...],
+    ) -> tuple[internal_Candidate, ...]:
+        candidates = self.recognize_batch(tasks)
+        if any(candidate.recognition_status == "timeout" for candidate in candidates):
+            self.context.raise_if_cancelled()
+            candidates = internal_recover_timed_out_tasks(
+                tasks,
+                candidates,
+                self.recognize_batch,
+            )
+        return candidates
+
+
+@dataclass(slots=True)
+class internal_OcrSelection:
+    """Candidate-selection state accumulated across scheduled OCR passes."""
+
+    candidates: list[tuple[str, internal_Candidate]] = field(default_factory=list)
+    selected_name: str = ""
+    selected: internal_Candidate | None = None
+    selected_tasks: tuple[internal_OcrTask, ...] = ()
+    previous_region_additions: int = 0
+    seeded_region_selected: bool = False
+
+    def clear_seeded_region_candidate(self) -> None:
+        self.selected_name = ""
+        self.selected = None
+        self.selected_tasks = ()
+        self.seeded_region_selected = False
+
+
+@dataclass(slots=True)
+class internal_OcrTaskPlan:
+    """Raster tasks and diagnostics prepared for one configured OCR pass."""
+
+    ocr_pass: OcrPass
+    started: float
+    tasks: tuple[internal_OcrTask, ...] = ()
+    packed_stroked: internal_PackedStrokedTextRaster | None = None
+    raster_pixels: int = 0
+    skipped_raster_pixels: int = 0
+    image_text_preflight: tuple[dict[str, object], ...] = ()
+    skipped_region_boxes: tuple[internal_PageBox, ...] = ()
+    region_stage: str = "page"
+    region_boxes: tuple[internal_PageBox, ...] = ()
+    adaptive_preflight: dict[str, object] | None = None
+
+
+@dataclass(slots=True)
+class internal_OcrPassOutcome:
+    """Recognition output that candidate rescue and selection may refine."""
+
+    candidate: internal_Candidate
+    task_candidates: tuple[internal_Candidate, ...]
+    candidate_source_tasks: tuple[internal_OcrTask, ...]
+    additions: int = 0
+    used_native_seed: bool = False
+    adaptive_retry_scale: float | None = None
+    adaptive_rescue_decision: dict[str, object] | None = None
+    adaptive_rescue: dict[str, object] | None = None
+
+
+def internal_verify_hidden_text(session: internal_OcrSession) -> ObservationBatch | None:
+    """Run the inexpensive semantic/spatial check for a hidden native text layer."""
+    capture = session.capture
+    session.context.raise_if_cancelled()
+    started = time.perf_counter()
+    verification_pass = OcrPass(
+        "hidden-text-verification",
+        OcrPassScope.PAGE,
+        1.0,
+        (PSM_SPARSE_TEXT,),
+        minimum_confidence=HIDDEN_TEXT_VERIFY_MIN_CONFIDENCE,
+        pixel_budget=HIDDEN_TEXT_VERIFY_PIXELS,
+        recognize_words=True,
+        region_first=False,
+    )
+    verification_region = internal_dominant_image_region(
+        capture,
+        max_pixels=HIDDEN_TEXT_VERIFY_PIXELS,
+    )
+    verification_tasks = (
+        internal_tile_tasks(
+            verification_region.raster,
+            verification_region.page_box,
+            verification_pass,
+            compact_image=session.compact_image,
+        )
+        if verification_region is not None
+        else ()
+    )
+    verification_candidates = session.recognize_tasks(verification_tasks)
+    verification_candidate = internal_merge_candidate_batches(verification_candidates)
+    verification = internal_hidden_text_verification(
+        capture.observations,
+        verification_candidate.observations,
+    )
+    raster_pixels = (
+        verification_region.raster.width * verification_region.raster.height
+        if verification_region is not None
+        else 0
+    )
+    session.trace.passes.append(
+        {
+            "name": verification_pass.name,
+            "scope": verification_pass.scope.value,
+            "scale": verification_pass.scale,
+            "modes": verification_pass.modes,
+            "recognize_words": verification_pass.recognize_words,
+            "character_confidence_threshold": None,
+            "task_count": len(verification_tasks),
+            "raster_pixels": raster_pixels,
+            "region_stage": "dominant-image-preview",
+            "region_boxes": (
+                (verification_region.page_box,) if verification_region is not None else ()
+            ),
+            "full_page_fallback": False,
+            "elapsed_seconds": time.perf_counter() - started,
+            "render_timings": session.trace.render_timings or {},
+            "recognition_seconds": sum(
+                candidate.recognition_seconds for candidate in verification_candidates
+            ),
+            "setup_seconds": sum(candidate.setup_seconds for candidate in verification_candidates),
+            "api_seconds": sum(candidate.api_seconds for candidate in verification_candidates),
+            "iterator_seconds": sum(
+                candidate.iterator_seconds for candidate in verification_candidates
+            ),
+            "cleanup_seconds": sum(
+                candidate.cleanup_seconds for candidate in verification_candidates
+            ),
+            "candidate_seconds": sum(
+                candidate.candidate_seconds for candidate in verification_candidates
+            ),
+            "recognition_statuses": tuple(
+                candidate.recognition_status for candidate in verification_candidates
+            ),
+            "accepted_additions": 0,
+            "adaptive_retry_scale": None,
+            "adaptive_preflight": None,
+            "adaptive_rescue_decision": None,
+            "adaptive_rescue": None,
+            "pixel_budget": verification_pass.pixel_budget,
+            "rectangles": tuple(task.rectangle for task in verification_tasks),
+            "selected": verification.accepted,
+            **verification_candidate.metrics.as_record(),
+            **verification.as_record(),
+        }
+    )
+    session.trace.hidden_text_verification = {
+        "raster_pixels": raster_pixels,
+        **verification.as_record(),
+    }
+    if verification.accepted:
+        return internal_promoted_hidden_observations(capture)
+    return None
+
+
+def internal_should_run_ocr_pass(
+    session: internal_OcrSession,
+    selection: internal_OcrSelection,
+    ocr_pass: OcrPass,
+) -> bool:
+    """Apply the pass guards and clear a provisional native-seeded candidate."""
+    selected = selection.selected
+    if (
+        selected is not None
+        and ocr_pass.scope is OcrPassScope.PAGE
+        and ocr_pass.run_if_characters_below is not None
+        and internal_primary_text_is_sufficient(selected)
+    ):
+        return False
+    if (
+        selected is not None
+        and ocr_pass.run_if_characters_below is not None
+        and selected.metrics.characters >= ocr_pass.run_if_characters_below
+    ):
+        return False
+    if (
+        selected is not None
+        and ocr_pass.scope is OcrPassScope.IMAGE_REGIONS
+        and ocr_pass.run_if_characters_below is not None
+        and selected.metrics.characters >= 28
+        and selected.metrics.mean_confidence >= 97.0
+    ):
+        return False
+    if (
+        selected is not None
+        and ocr_pass.scope is OcrPassScope.IMAGE_REGIONS
+        and ocr_pass.run_if_characters_below is not None
+        and selected.metrics.characters >= 1500
+        and selected.metrics.mean_confidence >= 98.0
+    ):
+        return False
+    if (
+        ocr_pass.run_if_additions_below is not None
+        and selection.previous_region_additions >= ocr_pass.run_if_additions_below
+    ):
+        return False
+    if (
+        ocr_pass.scope is OcrPassScope.PAGE
+        and ocr_pass.run_if_additions_below is not None
+        and selection.previous_region_additions == 0
+        and selected is None
+        and session.capture.evidence.visible_native_characters >= 3_000
+    ):
+        return False
+    if (
+        ocr_pass.scope is OcrPassScope.WEAK_REGIONS
+        and ocr_pass.run_if_additions_below is not None
+        and selection.previous_region_additions == 0
+        and selected is not None
+        and selected.metrics.characters >= 32
+        and selected.metrics.mean_confidence >= 90.0
+    ):
+        return False
+    if (
+        ocr_pass.scope is OcrPassScope.PAGE
+        and selection.seeded_region_selected
+        and ocr_pass.run_if_additions_below is not None
+    ):
+        selection.clear_seeded_region_candidate()
+    return True
+
+
+def internal_adapt_ocr_pass(
+    session: internal_OcrSession,
+    ocr_pass: OcrPass,
+) -> tuple[OcrPass, dict[str, object] | None]:
+    """Use a bounded preview to raise the primary scale for undersampled text."""
+    capture = session.capture
+    vector_preview = bool(
+        capture.evidence.image_count == 0
+        and capture.evidence.vector_complexity >= 100_000
+        and capture.evidence.text_coverage < 0.05
+    )
+    if not (
+        ocr_pass.adaptive_scale
+        and ocr_pass.scope is OcrPassScope.PAGE
+        and ocr_pass.pixel_budget == PRIMARY_OCR_PIXELS
+        and (capture.evidence.full_page_image or vector_preview)
+    ):
+        return ocr_pass, None
+
+    preview_raster: internal_Raster | None = None
+    if capture.evidence.full_page_image:
+        if OCR_PREFLIGHT_PIXELS not in session.dominant_regions:
+            # The preview only measures text height, so enlarging it would
+            # cost time and shift the projection this decision depends on.
+            session.dominant_regions[OCR_PREFLIGHT_PIXELS] = internal_dominant_image_region(
+                capture,
+                max_pixels=OCR_PREFLIGHT_PIXELS,
+                upscale=False,
+            )
+        preview_region = session.dominant_regions[OCR_PREFLIGHT_PIXELS]
+        preview_raster = preview_region.raster if preview_region is not None else None
+    else:
+        if session.rendered_page is None:
+            session.rendered_page = compose_page(
+                capture.page,
+                RenderOptions(include_text=ocr_pass.include_native_text),
+                page_program=capture.program,
+            )
+        preview_raster = internal_rendered_page_raster(
+            capture,
+            ocr_pass.scale,
+            rendered=session.rendered_page,
+            cache=True,
+            max_pixels=OCR_PREFLIGHT_PIXELS,
+            include_native_text=ocr_pass.include_native_text,
+            trace=session.trace,
+        )
+    if preview_raster is None:
+        return ocr_pass, None
+
+    preview_height = internal_estimated_text_height(preview_raster)
+    projected_height = preview_height * math.sqrt(
+        ocr_pass.pixel_budget / max(1, preview_raster.width * preview_raster.height)
+    )
+    projected_limit = 22.0 if vector_preview else 20.0
+    if not 12.0 <= projected_height < projected_limit:
+        return ocr_pass, None
+
+    original_scale = ocr_pass.scale
+    adapted_pass = replace(
+        ocr_pass,
+        scale=min(
+            8.0,
+            max(
+                original_scale + 0.5,
+                original_scale * 32.0 / projected_height,
+            ),
+        ),
+        pixel_budget=MAX_OCR_PIXELS,
+    )
+    return adapted_pass, {
+        "preview_pixels": preview_raster.width * preview_raster.height,
+        "preview_text_height": preview_height,
+        "projected_primary_text_height": projected_height,
+        "selected_scale": adapted_pass.scale,
+        "source": "vector-render" if vector_preview else "dominant-image",
+    }
+
+
+def internal_plan_region_first_tasks(
+    session: internal_OcrSession,
+    ocr_pass: OcrPass,
+) -> tuple[
+    tuple[internal_OcrTask, ...],
+    int,
+    tuple[internal_PageBox, ...],
+    str,
+]:
+    """Rasterize the first batch of content-derived OCR regions."""
+    capture = session.capture
+    candidate_regions = session.candidate_regions
+    if candidate_regions is None:
+        candidate_regions = internal_candidate_ocr_regions(capture)
+        session.candidate_regions = candidate_regions
+    distributed_outline_text = bool(
+        ocr_pass.scope is OcrPassScope.PAGE and internal_has_distributed_outline_text(capture)
+    )
+    region_batch = (
+        (
+            internal_OcrRegion(
+                session.page_box,
+                float("inf"),
+                ("distributed-outline-text",),
+            ),
+        )
+        if distributed_outline_text
+        else internal_ocr_region_batch(
+            candidate_regions,
+            ocr_pass,
+            expanded=False,
+            page_area=max(1.0, float(capture.page.width) * float(capture.page.height)),
+        )
+    )
+    tasks, raster_pixels, session.rendered_page, region_boxes = internal_candidate_region_tasks(
+        capture,
+        region_batch,
+        ocr_pass,
+        rendered=session.rendered_page,
+        compact_image=session.compact_image,
+        trace=session.trace,
+    )
+    region_stage = "distributed-outline-page" if distributed_outline_text else "initial-regions"
+    if len(region_batch) == 1 and "page-fallback" in region_batch[0].reasons:
+        region_stage = "page"
+    return tasks, raster_pixels, region_boxes, region_stage
+
+
+def internal_plan_weak_region_tasks(
+    session: internal_OcrSession,
+    selection: internal_OcrSelection,
+    ocr_pass: OcrPass,
+) -> tuple[tuple[internal_OcrTask, ...], int, tuple[internal_PageBox, ...]] | None:
+    """Plan a weak-region crop pass from the selected or native observations."""
+    selected = selection.selected
+    if selected is None and not ocr_pass.seed_with_native:
+        return None
+    if selected is not None and selection.selected_tasks:
+        tasks, raster_pixels, session.rendered_page, region_boxes = (
+            internal_high_resolution_weak_region_tasks(
+                session.capture,
+                selection.selected_tasks,
+                ocr_pass,
+                selected.observations,
+                rendered=session.rendered_page,
+                compact_image=session.compact_image,
+                trace=session.trace,
+            )
+        )
+        return tasks, raster_pixels, region_boxes
+
+    if ocr_pass.pixel_budget not in session.dominant_regions:
+        session.dominant_regions[ocr_pass.pixel_budget] = internal_dominant_image_region(
+            session.capture,
+            max_pixels=ocr_pass.pixel_budget,
+        )
+    direct_region = session.dominant_regions[ocr_pass.pixel_budget]
+    raster = direct_region.raster if direct_region is not None else None
+    raster_page_box = direct_region.page_box if direct_region is not None else session.page_box
+    if raster is None:
+        raster_key = (
+            ocr_pass.scale,
+            ocr_pass.pixel_budget,
+            ocr_pass.include_native_text,
+        )
+        if raster_key not in session.rendered_rasters:
+            session.rendered_rasters[raster_key] = internal_rendered_page_raster(
+                session.capture,
+                ocr_pass.scale,
+                max_pixels=ocr_pass.pixel_budget,
+                include_native_text=ocr_pass.include_native_text,
+                trace=session.trace,
+            )
+        raster = session.rendered_rasters[raster_key]
+        raster_page_box = session.page_box
+    tasks = (
+        internal_weak_region_tasks(
+            raster,
+            raster_page_box,
+            ocr_pass,
+            selected.observations if selected is not None else session.capture.observations,
+            compact_image=session.compact_image,
+        )
+        if raster is not None
+        else ()
+    )
+    raster_pixels = (
+        sum(task.rectangle[2] * task.rectangle[3] for task in tasks) if raster is not None else 0
+    )
+    return tasks, raster_pixels, ()
+
+
+def internal_plan_stroked_vector_tasks(
+    session: internal_OcrSession,
+    ocr_pass: OcrPass,
+) -> tuple[
+    tuple[internal_OcrTask, ...],
+    internal_PackedStrokedTextRaster | None,
+    int,
+    tuple[internal_PageBox, ...],
+    str,
+]:
+    """Plan packed stroked-vector OCR, falling back to a full montage."""
+    capture = session.capture
+    packed_stroked = internal_stroked_vector_text_raster(
+        capture,
+        ocr_pass.scale,
+        max_pixels=ocr_pass.pixel_budget,
+        trace=session.trace,
+    )
+    if packed_stroked is not None:
+        region_boxes = (
+            (capture.evidence.stroked_vector_text.bbox,)
+            if capture.evidence.stroked_vector_text.bbox is not None
+            else ()
+        )
+        tasks = internal_tile_tasks(
+            packed_stroked.raster,
+            packed_stroked.packed_box,
+            replace(ocr_pass, recognize_words=True, collect_symbols=True),
+            compact_image=session.compact_image,
+        )
+        raster_pixels = packed_stroked.raster.width * packed_stroked.raster.height
+        return (
+            tasks,
+            packed_stroked,
+            raster_pixels,
+            region_boxes,
+            "packed-stroked-vector-text",
+        )
+
+    fallback_region = internal_full_stroked_vector_text_raster(
+        capture,
+        ocr_pass.scale,
+        max_pixels=ocr_pass.pixel_budget,
+        trace=session.trace,
+    )
+    region_boxes = (fallback_region.page_box,) if fallback_region is not None else ()
+    tasks = (
+        internal_tile_tasks(
+            fallback_region.raster,
+            fallback_region.page_box,
+            ocr_pass,
+            compact_image=session.compact_image,
+        )
+        if fallback_region is not None
+        else ()
+    )
+    raster_pixels = (
+        fallback_region.raster.width * fallback_region.raster.height
+        if fallback_region is not None
+        else 0
+    )
+    session.trace.stroked_vector_packed = {
+        "accepted": False,
+        "cells": 0,
+        "raster_pixels": 0,
+        "unmapped_observations": 0,
+        "fallback_used": bool(tasks),
+    }
+    return tasks, None, raster_pixels, region_boxes, "stroked-vector-text-fallback"
+
+
+def internal_plan_image_region_tasks(
+    session: internal_OcrSession,
+    ocr_pass: OcrPass,
+    task_plan: internal_OcrTaskPlan,
+) -> None:
+    """Plan direct image-region OCR and record the cheap text-signal preflight."""
+    capture = session.capture
+    regions = internal_page_image_regions(
+        capture,
+        minimum_area_ratio=0.02,
+        max_pixels=ocr_pass.pixel_budget,
+        maximum_axis_deviation=OCR_IMAGE_REGIONS_MAX_AXIS_DEVIATION,
+    )
+    if not regions:
+        fallback_scale = max(2.0, ocr_pass.scale)
+        image_crop = internal_safe_image_crop(capture)
+        raster = internal_rendered_page_raster(
+            capture,
+            fallback_scale,
+            crop=image_crop,
+            max_pixels=ocr_pass.pixel_budget,
+            include_native_text=ocr_pass.include_native_text,
+            trace=session.trace,
+        )
+        raster_page_box = image_crop or session.page_box
+        task_plan.tasks = (
+            internal_tile_tasks(
+                raster,
+                raster_page_box,
+                ocr_pass,
+                compact_image=session.compact_image,
+            )
+            if raster is not None
+            else ()
+        )
+        task_plan.raster_pixels = raster.width * raster.height if raster is not None else 0
+        return
+
+    region_signals = tuple(
+        (region, internal_raster_text_signal(region.raster.image)) for region in regions
+    )
+    task_plan.image_text_preflight = tuple(
+        {
+            "page_box": region.page_box,
+            "raster_pixels": region.raster.width * region.raster.height,
+            **signal.as_record(),
+        }
+        for region, signal in region_signals
+    )
+    eligible_regions = tuple(
+        region
+        for region, signal in region_signals
+        if signal.likely_text
+        or (
+            signal.horizontal_edge_ratio >= 0.035
+            and sum(len(text.strip()) for text in capture.observations.text) < 15
+        )
+    )
+    skipped_regions = tuple(region for region, signal in region_signals if not signal.likely_text)
+    task_plan.skipped_raster_pixels = sum(
+        region.raster.width * region.raster.height for region in skipped_regions
+    )
+    task_plan.skipped_region_boxes = tuple(region.page_box for region in skipped_regions)
+    task_plan.region_boxes = tuple(region.page_box for region in eligible_regions)
+    task_plan.region_stage = "direct-image-regions"
+    task_plan.tasks = tuple(
+        task
+        for region in eligible_regions
+        for task in internal_tile_tasks(
+            region.raster,
+            region.page_box,
+            ocr_pass,
+            compact_image=session.compact_image,
+        )
+    )
+    task_plan.raster_pixels = sum(
+        region.raster.width * region.raster.height for region in eligible_regions
+    )
+
+
+def internal_plan_page_tasks(
+    session: internal_OcrSession,
+    ocr_pass: OcrPass,
+) -> tuple[tuple[internal_OcrTask, ...], int]:
+    """Plan the ordinary full-page pass from a direct scan or rendered raster."""
+    if internal_direct_scan_allowed(session.capture, session.plan):
+        if ocr_pass.pixel_budget not in session.dominant_regions:
+            session.dominant_regions[ocr_pass.pixel_budget] = internal_dominant_image_region(
+                session.capture,
+                max_pixels=ocr_pass.pixel_budget,
+            )
+        direct_region = session.dominant_regions.get(ocr_pass.pixel_budget)
+    else:
+        direct_region = None
+    raster = direct_region.raster if direct_region is not None else None
+    raster_page_box = direct_region.page_box if direct_region is not None else session.page_box
+    if raster is None:
+        raster_key = (
+            ocr_pass.scale,
+            ocr_pass.pixel_budget,
+            ocr_pass.include_native_text,
+        )
+        if raster_key not in session.rendered_rasters:
+            session.rendered_rasters[raster_key] = internal_rendered_page_raster(
+                session.capture,
+                ocr_pass.scale,
+                max_pixels=ocr_pass.pixel_budget,
+                include_native_text=ocr_pass.include_native_text,
+                trace=session.trace,
+            )
+        raster = session.rendered_rasters[raster_key]
+        raster_page_box = session.page_box
+    task_raster = (
+        internal_adaptive_ocr_raster(raster)
+        if raster is not None and ocr_pass.name == "adaptive-page"
+        else raster
+    )
+    tasks = (
+        internal_tile_tasks(
+            task_raster,
+            raster_page_box,
+            ocr_pass,
+            compact_image=session.compact_image,
+        )
+        if task_raster is not None
+        else ()
+    )
+    raster_pixels = raster.width * raster.height if raster is not None else 0
+    return tasks, raster_pixels
+
+
+def internal_plan_ocr_tasks(
+    session: internal_OcrSession,
+    selection: internal_OcrSelection,
+    configured_pass: OcrPass,
+) -> internal_OcrTaskPlan | None:
+    """Adapt a configured pass and turn its scope into concrete raster tasks."""
+    session.context.raise_if_cancelled()
+    started = time.perf_counter()
+    ocr_pass, adaptive_preflight = internal_adapt_ocr_pass(session, configured_pass)
+    task_plan = internal_OcrTaskPlan(
+        ocr_pass,
+        started,
+        adaptive_preflight=adaptive_preflight,
+    )
+    if (
+        ocr_pass.region_first
+        and ocr_pass.scope in {OcrPassScope.PAGE, OcrPassScope.WEAK_REGIONS}
+        and (
+            ocr_pass.scope is not OcrPassScope.WEAK_REGIONS
+            or selection.selected is not None
+            or ocr_pass.seed_with_native
+        )
+    ):
+        (
+            task_plan.tasks,
+            task_plan.raster_pixels,
+            task_plan.region_boxes,
+            task_plan.region_stage,
+        ) = internal_plan_region_first_tasks(session, ocr_pass)
+    elif ocr_pass.scope is OcrPassScope.WEAK_REGIONS:
+        weak_plan = internal_plan_weak_region_tasks(session, selection, ocr_pass)
+        if weak_plan is None:
+            return None
+        task_plan.tasks, task_plan.raster_pixels, task_plan.region_boxes = weak_plan
+        if selection.selected is not None and selection.selected_tasks:
+            task_plan.region_stage = "weak-region-crops"
+    elif ocr_pass.scope is OcrPassScope.STROKED_VECTOR_TEXT:
+        (
+            task_plan.tasks,
+            task_plan.packed_stroked,
+            task_plan.raster_pixels,
+            task_plan.region_boxes,
+            task_plan.region_stage,
+        ) = internal_plan_stroked_vector_tasks(session, ocr_pass)
+    elif ocr_pass.scope is OcrPassScope.IMAGE_REGIONS:
+        internal_plan_image_region_tasks(session, ocr_pass, task_plan)
+    else:
+        task_plan.tasks, task_plan.raster_pixels = internal_plan_page_tasks(
+            session,
+            ocr_pass,
+        )
+    if not task_plan.tasks:
+        if not task_plan.image_text_preflight:
+            return None
+        task_plan.region_stage = "image-text-preflight"
+    return task_plan
+
+
+def internal_recognize_stroked_candidate(
+    session: internal_OcrSession,
+    task_plan: internal_OcrTaskPlan,
+    task_candidates: tuple[internal_Candidate, ...],
+) -> tuple[
+    internal_Candidate,
+    tuple[internal_Candidate, ...],
+    tuple[internal_OcrTask, ...],
+]:
+    """Decode a packed stroked-text pass and run its isolated/fallback supplement."""
+    packed_stroked = task_plan.packed_stroked
+    if packed_stroked is None:
+        return (
+            internal_merge_candidate_batches(task_candidates),
+            task_candidates,
+            task_plan.tasks,
+        )
+    capture = session.capture
+    ocr_pass = task_plan.ocr_pass
+    candidate_source_tasks = task_plan.tasks
+    remapped_with_counts = tuple(
+        internal_remap_stroked_vector_candidate(candidate, packed_stroked)
+        for candidate in task_candidates
+    )
+    task_candidates = tuple(item[0] for item in remapped_with_counts)
+    unmapped_observations = sum(item[1] for item in remapped_with_counts)
+    packed_candidate = internal_merge_candidate_batches(task_candidates)
+    decode_started = time.perf_counter()
+    packed_decode = internal_decode_stroked_vector_text(
+        capture,
+        packed_candidate.observations,
+        packed_candidate.symbols,
+    )
+    decode_seconds = time.perf_counter() - decode_started
+    packed_accepted, packed_gate = internal_packed_stroked_vector_decode_gate(
+        packed_decode,
+        len(packed_stroked.cells),
+    )
+    packed_pixels = task_plan.raster_pixels
+    fallback_used = False
+    if packed_accepted:
+        # Seed packing only rasterizes multi-glyph runs, so isolated glyphs
+        # are recognized from their own high-scale montage as a supplement.
+        isolated_packed = internal_stroked_vector_text_raster(
+            capture,
+            ocr_pass.scale,
+            max_pixels=ocr_pass.pixel_budget,
+            variant="isolated",
+            trace=session.trace,
+        )
+        isolated_tasks = (
+            internal_tile_tasks(
+                isolated_packed.raster,
+                isolated_packed.packed_box,
+                replace(
+                    ocr_pass,
+                    recognize_words=True,
+                    collect_symbols=True,
+                    minimum_confidence=50.0,
+                ),
+                compact_image=session.compact_image,
+            )
+            if isolated_packed is not None
+            else ()
+        )
+        if isolated_tasks and isolated_packed is not None:
+            isolated_remapped = tuple(
+                internal_remap_stroked_vector_candidate(
+                    candidate,
+                    isolated_packed,
+                    digit_bearing_only=True,
+                )
+                for candidate in session.recognize_tasks(isolated_tasks)
+            )
+            isolated_candidates = tuple(item[0] for item in isolated_remapped)
+            packed_gate["isolated_cells"] = len(isolated_packed.cells)
+            packed_gate["isolated_observations"] = sum(
+                len(item[0].observations) for item in isolated_remapped
+            )
+            task_candidates = (*task_candidates, *isolated_candidates)
+            candidate_source_tasks = (*candidate_source_tasks, *isolated_tasks)
+            task_plan.tasks = (*task_plan.tasks, *isolated_tasks)
+            packed_candidate = internal_merge_candidate_batches(task_candidates)
+            task_plan.raster_pixels += isolated_packed.raster.width * isolated_packed.raster.height
+        session.trace.pending_stroked_decode = (
+            id(packed_candidate.observations),
+            packed_decode,
+            decode_seconds,
+        )
+    else:
+        fallback_region = internal_full_stroked_vector_text_raster(
+            capture,
+            ocr_pass.scale,
+            max_pixels=ocr_pass.pixel_budget,
+            trace=session.trace,
+        )
+        fallback_tasks = (
+            internal_tile_tasks(
+                fallback_region.raster,
+                fallback_region.page_box,
+                replace(ocr_pass, recognize_words=False),
+                compact_image=session.compact_image,
+            )
+            if fallback_region is not None
+            else ()
+        )
+        if fallback_tasks:
+            fallback_used = True
+            fallback_candidates = session.recognize_tasks(fallback_tasks)
+            task_candidates = (*task_candidates, *fallback_candidates)
+            candidate_source_tasks = (*candidate_source_tasks, *fallback_tasks)
+            task_plan.tasks = (*task_plan.tasks, *fallback_tasks)
+            packed_candidate = internal_merge_candidate_batches(fallback_candidates)
+            task_plan.raster_pixels += (
+                fallback_region.raster.width * fallback_region.raster.height
+                if fallback_region is not None
+                else 0
+            )
+            task_plan.region_stage = "stroked-vector-text-fallback"
+            task_plan.region_boxes = (
+                (fallback_region.page_box,)
+                if fallback_region is not None
+                else task_plan.region_boxes
+            )
+    session.trace.stroked_vector_packed = {
+        **packed_gate,
+        "raster_pixels": packed_pixels,
+        "unmapped_observations": unmapped_observations,
+        "symbol_observations": len(packed_candidate.symbols),
+        "fallback_used": fallback_used,
+    }
+    return packed_candidate, task_candidates, candidate_source_tasks
+
+
+def internal_recognize_ocr_task_plan(
+    session: internal_OcrSession,
+    task_plan: internal_OcrTaskPlan,
+) -> internal_OcrPassOutcome:
+    """Recognize all initially planned tasks and merge their candidate batches."""
+    task_candidates = session.recognize_tasks(task_plan.tasks)
+    candidate, task_candidates, candidate_source_tasks = internal_recognize_stroked_candidate(
+        session, task_plan, task_candidates
+    )
+    return internal_OcrPassOutcome(
+        candidate,
+        task_candidates,
+        candidate_source_tasks,
+    )
+
+
+def internal_apply_adaptive_rescue(
+    session: internal_OcrSession,
+    task_plan: internal_OcrTaskPlan,
+    outcome: internal_OcrPassOutcome,
+) -> None:
+    """Retry an undersampled primary candidate at a bounded higher resolution."""
+    ocr_pass = task_plan.ocr_pass
+    candidate = outcome.candidate
+    median_height = candidate.metrics.median_text_height
+    rescue_eligible = bool(
+        ocr_pass.adaptive_scale
+        and ocr_pass.scope is OcrPassScope.PAGE
+        and ocr_pass.pixel_budget < MAX_OCR_PIXELS
+        and not session.adaptive_rescue_used
+        and candidate.metrics.characters >= ocr_pass.minimum_characters_for_rescue
+        and (candidate.metrics.characters < 32 or 0.0 < median_height < 24.0)
+    )
+    run_rescue = False
+    if rescue_eligible:
+        session.adaptive_rescue_used = True
+        run_rescue, outcome.adaptive_rescue_decision = internal_adaptive_rescue_decision(
+            candidate,
+            outcome.candidate_source_tasks,
+            ocr_pass,
+        )
+    if not run_rescue:
+        return
+
+    factor = 1.5 if median_height <= 0.0 else min(2.5, max(1.25, 32.0 / median_height))
+    retry_scale = min(8.0, max(ocr_pass.scale + 0.5, ocr_pass.scale * factor))
+    outcome.adaptive_retry_scale = retry_scale
+    retry_pass = replace(
+        ocr_pass,
+        name="adaptive-rescue",
+        scale=retry_scale,
+        pixel_budget=MAX_OCR_PIXELS,
+        region_first=False,
+    )
+    retry_scope = (
+        "page" if candidate.metrics.characters < 32 or median_height < 18.0 else "weak-regions"
+    )
+    retry_boxes: tuple[internal_PageBox, ...] = ()
+    if retry_scope == "page":
+        retry_raster = internal_rendered_page_raster(
+            session.capture,
+            retry_scale,
+            max_pixels=MAX_OCR_PIXELS,
+            include_native_text=ocr_pass.include_native_text,
+            trace=session.trace,
+        )
+        retry_tasks = (
+            internal_tile_tasks(
+                retry_raster,
+                session.page_box,
+                retry_pass,
+                compact_image=session.compact_image,
+            )
+            if retry_raster is not None
+            else ()
+        )
+        rescue_pixels = retry_raster.width * retry_raster.height if retry_raster is not None else 0
+    else:
+        retry_pass = replace(
+            retry_pass,
+            scope=OcrPassScope.WEAK_REGIONS,
+            tiles=max(6, retry_pass.tiles),
+            region_columns=max(3, retry_pass.region_columns),
+            max_regions=max(8, retry_pass.max_regions),
+        )
+        retry_tasks, rescue_pixels, session.rendered_page, retry_boxes = (
+            internal_high_resolution_weak_region_tasks(
+                session.capture,
+                task_plan.tasks,
+                retry_pass,
+                candidate.observations,
+                rendered=session.rendered_page,
+                compact_image=session.compact_image,
+                trace=session.trace,
+            )
+        )
+    if not retry_tasks:
+        return
+
+    outcome.candidate_source_tasks = (*outcome.candidate_source_tasks, *retry_tasks)
+    retry_candidates = session.recognize_tasks(retry_tasks)
+    retry_candidate = internal_merge_candidate_batches(retry_candidates)
+    augmented_candidate, rescue_additions = internal_augment_candidate(
+        candidate,
+        retry_candidate,
+        minimum_confidence=ocr_pass.minimum_confidence,
+    )
+    if retry_candidate.metrics.utility > augmented_candidate.metrics.utility * 1.05:
+        outcome.candidate = retry_candidate
+    elif augmented_candidate.metrics.utility > candidate.metrics.utility:
+        outcome.candidate = augmented_candidate
+    outcome.task_candidates = (*outcome.task_candidates, *retry_candidates)
+    task_plan.raster_pixels += rescue_pixels
+    outcome.adaptive_rescue = {
+        "scope": retry_scope,
+        "scale": retry_scale,
+        "raster_pixels": rescue_pixels,
+        "task_count": len(retry_tasks),
+        "accepted_additions": rescue_additions,
+        "region_boxes": retry_boxes,
+    }
+
+
+def internal_record_ocr_pass_diagnostic(
+    session: internal_OcrSession,
+    task_plan: internal_OcrTaskPlan,
+    outcome: internal_OcrPassOutcome,
+) -> None:
+    """Append the stable diagnostic schema for one completed configured pass."""
+    ocr_pass = task_plan.ocr_pass
+    session.trace.passes.append(
+        {
+            "name": ocr_pass.name,
+            "scope": ocr_pass.scope.value,
+            "scale": ocr_pass.scale,
+            "modes": ocr_pass.modes,
+            "recognize_words": any(task.recognize_words for task in task_plan.tasks),
+            "character_confidence_threshold": ocr_pass.character_confidence_threshold,
+            "task_count": len(task_plan.tasks),
+            "raster_pixels": task_plan.raster_pixels,
+            "skipped_raster_pixels": task_plan.skipped_raster_pixels,
+            "image_text_preflight": task_plan.image_text_preflight,
+            "region_stage": task_plan.region_stage,
+            "region_boxes": task_plan.region_boxes,
+            "skipped_region_boxes": task_plan.skipped_region_boxes,
+            "full_page_fallback": (
+                task_plan.region_stage == "page" and ocr_pass.scope is OcrPassScope.PAGE
+            ),
+            "elapsed_seconds": time.perf_counter() - task_plan.started,
+            "render_timings": session.trace.render_timings or {},
+            "recognition_seconds": sum(
+                candidate.recognition_seconds for candidate in outcome.task_candidates
+            ),
+            "setup_seconds": sum(candidate.setup_seconds for candidate in outcome.task_candidates),
+            "api_seconds": sum(candidate.api_seconds for candidate in outcome.task_candidates),
+            "iterator_seconds": sum(
+                candidate.iterator_seconds for candidate in outcome.task_candidates
+            ),
+            "cleanup_seconds": sum(
+                candidate.cleanup_seconds for candidate in outcome.task_candidates
+            ),
+            "candidate_seconds": sum(
+                candidate.candidate_seconds for candidate in outcome.task_candidates
+            ),
+            "recognition_statuses": tuple(
+                candidate.recognition_status for candidate in outcome.task_candidates
+            ),
+            "accepted_additions": outcome.additions,
+            "adaptive_retry_scale": outcome.adaptive_retry_scale,
+            "adaptive_preflight": task_plan.adaptive_preflight,
+            "adaptive_rescue_decision": outcome.adaptive_rescue_decision,
+            "adaptive_rescue": outcome.adaptive_rescue,
+            "pixel_budget": ocr_pass.pixel_budget,
+            "rectangles": tuple(task.rectangle for task in task_plan.tasks),
+            "selected": False,
+            **outcome.candidate.metrics.as_record(),
+        }
+    )
+
+
+def internal_update_ocr_selection(
+    selection: internal_OcrSelection,
+    task_plan: internal_OcrTaskPlan,
+    outcome: internal_OcrPassOutcome,
+) -> None:
+    """Fold one pass candidate into the cross-pass winner state."""
+    ocr_pass = task_plan.ocr_pass
+    candidate = outcome.candidate
+    if not task_plan.tasks:
+        return
+    if ocr_pass.scope is OcrPassScope.WEAK_REGIONS:
+        selection.previous_region_additions = outcome.additions
+        if outcome.additions:
+            selection.selected_name = ocr_pass.name
+            selection.selected = candidate
+            selection.selected_tasks = (
+                *selection.selected_tasks,
+                *outcome.candidate_source_tasks,
+            )
+            selection.seeded_region_selected = (
+                outcome.used_native_seed and ocr_pass.seed_with_native
+            )
+        return
+    if selection.selected is None or candidate.metrics.utility > (
+        selection.selected.metrics.utility * ocr_pass.minimum_utility_gain
+    ):
+        selection.selected_name = ocr_pass.name
+        selection.selected = candidate
+        selection.selected_tasks = outcome.candidate_source_tasks
+
+
+def internal_execute_ocr_pass(
+    session: internal_OcrSession,
+    selection: internal_OcrSelection,
+    configured_pass: OcrPass,
+) -> None:
+    """Plan, recognize, rescue, diagnose, and select one configured OCR pass."""
+    if not internal_should_run_ocr_pass(session, selection, configured_pass):
+        return
+    task_plan = internal_plan_ocr_tasks(session, selection, configured_pass)
+    if task_plan is None:
+        return
+    outcome = internal_recognize_ocr_task_plan(session, task_plan)
+    ocr_pass = task_plan.ocr_pass
+    selected = selection.selected
+    if (
+        selected is not None
+        and session.plan.augment_page_candidates
+        and ocr_pass.scope is OcrPassScope.PAGE
+        and not session.capture.evidence.vector_complexity >= 180
+    ):
+        outcome.candidate, _ = internal_augment_candidate(
+            selected,
+            outcome.candidate,
+            minimum_confidence=70.0,
+        )
+
+    internal_apply_adaptive_rescue(session, task_plan, outcome)
+    if ocr_pass.scope is OcrPassScope.WEAK_REGIONS:
+        outcome.used_native_seed = selected is None
+        if selected is not None:
+            outcome.candidate, outcome.additions = internal_augment_candidate(
+                selected,
+                outcome.candidate,
+                minimum_confidence=ocr_pass.minimum_confidence,
+            )
+        else:
+            outcome.additions = len(outcome.candidate.observations)
+    selection.candidates.append((ocr_pass.name, outcome.candidate))
+    internal_record_ocr_pass_diagnostic(session, task_plan, outcome)
+    internal_update_ocr_selection(selection, task_plan, outcome)
+
+
+def internal_ruled_grid_observations(
+    session: internal_OcrSession,
+    selected: internal_Candidate,
+    selected_tasks: tuple[internal_OcrTask, ...],
+) -> ObservationBatch:
+    """Replace page-segmented text inside a regular ruling grid with cell OCR."""
+    if not selected_tasks:
+        return selected.observations
+    source_task = max(
+        selected_tasks,
+        key=lambda task: task.rectangle[2] * task.rectangle[3],
+    )
+    grid = internal_detect_ruling_grid(source_task.image)
+    if grid is None or not internal_grid_is_regular_table(
+        grid,
+        selected.observations,
+        source_task,
+    ):
+        return selected.observations
+    x_lines, y_lines, source_samples, slope = grid
+    cell_tasks = internal_grid_cell_tasks(
+        source_task,
+        x_lines,
+        y_lines,
+        source_samples,
+        slope,
+    )
+    if len(cell_tasks) < internal_GRID_MIN_CELLS:
+        return selected.observations
+    cell_candidate = internal_merge_candidate_batches(session.recognize_tasks(cell_tasks))
+    cell_observations = internal_grid_row_observations(cell_candidate.observations)
+    if not len(cell_observations):
+        return selected.observations
+
+    grid_box = internal_grid_region_page_box(source_task, x_lines, y_lines)
+    prior = selected.observations
+    centers_x = (prior.bbox[:, 0] + prior.bbox[:, 2]) * 0.5
+    centers_y = (prior.bbox[:, 1] + prior.bbox[:, 3]) * 0.5
+    outside = ~(
+        (centers_x >= grid_box[0])
+        & (centers_x <= grid_box[2])
+        & (centers_y >= grid_box[1])
+        & (centers_y <= grid_box[3])
+    )
+    replaced_alnum = sum(
+        sum(character.isalnum() for character in prior.text[index])
+        for index in numpy.flatnonzero(~outside)
+    )
+    cell_alnum = sum(
+        sum(character.isalnum() for character in text) for text in cell_observations.text
+    )
+    if cell_alnum < replaced_alnum * 0.8:
+        return selected.observations
+    retained = prior.take(numpy.flatnonzero(outside))
+    session.trace.grid_cell_ocr = {
+        "cells": len(cell_tasks),
+        "cell_observations": len(cell_observations),
+        "replaced_observations": int(numpy.count_nonzero(~outside)),
+        "grid_box": grid_box,
+        "columns": len(x_lines) - 1,
+        "rows": len(y_lines) - 1,
+    }
+    return ObservationBatch.concatenate(retained, cell_observations)
+
+
+def internal_finalize_ocr_selection(
+    session: internal_OcrSession,
+    selection: internal_OcrSelection,
+) -> ObservationBatch:
+    """Publish winner diagnostics and apply the ruled-grid post-processing pass."""
+    selected = selection.selected
+    if selected is None:
+        internal_record_candidates(
+            tuple(selection.candidates),
+            selection.selected_name,
+            session.trace,
+        )
+        return ObservationBatch.empty()
+    for diagnostic in session.trace.passes:
+        diagnostic["selected"] = diagnostic["name"] == selection.selected_name
+    internal_record_candidates(
+        tuple(selection.candidates),
+        selection.selected_name,
+        session.trace,
+    )
+    return internal_ruled_grid_observations(
+        session,
+        selected,
+        selection.selected_tasks,
+    )
+
 
 def recognize_page(
     capture: CapturedPage,
@@ -798,906 +2009,13 @@ def internal_recognize_page_with_reserved_raster(
     trace: internal_RecognitionTrace | None = None,
 ) -> ObservationBatch:
     trace = trace or internal_RecognitionTrace.create()
-    page = capture.page
-    page_box = (0.0, 0.0, float(page.width), float(page.height))
-    compact_image: bool | str = True
-    if capture.evidence.full_page_image:
-        image_filters = capture.evidence.image_filters
-        if any("JPX" in str(filter_name).upper() for filter_name in image_filters):
-            compact_image = "grayscale"
-    dominant_regions: dict[int, internal_RasterRegion | None] = {}
-    rendered_rasters: dict[tuple[float, int, bool], internal_Raster | None] = {}
-    rendered_page: Any | None = None
-    candidate_regions: tuple[internal_OcrRegion, ...] | None = None
-    candidates: list[tuple[str, internal_Candidate]] = []
-    pass_diagnostics = trace.passes
-    selected_name = ""
-    selected: internal_Candidate | None = None
-    selected_tasks: tuple[internal_OcrTask, ...] = ()
-    previous_region_additions = 0
-    seeded_region_selected = False
-    adaptive_rescue_used = False
-
-    def recognize_batch(tasks: tuple[internal_OcrTask, ...]) -> tuple[internal_Candidate, ...]:
-        groups = internal_ocr_task_groups(tasks)
-        results = context.map_ordered(internal_recognize_group, groups, stage=WorkStage.OCR)
-        return tuple(candidate for group in results for candidate in group)
-
-    def recognize_tasks(tasks: tuple[internal_OcrTask, ...]) -> tuple[internal_Candidate, ...]:
-        candidates = recognize_batch(tasks)
-        if any(candidate.recognition_status == "timeout" for candidate in candidates):
-            context.raise_if_cancelled()
-            candidates = internal_recover_timed_out_tasks(tasks, candidates, recognize_batch)
-        return candidates
-
+    session = internal_OcrSession.create(capture, plan, context, trace)
     if plan.verify_hidden_text:
-        context.raise_if_cancelled()
-        started = time.perf_counter()
-        verification_pass = OcrPass(
-            "hidden-text-verification",
-            OcrPassScope.PAGE,
-            1.0,
-            (PSM_SPARSE_TEXT,),
-            minimum_confidence=HIDDEN_TEXT_VERIFY_MIN_CONFIDENCE,
-            pixel_budget=HIDDEN_TEXT_VERIFY_PIXELS,
-            recognize_words=True,
-            region_first=False,
-        )
-        verification_region = internal_dominant_image_region(
-            capture,
-            max_pixels=HIDDEN_TEXT_VERIFY_PIXELS,
-        )
-        verification_tasks = (
-            internal_tile_tasks(
-                verification_region.raster,
-                verification_region.page_box,
-                verification_pass,
-                compact_image=compact_image,
-            )
-            if verification_region is not None
-            else ()
-        )
-        verification_candidates = recognize_tasks(verification_tasks)
-        verification_candidate = internal_merge_candidate_batches(verification_candidates)
-        verification = internal_hidden_text_verification(
-            capture.observations,
-            verification_candidate.observations,
-        )
-        raster_pixels = (
-            verification_region.raster.width * verification_region.raster.height
-            if verification_region is not None
-            else 0
-        )
-        verification_record: dict[str, object] = {
-            "name": verification_pass.name,
-            "scope": verification_pass.scope.value,
-            "scale": verification_pass.scale,
-            "modes": verification_pass.modes,
-            "recognize_words": verification_pass.recognize_words,
-            "character_confidence_threshold": None,
-            "task_count": len(verification_tasks),
-            "raster_pixels": raster_pixels,
-            "region_stage": "dominant-image-preview",
-            "region_boxes": (
-                (verification_region.page_box,) if verification_region is not None else ()
-            ),
-            "full_page_fallback": False,
-            "elapsed_seconds": time.perf_counter() - started,
-            "render_timings": trace.render_timings or {},
-            "recognition_seconds": sum(
-                candidate.recognition_seconds for candidate in verification_candidates
-            ),
-            "setup_seconds": sum(candidate.setup_seconds for candidate in verification_candidates),
-            "api_seconds": sum(candidate.api_seconds for candidate in verification_candidates),
-            "iterator_seconds": sum(
-                candidate.iterator_seconds for candidate in verification_candidates
-            ),
-            "cleanup_seconds": sum(
-                candidate.cleanup_seconds for candidate in verification_candidates
-            ),
-            "candidate_seconds": sum(
-                candidate.candidate_seconds for candidate in verification_candidates
-            ),
-            "recognition_statuses": tuple(
-                candidate.recognition_status for candidate in verification_candidates
-            ),
-            "accepted_additions": 0,
-            "adaptive_retry_scale": None,
-            "adaptive_preflight": None,
-            "adaptive_rescue_decision": None,
-            "adaptive_rescue": None,
-            "pixel_budget": verification_pass.pixel_budget,
-            "rectangles": tuple(task.rectangle for task in verification_tasks),
-            "selected": verification.accepted,
-            **verification_candidate.metrics.as_record(),
-            **verification.as_record(),
-        }
-        pass_diagnostics.append(verification_record)
-        trace.hidden_text_verification = {
-            "raster_pixels": raster_pixels,
-            **verification.as_record(),
-        }
-        if verification.accepted:
-            return internal_promoted_hidden_observations(capture)
+        verified_observations = internal_verify_hidden_text(session)
+        if verified_observations is not None:
+            return verified_observations
 
+    selection = internal_OcrSelection()
     for ocr_pass in plan.ocr_passes:
-        if (
-            selected is not None
-            and ocr_pass.scope is OcrPassScope.PAGE
-            and ocr_pass.run_if_characters_below is not None
-            and internal_primary_text_is_sufficient(selected)
-        ):
-            continue
-        if (
-            selected is not None
-            and ocr_pass.run_if_characters_below is not None
-            and selected.metrics.characters >= ocr_pass.run_if_characters_below
-        ):
-            continue
-        if (
-            selected is not None
-            and ocr_pass.scope is OcrPassScope.IMAGE_REGIONS
-            and ocr_pass.run_if_characters_below is not None
-            and selected.metrics.characters >= 28
-            and selected.metrics.mean_confidence >= 97.0
-        ):
-            continue
-        if (
-            selected is not None
-            and ocr_pass.scope is OcrPassScope.IMAGE_REGIONS
-            and ocr_pass.run_if_characters_below is not None
-            and selected.metrics.characters >= 1500
-            and selected.metrics.mean_confidence >= 98.0
-        ):
-            continue
-        if (
-            ocr_pass.run_if_additions_below is not None
-            and previous_region_additions >= ocr_pass.run_if_additions_below
-        ):
-            continue
-        if (
-            ocr_pass.scope is OcrPassScope.PAGE
-            and ocr_pass.run_if_additions_below is not None
-            and previous_region_additions == 0
-            and selected is None
-            and capture.evidence.visible_native_characters >= 3_000
-        ):
-            continue
-        if (
-            ocr_pass.scope is OcrPassScope.WEAK_REGIONS
-            and ocr_pass.run_if_additions_below is not None
-            and previous_region_additions == 0
-            and selected is not None
-            and selected.metrics.characters >= 32
-            and selected.metrics.mean_confidence >= 90.0
-        ):
-            continue
-        if (
-            ocr_pass.scope is OcrPassScope.PAGE
-            and seeded_region_selected
-            and ocr_pass.run_if_additions_below is not None
-        ):
-            selected = None
-            selected_name = ""
-            selected_tasks = ()
-            seeded_region_selected = False
-        context.raise_if_cancelled()
-        started = time.perf_counter()
-        adaptive_preflight: dict[str, object] | None = None
-        vector_preview = bool(
-            capture.evidence.image_count == 0
-            and capture.evidence.vector_complexity >= 100_000
-            and capture.evidence.text_coverage < 0.05
-        )
-        if (
-            ocr_pass.adaptive_scale
-            and ocr_pass.scope is OcrPassScope.PAGE
-            and ocr_pass.pixel_budget == PRIMARY_OCR_PIXELS
-            and (capture.evidence.full_page_image or vector_preview)
-        ):
-            preview_raster: internal_Raster | None = None
-            if capture.evidence.full_page_image:
-                if OCR_PREFLIGHT_PIXELS not in dominant_regions:
-                    # The preview only measures text height, so enlarging it would
-                    # cost time and shift the projection this decision depends on.
-                    dominant_regions[OCR_PREFLIGHT_PIXELS] = internal_dominant_image_region(
-                        capture,
-                        max_pixels=OCR_PREFLIGHT_PIXELS,
-                        upscale=False,
-                    )
-                preview_region = dominant_regions[OCR_PREFLIGHT_PIXELS]
-                preview_raster = preview_region.raster if preview_region is not None else None
-            else:
-                if rendered_page is None:
-                    rendered_page = compose_page(
-                        capture.page,
-                        RenderOptions(include_text=ocr_pass.include_native_text),
-                        page_program=capture.program,
-                    )
-                preview_raster = internal_rendered_page_raster(
-                    capture,
-                    ocr_pass.scale,
-                    rendered=rendered_page,
-                    cache=True,
-                    max_pixels=OCR_PREFLIGHT_PIXELS,
-                    include_native_text=ocr_pass.include_native_text,
-                    trace=trace,
-                )
-            if preview_raster is not None:
-                preview_height = internal_estimated_text_height(preview_raster)
-                projected_height = preview_height * math.sqrt(
-                    ocr_pass.pixel_budget / max(1, preview_raster.width * preview_raster.height)
-                )
-                projected_limit = 22.0 if vector_preview else 20.0
-                if 12.0 <= projected_height < projected_limit:
-                    original_scale = ocr_pass.scale
-                    ocr_pass = replace(
-                        ocr_pass,
-                        scale=min(
-                            8.0,
-                            max(
-                                original_scale + 0.5,
-                                original_scale * 32.0 / projected_height,
-                            ),
-                        ),
-                        pixel_budget=MAX_OCR_PIXELS,
-                    )
-                    adaptive_preflight = {
-                        "preview_pixels": preview_raster.width * preview_raster.height,
-                        "preview_text_height": preview_height,
-                        "projected_primary_text_height": projected_height,
-                        "selected_scale": ocr_pass.scale,
-                        "source": "vector-render" if vector_preview else "dominant-image",
-                    }
-        tasks: tuple[internal_OcrTask, ...]
-        packed_stroked: internal_PackedStrokedTextRaster | None = None
-        raster_pixels = 0
-        skipped_raster_pixels = 0
-        image_text_preflight: tuple[dict[str, object], ...] = ()
-        skipped_region_boxes: tuple[tuple[float, float, float, float], ...] = ()
-        region_stage = "page"
-        region_boxes: tuple[tuple[float, float, float, float], ...] = ()
-        if (
-            ocr_pass.region_first
-            and ocr_pass.scope in {OcrPassScope.PAGE, OcrPassScope.WEAK_REGIONS}
-            and (
-                ocr_pass.scope is not OcrPassScope.WEAK_REGIONS
-                or selected is not None
-                or ocr_pass.seed_with_native
-            )
-        ):
-            if candidate_regions is None:
-                candidate_regions = internal_candidate_ocr_regions(capture)
-            distributed_outline_text = bool(
-                ocr_pass.scope is OcrPassScope.PAGE
-                and internal_has_distributed_outline_text(capture)
-            )
-            region_batch = (
-                (
-                    internal_OcrRegion(
-                        page_box,
-                        float("inf"),
-                        ("distributed-outline-text",),
-                    ),
-                )
-                if distributed_outline_text
-                else internal_ocr_region_batch(
-                    candidate_regions,
-                    ocr_pass,
-                    expanded=False,
-                    page_area=max(1.0, float(page.width) * float(page.height)),
-                )
-            )
-            tasks, raster_pixels, rendered_page, region_boxes = internal_candidate_region_tasks(
-                capture,
-                region_batch,
-                ocr_pass,
-                rendered=rendered_page,
-                compact_image=compact_image,
-                trace=trace,
-            )
-            region_stage = (
-                "distributed-outline-page" if distributed_outline_text else "initial-regions"
-            )
-            if len(region_batch) == 1 and "page-fallback" in region_batch[0].reasons:
-                region_stage = "page"
-        elif ocr_pass.scope is OcrPassScope.WEAK_REGIONS:
-            if selected is None and not ocr_pass.seed_with_native:
-                continue
-            if selected is not None and selected_tasks:
-                tasks, raster_pixels, rendered_page, region_boxes = (
-                    internal_high_resolution_weak_region_tasks(
-                        capture,
-                        selected_tasks,
-                        ocr_pass,
-                        selected.observations,
-                        rendered=rendered_page,
-                        compact_image=compact_image,
-                        trace=trace,
-                    )
-                )
-                region_stage = "weak-region-crops"
-            else:
-                if ocr_pass.pixel_budget not in dominant_regions:
-                    dominant_regions[ocr_pass.pixel_budget] = internal_dominant_image_region(
-                        capture,
-                        max_pixels=ocr_pass.pixel_budget,
-                    )
-                direct_region = dominant_regions[ocr_pass.pixel_budget]
-                raster = direct_region.raster if direct_region is not None else None
-                raster_page_box = direct_region.page_box if direct_region is not None else page_box
-                if raster is None:
-                    raster_key = (
-                        ocr_pass.scale,
-                        ocr_pass.pixel_budget,
-                        ocr_pass.include_native_text,
-                    )
-                    if raster_key not in rendered_rasters:
-                        rendered_rasters[raster_key] = internal_rendered_page_raster(
-                            capture,
-                            ocr_pass.scale,
-                            max_pixels=ocr_pass.pixel_budget,
-                            include_native_text=ocr_pass.include_native_text,
-                            trace=trace,
-                        )
-                    raster = rendered_rasters[raster_key]
-                    raster_page_box = page_box
-                tasks = (
-                    internal_weak_region_tasks(
-                        raster,
-                        raster_page_box,
-                        ocr_pass,
-                        selected.observations if selected is not None else capture.observations,
-                        compact_image=compact_image,
-                    )
-                    if raster is not None
-                    else ()
-                )
-                raster_pixels = (
-                    sum(task.rectangle[2] * task.rectangle[3] for task in tasks)
-                    if raster is not None
-                    else 0
-                )
-        elif ocr_pass.scope is OcrPassScope.STROKED_VECTOR_TEXT:
-            packed_stroked = internal_stroked_vector_text_raster(
-                capture,
-                ocr_pass.scale,
-                max_pixels=ocr_pass.pixel_budget,
-                trace=trace,
-            )
-            if packed_stroked is not None:
-                region_stage = "packed-stroked-vector-text"
-                region_boxes = (
-                    (capture.evidence.stroked_vector_text.bbox,)
-                    if capture.evidence.stroked_vector_text.bbox is not None
-                    else ()
-                )
-                tasks = internal_tile_tasks(
-                    packed_stroked.raster,
-                    packed_stroked.packed_box,
-                    replace(ocr_pass, recognize_words=True, collect_symbols=True),
-                    compact_image=compact_image,
-                )
-                raster_pixels = packed_stroked.raster.width * packed_stroked.raster.height
-            else:
-                fallback_region = internal_full_stroked_vector_text_raster(
-                    capture,
-                    ocr_pass.scale,
-                    max_pixels=ocr_pass.pixel_budget,
-                    trace=trace,
-                )
-                region_stage = "stroked-vector-text-fallback"
-                region_boxes = (fallback_region.page_box,) if fallback_region is not None else ()
-                tasks = (
-                    internal_tile_tasks(
-                        fallback_region.raster,
-                        fallback_region.page_box,
-                        ocr_pass,
-                        compact_image=compact_image,
-                    )
-                    if fallback_region is not None
-                    else ()
-                )
-                raster_pixels = (
-                    fallback_region.raster.width * fallback_region.raster.height
-                    if fallback_region is not None
-                    else 0
-                )
-                trace.stroked_vector_packed = {
-                    "accepted": False,
-                    "cells": 0,
-                    "raster_pixels": 0,
-                    "unmapped_observations": 0,
-                    "fallback_used": bool(tasks),
-                }
-        elif ocr_pass.scope is OcrPassScope.IMAGE_REGIONS:
-            regions = internal_page_image_regions(
-                capture,
-                minimum_area_ratio=0.02,
-                max_pixels=ocr_pass.pixel_budget,
-                maximum_axis_deviation=OCR_IMAGE_REGIONS_MAX_AXIS_DEVIATION,
-            )
-            if regions:
-                region_signals = tuple(
-                    (region, internal_raster_text_signal(region.raster.image)) for region in regions
-                )
-                image_text_preflight = tuple(
-                    {
-                        "page_box": region.page_box,
-                        "raster_pixels": region.raster.width * region.raster.height,
-                        **signal.as_record(),
-                    }
-                    for region, signal in region_signals
-                )
-                eligible_regions = tuple(
-                    region
-                    for region, signal in region_signals
-                    if signal.likely_text
-                    or (
-                        signal.horizontal_edge_ratio >= 0.035
-                        and sum(len(t.strip()) for t in capture.observations.text) < 15
-                    )
-                )
-                skipped_regions = tuple(
-                    region for region, signal in region_signals if not signal.likely_text
-                )
-                skipped_raster_pixels = sum(
-                    region.raster.width * region.raster.height for region in skipped_regions
-                )
-                skipped_region_boxes = tuple(region.page_box for region in skipped_regions)
-                region_boxes = tuple(region.page_box for region in eligible_regions)
-                region_stage = "direct-image-regions"
-                tasks = tuple(
-                    task
-                    for region in eligible_regions
-                    for task in internal_tile_tasks(
-                        region.raster,
-                        region.page_box,
-                        ocr_pass,
-                        compact_image=compact_image,
-                    )
-                )
-                raster_pixels = sum(
-                    region.raster.width * region.raster.height for region in eligible_regions
-                )
-            else:
-                fallback_scale = max(2.0, ocr_pass.scale)
-                image_crop = internal_safe_image_crop(capture)
-                raster = internal_rendered_page_raster(
-                    capture,
-                    fallback_scale,
-                    crop=image_crop,
-                    max_pixels=ocr_pass.pixel_budget,
-                    include_native_text=ocr_pass.include_native_text,
-                    trace=trace,
-                )
-                raster_page_box = image_crop or page_box
-                tasks = (
-                    internal_tile_tasks(
-                        raster,
-                        raster_page_box,
-                        ocr_pass,
-                        compact_image=compact_image,
-                    )
-                    if raster is not None
-                    else ()
-                )
-                raster_pixels = raster.width * raster.height if raster is not None else 0
-        else:
-            if internal_direct_scan_allowed(capture, plan):
-                if ocr_pass.pixel_budget not in dominant_regions:
-                    dominant_regions[ocr_pass.pixel_budget] = internal_dominant_image_region(
-                        capture,
-                        max_pixels=ocr_pass.pixel_budget,
-                    )
-                direct_region = dominant_regions.get(ocr_pass.pixel_budget)
-            else:
-                direct_region = None
-            raster = direct_region.raster if direct_region is not None else None
-            raster_page_box = direct_region.page_box if direct_region is not None else page_box
-            if raster is None:
-                raster_key = (
-                    ocr_pass.scale,
-                    ocr_pass.pixel_budget,
-                    ocr_pass.include_native_text,
-                )
-                if raster_key not in rendered_rasters:
-                    rendered_rasters[raster_key] = internal_rendered_page_raster(
-                        capture,
-                        ocr_pass.scale,
-                        max_pixels=ocr_pass.pixel_budget,
-                        include_native_text=ocr_pass.include_native_text,
-                        trace=trace,
-                    )
-                raster = rendered_rasters[raster_key]
-                raster_page_box = page_box
-            task_raster = (
-                internal_adaptive_ocr_raster(raster)
-                if raster is not None and ocr_pass.name == "adaptive-page"
-                else raster
-            )
-            tasks = (
-                internal_tile_tasks(
-                    task_raster,
-                    raster_page_box,
-                    ocr_pass,
-                    compact_image=compact_image,
-                )
-                if task_raster is not None
-                else ()
-            )
-            raster_pixels = raster.width * raster.height if raster is not None else 0
-        if not tasks:
-            if not image_text_preflight:
-                continue
-            region_stage = "image-text-preflight"
-
-        candidate_source_tasks = tasks
-        task_candidates = recognize_tasks(tasks)
-        if packed_stroked is not None:
-            remapped_with_counts = tuple(
-                internal_remap_stroked_vector_candidate(candidate, packed_stroked)
-                for candidate in task_candidates
-            )
-            task_candidates = tuple(item[0] for item in remapped_with_counts)
-            unmapped_observations = sum(item[1] for item in remapped_with_counts)
-            packed_candidate = internal_merge_candidate_batches(task_candidates)
-            decode_started = time.perf_counter()
-            packed_decode = internal_decode_stroked_vector_text(
-                capture,
-                packed_candidate.observations,
-                packed_candidate.symbols,
-            )
-            decode_seconds = time.perf_counter() - decode_started
-            packed_accepted, packed_gate = internal_packed_stroked_vector_decode_gate(
-                packed_decode,
-                len(packed_stroked.cells),
-            )
-            packed_pixels = raster_pixels
-            fallback_used = False
-            if packed_accepted:
-                # Seed packing only rasterizes multi-glyph runs, so isolated
-                # glyphs (pin numbers, lone digits) are never shown to OCR when
-                # the packed decode gate passes. Recognize them from their own
-                # high-scale montage as a supplement.
-                isolated_packed = internal_stroked_vector_text_raster(
-                    capture,
-                    ocr_pass.scale,
-                    max_pixels=ocr_pass.pixel_budget,
-                    variant="isolated",
-                    trace=trace,
-                )
-                isolated_tasks = (
-                    internal_tile_tasks(
-                        isolated_packed.raster,
-                        isolated_packed.packed_box,
-                        replace(
-                            ocr_pass,
-                            recognize_words=True,
-                            collect_symbols=True,
-                            minimum_confidence=50.0,
-                        ),
-                        compact_image=compact_image,
-                    )
-                    if isolated_packed is not None
-                    else ()
-                )
-                if isolated_tasks and isolated_packed is not None:
-                    isolated_remapped = tuple(
-                        internal_remap_stroked_vector_candidate(
-                            candidate,
-                            isolated_packed,
-                            digit_bearing_only=True,
-                        )
-                        for candidate in recognize_tasks(isolated_tasks)
-                    )
-                    isolated_candidates = tuple(item[0] for item in isolated_remapped)
-                    packed_gate["isolated_cells"] = len(isolated_packed.cells)
-                    packed_gate["isolated_observations"] = sum(
-                        len(item[0].observations) for item in isolated_remapped
-                    )
-                    task_candidates = (*task_candidates, *isolated_candidates)
-                    candidate_source_tasks = (*candidate_source_tasks, *isolated_tasks)
-                    tasks = (*tasks, *isolated_tasks)
-                    packed_candidate = internal_merge_candidate_batches(task_candidates)
-                    raster_pixels += isolated_packed.raster.width * isolated_packed.raster.height
-                trace.pending_stroked_decode = (
-                    id(packed_candidate.observations),
-                    packed_decode,
-                    decode_seconds,
-                )
-            else:
-                fallback_region = internal_full_stroked_vector_text_raster(
-                    capture,
-                    ocr_pass.scale,
-                    max_pixels=ocr_pass.pixel_budget,
-                    trace=trace,
-                )
-                fallback_tasks = (
-                    internal_tile_tasks(
-                        fallback_region.raster,
-                        fallback_region.page_box,
-                        replace(ocr_pass, recognize_words=False),
-                        compact_image=compact_image,
-                    )
-                    if fallback_region is not None
-                    else ()
-                )
-                if fallback_tasks:
-                    fallback_used = True
-                    fallback_candidates = recognize_tasks(fallback_tasks)
-                    task_candidates = (*task_candidates, *fallback_candidates)
-                    candidate_source_tasks = (*candidate_source_tasks, *fallback_tasks)
-                    tasks = (*tasks, *fallback_tasks)
-                    packed_candidate = internal_merge_candidate_batches(fallback_candidates)
-                    raster_pixels += (
-                        fallback_region.raster.width * fallback_region.raster.height
-                        if fallback_region is not None
-                        else 0
-                    )
-                    region_stage = "stroked-vector-text-fallback"
-                    region_boxes = (
-                        (fallback_region.page_box,) if fallback_region is not None else region_boxes
-                    )
-            trace.stroked_vector_packed = {
-                **packed_gate,
-                "raster_pixels": packed_pixels,
-                "unmapped_observations": unmapped_observations,
-                "symbol_observations": len(packed_candidate.symbols),
-                "fallback_used": fallback_used,
-            }
-            candidate = packed_candidate
-        else:
-            candidate = internal_merge_candidate_batches(task_candidates)
-        if (
-            selected is not None
-            and plan.augment_page_candidates
-            and ocr_pass.scope is OcrPassScope.PAGE
-            and not capture.evidence.vector_complexity >= 180
-        ):
-            candidate, _ = internal_augment_candidate(
-                selected,
-                candidate,
-                minimum_confidence=70.0,
-            )
-        adaptive_retry_scale: float | None = None
-        adaptive_rescue: dict[str, object] | None = None
-        adaptive_rescue_decision: dict[str, object] | None = None
-        median_height = candidate.metrics.median_text_height
-        rescue_eligible = bool(
-            ocr_pass.adaptive_scale
-            and ocr_pass.scope is OcrPassScope.PAGE
-            and ocr_pass.pixel_budget < MAX_OCR_PIXELS
-            and not adaptive_rescue_used
-            and candidate.metrics.characters >= ocr_pass.minimum_characters_for_rescue
-            and (candidate.metrics.characters < 32 or 0.0 < median_height < 24.0)
-        )
-        run_rescue = False
-        if rescue_eligible:
-            adaptive_rescue_used = True
-            run_rescue, adaptive_rescue_decision = internal_adaptive_rescue_decision(
-                candidate,
-                candidate_source_tasks,
-                ocr_pass,
-            )
-        if run_rescue:
-            factor = 1.5 if median_height <= 0.0 else min(2.5, max(1.25, 32.0 / median_height))
-            adaptive_retry_scale = min(8.0, max(ocr_pass.scale + 0.5, ocr_pass.scale * factor))
-            retry_pass = replace(
-                ocr_pass,
-                name="adaptive-rescue",
-                scale=adaptive_retry_scale,
-                pixel_budget=MAX_OCR_PIXELS,
-                region_first=False,
-            )
-            retry_scope = (
-                "page"
-                if candidate.metrics.characters < 32 or median_height < 18.0
-                else "weak-regions"
-            )
-            retry_boxes: tuple[tuple[float, float, float, float], ...] = ()
-            if retry_scope == "page":
-                retry_raster = internal_rendered_page_raster(
-                    capture,
-                    adaptive_retry_scale,
-                    max_pixels=MAX_OCR_PIXELS,
-                    include_native_text=ocr_pass.include_native_text,
-                    trace=trace,
-                )
-                retry_tasks = (
-                    internal_tile_tasks(
-                        retry_raster,
-                        page_box,
-                        retry_pass,
-                        compact_image=compact_image,
-                    )
-                    if retry_raster is not None
-                    else ()
-                )
-                rescue_pixels = (
-                    retry_raster.width * retry_raster.height if retry_raster is not None else 0
-                )
-            else:
-                retry_pass = replace(
-                    retry_pass,
-                    scope=OcrPassScope.WEAK_REGIONS,
-                    tiles=max(6, retry_pass.tiles),
-                    region_columns=max(3, retry_pass.region_columns),
-                    max_regions=max(8, retry_pass.max_regions),
-                )
-                retry_tasks, rescue_pixels, rendered_page, retry_boxes = (
-                    internal_high_resolution_weak_region_tasks(
-                        capture,
-                        tasks,
-                        retry_pass,
-                        candidate.observations,
-                        rendered=rendered_page,
-                        compact_image=compact_image,
-                        trace=trace,
-                    )
-                )
-            if retry_tasks:
-                candidate_source_tasks = (*candidate_source_tasks, *retry_tasks)
-                retry_candidates = recognize_tasks(retry_tasks)
-                retry_candidate = internal_merge_candidate_batches(retry_candidates)
-                augmented_candidate, rescue_additions = internal_augment_candidate(
-                    candidate,
-                    retry_candidate,
-                    minimum_confidence=ocr_pass.minimum_confidence,
-                )
-                if retry_candidate.metrics.utility > augmented_candidate.metrics.utility * 1.05:
-                    candidate = retry_candidate
-                elif augmented_candidate.metrics.utility > candidate.metrics.utility:
-                    candidate = augmented_candidate
-                task_candidates = (*task_candidates, *retry_candidates)
-                raster_pixels += rescue_pixels
-                adaptive_rescue = {
-                    "scope": retry_scope,
-                    "scale": adaptive_retry_scale,
-                    "raster_pixels": rescue_pixels,
-                    "task_count": len(retry_tasks),
-                    "accepted_additions": rescue_additions,
-                    "region_boxes": retry_boxes,
-                }
-        additions = 0
-        if ocr_pass.scope is OcrPassScope.WEAK_REGIONS:
-            used_native_seed = selected is None
-            if selected is not None:
-                candidate, additions = internal_augment_candidate(
-                    selected,
-                    candidate,
-                    minimum_confidence=ocr_pass.minimum_confidence,
-                )
-            else:
-                additions = len(candidate.observations)
-        candidates.append((ocr_pass.name, candidate))
-        elapsed = time.perf_counter() - started
-        pass_diagnostics.append(
-            {
-                "name": ocr_pass.name,
-                "scope": ocr_pass.scope.value,
-                "scale": ocr_pass.scale,
-                "modes": ocr_pass.modes,
-                "recognize_words": any(task.recognize_words for task in tasks),
-                "character_confidence_threshold": ocr_pass.character_confidence_threshold,
-                "task_count": len(tasks),
-                "raster_pixels": raster_pixels,
-                "skipped_raster_pixels": skipped_raster_pixels,
-                "image_text_preflight": image_text_preflight,
-                "region_stage": region_stage,
-                "region_boxes": region_boxes,
-                "skipped_region_boxes": skipped_region_boxes,
-                "full_page_fallback": (
-                    region_stage == "page" and ocr_pass.scope is OcrPassScope.PAGE
-                ),
-                "elapsed_seconds": elapsed,
-                "render_timings": trace.render_timings or {},
-                "recognition_seconds": sum(
-                    task_candidate.recognition_seconds for task_candidate in task_candidates
-                ),
-                "setup_seconds": sum(
-                    task_candidate.setup_seconds for task_candidate in task_candidates
-                ),
-                "api_seconds": sum(
-                    task_candidate.api_seconds for task_candidate in task_candidates
-                ),
-                "iterator_seconds": sum(
-                    task_candidate.iterator_seconds for task_candidate in task_candidates
-                ),
-                "cleanup_seconds": sum(
-                    task_candidate.cleanup_seconds for task_candidate in task_candidates
-                ),
-                "candidate_seconds": sum(
-                    task_candidate.candidate_seconds for task_candidate in task_candidates
-                ),
-                "recognition_statuses": tuple(
-                    task_candidate.recognition_status for task_candidate in task_candidates
-                ),
-                "accepted_additions": additions,
-                "adaptive_retry_scale": adaptive_retry_scale,
-                "adaptive_preflight": adaptive_preflight,
-                "adaptive_rescue_decision": adaptive_rescue_decision,
-                "adaptive_rescue": adaptive_rescue,
-                "pixel_budget": ocr_pass.pixel_budget,
-                "rectangles": tuple(task.rectangle for task in tasks),
-                "selected": False,
-                **candidate.metrics.as_record(),
-            }
-        )
-        if not tasks:
-            continue
-        if ocr_pass.scope is OcrPassScope.WEAK_REGIONS:
-            previous_region_additions = additions
-            if additions:
-                selected_name = ocr_pass.name
-                selected = candidate
-                selected_tasks = (*selected_tasks, *candidate_source_tasks)
-                seeded_region_selected = used_native_seed and ocr_pass.seed_with_native
-            continue
-        if selected is None or candidate.metrics.utility > (
-            selected.metrics.utility * ocr_pass.minimum_utility_gain
-        ):
-            selected_name = ocr_pass.name
-            selected = candidate
-            selected_tasks = candidate_source_tasks
-
-    if selected is None:
-        internal_record_candidates(tuple(candidates), selected_name, trace)
-        return ObservationBatch.empty()
-    for diagnostic in pass_diagnostics:
-        diagnostic["selected"] = diagnostic["name"] == selected_name
-    internal_record_candidates(tuple(candidates), selected_name, trace)
-    if selected_tasks:
-        # Ruled scanned tables defeat Tesseract's page segmentation; when the
-        # page raster shows a full ruling grid, re-recognize cell by cell and
-        # let the grid text replace the page-segmented text inside the grid.
-        source_task = max(
-            selected_tasks,
-            key=lambda task: task.rectangle[2] * task.rectangle[3],
-        )
-        grid = internal_detect_ruling_grid(source_task.image)
-        if grid is not None and internal_grid_is_regular_table(
-            grid, selected.observations, source_task
-        ):
-            x_lines, y_lines, source_samples, slope = grid
-            cell_tasks = internal_grid_cell_tasks(
-                source_task, x_lines, y_lines, source_samples, slope
-            )
-            if len(cell_tasks) >= internal_GRID_MIN_CELLS:
-                cell_candidate = internal_merge_candidate_batches(recognize_tasks(cell_tasks))
-                cell_observations = internal_grid_row_observations(cell_candidate.observations)
-                if len(cell_observations):
-                    grid_box = internal_grid_region_page_box(source_task, x_lines, y_lines)
-                    prior = selected.observations
-                    centers_x = (prior.bbox[:, 0] + prior.bbox[:, 2]) * 0.5
-                    centers_y = (prior.bbox[:, 1] + prior.bbox[:, 3]) * 0.5
-                    outside = ~(
-                        (centers_x >= grid_box[0])
-                        & (centers_x <= grid_box[2])
-                        & (centers_y >= grid_box[1])
-                        & (centers_y <= grid_box[3])
-                    )
-                    replaced_alnum = sum(
-                        sum(character.isalnum() for character in prior.text[index])
-                        for index in numpy.flatnonzero(~outside)
-                    )
-                    cell_alnum = sum(
-                        sum(character.isalnum() for character in text)
-                        for text in cell_observations.text
-                    )
-                    if cell_alnum < replaced_alnum * 0.8:
-                        # The page-segmented reads carried more content than
-                        # the cell reads; this grid's cells recognize worse
-                        # than whole-page OCR, so keep the original.
-                        return selected.observations
-                    retained = prior.take(numpy.flatnonzero(outside))
-                    trace.grid_cell_ocr = {
-                        "cells": len(cell_tasks),
-                        "cell_observations": len(cell_observations),
-                        "replaced_observations": int(numpy.count_nonzero(~outside)),
-                        "grid_box": grid_box,
-                        "columns": len(x_lines) - 1,
-                        "rows": len(y_lines) - 1,
-                    }
-                    return ObservationBatch.concatenate(retained, cell_observations)
-    return selected.observations
+        internal_execute_ocr_pass(session, selection, ocr_pass)
+    return internal_finalize_ocr_selection(session, selection)
