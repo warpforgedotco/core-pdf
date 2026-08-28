@@ -17,11 +17,11 @@ from typing import Any
 
 import numpy
 
+from core_pdf.impl.capture_model.geometry import rect_tuple
 from core_pdf.impl.engine.layout.spatial import (
     SpatialIndex,
     bbox_intersection_area,
 )
-from core_pdf.impl.engine.model.geometry import rect_tuple
 from core_pdf.impl.engine.parse.model import (
     MAX_OCR_PIXELS,
     CapturedPage,

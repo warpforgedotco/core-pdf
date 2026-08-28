@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy
 
 from core_pdf.impl.engine.parse import ObservationBatch, ObservationSource
-from core_pdf.impl.engine.parse.layout import (
+from core_pdf.impl.engine.parse.block_layout import (
     internal_best_projection_gap,
     internal_best_region_projection_gap,
     internal_column_major_prose,

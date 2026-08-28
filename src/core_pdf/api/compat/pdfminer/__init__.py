@@ -11,7 +11,7 @@ from typing import Any, BinaryIO, TextIO, TypeAlias, cast
 
 from core_pdf import PdfDocument, PdfPage
 from core_pdf._vendor.fontTools.agl import toUnicode
-from core_pdf.impl.engine.model.geometry import bbox_union
+from core_pdf.impl.capture_model.geometry import bbox_union
 from core_pdf.impl.exceptions import PdfError
 from core_pdf.impl.primitives import PdfReference
 from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer

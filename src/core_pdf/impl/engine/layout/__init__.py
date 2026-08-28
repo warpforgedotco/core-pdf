@@ -2,6 +2,6 @@
 """Layout heuristics: line grouping, spatial indexing, and geometry quality.
 
 Everything here runs *downstream* of content-stream interpretation and consumes the
-capture records in ``engine/model``. Import from the owning module rather than from
+capture records in ``impl/capture_model``. Import from the owning module rather than from
 this package; it deliberately re-exports nothing.
 """

@@ -11,14 +11,14 @@ from dataclasses import replace
 from functools import lru_cache
 from typing import Any
 
-from core_pdf.impl.engine.layout.spatial import (
-    SpatialIndex,
-)
-from core_pdf.impl.engine.model.geometry import (
+from core_pdf.impl.capture_model.geometry import (
     overlap_ratio_min,
     rect_tuple,
 )
-from core_pdf.impl.engine.parse.layout import (
+from core_pdf.impl.engine.layout.spatial import (
+    SpatialIndex,
+)
+from core_pdf.impl.engine.parse.block_layout import (
     internal_has_repeated_block_columns,
     layout_element_order,
 )

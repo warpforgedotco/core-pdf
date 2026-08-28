@@ -15,7 +15,7 @@ from types import SimpleNamespace
 from typing import Any, TypeAlias, cast
 
 from core_pdf import PdfDocument
-from core_pdf.impl.engine.model.geometry import (
+from core_pdf.impl.capture_model.geometry import (
     bbox_contains,
     bbox_intersects,
     bbox_union,

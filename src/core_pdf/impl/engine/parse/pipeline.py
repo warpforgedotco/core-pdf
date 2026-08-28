@@ -13,7 +13,8 @@ from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 from typing import Any, cast
 
-from core_pdf.impl.engine.model.glyphs import GlyphUnicodeSemantics, glyph_unicode_semantics
+from core_pdf.impl.capture_model.glyphs import GlyphUnicodeSemantics, glyph_unicode_semantics
+from core_pdf.impl.engine.parse.block_layout import layout_blocks_with_evidence
 from core_pdf.impl.engine.parse.capture import (
     LearnedUnicodeMap,
     capture_page,
@@ -25,7 +26,6 @@ from core_pdf.impl.engine.parse.emit import (
 from core_pdf.impl.engine.parse.fusion import (
     fuse_observations,
 )
-from core_pdf.impl.engine.parse.layout import layout_blocks_with_evidence
 from core_pdf.impl.engine.parse.model import (
     CapturedPage,
     ObservationBatch,

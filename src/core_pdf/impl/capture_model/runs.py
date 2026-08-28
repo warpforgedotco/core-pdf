@@ -3,7 +3,7 @@
 
 TextRun memoizes two results the layout heuristics compute
 (``internal_layout_reconstruction_cache``, ``internal_layout_words_cache``). Their
-record types live beside this module in ``model/line_text.py``, so nothing here
+record types live beside this module in ``capture_model/line_text.py``, so nothing here
 names a type from ``layout/``.
 """
 
@@ -11,10 +11,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, ClassVar, TypeAlias
 
-from core_pdf.impl.engine.model.line_text import LayoutLineText, LayoutWordSnapshot
+from core_pdf.impl.capture_model.line_text import LayoutLineText, LayoutWordSnapshot
 
 if TYPE_CHECKING:
-    from core_pdf.impl.engine.model.glyphs import GlyphCluster
+    from core_pdf.impl.capture_model.glyphs import GlyphCluster
 
 Provenance: TypeAlias = tuple[tuple[str, object], ...]
 

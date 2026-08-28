@@ -239,13 +239,15 @@ exclude_type_checking_imports = true
 name = "Engine layers"
 type = "layers"
 containers = ["core_pdf.impl.engine"]
+# Every direct engine child must be assigned here. This makes a newly added
+# execution package fail closed until its dependency level is chosen explicitly.
+exhaustive = true
 layers = [
+    "document",
+    "page",
     "parse",
-    "render",
-    "writing",
-    "structured",
-    "layout",
-    "model",
+    "render | writing",
+    "structured | layout",
 ]
 
 [[tool.importlinter.contracts]]
@@ -253,48 +255,39 @@ name = "Spec layers"
 type = "layers"
 containers = ["core_pdf.impl.spec"]
 # Chapter numbers are not a layering: four s_07_* packages sit at four different
-# levels. This is the real order. Colons mark packages that genuinely do not depend
-# on one another, so the contract does not invent an ordering between them.
+# levels. This is the real order. Pipes make same-level packages independent, so
+# the contract forbids them from importing one another instead of inventing an order.
+exhaustive = true
 layers = [
     "s_07_document",
     "s_14_structure",
     "s_07_content",
-    "s_09_fonts : s_08_graphics : s_07_security",
+    "s_09_fonts | s_08_graphics | s_07_security",
     "s_07_syntax",
     "s_07_filters",
     "s_07_syntax_primitives",
 ]
 
 [[tool.importlinter.contracts]]
-name = "Spec stays below engine consumers"
+name = "Spec never depends on the engine"
 type = "forbidden"
 source_modules = ["core_pdf.impl.spec"]
-forbidden_modules = [
-    "core_pdf.impl.engine.document",
-    "core_pdf.impl.engine.layout",
-    "core_pdf.impl.engine.page",
-    "core_pdf.impl.engine.parse",
-    "core_pdf.impl.engine.render",
-    "core_pdf.impl.engine.structured",
-    "core_pdf.impl.engine.writing",
-]
+forbidden_modules = ["core_pdf.impl.engine"]
 
 [[tool.importlinter.contracts]]
 name = "Pipeline stages run in order"
 type = "layers"
 containers = ["core_pdf.impl.engine.parse"]
-# Each stage may use the stages before it and the shared model, never a later one.
-# pipeline is the orchestrator and sits above all of them.
+# This is exhaustive so helper modules cannot bypass the stage graph. Pipes mark
+# peers that are independent; a peer-to-peer import therefore fails the contract.
+exhaustive = true
 layers = [
     "pipeline",
-    "emit",
     "ocr",
-    "tables",
-    "fusion",
-    "layout",
-    "route",
-    "capture",
-    "model",
+    "emit | ocr_regions | route",
+    "capture | ocr_raster | ocr_stroked_vector | ocr_tesseract | tables",
+    "block_layout | fusion | grid_geometry | newstroke | ocr_model",
+    "model | newstroke_data | ocr_bootstrap | stroked_text",
 ]
 
 [[tool.importlinter.contracts]]
@@ -303,33 +296,56 @@ type = "layers"
 containers = ["core_pdf.impl.engine.parse"]
 # The recognition stage is itself layered: ocr.py orchestrates, the modules under
 # it produce rasters, pick regions and talk to Tesseract, and all of them share
-# one record vocabulary at the bottom.
+# one record vocabulary at the bottom. This exhaustive view makes every parse child
+# choose OCR-layer membership or an explicit non-OCR exclusion.
+exhaustive = true
+exhaustive_ignores = [
+    "block_layout",
+    "capture",
+    "emit",
+    "fusion",
+    "grid_geometry",
+    "model",
+    "newstroke",
+    "newstroke_data",
+    "pipeline",
+    "route",
+    "stroked_text",
+    "tables",
+]
 layers = [
     "ocr",
     "ocr_regions",
-    "ocr_raster",
-    "ocr_stroked_vector : ocr_tesseract",
-    "ocr_model",
+    "ocr_raster | ocr_stroked_vector | ocr_tesseract",
+    "ocr_model | ocr_bootstrap",
 ]
 
 [[tool.importlinter.contracts]]
 name = "impl/runtime is the floor"
 type = "forbidden"
 source_modules = ["core_pdf.impl.runtime"]
-forbidden_modules = ["core_pdf.impl.engine", "core_pdf.impl.spec", "core_pdf.api"]
+forbidden_modules = [
+    "core_pdf.impl.capture_model",
+    "core_pdf.impl.engine",
+    "core_pdf.impl.exceptions",
+    "core_pdf.impl.models",
+    "core_pdf.impl.pages",
+    "core_pdf.impl.primitives",
+    "core_pdf.impl.protocols",
+    "core_pdf.impl.spec",
+    "core_pdf.impl.text",
+    "core_pdf.impl.types",
+    "core_pdf.api",
+]
 
 [[tool.importlinter.contracts]]
 name = "The capture model depends on nothing above it"
 type = "forbidden"
-source_modules = ["core_pdf.impl.engine.model"]
+source_modules = ["core_pdf.impl.capture_model"]
 forbidden_modules = [
-    "core_pdf.impl.engine.layout",
-    "core_pdf.impl.engine.parse",
-    "core_pdf.impl.engine.render",
-    "core_pdf.impl.spec",
-    "core_pdf.impl.engine.structured",
-    "core_pdf.impl.engine.writing",
+    "core_pdf.impl.engine",
     "core_pdf.api",
+    "core_pdf.impl.spec",
 ]
 
 [[tool.importlinter.contracts]]
@@ -343,12 +359,7 @@ forbidden_modules = [
     "core_pdf.impl.spec.s_08_graphics",
     "core_pdf.impl.spec.s_09_fonts",
     "core_pdf.impl.spec.s_14_structure",
-    "core_pdf.impl.engine.layout",
-    "core_pdf.impl.engine.model",
-    "core_pdf.impl.engine.parse",
-    "core_pdf.impl.engine.render",
-    "core_pdf.impl.engine.structured",
-    "core_pdf.impl.engine.writing",
+    "core_pdf.impl.engine",
 ]
 
 [[tool.importlinter.contracts]]
@@ -364,12 +375,7 @@ forbidden_modules = [
     "core_pdf.impl.spec.s_08_graphics",
     "core_pdf.impl.spec.s_09_fonts",
     "core_pdf.impl.spec.s_14_structure",
-    "core_pdf.impl.engine.layout",
-    "core_pdf.impl.engine.model",
-    "core_pdf.impl.engine.parse",
-    "core_pdf.impl.engine.render",
-    "core_pdf.impl.engine.structured",
-    "core_pdf.impl.engine.writing",
+    "core_pdf.impl.engine",
 ]
 
 [[tool.importlinter.contracts]]
@@ -390,4 +396,8 @@ source_modules = [
     "core_pdf.impl.text",
     "core_pdf.impl.types",
 ]
-forbidden_modules = ["core_pdf.impl.engine", "core_pdf.impl.spec"]
+forbidden_modules = [
+    "core_pdf.impl.capture_model",
+    "core_pdf.impl.engine",
+    "core_pdf.impl.spec",
+]

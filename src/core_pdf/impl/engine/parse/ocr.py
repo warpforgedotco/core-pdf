@@ -13,11 +13,11 @@ from typing import Any
 
 import numpy
 
+from core_pdf.impl.capture_model.geometry import (
+    overlap_ratio_min,
+)
 from core_pdf.impl.engine.layout.spatial import (
     maximum_candidate_coverage,
-)
-from core_pdf.impl.engine.model.geometry import (
-    overlap_ratio_min,
 )
 from core_pdf.impl.engine.parse.capture import internal_promoted_hidden_observations
 from core_pdf.impl.engine.parse.model import (

@@ -23,13 +23,13 @@ import numpy
 import pytest
 
 from core_pdf import PdfDocument
+from core_pdf.impl.engine.parse.block_layout import (
+    internal_column_major_prose,
+    internal_peel_spanning_band,
+)
 from core_pdf.impl.engine.parse.emit import (
     internal_corrupt_native_block,
     internal_symbol_characters,
-)
-from core_pdf.impl.engine.parse.layout import (
-    internal_column_major_prose,
-    internal_peel_spanning_band,
 )
 from core_pdf.impl.engine.parse.model import (
     ParsedBlock,

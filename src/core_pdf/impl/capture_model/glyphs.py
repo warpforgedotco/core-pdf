@@ -7,7 +7,7 @@ from enum import StrEnum
 from functools import lru_cache
 from typing import Any
 
-from core_pdf.impl.engine.model.geometry import bbox_union
+from core_pdf.impl.capture_model.geometry import bbox_union
 from core_pdf.impl.types import Rectangle
 
 Matrix6 = tuple[float, float, float, float, float, float]

@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 """Internal PDF execution and derived-processing packages.
 
-The spec-aligned implementation is the sibling package ``core_pdf.impl.spec``.
-This package owns parsing, rendering, writing, structured output, layout, and
-the shared capture model.
+The spec-aligned implementation and shared capture records are sibling packages:
+``core_pdf.impl.spec`` and ``core_pdf.impl.capture_model``. This package owns
+parsing, rendering, writing, structured output, and layout.
 """
 
 __all__: tuple[str, ...] = ()

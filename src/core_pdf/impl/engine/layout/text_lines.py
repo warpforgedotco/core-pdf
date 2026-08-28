@@ -9,13 +9,13 @@ from dataclasses import dataclass
 from functools import lru_cache
 from statistics import median_low
 
-from core_pdf.impl.engine.layout.word_frequencies import word_rank
-from core_pdf.impl.engine.model.line_text import (
+from core_pdf.impl.capture_model.line_text import (
     EMPTY_LAYOUT_LINE_TEXT,
     LayoutLineText,
     LayoutLineTextSegment,
 )
-from core_pdf.impl.engine.model.runs import TextRun
+from core_pdf.impl.capture_model.runs import TextRun
+from core_pdf.impl.engine.layout.word_frequencies import word_rank
 
 FOOTER_RE = re.compile(r"^\s*page\s*\d+\s*$", re.IGNORECASE)
 LEADER_START_CHARS = "._~-–—"

@@ -2,23 +2,20 @@
 """Grouped layout lines and their cached text reconstruction.
 
 A ``LayoutLine`` is what the line-grouping heuristics produce, not what capture
-emits, so it lives here rather than with the capture records in ``engine/model``.
+emits, so it lives here rather than with the capture records in ``impl/capture_model``.
 """
 
 from __future__ import annotations
 
 from itertools import islice
-from typing import TYPE_CHECKING, TypeAlias
+from typing import TypeAlias
 
-from core_pdf.impl.engine.model.line_text import LayoutWordSnapshot
-from core_pdf.impl.engine.model.runs import TextRun, internal_track_text_run
-
-if TYPE_CHECKING:
-    from core_pdf.impl.engine.layout.text_lines import (
-        LayoutLineText,
-        LayoutLineTextSegment,
-    )
-
+from core_pdf.impl.capture_model.line_text import (
+    LayoutLineText,
+    LayoutLineTextSegment,
+    LayoutWordSnapshot,
+)
+from core_pdf.impl.capture_model.runs import TextRun, internal_track_text_run
 
 LayoutLineReconstructionKey: TypeAlias = tuple[
     bool | None,

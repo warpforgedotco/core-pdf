@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import numpy
 
-from core_pdf.impl.engine.parse.layout import (
+from core_pdf.impl.engine.parse.block_layout import (
     internal_best_projection_gap,
     internal_column_gap_minimum,
     internal_gutter_tolerating_contained_boxes,

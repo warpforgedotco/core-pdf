@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from core_pdf.impl.engine.model.geometry import (
+from core_pdf.impl.capture_model.geometry import (
     overlap_ratio_min_exact,
     overlap_ratio_of,
 )

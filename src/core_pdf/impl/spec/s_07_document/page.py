@@ -52,8 +52,7 @@ PAGE_INHERITED_KEYS = (
 
 
 if TYPE_CHECKING:
-    from core_pdf.impl.engine.layout.lines import LayoutLine
-    from core_pdf.impl.engine.model.runs import TextRun
+    from core_pdf.impl.capture_model.runs import TextRun
     from core_pdf.impl.spec.s_07_document.document import PdfDocument
     from core_pdf.impl.spec.s_07_document.records import RawFormField
 
@@ -68,7 +67,6 @@ class PdfPage:
     contents: CachedPdfObject | None
     content_streams_cache: tuple[PdfStream, ...] | None
     page_program_cache: PageProgram | None
-    text_lines: list[LayoutLine] | None
     links: list[RawLink] | MissingObject
     page_box_cache: dict[str, PageBoxCacheValue]
     rotation_cache: int | MissingObject
@@ -90,7 +88,6 @@ class PdfPage:
         self.content_streams_cache = None
         self.page_program_cache = None
         self.links = MISSING
-        self.text_lines = None
         self.page_box_cache = {}
         self.rotation_cache = MISSING
         self.resources_cache = MISSING

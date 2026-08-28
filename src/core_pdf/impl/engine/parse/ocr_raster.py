@@ -18,7 +18,7 @@ from typing import Any
 
 import numpy
 
-from core_pdf.impl.engine.model.geometry import bbox_union
+from core_pdf.impl.capture_model.geometry import bbox_union
 from core_pdf.impl.engine.parse.model import (
     MAX_OCR_PIXELS,
     CapturedPage,

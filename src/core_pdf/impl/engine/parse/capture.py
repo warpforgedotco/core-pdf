@@ -14,17 +14,17 @@ from typing import Any
 
 import numpy
 
-from core_pdf.impl.engine.layout.spatial import (
-    SpatialIndex,
-    bbox_intersection_area,
-)
-from core_pdf.impl.engine.model.geometry import rect_tuple
-from core_pdf.impl.engine.model.glyphs import (
+from core_pdf.impl.capture_model.geometry import rect_tuple
+from core_pdf.impl.capture_model.glyphs import (
     GlyphObservation,
     GlyphUnicodeSemantics,
     glyph_unicode_semantics,
 )
-from core_pdf.impl.engine.model.runs import TextRun
+from core_pdf.impl.capture_model.runs import TextRun
+from core_pdf.impl.engine.layout.spatial import (
+    SpatialIndex,
+    bbox_intersection_area,
+)
 from core_pdf.impl.engine.parse.model import (
     VECTOR_PAINT_KINDS,
     CapturedPage,

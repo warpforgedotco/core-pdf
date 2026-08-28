@@ -10,7 +10,7 @@ from __future__ import annotations
 import numpy
 import pytest
 
-from core_pdf.impl.engine.model.geometry import RectBox
+from core_pdf.impl.capture_model.geometry import RectBox
 from core_pdf.impl.engine.render.display import internal_image_quad
 from core_pdf.impl.engine.render.kernels import (
     RASTER_COORDINATE_CACHE_MAX_ENTRIES,

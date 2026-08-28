@@ -16,7 +16,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from typing import Any, Iterable, Mapping, TypeAlias
 
-from core_pdf.impl.engine.model.geometry import rect_tuple
+from core_pdf.impl.capture_model.geometry import rect_tuple
 from core_pdf.impl.types import Rectangle
 
 GlyphSignature: TypeAlias = tuple[tuple[tuple[bool, tuple[tuple[int, int], ...]], ...], ...]

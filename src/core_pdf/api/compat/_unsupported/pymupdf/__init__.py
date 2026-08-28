@@ -18,7 +18,7 @@ from core_pdf.api.compat.pypdf import (
     PdfReader,
     StructuredState,
 )
-from core_pdf.impl.engine.model.geometry import bbox_intersects, rect_tuple
+from core_pdf.impl.capture_model.geometry import bbox_intersects, rect_tuple
 from core_pdf.impl.engine.structured import (
     Annotation,
     Block,

@@ -1,8 +1,8 @@
+from core_pdf.impl.capture_model.glyphs import GlyphCluster
+from core_pdf.impl.capture_model.runs import TextRun
 from core_pdf.impl.engine.layout.geometry_quality import (
     text_run_geometry_issues,
 )
-from core_pdf.impl.engine.model.glyphs import GlyphCluster
-from core_pdf.impl.engine.model.runs import TextRun
 
 
 def text_run() -> TextRun:

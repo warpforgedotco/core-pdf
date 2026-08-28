@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 import numpy
 
-from core_pdf.impl.engine.model.geometry import RectBox
+from core_pdf.impl.capture_model.geometry import RectBox
 from core_pdf.impl.engine.render.display import (
     ImagePaintItem,
     LineCap,

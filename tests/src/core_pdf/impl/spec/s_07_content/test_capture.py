@@ -1,5 +1,5 @@
-from core_pdf.impl.engine.model.glyphs import GlyphObservation
-from core_pdf.impl.engine.model.runs import TextRun
+from core_pdf.impl.capture_model.glyphs import GlyphObservation
+from core_pdf.impl.capture_model.runs import TextRun
 from core_pdf.impl.spec.s_07_content.capture import (
     apply_glyph_geometry_to_run,
     glyph_bitmap_dimensions,

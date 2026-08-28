@@ -6,7 +6,7 @@ This is a Python 3.13+ PDF parsing engine using the `src` layout. Production cod
 
 - `impl/spec/` implements the PDF specification, one subpackage per spec chapter (`s_07_syntax`, `s_08_graphics`, `s_09_fonts`, …).
 - `impl/engine/parse/` is the extraction pipeline, one module per stage (capture → route → fusion → tables → OCR → layout → emit). `parse/__init__.py` re-exports only the pipeline entry points and shared stage models; import stage internals from the owning submodule.
-- `impl/engine/render/` rasterizes; `impl/engine/writing/` produces PDF output; `impl/engine/structured/` serializes to markdown/HTML/JSON; `impl/engine/model/` holds the capture records (geometry, text runs, glyphs) and `impl/engine/layout/` holds the heuristics that consume them. `impl/runtime/` holds engine-independent infrastructure and must not import from `impl/spec/` or `impl/engine/`.
+- `impl/engine/render/` rasterizes; `impl/engine/writing/` produces PDF output; `impl/engine/structured/` serializes to markdown/HTML/JSON; `impl/capture_model/` holds the shared capture records (geometry, text runs, glyphs) and `impl/engine/layout/` holds the heuristics that consume them. `impl/runtime/` holds engine-independent infrastructure and must not import from `impl/spec/`, `impl/engine/`, or `impl/capture_model/`.
 - `src/core_pdf/_vendor/fontTools` is vendored third-party code, excluded from linting, typing, and formatting.
 
 Tests live under `tests/`: `tests/src` mirrors the package structure, while broader pipeline tests (`test_parse_*.py`, `test_rendering.py`, …) sit at the top level. Corpus fixtures are in `tests/fixtures`. `docs/` holds `architecture.md`, `api.md`, `roadmap.md`, and licensing material; maintenance scripts are in `scripts/`.
@@ -28,7 +28,7 @@ uv run --group lint --group test --group benchmark ty check
 prek run --all-files                 # run repository hooks across all files
 ```
 
-After making broad changes, run the full suite with `uv run pytest tests/ -n auto`. Otherwise, test a subset covering the code and behavior affected by the changes, for example `uv run pytest tests/src/core_pdf/impl/engine/model/test_glyphs.py`. CI checks the lockfile, runs `prek` at the `pre-push` stage, and runs the test suite on Python 3.13 on Ubuntu.
+After making broad changes, run the full suite with `uv run pytest tests/ -n auto`. Otherwise, test a subset covering the code and behavior affected by the changes, for example `uv run pytest tests/src/core_pdf/impl/capture_model/test_glyphs.py`. CI checks the lockfile, runs `prek` at the `pre-push` stage, and runs the test suite on Python 3.13 on Ubuntu.
 
 ### Coverage
 
@@ -84,7 +84,7 @@ Write Python with four-space indentation, clear type annotations, and lines no l
 
 Module-level symbols that are not part of a module's interface are prefixed `internal_` rather than with a leading underscore — about 490 of them. Treat anything so prefixed as private. The convention is applied unevenly across subpackages, so its *absence* does not imply a symbol is public; nothing under `impl/` is. Where a module declares `__all__`, that is the more reliable signal. Two wrinkles worth knowing: `internal_EXPORTS` in `__init__.py` is the public export table (the prefix marks the variable as private, not its contents), and a handful of constants are spelled `internal_UPPER_CASE`.
 
-Dependency direction is enforced, not conventional. `import-linter` contracts in `[tool.importlinter]` (`pyproject.toml`) pin the engine layering, the spec layering, and the three packages that must not depend upward (`impl/runtime/`, `impl/engine/model/`, `spec/s_07_syntax`). They run in the `pre-push` prek stage that CI executes. If a change needs a new edge that a contract forbids, the edge is usually the bug -- read the "Dependency direction" section of `docs/architecture.md` before editing the contract.
+Dependency direction is enforced, not conventional. `import-linter` contracts in `[tool.importlinter]` (`pyproject.toml`) pin the engine layering, the spec layering, and the three packages that must not depend upward (`impl/runtime/`, `impl/capture_model/`, `spec/s_07_syntax`). They run in the `pre-push` prek stage that CI executes. If a change needs a new edge that a contract forbids, the edge is usually the bug -- read the "Dependency direction" section of `docs/architecture.md` before editing the contract.
 
 Third-party code belongs in `src/core_pdf/_vendor/`; do not add new third-party implementations elsewhere in `core-pdf`.
 

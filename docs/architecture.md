@@ -82,7 +82,7 @@ bytes → │ capture_page│ → plan_page ────────────
 | `parse/tables.py` | Owns the complete table stage: grid, stream, and chart detection; cell merging; ordering; and nearby title/caption association. |
 | `parse/ocr*.py` | The recognition stage, itself layered. `ocr.py` orchestrates; `ocr_regions.py` picks what to recognize and batches it; `ocr_raster.py` produces the pixels; `ocr_tesseract.py` is the only module that talks to Tesseract; `ocr_stroked_vector.py` recovers text drawn as vector strokes; `ocr_model.py` holds the records they all share. It returns observations and a `RecognitionReport`; caches hold reusable raster artifacts, not diagnostic side channels. |
 | `parse/grid_geometry.py` | Ruled-grid segment classification and connected components, shared by `tables.py` (vector rulings) and the OCR stage (rulings detected in a raster). |
-| `parse/layout.py` | Groups runs into lines and blocks; column detection and reading order. |
+| `parse/block_layout.py` | Groups runs into lines and blocks; column detection and reading order. |
 | `parse/emit.py` | Text normalization, artifact removal, table/block reconciliation, and direct assembly of the canonical structured `Page`. |
 | `parse/pipeline.py` | Lazy orchestration, single-flight locking, and product caching: `parse_page`, `extract_page`, and `page_extraction`. It assembles the typed `ParseReport` once per parsed page. |
 
@@ -130,6 +130,8 @@ src/core_pdf/
     text.py              shared text kernel: collapse_ws, search_key,
                          collapse_character_spaced
     pages.py             PageSelection and its single normalization implementation
+    capture_model/       shared capture records: geometry kernel, TextRun, glyph
+                         records, columnar glyph storage
     spec/                PDF specification implementation (see below); document-local
                          Raw* records live in s_07_document/records.py
     engine/
@@ -138,8 +140,6 @@ src/core_pdf/
       render/            display lists, raster kernels, targets, and page composition
       page.py            PdfPage
       document.py        PdfDocument
-      model/             the capture data model: geometry kernel, TextRun, glyph
-                         records, columnar glyph storage. Beneath spec/ and layout/.
       layout/            heuristics only: line grouping, spatial index, geometry
                          quality, word frequencies
       structured/        document IR → markdown/HTML/JSON/CSV/TEI
@@ -156,22 +156,26 @@ is what CI's quality job executes, so a violation fails the build rather than re
 `exclude_type_checking_imports` is on, so the contracts check the runtime graph. That
 is deliberate: annotation-only imports create no cycle at import time, and two of them
 are load-bearing (see the knots below). Adding a layer means adding it to the
-contract; the contracts are the specification, this prose is the explanation.
+contract; the contracts are the specification, this prose is the explanation. The
+engine, spec, and parse layer contracts are exhaustive, so an undeclared direct child
+fails closed. A pipe in a layer marks independent peers and forbids imports between
+those peers.
 
 Three packages exist to be depended *upon* and must not depend upward:
 
 | Package | May import | Status |
 | --- | --- | --- |
 | `impl/runtime/` | nothing internal | zero internal imports |
-| `impl/engine/model/` | `impl/` base modules | clean |
+| `impl/capture_model/` | `impl/` base modules | clean |
 | `impl/spec/s_07_syntax_primitives` | `impl/primitives.py` | clean |
 
 `impl/spec/` is a sibling of `impl/engine/`, making the specification boundary explicit.
-Engine consumers may depend on it; its only engine dependency is the low-level capture model,
-and an import contract prevents dependencies on the execution and derived-processing layers.
+Engine consumers may depend on it, but spec may not depend on any engine package. Both
+may depend on the neutral `impl/capture_model/` package, whose floor contract prevents
+it from depending back on either side.
 
 The line-text records (`LayoutLineText`, `LayoutLineTextSegment`,
-`LayoutWordSnapshot`) live in `model/line_text.py` rather than with the heuristics
+`LayoutWordSnapshot`) live in `capture_model/line_text.py` rather than with the heuristics
 that build them, because `TextRun` memoizes reconstruction results on itself and the
 record layer must not name a type from `layout/`.
 
@@ -183,9 +187,9 @@ engine-root ones because only the pipeline uses them.
 
 `layout/` is heuristics only and re-exports nothing — import from the owning module.
 `LayoutLine` lives in `layout/lines.py` because it is what line grouping *produces*;
-`TextRun` lives in `model/runs.py` because it is what capture *emits*. Likewise
-`model/glyphs.py` owns the glyph records (including `GlyphSegment` and
-`internal_materialize`) and `model/glyph_table.py` owns only the columnar storage that
+`TextRun` lives in `capture_model/runs.py` because it is what capture *emits*. Likewise
+`capture_model/glyphs.py` owns the glyph records (including `GlyphSegment` and
+`internal_materialize`) and `capture_model/glyph_table.py` owns only the columnar storage that
 consumes them, so the two no longer import each other.
 
 The chapter-7 bottom layers are explicit. `s_07_syntax_primitives` owns dependency-free

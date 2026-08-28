@@ -11,7 +11,7 @@ from typing import Any, NamedTuple, cast
 
 import numpy
 
-from core_pdf.impl.engine.model.runs import TextRun
+from core_pdf.impl.capture_model.runs import TextRun
 from core_pdf.impl.engine.structured.model import (
     TextSpan,
 )

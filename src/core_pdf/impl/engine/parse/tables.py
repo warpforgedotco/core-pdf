@@ -12,10 +12,10 @@ from typing import Any, cast
 
 import numpy
 
+from core_pdf.impl.capture_model.geometry import bbox_union, overlap_ratio_min
 from core_pdf.impl.engine.layout.spatial import (
     SpatialIndex,
 )
-from core_pdf.impl.engine.model.geometry import bbox_union, overlap_ratio_min
 from core_pdf.impl.engine.parse.grid_geometry import (
     AXIS_TOLERANCE,
     internal_axis_segments,

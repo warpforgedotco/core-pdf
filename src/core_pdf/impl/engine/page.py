@@ -6,6 +6,8 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Any, cast
 
+from core_pdf.impl.capture_model.geometry import rect_tuple
+from core_pdf.impl.capture_model.runs import TextRun
 from core_pdf.impl.engine.layout.geometry_quality import (
     LayoutGeometrySummary,
     page_layout_geometry_issues,
@@ -13,8 +15,6 @@ from core_pdf.impl.engine.layout.geometry_quality import (
     text_run_geometry_issues,
 )
 from core_pdf.impl.engine.layout.lines import LayoutLine
-from core_pdf.impl.engine.model.geometry import rect_tuple
-from core_pdf.impl.engine.model.runs import TextRun
 from core_pdf.impl.engine.parse.pipeline import extract_page, page_extraction
 from core_pdf.impl.engine.render.display import RenderOptions
 from core_pdf.impl.engine.render.page import compose_page
@@ -29,6 +29,7 @@ from core_pdf.impl.models import (
 from core_pdf.impl.runtime.cache import ExtractionCache
 from core_pdf.impl.runtime.execution import RUNTIME
 from core_pdf.impl.spec.s_07_document.page import PdfPage as SpecPdfPage
+from core_pdf.impl.spec.s_07_syntax.types import PdfDict
 from core_pdf.impl.spec.s_08_graphics.image_decode import ImageSource
 
 
@@ -50,6 +51,11 @@ def text_rotation_correction_for_runs(runs: list[TextRun], threshold: float = 0.
 
 class PdfPage(SpecPdfPage):
     document: Any
+    text_lines: list[LayoutLine] | None
+
+    def __init__(self, document: Any, page_dict: PdfDict, page_number: int) -> None:
+        super().__init__(document, page_dict, page_number)
+        self.text_lines = None
 
     @property
     def structured_view(self) -> Any:

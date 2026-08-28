@@ -10,7 +10,7 @@ from typing import Any, cast
 
 import numpy
 
-from core_pdf.impl.engine.model.runs import TextRun
+from core_pdf.impl.capture_model.runs import TextRun
 from core_pdf.impl.engine.parse.newstroke_data import NEWSTROKE_ASCII, NEWSTROKE_ASCII_ALTERNATES
 from core_pdf.impl.spec.s_07_content.capture import CapturedPath
 

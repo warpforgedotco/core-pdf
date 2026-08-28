@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+from core_pdf.impl.capture_model.geometry import overlap_ratio_min, overlap_ratio_min_exact
 from core_pdf.impl.engine.layout.spatial import (
     SpatialIndex,
     bbox_intersection_area,
 )
-from core_pdf.impl.engine.model.geometry import overlap_ratio_min, overlap_ratio_min_exact
 
 
 def test_spatial_index_returns_intersections_in_insertion_order() -> None:

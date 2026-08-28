@@ -21,13 +21,13 @@ from typing import (
 
 import numpy
 
+from core_pdf.impl.capture_model.geometry import (
+    bbox_union,
+    rect_tuple,
+)
 from core_pdf.impl.engine.layout.spatial import (
     SpatialIndex,
     bbox_intersection_area,
-)
-from core_pdf.impl.engine.model.geometry import (
-    bbox_union,
-    rect_tuple,
 )
 from core_pdf.impl.engine.parse.grid_geometry import (
     internal_axis_segments,

@@ -7,8 +7,8 @@ from typing import Any
 
 import pytest
 
-from core_pdf.impl.engine.model.glyph_table import GlyphTable
-from core_pdf.impl.engine.model.glyphs import GlyphObservation, GlyphSegment
+from core_pdf.impl.capture_model.glyph_table import GlyphTable
+from core_pdf.impl.capture_model.glyphs import GlyphObservation, GlyphSegment
 from core_pdf.impl.exceptions import PdfContractError
 
 

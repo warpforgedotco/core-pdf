@@ -6,7 +6,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, cast
 
-from core_pdf.impl.engine.model.geometry import rect_tuple
+from core_pdf.impl.capture_model.geometry import rect_tuple
 from core_pdf.impl.engine.render.display import (
     CompiledRenderPlan,
     DisplayItem,

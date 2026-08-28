@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from enum import IntEnum
 from typing import Any, cast
 
-from core_pdf.impl.engine.model.geometry import rect_tuple
+from core_pdf.impl.capture_model.geometry import rect_tuple
 from core_pdf.impl.spec.s_07_content.capture import CapturedPath
 from core_pdf.impl.spec.s_08_graphics.image_decode import ImageSource
 from core_pdf.impl.spec.s_08_graphics.image_metadata import (

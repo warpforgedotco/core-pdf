@@ -6,20 +6,20 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
-from core_pdf.impl.engine.model.geometry import (
+from core_pdf.impl.capture_model.geometry import (
     bbox_union,
     finite_rect,
     overlap_ratio_of,
 )
-from core_pdf.impl.engine.model.glyphs import (
+from core_pdf.impl.capture_model.glyphs import (
     glyph_text_has_unsupported_codepoint,
 )
-from core_pdf.impl.engine.model.runs import internal_track_text_run
+from core_pdf.impl.capture_model.runs import internal_track_text_run
 from core_pdf.impl.types import Rectangle
 
 if TYPE_CHECKING:
+    from core_pdf.impl.capture_model.runs import TextRun
     from core_pdf.impl.engine.layout.lines import LayoutLine
-    from core_pdf.impl.engine.model.runs import TextRun
 
 
 @dataclass(frozen=True, slots=True)

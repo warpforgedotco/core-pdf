@@ -15,7 +15,7 @@ import threading
 from collections.abc import Iterable, Iterator
 from typing import Any
 
-from core_pdf.impl.engine.model.glyphs import (
+from core_pdf.impl.capture_model.glyphs import (
     GlyphObservation,
     GlyphSegment,
     internal_GlyphEntry,
