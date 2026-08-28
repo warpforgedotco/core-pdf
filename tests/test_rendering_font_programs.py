@@ -8,11 +8,11 @@ import numpy
 
 from core_pdf import PdfDocument, PdfRasterFontRequest
 from core_pdf.impl.engine.render.display import RenderOptions
-from core_pdf.impl.engine.spec.s_07_syntax.stream import PdfStream
-from core_pdf.impl.engine.spec.s_09_fonts.decoder import FontDecoder
-from core_pdf.impl.engine.spec.s_09_fonts.font_program import CFFFont
-from core_pdf.impl.engine.spec.s_09_fonts.font_program_opentype import OpenTypeFontProgram
-from core_pdf.impl.engine.spec.s_09_fonts.font_program_type1 import Type1FontProgram
+from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
+from core_pdf.impl.spec.s_09_fonts.decoder import FontDecoder
+from core_pdf.impl.spec.s_09_fonts.font_program import CFFFont
+from core_pdf.impl.spec.s_09_fonts.font_program_opentype import OpenTypeFontProgram
+from core_pdf.impl.spec.s_09_fonts.font_program_type1 import Type1FontProgram
 
 FIXTURES = Path(__file__).parent / "fixtures"
 

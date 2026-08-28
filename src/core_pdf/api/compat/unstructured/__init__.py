@@ -15,9 +15,9 @@ import numpy
 
 from core_pdf import PdfDocument
 from core_pdf.api.compat.pdfminer import LAParams, LTChar, LTFigure, LTTextBox, extract_pages
-from core_pdf.impl.engine.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
-from core_pdf.impl.engine.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 from core_pdf.impl.exceptions import PdfError, PdfSourceError, PdfUnsupportedError
+from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
+from core_pdf.impl.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 
 PdfInput: TypeAlias = Any
 

@@ -8,8 +8,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, cast
 
-from core_pdf.impl.engine.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.primitives import PdfName, PdfReference, PdfString
+from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 
 
 @dataclass(frozen=True, slots=True)

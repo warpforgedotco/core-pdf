@@ -1,6 +1,6 @@
-from core_pdf.impl.engine.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.engine.writing import serialize_pdf_object
 from core_pdf.impl.primitives import PdfName, PdfReference, PdfString
+from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 
 
 def test_serialize_pdf_object_covers_core_syntax_types() -> None:

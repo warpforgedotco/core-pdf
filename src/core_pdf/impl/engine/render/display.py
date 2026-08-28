@@ -9,13 +9,13 @@ from enum import IntEnum
 from typing import Any, cast
 
 from core_pdf.impl.engine.model.geometry import rect_tuple
-from core_pdf.impl.engine.spec.s_07_content.capture import CapturedPath
-from core_pdf.impl.engine.spec.s_08_graphics.image_decode import ImageSource
-from core_pdf.impl.engine.spec.s_08_graphics.image_metadata import (
+from core_pdf.impl.spec.s_07_content.capture import CapturedPath
+from core_pdf.impl.spec.s_08_graphics.image_decode import ImageSource
+from core_pdf.impl.spec.s_08_graphics.image_metadata import (
     image_display_metadata,
     pdf_number,
 )
-from core_pdf.impl.engine.spec.s_08_graphics.shading import prepare_shading
+from core_pdf.impl.spec.s_08_graphics.shading import prepare_shading
 
 
 @dataclass(slots=True)

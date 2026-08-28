@@ -31,7 +31,6 @@ from core_pdf.impl.engine.parse.tables import (
     internal_structured_stream_table,
     internal_table_has_grid_shape,
 )
-from core_pdf.impl.engine.spec.s_07_content.capture import CapturedDrawing
 from core_pdf.impl.engine.structured.model import (
     Block,
     BlockKind,
@@ -42,6 +41,7 @@ from core_pdf.impl.engine.structured.model import (
     TableCell,
     TextLine,
 )
+from core_pdf.impl.spec.s_07_content.capture import CapturedDrawing
 from core_pdf.impl.text import collapse_character_spaced
 
 

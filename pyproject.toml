@@ -132,8 +132,8 @@ line-length = 100
 #   operations.py  dispatch_operations (180) — protected: hand-unrolled dispatch loop
 #   state.py       append_tj_array_simple_horizontal_batched (70) — protected: batched text
 #   ocr.py         internal_recognize_page_with_reserved_raster (66)
-"src/core_pdf/impl/engine/spec/s_07_content/operations.py" = ["C901"]
-"src/core_pdf/impl/engine/spec/s_07_content/state.py" = ["C901"]
+"src/core_pdf/impl/spec/s_07_content/operations.py" = ["C901"]
+"src/core_pdf/impl/spec/s_07_content/state.py" = ["C901"]
 "src/core_pdf/impl/engine/parse/ocr.py" = ["C901"]
 
 [tool.ruff.lint.mccabe]
@@ -222,7 +222,7 @@ core_pdf = ["py.typed"]
     "*.md",
     "LICENSE*",
 ]
-"core_pdf.impl.engine.spec.s_09_fonts" = [
+"core_pdf.impl.spec.s_09_fonts" = [
     "data/cmaps/**",
     "data/raster_fonts/**",
 ]
@@ -244,7 +244,6 @@ layers = [
     "render",
     "writing",
     "structured",
-    "spec",
     "layout",
     "model",
 ]
@@ -252,7 +251,7 @@ layers = [
 [[tool.importlinter.contracts]]
 name = "Spec layers"
 type = "layers"
-containers = ["core_pdf.impl.engine.spec"]
+containers = ["core_pdf.impl.spec"]
 # Chapter numbers are not a layering: four s_07_* packages sit at four different
 # levels. This is the real order. Colons mark packages that genuinely do not depend
 # on one another, so the contract does not invent an ordering between them.
@@ -264,6 +263,20 @@ layers = [
     "s_07_syntax",
     "s_07_filters",
     "s_07_syntax_primitives",
+]
+
+[[tool.importlinter.contracts]]
+name = "Spec stays below engine consumers"
+type = "forbidden"
+source_modules = ["core_pdf.impl.spec"]
+forbidden_modules = [
+    "core_pdf.impl.engine.document",
+    "core_pdf.impl.engine.layout",
+    "core_pdf.impl.engine.page",
+    "core_pdf.impl.engine.parse",
+    "core_pdf.impl.engine.render",
+    "core_pdf.impl.engine.structured",
+    "core_pdf.impl.engine.writing",
 ]
 
 [[tool.importlinter.contracts]]
@@ -303,7 +316,7 @@ layers = [
 name = "impl/runtime is the floor"
 type = "forbidden"
 source_modules = ["core_pdf.impl.runtime"]
-forbidden_modules = ["core_pdf.impl.engine", "core_pdf.api"]
+forbidden_modules = ["core_pdf.impl.engine", "core_pdf.impl.spec", "core_pdf.api"]
 
 [[tool.importlinter.contracts]]
 name = "The capture model depends on nothing above it"
@@ -313,7 +326,7 @@ forbidden_modules = [
     "core_pdf.impl.engine.layout",
     "core_pdf.impl.engine.parse",
     "core_pdf.impl.engine.render",
-    "core_pdf.impl.engine.spec",
+    "core_pdf.impl.spec",
     "core_pdf.impl.engine.structured",
     "core_pdf.impl.engine.writing",
     "core_pdf.api",
@@ -322,14 +335,14 @@ forbidden_modules = [
 [[tool.importlinter.contracts]]
 name = "The COS layer depends only on filters, syntax primitives, and base modules"
 type = "forbidden"
-source_modules = ["core_pdf.impl.engine.spec.s_07_syntax"]
+source_modules = ["core_pdf.impl.spec.s_07_syntax"]
 forbidden_modules = [
-    "core_pdf.impl.engine.spec.s_07_content",
-    "core_pdf.impl.engine.spec.s_07_document",
-    "core_pdf.impl.engine.spec.s_07_security",
-    "core_pdf.impl.engine.spec.s_08_graphics",
-    "core_pdf.impl.engine.spec.s_09_fonts",
-    "core_pdf.impl.engine.spec.s_14_structure",
+    "core_pdf.impl.spec.s_07_content",
+    "core_pdf.impl.spec.s_07_document",
+    "core_pdf.impl.spec.s_07_security",
+    "core_pdf.impl.spec.s_08_graphics",
+    "core_pdf.impl.spec.s_09_fonts",
+    "core_pdf.impl.spec.s_14_structure",
     "core_pdf.impl.engine.layout",
     "core_pdf.impl.engine.model",
     "core_pdf.impl.engine.parse",
@@ -341,16 +354,16 @@ forbidden_modules = [
 [[tool.importlinter.contracts]]
 name = "Syntax primitives are the spec floor"
 type = "forbidden"
-source_modules = ["core_pdf.impl.engine.spec.s_07_syntax_primitives"]
+source_modules = ["core_pdf.impl.spec.s_07_syntax_primitives"]
 forbidden_modules = [
-    "core_pdf.impl.engine.spec.s_07_content",
-    "core_pdf.impl.engine.spec.s_07_document",
-    "core_pdf.impl.engine.spec.s_07_filters",
-    "core_pdf.impl.engine.spec.s_07_security",
-    "core_pdf.impl.engine.spec.s_07_syntax",
-    "core_pdf.impl.engine.spec.s_08_graphics",
-    "core_pdf.impl.engine.spec.s_09_fonts",
-    "core_pdf.impl.engine.spec.s_14_structure",
+    "core_pdf.impl.spec.s_07_content",
+    "core_pdf.impl.spec.s_07_document",
+    "core_pdf.impl.spec.s_07_filters",
+    "core_pdf.impl.spec.s_07_security",
+    "core_pdf.impl.spec.s_07_syntax",
+    "core_pdf.impl.spec.s_08_graphics",
+    "core_pdf.impl.spec.s_09_fonts",
+    "core_pdf.impl.spec.s_14_structure",
     "core_pdf.impl.engine.layout",
     "core_pdf.impl.engine.model",
     "core_pdf.impl.engine.parse",
@@ -366,7 +379,7 @@ source_modules = ["core_pdf.impl"]
 forbidden_modules = ["core_pdf.api"]
 
 [[tool.importlinter.contracts]]
-name = "Base modules stay beneath the engine"
+name = "Base modules stay beneath the spec and engine"
 type = "forbidden"
 source_modules = [
     "core_pdf.impl.exceptions",
@@ -377,4 +390,4 @@ source_modules = [
     "core_pdf.impl.text",
     "core_pdf.impl.types",
 ]
-forbidden_modules = ["core_pdf.impl.engine"]
+forbidden_modules = ["core_pdf.impl.engine", "core_pdf.impl.spec"]

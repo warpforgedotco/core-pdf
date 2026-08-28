@@ -5,10 +5,10 @@ from core_pdf import (
     StandardPdfEncryption,
     serialize_document_to_pdf,
 )
-from core_pdf.impl.engine.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.engine.structured import Block, BlockKind, Document, Page, TextLine
 from core_pdf.impl.engine.writing import append_incremental_update, serialize_pdf_file
 from core_pdf.impl.primitives import PdfName, PdfReference, PdfString
+from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 
 
 def test_append_incremental_update_preserves_and_reopens_original_file() -> None:

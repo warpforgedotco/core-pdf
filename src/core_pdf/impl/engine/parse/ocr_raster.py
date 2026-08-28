@@ -27,7 +27,6 @@ from core_pdf.impl.engine.parse.ocr_model import internal_Raster, internal_Recog
 from core_pdf.impl.engine.render.display import RenderOptions
 from core_pdf.impl.engine.render.page import compose_page
 from core_pdf.impl.engine.render.raster_image import RasterImage
-from core_pdf.impl.engine.spec.s_08_graphics.image_decode import decode_pdf_image
 from core_pdf.impl.runtime.array_views import (
     contiguous_bytes,
     resample_bilinear,
@@ -35,6 +34,7 @@ from core_pdf.impl.runtime.array_views import (
     uint8_image_view,
 )
 from core_pdf.impl.runtime.image_cache import ImageCacheKey
+from core_pdf.impl.spec.s_08_graphics.image_decode import decode_pdf_image
 
 # Tesseract's LSTM was trained near 300-400 DPI. Scans below that are enlarged to
 # reach it; the gain comes from the resampling being smooth, not from pixel count,

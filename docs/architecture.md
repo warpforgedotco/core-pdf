@@ -27,7 +27,7 @@ The two central objects:
   structured IR instead of being duplicated here.
   The CLI drives it through `process_pdf` in `cli.py`.
 - **`PdfPage`** (`impl/engine/page.py`, subclassing the spec-level page in
-  `impl/engine/spec/s_07_document/page.py`) — per-page extraction and rendering.
+  `impl/spec/s_07_document/page.py`) — per-page extraction and rendering.
 
 The canonical public surface is the lazy export table in `core_pdf.__init__`. Document, page,
 structured records, writers, runtime controls, and errors remain owned by their engine modules.
@@ -130,6 +130,8 @@ src/core_pdf/
     text.py              shared text kernel: collapse_ws, search_key,
                          collapse_character_spaced
     pages.py             PageSelection and its single normalization implementation
+    spec/                PDF specification implementation (see below); document-local
+                         Raw* records live in s_07_document/records.py
     engine/
       parse/             the extraction pipeline, one module per stage (see §2),
                          plus newstroke and stroked_text, which only it uses
@@ -142,14 +144,12 @@ src/core_pdf/
                          quality, word frequencies
       structured/        document IR → markdown/HTML/JSON/CSV/TEI
       writing/           PDF output: objects, fonts, encryption, signatures
-      spec/              PDF specification implementation (see below); document-local
-                         Raw* records live in s_07_document/records.py
 ```
 
 ### Dependency direction
 
 **There are no runtime import cycles between packages, and `import-linter` enforces
-it.** Ten contracts live in `[tool.importlinter]` in `pyproject.toml`; run them with
+it.** Eleven contracts live in `[tool.importlinter]` in `pyproject.toml`; run them with
 `uv run --group lint lint-imports`. They also run in the `pre-push` prek stage, which
 is what CI's quality job executes, so a violation fails the build rather than review.
 
@@ -164,7 +164,11 @@ Three packages exist to be depended *upon* and must not depend upward:
 | --- | --- | --- |
 | `impl/runtime/` | nothing internal | zero internal imports |
 | `impl/engine/model/` | `impl/` base modules | clean |
-| `spec/s_07_syntax_primitives` | `impl/primitives.py` | clean |
+| `impl/spec/s_07_syntax_primitives` | `impl/primitives.py` | clean |
+
+`impl/spec/` is a sibling of `impl/engine/`, making the specification boundary explicit.
+Engine consumers may depend on it; its only engine dependency is the low-level capture model,
+and an import contract prevents dependencies on the execution and derived-processing layers.
 
 The line-text records (`LayoutLineText`, `LayoutLineTextSegment`,
 `LayoutWordSnapshot`) live in `model/line_text.py` rather than with the heuristics
@@ -188,7 +192,7 @@ The chapter-7 bottom layers are explicit. `s_07_syntax_primitives` owns dependen
 lexical tables, scanning, coercion, dictionary lookup, and content-operator metadata.
 Filters may use those kernels. Above filters, `s_07_syntax` owns the COS parser,
 `PdfStream` and its lazy decode cache, xref and object resolution, and the recursive PDF
-object type vocabulary. Base modules therefore never depend back on the engine, and the
+object type vocabulary. Base modules therefore never depend back on the spec or engine, and the
 contracts have no ignored runtime edges.
 
 **Two known knots**, both deliberate and neither a runtime package cycle:

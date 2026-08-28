@@ -17,7 +17,7 @@ import numpy
 
 from core_pdf.impl.engine.layout.spatial import SpatialIndex
 from core_pdf.impl.engine.parse.model import CapturedPage
-from core_pdf.impl.engine.spec.s_07_content.page_program import line_coordinate_columns
+from core_pdf.impl.spec.s_07_content.page_program import line_coordinate_columns
 
 AXIS_TOLERANCE = 1.5
 

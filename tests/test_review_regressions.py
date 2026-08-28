@@ -13,20 +13,20 @@ import pytest
 
 from core_pdf import PdfDocument as PublicPdfDocument
 from core_pdf import PdfSourceError
-from core_pdf.impl.engine.spec.s_07_content.operations import dispatch_operations
-from core_pdf.impl.engine.spec.s_07_document.document import PdfDocument
-from core_pdf.impl.engine.spec.s_07_document.document_labels import (
+from core_pdf.impl.primitives import MISSING, PdfName
+from core_pdf.impl.spec.s_07_content.operations import dispatch_operations
+from core_pdf.impl.spec.s_07_document.document import PdfDocument
+from core_pdf.impl.spec.s_07_document.document_labels import (
     format_alpha,
     format_page_label,
 )
-from core_pdf.impl.engine.spec.s_07_document.metadata import (
+from core_pdf.impl.spec.s_07_document.metadata import (
     resolve_info_metadata,
 )
-from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
-from core_pdf.impl.engine.spec.s_07_syntax.resolver_values import PdfValueResolver
-from core_pdf.impl.engine.spec.s_07_syntax.types import PdfDict
-from core_pdf.impl.engine.spec.s_09_fonts.decoder import FontDecoder
-from core_pdf.impl.primitives import MISSING, PdfName
+from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
+from core_pdf.impl.spec.s_07_syntax.resolver_values import PdfValueResolver
+from core_pdf.impl.spec.s_07_syntax.types import PdfDict
+from core_pdf.impl.spec.s_09_fonts.decoder import FontDecoder
 
 
 def test_leading_dot_number_is_passed_to_operator() -> None:

@@ -34,15 +34,15 @@ import numpy
 
 from core_pdf import PdfDocument
 from core_pdf.impl.engine.render.raster_image import RasterImage
-from core_pdf.impl.engine.spec.s_07_filters.decode_spec import normalize_stream_decode_spec
-from core_pdf.impl.engine.spec.s_07_filters.decoders import decode_jpx_image
-from core_pdf.impl.engine.spec.s_07_filters.jpeg2000 import (
+from core_pdf.impl.spec.s_07_filters.decode_spec import normalize_stream_decode_spec
+from core_pdf.impl.spec.s_07_filters.decoders import decode_jpx_image
+from core_pdf.impl.spec.s_07_filters.jpeg2000 import (
     internal_jpx_uses_irreversible_wavelet,
 )
-from core_pdf.impl.engine.spec.s_07_filters.pipeline import decode_one_filter
-from core_pdf.impl.engine.spec.s_07_filters.registry import FILTER_DESCRIPTOR_BY_NAME
-from core_pdf.impl.engine.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
-from core_pdf.impl.engine.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
+from core_pdf.impl.spec.s_07_filters.pipeline import decode_one_filter
+from core_pdf.impl.spec.s_07_filters.registry import FILTER_DESCRIPTOR_BY_NAME
+from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
+from core_pdf.impl.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 
 internal_ROOT = pathlib.Path(__file__).resolve().parents[1]
 CORPUS = internal_ROOT / "tests" / "fixtures" / "SCORE-Bench" / "src"

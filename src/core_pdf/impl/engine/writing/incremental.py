@@ -5,13 +5,13 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from core_pdf.impl.engine.spec.s_07_syntax.xref import XRefScanner
 from core_pdf.impl.engine.writing.objects import (
     internal_append_indirect_objects,
     internal_classic_xref_entry,
     serialize_pdf_dictionary,
 )
 from core_pdf.impl.primitives import PdfName
+from core_pdf.impl.spec.s_07_syntax.xref import XRefScanner
 
 
 def find_startxref(data: bytes) -> int:

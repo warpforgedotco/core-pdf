@@ -17,11 +17,11 @@ from core_pdf.impl.engine.render.display import (
     PathPaintKind,
 )
 from core_pdf.impl.engine.render.raster_image import RasterImage
-from core_pdf.impl.engine.spec.s_07_content.capture import CapturedPath
-from core_pdf.impl.engine.spec.s_08_graphics.device_profiles import (
+from core_pdf.impl.runtime.array_views import uint8_view
+from core_pdf.impl.spec.s_07_content.capture import CapturedPath
+from core_pdf.impl.spec.s_08_graphics.device_profiles import (
     cmyk_floats_to_srgb,
 )
-from core_pdf.impl.runtime.array_views import uint8_view
 
 # ===== raster_kernel =====
 

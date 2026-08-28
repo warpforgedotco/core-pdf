@@ -18,8 +18,6 @@ from core_pdf.impl.engine.model.runs import TextRun
 from core_pdf.impl.engine.parse.pipeline import extract_page, page_extraction
 from core_pdf.impl.engine.render.display import RenderOptions
 from core_pdf.impl.engine.render.page import compose_page
-from core_pdf.impl.engine.spec.s_07_document.page import PdfPage as SpecPdfPage
-from core_pdf.impl.engine.spec.s_08_graphics.image_decode import ImageSource
 from core_pdf.impl.engine.structured.model import TextDiagnostics
 from core_pdf.impl.engine.structured.model import TextRun as StructuredTextRun
 from core_pdf.impl.exceptions import PdfContractError
@@ -30,6 +28,8 @@ from core_pdf.impl.models import (
 )
 from core_pdf.impl.runtime.cache import ExtractionCache
 from core_pdf.impl.runtime.execution import RUNTIME
+from core_pdf.impl.spec.s_07_document.page import PdfPage as SpecPdfPage
+from core_pdf.impl.spec.s_08_graphics.image_decode import ImageSource
 
 
 def text_rotation_correction_for_runs(runs: list[TextRun], threshold: float = 0.95) -> int:

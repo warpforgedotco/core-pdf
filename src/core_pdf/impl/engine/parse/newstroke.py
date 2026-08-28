@@ -12,7 +12,7 @@ import numpy
 
 from core_pdf.impl.engine.model.runs import TextRun
 from core_pdf.impl.engine.parse.newstroke_data import NEWSTROKE_ASCII, NEWSTROKE_ASCII_ALTERNATES
-from core_pdf.impl.engine.spec.s_07_content.capture import CapturedPath
+from core_pdf.impl.spec.s_07_content.capture import CapturedPath
 
 FIT_ERROR = 0.08
 FIXED_ERROR = 0.10

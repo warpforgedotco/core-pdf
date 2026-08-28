@@ -23,22 +23,22 @@ from core_pdf.impl.engine.render.target import (
     internal_RasterMetrics,
     internal_RasterTarget,
 )
-from core_pdf.impl.engine.spec.s_07_content.capture import CapturedPath, CapturedSubpath
-from core_pdf.impl.engine.spec.s_07_content.page_program import PageEventKind, PageProgram
-from core_pdf.impl.engine.spec.s_07_content.state import TextState
-from core_pdf.impl.engine.spec.s_07_document.annotation_appearance import (
-    select_appearance_stream,
-)
-from core_pdf.impl.engine.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
-from core_pdf.impl.engine.spec.s_08_graphics.image_metadata import (
-    pdf_number,
-)
-from core_pdf.impl.engine.spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 from core_pdf.impl.exceptions import PdfRasterTooLargeError
 from core_pdf.impl.runtime.array_views import (
     uint8_image_view,
 )
 from core_pdf.impl.runtime.image_cache import ImageCache, ImageCacheKey
+from core_pdf.impl.spec.s_07_content.capture import CapturedPath, CapturedSubpath
+from core_pdf.impl.spec.s_07_content.page_program import PageEventKind, PageProgram
+from core_pdf.impl.spec.s_07_content.state import TextState
+from core_pdf.impl.spec.s_07_document.annotation_appearance import (
+    select_appearance_stream,
+)
+from core_pdf.impl.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
+from core_pdf.impl.spec.s_08_graphics.image_metadata import (
+    pdf_number,
+)
+from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 
 
 @dataclass(slots=True)

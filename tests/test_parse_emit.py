@@ -10,8 +10,8 @@ from core_pdf.impl.engine.parse import (
 )
 from core_pdf.impl.engine.parse.emit import assemble_page as emit_page
 from core_pdf.impl.engine.parse.emit import internal_line_decoration_flags
-from core_pdf.impl.engine.spec.s_07_content.capture import CapturedDrawing
 from core_pdf.impl.engine.structured import BlockKind, Table, TableCell
+from core_pdf.impl.spec.s_07_content.capture import CapturedDrawing
 
 
 def block(

@@ -51,7 +51,6 @@ from core_pdf.impl.engine.parse.stroked_text import (
 from core_pdf.impl.engine.parse.tables import (
     extract_tables,
 )
-from core_pdf.impl.engine.spec.s_07_document.page_links import resolve_destination_value
 from core_pdf.impl.engine.structured.model import (
     SCHEMA_VERSION,
     Annotation,
@@ -63,6 +62,7 @@ from core_pdf.impl.engine.structured.model import (
     Table,
 )
 from core_pdf.impl.runtime.execution import TaskScope, WorkStage
+from core_pdf.impl.spec.s_07_document.page_links import resolve_destination_value
 
 PAGE_EXTRACTION_CACHE_KEY = "page_extraction_v3"
 
