@@ -15,13 +15,13 @@ from core_pdf.impl.engine.layout.geometry_quality import (
 from core_pdf.impl.engine.layout.lines import LayoutLine
 from core_pdf.impl.engine.model.geometry import rect_tuple
 from core_pdf.impl.engine.model.runs import TextRun
-from core_pdf.impl.engine.parse import extract_page
+from core_pdf.impl.engine.parse.pipeline import extract_page, page_extraction
 from core_pdf.impl.engine.render.display import RenderOptions
 from core_pdf.impl.engine.render.page import compose_page
 from core_pdf.impl.engine.spec.s_07_document.page import PdfPage as SpecPdfPage
 from core_pdf.impl.engine.spec.s_08_graphics.image_decode import ImageSource
-from core_pdf.impl.engine.structured import TextDiagnostics
-from core_pdf.impl.engine.structured import TextRun as StructuredTextRun
+from core_pdf.impl.engine.structured.model import TextDiagnostics
+from core_pdf.impl.engine.structured.model import TextRun as StructuredTextRun
 from core_pdf.impl.exceptions import PdfContractError
 from core_pdf.impl.models import (
     DrawingRecord,
@@ -54,7 +54,12 @@ class PdfPage(SpecPdfPage):
     @property
     def structured_view(self) -> Any:
         """Return this page's canonical high-level structured representation."""
-        return self.document.structured_document.pages[self.page_number - 1]
+        return self.extract()
+
+    @property
+    def parse_report(self) -> Any | None:
+        """Return the report owned by this page's base extraction, when materialized."""
+        return page_extraction(self).report
 
     def internal_cache(self) -> ExtractionCache:
         cache = self.extraction_cache

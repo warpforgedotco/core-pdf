@@ -9,19 +9,19 @@ from typing import Any
 from core_pdf.impl.engine.spec.s_07_filters.decode_spec import (
     normalize_stream_decode_spec,
 )
-from core_pdf.impl.engine.spec.s_07_syntax.coercion import (
+from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
+from core_pdf.impl.engine.spec.s_07_syntax.types import PdfDict
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.coercion import (
     is_pdf_null,
     normalize_pdf_name,
 )
-from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
-from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import lookup_dict_key
-from core_pdf.impl.engine.spec.s_07_syntax.tokens import (
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.tokens import (
     INLINE_IMAGE_KEY_MAP,
     WHITESPACE,
 )
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.primitives import PdfName
-from core_pdf.impl.types import PdfDict
 
 
 class InlineImage:

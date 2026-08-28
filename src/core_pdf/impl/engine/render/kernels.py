@@ -18,32 +18,10 @@ from core_pdf.impl.engine.render.display import (
 )
 from core_pdf.impl.engine.render.raster_image import RasterImage
 from core_pdf.impl.engine.spec.s_07_content.capture import CapturedPath
-from core_pdf.impl.engine.spec.s_07_filters.models import DecodedImage
-from core_pdf.impl.engine.spec.s_07_filters.pipeline import decode_stream_data
-from core_pdf.impl.engine.spec.s_07_syntax.coercion import parse_float
-from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import lookup_dict_key
-from core_pdf.impl.engine.spec.s_08_graphics.color import ImageColorManager
-from core_pdf.impl.engine.spec.s_08_graphics.color_kernels import (
-    evaluate_sampled_tint_function,
-)
 from core_pdf.impl.engine.spec.s_08_graphics.device_profiles import (
     cmyk_floats_to_srgb,
 )
-from core_pdf.impl.engine.spec.s_08_graphics.image_decode import (
-    decode_pdf_image_samples,
-)
-from core_pdf.impl.engine.spec.s_08_graphics.image_metadata import (
-    image_color_space_name,
-    pdf_float,
-    pdf_int,
-    pdf_number,
-)
-from core_pdf.impl.objects import PdfStream
-from core_pdf.impl.runtime.array_views import (
-    ByteBuffer,
-    contiguous_bytes,
-    uint8_view,
-)
+from core_pdf.impl.runtime.array_views import uint8_view
 
 # ===== raster_kernel =====
 
@@ -208,12 +186,6 @@ RASTER_COORDINATE_CACHE_MAX_ENTRIES = 256
 RASTER_CIRCLE_MIN_PIXEL_AREA = 16
 RASTER_NUMPY_SPAN_MIN_PIXELS = 32
 AFFINE_BLIT_SCRATCH_BYTES = 1 << 20
-BIT_IMAGE_MASK_ALPHA = tuple(
-    bytes(255 if byte & (0x80 >> bit) else 0 for bit in range(8)) for byte in range(256)
-)
-BIT_IMAGE_MASK_ALPHA_ARRAY = numpy.frombuffer(
-    b"".join(BIT_IMAGE_MASK_ALPHA), dtype=numpy.uint8
-).reshape(256, 8)
 RASTER_SAMPLE_OFFSETS = (0.125, 0.375, 0.625, 0.875)
 
 
@@ -862,68 +834,7 @@ def rasterize_packed_stroked_paths(
     return RasterImage(rgba, raster_width, raster_height, 4)
 
 
-def number_array(value: Any) -> list[float]:
-    if not isinstance(value, (list, tuple)):
-        return []
-    out: list[float] = []
-    for item in value:
-        parsed = parse_float(item, None)
-        if parsed is None:
-            return []
-        out.append(parsed)
-    return out
-
-
-def evaluate_pdf_function(function: Any, value: float) -> list[float]:
-    if isinstance(function, PdfStream):
-        function_type = pdf_int(lookup_dict_key(function.dictionary, "FunctionType"), -1)
-        if function_type == 0:
-            try:
-                return evaluate_sampled_tint_function(function, value)
-            except Exception:
-                return [value]
-        dictionary = function.dictionary
-    elif isinstance(function, dict):
-        function_type = pdf_int(lookup_dict_key(function, "FunctionType"), -1)
-        dictionary = function
-    else:
-        return [value]
-
-    if function_type == 2:
-        exponent = pdf_float(lookup_dict_key(dictionary, "N"), 1.0)
-        c0 = number_array(lookup_dict_key(dictionary, "C0")) or [0.0]
-        c1 = number_array(lookup_dict_key(dictionary, "C1")) or [1.0]
-        count = max(len(c0), len(c1))
-        if len(c0) < count:
-            c0.extend([c0[-1] if c0 else 0.0] * (count - len(c0)))
-        if len(c1) < count:
-            c1.extend([c1[-1] if c1 else 1.0] * (count - len(c1)))
-        factor = value**exponent
-        return [c0[i] + factor * (c1[i] - c0[i]) for i in range(count)]
-
-    if function_type == 3:
-        functions = lookup_dict_key(dictionary, "Functions")
-        if not isinstance(functions, (list, tuple)) or not functions:
-            return [value]
-        bounds = number_array(lookup_dict_key(dictionary, "Bounds"))
-        encode = number_array(lookup_dict_key(dictionary, "Encode"))
-        index = 0
-        while index < len(bounds) and value >= bounds[index]:
-            index += 1
-        low = bounds[index - 1] if index > 0 else 0.0
-        high = bounds[index] if index < len(bounds) else 1.0
-        enc0 = encode[index * 2] if index * 2 < len(encode) else 0.0
-        enc1 = encode[index * 2 + 1] if index * 2 + 1 < len(encode) else 1.0
-        if high == low:
-            encoded = enc0
-        else:
-            encoded = enc0 + (value - low) * (enc1 - enc0) / (high - low)
-        return evaluate_pdf_function(functions[min(index, len(functions) - 1)], encoded)
-
-    return [value]
-
-
-def axial_shading_t(coords: list[float], px: float, py: float) -> float | None:
+def axial_shading_t(coords: list[float] | tuple[float, ...], px: float, py: float) -> float | None:
     x0, y0, x1, y1 = coords[:4]
     dx = x1 - x0
     dy = y1 - y0
@@ -933,7 +844,7 @@ def axial_shading_t(coords: list[float], px: float, py: float) -> float | None:
     return ((px - x0) * dx + (py - y0) * dy) / denom
 
 
-def radial_shading_t(coords: list[float], px: float, py: float) -> float | None:
+def radial_shading_t(coords: list[float] | tuple[float, ...], px: float, py: float) -> float | None:
     x0, y0, r0, x1, y1, r1 = coords[:6]
     dx = x1 - x0
     dy = y1 - y0
@@ -1008,13 +919,6 @@ def internal_blit_indexed_channels(
         target_region[:, :, 1][valid] = source_bytes[safe_index + 1][valid]
         target_region[:, :, 2][valid] = source_bytes[safe_index + 2][valid]
     target_region[:, :, 3][valid] = 255
-
-
-def internal_image_raw_bytes(raw: bytes | bytearray | memoryview) -> bytes | memoryview:
-    """Return image source storage without copying it."""
-    if type(raw) is bytes or type(raw) is memoryview:
-        return raw
-    return memoryview(raw).cast("B")
 
 
 def internal_intersect_box(
@@ -1197,76 +1101,25 @@ def internal_clamp01(value: float) -> float:
     return max(0.0, min(1.0, value))
 
 
-def internal_image_samples(
-    raw: bytes | memoryview, dictionary: dict[Any, Any]
-) -> tuple[bytes | DecodedImage | memoryview, dict[Any, Any]] | None:
-    return decode_pdf_image_samples(raw, dictionary)
-
-
-def internal_image_mask_samples(
-    raw: bytes | memoryview, dictionary: dict[Any, Any], width_px: int, height_px: int
-) -> bytes | memoryview:
-    if width_px <= 0 or height_px <= 0:
-        return b""
-    try:
-        decoded = decode_stream_data(raw, dictionary)
-    except Exception:
-        decoded = raw
-    row_bytes = (width_px + 7) >> 3
-    if len(decoded) < row_bytes * height_px:
-        return b""
-    packed = uint8_view(decoded, count=row_bytes * height_px)
-    expanded = BIT_IMAGE_MASK_ALPHA_ARRAY[packed].reshape(height_px, row_bytes * 8)
-    return contiguous_bytes(expanded[:, :width_px])
-
-
-def internal_image_mask_decode_inverts(value: Any) -> bool:
-    if not isinstance(value, (list, tuple)) or len(value) < 2:
-        return False
-    try:
-        return float(value[0]) > float(value[1])
-    except (TypeError, ValueError):
-        return False
-
-
 def internal_soft_mask_alpha_at(
-    mask: tuple[bytes | memoryview, int, int] | None, u: float, v: float
+    mask: numpy.ndarray[Any, Any] | None,
+    u: float,
+    v: float,
 ) -> int:
     if mask is None:
         return 255
-    samples, mask_width, mask_height = mask
+    if mask.ndim != 2 or mask.size == 0:
+        return 255
+    mask_height, mask_width = mask.shape
     src_x = min(mask_width - 1, max(0, int(u * mask_width)))
     src_y = min(mask_height - 1, max(0, int((1.0 - v) * mask_height)))
-    idx = src_y * mask_width + src_x
-    return samples[idx] if idx < len(samples) else 255
-
-
-def internal_image_quad(data: dict[str, Any]) -> tuple[tuple[float, float], ...] | None:
-    quad = data.get("quad")
-    if isinstance(quad, (list, tuple)) and len(quad) >= 3:
-        try:
-            return tuple((float(point[0]), float(point[1])) for point in quad)
-        except (TypeError, ValueError, IndexError):
-            return None
-    items = data.get("items")
-    if not isinstance(items, list):
-        return None
-    for kind, value in items:
-        if kind != "quad":
-            continue
-        if not isinstance(value, (list, tuple)) or len(value) < 3:
-            return None
-        try:
-            return tuple((float(point[0]), float(point[1])) for point in value)
-        except (TypeError, ValueError, IndexError):
-            return None
-    return None
+    return int(mask[src_y, src_x])
 
 
 # Colour and soft-mask helpers lifted out of RenderedPage.rasterize.
 def internal_color_rgba(color: Any, opacity: Any) -> tuple[int, int, int, int]:
     alpha = 255
-    if pdf_number(opacity):
+    if type(opacity) in {int, float}:
         alpha = internal_color_component(opacity, 255)
     if isinstance(color, (list, tuple)) and color:
         if len(color) == 1:
@@ -1293,10 +1146,12 @@ def internal_color_rgba(color: Any, opacity: Any) -> tuple[int, int, int, int]:
 
 
 def internal_shading_color_rgba(
-    color_space: Any, components: list[float], opacity: Any
+    color_model: str,
+    components: list[float] | tuple[float, ...],
+    opacity: Any,
 ) -> tuple[int, int, int, int]:
-    alpha = internal_color_component(opacity, 255) if pdf_number(opacity) else 255
-    name = image_color_space_name(color_space) or "DeviceRGB"
+    alpha = internal_color_component(opacity, 255) if type(opacity) in {int, float} else 255
+    name = color_model or "DeviceRGB"
     if name.endswith("DeviceGray") or len(components) == 1:
         gray = internal_color_component(components[0] if components else 0.0)
         return gray, gray, gray, alpha
@@ -1308,51 +1163,6 @@ def internal_shading_color_rgba(
     while len(rgb) < 3:
         rgb.append(rgb[-1] if rgb else 0)
     return rgb[0], rgb[1], rgb[2], alpha
-
-
-def internal_soft_mask_samples(data: dict[str, Any]) -> tuple[bytes | memoryview, int, int] | None:
-    dictionary = data.get("dictionary")
-    if not isinstance(dictionary, dict):
-        return None
-    raw = dictionary.get("__soft_mask_raw_data__")
-    mask_dict = dictionary.get("__soft_mask_dictionary__")
-    if not isinstance(raw, (bytes, bytearray, memoryview)) or not isinstance(mask_dict, dict):
-        return None
-    mask_width = pdf_int(lookup_dict_key(mask_dict, "Width"), 0)
-    mask_height = pdf_int(lookup_dict_key(mask_dict, "Height"), 0)
-    if mask_width <= 0 or mask_height <= 0:
-        return None
-    sample_dict = dict(mask_dict)
-    sample_dict.setdefault("ColorSpace", "DeviceGray")
-    sample_dict.setdefault("BitsPerComponent", 8)
-    raw_bytes = internal_image_raw_bytes(raw)
-    sample_result = internal_image_samples(raw_bytes, sample_dict)
-    samples: bytes | memoryview | DecodedImage
-    if sample_result is None:
-        samples = raw_bytes
-    else:
-        samples, sample_dict = sample_result
-    converted: ByteBuffer
-    if isinstance(samples, DecodedImage):
-        converted = samples.array.reshape(-1)
-    else:
-        converted_or_none: ByteBuffer | None
-        try:
-            converted_or_none = ImageColorManager.convert_image_data(samples, sample_dict)
-        except Exception:
-            converted_or_none = None
-        converted = converted_or_none if converted_or_none is not None else samples
-    pixel_count = mask_width * mask_height
-    converted_array = uint8_view(converted)
-    if len(converted_array) >= pixel_count * 3:
-        converted_array = numpy.ascontiguousarray(converted_array[0 : pixel_count * 3 : 3])
-    elif len(converted_array) < pixel_count:
-        return None
-    return (
-        contiguous_bytes(converted_array[:pixel_count]),
-        mask_width,
-        mask_height,
-    )
 
 
 def internal_make_page_geometry(

@@ -8,10 +8,6 @@ import mmap
 import threading
 from typing import cast
 
-from core_pdf.impl.engine.spec.s_07_syntax.coercion import normalize_pdf_name
-from core_pdf.impl.engine.spec.s_07_syntax.content_operators import (
-    CACHED_OPERATOR_KEYWORDS,
-)
 from core_pdf.impl.engine.spec.s_07_syntax.indirect_headers import (
     find_indirect_object_header,
 )
@@ -23,16 +19,25 @@ from core_pdf.impl.engine.spec.s_07_syntax.object_cache import (
     ObjectCache,
 )
 from core_pdf.impl.engine.spec.s_07_syntax.objects import PdfObjectStream
-from core_pdf.impl.engine.spec.s_07_syntax.resolver_values import ResolverValueMixin
+from core_pdf.impl.engine.spec.s_07_syntax.stream import PdfStream
+from core_pdf.impl.engine.spec.s_07_syntax.text_string import decode_pdf_text_string
+from core_pdf.impl.engine.spec.s_07_syntax.types import Decipher, PdfDict, PdfObject
 from core_pdf.impl.engine.spec.s_07_syntax.xref import (
     PdfXRefEntry,
     key_for,
     parse_object_marker_prefix,
 )
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.coercion import (
+    normalize_pdf_name,
+    parse_float,
+    parse_float_strict,
+    parse_int,
+)
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.content_operators import (
+    CACHED_OPERATOR_KEYWORDS,
+)
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.objects import PdfStream
-from core_pdf.impl.primitives import MISSING, PdfReference
-from core_pdf.impl.types import Decipher, PdfDict
+from core_pdf.impl.primitives import MISSING, PdfName, PdfReference, PdfString
 
 COMMON_KEYWORDS: tuple[bytes, ...] = (
     *CACHED_OPERATOR_KEYWORDS,
@@ -53,8 +58,13 @@ STREAM_DECODE_KEYS = frozenset(
     }
 )
 
+internal_GEN0_CACHE_MAX_SIZE = 1_000_000
+internal_GEN0_CACHE_ALWAYS_ARRAY_SIZE = 4_096
+internal_GEN0_CACHE_DENSITY_FACTOR = 4
+TERMINAL_TYPES = {int, float, str, bool, type(None), PdfName, bytes}
 
-class ObjectResolver(ResolverValueMixin):
+
+class ObjectResolver:
     __slots__ = (
         "data",
         "xref",
@@ -94,15 +104,23 @@ class ObjectResolver(ResolverValueMixin):
         self.objects: ObjectCache = {}
 
         max_obj = 0
+        gen0_entries = 0
         if self.xref:
             for k in self.xref:
                 obj_num = k >> 16
                 if obj_num > max_obj:
                     max_obj = obj_num
+                if (k & 0xFFFF) == 0:
+                    gen0_entries += 1
 
-        if max_obj < 1000000:
-            self.objects_gen0: GenerationZeroObjectCache | None = [MISSING] * (max_obj + 1)
-            self.xref_gen0: list[PdfXRefEntry | None] | None = [None] * (max_obj + 1)
+        gen0_cache_size = max_obj + 1
+        use_gen0_arrays = gen0_cache_size <= internal_GEN0_CACHE_MAX_SIZE and (
+            gen0_cache_size <= internal_GEN0_CACHE_ALWAYS_ARRAY_SIZE
+            or gen0_cache_size <= gen0_entries * internal_GEN0_CACHE_DENSITY_FACTOR
+        )
+        if use_gen0_arrays:
+            self.objects_gen0: GenerationZeroObjectCache | None = [MISSING] * gen0_cache_size
+            self.xref_gen0: list[PdfXRefEntry | None] | None = [None] * gen0_cache_size
             for k, entry in self.xref.items():
                 if (k & 0xFFFF) == 0:
                     self.xref_gen0[k >> 16] = entry
@@ -181,6 +199,163 @@ class ObjectResolver(ResolverValueMixin):
                 return cached
             self.internal_store_object(ref, cast(CachedPdfObject, resolved))
         return resolved
+
+    def deep_resolve(self, value: object, seen: set[int] | None = None) -> object:
+        t = type(value)
+        terminal_types = TERMINAL_TYPES
+        if t in terminal_types:
+            return value
+
+        if t is PdfReference:
+            res = self.resolve(value)
+            if type(res) in (dict, list, PdfStream, tuple, PdfReference):
+                return self.deep_resolve(res, seen)
+            return res
+
+        if t not in (dict, list, tuple, PdfStream):
+            return value
+
+        val_id = id(value)
+        deep_cache = self.deep_cache
+        cached = deep_cache.get(val_id)
+        if cached is not None and cached[0] is value:
+            return cached[1]
+
+        if seen is None:
+            seen = set()
+
+        if t is PdfStream:
+            stream = cast(PdfStream, value)
+            resolved_dict = self.deep_resolve(stream.dictionary, seen)
+            if resolved_dict is stream.dictionary:
+                deep_cache[val_id] = (value, stream)
+                return stream
+            res = stream.replace(dictionary=resolved_dict)
+            deep_cache[val_id] = (value, res)
+            return res
+
+        marker = id(value)
+        if marker in seen:
+            return value
+        seen.add(marker)
+
+        if t is list:
+            items = cast(list[object], value)
+            if len(items) > 64 and set(map(type, items)).issubset(terminal_types):
+                deep_cache[val_id] = (value, cast(CachedPdfObject, items))
+                return items
+            for item in items:
+                if type(item) not in terminal_types:
+                    break
+            else:
+                deep_cache[val_id] = (value, cast(CachedPdfObject, items))
+                return items
+            res_list: list[object] = []
+            changed = False
+            append = res_list.append
+            for item in items:
+                if type(item) in terminal_types:
+                    append(item)
+                    continue
+                resolved_item = self.deep_resolve(item, seen)
+                append(resolved_item)
+                if resolved_item is not item:
+                    changed = True
+            res = res_list if changed else items
+            deep_cache[val_id] = (value, cast(CachedPdfObject, res))
+            return res
+
+        if t is dict:
+            mapping = cast(PdfDict, value)
+            for item in mapping.values():
+                if type(item) not in terminal_types:
+                    break
+            else:
+                deep_cache[val_id] = (value, cast(CachedPdfObject, mapping))
+                return mapping
+            res_dict: PdfDict = {}
+            changed = False
+            for key, item in mapping.items():
+                resolved_item = self.deep_resolve(item, seen)
+                res_dict[key] = cast(PdfObject, resolved_item)
+                if resolved_item is not item:
+                    changed = True
+            res = res_dict if changed else mapping
+            deep_cache[val_id] = (value, cast(CachedPdfObject, res))
+            return res
+
+        if t is tuple:
+            tuple_items = cast(tuple[object, ...], value)
+            res = [self.deep_resolve(item, seen) for item in tuple_items]
+            deep_cache[val_id] = (value, cast(CachedPdfObject, res))
+            return res
+
+        return value
+
+    def resolve_dict(self, value: object) -> PdfDict | None:
+        resolved = self.deep_resolve(value)
+        return cast(PdfDict, resolved) if isinstance(resolved, dict) else None
+
+    def resolve_box(self, value: object) -> tuple[float, float, float, float] | None:
+        resolved = self.deep_resolve(value)
+        if resolved is None:
+            return None
+        if isinstance(resolved, (list, tuple)) and len(resolved) == 4:
+            try:
+                return (
+                    parse_float_strict(resolved[0]),
+                    parse_float_strict(resolved[1]),
+                    parse_float_strict(resolved[2]),
+                    parse_float_strict(resolved[3]),
+                )
+            except ValueError as error:
+                raise ValueError("invalid box value") from error
+        raise ValueError("invalid box value")
+
+    def resolve_font_dict(self, font: PdfDict) -> PdfDict:
+        resolved_font = self.deep_resolve(font)
+        if not isinstance(resolved_font, dict):
+            raise ValueError("invalid font dictionary")
+        return cast(PdfDict, resolved_font)
+
+    def resolve_float(self, value: object, default: float | None = 0.0) -> float | None:
+        if type(value) is int:
+            return float(value)
+        if type(value) is float:
+            return value
+        if type(value) is bool:
+            return default
+        return parse_float(self.resolve(value), default=default)
+
+    def resolve_name(self, value: object) -> str | None:
+        return normalize_pdf_name(value) or normalize_pdf_name(self.resolve(value))
+
+    def resolve_name_like_value(self, resolved: object) -> str | None:
+        val = self.resolve(resolved)
+        name = normalize_pdf_name(val)
+        if name is not None:
+            return name
+        if type(val) is PdfString:
+            return decode_pdf_text_string(val.data)
+        return None
+
+    def resolve_int(self, value: object, default: int | None = None) -> int | None:
+        if type(value) is int:
+            return value
+        return parse_int(self.resolve(value), default)
+
+    def resolve_str(self, value: object) -> str | None:
+        if type(value) is str:
+            return value
+
+        resolved = self.deep_resolve(value)
+        if type(resolved) is PdfString:
+            return decode_pdf_text_string(resolved.data)
+        if type(resolved) is bytes:
+            return decode_pdf_text_string(resolved)
+        if type(resolved) is str:
+            return resolved
+        return None
 
     def internal_cached_object(self, ref: PdfReference) -> object:
         obj_num = ref.object_number

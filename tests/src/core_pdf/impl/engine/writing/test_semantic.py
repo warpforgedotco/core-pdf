@@ -7,6 +7,8 @@ from core_pdf.impl.engine.structured import (
     Block,
     BlockKind,
     Document,
+    FormField,
+    Link,
     Page,
     Table,
     TableCell,
@@ -71,6 +73,21 @@ def test_semantic_writer_emits_minimal_tagged_page_structure() -> None:
         elements = tuple(structure.find_all())
         assert [element.role for element in elements] == ["Div", "P", "P"]
         assert [element.page_index for element in elements] == [0, 0, 0]
+
+
+def test_semantic_writer_can_omit_tagged_structure() -> None:
+    document = Document(
+        pages=(
+            Page(
+                page_number=1,
+                blocks=(Block(1, BlockKind.PARAGRAPH, (TextLine("Plain text"),)),),
+            ),
+        )
+    )
+
+    with PdfDocument.open(serialize_document_to_pdf(document, tagged_structure=False)) as parsed:
+        assert parsed.structure is None
+        assert "Plain text" in parsed.extract().text
 
 
 def test_semantic_writer_preserves_heading_tag_roles() -> None:
@@ -194,6 +211,30 @@ def test_semantic_writer_generates_outlines_from_headings() -> None:
         assert outlines[0].page_index == 0
 
 
+def test_semantic_writer_preserves_nested_explicit_outlines() -> None:
+    document = Document(pages=(Page(page_number=1),))
+
+    with PdfDocument.open(
+        serialize_document_to_pdf(
+            document,
+            outlines=(
+                (1, "Part", 1),
+                (2, "First child", 1),
+                (2, "Second child", 1),
+                (1, "Appendix", 1),
+            ),
+        )
+    ) as parsed:
+        outlines = tuple(parsed.outlines)
+
+    assert [(item.level, item.title, item.page_index) for item in outlines] == [
+        (0, "Part", 0),
+        (1, "First child", 0),
+        (1, "Second child", 0),
+        (0, "Appendix", 0),
+    ]
+
+
 def test_semantic_writer_rejects_text_outside_standard_encoding() -> None:
     document = Document(
         pages=(
@@ -226,6 +267,63 @@ def test_semantic_writer_accepts_a_font_provider() -> None:
     assert b"/BaseFont /Times-Roman" in output
     with PdfDocument.open(output) as parsed:
         assert "Provider text" in parsed.extract().text
+
+
+def test_semantic_writer_round_trips_links_and_form_fields() -> None:
+    document = Document(
+        pages=(
+            Page(
+                page_number=1,
+                links=(Link(bbox=(10.0, 20.0, 30.0, 40.0), url="https://example.test"),),
+                form_fields=(
+                    FormField(
+                        "name",
+                        "text",
+                        "Ada",
+                        bbox=(40.0, 50.0, 140.0, 70.0),
+                        required=True,
+                        read_only=True,
+                        options=("Ada", "Grace"),
+                    ),
+                    FormField(
+                        "enabled",
+                        "checkbox",
+                        "Yes",
+                        bbox=(150.0, 50.0, 165.0, 65.0),
+                    ),
+                ),
+            ),
+        )
+    )
+
+    with PdfDocument.open(serialize_document_to_pdf(document)) as parsed:
+        page = parsed.pages[0]
+        links = page.get_links()
+        fields = page.get_fields()
+
+    assert [(link.url, link.link_type, link.bbox) for link in links] == [
+        ("https://example.test", "URI", (10.0, 20.0, 30.0, 40.0))
+    ]
+    assert [(field.name, field.type, field.value_text) for field in fields] == [
+        ("name", "Tx", "Ada"),
+        ("enabled", "Btn", "Yes"),
+    ]
+    assert fields[0].is_required
+    assert fields[0].is_read_only
+    assert fields[0].flags == 3
+
+
+def test_semantic_writer_round_trips_attachments() -> None:
+    document = Document(pages=(Page(page_number=1),))
+
+    with PdfDocument.open(
+        serialize_document_to_pdf(document, attachments={"notes.txt": b"writer payload"})
+    ) as parsed:
+        files = parsed.embedded_files()
+
+    assert [(file.name, file.filename, file.data) for file in files] == [
+        ("notes.txt", "notes.txt", b"writer payload")
+    ]
 
 
 def test_semantic_writer_supports_standard_pdf_encryption() -> None:

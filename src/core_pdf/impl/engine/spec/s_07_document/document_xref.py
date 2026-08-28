@@ -12,23 +12,24 @@ from core_pdf.impl.engine.spec.s_07_document.document_labels import (
     infer_page_tree_node_type,
     resolve_page_tree_node_type,
 )
-from core_pdf.impl.engine.spec.s_07_syntax.coercion import normalize_pdf_name
 from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.engine.spec.s_07_syntax.object_cache import (
     CachedPdfObject,
     ResolvedObjectCache,
 )
-from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_07_syntax.resolver import ObjectResolver
+from core_pdf.impl.engine.spec.s_07_syntax.stream import PdfStream
+from core_pdf.impl.engine.spec.s_07_syntax.types import PdfDict, PdfObject
 from core_pdf.impl.engine.spec.s_07_syntax.xref import (
     PdfXRefEntry,
     XRefScanner,
     parse_object_marker_prefix,
 )
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 from core_pdf.impl.exceptions import PdfParseError, PdfUnsupportedError
-from core_pdf.impl.objects import PdfStream
 from core_pdf.impl.primitives import PdfReference
-from core_pdf.impl.types import PdfByteBuffer, PdfDict, PdfObject
+from core_pdf.impl.types import PdfByteBuffer
 
 TRAILER_METADATA_KEYS = ("Info", "ID", "Encrypt")
 

@@ -12,16 +12,15 @@ from core_pdf.impl.engine.parse import (
     OcrPassScope,
     PageEvidence,
     PageRoute,
-    ParseReport,
     TextQualityStats,
 )
 from core_pdf.impl.engine.parse.capture import (
     capture_page,
     internal_apply_structure_actual_text,
-    internal_capture_from_program,
     internal_extractable_runs,
     internal_vector_complexity,
 )
+from core_pdf.impl.engine.parse.pipeline import page_extraction
 from core_pdf.impl.engine.parse.route import plan_page
 
 
@@ -134,7 +133,7 @@ def test_vector_complexity_ignores_graphics_state_control_records() -> None:
     assert internal_vector_complexity(drawings, (object(), object())) == 5
 
 
-def test_native_text_capture_reuses_canonical_program() -> None:
+def test_page_extraction_owns_and_reuses_canonical_capture() -> None:
     fixture = (
         Path(__file__).parent
         / "fixtures"
@@ -145,8 +144,8 @@ def test_native_text_capture_reuses_canonical_program() -> None:
     with PdfDocument.open(fixture) as document:
         page = document.pages[0]
         program = page.get_page_program()
-        first = internal_capture_from_program(page, program)
-        second = capture_page(page)
+        first = page_extraction(page).capture()
+        second = page_extraction(page).capture()
 
     assert first is second
     assert first.program is program
@@ -193,9 +192,9 @@ def test_newstroke_vector_diagram_is_decoded_without_ocr() -> None:
         plan = plan_page(capture)
         structured_text = document.extract().text
         tables = document.extract().table_view.tables
-        cache = page.extraction_cache
-        assert cache is not None
-        metrics = cast(ParseReport, cache["parse_report_v1"]).metrics
+        report = page.parse_report
+        assert report is not None
+        metrics = report.metrics
 
     assert capture.evidence.vector_complexity > 0
     assert capture.evidence.vector_text_trusted is True

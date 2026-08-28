@@ -10,13 +10,13 @@ from core_pdf._vendor.fontTools.misc.psCharStrings import T1CharString
 from core_pdf._vendor.fontTools.pens.boundsPen import BoundsPen
 from core_pdf._vendor.fontTools.pens.recordingPen import RecordingPen
 from core_pdf._vendor.fontTools.pens.transformPen import TransformPen
-from core_pdf.impl.engine.spec.s_07_syntax.coercion import normalize_pdf_name
-from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_07_syntax.stream import PdfStream
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_09_fonts.font_program_truetype import (
     internal_recording_to_contours,
 )
 from core_pdf.impl.engine.spec.s_09_fonts.raster_kernel import Point, rasterize_contours
-from core_pdf.impl.objects import PdfStream
 
 internal_LEN_IV_RE = re.compile(rb"/lenIV\s+(-?\d+)\s+def\b")
 internal_FONT_MATRIX_RE = re.compile(

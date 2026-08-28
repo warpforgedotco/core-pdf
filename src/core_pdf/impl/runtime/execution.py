@@ -23,6 +23,13 @@ internal_InputT = TypeVar("internal_InputT")
 internal_ResultT = TypeVar("internal_ResultT")
 
 
+class internal_ExtractionCancelled(RuntimeError):
+    """Internal cancellation signal with the stable user-facing message."""
+
+    def __init__(self) -> None:
+        super().__init__("PDF extraction was cancelled")
+
+
 def internal_worker_count() -> int:
     configured = os.environ.get("CORE_PDF_THREADS")
     if configured:
@@ -129,7 +136,7 @@ class internal_ResourceBudget:
         with self.internal_condition:
             while self.internal_available < amount:
                 if cancelled():
-                    raise RuntimeError("PDF extraction was cancelled")
+                    raise internal_ExtractionCancelled()
                 self.internal_condition.wait(timeout=0.05)
             self.internal_available -= amount
         return amount
@@ -169,6 +176,19 @@ class internal_ResourceLease(AbstractContextManager["internal_ResourceLease"]):
             self.internal_acquired = 0
 
 
+@dataclass(slots=True)
+class internal_TaskMetricsState:
+    enabled: bool
+    lock: threading.Lock = field(default_factory=threading.Lock)
+    submitted: int = 0
+    completed: int = 0
+    cancelled: int = 0
+    active: int = 0
+    peak: int = 0
+    queue_seconds: float = 0.0
+    execution_seconds: float = 0.0
+
+
 class TaskScope(AbstractContextManager["TaskScope"]):
     """Cancellation and metrics scope sharing the process-wide executor."""
 
@@ -178,39 +198,42 @@ class TaskScope(AbstractContextManager["TaskScope"]):
         *,
         cancelled: Callable[[], bool] | None = None,
         metrics: bool = False,
+        internal_cancellations: tuple[Callable[[], bool], ...] | None = None,
+        internal_metrics_state: internal_TaskMetricsState | None = None,
+        internal_queue_key: object | None = None,
+        internal_owns_queue: bool = True,
     ) -> None:
         self.runtime = runtime
-        self.internal_cancelled = cancelled
-        self.internal_metrics_enabled = metrics
-        self.internal_lock = threading.Lock()
-        self.internal_submitted = 0
-        self.internal_completed = 0
-        self.internal_cancelled_count = 0
-        self.internal_active = 0
-        self.internal_peak = 0
-        self.internal_queue_seconds = 0.0
-        self.internal_execution_seconds = 0.0
+        if internal_cancellations is None:
+            internal_cancellations = (cancelled,) if cancelled is not None else ()
+        self.internal_cancellations = internal_cancellations
+        self.internal_metrics_state = internal_metrics_state or internal_TaskMetricsState(metrics)
+        self.internal_queue_key = internal_queue_key if internal_queue_key is not None else object()
+        self.internal_owns_queue = internal_owns_queue
 
     def __enter__(self) -> TaskScope:
         return self
 
     def __exit__(self, *internal_args: object) -> None:
-        self.runtime.internal_close_context(self)
+        if self.internal_owns_queue:
+            self.runtime.internal_close_context(self)
 
-    def internal_bind_cancelled(self, cancelled: Callable[[], bool]) -> Callable[[], bool] | None:
-        previous = self.internal_cancelled
-        self.internal_cancelled = cancelled
-        return previous
-
-    def internal_restore_cancelled(self, cancelled: Callable[[], bool] | None) -> None:
-        self.internal_cancelled = cancelled
+    def with_cancellation(self, cancelled: Callable[[], bool]) -> TaskScope:
+        """Return an immutable child sharing this scope's queue and metrics."""
+        return TaskScope(
+            self.runtime,
+            internal_cancellations=(*self.internal_cancellations, cancelled),
+            internal_metrics_state=self.internal_metrics_state,
+            internal_queue_key=self.internal_queue_key,
+            internal_owns_queue=False,
+        )
 
     def cancelled(self) -> bool:
-        return bool(self.internal_cancelled and self.internal_cancelled())
+        return any(cancelled() for cancelled in self.internal_cancellations)
 
     def raise_if_cancelled(self) -> None:
         if self.cancelled():
-            raise RuntimeError("PDF extraction was cancelled")
+            raise internal_ExtractionCancelled()
 
     def map_ordered(
         self,
@@ -244,15 +267,16 @@ class TaskScope(AbstractContextManager["TaskScope"]):
         return internal_ResourceLease(self.runtime.internal_raster_budget, amount, self.cancelled)
 
     def metrics(self) -> RuntimeMetrics:
-        with self.internal_lock:
+        state = self.internal_metrics_state
+        with state.lock:
             runtime_metrics = self.runtime.metrics()
             return RuntimeMetrics(
-                submitted=self.internal_submitted,
-                completed=self.internal_completed,
-                cancelled=self.internal_cancelled_count,
-                peak_workers=self.internal_peak,
-                queue_seconds=self.internal_queue_seconds,
-                execution_seconds=self.internal_execution_seconds,
+                submitted=state.submitted,
+                completed=state.completed,
+                cancelled=state.cancelled,
+                peak_workers=state.peak,
+                queue_seconds=state.queue_seconds,
+                execution_seconds=state.execution_seconds,
                 parent_workers=runtime_metrics.parent_workers,
                 active_workers=runtime_metrics.active_workers,
                 queued_tasks=runtime_metrics.queued_tasks,
@@ -265,24 +289,27 @@ class TaskScope(AbstractContextManager["TaskScope"]):
             )
 
     def internal_record_submit(self) -> None:
-        if self.internal_metrics_enabled:
-            with self.internal_lock:
-                self.internal_submitted += 1
+        state = self.internal_metrics_state
+        if state.enabled:
+            with state.lock:
+                state.submitted += 1
 
     def internal_record_start(self) -> None:
-        if self.internal_metrics_enabled:
-            with self.internal_lock:
-                self.internal_active += 1
-                self.internal_peak = max(self.internal_peak, self.internal_active)
+        state = self.internal_metrics_state
+        if state.enabled:
+            with state.lock:
+                state.active += 1
+                state.peak = max(state.peak, state.active)
 
     def internal_record_done(self, queue: float, execution: float, cancelled: bool) -> None:
-        if self.internal_metrics_enabled:
-            with self.internal_lock:
-                self.internal_active = max(0, self.internal_active - 1)
-                self.internal_completed += 1
-                self.internal_cancelled_count += int(cancelled)
-                self.internal_queue_seconds += queue
-                self.internal_execution_seconds += execution
+        state = self.internal_metrics_state
+        if state.enabled:
+            with state.lock:
+                state.active = max(0, state.active - 1)
+                state.completed += 1
+                state.cancelled += int(cancelled)
+                state.queue_seconds += queue
+                state.execution_seconds += execution
 
 
 class ExecutionRuntime:
@@ -443,8 +470,8 @@ class ExecutionRuntime:
             if context is not None:
                 context.raise_if_cancelled()
             return function(*args, **kwargs)
-        except RuntimeError as exc:
-            cancelled = str(exc) == "PDF extraction was cancelled"
+        except internal_ExtractionCancelled:
+            cancelled = True
             raise
         finally:
             finished = time.perf_counter()
@@ -480,7 +507,9 @@ class ExecutionRuntime:
             submitted_at=submitted_at,
             stage=stage,
         )
-        key: object = context if context is not None else self.internal_anonymous_context
+        key: object = (
+            context.internal_queue_key if context is not None else self.internal_anonymous_context
+        )
         with self.internal_lock:
             self.internal_submitted += 1
             queue = self.internal_pending.get(key)
@@ -657,12 +686,13 @@ class ExecutionRuntime:
         self.internal_signal_progress()
 
     def internal_close_context(self, context: TaskScope) -> None:
+        key = context.internal_queue_key
         with self.internal_lock:
-            queue = self.internal_pending.pop(context, None)
+            queue = self.internal_pending.pop(key, None)
             if queue is None:
                 return
             self.internal_round_robin = deque(
-                key for key in self.internal_round_robin if key is not context
+                pending_key for pending_key in self.internal_round_robin if pending_key is not key
             )
             for work in queue:
                 work.future.cancel()

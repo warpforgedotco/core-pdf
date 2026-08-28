@@ -7,8 +7,8 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Any, Protocol, cast
 
+from core_pdf.impl.engine.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.engine.writing.object_graph import PdfObjectGraph
-from core_pdf.impl.objects import PdfStream
 from core_pdf.impl.primitives import PdfName, PdfReference
 
 STANDARD_TYPE1_FONTS = frozenset(

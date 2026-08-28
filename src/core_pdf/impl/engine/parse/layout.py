@@ -27,7 +27,7 @@ from core_pdf.impl.engine.parse.model import (
     ParsedLine,
     ReadingOrderEvidence,
 )
-from core_pdf.impl.engine.structured import (
+from core_pdf.impl.engine.structured.model import (
     TextSpan,
 )
 from core_pdf.impl.runtime.array_views import finite_median

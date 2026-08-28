@@ -2155,14 +2155,14 @@ def test_document_stroked_alphabet_uses_richest_page_as_only_ocr_seed(
             plan_calls.append(int(self.page.page_number))
             return WorkPlan(PageRoute.OCR, reason=PagePlanReason.STROKED_VECTOR_TEXT)
 
-        def ocr(self, context: object) -> ObservationBatch:
+        def recognition(self, context: object) -> RecognitionResult:
             ocr_calls.append(int(self.page.page_number))
             observations = candidate_observations("seed", 99.0)
             self.internal_recognition = RecognitionResult(
                 observations,
                 RecognitionReport(stroked_vector_alphabet=alphabet),
             )
-            return observations
+            return self.internal_recognition
 
     extractions = {
         id(page): Extraction(page, capture) for page, capture in zip(pages, captures, strict=True)
@@ -2190,17 +2190,17 @@ def test_document_stroked_alphabet_uses_richest_page_as_only_ocr_seed(
         lambda profile, learned: decoded,
     )
 
-    seeds, reused = parse_pipeline.internal_prepare_document_stroked_mappings(
+    enrichment = parse_pipeline.internal_prepare_document_stroked_mappings(
         pages,
         captures,
         cast(TaskScope, object()),
     )
 
-    assert (seeds, reused) == (1, 1)
+    assert (enrichment.seed_count, enrichment.reused_pages) == (1, 1)
     assert ocr_calls == [2]
     assert plan_calls == [1]
-    seed_recognition = extractions[id(pages[1])].internal_recognition
-    reused_recognition = extractions[id(pages[0])].internal_recognition
+    seed_recognition = enrichment.recognition_by_index[1]
+    reused_recognition = enrichment.recognition_by_index[0]
     assert seed_recognition is not None
     assert reused_recognition is not None
     assert seed_recognition.report.document_stroked_glyphs["role"] == "seed"
@@ -2259,14 +2259,14 @@ def test_document_stroked_alphabet_falls_back_to_page_ocr_when_coverage_is_low(
             plan_calls.append(int(self.page.page_number))
             return WorkPlan(PageRoute.OCR, reason=PagePlanReason.STROKED_VECTOR_TEXT)
 
-        def ocr(self, context: object) -> ObservationBatch:
+        def recognition(self, context: object) -> RecognitionResult:
             ocr_calls.append(int(self.page.page_number))
             observations = candidate_observations("seed", 99.0)
             self.internal_recognition = RecognitionResult(
                 observations,
                 RecognitionReport(stroked_vector_alphabet=alphabet),
             )
-            return observations
+            return self.internal_recognition
 
     extractions = {
         id(page): Extraction(page, capture) for page, capture in zip(pages, captures, strict=True)
@@ -2285,20 +2285,19 @@ def test_document_stroked_alphabet_falls_back_to_page_ocr_when_coverage_is_low(
         ),
     )
 
-    seeds, reused = parse_pipeline.internal_prepare_document_stroked_mappings(
+    enrichment = parse_pipeline.internal_prepare_document_stroked_mappings(
         pages,
         captures,
         cast(TaskScope, object()),
     )
 
-    assert (seeds, reused) == (2, 0)
+    assert (enrichment.seed_count, enrichment.reused_pages) == (2, 0)
     assert ocr_calls == [2, 1]
     assert plan_calls == [1]
-    roles: list[object] = []
-    for page in pages:
-        recognition = extractions[id(page)].internal_recognition
-        assert recognition is not None
-        roles.append(recognition.report.document_stroked_glyphs["role"])
+    roles = [
+        enrichment.recognition_by_index[index].report.document_stroked_glyphs["role"]
+        for index in range(2)
+    ]
     assert tuple(roles) == ("seed", "seed")
 
 

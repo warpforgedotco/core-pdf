@@ -5,10 +5,13 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import dataclass, field
 from hashlib import sha256
 from typing import cast
 
-from core_pdf.impl.engine.structured import BlockKind, Document, Page, TextLine
+from core_pdf.impl.engine.spec.s_07_syntax.stream import PdfStream
+from core_pdf.impl.engine.structured.model import BlockKind, Document, Page, TextLine
+from core_pdf.impl.engine.structured.serialization import document_to_json_dict
 from core_pdf.impl.engine.writing.document import serialize_encrypted_pdf_file
 from core_pdf.impl.engine.writing.encryption import StandardPdfEncryption
 from core_pdf.impl.engine.writing.fonts import (
@@ -26,8 +29,621 @@ from core_pdf.impl.engine.writing.signatures import (
     PdfSignaturePlan,
     apply_signature_plan,
 )
-from core_pdf.impl.objects import PdfStream
 from core_pdf.impl.primitives import PdfName, PdfReference, PdfString
+
+internal_PdfDictionary = dict[PdfName, object]
+internal_TaggedPageLines = tuple[tuple[str, TextLine], ...]
+
+
+@dataclass(slots=True)
+class internal_PdfBuildContext:
+    document: Document
+    graph: PdfObjectGraph
+    pages_reference: PdfReference
+    font_resource: PdfFontResource
+    page_tagged_lines: tuple[internal_TaggedPageLines, ...]
+    page_references: list[PdfReference] = field(default_factory=list)
+    page_objects: list[tuple[PdfReference, internal_PdfDictionary]] = field(default_factory=list)
+    form_field_references: list[PdfReference] = field(default_factory=list)
+
+
+def internal_create_build_context(
+    document: Document,
+    font_name: str,
+    font_provider: PdfFontProvider | None,
+) -> internal_PdfBuildContext:
+    graph = PdfObjectGraph()
+    pages_reference = graph.add(None)
+    font = font_provider or StandardType1FontProvider(font_name)
+    page_tagged_lines = tuple(tuple(internal_tagged_lines(page)) for page in document.pages)
+    font_resource = font.add_to_graph(
+        graph,
+        (line.text for tagged_lines in page_tagged_lines for _, line in tagged_lines),
+    )
+    return internal_PdfBuildContext(
+        document=document,
+        graph=graph,
+        pages_reference=pages_reference,
+        font_resource=font_resource,
+        page_tagged_lines=page_tagged_lines,
+    )
+
+
+def internal_add_page_interactives(
+    context: internal_PdfBuildContext,
+    page: Page,
+) -> list[PdfReference]:
+    graph = context.graph
+    font_resource = context.font_resource
+    annotation_references: list[PdfReference] = []
+    for annotation in page.annotations:
+        annotation_object: internal_PdfDictionary = {
+            PdfName.of("Type"): PdfName.of("Annot"),
+            PdfName.of("Subtype"): PdfName.of(annotation.subtype or "Text"),
+            PdfName.of("Rect"): list(annotation.bbox or (0, 0, 0, 0)),
+        }
+        if annotation.contents:
+            annotation_object[PdfName.of("Contents")] = PdfString(
+                annotation.contents.encode("utf-8")
+            )
+        if annotation.destination is not None:
+            annotation_object[PdfName.of("A")] = {
+                PdfName.of("S"): PdfName.of("URI"),
+                PdfName.of("URI"): PdfString(str(annotation.destination).encode("utf-8")),
+            }
+        annotation_references.append(graph.add(annotation_object))
+    for link in page.links:
+        if link.url is None:
+            continue
+        annotation_references.append(
+            graph.add(
+                {
+                    PdfName.of("Type"): PdfName.of("Annot"),
+                    PdfName.of("Subtype"): PdfName.of("Link"),
+                    PdfName.of("Rect"): list(link.bbox or (0, 0, 0, 0)),
+                    PdfName.of("A"): {
+                        PdfName.of("S"): PdfName.of("URI"),
+                        PdfName.of("URI"): PdfString(link.url.encode("utf-8")),
+                    },
+                }
+            )
+        )
+    for form_field in page.form_fields:
+        field_type = form_field.field_type
+        if field_type.casefold() in {"text", "tx"}:
+            field_type = "Tx"
+        elif field_type.casefold() in {"button", "checkbox", "btn"}:
+            field_type = "Btn"
+        field_object: internal_PdfDictionary = {
+            PdfName.of("Type"): PdfName.of("Annot"),
+            PdfName.of("Subtype"): PdfName.of("Widget"),
+            PdfName.of("FT"): PdfName.of(field_type),
+            PdfName.of("T"): PdfString(form_field.name.encode("utf-8")),
+            PdfName.of("Rect"): list(form_field.bbox or (0, 0, 0, 0)),
+        }
+        is_button = field_type.casefold() in {"btn", "button"}
+        if not is_button:
+            field_object[PdfName.of("DA")] = PdfString(
+                f"/{font_resource.resource_name} 10 Tf 0 g".encode("ascii")
+            )
+        if form_field.value_text:
+            field_object[PdfName.of("V")] = PdfString(form_field.value_text.encode("utf-8"))
+        flags = (1 if form_field.read_only else 0) | (2 if form_field.required else 0)
+        flags |= 4 if form_field.no_export else 0
+        if flags:
+            field_object[PdfName.of("Ff")] = flags
+        if form_field.options:
+            field_object[PdfName.of("Opt")] = [
+                PdfString(option.encode("utf-8")) for option in form_field.options
+            ]
+        x0, y0, x1, y1 = form_field.bbox or (0, 0, 0, 0)
+        appearance_text = (
+            b"BT /"
+            + font_resource.resource_name.encode("ascii")
+            + b" 10 Tf 0 g 2 2 Td "
+            + serialize_pdf_string(form_field.value_text.encode("utf-8"))
+            + b" Tj ET"
+        )
+        appearance = graph.add(
+            PdfStream(
+                {
+                    PdfName.of("Type"): PdfName.of("XObject"),
+                    PdfName.of("Subtype"): PdfName.of("Form"),
+                    PdfName.of("BBox"): [0, 0, max(0, x1 - x0), max(0, y1 - y0)],
+                    PdfName.of("Resources"): {
+                        PdfName.of("Font"): {
+                            PdfName.of(font_resource.resource_name): font_resource.reference
+                        }
+                    },
+                },
+                appearance_text,
+            )
+        )
+        if is_button:
+            off_appearance = graph.add(
+                PdfStream(
+                    {
+                        PdfName.of("Type"): PdfName.of("XObject"),
+                        PdfName.of("Subtype"): PdfName.of("Form"),
+                        PdfName.of("BBox"): [0, 0, max(0, x1 - x0), max(0, y1 - y0)],
+                    },
+                    b"",
+                )
+            )
+            state = PdfName.of("Yes") if form_field.value_text else PdfName.of("Off")
+            field_object[PdfName.of("AS")] = state
+            field_object[PdfName.of("AP")] = {
+                PdfName.of("N"): {
+                    PdfName.of("Off"): off_appearance,
+                    PdfName.of("Yes"): appearance,
+                }
+            }
+        else:
+            field_object[PdfName.of("AP")] = {PdfName.of("N"): appearance}
+        field_reference = graph.add(field_object)
+        annotation_references.append(field_reference)
+        context.form_field_references.append(field_reference)
+    for figure in page.figures:
+        marker = {
+            "kind": figure.kind,
+            "bbox": figure.bbox,
+            "metadata": dict(figure.metadata),
+        }
+        annotation_references.append(
+            graph.add(
+                {
+                    PdfName.of("Type"): PdfName.of("Annot"),
+                    PdfName.of("Subtype"): PdfName.of("CoreFigure"),
+                    PdfName.of("Rect"): list(figure.bbox or (0, 0, 0, 0)),
+                    PdfName.of("Contents"): PdfString(
+                        json.dumps(marker, default=str).encode("utf-8")
+                    ),
+                }
+            )
+        )
+    return annotation_references
+
+
+def internal_add_pages(
+    context: internal_PdfBuildContext,
+    *,
+    tagged_structure: bool,
+) -> None:
+    for page_index, (page, tagged_lines) in enumerate(
+        zip(context.document.pages, context.page_tagged_lines, strict=True)
+    ):
+        content = content_stream_for_page(
+            page,
+            context.font_resource,
+            tagged=tagged_structure,
+            tagged_lines=tagged_lines,
+        )
+        content_reference = context.graph.add(PdfStream({}, content))
+        page_object: internal_PdfDictionary = {
+            PdfName.of("Type"): PdfName.of("Page"),
+            PdfName.of("Parent"): context.pages_reference,
+            PdfName.of("MediaBox"): [0, 0, page.width or 612.0, page.height or 792.0],
+            PdfName.of("Resources"): {
+                PdfName.of("Font"): {
+                    PdfName.of(context.font_resource.resource_name): context.font_resource.reference
+                },
+            },
+            PdfName.of("Contents"): content_reference,
+        }
+        if tagged_structure:
+            page_object[PdfName.of("StructParents")] = page_index
+        annotation_references = internal_add_page_interactives(context, page)
+        if annotation_references:
+            page_object[PdfName.of("Annots")] = annotation_references
+        if page.rotation:
+            page_object[PdfName.of("Rotate")] = page.rotation
+        if page.cropbox is not None:
+            page_object[PdfName.of("CropBox")] = list(page.cropbox)
+        page_reference = context.graph.add(page_object)
+        context.page_references.append(page_reference)
+        context.page_objects.append((page_reference, page_object))
+
+
+def internal_add_signature(
+    context: internal_PdfBuildContext,
+    signature: PdfSignaturePlan | None,
+) -> PdfReference | None:
+    if signature is None:
+        return None
+    signature_dictionary = context.graph.add(
+        {
+            PdfName.of("Type"): PdfName.of("Sig"),
+            PdfName.of("Filter"): PdfName.of("Adobe.PPKLite"),
+            PdfName.of("SubFilter"): PdfName.of("adbe.pkcs7.detached"),
+            PdfName.of("ByteRange"): internal_PdfByteRangePlaceholder(),
+            PdfName.of("Contents"): internal_PdfSignatureContentsPlaceholder(
+                signature.contents_length
+            ),
+        }
+    )
+    signature_field = context.graph.add(
+        {
+            PdfName.of("Type"): PdfName.of("Annot"),
+            PdfName.of("Subtype"): PdfName.of("Widget"),
+            PdfName.of("FT"): PdfName.of("Sig"),
+            PdfName.of("Rect"): [0, 0, 0, 0],
+            PdfName.of("T"): "Signature1",
+            PdfName.of("V"): signature_dictionary,
+            PdfName.of("F"): 4,
+        }
+    )
+    first_page_reference, first_page = context.page_objects[0]
+    existing_annotations = first_page.get(PdfName.of("Annots"))
+    if isinstance(existing_annotations, (list, tuple)):
+        first_page_annotations = [*existing_annotations, signature_field]
+    elif existing_annotations is None:
+        first_page_annotations = [signature_field]
+    else:
+        first_page_annotations = [existing_annotations, signature_field]
+    context.graph.replace(
+        first_page_reference,
+        {**first_page, PdfName.of("Annots"): first_page_annotations},
+    )
+    return signature_field
+
+
+def internal_finish_page_tree(context: internal_PdfBuildContext) -> None:
+    context.graph.replace(
+        context.pages_reference,
+        {
+            PdfName.of("Type"): PdfName.of("Pages"),
+            PdfName.of("Kids"): context.page_references,
+            PdfName.of("Count"): len(context.page_references),
+        },
+    )
+
+
+def internal_create_catalog(context: internal_PdfBuildContext) -> internal_PdfDictionary:
+    catalog: internal_PdfDictionary = {
+        PdfName.of("Type"): PdfName.of("Catalog"),
+        PdfName.of("Pages"): context.pages_reference,
+    }
+    language = context.document.metadata.get("Lang")
+    if language:
+        catalog[PdfName.of("Lang")] = PdfString(str(language).encode("utf-8"))
+    if context.document.metadata.get("Title"):
+        catalog[PdfName.of("ViewerPreferences")] = {
+            PdfName.of("DisplayDocTitle"): True,
+        }
+    return catalog
+
+
+def internal_add_outlines(
+    context: internal_PdfBuildContext,
+    catalog: internal_PdfDictionary,
+    outlines: Sequence[Sequence[object]] | None,
+) -> None:
+    generated_outlines = tuple(
+        (block.level or 1, block.text.strip(), page_number)
+        for page_number, page in enumerate(context.document.pages, 1)
+        for block in page.blocks
+        if block.kind is BlockKind.HEADING and block.text.strip()
+    )
+    outline_source = outlines if outlines is not None else generated_outlines
+    if not outline_source or not context.page_references:
+        return
+    outline_items: list[PdfReference] = []
+    outline_levels: list[int] = []
+    for row in outline_source:
+        if len(row) < 3 or not isinstance(row[1], str) or not isinstance(row[2], int):
+            continue
+        page_index = row[2] - 1
+        if page_index < 0 or page_index >= len(context.page_references):
+            continue
+        outline_items.append(
+            context.graph.add(
+                {
+                    PdfName.of("Title"): PdfString(row[1].encode("utf-8")),
+                    PdfName.of("Dest"): [
+                        context.page_references[page_index],
+                        PdfName.of("Fit"),
+                    ],
+                }
+            )
+        )
+        outline_levels.append(int(row[0]) if isinstance(row[0], int) else 1)
+    if not outline_items:
+        return
+    outline_root = context.graph.add(
+        {
+            PdfName.of("Type"): PdfName.of("Outlines"),
+            PdfName.of("Count"): len(outline_items),
+            PdfName.of("First"): outline_items[0],
+            PdfName.of("Last"): outline_items[-1],
+        }
+    )
+    stack: list[tuple[int, PdfReference]] = []
+    last_by_parent: dict[PdfReference, PdfReference] = {}
+    top_level_items: list[PdfReference] = []
+    for index, item_reference in enumerate(outline_items):
+        item = cast(
+            internal_PdfDictionary,
+            context.graph.objects[item_reference.object_number],
+        )
+        level = max(1, outline_levels[index])
+        while stack and stack[-1][0] >= level:
+            stack.pop()
+        parent = stack[-1][1] if stack else outline_root
+        item[PdfName.of("Parent")] = parent
+        previous = last_by_parent.get(parent)
+        if previous is not None:
+            item[PdfName.of("Prev")] = previous
+            previous_item = cast(
+                internal_PdfDictionary,
+                context.graph.objects[previous.object_number],
+            )
+            previous_item[PdfName.of("Next")] = item_reference
+            context.graph.replace(previous, previous_item)
+        else:
+            parent_item = cast(
+                internal_PdfDictionary,
+                context.graph.objects[parent.object_number],
+            )
+            parent_item[PdfName.of("First")] = item_reference
+            context.graph.replace(parent, parent_item)
+        last_by_parent[parent] = item_reference
+        if parent == outline_root:
+            top_level_items.append(item_reference)
+        stack.append((level, item_reference))
+        context.graph.replace(item_reference, item)
+    root_item = cast(
+        internal_PdfDictionary,
+        context.graph.objects[outline_root.object_number],
+    )
+    root_item[PdfName.of("First")] = top_level_items[0]
+    root_item[PdfName.of("Last")] = top_level_items[-1]
+    context.graph.replace(outline_root, root_item)
+    catalog[PdfName.of("Outlines")] = outline_root
+
+
+def internal_add_acroform(
+    context: internal_PdfBuildContext,
+    catalog: internal_PdfDictionary,
+    signature_field: PdfReference | None,
+) -> None:
+    if signature_field is not None:
+        catalog[PdfName.of("AcroForm")] = {
+            PdfName.of("SigFlags"): 3,
+            PdfName.of("NeedAppearances"): False,
+            PdfName.of("Fields"): [*context.form_field_references, signature_field],
+        }
+    elif context.form_field_references:
+        catalog[PdfName.of("AcroForm")] = {
+            PdfName.of("NeedAppearances"): False,
+            PdfName.of("Fields"): context.form_field_references,
+        }
+
+
+def internal_add_tagged_structure(
+    context: internal_PdfBuildContext,
+    catalog: internal_PdfDictionary,
+    *,
+    enabled: bool,
+) -> None:
+    if not enabled or not context.page_references:
+        return
+    graph = context.graph
+    structure_root = graph.add(
+        {PdfName.of("Type"): PdfName.of("StructTreeRoot"), PdfName.of("K"): []}
+    )
+    structure_kids: list[PdfReference] = []
+    parent_tree_entries: list[object] = []
+    for page_number, page_reference in enumerate(context.page_references, 1):
+        page_group = graph.add(
+            {
+                PdfName.of("Type"): PdfName.of("StructElem"),
+                PdfName.of("S"): PdfName.of("Div"),
+                PdfName.of("P"): structure_root,
+                PdfName.of("Pg"): page_reference,
+                PdfName.of("K"): [],
+                PdfName.of("T"): PdfString(f"Page {page_number}".encode("utf-8")),
+            }
+        )
+        structure_kids.append(page_group)
+        page_group_kids: list[PdfReference] = []
+        section_kids: dict[PdfReference, list[PdfReference]] = {}
+        section_parents: dict[PdfReference, PdfReference] = {}
+        section_ordinals: dict[PdfReference, int] = {}
+        section_stack: list[tuple[int, PdfReference]] = []
+        active_section: PdfReference | None = None
+        page_entries: list[PdfReference] = []
+        for mcid, (role, _) in enumerate(context.page_tagged_lines[page_number - 1]):
+            if role.startswith("H"):
+                level = int(role[1:])
+                while section_stack and section_stack[-1][0] >= level:
+                    section_stack.pop()
+                section_parent = section_stack[-1][1] if section_stack else page_group
+                active_section = graph.add(
+                    {
+                        PdfName.of("Type"): PdfName.of("StructElem"),
+                        PdfName.of("S"): PdfName.of("Sect"),
+                        PdfName.of("P"): section_parent,
+                        PdfName.of("Pg"): page_reference,
+                        PdfName.of("K"): [],
+                        PdfName.of("T"): PdfString(
+                            f"Section {len(section_kids) + 1}".encode("utf-8")
+                        ),
+                    }
+                )
+                section_kids[active_section] = []
+                section_parents[active_section] = section_parent
+                section_ordinals[active_section] = len(section_ordinals) + 1
+                if section_parent == page_group:
+                    page_group_kids.append(active_section)
+                else:
+                    section_kids[section_parent].append(active_section)
+                section_stack.append((level, active_section))
+            active_section = section_stack[-1][1] if section_stack else None
+            element = graph.add(
+                {
+                    PdfName.of("Type"): PdfName.of("StructElem"),
+                    PdfName.of("S"): PdfName.of(role),
+                    PdfName.of("P"): active_section or page_group,
+                    PdfName.of("Pg"): page_reference,
+                    PdfName.of("K"): {
+                        PdfName.of("Type"): PdfName.of("MCR"),
+                        PdfName.of("MCID"): mcid,
+                    },
+                    PdfName.of("T"): PdfString(
+                        f"Page {page_number} line {mcid + 1}".encode("utf-8")
+                    ),
+                }
+            )
+            if active_section:
+                section_kids[active_section].append(element)
+            else:
+                page_group_kids.append(element)
+            page_entries.append(element)
+        for figure in context.document.pages[page_number - 1].figures:
+            metadata = figure.metadata
+            decorative = bool(metadata.get("decorative", False))
+            figure_element: internal_PdfDictionary = {
+                PdfName.of("Type"): PdfName.of("StructElem"),
+                PdfName.of("S"): PdfName.of("Artifact" if decorative else "CoreFigure"),
+                PdfName.of("P"): active_section or page_group,
+                PdfName.of("Pg"): page_reference,
+                PdfName.of("K"): [],
+            }
+            if not decorative:
+                alternate = next(
+                    (
+                        str(metadata[key])
+                        for key in ("alt", "alternate_text", "description")
+                        if metadata.get(key)
+                    ),
+                    None,
+                )
+                if alternate:
+                    figure_element[PdfName.of("Alt")] = PdfString(alternate.encode("utf-8"))
+            figure_reference = graph.add(figure_element)
+            if active_section:
+                section_kids[active_section].append(figure_reference)
+            else:
+                page_group_kids.append(figure_reference)
+        for section, children in section_kids.items():
+            graph.replace(
+                section,
+                {
+                    PdfName.of("Type"): PdfName.of("StructElem"),
+                    PdfName.of("S"): PdfName.of("Sect"),
+                    PdfName.of("P"): section_parents.get(section, page_group),
+                    PdfName.of("Pg"): page_reference,
+                    PdfName.of("K"): children,
+                    PdfName.of("T"): PdfString(
+                        f"Section {section_ordinals[section]}".encode("utf-8")
+                    ),
+                },
+            )
+        graph.replace(
+            page_group,
+            {
+                PdfName.of("Type"): PdfName.of("StructElem"),
+                PdfName.of("S"): PdfName.of("Div"),
+                PdfName.of("P"): structure_root,
+                PdfName.of("Pg"): page_reference,
+                PdfName.of("K"): page_group_kids,
+                PdfName.of("T"): PdfString(f"Page {page_number}".encode("utf-8")),
+            },
+        )
+        parent_tree_entries.append(page_entries)
+    language = context.document.metadata.get("Lang")
+    graph.replace(
+        structure_root,
+        {
+            PdfName.of("Type"): PdfName.of("StructTreeRoot"),
+            PdfName.of("K"): structure_kids,
+            PdfName.of("RoleMap"): {PdfName.of("CoreFigure"): PdfName.of("Figure")},
+            **({PdfName.of("Lang"): PdfString(str(language).encode("utf-8"))} if language else {}),
+            PdfName.of("ParentTree"): graph.add(
+                {
+                    PdfName.of("Nums"): [
+                        item
+                        for index, entries in enumerate(parent_tree_entries)
+                        for item in (index, entries)
+                    ]
+                }
+            ),
+        },
+    )
+    catalog[PdfName.of("StructTreeRoot")] = structure_root
+
+
+def internal_add_attachments(
+    context: internal_PdfBuildContext,
+    catalog: internal_PdfDictionary,
+    attachments: Mapping[str, bytes] | None,
+) -> None:
+    if not attachments:
+        return
+    names: list[object] = []
+    for filename, data in attachments.items():
+        stream = context.graph.add(PdfStream({}, bytes(data)))
+        filespec = context.graph.add(
+            {
+                PdfName.of("Type"): PdfName.of("Filespec"),
+                PdfName.of("F"): PdfString(filename.encode("utf-8")),
+                PdfName.of("EF"): {PdfName.of("F"): stream},
+            }
+        )
+        names.extend((PdfString(filename.encode("utf-8")), filespec))
+    catalog[PdfName.of("Names")] = {PdfName.of("EmbeddedFiles"): {PdfName.of("Names"): names}}
+
+
+def internal_build_trailer(
+    context: internal_PdfBuildContext,
+    catalog: internal_PdfDictionary,
+) -> dict[object, object]:
+    trailer_info: PdfReference | None = None
+    if context.document.metadata:
+        info = {
+            PdfName.of(str(key)): PdfString(str(value).encode("utf-8"))
+            for key, value in context.document.metadata.items()
+            if not str(key).startswith("_")
+        }
+        if info:
+            trailer_info = context.graph.add(info)
+    catalog_reference = context.graph.add(catalog)
+    trailer: dict[object, object] = {PdfName.of("Root"): catalog_reference}
+    if trailer_info is not None:
+        trailer[PdfName.of("Info")] = trailer_info
+    return trailer
+
+
+def internal_canonical_file_id(document: Document) -> bytes:
+    file_id_hasher = sha256()
+    digest_record = document_to_json_dict(document)
+    digest_record.pop("diagnostics", None)
+    for page_record in cast(list[dict[str, object]], digest_record.get("pages", [])):
+        page_record.pop("diagnostics", None)
+    encoder = json.JSONEncoder(sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    for chunk in encoder.iterencode(digest_record):
+        file_id_hasher.update(chunk.encode("utf-8"))
+    return file_id_hasher.digest()[:16]
+
+
+def internal_serialize_pdf(
+    context: internal_PdfBuildContext,
+    trailer: Mapping[object, object],
+    *,
+    encryption: StandardPdfEncryption | None,
+    signature: PdfSignaturePlan | None,
+    version: str,
+) -> bytes:
+    if encryption is None:
+        output = context.graph.to_pdf(trailer=trailer, version=version)
+        return apply_signature_plan(output, signature) if signature is not None else output
+    return serialize_encrypted_pdf_file(
+        context.graph.objects,
+        trailer=trailer,
+        encryption=encryption,
+        file_id=internal_canonical_file_id(context.document),
+        version=version,
+    )
 
 
 def serialize_document_to_pdf(
@@ -47,503 +663,33 @@ def serialize_document_to_pdf(
         raise ValueError("PDF encryption and signature containers cannot be combined")
     if signature is not None and not document.pages:
         raise ValueError("a signed PDF requires at least one page")
-    graph = PdfObjectGraph()
-    pages_reference = graph.add(None)
-    font = font_provider or StandardType1FontProvider(font_name)
-    page_tagged_lines = tuple(tuple(internal_tagged_lines(page)) for page in document.pages)
-    page_lines = tuple(
-        tuple(line for _, line in tagged_lines) for tagged_lines in page_tagged_lines
-    )
-    font_resource = font.add_to_graph(
-        graph,
-        (line.text for lines in page_lines for line in lines),
-    )
-    page_references: list[PdfReference] = []
-    page_objects: list[tuple[PdfReference, dict[PdfName, object]]] = []
-    form_field_references: list[PdfReference] = []
-    for page, lines in zip(document.pages, page_lines, strict=True):
-        content = content_stream_for_page(
-            page,
-            font_resource,
-            lines,
-            tagged=tagged_structure,
-            tagged_lines=page_tagged_lines[len(page_references)],
-        )
-        content_reference = graph.add(PdfStream({}, content))
-        page_object: dict[PdfName, object] = {
-            PdfName.of("Type"): PdfName.of("Page"),
-            PdfName.of("Parent"): pages_reference,
-            PdfName.of("MediaBox"): [0, 0, page.width or 612.0, page.height or 792.0],
-            PdfName.of("Resources"): {
-                PdfName.of("Font"): {
-                    PdfName.of(font_resource.resource_name): font_resource.reference
-                },
-            },
-            PdfName.of("Contents"): content_reference,
-        }
-        if tagged_structure:
-            page_object[PdfName.of("StructParents")] = len(page_references)
-        annotation_references: list[PdfReference] = []
-        for annotation in page.annotations:
-            annotation_object: dict[PdfName, object] = {
-                PdfName.of("Type"): PdfName.of("Annot"),
-                PdfName.of("Subtype"): PdfName.of(annotation.subtype or "Text"),
-                PdfName.of("Rect"): list(annotation.bbox or (0, 0, 0, 0)),
-            }
-            if annotation.contents:
-                annotation_object[PdfName.of("Contents")] = PdfString(
-                    annotation.contents.encode("utf-8")
-                )
-            if annotation.destination is not None:
-                annotation_object[PdfName.of("A")] = {
-                    PdfName.of("S"): PdfName.of("URI"),
-                    PdfName.of("URI"): PdfString(str(annotation.destination).encode("utf-8")),
-                }
-            annotation_references.append(graph.add(annotation_object))
-        for link in page.links:
-            if link.url is None:
-                continue
-            annotation_references.append(
-                graph.add(
-                    {
-                        PdfName.of("Type"): PdfName.of("Annot"),
-                        PdfName.of("Subtype"): PdfName.of("Link"),
-                        PdfName.of("Rect"): list(link.bbox or (0, 0, 0, 0)),
-                        PdfName.of("A"): {
-                            PdfName.of("S"): PdfName.of("URI"),
-                            PdfName.of("URI"): PdfString(link.url.encode("utf-8")),
-                        },
-                    }
-                )
-            )
-        for field in page.form_fields:
-            field_type = field.field_type
-            if field_type.casefold() in {"text", "tx"}:
-                field_type = "Tx"
-            elif field_type.casefold() in {"button", "checkbox", "btn"}:
-                field_type = "Btn"
-            field_object: dict[PdfName, object] = {
-                PdfName.of("Type"): PdfName.of("Annot"),
-                PdfName.of("Subtype"): PdfName.of("Widget"),
-                PdfName.of("FT"): PdfName.of(field_type),
-                PdfName.of("T"): PdfString(field.name.encode("utf-8")),
-                PdfName.of("Rect"): list(field.bbox or (0, 0, 0, 0)),
-            }
-            is_button = field_type.casefold() in {"btn", "button"}
-            if not is_button:
-                field_object[PdfName.of("DA")] = PdfString(
-                    f"/{font_resource.resource_name} 10 Tf 0 g".encode("ascii")
-                )
-            if field.value_text:
-                field_object[PdfName.of("V")] = PdfString(field.value_text.encode("utf-8"))
-            flags = (1 if field.read_only else 0) | (2 if field.required else 0)
-            flags |= 4 if field.no_export else 0
-            if flags:
-                field_object[PdfName.of("Ff")] = flags
-            if field.options:
-                field_object[PdfName.of("Opt")] = [
-                    PdfString(option.encode("utf-8")) for option in field.options
-                ]
-            x0, y0, x1, y1 = field.bbox or (0, 0, 0, 0)
-            appearance_text = (
-                b"BT /"
-                + font_resource.resource_name.encode("ascii")
-                + b" 10 Tf 0 g 2 2 Td "
-                + serialize_pdf_string(field.value_text.encode("utf-8"))
-                + b" Tj ET"
-            )
-            appearance = graph.add(
-                PdfStream(
-                    {
-                        PdfName.of("Type"): PdfName.of("XObject"),
-                        PdfName.of("Subtype"): PdfName.of("Form"),
-                        PdfName.of("BBox"): [0, 0, max(0, x1 - x0), max(0, y1 - y0)],
-                        PdfName.of("Resources"): {
-                            PdfName.of("Font"): {
-                                PdfName.of(font_resource.resource_name): font_resource.reference
-                            }
-                        },
-                    },
-                    appearance_text,
-                )
-            )
-            if is_button:
-                off_appearance = graph.add(
-                    PdfStream(
-                        {
-                            PdfName.of("Type"): PdfName.of("XObject"),
-                            PdfName.of("Subtype"): PdfName.of("Form"),
-                            PdfName.of("BBox"): [0, 0, max(0, x1 - x0), max(0, y1 - y0)],
-                        },
-                        b"",
-                    )
-                )
-                state = PdfName.of("Yes") if field.value_text else PdfName.of("Off")
-                field_object[PdfName.of("AS")] = state
-                field_object[PdfName.of("AP")] = {
-                    PdfName.of("N"): {
-                        PdfName.of("Off"): off_appearance,
-                        PdfName.of("Yes"): appearance,
-                    }
-                }
-            else:
-                field_object[PdfName.of("AP")] = {PdfName.of("N"): appearance}
-            field_reference = graph.add(field_object)
-            annotation_references.append(field_reference)
-            form_field_references.append(field_reference)
-        for figure in page.figures:
-            marker = {
-                "kind": figure.kind,
-                "bbox": figure.bbox,
-                "metadata": dict(figure.metadata),
-            }
-            annotation_references.append(
-                graph.add(
-                    {
-                        PdfName.of("Type"): PdfName.of("Annot"),
-                        PdfName.of("Subtype"): PdfName.of("CoreFigure"),
-                        PdfName.of("Rect"): list(figure.bbox or (0, 0, 0, 0)),
-                        PdfName.of("Contents"): PdfString(
-                            json.dumps(marker, default=str).encode("utf-8")
-                        ),
-                    }
-                )
-            )
-        if annotation_references:
-            page_object[PdfName.of("Annots")] = annotation_references
-        if page.rotation:
-            page_object[PdfName.of("Rotate")] = page.rotation
-        if page.cropbox is not None:
-            page_object[PdfName.of("CropBox")] = list(page.cropbox)
-        page_reference = graph.add(page_object)
-        page_references.append(page_reference)
-        page_objects.append((page_reference, page_object))
-    signature_field: PdfReference | None = None
-    if signature is not None:
-        signature_dictionary = graph.add(
-            {
-                PdfName.of("Type"): PdfName.of("Sig"),
-                PdfName.of("Filter"): PdfName.of("Adobe.PPKLite"),
-                PdfName.of("SubFilter"): PdfName.of("adbe.pkcs7.detached"),
-                PdfName.of("ByteRange"): internal_PdfByteRangePlaceholder(),
-                PdfName.of("Contents"): internal_PdfSignatureContentsPlaceholder(
-                    signature.contents_length
-                ),
-            }
-        )
-        signature_field = graph.add(
-            {
-                PdfName.of("Type"): PdfName.of("Annot"),
-                PdfName.of("Subtype"): PdfName.of("Widget"),
-                PdfName.of("FT"): PdfName.of("Sig"),
-                PdfName.of("Rect"): [0, 0, 0, 0],
-                PdfName.of("T"): "Signature1",
-                PdfName.of("V"): signature_dictionary,
-                PdfName.of("F"): 4,
-            }
-        )
-        first_page_reference, first_page = page_objects[0]
-        existing_annotations = first_page.get(PdfName.of("Annots"))
-        if isinstance(existing_annotations, (list, tuple)):
-            first_page_annotations = [*existing_annotations, signature_field]
-        elif existing_annotations is None:
-            first_page_annotations = [signature_field]
-        else:
-            first_page_annotations = [existing_annotations, signature_field]
-        graph.replace(
-            first_page_reference,
-            {**first_page, PdfName.of("Annots"): first_page_annotations},
-        )
-    graph.replace(
-        pages_reference,
-        {
-            PdfName.of("Type"): PdfName.of("Pages"),
-            PdfName.of("Kids"): page_references,
-            PdfName.of("Count"): len(page_references),
-        },
-    )
-    catalog = {
-        PdfName.of("Type"): PdfName.of("Catalog"),
-        PdfName.of("Pages"): pages_reference,
-    }
-    generated_outlines = tuple(
-        (block.level or 1, block.text.strip(), page_number)
-        for page_number, page in enumerate(document.pages, 1)
-        for block in page.blocks
-        if block.kind is BlockKind.HEADING and block.text.strip()
-    )
-    outline_source = outlines if outlines is not None else generated_outlines
-    language = document.metadata.get("Lang")
-    if language:
-        catalog[PdfName.of("Lang")] = PdfString(str(language).encode("utf-8"))
-    if document.metadata.get("Title"):
-        catalog[PdfName.of("ViewerPreferences")] = {
-            PdfName.of("DisplayDocTitle"): True,
-        }
-    if outline_source and page_references:
-        outline_items: list[PdfReference] = []
-        outline_levels: list[int] = []
-        for row in outline_source:
-            if len(row) < 3 or not isinstance(row[1], str) or not isinstance(row[2], int):
-                continue
-            page_index = row[2] - 1
-            if page_index < 0 or page_index >= len(page_references):
-                continue
-            outline_items.append(
-                graph.add(
-                    {
-                        PdfName.of("Title"): PdfString(row[1].encode("utf-8")),
-                        PdfName.of("Dest"): [page_references[page_index], PdfName.of("Fit")],
-                    }
-                )
-            )
-            outline_levels.append(int(row[0]) if isinstance(row[0], int) else 1)
-        if outline_items:
-            outline_root = graph.add(
-                {
-                    PdfName.of("Type"): PdfName.of("Outlines"),
-                    PdfName.of("Count"): len(outline_items),
-                    PdfName.of("First"): outline_items[0],
-                    PdfName.of("Last"): outline_items[-1],
-                }
-            )
-            stack: list[tuple[int, PdfReference]] = []
-            last_by_parent: dict[PdfReference, PdfReference] = {}
-            top_level_items: list[PdfReference] = []
-            for index, item_reference in enumerate(outline_items):
-                item = cast(dict[PdfName, object], graph.objects[item_reference.object_number])
-                level = max(1, outline_levels[index])
-                while stack and stack[-1][0] >= level:
-                    stack.pop()
-                parent = stack[-1][1] if stack else outline_root
-                item[PdfName.of("Parent")] = parent
-                previous = last_by_parent.get(parent)
-                if previous is not None:
-                    item[PdfName.of("Prev")] = previous
-                    previous_item = cast(
-                        dict[PdfName, object], graph.objects[previous.object_number]
-                    )
-                    previous_item[PdfName.of("Next")] = item_reference
-                    graph.replace(previous, previous_item)
-                else:
-                    parent_item = cast(dict[PdfName, object], graph.objects[parent.object_number])
-                    parent_item[PdfName.of("First")] = item_reference
-                    graph.replace(parent, parent_item)
-                last_by_parent[parent] = item_reference
-                if parent == outline_root:
-                    top_level_items.append(item_reference)
-                stack.append((level, item_reference))
-                graph.replace(item_reference, item)
-            root_item = cast(dict[PdfName, object], graph.objects[outline_root.object_number])
-            root_item[PdfName.of("First")] = top_level_items[0]
-            root_item[PdfName.of("Last")] = top_level_items[-1]
-            graph.replace(outline_root, root_item)
-            catalog[PdfName.of("Outlines")] = outline_root
-    if signature_field is not None:
-        catalog[PdfName.of("AcroForm")] = {
-            PdfName.of("SigFlags"): 3,
-            PdfName.of("NeedAppearances"): False,
-            PdfName.of("Fields"): [*form_field_references, signature_field],
-        }
-    elif form_field_references:
-        catalog[PdfName.of("AcroForm")] = {
-            PdfName.of("NeedAppearances"): False,
-            PdfName.of("Fields"): form_field_references,
-        }
-    if tagged_structure and page_references:
-        structure_root = graph.add(
-            {PdfName.of("Type"): PdfName.of("StructTreeRoot"), PdfName.of("K"): []}
-        )
-        structure_kids: list[PdfReference] = []
-        parent_tree_entries: list[object] = []
-        for page_number, page_reference in enumerate(page_references, 1):
-            page_group = graph.add(
-                {
-                    PdfName.of("Type"): PdfName.of("StructElem"),
-                    PdfName.of("S"): PdfName.of("Div"),
-                    PdfName.of("P"): structure_root,
-                    PdfName.of("Pg"): page_reference,
-                    PdfName.of("K"): [],
-                    PdfName.of("T"): PdfString(f"Page {page_number}".encode("utf-8")),
-                }
-            )
-            structure_kids.append(page_group)
-            page_group_kids: list[PdfReference] = []
-            section_kids: dict[PdfReference, list[PdfReference]] = {}
-            section_parents: dict[PdfReference, PdfReference] = {}
-            section_stack: list[tuple[int, PdfReference]] = []
-            active_section: PdfReference | None = None
-            page_entries: list[PdfReference] = []
-            for mcid, (role, _) in enumerate(page_tagged_lines[page_number - 1]):
-                if role.startswith("H"):
-                    level = int(role[1:])
-                    while section_stack and section_stack[-1][0] >= level:
-                        section_stack.pop()
-                    section_parent = section_stack[-1][1] if section_stack else page_group
-                    active_section = graph.add(
-                        {
-                            PdfName.of("Type"): PdfName.of("StructElem"),
-                            PdfName.of("S"): PdfName.of("Sect"),
-                            PdfName.of("P"): section_parent,
-                            PdfName.of("Pg"): page_reference,
-                            PdfName.of("K"): [],
-                            PdfName.of("T"): PdfString(
-                                f"Section {len(section_kids) + 1}".encode("utf-8")
-                            ),
-                        }
-                    )
-                    section_kids[active_section] = []
-                    section_parents[active_section] = section_parent
-                    if section_parent == page_group:
-                        page_group_kids.append(active_section)
-                    else:
-                        section_kids[section_parent].append(active_section)
-                    section_stack.append((level, active_section))
-                active_section = section_stack[-1][1] if section_stack else None
-                element = graph.add(
-                    {
-                        PdfName.of("Type"): PdfName.of("StructElem"),
-                        PdfName.of("S"): PdfName.of(role),
-                        PdfName.of("P"): active_section or page_group,
-                        PdfName.of("Pg"): page_reference,
-                        PdfName.of("K"): {
-                            PdfName.of("Type"): PdfName.of("MCR"),
-                            PdfName.of("MCID"): mcid,
-                        },
-                        PdfName.of("T"): PdfString(
-                            f"Page {page_number} line {mcid + 1}".encode("utf-8")
-                        ),
-                    }
-                )
-                section_kids[active_section].append(
-                    element
-                ) if active_section else page_group_kids.append(element)
-                page_entries.append(element)
-            for figure in document.pages[page_number - 1].figures:
-                metadata = figure.metadata
-                decorative = bool(metadata.get("decorative", False))
-                figure_element: dict[PdfName, object] = {
-                    PdfName.of("Type"): PdfName.of("StructElem"),
-                    PdfName.of("S"): PdfName.of("Artifact" if decorative else "CoreFigure"),
-                    PdfName.of("P"): active_section or page_group,
-                    PdfName.of("Pg"): page_reference,
-                    PdfName.of("K"): [],
-                }
-                if not decorative:
-                    alternate = next(
-                        (
-                            str(metadata[key])
-                            for key in ("alt", "alternate_text", "description")
-                            if metadata.get(key)
-                        ),
-                        None,
-                    )
-                    if alternate:
-                        figure_element[PdfName.of("Alt")] = PdfString(alternate.encode("utf-8"))
-                figure_reference = graph.add(figure_element)
-                section_kids[active_section].append(
-                    figure_reference
-                ) if active_section else page_group_kids.append(figure_reference)
-            for section, children in section_kids.items():
-                graph.replace(
-                    section,
-                    {
-                        PdfName.of("Type"): PdfName.of("StructElem"),
-                        PdfName.of("S"): PdfName.of("Sect"),
-                        PdfName.of("P"): section_parents.get(section, page_group),
-                        PdfName.of("Pg"): page_reference,
-                        PdfName.of("K"): children,
-                        PdfName.of("T"): PdfString(
-                            f"Section {list(section_kids).index(section) + 1}".encode("utf-8")
-                        ),
-                    },
-                )
-            graph.replace(
-                page_group,
-                {
-                    PdfName.of("Type"): PdfName.of("StructElem"),
-                    PdfName.of("S"): PdfName.of("Div"),
-                    PdfName.of("P"): structure_root,
-                    PdfName.of("Pg"): page_reference,
-                    PdfName.of("K"): page_group_kids,
-                    PdfName.of("T"): PdfString(f"Page {page_number}".encode("utf-8")),
-                },
-            )
-            parent_tree_entries.append(page_entries)
-        graph.replace(
-            structure_root,
-            {
-                PdfName.of("Type"): PdfName.of("StructTreeRoot"),
-                PdfName.of("K"): structure_kids,
-                PdfName.of("RoleMap"): {PdfName.of("CoreFigure"): PdfName.of("Figure")},
-                **(
-                    {PdfName.of("Lang"): PdfString(str(language).encode("utf-8"))}
-                    if language
-                    else {}
-                ),
-                PdfName.of("ParentTree"): graph.add(
-                    {
-                        PdfName.of("Nums"): [
-                            item
-                            for index, entries in enumerate(parent_tree_entries)
-                            for item in (index, entries)
-                        ]
-                    }
-                ),
-            },
-        )
-        catalog[PdfName.of("StructTreeRoot")] = structure_root
-    if attachments:
-        names: list[object] = []
-        for filename, data in attachments.items():
-            stream = graph.add(PdfStream({}, bytes(data)))
-            filespec = graph.add(
-                {
-                    PdfName.of("Type"): PdfName.of("Filespec"),
-                    PdfName.of("F"): PdfString(filename.encode("utf-8")),
-                    PdfName.of("EF"): {PdfName.of("F"): stream},
-                }
-            )
-            names.extend((PdfString(filename.encode("utf-8")), filespec))
-        catalog[PdfName.of("Names")] = {PdfName.of("EmbeddedFiles"): {PdfName.of("Names"): names}}
-    if document.metadata:
-        info = {
-            PdfName.of(str(key)): PdfString(str(value).encode("utf-8"))
-            for key, value in document.metadata.items()
-            if not str(key).startswith("_")
-        }
-        if info:
-            trailer_info = graph.add(info)
-        else:
-            trailer_info = None
-    else:
-        trailer_info = None
-    catalog_reference = graph.add(catalog)
-    trailer: dict[object, object] = {PdfName.of("Root"): catalog_reference}
-    if trailer_info is not None:
-        trailer[PdfName.of("Info")] = trailer_info
-    if encryption is None:
-        output = graph.to_pdf(trailer=trailer, version=version)
-        return apply_signature_plan(output, signature) if signature is not None else output
-    file_id = sha256(document.to_json(sort_keys=True).encode("utf-8")).digest()[:16]
-    return serialize_encrypted_pdf_file(
-        graph.objects,
-        trailer=trailer,
+    context = internal_create_build_context(document, font_name, font_provider)
+    internal_add_pages(context, tagged_structure=tagged_structure)
+    signature_field = internal_add_signature(context, signature)
+    internal_finish_page_tree(context)
+    catalog = internal_create_catalog(context)
+    internal_add_outlines(context, catalog, outlines)
+    internal_add_acroform(context, catalog, signature_field)
+    internal_add_tagged_structure(context, catalog, enabled=tagged_structure)
+    internal_add_attachments(context, catalog, attachments)
+    trailer = internal_build_trailer(context, catalog)
+    return internal_serialize_pdf(
+        context,
+        trailer,
         encryption=encryption,
-        file_id=file_id,
+        signature=signature,
         version=version,
     )
 
 
 def content_stream_for_page(
     page: Page,
-    font: PdfFontResource | None = None,
+    font: PdfFontResource,
     lines: Iterable[TextLine] | None = None,
     *,
     tagged: bool = False,
     tagged_lines: Iterable[tuple[str, TextLine]] | None = None,
 ) -> bytes:
-    font = font or StandardType1FontProvider().add_to_graph(PdfObjectGraph(), ())
     commands: list[bytes] = []
     role_lines = tuple(
         tagged_lines or (("P", line) for line in (lines or internal_page_lines(page)))

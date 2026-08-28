@@ -599,7 +599,6 @@ def internal_page_image_regions(
         raster = internal_decoded_image_raster(
             image,
             display_area,
-            cache=getattr(capture.page, "extraction_cache", None),
             image_cache=getattr(getattr(capture.page, "document", None), "image_cache", None),
             max_pixels=max_pixels,
             upscale=upscale,
@@ -617,17 +616,25 @@ def internal_page_image_regions(
                     (orientation.value, float(display_area), int(max_pixels), upscale),
                 )
                 cache = getattr(getattr(capture.page, "document", None), "image_cache", None)
-                cached_oriented = cache.get(oriented_key) if cache is not None else None
-                if isinstance(cached_oriented, internal_Raster):
-                    oriented = cached_oriented
+                if cache is not None:
+                    cached_oriented = cache.get_or_create(
+                        oriented_key,
+                        lambda image=image, raster=raster, orientation=orientation: (
+                            internal_orient_direct_image_raster(
+                                image,
+                                raster,
+                                orientation=orientation,
+                            )
+                        ),
+                    )
+                    if isinstance(cached_oriented, internal_Raster):
+                        oriented = cached_oriented
                 else:
                     oriented = internal_orient_direct_image_raster(
                         image,
                         raster,
                         orientation=orientation,
                     )
-                    if cache is not None:
-                        cache.put(oriented_key, oriented)
             regions.append(
                 internal_RasterRegion(
                     oriented,

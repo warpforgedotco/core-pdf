@@ -1,8 +1,8 @@
 import pytest
 
 from core_pdf import PdfDocument
+from core_pdf.impl.engine.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.engine.writing import serialize_pdf_file
-from core_pdf.impl.objects import PdfStream
 from core_pdf.impl.primitives import PdfName, PdfReference
 
 

@@ -6,6 +6,7 @@ from typing import Any, cast
 
 import pytest
 
+from core_pdf.impl.engine.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.engine.spec.s_09_fonts import decoder as decoder_module
 from core_pdf.impl.engine.spec.s_09_fonts.cmap_tounicode import ToUnicodeCMap
 from core_pdf.impl.engine.spec.s_09_fonts.decoder import (
@@ -18,7 +19,6 @@ from core_pdf.impl.engine.spec.s_09_fonts.font_program_truetype import (
     internal_invert_unicode_cmap,
 )
 from core_pdf.impl.engine.spec.s_09_fonts.glyphs import glyph_name_to_unicode
-from core_pdf.impl.objects import PdfStream
 from core_pdf.impl.primitives import PdfString
 
 TESTS_DIR = Path(__file__).parents[6]
@@ -412,22 +412,13 @@ def test_font_decoder_identity_fallback_does_not_emit_surrogates() -> None:
     assert decoder.decode(b"\xd8\x00") == "\ufffd"
 
 
-def test_font_decoder_applies_learned_mapping_to_unknown_identity_code() -> None:
+def test_font_decoder_has_no_mutable_document_learning_state() -> None:
     decoder = FontDecoder(cid_type0_font("Identity-H", ordering="Unknown"))
     encoded = b"\x00A"
 
     assert decoder.decode(encoded) == "A"
-    assert decoder.decode_cache
-    assert decoder.glyphs_cache
-    assert decoder.cid_glyph_cache
-    assert decoder.install_learned_unicode({encoded: "Z"}) == 1
-    assert not decoder.decode_cache
-    assert not decoder.glyphs_cache
-    assert not decoder.cid_glyph_cache
-
-    glyph = decoder.decode_glyphs(encoded)[0]
-    assert glyph.unicode == "Z"
-    assert glyph.unicode_source == "learned_ocr"
+    assert not hasattr(decoder, "learned_unicode")
+    assert not hasattr(decoder, "install_learned_unicode")
 
 
 def test_cid_decoder_rejects_private_use_true_type_cmap_values() -> None:

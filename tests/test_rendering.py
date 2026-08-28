@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
 from io import BytesIO
+from threading import Event
 
 import imagecodecs
 import numpy
@@ -13,6 +16,7 @@ from core_pdf.impl.engine.page import text_rotation_correction_for_runs
 from core_pdf.impl.engine.render.display import (
     CompiledRenderPlan,
     DisplayList,
+    ImagePaintItem,
     PathPaintItem,
     RenderOptions,
 )
@@ -37,6 +41,7 @@ from core_pdf.impl.engine.spec.s_07_content.page_program import (
 )
 from core_pdf.impl.engine.spec.s_07_document.document import PdfDocument
 from core_pdf.impl.engine.spec.s_07_document.page import PdfPage
+from core_pdf.impl.engine.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.engine.spec.s_08_graphics.color import (
     ImageColorManager,
     internal_sampled_separation_rgb_lut,
@@ -47,7 +52,6 @@ from core_pdf.impl.engine.spec.s_08_graphics.image_decode import (
     decode_pdf_image,
 )
 from core_pdf.impl.exceptions import PdfRasterTooLargeError
-from core_pdf.impl.objects import PdfStream
 from core_pdf.impl.runtime.image_cache import ImageCache
 
 
@@ -817,6 +821,40 @@ def test_axis_aligned_image_rasterizes_native_array_samples() -> None:
     numpy.testing.assert_array_equal(raster.array(), expected)
 
 
+def test_image_paint_boundary_prepares_without_mutating_source_dictionary() -> None:
+    dictionary = {
+        "Width": 2,
+        "Height": 1,
+        "ColorSpace": "DeviceRGB",
+        "BitsPerComponent": 8,
+        "__soft_mask_raw_data__": bytes((0, 255)),
+        "__soft_mask_dictionary__": {
+            "Width": 2,
+            "Height": 1,
+            "ColorSpace": "DeviceGray",
+            "BitsPerComponent": 8,
+        },
+    }
+    original = deepcopy(dictionary)
+    page = rendered_page(width=2, height=1)
+    page.display_list.append(
+        "image",
+        1,
+        raw_data=bytes((10, 20, 30, 40, 50, 60)),
+        dictionary=dictionary,
+        bbox=(0, 0, 2, 1),
+    )
+
+    item = page.display_list.items[0]
+    assert isinstance(item, ImagePaintItem)
+    assert item.source is not None
+    page.rasterize(background=(255, 255, 255, 255), cache=False)
+    page.rasterize(background=(255, 255, 255, 255), cache=False)
+
+    assert dictionary == original
+    assert "__core_pdf_render_converted_image_data__" not in dictionary
+
+
 def test_image_decode_recovers_unambiguous_samples_from_malformed_icc() -> None:
     samples = bytes((10, 20, 30, 40, 50, 60))
 
@@ -903,6 +941,79 @@ def test_image_source_applies_soft_mask_once() -> None:
     numpy.testing.assert_array_equal(raster.array[0, :, 3], (0, 255))
 
 
+def test_image_source_prepares_native_soft_mask_and_reports_all_bytes() -> None:
+    source = ImageSource(
+        bytes((10, 20, 30)),
+        {
+            "Width": 1,
+            "Height": 1,
+            "ColorSpace": "DeviceRGB",
+            "BitsPerComponent": 8,
+            "__soft_mask_raw_data__": bytes((0, 64, 128, 255)),
+            "__soft_mask_dictionary__": {
+                "Width": 2,
+                "Height": 2,
+                "ColorSpace": "DeviceGray",
+                "BitsPerComponent": 8,
+            },
+        },
+    )
+
+    prepared = source.prepare()
+
+    assert prepared is source.prepare()
+    assert prepared is not None
+    assert prepared.soft_mask is not None
+    assert prepared.soft_mask.array.shape == (2, 2, 1)
+    assert prepared.nbytes == prepared.raster.nbytes + prepared.soft_mask.nbytes
+    numpy.testing.assert_array_equal(prepared.soft_mask.array[:, :, 0], ((0, 64), (128, 255)))
+
+
+def test_image_source_cache_single_flights_preparation() -> None:
+    cache = ImageCache(max_bytes=1024)
+    entered = Event()
+    release = Event()
+    second_started = Event()
+    preparations: list[ImageSource] = []
+
+    class BlockingImageSource(ImageSource):
+        def internal_prepare(self):
+            preparations.append(self)
+            entered.set()
+            assert release.wait(5)
+            return super().internal_prepare()
+
+    dictionary = {
+        "Width": 1,
+        "Height": 1,
+        "ColorSpace": "DeviceRGB",
+        "BitsPerComponent": 8,
+    }
+    first_source = BlockingImageSource(
+        bytes((10, 20, 30)), dictionary, cache=cache, cache_key=("shared", 1)
+    )
+    second_source = BlockingImageSource(
+        bytes((10, 20, 30)), dictionary, cache=cache, cache_key=("shared", 1)
+    )
+
+    def prepare_second():
+        second_started.set()
+        return second_source.prepare()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first_future = executor.submit(first_source.prepare)
+        assert entered.wait(5)
+        second_future = executor.submit(prepare_second)
+        assert second_started.wait(5)
+        assert not second_future.done()
+        release.set()
+        first = first_future.result(timeout=5)
+        second = second_future.result(timeout=5)
+
+    assert first is second
+    assert len(preparations) == 1
+
+
 def test_image_mask_source_exposes_alpha_channel() -> None:
     source = ImageSource(
         bytes((0b10000000,)),
@@ -919,6 +1030,27 @@ def test_image_mask_source_exposes_alpha_channel() -> None:
     assert raster is not None
     assert raster.color_model == "gray"
     numpy.testing.assert_array_equal(raster.array[0, :, 1], (255, 0))
+
+
+def test_image_mask_decode_is_applied_once_at_preparation_boundary() -> None:
+    page = rendered_page(width=2, height=1)
+    page.display_list.append(
+        "image",
+        1,
+        raw_data=bytes((0b10000000,)),
+        dictionary={
+            "Width": 2,
+            "Height": 1,
+            "ImageMask": True,
+            "BitsPerComponent": 1,
+            "Decode": [1, 0],
+        },
+        bbox=(0, 0, 2, 1),
+    )
+
+    actual = page.rasterize(background=(255, 255, 255, 255)).array()
+
+    numpy.testing.assert_array_equal(actual[0, :, 0], (255, 0))
 
 
 @pytest.mark.parametrize("rotation", [90, 180, 270])

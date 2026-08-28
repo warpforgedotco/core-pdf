@@ -11,6 +11,7 @@ import numpy
 import pytest
 
 from core_pdf.impl.engine.model.geometry import RectBox
+from core_pdf.impl.engine.render.display import internal_image_quad
 from core_pdf.impl.engine.render.kernels import (
     RASTER_COORDINATE_CACHE_MAX_ENTRIES,
     internal_cached_raster_coordinates,
@@ -18,9 +19,6 @@ from core_pdf.impl.engine.render.kernels import (
     internal_fill_path_crossing_spans,
     internal_fill_path_sample_crossings,
     internal_fill_path_sample_crossings_numpy,
-    internal_image_mask_decode_inverts,
-    internal_image_quad,
-    internal_image_raw_bytes,
     internal_intersect_box,
     internal_shading_color_rgba,
     internal_soft_mask_alpha_at,
@@ -91,49 +89,24 @@ def test_shading_cmyk_clamps_components_before_conversion() -> None:
     assert out_of_range == (248, 150, 37, 64)
 
 
-class TestImageRawBytes:
-    def test_bytes_and_memoryview_are_returned_without_copying(self) -> None:
-        raw = b"abc"
-        assert internal_image_raw_bytes(raw) is raw
-        view = memoryview(b"abc")
-        assert internal_image_raw_bytes(view) is view
-
-    def test_bytearray_is_wrapped_as_an_unsigned_byte_view(self) -> None:
-        result = internal_image_raw_bytes(bytearray(b"abc"))
-        assert isinstance(result, memoryview)
-        assert bytes(result) == b"abc"
-
-
-class TestImageMaskDecodeInverts:
-    def test_descending_decode_array_inverts(self) -> None:
-        assert internal_image_mask_decode_inverts([1, 0]) is True
-
-    def test_ascending_decode_array_does_not_invert(self) -> None:
-        assert internal_image_mask_decode_inverts([0, 1]) is False
-
-    @pytest.mark.parametrize("value", [None, [], [1], "10", {"a": 1}, ["x", "y"]])
-    def test_malformed_decode_arrays_do_not_invert(self, value: object) -> None:
-        assert internal_image_mask_decode_inverts(value) is False
-
-
 class TestSoftMaskAlphaAt:
     def test_absent_mask_is_fully_opaque(self) -> None:
         assert internal_soft_mask_alpha_at(None, 0.5, 0.5) == 255
 
     def test_samples_are_read_with_a_flipped_v_axis(self) -> None:
         # 2x2 mask laid out row-major from the top.
-        mask = (bytes([10, 20, 30, 40]), 2, 2)
+        mask = numpy.array([[10, 20], [30, 40]], dtype=numpy.uint8)
         assert internal_soft_mask_alpha_at(mask, 0.0, 1.0) == 10
         assert internal_soft_mask_alpha_at(mask, 0.9, 1.0) == 20
         assert internal_soft_mask_alpha_at(mask, 0.0, 0.0) == 30
 
     def test_coordinates_outside_the_mask_clamp_to_its_edge(self) -> None:
-        mask = (bytes([10, 20, 30, 40]), 2, 2)
+        mask = numpy.array([[10, 20], [30, 40]], dtype=numpy.uint8)
         assert internal_soft_mask_alpha_at(mask, 5.0, 0.0) == 40
         assert internal_soft_mask_alpha_at(mask, -5.0, 5.0) == 10
 
     def test_truncated_sample_buffer_reads_as_opaque(self) -> None:
-        assert internal_soft_mask_alpha_at((b"", 2, 2), 0.5, 0.5) == 255
+        assert internal_soft_mask_alpha_at(numpy.empty((0, 0), dtype=numpy.uint8), 0.5, 0.5) == 255
 
 
 class TestImageQuad:

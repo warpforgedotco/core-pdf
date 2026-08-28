@@ -72,6 +72,11 @@ class internal_Raster:
     def height(self) -> int:
         return self.image.height
 
+    @property
+    def nbytes(self) -> int:
+        """Expose the wrapped pixel footprint to the document image cache."""
+        return self.image.nbytes
+
 
 @dataclass(frozen=True, slots=True)
 class internal_RasterRegion:

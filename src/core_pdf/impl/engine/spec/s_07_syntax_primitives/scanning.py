@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
-from core_pdf.impl.engine.spec.s_07_syntax.tokens import SEPARATOR_TABLE
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.tokens import SEPARATOR_TABLE
 
 
 def skip_comment(data: bytes | memoryview, pos: int, data_len: int) -> int:

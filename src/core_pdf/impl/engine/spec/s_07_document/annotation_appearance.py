@@ -14,11 +14,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, cast
 
 from core_pdf.impl.engine.spec.s_07_content.geometry import transform_bbox
-from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_07_syntax.stream import PdfStream
+from core_pdf.impl.engine.spec.s_07_syntax.types import PdfDict
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.objects import PdfStream
-from core_pdf.impl.types import PdfDict
 
 if TYPE_CHECKING:
     from core_pdf.impl.engine.spec.s_07_content.state import TextState

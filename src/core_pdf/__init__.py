@@ -8,13 +8,13 @@ from core_pdf.impl import install_lazy_module_exports
 if TYPE_CHECKING:
     from core_pdf.impl.engine.document import PdfDocument
     from core_pdf.impl.engine.page import PdfPage
-    from core_pdf.impl.engine.parse import prewarm_runtime
+    from core_pdf.impl.engine.parse.ocr_tesseract import prewarm_runtime
     from core_pdf.impl.engine.spec.s_09_fonts.fallback import (
         PdfRasterFontFace,
         PdfRasterFontProvider,
         PdfRasterFontRequest,
     )
-    from core_pdf.impl.engine.structured import (
+    from core_pdf.impl.engine.structured.model import (
         ContentNode,
         DocumentTableView,
         DocumentTextView,
@@ -60,7 +60,7 @@ if TYPE_CHECKING:
     )
 
 internal_EXPORTS = {
-    "Document": ("core_pdf.impl.engine.structured", "Document"),
+    "Document": ("core_pdf.impl.engine.structured.model", "Document"),
     "PageSelection": ("core_pdf.impl.pages", "PageSelection"),
     "PdfDocument": ("core_pdf.impl.engine.document", "PdfDocument"),
     "serialize_document_to_pdf": (
@@ -102,23 +102,23 @@ internal_EXPORTS = {
     ),
     "PdfError": ("core_pdf.impl.exceptions", "PdfError"),
     "PdfContractError": ("core_pdf.impl.exceptions", "PdfContractError"),
-    "ContentNode": ("core_pdf.impl.engine.structured", "ContentNode"),
-    "DocumentTableView": ("core_pdf.impl.engine.structured", "DocumentTableView"),
-    "DocumentTextView": ("core_pdf.impl.engine.structured", "DocumentTextView"),
+    "ContentNode": ("core_pdf.impl.engine.structured.model", "ContentNode"),
+    "DocumentTableView": ("core_pdf.impl.engine.structured.model", "DocumentTableView"),
+    "DocumentTextView": ("core_pdf.impl.engine.structured.model", "DocumentTextView"),
     "DrawingRecord": ("core_pdf.impl.models", "DrawingRecord"),
     "ImageMetadata": ("core_pdf.impl.models", "ImageMetadata"),
     "ImageRecord": ("core_pdf.impl.models", "ImageRecord"),
     "PageScoped": ("core_pdf.impl.models", "PageScoped"),
-    "TableView": ("core_pdf.impl.engine.structured", "TableView"),
-    "TableReference": ("core_pdf.impl.engine.structured", "TableReference"),
-    "TableAssociatedText": ("core_pdf.impl.engine.structured", "TableAssociatedText"),
-    "TableColumnBand": ("core_pdf.impl.engine.structured", "TableColumnBand"),
-    "TableRowBand": ("core_pdf.impl.engine.structured", "TableRowBand"),
-    "TextView": ("core_pdf.impl.engine.structured", "TextView"),
-    "TextWord": ("core_pdf.impl.engine.structured", "TextWord"),
-    "TextDiagnostics": ("core_pdf.impl.engine.structured", "TextDiagnostics"),
-    "TextLineReference": ("core_pdf.impl.engine.structured", "TextLineReference"),
-    "TextRun": ("core_pdf.impl.engine.structured", "TextRun"),
+    "TableView": ("core_pdf.impl.engine.structured.model", "TableView"),
+    "TableReference": ("core_pdf.impl.engine.structured.model", "TableReference"),
+    "TableAssociatedText": ("core_pdf.impl.engine.structured.model", "TableAssociatedText"),
+    "TableColumnBand": ("core_pdf.impl.engine.structured.model", "TableColumnBand"),
+    "TableRowBand": ("core_pdf.impl.engine.structured.model", "TableRowBand"),
+    "TextView": ("core_pdf.impl.engine.structured.model", "TextView"),
+    "TextWord": ("core_pdf.impl.engine.structured.model", "TextWord"),
+    "TextDiagnostics": ("core_pdf.impl.engine.structured.model", "TextDiagnostics"),
+    "TextLineReference": ("core_pdf.impl.engine.structured.model", "TextLineReference"),
+    "TextRun": ("core_pdf.impl.engine.structured.model", "TextRun"),
     "PdfPage": ("core_pdf.impl.engine.page", "PdfPage"),
     "PdfDocumentClosedError": ("core_pdf.impl.exceptions", "PdfDocumentClosedError"),
     "PdfParseError": ("core_pdf.impl.exceptions", "PdfParseError"),
@@ -138,7 +138,7 @@ internal_EXPORTS = {
         "RuntimeConfig",
     ),
     "prewarm_runtime": (
-        "core_pdf.impl.engine.parse",
+        "core_pdf.impl.engine.parse.ocr_tesseract",
         "prewarm_runtime",
     ),
     "runtime_metrics": (

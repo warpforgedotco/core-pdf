@@ -8,7 +8,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, cast
 
-from core_pdf.impl.objects import PdfStream
+from core_pdf.impl.engine.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.primitives import PdfName, PdfReference, PdfString
 
 

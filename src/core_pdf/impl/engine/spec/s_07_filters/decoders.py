@@ -10,14 +10,14 @@ import numpy
 
 from core_pdf.impl.engine.spec.s_07_filters.decode_spec import FilterParams
 from core_pdf.impl.engine.spec.s_07_filters.errors import FilterParseError, FilterUnsupportedError
-from core_pdf.impl.engine.spec.s_07_filters.jbig2 import (
+from core_pdf.impl.engine.spec.s_07_filters.jbig2.codec import (
     Jbig2ParseError,
     Jbig2UnsupportedError,
     assemble_embedded_jbig2,
     decode_embedded_jbig2,
     parse_jbig2_file,
 )
-from core_pdf.impl.engine.spec.s_07_syntax.coercion import coerce_to_bytes, is_pdf_null
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.coercion import coerce_to_bytes, is_pdf_null
 
 
 def raise_pdf_parse(exc: BaseException) -> NoReturn:

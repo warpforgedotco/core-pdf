@@ -87,18 +87,26 @@ bytes → │ capture_page│ → plan_page ────────────
 | `parse/pipeline.py` | Lazy orchestration, single-flight locking, and product caching: `parse_page`, `extract_page`, and `page_extraction`. It assembles the typed `ParseReport` once per parsed page. |
 
 `parse/__init__.py` exposes only pipeline entry points and shared stage models. Stage-specific
-helpers are imported from their owner module. `internal_PageExtraction` memoizes each materialized
-stage, so asking for text after tables (or tables after text) reuses capture, recognition, fusion,
-layout, and emission products rather than running the content stream or OCR again.
+helpers are imported from their owner module. `internal_PageExtraction` is the single locked owner
+of page-local capture, recognition, fusion, layout, report, and assembly products. Document
+extraction builds an immutable enrichment snapshot for exactly the selected pages; learned font
+and stroked-glyph mappings are applied to selection-local captures and never mutate a page cache or
+font decoder. Direct page extraction is therefore independent of document extraction history.
 
 ### Table projections
 
 Table extraction produces one canonical view. `parse/tables.py` attaches derived row and column
 bands plus nearby `TableAssociatedText` records (title or caption) without rewriting cell
 topology. Emission reconciles those tables with text blocks, removes duplicate or rejected
-candidates, and assigns page-wide element order. `Page.tables`, `Document.table_view`, JSON, and
-HTML/Markdown all consume that same final tuple. Structured JSON schema 4.0 therefore has one
-`tables` field and no fallback table projection.
+candidates, assigns page-wide element order, and materializes title, caption, row-band, and
+column-band records. `Page.tables`, `Document.table_view`, JSON, and HTML/Markdown all consume that
+same final tuple; the structured value model does not rerun extraction heuristics.
+
+Structured JSON schema 5.0 is a normalized graph. Pages contain stable references to ordered
+nodes and interactive records; nodes reference canonical block, table, or figure IDs; blocks
+reference canonical line IDs. IDs have the deterministic form
+`p{page_number}:{kind}:{zero_based_index}`. Payloads occur once, and schema 4's duplicated node,
+element, line-reference, and table-reference snapshots are intentionally unsupported.
 
 ---
 
@@ -116,9 +124,9 @@ src/core_pdf/
                          image_cache (byte-budgeted LRU, single-flight decoding),
                          execution (bounded thread runtime, budgets, runtime config)
     models.py            public extraction records (DrawingRecord, ImageRecord)
-    objects.py           PdfStream and its lazy decoded-data cache
     exceptions.py        the PdfError hierarchy (incl. PdfDocumentClosedError)
     primitives.py        PdfName and friends (interned, precomputed hash)
+    types.py             source-buffer, protocol, and geometry aliases
     text.py              shared text kernel: collapse_ws, search_key,
                          collapse_character_spaced
     pages.py             PageSelection and its single normalization implementation
@@ -141,7 +149,7 @@ src/core_pdf/
 ### Dependency direction
 
 **There are no runtime import cycles between packages, and `import-linter` enforces
-it.** Seven contracts live in `[tool.importlinter]` in `pyproject.toml`; run them with
+it.** Ten contracts live in `[tool.importlinter]` in `pyproject.toml`; run them with
 `uv run --group lint lint-imports`. They also run in the `pre-push` prek stage, which
 is what CI's quality job executes, so a violation fails the build rather than review.
 
@@ -156,17 +164,18 @@ Three packages exist to be depended *upon* and must not depend upward:
 | --- | --- | --- |
 | `impl/runtime/` | nothing internal | zero internal imports |
 | `impl/engine/model/` | `impl/` base modules | clean |
-| `spec/s_07_syntax` | `impl/` base modules | clean |
+| `spec/s_07_syntax_primitives` | `impl/primitives.py` | clean |
 
 The line-text records (`LayoutLineText`, `LayoutLineTextSegment`,
 `LayoutWordSnapshot`) live in `model/line_text.py` rather than with the heuristics
 that build them, because `TextRun` memoizes reconstruction results on itself and the
 record layer must not name a type from `layout/`.
 
-Two helpers moved down for the same reason and should stay put: the generic cache-lock
-helpers are `impl/runtime/cache_lock.py`, not a document module, because the
-content-stream interpreter needs them; and `newstroke`/`stroked_text` are
-`parse/` modules, not engine-root ones, because only the pipeline uses them.
+Document cache and per-page locks belong to the spec-level `PdfDocument`; spec consumers
+name that ownership directly through their document protocols. Lightweight test doubles
+must provide their own locks, so there is no process-global fallback that can accidentally
+couple unrelated documents. `newstroke`/`stroked_text` remain `parse/` modules rather than
+engine-root ones because only the pipeline uses them.
 
 `layout/` is heuristics only and re-exports nothing — import from the owning module.
 `LayoutLine` lives in `layout/lines.py` because it is what line grouping *produces*;
@@ -175,14 +184,12 @@ content-stream interpreter needs them; and `newstroke`/`stroked_text` are
 `internal_materialize`) and `model/glyph_table.py` owns only the columnar storage that
 consumes them, so the two no longer import each other.
 
-**One piece of layering debt is named in the config rather than hidden.** `PdfStream`
-lives in `impl/objects.py`, a base module, but decodes through `s_07_filters`, so every
-module that touches a stream has a transitive path up into the engine. Four contracts
-would trip on that one edge, so each ignores it explicitly — and only it. The fix is to
-move `PdfStream` into the COS layer, which first needs the syntax *primitives*
-(`coercion`, `pdfdict`, `lexer_helpers`, `scanning`) separated from the COS objects that
-depend on the filters. The filter package's imports already imply that boundary: it
-reaches into `s_07_syntax` for exactly those four modules and nothing else.
+The chapter-7 bottom layers are explicit. `s_07_syntax_primitives` owns dependency-free
+lexical tables, scanning, coercion, dictionary lookup, and content-operator metadata.
+Filters may use those kernels. Above filters, `s_07_syntax` owns the COS parser,
+`PdfStream` and its lazy decode cache, xref and object resolution, and the recursive PDF
+object type vocabulary. Base modules therefore never depend back on the engine, and the
+contracts have no ignored runtime edges.
 
 **Two known knots**, both deliberate and neither a runtime package cycle:
 
@@ -201,7 +208,8 @@ Subpackages under `spec/` mirror **chapters of the PDF specification**:
 
 | Package | PDF chapter |
 | --- | --- |
-| `s_07_syntax` | 7 — lexer, tokens, xref, object model, resolver, coercion, text strings |
+| `s_07_syntax_primitives` | 7 — tokens, scanning, coercion, dictionary lookup, operators |
+| `s_07_syntax` | 7 — lexer, streams, xref, object model, resolver, text strings |
 | `s_07_filters` | 7 — stream filters (Flate, LZW, CCITT, JBIG2, …) |
 | `s_07_content` | 7 — content streams, operators, text state |
 | `s_07_document` | 7 — catalog, page tree, metadata |
@@ -210,18 +218,17 @@ Subpackages under `spec/` mirror **chapters of the PDF specification**:
 | `s_09_fonts` | 9 — font programs, CMaps, glyph decoding |
 | `s_14_structure` | 14 — logical structure tree |
 
-`s_07_syntax` is the COS layer — lexing, the object model, xref, and resolution are one
-cohesive unit and were merged into a single package. Splitting them across `s_07_syntax` and a
-separate `s_07_objects` produced a package-level import cycle (six edges each way) even though the
-modules themselves form an acyclic graph. The package now depends only on `impl/exceptions`,
-`impl/objects`, `impl/primitives`, and `impl/types`; keep it that way — nothing in `s_07_syntax`
-may import from another `spec/` subpackage or from `impl/engine/`.
+`s_07_syntax` is the upper COS layer — lexing, streams, the object model, xref, and resolution
+remain cohesive. Splitting those mutually dependent owners across `s_07_syntax` and a separate
+`s_07_objects` previously produced a package-level cycle. The lower
+`s_07_syntax_primitives` package is deliberately narrower: it contains only kernels needed by
+both filters and COS. Keep that package free of imports from filters or higher engine layers.
 
 Operator and filter metadata each have one declarative owner. Content-operator categories,
 dispatch names, text-only scan tables, Type 3 replay membership, and cached lexer keywords derive
-from `s_07_syntax/content_operators.py`; stream-filter aliases, decoders, predictor support, and
-decode-cache policy derive from `s_07_filters/registry.py`. Add metadata there instead of creating
-another parallel table.
+from `s_07_syntax_primitives/content_operators.py`; stream-filter aliases, decoders, predictor
+support, and decode-cache policy derive from `s_07_filters/registry.py`. Add metadata there instead
+of creating another parallel table.
 
 The spec-level `s_07_document/document.py` is the concrete owner of catalog, page-tree, labels,
 navigation, forms, attachments, and optional-content behavior. `document_xref.py` remains a

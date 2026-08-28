@@ -25,7 +25,7 @@ from core_pdf.impl.engine.spec.s_07_content.text_helpers import (
     gap_separator,
     normalize_extracted_text,
 )
-from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_08_graphics.image_decode import ImageSource
 from core_pdf.impl.engine.spec.s_08_graphics.matrix import Matrix
 from core_pdf.impl.types import Rectangle

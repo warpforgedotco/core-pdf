@@ -1,28 +1,18 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Compiled PDF dictionary lookup and inheritance kernels."""
+"""Inherited PDF dictionary value collection."""
 
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, cast
+from typing import cast
 
-if TYPE_CHECKING:
-    from core_pdf.impl.engine.spec.s_07_syntax.object_cache import (
-        CachedPdfObject,
-        InheritedValueMap,
-        InheritedValuesCache,
-    )
-    from core_pdf.impl.types import PdfDict
-
-
-def lookup_dict_key_default(value: object, key: str, default: object = None) -> object:
-    if not isinstance(value, dict):
-        return default
-    return value.get(key, default)
-
-
-def lookup_dict_key(value: object, key: str) -> object:
-    return lookup_dict_key_default(value, key, None)
+from core_pdf.impl.engine.spec.s_07_syntax.object_cache import (
+    CachedPdfObject,
+    InheritedValueMap,
+    InheritedValuesCache,
+)
+from core_pdf.impl.engine.spec.s_07_syntax.types import PdfDict
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 
 
 def collect_inherited_values(
@@ -76,8 +66,4 @@ def collect_inherited_values(
     return values
 
 
-__all__ = (
-    "collect_inherited_values",
-    "lookup_dict_key",
-    "lookup_dict_key_default",
-)
+__all__ = ("collect_inherited_values",)

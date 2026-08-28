@@ -106,9 +106,53 @@ def test_document_serializes_to_versioned_json() -> None:
 
     payload = document.to_json_dict()
 
-    assert payload["schema_version"] == "4.0"
+    assert payload["schema_version"] == "5.0"
     payload_any = cast(Any, payload)
-    assert payload_any["pages"][0]["blocks"][0]["kind"] == "heading"
+    assert payload_any["blocks"][0]["kind"] == "heading"
+    assert payload_any["blocks"][0]["line_ids"] == ["p1:line:0"]
+
+
+def test_schema_four_documents_are_rejected_instead_of_mislabeled() -> None:
+    with pytest.raises(ValueError, match="unsupported structured schema version: 4.0"):
+        Document(schema_version="4.0")
+
+
+def test_schema_five_normalizes_payloads_and_uses_stable_references() -> None:
+    line = TextLine("canonical")
+    document = Document(
+        pages=(
+            Page(
+                page_number=3,
+                blocks=(Block(0, BlockKind.PARAGRAPH, (line,)),),
+            ),
+        )
+    )
+
+    first = cast(Any, document.to_json_dict())
+    second = cast(Any, document.to_json_dict())
+
+    assert first == second
+    assert first["pages"][0]["node_ids"] == ["p3:node:0"]
+    assert first["nodes"] == [
+        {
+            "id": "p3:node:0",
+            "page_id": "p3",
+            "kind": "block",
+            "target_id": "p3:block:0",
+            "provenance": [],
+        }
+    ]
+    assert first["blocks"][0]["line_ids"] == ["p3:line:0"]
+    assert first["lines"][0]["id"] == "p3:line:0"
+    assert "payload" not in first["nodes"][0]
+    assert "blocks" not in first["pages"][0]
+
+
+def test_json_metadata_rejects_typed_values_instead_of_stringifying_them() -> None:
+    document = Document(metadata={"nested": {"invalid": object()}})
+
+    with pytest.raises(TypeError, match=r"\$\.metadata\.nested\.invalid"):
+        document.to_json_dict()
 
 
 def test_document_views_escape_html_and_render_semantics() -> None:
@@ -154,7 +198,7 @@ def test_document_serializes_tables_in_all_views() -> None:
     assert "<table><thead><tr><th>Name</th><th>Value</th></tr></thead>" in document.to_markdown()
     assert "<th>Name</th>" in document.to_html()
     payload = cast(Any, document.to_json_dict())
-    rows = payload["pages"][0]["tables"][0]["rows"]
+    rows = payload["tables"][0]["rows"]
     assert [[cell["text"] for cell in row] for row in rows] == [
         ["Name", "Value"],
         ["A", "1"],
@@ -195,4 +239,9 @@ def test_page_views_follow_unified_element_order() -> None:
         "<table><thead><tr><th>table</th></tr></thead><tbody></tbody></table>",
     ]
     payload = cast(Any, Document(pages=(page,)).to_json_dict())
-    assert payload["pages"][0]["elements"][0]["element_type"] == "figure"
+    assert payload["pages"][0]["node_ids"] == [
+        "p1:node:0",
+        "p1:node:1",
+        "p1:node:2",
+    ]
+    assert payload["nodes"][0]["target_id"] == "p1:figure:0"

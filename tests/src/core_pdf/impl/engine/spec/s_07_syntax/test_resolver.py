@@ -1,9 +1,45 @@
 from typing import cast
 
 from core_pdf.impl.engine.spec.s_07_syntax.resolver import ObjectResolver
+from core_pdf.impl.engine.spec.s_07_syntax.types import PdfDict
 from core_pdf.impl.engine.spec.s_07_syntax.xref import PdfXRefEntry, key_for
 from core_pdf.impl.primitives import PdfReference
-from core_pdf.impl.types import PdfDict
+
+
+def test_sparse_high_object_numbers_use_dictionary_caches() -> None:
+    resolver = ObjectResolver(
+        b"",
+        {key_for(999_999): PdfXRefEntry(offset=0)},
+        {},
+    )
+    try:
+        assert resolver.objects_gen0 is None
+        assert resolver.xref_gen0 is None
+    finally:
+        resolver.close()
+
+
+def test_dense_generation_zero_xref_uses_array_caches() -> None:
+    xref = {key_for(object_number): PdfXRefEntry(offset=0) for object_number in range(5_000)}
+    resolver = ObjectResolver(b"", xref, {})
+    try:
+        assert resolver.objects_gen0 is not None
+        assert resolver.xref_gen0 is not None
+        assert len(resolver.objects_gen0) == 5_000
+    finally:
+        resolver.close()
+
+
+def test_deep_cache_verifies_source_identity() -> None:
+    resolver = ObjectResolver(b"", {}, {})
+    source: list[object] = []
+    unrelated: list[object] = []
+    resolver.deep_cache[id(source)] = (unrelated, ["stale"])
+    try:
+        assert resolver.deep_resolve(source) is source
+        assert resolver.deep_cache[id(source)] == (source, source)
+    finally:
+        resolver.close()
 
 
 def test_resolves_demanded_object_missing_from_damaged_xref() -> None:

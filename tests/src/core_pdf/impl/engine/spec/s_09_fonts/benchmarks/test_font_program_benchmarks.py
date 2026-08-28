@@ -8,11 +8,11 @@ from pathlib import Path
 import pytest
 
 from core_pdf import PdfDocument
-from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_07_syntax.stream import PdfStream
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_09_fonts.decoder import FontDecoder
 from core_pdf.impl.engine.spec.s_09_fonts.font_program_opentype import OpenTypeFontProgram
 from core_pdf.impl.engine.spec.s_09_fonts.font_program_type1 import Type1FontProgram
-from core_pdf.impl.objects import PdfStream
 
 FIXTURES = Path(__file__).parents[7] / "fixtures"
 TYPE1_PDF = FIXTURES / "pdfminer.six" / "samples" / "simple5.pdf"

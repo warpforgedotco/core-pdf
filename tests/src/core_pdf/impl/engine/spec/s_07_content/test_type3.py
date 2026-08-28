@@ -1,3 +1,4 @@
+import threading
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -5,8 +6,8 @@ import pytest
 
 from core_pdf.impl.engine.spec.s_07_content.capture import type3_glyph_names
 from core_pdf.impl.engine.spec.s_07_content.state import TextState
+from core_pdf.impl.engine.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.engine.spec.s_09_fonts.decoder import FontDecoder, Type3CharProcProgram
-from core_pdf.impl.objects import PdfStream
 from core_pdf.impl.primitives import PdfName
 
 
@@ -16,7 +17,14 @@ def internal_type3_state(program: PdfStream) -> tuple[TextState, FontDecoder]:
         resolve=lambda value: value,
         resolve_name=lambda value: None,
     )
-    document = cast(Any, SimpleNamespace(resolver=resolver, decoder_cache={}))
+    document = cast(
+        Any,
+        SimpleNamespace(
+            resolver=resolver,
+            decoder_cache={},
+            internal_cache_lock=threading.RLock(),
+        ),
+    )
     state = TextState(document, {})
     state.font_widths = (500.0,) * 256
     font = {
@@ -68,7 +76,14 @@ def test_type3_win_ansi_euro_char_proc_is_rendered() -> None:
         resolve=lambda value: value,
         resolve_name=lambda value: None,
     )
-    document = cast(Any, SimpleNamespace(resolver=resolver, decoder_cache={}))
+    document = cast(
+        Any,
+        SimpleNamespace(
+            resolver=resolver,
+            decoder_cache={},
+            internal_cache_lock=threading.RLock(),
+        ),
+    )
     state = TextState(document, {})
     state.font_widths = (500.0,) * 256
     font = {

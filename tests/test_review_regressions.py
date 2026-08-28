@@ -24,9 +24,9 @@ from core_pdf.impl.engine.spec.s_07_document.metadata import (
 )
 from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.engine.spec.s_07_syntax.resolver_values import PdfValueResolver
+from core_pdf.impl.engine.spec.s_07_syntax.types import PdfDict
 from core_pdf.impl.engine.spec.s_09_fonts.decoder import FontDecoder
 from core_pdf.impl.primitives import MISSING, PdfName
-from core_pdf.impl.types import PdfDict
 
 
 def test_leading_dot_number_is_passed_to_operator() -> None:
@@ -343,6 +343,7 @@ def test_outline_links_are_resolved_shallowly() -> None:
 def test_structure_root_keeps_catalog_object_identity() -> None:
     root: dict[str, object] = {}
     document: PdfDocument[Any] = object.__new__(PdfDocument)
+    document.internal_cache_lock = threading.RLock()
     document.resolver = cast(Any, internal_TestResolver())
     document.catalog_cache = cast(PdfDict, {"StructTreeRoot": root})
     document.structure_cache = MISSING

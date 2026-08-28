@@ -14,7 +14,7 @@ from core_pdf.impl.engine.spec.s_07_filters.pipeline import (
     decode_stream_data,
     decode_stream_image_data,
 )
-from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_08_graphics.color import ImageColorManager
 from core_pdf.impl.engine.spec.s_08_graphics.image_metadata import pdf_int
 from core_pdf.impl.runtime.image_cache import ImageCache, ImageCacheKey
@@ -75,15 +75,41 @@ class ImageRaster:
         return int(self.array.nbytes)
 
 
+@dataclass(frozen=True, slots=True)
+class PreparedImage:
+    """Consumer-ready image data owned and cached by :class:`ImageSource`.
+
+    ``raster`` preserves the existing shared-image contract: when a colour image
+    carries a soft mask it includes a same-resolution alpha channel.  Renderers
+    additionally need the mask at its native resolution so a high-resolution
+    scan mask is not reduced to the colour image's dimensions.  Keeping that
+    immutable plane here gives every consumer one preparation and cache owner.
+    """
+
+    raster: ImageRaster
+    soft_mask: ImageRaster | None = None
+    is_stencil: bool = False
+
+    def __post_init__(self) -> None:
+        soft_mask = self.soft_mask
+        if soft_mask is not None and (soft_mask.color_model != "gray" or soft_mask.has_alpha):
+            raise ValueError("prepared image soft mask must be grayscale without alpha")
+
+    @property
+    def nbytes(self) -> int:
+        soft_mask = self.soft_mask
+        return self.raster.nbytes + (soft_mask.nbytes if soft_mask is not None else 0)
+
+
 class ImageSource:
-    """Thread-safe lazy decoder for one embedded image source."""
+    """Thread-safe lazy preparation owner for one embedded image source."""
 
     __slots__ = (
         "raw",
         "dictionary",
         "internal_lock",
-        "internal_raster",
-        "internal_decoded",
+        "internal_prepared",
+        "internal_prepared_once",
         "cache",
         "cache_key",
     )
@@ -99,37 +125,44 @@ class ImageSource:
         self.raw = raw
         self.dictionary = dictionary
         self.internal_lock = threading.Lock()
-        self.internal_raster: ImageRaster | None = None
-        self.internal_decoded = False
+        self.internal_prepared: PreparedImage | None = None
+        self.internal_prepared_once = False
         self.cache = cache
         self.cache_key = cache_key
 
-    def decode(self) -> ImageRaster | None:
+    def prepare(self) -> PreparedImage | None:
+        """Return the immutable prepared image, decoding at most once per cache key."""
         if self.cache is not None:
-            key = ImageCacheKey("decoded-image", self.cache_key or (id(self),))
-            value = self.cache.get_or_create(key, self.internal_decode)
-            return value if isinstance(value, ImageRaster) else None
-        if self.internal_decoded:
-            return self.internal_raster
+            key = ImageCacheKey("prepared-image", self.cache_key or (id(self),))
+            value = self.cache.get_or_create(key, self.internal_prepare)
+            return value if isinstance(value, PreparedImage) else None
+        if self.internal_prepared_once:
+            return self.internal_prepared
         with self.internal_lock:
-            if self.internal_decoded:
-                return self.internal_raster
-            self.internal_raster = self.internal_decode()
-            self.internal_decoded = True
-            return self.internal_raster
+            if self.internal_prepared_once:
+                return self.internal_prepared
+            self.internal_prepared = self.internal_prepare()
+            self.internal_prepared_once = True
+            return self.internal_prepared
 
-    def internal_decode(self) -> ImageRaster | None:
+    def decode(self) -> ImageRaster | None:
+        """Return the canonical raster retained for extraction API compatibility."""
+        prepared = self.prepare()
+        return prepared.raster if prepared is not None else None
+
+    def internal_prepare(self) -> PreparedImage | None:
+        is_stencil = lookup_dict_key(self.dictionary, "ImageMask") is True
         decoded = (
             self.internal_decode_mask()
-            if lookup_dict_key(self.dictionary, "ImageMask") is True
+            if is_stencil
             else decode_pdf_image(self.raw, self.dictionary)
         )
         if decoded is None:
             return None
         array: numpy.ndarray[Any, Any]
         if isinstance(decoded.data, numpy.ndarray):
-            decoded_array = cast(numpy.ndarray[Any, Any], decoded.data)
-            array = decoded_array.reshape((decoded.height, decoded.width, decoded.channels))
+            decoded_array = numpy.asarray(decoded.data)
+            array = decoded_array.reshape(decoded.height, decoded.width, decoded.channels)
         else:
             flat_array = numpy.frombuffer(decoded.data, dtype=numpy.uint8)
             array = flat_array.reshape(decoded.height, decoded.width, decoded.channels)
@@ -139,7 +172,15 @@ class ImageSource:
             color_model,
             has_alpha=decoded.channels in {2, 4},
         )
-        return self.internal_apply_soft_mask(raster)
+        if is_stencil:
+            return PreparedImage(raster, is_stencil=True)
+        soft_mask = self.internal_decode_soft_mask()
+        if soft_mask is None:
+            return PreparedImage(raster)
+        return PreparedImage(
+            self.internal_apply_soft_mask(raster, soft_mask),
+            soft_mask=soft_mask,
+        )
 
     def internal_decode_mask(self) -> DecodedRaster | None:
         width = pdf_int(lookup_dict_key(self.dictionary, "Width"), 0)
@@ -167,22 +208,26 @@ class ImageSource:
         array[:, :, 1] = alpha
         return DecodedRaster(array, width, height, 2)
 
-    def internal_apply_soft_mask(self, raster: ImageRaster) -> ImageRaster:
+    def internal_decode_soft_mask(self) -> ImageRaster | None:
         raw = self.dictionary.get("__soft_mask_raw_data__")
         dictionary = self.dictionary.get("__soft_mask_dictionary__")
         if not isinstance(raw, (bytes, memoryview)) or not isinstance(dictionary, dict):
-            return raster
+            return None
         mask_dictionary = dict(dictionary)
         mask_dictionary.setdefault("ColorSpace", "DeviceGray")
         mask_dictionary.setdefault("BitsPerComponent", 8)
-        mask = ImageSource(
-            raw,
-            mask_dictionary,
-            cache=self.cache,
-            cache_key=(*self.cache_key, "soft-mask"),
-        ).decode()
-        if mask is None:
-            return raster
+        # The parent PreparedImage owns this plane and reports its bytes to the
+        # document cache. Caching a second nested PreparedImage would count the
+        # same allocation twice and split preparation ownership again.
+        prepared = ImageSource(raw, mask_dictionary).prepare()
+        if prepared is None:
+            return None
+        mask = prepared.raster
+        if mask.color_model == "gray" and not mask.has_alpha:
+            return mask
+        return ImageRaster(mask.array[:, :, :1], "gray")
+
+    def internal_apply_soft_mask(self, raster: ImageRaster, mask: ImageRaster) -> ImageRaster:
         mask_array = mask.array[:, :, 0]
         y = numpy.minimum(
             mask.height - 1,
@@ -300,6 +345,7 @@ __all__ = (
     "DecodedRaster",
     "ImageRaster",
     "ImageSource",
+    "PreparedImage",
     "decode_pdf_image",
     "decode_pdf_image_samples",
 )

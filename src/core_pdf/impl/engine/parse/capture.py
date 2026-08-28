@@ -8,7 +8,7 @@ import re
 import time
 from bisect import bisect_left
 from collections import Counter, defaultdict
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import replace
 from typing import Any
 
@@ -38,14 +38,14 @@ from core_pdf.impl.engine.parse.model import (
 )
 from core_pdf.impl.engine.parse.newstroke import NewstrokeDecode, decode_newstroke_drawings
 from core_pdf.impl.engine.spec.s_07_content.page_program import PageProgram
-from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_08_graphics.image_metadata import (
     image_filter_names,
 )
 
 WORD_TOKEN_RE = re.compile(r"\w+")
 VECTOR_PAINT_OPERATION_WEIGHT = 3
-CAPTURED_PAGE_CACHE_KEY = "captured_page_program_v4"
+LearnedUnicodeMap = Mapping[object, Mapping[bytes, str]]
 
 # Thresholds for discarding a text layer that merely repeats another one. A layer needs
 # enough tokens for an overlap ratio to mean anything, then enough overlap to be judged a
@@ -200,6 +200,7 @@ def internal_apply_structure_actual_text(
 def internal_glyph_evidence_fields(
     glyph_fields: Iterable[tuple[str, bool, object, bytes, str, float | None]],
     runs: tuple[TextRun, ...],
+    learned_unicode: LearnedUnicodeMap | None = None,
 ) -> GlyphEvidence:
     authoritative = 0
     heuristic = 0
@@ -209,7 +210,7 @@ def internal_glyph_evidence_fields(
     semantic_characters = 0
     glyph_count = 0
     previous_decoder: object | None = None
-    learned: dict[bytes, str] | None = None
+    learned: Mapping[bytes, str] | None = None
     for (
         glyph_text,
         ignored_visible,
@@ -222,8 +223,7 @@ def internal_glyph_evidence_fields(
             continue
         glyph_count += 1
         if decoder is not previous_decoder:
-            candidate = getattr(decoder, "learned_unicode", None)
-            learned = candidate if isinstance(candidate, dict) and candidate else None
+            learned = learned_unicode.get(decoder) if learned_unicode is not None else None
             previous_decoder = decoder
         candidate_text = learned.get(code_bytes) if learned is not None else None
         learned_text = (
@@ -432,28 +432,35 @@ def internal_promoted_hidden_observations(capture: CapturedPage) -> ObservationB
     return internal_observations_from_runs(internal_promoted_hidden_runs(capture.runs))
 
 
-def internal_learned_glyph_text(glyph: GlyphObservation) -> str | None:
-    learned = getattr(glyph.font_decoder, "learned_unicode", None)
-    if not isinstance(learned, dict):
+def internal_learned_glyph_text(
+    glyph: GlyphObservation,
+    learned_unicode: LearnedUnicodeMap | None = None,
+) -> str | None:
+    if learned_unicode is None:
+        return None
+    learned = learned_unicode.get(glyph.font_decoder)
+    if learned is None:
         return None
     text = learned.get(glyph.code_bytes)
     return text if isinstance(text, str) and len(text) == 1 else None
 
 
-def internal_apply_learned_unicode_to_run(run: TextRun) -> TextRun:
-    if not run.glyph_clusters:
+def internal_apply_learned_unicode_to_run(
+    run: TextRun,
+    learned_unicode: LearnedUnicodeMap | None = None,
+) -> TextRun:
+    if not run.glyph_clusters or not learned_unicode:
         return run
     source = run.text
     cursor = 0
     output: list[str] = []
     changed = False
     previous_decoder: object | None = None
-    learned: dict[bytes, str] | None = None
+    learned: Mapping[bytes, str] | None = None
     for cluster in run.glyph_clusters:
         for decoder, code_bytes, glyph_text in cluster.iter_decode_fields():
             if decoder is not previous_decoder:
-                candidate = getattr(decoder, "learned_unicode", None)
-                learned = candidate if isinstance(candidate, dict) and candidate else None
+                learned = learned_unicode.get(decoder)
                 previous_decoder = decoder
             replacement = learned.get(code_bytes) if learned is not None else None
             original = glyph_text
@@ -747,13 +754,9 @@ def internal_capture_with_newstroke_text(
 def internal_capture_from_program(
     page: Any,
     program: PageProgram,
+    *,
+    learned_unicode: LearnedUnicodeMap | None = None,
 ) -> CapturedPage:
-    cache = getattr(page, "extraction_cache", None)
-    cache_key = CAPTURED_PAGE_CACHE_KEY
-    if cache is not None:
-        cached = cache.get(cache_key)
-        if isinstance(cached, CapturedPage) and cached.program is program:
-            return cached
     products = program.products
     program_runs = tuple(products.runs)
     glyphs_by_seqno: dict[int, list[str]] = defaultdict(list)
@@ -795,7 +798,7 @@ def internal_capture_from_program(
             enriched_runs.append(enriched)
     structured_runs = internal_apply_structure_actual_text(page, tuple(enriched_runs))
     raw_runs = tuple(
-        internal_apply_learned_unicode_to_run(run)
+        internal_apply_learned_unicode_to_run(run, learned_unicode)
         for run in internal_extractable_runs(structured_runs)
     )
     raw_text = "".join(run.text for run in raw_runs)
@@ -811,7 +814,11 @@ def internal_capture_from_program(
         painted_analysis = internal_analyze_text(painted_text)
         painted_text_quality = painted_analysis.quality
         painted_native_characters = painted_analysis.characters
-    glyph_evidence = internal_glyph_evidence_fields(products.glyphs.iter_evidence_rows(), raw_runs)
+    glyph_evidence = internal_glyph_evidence_fields(
+        products.glyphs.iter_evidence_rows(),
+        raw_runs,
+        learned_unicode,
+    )
     trusted_hidden_text = internal_hidden_text_is_trusted(
         native_characters=native_characters,
         painted_characters=painted_native_characters,
@@ -984,8 +991,6 @@ def internal_capture_from_program(
                 "seconds": newstroke_seconds,
             },
         )
-    if cache is not None:
-        cache[cache_key] = captured
     return captured
 
 

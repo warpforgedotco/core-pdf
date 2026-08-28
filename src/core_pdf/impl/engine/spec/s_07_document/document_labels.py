@@ -6,11 +6,11 @@ from __future__ import annotations
 from collections.abc import Callable
 from enum import StrEnum
 
-from core_pdf.impl.engine.spec.s_07_syntax.coercion import normalize_pdf_name
-from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_07_syntax.resolver_values import PdfValueResolver
 from core_pdf.impl.engine.spec.s_07_syntax.text_string import decode_pdf_text_string
-from core_pdf.impl.types import PdfDict
+from core_pdf.impl.engine.spec.s_07_syntax.types import PdfDict
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 
 ResolveFn = Callable[[object], object]
 MAX_PAGE_TREE_DEPTH = 100

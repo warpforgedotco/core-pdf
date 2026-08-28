@@ -16,7 +16,7 @@ from core_pdf.impl.types import Rectangle
 if TYPE_CHECKING:
     from core_pdf.impl.engine.structured.editor import DocumentEditor
 
-SCHEMA_VERSION = "4.0"
+SCHEMA_VERSION = "5.0"
 """Schema version stamped on every structured :class:`Document`."""
 
 JsonValue: TypeAlias = str | int | float | bool | None | list["JsonValue"] | dict[str, "JsonValue"]
@@ -84,29 +84,17 @@ class Table:
     rows: tuple[tuple[TableCell, ...], ...] = ()
     bbox: Rectangle | None = None
     confidence: float | None = None
+    title: TableAssociatedText | None = None
+    caption: TableAssociatedText | None = None
+    row_bands: tuple[TableRowBand, ...] = ()
+    column_bands: tuple[TableColumnBand, ...] = ()
     metadata: Mapping[str, Any] = field(default_factory=dict)
-    internal_row_bands_cache: tuple[TableRowBand, ...] | None = field(
-        default=None, init=False, repr=False, compare=False
-    )
-    internal_column_bands_cache: tuple[TableColumnBand, ...] | None = field(
-        default=None, init=False, repr=False, compare=False
-    )
     internal_content_bbox_cache: tuple[Rectangle | None] | None = field(
         default=None, init=False, repr=False, compare=False
     )
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "metadata", internal_freeze(self.metadata))
-
-    @property
-    def title(self) -> TableAssociatedText | None:
-        value = self.metadata.get("title")
-        return value if isinstance(value, TableAssociatedText) else None
-
-    @property
-    def caption(self) -> TableAssociatedText | None:
-        value = self.metadata.get("caption")
-        return value if isinstance(value, TableAssociatedText) else None
 
     @property
     def layout_bbox(self) -> Rectangle | None:
@@ -129,78 +117,6 @@ class Table:
         boxes = [cell.bbox for row in self.rows for cell in row if cell.bbox is not None]
         result = bbox_union(boxes) if boxes else self.bbox
         object.__setattr__(self, "internal_content_bbox_cache", (result,))
-        return result
-
-    @property
-    def row_bands(self) -> tuple[TableRowBand, ...]:
-        cached = self.internal_row_bands_cache
-        if cached is not None:
-            return cached
-        bands: list[TableRowBand] = []
-        associated = {
-            text.kind: text.text.casefold()
-            for text in (self.title, self.caption)
-            if text is not None
-        }
-        first_grid = next(
-            (
-                index
-                for index, row in enumerate(self.rows)
-                if any(cell.text.strip() for cell in row)
-                and not any(
-                    value in associated.values()
-                    for value in (cell.text.strip().casefold() for cell in row if cell.text.strip())
-                )
-            ),
-            None,
-        )
-        for index, row in enumerate(self.rows):
-            boxes = [cell.bbox for cell in row if cell.bbox is not None]
-            texts = tuple(cell.text.strip().casefold() for cell in row if cell.text.strip())
-            kind = "blank"
-            if texts:
-                if any(value in associated.values() for value in texts):
-                    kind = "title" if texts[0] == associated.get("title") else "caption"
-                elif first_grid is not None and index == first_grid and len(texts) >= 2:
-                    kind = "header"
-                else:
-                    kind = "body"
-            bands.append(
-                TableRowBand(
-                    index=index,
-                    bbox=bbox_union(boxes),
-                    kind=kind,
-                )
-            )
-        result = tuple(bands)
-        object.__setattr__(self, "internal_row_bands_cache", result)
-        return result
-
-    @property
-    def column_bands(self) -> tuple[TableColumnBand, ...]:
-        cached = self.internal_column_bands_cache
-        if cached is not None:
-            return cached
-        columns = max(
-            (cell.column + cell.column_span for row in self.rows for cell in row),
-            default=0,
-        )
-        # One pass bucketing each cell's bbox into the columns it spans;
-        # rescanning every cell per column index is O(rows * columns**2).
-        buckets: list[list[Rectangle]] = [[] for _ in range(columns)]
-        for row in self.rows:
-            for cell in row:
-                if cell.bbox is None:
-                    continue
-                for index in range(
-                    max(cell.column, 0), min(cell.column + cell.column_span, columns)
-                ):
-                    buckets[index].append(cell.bbox)
-        result = tuple(
-            TableColumnBand(index=index, bbox=bbox_union(boxes))
-            for index, boxes in enumerate(buckets)
-        )
-        object.__setattr__(self, "internal_column_bands_cache", result)
         return result
 
 
@@ -625,6 +541,8 @@ class Document:
     schema_version: str = SCHEMA_VERSION
 
     def __post_init__(self) -> None:
+        if self.schema_version != SCHEMA_VERSION:
+            raise ValueError(f"unsupported structured schema version: {self.schema_version}")
         object.__setattr__(self, "metadata", internal_freeze(self.metadata))
 
     @property

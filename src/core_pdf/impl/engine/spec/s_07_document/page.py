@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import threading
 from collections import deque
 from typing import TYPE_CHECKING, Any, cast
 
@@ -22,25 +21,23 @@ from core_pdf.impl.engine.spec.s_07_document.page_links import (
     resolve_annotation_dict,
 )
 from core_pdf.impl.engine.spec.s_07_document.records import RawAnnotation, RawLink
+from core_pdf.impl.engine.spec.s_07_syntax.inherited_values import collect_inherited_values
 from core_pdf.impl.engine.spec.s_07_syntax.object_cache import (
     CachedPdfObject,
     InheritedValueMap,
 )
-from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import (
-    collect_inherited_values,
-    lookup_dict_key,
-)
+from core_pdf.impl.engine.spec.s_07_syntax.stream import PdfStream
+from core_pdf.impl.engine.spec.s_07_syntax.types import PdfDict, PdfObject
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_14_structure.tree import PageStructure
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.objects import PdfStream
 from core_pdf.impl.primitives import (
     MISSING,
     MissingObject,
     PdfReference,
 )
 from core_pdf.impl.runtime.cache import ExtractionCache
-from core_pdf.impl.runtime.cache_lock import document_cache_lock
-from core_pdf.impl.types import PdfDict, PdfObject, Rectangle
+from core_pdf.impl.types import Rectangle
 
 PAGE_INHERITED_KEYS = (
     "MediaBox",
@@ -87,10 +84,7 @@ class PdfPage:
         self.document = document
         self.page_dict = page_dict
         self.page_number = page_number
-        page_lock = getattr(document, "page_lock", None)
-        self.internal_page_lock = (
-            page_lock(page_number) if callable(page_lock) else threading.RLock()
-        )
+        self.internal_page_lock = document.page_lock(page_number)
         self.inherited_values_cache = None
         self.contents = cast(CachedPdfObject | None, lookup_dict_key(self.page_dict, "Contents"))
         self.content_streams_cache = None
@@ -100,8 +94,8 @@ class PdfPage:
         self.page_box_cache = {}
         self.rotation_cache = MISSING
         self.resources_cache = MISSING
-        with document_cache_lock(document):
-            page_caches = getattr(document, "page_extraction_caches", None)
+        with document.internal_cache_lock:
+            page_caches = document.page_extraction_caches
             if page_caches is None:
                 page_caches = {}
                 document.page_extraction_caches = page_caches
@@ -353,7 +347,7 @@ class PdfPage:
             return program
 
     def collect_inherited_values(self) -> InheritedValueMap:
-        with document_cache_lock(self.document):
+        with self.document.internal_cache_lock:
             return collect_inherited_values(
                 self.page_dict,
                 PAGE_INHERITED_KEYS,

@@ -7,16 +7,17 @@ import typing
 import zlib
 from typing import cast
 
-from core_pdf.impl.engine.spec.s_07_syntax.coercion import (
+from core_pdf.impl.engine.spec.s_07_syntax.lexer import WS_TABLE, PdfLexer
+from core_pdf.impl.engine.spec.s_07_syntax.objects import PdfObjectStream
+from core_pdf.impl.engine.spec.s_07_syntax.stream import PdfStream
+from core_pdf.impl.engine.spec.s_07_syntax.types import PdfDict
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.coercion import (
     normalize_pdf_name,
     parse_int_strict,
 )
-from core_pdf.impl.engine.spec.s_07_syntax.lexer import WS_TABLE, PdfLexer
-from core_pdf.impl.engine.spec.s_07_syntax.objects import PdfObjectStream
-from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.objects import PdfStream
-from core_pdf.impl.types import PdfByteBuffer, PdfDict
+from core_pdf.impl.types import PdfByteBuffer
 
 
 class PdfXRefEntry:

@@ -1,10 +1,11 @@
+import threading
 from types import SimpleNamespace
 from typing import Any, cast
 
 from core_pdf.impl.engine.spec.s_07_content.operations import OperandWindow
 from core_pdf.impl.engine.spec.s_07_content.state import TextState
+from core_pdf.impl.engine.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.engine.spec.s_08_graphics.matrix import IDENTITY_MATRIX
-from core_pdf.impl.objects import PdfStream
 
 
 def test_distinct_stream_slices_with_equal_lengths_have_distinct_execution_keys() -> None:
@@ -23,7 +24,10 @@ def internal_consume(content: bytes) -> TextState:
         resolve_name=lambda internal_value: None,
         resolve_str=lambda internal_value: None,
     )
-    document = cast(Any, SimpleNamespace(resolver=resolver))
+    document = cast(
+        Any,
+        SimpleNamespace(resolver=resolver, internal_cache_lock=threading.RLock()),
+    )
     state = TextState(document, {})
     state.consume_stream(PdfStream(raw_data=content), {}, IDENTITY_MATRIX, 0)
     return state
@@ -66,6 +70,57 @@ def test_graphics_state_restore_recomputes_derived_text_scales() -> None:
     state.op_Q(OperandWindow(()), 0)
 
     assert state.text_advance_scale == 0.0072
+
+
+def test_graphics_state_save_restore_covers_every_snapshot_field() -> None:
+    state = internal_consume(b"")
+    fields = (
+        "ca",
+        "cb",
+        "cc",
+        "cd",
+        "ce",
+        "cf",
+        "fill_color",
+        "fill_pattern",
+        "fill_opacity",
+        "stroke_color",
+        "stroke_pattern",
+        "stroke_opacity",
+        "fill_color_space",
+        "stroke_color_space",
+        "compatibility_depth",
+        "blend_mode",
+        "group_alpha",
+        "flatness",
+        "render_intent",
+        "clip_bbox",
+        "line_width",
+        "line_cap",
+        "line_join",
+        "miter_limit",
+        "dash_pattern",
+        "font_size",
+        "font_operand",
+        "font_size_operand",
+        "horizontal_scale",
+        "char_space",
+        "word_space",
+        "rise",
+        "leading",
+        "render_mode",
+        "current_font",
+        "current_decoder",
+    )
+    before = tuple(getattr(state, name) for name in fields)
+
+    state.op_q(OperandWindow(()), 0)
+    sentinel = object()
+    for name in fields:
+        setattr(state, name, sentinel)
+    state.op_Q(OperandWindow(()), 0)
+
+    assert tuple(getattr(state, name) for name in fields) == before
 
 
 def test_pdfminer_double_quote_policy_omits_next_line_move() -> None:

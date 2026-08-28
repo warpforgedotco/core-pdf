@@ -12,10 +12,10 @@ from core_pdf import PdfDocument
 from core_pdf._vendor.fontTools.ttLib import TTLibError
 from core_pdf.impl.engine.model.geometry import flip_rect_vertical
 from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
-from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_07_syntax.stream import PdfStream
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_09_fonts.cmap_tounicode import ToUnicodeCMap
 from core_pdf.impl.exceptions import PdfUnsupportedError
-from core_pdf.impl.objects import PdfStream
 from core_pdf.impl.primitives import PdfReference
 
 _DATE = re.compile(r"[0-3]?\d[/\-][0-3]?\d[/\-]\d{2,4}")

@@ -5,9 +5,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, TypeAlias
 
+from core_pdf.impl.engine.spec.s_07_syntax.stream import PdfStream
+from core_pdf.impl.engine.spec.s_07_syntax.types import PdfDict
 from core_pdf.impl.engine.spec.s_08_graphics.matrix import Matrix
-from core_pdf.impl.objects import PdfStream
-from core_pdf.impl.types import PdfDict
 
 if TYPE_CHECKING:
     from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer

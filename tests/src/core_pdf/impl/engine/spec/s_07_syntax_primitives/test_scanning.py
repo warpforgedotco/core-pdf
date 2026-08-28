@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from itertools import product
 
-from core_pdf.impl.engine.spec.s_07_syntax.scanning import (
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.scanning import (
     skip_comment,
     skip_hex_string,
     skip_literal_string,

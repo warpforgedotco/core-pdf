@@ -1,26 +1,27 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
+import threading
 import typing
 
 if typing.TYPE_CHECKING:
     from typing import Any
 
-from core_pdf.impl.engine.spec.s_07_syntax.coercion import (
+from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
+from core_pdf.impl.engine.spec.s_07_syntax.object_cache import ObjectCache
+from core_pdf.impl.engine.spec.s_07_syntax.stream import PdfStream
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.coercion import (
     normalize_pdf_name,
     parse_int,
     parse_int_strict,
 )
-from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
-from core_pdf.impl.engine.spec.s_07_syntax.object_cache import ObjectCache
-from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.objects import PdfStream
 from core_pdf.impl.primitives import PdfReference
 
 
 class PdfObjectStream:
-    __slots__ = ("stream", "objects", "raw_body", "index", "lexer")
+    __slots__ = ("stream", "objects", "raw_body", "index", "lexer", "lock")
 
     def __init__(self, stream: PdfStream, kw_cache: dict[bytes, object] | None = None) -> None:
         type_name = normalize_pdf_name(lookup_dict_key(stream.dictionary, "Type"))
@@ -63,22 +64,24 @@ class PdfObjectStream:
         self.raw_body = body
         self.index = index_map
         self.lexer = PdfLexer(body, kw_cache=kw_cache)
+        self.lock = threading.RLock()
 
     def get(self, reference: int | PdfReference, default: Any = None) -> Any:
         obj_num = reference.object_number if isinstance(reference, PdfReference) else reference
         if obj_num < 0:
             raise ValueError("invalid object number")
-        if obj_num in self.objects:
-            return self.objects[obj_num]
-        if obj_num not in self.index:
-            return default
-        rel_offset = self.index[obj_num]
-        try:
-            result = self.lexer.parse_object_at(rel_offset)
-        except PdfParseError:
-            result = self.recover_object_at(rel_offset)
-        self.objects[obj_num] = result
-        return result
+        with self.lock:
+            if obj_num in self.objects:
+                return self.objects[obj_num]
+            if obj_num not in self.index:
+                return default
+            rel_offset = self.index[obj_num]
+            try:
+                result = self.lexer.parse_object_at(rel_offset)
+            except PdfParseError:
+                result = self.recover_object_at(rel_offset)
+            self.objects[obj_num] = result
+            return result
 
     def recover_object_at(self, rel_offset: int) -> Any:
         body = self.raw_body

@@ -47,7 +47,15 @@ def test_table_exposes_geometry_bands_and_associated_text() -> None:
             (TableCell(1, 0, "C", bbox=(0.0, 0.0, 10.0, 10.0)),),
         ),
         bbox=(0.0, 0.0, 20.0, 20.0),
-        metadata={"caption": TableAssociatedText("Caption", bbox=(-5.0, 20.0, 25.0, 25.0))},
+        caption=TableAssociatedText("Caption", bbox=(-5.0, 20.0, 25.0, 25.0)),
+        row_bands=(
+            TableRowBand(0, bbox=(0.0, 10.0, 20.0, 20.0), kind="header"),
+            TableRowBand(1, bbox=(0.0, 0.0, 10.0, 10.0), kind="body"),
+        ),
+        column_bands=(
+            TableColumnBand(0, bbox=(0.0, 0.0, 10.0, 20.0)),
+            TableColumnBand(1, bbox=(10.0, 10.0, 20.0, 20.0)),
+        ),
     )
 
     assert table.caption is not None
@@ -133,7 +141,7 @@ def test_document_text_view_preserves_line_page_ownership() -> None:
     assert document.text_view.line_references == (
         TextLineReference(page_number=4, line_index=0, line=line),
     )
-    assert cast(Any, document.to_json_dict())["line_references"][0]["page_number"] == 4
+    assert cast(Any, document.to_json_dict())["lines"][0]["page_id"] == "p4"
 
 
 def test_reference_ownership_preserves_zero_page_numbers() -> None:
@@ -161,7 +169,7 @@ def test_document_table_view_preserves_table_page_ownership() -> None:
 
     assert references == (TableReference(page_number=4, table_index=0, table=table),)
     payload = cast(Any, document.to_json_dict())
-    assert payload["table_references"][0]["page_number"] == 4
+    assert payload["tables"][0]["page_id"] == "p4"
 
 
 def test_node_provenance_and_page_diagnostics_are_serializable() -> None:
@@ -179,9 +187,10 @@ def test_node_provenance_and_page_diagnostics_are_serializable() -> None:
     assert page.nodes[0].provenance == ("stream",)
     payload = cast(Any, Document(pages=(page,)).to_json_dict())
     assert payload["pages"][0]["diagnostics"][0]["code"] == "table-check"
-    assert payload["pages"][0]["nodes"][0]["node_id"] == 0
-    assert payload["pages"][0]["nodes"][0]["provenance"] == ["stream"]
-    assert payload["nodes"][0]["page_number"] == 1
+    assert payload["pages"][0]["node_ids"] == ["p1:node:0"]
+    assert payload["nodes"][0]["id"] == "p1:node:0"
+    assert payload["nodes"][0]["target_id"] == "p1:table:0"
+    assert payload["nodes"][0]["provenance"] == ["stream"]
 
 
 def test_canonical_table_projection_is_serializable() -> None:
@@ -193,8 +202,10 @@ def test_canonical_table_projection_is_serializable() -> None:
 
     payload = cast(Any, Document(pages=(page,)).to_json_dict())
 
-    assert payload["pages"][0]["tables"] == [
+    assert payload["tables"] == [
         {
+            "id": "p1:table:0",
+            "page_id": "p1",
             "order": 0,
             "bbox": None,
             "layout_bbox": None,
@@ -202,8 +213,8 @@ def test_canonical_table_projection_is_serializable() -> None:
             "confidence": None,
             "title": None,
             "caption": None,
-            "row_bands": [{"index": 0, "bbox": None, "kind": "body", "confidence": None}],
-            "column_bands": [{"index": 0, "bbox": None, "confidence": None}],
+            "row_bands": [],
+            "column_bands": [],
             "metadata": {},
             "rows": [
                 [
@@ -229,14 +240,17 @@ def test_structured_table_serializes_associations_and_band_geometry() -> None:
             (TableCell(1, 0, "Value", bbox=(0.0, 0.0, 20.0, 10.0)),),
         ),
         bbox=(0.0, 0.0, 20.0, 20.0),
-        metadata={
-            "title": TableAssociatedText("Table title", bbox=(0.0, 22.0, 20.0, 30.0), kind="title")
-        },
+        title=TableAssociatedText("Table title", bbox=(0.0, 22.0, 20.0, 30.0), kind="title"),
+        row_bands=(
+            TableRowBand(0, bbox=(0.0, 10.0, 20.0, 20.0), kind="header"),
+            TableRowBand(1, bbox=(0.0, 0.0, 20.0, 10.0), kind="body"),
+        ),
+        column_bands=(TableColumnBand(0, bbox=(0.0, 0.0, 20.0, 20.0)),),
     )
 
     document = Document(pages=(Page(page_number=1, tables=(table,)),))
     payload = cast(Any, document.to_json_dict())
-    serialized = payload["pages"][0]["tables"][0]
+    serialized = payload["tables"][0]
 
     assert serialized["layout_bbox"] == [0.0, 0.0, 20.0, 30.0]
     assert serialized["content_bbox"] == [0.0, 0.0, 20.0, 20.0]
@@ -259,9 +273,12 @@ def test_structured_table_rendering_uses_associations_and_row_kinds() -> None:
             (TableCell(1, 0, "Name"), TableCell(1, 1, "Value")),
             (TableCell(2, 0, "A"), TableCell(2, 1, "1")),
         ),
-        metadata={
-            "title": TableAssociatedText("Table title", kind="title"),
-        },
+        title=TableAssociatedText("Table title", kind="title"),
+        row_bands=(
+            TableRowBand(0, kind="title"),
+            TableRowBand(1, kind="header"),
+            TableRowBand(2, kind="body"),
+        ),
     )
 
     html = Page(page_number=1, tables=(table,)).to_html()

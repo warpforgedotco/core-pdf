@@ -10,8 +10,9 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Iterable
 
-from core_pdf.impl.engine.spec.s_07_syntax.coercion import normalize_pdf_name
-from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_07_syntax.stream import PdfStream
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_09_fonts.cff import (
     build_cff_unicode_repair_index,
     cff_font_for_pdf_font,
@@ -74,7 +75,6 @@ from core_pdf.impl.engine.spec.s_09_fonts.widths import (
     parse_font_widths,
 )
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.objects import PdfStream
 from core_pdf.impl.primitives import PdfString
 from core_pdf.impl.types import Rectangle
 
@@ -231,8 +231,6 @@ class FontDecoder:
     cff_unicode_repairs: dict[bytes, str]
     font_program: FontProgram | None
     raster_font_provider: RasterFontProviderLike | None
-    learned_unicode: dict[bytes, str]
-    lazy_initialized: bool
 
     def __init__(
         self,
@@ -250,7 +248,6 @@ class FontDecoder:
         self.fast_widths_cache = None
         self.glyph_bbox_cache = {}
         self.glyph_bitmap_cache: dict[tuple[int, int, int], tuple[int, ...]] = {}
-        self.learned_unicode: dict[bytes, str] = {}
         self.type3_glyph_names = None
         self.type3_charproc_cache = [None] * 256
         self.type3_charproc_cache_hits = 0
@@ -258,12 +255,9 @@ class FontDecoder:
         self.type3_charproc_compiled_programs = 0
         self.type3_charproc_compiled_operations = 0
         self.type3_charproc_unsafe_fallbacks = 0
-        # Native classes cannot intercept missing slot attributes with __getattr__.
-        # Initialize the complete decoder state while constructing the object.
-        self.lazy_initialized = True
-        self.__post_init__()
+        self.internal_initialize()
 
-    def __post_init__(self) -> None:
+    def internal_initialize(self) -> None:
         font = self.font
         subtype = lookup_dict_key(font, "Subtype")
         if subtype is not None:
@@ -658,33 +652,11 @@ class FontDecoder:
                     dedupe_alternates(alternates, cid_text),
                 )
 
-        learned_text = self.learned_unicode.get(code_bytes)
-        if learned_text is not None:
-            return UnicodeChoice(
-                learned_text,
-                "learned_ocr",
-                dedupe_alternates(alternates, learned_text),
-            )
-
         if fallback_code == 0:
             return UnicodeChoice("\u0000", "fallback_nul", dedupe_alternates(alternates, "\u0000"))
         text = unicode_scalar_or_replacement(fallback_code)
         source = "identity" if text != "\ufffd" else "replacement"
         return UnicodeChoice(text, source, dedupe_alternates(alternates, text))
-
-    def install_learned_unicode(self, mapping: Mapping[bytes, str]) -> int:
-        """Install high-consensus OCR mappings for otherwise unknown glyph IDs."""
-        additions = 0
-        for code_bytes, text in mapping.items():
-            if not code_bytes or not text or len(text) != 1:
-                continue
-            if self.learned_unicode.get(code_bytes) == text:
-                continue
-            self.learned_unicode[bytes(code_bytes)] = text
-            additions += 1
-        if additions:
-            self.internal_clear_unicode_caches()
-        return additions
 
     def internal_clear_unicode_caches(self) -> None:
         """Clear every memo whose value can depend on a Unicode mapping."""

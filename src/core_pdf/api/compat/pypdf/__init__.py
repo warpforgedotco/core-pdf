@@ -12,7 +12,7 @@ from typing import Any, BinaryIO, cast
 from core_pdf import PdfDocument
 from core_pdf.api.compat.pypdf._text import extract_legacy_text
 from core_pdf.impl.engine.model.geometry import rect_tuple
-from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_09_fonts.cmap_tounicode import ToUnicodeCMap
 from core_pdf.impl.engine.spec.s_09_fonts.decoder import FontDecoder
 from core_pdf.impl.engine.structured import (

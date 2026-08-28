@@ -3,11 +3,11 @@ from __future__ import annotations
 import numpy
 import pytest
 
-from core_pdf.impl.engine.spec.s_08_graphics import IccTransform
 from core_pdf.impl.engine.spec.s_08_graphics.icc_profiles import (
     IccCurve,
     IccLutProfile,
     IccMatrixProfile,
+    IccTransform,
 )
 
 # These two were demoted out of the pull-request set for swinging 282ms to 2s on

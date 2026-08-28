@@ -10,9 +10,12 @@
 # have them, and pytest exits with "file or directory not found" on a path that
 # does not exist, so globbing would break both workflows.
 tests/src/core_pdf/impl/engine/render/benchmarks
+tests/src/core_pdf/impl/engine/structured/benchmarks
+tests/src/core_pdf/impl/engine/writing/benchmarks
 tests/src/core_pdf/impl/engine/spec/s_07_content/benchmarks
 tests/src/core_pdf/impl/engine/spec/s_07_filters/benchmarks
 tests/src/core_pdf/impl/engine/spec/s_07_syntax/benchmarks
+tests/src/core_pdf/impl/engine/spec/s_07_syntax_primitives/benchmarks
 tests/src/core_pdf/impl/engine/spec/s_07_security/benchmarks
 tests/src/core_pdf/impl/engine/spec/s_08_graphics/benchmarks
 tests/src/core_pdf/impl/engine/spec/s_09_fonts/benchmarks

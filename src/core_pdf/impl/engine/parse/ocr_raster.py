@@ -14,10 +14,7 @@ import time
 from collections import Counter
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import (
-    Any,
-    cast,
-)
+from typing import Any
 
 import numpy
 
@@ -324,7 +321,6 @@ def internal_decoded_image_raster(
     image: Any,
     display_area: float,
     *,
-    cache: Any | None = None,
     image_cache: Any | None = None,
     max_pixels: int = MAX_OCR_PIXELS,
     upscale: bool = True,
@@ -338,21 +334,17 @@ def internal_decoded_image_raster(
         tuple(source_key),
         (float(display_area), int(max_pixels), upscale),
     )
-    page_cache_key = (
-        "decoded_ocr_image_v4",
-        *source_key,
-        float(display_area),
-        max_pixels,
-        upscale,
-    )
     if image_cache is not None:
-        cached = image_cache.get(shared_key)
-        if isinstance(cached, internal_Raster):
-            return cached
-    if cache is not None:
-        cached = cache.get(page_cache_key)
-        if isinstance(cached, internal_Raster):
-            return cached
+        cached = image_cache.get_or_create(
+            shared_key,
+            lambda: internal_decoded_image_raster(
+                image,
+                display_area,
+                max_pixels=max_pixels,
+                upscale=upscale,
+            ),
+        )
+        return cached if isinstance(cached, internal_Raster) else None
     shared = source.decode() if source is not None and hasattr(source, "decode") else None
     samples: numpy.ndarray[Any, Any] | None
     data: bytes | memoryview | None
@@ -371,8 +363,8 @@ def internal_decoded_image_raster(
         if decoded is None:
             return None
         if isinstance(decoded.data, numpy.ndarray):
-            array = cast(numpy.ndarray[Any, Any], decoded.data)
-            samples = array.reshape((decoded.height, decoded.width, decoded.channels))
+            array = numpy.asarray(decoded.data)
+            samples = array.reshape(decoded.height, decoded.width, decoded.channels)
             data = None
         elif isinstance(decoded.data, (bytes, memoryview)):
             samples = None
@@ -427,12 +419,7 @@ def internal_decoded_image_raster(
     if data is None:
         assert samples is not None
         data = contiguous_bytes(samples)
-    raster = internal_Raster(RasterImage(data, width, height, channels), resolution)
-    if image_cache is not None:
-        image_cache.put(shared_key, raster)
-    elif cache is not None:
-        cache[page_cache_key] = raster
-    return raster
+    return internal_Raster(RasterImage(data, width, height, channels), resolution)
 
 
 class DirectImageOrientation(StrEnum):

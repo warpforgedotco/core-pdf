@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 from typing import Any, Protocol, cast
 
-from core_pdf.impl.engine.spec.s_07_syntax.tokens import WS_TABLE
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.tokens import WS_TABLE
 
 IS_NUMBER_CHAR = bytes([1 if i in b"+-0123456789." else 0 for i in range(256)])
 PDF_IGNORED_RE = re.compile(b"(?:[\x00\t\n\x0c\r ]+|%[^\r\n]*(?:\r\n|\n\r|\r|\n)?)*")

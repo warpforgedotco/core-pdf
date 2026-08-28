@@ -6,18 +6,18 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from typing import TYPE_CHECKING, Any, TypeAlias, cast, overload
 
-from core_pdf.impl.engine.spec.s_07_syntax.coercion import (
+from core_pdf.impl.engine.spec.s_07_syntax.trees import iter_number_tree_items
+from core_pdf.impl.engine.spec.s_07_syntax.types import PdfArray, PdfDict
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.coercion import (
     coerce_value,
     normalize_pdf_name,
 )
-from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import lookup_dict_key
-from core_pdf.impl.engine.spec.s_07_syntax.trees import iter_number_tree_items
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_14_structure.content import (
     StructureContentItem,
     StructureContentObject,
 )
 from core_pdf.impl.primitives import MISSING, PdfReference
-from core_pdf.impl.types import PdfArray, PdfDict
 
 if TYPE_CHECKING:
     from core_pdf.impl.engine.spec.s_07_document.document import PdfDocument

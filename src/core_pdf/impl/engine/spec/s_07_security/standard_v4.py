@@ -8,17 +8,17 @@ from core_pdf.impl.engine.spec.s_07_security.aes import AES
 from core_pdf.impl.engine.spec.s_07_security.errors import PDFEncryptionError
 from core_pdf.impl.engine.spec.s_07_security.standard import PdfStandardSecurityHandler
 from core_pdf.impl.engine.spec.s_07_security.values import get_name
-from core_pdf.impl.engine.spec.s_07_syntax.coercion import (
+from core_pdf.impl.engine.spec.s_07_syntax.types import PdfDict
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.coercion import (
     is_pdf_null,
     normalize_pdf_name,
 )
-from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import (
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.pdfdict import (
     lookup_dict_key,
     lookup_dict_key_default,
 )
 from core_pdf.impl.exceptions import PdfParseError, PdfUnsupportedError
 from core_pdf.impl.primitives import MISSING
-from core_pdf.impl.types import PdfDict
 
 
 class PdfStandardSecurityHandlerV4(PdfStandardSecurityHandler):

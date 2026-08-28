@@ -9,15 +9,15 @@ from core_pdf._vendor.fontTools.pens.boundsPen import BoundsPen
 from core_pdf._vendor.fontTools.pens.recordingPen import DecomposingRecordingPen
 from core_pdf._vendor.fontTools.pens.transformPen import TransformPen
 from core_pdf._vendor.fontTools.ttLib import TTFont
-from core_pdf.impl.engine.spec.s_07_syntax.coercion import normalize_pdf_name
-from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_07_syntax.stream import PdfStream
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_09_fonts.font_program_truetype import (
     FONT_PROGRAM_ERRORS,
     internal_recording_to_contours,
 )
 from core_pdf.impl.engine.spec.s_09_fonts.raster_kernel import Point, rasterize_contours
 from core_pdf.impl.engine.spec.s_09_fonts.widths import get_descendant
-from core_pdf.impl.objects import PdfStream
 
 
 class OpenTypeFontProgram:

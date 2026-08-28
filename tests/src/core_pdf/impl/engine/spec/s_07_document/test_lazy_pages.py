@@ -5,8 +5,8 @@ from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 
 from core_pdf.impl.engine.spec.s_07_document.document_pages import LazyPageList
+from core_pdf.impl.engine.spec.s_07_syntax.types import PdfDict
 from core_pdf.impl.runtime.cache import ExtractionCache
-from core_pdf.impl.types import PdfDict
 
 
 class FakePage:
