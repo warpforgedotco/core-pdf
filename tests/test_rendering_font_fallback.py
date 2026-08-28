@@ -8,7 +8,7 @@ import numpy
 from core_pdf import PdfDocument, PdfRasterFontFace, PdfRasterFontRequest
 from core_pdf.impl.engine.render.display import RenderOptions
 from core_pdf.impl.engine.render.raster_image import RasterImage
-from core_pdf.impl.engine.spec.s_09_fonts.fallback import fallback_glyph_outline
+from core_pdf.impl.spec.s_09_fonts.fallback import fallback_glyph_outline
 
 SIMPLE1 = Path(__file__).parent / "fixtures" / "pdfminer.six" / "samples" / "simple1.pdf"
 FONT_PROGRAM_FIXTURES = Path(__file__).parent / "fixtures" / "font_programs"

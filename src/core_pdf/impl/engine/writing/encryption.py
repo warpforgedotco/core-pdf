@@ -8,15 +8,15 @@ from dataclasses import dataclass
 from hashlib import md5
 from typing import Any
 
-from core_pdf.impl.engine.spec.s_07_security.crypto_constants import PDF_PADDING
-from core_pdf.impl.engine.spec.s_07_security.key_derivation import (
+from core_pdf.impl.primitives import PdfName, PdfString
+from core_pdf.impl.spec.s_07_security.crypto_constants import PDF_PADDING
+from core_pdf.impl.spec.s_07_security.key_derivation import (
     md5_50_rounds,
     pad_password,
     rc4_xor_cascade,
 )
-from core_pdf.impl.engine.spec.s_07_security.rc4 import CryptRC4
-from core_pdf.impl.engine.spec.s_07_syntax.stream import PdfStream
-from core_pdf.impl.primitives import PdfName, PdfString
+from core_pdf.impl.spec.s_07_security.rc4 import CryptRC4
+from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 
 
 @dataclass(frozen=True, slots=True)

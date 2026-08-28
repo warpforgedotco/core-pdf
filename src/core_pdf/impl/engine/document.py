@@ -14,7 +14,6 @@ from typing import TYPE_CHECKING, Any, BinaryIO, cast
 
 from core_pdf.impl.engine.parse.ocr_bootstrap import internal_prepare_ocr_signals
 from core_pdf.impl.engine.parse.pipeline import parse_document
-from core_pdf.impl.engine.spec.s_07_document.document import PdfDocument as SpecPdfDocument
 from core_pdf.impl.engine.structured.model import (
     Document as StructuredDocument,
 )
@@ -35,6 +34,7 @@ from core_pdf.impl.models import (
 )
 from core_pdf.impl.pages import PageSelection
 from core_pdf.impl.runtime.execution import RUNTIME, TaskScope
+from core_pdf.impl.spec.s_07_document.document import PdfDocument as SpecPdfDocument
 from core_pdf.impl.types import PdfSource
 
 # Claim process signal ownership when the public document class is imported on
@@ -43,8 +43,8 @@ internal_prepare_ocr_signals()
 
 if TYPE_CHECKING:
     from core_pdf.impl.engine.page import PdfPage as PdfPage
-    from core_pdf.impl.engine.spec.s_07_syntax.types import PdfObject
-    from core_pdf.impl.engine.spec.s_09_fonts.fallback import RasterFontProviderLike
+    from core_pdf.impl.spec.s_07_syntax.types import PdfObject
+    from core_pdf.impl.spec.s_09_fonts.fallback import RasterFontProviderLike
 
 
 class DocumentOperation(AbstractContextManager["DocumentOperation"]):

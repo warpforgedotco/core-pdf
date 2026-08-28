@@ -12,10 +12,10 @@ import pytest
 from core_pdf.impl.engine.document import PdfDocument
 from core_pdf.impl.engine.parse import ParsedPage
 from core_pdf.impl.engine.parse import pipeline as parse_pipeline
-from core_pdf.impl.engine.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.engine.writing import serialize_pdf_file
 from core_pdf.impl.primitives import PdfName, PdfReference
 from core_pdf.impl.runtime.execution import ExecutionRuntime, RuntimeConfig, TaskScope, WorkStage
+from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 
 TESTS_DIR = Path(__file__).parent / "fixtures"
 SAMPLE_PDF = TESTS_DIR / "SCORE-Bench" / "src" / "global-AIDS-strategy-p74-75-p001.pdf"

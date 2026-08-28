@@ -11,9 +11,9 @@ from pathlib import Path
 from typing import Any, TypeAlias, cast
 
 from core_pdf import PdfDocument
-from core_pdf.impl.engine.spec.s_07_content.operations import validate_inline_images
-from core_pdf.impl.engine.spec.s_07_filters.errors import FilterParseError
 from core_pdf.impl.engine.writing.incremental import find_startxref
+from core_pdf.impl.spec.s_07_content.operations import validate_inline_images
+from core_pdf.impl.spec.s_07_filters.errors import FilterParseError
 
 from ..pypdf import internal_validate_pypdf_page_tree
 from ._operator_text import OperatorTextProjection

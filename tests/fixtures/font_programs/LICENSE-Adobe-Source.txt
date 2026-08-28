@@ -5,7 +5,7 @@ States and/or other countries.
 This Font Software is licensed under the SIL Open Font License, Version 1.1.
 The complete license text distributed with the repository is recorded at:
 
-src/core_pdf/impl/engine/spec/s_09_fonts/data/raster_fonts/LICENSE-Noto-Symbols.txt
+src/core_pdf/impl/spec/s_09_fonts/data/raster_fonts/LICENSE-Noto-Symbols.txt
 
 Upstream source-specific license record:
 https://github.com/adobe-fonts/cff2-hint-ordering-test/blob/master/LICENSE.md

@@ -9,11 +9,6 @@ if TYPE_CHECKING:
     from core_pdf.impl.engine.document import PdfDocument
     from core_pdf.impl.engine.page import PdfPage
     from core_pdf.impl.engine.parse.ocr_tesseract import prewarm_runtime
-    from core_pdf.impl.engine.spec.s_09_fonts.fallback import (
-        PdfRasterFontFace,
-        PdfRasterFontProvider,
-        PdfRasterFontRequest,
-    )
     from core_pdf.impl.engine.structured.model import (
         ContentNode,
         DocumentTableView,
@@ -58,6 +53,11 @@ if TYPE_CHECKING:
         runtime_metrics,
         shutdown_runtime,
     )
+    from core_pdf.impl.spec.s_09_fonts.fallback import (
+        PdfRasterFontFace,
+        PdfRasterFontProvider,
+        PdfRasterFontRequest,
+    )
 
 internal_EXPORTS = {
     "Document": ("core_pdf.impl.engine.structured.model", "Document"),
@@ -69,15 +69,15 @@ internal_EXPORTS = {
     ),
     "PdfFontProvider": ("core_pdf.impl.engine.writing.fonts", "PdfFontProvider"),
     "PdfRasterFontFace": (
-        "core_pdf.impl.engine.spec.s_09_fonts.fallback",
+        "core_pdf.impl.spec.s_09_fonts.fallback",
         "PdfRasterFontFace",
     ),
     "PdfRasterFontProvider": (
-        "core_pdf.impl.engine.spec.s_09_fonts.fallback",
+        "core_pdf.impl.spec.s_09_fonts.fallback",
         "PdfRasterFontProvider",
     ),
     "PdfRasterFontRequest": (
-        "core_pdf.impl.engine.spec.s_09_fonts.fallback",
+        "core_pdf.impl.spec.s_09_fonts.fallback",
         "PdfRasterFontRequest",
     ),
     "PdfSignaturePlan": (

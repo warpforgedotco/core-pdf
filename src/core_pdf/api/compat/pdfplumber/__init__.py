@@ -21,9 +21,9 @@ from core_pdf.impl.engine.model.geometry import (
     bbox_union,
     flip_rect_vertical,
 )
-from core_pdf.impl.engine.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
-from core_pdf.impl.engine.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 from core_pdf.impl.primitives import PdfReference
+from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
+from core_pdf.impl.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 
 from .exceptions import PdfminerException
 

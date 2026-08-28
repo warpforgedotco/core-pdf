@@ -37,9 +37,9 @@ from core_pdf.impl.engine.parse.model import (
     internal_analyze_text,
 )
 from core_pdf.impl.engine.parse.newstroke import NewstrokeDecode, decode_newstroke_drawings
-from core_pdf.impl.engine.spec.s_07_content.page_program import PageProgram
-from core_pdf.impl.engine.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
-from core_pdf.impl.engine.spec.s_08_graphics.image_metadata import (
+from core_pdf.impl.spec.s_07_content.page_program import PageProgram
+from core_pdf.impl.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
+from core_pdf.impl.spec.s_08_graphics.image_metadata import (
     image_filter_names,
 )
 

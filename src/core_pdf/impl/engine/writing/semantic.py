@@ -9,7 +9,6 @@ from dataclasses import dataclass, field
 from hashlib import sha256
 from typing import cast
 
-from core_pdf.impl.engine.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.engine.structured.model import BlockKind, Document, Page, TextLine
 from core_pdf.impl.engine.structured.serialization import document_to_json_dict
 from core_pdf.impl.engine.writing.document import serialize_encrypted_pdf_file
@@ -30,6 +29,7 @@ from core_pdf.impl.engine.writing.signatures import (
     apply_signature_plan,
 )
 from core_pdf.impl.primitives import PdfName, PdfReference, PdfString
+from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 
 internal_PdfDictionary = dict[PdfName, object]
 internal_TaggedPageLines = tuple[tuple[str, TextLine], ...]

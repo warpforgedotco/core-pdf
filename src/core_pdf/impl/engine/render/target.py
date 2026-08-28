@@ -50,22 +50,22 @@ from core_pdf.impl.engine.render.kernels import (
     radial_shading_t,
     rasterize_unclipped_line_normal,
 )
-from core_pdf.impl.engine.spec.s_07_content.capture import CapturedPath
-from core_pdf.impl.engine.spec.s_08_graphics.image_decode import PreparedImage
-from core_pdf.impl.engine.spec.s_08_graphics.image_metadata import (
-    pdf_int,
-    pdf_number,
-)
-from core_pdf.impl.engine.spec.s_08_graphics.shading import (
-    PreparedShading,
-    prepare_shading,
-)
 from core_pdf.impl.runtime.array_views import (
     ByteBuffer,
     nearest_indices,
     uint8_image_view,
     uint8_view,
     unit_sample_positions,
+)
+from core_pdf.impl.spec.s_07_content.capture import CapturedPath
+from core_pdf.impl.spec.s_08_graphics.image_decode import PreparedImage
+from core_pdf.impl.spec.s_08_graphics.image_metadata import (
+    pdf_int,
+    pdf_number,
+)
+from core_pdf.impl.spec.s_08_graphics.shading import (
+    PreparedShading,
+    prepare_shading,
 )
 
 if TYPE_CHECKING:

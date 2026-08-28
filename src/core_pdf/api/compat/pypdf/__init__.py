@@ -12,9 +12,6 @@ from typing import Any, BinaryIO, cast
 from core_pdf import PdfDocument
 from core_pdf.api.compat.pypdf._text import extract_legacy_text
 from core_pdf.impl.engine.model.geometry import rect_tuple
-from core_pdf.impl.engine.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
-from core_pdf.impl.engine.spec.s_09_fonts.cmap_tounicode import ToUnicodeCMap
-from core_pdf.impl.engine.spec.s_09_fonts.decoder import FontDecoder
 from core_pdf.impl.engine.structured import (
     Annotation,
     Document,
@@ -25,6 +22,9 @@ from core_pdf.impl.engine.writing.encryption import StandardPdfEncryption
 from core_pdf.impl.engine.writing.semantic import serialize_document_to_pdf
 from core_pdf.impl.exceptions import PdfUnsupportedError
 from core_pdf.impl.primitives import PdfReference
+from core_pdf.impl.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
+from core_pdf.impl.spec.s_09_fonts.cmap_tounicode import ToUnicodeCMap
+from core_pdf.impl.spec.s_09_fonts.decoder import FontDecoder
 
 PdfInput = str | PathLike[str] | bytes | bytearray | BytesIO
 BBox = tuple[float, float, float, float]

@@ -40,8 +40,8 @@ from core_pdf.impl.engine.parse.tables import (
     internal_merge_wrapped_cell_rows,
     internal_stream_table_reads_like_prose,
 )
-from core_pdf.impl.engine.spec.s_09_fonts.font_program_truetype import tt_font_for_data
 from core_pdf.impl.engine.structured import Block, BlockKind, Table, TableCell, TextLine
+from core_pdf.impl.spec.s_09_fonts.font_program_truetype import tt_font_for_data
 
 FIXTURES = Path(__file__).parent / "fixtures" / "SCORE-Bench" / "src"
 

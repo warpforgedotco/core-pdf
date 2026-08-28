@@ -29,30 +29,30 @@ from core_pdf.impl.engine.render.page import (
     compose_page,
     internal_append_glyph_paint,
 )
-from core_pdf.impl.engine.spec.s_07_content.capture import (
+from core_pdf.impl.exceptions import PdfRasterTooLargeError
+from core_pdf.impl.runtime.image_cache import ImageCache
+from core_pdf.impl.spec.s_07_content.capture import (
     CapturedDrawing,
     CapturedPath,
     CapturedSubpath,
 )
-from core_pdf.impl.engine.spec.s_07_content.page_program import (
+from core_pdf.impl.spec.s_07_content.page_program import (
     LineTable,
     PageProducts,
     PageProgram,
 )
-from core_pdf.impl.engine.spec.s_07_document.document import PdfDocument
-from core_pdf.impl.engine.spec.s_07_document.page import PdfPage
-from core_pdf.impl.engine.spec.s_07_syntax.stream import PdfStream
-from core_pdf.impl.engine.spec.s_08_graphics.color import (
+from core_pdf.impl.spec.s_07_document.document import PdfDocument
+from core_pdf.impl.spec.s_07_document.page import PdfPage
+from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
+from core_pdf.impl.spec.s_08_graphics.color import (
     ImageColorManager,
     internal_sampled_separation_rgb_lut,
 )
-from core_pdf.impl.engine.spec.s_08_graphics.color_spec import ImageColorSpec
-from core_pdf.impl.engine.spec.s_08_graphics.image_decode import (
+from core_pdf.impl.spec.s_08_graphics.color_spec import ImageColorSpec
+from core_pdf.impl.spec.s_08_graphics.image_decode import (
     ImageSource,
     decode_pdf_image,
 )
-from core_pdf.impl.exceptions import PdfRasterTooLargeError
-from core_pdf.impl.runtime.image_cache import ImageCache
 
 
 class StaticDisplayPage(PdfPage):

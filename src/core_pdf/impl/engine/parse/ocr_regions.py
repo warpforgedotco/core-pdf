@@ -77,8 +77,8 @@ from core_pdf.impl.engine.parse.ocr_raster import (
 )
 from core_pdf.impl.engine.render.display import RenderOptions
 from core_pdf.impl.engine.render.page import compose_page
-from core_pdf.impl.engine.spec.s_07_content.page_program import line_coordinate_columns
 from core_pdf.impl.runtime.image_cache import ImageCacheKey
+from core_pdf.impl.spec.s_07_content.page_program import line_coordinate_columns
 
 OCR_BATCH_MAX_TASKS = 16
 
