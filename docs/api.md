@@ -11,6 +11,17 @@ with PdfDocument.open("document.pdf") as document:
     print(document.structured_document.text)
 ```
 
+## Structured JSON
+
+`Document.to_json_dict()` and `Document.to_json()` emit schema 5.0. The document is a normalized
+graph: `pages` reference ordered `nodes`, nodes reference one canonical block/table/figure payload,
+and blocks reference canonical lines. Stable IDs use
+`p{page_number}:{kind}:{zero_based_index}`. Schema 4's duplicated page payloads and document-wide
+line/table reference snapshots are not emitted, and there is no schema-4 compatibility encoder.
+
+Metadata must already be composed of JSON scalar, mapping, list, or tuple values. Unsupported
+objects raise a path-specific `TypeError` instead of being silently converted to strings.
+
 ## Compatibility facades
 
 `core_pdf.api.compat` provides local, dependency-free projections for common third-party PDF

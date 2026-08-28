@@ -235,6 +235,9 @@ TYPE3_REPLAY_OPERATORS = frozenset(
 CACHED_OPERATOR_KEYWORDS = tuple(
     name.encode("latin-1") for name, spec in OPERATOR_SPECS.items() if spec.cache_keyword
 )
+PDF_CONTENT_OPERATOR_BYTES = frozenset(
+    name.encode("latin-1") for name in OPERATOR_SPECS
+) | frozenset((b"ID", b"EI"))
 
 TEXT_OPERATORS = frozenset(name for name, spec in OPERATOR_SPECS.items() if spec.category == "text")
 IMAGE_OPERATORS = frozenset(

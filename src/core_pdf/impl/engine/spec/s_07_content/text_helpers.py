@@ -6,15 +6,15 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Any, Protocol, cast
 
-from core_pdf.impl.engine.spec.s_07_syntax.coercion import normalize_pdf_name
-from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_07_syntax.stream import PdfStream
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_09_fonts.font_program_truetype import TrueTypeFontProgram
 from core_pdf.impl.engine.spec.s_09_fonts.widths import (
     require_font_float,
     require_font_int,
 )
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.objects import PdfStream
 
 NO_SPACE_BEFORE = frozenset(".,;:!?)]}%")
 NO_SPACE_AFTER = frozenset("([{")

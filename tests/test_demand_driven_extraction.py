@@ -6,7 +6,7 @@ import pytest
 
 from core_pdf import PdfDocument
 from core_pdf.impl.engine.parse import pipeline as parse_pipeline
-from core_pdf.impl.engine.parse.pipeline import ASSEMBLED_PAGE_CACHE_KEY
+from core_pdf.impl.engine.parse.pipeline import PAGE_EXTRACTION_CACHE_KEY, page_extraction
 
 FIXTURE = (
     Path(__file__).parent
@@ -36,10 +36,12 @@ def test_repeated_extract_reuses_the_cached_table_stage(
         page = document.pages[0]
         first = page.extract()
         second = page.extract()
+        extraction = page_extraction(page)
         cache = page.extraction_cache
 
     assert first is second
     assert first.tables == ()
     assert calls == 1
     assert cache is not None
-    assert ASSEMBLED_PAGE_CACHE_KEY in cache
+    assert cache[PAGE_EXTRACTION_CACHE_KEY] is extraction
+    assert extraction.internal_assembled_page is first

@@ -10,10 +10,12 @@ from typing import Any, cast
 
 from core_pdf.impl.engine.model.geometry import rect_tuple
 from core_pdf.impl.engine.spec.s_07_content.capture import CapturedPath
+from core_pdf.impl.engine.spec.s_08_graphics.image_decode import ImageSource
 from core_pdf.impl.engine.spec.s_08_graphics.image_metadata import (
     image_display_metadata,
     pdf_number,
 )
+from core_pdf.impl.engine.spec.s_08_graphics.shading import prepare_shading
 
 
 @dataclass(slots=True)
@@ -104,7 +106,72 @@ class PathPaintItem:
         }
 
 
-DisplayItem = DisplayListItem | PathPaintItem
+@dataclass(slots=True)
+class ImagePaintItem:
+    """Typed image paint command whose source owns all PDF image preparation."""
+
+    paint_kind: str
+    seqno: int
+    bbox: Any
+    source: ImageSource | None
+    quad: tuple[tuple[float, float], ...] | None
+    fill: Any
+    fill_opacity: Any
+    blend_mode: Any
+    soft_mask_alpha: Any
+    image_clip: Any
+    image_metadata: dict[str, Any]
+    ctm: Any = None
+    xobject_depth: Any = None
+
+    @property
+    def kind(self) -> str:
+        return self.paint_kind
+
+    def to_data(self) -> dict[str, Any]:
+        """Return the legacy diagnostic mapping without duplicating paint ownership."""
+        source = self.source
+        return {
+            "bbox": self.bbox,
+            "raw_data": source.raw if source is not None else None,
+            "dictionary": source.dictionary if source is not None else None,
+            "image_source": source,
+            "items": [("quad", self.quad)] if self.quad is not None else [],
+            "fill": self.fill,
+            "fill_opacity": self.fill_opacity,
+            "blend_mode": self.blend_mode,
+            "soft_mask_alpha": self.soft_mask_alpha,
+            "image_clip": self.image_clip,
+            "image_metadata": self.image_metadata,
+            "ctm": self.ctm,
+            "xobject_depth": self.xobject_depth,
+        }
+
+
+DisplayItem = DisplayListItem | ImagePaintItem | PathPaintItem
+
+
+def internal_image_quad(data: dict[str, Any]) -> tuple[tuple[float, float], ...] | None:
+    """Normalize an image quad once at display-list construction."""
+    quad = data.get("quad")
+    if isinstance(quad, (list, tuple)) and len(quad) >= 3:
+        try:
+            return tuple((float(point[0]), float(point[1])) for point in quad)
+        except (TypeError, ValueError, IndexError):
+            return None
+    items = data.get("items")
+    if not isinstance(items, (list, tuple)):
+        return None
+    for kind, value in items:
+        if kind != "quad":
+            continue
+        if not isinstance(value, (list, tuple)) or len(value) < 3:
+            return None
+        try:
+            return tuple((float(point[0]), float(point[1])) for point in value)
+        except (TypeError, ValueError, IndexError):
+            return None
+    return None
 
 
 @dataclass(slots=True)
@@ -120,7 +187,37 @@ class DisplayList:
                 explicit = data.get("image_metadata")
                 if isinstance(explicit, dict):
                     metadata.update(explicit)
-                data["image_metadata"] = metadata
+            source = data.get("image_source")
+            if not isinstance(source, ImageSource):
+                dictionary = data.get("dictionary")
+                raw = data.get("raw_data", data.get("data"))
+                if isinstance(dictionary, dict) and isinstance(raw, (bytes, bytearray, memoryview)):
+                    source = ImageSource(
+                        memoryview(raw).cast("B") if isinstance(raw, bytearray) else raw,
+                        dictionary,
+                    )
+                else:
+                    source = None
+            self.items.append(
+                ImagePaintItem(
+                    paint_kind=kind,
+                    seqno=seqno,
+                    bbox=rect_tuple(data.get("bbox")),
+                    source=source,
+                    quad=internal_image_quad(data),
+                    fill=data.get("fill") or data.get("fill_color"),
+                    fill_opacity=data.get("fill_opacity"),
+                    blend_mode=data.get("blend_mode"),
+                    soft_mask_alpha=data.get("soft_mask_alpha"),
+                    image_clip=data.get("image_clip"),
+                    image_metadata=metadata,
+                    ctm=data.get("ctm"),
+                    xobject_depth=data.get("xobject_depth"),
+                )
+            )
+            return
+        if kind == "shading" and "prepared_shading" not in data:
+            data["prepared_shading"] = prepare_shading(data.get("dictionary"))
         paint_kind = PATH_PAINT_KINDS.get(kind)
         if (
             paint_kind is not None
@@ -247,6 +344,8 @@ MAX_TILES_PER_ITEM = 256
 
 def internal_display_item_box(item: DisplayItem) -> tuple[float, float, float, float] | None:
     """Compute the conservative paint bounds used by the compiled render plan."""
+    if type(item) is ImagePaintItem:
+        return rect_tuple(item.bbox)
     if type(item) is PathPaintItem:
         value = item.bbox
         if value is None and type(item.path) is CapturedPath:
@@ -360,9 +459,11 @@ __all__ = (
     "DisplayItem",
     "DisplayList",
     "DisplayListItem",
+    "ImagePaintItem",
     "LineCap",
     "LineJoin",
     "PathPaintItem",
     "PathPaintKind",
     "RenderOptions",
+    "internal_image_quad",
 )

@@ -30,17 +30,12 @@ from core_pdf.impl.engine.parse.model import (
     TextQualityStats,
     WorkPlan,
 )
-from core_pdf.impl.engine.parse.ocr_bootstrap import internal_prepare_ocr_signals
 from core_pdf.impl.engine.parse.pipeline import (
     extract_page,
     page_extraction,
     parse_document,
     parse_page,
 )
-
-# Claim the main thread's signal handlers now, while we are certainly on it.
-# parse.ocr_tesseract itself stays unimported until a page actually needs recognition.
-internal_prepare_ocr_signals()
 
 if TYPE_CHECKING:
     from core_pdf.impl.engine.parse.ocr_tesseract import prewarm_runtime

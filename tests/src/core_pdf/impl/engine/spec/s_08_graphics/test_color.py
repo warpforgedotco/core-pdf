@@ -4,11 +4,6 @@ from typing import cast
 import numpy
 import pytest
 
-from core_pdf.impl.engine.spec.s_08_graphics import (
-    IccSampleError,
-    IccTransform,
-    parse_icc_transform,
-)
 from core_pdf.impl.engine.spec.s_08_graphics.device_profiles import (
     default_cmyk_transform,
 )
@@ -18,7 +13,10 @@ from core_pdf.impl.engine.spec.s_08_graphics.icc_profiles import (
     IccCurve,
     IccLutProfile,
     IccMatrixProfile,
+    IccSampleError,
+    IccTransform,
     internal_compensate_black_point,
+    parse_icc_transform,
     select_icc_lut_tag,
 )
 

@@ -3,11 +3,11 @@
 
 from __future__ import annotations
 
-from core_pdf.impl.engine.spec.s_07_syntax.lexer_helpers import (
+from core_pdf.impl.engine.spec.s_07_syntax.xref import parse_object_marker_prefix
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.lexer_helpers import (
     FindableSizedBuffer,
     full_source_buffer,
 )
-from core_pdf.impl.engine.spec.s_07_syntax.xref import parse_object_marker_prefix
 
 
 def find_indirect_object_header(

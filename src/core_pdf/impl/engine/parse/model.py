@@ -14,7 +14,7 @@ import numpy
 from core_pdf.impl.engine.model.runs import TextRun
 from core_pdf.impl.engine.spec.s_07_content.capture import CapturedDrawing, CapturedInlineImage
 from core_pdf.impl.engine.spec.s_07_content.page_program import PageProgram
-from core_pdf.impl.engine.structured import (
+from core_pdf.impl.engine.structured.model import (
     TextSpan,
 )
 
@@ -142,11 +142,6 @@ class ObservationBatch:
     font_size: FloatArray
     line_break_before: BoolArray
     references: tuple[Any | None, ...]
-    # Memo for table-detection cell text keyed by the observation indexes of a
-    # cell; hypotheses re-derive the same cells many times per page.
-    internal_cell_text_cache: dict[tuple[int, ...], str] = field(
-        default_factory=dict, init=False, repr=False, compare=False
-    )
 
     def __post_init__(self) -> None:
         size = len(self.text)
@@ -206,7 +201,7 @@ class ObservationBatch:
         line_break_before: Iterable[bool] | None = None,
         references: Iterable[Any | None] | None = None,
     ) -> ObservationBatch:
-        texts = cast(tuple[str, ...], text if isinstance(text, tuple) else tuple(text))
+        texts = tuple(text)
         size = len(texts)
         if size == 0:
             return cls.empty()
@@ -292,7 +287,7 @@ class ObservationBatch:
 
     def take(self, indexes: Sequence[int] | IntArray) -> ObservationBatch:
         if (
-            isinstance(indexes, (list, tuple))
+            isinstance(indexes, (list, tuple, range))
             and len(indexes) == len(self)
             and all(int(cast(Any, index)) == position for position, index in enumerate(indexes))
         ):
@@ -300,6 +295,8 @@ class ObservationBatch:
             # second allocation of every column.
             return self
         indexes = numpy.asarray(indexes, dtype=numpy.int64)
+        if not len(indexes):
+            return ObservationBatch.empty()
         return ObservationBatch(
             tuple(self.text[int(index)] for index in indexes),
             self.bbox[indexes],
@@ -315,6 +312,11 @@ class ObservationBatch:
         )
 
     def select(self, mask: BoolArray) -> ObservationBatch:
+        selected = int(numpy.count_nonzero(mask))
+        if selected == len(self):
+            return self
+        if selected == 0:
+            return ObservationBatch.empty()
         return self.take(numpy.flatnonzero(mask))
 
     @classmethod

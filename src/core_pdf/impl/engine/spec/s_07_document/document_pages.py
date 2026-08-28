@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Callable, Iterator, Sequence
 from typing import (
     Generic,
@@ -13,9 +14,8 @@ from typing import (
     overload,
 )
 
+from core_pdf.impl.engine.spec.s_07_syntax.types import PdfDict
 from core_pdf.impl.runtime.cache import ExtractionCache
-from core_pdf.impl.runtime.cache_lock import document_cache_lock
-from core_pdf.impl.types import PdfDict
 
 
 class PageListItem(Protocol):
@@ -30,6 +30,7 @@ PageFactory = Callable[[object, PdfDict, int], internal_PageT]
 class PageListDocument(Protocol):
     page_dicts_cache: list[PdfDict] | None
     page_class: type | None
+    internal_cache_lock: threading.RLock
 
     def iter_page_dicts_stream(self) -> Iterator[PdfDict]: ...
 
@@ -71,7 +72,7 @@ class LazyPageList(Sequence[internal_PageT], Generic[internal_PageT]):
             raise IndexError("page index out of range") from None
 
     def ensure(self, index: int) -> None:
-        with document_cache_lock(self.document):
+        with self.document.internal_cache_lock:
             while len(self.internal_items) <= index:
                 page_dict = self.next_page_dict()
                 page_class = self.document.page_class

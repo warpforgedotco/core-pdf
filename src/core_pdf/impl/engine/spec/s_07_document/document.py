@@ -40,22 +40,27 @@ from core_pdf.impl.engine.spec.s_07_security.errors import (
     PDFEncryptionError,
     PDFPasswordIncorrect,
 )
-from core_pdf.impl.engine.spec.s_07_syntax.coercion import normalize_pdf_name
+from core_pdf.impl.engine.spec.s_07_syntax.inherited_values import collect_inherited_values
 from core_pdf.impl.engine.spec.s_07_syntax.object_cache import (
     CachedPdfObject,
     InheritedValueMap,
     InheritedValuesCache,
 )
-from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import (
-    collect_inherited_values,
-    lookup_dict_key,
-)
 from core_pdf.impl.engine.spec.s_07_syntax.resolver import ObjectResolver
+from core_pdf.impl.engine.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.engine.spec.s_07_syntax.trees import (
     iter_name_tree_items,
     iter_number_tree_items,
 )
+from core_pdf.impl.engine.spec.s_07_syntax.types import (
+    Decipher,
+    PdfArray,
+    PdfDict,
+    PdfObject,
+)
 from core_pdf.impl.engine.spec.s_07_syntax.xref import PdfXRefEntry
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_14_structure.tree import StructureTree
 from core_pdf.impl.exceptions import (
     PdfDocumentClosedError,
@@ -63,22 +68,13 @@ from core_pdf.impl.exceptions import (
     PdfSourceError,
     PdfUnsupportedError,
 )
-from core_pdf.impl.objects import PdfStream
 from core_pdf.impl.pages import PageSelection, resolve_page_selection
 from core_pdf.impl.primitives import MISSING, MissingObject, PdfReference
 from core_pdf.impl.runtime.cache import ExtractionCache
-from core_pdf.impl.runtime.cache_lock import (
-    document_cache_lock,
-    get_or_compute,
-)
 from core_pdf.impl.runtime.image_cache import ImageCache
 from core_pdf.impl.types import (
-    Decipher,
     PathSource,
-    PdfArray,
     PdfByteBuffer,
-    PdfDict,
-    PdfObject,
     PdfSource,
     SeekableBinaryReader,
 )
@@ -151,6 +147,7 @@ class PdfDocument(
         "page_labels_cache",
         "page_extraction_caches",
         "internal_cache_lock",
+        "internal_page_locks",
         "xref_was_recovered",
         "xref_recovery_reason",
         "recovery_scan_all_revisions",
@@ -187,6 +184,7 @@ class PdfDocument(
     page_labels_cache: list[str] | None | MissingObject
     page_extraction_caches: dict[int, ExtractionCache] | None
     internal_cache_lock: threading.RLock
+    internal_page_locks: dict[int, threading.RLock]
     xref_was_recovered: bool
     xref_recovery_reason: str | None
     recovery_scan_all_revisions: bool
@@ -206,6 +204,7 @@ class PdfDocument(
     ) -> None:
         self.internal_closed = False
         self.internal_cache_lock = threading.RLock()
+        self.internal_page_locks = {}
         self.source = source
         self.password = password
         self.file_handle = None
@@ -273,6 +272,8 @@ class PdfDocument(
         self.internal_closed = True
 
         self._clear_document_caches()
+        with self.internal_cache_lock:
+            self.internal_page_locks.clear()
 
         resolver = getattr(self, "resolver", None)
         if resolver is not None:
@@ -293,31 +294,39 @@ class PdfDocument(
         return self.resolver.resolve(ref)
 
     def catalog(self) -> PdfDict:
-        def compute() -> PdfDict:
+        with self.internal_cache_lock:
+            cached = self.catalog_cache
+            if cached is not None:
+                return cached
             root_ref = lookup_dict_key(self.trailer_dict, "Root")
             if root_ref is None:
                 raise ValueError("missing catalog root")
             root = self.resolve(root_ref)
             if not isinstance(root, dict):
                 raise ValueError("invalid catalog root")
-            return cast(PdfDict, root)
-
-        return get_or_compute(self, "catalog_cache", compute)
+            cached = cast(PdfDict, root)
+            self.catalog_cache = cached
+            return cached
 
     def get_metadata(self) -> MetadataRecord:
-        return get_or_compute(
-            self,
-            "metadata_cache",
-            lambda: resolve_metadata(
-                self.resolver,
-                self.trailer_dict,
-                recover=document_recovery_enabled(self),
-            ),
-        )
+        with self.internal_cache_lock:
+            cached = self.metadata_cache
+            if cached is None:
+                cached = resolve_metadata(
+                    self.resolver,
+                    self.trailer_dict,
+                    recover=document_recovery_enabled(self),
+                )
+                self.metadata_cache = cached
+            return cached
+
+    def page_lock(self, page_number: int) -> threading.RLock:
+        with self.internal_cache_lock:
+            return self.internal_page_locks.setdefault(page_number, threading.RLock())
 
     @property
     def structure(self) -> StructureTree | None:
-        with document_cache_lock(self):
+        with self.internal_cache_lock:
             structure = self.structure_cache
             if structure is not MISSING:
                 return cast(StructureTree | None, structure)
@@ -333,7 +342,7 @@ class PdfDocument(
 
     @property
     def mark_info(self) -> PdfDict | None:
-        with document_cache_lock(self):
+        with self.internal_cache_lock:
             mark_info = self.mark_info_cache
             if mark_info is not MISSING:
                 return cast(PdfDict | None, mark_info)
@@ -349,7 +358,7 @@ class PdfDocument(
 
     def invalidate_document_extraction_cache(self) -> None:
         """Clear every per-page extraction cache; the single home of page-cache clearing."""
-        with document_cache_lock(self):
+        with self.internal_cache_lock:
             if self.page_extraction_caches is not None:
                 for cache in self.page_extraction_caches.values():
                     cache.clear()
@@ -663,7 +672,7 @@ class PdfDocument(
         return value
 
     def iter_page_dicts(self) -> Iterator[PdfDict]:
-        with document_cache_lock(self):
+        with self.internal_cache_lock:
             if self.page_dicts_cache is not None:
                 yield from self.page_dicts_cache
                 return
@@ -786,11 +795,16 @@ class PdfDocument(
 
     @property
     def pages(self) -> LazyPageList[internal_PageT]:
-        return get_or_compute(self, "pages_cache", lambda: LazyPageList(self))
+        with self.internal_cache_lock:
+            pages = self.pages_cache
+            if pages is None:
+                pages = LazyPageList(self)
+                self.pages_cache = pages
+            return pages
 
     @property
     def page_labels(self) -> list[str] | None:
-        with document_cache_lock(self):
+        with self.internal_cache_lock:
             labels = self.page_labels_cache
             if labels is MISSING:
                 labels = self.build_page_labels()
@@ -850,7 +864,7 @@ class PdfDocument(
             return page_obj.page_number - 1
         if not isinstance(page_obj, dict):
             return None
-        with document_cache_lock(self):
+        with self.internal_cache_lock:
             if self.page_index_cache is None:
                 if self.page_dicts_cache is None:
                     self.page_dicts_cache = self.build_page_dicts()
@@ -993,7 +1007,7 @@ class PdfDocument(
     def named_destinations(
         self,
     ) -> dict[str, RawNamedDestination]:
-        with document_cache_lock(self):
+        with self.internal_cache_lock:
             if self.named_destinations_cache is None:
                 self.populate_named_destinations()
             return dict(self.named_destinations_cache or {})
@@ -1006,7 +1020,7 @@ class PdfDocument(
         if name in seen:
             return None
         seen.add(name)
-        with document_cache_lock(self):
+        with self.internal_cache_lock:
             if self.named_destinations_cache is None:
                 self.populate_named_destinations()
             return (self.named_destinations_cache or {}).get(name)
@@ -1096,7 +1110,7 @@ class PdfDocument(
         raise ValueError("invalid destination")
 
     def populate_named_destinations(self) -> None:
-        with document_cache_lock(self):
+        with self.internal_cache_lock:
             if self.named_destinations_cache is not None:
                 return
             targets: dict[str, object] = {}
@@ -1147,7 +1161,7 @@ class PdfDocument(
 
     @property
     def acroform(self) -> PdfDict | None:
-        with document_cache_lock(self):
+        with self.internal_cache_lock:
             cached = self.acroform_cache
             if cached is not MISSING:
                 return cast(PdfDict | None, cached)
@@ -1317,7 +1331,7 @@ class PdfDocument(
         return records
 
     def fields(self) -> list[RawFormField]:
-        with document_cache_lock(self):
+        with self.internal_cache_lock:
             if self.fields_cache is not None:
                 return self.fields_cache
             af = self.acroform
@@ -1346,7 +1360,12 @@ class PdfDocument(
             return records
 
     def fields_by_page(self) -> dict[int, list[RawFormField]]:
-        return get_or_compute(self, "fields_by_page_cache", self.build_fields_by_page)
+        with self.internal_cache_lock:
+            fields = self.fields_by_page_cache
+            if fields is None:
+                fields = self.build_fields_by_page()
+                self.fields_by_page_cache = fields
+            return fields
 
     def build_fields_by_page(self) -> dict[int, list[RawFormField]]:
         """Group every document field by the page index its widget(s) sit on.
@@ -1446,7 +1465,12 @@ class PdfDocument(
     # Attachments and optional content
 
     def embedded_files(self) -> list[RawEmbeddedFile]:
-        return list(get_or_compute(self, "embedded_files_cache", self.build_embedded_files))
+        with self.internal_cache_lock:
+            files = self.embedded_files_cache
+            if files is None:
+                files = self.build_embedded_files()
+                self.embedded_files_cache = files
+            return list(files)
 
     def build_embedded_files(self) -> list[RawEmbeddedFile]:
         names = self.resolver.resolve(lookup_dict_key(self.catalog(), "Names"))
@@ -1504,7 +1528,7 @@ class PdfDocument(
         return None
 
     def load_oc_layers(self) -> None:
-        with document_cache_lock(self):
+        with self.internal_cache_lock:
             if self.oc_layers is None:
                 self.internal_load_oc_layers()
 

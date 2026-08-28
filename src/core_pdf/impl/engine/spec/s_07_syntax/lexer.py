@@ -10,7 +10,9 @@ import re
 from collections.abc import Callable
 from typing import Any
 
-from core_pdf.impl.engine.spec.s_07_syntax.lexer_helpers import (
+from core_pdf.impl.engine.spec.s_07_syntax.stream import PdfStream
+from core_pdf.impl.engine.spec.s_07_syntax.types import Decipher, PdfDict
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.lexer_helpers import (
     EMPTY_TRANSLATE_TABLE,
     HEX_VALUE,
     R_SENTINEL,
@@ -24,21 +26,19 @@ from core_pdf.impl.engine.spec.s_07_syntax.lexer_helpers import (
     matches_keyword_with_one_substitution,
     skip_pdf_ignored,
 )
-from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import lookup_dict_key
-from core_pdf.impl.engine.spec.s_07_syntax.tokens import (
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.tokens import (
     DELIMITERS,
     SEPARATOR_TABLE,
     WHITESPACE,
     WS_TABLE,
 )
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.objects import PdfStream
 from core_pdf.impl.primitives import (
     PdfName,
     PdfReference,
     PdfString,
 )
-from core_pdf.impl.types import Decipher, PdfDict
 
 PdfName_of = PdfName.of
 RECOVERABLE_DICTIONARY_KEY_NAMES = {

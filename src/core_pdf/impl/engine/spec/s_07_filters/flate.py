@@ -7,70 +7,16 @@ import imagecodecs
 
 from core_pdf.impl.engine.spec.s_07_filters.codecs import PDF_WHITESPACE_TABLE
 from core_pdf.impl.engine.spec.s_07_filters.errors import FilterParseError
-from core_pdf.impl.engine.spec.s_07_syntax.lexer_helpers import full_source_bytes
-from core_pdf.impl.engine.spec.s_07_syntax.scanning import (
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.content_operators import (
+    PDF_CONTENT_OPERATOR_BYTES,
+)
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.lexer_helpers import full_source_bytes
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.scanning import (
     skip_comment,
     skip_hex_string,
     skip_literal_string,
 )
 
-PDF_CONTENT_OPERATORS = {
-    b"b",
-    b"b*",
-    b"B",
-    b"B*",
-    b"BI",
-    b"BT",
-    b"c",
-    b"cm",
-    b"CS",
-    b"cs",
-    b"d",
-    b"Do",
-    b"ET",
-    b"f",
-    b"F",
-    b"f*",
-    b"gs",
-    b"h",
-    b"i",
-    b"ID",
-    b"j",
-    b"J",
-    b"l",
-    b"m",
-    b"M",
-    b"n",
-    b"q",
-    b"Q",
-    b"re",
-    b"ri",
-    b"s",
-    b"S",
-    b"SC",
-    b"sc",
-    b"SCN",
-    b"scn",
-    b"sh",
-    b"T*",
-    b"TD",
-    b"Td",
-    b"Tf",
-    b"Tj",
-    b"TJ",
-    b"Tm",
-    b"Tr",
-    b"Ts",
-    b"Tw",
-    b"Tz",
-    b"v",
-    b"w",
-    b"W",
-    b"W*",
-    b"y",
-    b"'",
-    b'"',
-}
 PDF_CONTENT_DELIMITERS = b"()<>[]{}/%"
 # Incomplete raw Deflate has no signature, so a few arbitrary bytes can decode
 # to garbage without the decoder ever reaching an end-of-stream marker.
@@ -194,6 +140,6 @@ def looks_like_pdf_content_stream(data: bytes | memoryview) -> bool:
                 break
             pos += 1
         token_count += 1
-        if container_depth == 0 and raw[start:pos] in PDF_CONTENT_OPERATORS:
+        if container_depth == 0 and raw[start:pos] in PDF_CONTENT_OPERATOR_BYTES:
             return True
     return False

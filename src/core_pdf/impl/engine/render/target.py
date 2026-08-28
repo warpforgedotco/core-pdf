@@ -13,6 +13,7 @@ import numpy
 
 from core_pdf.impl.engine.model.geometry import RectBox
 from core_pdf.impl.engine.render.display import (
+    ImagePaintItem,
     LineCap,
     LineJoin,
     PathPaintItem,
@@ -26,7 +27,6 @@ from core_pdf.impl.engine.render.kernels import (
     RASTER_NUMPY_SPAN_MIN_PIXELS,
     RASTER_SAMPLE_OFFSETS,
     axial_shading_t,
-    evaluate_pdf_function,
     internal_blend_normal_alpha_array_numpy,
     internal_blend_normal_masked_array_numpy,
     internal_blend_normal_solid_array_numpy,
@@ -41,29 +41,24 @@ from core_pdf.impl.engine.render.kernels import (
     internal_fill_path_crossing_spans,
     internal_fill_path_sample_crossings,
     internal_fill_path_sample_crossings_numpy,
-    internal_image_mask_decode_inverts,
-    internal_image_mask_samples,
-    internal_image_quad,
-    internal_image_raw_bytes,
-    internal_image_samples,
     internal_intersect_box,
     internal_make_page_geometry,
     internal_shading_color_rgba,
     internal_signed_area_coverage,
     internal_soft_mask_alpha_at,
-    internal_soft_mask_samples,
     internal_translate_rect,
-    number_array,
     radial_shading_t,
     rasterize_unclipped_line_normal,
 )
 from core_pdf.impl.engine.spec.s_07_content.capture import CapturedPath
-from core_pdf.impl.engine.spec.s_07_filters.models import DecodedImage
-from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import lookup_dict_key
-from core_pdf.impl.engine.spec.s_08_graphics.color import ImageColorManager
+from core_pdf.impl.engine.spec.s_08_graphics.image_decode import PreparedImage
 from core_pdf.impl.engine.spec.s_08_graphics.image_metadata import (
     pdf_int,
     pdf_number,
+)
+from core_pdf.impl.engine.spec.s_08_graphics.shading import (
+    PreparedShading,
+    prepare_shading,
 )
 from core_pdf.impl.runtime.array_views import (
     ByteBuffer,
@@ -72,7 +67,6 @@ from core_pdf.impl.runtime.array_views import (
     uint8_view,
     unit_sample_positions,
 )
-from core_pdf.impl.runtime.image_cache import ImageCacheKey
 
 if TYPE_CHECKING:
     from core_pdf.impl.engine.render.page import RenderedPage
@@ -1513,7 +1507,8 @@ class internal_RasterTarget:
         width_px: int,
         height_px: int,
         comps: int,
-        data: dict[str, Any],
+        soft_mask: numpy.ndarray[Any, Any] | None,
+        constant_alpha: float | None,
         blend_mode: str | None,
     ) -> bool:
         # Captured frame values hoisted into locals so the body below runs on
@@ -1570,18 +1565,17 @@ class internal_RasterTarget:
         if abs(det) < 1e-9:
             return False
         inv_det = 1.0 / det
-        soft_mask_alpha = data.get("soft_mask_alpha")
         alpha = 255
-        if pdf_number(soft_mask_alpha):
-            alpha = max(0, min(255, int(round(alpha * float(soft_mask_alpha)))))
-        soft_mask = internal_soft_mask_samples(data)
+        if constant_alpha is not None:
+            alpha = max(0, min(255, int(round(alpha * constant_alpha))))
         if soft_mask is None:
             soft_mask_data = None
             soft_mask_width = 0
             soft_mask_height = 0
             soft_mask_len = 0
         else:
-            soft_mask_data, soft_mask_width, soft_mask_height = soft_mask
+            soft_mask_height, soft_mask_width = soft_mask.shape
+            soft_mask_data = soft_mask.reshape(-1)
             soft_mask_len = len(soft_mask_data)
         can_write_opaque = (
             alpha == 255 and blend_mode is None and not buffer_stack[-1][1] and soft_mask is None
@@ -1990,14 +1984,11 @@ class internal_RasterTarget:
 
     def blit_image(
         self,
-        box: tuple[float, float, float, float] | None,
-        data: dict[str, Any],
-        blend_mode: str | None,
+        item: ImagePaintItem,
     ) -> None:
         # Captured frame values hoisted into locals so the body below runs on
         # LOAD_FAST exactly as it did when this was a closure.
         clip = self.clip
-        page = self.page
         blend_px = self.blend_px
         blit_affine_image = self.blit_affine_image
         buffer_stack = self.buffer_stack
@@ -2009,107 +2000,44 @@ class internal_RasterTarget:
         page_box_to_pixels = self.page_box_to_pixels
         raster_metrics = self.raster_metrics
         width = self.width
+        box = item.bbox
         if box is None:
             return
-        dictionary = data.get("dictionary")
-        raw = data.get("raw_data")
-        if not isinstance(dictionary, dict) or not isinstance(raw, (bytes, bytearray, memoryview)):
+        source = item.source
+        if source is None:
             return
-        if lookup_dict_key(dictionary, "ImageMask") is True:
-            self.blit_image_mask(data, dictionary, raw, box, blend_mode)
-            return
-        width_px = pdf_int(lookup_dict_key(dictionary, "Width"), 0)
-        height_px = pdf_int(lookup_dict_key(dictionary, "Height"), 0)
-        if width_px <= 0 or height_px <= 0:
-            return
-        shared_source = data.get("image_source")
-        source_alpha: numpy.ndarray[Any, Any] | None = None
+        blend_mode = item.blend_mode
+        if blend_mode == "Normal":
+            blend_mode = None
         decode_started = time.perf_counter()
         try:
-            if shared_source is not None and hasattr(shared_source, "decode"):
-                shared_raster = shared_source.decode()
-                if shared_raster is None:
-                    return
-                source_channels = 1 if shared_raster.color_model == "gray" else 3
-                converted = shared_raster.array[:, :, :source_channels].reshape(-1)
-                if shared_raster.has_alpha:
-                    source_alpha = shared_raster.array[:, :, source_channels].reshape(-1)
-            else:
-                raw_bytes = internal_image_raw_bytes(raw)
-                page_cache_key = (width_px, height_px, id(raw))
-                source_key = getattr(shared_source, "cache_key", None)
-                if not isinstance(source_key, tuple):
-                    source_key = ("raw", len(raw_bytes), width_px, height_px, id(raw))
-                conversion_key = ImageCacheKey(
-                    "converted-image",
-                    tuple(source_key),
-                    (width_px, height_px),
-                )
-                converted = (
-                    page.image_cache.get(conversion_key)
-                    if page.image_cache is not None
-                    else page.image_conversion_cache.get(page_cache_key)
-                )
-                source_channels = 0
-                if converted is None:
-                    converted_cache_key = "__core_pdf_render_converted_image_data__"
-                    converted_cache = dictionary.get(converted_cache_key)
-                    if (
-                        isinstance(converted_cache, tuple)
-                        and len(converted_cache) == 4
-                        and converted_cache[0] == len(raw_bytes)
-                        and converted_cache[1] == width_px
-                        and converted_cache[2] == height_px
-                        and isinstance(converted_cache[3], (bytes, memoryview, numpy.ndarray))
-                    ):
-                        converted = converted_cache[3]
-                        if page.image_cache is not None:
-                            page.image_cache.put(conversion_key, converted)
-                        else:
-                            page.image_conversion_cache[page_cache_key] = converted
-                if converted is None:
-                    sample_result = internal_image_samples(raw_bytes, dictionary)
-                    samples: bytes | memoryview | DecodedImage
-                    sample_dictionary: dict[Any, Any]
-                    if sample_result is None:
-                        samples = raw_bytes
-                        sample_dictionary = dictionary
-                    else:
-                        samples, sample_dictionary = sample_result
-                    if isinstance(samples, DecodedImage):
-                        converted = samples.array.reshape(-1)
-                    else:
-                        converted_data = ImageColorManager.convert_image_data(
-                            samples,
-                            sample_dictionary,
-                        )
-                        if converted_data is None:
-                            return
-                        converted = uint8_view(converted_data)
-                    dictionary[converted_cache_key] = (
-                        len(raw_bytes),
-                        width_px,
-                        height_px,
-                        converted,
-                    )
-                    if page.image_cache is not None:
-                        page.image_cache.put(conversion_key, converted)
-                    else:
-                        page.image_conversion_cache[page_cache_key] = converted
+            prepared = source.prepare()
         except Exception:
-            converted = None
-            source_channels = 0
+            prepared = None
         raster_metrics.image_decode_seconds += time.perf_counter() - decode_started
-        if converted is None or len(converted) == 0:
+        if prepared is None:
             return
+        if prepared.is_stencil:
+            self.blit_image_mask(item, prepared, blend_mode)
+            return
+        shared_raster = prepared.raster
+        width_px = shared_raster.width
+        height_px = shared_raster.height
+        source_channels = 1 if shared_raster.color_model == "gray" else 3
+        converted = shared_raster.array[:, :, :source_channels].reshape(-1)
+        source_alpha: numpy.ndarray[Any, Any] | None = None
+        if shared_raster.has_alpha:
+            source_alpha = shared_raster.array[:, :, source_channels].reshape(-1)
+        native_soft_mask = prepared.soft_mask
+        soft_mask = native_soft_mask.array[:, :, 0] if native_soft_mask is not None else None
         if source_alpha is not None:
             alpha_view = uint8_view(source_alpha)
             expected_alpha = width_px * height_px
             if len(alpha_view) >= expected_alpha:
                 alpha_view = alpha_view[:expected_alpha]
-                if not numpy.any(alpha_view) and internal_soft_mask_samples(data) is None:
+                if not numpy.any(alpha_view) and soft_mask is None:
                     return
-                if numpy.all(alpha_view == 255) and internal_soft_mask_samples(data) is None:
+                if numpy.all(alpha_view == 255) and soft_mask is None:
                     source_alpha = None
         # Average before sampling when the image is being shrunk. Both blit
         # paths below resample with nearest-neighbour, which at a 4x reduction
@@ -2167,17 +2095,33 @@ class internal_RasterTarget:
                     converted = reduced
                     width_px = reduced_width
                     height_px = reduced_height
-        quad = internal_image_quad(data)
-        comps = source_channels or (3 if len(converted) >= width_px * height_px * 3 else 1)
+        soft_mask_alpha = item.soft_mask_alpha
+        constant_alpha_value = float(soft_mask_alpha) if pdf_number(soft_mask_alpha) else None
+        quad = item.quad
+        comps = source_channels
         raster_metrics.image_count += 1
         if quad is not None and source_alpha is None:
             blit_started = time.perf_counter()
             affine_blit = blit_affine_image(
-                quad, converted, width_px, height_px, comps, data, blend_mode
+                quad,
+                converted,
+                width_px,
+                height_px,
+                comps,
+                soft_mask,
+                constant_alpha_value,
+                blend_mode,
             )
             raster_metrics.image_blit_seconds += time.perf_counter() - blit_started
             if affine_blit:
                 return
+        # Preserve the established sampling choice for soft-masked images.
+        # The shared raster's same-size alpha plane makes those images bypass
+        # affine dispatch; the native-resolution mask then replaces that plane
+        # in the axis-aligned path below.  Clearing it before affine dispatch
+        # changes which sampler paints the image and therefore its raster.
+        if soft_mask is not None:
+            source_alpha = None
         x0, y0, x1, y1 = box
         clip_box = current_clip()
         if clip_box is not None:
@@ -2196,13 +2140,6 @@ class internal_RasterTarget:
         y_span = max(1, iy1 - iy0)
         src_x_map = nearest_indices(x_span, width_px)
         src_y_map = nearest_indices(y_span, height_px)
-        # ImageSource keeps a same-sized alpha plane for general consumers.
-        # A PDF soft mask may have substantially higher resolution than its
-        # colour image, so use the original mask here instead of the
-        # downsampled shared alpha.  This preserves scan text and line art.
-        soft_mask = internal_soft_mask_samples(data)
-        if soft_mask is not None:
-            source_alpha = None
         x_unit_map = (
             unit_sample_positions(x_span)
             if soft_mask is not None
@@ -2213,7 +2150,6 @@ class internal_RasterTarget:
             if soft_mask is not None
             else numpy.empty(0, dtype=numpy.float64)
         )
-        soft_mask_alpha = data.get("soft_mask_alpha")
         if pdf_number(soft_mask_alpha):
             has_constant_alpha = True
             constant_alpha = float(soft_mask_alpha)
@@ -2388,7 +2324,11 @@ class internal_RasterTarget:
                     blend_mode,
                 )
 
-    def shading_box(self, data: dict[str, Any]) -> tuple[float, float, float, float]:
+    def shading_box(
+        self,
+        data: dict[str, Any],
+        shading: PreparedShading,
+    ) -> tuple[float, float, float, float]:
         # Captured frame values hoisted into locals so the body below runs on
         # LOAD_FAST exactly as it did when this was a closure.
         crop_x0 = self.crop_x0
@@ -2396,19 +2336,19 @@ class internal_RasterTarget:
         crop_y1 = self.crop_y1
         scale = self.scale
         width = self.width
-        dictionary = data.get("dictionary")
-        box = None
-        if isinstance(dictionary, dict):
-            bbox_values = number_array(lookup_dict_key(dictionary, "BBox"))
-            if len(bbox_values) >= 4:
-                box = tuple(bbox_values[:4])
+        box = shading.bbox
         if box is None:
             raw_box = data.get("bbox")
             if isinstance(raw_box, RectBox):
                 box = (raw_box.x0, raw_box.y0, raw_box.x1, raw_box.y1)
             elif isinstance(raw_box, (list, tuple)) and len(raw_box) == 4:
                 try:
-                    box = tuple(float(value) for value in raw_box[:4])
+                    box = (
+                        float(raw_box[0]),
+                        float(raw_box[1]),
+                        float(raw_box[2]),
+                        float(raw_box[3]),
+                    )
                 except (TypeError, ValueError):
                     box = None
         if box is None:
@@ -2430,24 +2370,17 @@ class internal_RasterTarget:
         scale = self.scale
         shading_box = self.shading_box
         width = self.width
-        dictionary = data.get("dictionary")
-        if not isinstance(dictionary, dict):
+        shading = data.get("prepared_shading")
+        if not isinstance(shading, PreparedShading):
+            shading = prepare_shading(data.get("dictionary"))
+        if shading is None:
             return
-        shading_type = pdf_int(lookup_dict_key(dictionary, "ShadingType"), 0)
-        if shading_type not in {2, 3}:
-            return
-        coords = number_array(lookup_dict_key(dictionary, "Coords"))
-        if (shading_type == 2 and len(coords) < 4) or (shading_type == 3 and len(coords) < 6):
-            return
-        domain = number_array(lookup_dict_key(dictionary, "Domain"))
-        if len(domain) < 2:
-            domain = [0.0, 1.0]
-        extend = lookup_dict_key(dictionary, "Extend")
-        extend0 = isinstance(extend, (list, tuple)) and len(extend) > 0 and extend[0] is True
-        extend1 = isinstance(extend, (list, tuple)) and len(extend) > 1 and extend[1] is True
-        function = lookup_dict_key(dictionary, "Function")
-        color_space = lookup_dict_key(dictionary, "ColorSpace")
-        x0, y0, x1, y1 = shading_box(data)
+        shading_type = shading.shading_type
+        coords = shading.coords
+        domain = shading.domain
+        extend0 = shading.extend_start
+        extend1 = shading.extend_end
+        x0, y0, x1, y1 = shading_box(data, shading)
         clip_box = current_clip()
         if clip_box is not None:
             clipped = internal_intersect_box((x0, y0, x1, y1), clip_box)
@@ -2504,8 +2437,8 @@ class internal_RasterTarget:
                 if rgba is None:
                     value = domain[0] + unit_t * domain_span
                     rgba = internal_shading_color_rgba(
-                        color_space,
-                        evaluate_pdf_function(function, value),
+                        shading.color_model,
+                        shading.evaluate(value),
                         fill_opacity,
                     )
                     # Bounded like the raster coordinate caches below: a
@@ -2946,7 +2879,10 @@ class internal_RasterTarget:
             )
 
     def blit_image_mask(
-        self, data: Any, dictionary: Any, raw: Any, box: Any, blend_mode: Any
+        self,
+        item: ImagePaintItem,
+        prepared: PreparedImage,
+        blend_mode: str | None,
     ) -> None:
         """Paint a stencil-mask image: 1 bit per sample selecting the fill colour.
 
@@ -2972,26 +2908,17 @@ class internal_RasterTarget:
         pixels = self.pixels
         width = self.width
         stencil_red, stencil_green, stencil_blue, stencil_alpha = internal_color_rgba(
-            data.get("fill") or data.get("fill_color"), data.get("fill_opacity")
+            item.fill,
+            item.fill_opacity,
         )
-        width_px = pdf_int(lookup_dict_key(dictionary, "Width"), 0)
-        height_px = pdf_int(lookup_dict_key(dictionary, "Height"), 0)
-        if width_px <= 0 or height_px <= 0:
+        raster = prepared.raster
+        width_px = raster.width
+        height_px = raster.height
+        if not raster.has_alpha:
             return
-        shared_mask_source = data.get("image_source")
-        shared_mask = (
-            shared_mask_source.decode()
-            if shared_mask_source is not None and hasattr(shared_mask_source, "decode")
-            else None
-        )
-        mask = (
-            shared_mask.array[:, :, 1].reshape(-1)
-            if shared_mask is not None and shared_mask.has_alpha
-            else internal_image_mask_samples(
-                internal_image_raw_bytes(raw), dictionary, width_px, height_px
-            )
-        )
-        if mask is None or len(mask) == 0:
+        mask = raster.array[:, :, raster.channels - 1].reshape(-1)
+        box = item.bbox
+        if box is None or len(mask) == 0:
             return
         x0, y0, x1, y1 = box
         clip_box = current_clip()
@@ -3011,8 +2938,6 @@ class internal_RasterTarget:
         y_span = max(1, iy1 - iy0)
         src_x_map = nearest_indices(x_span, width_px)
         src_y_map = nearest_indices(y_span, height_px)
-        decode = lookup_dict_key(dictionary, "Decode")
-        invert = internal_image_mask_decode_inverts(decode)
         target_alpha = buffer_stack[-1][1] if buffer_stack else None
         if (
             (not clip_path_stack or clip_paths_are_axis_aligned_rects())
@@ -3024,8 +2949,6 @@ class internal_RasterTarget:
                 source_x = src_x_map
                 source_y = src_y_map
                 sampled_mask = source_mask[source_y[:, None], source_x[None, :]]
-                if invert:
-                    sampled_mask = 255 - sampled_mask
                 target_pixels = pixel_view(pixels)
                 target_region = target_pixels[iy0:iy1, ix0:ix1]
                 visible = sampled_mask != 0
@@ -3040,7 +2963,7 @@ class internal_RasterTarget:
                     src_idx = source_row + src_x_map[dx]
                     if src_idx >= len(mask):
                         continue
-                    alpha = 255 - mask[src_idx] if invert else mask[src_idx]
+                    alpha = mask[src_idx]
                     if alpha:
                         idx = row + px * 4
                         pixels[idx] = stencil_red
@@ -3067,8 +2990,6 @@ class internal_RasterTarget:
                 if src_idx >= len(mask):
                     continue
                 alpha = mask[src_idx]
-                if invert:
-                    alpha = 255 - alpha
                 if normal_fast:
                     blend_normal_pixel(
                         row + px * 4, stencil_red, stencil_green, stencil_blue, alpha
@@ -3133,16 +3054,10 @@ class internal_RasterTarget:
             alpha_grid = alpha_view[numpy.minimum(base_index, len(alpha_view) - 1)]
             bounds_ok &= base_index < len(alpha_view)
         if soft_mask is not None:
-            samples, mask_width, mask_height = soft_mask
-            mask_view = uint8_view(samples)
+            mask_height, mask_width = soft_mask.shape
             mask_x = numpy.clip((x_unit_map * mask_width).astype(numpy.intp), 0, mask_width - 1)
             mask_y = numpy.clip((y_unit_map * mask_height).astype(numpy.intp), 0, mask_height - 1)
-            mask_index = mask_y[:, None] * mask_width + mask_x[None, :]
-            mask_alpha = numpy.where(
-                mask_index < len(mask_view),
-                mask_view[numpy.minimum(mask_index, len(mask_view) - 1)],
-                255,
-            )
+            mask_alpha = soft_mask[mask_y[:, None], mask_x[None, :]]
             bounds_ok &= mask_alpha > 0
             scaled = numpy.rint(alpha_grid.astype(numpy.float64) * mask_alpha / 255.0)
             alpha_grid = numpy.clip(scaled, 0, 255).astype(numpy.uint8)

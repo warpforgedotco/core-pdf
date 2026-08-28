@@ -13,7 +13,12 @@ from core_pdf.impl.engine.spec.s_07_content.inline_images import (
     parse_inline_image,
     recover_inline_image_position,
 )
-from core_pdf.impl.engine.spec.s_07_syntax.content_operators import (
+from core_pdf.impl.engine.spec.s_07_syntax.lexer import (
+    EMPTY_SIMPLE_TJ_ARRAY,
+    PdfLexer,
+)
+from core_pdf.impl.engine.spec.s_07_syntax.object_cache import CachedPdfObject
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.content_operators import (
     GRAPHICS_STATE_OPERATORS,
     IMAGE_OPERATORS,
     TEXT_ONLY_SKIP_DOUBLE,
@@ -22,19 +27,14 @@ from core_pdf.impl.engine.spec.s_07_syntax.content_operators import (
     VECTOR_PAINT_OPERATORS,
     VECTOR_PATH_OPERATORS,
 )
-from core_pdf.impl.engine.spec.s_07_syntax.lexer import (
-    EMPTY_SIMPLE_TJ_ARRAY,
-    PdfLexer,
-)
-from core_pdf.impl.engine.spec.s_07_syntax.lexer_helpers import full_source_bytes
-from core_pdf.impl.engine.spec.s_07_syntax.object_cache import CachedPdfObject
-from core_pdf.impl.engine.spec.s_07_syntax.scanning import (
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.lexer_helpers import full_source_bytes
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.scanning import (
     skip_comment,
     skip_hex_string,
     skip_literal_string,
     skip_name,
 )
-from core_pdf.impl.engine.spec.s_07_syntax.tokens import SEPARATOR_TABLE, WS_TABLE
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.tokens import SEPARATOR_TABLE, WS_TABLE
 from core_pdf.impl.engine.spec.s_09_fonts.decoder import FontDecoder
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.primitives import PdfName, PdfString

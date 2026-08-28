@@ -566,8 +566,7 @@ def score_document_candidates(document: PdfDocument, gt_text: str) -> list[dict[
     """Score opt-in raw OCR candidates against the case's content ground truth."""
     scored: list[dict[str, Any]] = []
     for page_number, page in enumerate(document.pages, start=1):
-        cache = getattr(page, "extraction_cache", None)
-        report = cache.get("parse_report_v1") if cache is not None else None
+        report = getattr(page, "parse_report", None)
         records = report.recognition.candidate_analysis if isinstance(report, ParseReport) else ()
         for record in records:
             if not isinstance(record, dict):
@@ -611,10 +610,7 @@ def collect_document_extraction_analysis(document: PdfDocument) -> list[dict[str
         return []
     records: list[dict[str, Any]] = []
     for page_number, page in enumerate(document.pages, start=1):
-        cache = getattr(page, "extraction_cache", None)
-        if cache is None:
-            continue
-        report = cache.get("parse_report_v1")
+        report = getattr(page, "parse_report", None)
         if isinstance(report, ParseReport):
             records.append({"page": page_number, **report.as_record()})
     return records

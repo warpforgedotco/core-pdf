@@ -15,7 +15,7 @@ from core_pdf.impl.engine.spec.s_07_security.key_derivation import (
     rc4_xor_cascade,
 )
 from core_pdf.impl.engine.spec.s_07_security.rc4 import CryptRC4
-from core_pdf.impl.objects import PdfStream
+from core_pdf.impl.engine.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.primitives import PdfName, PdfString
 
 

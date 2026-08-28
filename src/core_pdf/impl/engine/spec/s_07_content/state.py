@@ -69,15 +69,19 @@ from core_pdf.impl.engine.spec.s_07_content.text_helpers import (
     detect_ligature_overrides,
     is_garbage_text,
 )
-from core_pdf.impl.engine.spec.s_07_syntax.coercion import (
+from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
+from core_pdf.impl.engine.spec.s_07_syntax.resolver_values import PdfValueResolver
+from core_pdf.impl.engine.spec.s_07_syntax.stream import PdfStream
+from core_pdf.impl.engine.spec.s_07_syntax.types import PdfDict
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.coercion import (
     normalize_pdf_name,
     parse_float,
     parse_int,
 )
-from core_pdf.impl.engine.spec.s_07_syntax.content_operators import TYPE3_REPLAY_OPERATORS
-from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
-from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import lookup_dict_key
-from core_pdf.impl.engine.spec.s_07_syntax.resolver_values import PdfValueResolver
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.content_operators import (
+    TYPE3_REPLAY_OPERATORS,
+)
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_08_graphics.image_decode import ImageSource
 from core_pdf.impl.engine.spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 from core_pdf.impl.engine.spec.s_09_fonts.decoder import (
@@ -86,16 +90,14 @@ from core_pdf.impl.engine.spec.s_09_fonts.decoder import (
     Type3CharProcProgram,
 )
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.objects import PdfStream
 from core_pdf.impl.primitives import (
     MISSING,
     PdfName,
     PdfReference,
     PdfString,
 )
-from core_pdf.impl.runtime.cache_lock import document_cache_lock
 from core_pdf.impl.runtime.image_cache import ImageCache
-from core_pdf.impl.types import PdfDict, Rectangle
+from core_pdf.impl.types import Rectangle
 
 OperationHandler: TypeAlias = StateOperationHandler
 ObjectCache: TypeAlias = dict[object, object]
@@ -635,9 +637,6 @@ class TextState:
         self.compat_tj_decoder = previous_compat_decoder
         self.compat_tj_need_charspace = previous_compat_need_charspace
 
-    def append_tj_array(self, array: Any) -> None:
-        self._append_tj_array_impl(array)
-
     @property
     def ctm(self) -> Matrix:
         return Matrix(self.ca, self.cb, self.cc, self.cd, self.ce, self.cf)
@@ -819,7 +818,7 @@ class TextState:
             if isinstance(char_proc, PdfStream)
             else Type3CharProcProgram(None, None)
         )
-        with document_cache_lock(self.document):
+        with self.document.internal_cache_lock:
             cached = cache[code]
             if cached is not None:
                 return cached
@@ -1324,7 +1323,7 @@ class TextState:
             else id(font_obj_ref)
         )
         doc_cache = self.document.decoder_cache
-        with document_cache_lock(self.document):
+        with self.document.internal_cache_lock:
             cached_decoder = doc_cache.get(cache_key, MISSING)
             if cached_decoder is not MISSING:
                 decoder = typing.cast("FontDecoder", cached_decoder)
@@ -3464,7 +3463,7 @@ class TextState:
         self.sequence = seqno
         self.pending_line_break = pending_line_break
 
-    def _append_tj_array_impl(self: Any, array: Any) -> None:
+    def append_tj_array(self: Any, array: Any) -> None:
         if not isinstance(array, (list, tuple)):
             return
         if not array:
@@ -3656,7 +3655,7 @@ class TextState:
             self.cached_rotation = detect_rotation_from_linear(self.ca, self.cb, self.cc, self.cd)
         self.invisible_text_layer = False
 
-    def internal_end_text(self) -> None:
+    def op_ET(self, operands: OperandWindow, depth: int) -> None:
         pending = self.pending_run
         if pending:
             if self.capture_runs:
@@ -3696,9 +3695,6 @@ class TextState:
     def op_BT(self, operands: OperandWindow, depth: int) -> None:
         self.text_object_id += 1
         self.internal_begin_text()
-
-    def op_ET(self, operands: OperandWindow, depth: int) -> None:
-        self.internal_end_text()
 
     def op_T_star(self, operands: OperandWindow, depth: int) -> None:
         self.internal_move_text(0.0, -self.leading)
@@ -4085,9 +4081,6 @@ class TextState:
         self.dash_pattern = (dash_array, phase)
 
     def op_m(self, operands: OperandWindow, depth: int) -> None:
-        self._op_m_impl(operands, depth)
-
-    def _op_m_impl(self, operands: OperandWindow, depth: int) -> None:
         if len(operands) >= 2:
             try:
                 # op_m_values coerces via as_float; the except below covers non-numerics.
@@ -4107,9 +4100,6 @@ class TextState:
         self.subpath_start = point
 
     def op_l(self, operands: OperandWindow, depth: int) -> None:
-        self._op_l_impl(operands, depth)
-
-    def _op_l_impl(self, operands: OperandWindow, depth: int) -> None:
         if len(operands) >= 2 and self.current_point is not None:
             try:
                 # op_l_values coerces via as_float; the except below covers non-numerics.
@@ -4130,9 +4120,6 @@ class TextState:
         self.current_point = point
 
     def op_re(self, operands: OperandWindow, depth: int) -> None:
-        self._op_re_impl(operands, depth)
-
-    def _op_re_impl(self, operands: OperandWindow, depth: int) -> None:
         if len(operands) >= 4:
             try:
                 x, y = self.as_float(operands[0]), self.as_float(operands[1])
@@ -4156,9 +4143,6 @@ class TextState:
         self.subpath_start = (x_float, y_float)
 
     def op_h(self, operands: OperandWindow, depth: int) -> None:
-        self._op_h_impl(operands, depth)
-
-    def _op_h_impl(self, operands: OperandWindow, depth: int) -> None:
         if self.current_point is not None and self.subpath_start is not None:
             if (
                 self.capture_clipping
@@ -4169,9 +4153,6 @@ class TextState:
             self.current_point = self.subpath_start
 
     def op_c(self, operands: OperandWindow, depth: int) -> None:
-        self._op_c_impl(operands, depth)
-
-    def _op_c_impl(self, operands: OperandWindow, depth: int) -> None:
         if len(operands) >= 6:
             try:
                 x1 = self.as_float(operands[0])
@@ -4185,9 +4166,6 @@ class TextState:
             self.append_cubic_curve(x1, y1, x2, y2, x3, y3)
 
     def op_v(self, operands: OperandWindow, depth: int) -> None:
-        self._op_v_impl(operands, depth)
-
-    def _op_v_impl(self, operands: OperandWindow, depth: int) -> None:
         if len(operands) >= 4 and self.current_point is not None:
             x0, y0 = self.current_point
             try:
@@ -4200,9 +4178,6 @@ class TextState:
             self.append_cubic_curve(x0, y0, x2, y2, x3, y3)
 
     def op_y(self, operands: OperandWindow, depth: int) -> None:
-        self._op_y_impl(operands, depth)
-
-    def _op_y_impl(self, operands: OperandWindow, depth: int) -> None:
         if len(operands) >= 4 and self.current_point is not None:
             try:
                 x1 = self.as_float(operands[0])
@@ -4596,9 +4571,6 @@ class TextState:
             },
         )
 
-    def op_CS(self, operands: OperandWindow, depth: int) -> None:
-        self._op_CS_impl(operands, depth)
-
     def internal_set_color_space(self, operands: OperandWindow, *, stroke: bool) -> None:
         if self.type3_uncolored:
             # 9.6.5.2: every colour operator is ignored inside an uncoloured
@@ -4626,23 +4598,14 @@ class TextState:
                 else:
                     self.fill_color_space = color_space
 
-    def _op_CS_impl(self, operands: OperandWindow, depth: int) -> None:
+    def op_CS(self, operands: OperandWindow, depth: int) -> None:
         self.internal_set_color_space(operands, stroke=True)
 
     def op_cs(self, operands: OperandWindow, depth: int) -> None:
-        self._op_cs_impl(operands, depth)
-
-    def _op_cs_impl(self, operands: OperandWindow, depth: int) -> None:
         self.internal_set_color_space(operands, stroke=False)
 
     def op_SC(self, operands: OperandWindow, depth: int) -> None:
-        self._op_SC_impl(operands, depth)
-
-    def _op_SC_impl(self, operands: OperandWindow, depth: int) -> None:
         self.internal_set_color(operands, stroke=True, allow_pattern=False)
-
-    def op_SCN(self, operands: OperandWindow, depth: int) -> None:
-        self._op_SCN_impl(operands, depth)
 
     def internal_set_color(
         self, operands: OperandWindow, *, stroke: bool, allow_pattern: bool
@@ -4673,25 +4636,16 @@ class TextState:
                 self.fill_color = normalized
                 self.fill_pattern = None
 
-    def _op_SCN_impl(self, operands: OperandWindow, depth: int) -> None:
+    def op_SCN(self, operands: OperandWindow, depth: int) -> None:
         self.internal_set_color(operands, stroke=True, allow_pattern=True)
 
     def op_sc(self, operands: OperandWindow, depth: int) -> None:
-        self._op_sc_impl(operands, depth)
-
-    def _op_sc_impl(self, operands: OperandWindow, depth: int) -> None:
         self.internal_set_color(operands, stroke=False, allow_pattern=False)
 
     def op_scN(self, operands: OperandWindow, depth: int) -> None:
-        self._op_scN_impl(operands, depth)
-
-    def _op_scN_impl(self, operands: OperandWindow, depth: int) -> None:
         self.internal_set_color(operands, stroke=False, allow_pattern=True)
 
     def op_i(self, operands: OperandWindow, depth: int) -> None:
-        self._op_i_impl(operands, depth)
-
-    def _op_i_impl(self, operands: OperandWindow, depth: int) -> None:
         if operands:
             try:
                 value = self.as_float(operands[0])
@@ -4700,9 +4654,6 @@ class TextState:
             self.flatness = max(0, min(100, int(value)))
 
     def op_ri(self, operands: OperandWindow, depth: int) -> None:
-        self._op_ri_impl(operands, depth)
-
-    def _op_ri_impl(self, operands: OperandWindow, depth: int) -> None:
         if not operands:
             return
         value = self.document.resolver.resolve_name_like_value(operands[0])

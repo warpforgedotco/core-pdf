@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from core_pdf.impl.engine.spec.s_07_syntax.coercion import (
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.coercion import (
     normalize_pdf_name,
     parse_int,
 )

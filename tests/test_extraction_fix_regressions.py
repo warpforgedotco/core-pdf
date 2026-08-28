@@ -35,6 +35,7 @@ from core_pdf.impl.engine.parse.model import (
     ParsedBlock,
     ParsedLine,
 )
+from core_pdf.impl.engine.parse.pipeline import page_extraction
 from core_pdf.impl.engine.parse.tables import (
     internal_merge_wrapped_cell_rows,
     internal_stream_table_reads_like_prose,
@@ -370,8 +371,7 @@ def test_cell_background_does_not_paint_over_its_text() -> None:
         cast(Any, pytest.skip)("missing fixture")
     with PdfDocument.open(fixture) as document:
         document.extract()
-        cache = cast(Any, document.pages[0].extraction_cache)
-        capture = next(value for value in cache.values() if type(value).__name__ == "CapturedPage")
+        capture = page_extraction(document.pages[0]).capture()
         header = next(run for run in capture.runs if (run.text or "").strip() == "Material")
         raster = document.pages[0].render().rasterize(scale=4.0)
 

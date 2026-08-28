@@ -232,17 +232,8 @@ root_package = "core_pdf"
 # The documented invariant is that there are no *runtime* import cycles between
 # packages; annotation-only imports are excluded so the tool checks that, and not a
 # stricter rule this codebase has never held. See "Dependency direction" in
-# docs/architecture.md for the two knots that are deliberately tolerated.
+# docs/architecture.md for the deliberate annotation-only knots.
 exclude_type_checking_imports = true
-
-# One wart shows up in four contracts, so it is spelled out once here and referenced
-# by name below. PdfStream lives in impl/objects.py, a base module, but decodes
-# through impl/engine/spec/s_07_filters. Every module that touches PdfStream
-# therefore has a transitive path up into the engine. It is not an allowance: the
-# fix is to move PdfStream into the COS layer, which needs the syntax *primitives*
-# (coercion, pdfdict, lexer_helpers, scanning) separated from the COS objects that
-# depend on the filters -- the layer boundary the filter imports already imply.
-# Until then these two edges are ignored, and only these two.
 
 [[tool.importlinter.contracts]]
 name = "Engine layers"
@@ -257,10 +248,6 @@ layers = [
     "layout",
     "model",
 ]
-ignore_imports = [                                              # PdfStream wart
-    "core_pdf.impl.objects -> core_pdf.impl.engine.spec.s_07_filters.decode_spec",
-    "core_pdf.impl.objects -> core_pdf.impl.engine.spec.s_07_filters.pipeline",
-]
 
 [[tool.importlinter.contracts]]
 name = "Spec layers"
@@ -274,12 +261,9 @@ layers = [
     "s_14_structure",
     "s_07_content",
     "s_09_fonts : s_08_graphics : s_07_security",
-    "s_07_filters",
     "s_07_syntax",
-]
-ignore_imports = [                                              # PdfStream wart
-    "core_pdf.impl.objects -> core_pdf.impl.engine.spec.s_07_filters.decode_spec",
-    "core_pdf.impl.objects -> core_pdf.impl.engine.spec.s_07_filters.pipeline",
+    "s_07_filters",
+    "s_07_syntax_primitives",
 ]
 
 [[tool.importlinter.contracts]]
@@ -334,19 +318,14 @@ forbidden_modules = [
     "core_pdf.impl.engine.writing",
     "core_pdf.api",
 ]
-ignore_imports = [                                              # PdfStream wart
-    "core_pdf.impl.objects -> core_pdf.impl.engine.spec.s_07_filters.decode_spec",
-    "core_pdf.impl.objects -> core_pdf.impl.engine.spec.s_07_filters.pipeline",
-]
 
 [[tool.importlinter.contracts]]
-name = "The COS layer depends only on the base modules"
+name = "The COS layer depends only on filters, syntax primitives, and base modules"
 type = "forbidden"
 source_modules = ["core_pdf.impl.engine.spec.s_07_syntax"]
 forbidden_modules = [
     "core_pdf.impl.engine.spec.s_07_content",
     "core_pdf.impl.engine.spec.s_07_document",
-    "core_pdf.impl.engine.spec.s_07_filters",
     "core_pdf.impl.engine.spec.s_07_security",
     "core_pdf.impl.engine.spec.s_08_graphics",
     "core_pdf.impl.engine.spec.s_09_fonts",
@@ -358,9 +337,26 @@ forbidden_modules = [
     "core_pdf.impl.engine.structured",
     "core_pdf.impl.engine.writing",
 ]
-ignore_imports = [                                              # PdfStream wart
-    "core_pdf.impl.objects -> core_pdf.impl.engine.spec.s_07_filters.decode_spec",
-    "core_pdf.impl.objects -> core_pdf.impl.engine.spec.s_07_filters.pipeline",
+
+[[tool.importlinter.contracts]]
+name = "Syntax primitives are the spec floor"
+type = "forbidden"
+source_modules = ["core_pdf.impl.engine.spec.s_07_syntax_primitives"]
+forbidden_modules = [
+    "core_pdf.impl.engine.spec.s_07_content",
+    "core_pdf.impl.engine.spec.s_07_document",
+    "core_pdf.impl.engine.spec.s_07_filters",
+    "core_pdf.impl.engine.spec.s_07_security",
+    "core_pdf.impl.engine.spec.s_07_syntax",
+    "core_pdf.impl.engine.spec.s_08_graphics",
+    "core_pdf.impl.engine.spec.s_09_fonts",
+    "core_pdf.impl.engine.spec.s_14_structure",
+    "core_pdf.impl.engine.layout",
+    "core_pdf.impl.engine.model",
+    "core_pdf.impl.engine.parse",
+    "core_pdf.impl.engine.render",
+    "core_pdf.impl.engine.structured",
+    "core_pdf.impl.engine.writing",
 ]
 
 [[tool.importlinter.contracts]]
@@ -375,7 +371,6 @@ type = "forbidden"
 source_modules = [
     "core_pdf.impl.exceptions",
     "core_pdf.impl.models",
-    "core_pdf.impl.objects",
     "core_pdf.impl.pages",
     "core_pdf.impl.primitives",
     "core_pdf.impl.protocols",
@@ -383,7 +378,3 @@ source_modules = [
     "core_pdf.impl.types",
 ]
 forbidden_modules = ["core_pdf.impl.engine"]
-ignore_imports = [                                              # PdfStream wart
-    "core_pdf.impl.objects -> core_pdf.impl.engine.spec.s_07_filters.decode_spec",
-    "core_pdf.impl.objects -> core_pdf.impl.engine.spec.s_07_filters.pipeline",
-]

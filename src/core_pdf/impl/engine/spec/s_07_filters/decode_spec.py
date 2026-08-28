@@ -10,12 +10,12 @@ from core_pdf.impl.engine.spec.s_07_filters.registry import (
     CCITT_FILTERS,
     FILTER_NAME_ALIASES,
 )
-from core_pdf.impl.engine.spec.s_07_syntax.coercion import (
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.coercion import (
     is_pdf_null,
     normalize_pdf_name,
     parse_int,
 )
-from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 
 DecodeParam: TypeAlias = object
 

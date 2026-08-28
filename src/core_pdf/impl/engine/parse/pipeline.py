@@ -8,15 +8,16 @@ import time
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from concurrent.futures import Future
-from dataclasses import replace
+from contextlib import suppress
+from dataclasses import dataclass, field, replace
+from types import MappingProxyType
 from typing import Any, cast
 
 from core_pdf.impl.engine.model.glyphs import GlyphUnicodeSemantics, glyph_unicode_semantics
 from core_pdf.impl.engine.parse.capture import (
-    CAPTURED_PAGE_CACHE_KEY,
+    LearnedUnicodeMap,
     capture_page,
     internal_capture_from_program,
-    internal_learned_glyph_text,
 )
 from core_pdf.impl.engine.parse.emit import (
     assemble_page,
@@ -51,7 +52,7 @@ from core_pdf.impl.engine.parse.tables import (
     extract_tables,
 )
 from core_pdf.impl.engine.spec.s_07_document.page_links import resolve_destination_value
-from core_pdf.impl.engine.structured import (
+from core_pdf.impl.engine.structured.model import (
     SCHEMA_VERSION,
     Annotation,
     Diagnostic,
@@ -63,9 +64,6 @@ from core_pdf.impl.engine.structured import (
 )
 from core_pdf.impl.runtime.execution import TaskScope, WorkStage
 
-PARSED_PAGE_CACHE_KEY = "parsed_page_v5"
-PARSE_REPORT_CACHE_KEY = "parse_report_v1"
-ASSEMBLED_PAGE_CACHE_KEY = "assembled_page_v2"
 PAGE_EXTRACTION_CACHE_KEY = "page_extraction_v3"
 
 
@@ -82,115 +80,202 @@ def internal_report_number(
 class internal_PageExtraction:
     """Lazily materialized extraction products for one page."""
 
-    def __init__(self, page: Any) -> None:
+    def __init__(
+        self,
+        page: Any,
+        *,
+        capture: CapturedPage | None = None,
+        plan: WorkPlan | None = None,
+        recognition: RecognitionResult | None = None,
+        capture_seconds: float = 0.0,
+        planning_seconds: float = 0.0,
+        ocr_seconds: float = 0.0,
+    ) -> None:
         self.page = page
-        self.started = time.perf_counter()
-        self.internal_capture: CapturedPage | None = None
-        self.internal_captured_at: float | None = None
-        self.internal_plan: WorkPlan | None = None
-        self.internal_planned_at: float | None = None
-        self.internal_recognition: RecognitionResult | None = None
-        self.internal_recognized_at: float | None = None
+        self.internal_capture = capture
+        self.internal_plan = plan
+        self.internal_recognition = recognition
         self.internal_observations: ObservationBatch | None = None
-        self.internal_fused_at: float | None = None
         self.internal_tables: tuple[Table, ...] | None = None
-        self.internal_tabled_at: float | None = None
         self.internal_layout: tuple[tuple[ParsedBlock, ...], str, ReadingOrderEvidence] | None = (
             None
         )
-        self.internal_layout_finished_at: float | None = None
+        self.internal_parsed_page: ParsedPage | None = None
+        self.internal_parse_report: ParseReport | None = None
+        self.internal_assembled_page: Any | None = None
+        self.internal_capture_seconds = capture_seconds
+        self.internal_planning_seconds = planning_seconds
+        self.internal_ocr_seconds = ocr_seconds
+        self.internal_fusion_seconds = 0.0
+        self.internal_table_seconds = 0.0
+        self.internal_layout_seconds = 0.0
+
+    def internal_invalidate_after_capture(self) -> None:
+        self.internal_plan = None
+        self.internal_planning_seconds = 0.0
+        self.internal_invalidate_after_plan()
+
+    def internal_invalidate_after_plan(self) -> None:
+        self.internal_recognition = None
+        self.internal_ocr_seconds = 0.0
+        self.internal_invalidate_after_recognition()
+
+    def internal_invalidate_after_recognition(self) -> None:
+        self.internal_observations = None
+        self.internal_fusion_seconds = 0.0
+        self.internal_tables = None
+        self.internal_table_seconds = 0.0
+        self.internal_layout = None
+        self.internal_layout_seconds = 0.0
+        self.internal_parsed_page = None
+        self.internal_parse_report = None
+        self.internal_assembled_page = None
+
+    def replace_capture(self, capture: CapturedPage, *, seconds: float = 0.0) -> None:
+        """Install a capture and atomically invalidate every dependent product."""
+        with self.page.internal_page_lock:
+            self.internal_capture = capture
+            self.internal_capture_seconds = seconds
+            self.internal_invalidate_after_capture()
+
+    def replace_recognition(self, recognition: RecognitionResult, *, seconds: float = 0.0) -> None:
+        """Install recognition and atomically invalidate every dependent product."""
+        with self.page.internal_page_lock:
+            self.internal_recognition = recognition
+            self.internal_ocr_seconds = seconds
+            self.internal_invalidate_after_recognition()
+
+    def replace_recognition_report(self, report: RecognitionReport) -> None:
+        """Replace diagnostics without recomputing observation-dependent stages."""
+        with self.page.internal_page_lock:
+            recognition = self.internal_recognition
+            if recognition is None:
+                raise RuntimeError("recognition must exist before its report can be replaced")
+            self.internal_recognition = replace(recognition, report=report)
+            self.internal_parsed_page = None
+            self.internal_parse_report = None
+            self.internal_assembled_page = None
+
+    @property
+    def report(self) -> ParseReport | None:
+        with self.page.internal_page_lock:
+            return self.internal_parse_report
 
     def capture(self) -> CapturedPage:
-        if self.internal_capture is not None:
-            return self.internal_capture
-        self.internal_capture = capture_page(self.page)
-        self.internal_captured_at = time.perf_counter()
-        return self.internal_capture
+        with self.page.internal_page_lock:
+            if self.internal_capture is not None:
+                return self.internal_capture
+            started = time.perf_counter()
+            capture = capture_page(self.page)
+            self.internal_capture_seconds = time.perf_counter() - started
+            self.internal_capture = capture
+            return capture
 
     def plan(self) -> WorkPlan:
-        if self.internal_plan is not None:
-            return self.internal_plan
-        self.internal_plan = plan_page(self.capture())
-        self.internal_planned_at = time.perf_counter()
-        return self.internal_plan
+        with self.page.internal_page_lock:
+            if self.internal_plan is not None:
+                return self.internal_plan
+            started = time.perf_counter()
+            plan = plan_page(self.capture())
+            self.internal_planning_seconds = time.perf_counter() - started
+            self.internal_plan = plan
+            return plan
 
     def recognition(self, context: TaskScope) -> RecognitionResult:
-        if self.internal_recognition is None:
+        with self.page.internal_page_lock:
+            if self.internal_recognition is not None:
+                return self.internal_recognition
+            started = time.perf_counter()
             plan = self.plan()
             if plan.ocr_passes:
                 from core_pdf.impl.engine.parse.ocr import recognize_page
 
-                self.internal_recognition = recognize_page(self.capture(), plan, context)
+                recognition = recognize_page(self.capture(), plan, context)
             else:
                 # recognize_page() returns exactly this for a plan with no OCR
                 # passes. Short-circuiting keeps parse.ocr — and with it
                 # tesserocr, PIL and the rasterizer — off the native-text path.
-                self.internal_recognition = RecognitionResult(
-                    ObservationBatch.empty(), RecognitionReport()
-                )
-            self.internal_recognized_at = time.perf_counter()
-        return self.internal_recognition
+                recognition = RecognitionResult(ObservationBatch.empty(), RecognitionReport())
+            self.internal_ocr_seconds = time.perf_counter() - started
+            self.internal_recognition = recognition
+            return recognition
 
     def ocr(self, context: TaskScope) -> ObservationBatch:
         return self.recognition(context).observations
 
     def observations(self, context: TaskScope) -> ObservationBatch:
-        if self.internal_observations is None:
+        with self.page.internal_page_lock:
+            if self.internal_observations is not None:
+                return self.internal_observations
+            started = time.perf_counter()
             capture = self.capture()
-            self.internal_observations = fuse_observations(
+            observations = fuse_observations(
                 capture.observations,
                 self.ocr(context),
                 self.plan(),
             )
-            self.internal_fused_at = time.perf_counter()
-        return self.internal_observations
+            self.internal_fusion_seconds = time.perf_counter() - started
+            self.internal_observations = observations
+            return observations
 
     def tables(self, context: TaskScope) -> tuple[Table, ...]:
-        if self.internal_tables is None:
-            self.internal_tables = extract_tables(self.capture(), self.observations(context))
-            self.internal_tabled_at = time.perf_counter()
-        return self.internal_tables
+        with self.page.internal_page_lock:
+            if self.internal_tables is not None:
+                return self.internal_tables
+            started = time.perf_counter()
+            tables = extract_tables(self.capture(), self.observations(context))
+            self.internal_table_seconds = time.perf_counter() - started
+            self.internal_tables = tables
+            return tables
 
     def internal_image_obstacles(self) -> tuple[tuple[float, float, float, float], ...]:
-        capture = self.capture()
-        return tuple(
-            box
-            for box in capture.evidence.image_boxes
-            if 0.01 <= ((box[2] - box[0]) * (box[3] - box[1])) / capture.evidence.page_area < 0.65
-        )
+        with self.page.internal_page_lock:
+            capture = self.capture()
+            return tuple(
+                box
+                for box in capture.evidence.image_boxes
+                if 0.01
+                <= ((box[2] - box[0]) * (box[3] - box[1])) / capture.evidence.page_area
+                < 0.65
+            )
 
     def layout(self, context: TaskScope) -> tuple[ParsedBlock, ...]:
-        if self.internal_layout is not None:
-            return self.internal_layout[0]
-        observations = self.observations(context)
-        capture = self.capture()
-        table_obstacles = tuple(
-            table.bbox for table in self.tables(context) if table.bbox is not None
-        )
-        use_xy_cut = not (
-            capture.evidence.image_count >= 8 and 0.05 <= capture.evidence.image_area_ratio < 0.65
-        )
-        blocks, order_evidence = layout_blocks_with_evidence(
-            observations,
-            obstacles=(*table_obstacles, *self.internal_image_obstacles()),
-            use_xy_cut=use_xy_cut,
-            rotation=int(getattr(self.page, "rotation", 0) or 0),
-            page_width=float(capture.page.width),
-            page_height=float(capture.page.height),
-        )
-        self.internal_layout = (
-            blocks,
-            "xy-cut" if use_xy_cut else "row-order",
-            order_evidence,
-        )
-        self.internal_layout_finished_at = time.perf_counter()
-        return blocks
+        with self.page.internal_page_lock:
+            if self.internal_layout is not None:
+                return self.internal_layout[0]
+            started = time.perf_counter()
+            observations = self.observations(context)
+            capture = self.capture()
+            table_obstacles = tuple(
+                table.bbox for table in self.tables(context) if table.bbox is not None
+            )
+            use_xy_cut = not (
+                capture.evidence.image_count >= 8
+                and 0.05 <= capture.evidence.image_area_ratio < 0.65
+            )
+            blocks, order_evidence = layout_blocks_with_evidence(
+                observations,
+                obstacles=(*table_obstacles, *self.internal_image_obstacles()),
+                use_xy_cut=use_xy_cut,
+                rotation=int(getattr(self.page, "rotation", 0) or 0),
+                page_width=float(capture.page.width),
+                page_height=float(capture.page.height),
+            )
+            self.internal_layout_seconds = time.perf_counter() - started
+            self.internal_layout = (
+                blocks,
+                "xy-cut" if use_xy_cut else "row-order",
+                order_evidence,
+            )
+            return blocks
 
     def parsed_page(self, context: TaskScope) -> ParsedPage:
-        cache = self.page.extraction_cache
-        cached = cache.get_as(PARSED_PAGE_CACHE_KEY, ParsedPage)
-        if cached is not None:
-            return cached
+        with self.page.internal_page_lock:
+            if self.internal_parsed_page is not None:
+                return self.internal_parsed_page
+            return self.internal_build_parsed_page(context)
+
+    def internal_build_parsed_page(self, context: TaskScope) -> ParsedPage:
         capture = self.capture()
         plan = self.plan()
         recognition = self.recognition(context)
@@ -207,7 +292,6 @@ class internal_PageExtraction:
                 for index, box in enumerate(capture.evidence.image_boxes)
             )
         )
-        finished = self.internal_layout_finished_at or time.perf_counter()
         ocr_diagnostics = recognition_report.passes
         newstroke_diagnostics = capture.newstroke_report
         stroked_decode_diagnostics = recognition_report.stroked_vector_decode
@@ -248,19 +332,15 @@ class internal_PageExtraction:
             type3_unsafe_fallbacks += int(getattr(decoder, "type3_charproc_unsafe_fallbacks", 0))
         metrics: dict[str, float | int | str | bool] = {
             "route": plan.route.value,
-            "page_program_seconds": (self.internal_captured_at or self.started) - self.started,
+            "page_program_seconds": self.internal_capture_seconds,
             "content_stream_passes": 1,
             "capture_product_count": 1,
-            "capture_seconds": (self.internal_captured_at or self.started) - self.started,
-            "planning_seconds": (self.internal_planned_at or self.started)
-            - (self.internal_captured_at or self.started),
-            "ocr_seconds": (self.internal_recognized_at or self.started)
-            - (self.internal_planned_at or self.started),
-            "fusion_seconds": (self.internal_fused_at or self.started)
-            - (self.internal_recognized_at or self.started),
-            "table_seconds": (self.internal_tabled_at or self.started)
-            - (self.internal_fused_at or self.started),
-            "layout_seconds": finished - (self.internal_tabled_at or self.started),
+            "capture_seconds": self.internal_capture_seconds,
+            "planning_seconds": self.internal_planning_seconds,
+            "ocr_seconds": self.internal_ocr_seconds,
+            "fusion_seconds": self.internal_fusion_seconds,
+            "table_seconds": self.internal_table_seconds,
+            "layout_seconds": self.internal_layout_seconds,
             "native_observations": len(capture.observations),
             "ocr_observations": len(ocr),
             "ocr_raster_pixels": ocr_raster_pixels,
@@ -371,64 +451,89 @@ class internal_PageExtraction:
             full_page_image=capture.evidence.full_page_image,
             report=report,
         )
-        cache[PARSED_PAGE_CACHE_KEY] = parsed
-        cache[PARSE_REPORT_CACHE_KEY] = report
+        self.internal_parse_report = report
+        self.internal_parsed_page = parsed
         return parsed
 
     def assembled_page(self, context: TaskScope) -> Any:
-        cache = self.page.extraction_cache
-        assembled = cache.get(ASSEMBLED_PAGE_CACHE_KEY)
-        if assembled is None:
+        with self.page.internal_page_lock:
+            if self.internal_assembled_page is not None:
+                return self.internal_assembled_page
             assembled = assemble_page(self.parsed_page(context), self.capture().drawings)
+            annotations: list[Annotation] = []
             try:
-                resolver = self.page.document.resolver
-                annotations = tuple(
-                    Annotation(
-                        subtype=record.subtype,
-                        bbox=record.rect,
-                        contents=record.contents,
-                        destination=resolve_destination_value(
-                            resolver, record.dest or record.action
-                        ),
-                    )
-                    for record in self.page.get_annotations()
-                )
-                links = tuple(
-                    Link(
-                        bbox=record.bbox,
-                        url=record.url,
-                        link_type=record.link_type,
-                        text="",
-                    )
-                    for record in self.page.get_links()
-                )
-                fields = tuple(
-                    FormField(
-                        name=record.name,
-                        field_type=record.type,
-                        value_text=record.value_text,
-                        bbox=record.rect,
-                        field_index=index,
-                        required=record.is_required,
-                        read_only=record.is_read_only,
-                        no_export=record.no_export,
-                        options=record.options,
-                    )
-                    for index, record in enumerate(self.page.get_fields())
-                )
-                cropbox = self.page.crop_box
-                assembled = replace(
-                    assembled,
-                    annotations=annotations,
-                    links=links,
-                    form_fields=fields,
-                    cropbox=cropbox,
-                )
+                records = self.page.get_annotations()
             except (TypeError, ValueError):
-                # Malformed optional interactive objects must not block extraction.
-                pass
-            cache[ASSEMBLED_PAGE_CACHE_KEY] = assembled
-        return assembled
+                records = ()
+            resolver = self.page.document.resolver
+            for record in records:
+                try:
+                    annotations.append(
+                        Annotation(
+                            subtype=record.subtype,
+                            bbox=record.rect,
+                            contents=record.contents,
+                            destination=resolve_destination_value(
+                                resolver, record.dest or record.action
+                            ),
+                        )
+                    )
+                except (TypeError, ValueError):
+                    continue
+
+            links: list[Link] = []
+            try:
+                records = self.page.get_links()
+            except (TypeError, ValueError):
+                records = ()
+            for record in records:
+                try:
+                    links.append(
+                        Link(
+                            bbox=record.bbox,
+                            url=record.url,
+                            link_type=record.link_type,
+                            text="",
+                        )
+                    )
+                except (TypeError, ValueError):
+                    continue
+
+            fields: list[FormField] = []
+            try:
+                records = self.page.get_fields()
+            except (TypeError, ValueError):
+                records = ()
+            for index, record in enumerate(records):
+                try:
+                    fields.append(
+                        FormField(
+                            name=record.name,
+                            field_type=record.type,
+                            value_text=record.value_text,
+                            bbox=record.rect,
+                            field_index=index,
+                            required=record.is_required,
+                            read_only=record.is_read_only,
+                            no_export=record.no_export,
+                            options=record.options,
+                        )
+                    )
+                except (TypeError, ValueError):
+                    continue
+
+            cropbox = assembled.cropbox
+            with suppress(TypeError, ValueError):
+                cropbox = self.page.crop_box
+            assembled = replace(
+                assembled,
+                annotations=tuple(annotations),
+                links=tuple(links),
+                form_fields=tuple(fields),
+                cropbox=cropbox,
+            )
+            self.internal_assembled_page = assembled
+            return assembled
 
 
 def page_extraction(page: Any) -> internal_PageExtraction:
@@ -442,14 +547,12 @@ def page_extraction(page: Any) -> internal_PageExtraction:
 
 
 def parse_page(page: Any, context: TaskScope) -> ParsedPage:
-    with page.internal_page_lock:
-        return page_extraction(page).parsed_page(context)
+    return page_extraction(page).parsed_page(context)
 
 
 def extract_page(page: Any, context: TaskScope) -> Any:
     """Return the canonical emitted page, parsing and emitting at most once."""
-    with page.internal_page_lock:
-        return page_extraction(page).assembled_page(context)
+    return page_extraction(page).assembled_page(context)
 
 
 DOCUMENT_FONT_SEED_LIMIT = 4
@@ -457,6 +560,35 @@ DOCUMENT_FONT_SEEDS_PER_DECODER = 2
 DOCUMENT_STROKED_MIN_DECODED_RUNS = 20
 DOCUMENT_STROKED_MIN_RUN_COVERAGE = 0.70
 DOCUMENT_STROKED_MIN_GLYPH_COVERAGE = 0.70
+
+
+@dataclass(frozen=True, slots=True)
+class internal_FontEnrichment:
+    """Immutable learned Unicode overlay for one exact document selection."""
+
+    seed_indexes: tuple[int, ...] = ()
+    learned_unicode: LearnedUnicodeMap = field(default_factory=lambda: MappingProxyType({}))
+    learned_characters: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class internal_StrokedEnrichment:
+    """Selection-local recognition replacements learned across compatible pages."""
+
+    seed_count: int = 0
+    reused_pages: int = 0
+    recognition_by_index: Mapping[int, RecognitionResult] = field(
+        default_factory=lambda: MappingProxyType({})
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class internal_SelectionState:
+    """Page pipelines and enrichments owned by one exact document extraction."""
+
+    extractions: tuple[internal_PageExtraction, ...]
+    font: internal_FontEnrichment = internal_FontEnrichment()
+    stroked: internal_StrokedEnrichment = internal_StrokedEnrichment()
 
 
 def internal_unknown_decoder_counts(capture: CapturedPage) -> Counter[object]:
@@ -486,8 +618,6 @@ def internal_unknown_decoder_counts(capture: CapturedPage) -> Counter[object]:
                     GlyphUnicodeSemantics.UNSUPPORTED,
                 }
             )
-            or internal_learned_glyph_text(glyph) is not None
-            or not callable(getattr(decoder, "install_learned_unicode", None))
         ):
             continue
         counts[decoder] += 1
@@ -592,11 +722,11 @@ def internal_merge_font_mapping_votes(
             destination_codes.setdefault(code_bytes, Counter()).update(counts)
 
 
-def internal_install_document_font_mappings(
+def internal_resolve_document_font_mappings(
     votes: dict[object, dict[bytes, Counter[str]]],
-) -> tuple[frozenset[object], int]:
-    installed_decoders: set[object] = set()
-    installed_characters = 0
+) -> tuple[LearnedUnicodeMap, int]:
+    resolved: dict[object, Mapping[bytes, str]] = {}
+    learned_characters = 0
     for decoder, by_code in votes.items():
         mapping: dict[bytes, str] = {}
         for code_bytes, counts in by_code.items():
@@ -606,37 +736,20 @@ def internal_install_document_font_mappings(
             total = counts.total()
             if count >= 2 and count / total >= 0.90:
                 mapping[code_bytes] = character
-        installer = getattr(decoder, "install_learned_unicode", None)
-        if not mapping or not callable(installer):
-            continue
-        additions = int(installer(mapping))
-        if additions:
-            installed_decoders.add(decoder)
-            installed_characters += additions
-    return frozenset(installed_decoders), installed_characters
-
-
-def internal_refresh_learned_capture(page: Any, decoders: frozenset[object]) -> None:
-    extraction = page_extraction(page)
-    capture = extraction.internal_capture
-    if capture is None or not any(
-        glyph.font_decoder in decoders for glyph in capture.program.products.glyphs
-    ):
-        return
-    cache = page.extraction_cache
-    cache.pop(CAPTURED_PAGE_CACHE_KEY, None)
-    extraction.internal_capture = internal_capture_from_program(page, capture.program)
-    extraction.internal_captured_at = time.perf_counter()
+        if mapping:
+            resolved[decoder] = MappingProxyType(mapping)
+            learned_characters += len(mapping)
+    return MappingProxyType(resolved), learned_characters
 
 
 def internal_prepare_document_font_mappings(
     pages: tuple[Any, ...],
     captures: tuple[CapturedPage, ...],
     context: TaskScope,
-) -> tuple[int, int]:
+) -> internal_FontEnrichment:
     seed_indexes = internal_document_font_seed_indexes(captures)
     if not seed_indexes:
-        return 0, 0
+        return internal_FontEnrichment()
     ocr_by_index: dict[int, ObservationBatch] = {}
     for completed in context.map_completed(
         lambda page_index: page_extraction(pages[page_index]).ocr(context),
@@ -650,14 +763,52 @@ def internal_prepare_document_font_mappings(
             votes,
             internal_font_mapping_votes(captures[page_index], ocr),
         )
-    installed_decoders, installed_characters = internal_install_document_font_mappings(votes)
-    if not installed_decoders:
-        return len(seed_indexes), 0
-    seed_set = frozenset(seed_indexes)
-    for page_index, page in enumerate(pages):
-        if page_index not in seed_set:
-            internal_refresh_learned_capture(page, installed_decoders)
-    return len(seed_indexes), installed_characters
+    learned_unicode, learned_characters = internal_resolve_document_font_mappings(votes)
+    return internal_FontEnrichment(
+        seed_indexes=seed_indexes,
+        learned_unicode=learned_unicode,
+        learned_characters=learned_characters,
+    )
+
+
+def internal_capture_uses_learned_unicode(
+    capture: CapturedPage,
+    learned_unicode: LearnedUnicodeMap,
+) -> bool:
+    return bool(learned_unicode) and any(
+        glyph.font_decoder in learned_unicode for glyph in capture.program.products.glyphs
+    )
+
+
+def internal_apply_font_enrichment(
+    pages: tuple[Any, ...],
+    captures: tuple[CapturedPage, ...],
+    font: internal_FontEnrichment,
+) -> tuple[internal_PageExtraction, ...]:
+    """Create local pipelines only for non-seed pages changed by the overlay."""
+    seed_indexes = frozenset(font.seed_indexes)
+    extractions: list[internal_PageExtraction] = []
+    for index, (page, capture) in enumerate(zip(pages, captures, strict=True)):
+        base = page_extraction(page)
+        if index in seed_indexes or not internal_capture_uses_learned_unicode(
+            capture, font.learned_unicode
+        ):
+            extractions.append(base)
+            continue
+        started = time.perf_counter()
+        enriched_capture = internal_capture_from_program(
+            page,
+            capture.program,
+            learned_unicode=font.learned_unicode,
+        )
+        extractions.append(
+            internal_PageExtraction(
+                page,
+                capture=enriched_capture,
+                capture_seconds=time.perf_counter() - started,
+            )
+        )
+    return tuple(extractions)
 
 
 def internal_merge_document_stroked_alphabet(
@@ -685,42 +836,20 @@ def internal_document_stroked_decode_is_sufficient(decoded: StrokedTextDecode) -
     )
 
 
-def internal_install_document_stroked_decode(
-    page: Any,
+def internal_document_stroked_recognition(
+    capture: CapturedPage,
     decoded: StrokedTextDecode,
     *,
     seconds: float,
     seed_pages: tuple[int, ...],
     alphabet_size: int,
-) -> bool:
-    """Install deterministic cross-page vector text as this page's zero-raster OCR result."""
-    with page.internal_page_lock:
-        extraction = page_extraction(page)
-        if extraction.internal_recognition is not None:
-            return False
-        internal_install_document_stroked_decode_locked(
-            extraction,
-            decoded,
-            seconds=seconds,
-            seed_pages=seed_pages,
-            alphabet_size=alphabet_size,
-        )
-    return True
-
-
-def internal_install_document_stroked_decode_locked(
-    extraction: internal_PageExtraction,
-    decoded: StrokedTextDecode,
-    *,
-    seconds: float,
-    seed_pages: tuple[int, ...],
-    alphabet_size: int,
-) -> None:
+) -> RecognitionResult:
+    """Build a selection-local zero-raster recognition result."""
     from core_pdf.impl.engine.parse.ocr_stroked_vector import internal_stroked_vector_decoded_batch
 
     observations = internal_stroked_vector_decoded_batch(decoded.observations)
     candidate = internal_candidate(-1, observations)
-    bbox = extraction.capture().evidence.stroked_vector_text.bbox
+    bbox = capture.evidence.stroked_vector_text.bbox
     pass_report: dict[str, object] = {
         "name": "document-stroked-glyphs",
         "scope": OcrPassScope.STROKED_VECTOR_TEXT.value,
@@ -789,7 +918,7 @@ def internal_install_document_stroked_decode_locked(
         "decoded_runs": len(decoded.observations),
         "seconds": seconds,
     }
-    extraction.internal_recognition = RecognitionResult(
+    return RecognitionResult(
         observations,
         RecognitionReport(
             passes=(pass_report,),
@@ -807,14 +936,14 @@ def internal_install_document_stroked_decode_locked(
             stroked_vector_alphabet=decoded.alphabet,
         ),
     )
-    extraction.internal_recognized_at = time.perf_counter()
 
 
 def internal_prepare_document_stroked_mappings(
     pages: tuple[Any, ...],
     captures: tuple[CapturedPage, ...],
     context: TaskScope,
-) -> tuple[int, int]:
+    extractions: tuple[internal_PageExtraction, ...] | None = None,
+) -> internal_StrokedEnrichment:
     """OCR the richest flattened-font page, then decode compatible pages structurally."""
     indexes = tuple(
         index
@@ -822,7 +951,7 @@ def internal_prepare_document_stroked_mappings(
         if capture.evidence.stroked_vector_text.trusted
     )
     if len(indexes) < 2:
-        return 0, 0
+        return internal_StrokedEnrichment()
     from core_pdf.impl.engine.parse.ocr_stroked_vector import internal_stroked_text_profile
 
     ordered = tuple(
@@ -838,37 +967,37 @@ def internal_prepare_document_stroked_mappings(
     ambiguous: set[GlyphSignature] = set()
     seed_indexes: list[int] = []
     reused_pages = 0
+    recognition_by_index: dict[int, RecognitionResult] = {}
+    if extractions is None:
+        extractions = tuple(page_extraction(page) for page in pages)
     for page_index in ordered:
         page = pages[page_index]
-        extraction = page_extraction(page)
+        extraction = extractions[page_index]
         capture = extraction.capture()
-        if extraction.internal_recognition is None and alphabet:
-            with page.internal_page_lock:
-                extraction.plan()
+        with page.internal_page_lock:
+            recognition = extraction.internal_recognition
+        if recognition is None and alphabet:
+            extraction.plan()
             started = time.perf_counter()
             decoded = decode_stroked_text_profile_with_alphabet(
                 internal_stroked_text_profile(capture),
                 alphabet,
             )
             seconds = time.perf_counter() - started
-            if internal_document_stroked_decode_is_sufficient(
-                decoded
-            ) and internal_install_document_stroked_decode(
-                page,
-                decoded,
-                seconds=seconds,
-                seed_pages=tuple(int(pages[index].page_number) for index in seed_indexes),
-                alphabet_size=len(alphabet),
-            ):
+            if internal_document_stroked_decode_is_sufficient(decoded):
+                recognition_by_index[page_index] = internal_document_stroked_recognition(
+                    capture,
+                    decoded,
+                    seconds=seconds,
+                    seed_pages=tuple(int(pages[index].page_number) for index in seed_indexes),
+                    alphabet_size=len(alphabet),
+                )
                 reused_pages += 1
                 continue
 
-        if extraction.internal_recognition is None:
-            with page.internal_page_lock:
-                if extraction.internal_recognition is None:
-                    extraction.ocr(context)
-        recognition = extraction.internal_recognition
-        learned = recognition.report.stroked_vector_alphabet if recognition is not None else ()
+        if recognition is None:
+            recognition = extraction.recognition(context)
+        learned = recognition.report.stroked_vector_alphabet
         if learned:
             internal_merge_document_stroked_alphabet(
                 alphabet,
@@ -882,12 +1011,36 @@ def internal_prepare_document_stroked_mappings(
             "alphabet_size": len(alphabet),
             "ambiguous_signatures": len(ambiguous),
         }
-        if recognition is not None:
-            extraction.internal_recognition = replace(
-                recognition,
-                report=replace(recognition.report, document_stroked_glyphs=seed_report),
-            )
-    return len(seed_indexes), reused_pages
+        recognition_by_index[page_index] = replace(
+            recognition,
+            report=replace(recognition.report, document_stroked_glyphs=seed_report),
+        )
+    return internal_StrokedEnrichment(
+        seed_count=len(seed_indexes),
+        reused_pages=reused_pages,
+        recognition_by_index=MappingProxyType(recognition_by_index),
+    )
+
+
+def internal_apply_stroked_enrichment(
+    extractions: tuple[internal_PageExtraction, ...],
+    stroked: internal_StrokedEnrichment,
+) -> tuple[internal_PageExtraction, ...]:
+    if not stroked.recognition_by_index:
+        return extractions
+    enriched = list(extractions)
+    for index, recognition in stroked.recognition_by_index.items():
+        base = extractions[index]
+        enriched[index] = internal_PageExtraction(
+            base.page,
+            capture=base.capture(),
+            plan=base.plan(),
+            recognition=recognition,
+            capture_seconds=base.internal_capture_seconds,
+            planning_seconds=base.internal_planning_seconds,
+            ocr_seconds=base.internal_ocr_seconds,
+        )
+    return tuple(enriched)
 
 
 def internal_page_chunks(
@@ -925,32 +1078,55 @@ def internal_capture_document_pages(
 
 
 def internal_parse_document_pages(
-    pages: tuple[Any, ...],
+    extractions: tuple[internal_PageExtraction, ...],
     context: TaskScope,
 ) -> tuple[ParsedPage, ...]:
-    parsed_by_index: list[ParsedPage | None] = [None] * len(pages)
+    parsed_by_index: list[ParsedPage | None] = [None] * len(extractions)
     futures: dict[int, Future[ParsedPage]] = {}
     direct_indexes: list[int] = []
-    for index, page in enumerate(pages):
-        extraction = page_extraction(page)
+    for index, extraction in enumerate(extractions):
         plan = extraction.plan()
         requires_ocr = extraction.internal_recognition is None and (
             bool(plan.ocr_passes) or plan.verify_hidden_text
         )
         if requires_ocr:
-            futures[index] = context.submit(parse_page, page, context, stage=WorkStage.PAGE)
+            futures[index] = context.submit(
+                extraction.parsed_page,
+                context,
+                stage=WorkStage.PAGE,
+            )
         else:
             direct_indexes.append(index)
     try:
         for index in direct_indexes:
             context.raise_if_cancelled()
-            parsed_by_index[index] = parse_page(pages[index], context)
+            parsed_by_index[index] = extractions[index].parsed_page(context)
         for index, future in futures.items():
             parsed_by_index[index] = future.result()
     finally:
         for future in futures.values():
             future.cancel()
     return tuple(page for page in parsed_by_index if page is not None)
+
+
+def internal_prepare_selection_state(
+    pages: tuple[Any, ...],
+    captures: tuple[CapturedPage, ...],
+    context: TaskScope,
+) -> internal_SelectionState:
+    font = internal_prepare_document_font_mappings(pages, captures, context)
+    extractions = internal_apply_font_enrichment(pages, captures, font)
+    stroked = internal_prepare_document_stroked_mappings(
+        pages,
+        tuple(extraction.capture() for extraction in extractions),
+        context,
+        extractions,
+    )
+    return internal_SelectionState(
+        extractions=internal_apply_stroked_enrichment(extractions, stroked),
+        font=font,
+        stroked=stroked,
+    )
 
 
 def parse_document(
@@ -960,14 +1136,18 @@ def parse_document(
 ) -> Document:
     pages = tuple(pages)
     parsed_pages: tuple[ParsedPage, ...]
+    extractions: tuple[internal_PageExtraction, ...]
     if len(pages) == 1:
-        parsed_pages = (parse_page(pages[0], context),)
+        extractions = (page_extraction(pages[0]),)
+        parsed_pages = (extractions[0].parsed_page(context),)
     else:
         captures = internal_capture_document_pages(pages, context)
         if len(captures) == len(pages):
-            internal_prepare_document_font_mappings(pages, captures, context)
-            internal_prepare_document_stroked_mappings(pages, captures, context)
-        parsed_pages = internal_parse_document_pages(pages, context)
+            selection = internal_prepare_selection_state(pages, captures, context)
+            extractions = selection.extractions
+        else:
+            extractions = tuple(page_extraction(page) for page in pages)
+        parsed_pages = internal_parse_document_pages(extractions, context)
     diagnostics = tuple(
         Diagnostic("parse", message, page_number=page.page_number)
         for page in parsed_pages
@@ -975,7 +1155,7 @@ def parse_document(
     )
     metadata = document.get_metadata()
     return Document(
-        pages=tuple(page_extraction(source_page).assembled_page(context) for source_page in pages),
+        pages=tuple(extraction.assembled_page(context) for extraction in extractions),
         metadata=metadata,
         diagnostics=diagnostics,
         schema_version=SCHEMA_VERSION,

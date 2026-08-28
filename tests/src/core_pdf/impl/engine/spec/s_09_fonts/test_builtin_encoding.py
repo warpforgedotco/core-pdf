@@ -12,9 +12,9 @@ from __future__ import annotations
 
 import struct
 
+from core_pdf.impl.engine.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.engine.spec.s_09_fonts.decoder import FontDecoder
 from core_pdf.impl.engine.spec.s_09_fonts.font_program import CFFFont, cff_font_for_data
-from core_pdf.impl.objects import PdfStream
 
 
 def index(items: list[bytes], off_size: int = 1) -> bytes:

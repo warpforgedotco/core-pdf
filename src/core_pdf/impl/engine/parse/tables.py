@@ -28,10 +28,12 @@ from core_pdf.impl.engine.parse.model import (
     ObservationBatch,
     ObservationSource,
 )
-from core_pdf.impl.engine.structured import (
+from core_pdf.impl.engine.structured.model import (
     Table,
     TableAssociatedText,
     TableCell,
+    TableColumnBand,
+    TableRowBand,
 )
 from core_pdf.impl.runtime.array_views import finite_median
 from core_pdf.impl.text import collapse_character_spaced, collapse_ws
@@ -187,11 +189,19 @@ def internal_merge_collinear_segments(
     return numpy.asarray(merged, dtype=numpy.float32).reshape((-1, 3))
 
 
-def internal_cell_text(observations: ObservationBatch, indexes: list[int]) -> str:
+internal_CellTextMemo = dict[tuple[int, ...], str]
+
+
+def internal_cell_text(
+    observations: ObservationBatch,
+    indexes: list[int],
+    cache: internal_CellTextMemo | None = None,
+) -> str:
     cache_key = tuple(indexes)
-    cached = observations.internal_cell_text_cache.get(cache_key)
-    if cached is not None:
-        return cached
+    if cache is not None:
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
     boxes = observations.bbox[indexes]
     centers = ((boxes[:, 1] + boxes[:, 3]) * 0.5).tolist()
     lefts = boxes[:, 0].tolist()
@@ -206,7 +216,8 @@ def internal_cell_text(observations: ObservationBatch, indexes: list[int]) -> st
         if part and not (len(part) >= 4 and set(part) <= {".", "…"}):
             parts.append(part)
     result = " ".join(parts)
-    observations.internal_cell_text_cache[cache_key] = result
+    if cache is not None:
+        cache[cache_key] = result
     return result
 
 
@@ -516,6 +527,7 @@ def internal_stream_table(
     columns: list[list[tuple[int, int]]],
     *,
     minimum_rows: int = 3,
+    cell_text_cache: internal_CellTextMemo | None = None,
 ) -> Table | None:
     support_set = set(support)
     columns = [
@@ -593,7 +605,7 @@ def internal_stream_table(
                     column = 0
             if 0 <= column < column_count and x0 <= right_edge_limit:
                 cells[column].append(index)
-        texts = [internal_cell_text(observations, cell) for cell in cells]
+        texts = [internal_cell_text(observations, cell, cell_text_cache) for cell in cells]
         if not any(texts):
             continue
         populated += sum(bool(text) for text in texts)
@@ -677,6 +689,8 @@ def internal_compact_stream_table(
     observations: ObservationBatch,
     rows: list[list[int]],
     page_width: float,
+    *,
+    cell_text_cache: internal_CellTextMemo | None = None,
 ) -> Table | None:
     """Recover compact tables whose rows are interleaved with nearby prose."""
     candidates = [
@@ -709,7 +723,9 @@ def internal_compact_stream_table(
         for index in row:
             column = int(numpy.argmin(numpy.abs(anchors - observations.bbox[index, 0])))
             cell_indexes[column].append(index)
-        texts = [internal_cell_text(observations, indexes) for indexes in cell_indexes]
+        texts = [
+            internal_cell_text(observations, indexes, cell_text_cache) for indexes in cell_indexes
+        ]
         if not any(texts):
             continue
         numeric_cells += sum(
@@ -771,6 +787,8 @@ def internal_stream_tables(
     capture: CapturedPage,
     observations: ObservationBatch,
     start_order: int,
+    *,
+    cell_text_cache: internal_CellTextMemo | None = None,
 ) -> tuple[Table, ...]:
     horizontal = (observations.rotation % 180) == 0
     horizontal_count = int(numpy.count_nonzero(horizontal & observations.visible))
@@ -825,6 +843,7 @@ def internal_stream_tables(
                     group,
                     [columns[index] for index in component],
                     minimum_rows=minimum_rows,
+                    cell_text_cache=cell_text_cache,
                 )
                 if table is not None:
                     tables.append(table)
@@ -834,6 +853,7 @@ def internal_stream_tables(
             observations,
             rows,
             float(capture.page.width),
+            cell_text_cache=cell_text_cache,
         )
         if compact is not None:
             tables.append(compact)
@@ -974,6 +994,8 @@ def internal_merge_adjacent_tables(tables: list[Table]) -> list[Table]:
                 max(previous_bbox[3], table_bbox[3]),
             ),
             confidence=min(previous.confidence or 1.0, table.confidence or 1.0),
+            title=previous.title or table.title,
+            caption=table.caption or previous.caption,
             metadata=previous.metadata,
         )
     return merged
@@ -1046,6 +1068,8 @@ def internal_split_semantic_table(table: Table) -> tuple[Table, ...]:
                 rows=rows,
                 bbox=bbox,
                 confidence=table.confidence,
+                title=table.title if segment_index == 0 else None,
+                caption=table.caption if end == len(table.rows) else None,
                 metadata=table.metadata,
             )
         )
@@ -1390,6 +1414,8 @@ def internal_table_from_component(
     vertical: numpy.ndarray[Any, Any],
     observations: ObservationBatch,
     observation_index: SpatialIndex[int] | None = None,
+    *,
+    cell_text_cache: internal_CellTextMemo | None = None,
 ) -> Table | None:
     x_edges = internal_cluster_positions(vertical[:, 0])
     y_edges = internal_cluster_positions(horizontal[:, 2])[::-1]
@@ -1456,7 +1482,11 @@ def internal_table_from_component(
                 TableCell(
                     row=row,
                     column=column,
-                    text=internal_cell_text(observations, cell_observations[(row, column)]),
+                    text=internal_cell_text(
+                        observations,
+                        cell_observations[(row, column)],
+                        cell_text_cache,
+                    ),
                     bbox=bbox,
                 )
             )
@@ -1473,6 +1503,8 @@ def internal_table_from_component(
 def internal_detect_tables(
     capture: CapturedPage,
     observations: ObservationBatch,
+    *,
+    cell_text_cache: internal_CellTextMemo | None = None,
 ) -> tuple[Table, ...]:
     horizontal, vertical = internal_axis_segments(capture)
     horizontal = internal_merge_collinear_segments(horizontal, coordinate=2, start=0, end=1)
@@ -1494,12 +1526,18 @@ def internal_detect_tables(
                     *component_part,
                     observations,
                     observation_index,
+                    cell_text_cache=cell_text_cache,
                 )
                 if table is not None:
                     ruled_tables.append(table)
     ruled = tuple(ruled_tables)
     tables = list(ruled)
-    for stream in internal_stream_tables(capture, observations, len(tables)):
+    for stream in internal_stream_tables(
+        capture,
+        observations,
+        len(tables),
+        cell_text_cache=cell_text_cache,
+    ):
         conflicts = [
             table
             for table in tables
@@ -1536,6 +1574,10 @@ def internal_detect_tables(
                 rows=table.rows,
                 bbox=table.bbox,
                 confidence=table.confidence,
+                title=table.title,
+                caption=table.caption,
+                row_bands=table.row_bands,
+                column_bands=table.column_bands,
                 metadata=table.metadata,
             )
     tables = [
@@ -1557,6 +1599,10 @@ def internal_detect_tables(
             ),
             bbox=table.bbox,
             confidence=table.confidence,
+            title=table.title,
+            caption=table.caption,
+            row_bands=table.row_bands,
+            column_bands=table.column_bands,
             metadata=table.metadata,
         )
         for table in tables
@@ -1568,18 +1614,25 @@ def internal_annotate_table_associations(
     table: Table,
     observations: ObservationBatch,
     text_rows: list[list[int]],
+    *,
+    cell_text_cache: internal_CellTextMemo | None = None,
 ) -> Table:
     """Annotate spanning rows and nearby aligned text without changing cells."""
-    metadata = dict(table.metadata)
+    title = table.title
+    caption = table.caption
     if len(table.rows) >= 2:
         first = tuple(cell for cell in table.rows[0] if cell.text.strip())
         second = tuple(cell for cell in table.rows[1] if cell.text.strip())
         if len(first) == 1 and len(second) >= 2:
             cell = first[0]
             kind = "caption" if ":" in cell.text else "title"
-            metadata[kind] = TableAssociatedText(cell.text, cell.bbox, kind=kind)
-    if table.bbox is None or "title" in metadata:
-        return replace(table, metadata=metadata) if metadata != table.metadata else table
+            associated = TableAssociatedText(cell.text, cell.bbox, kind=kind)
+            if kind == "caption":
+                caption = associated
+            else:
+                title = associated
+    if table.bbox is None or title is not None:
+        return replace(table, title=title, caption=caption)
     x0, _y0, x1, y1 = table.bbox
     candidates: list[tuple[float, tuple[int, ...]]] = []
     for row in text_rows:
@@ -1595,9 +1648,9 @@ def internal_annotate_table_associations(
             candidates.append((gap, tuple(row)))
     if candidates:
         _gap, title_row = min(candidates, key=lambda item: item[0])
-        text = internal_cell_text(observations, list(title_row))
+        text = internal_cell_text(observations, list(title_row), cell_text_cache)
         if text:
-            metadata["title"] = TableAssociatedText(
+            title = TableAssociatedText(
                 text,
                 (
                     min(float(observations.bbox[index, 0]) for index in title_row),
@@ -1607,7 +1660,61 @@ def internal_annotate_table_associations(
                 ),
                 kind="title",
             )
-    return replace(table, metadata=metadata) if metadata != table.metadata else table
+    if title is table.title and caption is table.caption:
+        return table
+    return replace(table, title=title, caption=caption)
+
+
+def internal_table_with_bands(table: Table) -> Table:
+    """Materialize table row and column semantics at the extraction boundary."""
+    associated = {
+        text.kind: text.text.casefold() for text in (table.title, table.caption) if text is not None
+    }
+    first_grid = next(
+        (
+            index
+            for index, row in enumerate(table.rows)
+            if any(cell.text.strip() for cell in row)
+            and not any(
+                value in associated.values()
+                for value in (cell.text.strip().casefold() for cell in row if cell.text.strip())
+            )
+        ),
+        None,
+    )
+    row_bands: list[TableRowBand] = []
+    for index, row in enumerate(table.rows):
+        boxes = [cell.bbox for cell in row if cell.bbox is not None]
+        texts = tuple(cell.text.strip().casefold() for cell in row if cell.text.strip())
+        kind = "blank"
+        if texts:
+            if any(value in associated.values() for value in texts):
+                kind = "title" if texts[0] == associated.get("title") else "caption"
+            elif first_grid is not None and index == first_grid and len(texts) >= 2:
+                kind = "header"
+            else:
+                kind = "body"
+        row_bands.append(TableRowBand(index=index, bbox=bbox_union(boxes), kind=kind))
+
+    column_count = max(
+        (cell.column + cell.column_span for row in table.rows for cell in row),
+        default=0,
+    )
+    column_boxes: list[list[tuple[float, float, float, float]]] = [[] for _ in range(column_count)]
+    for row in table.rows:
+        for cell in row:
+            if cell.bbox is None:
+                continue
+            for index in range(
+                max(cell.column, 0),
+                min(cell.column + cell.column_span, column_count),
+            ):
+                column_boxes[index].append(cell.bbox)
+    column_bands = tuple(
+        TableColumnBand(index=index, bbox=bbox_union(boxes))
+        for index, boxes in enumerate(column_boxes)
+    )
+    return replace(table, row_bands=tuple(row_bands), column_bands=column_bands)
 
 
 def extract_tables(
@@ -1620,7 +1727,12 @@ def extract_tables(
     # without another geometric pass.
     if capture.evidence.vector_text_trusted or capture.evidence.stroked_vector_text.trusted:
         return ()
-    tables = internal_detect_tables(capture, observations)
+    cell_text_cache: internal_CellTextMemo = {}
+    tables = internal_detect_tables(
+        capture,
+        observations,
+        cell_text_cache=cell_text_cache,
+    )
     chart_table = extract_chart_table(capture, observations)
     if chart_table is not None:
         tables = (*tables, chart_table)
@@ -1628,10 +1740,13 @@ def extract_tables(
         return ()
     text_rows = internal_text_rows(observations)
     return tuple(
-        internal_annotate_table_associations(
-            replace(table, order=order) if table.order != order else table,
-            observations,
-            text_rows,
+        internal_table_with_bands(
+            internal_annotate_table_associations(
+                replace(table, order=order) if table.order != order else table,
+                observations,
+                text_rows,
+                cell_text_cache=cell_text_cache,
+            )
         )
         for order, table in enumerate(tables)
     )

@@ -9,9 +9,10 @@ from dataclasses import dataclass
 from typing import Any, cast
 
 from core_pdf.impl.engine.spec.s_07_content.operations import iter_content_operations
-from core_pdf.impl.engine.spec.s_07_syntax.coercion import normalize_pdf_name
 from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
-from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_07_syntax.stream import PdfStream
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_08_graphics.matrix import multiply_affine
 from core_pdf.impl.engine.spec.s_09_fonts.cmap_tounicode import ToUnicodeCMap
 from core_pdf.impl.engine.spec.s_09_fonts.cmap_widths import FontWidthMap, SparseFontWidthMap
@@ -22,7 +23,6 @@ from core_pdf.impl.engine.spec.s_09_fonts.glyphs import (
 )
 from core_pdf.impl.engine.spec.s_09_fonts.helpers import cached_decode_table
 from core_pdf.impl.engine.spec.s_09_fonts.widths import parse_font_widths
-from core_pdf.impl.objects import PdfStream
 from core_pdf.impl.primitives import PdfName, PdfString
 from core_pdf.impl.text import is_neutral_character, is_rtl_character
 

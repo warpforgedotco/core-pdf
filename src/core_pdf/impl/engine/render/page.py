@@ -6,14 +6,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, cast
 
-import numpy
-
 from core_pdf.impl.engine.model.geometry import rect_tuple
 from core_pdf.impl.engine.render.display import (
     CompiledRenderPlan,
     DisplayItem,
     DisplayList,
     DisplayListItem,
+    ImagePaintItem,
     PathPaintItem,
     RenderOptions,
 )
@@ -30,7 +29,7 @@ from core_pdf.impl.engine.spec.s_07_content.state import TextState
 from core_pdf.impl.engine.spec.s_07_document.annotation_appearance import (
     select_appearance_stream,
 )
-from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_08_graphics.image_metadata import (
     pdf_number,
 )
@@ -54,9 +53,6 @@ class RenderedPage:
     render_plan: CompiledRenderPlan | None = field(default=None, repr=False)
     metadata: dict[str, Any] = field(default_factory=dict)
     raster_cache: dict[tuple[Any, ...], RasterImage] = field(default_factory=dict, repr=False)
-    image_conversion_cache: dict[
-        tuple[int, int, int], bytes | memoryview | numpy.ndarray[Any, Any]
-    ] = field(default_factory=dict, repr=False)
 
     def internal_render_items(
         self,
@@ -222,6 +218,9 @@ class RenderedPage:
             if type(item) is PathPaintItem:
                 paint_typed_path(item)
                 continue
+            if type(item) is ImagePaintItem:
+                blit_image(item)
+                continue
             generic_item = cast(DisplayListItem, item)
             data = generic_item.data
             blend_mode = data.get("blend_mode")
@@ -311,10 +310,7 @@ class RenderedPage:
                     int(data.get("line_cap") or 0),
                     int(data.get("line_join") or 0),
                 )
-            elif generic_item.kind in {"fill", "fillstroke", "image", "inline-image"}:
-                if generic_item.kind in {"image", "inline-image"}:
-                    blit_image(data.get("bbox"), data, blend_mode)
-                    continue
+            elif generic_item.kind in {"fill", "fillstroke"}:
                 rgba = internal_color_rgba(
                     data.get("fill") or data.get("fill_color"),
                     data.get("fill_opacity"),
@@ -457,8 +453,8 @@ class RenderedPage:
                     "seqno": item.seqno,
                     "data": (
                         item.to_data()
-                        if type(item) is PathPaintItem
-                        else dict(cast(DisplayListItem, item).data)
+                        if isinstance(item, (PathPaintItem, ImagePaintItem))
+                        else dict(item.data)
                     ),
                 }
                 for item in self.display_list.items

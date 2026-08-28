@@ -6,17 +6,17 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 from typing import TypeAlias, TypedDict, cast
 
-from core_pdf.impl.engine.spec.s_07_syntax.coercion import (
+from core_pdf.impl.engine.spec.s_07_syntax.resolver_values import PdfValueResolver
+from core_pdf.impl.engine.spec.s_07_syntax.stream import PdfStream
+from core_pdf.impl.engine.spec.s_07_syntax.text_string import decode_pdf_text_string
+from core_pdf.impl.engine.spec.s_07_syntax.types import PdfDict
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.coercion import (
     coerce_value,
     normalize_pdf_name,
 )
-from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import lookup_dict_key
-from core_pdf.impl.engine.spec.s_07_syntax.resolver_values import PdfValueResolver
-from core_pdf.impl.engine.spec.s_07_syntax.text_string import decode_pdf_text_string
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 from core_pdf.impl.exceptions import PdfError
-from core_pdf.impl.objects import PdfStream
 from core_pdf.impl.primitives import PdfName, PdfReference, PdfString
-from core_pdf.impl.types import PdfDict
 
 MetadataScalar: TypeAlias = (
     str

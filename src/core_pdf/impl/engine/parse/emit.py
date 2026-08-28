@@ -32,7 +32,7 @@ from core_pdf.impl.engine.parse.tables import (
     internal_table_has_grid_shape,
 )
 from core_pdf.impl.engine.spec.s_07_content.capture import CapturedDrawing
-from core_pdf.impl.engine.structured import (
+from core_pdf.impl.engine.structured.model import (
     Block,
     BlockKind,
     Diagnostic,

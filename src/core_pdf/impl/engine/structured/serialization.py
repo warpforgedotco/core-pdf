@@ -36,13 +36,19 @@ from core_pdf.impl.pages import PageSelection, resolve_page_selection
 ElementResultT = TypeVar("ElementResultT")
 
 
-def node_to_json_dict(node: ContentNode) -> dict[str, JsonValue]:
+def node_to_json_dict(
+    node: ContentNode,
+    *,
+    node_id: str,
+    page_id: str,
+    target_id: str,
+) -> dict[str, JsonValue]:
     return {
-        "node_id": node.node_id,
+        "id": node_id,
+        "page_id": page_id,
         "kind": node.kind,
-        "page_number": node.page_number,
+        "target_id": target_id,
         "provenance": list(node.provenance),
-        "payload": element_to_json_dict(node.payload),
     }
 
 
@@ -56,53 +62,151 @@ def diagnostic_to_json_dict(diagnostic: Diagnostic) -> dict[str, JsonValue]:
 
 
 def document_to_json_dict(document: Document) -> dict[str, JsonValue]:
+    pages: list[JsonValue] = []
+    nodes: list[JsonValue] = []
+    blocks: list[JsonValue] = []
+    lines: list[JsonValue] = []
+    tables: list[JsonValue] = []
+    figures: list[JsonValue] = []
+    links: list[JsonValue] = []
+    annotations: list[JsonValue] = []
+    form_fields: list[JsonValue] = []
+    seen_page_ids: set[str] = set()
+
+    for page in document.pages:
+        page_id = f"p{page.page_number}"
+        if page_id in seen_page_ids:
+            raise ValueError(f"duplicate structured page id: {page_id}")
+        seen_page_ids.add(page_id)
+
+        block_ids = {
+            id(block): f"{page_id}:block:{index}" for index, block in enumerate(page.blocks)
+        }
+        table_ids = {
+            id(table): f"{page_id}:table:{index}" for index, table in enumerate(page.tables)
+        }
+        figure_ids = {
+            id(figure): f"{page_id}:figure:{index}" for index, figure in enumerate(page.figures)
+        }
+
+        line_ids: dict[int, str] = {}
+        for block in page.blocks:
+            for line in block.lines:
+                identity = id(line)
+                if identity not in line_ids:
+                    line_ids[identity] = f"{page_id}:line:{len(line_ids)}"
+                    lines.append(
+                        {
+                            "id": line_ids[identity],
+                            "page_id": page_id,
+                            **line_to_json_dict(line),
+                        }
+                    )
+
+        blocks.extend(
+            {
+                "id": block_ids[id(block)],
+                "page_id": page_id,
+                **internal_block_payload(block),
+                "line_ids": [line_ids[id(line)] for line in block.lines],
+            }
+            for block in page.blocks
+        )
+        tables.extend(
+            {
+                "id": table_ids[id(table)],
+                "page_id": page_id,
+                **table_to_json_dict(table),
+            }
+            for table in page.tables
+        )
+        figures.extend(
+            {
+                "id": figure_ids[id(figure)],
+                "page_id": page_id,
+                **figure_to_json_dict(figure),
+            }
+            for figure in page.figures
+        )
+
+        target_ids = {**block_ids, **table_ids, **figure_ids}
+        page_node_ids: list[JsonValue] = []
+        for index, node in enumerate(page.nodes):
+            node_id = f"{page_id}:node:{index}"
+            page_node_ids.append(node_id)
+            nodes.append(
+                node_to_json_dict(
+                    node,
+                    node_id=node_id,
+                    page_id=page_id,
+                    target_id=target_ids[id(node.payload)],
+                )
+            )
+
+        page_link_ids: list[JsonValue] = [
+            f"{page_id}:link:{index}" for index in range(len(page.links))
+        ]
+        page_annotation_ids: list[JsonValue] = [
+            f"{page_id}:annotation:{index}" for index in range(len(page.annotations))
+        ]
+        page_field_ids: list[JsonValue] = [
+            f"{page_id}:form-field:{index}" for index in range(len(page.form_fields))
+        ]
+        links.extend(
+            {"id": record_id, "page_id": page_id, **link_to_json_dict(link)}
+            for record_id, link in zip(page_link_ids, page.links, strict=True)
+        )
+        annotations.extend(
+            {"id": record_id, "page_id": page_id, **annotation_to_json_dict(annotation)}
+            for record_id, annotation in zip(page_annotation_ids, page.annotations, strict=True)
+        )
+        form_fields.extend(
+            {"id": record_id, "page_id": page_id, **field_to_json_dict(field)}
+            for record_id, field in zip(page_field_ids, page.form_fields, strict=True)
+        )
+        pages.append(
+            {
+                "id": page_id,
+                "page_number": page.page_number,
+                "page_label": page.page_label,
+                "width": page.width,
+                "height": page.height,
+                "rotation": page.rotation,
+                "cropbox": bbox_to_json(page.cropbox),
+                "page_class": page.page_class,
+                "base_route": page.base_route,
+                "confidence": page.confidence,
+                "node_ids": page_node_ids,
+                "link_ids": page_link_ids,
+                "annotation_ids": page_annotation_ids,
+                "form_field_ids": page_field_ids,
+                "header": page.header,
+                "footer": page.footer,
+                "diagnostics": [
+                    diagnostic_to_json_dict(diagnostic) for diagnostic in page.diagnostics
+                ],
+            }
+        )
+
     return {
         "schema_version": document.schema_version,
-        "metadata": json_safe(document.metadata),
-        "nodes": [node_to_json_dict(node) for node in document.nodes],
-        "table_references": [
-            {
-                "page_number": reference.page_number,
-                "table_index": reference.table_index,
-                "table": table_to_json_dict(reference.table),
-            }
-            for reference in document.table_view.references
-        ],
-        "line_references": [
-            {
-                "page_number": reference.page_number,
-                "line_index": reference.line_index,
-                "line": line_to_json_dict(reference.line),
-            }
-            for reference in document.text_view.line_references
-        ],
-        "pages": [page_to_json_dict(page) for page in document.pages],
+        "metadata": json_safe(document.metadata, path="$.metadata"),
+        "pages": pages,
+        "nodes": nodes,
+        "blocks": blocks,
+        "lines": lines,
+        "tables": tables,
+        "figures": figures,
+        "links": links,
+        "annotations": annotations,
+        "form_fields": form_fields,
         "diagnostics": [diagnostic_to_json_dict(diagnostic) for diagnostic in document.diagnostics],
     }
 
 
 def page_to_json_dict(page: Page) -> dict[str, JsonValue]:
-    return {
-        "page_number": page.page_number,
-        "page_label": page.page_label,
-        "width": page.width,
-        "height": page.height,
-        "rotation": page.rotation,
-        "page_class": page.page_class,
-        "base_route": page.base_route,
-        "confidence": page.confidence,
-        "nodes": [node_to_json_dict(node) for node in page.nodes],
-        "elements": [element_to_json_dict(element) for element in page.elements],
-        "blocks": [block_to_json_dict(block) for block in page.blocks],
-        "tables": [table_to_json_dict(table) for table in page.tables],
-        "figures": [figure_to_json_dict(figure) for figure in page.figures],
-        "links": [link_to_json_dict(link) for link in page.links],
-        "annotations": [annotation_to_json_dict(annotation) for annotation in page.annotations],
-        "form_fields": [field_to_json_dict(field) for field in page.form_fields],
-        "header": page.header,
-        "footer": page.footer,
-        "diagnostics": [diagnostic_to_json_dict(diagnostic) for diagnostic in page.diagnostics],
-    }
+    """Return a self-contained normalized schema-5 graph for one page."""
+    return document_to_json_dict(Document(pages=(page,)))
 
 
 def element_to_json_dict(element: Block | Table | Figure) -> dict[str, JsonValue]:
@@ -140,6 +244,13 @@ def internal_add_element_type(
 
 def block_to_json_dict(block: Block) -> dict[str, JsonValue]:
     return {
+        **internal_block_payload(block),
+        "lines": [line_to_json_dict(line) for line in block.lines],
+    }
+
+
+def internal_block_payload(block: Block) -> dict[str, JsonValue]:
+    return {
         "order": block.order,
         "kind": block.kind.value,
         "bbox": bbox_to_json(block.bbox),
@@ -148,7 +259,6 @@ def block_to_json_dict(block: Block) -> dict[str, JsonValue]:
         "confidence": block.confidence,
         "level": block.level,
         "provenance": list(block.provenance),
-        "lines": [line_to_json_dict(line) for line in block.lines],
     }
 
 
@@ -527,14 +637,19 @@ def internal_has_list_marker(text: str) -> bool:
     )
 
 
-def json_safe(value: object) -> JsonValue:
+def json_safe(value: object, *, path: str = "$") -> JsonValue:
     if value is None or isinstance(value, (str, int, float, bool)):
         return value
     if isinstance(value, Mapping):
-        return {str(key): json_safe(item) for key, item in value.items()}
+        result: dict[str, JsonValue] = {}
+        for key, item in value.items():
+            if not isinstance(key, str):
+                raise TypeError(f"unsupported JSON metadata key at {path}: {type(key).__name__}")
+            result[key] = json_safe(item, path=f"{path}.{key}")
+        return result
     if isinstance(value, (list, tuple)):
-        return [json_safe(item) for item in value]
-    return str(value)
+        return [json_safe(item, path=f"{path}[{index}]") for index, item in enumerate(value)]
+    raise TypeError(f"unsupported JSON metadata value at {path}: {type(value).__name__}")
 
 
 __all__ = (

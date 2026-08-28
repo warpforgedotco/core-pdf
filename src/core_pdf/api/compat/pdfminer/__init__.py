@@ -12,10 +12,11 @@ from typing import Any, BinaryIO, TextIO, TypeAlias, cast
 from core_pdf import PdfDocument, PdfPage
 from core_pdf._vendor.fontTools.agl import toUnicode
 from core_pdf.impl.engine.model.geometry import bbox_union
-from core_pdf.impl.engine.spec.s_07_syntax.coercion import normalize_pdf_name
 from core_pdf.impl.engine.spec.s_07_syntax.lexer import PdfLexer
-from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_07_syntax.types import PdfDict
 from core_pdf.impl.engine.spec.s_07_syntax.xref import XRefScanner
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_09_fonts.cmap_resources import resolve_cmap_decoder
 from core_pdf.impl.engine.spec.s_09_fonts.data.base_encodings import (
     MAC_ROMAN_ENCODING,
@@ -25,7 +26,6 @@ from core_pdf.impl.engine.spec.s_09_fonts.data.base_encodings import (
 from core_pdf.impl.engine.spec.s_09_fonts.data.core14 import FONT_DATA
 from core_pdf.impl.exceptions import PdfError
 from core_pdf.impl.primitives import PdfReference
-from core_pdf.impl.types import PdfDict
 
 PdfInput: TypeAlias = Any
 

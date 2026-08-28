@@ -58,8 +58,13 @@ def link_pdf() -> bytes:
 
 def destinations(pdf_bytes: bytes) -> list[object]:
     with PdfDocument.open(io.BytesIO(pdf_bytes)) as document:
-        page = json.loads(document.extract().to_json())["pages"][0]
-    return [annotation["destination"] for annotation in page["annotations"]]
+        payload = json.loads(document.extract().to_json())
+    page_id = payload["pages"][0]["id"]
+    return [
+        annotation["destination"]
+        for annotation in payload["annotations"]
+        if annotation["page_id"] == page_id
+    ]
 
 
 def test_indirect_uri_reaches_structured_output_as_the_url() -> None:

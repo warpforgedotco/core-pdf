@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import TypeAlias
 
-from core_pdf.impl.objects import PdfStream
+from core_pdf.impl.engine.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.primitives import (
     MissingObject,
     PdfName,
@@ -33,7 +33,7 @@ CachedPdfObject: TypeAlias = CachedPdfScalar | CachedPdfArray | CachedPdfTuple |
 
 ObjectGenerationKey: TypeAlias = tuple[int, int]
 ObjectCache: TypeAlias = dict[int, CachedPdfObject]
-DeepObjectCache: TypeAlias = dict[int, CachedPdfObject]
+DeepObjectCache: TypeAlias = dict[int, tuple[object, CachedPdfObject]]
 ResolvedObjectCache: TypeAlias = dict[ObjectGenerationKey, CachedPdfObject]
 GenerationZeroObjectCache: TypeAlias = list[CachedPdfObject | MissingObject]
 InheritedValueMap: TypeAlias = dict[str, CachedPdfObject]

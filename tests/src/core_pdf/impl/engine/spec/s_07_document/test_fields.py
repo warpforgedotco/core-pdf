@@ -11,8 +11,8 @@ import pytest
 from core_pdf import PdfDocument
 from core_pdf.impl.engine.spec.s_07_document.document import PdfDocument as SpecPdfDocument
 from core_pdf.impl.engine.spec.s_07_document.fields import field_value_text
+from core_pdf.impl.engine.spec.s_07_syntax.types import PdfDict
 from core_pdf.impl.primitives import PdfName, PdfString
-from core_pdf.impl.types import PdfDict
 
 
 class IdentityResolver:

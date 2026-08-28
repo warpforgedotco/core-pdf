@@ -9,8 +9,8 @@ from core_pdf.impl.engine.spec.s_07_security.saslprep import saslprep
 from core_pdf.impl.engine.spec.s_07_security.standard_v4 import (
     PdfStandardSecurityHandlerV4,
 )
-from core_pdf.impl.engine.spec.s_07_syntax.coercion import coerce_to_bytes
-from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.coercion import coerce_to_bytes
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 
 
 class PdfStandardSecurityHandlerV5(PdfStandardSecurityHandlerV4):

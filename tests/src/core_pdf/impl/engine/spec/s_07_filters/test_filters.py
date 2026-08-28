@@ -31,12 +31,15 @@ from core_pdf.impl.engine.spec.s_07_filters.registry import (
     PREDICTOR_FILTERS,
 )
 from core_pdf.impl.engine.spec.s_07_security.standard_v4 import PdfStandardSecurityHandlerV4
+from core_pdf.impl.engine.spec.s_07_syntax.types import PdfDict
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.content_operators import (
+    PDF_CONTENT_OPERATOR_BYTES,
+)
 from core_pdf.impl.engine.spec.s_08_graphics.color_kernels import (
     unpack_subbyte_image_samples,
 )
 from core_pdf.impl.exceptions import PdfParseError, PdfUnsupportedError
 from core_pdf.impl.primitives import PdfName
-from core_pdf.impl.types import PdfDict
 
 
 def gzip_compress(data: bytes) -> bytes:
@@ -135,6 +138,11 @@ def test_content_stream_detection_finds_operator_after_complex_operands() -> Non
     data = b"[(Tj) /Do << /Value q >>] TJ"
 
     assert looks_like_pdf_content_stream(data)
+
+
+@pytest.mark.parametrize("operator", sorted(PDF_CONTENT_OPERATOR_BYTES))
+def test_content_stream_detection_uses_every_canonical_operator(operator: bytes) -> None:
+    assert looks_like_pdf_content_stream(b"0 " + operator)
 
 
 def test_content_stream_detection_supports_sliced_memoryview() -> None:

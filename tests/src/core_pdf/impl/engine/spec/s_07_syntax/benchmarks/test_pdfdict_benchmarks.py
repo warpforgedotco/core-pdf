@@ -5,11 +5,9 @@ from typing import cast
 
 import pytest
 
-from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import (
-    collect_inherited_values,
-    lookup_dict_key,
-)
-from core_pdf.impl.types import PdfDict
+from core_pdf.impl.engine.spec.s_07_syntax.inherited_values import collect_inherited_values
+from core_pdf.impl.engine.spec.s_07_syntax.types import PdfDict
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 
 FAST_PATH_DICT = {
     "Type": "Page",

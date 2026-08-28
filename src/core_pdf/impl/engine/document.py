@@ -12,9 +12,10 @@ from os import PathLike
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, BinaryIO, cast
 
-from core_pdf.impl.engine.parse import parse_document
+from core_pdf.impl.engine.parse.ocr_bootstrap import internal_prepare_ocr_signals
+from core_pdf.impl.engine.parse.pipeline import parse_document
 from core_pdf.impl.engine.spec.s_07_document.document import PdfDocument as SpecPdfDocument
-from core_pdf.impl.engine.structured import (
+from core_pdf.impl.engine.structured.model import (
     Document as StructuredDocument,
 )
 from core_pdf.impl.engine.writing.encryption import StandardPdfEncryptionContext
@@ -36,10 +37,14 @@ from core_pdf.impl.pages import PageSelection
 from core_pdf.impl.runtime.execution import RUNTIME, TaskScope
 from core_pdf.impl.types import PdfSource
 
+# Claim process signal ownership when the public document class is imported on
+# the application's main thread. Parse submodules remain side-effect free.
+internal_prepare_ocr_signals()
+
 if TYPE_CHECKING:
     from core_pdf.impl.engine.page import PdfPage as PdfPage
+    from core_pdf.impl.engine.spec.s_07_syntax.types import PdfObject
     from core_pdf.impl.engine.spec.s_09_fonts.fallback import RasterFontProviderLike
-    from core_pdf.impl.types import PdfObject
 
 
 class DocumentOperation(AbstractContextManager["DocumentOperation"]):
@@ -82,7 +87,6 @@ class PdfDocument(SpecPdfDocument["PdfPage"]):
         raster_font_provider: RasterFontProviderLike | None = None,
     ) -> None:
         self.internal_operation_lock = threading.RLock()
-        self.internal_page_locks: dict[int, threading.RLock] = {}
         self.internal_operation_cancelled = threading.Event()
         self.internal_active_operations = 0
         self.internal_closing = False
@@ -186,10 +190,6 @@ class PdfDocument(SpecPdfDocument["PdfPage"]):
         if should_close:
             super().close()
 
-    def page_lock(self, page_number: int) -> threading.RLock:
-        with self.internal_cache_lock:
-            return self.internal_page_locks.setdefault(page_number, threading.RLock())
-
     def close(self) -> None:
         with self.internal_operation_lock:
             if self.internal_closing or super().closed:
@@ -243,11 +243,11 @@ class PdfDocument(SpecPdfDocument["PdfPage"]):
                             ) as active_context:
                                 result = parse_document(self, active_context, selected_pages)
                         else:
-                            previous = context.internal_bind_cancelled(lambda: operation.cancelled)
-                            try:
-                                result = parse_document(self, context, selected_pages)
-                            finally:
-                                context.internal_restore_cancelled(previous)
+                            result = parse_document(
+                                self,
+                                context.with_cancellation(lambda: operation.cancelled),
+                                selected_pages,
+                            )
                     except BaseException as exc:
                         active_flight.set_exception(exc)
                         raise

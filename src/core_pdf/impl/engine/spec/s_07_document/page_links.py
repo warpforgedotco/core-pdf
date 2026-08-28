@@ -5,12 +5,12 @@ from __future__ import annotations
 
 from typing import cast
 
-from core_pdf.impl.engine.spec.s_07_syntax.coercion import parse_float_strict
-from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_07_syntax.resolver_values import PdfValueResolver
 from core_pdf.impl.engine.spec.s_07_syntax.text_string import decode_pdf_text_string
+from core_pdf.impl.engine.spec.s_07_syntax.types import PdfDict
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.coercion import parse_float_strict
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 from core_pdf.impl.primitives import PdfName, PdfReference, PdfString
-from core_pdf.impl.types import PdfDict
 
 
 def pdf_name_direct(value: object) -> str | None:

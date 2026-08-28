@@ -208,14 +208,6 @@ def internal_stroked_vector_text_raster(
         target_scale = 24.0 / max(0.5, median_height)
         scale = min(max(requested_scale, target_scale), safe_scale, 48.0)
     page = capture.page
-    cache = getattr(page, "extraction_cache", None)
-    cache_key = ("packed_stroked_vector_text_raster_v5", scale, max_pixels, variant)
-    if cache is not None:
-        cached = cache.get(cache_key)
-        if isinstance(cached, internal_PackedStrokedTextRaster):
-            if trace is not None and variant == "seed" and cached.raster.render_report is not None:
-                trace.render_timings = cached.raster.render_report
-            return cached
 
     compose_started = time.perf_counter()
     display_list = DisplayList(width=packed_width, height=packed_height)
@@ -337,8 +329,6 @@ def internal_stroked_vector_text_raster(
         packed_box=(0.0, 0.0, packed_width, packed_height),
         cells=cells,
     )
-    if cache is not None:
-        cache[cache_key] = packed
     # The isolated-glyph supplement uses the general renderer by design. Keep
     # the pass-level timing tied to the seed atlas, matching the actual primary
     # recognition path and preserving the Wu-kernel performance invariant.
@@ -372,15 +362,6 @@ def internal_full_stroked_vector_text_raster(
     area = max(1.0, (crop[2] - crop[0]) * (crop[3] - crop[1]))
     safe_scale = math.sqrt(max_pixels / area) * 0.999
     scale = min(requested_scale, safe_scale)
-    cache = getattr(page, "extraction_cache", None)
-    cache_key = ("stroked_vector_text_raster_v1", scale, max_pixels)
-    if cache is not None:
-        cached = cache.get(cache_key)
-        if isinstance(cached, internal_RasterRegion):
-            if trace is not None and cached.raster.render_report is not None:
-                trace.render_timings = cached.raster.render_report
-            return cached
-
     compose_started = time.perf_counter()
     display_list = DisplayList(width=page_width, height=page_height)
     for index in evidence.drawing_indexes:
@@ -437,8 +418,6 @@ def internal_full_stroked_vector_text_raster(
         render_report,
     )
     region = internal_RasterRegion(raster, crop)
-    if cache is not None:
-        cache[cache_key] = region
     if trace is not None:
         trace.render_timings = render_report
     return region

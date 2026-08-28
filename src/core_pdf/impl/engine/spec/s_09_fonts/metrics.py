@@ -6,7 +6,7 @@ from __future__ import annotations
 import contextlib
 from typing import Any
 
-from core_pdf.impl.engine.spec.s_07_syntax.pdfdict import lookup_dict_key
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 from core_pdf.impl.engine.spec.s_09_fonts.cmap_widths import (
     FontWidthMap,
     SparseFontWidthMap,

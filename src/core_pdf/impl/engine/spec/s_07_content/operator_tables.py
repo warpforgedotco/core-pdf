@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from core_pdf.impl.engine.spec.s_07_syntax.content_operators import (
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.content_operators import (
     TEXT_ONLY_NOOP_OPS,
     TEXT_ONLY_OP,
     TEXT_OP,

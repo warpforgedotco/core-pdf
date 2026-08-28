@@ -134,7 +134,7 @@ def test_score_document_candidates_identifies_oracle_gap() -> None:
             )
         ),
     )
-    page = SimpleNamespace(extraction_cache={"parse_report_v1": report})
+    page = SimpleNamespace(parse_report=report)
     document = SimpleNamespace(pages=[page])
 
     candidates = score_bench["score_document_candidates"](document, "alpha beta")
@@ -210,7 +210,7 @@ def test_collect_document_extraction_analysis_is_opt_in(
         recognition=RecognitionReport(passes=({"name": "primary", "elapsed_seconds": 1.25},)),
         metrics={"route": "ocr"},
     )
-    page = SimpleNamespace(extraction_cache={"parse_report_v1": report, "unrelated": object()})
+    page = SimpleNamespace(parse_report=report)
     document = SimpleNamespace(pages=[page])
 
     monkeypatch.delenv("CORE_PDF_EXTRACTION_ANALYSIS", raising=False)

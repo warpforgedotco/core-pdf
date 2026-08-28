@@ -1,15 +1,16 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 from typing import Any, cast
 
 from core_pdf.impl.engine.document import PdfDocument
 from core_pdf.impl.engine.spec.s_07_document.page import PdfPage
 from core_pdf.impl.engine.spec.s_07_document.records import RawFormField
-from core_pdf.impl.engine.spec.s_07_syntax.coercion import parse_name
+from core_pdf.impl.engine.spec.s_07_syntax.types import PdfArray, PdfDict, PdfObject
+from core_pdf.impl.engine.spec.s_07_syntax_primitives.coercion import parse_name
 from core_pdf.impl.primitives import PdfName
-from core_pdf.impl.types import PdfArray, PdfDict, PdfObject
 
 TESTS_DIR = Path(__file__).parents[6]
 SAMPLE_PDF = TESTS_DIR / "fixtures" / "SCORE-Bench" / "src" / "g-325a.pdf"
@@ -25,10 +26,17 @@ class FakeResolver:
 
 class FakeDocument:
     def __init__(self, fields: list[RawFormField]) -> None:
+        self.internal_cache_lock = threading.RLock()
+        self.internal_page_locks: dict[int, threading.RLock] = {}
         self.resolver = FakeResolver()
         self.internal_fields = fields
         self.pages: list[Any] = []
         self.fields_by_page_cache: dict[int, list[RawFormField]] | None = None
+        self.page_extraction_caches: dict[int, object] | None = None
+
+    def page_lock(self, page_number: int) -> threading.RLock:
+        with self.internal_cache_lock:
+            return self.internal_page_locks.setdefault(page_number, threading.RLock())
 
     def fields(self) -> list[RawFormField]:
         return self.internal_fields
