@@ -91,25 +91,21 @@ markers = [
 [tool.coverage.run]
 source = ["src/core_pdf"]
 parallel = true
-# The pymupdf facade is quarantined (see api/compat/_unsupported) and nothing
-# imports it, so it can only ever measure 0%. Keeping it in `source` weighed the
-# ratchet below down by a constant that has nothing to do with live code.
-omit = ["src/core_pdf/api/compat/_unsupported/*"]
+branch = true
+# Coverage is an owned-code metric. The quarantined pymupdf facade and vendored
+# dependencies are tested through their consumers but do not belong in the ratchet.
+omit = [
+    "src/core_pdf/_vendor/*",
+    "src/core_pdf/api/compat/_unsupported/*",
+]
 
 [tool.coverage.report]
 show_missing = true
 skip_covered = true
-# A ratchet, not a target. Set just below the measured figure so coverage cannot
-# silently regress; raise it as gaps close. The rendering package is at 73% now
-# that the rasterizer is decomposed, up from 52% when its internals were unreachable.
-# Vendored fontTools (src/core_pdf/_vendor) is included in `source` above and no
-# longer omitted, so this ratchet was recalibrated after pruning ~57k lines of
-# unreachable vendored code (confirmed 0% across the full test suite AND a
-# 2377-document real-world PDF corpus): 77 -> 64.
-# Raised 64 -> 66 after omitting the quarantined pymupdf facade (which nothing
-# imports, so it could only ever read 0%) and deleting ~1.5k lines of dead code;
-# measured 66.98%.
-fail_under = 66
+# A ratchet, not a target. Keep it just below the measured owned-code branch
+# coverage so CI rejects silent regressions; raise it as focused gaps close.
+# Measured 70.26% across the full suite after enabling branch coverage.
+fail_under = 70
 exclude_also = [
     "if TYPE_CHECKING:",
     "raise NotImplementedError",
@@ -180,9 +176,9 @@ files = ["src/core_pdf"]
 mypy_path = "src"
 exclude = ["src/core_pdf/_vendor/fontTools"]
 show_error_codes = true
-ignore_missing_imports = true
+ignore_missing_imports = false
 # Enabled incrementally. Remaining candidates and their current cost:
-# check_untyped_defs (1), disallow_any_generics (9), no_implicit_reexport (9),
+# check_untyped_defs (1), disallow_any_generics (9),
 # strict_equality (10), warn_unreachable (33), warn_return_any (59).
 #
 # `warn_redundant_casts` is deliberately NOT enabled: `ty` also runs in this
@@ -190,6 +186,7 @@ ignore_missing_imports = true
 # the two checkers give contradictory advice on the same lines.
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
+no_implicit_reexport = true
 warn_unused_ignores = true
 
 [tool.ty.environment]
@@ -214,6 +211,8 @@ core_pdf = ["py.typed"]
 "core_pdf._vendor.fontTools" = ["LICENSE.txt", "LICENSE.external.txt"]
 "core_pdf._vendor.icc" = ["*.icc", "README.md"]
 "core_pdf._vendor.fontTools.ttLib.tables" = ["table_API_readme.txt"]
+"core_pdf.impl.spec.s_07_filters.jbig2" = ["LICENSE.txt"]
+"core_pdf.impl.spec.s_07_security" = ["LICENSE.txt"]
 "core_pdf.impl.engine.layout.data.wordlists" = [
     "*.txt.gz",
     "*.bin",
@@ -224,6 +223,9 @@ core_pdf = ["py.typed"]
     "data/cmaps/**",
     "data/raster_fonts/**",
 ]
+
+[tool.setuptools.exclude-package-data]
+"*" = ["**/__pycache__/*", "**/*.py[co]"]
 
 [tool.importlinter]
 root_package = "core_pdf"

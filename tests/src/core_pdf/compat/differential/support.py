@@ -7,7 +7,8 @@ from typing import Any, Callable, Literal
 
 import pytest
 
-FIXTURES_ROOT = Path(__file__).resolve().parents[4] / "fixtures"
+from tests.support.paths import FIXTURES_ROOT
+
 XRAY_ROOT = FIXTURES_ROOT / "x-ray"
 FULL_ENV = "CORE_PDF_COMPAT_DIFFERENTIAL_FULL"
 FacadeName = Literal["llamaindex", "pdfplumber", "pikepdf", "pypdf", "unstructured", "xray"]

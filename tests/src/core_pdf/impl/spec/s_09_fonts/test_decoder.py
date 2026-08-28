@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any, cast
 
 import pytest
@@ -20,8 +19,6 @@ from core_pdf.impl.spec.s_09_fonts.font_program_truetype import (
     internal_invert_unicode_cmap,
 )
 from core_pdf.impl.spec.s_09_fonts.glyphs import glyph_name_to_unicode
-
-TESTS_DIR = Path(__file__).parents[5]
 
 
 def test_glyph_name_to_unicode_handles_computer_modern_delimiter_aliases() -> None:

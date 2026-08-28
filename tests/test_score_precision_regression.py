@@ -34,8 +34,9 @@ from typing import Any, cast
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[1]
-SCORE_SCRIPT = ROOT / "scripts" / "score_unstructured_bench.py"
+from tests.support.paths import REPO_ROOT
+
+SCORE_SCRIPT = REPO_ROOT / "scripts" / "score_unstructured_bench.py"
 
 _score_bench = run_path(
     str(SCORE_SCRIPT),
@@ -101,7 +102,7 @@ def test_precision_regression_partition(tmp_path: Path) -> None:
             str(json_output),
             "--no-html-output",
         ],
-        cwd=str(ROOT),
+        cwd=str(REPO_ROOT),
         capture_output=True,
         text=True,
         timeout=1200,

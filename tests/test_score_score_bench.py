@@ -15,9 +15,10 @@ from core_pdf.impl.engine.parse import (
     WorkPlan,
     ocr_tesseract,
 )
+from tests.support.paths import REPO_ROOT
 
 score_bench = run_path(
-    str(Path(__file__).parents[1] / "scripts" / "score_unstructured_bench.py"),
+    str(REPO_ROOT / "scripts" / "score_unstructured_bench.py"),
     run_name="score_score_bench_tests",
 )
 tokenize = score_bench["tokenize"]

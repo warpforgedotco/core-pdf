@@ -3,15 +3,13 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from core_pdf import PdfDocument
+from tests.support.paths import FIXTURES_ROOT
 
-FIXTURES = Path(__file__).parents[6] / "fixtures"
-LATIN_PDF = FIXTURES / "pypdf" / "resources" / "crazyones.pdf"
-CID_PDF = FIXTURES / "pdfminer.six" / "samples" / "jo.pdf"
+LATIN_PDF = FIXTURES_ROOT / "pypdf" / "resources" / "crazyones.pdf"
+CID_PDF = FIXTURES_ROOT / "pdfminer.six" / "samples" / "jo.pdf"
 
 
 def internal_reinterpret(page) -> object:

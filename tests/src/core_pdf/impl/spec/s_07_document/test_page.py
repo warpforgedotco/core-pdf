@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import threading
-from pathlib import Path
 from typing import Any, cast
 
 from core_pdf.impl.engine.document import PdfDocument
@@ -11,9 +10,9 @@ from core_pdf.impl.spec.s_07_document.page import PdfPage
 from core_pdf.impl.spec.s_07_document.records import RawFormField
 from core_pdf.impl.spec.s_07_syntax.types import PdfArray, PdfDict, PdfObject
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import parse_name
+from tests.support.paths import FIXTURES_ROOT
 
-TESTS_DIR = Path(__file__).parents[5]
-SAMPLE_PDF = TESTS_DIR / "fixtures" / "SCORE-Bench" / "src" / "g-325a.pdf"
+SAMPLE_PDF = FIXTURES_ROOT / "SCORE-Bench" / "src" / "g-325a.pdf"
 
 
 class FakeResolver:

@@ -8,7 +8,7 @@ import zlib
 from typing import cast
 
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.spec.s_07_syntax.lexer import WS_TABLE, PdfLexer
+from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.spec.s_07_syntax.objects import PdfObjectStream
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict
@@ -17,6 +17,7 @@ from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     parse_int_strict,
 )
 from core_pdf.impl.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
+from core_pdf.impl.spec.s_07_syntax_primitives.tokens import WS_TABLE
 from core_pdf.impl.types import PdfByteBuffer
 
 

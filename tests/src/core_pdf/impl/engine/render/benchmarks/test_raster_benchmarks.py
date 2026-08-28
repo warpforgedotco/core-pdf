@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import math
 import zlib
-from pathlib import Path
 
 import numpy
 import pytest
@@ -25,10 +24,10 @@ from core_pdf import PdfDocument
 from core_pdf.impl.engine.parse.model import PRIMARY_OCR_PIXELS
 from core_pdf.impl.engine.render.display import DisplayList, ImagePaintItem, RenderOptions
 from core_pdf.impl.engine.render.page import RenderedPage, compose_page
+from tests.support.paths import FIXTURES_ROOT
 
-FIXTURES = Path(__file__).parents[6] / "fixtures"
-TEXT_PDF = FIXTURES / "pypdf" / "resources" / "crazyones.pdf"
-VECTOR_PDF = FIXTURES / "pypdf" / "resources" / "GeoBase_NHNC1_Data_Model_UML_EN.pdf"
+TEXT_PDF = FIXTURES_ROOT / "pypdf" / "resources" / "crazyones.pdf"
+VECTOR_PDF = FIXTURES_ROOT / "pypdf" / "resources" / "GeoBase_NHNC1_Data_Model_UML_EN.pdf"
 
 MAX_PIXELS = 16_000_000
 IMAGE_WIDTH = 256

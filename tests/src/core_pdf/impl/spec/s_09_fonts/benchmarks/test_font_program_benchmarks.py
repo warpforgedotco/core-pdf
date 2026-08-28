@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import zlib
-from pathlib import Path
 
 import pytest
 
@@ -13,10 +12,10 @@ from core_pdf.impl.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 from core_pdf.impl.spec.s_09_fonts.decoder import FontDecoder
 from core_pdf.impl.spec.s_09_fonts.font_program_opentype import OpenTypeFontProgram
 from core_pdf.impl.spec.s_09_fonts.font_program_type1 import Type1FontProgram
+from tests.support.paths import FIXTURES_ROOT
 
-FIXTURES = Path(__file__).parents[6] / "fixtures"
-TYPE1_PDF = FIXTURES / "pdfminer.six" / "samples" / "simple5.pdf"
-CFF2_HEX = FIXTURES / "font_programs" / "cff2-a.otf.zlib.hex"
+TYPE1_PDF = FIXTURES_ROOT / "pdfminer.six" / "samples" / "simple5.pdf"
+CFF2_HEX = FIXTURES_ROOT / "font_programs" / "cff2-a.otf.zlib.hex"
 
 
 def internal_type1_data() -> tuple[bytes, int | None]:
