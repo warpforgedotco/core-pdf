@@ -37,6 +37,7 @@ from core_pdf.impl.render.kernels import (
     internal_box_downsample,
     internal_cached_raster_coordinates,
     internal_color_rgba,
+    internal_composite_blended_group_numpy,
     internal_composite_normal_group_numpy,
     internal_fill_path_crossing_spans,
     internal_fill_path_sample_crossings,
@@ -189,23 +190,48 @@ class internal_RasterTarget:
             pixel_views[key] = view
         return view
 
-    def blend_px(
-        self, idx: int, rgba: tuple[int, int, int, int], blend_mode: str | None = None
-    ) -> None:
-        pixels = self.pixels
+    def internal_resolved_blend(self, blend_mode: str | None) -> tuple[float | None, str | None]:
+        """Resolve the half of `blend_px`'s arguments that is span-invariant.
+
+        The enclosing group's alpha comes from `buffer_stack`, which none of the
+        paint methods push or pop, and the lowercased blend mode is fixed for a
+        whole call. Callers resolve both once and pass them down rather than
+        making `blend_px` re-derive them on every pixel.
+        """
         buffer_stack = self.buffer_stack
+        target_alpha = buffer_stack[-1][1] if buffer_stack else None
+        return (
+            float(target_alpha) if pdf_number(target_alpha) else None,
+            blend_mode.lower() if isinstance(blend_mode, str) else None,
+        )
+
+    def blend_px(
+        self,
+        idx: int,
+        rgba: tuple[int, int, int, int],
+        target_alpha_scale: float | None,
+        mode: str | None,
+    ) -> None:
+        """Blend one pixel, with the span-invariant arguments already resolved.
+
+        `target_alpha_scale` is the enclosing group's alpha (`None` when absent)
+        and `mode` the lowercased blend mode, both from `internal_resolved_blend`.
+        This is the rasterizer's hottest method -- `fill_rect` alone reaches it
+        ~1.8M times over the corpus -- so it takes them pre-resolved instead of
+        re-reading `buffer_stack` and re-lowercasing `mode` on each call.
+        """
+        pixels = self.pixels
         sr, sg, sb, sa = rgba
         if sa <= 0:
             return
-        target_alpha = buffer_stack[-1][1] if buffer_stack else None
-        if sa >= 255 and target_alpha is None and blend_mode is None:
+        if sa >= 255 and target_alpha_scale is None and mode is None:
             pixels[idx] = sr
             pixels[idx + 1] = sg
             pixels[idx + 2] = sb
             pixels[idx + 3] = 255
             return
-        if pdf_number(target_alpha):
-            sa = max(0, min(255, int(round(sa * float(target_alpha)))))
+        if target_alpha_scale is not None:
+            sa = max(0, min(255, int(round(sa * target_alpha_scale))))
             if sa <= 0:
                 return
         dr = pixels[idx]
@@ -220,7 +246,6 @@ class internal_RasterTarget:
         dst_r = dr / 255.0
         dst_g = dg / 255.0
         dst_b = db / 255.0
-        mode = blend_mode.lower() if isinstance(blend_mode, str) else None
         if mode == "multiply":
             src_r *= dst_r
             src_g *= dst_g
@@ -343,23 +368,17 @@ class internal_RasterTarget:
                 target_scale,
             )
             return
-        blend_px = self.blend_px
-        # `group_alpha` is constant for the whole buffer; resolve it once rather
-        # than re-type-checking and re-coercing it on every pixel.
-        alpha_factor = float(group_alpha) if pdf_number(group_alpha) else None
-        for idx in range(0, len(child), 4):
-            sa = child[idx + 3]
-            if sa <= 0:
-                continue
-            if alpha_factor is not None:
-                sa = max(0, min(255, int(round(sa * alpha_factor))))
-                if sa <= 0:
-                    continue
-            blend_px(
-                idx,
-                (child[idx], child[idx + 1], child[idx + 2], sa),
-                group_blend_mode,
-            )
+        # Both group alphas and the blend mode are invariant across the whole
+        # buffer, so they are resolved once here rather than re-derived on every
+        # pixel the way a `blend_px` loop would; the blend then runs as a single
+        # vectorized pass instead of one Python call per pixel.
+        internal_composite_blended_group_numpy(
+            self.pixel_view(self.pixels),
+            self.pixel_view(child),
+            float(group_alpha) if pdf_number(group_alpha) else None,
+            float(parent_alpha) if pdf_number(parent_alpha) else None,
+            group_blend_mode,
+        )
 
     def fill_rect(
         self,
@@ -472,6 +491,7 @@ class internal_RasterTarget:
         # above instead of reaching this scanline loop.
         width = self.width
         blend_px = self.blend_px
+        blend_alpha_scale, blend_resolved_mode = self.internal_resolved_blend(blend_mode)
         blend_normal_pixel = self.blend_normal_pixel
         clip_row_visible_spans = self.clip_row_visible_spans
         blended_rgba = rgba
@@ -514,7 +534,7 @@ class internal_RasterTarget:
                     )
                 else:
                     for x in range(start, end):
-                        blend_px(row + x * 4, rgba, blend_mode)
+                        blend_px(row + x * 4, rgba, blend_alpha_scale, blend_resolved_mode)
 
     def fill_path_scanlines(
         self,
@@ -529,6 +549,7 @@ class internal_RasterTarget:
         blend_normal_pixel = self.blend_normal_pixel
         blend_normal_solid_span = self.blend_normal_solid_span
         blend_px = self.blend_px
+        blend_alpha_scale, blend_resolved_mode = self.internal_resolved_blend(blend_mode)
         buffer_stack = self.buffer_stack
         can_blend_normal_fast = self.can_blend_normal_fast
         clip_paths_are_axis_aligned_rects = self.clip_paths_are_axis_aligned_rects
@@ -657,7 +678,7 @@ class internal_RasterTarget:
                         if normal_fast:
                             blend_normal_pixel(row + px * 4, *rgba)
                         else:
-                            blend_px(row + px * 4, rgba, blend_mode)
+                            blend_px(row + px * 4, rgba, blend_alpha_scale, blend_resolved_mode)
 
     def draw_glyph_bitmap(
         self,
@@ -787,6 +808,7 @@ class internal_RasterTarget:
         clip = self.clip
         blend_normal_pixel = self.blend_normal_pixel
         blend_px = self.blend_px
+        blend_alpha_scale, blend_resolved_mode = self.internal_resolved_blend(blend_mode)
         can_blend_normal_fast = self.can_blend_normal_fast
         clip_path_stack = clip.clip_path_stack
         clip_paths_are_axis_aligned_rects = self.clip_paths_are_axis_aligned_rects
@@ -870,7 +892,7 @@ class internal_RasterTarget:
                     if normal_fast:
                         blend_normal_pixel(row + px * 4, *rgba)
                     else:
-                        blend_px(row + px * 4, rgba, blend_mode)
+                        blend_px(row + px * 4, rgba, blend_alpha_scale, blend_resolved_mode)
 
     def fast_fill_path(
         self,
@@ -954,6 +976,7 @@ class internal_RasterTarget:
         axis_aligned_rect_box = clip.axis_aligned_rect_box
         blend_normal_pixel = self.blend_normal_pixel
         blend_px = self.blend_px
+        blend_alpha_scale, blend_resolved_mode = self.internal_resolved_blend(blend_mode)
         can_blend_normal_fast = self.can_blend_normal_fast
         clip_path_stack = clip.clip_path_stack
         clip_paths_are_axis_aligned_rects = self.clip_paths_are_axis_aligned_rects
@@ -1148,7 +1171,8 @@ class internal_RasterTarget:
                         blend_px(
                             row + px * 4,
                             (rgba[0], rgba[1], rgba[2], alpha),
-                            blend_mode,
+                            blend_alpha_scale,
+                            blend_resolved_mode,
                         )
 
     def fill_line(
@@ -1168,6 +1192,7 @@ class internal_RasterTarget:
         clip = self.clip
         blend_normal_pixel = self.blend_normal_pixel
         blend_px = self.blend_px
+        blend_alpha_scale, blend_resolved_mode = self.internal_resolved_blend(blend_mode)
         buffer_stack = self.buffer_stack
         clip_path_stack = clip.clip_path_stack
         clip_paths_are_axis_aligned_rects = self.clip_paths_are_axis_aligned_rects
@@ -1421,7 +1446,8 @@ class internal_RasterTarget:
                         blend_px(
                             row + px * 4,
                             (rgba[0], rgba[1], rgba[2], alpha),
-                            blend_mode,
+                            blend_alpha_scale,
+                            blend_resolved_mode,
                         )
 
     def cached_page_coordinates(
@@ -1538,6 +1564,7 @@ class internal_RasterTarget:
         clip = self.clip
         blend_normal_pixel = self.blend_normal_pixel
         blend_px = self.blend_px
+        blend_alpha_scale, blend_resolved_mode = self.internal_resolved_blend(blend_mode)
         blit_opaque_sampled_tiles = self.blit_opaque_sampled_tiles
         buffer_stack = self.buffer_stack
         can_blend_normal_fast = self.can_blend_normal_fast
@@ -2001,7 +2028,7 @@ class internal_RasterTarget:
                 if normal_fast:
                     blend_normal_pixel(row + px * 4, rgba[0], rgba[1], rgba[2], rgba[3])
                 else:
-                    blend_px(row + px * 4, rgba, blend_mode)
+                    blend_px(row + px * 4, rgba, blend_alpha_scale, blend_resolved_mode)
         return True
 
     def blit_image(
@@ -2031,6 +2058,7 @@ class internal_RasterTarget:
         blend_mode = item.blend_mode
         if blend_mode == "Normal":
             blend_mode = None
+        blend_alpha_scale, blend_resolved_mode = self.internal_resolved_blend(blend_mode)
         decode_started = time.perf_counter()
         try:
             prepared = source.prepare()
@@ -2285,7 +2313,7 @@ class internal_RasterTarget:
                             rgba[2],
                             max(0, min(255, int(round(rgba[3] * constant_alpha)))),
                         )
-                    blend_px(row + px * 4, rgba, blend_mode)
+                    blend_px(row + px * 4, rgba, blend_alpha_scale, blend_resolved_mode)
 
     def record_image_timings(self) -> None:
         # Captured frame values hoisted into locals so the body below runs on
@@ -2383,6 +2411,7 @@ class internal_RasterTarget:
         # LOAD_FAST exactly as it did when this was a closure.
         blend_normal_pixel = self.blend_normal_pixel
         blend_px = self.blend_px
+        blend_alpha_scale, blend_resolved_mode = self.internal_resolved_blend(blend_mode)
         can_blend_normal_fast = self.can_blend_normal_fast
         clip_row_visible_spans = self.clip_row_visible_spans
         crop_x0 = self.crop_x0
@@ -2482,7 +2511,7 @@ class internal_RasterTarget:
                 if normal_fast:
                     blend_normal_pixel(row + px * 4, *rgba)
                 else:
-                    blend_px(row + px * 4, rgba, blend_mode)
+                    blend_px(row + px * 4, rgba, blend_alpha_scale, blend_resolved_mode)
 
     def stroke_path(
         self,
@@ -2903,6 +2932,7 @@ class internal_RasterTarget:
         # Captured target state hoisted into locals, as elsewhere in this class.
         blend_normal_pixel = self.blend_normal_pixel
         blend_px = self.blend_px
+        blend_alpha_scale, blend_resolved_mode = self.internal_resolved_blend(blend_mode)
         buffer_stack = self.buffer_stack
         can_blend_normal_fast = self.can_blend_normal_fast
         clip_path_stack = self.clip_path_stack
@@ -3004,7 +3034,8 @@ class internal_RasterTarget:
                     blend_px(
                         row + px * 4,
                         (stencil_red, stencil_green, stencil_blue, alpha),
-                        blend_mode,
+                        blend_alpha_scale,
+                        blend_resolved_mode,
                     )
         return
 
