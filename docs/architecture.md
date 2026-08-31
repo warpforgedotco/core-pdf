@@ -138,10 +138,11 @@ Three packages form dependency floors:
 within the derived layers, the spec may depend only on the low-level capture model. Base modules
 under `impl/` never depend on the spec or derived packages.
 
-Records belong in `model/`, while `layout/` contains the heuristics that consume or produce layout
-results. Both packages avoid convenience re-exports: import a symbol from the module that owns it.
-Document-scoped caches and page locks live on the spec-level document, with no process-global
-fallback that could couple unrelated documents.
+Public extraction records belong in `impl/models.py`. The `model/` package owns internal capture
+records and low-level records shared with layout, while `layout/` owns layout heuristics and their
+stage-specific results. Both packages avoid convenience re-exports: import a symbol from the module
+that owns it. Document-scoped caches and page locks live on the spec-level document, with no
+process-global fallback that could couple unrelated documents.
 
 Two relationships sit outside the simple package ordering:
 
