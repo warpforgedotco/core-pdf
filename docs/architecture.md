@@ -170,9 +170,9 @@ consumers may depend on it; its only derived-processing dependency is the low-le
 model, and an import contract prevents dependencies on execution and higher derived layers.
 
 The line-text records (`LayoutLineText`, `LayoutLineTextSegment`,
-`LayoutWordSnapshot`) live in `model/line_text.py` rather than with the heuristics
-that build them, because `TextRun` memoizes reconstruction results on itself and the
-record layer must not name a type from `layout/`.
+`LayoutWordSnapshot`) live alongside `TextRun` in `model/runs.py` rather than with the
+heuristics that build them, because `TextRun` memoizes reconstruction results on itself
+and the record layer must not name a type from `layout/`.
 
 Document cache and per-page locks belong to the spec-level `PdfDocument`; spec consumers
 name that ownership directly through their document protocols. Lightweight test doubles
@@ -200,7 +200,7 @@ processing packages, and the contracts have no ignored runtime edges.
   under `TYPE_CHECKING` only, while `s_07_document` imports the structure tree for
   real. Replacing those annotations with protocols would add more indirection than
   the cycle costs, so an import contract should record it as an allowed exception.
-- `structured/{model,editor,serialization}` form a three-module cycle because the
+- `structured/{model,serialization}` form a two-module cycle because the
   serializers hang off the structured IR (`Page.to_markdown()` and friends) via
   function-local imports. That is the documented design — the alternative duplicates
   serializer entry points — so the cycle stays inside the package.

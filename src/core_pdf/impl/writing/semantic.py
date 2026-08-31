@@ -13,14 +13,13 @@ from core_pdf.impl.primitives import PdfName, PdfReference, PdfString
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.structured.model import BlockKind, Document, Page, TextLine
 from core_pdf.impl.structured.serialization import document_to_json_dict
-from core_pdf.impl.writing.document import serialize_encrypted_pdf_file
+from core_pdf.impl.writing.document import PdfObjectGraph, serialize_encrypted_pdf_file
 from core_pdf.impl.writing.encryption import StandardPdfEncryption
 from core_pdf.impl.writing.fonts import (
     PdfFontProvider,
     PdfFontResource,
     StandardType1FontProvider,
 )
-from core_pdf.impl.writing.object_graph import PdfObjectGraph
 from core_pdf.impl.writing.objects import (
     internal_PdfByteRangePlaceholder,
     internal_PdfSignatureContentsPlaceholder,

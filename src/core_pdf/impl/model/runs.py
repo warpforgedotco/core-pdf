@@ -3,18 +3,39 @@
 
 TextRun memoizes two results the layout heuristics compute
 (``internal_layout_reconstruction_cache``, ``internal_layout_words_cache``). Their
-record types live beside this module in ``model/line_text.py``, so nothing here
-names a type from ``layout/``.
+record types live here too, so the model layer never names a type from ``layout/``.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, ClassVar, TypeAlias
-
-from core_pdf.impl.model.line_text import LayoutLineText, LayoutWordSnapshot
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple, TypeAlias
 
 if TYPE_CHECKING:
     from core_pdf.impl.model.glyphs import GlyphCluster
+
+
+@dataclass(frozen=True, slots=True)
+class LayoutLineTextSegment:
+    text: str
+    separator_before: str
+    advance_bbox: tuple[float, float, float, float]
+    rotation_angle: int
+
+
+@dataclass(frozen=True, slots=True)
+class LayoutLineText:
+    text: str
+    segments: tuple[LayoutLineTextSegment, ...]
+
+
+EMPTY_LAYOUT_LINE_TEXT = LayoutLineText("", ())
+
+
+class LayoutWordSnapshot(NamedTuple):
+    text: str
+    bbox: tuple[float, float, float, float]
+
 
 Provenance: TypeAlias = tuple[tuple[str, object], ...]
 

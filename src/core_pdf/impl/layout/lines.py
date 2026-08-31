@@ -10,11 +10,10 @@ from __future__ import annotations
 from itertools import islice
 from typing import TYPE_CHECKING, TypeAlias
 
-from core_pdf.impl.model.line_text import LayoutWordSnapshot
-from core_pdf.impl.model.runs import TextRun, internal_track_text_run
+from core_pdf.impl.model.runs import LayoutWordSnapshot, TextRun, internal_track_text_run
 
 if TYPE_CHECKING:
-    from core_pdf.impl.layout.text_lines import (
+    from core_pdf.impl.model.runs import (
         LayoutLineText,
         LayoutLineTextSegment,
     )

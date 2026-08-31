@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from types import MappingProxyType
 
 from core_pdf.impl.primitives import PdfName, PdfReference
 from core_pdf.impl.writing.encryption import StandardPdfEncryption
@@ -12,6 +13,51 @@ from core_pdf.impl.writing.objects import (
     internal_classic_xref_entry,
     serialize_pdf_dictionary,
 )
+
+
+class PdfObjectGraph:
+    """Allocate and freeze a deterministic indirect-object graph."""
+
+    def __init__(self, *, first_object_number: int = 1) -> None:
+        if first_object_number < 1:
+            raise ValueError("first PDF object number must be positive")
+        self.internal_next_object_number = first_object_number
+        self.internal_objects: dict[int, object] = {}
+        self.internal_frozen = False
+
+    @property
+    def objects(self) -> Mapping[int, object]:
+        return MappingProxyType(self.internal_objects)
+
+    def add(self, value: object) -> PdfReference:
+        self.internal_ensure_mutable()
+        number = self.internal_next_object_number
+        self.internal_next_object_number += 1
+        self.internal_objects[number] = value
+        return PdfReference(number)
+
+    def replace(self, reference: PdfReference, value: object) -> None:
+        self.internal_ensure_mutable()
+        if reference.generation_number != 0 or reference.object_number not in self.internal_objects:
+            raise KeyError("reference does not belong to this object graph")
+        self.internal_objects[reference.object_number] = value
+
+    def freeze(self) -> Mapping[int, object]:
+        self.internal_frozen = True
+        return self.objects
+
+    def to_pdf(
+        self,
+        *,
+        trailer: Mapping[object, object],
+        version: str = "1.7",
+    ) -> bytes:
+        self.internal_frozen = True
+        return serialize_pdf_file(self.internal_objects, trailer=trailer, version=version)
+
+    def internal_ensure_mutable(self) -> None:
+        if self.internal_frozen:
+            raise RuntimeError("PDF object graph is frozen")
 
 
 def serialize_pdf_file(
@@ -77,4 +123,9 @@ def validate_pdf_version(version: str) -> None:
         raise ValueError(f"unsupported PDF version: {version!r}")
 
 
-__all__ = ("serialize_encrypted_pdf_file", "serialize_pdf_file", "validate_pdf_version")
+__all__ = (
+    "PdfObjectGraph",
+    "serialize_encrypted_pdf_file",
+    "serialize_pdf_file",
+    "validate_pdf_version",
+)

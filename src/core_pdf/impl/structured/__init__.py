@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 """Immutable structured document records and derived views."""
 
-from core_pdf.impl.structured.editor import DocumentEditor
 from core_pdf.impl.structured.model import (
     SCHEMA_VERSION,
     Annotation,
@@ -10,6 +9,7 @@ from core_pdf.impl.structured.model import (
     ContentNode,
     Diagnostic,
     Document,
+    DocumentEditor,
     DocumentTableView,
     DocumentTextView,
     Figure,

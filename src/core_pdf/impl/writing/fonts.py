@@ -9,7 +9,7 @@ from typing import Any, Protocol, cast
 
 from core_pdf.impl.primitives import PdfName, PdfReference
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
-from core_pdf.impl.writing.object_graph import PdfObjectGraph
+from core_pdf.impl.writing.document import PdfObjectGraph
 
 STANDARD_TYPE1_FONTS = frozenset(
     {"Courier", "Courier-Bold", "Courier-Oblique", "Courier-BoldOblique", "Helvetica"}

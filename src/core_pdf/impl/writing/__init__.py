@@ -2,6 +2,7 @@
 """PDF writing primitives."""
 
 from core_pdf.impl.writing.document import (
+    PdfObjectGraph,
     serialize_encrypted_pdf_file,
     serialize_pdf_file,
 )
@@ -16,7 +17,6 @@ from core_pdf.impl.writing.fonts import (
     TrueTypeFontProvider,
 )
 from core_pdf.impl.writing.incremental import append_incremental_update
-from core_pdf.impl.writing.object_graph import PdfObjectGraph
 from core_pdf.impl.writing.objects import serialize_pdf_object
 from core_pdf.impl.writing.semantic import serialize_document_to_pdf
 from core_pdf.impl.writing.signatures import (
