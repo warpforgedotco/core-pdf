@@ -346,9 +346,7 @@ class RenderedPage:
             # which is exactly the wash that covered IRS-2023-Form-1095-A.
             # Readers draw nothing here, so neither do we; the items stay in the
             # display list because their /Rect still carries annotation geometry.
-        if rotate == 0:
-            result = RasterImage(raster_target.pixels, width, height, 4)
-        elif rotate in {90, 180, 270}:
+        if rotate in {90, 180, 270}:
             rotated = bytearray(background_bytes * (width * height))
             source_pixels = memoryview(raster_target.pixels).cast("I")
             rotated_pixels = memoryview(rotated).cast("I")
@@ -374,10 +372,9 @@ class RenderedPage:
                 4,
             )
         else:
-            # A rotation that is not a multiple of 90 rasterizes unrotated;
-            # only the reported dimensions reflect the requested rotation.
-            result_width, result_height = self.raster_size(scale, crop=crop)
-            result = RasterImage(bytearray(raster_target.pixels), result_width, result_height, 4)
+            # A rotation that is not a multiple of 90 rasterizes unrotated; the
+            # reported dimensions match the buffer's unrotated layout.
+            result = RasterImage(raster_target.pixels, width, height, 4)
         record_image_timings()
         if cache:
             if self.image_cache is not None:

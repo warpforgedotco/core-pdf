@@ -82,23 +82,16 @@ def _pike_value(value: object) -> object:
     return value
 
 
-class _StrictDictionaryLexer(PdfLexer):
-    def recover_dictionary_key_position(self) -> bool:
-        return False
-
-    def recover_dictionary_entry_position(self) -> bool:
-        return False
-
-
 def _pikepdf_info_metadata(pdf: PdfDocument) -> dict[str, Any]:
     info = lookup_dict_key(pdf.trailer_dict, "Info")
     if isinstance(info, PdfReference):
         entry = pdf.xref.get((info.object_number << 16) | info.generation_number)
         if entry is not None and entry.object_stream is None:
-            lexer = _StrictDictionaryLexer(
+            lexer = PdfLexer(
                 pdf.raw_data,
                 reference_resolver=pdf.resolver.resolve,
                 decipher=pdf.decipher,
+                recover_dictionary_structure=False,
             )
             try:
                 lexer.rewind(entry.offset)
@@ -336,7 +329,7 @@ class Pages(MutableSequence[PdfPageObject]):
     def _sync(self) -> None:
         pages = tuple(item._page for item in self._values)
         self._owner._document = StructuredState.synthetic(
-            Document(pages=pages, metadata=self._owner._document.snapshot.metadata)
+            Document(pages=pages, metadata=self._owner._document.structured.metadata)
         )
         self._values = [Page(self._owner._document, page) for page in pages]
 

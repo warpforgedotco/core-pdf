@@ -10,13 +10,20 @@ from typing import Any, cast
 
 from core_pdf import PdfDocument
 from core_pdf._vendor.fontTools.ttLib import TTLibError
-from core_pdf.impl.engine.model.geometry import flip_rect_vertical
+from core_pdf.impl.engine.model.geometry import (
+    bbox_intersects,
+    flip_rect_vertical,
+    overlap_ratio_of,
+)
 from core_pdf.impl.exceptions import PdfUnsupportedError
 from core_pdf.impl.primitives import PdfReference
 from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 from core_pdf.impl.spec.s_09_fonts.cmap_tounicode import ToUnicodeCMap
+from core_pdf.impl.text import collapse_ws
+
+from .._shared import float32 as _float32
 
 _DATE = re.compile(r"[0-3]?\d[/\-][0-3]?\d[/\-]\d{2,4}")
 _OK_WORDS = re.compile(
@@ -49,26 +56,13 @@ class _RecoveredFont:
     widths: tuple[float, ...]
 
 
-def _intersection_area(
-    first: tuple[float, float, float, float],
-    second: tuple[float, float, float, float],
-) -> float:
-    width = max(0.0, min(first[2], second[2]) - max(first[0], second[0]))
-    height = max(0.0, min(first[3], second[3]) - max(first[1], second[1]))
-    return width * height
-
-
 def _occluded(character: _Character, rectangle: _Rectangle, threshold: float) -> bool:
-    overlap = _intersection_area(character.bbox, rectangle.bbox)
-    if overlap <= 0 or not (
+    if not bbox_intersects(character.bbox, rectangle.bbox) or not (
         rectangle.seqno > character.seqno
         or (rectangle.allow_same_fill and rectangle.fill == character.fill)
     ):
         return False
-    area = max(0.0, character.bbox[2] - character.bbox[0]) * max(
-        0.0, character.bbox[3] - character.bbox[1]
-    )
-    return bool(area and overlap / area > threshold)
+    return overlap_ratio_of(character.bbox, rectangle.bbox) > threshold
 
 
 def _path_rectangles(drawing: Any, crop_box: tuple[float, float, float, float]) -> list[_Rectangle]:
@@ -147,13 +141,25 @@ def _fitz_coordinate(value: float) -> float:
     return _float32(value)
 
 
-def _float32(value: float) -> float:
-    return struct.unpack("f", struct.pack("f", value))[0]
-
-
 def _next_float32(value: float) -> float:
     bits = struct.unpack("I", struct.pack("f", value))[0]
     return struct.unpack("f", struct.pack("I", bits + 1))[0]
+
+
+def _parse_object_at(document: Any, offset: int) -> object | None:
+    """Parse the indirect object at ``offset``, or None when it cannot be read."""
+    lexer = PdfLexer(
+        document.raw_data,
+        reference_resolver=document.resolver.resolve,
+        decipher=document.decipher,
+    )
+    try:
+        lexer.rewind(offset)
+        return lexer.parse_indirect_object()
+    except (TypeError, ValueError):
+        return None
+    finally:
+        lexer.close()
 
 
 def _recover_font(page: Any, font_name: str) -> _RecoveredFont | None:
@@ -167,18 +173,7 @@ def _recover_font(page: Any, font_name: str) -> _RecoveredFont | None:
         match = re.search(object_header, raw_data)
         if match is None:
             continue
-        lexer = PdfLexer(
-            document.raw_data,
-            reference_resolver=document.resolver.resolve,
-            decipher=document.decipher,
-        )
-        try:
-            lexer.rewind(match.start())
-            font = lexer.parse_indirect_object()
-        except (TypeError, ValueError):
-            continue
-        finally:
-            lexer.close()
+        font = _parse_object_at(document, match.start())
         if not isinstance(font, dict):
             continue
         to_unicode = lookup_dict_key(font, "ToUnicode")
@@ -193,32 +188,36 @@ def _recover_font(page: Any, font_name: str) -> _RecoveredFont | None:
         )
         if stream_match is None:
             continue
-        lexer = PdfLexer(
-            document.raw_data,
-            reference_resolver=document.resolver.resolve,
-            decipher=document.decipher,
-        )
+        stream = _parse_object_at(document, stream_match.start())
+        if not isinstance(stream, PdfStream):
+            continue
         try:
-            lexer.rewind(stream_match.start())
-            stream = lexer.parse_indirect_object()
-            if isinstance(stream, PdfStream):
-                first_char = lookup_dict_key(font, "FirstChar")
-                widths = lookup_dict_key(font, "Widths")
-                if not isinstance(first_char, int) or not isinstance(widths, list):
-                    continue
-                return _RecoveredFont(
-                    ToUnicodeCMap(stream.data),
-                    first_char,
-                    tuple(float(cast(Any, width)) for width in widths),
-                )
+            first_char = lookup_dict_key(font, "FirstChar")
+            widths = lookup_dict_key(font, "Widths")
+            if not isinstance(first_char, int) or not isinstance(widths, list):
+                continue
+            return _RecoveredFont(
+                ToUnicodeCMap(stream.data),
+                first_char,
+                tuple(float(cast(Any, width)) for width in widths),
+            )
         except (TypeError, ValueError):
             continue
-        finally:
-            lexer.close()
     return None
 
 
-def _page_redactions(page: Any) -> list[dict[str, object]]:
+def _operand_overrides(raw_data: bytes) -> dict[bytes, bytes]:
+    """Map multi-operand hex ``Tj`` payloads to their final operand, document-wide."""
+    return {
+        bytes.fromhex(groups[0].decode()): bytes.fromhex(groups[-1].decode())
+        for match in re.finditer(rb"(?:<[0-9A-Fa-f]+>){2,}\s*Tj\b", raw_data)
+        if len(groups := re.findall(rb"<([0-9A-Fa-f]+)>", match.group())) > 1
+    }
+
+
+def _page_redactions(
+    page: Any, override_cache: dict[str, dict[bytes, bytes]]
+) -> list[dict[str, object]]:
     source_crop_box = page.crop_box or page.media_box
     crop_box = cast(
         tuple[float, float, float, float], tuple(float(value) for value in source_crop_box)
@@ -236,14 +235,14 @@ def _page_redactions(page: Any) -> list[dict[str, object]]:
     widget_boxes = {
         tuple(annotation.rect) for annotation in annotations if annotation.subtype == "Widget"
     }
+    non_annotation_rectangles = [
+        rectangle for rectangle in rectangles if rectangle.bbox not in annotation_boxes
+    ]
     recovered_fonts: dict[str, _RecoveredFont | None] = {}
     recovered_positions: dict[tuple[str, int], float] = {}
-    raw_data = bytes(page.document.raw_data)
-    operand_overrides = {
-        bytes.fromhex(groups[0].decode()): bytes.fromhex(groups[-1].decode())
-        for match in re.finditer(rb"(?:<[0-9A-Fa-f]+>){2,}\s*Tj\b", raw_data)
-        if len(groups := re.findall(rb"<([0-9A-Fa-f]+)>", match.group())) > 1
-    }
+    if "overrides" not in override_cache:
+        override_cache["overrides"] = _operand_overrides(bytes(page.document.raw_data))
+    operand_overrides = override_cache["overrides"]
     glyphs = tuple(page.get_page_program().products.glyphs)
     sequence_codes: dict[int, bytes] = {}
     for glyph in glyphs:
@@ -302,30 +301,27 @@ def _page_redactions(page: Any) -> list[dict[str, object]]:
                     recovered_positions[position_key] = x1
                     glyph_box = (x0, glyph_box[1], x1, glyph_box[3])
         character = _Character(glyph_box, text, glyph.seqno, glyph.fill)
-        matching_rectangles = [
-            rectangle
-            for rectangle in rectangles
-            if not (rectangle.bbox in annotation_boxes and glyph.font_size == 1.0)
-        ]
+        matching_rectangles = non_annotation_rectangles if glyph.font_size == 1.0 else rectangles
         if any(_occluded(character, rectangle, 0.8) for rectangle in matching_rectangles):
             characters.append(character)
 
     redactions: list[dict[str, object]] = []
-    remaining = characters.copy()
+    remaining = characters
     for rectangle in sorted(rectangles, key=lambda item: item.seqno, reverse=True):
-        covered = [
-            character
-            for character in remaining
-            if _intersection_area(character.bbox, rectangle.bbox) > 0
-        ]
-        for character in covered:
-            remaining.remove(character)
+        covered = []
+        kept = []
+        for character in remaining:
+            if bbox_intersects(character.bbox, rectangle.bbox):
+                covered.append(character)
+            else:
+                kept.append(character)
+        remaining = kept
         text = "".join(character.text for character in covered)
         if len(text) > 1 and len(set(text)) == 1:
             continue
         if not text.strip() or re.search(r"[\d\w]", text) is None:
             continue
-        if not _OK_WORDS.sub("", " ".join(text.strip().split())):
+        if not _OK_WORDS.sub("", collapse_ws(text)):
             continue
         fitz_box = _fitz_box(rectangle.bbox, crop_box)
         if rectangle.bbox in annotation_boxes:
@@ -335,7 +331,7 @@ def _page_redactions(page: Any) -> list[dict[str, object]]:
         widget_has_later_content = is_widget and any(
             glyph.seqno >= rectangle.seqno
             and glyph.ink_bbox is not None
-            and _intersection_area(glyph.ink_bbox, rectangle.bbox) > 0
+            and bbox_intersects(glyph.ink_bbox, rectangle.bbox)
             for glyph in glyphs
         )
         outside_page = (
@@ -495,9 +491,7 @@ def _raw_highlight_redactions(page: Any) -> list[dict[str, object]]:
     output: list[dict[str, object]] = []
     for highlight in highlights:
         text = "".join(
-            character.text
-            for character in recovered
-            if _intersection_area(character.bbox, highlight) > 0
+            character.text for character in recovered if bbox_intersects(character.bbox, highlight)
         )
         if text.strip():
             fitz_box = _fitz_box(highlight, crop_box)
@@ -550,10 +544,11 @@ def inspect(source: Any) -> dict[int, list[dict[str, object]]]:
         _validate_mupdf_structure(document)
         if _requires_password(document):
             raise PdfUnsupportedError("document closed or encrypted")
+        override_cache: dict[str, dict[bytes, bytes]] = {}
         try:
             for page in document.pages:
                 try:
-                    redactions = _page_redactions(page)
+                    redactions = _page_redactions(page, override_cache)
                 except TTLibError:
                     redactions = _raw_highlight_redactions(page)
                 except (KeyError, TypeError, ValueError):

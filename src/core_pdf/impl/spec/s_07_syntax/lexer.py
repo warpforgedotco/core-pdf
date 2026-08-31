@@ -83,6 +83,7 @@ class PdfLexer:
         "current_gen_num",
         "kw_cache",
         "recover_malformed_objects",
+        "recover_dictionary_structure",
     )
 
     raw_data: memoryview
@@ -96,6 +97,7 @@ class PdfLexer:
     current_gen_num: int | None
     kw_cache: dict[bytes, object]
     recover_malformed_objects: bool
+    recover_dictionary_structure: bool
 
     def __init__(
         self,
@@ -105,6 +107,7 @@ class PdfLexer:
         decipher: Decipher | None = None,
         kw_cache: dict[bytes, object] | None = None,
         recover_malformed_objects: bool = True,
+        recover_dictionary_structure: bool = True,
     ) -> None:
 
         if type(data) is memoryview:
@@ -124,6 +127,7 @@ class PdfLexer:
         self.current_obj_num = None
         self.current_gen_num = None
         self.recover_malformed_objects = recover_malformed_objects
+        self.recover_dictionary_structure = recover_dictionary_structure
 
         if kw_cache is not None:
             self.kw_cache = kw_cache
@@ -829,7 +833,11 @@ class PdfLexer:
                 self.advance(2)
                 return values
             if self.raw_data[self.pos] != 47:
-                if self.recover_malformed_objects and self.recover_dictionary_key_position():
+                if (
+                    self.recover_malformed_objects
+                    and self.recover_dictionary_structure
+                    and self.recover_dictionary_key_position()
+                ):
                     if self.pos >= self.data_len:
                         raise PdfParseError("unterminated dictionary")
                     if (
@@ -852,6 +860,7 @@ class PdfLexer:
                 self.pos = value_start
                 if (
                     not self.recover_malformed_objects
+                    or not self.recover_dictionary_structure
                     or not self.recover_dictionary_entry_position()
                 ):
                     raise

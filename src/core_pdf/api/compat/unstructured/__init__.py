@@ -15,6 +15,7 @@ import numpy
 
 from core_pdf import PdfDocument
 from core_pdf.api.compat.pdfminer import LAParams, LTChar, LTFigure, LTTextBox, extract_pages
+from core_pdf.impl.engine.model.geometry import flip_rect_vertical
 from core_pdf.impl.exceptions import PdfError, PdfSourceError, PdfUnsupportedError
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
 from core_pdf.impl.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
@@ -253,12 +254,8 @@ def internal_clean_text(text: str) -> str:
     return re.sub(r" {2,}", " ", cleaned).strip()
 
 
-def internal_layout_regions(
-    items: list[LTTextBox],
-    page_height: float,
-) -> list[internal_LayoutRegion]:
+def internal_layout_regions(items: list[LTTextBox]) -> list[internal_LayoutRegion]:
     """Project each canonical pdfminer text box to one Unstructured region."""
-    del page_height
     return [
         internal_LayoutRegion(text, item.bbox)
         for item in items
@@ -430,11 +427,7 @@ def internal_region_order(
     )
     boxes = []
     for index in basic_order:
-        x0, y0, x1, y1 = regions[index].bbox
-        left = x0
-        top = page_height - y1
-        right = x1
-        bottom = page_height - y0
+        left, top, right, bottom = flip_rect_vertical(regions[index].bbox, page_height)
         coordinate_limit = max(1.0, page_height) * 64.0
         if any(
             coordinate < 0 or coordinate > coordinate_limit
@@ -572,7 +565,7 @@ def partition_pdf(filename: object, **kwargs: object) -> list[Element]:
         for page in pages:
             source_page = next(source_pages, None)
             text_boxes = [item for item in page if isinstance(item, LTTextBox)]
-            regions = internal_layout_regions(text_boxes, page.height)
+            regions = internal_layout_regions(text_boxes)
             for figure in (item for item in page if isinstance(item, LTFigure)):
                 # PDFMiner's recursive figure extraction inserts a newline for
                 # every non-text drawing and Unstructured splits those runs
