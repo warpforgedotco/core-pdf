@@ -7,13 +7,13 @@ from typing import Any, cast
 
 import pytest
 
-from core_pdf.impl.engine.parse import (
+from core_pdf.impl.parse import (
     CapturedPage,
     ObservationBatch,
     ObservationSource,
     PageEvidence,
 )
-from core_pdf.impl.engine.parse import pipeline as parse_pipeline
+from core_pdf.impl.parse import pipeline as parse_pipeline
 
 
 def internal_observations(text: str) -> ObservationBatch:

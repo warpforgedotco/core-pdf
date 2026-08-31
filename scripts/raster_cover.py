@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Recompute the covering subset used by ``tests/test_rendering_golden.py``.
 
-Traces which lines of ``engine/render/`` each corpus document executes while its
+Traces which lines of ``render/`` each corpus document executes while its
 first page is rasterized, then greedily picks the smallest set of documents that
 between them reach every line the whole corpus reaches.  That subset is what the
 always-on golden layer renders, so it stays fast without losing reach.
@@ -23,7 +23,7 @@ from types import FrameType
 from typing import Any
 
 from core_pdf import PdfDocument
-from core_pdf.impl.engine.render import display, kernels, page, raster_image, target
+from core_pdf.impl.render import display, kernels, page, raster_image, target
 
 CORPUS = pathlib.Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "SCORE-Bench" / "src"
 TARGET_FILES = frozenset(

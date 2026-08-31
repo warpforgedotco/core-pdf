@@ -2,11 +2,14 @@ from __future__ import annotations
 
 from typing import Any, cast
 
-from core_pdf.impl.engine.structured import (
+import core_pdf
+from core_pdf.impl.models import TextWord
+from core_pdf.impl.structured import (
     Block,
     BlockKind,
     ContentNode,
     Diagnostic,
+    DiagnosticTextRun,
     Document,
     Page,
     Table,
@@ -18,6 +21,13 @@ from core_pdf.impl.engine.structured import (
     TextLine,
     TextLineReference,
 )
+
+
+def test_public_text_records_have_one_canonical_name_and_owner() -> None:
+    assert core_pdf.DiagnosticTextRun is DiagnosticTextRun
+    assert core_pdf.TextWord is TextWord
+    assert "TextRun" not in core_pdf.__all__
+    assert not hasattr(core_pdf, "TextRun")
 
 
 def test_page_exposes_shared_nodes_and_independent_views() -> None:
@@ -77,8 +87,8 @@ def test_text_view_exposes_lines_and_words() -> None:
                 order=0,
                 kind=BlockKind.PARAGRAPH,
                 lines=(
-                    TextLine(text="one two", source="native"),
-                    TextLine(text="three", source="ocr"),
+                    TextLine(text="one two", bbox=(0.0, 0.0, 70.0, 10.0), source="native"),
+                    TextLine(text="three", bbox=(0.0, 20.0, 30.0, 30.0), source="ocr"),
                 ),
             ),
         ),
@@ -88,6 +98,7 @@ def test_text_view_exposes_lines_and_words() -> None:
     assert [word.text for word in page.text_view.words] == ["one", "two", "three"]
     assert [word.block_index for word in page.text_view.words] == [0, 0, 0]
     assert [word.page_number for word in page.text_view.words] == [1, 1, 1]
+    assert [word.bbox for word in page.text_view.words] == [None, None, None]
 
 
 def test_nodes_are_stable_in_reading_order() -> None:

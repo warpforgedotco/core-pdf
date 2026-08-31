@@ -7,7 +7,13 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, cast
 
-from core_pdf.api.compat.pypdf._text import internal_legacy_base_table
+from core_pdf.api.compat._text_state import (
+    internal_append_directional_text,
+    internal_ensure_line_break,
+    internal_flush_text,
+    internal_legacy_base_table,
+    internal_positioned_text,
+)
 from core_pdf.impl.primitives import PdfName, PdfString
 from core_pdf.impl.spec.s_07_content.operations import iter_content_operations
 from core_pdf.impl.spec.s_07_filters.errors import FilterParseError
@@ -27,16 +33,6 @@ from core_pdf.impl.spec.s_09_fonts.data.base_encodings import (
 )
 from core_pdf.impl.spec.s_09_fonts.decoder import FontDecoder
 from core_pdf.impl.spec.s_09_fonts.glyphs import glyph_name_to_unicode
-from core_pdf.impl.text import is_neutral_character, is_rtl_character
-
-
-def internal_orientation(matrix: list[float]) -> int:
-    if matrix[3] > 1e-6:
-        return 0
-    if matrix[3] < -1e-6:
-        return 180
-    return 90 if matrix[1] > 0 else 270
-
 
 internal_WIN_ANSI_ENCODING = tuple(internal_legacy_base_table("WinAnsiEncoding"))
 internal_MAC_ROMAN_ENCODING = tuple(internal_legacy_base_table("MacRomanEncoding"))
@@ -154,40 +150,24 @@ class internal_TextState:
         self.rtl = False
 
     def flush(self) -> None:
-        if self.text:
-            self.output_parts.append(self.text)
-            self.output_last = self.text[-1]
-            self.text = ""
+        self.text, self.output_last = internal_flush_text(
+            self.output_parts, self.text, self.output_last
+        )
 
     def positioned(self, string_width: float) -> None:
-        previous = multiply_affine(self.previous_tm, self.previous_cm)
-        current = multiply_affine(self.tm, self.cm)
-        orientation = internal_orientation(current)
-        delta_x = current[4] - previous[4]
-        delta_y = current[5] - previous[5]
-        previous_scale_x = math.hypot(self.previous_tm[0], self.previous_tm[1])
-        previous_scale_y = math.hypot(self.previous_tm[2], self.previous_tm[3])
-        current_scale_y = math.hypot(self.tm[2], self.tm[3])
-        moved_height, moved_width = (
-            (delta_y, delta_x) if orientation in (0, 180) else (delta_x, delta_y)
+        self.text, self.output_last = internal_positioned_text(
+            self.output_parts,
+            self.text,
+            self.output_last,
+            previous_text_matrix=self.previous_tm,
+            previous_current_matrix=self.previous_cm,
+            text_matrix=self.tm,
+            current_matrix=self.cm,
+            line_height=self.height,
+            font_size=self.font_size,
+            space_width=self.half_space_width,
+            string_width=string_width,
         )
-        try:
-            if abs(moved_height) > 0.8 * min(
-                self.height * previous_scale_y, self.font_size * current_scale_y
-            ):
-                if (self.text or self.output_last)[-1] != "\n":
-                    self.output_parts.append(self.text + "\n")
-                    self.output_last = "\n"
-                    self.text = ""
-            elif (
-                moved_width
-                >= (self.font_size * self.half_space_width / 1000.0 + string_width)
-                * previous_scale_x
-                and (self.text or self.output_last)[-1] != " "
-            ):
-                self.text += " "
-        except (IndexError, ValueError):
-            pass
         self.previous_tm = self.tm.copy()
         self.previous_cm = self.cm.copy()
 
@@ -198,18 +178,7 @@ class internal_TextState:
         else:
             chunks, width = self.font.decode_parts(data)
         for chunk in chunks:
-            if len(chunk) != 1 or is_neutral_character(chunk):
-                self.text = chunk + self.text if self.rtl else self.text + chunk
-            elif is_rtl_character(chunk):
-                if not self.rtl:
-                    self.rtl = True
-                    self.text = ""
-                self.text = chunk + self.text
-            else:
-                if self.rtl:
-                    self.rtl = False
-                    self.text = ""
-                self.text += chunk
+            self.text, self.rtl = internal_append_directional_text(self.text, self.rtl, chunk)
         self.width += width * self.font_size
         self.height = self.font_size
         self.positioned(0.0)
@@ -754,9 +723,9 @@ class OperatorTextProjection:
                         state.insert_space()
             elif operator == "Do" and operands and isinstance(xobjects, dict):
                 state.flush()
-                if state.output_last and state.output_last != "\n":
-                    state.output_parts.append("\n")
-                    state.output_last = "\n"
+                state.output_last = internal_ensure_line_break(
+                    state.output_parts, state.output_last
+                )
                 form = self.resolver.resolve(xobjects.get(operands[0]))
                 if not isinstance(form, PdfStream):
                     form = self.resolver.resolve(xobjects.get(str(operands[0])))

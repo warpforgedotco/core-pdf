@@ -15,11 +15,11 @@ from typing import TYPE_CHECKING, Any, TypeAlias, cast
 if TYPE_CHECKING:
     from core_pdf.impl.spec.s_07_content.inline_images import InlineImage
 
-from core_pdf.impl.engine.model.geometry import RectBox
-from core_pdf.impl.engine.model.glyph_table import GlyphTableBuilder
-from core_pdf.impl.engine.model.glyphs import GlyphCluster, GlyphObservation, GlyphSegment
-from core_pdf.impl.engine.model.runs import TextRun
 from core_pdf.impl.exceptions import PdfParseError
+from core_pdf.impl.model.geometry import RectBox
+from core_pdf.impl.model.glyph_table import GlyphTableBuilder
+from core_pdf.impl.model.glyphs import GlyphCluster, GlyphObservation, GlyphSegment
+from core_pdf.impl.model.runs import TextRun
 from core_pdf.impl.primitives import (
     MISSING,
     PdfName,

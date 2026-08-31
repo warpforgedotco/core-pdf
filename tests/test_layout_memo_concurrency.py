@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from core_pdf import PdfDocument
-from core_pdf.impl.engine import page as engine_page
+from core_pdf.impl import page as engine_page
 
 FIXTURE = (
     Path(__file__).parent

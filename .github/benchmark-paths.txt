@@ -3,19 +3,19 @@
 #   full-benchmarks.yml runs all benchmarks in these directories, weekly
 #
 # Do not replace this list with a glob over
-# tests/src/core_pdf/impl/engine/**/benchmarks. Two directories match that
+# tests/src/core_pdf/impl/**/benchmarks. Two directories match that
 # pattern on a developer machine but hold no tracked files -- s_07_document and
 # s_07_objects, whose benchmark modules were deleted by the layering refactor in
 # #49 and survive locally only as stale __pycache__. A fresh CI clone does not
 # have them, and pytest exits with "file or directory not found" on a path that
 # does not exist, so globbing would break both workflows.
-tests/src/core_pdf/impl/engine/render/benchmarks
-tests/src/core_pdf/impl/engine/structured/benchmarks
-tests/src/core_pdf/impl/engine/writing/benchmarks
-tests/src/core_pdf/impl/engine/spec/s_07_content/benchmarks
-tests/src/core_pdf/impl/engine/spec/s_07_filters/benchmarks
-tests/src/core_pdf/impl/engine/spec/s_07_syntax/benchmarks
-tests/src/core_pdf/impl/engine/spec/s_07_syntax_primitives/benchmarks
-tests/src/core_pdf/impl/engine/spec/s_07_security/benchmarks
-tests/src/core_pdf/impl/engine/spec/s_08_graphics/benchmarks
-tests/src/core_pdf/impl/engine/spec/s_09_fonts/benchmarks
+tests/src/core_pdf/impl/render/benchmarks
+tests/src/core_pdf/impl/structured/benchmarks
+tests/src/core_pdf/impl/writing/benchmarks
+tests/src/core_pdf/impl/spec/s_07_content/benchmarks
+tests/src/core_pdf/impl/spec/s_07_filters/benchmarks
+tests/src/core_pdf/impl/spec/s_07_syntax/benchmarks
+tests/src/core_pdf/impl/spec/s_07_syntax_primitives/benchmarks
+tests/src/core_pdf/impl/spec/s_07_security/benchmarks
+tests/src/core_pdf/impl/spec/s_08_graphics/benchmarks
+tests/src/core_pdf/impl/spec/s_09_fonts/benchmarks

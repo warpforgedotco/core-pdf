@@ -12,8 +12,8 @@ from typing import Any, BinaryIO, TextIO, TypeAlias, cast
 
 from core_pdf import PdfDocument, PdfPage
 from core_pdf._vendor.fontTools.agl import toUnicode
-from core_pdf.impl.engine.model.geometry import bbox_union, overlap_ratio_of
 from core_pdf.impl.exceptions import PdfError
+from core_pdf.impl.model.geometry import bbox_union, overlap_ratio_of
 from core_pdf.impl.primitives import PdfReference
 from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict

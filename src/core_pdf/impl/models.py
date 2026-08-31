@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, fields, replace
 from typing import Generic, Self, TypeVar
 
 from core_pdf.impl.types import Rectangle
@@ -20,6 +20,45 @@ class PageScoped(Generic[RecordT]):
     page_number: int
     page_label: str | None
     record: RecordT
+
+
+@dataclass(frozen=True, slots=True)
+class TextWord:
+    """One canonical word record shared by layout and structured extraction."""
+
+    text: str
+    bbox: Rectangle | None = None
+    line_index: int = 0
+    word_index: int = 0
+    block_index: int = 0
+    page_number: int | None = None
+    source: str = "unknown"
+
+
+def internal_text_word_tokens(text: str) -> tuple[str, ...]:
+    """Return the non-whitespace word vocabulary used throughout extraction."""
+    return tuple(text.split())
+
+
+def internal_reconcile_text_words(
+    text: str,
+    words: tuple[TextWord, ...],
+) -> tuple[TextWord, ...]:
+    """Keep word text and geometry consistent after line-level normalization.
+
+    Unchanged and one-to-one substituted words retain their boxes. If normalization
+    changes word boundaries, geometry cannot be mapped safely and is left unknown.
+    """
+    tokens = internal_text_word_tokens(text)
+    if not tokens:
+        return ()
+    if not words:
+        return tuple(TextWord(token) for token in tokens)
+    if tuple(word.text for word in words) == tokens:
+        return words
+    if len(words) == len(tokens):
+        return tuple(replace(word, text=token) for word, token in zip(words, tokens, strict=True))
+    return tuple(TextWord(token) for token in tokens)
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,4 +113,4 @@ class ImageRecord(DrawingRecord):
     image_metadata: ImageMetadata | None = None
 
 
-__all__ = ("DrawingRecord", "ImageMetadata", "ImageRecord", "PageScoped")
+__all__ = ("DrawingRecord", "ImageMetadata", "ImageRecord", "PageScoped", "TextWord")

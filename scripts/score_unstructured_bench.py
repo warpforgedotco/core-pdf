@@ -17,7 +17,7 @@ from time import perf_counter
 from typing import Any, Iterable, cast
 
 from core_pdf import PdfDocument
-from core_pdf.impl.engine.parse import ParseReport
+from core_pdf.impl.parse import ParseReport
 
 ROOT = Path(__file__).resolve().parents[1]
 SCORE_BENCH_ROOT = ROOT / "tests" / "fixtures" / "SCORE-Bench"

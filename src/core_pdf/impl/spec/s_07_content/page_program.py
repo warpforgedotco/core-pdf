@@ -11,9 +11,9 @@ from typing import Any
 
 import numpy
 
-from core_pdf.impl.engine.model.glyph_table import GlyphTable, GlyphTableBuilder
-from core_pdf.impl.engine.model.runs import TextRun
 from core_pdf.impl.exceptions import PdfContractError
+from core_pdf.impl.model.glyph_table import GlyphTable, GlyphTableBuilder
+from core_pdf.impl.model.runs import TextRun
 from core_pdf.impl.spec.s_07_content.capture import (
     CapturedDrawing,
     CapturedInlineImage,

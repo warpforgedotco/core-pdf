@@ -9,13 +9,13 @@ from pathlib import Path
 
 import pytest
 
-from core_pdf.impl.engine.document import PdfDocument
-from core_pdf.impl.engine.parse import ParsedPage
-from core_pdf.impl.engine.parse import pipeline as parse_pipeline
-from core_pdf.impl.engine.writing import serialize_pdf_file
+from core_pdf.impl.document import PdfDocument
+from core_pdf.impl.parse import ParsedPage
+from core_pdf.impl.parse import pipeline as parse_pipeline
 from core_pdf.impl.primitives import PdfName, PdfReference
 from core_pdf.impl.runtime.execution import ExecutionRuntime, RuntimeConfig, TaskScope, WorkStage
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
+from core_pdf.impl.writing import serialize_pdf_file
 
 TESTS_DIR = Path(__file__).parent / "fixtures"
 SAMPLE_PDF = TESTS_DIR / "SCORE-Bench" / "src" / "global-AIDS-strategy-p74-75-p001.pdf"
@@ -572,7 +572,7 @@ def test_concurrent_document_extracts_share_the_emitted_document() -> None:
 
 def internal_multi_page_pdf() -> bytes:
     from core_pdf import serialize_document_to_pdf
-    from core_pdf.impl.engine.structured import Block, BlockKind, Document, Page, TextLine
+    from core_pdf.impl.structured import Block, BlockKind, Document, Page, TextLine
 
     return serialize_document_to_pdf(
         Document(

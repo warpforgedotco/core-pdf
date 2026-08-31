@@ -7,9 +7,9 @@ from types import SimpleNamespace
 
 import numpy
 
-from core_pdf.impl.engine.parse.ocr_model import internal_Raster
-from core_pdf.impl.engine.parse.ocr_raster import internal_decoded_image_raster
-from core_pdf.impl.engine.render.raster_image import RasterImage
+from core_pdf.impl.parse.ocr_model import internal_Raster
+from core_pdf.impl.parse.ocr_raster import internal_decoded_image_raster
+from core_pdf.impl.render.raster_image import RasterImage
 from core_pdf.impl.runtime.image_cache import ImageCache, ImageCacheKey
 
 

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Internal implementation package for core_pdf."""
+"""Internal PDF specification, runtime, and derived-processing packages."""
 
 from __future__ import annotations
 

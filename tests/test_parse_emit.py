@@ -2,16 +2,21 @@ from __future__ import annotations
 
 from typing import cast
 
-from core_pdf.impl.engine.parse import (
+from core_pdf.impl.model.runs import TextRun
+from core_pdf.impl.models import TextWord
+from core_pdf.impl.parse import (
+    ObservationBatch,
+    ObservationSource,
     PageRoute,
     ParsedBlock,
     ParsedLine,
     ParsedPage,
 )
-from core_pdf.impl.engine.parse.emit import assemble_page as emit_page
-from core_pdf.impl.engine.parse.emit import internal_line_decoration_flags
-from core_pdf.impl.engine.structured import BlockKind, Table, TableCell
+from core_pdf.impl.parse.emit import assemble_page as emit_page
+from core_pdf.impl.parse.emit import internal_line_decoration_flags
+from core_pdf.impl.parse.layout import layout_blocks
 from core_pdf.impl.spec.s_07_content.capture import CapturedDrawing
+from core_pdf.impl.structured import BlockKind, Table, TableCell
 
 
 def block(
@@ -26,6 +31,74 @@ def block(
         kind=kind,
         level=1 if kind == "heading" else None,
     )
+
+
+def test_emit_preserves_distinct_word_boxes_computed_by_layout() -> None:
+    first = TextRun("one", 10.0, 100.0, 40.0, 110.0, 0.0, 0.0, 10.0, 4.0, 0, 0, 0)
+    second = TextRun("two", 50.0, 100.0, 80.0, 110.0, 0.0, 0.0, 10.0, 4.0, 1, 1, 0)
+    observations = ObservationBatch.from_columns(
+        (first.text, second.text),
+        ((first.x0, first.y0, first.x1, first.y1), (second.x0, second.y0, second.x1, second.y1)),
+        source=ObservationSource.NATIVE,
+        line_break_before=(True, False),
+        references=(first, second),
+    )
+    parsed = ParsedPage(
+        page_number=1,
+        width=200.0,
+        height=200.0,
+        rotation=0,
+        route=PageRoute.NATIVE,
+        blocks=layout_blocks(observations),
+    )
+
+    page = emit_page(parsed)
+
+    assert [(word.text, word.bbox) for word in page.words] == [
+        ("one", (10.0, 100.0, 40.0, 110.0)),
+        ("two", (50.0, 100.0, 80.0, 110.0)),
+    ]
+    assert page.blocks[0].lines[0].bbox == (10.0, 100.0, 80.0, 110.0)
+
+
+def test_emit_reconciles_word_geometry_with_normalized_text() -> None:
+    parsed = ParsedPage(
+        page_number=1,
+        width=200.0,
+        height=200.0,
+        rotation=0,
+        route=PageRoute.NATIVE,
+        blocks=(
+            ParsedBlock(
+                lines=(
+                    ParsedLine(
+                        "ABΗCD",
+                        (10.0, 100.0, 60.0, 110.0),
+                        "native",
+                        words=(TextWord("ABΗCD", (10.0, 100.0, 60.0, 110.0)),),
+                    ),
+                    ParsedLine(
+                        'value "',
+                        (10.0, 80.0, 70.0, 90.0),
+                        "native",
+                        words=(
+                            TextWord("value", (10.0, 80.0, 50.0, 90.0)),
+                            TextWord('"', (60.0, 80.0, 70.0, 90.0)),
+                        ),
+                    ),
+                ),
+                bbox=(10.0, 80.0, 70.0, 110.0),
+            ),
+        ),
+    )
+
+    page = emit_page(parsed)
+
+    first, second = page.blocks[0].lines
+    assert [(word.text, word.bbox) for word in first.words] == [
+        ("ABHCD", (10.0, 100.0, 60.0, 110.0))
+    ]
+    assert [(word.text, word.bbox) for word in second.words] == [("value", None)]
 
 
 def test_emit_attaches_caption_and_section_to_table() -> None:

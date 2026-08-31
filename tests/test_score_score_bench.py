@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from core_pdf.impl.engine.parse import (
+from core_pdf.impl.parse import (
     PageRoute,
     ParseReport,
     RecognitionReport,

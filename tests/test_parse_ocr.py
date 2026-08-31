@@ -9,8 +9,8 @@ from typing import cast
 
 import pytest
 
-from core_pdf.impl.engine.model.runs import TextRun
-from core_pdf.impl.engine.parse import (
+from core_pdf.impl.model.runs import TextRun
+from core_pdf.impl.parse import (
     CapturedPage,
     ObservationBatch,
     ObservationSource,
@@ -28,18 +28,18 @@ from core_pdf.impl.engine.parse import (
     ocr_stroked_vector,
     ocr_tesseract,
 )
-from core_pdf.impl.engine.parse import capture as parse_capture
-from core_pdf.impl.engine.parse import ocr as parse_ocr
-from core_pdf.impl.engine.parse import pipeline as parse_pipeline
-from core_pdf.impl.engine.parse.model import StrokedVectorTextEvidence
-from core_pdf.impl.engine.parse.stroked_text import (
+from core_pdf.impl.parse import capture as parse_capture
+from core_pdf.impl.parse import ocr as parse_ocr
+from core_pdf.impl.parse import pipeline as parse_pipeline
+from core_pdf.impl.parse.model import StrokedVectorTextEvidence
+from core_pdf.impl.parse.stroked_text import (
     StrokedTextDecode,
     StrokedTextObservation,
     StrokedTextProfile,
     StrokedTextRun,
     StrokedTextSeed,
 )
-from core_pdf.impl.engine.render.raster_image import RasterImage
+from core_pdf.impl.render.raster_image import RasterImage
 from core_pdf.impl.runtime.execution import TaskScope
 
 
@@ -92,14 +92,14 @@ def internal_recognize_with_report(
     plan: WorkPlan,
     context: TaskScope,
 ) -> tuple[ObservationBatch, RecognitionReport]:
-    trace = ocr.internal_RecognitionTrace.create()
-    observations = ocr.internal_recognize_page_with_reserved_raster(
+    report = RecognitionReport()
+    observations, _ = ocr.internal_recognize_page_with_reserved_raster(
         capture,
         plan,
         context,
-        trace=trace,
+        report=report,
     )
-    return observations, trace.report()
+    return observations, report
 
 
 def internal_report_mapping(value: object) -> Mapping[str, object]:
@@ -880,19 +880,27 @@ def test_candidate_diagnostics_are_typed_and_identify_selection() -> None:
         11,
         candidate_observations("noise", 40.0),
     )
-    trace = ocr.internal_RecognitionTrace.create()
+    report = RecognitionReport()
 
     ocr.internal_record_candidates(
         (("primary", first), ("fallback", second)),
         "primary",
-        trace,
+        report,
     )
 
-    diagnostics = trace.report().candidates
+    diagnostics = report.candidates
     assert diagnostics[0]["selected"] is True
     assert diagnostics[0]["characters"] == len("alpha + beta")
     assert diagnostics[0]["mean_confidence"] == 80.0
     assert diagnostics[1]["selected"] is False
+
+
+def test_recognition_report_serializes_learned_stroked_vector_alphabet() -> None:
+    alphabet = (("signature", "A"),)
+
+    record = RecognitionReport(stroked_vector_alphabet=alphabet).as_record()
+
+    assert record["stroked_vector_alphabet"] == alphabet
 
 
 def test_hidden_text_verification_requires_semantic_and_spatial_agreement() -> None:
@@ -1863,12 +1871,12 @@ def test_stroked_vector_decoder_corrects_one_character_ocr_error(
         confidence=(95.0,),
     )
 
-    trace = ocr.internal_RecognitionTrace.create()
-    recovered = ocr.internal_recover_stroked_vector_text(capture, observations, trace)
+    report = RecognitionReport()
+    recovered = ocr.internal_recover_stroked_vector_text(capture, observations, report)
 
     assert recovered.text == ("D7",)
     assert recovered.source.tolist() == [int(ObservationSource.STRUCTURE)]
-    assert trace.report().stroked_vector_decode["corrections"] == 1
+    assert report.stroked_vector_decode["corrections"] == 1
 
 
 def test_stroked_vector_substitution_repairs_only_anchored_low_confidence_edits() -> None:

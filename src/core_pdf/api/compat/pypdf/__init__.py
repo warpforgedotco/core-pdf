@@ -11,17 +11,17 @@ from typing import Any, BinaryIO, cast
 from core_pdf import PdfDocument
 from core_pdf.api.compat._shared import ClosingMixin, coerce_bbox, write_bytes
 from core_pdf.api.compat.pypdf._text import extract_legacy_text
-from core_pdf.impl.engine.structured import (
+from core_pdf.impl.exceptions import PdfUnsupportedError
+from core_pdf.impl.primitives import PdfReference
+from core_pdf.impl.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
+from core_pdf.impl.structured import (
     Annotation,
     Document,
     Link,
     Page,
 )
-from core_pdf.impl.engine.writing.encryption import StandardPdfEncryption
-from core_pdf.impl.engine.writing.semantic import serialize_document_to_pdf
-from core_pdf.impl.exceptions import PdfUnsupportedError
-from core_pdf.impl.primitives import PdfReference
-from core_pdf.impl.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
+from core_pdf.impl.writing.encryption import StandardPdfEncryption
+from core_pdf.impl.writing.semantic import serialize_document_to_pdf
 
 PdfInput = str | PathLike[str] | bytes | bytearray | BytesIO
 

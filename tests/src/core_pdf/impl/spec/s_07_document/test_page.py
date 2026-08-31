@@ -5,7 +5,7 @@ import threading
 from pathlib import Path
 from typing import Any, cast
 
-from core_pdf.impl.engine.document import PdfDocument
+from core_pdf.impl.document import PdfDocument
 from core_pdf.impl.primitives import PdfName
 from core_pdf.impl.spec.s_07_document.page import PdfPage
 from core_pdf.impl.spec.s_07_document.records import RawFormField

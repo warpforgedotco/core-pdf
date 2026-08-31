@@ -79,7 +79,7 @@ jobs:
       - name: Run core-pdf tests
         env:
           # Raster every corpus document, not just the 24-document covering
-          # subset. The subset reaches every line of engine/render/, but it
+          # subset. The subset reaches every line of render/, but it
           # cannot see output drift on the other 200: four snapshot digests
           # stayed unreachable for weeks precisely because only the subset ran
           # here. The full sweep costs a few minutes.

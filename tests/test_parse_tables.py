@@ -5,13 +5,13 @@ from typing import Any, cast
 
 import numpy
 
-from core_pdf.impl.engine.parse import (
+from core_pdf.impl.parse import (
     CapturedPage,
     ObservationBatch,
     ObservationSource,
     PageEvidence,
 )
-from core_pdf.impl.engine.parse.tables import (
+from core_pdf.impl.parse.tables import (
     extract_tables,
     internal_compact_stream_table,
     internal_merge_adjacent_tables,
@@ -22,7 +22,7 @@ from core_pdf.impl.engine.parse.tables import (
     internal_stream_tables,
     internal_table_character_spaced_prose,
 )
-from core_pdf.impl.engine.structured import Table, TableCell
+from core_pdf.impl.structured import Table, TableCell
 
 
 def page_evidence() -> PageEvidence:
