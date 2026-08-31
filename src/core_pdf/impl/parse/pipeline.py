@@ -133,16 +133,11 @@ class internal_PageExtraction:
         self.internal_layout_seconds = 0.0
 
     def internal_invalidate_after_capture(self) -> None:
+        """Drop every product downstream of the capture, in pipeline order."""
         self.internal_plan = None
         self.internal_planning_seconds = 0.0
-        self.internal_invalidate_after_plan()
-
-    def internal_invalidate_after_plan(self) -> None:
         self.internal_recognition = None
         self.internal_ocr_seconds = 0.0
-        self.internal_invalidate_after_recognition()
-
-    def internal_invalidate_after_recognition(self) -> None:
         self.internal_observations = None
         self.internal_fusion_seconds = 0.0
         self.internal_tables = None
@@ -159,24 +154,6 @@ class internal_PageExtraction:
             self.internal_capture = capture
             self.internal_capture_seconds = seconds
             self.internal_invalidate_after_capture()
-
-    def replace_recognition(self, recognition: RecognitionResult, *, seconds: float = 0.0) -> None:
-        """Install recognition and atomically invalidate every dependent product."""
-        with self.page.internal_page_lock:
-            self.internal_recognition = recognition
-            self.internal_ocr_seconds = seconds
-            self.internal_invalidate_after_recognition()
-
-    def replace_recognition_report(self, report: RecognitionReport) -> None:
-        """Replace diagnostics without recomputing observation-dependent stages."""
-        with self.page.internal_page_lock:
-            recognition = self.internal_recognition
-            if recognition is None:
-                raise RuntimeError("recognition must exist before its report can be replaced")
-            self.internal_recognition = replace(recognition, report=report)
-            self.internal_parsed_page = None
-            self.internal_parse_report = None
-            self.internal_assembled_page = None
 
     @property
     def report(self) -> ParseReport | None:

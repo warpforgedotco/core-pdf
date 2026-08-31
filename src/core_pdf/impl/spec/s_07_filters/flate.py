@@ -5,7 +5,6 @@ import zlib
 
 import imagecodecs
 
-from core_pdf.impl.spec.s_07_filters.codecs import PDF_WHITESPACE_TABLE
 from core_pdf.impl.spec.s_07_filters.errors import FilterParseError
 from core_pdf.impl.spec.s_07_syntax_primitives.content_operators import (
     PDF_CONTENT_OPERATOR_BYTES,
@@ -16,8 +15,12 @@ from core_pdf.impl.spec.s_07_syntax_primitives.scanning import (
     skip_hex_string,
     skip_literal_string,
 )
+from core_pdf.impl.spec.s_07_syntax_primitives.tokens import (
+    DELIMITERS,
+    SEPARATOR_TABLE,
+    WS_TABLE,
+)
 
-PDF_CONTENT_DELIMITERS = b"()<>[]{}/%"
 # Incomplete raw Deflate has no signature, so a few arbitrary bytes can decode
 # to garbage without the decoder ever reaching an end-of-stream marker.
 MIN_TRUNCATED_RAW_FLATE_BYTES = 8
@@ -94,7 +97,7 @@ def looks_like_pdf_content_stream(data: bytes | memoryview) -> bool:
     container_depth = 0
     while pos < end and token_count < 64:
         byte = raw[pos]
-        if PDF_WHITESPACE_TABLE[byte]:
+        if WS_TABLE[byte]:
             pos += 1
             continue
         if byte == 37:
@@ -126,17 +129,17 @@ def looks_like_pdf_content_stream(data: bytes | memoryview) -> bool:
             pos += 1
             while pos < end:
                 byte = raw[pos]
-                if PDF_WHITESPACE_TABLE[byte] or byte in PDF_CONTENT_DELIMITERS:
+                if SEPARATOR_TABLE[byte]:
                     break
                 pos += 1
             continue
-        if byte in PDF_CONTENT_DELIMITERS:
+        if byte in DELIMITERS:
             pos += 1
             continue
         start = pos
         while pos < end:
             byte = raw[pos]
-            if PDF_WHITESPACE_TABLE[byte] or byte in PDF_CONTENT_DELIMITERS:
+            if SEPARATOR_TABLE[byte]:
                 break
             pos += 1
         token_count += 1

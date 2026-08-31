@@ -15,6 +15,7 @@ from core_pdf.impl.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 
 class PdfStandardSecurityHandlerV5(PdfStandardSecurityHandlerV4):
     supported_revisions = (5, 6)
+    internal_aes_cipher: AES
 
     def init_params(self) -> None:
         super().init_params()
@@ -105,9 +106,15 @@ class PdfStandardSecurityHandlerV5(PdfStandardSecurityHandlerV4):
     def bytes_mod_3(input_bytes: bytes) -> int:
         return sum(b % 3 for b in input_bytes) % 3
 
+    def init_key(self) -> None:
+        # AESV3 uses one file key for every object, unlike the per-object keys V4
+        # derives, so the key schedule is expanded once here rather than per
+        # encrypted string and stream.
+        super().init_key()
+        assert self.key is not None
+        self.internal_aes_cipher = AES(self.key)
+
     def decrypt_aes256(self, objid: int, genno: int, data: bytes) -> bytes:
         initialization_vector = data[:16]
         ciphertext = data[16:]
-        assert self.key is not None
-        cipher = AES(self.key)
-        return cipher.decrypt_cbc(initialization_vector, ciphertext, padding=True)
+        return self.internal_aes_cipher.decrypt_cbc(initialization_vector, ciphertext, padding=True)

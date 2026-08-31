@@ -421,7 +421,6 @@ class TextState:
         "compat_tj_origin_f",
         "compat_tj_decoder",
         "compat_tj_need_charspace",
-        "invisible_text_layer",
         "op_handlers",
         "op_handlers_bytes",
         "single_op_handlers",
@@ -577,7 +576,6 @@ class TextState:
         self.compat_tj_origin_f = 0.0
         self.compat_tj_decoder = None
         self.compat_tj_need_charspace = False
-        self.invisible_text_layer = False
         cls = type(self)
         shared_attr = "shared_operator_tables_graphics"
         shared = getattr(cls, shared_attr, None)
@@ -909,7 +907,6 @@ class TextState:
             pending_line_break=self.pending_line_break,
             compat_tj_cursor_x=self.compat_tj_cursor_x,
             compat_tj_cursor_y=self.compat_tj_cursor_y,
-            invisible_text_layer=self.invisible_text_layer,
             xobject_depth=self.xobject_depth,
             resource_cache=self.resource_cache,
             resolved_resource_categories=self.resolved_resource_categories,
@@ -960,7 +957,6 @@ class TextState:
         self.pending_line_break = state.pending_line_break
         self.compat_tj_cursor_x = state.compat_tj_cursor_x
         self.compat_tj_cursor_y = state.compat_tj_cursor_y
-        self.invisible_text_layer = state.invisible_text_layer
         self.xobject_depth = state.xobject_depth
         self.resource_cache = state.resource_cache
         self.resolved_resource_categories = state.resolved_resource_categories
@@ -1258,11 +1254,13 @@ class TextState:
         if not self.marked_content_stack and self.render_mode != 3 and self.font_size >= 0.1:
             return True
 
+        # Render mode 3 and sub-0.1pt text paint nothing, so they are not visible
+        # here. Whether such a layer is nonetheless the page's real text -- a scan
+        # carrying an OCR layer -- is a property of the whole page, not of the runs
+        # captured before this operator, so that call belongs to
+        # `internal_hidden_text_is_trusted` once parsing has seen every run.
         if self.render_mode == 3 or self.font_size < 0.1:
-            if not any(r.visible for r in self.runs):
-                self.invisible_text_layer = True
-            if not self.invisible_text_layer:
-                return False
+            return False
 
         for entry in self.marked_content_stack:
             layer = getattr(entry, "layer", entry)
@@ -3503,7 +3501,6 @@ class TextState:
             self.cached_rotation = 0
         else:
             self.cached_rotation = detect_rotation_from_linear(self.ca, self.cb, self.cc, self.cd)
-        self.invisible_text_layer = False
 
     def op_ET(self, operands: OperandWindow, depth: int) -> None:
         self.flush_run()

@@ -658,11 +658,6 @@ class FontDecoder:
         source = "identity" if text != "\ufffd" else "replacement"
         return UnicodeChoice(text, source, dedupe_alternates(alternates, text))
 
-    def internal_clear_unicode_caches(self) -> None:
-        """Clear every memo whose value can depend on a Unicode mapping."""
-        self.internal_clear_cid_unicode_caches()
-        self.simple_glyph_cache.clear()
-
     def internal_clear_cid_unicode_caches(self) -> None:
         """Clear text and glyph memos derived from CID Unicode mappings."""
         self.decode_cache.clear()

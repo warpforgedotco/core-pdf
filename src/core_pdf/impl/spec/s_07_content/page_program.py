@@ -14,6 +14,7 @@ import numpy
 from core_pdf.impl.exceptions import PdfContractError
 from core_pdf.impl.model.glyph_table import GlyphTable, GlyphTableBuilder
 from core_pdf.impl.model.runs import TextRun
+from core_pdf.impl.runtime.array_views import readonly
 from core_pdf.impl.spec.s_07_content.capture import (
     CapturedDrawing,
     CapturedInlineImage,
@@ -68,7 +69,7 @@ class LineTable:
             numpy.asarray(width_values, dtype=numpy.float64),
         )
         for column in (table.x0, table.y0, table.x1, table.y1, table.width):
-            internal_readonly(column)
+            readonly(column)
         return table
 
     def __len__(self) -> int:
@@ -100,11 +101,6 @@ class LineTable:
     @property
     def nbytes(self) -> int:
         return sum(column.nbytes for column in (self.x0, self.y0, self.x1, self.y1, self.width))
-
-
-def internal_readonly(array: numpy.ndarray[Any, Any]) -> numpy.ndarray[Any, Any]:
-    array.flags.writeable = False
-    return array
 
 
 @dataclass(frozen=True, slots=True)
@@ -143,7 +139,7 @@ class PageEventStream:
             self.visible,
         )
         for column in (*columns, self.non_text_indexes):
-            internal_readonly(column)
+            readonly(column)
 
     @classmethod
     def from_products(cls, products: PageProducts) -> PageEventStream:

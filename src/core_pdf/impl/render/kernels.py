@@ -335,6 +335,86 @@ def internal_blend_solid_array_numpy(
     target[..., 3] = numpy.clip(out_a_i, 0.0, 255.0).astype(numpy.uint8)
 
 
+def internal_composite_blended_group_numpy(
+    destination: numpy.ndarray[Any, numpy.dtype[numpy.uint8]],
+    source: numpy.ndarray[Any, numpy.dtype[numpy.uint8]],
+    source_alpha_scale: float | None,
+    target_alpha_scale: float | None,
+    blend_mode: str | None,
+) -> None:
+    """Composite a straight-alpha group that carries a blend mode, in one pass.
+
+    The per-pixel twin of this ran ``blend_px`` once per pixel for every group
+    whose blend mode was not Normal, re-resolving the enclosing group's alpha
+    and re-lowercasing ``blend_mode`` on each of them. This is the same math
+    hoisted out of that loop and vectorized: a source *array* where
+    ``internal_blend_solid_array_numpy`` takes a single colour.
+
+    ``source_alpha_scale`` is the group's own alpha and ``target_alpha_scale``
+    the enclosing group's. ``None`` means "absent", i.e. not applied. They are
+    rounded and clamped separately, in that order, exactly as the two scalar
+    steps did -- folding them into one multiply would round once and drift.
+
+    Uses float64 throughout (not the float32 of the Normal-blend fast paths) so
+    every intermediate matches ``blend_px``'s plain-Python-float arithmetic bit
+    for bit; the golden-raster digests depend on it.
+
+    Indexes both views' last axis directly rather than reshaping to ``(-1, 4)``
+    -- see ``internal_blend_normal_solid_array_numpy`` for why a reshaped
+    non-contiguous destination slice silently discards every write.
+    """
+    if destination.size == 0:
+        return
+    source_alpha = source[..., 3].astype(numpy.float64)
+    if source_alpha_scale is not None:
+        source_alpha = numpy.clip(numpy.rint(source_alpha * source_alpha_scale), 0.0, 255.0)
+    if target_alpha_scale is not None:
+        source_alpha = numpy.clip(numpy.rint(source_alpha * target_alpha_scale), 0.0, 255.0)
+    # A pixel invisible at any stage stays invisible: scaling is monotonic and
+    # clamped at zero, so this one test covers all three scalar early-returns.
+    visible = source_alpha > 0.0
+    if not numpy.any(visible):
+        return
+    # Everything below runs on the visible pixels only. A group is usually a
+    # shaped region inside a full-page buffer, so this is most of the buffer.
+    dr = destination[..., 0][visible].astype(numpy.float64)
+    dg = destination[..., 1][visible].astype(numpy.float64)
+    db = destination[..., 2][visible].astype(numpy.float64)
+    da = destination[..., 3][visible].astype(numpy.float64)
+    src_a = source_alpha[visible] / 255.0
+    one_minus_src_a = 1.0 - src_a
+    dst_a = da / 255.0
+    src_r = source[..., 0][visible].astype(numpy.float64) / 255.0
+    src_g = source[..., 1][visible].astype(numpy.float64) / 255.0
+    src_b = source[..., 2][visible].astype(numpy.float64) / 255.0
+    mode = blend_mode.lower() if isinstance(blend_mode, str) else None
+    if mode == "multiply":
+        src_r = src_r * (dr / 255.0)
+        src_g = src_g * (dg / 255.0)
+        src_b = src_b * (db / 255.0)
+    elif mode == "screen":
+        src_r = 1.0 - (1.0 - src_r) * (1.0 - dr / 255.0)
+        src_g = 1.0 - (1.0 - src_g) * (1.0 - dg / 255.0)
+        src_b = 1.0 - (1.0 - src_b) * (1.0 - db / 255.0)
+    out_a = src_a + dst_a * one_minus_src_a
+    safe_out_a = numpy.where(out_a > 0.0, out_a, 1.0)
+    out_r = numpy.round(((src_r * 255.0) * src_a + dr * dst_a * one_minus_src_a) / safe_out_a)
+    out_g = numpy.round(((src_g * 255.0) * src_a + dg * dst_a * one_minus_src_a) / safe_out_a)
+    out_b = numpy.round(((src_b * 255.0) * src_a + db * dst_a * one_minus_src_a) / safe_out_a)
+    out_a_i = numpy.round(out_a * 255.0)
+    # `out_a` can only reach zero where the source is invisible, which `visible`
+    # already excludes, but the scalar path zeroed the pixel there -- keep it.
+    transparent = out_a <= 0.0
+    out_r = numpy.where(transparent, 0.0, out_r)
+    out_g = numpy.where(transparent, 0.0, out_g)
+    out_b = numpy.where(transparent, 0.0, out_b)
+    out_a_i = numpy.where(transparent, 0.0, out_a_i)
+    for channel, values in ((0, out_r), (1, out_g), (2, out_b), (3, out_a_i)):
+        # `destination[..., channel]` is a basic-indexing view, so the masked
+        # assignment writes through to `destination` itself.
+        destination[..., channel][visible] = numpy.clip(values, 0.0, 255.0).astype(numpy.uint8)
+
+
 def internal_group_offsets(
     counts: numpy.ndarray[Any, Any],
 ) -> tuple[numpy.ndarray[Any, Any], numpy.ndarray[Any, Any]]:

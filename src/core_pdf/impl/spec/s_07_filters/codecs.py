@@ -10,9 +10,8 @@ import imagecodecs
 
 from core_pdf.impl.spec.s_07_filters.decode_spec import FilterParams
 from core_pdf.impl.spec.s_07_filters.errors import FilterParseError
+from core_pdf.impl.spec.s_07_syntax_primitives.tokens import WHITESPACE
 
-PDF_WHITESPACE_TABLE = bytes([1 if i in b"\x00\t\n\x0c\r " else 0 for i in range(256)])
-PDF_WHITESPACE_BYTES = b"\x00\t\n\x0c\r "
 ASCII_HEX_DIGITS = b"0123456789ABCDEFabcdef"
 ASCII_HEX_INVALID_BYTES = bytes(byte for byte in range(256) if byte not in ASCII_HEX_DIGITS)
 ASCII85_DIGITS = bytes(range(33, 118))
@@ -152,10 +151,10 @@ def apply_lzw(data: bytes | memoryview, parms: object) -> bytes:
 
 def apply_ascii85(data: bytes | memoryview, parms: object) -> bytes:
     try:
-        clean = bytes(data).lstrip(PDF_WHITESPACE_BYTES)
+        clean = bytes(data).lstrip(WHITESPACE)
         if clean.startswith(b"<~"):
             clean = clean[2:]
-        clean = clean.translate(None, PDF_WHITESPACE_BYTES)
+        clean = clean.translate(None, WHITESPACE)
         terminator = clean.find(b"~>")
         if terminator >= 0:
             clean = clean[:terminator]

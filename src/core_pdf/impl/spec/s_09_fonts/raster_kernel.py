@@ -43,24 +43,23 @@ def rasterize_contours(
         return ()
     edge_array = numpy.asarray(edges, dtype=numpy.float64)
     rows: list[int] = []
+    edge_x0, edge_y0, edge_x1, edge_y1 = edge_array.T
     for y in range(height - 1, -1, -1):
         y_mid = y + 0.5
-        edge_x0, edge_y0, edge_x1, edge_y1 = edge_array.T
         crosses = (edge_y0 > y_mid) != (edge_y1 > y_mid)
         if not numpy.any(crosses):
             rows.append(0)
             continue
+        x0 = edge_x0[crosses]
+        y0 = edge_y0[crosses]
         intersections = numpy.sort(
-            edge_x0[crosses]
-            + (edge_x1[crosses] - edge_x0[crosses])
-            * (y_mid - edge_y0[crosses])
-            / (edge_y1[crosses] - edge_y0[crosses])
+            x0 + (edge_x1[crosses] - x0) * (y_mid - y0) / (edge_y1[crosses] - y0)
         )
         row = 0
         for index in range(0, len(intersections) - 1, 2):
             start_x = max(0, ceil(float(intersections[index]) - 0.5))
             end_x = min(width - 1, ceil(float(intersections[index + 1]) - 0.5) - 1)
-            for x in range(start_x, end_x + 1):
-                row |= 1 << x
+            if end_x >= start_x:
+                row |= ((1 << (end_x - start_x + 1)) - 1) << start_x
         rows.append(row)
     return tuple(rows)

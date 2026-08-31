@@ -14,13 +14,9 @@ from typing import Any
 
 import numpy
 
-from core_pdf.impl.layout.spatial import (
-    SpatialIndex,
-    bbox_intersection_area,
-)
-from core_pdf.impl.model.geometry import rect_tuple
+from core_pdf.impl.layout.spatial import SpatialIndex
+from core_pdf.impl.model.geometry import bbox_intersection_area, rect_tuple
 from core_pdf.impl.model.glyphs import (
-    GlyphObservation,
     GlyphUnicodeSemantics,
     glyph_unicode_semantics,
 )
@@ -428,19 +424,6 @@ def internal_promoted_hidden_runs(runs: tuple[TextRun, ...]) -> tuple[TextRun, .
 def internal_promoted_hidden_observations(capture: CapturedPage) -> ObservationBatch:
     """Expose a verified hidden layer while preserving its original geometry and ordering."""
     return internal_observations_from_runs(internal_promoted_hidden_runs(capture.runs))
-
-
-def internal_learned_glyph_text(
-    glyph: GlyphObservation,
-    learned_unicode: LearnedUnicodeMap | None = None,
-) -> str | None:
-    if learned_unicode is None:
-        return None
-    learned = learned_unicode.get(glyph.font_decoder)
-    if learned is None:
-        return None
-    text = learned.get(glyph.code_bytes)
-    return text if isinstance(text, str) and len(text) == 1 else None
 
 
 def internal_apply_learned_unicode_to_run(

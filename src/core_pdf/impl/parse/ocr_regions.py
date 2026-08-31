@@ -21,12 +21,10 @@ from typing import (
 
 import numpy
 
-from core_pdf.impl.layout.spatial import (
-    SpatialIndex,
-    bbox_intersection_area,
-)
+from core_pdf.impl.layout.spatial import SpatialIndex
 from core_pdf.impl.model.geometry import (
     bbox_area,
+    bbox_intersection_area,
     bbox_union,
     rect_tuple,
 )
@@ -82,6 +80,7 @@ from core_pdf.impl.parse.ocr_raster import (
 )
 from core_pdf.impl.render.display import RenderOptions
 from core_pdf.impl.render.page import compose_page
+from core_pdf.impl.runtime.array_views import finite_median
 from core_pdf.impl.runtime.image_cache import ImageCacheKey
 from core_pdf.impl.spec.s_07_content.page_program import line_coordinate_columns
 
@@ -202,7 +201,7 @@ def internal_estimated_text_height(raster: internal_Raster) -> float:
     lower = float(numpy.percentile(values, 25.0))
     upper = float(numpy.percentile(values, 85.0))
     typical = values[(values >= lower) & (values <= upper)]
-    return float(numpy.median(typical if len(typical) else values)) * sample_step
+    return finite_median(typical if len(typical) else values) * sample_step
 
 
 def internal_observation_coverage_grid(
@@ -591,7 +590,7 @@ def internal_page_image_regions(
             for original, clipped_value in zip(box, clipped, strict=True)
         ):
             continue
-        display_area = max(0.0, clipped[2] - clipped[0]) * max(0.0, clipped[3] - clipped[1])
+        display_area = bbox_area(clipped)
         if display_area / page_area < minimum_area_ratio:
             continue
         raster = internal_decoded_image_raster(
@@ -648,9 +647,6 @@ def internal_dominant_image_region(
     max_pixels: int = MAX_OCR_PIXELS,
     upscale: bool = True,
 ) -> internal_RasterRegion | None:
-    def box_area(box: tuple[float, float, float, float]) -> float:
-        return max(0.0, box[2] - box[0]) * max(0.0, box[3] - box[1])
-
     regions = internal_page_image_regions(
         capture,
         minimum_area_ratio=0.65,
@@ -663,21 +659,10 @@ def internal_dominant_image_region(
     if not substantial:
         return None
     if len(substantial) > 1:
-        largest = max(substantial, key=lambda region: box_area(region.page_box))
-        largest_area = max(1.0, box_area(largest.page_box))
+        largest = max(substantial, key=lambda region: bbox_area(region.page_box))
+        largest_area = max(1.0, bbox_area(largest.page_box))
         overlapping = sum(
-            max(
-                0.0,
-                min(region.page_box[2], largest.page_box[2])
-                - max(region.page_box[0], largest.page_box[0]),
-            )
-            * max(
-                0.0,
-                min(region.page_box[3], largest.page_box[3])
-                - max(region.page_box[1], largest.page_box[1]),
-            )
-            / largest_area
-            >= 0.90
+            bbox_intersection_area(region.page_box, largest.page_box) / largest_area >= 0.90
             for region in substantial
             if region is not largest
         )
@@ -786,7 +771,7 @@ def internal_candidate_ocr_regions(capture: CapturedPage) -> tuple[internal_OcrR
         box = rect_tuple(getattr(drawing, "rect", None))
         if box is None:
             continue
-        drawing_area = max(0.0, box[2] - box[0]) * max(0.0, box[3] - box[1])
+        drawing_area = bbox_area(box)
         if drawing_area <= 0.0 or drawing_area >= page_area * 0.80:
             continue
         uncovered = native_overlap(box) < 0.25
@@ -976,9 +961,7 @@ def internal_candidate_ocr_regions(capture: CapturedPage) -> tuple[internal_OcrR
             optional_component_box = bbox_union(component_boxes)
             assert optional_component_box is not None
             component_box = optional_component_box
-            component_area = max(0.0, component_box[2] - component_box[0]) * max(
-                0.0, component_box[3] - component_box[1]
-            )
+            component_area = bbox_area(component_box)
             label_padding = max(
                 padding,
                 min(72.0, min(page_width, page_height) * 0.03),

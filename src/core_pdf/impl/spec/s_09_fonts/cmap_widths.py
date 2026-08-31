@@ -28,10 +28,6 @@ class FontWidthMap(Mapping[int, float]):
         width = self.get(code)
         return default if width is None else width
 
-    @property
-    def explicit_count(self) -> int:
-        return len(self)
-
     def iter_explicit_widths(self) -> Iterator[tuple[int, float]]:
         return iter(self.items())
 
