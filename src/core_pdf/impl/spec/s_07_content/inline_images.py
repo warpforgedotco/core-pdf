@@ -20,6 +20,7 @@ from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
 from core_pdf.impl.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 from core_pdf.impl.spec.s_07_syntax_primitives.tokens import (
     INLINE_IMAGE_KEY_MAP,
+    SEPARATOR_TABLE,
     WHITESPACE,
 )
 
@@ -176,11 +177,7 @@ def parse_inline_image(lexer: PdfLexer) -> InlineImage:
             raise PdfParseError("unterminated inline image data")
         after = marker + 2
         prev_ok = marker == data_start or search_data[marker - 1] in WHITESPACE
-        next_ok = (
-            after >= len(search_data)
-            or search_data[after] in WHITESPACE
-            or search_data[after] in b"()<>[]{}/%"
-        )
+        next_ok = after >= len(search_data) or SEPARATOR_TABLE[search_data[after]]
         if prev_ok and next_ok:
             image_data = search_data[data_start:marker].rstrip(WHITESPACE)
             lexer.pos = position_offset + after

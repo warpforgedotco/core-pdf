@@ -29,14 +29,14 @@ from core_pdf.impl.spec.s_09_fonts.cmap_tokenizer import (
 
 
 @lru_cache(maxsize=1)
-def internal_identity_bmp_cache() -> list[str]:
-    """The BMP identity decode table, which does not depend on any font."""
-    return [unicode_scalar_or_replacement(code) if code != 0 else "\ufffd" for code in range(65536)]
+def internal_identity_bmp_table() -> tuple[str, ...]:
+    """The BMP identity decode table, which does not depend on any font.
 
-
-def internal_identity_bmp_table() -> list[str]:
-    """Return a private copy of the identity table for per-font patching."""
-    return internal_identity_bmp_cache().copy()
+    Immutable so the shared cache cannot be patched by a per-font caller.
+    """
+    return tuple(
+        unicode_scalar_or_replacement(code) if code != 0 else "\ufffd" for code in range(65536)
+    )
 
 
 class ToUnicodeCMap:
@@ -310,7 +310,7 @@ class ToUnicodeCMap:
             return self.fast_decode_table_2byte
         if 2 not in self.decode_lengths:
             return None
-        table2 = internal_identity_bmp_table()
+        table2 = list(internal_identity_bmp_table())
         for k, v in self.mappings.items():
             if len(k) == 2:
                 code = (k[0] << 8) | k[1]

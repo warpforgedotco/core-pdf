@@ -11,7 +11,6 @@ from typing import Generic, TypeVar
 import numpy
 
 from core_pdf.impl.model.geometry import (
-    bbox_area,
     bbox_intersection_area,
     finite_rect,
 )
@@ -270,8 +269,6 @@ class SpatialIndex(Generic[T]):
 __all__ = (
     "SpatialHit",
     "SpatialIndex",
-    "bbox_area",
-    "bbox_intersection_area",
 )
 
 

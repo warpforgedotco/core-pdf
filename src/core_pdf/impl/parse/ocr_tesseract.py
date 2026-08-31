@@ -559,6 +559,9 @@ def internal_recognize(
         clear_adaptive()
     cleanup_seconds = time.perf_counter() - cleanup_started
     candidate_started = time.perf_counter()
+    median_text_height = (
+        finite_median(numpy.asarray(text_heights, dtype=numpy.float64)) if text_heights else 0.0
+    )
     observations = ObservationBatch.from_columns(
         texts,
         boxes,
@@ -578,9 +581,7 @@ def internal_recognize(
         iterator_seconds=iterator_seconds,
         cleanup_seconds=cleanup_seconds,
         recognition_status=recognition_status,
-        median_text_height=(
-            finite_median(numpy.asarray(text_heights, dtype=numpy.float64)) if text_heights else 0.0
-        ),
+        median_text_height=median_text_height,
     )
     candidate_seconds = time.perf_counter() - candidate_started
     candidate = replace(candidate, candidate_seconds=candidate_seconds)
@@ -606,9 +607,7 @@ def internal_recognize(
         cleanup_seconds=cleanup_seconds,
         candidate_seconds=candidate_seconds,
         recognition_status=recognition_status,
-        median_text_height=(
-            finite_median(numpy.asarray(text_heights, dtype=numpy.float64)) if text_heights else 0.0
-        ),
+        median_text_height=median_text_height,
     )
     return internal_select_character_filtered_candidate(candidate, filtered_candidate)
 

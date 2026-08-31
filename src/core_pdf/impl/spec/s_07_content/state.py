@@ -1258,15 +1258,13 @@ class TextState:
         if not self.marked_content_stack and self.render_mode != 3 and self.font_size >= 0.1:
             return True
 
-        if self.render_mode == 3 or self.font_size < 0.1:
-            # Once the layer has been judged invisible the scan cannot change the
-            # answer, so skip it. On a scanned page every run is invisible, the flag
-            # latches on the first show-text op, and the remaining ops pay nothing
-            # instead of re-walking the whole page accumulator each time.
-            if not self.invisible_text_layer and not any(r.visible for r in self.runs):
-                self.invisible_text_layer = True
-            if not self.invisible_text_layer:
+        # Once the layer has been judged invisible the scan cannot change the answer,
+        # so it latches on the first show-text op and the remaining ops skip
+        # re-walking the whole page accumulator.
+        if (self.render_mode == 3 or self.font_size < 0.1) and not self.invisible_text_layer:
+            if any(r.visible for r in self.runs):
                 return False
+            self.invisible_text_layer = True
 
         for entry in self.marked_content_stack:
             layer = getattr(entry, "layer", entry)

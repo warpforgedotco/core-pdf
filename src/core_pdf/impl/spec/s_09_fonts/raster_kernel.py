@@ -50,11 +50,10 @@ def rasterize_contours(
         if not numpy.any(crosses):
             rows.append(0)
             continue
+        x0 = edge_x0[crosses]
+        y0 = edge_y0[crosses]
         intersections = numpy.sort(
-            edge_x0[crosses]
-            + (edge_x1[crosses] - edge_x0[crosses])
-            * (y_mid - edge_y0[crosses])
-            / (edge_y1[crosses] - edge_y0[crosses])
+            x0 + (edge_x1[crosses] - x0) * (y_mid - y0) / (edge_y1[crosses] - y0)
         )
         row = 0
         for index in range(0, len(intersections) - 1, 2):

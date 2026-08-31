@@ -77,9 +77,7 @@ def internal_box_bounds(output_count: int, source_count: int) -> tuple[Any, Any]
     starts = numpy.minimum(edges[:-1], source_count - 1)
     stops = numpy.maximum(edges[1:], starts + 1)
     counts = (stops - starts).astype(numpy.float32)
-    starts.flags.writeable = False
-    counts.flags.writeable = False
-    return starts, counts
+    return readonly(starts), readonly(counts)
 
 
 def internal_box_axis(
@@ -134,10 +132,8 @@ def resample_box(
 def internal_bilinear_taps(output_count: int, source_count: int) -> tuple[Any, Any, Any]:
     """Return lower/upper source indexes and blend weights for one axis."""
     if source_count == 1:
-        zeros = numpy.zeros(output_count, dtype=numpy.intp)
-        weights = numpy.zeros(output_count, dtype=numpy.float32)
-        for array in (zeros, weights):
-            array.flags.writeable = False
+        zeros = readonly(numpy.zeros(output_count, dtype=numpy.intp))
+        weights = readonly(numpy.zeros(output_count, dtype=numpy.float32))
         return zeros, zeros, weights
     positions = (numpy.arange(output_count, dtype=numpy.float64) + 0.5) * (
         source_count / output_count
@@ -147,9 +143,7 @@ def internal_bilinear_taps(output_count: int, source_count: int) -> tuple[Any, A
     lower = numpy.minimum(lower, source_count - 2)
     upper = lower + 1
     weights = (positions - lower).astype(numpy.float32)
-    for array in (lower, upper, weights):
-        array.flags.writeable = False
-    return lower, upper, weights
+    return readonly(lower), readonly(upper), readonly(weights)
 
 
 def internal_bilinear_axis(

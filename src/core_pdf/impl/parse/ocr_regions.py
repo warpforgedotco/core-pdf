@@ -961,9 +961,7 @@ def internal_candidate_ocr_regions(capture: CapturedPage) -> tuple[internal_OcrR
             optional_component_box = bbox_union(component_boxes)
             assert optional_component_box is not None
             component_box = optional_component_box
-            component_area = max(0.0, component_box[2] - component_box[0]) * max(
-                0.0, component_box[3] - component_box[1]
-            )
+            component_area = bbox_area(component_box)
             label_padding = max(
                 padding,
                 min(72.0, min(page_width, page_height) * 0.03),

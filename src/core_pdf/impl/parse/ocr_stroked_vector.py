@@ -17,11 +17,8 @@ from typing import Any
 
 import numpy
 
-from core_pdf.impl.layout.spatial import (
-    SpatialIndex,
-    bbox_intersection_area,
-)
-from core_pdf.impl.model.geometry import rect_tuple
+from core_pdf.impl.layout.spatial import SpatialIndex
+from core_pdf.impl.model.geometry import bbox_intersection_area, rect_tuple
 from core_pdf.impl.parse.model import (
     MAX_OCR_PIXELS,
     CapturedPage,

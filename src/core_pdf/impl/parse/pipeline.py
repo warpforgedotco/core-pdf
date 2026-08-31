@@ -133,16 +133,11 @@ class internal_PageExtraction:
         self.internal_layout_seconds = 0.0
 
     def internal_invalidate_after_capture(self) -> None:
+        """Drop every product downstream of the capture, in pipeline order."""
         self.internal_plan = None
         self.internal_planning_seconds = 0.0
-        self.internal_invalidate_after_plan()
-
-    def internal_invalidate_after_plan(self) -> None:
         self.internal_recognition = None
         self.internal_ocr_seconds = 0.0
-        self.internal_invalidate_after_recognition()
-
-    def internal_invalidate_after_recognition(self) -> None:
         self.internal_observations = None
         self.internal_fusion_seconds = 0.0
         self.internal_tables = None
