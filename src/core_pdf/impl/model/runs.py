@@ -9,7 +9,9 @@ record types live here too, so the model layer never names a type from ``layout/
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple, TypeAlias
+from typing import TYPE_CHECKING, Any, ClassVar, TypeAlias
+
+from core_pdf.impl.models import TextWord
 
 if TYPE_CHECKING:
     from core_pdf.impl.model.glyphs import GlyphCluster
@@ -30,11 +32,6 @@ class LayoutLineText:
 
 
 EMPTY_LAYOUT_LINE_TEXT = LayoutLineText("", ())
-
-
-class LayoutWordSnapshot(NamedTuple):
-    text: str
-    bbox: tuple[float, float, float, float]
 
 
 Provenance: TypeAlias = tuple[tuple[str, object], ...]
@@ -113,7 +110,7 @@ class TextRun:
     height_value: float
     internal_revision: int
     internal_layout_reconstruction_cache: tuple[object, LayoutLineText] | None
-    internal_layout_words_cache: tuple[object, tuple[str, tuple[LayoutWordSnapshot, ...]]] | None
+    internal_layout_words_cache: tuple[object, tuple[str, tuple[TextWord, ...]]] | None
     internal_geometry_issues_cache: tuple[object, tuple[object, ...]] | None
 
     @property

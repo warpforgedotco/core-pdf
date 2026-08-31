@@ -938,6 +938,7 @@ def internal_normalized_blocks(
                         superscript=line.superscript,
                         subscript=line.subscript,
                         spans=line.spans,
+                        words=line.words,
                     )
                     for line, text in zip(decorated_lines, normalized_line_texts, strict=True)
                 ),

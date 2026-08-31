@@ -10,7 +10,8 @@ from __future__ import annotations
 from itertools import islice
 from typing import TYPE_CHECKING, TypeAlias
 
-from core_pdf.impl.model.runs import LayoutWordSnapshot, TextRun, internal_track_text_run
+from core_pdf.impl.model.runs import TextRun, internal_track_text_run
+from core_pdf.impl.models import TextWord
 
 if TYPE_CHECKING:
     from core_pdf.impl.model.runs import (
@@ -209,10 +210,10 @@ class LayoutLine:
         self.internal_reconstructed_cache_key = key
         return reconstructed
 
-    def internal_build_text_and_words(self) -> tuple[str, tuple[LayoutWordSnapshot, ...]]:
+    def internal_build_text_and_words(self) -> tuple[str, tuple[TextWord, ...]]:
         reconstructed = self.reconstructed_text()
         parts: list[str] = []
-        words: list[LayoutWordSnapshot] = []
+        words: list[TextWord] = []
         word = ""
         word_x0 = word_y0 = word_x1 = word_y1 = 0.0
         append_part = parts.append
@@ -222,7 +223,7 @@ class LayoutLine:
             nonlocal word, word_x0, word_y0, word_x1, word_y1
             if not word:
                 return
-            append_word(LayoutWordSnapshot(word, (word_x0, word_y0, word_x1, word_y1)))
+            append_word(TextWord(word, (word_x0, word_y0, word_x1, word_y1)))
             word = ""
 
         def extend_word(char: str, bbox: tuple[float, float, float, float]) -> None:
@@ -252,15 +253,13 @@ class LayoutLine:
                 if char.isspace():
                     append_space()
                     continue
-                if word and char.isalnum() != word[-1].isalnum():
-                    flush_word()
                 extend_word(char, bbox)
                 append_part(char)
 
         flush_word()
         return "".join(parts).rstrip(), tuple(words)
 
-    def cached_text_and_words(self) -> tuple[str, tuple[LayoutWordSnapshot, ...]]:
+    def cached_text_and_words(self) -> tuple[str, tuple[TextWord, ...]]:
         key = self.reconstruction_key()
         first_run = self.runs[0] if self.runs else None
         cache = first_run.internal_layout_words_cache if first_run is not None else None

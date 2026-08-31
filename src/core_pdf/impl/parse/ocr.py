@@ -36,6 +36,7 @@ from core_pdf.impl.parse.model import (
     ObservationSource,
     OcrPass,
     OcrPassScope,
+    RecognitionReport,
     RecognitionResult,
     WorkPlan,
     internal_bbox_tuple,
@@ -50,7 +51,6 @@ from core_pdf.impl.parse.ocr_model import (
     internal_pixel_box_to_page_box,
     internal_Raster,
     internal_RasterRegion,
-    internal_RecognitionTrace,
 )
 from core_pdf.impl.parse.ocr_raster import (
     internal_adaptive_ocr_raster,
@@ -87,6 +87,7 @@ from core_pdf.impl.parse.ocr_tesseract import (
     internal_recognize_group,
     internal_recover_timed_out_tasks,
 )
+from core_pdf.impl.parse.stroked_text import StrokedTextDecode
 from core_pdf.impl.render.display import (
     RenderOptions,
 )
@@ -751,9 +752,9 @@ def internal_candidate_timing_record(
 def internal_record_candidates(
     candidates: tuple[tuple[str, internal_Candidate], ...],
     selected_name: str,
-    trace: internal_RecognitionTrace,
+    report: RecognitionReport,
 ) -> None:
-    trace.candidates = tuple(
+    report.candidates = tuple(
         {
             "name": name,
             "mode": candidate.mode,
@@ -768,7 +769,7 @@ def internal_record_candidates(
         "yes",
         "on",
     }:
-        trace.candidate_analysis = tuple(
+        report.candidate_analysis = tuple(
             {
                 "name": name,
                 "mode": candidate.mode,
@@ -790,19 +791,24 @@ def recognize_page(
     plan: WorkPlan,
     context: TaskScope,
 ) -> RecognitionResult:
-    trace = internal_RecognitionTrace.create()
+    report = RecognitionReport()
     if not plan.ocr_passes:
-        return RecognitionResult(ObservationBatch.empty(), trace.report())
+        return RecognitionResult(ObservationBatch.empty(), report)
     with context.reserve_raster(MAX_OCR_RASTER_BYTES):
         context.raise_if_cancelled()
-        observations = internal_recognize_page_with_reserved_raster(
+        observations, cached_stroked_decode = internal_recognize_page_with_reserved_raster(
             capture,
             plan,
             context,
-            trace=trace,
+            report=report,
         )
-    observations = internal_recover_stroked_vector_text(capture, observations, trace)
-    return RecognitionResult(observations, trace.report())
+    observations = internal_recover_stroked_vector_text(
+        capture,
+        observations,
+        report,
+        cached_decode=cached_stroked_decode,
+    )
+    return RecognitionResult(observations, report)
 
 
 def internal_recognize_page_with_reserved_raster(
@@ -810,9 +816,9 @@ def internal_recognize_page_with_reserved_raster(
     plan: WorkPlan,
     context: TaskScope,
     *,
-    trace: internal_RecognitionTrace | None = None,
-) -> ObservationBatch:
-    trace = trace or internal_RecognitionTrace.create()
+    report: RecognitionReport | None = None,
+) -> tuple[ObservationBatch, tuple[int, StrokedTextDecode, float] | None]:
+    report = report or RecognitionReport()
     page = capture.page
     page_box = (0.0, 0.0, float(page.width), float(page.height))
     compact_image: bool | str = True
@@ -825,7 +831,7 @@ def internal_recognize_page_with_reserved_raster(
     rendered_page: Any | None = None
     candidate_regions: tuple[internal_OcrRegion, ...] | None = None
     candidates: list[tuple[str, internal_Candidate]] = []
-    pass_diagnostics = trace.passes
+    pending_stroked_decode: tuple[int, StrokedTextDecode, float] | None = None
     selected_name = ""
     selected: internal_Candidate | None = None
     selected_tasks: tuple[internal_OcrTask, ...] = ()
@@ -861,7 +867,7 @@ def internal_recognize_page_with_reserved_raster(
                 ocr_pass.scale,
                 max_pixels=ocr_pass.pixel_budget,
                 include_native_text=ocr_pass.include_native_text,
-                trace=trace,
+                report=report,
             )
         return rendered_rasters[raster_key]
 
@@ -918,7 +924,7 @@ def internal_recognize_page_with_reserved_raster(
             ),
             "full_page_fallback": False,
             "elapsed_seconds": time.perf_counter() - started,
-            "render_timings": trace.render_timings or {},
+            "render_timings": report.render_timings or {},
             **internal_candidate_timing_record(verification_candidates),
             "accepted_additions": 0,
             "adaptive_retry_scale": None,
@@ -931,13 +937,13 @@ def internal_recognize_page_with_reserved_raster(
             **verification_candidate.metrics.as_record(),
             **verification.as_record(),
         }
-        pass_diagnostics.append(verification_record)
-        trace.hidden_text_verification = {
+        report.passes += (verification_record,)
+        report.hidden_text_verification = {
             "raster_pixels": raster_pixels,
             **verification.as_record(),
         }
         if verification.accepted:
-            return internal_promoted_hidden_observations(capture)
+            return internal_promoted_hidden_observations(capture), pending_stroked_decode
 
     for ocr_pass in plan.ocr_passes:
         if (
@@ -1040,7 +1046,7 @@ def internal_recognize_page_with_reserved_raster(
                     cache=True,
                     max_pixels=OCR_PREFLIGHT_PIXELS,
                     include_native_text=ocr_pass.include_native_text,
-                    trace=trace,
+                    report=report,
                 )
             if preview_raster is not None:
                 preview_height = internal_estimated_text_height(preview_raster)
@@ -1112,7 +1118,7 @@ def internal_recognize_page_with_reserved_raster(
                 ocr_pass,
                 rendered=rendered_page,
                 compact_image=compact_image,
-                trace=trace,
+                report=report,
             )
             region_stage = (
                 "distributed-outline-page" if distributed_outline_text else "initial-regions"
@@ -1131,7 +1137,7 @@ def internal_recognize_page_with_reserved_raster(
                         selected.observations,
                         rendered=rendered_page,
                         compact_image=compact_image,
-                        trace=trace,
+                        report=report,
                     )
                 )
                 region_stage = "weak-region-crops"
@@ -1163,7 +1169,7 @@ def internal_recognize_page_with_reserved_raster(
                 capture,
                 ocr_pass.scale,
                 max_pixels=ocr_pass.pixel_budget,
-                trace=trace,
+                report=report,
             )
             if packed_stroked is not None:
                 region_stage = "packed-stroked-vector-text"
@@ -1184,7 +1190,7 @@ def internal_recognize_page_with_reserved_raster(
                     capture,
                     ocr_pass.scale,
                     max_pixels=ocr_pass.pixel_budget,
-                    trace=trace,
+                    report=report,
                 )
                 region_stage = "stroked-vector-text-fallback"
                 region_boxes = (fallback_region.page_box,) if fallback_region is not None else ()
@@ -1203,7 +1209,7 @@ def internal_recognize_page_with_reserved_raster(
                     if fallback_region is not None
                     else 0
                 )
-                trace.stroked_vector_packed = {
+                report.stroked_vector_packed = {
                     "accepted": False,
                     "cells": 0,
                     "raster_pixels": 0,
@@ -1269,7 +1275,7 @@ def internal_recognize_page_with_reserved_raster(
                     crop=image_crop,
                     max_pixels=ocr_pass.pixel_budget,
                     include_native_text=ocr_pass.include_native_text,
-                    trace=trace,
+                    report=report,
                 )
                 raster_page_box = image_crop or page_box
                 tasks = (
@@ -1348,7 +1354,7 @@ def internal_recognize_page_with_reserved_raster(
                     ocr_pass.scale,
                     max_pixels=ocr_pass.pixel_budget,
                     variant="isolated",
-                    trace=trace,
+                    report=report,
                 )
                 isolated_tasks = (
                     internal_tile_tasks(
@@ -1384,7 +1390,7 @@ def internal_recognize_page_with_reserved_raster(
                     tasks = (*tasks, *isolated_tasks)
                     packed_candidate = internal_merge_candidate_batches(task_candidates)
                     raster_pixels += isolated_packed.raster.width * isolated_packed.raster.height
-                trace.pending_stroked_decode = (
+                pending_stroked_decode = (
                     id(packed_candidate.observations),
                     packed_decode,
                     decode_seconds,
@@ -1394,7 +1400,7 @@ def internal_recognize_page_with_reserved_raster(
                     capture,
                     ocr_pass.scale,
                     max_pixels=ocr_pass.pixel_budget,
-                    trace=trace,
+                    report=report,
                 )
                 fallback_tasks = (
                     internal_tile_tasks(
@@ -1422,7 +1428,7 @@ def internal_recognize_page_with_reserved_raster(
                     region_boxes = (
                         (fallback_region.page_box,) if fallback_region is not None else region_boxes
                     )
-            trace.stroked_vector_packed = {
+            report.stroked_vector_packed = {
                 **packed_gate,
                 "raster_pixels": packed_pixels,
                 "unmapped_observations": unmapped_observations,
@@ -1485,7 +1491,7 @@ def internal_recognize_page_with_reserved_raster(
                     adaptive_retry_scale,
                     max_pixels=MAX_OCR_PIXELS,
                     include_native_text=ocr_pass.include_native_text,
-                    trace=trace,
+                    report=report,
                 )
                 retry_tasks = (
                     internal_tile_tasks(
@@ -1516,7 +1522,7 @@ def internal_recognize_page_with_reserved_raster(
                         candidate.observations,
                         rendered=rendered_page,
                         compact_image=compact_image,
-                        trace=trace,
+                        report=report,
                     )
                 )
             if retry_tasks:
@@ -1555,7 +1561,7 @@ def internal_recognize_page_with_reserved_raster(
                 additions = len(candidate.observations)
         candidates.append((ocr_pass.name, candidate))
         elapsed = time.perf_counter() - started
-        pass_diagnostics.append(
+        report.passes += (
             {
                 "name": ocr_pass.name,
                 "scope": ocr_pass.scope.value,
@@ -1574,7 +1580,7 @@ def internal_recognize_page_with_reserved_raster(
                     region_stage == "page" and ocr_pass.scope is OcrPassScope.PAGE
                 ),
                 "elapsed_seconds": elapsed,
-                "render_timings": trace.render_timings or {},
+                "render_timings": report.render_timings or {},
                 **internal_candidate_timing_record(task_candidates),
                 "accepted_additions": additions,
                 "adaptive_retry_scale": adaptive_retry_scale,
@@ -1585,7 +1591,7 @@ def internal_recognize_page_with_reserved_raster(
                 "rectangles": tuple(task.rectangle for task in tasks),
                 "selected": False,
                 **candidate.metrics.as_record(),
-            }
+            },
         )
         if not tasks:
             continue
@@ -1605,11 +1611,11 @@ def internal_recognize_page_with_reserved_raster(
             selected_tasks = candidate_source_tasks
 
     if selected is None:
-        internal_record_candidates(tuple(candidates), selected_name, trace)
-        return ObservationBatch.empty()
-    for diagnostic in pass_diagnostics:
+        internal_record_candidates(tuple(candidates), selected_name, report)
+        return ObservationBatch.empty(), pending_stroked_decode
+    for diagnostic in report.passes:
         diagnostic["selected"] = diagnostic["name"] == selected_name
-    internal_record_candidates(tuple(candidates), selected_name, trace)
+    internal_record_candidates(tuple(candidates), selected_name, report)
     if selected_tasks:
         # Ruled scanned tables defeat Tesseract's page segmentation; when the
         # page raster shows a full ruling grid, re-recognize cell by cell and
@@ -1652,9 +1658,9 @@ def internal_recognize_page_with_reserved_raster(
                         # The page-segmented reads carried more content than
                         # the cell reads; this grid's cells recognize worse
                         # than whole-page OCR, so keep the original.
-                        return selected.observations
+                        return selected.observations, pending_stroked_decode
                     retained = prior.take(numpy.flatnonzero(outside))
-                    trace.grid_cell_ocr = {
+                    report.grid_cell_ocr = {
                         "cells": len(cell_tasks),
                         "cell_observations": len(cell_observations),
                         "replaced_observations": int(numpy.count_nonzero(~outside)),
@@ -1662,5 +1668,8 @@ def internal_recognize_page_with_reserved_raster(
                         "columns": len(x_lines) - 1,
                         "rows": len(y_lines) - 1,
                     }
-                    return ObservationBatch.concatenate(retained, cell_observations)
-    return selected.observations
+                    return (
+                        ObservationBatch.concatenate(retained, cell_observations),
+                        pending_stroked_decode,
+                    )
+    return selected.observations, pending_stroked_decode

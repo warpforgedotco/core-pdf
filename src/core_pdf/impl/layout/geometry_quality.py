@@ -282,7 +282,9 @@ def layout_line_geometry_issues(line: LayoutLine) -> tuple[LayoutGeometryIssue, 
             )
 
     words = line.cached_text_and_words()[1]
-    word_bboxes = tuple(word.bbox for word in words if bbox_is_positive(word.bbox))
+    word_bboxes = tuple(
+        bbox for word in words if (bbox := word.bbox) is not None and bbox_is_positive(bbox)
+    )
     if not word_bboxes:
         return tuple(issues)
     word_union = bbox_union(word_bboxes)

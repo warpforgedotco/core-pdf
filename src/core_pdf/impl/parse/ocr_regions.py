@@ -54,6 +54,7 @@ from core_pdf.impl.parse.model import (
     ObservationBatch,
     OcrPass,
     OcrPassScope,
+    RecognitionReport,
     WorkPlan,
     internal_bbox_tuple,
     internal_Candidate,
@@ -68,7 +69,6 @@ from core_pdf.impl.parse.ocr_model import (
     internal_Raster,
     internal_raster_rectangle_page_box,
     internal_RasterRegion,
-    internal_RecognitionTrace,
 )
 from core_pdf.impl.parse.ocr_raster import (
     DirectImageOrientation,
@@ -1084,7 +1084,7 @@ def internal_candidate_region_tasks(
     *,
     rendered: Any | None,
     compact_image: bool | str,
-    trace: internal_RecognitionTrace | None = None,
+    report: RecognitionReport | None = None,
 ) -> tuple[
     tuple[internal_OcrTask, ...], int, Any | None, tuple[tuple[float, float, float, float], ...]
 ]:
@@ -1157,7 +1157,7 @@ def internal_candidate_region_tasks(
                 cache=True,
                 max_pixels=ocr_pass.pixel_budget,
                 include_native_text=ocr_pass.include_native_text,
-                trace=trace,
+                report=report,
             )
             raster_box = region.page_box
         if raster is None:
@@ -1212,7 +1212,7 @@ def internal_high_resolution_weak_region_tasks(
     *,
     rendered: Any | None,
     compact_image: bool | str,
-    trace: internal_RecognitionTrace | None = None,
+    report: RecognitionReport | None = None,
 ) -> tuple[
     tuple[internal_OcrTask, ...], int, Any | None, tuple[tuple[float, float, float, float], ...]
 ]:
@@ -1260,7 +1260,7 @@ def internal_high_resolution_weak_region_tasks(
             cache=True,
             max_pixels=ocr_pass.pixel_budget,
             include_native_text=ocr_pass.include_native_text,
-            trace=trace,
+            report=report,
         )
         if raster is None:
             continue

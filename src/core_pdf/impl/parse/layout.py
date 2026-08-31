@@ -15,12 +15,17 @@ from typing import cast
 
 import numpy
 
-from core_pdf.impl.layout.lines import reconstruct_cached_layout_line_text
+from core_pdf.impl.layout.lines import LayoutLine
 from core_pdf.impl.layout.spatial import (
     SpatialIndex,
 )
 from core_pdf.impl.model.geometry import horizontal_overlap_ratio
 from core_pdf.impl.model.runs import TextRun
+from core_pdf.impl.models import (
+    TextWord,
+    internal_reconcile_text_words,
+    internal_text_word_tokens,
+)
 from core_pdf.impl.parse.model import (
     ObservationBatch,
     ObservationSource,
@@ -150,12 +155,12 @@ def internal_style_enabled(reference: object, name: str) -> bool:
     return bool(value() if callable(value) else value)
 
 
-def internal_group_text(
+def internal_group_text_and_words(
     observations: ObservationBatch,
     indexes: numpy.ndarray,
     *,
     may_contain_ocr: bool = True,
-) -> str:
+) -> tuple[str, tuple[TextWord, ...]]:
     # A group whose source range collapses to NATIVE cannot hold an OCR observation,
     # and the caller already has that range from its columnar reduction.  Native pages
     # therefore reach the reordering test without touching the source column at all.
@@ -194,10 +199,14 @@ def internal_group_text(
         index_values = indexes.tolist()
         indexes = cast(numpy.ndarray, numpy.asarray([index_values[position] for position in order]))
     references = tuple(observations.references[index] for index in indexes)
-    if references and all(reference is not None for reference in references):
+    if references and all(isinstance(reference, TextRun) for reference in references):
         runs = cast(list[TextRun], list(references))
-        return reconstruct_cached_layout_line_text(runs).text.strip()
+        line = LayoutLine(runs)
+        text = line.reconstructed_text().text.strip()
+        layout_words = line.cached_text_and_words()[1]
+        return text, internal_reconcile_text_words(text, layout_words)
     parts: list[str] = []
+    candidate_words: list[TextWord] = []
     for index in indexes:
         text = observations.text[index].strip()
         if not text:
@@ -209,7 +218,16 @@ def internal_group_text(
         ):
             parts.append(" ")
         parts.append(text)
-    return "".join(parts)
+        tokens = internal_text_word_tokens(text)
+        bbox = observations.bbox[index]
+        word_bbox = (
+            (float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3]))
+            if len(tokens) == 1
+            else None
+        )
+        candidate_words.extend(TextWord(token, bbox=word_bbox) for token in tokens)
+    combined = "".join(parts)
+    return combined, internal_reconcile_text_words(combined, tuple(candidate_words))
 
 
 def internal_looks_like_native_artifact(text: str) -> bool:
@@ -307,7 +325,11 @@ def internal_build_lines(observations: ObservationBatch) -> internal_BuiltLines:
         all_native = (
             source_minimum[group_index] == source_maximum[group_index] == internal_NATIVE_SOURCE
         )
-        text = internal_group_text(observations, indexes, may_contain_ocr=not all_native)
+        text, words = internal_group_text_and_words(
+            observations,
+            indexes,
+            may_contain_ocr=not all_native,
+        )
         if not text:
             continue
         if all_native and internal_looks_like_native_artifact(text):
@@ -322,6 +344,7 @@ def internal_build_lines(observations: ObservationBatch) -> internal_BuiltLines:
             text = internal_clean_native_punctuation_runs(text)
             if not text:
                 continue
+        words = internal_reconcile_text_words(text, words)
         confidences = observations.confidence[indexes]
         font_sizes = observations.font_size[indexes]
         finite_confidences = confidences[numpy.isfinite(confidences)]
@@ -383,6 +406,7 @@ def internal_build_lines(observations: ObservationBatch) -> internal_BuiltLines:
             source = "ocr"
         else:
             source = "hybrid"
+        words = tuple(replace(word, source=source) for word in words)
         group_box = group_boxes[group_index]
         output.append(
             ParsedLine(
@@ -403,6 +427,7 @@ def internal_build_lines(observations: ObservationBatch) -> internal_BuiltLines:
                 bold=bold,
                 italic=italic,
                 spans=spans,
+                words=words,
             )
         )
         output_boxes.append(group_box)

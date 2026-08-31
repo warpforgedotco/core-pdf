@@ -27,6 +27,7 @@ from core_pdf.impl.parse.model import (
     CapturedPage,
     ObservationBatch,
     ObservationSource,
+    RecognitionReport,
     internal_bbox_tuple,
     internal_Candidate,
     internal_candidate,
@@ -35,7 +36,6 @@ from core_pdf.impl.parse.ocr_model import (
     internal_PackedStrokedTextRaster,
     internal_Raster,
     internal_RasterRegion,
-    internal_RecognitionTrace,
     internal_StrokedTextCell,
 )
 from core_pdf.impl.parse.stroked_text import (
@@ -167,7 +167,7 @@ def internal_stroked_vector_text_raster(
     *,
     max_pixels: int = MAX_OCR_PIXELS,
     variant: str = "seed",
-    trace: internal_RecognitionTrace | None = None,
+    report: RecognitionReport | None = None,
 ) -> internal_PackedStrokedTextRaster | None:
     """Pack vector words into a compact seed raster with piecewise page mapping."""
     evidence = capture.evidence.stroked_vector_text
@@ -332,8 +332,8 @@ def internal_stroked_vector_text_raster(
     # The isolated-glyph supplement uses the general renderer by design. Keep
     # the pass-level timing tied to the seed atlas, matching the actual primary
     # recognition path and preserving the Wu-kernel performance invariant.
-    if trace is not None and variant == "seed":
-        trace.render_timings = render_report
+    if report is not None and variant == "seed":
+        report.render_timings = render_report
     return packed
 
 
@@ -342,7 +342,7 @@ def internal_full_stroked_vector_text_raster(
     requested_scale: float,
     *,
     max_pixels: int = MAX_OCR_PIXELS,
-    trace: internal_RecognitionTrace | None = None,
+    report: RecognitionReport | None = None,
 ) -> internal_RasterRegion | None:
     """Render the full compact-stroke layer when packed seed OCR is insufficient."""
     evidence = capture.evidence.stroked_vector_text
@@ -418,8 +418,8 @@ def internal_full_stroked_vector_text_raster(
         render_report,
     )
     region = internal_RasterRegion(raster, crop)
-    if trace is not None:
-        trace.render_timings = render_report
+    if report is not None:
+        report.render_timings = render_report
     return region
 
 
@@ -753,21 +753,17 @@ def internal_packed_stroked_vector_decode_gate(
 def internal_recover_stroked_vector_text(
     capture: CapturedPage,
     ocr: ObservationBatch,
-    trace: internal_RecognitionTrace | None = None,
+    report: RecognitionReport | None = None,
+    *,
+    cached_decode: tuple[int, StrokedTextDecode, float] | None = None,
 ) -> ObservationBatch:
     """Augment one OCR pass with text decoded from repeated vector glyphs."""
     evidence = capture.evidence.stroked_vector_text
     if not evidence.trusted or not evidence.drawing_indexes or not len(ocr):
         return ocr
-    trace = trace or internal_RecognitionTrace.create()
+    report = report or RecognitionReport()
     started = time.perf_counter()
-    cached_decode = trace.pending_stroked_decode
-    if (
-        isinstance(cached_decode, tuple)
-        and len(cached_decode) == 3
-        and cached_decode[0] == id(ocr)
-        and isinstance(cached_decode[1], StrokedTextDecode)
-    ):
+    if cached_decode is not None and cached_decode[0] == id(ocr):
         decoded = cached_decode[1]
         prior_decode_seconds = float(cached_decode[2])
     else:
@@ -810,7 +806,7 @@ def internal_recover_stroked_vector_text(
             accepted.append(observation)
             corrections += 1
 
-    trace.stroked_vector_decode = {
+    report.stroked_vector_decode = {
         "seconds": prior_decode_seconds + time.perf_counter() - started,
         "eligible_seeds": decoded.eligible_seeds,
         "aligned_seeds": decoded.aligned_seeds,
@@ -826,7 +822,7 @@ def internal_recover_stroked_vector_text(
         "additions": additions,
         "corrections": corrections,
     }
-    trace.stroked_vector_alphabet = tuple(decoded.alphabet)
+    report.stroked_vector_alphabet = tuple(decoded.alphabet)
     if not accepted:
         return ocr
     retained = ocr.take(tuple(index for index in range(len(ocr)) if index not in replacements))

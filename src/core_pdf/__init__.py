@@ -21,6 +21,7 @@ if TYPE_CHECKING:
         ImageMetadata,
         ImageRecord,
         PageScoped,
+        TextWord,
     )
     from core_pdf.impl.page import PdfPage
     from core_pdf.impl.pages import PageSelection
@@ -39,13 +40,12 @@ if TYPE_CHECKING:
     )
     from core_pdf.impl.structured.model import (
         ContentNode,
+        DiagnosticTextRun,
         DocumentTableView,
         DocumentTextView,
         TableView,
         TextDiagnostics,
-        TextRun,
         TextView,
-        TextWord,
     )
     from core_pdf.impl.writing.encryption import StandardPdfEncryption
     from core_pdf.impl.writing.fonts import (
@@ -103,6 +103,7 @@ internal_EXPORTS = {
     "PdfError": ("core_pdf.impl.exceptions", "PdfError"),
     "PdfContractError": ("core_pdf.impl.exceptions", "PdfContractError"),
     "ContentNode": ("core_pdf.impl.structured.model", "ContentNode"),
+    "DiagnosticTextRun": ("core_pdf.impl.structured.model", "DiagnosticTextRun"),
     "DocumentTableView": ("core_pdf.impl.structured.model", "DocumentTableView"),
     "DocumentTextView": ("core_pdf.impl.structured.model", "DocumentTextView"),
     "DrawingRecord": ("core_pdf.impl.models", "DrawingRecord"),
@@ -115,10 +116,9 @@ internal_EXPORTS = {
     "TableColumnBand": ("core_pdf.impl.structured.model", "TableColumnBand"),
     "TableRowBand": ("core_pdf.impl.structured.model", "TableRowBand"),
     "TextView": ("core_pdf.impl.structured.model", "TextView"),
-    "TextWord": ("core_pdf.impl.structured.model", "TextWord"),
+    "TextWord": ("core_pdf.impl.models", "TextWord"),
     "TextDiagnostics": ("core_pdf.impl.structured.model", "TextDiagnostics"),
     "TextLineReference": ("core_pdf.impl.structured.model", "TextLineReference"),
-    "TextRun": ("core_pdf.impl.structured.model", "TextRun"),
     "PdfPage": ("core_pdf.impl.page", "PdfPage"),
     "PdfDocumentClosedError": ("core_pdf.impl.exceptions", "PdfDocumentClosedError"),
     "PdfParseError": ("core_pdf.impl.exceptions", "PdfParseError"),
@@ -162,6 +162,7 @@ __all__ = (
     "PdfError",
     "PdfContractError",
     "ContentNode",
+    "DiagnosticTextRun",
     "DocumentTableView",
     "DocumentTextView",
     "DrawingRecord",
@@ -177,7 +178,6 @@ __all__ = (
     "TextWord",
     "TextDiagnostics",
     "TextLineReference",
-    "TextRun",
     "PdfPage",
     "PdfDocumentClosedError",
     "PdfParseError",

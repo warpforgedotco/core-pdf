@@ -120,7 +120,7 @@ class ImagePaintItem:
     blend_mode: Any
     soft_mask_alpha: Any
     image_clip: Any
-    image_metadata: dict[str, Any]
+    source_metadata: dict[str, Any]
     ctm: Any = None
     xobject_depth: Any = None
 
@@ -142,7 +142,7 @@ class ImagePaintItem:
             "blend_mode": self.blend_mode,
             "soft_mask_alpha": self.soft_mask_alpha,
             "image_clip": self.image_clip,
-            "image_metadata": self.image_metadata,
+            "source_metadata": self.source_metadata,
             "ctm": self.ctm,
             "xobject_depth": self.xobject_depth,
         }
@@ -184,7 +184,7 @@ class DisplayList:
         if kind in {"image", "inline-image"}:
             metadata = image_display_metadata(kind, data)
             if metadata:
-                explicit = data.get("image_metadata")
+                explicit = data.get("source_metadata")
                 if isinstance(explicit, dict):
                     metadata.update(explicit)
             source = data.get("image_source")
@@ -210,7 +210,7 @@ class DisplayList:
                     blend_mode=data.get("blend_mode"),
                     soft_mask_alpha=data.get("soft_mask_alpha"),
                     image_clip=data.get("image_clip"),
-                    image_metadata=metadata,
+                    source_metadata=metadata,
                     ctm=data.get("ctm"),
                     xobject_depth=data.get("xobject_depth"),
                 )

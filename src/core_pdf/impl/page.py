@@ -28,8 +28,7 @@ from core_pdf.impl.runtime.cache import ExtractionCache
 from core_pdf.impl.runtime.execution import RUNTIME
 from core_pdf.impl.spec.s_07_document.page import PdfPage as SpecPdfPage
 from core_pdf.impl.spec.s_08_graphics.image_decode import ImageSource
-from core_pdf.impl.structured.model import TextDiagnostics
-from core_pdf.impl.structured.model import TextRun as StructuredTextRun
+from core_pdf.impl.structured.model import DiagnosticTextRun, TextDiagnostics
 
 
 def text_rotation_correction_for_runs(runs: list[TextRun], threshold: float = 0.95) -> int:
@@ -81,7 +80,7 @@ class PdfPage(SpecPdfPage):
         with self.internal_page_lock:
             return TextDiagnostics(
                 runs=tuple(
-                    StructuredTextRun(
+                    DiagnosticTextRun(
                         text=run.text,
                         bbox=(run.x0, run.y0, run.x1, run.y1),
                         font_name=run.font_name,

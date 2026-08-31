@@ -848,6 +848,9 @@ def test_image_paint_boundary_prepares_without_mutating_source_dictionary() -> N
     item = page.display_list.items[0]
     assert isinstance(item, ImagePaintItem)
     assert item.source is not None
+    assert item.source_metadata["width"] == 2
+    assert item.to_data()["source_metadata"] is item.source_metadata
+    assert "image_metadata" not in item.to_data()
     page.rasterize(background=(255, 255, 255, 255), cache=False)
     page.rasterize(background=(255, 255, 255, 255), cache=False)
 

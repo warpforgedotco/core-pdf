@@ -22,8 +22,9 @@ from core_pdf.impl.model.geometry import bbox_union
 from core_pdf.impl.parse.model import (
     MAX_OCR_PIXELS,
     CapturedPage,
+    RecognitionReport,
 )
-from core_pdf.impl.parse.ocr_model import internal_Raster, internal_RecognitionTrace
+from core_pdf.impl.parse.ocr_model import internal_Raster
 from core_pdf.impl.render.display import RenderOptions
 from core_pdf.impl.render.page import compose_page
 from core_pdf.impl.render.raster_image import RasterImage
@@ -541,7 +542,7 @@ def internal_rendered_page_raster(
     cache: bool = True,
     max_pixels: int = MAX_OCR_PIXELS,
     include_native_text: bool = False,
-    trace: internal_RecognitionTrace | None = None,
+    report: RecognitionReport | None = None,
 ) -> internal_Raster | None:
     page = capture.page
     compose_started = time.perf_counter()
@@ -572,8 +573,8 @@ def internal_rendered_page_raster(
         # A malformed embedded image can produce a source sample outside its
         # decoded raster during compositing.  Keep native extraction usable and
         # let OCR continue without the rendered-page fallback.
-        if trace is not None:
-            trace.render_error = str(error)
+        if report is not None:
+            report.render_error = str(error)
         return None
     render_report: dict[str, object] = {
         "compose_seconds": compose_seconds,
@@ -597,8 +598,8 @@ def internal_rendered_page_raster(
             if getattr(item, "kind", None) in {"image", "inline-image"}
         ),
     }
-    if trace is not None:
-        trace.render_timings = render_report
+    if report is not None:
+        report.render_timings = render_report
     return internal_Raster(
         data,
         max(70, int(round(72.0 * scale))),

@@ -32,10 +32,10 @@ The two central objects:
 The canonical public surface is the lazy export table in `core_pdf.__init__`. Document, page,
 structured records, writers, runtime controls, and errors remain owned by their engine modules.
 
-Compatibility facades under `core_pdf.api.compat.*` import those engine owners directly. There is
-no shared compatibility state or conversion kernel. Each facade owns only the projection needed
-for its target interface, and `compat.__init__` resolves convenience exports lazily so importing
-one facade does not initialize all of them.
+Compatibility facades under `core_pdf.api.compat.*` import those engine owners directly. Each
+facade owns the state and projection needed for its target interface; exact stateless mechanics
+may be shared, but there is no shared compatibility state or conversion kernel. `compat.__init__`
+resolves convenience exports lazily so importing one facade does not initialize all of them.
 
 **Known defects.** The capture/render pipeline places some XObject-drawn vector text at
 vertically mirrored y coordinates. Because neither the content-stream sequence nor raster
@@ -123,7 +123,7 @@ src/core_pdf/
                          array_views (zero-copy numpy/memoryview), cache,
                          image_cache (byte-budgeted LRU, single-flight decoding),
                          execution (bounded thread runtime, budgets, runtime config)
-    models.py            public extraction records (DrawingRecord, ImageRecord)
+    models.py            public extraction records (DrawingRecord, ImageRecord, TextWord)
     exceptions.py        the PdfError hierarchy (incl. PdfDocumentClosedError)
     primitives.py        PdfName and friends (interned, precomputed hash)
     types.py             source-buffer, protocol, and geometry aliases
@@ -169,10 +169,11 @@ Three packages exist to be depended *upon* and must not depend upward:
 consumers may depend on it; its only derived-processing dependency is the low-level capture
 model, and an import contract prevents dependencies on execution and higher derived layers.
 
-The line-text records (`LayoutLineText`, `LayoutLineTextSegment`,
-`LayoutWordSnapshot`) live alongside `TextRun` in `model/runs.py` rather than with the
-heuristics that build them, because `TextRun` memoizes reconstruction results on itself
-and the record layer must not name a type from `layout/`.
+The line-text records (`LayoutLineText`, `LayoutLineTextSegment`) live alongside `TextRun` in
+`model/runs.py` rather than with the heuristics that build them, because `TextRun` memoizes
+reconstruction results on itself and the record layer must not name a type from `layout/`.
+Cached layout words and structured views both use the canonical public `TextWord` record from
+`impl/models.py`.
 
 Document cache and per-page locks belong to the spec-level `PdfDocument`; spec consumers
 name that ownership directly through their document protocols. Lightweight test doubles

@@ -10,6 +10,7 @@ from types import MappingProxyType
 from typing import Any, Mapping, TypeAlias
 
 from core_pdf.impl.model.geometry import bbox_union
+from core_pdf.impl.models import TextWord, internal_reconcile_text_words
 from core_pdf.impl.pages import PageSelection
 from core_pdf.impl.types import Rectangle
 
@@ -192,6 +193,10 @@ class TextLine:
     superscript: bool = False
     subscript: bool = False
     spans: tuple[TextSpan, ...] = ()
+    words: tuple[TextWord, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "words", internal_reconcile_text_words(self.text, self.words))
 
     def styled_spans(self) -> tuple[TextSpan, ...]:
         if self.spans:
@@ -294,16 +299,15 @@ class TextView:
         line_index = 0
         for block_index, block in enumerate(self.blocks):
             for line in block.lines:
-                for word_index, word in enumerate(line.text.split()):
+                for word_index, word in enumerate(line.words):
                     words.append(
-                        TextWord(
-                            text=word,
-                            bbox=line.bbox,
+                        replace(
+                            word,
                             line_index=line_index,
                             word_index=word_index,
                             block_index=block_index,
                             page_number=self.page_number,
-                            source=line.source,
+                            source=line.source if word.source == "unknown" else word.source,
                         )
                     )
                 line_index += 1
@@ -325,19 +329,6 @@ class TextView:
 
 
 @dataclass(frozen=True, slots=True)
-class TextWord:
-    """A word projection derived from a normalized text line."""
-
-    text: str
-    bbox: Rectangle | None = None
-    line_index: int = 0
-    word_index: int = 0
-    block_index: int = 0
-    page_number: int | None = None
-    source: str = "unknown"
-
-
-@dataclass(frozen=True, slots=True)
 class TextLineReference:
     """A document-owned reference to a normalized line and its source page."""
 
@@ -347,7 +338,7 @@ class TextLineReference:
 
 
 @dataclass(frozen=True, slots=True)
-class TextRun:
+class DiagnosticTextRun:
     """Raw font-level text evidence exposed only through diagnostics."""
 
     text: str
@@ -365,7 +356,7 @@ class TextRun:
 class TextDiagnostics:
     """Low-level text evidence separate from semantic text projections."""
 
-    runs: tuple[TextRun, ...]
+    runs: tuple[DiagnosticTextRun, ...]
 
 
 @dataclass(frozen=True, slots=True)

@@ -1,57 +1,17 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 """Records and box geometry shared across the OCR stage.
 
-The recognition stage is large enough to have its own internal vocabulary: rasters
-and the regions cut from them, the tasks queued against Tesseract, and the traces
-recognition returns. These types are referenced from every part of the stage, so
-they live here rather than in whichever module happened to need them first.
+The recognition stage is large enough to have its own internal vocabulary: rasters,
+the regions cut from them, and the tasks queued against Tesseract. These types are
+referenced from every part of the stage, so they live here rather than in whichever
+module happened to need them first.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from core_pdf.impl.parse.model import RecognitionReport
-from core_pdf.impl.parse.stroked_text import StrokedTextDecode
 from core_pdf.impl.render.raster_image import RasterImage
-
-
-@dataclass(slots=True)
-class internal_RecognitionTrace:
-    """Mutable stage-local collector finalized as one immutable recognition report."""
-
-    passes: list[dict[str, object]]
-    candidates: tuple[dict[str, object], ...] = ()
-    candidate_analysis: tuple[dict[str, object], ...] = ()
-    hidden_text_verification: dict[str, object] | None = None
-    stroked_vector_decode: dict[str, object] | None = None
-    stroked_vector_packed: dict[str, object] | None = None
-    render_timings: dict[str, object] | None = None
-    grid_cell_ocr: dict[str, object] | None = None
-    render_error: str | None = None
-    pending_stroked_decode: tuple[int, StrokedTextDecode, float] | None = None
-    stroked_vector_alphabet: tuple[tuple[object, str], ...] = ()
-
-    @classmethod
-    def create(cls) -> internal_RecognitionTrace:
-        return cls([])
-
-    def report(self) -> RecognitionReport:
-        return RecognitionReport(
-            passes=tuple(self.passes),
-            candidates=self.candidates,
-            candidate_analysis=self.candidate_analysis,
-            hidden_text_verification=self.hidden_text_verification or {},
-            stroked_vector_decode=self.stroked_vector_decode or {},
-            stroked_vector_packed=self.stroked_vector_packed or {},
-            # Filled in by the pipeline once document-level stroked-glyph
-            # aggregation is known; the trace never learns it.
-            document_stroked_glyphs={},
-            render_timings=self.render_timings or {},
-            grid_cell_ocr=self.grid_cell_ocr or {},
-            render_error=self.render_error,
-            stroked_vector_alphabet=self.stroked_vector_alphabet,
-        )
 
 
 @dataclass(frozen=True, slots=True)

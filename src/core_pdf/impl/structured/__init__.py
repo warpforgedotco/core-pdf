@@ -8,6 +8,7 @@ from core_pdf.impl.structured.model import (
     BlockKind,
     ContentNode,
     Diagnostic,
+    DiagnosticTextRun,
     Document,
     DocumentEditor,
     DocumentTableView,
@@ -26,10 +27,8 @@ from core_pdf.impl.structured.model import (
     TextDiagnostics,
     TextLine,
     TextLineReference,
-    TextRun,
     TextSpan,
     TextView,
-    TextWord,
 )
 
 __all__ = (
@@ -38,6 +37,7 @@ __all__ = (
     "Block",
     "BlockKind",
     "ContentNode",
+    "DiagnosticTextRun",
     "Diagnostic",
     "DocumentTableView",
     "DocumentTextView",
@@ -59,6 +59,4 @@ __all__ = (
     "TextLine",
     "TextDiagnostics",
     "TextLineReference",
-    "TextRun",
-    "TextWord",
 )

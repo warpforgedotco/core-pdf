@@ -12,6 +12,7 @@ from typing import Any, NamedTuple, cast
 import numpy
 
 from core_pdf.impl.model.runs import TextRun
+from core_pdf.impl.models import TextWord, internal_reconcile_text_words
 from core_pdf.impl.spec.s_07_content.capture import CapturedDrawing, CapturedInlineImage
 from core_pdf.impl.spec.s_07_content.page_program import PageProgram
 from core_pdf.impl.structured.model import (
@@ -711,11 +712,11 @@ class WorkPlan:
         }
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class RecognitionReport:
-    """One explicit diagnostic product returned by the recognition stage."""
+    """Canonical diagnostics collected and returned by the recognition stage."""
 
-    passes: tuple[Mapping[str, object], ...] = ()
+    passes: tuple[dict[str, object], ...] = ()
     candidates: tuple[Mapping[str, object], ...] = ()
     candidate_analysis: tuple[Mapping[str, object], ...] = ()
     hidden_text_verification: Mapping[str, object] = field(default_factory=dict)
@@ -739,6 +740,7 @@ class RecognitionReport:
             "render_timings": dict(self.render_timings),
             "grid_cell_ocr": dict(self.grid_cell_ocr),
             "render_error": self.render_error,
+            "stroked_vector_alphabet": self.stroked_vector_alphabet,
         }
 
 
@@ -784,6 +786,10 @@ class ParsedLine:
     superscript: bool = False
     subscript: bool = False
     spans: tuple[TextSpan, ...] = ()
+    words: tuple[TextWord, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "words", internal_reconcile_text_words(self.text, self.words))
 
 
 @dataclass(frozen=True, slots=True)

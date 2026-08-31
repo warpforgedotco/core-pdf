@@ -9,6 +9,13 @@ from dataclasses import dataclass
 from typing import Any, cast
 
 from core_pdf.api.compat._shared import LIGATURES
+from core_pdf.api.compat._text_state import (
+    internal_append_directional_text,
+    internal_ensure_line_break,
+    internal_flush_text,
+    internal_legacy_base_table,
+    internal_positioned_text,
+)
 from core_pdf.impl.primitives import PdfName, PdfString
 from core_pdf.impl.spec.s_07_content.operations import iter_content_operations
 from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
@@ -23,9 +30,7 @@ from core_pdf.impl.spec.s_09_fonts.glyphs import (
     TEX_GLYPH_ALIASES,
     ensure_glyph_map,
 )
-from core_pdf.impl.spec.s_09_fonts.helpers import cached_decode_table
 from core_pdf.impl.spec.s_09_fonts.widths import parse_font_widths
-from core_pdf.impl.text import is_neutral_character, is_rtl_character
 
 Matrix = list[float]
 internal_PREDEFINED_ENCODING_CODECS = {
@@ -52,37 +57,6 @@ internal_PREDEFINED_ENCODING_CODECS = {
     "UniJIS-UTF16-H": "utf-16-be",
     "UniJIS-UTF16-V": "utf-16-be",
 }
-
-
-def internal_legacy_base_table(name: str) -> list[str]:
-    table = list(cached_decode_table(name, ()))
-    if name == "StandardEncoding":
-        table = [value or chr(code) for code, value in enumerate(table)]
-        table[174] = "ﬁ"
-        table[175] = "ﬂ"
-    elif name == "WinAnsiEncoding":
-        for code in (127, 129, 141, 143, 144, 157):
-            table[code] = chr(code)
-        table[160] = "\xa0"
-        table[173] = "\xad"
-    elif name == "MacRomanEncoding":
-        table[127] = "\x7f"
-        table[202] = "\xa0"
-        table[219] = "€"
-        table[222] = "ﬁ"
-        table[223] = "ﬂ"
-        table[240] = "\uf8ff"
-    return table
-
-
-def internal_orientation(matrix: Matrix) -> int:
-    if matrix[3] > 1e-6:
-        return 0
-    if matrix[3] < -1e-6:
-        return 180
-    if matrix[1] > 0:
-        return 90
-    return 270
 
 
 @dataclass(slots=True)
@@ -594,62 +568,33 @@ class LegacyTextExtractor:
         return widths, default_width, 200.0
 
     def flush(self) -> None:
-        if self.text:
-            self.output_parts.append(self.text)
-            self.output_last = self.text[-1]
-            self.text = ""
+        self.text, self.output_last = internal_flush_text(
+            self.output_parts, self.text, self.output_last
+        )
 
     def add_text(self, value: str) -> None:
         for character in value:
             self.add_text_unit(character)
 
     def add_text_unit(self, value: str) -> None:
-        if len(value) != 1 or is_neutral_character(value):
-            self.text = value + self.text if self.rtl else self.text + value
-        elif is_rtl_character(value):
-            if not self.rtl:
-                self.rtl = True
-                # Native pypdf sends the preceding directional run only to
-                # visitor_text before starting the RTL run. With the default
-                # API (no visitor) that run is intentionally not retained.
-                self.text = ""
-            self.text = value + self.text
-        else:
-            if self.rtl:
-                self.rtl = False
-                self.text = ""
-            self.text += value
+        # Native pypdf sends a preceding directional run only to visitor_text
+        # when direction changes. The default API intentionally discards it.
+        self.text, self.rtl = internal_append_directional_text(self.text, self.rtl, value)
 
     def check_position(self, string_width: float) -> None:
-        previous = multiply_affine(self.previous_tm, self.previous_cm)
-        current = multiply_affine(self.tm, self.cm)
-        orientation = internal_orientation(current)
-        delta_x = current[4] - previous[4]
-        delta_y = current[5] - previous[5]
-        previous_scale_x = math.hypot(self.previous_tm[0], self.previous_tm[1])
-        previous_scale_y = math.hypot(self.previous_tm[2], self.previous_tm[3])
-        current_scale_y = math.hypot(self.tm[2], self.tm[3])
-        moved_height, moved_width = (
-            (delta_y, delta_x) if orientation in {0, 180} else (delta_x, delta_y)
+        self.text, self.output_last = internal_positioned_text(
+            self.output_parts,
+            self.text,
+            self.output_last,
+            previous_text_matrix=self.previous_tm,
+            previous_current_matrix=self.previous_cm,
+            text_matrix=self.tm,
+            current_matrix=self.cm,
+            line_height=self.actual_height,
+            font_size=self.font_size,
+            space_width=self.current_space_width,
+            string_width=string_width,
         )
-        try:
-            if abs(moved_height) > 0.8 * min(
-                self.actual_height * previous_scale_y,
-                self.font_size * current_scale_y,
-            ):
-                if (self.text or self.output_last)[-1] != "\n":
-                    self.output_parts.append(self.text + "\n")
-                    self.output_last = "\n"
-                    self.text = ""
-            elif (
-                moved_width
-                >= (self.font_size * self.current_space_width / 1000.0 + string_width)
-                * previous_scale_x
-                and (self.text or self.output_last)[-1] != " "
-            ):
-                self.text += " "
-        except (IndexError, ValueError):
-            pass
         self.previous_tm = self.tm.copy()
         self.previous_cm = self.cm.copy()
 
@@ -772,9 +717,7 @@ class LegacyTextExtractor:
         for operator, operands in iter_content_operations(PdfLexer(data)):
             if operator == "Do":
                 self.flush()
-                if self.output_last and self.output_last != "\n":
-                    self.output_parts.append("\n")
-                    self.output_last = "\n"
+                self.output_last = internal_ensure_line_break(self.output_parts, self.output_last)
                 self.internal_form(operands)
                 self.text = ""
             else:
