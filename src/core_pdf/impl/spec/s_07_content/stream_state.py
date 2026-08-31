@@ -65,7 +65,6 @@ class StreamState:
         "pending_line_break",
         "compat_tj_cursor_x",
         "compat_tj_cursor_y",
-        "invisible_text_layer",
         "xobject_depth",
         "resource_cache",
         "resolved_resource_categories",
@@ -157,7 +156,6 @@ class StreamState:
         pending_line_break: bool,
         compat_tj_cursor_x: float,
         compat_tj_cursor_y: float,
-        invisible_text_layer: bool,
         xobject_depth: int,
         resource_cache: ResourceCache,
         resolved_resource_categories: ResolvedResourceCache,
@@ -205,7 +203,6 @@ class StreamState:
         self.pending_line_break = pending_line_break
         self.compat_tj_cursor_x = compat_tj_cursor_x
         self.compat_tj_cursor_y = compat_tj_cursor_y
-        self.invisible_text_layer = invisible_text_layer
         self.xobject_depth = xobject_depth
         self.resource_cache = resource_cache
         self.resolved_resource_categories = resolved_resource_categories
