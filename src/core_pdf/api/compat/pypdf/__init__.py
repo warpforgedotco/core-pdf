@@ -6,12 +6,11 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import replace
 from io import BytesIO
 from os import PathLike
-from pathlib import Path
 from typing import Any, BinaryIO, cast
 
 from core_pdf import PdfDocument
+from core_pdf.api.compat._shared import ClosingMixin, coerce_bbox, write_bytes
 from core_pdf.api.compat.pypdf._text import extract_legacy_text
-from core_pdf.impl.engine.model.geometry import rect_tuple
 from core_pdf.impl.engine.structured import (
     Annotation,
     Document,
@@ -23,12 +22,8 @@ from core_pdf.impl.engine.writing.semantic import serialize_document_to_pdf
 from core_pdf.impl.exceptions import PdfUnsupportedError
 from core_pdf.impl.primitives import PdfReference
 from core_pdf.impl.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
-from core_pdf.impl.spec.s_09_fonts.cmap_tounicode import ToUnicodeCMap
-from core_pdf.impl.spec.s_09_fonts.decoder import FontDecoder
 
 PdfInput = str | PathLike[str] | bytes | bytearray | BytesIO
-BBox = tuple[float, float, float, float]
-GraphicsState = tuple[list[float], str | None, float, float]
 
 
 def internal_validate_pypdf_page_tree(pdf: PdfDocument) -> None:
@@ -62,55 +57,20 @@ def internal_validate_pypdf_page_tree(pdf: PdfDocument) -> None:
     visit(lookup_dict_key(pdf.catalog(), "Pages"))
 
 
-class ClosingMixin:
-    def close(self) -> None:
-        return None
-
-    def __enter__(self) -> Any:
-        return self
-
-    def __exit__(self, *args: object) -> None:
-        self.close()
-
-
-def coerce_bbox(value: object) -> BBox:
-    box = rect_tuple(value)
-    if box is None:
-        raise ValueError(f"value does not describe a rectangle: {value!r}")
-    return box
-
-
-def write_bytes(target: str | PathLike[str] | BinaryIO, data: bytes) -> None:
-    if isinstance(target, (str, PathLike)):
-        Path(cast(str | PathLike[str], target)).write_bytes(data)
-    else:
-        target.write(data)
-
-
-def internal_operand_text(
-    data: bytes, cmap: ToUnicodeCMap | None, decoder: FontDecoder | None
-) -> str:
-    text = cmap.decode(data, preserve_nulls=True) if cmap is not None else ""
-    if not text and decoder is not None:
-        text = "".join(glyph.unicode for glyph in decoder.decode_glyphs(data))
-    if not text and len(data) % 2 == 0 and data[::2].count(0) >= len(data) // 4:
-        text = data.decode("utf-16-be", errors="replace")
-    return text or data.decode("latin-1")
-
-
-def internal_restore_graphics_state(stack: list[GraphicsState]) -> GraphicsState:
-    if stack:
-        return stack.pop()
-    return ([1.0, 0.0, 0.0, 1.0, 0.0, 0.0], None, 0.0, 250.0)
-
-
 class StructuredState(ClosingMixin):
     """Facade-local ownership of an engine document or synthetic structured snapshot."""
 
-    def __init__(self, pdf: PdfDocument | None, structured: Document) -> None:
+    def __init__(self, pdf: PdfDocument | None, structured: Document | None = None) -> None:
         self.pdf = pdf
-        self.structured = structured
+        self._structured = structured
         self.internal_projection: PdfDocument | None = None
+
+    @property
+    def structured(self) -> Document:
+        """Full structured snapshot, extracted lazily from the source document."""
+        if self._structured is None:
+            self._structured = self.source_pdf.structured_document
+        return self._structured
 
     @classmethod
     def open(cls, source: PdfInput, *, password: str = "") -> "StructuredState":
@@ -119,11 +79,10 @@ class StructuredState(ClosingMixin):
             if pdf.raw_data.find(b"startxref") < 0:
                 raise ValueError("startxref not found")
             internal_validate_pypdf_page_tree(pdf)
-            structured = pdf.structured_document
         except Exception:
             pdf.close()
             raise
-        return cls(pdf, structured)
+        return cls(pdf)
 
     @classmethod
     def from_structured(cls, structured: Document) -> "StructuredState":
@@ -139,10 +98,6 @@ class StructuredState(ClosingMixin):
         if self.pdf is None:
             raise ValueError("synthetic snapshots do not have a source PDF")
         return self.pdf
-
-    @property
-    def snapshot(self) -> Document:
-        return self.structured
 
     @property
     def metadata(self) -> Mapping[str, Any]:
@@ -166,14 +121,11 @@ class StructuredState(ClosingMixin):
     def capability_page(self, page_number: int) -> Any:
         return self.capability_document().pages[page_number - 1]
 
-    def _with_pages(self, pages: Sequence[Page]) -> "StructuredState":
+    def replace_pages(self, pages: Sequence[Page]) -> "StructuredState":
         return StructuredState.synthetic(replace(self.structured, pages=tuple(pages)))
 
-    def replace_pages(self, pages: Sequence[Page]) -> "StructuredState":
-        return self._with_pages(pages)
-
     def delete_page(self, page_number: int) -> "StructuredState":
-        return self._with_pages(
+        return self.replace_pages(
             tuple(page for index, page in enumerate(self.pages, 1) if index != page_number)
         )
 
@@ -202,7 +154,7 @@ class StructuredState(ClosingMixin):
                 )
             )
 
-        return self._with_pages(
+        return self.replace_pages(
             tuple(
                 replace(
                     page,
@@ -411,6 +363,9 @@ class internal_LockedPages:
 class PdfReader(ClosingMixin):
     """Reader exposing the most-used pypdf page and metadata APIs."""
 
+    pages: Any
+    metadata: dict[str, Any]
+
     def __init__(
         self,
         stream: PdfInput,
@@ -436,14 +391,27 @@ class PdfReader(ClosingMixin):
         self.trailer = {}
 
     def _bind(self, document: StructuredState) -> None:
-        """Materialize page objects and merge engine info metadata from ``document``."""
+        """Adopt ``document`` and drop any previously materialized pages/metadata."""
         self._document = document
+        self.__dict__.pop("pages", None)
+        self.__dict__.pop("metadata", None)
+
+    def __getattr__(self, name: str) -> Any:
+        if name in {"pages", "metadata"} and self.__dict__.get("_document") is not None:
+            self._materialize()
+            return self.__dict__[name]
+        raise AttributeError(name)
+
+    def _materialize(self) -> None:
+        """Materialize page objects and merge engine info metadata lazily."""
+        document = self._document
         self.pages = tuple(PdfPageObject(document, page) for page in document.pages)
         raw_metadata = document.source_pdf.get_metadata()
-        self.metadata = (
+        metadata: dict[str, Any] = (
             dict(cast(Any, raw_metadata.get("info", {}))) if isinstance(raw_metadata, dict) else {}
         )
-        self.metadata.update(document.metadata)
+        metadata.update(document.metadata)
+        self.metadata = metadata
 
     @property
     def num_pages(self) -> int:
@@ -735,10 +703,10 @@ class PdfMerger:
             if not inserted and page_offset <= item_end:
                 split_at = page_offset - pages_before
                 if split_at:
-                    merged.append(item._with_pages(item.pages[:split_at]))
+                    merged.append(item.replace_pages(item.pages[:split_at]))
                 merged.append(document)
                 if split_at < len(item.pages):
-                    merged.append(item._with_pages(item.pages[split_at:]))
+                    merged.append(item.replace_pages(item.pages[split_at:]))
                 inserted = True
             else:
                 merged.append(item)

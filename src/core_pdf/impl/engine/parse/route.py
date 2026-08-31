@@ -67,6 +67,15 @@ def internal_vector_text_scale(capture: CapturedPage, vector_complexity: int) ->
     )
 
 
+def internal_schematic_page(
+    vector_complexity: int,
+    text_density: float,
+    text_coverage: float,
+) -> bool:
+    """A vector-heavy page whose visible text is too sparse to read like prose."""
+    return vector_complexity >= 180 and (text_density < 0.0015 or text_coverage < 0.05)
+
+
 def internal_rotated_native_characters(capture: CapturedPage) -> int:
     observations = getattr(capture, "observations", None)
     if observations is None or not hasattr(observations, "text"):
@@ -194,8 +203,7 @@ def plan_page(capture: CapturedPage) -> WorkPlan:
         and vector_complexity < 150
     )
     if corrupt_mapping:
-        schematic = vector_complexity >= 180 and text_density < 0.0015
-        schematic = schematic or (text_coverage < 0.05 and vector_complexity >= 180)
+        schematic = internal_schematic_page(vector_complexity, text_density, text_coverage)
         image_modes = (PSM_AUTO,)
         scale = 6.0
         weak_threshold = 300 if schematic else 1_000
@@ -534,8 +542,7 @@ def plan_page(capture: CapturedPage) -> WorkPlan:
     ):
         return WorkPlan(PageRoute.NATIVE, reason=PagePlanReason.CLEAN_SHORT_NATIVE_TEXT)
 
-    schematic = vector_complexity >= 180 and text_density < 0.0015
-    schematic = schematic or (text_coverage < 0.05 and vector_complexity >= 180)
+    schematic = internal_schematic_page(vector_complexity, text_density, text_coverage)
     mode = PSM_AUTO if (schematic and vector_complexity >= 150_000) else PSM_SPARSE_TEXT
     image_modes = (mode,)
     scale = internal_ocr_scale(capture, schematic=schematic, vector_complexity=vector_complexity)

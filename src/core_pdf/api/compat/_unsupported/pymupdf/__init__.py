@@ -3,22 +3,20 @@
 from __future__ import annotations
 
 import json
-import struct
-import zlib
-from collections.abc import Mapping
+from bisect import bisect_left
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
 from html import escape
-from os import PathLike
-from pathlib import Path
 from typing import Any, cast
 
+from core_pdf.api.compat._shared import BBox, coerce_bbox, encode_png, float32, write_bytes
 from core_pdf.api.compat.pypdf import (
     PdfInput,
     PdfPageObject,
     PdfReader,
     StructuredState,
 )
-from core_pdf.impl.engine.model.geometry import bbox_intersects, rect_tuple
+from core_pdf.impl.engine.model.geometry import bbox_intersects
 from core_pdf.impl.engine.structured import (
     Annotation,
     Block,
@@ -32,19 +30,6 @@ from core_pdf.impl.engine.structured import (
     Page as StructuredPage,
 )
 
-BBox = tuple[float, float, float, float]
-
-
-def _float32(value: float) -> float:
-    return struct.unpack("f", struct.pack("f", value))[0]
-
-
-def coerce_bbox(value: object) -> BBox:
-    box = rect_tuple(value)
-    if box is None:
-        raise ValueError(f"value does not describe a rectangle: {value!r}")
-    return box
-
 
 def synthesize_characters(text: str, box: BBox) -> list[tuple[str, BBox]]:
     x0, y0, x1, y1 = box
@@ -53,33 +38,6 @@ def synthesize_characters(text: str, box: BBox) -> list[tuple[str, BBox]]:
         (character, (x0 + index * width, y0, x0 + (index + 1) * width, y1))
         for index, character in enumerate(text)
     ]
-
-
-def write_bytes(target: str | PathLike[str] | Any, data: bytes) -> None:
-    if isinstance(target, (str, PathLike)):
-        Path(target).write_bytes(data)
-    else:
-        target.write(data)
-
-
-def internal_png_chunk(kind: bytes, data: bytes) -> bytes:
-    return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
-
-
-def encode_png(width: int, height: int, channels: int, pixels: bytes) -> bytes:
-    if channels not in (3, 4):
-        raise ValueError("PNG output requires RGB or RGBA pixels")
-    stride = width * channels
-    scanlines = b"".join(
-        b"\x00" + pixels[row * stride : (row + 1) * stride] for row in range(height)
-    )
-    header = struct.pack(">IIBBBBB", width, height, 8, 6 if channels == 4 else 2, 0, 0, 0)
-    return (
-        b"\x89PNG\r\n\x1a\n"
-        + internal_png_chunk(b"IHDR", header)
-        + internal_png_chunk(b"IDAT", zlib.compress(scanlines))
-        + internal_png_chunk(b"IEND", b"")
-    )
 
 
 class Matrix:
@@ -175,7 +133,7 @@ class Page(PdfPageObject):
     @property
     def rect(self) -> tuple[float, float, float, float]:
         x0, y0, x1, y1 = self.cropbox
-        return (0.0, 0.0, _float32(x1 - x0), _float32(y1 - y0))
+        return (0.0, 0.0, float32(x1 - x0), float32(y1 - y0))
 
     def _native_text_view(self) -> Any:
         """Return only text represented by PDF text operators, as MuPDF does by default."""
@@ -243,6 +201,7 @@ class Page(PdfPageObject):
         glyphs_by_sequence: dict[int, list[Any]] = {}
         for glyph in products.glyphs:
             glyphs_by_sequence.setdefault(glyph.seqno, []).append(glyph)
+        sequence_numbers = sorted(glyphs_by_sequence)
         indexed_words = list(self._native_text_view().words)
         search_from = 0
         output: list[tuple[float, float, float, float, str, int, int, int]] = []
@@ -260,9 +219,9 @@ class Page(PdfPageObject):
             metric_height = ascent + descent
             baseline = run.baseline[1]
             mupdf_baseline = (
-                _float32(baseline)
+                float32(baseline)
                 if previous_baseline is None or previous_mupdf_baseline is None
-                else _float32(previous_mupdf_baseline + _float32(baseline - previous_baseline))
+                else float32(previous_mupdf_baseline + float32(baseline - previous_baseline))
             )
             previous_baseline = baseline
             previous_mupdf_baseline = mupdf_baseline
@@ -271,21 +230,22 @@ class Page(PdfPageObject):
                 if run_index + 1 < len(products.runs)
                 else float("inf")
             )
+            start = bisect_left(sequence_numbers, run.seqno)
+            stop = bisect_left(sequence_numbers, next_sequence, start)
             run_glyphs = [
                 glyph
-                for sequence, sequence_glyphs in glyphs_by_sequence.items()
-                if run.seqno <= sequence < next_sequence
-                for glyph in sequence_glyphs
+                for sequence in sequence_numbers[start:stop]
+                for glyph in glyphs_by_sequence[sequence]
             ]
             if not font_size:
                 continue
-            origin_y = _float32(_float32(float(crop_y1)) - mupdf_baseline)
+            origin_y = float32(float32(float(crop_y1)) - mupdf_baseline)
             if metric_height:
-                y0 = _float32(origin_y - _float32(font_size * _float32(ascent / metric_height)))
-                y1 = _float32(origin_y + _float32(font_size * _float32(descent / metric_height)))
+                y0 = float32(origin_y - float32(font_size * float32(ascent / metric_height)))
+                y1 = float32(origin_y + float32(font_size * float32(descent / metric_height)))
             elif run_glyphs:
-                y0 = _float32(crop_y1 - max(glyph.ink_bbox[3] for glyph in run_glyphs))
-                y1 = _float32(crop_y1 - min(glyph.ink_bbox[1] for glyph in run_glyphs))
+                y0 = float32(crop_y1 - max(glyph.ink_bbox[3] for glyph in run_glyphs))
+                y1 = float32(crop_y1 - min(glyph.ink_bbox[1] for glyph in run_glyphs))
             else:
                 continue
             current: list[Any] = []
@@ -299,26 +259,22 @@ class Page(PdfPageObject):
                 raw_x0 = current[0].advance_bbox[0] - crop_x0
                 same_line = previous_word_y == (y0, y1)
                 if same_line and previous_raw_x1 is not None and output:
-                    x0 = _float32(output[-1][2] + _float32(raw_x0 - previous_raw_x1))
+                    x0 = float32(output[-1][2] + float32(raw_x0 - previous_raw_x1))
                 else:
-                    x0 = _float32(raw_x0)
+                    x0 = float32(raw_x0)
                 x1 = x0
                 raw_previous_x1 = raw_x0
                 for item_index, item in enumerate(current):
                     if item_index:
-                        x1 = _float32(
-                            x1 + _float32(item.advance_bbox[0] - crop_x0 - raw_previous_x1)
-                        )
+                        x1 = float32(x1 + float32(item.advance_bbox[0] - crop_x0 - raw_previous_x1))
                     width_units = round(
                         (item.advance_bbox[2] - item.advance_bbox[0]) / font_size * 1000
                     )
-                    advance = _float32(
-                        _float32(font_size) * _float32(width_units * _float32(0.001))
-                    )
-                    x1 = _float32(x1 + advance)
+                    advance = float32(float32(font_size) * float32(width_units * float32(0.001)))
+                    x1 = float32(x1 + advance)
                     raw_previous_x1 = item.advance_bbox[2] - crop_x0
                 if len({item.seqno for item in current}) > 1:
-                    x1 = _float32(current[-1].advance_bbox[2] - crop_x0)
+                    x1 = float32(current[-1].advance_bbox[2] - crop_x0)
                 indices = None
                 for index in range(search_from, len(indexed_words)):
                     candidate = indexed_words[index]
@@ -447,18 +403,16 @@ class Page(PdfPageObject):
         if kind == "words":
             if clip is None:
                 return self._mupdf_words()
-            words = self._native_text_view().words
-            if clip is not None:
-                x0, y0, x1, y1 = cast(tuple[float, float, float, float], clip)
-                words = tuple(
-                    word
-                    for word in words
-                    if word.bbox is not None
-                    and word.bbox[0] < x1
-                    and word.bbox[2] > x0
-                    and word.bbox[1] < y1
-                    and word.bbox[3] > y0
-                )
+            x0, y0, x1, y1 = cast(tuple[float, float, float, float], clip)
+            words = tuple(
+                word
+                for word in self._native_text_view().words
+                if word.bbox is not None
+                and word.bbox[0] < x1
+                and word.bbox[2] > x0
+                and word.bbox[1] < y1
+                and word.bbox[3] > y0
+            )
             return [
                 (
                     *(word.bbox if word.bbox is not None else (0.0, 0.0, 0.0, 0.0)),
@@ -816,10 +770,7 @@ class Document(PdfReader):
         pages = tuple(
             replace(page, page_number=page_index + 1) for page_index, page in enumerate(pages)
         )
-        self._document = self._document.replace_pages(pages)
-        typed_pages = tuple(Page(self._document, page, self) for page in pages)
-        self.pages = typed_pages
-        return typed_pages[index]
+        return self._set_pages(pages)[index]
 
     @property
     def page_count(self) -> int:
@@ -892,64 +843,61 @@ class Document(PdfReader):
         self._toc_override = normalized
 
     def set_metadata(self, metadata: dict[str, object]) -> None:
-        self._document = self._document.update_metadata(metadata)
+        self._set_document(self._document.update_metadata(metadata))
         self.metadata.update(metadata)
-        self.pages = tuple(Page(self._document, page, self) for page in self._document.pages)
+
+    def _set_document(self, document: StructuredState) -> tuple[Page, ...]:
+        """Adopt ``document`` and rebuild the facade page objects from it."""
+        self._document = document
+        typed_pages = tuple(Page(document, page, self) for page in document.pages)
+        self.pages = typed_pages
+        return typed_pages
+
+    def _set_pages(self, pages: Sequence[StructuredPage]) -> tuple[Page, ...]:
+        return self._set_document(self._document.replace_pages(tuple(pages)))
+
+    def _mutate_page(
+        self, page_number: int, mutate: Callable[[StructuredPage], StructuredPage]
+    ) -> None:
+        pages = list(self._document.pages)
+        pages[page_number - 1] = mutate(pages[page_number - 1])
+        self._set_pages(pages)
 
     def _replace_annotation(self, page_number: int, index: int, annotation: Annotation) -> None:
-        pages = list(self._document.pages)
-        page = pages[page_number - 1]
-        annotations = list(page.annotations)
-        annotations[index] = annotation
-        pages[page_number - 1] = replace(page, annotations=tuple(annotations))
-        self._document = self._document.replace_pages(pages)
-        self.pages = tuple(Page(self._document, item, self) for item in pages)
+        def mutate(page: StructuredPage) -> StructuredPage:
+            annotations = list(page.annotations)
+            annotations[index] = annotation
+            return replace(page, annotations=tuple(annotations))
+
+        self._mutate_page(page_number, mutate)
 
     def _replace_page_annotations(
         self, page_number: int, annotations: tuple[Annotation, ...]
     ) -> None:
-        pages = list(self._document.pages)
-        pages[page_number - 1] = replace(pages[page_number - 1], annotations=annotations)
-        self._document = self._document.replace_pages(pages)
-        self.pages = tuple(Page(self._document, item, self) for item in pages)
+        self._mutate_page(page_number, lambda page: replace(page, annotations=annotations))
 
     def _replace_form_field(self, page_number: int, index: int, field: FormField) -> None:
-        pages = list(self._document.pages)
-        page = pages[page_number - 1]
-        fields = list(page.form_fields)
-        fields[index] = field
-        pages[page_number - 1] = replace(page, form_fields=tuple(fields))
-        self._document = self._document.replace_pages(pages)
-        self.pages = tuple(Page(self._document, item, self) for item in pages)
+        def mutate(page: StructuredPage) -> StructuredPage:
+            fields = list(page.form_fields)
+            fields[index] = field
+            return replace(page, form_fields=tuple(fields))
+
+        self._mutate_page(page_number, mutate)
 
     def _replace_links(self, page_number: int, links: tuple[Link, ...]) -> None:
-        pages = list(self._document.pages)
-        pages[page_number - 1] = replace(pages[page_number - 1], links=links)
-        self._document = self._document.replace_pages(pages)
-        self.pages = tuple(Page(self._document, item, self) for item in pages)
+        self._mutate_page(page_number, lambda page: replace(page, links=links))
 
     def _append_block(self, page_number: int, block: Block) -> None:
-        pages = list(self._document.pages)
-        index = page_number - 1
-        pages[index] = replace(pages[index], blocks=(*pages[index].blocks, block))
-        self._document = self._document.replace_pages(pages)
-        self.pages = tuple(Page(self._document, item, self) for item in pages)
+        self._mutate_page(page_number, lambda page: replace(page, blocks=(*page.blocks, block)))
 
     def _append_figure(self, page_number: int, figure: Figure) -> None:
-        pages = list(self._document.pages)
-        index = page_number - 1
-        pages[index] = replace(pages[index], figures=(*pages[index].figures, figure))
-        self._document = self._document.replace_pages(pages)
-        self.pages = tuple(Page(self._document, item, self) for item in pages)
+        self._mutate_page(page_number, lambda page: replace(page, figures=(*page.figures, figure)))
 
     def select(self, pages: list[int] | tuple[int, ...]) -> None:
-        selected = tuple(self._document.pages[index] for index in pages)
-        self._document = self._document.replace_pages(selected)
-        self.pages = tuple(Page(self._document, page, self) for page in selected)
+        self._set_pages(tuple(self._document.pages[index] for index in pages))
 
     def delete_page(self, page_number: int) -> None:
-        self._document = self._document.delete_page(page_number + 1)
-        self.pages = tuple(Page(self._document, page, self) for page in self._document.pages)
+        self._set_document(self._document.delete_page(page_number + 1))
 
     def insert_pdf(
         self,
@@ -959,9 +907,7 @@ class Document(PdfReader):
     ) -> None:
         end = source.page_count if to_page < 0 else to_page + 1
         inserted = tuple(source._document.pages[from_page:end])
-        combined = (*self._document.pages, *inserted)
-        self._document = self._document.replace_pages(combined)
-        self.pages = tuple(Page(self._document, page, self) for page in combined)
+        self._set_pages((*self._document.pages, *inserted))
 
     def apply_redactions(self) -> None:
         pages = list(self._document.pages)

@@ -11,10 +11,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from core_pdf.impl.engine.model.geometry import (
-    overlap_ratio_min_exact,
-    overlap_ratio_of,
-)
 from core_pdf.impl.engine.parse.model import RecognitionReport
 from core_pdf.impl.engine.parse.stroked_text import StrokedTextDecode
 from core_pdf.impl.engine.render.raster_image import RasterImage
@@ -173,21 +169,6 @@ def internal_ocr_region_box(
         min(page_height, y1 + padding),
     )
     return clipped if clipped[2] > clipped[0] and clipped[3] > clipped[1] else None
-
-
-def internal_ocr_region_overlap(
-    left: tuple[float, float, float, float],
-    right: tuple[float, float, float, float],
-) -> float:
-    return overlap_ratio_min_exact(left, right)
-
-
-def internal_ocr_region_coverage(
-    target: tuple[float, float, float, float],
-    candidate: tuple[float, float, float, float],
-) -> float:
-    """Return how much of a requested OCR target is covered by a candidate raster."""
-    return overlap_ratio_of(target, candidate)
 
 
 def internal_raster_rectangle_page_box(

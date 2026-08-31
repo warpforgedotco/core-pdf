@@ -15,6 +15,7 @@ from core_pdf.impl.engine.layout.spatial import (
     SpatialIndex,
 )
 from core_pdf.impl.engine.model.geometry import (
+    horizontal_overlap_ratio,
     overlap_ratio_min,
     rect_tuple,
 )
@@ -45,14 +46,6 @@ from core_pdf.impl.spec.s_07_content.capture import CapturedDrawing
 from core_pdf.impl.text import collapse_character_spaced
 
 
-def internal_horizontal_overlap(
-    left: tuple[float, float, float, float],
-    right: tuple[float, float, float, float],
-) -> float:
-    intersection = max(0.0, min(left[2], right[2]) - max(left[0], right[0]))
-    return intersection / max(1.0, min(left[2] - left[0], right[2] - right[0]))
-
-
 def internal_caption_for(
     caption_blocks: tuple[Block, ...],
     target_bbox: tuple[float, float, float, float] | None,
@@ -61,7 +54,7 @@ def internal_caption_for(
         return None
     candidates: list[tuple[float, Block]] = []
     for caption in caption_blocks:
-        if caption.bbox is None or internal_horizontal_overlap(caption.bbox, target_bbox) < 0.3:
+        if caption.bbox is None or horizontal_overlap_ratio(caption.bbox, target_bbox) < 0.3:
             continue
         if caption.bbox[3] <= target_bbox[1]:
             gap = target_bbox[1] - caption.bbox[3]
@@ -130,6 +123,10 @@ def internal_emitted_text_tokens(text: str) -> tuple[str, ...]:
     )
 
 
+def internal_wordlike_token(token: str) -> bool:
+    return token.isalpha() and len(token) >= 3 and any(character in "aeiou" for character in token)
+
+
 def internal_table_text(table: Table) -> str:
     return " ".join(cell.text for row in table.rows for cell in row if cell.text)
 
@@ -155,12 +152,7 @@ def internal_overlapping_block_token_coverage(table: Table, blocks: list[Block])
             block_tokens.extend(internal_emitted_text_tokens(block.text))
     if not block_tokens:
         return 0.0
-    block_counts = Counter(block_tokens)
-    matched = 0
-    for token in table_tokens:
-        if block_counts[token] > 0:
-            matched += 1
-            block_counts[token] -= 1
+    matched = (Counter(table_tokens) & Counter(block_tokens)).total()
     return matched / len(table_tokens)
 
 
@@ -268,10 +260,7 @@ def internal_noisy_stream_table(table: Table) -> bool:
     if len(tokens) < 16:
         return False
     single_character = sum(len(token) == 1 for token in tokens)
-    wordlike = sum(
-        token.isalpha() and len(token) >= 3 and any(character in "aeiou" for character in token)
-        for token in tokens
-    )
+    wordlike = sum(internal_wordlike_token(token) for token in tokens)
     return single_character / len(tokens) >= 0.55 and wordlike / len(tokens) < 0.30
 
 
@@ -449,10 +438,7 @@ def internal_corrupt_native_block(block: Block) -> bool:
     tokens = internal_emitted_text_tokens(text)
     token_count = len(tokens)
     if token_count >= 24:
-        wordlike = sum(
-            token.isalpha() and len(token) >= 3 and any(character in "aeiou" for character in token)
-            for token in tokens
-        )
+        wordlike = sum(internal_wordlike_token(token) for token in tokens)
         if wordlike / token_count >= 0.12:
             return False
     # One pass over the text collects every per-character count; separate
@@ -501,10 +487,7 @@ def internal_corrupt_native_block(block: Block) -> bool:
     symbol_ratio = internal_symbol_characters(text) / nonspace_count
     non_ascii_ratio = non_ascii / nonspace_count
     if token_count < 24:
-        wordlike = sum(
-            token.isalpha() and len(token) >= 3 and any(character in "aeiou" for character in token)
-            for token in tokens
-        )
+        wordlike = sum(internal_wordlike_token(token) for token in tokens)
     digit_bearing = sum(any(character.isdigit() for character in token) for token in tokens)
     if token_count < 24:
         return (
@@ -711,8 +694,13 @@ def internal_remove_sparse_ocr_artifacts(text: str) -> str:
         if len(tokens) == 2 and tokens[0] == ">" and re.fullmatch(r"\d+(?:[.,]\d+)?", tokens[1]):
             lines.append(tokens[1])
             continue
-        if any(internal_ocr_artifact_token(token, tokens) for token in tokens):
-            tokens = [token for token in tokens if not internal_ocr_artifact_token(token, tokens)]
+        artifact_flags = [internal_ocr_artifact_token(token, tokens) for token in tokens]
+        if any(artifact_flags):
+            tokens = [
+                token
+                for token, is_artifact in zip(tokens, artifact_flags, strict=True)
+                if not is_artifact
+            ]
         if "|" not in tokens:
             lines.append(" ".join(tokens) if tokens != original_tokens else line)
             continue

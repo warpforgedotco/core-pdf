@@ -104,21 +104,16 @@ class ContentOperatorCounts:
         )
 
 
-def content_stream_may_show_text(data: bytes | memoryview) -> bool:
-    data_len = len(data)
-    raw_bytes = full_source_bytes(data)
-    if raw_bytes is None:
-        raw_bytes = bytes(data)
-
-    if not any(raw_bytes.find(candidate) >= 0 for candidate in TEXT_SHOWING_CANDIDATES):
-        return False
-
-    pos = 0
-    container_depth = 0
-    inline_image_lexer: PdfLexer | None = None
-    while match := (
-        CONTAINER_LEXICAL_MARKER_RE if container_depth else TEXT_OR_LEXICAL_MARKER_RE
-    ).search(raw_bytes, pos):
+def _advance_past_lexical_markers(
+    raw_bytes: bytes,
+    pos: int,
+    data_len: int,
+    container_depth: int,
+    container_re: re.Pattern[bytes],
+) -> tuple[int, int, bytes, int, bool] | None:
+    while match := (container_re if container_depth else TEXT_OR_LEXICAL_MARKER_RE).search(
+        raw_bytes, pos
+    ):
         marker = match.start()
         token = match.group()
         if token == b"%":
@@ -153,9 +148,30 @@ def content_stream_may_show_text(data: bytes | memoryview) -> bool:
             pos = skip_name(raw_bytes, marker, data_len)
             continue
         after = match.end()
-        delimited = (marker == 0 or SEPARATOR_TABLE[raw_bytes[marker - 1]]) and (
-            after == data_len or SEPARATOR_TABLE[raw_bytes[after]]
+        delimited = bool(
+            (marker == 0 or SEPARATOR_TABLE[raw_bytes[marker - 1]])
+            and (after == data_len or SEPARATOR_TABLE[raw_bytes[after]])
         )
+        return marker, after, token, container_depth, delimited
+    return None
+
+
+def content_stream_may_show_text(data: bytes | memoryview) -> bool:
+    data_len = len(data)
+    raw_bytes = full_source_bytes(data)
+    if raw_bytes is None:
+        raw_bytes = bytes(data)
+
+    if not any(raw_bytes.find(candidate) >= 0 for candidate in TEXT_SHOWING_CANDIDATES):
+        return False
+
+    pos = 0
+    container_depth = 0
+    inline_image_lexer: PdfLexer | None = None
+    while scan := _advance_past_lexical_markers(
+        raw_bytes, pos, data_len, container_depth, CONTAINER_LEXICAL_MARKER_RE
+    ):
+        marker, after, token, container_depth, delimited = scan
         if not delimited:
             pos = marker + 1
             continue
@@ -1375,44 +1391,10 @@ def validate_inline_images(data: bytes | memoryview) -> None:
     pos = 0
     container_depth = 0
     lexer = PdfLexer(raw_bytes)
-    while match := TEXT_OR_LEXICAL_MARKER_RE.search(raw_bytes, pos):
-        marker = match.start()
-        token = match.group()
-        if token == b"%":
-            pos = skip_comment(raw_bytes, marker, data_len)
-            continue
-        if token == b"(":
-            pos = skip_literal_string(raw_bytes, marker, data_len)
-            continue
-        if token == b"<":
-            if marker + 1 < data_len and raw_bytes[marker + 1] == 60:
-                container_depth += 1
-                pos = marker + 2
-            else:
-                pos = skip_hex_string(raw_bytes, marker, data_len)
-            continue
-        if token == b">":
-            if marker + 1 < data_len and raw_bytes[marker + 1] == 62:
-                container_depth = max(0, container_depth - 1)
-                pos = marker + 2
-            else:
-                pos = marker + 1
-            continue
-        if token == b"[":
-            container_depth += 1
-            pos = marker + 1
-            continue
-        if token == b"]":
-            container_depth = max(0, container_depth - 1)
-            pos = marker + 1
-            continue
-        if token == b"/":
-            pos = skip_name(raw_bytes, marker, data_len)
-            continue
-        after = match.end()
-        delimited = (marker == 0 or SEPARATOR_TABLE[raw_bytes[marker - 1]]) and (
-            after == data_len or SEPARATOR_TABLE[raw_bytes[after]]
-        )
+    while scan := _advance_past_lexical_markers(
+        raw_bytes, pos, data_len, container_depth, TEXT_OR_LEXICAL_MARKER_RE
+    ):
+        _marker, after, token, container_depth, delimited = scan
         if token != b"BI" or container_depth or not delimited:
             pos = after
             continue

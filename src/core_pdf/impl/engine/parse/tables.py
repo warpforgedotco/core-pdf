@@ -15,7 +15,11 @@ import numpy
 from core_pdf.impl.engine.layout.spatial import (
     SpatialIndex,
 )
-from core_pdf.impl.engine.model.geometry import bbox_union, overlap_ratio_min
+from core_pdf.impl.engine.model.geometry import (
+    bbox_union,
+    horizontal_overlap_ratio,
+    overlap_ratio_min,
+)
 from core_pdf.impl.engine.parse.grid_geometry import (
     AXIS_TOLERANCE,
     internal_axis_segments,
@@ -940,14 +944,6 @@ def internal_merge_adjacent_tables(tables: list[Table]) -> list[Table]:
             continue
         previous_columns = max((len(row) for row in previous.rows), default=0)
         columns = max((len(row) for row in table.rows), default=0)
-        horizontal_overlap = max(
-            0.0,
-            min(previous_bbox[2], table_bbox[2]) - max(previous_bbox[0], table_bbox[0]),
-        )
-        minimum_width = max(
-            1.0,
-            min(previous_bbox[2] - previous_bbox[0], table_bbox[2] - table_bbox[0]),
-        )
         vertical_gap = previous_bbox[1] - table_bbox[3]
         # Relax adjacent-table merge conditions slightly to allow merging
         # of tables with minor horizontal overlap or slightly differing column
@@ -956,7 +952,7 @@ def internal_merge_adjacent_tables(tables: list[Table]) -> list[Table]:
         if (
             columns != previous_columns
             or not 2 <= columns <= 16
-            or horizontal_overlap / minimum_width < 0.6
+            or horizontal_overlap_ratio(previous_bbox, table_bbox) < 0.6
             or internal_table_column_alignment(previous, table) < 0.55
             or not -5.0 <= vertical_gap <= TABLE_MERGE_GAP
         ):
@@ -1569,20 +1565,10 @@ def internal_detect_tables(
     ]
     for order, table in enumerate(tables):
         if table.order != order:
-            tables[order] = Table(
-                order=order,
-                rows=table.rows,
-                bbox=table.bbox,
-                confidence=table.confidence,
-                title=table.title,
-                caption=table.caption,
-                row_bands=table.row_bands,
-                column_bands=table.column_bands,
-                metadata=table.metadata,
-            )
+            tables[order] = replace(table, order=order)
     tables = [
-        Table(
-            order=table.order,
+        replace(
+            table,
             rows=tuple(
                 tuple(
                     replace(
@@ -1597,13 +1583,6 @@ def internal_detect_tables(
                 )
                 for row in table.rows
             ),
-            bbox=table.bbox,
-            confidence=table.confidence,
-            title=table.title,
-            caption=table.caption,
-            row_bands=table.row_bands,
-            column_bands=table.column_bands,
-            metadata=table.metadata,
         )
         for table in tables
     ]

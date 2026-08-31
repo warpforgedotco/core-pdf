@@ -610,9 +610,9 @@ def internal_merge_candidate_batches(
         normalized_text = tuple(search_key(text) for text in combined.text)
         normalized_tokens = tuple(
             tuple(
-                internal_normalized_ocr_token_key(match.group(0))
+                key
                 for match in internal_OCR_TOKEN.finditer(text)
-                if internal_normalized_ocr_token_key(match.group(0))
+                if (key := internal_normalized_ocr_token_key(match.group(0)))
             )
             for text in combined.text
         )
@@ -733,6 +733,21 @@ def internal_augment_candidate(
     return internal_candidate(primary.mode, combined, symbols=primary.symbols), added
 
 
+def internal_candidate_timing_record(
+    candidates: tuple[internal_Candidate, ...],
+) -> dict[str, object]:
+    """Aggregate the per-candidate recognition timings shared by pass diagnostics."""
+    return {
+        "recognition_seconds": sum(candidate.recognition_seconds for candidate in candidates),
+        "setup_seconds": sum(candidate.setup_seconds for candidate in candidates),
+        "api_seconds": sum(candidate.api_seconds for candidate in candidates),
+        "iterator_seconds": sum(candidate.iterator_seconds for candidate in candidates),
+        "cleanup_seconds": sum(candidate.cleanup_seconds for candidate in candidates),
+        "candidate_seconds": sum(candidate.candidate_seconds for candidate in candidates),
+        "recognition_statuses": tuple(candidate.recognition_status for candidate in candidates),
+    }
+
+
 def internal_record_candidates(
     candidates: tuple[tuple[str, internal_Candidate], ...],
     selected_name: str,
@@ -830,6 +845,26 @@ def internal_recognize_page_with_reserved_raster(
             candidates = internal_recover_timed_out_tasks(tasks, candidates, recognize_batch)
         return candidates
 
+    def dominant_image_region_cached(pixel_budget: int) -> internal_RasterRegion | None:
+        if pixel_budget not in dominant_regions:
+            dominant_regions[pixel_budget] = internal_dominant_image_region(
+                capture,
+                max_pixels=pixel_budget,
+            )
+        return dominant_regions[pixel_budget]
+
+    def rendered_raster_cached(ocr_pass: OcrPass) -> internal_Raster | None:
+        raster_key = (ocr_pass.scale, ocr_pass.pixel_budget, ocr_pass.include_native_text)
+        if raster_key not in rendered_rasters:
+            rendered_rasters[raster_key] = internal_rendered_page_raster(
+                capture,
+                ocr_pass.scale,
+                max_pixels=ocr_pass.pixel_budget,
+                include_native_text=ocr_pass.include_native_text,
+                trace=trace,
+            )
+        return rendered_rasters[raster_key]
+
     if plan.verify_hidden_text:
         context.raise_if_cancelled()
         started = time.perf_counter()
@@ -884,23 +919,7 @@ def internal_recognize_page_with_reserved_raster(
             "full_page_fallback": False,
             "elapsed_seconds": time.perf_counter() - started,
             "render_timings": trace.render_timings or {},
-            "recognition_seconds": sum(
-                candidate.recognition_seconds for candidate in verification_candidates
-            ),
-            "setup_seconds": sum(candidate.setup_seconds for candidate in verification_candidates),
-            "api_seconds": sum(candidate.api_seconds for candidate in verification_candidates),
-            "iterator_seconds": sum(
-                candidate.iterator_seconds for candidate in verification_candidates
-            ),
-            "cleanup_seconds": sum(
-                candidate.cleanup_seconds for candidate in verification_candidates
-            ),
-            "candidate_seconds": sum(
-                candidate.candidate_seconds for candidate in verification_candidates
-            ),
-            "recognition_statuses": tuple(
-                candidate.recognition_status for candidate in verification_candidates
-            ),
+            **internal_candidate_timing_record(verification_candidates),
             "accepted_additions": 0,
             "adaptive_retry_scale": None,
             "adaptive_preflight": None,
@@ -1084,7 +1103,6 @@ def internal_recognize_page_with_reserved_raster(
                 else internal_ocr_region_batch(
                     candidate_regions,
                     ocr_pass,
-                    expanded=False,
                     page_area=max(1.0, float(page.width) * float(page.height)),
                 )
             )
@@ -1118,29 +1136,11 @@ def internal_recognize_page_with_reserved_raster(
                 )
                 region_stage = "weak-region-crops"
             else:
-                if ocr_pass.pixel_budget not in dominant_regions:
-                    dominant_regions[ocr_pass.pixel_budget] = internal_dominant_image_region(
-                        capture,
-                        max_pixels=ocr_pass.pixel_budget,
-                    )
-                direct_region = dominant_regions[ocr_pass.pixel_budget]
+                direct_region = dominant_image_region_cached(ocr_pass.pixel_budget)
                 raster = direct_region.raster if direct_region is not None else None
                 raster_page_box = direct_region.page_box if direct_region is not None else page_box
                 if raster is None:
-                    raster_key = (
-                        ocr_pass.scale,
-                        ocr_pass.pixel_budget,
-                        ocr_pass.include_native_text,
-                    )
-                    if raster_key not in rendered_rasters:
-                        rendered_rasters[raster_key] = internal_rendered_page_raster(
-                            capture,
-                            ocr_pass.scale,
-                            max_pixels=ocr_pass.pixel_budget,
-                            include_native_text=ocr_pass.include_native_text,
-                            trace=trace,
-                        )
-                    raster = rendered_rasters[raster_key]
+                    raster = rendered_raster_cached(ocr_pass)
                     raster_page_box = page_box
                 tasks = (
                     internal_weak_region_tasks(
@@ -1284,32 +1284,15 @@ def internal_recognize_page_with_reserved_raster(
                 )
                 raster_pixels = raster.width * raster.height if raster is not None else 0
         else:
-            if internal_direct_scan_allowed(capture, plan):
-                if ocr_pass.pixel_budget not in dominant_regions:
-                    dominant_regions[ocr_pass.pixel_budget] = internal_dominant_image_region(
-                        capture,
-                        max_pixels=ocr_pass.pixel_budget,
-                    )
-                direct_region = dominant_regions.get(ocr_pass.pixel_budget)
-            else:
-                direct_region = None
+            direct_region = (
+                dominant_image_region_cached(ocr_pass.pixel_budget)
+                if internal_direct_scan_allowed(capture, plan)
+                else None
+            )
             raster = direct_region.raster if direct_region is not None else None
             raster_page_box = direct_region.page_box if direct_region is not None else page_box
             if raster is None:
-                raster_key = (
-                    ocr_pass.scale,
-                    ocr_pass.pixel_budget,
-                    ocr_pass.include_native_text,
-                )
-                if raster_key not in rendered_rasters:
-                    rendered_rasters[raster_key] = internal_rendered_page_raster(
-                        capture,
-                        ocr_pass.scale,
-                        max_pixels=ocr_pass.pixel_budget,
-                        include_native_text=ocr_pass.include_native_text,
-                        trace=trace,
-                    )
-                raster = rendered_rasters[raster_key]
+                raster = rendered_raster_cached(ocr_pass)
                 raster_page_box = page_box
             task_raster = (
                 internal_adaptive_ocr_raster(raster)
@@ -1592,27 +1575,7 @@ def internal_recognize_page_with_reserved_raster(
                 ),
                 "elapsed_seconds": elapsed,
                 "render_timings": trace.render_timings or {},
-                "recognition_seconds": sum(
-                    task_candidate.recognition_seconds for task_candidate in task_candidates
-                ),
-                "setup_seconds": sum(
-                    task_candidate.setup_seconds for task_candidate in task_candidates
-                ),
-                "api_seconds": sum(
-                    task_candidate.api_seconds for task_candidate in task_candidates
-                ),
-                "iterator_seconds": sum(
-                    task_candidate.iterator_seconds for task_candidate in task_candidates
-                ),
-                "cleanup_seconds": sum(
-                    task_candidate.cleanup_seconds for task_candidate in task_candidates
-                ),
-                "candidate_seconds": sum(
-                    task_candidate.candidate_seconds for task_candidate in task_candidates
-                ),
-                "recognition_statuses": tuple(
-                    task_candidate.recognition_status for task_candidate in task_candidates
-                ),
+                **internal_candidate_timing_record(task_candidates),
                 "accepted_additions": additions,
                 "adaptive_retry_scale": adaptive_retry_scale,
                 "adaptive_preflight": adaptive_preflight,

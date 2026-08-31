@@ -19,6 +19,7 @@ from core_pdf.impl.engine.layout.lines import reconstruct_cached_layout_line_tex
 from core_pdf.impl.engine.layout.spatial import (
     SpatialIndex,
 )
+from core_pdf.impl.engine.model.geometry import horizontal_overlap_ratio
 from core_pdf.impl.engine.model.runs import TextRun
 from core_pdf.impl.engine.parse.model import (
     ObservationBatch,
@@ -413,16 +414,12 @@ def internal_build_lines(observations: ObservationBatch) -> internal_BuiltLines:
     return internal_BuiltLines(tuple(output), boxes)
 
 
-def internal_best_projection_gap(
-    boxes: numpy.ndarray,
+def internal_projection_gap_from_sorted(
+    sorted_starts: numpy.ndarray,
+    sorted_ends: numpy.ndarray,
     axis: int,
     minimum_gap: float,
 ) -> tuple[float, float] | None:
-    starts = boxes[:, axis]
-    ends = boxes[:, axis + 2]
-    order = numpy.argsort(starts, kind="stable")
-    sorted_starts = starts[order]
-    sorted_ends = ends[order]
     previous_ends = numpy.maximum.accumulate(sorted_ends)[:-1]
     gaps = sorted_starts[1:] - previous_ends
     if not len(gaps):
@@ -438,6 +435,17 @@ def internal_best_projection_gap(
     return (best_gap, best_cut) if best_gap >= minimum_gap else None
 
 
+def internal_best_projection_gap(
+    boxes: numpy.ndarray,
+    axis: int,
+    minimum_gap: float,
+) -> tuple[float, float] | None:
+    starts = boxes[:, axis]
+    ends = boxes[:, axis + 2]
+    order = numpy.argsort(starts, kind="stable")
+    return internal_projection_gap_from_sorted(starts[order], ends[order], axis, minimum_gap)
+
+
 def internal_best_region_projection_gap(
     geometry: internal_LayoutGeometry,
     region: internal_LayoutRegion,
@@ -445,18 +453,12 @@ def internal_best_region_projection_gap(
     minimum_gap: float,
 ) -> tuple[float, float] | None:
     order = region.x_start_order if axis == 0 else region.y_start_order
-    sorted_starts = geometry.boxes[order, axis]
-    sorted_ends = geometry.boxes[order, axis + 2]
-    previous_ends = numpy.maximum.accumulate(sorted_ends)[:-1]
-    gaps = sorted_starts[1:] - previous_ends
-    if not len(gaps):
-        return None
-    best_index = (
-        len(gaps) - 1 - int(numpy.argmax(gaps[::-1])) if axis == 1 else int(numpy.argmax(gaps))
+    return internal_projection_gap_from_sorted(
+        geometry.boxes[order, axis],
+        geometry.boxes[order, axis + 2],
+        axis,
+        minimum_gap,
     )
-    best_gap = float(gaps[best_index])
-    best_cut = float((sorted_starts[best_index + 1] + previous_ends[best_index]) * 0.5)
-    return (best_gap, best_cut) if best_gap >= minimum_gap else None
 
 
 def internal_gutter_tolerating_contained_boxes(
@@ -732,6 +734,31 @@ def internal_peel_spanning_band(
     return None
 
 
+def internal_assign_row_bands(
+    order: numpy.ndarray,
+    centers: numpy.ndarray,
+    tolerance: float,
+    row_ids: numpy.ndarray,
+) -> None:
+    """Write a row id per box, walking centers top-to-bottom.
+
+    Band by how far each box sits from the row already being built, rather
+    than by rounding its absolute position to a grid. Rounding puts the
+    boundary at an arbitrary offset, so two cells a point apart can land in
+    different rows while two a whole line apart share one -- which scrambles
+    the reading order of any table whose cells vary in height.
+    """
+    current_row = 0
+    row_center = float(centers[order[0]])
+    for position, raw_item in enumerate(order):
+        item = int(raw_item)
+        center = float(centers[item])
+        if position and row_center - center > tolerance:
+            current_row += 1
+            row_center = center
+        row_ids[item] = current_row
+
+
 def internal_row_order_indexes(indexes: numpy.ndarray, boxes: numpy.ndarray) -> numpy.ndarray:
     """Order boxes into reading order: row bands top-to-bottom, then left-to-right."""
     region = boxes[indexes]
@@ -741,23 +768,10 @@ def internal_row_order_indexes(indexes: numpy.ndarray, boxes: numpy.ndarray) -> 
     tolerance = max(1.0, finite_median(heights) * 0.5)
     if not math.isfinite(tolerance):
         tolerance = 1.0
-
-    # Band by how far each box sits from the row already being built, rather
-    # than by rounding its absolute position to a grid. Rounding puts the
-    # boundary at an arbitrary offset, so two cells a point apart can land in
-    # different rows while two a whole line apart share one -- which scrambles
-    # the reading order of any table whose cells vary in height.
     centers = (region[:, 1] + region[:, 3]) * 0.5
     order = numpy.argsort(-centers, kind="stable")
     row_ids = numpy.empty(len(indexes), dtype=numpy.int64)
-    current_row = 0
-    row_center = float(centers[order[0]])
-    for position, item in enumerate(order):
-        center = float(centers[item])
-        if position and row_center - center > tolerance:
-            current_row += 1
-            row_center = center
-        row_ids[item] = current_row
+    internal_assign_row_bands(order, centers, tolerance, row_ids)
     return indexes[numpy.lexsort((region[:, 0], row_ids))]
 
 
@@ -767,22 +781,16 @@ def internal_row_order_region(
     indexes = region.indexes
     if len(indexes) < 2:
         return indexes
-    boxes = geometry.boxes
     tolerance = max(1.0, finite_median(geometry.heights[indexes]) * 0.5)
     if not math.isfinite(tolerance):
         tolerance = 1.0
-    order = region.y_center_order
-    centers = geometry.y_centers
-    current_row = 0
-    row_center = float(centers[order[0]])
-    for position, raw_item in enumerate(order):
-        item = int(raw_item)
-        center = float(centers[item])
-        if position and row_center - center > tolerance:
-            current_row += 1
-            row_center = center
-        geometry.row_ids[item] = current_row
-    return indexes[numpy.lexsort((boxes[indexes, 0], geometry.row_ids[indexes]))]
+    internal_assign_row_bands(
+        region.y_center_order,
+        geometry.y_centers,
+        tolerance,
+        geometry.row_ids,
+    )
+    return indexes[numpy.lexsort((geometry.boxes[indexes, 0], geometry.row_ids[indexes]))]
 
 
 def internal_obstacle_partition(
@@ -1332,10 +1340,8 @@ def internal_topological_block_order_from_pairs(
 
     for i, j in pairs:
         ax0, ay0, ax1, ay1 = blocks[i].bbox
-        awidth = ax1 - ax0
         a_is_full_width = full_width[i]
         bx0, by0, bx1, by1 = blocks[j].bbox
-        bwidth = bx1 - bx0
         b_is_full_width = full_width[j]
 
         # Rule 1: Full-width header preceding child blocks below it
@@ -1346,9 +1352,7 @@ def internal_topological_block_order_from_pairs(
             graph[j].append(i)
             in_degree[i] += 1
         elif not a_is_full_width and not b_is_full_width:
-            overlap_x = max(0.0, min(ax1, bx1) - max(ax0, bx0))
-            min_w = max(1.0, min(awidth, bwidth))
-            if overlap_x / min_w >= 0.45:
+            if horizontal_overlap_ratio(blocks[i].bbox, blocks[j].bbox) >= 0.45:
                 if ay0 >= by1 - 2.0:
                     graph[i].append(j)
                     in_degree[j] += 1

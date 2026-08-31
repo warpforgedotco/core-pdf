@@ -3,6 +3,7 @@ from __future__ import annotations
 import heapq
 import re
 from bisect import bisect_left, bisect_right
+from collections import OrderedDict
 from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
 from html import escape
@@ -11,7 +12,7 @@ from typing import Any, BinaryIO, TextIO, TypeAlias, cast
 
 from core_pdf import PdfDocument, PdfPage
 from core_pdf._vendor.fontTools.agl import toUnicode
-from core_pdf.impl.engine.model.geometry import bbox_union
+from core_pdf.impl.engine.model.geometry import bbox_union, overlap_ratio_of
 from core_pdf.impl.exceptions import PdfError
 from core_pdf.impl.primitives import PdfReference
 from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
@@ -26,6 +27,8 @@ from core_pdf.impl.spec.s_09_fonts.data.base_encodings import (
     WIN_ANSI_ENCODING,
 )
 from core_pdf.impl.spec.s_09_fonts.data.core14 import FONT_DATA
+
+from .._shared import LIGATURES
 
 PdfInput: TypeAlias = Any
 
@@ -354,9 +357,7 @@ def internal_pdfminer_resolvable_pages(  # noqa: C901
             expected_header = expected_pattern.search(data, entry.offset, search_end)
             if expected_header is None:
                 continue
-            offset_start = entry.offset
-            while offset_start < len(data) and data[offset_start] in b"\x00\t\n\x0c\r ":
-                offset_start += 1
+            offset_start = XRefScanner.skip_ws(data, entry.offset)
             if first_header is not None and first_header.start() == offset_start:
                 found_number, found_generation = (int(item) for item in first_header.groups())
                 if (
@@ -376,9 +377,7 @@ def internal_pdfminer_resolvable_pages(  # noqa: C901
             root_key = (root_reference.object_number << 16) | root_reference.generation_number
             root_entry = strict_xref.get(root_key)
             if root_entry is not None and root_entry.object_stream is None:
-                offset = root_entry.offset
-                while offset < len(data) and data[offset] in b"\x00\t\n\x0c\r ":
-                    offset += 1
+                offset = XRefScanner.skip_ws(data, root_entry.offset)
                 header = re.match(rb"(\d+)\s+(\d+)\s+obj\b", data[offset:])
                 if header is not None:
                     hard_mismatch = (int(header.group(1)), int(header.group(2))) != (
@@ -442,41 +441,6 @@ def internal_pdfminer_resolvable_pages(  # noqa: C901
     yield from fallback_pages(
         ((key >> 16, key & 0xFFFF) for key, entry in strict_xref.items() if entry.in_use)
     )
-
-
-@dataclass(frozen=True, slots=True)
-class Rect:
-    x0: float
-    y0: float
-    x1: float
-    y1: float
-
-    @property
-    def width(self) -> float:
-        return self.x1 - self.x0
-
-    @property
-    def height(self) -> float:
-        return self.y1 - self.y0
-
-
-@dataclass(frozen=True, slots=True)
-class TextCharacter:
-    text: str
-    bbox: Rect
-    font_name: str | None = None
-    font_size: float | None = None
-    sequence: int | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class TextSpan:
-    text: str
-    bbox: Rect
-    characters: tuple[TextCharacter, ...] = ()
-    font_name: str | None = None
-    font_size: float | None = None
-    sequence: int | None = None
 
 
 @dataclass(slots=True)
@@ -564,10 +528,6 @@ class LTChar(LTComponent, LTText):
         return self.text
 
     @property
-    def font_name(self) -> str | None:
-        return self.fontname
-
-    @property
     def adv(self) -> float:
         return self.width
 
@@ -647,10 +607,6 @@ class LTPage(LTComponent):
         return iter(self._objs)
 
 
-def _bbox(rect: Rect) -> tuple[float, float, float, float]:
-    return (rect.x0, rect.y0, rect.x1, rect.y1)
-
-
 def _make_line(items: list[LTChar], params: LAParams) -> LTTextLine:
     vertical = params.detect_vertical and len(items) > 1 and items[0].is_hoverlap(items[-1])
     line_type = LTTextLineVertical if vertical else LTTextLineHorizontal
@@ -700,10 +656,10 @@ def _group_objects(chars: list[LTChar], params: LAParams) -> list[LTTextLine]:
             lines.append(_make_line(current, params))
             current = [item]
         elif vertical and not horizontal:
-            current.extend([item])
+            current.append(item)
             current_vertical = True
         elif horizontal and not vertical:
-            current.extend([item])
+            current.append(item)
             current_vertical = False
         else:
             lines.append(_make_line(current, params))
@@ -993,6 +949,78 @@ def _mapping_value(mapping: object, name: str) -> object | None:
     return next((value for key, value in mapping.items() if str(key) == name), None)
 
 
+@dataclass(slots=True)
+class _FontProjection:
+    """Per-font values derived once for pdfminer's width and text projections."""
+
+    font: dict[Any, Any]
+    values: dict[str, Any]
+    has_widths: bool
+    legacy_widths: list[float] | None
+    first_char: int
+    recovered_malformed_token: bool
+
+
+internal_FONT_PROJECTION_CACHE_MAX_ENTRIES = 128
+internal_FONT_PROJECTION_CACHE: OrderedDict[int, _FontProjection] = OrderedDict()
+
+
+def _font_projection(font: dict[Any, Any]) -> _FontProjection:
+    """Return the cached per-font projection, keyed by object identity.
+
+    The cached entry retains the font dictionary itself, so an ``id()`` key
+    cannot be recycled for a different object while its entry is alive.
+    """
+    cache_key = id(font)
+    entry = internal_FONT_PROJECTION_CACHE.get(cache_key)
+    if entry is not None and entry.font is font:
+        internal_FONT_PROJECTION_CACHE.move_to_end(cache_key)
+        return entry
+    values: dict[str, Any] = {}
+    for raw_key, value in font.items():
+        values.setdefault(str(raw_key), value)
+    font_widths = values.get("Widths")
+    first_char = values.get("FirstChar")
+    legacy_widths: list[float] | None = None
+    recovered_malformed_token = False
+    if isinstance(font_widths, (list, tuple)) and isinstance(first_char, int):
+        legacy_widths = []
+        for width_value in font_widths:
+            if isinstance(width_value, str):
+                match = re.fullmatch(r"[^0-9+.-]+([+-]?(?:\d+(?:\.\d*)?|\.\d+))", width_value)
+                if match is not None:
+                    # PDFMiner's lexer separates a leading malformed control
+                    # token from trailing numeric bytes. Its numeric coercion
+                    # gives the former zero width and retains the latter as
+                    # the following array entry.
+                    legacy_widths.extend((0.0, float(match.group(1))))
+                    recovered_malformed_token = True
+                    continue
+            try:
+                legacy_widths.append(float(width_value))
+            except (TypeError, ValueError):
+                legacy_widths.append(0.0)
+    entry = _FontProjection(
+        font,
+        values,
+        font_widths is not None,
+        legacy_widths,
+        first_char if isinstance(first_char, int) else 0,
+        recovered_malformed_token,
+    )
+    internal_FONT_PROJECTION_CACHE[cache_key] = entry
+    while len(internal_FONT_PROJECTION_CACHE) > internal_FONT_PROJECTION_CACHE_MAX_ENTRIES:
+        internal_FONT_PROJECTION_CACHE.popitem(last=False)
+    return entry
+
+
+def _font_value(font: object, name: str) -> object | None:
+    """``_mapping_value`` for font dictionaries, served from the per-font cache."""
+    if not isinstance(font, dict):
+        return None
+    return _font_projection(font).values.get(name)
+
+
 def _pdfminer_base_encoding_text(
     decoder: Any,
     char_code: int,
@@ -1075,7 +1103,7 @@ def internal_pdfminer_glyph_text(glyph: Any) -> str:
             and (not glyph_name or getattr(decoder, "base_encoding", None) == "WinAnsiEncoding")
         ):
             base_encoding = getattr(decoder, "base_encoding", None)
-            if base_encoding is None and str(_mapping_value(decoder.font, "Subtype")) == "TrueType":
+            if base_encoding is None and str(_font_value(decoder.font, "Subtype")) == "TrueType":
                 base_encoding = "WinAnsiEncoding"
             encoded = _pdfminer_base_encoding_text(decoder, glyph.char_code, base_encoding)
             if encoded:
@@ -1127,7 +1155,7 @@ def internal_pdfminer_glyph_text(glyph: Any) -> str:
         base_text = _pdfminer_base_encoding_text(decoder, glyph.char_code)
         return base_text or f"(cid:{glyph.cid})"
     if glyph.unicode_source == "truetype_cmap" and getattr(decoder, "to_unicode", None) is None:
-        descendants = _mapping_value(getattr(decoder, "font", None), "DescendantFonts")
+        descendants = _font_value(getattr(decoder, "font", None), "DescendantFonts")
         descendant = descendants[0] if isinstance(descendants, list) and descendants else None
         system_info = _mapping_value(descendant, "CIDSystemInfo")
         registry = _mapping_value(system_info, "Registry")
@@ -1149,10 +1177,10 @@ def internal_pdfminer_embedded_cmap_is_unusable(glyph: Any) -> bool:
     decoder = glyph.font_decoder
     if not getattr(decoder, "is_cid_font", False):
         return False
-    descendants = _mapping_value(decoder.font, "DescendantFonts")
+    descendants = _font_value(decoder.font, "DescendantFonts")
     if not isinstance(descendants, list) or not descendants:
         raise PdfError("Type0 font is missing /DescendantFonts")
-    encoding = _mapping_value(decoder.font, "Encoding")
+    encoding = _font_value(decoder.font, "Encoding")
     try:
         data = bytes(getattr(encoding, "decoded_data"))
     except (AttributeError, TypeError, ValueError):
@@ -1209,13 +1237,6 @@ def internal_pdfminer_ligature_overrides(
     ],
     set[int],
 ]:
-    ligatures = {
-        "ff": "ﬀ",
-        "fi": "ﬁ",
-        "fl": "ﬂ",
-        "ffi": "ﬃ",
-        "ffl": "ﬄ",
-    }
     overrides: dict[
         int,
         tuple[
@@ -1269,8 +1290,8 @@ def internal_pdfminer_ligature_overrides(
         encoded_ligature = (
             base_table[glyph.char_code] if 0 <= glyph.char_code < len(base_table) else ""
         )
-        expected_ligature = ligatures.get(str(glyph_name) if glyph_name else "", encoded_ligature)
-        if expected_ligature not in ligatures.values():
+        expected_ligature = LIGATURES.get(str(glyph_name) if glyph_name else "", encoded_ligature)
+        if expected_ligature not in LIGATURES.values():
             # A decomposed Unicode sequence is not sufficient evidence that
             # pdfminer would emit a legacy presentation-form ligature.  Most
             # commonly it came from /ActualText or a ToUnicode mapping, both
@@ -1288,7 +1309,7 @@ def internal_pdfminer_ligature_overrides(
             if len(candidate) != cluster_size:
                 continue
             decomposition = "".join(item.text for item in candidate)
-            candidate_text = ligatures.get(decomposition)
+            candidate_text = LIGATURES.get(decomposition)
             if candidate_text is None or candidate_text != expected_ligature:
                 continue
             if any(
@@ -1473,8 +1494,6 @@ def internal_pdfminer_offsets(
                 * float(provenance.get("horizontal_scale", 100.0))
                 * 0.01
             )
-        if glyph.seqno == following.seqno:
-            continue
     return offsets
 
 
@@ -1482,30 +1501,13 @@ def _pdfminer_builtin_width(glyph: Any) -> float | None:
     """Return pdfminer's built-in width for a widthless Standard-14 font."""
     decoder = glyph.font_decoder
     projected_text = internal_pdfminer_glyph_text(glyph)
-    font_widths = _mapping_value(decoder.font, "Widths")
-    first_char = _mapping_value(decoder.font, "FirstChar")
-    legacy_widths: list[float] | None = None
+    font = decoder.font
+    projection = _font_projection(font) if isinstance(font, dict) else None
+    legacy_widths = projection.legacy_widths if projection is not None else None
     width_index = -1
-    if isinstance(font_widths, (list, tuple)) and isinstance(first_char, int):
-        legacy_widths = []
-        recovered_malformed_token = False
-        for width_value in font_widths:
-            if isinstance(width_value, str):
-                match = re.fullmatch(r"[^0-9+.-]+([+-]?(?:\d+(?:\.\d*)?|\.\d+))", width_value)
-                if match is not None:
-                    # PDFMiner's lexer separates a leading malformed control
-                    # token from trailing numeric bytes. Its numeric coercion
-                    # gives the former zero width and retains the latter as
-                    # the following array entry.
-                    legacy_widths.extend((0.0, float(match.group(1))))
-                    recovered_malformed_token = True
-                    continue
-            try:
-                legacy_widths.append(float(cast(Any, width_value)))
-            except (TypeError, ValueError):
-                legacy_widths.append(0.0)
-        width_index = glyph.char_code - first_char if glyph.char_code is not None else -1
-        if recovered_malformed_token and 0 <= width_index < len(legacy_widths):
+    if projection is not None and legacy_widths is not None:
+        width_index = glyph.char_code - projection.first_char if glyph.char_code is not None else -1
+        if projection.recovered_malformed_token and 0 <= width_index < len(legacy_widths):
             return legacy_widths[width_index]
     glyph_name = getattr(decoder, "encoding_differences", {}).get(glyph.char_code)
     if (
@@ -1523,11 +1525,10 @@ def _pdfminer_builtin_width(glyph: Any) -> float | None:
         return 0.0
     if decoder.is_cid_font or decoder.is_type3:
         return None
-    font = decoder.font
     # PDFType1Font consults FontMetricsDB before the PDF's descriptor and
     # /Widths array. Exact Standard-14 names therefore use AFM metrics even
     # when a producer embeds a contradictory width table.
-    base_font = str(_mapping_value(font, "BaseFont") or "")
+    base_font = str(_font_value(font, "BaseFont") or "")
     entry = FONT_DATA.get(base_font)
     if isinstance(entry, dict):
         widths = entry.get("widths")
@@ -1538,12 +1539,12 @@ def _pdfminer_builtin_width(glyph: Any) -> float | None:
     if legacy_widths is not None:
         if 0 <= width_index < len(legacy_widths):
             return legacy_widths[width_index]
-        descriptor = _mapping_value(font, "FontDescriptor")
+        descriptor = _font_value(font, "FontDescriptor")
         missing_width = _mapping_value(descriptor, "MissingWidth")
         return float(missing_width) if isinstance(missing_width, (int, float)) else 0.0
-    if font_widths is not None:
+    if projection is not None and projection.has_widths:
         return None
-    descriptor = _mapping_value(font, "FontDescriptor")
+    descriptor = _font_value(font, "FontDescriptor")
     missing_width = _mapping_value(descriptor, "MissingWidth")
     # PDFSimpleFont constructs a zero-filled width table when /Widths is
     # absent, then falls back to the descriptor's /MissingWidth. Native core
@@ -1564,14 +1565,14 @@ def internal_pdfminer_normalized_width(glyph: Any) -> float:
         return 0.0
     width_scale = 0.001
     if getattr(glyph.font_decoder, "is_type3", False):
-        font_matrix = _mapping_value(glyph.font_decoder.font, "FontMatrix")
+        font_matrix = _font_value(glyph.font_decoder.font, "FontMatrix")
         if isinstance(font_matrix, (tuple, list)) and len(font_matrix) >= 4:
             # PDFType3Font uses apply_matrix_norm(matrix, (1, 1)) and
             # therefore scales horizontal widths by ``a + c`` rather than by
             # the conventional fixed 1/1000 text-space factor.
             width_scale = float(cast(Any, font_matrix[0])) + float(cast(Any, font_matrix[2]))
-        raw_widths = _mapping_value(glyph.font_decoder.font, "Widths")
-        first_char = _mapping_value(glyph.font_decoder.font, "FirstChar")
+        raw_widths = _font_value(glyph.font_decoder.font, "Widths")
+        first_char = _font_value(glyph.font_decoder.font, "FirstChar")
         if isinstance(raw_widths, (tuple, list)) and isinstance(first_char, int):
             index = width_code - first_char
             if 0 <= index < len(raw_widths):
@@ -1584,7 +1585,7 @@ def internal_pdfminer_normalized_width(glyph: Any) -> float:
     builtin_width = _pdfminer_builtin_width(glyph)
     if builtin_width is not None:
         width = builtin_width * 0.001
-    base_font = normalize_pdf_name(_mapping_value(glyph.font_decoder.font, "BaseFont"))
+    base_font = normalize_pdf_name(_font_value(glyph.font_decoder.font, "BaseFont"))
     glyph_name = getattr(glyph.font_decoder, "encoding_differences", {}).get(glyph.char_code)
     if base_font in {"Symbol", "ZapfDingbats"} and glyph_name and not toUnicode(glyph_name):
         return 0.0
@@ -1600,7 +1601,7 @@ def internal_pdfminer_font_name(glyph: Any) -> str:
     Core keeps the source font name because it is useful to native callers, so
     apply the legacy projection only at the compatibility boundary.
     """
-    base_font = str(_mapping_value(glyph.font_decoder.font, "BaseFont") or "")
+    base_font = str(_font_value(glyph.font_decoder.font, "BaseFont") or "")
     builtin_metrics = FONT_DATA.get(base_font)
     if isinstance(builtin_metrics, dict):
         props = builtin_metrics.get("props")
@@ -1615,11 +1616,11 @@ def internal_pdfminer_descent(glyph: Any) -> float:
     decoder = glyph.font_decoder
     descent_scale = 0.001
     descent_value = float(getattr(decoder, "descent", -200.0))
-    base_font = str(_mapping_value(decoder.font, "BaseFont") or "")
+    base_font = str(_font_value(decoder.font, "BaseFont") or "")
     if (
         not getattr(decoder, "is_cid_font", False)
         and not getattr(decoder, "is_type3", False)
-        and _mapping_value(decoder.font, "FontDescriptor") is None
+        and _font_value(decoder.font, "FontDescriptor") is None
     ):
         # PDFSimpleFont coerces a missing/null descriptor to an empty dict,
         # whose default descent is zero. The native decoder uses a defensive
@@ -1635,10 +1636,10 @@ def internal_pdfminer_descent(glyph: Any) -> float:
         builtin_descent = builtin_metrics["props"].get("Descent")
         descent_value = float(builtin_descent) if isinstance(builtin_descent, (int, float)) else 0.0
     if getattr(decoder, "is_type3", False):
-        font_matrix = _mapping_value(decoder.font, "FontMatrix")
+        font_matrix = _font_value(decoder.font, "FontMatrix")
         if isinstance(font_matrix, (tuple, list)) and len(font_matrix) == 6:
             descent_scale = float(cast(Any, font_matrix[1])) + float(cast(Any, font_matrix[3]))
-        descriptor = _mapping_value(decoder.font, "FontDescriptor")
+        descriptor = _font_value(decoder.font, "FontDescriptor")
         descriptor_bbox = _mapping_value(descriptor, "FontBBox")
         if descriptor is not None:
             descent_value = (
@@ -1647,7 +1648,7 @@ def internal_pdfminer_descent(glyph: Any) -> float:
                 else 0.0
             )
         else:
-            font_bbox = _mapping_value(decoder.font, "FontBBox")
+            font_bbox = _font_value(decoder.font, "FontBBox")
             if isinstance(font_bbox, (tuple, list)) and len(font_bbox) == 4:
                 descent_value = float(cast(Any, font_bbox[1]))
     return descent_value * descent_scale
@@ -1890,13 +1891,13 @@ def extract_pages(  # noqa: C901
                     builtin_width = _pdfminer_builtin_width(glyph)
                     if builtin_width is not None:
                         normalized_width = builtin_width * 0.001
-                    base_font = str(_mapping_value(glyph.font_decoder.font, "BaseFont"))
+                    base_font = str(_font_value(glyph.font_decoder.font, "BaseFont"))
                     glyph_name = getattr(glyph.font_decoder, "encoding_differences", {}).get(
                         glyph.char_code
                     )
                     if (
                         glyph_name
-                        and _mapping_value(glyph.font_decoder.font, "Widths") is None
+                        and _font_value(glyph.font_decoder.font, "Widths") is None
                         and base_font.split("+")[-1] in {"Symbol", "ZapfDingbats"}
                     ):
                         # pdfminer indexes built-in Symbol/Zapf metrics by its
@@ -2043,56 +2044,8 @@ def extract_pages(  # noqa: C901
                                 and projected_glyphs[glyph_index - 1].font_decoder.is_vertical
                             ),
                         )
-                    descent_scale = 0.001
-                    descent_value = float(getattr(glyph.font_decoder, "descent", -200.0))
-                    if (
-                        not getattr(glyph.font_decoder, "is_cid_font", False)
-                        and not getattr(glyph.font_decoder, "is_type3", False)
-                        and _mapping_value(glyph.font_decoder.font, "FontDescriptor") is None
-                    ):
-                        descent_value = 0.0
-                    # Match FontMetricsDB's exact-name lookup. Subset fonts
-                    # retain their embedded descriptor instead of inheriting
-                    # the similarly named standard font's descent.
-                    base_font = str(_mapping_value(glyph.font_decoder.font, "BaseFont") or "")
-                    builtin_metrics = FONT_DATA.get(base_font)
-                    if (
-                        not getattr(glyph.font_decoder, "is_cid_font", False)
-                        and not getattr(glyph.font_decoder, "is_type3", False)
-                        and isinstance(builtin_metrics, dict)
-                        and isinstance(builtin_metrics.get("props"), dict)
-                    ):
-                        builtin_descent = builtin_metrics["props"].get("Descent")
-                        descent_value = (
-                            float(builtin_descent)
-                            if isinstance(builtin_descent, (int, float))
-                            else 0.0
-                        )
-                    if getattr(glyph.font_decoder, "is_type3", False):
-                        font_matrix = _mapping_value(glyph.font_decoder.font, "FontMatrix")
-                        if isinstance(font_matrix, (tuple, list)) and len(font_matrix) == 6:
-                            font_matrix_b = float(cast(Any, font_matrix[1]))
-                            font_matrix_d = float(cast(Any, font_matrix[3]))
-                            descent_scale = font_matrix_b + font_matrix_d
-                        descriptor = _mapping_value(glyph.font_decoder.font, "FontDescriptor")
-                        descriptor_bbox = _mapping_value(descriptor, "FontBBox")
-                        if descriptor is not None:
-                            # PDFType3Font derives ascent/descent from the
-                            # descriptor's FontBBox and treats a missing or
-                            # malformed box as all zeros. It does not fall
-                            # back to the Type 3 font dictionary in this case.
-                            descent_value = (
-                                float(cast(Any, descriptor_bbox[1]))
-                                if isinstance(descriptor_bbox, (tuple, list))
-                                and len(descriptor_bbox) == 4
-                                else 0.0
-                            )
-                        else:
-                            font_bbox = _mapping_value(glyph.font_decoder.font, "FontBBox")
-                            if isinstance(font_bbox, (tuple, list)) and len(font_bbox) == 4:
-                                descent_value = float(cast(Any, font_bbox[1]))
                     text_rise = float(glyph_provenance.get("text_rise", 0.0))
-                    descent = descent_value * descent_scale * glyph.font_size + text_rise
+                    descent = internal_pdfminer_descent(glyph) * glyph.font_size + text_rise
                     # ``LTChar`` uses the font descent only to anchor horizontal
                     # glyphs; its box is always exactly one text-space unit tall.
                     # FontBBox/ascent describes ink, not pdfminer's layout box.
@@ -2184,23 +2137,13 @@ def extract_pages(  # noqa: C901
                 # (0, 0). Core's canonical geometry remains in PDF user space,
                 # so normalize non-zero and negative media-box origins here.
                 if not coordinates_in_layout_space:
-                    media_left, media_bottom, _media_right, _media_top = page_media_box
-                    x0 -= media_left
-                    x1 -= media_left
-                    y0 -= media_bottom
-                    y1 -= media_bottom
-                    rotation = int(page.rotation) % 360
-                    if rotation == 90:
-                        x0, y0, x1, y1 = y0, page_width - x1, y1, page_width - x0
-                    elif rotation == 180:
-                        x0, y0, x1, y1 = (
-                            page_width - x1,
-                            page_height - y1,
-                            page_width - x0,
-                            page_height - y0,
-                        )
-                    elif rotation == 270:
-                        x0, y0, x1, y1 = page_height - y1, x0, page_height - y0, x1
+                    x0, y0, x1, y1 = _pdfminer_layout_figure_box(
+                        (x0, y0, x1, y1),
+                        page_media_box,
+                        int(page.rotation) % 360,
+                        page_width,
+                        page_height,
+                    )
                 character = LTChar(
                     (x0, y0, x1, y1),
                     text,
@@ -2219,16 +2162,9 @@ def extract_pages(  # noqa: C901
                     continue
                 clip_bbox = provenance.get("clip_bbox")
                 if isinstance(clip_bbox, (tuple, list)) and len(clip_bbox) == 4:
-                    clip_left, clip_bottom, clip_right, clip_top = (
-                        float(cast(Any, value)) for value in clip_bbox
-                    )
-                    clip_area = max(0.0, clip_right - clip_left) * max(0.0, clip_top - clip_bottom)
-                    if clip_area > 0 and any(
-                        max(0.0, min(clip_right, right) - max(clip_left, left))
-                        * max(0.0, min(clip_top, top) - max(clip_bottom, bottom))
-                        / clip_area
-                        > 0.5
-                        for left, bottom, right, top in annotation_boxes
+                    clip = tuple(float(cast(Any, value)) for value in clip_bbox)
+                    if any(
+                        overlap_ratio_of(clip, annotation) > 0.5 for annotation in annotation_boxes
                     ):
                         continue
                 raw_stream_order = provenance.get("stream_order")

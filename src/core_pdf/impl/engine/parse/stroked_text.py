@@ -16,7 +16,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from typing import Any, Iterable, Mapping, TypeAlias
 
-from core_pdf.impl.engine.model.geometry import rect_tuple
+from core_pdf.impl.engine.model.geometry import bbox_area, bbox_intersection_area, rect_tuple
 from core_pdf.impl.types import Rectangle
 
 GlyphSignature: TypeAlias = tuple[tuple[tuple[bool, tuple[tuple[int, int], ...]], ...], ...]
@@ -236,11 +236,9 @@ def internal_seed_run_overlap(
     run_box: Rectangle,
 ) -> float:
     """Return containment-style overlap for a remapped packed OCR token."""
-    intersection_width = max(0.0, min(seed_box[2], run_box[2]) - max(seed_box[0], run_box[0]))
-    intersection_height = max(0.0, min(seed_box[3], run_box[3]) - max(seed_box[1], run_box[1]))
-    intersection = intersection_width * intersection_height
-    seed_area = max(0.01, (seed_box[2] - seed_box[0]) * (seed_box[3] - seed_box[1]))
-    run_area = max(0.01, (run_box[2] - run_box[0]) * (run_box[3] - run_box[1]))
+    intersection = bbox_intersection_area(seed_box, run_box)
+    seed_area = max(0.01, bbox_area(seed_box))
+    run_area = max(0.01, bbox_area(run_box))
     return intersection / min(seed_area, run_area)
 
 
@@ -456,6 +454,10 @@ def internal_path_runs(
     glyph: list[internal_PathRecord] = []
     glyph_x0 = 0.0
     glyph_x1 = 0.0
+    # Running vertical extent of every record appended to the current run;
+    # records are only ever added, so the min/max accumulate monotonically.
+    line_y0 = 0.0
+    line_y1 = 0.0
     previous_index = -2
 
     def finish_glyph() -> None:
@@ -476,14 +478,11 @@ def internal_path_runs(
             glyph.append(record)
             glyph_x0 = record.bbox[0]
             glyph_x1 = record.bbox[2]
+            line_y0 = record.bbox[1]
+            line_y1 = record.bbox[3]
             previous_index = record.index
             continue
 
-        existing_boxes = tuple(item.bbox for completed in run for item in completed) + tuple(
-            item.bbox for item in glyph
-        )
-        line_y0 = min(box[1] for box in existing_boxes)
-        line_y1 = max(box[3] for box in existing_boxes)
         line_height = max(0.2, line_y1 - line_y0)
         center_y = (record.bbox[1] + record.bbox[3]) * 0.5
         vertical_match = line_y0 - line_height * 0.30 <= center_y <= line_y1 + line_height * 0.30
@@ -495,6 +494,8 @@ def internal_path_runs(
             glyph.append(record)
             glyph_x0 = min(glyph_x0, record.bbox[0])
             glyph_x1 = max(glyph_x1, record.bbox[2])
+            line_y0 = min(line_y0, record.bbox[1])
+            line_y1 = max(line_y1, record.bbox[3])
         else:
             gap = record.bbox[0] - glyph_x1
             forward = record.bbox[0] >= glyph_x0 - STROKED_TEXT_GLYPH_OVERLAP_TOLERANCE
@@ -508,11 +509,15 @@ def internal_path_runs(
                 glyph.append(record)
                 glyph_x0 = record.bbox[0]
                 glyph_x1 = record.bbox[2]
+                line_y0 = min(line_y0, record.bbox[1])
+                line_y1 = max(line_y1, record.bbox[3])
             else:
                 finish_run()
                 glyph.append(record)
                 glyph_x0 = record.bbox[0]
                 glyph_x1 = record.bbox[2]
+                line_y0 = record.bbox[1]
+                line_y1 = record.bbox[3]
         previous_index = record.index
     finish_run()
     return tuple(runs)

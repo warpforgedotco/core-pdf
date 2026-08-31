@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import builtins
 import math
-import struct
-import zlib
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from io import BytesIO
@@ -25,6 +23,7 @@ from core_pdf.impl.primitives import PdfReference
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
 from core_pdf.impl.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 
+from .._shared import ClosingMixin, encode_png, png_chunk
 from .exceptions import PdfminerException
 
 BBox: TypeAlias = tuple[float, float, float, float]
@@ -39,17 +38,6 @@ LIGATURE_EXPANSIONS = {
     "ﬅ": "ft",
     "ﬆ": "st",
 }
-
-
-class ClosingMixin:
-    def close(self) -> None:
-        return None
-
-    def __enter__(self) -> Any:
-        return self
-
-    def __exit__(self, *args: object) -> None:
-        self.close()
 
 
 def flip_box(box: object, height: float) -> BBox:
@@ -104,22 +92,6 @@ def cluster_by_preserving_order(
             groups[-1].append(item)
         previous_cluster = cluster
     return groups
-
-
-def png_chunk(kind: bytes, data: bytes) -> bytes:
-    return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
-
-
-def encode_png(width: int, height: int, channels: int, pixels: bytes | bytearray) -> bytes:
-    stride = width * channels
-    scanlines = b"".join(b"\0" + pixels[y * stride : (y + 1) * stride] for y in range(height))
-    header = struct.pack(">IIBBBBB", width, height, 8, 6 if channels == 4 else 2, 0, 0, 0)
-    return (
-        b"\x89PNG\r\n\x1a\n"
-        + png_chunk(b"IHDR", header)
-        + png_chunk(b"IDAT", zlib.compress(scanlines))
-        + png_chunk(b"IEND", b"")
-    )
 
 
 class TableSettings:
@@ -189,12 +161,12 @@ class TableSettings:
         return cls(**values)
 
 
-def _source(value: PdfInput, password: str = "", unicode_norm: str | None = None) -> PdfDocument:
+def _source(value: PdfInput, password: str = "") -> PdfDocument:
     try:
         # pdfplumber consumes pdfminer.six's parser semantics.  Keep the
         # engine's native recovery and text-operator behavior unchanged, but
         # select the legacy policy at this compatibility boundary.
-        document = PdfDocument.open(
+        return PdfDocument.open(
             value,
             password=password,
             recovery_scan_all_revisions=False,
@@ -202,15 +174,14 @@ def _source(value: PdfInput, password: str = "", unicode_norm: str | None = None
         )
     except Exception as exc:
         raise PdfminerException(exc) from exc
-    cast(Any, document).compat_unicode_norm = unicode_norm
-    return document
 
 
 class EnginePageAdapter:
     """pdfplumber-specific projection of one engine page."""
 
-    def __init__(self, page: Any) -> None:
+    def __init__(self, page: Any, unicode_norm: str | None = None) -> None:
         self.page = page
+        self.unicode_norm = unicode_norm
         width: int | float = page.width
         height: int | float = page.height
         media_left: int | float = 0
@@ -517,6 +488,25 @@ def _envelope(
     }
 
 
+def _filter_objects(
+    value: Mapping[str, Any], include: Iterable[str] | None, exclude: Iterable[str]
+) -> None:
+    """Apply pdfplumber's include/exclude attribute filters to a page dict in place."""
+    allowed = set(include) | {"object_type"} if include is not None else None
+    for objects in value.values():
+        if not isinstance(objects, list):
+            continue
+        for obj in objects:
+            if not isinstance(obj, dict):
+                continue
+            if allowed is not None:
+                for key in tuple(obj):
+                    if key not in allowed:
+                        del obj[key]
+            for key in exclude:
+                obj.pop(key, None)
+
+
 def _char(page: EnginePageAdapter, item: Any, doctop: float) -> ObjectDict:
     x0, top, x1, bottom = _bbox(page, (item.bbox.x0, item.bbox.y0, item.bbox.x1, item.bbox.y1))
     if page.info.rotation % 360 == 90:
@@ -542,8 +532,7 @@ def _char(page: EnginePageAdapter, item: Any, doctop: float) -> ObjectDict:
     top += page.info.media_top
     bottom += page.info.media_top
     text = item.text
-    document = getattr(page.page, "document", None)
-    if getattr(document, "compat_unicode_norm", None) == "NFC" and text == "\u037e":
+    if page.unicode_norm == "NFC" and text == "\u037e":
         text = ";"
     return _envelope(
         "char",
@@ -597,7 +586,8 @@ class Page:
         self.page_number = index + 1
         self.initial_doctop = doctop
         self._adapter = EnginePageAdapter(
-            pdf._document.pages[index] if engine_page is None else engine_page
+            pdf._document.pages[index] if engine_page is None else engine_page,
+            pdf._unicode_norm,
         )
         self.rotation = self._adapter.info.rotation % 360
         self.mediabox = self._box_from_page("media_box") or (0.0, 0.0, self.width, self.height)
@@ -668,11 +658,12 @@ class Page:
     @property
     def objects(self) -> dict[str, list[ObjectDict]]:
         if self._objects is None:
-            objects: dict[str, list[ObjectDict]] = {"char": []}
-            objects["char"] = [
-                _char(self._adapter, c, self.initial_doctop)
-                for c in self._adapter.text_characters()
-            ]
+            objects: dict[str, list[ObjectDict]] = {
+                "char": [
+                    _char(self._adapter, c, self.initial_doctop)
+                    for c in self._adapter.text_characters()
+                ]
+            }
             for drawing in self._adapter.drawings():
                 record = _drawing(self._adapter, drawing, self.initial_doctop)
                 if record["object_type"] in {"state-push", "state-pop", "clip", "marked-content"}:
@@ -895,7 +886,11 @@ class Page:
             self._layout = next(
                 (
                     item
-                    for item in extract_pages(self._document_source(), laparams=laparams)
+                    for item in extract_pages(
+                        self._document_source(),
+                        page_numbers=(self.page_number - 1,),
+                        laparams=laparams,
+                    )
                     if item.pageid == self.page_number
                 ),
                 None,
@@ -1018,19 +1013,7 @@ class Page:
         include = kwargs.pop("include_attrs", None)
         exclude = set(kwargs.pop("exclude_attrs", ()) or ())
         value = self.to_dict(object_types)
-        for objects in value.values():
-            if not isinstance(objects, list):
-                continue
-            for obj in objects:
-                if not isinstance(obj, dict):
-                    continue
-                if include is not None:
-                    allowed = set(include) | {"object_type"}
-                    for key in tuple(obj):
-                        if key not in allowed:
-                            del obj[key]
-                for key in exclude:
-                    obj.pop(key, None)
+        _filter_objects(value, include, exclude)
         return json.dumps(value, **kwargs)
 
     def extract_words(self, **kwargs: Any) -> list[ObjectDict]:
@@ -1280,11 +1263,8 @@ class Page:
             else re.escape(pattern)
         )
         flags = 0 if case else re.IGNORECASE
-        results: list[ObjectDict] = []
-        for match in re.finditer(expression, text, flags):
-            chars = self.chars[match.start() : match.end()]
-            if not chars:
-                continue
+
+        def build_result(match: Any, chars: list[ObjectDict]) -> ObjectDict:
             x0, top, x1, bottom = merge_bboxes(obj_to_bbox(char) for char in chars)
             result: ObjectDict = {
                 "text": match.group(0),
@@ -1297,25 +1277,20 @@ class Page:
             }
             if kwargs.get("return_chars", True):
                 result["chars"] = chars
-            results.append(result)
+            return result
+
+        results: list[ObjectDict] = []
+        for match in re.finditer(expression, text, flags):
+            chars = self.chars[match.start() : match.end()]
+            if not chars:
+                continue
+            results.append(build_result(match, chars))
         if not results and regex and not kwargs.get("layout"):
             formatted = self.extract_text()
             fallback_expression = re.sub(r"\\ +", r"\\s+", re.escape(pattern))
             for match in re.finditer(fallback_expression, formatted, flags):
                 if self.chars:
-                    x0, top, x1, bottom = merge_bboxes(obj_to_bbox(char) for char in self.chars)
-                    result = {
-                        "text": match.group(0),
-                        "groups": match.groups(),
-                        "x0": x0,
-                        "top": top,
-                        "x1": x1,
-                        "bottom": bottom,
-                        "doctop": min(char["doctop"] for char in self.chars),
-                    }
-                    if kwargs.get("return_chars", True):
-                        result["chars"] = self.chars
-                    results.append(result)
+                    results.append(build_result(match, self.chars))
         return results
 
     def crop(self, bbox: BBox, relative: bool = False, strict: bool = True) -> "CroppedPage":
@@ -1669,8 +1644,6 @@ class PageImage:
                 ]
                 for row in range(upper, lower)
             )
-            from types import SimpleNamespace
-
             raster = SimpleNamespace(
                 data=cropped,
                 width=right - left,
@@ -1842,8 +1815,6 @@ class PageImage:
                 center = point(float(value["x0"]), float(value["top"]))
                 radius = round(float(value.get("radius", value.get("r", 1))) * scale_x)
                 for angle in range(360):
-                    import math
-
                     radians = math.radians(angle)
                     set_pixel(
                         round(center[0] + radius * math.cos(radians)),
@@ -1867,7 +1838,9 @@ class PDF(ClosingMixin):
         source: PdfInput | None = None,
         pages: Iterable[int] | None = None,
         laparams: Any = None,
+        unicode_norm: str | None = None,
     ) -> None:
+        self._unicode_norm = unicode_norm
         if source is None:
             source = cast(PdfInput, document)
             document = _source(source)
@@ -1895,7 +1868,7 @@ class PDF(ClosingMixin):
         laparams: Any = None,
         **_: Any,
     ) -> "PDF":
-        return cls(_source(source, password, unicode_norm), source, pages, laparams)
+        return cls(_source(source, password), source, pages, laparams, unicode_norm)
 
     @property
     def pages(self) -> list[Page]:
@@ -1972,24 +1945,8 @@ class PDF(ClosingMixin):
         include = kwargs.pop("include_attrs", None)
         exclude = set(kwargs.pop("exclude_attrs", ()) or ())
         value = self.to_dict(object_types)
-        if include is not None:
-            allowed = set(include)
-            for page in value["pages"]:
-                for objects in page.values():
-                    if isinstance(objects, list):
-                        for obj in objects:
-                            if isinstance(obj, dict):
-                                for key in tuple(obj):
-                                    if key not in allowed and key != "object_type":
-                                        del obj[key]
-        if exclude:
-            for page in value["pages"]:
-                for objects in page.values():
-                    if isinstance(objects, list):
-                        for obj in objects:
-                            if isinstance(obj, dict):
-                                for key in exclude:
-                                    obj.pop(key, None)
+        for page in value["pages"]:
+            _filter_objects(page, include, exclude)
         return json.dumps(value, **kwargs)
 
     def to_csv(self, object_types: list[str] | None = None, **kwargs: Any) -> str:

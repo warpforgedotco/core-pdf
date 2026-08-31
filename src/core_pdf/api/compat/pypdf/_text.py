@@ -8,6 +8,7 @@ from contextlib import suppress
 from dataclasses import dataclass
 from typing import Any, cast
 
+from core_pdf.api.compat._shared import LIGATURES
 from core_pdf.impl.primitives import PdfName, PdfString
 from core_pdf.impl.spec.s_07_content.operations import iter_content_operations
 from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
@@ -27,7 +28,6 @@ from core_pdf.impl.spec.s_09_fonts.widths import parse_font_widths
 from core_pdf.impl.text import is_neutral_character, is_rtl_character
 
 Matrix = list[float]
-internal_LIGATURES = {"ff": "ﬀ", "fi": "ﬁ", "fl": "ﬂ", "ffi": "ﬃ", "ffl": "ﬄ"}
 internal_PREDEFINED_ENCODING_CODECS = {
     "Identity-H": "utf-16-be",
     "Identity-V": "utf-16-be",
@@ -99,10 +99,6 @@ class LegacyFont:
     character_map: dict[str, str]
     difference_fallbacks: dict[bytes, str]
     width_uses_source_code: bool
-
-    def decode(self, data: bytes) -> tuple[str, float]:
-        parts, width = self.decode_parts(data)
-        return "".join(parts), width
 
     def decode_parts(self, data: bytes) -> tuple[tuple[str, ...], float]:
         glyphs = self.decoder.decode_glyphs(data)
@@ -184,7 +180,7 @@ class LegacyFont:
         if glyph.unicode_source == "undefined" and len(glyph.code_bytes) == 1:
             return glyph.code_bytes.decode("latin-1")
         if glyph.split_unicode:
-            return internal_LIGATURES.get(glyph.unicode, glyph.unicode)
+            return LIGATURES.get(glyph.unicode, glyph.unicode)
         return glyph.unicode
 
 
@@ -196,18 +192,25 @@ class LegacyTextExtractor:
         page: Any,
         resources: object | None = None,
         known_forms: set[int] | None = None,
+        form_text_cache: dict[int, tuple[PdfStream, str]] | None = None,
     ) -> None:
         self.page = page
         self.document = page.document
         self.resources = resources if resources is not None else page.resolve_resources()
         self.known_forms = known_forms if known_forms is not None else set()
+        # Extracted text per form XObject (keyed by identity, holding the stream
+        # alive), shared across nested extractors for one page extraction. A
+        # form's output ignores the outer graphics state, so repeating a Do of
+        # the same form repeats the same text. Entries are recorded only for
+        # top-level invocations: while ancestors are active, a recursive
+        # reference is skipped and the result would not be reusable.
+        self.form_text_cache = form_text_cache if form_text_cache is not None else {}
         self.fonts = self.internal_fonts(self.resources)
         self.cm: Matrix = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
         self.tm: Matrix = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
         self.previous_cm = self.cm.copy()
         self.previous_tm = self.tm.copy()
-        self.stack: list[tuple[Matrix, str | None, LegacyFont | None, float, float]] = []
-        self.font_name: str | None = None
+        self.stack: list[tuple[Matrix, LegacyFont | None, float, float]] = []
         self.font: LegacyFont | None = None
         self.font_size = 12.0
         self.half_space_width = 125.0
@@ -291,7 +294,6 @@ class LegacyTextExtractor:
                     (self.internal_space_code(cmap, encoding_table, encoding_is_mapping),)
                 )
             synthetic_space_width = self.internal_synthetic_space_width(
-                font,
                 decoder,
                 cmap,
                 encoding_table,
@@ -318,7 +320,6 @@ class LegacyTextExtractor:
 
     def internal_synthetic_space_width(
         self,
-        font: dict[object, object],
         decoder: FontDecoder,
         cmap: ToUnicodeCMap | None,
         encoding_table: tuple[str, ...] | None,
@@ -329,7 +330,6 @@ class LegacyTextExtractor:
     ) -> float:
         if decoder.is_cid_font:
             return space_width
-        del font
         space_code = self.internal_space_code(cmap, encoding_table, encoding_is_mapping)
         if space_code == 32:
             return space_width
@@ -681,12 +681,10 @@ class LegacyTextExtractor:
         elif operator == "ET":
             self.flush()
         elif operator == "q":
-            self.stack.append(
-                (self.cm.copy(), self.font_name, self.font, self.font_size, self.leading)
-            )
+            self.stack.append((self.cm.copy(), self.font, self.font_size, self.leading))
         elif operator == "Q":
             if self.stack:
-                self.cm, self.font_name, self.font, self.font_size, self.leading = self.stack.pop()
+                self.cm, self.font, self.font_size, self.leading = self.stack.pop()
             else:
                 self.cm = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
         elif operator == "cm":
@@ -703,8 +701,7 @@ class LegacyTextExtractor:
         elif operator == "Tf":
             self.flush()
             if operands:
-                self.font_name = str(operands[0])
-                self.font = self.fonts.get(self.font_name)
+                self.font = self.fonts.get(str(operands[0]))
                 self.half_space_width = (
                     self.font.space_width if self.font is not None else 250.0
                 ) / 2.0
@@ -802,19 +799,28 @@ class LegacyTextExtractor:
         form_id = id(xobject)
         if form_id in self.known_forms:
             return
+        top_level = not self.known_forms
         form_resources = lookup_dict_key(xobject.dictionary, "Resources")
         if form_resources is None:
             return
-        stream = self.document.resolver.resolve_stream(xobject)
-        self.known_forms.add(form_id)
-        try:
-            child = LegacyTextExtractor(self.page, form_resources, self.known_forms)
-            child_text = child.extract((stream,))
-            if child_text:
-                self.output_parts.append(child_text)
-                self.output_last = child_text[-1]
-        finally:
-            self.known_forms.discard(form_id)
+        cached = self.form_text_cache.get(form_id) if top_level else None
+        if cached is not None:
+            child_text = cached[1]
+        else:
+            stream = self.document.resolver.resolve_stream(xobject)
+            self.known_forms.add(form_id)
+            try:
+                child = LegacyTextExtractor(
+                    self.page, form_resources, self.known_forms, self.form_text_cache
+                )
+                child_text = child.extract((stream,))
+            finally:
+                self.known_forms.discard(form_id)
+            if top_level:
+                self.form_text_cache[form_id] = (xobject, child_text)
+        if child_text:
+            self.output_parts.append(child_text)
+            self.output_last = child_text[-1]
 
 
 def extract_legacy_text(page: Any) -> str:

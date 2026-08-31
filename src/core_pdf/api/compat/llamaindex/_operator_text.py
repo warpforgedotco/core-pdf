@@ -7,6 +7,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, cast
 
+from core_pdf.api.compat.pypdf._text import internal_legacy_base_table
 from core_pdf.impl.primitives import PdfName, PdfString
 from core_pdf.impl.spec.s_07_content.operations import iter_content_operations
 from core_pdf.impl.spec.s_07_filters.errors import FilterParseError
@@ -37,34 +38,34 @@ def internal_orientation(matrix: list[float]) -> int:
     return 90 if matrix[1] > 0 else 270
 
 
-def internal_byte_encoding(name: str) -> tuple[str, ...]:
-    table: list[str] = []
-    for code in range(256):
-        try:
-            table.append(bytes((code,)).decode(name))
-        except UnicodeDecodeError:
-            table.append(chr(code))
-    return tuple(table)
-
-
-internal_WIN_ANSI_ENCODING = internal_byte_encoding("cp1252")
-internal_MAC_ROMAN_ENCODING = internal_byte_encoding("mac_roman")
+internal_WIN_ANSI_ENCODING = tuple(internal_legacy_base_table("WinAnsiEncoding"))
+internal_MAC_ROMAN_ENCODING = tuple(internal_legacy_base_table("MacRomanEncoding"))
+# Names whose engine translation differs from this facade's projection: the
+# underscore ligature names would fall through untranslated, and negationslash
+# is projected as the fraction slash.
 internal_LEGACY_GLYPH_ALIASES = {
-    "Ifractur": "ℑ",
-    "Rfractur": "ℜ",
-    "circlecopyrt": "©",
-    "check": "✓",
-    "epsilon1": "ϵ",
     "f_f": "ﬀ",
     "f_f_i": "ﬃ",
     "f_f_l": "ﬄ",
     "negationslash": "⁄",
-    "notexistential": "∄",
-    "lessmuch": "≪",
-    "intercal": "⊺",
-    "radicalbt": "√",
-    "uniontext": "⋃",
-    "triangleleft": "◁",
+}
+internal_PREDEFINED_ENCODING_CODECS = {
+    "Identity-H": "utf-16-be",
+    "Identity-V": "utf-16-be",
+    "GB-EUC-H": "gbk",
+    "GB-EUC-V": "gbk",
+    "GBpc-EUC-H": "gb2312",
+    "GBpc-EUC-V": "gb2312",
+    "GBK-EUC-H": "gbk",
+    "GBK-EUC-V": "gbk",
+    "GBK2K-H": "gb18030",
+    "GBK2K-V": "gb18030",
+    "ETen-B5-H": "cp950",
+    "ETen-B5-V": "cp950",
+    "ETenms-B5-H": "cp950",
+    "ETenms-B5-V": "cp950",
+    "90ms-RKSJ-H": "cp932",
+    "90ms-RKSJ-V": "cp932",
 }
 
 
@@ -119,28 +120,22 @@ class internal_Font:
                 )
         return "".join(self.encoding[code] or chr(code) for code in data)
 
-    def decode(self, data: bytes) -> str:
-        return "".join(self.display_chunks(data))
-
-    def display_chunks(self, data: bytes) -> tuple[str, ...]:
-        return tuple(
-            self.character_map.get(character, character) for character in self.encoded(data)
-        )
-
-    def text_width(self, data: bytes) -> float:
-        return sum(
+    def decode_parts(self, data: bytes) -> tuple[tuple[str, ...], float]:
+        encoded = self.encoded(data)
+        chunks = tuple(self.character_map.get(character, character) for character in encoded)
+        width = sum(
             self.space_width
             if character == self.space_character
             else self.character_widths.get(ord(character), self.default_width)
-            for character in self.encoded(data)
+            for character in encoded
         )
+        return chunks, width
 
 
 class internal_TextState:
     def __init__(self, fonts: Mapping[str, internal_Font]) -> None:
         self.fonts = fonts
         self.font: internal_Font | None = None
-        self.font_name: str | None = None
         self.font_size = 12.0
         self.half_space_width = 125.0
         self.leading = 0.0
@@ -148,16 +143,21 @@ class internal_TextState:
         self.tm = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
         self.previous_cm = self.cm.copy()
         self.previous_tm = self.tm.copy()
-        self.stack: list[tuple[list[float], internal_Font | None, str | None, float, float]] = []
+        self.stack: list[tuple[list[float], internal_Font | None, float, float]] = []
         self.text = ""
-        self.output = ""
+        # Accumulated output as parts plus its trailing character; joining or
+        # copying the whole output per operator is quadratic.
+        self.output_parts: list[str] = []
+        self.output_last = ""
         self.width = 0.0
         self.height = 0.0
         self.rtl = False
 
     def flush(self) -> None:
-        self.output += self.text
-        self.text = ""
+        if self.text:
+            self.output_parts.append(self.text)
+            self.output_last = self.text[-1]
+            self.text = ""
 
     def positioned(self, string_width: float) -> None:
         previous = multiply_affine(self.previous_tm, self.previous_cm)
@@ -175,14 +175,15 @@ class internal_TextState:
             if abs(moved_height) > 0.8 * min(
                 self.height * previous_scale_y, self.font_size * current_scale_y
             ):
-                if (self.output + self.text)[-1] != "\n":
-                    self.output += self.text + "\n"
+                if (self.text or self.output_last)[-1] != "\n":
+                    self.output_parts.append(self.text + "\n")
+                    self.output_last = "\n"
                     self.text = ""
             elif (
                 moved_width
                 >= (self.font_size * self.half_space_width / 1000.0 + string_width)
                 * previous_scale_x
-                and (self.output + self.text)[-1] != " "
+                and (self.text or self.output_last)[-1] != " "
             ):
                 self.text += " "
         except (IndexError, ValueError):
@@ -192,11 +193,10 @@ class internal_TextState:
 
     def show(self, data: bytes) -> None:
         if self.font is None:
-            chunks = ("�",) * len(data)
+            chunks: tuple[str, ...] = ("�",) * len(data)
             width = 250.0 * len(data)
         else:
-            chunks = self.font.display_chunks(data)
-            width = self.font.text_width(data)
+            chunks, width = self.font.decode_parts(data)
         for chunk in chunks:
             if len(chunk) != 1 or is_neutral_character(chunk):
                 self.text = chunk + self.text if self.rtl else self.text + chunk
@@ -578,24 +578,7 @@ class OperatorTextProjection:
             return "charmap"
         elif encoding_name is not None:
             name = encoding_name
-            codecs = {
-                "Identity-H": "utf-16-be",
-                "Identity-V": "utf-16-be",
-                "GB-EUC-H": "gbk",
-                "GB-EUC-V": "gbk",
-                "GBpc-EUC-H": "gb2312",
-                "GBpc-EUC-V": "gb2312",
-                "GBK-EUC-H": "gbk",
-                "GBK-EUC-V": "gbk",
-                "GBK2K-H": "gb18030",
-                "GBK2K-V": "gb18030",
-                "ETen-B5-H": "cp950",
-                "ETen-B5-V": "cp950",
-                "ETenms-B5-H": "cp950",
-                "ETenms-B5-V": "cp950",
-                "90ms-RKSJ-H": "cp932",
-                "90ms-RKSJ-V": "cp932",
-            }
+            codecs = internal_PREDEFINED_ENCODING_CODECS
             if name in codecs or "-UCS2-" in name:
                 return codecs.get(name, "utf-16-be")
             table = list(
@@ -684,20 +667,10 @@ class OperatorTextProjection:
             elif operator == "ET":
                 state.flush()
             elif operator == "q":
-                state.stack.append(
-                    (
-                        state.cm.copy(),
-                        state.font,
-                        state.font_name,
-                        state.font_size,
-                        state.leading,
-                    )
-                )
+                state.stack.append((state.cm.copy(), state.font, state.font_size, state.leading))
             elif operator == "Q":
                 if state.stack:
-                    state.cm, state.font, state.font_name, state.font_size, state.leading = (
-                        state.stack.pop()
-                    )
+                    state.cm, state.font, state.font_size, state.leading = state.stack.pop()
                 else:
                     state.cm = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
             elif operator == "cm":
@@ -719,8 +692,7 @@ class OperatorTextProjection:
             elif operator == "Tf":
                 state.flush()
                 if operands:
-                    state.font_name = str(operands[0])
-                    state.font = state.fonts.get(state.font_name)
+                    state.font = state.fonts.get(str(operands[0]))
                 if len(operands) > 1:
                     state.font_size = float(cast(Any, operands[1]))
                 state.half_space_width = (
@@ -782,8 +754,9 @@ class OperatorTextProjection:
                         state.insert_space()
             elif operator == "Do" and operands and isinstance(xobjects, dict):
                 state.flush()
-                if state.output and not state.output.endswith("\n"):
-                    state.output += "\n"
+                if state.output_last and state.output_last != "\n":
+                    state.output_parts.append("\n")
+                    state.output_last = "\n"
                 form = self.resolver.resolve(xobjects.get(operands[0]))
                 if not isinstance(form, PdfStream):
                     form = self.resolver.resolve(xobjects.get(str(operands[0])))
@@ -800,13 +773,16 @@ class OperatorTextProjection:
                             continue
                         self.active_forms.add(form_id)
                         try:
-                            state.output += self.internal_extract(
+                            form_text = self.internal_extract(
                                 (self.resolver.resolve_stream(form),), form_resources
                             )
                         finally:
                             self.active_forms.discard(form_id)
+                        if form_text:
+                            state.output_parts.append(form_text)
+                            state.output_last = form_text[-1]
         state.flush()
-        return state.output
+        return "".join(state.output_parts)
 
     def extract_text(self) -> str:
         resources = self.page.resolve_resources()

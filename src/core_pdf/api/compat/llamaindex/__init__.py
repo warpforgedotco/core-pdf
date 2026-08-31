@@ -133,7 +133,7 @@ def load_data(
     if b"startxref" not in source_data or b"%%EOF" not in source_data:
         raise ValueError("incomplete PDF cross-reference terminator")
     find_startxref(source_data)
-    with PdfDocument.open(source_path) as pdf:
+    with PdfDocument.open(source_data) as pdf:
         internal_validate_pypdf_page_tree(pdf)
         for page in pdf.pages:
             for stream in page.content_streams:

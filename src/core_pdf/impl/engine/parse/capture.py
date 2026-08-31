@@ -70,9 +70,7 @@ def internal_normalized_tokens(runs: tuple[Any, ...] | list[Any]) -> tuple[str, 
 def internal_token_overlap(left: tuple[str, ...], right: tuple[str, ...]) -> float:
     if not left or not right:
         return 0.0
-    left_counts = Counter(left)
-    right_counts = Counter(right)
-    matched = sum(min(count, right_counts.get(token, 0)) for token, count in left_counts.items())
+    matched = (Counter(left) & Counter(right)).total()
     return matched / min(len(left), len(right))
 
 
