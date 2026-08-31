@@ -89,9 +89,12 @@ class DrawingRecord:
     @classmethod
     def from_captured(cls, source: object, **overrides: object) -> Self:
         """Build a record from an object exposing the same fields."""
-        values = {field.name: getattr(source, field.name) for field in fields(DrawingRecord)}
+        values = {name: getattr(source, name) for name in internal_DRAWING_FIELD_NAMES}
         values.update(overrides)
         return cls(**values)
+
+
+internal_DRAWING_FIELD_NAMES: tuple[str, ...] = tuple(f.name for f in fields(DrawingRecord))
 
 
 @dataclass(frozen=True, slots=True)

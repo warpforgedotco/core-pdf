@@ -160,24 +160,6 @@ class internal_PageExtraction:
             self.internal_capture_seconds = seconds
             self.internal_invalidate_after_capture()
 
-    def replace_recognition(self, recognition: RecognitionResult, *, seconds: float = 0.0) -> None:
-        """Install recognition and atomically invalidate every dependent product."""
-        with self.page.internal_page_lock:
-            self.internal_recognition = recognition
-            self.internal_ocr_seconds = seconds
-            self.internal_invalidate_after_recognition()
-
-    def replace_recognition_report(self, report: RecognitionReport) -> None:
-        """Replace diagnostics without recomputing observation-dependent stages."""
-        with self.page.internal_page_lock:
-            recognition = self.internal_recognition
-            if recognition is None:
-                raise RuntimeError("recognition must exist before its report can be replaced")
-            self.internal_recognition = replace(recognition, report=report)
-            self.internal_parsed_page = None
-            self.internal_parse_report = None
-            self.internal_assembled_page = None
-
     @property
     def report(self) -> ParseReport | None:
         with self.page.internal_page_lock:

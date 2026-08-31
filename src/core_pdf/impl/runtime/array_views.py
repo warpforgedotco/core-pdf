@@ -12,6 +12,12 @@ ByteBuffer: TypeAlias = bytes | bytearray | memoryview | numpy.ndarray[Any, Any]
 UInt8Array = numpy.ndarray[Any, numpy.dtype[numpy.uint8]]
 
 
+def readonly(array: numpy.ndarray[Any, Any]) -> numpy.ndarray[Any, Any]:
+    """Mark an array immutable and return it, so callers can seal in an expression."""
+    array.flags.writeable = False
+    return array
+
+
 def finite_median(values: numpy.ndarray[Any, Any]) -> float:
     """Return the median of a non-empty finite 1D array without NaN dispatch."""
     size = values.size
@@ -32,8 +38,7 @@ def nearest_indices(output_count: int, source_count: int) -> numpy.ndarray[Any, 
         return numpy.empty(0, dtype=numpy.intp)
     indexes = numpy.arange(output_count, dtype=numpy.intp)
     result = numpy.minimum(source_count - 1, (indexes * source_count) // output_count)
-    result.flags.writeable = False
-    return result
+    return readonly(result)
 
 
 @lru_cache(maxsize=256)
@@ -42,8 +47,7 @@ def unit_sample_positions(output_count: int) -> numpy.ndarray[Any, Any]:
     if output_count <= 0:
         return numpy.empty(0, dtype=numpy.float64)
     result = numpy.arange(output_count, dtype=numpy.float64) / output_count
-    result.flags.writeable = False
-    return result
+    return readonly(result)
 
 
 def resample_nearest(
@@ -293,6 +297,7 @@ __all__ = (
     "contiguous_bytes",
     "finite_median",
     "nearest_indices",
+    "readonly",
     "resample_bilinear",
     "resample_box",
     "resample_nearest",

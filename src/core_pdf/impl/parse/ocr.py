@@ -93,6 +93,7 @@ from core_pdf.impl.render.display import (
 )
 from core_pdf.impl.render.page import compose_page
 from core_pdf.impl.render.raster_image import RasterImage
+from core_pdf.impl.runtime.array_views import finite_median
 from core_pdf.impl.runtime.execution import TaskScope, WorkStage
 from core_pdf.impl.text import search_key, text_tokens
 
@@ -304,7 +305,7 @@ def internal_estimate_ruling_skew(dark: numpy.ndarray) -> float:
             offsets.append(nearest - line)
     if len(offsets) < 3:
         return 0.0
-    return float(numpy.median(offsets)) / baseline
+    return finite_median(numpy.asarray(offsets, dtype=numpy.float64)) / baseline
 
 
 def internal_vertical_shear(dark: numpy.ndarray, slope: float) -> numpy.ndarray:
@@ -489,10 +490,10 @@ def internal_grid_is_regular_table(
     if len(y_lines) - 1 < internal_GRID_MIN_ROWS or len(x_lines) - 1 < internal_GRID_MIN_COLUMNS:
         return False
     heights = numpy.diff(numpy.asarray(y_lines, dtype=numpy.float64))
-    median_height = float(numpy.median(heights))
+    median_height = finite_median(heights)
     if median_height <= 0.0:
         return False
-    deviation = float(numpy.median(numpy.abs(heights - median_height))) / median_height
+    deviation = finite_median(numpy.abs(heights - median_height)) / median_height
     if deviation > internal_GRID_MAX_ROW_HEIGHT_DEVIATION:
         return False
     if not len(prior):
@@ -537,7 +538,7 @@ def internal_grid_row_observations(
     if not len(observations):
         return observations
     heights = observations.bbox[:, 3] - observations.bbox[:, 1]
-    tolerance = max(2.0, float(numpy.median(heights)) * 0.6)
+    tolerance = max(2.0, finite_median(heights) * 0.6)
     order = numpy.argsort(-(observations.bbox[:, 1] + observations.bbox[:, 3]) * 0.5)
     rows: list[list[int]] = []
     row_center = 0.0
@@ -683,7 +684,9 @@ def internal_merge_candidate_batches(
                 mode,
                 combined.take(deduplicated),
                 symbols=combined_symbols,
-                median_text_height=float(numpy.median(heights)) if heights else 0.0,
+                median_text_height=(
+                    finite_median(numpy.asarray(heights, dtype=numpy.float64)) if heights else 0.0
+                ),
             )
         )
     return max(merged_by_mode, key=lambda candidate: candidate.metrics.utility)

@@ -344,12 +344,15 @@ class internal_RasterTarget:
             )
             return
         blend_px = self.blend_px
+        # `group_alpha` is constant for the whole buffer; resolve it once rather
+        # than re-type-checking and re-coercing it on every pixel.
+        alpha_factor = float(group_alpha) if pdf_number(group_alpha) else None
         for idx in range(0, len(child), 4):
             sa = child[idx + 3]
             if sa <= 0:
                 continue
-            if pdf_number(group_alpha):
-                sa = max(0, min(255, int(round(sa * float(group_alpha)))))
+            if alpha_factor is not None:
+                sa = max(0, min(255, int(round(sa * alpha_factor))))
                 if sa <= 0:
                     continue
             blend_px(

@@ -6,10 +6,8 @@ import binascii
 import typing
 from dataclasses import dataclass
 
+from core_pdf.impl.spec.s_07_syntax_primitives.tokens import SEPARATOR_TABLE, WS_TABLE
 from core_pdf.impl.spec.s_09_fonts.cmap_pdf_string import decode_pdf_literal_string
-
-PDF_WHITESPACE_BYTES = bytes([1 if byte in b"\x00\t\n\f\r " else 0 for byte in range(256)])
-CMAP_DELIMITER_BYTES = b"[]<>()/%{}"
 
 CMapTokenKind = typing.Literal["array", "delimiter", "hex", "literal", "procedure", "word"]
 
@@ -196,7 +194,7 @@ def internal_cmap_token_spans(data: bytes, *, group_arrays: bool) -> typing.Iter
     n = len(data)
     while pos < n:
         byte = data[pos]
-        if PDF_WHITESPACE_BYTES[byte]:
+        if WS_TABLE[byte]:
             pos += 1
             continue
         match byte:
@@ -235,11 +233,7 @@ def internal_cmap_token_spans(data: bytes, *, group_arrays: bool) -> typing.Iter
                 pos = end
             case 47:  # name object
                 end = pos + 1
-                while (
-                    end < n
-                    and not PDF_WHITESPACE_BYTES[data[end]]
-                    and data[end] not in CMAP_DELIMITER_BYTES
-                ):
+                while end < n and not SEPARATOR_TABLE[data[end]]:
                     end += 1
                 yield CMapToken(data[pos:end], pos, end, "word")
                 pos = end
@@ -248,11 +242,7 @@ def internal_cmap_token_spans(data: bytes, *, group_arrays: bool) -> typing.Iter
                 pos += 1
             case _:
                 end = pos + 1
-                while (
-                    end < n
-                    and not PDF_WHITESPACE_BYTES[data[end]]
-                    and data[end] not in CMAP_DELIMITER_BYTES
-                ):
+                while end < n and not SEPARATOR_TABLE[data[end]]:
                     end += 1
                 yield CMapToken(data[pos:end], pos, end, "word")
                 pos = end

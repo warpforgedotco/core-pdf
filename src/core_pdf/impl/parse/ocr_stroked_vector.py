@@ -56,6 +56,7 @@ from core_pdf.impl.render.display import (
 )
 from core_pdf.impl.render.kernels import rasterize_packed_stroked_paths
 from core_pdf.impl.render.page import RenderedPage
+from core_pdf.impl.runtime.array_views import finite_median
 
 STROKED_VECTOR_PACK_WIDTH = 240.0
 
@@ -204,7 +205,9 @@ def internal_stroked_vector_text_raster(
         # 1-2pt tall); at the seed scale they raster below OCR's working size.
         # The montage area is tiny, so trade unused pixel budget for scale
         # until the median glyph is comfortably readable.
-        median_height = float(numpy.median([run.bbox[3] - run.bbox[1] for run in runs]))
+        median_height = finite_median(
+            numpy.asarray([run.bbox[3] - run.bbox[1] for run in runs], dtype=numpy.float64)
+        )
         target_scale = 24.0 / max(0.5, median_height)
         scale = min(max(requested_scale, target_scale), safe_scale, 48.0)
     page = capture.page

@@ -105,9 +105,24 @@ class PdfStandardSecurityHandlerV5(PdfStandardSecurityHandlerV4):
     def bytes_mod_3(input_bytes: bytes) -> int:
         return sum(b % 3 for b in input_bytes) % 3
 
+    def internal_aes_cipher(self) -> AES:
+        """Return the document-wide AESV3 cipher, expanding its key schedule once.
+
+        AESV3 uses one file key for every object, unlike the per-object keys V4
+        derives, so rebuilding the schedule per string and per stream was pure
+        repetition on documents with many encrypted objects.
+        """
+        key = self.key
+        assert key is not None
+        cached = getattr(self, "internal_aes_cipher_cache", None)
+        if cached is not None and cached[0] == key:
+            return cached[1]
+        cipher = AES(key)
+        self.internal_aes_cipher_cache = (key, cipher)
+        return cipher
+
     def decrypt_aes256(self, objid: int, genno: int, data: bytes) -> bytes:
         initialization_vector = data[:16]
         ciphertext = data[16:]
-        assert self.key is not None
-        cipher = AES(self.key)
+        cipher = self.internal_aes_cipher()
         return cipher.decrypt_cbc(initialization_vector, ciphertext, padding=True)

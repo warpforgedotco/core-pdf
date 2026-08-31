@@ -13,6 +13,7 @@ import numpy
 
 from core_pdf.impl.model.runs import TextRun
 from core_pdf.impl.models import TextWord, internal_reconcile_text_words
+from core_pdf.impl.runtime.array_views import readonly
 from core_pdf.impl.spec.s_07_content.capture import CapturedDrawing, CapturedInlineImage
 from core_pdf.impl.spec.s_07_content.page_program import PageProgram
 from core_pdf.impl.structured.model import (
@@ -123,11 +124,6 @@ class FusionPolicy(StrEnum):
     UNCOVERED_VECTOR = "uncovered-vector"
 
 
-def internal_readonly(array: numpy.ndarray[Any, Any]) -> numpy.ndarray[Any, Any]:
-    array.flags.writeable = False
-    return array
-
-
 @dataclass(frozen=True, slots=True)
 class ObservationBatch:
     """Columnar text observations optimized for vectorized geometry operations."""
@@ -165,7 +161,7 @@ class ObservationBatch:
         ):
             if len(column) != size:
                 raise ValueError("observation columns must have equal length")
-            internal_readonly(column)
+            readonly(column)
 
     def __len__(self) -> int:
         return len(self.text)

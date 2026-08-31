@@ -1259,7 +1259,11 @@ class TextState:
             return True
 
         if self.render_mode == 3 or self.font_size < 0.1:
-            if not any(r.visible for r in self.runs):
+            # Once the layer has been judged invisible the scan cannot change the
+            # answer, so skip it. On a scanned page every run is invisible, the flag
+            # latches on the first show-text op, and the remaining ops pay nothing
+            # instead of re-walking the whole page accumulator each time.
+            if not self.invisible_text_layer and not any(r.visible for r in self.runs):
                 self.invisible_text_layer = True
             if not self.invisible_text_layer:
                 return False
