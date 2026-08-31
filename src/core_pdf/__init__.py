@@ -6,30 +6,7 @@ from typing import TYPE_CHECKING
 from core_pdf.impl import install_lazy_module_exports
 
 if TYPE_CHECKING:
-    from core_pdf.impl.engine.document import PdfDocument
-    from core_pdf.impl.engine.page import PdfPage
-    from core_pdf.impl.engine.parse.ocr_tesseract import prewarm_runtime
-    from core_pdf.impl.engine.structured.model import (
-        ContentNode,
-        DocumentTableView,
-        DocumentTextView,
-        TableView,
-        TextDiagnostics,
-        TextRun,
-        TextView,
-        TextWord,
-    )
-    from core_pdf.impl.engine.writing.encryption import StandardPdfEncryption
-    from core_pdf.impl.engine.writing.fonts import (
-        PdfFontProvider,
-        StandardType1FontProvider,
-        TrueTypeFontProvider,
-    )
-    from core_pdf.impl.engine.writing.semantic import serialize_document_to_pdf
-    from core_pdf.impl.engine.writing.signatures import (
-        PdfSignaturePlan,
-        PdfSignatureProvider,
-    )
+    from core_pdf.impl.document import PdfDocument
     from core_pdf.impl.exceptions import (
         PdfContractError,
         PdfDocumentClosedError,
@@ -45,7 +22,9 @@ if TYPE_CHECKING:
         ImageRecord,
         PageScoped,
     )
+    from core_pdf.impl.page import PdfPage
     from core_pdf.impl.pages import PageSelection
+    from core_pdf.impl.parse.ocr_tesseract import prewarm_runtime
     from core_pdf.impl.runtime.execution import (
         RuntimeConfig,
         RuntimeMetrics,
@@ -58,16 +37,37 @@ if TYPE_CHECKING:
         PdfRasterFontProvider,
         PdfRasterFontRequest,
     )
+    from core_pdf.impl.structured.model import (
+        ContentNode,
+        DocumentTableView,
+        DocumentTextView,
+        TableView,
+        TextDiagnostics,
+        TextRun,
+        TextView,
+        TextWord,
+    )
+    from core_pdf.impl.writing.encryption import StandardPdfEncryption
+    from core_pdf.impl.writing.fonts import (
+        PdfFontProvider,
+        StandardType1FontProvider,
+        TrueTypeFontProvider,
+    )
+    from core_pdf.impl.writing.semantic import serialize_document_to_pdf
+    from core_pdf.impl.writing.signatures import (
+        PdfSignaturePlan,
+        PdfSignatureProvider,
+    )
 
 internal_EXPORTS = {
-    "Document": ("core_pdf.impl.engine.structured.model", "Document"),
+    "Document": ("core_pdf.impl.structured.model", "Document"),
     "PageSelection": ("core_pdf.impl.pages", "PageSelection"),
-    "PdfDocument": ("core_pdf.impl.engine.document", "PdfDocument"),
+    "PdfDocument": ("core_pdf.impl.document", "PdfDocument"),
     "serialize_document_to_pdf": (
-        "core_pdf.impl.engine.writing.semantic",
+        "core_pdf.impl.writing.semantic",
         "serialize_document_to_pdf",
     ),
-    "PdfFontProvider": ("core_pdf.impl.engine.writing.fonts", "PdfFontProvider"),
+    "PdfFontProvider": ("core_pdf.impl.writing.fonts", "PdfFontProvider"),
     "PdfRasterFontFace": (
         "core_pdf.impl.spec.s_09_fonts.fallback",
         "PdfRasterFontFace",
@@ -81,45 +81,45 @@ internal_EXPORTS = {
         "PdfRasterFontRequest",
     ),
     "PdfSignaturePlan": (
-        "core_pdf.impl.engine.writing.signatures",
+        "core_pdf.impl.writing.signatures",
         "PdfSignaturePlan",
     ),
     "PdfSignatureProvider": (
-        "core_pdf.impl.engine.writing.signatures",
+        "core_pdf.impl.writing.signatures",
         "PdfSignatureProvider",
     ),
     "StandardPdfEncryption": (
-        "core_pdf.impl.engine.writing.encryption",
+        "core_pdf.impl.writing.encryption",
         "StandardPdfEncryption",
     ),
     "StandardType1FontProvider": (
-        "core_pdf.impl.engine.writing.fonts",
+        "core_pdf.impl.writing.fonts",
         "StandardType1FontProvider",
     ),
     "TrueTypeFontProvider": (
-        "core_pdf.impl.engine.writing.fonts",
+        "core_pdf.impl.writing.fonts",
         "TrueTypeFontProvider",
     ),
     "PdfError": ("core_pdf.impl.exceptions", "PdfError"),
     "PdfContractError": ("core_pdf.impl.exceptions", "PdfContractError"),
-    "ContentNode": ("core_pdf.impl.engine.structured.model", "ContentNode"),
-    "DocumentTableView": ("core_pdf.impl.engine.structured.model", "DocumentTableView"),
-    "DocumentTextView": ("core_pdf.impl.engine.structured.model", "DocumentTextView"),
+    "ContentNode": ("core_pdf.impl.structured.model", "ContentNode"),
+    "DocumentTableView": ("core_pdf.impl.structured.model", "DocumentTableView"),
+    "DocumentTextView": ("core_pdf.impl.structured.model", "DocumentTextView"),
     "DrawingRecord": ("core_pdf.impl.models", "DrawingRecord"),
     "ImageMetadata": ("core_pdf.impl.models", "ImageMetadata"),
     "ImageRecord": ("core_pdf.impl.models", "ImageRecord"),
     "PageScoped": ("core_pdf.impl.models", "PageScoped"),
-    "TableView": ("core_pdf.impl.engine.structured.model", "TableView"),
-    "TableReference": ("core_pdf.impl.engine.structured.model", "TableReference"),
-    "TableAssociatedText": ("core_pdf.impl.engine.structured.model", "TableAssociatedText"),
-    "TableColumnBand": ("core_pdf.impl.engine.structured.model", "TableColumnBand"),
-    "TableRowBand": ("core_pdf.impl.engine.structured.model", "TableRowBand"),
-    "TextView": ("core_pdf.impl.engine.structured.model", "TextView"),
-    "TextWord": ("core_pdf.impl.engine.structured.model", "TextWord"),
-    "TextDiagnostics": ("core_pdf.impl.engine.structured.model", "TextDiagnostics"),
-    "TextLineReference": ("core_pdf.impl.engine.structured.model", "TextLineReference"),
-    "TextRun": ("core_pdf.impl.engine.structured.model", "TextRun"),
-    "PdfPage": ("core_pdf.impl.engine.page", "PdfPage"),
+    "TableView": ("core_pdf.impl.structured.model", "TableView"),
+    "TableReference": ("core_pdf.impl.structured.model", "TableReference"),
+    "TableAssociatedText": ("core_pdf.impl.structured.model", "TableAssociatedText"),
+    "TableColumnBand": ("core_pdf.impl.structured.model", "TableColumnBand"),
+    "TableRowBand": ("core_pdf.impl.structured.model", "TableRowBand"),
+    "TextView": ("core_pdf.impl.structured.model", "TextView"),
+    "TextWord": ("core_pdf.impl.structured.model", "TextWord"),
+    "TextDiagnostics": ("core_pdf.impl.structured.model", "TextDiagnostics"),
+    "TextLineReference": ("core_pdf.impl.structured.model", "TextLineReference"),
+    "TextRun": ("core_pdf.impl.structured.model", "TextRun"),
+    "PdfPage": ("core_pdf.impl.page", "PdfPage"),
     "PdfDocumentClosedError": ("core_pdf.impl.exceptions", "PdfDocumentClosedError"),
     "PdfParseError": ("core_pdf.impl.exceptions", "PdfParseError"),
     "PdfRasterTooLargeError": ("core_pdf.impl.exceptions", "PdfRasterTooLargeError"),
@@ -138,7 +138,7 @@ internal_EXPORTS = {
         "RuntimeConfig",
     ),
     "prewarm_runtime": (
-        "core_pdf.impl.engine.parse.ocr_tesseract",
+        "core_pdf.impl.parse.ocr_tesseract",
         "prewarm_runtime",
     ),
     "runtime_metrics": (

@@ -10,12 +10,12 @@ from typing import Any, cast
 
 from core_pdf import PdfDocument
 from core_pdf._vendor.fontTools.ttLib import TTLibError
-from core_pdf.impl.engine.model.geometry import (
+from core_pdf.impl.exceptions import PdfUnsupportedError
+from core_pdf.impl.model.geometry import (
     bbox_intersects,
     flip_rect_vertical,
     overlap_ratio_of,
 )
-from core_pdf.impl.exceptions import PdfUnsupportedError
 from core_pdf.impl.primitives import PdfReference
 from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream

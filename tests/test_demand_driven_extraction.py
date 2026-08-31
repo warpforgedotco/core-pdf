@@ -5,8 +5,8 @@ from pathlib import Path
 import pytest
 
 from core_pdf import PdfDocument
-from core_pdf.impl.engine.parse import pipeline as parse_pipeline
-from core_pdf.impl.engine.parse.pipeline import PAGE_EXTRACTION_CACHE_KEY, page_extraction
+from core_pdf.impl.parse import pipeline as parse_pipeline
+from core_pdf.impl.parse.pipeline import PAGE_EXTRACTION_CACHE_KEY, page_extraction
 
 FIXTURE = (
     Path(__file__).parent

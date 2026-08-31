@@ -5,8 +5,8 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 from core_pdf import PdfDocument
-from core_pdf.impl.engine.model.runs import TextRun
-from core_pdf.impl.engine.parse import (
+from core_pdf.impl.model.runs import TextRun
+from core_pdf.impl.parse import (
     CapturedPage,
     GlyphEvidence,
     OcrPassScope,
@@ -14,14 +14,14 @@ from core_pdf.impl.engine.parse import (
     PageRoute,
     TextQualityStats,
 )
-from core_pdf.impl.engine.parse.capture import (
+from core_pdf.impl.parse.capture import (
     capture_page,
     internal_apply_structure_actual_text,
     internal_extractable_runs,
     internal_vector_complexity,
 )
-from core_pdf.impl.engine.parse.pipeline import page_extraction
-from core_pdf.impl.engine.parse.route import plan_page
+from core_pdf.impl.parse.pipeline import page_extraction
+from core_pdf.impl.parse.route import plan_page
 
 
 def run(

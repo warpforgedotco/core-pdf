@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import numpy
 
-from core_pdf.impl.engine.parse import ObservationBatch, ObservationSource
-from core_pdf.impl.engine.parse.layout import (
+from core_pdf.impl.parse import ObservationBatch, ObservationSource
+from core_pdf.impl.parse.layout import (
     internal_best_projection_gap,
     internal_best_region_projection_gap,
     internal_column_major_prose,
@@ -17,7 +17,7 @@ from core_pdf.impl.engine.parse.layout import (
     layout_blocks,
     layout_blocks_with_evidence,
 )
-from core_pdf.impl.engine.parse.model import ParsedBlock, ParsedLine
+from core_pdf.impl.parse.model import ParsedBlock, ParsedLine
 
 
 def observations(

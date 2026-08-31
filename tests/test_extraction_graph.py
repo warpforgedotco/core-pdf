@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, cast
 
-from core_pdf.impl.engine.structured import (
+from core_pdf.impl.structured import (
     Block,
     BlockKind,
     ContentNode,

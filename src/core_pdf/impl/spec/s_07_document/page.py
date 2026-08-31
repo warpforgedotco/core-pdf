@@ -52,8 +52,8 @@ PAGE_INHERITED_KEYS = (
 
 
 if TYPE_CHECKING:
-    from core_pdf.impl.engine.layout.lines import LayoutLine
-    from core_pdf.impl.engine.model.runs import TextRun
+    from core_pdf.impl.layout.lines import LayoutLine
+    from core_pdf.impl.model.runs import TextRun
     from core_pdf.impl.spec.s_07_document.document import PdfDocument
     from core_pdf.impl.spec.s_07_document.records import RawFormField
 

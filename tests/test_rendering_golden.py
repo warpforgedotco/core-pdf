@@ -10,14 +10,14 @@ Two layers:
 
 * The always-on layer renders :data:`COVERING_SUBSET` — 24 corpus documents
   chosen by greedy set cover so that together they execute *every* line of the
-  ``engine/render/`` package that the full 224-document corpus reaches. It runs in a
+  ``render/`` package that the full 224-document corpus reaches. It runs in a
   few seconds, which is what makes it the right layer to run while iterating.
 * A distributed layer over the whole corpus, behind ``CORE_PDF_RASTER_GOLDEN_FULL``.
   **CI sets that variable**, so the full corpus is a merge gate; the variable
   exists so local runs can opt out of the few minutes it costs, not so the
   sweep can be skipped indefinitely. Each document is a separate pytest case,
   so ``-n 2`` distributes the expensive raster work. Line coverage is not
-  output coverage — the subset reaches every line of ``engine/render/`` and
+  output coverage — the subset reaches every line of ``render/`` and
   still cannot see a changed pixel in the other 200 documents.
 
 Regenerate the digests after an *intentional* rendering change, without
@@ -51,7 +51,7 @@ from scripts.raster_golden import (
     raster_snapshot_failure,
 )
 
-# Greedy line-cover of engine/render/ over the corpus: these 24 documents reach
+# Greedy line-cover of render/ over the corpus: these 24 documents reach
 # 100% of the lines that all 224 reach. Recompute with scripts/raster_cover.py
 # if the corpus or the rasterizer's structure changes substantially.
 COVERING_SUBSET = (

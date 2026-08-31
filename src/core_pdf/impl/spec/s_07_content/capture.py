@@ -10,14 +10,14 @@ from functools import lru_cache
 from math import ceil
 from typing import Any
 
-from core_pdf.impl.engine.model.geometry import RectBox
-from core_pdf.impl.engine.model.glyphs import (
+from core_pdf.impl.model.geometry import RectBox
+from core_pdf.impl.model.glyphs import (
     GlyphCluster,
     GlyphObservation,
     glyph_cluster_from_observations,
     glyph_unicode_confidence,
 )
-from core_pdf.impl.engine.model.runs import TextRun
+from core_pdf.impl.model.runs import TextRun
 from core_pdf.impl.spec.s_07_content.text_helpers import (
     NO_SPACE_AFTER,
     NO_SPACE_BEFORE,

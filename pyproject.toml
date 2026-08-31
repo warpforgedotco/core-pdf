@@ -134,7 +134,7 @@ line-length = 100
 #   ocr.py         internal_recognize_page_with_reserved_raster (66)
 "src/core_pdf/impl/spec/s_07_content/operations.py" = ["C901"]
 "src/core_pdf/impl/spec/s_07_content/state.py" = ["C901"]
-"src/core_pdf/impl/engine/parse/ocr.py" = ["C901"]
+"src/core_pdf/impl/parse/ocr.py" = ["C901"]
 
 [tool.ruff.lint.mccabe]
 max-complexity = 60
@@ -216,7 +216,7 @@ core_pdf = ["py.typed"]
 "core_pdf._vendor.fontTools" = ["LICENSE.txt", "LICENSE.external.txt"]
 "core_pdf._vendor.icc" = ["*.icc", "README.md"]
 "core_pdf._vendor.fontTools.ttLib.tables" = ["table_API_readme.txt"]
-"core_pdf.impl.engine.layout.data.wordlists" = [
+"core_pdf.impl.layout.data.wordlists" = [
     "*.txt.gz",
     "*.bin",
     "*.md",
@@ -236,10 +236,12 @@ root_package = "core_pdf"
 exclude_type_checking_imports = true
 
 [[tool.importlinter.contracts]]
-name = "Engine layers"
+name = "Derived-processing layers"
 type = "layers"
-containers = ["core_pdf.impl.engine"]
+containers = ["core_pdf.impl"]
 layers = [
+    "document",
+    "page",
     "parse",
     "render",
     "writing",
@@ -266,23 +268,23 @@ layers = [
 ]
 
 [[tool.importlinter.contracts]]
-name = "Spec stays below engine consumers"
+name = "Spec stays below derived consumers"
 type = "forbidden"
 source_modules = ["core_pdf.impl.spec"]
 forbidden_modules = [
-    "core_pdf.impl.engine.document",
-    "core_pdf.impl.engine.layout",
-    "core_pdf.impl.engine.page",
-    "core_pdf.impl.engine.parse",
-    "core_pdf.impl.engine.render",
-    "core_pdf.impl.engine.structured",
-    "core_pdf.impl.engine.writing",
+    "core_pdf.impl.document",
+    "core_pdf.impl.layout",
+    "core_pdf.impl.page",
+    "core_pdf.impl.parse",
+    "core_pdf.impl.render",
+    "core_pdf.impl.structured",
+    "core_pdf.impl.writing",
 ]
 
 [[tool.importlinter.contracts]]
 name = "Pipeline stages run in order"
 type = "layers"
-containers = ["core_pdf.impl.engine.parse"]
+containers = ["core_pdf.impl.parse"]
 # Each stage may use the stages before it and the shared model, never a later one.
 # pipeline is the orchestrator and sits above all of them.
 layers = [
@@ -300,7 +302,7 @@ layers = [
 [[tool.importlinter.contracts]]
 name = "OCR stage layers"
 type = "layers"
-containers = ["core_pdf.impl.engine.parse"]
+containers = ["core_pdf.impl.parse"]
 # The recognition stage is itself layered: ocr.py orchestrates, the modules under
 # it produce rasters, pick regions and talk to Tesseract, and all of them share
 # one record vocabulary at the bottom.
@@ -316,19 +318,32 @@ layers = [
 name = "impl/runtime is the floor"
 type = "forbidden"
 source_modules = ["core_pdf.impl.runtime"]
-forbidden_modules = ["core_pdf.impl.engine", "core_pdf.impl.spec", "core_pdf.api"]
+forbidden_modules = [
+    "core_pdf.impl.document",
+    "core_pdf.impl.layout",
+    "core_pdf.impl.model",
+    "core_pdf.impl.page",
+    "core_pdf.impl.parse",
+    "core_pdf.impl.render",
+    "core_pdf.impl.spec",
+    "core_pdf.impl.structured",
+    "core_pdf.impl.writing",
+    "core_pdf.api",
+]
 
 [[tool.importlinter.contracts]]
 name = "The capture model depends on nothing above it"
 type = "forbidden"
-source_modules = ["core_pdf.impl.engine.model"]
+source_modules = ["core_pdf.impl.model"]
 forbidden_modules = [
-    "core_pdf.impl.engine.layout",
-    "core_pdf.impl.engine.parse",
-    "core_pdf.impl.engine.render",
+    "core_pdf.impl.document",
+    "core_pdf.impl.layout",
+    "core_pdf.impl.page",
+    "core_pdf.impl.parse",
+    "core_pdf.impl.render",
     "core_pdf.impl.spec",
-    "core_pdf.impl.engine.structured",
-    "core_pdf.impl.engine.writing",
+    "core_pdf.impl.structured",
+    "core_pdf.impl.writing",
     "core_pdf.api",
 ]
 
@@ -343,12 +358,12 @@ forbidden_modules = [
     "core_pdf.impl.spec.s_08_graphics",
     "core_pdf.impl.spec.s_09_fonts",
     "core_pdf.impl.spec.s_14_structure",
-    "core_pdf.impl.engine.layout",
-    "core_pdf.impl.engine.model",
-    "core_pdf.impl.engine.parse",
-    "core_pdf.impl.engine.render",
-    "core_pdf.impl.engine.structured",
-    "core_pdf.impl.engine.writing",
+    "core_pdf.impl.layout",
+    "core_pdf.impl.model",
+    "core_pdf.impl.parse",
+    "core_pdf.impl.render",
+    "core_pdf.impl.structured",
+    "core_pdf.impl.writing",
 ]
 
 [[tool.importlinter.contracts]]
@@ -364,22 +379,22 @@ forbidden_modules = [
     "core_pdf.impl.spec.s_08_graphics",
     "core_pdf.impl.spec.s_09_fonts",
     "core_pdf.impl.spec.s_14_structure",
-    "core_pdf.impl.engine.layout",
-    "core_pdf.impl.engine.model",
-    "core_pdf.impl.engine.parse",
-    "core_pdf.impl.engine.render",
-    "core_pdf.impl.engine.structured",
-    "core_pdf.impl.engine.writing",
+    "core_pdf.impl.layout",
+    "core_pdf.impl.model",
+    "core_pdf.impl.parse",
+    "core_pdf.impl.render",
+    "core_pdf.impl.structured",
+    "core_pdf.impl.writing",
 ]
 
 [[tool.importlinter.contracts]]
-name = "The engine never imports the compatibility facades"
+name = "The implementation never imports the compatibility facades"
 type = "forbidden"
 source_modules = ["core_pdf.impl"]
 forbidden_modules = ["core_pdf.api"]
 
 [[tool.importlinter.contracts]]
-name = "Base modules stay beneath the spec and engine"
+name = "Base modules stay beneath the spec and derived processing"
 type = "forbidden"
 source_modules = [
     "core_pdf.impl.exceptions",
@@ -390,4 +405,14 @@ source_modules = [
     "core_pdf.impl.text",
     "core_pdf.impl.types",
 ]
-forbidden_modules = ["core_pdf.impl.engine", "core_pdf.impl.spec"]
+forbidden_modules = [
+    "core_pdf.impl.document",
+    "core_pdf.impl.layout",
+    "core_pdf.impl.model",
+    "core_pdf.impl.page",
+    "core_pdf.impl.parse",
+    "core_pdf.impl.render",
+    "core_pdf.impl.spec",
+    "core_pdf.impl.structured",
+    "core_pdf.impl.writing",
+]

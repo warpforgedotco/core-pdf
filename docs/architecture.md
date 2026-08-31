@@ -21,12 +21,12 @@ Everything under `core_pdf.impl.*` is internal and may change without notice.
 
 The two central objects:
 
-- **`PdfDocument`** (`impl/engine/document.py`) — `open`, page access, canonical structured
+- **`PdfDocument`** (`impl/document.py`) — `open`, page access, canonical structured
   extraction (`extract`), and engine-owned PDF capabilities. It owns caches that must be
   shared across pages, notably the image cache. Structured serializers are kept on the
   structured IR instead of being duplicated here.
   The CLI drives it through `process_pdf` in `cli.py`.
-- **`PdfPage`** (`impl/engine/page.py`, subclassing the spec-level page in
+- **`PdfPage`** (`impl/page.py`, subclassing the spec-level page in
   `impl/spec/s_07_document/page.py`) — per-page extraction and rendering.
 
 The canonical public surface is the lazy export table in `core_pdf.__init__`. Document, page,
@@ -132,18 +132,17 @@ src/core_pdf/
     pages.py             PageSelection and its single normalization implementation
     spec/                PDF specification implementation (see below); document-local
                          Raw* records live in s_07_document/records.py
-    engine/
-      parse/             the extraction pipeline, one module per stage (see §2),
+    parse/               the extraction pipeline, one module per stage (see §2),
                          plus newstroke and stroked_text, which only it uses
-      render/            display lists, raster kernels, targets, and page composition
-      page.py            PdfPage
-      document.py        PdfDocument
-      model/             the capture data model: geometry kernel, TextRun, glyph
+    render/              display lists, raster kernels, targets, and page composition
+    page.py              PdfPage
+    document.py          PdfDocument
+    model/               the capture data model: geometry kernel, TextRun, glyph
                          records, columnar glyph storage. Beneath spec/ and layout/.
-      layout/            heuristics only: line grouping, spatial index, geometry
+    layout/              heuristics only: line grouping, spatial index, geometry
                          quality, word frequencies
-      structured/        document IR → markdown/HTML/JSON/CSV/TEI
-      writing/           PDF output: objects, fonts, encryption, signatures
+    structured/          document IR → markdown/HTML/JSON/CSV/TEI
+    writing/             PDF output: objects, fonts, encryption, signatures
 ```
 
 ### Dependency direction
@@ -163,12 +162,12 @@ Three packages exist to be depended *upon* and must not depend upward:
 | Package | May import | Status |
 | --- | --- | --- |
 | `impl/runtime/` | nothing internal | zero internal imports |
-| `impl/engine/model/` | `impl/` base modules | clean |
+| `impl/model/` | `impl/` base modules | clean |
 | `impl/spec/s_07_syntax_primitives` | `impl/primitives.py` | clean |
 
-`impl/spec/` is a sibling of `impl/engine/`, making the specification boundary explicit.
-Engine consumers may depend on it; its only engine dependency is the low-level capture model,
-and an import contract prevents dependencies on the execution and derived-processing layers.
+`impl/spec/` is a sibling of the derived-processing packages at the `impl/` root. Those
+consumers may depend on it; its only derived-processing dependency is the low-level capture
+model, and an import contract prevents dependencies on execution and higher derived layers.
 
 The line-text records (`LayoutLineText`, `LayoutLineTextSegment`,
 `LayoutWordSnapshot`) live in `model/line_text.py` rather than with the heuristics
@@ -179,7 +178,7 @@ Document cache and per-page locks belong to the spec-level `PdfDocument`; spec c
 name that ownership directly through their document protocols. Lightweight test doubles
 must provide their own locks, so there is no process-global fallback that can accidentally
 couple unrelated documents. `newstroke`/`stroked_text` remain `parse/` modules rather than
-engine-root ones because only the pipeline uses them.
+top-level `impl/` modules because only the pipeline uses them.
 
 `layout/` is heuristics only and re-exports nothing — import from the owning module.
 `LayoutLine` lives in `layout/lines.py` because it is what line grouping *produces*;
@@ -192,8 +191,8 @@ The chapter-7 bottom layers are explicit. `s_07_syntax_primitives` owns dependen
 lexical tables, scanning, coercion, dictionary lookup, and content-operator metadata.
 Filters may use those kernels. Above filters, `s_07_syntax` owns the COS parser,
 `PdfStream` and its lazy decode cache, xref and object resolution, and the recursive PDF
-object type vocabulary. Base modules therefore never depend back on the spec or engine, and the
-contracts have no ignored runtime edges.
+object type vocabulary. Base modules therefore never depend back on the spec or derived
+processing packages, and the contracts have no ignored runtime edges.
 
 **Two known knots**, both deliberate and neither a runtime package cycle:
 
@@ -226,7 +225,7 @@ Subpackages under `spec/` mirror **chapters of the PDF specification**:
 remain cohesive. Splitting those mutually dependent owners across `s_07_syntax` and a separate
 `s_07_objects` previously produced a package-level cycle. The lower
 `s_07_syntax_primitives` package is deliberately narrower: it contains only kernels needed by
-both filters and COS. Keep that package free of imports from filters or higher engine layers.
+both filters and COS. Keep that package free of imports from filters or higher derived layers.
 
 Operator and filter metadata each have one declarative owner. Content-operator categories,
 dispatch names, text-only scan tables, Type 3 replay membership, and cached lexer keywords derive
@@ -294,7 +293,7 @@ every irreversible-JPX page. `CORE_PDF_RASTER_GOLDEN_FULL=1` sweeps the complete
 corpus as one independently schedulable test per document. CI sets that variable
 and uses two pytest workers, so the whole corpus gates a merge without serializing
 all raster work; a focused macOS ARM job exercises the portable JPX contract as
-well. Reaching every *line* of `engine/render/` is not the same as pinning every
+well. Reaching every *line* of `render/` is not the same as pinning every
 *pixel*: four digests once
 sat in the snapshot that no commit could produce, unnoticed because only the
 subset ran in CI.

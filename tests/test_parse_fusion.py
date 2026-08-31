@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from core_pdf.impl.engine.layout.spatial import maximum_candidate_coverage
-from core_pdf.impl.engine.parse import (
+from core_pdf.impl.layout.spatial import maximum_candidate_coverage
+from core_pdf.impl.parse import (
     FusionPolicy,
     ObservationBatch,
     ObservationSource,
@@ -11,7 +11,7 @@ from core_pdf.impl.engine.parse import (
     PageRoute,
     WorkPlan,
 )
-from core_pdf.impl.engine.parse.fusion import fuse_observations
+from core_pdf.impl.parse.fusion import fuse_observations
 
 
 def observations(

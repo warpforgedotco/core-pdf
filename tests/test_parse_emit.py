@@ -2,16 +2,16 @@ from __future__ import annotations
 
 from typing import cast
 
-from core_pdf.impl.engine.parse import (
+from core_pdf.impl.parse import (
     PageRoute,
     ParsedBlock,
     ParsedLine,
     ParsedPage,
 )
-from core_pdf.impl.engine.parse.emit import assemble_page as emit_page
-from core_pdf.impl.engine.parse.emit import internal_line_decoration_flags
-from core_pdf.impl.engine.structured import BlockKind, Table, TableCell
+from core_pdf.impl.parse.emit import assemble_page as emit_page
+from core_pdf.impl.parse.emit import internal_line_decoration_flags
 from core_pdf.impl.spec.s_07_content.capture import CapturedDrawing
+from core_pdf.impl.structured import BlockKind, Table, TableCell
 
 
 def block(
