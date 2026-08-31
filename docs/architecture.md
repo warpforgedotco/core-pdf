@@ -1,55 +1,35 @@
 # core-pdf architecture
 
-An orientation guide for the all-in-one local PDF parsing engine. It covers how a PDF becomes
-structured evidence, how parsing, rendering, analysis, compatibility, and writing share one
-document model, how the source tree is organized, the naming conventions in use.
-
-Roughly 87k lines of non-vendor Python live under `src/core_pdf/`, plus a vendored copy of
-fontTools in `src/core_pdf/_vendor/` that is excluded from linting, typing, and formatting.
+An orientation to core-pdf's public boundary, extraction pipeline, source layout, and enforced
+dependency direction.
 
 ---
 
 ## 1. Public surface
 
-`core_pdf/__init__.py` exports lazily. Rather than importing submodules at package import
-time, it maps each public name to its defining module in an `internal_EXPORTS` table and
-resolves it on first attribute access (`install_lazy_module_exports`). This keeps `import
-core_pdf` cheap; it also means the public API is exactly the contents of that table, not
-"whatever is importable".
+`core_pdf/__init__.py` maps every public name to its defining module in `internal_EXPORTS` and
+resolves it on first access with `install_lazy_module_exports`. This keeps `import core_pdf` cheap
+and makes the export table the authoritative public surface. Everything under `core_pdf.impl.*` is
+internal and may change without notice.
 
-Everything under `core_pdf.impl.*` is internal and may change without notice.
+The two central objects are:
 
-The two central objects:
+- **`PdfDocument`** (`impl/document.py`) — opens documents, provides page access and structured
+  extraction, and owns caches shared across pages. The CLI drives it through `process_pdf` in
+  `cli.py`.
+- **`PdfPage`** (`impl/page.py`, extending the spec-level page in
+  `impl/spec/s_07_document/page.py`) — provides per-page extraction and rendering.
 
-- **`PdfDocument`** (`impl/document.py`) — `open`, page access, canonical structured
-  extraction (`extract`), and engine-owned PDF capabilities. It owns caches that must be
-  shared across pages, notably the image cache. Structured serializers are kept on the
-  structured IR instead of being duplicated here.
-  The CLI drives it through `process_pdf` in `cli.py`.
-- **`PdfPage`** (`impl/page.py`, subclassing the spec-level page in
-  `impl/spec/s_07_document/page.py`) — per-page extraction and rendering.
-
-The canonical public surface is the lazy export table in `core_pdf.__init__`. Document, page,
-structured records, writers, runtime controls, and errors remain owned by their engine modules.
-
-Compatibility facades under `core_pdf.api.compat.*` import those engine owners directly. Each
-facade owns the state and projection needed for its target interface; exact stateless mechanics
-may be shared, but there is no shared compatibility state or conversion kernel. `compat.__init__`
-resolves convenience exports lazily so importing one facade does not initialize all of them.
-
-**Known defects.** The capture/render pipeline places some XObject-drawn vector text at
-vertically mirrored y coordinates. Because neither the content-stream sequence nor raster
-inspection can then see that the text paints above a fill, bad-redaction analysis reports
-four documented false positives relative to real x-ray on text-over-rectangle forms; the
-pinning tests are marked `xfail` in
-`tests/src/core_pdf/compat/test_facade_characterization.py`.
+Compatibility facades under `core_pdf.api.compat.*` project the engine's public objects into
+third-party interfaces without sharing facade state. See [api.md](api.md) for the supported API,
+structured JSON format, and compatibility behavior.
 
 ---
 
 ## 2. The extraction pipeline
 
-The pipeline lives in the `parse/` package, one module per stage. The stages run in roughly
-this order:
+The `parse/` package owns extraction, with one module per stage. The stages run in roughly this
+order:
 
 ```text
         ┌── capture ──┐
@@ -75,38 +55,31 @@ bytes → │ capture_page│ → plan_page ────────────
 
 | Module | Role |
 | --- | --- |
-| `parse/model.py` | Shared stage contracts: `ObservationBatch`, `PageEvidence`, typed route/fusion policies, `WorkPlan`, `RecognitionResult`, `RecognitionReport`, `ParsedPage`, and `ParseReport`. |
-| `parse/capture.py` | Runs the canonical page program once and produces one cached `CapturedPage`: glyphs, drawings, images, observations, and routing evidence. |
-| `parse/route.py` | Decides *how* to extract this page — native text, OCR, or both — producing a typed `WorkPlan`. |
-| `parse/fusion.py` | Merges observations from multiple sources (native + OCR) into one coherent set. |
-| `parse/tables.py` | Owns the complete table stage: grid, stream, and chart detection; cell merging; ordering; and nearby title/caption association. |
-| `parse/ocr*.py` | The recognition stage, itself layered. `ocr.py` orchestrates; `ocr_regions.py` picks what to recognize and batches it; `ocr_raster.py` produces the pixels; `ocr_tesseract.py` is the only module that talks to Tesseract; `ocr_stroked_vector.py` recovers text drawn as vector strokes; `ocr_model.py` holds the records they all share. It returns observations and a `RecognitionReport`; caches hold reusable raster artifacts, not diagnostic side channels. |
-| `parse/grid_geometry.py` | Ruled-grid segment classification and connected components, shared by `tables.py` (vector rulings) and the OCR stage (rulings detected in a raster). |
-| `parse/layout.py` | Groups runs into lines and blocks; column detection and reading order. |
-| `parse/emit.py` | Text normalization, artifact removal, table/block reconciliation, and direct assembly of the canonical structured `Page`. |
-| `parse/pipeline.py` | Lazy orchestration, single-flight locking, and product caching: `parse_page`, `extract_page`, and `page_extraction`. It assembles the typed `ParseReport` once per parsed page. |
+| `parse/model.py` | Shared contracts for evidence, plans, observations, results, and reports. |
+| `parse/capture.py` | Runs the page program once and produces a cached `CapturedPage`. |
+| `parse/route.py` | Chooses native extraction, OCR, or both and returns a `WorkPlan`. |
+| `parse/fusion.py` | Merges native and recognized observations. |
+| `parse/tables.py` | Detects and reconciles grids, stream tables, charts, cells, titles, and captions. |
+| `parse/ocr*.py` | Recognizes raster and stroked-vector text; OCR backends remain isolated here. |
+| `parse/grid_geometry.py` | Supplies ruled-grid geometry to table and OCR stages. |
+| `parse/layout.py` | Groups runs into lines and blocks and determines reading order. |
+| `parse/emit.py` | Normalizes text and assembles the canonical structured `Page`. |
+| `parse/pipeline.py` | Orchestrates stages, locking, and product caching. |
 
-`parse/__init__.py` exposes only pipeline entry points and shared stage models. Stage-specific
-helpers are imported from their owner module. `internal_PageExtraction` is the single locked owner
-of page-local capture, recognition, fusion, layout, report, and assembly products. Document
-extraction builds an immutable enrichment snapshot for exactly the selected pages; learned font
-and stroked-glyph mappings are applied to selection-local captures and never mutate a page cache or
-font decoder. Direct page extraction is therefore independent of document extraction history.
+`parse/__init__.py` exports only pipeline entry points and shared stage models. Import stage helpers
+from their owning modules. `internal_PageExtraction` is the locked owner of page-local capture,
+recognition, fusion, layout, report, and assembly products.
+
+Document extraction creates an immutable enrichment snapshot for the selected pages. Learned font
+and stroked-glyph mappings apply to selection-local captures without mutating page caches or font
+decoders, so direct page extraction does not depend on earlier document extraction.
 
 ### Table projections
 
-Table extraction produces one canonical view. `parse/tables.py` attaches derived row and column
-bands plus nearby `TableAssociatedText` records (title or caption) without rewriting cell
-topology. Emission reconciles those tables with text blocks, removes duplicate or rejected
-candidates, assigns page-wide element order, and materializes title, caption, row-band, and
-column-band records. `Page.tables`, `Document.table_view`, JSON, and HTML/Markdown all consume that
-same final tuple; the structured value model does not rerun extraction heuristics.
-
-Structured JSON schema 5.0 is a normalized graph. Pages contain stable references to ordered
-nodes and interactive records; nodes reference canonical block, table, or figure IDs; blocks
-reference canonical line IDs. IDs have the deterministic form
-`p{page_number}:{kind}:{zero_based_index}`. Payloads occur once, and schema 4's duplicated node,
-element, line-reference, and table-reference snapshots are intentionally unsupported.
+Table extraction produces one canonical view. The table stage adds row and column bands and nearby
+titles or captions; emission reconciles those tables with text blocks and assigns page-wide order.
+`Page.tables`, `Document.table_view`, and the structured serializers consume the resulting tuple
+without rerunning extraction heuristics.
 
 ---
 
@@ -115,100 +88,72 @@ element, line-reference, and table-reference snapshots are intentionally unsuppo
 ```text
 src/core_pdf/
   __init__.py            lazy public export table
-  cli.py, __main__.py    CLI entry point (also carries Nuitka build directives)
-  api/
-    compat/              independent third-party facades over engine owners
+  cli.py, __main__.py    command-line entry point
+  api/compat/            independent third-party compatibility facades
+  _vendor/               vendored third-party source and data
   impl/
-    runtime/             engine-independent infrastructure beneath the whole engine:
-                         array_views (zero-copy numpy/memoryview), cache,
-                         image_cache (byte-budgeted LRU, single-flight decoding),
-                         execution (bounded thread runtime, budgets, runtime config)
-    models.py            public extraction records (DrawingRecord, ImageRecord, TextWord)
-    exceptions.py        the PdfError hierarchy (incl. PdfDocumentClosedError)
-    primitives.py        PdfName and friends (interned, precomputed hash)
-    types.py             source-buffer, protocol, and geometry aliases
-    text.py              shared text kernel: collapse_ws, search_key,
-                         collapse_character_spaced
-    pages.py             PageSelection and its single normalization implementation
-    spec/                PDF specification implementation (see below); document-local
-                         Raw* records live in s_07_document/records.py
-    parse/               the extraction pipeline, one module per stage (see §2),
-                         plus newstroke and stroked_text, which only it uses
+    runtime/             engine-independent caching, arrays, and execution support
+    exceptions.py        error hierarchy
+    models.py            public extraction records
+    pages.py             page-selection normalization
+    primitives.py        PDF primitives
+    text.py              shared text normalization
+    types.py             buffers, protocols, and geometry aliases
+    model/               capture geometry, text runs, and glyph storage
+    layout/              layout heuristics and spatial analysis
+    spec/                PDF specification implementation (see below)
+    parse/               extraction pipeline (see section 2)
     render/              display lists, raster kernels, targets, and page composition
+    structured/          document IR and markdown/HTML/JSON/CSV/TEI serialization
+    writing/             PDF objects, fonts, encryption, signatures, and output
     page.py              PdfPage
     document.py          PdfDocument
-    model/               the capture data model: geometry kernel, TextRun, glyph
-                         records, columnar glyph storage. Beneath spec/ and layout/.
-    layout/              heuristics only: line grouping, spatial index, geometry
-                         quality, word frequencies
-    structured/          document IR → markdown/HTML/JSON/CSV/TEI
-    writing/             PDF output: objects, fonts, encryption, signatures
 ```
+
+Rendering uses direct module owners rather than a barrel module: `render/display.py` owns display
+records and options, `render/kernels.py` owns pure raster kernels, `render/target.py` owns the
+mutable paint target, `render/page.py` owns page composition, and `render/raster_image.py` owns the
+raster value object.
 
 ### Dependency direction
 
-**There are no runtime import cycles between packages, and `import-linter` enforces
-it.** Eleven contracts live in `[tool.importlinter]` in `pyproject.toml`; run them with
-`uv run --group lint lint-imports`. They also run in the `pre-push` prek stage, which
-is what CI's quality job executes, so a violation fails the build rather than review.
+There are no runtime import cycles between packages. Dependency direction is enforced by the
+import-linter contracts in `pyproject.toml`, which are the source of truth when this overview and
+the code disagree. Upper layers may depend on lower layers; lower layers must not import upward.
+The principal derived-processing order is:
 
-`exclude_type_checking_imports` is on, so the contracts check the runtime graph. That
-is deliberate: annotation-only imports create no cycle at import time, and two of them
-are load-bearing (see the knots below). Adding a layer means adding it to the
-contract; the contracts are the specification, this prose is the explanation.
+```text
+document → page → parse → render → writing → structured → layout → model
+```
 
-Three packages exist to be depended *upon* and must not depend upward:
+Three packages form dependency floors:
 
-| Package | May import | Status |
-| --- | --- | --- |
-| `impl/runtime/` | nothing internal | zero internal imports |
-| `impl/model/` | `impl/` base modules | clean |
-| `impl/spec/s_07_syntax_primitives` | `impl/primitives.py` | clean |
+| Package | May import internally |
+| --- | --- |
+| `impl/runtime/` | nothing |
+| `impl/model/` | base modules directly under `impl/` |
+| `impl/spec/s_07_syntax_primitives/` | `impl/primitives.py` |
 
-`impl/spec/` is a sibling of the derived-processing packages at the `impl/` root. Those
-consumers may depend on it; its only derived-processing dependency is the low-level capture
-model, and an import contract prevents dependencies on execution and higher derived layers.
+`impl/spec/` is a sibling of the derived-processing packages. Derived consumers may depend on it;
+within the derived layers, the spec may depend only on the low-level capture model. Base modules
+under `impl/` never depend on the spec or derived packages.
 
-The line-text records (`LayoutLineText`, `LayoutLineTextSegment`) live alongside `TextRun` in
-`model/runs.py` rather than with the heuristics that build them, because `TextRun` memoizes
-reconstruction results on itself and the record layer must not name a type from `layout/`.
-Cached layout words and structured views both use the canonical public `TextWord` record from
-`impl/models.py`.
+Records belong in `model/`, while `layout/` contains the heuristics that consume or produce layout
+results. Both packages avoid convenience re-exports: import a symbol from the module that owns it.
+Document-scoped caches and page locks live on the spec-level document, with no process-global
+fallback that could couple unrelated documents.
 
-Document cache and per-page locks belong to the spec-level `PdfDocument`; spec consumers
-name that ownership directly through their document protocols. Lightweight test doubles
-must provide their own locks, so there is no process-global fallback that can accidentally
-couple unrelated documents. `newstroke`/`stroked_text` remain `parse/` modules rather than
-top-level `impl/` modules because only the pipeline uses them.
+Two relationships sit outside the simple package ordering:
 
-`layout/` is heuristics only and re-exports nothing — import from the owning module.
-`LayoutLine` lives in `layout/lines.py` because it is what line grouping *produces*;
-`TextRun` lives in `model/runs.py` because it is what capture *emits*. Likewise
-`model/glyphs.py` owns the glyph records (including `GlyphSegment` and
-`internal_materialize`) and `model/glyph_table.py` owns only the columnar storage that
-consumes them, so the two no longer import each other.
-
-The chapter-7 bottom layers are explicit. `s_07_syntax_primitives` owns dependency-free
-lexical tables, scanning, coercion, dictionary lookup, and content-operator metadata.
-Filters may use those kernels. Above filters, `s_07_syntax` owns the COS parser,
-`PdfStream` and its lazy decode cache, xref and object resolution, and the recursive PDF
-object type vocabulary. Base modules therefore never depend back on the spec or derived
-processing packages, and the contracts have no ignored runtime edges.
-
-**Two known knots**, both deliberate and neither a runtime package cycle:
-
-- `s_14_structure/tree.py` names `PdfDocument` and `PdfPage` in eleven signatures,
-  under `TYPE_CHECKING` only, while `s_07_document` imports the structure tree for
-  real. Replacing those annotations with protocols would add more indirection than
-  the cycle costs, so an import contract should record it as an allowed exception.
-- `structured/{model,serialization}` form a two-module cycle because the
-  serializers hang off the structured IR (`Page.to_markdown()` and friends) via
-  function-local imports. That is the documented design — the alternative duplicates
-  serializer entry points — so the cycle stays inside the package.
+- `s_14_structure/tree.py` uses type-only references to the spec-level document and page, while
+  `s_07_document` imports the structure tree at runtime. Import-linter excludes those
+  `TYPE_CHECKING` imports because it enforces the runtime graph.
+- Structured IR methods call serializers through function-local imports. This keeps serializer
+  entry points on the IR without creating a module-initialization cycle.
 
 ### The `spec/s_NN_*` scheme
 
-Subpackages under `spec/` mirror **chapters of the PDF specification**:
+Subpackages under `spec/` mirror chapters of the PDF specification:
 
 | Package | PDF chapter |
 | --- | --- |
@@ -222,93 +167,41 @@ Subpackages under `spec/` mirror **chapters of the PDF specification**:
 | `s_09_fonts` | 9 — font programs, CMaps, glyph decoding |
 | `s_14_structure` | 14 — logical structure tree |
 
-`s_07_syntax` is the upper COS layer — lexing, streams, the object model, xref, and resolution
-remain cohesive. Splitting those mutually dependent owners across `s_07_syntax` and a separate
-`s_07_objects` previously produced a package-level cycle. The lower
-`s_07_syntax_primitives` package is deliberately narrower: it contains only kernels needed by
-both filters and COS. Keep that package free of imports from filters or higher derived layers.
+Chapter numbers do not determine dependency order. `s_07_syntax_primitives` contains only kernels
+shared by filters and the upper COS layer; `s_07_syntax` owns the mutually dependent lexer,
+streams, object model, xref, and resolution machinery.
 
-Operator and filter metadata each have one declarative owner. Content-operator categories,
-dispatch names, text-only scan tables, Type 3 replay membership, and cached lexer keywords derive
-from `s_07_syntax_primitives/content_operators.py`; stream-filter aliases, decoders, predictor
-support, and decode-cache policy derive from `s_07_filters/registry.py`. Add metadata there instead
-of creating another parallel table.
+Declarative metadata has one owner: content-operator behavior belongs in
+`s_07_syntax_primitives/content_operators.py`, and stream-filter behavior belongs in
+`s_07_filters/registry.py`. Extend those registries instead of creating parallel tables.
 
-The spec-level `s_07_document/document.py` is the concrete owner of catalog, page-tree, labels,
-navigation, forms, attachments, and optional-content behavior. `document_xref.py` remains a
-separate cohesive base for xref scanning/recovery, while `document_pages.py` contains only the
-read-only lazy page sequence and shared inherited-page constants.
+---
 
-### Device colour and the default CMYK profile
+## 4. Rendering constraints
 
-PDF 32000-1 leaves all three Device spaces device-dependent. Treating
-DeviceGray and DeviceRGB as sRGB is renderer behaviour rather than anything the
-spec defines, but it is what viewers do and it costs nothing: the components
-map straight onto the components of the output space. DeviceCMYK has no such
-correspondence, and the spec gives no conversion to RGB at all. The
-uncalibrated `255*(1-ink)*(1-black)` formula that fills the gap is visibly
-wrong -- it renders the process inks as saturated screen primaries and 100% K as
-pure black -- so `s_08_graphics/device_profiles.py` runs DeviceCMYK through a
-real press profile vendored in `_vendor/icc/`, and keeps the ink formula only as
-a fallback for an install where that file is missing.
+### Device colour
 
-Two details in `s_08_graphics/icc_profiles.py` are load-bearing and easy to get
-wrong. LUT tags are selected by **relative colorimetric** intent
-(`select_icc_lut_tag` prefers the `1` suffix) because PDF 8.6.5.8 makes that the
-default rendering intent, and because a perceptual table already black-points
-its output, which silently disables the next step. That step is **black point
-compensation**: relative colorimetric alone reproduces press black as the dark
-grey it measures on paper, so a CMYK page renders washed out on a screen that
-can show real black. `internal_detect_black_point` finds the darkest colour the
-profile can actually reach -- a rich black mixing all four inks, not 100% K --
-by asking the profile's `B2A` table which inks it would use for L\* = 0, and
-`internal_compensate_black_point` scales the connection space so that lands on
-zero. Together these reproduce lcms2 to within 0.21 of 255 mean.
-
-Anything reaching an ICC LUT from an image should call `apply_uint8` rather than
-`apply`: it collapses the input curves into a byte-indexed gather and
-deduplicates repeated colours, which is worth roughly an order of magnitude on
-photographic CMYK.
+PDF leaves DeviceCMYK conversion undefined. `s_08_graphics/device_profiles.py` converts it through
+the press profile in `_vendor/icc/` and uses the uncalibrated ink formula only when the profile is
+unavailable. The ICC implementation documents its rendering intent, black-point compensation, and
+optimized byte path alongside the code.
 
 ### Golden rasters
 
-Rendering uses direct module owners rather than a barrel module: display-list records and options
-live in `render/display.py`, pure raster kernels in `render/kernels.py`, the mutable paint target in
-`render/target.py`, page composition in `render/page.py`, and the raster value object in
-`render/raster_image.py`.
+`tests/test_rendering_golden.py` pins corpus output. Ordinary pages use exact RGBA digests; pages
+containing irreversible JPEG 2000 images use canonical PNG references with bounded RGB differences
+because OpenJPEG output can vary across CPU implementations. CI runs the complete corpus, while the
+default local test uses a covering subset.
 
-`tests/test_rendering_golden.py` pins the RGBA output of the corpus. The versioned
-manifest in `tests/snapshots/raster/first_page_scale1.json` has two contracts:
-ordinary pages retain exact SHA-256 digests, while pages that paint irreversible
-JPEG 2000 images retain a lossless canonical PNG plus measured RGB error limits.
-OpenJPEG implements that lossy 9/7 transform with different floating-point paths
-on x86 and ARM, so requiring an exact digest there would characterize a wheel's
-CPU implementation rather than the renderer. Tolerant entries still require
-identical dimensions and alpha, and separately bound the maximum channel error,
-changed RGB samples, and total RGB error. Their PNG digest is also recorded for
-an exact fast path and fixture-integrity check.
+A behavior-preserving refactor must leave the manifest and reference images unchanged. After an
+intentional output change, regenerate them with:
 
-The always-on layer renders 24 documents chosen by greedy line-cover — together
-they exercise the rendering modules across the full 224-document reach — plus
-every irreversible-JPX page. `CORE_PDF_RASTER_GOLDEN_FULL=1` sweeps the complete
-corpus as one independently schedulable test per document. CI sets that variable
-and uses two pytest workers, so the whole corpus gates a merge without serializing
-all raster work; a focused macOS ARM job exercises the portable JPX contract as
-well. Reaching every *line* of `render/` is not the same as pinning every
-*pixel*: four digests once
-sat in the snapshot that no commit could produce, unnoticed because only the
-subset ran in CI.
+```sh
+uv run python scripts/update_raster_golden.py
+```
 
-A refactor that preserves behavior must leave the manifest and PNG references
-untouched. Regenerate them with
-`uv run python scripts/update_raster_golden.py` only when an output change is
-intentional and review the complete diff. Reference regeneration is restricted
-to the pinned Ubuntu x86_64 codec environment; `--allow-noncanonical-write` is
-an explicitly destructive bootstrap escape hatch, not the normal workflow. It
-records noncanonical provenance, so the resulting tree intentionally fails its
-provenance test until regenerated canonically. The updater records its
-environment in the manifest, renders documents in two isolated
-worker processes, classifies the page's JPEG 2000 codestreams, preserves
-calibrated limits, and refuses to invent a tolerance for a newly encountered
-irreversible stream. Recompute the
-covering subset with `scripts/raster_cover.py` after large structural changes.
+Review the complete artifact diff. Canonical references must be generated in the pinned Ubuntu
+x86_64 codec environment; the noncanonical override is only a bootstrap mechanism and deliberately
+leaves provenance validation failing. The test and updater module documentation describes the
+snapshot format and regeneration mechanics. Recompute the local covering subset with
+`scripts/raster_cover.py` after substantial renderer restructuring.
