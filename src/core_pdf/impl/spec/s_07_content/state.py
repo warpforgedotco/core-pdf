@@ -1258,13 +1258,13 @@ class TextState:
         if not self.marked_content_stack and self.render_mode != 3 and self.font_size >= 0.1:
             return True
 
-        # Once the layer has been judged invisible the scan cannot change the answer,
-        # so it latches on the first show-text op and the remaining ops skip
-        # re-walking the whole page accumulator.
-        if (self.render_mode == 3 or self.font_size < 0.1) and not self.invisible_text_layer:
-            if any(r.visible for r in self.runs):
-                return False
-            self.invisible_text_layer = True
+        # Render mode 3 and sub-0.1pt text paint nothing, so they are not visible
+        # here. Whether such a layer is nonetheless the page's real text -- a scan
+        # carrying an OCR layer -- is a property of the whole page, not of the runs
+        # captured before this operator, so that call belongs to
+        # `internal_hidden_text_is_trusted` once parsing has seen every run.
+        if self.render_mode == 3 or self.font_size < 0.1:
+            return False
 
         for entry in self.marked_content_stack:
             layer = getattr(entry, "layer", entry)
