@@ -401,7 +401,6 @@ source_modules = [
     "core_pdf.impl.models",
     "core_pdf.impl.pages",
     "core_pdf.impl.primitives",
-    "core_pdf.impl.protocols",
     "core_pdf.impl.text",
     "core_pdf.impl.types",
 ]

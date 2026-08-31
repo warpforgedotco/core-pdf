@@ -3,9 +3,24 @@ from __future__ import annotations
 
 import mmap
 from os import PathLike
-from typing import TypeAlias
+from typing import Protocol, TypeAlias
 
-from core_pdf.impl.protocols import BinaryReader, SeekableBinaryReader
+
+class BinaryReader(Protocol):
+    """Readable binary source that can be materialized before parsing."""
+
+    def read(self, size: int = -1, /) -> bytes | bytearray | memoryview: ...
+
+
+class SeekableBinaryReader(BinaryReader, Protocol):
+    """Random-access binary source aligned with PDF byte-offset structure."""
+
+    def seek(self, offset: int, whence: int = 0, /) -> int: ...
+
+    def tell(self) -> int: ...
+
+    def fileno(self) -> int: ...
+
 
 PdfByteBuffer: TypeAlias = bytes | mmap.mmap
 PathSource: TypeAlias = str | PathLike[str]
