@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from collections.abc import Callable
 from dataclasses import dataclass
 from functools import lru_cache
 from statistics import median_low
@@ -125,11 +126,10 @@ def line_text_segment(
     text: str,
     separator_before: str,
 ) -> LayoutLineTextSegment:
-    advance_bbox = GlyphLineBuilder.advance_bbox(run)
     return LayoutLineTextSegment(
         text=text,
         separator_before=separator_before,
-        advance_bbox=advance_bbox,
+        advance_bbox=run.advance_bbox,
         rotation_angle=run.rotation_angle,
     )
 
@@ -223,7 +223,6 @@ class GlyphLineBuilder:
         "suppress_tiny_page_footer",
         "tracked_word_gap",
         "explicit_spaces_control_glyph_gaps",
-        "explicit_space_count",
         "has_large_column_gap",
         "next_non_space_texts",
         "next_non_space_x0s",
@@ -262,7 +261,6 @@ class GlyphLineBuilder:
             non_space_runs,
             explicit_space_count=sum(1 for run in runs if run.text_is_space),
         )
-        self.explicit_space_count = 0
         self.has_large_column_gap = False
         self.next_non_space_texts: list[str] = []
         self.next_non_space_x0s: list[float] = []
@@ -275,9 +273,6 @@ class GlyphLineBuilder:
         if self.has_explicit_spaces:
             self.internal_prepare_explicit_space_context()
 
-    def render(self) -> str:
-        return self.build().text
-
     def build(self) -> LayoutLineText:
         parts: list[str] = []
         segments: list[LayoutLineTextSegment] = []
@@ -287,7 +282,6 @@ class GlyphLineBuilder:
         prev_run: TextRun | None = None
         prev_run_text = ""
         prev_last_char = ""
-        prev_run_bbox: tuple[float, float, float, float] | None = None
         prev_atom: LayoutLineTextAtom | None = None
         recent_emitted_runs: list[tuple[tuple[float, float, float, float], str]] = []
 
@@ -299,12 +293,6 @@ class GlyphLineBuilder:
             if not stripped and not text.isspace():
                 continue
 
-            if (
-                prev_run is not None
-                and prev_run_bbox is not None
-                and self.is_duplicate_overlap(prev_run_bbox, prev_run_text, run, text)
-            ):
-                continue
             if self.is_recent_duplicate_overlap(recent_emitted_runs, run, text):
                 continue
 
@@ -347,8 +335,7 @@ class GlyphLineBuilder:
             prev_run = run
             prev_run_text = text
             prev_last_char = text[-1:]
-            prev_run_bbox = self.advance_bbox(run)
-            recent_emitted_runs.append((prev_run_bbox, text))
+            recent_emitted_runs.append((run.advance_bbox, text))
             if len(recent_emitted_runs) > 256:
                 del recent_emitted_runs[:64]
 
@@ -381,7 +368,7 @@ class GlyphLineBuilder:
                     LayoutLineTextAtom(
                         text=text,
                         run=run,
-                        advance_bbox=self.advance_bbox(run),
+                        advance_bbox=run.advance_bbox,
                         baseline=run.baseline,
                         has_glyph_geometry=False,
                     ),
@@ -403,7 +390,7 @@ class GlyphLineBuilder:
             LayoutLineTextAtom(
                 text=text,
                 run=run,
-                advance_bbox=self.advance_bbox(run),
+                advance_bbox=run.advance_bbox,
                 baseline=run.baseline,
                 has_glyph_geometry=False,
             ),
@@ -411,7 +398,6 @@ class GlyphLineBuilder:
 
     def internal_prepare_explicit_space_context(self) -> None:
         runs = self.runs
-        self.explicit_space_count = sum(1 for run in runs if run.text_is_space)
         self.next_non_space_texts = [""] * len(runs)
         self.next_non_space_x0s = [0.0] * len(runs)
         next_text = ""
@@ -469,42 +455,18 @@ class GlyphLineBuilder:
         stripped = run.stripped_text
         if stripped != "TM" or run.rotation_angle != 0 or run.baseline is None:
             return False
-        previous = self.previous_non_space_run(index)
-        following = self.next_non_space_run(index)
-        context_runs = [
-            candidate
-            for candidate in (previous, following)
-            if candidate is not None
-            and candidate.baseline is not None
-            and candidate.rotation_angle == 0
-            and candidate.stripped_text
-            and candidate.stripped_text != stripped
-        ]
-        if not context_runs:
-            return False
-        context_font_size = max(candidate.font_size for candidate in context_runs)
-        if context_font_size <= 0.0 or run.font_size >= context_font_size * 0.82:
-            return False
-        run_baseline = baseline_midpoint(run.baseline, 0)
-        baseline_raise = max(
-            run_baseline - baseline_midpoint(candidate.baseline, 0)
-            for candidate in context_runs
-            if candidate.baseline is not None
+        return self.internal_is_shifted_script_run(
+            run,
+            self.previous_non_space_run(index),
+            self.next_non_space_run(index),
+            context_text_ok=lambda text: text != "TM",
+            font_size_ratio=0.82,
+            baseline_drops=False,
+            shift_minimum=1.5,
+            shift_factor=0.18,
+            attach_factor=0.25,
+            attach_previous_only=False,
         )
-        if baseline_raise < max(1.5, context_font_size * 0.18):
-            return False
-        attach_gap = max(run.space_width * 0.5, context_font_size * 0.25, 2.0)
-        attached_prev = (
-            previous is not None
-            and bool(previous.stripped_text)
-            and run.x0 - previous.x1 <= attach_gap
-        )
-        attached_next = (
-            following is not None
-            and bool(following.stripped_text)
-            and following.x0 - run.x1 <= attach_gap
-        )
-        return attached_prev or attached_next
 
     def is_superscript_like_numeric_run(self, run: TextRun, index: int) -> bool:
         stripped = run.stripped_text
@@ -517,45 +479,18 @@ class GlyphLineBuilder:
             or run.baseline is None
         ):
             return False
-        previous = self.previous_non_space_run(index)
-        following = self.next_non_space_run(index)
-        context_runs = [
-            candidate
-            for candidate in (previous, following)
-            if candidate is not None
-            and candidate.baseline is not None
-            and candidate.rotation_angle == 0
-            and candidate.stripped_text
-            and not candidate.stripped_text.isdigit()
-        ]
-        if not context_runs:
-            return False
-        context_font_size = max(candidate.font_size for candidate in context_runs)
-        if context_font_size <= 0.0 or run.font_size >= context_font_size * 0.8:
-            return False
-        run_baseline = baseline_midpoint(run.baseline, 0)
-        baseline_raises = [
-            run_baseline - baseline_midpoint(candidate.baseline, 0)
-            for candidate in context_runs
-            if candidate.baseline is not None
-        ]
-        if not baseline_raises:
-            return False
-        baseline_raise = max(baseline_raises)
-        if baseline_raise < max(1.5, context_font_size * 0.18):
-            return False
-        attach_gap = max(run.space_width * 0.5, context_font_size * 0.25, 2.0)
-        attached_prev = (
-            previous is not None
-            and bool(previous.stripped_text)
-            and run.x0 - previous.x1 <= attach_gap
+        return self.internal_is_shifted_script_run(
+            run,
+            self.previous_non_space_run(index),
+            self.next_non_space_run(index),
+            context_text_ok=lambda text: not text.isdigit(),
+            font_size_ratio=0.8,
+            baseline_drops=False,
+            shift_minimum=1.5,
+            shift_factor=0.18,
+            attach_factor=0.25,
+            attach_previous_only=False,
         )
-        attached_next = (
-            following is not None
-            and bool(following.stripped_text)
-            and following.x0 - run.x1 <= attach_gap
-        )
-        return attached_prev or attached_next
 
     def is_subscript_like_numeric_run(self, run: TextRun, index: int) -> bool:
         stripped = run.stripped_text
@@ -571,7 +506,42 @@ class GlyphLineBuilder:
         previous = self.previous_non_space_run(index)
         if previous is None or not chemical_subscript_prefix_text(previous.stripped_text):
             return False
-        following = self.next_non_space_run(index)
+        return self.internal_is_shifted_script_run(
+            run,
+            previous,
+            self.next_non_space_run(index),
+            context_text_ok=lambda text: not text.isdigit(),
+            font_size_ratio=0.82,
+            baseline_drops=True,
+            shift_minimum=0.45,
+            shift_factor=0.05,
+            attach_factor=0.2,
+            attach_previous_only=True,
+        )
+
+    def internal_is_shifted_script_run(
+        self,
+        run: TextRun,
+        previous: TextRun | None,
+        following: TextRun | None,
+        *,
+        context_text_ok: Callable[[str], bool],
+        font_size_ratio: float,
+        baseline_drops: bool,
+        shift_minimum: float,
+        shift_factor: float,
+        attach_factor: float,
+        attach_previous_only: bool,
+    ) -> bool:
+        """Shared gate for runs shifted off the surrounding baseline.
+
+        Classifies a run as script-like when its neighbours accept it as
+        context, its font is small enough relative to theirs, its baseline is
+        raised (or dropped) far enough, and it sits tightly attached to a
+        neighbour.
+        """
+        if run.baseline is None:
+            return False
         context_runs = [
             candidate
             for candidate in (previous, following)
@@ -579,26 +549,39 @@ class GlyphLineBuilder:
             and candidate.baseline is not None
             and candidate.rotation_angle == 0
             and candidate.stripped_text
-            and not candidate.stripped_text.isdigit()
+            and context_text_ok(candidate.stripped_text)
         ]
         if not context_runs:
             return False
         context_font_size = max(candidate.font_size for candidate in context_runs)
-        if context_font_size <= 0.0 or run.font_size >= context_font_size * 0.82:
+        if context_font_size <= 0.0 or run.font_size >= context_font_size * font_size_ratio:
             return False
         run_baseline = baseline_midpoint(run.baseline, 0)
-        baseline_drops = [
-            baseline_midpoint(candidate.baseline, 0) - run_baseline
+        baseline_shift = max(
+            (
+                baseline_midpoint(candidate.baseline, 0) - run_baseline
+                if baseline_drops
+                else run_baseline - baseline_midpoint(candidate.baseline, 0)
+            )
             for candidate in context_runs
             if candidate.baseline is not None
-        ]
-        if not baseline_drops:
+        )
+        if baseline_shift < max(shift_minimum, context_font_size * shift_factor):
             return False
-        baseline_drop = max(baseline_drops)
-        if baseline_drop < max(0.45, context_font_size * 0.05):
-            return False
-        attach_gap = max(run.space_width * 0.5, context_font_size * 0.2, 2.0)
-        return run.x0 - previous.x1 <= attach_gap
+        attach_gap = max(run.space_width * 0.5, context_font_size * attach_factor, 2.0)
+        if attach_previous_only:
+            return previous is not None and run.x0 - previous.x1 <= attach_gap
+        attached_prev = (
+            previous is not None
+            and bool(previous.stripped_text)
+            and run.x0 - previous.x1 <= attach_gap
+        )
+        attached_next = (
+            following is not None
+            and bool(following.stripped_text)
+            and following.x0 - run.x1 <= attach_gap
+        )
+        return attached_prev or attached_next
 
     def is_formula_subscript_like_numeric_run(self, run: TextRun, index: int) -> bool:
         """Recognize numeric subscripts attached to mathematical variables."""
@@ -712,33 +695,6 @@ class GlyphLineBuilder:
                 return run
         return None
 
-    @staticmethod
-    def advance_bbox(run: TextRun) -> tuple[float, float, float, float]:
-        return run.advance_bbox
-
-    def is_duplicate_overlap(
-        self,
-        prev_bbox: tuple[float, float, float, float],
-        prev_text: str,
-        run: TextRun,
-        text: str,
-        *,
-        run_bbox: tuple[float, float, float, float] | None = None,
-    ) -> bool:
-        x0, y0, x1, y1 = run_bbox if run_bbox is not None else self.advance_bbox(run)
-        px0, py0, px1, py1 = prev_bbox
-        ox = (x1 if x1 < px1 else px1) - (x0 if x0 > px0 else px0)
-        oy = (y1 if y1 < py1 else py1) - (y0 if y0 > py0 else py0)
-        if ox <= 0 or oy <= 0:
-            return False
-        box_area = (y1 - y0) * (x1 - x0)
-        if box_area <= 0:
-            return False
-        overlap_ratio = (ox * oy) / box_area
-        if text == prev_text:
-            return overlap_ratio > 0.5
-        return overlap_ratio > 0.8 and len(text) == len(prev_text) and len(text) <= 2
-
     def is_recent_duplicate_overlap(
         self,
         recent_runs: list[tuple[tuple[float, float, float, float], str]],
@@ -747,7 +703,7 @@ class GlyphLineBuilder:
     ) -> bool:
         if not recent_runs:
             return False
-        x0, y0, x1, y1 = self.advance_bbox(run)
+        x0, y0, x1, y1 = run.advance_bbox
         box_area = (y1 - y0) * (x1 - x0)
         if box_area <= 0:
             return False
@@ -1088,23 +1044,12 @@ class GlyphLineBuilder:
     ) -> bool:
         if self.is_tracked_glyph_line:
             return False
-        if self.is_table_like_line:
-            # Tables frequently split a word into adjacent text-showing
-            # operators while also containing numeric cells.  Preserve the
-            # table spacing rules for real cell gaps, but join only very tight
-            # fragments (for example ``Vo`` + ``lume``).
-            if spacing_gap > max(1.8, min(space_width, height) * 0.25):
-                return False
-            return should_join_plausible_split_word(
-                prev_text,
-                text,
-                x_gap=spacing_gap,
-                height=height,
-                space_width=space_width,
-                prev_visible=prev_visible,
-                visible=visible,
-                allow_short_prefix=allow_short_prefix,
-            )
+        # Tables frequently split a word into adjacent text-showing
+        # operators while also containing numeric cells.  Preserve the
+        # table spacing rules for real cell gaps, but join only very tight
+        # fragments (for example ``Vo`` + ``lume``).
+        if self.is_table_like_line and spacing_gap > max(1.8, min(space_width, height) * 0.25):
+            return False
         return should_join_plausible_split_word(
             prev_text,
             text,
@@ -1762,31 +1707,10 @@ def is_structural_list_marker_run(run: TextRun) -> bool:
 
 
 def is_decorative_leader(text: str) -> bool:
-    if not text:
-        return False
-    if len(text) < 3:
-        return False
-    first_text_char = text[0]
-    leader_chars = LEADER_START_CHARS
-    if first_text_char not in leader_chars and not first_text_char.isspace():
-        return False
-    if first_text_char in leader_chars:
-        last_non_space = len(text) - 1
-        while last_non_space >= 0 and text[last_non_space].isspace():
-            last_non_space -= 1
-        if last_non_space < 2:
-            return False
-        for ch in text[: last_non_space + 1]:
-            if ch not in leader_chars and not ch.isspace():
-                return False
-        return True
     stripped = text.strip()
-    if len(stripped) < 3:
+    if len(stripped) < 3 or stripped[0] not in LEADER_START_CHARS:
         return False
-    first = stripped[0]
-    if first not in leader_chars:
-        return False
-    return all(not (ch not in leader_chars and not ch.isspace()) for ch in stripped)
+    return all(ch in LEADER_START_CHARS or ch.isspace() for ch in stripped)
 
 
 def is_tiny_page_footer(text: str) -> bool:

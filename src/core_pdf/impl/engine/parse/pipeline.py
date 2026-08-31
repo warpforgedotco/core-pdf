@@ -5,13 +5,14 @@ from __future__ import annotations
 
 import math
 import time
+from bisect import bisect_left, bisect_right
 from collections import Counter, defaultdict
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from concurrent.futures import Future
 from contextlib import suppress
 from dataclasses import dataclass, field, replace
 from types import MappingProxyType
-from typing import Any, cast
+from typing import Any, TypeVar, cast
 
 from core_pdf.impl.engine.model.glyphs import GlyphUnicodeSemantics, glyph_unicode_semantics
 from core_pdf.impl.engine.parse.capture import (
@@ -65,6 +66,27 @@ from core_pdf.impl.runtime.execution import TaskScope, WorkStage
 from core_pdf.impl.spec.s_07_document.page_links import resolve_destination_value
 
 PAGE_EXTRACTION_CACHE_KEY = "page_extraction_v3"
+
+internal_T = TypeVar("internal_T")
+
+
+def internal_collected_records(
+    fetch: Callable[[], Iterable[Any]],
+    build: Callable[[int, Any], internal_T],
+) -> tuple[internal_T, ...]:
+    """Fetch page records and build one product per record, skipping bad entries."""
+    records: Iterable[Any]
+    try:
+        records = fetch()
+    except (TypeError, ValueError):
+        records = ()
+    output: list[internal_T] = []
+    for index, record in enumerate(records):
+        try:
+            output.append(build(index, record))
+        except (TypeError, ValueError):
+            continue
+    return tuple(output)
 
 
 def internal_report_number(
@@ -200,9 +222,6 @@ class internal_PageExtraction:
             self.internal_recognition = recognition
             return recognition
 
-    def ocr(self, context: TaskScope) -> ObservationBatch:
-        return self.recognition(context).observations
-
     def observations(self, context: TaskScope) -> ObservationBatch:
         with self.page.internal_page_lock:
             if self.internal_observations is not None:
@@ -211,7 +230,7 @@ class internal_PageExtraction:
             capture = self.capture()
             observations = fuse_observations(
                 capture.observations,
-                self.ocr(context),
+                self.recognition(context).observations,
                 self.plan(),
             )
             self.internal_fusion_seconds = time.perf_counter() - started
@@ -460,76 +479,47 @@ class internal_PageExtraction:
             if self.internal_assembled_page is not None:
                 return self.internal_assembled_page
             assembled = assemble_page(self.parsed_page(context), self.capture().drawings)
-            annotations: list[Annotation] = []
-            try:
-                records = self.page.get_annotations()
-            except (TypeError, ValueError):
-                records = ()
             resolver = self.page.document.resolver
-            for record in records:
-                try:
-                    annotations.append(
-                        Annotation(
-                            subtype=record.subtype,
-                            bbox=record.rect,
-                            contents=record.contents,
-                            destination=resolve_destination_value(
-                                resolver, record.dest or record.action
-                            ),
-                        )
-                    )
-                except (TypeError, ValueError):
-                    continue
-
-            links: list[Link] = []
-            try:
-                records = self.page.get_links()
-            except (TypeError, ValueError):
-                records = ()
-            for record in records:
-                try:
-                    links.append(
-                        Link(
-                            bbox=record.bbox,
-                            url=record.url,
-                            link_type=record.link_type,
-                            text="",
-                        )
-                    )
-                except (TypeError, ValueError):
-                    continue
-
-            fields: list[FormField] = []
-            try:
-                records = self.page.get_fields()
-            except (TypeError, ValueError):
-                records = ()
-            for index, record in enumerate(records):
-                try:
-                    fields.append(
-                        FormField(
-                            name=record.name,
-                            field_type=record.type,
-                            value_text=record.value_text,
-                            bbox=record.rect,
-                            field_index=index,
-                            required=record.is_required,
-                            read_only=record.is_read_only,
-                            no_export=record.no_export,
-                            options=record.options,
-                        )
-                    )
-                except (TypeError, ValueError):
-                    continue
-
+            annotations = internal_collected_records(
+                self.page.get_annotations,
+                lambda _index, record: Annotation(
+                    subtype=record.subtype,
+                    bbox=record.rect,
+                    contents=record.contents,
+                    destination=resolve_destination_value(resolver, record.dest or record.action),
+                ),
+            )
+            links = internal_collected_records(
+                self.page.get_links,
+                lambda _index, record: Link(
+                    bbox=record.bbox,
+                    url=record.url,
+                    link_type=record.link_type,
+                    text="",
+                ),
+            )
+            fields = internal_collected_records(
+                self.page.get_fields,
+                lambda index, record: FormField(
+                    name=record.name,
+                    field_type=record.type,
+                    value_text=record.value_text,
+                    bbox=record.rect,
+                    field_index=index,
+                    required=record.is_required,
+                    read_only=record.is_read_only,
+                    no_export=record.no_export,
+                    options=record.options,
+                ),
+            )
             cropbox = assembled.cropbox
             with suppress(TypeError, ValueError):
                 cropbox = self.page.crop_box
             assembled = replace(
                 assembled,
-                annotations=tuple(annotations),
-                links=tuple(links),
-                form_fields=tuple(fields),
+                annotations=annotations,
+                links=links,
+                form_fields=fields,
                 cropbox=cropbox,
             )
             self.internal_assembled_page = assembled
@@ -660,6 +650,10 @@ def internal_font_mapping_votes(
     )
     if not glyphs:
         return votes
+    # Each OCR word only inspects glyphs in its own vertical band, so bucket the
+    # page's glyphs by ink center once instead of rescanning them all per word.
+    glyphs_by_y = sorted(glyphs, key=lambda glyph: (glyph.ink_bbox[1] + glyph.ink_bbox[3]) * 0.5)
+    y_centers = [(glyph.ink_bbox[1] + glyph.ink_bbox[3]) * 0.5 for glyph in glyphs_by_y]
     for text, bbox, confidence in zip(ocr.text, ocr.bbox, ocr.confidence, strict=True):
         if not math.isfinite(float(confidence)) or float(confidence) < 90.0:
             continue
@@ -668,17 +662,16 @@ def internal_font_mapping_votes(
             continue
         x0, y0, x1, y1 = internal_bbox_tuple(bbox)
         tolerance = max(1.0, (y1 - y0) * 0.10)
+        y_start = bisect_left(y_centers, y0 - tolerance)
+        y_stop = bisect_right(y_centers, y1 + tolerance)
         aligned = tuple(
             sorted(
                 (
                     glyph
-                    for glyph in glyphs
+                    for glyph in glyphs_by_y[y_start:y_stop]
                     if x0 - tolerance
                     <= (glyph.ink_bbox[0] + glyph.ink_bbox[2]) * 0.5
                     <= x1 + tolerance
-                    and y0 - tolerance
-                    <= (glyph.ink_bbox[1] + glyph.ink_bbox[3]) * 0.5
-                    <= y1 + tolerance
                 ),
                 key=lambda glyph: (glyph.ink_bbox[1], glyph.ink_bbox[0], glyph.seqno),
             )
@@ -752,7 +745,7 @@ def internal_prepare_document_font_mappings(
         return internal_FontEnrichment()
     ocr_by_index: dict[int, ObservationBatch] = {}
     for completed in context.map_completed(
-        lambda page_index: page_extraction(pages[page_index]).ocr(context),
+        lambda page_index: page_extraction(pages[page_index]).recognition(context).observations,
         seed_indexes,
         stage=WorkStage.PAGE,
     ):

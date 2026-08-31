@@ -724,14 +724,17 @@ def rasterize_packed_stroked_paths(
     raster_scale = max(0.01, float(scale))
     raster_width = max(1, int(round(width * raster_scale)))
     raster_height = max(1, int(round(height * raster_scale)))
-    gray = numpy.full((raster_height, raster_width), 255, dtype=numpy.uint8)
+    # Flat bytearray while plotting: per-pixel numpy scalar reads/writes are far
+    # slower than plain byte indexing; the buffer becomes an array once at the end.
+    gray = bytearray(b"\xff" * (raster_height * raster_width))
     page_height = float(height)
 
     def plot(x: int, y: int, coverage: float) -> None:
         if coverage <= 0.0 or not (0 <= x < raster_width and 0 <= y < raster_height):
             return
-        value = int(gray[y, x])
-        gray[y, x] = max(0, min(255, round(value * (1.0 - coverage))))
+        index = y * raster_width + x
+        value = gray[index]
+        gray[index] = max(0, min(255, round(value * (1.0 - coverage))))
 
     def draw_line(x0: float, y0: float, x1: float, y1: float) -> None:
         steep = abs(y1 - y0) > abs(x1 - x0)
@@ -829,7 +832,7 @@ def rasterize_packed_stroked_paths(
                     )
 
     rgba = numpy.empty((raster_height, raster_width, 4), dtype=numpy.uint8)
-    rgba[:, :, :3] = gray[:, :, None]
+    rgba[:, :, :3] = uint8_view(gray).reshape(raster_height, raster_width)[:, :, None]
     rgba[:, :, 3] = 255
     return RasterImage(rgba, raster_width, raster_height, 4)
 
@@ -1143,6 +1146,19 @@ def internal_color_rgba(color: Any, opacity: Any) -> tuple[int, int, int, int]:
             rgb.append(rgb[-1] if rgb else 0)
         return rgb[0], rgb[1], rgb[2], alpha
     return 0, 0, 0, alpha
+
+
+def internal_scale_rgba_alpha(
+    rgba: tuple[int, int, int, int],
+    alpha_scale: Any,
+) -> tuple[int, int, int, int]:
+    """Scale a colour's alpha by a soft-mask factor, clamped to a byte."""
+    return (
+        rgba[0],
+        rgba[1],
+        rgba[2],
+        max(0, min(255, int(round(rgba[3] * float(alpha_scale))))),
+    )
 
 
 def internal_shading_color_rgba(

@@ -26,8 +26,15 @@ from core_pdf.impl.engine.layout.spatial import (
     bbox_intersection_area,
 )
 from core_pdf.impl.engine.model.geometry import (
+    bbox_area,
     bbox_union,
     rect_tuple,
+)
+from core_pdf.impl.engine.model.geometry import (
+    overlap_ratio_min_exact as internal_ocr_region_overlap,
+)
+from core_pdf.impl.engine.model.geometry import (
+    overlap_ratio_of as internal_ocr_region_coverage,
 )
 from core_pdf.impl.engine.parse.grid_geometry import (
     internal_axis_segments,
@@ -56,8 +63,6 @@ from core_pdf.impl.engine.parse.model import (
 )
 from core_pdf.impl.engine.parse.ocr_model import (
     internal_ocr_region_box,
-    internal_ocr_region_coverage,
-    internal_ocr_region_overlap,
     internal_OcrRegion,
     internal_OcrTask,
     internal_Raster,
@@ -128,41 +133,34 @@ def internal_tile_tasks(
     requested_tiles = ocr_pass.tiles if ocr_pass.scope is OcrPassScope.TILES else 1
     tiles = max(1, min(requested_tiles, raster.height))
     if tiles == 1:
-        return tuple(
-            internal_OcrTask(
-                mode=mode,
-                image=image,
-                rectangle=(0, 0, raster.width, raster.height),
-                page_box=page_box,
-                resolution=raster.resolution,
-                minimum_confidence=ocr_pass.minimum_confidence,
-                character_confidence_threshold=ocr_pass.character_confidence_threshold,
-                recognize_words=ocr_pass.recognize_words,
-                collect_symbols=ocr_pass.collect_symbols,
+        rectangles: tuple[tuple[int, int, int, int], ...] = ((0, 0, raster.width, raster.height),)
+    else:
+        overlap = max(24, int(round(raster.resolution * 0.35)))
+        base_height = math.ceil(raster.height / tiles)
+        rectangles = tuple(
+            (
+                0,
+                (y0 := max(0, tile_index * base_height - overlap)),
+                raster.width,
+                min(raster.height, (tile_index + 1) * base_height + overlap) - y0,
             )
-            for mode in ocr_pass.modes
+            for tile_index in range(tiles)
         )
-    overlap = max(24, int(round(raster.resolution * 0.35)))
-    base_height = math.ceil(raster.height / tiles)
-    tasks = []
-    for mode in ocr_pass.modes:
-        for tile_index in range(tiles):
-            y0 = max(0, tile_index * base_height - overlap)
-            y1 = min(raster.height, (tile_index + 1) * base_height + overlap)
-            tasks.append(
-                internal_OcrTask(
-                    mode=mode,
-                    image=image,
-                    rectangle=(0, y0, raster.width, y1 - y0),
-                    page_box=page_box,
-                    resolution=raster.resolution,
-                    minimum_confidence=ocr_pass.minimum_confidence,
-                    character_confidence_threshold=ocr_pass.character_confidence_threshold,
-                    recognize_words=ocr_pass.recognize_words,
-                    collect_symbols=ocr_pass.collect_symbols,
-                )
-            )
-    return tuple(tasks)
+    return tuple(
+        internal_OcrTask(
+            mode=mode,
+            image=image,
+            rectangle=rectangle,
+            page_box=page_box,
+            resolution=raster.resolution,
+            minimum_confidence=ocr_pass.minimum_confidence,
+            character_confidence_threshold=ocr_pass.character_confidence_threshold,
+            recognize_words=ocr_pass.recognize_words,
+            collect_symbols=ocr_pass.collect_symbols,
+        )
+        for mode in ocr_pass.modes
+        for rectangle in rectangles
+    )
 
 
 def internal_estimated_text_height(raster: internal_Raster) -> float:
@@ -691,13 +689,7 @@ def internal_dominant_image_region(
 OCR_REGION_INITIAL_COUNT = 8
 
 
-OCR_REGION_MAX_COUNT = 16
-
-
 OCR_REGION_INITIAL_AREA_RATIO = 0.25
-
-
-OCR_REGION_MAX_AREA_RATIO = 0.60
 
 
 OCR_DIRECT_REGION_MIN_COVERAGE = 0.65
@@ -708,22 +700,13 @@ def internal_merge_ocr_regions(regions: list[internal_OcrRegion]) -> tuple[inter
     merged_areas: list[float] = []
     for region in sorted(regions, key=lambda item: (-item.score, item.page_box)):
         region_box = region.page_box
-        region_area = max(0.0, region_box[2] - region_box[0]) * max(
-            0.0, region_box[3] - region_box[1]
-        )
+        region_area = bbox_area(region_box)
         match = None
         for index, existing in enumerate(merged):
-            existing_box = existing.page_box
             smaller = min(merged_areas[index], region_area)
             if not smaller:
                 continue
-            intersection_width = max(
-                0.0, min(existing_box[2], region_box[2]) - max(existing_box[0], region_box[0])
-            )
-            intersection_height = max(
-                0.0, min(existing_box[3], region_box[3]) - max(existing_box[1], region_box[1])
-            )
-            if intersection_width * intersection_height >= smaller * 0.35:
+            if bbox_intersection_area(existing.page_box, region_box) >= smaller * 0.35:
                 match = index
                 break
         if match is None:
@@ -731,19 +714,14 @@ def internal_merge_ocr_regions(regions: list[internal_OcrRegion]) -> tuple[inter
             merged_areas.append(region_area)
             continue
         existing = merged[match]
-        existing_box = existing.page_box
-        merged_box = (
-            min(existing_box[0], region_box[0]),
-            min(existing_box[1], region_box[1]),
-            max(existing_box[2], region_box[2]),
-            max(existing_box[3], region_box[3]),
-        )
+        merged_box = bbox_union((existing.page_box, region_box))
+        assert merged_box is not None
         merged[match] = internal_OcrRegion(
             merged_box,
             max(existing.score, region.score) + min(existing.score, region.score) * 0.15,
             tuple(dict.fromkeys((*existing.reasons, *region.reasons))),
         )
-        merged_areas[match] = (merged_box[2] - merged_box[0]) * (merged_box[3] - merged_box[1])
+        merged_areas[match] = bbox_area(merged_box)
     return tuple(sorted(merged, key=lambda item: (-item.score, item.page_box)))
 
 
@@ -799,12 +777,7 @@ def internal_candidate_ocr_regions(capture: CapturedPage) -> tuple[internal_OcrR
             )
         return min(
             1.0,
-            sum(
-                max(0.0, min(box[2], other[2]) - max(box[0], other[0]))
-                * max(0.0, min(box[3], other[3]) - max(box[1], other[1]))
-                for other in native_boxes
-            )
-            / area,
+            sum(bbox_intersection_area(box, other) for other in native_boxes) / area,
         )
 
     for drawing in getattr(capture, "drawings", ()):
@@ -1087,19 +1060,13 @@ def internal_ocr_region_batch(
     regions: tuple[internal_OcrRegion, ...],
     ocr_pass: OcrPass,
     *,
-    expanded: bool,
     page_area: float,
 ) -> tuple[internal_OcrRegion, ...]:
-    count_limit = max(
-        ocr_pass.max_regions,
-        OCR_REGION_MAX_COUNT if expanded else OCR_REGION_INITIAL_COUNT,
-    )
-    area_limit = OCR_REGION_MAX_AREA_RATIO if expanded else OCR_REGION_INITIAL_AREA_RATIO
+    count_limit = max(ocr_pass.max_regions, OCR_REGION_INITIAL_COUNT)
+    area_limit = OCR_REGION_INITIAL_AREA_RATIO
     selected: list[internal_OcrRegion] = []
     area = 0.0
     page_area = max(1.0, page_area)
-    if page_area <= 0.0:
-        return ()
     for region in regions:
         if len(selected) >= count_limit:
             break

@@ -950,10 +950,10 @@ class TextState:
         self.fill_color_space = state.fill_color_space
         self.stroke_color_space = state.stroke_color_space
         self.compatibility_depth = state.compatibility_depth
-        self.blend_mode = getattr(state, "blend_mode", None)
-        self.group_alpha = getattr(state, "group_alpha", None)
-        self.flatness = getattr(state, "flatness", 0)
-        self.render_intent = getattr(state, "render_intent", None)
+        self.blend_mode = state.blend_mode
+        self.group_alpha = state.group_alpha
+        self.flatness = state.flatness
+        self.render_intent = state.render_intent
         self.clip_bbox = state.clip_bbox
         self.layout_form_bbox = state.layout_form_bbox
         self.layout_form_id = state.layout_form_id
@@ -1796,7 +1796,6 @@ class TextState:
 
         p = self.pending_run
         pc = p.coords
-        nc = new_run.coords
         p_text = p.text
         new_text = new_run.text
         p_font_size = pc[TextRun.FONT_SIZE]
@@ -2073,15 +2072,11 @@ class TextState:
                 position_x, position_y = vertical_offset
                 origin_x = position_x
                 origin_y = rise + position_y - glyph_offset
-            glyph_a = advance_scale * combined_a
-            glyph_b = advance_scale * combined_b
-            glyph_c = font_scale * combined_c
-            glyph_d = font_scale * combined_d
             return (
-                glyph_a,
-                glyph_b,
-                glyph_c,
-                glyph_d,
+                transform_a,
+                transform_b,
+                transform_c,
+                transform_d,
                 text_basis[0] + origin_x * combined_a + origin_y * combined_c,
                 text_basis[1] + origin_x * combined_b + origin_y * combined_d,
             )
@@ -3020,116 +3015,18 @@ class TextState:
         ar_C = ar * C
         ar_D = ar * D
 
-        for item in array:
-            t = type(item)
-            if t is bytes:
-                item_data = item
-                if pending_data is None:
-                    pending_data = item_data
-                elif type(pending_data) is bytearray:
-                    pending_data.extend(item_data)
-                else:
-                    merged = bytearray(pending_data)
-                    merged.extend(item_data)
-                    pending_data = merged
-                continue
-            if t is PdfString:
-                item_data = item.data
-                if pending_data is None:
-                    pending_data = item_data
-                elif type(pending_data) is bytearray:
-                    pending_data.extend(item_data)
-                else:
-                    merged = bytearray(pending_data)
-                    merged.extend(item_data)
-                    pending_data = merged
-                continue
-
-            if t is int or t is float:
-                if pending_data:
-                    text, total = internal_decode_pending_run(pending_data, table, widths, cs, ws)
-
-                    if text:
-                        visible = self.is_text_visible(text)
-                        if is_vert:
-                            adv_x, adv_y = 0.0, -total * text_scale
-                        else:
-                            adv_x, adv_y = total * text_scale, 0.0
-
-                        E = te * ca + tf * cc + ce
-                        F = te * cb + tf * cd + cf
-                        c0_x = dr_C + E
-                        c0_y = dr_D + F
-                        c1_x = ar_C + E
-                        c1_y = ar_D + F
-                        adv_A = adv_x * A
-                        adv_B = adv_x * B
-                        c2_x = adv_A + c0_x
-                        c2_y = adv_B + c0_y
-                        c3_x = adv_A + c1_x
-                        c3_y = adv_B + c1_y
-
-                        x0, y0, x1, y1 = internal_quad_bounds(
-                            c0_x, c0_y, c1_x, c1_y, c2_x, c2_y, c3_x, c3_y
-                        )
-
-                        new_run = self.alloc_run(
-                            text=text,
-                            x0=x0,
-                            y0=y0,
-                            x1=x1,
-                            y1=y1,
-                            tx=te,
-                            ty=tf,
-                            font_size=effective_font_size,
-                            font_name=decoder.font_name or font_name,
-                            space_width=effective_space_width,
-                            order=seqno,
-                            stream_order=stream_order,
-                            xobject_depth=xobject_depth,
-                            is_vertical=is_vert,
-                            rotation_angle=rot,
-                            visible=visible,
-                            line_break_before=pending_line_break,
-                            seqno=seqno,
-                            fill_color=fill_color,
-                        )
-                        self.update_pending_run(new_run)
-                        seqno += 1
-                        pending_line_break = False
-                        te = te + adv_x * ta + adv_y * tc
-                        tf = tf + adv_x * tb + adv_y * td
-
-                    pending_data = None
-
-                adjustment = item * adjustment_scale
-                if is_vert:
-                    te -= adjustment * tc
-                    tf -= adjustment * td
-                else:
-                    te -= adjustment * ta
-                    tf -= adjustment * tb
-                continue
-
-            if t is str:
-                item_data = item.encode("latin-1")
-                if pending_data is None:
-                    pending_data = item_data
-                elif type(pending_data) is bytearray:
-                    pending_data.extend(item_data)
-                else:
-                    merged = bytearray(pending_data)
-                    merged.extend(item_data)
-                    pending_data = merged
-
-        if pending_data:
+        def flush_pending() -> None:
+            nonlocal pending_data, te, tf, seqno, pending_line_break
+            assert pending_data is not None
             text, total = internal_decode_pending_run(pending_data, table, widths, cs, ws)
+
             if text:
                 visible = self.is_text_visible(text)
                 if is_vert:
                     adv_x, adv_y = 0.0, -total * text_scale
                 else:
                     adv_x, adv_y = total * text_scale, 0.0
+
                 E = te * ca + tf * cc + ce
                 F = te * cb + tf * cd + cf
                 c0_x = dr_C + E
@@ -3173,6 +3070,43 @@ class TextState:
                 pending_line_break = False
                 te = te + adv_x * ta + adv_y * tc
                 tf = tf + adv_x * tb + adv_y * td
+
+            pending_data = None
+
+        for item in array:
+            t = type(item)
+            if t is bytes:
+                item_data = item
+            elif t is PdfString:
+                item_data = item.data
+            elif t is int or t is float:
+                if pending_data:
+                    flush_pending()
+
+                adjustment = item * adjustment_scale
+                if is_vert:
+                    te -= adjustment * tc
+                    tf -= adjustment * td
+                else:
+                    te -= adjustment * ta
+                    tf -= adjustment * tb
+                continue
+            elif t is str:
+                item_data = item.encode("latin-1")
+            else:
+                continue
+
+            if pending_data is None:
+                pending_data = item_data
+            elif type(pending_data) is bytearray:
+                pending_data.extend(item_data)
+            else:
+                merged = bytearray(pending_data)
+                merged.extend(item_data)
+                pending_data = merged
+
+        if pending_data:
+            flush_pending()
 
         self.tm_e, self.tm_f = te, tf
         self.sequence = seqno
@@ -3258,134 +3192,18 @@ class TextState:
             batch_parts = None
             batch_last_char = ""
 
-        for item in array:
-            t = type(item)
-            if t is bytes:
-                item_data = item
-                if pending_data is None:
-                    pending_data = item_data
-                elif type(pending_data) is bytearray:
-                    pending_data.extend(item_data)
-                else:
-                    merged = bytearray(pending_data)
-                    merged.extend(item_data)
-                    pending_data = merged
-                continue
-            if t is PdfString:
-                item_data = item.data
-                if pending_data is None:
-                    pending_data = item_data
-                elif type(pending_data) is bytearray:
-                    pending_data.extend(item_data)
-                else:
-                    merged = bytearray(pending_data)
-                    merged.extend(item_data)
-                    pending_data = merged
-                continue
-            if t is str:
-                item_data = item.encode("latin-1")
-                if pending_data is None:
-                    pending_data = item_data
-                elif type(pending_data) is bytearray:
-                    pending_data.extend(item_data)
-                else:
-                    merged = bytearray(pending_data)
-                    merged.extend(item_data)
-                    pending_data = merged
-                continue
-
-            if t is int or t is float:
-                if pending_data:
-                    text, total = internal_decode_pending_run(pending_data, table, widths, cs, ws)
-
-                    if text:
-                        visible = self.is_text_visible(text)
-                        adv_x = total * text_scale
-
-                        E = te * ca + tf * cc + ce
-                        F = te * cb + tf * cd + cf
-                        c0_x = dr_C + E
-                        c0_y = dr_D + F
-                        c1_x = ar_C + E
-                        c1_y = ar_D + F
-                        adv_A = adv_x * A
-                        adv_B = adv_x * B
-                        c2_x = adv_A + c0_x
-                        c2_y = adv_B + c0_y
-                        c3_x = adv_A + c1_x
-                        c3_y = adv_B + c1_y
-
-                        x0, y0, x1, y1 = internal_quad_bounds(
-                            c0_x, c0_y, c1_x, c1_y, c2_x, c2_y, c3_x, c3_y
-                        )
-
-                        if batch_parts is None:
-                            batch_parts = [text]
-                            batch_last_char = text[-1]
-                            batch_x0, batch_y0, batch_x1, batch_y1 = x0, y0, x1, y1
-                            batch_tx, batch_ty = te, tf
-                            batch_order = seqno
-                            batch_seqno = seqno
-                            batch_visible = visible
-                            batch_line_break_before = pending_line_break
-                        else:
-                            gap = x0 - batch_x1
-                            if (
-                                visible == batch_visible
-                                and not pending_line_break
-                                and abs(batch_y0 - y0) <= effective_font_size * 0.5
-                                and -2.0 <= gap < merge_threshold
-                            ):
-                                threshold = effective_space_width * 0.12
-                                font_threshold = effective_font_size * 0.10
-                                if font_threshold > threshold:
-                                    threshold = font_threshold
-                                if threshold < 1.0:
-                                    threshold = 1.0
-                                if (
-                                    gap <= threshold
-                                    or batch_last_char.isspace()
-                                    or text[0].isspace()
-                                    or text[0] in no_space_before
-                                    or batch_last_char in no_space_after
-                                ):
-                                    separator = ""
-                                else:
-                                    separator = " "
-                                if separator:
-                                    batch_parts.append(separator)
-                                batch_parts.append(text)
-                                batch_last_char = text[-1]
-                                if x1 > batch_x1:
-                                    batch_x1 = x1
-                            else:
-                                flush_batch()
-                                batch_parts = [text]
-                                batch_last_char = text[-1]
-                                batch_x0, batch_y0, batch_x1, batch_y1 = x0, y0, x1, y1
-                                batch_tx, batch_ty = te, tf
-                                batch_order = seqno
-                                batch_seqno = seqno
-                                batch_visible = visible
-                                batch_line_break_before = pending_line_break
-
-                        seqno += 1
-                        pending_line_break = False
-                        te = te + adv_x * ta
-                        tf = tf + adv_x * tb
-
-                    pending_data = None
-
-                adjustment = item * text_scale
-                te -= adjustment * ta
-                tf -= adjustment * tb
-
-        if pending_data:
+        def flush_pending() -> None:
+            nonlocal pending_data, te, tf, seqno, pending_line_break
+            nonlocal batch_parts, batch_last_char, batch_x0, batch_y0, batch_x1, batch_y1
+            nonlocal batch_tx, batch_ty, batch_order, batch_seqno, batch_visible
+            nonlocal batch_line_break_before
+            assert pending_data is not None
             text, total = internal_decode_pending_run(pending_data, table, widths, cs, ws)
 
             if text:
                 visible = is_text_visible(text)
                 adv_x = total * text_scale
+
                 E = te * ca + tf * cc + ce
                 F = te * cb + tf * cd + cf
                 c0_x = dr_C + E
@@ -3457,6 +3275,39 @@ class TextState:
                 pending_line_break = False
                 te = te + adv_x * ta
                 tf = tf + adv_x * tb
+
+            pending_data = None
+
+        for item in array:
+            t = type(item)
+            if t is bytes:
+                item_data = item
+            elif t is PdfString:
+                item_data = item.data
+            elif t is str:
+                item_data = item.encode("latin-1")
+            elif t is int or t is float:
+                if pending_data:
+                    flush_pending()
+
+                adjustment = item * text_scale
+                te -= adjustment * ta
+                tf -= adjustment * tb
+                continue
+            else:
+                continue
+
+            if pending_data is None:
+                pending_data = item_data
+            elif type(pending_data) is bytearray:
+                pending_data.extend(item_data)
+            else:
+                merged = bytearray(pending_data)
+                merged.extend(item_data)
+                pending_data = merged
+
+        if pending_data:
+            flush_pending()
 
         flush_batch()
         self.tm_e, self.tm_f = te, tf
@@ -3635,8 +3486,7 @@ class TextState:
             )
 
     def internal_begin_text(self) -> None:
-        if self.pending_run:
-            self.flush_run()
+        self.flush_run()
         self.tm_a = self.lm_a = 1.0
         self.tm_b = self.lm_b = 0.0
         self.tm_c = self.lm_c = 0.0
@@ -3656,18 +3506,10 @@ class TextState:
         self.invisible_text_layer = False
 
     def op_ET(self, operands: OperandWindow, depth: int) -> None:
-        pending = self.pending_run
-        if pending:
-            if self.capture_runs:
-                pending.freeze_glyph_clusters()
-                self.runs.append(pending)
-            self.pending_run = None
+        self.flush_run()
 
     def internal_move_text(self, tx: float, ty: float) -> None:
-        if self.pending_run:
-            self.pending_run.freeze_glyph_clusters()
-            self.runs.append(self.pending_run)
-            self.pending_run = None
+        self.flush_run()
         # Preserve the specification's affine operation order. Exact layout
         # grouping can hinge on the final ULP at a character-margin boundary.
         self.tm_e = tx * self.lm_a + ty * self.lm_c + self.lm_e

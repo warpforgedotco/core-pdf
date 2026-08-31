@@ -16,7 +16,10 @@ from core_pdf.impl.engine.render.display import (
     PathPaintItem,
     RenderOptions,
 )
-from core_pdf.impl.engine.render.kernels import internal_color_rgba
+from core_pdf.impl.engine.render.kernels import (
+    internal_color_rgba,
+    internal_scale_rgba_alpha,
+)
 from core_pdf.impl.engine.render.raster_image import RasterImage
 from core_pdf.impl.engine.render.target import (
     internal_ClipState,
@@ -205,7 +208,6 @@ class RenderedPage:
         paint_fill_pattern = raster_target.paint_fill_pattern
         paint_typed_path = raster_target.paint_typed_path
         stroke_path = raster_target.stroke_path
-        fill_path = raster_target.fill_path
         paint_shading = raster_target.paint_shading
         rotate = self.rotate % 360
 
@@ -289,18 +291,7 @@ class RenderedPage:
                 )
                 soft_mask_alpha = data.get("soft_mask_alpha")
                 if pdf_number(soft_mask_alpha):
-                    stroke_rgba = (
-                        stroke_rgba[0],
-                        stroke_rgba[1],
-                        stroke_rgba[2],
-                        max(
-                            0,
-                            min(
-                                255,
-                                int(round(stroke_rgba[3] * float(soft_mask_alpha))),
-                            ),
-                        ),
-                    )
+                    stroke_rgba = internal_scale_rgba_alpha(stroke_rgba, soft_mask_alpha)
                 stroke_path(
                     path,
                     float(data.get("line_width") or 1.0),
@@ -317,12 +308,7 @@ class RenderedPage:
                 )
                 soft_mask_alpha = data.get("soft_mask_alpha")
                 if pdf_number(soft_mask_alpha):
-                    rgba = (
-                        rgba[0],
-                        rgba[1],
-                        rgba[2],
-                        max(0, min(255, int(round(rgba[3] * float(soft_mask_alpha))))),
-                    )
+                    rgba = internal_scale_rgba_alpha(rgba, soft_mask_alpha)
                 path = data.get("path")
                 if type(path) is not CapturedPath:
                     continue
@@ -342,18 +328,7 @@ class RenderedPage:
                         data.get("stroke_color"), data.get("stroke_opacity")
                     )
                     if pdf_number(soft_mask_alpha):
-                        stroke_rgba = (
-                            stroke_rgba[0],
-                            stroke_rgba[1],
-                            stroke_rgba[2],
-                            max(
-                                0,
-                                min(
-                                    255,
-                                    int(round(stroke_rgba[3] * float(soft_mask_alpha))),
-                                ),
-                            ),
-                        )
+                        stroke_rgba = internal_scale_rgba_alpha(stroke_rgba, soft_mask_alpha)
                     stroke_path(
                         path,
                         float(data.get("line_width") or 1.0),
@@ -372,17 +347,9 @@ class RenderedPage:
             # Readers draw nothing here, so neither do we; the items stay in the
             # display list because their /Rect still carries annotation geometry.
         if rotate == 0:
-            record_image_timings()
             result = RasterImage(raster_target.pixels, width, height, 4)
-            if cache:
-                if self.image_cache is not None:
-                    self.image_cache.put(cache_key, result)
-                else:
-                    self.raster_cache[raster_options] = result
-            return result
-
-        rotated = bytearray(background_bytes * (width * height))
-        if rotate in {90, 180, 270}:
+        elif rotate in {90, 180, 270}:
+            rotated = bytearray(background_bytes * (width * height))
             source_pixels = memoryview(raster_target.pixels).cast("I")
             rotated_pixels = memoryview(rotated).cast("I")
             if rotate == 90:
@@ -406,34 +373,12 @@ class RenderedPage:
                 width if rotate in {90, 270} else height,
                 4,
             )
-            record_image_timings()
-            if cache:
-                if self.image_cache is not None:
-                    self.image_cache.put(cache_key, result)
-                else:
-                    self.raster_cache[raster_options] = result
-            return result
-        for y in range(height):
-            for x in range(width):
-                src_idx = (y * width + x) * 4
-                if rotate == 90:
-                    dst_x, dst_y = height - 1 - y, x
-                    dst_w, dst_h = height, width
-                elif rotate == 180:
-                    dst_x, dst_y = width - 1 - x, height - 1 - y
-                    dst_w, dst_h = width, height
-                elif rotate == 270:
-                    dst_x, dst_y = y, width - 1 - x
-                    dst_w, dst_h = height, width
-                else:
-                    dst_x, dst_y = x, y
-                    dst_w, dst_h = width, height
-                if 0 <= dst_x < dst_w and 0 <= dst_y < dst_h:
-                    dst_idx = (dst_y * dst_w + dst_x) * 4
-                    rotated[dst_idx : dst_idx + 4] = raster_target.pixels[src_idx : src_idx + 4]
-        result_width, result_height = self.raster_size(scale, crop=crop)
+        else:
+            # A rotation that is not a multiple of 90 rasterizes unrotated;
+            # only the reported dimensions reflect the requested rotation.
+            result_width, result_height = self.raster_size(scale, crop=crop)
+            result = RasterImage(bytearray(raster_target.pixels), result_width, result_height, 4)
         record_image_timings()
-        result = RasterImage(rotated, result_width, result_height, 4)
         if cache:
             if self.image_cache is not None:
                 self.image_cache.put(cache_key, result)
@@ -557,6 +502,19 @@ def compose_page(
     text_clipping_subpaths: list[CapturedSubpath] = []
     current_text_object_id: int | None = None
 
+    def append_text_run(run: Any) -> None:
+        display_list.append(
+            "text",
+            run.seqno,
+            text=run.text,
+            bbox=(run.x0, run.y0, run.x1, run.y1),
+            font_name=run.font_name,
+            font_size=run.font_size,
+            visible=run.visible,
+            fill_color=run.fill_color,
+            rotation_angle=run.rotation_angle,
+        )
+
     def flush_text_clip(seqno: int) -> None:
         if not text_clipping_subpaths:
             return
@@ -575,18 +533,7 @@ def compose_page(
         if kind is PageEventKind.TEXT:
             if not options.include_text:
                 continue
-            run = products.runs[payload]
-            display_list.append(
-                "text",
-                run.seqno,
-                text=run.text,
-                bbox=(run.x0, run.y0, run.x1, run.y1),
-                font_name=run.font_name,
-                font_size=run.font_size,
-                visible=run.visible,
-                fill_color=run.fill_color,
-                rotation_angle=run.rotation_angle,
-            )
+            append_text_run(products.runs[payload])
         elif kind is PageEventKind.GLYPH:
             glyph = products.glyphs[payload]
             glyph_text_object_id = getattr(glyph, "text_object_id", 0)
@@ -643,17 +590,7 @@ def compose_page(
     def append_capture(state: TextState) -> None:
         if options.include_text:
             for run in state.runs:
-                display_list.append(
-                    "text",
-                    run.seqno,
-                    text=run.text,
-                    bbox=(run.x0, run.y0, run.x1, run.y1),
-                    font_name=run.font_name,
-                    font_size=run.font_size,
-                    visible=run.visible,
-                    fill_color=run.fill_color,
-                    rotation_angle=run.rotation_angle,
-                )
+                append_text_run(run)
         for drawing in state.drawings:
             display_list.append_captured_drawing(drawing)
 

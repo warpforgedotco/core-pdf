@@ -43,6 +43,7 @@ from core_pdf.impl.engine.render.kernels import (
     internal_fill_path_sample_crossings_numpy,
     internal_intersect_box,
     internal_make_page_geometry,
+    internal_scale_rgba_alpha,
     internal_shading_color_rgba,
     internal_signed_area_coverage,
     internal_soft_mask_alpha_at,
@@ -608,26 +609,9 @@ class internal_RasterTarget:
             if not crossings:
                 continue
             row = py * width * 4
-            if fill_rule == "evenodd":
-                xs = sorted(x for x, internal_delta in crossings)
-                scan_spans = list(zip(xs[0::2], xs[1::2], strict=False))
-            else:
-                crossings.sort(key=lambda item: item[0])
-                spans_list: list[tuple[float, float]] = []
-                winding = 0
-                previous_x: float | None = None
-                index = 0
-                while index < len(crossings):
-                    x = crossings[index][0]
-                    if previous_x is not None and winding != 0 and x > previous_x:
-                        spans_list.append((previous_x, x))
-                    delta = 0
-                    while index < len(crossings) and crossings[index][0] == x:
-                        delta += crossings[index][1]
-                        index += 1
-                    winding += delta
-                    previous_x = x
-                scan_spans = spans_list
+            # Same winding sweep as the kernel helper; the helper drops the
+            # degenerate evenodd pairs that `span_pixels` would reject anyway.
+            scan_spans = internal_fill_path_crossing_spans(crossings, fill_rule)
             for start_x, end_x in scan_spans:
                 span = span_pixels(start_x, end_x)
                 if span is None:
@@ -906,14 +890,41 @@ class internal_RasterTarget:
         ix0, iy0, ix1, iy1 = pixel_box
         if ix1 - ix0 < 10 or iy1 - iy0 < 10:
             return False
+        # Active-edge table, mirroring `fill_path_scanlines`: rows are visited
+        # with strictly decreasing scan_y, so instead of rescanning every edge
+        # on every row, each edge is pushed onto a min-heap (by its lower y
+        # bound) once scan_y drops below its upper bound and popped once
+        # scan_y drops below its lower bound. The in-loop bounds recheck keeps
+        # the crossing set identical to the full per-row scan.
+        edge_bounds = [
+            (ex0, ey0, ex1, ey1, ey0 if ey0 < ey1 else ey1, ey1 if ey1 > ey0 else ey0)
+            for ex0, ey0, ex1, ey1 in edges
+        ]
+        edge_count = len(edge_bounds)
+        pending_order = sorted(range(edge_count), key=lambda i: -edge_bounds[i][5])
+        pending_index = 0
+        active_heap: list[tuple[float, int]] = []
         for py in range(iy0, iy1):
             scan_y = crop_y1 - (py + 0.5) / scale
+            while (
+                pending_index < edge_count and edge_bounds[pending_order[pending_index]][5] > scan_y
+            ):
+                edge_index = pending_order[pending_index]
+                heapq.heappush(active_heap, (edge_bounds[edge_index][4], edge_index))
+                pending_index += 1
+            while active_heap and active_heap[0][0] > scan_y:
+                heapq.heappop(active_heap)
             intersections: list[tuple[float, int]] = []
-            for ex0, ey0, ex1, ey1 in edges:
-                if ey0 <= scan_y < ey1:
-                    intersections.append((ex0 + (scan_y - ey0) * (ex1 - ex0) / (ey1 - ey0), 1))
-                elif ey1 <= scan_y < ey0:
-                    intersections.append((ex0 + (scan_y - ey0) * (ex1 - ex0) / (ey1 - ey0), -1))
+            for low, edge_index in active_heap:
+                ex0, ey0, ex1, ey1, edge_low, edge_high = edge_bounds[edge_index]
+                if not (edge_low <= scan_y < edge_high):
+                    continue
+                intersections.append(
+                    (
+                        ex0 + (scan_y - ey0) * (ex1 - ex0) / (ey1 - ey0),
+                        1 if ey1 > ey0 else -1,
+                    )
+                )
             intersections.sort()
             winding = 0
             start_x = 0.0
@@ -1179,19 +1190,27 @@ class internal_RasterTarget:
             if total > 0:
                 seg_len = ((x1 - x0) ** 2 + (y1 - y0) ** 2) ** 0.5
                 if seg_len > 0:
+                    # The prefix-sum walk over `dash_array` is loop-invariant:
+                    # normalize once and precompute the cumulative sums, so the
+                    # per-step lookup scans plain floats instead of redoing the
+                    # max/float conversions on every dash step.
+                    dash_cumulative: list[float] = []
+                    acc = 0.0
+                    for val in dash_array:
+                        acc += max(0.0, float(val))
+                        dash_cumulative.append(acc)
                     pos = float(phase) % total
                     on = True
                     remaining = seg_len
                     while remaining > 0:
                         dash_idx = 0
-                        acc = 0.0
-                        for i, val in enumerate(dash_array):
-                            acc += max(0.0, float(val))
+                        dash_end = dash_cumulative[-1]
+                        for i, acc in enumerate(dash_cumulative):
                             if pos < acc:
                                 dash_idx = i
+                                dash_end = acc
                                 break
                         on = (dash_idx % 2) == 0
-                        dash_end = acc
                         step = min(
                             remaining,
                             dash_end - pos if dash_end > pos else total - pos,
@@ -2836,12 +2855,7 @@ class internal_RasterTarget:
                 if len(color_cache) < RASTER_COORDINATE_CACHE_MAX_ENTRIES:
                     color_cache[color_key] = rgba
             if pdf_number(soft_mask_alpha):
-                rgba = (
-                    rgba[0],
-                    rgba[1],
-                    rgba[2],
-                    max(0, min(255, int(round(rgba[3] * float(soft_mask_alpha))))),
-                )
+                rgba = internal_scale_rgba_alpha(rgba, soft_mask_alpha)
             fill_path(
                 path,
                 rgba,
@@ -2856,18 +2870,7 @@ class internal_RasterTarget:
                 if len(color_cache) < RASTER_COORDINATE_CACHE_MAX_ENTRIES:
                     color_cache[color_key] = stroke_rgba
             if pdf_number(soft_mask_alpha):
-                stroke_rgba = (
-                    stroke_rgba[0],
-                    stroke_rgba[1],
-                    stroke_rgba[2],
-                    max(
-                        0,
-                        min(
-                            255,
-                            int(round(stroke_rgba[3] * float(soft_mask_alpha))),
-                        ),
-                    ),
-                )
+                stroke_rgba = internal_scale_rgba_alpha(stroke_rgba, soft_mask_alpha)
             stroke_path(
                 path,
                 float(item.line_width or 1.0),
@@ -3257,68 +3260,46 @@ class internal_RasterTarget:
                 numpy.rint(dst), 0, 255
             ).astype(numpy.uint8)
 
+        # The two orientations differ only in which page axis feeds u and v;
+        # everything downstream of that selection is shared.
         if u_from_x:
-            inv_ux = 1.0 / ux
-            inv_vy = 1.0 / vy
-            u = (page_x_coordinates(ix0, ix1) - p00[0]) * inv_ux
-            valid_u = (u >= 0.0) & (u <= 1.0)
-            source_x_map = numpy.where(
-                valid_u,
-                numpy.clip((u * width_px).astype(numpy.intp), 0, width_px - 1),
-                -1,
-            )
-            mask_x_map = numpy.where(
-                valid_u,
-                numpy.clip((u * soft_mask_width).astype(numpy.intp), 0, soft_mask_width - 1),
-                -1,
-            )
-            v = (page_y_coordinates(iy0, iy1) - p00[1]) * inv_vy
-            valid_v = (v >= 0.0) & (v <= 1.0)
-            source_y_map = numpy.where(
-                valid_v,
-                numpy.clip(((1.0 - v) * height_px).astype(numpy.intp), 0, height_px - 1),
-                -1,
-            )
-            mask_y_map = numpy.where(
-                valid_v,
-                numpy.clip(
-                    ((1.0 - v) * soft_mask_height).astype(numpy.intp),
-                    0,
-                    soft_mask_height - 1,
-                ),
-                -1,
-            )
+            u_coordinates = page_x_coordinates(ix0, ix1) - p00[0]
+            v_coordinates = page_y_coordinates(iy0, iy1) - p00[1]
+            inv_u = 1.0 / ux
+            inv_v = 1.0 / vy
         else:
-            inv_uy = 1.0 / uy
-            inv_vx = 1.0 / vx
-            u = (page_y_coordinates(iy0, iy1) - p00[1]) * inv_uy
-            valid_u = (u >= 0.0) & (u <= 1.0)
-            source_x_map = numpy.where(
-                valid_u,
-                numpy.clip((u * width_px).astype(numpy.intp), 0, width_px - 1),
-                -1,
-            )
-            mask_x_map = numpy.where(
-                valid_u,
-                numpy.clip((u * soft_mask_width).astype(numpy.intp), 0, soft_mask_width - 1),
-                -1,
-            )
-            v = (page_x_coordinates(ix0, ix1) - p00[0]) * inv_vx
-            valid_v = (v >= 0.0) & (v <= 1.0)
-            source_y_map = numpy.where(
-                valid_v,
-                numpy.clip(((1.0 - v) * height_px).astype(numpy.intp), 0, height_px - 1),
-                -1,
-            )
-            mask_y_map = numpy.where(
-                valid_v,
-                numpy.clip(
-                    ((1.0 - v) * soft_mask_height).astype(numpy.intp),
-                    0,
-                    soft_mask_height - 1,
-                ),
-                -1,
-            )
+            u_coordinates = page_y_coordinates(iy0, iy1) - p00[1]
+            v_coordinates = page_x_coordinates(ix0, ix1) - p00[0]
+            inv_u = 1.0 / uy
+            inv_v = 1.0 / vx
+        u = u_coordinates * inv_u
+        valid_u = (u >= 0.0) & (u <= 1.0)
+        source_x_map = numpy.where(
+            valid_u,
+            numpy.clip((u * width_px).astype(numpy.intp), 0, width_px - 1),
+            -1,
+        )
+        mask_x_map = numpy.where(
+            valid_u,
+            numpy.clip((u * soft_mask_width).astype(numpy.intp), 0, soft_mask_width - 1),
+            -1,
+        )
+        v = v_coordinates * inv_v
+        valid_v = (v >= 0.0) & (v <= 1.0)
+        source_y_map = numpy.where(
+            valid_v,
+            numpy.clip(((1.0 - v) * height_px).astype(numpy.intp), 0, height_px - 1),
+            -1,
+        )
+        mask_y_map = numpy.where(
+            valid_v,
+            numpy.clip(
+                ((1.0 - v) * soft_mask_height).astype(numpy.intp),
+                0,
+                soft_mask_height - 1,
+            ),
+            -1,
+        )
         for dy, py in enumerate(range(iy0, iy1)):
             dy_src_x = source_x_map[dy] if u_from_y else None
             dy_mask_x = mask_x_map[dy] if u_from_y else None
@@ -3770,29 +3751,13 @@ class internal_ClipState:
             return ()
         spans: list[tuple[int, int]] = []
         page_x_to_pixel_span = self.page_x_to_pixel_span
-        if fill_rule == "evenodd":
-            xs = sorted(x for x, internal_delta in crossings)
-            for start_x, end_x in zip(xs[0::2], xs[1::2], strict=False):
-                span = page_x_to_pixel_span(start_x, end_x)
-                if span is not None:
-                    spans.append(span)
-        else:
-            crossings.sort(key=lambda item: item[0])
-            winding = 0
-            previous_x: float | None = None
-            index = 0
-            while index < len(crossings):
-                x = crossings[index][0]
-                if previous_x is not None and winding != 0 and x > previous_x:
-                    span = page_x_to_pixel_span(previous_x, x)
-                    if span is not None:
-                        spans.append(span)
-                delta = 0
-                while index < len(crossings) and crossings[index][0] == x:
-                    delta += crossings[index][1]
-                    index += 1
-                winding += delta
-                previous_x = x
+        # Same winding sweep as the kernel helper; the helper drops the
+        # degenerate evenodd pairs that `page_x_to_pixel_span` would reject
+        # anyway. Only the mapping to pixel spans is local.
+        for start_x, end_x in internal_fill_path_crossing_spans(crossings, fill_rule):
+            span = page_x_to_pixel_span(start_x, end_x)
+            if span is not None:
+                spans.append(span)
         cached_spans = tuple(spans)
         clip_row_span_cache[cache_key] = cached_spans
         return cached_spans

@@ -15,7 +15,7 @@ from concurrent.futures import (
     wait,
 )
 from contextlib import AbstractContextManager, suppress
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from typing import Any, Generic, TypeVar
 
@@ -30,27 +30,25 @@ class internal_ExtractionCancelled(RuntimeError):
         super().__init__("PDF extraction was cancelled")
 
 
-def internal_worker_count() -> int:
-    configured = os.environ.get("CORE_PDF_THREADS")
+def internal_env_int(name: str, default: int) -> int:
+    configured = os.environ.get(name)
     if configured:
         try:
             return max(1, int(configured))
         except ValueError:
             pass
+    return default
+
+
+def internal_worker_count() -> int:
     # Page parsing can submit OCR work while its page worker waits. A larger
     # pool therefore oversubscribes the same process even before native OCR
     # work is counted; four workers keeps that nested pipeline bounded.
-    return max(1, min(4, os.process_cpu_count() or 1))
+    return internal_env_int("CORE_PDF_THREADS", max(1, min(4, os.process_cpu_count() or 1)))
 
 
 def internal_raster_budget_bytes() -> int:
-    configured = os.environ.get("CORE_PDF_RASTER_BUDGET_MIB")
-    if configured:
-        try:
-            return max(1, int(configured)) * 1024 * 1024
-        except ValueError:
-            pass
-    return 256 * 1024 * 1024
+    return internal_env_int("CORE_PDF_RASTER_BUDGET_MIB", 256) * 1024 * 1024
 
 
 class WorkStage(StrEnum):
@@ -60,13 +58,7 @@ class WorkStage(StrEnum):
 
 
 def internal_ocr_worker_count() -> int:
-    configured = os.environ.get("CORE_PDF_OCR_WORKERS")
-    if configured:
-        try:
-            return max(1, int(configured))
-        except ValueError:
-            pass
-    return max(1, min(os.process_cpu_count() or 1, 4))
+    return internal_env_int("CORE_PDF_OCR_WORKERS", max(1, min(4, os.process_cpu_count() or 1)))
 
 
 @dataclass(frozen=True, slots=True)
@@ -269,23 +261,14 @@ class TaskScope(AbstractContextManager["TaskScope"]):
     def metrics(self) -> RuntimeMetrics:
         state = self.internal_metrics_state
         with state.lock:
-            runtime_metrics = self.runtime.metrics()
-            return RuntimeMetrics(
+            return replace(
+                self.runtime.metrics(),
                 submitted=state.submitted,
                 completed=state.completed,
                 cancelled=state.cancelled,
                 peak_workers=state.peak,
                 queue_seconds=state.queue_seconds,
                 execution_seconds=state.execution_seconds,
-                parent_workers=runtime_metrics.parent_workers,
-                active_workers=runtime_metrics.active_workers,
-                queued_tasks=runtime_metrics.queued_tasks,
-                raster_capacity_bytes=runtime_metrics.raster_capacity_bytes,
-                raster_available_bytes=runtime_metrics.raster_available_bytes,
-                page_capacity=runtime_metrics.page_capacity,
-                page_active=runtime_metrics.page_active,
-                ocr_capacity=runtime_metrics.ocr_capacity,
-                ocr_active=runtime_metrics.ocr_active,
             )
 
     def internal_record_submit(self) -> None:

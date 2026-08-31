@@ -124,6 +124,12 @@ def overlap_ratio_min_exact(left: Sequence[float], right: Sequence[float]) -> fl
     return bbox_intersection_area(left, right) / smaller_area
 
 
+def horizontal_overlap_ratio(left: Sequence[float], right: Sequence[float]) -> float:
+    """Horizontal intersection relative to the narrower box (denominator floored at 1.0)."""
+    intersection = max(0.0, min(left[2], right[2]) - max(left[0], right[0]))
+    return intersection / max(1.0, min(left[2] - left[0], right[2] - right[0]))
+
+
 def overlap_ratio_of(subject: Sequence[float], container: Sequence[float]) -> float:
     """Fraction of ``subject``'s own area that ``container`` covers."""
     subject_area = bbox_area(subject)
