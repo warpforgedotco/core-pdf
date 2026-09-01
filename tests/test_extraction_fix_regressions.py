@@ -99,6 +99,21 @@ def test_numeric_table_block_survives_corruption_filter() -> None:
     assert not internal_corrupt_native_block(numeric)
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        "1–2 Reserved; must be 0.",
+        "7–8 Reserved; must be 1.",
+        "13–32 (Revision 3 or greater) Reserved; must be 1.",
+    ],
+)
+def test_short_specification_table_rows_survive_corruption_filter(text: str) -> None:
+    """Regression: valid permission rows were deleted as corrupt native text."""
+    assert not internal_corrupt_native_block(
+        internal_native_block(text, (20.0, 100.0, 260.0, 120.0))
+    )
+
+
 def test_damaged_native_layer_is_still_rejected() -> None:
     """The corruption filter must keep catching mojibake after the fix."""
     corrupt = internal_native_block(

@@ -217,6 +217,39 @@ def test_emit_removes_blocks_duplicated_by_table_cells() -> None:
     assert page.tables[0].rows[0][0].text == "Year"
 
 
+def test_emit_keeps_line_that_contains_but_does_not_duplicate_a_table() -> None:
+    """A small table inside an oversized line box must not delete the line.
+
+    Some valid font descriptors use extreme font-wide ascent and descent
+    values. Their line boxes can contain a nearby table even when their text
+    does not belong to it, so containment has to be measured in the direction
+    of line-inside-table rather than by the smaller of the two areas.
+    """
+    parsed = ParsedPage(
+        page_number=1,
+        width=300.0,
+        height=400.0,
+        rotation=0,
+        route=PageRoute.NATIVE,
+        blocks=(
+            block("Normative body text after the table", (20.0, 150.0, 280.0, 260.0)),
+            block("Bit position Meaning", (20.0, 240.0, 280.0, 260.0)),
+        ),
+        tables=(
+            Table(
+                order=0,
+                bbox=(20.0, 240.0, 280.0, 260.0),
+                rows=((TableCell(0, 0, "Bit position"), TableCell(0, 1, "Meaning")),),
+            ),
+        ),
+    )
+
+    page = emit_page(parsed)
+
+    assert "Normative body text after the table" in page.text
+    assert len(page.tables) == 1
+
+
 def test_emit_preserves_structured_stream_table_with_sparse_numeric_values() -> None:
     parsed = ParsedPage(
         page_number=1,

@@ -10,6 +10,9 @@ Populate this directory with:
 ./scripts/fetch_pdf_specs.sh
 ```
 
+Fetch only the two public documents exercised by the security specification
+evidence tests with `./scripts/fetch_pdf_specs.sh security`.
+
 ## These files are deliberately not committed
 
 Every document below is Adobe- or ISO-copyrighted and **none of them grant

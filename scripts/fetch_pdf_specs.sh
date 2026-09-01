@@ -15,7 +15,9 @@
 # for direct PDF URLs, so they are fetched separately by scripts/fetch_pdfa_docs.py
 # (Playwright). This script delegates to it.
 #
-# Usage: scripts/fetch_pdf_specs.sh [all|reference|pdf|restricted|pdfa]
+#   security  public PDF 1.7/ISO 32000-1 sources used by security evidence tests
+#
+# Usage: scripts/fetch_pdf_specs.sh [all|reference|pdf|restricted|pdfa|security]
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -23,6 +25,14 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 SPECS_ROOT="${PROJECT_ROOT}/tests/fixtures/specifications"
 
 TIER="${1:-all}"
+
+case "${TIER}" in
+  all | reference | pdf | restricted | pdfa | security) ;;
+  *)
+    echo "usage: $0 [all|reference|pdf|restricted|pdfa|security]" >&2
+    exit 2
+    ;;
+esac
 
 ADOBE="https://opensource.adobe.com/dc-acrobat-sdk-docs"
 FONTNOTES="https://adobe-type-tools.github.io/font-tech-notes/pdfs"
@@ -85,7 +95,12 @@ fetched=0 cached=0 failed=0
 
 for entry in "${MANIFEST[@]}"; do
   IFS='|' read -r tier subdir url name <<<"${entry}"
-  [[ "${TIER}" == "all" || "${TIER}" == "${tier}" ]] || continue
+  if [[ "${TIER}" == "security" ]]; then
+    [[ "${name}" == "PDFReference-1.7-Adobe-2006.pdf" || \
+       "${name}" == "ISO32000-1-2008-PDF-1.7.pdf" ]] || continue
+  else
+    [[ "${TIER}" == "all" || "${TIER}" == "${tier}" ]] || continue
+  fi
 
   case "${tier}" in
     pdf) dest="${SPECS_ROOT}/PDF" ;;
@@ -127,6 +142,9 @@ done
 echo
 echo "tier=${TIER}: ${fetched} fetched, ${cached} cached, ${failed} failed"
 (( failed == 0 )) || echo "Some documents need manual download; see the tier README."
+if [[ "${TIER}" == "security" && "${failed}" -ne 0 ]]; then
+  exit 1
+fi
 
 # The pdfa.org documents need a browser engine; hand them to the Playwright
 # fetcher, which sorts them into the reference and restricted tiers itself.

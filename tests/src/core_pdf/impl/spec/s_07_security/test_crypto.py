@@ -13,8 +13,12 @@ from core_pdf.impl.spec.s_07_security.ciphers import (
 )
 from core_pdf.impl.spec.s_07_security.standard import (
     internal_CryptMethod,
+    internal_parse_config,
+    internal_parse_crypt_filters,
     internal_resolve_crypt_method,
     internal_saslprep,
+    internal_StandardSecurityConfig,
+    internal_StandardSecurityHandler,
     internal_stream_crypt_filter_name,
 )
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict
@@ -114,6 +118,14 @@ def test_rc4_known_vector() -> None:
             {"Filter": PdfName.of("Standard"), "V": 99},
             "Unsupported standard encryption algorithm",
         ),
+        (
+            {"Filter": PdfName.of("Standard"), "V": 3},
+            "Unsupported standard encryption algorithm",
+        ),
+        (
+            {"Filter": PdfName.of("Standard"), "V": 6},
+            "Unsupported standard encryption algorithm",
+        ),
     ],
 )
 def test_standard_security_factory_rejects_unsupported_handler(
@@ -124,11 +136,23 @@ def test_standard_security_factory_rejects_unsupported_handler(
         create_standard_decipher([b"document-id"], params)
 
 
-def test_standard_security_factory_rejects_mismatched_revision() -> None:
+@pytest.mark.parametrize(
+    ("version", "revision"),
+    [
+        (1, 4),
+        (2, 2),
+        (4, 3),
+        (5, 4),
+    ],
+)
+def test_standard_security_factory_rejects_mismatched_revision(
+    version: int,
+    revision: int,
+) -> None:
     params: PdfDict = {
         "Filter": PdfName.of("Standard"),
-        "V": 4,
-        "R": 3,
+        "V": version,
+        "R": revision,
         "P": -4,
         "O": bytes(32),
         "U": bytes(32),
@@ -136,6 +160,107 @@ def test_standard_security_factory_rejects_mismatched_revision() -> None:
 
     with pytest.raises(PdfUnsupportedError, match="Invalid encryption dictionary"):
         create_standard_decipher([b"document-id"], params)
+
+
+def test_standard_security_v1_permissions_can_require_revision_3() -> None:
+    # Clear permission bit 9, which ISO 32000-1:2008, Tables 21-22 classify
+    # as a revision-3 permission while retaining the V=1 encryption method.
+    params: PdfDict = {
+        "R": 3,
+        "P": -260,
+        "O": bytes(32),
+        "U": bytes(32),
+        "Length": 40,
+    }
+
+    config = internal_parse_config([b"document-id"], params, 1, (2, 3))
+
+    assert config.revision == 3
+
+
+def test_standard_security_v1_revision_2_cannot_clear_revision_3_permissions() -> None:
+    params: PdfDict = {
+        "R": 2,
+        "P": -260,
+        "O": bytes(32),
+        "U": bytes(32),
+        "Length": 40,
+    }
+
+    with pytest.raises(ValueError, match="require R=3"):
+        internal_parse_config([b"document-id"], params, 1, (2, 3))
+
+
+def test_standard_security_v1_revision_3_accepts_revision_2_permissions() -> None:
+    # Adobe's authorized ISO 32000-1:2008 PDF uses V=1, R=3, and P=-28.
+    # Readers need to accept that real-world combination even though no
+    # revision-3 permission bit is cleared.
+    params: PdfDict = {
+        "R": 3,
+        "P": -28,
+        "O": bytes(32),
+        "U": bytes(32),
+        "Length": 40,
+    }
+
+    config = internal_parse_config([b"document-id"], params, 1, (2, 3))
+
+    assert config.revision == 3
+
+
+def internal_legacy_security_params(revision: int, permissions: int) -> PdfDict:
+    return {
+        "R": revision,
+        "P": permissions,
+        "O": bytes(32),
+        "U": bytes(32),
+        "Length": 40,
+    }
+
+
+@pytest.mark.parametrize("bit_position", [1, 2])
+def test_standard_security_rejects_each_reserved_zero_permission_bit(
+    bit_position: int,
+) -> None:
+    permissions = 0xFFFFFFFC | (1 << (bit_position - 1))
+
+    with pytest.raises(ValueError, match="bits 1-2 must be zero"):
+        internal_parse_config(
+            [b"document-id"],
+            internal_legacy_security_params(3, permissions),
+            1,
+            (2, 3),
+        )
+
+
+@pytest.mark.parametrize("bit_position", [7, 8, *range(13, 33)])
+def test_standard_security_rejects_each_cleared_reserved_one_permission_bit(
+    bit_position: int,
+) -> None:
+    permissions = 0xFFFFFFFC & ~(1 << (bit_position - 1))
+
+    with pytest.raises(ValueError, match="reserved encryption permission bits must be one"):
+        internal_parse_config(
+            [b"document-id"],
+            internal_legacy_security_params(3, permissions),
+            1,
+            (2, 3),
+        )
+
+
+@pytest.mark.parametrize("bit_position", [3, 4, 5, 6, 9, 10, 11, 12])
+def test_standard_security_accepts_each_clearable_permission_bit(bit_position: int) -> None:
+    permissions = 0xFFFFFFFC & ~(1 << (bit_position - 1))
+    revision = 3 if bit_position >= 9 else 2
+
+    config = internal_parse_config(
+        [b"document-id"],
+        internal_legacy_security_params(revision, permissions),
+        1,
+        (2, 3),
+    )
+
+    assert config.permissions == permissions
 
 
 @pytest.mark.parametrize(
@@ -198,3 +323,159 @@ def test_security_handler_rejects_late_crypt_filter() -> None:
 def test_security_handler_rejects_unknown_named_crypt_filter() -> None:
     with pytest.raises(PdfUnsupportedError, match="Undefined crypt filter"):
         internal_resolve_crypt_method("Unknown", {})
+
+
+def test_standard_security_parses_embedded_file_filter() -> None:
+    params: PdfDict = {
+        "CF": {
+            "StdCF": {
+                "Type": PdfName.of("CryptFilter"),
+                "CFM": PdfName.of("AESV2"),
+                "AuthEvent": PdfName.of("DocOpen"),
+                "Length": 16,
+            }
+        },
+        "StmF": PdfName.of("Identity"),
+        "StrF": PdfName.of("Identity"),
+        "EFF": PdfName.of("StdCF"),
+    }
+
+    _, stream_filter, string_filter, embedded_file_filter, crypt_filters = (
+        internal_parse_crypt_filters(params, 4)
+    )
+
+    assert stream_filter == "Identity"
+    assert string_filter == "Identity"
+    assert embedded_file_filter == "StdCF"
+    assert crypt_filters == {"StdCF": "AESV2"}
+
+
+def test_standard_security_defaults_embedded_file_filter_to_stream_filter() -> None:
+    params: PdfDict = {
+        "CF": {
+            "StdCF": {
+                "CFM": PdfName.of("AESV3"),
+                "AuthEvent": PdfName.of("DocOpen"),
+                "Length": 32,
+            }
+        },
+        "StmF": PdfName.of("StdCF"),
+    }
+
+    _, stream_filter, _, embedded_file_filter, _ = internal_parse_crypt_filters(params, 5)
+
+    assert stream_filter == "StdCF"
+    assert embedded_file_filter == "StdCF"
+
+
+def test_standard_security_rejects_undefined_embedded_file_filter() -> None:
+    params: PdfDict = {
+        "CF": {
+            "StdCF": {
+                "CFM": PdfName.of("AESV2"),
+                "AuthEvent": PdfName.of("DocOpen"),
+                "Length": 16,
+            }
+        },
+        "EFF": PdfName.of("Missing"),
+    }
+
+    with pytest.raises(ValueError, match="undefined EFF crypt filter"):
+        internal_parse_crypt_filters(params, 4)
+
+
+@pytest.mark.parametrize(
+    "filter_config",
+    [
+        {
+            "Type": PdfName.of("WrongType"),
+            "CFM": PdfName.of("AESV3"),
+            "AuthEvent": PdfName.of("DocOpen"),
+            "Length": 32,
+        },
+        {
+            "CFM": PdfName.of("AESV3"),
+            "AuthEvent": PdfName.of("EFOpen"),
+            "Length": 32,
+        },
+        {
+            "CFM": PdfName.of("AESV3"),
+            "AuthEvent": PdfName.of("DocOpen"),
+            "Length": 16,
+        },
+    ],
+)
+def test_standard_security_rejects_invalid_standard_crypt_filter(
+    filter_config: PdfDict,
+) -> None:
+    params: PdfDict = {
+        "CF": {"StdCF": filter_config},
+        "StmF": PdfName.of("StdCF"),
+    }
+
+    with pytest.raises(ValueError):
+        internal_parse_crypt_filters(params, 5)
+
+
+def test_standard_security_rejects_nonstandard_named_crypt_filter() -> None:
+    params: PdfDict = {
+        "CF": {
+            "Custom": {
+                "CFM": PdfName.of("AESV2"),
+                "AuthEvent": PdfName.of("DocOpen"),
+                "Length": 16,
+            }
+        }
+    }
+
+    with pytest.raises(ValueError, match="unsupported Standard Security crypt filter"):
+        internal_parse_crypt_filters(params, 4)
+
+
+def test_security_handler_uses_eff_for_embedded_file_streams() -> None:
+    crypt_filters: dict[str, internal_CryptMethod] = {"StdCF": "AESV2"}
+    config = internal_StandardSecurityConfig(
+        version=4,
+        revision=4,
+        permissions=(1 << 32) - 4,
+        owner_entry=bytes(32),
+        user_entry=bytes(32),
+        length_bits=128,
+        document_id=b"document-id",
+        encrypt_metadata=True,
+        stream_filter="Identity",
+        string_filter="Identity",
+        embedded_file_filter="StdCF",
+        crypt_filters=crypt_filters,
+        owner_encrypted_key=b"",
+        user_encrypted_key=b"",
+        encrypted_permissions=b"",
+    )
+    handler = internal_StandardSecurityHandler(config, bytes(range(16)))
+    object_number = 7
+    generation_number = 0
+    initialization_vector = bytes(range(16))
+    plaintext = b"embedded file payload"
+    object_key = handler.object_key(object_number, generation_number, b"sAlT")
+    ciphertext = initialization_vector + internal_aes_cbc_encrypt(
+        object_key,
+        initialization_vector,
+        plaintext,
+        use_padding=True,
+    )
+
+    decrypted = handler.decrypt(
+        object_number,
+        generation_number,
+        ciphertext,
+        {"Type": PdfName.of("EmbeddedFile")},
+    )
+    ordinary_stream = handler.decrypt(
+        object_number,
+        generation_number,
+        ciphertext,
+        {"Type": PdfName.of("XObject")},
+    )
+
+    assert decrypted == plaintext
+    assert ordinary_stream == ciphertext
