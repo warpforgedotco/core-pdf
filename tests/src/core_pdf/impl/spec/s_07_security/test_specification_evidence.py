@@ -81,7 +81,7 @@ def test_pdf_reference_1_7_permission_rows_match_the_implementation() -> None:
     rows = [
         (int(match[0]), int(match[1]), int(match[2]))
         for match in re.findall(
-            r"(\d+)\s*[–-]\s*(\d+)\s+"
+            r"(\d+)\s*[\u2013-]\s*(\d+)\s+"
             r"(?:\(Revision 3 or greater\)\s+)?Reserved;\s+must be ([01])\.",
             text,
         )
@@ -177,18 +177,87 @@ def test_iso_ts_32003_aes_gcm_rules_match_the_implementation_when_available() ->
     assert crypt_filters == {"StdCF": "AESV4"}
 
 
-def test_iso_ts_32004_bit_13_extension_fails_closed_when_available() -> None:
-    """ISO/TS 32004:2024, 5.1.2 and Table 3."""
+def test_iso_ts_32004_standalone_pdf_mac_rules_and_fail_closed_behavior() -> None:
+    """ISO/TS 32004:2024, 4, 5.1-5.2, 6.2-6.6."""
     with PdfDocument.open(internal_specification(internal_ISO_TS_32004)) as document:
         assert len(document.pages) == 25
-        text = internal_page_text(document, 10)
+        extension_and_encrypt = internal_page_text(document, 9)
+        permission_and_trailer = internal_page_text(document, 10)
+        auth_code = internal_page_text(document, 11)
+        cms_structure = internal_page_text(document, 12)
+        algorithms = internal_page_text(document, 13)
+        attributes_and_kdf = internal_page_text(document, 14)
+        location = internal_page_text(document, 15)
+        unsigned_digest = internal_page_text(document, 16)
 
-    assert "Table 3 — Additions to ISO 32000-2:2020, Table 22" in text
-    assert "13 When zero, indicates that a PDF MAC token is required" in text
-    assert "unless bit 13 is zero in all revisions" in text
+    assert "Table 1 — Extension schema entries" in extension_and_encrypt
+    assert "BaseVersion name 2.0" in extension_and_encrypt
+    assert "ExtensionLevel integer 32004" in extension_and_encrypt
+    assert "ExtensionRevision text string :2024" in extension_and_encrypt
+    assert "KDFSalt byte string" in extension_and_encrypt
+    assert "shall be a direct object" in extension_and_encrypt
+    assert "A 32-byte salt value for use in key derivation" in extension_and_encrypt
 
-    # core-pdf does not implement ISO/TS 32004:2024 AuthCode validation yet.
-    # Reject its bit-13 signal instead of silently accepting unverified content.
+    assert "Table 3 — Additions to ISO 32000-2:2020, Table 22" in permission_and_trailer
+    assert "13 When zero, indicates that a PDF MAC token is required" in permission_and_trailer
+    assert "unless bit 13 is zero in all revisions" in permission_and_trailer
+    assert "AuthCode dictionary" in permission_and_trailer
+    assert "Required if the document is encrypted with user access permissions bit 13 zero" in (
+        permission_and_trailer
+    )
+    assert "Shall be a direct object" in permission_and_trailer
+    assert "value of the V entry in the document\u2019s Encrypt dictionary shall be at least 5" in (
+        permission_and_trailer
+    )
+
+    assert "Table 6 — Entries in an AuthCode dictionary" in auth_code
+    assert "MACLocation name" in auth_code
+    assert "Standalone: The DER-encoded PDF MAC token is given by the value of the MAC entry" in (
+        auth_code
+    )
+    assert "An array of four nonnegative integers" in auth_code
+    assert "The first array element shall be zero" in auth_code
+    assert "free of any trailing data" in auth_code
+    assert "If MACLocation is Standalone, this entry shall not be present" in auth_code
+
+    assert "PdfMacIntegrityInfo::= SEQUENCE" in cms_structure
+    assert "version INTEGER" in cms_structure
+    assert "shall be 0" in cms_structure
+    assert "dataDigest OCTET STRING" in cms_structure
+    assert "signatureDigest [0] IMPLICIT OCTET STRING OPTIONAL" in cms_structure
+    assert "PDF MAC tokens are CMS ContentInfo objects" in cms_structure
+    assert "content type of a PDF MAC token is id-ct-authData" in cms_structure
+    assert "exactly one recipientInfo field" in cms_structure
+    assert "PasswordRecipientInfo as its type" in cms_structure
+
+    assert "AES-256 key wrapping without padding 256" in algorithms
+    assert "SHA-256" in algorithms
+    assert "SHA-384" in algorithms
+    assert "SHA-512" in algorithms
+    assert "HMAC with SHA-256 256" in algorithms
+
+    assert "CMS unauthenticated attributes shall not be used" in attributes_and_kdf
+    assert "unauthAttrs field shall be absent" in attributes_and_kdf
+    assert "pdfMacWrapKdf is an instance" in attributes_and_kdf
+    assert "hash algorithm shall be SHA-256" in attributes_and_kdf
+    assert "salt shall be the 32-byte value stored in the KDFSalt field" in attributes_and_kdf
+    assert (
+        "info parameter shall be set to the 6-character string \u2018PDFMAC\u2019"
+        in attributes_and_kdf
+    )
+
+    assert "value of the MACLocation entry shall be Standalone" in location
+    assert "ByteRange of the AuthCode dictionary shall cover the entire PDF file" in location
+    assert "except for the value of the MAC entry itself" in location
+    assert "signatureDigest field shall be absent" in unsigned_digest
+    assert "dataDigest field shall be obtained by digesting the bytes" in unsigned_digest
+    assert "ByteRange entry of the AuthCode dictionary" in unsigned_digest
+
+    # ISO/TS 32004:2024, Table 3 makes bit 13 part of the security protocol.
+    # Until AuthCode validation exists, production code deliberately retains it
+    # in the reserved-one mask and therefore rejects MAC-protected documents.
+    assert 13 in internal_RESERVED_ONE_PERMISSION_BITS
+    assert internal_RESERVED_ONE_PERMISSION_MASK & (1 << 12)
     permissions_with_bit_13_clear = 0xFFFFFFFC & ~(1 << 12)
     with pytest.raises(ValueError, match="reserved encryption permission bits must be one"):
         internal_parse_config(

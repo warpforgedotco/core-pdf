@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from pathlib import Path
 from typing import cast
 
@@ -17,6 +18,41 @@ AES_GCM_DIRECTORY = FIXTURE_DIRECTORY / "aes_gcm"
 AES_GCM_FIXTURE = AES_GCM_DIRECTORY / "aes-256-r7-gcm.pdf"
 AES_GCM_USER_PASSWORD = "user-gcm"
 AES_GCM_OWNER_PASSWORD = "owner-gcm"
+PDF_MAC_DIRECTORY = FIXTURE_DIRECTORY / "pdf_mac"
+PDF_MAC_FIXTURES = (
+    (
+        "aes-256-r6-cbc-mac.pdf",
+        "user-mac-cbc",
+        "owner-mac-cbc",
+        "AES-256-CBC",
+        "AESV3",
+        5,
+        6,
+    ),
+    (
+        "aes-256-r7-gcm-mac.pdf",
+        "user-mac-gcm",
+        "owner-mac-gcm",
+        "AES-256-GCM",
+        "AESV4",
+        6,
+        7,
+    ),
+)
+PDF_MAC_PASSWORD_CASES = tuple(
+    (filename, password)
+    for filename, user_password, owner_password, *_ in PDF_MAC_FIXTURES
+    for password in (user_password, owner_password)
+)
+PDF_MAC_TAMPER_CHECKS = (
+    "covered-document-byte",
+    "mac-byte",
+    "kdf-salt",
+    "byte-range",
+    "truncated-file",
+    "trailing-file-bytes",
+)
+PDF_MAC_BYTE_RANGE_PATTERN = re.compile(rb"/ByteRange\s*\[\s*0\s+(\d+)\s+(\d+)\s+(\d+)\s*\]")
 EXPECTED_TEXT = "Security Interoperability"
 EXPECTED_INFO = {
     "Author": "core-pdf",
@@ -50,10 +86,11 @@ def internal_hex_entry_bounds(data: bytes, key: str) -> tuple[int, int]:
     return start, data.index(b">", start)
 
 
-def internal_corrupt_hex_entry(data: bytes, key: str) -> bytes:
-    start, _ = internal_hex_entry_bounds(data, key)
+def internal_corrupt_hex_entry(data: bytes, key: str, *, from_end: bool = False) -> bytes:
+    start, end = internal_hex_entry_bounds(data, key)
+    index = end - 1 if from_end else start
     corrupted = bytearray(data)
-    corrupted[start] = ord("0") if corrupted[start] != ord("0") else ord("1")
+    corrupted[index] = ord("0") if corrupted[index] != ord("0") else ord("1")
     return bytes(corrupted)
 
 
@@ -99,6 +136,32 @@ def internal_corrupt_aes_gcm_page_stream(data: bytes, relative_index: int) -> by
     return bytes(corrupted)
 
 
+def internal_tamper_pdf_mac(data: bytes, name: str) -> bytes:
+    match name:
+        case "covered-document-byte":
+            second_comment = data.index(b"\n%", len(b"%PDF-")) + 2
+            corrupted = bytearray(data)
+            corrupted[second_comment] ^= 1
+            return bytes(corrupted)
+        case "mac-byte":
+            return internal_corrupt_hex_entry(data, "MAC", from_end=True)
+        case "kdf-salt":
+            return internal_corrupt_hex_entry(data, "KDFSalt")
+        case "byte-range":
+            match = PDF_MAC_BYTE_RANGE_PATTERN.search(data)
+            assert match is not None
+            old_length = match.group(3)
+            new_length = str(int(old_length) - 1).encode("ascii")
+            assert len(new_length) == len(old_length)
+            return data[: match.start(3)] + new_length + data[match.end(3) :]
+        case "truncated-file":
+            return data[:-1]
+        case "trailing-file-bytes":
+            return data + b"% PDF MAC coverage tamper\n"
+        case _:
+            raise AssertionError(f"unknown PDF MAC tamper case: {name}")
+
+
 @pytest.mark.parametrize(("filename", "password"), PASSWORD_CASES)
 def test_qpdf_encrypted_fixture_opens_with_user_or_owner_password(
     filename: str,
@@ -137,6 +200,39 @@ def test_pyhanko_aes_gcm_fixture_opens_with_user_or_owner_password(password: str
 def test_pyhanko_aes_gcm_fixture_rejects_incorrect_password() -> None:
     with pytest.raises(PdfUnsupportedError, match="Incorrect password"):
         PdfDocument.open(AES_GCM_FIXTURE, password="incorrect")
+
+
+@pytest.mark.parametrize(("filename", "password"), PDF_MAC_PASSWORD_CASES)
+def test_pyhanko_pdf_mac_fixture_fails_closed_until_validation_exists(
+    filename: str,
+    password: str,
+) -> None:
+    # ISO/TS 32004:2024, Table 3 repurposes permission bit 13 to require a
+    # PDF MAC token. Valid fixtures must remain unreadable until core-pdf can
+    # validate AuthCode instead of exposing unauthenticated document content.
+    with pytest.raises(PdfUnsupportedError, match="Invalid encryption dictionary") as error:
+        PdfDocument.open(PDF_MAC_DIRECTORY / filename, password=password)
+
+    assert isinstance(error.value.__cause__, ValueError)
+    assert str(error.value.__cause__) == "reserved encryption permission bits must be one"
+
+
+@pytest.mark.parametrize(
+    ("filename", "password"),
+    [(fixture[0], fixture[1]) for fixture in PDF_MAC_FIXTURES],
+)
+@pytest.mark.parametrize("tamper_name", PDF_MAC_TAMPER_CHECKS)
+def test_pyhanko_pdf_mac_tamper_cases_remain_fail_closed(
+    filename: str,
+    password: str,
+    tamper_name: str,
+) -> None:
+    pristine = (PDF_MAC_DIRECTORY / filename).read_bytes()
+    tampered = internal_tamper_pdf_mac(pristine, tamper_name)
+    assert tampered != pristine
+
+    with pytest.raises(PdfUnsupportedError, match="Invalid encryption dictionary"):
+        PdfDocument.open(tampered, password=password)
 
 
 @pytest.mark.parametrize(
@@ -347,4 +443,113 @@ def test_pyhanko_aes_gcm_fixture_has_expected_security_dictionary() -> None:
     assert all(marker in fixture_bytes for marker in markers)
     assert b"/KDFSalt" not in fixture_bytes
     assert b"/AuthCode" not in fixture_bytes
+    assert EXPECTED_TEXT.encode() not in fixture_bytes
+
+
+def test_pyhanko_pdf_mac_fixtures_and_manifest_are_pinned() -> None:
+    manifest = json.loads((PDF_MAC_DIRECTORY / "manifest.json").read_text(encoding="utf-8"))
+    records = {record["filename"]: record for record in manifest["fixtures"]}
+    source = manifest["source"]
+
+    assert manifest["specification"] == "ISO/TS 32004:2024"
+    assert manifest["expected"] == {"text": EXPECTED_TEXT}
+    assert manifest["generator"] == {
+        "commit": "00362ec2772b2d39e5d9ba2c0287efb4077421d8",
+        "license": "MIT",
+        "name": "pyHanko",
+        "version": "0.37.0",
+        "website": "https://github.com/MatthiasValvekens/pyHanko",
+    }
+    assert manifest["regenerate"] == [
+        "uv",
+        "run",
+        "--with",
+        "pyhanko==0.37.0",
+        "python",
+        "scripts/generate_pdf_mac_interop_fixtures.py",
+    ]
+    assert source["filename"] == "../source.pdf"
+    source_bytes = (PDF_MAC_DIRECTORY / source["filename"]).read_bytes()
+    assert hashlib.sha256(source_bytes).hexdigest() == source["sha256"]
+
+    expected_filenames = {fixture[0] for fixture in PDF_MAC_FIXTURES}
+    assert records.keys() == expected_filenames
+    assert {path.name for path in PDF_MAC_DIRECTORY.glob("*.pdf")} == expected_filenames
+    for (
+        filename,
+        user_password,
+        owner_password,
+        algorithm,
+        crypt_filter_method,
+        version,
+        revision,
+    ) in PDF_MAC_FIXTURES:
+        fixture_bytes = (PDF_MAC_DIRECTORY / filename).read_bytes()
+        assert records[filename] == {
+            "algorithm": algorithm,
+            "crypt_filter_method": crypt_filter_method,
+            "filename": filename,
+            "kdf_salt_bytes": 32,
+            "mac_algorithm": "HMAC-SHA-256",
+            "mac_digest_algorithm": "SHA-256",
+            "mac_key_wrap_algorithm": "AES-256-KW",
+            "mac_location": "Standalone",
+            "owner_password": owner_password,
+            "pdf_mac": True,
+            "revision": revision,
+            "sha256": hashlib.sha256(fixture_bytes).hexdigest(),
+            "tamper_checks": list(PDF_MAC_TAMPER_CHECKS),
+            "user_password": user_password,
+            "version": version,
+        }
+
+
+@pytest.mark.parametrize(
+    ("filename", "crypt_filter_method", "version", "revision"),
+    [(fixture[0], fixture[4], fixture[5], fixture[6]) for fixture in PDF_MAC_FIXTURES],
+)
+def test_pyhanko_pdf_mac_fixture_has_expected_standalone_structure(
+    filename: str,
+    crypt_filter_method: str,
+    version: int,
+    revision: int,
+) -> None:
+    fixture_bytes = (PDF_MAC_DIRECTORY / filename).read_bytes()
+
+    # ISO/TS 32004:2024, Tables 1-3, 5-6 and 6.5.1 require the extension
+    # declaration, a 32-byte KDFSalt, bit 13 clear, a direct AuthCode
+    # dictionary, a standalone DER token, and exact whole-file coverage.
+    assert re.search(rb"trailer\s*<<\s*/AuthCode\s*<<", fixture_bytes)
+    assert b"/MACLocation /Standalone" in fixture_bytes
+    assert b"/SigObjRef" not in fixture_bytes
+    assert b"/P -4100" in fixture_bytes
+    permissions = (-4100) & 0xFFFFFFFF
+    assert permissions & (1 << 12) == 0
+    assert f"/V {version}".encode() in fixture_bytes
+    assert f"/R {revision}".encode() in fixture_bytes
+    assert f"/CFM /{crypt_filter_method}".encode() in fixture_bytes
+    assert b"/ExtensionLevel 32004" in fixture_bytes
+    if crypt_filter_method == "AESV4":
+        assert b"/ExtensionLevel 32003" in fixture_bytes
+    else:
+        assert b"/ExtensionLevel 32003" not in fixture_bytes
+
+    kdf_start, kdf_end = internal_hex_entry_bounds(fixture_bytes, "KDFSalt")
+    assert len(bytes.fromhex(fixture_bytes[kdf_start:kdf_end].decode("ascii"))) == 32
+
+    byte_range = PDF_MAC_BYTE_RANGE_PATTERN.search(fixture_bytes)
+    assert byte_range is not None
+    first_length, second_start, second_length = map(int, byte_range.groups())
+    mac_start, mac_end = internal_hex_entry_bounds(fixture_bytes, "MAC")
+    assert first_length == mac_start - 1
+    assert second_start == mac_end + 1
+    assert second_start + second_length == len(fixture_bytes)
+    assert (
+        fixture_bytes[first_length:second_start] == b"<" + fixture_bytes[mac_start:mac_end] + b">"
+    )
+
+    encoded_mac = fixture_bytes[mac_start:mac_end]
+    assert encoded_mac == encoded_mac.upper()
+    assert not any(chr(byte).isspace() for byte in encoded_mac)
+    assert bytes.fromhex(encoded_mac.decode("ascii")).startswith(b"\x30")
     assert EXPECTED_TEXT.encode() not in fixture_bytes
