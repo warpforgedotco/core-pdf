@@ -228,6 +228,137 @@ def type3_glyph_names(font: dict[Any, Any], decoder: Any) -> dict[int, str]:
     }
 
 
+class PdfminerCursor:
+    """pdfminer-compatible text cursor tracked alongside spec glyph capture.
+
+    pdfminer advances its own cursor per glyph and reports each glyph's origin
+    from it. That bookkeeping is a compatibility concern, not a spec one, so it
+    lives here rather than threaded through the capture loop as eight locals.
+    """
+
+    __slots__ = (
+        "x",
+        "y",
+        "need_charspace",
+        "char_space",
+        "word_space",
+        "spacing_scale",
+        "origin_x",
+        "origin_y",
+        "combined",
+        "is_vertical",
+        "font_size",
+    )
+
+    def __init__(
+        self,
+        x: float,
+        y: float,
+        need_charspace: bool,
+        *,
+        char_space: float,
+        word_space: float,
+        spacing_scale: float,
+        origin_x: float,
+        origin_y: float,
+        combined: tuple[float, float, float, float],
+        is_vertical: bool,
+        font_size: float,
+    ) -> None:
+        self.x = x
+        self.y = y
+        self.need_charspace = need_charspace
+        self.char_space = char_space
+        self.word_space = word_space
+        self.spacing_scale = spacing_scale
+        self.origin_x = origin_x
+        self.origin_y = origin_y
+        self.combined = combined
+        self.is_vertical = is_vertical
+        self.font_size = font_size
+
+    def step(self, width_units: float, is_space: bool) -> tuple[tuple[str, Any], ...]:
+        """Apply pending char spacing, report this glyph's provenance, advance."""
+        if self.need_charspace:
+            if self.is_vertical:
+                self.y += self.char_space
+            else:
+                self.x += self.char_space
+        combined_a, combined_b, combined_c, combined_d = self.combined
+        provenance: tuple[tuple[str, Any], ...] = (
+            (
+                "pdfminer_origin",
+                (
+                    self.x * combined_a + self.y * combined_c + self.origin_x,
+                    self.x * combined_b + self.y * combined_d + self.origin_y,
+                ),
+            ),
+            ("pdfminer_matrix_origin", (self.origin_x, self.origin_y)),
+            ("pdfminer_cursor", (self.x, self.y)),
+            ("pdfminer_need_charspace", self.need_charspace),
+        )
+        advance = width_units * 0.001 * self.font_size * self.spacing_scale
+        if self.is_vertical:
+            self.y += advance
+            if is_space:
+                self.y += self.word_space
+        else:
+            self.x += advance
+            if is_space:
+                self.x += self.word_space
+        self.need_charspace = True
+        return provenance
+
+
+class RunGeometry:
+    """Running union of glyph advance/ink boxes plus the minimum confidence.
+
+    Accumulated as observations are appended so a caller never has to rescan
+    the slice it just wrote. Empty until the first `add`, which is what
+    distinguishes "no glyphs recorded" from "a run at the origin".
+    """
+
+    __slots__ = ("started", "advance", "ink", "confidence")
+
+    def __init__(self) -> None:
+        self.started = False
+        self.advance: Rectangle = (0.0, 0.0, 0.0, 0.0)
+        self.ink: Rectangle = (0.0, 0.0, 0.0, 0.0)
+        self.confidence: float | None = None
+
+    def add(
+        self,
+        advance_bbox: Rectangle,
+        ink_bbox: Rectangle,
+        confidence: float | None,
+    ) -> None:
+        if not self.started:
+            self.started = True
+            self.advance = advance_bbox
+            self.ink = ink_bbox
+            self.confidence = confidence
+            return
+        ax0, ay0, ax1, ay1 = self.advance
+        bx0, by0, bx1, by1 = advance_bbox
+        self.advance = (
+            bx0 if bx0 < ax0 else ax0,
+            by0 if by0 < ay0 else ay0,
+            bx1 if bx1 > ax1 else ax1,
+            by1 if by1 > ay1 else ay1,
+        )
+        ix0, iy0, ix1, iy1 = self.ink
+        bx0, by0, bx1, by1 = ink_bbox
+        self.ink = (
+            bx0 if bx0 < ix0 else ix0,
+            by0 if by0 < iy0 else iy0,
+            bx1 if bx1 > ix1 else ix1,
+            by1 if by1 > iy1 else iy1,
+        )
+        current = self.confidence
+        if confidence is not None and (current is None or confidence < current):
+            self.confidence = confidence
+
+
 def type3_font_matrix(font: dict[str, Any]) -> Matrix:
     matrix = font.get("FontMatrix")
     if not isinstance(matrix, (list, tuple)) or len(matrix) != 6:

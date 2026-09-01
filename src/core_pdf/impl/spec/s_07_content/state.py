@@ -37,6 +37,8 @@ from core_pdf.impl.spec.s_07_content.capture import (
     CapturedInlineImage,
     CapturedLine,
     CapturedPath,
+    PdfminerCursor,
+    RunGeometry,
     glyph_bitmap_dimensions,
     glyph_ink_rect,
     glyph_text_space_boxes,
@@ -1864,21 +1866,7 @@ class TextState:
             ("compatibility_data", compatibility_data),
         )
         compat_tj_active = self.compat_tj_active and self.compat_tj_decoder is decoder
-        if compat_tj_active:
-            compat_cursor_x = self.compat_tj_cursor_x
-            compat_cursor_y = self.compat_tj_cursor_y
-            compat_need_charspace = self.compat_tj_need_charspace
-            compat_spacing_scale = self.horizontal_scale * 0.01
-            compat_charspace = self.char_space * compat_spacing_scale
-            compat_wordspace = (
-                0.0 if decoder.is_cid_font else self.word_space * compat_spacing_scale
-            )
-            compat_origin_x = (
-                self.compat_tj_origin_e * self.ca + self.compat_tj_origin_f * self.cc + self.ce
-            )
-            compat_origin_y = (
-                self.compat_tj_origin_e * self.cb + self.compat_tj_origin_f * self.cd + self.cf
-            )
+        compat_cursor: PdfminerCursor | None = None
         text_basis = (
             self.tm_e * self.ca + self.tm_f * self.cc + self.ce,
             self.tm_e * self.cb + self.tm_f * self.cd + self.cf,
@@ -1902,6 +1890,25 @@ class TextState:
         cursor = 0
         is_vertical = decoder.is_vertical
         glyph_width = decoder.glyph_width
+        if compat_tj_active:
+            compat_spacing_scale = self.horizontal_scale * 0.01
+            compat_cursor = PdfminerCursor(
+                self.compat_tj_cursor_x,
+                self.compat_tj_cursor_y,
+                self.compat_tj_need_charspace,
+                char_space=self.char_space * compat_spacing_scale,
+                word_space=(0.0 if decoder.is_cid_font else self.word_space * compat_spacing_scale),
+                spacing_scale=compat_spacing_scale,
+                origin_x=(
+                    self.compat_tj_origin_e * self.ca + self.compat_tj_origin_f * self.cc + self.ce
+                ),
+                origin_y=(
+                    self.compat_tj_origin_e * self.cb + self.compat_tj_origin_f * self.cd + self.cf
+                ),
+                combined=(combined_a, combined_b, combined_c, combined_d),
+                is_vertical=is_vertical,
+                font_size=font_size,
+            )
         effective_font_name = decoder.font_name or font_name
         advance_scale = self.text_advance_scale
         char_space_scale = self.char_space_scale
@@ -1985,12 +1992,10 @@ class TextState:
             group_alpha,
             text_object_id,
         )
-        # Running union of the appended observations' geometry, accumulated
-        # during the append loop so the caller need not rescan the slice.
-        run_geometry_started = False
-        run_advance_x0 = run_advance_y0 = run_advance_x1 = run_advance_y1 = 0.0
-        run_ink_x0 = run_ink_y0 = run_ink_x1 = run_ink_y1 = 0.0
-        run_confidence: float | None = None
+        # Accumulated during the append loop so the caller need not rescan
+        # the slice it just wrote.
+        run_geometry = RunGeometry()
+        add_run_geometry = run_geometry.add
         for glyph in glyphs:
             advance = (
                 chunk_advance(
@@ -2015,35 +2020,16 @@ class TextState:
                 offset += advance
                 continue
 
-            if compat_tj_active:
-                if compat_need_charspace:
-                    if is_vertical:
-                        compat_cursor_y += compat_charspace
-                    else:
-                        compat_cursor_x += compat_charspace
-                pdfminer_origin = (
-                    compat_cursor_x * combined_a + compat_cursor_y * combined_c + compat_origin_x,
-                    compat_cursor_x * combined_b + compat_cursor_y * combined_d + compat_origin_y,
+            if compat_cursor is not None:
+                width_units = (
+                    float(vertical_metric(glyph.width_code)[0])
+                    if is_vertical
+                    else glyph_width(glyph.width_code)
                 )
                 observation_provenance: tuple[tuple[str, Any], ...] = (
                     *glyph_provenance,
-                    ("pdfminer_origin", pdfminer_origin),
-                    ("pdfminer_matrix_origin", (compat_origin_x, compat_origin_y)),
-                    ("pdfminer_cursor", (compat_cursor_x, compat_cursor_y)),
-                    ("pdfminer_need_charspace", compat_need_charspace),
+                    *compat_cursor.step(width_units, glyph.char_code == 32),
                 )
-                if is_vertical:
-                    metric = vertical_metric(glyph.width_code)
-                    compat_cursor_y += float(metric[0]) * 0.001 * font_size * compat_spacing_scale
-                    if glyph.char_code == 32:
-                        compat_cursor_y += compat_wordspace
-                else:
-                    compat_cursor_x += (
-                        glyph_width(glyph.width_code) * 0.001 * font_size * compat_spacing_scale
-                    )
-                    if glyph.char_code == 32:
-                        compat_cursor_x += compat_wordspace
-                compat_need_charspace = True
             else:
                 observation_provenance = glyph_provenance
 
@@ -2222,34 +2208,7 @@ class TextState:
                         observation_confidence,
                     )
                 )
-                if run_geometry_started:
-                    box_x0, box_y0, box_x1, box_y1 = advance_bbox
-                    if box_x0 < run_advance_x0:
-                        run_advance_x0 = box_x0
-                    if box_y0 < run_advance_y0:
-                        run_advance_y0 = box_y0
-                    if box_x1 > run_advance_x1:
-                        run_advance_x1 = box_x1
-                    if box_y1 > run_advance_y1:
-                        run_advance_y1 = box_y1
-                    box_x0, box_y0, box_x1, box_y1 = rect
-                    if box_x0 < run_ink_x0:
-                        run_ink_x0 = box_x0
-                    if box_y0 < run_ink_y0:
-                        run_ink_y0 = box_y0
-                    if box_x1 > run_ink_x1:
-                        run_ink_x1 = box_x1
-                    if box_y1 > run_ink_y1:
-                        run_ink_y1 = box_y1
-                    if observation_confidence is not None and (
-                        run_confidence is None or observation_confidence < run_confidence
-                    ):
-                        run_confidence = observation_confidence
-                else:
-                    run_geometry_started = True
-                    run_advance_x0, run_advance_y0, run_advance_x1, run_advance_y1 = advance_bbox
-                    run_ink_x0, run_ink_y0, run_ink_x1, run_ink_y1 = rect
-                    run_confidence = observation_confidence
+                add_run_geometry(advance_bbox, rect, observation_confidence)
                 offset += advance
                 continue
 
@@ -2361,37 +2320,9 @@ class TextState:
                 )
             for observation in cluster_observations:
                 append_glyph(observation)
-                if run_geometry_started:
-                    box_x0, box_y0, box_x1, box_y1 = observation.advance_bbox
-                    if box_x0 < run_advance_x0:
-                        run_advance_x0 = box_x0
-                    if box_y0 < run_advance_y0:
-                        run_advance_y0 = box_y0
-                    if box_x1 > run_advance_x1:
-                        run_advance_x1 = box_x1
-                    if box_y1 > run_advance_y1:
-                        run_advance_y1 = box_y1
-                    box_x0, box_y0, box_x1, box_y1 = observation.ink_bbox
-                    if box_x0 < run_ink_x0:
-                        run_ink_x0 = box_x0
-                    if box_y0 < run_ink_y0:
-                        run_ink_y0 = box_y0
-                    if box_x1 > run_ink_x1:
-                        run_ink_x1 = box_x1
-                    if box_y1 > run_ink_y1:
-                        run_ink_y1 = box_y1
-                    glyph_confidence = observation.confidence
-                    if glyph_confidence is not None and (
-                        run_confidence is None or glyph_confidence < run_confidence
-                    ):
-                        run_confidence = glyph_confidence
-                else:
-                    run_geometry_started = True
-                    run_advance_x0, run_advance_y0, run_advance_x1, run_advance_y1 = (
-                        observation.advance_bbox
-                    )
-                    run_ink_x0, run_ink_y0, run_ink_x1, run_ink_y1 = observation.ink_bbox
-                    run_confidence = observation.confidence
+                add_run_geometry(
+                    observation.advance_bbox, observation.ink_bbox, observation.confidence
+                )
             cluster = glyph_cluster_from_observations(
                 cluster_id,
                 chunk_text,
@@ -2401,17 +2332,13 @@ class TextState:
                 clusters.append(cluster)
             offset += advance
 
-        if compat_tj_active:
-            self.compat_tj_cursor_x = compat_cursor_x
-            self.compat_tj_cursor_y = compat_cursor_y
-            self.compat_tj_need_charspace = compat_need_charspace
-        if not run_geometry_started:
+        if compat_cursor is not None:
+            self.compat_tj_cursor_x = compat_cursor.x
+            self.compat_tj_cursor_y = compat_cursor.y
+            self.compat_tj_need_charspace = compat_cursor.need_charspace
+        if not run_geometry.started:
             return None
-        return (
-            (run_advance_x0, run_advance_y0, run_advance_x1, run_advance_y1),
-            (run_ink_x0, run_ink_y0, run_ink_x1, run_ink_y1),
-            run_confidence,
-        )
+        return run_geometry.advance, run_geometry.ink, run_geometry.confidence
 
     def _append_text_impl(
         self: Any,
