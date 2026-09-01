@@ -566,7 +566,10 @@ class TextState:
         self.compat_tj_decoder = None
         self.compat_tj_need_charspace = False
         cls = type(self)
-        shared = cls.shared_operator_tables
+        # Read the class's own entry, not an inherited one: `cls.shared_operator_tables`
+        # would find the base class's tables and skip building the subclass's, so an
+        # overridden `op_*` would never be dispatched.
+        shared = cls.__dict__.get("shared_operator_tables")
         if shared is None:
             shared = cls.shared_operator_tables = build_operator_tables(cls)
         (
