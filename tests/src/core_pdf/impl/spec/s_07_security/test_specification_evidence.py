@@ -3,8 +3,8 @@
 
 The source PDFs are copyrighted and intentionally gitignored. The public Adobe
 documents used in CI are fetched with ``scripts/fetch_pdf_specs.sh security``;
-the sponsored ISO 32000-2 and ISO/TS 32004 documents are checked when a local
-copy is available.
+the sponsored ISO 32000-2, ISO/TS 32003, and ISO/TS 32004 documents are checked
+when a local copy is available.
 """
 
 from __future__ import annotations
@@ -16,18 +16,29 @@ from pathlib import Path
 import pytest
 
 from core_pdf import PdfDocument
+from core_pdf.impl.primitives import PdfName
+from core_pdf.impl.spec.s_07_security.ciphers import (
+    internal_AES_GCM_IV_BYTES,
+    internal_AES_GCM_KEY_BYTES,
+    internal_AES_GCM_MAX_PLAINTEXT_BYTES,
+    internal_AES_GCM_TAG_BYTES,
+)
 from core_pdf.impl.spec.s_07_security.standard import (
     internal_parse_config,
+    internal_parse_crypt_filters,
     internal_RESERVED_ONE_PERMISSION_BITS,
     internal_RESERVED_ONE_PERMISSION_MASK,
     internal_RESERVED_ZERO_PERMISSION_BITS,
     internal_RESERVED_ZERO_PERMISSION_MASK,
+    internal_supported_revisions,
 )
+from core_pdf.impl.spec.s_07_syntax.types import PdfDict
 
 internal_SPECS = Path(__file__).resolve().parents[5] / "fixtures" / "specifications" / "PDF"
 internal_ADOBE_PDF_17 = "PDFReference-1.7-Adobe-2006.pdf"
 internal_ISO_32000_1 = "ISO32000-1-2008-PDF-1.7.pdf"
 internal_ISO_32000_2 = "ISO32000-2-2020-PDF-2.0-EC3.pdf"
+internal_ISO_TS_32003 = "ISO-TS-32003-2023-AES-GCM.pdf"
 internal_ISO_TS_32004 = "ISO-TS-32004-2024-Integrity-Protection.pdf"
 
 internal_PUBLIC_SPEC_SHA256 = {
@@ -118,6 +129,52 @@ def test_iso_32000_2_permission_rows_are_parseable_when_available() -> None:
     assert "7 - 8 Reserved. Must be 1." in text
     assert "13 - 32 (Security handlers of revision 3 or greater) Reserved. Must be 1." in text
     assert "(Security handlers of revision 2) Print the document." in text
+
+
+def test_iso_ts_32003_aes_gcm_rules_match_the_implementation_when_available() -> None:
+    """ISO/TS 32003:2023, Tables 2-4 and 5.2."""
+    with PdfDocument.open(internal_specification(internal_ISO_TS_32003)) as document:
+        assert len(document.pages) == 13
+        tables = internal_page_text(document, 9)
+        object_encryption = internal_page_text(document, 10)
+
+    assert "introduced a value of 6 for V which supports AES-GCM" in tables
+    assert "declares at least one crypt filter using the AESV4 method" in tables
+    assert "R number" in tables
+    assert "(Required) 7 (ISO/TS 32003)" in tables
+    assert "CFM name AESV4" in tables
+    assert "same manner as for AESV3" in tables
+    assert "32-byte crypt filter encryption key" in tables
+    assert "initialization vector (IV) shall be 12 bytes" in tables
+    assert "block size parameter shall be set to 16 bytes" in tables
+
+    assert "AAD input to the AES-GCM algorithm shall be nil" in object_encryption
+    assert "first 12 bytes of encrypted output" in object_encryption
+    assert "16-byte GCM authentication tag" in object_encryption
+    assert "(2³⁹ - 256) bytes of plaintext" in object_encryption
+    assert "password algorithms used shall be the same" in object_encryption
+    assert "standard security handler of revision 6" in object_encryption
+
+    assert internal_supported_revisions(6) == (7,)
+    assert internal_AES_GCM_KEY_BYTES == 32
+    assert internal_AES_GCM_IV_BYTES == 12
+    assert internal_AES_GCM_TAG_BYTES == 16
+    assert internal_AES_GCM_MAX_PLAINTEXT_BYTES == (1 << 39) - 256
+
+    params: PdfDict = {
+        "CF": {
+            "StdCF": {
+                "CFM": PdfName.of("AESV4"),
+                "AuthEvent": PdfName.of("DocOpen"),
+                "Length": 32,
+            }
+        },
+        "StmF": PdfName.of("StdCF"),
+        "StrF": PdfName.of("StdCF"),
+    }
+    _, stream_filter, string_filter, _, crypt_filters = internal_parse_crypt_filters(params, 6)
+    assert stream_filter == string_filter == "StdCF"
+    assert crypt_filters == {"StdCF": "AESV4"}
 
 
 def test_iso_ts_32004_bit_13_extension_fails_closed_when_available() -> None:

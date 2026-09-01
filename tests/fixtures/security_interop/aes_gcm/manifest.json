@@ -1,0 +1,37 @@
+{
+  "expected": {
+    "text": "Security Interoperability"
+  },
+  "fixture": {
+    "algorithm": "AES-256-GCM",
+    "crypt_filter_method": "AESV4",
+    "filename": "aes-256-r7-gcm.pdf",
+    "owner_password": "owner-gcm",
+    "pdf_mac": false,
+    "revision": 7,
+    "sha256": "ca266431df938b35b98c6098b368cca438455a3c76b02b2a2eb6b76b976a917f",
+    "user_password": "user-gcm",
+    "version": 6
+  },
+  "generator": {
+    "commit": "00362ec2772b2d39e5d9ba2c0287efb4077421d8",
+    "license": "MIT",
+    "name": "pyHanko",
+    "version": "0.37.0",
+    "website": "https://github.com/MatthiasValvekens/pyHanko"
+  },
+  "regenerate": [
+    "uv",
+    "run",
+    "--with",
+    "pyhanko==0.37.0",
+    "python",
+    "scripts/generate_aes_gcm_interop_fixture.py"
+  ],
+  "source": {
+    "filename": "../source.pdf",
+    "sha256": "f06eccd62dc412f8774af0562441b88953ceb2ab705d4a8ecf212a17e8a2a851"
+  },
+  "specification": "ISO/TS 32003:2023",
+  "warning": "Deterministic cryptographic material is for this public test fixture only."
+}

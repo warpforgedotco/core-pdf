@@ -9,10 +9,12 @@ from core_pdf.impl.spec.s_07_security.ciphers import (
     internal_aes_cbc_decrypt,
     internal_aes_cbc_encrypt,
     internal_aes_ecb_decrypt,
+    internal_aes_gcm_decrypt,
     internal_rc4_crypt,
 )
 from core_pdf.impl.spec.s_07_security.standard import (
     internal_CryptMethod,
+    internal_normalize_password,
     internal_parse_config,
     internal_parse_crypt_filters,
     internal_resolve_crypt_method,
@@ -99,6 +101,49 @@ def test_aes_ecb_decrypts_known_vector() -> None:
     assert internal_aes_ecb_decrypt(key, ciphertext) == expected
 
 
+def test_aes_gcm_decrypts_nist_aes_256_known_vector() -> None:
+    """NIST CAVP 14.0 AES-256-GCM, PTlen=128/AADlen=0, Count 0."""
+    key = bytes.fromhex("31bdadd96698c204aa9ce1448ea94ae1fb4a9a0b3c9d773b51bb1822666b8f22")
+    initialization_vector = bytes.fromhex("0d18e06c7c725ac9e362e1ce")
+    plaintext = bytes.fromhex("2db5168e932556f8089a0622981d017d")
+    ciphertext = bytes.fromhex("fa4362189661d163fcd6a56d8bf0405a")
+    authentication_tag = bytes.fromhex("d636ac1bbedd5cc3ee727dc2ab4a9489")
+
+    # ISO/TS 32003:2023, 5.2 serializes AESV4 objects as IV, ciphertext,
+    # then tag and requires nil additional authenticated data.
+    serialized = initialization_vector + ciphertext + authentication_tag
+
+    assert internal_aes_gcm_decrypt(key, serialized) == plaintext
+
+
+@pytest.mark.parametrize("byte_index", [0, 12, -1], ids=["iv", "ciphertext", "tag"])
+def test_aes_gcm_authenticates_every_serialized_component(byte_index: int) -> None:
+    data = bytearray(
+        bytes.fromhex("0d18e06c7c725ac9e362e1ce")
+        + bytes.fromhex("fa4362189661d163fcd6a56d8bf0405a")
+        + bytes.fromhex("d636ac1bbedd5cc3ee727dc2ab4a9489")
+    )
+    data[byte_index] ^= 1
+
+    with pytest.raises(PdfDecryptionError, match="Invalid encrypted object ciphertext"):
+        internal_aes_gcm_decrypt(
+            bytes.fromhex("31bdadd96698c204aa9ce1448ea94ae1fb4a9a0b3c9d773b51bb1822666b8f22"),
+            bytes(data),
+        )
+
+
+def test_aes_gcm_rejects_truncated_serialized_object() -> None:
+    # ISO/TS 32003:2023, 5.2 requires a 12-byte IV and 16-byte tag even
+    # when the encrypted plaintext is empty.
+    with pytest.raises(PdfDecryptionError, match="Invalid encrypted object ciphertext"):
+        internal_aes_gcm_decrypt(bytes(32), bytes(27))
+
+
+def test_aes_gcm_requires_the_iso_ts_32003_key_size() -> None:
+    with pytest.raises(ValueError, match="AESV4 key must be 32 bytes"):
+        internal_aes_gcm_decrypt(bytes(16), bytes(28))
+
+
 def test_rc4_known_vector() -> None:
     key = bytes.fromhex("0102030405")
     plaintext = bytes(16)
@@ -123,7 +168,7 @@ def test_rc4_known_vector() -> None:
             "Unsupported standard encryption algorithm",
         ),
         (
-            {"Filter": PdfName.of("Standard"), "V": 6},
+            {"Filter": PdfName.of("Standard"), "V": 7},
             "Unsupported standard encryption algorithm",
         ),
     ],
@@ -143,6 +188,7 @@ def test_standard_security_factory_rejects_unsupported_handler(
         (2, 2),
         (4, 3),
         (5, 4),
+        (6, 6),
     ],
 )
 def test_standard_security_factory_rejects_mismatched_revision(
@@ -279,6 +325,12 @@ def test_saslprep_maps_and_normalizes_valid_passwords(value: str, expected: str)
     assert internal_saslprep(value) == expected
 
 
+def test_revision_7_uses_revision_6_password_normalization() -> None:
+    # ISO/TS 32003:2023, 5.2 applies the ISO 32000-2:2020 revision-6
+    # password algorithms to revision 7.
+    assert internal_normalize_password("I\u00adX", 7) == b"IX"
+
+
 @pytest.mark.parametrize(
     ("value", "message"),
     [
@@ -366,6 +418,51 @@ def test_standard_security_defaults_embedded_file_filter_to_stream_filter() -> N
 
     assert stream_filter == "StdCF"
     assert embedded_file_filter == "StdCF"
+
+
+def test_standard_security_parses_iso_ts_32003_aesv4_configuration() -> None:
+    params: PdfDict = {
+        "R": 7,
+        "P": -4,
+        "O": bytes(48),
+        "U": bytes(48),
+        "OE": bytes(32),
+        "UE": bytes(32),
+        "Perms": bytes(16),
+        "Length": 256,
+        "CF": {
+            "StdCF": {
+                "Type": PdfName.of("CryptFilter"),
+                "CFM": PdfName.of("AESV4"),
+                "AuthEvent": PdfName.of("DocOpen"),
+                "Length": 32,
+            }
+        },
+        "StmF": PdfName.of("StdCF"),
+        "StrF": PdfName.of("StdCF"),
+    }
+
+    config = internal_parse_config([b"document-id"], params, 6, (7,))
+
+    assert config.version == 6
+    assert config.revision == 7
+    assert config.length_bits == 256
+    assert config.stream_filter == "StdCF"
+    assert config.string_filter == "StdCF"
+    assert config.crypt_filters == {"StdCF": "AESV4"}
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {},
+        {"CF": {"StdCF": {"CFM": PdfName.of("AESV3"), "Length": 32}}},
+        {"CF": {"StdCF": {"CFM": PdfName.of("AESV4"), "Length": 16}}},
+    ],
+)
+def test_standard_security_v6_requires_a_valid_aesv4_filter(params: PdfDict) -> None:
+    with pytest.raises(ValueError):
+        internal_parse_crypt_filters(params, 6)
 
 
 def test_standard_security_rejects_undefined_embedded_file_filter() -> None:
