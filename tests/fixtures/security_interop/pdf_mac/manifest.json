@@ -1,0 +1,76 @@
+{
+  "expected": {
+    "text": "Security Interoperability"
+  },
+  "fixtures": [
+    {
+      "algorithm": "AES-256-CBC",
+      "crypt_filter_method": "AESV3",
+      "filename": "aes-256-r6-cbc-mac.pdf",
+      "kdf_salt_bytes": 32,
+      "mac_algorithm": "HMAC-SHA-256",
+      "mac_digest_algorithm": "SHA-256",
+      "mac_key_wrap_algorithm": "AES-256-KW",
+      "mac_location": "Standalone",
+      "owner_password": "owner-mac-cbc",
+      "pdf_mac": true,
+      "revision": 6,
+      "sha256": "3ce8e22a5c4e5d660c091643cf47e79b312974eb29a7a7b69b136fc1b11390d7",
+      "tamper_checks": [
+        "covered-document-byte",
+        "mac-byte",
+        "kdf-salt",
+        "byte-range",
+        "truncated-file",
+        "trailing-file-bytes"
+      ],
+      "user_password": "user-mac-cbc",
+      "version": 5
+    },
+    {
+      "algorithm": "AES-256-GCM",
+      "crypt_filter_method": "AESV4",
+      "filename": "aes-256-r7-gcm-mac.pdf",
+      "kdf_salt_bytes": 32,
+      "mac_algorithm": "HMAC-SHA-256",
+      "mac_digest_algorithm": "SHA-256",
+      "mac_key_wrap_algorithm": "AES-256-KW",
+      "mac_location": "Standalone",
+      "owner_password": "owner-mac-gcm",
+      "pdf_mac": true,
+      "revision": 7,
+      "sha256": "c2fae5823d6b324935d9adcc2a32c2e0a5fefccf7cf5d0a1b3526550486697e1",
+      "tamper_checks": [
+        "covered-document-byte",
+        "mac-byte",
+        "kdf-salt",
+        "byte-range",
+        "truncated-file",
+        "trailing-file-bytes"
+      ],
+      "user_password": "user-mac-gcm",
+      "version": 6
+    }
+  ],
+  "generator": {
+    "commit": "00362ec2772b2d39e5d9ba2c0287efb4077421d8",
+    "license": "MIT",
+    "name": "pyHanko",
+    "version": "0.37.0",
+    "website": "https://github.com/MatthiasValvekens/pyHanko"
+  },
+  "regenerate": [
+    "uv",
+    "run",
+    "--with",
+    "pyhanko==0.37.0",
+    "python",
+    "scripts/generate_pdf_mac_interop_fixtures.py"
+  ],
+  "source": {
+    "filename": "../source.pdf",
+    "sha256": "f06eccd62dc412f8774af0562441b88953ceb2ab705d4a8ecf212a17e8a2a851"
+  },
+  "specification": "ISO/TS 32004:2024",
+  "warning": "Deterministic cryptographic material is for public test fixtures only."
+}
