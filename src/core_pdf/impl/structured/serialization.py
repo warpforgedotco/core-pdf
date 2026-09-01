@@ -204,20 +204,6 @@ def document_to_json_dict(document: Document) -> dict[str, JsonValue]:
     }
 
 
-def page_to_json_dict(page: Page) -> dict[str, JsonValue]:
-    """Return a self-contained normalized schema-5 graph for one page."""
-    return document_to_json_dict(Document(pages=(page,)))
-
-
-def element_to_json_dict(element: Block | Table | Figure) -> dict[str, JsonValue]:
-    return internal_map_page_element(
-        element,
-        block=lambda block: internal_add_element_type(block_to_json_dict(block), "block"),
-        table=lambda table: internal_add_element_type(table_to_json_dict(table), "table"),
-        figure=lambda figure: internal_add_element_type(figure_to_json_dict(figure), "figure"),
-    )
-
-
 def internal_map_page_element(
     element: PageElement,
     *,
@@ -233,13 +219,6 @@ def internal_map_page_element(
         case Figure():
             return figure(element)
     raise TypeError(f"unsupported page element: {type(element).__name__}")
-
-
-def internal_add_element_type(
-    payload: dict[str, JsonValue], element_type: str
-) -> dict[str, JsonValue]:
-    payload["element_type"] = element_type
-    return payload
 
 
 def block_to_json_dict(block: Block) -> dict[str, JsonValue]:
@@ -665,10 +644,8 @@ __all__ = (
     "document_to_json_dict",
     "document_to_markdown",
     "document_to_tei",
-    "element_to_json_dict",
     "json_safe",
     "page_to_html",
-    "page_to_json_dict",
     "page_to_markdown",
     "table_cell_to_json_dict",
     "table_to_html",

@@ -1024,26 +1024,32 @@ class FontDecoder:
         horizontal_scale: float,
         glyphs: tuple[DecodedGlyph, ...] | None = None,
     ) -> tuple[float, float]:
-        data = bytes(data)
         if not data:
             return (0.0, 0.0)
         if glyphs is None:
-            glyphs = self.decode_glyphs(data)
+            glyphs = self.decode_glyphs(bytes(data))
+
+        # Same arithmetic as glyph_advance_vector, with the per-glyph method
+        # call and its attribute loads hoisted out of the loop. The operation
+        # order is kept exactly so the result stays bit-identical.
+        if self.is_vertical:
+            total_y = 0.0
+            vertical_glyph_metric = self.vertical_glyph_metric
+            for glyph in glyphs:
+                spacing = char_space + (word_space if glyph.code_bytes == b" " else 0.0)
+                total_y += vertical_glyph_metric(glyph.width_code)[0] * font_size / 1000.0 + spacing
+            return (0.0, total_y)
 
         total_x = 0.0
-        total_y = 0.0
+        default_width = self.default_width
+        width_for = self.widths.width_for
         for glyph in glyphs:
-            advance_x, advance_y = self.glyph_advance_vector(
-                glyph.width_code,
-                font_size=font_size,
-                char_space=char_space,
-                word_space=word_space,
-                horizontal_scale=horizontal_scale,
-                encoded_space=glyph.code_bytes == b" ",
-            )
-            total_x += advance_x
-            total_y += advance_y
-        return (total_x, total_y)
+            code = glyph.width_code
+            fallback = default_width if default_width > 0.0 else 250.0 if code == 32 else 1000.0
+            spacing = char_space + (word_space if glyph.code_bytes == b" " else 0.0)
+            displacement_x = width_for(code, fallback) * font_size / 1000.0 + spacing
+            total_x += displacement_x * horizontal_scale / 100.0
+        return (total_x, 0.0)
 
 
 def dedupe_alternates(values: Iterable[str], selected: str) -> tuple[str, ...]:

@@ -247,8 +247,6 @@ def normalize_image_color_spec(image_dict: object) -> ImageColorSpec:
                 if kind == "DeviceN" and isinstance(names, (list, tuple))
                 else 1,
             )
-        if kind in {"Separation", "DeviceN"}:
-            raise ValueError(f"invalid {kind} color space")
         return ImageColorSpec(kind=kind, params={}, bits_per_component=bits_per_component)
     return ImageColorSpec(
         kind=normalize_color_space_name(color_space),

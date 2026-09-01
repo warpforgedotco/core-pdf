@@ -426,6 +426,16 @@ def dispatch_operations(
         and not handler_target.capture_clipping
     )
     should_decipher = lexer.decipher is not None and lexer.current_obj_num is not None
+    # Fixed when the document is opened, but it was previously resolved by a
+    # double getattr chain on every ``<<`` token of every content stream.
+    legacy_pdfminer_mode = bool(
+        handler_target is not None
+        and getattr(
+            getattr(handler_target, "document", None),
+            "legacy_pdfminer_text_operators",
+            False,
+        )
+    )
     skipped_clip_q_count = 0
 
     pos = lexer.pos
@@ -1028,14 +1038,6 @@ def dispatch_operations(
         if byte == 60:
             if pos + 1 < data_len and raw_bytes[pos + 1] == 60:
                 operand_start = pos
-                legacy_pdfminer_mode = bool(
-                    handler_target is not None
-                    and getattr(
-                        getattr(handler_target, "document", None),
-                        "legacy_pdfminer_text_operators",
-                        False,
-                    )
-                )
                 try:
                     parse_dictionary = (
                         lexer.parse_dictionary

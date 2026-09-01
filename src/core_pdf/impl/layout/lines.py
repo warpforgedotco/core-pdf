@@ -88,105 +88,78 @@ class LayoutLine:
     max_font_size: float
     is_all_caps_text: bool
 
-    def __init__(
-        self,
-        runs: list[TextRun] | None = None,
-        x0: float = 0.0,
-        y0: float = 0.0,
-        x1: float = 0.0,
-        y1: float = 0.0,
-        is_vertical: bool = False,
-        rotation_angle: int = 0,
-        max_order: int = -1,
-        max_depth: int = -1,
-        min_order: int = 999999,
-        mid_y: float = 0.0,
-        height: float = 0.0,
-        max_font_size: float = 0.0,
-        is_all_caps_text: bool = True,
-    ) -> None:
+    def __init__(self, runs: list[TextRun] | None = None) -> None:
         self.internal_reconstructed_cache: LayoutLineText | None = None
         self.internal_reconstructed_cache_key: LayoutLineReconstructionKey | None = None
-        compute_from_runs = (
-            runs is not None
-            and len(runs) > 0
-            and x0 == 0.0
-            and y0 == 0.0
-            and x1 == 0.0
-            and y1 == 0.0
-            and not is_vertical
-            and rotation_angle == 0
-            and max_order == -1
-            and max_depth == -1
-            and min_order == 999999
-            and mid_y == 0.0
-            and height == 0.0
-            and max_font_size == 0.0
-            and is_all_caps_text
-        )
-        if compute_from_runs and runs is not None:
-            run_list = runs
-            first_run = run_list[0]
-            first_coords = first_run.coords
-            x0 = first_coords[TextRun.X0]
-            y0 = first_coords[TextRun.Y0]
-            x1 = first_coords[TextRun.X1]
-            y1 = first_coords[TextRun.Y1]
-            max_order = first_run.order
-            min_order = first_run.order
-            max_depth = first_run.xobject_depth
-            max_font_size = first_coords[TextRun.FONT_SIZE]
-            is_all_caps_text = not first_run.has_text or first_run.text_is_upper
+        self.runs = run_list = runs if runs is not None else []
+        if not run_list:
+            self.x0 = self.y0 = self.x1 = self.y1 = 0.0
+            self.is_vertical = False
+            self.rotation_angle = 0
+            self.max_order = -1
+            self.max_depth = -1
+            self.min_order = 999999
+            self.mid_y = 0.0
+            self.height = 0.0
+            self.max_font_size = 0.0
+            self.is_all_caps_text = True
+            return
 
-            text_run_x0 = TextRun.X0
-            text_run_y0 = TextRun.Y0
-            text_run_x1 = TextRun.X1
-            text_run_y1 = TextRun.Y1
-            text_run_font_size = TextRun.FONT_SIZE
+        first_run = run_list[0]
+        first_coords = first_run.coords
+        x0 = first_coords[TextRun.X0]
+        y0 = first_coords[TextRun.Y0]
+        x1 = first_coords[TextRun.X1]
+        y1 = first_coords[TextRun.Y1]
+        max_order = first_run.order
+        min_order = first_run.order
+        max_depth = first_run.xobject_depth
+        max_font_size = first_coords[TextRun.FONT_SIZE]
+        is_all_caps_text = not first_run.has_text or first_run.text_is_upper
 
-            for run in islice(run_list, 1, None):
-                coords = run.coords
-                run_x0 = coords[text_run_x0]
-                run_y0 = coords[text_run_y0]
-                run_x1 = coords[text_run_x1]
-                run_y1 = coords[text_run_y1]
-                font_size = coords[text_run_font_size]
-                if run_x0 < x0:
-                    x0 = run_x0
-                if run_y0 < y0:
-                    y0 = run_y0
-                if run_x1 > x1:
-                    x1 = run_x1
-                if run_y1 > y1:
-                    y1 = run_y1
-                if run.order > max_order:
-                    max_order = run.order
-                if run.order < min_order:
-                    min_order = run.order
-                if run.xobject_depth > max_depth:
-                    max_depth = run.xobject_depth
-                if font_size > max_font_size:
-                    max_font_size = font_size
-                if is_all_caps_text and run.has_text and not run.text_is_upper:
-                    is_all_caps_text = False
+        text_run_x0 = TextRun.X0
+        text_run_y0 = TextRun.Y0
+        text_run_x1 = TextRun.X1
+        text_run_y1 = TextRun.Y1
+        text_run_font_size = TextRun.FONT_SIZE
 
-            is_vertical = first_run.is_vertical
-            rotation_angle = first_run.rotation_angle
-            mid_y = (y0 + y1) * 0.5
-            height = y1 - y0
+        for run in islice(run_list, 1, None):
+            coords = run.coords
+            run_x0 = coords[text_run_x0]
+            run_y0 = coords[text_run_y0]
+            run_x1 = coords[text_run_x1]
+            run_y1 = coords[text_run_y1]
+            font_size = coords[text_run_font_size]
+            if run_x0 < x0:
+                x0 = run_x0
+            if run_y0 < y0:
+                y0 = run_y0
+            if run_x1 > x1:
+                x1 = run_x1
+            if run_y1 > y1:
+                y1 = run_y1
+            if run.order > max_order:
+                max_order = run.order
+            if run.order < min_order:
+                min_order = run.order
+            if run.xobject_depth > max_depth:
+                max_depth = run.xobject_depth
+            if font_size > max_font_size:
+                max_font_size = font_size
+            if is_all_caps_text and run.has_text and not run.text_is_upper:
+                is_all_caps_text = False
 
-        self.runs = runs if runs is not None else []
         self.x0 = x0
         self.y0 = y0
         self.x1 = x1
         self.y1 = y1
-        self.is_vertical = is_vertical
-        self.rotation_angle = rotation_angle
+        self.is_vertical = first_run.is_vertical
+        self.rotation_angle = first_run.rotation_angle
         self.max_order = max_order
         self.max_depth = max_depth
         self.min_order = min_order
-        self.mid_y = mid_y
-        self.height = height
+        self.mid_y = (y0 + y1) * 0.5
+        self.height = y1 - y0
         self.max_font_size = max_font_size
         self.is_all_caps_text = is_all_caps_text
 

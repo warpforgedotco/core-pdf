@@ -169,17 +169,6 @@ class RectBox:
         self.fill = fill
         self.fill_opacity = fill_opacity
 
-    @property
-    def width(self) -> float:
-        return self.x1 - self.x0
-
-    @property
-    def height(self) -> float:
-        return self.y1 - self.y0
-
-    def get_area(self) -> float:
-        return self.width * self.height
-
     def normalize(self) -> RectBox:
         if self.x0 <= self.x1 and self.y0 <= self.y1:
             return self
@@ -193,22 +182,6 @@ class RectBox:
             fill_opacity=self.fill_opacity,
         )
 
-    def intersects(self, other: RectBox, occlusion_threshold: float = 0.0) -> bool:
-
-        x0 = max(self.x0, other.x0)
-        y0 = max(self.y0, other.y0)
-        x1 = min(self.x1, other.x1)
-        y1 = min(self.y1, other.y1)
-        if x1 <= x0 or y1 <= y0:
-            return False
-
-        area = (x1 - x0) * (y1 - y0)
-        area_of_bbox = (self.x1 - self.x0) * (self.y1 - self.y0)
-        if area_of_bbox <= 0:
-            return False
-
-        return area / area_of_bbox > occlusion_threshold
-
     def __iter__(self) -> Iterator[float]:
         yield self.x0
         yield self.y0
@@ -220,23 +193,3 @@ class RectBox:
 
     def __getitem__(self, index: int) -> float:
         return (self.x0, self.y0, self.x1, self.y1)[index]
-
-    def __abs__(self) -> float:
-        return abs(self.get_area())
-
-    def __and__(self, other: RectBox) -> RectBox:
-        x0 = max(self.x0, other.x0)
-        y0 = max(self.y0, other.y0)
-        x1 = min(self.x1, other.x1)
-        y1 = min(self.y1, other.y1)
-        if x1 <= x0 or y1 <= y0:
-            return RectBox(0.0, 0.0, 0.0, 0.0)
-        return RectBox(
-            x0,
-            y0,
-            x1,
-            y1,
-            seqno=max(self.seqno, other.seqno),
-            fill=self.fill if self.seqno >= other.seqno else other.fill,
-            fill_opacity=(self.fill_opacity if self.seqno >= other.seqno else other.fill_opacity),
-        )

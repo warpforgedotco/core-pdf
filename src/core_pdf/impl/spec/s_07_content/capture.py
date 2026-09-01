@@ -407,9 +407,6 @@ class CapturedSubpath:
         self.points = points if points is not None else []
         self.closed = closed
 
-    def clone(self) -> CapturedSubpath:
-        return CapturedSubpath(list(self.points), closed=self.closed)
-
     def transformed(self, matrix: Matrix) -> CapturedSubpath:
         a, b, c, d, e, f = matrix
         return CapturedSubpath(
@@ -458,9 +455,6 @@ class CapturedPath:
 
     def __init__(self, subpaths: list[CapturedSubpath] | None = None) -> None:
         self.subpaths = subpaths if subpaths is not None else []
-
-    def clone(self) -> CapturedPath:
-        return CapturedPath([subpath.clone() for subpath in self.subpaths])
 
     def transformed(self, matrix: Matrix) -> CapturedPath:
         return CapturedPath([subpath.transformed(matrix) for subpath in self.subpaths])

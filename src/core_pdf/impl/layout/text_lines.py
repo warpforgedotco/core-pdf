@@ -211,6 +211,24 @@ def rotated_table_run_gap(previous: TextRun, current: TextRun) -> float:
     return current.y0 - previous.y1
 
 
+def internal_is_short_digit_run(
+    run: TextRun,
+    *,
+    max_length: int,
+    require_baseline: bool = True,
+) -> bool:
+    """Whether ``run`` is a short, unrotated, digits-only run with no surrounding space."""
+    stripped = run.stripped_text
+    return bool(
+        stripped
+        and stripped == run.text
+        and stripped.isdigit()
+        and len(stripped) <= max_length
+        and run.rotation_angle == 0
+        and (run.baseline is not None or not require_baseline)
+    )
+
+
 class GlyphLineBuilder:
     __slots__ = (
         "runs",
@@ -466,15 +484,7 @@ class GlyphLineBuilder:
         )
 
     def is_superscript_like_numeric_run(self, run: TextRun, index: int) -> bool:
-        stripped = run.stripped_text
-        if (
-            not stripped
-            or stripped != run.text
-            or not stripped.isdigit()
-            or len(stripped) > 4
-            or run.rotation_angle != 0
-            or run.baseline is None
-        ):
+        if not internal_is_short_digit_run(run, max_length=4):
             return False
         return self.internal_is_shifted_script_run(
             run,
@@ -490,15 +500,7 @@ class GlyphLineBuilder:
         )
 
     def is_subscript_like_numeric_run(self, run: TextRun, index: int) -> bool:
-        stripped = run.stripped_text
-        if (
-            not stripped
-            or stripped != run.text
-            or not stripped.isdigit()
-            or len(stripped) > 3
-            or run.rotation_angle != 0
-            or run.baseline is None
-        ):
+        if not internal_is_short_digit_run(run, max_length=3):
             return False
         previous = self.previous_non_space_run(index)
         if previous is None or not chemical_subscript_prefix_text(previous.stripped_text):
@@ -582,39 +584,26 @@ class GlyphLineBuilder:
 
     def is_formula_subscript_like_numeric_run(self, run: TextRun, index: int) -> bool:
         """Recognize numeric subscripts attached to mathematical variables."""
-        stripped = run.stripped_text
-        if (
-            not stripped
-            or stripped != run.text
-            or not stripped.isdigit()
-            or len(stripped) > 3
-            or run.rotation_angle != 0
-            or run.baseline is None
-        ):
+        run_baseline = run.baseline
+        if not internal_is_short_digit_run(run, max_length=3) or run_baseline is None:
             return False
         previous = self.previous_non_space_run(index)
         if previous is None or not previous.stripped_text[-1:].isalpha():
             return False
-        if previous.baseline is None:
+        previous_baseline = previous.baseline
+        if previous_baseline is None:
             return False
         previous_height = previous.height_value
         if previous_height <= 0.0 or run.height_value >= previous_height * 0.9:
             return False
-        baseline_drop = baseline_midpoint(previous.baseline, 0) - baseline_midpoint(run.baseline, 0)
+        baseline_drop = baseline_midpoint(previous_baseline, 0) - baseline_midpoint(run_baseline, 0)
         if baseline_drop < max(0.45, previous_height * 0.05):
             return False
         attach_gap = max(run.space_width * 0.5, previous_height * 0.2, 2.0)
         return run.x0 - previous.x1 <= attach_gap
 
     def is_unit_exponent_run(self, run: TextRun) -> bool:
-        stripped = run.stripped_text
-        if (
-            not stripped
-            or stripped != run.text
-            or not stripped.isdigit()
-            or len(stripped) > 2
-            or run.rotation_angle != 0
-        ):
+        if not internal_is_short_digit_run(run, max_length=2, require_baseline=False):
             return False
         following = min(
             (

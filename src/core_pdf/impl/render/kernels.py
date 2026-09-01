@@ -592,8 +592,8 @@ def internal_box_downsample(
     column_edges = (numpy.arange(target_width + 1, dtype=numpy.int64) * source_width) // (
         target_width
     )
-    totals = numpy.add.reduceat(grid.astype(numpy.uint32), row_edges[:-1], axis=0)
-    totals = numpy.add.reduceat(totals, column_edges[:-1], axis=1)
+    totals = numpy.add.reduceat(grid, row_edges[:-1], axis=0, dtype=numpy.uint32)
+    totals = numpy.add.reduceat(totals, column_edges[:-1], axis=1, dtype=numpy.uint32)
     counts = numpy.diff(row_edges)[:, None, None] * numpy.diff(column_edges)[None, :, None]
     reduced = (totals // numpy.maximum(counts, 1)).astype(numpy.uint8)
     return reduced.reshape(-1), target_width, target_height

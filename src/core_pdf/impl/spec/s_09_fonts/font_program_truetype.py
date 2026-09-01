@@ -58,6 +58,7 @@ class TrueTypeFontProgram:
         "glyph_to_unicode",
         "internal_glyph_set",
         "internal_glyph_contour_cache",
+        "internal_normalized_contour_cache",
         "internal_glyph_bitmap_cache",
     )
 
@@ -83,6 +84,7 @@ class TrueTypeFontProgram:
             self.cmap = {}
         self.internal_glyph_set: Any | None = None
         self.internal_glyph_contour_cache: dict[int, tuple[tuple[Point, ...], ...]] = {}
+        self.internal_normalized_contour_cache: dict[int, tuple[tuple[Point, ...], ...]] = {}
         self.internal_glyph_bitmap_cache: dict[tuple[int, int, int], tuple[int, ...]] = {}
 
     def glyph_id_for_code(self, code: int) -> int:
@@ -148,16 +150,30 @@ class TrueTypeFontProgram:
         return [list(contour) for contour in self.internal_glyph_contours_for_gid(gid)]
 
     def normalized_glyph_contours(self, gid: int) -> tuple[tuple[Point, ...], ...]:
-        """Return an immutable outline in PDF's 1000-unit glyph space."""
+        """Return an immutable outline in PDF's 1000-unit glyph space.
+
+        Cached like the OpenType sibling: real TrueType programs have 2048
+        units per em, so ``scale`` is never 1.0 and the rescale below rebuilt
+        every contour tuple on each painted glyph.
+        """
+        cached = self.internal_normalized_contour_cache.get(gid)
+        if cached is not None:
+            return cached
         contours = self.internal_glyph_contours_for_gid(gid)
         if not contours:
             return ()
         scale = 1000.0 / self.units_per_em if self.units_per_em else 1.0
         if scale == 1.0:
-            return contours
-        return tuple(
-            tuple((point[0] * scale, point[1] * scale) for point in contour) for contour in contours
-        )
+            normalized = contours
+        else:
+            normalized = tuple(
+                tuple((point[0] * scale, point[1] * scale) for point in contour)
+                for contour in contours
+            )
+        if len(self.internal_normalized_contour_cache) >= 512:
+            self.internal_normalized_contour_cache.clear()
+        self.internal_normalized_contour_cache[gid] = normalized
+        return normalized
 
     def internal_glyph_contours_for_gid(self, gid: int) -> tuple[tuple[Point, ...], ...]:
         cached = self.internal_glyph_contour_cache.get(gid)
