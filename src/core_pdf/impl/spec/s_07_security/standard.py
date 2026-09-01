@@ -62,6 +62,7 @@ class internal_StandardSecurityConfig:
     encrypt_metadata: bool
     stream_filter: str
     string_filter: str
+    embedded_file_filter: str
     crypt_filters: Mapping[str, internal_CryptMethod]
     owner_encrypted_key: bytes
     user_encrypted_key: bytes
@@ -82,17 +83,25 @@ class internal_StandardSecurityHandler:
         name: str | None = None,
     ) -> bytes:
         config = self.config
-        if config.version <= 3:
+        if config.version in (1, 2):
             return internal_rc4_crypt(self.object_key(object_number, generation_number), data)
 
-        if not config.encrypt_metadata and attrs is not None:
+        default_stream_filter = config.stream_filter
+        if attrs is not None:
             object_type = normalize_pdf_name(attrs.get("Type"))
-            if object_type == "Metadata":
+            if not config.encrypt_metadata and object_type == "Metadata":
                 return data
+            # ISO 32000-1:2008, Table 20; Adobe Supplement to ISO 32000,
+            # BaseVersion 1.7, ExtensionLevel 3, June 2008, Table 3.18; and
+            # ISO 32000-2:2020, Table 20 assign EFF to embedded-file streams
+            # that do not carry their own Crypt filter. If EFF is absent, its
+            # parsed value is StmF, as those same tables require.
+            if object_type == "EmbeddedFile":
+                default_stream_filter = config.embedded_file_filter
 
         if name is None:
             name = (
-                internal_stream_crypt_filter_name(attrs, config.stream_filter)
+                internal_stream_crypt_filter_name(attrs, default_stream_filter)
                 if attrs is not None
                 else config.string_filter
             )
@@ -188,6 +197,19 @@ def internal_parse_config(
     if permissions < 0:
         permissions += 1 << 32
 
+    if version == 1:
+        # ISO 32000-1:2008, Table 21 requires R=3, rather than R=2, when
+        # any permission introduced for revision 3 (bits 9 through 12 in
+        # Table 22) is cleared, even though V remains 1.
+        revision_3_required = any(
+            permissions & (1 << (bit_position - 1)) == 0 for bit_position in (9, 10, 11, 12)
+        )
+        expected_revision = 3 if revision_3_required else 2
+        if revision != expected_revision:
+            raise ValueError(
+                f"Standard Security V=1 permissions require R={expected_revision}, got R={revision}"
+            )
+
     # Entry sizes come from these version-specific definitions:
     # - ISO 32000-1:2008, Table 21: O/U are 32 bytes through revision 4.
     # - Adobe Supplement to ISO 32000, BaseVersion 1.7, ExtensionLevel 3,
@@ -200,26 +222,61 @@ def internal_parse_config(
     first_document_id = coerce_to_bytes(document_id[0]) if document_id else b""
 
     raw_length = params.get("Length", MISSING)
-    length_bits = 40 if raw_length is MISSING else internal_parse_int(raw_length, "Length")
-    if version <= 3 and length_bits not in (40, 128):
-        raise ValueError(
-            f"unsupported legacy RC4 key length for the cryptography backend: {length_bits}"
-        )
+    if raw_length is MISSING:
+        match version:
+            case 1 | 2:
+                length_bits = 40
+            case 4:
+                length_bits = 128
+            case 5:
+                length_bits = 256
+            case _:
+                raise ValueError(f"encryption key length is not defined for V={version}")
+    else:
+        length_bits = internal_parse_int(raw_length, "Length")
+
+    # ISO 32000-1:2008, Table 20 fixes V=1 at 40 bits and permits V=2
+    # lengths from 40 through 128 bits. This backend deliberately implements
+    # the interoperable 40- and 128-bit RC4 forms only. ISO 32000-1:2008,
+    # 7.6.3.1 fixes the revision-4 Standard handler at 128 bits; the Adobe
+    # ExtensionLevel 3 supplement, 3.5 and Algorithm 3.1a, and
+    # ISO 32000-2:2020, 7.6.3.3 fix V=5 at 256 bits. qpdf redundantly emits
+    # Length for V=1, V=4, and V=5, so accept it only when it states that
+    # format-mandated size instead of silently replacing a contradictory value.
+    match version:
+        case 1:
+            if length_bits != 40:
+                raise ValueError(f"invalid V=1 encryption key length: {length_bits}")
+        case 2:
+            if length_bits not in (40, 128):
+                raise ValueError(
+                    f"unsupported legacy RC4 key length for the cryptography backend: {length_bits}"
+                )
+        case 4:
+            if length_bits != 128:
+                raise ValueError(f"invalid V=4 encryption key length: {length_bits}")
+        case 5:
+            if length_bits != 256:
+                raise ValueError(f"invalid V=5 encryption key length: {length_bits}")
 
     encrypt_metadata = True
     stream_filter = "Identity"
     string_filter = "Identity"
+    embedded_file_filter = "Identity"
     crypt_filters: Mapping[str, internal_CryptMethod] = MappingProxyType({})
     owner_encrypted_key = b""
     user_encrypted_key = b""
     encrypted_permissions = b""
 
-    if version >= 4:
-        length_bits = 128 if version == 4 else 256
-        encrypt_metadata, stream_filter, string_filter, crypt_filters = (
-            internal_parse_crypt_filters(params, version)
-        )
-    if version >= 5:
+    if version in (4, 5):
+        (
+            encrypt_metadata,
+            stream_filter,
+            string_filter,
+            embedded_file_filter,
+            crypt_filters,
+        ) = internal_parse_crypt_filters(params, version)
+    if version == 5:
         owner_encrypted_key = internal_required_bytes(params, "OE", 32)
         user_encrypted_key = internal_required_bytes(params, "UE", 32)
         encrypted_permissions = internal_required_bytes(params, "Perms", 16)
@@ -235,6 +292,7 @@ def internal_parse_config(
         encrypt_metadata=encrypt_metadata,
         stream_filter=stream_filter,
         string_filter=string_filter,
+        embedded_file_filter=embedded_file_filter,
         crypt_filters=crypt_filters,
         owner_encrypted_key=owner_encrypted_key,
         user_encrypted_key=user_encrypted_key,
@@ -245,9 +303,15 @@ def internal_parse_config(
 def internal_parse_crypt_filters(
     params: PdfDict,
     version: int,
-) -> tuple[bool, str, str, Mapping[str, internal_CryptMethod]]:
-    raw_filters = params.get("CF")
-    if raw_filters is None:
+) -> tuple[bool, str, str, str, Mapping[str, internal_CryptMethod]]:
+    # The Standard handler's supported filter set is intentionally narrower
+    # than the generic crypt-filter grammar. ISO 32000-1:2008, 7.6.3.1 limits
+    # R=4 to Identity and StdCF with V2/AESV2 plus AuthEvent=DocOpen. Adobe
+    # Supplement to ISO 32000, BaseVersion 1.7, ExtensionLevel 3, June 2008,
+    # 3.5.2 applies that rule to V=5 with AESV3. ISO 32000-2:2020, 7.6.4.1
+    # retains Identity/StdCF/DocOpen and requires AESV3 for R=6.
+    raw_filters = params.get("CF", MISSING)
+    if raw_filters is MISSING:
         filters: PdfDict = {}
     elif isinstance(raw_filters, dict):
         filters = cast(PdfDict, raw_filters)
@@ -257,25 +321,70 @@ def internal_parse_crypt_filters(
     match version:
         case 4:
             allowed_methods = {"V2", "AESV2"}
-        case 5 | 6:
+        case 5:
             allowed_methods = {"AESV3"}
         case _:
             raise ValueError(f"crypt filters are not defined for V={version}")
     crypt_filters: dict[str, internal_CryptMethod] = {}
     for raw_name, raw_config in filters.items():
+        filter_name = internal_name(raw_name)
+        if not filter_name:
+            raise ValueError("invalid crypt filter name")
+        # ISO 32000-1:2008, Table 20 says entries using a standard name are
+        # ignored in favour of that name's built-in behaviour (Table 26).
+        if filter_name == "Identity":
+            continue
+        if filter_name != "StdCF":
+            raise ValueError(f"unsupported Standard Security crypt filter: {filter_name}")
         if not isinstance(raw_config, dict):
             raise ValueError(f"invalid crypt filter dictionary: {raw_name!r}")
-        method_name = internal_name(raw_config.get("CFM") or "")
+        filter_config = cast(PdfDict, raw_config)
+
+        raw_type = filter_config.get("Type", MISSING)
+        if raw_type is not MISSING and internal_name(raw_type) != "CryptFilter":
+            raise ValueError(f"invalid crypt filter type: {filter_name}")
+
+        method_name = internal_name(filter_config.get("CFM", "None"))
         if method_name not in allowed_methods:
             raise ValueError(f"unknown crypt filter method: {method_name}")
-        crypt_filters[internal_name(raw_name)] = cast(internal_CryptMethod, method_name)
+
+        auth_event = internal_name(filter_config.get("AuthEvent", "DocOpen"))
+        if auth_event != "DocOpen":
+            raise ValueError(f"unsupported Standard Security authorization event: {auth_event}")
+
+        # ISO 32000-1:2008, Table 25 expresses Standard-handler Length in
+        # bytes (16 means 128 bits). Adobe ExtensionLevel 3, Table 3.22 and
+        # ISO 32000-2:2020, Table 25 use 32 for the 256-bit AESV3 form.
+        raw_filter_length = filter_config.get("Length", MISSING)
+        expected_filter_length = 32 if method_name == "AESV3" else 16
+        if raw_filter_length is not MISSING:
+            filter_length = internal_parse_int(raw_filter_length, "CF/Length")
+            if filter_length != expected_filter_length:
+                raise ValueError(f"invalid {method_name} crypt filter length: {filter_length}")
+
+        crypt_filters[filter_name] = cast(internal_CryptMethod, method_name)
 
     raw_stream_filter = params.get("StmF", MISSING)
     stream_filter = internal_name("Identity" if raw_stream_filter is MISSING else raw_stream_filter)
     raw_string_filter = params.get("StrF", MISSING)
     string_filter = internal_name("Identity" if raw_string_filter is MISSING else raw_string_filter)
-    if string_filter != "Identity" and string_filter not in crypt_filters:
-        raise ValueError(f"undefined string crypt filter: {string_filter}")
+    raw_embedded_file_filter = params.get("EFF", MISSING)
+    embedded_file_filter = internal_name(
+        stream_filter if raw_embedded_file_filter is MISSING else raw_embedded_file_filter
+    )
+
+    # ISO 32000-1:2008, Table 20; Adobe ExtensionLevel 3, Table 3.18; and
+    # ISO 32000-2:2020, Table 20 require each selected default to be either a
+    # CF key or the standard Identity filter. EFF defaults to StmF.
+    for field_name, filter_name in (
+        ("StmF", stream_filter),
+        ("StrF", string_filter),
+        ("EFF", embedded_file_filter),
+    ):
+        if not filter_name:
+            raise ValueError(f"invalid {field_name} crypt filter")
+        if filter_name != "Identity" and filter_name not in crypt_filters:
+            raise ValueError(f"undefined {field_name} crypt filter: {filter_name}")
 
     encrypt_metadata = params.get("EncryptMetadata", MISSING)
     if encrypt_metadata is MISSING:
@@ -286,6 +395,7 @@ def internal_parse_crypt_filters(
         encrypt_metadata,
         stream_filter,
         string_filter,
+        embedded_file_filter,
         MappingProxyType(crypt_filters),
     )
 
@@ -571,12 +681,20 @@ def internal_saslprep(data: str) -> str:
 
 
 def internal_supported_revisions(version: int) -> tuple[int, ...] | None:
+    # ISO 32000-1:2008, Tables 20-21 define V=1/R=2-or-3, V=2/R=3,
+    # and V=4/R=4; they explicitly prohibit the unpublished V=3 algorithm.
+    # Adobe Supplement to ISO 32000, BaseVersion 1.7, ExtensionLevel 3,
+    # June 2008, Tables 3.18-3.19 add V=5/R=5. ISO 32000-2:2020,
+    # Tables 20-21 use V=5/R=6. ISO/TS 32003:2023, Tables 2-4 reserve
+    # V=6/R=7 for AESV4 (AES-GCM), which this AES-CBC handler does not support.
     match version:
-        case 1 | 2 | 3:
+        case 1:
             return (2, 3)
+        case 2:
+            return (3,)
         case 4:
             return (4,)
-        case 5 | 6:
+        case 5:
             return (5, 6)
         case _:
             return None

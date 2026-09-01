@@ -1,5 +1,8 @@
 from typing import cast
 
+import pytest
+
+from core_pdf.impl.exceptions import PdfUnsupportedError
 from core_pdf.impl.primitives import PdfReference
 from core_pdf.impl.spec.s_07_syntax.resolver import (
     ObjectResolver,
@@ -117,3 +120,29 @@ def test_object_missing_from_damaged_object_stream_resolves_to_none() -> None:
     assert isinstance(present, dict)
     assert str(cast(PdfDict, present)["Type"]) == "Font"
     assert missing is None
+
+
+def test_damaged_xref_recovery_does_not_swallow_unsupported_security_error() -> None:
+    data = b"1 0 obj\n(encrypted)\nendobj\n"
+
+    def internal_reject_decipher(
+        object_number: int,
+        generation_number: int,
+        value: bytes,
+        dictionary: PdfDict | None,
+    ) -> bytes:
+        del object_number, generation_number, value, dictionary
+        raise PdfUnsupportedError("unsupported security configuration")
+
+    resolver = ObjectResolver(
+        data,
+        {},
+        {},
+        decipher=internal_reject_decipher,
+        recover_missing=True,
+    )
+    try:
+        with pytest.raises(PdfUnsupportedError, match="unsupported security configuration"):
+            resolver.resolve(PdfReference(1))
+    finally:
+        resolver.close()

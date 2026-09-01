@@ -146,6 +146,33 @@ def test_qpdf_modern_fixture_rejects_invalid_stream_padding() -> None:
 
 
 @pytest.mark.parametrize(
+    ("original", "replacement", "message"),
+    [
+        (b"/V 5", b"/V 6", "Unsupported standard encryption algorithm V=6"),
+        (b"/R 6", b"/R 4", "Invalid encryption dictionary"),
+        (b"/StmF /StdCF", b"/StmF /BadCF", "Invalid encryption dictionary"),
+        (b"/StrF /StdCF", b"/StrF /BadCF", "Invalid encryption dictionary"),
+        (b"/AuthEvent /DocOpen", b"/AuthEvent /EFOpen ", "Invalid encryption dictionary"),
+        (b"/CFM /AESV3", b"/CFM /AESV2", "Invalid encryption dictionary"),
+        (b"/Length 32", b"/Length 16", "Invalid encryption dictionary"),
+        (b"/Length 256", b"/Length 128", "Invalid encryption dictionary"),
+    ],
+)
+def test_qpdf_modern_fixture_rejects_inconsistent_security_configuration(
+    original: bytes,
+    replacement: bytes,
+    message: str,
+) -> None:
+    fixture_bytes = (FIXTURE_DIRECTORY / "aes-256-r6.pdf").read_bytes()
+    assert len(original) == len(replacement)
+    assert original in fixture_bytes
+    corrupted = fixture_bytes.replace(original, replacement, 1)
+
+    with pytest.raises(PdfUnsupportedError, match=message):
+        PdfDocument.open(corrupted, password="user-r6")
+
+
+@pytest.mark.parametrize(
     ("filename", "markers"),
     [
         ("rc4-40-r2.pdf", (b"/R 2", b"/V 1", b"/Length 40")),
