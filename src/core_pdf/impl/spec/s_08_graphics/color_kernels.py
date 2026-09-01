@@ -17,37 +17,7 @@ ImageBuffer = ByteBuffer
 
 
 @lru_cache(maxsize=1024)
-def decode_translation_tables_8bit(
-    pairs: tuple[tuple[float, float], ...],
-) -> tuple[bytes, ...]:
-    values = numpy.arange(256, dtype=numpy.float64) / 255.0
-    tables: list[bytes] = []
-    for dmin, dmax in pairs:
-        span = dmax - dmin
-        decoded = numpy.rint((dmin + values * span) * 255.0)
-        tables.append(numpy.clip(decoded, 0, 255).astype(numpy.uint8).tobytes())
-    return tuple(tables)
-
-
-def apply_decode_array_8bit(
-    samples: ImageBuffer,
-    pairs: tuple[tuple[float, float], ...],
-) -> numpy.ndarray:
-    tables = decode_translation_tables_8bit(pairs)
-    values = uint8_view(samples)
-    if len(tables) == 1:
-        return numpy.frombuffer(tables[0], dtype=numpy.uint8)[values]
-    components = len(tables)
-    result = numpy.empty(len(values), dtype=numpy.uint8)
-    for index, table in enumerate(tables):
-        result[index::components] = numpy.frombuffer(table, dtype=numpy.uint8)[
-            values[index::components]
-        ]
-    return result
-
-
-@lru_cache(maxsize=1024)
-def decode_translation_tables_subbyte(
+def decode_translation_tables(
     max_sample: int,
     pairs: tuple[tuple[float, float], ...],
 ) -> tuple[bytes, ...]:
@@ -61,12 +31,12 @@ def decode_translation_tables_subbyte(
     return tuple(tables)
 
 
-def apply_decode_array_subbyte(
+def apply_decode_array(
     samples: ImageBuffer,
     pairs: tuple[tuple[float, float], ...],
     max_sample: int,
 ) -> numpy.ndarray:
-    tables = decode_translation_tables_subbyte(max_sample, pairs)
+    tables = decode_translation_tables(max_sample, pairs)
     values = uint8_view(samples)
     if len(tables) == 1:
         return numpy.frombuffer(tables[0], dtype=numpy.uint8)[values]

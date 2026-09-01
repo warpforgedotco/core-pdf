@@ -15,10 +15,7 @@ from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     parse_float,
 )
 from core_pdf.impl.spec.s_08_graphics.color_kernels import (
-    apply_decode_array_8bit as internal_native_apply_decode_array_8bit,
-)
-from core_pdf.impl.spec.s_08_graphics.color_kernels import (
-    apply_decode_array_subbyte as internal_native_apply_decode_array_subbyte,
+    apply_decode_array as internal_native_apply_decode_array,
 )
 from core_pdf.impl.spec.s_08_graphics.color_kernels import (
     evaluate_sampled_tint_function as internal_native_evaluate_sampled_tint_function,
@@ -261,9 +258,7 @@ class ImageColorManager:
             pairs = [(0.0, 1.0)] * components
         if bpc == 8 and all(pair == (0.0, 1.0) for pair in pairs):
             return samples
-        if bpc == 8:
-            return internal_native_apply_decode_array_8bit(samples, tuple(pairs))
-        return internal_native_apply_decode_array_subbyte(samples, tuple(pairs), max_sample)
+        return internal_native_apply_decode_array(samples, tuple(pairs), max_sample)
 
     @staticmethod
     def convert_separation(raw: ImageBuffer, color_space: ImageColorSpec) -> ImageBuffer | None:

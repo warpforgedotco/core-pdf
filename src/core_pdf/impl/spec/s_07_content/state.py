@@ -74,8 +74,6 @@ from core_pdf.impl.spec.s_07_content.stream_state import (
     StreamState,
 )
 from core_pdf.impl.spec.s_07_content.text_helpers import (
-    NO_SPACE_AFTER,
-    NO_SPACE_BEFORE,
     cached_encode_latin1,
     detect_ligature_overrides,
     is_garbage_text,
@@ -254,10 +252,7 @@ class TextState:
 
     document: TextDocument
     page: PdfDict
-    capture_runs: bool
     capture_glyphs: bool
-    capture_glyph_bitmaps: bool
-    capture_images: bool
     capture_graphics: bool
     compat_tj_decoder: FontDecoder | None
     runs: list[TextRun]
@@ -316,10 +311,7 @@ class TextState:
     __slots__ = (
         "document",
         "page",
-        "capture_runs",
         "capture_glyphs",
-        "capture_glyph_bitmaps",
-        "capture_images",
         "capture_graphics",
         "capture_clipping",
         "runs",
@@ -505,10 +497,7 @@ class TextState:
         self.dash_pattern = ([], 0.0)
         self.stack = []
         self.clip_scope_stack = []
-        self.capture_runs = True
         self.capture_glyphs = True
-        self.capture_glyph_bitmaps = True
-        self.capture_images = True
         self.capture_graphics = True
         self.capture_clipping = True
         self.runs = []
@@ -1370,7 +1359,7 @@ class TextState:
         if self.document.resolver.resolve_name(xobj_dict.get("Type")) == "ObjStm":
             return
         if subtype == "Image":
-            if self.capture_images and self.is_graphics_visible():
+            if self.is_graphics_visible():
                 width = self.document.resolver.resolve_int(xobj_dict.get("Width")) or 0
                 height = self.document.resolver.resolve_int(xobj_dict.get("Height")) or 0
                 bbox = None
@@ -1540,9 +1529,6 @@ class TextState:
         )
 
     def flush_run(self: Any) -> None:
-        if not self.capture_runs:
-            self.pending_run = None
-            return
         if self.pending_run:
             self.pending_run.freeze_glyph_clusters()
             self.runs.append(self.pending_run)
@@ -1867,53 +1853,6 @@ class TextState:
             if self.capture_glyphs:
                 self.run_pool.append(new_run)
 
-    def merge_pending_horizontal_run(
-        self,
-        text: str,
-        x0: float,
-        x1: float,
-        y0: float,
-        y1: float,
-        font_size: float,
-        font_name: str | None,
-        visible: bool,
-        fill_color: tuple[float, ...] | None,
-    ) -> bool:
-        p = self.pending_run
-        if p is None or self.pending_line_break:
-            return False
-        # Refuse the merge for clipped text so it takes the allocating path,
-        # where it is dropped rather than absorbed into a visible neighbour.
-        if self.internal_is_clipped_away(x0, y0, x1, y1):
-            return False
-
-        pc = p.coords
-        p_text = p.text
-        if (
-            p.rotation_angle != 0
-            or p.visible != visible
-            or pc[TextRun.FONT_SIZE] != font_size
-            or p.fill_color != fill_color
-            or (
-                p.font_name != font_name
-                and not can_merge_cross_font_word(p_text, text)
-                and not can_merge_cross_font_word(text, p_text)
-            )
-            or abs(pc[TextRun.Y0] - y0) > font_size * 0.5
-        ):
-            return False
-
-        gap = x0 - pc[TextRun.X1]
-        merge_threshold = max(pc[TextRun.SPACE_WIDTH] * 0.45, 2.0)
-        if not (-2.0 <= gap < merge_threshold):
-            return False
-
-        p.set_text(p_text + gap_separator(p_text, text, gap, p) + text)
-        if x1 > pc[TextRun.X1]:
-            p.x1 = x1
-            p.ink_bbox = p.advance_bbox
-        return True
-
     def record_glyph_observations(
         self: Any,
         text: str,
@@ -2012,7 +1951,6 @@ class TextState:
         is_vertical = decoder.is_vertical
         glyph_width = decoder.glyph_width
         effective_font_name = decoder.font_name or font_name
-        capture_glyph_bitmaps = self.capture_glyph_bitmaps
         advance_scale = self.text_advance_scale
         char_space_scale = self.char_space_scale
         word_space_scale = self.word_space_scale
@@ -2284,7 +2222,7 @@ class TextState:
                 bitmap_width = 0
                 bitmap_height = 0
                 bitmap_code: int | None = None
-                if capture_glyph_bitmaps and (
+                if (
                     should_capture_glyph_bitmap(chunk_text)
                     if single_character
                     else suspicious_multi
@@ -2575,21 +2513,7 @@ class TextState:
                 self.pending_line_break = False
             return
 
-        simple_horizontal_run = (
-            self.capture_runs
-            and not self.capture_glyphs
-            and self.cached_rotation == 0
-            and not decoder.is_vertical
-        )
-        if (
-            simple_horizontal_run
-            and not self.marked_content_stack
-            and self.render_mode != 3
-            and self.font_size >= 0.1
-        ):
-            visible = True
-        else:
-            visible = self.is_text_visible(text)
+        visible = self.is_text_visible(text)
 
         fs = self.font_size
         rise = self.rise
@@ -2773,100 +2697,32 @@ class TextState:
             self.pending_line_break = False
             return
 
-        if not self.capture_runs:
-            if self.capture_glyphs:
-                self.record_glyph_observations(
-                    text,
-                    data,
-                    decoder,
-                    rot,
-                    visible,
-                    glyphs=glyphs,
-                    string_syntax=string_syntax,
-                    compatibility_data=compatibility_data,
-                )
-            self.sequence = seqno + 1
-            self.pending_line_break = False
-            self.tm_e = te + adv_x * ta + adv_y * tc
-            self.tm_f = tf + adv_x * tb + adv_y * td
-            return
-
-        prepared_text = text
-        prepared_visible = visible
-        if simple_horizontal_run:
-            normalized_text = normalize_extracted_text(text)
-            prepared_text = normalized_text
-            if normalized_text and self.merge_pending_horizontal_run(
-                normalized_text,
-                x0,
-                x1,
-                y0,
-                y1,
-                effective_font_size,
-                self.current_font,
-                prepared_visible,
-                self.fill_color,
-            ):
-                self.sequence = seqno + 1
-                self.tm_e = te + adv_x * ta + adv_y * tc
-                self.tm_f = tf + adv_x * tb + adv_y * td
-                self.pending_line_break = False
-                return
-
-        if simple_horizontal_run:
-            new_run = self.alloc_prepared_run(
-                text=prepared_text,
-                x0=x0,
-                y0=y0,
-                x1=x1,
-                y1=y1,
-                tx=te,
-                ty=tf,
-                font_size=effective_font_size,
-                font_name=self.current_font,
-                space_width=effective_space_width,
-                order=seqno,
-                stream_order=self.stream_order,
-                xobject_depth=self.xobject_depth,
-                is_vertical=False,
-                rotation_angle=0,
-                visible=prepared_visible,
-                line_break_before=self.pending_line_break,
-                seqno=seqno,
-                fill_color=self.fill_color,
-                advance_bbox=advance_bbox,
-                ink_bbox=advance_bbox,
-                baseline=baseline,
-                provenance=provenance,
-                confidence=None,
-            )
-        else:
-            new_run = self.alloc_run(
-                text=text,
-                x0=x0,
-                y0=y0,
-                x1=x1,
-                y1=y1,
-                tx=te,
-                ty=tf,
-                font_size=effective_font_size,
-                font_name=self.current_font,
-                space_width=effective_space_width,
-                order=seqno,
-                stream_order=self.stream_order,
-                xobject_depth=self.xobject_depth,
-                is_vertical=decoder.is_vertical,
-                rotation_angle=rot,
-                visible=visible,
-                line_break_before=self.pending_line_break,
-                seqno=seqno,
-                fill_color=self.fill_color,
-                advance_bbox=advance_bbox,
-                ink_bbox=advance_bbox,
-                baseline=baseline,
-                provenance=provenance,
-                confidence=None,
-            )
+        new_run = self.alloc_run(
+            text=text,
+            x0=x0,
+            y0=y0,
+            x1=x1,
+            y1=y1,
+            tx=te,
+            ty=tf,
+            font_size=effective_font_size,
+            font_name=self.current_font,
+            space_width=effective_space_width,
+            order=seqno,
+            stream_order=self.stream_order,
+            xobject_depth=self.xobject_depth,
+            is_vertical=decoder.is_vertical,
+            rotation_angle=rot,
+            visible=visible,
+            line_break_before=self.pending_line_break,
+            seqno=seqno,
+            fill_color=self.fill_color,
+            advance_bbox=advance_bbox,
+            ink_bbox=advance_bbox,
+            baseline=baseline,
+            provenance=provenance,
+            confidence=None,
+        )
         if self.capture_glyphs:
             cluster_start = len(self.glyph_clusters)
             run_geometry = self.record_glyph_observations(
@@ -2955,349 +2811,6 @@ class TextState:
                 self.tm_e += advance * self.tm_a
                 self.tm_f += advance * self.tm_b
 
-    def append_tj_array_simple(
-        self: Any, array: list[Any] | tuple[Any, ...], decoder: FontDecoder
-    ) -> None:
-        table = decoder.byte_decode_table
-        assert table is not None
-
-        if self.cached_rotation == 0 and not decoder.is_vertical:
-            self.append_tj_array_simple_horizontal_batched(array, decoder)
-            return
-
-        pending_data: bytes | bytearray | None = None
-        text_scale = self.text_advance_scale
-        adjustment_scale = text_scale
-        is_vert = decoder.is_vertical
-        widths = self.font_widths or decoder.fast_widths
-        cs = self.char_space_scale
-        ws = self.word_space_scale
-
-        fs = self.font_size
-        rise = self.rise
-        ascent = self.font_ascent
-        descent = self.font_descent
-        A, B, C, D = self.combined_A, self.combined_B, self.combined_C, self.combined_D
-        ca, cb, cc, cd, ce, cf = self.ca, self.cb, self.cc, self.cd, self.ce, self.cf
-        ta, tb, tc, td = self.tm_a, self.tm_b, self.tm_c, self.tm_d
-        te, tf = self.tm_e, self.tm_f
-        rot = self.cached_rotation
-        scale_factor = hypot(C, D) if is_vert else hypot(A, B)
-        effective_font_size = fs * scale_factor
-        effective_space_width = self.font_space_width * scale_factor
-        stream_order = self.stream_order
-        xobject_depth = self.xobject_depth
-        font_name = self.current_font
-        fill_color = self.fill_color
-        seqno = self.sequence
-        pending_line_break = self.pending_line_break
-
-        ar = ascent + rise
-        dr = descent + rise
-        dr_C = dr * C
-        dr_D = dr * D
-        ar_C = ar * C
-        ar_D = ar * D
-
-        def flush_pending() -> None:
-            nonlocal pending_data, te, tf, seqno, pending_line_break
-            assert pending_data is not None
-            text, total = internal_decode_pending_run(pending_data, table, widths, cs, ws)
-
-            if text:
-                visible = self.is_text_visible(text)
-                if is_vert:
-                    adv_x, adv_y = 0.0, -total * text_scale
-                else:
-                    adv_x, adv_y = total * text_scale, 0.0
-
-                E = te * ca + tf * cc + ce
-                F = te * cb + tf * cd + cf
-                c0_x = dr_C + E
-                c0_y = dr_D + F
-                c1_x = ar_C + E
-                c1_y = ar_D + F
-                adv_A = adv_x * A
-                adv_B = adv_x * B
-                c2_x = adv_A + c0_x
-                c2_y = adv_B + c0_y
-                c3_x = adv_A + c1_x
-                c3_y = adv_B + c1_y
-
-                x0, y0, x1, y1 = internal_quad_bounds(
-                    c0_x, c0_y, c1_x, c1_y, c2_x, c2_y, c3_x, c3_y
-                )
-
-                new_run = self.alloc_run(
-                    text=text,
-                    x0=x0,
-                    y0=y0,
-                    x1=x1,
-                    y1=y1,
-                    tx=te,
-                    ty=tf,
-                    font_size=effective_font_size,
-                    font_name=decoder.font_name or font_name,
-                    space_width=effective_space_width,
-                    order=seqno,
-                    stream_order=stream_order,
-                    xobject_depth=xobject_depth,
-                    is_vertical=is_vert,
-                    rotation_angle=rot,
-                    visible=visible,
-                    line_break_before=pending_line_break,
-                    seqno=seqno,
-                    fill_color=fill_color,
-                )
-                self.update_pending_run(new_run)
-                seqno += 1
-                pending_line_break = False
-                te = te + adv_x * ta + adv_y * tc
-                tf = tf + adv_x * tb + adv_y * td
-
-            pending_data = None
-
-        for item in array:
-            t = type(item)
-            if t is bytes:
-                item_data = item
-            elif t is PdfString:
-                item_data = item.data
-            elif t is int or t is float:
-                if pending_data:
-                    flush_pending()
-
-                adjustment = item * adjustment_scale
-                if is_vert:
-                    te -= adjustment * tc
-                    tf -= adjustment * td
-                else:
-                    te -= adjustment * ta
-                    tf -= adjustment * tb
-                continue
-            elif t is str:
-                item_data = item.encode("latin-1")
-            else:
-                continue
-
-            if pending_data is None:
-                pending_data = item_data
-            elif type(pending_data) is bytearray:
-                pending_data.extend(item_data)
-            else:
-                merged = bytearray(pending_data)
-                merged.extend(item_data)
-                pending_data = merged
-
-        if pending_data:
-            flush_pending()
-
-        self.tm_e, self.tm_f = te, tf
-        self.sequence = seqno
-        self.pending_line_break = pending_line_break
-
-    def append_tj_array_simple_horizontal_batched(
-        self: Any, array: list[Any] | tuple[Any, ...], decoder: FontDecoder
-    ) -> None:
-        table = decoder.byte_decode_table
-        assert table is not None
-
-        pending_data: bytes | bytearray | None = None
-        widths = self.font_widths or decoder.fast_widths
-        text_scale = self.text_advance_scale
-        cs = self.char_space_scale
-        ws = self.word_space_scale
-
-        fs = self.font_size
-        rise = self.rise
-        ascent = self.font_ascent
-        descent = self.font_descent
-        A, B, C, D = self.combined_A, self.combined_B, self.combined_C, self.combined_D
-        ca, cb, cc, cd, ce, cf = self.ca, self.cb, self.cc, self.cd, self.ce, self.cf
-        ta, tb = self.tm_a, self.tm_b
-        te, tf = self.tm_e, self.tm_f
-        scale_factor = hypot(A, B)
-        effective_font_size = fs * scale_factor
-        effective_space_width = self.font_space_width * scale_factor
-        merge_threshold = max(effective_space_width * 0.45, 2.0)
-        stream_order = self.stream_order
-        xobject_depth = self.xobject_depth
-        font_name = self.current_font
-        fill_color = self.fill_color
-        seqno = self.sequence
-        pending_line_break = self.pending_line_break
-
-        ar = ascent + rise
-        dr = descent + rise
-        dr_C = dr * C
-        dr_D = dr * D
-        ar_C = ar * C
-        ar_D = ar * D
-
-        batch_parts: list[str] | None = None
-        batch_last_char = ""
-        batch_x0 = batch_y0 = batch_x1 = batch_y1 = 0.0
-        batch_tx = batch_ty = 0.0
-        batch_order = batch_seqno = 0
-        batch_visible = True
-        batch_line_break_before = False
-        alloc_run = self.alloc_run
-        update_pending_run = self.update_pending_run
-        is_text_visible = self.is_text_visible
-        no_space_before = NO_SPACE_BEFORE
-        no_space_after = NO_SPACE_AFTER
-
-        def flush_batch() -> None:
-            nonlocal batch_parts, batch_last_char
-            if batch_parts is None:
-                return
-            new_run = alloc_run(
-                text="".join(batch_parts),
-                x0=batch_x0,
-                y0=batch_y0,
-                x1=batch_x1,
-                y1=batch_y1,
-                tx=batch_tx,
-                ty=batch_ty,
-                font_size=effective_font_size,
-                font_name=decoder.font_name or font_name,
-                space_width=effective_space_width,
-                order=batch_order,
-                stream_order=stream_order,
-                xobject_depth=xobject_depth,
-                is_vertical=False,
-                rotation_angle=0,
-                visible=batch_visible,
-                line_break_before=batch_line_break_before,
-                seqno=batch_seqno,
-                fill_color=fill_color,
-            )
-            update_pending_run(new_run)
-            batch_parts = None
-            batch_last_char = ""
-
-        def flush_pending() -> None:
-            nonlocal pending_data, te, tf, seqno, pending_line_break
-            nonlocal batch_parts, batch_last_char, batch_x0, batch_y0, batch_x1, batch_y1
-            nonlocal batch_tx, batch_ty, batch_order, batch_seqno, batch_visible
-            nonlocal batch_line_break_before
-            assert pending_data is not None
-            text, total = internal_decode_pending_run(pending_data, table, widths, cs, ws)
-
-            if text:
-                visible = is_text_visible(text)
-                adv_x = total * text_scale
-
-                E = te * ca + tf * cc + ce
-                F = te * cb + tf * cd + cf
-                c0_x = dr_C + E
-                c0_y = dr_D + F
-                c1_x = ar_C + E
-                c1_y = ar_D + F
-                adv_A = adv_x * A
-                adv_B = adv_x * B
-                c2_x = adv_A + c0_x
-                c2_y = adv_B + c0_y
-                c3_x = adv_A + c1_x
-                c3_y = adv_B + c1_y
-
-                x0, y0, x1, y1 = internal_quad_bounds(
-                    c0_x, c0_y, c1_x, c1_y, c2_x, c2_y, c3_x, c3_y
-                )
-
-                if batch_parts is None:
-                    batch_parts = [text]
-                    batch_last_char = text[-1]
-                    batch_x0, batch_y0, batch_x1, batch_y1 = x0, y0, x1, y1
-                    batch_tx, batch_ty = te, tf
-                    batch_order = seqno
-                    batch_seqno = seqno
-                    batch_visible = visible
-                    batch_line_break_before = pending_line_break
-                else:
-                    gap = x0 - batch_x1
-                    if (
-                        visible == batch_visible
-                        and not pending_line_break
-                        and abs(batch_y0 - y0) <= effective_font_size * 0.5
-                        and -2.0 <= gap < merge_threshold
-                    ):
-                        threshold = effective_space_width * 0.12
-                        font_threshold = effective_font_size * 0.10
-                        if font_threshold > threshold:
-                            threshold = font_threshold
-                        if threshold < 1.0:
-                            threshold = 1.0
-                        if (
-                            gap <= threshold
-                            or batch_last_char.isspace()
-                            or text[0].isspace()
-                            or text[0] in no_space_before
-                            or batch_last_char in no_space_after
-                        ):
-                            separator = ""
-                        else:
-                            separator = " "
-                        if separator:
-                            batch_parts.append(separator)
-                        batch_parts.append(text)
-                        batch_last_char = text[-1]
-                        if x1 > batch_x1:
-                            batch_x1 = x1
-                    else:
-                        flush_batch()
-                        batch_parts = [text]
-                        batch_last_char = text[-1]
-                        batch_x0, batch_y0, batch_x1, batch_y1 = x0, y0, x1, y1
-                        batch_tx, batch_ty = te, tf
-                        batch_order = seqno
-                        batch_seqno = seqno
-                        batch_visible = visible
-                        batch_line_break_before = pending_line_break
-
-                seqno += 1
-                pending_line_break = False
-                te = te + adv_x * ta
-                tf = tf + adv_x * tb
-
-            pending_data = None
-
-        for item in array:
-            t = type(item)
-            if t is bytes:
-                item_data = item
-            elif t is PdfString:
-                item_data = item.data
-            elif t is str:
-                item_data = item.encode("latin-1")
-            elif t is int or t is float:
-                if pending_data:
-                    flush_pending()
-
-                adjustment = item * text_scale
-                te -= adjustment * ta
-                tf -= adjustment * tb
-                continue
-            else:
-                continue
-
-            if pending_data is None:
-                pending_data = item_data
-            elif type(pending_data) is bytearray:
-                pending_data.extend(item_data)
-            else:
-                merged = bytearray(pending_data)
-                merged.extend(item_data)
-                pending_data = merged
-
-        if pending_data:
-            flush_pending()
-
-        flush_batch()
-        self.tm_e, self.tm_f = te, tf
-        self.sequence = seqno
-        self.pending_line_break = pending_line_break
-
     def append_tj_array(self: Any, array: Any) -> None:
         if not isinstance(array, (list, tuple)):
             return
@@ -3307,19 +2820,6 @@ class TextState:
         scale = self.text_advance_scale
 
         decoder = self.current_decoder if self.current_decoder is not None else self.get_decoder()
-        if (
-            self.capture_runs
-            and not self.capture_glyphs
-            and self.current_actual_text_span() is None
-            and decoder.byte_decode_table is not None
-            and not decoder.is_cid_font
-            and not decoder.is_vertical
-            and not (decoder.is_type3 and self.capture_graphics)
-            and decoder.to_unicode is None
-            and decoder.cmap is None
-        ):
-            self.append_tj_array_simple(array, decoder)
-            return
         is_vert = decoder.is_vertical
         zero_copy_flush = (
             not decoder.is_cid_font and decoder.to_unicode is None and decoder.cmap is None
@@ -3411,34 +2911,33 @@ class TextState:
         actual_text = getattr(entry, "actual_text", None)
         if actual_text is None or not getattr(entry, "has_text_extents", False):
             return
-        if self.capture_runs:
-            new_run = self.alloc_run(
-                text=actual_text,
-                x0=entry.x0,
-                y0=entry.y0,
-                x1=entry.x1,
-                y1=entry.y1,
-                tx=entry.tx,
-                ty=entry.ty,
-                font_size=entry.font_size,
-                font_name=entry.font_name,
-                space_width=entry.space_width,
-                order=entry.order,
-                stream_order=entry.stream_order,
-                xobject_depth=entry.xobject_depth,
-                is_vertical=entry.is_vertical,
-                rotation_angle=entry.rotation_angle,
-                visible=entry.visible,
-                line_break_before=entry.line_break_before,
-                seqno=entry.seqno,
-                fill_color=entry.fill_color,
-                advance_bbox=entry.advance_bbox,
-                ink_bbox=entry.ink_bbox,
-                baseline=entry.baseline,
-                provenance=(*entry.provenance, ("unicode_source", "actual_text")),
-                confidence=entry.confidence,
-            )
-            self.update_pending_run(new_run)
+        new_run = self.alloc_run(
+            text=actual_text,
+            x0=entry.x0,
+            y0=entry.y0,
+            x1=entry.x1,
+            y1=entry.y1,
+            tx=entry.tx,
+            ty=entry.ty,
+            font_size=entry.font_size,
+            font_name=entry.font_name,
+            space_width=entry.space_width,
+            order=entry.order,
+            stream_order=entry.stream_order,
+            xobject_depth=entry.xobject_depth,
+            is_vertical=entry.is_vertical,
+            rotation_angle=entry.rotation_angle,
+            visible=entry.visible,
+            line_break_before=entry.line_break_before,
+            seqno=entry.seqno,
+            fill_color=entry.fill_color,
+            advance_bbox=entry.advance_bbox,
+            ink_bbox=entry.ink_bbox,
+            baseline=entry.baseline,
+            provenance=(*entry.provenance, ("unicode_source", "actual_text")),
+            confidence=entry.confidence,
+        )
+        self.update_pending_run(new_run)
         if self.capture_glyphs and entry.advance_bbox is not None:
             self.glyphs.append_row(
                 GlyphObservation(
@@ -3746,7 +3245,7 @@ class TextState:
         if not hasattr(operand, "dictionary"):
             return
         image = cast("InlineImage", operand)
-        if self.capture_images and self.is_graphics_visible():
+        if self.is_graphics_visible():
             dictionary = dict(image.dictionary)
             data = getattr(image, "data", b"")
             source = ImageSource(

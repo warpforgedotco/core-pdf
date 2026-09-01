@@ -75,11 +75,6 @@ def select_appearance_stream(
     return None
 
 
-def internal_appearance_stream(document: Any, annot: dict) -> PdfStream | None:
-    """Return the normal appearance stream, resolving an appearance substate."""
-    return select_appearance_stream(document.resolver, annot.get("AP"), annot.get("AS"))
-
-
 def internal_should_render(document: Any, annot: dict) -> bool:
     subtype = document.resolver.resolve_name(annot.get("Subtype")) or ""
     if subtype in SKIPPED_SUBTYPES:
@@ -140,7 +135,7 @@ def consume_annotation_appearances(page: Any, state: "TextState") -> None:
         try:
             if not internal_should_render(document, annot):
                 continue
-            stream = internal_appearance_stream(document, annot)
+            stream = select_appearance_stream(document.resolver, annot.get("AP"), annot.get("AS"))
             if stream is None:
                 continue
             rect = document.resolver.resolve_box(annot.get("Rect"))

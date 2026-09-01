@@ -16,16 +16,10 @@ if typing.TYPE_CHECKING:
     FilterFn = Callable[[bytes, object], bytes]
 
 from core_pdf.impl.spec.s_07_filters.codecs import (
-    apply_ascii85 as apply_ascii85,
-)
-from core_pdf.impl.spec.s_07_filters.codecs import (
-    apply_ascii_hex as apply_ascii_hex,
-)
-from core_pdf.impl.spec.s_07_filters.codecs import (
-    apply_lzw as apply_lzw,
-)
-from core_pdf.impl.spec.s_07_filters.codecs import (
-    apply_run_length as apply_run_length,
+    apply_ascii85,
+    apply_ascii_hex,
+    apply_lzw,
+    apply_run_length,
 )
 from core_pdf.impl.spec.s_07_filters.decode_spec import (
     FilterParams,
@@ -33,40 +27,22 @@ from core_pdf.impl.spec.s_07_filters.decode_spec import (
     normalize_stream_decode_spec,
 )
 from core_pdf.impl.spec.s_07_filters.decoders import (
-    decode_ccitt_fax as decode_ccitt_fax,
-)
-from core_pdf.impl.spec.s_07_filters.decoders import (
-    decode_ccitt_fax_image as decode_ccitt_fax_image,
-)
-from core_pdf.impl.spec.s_07_filters.decoders import (
-    decode_crypt as decode_crypt,
-)
-from core_pdf.impl.spec.s_07_filters.decoders import (
-    decode_jbig2 as decode_jbig2,
-)
-from core_pdf.impl.spec.s_07_filters.decoders import (
-    decode_jpeg as decode_jpeg,
-)
-from core_pdf.impl.spec.s_07_filters.decoders import (
-    decode_jpeg_image as decode_jpeg_image,
-)
-from core_pdf.impl.spec.s_07_filters.decoders import (
-    decode_jpx as decode_jpx,
-)
-from core_pdf.impl.spec.s_07_filters.decoders import (
-    decode_jpx_image as decode_jpx_image,
+    decode_ccitt_fax,
+    decode_ccitt_fax_image,
+    decode_crypt,
+    decode_jbig2,
+    decode_jpeg,
+    decode_jpeg_image,
+    decode_jpx,
+    decode_jpx_image,
 )
 from core_pdf.impl.spec.s_07_filters.errors import FilterParseError, FilterUnsupportedError
 from core_pdf.impl.spec.s_07_filters.flate import (
-    apply_flate as apply_flate,
-)
-from core_pdf.impl.spec.s_07_filters.flate import (
+    apply_flate,
     looks_like_pdf_content_stream,
 )
 from core_pdf.impl.spec.s_07_filters.models import DecodedImage
-from core_pdf.impl.spec.s_07_filters.predictors import (
-    apply_predictor as apply_predictor,
-)
+from core_pdf.impl.spec.s_07_filters.predictors import apply_predictor
 from core_pdf.impl.spec.s_07_filters.registry import (
     EXPENSIVE_DECODE_CACHE_FILTERS,
     FILTER_DESCRIPTOR_BY_NAME,
@@ -107,14 +83,12 @@ def expensive_decode_cache_key(
     data: bytes,
     filters: typing.Sequence[str],
     params: typing.Sequence[object],
-    context: object = None,
 ) -> tuple[object, ...]:
     return (
         id(data),
         len(data),
         tuple(filters),
         repr(params),
-        context,
     )
 
 
@@ -214,9 +188,8 @@ def decode_stream_data(
         normalized_parms = spec.params
     if normalized_parms and len(normalized_parms) != len(filters):
         raise FilterParseError("invalid stream decode parameters")
-    cache_context = None
     decode_cache_key = (
-        expensive_decode_cache_key(data, filters, normalized_parms, cache_context)
+        expensive_decode_cache_key(data, filters, normalized_parms)
         if EXPENSIVE_DECODE_CACHE_FILTERS.intersection(filters)
         else None
     )
