@@ -266,7 +266,7 @@ def png_predict(
     columns: int,
     colors: int,
     bits_per_component: int,
-    damaged_rows_before_error: bool = False,
+    damaged_rows_before_error: int = 0,
 ) -> bytes:
     if bits_per_component not in {1, 2, 4, 8, 16}:
         raise PredictorError(f"invalid PNG predictor bits {bits_per_component}")

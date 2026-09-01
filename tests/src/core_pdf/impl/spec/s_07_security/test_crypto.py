@@ -265,33 +265,43 @@ def internal_legacy_security_params(revision: int, permissions: int) -> PdfDict:
 
 
 @pytest.mark.parametrize("bit_position", [1, 2])
-def test_standard_security_rejects_each_reserved_zero_permission_bit(
+def test_standard_security_ignores_each_reserved_zero_permission_bit(
     bit_position: int,
 ) -> None:
+    """ISO 32000-1 7.6.3.2: readers ignore every flag outside 3-6 and 9-12.
+
+    Table 22 requires a *writer* to clear bits 1-2, but the same clause binds
+    readers the other way, and real producers set them: Distiller writes
+    ``/P -9``. Refusing the document denied every page over a bit the reader
+    was told to disregard.
+    """
     permissions = 0xFFFFFFFC | (1 << (bit_position - 1))
 
-    with pytest.raises(ValueError, match="bits 1-2 must be zero"):
-        internal_parse_config(
-            [b"document-id"],
-            internal_legacy_security_params(3, permissions),
-            1,
-            (2, 3),
-        )
+    config = internal_parse_config(
+        [b"document-id"],
+        internal_legacy_security_params(3, permissions),
+        1,
+        (2, 3),
+    )
+
+    assert config.permissions == permissions
 
 
 @pytest.mark.parametrize("bit_position", [7, 8, *range(13, 33)])
-def test_standard_security_rejects_each_cleared_reserved_one_permission_bit(
+def test_standard_security_ignores_each_cleared_reserved_one_permission_bit(
     bit_position: int,
 ) -> None:
+    """ISO 32000-1 7.6.3.2: a cleared reserved-one bit is ignored, not fatal."""
     permissions = 0xFFFFFFFC & ~(1 << (bit_position - 1))
 
-    with pytest.raises(ValueError, match="reserved encryption permission bits must be one"):
-        internal_parse_config(
-            [b"document-id"],
-            internal_legacy_security_params(3, permissions),
-            1,
-            (2, 3),
-        )
+    config = internal_parse_config(
+        [b"document-id"],
+        internal_legacy_security_params(3, permissions),
+        1,
+        (2, 3),
+    )
+
+    assert config.permissions == permissions
 
 
 @pytest.mark.parametrize("bit_position", [3, 4, 5, 6, 9, 10, 11, 12])
@@ -576,3 +586,24 @@ def test_security_handler_uses_eff_for_embedded_file_streams() -> None:
 
     assert decrypted == plaintext
     assert ordinary_stream == ciphertext
+
+
+def test_reserved_permission_bits_do_not_block_real_producer_output() -> None:
+    """ISO 32000-1 7.6.3.2, end to end on files Distiller actually produced.
+
+    These carry ``/P -9`` (bits 1 and 2 set) with V=2/R=3. Enforcing Table 22's
+    writer requirements against them denied every page of a readable document.
+    """
+    from pathlib import Path
+
+    from core_pdf import PdfDocument as PublicDocument
+
+    fixtures = Path(__file__).resolve().parents[5] / "fixtures" / "llama_index"
+    sample = fixtures / "docs" / "examples" / "data" / "10k" / "uber_2021.pdf"
+    if not sample.exists():  # pragma: no cover - fixture tier is optional
+        pytest.skip("llama_index fixtures are not present")
+
+    with PublicDocument(str(sample)) as document:
+        assert len(document.pages) > 0
+        lines = document.pages[0].get_text_lines()
+        assert any("SECURITIES" in line.reconstructed_text().text for line in lines)

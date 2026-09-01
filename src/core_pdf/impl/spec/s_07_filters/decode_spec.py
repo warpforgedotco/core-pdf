@@ -30,7 +30,12 @@ class FilterParams:
     colors: int = 1
     bits_per_component: int = 8
     k: int = 0
-    damaged_rows_before_error: bool = False
+    # ISO 32000-1 Table 11 types this as an integer ("The number of damaged
+    # rows of data that shall be tolerated before an error occurs"), not a
+    # boolean. Parsing it as a boolean refused every conforming file that
+    # states a tolerance above 1.
+    damaged_rows_before_error: int = 0
+    black_is_1: bool = False
     rows: int = 0
     encoded_byte_align: bool = False
     has_columns: bool = False
@@ -94,6 +99,14 @@ class FilterParams:
                 raise ValueError(f"invalid DecodeParms {name}")
             return parsed
 
+        def require_damaged_rows() -> int:
+            # Accept the boolean form too: it predates this parser and some
+            # writers emit it, and `true` means the same as a nonzero count.
+            value = parms.get("DamagedRowsBeforeError")
+            if type(value) is bool:
+                return int(value)
+            return require_nonneg_int("DamagedRowsBeforeError", 0)
+
         def require_early_change() -> int:
             value = require_int("EarlyChange", 1)
             if value not in (0, 1):
@@ -109,7 +122,8 @@ class FilterParams:
             colors=require_pos_int("Colors", 1),
             bits_per_component=require_bits_per_component("BitsPerComponent"),
             k=require_int("K", 0) or 0,
-            damaged_rows_before_error=require_bool("DamagedRowsBeforeError", False),
+            damaged_rows_before_error=require_damaged_rows(),
+            black_is_1=require_bool("BlackIs1", False),
             rows=require_nonneg_int("Rows", 0),
             encoded_byte_align=require_bool("EncodedByteAlign", False),
             has_columns=not is_pdf_null(columns_value),
@@ -146,19 +160,25 @@ def normalize_stream_decode_spec(dictionary: object) -> StreamDecodeSpec:
     if not isinstance(dictionary, dict):
         raise FilterParseError("invalid stream dictionary")
     raw_filters = dictionary.get("Filter")
-    if is_pdf_null(raw_filters):
-        raw_filters = dictionary.get("F")
+    # ISO 32000-1 Table 5: on a regular stream /F is a *file specification* and
+    # the filters for that external data are named by /FFilter, so /FFilter is
+    # consulted first. /F means "Filter" only for inline images (Table 93), and
+    # those are already normalized to Filter/DecodeParms before reaching here --
+    # the abbreviation fallback below is kept only as leniency for writers that
+    # use it on a regular stream.
     if is_pdf_null(raw_filters):
         raw_filters = dictionary.get("FFilter")
+    if is_pdf_null(raw_filters):
+        raw_filters = dictionary.get("F")
     if is_pdf_null(raw_filters):
         filters: list[object] = []
     else:
         filters = list(raw_filters) if isinstance(raw_filters, (list, tuple)) else [raw_filters]
     parms_raw = dictionary.get("DecodeParms")
     if is_pdf_null(parms_raw):
-        parms_raw = dictionary.get("DP")
-    if is_pdf_null(parms_raw):
         parms_raw = dictionary.get("FDecodeParms")
+    if is_pdf_null(parms_raw):
+        parms_raw = dictionary.get("DP")
     raw_param_items = list(parms_raw) if isinstance(parms_raw, (list, tuple)) else None
 
     names: list[str] = []
