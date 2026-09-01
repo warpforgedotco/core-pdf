@@ -5,13 +5,21 @@ from pathlib import Path
 import pytest
 
 from core_pdf import PdfDocument
-from core_pdf.impl.exceptions import PdfUnsupportedError
+from core_pdf.impl.exceptions import PdfParseError, PdfUnsupportedError
+from core_pdf.impl.primitives import PdfName
+from core_pdf.impl.spec.s_07_security import create_standard_decipher
 from core_pdf.impl.spec.s_07_security.ciphers import (
     internal_aes_cbc_decrypt,
     internal_aes_cbc_encrypt,
     internal_rc4_crypt,
 )
-from core_pdf.impl.spec.s_07_security.saslprep import saslprep
+from core_pdf.impl.spec.s_07_security.standard import (
+    internal_CryptMethod,
+    internal_resolve_crypt_method,
+    internal_saslprep,
+    internal_stream_crypt_filter_name,
+)
+from core_pdf.impl.spec.s_07_syntax.types import PdfDict
 
 ENCRYPTION_FIXTURES = (
     Path(__file__).parents[5] / "fixtures" / "pdfminer.six" / "samples" / "encryption"
@@ -95,6 +103,40 @@ def test_encrypted_pdf_rejects_incorrect_password() -> None:
 
 
 @pytest.mark.parametrize(
+    ("params", "message"),
+    [
+        ({}, "Invalid encryption dictionary"),
+        ({"Filter": PdfName.of("PubSec")}, "Public-key encryption"),
+        ({"Filter": PdfName.of("Custom")}, "Unsupported encryption filter"),
+        (
+            {"Filter": PdfName.of("Standard"), "V": 99},
+            "Unsupported standard encryption algorithm",
+        ),
+    ],
+)
+def test_standard_security_factory_rejects_unsupported_handler(
+    params: PdfDict,
+    message: str,
+) -> None:
+    with pytest.raises(PdfUnsupportedError, match=message):
+        create_standard_decipher([b"document-id"], params)
+
+
+def test_standard_security_factory_rejects_mismatched_revision() -> None:
+    params: PdfDict = {
+        "Filter": PdfName.of("Standard"),
+        "V": 4,
+        "R": 3,
+        "P": -4,
+        "O": bytes(32),
+        "U": bytes(32),
+    }
+
+    with pytest.raises(PdfUnsupportedError, match="Invalid encryption dictionary"):
+        create_standard_decipher([b"document-id"], params)
+
+
+@pytest.mark.parametrize(
     ("value", "expected"),
     [
         ("user\u00a0name", "user name"),
@@ -107,7 +149,7 @@ def test_encrypted_pdf_rejects_incorrect_password() -> None:
     ],
 )
 def test_saslprep_maps_and_normalizes_valid_passwords(value: str, expected: str) -> None:
-    assert saslprep(value) == expected
+    assert internal_saslprep(value) == expected
 
 
 @pytest.mark.parametrize(
@@ -124,4 +166,33 @@ def test_saslprep_rejects_prohibited_and_bidirectionally_invalid_passwords(
     message: str,
 ) -> None:
     with pytest.raises(ValueError, match=message):
-        saslprep(value)
+        internal_saslprep(value)
+
+
+def test_security_handler_uses_explicit_named_crypt_filter() -> None:
+    attrs: PdfDict = {
+        "Filter": [PdfName.of("Crypt"), PdfName.of("FlateDecode")],
+        "DecodeParms": [{"Name": PdfName.of("Special")}, None],
+    }
+
+    assert internal_stream_crypt_filter_name(attrs, "Default") == "Special"
+    methods: dict[str, internal_CryptMethod] = {"Special": "AESV2"}
+    assert internal_resolve_crypt_method("Special", methods) == "AESV2"
+
+
+def test_security_handler_defaults_explicit_crypt_to_identity() -> None:
+    attrs: PdfDict = {"Filter": PdfName.of("Crypt")}
+
+    assert internal_stream_crypt_filter_name(attrs, "Default") == "Identity"
+
+
+def test_security_handler_rejects_late_crypt_filter() -> None:
+    attrs: PdfDict = {"Filter": [PdfName.of("FlateDecode"), PdfName.of("Crypt")]}
+
+    with pytest.raises(PdfParseError, match="first"):
+        internal_stream_crypt_filter_name(attrs, "Default")
+
+
+def test_security_handler_rejects_unknown_named_crypt_filter() -> None:
+    with pytest.raises(PdfUnsupportedError, match="Undefined crypt filter"):
+        internal_resolve_crypt_method("Unknown", {})

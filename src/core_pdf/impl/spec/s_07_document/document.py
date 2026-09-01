@@ -45,11 +45,7 @@ from core_pdf.impl.spec.s_07_document.records import (
     RawNamedDestination,
     RawOutlineItem,
 )
-from core_pdf.impl.spec.s_07_security.crypto_handlers import SECURITY_HANDLER_REGISTRY
-from core_pdf.impl.spec.s_07_security.errors import (
-    PDFEncryptionError,
-    PDFPasswordIncorrect,
-)
+from core_pdf.impl.spec.s_07_security import create_standard_decipher
 from core_pdf.impl.spec.s_07_syntax.inherited_values import collect_inherited_values
 from core_pdf.impl.spec.s_07_syntax.object_cache import (
     CachedPdfObject,
@@ -466,24 +462,6 @@ class PdfDocument(
         if not isinstance(encrypt_dict, dict):
             raise PdfUnsupportedError("Invalid Encrypt dictionary")
 
-        filter_name = self.resolver.resolve_name(lookup_dict_key(encrypt_dict, "Filter"))
-        if filter_name is None:
-            raise PdfUnsupportedError("Invalid encryption dictionary")
-        if filter_name in {"Adobe.PubSec", "PubSec"}:
-            raise PdfUnsupportedError("Public-key encryption is not supported")
-        if filter_name != "Standard":
-            raise PdfUnsupportedError(f"Unsupported encryption filter: {filter_name}")
-
-        raw_v = lookup_dict_key(encrypt_dict, "V")
-        if raw_v is None:
-            raise PdfUnsupportedError("Invalid encryption dictionary")
-        v = self.resolver.resolve_int(raw_v)
-        if type(v) is not int:
-            raise PdfUnsupportedError("Invalid encryption dictionary")
-        handler_cls = SECURITY_HANDLER_REGISTRY.get(v)
-        if handler_cls is None:
-            raise PdfUnsupportedError(f"Unsupported standard encryption algorithm V={v}")
-
         docid = lookup_dict_key(self.trailer_dict, "ID")
         if docid is None:
             docid = [b""]
@@ -493,13 +471,7 @@ class PdfDocument(
             raise PdfUnsupportedError("Invalid trailer ID array")
         docid_list: Sequence[object] = docid
 
-        try:
-            handler = handler_cls(docid_list, encrypt_dict, password)
-        except PDFPasswordIncorrect as exc:
-            raise PdfUnsupportedError("Incorrect password") from exc
-        except PDFEncryptionError as exc:
-            raise PdfUnsupportedError("Invalid encryption dictionary") from exc
-        self.decipher = handler.decrypt
+        self.decipher = create_standard_decipher(docid_list, encrypt_dict, password)
 
     # Page tree and page labels
 
