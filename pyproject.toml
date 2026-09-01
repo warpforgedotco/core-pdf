@@ -111,7 +111,9 @@ skip_covered = true
 # Raised 64 -> 66 after omitting the quarantined pymupdf facade (which nothing
 # imports, so it could only ever read 0%) and deleting ~1.5k lines of dead code;
 # measured 66.98%.
-fail_under = 66
+# Raised 66 -> 67 after removing the unreachable text-only dispatch table, the
+# hand-unrolled float operand paths and several duplicated helpers; measured 67.84%.
+fail_under = 67
 exclude_also = [
     "if TYPE_CHECKING:",
     "raise NotImplementedError",
