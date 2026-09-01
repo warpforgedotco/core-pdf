@@ -1,0 +1,177 @@
+{
+  "expected": {
+    "info_title": "Core PDF Security Fixture",
+    "text": "Security Interoperability",
+    "xmp_marker": "security-xmp-marker"
+  },
+  "fixtures": [
+    {
+      "algorithm": "RC4-40",
+      "bits": 40,
+      "command": [
+        "qpdf",
+        "--object-streams=disable",
+        "--stream-data=uncompress",
+        "--allow-weak-crypto",
+        "source.pdf",
+        "rc4-40-r2.pdf",
+        "--encrypt",
+        "--user-password=user-40",
+        "--owner-password=owner-40",
+        "--bits=40",
+        "--"
+      ],
+      "encrypt_metadata": true,
+      "filename": "rc4-40-r2.pdf",
+      "owner_password": "owner-40",
+      "qpdf_options": [],
+      "revision": 2,
+      "sha256": "2b9e6b7e99601f9213a60d756379fb58f00a99ec85918aca777caa8693550b72",
+      "user_password": "user-40",
+      "weak_crypto": true
+    },
+    {
+      "algorithm": "RC4-128",
+      "bits": 128,
+      "command": [
+        "qpdf",
+        "--object-streams=disable",
+        "--stream-data=uncompress",
+        "--allow-weak-crypto",
+        "source.pdf",
+        "rc4-128-r3.pdf",
+        "--encrypt",
+        "--user-password=user-128",
+        "--owner-password=owner-128",
+        "--bits=128",
+        "--use-aes=n",
+        "--"
+      ],
+      "encrypt_metadata": true,
+      "filename": "rc4-128-r3.pdf",
+      "owner_password": "owner-128",
+      "qpdf_options": [
+        "--use-aes=n"
+      ],
+      "revision": 3,
+      "sha256": "f9ecbdb40ab10681ec3ddec25532ca600d222800dec7741550b1e0502d8ee2c7",
+      "user_password": "user-128",
+      "weak_crypto": true
+    },
+    {
+      "algorithm": "AES-128",
+      "bits": 128,
+      "command": [
+        "qpdf",
+        "--object-streams=disable",
+        "--stream-data=uncompress",
+        "source.pdf",
+        "aes-128-r4-cleartext-metadata.pdf",
+        "--encrypt",
+        "--user-password=user-aes128",
+        "--owner-password=owner-aes128",
+        "--bits=128",
+        "--use-aes=y",
+        "--force-V4",
+        "--cleartext-metadata",
+        "--"
+      ],
+      "encrypt_metadata": false,
+      "filename": "aes-128-r4-cleartext-metadata.pdf",
+      "owner_password": "owner-aes128",
+      "qpdf_options": [
+        "--use-aes=y",
+        "--force-V4",
+        "--cleartext-metadata"
+      ],
+      "revision": 4,
+      "sha256": "c1fdd37822e37c67aaf7e53728180aa595ebfe8792aa0bcc0329c2435219c73a",
+      "user_password": "user-aes128",
+      "weak_crypto": false
+    },
+    {
+      "algorithm": "AES-256",
+      "bits": 256,
+      "command": [
+        "qpdf",
+        "--object-streams=disable",
+        "--stream-data=uncompress",
+        "source.pdf",
+        "aes-256-r5.pdf",
+        "--encrypt",
+        "--user-password=user-r5",
+        "--owner-password=owner-r5",
+        "--bits=256",
+        "--force-R5",
+        "--"
+      ],
+      "encrypt_metadata": true,
+      "filename": "aes-256-r5.pdf",
+      "owner_password": "owner-r5",
+      "qpdf_options": [
+        "--force-R5"
+      ],
+      "revision": 5,
+      "sha256": "1c26c7f3739359df75a08eb73dfa55ccd12a9e142fa537876ce4df9c12b843a8",
+      "user_password": "user-r5",
+      "weak_crypto": false
+    },
+    {
+      "algorithm": "AES-256",
+      "bits": 256,
+      "command": [
+        "qpdf",
+        "--object-streams=disable",
+        "--stream-data=uncompress",
+        "source.pdf",
+        "aes-256-r6.pdf",
+        "--encrypt",
+        "--user-password=user-r6",
+        "--owner-password=owner-r6",
+        "--bits=256",
+        "--"
+      ],
+      "encrypt_metadata": true,
+      "filename": "aes-256-r6.pdf",
+      "owner_password": "owner-r6",
+      "qpdf_options": [],
+      "revision": 6,
+      "sha256": "010ebb7841b4b4a8ad5514b00ab07f5decd737f65fb972ca4bf88c0d4b73c359",
+      "user_password": "user-r6",
+      "weak_crypto": false
+    },
+    {
+      "algorithm": "AES-256",
+      "bits": 256,
+      "command": [
+        "qpdf",
+        "--object-streams=disable",
+        "--stream-data=uncompress",
+        "source.pdf",
+        "aes-256-r6-blank-user.pdf",
+        "--encrypt",
+        "--user-password=",
+        "--owner-password=owner-blank",
+        "--bits=256",
+        "--"
+      ],
+      "encrypt_metadata": true,
+      "filename": "aes-256-r6-blank-user.pdf",
+      "owner_password": "owner-blank",
+      "qpdf_options": [],
+      "revision": 6,
+      "sha256": "b525001805118e0c43faa43b14522f775e81d6d7d2e94d4ff9db3384df437847",
+      "user_password": "",
+      "weak_crypto": false
+    }
+  ],
+  "generator": {
+    "name": "qpdf",
+    "version": "12.3.2",
+    "website": "https://qpdf.sourceforge.io/"
+  },
+  "source": {
+    "filename": "source.pdf",
+    "sha256": "f06eccd62dc412f8774af0562441b88953ceb2ab705d4a8ecf212a17e8a2a851"
+  }
+}

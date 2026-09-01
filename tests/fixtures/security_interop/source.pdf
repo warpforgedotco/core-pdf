@@ -1,0 +1,53 @@
+%PDF-1.7
+%‚„œ”
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R /Metadata 7 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+5 0 obj
+<< /Length 57 >>
+stream
+BT
+/F1 18 Tf
+72 720 Td
+(Security Interoperability) Tj
+ET
+
+endstream
+endobj
+6 0 obj
+<< /Title (Core PDF Security Fixture) /Author (core-pdf) /Subject (qpdf interoperability) >>
+endobj
+7 0 obj
+<< /Length 125 /Type /Metadata /Subtype /XML >>
+stream
+<?xml version="1.0" encoding="UTF-8"?>
+<xmpmeta xmlns="urn:core-pdf:test">
+  <marker>security-xmp-marker</marker>
+</xmpmeta>
+
+endstream
+endobj
+xref
+0 8
+0000000000 65535 f 
+0000000015 00000 n 
+0000000080 00000 n 
+0000000137 00000 n 
+0000000263 00000 n 
+0000000333 00000 n 
+0000000440 00000 n 
+0000000548 00000 n 
+trailer
+<< /Size 8 /Root 1 0 R /Info 6 0 R /ID [<636f72652d7064662d7365637572697479><636f72652d7064662d7365637572697479>] >>
+startxref
+754
+%%EOF

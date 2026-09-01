@@ -1,10 +1,7 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
-from core_pdf import PdfDocument
 from core_pdf.impl.exceptions import PdfParseError, PdfUnsupportedError
 from core_pdf.impl.primitives import PdfName
 from core_pdf.impl.spec.s_07_security import create_standard_decipher
@@ -20,10 +17,6 @@ from core_pdf.impl.spec.s_07_security.standard import (
     internal_stream_crypt_filter_name,
 )
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict
-
-ENCRYPTION_FIXTURES = (
-    Path(__file__).parents[5] / "fixtures" / "pdfminer.six" / "samples" / "encryption"
-)
 
 
 def test_aes_cbc_known_vector() -> None:
@@ -80,26 +73,6 @@ def test_rc4_known_vector() -> None:
 
     assert encrypted.hex() == "b2396305f03dc027ccc3524a0a1118a8"
     assert internal_rc4_crypt(key, encrypted) == plaintext
-
-
-@pytest.mark.parametrize(
-    ("filename", "password", "expected"),
-    [
-        ("rc4-40.pdf", "foo", "Secret!"),
-        ("rc4-128.pdf", "foo", "Secret!"),
-        ("aes-128.pdf", "foo", "Secret!"),
-        ("aes-256.pdf", "foo", "Secret!"),
-        ("aes-256-r6.pdf", "usersecret", "Hello World"),
-    ],
-)
-def test_encrypted_pdf_fixture_opens(filename: str, password: str, expected: str) -> None:
-    with PdfDocument.open(ENCRYPTION_FIXTURES / filename, password=password) as document:
-        assert document.pages[0].extract().text == expected
-
-
-def test_encrypted_pdf_rejects_incorrect_password() -> None:
-    with pytest.raises(PdfUnsupportedError, match="Incorrect password"):
-        PdfDocument.open(ENCRYPTION_FIXTURES / "aes-256-r6.pdf", password="wrong")
 
 
 @pytest.mark.parametrize(
