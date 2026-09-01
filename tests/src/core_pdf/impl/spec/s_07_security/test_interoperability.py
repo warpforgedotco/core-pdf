@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from core_pdf import PdfDocument
+from core_pdf import PdfDecryptionError, PdfDocument
 from core_pdf.impl.exceptions import PdfUnsupportedError
 
 FIXTURE_DIRECTORY = Path(__file__).parents[5] / "fixtures" / "security_interop"
@@ -37,6 +37,42 @@ PASSWORD_CASES = tuple(
 )
 
 
+def internal_hex_entry_bounds(data: bytes, key: str) -> tuple[int, int]:
+    marker = f"/{key} <".encode()
+    start = data.index(marker) + len(marker)
+    return start, data.index(b">", start)
+
+
+def internal_corrupt_hex_entry(data: bytes, key: str) -> bytes:
+    start, _ = internal_hex_entry_bounds(data, key)
+    corrupted = bytearray(data)
+    corrupted[start] = ord("0") if corrupted[start] != ord("0") else ord("1")
+    return bytes(corrupted)
+
+
+def internal_truncate_hex_entry(data: bytes, key: str) -> bytes:
+    _, end = internal_hex_entry_bounds(data, key)
+    corrupted = bytearray(data)
+    corrupted[end - 2 : end] = b"  "
+    return bytes(corrupted)
+
+
+def internal_corrupt_page_stream_padding(data: bytes) -> bytes:
+    length_marker = b"6 0 obj\n<< /Length "
+    length_start = data.index(length_marker) + len(length_marker)
+    length_end = data.index(b" ", length_start)
+    length = int(data[length_start:length_end])
+    stream_start = data.index(b"stream\n", length_end) + len(b"stream\n")
+    assert length >= 32
+    assert length % 16 == 0
+
+    corrupted = bytearray(data)
+    # Alter the previous CBC block so the final plaintext padding byte changes
+    # deterministically while the ciphertext remains block-aligned.
+    corrupted[stream_start + length - 17] ^= 1
+    return bytes(corrupted)
+
+
 @pytest.mark.parametrize(("filename", "password"), PASSWORD_CASES)
 def test_qpdf_encrypted_fixture_opens_with_user_or_owner_password(
     filename: str,
@@ -62,6 +98,51 @@ def test_qpdf_encrypted_fixture_opens_with_default_blank_password() -> None:
 def test_qpdf_encrypted_fixture_rejects_incorrect_password(filename: str) -> None:
     with pytest.raises(PdfUnsupportedError, match="Incorrect password"):
         PdfDocument.open(FIXTURE_DIRECTORY / filename, password="incorrect")
+
+
+@pytest.mark.parametrize(
+    ("filename", "password"),
+    [
+        ("aes-256-r5.pdf", "user-r5"),
+        ("aes-256-r6.pdf", "user-r6"),
+    ],
+)
+def test_qpdf_modern_fixture_rejects_corrupted_permissions(
+    filename: str,
+    password: str,
+) -> None:
+    fixture_bytes = (FIXTURE_DIRECTORY / filename).read_bytes()
+    corrupted = internal_corrupt_hex_entry(fixture_bytes, "Perms")
+
+    with pytest.raises(PdfDecryptionError, match="Invalid encryption permissions"):
+        PdfDocument.open(corrupted, password=password)
+
+
+def test_qpdf_modern_fixture_rejects_permissions_mismatched_with_dictionary() -> None:
+    fixture_bytes = (FIXTURE_DIRECTORY / "aes-256-r6.pdf").read_bytes()
+    corrupted = fixture_bytes.replace(b"/P -4 ", b"/P -8 ", 1)
+    assert corrupted != fixture_bytes
+
+    with pytest.raises(PdfDecryptionError, match="Invalid encryption permissions"):
+        PdfDocument.open(corrupted, password="user-r6")
+
+
+@pytest.mark.parametrize("entry_name", ["O", "U", "OE", "UE", "Perms"])
+def test_qpdf_modern_fixture_rejects_truncated_encryption_entry(entry_name: str) -> None:
+    fixture_bytes = (FIXTURE_DIRECTORY / "aes-256-r6.pdf").read_bytes()
+    corrupted = internal_truncate_hex_entry(fixture_bytes, entry_name)
+
+    with pytest.raises(PdfUnsupportedError, match="Invalid encryption dictionary"):
+        PdfDocument.open(corrupted, password="user-r6")
+
+
+def test_qpdf_modern_fixture_rejects_invalid_stream_padding() -> None:
+    fixture_bytes = (FIXTURE_DIRECTORY / "aes-256-r6.pdf").read_bytes()
+    corrupted = internal_corrupt_page_stream_padding(fixture_bytes)
+
+    with PdfDocument.open(corrupted, password="user-r6") as document:
+        with pytest.raises(PdfDecryptionError, match="Invalid encrypted object ciphertext"):
+            document.pages[0].extract()
 
 
 @pytest.mark.parametrize(

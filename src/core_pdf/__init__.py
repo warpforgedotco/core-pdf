@@ -9,6 +9,7 @@ if TYPE_CHECKING:
     from core_pdf.impl.document import PdfDocument
     from core_pdf.impl.exceptions import (
         PdfContractError,
+        PdfDecryptionError,
         PdfDocumentClosedError,
         PdfError,
         PdfParseError,
@@ -83,6 +84,7 @@ internal_EXPORTS = {
     "TextDiagnostics": ("core_pdf.impl.structured.model", "TextDiagnostics"),
     "TextLineReference": ("core_pdf.impl.structured.model", "TextLineReference"),
     "PdfPage": ("core_pdf.impl.page", "PdfPage"),
+    "PdfDecryptionError": ("core_pdf.impl.exceptions", "PdfDecryptionError"),
     "PdfDocumentClosedError": ("core_pdf.impl.exceptions", "PdfDocumentClosedError"),
     "PdfParseError": ("core_pdf.impl.exceptions", "PdfParseError"),
     "PdfRasterTooLargeError": ("core_pdf.impl.exceptions", "PdfRasterTooLargeError"),
@@ -142,6 +144,7 @@ __all__ = (
     "TextDiagnostics",
     "TextLineReference",
     "PdfPage",
+    "PdfDecryptionError",
     "PdfDocumentClosedError",
     "PdfParseError",
     "PdfRasterTooLargeError",

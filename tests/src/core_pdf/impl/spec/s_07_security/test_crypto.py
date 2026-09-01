@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import pytest
 
-from core_pdf.impl.exceptions import PdfParseError, PdfUnsupportedError
+from core_pdf.impl.exceptions import PdfDecryptionError, PdfParseError, PdfUnsupportedError
 from core_pdf.impl.primitives import PdfName
 from core_pdf.impl.spec.s_07_security import create_standard_decipher
 from core_pdf.impl.spec.s_07_security.ciphers import (
     internal_aes_cbc_decrypt,
     internal_aes_cbc_encrypt,
+    internal_aes_ecb_decrypt,
     internal_rc4_crypt,
 )
 from core_pdf.impl.spec.s_07_security.standard import (
@@ -64,6 +65,34 @@ def test_aes_cbc_pkcs7_padding_round_trip() -> None:
         )
         == plaintext
     )
+
+
+@pytest.mark.parametrize(
+    ("initialization_vector", "ciphertext"),
+    [
+        (bytes(15), bytes(16)),
+        (bytes(16), bytes(15)),
+    ],
+)
+def test_aes_cbc_rejects_invalid_block_shape(
+    initialization_vector: bytes,
+    ciphertext: bytes,
+) -> None:
+    with pytest.raises(PdfDecryptionError, match="Invalid encrypted object ciphertext"):
+        internal_aes_cbc_decrypt(
+            bytes(16),
+            initialization_vector,
+            ciphertext,
+            use_padding=False,
+        )
+
+
+def test_aes_ecb_decrypts_known_vector() -> None:
+    key = bytes.fromhex("603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30914dff4")
+    ciphertext = bytes.fromhex("f3eed1bdb5d2a03c064b5a7e3db181f8")
+    expected = bytes.fromhex("6bc1bee22e409f96e93d7e117393172a")
+
+    assert internal_aes_ecb_decrypt(key, ciphertext) == expected
 
 
 def test_rc4_known_vector() -> None:

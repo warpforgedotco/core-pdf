@@ -3,10 +3,11 @@ from __future__ import annotations
 
 import pytest
 
-from core_pdf.impl.exceptions import PdfParseError
+from core_pdf.impl.exceptions import PdfDecryptionError, PdfParseError
 from core_pdf.impl.primitives import PdfReference, PdfString
 from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
+from core_pdf.impl.spec.s_07_syntax.types import PdfDict
 
 
 @pytest.mark.parametrize(
@@ -285,3 +286,67 @@ def test_read_string_can_project_pdfminer_unknown_escape_behavior() -> None:
 
     assert native.read_string() == b"27 mm glandsizes/torque"
     assert compatibility.read_string(drop_unknown_escapes=True) == b"27mm glandsizestorque"
+
+
+@pytest.mark.parametrize(
+    "signature_entries",
+    [
+        b"/Contents <30820100> /Type /Sig",
+        b"/Type /DocTimeStamp /Contents <30820100>",
+        b"/Contents <30820100> /ByteRange [0 10 20 30]",
+    ],
+)
+def test_signature_hex_contents_are_not_deciphered(signature_entries: bytes) -> None:
+    def decipher(
+        _object_number: int,
+        _generation_number: int,
+        _data: bytes,
+        _dictionary: PdfDict | None,
+    ) -> bytes:
+        raise AssertionError("signature contents must remain unencrypted")
+
+    lexer = PdfLexer(b"7 0 obj << " + signature_entries + b" >> endobj", decipher=decipher)
+
+    dictionary = lexer.parse_indirect_object()
+
+    assert isinstance(dictionary, dict)
+    assert dictionary["Contents"] == PdfString(bytes.fromhex("30820100"))
+
+
+def test_non_signature_hex_contents_are_deciphered_after_dictionary_parse() -> None:
+    calls: list[tuple[int, int, bytes]] = []
+
+    def decipher(
+        object_number: int,
+        generation_number: int,
+        data: bytes,
+        _dictionary: PdfDict | None,
+    ) -> bytes:
+        calls.append((object_number, generation_number, data))
+        return b"deciphered"
+
+    lexer = PdfLexer(
+        b"7 2 obj << /Contents <0102> /Type /Annot >> endobj",
+        decipher=decipher,
+    )
+
+    dictionary = lexer.parse_indirect_object()
+
+    assert isinstance(dictionary, dict)
+    assert dictionary["Contents"] == PdfString(b"deciphered")
+    assert calls == [(7, 2, b"\x01\x02")]
+
+
+def test_non_signature_hex_contents_propagate_decryption_failure() -> None:
+    def decipher(
+        _object_number: int,
+        _generation_number: int,
+        _data: bytes,
+        _dictionary: PdfDict | None,
+    ) -> bytes:
+        raise PdfDecryptionError("Invalid encrypted object ciphertext")
+
+    lexer = PdfLexer(b"7 0 obj << /Contents <0102> /Type /Annot >> endobj", decipher=decipher)
+
+    with pytest.raises(PdfDecryptionError, match="Invalid encrypted object ciphertext"):
+        lexer.parse_indirect_object()
