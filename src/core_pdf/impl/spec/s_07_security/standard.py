@@ -197,6 +197,16 @@ def internal_parse_config(
     if permissions < 0:
         permissions += 1 << 32
 
+    # ISO 32000-1:2008, Table 22; Adobe Supplement to ISO 32000,
+    # BaseVersion 1.7, ExtensionLevel 3, June 2008, Table 3.20; and
+    # ISO 32000-2:2020, Table 22 reserve bits 1-2 as zero and require
+    # bits 7-8 and 13-32 to be one in every Standard-handler permission word.
+    if permissions & 0b11:
+        raise ValueError("reserved encryption permission bits 1-2 must be zero")
+    required_one_bits = 0xFFFFF0C0
+    if permissions & required_one_bits != required_one_bits:
+        raise ValueError("reserved encryption permission bits must be one")
+
     if version == 1:
         # ISO 32000-1:2008, Table 21 requires R=3, rather than R=2, when
         # any permission introduced for revision 3 (bits 9 through 12 in

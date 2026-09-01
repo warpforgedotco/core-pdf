@@ -150,6 +150,8 @@ def test_qpdf_modern_fixture_rejects_invalid_stream_padding() -> None:
     [
         (b"/V 5", b"/V 6", "Unsupported standard encryption algorithm V=6"),
         (b"/R 6", b"/R 4", "Invalid encryption dictionary"),
+        (b"/P -4", b"/P -1", "Invalid encryption dictionary"),
+        (b"/P -4 ", b"/P -68", "Invalid encryption dictionary"),
         (b"/StmF /StdCF", b"/StmF /BadCF", "Invalid encryption dictionary"),
         (b"/StrF /StdCF", b"/StrF /BadCF", "Invalid encryption dictionary"),
         (b"/AuthEvent /DocOpen", b"/AuthEvent /EFOpen ", "Invalid encryption dictionary"),
