@@ -89,6 +89,8 @@ from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     parse_float,
     parse_int,
 )
+from core_pdf.impl.spec.s_08_graphics.color import color_operands_to_srgb
+from core_pdf.impl.spec.s_08_graphics.color_spec import ImageColorSpec, color_spec_from_value
 from core_pdf.impl.spec.s_08_graphics.image_decode import ImageSource
 from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix, transform_bbox
 from core_pdf.impl.spec.s_09_fonts.decoder import (
@@ -117,6 +119,8 @@ internal_GraphicsState: TypeAlias = tuple[
     float | None,
     str,
     str,
+    ImageColorSpec | None,
+    ImageColorSpec | None,
     int,
     str | None,
     float | None,
@@ -282,7 +286,13 @@ class TextState:
     layout_form_bbox: Rectangle | None
     layout_form_id: LayoutFormId
     fill_color_space: str
+    # The resolved space behind that name. The name alone cannot distinguish two
+    # Separation resources with different tint transforms, and 8.6.6.3/8.6.6.4
+    # need the palette or the tint transform to turn `sc`/`scn` operands into a
+    # colour, so it travels with the name through q/Q.
+    fill_color_spec: ImageColorSpec | None
     stroke_color_space: str
+    stroke_color_spec: ImageColorSpec | None
     dash_pattern: tuple[list[float], float]
     font_operand: object
     font_size_operand: object
@@ -298,6 +308,7 @@ class TextState:
     resolved_resource_categories: ResolvedResourceCache
     resource_cache: ResourceCache
     color_space_cache: ObjectCache
+    color_spec_cache: ObjectCache
     color_normalization_cache: ObjectCache
     extgstate_cache: ObjectCache
     font_setting_cache: ObjectCache
@@ -360,6 +371,8 @@ class TextState:
         "layout_form_id",
         "page_clip",
         "fill_color_space",
+        "fill_color_spec",
+        "stroke_color_spec",
         "stroke_color_space",
         "compatibility_depth",
         "line_width",
@@ -403,6 +416,7 @@ class TextState:
         "resource_cache",
         "image_cache",
         "color_space_cache",
+        "color_spec_cache",
         "color_normalization_cache",
         "extgstate_cache",
         "font_setting_cache",
@@ -492,6 +506,8 @@ class TextState:
         # provenance those identities feed is what layout groups runs by.
         self.page_clip = page_clip
         self.fill_color_space = "DeviceGray"
+        self.fill_color_spec = None
+        self.stroke_color_spec = None
         self.stroke_color_space = "DeviceGray"
         self.line_width = 1.0
         self.line_cap = 0
@@ -555,6 +571,7 @@ class TextState:
         self.image_cache = image_cache
         self.resource_cache = {}
         self.color_space_cache = {}
+        self.color_spec_cache = {}
         self.color_normalization_cache = {}
         self.extgstate_cache = {}
         self.font_setting_cache = {}
@@ -3627,6 +3644,76 @@ class TextState:
             return tuple(max(0.0, min(1.0, float(c))) for c in o)
         return self.normalize_colors(*o)
 
+    def internal_color_space_value(self: Any, name_obj: Any) -> object:
+        """The colour-space resource behind a `cs`/`CS` operand, indirects resolved.
+
+        A colour-space array carries the tint function and the Indexed palette
+        as indirect references, so the entries have to be resolved before the
+        array can be parsed.
+        """
+        name = self.document.resolver.resolve_name(name_obj)
+        if name is None:
+            return None
+        resolve = self.document.resolver.resolve
+        value = self.lookup_page_resource("ColorSpace", name)
+        if value is None:
+            # An inline device space (`/DeviceRGB cs`) names no resource.
+            return name
+        value = resolve(value)
+        if isinstance(value, (list, tuple)):
+            return [resolve(entry) for entry in value]
+        return value
+
+    def internal_resolve_color_spec(self: Any, name_obj: Any) -> ImageColorSpec | None:
+        """Resolve a `cs`/`CS` operand to its full colour space, not just a name.
+
+        Cached per resource dictionary like the name is: the parse walks the
+        colour-space array and, for Indexed, pulls the palette out of a stream.
+        """
+        try:
+            cache_key = (self.resources_id, name_obj)
+            cached = self.color_spec_cache.get(cache_key, MISSING)
+            if cached is not MISSING:
+                return cast("ImageColorSpec | None", cached)
+        except TypeError:
+            cache_key = None
+        value = self.internal_color_space_value(name_obj)
+        try:
+            spec = color_spec_from_value(value) if value is not None else None
+        except (ValueError, TypeError):
+            spec = None
+        if cache_key is not None:
+            self.color_spec_cache[cache_key] = spec
+        return spec
+
+    def internal_color_from_operands(
+        self: Any, operands: Any, spec: ImageColorSpec | None
+    ) -> tuple[float, ...] | None:
+        """Turn `sc`/`scn` operands into the colour they select.
+
+        Device-space operands are their own components and pass through. An
+        Indexed operand is a palette index and a Separation/DeviceN operand is a
+        tint (ISO 32000-1 8.6.6.3, 8.6.6.4), so those resolve to sRGB here --
+        clamping them to 0..1 and painting them directly rendered a spot colour
+        as an inverted grey and ignored the palette entirely.
+        """
+        if spec is not None and spec.kind in {"Indexed", "Separation", "DeviceN"}:
+            values = self.internal_numeric_operands(operands)
+            if values is not None:
+                converted = color_operands_to_srgb(spec, values)
+                if converted is not None:
+                    return converted
+        return self.normalize_color_operands(operands)
+
+    def internal_numeric_operands(self: Any, operands: Any) -> list[float] | None:
+        values: list[float] = []
+        for operand in operands:
+            if type(operand) is float or type(operand) is int:
+                values.append(float(operand))
+            else:
+                return None
+        return values or None
+
     def resolve_color_space(
         self: Any, name_obj: Any, *, default_fallback: bool = False
     ) -> str | None:
@@ -3817,17 +3904,23 @@ class TextState:
                 cached = MISSING
             if cached is not MISSING:
                 if cached is not None:
-                    if stroke and self.stroke_color_space != cached:
+                    spec = self.internal_resolve_color_spec(name_obj)
+                    if stroke:
                         self.stroke_color_space = cast("str", cached)
-                    elif not stroke and self.fill_color_space != cached:
+                        self.stroke_color_spec = spec
+                    else:
                         self.fill_color_space = cast("str", cached)
+                        self.fill_color_spec = spec
                 return
             color_space = self.resolve_color_space(name_obj, default_fallback=True)
             if color_space is not None:
+                spec = self.internal_resolve_color_spec(name_obj)
                 if stroke:
                     self.stroke_color_space = color_space
+                    self.stroke_color_spec = spec
                 else:
                     self.fill_color_space = color_space
+                    self.fill_color_spec = spec
 
     def op_CS(self, operands: OperandWindow, depth: int) -> None:
         self.internal_set_color_space(operands, stroke=True)
@@ -3851,14 +3944,18 @@ class TextState:
             else:
                 self.fill_pattern = pattern
             if len(operands) > 1:
-                normalized = self.normalize_color_operands(operands[:-1])
+                normalized = self.internal_color_from_operands(
+                    operands[:-1], self.stroke_color_spec if stroke else self.fill_color_spec
+                )
                 if normalized is not None:
                     if stroke:
                         self.stroke_color = normalized
                     else:
                         self.fill_color = normalized
             return
-        normalized = self.normalize_color_operands(operands)
+        normalized = self.internal_color_from_operands(
+            operands, self.stroke_color_spec if stroke else self.fill_color_spec
+        )
         if normalized is not None:
             if stroke:
                 self.stroke_color = normalized
@@ -4021,6 +4118,8 @@ class TextState:
                 self.stroke_opacity,
                 self.fill_color_space,
                 self.stroke_color_space,
+                self.fill_color_spec,
+                self.stroke_color_spec,
                 self.compatibility_depth,
                 self.blend_mode,
                 self.group_alpha,
@@ -4074,6 +4173,8 @@ class TextState:
             self.stroke_opacity,
             self.fill_color_space,
             self.stroke_color_space,
+            self.fill_color_spec,
+            self.stroke_color_spec,
             self.compatibility_depth,
             self.blend_mode,
             self.group_alpha,
