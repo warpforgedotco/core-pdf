@@ -168,12 +168,6 @@ def internal_templates() -> internal_TemplateSet:
     )
 
 
-def internal_color(value: object) -> tuple[float, ...] | None:
-    if not isinstance(value, (list, tuple)):
-        return None
-    return tuple(float(cast(Any, component)) for component in value)
-
-
 def internal_drawing_style(drawing: CapturedDrawing) -> tuple[object, ...] | None:
     style = drawing.stroke_style_key()
     if style is None or style[1] <= 0.0 or style[2] <= 0.0:

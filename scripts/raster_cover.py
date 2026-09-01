@@ -26,10 +26,12 @@ from core_pdf import PdfDocument
 from core_pdf.impl.render import (
     blend,
     clipping,
+    image_target,
     images,
     kernels,
     model,
     page,
+    path_target,
     paths,
     patterns,
     target,
@@ -38,7 +40,19 @@ from core_pdf.impl.render import (
 CORPUS = pathlib.Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "SCORE-Bench" / "src"
 TARGET_FILES = frozenset(
     module.__file__
-    for module in (blend, clipping, images, kernels, model, page, paths, patterns, target)
+    for module in (
+        blend,
+        clipping,
+        image_target,
+        images,
+        kernels,
+        model,
+        page,
+        path_target,
+        paths,
+        patterns,
+        target,
+    )
 )
 RenderLine = tuple[str, int]
 

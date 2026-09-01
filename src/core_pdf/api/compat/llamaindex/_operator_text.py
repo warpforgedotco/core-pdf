@@ -594,18 +594,6 @@ class OperatorTextProjection:
             if source
         }
 
-    def internal_streams(self, value: object) -> tuple[PdfStream, ...]:
-        resolved = self.resolver.resolve(value)
-        if isinstance(resolved, PdfStream):
-            return (self.resolver.resolve_stream(resolved),)
-        if isinstance(resolved, (list, tuple)):
-            return tuple(
-                self.resolver.resolve_stream(stream)
-                for item in resolved
-                if isinstance((stream := self.resolver.resolve(item)), PdfStream)
-            )
-        return ()
-
     def internal_extract(
         self,
         streams: tuple[PdfStream, ...],

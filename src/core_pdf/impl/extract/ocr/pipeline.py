@@ -33,8 +33,8 @@ from core_pdf.impl.extract.ocr.candidates import (
     internal_candidate_timing_record,
     internal_hidden_text_verification,
     internal_merge_candidate_batches,
-    internal_record_candidates,
 )
+from core_pdf.impl.extract.ocr.execution import internal_OcrPassExecution, internal_OcrPassState
 from core_pdf.impl.extract.ocr.grids import (
     internal_detect_ruling_grid,
     internal_grid_cell_tasks,
@@ -61,7 +61,6 @@ from core_pdf.impl.extract.ocr.regions import (
     internal_ocr_region_batch,
     internal_ocr_task_groups,
     internal_page_image_regions,
-    internal_primary_text_is_sufficient,
     internal_tile_tasks,
     internal_weak_region_tasks,
 )
@@ -167,13 +166,8 @@ def internal_recognize_page_with_reserved_raster(
     rendered_rasters: dict[tuple[float, int, bool], internal_Raster | None] = {}
     rendered_page: Any | None = None
     candidate_regions: tuple[internal_OcrRegion, ...] | None = None
-    candidates: list[tuple[str, internal_Candidate]] = []
     pending_stroked_decode: tuple[int, StrokedTextDecode, float] | None = None
-    selected_name = ""
-    selected: internal_Candidate | None = None
-    selected_tasks: tuple[internal_OcrTask, ...] = ()
-    previous_region_additions = 0
-    seeded_region_selected = False
+    pass_state = internal_OcrPassState()
     adaptive_rescue_used = False
 
     def recognize_batch(tasks: tuple[internal_OcrTask, ...]) -> tuple[internal_Candidate, ...]:
@@ -271,58 +265,15 @@ def internal_recognize_page_with_reserved_raster(
             return internal_promoted_hidden_observations(capture), pending_stroked_decode
 
     for ocr_pass in plan.ocr_passes:
-        if (
-            selected is not None
-            and ocr_pass.scope is OcrPassScope.PAGE
-            and ocr_pass.run_if_characters_below is not None
-            and internal_primary_text_is_sufficient(selected)
-        ):
+        prepared_state = pass_state.prepare(
+            ocr_pass,
+            visible_native_characters=capture.evidence.visible_native_characters,
+        )
+        if prepared_state is None:
             continue
-        if (
-            selected is not None
-            and ocr_pass.run_if_characters_below is not None
-            and selected.metrics.characters >= ocr_pass.run_if_characters_below
-        ):
-            continue
-        if (
-            selected is not None
-            and ocr_pass.scope is OcrPassScope.IMAGE_REGIONS
-            and ocr_pass.run_if_characters_below is not None
-            and selected.metrics.characters >= 28
-            and selected.metrics.mean_confidence >= 97.0
-        ):
-            continue
-        if (
-            ocr_pass.run_if_additions_below is not None
-            and previous_region_additions >= ocr_pass.run_if_additions_below
-        ):
-            continue
-        if (
-            ocr_pass.scope is OcrPassScope.PAGE
-            and ocr_pass.run_if_additions_below is not None
-            and previous_region_additions == 0
-            and selected is None
-            and capture.evidence.visible_native_characters >= 3_000
-        ):
-            continue
-        if (
-            ocr_pass.scope is OcrPassScope.WEAK_REGIONS
-            and ocr_pass.run_if_additions_below is not None
-            and previous_region_additions == 0
-            and selected is not None
-            and selected.metrics.characters >= 32
-            and selected.metrics.mean_confidence >= 90.0
-        ):
-            continue
-        if (
-            ocr_pass.scope is OcrPassScope.PAGE
-            and seeded_region_selected
-            and ocr_pass.run_if_additions_below is not None
-        ):
-            selected = None
-            selected_name = ""
-            selected_tasks = ()
-            seeded_region_selected = False
+        pass_state = prepared_state
+        selected = pass_state.selected
+        selected_tasks = pass_state.selected_tasks
         context.raise_if_cancelled()
         started = time.perf_counter()
         adaptive_preflight: dict[str, object] | None = None
@@ -818,74 +769,30 @@ def internal_recognize_page_with_reserved_raster(
                     "accepted_additions": rescue_additions,
                     "region_boxes": retry_boxes,
                 }
-        additions = 0
-        if ocr_pass.scope is OcrPassScope.WEAK_REGIONS:
-            used_native_seed = selected is None
-            if selected is not None:
-                candidate, additions = internal_augment_candidate(
-                    selected,
-                    candidate,
-                    minimum_confidence=ocr_pass.minimum_confidence,
-                )
-            else:
-                additions = len(candidate.observations)
-        candidates.append((ocr_pass.name, candidate))
-        elapsed = time.perf_counter() - started
-        report.passes += (
-            {
-                "name": ocr_pass.name,
-                "scope": ocr_pass.scope.value,
-                "scale": ocr_pass.scale,
-                "modes": ocr_pass.modes,
-                "recognize_words": any(task.recognize_words for task in tasks),
-                "character_confidence_threshold": ocr_pass.character_confidence_threshold,
-                "task_count": len(tasks),
-                "raster_pixels": raster_pixels,
-                "skipped_raster_pixels": skipped_raster_pixels,
-                "image_text_preflight": image_text_preflight,
-                "region_stage": region_stage,
-                "region_boxes": region_boxes,
-                "skipped_region_boxes": skipped_region_boxes,
-                "full_page_fallback": (
-                    region_stage == "page" and ocr_pass.scope is OcrPassScope.PAGE
-                ),
-                "elapsed_seconds": elapsed,
-                "render_timings": report.render_timings or {},
-                **internal_candidate_timing_record(task_candidates),
-                "accepted_additions": additions,
-                "adaptive_retry_scale": adaptive_retry_scale,
-                "adaptive_preflight": adaptive_preflight,
-                "adaptive_rescue_decision": adaptive_rescue_decision,
-                "adaptive_rescue": adaptive_rescue,
-                "pixel_budget": ocr_pass.pixel_budget,
-                "rectangles": tuple(task.rectangle for task in tasks),
-                "selected": False,
-                **candidate.metrics.as_record(),
-            },
-        )
-        if not tasks:
-            continue
-        if ocr_pass.scope is OcrPassScope.WEAK_REGIONS:
-            previous_region_additions = additions
-            if additions:
-                selected_name = ocr_pass.name
-                selected = candidate
-                selected_tasks = (*selected_tasks, *candidate_source_tasks)
-                seeded_region_selected = used_native_seed and ocr_pass.seed_with_native
-            continue
-        if selected is None or candidate.metrics.utility > (
-            selected.metrics.utility * ocr_pass.minimum_utility_gain
-        ):
-            selected_name = ocr_pass.name
-            selected = candidate
-            selected_tasks = candidate_source_tasks
+        pass_state = internal_OcrPassExecution(
+            ocr_pass=ocr_pass,
+            candidate=candidate,
+            candidate_source_tasks=candidate_source_tasks,
+            task_candidates=task_candidates,
+            tasks=tasks,
+            started=started,
+            raster_pixels=raster_pixels,
+            skipped_raster_pixels=skipped_raster_pixels,
+            image_text_preflight=image_text_preflight,
+            region_stage=region_stage,
+            region_boxes=region_boxes,
+            skipped_region_boxes=skipped_region_boxes,
+            adaptive_retry_scale=adaptive_retry_scale,
+            adaptive_preflight=adaptive_preflight,
+            adaptive_rescue_decision=adaptive_rescue_decision,
+            adaptive_rescue=adaptive_rescue,
+        ).complete(pass_state, report)
 
+    pass_state.record_selection(report)
+    selected = pass_state.selected
     if selected is None:
-        internal_record_candidates(tuple(candidates), selected_name, report)
         return ObservationBatch.empty(), pending_stroked_decode
-    for diagnostic in report.passes:
-        diagnostic["selected"] = diagnostic["name"] == selected_name
-    internal_record_candidates(tuple(candidates), selected_name, report)
+    selected_tasks = pass_state.selected_tasks
     if selected_tasks:
         # Ruled scanned tables defeat Tesseract's page segmentation; when the
         # page raster shows a full ruling grid, re-recognize cell by cell and

@@ -9,8 +9,8 @@ import numpy
 
 from core_pdf.impl.render.blend import internal_BlendTargetMixin
 from core_pdf.impl.render.clipping import internal_ClipState
-from core_pdf.impl.render.images import internal_ImageTargetMixin
-from core_pdf.impl.render.paths import internal_PathTargetMixin
+from core_pdf.impl.render.image_target import internal_ImageTargetMixin
+from core_pdf.impl.render.path_target import internal_PathTargetMixin
 from core_pdf.impl.render.patterns import internal_PatternTargetMixin
 from core_pdf.impl.runtime.array_views import uint8_image_view
 

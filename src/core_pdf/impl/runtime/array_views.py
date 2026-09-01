@@ -211,35 +211,6 @@ def contiguous_bytes(array: numpy.ndarray[Any, Any]) -> memoryview:
     return memoryview(numpy.ascontiguousarray(array)).cast("B")
 
 
-def typed_view(
-    buffer: ByteBuffer,
-    dtype: numpy.dtype[Any] | str,
-    *,
-    count: int = -1,
-    offset: int = 0,
-) -> numpy.ndarray[Any, Any]:
-    """Return a one-dimensional typed view over a byte-oriented buffer.
-
-    Byte buffers remain borrowed.  Array inputs are flattened when compatible and
-    copied only when their dtype or layout cannot support the requested view.
-    ``count`` and ``offset`` are expressed in elements for array inputs and bytes
-    for byte buffers, matching NumPy's ``frombuffer`` contract.
-    """
-    target = numpy.dtype(dtype)
-    if isinstance(buffer, numpy.ndarray):
-        array = numpy.asarray(buffer)
-        if array.dtype == target and array.flags.c_contiguous:
-            view = array.reshape(-1)
-        else:
-            view = numpy.ascontiguousarray(array, dtype=target).reshape(-1)
-        if offset:
-            view = view[offset:]
-        if count >= 0:
-            view = view[:count]
-        return view
-    return numpy.frombuffer(buffer, dtype=target, count=count, offset=offset)
-
-
 def uint8_view(
     buffer: ByteBuffer,
     *,
@@ -296,7 +267,6 @@ __all__ = (
     "resample_box",
     "resample_nearest",
     "resample_smooth",
-    "typed_view",
     "uint8_image_view",
     "uint8_view",
     "unit_sample_positions",

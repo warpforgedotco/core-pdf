@@ -221,13 +221,6 @@ def internal_map_page_element(
     raise TypeError(f"unsupported page element: {type(element).__name__}")
 
 
-def block_to_json_dict(block: Block) -> dict[str, JsonValue]:
-    return {
-        **internal_block_payload(block),
-        "lines": [line_to_json_dict(line) for line in block.lines],
-    }
-
-
 def internal_block_payload(block: Block) -> dict[str, JsonValue]:
     return {
         "order": block.order,
@@ -626,7 +619,6 @@ def json_safe(value: object, *, path: str = "$") -> JsonValue:
 
 __all__ = (
     "block_to_html",
-    "block_to_json_dict",
     "block_to_markdown",
     "annotation_to_json_dict",
     "field_to_json_dict",

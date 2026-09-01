@@ -74,7 +74,8 @@ bytes → │ capture_page│ → plan_page ────────────
 | `extract/emit.py` | Normalizes text and assembles the canonical output `Page`. |
 | `extract/pipeline.py` | Orchestrates stages, locking, and product caching. |
 
-OCR is one feature namespace: `ocr/pipeline.py` orchestrates recognition; `candidates.py` verifies,
+OCR is one feature namespace: `ocr/pipeline.py` orchestrates recognition; `execution.py` owns pass
+admission, completion, diagnostics, and candidate-selection transitions; `candidates.py` verifies,
 merges, and ranks candidate batches; `grids.py` owns ruled-grid cell recognition; `raster.py`,
 `regions.py`, `tesseract.py`, `vector.py`, `strokes.py`, and `newstroke.py` own their respective
 mechanisms; and `types.py` holds their shared records. `internal_PageExtraction` remains the locked
@@ -120,11 +121,12 @@ src/core_pdf/
 ```
 
 Rendering uses direct module owners rather than a barrel module: `render/model.py` owns display
-records, render options, plans, and the raster value object. `blend.py`, `images.py`, `paths.py`,
-and `patterns.py` own both their pure raster operations and the corresponding target behaviors.
-`kernels.py` retains only cross-cutting page-coordinate helpers; `clipping.py` owns clip-mask
-operations; `target.py` composes those behaviors around the mutable buffer state; and `page.py`
-owns page composition.
+records, render options, plans, and the raster value object. `images.py` and `paths.py` own pure
+sampling and rasterization kernels; `image_target.py` and `path_target.py` own the corresponding
+stateful target behaviors. `blend.py` and `patterns.py` retain their focused operations and target
+behaviors, `kernels.py` retains only cross-cutting page-coordinate helpers, and `clipping.py` owns
+clip-mask operations. `target.py` composes those behaviors around the mutable buffer state, while
+`page.py` owns page composition.
 
 Layout follows the same ownership rule. `blocks.py` owns line grouping and block classification;
 `regions.py` owns geometric partitioning; `order.py` owns block ordering and its evidence;

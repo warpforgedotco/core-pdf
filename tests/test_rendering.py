@@ -7,7 +7,6 @@ import imagecodecs
 import numpy
 import pytest
 
-from core_pdf.impl.document import text_rotation_correction_for_runs
 from core_pdf.impl.exceptions import PdfRasterTooLargeError
 from core_pdf.impl.model.glyph_table import GlyphTable
 from core_pdf.impl.model.glyphs import GlyphObservation
@@ -448,27 +447,6 @@ def test_display_chars_apply_page_rotation_to_text_geometry() -> None:
         90,
     )
     assert displayed[0].rotation_angle == 270
-
-
-def test_text_rotation_correction_uses_displayed_text_orientation() -> None:
-    run = TextRun(
-        "dominant text",
-        0,
-        0,
-        10,
-        10,
-        0,
-        0,
-        10,
-        3,
-        0,
-        0,
-        0,
-        rotation_angle=270,
-    )
-    correction = text_rotation_correction_for_runs([run], threshold=0.95)
-
-    assert correction == 90
 
 
 def test_text_display_items_do_not_fabricate_raster_pixels() -> None:

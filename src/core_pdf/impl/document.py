@@ -21,7 +21,6 @@ from core_pdf.impl.layout.diagnostics import (
 )
 from core_pdf.impl.layout.lines import LayoutLine
 from core_pdf.impl.model.geometry import rect_tuple
-from core_pdf.impl.model.runs import TextRun
 from core_pdf.impl.output import DiagnosticTextRun, TextDiagnostics
 from core_pdf.impl.output import Document as StructuredDocument
 from core_pdf.impl.pages import PageSelection
@@ -46,22 +45,6 @@ internal_prepare_ocr_signals()
 
 if TYPE_CHECKING:
     from core_pdf.impl.spec.s_09_fonts.fallback import RasterFontProviderLike
-
-
-def text_rotation_correction_for_runs(runs: list[TextRun], threshold: float = 0.95) -> int:
-    weighted: dict[int, int] = {}
-    total = 0
-    for run in runs:
-        weight = len(run.text.strip())
-        if not weight:
-            continue
-        angle = int(run.rotation_angle) % 360
-        weighted[angle] = weighted.get(angle, 0) + weight
-        total += weight
-    if not total:
-        return 0
-    angle, weight = max(weighted.items(), key=lambda item: item[1])
-    return (-angle) % 360 if weight / total >= threshold else 0
 
 
 class PdfPage(SpecPdfPage):
@@ -434,5 +417,4 @@ __all__ = (
     "DocumentOperation",
     "PdfDocument",
     "PdfPage",
-    "text_rotation_correction_for_runs",
 )
