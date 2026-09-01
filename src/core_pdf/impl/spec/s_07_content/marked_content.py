@@ -3,14 +3,37 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from core_pdf.impl.spec.s_07_content.geometry import (
-    extend_baseline,
-    min_optional_confidence,
-    union_bbox,
-)
+from core_pdf.impl.model.runs import Provenance
 from core_pdf.impl.types import Rectangle
 
-Provenance = tuple[tuple[str, object], ...]
+
+def union_bbox(left: Rectangle | None, right: Rectangle | None) -> Rectangle | None:
+    if left is None:
+        return right
+    if right is None:
+        return left
+    return (
+        min(left[0], right[0]),
+        min(left[1], right[1]),
+        max(left[2], right[2]),
+        max(left[3], right[3]),
+    )
+
+
+def extend_baseline(left: Rectangle | None, right: Rectangle | None) -> Rectangle | None:
+    if left is None:
+        return right
+    if right is None:
+        return left
+    return (left[0], left[1], right[2], right[3])
+
+
+def min_optional_confidence(left: float | None, right: float | None) -> float | None:
+    if left is None:
+        return right
+    if right is None:
+        return left
+    return min(left, right)
 
 
 @dataclass(slots=True)

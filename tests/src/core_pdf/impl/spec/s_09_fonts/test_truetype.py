@@ -148,12 +148,10 @@ def test_corrupt_font_tables_do_not_escape_as_assertion_errors() -> None:
     because a corrupt cmap format 4 subtable raised AssertionError out through
     the content interpreter.
     """
-    from core_pdf.impl.spec.s_07_content.text_helpers import (
-        load_ligature_font_tables,
-    )
     from core_pdf.impl.spec.s_09_fonts.font_program_truetype import (
         internal_best_unicode_gid_cmap,
     )
+    from core_pdf.impl.spec.s_09_fonts.ligatures import load_ligature_font_tables
 
     class AssertingFont:
         def __getitem__(self, key: str) -> object:

@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable, Iterator
-from dataclasses import dataclass
 from typing import Protocol, TypeAlias, TypeVar, cast, overload
 
 from core_pdf.impl.exceptions import PdfParseError
@@ -16,13 +15,8 @@ from core_pdf.impl.spec.s_07_content.inline_images import (
     recover_inline_image_position,
 )
 from core_pdf.impl.spec.s_07_content.operator_tables import (
-    GRAPHICS_STATE_OPERATORS,
-    IMAGE_OPERATORS,
     TEXT_ONLY_SKIP_DOUBLE,
     TEXT_ONLY_SKIP_SINGLE,
-    TEXT_OPERATORS,
-    VECTOR_PAINT_OPERATORS,
-    VECTOR_PATH_OPERATORS,
 )
 from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.spec.s_07_syntax.types import CachedPdfObject
@@ -60,34 +54,6 @@ TEXT_CLIP_PREFIX_RE = re.compile(
 TEXT_SHOWING_CANDIDATES = (b'"', b"'", b"Tj", b"TJ", b"Do")
 TEXT_OR_LEXICAL_MARKER_RE = re.compile(rb"""[%(/<>\[\]"']|T[jJ]|Do|BI""")
 CONTAINER_LEXICAL_MARKER_RE = re.compile(rb"[%(<>\[\]]")
-
-
-@dataclass(frozen=True, slots=True)
-class ContentOperatorCounts:
-    """Coarse content-stream operator counts for cheap page preflight."""
-
-    text: int = 0
-    image: int = 0
-    vector_path: int = 0
-    vector_paint: int = 0
-    graphics_state: int = 0
-    unknown: int = 0
-    malformed: int = 0
-
-    @property
-    def vector(self) -> int:
-        return self.vector_path + self.vector_paint
-
-    @property
-    def total(self) -> int:
-        return (
-            self.text
-            + self.image
-            + self.vector_path
-            + self.vector_paint
-            + self.graphics_state
-            + self.unknown
-        )
 
 
 def _advance_past_lexical_markers(
@@ -177,48 +143,6 @@ def content_stream_may_show_text(data: bytes | memoryview) -> bool:
             pos = inline_image_lexer.pos
 
     return False
-
-
-def count_content_stream_operators(data: bytes | memoryview) -> ContentOperatorCounts:
-    """Return coarse operator counts without constructing graphics or text state."""
-    text = image = vector_path = vector_paint = graphics_state = unknown = 0
-
-    def collector(operands: OperandWindow, depth: int, operator: str) -> None:
-        nonlocal text, image, vector_path, vector_paint, graphics_state, unknown
-        if operator in TEXT_OPERATORS:
-            text += 1
-        elif operator in IMAGE_OPERATORS:
-            image += 1
-        elif operator in VECTOR_PATH_OPERATORS:
-            vector_path += 1
-        elif operator in VECTOR_PAINT_OPERATORS:
-            vector_paint += 1
-        elif operator in GRAPHICS_STATE_OPERATORS:
-            graphics_state += 1
-        elif operator:
-            unknown += 1
-
-    try:
-        handlers = CollectedIntegerHandlers(collector)
-        dispatch_operations(
-            PdfLexer(data),
-            CollectedStringHandlers(collector),
-            None,
-            handlers,
-            handlers,
-            None,
-            0,
-        )
-    except PdfParseError:
-        return ContentOperatorCounts(malformed=1)
-    return ContentOperatorCounts(
-        text=text,
-        image=image,
-        vector_path=vector_path,
-        vector_paint=vector_paint,
-        graphics_state=graphics_state,
-        unknown=unknown,
-    )
 
 
 def skip_text_clip_prefix(raw_bytes: bytes | memoryview, pos: int) -> int | None:
@@ -1278,10 +1202,8 @@ __all__ = (
     "ContentOperand",
     "ContentOperands",
     "ContentOperation",
-    "ContentOperatorCounts",
     "OperandWindow",
     "content_stream_may_show_text",
-    "count_content_stream_operators",
     "dispatch_operations",
     "iter_content_operations",
     "validate_inline_images",

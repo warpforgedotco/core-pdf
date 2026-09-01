@@ -200,19 +200,6 @@ OPERATOR_SPECS = {
 TYPE3_REPLAY_OPERATORS = frozenset(
     name for name, spec in OPERATOR_SPECS.items() if spec.type3_replay
 )
-TEXT_OPERATORS = frozenset(name for name, spec in OPERATOR_SPECS.items() if spec.category == "text")
-IMAGE_OPERATORS = frozenset(
-    {name for name, spec in OPERATOR_SPECS.items() if spec.category == "image"} | {"ID", "EI"}
-)
-VECTOR_PATH_OPERATORS = frozenset(
-    name for name, spec in OPERATOR_SPECS.items() if spec.category == "vector_path"
-)
-VECTOR_PAINT_OPERATORS = frozenset(
-    name for name, spec in OPERATOR_SPECS.items() if spec.category == "vector_paint"
-)
-GRAPHICS_STATE_OPERATORS = frozenset(
-    name for name, spec in OPERATOR_SPECS.items() if spec.category == "graphics_state"
-)
 
 internal_TEXT_ONLY_SKIP_OPS = {name for name, spec in OPERATOR_SPECS.items() if spec.text_only_skip}
 # Some damaged producers emit `N` as a path no-op. It has no normal handler,
@@ -229,15 +216,10 @@ del internal_op
 
 
 __all__ = (
-    "GRAPHICS_STATE_OPERATORS",
-    "IMAGE_OPERATORS",
     "OPERATOR_SPECS",
     "TEXT_ONLY_SKIP_DOUBLE",
     "TEXT_ONLY_SKIP_SINGLE",
-    "TEXT_OPERATORS",
     "TYPE3_REPLAY_OPERATORS",
-    "VECTOR_PAINT_OPERATORS",
-    "VECTOR_PATH_OPERATORS",
     "build_operator_tables",
 )
 

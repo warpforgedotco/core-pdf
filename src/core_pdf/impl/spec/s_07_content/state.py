@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import contextlib
 import typing
+from functools import lru_cache
 from math import ceil, hypot
 from typing import TYPE_CHECKING, Any, TypeAlias, cast
 
@@ -49,7 +50,6 @@ from core_pdf.impl.spec.s_07_content.capture import (
     type3_font_matrix,
     type3_glyph_names,
 )
-from core_pdf.impl.spec.s_07_content.geometry import transform_bbox
 from core_pdf.impl.spec.s_07_content.marked_content import MarkedContentEntry
 from core_pdf.impl.spec.s_07_content.operations import (
     ContentOperand,
@@ -66,7 +66,6 @@ from core_pdf.impl.spec.s_07_content.operator_tables import (
     TYPE3_REPLAY_OPERATORS,
     build_operator_tables,
 )
-from core_pdf.impl.spec.s_07_content.operators import detect_rotation_from_linear
 from core_pdf.impl.spec.s_07_content.stream_state import (
     ContentStreamFrame,
     LayoutFormId,
@@ -78,7 +77,6 @@ from core_pdf.impl.spec.s_07_content.stream_state import (
 from core_pdf.impl.spec.s_07_content.text_helpers import (
     cached_encode_latin1,
     can_merge_cross_font_word,
-    detect_ligature_overrides,
     gap_separator,
     is_garbage_text,
     normalize_extracted_text,
@@ -92,12 +90,13 @@ from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     parse_int,
 )
 from core_pdf.impl.spec.s_08_graphics.image_decode import ImageSource
-from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
+from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix, transform_bbox
 from core_pdf.impl.spec.s_09_fonts.decoder import (
     DecodedGlyph,
     FontDecoder,
     Type3CharProcProgram,
 )
+from core_pdf.impl.spec.s_09_fonts.ligatures import detect_ligature_overrides
 from core_pdf.impl.types import Rectangle
 
 OperationHandler: TypeAlias = StateOperationHandler
@@ -143,6 +142,49 @@ internal_GraphicsState: TypeAlias = tuple[
 ]
 
 TYPE3_REPLAY_OPERAND_TYPES = (int, float, PdfName, PdfString)
+
+
+MATRIX_TOLERANCE = 0.1
+
+
+@lru_cache(maxsize=128)
+def detect_rotation_from_linear(
+    A: float, B: float, C: float, D: float, tolerance: float = MATRIX_TOLERANCE
+) -> int:
+    scale_x = hypot(A, B)
+    scale_y = hypot(C, D)
+    if scale_x <= 0 or scale_y <= 0:
+        return 0
+    na, nb, nc, nd = A / scale_x, B / scale_x, C / scale_y, D / scale_y
+    if (
+        abs(na - 1.0) < tolerance
+        and abs(nb) < tolerance
+        and abs(nc) < tolerance
+        and abs(nd - 1.0) < tolerance
+    ):
+        return 0
+    if (
+        abs(na) < tolerance
+        and abs(nb - 1.0) < tolerance
+        and abs(nc + 1.0) < tolerance
+        and abs(nd) < tolerance
+    ):
+        return 90
+    if (
+        abs(na + 1.0) < tolerance
+        and abs(nb) < tolerance
+        and abs(nc) < tolerance
+        and abs(nd + 1.0) < tolerance
+    ):
+        return 180
+    if (
+        abs(na) < tolerance
+        and abs(nb + 1.0) < tolerance
+        and abs(nc - 1.0) < tolerance
+        and abs(nd) < tolerance
+    ):
+        return 270
+    return 0
 
 
 def internal_quad_bounds(

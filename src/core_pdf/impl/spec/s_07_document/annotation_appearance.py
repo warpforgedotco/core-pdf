@@ -14,10 +14,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, cast
 
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.spec.s_07_content.geometry import transform_bbox
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict
-from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
+from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix, transform_bbox
 
 if TYPE_CHECKING:
     from core_pdf.impl.spec.s_07_content.state import TextState
