@@ -4,9 +4,7 @@
 from __future__ import annotations
 
 import os
-import threading
 import typing
-from collections import OrderedDict
 
 import numpy
 
@@ -15,6 +13,7 @@ if typing.TYPE_CHECKING:
 
     FilterFn = Callable[[bytes, object], bytes]
 
+from core_pdf.impl.runtime.image_cache import ImageCache, ImageCacheKey
 from core_pdf.impl.spec.s_07_filters.codecs import (
     apply_ascii85,
     apply_ascii_hex,
@@ -70,59 +69,48 @@ FILTER_MAP: dict[str, FilterFn] = {
     for descriptor in FILTER_DESCRIPTORS
     if descriptor.decoder is not None
 }
-EXPENSIVE_DECODE_CACHE_MAX_BYTES = int(
-    os.environ.get("CORE_PDF_EXPENSIVE_DECODE_CACHE_BYTES", str(384 * 1024 * 1024))
-)
-internal_EXPENSIVE_DECODE_CACHE: OrderedDict[tuple[object, ...], tuple[bytes, bytes]] = (
-    OrderedDict()
-)
-internal_EXPENSIVE_DECODE_CACHE_BYTES = 0
-internal_EXPENSIVE_DECODE_CACHE_LOCK = threading.Lock()
+EXPENSIVE_DECODE_CACHE_BYTES_ENV = "CORE_PDF_EXPENSIVE_DECODE_CACHE_BYTES"
+DEFAULT_EXPENSIVE_DECODE_CACHE_BYTES = 384 * 1024 * 1024
+
+
+def internal_expensive_decode_cache_bytes() -> int:
+    raw = os.environ.get(EXPENSIVE_DECODE_CACHE_BYTES_ENV)
+    if raw is None:
+        return DEFAULT_EXPENSIVE_DECODE_CACHE_BYTES
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        return DEFAULT_EXPENSIVE_DECODE_CACHE_BYTES
+
+
+internal_EXPENSIVE_DECODE_CACHE = ImageCache(internal_expensive_decode_cache_bytes())
 
 
 def expensive_decode_cache_key(
     data: bytes,
     filters: typing.Sequence[str],
     params: typing.Sequence[object],
-) -> tuple[object, ...]:
-    return (
-        id(data),
-        len(data),
-        tuple(filters),
-        repr(params),
+) -> ImageCacheKey:
+    return ImageCacheKey(
+        kind="expensive_decode",
+        identity=(id(data), len(data), tuple(filters), repr(params)),
     )
 
 
-def cached_expensive_decode(key: tuple[object, ...], data: bytes) -> bytes | None:
-    with internal_EXPENSIVE_DECODE_CACHE_LOCK:
-        entry = internal_EXPENSIVE_DECODE_CACHE.get(key)
-        if entry is None:
-            return None
-        source, decoded = entry
-        if source is not data:
-            internal_EXPENSIVE_DECODE_CACHE.pop(key, None)
-            return None
-        internal_EXPENSIVE_DECODE_CACHE.move_to_end(key)
-        return decoded
+def cached_expensive_decode(key: ImageCacheKey, data: bytes) -> bytes | None:
+    entry = internal_EXPENSIVE_DECODE_CACHE.get(key)
+    if entry is None:
+        return None
+    source, decoded = entry
+    # The key embeds id(data), which CPython reuses after a buffer is freed, so
+    # the entry carries its source and is only trusted for that exact object. A
+    # mismatch needs no eviction: the caller decodes and stores under this key,
+    # which replaces the entry.
+    return decoded if source is data else None
 
 
-def store_expensive_decode(key: tuple[object, ...], data: bytes, decoded: bytes) -> None:
-    entry_size = len(data) + len(decoded)
-    if EXPENSIVE_DECODE_CACHE_MAX_BYTES <= 0 or entry_size > EXPENSIVE_DECODE_CACHE_MAX_BYTES:
-        return
-    global internal_EXPENSIVE_DECODE_CACHE_BYTES
-    with internal_EXPENSIVE_DECODE_CACHE_LOCK:
-        previous = internal_EXPENSIVE_DECODE_CACHE.pop(key, None)
-        if previous is not None:
-            internal_EXPENSIVE_DECODE_CACHE_BYTES -= len(previous[0]) + len(previous[1])
-        internal_EXPENSIVE_DECODE_CACHE[key] = (data, decoded)
-        internal_EXPENSIVE_DECODE_CACHE_BYTES += entry_size
-        while (
-            internal_EXPENSIVE_DECODE_CACHE
-            and internal_EXPENSIVE_DECODE_CACHE_BYTES > EXPENSIVE_DECODE_CACHE_MAX_BYTES
-        ):
-            ignored_key, evicted = internal_EXPENSIVE_DECODE_CACHE.popitem(last=False)
-            internal_EXPENSIVE_DECODE_CACHE_BYTES -= len(evicted[0]) + len(evicted[1])
+def store_expensive_decode(key: ImageCacheKey, data: bytes, decoded: bytes) -> None:
+    internal_EXPENSIVE_DECODE_CACHE.put(key, (data, decoded), size=len(data) + len(decoded))
 
 
 def internal_coerce_decoder_bytes(result: object) -> bytes:

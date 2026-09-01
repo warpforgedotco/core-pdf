@@ -19,7 +19,6 @@ from core_pdf.impl.spec.s_09_fonts.data.base_encodings import (
 )
 from core_pdf.impl.spec.s_09_fonts.glyphs import glyph_name_to_unicode
 
-EncodingFallback = Callable[[int], str]
 LIGATURE_TEXT_OVERRIDES = {
     "\ufb00": "ff",
     "\ufb01": "fi",
@@ -27,10 +26,6 @@ LIGATURE_TEXT_OVERRIDES = {
     "\ufb03": "ffi",
     "\ufb04": "ffl",
 }
-
-
-def fallback_with_pdfdoc(b: int) -> str:
-    return normalize_ligature_text(PDFDOC_ENCODING_TABLE[b])
 
 
 def normalize_ligature_text(text: str) -> str:
@@ -117,12 +112,12 @@ def base_encoding_glyph_names(key: str | None) -> tuple[str, ...]:
 
 
 def build_decode_table(
-    fallback_fn: EncodingFallback,
+    base: tuple[str, ...],
     differences: dict[int, str] | None = None,
 ) -> tuple[str, ...]:
     if not differences:
-        return tuple(fallback_fn(b) for b in range(256))
-    table = [fallback_fn(b) for b in range(256)]
+        return base
+    table = list(base)
     for code, glyph_name in differences.items():
         mapped = unicode_for_glyph_name(glyph_name)
         if mapped is None:
@@ -146,7 +141,8 @@ def cached_decode_table(
     key: str, differences_items: tuple[tuple[int, str], ...]
 ) -> tuple[str, ...]:
     differences = dict(differences_items)
-    return build_decode_table(ENCODING_FALLBACKS.get(key, fallback_with_pdfdoc), differences)
+    base = ENCODING_FALLBACKS.get(key, internal_PDFDOC_FALLBACK_TABLE)
+    return build_decode_table(base, differences)
 
 
 def parse_differences(
@@ -177,12 +173,18 @@ def parse_differences(
     return differences
 
 
-ENCODING_FALLBACKS: dict[str, EncodingFallback] = {
-    "StandardEncoding": STANDARD_ENCODING_TABLE.__getitem__,
+# PDFDocEncoding is the only base whose entries need ligature expansion, so it
+# is normalized once here rather than per lookup.
+internal_PDFDOC_FALLBACK_TABLE: tuple[str, ...] = tuple(
+    normalize_ligature_text(text) for text in PDFDOC_ENCODING_TABLE
+)
+
+ENCODING_FALLBACKS: dict[str, tuple[str, ...]] = {
+    "StandardEncoding": STANDARD_ENCODING_TABLE,
     # Type3 fonts use StandardEncoding when /Encoding is omitted.  Keep this
     # fallback separate from the parser's default so explicitly supplied
     # Differences can still override individual character codes.
-    "Type3": STANDARD_ENCODING_TABLE.__getitem__,
-    "WinAnsiEncoding": WIN_ANSI_ENCODING_TABLE.__getitem__,
-    "MacRomanEncoding": MAC_ROMAN_ENCODING_TABLE.__getitem__,
+    "Type3": STANDARD_ENCODING_TABLE,
+    "WinAnsiEncoding": WIN_ANSI_ENCODING_TABLE,
+    "MacRomanEncoding": MAC_ROMAN_ENCODING_TABLE,
 }

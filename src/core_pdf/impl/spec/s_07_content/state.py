@@ -3218,17 +3218,21 @@ class TextState:
 
     def op_BDC(self, operands: OperandWindow, depth: int) -> None:
         tag = self.document.resolver.resolve_name(operands[0]) if operands else None
-        layer = (
-            self.resolve_marked_content_layer(operands[1])
-            if tag == "OC" and len(operands) >= 2
-            else None
-        )
-        actual_text = (
-            self.resolve_marked_content_actual_text(operands[1])
-            if tag == "Span" and len(operands) >= 2
-            else None
-        )
-        mcid = self.resolve_marked_content_mcid(operands[1]) if len(operands) >= 2 else None
+        layer: str | None = None
+        actual_text: str | None = None
+        mcid: int | None = None
+        if len(operands) >= 2:
+            properties = operands[1]
+            if tag == "OC":
+                layer = self.resolve_marked_content_layer(properties)
+            # ActualText and MCID both live in this dictionary; resolving it
+            # once can mean one fewer page-resource lookup per BDC.
+            props = self.resolve_marked_content_properties(properties)
+            if props is not None:
+                resolver = self.document.resolver
+                if tag == "Span":
+                    actual_text = resolver.resolve_str(props.get("ActualText"))
+                mcid = resolver.resolve_int(props.get("MCID"))
         self.marked_content_stack.append(
             MarkedContentEntry(layer=layer, actual_text=actual_text, mcid=mcid)
         )
@@ -3852,18 +3856,6 @@ class TextState:
     def op_DP(self, operands: OperandWindow, depth: int) -> None:
         # A property-bearing marked-content point likewise has no lasting state.
         return
-
-    def resolve_marked_content_actual_text(self: Any, value: Any) -> str | None:
-        props = self.resolve_marked_content_properties(value)
-        if not isinstance(props, dict):
-            return None
-        return self.document.resolver.resolve_str(props.get("ActualText"))
-
-    def resolve_marked_content_mcid(self: Any, value: Any) -> int | None:
-        props = self.resolve_marked_content_properties(value)
-        if not isinstance(props, dict):
-            return None
-        return self.document.resolver.resolve_int(props.get("MCID"))
 
     def resolve_marked_content_properties(self: Any, value: Any) -> dict[str, Any] | None:
         if value is None:
