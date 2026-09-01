@@ -1106,7 +1106,5 @@ class PdfLexer:
                 pos += 1
         elif pos < self.data_len and data[pos] == 10:
             pos += 1
-            if pos < self.data_len and data[pos] == 13:
-                pos += 1
 
         self.pos = pos

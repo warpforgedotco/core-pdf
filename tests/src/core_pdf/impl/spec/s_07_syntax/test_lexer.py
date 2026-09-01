@@ -253,6 +253,16 @@ def test_parse_stream_trusts_exact_length_with_embedded_keyword() -> None:
     assert bytes(stream.raw_data) == payload
 
 
+def test_parse_stream_preserves_carriage_return_after_lf_delimiter() -> None:
+    payload = b"\rbinary stream data"
+    data = f"<< /Length {len(payload)} >>\nstream\n".encode() + payload + b"\nendstream\nendobj"
+
+    stream = PdfLexer(data).parse_object()
+
+    assert isinstance(stream, PdfStream)
+    assert bytes(stream.raw_data) == payload
+
+
 def test_read_string_normalizes_lfcr_in_sliced_memoryview() -> None:
     data = memoryview(b"prefix(first\n\rsecond)suffix")[len(b"prefix") : -len(b"suffix")]
     lexer = PdfLexer(data)
