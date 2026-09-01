@@ -1,11 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 from __future__ import annotations
 
-import io
-
 import pytest
 
-from core_pdf import PdfDocument
+from tests.helpers.pdf_bytes import assemble_pdf, open_pdf, stream_obj
 
 
 def type0_font(encoding: str, descendant: int) -> bytes:
@@ -38,7 +36,7 @@ def japanese_pdf_without_to_unicode() -> bytes:
         ),
         type0_font("90ms-RKSJ-H", 5),
         cid_font(),
-        f"<< /Length {len(content)} >>\nstream\n".encode() + content + b"endstream",
+        stream_obj(content),
         (
             b"<< /Type /FontDescriptor /FontName /HeiseiMin-W3 /Flags 6 "
             b"/FontBBox [0 -257 1000 899] /ItalicAngle 0 /Ascent 859 "
@@ -47,29 +45,11 @@ def japanese_pdf_without_to_unicode() -> bytes:
         type0_font("90ms-RKSJ-V", 9),
         cid_font(),
     ]
-
-    pdf = bytearray(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
-    offsets = [0]
-    for number, obj in enumerate(objects, start=1):
-        offsets.append(len(pdf))
-        pdf.extend(f"{number} 0 obj\n".encode())
-        pdf.extend(obj)
-        pdf.extend(b"\nendobj\n")
-
-    xref_offset = len(pdf)
-    pdf.extend(f"xref\n0 {len(objects) + 1}\n".encode())
-    pdf.extend(b"0000000000 65535 f \n")
-    for offset in offsets[1:]:
-        pdf.extend(f"{offset:010d} 00000 n \n".encode())
-    pdf.extend(
-        f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\n"
-        f"startxref\n{xref_offset}\n%%EOF\n".encode()
-    )
-    return bytes(pdf)
+    return assemble_pdf(objects)
 
 
 def test_extracts_horizontal_and_vertical_japanese_without_to_unicode() -> None:
-    with PdfDocument.open(io.BytesIO(japanese_pdf_without_to_unicode())) as document:
+    with open_pdf(japanese_pdf_without_to_unicode()) as document:
         page = document.pages[0]
         result = page.extract()
         text = "\n".join(line.text for block in result.blocks for line in block.lines)

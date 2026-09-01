@@ -1,0 +1,248 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+"""Stand-ins for the OCR stage's external boundaries: Tesseract and the task scope."""
+
+from __future__ import annotations
+
+from collections.abc import Callable, Iterable, Iterator, Sequence
+from dataclasses import dataclass, field
+from threading import RLock
+from typing import Any, cast
+
+import pytest
+
+from core_pdf.impl.parse import (
+    CapturedPage,
+    ObservationBatch,
+    ObservationSource,
+    PagePlanReason,
+    PageRoute,
+    RecognitionReport,
+    RecognitionResult,
+    WorkPlan,
+    ocr,
+    ocr_raster,
+    ocr_regions,
+    ocr_stroked_vector,
+    ocr_tesseract,
+)
+from core_pdf.impl.runtime.cache import ExtractionCache
+from core_pdf.impl.runtime.execution import TaskScope
+
+Box = tuple[float, float, float, float]
+PixelBox = tuple[int, int, int, int]
+IteratorEntry = tuple[str, float, PixelBox]
+
+
+def patch_ocr_helper(monkeypatch: pytest.MonkeyPatch, name: str, value: object) -> None:
+    """Patch ``name`` in every OCR module that binds it.
+
+    The stage is split across modules that each bind imported helpers into their
+    own namespace, so patching one module intercepts only that module's calls.
+    Tests mean "make this helper behave differently wherever it runs".
+    """
+    for module in (ocr, ocr_raster, ocr_regions, ocr_stroked_vector, ocr_tesseract):
+        if hasattr(module, name):
+            monkeypatch.setattr(module, name, value)
+
+
+def patch_dominant_region(
+    monkeypatch: pytest.MonkeyPatch,
+    raster: ocr.internal_Raster | None,
+    box: Box = (0.0, 0.0, 10.0, 10.0),
+) -> None:
+    """Make the dominant page image resolve to ``raster`` over ``box`` (or to nothing)."""
+    region = None if raster is None else ocr.internal_RasterRegion(raster, box)
+    patch_ocr_helper(
+        monkeypatch,
+        "internal_dominant_image_region",
+        lambda internal_capture, **internal_kwargs: region,
+    )
+
+
+class InlineTaskScope:
+    """A ``TaskScope`` that runs everything on the calling thread."""
+
+    def raise_if_cancelled(self) -> None:
+        pass
+
+    def map_ordered(
+        self,
+        function: Callable[[Any], Any],
+        values: Iterable[Any],
+        *,
+        stage: object = None,
+        **internal_kwargs: object,
+    ) -> Iterator[Any]:
+        return map(function, values)
+
+
+def inline_scope() -> TaskScope:
+    return cast(TaskScope, InlineTaskScope())
+
+
+class FakeResultIterator:
+    """A tesserocr result iterator over fixed ``(text, confidence, bbox)`` entries.
+
+    ``levels`` records the iteration level every accessor was asked for.
+    """
+
+    def __init__(
+        self,
+        entries: Sequence[IteratorEntry],
+        *,
+        line_starts: Sequence[bool] | None = None,
+    ) -> None:
+        self.entries = tuple(entries)
+        self.line_starts = tuple(line_starts) if line_starts is not None else None
+        self.index = 0
+        self.levels: list[object] = []
+
+    def IsAtBeginningOf(self, level: object) -> bool:
+        return self.line_starts[self.index] if self.line_starts is not None else True
+
+    def GetUTF8Text(self, level: object) -> str:
+        self.levels.append(level)
+        return self.entries[self.index][0]
+
+    def Confidence(self, level: object) -> float:
+        self.levels.append(level)
+        return self.entries[self.index][1]
+
+    def BoundingBox(self, level: object) -> PixelBox:
+        self.levels.append(level)
+        return self.entries[self.index][2]
+
+    def Next(self, level: object) -> bool:
+        self.levels.append(level)
+        self.index += 1
+        return self.index < len(self.entries)
+
+
+class FakeTessApi:
+    """The ``PyTessBaseAPI`` surface the OCR stage calls, recording what it receives.
+
+    ``iterators`` are handed out in order by ``GetIterator``; when they run out
+    the fake returns ``None`` (what Tesseract does after a failed recognition).
+    ``rectangle_error`` makes ``SetRectangle`` raise, for tests asserting that a
+    full-page task never sets one.
+    """
+
+    def __init__(
+        self,
+        iterators: Sequence[FakeResultIterator] = (),
+        *,
+        recognize: bool = True,
+        rectangle_error: str | None = None,
+    ) -> None:
+        self.pending = list(iterators)
+        self.recognize = recognize
+        self.rectangle_error = rectangle_error
+        self.image: bytes | None = None
+        self.rectangle: PixelBox | None = None
+        self.resolution: int | None = None
+        self.mode: int | None = None
+        self.recognitions = 0
+        self.iterators = 0
+
+    def SetVariable(self, name: str, value: str) -> None:
+        pass
+
+    def SetPageSegMode(self, mode: int) -> None:
+        self.mode = mode
+
+    def SetImageBytes(self, data: bytes, *internal_args: object) -> None:
+        self.image = data
+
+    def SetRectangle(self, left: int, top: int, width: int, height: int) -> None:
+        if self.rectangle_error is not None:
+            raise AssertionError(self.rectangle_error)
+        self.rectangle = (left, top, width, height)
+
+    def SetSourceResolution(self, resolution: int) -> None:
+        self.resolution = resolution
+
+    def Recognize(self, **internal_kwargs: object) -> bool:
+        self.recognitions += 1
+        return self.recognize
+
+    def GetIterator(self) -> FakeResultIterator | None:
+        self.iterators += 1
+        return self.pending.pop(0) if self.pending else None
+
+    def Clear(self) -> None:
+        pass
+
+
+def patch_engine(monkeypatch: pytest.MonkeyPatch, api: FakeTessApi | None = None) -> FakeTessApi:
+    """Bind ``ocr_tesseract.internal_api`` to one fake so no Tesseract engine is built."""
+    engine = api if api is not None else FakeTessApi()
+    monkeypatch.setattr(ocr_tesseract, "internal_api", lambda internal_mode: engine)
+    return engine
+
+
+@dataclass(slots=True)
+class FakeDocumentPage:
+    """The page attributes document-level enrichment reads and locks on."""
+
+    page_number: int
+    extraction_cache: ExtractionCache = field(default_factory=ExtractionCache)
+    internal_page_lock: RLock = field(default_factory=RLock)
+
+
+class RecordingExtraction:
+    """A page extraction whose plan and recognition calls are recorded.
+
+    ``recognition`` answers with one high-confidence ``seed`` observation and a
+    report carrying ``alphabet`` as the learned stroked-vector alphabet.
+    """
+
+    def __init__(
+        self,
+        page: FakeDocumentPage,
+        capture: CapturedPage,
+        *,
+        alphabet: tuple[tuple[Any, str], ...],
+        plan_calls: list[int],
+        ocr_calls: list[int],
+    ) -> None:
+        self.page = page
+        self.internal_capture = capture
+        self.internal_recognition: RecognitionResult | None = None
+        self.internal_recognized_at: float | None = None
+        self.alphabet = alphabet
+        self.plan_calls = plan_calls
+        self.ocr_calls = ocr_calls
+
+    def capture(self) -> CapturedPage:
+        return self.internal_capture
+
+    def plan(self) -> WorkPlan:
+        self.plan_calls.append(self.page.page_number)
+        return WorkPlan(PageRoute.OCR, reason=PagePlanReason.STROKED_VECTOR_TEXT)
+
+    def recognition(self, context: object) -> RecognitionResult:
+        self.ocr_calls.append(self.page.page_number)
+        observations = ObservationBatch.from_columns(
+            ("seed",),
+            ((0.0, 0.0, 1.0, 1.0),),
+            source=ObservationSource.OCR,
+            confidence=(99.0,),
+        )
+        self.internal_recognition = RecognitionResult(
+            observations,
+            RecognitionReport(stroked_vector_alphabet=self.alphabet),
+        )
+        return self.internal_recognition
+
+
+__all__ = (
+    "FakeDocumentPage",
+    "FakeResultIterator",
+    "FakeTessApi",
+    "InlineTaskScope",
+    "RecordingExtraction",
+    "inline_scope",
+    "patch_dominant_region",
+    "patch_engine",
+    "patch_ocr_helper",
+)

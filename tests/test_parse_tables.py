@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
-from typing import Any, cast
+from collections.abc import Callable
 
 import numpy
+import pytest
 
+from core_pdf.impl.model.runs import TextRun
 from core_pdf.impl.parse import (
     CapturedPage,
     ObservationBatch,
     ObservationSource,
-    PageEvidence,
 )
 from core_pdf.impl.parse.tables import (
     extract_tables,
@@ -22,19 +22,10 @@ from core_pdf.impl.parse.tables import (
     internal_stream_tables,
     internal_table_character_spaced_prose,
 )
+from core_pdf.impl.spec.s_07_content.capture import CapturedLine
 from core_pdf.impl.structured import Table, TableCell
-
-
-def page_evidence() -> PageEvidence:
-    return PageEvidence(
-        page_area=10_000.0,
-        native_characters=0,
-        visible_native_characters=0,
-        suspicious_characters=0,
-        image_count=0,
-        image_area_ratio=0.0,
-        vector_complexity=0,
-    )
+from tests.helpers.parse_fakes import capture as make_capture
+from tests.helpers.parse_fakes import page_evidence, text_run
 
 
 def test_split_grid_component_separates_vertical_table_regions() -> None:
@@ -165,83 +156,65 @@ def test_compact_stream_table_handles_interleaved_prose_and_split_cells() -> Non
     ]
 
 
-def test_stream_table_rejects_dense_prose_columns() -> None:
+def grid_observations(
+    row_count: int,
+    column_x0s: tuple[float, ...],
+    cell_width: float,
+    text_for: Callable[[int, int], str],
+) -> tuple[ObservationBatch, list[list[int]], list[list[tuple[int, int]]]]:
+    """A regular grid of one observation per cell, with its row and column index lists."""
     texts: list[str] = []
     boxes: list[tuple[float, float, float, float]] = []
     rows: list[list[int]] = []
-    columns: list[list[tuple[int, int]]] = [[] for _ in range(4)]
-    index = 0
-    for row in range(6):
-        row_indexes = []
-        y0 = float((5 - row) * 12)
-        for column, x0 in enumerate((0.0, 70.0, 140.0, 210.0)):
-            texts.append(f"Sentence fragment {row}, column {column}.")
-            boxes.append((x0, y0, x0 + 55.0, y0 + 10.0))
-            row_indexes.append(index)
-            columns[column].append((row, index))
-            index += 1
-        rows.append(row_indexes)
-    observations = ObservationBatch.from_columns(
-        texts,
-        boxes,
-        source=ObservationSource.NATIVE,
+    columns: list[list[tuple[int, int]]] = [[] for _ in column_x0s]
+    for row in range(row_count):
+        y0 = float((row_count - 1 - row) * 12)
+        rows.append(list(range(len(texts), len(texts) + len(column_x0s))))
+        for column, x0 in enumerate(column_x0s):
+            columns[column].append((row, len(texts)))
+            texts.append(text_for(row, column))
+            boxes.append((x0, y0, x0 + cell_width, y0 + 10.0))
+    return (
+        ObservationBatch.from_columns(texts, boxes, source=ObservationSource.NATIVE),
+        rows,
+        columns,
     )
 
-    table = internal_stream_table(0, observations, rows, list(range(6)), columns)
 
-    assert table is None
-
-
-def test_stream_table_rejects_character_spaced_prose() -> None:
-    texts: list[str] = []
-    boxes: list[tuple[float, float, float, float]] = []
-    rows: list[list[int]] = []
-    columns: list[list[tuple[int, int]]] = [[] for _ in range(8)]
-    index = 0
-    for row in range(5):
-        row_indexes = []
-        y0 = float((4 - row) * 12)
-        for column, x0 in enumerate((0.0, 50.0, 100.0, 150.0, 200.0, 250.0, 300.0, 350.0)):
-            texts.append("s p a c e d t e x t")
-            boxes.append((x0, y0, x0 + 40.0, y0 + 10.0))
-            row_indexes.append(index)
-            columns[column].append((row, index))
-            index += 1
-        rows.append(row_indexes)
-    observations = ObservationBatch.from_columns(
-        texts,
-        boxes,
-        source=ObservationSource.NATIVE,
-    )
-
-    table = internal_stream_table(0, observations, rows, list(range(5)), columns)
-
-    assert table is None
+EIGHT_COLUMNS = (0.0, 50.0, 100.0, 150.0, 200.0, 250.0, 300.0, 350.0)
 
 
-def test_stream_table_rejects_character_spaced_prose_with_numeric_noise() -> None:
-    texts: list[str] = []
-    boxes: list[tuple[float, float, float, float]] = []
-    rows: list[list[int]] = []
-    columns: list[list[tuple[int, int]]] = [[] for _ in range(8)]
-    index = 0
-    for row in range(5):
-        row_indexes = []
-        y0 = float((4 - row) * 12)
-        for column, x0 in enumerate((0.0, 50.0, 100.0, 150.0, 200.0, 250.0, 300.0, 350.0)):
-            texts.append("2024" if row == 0 and column == 0 else "s p a c e d t e x t")
-            boxes.append((x0, y0, x0 + 40.0, y0 + 10.0))
-            row_indexes.append(index)
-            columns[column].append((row, index))
-            index += 1
-        rows.append(row_indexes)
-    observations = ObservationBatch.from_columns(
-        texts,
-        boxes,
-        source=ObservationSource.NATIVE,
-    )
+@pytest.mark.parametrize(
+    ("row_count", "column_x0s", "cell_width", "text_for"),
+    [
+        pytest.param(
+            6,
+            (0.0, 70.0, 140.0, 210.0),
+            55.0,
+            lambda row, column: f"Sentence fragment {row}, column {column}.",
+            id="dense-prose",
+        ),
+        pytest.param(
+            5, EIGHT_COLUMNS, 40.0, lambda row, column: "s p a c e d t e x t", id="spaced-prose"
+        ),
+        pytest.param(
+            5,
+            EIGHT_COLUMNS,
+            40.0,
+            lambda row, column: "2024" if (row, column) == (0, 0) else "s p a c e d t e x t",
+            id="spaced-prose-with-numeric-noise",
+        ),
+    ],
+)
+def test_stream_table_rejects_prose_grids(
+    row_count: int,
+    column_x0s: tuple[float, ...],
+    cell_width: float,
+    text_for: Callable[[int, int], str],
+) -> None:
+    observations, rows, columns = grid_observations(row_count, column_x0s, cell_width, text_for)
 
-    table = internal_stream_table(0, observations, rows, list(range(5)), columns)
+    table = internal_stream_table(0, observations, rows, list(range(row_count)), columns)
 
     assert table is None
 
@@ -297,23 +270,41 @@ def test_split_semantic_table_separates_numeric_sections() -> None:
     ]
 
 
-def line(x0: float, y0: float, x1: float, y1: float) -> SimpleNamespace:
-    return SimpleNamespace(x0=x0, y0=y0, x1=x1, y1=y1)
+def line(x0: float, y0: float, x1: float, y1: float) -> CapturedLine:
+    return CapturedLine(x0, y0, x1, y1, 0.5)
 
 
-def text(value: str, x: float, y: float, sequence: int) -> SimpleNamespace:
-    return SimpleNamespace(
-        text=value,
-        x0=x,
-        y0=y,
-        x1=x + 5.0,
-        y1=y + 5.0,
-        seqno=sequence,
-        visible=True,
+def text(value: str, x: float, y: float, sequence: int) -> TextRun:
+    return text_run(value, x, y, x + 5.0, y + 5.0, seqno=sequence)
+
+
+RULED_GRID = (
+    line(10.0, 90.0, 90.0, 90.0),
+    line(10.0, 50.0, 90.0, 50.0),
+    line(10.0, 10.0, 90.0, 10.0),
+    line(10.0, 10.0, 10.0, 90.0),
+    line(50.0, 10.0, 50.0, 90.0),
+    line(90.0, 10.0, 90.0, 90.0),
+)
+
+
+def table_capture(
+    runs: tuple[TextRun, ...],
+    *,
+    grid_lines: tuple[CapturedLine, ...] = (),
+    width: float = 100.0,
+    height: float = 100.0,
+) -> CapturedPage:
+    return make_capture(
+        page_evidence(page_area=10_000.0),
+        runs=runs,
+        grid_lines=grid_lines,
+        width=width,
+        height=height,
     )
 
 
-def observations(runs: tuple[Any, ...]) -> ObservationBatch:
+def observations(runs: tuple[TextRun, ...]) -> ObservationBatch:
     return ObservationBatch.from_columns(
         (run.text for run in runs),
         ((run.x0, run.y0, run.x1, run.y1) for run in runs),
@@ -325,26 +316,14 @@ def observations(runs: tuple[Any, ...]) -> ObservationBatch:
 
 
 def test_extract_tables_assigns_runs_to_ruled_cells() -> None:
-    capture = cast(
-        CapturedPage,
-        SimpleNamespace(
-            page=SimpleNamespace(width=100.0, height=100.0),
-            evidence=page_evidence(),
-            grid_lines=(
-                line(10.0, 90.0, 90.0, 90.0),
-                line(10.0, 50.0, 90.0, 50.0),
-                line(10.0, 10.0, 90.0, 10.0),
-                line(10.0, 10.0, 10.0, 90.0),
-                line(50.0, 10.0, 50.0, 90.0),
-                line(90.0, 10.0, 90.0, 90.0),
-            ),
-            runs=(
-                text("top-left", 20.0, 70.0, 0),
-                text("top-right", 60.0, 70.0, 1),
-                text("bottom-left", 20.0, 30.0, 2),
-                text("bottom-right", 60.0, 30.0, 3),
-            ),
+    capture = table_capture(
+        (
+            text("top-left", 20.0, 70.0, 0),
+            text("top-right", 60.0, 70.0, 1),
+            text("bottom-left", 20.0, 30.0, 2),
+            text("bottom-right", 60.0, 30.0, 3),
         ),
+        grid_lines=RULED_GRID,
     )
 
     tables = extract_tables(capture, observations(capture.runs))
@@ -405,21 +384,8 @@ def test_extract_tables_ignores_many_observations_outside_ruled_component() -> N
     outside_runs = tuple(
         text(f"outside-{index}", 200.0 + index * 10.0, 200.0, index + 4) for index in range(300)
     )
-    capture = cast(
-        CapturedPage,
-        SimpleNamespace(
-            page=SimpleNamespace(width=4_000.0, height=4_000.0),
-            evidence=page_evidence(),
-            grid_lines=(
-                line(10.0, 90.0, 90.0, 90.0),
-                line(10.0, 50.0, 90.0, 50.0),
-                line(10.0, 10.0, 90.0, 10.0),
-                line(10.0, 10.0, 10.0, 90.0),
-                line(50.0, 10.0, 50.0, 90.0),
-                line(90.0, 10.0, 90.0, 90.0),
-            ),
-            runs=(*table_runs, *outside_runs),
-        ),
+    capture = table_capture(
+        (*table_runs, *outside_runs), grid_lines=RULED_GRID, width=4_000.0, height=4_000.0
     )
 
     tables = extract_tables(capture, observations(capture.runs))
@@ -432,21 +398,15 @@ def test_extract_tables_ignores_many_observations_outside_ruled_component() -> N
 
 
 def test_extract_tables_detects_aligned_borderless_rows() -> None:
-    capture = cast(
-        CapturedPage,
-        SimpleNamespace(
-            page=SimpleNamespace(width=100.0, height=100.0),
-            evidence=page_evidence(),
-            grid_lines=(),
-            runs=tuple(
-                run
-                for row, y in enumerate((80.0, 65.0, 50.0, 35.0))
-                for run in (
-                    text(f"label-{row}", 10.0, y, row * 2),
-                    text(str(row + 1), 70.0, y, row * 2 + 1),
-                )
-            ),
-        ),
+    capture = table_capture(
+        tuple(
+            run
+            for row, y in enumerate((80.0, 65.0, 50.0, 35.0))
+            for run in (
+                text(f"label-{row}", 10.0, y, row * 2),
+                text(str(row + 1), 70.0, y, row * 2 + 1),
+            )
+        )
     )
 
     tables = extract_tables(capture, observations(capture.runs))
@@ -483,11 +443,7 @@ def test_stream_tables_prefer_horizontal_observations_over_rotated_noise() -> No
         rotation=(0,) * 8 + (90,) * 4,
     )
 
-    tables = internal_stream_tables(
-        cast(CapturedPage, SimpleNamespace(page=SimpleNamespace(width=100.0, height=100.0))),
-        observations,
-        0,
-    )
+    tables = internal_stream_tables(table_capture(()), observations, 0)
 
     assert len(tables) == 1
     assert [[cell.text for cell in row] for row in tables[0].rows] == [
@@ -499,26 +455,20 @@ def test_stream_tables_prefer_horizontal_observations_over_rotated_noise() -> No
 
 
 def test_extract_tables_rejects_aligned_bullet_prose() -> None:
-    capture = cast(
-        CapturedPage,
-        SimpleNamespace(
-            page=SimpleNamespace(width=100.0, height=100.0),
-            evidence=page_evidence(),
-            grid_lines=(),
-            runs=tuple(
-                run
-                for row, y in enumerate((80.0, 65.0, 50.0, 35.0))
-                for run in (
-                    text("•", 10.0, y, row * 2),
-                    text(
-                        "This is a long prose list item without tabular values",
-                        20.0,
-                        y,
-                        row * 2 + 1,
-                    ),
-                )
-            ),
-        ),
+    capture = table_capture(
+        tuple(
+            run
+            for row, y in enumerate((80.0, 65.0, 50.0, 35.0))
+            for run in (
+                text("•", 10.0, y, row * 2),
+                text(
+                    "This is a long prose list item without tabular values",
+                    20.0,
+                    y,
+                    row * 2 + 1,
+                ),
+            )
+        )
     )
 
     assert extract_tables(capture, observations(capture.runs)) == ()

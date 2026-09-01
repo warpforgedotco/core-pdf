@@ -3,10 +3,11 @@ from core_pdf.impl.layout.geometry_quality import (
 )
 from core_pdf.impl.model.glyphs import GlyphCluster
 from core_pdf.impl.model.runs import TextRun
+from tests.helpers.parse_fakes import text_run as make_text_run
 
 
 def text_run() -> TextRun:
-    return TextRun("A", 0.0, 0.0, 10.0, 10.0, 0.0, 0.0, 10.0, 4.0, 0, 0, 0)
+    return make_text_run("A", 0.0, 0.0, 10.0, 10.0, tx=0.0, ty=0.0)
 
 
 def recycle(existing: TextRun, text: str = "B", x1: float = 11.0) -> TextRun:

@@ -24,6 +24,7 @@ from core_pdf.impl.spec.s_07_security.standard import (
     internal_stream_crypt_filter_name,
 )
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict
+from tests.helpers.paths import FIXTURES, require_fixture
 
 
 def test_aes_cbc_known_vector() -> None:
@@ -594,14 +595,12 @@ def test_reserved_permission_bits_do_not_block_real_producer_output() -> None:
     These carry ``/P -9`` (bits 1 and 2 set) with V=2/R=3. Enforcing Table 22's
     writer requirements against them denied every page of a readable document.
     """
-    from pathlib import Path
-
     from core_pdf import PdfDocument as PublicDocument
 
-    fixtures = Path(__file__).resolve().parents[5] / "fixtures" / "llama_index"
-    sample = fixtures / "docs" / "examples" / "data" / "10k" / "uber_2021.pdf"
-    if not sample.exists():  # pragma: no cover - fixture tier is optional
-        pytest.skip("llama_index fixtures are not present")
+    sample = require_fixture(
+        FIXTURES / "llama_index" / "docs" / "examples" / "data" / "10k" / "uber_2021.pdf",
+        "llama_index fixtures are not present",
+    )
 
     with PublicDocument(str(sample)) as document:
         assert len(document.pages) > 0

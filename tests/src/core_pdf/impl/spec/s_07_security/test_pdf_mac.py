@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from pathlib import Path
 from typing import Any, cast
 
 import pytest
@@ -38,14 +37,9 @@ from core_pdf.impl.spec.s_07_security.pdf_mac import (
 from core_pdf.impl.spec.s_07_security.standard import internal_StandardSecurityHandler
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict
 from core_pdf.impl.types import PdfByteBuffer
+from tests.helpers.paths import FIXTURES
 
-internal_FIXTURE = (
-    Path(__file__).parents[5]
-    / "fixtures"
-    / "security_interop"
-    / "pdf_mac"
-    / "aes-256-r6-cbc-mac.pdf"
-)
+internal_FIXTURE = FIXTURES / "security_interop" / "pdf_mac" / "aes-256-r6-cbc-mac.pdf"
 internal_PASSWORD = "user-mac-cbc"
 
 

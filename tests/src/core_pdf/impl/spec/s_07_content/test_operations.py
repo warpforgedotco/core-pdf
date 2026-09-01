@@ -116,7 +116,6 @@ def test_content_operations_skip_comments_after_whitespace(
     assert list(iter_content_operations(PdfLexer(data))) == expected
 
 
-@pytest.mark.parametrize(("operator", "operands"), [("TL", "12"), ("Tz", "90"), ("Ts", "2")])
 class internal_RecordingOperationTarget:
     """Minimal bound ``OperationTarget`` that records every dispatched call.
 
@@ -305,153 +304,56 @@ def test_stage_e_guarded_operators_fall_through_silently_without_operands(
 # ---- Stage C: bound two-byte operator chain (T*, RG, rg, re, ET, cm) ----
 
 
-def test_stage_c_bt_et_fire_unconditionally() -> None:
-    target = internal_run_dispatch(b"BT ET")
-
-    assert target.calls == [("op_BT", 0), ("op_ET", 0)]
-
-
-def test_stage_c_td_value_fast_path() -> None:
-    target = internal_run_dispatch(b"1 2 TD")
-
-    assert target.calls == [("op_TD_values", (1, 2))]
-
-
-@pytest.mark.parametrize("data", [b"1 TD", b"/Foo 2 TD"])
-def test_stage_c_td_falls_back_to_generic_handler(data: bytes) -> None:
+@pytest.mark.parametrize(
+    ("data", "expected_calls"),
+    [
+        pytest.param(b"BT ET", [("op_BT", 0), ("op_ET", 0)], id="bt-et-unconditional"),
+        pytest.param(b"1 2 TD", [("op_TD_values", (1, 2))], id="td-values"),
+        pytest.param(b"1 TD", [("op_TD", 0)], id="td-too-few-generic"),
+        pytest.param(b"/Foo 2 TD", [("op_TD", 0)], id="td-wrong-type-generic"),
+        pytest.param(b"5 Tc", [("op_Tc_values", (5,))], id="tc-value"),
+        pytest.param(b"Tc", [], id="tc-missing-silent"),
+        pytest.param(b"/Foo Tc", [("op_Tc", 0)], id="tc-wrong-type-generic"),
+        pytest.param(
+            b"/F1 12 Tf", [("op_Tf_values", (PdfName.of("F1"), 12))], id="tf-values-untyped"
+        ),
+        pytest.param(b"Tf", [("op_Tf", 0)], id="tf-too-few-generic"),
+        pytest.param(b"(hello) Tj", [("append_text", (None, b"hello", True))], id="tj-text"),
+        pytest.param(b"Tj", [], id="tj-missing-silent"),
+        pytest.param(b"1 2 3 4 5 6 Tm", [("op_Tm_values", (1, 2, 3, 4, 5, 6))], id="tm-values"),
+        pytest.param(b"1 2 3 4 5 Tm", [("op_Tm", 0)], id="tm-too-few-generic"),
+        pytest.param(b"/Foo 2 3 4 5 6 Tm", [("op_Tm", 0)], id="tm-wrong-type-generic"),
+        pytest.param(b"2 Tw", [("op_Tw_values", (2,))], id="tw-value"),
+        pytest.param(b"Tw", [], id="tw-missing-silent"),
+        pytest.param(
+            b"[(hi) -20 (there)] TJ",
+            [("append_tj_array", [PdfString(b"hi"), -20, PdfString(b"there")])],
+            id="tj-array",
+        ),
+        pytest.param(b"TJ", [], id="tj-array-missing-silent"),
+        pytest.param(b"1 2 Td", [("op_Td_values", (1, 2))], id="td-lower-values"),
+        pytest.param(b"1 Td", [("op_Td", 0)], id="td-lower-too-few-generic"),
+        pytest.param(b"/Foo 2 Td", [("op_Td", 0)], id="td-lower-wrong-type-generic"),
+        pytest.param(b"1 0 0 RG", [("op_RG_values", (1, 0, 0))], id="rg-upper-values"),
+        # No generic `op_RG` exists on OperationTarget -- an unmet guard must
+        # fall through to Stage D/E/F and call nothing, not raise.
+        pytest.param(b"1 0 RG", [], id="rg-upper-too-few-silent"),
+        pytest.param(b"1 0 0 rg", [("op_rg_values", (1, 0, 0))], id="rg-lower-values"),
+        pytest.param(b"1 0 rg", [], id="rg-lower-too-few-silent"),
+        pytest.param(b"0 0 10 10 re", [("op_re_values", (0, 0, 10, 10))], id="re-values"),
+        pytest.param(b"0 0 10 re", [("op_re", 0)], id="re-too-few-generic"),
+        pytest.param(b"1 0 0 1 0 0 cm", [("op_cm_values", (1, 0, 0, 1, 0, 0))], id="cm-values"),
+        pytest.param(b"/Foo 0 0 1 0 0 cm", [("op_cm", 0)], id="cm-wrong-type-generic"),
+        # The `op_count >= 6` guard sits in the outer `elif` condition itself, so
+        # an unmet guard skips the whole branch -- no generic `op_cm` fallback is
+        # reachable here, unlike the too-few-operands cases above.
+        pytest.param(b"1 0 0 1 0 cm", [], id="cm-too-few-silent"),
+    ],
+)
+def test_stage_c_dispatch(data: bytes, expected_calls: list[object]) -> None:
     target = internal_run_dispatch(data)
 
-    assert target.calls == [("op_TD", 0)]
-
-
-def test_stage_c_tc_value_fast_path() -> None:
-    target = internal_run_dispatch(b"5 Tc")
-
-    assert target.calls == [("op_Tc_values", (5,))]
-
-
-def test_stage_c_tc_without_operand_falls_through_silently() -> None:
-    target = internal_run_dispatch(b"Tc")
-
-    assert target.calls == []
-
-
-def test_stage_c_tc_wrong_type_falls_back_to_generic_handler() -> None:
-    target = internal_run_dispatch(b"/Foo Tc")
-
-    assert target.calls == [("op_Tc", 0)]
-
-
-def test_stage_c_tf_value_fast_path_has_no_type_check() -> None:
-    target = internal_run_dispatch(b"/F1 12 Tf")
-
-    assert target.calls == [("op_Tf_values", (PdfName.of("F1"), 12))]
-
-
-def test_stage_c_tf_falls_back_to_generic_handler_with_too_few_operands() -> None:
-    target = internal_run_dispatch(b"Tf")
-
-    assert target.calls == [("op_Tf", 0)]
-
-
-def test_stage_c_tj_calls_append_text() -> None:
-    target = internal_run_dispatch(b"(hello) Tj")
-
-    assert target.calls == [("append_text", (None, b"hello", True))]
-
-
-def test_stage_c_tj_without_operand_falls_through_silently() -> None:
-    target = internal_run_dispatch(b"Tj")
-
-    assert target.calls == []
-
-
-def test_stage_c_tm_value_fast_path() -> None:
-    target = internal_run_dispatch(b"1 2 3 4 5 6 Tm")
-
-    assert target.calls == [("op_Tm_values", (1, 2, 3, 4, 5, 6))]
-
-
-@pytest.mark.parametrize("data", [b"1 2 3 4 5 Tm", b"/Foo 2 3 4 5 6 Tm"])
-def test_stage_c_tm_falls_back_to_generic_handler(data: bytes) -> None:
-    target = internal_run_dispatch(data)
-
-    assert target.calls == [("op_Tm", 0)]
-
-
-def test_stage_c_tw_value_fast_path() -> None:
-    target = internal_run_dispatch(b"2 Tw")
-
-    assert target.calls == [("op_Tw_values", (2,))]
-
-
-def test_stage_c_tw_without_operand_falls_through_silently() -> None:
-    target = internal_run_dispatch(b"Tw")
-
-    assert target.calls == []
-
-
-def test_stage_c_tj_array_calls_append_tj_array() -> None:
-    target = internal_run_dispatch(b"[(hi) -20 (there)] TJ")
-
-    assert target.calls == [("append_tj_array", [PdfString(b"hi"), -20, PdfString(b"there")])]
-
-
-def test_stage_c_tj_array_without_operand_falls_through_silently() -> None:
-    target = internal_run_dispatch(b"TJ")
-
-    assert target.calls == []
-
-
-def test_stage_c_td_lowercase_value_fast_path() -> None:
-    target = internal_run_dispatch(b"1 2 Td")
-
-    assert target.calls == [("op_Td_values", (1, 2))]
-
-
-@pytest.mark.parametrize("data", [b"1 Td", b"/Foo 2 Td"])
-def test_stage_c_td_lowercase_falls_back_to_generic_handler(data: bytes) -> None:
-    target = internal_run_dispatch(data)
-
-    assert target.calls == [("op_Td", 0)]
-
-
-def test_stage_c_rg_uppercase_value_fast_path() -> None:
-    target = internal_run_dispatch(b"1 0 0 RG")
-
-    assert target.calls == [("op_RG_values", (1, 0, 0))]
-
-
-def test_stage_c_rg_uppercase_falls_through_silently_with_too_few_operands() -> None:
-    # No generic `op_RG` exists on OperationTarget -- an unmet guard must
-    # fall through to Stage D/E/F and call nothing, not raise.
-    target = internal_run_dispatch(b"1 0 RG")
-
-    assert target.calls == []
-
-
-def test_stage_c_rg_lowercase_value_fast_path() -> None:
-    target = internal_run_dispatch(b"1 0 0 rg")
-
-    assert target.calls == [("op_rg_values", (1, 0, 0))]
-
-
-def test_stage_c_rg_lowercase_falls_through_silently_with_too_few_operands() -> None:
-    target = internal_run_dispatch(b"1 0 rg")
-
-    assert target.calls == []
-
-
-def test_stage_c_re_value_fast_path_when_capturing() -> None:
-    target = internal_run_dispatch(b"0 0 10 10 re")
-
-    assert target.calls == [("op_re_values", (0, 0, 10, 10))]
-
-
-def test_stage_c_re_falls_back_to_generic_handler_with_too_few_operands() -> None:
-    target = internal_run_dispatch(b"0 0 10 re")
-
-    assert target.calls == [("op_re", 0)]
+    assert target.calls == expected_calls
 
 
 def test_stage_c_re_calls_nothing_when_not_capturing() -> None:
@@ -461,26 +363,5 @@ def test_stage_c_re_calls_nothing_when_not_capturing() -> None:
             capture_graphics=False, capture_glyphs=False, capture_clipping=False
         ),
     )
-
-    assert target.calls == []
-
-
-def test_stage_c_cm_value_fast_path() -> None:
-    target = internal_run_dispatch(b"1 0 0 1 0 0 cm")
-
-    assert target.calls == [("op_cm_values", (1, 0, 0, 1, 0, 0))]
-
-
-def test_stage_c_cm_wrong_type_falls_back_to_generic_handler() -> None:
-    target = internal_run_dispatch(b"/Foo 0 0 1 0 0 cm")
-
-    assert target.calls == [("op_cm", 0)]
-
-
-def test_stage_c_cm_falls_through_silently_with_too_few_operands() -> None:
-    # The `op_count >= 6` guard sits in the outer `elif` condition itself, so
-    # an unmet guard skips the whole branch -- no generic `op_cm` fallback is
-    # reachable here, unlike the too-few-operands cases above.
-    target = internal_run_dispatch(b"1 0 0 1 0 cm")
 
     assert target.calls == []

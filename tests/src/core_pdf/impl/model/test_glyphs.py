@@ -8,7 +8,7 @@ from core_pdf.impl.model.glyphs import (
     glyph_unicode_confidence,
     glyph_unicode_semantics,
 )
-from core_pdf.impl.model.runs import TextRun
+from tests.helpers.parse_fakes import text_run
 
 
 def test_unicode_confidence_scores_authoritative_and_unsupported_glyphs() -> None:
@@ -119,20 +119,8 @@ def test_text_run_replacement_drops_clusters_that_describe_old_text() -> None:
         (observation,),
     )
     assert cluster is not None
-    run = TextRun(
-        "A",
-        1.0,
-        2.0,
-        3.0,
-        4.0,
-        0.0,
-        0.0,
-        12.0,
-        4.0,
-        0,
-        0,
-        0,
-        glyph_clusters=(cluster,),
+    run = text_run(
+        "A", 1.0, 2.0, 3.0, 4.0, tx=0.0, ty=0.0, font_size=12.0, glyph_clusters=(cluster,)
     )
 
     replacement = run.replace(text="B")

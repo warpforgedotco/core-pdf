@@ -50,6 +50,7 @@ from scripts.raster_golden import (
     load_snapshot,
     raster_snapshot_failure,
 )
+from tests.helpers.paths import require_fixture
 
 # Greedy line-cover of render/ over the corpus: these 24 documents reach
 # 100% of the lines that all 224 reach. Recompute with scripts/raster_cover.py
@@ -112,9 +113,7 @@ def internal_snapshot() -> RasterSnapshot:
 )
 @pytest.mark.parametrize("name", COVERING_SUBSET)
 def test_first_page_raster_matches_snapshot(name: str) -> None:
-    pdf = CORPUS / name
-    if not pdf.is_file():
-        cast(Any, pytest.skip)(f"corpus document not present: {name}")
+    pdf = require_fixture(CORPUS / name, f"corpus document not present: {name}")
     failure = raster_snapshot_failure(pdf, internal_snapshot())
     assert failure is None, f"raster output changed for {name}: {failure}"
 
@@ -125,9 +124,7 @@ def test_first_page_raster_matches_snapshot(name: str) -> None:
 )
 @pytest.mark.parametrize("name", IRREVERSIBLE_JPX_SUBSET)
 def test_irreversible_jpx_raster_is_portable(name: str) -> None:
-    pdf = CORPUS / name
-    if not pdf.is_file():
-        cast(Any, pytest.skip)(f"corpus document not present: {name}")
+    pdf = require_fixture(CORPUS / name, f"corpus document not present: {name}")
     failure = raster_snapshot_failure(pdf, internal_snapshot())
     assert failure is None, f"portable JPX raster changed for {name}: {failure}"
 
@@ -171,8 +168,6 @@ def test_raster_snapshot_records_the_canonical_environment() -> None:
 )
 @pytest.mark.parametrize("name", internal_FULL_CORPUS_NAMES)
 def test_whole_corpus_raster_matches_snapshot(name: str) -> None:
-    pdf = CORPUS / name
-    if not pdf.is_file():
-        cast(Any, pytest.skip)(f"SCORE-Bench corpus not present at {CORPUS}")
+    pdf = require_fixture(CORPUS / name, f"SCORE-Bench corpus not present at {CORPUS}")
     failure = raster_snapshot_failure(pdf, internal_snapshot())
     assert failure is None, f"raster output changed for {name}: {failure}"

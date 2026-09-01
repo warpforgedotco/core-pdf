@@ -1,27 +1,19 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from threading import RLock
 from types import SimpleNamespace
-from typing import Any, cast
 
 import pytest
 
-from core_pdf.impl.parse import (
-    CapturedPage,
-    ObservationBatch,
-    ObservationSource,
-    PageEvidence,
-)
+from core_pdf.impl.parse import CapturedPage, ObservationBatch
 from core_pdf.impl.parse import pipeline as parse_pipeline
+from tests.helpers.ocr_fakes import FakeDocumentPage
+from tests.helpers.parse_fakes import capture as make_capture
+from tests.helpers.parse_fakes import observations, page_evidence
 
 
 def internal_observations(text: str) -> ObservationBatch:
-    return ObservationBatch.from_columns(
-        (text,),
-        ((0.0, 0.0, 10.0, 10.0),),
-        source=ObservationSource.NATIVE,
-    )
+    return observations([(text, (0.0, 0.0, 10.0, 10.0))])
 
 
 def internal_base_capture(page: object, decoder: object, text: str) -> CapturedPage:
@@ -30,23 +22,13 @@ def internal_base_capture(page: object, decoder: object, text: str) -> CapturedP
             glyphs=(SimpleNamespace(font_decoder=decoder),),
         )
     )
-    return CapturedPage(
-        page=page,
-        program=cast(Any, program),
-        observations=internal_observations(text),
-        runs=(),
-        drawings=(),
-        grid_lines=(),
-        inline_images=(),
-        evidence=PageEvidence(
-            page_area=100.0,
-            native_characters=len(text),
-            visible_native_characters=len(text),
-            suspicious_characters=0,
-            image_count=0,
-            image_area_ratio=0.0,
-            vector_complexity=0,
+    return make_capture(
+        page_evidence(
+            page_area=100.0, native_characters=len(text), visible_native_characters=len(text)
         ),
+        page=page,
+        program=program,
+        batch=internal_observations(text),
     )
 
 
@@ -54,14 +36,7 @@ def test_selection_local_enrichment_is_history_independent_and_does_not_replace_
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     decoder = object()
-    pages = tuple(
-        SimpleNamespace(
-            page_number=page_number,
-            extraction_cache={},
-            internal_page_lock=RLock(),
-        )
-        for page_number in (1, 2, 3)
-    )
+    pages = tuple(FakeDocumentPage(page_number=page_number) for page_number in (1, 2, 3))
     captures = tuple(
         internal_base_capture(page, decoder, f"base-{page.page_number}") for page in pages
     )

@@ -7,7 +7,7 @@ from core_pdf.impl.model.glyphs import (
     GlyphObservation,
     glyph_cluster_from_observations,
 )
-from core_pdf.impl.model.runs import TextRun
+from tests.helpers.parse_fakes import text_run
 
 
 def test_complete_whitespace_run_stays_one_text_atom() -> None:
@@ -18,19 +18,16 @@ def test_complete_whitespace_run_stays_one_text_atom() -> None:
         cluster = glyph_cluster_from_observations(index, character, (observation,))
         assert cluster is not None
         clusters.append(cluster)
-    run = TextRun(
+    run = text_run(
         "A B",
         0.0,
         0.0,
         3.0,
         1.0,
-        0.0,
-        0.0,
-        12.0,
-        1.0,
-        0,
-        0,
-        0,
+        tx=0.0,
+        ty=0.0,
+        font_size=12.0,
+        space_width=1.0,
         glyph_clusters=tuple(clusters),
     )
     builder = GlyphLineBuilder([run])

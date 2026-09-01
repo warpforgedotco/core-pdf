@@ -3,21 +3,15 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any, cast
-
-import pytest
 
 from core_pdf import PdfDocument
 from core_pdf.impl.primitives import PdfName, PdfString
 from core_pdf.impl.spec.s_07_document.document import PdfDocument as SpecPdfDocument
 from core_pdf.impl.spec.s_07_document.fields import field_value_text
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict
-
-
-class IdentityResolver:
-    def resolve(self, value: object) -> object:
-        return value
+from tests.helpers.paths import FIXTURES, require_fixture
+from tests.helpers.resolvers import IdentityResolver
 
 
 class Document:
@@ -37,12 +31,10 @@ def test_field_value_text_ignores_signature_dictionary() -> None:
 
 
 def test_widget_value_overrides_empty_parent_value() -> None:
-    pdf_path = (
-        Path(__file__).resolve().parents[6]
-        / "tests/fixtures/pikepdf/tests/resources/form_dd0293.pdf"
+    pdf_path = require_fixture(
+        FIXTURES / "pikepdf" / "tests" / "resources" / "form_dd0293.pdf",
+        "pikepdf fixture submodule is not initialized",
     )
-    if not pdf_path.is_file():
-        pytest.skip("pikepdf fixture submodule is not initialized")
 
     with PdfDocument.open(pdf_path) as document:
         fields = document.pages[0].get_fields()

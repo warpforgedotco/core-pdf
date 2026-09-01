@@ -12,17 +12,18 @@ from core_pdf.impl.parse import (
     WorkPlan,
 )
 from core_pdf.impl.parse.fusion import fuse_observations
+from tests.helpers import parse_fakes
 
 
 def observations(
     *items: tuple[str, float, float],
     source: ObservationSource,
 ) -> ObservationBatch:
-    return ObservationBatch.from_columns(
-        (text for text, internal_confidence, internal_x0 in items),
-        ((x0, 0.0, x0 + 10.0, 10.0) for internal_text, internal_confidence, x0 in items),
+    """Observations from ``(text, confidence, x0)`` triples on one 10pt-high line."""
+    return parse_fakes.observations(
+        ((text, (x0, 0.0, x0 + 10.0, 10.0)) for text, internal_confidence, x0 in items),
         source=source,
-        confidence=(confidence for internal_text, confidence, internal_x0 in items),
+        confidence=tuple(confidence for internal_text, confidence, internal_x0 in items),
     )
 
 

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from typing import cast
+from typing import Any, cast
 
-from core_pdf.impl.model.runs import TextRun
+import pytest
+
 from core_pdf.impl.models import TextWord
 from core_pdf.impl.parse import (
     ObservationBatch,
@@ -17,6 +18,7 @@ from core_pdf.impl.parse.emit import internal_line_decoration_flags
 from core_pdf.impl.parse.layout import layout_blocks
 from core_pdf.impl.spec.s_07_content.capture import CapturedDrawing
 from core_pdf.impl.structured import BlockKind, Table, TableCell
+from tests.helpers.parse_fakes import text_run
 
 
 def block(
@@ -33,9 +35,37 @@ def block(
     )
 
 
+def page_of(
+    *,
+    route: PageRoute = PageRoute.NATIVE,
+    blocks: tuple[ParsedBlock, ...] = (),
+    width: float = 300.0,
+    height: float = 400.0,
+    **fields: Any,
+) -> ParsedPage:
+    return ParsedPage(
+        page_number=1,
+        width=width,
+        height=height,
+        rotation=0,
+        route=route,
+        blocks=blocks,
+        **fields,
+    )
+
+
+def single_block_page(
+    text: str,
+    route: PageRoute = PageRoute.NATIVE,
+    bbox: tuple[float, float, float, float] = (20.0, 120.0, 260.0, 150.0),
+) -> ParsedPage:
+    source = "ocr" if route is PageRoute.OCR else "native"
+    return page_of(route=route, blocks=(block(text, bbox, source=source),))
+
+
 def test_emit_preserves_distinct_word_boxes_computed_by_layout() -> None:
-    first = TextRun("one", 10.0, 100.0, 40.0, 110.0, 0.0, 0.0, 10.0, 4.0, 0, 0, 0)
-    second = TextRun("two", 50.0, 100.0, 80.0, 110.0, 0.0, 0.0, 10.0, 4.0, 1, 1, 0)
+    first = text_run("one", 10.0, 100.0, 40.0, 110.0, tx=0.0, ty=0.0, order=0)
+    second = text_run("two", 50.0, 100.0, 80.0, 110.0, tx=0.0, ty=0.0, order=1)
     observations = ObservationBatch.from_columns(
         (first.text, second.text),
         ((first.x0, first.y0, first.x1, first.y1), (second.x0, second.y0, second.x1, second.y1)),
@@ -43,11 +73,9 @@ def test_emit_preserves_distinct_word_boxes_computed_by_layout() -> None:
         line_break_before=(True, False),
         references=(first, second),
     )
-    parsed = ParsedPage(
-        page_number=1,
+    parsed = page_of(
         width=200.0,
         height=200.0,
-        rotation=0,
         route=PageRoute.NATIVE,
         blocks=layout_blocks(observations),
     )
@@ -62,11 +90,9 @@ def test_emit_preserves_distinct_word_boxes_computed_by_layout() -> None:
 
 
 def test_emit_reconciles_word_geometry_with_normalized_text() -> None:
-    parsed = ParsedPage(
-        page_number=1,
+    parsed = page_of(
         width=200.0,
         height=200.0,
-        rotation=0,
         route=PageRoute.NATIVE,
         blocks=(
             ParsedBlock(
@@ -102,11 +128,9 @@ def test_emit_reconciles_word_geometry_with_normalized_text() -> None:
 
 
 def test_emit_attaches_caption_and_section_to_table() -> None:
-    parsed = ParsedPage(
-        page_number=1,
+    parsed = page_of(
         width=200.0,
         height=300.0,
-        rotation=0,
         route=PageRoute.NATIVE,
         blocks=(
             block("Revenue", (10.0, 250.0, 100.0, 270.0), "heading"),
@@ -167,11 +191,9 @@ def test_emit_materializes_line_decoration_bbox_once() -> None:
             return (50.0, 99.5, 56.0, 100.5)
 
     drawing = type("Drawing", (), {"kind": "fill", "bbox": None, "path": Path()})()
-    parsed = ParsedPage(
-        page_number=1,
+    parsed = page_of(
         width=200.0,
         height=300.0,
-        rotation=0,
         route=PageRoute.NATIVE,
         blocks=(
             block("first", (10.0, 100.0, 110.0, 110.0)),
@@ -186,11 +208,9 @@ def test_emit_materializes_line_decoration_bbox_once() -> None:
 
 
 def test_emit_removes_blocks_duplicated_by_table_cells() -> None:
-    parsed = ParsedPage(
-        page_number=1,
+    parsed = page_of(
         width=200.0,
         height=300.0,
-        rotation=0,
         route=PageRoute.NATIVE,
         blocks=(
             block("Introduction text", (10.0, 250.0, 100.0, 270.0)),
@@ -225,11 +245,7 @@ def test_emit_keeps_line_that_contains_but_does_not_duplicate_a_table() -> None:
     does not belong to it, so containment has to be measured in the direction
     of line-inside-table rather than by the smaller of the two areas.
     """
-    parsed = ParsedPage(
-        page_number=1,
-        width=300.0,
-        height=400.0,
-        rotation=0,
+    parsed = page_of(
         route=PageRoute.NATIVE,
         blocks=(
             block("Normative body text after the table", (20.0, 150.0, 280.0, 260.0)),
@@ -251,11 +267,9 @@ def test_emit_keeps_line_that_contains_but_does_not_duplicate_a_table() -> None:
 
 
 def test_emit_preserves_structured_stream_table_with_sparse_numeric_values() -> None:
-    parsed = ParsedPage(
-        page_number=1,
+    parsed = page_of(
         width=200.0,
         height=300.0,
-        rotation=0,
         route=PageRoute.NATIVE,
         blocks=(
             block(
@@ -281,11 +295,9 @@ def test_emit_preserves_structured_stream_table_with_sparse_numeric_values() -> 
 
 
 def test_emit_removes_character_spaced_stream_table_duplicated_by_block() -> None:
-    parsed = ParsedPage(
-        page_number=1,
+    parsed = page_of(
         width=200.0,
         height=300.0,
-        rotation=0,
         route=PageRoute.NATIVE,
         blocks=(block("NGL Pipelines & Services $ 10 $ 9", (10.0, 150.0, 150.0, 205.0)),),
         tables=(
@@ -311,11 +323,7 @@ def test_emit_removes_character_spaced_stream_table_duplicated_by_block() -> Non
 
 
 def test_emit_removes_stream_table_covered_by_overlapping_blocks() -> None:
-    parsed = ParsedPage(
-        page_number=1,
-        width=300.0,
-        height=400.0,
-        rotation=0,
+    parsed = page_of(
         route=PageRoute.NATIVE,
         blocks=(
             block(
@@ -365,11 +373,7 @@ def test_emit_keeps_a_grid_shaped_table_and_drops_the_duplicate_block() -> None:
     discarded the structure of genuine tables -- the dominant reason a page
     with a table in the ground truth came back with none.
     """
-    parsed = ParsedPage(
-        page_number=1,
-        width=300.0,
-        height=400.0,
-        rotation=0,
+    parsed = page_of(
         route=PageRoute.NATIVE,
         blocks=(
             block(
@@ -415,11 +419,7 @@ def test_emit_keeps_a_grid_shaped_table_and_drops_the_duplicate_block() -> None:
 
 
 def test_emit_removes_small_table_duplicated_by_page_text() -> None:
-    parsed = ParsedPage(
-        page_number=1,
-        width=300.0,
-        height=400.0,
-        rotation=0,
+    parsed = page_of(
         route=PageRoute.NATIVE,
         blocks=(
             block(
@@ -448,11 +448,7 @@ def test_emit_removes_small_table_duplicated_by_page_text() -> None:
 
 
 def test_emit_removes_corrupt_native_blocks() -> None:
-    parsed = ParsedPage(
-        page_number=1,
-        width=300.0,
-        height=400.0,
-        rotation=0,
+    parsed = page_of(
         route=PageRoute.NATIVE,
         blocks=(
             block(
@@ -475,11 +471,7 @@ def test_emit_removes_corrupt_native_blocks() -> None:
 
 
 def test_emit_removes_fragmented_stream_table() -> None:
-    parsed = ParsedPage(
-        page_number=1,
-        width=300.0,
-        height=400.0,
-        rotation=0,
+    parsed = page_of(
         route=PageRoute.NATIVE,
         blocks=(block("Scheduled maturities of debt", (20.0, 300.0, 260.0, 320.0)),),
         tables=(
@@ -504,11 +496,7 @@ def test_emit_removes_fragmented_stream_table() -> None:
 
 
 def test_emit_removes_noisy_stream_table() -> None:
-    parsed = ParsedPage(
-        page_number=1,
-        width=300.0,
-        height=400.0,
-        rotation=0,
+    parsed = page_of(
         route=PageRoute.NATIVE,
         blocks=(block("Mass properties table", (20.0, 300.0, 260.0, 320.0)),),
         tables=(
@@ -533,11 +521,7 @@ def test_emit_removes_noisy_stream_table() -> None:
 
 
 def test_emit_removes_short_corrupt_native_fragments() -> None:
-    parsed = ParsedPage(
-        page_number=1,
-        width=300.0,
-        height=400.0,
-        rotation=0,
+    parsed = page_of(
         route=PageRoute.NATIVE,
         blocks=(
             block("r • r-", (20.0, 300.0, 40.0, 320.0)),
@@ -551,11 +535,7 @@ def test_emit_removes_short_corrupt_native_fragments() -> None:
 
 
 def test_emit_keeps_short_non_latin_native_text() -> None:
-    parsed = ParsedPage(
-        page_number=1,
-        width=300.0,
-        height=400.0,
-        rotation=0,
+    parsed = page_of(
         route=PageRoute.NATIVE,
         blocks=(
             block("日本語かなカナ漢字", (20.0, 300.0, 260.0, 320.0)),
@@ -576,11 +556,7 @@ def test_emit_keeps_short_non_latin_native_text() -> None:
 def test_emit_removes_symbol_only_native_blocks() -> None:
     # Isolated Braille glyphs or stray symbols with no alphanumeric content
     # carry no semantic text (cf. the OCR route's `internal_corrupt_ocr_block`).
-    parsed = ParsedPage(
-        page_number=1,
-        width=300.0,
-        height=400.0,
-        rotation=0,
+    parsed = page_of(
         route=PageRoute.NATIVE,
         blocks=(
             block("⠭ ⠬", (20.0, 300.0, 260.0, 320.0)),
@@ -599,11 +575,7 @@ def test_emit_removes_symbol_only_native_blocks() -> None:
 
 
 def test_emit_removes_corrupt_mixed_native_fragments() -> None:
-    parsed = ParsedPage(
-        page_number=1,
-        width=300.0,
-        height=400.0,
-        rotation=0,
+    parsed = page_of(
         route=PageRoute.NATIVE,
         blocks=(
             ParsedBlock(
@@ -631,11 +603,7 @@ def test_emit_removes_corrupt_mixed_native_fragments() -> None:
 
 
 def test_emit_removes_punctuation_only_ocr_fragments() -> None:
-    parsed = ParsedPage(
-        page_number=1,
-        width=300.0,
-        height=400.0,
-        rotation=0,
+    parsed = page_of(
         route=PageRoute.OCR,
         blocks=(
             ParsedBlock(
@@ -661,11 +629,7 @@ def test_emit_removes_punctuation_only_ocr_fragments() -> None:
 
 
 def test_emit_removes_tiny_ocr_fragments_duplicated_by_table_tokens() -> None:
-    parsed = ParsedPage(
-        page_number=1,
-        width=300.0,
-        height=400.0,
-        rotation=0,
+    parsed = page_of(
         route=PageRoute.HYBRID,
         blocks=(
             ParsedBlock(
@@ -692,11 +656,7 @@ def test_emit_removes_tiny_ocr_fragments_duplicated_by_table_tokens() -> None:
 
 
 def test_emit_normalizes_latin_context_confusable_characters() -> None:
-    parsed = ParsedPage(
-        page_number=1,
-        width=300.0,
-        height=400.0,
-        rotation=0,
+    parsed = page_of(
         route=PageRoute.NATIVE,
         blocks=(
             block("Fax: 699-3395 35149؛", (20.0, 300.0, 260.0, 320.0)),
@@ -722,204 +682,95 @@ def test_emit_normalizes_latin_context_confusable_characters() -> None:
     }
 
 
-def test_emit_removes_numeric_only_ocr_pipe_artifacts() -> None:
-    parsed = ParsedPage(
-        page_number=1,
-        width=300.0,
-        height=400.0,
-        rotation=0,
-        route=PageRoute.OCR,
-        blocks=(
-            block(
-                "400 | 400 | 400\n137.0 | 128.1",
-                (20.0, 120.0, 260.0, 150.0),
-                source="ocr",
-            ),
+@pytest.mark.parametrize(
+    ("route", "text", "expected"),
+    [
+        pytest.param(
+            PageRoute.OCR,
+            "400 | 400 | 400\n137.0 | 128.1",
+            "400 400 400\n137.0 128.1",
+            id="removes-numeric-only-pipes",
         ),
-    )
-
-    page = emit_page(parsed)
-
-    assert page.text == "400 400 400\n137.0 128.1"
-
-
-def test_emit_removes_sparse_ocr_pipe_artifacts() -> None:
-    parsed = ParsedPage(
-        page_number=1,
-        width=300.0,
-        height=400.0,
-        rotation=0,
-        route=PageRoute.OCR,
-        blocks=(
-            block(
-                "total | 46 | 69\nR-21 | | 12",
-                (20.0, 120.0, 260.0, 150.0),
-                source="ocr",
-            ),
+        pytest.param(
+            PageRoute.OCR,
+            "total | 46 | 69\nR-21 | | 12",
+            "total 46 69\nR-21 12",
+            id="removes-sparse-pipes",
         ),
-    )
-
-    page = emit_page(parsed)
-
-    assert page.text == "total 46 69\nR-21 12"
-
-
-def test_emit_removes_lone_ocr_pipe_artifact_lines() -> None:
-    parsed = ParsedPage(
-        page_number=1,
-        width=300.0,
-        height=400.0,
-        rotation=0,
-        route=PageRoute.OCR,
-        blocks=(block("|\nvalid text", (20.0, 120.0, 260.0, 150.0), source="ocr"),),
-    )
-
-    page = emit_page(parsed)
-
-    assert page.text == "valid text"
-
-
-def test_emit_keeps_ocr_pipes_in_prose_lines() -> None:
-    parsed = ParsedPage(
-        page_number=1,
-        width=300.0,
-        height=400.0,
-        rotation=0,
-        route=PageRoute.OCR,
-        blocks=(
-            block(
-                "55 Cyril Magnin Street | San Francisco, CA | 94102",
-                (20.0, 120.0, 260.0, 150.0),
-                source="ocr",
-            ),
+        pytest.param(PageRoute.OCR, "|\nvalid text", "valid text", id="removes-lone-pipe-lines"),
+        pytest.param(
+            PageRoute.OCR,
+            "55 Cyril Magnin Street | San Francisco, CA | 94102",
+            "55 Cyril Magnin Street | San Francisco, CA | 94102",
+            id="keeps-pipes-in-prose",
         ),
-    )
-
-    page = emit_page(parsed)
-
-    assert page.text == "55 Cyril Magnin Street | San Francisco, CA | 94102"
-
-
-def test_emit_removes_numeric_ocr_angle_marker_artifacts() -> None:
-    parsed = ParsedPage(
-        page_number=1,
-        width=300.0,
-        height=400.0,
-        rotation=0,
-        route=PageRoute.OCR,
-        blocks=(
-            block(
-                "> 1\n> quoted text remains",
-                (20.0, 120.0, 260.0, 150.0),
-                source="ocr",
-            ),
+        pytest.param(
+            PageRoute.OCR,
+            "> 1\n> quoted text remains",
+            "1\n> quoted text remains",
+            id="removes-numeric-angle-markers",
         ),
-    )
-
-    page = emit_page(parsed)
-
-    assert page.text == "1\n> quoted text remains"
-
-
-def test_emit_removes_sparse_ocr_symbol_artifacts() -> None:
-    parsed = ParsedPage(
-        page_number=1,
-        width=300.0,
-        height=400.0,
-        rotation=0,
-        route=PageRoute.OCR,
-        blocks=(block("• 42 87\nvalid � text", (20.0, 120.0, 260.0, 150.0), source="ocr"),),
-    )
-
-    page = emit_page(parsed)
-
-    assert page.text == "42 87\nvalid text"
-
-
-def test_emit_removes_ocr_standalone_punctuation_artifacts() -> None:
-    parsed = ParsedPage(
-        page_number=1,
-        width=300.0,
-        height=400.0,
-        rotation=0,
-        route=PageRoute.OCR,
-        blocks=(
-            block(
-                "I agree [ to pay\n' Business Fax Number\n! Excess mark",
-                (20.0, 120.0, 260.0, 150.0),
-                source="ocr",
-            ),
+        pytest.param(
+            PageRoute.OCR, "• 42 87\nvalid � text", "42 87\nvalid text", id="removes-sparse-symbols"
         ),
-    )
-
-    page = emit_page(parsed)
-
-    assert page.text == "I agree to pay\nBusiness Fax Number\nExcess mark"
-
-
-def test_emit_removes_isolated_leading_zero_ocr_artifact_tokens() -> None:
-    parsed = ParsedPage(
-        page_number=1,
-        width=300.0,
-        height=400.0,
-        rotation=0,
-        route=PageRoute.OCR,
-        blocks=(
-            block(
-                "04\n07 U6.2\nModel 01 remains",
-                (20.0, 120.0, 260.0, 150.0),
-                source="ocr",
-            ),
+        pytest.param(
+            PageRoute.OCR,
+            "I agree [ to pay\n' Business Fax Number\n! Excess mark",
+            "I agree to pay\nBusiness Fax Number\nExcess mark",
+            id="removes-standalone-punctuation",
         ),
-    )
-
-    page = emit_page(parsed)
-
-    assert page.text == "\nU6.2\nModel 01 remains"
-
-
-def test_emit_keeps_embedded_ocr_punctuation() -> None:
-    parsed = ParsedPage(
-        page_number=1,
-        width=300.0,
-        height=400.0,
-        rotation=0,
-        route=PageRoute.OCR,
-        blocks=(block("Warning! keep excited text", (20.0, 120.0, 260.0, 150.0), source="ocr"),),
-    )
-
-    page = emit_page(parsed)
-
-    assert page.text == "Warning! keep excited text"
-
-
-def test_emit_normalizes_intrusive_punctuation_inside_tokens() -> None:
-    parsed = ParsedPage(
-        page_number=1,
-        width=300.0,
-        height=400.0,
-        rotation=0,
-        route=PageRoute.NATIVE,
-        blocks=(
-            block(
-                "7!19/71 T[34 G! (%! Warning!",
-                (20.0, 120.0, 260.0, 150.0),
-                source="native",
-            ),
+        pytest.param(
+            PageRoute.OCR,
+            "04\n07 U6.2\nModel 01 remains",
+            "\nU6.2\nModel 01 remains",
+            id="removes-isolated-leading-zero-tokens",
         ),
-    )
-
-    page = emit_page(parsed)
-
-    assert page.text == "7!19/71 T34 G! (% Warning!"
+        pytest.param(
+            PageRoute.OCR,
+            "Warning! keep excited text",
+            "Warning! keep excited text",
+            id="keeps-embedded-punctuation",
+        ),
+        pytest.param(
+            PageRoute.NATIVE,
+            "7!19/71 T[34 G! (%! Warning!",
+            "7!19/71 T34 G! (% Warning!",
+            id="normalizes-intrusive-punctuation",
+        ),
+        pytest.param(
+            PageRoute.OCR,
+            "• Complete application",
+            "• Complete application",
+            id="keeps-ocr-bullets-in-wordlike-lines",
+        ),
+        pytest.param(PageRoute.NATIVE, "• 42 87", "42 87", id="removes-nonword-bullets-for-native"),
+        pytest.param(
+            PageRoute.OCR,
+            "ing groups include, for example",
+            "groups include, for example",
+            id="removes-line-initial-suffix-fragment",
+        ),
+        pytest.param(
+            PageRoute.NATIVE,
+            "ence on global dynamics\ntions within states\nating shifts continue\nducted studies",
+            "on global dynamics\nwithin states\nshifts continue\nstudies",
+            id="removes-expanded-line-initial-suffix-fragments",
+        ),
+        pytest.param(
+            PageRoute.NATIVE,
+            "valid � text",
+            "valid text",
+            id="removes-native-replacement-characters",
+        ),
+        pytest.param(PageRoute.OCR, "ing 12", "ing 12", id="keeps-short-ocr-suffix-lines"),
+    ],
+)
+def test_emit_normalizes_single_block_text(route: PageRoute, text: str, expected: str) -> None:
+    assert emit_page(single_block_page(text, route)).text == expected
 
 
 def test_emit_removes_soft_line_end_hyphens_before_lowercase_continuations() -> None:
-    parsed = ParsedPage(
-        page_number=1,
-        width=300.0,
-        height=400.0,
-        rotation=0,
+    parsed = page_of(
         route=PageRoute.NATIVE,
         blocks=(
             ParsedBlock(
@@ -946,11 +797,7 @@ def test_emit_removes_soft_line_end_hyphens_before_lowercase_continuations() -> 
 
 
 def test_emit_keeps_non_continuation_line_end_hyphens() -> None:
-    parsed = ParsedPage(
-        page_number=1,
-        width=300.0,
-        height=400.0,
-        rotation=0,
+    parsed = page_of(
         route=PageRoute.NATIVE,
         blocks=(
             ParsedBlock(
@@ -976,119 +823,8 @@ def test_emit_keeps_non_continuation_line_end_hyphens() -> None:
     assert page.text == "Part A-\nNext item"
 
 
-def test_emit_keeps_ocr_bullets_in_wordlike_lines() -> None:
-    parsed = ParsedPage(
-        page_number=1,
-        width=300.0,
-        height=400.0,
-        rotation=0,
-        route=PageRoute.OCR,
-        blocks=(block("• Complete application", (20.0, 120.0, 260.0, 150.0), source="ocr"),),
-    )
-
-    page = emit_page(parsed)
-
-    assert page.text == "• Complete application"
-
-
-def test_emit_removes_nonword_bullets_for_native_lines() -> None:
-    parsed = ParsedPage(
-        page_number=1,
-        width=300.0,
-        height=400.0,
-        rotation=0,
-        route=PageRoute.NATIVE,
-        blocks=(block("• 42 87", (20.0, 120.0, 260.0, 150.0), source="native"),),
-    )
-
-    page = emit_page(parsed)
-
-    assert page.text == "42 87"
-
-
-def test_emit_removes_line_initial_ocr_suffix_fragments() -> None:
-    parsed = ParsedPage(
-        page_number=1,
-        width=300.0,
-        height=400.0,
-        rotation=0,
-        route=PageRoute.OCR,
-        blocks=(
-            block(
-                "ing groups include, for example",
-                (20.0, 120.0, 260.0, 150.0),
-                source="ocr",
-            ),
-        ),
-    )
-
-    page = emit_page(parsed)
-
-    assert page.text == "groups include, for example"
-
-
-def test_emit_removes_expanded_line_initial_suffix_fragments() -> None:
-    parsed = ParsedPage(
-        page_number=1,
-        width=300.0,
-        height=400.0,
-        rotation=0,
-        route=PageRoute.NATIVE,
-        blocks=(
-            block(
-                (
-                    "ence on global dynamics\n"
-                    "tions within states\n"
-                    "ating shifts continue\n"
-                    "ducted studies"
-                ),
-                (20.0, 120.0, 260.0, 150.0),
-                source="native",
-            ),
-        ),
-    )
-
-    page = emit_page(parsed)
-
-    assert page.text == "on global dynamics\nwithin states\nshifts continue\nstudies"
-
-
-def test_emit_removes_native_replacement_character_tokens() -> None:
-    parsed = ParsedPage(
-        page_number=1,
-        width=300.0,
-        height=400.0,
-        rotation=0,
-        route=PageRoute.NATIVE,
-        blocks=(block("valid � text", (20.0, 120.0, 260.0, 150.0), source="native"),),
-    )
-
-    page = emit_page(parsed)
-
-    assert page.text == "valid text"
-
-
-def test_emit_keeps_short_ocr_suffix_lines() -> None:
-    parsed = ParsedPage(
-        page_number=1,
-        width=300.0,
-        height=400.0,
-        rotation=0,
-        route=PageRoute.OCR,
-        blocks=(block("ing 12", (20.0, 120.0, 260.0, 150.0), source="ocr"),),
-    )
-
-    page = emit_page(parsed)
-
-    assert page.text == "ing 12"
-
-
 def test_emit_removes_blocks_outside_page_bounds() -> None:
-    parsed = ParsedPage(
-        page_number=1,
-        width=300.0,
-        height=400.0,
-        rotation=0,
+    parsed = page_of(
         route=PageRoute.NATIVE,
         blocks=(
             block("visible", (20.0, 300.0, 80.0, 320.0)),
@@ -1114,11 +850,7 @@ def test_emit_removes_stream_table_covered_by_synthetic_chart_table() -> None:
         rows=((TableCell(0, 0, "musculoskeletal diseases 182 Public Health 2022"),),),
         metadata={"source": "stream"},
     )
-    parsed = ParsedPage(
-        page_number=1,
-        width=300.0,
-        height=400.0,
-        rotation=0,
+    parsed = page_of(
         route=PageRoute.HYBRID,
         blocks=(block("Caption", (20.0, 300.0, 260.0, 320.0)),),
         tables=(synthetic, stream),
@@ -1132,11 +864,7 @@ def test_emit_removes_stream_table_covered_by_synthetic_chart_table() -> None:
 
 
 def test_emit_removes_tiny_synthetic_chart_table_covered_by_table() -> None:
-    parsed = ParsedPage(
-        page_number=1,
-        width=300.0,
-        height=400.0,
-        rotation=0,
+    parsed = page_of(
         route=PageRoute.NATIVE,
         blocks=(block("IRB Statistics", (20.0, 300.0, 260.0, 320.0), "heading"),),
         tables=(
@@ -1165,11 +893,7 @@ def test_emit_removes_tiny_synthetic_chart_table_covered_by_table() -> None:
 
 
 def test_emit_keeps_chart_table_that_covers_tiny_synthetic_table() -> None:
-    parsed = ParsedPage(
-        page_number=1,
-        width=300.0,
-        height=400.0,
-        rotation=0,
+    parsed = page_of(
         route=PageRoute.NATIVE,
         blocks=(
             block(
@@ -1204,11 +928,7 @@ def test_emit_keeps_chart_table_that_covers_tiny_synthetic_table() -> None:
 
 
 def test_emit_removes_tiny_bi_artifact_table() -> None:
-    parsed = ParsedPage(
-        page_number=1,
-        width=300.0,
-        height=400.0,
-        rotation=0,
+    parsed = page_of(
         route=PageRoute.NATIVE,
         blocks=(block("Figure caption", (20.0, 300.0, 260.0, 320.0), "caption"),),
         tables=(

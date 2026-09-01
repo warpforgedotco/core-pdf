@@ -8,24 +8,11 @@ from core_pdf.impl.spec.s_14_structure.tree import (
     StructureTree,
     find_all,
 )
-
-
-class Resolver:
-    @staticmethod
-    def resolve(value: object) -> object:
-        return value
-
-    @staticmethod
-    def resolve_int(value: object) -> int | None:
-        if type(value) is int:
-            return value
-        if isinstance(value, str) and value.isdigit():
-            return int(value)
-        return None
+from tests.helpers.resolvers import IdentityResolver
 
 
 class Document:
-    resolver = Resolver()
+    resolver = IdentityResolver()
     xref_was_recovered = False
     page_tree_was_recovered = False
 

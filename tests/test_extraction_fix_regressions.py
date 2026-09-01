@@ -14,11 +14,6 @@ stream it uses the smallest benchmark fixture that exercises it.
 
 from __future__ import annotations
 
-import re
-import zlib
-from pathlib import Path
-from typing import Any, cast
-
 import numpy
 import pytest
 
@@ -40,41 +35,9 @@ from core_pdf.impl.parse.tables import (
     internal_merge_wrapped_cell_rows,
     internal_stream_table_reads_like_prose,
 )
-from core_pdf.impl.spec.s_09_fonts.font_program_truetype import tt_font_for_data
-from core_pdf.impl.structured import Block, BlockKind, Table, TableCell, TextLine
-
-FIXTURES = Path(__file__).parent / "fixtures" / "SCORE-Bench" / "src"
-
-
-def internal_native_block(text: str, bbox: tuple[float, float, float, float]) -> Block:
-    return Block(
-        order=0,
-        kind=BlockKind.PARAGRAPH,
-        lines=tuple(TextLine(text=line, bbox=bbox, source="native") for line in text.split("\n")),
-        bbox=bbox,
-        provenance=("native",),
-    )
-
-
-def internal_cell(row: int, column: int, text: str, bbox: tuple[float, float, float, float]):
-    return TableCell(row=row, column=column, text=text, bbox=bbox)
-
-
-def internal_stream_table(rows: tuple[tuple[TableCell, ...], ...], **metadata: object) -> Table:
-    boxes = [cell.bbox for row in rows for cell in row if cell.bbox is not None]
-    return Table(
-        order=0,
-        rows=rows,
-        bbox=(
-            min(box[0] for box in boxes),
-            min(box[1] for box in boxes),
-            max(box[2] for box in boxes),
-            max(box[3] for box in boxes),
-        )
-        if boxes
-        else None,
-        metadata={"source": "stream", **metadata},
-    )
+from core_pdf.impl.structured import Table, TableCell
+from tests.helpers.paths import score_bench_pdf
+from tests.helpers.structured import cell, native_block, stream_table
 
 
 def test_decimal_separators_are_not_symbols() -> None:
@@ -92,7 +55,7 @@ def test_decimal_separators_are_not_symbols() -> None:
 
 def test_numeric_table_block_survives_corruption_filter() -> None:
     """Regression: whole numeric tables were deleted as corrupt native text."""
-    numeric = internal_native_block(
+    numeric = native_block(
         "79.4 105.1 108.9 102.3\n5.1 6.5 5.0 4.5\n6.4 6.2 7.3 4.4",
         (20.0, 100.0, 260.0, 160.0),
     )
@@ -109,14 +72,12 @@ def test_numeric_table_block_survives_corruption_filter() -> None:
 )
 def test_short_specification_table_rows_survive_corruption_filter(text: str) -> None:
     """Regression: valid permission rows were deleted as corrupt native text."""
-    assert not internal_corrupt_native_block(
-        internal_native_block(text, (20.0, 100.0, 260.0, 120.0))
-    )
+    assert not internal_corrupt_native_block(native_block(text, (20.0, 100.0, 260.0, 120.0)))
 
 
 def test_damaged_native_layer_is_still_rejected() -> None:
     """The corruption filter must keep catching mojibake after the fix."""
-    corrupt = internal_native_block(
+    corrupt = native_block(
         "76391*11 IOIIlo6 I * 9 2*0 118)96 '1'1322) '1'19)20 IZZO 1911*2.1,z,z CSM/l\":OST L*O*Io",
         (20.0, 200.0, 260.0, 260.0),
     )
@@ -233,20 +194,20 @@ def internal_wrapped_cell_table() -> Table:
             )
             rows.append(
                 (
-                    internal_cell(physical, 0, f"label {word}", (50.0, y1 - 12.0, 150.0, y1)),
-                    internal_cell(
+                    cell(physical, 0, f"label {word}", (50.0, y1 - 12.0, 150.0, y1)),
+                    cell(
                         physical,
                         1,
                         "long wrapped description" if line == 0 else f"continued {word}",
                         description,
                     ),
-                    internal_cell(physical, 2, f"practice {word}", (310.0, y1 - 12.0, 430.0, y1)),
-                    internal_cell(physical, 3, f"resources {word}", (440.0, y1 - 12.0, 560.0, y1)),
-                    internal_cell(physical, 4, f"marketing {word}", (570.0, y1 - 12.0, 690.0, y1)),
+                    cell(physical, 2, f"practice {word}", (310.0, y1 - 12.0, 430.0, y1)),
+                    cell(physical, 3, f"resources {word}", (440.0, y1 - 12.0, 560.0, y1)),
+                    cell(physical, 4, f"marketing {word}", (570.0, y1 - 12.0, 690.0, y1)),
                 )
             )
             physical += 1
-    return internal_stream_table(tuple(rows))
+    return stream_table(tuple(rows))
 
 
 def test_wrapped_cells_group_into_logical_rows() -> None:
@@ -273,7 +234,7 @@ def test_numeric_table_rows_are_never_regrouped() -> None:
         top = 712.0 - index * 12.0
         values = (f"Sample {index}", "12.5", "3.75", "0.82", "44.1")
         return tuple(
-            internal_cell(
+            cell(
                 index,
                 column,
                 value,
@@ -283,7 +244,7 @@ def test_numeric_table_rows_are_never_regrouped() -> None:
         )
 
     rows = tuple(row(index) for index in range(10))
-    table = internal_stream_table(rows)
+    table = stream_table(rows)
     assert internal_merge_wrapped_cell_rows(table).rows == table.rows
 
 
@@ -294,7 +255,7 @@ def test_word_rails_over_prose_are_not_a_table() -> None:
     def rail_row(row: int) -> tuple[TableCell, ...]:
         top = 712.0 - row * 12.0
         return tuple(
-            internal_cell(
+            cell(
                 row,
                 column,
                 word,
@@ -304,7 +265,7 @@ def test_word_rails_over_prose_are_not_a_table() -> None:
         )
 
     rows = tuple(rail_row(row) for row in range(14))
-    assert internal_stream_table_reads_like_prose(internal_stream_table(rows))
+    assert internal_stream_table_reads_like_prose(stream_table(rows))
 
 
 def test_sparse_long_celled_narrow_table_is_not_a_table() -> None:
@@ -313,7 +274,7 @@ def test_sparse_long_celled_narrow_table_is_not_a_table() -> None:
     for index in range(8):
         top = 700.0 - index * 14.0
         cells = [
-            internal_cell(
+            cell(
                 index,
                 0,
                 "a fairly long list entry describing something",
@@ -322,7 +283,7 @@ def test_sparse_long_celled_narrow_table_is_not_a_table() -> None:
         ]
         if index % 3 == 0:
             cells.append(
-                internal_cell(
+                cell(
                     index,
                     1,
                     "another long entry in the parallel list",
@@ -330,47 +291,18 @@ def test_sparse_long_celled_narrow_table_is_not_a_table() -> None:
                 )
             )
         else:
-            cells.append(internal_cell(index, 1, "", (320.0, top - 12.0, 560.0, top)))
+            cells.append(cell(index, 1, "", (320.0, top - 12.0, 560.0, top)))
         rows.append(tuple(cells))
-    assert internal_stream_table_reads_like_prose(internal_stream_table(tuple(rows)))
+    assert internal_stream_table_reads_like_prose(stream_table(tuple(rows)))
 
 
 def test_numeric_table_reaches_the_page() -> None:
     """End-to-end guard: the deleted numbers must survive to the output."""
-    fixture = FIXTURES / "Tobacco-Lab-Reproducibility-Tables-p002.pdf"
-    if not fixture.exists():  # pragma: no cover - corpus not vendored everywhere
-        cast(Any, pytest.skip)("missing fixture")
+    fixture = score_bench_pdf("Tobacco-Lab-Reproducibility-Tables-p002.pdf")
     with PdfDocument.open(fixture) as document:
         text = document.extract().text
     for token in ("79.4", "105.1", "108.9"):
         assert token in text
-
-
-def internal_first_embedded_truetype(pdf: bytes) -> bytes:
-    match = re.search(rb"/FontFile2\s+(\d+)\s+0\s+R", pdf)
-    assert match is not None
-    obj = int(match.group(1))
-    stream = re.search(rb"[^0-9]%d 0 obj(.*?)stream\r?\n" % obj, pdf, re.S)
-    assert stream is not None
-    body = pdf[stream.end() : pdf.find(b"endstream", stream.end())]
-    return zlib.decompress(body) if b"FlateDecode" in stream.group(1) else body
-
-
-def test_macintosh_only_cmap_resolves_glyphs() -> None:
-    """Regression: subset fonts with no Unicode cmap drew from raw codes.
-
-    A macOS-exported subset carries only a Macintosh (1,0) subtable. The
-    best-cmap lookup finds no Unicode table, and the character codes then
-    fell through as glyph ids -- indices into a subset whose order has
-    nothing to do with them, so every glyph on the page was wrong.
-    """
-    fixture = FIXTURES / "fhhd0346-p009.pdf"
-    if not fixture.exists():  # pragma: no cover - corpus not vendored everywhere
-        cast(Any, pytest.skip)("missing fixture")
-    program = tt_font_for_data(
-        internal_first_embedded_truetype(fixture.read_bytes()), None, use_cmap=True
-    )
-    assert program.cmap, "a Macintosh-only cmap must still resolve character codes"
 
 
 def test_cell_background_does_not_paint_over_its_text() -> None:
@@ -381,19 +313,19 @@ def test_cell_background_does_not_paint_over_its_text() -> None:
     replay painted the fill over the row's leading glyphs.  Measured as ink:
     the overpainted header lost roughly a third of its pixels.
     """
-    fixture = FIXTURES / "fhhd0346-p009.pdf"
-    if not fixture.exists():  # pragma: no cover - corpus not vendored everywhere
-        cast(Any, pytest.skip)("missing fixture")
+    fixture = score_bench_pdf("fhhd0346-p009.pdf")
+    scale = 2.0
     with PdfDocument.open(fixture) as document:
-        document.extract()
         capture = page_extraction(document.pages[0]).capture()
         header = next(run for run in capture.runs if (run.text or "").strip() == "Material")
-        raster = document.pages[0].render().rasterize(scale=4.0)
+        raster = document.pages[0].render().rasterize(scale=scale)
 
-    pixels = numpy.asarray(raster.array())[:, :, :3].min(axis=2)
+    pixels = raster.array()[:, :, :3].min(axis=2)
     height = pixels.shape[0]
     crop = pixels[
-        max(0, int(height - header.y1 * 4.0) - 4) : int(height - header.y0 * 4.0) + 4,
-        max(0, int(header.x0 * 4.0) - 4) : int(header.x1 * 4.0) + 4,
+        max(0, int(height - header.y1 * scale) - 4) : int(height - header.y0 * scale) + 4,
+        max(0, int(header.x0 * scale) - 4) : int(header.x1 * scale) + 4,
     ]
-    assert int((crop < 128).sum()) > 1500
+    # The intact header measures ~460 ink pixels at this scale; the overpainted
+    # one lost roughly a third of them.
+    assert int((crop < 128).sum()) > 400

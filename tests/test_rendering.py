@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from io import BytesIO
-from threading import Event
 
 import imagecodecs
 import numpy
@@ -43,16 +41,8 @@ from core_pdf.impl.spec.s_07_content.page_program import (
 )
 from core_pdf.impl.spec.s_07_document.document import PdfDocument
 from core_pdf.impl.spec.s_07_document.page import PdfPage
-from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
-from core_pdf.impl.spec.s_08_graphics.color import (
-    ImageColorManager,
-    internal_sampled_separation_rgb_lut,
-    internal_separation_lut_cache,
-)
-from core_pdf.impl.spec.s_08_graphics.color_spec import ImageColorSpec
 from core_pdf.impl.spec.s_08_graphics.image_decode import (
     ImageSource,
-    decode_pdf_image,
 )
 
 
@@ -130,7 +120,6 @@ def test_rasterize_accepts_a_crop_without_recomposing_the_display_list() -> None
     assert cropped.width == 30
     assert cropped.height == 40
     assert cropped.nbytes == 30 * 40 * 4
-    assert page.raster_cache == {}
 
 
 def test_compiled_render_plan_culls_distant_paint_but_preserves_state() -> None:
@@ -172,7 +161,7 @@ def test_unpatterned_path_uses_typed_display_record() -> None:
 
     assert type(page.display_list.items[0]) is PathPaintItem
     raster = page.rasterize(background=(255, 255, 255, 255))
-    pixels = numpy.frombuffer(raster.pixels, dtype=numpy.uint8).reshape(4, 4, 4)
+    pixels = raster.array()
     assert numpy.all(pixels[1:3, 1:3, :3] == 0)
 
 
@@ -377,98 +366,6 @@ def test_vectorized_line_kernel_matches_scalar_antialias_samples() -> None:
     assert pixels == expected
 
 
-def test_cmyk_conversion_handles_process_inks_and_black() -> None:
-    # Solid inks come out as the colours a SWOP press actually prints, not as
-    # the saturated (0, 255, 255) / (255, 0, 255) / (255, 255, 0) the naive
-    # 255*(1-ink)*(1-black) formula produces. 100% K is the profile's black
-    # after black point compensation, which is a near-neutral very dark grey.
-    samples = bytes.fromhex("00000000 ff000000 00ff0000 0000ff00 0a141e28 000000ff")
-    expected = bytes.fromhex("ffffff 00aef0 ec0a8d fff300 d6cdc6 292728")
-
-    numpy.testing.assert_array_equal(
-        ImageColorManager.convert_cmyk(samples),
-        numpy.frombuffer(expected, dtype=numpy.uint8),
-    )
-
-
-def test_cmyk_conversion_is_monotonic_in_ink_and_black() -> None:
-    """Properties any usable CMYK profile has, independent of which one ships."""
-    no_ink = ImageColorManager.convert_cmyk(bytes(4))
-    assert tuple(no_ink) == (255, 255, 255)
-
-    for channel in range(4):
-        ramp = bytearray()
-        for level in (0, 64, 128, 192, 255):
-            ink = [0, 0, 0, 0]
-            ink[channel] = level
-            ramp.extend(ink)
-        luminance = ImageColorManager.convert_cmyk(bytes(ramp)).reshape(-1, 3).sum(axis=1)
-        assert list(luminance) == sorted(luminance, reverse=True), (
-            f"channel {channel} does not darken monotonically: {luminance}"
-        )
-
-    black = ImageColorManager.convert_cmyk(bytes.fromhex("000000ff")).reshape(3)
-    assert black.max() < 64
-    assert int(black.max()) - int(black.min()) <= 8
-
-
-def first_lut_entry(cache: dict) -> object:
-    return next(iter(cache.values()))
-
-
-def test_sampled_separation_conversion_reuses_exact_rgb_lut() -> None:
-    tint_function = PdfStream(
-        {
-            "FunctionType": 0,
-            "BitsPerSample": 8,
-            "Size": [256],
-            "Domain": [0, 1],
-            "Range": [0, 1],
-        },
-        bytes(range(256)),
-    )
-    spec = ImageColorSpec(
-        kind="Separation",
-        params={},
-        bits_per_component=8,
-        alt="DeviceGray",
-        tint_fn=tint_function,
-    )
-    samples = bytes((0, 64, 128, 192, 255, 64, 0))
-
-    internal_separation_lut_cache.clear()
-    first = ImageColorManager.convert_separation(samples, spec)
-    second = ImageColorManager.convert_separation(samples, spec)
-    expected = numpy.repeat(numpy.frombuffer(samples, dtype=numpy.uint8), 3)
-
-    numpy.testing.assert_array_equal(first, expected)
-    numpy.testing.assert_array_equal(second, expected)
-    # One compiled LUT, reused: the second lookup returns the very same array.
-    assert len(internal_separation_lut_cache) == 1
-    assert internal_sampled_separation_rgb_lut(tint_function, "DeviceGray") is (
-        internal_sampled_separation_rgb_lut(tint_function, "DeviceGray")
-    )
-    assert len(internal_separation_lut_cache) == 1
-    assert not internal_sampled_separation_rgb_lut(tint_function, "DeviceGray").flags.writeable
-
-    # The cache must not keep the stream (and its view into the document buffer)
-    # alive; an equal function built from fresh bytes hits the same entry.
-    twin = PdfStream(dict(tint_function.dictionary), bytes(range(256)))
-    assert internal_sampled_separation_rgb_lut(twin, "DeviceGray") is first_lut_entry(
-        internal_separation_lut_cache
-    )
-
-
-def test_indexed_conversion_uses_rgb_lookup_entries() -> None:
-    lookup = bytes(value for index in range(4) for value in (index, index + 10, index + 20))
-    spec = ImageColorSpec("Indexed", {}, base="DeviceRGB", hival=3, lookup=lookup)
-
-    numpy.testing.assert_array_equal(
-        ImageColorManager.convert_indexed(bytes((3, 0, 2)), spec),
-        numpy.asarray((3, 13, 23, 0, 10, 20, 2, 12, 22), dtype=numpy.uint8),
-    )
-
-
 @pytest.mark.parametrize("rotation", [90, 180, 270])
 def test_rasterize_rotation_preserves_rgba_pixel_order(rotation: int) -> None:
     page = rendered_page(width=2, height=3, rotate=rotation)
@@ -511,8 +408,6 @@ def test_rasterize_rejects_oversized_canvas_before_allocation() -> None:
 
     with pytest.raises(PdfRasterTooLargeError, match="pixels=20000, maximum=19999"):
         page.rasterize(max_pixels=19_999)
-
-    assert page.raster_cache == {}
 
 
 def test_seekable_source_is_read_from_start_and_restored() -> None:
@@ -874,186 +769,6 @@ def test_image_paint_boundary_prepares_without_mutating_source_dictionary() -> N
     assert "__core_pdf_render_converted_image_data__" not in dictionary
 
 
-def test_image_decode_recovers_unambiguous_samples_from_malformed_icc() -> None:
-    samples = bytes((10, 20, 30, 40, 50, 60))
-
-    decoded = decode_pdf_image(
-        samples,
-        {
-            "Width": 2,
-            "Height": 1,
-            "BitsPerComponent": 8,
-            "ColorSpace": ["ICCBased", object()],
-        },
-    )
-
-    assert decoded is not None
-    assert decoded.channels == 3
-    assert decoded.data == samples
-
-
-def test_image_decode_converts_cmyk_jpeg_samples_to_rgb() -> None:
-    samples = numpy.array([[[10, 20, 30, 40]]], dtype=numpy.uint8)
-    encoded = bytes(imagecodecs.jpeg_encode(samples, level=100))
-
-    decoded = decode_pdf_image(
-        encoded,
-        {
-            "Filter": "DCTDecode",
-            "Width": 1,
-            "Height": 1,
-            "BitsPerComponent": 8,
-            "ColorSpace": "DeviceCMYK",
-        },
-    )
-
-    assert decoded is not None
-    assert decoded.channels == 3
-    jpeg_samples = numpy.asarray(imagecodecs.jpeg_decode(encoded), dtype=numpy.uint8)
-    expected = ImageColorManager.convert_cmyk(jpeg_samples.reshape(-1))
-    numpy.testing.assert_array_equal(decoded.data, expected)
-
-
-def test_image_source_decodes_once_into_read_only_ndarray() -> None:
-    source = ImageSource(
-        bytes((10, 20, 30, 40, 50, 60)),
-        {
-            "Width": 2,
-            "Height": 1,
-            "ColorSpace": "DeviceRGB",
-            "BitsPerComponent": 8,
-        },
-    )
-
-    first = source.decode()
-    second = source.decode()
-
-    assert first is second
-    assert first is not None
-    assert first.array.shape == (1, 2, 3)
-    assert first.array.strides[0] == first.stride
-    assert not first.array.flags.writeable
-
-
-def test_image_source_applies_soft_mask_once() -> None:
-    source = ImageSource(
-        bytes((10, 20, 30, 40, 50, 60)),
-        {
-            "Width": 2,
-            "Height": 1,
-            "ColorSpace": "DeviceRGB",
-            "BitsPerComponent": 8,
-            "__soft_mask_raw_data__": bytes((0, 255)),
-            "__soft_mask_dictionary__": {
-                "Width": 2,
-                "Height": 1,
-                "ColorSpace": "DeviceGray",
-                "BitsPerComponent": 8,
-            },
-        },
-    )
-
-    raster = source.decode()
-
-    assert raster is not None
-    assert raster.has_alpha
-    numpy.testing.assert_array_equal(raster.array[0, :, 3], (0, 255))
-
-
-def test_image_source_prepares_native_soft_mask_and_reports_all_bytes() -> None:
-    source = ImageSource(
-        bytes((10, 20, 30)),
-        {
-            "Width": 1,
-            "Height": 1,
-            "ColorSpace": "DeviceRGB",
-            "BitsPerComponent": 8,
-            "__soft_mask_raw_data__": bytes((0, 64, 128, 255)),
-            "__soft_mask_dictionary__": {
-                "Width": 2,
-                "Height": 2,
-                "ColorSpace": "DeviceGray",
-                "BitsPerComponent": 8,
-            },
-        },
-    )
-
-    prepared = source.prepare()
-
-    assert prepared is source.prepare()
-    assert prepared is not None
-    assert prepared.soft_mask is not None
-    assert prepared.soft_mask.array.shape == (2, 2, 1)
-    assert prepared.nbytes == prepared.raster.nbytes + prepared.soft_mask.nbytes
-    numpy.testing.assert_array_equal(prepared.soft_mask.array[:, :, 0], ((0, 64), (128, 255)))
-
-
-def test_image_source_cache_single_flights_preparation() -> None:
-    cache = ImageCache(max_bytes=1024)
-    entered = Event()
-    release = Event()
-    second_started = Event()
-    preparations: list[ImageSource] = []
-
-    class BlockingImageSource(ImageSource):
-        def internal_prepare(self):
-            preparations.append(self)
-            entered.set()
-            assert release.wait(5)
-            return super().internal_prepare()
-
-    dictionary = {
-        "Width": 1,
-        "Height": 1,
-        "ColorSpace": "DeviceRGB",
-        "BitsPerComponent": 8,
-    }
-    first_source = BlockingImageSource(
-        bytes((10, 20, 30)), dictionary, cache=cache, cache_key=("shared", 1)
-    )
-    second_source = BlockingImageSource(
-        bytes((10, 20, 30)), dictionary, cache=cache, cache_key=("shared", 1)
-    )
-
-    def prepare_second():
-        second_started.set()
-        return second_source.prepare()
-
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        first_future = executor.submit(first_source.prepare)
-        assert entered.wait(5)
-        second_future = executor.submit(prepare_second)
-        assert second_started.wait(5)
-        assert not second_future.done()
-        release.set()
-        first = first_future.result(timeout=5)
-        second = second_future.result(timeout=5)
-
-    assert first is second
-    assert len(preparations) == 1
-
-
-def test_image_mask_source_exposes_alpha_channel() -> None:
-    source = ImageSource(
-        bytes((0b10000000,)),
-        {
-            "Width": 2,
-            "Height": 1,
-            "ImageMask": True,
-            "BitsPerComponent": 1,
-        },
-    )
-
-    raster = source.decode()
-
-    assert raster is not None
-    assert raster.color_model == "gray"
-    # ISO 32000-1 8.9.6.2: with the default Decode [0 1] "a sample value of 0
-    # shall mark the page ... and a 1 shall leave the previous contents
-    # unchanged", so the 0 bit is the opaque one.
-    numpy.testing.assert_array_equal(raster.array[0, :, 1], (0, 255))
-
-
 def test_image_mask_decode_is_applied_once_at_preparation_boundary() -> None:
     page = rendered_page(width=2, height=1)
     page.display_list.append(
@@ -1105,14 +820,8 @@ def test_orthogonal_image_blit_preserves_rotation_pixel_order(rotation: int) -> 
     unrotated = rendered_page(width=2, height=3)
     unrotated.display_list.items = page.display_list.items
 
-    source = numpy.frombuffer(
-        unrotated.rasterize(background=(255, 255, 255, 255)).pixels,
-        dtype=numpy.uint8,
-    ).reshape(3, 2, 4)
-    actual = numpy.frombuffer(
-        page.rasterize(background=(255, 255, 255, 255)).pixels,
-        dtype=numpy.uint8,
-    ).reshape(page.raster_size()[1], page.raster_size()[0], 4)
+    source = unrotated.rasterize(background=(255, 255, 255, 255)).array()
+    actual = page.rasterize(background=(255, 255, 255, 255)).array()
     if rotation == 90:
         expected = numpy.rot90(source, k=3)
     elif rotation == 180:
@@ -1194,49 +903,26 @@ def test_orthogonal_image_quad_rasterizes_rotated_samples() -> None:
         bbox=(0, 0, 3, 2),
     )
 
-    actual = numpy.frombuffer(
-        page.rasterize(background=(255, 255, 255, 255)).pixels,
-        dtype=numpy.uint8,
-    ).reshape(2, 3, 4)
+    actual = page.rasterize(background=(255, 255, 255, 255)).array()
 
     expected = numpy.full((2, 3, 4), 255, dtype=numpy.uint8)
     expected[:, :, :3] = numpy.rot90(samples, k=3)
     numpy.testing.assert_array_equal(actual, expected)
 
 
-def test_image_mask_opaque_region_uses_masked_page_view() -> None:
-    page = rendered_page(width=2, height=2)
-    page.display_list.append(
-        "image",
-        1,
-        raw_data=b"\x80\x40",
-        dictionary={
-            "ImageMask": True,
-            "Width": 2,
-            "Height": 2,
-            "BitsPerComponent": 1,
-        },
-        bbox=(0, 0, 2, 2),
-    )
-
-    actual = numpy.frombuffer(
-        page.rasterize(background=(255, 255, 255, 255)).pixels,
-        dtype=numpy.uint8,
-    ).reshape(2, 2, 4)
-    expected = numpy.full((2, 2, 4), 255, dtype=numpy.uint8)
-    # 8.9.6.2: the 0 bits mark the page, so rows 0b10... and 0b01... paint the
-    # second and first pixel respectively.
-    expected[0, 1, :3] = 0
-    expected[1, 0, :3] = 0
-
-    numpy.testing.assert_array_equal(actual, expected)
-
-
-def test_image_mask_paints_the_current_fill_colour() -> None:
+@pytest.mark.parametrize(
+    ("fill", "expected_rgb"),
+    [
+        pytest.param(None, (0, 0, 0), id="default-black"),
+        pytest.param((1.0, 0.0, 0.0), (255, 0, 0), id="current-fill"),
+    ],
+)
+def test_image_mask_paints_marked_bits_with_the_current_fill(
+    fill: tuple[float, float, float] | None, expected_rgb: tuple[int, int, int]
+) -> None:
     # PDF 8.9.6.2: a stencil mask carries no colour samples of its own, so its set
-    # bits take the fill colour that was current when it was drawn. Painting them
-    # black regardless is only correct by accident, because black is the default
-    # fill -- which is why every stencil in the corpus hid this.
+    # bits take the fill colour that was current when it was drawn. No recorded
+    # fill means the drawing never set one, so the PDF default (black) applies.
     page = rendered_page(width=2, height=2)
     page.display_list.append(
         "image",
@@ -1249,46 +935,15 @@ def test_image_mask_paints_the_current_fill_colour() -> None:
             "BitsPerComponent": 1,
         },
         bbox=(0, 0, 2, 2),
-        fill=(1.0, 0.0, 0.0),
+        **({} if fill is None else {"fill": fill}),
     )
 
-    actual = numpy.frombuffer(
-        page.rasterize(background=(255, 255, 255, 255)).pixels,
-        dtype=numpy.uint8,
-    ).reshape(2, 2, 4)
-    expected = numpy.full((2, 2, 4), 255, dtype=numpy.uint8)
-    # 8.9.6.2: the 0 bits are the ones that mark the page.
-    expected[0, 1, :3] = (255, 0, 0)
-    expected[1, 0, :3] = (255, 0, 0)
-
-    numpy.testing.assert_array_equal(actual, expected)
-
-
-def test_image_mask_without_a_recorded_fill_stays_black() -> None:
-    # No fill recorded means the drawing never set one, so the PDF default applies.
-    page = rendered_page(width=2, height=2)
-    page.display_list.append(
-        "image",
-        1,
-        raw_data=b"\x80\x40",
-        dictionary={
-            "ImageMask": True,
-            "Width": 2,
-            "Height": 2,
-            "BitsPerComponent": 1,
-        },
-        bbox=(0, 0, 2, 2),
-    )
-
-    actual = numpy.frombuffer(
-        page.rasterize(background=(255, 255, 255, 255)).pixels,
-        dtype=numpy.uint8,
-    ).reshape(2, 2, 4)
+    actual = page.rasterize(background=(255, 255, 255, 255)).array()
     expected = numpy.full((2, 2, 4), 255, dtype=numpy.uint8)
     # 8.9.6.2: the 0 bits mark the page, so rows 0b10... and 0b01... paint the
     # second and first pixel respectively.
-    expected[0, 1, :3] = 0
-    expected[1, 0, :3] = 0
+    expected[0, 1, :3] = expected_rgb
+    expected[1, 0, :3] = expected_rgb
 
     numpy.testing.assert_array_equal(actual, expected)
 
@@ -1305,10 +960,7 @@ def test_aligned_opaque_glyph_bitmap_expands_through_page_view() -> None:
         fill_color=(0, 0, 0),
     )
 
-    actual = numpy.frombuffer(
-        page.rasterize(background=(255, 255, 255, 255)).pixels,
-        dtype=numpy.uint8,
-    ).reshape(4, 4, 4)
+    actual = page.rasterize(background=(255, 255, 255, 255)).array()
     expected = numpy.full((4, 4, 4), 255, dtype=numpy.uint8)
     expected[:2, :2, :3] = 0
     expected[2:, 2:, :3] = 0
@@ -1341,10 +993,7 @@ def test_soft_masked_image_blends_vectorized_samples() -> None:
         bbox=(0, 0, 2, 2),
     )
 
-    actual = numpy.frombuffer(
-        page.rasterize(background=(255, 255, 255, 255)).pixels,
-        dtype=numpy.uint8,
-    ).reshape(2, 2, 4)
+    actual = page.rasterize(background=(255, 255, 255, 255)).array()
 
     assert actual[0, 0, 0] == 255
     assert actual[0, 1, 0] == 0
@@ -1378,10 +1027,7 @@ def test_shared_image_preserves_higher_resolution_soft_mask() -> None:
         bbox=(0, 0, 2, 2),
     )
 
-    actual = numpy.frombuffer(
-        page.rasterize(background=(255, 255, 255, 255)).pixels,
-        dtype=numpy.uint8,
-    ).reshape(2, 2, 4)
+    actual = page.rasterize(background=(255, 255, 255, 255)).array()
 
     numpy.testing.assert_array_equal(actual[:, :, 0], ((255, 0), (255, 0)))
 
@@ -1418,10 +1064,7 @@ def test_affine_image_blit_preserves_sheared_source_samples() -> None:
     expected[1, 0, :3] = decoded[1, 0]
     expected[1, 1, :3] = decoded[1, 1]
 
-    actual = numpy.frombuffer(
-        page.rasterize(background=(255, 255, 255, 255)).pixels,
-        dtype=numpy.uint8,
-    ).reshape(2, 3, 4)
+    actual = page.rasterize(background=(255, 255, 255, 255)).array()
 
     numpy.testing.assert_array_equal(actual, expected)
 

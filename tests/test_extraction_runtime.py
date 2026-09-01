@@ -5,7 +5,6 @@ import textwrap
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
 
 import pytest
 
@@ -14,70 +13,23 @@ from core_pdf.impl.parse import ParsedPage
 from core_pdf.impl.parse import pipeline as parse_pipeline
 from core_pdf.impl.primitives import PdfName
 from core_pdf.impl.runtime.execution import ExecutionRuntime, RuntimeConfig, TaskScope, WorkStage
+from tests.helpers.paths import SCORE_BENCH
+from tests.helpers.pdf_bytes import text_pages_pdf
 
-TESTS_DIR = Path(__file__).parent / "fixtures"
-SAMPLE_PDF = TESTS_DIR / "SCORE-Bench" / "src" / "global-AIDS-strategy-p74-75-p001.pdf"
-PAGE_OCR_PDF = TESTS_DIR / "SCORE-Bench" / "src" / "SFG-Content-Marketing-2021-p001.pdf"
-
-
-def internal_assemble_pdf(objects: list[bytes]) -> bytes:
-    output = bytearray(b"%PDF-1.7\n%\xe2\xe3\xcf\xd3\n")
-    offsets: list[int] = []
-    for number, value in enumerate(objects, 1):
-        offsets.append(len(output))
-        output.extend(f"{number} 0 obj\n".encode())
-        output.extend(value)
-        output.extend(b"\nendobj\n")
-    xref_offset = len(output)
-    output.extend(f"xref\n0 {len(objects) + 1}\n".encode())
-    output.extend(b"0000000000 65535 f \n")
-    for offset in offsets:
-        output.extend(f"{offset:010d} 00000 n \n".encode())
-    output.extend(
-        f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\n"
-        f"startxref\n{xref_offset}\n%%EOF\n".encode()
-    )
-    return bytes(output)
+SAMPLE_PDF = SCORE_BENCH / "global-AIDS-strategy-p74-75-p001.pdf"
+PAGE_OCR_PDF = SCORE_BENCH / "SFG-Content-Marketing-2021-p001.pdf"
 
 
-def internal_text_pages_pdf(texts: tuple[str, ...]) -> bytes:
-    kids = " ".join(f"{4 + page_index * 2} 0 R" for page_index in range(len(texts)))
-    objects = [
-        b"<< /Type /Catalog /Pages 2 0 R >>",
-        f"<< /Type /Pages /Kids [{kids}] /Count {len(texts)} >>".encode(),
-        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
-    ]
-    for page_index, text in enumerate(texts):
-        content_object = 5 + page_index * 2
-        content = f"BT /F1 10 Tf 36 750 Td ({text}) Tj ET".encode()
-        objects.extend(
-            (
-                (
-                    b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
-                    b"/Resources << /Font << /F1 3 0 R >> >> /Contents "
-                    + f"{content_object} 0 R >>".encode()
-                ),
-                f"<< /Length {len(content)} >>\nstream\n".encode() + content + b"\nendstream",
-            )
-        )
-    return internal_assemble_pdf(objects)
+def test_ocr_extraction_can_start_in_an_application_worker() -> None:
+    """Both OCR entry points (image regions and the primary page) start off-main-thread.
 
-
-def internal_many_page_pdf(page_count: int) -> bytes:
-    return internal_text_pages_pdf(tuple(f"Page {page_index}" for page_index in range(page_count)))
-
-
-@pytest.mark.parametrize(
-    ("fixture", "expected_pass"),
-    [
-        pytest.param(SAMPLE_PDF, "image-regions", id="image-region"),
-        pytest.param(PAGE_OCR_PDF, "primary-page", id="page"),
-    ],
-)
-def test_ocr_extraction_can_start_in_an_application_worker(
-    fixture: Path,
-    expected_pass: str,
-) -> None:
+    One interpreter runs both fixtures: the property under test is that the
+    engine initialises from a worker thread, which one process demonstrates.
+    """
+    cases = {
+        str(SAMPLE_PDF): "image-regions",
+        str(PAGE_OCR_PDF): "primary-page",
+    }
     script = textwrap.dedent(
         f"""
         import json
@@ -86,10 +38,8 @@ def test_ocr_extraction_can_start_in_an_application_worker(
         from pathlib import Path
         from core_pdf import PdfDocument
 
-        fixture = Path({str(fixture)!r})
-
-        def extract():
-            with PdfDocument.open(fixture) as document:
+        def extract(fixture):
+            with PdfDocument.open(Path(fixture)) as document:
                 extracted = document.extract()
                 report = document.pages[0].parse_report
                 assert report is not None
@@ -100,7 +50,8 @@ def test_ocr_extraction_can_start_in_an_application_worker(
                 }}
 
         with ThreadPoolExecutor(max_workers=1) as executor:
-            print(json.dumps(executor.submit(extract).result()))
+            results = [executor.submit(extract, fixture).result() for fixture in {list(cases)!r}]
+        print(json.dumps(results))
         """
     )
     completed = subprocess.run(
@@ -110,10 +61,10 @@ def test_ocr_extraction_can_start_in_an_application_worker(
         text=True,
     )
 
-    result = json.loads(completed.stdout)
-    assert result["characters"] > 0
-    assert expected_pass in result["passes"]
-    assert result["worker"] is True
+    for result, expected_pass in zip(json.loads(completed.stdout), cases.values(), strict=True):
+        assert result["characters"] > 0
+        assert expected_pass in result["passes"]
+        assert result["worker"] is True
 
 
 def test_worker_first_ocr_initialization_has_an_actionable_error() -> None:
@@ -181,8 +132,8 @@ def test_run_on_each_worker_does_not_hang_when_workers_are_busy() -> None:
         started = time.perf_counter()
         # The barrier can never fill while two workers are blocked, so the wait
         # must break rather than deadlock the pool.
-        runtime.run_on_each_worker(record, timeout=1.0)
-        assert time.perf_counter() - started < 10.0
+        runtime.run_on_each_worker(record, timeout=0.1)
+        assert time.perf_counter() - started < 5.0
         assert warmed >= 1
     finally:
         release.set()
@@ -495,7 +446,8 @@ def test_document_extraction_chunks_capture_and_parses_native_pages_inline() -> 
     runtime = ExecutionRuntime(RuntimeConfig(parent_workers=4))
     try:
         page_count = 128
-        with PdfDocument.open(internal_many_page_pdf(page_count)) as document:
+        pages = tuple(f"Page {page_index}" for page_index in range(page_count))
+        with PdfDocument.open(text_pages_pdf(pages)) as document:
             with runtime.task_scope(metrics=True) as context:
                 extracted = document.extract(context=context)
                 metrics = context.metrics()
@@ -584,9 +536,7 @@ def test_concurrent_document_extracts_share_the_emitted_document() -> None:
 
 
 def internal_multi_page_pdf() -> bytes:
-    return internal_text_pages_pdf(
-        tuple(f"page {page_number} payload" for page_number in range(1, 4))
-    )
+    return text_pages_pdf(tuple(f"page {page_number} payload" for page_number in range(1, 4)))
 
 
 def test_document_extract_parses_only_the_selected_pages(monkeypatch: pytest.MonkeyPatch) -> None:

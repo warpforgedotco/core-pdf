@@ -18,16 +18,17 @@ from core_pdf.impl.parse.layout import (
     layout_blocks_with_evidence,
 )
 from core_pdf.impl.parse.model import ParsedBlock, ParsedLine
+from tests.helpers import parse_fakes
 
 
 def observations(
     items: tuple[tuple[str, tuple[float, float, float, float]], ...],
 ) -> ObservationBatch:
-    return ObservationBatch.from_columns(
-        (text for text, internal_box in items),
-        (box for internal_text, box in items),
+    """Confident OCR observations that each start a line."""
+    return parse_fakes.observations(
+        items,
         source=ObservationSource.OCR,
-        confidence=(90.0 for internal_item in items),
+        confidence=90.0,
         line_break_before=(True for internal_item in items),
     )
 

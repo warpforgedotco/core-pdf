@@ -194,19 +194,9 @@ def internal_type2_calculated_line(
 def internal_type2_contour(
     operands: list[int], operator: int | tuple[int, int]
 ) -> list[tuple[float, float]]:
-    encoded_operator = bytes([operator]) if isinstance(operator, int) else bytes(operator)
-    charstring = (
-        internal_type2_number(0)
-        + internal_type2_number(0)
-        + bytes([21])
-        + b"".join(internal_type2_number(value) for value in operands)
-        + encoded_operator
-        + bytes([14])
-    )
-    contours, ignored_bbox = internal_type2_glyph_geometry_impl(
-        charstring,
-        local_subrs=(),
-        global_subrs=(),
+    encoded_operator = (operator,) if isinstance(operator, int) else operator
+    contours, ignored_bbox = internal_type2_geometry(
+        0, 0, (21,), *operands, encoded_operator, (14,)
     )
     assert len(contours) == 1
     return contours[0]
@@ -333,7 +323,7 @@ def test_type2_stack_operators_preserve_specified_order(
 
 
 def test_type2_random_is_repeatable_and_in_the_specified_range() -> None:
-    program = internal_type2_program(
+    tokens = (
         0,
         0,
         (21,),
@@ -345,16 +335,8 @@ def test_type2_random_is_repeatable_and_in_the_specified_range() -> None:
         (14,),
     )
 
-    first = internal_type2_glyph_geometry_impl(
-        program,
-        local_subrs=(),
-        global_subrs=(),
-    )
-    second = internal_type2_glyph_geometry_impl(
-        program,
-        local_subrs=(),
-        global_subrs=(),
-    )
+    first = internal_type2_geometry(*tokens)
+    second = internal_type2_geometry(*tokens)
 
     assert first == second
     endpoint = first[0][0][-1]

@@ -16,38 +16,22 @@ from core_pdf.impl.parse.emit import (
     internal_stream_table_is_tabular,
 )
 from core_pdf.impl.structured import Block, BlockKind, Table, TableCell, TextLine
+from tests.helpers.structured import cell, stream_table
 
 
-def cell(row: int, column: int, text: str) -> TableCell:
+def grid_cell(row: int, column: int, text: str) -> TableCell:
     width = 120.0
     left = 60.0 + column * width
     top = 700.0 - row * 20.0
-    return TableCell(
-        row=row,
-        column=column,
-        text=text,
-        bbox=(left, top - 18.0, left + width, top),
-    )
+    return cell(row, column, text, (left, top - 18.0, left + width, top))
 
 
 def table_of(rows: tuple[tuple[str, ...], ...], *, source: str = "stream") -> Table:
     built = tuple(
-        tuple(cell(row_index, column_index, text) for column_index, text in enumerate(row))
+        tuple(grid_cell(row_index, column_index, text) for column_index, text in enumerate(row))
         for row_index, row in enumerate(rows)
     )
-    boxes = [item.bbox for row in built for item in row if item.bbox is not None]
-    return Table(
-        order=0,
-        rows=built,
-        bbox=(
-            min(box[0] for box in boxes),
-            min(box[1] for box in boxes),
-            max(box[2] for box in boxes),
-            max(box[3] for box in boxes),
-        ),
-        confidence=1.0,
-        metadata={"source": source},
-    )
+    return stream_table(built, source=source, confidence=1.0)
 
 
 def blocks_covering(table: Table) -> list[Block]:

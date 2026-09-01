@@ -1,18 +1,17 @@
 from __future__ import annotations
 
-from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 
 from core_pdf import PdfDocument
 from core_pdf.impl.model.runs import TextRun
 from core_pdf.impl.parse import (
-    CapturedPage,
     GlyphEvidence,
     OcrPassScope,
     PageEvidence,
     PageRoute,
     TextQualityStats,
+    WorkPlan,
 )
 from core_pdf.impl.parse.capture import (
     capture_page,
@@ -23,7 +22,14 @@ from core_pdf.impl.parse.capture import (
 )
 from core_pdf.impl.parse.pipeline import page_extraction
 from core_pdf.impl.parse.route import plan_page
-from core_pdf.impl.spec.s_07_content.capture import CapturedPath, CapturedSubpath
+from core_pdf.impl.spec.s_07_content.capture import (
+    CapturedDrawing,
+    CapturedPath,
+    CapturedSubpath,
+)
+from tests.helpers.parse_fakes import capture as make_capture
+from tests.helpers.parse_fakes import drawing, text_run
+from tests.helpers.paths import SCORE_BENCH
 
 
 def run(
@@ -32,18 +38,25 @@ def run(
     depth: int = 0,
     clip: tuple[float, float, float, float] | None = None,
     bbox: tuple[float, float, float, float] | None = None,
-) -> SimpleNamespace:
+) -> TextRun:
     provenance = (("clip_bbox", clip),) if clip is not None else ()
     x0, y0, x1, y1 = bbox or clip or (0.0, 0.0, 100.0, 100.0)
-    return SimpleNamespace(
-        text=text,
-        xobject_depth=depth,
-        provenance=provenance,
-        inside_active_clip=True,
-        x0=x0,
-        y0=y0,
-        x1=x1,
-        y1=y1,
+    return text_run(text, x0, y0, x1, y1, xobject_depth=depth, provenance=provenance)
+
+
+def plan_for(
+    page_evidence: PageEvidence,
+    *,
+    width: float = 600.0,
+    height: float = 800.0,
+    rotation: int = 0,
+    drawings: tuple[CapturedDrawing, ...] = (),
+) -> WorkPlan:
+    """Route a page that carries only ``page_evidence`` (and optional drawings)."""
+    return plan_page(
+        make_capture(
+            page_evidence, width=width, height=height, rotation=rotation, drawings=drawings
+        )
     )
 
 
@@ -198,7 +211,7 @@ def test_structure_actual_text_replaces_mcid_text_before_routing() -> None:
 
 def test_vector_complexity_ignores_graphics_state_control_records() -> None:
     drawings = tuple(
-        SimpleNamespace(kind=kind)
+        drawing(kind, (0.0, 0.0, 1.0, 1.0))
         for kind in ("state-push", "clip", "stroke", "state-pop", "image")
     )
 
@@ -206,13 +219,7 @@ def test_vector_complexity_ignores_graphics_state_control_records() -> None:
 
 
 def test_page_extraction_owns_and_reuses_canonical_capture() -> None:
-    fixture = (
-        Path(__file__).parent
-        / "fixtures"
-        / "SCORE-Bench"
-        / "src"
-        / "Employee_Health_Benefits_Assess-p006.pdf"
-    )
+    fixture = SCORE_BENCH / "Employee_Health_Benefits_Assess-p006.pdf"
     with PdfDocument.open(fixture) as document:
         page = document.pages[0]
         program = page.get_page_program()
@@ -225,9 +232,7 @@ def test_page_extraction_owns_and_reuses_canonical_capture() -> None:
 
 
 def test_image_only_program_still_routes_ocr() -> None:
-    fixture = (
-        Path(__file__).parent / "fixtures" / "SCORE-Bench" / "src" / "153rd-Omaha-Pow-Wow-p001.pdf"
-    )
+    fixture = SCORE_BENCH / "153rd-Omaha-Pow-Wow-p001.pdf"
     with PdfDocument.open(fixture) as document:
         page = document.pages[0]
         capture = capture_page(page)
@@ -238,26 +243,16 @@ def test_image_only_program_still_routes_ocr() -> None:
 
 
 def test_clean_native_plan_has_no_ocr() -> None:
-    capture = SimpleNamespace(
-        evidence=evidence(characters=200, visible_characters=200),
-        drawings=(),
-        grid_lines=(),
-        page=SimpleNamespace(width=600.0, height=800.0),
+    native = plan_for(
+        evidence(characters=200, visible_characters=200),
     )
-    native = plan_page(cast(CapturedPage, capture))
 
     assert native.route is PageRoute.NATIVE
     assert not native.ocr_passes
 
 
 def test_newstroke_vector_diagram_is_decoded_without_ocr() -> None:
-    fixture = (
-        Path(__file__).parent
-        / "fixtures"
-        / "SCORE-Bench"
-        / "src"
-        / "esp32_s3_circuit_schematic.pdf"
-    )
+    fixture = SCORE_BENCH / "esp32_s3_circuit_schematic.pdf"
     with PdfDocument.open(fixture) as document:
         page = document.pages[0]
         capture = capture_page(page)
@@ -284,19 +279,14 @@ def test_newstroke_vector_diagram_is_decoded_without_ocr() -> None:
 
 
 def test_route_selects_embedded_image_supplement() -> None:
-    capture = SimpleNamespace(
-        evidence=evidence(
+    plan = plan_for(
+        evidence(
             characters=200,
             visible_characters=200,
             image_count=1,
             image_area_ratio=0.2,
         ),
-        drawings=(),
-        grid_lines=(),
-        page=SimpleNamespace(width=600.0, height=800.0),
     )
-
-    plan = plan_page(cast(CapturedPage, capture))
 
     assert plan.reason == "embedded-image-text-supplement"
     assert plan.image_regions_only is True
@@ -305,19 +295,16 @@ def test_route_selects_embedded_image_supplement() -> None:
 
 
 def test_route_uses_layout_analysis_for_ultra_complex_line_art() -> None:
-    capture = SimpleNamespace(
-        evidence=evidence(
+    plan = plan_for(
+        evidence(
             characters=0,
             visible_characters=0,
             vector_complexity=150_000,
             page_area=960_000.0,
         ),
-        drawings=(),
-        grid_lines=(),
-        page=SimpleNamespace(width=1200.0, height=800.0),
+        width=1200.0,
+        height=800.0,
     )
-
-    plan = plan_page(cast(CapturedPage, capture))
 
     primary = plan.ocr_passes[0]
     assert primary.modes == (3,)
@@ -328,19 +315,16 @@ def test_route_uses_layout_analysis_for_ultra_complex_line_art() -> None:
 
 
 def test_route_adds_region_recovery_for_uncovered_vector_text() -> None:
-    capture = SimpleNamespace(
-        evidence=evidence(
+    plan = plan_for(
+        evidence(
             characters=6,
             visible_characters=6,
             vector_complexity=200_000,
             uncovered_vector_area=100_000.0,
         ),
-        drawings=(),
-        grid_lines=(),
-        page=SimpleNamespace(width=1200.0, height=800.0),
+        width=1200.0,
+        height=800.0,
     )
-
-    plan = plan_page(cast(CapturedPage, capture))
 
     assert plan.reason == "uncovered-vector-text"
     assert plan.ocr_passes[0].name == "schematic-regions"
@@ -354,24 +338,23 @@ def test_route_adds_region_recovery_for_uncovered_vector_text() -> None:
 
 
 def test_route_skips_ocr_for_native_text_over_simple_rectangles() -> None:
-    rectangle = SimpleNamespace(
-        kind="fill",
+    rectangle = drawing(
+        "fill",
+        (0.0, 0.0, 8.0, 8.0),
         path=CapturedPath(
             [CapturedSubpath([(0.0, 0.0), (8.0, 0.0), (8.0, 8.0), (0.0, 8.0)], closed=True)]
         ),
     )
-    capture = SimpleNamespace(
-        evidence=evidence(
+
+    plan = plan_for(
+        evidence(
             characters=200,
             visible_characters=200,
             vector_complexity=2_400,
             uncovered_vector_area=32_000.0,
         ),
         drawings=(rectangle,) * 32,
-        page=SimpleNamespace(width=600.0, height=800.0),
     )
-
-    plan = plan_page(cast(CapturedPage, capture))
 
     assert plan.route is PageRoute.NATIVE
     assert plan.reason == "native-text-with-rectangular-vectors"
@@ -379,8 +362,8 @@ def test_route_skips_ocr_for_native_text_over_simple_rectangles() -> None:
 
 
 def test_route_skips_ocr_for_glyph_trusted_vector_text() -> None:
-    capture = SimpleNamespace(
-        evidence=evidence(
+    plan = plan_for(
+        evidence(
             characters=300,
             visible_characters=300,
             vector_complexity=20_000,
@@ -393,11 +376,7 @@ def test_route_skips_ocr_for_glyph_trusted_vector_text() -> None:
                 authoritative_glyphs=300,
             ),
         ),
-        observations=SimpleNamespace(rotation=(0,)),
-        page=SimpleNamespace(width=600.0, height=800.0),
     )
-
-    plan = plan_page(cast(CapturedPage, capture))
 
     assert plan.route is PageRoute.NATIVE
     assert plan.reason == "glyph-trusted-vector-text"
@@ -405,8 +384,8 @@ def test_route_skips_ocr_for_glyph_trusted_vector_text() -> None:
 
 
 def test_identity_glyph_identifiers_do_not_suppress_vector_ocr() -> None:
-    capture = SimpleNamespace(
-        evidence=evidence(
+    plan = plan_for(
+        evidence(
             characters=300,
             visible_characters=300,
             vector_complexity=20_000,
@@ -415,11 +394,7 @@ def test_identity_glyph_identifiers_do_not_suppress_vector_ocr() -> None:
             text_quality=TextQualityStats(token_count=50, wordlike_ratio=0.75),
             glyphs=GlyphEvidence(glyph_count=300, unknown_glyphs=300),
         ),
-        observations=SimpleNamespace(rotation=(0,)),
-        page=SimpleNamespace(width=600.0, height=800.0),
     )
-
-    plan = plan_page(cast(CapturedPage, capture))
 
     assert plan.reason == "uncovered-vector-text"
     assert plan.ocr_passes
@@ -427,8 +402,8 @@ def test_identity_glyph_identifiers_do_not_suppress_vector_ocr() -> None:
 
 
 def test_route_uses_binary_clean_ocr_for_noisy_native_text() -> None:
-    capture = SimpleNamespace(
-        evidence=evidence(
+    plan = plan_for(
+        evidence(
             characters=180,
             visible_characters=180,
             vector_complexity=500,
@@ -441,13 +416,7 @@ def test_route_uses_binary_clean_ocr_for_noisy_native_text() -> None:
                 digit_token_ratio=0.35,
             ),
         ),
-        observations=SimpleNamespace(rotation=(0,)),
-        drawings=(),
-        grid_lines=(),
-        page=SimpleNamespace(width=600.0, height=800.0),
     )
-
-    plan = plan_page(cast(CapturedPage, capture))
 
     assert plan.route is PageRoute.HYBRID
     assert plan.reason == "noisy-native-text"
@@ -458,8 +427,8 @@ def test_route_uses_binary_clean_ocr_for_noisy_native_text() -> None:
 
 
 def test_route_keeps_regular_native_text_despite_some_short_tokens() -> None:
-    capture = SimpleNamespace(
-        evidence=evidence(
+    plan = plan_for(
+        evidence(
             characters=220,
             visible_characters=220,
             vector_complexity=500,
@@ -471,31 +440,20 @@ def test_route_keeps_regular_native_text_despite_some_short_tokens() -> None:
                 digit_token_ratio=0.18,
             ),
         ),
-        observations=SimpleNamespace(rotation=(0,)),
-        drawings=(),
-        grid_lines=(),
-        page=SimpleNamespace(width=600.0, height=800.0),
     )
-
-    plan = plan_page(cast(CapturedPage, capture))
 
     assert plan.reason == "healthy-native-text"
 
 
 def test_route_requires_stronger_evidence_for_ocr_replacement() -> None:
-    capture = SimpleNamespace(
-        evidence=evidence(
+    plan = plan_for(
+        evidence(
             characters=0,
             visible_characters=0,
             image_count=1,
             image_area_ratio=1.0,
         ),
-        drawings=(),
-        grid_lines=(),
-        page=SimpleNamespace(width=600.0, height=800.0),
     )
-
-    plan = plan_page(cast(CapturedPage, capture))
 
     assert plan.route is PageRoute.OCR
     assert tuple(ocr_pass.name for ocr_pass in plan.ocr_passes) == (
@@ -506,18 +464,13 @@ def test_route_requires_stronger_evidence_for_ocr_replacement() -> None:
 
 
 def test_hidden_text_route_requires_material_adaptive_gain() -> None:
-    capture = SimpleNamespace(
-        evidence=evidence(
+    plan = plan_for(
+        evidence(
             characters=140,
             visible_characters=10,
             image_count=1,
         ),
-        drawings=(),
-        grid_lines=(),
-        page=SimpleNamespace(width=600.0, height=800.0),
     )
-
-    plan = plan_page(cast(CapturedPage, capture))
 
     assert plan.reason == "unpainted-native-text-layer"
     adaptive = next(ocr_pass for ocr_pass in plan.ocr_passes if ocr_pass.name == "adaptive-page")
@@ -527,8 +480,8 @@ def test_hidden_text_route_requires_material_adaptive_gain() -> None:
 
 
 def test_clean_numeric_hidden_layer_schedules_verification_before_full_ocr() -> None:
-    capture = SimpleNamespace(
-        evidence=evidence(
+    plan = plan_for(
+        evidence(
             characters=800,
             visible_characters=8,
             image_count=1,
@@ -543,21 +496,15 @@ def test_clean_numeric_hidden_layer_schedules_verification_before_full_ocr() -> 
             ),
             glyphs=GlyphEvidence(glyph_count=800, heuristic_glyphs=800),
         ),
-        observations=SimpleNamespace(rotation=(0,)),
-        drawings=(),
-        grid_lines=(),
-        page=SimpleNamespace(width=600.0, height=800.0),
     )
-
-    plan = plan_page(cast(CapturedPage, capture))
 
     assert plan.reason == "unpainted-native-text-layer"
     assert plan.verify_hidden_text is True
 
 
 def test_corrupt_numeric_hidden_layer_skips_verification() -> None:
-    capture = SimpleNamespace(
-        evidence=evidence(
+    plan = plan_for(
+        evidence(
             characters=800,
             visible_characters=8,
             image_count=1,
@@ -570,31 +517,21 @@ def test_corrupt_numeric_hidden_layer_skips_verification() -> None:
                 low_confidence_glyphs=760,
             ),
         ),
-        observations=SimpleNamespace(rotation=(0,)),
-        drawings=(),
-        grid_lines=(),
-        page=SimpleNamespace(width=600.0, height=800.0),
     )
-
-    plan = plan_page(cast(CapturedPage, capture))
 
     assert plan.reason == "unpainted-native-text-layer"
     assert plan.verify_hidden_text is False
 
 
 def test_trusted_hidden_text_uses_extraction_layer_without_ocr() -> None:
-    capture = SimpleNamespace(
-        evidence=evidence(
+    plan = plan_for(
+        evidence(
             characters=200,
             visible_characters=200,
             image_count=1,
             trusted_hidden_text=True,
         ),
-        observations=SimpleNamespace(rotation=(0,)),
-        page=SimpleNamespace(width=600.0, height=800.0),
     )
-
-    plan = plan_page(cast(CapturedPage, capture))
 
     assert plan.route is PageRoute.NATIVE
     assert plan.reason == "trusted-hidden-native-text"
@@ -602,14 +539,9 @@ def test_trusted_hidden_text_uses_extraction_layer_without_ocr() -> None:
 
 
 def test_native_unavailable_limits_low_yield_page_fallback() -> None:
-    capture = SimpleNamespace(
-        evidence=evidence(characters=0, visible_characters=0),
-        drawings=(),
-        grid_lines=(),
-        page=SimpleNamespace(width=600.0, height=800.0),
+    plan = plan_for(
+        evidence(characters=0, visible_characters=0),
     )
-
-    plan = plan_page(cast(CapturedPage, capture))
 
     assert plan.reason == "native-text-unavailable"
     assert plan.ocr_passes[0].modes == (11,)
@@ -619,53 +551,38 @@ def test_native_unavailable_limits_low_yield_page_fallback() -> None:
 
 
 def test_hybrid_augmentation_uses_raster_text_confidence_floor() -> None:
-    capture = SimpleNamespace(
-        evidence=evidence(
+    plan = plan_for(
+        evidence(
             characters=20,
             visible_characters=10,
             image_count=1,
             image_area_ratio=0.80,
         ),
-        drawings=(),
-        grid_lines=(),
-        page=SimpleNamespace(width=600.0, height=800.0),
     )
-
-    plan = plan_page(cast(CapturedPage, capture))
 
     assert plan.reason == "native-text-needs-augmentation"
     assert all(ocr_pass.minimum_confidence == 60.0 for ocr_pass in plan.ocr_passes)
 
 
 def test_route_uses_lower_scale_when_ultra_complex_page_contains_rasters() -> None:
-    capture = SimpleNamespace(
-        evidence=evidence(
+    plan = plan_for(
+        evidence(
             characters=0,
             visible_characters=0,
             image_count=1,
             image_area_ratio=0.2,
             vector_complexity=150_000,
         ),
-        drawings=(),
-        grid_lines=(),
-        page=SimpleNamespace(width=600.0, height=800.0),
     )
-
-    plan = plan_page(cast(CapturedPage, capture))
 
     assert plan.ocr_passes[0].scale == 3.5
 
 
 def test_rotated_native_route_has_low_yield_page_fallback() -> None:
-    capture = SimpleNamespace(
-        evidence=evidence(characters=3, visible_characters=3, image_count=2),
-        observations=SimpleNamespace(rotation=(90,)),
-        drawings=(),
-        grid_lines=(),
-        page=SimpleNamespace(width=600.0, height=800.0),
+    plan = plan_for(
+        evidence(characters=3, visible_characters=3, image_count=2),
+        rotation=90,
     )
-
-    plan = plan_page(cast(CapturedPage, capture))
 
     assert plan.reason == "rotated-native-text"
     primary = next(ocr_pass for ocr_pass in plan.ocr_passes if ocr_pass.name == "orientation-page")

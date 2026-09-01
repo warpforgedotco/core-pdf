@@ -3,13 +3,11 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from core_pdf import PdfDocument
+from tests.helpers.paths import FIXTURES
 
-FIXTURES = Path(__file__).parents[6] / "fixtures"
 LATIN_PDF = FIXTURES / "pypdf" / "resources" / "crazyones.pdf"
 CID_PDF = FIXTURES / "pdfminer.six" / "samples" / "jo.pdf"
 

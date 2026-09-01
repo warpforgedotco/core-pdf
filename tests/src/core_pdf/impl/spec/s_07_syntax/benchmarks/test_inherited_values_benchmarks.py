@@ -7,6 +7,7 @@ import pytest
 
 from core_pdf.impl.spec.s_07_syntax.inherited_values import collect_inherited_values
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict
+from tests.helpers.resolvers import IdentityResolver
 
 
 def build_inheritance_chain(depth: int) -> PdfDict:
@@ -24,9 +25,7 @@ def build_inheritance_chain(depth: int) -> PdfDict:
 PAGE_NODE = build_inheritance_chain(depth=6)
 INHERITED_KEYS = ("Resources", "MediaBox", "Rotate", "CropBox")
 
-
-def identity_resolve(value: object) -> object:
-    return value
+identity_resolve = IdentityResolver().resolve
 
 
 @pytest.mark.benchmark_high_impact

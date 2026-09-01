@@ -4,10 +4,9 @@ from __future__ import annotations
 import pytest
 
 from core_pdf.impl.spec.s_07_syntax.trees import iter_number_tree_items
+from tests.helpers.resolvers import IdentityResolver
 
-
-def identity(value: object) -> object:
-    return value
+identity = IdentityResolver().resolve
 
 
 def test_number_tree_walks_nested_kids_in_document_order() -> None:
