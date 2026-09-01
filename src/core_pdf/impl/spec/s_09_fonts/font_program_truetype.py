@@ -249,12 +249,14 @@ def internal_ensure_glyph_order(font: TTFont) -> None:
 
 
 def internal_best_unicode_gid_cmap(font: TTFont) -> dict[int, int]:
+    symbol_fallback = False
     try:
         cmap_table = font["cmap"]
         name_cmap = cmap_table.getBestCmap()
         if name_cmap is None:
             symbol_cmap = cmap_table.getcmap(3, 0)
             name_cmap = symbol_cmap.cmap if symbol_cmap is not None else {}
+            symbol_fallback = bool(name_cmap)
         reverse_glyph_map = font.getReverseGlyphMap()
     except FONT_PROGRAM_ERRORS:
         return {}
@@ -273,6 +275,14 @@ def internal_best_unicode_gid_cmap(font: TTFont) -> dict[int, int]:
                 continue
         if gid > 0:
             mapping[codepoint] = gid
+            if symbol_fallback and 0xF000 <= codepoint <= 0xF2FF:
+                # ISO 32000-1 9.6.6.4: with a (3, 0) subtable the codes live in
+                # 0x0000-0x00FF, 0xF000-0xF0FF, 0xF100-0xF1FF or 0xF200-0xF2FF,
+                # and "each byte from the string shall be prepended with the
+                # high byte of the range". Its keys are not Unicode scalars, so
+                # register the single-byte code that selects each glyph;
+                # otherwise every code missed and resolved to GID 0.
+                mapping.setdefault(codepoint & 0xFF, gid)
     return mapping
 
 

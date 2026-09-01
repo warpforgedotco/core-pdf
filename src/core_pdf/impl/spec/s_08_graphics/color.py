@@ -428,8 +428,15 @@ class ImageColorManager:
         lookup = spec.lookup
         hival = spec.hival
         samples = uint8_view(raw)
+        # ISO 32000-1 8.6.6.3: "if it is outside the range 0 to hival, it shall
+        # be adjusted to the nearest value within that range." Raising sent the
+        # caller down the recovery path, which reinterpreted the palette
+        # *indexes* as DeviceGray samples -- one stray sample turned the whole
+        # image into a near-black field.
+        if hival < 0:
+            return None
         if numpy.any(samples > hival):
-            raise ValueError("invalid Indexed color sample")
+            samples = numpy.minimum(samples, hival)
         if spec.base == "DeviceRGB":
             if len(lookup) < (hival + 1) * 3:
                 raise ValueError("invalid Indexed color lookup")

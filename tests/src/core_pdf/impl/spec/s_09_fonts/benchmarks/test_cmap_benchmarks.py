@@ -61,5 +61,5 @@ def test_cmap_decode_benchmark(benchmark) -> None:
 
 @pytest.mark.benchmark_high_impact
 def test_width_lookup_benchmark(benchmark) -> None:
-    result = benchmark(WIDTH_MAP.fast_256, 1000.0)
+    result = benchmark(WIDTH_MAP.fast_256, 1000.0, 250.0)
     assert len(result) == 256

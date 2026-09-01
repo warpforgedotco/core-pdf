@@ -31,11 +31,9 @@ class FontWidthMap(Mapping[int, float]):
     def iter_explicit_widths(self) -> Iterator[tuple[int, float]]:
         return iter(self.items())
 
-    def fast_256(self, default_width: float) -> tuple[float, ...]:
-        default_positive = default_width if default_width > 0.0 else 1000.0
-        space_width = default_width if default_width > 0.0 else 250.0
+    def fast_256(self, default_width: float, space_width: float) -> tuple[float, ...]:
         return tuple(
-            self.width_for(code, space_width if code == 32 else default_positive)
+            self.width_for(code, space_width if code == 32 else default_width)
             for code in range(256)
         )
 
@@ -99,9 +97,8 @@ class CompactCIDWidthMap(FontWidthMap):
             return self.widths[index]
         return default
 
-    def fast_256(self, default_width: float) -> tuple[float, ...]:
-        default_positive = default_width if default_width > 0.0 else 1000.0
-        space_width = default_width if default_width > 0.0 else 250.0
+    def fast_256(self, default_width: float, space_width: float) -> tuple[float, ...]:
+        default_positive = default_width
         start = self.start
         end = start + len(self.widths)
         if start >= 256 or end <= 0:
