@@ -81,7 +81,7 @@ def test_pdf_reference_1_7_permission_rows_match_the_implementation() -> None:
     rows = [
         (int(match[0]), int(match[1]), int(match[2]))
         for match in re.findall(
-            r"(\d+)\s*[–-]\s*(\d+)\s+"
+            r"(\d+)\s*[\u2013-]\s*(\d+)\s+"
             r"(?:\(Revision 3 or greater\)\s+)?Reserved;\s+must be ([01])\.",
             text,
         )
@@ -206,7 +206,7 @@ def test_iso_ts_32004_standalone_pdf_mac_rules_and_fail_closed_behavior() -> Non
         permission_and_trailer
     )
     assert "Shall be a direct object" in permission_and_trailer
-    assert "value of the V entry in the document’s Encrypt dictionary shall be at least 5" in (
+    assert "value of the V entry in the document\u2019s Encrypt dictionary shall be at least 5" in (
         permission_and_trailer
     )
 
@@ -241,7 +241,10 @@ def test_iso_ts_32004_standalone_pdf_mac_rules_and_fail_closed_behavior() -> Non
     assert "pdfMacWrapKdf is an instance" in attributes_and_kdf
     assert "hash algorithm shall be SHA-256" in attributes_and_kdf
     assert "salt shall be the 32-byte value stored in the KDFSalt field" in attributes_and_kdf
-    assert "info parameter shall be set to the 6-character string ‘PDFMAC’" in attributes_and_kdf
+    assert (
+        "info parameter shall be set to the 6-character string \u2018PDFMAC\u2019"
+        in attributes_and_kdf
+    )
 
     assert "value of the MACLocation entry shall be Standalone" in location
     assert "ByteRange of the AuthCode dictionary shall cover the entire PDF file" in location
