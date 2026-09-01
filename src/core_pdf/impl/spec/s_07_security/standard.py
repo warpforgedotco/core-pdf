@@ -49,6 +49,21 @@ internal_SASLPREP_PROHIBITED: tuple[Callable[[str], bool], ...] = (
     stringprep.in_table_a1,
 )
 
+# Adobe PDF Reference 1.7, sixth edition (November 2006), Table 3.20, and
+# ISO 32000-2:2020, Table 22 define these reserved positions explicitly.
+# ISO 32000-1:2008, 7.6.3.2 also requires the reserved high-order bits to be
+# one. The Adobe Supplement to ISO 32000, BaseVersion 1.7, ExtensionLevel 3
+# (June 2008), 3.5.2 retains the PDF 1.7 permission flags for revision 5.
+internal_RESERVED_ZERO_PERMISSION_BITS = (1, 2)
+internal_RESERVED_ONE_PERMISSION_BITS = (7, 8, *range(13, 33))
+internal_REVISION_3_PERMISSION_BITS = (9, 10, 11, 12)
+internal_RESERVED_ZERO_PERMISSION_MASK = sum(
+    1 << (bit_position - 1) for bit_position in internal_RESERVED_ZERO_PERMISSION_BITS
+)
+internal_RESERVED_ONE_PERMISSION_MASK = sum(
+    1 << (bit_position - 1) for bit_position in internal_RESERVED_ONE_PERMISSION_BITS
+)
+
 
 @dataclass(frozen=True, slots=True)
 class internal_StandardSecurityConfig:
@@ -197,27 +212,29 @@ def internal_parse_config(
     if permissions < 0:
         permissions += 1 << 32
 
-    # ISO 32000-1:2008, Table 22; Adobe Supplement to ISO 32000,
-    # BaseVersion 1.7, ExtensionLevel 3, June 2008, Table 3.20; and
-    # ISO 32000-2:2020, Table 22 reserve bits 1-2 as zero and require
-    # bits 7-8 and 13-32 to be one in every Standard-handler permission word.
-    if permissions & 0b11:
+    # ISO/TS 32004:2024, Table 3 repurposes bit 13 to require a PDF MAC token.
+    # That extension is not supported yet, so keeping bit 13 in the reserved-one
+    # mask fails closed instead of accepting a document whose AuthCode integrity
+    # protection this handler cannot validate.
+    if permissions & internal_RESERVED_ZERO_PERMISSION_MASK:
         raise ValueError("reserved encryption permission bits 1-2 must be zero")
-    required_one_bits = 0xFFFFF0C0
-    if permissions & required_one_bits != required_one_bits:
+    if permissions & internal_RESERVED_ONE_PERMISSION_MASK != internal_RESERVED_ONE_PERMISSION_MASK:
         raise ValueError("reserved encryption permission bits must be one")
 
-    if version == 1:
+    if version == 1 and revision == 2:
         # ISO 32000-1:2008, Table 21 requires R=3, rather than R=2, when
         # any permission introduced for revision 3 (bits 9 through 12 in
-        # Table 22) is cleared, even though V remains 1.
+        # Table 22) is cleared, even though V remains 1. Do not require R=2
+        # in the opposite direction: Adobe's authorized ISO 32000-1:2008 PDF
+        # itself uses V=1/R=3 with all four revision-3 permissions set.
         revision_3_required = any(
-            permissions & (1 << (bit_position - 1)) == 0 for bit_position in (9, 10, 11, 12)
+            permissions & (1 << (bit_position - 1)) == 0
+            for bit_position in internal_REVISION_3_PERMISSION_BITS
         )
-        expected_revision = 3 if revision_3_required else 2
-        if revision != expected_revision:
+        if revision_3_required:
             raise ValueError(
-                f"Standard Security V=1 permissions require R={expected_revision}, got R={revision}"
+                "Standard Security V=1 permissions require R=3 when any "
+                "revision-3 permission is cleared, got R=2"
             )
 
     # Entry sizes come from these version-specific definitions:

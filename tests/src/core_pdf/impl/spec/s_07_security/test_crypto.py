@@ -139,7 +139,7 @@ def test_standard_security_factory_rejects_unsupported_handler(
 @pytest.mark.parametrize(
     ("version", "revision"),
     [
-        (1, 3),
+        (1, 4),
         (2, 2),
         (4, 3),
         (5, 4),
@@ -176,6 +176,91 @@ def test_standard_security_v1_permissions_can_require_revision_3() -> None:
     config = internal_parse_config([b"document-id"], params, 1, (2, 3))
 
     assert config.revision == 3
+
+
+def test_standard_security_v1_revision_2_cannot_clear_revision_3_permissions() -> None:
+    params: PdfDict = {
+        "R": 2,
+        "P": -260,
+        "O": bytes(32),
+        "U": bytes(32),
+        "Length": 40,
+    }
+
+    with pytest.raises(ValueError, match="require R=3"):
+        internal_parse_config([b"document-id"], params, 1, (2, 3))
+
+
+def test_standard_security_v1_revision_3_accepts_revision_2_permissions() -> None:
+    # Adobe's authorized ISO 32000-1:2008 PDF uses V=1, R=3, and P=-28.
+    # Readers need to accept that real-world combination even though no
+    # revision-3 permission bit is cleared.
+    params: PdfDict = {
+        "R": 3,
+        "P": -28,
+        "O": bytes(32),
+        "U": bytes(32),
+        "Length": 40,
+    }
+
+    config = internal_parse_config([b"document-id"], params, 1, (2, 3))
+
+    assert config.revision == 3
+
+
+def internal_legacy_security_params(revision: int, permissions: int) -> PdfDict:
+    return {
+        "R": revision,
+        "P": permissions,
+        "O": bytes(32),
+        "U": bytes(32),
+        "Length": 40,
+    }
+
+
+@pytest.mark.parametrize("bit_position", [1, 2])
+def test_standard_security_rejects_each_reserved_zero_permission_bit(
+    bit_position: int,
+) -> None:
+    permissions = 0xFFFFFFFC | (1 << (bit_position - 1))
+
+    with pytest.raises(ValueError, match="bits 1-2 must be zero"):
+        internal_parse_config(
+            [b"document-id"],
+            internal_legacy_security_params(3, permissions),
+            1,
+            (2, 3),
+        )
+
+
+@pytest.mark.parametrize("bit_position", [7, 8, *range(13, 33)])
+def test_standard_security_rejects_each_cleared_reserved_one_permission_bit(
+    bit_position: int,
+) -> None:
+    permissions = 0xFFFFFFFC & ~(1 << (bit_position - 1))
+
+    with pytest.raises(ValueError, match="reserved encryption permission bits must be one"):
+        internal_parse_config(
+            [b"document-id"],
+            internal_legacy_security_params(3, permissions),
+            1,
+            (2, 3),
+        )
+
+
+@pytest.mark.parametrize("bit_position", [3, 4, 5, 6, 9, 10, 11, 12])
+def test_standard_security_accepts_each_clearable_permission_bit(bit_position: int) -> None:
+    permissions = 0xFFFFFFFC & ~(1 << (bit_position - 1))
+    revision = 3 if bit_position >= 9 else 2
+
+    config = internal_parse_config(
+        [b"document-id"],
+        internal_legacy_security_params(revision, permissions),
+        1,
+        (2, 3),
+    )
+
+    assert config.permissions == permissions
 
 
 @pytest.mark.parametrize(

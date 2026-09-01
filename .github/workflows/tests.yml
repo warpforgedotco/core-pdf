@@ -71,6 +71,9 @@ jobs:
       - name: Install English Tesseract data
         run: sudo apt-get update && sudo apt-get install --yes tesseract-ocr-eng
 
+      - name: Fetch public security specification evidence
+        run: ./scripts/fetch_pdf_specs.sh security
+
       - name: Verify standard CPython
         run: >-
           uv run --locked --package core-pdf python -c

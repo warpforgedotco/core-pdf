@@ -3,7 +3,7 @@ from typing import cast
 import pytest
 
 from core_pdf.impl.exceptions import PdfUnsupportedError
-from core_pdf.impl.primitives import PdfReference
+from core_pdf.impl.primitives import PdfReference, PdfString
 from core_pdf.impl.spec.s_07_syntax.resolver import (
     ObjectResolver,
     internal_find_indirect_object_header,
@@ -70,6 +70,25 @@ def test_deep_cache_verifies_source_identity() -> None:
     try:
         assert resolver.deep_resolve(source) is source
         assert resolver.deep_cache[id(source)] == (source, source)
+    finally:
+        resolver.close()
+
+
+def test_resolve_str_does_not_expand_composite_object_graph(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    resolver = ObjectResolver(b"", {}, {})
+
+    def internal_reject_deep_resolution(*args: object) -> object:
+        del args
+        raise AssertionError("composite value was deep-resolved")
+
+    monkeypatch.setattr(ObjectResolver, "deep_resolve", internal_reject_deep_resolution)
+    try:
+        assert resolver.resolve_str([PdfReference(1), "XYZ"]) is None
+        assert resolver.resolve_str(PdfString(b"https://example.invalid")) == (
+            "https://example.invalid"
+        )
     finally:
         resolver.close()
 

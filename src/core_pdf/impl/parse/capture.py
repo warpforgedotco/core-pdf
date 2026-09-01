@@ -15,7 +15,7 @@ from typing import Any
 import numpy
 
 from core_pdf.impl.layout.spatial import SpatialIndex
-from core_pdf.impl.model.geometry import bbox_intersection_area, rect_tuple
+from core_pdf.impl.model.geometry import bbox_intersection_area, bbox_union, rect_tuple
 from core_pdf.impl.model.glyphs import (
     GlyphUnicodeSemantics,
     glyph_unicode_semantics,
@@ -45,7 +45,7 @@ LearnedUnicodeMap = Mapping[object, Mapping[bytes, str]]
 # Thresholds for discarding a text layer that merely repeats another one. A layer needs
 # enough tokens for an overlap ratio to mean anything, then enough overlap to be judged a
 # duplicate. The two overlap floors differ because nested XObject layers repeat the page
-# almost exactly, while separately clipped boxes overlap more loosely.
+# almost exactly, while separately clipped boxes can repeat only a localized region.
 #
 # These are unrelated to the HIDDEN_TEXT_VERIFY_* constants in parse.model, which gate the
 # raster-to-text consistency check in parse.ocr. The similar values are a coincidence.
@@ -120,14 +120,26 @@ def internal_discard_duplicate_clipped_layers(runs: tuple[TextRun, ...]) -> tupl
     primary_tokens = tokens_by_box[primary_box]
     if len(primary_tokens) < DUPLICATE_LAYER_MIN_TOKENS:
         return runs
-    duplicate_boxes = {
-        box
-        for box, group in groups.items()
-        if box != primary_box
-        and len(tokens_by_box[box]) >= DUPLICATE_LAYER_MIN_TOKENS
-        and internal_token_overlap(tokens_by_box[box], primary_tokens)
-        >= DUPLICATE_CLIPPED_LAYER_MIN_OVERLAP
-    }
+    duplicate_boxes: set[tuple[float, float, float, float]] = set()
+    for box in groups:
+        if box == primary_box or len(tokens_by_box[box]) < DUPLICATE_LAYER_MIN_TOKENS:
+            continue
+        # Compare with primary-layer text painted in the same region. A page's
+        # table cells legitimately have separate clipping boxes and repeat much
+        # of the surrounding vocabulary; comparing each cell with every token
+        # on the page deleted non-duplicate rows from ISO 32000-2:2020 Table 22.
+        local_primary = tuple(
+            run
+            for run in primary_runs
+            if bbox_intersection_area((run.x0, run.y0, run.x1, run.y1), box) > 0.0
+        )
+        local_tokens = internal_normalized_tokens(local_primary)
+        if (
+            len(local_tokens) >= DUPLICATE_LAYER_MIN_TOKENS
+            and internal_token_overlap(tokens_by_box[box], local_tokens)
+            >= DUPLICATE_CLIPPED_LAYER_MIN_OVERLAP
+        ):
+            duplicate_boxes.add(box)
     return tuple(run for run, box in run_boxes if box not in duplicate_boxes)
 
 
@@ -354,6 +366,40 @@ def internal_copy_run(
     )
 
 
+def internal_layout_bbox_for_run(run: TextRun) -> tuple[float, float, float, float]:
+    """Choose geometry that describes this occurrence rather than every font glyph."""
+    bbox = (run.x0, run.y0, run.x1, run.y1)
+    if run.is_vertical or run.rotation_angle % 180:
+        return bbox
+    font_size = abs(run.font_size)
+    advance_height = run.y1 - run.y0
+    if font_size <= 0.0 or advance_height <= font_size * 2.5:
+        return bbox
+    cluster_ink = bbox_union(
+        cluster.ink_bbox for cluster in run.glyph_clusters if cluster.text.strip()
+    )
+    _, ink_y0, _, ink_y1 = cluster_ink or run.ink_bbox
+    ink_height = ink_y1 - ink_y0
+    if ink_height <= 0.0 or advance_height <= ink_height * 2.5:
+        return bbox
+
+    # ISO 32000-1:2008 and ISO 32000-2:2020, 9.8.1 define Ascent and
+    # Descent over the entire font. A rare outlier glyph can therefore make a
+    # valid descriptor box several lines tall. When actual ink proves that
+    # happened, use a conventional one-em line box around the captured
+    # baseline while retaining any ink that extends beyond it.
+    baseline = run.baseline
+    if baseline is None:
+        return (run.x0, ink_y0, run.x1, ink_y1)
+    baseline_y = (baseline[1] + baseline[3]) * 0.5
+    return (
+        run.x0,
+        min(ink_y0, baseline_y - font_size * 0.2),
+        run.x1,
+        max(ink_y1, baseline_y + font_size * 0.8),
+    )
+
+
 def internal_promote_hidden_run(run: TextRun) -> TextRun:
     """Create an extraction-only view without changing PDF paint visibility."""
     return internal_copy_run(
@@ -383,7 +429,7 @@ def internal_observations_from_runs(runs: tuple[TextRun, ...]) -> ObservationBat
     line_break_values: list[bool] = []
     for i, run in enumerate(runs):
         c = run.coords
-        box_rows.append((c[0], c[1], c[2], c[3]))
+        box_rows.append(internal_layout_bbox_for_run(run))
         conf = run.confidence
         confidence_values.append(conf if conf is not None else math.nan)
         seq = run.seqno

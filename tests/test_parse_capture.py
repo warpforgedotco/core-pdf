@@ -18,6 +18,7 @@ from core_pdf.impl.parse.capture import (
     capture_page,
     internal_apply_structure_actual_text,
     internal_extractable_runs,
+    internal_layout_bbox_for_run,
     internal_vector_complexity,
 )
 from core_pdf.impl.parse.pipeline import page_extraction
@@ -29,13 +30,19 @@ def run(
     *,
     depth: int = 0,
     clip: tuple[float, float, float, float] | None = None,
+    bbox: tuple[float, float, float, float] | None = None,
 ) -> SimpleNamespace:
     provenance = (("clip_bbox", clip),) if clip is not None else ()
+    x0, y0, x1, y1 = bbox or clip or (0.0, 0.0, 100.0, 100.0)
     return SimpleNamespace(
         text=text,
         xobject_depth=depth,
         provenance=provenance,
         inside_active_clip=True,
+        x0=x0,
+        y0=y0,
+        x1=x1,
+        y1=y1,
     )
 
 
@@ -98,6 +105,70 @@ def test_capture_discards_duplicate_alternate_clip_layer() -> None:
     assert internal_extractable_runs(
         cast(Any, (page_run, alternate_run, distinct_clipped_run))
     ) == (page_run, distinct_clipped_run)
+
+
+def test_capture_preserves_similar_text_in_a_separate_clipped_region() -> None:
+    text = " ".join(f"security-handler-token-{index}" for index in range(30))
+    page_run = run(
+        text,
+        clip=(0.0, 0.0, 100.0, 100.0),
+        bbox=(0.0, 0.0, 100.0, 20.0),
+    )
+    table_cell_run = run(
+        text,
+        clip=(0.0, 50.0, 100.0, 100.0),
+        bbox=(0.0, 50.0, 100.0, 70.0),
+    )
+
+    assert internal_extractable_runs(cast(Any, (page_run, table_cell_run))) == (
+        page_run,
+        table_cell_run,
+    )
+
+
+def test_capture_repairs_font_wide_vertical_metrics_for_layout() -> None:
+    text_run = TextRun(
+        "Permission row",
+        10.0,
+        -24.0,
+        110.0,
+        31.0,
+        0.0,
+        0.0,
+        10.0,
+        4.0,
+        0,
+        0,
+        0,
+        advance_bbox=(10.0, -24.0, 110.0, 31.0),
+        ink_bbox=(10.0, -0.1, 110.0, 6.7),
+        baseline=(10.0, 0.0, 110.0, 0.0),
+    )
+
+    assert internal_layout_bbox_for_run(text_run) == (10.0, -2.0, 110.0, 8.0)
+
+
+def test_capture_does_not_rewrite_vertical_text_layout_geometry() -> None:
+    text_run = TextRun(
+        "Vertical",
+        10.0,
+        -24.0,
+        20.0,
+        80.0,
+        0.0,
+        0.0,
+        10.0,
+        4.0,
+        0,
+        0,
+        0,
+        is_vertical=True,
+        advance_bbox=(10.0, -24.0, 20.0, 80.0),
+        ink_bbox=(10.0, 0.0, 20.0, 70.0),
+        baseline=(15.0, 0.0, 15.0, 70.0),
+    )
+
+    assert internal_layout_bbox_for_run(text_run) == (10.0, -24.0, 20.0, 80.0)
 
 
 def test_structure_actual_text_replaces_mcid_text_before_routing() -> None:

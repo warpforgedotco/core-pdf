@@ -17,6 +17,7 @@ from core_pdf.impl.layout.spatial import (
 from core_pdf.impl.model.geometry import (
     horizontal_overlap_ratio,
     overlap_ratio_min,
+    overlap_ratio_of,
     rect_tuple,
 )
 from core_pdf.impl.parse.layout import (
@@ -488,6 +489,12 @@ def internal_corrupt_native_block(block: Block) -> bool:
     non_ascii_ratio = non_ascii / nonspace_count
     if token_count < 24:
         wordlike = sum(internal_wordlike_token(token) for token in tokens)
+        # A compact row with at least one ordinary word per three tokens has
+        # enough semantic evidence to preserve. PDF Reference 1.7 Table 3.20's
+        # "1–2 Reserved; must be 0." meets that bar; longer mixed-case mojibake
+        # fragments do not receive this narrow exemption.
+        if token_count <= 12 and wordlike * 3 >= token_count:
+            return False
     digit_bearing = sum(any(character.isdigit() for character in token) for token in tokens)
     if token_count < 24:
         return (
@@ -573,7 +580,7 @@ def internal_remove_table_duplicate_blocks(
                 line
                 for line in block.lines
                 if line.bbox is None
-                or not any(overlap_ratio_min(line.bbox, box) >= 0.9 for box in contained_line_boxes)
+                or not any(overlap_ratio_of(line.bbox, box) >= 0.9 for box in contained_line_boxes)
             )
             if filtered and len(filtered) != len(block.lines):
                 deduplicated.append(replace(block, lines=filtered))

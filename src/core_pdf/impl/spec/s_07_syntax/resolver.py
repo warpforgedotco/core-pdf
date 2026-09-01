@@ -370,7 +370,19 @@ class ObjectResolver:
         if type(value) is str:
             return value
 
-        resolved = self.deep_resolve(value)
+        # Resolve only an indirect scalar chain. ISO 32000-1:2008 and
+        # ISO 32000-2:2020, 12.3.2.2 allow a GoTo destination to be an array
+        # beginning with an indirect page reference. Deep-resolving such an
+        # array merely to decide whether it is a string walks the page graph.
+        resolved = value
+        seen: set[int] = set()
+        while type(resolved) is PdfReference:
+            reference = resolved
+            reference_key = key_for(reference.object_number, reference.generation_number)
+            if reference_key in seen:
+                return None
+            seen.add(reference_key)
+            resolved = self.resolve(reference)
         if type(resolved) is PdfString:
             return decode_pdf_text_string(resolved.data)
         if type(resolved) is bytes:
