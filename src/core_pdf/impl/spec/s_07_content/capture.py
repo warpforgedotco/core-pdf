@@ -3,28 +3,14 @@
 
 from __future__ import annotations
 
-import typing
+import dataclasses
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 from math import ceil
 from typing import Any
 
-from core_pdf.impl.model.geometry import RectBox
-from core_pdf.impl.model.glyphs import (
-    GlyphCluster,
-    GlyphObservation,
-    glyph_cluster_from_observations,
-    glyph_unicode_confidence,
-)
-from core_pdf.impl.model.runs import TextRun
-from core_pdf.impl.spec.s_07_content.text_helpers import (
-    NO_SPACE_AFTER,
-    NO_SPACE_BEFORE,
-    can_merge_cross_font_word,
-    gap_separator,
-    normalize_extracted_text,
-)
+from core_pdf.impl.model.geometry import RectBox, bbox_union
 from core_pdf.impl.spec.s_08_graphics.image_decode import ImageSource
 from core_pdf.impl.spec.s_08_graphics.matrix import Matrix
 from core_pdf.impl.types import Rectangle
@@ -242,47 +228,135 @@ def type3_glyph_names(font: dict[Any, Any], decoder: Any) -> dict[int, str]:
     }
 
 
-def apply_glyph_geometry_to_run(
-    run: TextRun,
-    glyphs: typing.Iterable[GlyphObservation],
-    glyph_clusters: tuple[GlyphCluster, ...] = (),
-) -> None:
-    if glyph_clusters:
-        run.glyph_clusters = glyph_clusters
-    iterator = iter(glyphs)
-    first = next(iterator, None)
-    if first is None:
-        return
-    advance_x0, advance_y0, advance_x1, advance_y1 = first.advance_bbox
-    ink_x0, ink_y0, ink_x1, ink_y1 = first.ink_bbox
-    confidence = first.confidence
-    for glyph in iterator:
-        x0, y0, x1, y1 = glyph.advance_bbox
-        if x0 < advance_x0:
-            advance_x0 = x0
-        if y0 < advance_y0:
-            advance_y0 = y0
-        if x1 > advance_x1:
-            advance_x1 = x1
-        if y1 > advance_y1:
-            advance_y1 = y1
-        x0, y0, x1, y1 = glyph.ink_bbox
-        if x0 < ink_x0:
-            ink_x0 = x0
-        if y0 < ink_y0:
-            ink_y0 = y0
-        if x1 > ink_x1:
-            ink_x1 = x1
-        if y1 > ink_y1:
-            ink_y1 = y1
-        glyph_confidence = glyph.confidence
-        if glyph_confidence is not None and (confidence is None or glyph_confidence < confidence):
-            confidence = glyph_confidence
+class PdfminerCursor:
+    """pdfminer-compatible text cursor tracked alongside spec glyph capture.
 
-    run.advance_bbox = (advance_x0, advance_y0, advance_x1, advance_y1)
-    run.ink_bbox = (ink_x0, ink_y0, ink_x1, ink_y1)
-    if confidence is not None:
-        run.confidence = confidence
+    pdfminer advances its own cursor per glyph and reports each glyph's origin
+    from it. That bookkeeping is a compatibility concern, not a spec one, so it
+    lives here rather than threaded through the capture loop as eight locals.
+    """
+
+    __slots__ = (
+        "x",
+        "y",
+        "need_charspace",
+        "char_space",
+        "word_space",
+        "spacing_scale",
+        "origin_x",
+        "origin_y",
+        "combined",
+        "is_vertical",
+        "font_size",
+    )
+
+    def __init__(
+        self,
+        x: float,
+        y: float,
+        need_charspace: bool,
+        *,
+        char_space: float,
+        word_space: float,
+        spacing_scale: float,
+        origin_x: float,
+        origin_y: float,
+        combined: tuple[float, float, float, float],
+        is_vertical: bool,
+        font_size: float,
+    ) -> None:
+        self.x = x
+        self.y = y
+        self.need_charspace = need_charspace
+        self.char_space = char_space
+        self.word_space = word_space
+        self.spacing_scale = spacing_scale
+        self.origin_x = origin_x
+        self.origin_y = origin_y
+        self.combined = combined
+        self.is_vertical = is_vertical
+        self.font_size = font_size
+
+    def step(self, width_units: float, is_space: bool) -> tuple[tuple[str, Any], ...]:
+        """Apply pending char spacing, report this glyph's provenance, advance."""
+        if self.need_charspace:
+            if self.is_vertical:
+                self.y += self.char_space
+            else:
+                self.x += self.char_space
+        combined_a, combined_b, combined_c, combined_d = self.combined
+        provenance: tuple[tuple[str, Any], ...] = (
+            (
+                "pdfminer_origin",
+                (
+                    self.x * combined_a + self.y * combined_c + self.origin_x,
+                    self.x * combined_b + self.y * combined_d + self.origin_y,
+                ),
+            ),
+            ("pdfminer_matrix_origin", (self.origin_x, self.origin_y)),
+            ("pdfminer_cursor", (self.x, self.y)),
+            ("pdfminer_need_charspace", self.need_charspace),
+        )
+        advance = width_units * 0.001 * self.font_size * self.spacing_scale
+        if self.is_vertical:
+            self.y += advance
+            if is_space:
+                self.y += self.word_space
+        else:
+            self.x += advance
+            if is_space:
+                self.x += self.word_space
+        self.need_charspace = True
+        return provenance
+
+
+class RunGeometry:
+    """Running union of glyph advance/ink boxes plus the minimum confidence.
+
+    Accumulated as observations are appended so a caller never has to rescan
+    the slice it just wrote. Empty until the first `add`, which is what
+    distinguishes "no glyphs recorded" from "a run at the origin".
+    """
+
+    __slots__ = ("started", "advance", "ink", "confidence")
+
+    def __init__(self) -> None:
+        self.started = False
+        self.advance: Rectangle = (0.0, 0.0, 0.0, 0.0)
+        self.ink: Rectangle = (0.0, 0.0, 0.0, 0.0)
+        self.confidence: float | None = None
+
+    def add(
+        self,
+        advance_bbox: Rectangle,
+        ink_bbox: Rectangle,
+        confidence: float | None,
+    ) -> None:
+        if not self.started:
+            self.started = True
+            self.advance = advance_bbox
+            self.ink = ink_bbox
+            self.confidence = confidence
+            return
+        ax0, ay0, ax1, ay1 = self.advance
+        bx0, by0, bx1, by1 = advance_bbox
+        self.advance = (
+            bx0 if bx0 < ax0 else ax0,
+            by0 if by0 < ay0 else ay0,
+            bx1 if bx1 > ax1 else ax1,
+            by1 if by1 > ay1 else ay1,
+        )
+        ix0, iy0, ix1, iy1 = self.ink
+        bx0, by0, bx1, by1 = ink_bbox
+        self.ink = (
+            bx0 if bx0 < ix0 else ix0,
+            by0 if by0 < iy0 else iy0,
+            bx1 if bx1 > ix1 else ix1,
+            by1 if by1 > iy1 else iy1,
+        )
+        current = self.confidence
+        if confidence is not None and (current is None or confidence < current):
+            self.confidence = confidence
 
 
 def type3_font_matrix(font: dict[str, Any]) -> Matrix:
@@ -333,9 +407,6 @@ class CapturedSubpath:
         self.points = points if points is not None else []
         self.closed = closed
 
-    def clone(self) -> CapturedSubpath:
-        return CapturedSubpath(list(self.points), closed=self.closed)
-
     def transformed(self, matrix: Matrix) -> CapturedSubpath:
         a, b, c, d, e, f = matrix
         return CapturedSubpath(
@@ -385,9 +456,6 @@ class CapturedPath:
     def __init__(self, subpaths: list[CapturedSubpath] | None = None) -> None:
         self.subpaths = subpaths if subpaths is not None else []
 
-    def clone(self) -> CapturedPath:
-        return CapturedPath([subpath.clone() for subpath in self.subpaths])
-
     def transformed(self, matrix: Matrix) -> CapturedPath:
         return CapturedPath([subpath.transformed(matrix) for subpath in self.subpaths])
 
@@ -425,15 +493,7 @@ class CapturedPath:
         return any(subpath.has_segments() for subpath in self.subpaths)
 
     def bbox(self) -> Rectangle | None:
-        boxes = [box for subpath in self.subpaths if (box := subpath.bbox())]
-        if not boxes:
-            return None
-        return (
-            min(box[0] for box in boxes),
-            min(box[1] for box in boxes),
-            max(box[2] for box in boxes),
-            max(box[3] for box in boxes),
-        )
+        return bbox_union(box for subpath in self.subpaths if (box := subpath.bbox()))
 
     def fill_edges(self) -> list[tuple[float, float, float, float]]:
         edges: list[tuple[float, float, float, float]] = []
@@ -456,115 +516,40 @@ DrawingItem = tuple[str, tuple[tuple[float, float], ...]]
 internal_EMPTY_DRAWING_ITEMS: tuple[DrawingItem, ...] = ()
 
 
+@dataclass(slots=True)
 class CapturedDrawing:
-    __slots__ = (
-        "seqno",
-        "fill",
-        "fill_pattern",
-        "fill_opacity",
-        "stroke_color",
-        "stroke_pattern",
-        "stroke_opacity",
-        "line_width",
-        "line_cap",
-        "line_join",
-        "dash_pattern",
-        "fill_rule",
-        "blend_mode",
-        "soft_mask_alpha",
-        "raw_data",
-        "dictionary",
-        "image_source",
-        "image_clip",
-        "items",
-        "path",
-        "bbox",
-        "internal_rect_cache",
-        "kind",
-        "stream_order",
-        "xobject_depth",
-    )
+    seqno: int
+    fill: tuple[float, ...] | None
+    fill_opacity: float | None
+    fill_pattern: Mapping[object, object] | None = None
+    stroke_color: tuple[float, ...] | None = None
+    stroke_pattern: Mapping[object, object] | None = None
+    stroke_opacity: float | None = None
+    line_width: float = 1.0
+    line_cap: int = 0
+    line_join: int = 0
+    dash_pattern: tuple[list[float], float] | None = None
+    fill_rule: str = "nonzero"
+    blend_mode: str | None = None
+    soft_mask_alpha: float | None = None
+    raw_data: bytes | memoryview | None = None
+    dictionary: dict[Any, Any] | None = None
+    image_source: ImageSource | None = None
+    image_clip: Rectangle | None = None
+    kind: str = "fill"
+    items: tuple[DrawingItem, ...] | list[DrawingItem] = internal_EMPTY_DRAWING_ITEMS
+    path: CapturedPath | None = None
+    bbox: RectBox | None = None
+    stream_order: int = 0
+    xobject_depth: int = 0
+    internal_rect_cache: RectBox | None = field(default=None, init=False, repr=False)
 
-    def __init__(
-        self,
-        seqno: int,
-        fill: tuple[float, ...] | None,
-        fill_opacity: float | None,
-        fill_pattern: Mapping[object, object] | None = None,
-        stroke_color: tuple[float, ...] | None = None,
-        stroke_pattern: Mapping[object, object] | None = None,
-        stroke_opacity: float | None = None,
-        line_width: float = 1.0,
-        line_cap: int = 0,
-        line_join: int = 0,
-        dash_pattern: tuple[list[float], float] | None = None,
-        fill_rule: str = "nonzero",
-        blend_mode: str | None = None,
-        soft_mask_alpha: float | None = None,
-        raw_data: bytes | memoryview | None = None,
-        dictionary: dict[Any, Any] | None = None,
-        image_source: ImageSource | None = None,
-        image_clip: Rectangle | None = None,
-        kind: str = "fill",
-        items: list[DrawingItem] | None = None,
-        path: CapturedPath | None = None,
-        bbox: RectBox | None = None,
-        stream_order: int = 0,
-        xobject_depth: int = 0,
-    ) -> None:
-        self.seqno = seqno
-        self.fill = fill
-        self.fill_pattern = fill_pattern
-        self.fill_opacity = fill_opacity
-        self.stroke_color = stroke_color
-        self.stroke_pattern = stroke_pattern
-        self.stroke_opacity = stroke_opacity
-        self.line_width = line_width
-        self.line_cap = line_cap
-        self.line_join = line_join
-        self.dash_pattern = dash_pattern
-        self.fill_rule = fill_rule
-        self.blend_mode = blend_mode
-        self.soft_mask_alpha = soft_mask_alpha
-        self.raw_data = raw_data
-        self.dictionary = dictionary
-        self.image_source = image_source
-        self.image_clip = image_clip
-        self.kind = kind
-        self.items = items if items else internal_EMPTY_DRAWING_ITEMS
-        self.path = path
-        self.bbox = bbox
-        self.internal_rect_cache: RectBox | None = None
-        self.stream_order = stream_order
-        self.xobject_depth = xobject_depth
+    def __post_init__(self) -> None:
+        if not self.items:
+            self.items = internal_EMPTY_DRAWING_ITEMS
 
     def replace(self, **kwargs: Any) -> CapturedDrawing:
-        return CapturedDrawing(
-            seqno=kwargs.get("seqno", self.seqno),
-            fill=kwargs.get("fill", self.fill),
-            fill_pattern=kwargs.get("fill_pattern", self.fill_pattern),
-            fill_opacity=kwargs.get("fill_opacity", self.fill_opacity),
-            stroke_color=kwargs.get("stroke_color", self.stroke_color),
-            stroke_pattern=kwargs.get("stroke_pattern", self.stroke_pattern),
-            stroke_opacity=kwargs.get("stroke_opacity", self.stroke_opacity),
-            line_width=kwargs.get("line_width", self.line_width),
-            line_cap=kwargs.get("line_cap", self.line_cap),
-            line_join=kwargs.get("line_join", self.line_join),
-            dash_pattern=kwargs.get("dash_pattern", self.dash_pattern),
-            fill_rule=kwargs.get("fill_rule", self.fill_rule),
-            blend_mode=kwargs.get("blend_mode", self.blend_mode),
-            soft_mask_alpha=kwargs.get("soft_mask_alpha", self.soft_mask_alpha),
-            raw_data=kwargs.get("raw_data", self.raw_data),
-            dictionary=kwargs.get("dictionary", self.dictionary),
-            image_source=kwargs.get("image_source", self.image_source),
-            image_clip=kwargs.get("image_clip", self.image_clip),
-            kind=kwargs.get("kind", self.kind),
-            items=kwargs.get("items", self.items),
-            path=kwargs.get("path", self.path),
-            bbox=kwargs.get("bbox", self.bbox),
-            stream_order=kwargs.get("stream_order", self.stream_order),
-            xobject_depth=kwargs.get("xobject_depth", self.xobject_depth),
-        )
+        return dataclasses.replace(self, **kwargs)
 
     @property
     def rect(self) -> RectBox | None:
@@ -600,11 +585,4 @@ __all__ = (
     "CapturedLine",
     "CapturedPath",
     "CapturedSubpath",
-    "NO_SPACE_AFTER",
-    "NO_SPACE_BEFORE",
-    "can_merge_cross_font_word",
-    "gap_separator",
-    "glyph_cluster_from_observations",
-    "glyph_unicode_confidence",
-    "normalize_extracted_text",
 )

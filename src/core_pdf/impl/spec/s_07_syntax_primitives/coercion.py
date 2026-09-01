@@ -17,11 +17,6 @@ def is_pdf_null(value: object) -> bool:
 
 
 @lru_cache(maxsize=4096)
-def parse_name_str(value: str) -> str:
-    return value
-
-
-@lru_cache(maxsize=4096)
 def parse_name_bytes(value: bytes) -> str:
     return value.decode("latin-1")
 
@@ -30,7 +25,7 @@ def parse_name(value: object, default: str | None = None) -> str | None:
     if type(value) is PdfName:
         return str(value)
     if type(value) is str:
-        return parse_name_str(value)
+        return value
     if type(value) is bytes:
         return parse_name_bytes(value)
     return default
@@ -182,5 +177,4 @@ __all__ = (
     "parse_int_strict",
     "parse_name",
     "parse_name_bytes",
-    "parse_name_str",
 )

@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable, Iterator
-from dataclasses import dataclass
 from typing import Protocol, TypeAlias, TypeVar, cast, overload
 
 from core_pdf.impl.exceptions import PdfParseError
@@ -16,13 +15,8 @@ from core_pdf.impl.spec.s_07_content.inline_images import (
     recover_inline_image_position,
 )
 from core_pdf.impl.spec.s_07_content.operator_tables import (
-    GRAPHICS_STATE_OPERATORS,
-    IMAGE_OPERATORS,
     TEXT_ONLY_SKIP_DOUBLE,
     TEXT_ONLY_SKIP_SINGLE,
-    TEXT_OPERATORS,
-    VECTOR_PAINT_OPERATORS,
-    VECTOR_PATH_OPERATORS,
 )
 from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.spec.s_07_syntax.types import CachedPdfObject
@@ -60,45 +54,6 @@ TEXT_CLIP_PREFIX_RE = re.compile(
 TEXT_SHOWING_CANDIDATES = (b'"', b"'", b"Tj", b"TJ", b"Do")
 TEXT_OR_LEXICAL_MARKER_RE = re.compile(rb"""[%(/<>\[\]"']|T[jJ]|Do|BI""")
 CONTAINER_LEXICAL_MARKER_RE = re.compile(rb"[%(<>\[\]]")
-
-
-@dataclass(frozen=True, slots=True)
-class ContentOperatorCounts:
-    """Coarse content-stream operator counts for cheap page preflight."""
-
-    text: int = 0
-    image: int = 0
-    vector_path: int = 0
-    vector_paint: int = 0
-    graphics_state: int = 0
-    unknown: int = 0
-    malformed: int = 0
-
-    @property
-    def vector(self) -> int:
-        return self.vector_path + self.vector_paint
-
-    @property
-    def total(self) -> int:
-        return (
-            self.text
-            + self.image
-            + self.vector_path
-            + self.vector_paint
-            + self.graphics_state
-            + self.unknown
-        )
-
-    def add(self, other: "ContentOperatorCounts") -> "ContentOperatorCounts":
-        return ContentOperatorCounts(
-            text=self.text + other.text,
-            image=self.image + other.image,
-            vector_path=self.vector_path + other.vector_path,
-            vector_paint=self.vector_paint + other.vector_paint,
-            graphics_state=self.graphics_state + other.graphics_state,
-            unknown=self.unknown + other.unknown,
-            malformed=self.malformed + other.malformed,
-        )
 
 
 def _advance_past_lexical_markers(
@@ -188,48 +143,6 @@ def content_stream_may_show_text(data: bytes | memoryview) -> bool:
             pos = inline_image_lexer.pos
 
     return False
-
-
-def count_content_stream_operators(data: bytes | memoryview) -> ContentOperatorCounts:
-    """Return coarse operator counts without constructing graphics or text state."""
-    text = image = vector_path = vector_paint = graphics_state = unknown = 0
-
-    def collector(operands: OperandWindow, depth: int, operator: str) -> None:
-        nonlocal text, image, vector_path, vector_paint, graphics_state, unknown
-        if operator in TEXT_OPERATORS:
-            text += 1
-        elif operator in IMAGE_OPERATORS:
-            image += 1
-        elif operator in VECTOR_PATH_OPERATORS:
-            vector_path += 1
-        elif operator in VECTOR_PAINT_OPERATORS:
-            vector_paint += 1
-        elif operator in GRAPHICS_STATE_OPERATORS:
-            graphics_state += 1
-        elif operator:
-            unknown += 1
-
-    try:
-        handlers = CollectedIntegerHandlers(collector)
-        dispatch_operations(
-            PdfLexer(data),
-            CollectedStringHandlers(collector),
-            None,
-            handlers,
-            handlers,
-            None,
-            0,
-        )
-    except PdfParseError:
-        return ContentOperatorCounts(malformed=1)
-    return ContentOperatorCounts(
-        text=text,
-        image=image,
-        vector_path=vector_path,
-        vector_paint=vector_paint,
-        graphics_state=graphics_state,
-        unknown=unknown,
-    )
 
 
 def skip_text_clip_prefix(raw_bytes: bytes | memoryview, pos: int) -> int | None:
@@ -513,6 +426,16 @@ def dispatch_operations(
         and not handler_target.capture_clipping
     )
     should_decipher = lexer.decipher is not None and lexer.current_obj_num is not None
+    # Fixed when the document is opened, but it was previously resolved by a
+    # double getattr chain on every ``<<`` token of every content stream.
+    legacy_pdfminer_mode = bool(
+        handler_target is not None
+        and getattr(
+            getattr(handler_target, "document", None),
+            "legacy_pdfminer_text_operators",
+            False,
+        )
+    )
     skipped_clip_q_count = 0
 
     pos = lexer.pos
@@ -581,12 +504,6 @@ def dispatch_operations(
                                 operands[op_count] = -val if first == 45 else val
                             op_count += 1
                             continue
-                        if first == 46 and 48 <= b1 <= 57:
-                            if op_count < max_operands:
-                                operands[op_count] = float(raw_bytes[start_offset:pos])
-                            op_count += 1
-                            continue
-
                     # Fast path: Three-character numeric tokens (e.g. '123', '-12')
                     elif n_raw == 3:
                         b1 = raw_bytes[start_offset + 1]
@@ -632,115 +549,6 @@ def dispatch_operations(
                             val = (b1 - 48) * 100 + (b2 - 48) * 10 + (b3 - 48)
                             if op_count < max_operands:
                                 operands[op_count] = -val if first == 45 else val
-                            op_count += 1
-                            continue
-
-                        if 48 <= first <= 57 and b1 == 46 and 48 <= b2 <= 57 and 48 <= b3 <= 57:
-                            if op_count < max_operands:
-                                operands[op_count] = float(raw_bytes[start_offset:pos])
-                            op_count += 1
-                            continue
-
-                    elif n_raw == 5:
-                        b1 = raw_bytes[start_offset + 1]
-                        b2 = raw_bytes[start_offset + 2]
-                        b3 = raw_bytes[start_offset + 3]
-                        b4 = raw_bytes[start_offset + 4]
-                        if (
-                            48 <= first <= 57
-                            and b1 == 46
-                            and 48 <= b2 <= 57
-                            and 48 <= b3 <= 57
-                            and 48 <= b4 <= 57
-                        ):
-                            if op_count < max_operands:
-                                operands[op_count] = float(raw_bytes[start_offset:pos])
-                            op_count += 1
-                            continue
-                        if (
-                            48 <= first <= 57
-                            and 48 <= b1 <= 57
-                            and b2 == 46
-                            and 48 <= b3 <= 57
-                            and 48 <= b4 <= 57
-                        ):
-                            if op_count < max_operands:
-                                operands[op_count] = float(raw_bytes[start_offset:pos])
-                            op_count += 1
-                            continue
-                        if (
-                            first == 45
-                            and 48 <= b1 <= 57
-                            and b2 == 46
-                            and 48 <= b3 <= 57
-                            and 48 <= b4 <= 57
-                        ):
-                            if op_count < max_operands:
-                                operands[op_count] = float(raw_bytes[start_offset:pos])
-                            op_count += 1
-                            continue
-
-                    elif n_raw == 6:
-                        b1 = raw_bytes[start_offset + 1]
-                        b2 = raw_bytes[start_offset + 2]
-                        b3 = raw_bytes[start_offset + 3]
-                        b4 = raw_bytes[start_offset + 4]
-                        b5 = raw_bytes[start_offset + 5]
-                        if (
-                            first == 45
-                            and 48 <= b1 <= 57
-                            and b2 == 46
-                            and 48 <= b3 <= 57
-                            and 48 <= b4 <= 57
-                            and 48 <= b5 <= 57
-                        ):
-                            if op_count < max_operands:
-                                operands[op_count] = float(raw_bytes[start_offset:pos])
-                            op_count += 1
-                            continue
-                        if (
-                            48 <= first <= 57
-                            and 48 <= b1 <= 57
-                            and 48 <= b2 <= 57
-                            and b3 == 46
-                            and 48 <= b4 <= 57
-                            and 48 <= b5 <= 57
-                        ):
-                            if op_count < max_operands:
-                                operands[op_count] = float(raw_bytes[start_offset:pos])
-                            op_count += 1
-                            continue
-                        if (
-                            first == 45
-                            and 48 <= b1 <= 57
-                            and 48 <= b2 <= 57
-                            and b3 == 46
-                            and 48 <= b4 <= 57
-                            and 48 <= b5 <= 57
-                        ):
-                            if op_count < max_operands:
-                                operands[op_count] = float(raw_bytes[start_offset:pos])
-                            op_count += 1
-                            continue
-
-                    elif n_raw == 7:
-                        b1 = raw_bytes[start_offset + 1]
-                        b2 = raw_bytes[start_offset + 2]
-                        b3 = raw_bytes[start_offset + 3]
-                        b4 = raw_bytes[start_offset + 4]
-                        b5 = raw_bytes[start_offset + 5]
-                        b6 = raw_bytes[start_offset + 6]
-                        if (
-                            first == 45
-                            and 48 <= b1 <= 57
-                            and 48 <= b2 <= 57
-                            and 48 <= b3 <= 57
-                            and b4 == 46
-                            and 48 <= b5 <= 57
-                            and 48 <= b6 <= 57
-                        ):
-                            if op_count < max_operands:
-                                operands[op_count] = float(raw_bytes[start_offset:pos])
                             op_count += 1
                             continue
 
@@ -1230,14 +1038,6 @@ def dispatch_operations(
         if byte == 60:
             if pos + 1 < data_len and raw_bytes[pos + 1] == 60:
                 operand_start = pos
-                legacy_pdfminer_mode = bool(
-                    handler_target is not None
-                    and getattr(
-                        getattr(handler_target, "document", None),
-                        "legacy_pdfminer_text_operators",
-                        False,
-                    )
-                )
                 try:
                     parse_dictionary = (
                         lexer.parse_dictionary
@@ -1404,10 +1204,8 @@ __all__ = (
     "ContentOperand",
     "ContentOperands",
     "ContentOperation",
-    "ContentOperatorCounts",
     "OperandWindow",
     "content_stream_may_show_text",
-    "count_content_stream_operators",
     "dispatch_operations",
     "iter_content_operations",
     "validate_inline_images",

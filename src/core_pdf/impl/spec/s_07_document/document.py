@@ -83,31 +83,6 @@ if TYPE_CHECKING:
 
 internal_PageT = TypeVar("internal_PageT", bound=PageListItem)
 
-DOCUMENT_CACHE_FIELDS = (
-    "catalog_cache",
-    "metadata_cache",
-    "structure_cache",
-    "mark_info_cache",
-    "page_dicts_cache",
-    "pages_cache",
-    "page_index_cache",
-    "named_destinations_cache",
-    "embedded_files_cache",
-    "oc_layers",
-    "acroform_cache",
-    "fields_cache",
-    "fields_by_page_cache",
-    "page_labels_cache",
-    "page_extraction_caches",
-)
-
-OPTIONAL_DOCUMENT_CACHE_FIELDS = (
-    "structure_cache",
-    "mark_info_cache",
-    "acroform_cache",
-    "page_labels_cache",
-)
-
 
 class PdfDocument(
     DocumentXRefMixin,
@@ -368,19 +343,29 @@ class PdfDocument(
                         page_cache.clear()
 
     def _initialize_document_caches(self) -> None:
-        for cache_name in DOCUMENT_CACHE_FIELDS:
-            setattr(self, cache_name, None)
-        for cache_name in OPTIONAL_DOCUMENT_CACHE_FIELDS:
-            setattr(self, cache_name, MISSING)
         self.decoder_cache = {}
         self.image_cache = ImageCache()
         self.inherited_values_cache = {}
+        self._clear_document_caches()
 
     def _clear_document_caches(self) -> None:
-        for cache_name in DOCUMENT_CACHE_FIELDS:
-            setattr(self, cache_name, None)
-        for cache_name in OPTIONAL_DOCUMENT_CACHE_FIELDS:
-            setattr(self, cache_name, MISSING)
+        # None means "not computed yet"; MISSING distinguishes that from a
+        # computed absence, for the four entries that may legitimately be None.
+        self.catalog_cache = None
+        self.metadata_cache = None
+        self.page_dicts_cache = None
+        self.pages_cache = None
+        self.page_index_cache = None
+        self.named_destinations_cache = None
+        self.embedded_files_cache = None
+        self.oc_layers = None
+        self.fields_cache = None
+        self.fields_by_page_cache = None
+        self.page_extraction_caches = None
+        self.structure_cache = MISSING
+        self.mark_info_cache = MISSING
+        self.acroform_cache = MISSING
+        self.page_labels_cache = MISSING
         self.decoder_cache.clear()
         self.image_cache.clear()
         self.inherited_values_cache.clear()

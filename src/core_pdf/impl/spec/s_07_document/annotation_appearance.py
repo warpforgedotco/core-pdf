@@ -14,10 +14,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, cast
 
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.spec.s_07_content.geometry import transform_bbox
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict
-from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
+from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix, transform_bbox
 
 if TYPE_CHECKING:
     from core_pdf.impl.spec.s_07_content.state import TextState
@@ -73,11 +72,6 @@ def select_appearance_stream(
         if isinstance(only, PdfStream):
             return only
     return None
-
-
-def internal_appearance_stream(document: Any, annot: dict) -> PdfStream | None:
-    """Return the normal appearance stream, resolving an appearance substate."""
-    return select_appearance_stream(document.resolver, annot.get("AP"), annot.get("AS"))
 
 
 def internal_should_render(document: Any, annot: dict) -> bool:
@@ -140,7 +134,7 @@ def consume_annotation_appearances(page: Any, state: "TextState") -> None:
         try:
             if not internal_should_render(document, annot):
                 continue
-            stream = internal_appearance_stream(document, annot)
+            stream = select_appearance_stream(document.resolver, annot.get("AP"), annot.get("AS"))
             if stream is None:
                 continue
             rect = document.resolver.resolve_box(annot.get("Rect"))

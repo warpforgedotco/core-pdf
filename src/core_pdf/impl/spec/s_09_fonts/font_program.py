@@ -1431,7 +1431,7 @@ def glyph_feature_distance(left: CFFGlyphFeature, right: CFFGlyphFeature) -> flo
 
 SUSPICIOUS_TO_UNICODE = {"\ufffd", "£", "•"}
 REPAIRABLE_TO_UNICODE = SUSPICIOUS_TO_UNICODE | {"5", "H"}
-LEGITIMATE_MULTI_CHAR_GLYPHS = {"ff", "fi", "fl", "ffi", "ffl", "st"}
+LEGITIMATE_MULTI_CHAR_GLYPHS = frozenset({"ff", "fi", "fl", "ffi", "ffl", "st"})
 
 
 def is_repairable_to_unicode_label(label: str) -> bool:

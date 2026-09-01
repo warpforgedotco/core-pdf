@@ -889,6 +889,22 @@ def internal_xy_cut_regions(
     if len(indexes) <= 2 or depth >= 32:
         return [internal_row_order_region(geometry, current_region)]
 
+    def recurse(
+        group: numpy.ndarray,
+        used: frozenset[int] = used_obstacles,
+    ) -> list[numpy.ndarray]:
+        return internal_xy_cut_regions(
+            group,
+            boxes,
+            obstacles,
+            median_height,
+            depth=depth + 1,
+            obstacle_index=obstacle_index,
+            used_obstacles=used,
+            geometry=geometry,
+            parent_region=current_region,
+        )
+
     obstacle_partition = internal_obstacle_partition(
         indexes,
         boxes,
@@ -899,21 +915,7 @@ def internal_xy_cut_regions(
     if obstacle_partition is not None:
         groups, used_obstacle = obstacle_partition
         next_used_obstacles = used_obstacles | {used_obstacle}
-        return [
-            region
-            for group in groups
-            for region in internal_xy_cut_regions(
-                group,
-                boxes,
-                obstacles,
-                median_height,
-                depth=depth + 1,
-                obstacle_index=obstacle_index,
-                used_obstacles=next_used_obstacles,
-                geometry=geometry,
-                parent_region=current_region,
-            )
-        ]
+        return [region for group in groups for region in recurse(group, next_used_obstacles)]
 
     region_boxes = boxes[indexes]
     horizontal = internal_best_region_projection_gap(
@@ -938,53 +940,19 @@ def internal_xy_cut_regions(
             left = indexes[centers_x < tolerant_cut]
             right = indexes[centers_x >= tolerant_cut]
             if len(left) and len(right):
-                return [
-                    region
-                    for group in (left, right)
-                    for region in internal_xy_cut_regions(
-                        group,
-                        boxes,
-                        obstacles,
-                        median_height,
-                        depth=depth + 1,
-                        obstacle_index=obstacle_index,
-                        used_obstacles=used_obstacles,
-                        geometry=geometry,
-                        parent_region=current_region,
-                    )
-                ]
+                return [region for group in (left, right) for region in recurse(group)]
         peeled = internal_peel_spanning_band(indexes, boxes, median_height)
         if peeled is not None:
             band, remainder = peeled
             return [
                 internal_row_order_region(geometry, geometry.region(band, current_region)),
-                *internal_xy_cut_regions(
-                    remainder,
-                    boxes,
-                    obstacles,
-                    median_height,
-                    depth=depth + 1,
-                    obstacle_index=obstacle_index,
-                    used_obstacles=used_obstacles,
-                    geometry=geometry,
-                    parent_region=current_region,
-                ),
+                *recurse(remainder),
             ]
         peeled = internal_peel_spanning_band(indexes, boxes, median_height, from_bottom=True)
         if peeled is not None:
             band, remainder = peeled
             return [
-                *internal_xy_cut_regions(
-                    remainder,
-                    boxes,
-                    obstacles,
-                    median_height,
-                    depth=depth + 1,
-                    obstacle_index=obstacle_index,
-                    used_obstacles=used_obstacles,
-                    geometry=geometry,
-                    parent_region=current_region,
-                ),
+                *recurse(remainder),
                 internal_row_order_region(geometry, geometry.region(band, current_region)),
             ]
         return [internal_row_order_region(geometry, current_region)]
@@ -996,21 +964,7 @@ def internal_xy_cut_regions(
     if not len(first) or not len(second):
         return [internal_row_order_region(geometry, current_region)]
     ordered_groups = (second, first) if axis == 1 else (first, second)
-    return [
-        region
-        for group in ordered_groups
-        for region in internal_xy_cut_regions(
-            group,
-            boxes,
-            obstacles,
-            median_height,
-            depth=depth + 1,
-            obstacle_index=obstacle_index,
-            used_obstacles=used_obstacles,
-            geometry=geometry,
-            parent_region=current_region,
-        )
-    ]
+    return [region for group in ordered_groups for region in recurse(group)]
 
 
 def internal_block_bbox(lines: tuple[ParsedLine, ...]) -> tuple[float, float, float, float]:

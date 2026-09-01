@@ -59,10 +59,6 @@ def find_all(
                 stack.append(child)
 
 
-def find_first(elements: Iterable[StructureElement]) -> StructureElement | None:
-    return next(iter(elements), None)
-
-
 def literal_name(value: Any) -> str | None:
     if isinstance(value, PdfReference):
         return None
@@ -252,7 +248,7 @@ class StructureElement:
         return find_all(filtered, matcher)
 
     def find(self, matcher: str | MatchFunc | None = None) -> StructureElement | None:
-        return find_first(self.find_all(matcher))
+        return next(self.find_all(matcher), None)
 
 
 class StructureTree(Iterable[StructureElement | StructureContentItem | StructureContentObject]):
@@ -347,7 +343,7 @@ class StructureTree(Iterable[StructureElement | StructureContentItem | Structure
         return find_all([item for item in self if isinstance(item, StructureElement)], matcher)
 
     def find(self, matcher: str | MatchFunc | None = None) -> StructureElement | None:
-        return find_first(self.find_all(matcher))
+        return next(self.find_all(matcher), None)
 
     def page_structure(self, page: PdfPage) -> "PageStructure":
         key = self.document.resolver.resolve_int(page.page_dict.get("StructParents"))
@@ -431,7 +427,7 @@ class PageStructure(Sequence[StructureElement | None]):
                 element = parent
 
     def find(self, matcher: str | MatchFunc | None = None) -> StructureElement | None:
-        return find_first(self.find_all(matcher))
+        return next(self.find_all(matcher), None)
 
 
 StructureChild: TypeAlias = StructureElement | StructureContentItem | StructureContentObject

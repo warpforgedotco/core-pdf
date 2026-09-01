@@ -470,6 +470,7 @@ class TextRun:
             order=kwargs.get("order", self.order),
             stream_order=kwargs.get("stream_order", self.stream_order),
             xobject_depth=kwargs.get("xobject_depth", self.xobject_depth),
+            font_name=kwargs.get("font_name", self.font_name),
             is_vertical=kwargs.get("is_vertical", self.is_vertical),
             rotation_angle=kwargs.get("rotation_angle", self.rotation_angle),
             visible=kwargs.get("visible", self.visible),

@@ -404,9 +404,10 @@ class DocumentTextView:
 
     @property
     def words(self) -> tuple[TextWord, ...]:
+        # TextView.words already stamps page_number, so no restamping is needed here.
         words: list[TextWord] = []
         for page in self.pages:
-            words.extend(replace(word, page_number=page.page_number) for word in page.words)
+            words.extend(page.words)
         return tuple(words)
 
     @property

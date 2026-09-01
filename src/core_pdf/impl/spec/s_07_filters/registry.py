@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal, TypeAlias
 
@@ -30,6 +31,9 @@ class FilterDescriptor:
     predictor: bool = False
     expensive_decode: bool = False
     ccitt: bool = False
+    # JPX reads the image dictionary (for /SMaskInData and colour) rather than
+    # the DecodeParms every other filter is handed.
+    wants_image_dictionary: bool = False
 
 
 FILTER_DESCRIPTORS = (
@@ -66,7 +70,13 @@ FILTER_DESCRIPTORS = (
     ),
     FilterDescriptor("CCF", "ccitt", ("ccf",), expensive_decode=True, ccitt=True),
     FilterDescriptor("Crypt", "crypt", ("crypt",)),
-    FilterDescriptor("JPXDecode", "jpx", ("jpxdecode",), expensive_decode=True),
+    FilterDescriptor(
+        "JPXDecode",
+        "jpx",
+        ("jpxdecode",),
+        expensive_decode=True,
+        wants_image_dictionary=True,
+    ),
     FilterDescriptor("JBIG2Decode", "jbig2", ("jbig2decode",), expensive_decode=True),
     FilterDescriptor("Identity", None, ("identity",)),
     FilterDescriptor("None", None, ("none",)),
@@ -83,3 +93,45 @@ PREDICTOR_FILTERS = frozenset(
 EXPENSIVE_DECODE_CACHE_FILTERS = frozenset(
     descriptor.name for descriptor in FILTER_DESCRIPTORS if descriptor.expensive_decode
 )
+
+
+@dataclass(frozen=True, slots=True)
+class NativeImageSpec:
+    """What a decoder's array fast path accepts, and how wide its output is.
+
+    `channels` maps a normalized colour-space name to its component count and
+    doubles as the preallocation table: a name absent from it means "decode
+    without a preallocated buffer". `color_names` and `bits` are the wider set
+    the fast path will accept at all; `bits=None` means any depth.
+    """
+
+    channels: Mapping[str | None, int]
+    color_names: frozenset[str | None]
+    bits: frozenset[int | None] | None = None
+
+
+internal_RAW_SAMPLE_IMAGE = NativeImageSpec(
+    channels={None: 1, "DeviceGray": 1, "DeviceRGB": 3},
+    color_names=frozenset({None, "DeviceGray", "DeviceRGB"}),
+    bits=frozenset({None, 8}),
+)
+
+NATIVE_IMAGE_SPECS: Mapping[str, NativeImageSpec] = {
+    "jpeg": NativeImageSpec(
+        channels={"DeviceGray": 1, "DeviceRGB": 3, "DeviceCMYK": 4},
+        color_names=frozenset({None, "DeviceGray", "DeviceRGB", "DeviceCMYK"}),
+        bits=frozenset({None, 8}),
+    ),
+    "jpx": NativeImageSpec(
+        channels={"DeviceGray": 1, "DeviceRGB": 3},
+        color_names=frozenset({None, "DeviceGray", "DeviceRGB"}),
+    ),
+    "ccitt": NativeImageSpec(
+        channels={},
+        color_names=frozenset({None, "DeviceGray"}),
+        bits=frozenset({None, 1}),
+    ),
+    # flate and lzw share a spec: both decode to raw samples the caller reshapes.
+    "flate": internal_RAW_SAMPLE_IMAGE,
+    "lzw": internal_RAW_SAMPLE_IMAGE,
+}

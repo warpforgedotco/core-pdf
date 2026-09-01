@@ -15,10 +15,7 @@ from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     parse_float,
 )
 from core_pdf.impl.spec.s_08_graphics.color_kernels import (
-    apply_decode_array_8bit as internal_native_apply_decode_array_8bit,
-)
-from core_pdf.impl.spec.s_08_graphics.color_kernels import (
-    apply_decode_array_subbyte as internal_native_apply_decode_array_subbyte,
+    apply_decode_array as internal_native_apply_decode_array,
 )
 from core_pdf.impl.spec.s_08_graphics.color_kernels import (
     evaluate_sampled_tint_function as internal_native_evaluate_sampled_tint_function,
@@ -46,6 +43,7 @@ from core_pdf.impl.spec.s_08_graphics.color_spec import (
 from core_pdf.impl.spec.s_08_graphics.device_profiles import (
     cmyk_bytes_to_srgb,
     cmyk_floats_to_srgb,
+    internal_component_byte,
 )
 from core_pdf.impl.spec.s_08_graphics.icc_profiles import (
     IccProfileError,
@@ -67,8 +65,57 @@ def internal_alternate_color_component_count(alt_name: str) -> int:
     raise ValueError("invalid Separation color space")
 
 
-@lru_cache(maxsize=256)
+def internal_sampled_separation_lut_key(
+    tint_fn: PdfStream,
+    alt_name: str,
+) -> tuple[object, ...] | None:
+    """A value key for the LUT, or ``None`` when the function is not cacheable.
+
+    Keying the cache on the ``PdfStream`` itself pinned the stream -- and with it
+    the ``memoryview`` into the document's source buffer -- for the lifetime of
+    the process, so the buffer outlived the document that owned it. These are the
+    only entries ``evaluate_sampled_tint_function`` reads, so together with the
+    decoded samples they determine the LUT exactly.
+    """
+    dictionary = tint_fn.dictionary
+    key: list[object] = [alt_name]
+    for name in ("FunctionType", "BitsPerSample", "Size", "Domain", "Range", "Encode"):
+        value = dictionary.get(name)
+        if isinstance(value, (list, tuple)):
+            if not all(isinstance(item, (int, float)) for item in value):
+                return None
+            key.append(tuple(value))
+        elif isinstance(value, (int, float)) or value is None:
+            key.append(value)
+        else:
+            return None
+    key.append(bytes(tint_fn.data))
+    return tuple(key)
+
+
 def internal_sampled_separation_rgb_lut(
+    tint_fn: PdfStream,
+    alt_name: str,
+) -> numpy.ndarray[Any, numpy.dtype[numpy.uint8]]:
+    """Compile an 8-bit sampled Separation function to a read-only RGB LUT."""
+    cache_key = internal_sampled_separation_lut_key(tint_fn, alt_name)
+    if cache_key is not None:
+        cached = internal_separation_lut_cache.get(cache_key)
+        if cached is not None:
+            return cached
+        lut = internal_build_sampled_separation_rgb_lut(tint_fn, alt_name)
+        if len(internal_separation_lut_cache) < 256:
+            internal_separation_lut_cache[cache_key] = lut
+        return lut
+    return internal_build_sampled_separation_rgb_lut(tint_fn, alt_name)
+
+
+internal_separation_lut_cache: dict[
+    tuple[object, ...], numpy.ndarray[Any, numpy.dtype[numpy.uint8]]
+] = {}
+
+
+def internal_build_sampled_separation_rgb_lut(
     tint_fn: PdfStream,
     alt_name: str,
 ) -> numpy.ndarray[Any, numpy.dtype[numpy.uint8]]:
@@ -224,11 +271,9 @@ class ImageColorManager:
         expected = width * height * (3 if spec.kind == "DeviceRGB" else 1)
         if len(raw) != expected:
             return None
-        if spec.kind == "DeviceRGB":
-            return raw
-        # Preserve native grayscale samples. Consumers that need RGB can
-        # expand them at the final compositing boundary; OCR can consume the
-        # one-channel buffer directly.
+        # Both kinds pass through untouched. Native grayscale samples are
+        # preserved: consumers that need RGB expand them at the final
+        # compositing boundary, and OCR consumes the one-channel buffer.
         return raw
 
     @staticmethod
@@ -261,9 +306,7 @@ class ImageColorManager:
             pairs = [(0.0, 1.0)] * components
         if bpc == 8 and all(pair == (0.0, 1.0) for pair in pairs):
             return samples
-        if bpc == 8:
-            return internal_native_apply_decode_array_8bit(samples, tuple(pairs))
-        return internal_native_apply_decode_array_subbyte(samples, tuple(pairs), max_sample)
+        return internal_native_apply_decode_array(samples, tuple(pairs), max_sample)
 
     @staticmethod
     def convert_separation(raw: ImageBuffer, color_space: ImageColorSpec) -> ImageBuffer | None:
@@ -454,7 +497,7 @@ class ImageColorManager:
     def apply_alt_color(components: ColorComponents, alt_name: str) -> bytes | None:
         if alt_name == "DeviceGray":
             v = max(0.0, min(1.0, components[0] if components else 0.0))
-            v_byte = max(0, min(255, int(round(v * 255.0))))
+            v_byte = internal_component_byte(v)
             return bytes([v_byte, v_byte, v_byte])
         if alt_name == "DeviceRGB":
             r = max(0.0, min(1.0, components[0] if len(components) >= 1 else 0.0))
@@ -462,9 +505,9 @@ class ImageColorManager:
             b = max(0.0, min(1.0, components[2] if len(components) >= 3 else r))
             return bytes(
                 [
-                    max(0, min(255, int(round(r * 255.0)))),
-                    max(0, min(255, int(round(g * 255.0)))),
-                    max(0, min(255, int(round(b * 255.0)))),
+                    internal_component_byte(r),
+                    internal_component_byte(g),
+                    internal_component_byte(b),
                 ]
             )
         if alt_name == "DeviceCMYK":

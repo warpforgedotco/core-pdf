@@ -6,6 +6,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any, Final, NamedTuple
 
+from core_pdf.impl.types import Rectangle
+
 
 class Matrix(NamedTuple):
     a: float
@@ -65,3 +67,21 @@ def multiply_affine(left: Sequence[float], right: Sequence[float]) -> list[float
         left[4] * right[0] + left[5] * right[2] + right[4],
         left[4] * right[1] + left[5] * right[3] + right[5],
     ]
+
+
+def transform_bbox(bbox: Rectangle, matrix: Matrix) -> Rectangle:
+    """Axis-aligned bounds of `bbox` after `matrix` is applied to its corners."""
+    x0, y0, x1, y1 = bbox
+    a, b, c, d, e, f = matrix
+    points = (
+        (x0 * a + y0 * c + e, x0 * b + y0 * d + f),
+        (x1 * a + y0 * c + e, x1 * b + y0 * d + f),
+        (x0 * a + y1 * c + e, x0 * b + y1 * d + f),
+        (x1 * a + y1 * c + e, x1 * b + y1 * d + f),
+    )
+    return (
+        min(point[0] for point in points),
+        min(point[1] for point in points),
+        max(point[0] for point in points),
+        max(point[1] for point in points),
+    )

@@ -971,14 +971,6 @@ def internal_recognize_page_with_reserved_raster(
         ):
             continue
         if (
-            selected is not None
-            and ocr_pass.scope is OcrPassScope.IMAGE_REGIONS
-            and ocr_pass.run_if_characters_below is not None
-            and selected.metrics.characters >= 1500
-            and selected.metrics.mean_confidence >= 98.0
-        ):
-            continue
-        if (
             ocr_pass.run_if_additions_below is not None
             and previous_region_additions >= ocr_pass.run_if_additions_below
         ):

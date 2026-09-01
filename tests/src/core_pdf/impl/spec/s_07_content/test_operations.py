@@ -9,7 +9,6 @@ from core_pdf.impl.primitives import PdfName, PdfString
 from core_pdf.impl.spec.s_07_content.operations import (
     OperandWindow,
     content_stream_may_show_text,
-    count_content_stream_operators,
     dispatch_operations,
     iter_content_operations,
 )
@@ -117,38 +116,7 @@ def test_content_operations_skip_comments_after_whitespace(
     assert list(iter_content_operations(PdfLexer(data))) == expected
 
 
-def test_content_operator_counts_ignore_operand_and_inline_image_bytes() -> None:
-    data = b"(Tj) % Do\nBI /W 1 /H 1 /BPC 8 ID Tj Do S EI q Q"
-
-    counts = count_content_stream_operators(data)
-
-    assert counts.text == 0
-    assert counts.image == 1
-    assert counts.graphics_state == 2
-
-
-def test_content_operator_counts_group_text_image_and_vector_operators() -> None:
-    counts = count_content_stream_operators(
-        b"BT /F1 12 Tf (hello) Tj ET q 0 0 10 10 re f /Im1 Do Q"
-    )
-
-    assert counts.text >= 4
-    assert counts.image == 1
-    assert counts.vector_path == 1
-    assert counts.vector_paint == 1
-
-
 @pytest.mark.parametrize(("operator", "operands"), [("TL", "12"), ("Tz", "90"), ("Ts", "2")])
-def test_content_operator_counts_classify_all_text_state_operators(
-    operator: str,
-    operands: str,
-) -> None:
-    counts = count_content_stream_operators(f"{operands} {operator}".encode("ascii"))
-
-    assert counts.text == 1
-    assert counts.unknown == 0
-
-
 class internal_RecordingOperationTarget:
     """Minimal bound ``OperationTarget`` that records every dispatched call.
 

@@ -111,7 +111,9 @@ skip_covered = true
 # Raised 64 -> 66 after omitting the quarantined pymupdf facade (which nothing
 # imports, so it could only ever read 0%) and deleting ~1.5k lines of dead code;
 # measured 66.98%.
-fail_under = 66
+# Raised 66 -> 67 after removing the unreachable text-only dispatch table, the
+# hand-unrolled float operand paths and several duplicated helpers; measured 67.84%.
+fail_under = 67
 exclude_also = [
     "if TYPE_CHECKING:",
     "raise NotImplementedError",
@@ -131,11 +133,9 @@ line-length = 100
 # C901 exemptions. Each of these files holds a function above the complexity gate
 # that is either a deliberate optimization pinned by docs/architecture.md or known
 # debt. Shrink this list rather than raising max-complexity.
-#   operations.py  dispatch_operations (180) — protected: hand-unrolled dispatch loop
-#   state.py       append_tj_array_simple_horizontal_batched (70) — protected: batched text
+#   operations.py  dispatch_operations (162) — protected: hand-unrolled dispatch loop
 #   ocr.py         internal_recognize_page_with_reserved_raster (66)
 "src/core_pdf/impl/spec/s_07_content/operations.py" = ["C901"]
-"src/core_pdf/impl/spec/s_07_content/state.py" = ["C901"]
 "src/core_pdf/impl/parse/ocr.py" = ["C901"]
 
 [tool.ruff.lint.mccabe]

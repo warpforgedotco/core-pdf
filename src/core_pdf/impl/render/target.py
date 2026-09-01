@@ -399,13 +399,10 @@ class internal_RasterTarget:
         x0, y0, x1, y1 = box
         clip_box = self.current_clip() if clip_path_stack else None
         if clip_box is not None:
-            cx0, cy0, cx1, cy1 = clip_box
-            x0 = max(x0, cx0)
-            y0 = max(y0, cy0)
-            x1 = min(x1, cx1)
-            y1 = min(y1, cy1)
-            if x1 <= x0 or y1 <= y0:
+            clipped = internal_intersect_box((x0, y0, x1, y1), clip_box)
+            if clipped is None:
                 return
+            x0, y0, x1, y1 = clipped
         pixel_box = self.page_box_to_pixels(x0, y0, x1, y1)
         if pixel_box is None:
             return
@@ -2175,13 +2172,10 @@ class internal_RasterTarget:
         x0, y0, x1, y1 = box
         clip_box = current_clip()
         if clip_box is not None:
-            cx0, cy0, cx1, cy1 = clip_box
-            x0 = max(x0, cx0)
-            y0 = max(y0, cy0)
-            x1 = min(x1, cx1)
-            y1 = min(y1, cy1)
-            if x1 <= x0 or y1 <= y0:
+            clipped = internal_intersect_box((x0, y0, x1, y1), clip_box)
+            if clipped is None:
                 return
+            x0, y0, x1, y1 = clipped
         pixel_box = page_box_to_pixels(x0, y0, x1, y1)
         if pixel_box is None:
             return
@@ -2445,6 +2439,9 @@ class internal_RasterTarget:
         soft_mask_alpha = data.get("soft_mask_alpha")
         fill_opacity = data.get("fill_opacity")
         normal_fast = can_blend_normal_fast(blend_mode)
+        # Fixed for the whole shading; resolving it per pixel re-ran pdf_number
+        # and float() once per device pixel of the fill.
+        shading_alpha = float(soft_mask_alpha) if pdf_number(soft_mask_alpha) else None
         domain_span = domain[1] - domain[0]
         # page_x only depends on the column, so it is identical on every row;
         # computing it once here avoids redoing the same division per pixel.
@@ -2461,57 +2458,51 @@ class internal_RasterTarget:
             visible_spans = clip_row_visible_spans(py)
             if not visible_spans:
                 continue
-            for px in range(ix0, ix1):
-                index = bisect_left(visible_spans, (px + 1, -1))
-                if index <= 0:
-                    continue
-                start, end = visible_spans[index - 1]
-                if not (start <= px < end):
-                    continue
-                page_x = page_x_values[px - ix0]
-                unit_t = (
-                    axial_shading_t(coords, page_x, page_y)
-                    if shading_type == 2
-                    else radial_shading_t(coords, page_x, page_y)
-                )
-                if unit_t is None:
-                    continue
-                if unit_t < 0.0:
-                    if not extend0:
-                        continue
-                    unit_t = 0.0
-                elif unit_t > 1.0:
-                    if not extend1:
-                        continue
-                    unit_t = 1.0
-                rgba = color_cache.get(unit_t)
-                if rgba is None:
-                    value = domain[0] + unit_t * domain_span
-                    rgba = internal_shading_color_rgba(
-                        shading.color_model,
-                        shading.evaluate(value),
-                        fill_opacity,
+            # Walking the spans directly answers a per-row question once per
+            # span, where the bisect answered it again for every pixel.
+            for span_start, span_end in visible_spans:
+                for px in range(max(ix0, span_start), min(ix1, span_end)):
+                    page_x = page_x_values[px - ix0]
+                    unit_t = (
+                        axial_shading_t(coords, page_x, page_y)
+                        if shading_type == 2
+                        else radial_shading_t(coords, page_x, page_y)
                     )
-                    # Bounded like the raster coordinate caches below: a
-                    # diagonal or radial gradient can produce a near-unique
-                    # unit_t per pixel, so an unbounded cache would grow to
-                    # one entry per pixel on a large fill.
-                    if len(color_cache) < RASTER_COORDINATE_CACHE_MAX_ENTRIES:
-                        color_cache[unit_t] = rgba
-                if pdf_number(soft_mask_alpha):
-                    rgba = (
-                        rgba[0],
-                        rgba[1],
-                        rgba[2],
-                        max(
-                            0,
-                            min(255, int(round(rgba[3] * float(soft_mask_alpha)))),
-                        ),
-                    )
-                if normal_fast:
-                    blend_normal_pixel(row + px * 4, *rgba)
-                else:
-                    blend_px(row + px * 4, rgba, blend_alpha_scale, blend_resolved_mode)
+                    if unit_t is None:
+                        continue
+                    if unit_t < 0.0:
+                        if not extend0:
+                            continue
+                        unit_t = 0.0
+                    elif unit_t > 1.0:
+                        if not extend1:
+                            continue
+                        unit_t = 1.0
+                    rgba = color_cache.get(unit_t)
+                    if rgba is None:
+                        value = domain[0] + unit_t * domain_span
+                        rgba = internal_shading_color_rgba(
+                            shading.color_model,
+                            shading.evaluate(value),
+                            fill_opacity,
+                        )
+                        # Bounded like the raster coordinate caches below: a
+                        # diagonal or radial gradient can produce a near-unique
+                        # unit_t per pixel, so an unbounded cache would grow to
+                        # one entry per pixel on a large fill.
+                        if len(color_cache) < RASTER_COORDINATE_CACHE_MAX_ENTRIES:
+                            color_cache[unit_t] = rgba
+                    if shading_alpha is not None:
+                        rgba = (
+                            rgba[0],
+                            rgba[1],
+                            rgba[2],
+                            max(0, min(255, int(round(rgba[3] * shading_alpha)))),
+                        )
+                    if normal_fast:
+                        blend_normal_pixel(row + px * 4, *rgba)
+                    else:
+                        blend_px(row + px * 4, rgba, blend_alpha_scale, blend_resolved_mode)
 
     def stroke_path(
         self,
@@ -2959,13 +2950,10 @@ class internal_RasterTarget:
         x0, y0, x1, y1 = box
         clip_box = current_clip()
         if clip_box is not None:
-            cx0, cy0, cx1, cy1 = clip_box
-            x0 = max(x0, cx0)
-            y0 = max(y0, cy0)
-            x1 = min(x1, cx1)
-            y1 = min(y1, cy1)
-            if x1 <= x0 or y1 <= y0:
+            clipped = internal_intersect_box((x0, y0, x1, y1), clip_box)
+            if clipped is None:
                 return
+            x0, y0, x1, y1 = clipped
         pixel_box = page_box_to_pixels(x0, y0, x1, y1)
         if pixel_box is None:
             return
@@ -3014,29 +3002,26 @@ class internal_RasterTarget:
             visible_spans = clip_row_visible_spans(py)
             if not visible_spans:
                 continue
-            for dx, px in enumerate(range(ix0, ix1)):
-                index = bisect_left(visible_spans, (px + 1, -1))
-                if index <= 0:
-                    continue
-                start, end = visible_spans[index - 1]
-                if not (start <= px < end):
-                    continue
-                src_x = src_x_map[dx]
-                src_idx = src_y * width_px + src_x
-                if src_idx >= len(mask):
-                    continue
-                alpha = mask[src_idx]
-                if normal_fast:
-                    blend_normal_pixel(
-                        row + px * 4, stencil_red, stencil_green, stencil_blue, alpha
-                    )
-                else:
-                    blend_px(
-                        row + px * 4,
-                        (stencil_red, stencil_green, stencil_blue, alpha),
-                        blend_alpha_scale,
-                        blend_resolved_mode,
-                    )
+            # Same per-row span walk as paint_shading: the bisect re-answered a
+            # per-row question once per pixel.
+            for span_start, span_end in visible_spans:
+                for px in range(max(ix0, span_start), min(ix1, span_end)):
+                    src_x = src_x_map[px - ix0]
+                    src_idx = src_y * width_px + src_x
+                    if src_idx >= len(mask):
+                        continue
+                    alpha = mask[src_idx]
+                    if normal_fast:
+                        blend_normal_pixel(
+                            row + px * 4, stencil_red, stencil_green, stencil_blue, alpha
+                        )
+                    else:
+                        blend_px(
+                            row + px * 4,
+                            (stencil_red, stencil_green, stencil_blue, alpha),
+                            blend_alpha_scale,
+                            blend_resolved_mode,
+                        )
         return
 
     def blit_image_rows_blended(
@@ -3610,7 +3595,6 @@ class internal_ClipState:
         "path_bbox_cache",
         "path_rect_cache",
         "path_edge_cache",
-        "clip_edge_cache",
         "clip_row_span_cache",
         "clip_visible_row_cache",
         "crop_x0",
@@ -3640,7 +3624,6 @@ class internal_ClipState:
         self.path_bbox_cache: dict[int, tuple[float, float, float, float] | None] = {}
         self.path_rect_cache: dict[int, tuple[float, float, float, float] | None] = {}
         self.path_edge_cache: dict[int, list[tuple[float, float, float, float]]] = {}
-        self.clip_edge_cache: dict[int, list[tuple[float, float, float, float]]] = {}
         self.clip_row_span_cache: dict[tuple[int, int, str], tuple[tuple[int, int], ...]] = {}
         self.clip_visible_row_cache: dict[tuple[int, int], tuple[tuple[int, int], ...]] = {}
         self.crop_x0 = crop_x0
@@ -3682,6 +3665,9 @@ class internal_ClipState:
     def mark_clip_metadata_dirty(self) -> None:
         self.metadata_dirty = True
         self.stack_generation += 1
+        # Every entry is keyed by the generation that just advanced, so the whole
+        # cache is unreachable now; keeping it only grows the page-render dict.
+        self.clip_visible_row_cache.clear()
 
     def current_clip(self) -> tuple[float, float, float, float] | None:
         self.refresh_clip_metadata()
@@ -3761,13 +3747,10 @@ class internal_ClipState:
         cached = clip_row_span_cache.get(cache_key)
         if cached is not None:
             return cached
-        clip_edge_cache = self.clip_edge_cache
-        edges = clip_edge_cache.get(id(path))
-        if edges is None:
-            edges = self.path_edges(path)
-            clip_edge_cache[id(path)] = edges
+        edges = self.path_edges(path)
         if not edges:
-            clip_row_span_cache[cache_key] = ()
+            if len(clip_row_span_cache) < RASTER_COORDINATE_CACHE_MAX_ENTRIES:
+                clip_row_span_cache[cache_key] = ()
             return ()
         page_y = self.crop_y1 - (py + 0.5) / self.scale
         crossings: list[tuple[float, int]] = []
@@ -3781,7 +3764,8 @@ class internal_ClipState:
             t = (page_y - y0) / (y1 - y0)
             crossings.append((x0 + t * (x1 - x0), 1 if y1 > y0 else -1))
         if not crossings:
-            clip_row_span_cache[cache_key] = ()
+            if len(clip_row_span_cache) < RASTER_COORDINATE_CACHE_MAX_ENTRIES:
+                clip_row_span_cache[cache_key] = ()
             return ()
         spans: list[tuple[int, int]] = []
         page_x_to_pixel_span = self.page_x_to_pixel_span
@@ -3793,7 +3777,8 @@ class internal_ClipState:
             if span is not None:
                 spans.append(span)
         cached_spans = tuple(spans)
-        clip_row_span_cache[cache_key] = cached_spans
+        if len(clip_row_span_cache) < RASTER_COORDINATE_CACHE_MAX_ENTRIES:
+            clip_row_span_cache[cache_key] = cached_spans
         return cached_spans
 
     def pixel_in_clip(self, px: int, py: int) -> bool:

@@ -47,6 +47,7 @@ from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_08_graphics.color import (
     ImageColorManager,
     internal_sampled_separation_rgb_lut,
+    internal_separation_lut_cache,
 )
 from core_pdf.impl.spec.s_08_graphics.color_spec import ImageColorSpec
 from core_pdf.impl.spec.s_08_graphics.image_decode import (
@@ -411,6 +412,10 @@ def test_cmyk_conversion_is_monotonic_in_ink_and_black() -> None:
     assert int(black.max()) - int(black.min()) <= 8
 
 
+def first_lut_entry(cache: dict) -> object:
+    return next(iter(cache.values()))
+
+
 def test_sampled_separation_conversion_reuses_exact_rgb_lut() -> None:
     tint_function = PdfStream(
         {
@@ -431,16 +436,27 @@ def test_sampled_separation_conversion_reuses_exact_rgb_lut() -> None:
     )
     samples = bytes((0, 64, 128, 192, 255, 64, 0))
 
-    internal_sampled_separation_rgb_lut.cache_clear()
+    internal_separation_lut_cache.clear()
     first = ImageColorManager.convert_separation(samples, spec)
     second = ImageColorManager.convert_separation(samples, spec)
     expected = numpy.repeat(numpy.frombuffer(samples, dtype=numpy.uint8), 3)
 
     numpy.testing.assert_array_equal(first, expected)
     numpy.testing.assert_array_equal(second, expected)
-    assert internal_sampled_separation_rgb_lut.cache_info().misses == 1
-    assert internal_sampled_separation_rgb_lut.cache_info().hits == 1
+    # One compiled LUT, reused: the second lookup returns the very same array.
+    assert len(internal_separation_lut_cache) == 1
+    assert internal_sampled_separation_rgb_lut(tint_function, "DeviceGray") is (
+        internal_sampled_separation_rgb_lut(tint_function, "DeviceGray")
+    )
+    assert len(internal_separation_lut_cache) == 1
     assert not internal_sampled_separation_rgb_lut(tint_function, "DeviceGray").flags.writeable
+
+    # The cache must not keep the stream (and its view into the document buffer)
+    # alive; an equal function built from fresh bytes hits the same entry.
+    twin = PdfStream(dict(tint_function.dictionary), bytes(range(256)))
+    assert internal_sampled_separation_rgb_lut(twin, "DeviceGray") is first_lut_entry(
+        internal_separation_lut_cache
+    )
 
 
 def test_indexed_conversion_uses_rgb_lookup_entries() -> None:

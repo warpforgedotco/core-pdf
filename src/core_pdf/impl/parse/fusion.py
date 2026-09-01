@@ -38,10 +38,9 @@ def internal_duplicate_of_native_text(
     discarding short schematic labels such as ``R1`` or ``+5V``.
     """
     compact = compact_text(ocr_text)
-    if len(compact) < 8:
-        tokens = text_tokens(ocr_text)
-        return bool(tokens) and all(token in native_tokens for token in tokens)
-    if compact in native_compact:
+    # Short observations get no containment shortcut; they fall through to the
+    # token check so that labels such as ``R1`` are not discarded.
+    if len(compact) >= 8 and compact in native_compact:
         return True
     tokens = text_tokens(ocr_text)
     return bool(tokens) and all(token in native_tokens for token in tokens)
