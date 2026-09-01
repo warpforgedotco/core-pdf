@@ -1048,7 +1048,10 @@ def test_image_mask_source_exposes_alpha_channel() -> None:
 
     assert raster is not None
     assert raster.color_model == "gray"
-    numpy.testing.assert_array_equal(raster.array[0, :, 1], (255, 0))
+    # ISO 32000-1 8.9.6.2: with the default Decode [0 1] "a sample value of 0
+    # shall mark the page ... and a 1 shall leave the previous contents
+    # unchanged", so the 0 bit is the opaque one.
+    numpy.testing.assert_array_equal(raster.array[0, :, 1], (0, 255))
 
 
 def test_image_mask_decode_is_applied_once_at_preparation_boundary() -> None:
@@ -1069,7 +1072,8 @@ def test_image_mask_decode_is_applied_once_at_preparation_boundary() -> None:
 
     actual = page.rasterize(background=(255, 255, 255, 255)).array()
 
-    numpy.testing.assert_array_equal(actual[0, :, 0], (255, 0))
+    # Decode [1 0] reverses the default meanings (8.9.6.2), so the 1 bit paints.
+    numpy.testing.assert_array_equal(actual[0, :, 0], (0, 255))
 
 
 @pytest.mark.parametrize("rotation", [90, 180, 270])
@@ -1220,8 +1224,10 @@ def test_image_mask_opaque_region_uses_masked_page_view() -> None:
         dtype=numpy.uint8,
     ).reshape(2, 2, 4)
     expected = numpy.full((2, 2, 4), 255, dtype=numpy.uint8)
-    expected[0, 0, :3] = 0
-    expected[1, 1, :3] = 0
+    # 8.9.6.2: the 0 bits mark the page, so rows 0b10... and 0b01... paint the
+    # second and first pixel respectively.
+    expected[0, 1, :3] = 0
+    expected[1, 0, :3] = 0
 
     numpy.testing.assert_array_equal(actual, expected)
 
@@ -1251,8 +1257,9 @@ def test_image_mask_paints_the_current_fill_colour() -> None:
         dtype=numpy.uint8,
     ).reshape(2, 2, 4)
     expected = numpy.full((2, 2, 4), 255, dtype=numpy.uint8)
-    expected[0, 0, :3] = (255, 0, 0)
-    expected[1, 1, :3] = (255, 0, 0)
+    # 8.9.6.2: the 0 bits are the ones that mark the page.
+    expected[0, 1, :3] = (255, 0, 0)
+    expected[1, 0, :3] = (255, 0, 0)
 
     numpy.testing.assert_array_equal(actual, expected)
 
@@ -1278,8 +1285,10 @@ def test_image_mask_without_a_recorded_fill_stays_black() -> None:
         dtype=numpy.uint8,
     ).reshape(2, 2, 4)
     expected = numpy.full((2, 2, 4), 255, dtype=numpy.uint8)
-    expected[0, 0, :3] = 0
-    expected[1, 1, :3] = 0
+    # 8.9.6.2: the 0 bits mark the page, so rows 0b10... and 0b01... paint the
+    # second and first pixel respectively.
+    expected[0, 1, :3] = 0
+    expected[1, 0, :3] = 0
 
     numpy.testing.assert_array_equal(actual, expected)
 

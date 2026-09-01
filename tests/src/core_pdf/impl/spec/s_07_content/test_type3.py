@@ -102,7 +102,10 @@ def test_type3_win_ansi_euro_char_proc_is_rendered() -> None:
     assert decoder.type3_charproc_cache[128] is not None
     assert len(state.drawings) == 1
     assert state.drawings[0].path is not None
-    assert state.drawings[0].path.bbox() == pytest.approx((0.0, 0.0, 0.001, 0.001))
+    # ISO 32000-1 9.6.5 concatenates the font matrix with the text space in
+    # effect, and 9.4.4 NOTE 2 puts Tfs in that matrix. The 1x1 glyph box is
+    # scaled by FontMatrix (0.001) and then by the default Tfs of 12.
+    assert state.drawings[0].path.bbox() == pytest.approx((0.0, 0.0, 0.012, 0.012))
 
 
 def test_type3_char_proc_compiles_once_and_replays_exactly() -> None:
@@ -158,8 +161,9 @@ def test_type3_dash_operator_uses_safe_fallback_and_preserves_dash() -> None:
     dash_pattern = state.drawings[0].dash_pattern
     assert dash_pattern is not None
     dash_array, dash_phase = dash_pattern
-    assert dash_array == pytest.approx([0.003, 0.002])
-    assert dash_phase == pytest.approx(0.001)
+    # Same scaling as above: FontMatrix 0.001 then the default Tfs of 12.
+    assert dash_array == pytest.approx([0.036, 0.024])
+    assert dash_phase == pytest.approx(0.012)
 
 
 @pytest.mark.parametrize(
@@ -250,3 +254,47 @@ def test_colored_type3_glyph_still_takes_its_own_color() -> None:
 
     assert len(state.drawings) == 1
     assert state.drawings[0].fill == (0.0, 0.0, 0.0, 1.0)
+
+
+@pytest.mark.parametrize(
+    ("font_size", "expected"),
+    [(1.0, 0.001), (12.0, 0.012), (100.0, 0.1)],
+)
+def test_type3_glyph_ctm_scales_with_the_font_size(font_size: float, expected: float) -> None:
+    """ISO 32000-1 9.6.5 concatenates the font matrix with the text space in
+    effect, and 9.4.4 NOTE 2 puts Tfs (and Th, Trise) in that matrix.
+
+    Tfs was absent from the glyph CTM and the font matrix was concatenated on
+    the wrong side, so every Type 3 glyph painted at FontMatrix scale near the
+    origin, the same size whatever the font size.
+    """
+    stream = PdfStream(raw_data=b"1000 0 d0 0 0 1 1 re f")
+    state, decoder = internal_type3_state(stream)
+    state.font_size = font_size
+
+    state._render_type3_glyphs_impl(b"A", decoder)
+
+    assert len(state.drawings) == 1
+    path = state.drawings[0].path
+    assert path is not None
+    assert path.bbox() == pytest.approx((0.0, 0.0, expected, expected))
+
+
+def test_type3_glyph_is_not_painted_in_render_mode_3() -> None:
+    """9.3.6: "Only a value of 3 for text rendering mode shall have any effect
+    on text displayed in a Type 3 font", and Table 106 makes mode 3 invisible.
+
+    Mode 7 deliberately still paints here: for a Type 3 font the clause says
+    only mode 3 has an effect.
+    """
+    stream = PdfStream(raw_data=b"1000 0 d0 0 0 1 1 re f")
+
+    state, decoder = internal_type3_state(stream)
+    state.render_mode = 3
+    state._render_type3_glyphs_impl(b"A", decoder)
+    assert state.drawings == []
+
+    state, decoder = internal_type3_state(stream)
+    state.render_mode = 7
+    state._render_type3_glyphs_impl(b"A", decoder)
+    assert len(state.drawings) == 1

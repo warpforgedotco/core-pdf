@@ -241,6 +241,12 @@ class TextDocument(typing.Protocol):
     def resolve(self, value: object) -> object: ...
 
 
+# ISO 32000-1 Table 106: mode 3 is "neither fill nor stroke text (invisible)"
+# and mode 7 is "add text to path for clipping" -- neither adds marks to the
+# page. render/page.py already used this pair; extraction checked only mode 3.
+internal_NON_PAINTING_RENDER_MODES = frozenset({3, 7})
+
+
 class TextState:
     # Built once per class from the handler methods; shared by every instance.
     shared_operator_tables: typing.ClassVar[
@@ -1237,7 +1243,11 @@ class TextState:
         first_code = ord(text[0])
         if (first_code < 32 or 0xE000 <= first_code <= 0xF8FF) and self.is_garbage(text):
             return False
-        if not self.marked_content_stack and self.render_mode != 3 and self.font_size >= 0.1:
+        if (
+            not self.marked_content_stack
+            and self.render_mode not in internal_NON_PAINTING_RENDER_MODES
+            and self.font_size >= 0.1
+        ):
             return True
 
         # Render mode 3 and sub-0.1pt text paint nothing, so they are not visible
@@ -1245,7 +1255,7 @@ class TextState:
         # carrying an OCR layer -- is a property of the whole page, not of the runs
         # captured before this operator, so that call belongs to
         # `internal_hidden_text_is_trusted` once parsing has seen every run.
-        if self.render_mode == 3 or self.font_size < 0.1:
+        if self.render_mode in internal_NON_PAINTING_RENDER_MODES or self.font_size < 0.1:
             return False
 
         for entry in self.marked_content_stack:
@@ -2678,6 +2688,13 @@ class TextState:
         self.pending_line_break = False
 
     def _render_type3_glyphs_impl(self: Any, data: bytes, decoder: FontDecoder) -> None:
+        # ISO 32000-1 9.3.6: "Only a value of 3 for text rendering mode shall
+        # have any effect on text displayed in a Type 3 font", and Table 106
+        # makes mode 3 invisible. Mode 7 deliberately still paints here -- for a
+        # Type 3 font the clause says only mode 3 has an effect, unlike the
+        # simple-font case where 7 also adds no marks.
+        if self.render_mode == 3:
+            return
         font = decoder.font
         char_procs = font.get("CharProcs")
         if not isinstance(char_procs, dict):
@@ -2700,14 +2717,36 @@ class TextState:
             program = self.type3_char_proc_program(code, decoder, glyph_names, char_procs)
             char_proc = program.stream
             if char_proc is not None:
-                glyph_ctm = Matrix(
+                # ISO 32000-1 9.6.5: when the glyph description begins, the CTM
+                # is "the concatenation of the font matrix ... and the text space
+                # that was in effect at the time the text-showing operator was
+                # invoked". Text space is Trm from 9.4.4 NOTE 2:
+                #
+                #   Trm = [Tfs x Th, 0, 0; 0, Tfs, 0; 0, Trise, 1] x Tm x CTM
+                #
+                # `multiply` applies the receiver first, so the font matrix has
+                # to lead. It was trailing, and the Tfs/Th/Trise factor was
+                # missing entirely, which left every Type 3 glyph painted at
+                # FontMatrix scale near the origin and independent of font size.
+                text_space = Matrix(
                     self.combined_A,
                     self.combined_B,
                     self.combined_C,
                     self.combined_D,
                     self.tm_e * self.ca + self.tm_f * self.cc + self.ce,
                     self.tm_e * self.cb + self.tm_f * self.cd + self.cf,
-                ).multiply(font_matrix)
+                )
+                font_size = self.font_size
+                glyph_ctm = font_matrix.multiply(
+                    Matrix(
+                        font_size * self.horizontal_scale / 100.0,
+                        0.0,
+                        0.0,
+                        font_size,
+                        0.0,
+                        self.rise,
+                    ).multiply(text_space)
+                )
                 previous_type3_uncolored = self.type3_uncolored
                 self.type3_uncolored = False
                 try:
