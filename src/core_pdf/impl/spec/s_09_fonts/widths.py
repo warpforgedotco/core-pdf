@@ -65,6 +65,11 @@ def get_descendant(font: dict[Any, Any]) -> dict[Any, Any] | None:
 class FontMetrics:
     widths: FontWidthMap
     default_width: float
+    # Whether the document actually stated the default (MissingWidth, or DW for
+    # a CIDFont). ISO 32000-1 Table 122 defaults MissingWidth to 0, so a stated
+    # 0 must survive: it means unlisted codes have no advance, and substituting
+    # a full em for it shifts every following glyph on the line.
+    default_width_explicit: bool
     is_vertical: bool
     default_vertical_displacement_y: float
     default_vertical_origin_y: float
@@ -75,9 +80,15 @@ def parse_font_widths(font: dict[Any, Any], subtype: str | None) -> FontMetrics:
     widths: FontWidthMap = SparseFontWidthMap()
     missing_width = font.get("MissingWidth")
     if missing_width is None:
+        # Not the Table 122 default of 0: a font that omits MissingWidth and
+        # also omits a code from /Widths is broken, and advancing by zero piles
+        # its glyphs on one spot. Deliberate leniency, applied only when the
+        # document says nothing.
         default_width = 1000.0
+        default_width_explicit = False
     else:
         default_width = parse_optional_font_float(missing_width, 1000.0)
+        default_width_explicit = True
     is_vertical = False
     default_vertical_displacement_y = -1000.0
     default_vertical_origin_y = 880.0
@@ -89,6 +100,7 @@ def parse_font_widths(font: dict[Any, Any], subtype: str | None) -> FontMetrics:
             descendant_dw = descendant.get("DW")
             if descendant_dw is not None:
                 default_width = parse_optional_font_float(descendant_dw, default_width)
+                default_width_explicit = True
             dw2 = descendant.get("DW2")
             if isinstance(dw2, (list, tuple)) and len(dw2) >= 2:
                 default_vertical_origin_y = parse_optional_font_float(dw2[0], 880.0)
@@ -145,15 +157,21 @@ def parse_font_widths(font: dict[Any, Any], subtype: str | None) -> FontMetrics:
             widths = parse_cid_widths(descendant.get("W"))
             descriptor = descendant.get("FontDescriptor")
 
-    if isinstance(descriptor, dict):
+    # ISO 32000-1 Table 122 scopes MissingWidth to "character codes whose widths
+    # are not specified in a font dictionary's Widths array". A CIDFont has no
+    # Widths array -- 9.7.4.3 gives it W/DW instead, and Table 117 makes DW the
+    # default width -- so a descriptor MissingWidth must not override DW.
+    if isinstance(descriptor, dict) and subtype != "Type0":
         desc_missing_width = descriptor.get("MissingWidth")
         if desc_missing_width is not None:
             default_width = parse_optional_font_float(desc_missing_width, default_width)
+            default_width_explicit = True
 
     if subtype == "Type0":
         return FontMetrics(
             widths=widths,
             default_width=default_width,
+            default_width_explicit=default_width_explicit,
             is_vertical=is_vertical,
             default_vertical_displacement_y=default_vertical_displacement_y,
             default_vertical_origin_y=default_vertical_origin_y,
@@ -189,6 +207,7 @@ def parse_font_widths(font: dict[Any, Any], subtype: str | None) -> FontMetrics:
     return FontMetrics(
         widths=widths,
         default_width=default_width,
+        default_width_explicit=default_width_explicit,
         is_vertical=is_vertical,
         default_vertical_displacement_y=default_vertical_displacement_y,
         default_vertical_origin_y=default_vertical_origin_y,

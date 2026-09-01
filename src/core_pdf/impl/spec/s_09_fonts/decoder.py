@@ -203,6 +203,8 @@ class FontDecoder:
     byte_decode_table: tuple[str, ...] | None
     widths: FontWidthMap
     default_width: float
+    internal_width_fallback: float
+    internal_space_width_fallback: float
     default_vertical_displacement_y: float
     default_vertical_origin_y: float
     vertical_metrics: dict[int, tuple[float, float, float]]
@@ -288,6 +290,7 @@ class FontDecoder:
         font_metrics = parse_font_widths(font, subtype)
         widths = font_metrics.widths
         default_width = font_metrics.default_width
+        default_width_explicit = font_metrics.default_width_explicit
         is_vertical = font_metrics.is_vertical
         is_cid_font = subtype == "Type0" and get_descendant(font) is not None
 
@@ -334,6 +337,7 @@ class FontDecoder:
                 # does not encode should not advance by a full em.
                 if font.get("MissingWidth") is None:
                     default_width = 0.0
+                    default_width_explicit = True
 
         self.to_unicode = to_unicode
         self.cmap = cmap
@@ -355,6 +359,15 @@ class FontDecoder:
         self.byte_decode_table = byte_decode_table
         self.widths = widths
         self.default_width = default_width
+        # One place decides what an unlisted code advances by. A stated default
+        # -- including a stated 0 (Table 122) -- is used verbatim; only when the
+        # document says nothing does the lenient em/half-em pair apply.
+        if default_width_explicit:
+            self.internal_width_fallback = default_width
+            self.internal_space_width_fallback = default_width
+        else:
+            self.internal_width_fallback = default_width if default_width > 0.0 else 1000.0
+            self.internal_space_width_fallback = default_width if default_width > 0.0 else 250.0
         self.default_vertical_displacement_y = font_metrics.default_vertical_displacement_y
         self.default_vertical_origin_y = font_metrics.default_vertical_origin_y
         self.vertical_metrics = font_metrics.vertical_metrics
@@ -413,7 +426,9 @@ class FontDecoder:
     def fast_widths(self) -> tuple[float, ...]:
         widths = self.fast_widths_cache
         if widths is None:
-            widths = self.widths.fast_256(self.default_width)
+            widths = self.widths.fast_256(
+                self.internal_width_fallback, self.internal_space_width_fallback
+            )
             self.fast_widths_cache = widths
         return widths
 
@@ -987,8 +1002,9 @@ class FontDecoder:
         )
 
     def glyph_width(self, code: int) -> float:
-        default_width = self.default_width
-        fallback = default_width if default_width > 0.0 else 250.0 if code == 32 else 1000.0
+        fallback = (
+            self.internal_space_width_fallback if code == 32 else self.internal_width_fallback
+        )
         return self.widths.width_for(code, fallback)
 
     def glyph_advance_vector(
@@ -1041,11 +1057,12 @@ class FontDecoder:
             return (0.0, total_y)
 
         total_x = 0.0
-        default_width = self.default_width
+        width_fallback = self.internal_width_fallback
+        space_fallback = self.internal_space_width_fallback
         width_for = self.widths.width_for
         for glyph in glyphs:
             code = glyph.width_code
-            fallback = default_width if default_width > 0.0 else 250.0 if code == 32 else 1000.0
+            fallback = space_fallback if code == 32 else width_fallback
             spacing = char_space + (word_space if glyph.code_bytes == b" " else 0.0)
             displacement_x = width_for(code, fallback) * font_size / 1000.0 + spacing
             total_x += displacement_x * horizontal_scale / 100.0

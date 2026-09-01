@@ -399,12 +399,50 @@ class CMapDecoder:
                 matched = True
                 break
             if not matched:
-                entry = (BYTE_CACHE[data[pos]], 0)
+                # ISO 32000-1 9.7.6.3: an invalid code does not consume one
+                # byte -- "The length of the codes in the chosen codespace
+                # range determines the total number of bytes to consume from
+                # the string." Consuming one byte instead desynchronized every
+                # following code in the string.
+                length = self.internal_invalid_code_length(data, pos, n)
+                entry = (bytes(data[pos : pos + length]), 0)
                 if key is not None and len(cache) < 65536:
-                    cache[key] = (entry, 1)
+                    cache[key] = (entry, length)
                 out.append(entry)
-                pos += 1
+                pos += length
         return out
+
+    def internal_invalid_code_length(
+        self, data: bytes | bytearray | memoryview, pos: int, limit: int
+    ) -> int:
+        """Bytes to consume for a code matching no codespace range (9.7.6.3).
+
+        (a) If the first byte matches no range's first byte, the range having
+        the shortest codes is chosen. (b) Otherwise the longest partial match
+        wins, ties going to the shortest codes.
+        """
+        ranges = self.code_space_ranges_by_length
+        if not ranges:
+            return 1
+        lengths = sorted(ranges)
+        shortest = lengths[0]
+        best_partial = 0
+        chosen = shortest
+        # Ascending lengths, and a strict improvement test, so a tie keeps the
+        # shortest codes without a second comparison.
+        for length in lengths:
+            for start, end in ranges[length]:
+                matched_bytes = 0
+                while (
+                    matched_bytes < length
+                    and pos + matched_bytes < limit
+                    and start[matched_bytes] <= data[pos + matched_bytes] <= end[matched_bytes]
+                ):
+                    matched_bytes += 1
+                if matched_bytes > best_partial:
+                    best_partial = matched_bytes
+                    chosen = length
+        return chosen if best_partial else shortest
 
     def decode_cids_array(
         self, data: bytes | bytearray | memoryview
