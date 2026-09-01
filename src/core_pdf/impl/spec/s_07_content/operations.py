@@ -581,12 +581,6 @@ def dispatch_operations(
                                 operands[op_count] = -val if first == 45 else val
                             op_count += 1
                             continue
-                        if first == 46 and 48 <= b1 <= 57:
-                            if op_count < max_operands:
-                                operands[op_count] = float(raw_bytes[start_offset:pos])
-                            op_count += 1
-                            continue
-
                     # Fast path: Three-character numeric tokens (e.g. '123', '-12')
                     elif n_raw == 3:
                         b1 = raw_bytes[start_offset + 1]
@@ -632,115 +626,6 @@ def dispatch_operations(
                             val = (b1 - 48) * 100 + (b2 - 48) * 10 + (b3 - 48)
                             if op_count < max_operands:
                                 operands[op_count] = -val if first == 45 else val
-                            op_count += 1
-                            continue
-
-                        if 48 <= first <= 57 and b1 == 46 and 48 <= b2 <= 57 and 48 <= b3 <= 57:
-                            if op_count < max_operands:
-                                operands[op_count] = float(raw_bytes[start_offset:pos])
-                            op_count += 1
-                            continue
-
-                    elif n_raw == 5:
-                        b1 = raw_bytes[start_offset + 1]
-                        b2 = raw_bytes[start_offset + 2]
-                        b3 = raw_bytes[start_offset + 3]
-                        b4 = raw_bytes[start_offset + 4]
-                        if (
-                            48 <= first <= 57
-                            and b1 == 46
-                            and 48 <= b2 <= 57
-                            and 48 <= b3 <= 57
-                            and 48 <= b4 <= 57
-                        ):
-                            if op_count < max_operands:
-                                operands[op_count] = float(raw_bytes[start_offset:pos])
-                            op_count += 1
-                            continue
-                        if (
-                            48 <= first <= 57
-                            and 48 <= b1 <= 57
-                            and b2 == 46
-                            and 48 <= b3 <= 57
-                            and 48 <= b4 <= 57
-                        ):
-                            if op_count < max_operands:
-                                operands[op_count] = float(raw_bytes[start_offset:pos])
-                            op_count += 1
-                            continue
-                        if (
-                            first == 45
-                            and 48 <= b1 <= 57
-                            and b2 == 46
-                            and 48 <= b3 <= 57
-                            and 48 <= b4 <= 57
-                        ):
-                            if op_count < max_operands:
-                                operands[op_count] = float(raw_bytes[start_offset:pos])
-                            op_count += 1
-                            continue
-
-                    elif n_raw == 6:
-                        b1 = raw_bytes[start_offset + 1]
-                        b2 = raw_bytes[start_offset + 2]
-                        b3 = raw_bytes[start_offset + 3]
-                        b4 = raw_bytes[start_offset + 4]
-                        b5 = raw_bytes[start_offset + 5]
-                        if (
-                            first == 45
-                            and 48 <= b1 <= 57
-                            and b2 == 46
-                            and 48 <= b3 <= 57
-                            and 48 <= b4 <= 57
-                            and 48 <= b5 <= 57
-                        ):
-                            if op_count < max_operands:
-                                operands[op_count] = float(raw_bytes[start_offset:pos])
-                            op_count += 1
-                            continue
-                        if (
-                            48 <= first <= 57
-                            and 48 <= b1 <= 57
-                            and 48 <= b2 <= 57
-                            and b3 == 46
-                            and 48 <= b4 <= 57
-                            and 48 <= b5 <= 57
-                        ):
-                            if op_count < max_operands:
-                                operands[op_count] = float(raw_bytes[start_offset:pos])
-                            op_count += 1
-                            continue
-                        if (
-                            first == 45
-                            and 48 <= b1 <= 57
-                            and 48 <= b2 <= 57
-                            and b3 == 46
-                            and 48 <= b4 <= 57
-                            and 48 <= b5 <= 57
-                        ):
-                            if op_count < max_operands:
-                                operands[op_count] = float(raw_bytes[start_offset:pos])
-                            op_count += 1
-                            continue
-
-                    elif n_raw == 7:
-                        b1 = raw_bytes[start_offset + 1]
-                        b2 = raw_bytes[start_offset + 2]
-                        b3 = raw_bytes[start_offset + 3]
-                        b4 = raw_bytes[start_offset + 4]
-                        b5 = raw_bytes[start_offset + 5]
-                        b6 = raw_bytes[start_offset + 6]
-                        if (
-                            first == 45
-                            and 48 <= b1 <= 57
-                            and 48 <= b2 <= 57
-                            and 48 <= b3 <= 57
-                            and b4 == 46
-                            and 48 <= b5 <= 57
-                            and 48 <= b6 <= 57
-                        ):
-                            if op_count < max_operands:
-                                operands[op_count] = float(raw_bytes[start_offset:pos])
                             op_count += 1
                             continue
 

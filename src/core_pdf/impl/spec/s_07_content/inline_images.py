@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any
+from dataclasses import dataclass
 
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.primitives import PdfName
@@ -32,18 +32,10 @@ INLINE_IMAGE_KEY_MAP = {
 }
 
 
+@dataclass(frozen=True, slots=True)
 class InlineImage:
-    __slots__ = ("dictionary", "data")
-
-    dictionary: dict[str, Any]
+    dictionary: PdfDict
     data: bytes
-
-    def __init__(self, dictionary: PdfDict, data: bytes) -> None:
-        object.__setattr__(self, "dictionary", dictionary)
-        object.__setattr__(self, "data", data)
-
-    def __setattr__(self, name: str, value: Any) -> None:
-        raise AttributeError(f"cannot assign to field {name!r}")
 
 
 def normalize_inline_image_dictionary(dictionary: PdfDict) -> PdfDict:

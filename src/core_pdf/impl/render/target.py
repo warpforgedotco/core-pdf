@@ -3610,7 +3610,6 @@ class internal_ClipState:
         "path_bbox_cache",
         "path_rect_cache",
         "path_edge_cache",
-        "clip_edge_cache",
         "clip_row_span_cache",
         "clip_visible_row_cache",
         "crop_x0",
@@ -3640,7 +3639,6 @@ class internal_ClipState:
         self.path_bbox_cache: dict[int, tuple[float, float, float, float] | None] = {}
         self.path_rect_cache: dict[int, tuple[float, float, float, float] | None] = {}
         self.path_edge_cache: dict[int, list[tuple[float, float, float, float]]] = {}
-        self.clip_edge_cache: dict[int, list[tuple[float, float, float, float]]] = {}
         self.clip_row_span_cache: dict[tuple[int, int, str], tuple[tuple[int, int], ...]] = {}
         self.clip_visible_row_cache: dict[tuple[int, int], tuple[tuple[int, int], ...]] = {}
         self.crop_x0 = crop_x0
@@ -3761,11 +3759,7 @@ class internal_ClipState:
         cached = clip_row_span_cache.get(cache_key)
         if cached is not None:
             return cached
-        clip_edge_cache = self.clip_edge_cache
-        edges = clip_edge_cache.get(id(path))
-        if edges is None:
-            edges = self.path_edges(path)
-            clip_edge_cache[id(path)] = edges
+        edges = self.path_edges(path)
         if not edges:
             clip_row_span_cache[cache_key] = ()
             return ()

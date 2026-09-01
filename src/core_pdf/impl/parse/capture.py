@@ -645,12 +645,7 @@ def internal_stroked_vector_text_evidence(
     )
     if len(selected) < STROKED_VECTOR_MIN_DOMINANT_PATHS:
         return StrokedVectorTextEvidence()
-    bbox = (
-        min(box[0] for _, box in selected),
-        min(box[1] for _, box in selected),
-        max(box[2] for _, box in selected),
-        max(box[3] for _, box in selected),
-    )
+    bbox = bbox_union(box for _, box in selected)
     return StrokedVectorTextEvidence(
         trusted=True,
         drawing_indexes=tuple(index for index, _ in selected),

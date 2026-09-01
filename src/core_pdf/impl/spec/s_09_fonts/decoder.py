@@ -37,6 +37,7 @@ from core_pdf.impl.spec.s_09_fonts.cmap_tounicode import ToUnicodeCMap
 from core_pdf.impl.spec.s_09_fonts.cmap_widths import FontWidthMap
 from core_pdf.impl.spec.s_09_fonts.font_names import resolve_base_font_name
 from core_pdf.impl.spec.s_09_fonts.font_program import (
+    LEGITIMATE_MULTI_CHAR_GLYPHS,
     CFFFont,
     CFFUnicodeRepairIndex,
 )
@@ -86,7 +87,6 @@ if typing.TYPE_CHECKING:
 FontProgram = CFFFont | TrueTypeFontProgram | Type1FontProgram | OpenTypeFontProgram
 
 
-LEGITIMATE_MULTI_CHAR_GLYPHS = frozenset({"ff", "fi", "fl", "ffi", "ffl", "st"})
 TYPE1_ENCODING_ENTRY_RE = re.compile(rb"\bdup\s+(\d{1,3})\s+/([A-Za-z0-9_.]+)\s+put\b")
 
 

@@ -16,7 +16,12 @@ from collections import defaultdict
 from dataclasses import dataclass
 from typing import Any, Iterable, Mapping, TypeAlias
 
-from core_pdf.impl.model.geometry import bbox_area, bbox_intersection_area, rect_tuple
+from core_pdf.impl.model.geometry import (
+    bbox_area,
+    bbox_intersection_area,
+    bbox_union,
+    rect_tuple,
+)
 from core_pdf.impl.types import Rectangle
 
 GlyphSignature: TypeAlias = tuple[tuple[tuple[bool, tuple[tuple[int, int], ...]], ...], ...]
@@ -368,13 +373,16 @@ def internal_consensus_mapping(
     return mapping, initial, len(accepted_sequences)
 
 
+def internal_required_bbox(boxes: Iterable[Rectangle]) -> Rectangle:
+    """`bbox_union` for groups the caller has already shown to be non-empty."""
+    bbox = bbox_union(boxes)
+    if bbox is None:
+        raise ValueError("cannot take the bounding box of an empty group")
+    return bbox
+
+
 def internal_glyph_bbox(glyph: internal_Glyph) -> Rectangle:
-    return (
-        min(record.bbox[0] for record in glyph),
-        min(record.bbox[1] for record in glyph),
-        max(record.bbox[2] for record in glyph),
-        max(record.bbox[3] for record in glyph),
-    )
+    return internal_required_bbox(record.bbox for record in glyph)
 
 
 def internal_signature_distance(
@@ -563,13 +571,7 @@ def internal_stroked_text_seed_run(
 ) -> StrokedTextRun | None:
     if not 2 <= len(glyphs) <= STROKED_TEXT_MAX_TOKEN_CHARACTERS:
         return None
-    boxes = tuple(internal_glyph_bbox(glyph) for glyph in glyphs)
-    bbox = (
-        min(box[0] for box in boxes),
-        min(box[1] for box in boxes),
-        max(box[2] for box in boxes),
-        max(box[3] for box in boxes),
-    )
+    bbox = internal_required_bbox(internal_glyph_bbox(glyph) for glyph in glyphs)
     width = bbox[2] - bbox[0]
     height = bbox[3] - bbox[1]
     if not (
@@ -597,13 +599,7 @@ def profile_stroked_text(
     run_profiles: list[internal_StrokedTextRunProfile] = []
     for run in runs:
         signatures = tuple(internal_glyph_signature(glyph, signature_cache) for glyph in run)
-        boxes = tuple(internal_glyph_bbox(glyph) for glyph in run)
-        bbox = (
-            min(box[0] for box in boxes),
-            min(box[1] for box in boxes),
-            max(box[2] for box in boxes),
-            max(box[3] for box in boxes),
-        )
+        bbox = internal_required_bbox(internal_glyph_bbox(glyph) for glyph in run)
         run_profiles.append(
             internal_StrokedTextRunProfile(
                 glyphs=run,

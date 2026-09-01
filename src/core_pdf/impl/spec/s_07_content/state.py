@@ -247,6 +247,11 @@ class TextDocument(typing.Protocol):
 
 
 class TextState:
+    # Built once per class from the handler methods; shared by every instance.
+    shared_operator_tables: typing.ClassVar[
+        tuple[dict[str, Any], dict[bytes, Any], list[Any | None], dict[int, Any]] | None
+    ] = None
+
     document: TextDocument
     page: PdfDict
     capture_runs: bool
@@ -575,15 +580,9 @@ class TextState:
         self.compat_tj_decoder = None
         self.compat_tj_need_charspace = False
         cls = type(self)
-        shared_attr = "shared_operator_tables_graphics"
-        shared = getattr(cls, shared_attr, None)
+        shared = cls.shared_operator_tables
         if shared is None:
-            shared = build_operator_tables(
-                cls,
-                capture_graphics=True,
-                capture_clipping=True,
-            )
-            setattr(cls, shared_attr, shared)
+            shared = cls.shared_operator_tables = build_operator_tables(cls)
         (
             self.op_handlers,
             self.op_handlers_bytes,
@@ -3515,9 +3514,6 @@ class TextState:
         else:
             self.append_text(operand, decoder=decoder)
 
-    def op_noop(self, operands: OperandWindow, depth: int) -> None:
-        return
-
     def op_BT(self, operands: OperandWindow, depth: int) -> None:
         self.text_object_id += 1
         self.internal_begin_text()
@@ -4025,53 +4021,49 @@ class TextState:
         ):
             self.current_path.close()
 
-    def op_paint_stroke(self, operands: OperandWindow, depth: int) -> None:
-        self.flush_drawing("stroke")
+    def internal_end_path(self) -> None:
+        """Discard the current point and subpath origin after a painting operator."""
         self.current_point = None
         self.subpath_start = None
+
+    def op_paint_stroke(self, operands: OperandWindow, depth: int) -> None:
+        self.flush_drawing("stroke")
+        self.internal_end_path()
 
     def op_paint_close_stroke(self, operands: OperandWindow, depth: int) -> None:
         self.internal_close_current_subpath()
         self.flush_drawing("stroke")
-        self.current_point = None
-        self.subpath_start = None
+        self.internal_end_path()
 
     def op_paint_fill(self, operands: OperandWindow, depth: int) -> None:
         self.flush_drawing("fill", "nonzero")
-        self.current_point = None
-        self.subpath_start = None
+        self.internal_end_path()
 
     def op_paint_fill_evenodd(self, operands: OperandWindow, depth: int) -> None:
         self.flush_drawing("fill", "evenodd")
-        self.current_point = None
-        self.subpath_start = None
+        self.internal_end_path()
 
     def op_paint_fillstroke(self, operands: OperandWindow, depth: int) -> None:
         self.flush_drawing("fillstroke", "nonzero")
-        self.current_point = None
-        self.subpath_start = None
+        self.internal_end_path()
 
     def op_paint_fillstroke_evenodd(self, operands: OperandWindow, depth: int) -> None:
         self.flush_drawing("fillstroke", "evenodd")
-        self.current_point = None
-        self.subpath_start = None
+        self.internal_end_path()
 
     def op_paint_close_fillstroke(self, operands: OperandWindow, depth: int) -> None:
         self.internal_close_current_subpath()
         self.flush_drawing("fillstroke", "nonzero")
-        self.current_point = None
-        self.subpath_start = None
+        self.internal_end_path()
 
     def op_paint_close_fillstroke_evenodd(self, operands: OperandWindow, depth: int) -> None:
         self.internal_close_current_subpath()
         self.flush_drawing("fillstroke", "evenodd")
-        self.current_point = None
-        self.subpath_start = None
+        self.internal_end_path()
 
     def op_paint_clear(self, operands: OperandWindow, depth: int) -> None:
         self.current_path.clear()
-        self.current_point = None
-        self.subpath_start = None
+        self.internal_end_path()
 
     def internal_emit_clip_scope_push(self: Any) -> None:
         if not self.clip_scope_stack or self.clip_scope_stack[-1]:
@@ -4163,57 +4155,10 @@ class TextState:
     # `o` is an OperandWindow on the hot path and a plain list elsewhere, holding
     # raw PDF operands; `Any` matches the deliberate looseness of `self: Any` here.
     def normalize_color_operands(self: Any, o: Any) -> tuple[float, ...] | None:
-        count = len(o)
-        if count == 1:
-            c0 = o[0]
-            t0 = type(c0)
-            if t0 is float or t0 is int:
-                if c0 < 0.0:
-                    return (0.0,)
-                if c0 > 1.0:
-                    return (1.0,)
-                return (float(c0),)
-            return self.normalize_colors(c0)
-        if count == 3:
-            c0 = o[0]
-            c1 = o[1]
-            c2 = o[2]
-            t0 = type(c0)
-            t1 = type(c1)
-            t2 = type(c2)
-            if (
-                (t0 is float or t0 is int)
-                and (t1 is float or t1 is int)
-                and (t2 is float or t2 is int)
-            ):
-                return (
-                    max(0.0, min(1.0, float(c0))),
-                    max(0.0, min(1.0, float(c1))),
-                    max(0.0, min(1.0, float(c2))),
-                )
-            return self.normalize_colors(c0, c1, c2)
-        if count == 4:
-            c0 = o[0]
-            c1 = o[1]
-            c2 = o[2]
-            c3 = o[3]
-            t0 = type(c0)
-            t1 = type(c1)
-            t2 = type(c2)
-            t3 = type(c3)
-            if (
-                (t0 is float or t0 is int)
-                and (t1 is float or t1 is int)
-                and (t2 is float or t2 is int)
-                and (t3 is float or t3 is int)
-            ):
-                return (
-                    max(0.0, min(1.0, float(c0))),
-                    max(0.0, min(1.0, float(c1))),
-                    max(0.0, min(1.0, float(c2))),
-                    max(0.0, min(1.0, float(c3))),
-                )
-            return self.normalize_colors(c0, c1, c2, c3)
+        # Plain numeric operands (the overwhelming majority) clamp directly;
+        # anything else -- strings, names, nulls -- goes through the resolver.
+        if o and all(type(c) is float or type(c) is int for c in o):
+            return tuple(max(0.0, min(1.0, float(c))) for c in o)
         return self.normalize_colors(*o)
 
     def resolve_color_space(

@@ -314,10 +314,7 @@ class GlyphLineBuilder:
 
                 separator_before = ""
                 if prev_atom is not None:
-                    separator_before, _ = self.atom_separator(
-                        prev_atom,
-                        atom,
-                    )
+                    separator_before = self.atom_separator(prev_atom, atom)
                     if separator_before:
                         append_part(separator_before)
                 append_part(atom_text)
@@ -756,24 +753,24 @@ class GlyphLineBuilder:
         self,
         previous: LayoutLineTextAtom,
         atom: LayoutLineTextAtom,
-    ) -> tuple[str, str]:
+    ) -> str:
         prev_run = previous.run
         run = atom.run
         prev_text = previous.text
         text = atom.text
         if prev_text.endswith(" ") or text.startswith(" "):
-            return "", "join"
+            return ""
         prev_last_char = prev_text[-1:]
         first_char = text[:1]
         if not prev_last_char or not first_char:
-            return "", "join"
+            return ""
         if (
             prev_run is run
             and " " in run.text
             and previous.has_glyph_geometry
             and atom.has_glyph_geometry
         ):
-            return "", "same_run_explicit_space_join"
+            return ""
 
         prev_x0, internal_prev_y0, prev_x1, internal_prev_y1 = previous.advance_bbox
         x0, y0, internal_x1, y1 = atom.advance_bbox
@@ -795,22 +792,22 @@ class GlyphLineBuilder:
                 spacing_gap = x0 - (prev_x0 + len(prev_stripped) * estimated_char_width)
         baseline_delta = self.atom_baseline_delta(previous, atom)
         if inline_marker_text(text):
-            return "", "inline_marker_join"
+            return ""
         if self.is_formula_like_line and self.is_formula_numeric_atom(previous, atom):
-            return " ", "formula_numeric_boundary_space"
+            return " "
         if self.is_formula_like_line and self.is_formula_fraction_denominator(previous, atom):
-            return "/", "formula_fraction_separator"
+            return "/"
         if script_digit_text(prev_text) and text[:1] in ")]},.;:":
-            return "", "script_digit_suffix_join"
+            return ""
         if script_digit_text(text):
-            return "", "script_digit_join"
+            return ""
         if self.is_formula_like_line and self.is_formula_script_atom(previous, atom):
-            return " ", "formula_script_boundary_space"
+            return " "
         if baseline_delta is not None and baseline_delta > max(height * 0.42, 2.0):
-            return " ", "baseline_space"
+            return " "
 
         if self.is_column_gap(spacing_gap, height, space_width):
-            return " ", "column_space"
+            return " "
 
         if prev_stripped is None:
             prev_stripped = prev_text.strip()
@@ -825,7 +822,7 @@ class GlyphLineBuilder:
             and first_char in "$0123456789("
             and x_gap >= -2.0
         ):
-            return " ", "table_space"
+            return " "
         if (
             self.is_all_caps_line
             and " " in prev_stripped
@@ -834,7 +831,7 @@ class GlyphLineBuilder:
             and len(stripped) >= 4
             and x_gap >= -max(0.6, height * 0.08)
         ):
-            return " ", "all_caps_space"
+            return " "
         if not (prev_run.visible and run.visible) and should_insert_tight_word_space(
             prev_text=prev_stripped,
             text=stripped,
@@ -842,7 +839,7 @@ class GlyphLineBuilder:
             height=height,
             space_width=space_width,
         ):
-            return " ", "hidden_tight_word_space"
+            return " "
         if should_insert_hidden_ocr_overlap_space(
             prev_text=prev_stripped,
             text=stripped,
@@ -852,7 +849,7 @@ class GlyphLineBuilder:
             prev_visible=prev_run.visible,
             visible=run.visible,
         ):
-            return " ", "hidden_overlap_space"
+            return " "
         if self.should_join_word_fragments(
             prev_stripped,
             stripped,
@@ -863,7 +860,7 @@ class GlyphLineBuilder:
             visible=run.visible,
             allow_short_prefix=(len(prev_run.stripped_text) <= 2 and len(run.stripped_text) <= 2),
         ):
-            return "", "word_fragment_join"
+            return ""
         if (
             self.has_explicit_spaces
             and not self.is_table_like_line
@@ -874,7 +871,7 @@ class GlyphLineBuilder:
             and spacing_gap > max(0.55, min(space_width, height) * 0.1)
             and (prev_last_char.isupper() or first_char.isupper() or prev_last_char.isdigit())
         ):
-            return " ", "explicit_context_space"
+            return " "
         if (
             not (previous.has_glyph_geometry and atom.has_glyph_geometry)
             and " " in prev_stripped
@@ -885,7 +882,7 @@ class GlyphLineBuilder:
             and should_insert_phrase_continuation_space(prev_stripped, stripped)
             and len(stripped.split(" ", 1)[0]) >= 3
         ):
-            return " ", "phrase_continuation_space"
+            return " "
         if (
             not self.is_table_like_line
             and not self.is_tracked_glyph_line
@@ -895,7 +892,7 @@ class GlyphLineBuilder:
             and len(stripped) > 1
             and spacing_gap > max(0.45, min(space_width, height) * 0.12)
         ):
-            return " ", "lowercase_gap_space"
+            return " "
         if (
             spacing_gap > threshold
             and (
@@ -914,7 +911,7 @@ class GlyphLineBuilder:
                 and not self.is_table_like_line
             )
         ):
-            return " ", "word_gap_space"
+            return " "
         if spacing_gap >= -max(threshold, 2.5) and (
             (prev_last_char.islower() and first_char.isupper())
             or (
@@ -932,7 +929,7 @@ class GlyphLineBuilder:
             )
         ):
             if prev_run is run and x_gap <= max(0.5, min(space_width, height) * 0.2):
-                return "", "same_run_case_digit_join"
+                return ""
             if compact_unit_suffix_should_join(
                 prev_stripped,
                 stripped,
@@ -940,9 +937,9 @@ class GlyphLineBuilder:
                 height=height,
                 space_width=space_width,
             ):
-                return "", "compact_unit_suffix_join"
-            return " ", "case_digit_boundary_space"
-        return "", "join"
+                return ""
+            return " "
+        return ""
 
     def is_formula_script_atom(
         self,

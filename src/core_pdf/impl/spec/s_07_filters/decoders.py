@@ -8,6 +8,7 @@ from typing import NoReturn
 import imagecodecs
 import numpy
 
+from core_pdf.impl.runtime.execution import internal_env_int
 from core_pdf.impl.spec.s_07_filters.decode_spec import FilterParams
 from core_pdf.impl.spec.s_07_filters.errors import FilterParseError, FilterUnsupportedError
 from core_pdf.impl.spec.s_07_filters.jbig2.codec import (
@@ -148,13 +149,7 @@ def decode_jpx_image(
 
 
 def internal_jpx_thread_count() -> int:
-    configured = os.environ.get("CORE_PDF_JPX_THREADS")
-    if configured:
-        try:
-            return max(1, min(4, int(configured)))
-        except ValueError:
-            pass
-    return max(1, min(4, os.cpu_count() or 1))
+    return min(4, internal_env_int("CORE_PDF_JPX_THREADS", max(1, min(4, os.cpu_count() or 1))))
 
 
 def decode_jpx(data: bytes, parms: object) -> bytes:

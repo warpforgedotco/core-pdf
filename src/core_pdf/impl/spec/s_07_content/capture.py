@@ -10,7 +10,7 @@ from functools import lru_cache
 from math import ceil
 from typing import Any
 
-from core_pdf.impl.model.geometry import RectBox
+from core_pdf.impl.model.geometry import RectBox, bbox_union
 from core_pdf.impl.model.glyphs import (
     GlyphCluster,
     GlyphObservation,
@@ -425,15 +425,7 @@ class CapturedPath:
         return any(subpath.has_segments() for subpath in self.subpaths)
 
     def bbox(self) -> Rectangle | None:
-        boxes = [box for subpath in self.subpaths if (box := subpath.bbox())]
-        if not boxes:
-            return None
-        return (
-            min(box[0] for box in boxes),
-            min(box[1] for box in boxes),
-            max(box[2] for box in boxes),
-            max(box[3] for box in boxes),
-        )
+        return bbox_union(box for subpath in self.subpaths if (box := subpath.bbox()))
 
     def fill_edges(self) -> list[tuple[float, float, float, float]]:
         edges: list[tuple[float, float, float, float]] = []

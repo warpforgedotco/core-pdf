@@ -199,11 +199,6 @@ OPERATOR_SPECS = {
 }
 
 TEXT_OP = {name: spec.handler for name, spec in OPERATOR_SPECS.items()}
-TEXT_ONLY_NOOP_OPS = frozenset(name for name, spec in OPERATOR_SPECS.items() if spec.text_only_noop)
-TEXT_ONLY_OP = TEXT_OP.copy()
-for internal_op in TEXT_ONLY_NOOP_OPS:
-    TEXT_ONLY_OP[internal_op] = "op_noop"
-del internal_op
 
 TYPE3_REPLAY_OPERATORS = frozenset(
     name for name, spec in OPERATOR_SPECS.items() if spec.type3_replay
@@ -242,8 +237,6 @@ __all__ = (
     "GRAPHICS_STATE_OPERATORS",
     "IMAGE_OPERATORS",
     "OPERATOR_SPECS",
-    "TEXT_ONLY_NOOP_OPS",
-    "TEXT_ONLY_OP",
     "TEXT_ONLY_SKIP_DOUBLE",
     "TEXT_ONLY_SKIP_SINGLE",
     "TEXT_OPERATORS",
@@ -257,17 +250,13 @@ __all__ = (
 
 def build_operator_tables(
     target: type[Any],
-    *,
-    capture_graphics: bool,
-    capture_clipping: bool,
 ) -> tuple[
     dict[str, Any],
     dict[bytes, Any],
     list[Any | None],
     dict[int, Any],
 ]:
-    operator_map = TEXT_OP if capture_graphics or capture_clipping else TEXT_ONLY_OP
-    handlers = {name: getattr(target, method) for name, method in operator_map.items()}
+    handlers = {name: getattr(target, method) for name, method in TEXT_OP.items()}
     byte_handlers = {name.encode("latin-1"): handler for name, handler in handlers.items()}
     single_handlers: list[Any | None] = [None] * 256
     double_handlers: dict[int, Any] = {}
