@@ -25,7 +25,6 @@ from core_pdf.impl.spec.s_07_content.text_helpers import (
     gap_separator,
     normalize_extracted_text,
 )
-from core_pdf.impl.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 from core_pdf.impl.spec.s_08_graphics.image_decode import ImageSource
 from core_pdf.impl.spec.s_08_graphics.matrix import Matrix
 from core_pdf.impl.types import Rectangle
@@ -287,14 +286,14 @@ def apply_glyph_geometry_to_run(
 
 
 def type3_font_matrix(font: dict[str, Any]) -> Matrix:
-    matrix = lookup_dict_key(font, "FontMatrix")
+    matrix = font.get("FontMatrix")
     if not isinstance(matrix, (list, tuple)) or len(matrix) != 6:
         return Matrix(0.001, 0.0, 0.0, 0.001, 0.0, 0.0)
     values: list[float] = []
     for value in matrix:
         if type(value) not in (int, float):
             return Matrix(0.001, 0.0, 0.0, 0.001, 0.0, 0.0)
-        values.append(float(typing.cast(Any, value)))
+        values.append(float(value))
     return Matrix(*values)
 
 

@@ -13,7 +13,6 @@ from core_pdf.api.compat._shared import ClosingMixin, coerce_bbox
 from core_pdf.api.compat.pypdf._text import extract_legacy_text
 from core_pdf.impl.exceptions import PdfUnsupportedError
 from core_pdf.impl.primitives import PdfReference
-from core_pdf.impl.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 from core_pdf.impl.structured import (
     Document,
     Page,
@@ -26,7 +25,7 @@ def internal_validate_pypdf_page_tree(pdf: PdfDocument) -> None:
     """Preserve pypdf's rejection of repeated/cyclic intermediate page nodes."""
     literal_trailers = tuple(pdf.iter_literal_trailer_dictionaries())
     if literal_trailers:
-        latest_root = lookup_dict_key(literal_trailers[-1], "Root")
+        latest_root = literal_trailers[-1].get("Root")
         if isinstance(latest_root, PdfReference):
             root_key = (latest_root.object_number << 16) | latest_root.generation_number
             if root_key not in pdf.xref:
@@ -45,12 +44,12 @@ def internal_validate_pypdf_page_tree(pdf: PdfDocument) -> None:
         node = pdf.resolver.resolve(value)
         if not isinstance(node, dict):
             raise ValueError("invalid object in page tree")
-        kids = pdf.resolver.resolve(lookup_dict_key(node, "Kids"))
+        kids = pdf.resolver.resolve(node.get("Kids"))
         if isinstance(kids, (list, tuple)):
             for kid in kids:
                 visit(kid)
 
-    visit(lookup_dict_key(pdf.catalog(), "Pages"))
+    visit(pdf.catalog().get("Pages"))
 
 
 class StructuredState(ClosingMixin):
@@ -228,7 +227,7 @@ class PdfPageObject:
             crop_box = source_page.crop_box or media_box
             self.mediabox = Rectangle(*media_box)
             self.cropbox = Rectangle(*crop_box)
-            raw_rotation = lookup_dict_key(source_page.inherited_values, "Rotate")
+            raw_rotation = source_page.inherited_values.get("Rotate")
             self.rotation = (
                 int(raw_rotation)
                 if isinstance(raw_rotation, (int, float))

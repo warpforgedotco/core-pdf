@@ -60,7 +60,10 @@ from core_pdf.impl.spec.s_07_content.operations import (
     dispatch_operations,
     iter_content_operations,
 )
-from core_pdf.impl.spec.s_07_content.operator_tables import build_operator_tables
+from core_pdf.impl.spec.s_07_content.operator_tables import (
+    TYPE3_REPLAY_OPERATORS,
+    build_operator_tables,
+)
 from core_pdf.impl.spec.s_07_content.operators import detect_rotation_from_linear
 from core_pdf.impl.spec.s_07_content.stream_state import (
     ContentStreamFrame,
@@ -78,18 +81,13 @@ from core_pdf.impl.spec.s_07_content.text_helpers import (
     is_garbage_text,
 )
 from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
-from core_pdf.impl.spec.s_07_syntax.resolver_values import PdfValueResolver
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
-from core_pdf.impl.spec.s_07_syntax.types import PdfDict
+from core_pdf.impl.spec.s_07_syntax.types import PdfDict, PdfValueResolver
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     normalize_pdf_name,
     parse_float,
     parse_int,
 )
-from core_pdf.impl.spec.s_07_syntax_primitives.content_operators import (
-    TYPE3_REPLAY_OPERATORS,
-)
-from core_pdf.impl.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 from core_pdf.impl.spec.s_08_graphics.image_decode import ImageSource
 from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 from core_pdf.impl.spec.s_09_fonts.decoder import (
@@ -809,7 +807,7 @@ class TextState:
 
         decoder.type3_charproc_cache_misses += 1
         glyph_name = glyph_names.get(code)
-        char_proc = lookup_dict_key(char_procs, glyph_name) if glyph_name else None
+        char_proc: object = char_procs.get(glyph_name) if glyph_name else None
         char_proc = self.document.resolver.resolve(char_proc)
         candidate = (
             self.compile_type3_char_proc(char_proc)
@@ -1150,7 +1148,7 @@ class TextState:
 
         category_res = self.resolved_resource_categories.get(cache_key, MISSING)
         if category_res is MISSING:
-            raw_category = lookup_dict_key(self.resources, category)
+            raw_category = self.resources.get(category)
             category_res = (
                 self.document.resolver.resolve_dict(raw_category)
                 if raw_category is not None
@@ -1159,7 +1157,7 @@ class TextState:
             self.resolved_resource_categories[cache_key] = category_res
 
         if isinstance(category_res, dict):
-            res = lookup_dict_key(category_res, name)
+            res = category_res.get(name)
             if res is not None:
                 resolved = self.document.resolver.resolve(res)
                 cat_cache[name] = resolved
@@ -1169,7 +1167,7 @@ class TextState:
             parent_key = (self.resources_id, parent_category)
             parent_res = self.resolved_resource_categories.get(parent_key, MISSING)
             if parent_res is MISSING:
-                raw_parent = lookup_dict_key(self.resources, parent_category)
+                raw_parent = self.resources.get(parent_category)
                 parent_res = (
                     self.document.resolver.resolve_dict(raw_parent)
                     if raw_parent is not None
@@ -1181,11 +1179,11 @@ class TextState:
                 sub_res_dict = None
                 for p_val in parent_res.values():
                     if isinstance(p_val, dict):
-                        sub_res_dict = lookup_dict_key(p_val, "Resources")
+                        sub_res_dict = p_val.get("Resources")
                     if isinstance(sub_res_dict, dict):
-                        sub_cat = lookup_dict_key(sub_res_dict, category)
+                        sub_cat = sub_res_dict.get(category)
                         if isinstance(sub_cat, dict):
-                            found = lookup_dict_key(sub_cat, name)
+                            found = sub_cat.get(name)
                             if found is not None:
                                 resolved = self.document.resolver.resolve(found)
                                 cat_cache[name] = resolved
@@ -1356,8 +1354,8 @@ class TextState:
         name = self.document.resolver.resolve_name(name_obj)
         if not name:
             return
-        xobjects = lookup_dict_key(self.resources, "XObject")
-        raw_xobj = lookup_dict_key(xobjects, name) if isinstance(xobjects, dict) else None
+        xobjects = self.resources.get("XObject")
+        raw_xobj = xobjects.get(name) if isinstance(xobjects, dict) else None
         stream_key = (
             ("ref", raw_xobj.object_number, raw_xobj.generation_number)
             if isinstance(raw_xobj, PdfReference)
@@ -1369,15 +1367,13 @@ class TextState:
         if not isinstance(xobj, PdfStream):
             return
         xobj_dict = xobj.dictionary
-        subtype = self.document.resolver.resolve_name(lookup_dict_key(xobj_dict, "Subtype"))
-        if self.document.resolver.resolve_name(lookup_dict_key(xobj_dict, "Type")) == "ObjStm":
+        subtype = self.document.resolver.resolve_name(xobj_dict.get("Subtype"))
+        if self.document.resolver.resolve_name(xobj_dict.get("Type")) == "ObjStm":
             return
         if subtype == "Image":
             if self.capture_images and self.is_graphics_visible():
-                width = self.document.resolver.resolve_int(lookup_dict_key(xobj_dict, "Width")) or 0
-                height = (
-                    self.document.resolver.resolve_int(lookup_dict_key(xobj_dict, "Height")) or 0
-                )
+                width = self.document.resolver.resolve_int(xobj_dict.get("Width")) or 0
+                height = self.document.resolver.resolve_int(xobj_dict.get("Height")) or 0
                 bbox = None
                 quad = None
                 if width > 0 and height > 0:
@@ -1399,7 +1395,7 @@ class TextState:
                 smask_alpha = None
                 soft_mask_raw_data = None
                 soft_mask_dictionary = None
-                smask = lookup_dict_key(xobj_dict, "SMask")
+                smask = xobj_dict.get("SMask")
                 if smask is not None:
                     smask_stream = self.document.resolver.resolve(smask)
                     if isinstance(smask_stream, PdfStream):
@@ -1409,16 +1405,8 @@ class TextState:
                         smask_data = getattr(smask_stream, "raw_data", b"")
                         soft_mask_raw_data = smask_data
                         soft_mask_dictionary = dict(smask_dict)
-                        width = (
-                            self.document.resolver.resolve_int(lookup_dict_key(smask_dict, "Width"))
-                            or 0
-                        )
-                        height = (
-                            self.document.resolver.resolve_int(
-                                lookup_dict_key(smask_dict, "Height")
-                            )
-                            or 0
-                        )
+                        width = self.document.resolver.resolve_int(smask_dict.get("Width")) or 0
+                        height = self.document.resolver.resolve_int(smask_dict.get("Height")) or 0
                         if width > 0 and height > 0 and smask_data:
                             total = min(len(smask_data), width * height)
                             if total > 0:
@@ -1429,7 +1417,7 @@ class TextState:
                 # Indexed lookup table is indirect) left it unable to convert
                 # the samples and the whole image was dropped. deep_resolve is
                 # cached, so repeated XObjects pay for this once.
-                color_space = lookup_dict_key(source_dictionary, "ColorSpace")
+                color_space = source_dictionary.get("ColorSpace")
                 if color_space is not None:
                     source_dictionary[PdfName.of("ColorSpace")] = (
                         self.document.resolver.deep_resolve(color_space)
@@ -1441,7 +1429,7 @@ class TextState:
                 # set bits in the current fill colour. Every other image ignores
                 # the fill, so recording it is only meaningful for the mask case,
                 # but it costs nothing to carry and the renderer decides.
-                image_is_stencil = lookup_dict_key(xobj_dict, "ImageMask") is True
+                image_is_stencil = xobj_dict.get("ImageMask") is True
                 self.drawings.append(
                     CapturedDrawing(
                         seqno=self.sequence,
@@ -1474,13 +1462,12 @@ class TextState:
         if subtype != "Form":
             return
         group_alpha = None
-        group = lookup_dict_key(xobj_dict, "Group")
+        group = xobj_dict.get("Group")
         if group is not None:
             group_dict = self.document.resolver.resolve_dict(group)
             if (
                 isinstance(group_dict, dict)
-                and self.document.resolver.resolve_name(lookup_dict_key(group_dict, "S"))
-                == "Transparency"
+                and self.document.resolver.resolve_name(group_dict.get("S")) == "Transparency"
             ):
                 # PDF 32000-1 Table 147: a transparency group dictionary holds
                 # S/CS/I/K and nothing else. The constant alpha and blend mode
@@ -1496,19 +1483,19 @@ class TextState:
                 blend = self.blend_mode
                 if self.fill_opacity < 1.0 or (blend is not None and blend != "Normal"):
                     group_alpha = max(0.0, min(1.0, self.fill_opacity))
-        raw_resources = lookup_dict_key(xobj_dict, "Resources")
+        raw_resources = xobj_dict.get("Resources")
         resources = (
             raw_resources
             if isinstance(raw_resources, dict)
             else self.document.resolver.resolve_dict(raw_resources)
         ) or self.resources
-        xobj_matrix = lookup_dict_key(xobj_dict, "Matrix")
+        xobj_matrix = xobj_dict.get("Matrix")
         if isinstance(xobj_matrix, (list, tuple)) and len(xobj_matrix) > 6:
             xobj_matrix = xobj_matrix[:6]
         nested_ctm = (
             Matrix.from_operand(xobj_matrix) if xobj_matrix is not None else IDENTITY_MATRIX
         ).multiply(self.ctm)
-        raw_form_bbox = lookup_dict_key(xobj_dict, "BBox")
+        raw_form_bbox = xobj_dict.get("BBox")
         form_bbox = self.document.resolver.resolve_box(raw_form_bbox)
         transformed_form_bbox = (
             transform_bbox(form_bbox, nested_ctm) if form_bbox is not None else None
@@ -2913,7 +2900,7 @@ class TextState:
 
     def _render_type3_glyphs_impl(self: Any, data: bytes, decoder: FontDecoder) -> None:
         font = decoder.font
-        char_procs = lookup_dict_key(font, "CharProcs")
+        char_procs = font.get("CharProcs")
         if not isinstance(char_procs, dict):
             return
         glyph_names = decoder.type3_glyph_names
@@ -2921,7 +2908,7 @@ class TextState:
             glyph_names = type3_glyph_names(font, decoder)
             decoder.type3_glyph_names = glyph_names
 
-        resources = lookup_dict_key(font, "Resources")
+        resources = font.get("Resources")
         if not isinstance(resources, dict):
             resources = self.resources
         font_matrix = type3_font_matrix(font)
@@ -4294,9 +4281,9 @@ class TextState:
             )
         if not isinstance(pattern_dict, dict):
             return None
-        pattern_type = parse_int(lookup_dict_key(pattern_dict, "PatternType"), None)
+        pattern_type = parse_int(pattern_dict.get("PatternType"), None)
         if pattern_type == 2:
-            shading = lookup_dict_key(pattern_dict, "Shading")
+            shading = pattern_dict.get("Shading")
             shading = self.document.resolver.resolve(shading)
             shading_dict = (
                 self.document.resolver.resolve_dict(shading) if shading is not None else None
@@ -4306,7 +4293,7 @@ class TextState:
             return cast(PdfDict, {"kind": "shading", "dictionary": dict(shading_dict)})
         if pattern_type != 1 or not isinstance(pattern, PdfStream):
             return None
-        paint_type = parse_int(lookup_dict_key(pattern_dict, "PaintType"), 1)
+        paint_type = parse_int(pattern_dict.get("PaintType"), 1)
         if paint_type not in {1, 2}:
             return None
         base_color = None
@@ -4314,24 +4301,18 @@ class TextState:
             base_color = self.normalize_color_operands(operands[:-1])
             if base_color is None:
                 return None
-        bbox = self.document.resolver.resolve_box(lookup_dict_key(pattern_dict, "BBox"))
+        bbox = self.document.resolver.resolve_box(pattern_dict.get("BBox"))
         if bbox is None:
             return None
-        x_step = self.document.resolver.resolve_float(
-            lookup_dict_key(pattern_dict, "XStep"), default=None
-        )
-        y_step = self.document.resolver.resolve_float(
-            lookup_dict_key(pattern_dict, "YStep"), default=None
-        )
+        x_step = self.document.resolver.resolve_float(pattern_dict.get("XStep"), default=None)
+        y_step = self.document.resolver.resolve_float(pattern_dict.get("YStep"), default=None)
         if x_step is None or y_step is None or x_step == 0.0 or y_step == 0.0:
             return None
         try:
-            matrix = Matrix.from_operand(lookup_dict_key(pattern_dict, "Matrix"))
+            matrix = Matrix.from_operand(pattern_dict.get("Matrix"))
         except ValueError:
             matrix = IDENTITY_MATRIX
-        resources = (
-            self.document.resolver.resolve_dict(lookup_dict_key(pattern_dict, "Resources")) or {}
-        )
+        resources = self.document.resolver.resolve_dict(pattern_dict.get("Resources")) or {}
         nested_state = type(self)(
             self.document,
             self.page,
@@ -4511,13 +4492,13 @@ class TextState:
         props = self.resolve_marked_content_properties(value)
         if not isinstance(props, dict):
             return None
-        return self.document.resolver.resolve_str(lookup_dict_key(props, "ActualText"))
+        return self.document.resolver.resolve_str(props.get("ActualText"))
 
     def resolve_marked_content_mcid(self: Any, value: Any) -> int | None:
         props = self.resolve_marked_content_properties(value)
         if not isinstance(props, dict):
             return None
-        return self.document.resolver.resolve_int(lookup_dict_key(props, "MCID"))
+        return self.document.resolver.resolve_int(props.get("MCID"))
 
     def resolve_marked_content_properties(self: Any, value: Any) -> dict[str, Any] | None:
         if value is None:
@@ -4537,7 +4518,7 @@ class TextState:
 
         resolved = self.document.resolver.resolve(value)
         if isinstance(resolved, dict):
-            oc = lookup_dict_key(resolved, "OC")
+            oc = resolved.get("OC")
             if oc is not None:
                 name = self.document.resolver.resolve_name(oc)
                 return name or self.document.resolver.resolve_str(oc)
@@ -4784,13 +4765,13 @@ class TextState:
         if not extgstate:
             return
         try:
-            fill_opacity = lookup_dict_key(extgstate, "ca")
+            fill_opacity = extgstate.get("ca")
             if fill_opacity is not None:
                 self.fill_opacity = max(0.0, min(1.0, self.as_float(fill_opacity)))
-            stroke_opacity = lookup_dict_key(extgstate, "CA")
+            stroke_opacity = extgstate.get("CA")
             if stroke_opacity is not None:
                 self.stroke_opacity = max(0.0, min(1.0, self.as_float(stroke_opacity)))
-            blend_mode = lookup_dict_key(extgstate, "BM")
+            blend_mode = extgstate.get("BM")
             if blend_mode is not None:
                 if isinstance(blend_mode, (list, tuple)):
                     blend_mode = blend_mode[0] if blend_mode else None

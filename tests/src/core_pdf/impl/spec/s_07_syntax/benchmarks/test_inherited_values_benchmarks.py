@@ -7,14 +7,6 @@ import pytest
 
 from core_pdf.impl.spec.s_07_syntax.inherited_values import collect_inherited_values
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict
-from core_pdf.impl.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
-
-FAST_PATH_DICT = {
-    "Type": "Page",
-    "MediaBox": [0, 0, 612, 792],
-    "Resources": {"Font": {"F1": "5 0 R"}},
-    "Contents": "7 0 R",
-}
 
 
 def build_inheritance_chain(depth: int) -> PdfDict:
@@ -35,12 +27,6 @@ INHERITED_KEYS = ("Resources", "MediaBox", "Rotate", "CropBox")
 
 def identity_resolve(value: object) -> object:
     return value
-
-
-@pytest.mark.benchmark_high_impact
-def test_lookup_dict_key_fast_path_benchmark(benchmark) -> None:
-    result = benchmark(lookup_dict_key, FAST_PATH_DICT, "MediaBox")
-    assert result == [0, 0, 612, 792]
 
 
 @pytest.mark.benchmark_high_impact

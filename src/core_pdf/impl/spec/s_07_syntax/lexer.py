@@ -18,7 +18,7 @@ from core_pdf.impl.primitives import (
 )
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax.types import Decipher, PdfDict
-from core_pdf.impl.spec.s_07_syntax_primitives.lexer_helpers import (
+from core_pdf.impl.spec.s_07_syntax_primitives.scanning import (
     EMPTY_TRANSLATE_TABLE,
     HEX_VALUE,
     R_SENTINEL,
@@ -32,7 +32,6 @@ from core_pdf.impl.spec.s_07_syntax_primitives.lexer_helpers import (
     matches_keyword_with_one_substitution,
     skip_pdf_ignored,
 )
-from core_pdf.impl.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 from core_pdf.impl.spec.s_07_syntax_primitives.tokens import (
     DELIMITERS,
     SEPARATOR_TABLE,
@@ -63,7 +62,6 @@ RECOVERABLE_DICTIONARY_KEY_NAMES = {
     b"Encrypt",
 }
 
-EMPTY_SIMPLE_TJ_ARRAY: tuple[Any, ...] = ()
 SEPARATOR_RE = re.compile(b"[" + re.escape(WHITESPACE + DELIMITERS) + b"]")
 HEX_STRING_END_RE = re.compile(b">")
 STRING_SPECIAL_RE = re.compile(b"[" + re.escape(b"()\\\r\n") + b"]")
@@ -745,7 +743,7 @@ class PdfLexer:
             byte = data[pos]
             if byte == 93:
                 self.pos = pos + 1
-                return values if values is not None else EMPTY_SIMPLE_TJ_ARRAY
+                return values if values is not None else ()
             if byte == 40:
                 if values is None:
                     values = []
@@ -918,7 +916,7 @@ class PdfLexer:
     def parse_stream(self, dictionary: PdfDict) -> PdfStream:
         self.skip_eol()
         should_decipher = self.decipher is not None and self.current_obj_num is not None
-        length = lookup_dict_key(dictionary, "Length")
+        length: object = dictionary.get("Length")
         if type(length) is PdfReference:
             if self.reference_resolver is None:
                 raise PdfParseError("stream length reference must be resolved by the caller")

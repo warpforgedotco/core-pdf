@@ -37,7 +37,6 @@ from core_pdf.impl.spec.s_07_content.state import TextState
 from core_pdf.impl.spec.s_07_document.annotation_appearance import (
     select_appearance_stream,
 )
-from core_pdf.impl.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 from core_pdf.impl.spec.s_08_graphics.image_metadata import (
     pdf_number,
 )
@@ -605,11 +604,11 @@ def compose_page(
         if normal is None:
             return False
         form_dict = page.document.resolver.resolve_dict(normal.dictionary) or {}
-        bbox = page.document.resolver.resolve_box(lookup_dict_key(form_dict, "BBox"))
+        bbox = page.document.resolver.resolve_box(form_dict.get("BBox"))
         if bbox is None:
             bbox = rect
         try:
-            matrix_operand = lookup_dict_key(form_dict, "Matrix")
+            matrix_operand = form_dict.get("Matrix")
             if isinstance(matrix_operand, (list, tuple)) and len(matrix_operand) > 6:
                 matrix_operand = matrix_operand[:6]
             matrix = (
@@ -642,8 +641,7 @@ def compose_page(
             decoder_cache=getattr(page.document, "decoder_cache", {}),
         )
         resources = (
-            page.document.resolver.resolve_dict(lookup_dict_key(form_dict, "Resources"))
-            or page.cached_resources
+            page.document.resolver.resolve_dict(form_dict.get("Resources")) or page.cached_resources
         )
         state.consume_stream(normal, resources, nested_ctm, 0)
         append_capture(state)
@@ -661,8 +659,8 @@ def compose_page(
             appearance = None
             appearance_state = None
             if isinstance(widget, dict):
-                appearance = lookup_dict_key(widget, "AP")
-                appearance_state = lookup_dict_key(widget, "AS")
+                appearance = widget.get("AP")
+                appearance_state = widget.get("AS")
             if rect is None:
                 continue
             display_list.append(
@@ -680,10 +678,8 @@ def compose_page(
             )
     if options.include_annotations:
         for annot in page.get_annotations():
-            appearance = lookup_dict_key(annot.dict, "AP") if isinstance(annot.dict, dict) else None
-            appearance_state = (
-                lookup_dict_key(annot.dict, "AS") if isinstance(annot.dict, dict) else None
-            )
+            appearance = annot.dict.get("AP") if isinstance(annot.dict, dict) else None
+            appearance_state = annot.dict.get("AS") if isinstance(annot.dict, dict) else None
             rendered = False
             if appearance is not None:
                 rendered = append_form_appearance(

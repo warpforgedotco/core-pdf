@@ -21,7 +21,6 @@ from core_pdf.impl.spec.s_07_content.operations import iter_content_operations
 from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
-from core_pdf.impl.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 from core_pdf.impl.spec.s_08_graphics.matrix import multiply_affine
 from core_pdf.impl.spec.s_09_fonts.cmap_tounicode import ToUnicodeCMap
 from core_pdf.impl.spec.s_09_fonts.cmap_widths import FontWidthMap, SparseFontWidthMap
@@ -202,7 +201,7 @@ class LegacyTextExtractor:
         resolved_resources = self.document.resolver.resolve(resources)
         if not isinstance(resolved_resources, dict):
             return {}
-        raw_fonts = self.document.resolver.resolve(lookup_dict_key(resolved_resources, "Font"))
+        raw_fonts = self.document.resolver.resolve(resolved_resources.get("Font"))
         if not isinstance(raw_fonts, dict):
             return {}
         fonts: dict[str, LegacyFont] = {}
@@ -210,25 +209,23 @@ class LegacyTextExtractor:
             font = self.document.resolver.resolve(raw_font)
             if not isinstance(font, dict):
                 continue
-            subtype = normalize_pdf_name(lookup_dict_key(font, "Subtype") or "")
+            subtype = normalize_pdf_name(font.get("Subtype") or "")
             if subtype not in {"Type1", "MMType1", "TrueType", "Type3"}:
-                descendants = self.document.resolver.resolve(
-                    lookup_dict_key(font, "DescendantFonts")
-                )
+                descendants = self.document.resolver.resolve(font.get("DescendantFonts"))
                 if not isinstance(descendants, (list, tuple)) or not descendants:
                     raise KeyError("DescendantFonts")
                 descriptor_font = self.document.resolver.resolve(descendants[0])
             else:
                 descriptor_font = font
             descriptor = (
-                self.document.resolver.resolve(lookup_dict_key(descriptor_font, "FontDescriptor"))
+                self.document.resolver.resolve(descriptor_font.get("FontDescriptor"))
                 if isinstance(descriptor_font, dict)
                 else None
             )
             if (
                 isinstance(descriptor, dict)
                 and sum(
-                    lookup_dict_key(descriptor, key) is not None
+                    descriptor.get(key) is not None
                     for key in ("FontFile", "FontFile2", "FontFile3")
                 )
                 > 1
@@ -239,7 +236,7 @@ class LegacyTextExtractor:
             except (TypeError, ValueError):
                 continue
             cmap: ToUnicodeCMap | None = None
-            to_unicode = self.document.resolver.resolve(lookup_dict_key(font, "ToUnicode"))
+            to_unicode = self.document.resolver.resolve(font.get("ToUnicode"))
             if isinstance(to_unicode, PdfStream):
                 try:
                     cmap = ToUnicodeCMap(self.document.resolver.resolve_stream(to_unicode).data)
@@ -248,7 +245,7 @@ class LegacyTextExtractor:
             encoding_table, encoding_codec, character_map = self.internal_legacy_encoding(
                 font, decoder
             )
-            raw_encoding = self.document.resolver.resolve(lookup_dict_key(font, "Encoding"))
+            raw_encoding = self.document.resolver.resolve(font.get("Encoding"))
             width_uses_source_code = decoder.is_cid_font and isinstance(raw_encoding, PdfStream)
             encoding_is_mapping = self.internal_encoding_is_mapping(font)
             widths, default_width, space_width = self.internal_font_widths(
@@ -341,7 +338,7 @@ class LegacyTextExtractor:
         return 32
 
     def internal_encoding_is_mapping(self, font: dict[object, object]) -> bool:
-        encoding = self.document.resolver.resolve(lookup_dict_key(font, "Encoding"))
+        encoding = self.document.resolver.resolve(font.get("Encoding"))
         if isinstance(encoding, dict):
             return True
         encoding_name = normalize_pdf_name(encoding or "")
@@ -356,7 +353,7 @@ class LegacyTextExtractor:
             return True
         if encoding is not None:
             return False
-        base_font = normalize_pdf_name(lookup_dict_key(font, "BaseFont") or "") or ""
+        base_font = normalize_pdf_name(font.get("BaseFont") or "") or ""
         base_font = base_font.split("+", 1)[-1]
         return base_font in {
             "Courier",
@@ -379,13 +376,13 @@ class LegacyTextExtractor:
         self, font: dict[object, object], decoder: FontDecoder
     ) -> tuple[tuple[str, ...] | None, str | None, dict[str, str]]:
         if decoder.is_cid_font:
-            encoding_name = normalize_pdf_name(lookup_dict_key(font, "Encoding") or "") or ""
+            encoding_name = normalize_pdf_name(font.get("Encoding") or "") or ""
             codec = internal_PREDEFINED_ENCODING_CODECS.get(encoding_name)
             if codec is None and "-UCS2-" in encoding_name:
                 codec = "utf-16-be"
             return None, codec, {}
-        encoding_obj = self.document.resolver.resolve(lookup_dict_key(font, "Encoding"))
-        base_font = normalize_pdf_name(lookup_dict_key(font, "BaseFont"))
+        encoding_obj = self.document.resolver.resolve(font.get("Encoding"))
+        base_font = normalize_pdf_name(font.get("BaseFont"))
         if encoding_obj is None and base_font not in {"Symbol", "ZapfDingbats"}:
             table = [chr(code) for code in range(256)]
         else:
@@ -396,14 +393,14 @@ class LegacyTextExtractor:
             if 0 <= code <= 255:
                 table[code] = self.internal_legacy_glyph_name(name)
 
-        subtype = normalize_pdf_name(lookup_dict_key(font, "Subtype") or "")
-        descriptor = self.document.resolver.resolve(lookup_dict_key(font, "FontDescriptor"))
+        subtype = normalize_pdf_name(font.get("Subtype") or "")
+        descriptor = self.document.resolver.resolve(font.get("FontDescriptor"))
         has_type1_font_file = (
-            isinstance(descriptor, dict) and lookup_dict_key(descriptor, "FontFile") is not None
+            isinstance(descriptor, dict) and descriptor.get("FontFile") is not None
         )
         if (
             subtype in {"Type1", "MMType1"}
-            and lookup_dict_key(font, "ToUnicode") is None
+            and font.get("ToUnicode") is None
             and has_type1_font_file
         ):
             character_map.update(self.internal_type1_character_map(descriptor))
@@ -413,7 +410,7 @@ class LegacyTextExtractor:
 
     def internal_type1_character_map(self, descriptor: dict[object, object]) -> dict[str, str]:
         """Project the clear-text Type 1 encoding accepted by pypdf."""
-        raw_font_file = self.document.resolver.resolve(lookup_dict_key(descriptor, "FontFile"))
+        raw_font_file = self.document.resolver.resolve(descriptor.get("FontFile"))
         if not isinstance(raw_font_file, PdfStream):
             return {}
         data = self.document.resolver.resolve_stream(raw_font_file).data
@@ -464,9 +461,9 @@ class LegacyTextExtractor:
         return f"/{name}" if unknown is None else unknown
 
     def internal_difference_fallbacks(self, font: dict[object, object]) -> dict[bytes, str]:
-        encoding = self.document.resolver.resolve(lookup_dict_key(font, "Encoding"))
+        encoding = self.document.resolver.resolve(font.get("Encoding"))
         differences = (
-            self.document.resolver.resolve(lookup_dict_key(encoding, "Differences"))
+            self.document.resolver.resolve(encoding.get("Differences"))
             if isinstance(encoding, dict)
             else None
         )
@@ -494,10 +491,10 @@ class LegacyTextExtractor:
         encoding_table: tuple[str, ...] | None,
         encoding_is_mapping: bool,
     ) -> tuple[FontWidthMap, float, float]:
-        subtype = normalize_pdf_name(lookup_dict_key(font, "Subtype") or "")
+        subtype = normalize_pdf_name(font.get("Subtype") or "")
         widths = decoder.widths
         if decoder.is_type3:
-            char_procs = self.document.resolver.resolve(lookup_dict_key(font, "CharProcs"))
+            char_procs = self.document.resolver.resolve(font.get("CharProcs"))
             if (
                 cmap is None
                 and isinstance(char_procs, dict)
@@ -519,14 +516,14 @@ class LegacyTextExtractor:
 
         default_width = decoder.default_width
         if not decoder.is_cid_font:
-            descriptor = self.document.resolver.resolve(lookup_dict_key(font, "FontDescriptor"))
+            descriptor = self.document.resolver.resolve(font.get("FontDescriptor"))
             missing_width = (
-                self.document.resolver.resolve(lookup_dict_key(descriptor, "MissingWidth"))
+                self.document.resolver.resolve(descriptor.get("MissingWidth"))
                 if isinstance(descriptor, dict)
                 else None
             )
             flags = (
-                self.document.resolver.resolve(lookup_dict_key(descriptor, "Flags"))
+                self.document.resolver.resolve(descriptor.get("Flags"))
                 if isinstance(descriptor, dict)
                 else 0
             )
@@ -731,19 +728,19 @@ class LegacyTextExtractor:
         resources = self.document.resolver.resolve(self.resources)
         if not isinstance(resources, dict):
             return
-        xobjects = self.document.resolver.resolve(lookup_dict_key(resources, "XObject"))
+        xobjects = self.document.resolver.resolve(resources.get("XObject"))
         if not isinstance(xobjects, dict):
             return
         xobject = self.document.resolver.resolve(xobjects.get(operands[0]))
         if not isinstance(xobject, PdfStream):
             return
-        if str(lookup_dict_key(xobject.dictionary, "Subtype")) == "Image":
+        if str(xobject.dictionary.get("Subtype")) == "Image":
             return
         form_id = id(xobject)
         if form_id in self.known_forms:
             return
         top_level = not self.known_forms
-        form_resources = lookup_dict_key(xobject.dictionary, "Resources")
+        form_resources = xobject.dictionary.get("Resources")
         if form_resources is None:
             return
         cached = self.form_text_cache.get(form_id) if top_level else None

@@ -6,11 +6,9 @@ from __future__ import annotations
 from typing import cast
 
 from core_pdf.impl.primitives import PdfName, PdfReference, PdfString
-from core_pdf.impl.spec.s_07_syntax.resolver_values import PdfValueResolver
 from core_pdf.impl.spec.s_07_syntax.text_string import decode_pdf_text_string
-from core_pdf.impl.spec.s_07_syntax.types import PdfDict
+from core_pdf.impl.spec.s_07_syntax.types import PdfDict, PdfValueResolver
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import parse_float_strict
-from core_pdf.impl.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 
 
 def pdf_name_direct(value: object) -> str | None:
@@ -53,9 +51,9 @@ def resolve_annotation_dict(resolver: PdfValueResolver, value: object) -> PdfDic
 
 def link_target_direct(action: PdfDict, link_type: str | None) -> str | None:
     if link_type == "URI":
-        return pdf_string_direct(lookup_dict_key(action, "URI"))
+        return pdf_string_direct(action.get("URI"))
     if link_type == "GoTo":
-        return pdf_string_direct(lookup_dict_key(action, "D"))
+        return pdf_string_direct(action.get("D"))
     return None
 
 
@@ -65,7 +63,7 @@ def link_target_resolved(
     key = "URI" if link_type == "URI" else "D" if link_type == "GoTo" else None
     if key is None:
         return None
-    return resolver.resolve_str(lookup_dict_key(action, key))
+    return resolver.resolve_str(action.get(key))
 
 
 def resolve_destination_value(resolver: PdfValueResolver, value: object, depth: int = 0) -> object:

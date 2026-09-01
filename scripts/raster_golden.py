@@ -42,7 +42,6 @@ from core_pdf.impl.spec.s_07_filters.jpeg2000 import (
 from core_pdf.impl.spec.s_07_filters.pipeline import decode_one_filter
 from core_pdf.impl.spec.s_07_filters.registry import FILTER_DESCRIPTOR_BY_NAME
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
-from core_pdf.impl.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 
 internal_ROOT = pathlib.Path(__file__).resolve().parents[1]
 CORPUS = internal_ROOT / "tests" / "fixtures" / "SCORE-Bench" / "src"
@@ -168,11 +167,11 @@ def render_first_page(pdf: pathlib.Path) -> RasterImage:
 
 
 def internal_dictionary_mentions_jpx(dictionary: dict[Any, Any]) -> bool:
-    raw_filters = lookup_dict_key(dictionary, "Filter")
+    raw_filters = dictionary.get("Filter")
     if raw_filters is None:
-        raw_filters = lookup_dict_key(dictionary, "F")
+        raw_filters = dictionary.get("F")
     if raw_filters is None:
-        raw_filters = lookup_dict_key(dictionary, "FFilter")
+        raw_filters = dictionary.get("FFilter")
     filters = raw_filters if isinstance(raw_filters, (list, tuple)) else (raw_filters,)
     return any(normalize_pdf_name(item) in {"JPXDecode", "jpxdecode"} for item in filters)
 

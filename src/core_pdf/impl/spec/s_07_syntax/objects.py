@@ -10,25 +10,24 @@ if typing.TYPE_CHECKING:
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.primitives import PdfReference
 from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
-from core_pdf.impl.spec.s_07_syntax.object_cache import ObjectCache
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
+from core_pdf.impl.spec.s_07_syntax.types import ObjectCache
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     normalize_pdf_name,
     parse_int,
     parse_int_strict,
 )
-from core_pdf.impl.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 
 
 class PdfObjectStream:
     __slots__ = ("stream", "objects", "raw_body", "index", "lexer", "lock")
 
     def __init__(self, stream: PdfStream, kw_cache: dict[bytes, object] | None = None) -> None:
-        type_name = normalize_pdf_name(lookup_dict_key(stream.dictionary, "Type"))
+        type_name = normalize_pdf_name(stream.dictionary.get("Type"))
         if type_name is not None and type_name != "ObjStm":
             raise PdfParseError("stream is not an object stream")
-        n = parse_int_strict(lookup_dict_key(stream.dictionary, "N"))
-        first = parse_int_strict(lookup_dict_key(stream.dictionary, "First"))
+        n = parse_int_strict(stream.dictionary.get("N"))
+        first = parse_int_strict(stream.dictionary.get("First"))
         if n < 0 or first < 0:
             raise PdfParseError("invalid object stream dictionary")
         if first > len(stream.data):

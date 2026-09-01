@@ -19,7 +19,6 @@ from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict
 from core_pdf.impl.spec.s_07_syntax.xref import XRefScanner
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
-from core_pdf.impl.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 from core_pdf.impl.spec.s_09_fonts.cmap_resources import resolve_cmap_decoder
 from core_pdf.impl.spec.s_09_fonts.data.base_encodings import (
     MAC_ROMAN_ENCODING,
@@ -67,7 +66,7 @@ def internal_pdfminer_resolvable_pages(  # noqa: C901
                     value = None
             if not isinstance(value, dict):
                 continue
-            if normalize_pdf_name(lookup_dict_key(value, "Type")) != "Page":
+            if normalize_pdf_name(value.get("Type")) != "Page":
                 continue
             if found >= len(document.pages):
                 raise PdfError("fallback page is unavailable in the native page list")
@@ -109,14 +108,14 @@ def internal_pdfminer_resolvable_pages(  # noqa: C901
                     root_value = None
                 if (
                     isinstance(root_value, dict)
-                    and normalize_pdf_name(lookup_dict_key(root_value, "Type")) == "Catalog"
+                    and normalize_pdf_name(root_value.get("Type")) == "Catalog"
                 ):
                     fallback_catalog = root_value
         if fallback_catalog is not None:
             try:
-                catalog_pages = lookup_dict_key(document.catalog(), "Pages")
+                catalog_pages = document.catalog().get("Pages")
             except Exception:
-                catalog_pages = lookup_dict_key(fallback_catalog, "Pages")
+                catalog_pages = fallback_catalog.get("Pages")
         else:
             catalog_pages = None
 
@@ -136,13 +135,13 @@ def internal_pdfminer_resolvable_pages(  # noqa: C901
                     return
             if not isinstance(node, dict):
                 return
-            node_type = normalize_pdf_name(lookup_dict_key(node, "Type"))
+            node_type = normalize_pdf_name(node.get("Type"))
             if node_type == "Page":
                 if node_reference is not None:
                     reachable_page_ids.add(node_reference.object_number)
                 return
             try:
-                kids = document.resolver.resolve(lookup_dict_key(node, "Kids"))
+                kids = document.resolver.resolve(node.get("Kids"))
             except Exception:
                 return
             if isinstance(kids, (tuple, list)):
@@ -154,7 +153,7 @@ def internal_pdfminer_resolvable_pages(  # noqa: C901
         def belongs_to_catalog_tree(value: dict[Any, Any]) -> bool:
             if not isinstance(catalog_pages, PdfReference):
                 return True
-            parent = lookup_dict_key(value, "Parent")
+            parent = value.get("Parent")
             seen_parents: set[tuple[int, int]] = set()
             while isinstance(parent, PdfReference):
                 key = (parent.object_number, parent.generation_number)
@@ -169,7 +168,7 @@ def internal_pdfminer_resolvable_pages(  # noqa: C901
                     return False
                 if not isinstance(parent_value, dict):
                     return False
-                parent = lookup_dict_key(parent_value, "Parent")
+                parent = parent_value.get("Parent")
             return False
 
         found = 0
@@ -189,7 +188,7 @@ def internal_pdfminer_resolvable_pages(  # noqa: C901
                 continue
             if not isinstance(value, dict):
                 continue
-            if normalize_pdf_name(lookup_dict_key(value, "Type")) != "Page":
+            if normalize_pdf_name(value.get("Type")) != "Page":
                 continue
             try:
                 resolved_value = document.resolver.resolve(
@@ -308,7 +307,7 @@ def internal_pdfminer_resolvable_pages(  # noqa: C901
     except Exception:
         xref_sections = [strict_xref]
 
-    info_reference = lookup_dict_key(strict_trailer, "Info")
+    info_reference = strict_trailer.get("Info")
     if isinstance(info_reference, PdfReference):
         info_key = (info_reference.object_number << 16) | info_reference.generation_number
         info_entry = strict_xref.get(info_key)
@@ -368,7 +367,7 @@ def internal_pdfminer_resolvable_pages(  # noqa: C901
             return True
         return False
 
-    root_reference = lookup_dict_key(strict_trailer, "Root")
+    root_reference = strict_trailer.get("Root")
     if root_reference is None:
         raise PdfError("No /Root object")
     if not reference_is_resolvable(root_reference):
@@ -395,7 +394,7 @@ def internal_pdfminer_resolvable_pages(  # noqa: C901
         return
     if not isinstance(catalog, dict):
         raise PdfError("invalid /Root object")
-    pages_reference = lookup_dict_key(catalog, "Pages")
+    pages_reference = catalog.get("Pages")
     page_index = 0
     visited: set[tuple[str, int, int] | tuple[str, int]] = set()
 
@@ -417,11 +416,11 @@ def internal_pdfminer_resolvable_pages(  # noqa: C901
         )
         duplicate = marker in visited
         visited.add(marker)
-        node_type = normalize_pdf_name(lookup_dict_key(node, "Type"))
+        node_type = normalize_pdf_name(node.get("Type"))
         if node_type == "Pages":
             if not valid_reference or duplicate:
                 return
-            kids = document.resolver.resolve(lookup_dict_key(node, "Kids"))
+            kids = document.resolver.resolve(node.get("Kids"))
             if not isinstance(kids, list):
                 return
             for kid in kids:
@@ -1196,20 +1195,18 @@ def internal_pdfminer_embedded_cmap_is_unusable(glyph: Any) -> bool:
 def internal_pdfminer_validate_page_resources(page: PdfPage) -> None:
     """Apply failures raised while pdfminer constructs a page resource map."""
     resources = page.cached_resources
-    fonts = page.document.resolver.resolve(lookup_dict_key(resources, "Font"))
+    fonts = page.document.resolver.resolve(resources.get("Font"))
     if isinstance(fonts, dict):
         for font_value in fonts.values():
             font = page.document.resolver.resolve(font_value)
             if not isinstance(font, dict):
                 continue
-            if normalize_pdf_name(lookup_dict_key(font, "Subtype")) == "Type0":
-                descendants = page.document.resolver.resolve(
-                    lookup_dict_key(font, "DescendantFonts")
-                )
+            if normalize_pdf_name(font.get("Subtype")) == "Type0":
+                descendants = page.document.resolver.resolve(font.get("DescendantFonts"))
                 if not isinstance(descendants, list) or not descendants:
                     raise PdfError("Type0 font is missing /DescendantFonts")
 
-    color_spaces = page.document.resolver.resolve(lookup_dict_key(resources, "ColorSpace"))
+    color_spaces = page.document.resolver.resolve(resources.get("ColorSpace"))
     if not isinstance(color_spaces, dict):
         return
     for color_space_value in color_spaces.values():
@@ -1220,7 +1217,7 @@ def internal_pdfminer_validate_page_resources(page: PdfPage) -> None:
             continue
         profile = page.document.resolver.resolve(color_space[1])
         dictionary = getattr(profile, "dictionary", profile)
-        if not isinstance(dictionary, dict) or lookup_dict_key(dictionary, "N") is None:
+        if not isinstance(dictionary, dict) or dictionary.get("N") is None:
             raise PdfError("ICCBased color profile is missing /N")
 
 

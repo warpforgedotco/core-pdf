@@ -24,8 +24,7 @@ from core_pdf.impl.spec.s_07_document.metadata import (
     resolve_info_metadata,
 )
 from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
-from core_pdf.impl.spec.s_07_syntax.resolver_values import PdfValueResolver
-from core_pdf.impl.spec.s_07_syntax.types import PdfDict
+from core_pdf.impl.spec.s_07_syntax.types import PdfDict, PdfValueResolver
 from core_pdf.impl.spec.s_09_fonts.decoder import FontDecoder
 
 

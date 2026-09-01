@@ -11,7 +11,6 @@ from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     parse_float,
     parse_int,
 )
-from core_pdf.impl.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 
 
 def pdf_int(value: Any, default: int) -> int:
@@ -69,7 +68,7 @@ def image_color_space_name(value: Any) -> str | None:
             prefixes.append("ICCBased")
             if len(current) <= 1 or not isinstance(current[1], dict):
                 return ":".join(prefixes)
-            alternate = lookup_dict_key(current[1], "Alternate")
+            alternate = current[1].get("Alternate")
             if alternate is None:
                 return ":".join(prefixes)
             current = alternate
@@ -84,11 +83,11 @@ def image_display_metadata(kind: str, data: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(dictionary, dict):
         return {}
 
-    width = pdf_positive_int(lookup_dict_key(dictionary, "Width"))
-    height = pdf_positive_int(lookup_dict_key(dictionary, "Height"))
-    image_mask = lookup_dict_key(dictionary, "ImageMask") is True
+    width = pdf_positive_int(dictionary.get("Width"))
+    height = pdf_positive_int(dictionary.get("Height"))
+    image_mask = dictionary.get("ImageMask") is True
     bpc = pdf_positive_int(
-        lookup_dict_key(dictionary, "BitsPerComponent"),
+        dictionary.get("BitsPerComponent"),
         1 if image_mask else 0,
     )
     bbox = data.get("bbox")
@@ -98,11 +97,11 @@ def image_display_metadata(kind: str, data: dict[str, Any]) -> dict[str, Any]:
         "height": height,
         "pixels": width * height if width > 0 and height > 0 else 0,
         "bits_per_component": bpc if bpc > 0 else None,
-        "color_space": image_color_space_name(lookup_dict_key(dictionary, "ColorSpace")),
-        "filters": image_filter_names(lookup_dict_key(dictionary, "Filter")),
+        "color_space": image_color_space_name(dictionary.get("ColorSpace")),
+        "filters": image_filter_names(dictionary.get("Filter")),
         "image_mask": image_mask,
-        "has_mask": lookup_dict_key(dictionary, "Mask") is not None,
-        "has_soft_mask": lookup_dict_key(dictionary, "SMask") is not None,
+        "has_mask": dictionary.get("Mask") is not None,
+        "has_soft_mask": dictionary.get("SMask") is not None,
     }
 
     raw_data = data.get("raw_data", data.get("data"))

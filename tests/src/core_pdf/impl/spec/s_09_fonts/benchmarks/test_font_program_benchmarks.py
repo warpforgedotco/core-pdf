@@ -9,7 +9,6 @@ import pytest
 
 from core_pdf import PdfDocument
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
-from core_pdf.impl.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 from core_pdf.impl.spec.s_09_fonts.decoder import FontDecoder
 from core_pdf.impl.spec.s_09_fonts.font_program_opentype import OpenTypeFontProgram
 from core_pdf.impl.spec.s_09_fonts.font_program_type1 import Type1FontProgram
@@ -23,11 +22,11 @@ def internal_type1_data() -> tuple[bytes, int | None]:
     with PdfDocument.open(TYPE1_PDF) as document:
         decoder = document.pages[0].get_page_program().products.glyphs[0].font_decoder
         assert isinstance(decoder, FontDecoder)
-        descriptor = lookup_dict_key(decoder.font, "FontDescriptor")
+        descriptor = decoder.font.get("FontDescriptor")
         assert isinstance(descriptor, dict)
-        stream = lookup_dict_key(descriptor, "FontFile")
+        stream = descriptor.get("FontFile")
         assert isinstance(stream, PdfStream)
-        value = lookup_dict_key(stream.dictionary, "Length1")
+        value = stream.dictionary.get("Length1")
         length1 = int(value) if isinstance(value, (int, float)) else None
         return stream.data, length1
 

@@ -14,7 +14,6 @@ from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     parse_float,
 )
-from core_pdf.impl.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 from core_pdf.impl.spec.s_08_graphics.color_kernels import (
     apply_decode_array_8bit as internal_native_apply_decode_array_8bit,
 )
@@ -216,7 +215,7 @@ class ImageColorManager:
             return None
         if spec.kind not in {"DeviceRGB", "DeviceGray"}:
             return None
-        if lookup_dict_key(image_dict, "Decode") is not None:
+        if image_dict.get("Decode") is not None:
             return None
         width = internal_native_image_dimension(image_dict, "Width")
         height = internal_native_image_dimension(image_dict, "Height")
@@ -247,7 +246,7 @@ class ImageColorManager:
         max_sample = (1 << bpc) - 1
         if max_sample <= 0:
             return samples
-        decode = lookup_dict_key(image_dict, "Decode") if isinstance(image_dict, dict) else None
+        decode = image_dict.get("Decode") if isinstance(image_dict, dict) else None
         pairs: list[tuple[float, float]] = []
         if isinstance(decode, (list, tuple)) and len(decode) >= components * 2:
             for i in range(components):

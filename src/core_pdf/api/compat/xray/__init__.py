@@ -19,7 +19,6 @@ from core_pdf.impl.model.geometry import (
 from core_pdf.impl.primitives import PdfReference
 from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
-from core_pdf.impl.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 from core_pdf.impl.spec.s_09_fonts.cmap_tounicode import ToUnicodeCMap
 from core_pdf.impl.text import collapse_ws
 
@@ -176,7 +175,7 @@ def _recover_font(page: Any, font_name: str) -> _RecoveredFont | None:
         font = _parse_object_at(document, match.start())
         if not isinstance(font, dict):
             continue
-        to_unicode = lookup_dict_key(font, "ToUnicode")
+        to_unicode = font.get("ToUnicode")
         if not isinstance(to_unicode, PdfReference):
             continue
         stream_match = re.search(
@@ -192,8 +191,8 @@ def _recover_font(page: Any, font_name: str) -> _RecoveredFont | None:
         if not isinstance(stream, PdfStream):
             continue
         try:
-            first_char = lookup_dict_key(font, "FirstChar")
-            widths = lookup_dict_key(font, "Widths")
+            first_char = font.get("FirstChar")
+            widths = font.get("Widths")
             if not isinstance(first_char, int) or not isinstance(widths, list):
                 continue
             return _RecoveredFont(
@@ -422,7 +421,7 @@ def _raw_highlight_redactions(page: Any) -> list[dict[str, object]]:
         return []
     raw_data = bytes(page.document.raw_data)
     resources = page.resolve_resources()
-    resource_fonts = lookup_dict_key(resources, "Font")
+    resource_fonts = resources.get("Font")
     font_names = (
         {str(name) for name in resource_fonts} if isinstance(resource_fonts, dict) else set()
     )

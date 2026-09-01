@@ -30,9 +30,7 @@ from core_pdf.impl.spec.s_07_filters.registry import (
     EXPENSIVE_DECODE_CACHE_FILTERS,
     PREDICTOR_FILTERS,
 )
-from core_pdf.impl.spec.s_07_syntax_primitives.content_operators import (
-    PDF_CONTENT_OPERATOR_BYTES,
-)
+from core_pdf.impl.spec.s_07_syntax_primitives.tokens import PDF_CONTENT_OPERATOR_BYTES
 from core_pdf.impl.spec.s_08_graphics.color_kernels import (
     unpack_subbyte_image_samples,
 )

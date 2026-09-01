@@ -8,7 +8,7 @@ import zlib
 from typing import cast
 
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.spec.s_07_syntax.lexer import WS_TABLE, PdfLexer
+from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.spec.s_07_syntax.objects import PdfObjectStream
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict
@@ -16,7 +16,7 @@ from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     normalize_pdf_name,
     parse_int_strict,
 )
-from core_pdf.impl.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
+from core_pdf.impl.spec.s_07_syntax_primitives.tokens import WS_TABLE
 from core_pdf.impl.types import PdfByteBuffer
 
 
@@ -353,12 +353,12 @@ class XRefScanner:
         )
         lexer.pos = XRefScanner.skip_ws(data, pos)
         trailer_dict = lexer.parse_dictionary()
-        trailer_size = lookup_dict_key(trailer_dict, "Size")
+        trailer_size = trailer_dict.get("Size")
         if type(trailer_size) is not int or trailer_size <= max_object_number or trailer_size <= 0:
             trailer_dict = dict(trailer_dict)
             trailer_dict["Size"] = max(max_object_number + 1, 1)
-        prev = lookup_dict_key(trailer_dict, "Prev")
-        xrefstm = lookup_dict_key(trailer_dict, "XRefStm")
+        prev = trailer_dict.get("Prev")
+        xrefstm = trailer_dict.get("XRefStm")
         if prev is not None and type(prev) is not int:
             raise PdfParseError("invalid xref table trailer /Prev")
         if xrefstm is not None and type(xrefstm) is not int:
@@ -416,7 +416,7 @@ class XRefScanner:
             if obj is None:
                 raise
             entries, trailer = XRefScanner.parse_stream(obj)
-        prev = lookup_dict_key(trailer, "Prev")
+        prev = trailer.get("Prev")
         if prev is not None and type(prev) is not int:
             raise PdfParseError("invalid xref stream trailer /Prev")
         return entries, trailer, prev, None
@@ -491,15 +491,15 @@ class XRefScanner:
     @staticmethod
     def parse_stream(stream: PdfStream) -> tuple[XRefTable, PdfDict]:
         dict_obj = stream.dictionary
-        type_value = lookup_dict_key(dict_obj, "Type")
+        type_value = dict_obj.get("Type")
         type_name = normalize_pdf_name(type_value)
         if type_name is not None and type_name != "XRef":
             raise PdfParseError("invalid xref stream type")
-        size = lookup_dict_key(dict_obj, "Size")
+        size = dict_obj.get("Size")
         if type(size) is not int or size <= 0:
             raise PdfParseError("invalid xref stream size")
 
-        w_raw = lookup_dict_key(dict_obj, "W")
+        w_raw = dict_obj.get("W")
         if not isinstance(w_raw, (list, tuple)) or len(w_raw) < 3:
             raise PdfParseError("invalid xref stream W")
         if not all(type(x) is int for x in w_raw):
@@ -508,7 +508,7 @@ class XRefScanner:
         if any(width < 0 for width in w):
             raise PdfParseError("invalid xref stream W")
 
-        index_raw = lookup_dict_key(dict_obj, "Index")
+        index_raw = dict_obj.get("Index")
         if index_raw is None:
             index = [0, size]
         elif not isinstance(index_raw, (list, tuple)) or not all(type(x) is int for x in index_raw):
@@ -598,7 +598,7 @@ class XRefScanner:
             dict_obj = lexer.parse_dictionary()
         except PdfParseError:
             return None
-        if normalize_pdf_name(lookup_dict_key(dict_obj, "Type")) != "XRef":
+        if normalize_pdf_name(dict_obj.get("Type")) != "XRef":
             return None
 
         lexer.skip_ignored()
@@ -615,7 +615,7 @@ class XRefScanner:
         lexer.skip_eol()
         data_start = lexer.pos
 
-        length = lookup_dict_key(dict_obj, "Length")
+        length = dict_obj.get("Length")
         if type(length) is int and length >= 0 and data_start + length <= len(data):
             data_end = data_start + length
             if lexer.find_object_end(data_end) < 0:
@@ -627,7 +627,7 @@ class XRefScanner:
                 return None
             raw_data = data[data_start:endstream]
         decoded_data = None
-        filter_name = normalize_pdf_name(lookup_dict_key(dict_obj, "Filter"))
+        filter_name = normalize_pdf_name(dict_obj.get("Filter"))
         if filter_name == "FlateDecode":
             try:
                 decoded_data = zlib.decompress(raw_data)
@@ -637,12 +637,14 @@ class XRefScanner:
                     decoded_data = decoder.decompress(raw_data) + decoder.flush()
                 except zlib.error as exc:
                     raise PdfParseError("invalid xref stream") from exc
-            w = lookup_dict_key(dict_obj, "W")
-            index = lookup_dict_key(dict_obj, "Index")
+            w = dict_obj.get("W")
+            index = dict_obj.get("Index")
             if isinstance(w, list) and isinstance(index, list):
-                row_size = sum(item for item in w if type(item) is int)
+                row_size = sum(cast(int, item) for item in w if type(item) is int)
                 row_count = sum(
-                    index[i + 1] for i in range(0, len(index) - 1, 2) if type(index[i + 1]) is int
+                    cast(int, index[i + 1])
+                    for i in range(0, len(index) - 1, 2)
+                    if type(index[i + 1]) is int
                 )
                 if len(decoded_data) != row_size * row_count:
                     decoded_data = None
@@ -771,10 +773,9 @@ class XRefScanner:
             if not isinstance(obj, PdfStream):
                 continue
             dictionary = obj.dictionary
-            type_name = normalize_pdf_name(lookup_dict_key(dictionary, "Type"))
+            type_name = normalize_pdf_name(dictionary.get("Type"))
             if type_name != "ObjStm" and (
-                lookup_dict_key(dictionary, "N") is None
-                or lookup_dict_key(dictionary, "First") is None
+                dictionary.get("N") is None or dictionary.get("First") is None
             ):
                 continue
             try:
@@ -847,11 +848,7 @@ def find_previous_object_marker(data: PdfByteBuffer, before: int) -> int | None:
 def parse_object_marker_prefix(
     data: PdfByteBuffer | memoryview, marker: int
 ) -> tuple[int, int, int] | None:
-    """Return ``(offset, object number, generation)`` for the ``N G obj`` header at ``marker``.
-
-    ``s_07_syntax.indirect_headers.parse_object_header_prefix`` wraps this and takes
-    just the offset, for callers that don't need the parsed object/generation numbers.
-    """
+    """Return ``(offset, object number, generation)`` for the header at ``marker``."""
     if marker + 3 < len(data) and not WS_TABLE[data[marker + 3]]:
         return None
     pos = marker - 1

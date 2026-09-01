@@ -20,7 +20,6 @@ from core_pdf.impl.spec.s_07_filters.errors import FilterParseError
 from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
-from core_pdf.impl.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 from core_pdf.impl.spec.s_08_graphics.matrix import multiply_affine
 from core_pdf.impl.spec.s_09_fonts.cmap_tokenizer import (
     cmap_tokens,
@@ -216,7 +215,7 @@ class OperatorTextProjection:
 
     def internal_fonts(self, resources: Mapping[object, object]) -> dict[str, internal_Font]:
         result: dict[str, internal_Font] = {}
-        fonts = self.resolver.resolve(lookup_dict_key(resources, "Font"))
+        fonts = self.resolver.resolve(resources.get("Font"))
         if not isinstance(fonts, dict):
             return result
         for name, raw_font in fonts.items():
@@ -224,9 +223,9 @@ class OperatorTextProjection:
             if not isinstance(font, dict):
                 continue
             self.internal_validate_font_files(font)
-            subtype = normalize_pdf_name(lookup_dict_key(font, "Subtype"))
+            subtype = normalize_pdf_name(font.get("Subtype"))
             if subtype not in {"Type1", "MMType1", "TrueType", "Type3"} and not isinstance(
-                self.resolver.resolve(lookup_dict_key(font, "DescendantFonts")),
+                self.resolver.resolve(font.get("DescendantFonts")),
                 (list, tuple),
             ):
                 raise KeyError("DescendantFonts")
@@ -247,9 +246,7 @@ class OperatorTextProjection:
             # expanded extraction encoding. Explicit encodings take precedence;
             # otherwise ToUnicode identifies the encoded glyph most precisely.
             space_code: int | None = None
-            has_explicit_encoding = (
-                self.resolver.resolve(lookup_dict_key(font, "Encoding")) is not None
-            )
+            has_explicit_encoding = self.resolver.resolve(font.get("Encoding")) is not None
             if has_explicit_encoding and not isinstance(encoding, str):
                 space_code = next(
                     (code for code, text in enumerate(encoding) if text == " "),
@@ -338,10 +335,10 @@ class OperatorTextProjection:
 
     def internal_type1_alternative(self, font: Mapping[object, object]) -> dict[int, str]:
         """Read the conservative clear-text Type 1 encoding used by PDF readers."""
-        descriptor = self.resolver.resolve(lookup_dict_key(font, "FontDescriptor"))
+        descriptor = self.resolver.resolve(font.get("FontDescriptor"))
         if not isinstance(descriptor, dict):
             return {}
-        font_file = self.resolver.resolve(lookup_dict_key(descriptor, "FontFile"))
+        font_file = self.resolver.resolve(descriptor.get("FontFile"))
         if not isinstance(font_file, PdfStream):
             return {}
         try:
@@ -368,9 +365,9 @@ class OperatorTextProjection:
         return result
 
     def internal_type3_interpretable(self, font: Mapping[object, object]) -> bool:
-        if lookup_dict_key(font, "ToUnicode") is not None:
+        if font.get("ToUnicode") is not None:
             return True
-        char_procs = self.resolver.resolve(lookup_dict_key(font, "CharProcs"))
+        char_procs = self.resolver.resolve(font.get("CharProcs"))
         if not isinstance(char_procs, dict):
             return True
         return all(
@@ -386,7 +383,7 @@ class OperatorTextProjection:
     ) -> ToUnicodeCMap | None:
         if decoder.to_unicode is not None:
             return decoder.to_unicode
-        raw_cmap = lookup_dict_key(font, "ToUnicode")
+        raw_cmap = font.get("ToUnicode")
         if not isinstance(raw_cmap, PdfStream):
             return None
         try:
@@ -435,7 +432,7 @@ class OperatorTextProjection:
 
     def internal_validate_font_files(self, font: Mapping[object, object]) -> None:
         owners: list[Mapping[object, object]] = [font]
-        descendants = self.resolver.resolve(lookup_dict_key(font, "DescendantFonts"))
+        descendants = self.resolver.resolve(font.get("DescendantFonts"))
         if isinstance(descendants, (list, tuple)):
             owners.extend(
                 descendant
@@ -443,28 +440,25 @@ class OperatorTextProjection:
                 if isinstance((descendant := self.resolver.resolve(raw_descendant)), dict)
             )
         for owner in owners:
-            descriptor = self.resolver.resolve(lookup_dict_key(owner, "FontDescriptor"))
+            descriptor = self.resolver.resolve(owner.get("FontDescriptor"))
             if not isinstance(descriptor, dict):
                 continue
             embedded_files = sum(
-                lookup_dict_key(descriptor, key) is not None
-                for key in ("FontFile", "FontFile2", "FontFile3")
+                descriptor.get(key) is not None for key in ("FontFile", "FontFile2", "FontFile3")
             )
             if embedded_files > 1:
                 raise ValueError("font descriptor declares more than one embedded font program")
 
     def internal_font_flags(self, font: Mapping[object, object]) -> int:
-        descendants = self.resolver.resolve(lookup_dict_key(font, "DescendantFonts"))
+        descendants = self.resolver.resolve(font.get("DescendantFonts"))
         owner: Mapping[object, object] = font
         if isinstance(descendants, (list, tuple)) and descendants:
             descendant = self.resolver.resolve(descendants[0])
             if isinstance(descendant, dict):
                 owner = descendant
-        descriptor = self.resolver.resolve(lookup_dict_key(owner, "FontDescriptor"))
+        descriptor = self.resolver.resolve(owner.get("FontDescriptor"))
         flags = (
-            self.resolver.resolve(lookup_dict_key(descriptor, "Flags"))
-            if isinstance(descriptor, dict)
-            else None
+            self.resolver.resolve(descriptor.get("Flags")) if isinstance(descriptor, dict) else None
         )
         return int(flags) if isinstance(flags, (int, float)) else 0
 
@@ -475,13 +469,13 @@ class OperatorTextProjection:
     ) -> tuple[dict[int, float], float]:
         widths: dict[int, float] = {}
         default_width = 0.0
-        descendants = self.resolver.resolve(lookup_dict_key(font, "DescendantFonts"))
+        descendants = self.resolver.resolve(font.get("DescendantFonts"))
         if isinstance(descendants, (list, tuple)):
             for raw_descendant in descendants:
                 descendant = self.resolver.resolve(raw_descendant)
                 if not isinstance(descendant, dict):
                     continue
-                raw_w = self.resolver.resolve(lookup_dict_key(descendant, "W"))
+                raw_w = self.resolver.resolve(descendant.get("W"))
                 if isinstance(raw_w, (list, tuple)):
                     index = 0
                     while index < len(raw_w):
@@ -508,12 +502,12 @@ class OperatorTextProjection:
                                 index += 3
                                 continue
                         index += 1
-                raw_default = self.resolver.resolve(lookup_dict_key(descendant, "DW"))
+                raw_default = self.resolver.resolve(descendant.get("DW"))
                 if isinstance(raw_default, (int, float)):
                     default_width = float(raw_default)
         else:
-            first_char = self.resolver.resolve(lookup_dict_key(font, "FirstChar"))
-            raw_widths = self.resolver.resolve(lookup_dict_key(font, "Widths"))
+            first_char = self.resolver.resolve(font.get("FirstChar"))
+            raw_widths = self.resolver.resolve(font.get("Widths"))
             if isinstance(first_char, (int, float)) and isinstance(raw_widths, (list, tuple)):
                 widths.update(
                     (
@@ -522,9 +516,9 @@ class OperatorTextProjection:
                     )
                     for offset, value in enumerate(raw_widths)
                 )
-            descriptor = self.resolver.resolve(lookup_dict_key(font, "FontDescriptor"))
+            descriptor = self.resolver.resolve(font.get("FontDescriptor"))
             if isinstance(descriptor, dict):
-                missing = self.resolver.resolve(lookup_dict_key(descriptor, "MissingWidth"))
+                missing = self.resolver.resolve(descriptor.get("MissingWidth"))
                 if isinstance(missing, (int, float)):
                     default_width = float(int(missing))
             if not widths:
@@ -541,7 +535,7 @@ class OperatorTextProjection:
         decoder: FontDecoder,
         to_unicode: ToUnicodeCMap | None,
     ) -> tuple[str, ...] | str:
-        raw_encoding = self.resolver.resolve(lookup_dict_key(font, "Encoding"))
+        raw_encoding = self.resolver.resolve(font.get("Encoding"))
         encoding_name = normalize_pdf_name(raw_encoding)
         if raw_encoding is None:
             return "charmap"
@@ -558,7 +552,7 @@ class OperatorTextProjection:
                 else STANDARD_ENCODING
             )
         elif isinstance(raw_encoding, dict):
-            base = normalize_pdf_name(lookup_dict_key(raw_encoding, "BaseEncoding"))
+            base = normalize_pdf_name(raw_encoding.get("BaseEncoding"))
             table = list(
                 internal_WIN_ANSI_ENCODING
                 if base == "WinAnsiEncoding"
@@ -618,7 +612,7 @@ class OperatorTextProjection:
         resources: Mapping[object, object],
     ) -> str:
         state = internal_TextState(self.internal_fonts(resources))
-        xobjects = self.resolver.resolve(lookup_dict_key(resources, "XObject"))
+        xobjects = self.resolver.resolve(resources.get("XObject"))
         decoded_streams: list[bytes] = []
         for stream in streams:
             try:
@@ -729,13 +723,8 @@ class OperatorTextProjection:
                 form = self.resolver.resolve(xobjects.get(operands[0]))
                 if not isinstance(form, PdfStream):
                     form = self.resolver.resolve(xobjects.get(str(operands[0])))
-                if (
-                    isinstance(form, PdfStream)
-                    and str(lookup_dict_key(form.dictionary, "Subtype")) != "Image"
-                ):
-                    form_resources = self.resolver.resolve(
-                        lookup_dict_key(form.dictionary, "Resources")
-                    )
+                if isinstance(form, PdfStream) and str(form.dictionary.get("Subtype")) != "Image":
+                    form_resources = self.resolver.resolve(form.dictionary.get("Resources"))
                     if isinstance(form_resources, dict):
                         form_id = id(form)
                         if form_id in self.active_forms:

@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from typing import Any
 
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import parse_float, parse_int
-from core_pdf.impl.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 from core_pdf.impl.spec.s_09_fonts.cmap_widths import (
     FontWidthMap,
     SparseFontWidthMap,
@@ -54,7 +53,7 @@ def parse_optional_font_float(value: Any, default: float) -> float:
 
 
 def get_descendant(font: dict[Any, Any]) -> dict[Any, Any] | None:
-    descendant_fonts = lookup_dict_key(font, "DescendantFonts")
+    descendant_fonts = font.get("DescendantFonts")
     if isinstance(descendant_fonts, (list, tuple)) and descendant_fonts:
         candidate = descendant_fonts[0]
         if isinstance(candidate, dict):
@@ -74,7 +73,7 @@ class FontMetrics:
 
 def parse_font_widths(font: dict[Any, Any], subtype: str | None) -> FontMetrics:
     widths: FontWidthMap = SparseFontWidthMap()
-    missing_width = lookup_dict_key(font, "MissingWidth")
+    missing_width = font.get("MissingWidth")
     if missing_width is None:
         default_width = 1000.0
     else:
@@ -83,18 +82,18 @@ def parse_font_widths(font: dict[Any, Any], subtype: str | None) -> FontMetrics:
     default_vertical_displacement_y = -1000.0
     default_vertical_origin_y = 880.0
     vertical_metrics: dict[int, tuple[float, float, float]] = {}
-    descriptor = lookup_dict_key(font, "FontDescriptor")
+    descriptor = font.get("FontDescriptor")
     if subtype == "Type0":
         descendant = get_descendant(font)
         if isinstance(descendant, dict):
-            descendant_dw = lookup_dict_key(descendant, "DW")
+            descendant_dw = descendant.get("DW")
             if descendant_dw is not None:
                 default_width = parse_optional_font_float(descendant_dw, default_width)
-            dw2 = lookup_dict_key(descendant, "DW2")
+            dw2 = descendant.get("DW2")
             if isinstance(dw2, (list, tuple)) and len(dw2) >= 2:
                 default_vertical_origin_y = parse_optional_font_float(dw2[0], 880.0)
                 default_vertical_displacement_y = parse_optional_font_float(dw2[1], -1000.0)
-            w2 = lookup_dict_key(descendant, "W2")
+            w2 = descendant.get("W2")
             if isinstance(w2, (list, tuple)):
                 index = 0
                 while index + 1 < len(w2):
@@ -133,9 +132,9 @@ def parse_font_widths(font: dict[Any, Any], subtype: str | None) -> FontMetrics:
                             except ValueError:
                                 pass
                         index += 5
-            wmode = lookup_dict_key(descendant, "WMode")
+            wmode = descendant.get("WMode")
             if wmode is None:
-                wmode = lookup_dict_key(font, "WMode")
+                wmode = font.get("WMode")
             if wmode is None:
                 wmode = 0
             try:
@@ -143,11 +142,11 @@ def parse_font_widths(font: dict[Any, Any], subtype: str | None) -> FontMetrics:
             except ValueError:
                 wmode_int = 0
             is_vertical = wmode_int == 1
-            widths = parse_cid_widths(lookup_dict_key(descendant, "W"))
-            descriptor = lookup_dict_key(descendant, "FontDescriptor")
+            widths = parse_cid_widths(descendant.get("W"))
+            descriptor = descendant.get("FontDescriptor")
 
     if isinstance(descriptor, dict):
-        desc_missing_width = lookup_dict_key(descriptor, "MissingWidth")
+        desc_missing_width = descriptor.get("MissingWidth")
         if desc_missing_width is not None:
             default_width = parse_optional_font_float(desc_missing_width, default_width)
 
@@ -161,7 +160,7 @@ def parse_font_widths(font: dict[Any, Any], subtype: str | None) -> FontMetrics:
             vertical_metrics=vertical_metrics,
         )
 
-    first_char_val = lookup_dict_key(font, "FirstChar")
+    first_char_val = font.get("FirstChar")
     if first_char_val is None:
         first_char = 0
     else:
@@ -169,14 +168,14 @@ def parse_font_widths(font: dict[Any, Any], subtype: str | None) -> FontMetrics:
             first_char = require_font_int(first_char_val, "invalid font FirstChar")
         except ValueError:
             first_char = 0
-    last_char_val = lookup_dict_key(font, "LastChar")
+    last_char_val = font.get("LastChar")
     last_char = None
     if last_char_val is not None:
         try:
             last_char = require_font_int(last_char_val, "invalid font LastChar")
         except ValueError:
             last_char = None
-    font_widths = lookup_dict_key(font, "Widths")
+    font_widths = font.get("Widths")
     if isinstance(font_widths, (list, tuple)):
         sparse_widths: dict[int, float] = {}
         for index, width in enumerate(font_widths):

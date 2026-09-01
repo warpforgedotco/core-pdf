@@ -8,7 +8,6 @@ from typing import Any
 
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import parse_float
-from core_pdf.impl.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 from core_pdf.impl.spec.s_08_graphics.color_kernels import (
     evaluate_sampled_tint_function,
 )
@@ -34,7 +33,7 @@ def internal_number_array(value: Any) -> tuple[float, ...]:
 def internal_evaluate_pdf_function(function: Any, value: float) -> tuple[float, ...]:
     """Evaluate the PDF Function forms supported by the rasterizer."""
     if isinstance(function, PdfStream):
-        function_type = pdf_int(lookup_dict_key(function.dictionary, "FunctionType"), -1)
+        function_type = pdf_int(function.dictionary.get("FunctionType"), -1)
         if function_type == 0:
             try:
                 return tuple(evaluate_sampled_tint_function(function, value))
@@ -42,15 +41,15 @@ def internal_evaluate_pdf_function(function: Any, value: float) -> tuple[float, 
                 return (value,)
         dictionary = function.dictionary
     elif isinstance(function, dict):
-        function_type = pdf_int(lookup_dict_key(function, "FunctionType"), -1)
+        function_type = pdf_int(function.get("FunctionType"), -1)
         dictionary = function
     else:
         return (value,)
 
     if function_type == 2:
-        exponent = pdf_float(lookup_dict_key(dictionary, "N"), 1.0)
-        c0 = list(internal_number_array(lookup_dict_key(dictionary, "C0")) or (0.0,))
-        c1 = list(internal_number_array(lookup_dict_key(dictionary, "C1")) or (1.0,))
+        exponent = pdf_float(dictionary.get("N"), 1.0)
+        c0 = list(internal_number_array(dictionary.get("C0")) or (0.0,))
+        c1 = list(internal_number_array(dictionary.get("C1")) or (1.0,))
         count = max(len(c0), len(c1))
         if len(c0) < count:
             c0.extend([c0[-1] if c0 else 0.0] * (count - len(c0)))
@@ -60,11 +59,11 @@ def internal_evaluate_pdf_function(function: Any, value: float) -> tuple[float, 
         return tuple(c0[index] + factor * (c1[index] - c0[index]) for index in range(count))
 
     if function_type == 3:
-        functions = lookup_dict_key(dictionary, "Functions")
+        functions = dictionary.get("Functions")
         if not isinstance(functions, (list, tuple)) or not functions:
             return (value,)
-        bounds = internal_number_array(lookup_dict_key(dictionary, "Bounds"))
-        encode = internal_number_array(lookup_dict_key(dictionary, "Encode"))
+        bounds = internal_number_array(dictionary.get("Bounds"))
+        encode = internal_number_array(dictionary.get("Encode"))
         index = 0
         while index < len(bounds) and value >= bounds[index]:
             index += 1
@@ -99,18 +98,18 @@ def prepare_shading(dictionary: object) -> PreparedShading | None:
     """Normalize one axial or radial PDF shading dictionary."""
     if not isinstance(dictionary, dict):
         return None
-    shading_type = pdf_int(lookup_dict_key(dictionary, "ShadingType"), 0)
+    shading_type = pdf_int(dictionary.get("ShadingType"), 0)
     if shading_type not in {2, 3}:
         return None
-    coords = internal_number_array(lookup_dict_key(dictionary, "Coords"))
+    coords = internal_number_array(dictionary.get("Coords"))
     if (shading_type == 2 and len(coords) < 4) or (shading_type == 3 and len(coords) < 6):
         return None
-    domain_values = internal_number_array(lookup_dict_key(dictionary, "Domain"))
+    domain_values = internal_number_array(dictionary.get("Domain"))
     domain = (domain_values[0], domain_values[1]) if len(domain_values) >= 2 else (0.0, 1.0)
-    extend = lookup_dict_key(dictionary, "Extend")
+    extend = dictionary.get("Extend")
     extend_start = isinstance(extend, (list, tuple)) and len(extend) > 0 and extend[0] is True
     extend_end = isinstance(extend, (list, tuple)) and len(extend) > 1 and extend[1] is True
-    bbox_values = internal_number_array(lookup_dict_key(dictionary, "BBox"))
+    bbox_values = internal_number_array(dictionary.get("BBox"))
     bbox = (
         (bbox_values[0], bbox_values[1], bbox_values[2], bbox_values[3])
         if len(bbox_values) >= 4
@@ -122,10 +121,9 @@ def prepare_shading(dictionary: object) -> PreparedShading | None:
         domain=domain,
         extend_start=extend_start,
         extend_end=extend_end,
-        color_model=image_color_space_name(lookup_dict_key(dictionary, "ColorSpace"))
-        or "DeviceRGB",
+        color_model=image_color_space_name(dictionary.get("ColorSpace")) or "DeviceRGB",
         bbox=bbox,
-        internal_function=lookup_dict_key(dictionary, "Function"),
+        internal_function=dictionary.get("Function"),
     )
 
 

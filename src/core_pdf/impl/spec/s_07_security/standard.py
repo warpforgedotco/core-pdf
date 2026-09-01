@@ -28,10 +28,6 @@ from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     normalize_pdf_name,
     parse_int,
 )
-from core_pdf.impl.spec.s_07_syntax_primitives.pdfdict import (
-    lookup_dict_key,
-    lookup_dict_key_default,
-)
 
 internal_CryptMethod = Literal["V2", "AESV2", "AESV3"]
 
@@ -88,7 +84,7 @@ class internal_StandardSecurityHandler:
             return internal_rc4_crypt(self.object_key(object_number, generation_number), data)
 
         if not config.encrypt_metadata and attrs is not None:
-            object_type = normalize_pdf_name(lookup_dict_key(attrs, "Type"))
+            object_type = normalize_pdf_name(attrs.get("Type"))
             if object_type == "Metadata":
                 return data
 
@@ -141,7 +137,7 @@ def create_standard_decipher(
     password: str = "",
 ) -> Decipher:
     """Validate a Standard Security dictionary and return its object decipher."""
-    filter_name = normalize_pdf_name(lookup_dict_key(params, "Filter"))
+    filter_name = normalize_pdf_name(params.get("Filter"))
     if filter_name is None:
         raise PdfUnsupportedError("Invalid encryption dictionary")
     if filter_name in {"Adobe.PubSec", "PubSec"}:
@@ -149,7 +145,7 @@ def create_standard_decipher(
     if filter_name != "Standard":
         raise PdfUnsupportedError(f"Unsupported encryption filter: {filter_name}")
 
-    version = parse_int(lookup_dict_key(params, "V"), None)
+    version = parse_int(params.get("V"), None)
     if version is None:
         raise PdfUnsupportedError("Invalid encryption dictionary")
     supported_revisions = internal_supported_revisions(version)
@@ -176,18 +172,18 @@ def internal_parse_config(
     if revision not in supported_revisions:
         raise ValueError(f"unsupported Standard Security revision R={revision} for V={version}")
 
-    raw_permissions = lookup_dict_key_default(params, "P", MISSING)
+    raw_permissions = params.get("P", MISSING)
     if raw_permissions is MISSING or raw_permissions is None:
         raise ValueError("missing encryption permissions")
     permissions = internal_parse_int(raw_permissions, "P")
     if permissions < 0:
         permissions += 1 << 32
 
-    owner_entry = coerce_to_bytes(lookup_dict_key(params, "O"))
-    user_entry = coerce_to_bytes(lookup_dict_key(params, "U"))
+    owner_entry = coerce_to_bytes(params.get("O"))
+    user_entry = coerce_to_bytes(params.get("U"))
     first_document_id = coerce_to_bytes(document_id[0]) if document_id else b""
 
-    raw_length = lookup_dict_key_default(params, "Length", MISSING)
+    raw_length = params.get("Length", MISSING)
     length_bits = 40 if raw_length is MISSING else internal_parse_int(raw_length, "Length")
     if version <= 3 and length_bits not in (40, 128):
         raise ValueError(
@@ -207,8 +203,8 @@ def internal_parse_config(
             internal_parse_crypt_filters(params, version)
         )
     if version >= 5:
-        owner_encrypted_key = coerce_to_bytes(lookup_dict_key(params, "OE"))
-        user_encrypted_key = coerce_to_bytes(lookup_dict_key(params, "UE"))
+        owner_encrypted_key = coerce_to_bytes(params.get("OE"))
+        user_encrypted_key = coerce_to_bytes(params.get("UE"))
 
     return internal_StandardSecurityConfig(
         version=version,
@@ -231,7 +227,7 @@ def internal_parse_crypt_filters(
     params: PdfDict,
     version: int,
 ) -> tuple[bool, str, str, Mapping[str, internal_CryptMethod]]:
-    raw_filters = lookup_dict_key(params, "CF")
+    raw_filters = params.get("CF")
     if raw_filters is None:
         filters: PdfDict = {}
     elif isinstance(raw_filters, dict):
@@ -250,19 +246,19 @@ def internal_parse_crypt_filters(
     for raw_name, raw_config in filters.items():
         if not isinstance(raw_config, dict):
             raise ValueError(f"invalid crypt filter dictionary: {raw_name!r}")
-        method_name = internal_name(lookup_dict_key(raw_config, "CFM") or "")
+        method_name = internal_name(raw_config.get("CFM") or "")
         if method_name not in allowed_methods:
             raise ValueError(f"unknown crypt filter method: {method_name}")
         crypt_filters[internal_name(raw_name)] = cast(internal_CryptMethod, method_name)
 
-    raw_stream_filter = lookup_dict_key_default(params, "StmF", MISSING)
+    raw_stream_filter = params.get("StmF", MISSING)
     stream_filter = internal_name("Identity" if raw_stream_filter is MISSING else raw_stream_filter)
-    raw_string_filter = lookup_dict_key_default(params, "StrF", MISSING)
+    raw_string_filter = params.get("StrF", MISSING)
     string_filter = internal_name("Identity" if raw_string_filter is MISSING else raw_string_filter)
     if string_filter != "Identity" and string_filter not in crypt_filters:
         raise ValueError(f"undefined string crypt filter: {string_filter}")
 
-    encrypt_metadata = lookup_dict_key_default(params, "EncryptMetadata", MISSING)
+    encrypt_metadata = params.get("EncryptMetadata", MISSING)
     if encrypt_metadata is MISSING:
         encrypt_metadata = True
     if type(encrypt_metadata) is not bool:
@@ -290,7 +286,7 @@ def internal_stream_crypt_filter_name(attrs: PdfDict, default_filter: str) -> st
         return "Identity"
     if not isinstance(params, dict):
         raise PdfParseError("invalid Crypt filter params")
-    raw_name = lookup_dict_key(params, "Name")
+    raw_name = params.get("Name")
     if is_pdf_null(raw_name):
         return "Identity"
     filter_name = normalize_pdf_name(raw_name)
@@ -552,7 +548,7 @@ def internal_supported_revisions(version: int) -> tuple[int, ...] | None:
 
 
 def internal_required_int(params: PdfDict, key: str) -> int:
-    raw_value = lookup_dict_key(params, key)
+    raw_value = params.get(key)
     if raw_value is None:
         raise ValueError(f"missing encryption dictionary value {key}")
     return internal_parse_int(raw_value, key)

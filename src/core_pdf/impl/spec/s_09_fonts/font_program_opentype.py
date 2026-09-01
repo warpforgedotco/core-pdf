@@ -11,7 +11,6 @@ from core_pdf._vendor.fontTools.pens.transformPen import TransformPen
 from core_pdf._vendor.fontTools.ttLib import TTFont
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
-from core_pdf.impl.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 from core_pdf.impl.spec.s_09_fonts.font_program_truetype import (
     FONT_PROGRAM_ERRORS,
     internal_recording_to_contours,
@@ -115,13 +114,13 @@ class OpenTypeFontProgram:
 def opentype_font_for_pdf_font(font: dict[str, object]) -> OpenTypeFontProgram | None:
     descendant = get_descendant(font)
     font_dict = descendant if descendant is not None else font
-    descriptor = lookup_dict_key(font_dict, "FontDescriptor")
+    descriptor = font_dict.get("FontDescriptor")
     if not isinstance(descriptor, dict):
         return None
-    font_file = lookup_dict_key(descriptor, "FontFile3")
+    font_file = descriptor.get("FontFile3")
     if not isinstance(font_file, PdfStream):
         return None
-    if normalize_pdf_name(lookup_dict_key(font_file.dictionary, "Subtype")) != "OpenType":
+    if normalize_pdf_name(font_file.dictionary.get("Subtype")) != "OpenType":
         return None
     try:
         return OpenTypeFontProgram(font_file.data)

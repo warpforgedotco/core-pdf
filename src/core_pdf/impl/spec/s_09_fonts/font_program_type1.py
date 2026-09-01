@@ -12,7 +12,6 @@ from core_pdf._vendor.fontTools.pens.recordingPen import RecordingPen
 from core_pdf._vendor.fontTools.pens.transformPen import TransformPen
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
-from core_pdf.impl.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 from core_pdf.impl.spec.s_09_fonts.font_program_truetype import (
     internal_recording_to_contours,
 )
@@ -282,15 +281,15 @@ def type1_font_for_data(data: bytes, length1: int | None = None) -> Type1FontPro
 
 
 def type1_font_for_pdf_font(font: dict[str, object]) -> Type1FontProgram | None:
-    if normalize_pdf_name(lookup_dict_key(font, "Subtype")) not in {"Type1", "MMType1"}:
+    if normalize_pdf_name(font.get("Subtype")) not in {"Type1", "MMType1"}:
         return None
-    descriptor = lookup_dict_key(font, "FontDescriptor")
+    descriptor = font.get("FontDescriptor")
     if not isinstance(descriptor, dict):
         return None
-    font_file = lookup_dict_key(descriptor, "FontFile")
+    font_file = descriptor.get("FontFile")
     if not isinstance(font_file, PdfStream):
         return None
-    length1_value = lookup_dict_key(font_file.dictionary, "Length1")
+    length1_value = font_file.dictionary.get("Length1")
     length1 = int(length1_value) if isinstance(length1_value, (int, float)) else None
     try:
         return type1_font_for_data(font_file.data, length1)

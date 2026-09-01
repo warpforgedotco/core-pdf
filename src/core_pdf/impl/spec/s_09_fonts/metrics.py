@@ -6,7 +6,6 @@ from __future__ import annotations
 import contextlib
 from typing import Any
 
-from core_pdf.impl.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 from core_pdf.impl.spec.s_09_fonts.cmap_widths import (
     FontWidthMap,
     SparseFontWidthMap,
@@ -70,12 +69,12 @@ def parse_font_metrics(
     widths: FontWidthMap,
 ) -> tuple[float, float]:
     ascent, descent = 800.0, -200.0
-    descriptor = lookup_dict_key(font_dict, "FontDescriptor")
+    descriptor = font_dict.get("FontDescriptor")
     if subtype == "Type3" and not isinstance(descriptor, dict):
         # Type 3 fonts need not have a FontDescriptor. Their FontBBox is in
         # glyph space and supplies the vertical metrics directly; using the
         # generic Latin fallback shifts every layout box below its baseline.
-        font_bbox = lookup_dict_key(font_dict, "FontBBox")
+        font_bbox = font_dict.get("FontBBox")
         if isinstance(font_bbox, (list, tuple)) and len(font_bbox) >= 4:
             with contextlib.suppress(ValueError):
                 bbox_descent = require_font_float(font_bbox[1], "invalid Type3 FontBBox")
@@ -84,7 +83,7 @@ def parse_font_metrics(
     if subtype == "Type0":
         descendant = get_descendant(font_dict)
         if isinstance(descendant, dict):
-            desc_descriptor = lookup_dict_key(descendant, "FontDescriptor")
+            desc_descriptor = descendant.get("FontDescriptor")
             descriptor = desc_descriptor or descriptor
 
     if base_font_name in FONT_DATA and not widths:
@@ -103,11 +102,11 @@ def parse_font_metrics(
 
     descriptor_descent_applied = False
     if isinstance(descriptor, dict):
-        descriptor_ascent = lookup_dict_key(descriptor, "Ascent")
+        descriptor_ascent = descriptor.get("Ascent")
         if descriptor_ascent is not None:
             with contextlib.suppress(ValueError):
                 ascent = require_font_float(descriptor_ascent, "invalid font Ascent")
-        descriptor_descent = lookup_dict_key(descriptor, "Descent")
+        descriptor_descent = descriptor.get("Descent")
         if descriptor_descent is not None:
             with contextlib.suppress(ValueError):
                 descent = require_font_float(descriptor_descent, "invalid font Descent")
@@ -122,7 +121,7 @@ def parse_font_metrics(
 
 
 def adjust_type3_widths(font_dict: dict[str, Any], widths: FontWidthMap) -> FontWidthMap:
-    font_matrix = lookup_dict_key(font_dict, "FontMatrix")
+    font_matrix = font_dict.get("FontMatrix")
     if isinstance(font_matrix, (list, tuple)) and len(font_matrix) >= 1:
         try:
             fm_a = require_font_float(font_matrix[0], "invalid FontMatrix")

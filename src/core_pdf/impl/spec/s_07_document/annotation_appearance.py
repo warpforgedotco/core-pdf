@@ -17,7 +17,6 @@ from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.spec.s_07_content.geometry import transform_bbox
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict
-from core_pdf.impl.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 
 if TYPE_CHECKING:
@@ -37,10 +36,10 @@ def internal_inheritable(document: Any, node: object, key: str) -> object:
     for _ in range(50):
         if not isinstance(node, dict):
             return None
-        value = lookup_dict_key(node, key)
+        value = node.get(key)
         if value is not None:
             return value
-        parent = document.resolver.resolve(lookup_dict_key(node, "Parent"))
+        parent = document.resolver.resolve(node.get("Parent"))
         if parent is node:
             return None
         node = parent
@@ -60,14 +59,14 @@ def select_appearance_stream(
     appearances = resolver.resolve(appearance)
     if not isinstance(appearances, dict):
         return None
-    normal = resolver.resolve(lookup_dict_key(appearances, "N"))
+    normal = resolver.resolve(appearances.get("N"))
     if isinstance(normal, PdfStream):
         return normal
     if not isinstance(normal, dict):
         return None
     state_name = resolver.resolve_name(appearance_state)
     if state_name is not None:
-        selected = resolver.resolve(lookup_dict_key(normal, state_name))
+        selected = resolver.resolve(normal.get(state_name))
         return selected if isinstance(selected, PdfStream) else None
     if len(normal) == 1:
         only = resolver.resolve(next(iter(normal.values())))
@@ -78,16 +77,14 @@ def select_appearance_stream(
 
 def internal_appearance_stream(document: Any, annot: dict) -> PdfStream | None:
     """Return the normal appearance stream, resolving an appearance substate."""
-    return select_appearance_stream(
-        document.resolver, lookup_dict_key(annot, "AP"), lookup_dict_key(annot, "AS")
-    )
+    return select_appearance_stream(document.resolver, annot.get("AP"), annot.get("AS"))
 
 
 def internal_should_render(document: Any, annot: dict) -> bool:
-    subtype = document.resolver.resolve_name(lookup_dict_key(annot, "Subtype")) or ""
+    subtype = document.resolver.resolve_name(annot.get("Subtype")) or ""
     if subtype in SKIPPED_SUBTYPES:
         return False
-    flags = document.resolver.resolve_int(lookup_dict_key(annot, "F")) or 0
+    flags = document.resolver.resolve_int(annot.get("F")) or 0
     if flags & (ANNOTATION_FLAG_HIDDEN | ANNOTATION_FLAG_NO_VIEW):
         return False
     if subtype == "Widget":
@@ -146,22 +143,22 @@ def consume_annotation_appearances(page: Any, state: "TextState") -> None:
             stream = internal_appearance_stream(document, annot)
             if stream is None:
                 continue
-            rect = document.resolver.resolve_box(lookup_dict_key(annot, "Rect"))
+            rect = document.resolver.resolve_box(annot.get("Rect"))
             if rect is None:
                 continue
             rect = internal_normalized_rect(rect)
 
-            raw_matrix = lookup_dict_key(stream.dictionary, "Matrix")
+            raw_matrix = stream.dictionary.get("Matrix")
             if isinstance(raw_matrix, (list, tuple)) and len(raw_matrix) > 6:
                 raw_matrix = raw_matrix[:6]
             matrix = Matrix.from_operand(raw_matrix) if raw_matrix is not None else IDENTITY_MATRIX
-            bbox = document.resolver.resolve_box(lookup_dict_key(stream.dictionary, "BBox"))
+            bbox = document.resolver.resolve_box(stream.dictionary.get("BBox"))
 
             placement = internal_appearance_matrix(rect, bbox, matrix)
             nested_ctm = matrix.multiply(placement)
             clip = transform_bbox(bbox, nested_ctm) if bbox is not None else rect
 
-            raw_resources = lookup_dict_key(stream.dictionary, "Resources")
+            raw_resources = stream.dictionary.get("Resources")
             resolved_resources = (
                 raw_resources
                 if isinstance(raw_resources, dict)
