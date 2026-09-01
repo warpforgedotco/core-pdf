@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TypeAlias
 
 from core_pdf.impl.spec.s_07_filters.errors import FilterParseError
@@ -19,59 +20,21 @@ from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
 DecodeParam: TypeAlias = object
 
 
+@dataclass(frozen=True, slots=True)
 class FilterParams:
     """Decode parameters associated with a PDF stream filter."""
 
-    __slots__ = (
-        "early_change",
-        "predictor",
-        "columns",
-        "colors",
-        "bits_per_component",
-        "k",
-        "damaged_rows_before_error",
-        "rows",
-        "encoded_byte_align",
-        "has_columns",
-        "jbig2_globals",
-    )
-
-    early_change: int
-    predictor: int
-    columns: int
-    colors: int
-    bits_per_component: int
-    k: int
-    damaged_rows_before_error: bool
-    rows: int
-    encoded_byte_align: bool
-    has_columns: bool
-
-    def __init__(
-        self,
-        early_change: int = 1,
-        predictor: int = 1,
-        columns: int = 1,
-        colors: int = 1,
-        bits_per_component: int = 8,
-        k: int = 0,
-        damaged_rows_before_error: bool = False,
-        rows: int = 0,
-        encoded_byte_align: bool = False,
-        has_columns: bool = False,
-        jbig2_globals: object | None = None,
-    ) -> None:
-        self.early_change = early_change
-        self.predictor = predictor
-        self.columns = columns
-        self.colors = colors
-        self.bits_per_component = bits_per_component
-        self.k = k
-        self.damaged_rows_before_error = damaged_rows_before_error
-        self.rows = rows
-        self.encoded_byte_align = encoded_byte_align
-        self.has_columns = has_columns
-        self.jbig2_globals = jbig2_globals
+    early_change: int = 1
+    predictor: int = 1
+    columns: int = 1
+    colors: int = 1
+    bits_per_component: int = 8
+    k: int = 0
+    damaged_rows_before_error: bool = False
+    rows: int = 0
+    encoded_byte_align: bool = False
+    has_columns: bool = False
+    jbig2_globals: object | None = None
 
     @classmethod
     def from_parms(cls, parms: object) -> "FilterParams":
@@ -154,17 +117,12 @@ class FilterParams:
         )
 
 
+@dataclass(frozen=True, slots=True)
 class StreamDecodeSpec:
     """Normalized stream filter pipeline and per-filter parameters."""
 
-    __slots__ = ("filters", "params")
-
     filters: tuple[str, ...]
     params: tuple[DecodeParam, ...]
-
-    def __init__(self, filters: tuple[str, ...], params: tuple[DecodeParam, ...]) -> None:
-        self.filters = filters
-        self.params = params
 
 
 def with_ccitt_image_rows(parms: object, dictionary: object) -> object:

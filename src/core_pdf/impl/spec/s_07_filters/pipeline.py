@@ -47,6 +47,7 @@ from core_pdf.impl.spec.s_07_filters.registry import (
     EXPENSIVE_DECODE_CACHE_FILTERS,
     FILTER_DESCRIPTOR_BY_NAME,
     FILTER_DESCRIPTORS,
+    NATIVE_IMAGE_SPECS,
     PREDICTOR_FILTERS,
 )
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
@@ -150,7 +151,7 @@ def decode_one_filter(
     try:
         decoder_context = (
             (parent_dictionary if parent_dictionary is not None else dictionary)
-            if descriptor is not None and descriptor.decoder == "jpx"
+            if descriptor is not None and descriptor.wants_image_dictionary
             else parms
         )
         result = internal_coerce_decoder_bytes(fn(data, decoder_context))
@@ -214,6 +215,14 @@ def decode_stream_data(
     return result
 
 
+# Decoders whose native path is exactly "preallocate a shape, hand it the buffer".
+# CCITT (needs FilterParams) and flate/lzw (decode then reshape) stay explicit below.
+internal_NATIVE_ARRAY_DECODERS = {
+    "jpeg": decode_jpeg_image,
+    "jpx": decode_jpx_image,
+}
+
+
 def decode_stream_image_data(
     data: bytes | memoryview,
     dictionary: object,
@@ -230,6 +239,8 @@ def decode_stream_image_data(
     filter_name = spec.filters[0]
     descriptor = FILTER_DESCRIPTOR_BY_NAME.get(filter_name)
     decoder = descriptor.decoder if descriptor is not None else None
+    if decoder is None:
+        return None
     if not image_decode_is_identity(dictionary) or not image_native_parameters_are_safe(
         dictionary, filter_name
     ):
@@ -237,14 +248,11 @@ def decode_stream_image_data(
     params = spec.params[0] if spec.params else None
     source = data
     try:
-        if decoder == "jpeg":
+        array_decoder = internal_NATIVE_ARRAY_DECODERS.get(decoder)
+        if array_decoder is not None:
             output_shape = native_image_output_shape(dictionary, filter_name)
             output = numpy.empty(output_shape, dtype=numpy.uint8) if output_shape else None
-            return DecodedImage(decode_jpeg_image(source, out=output), "jpeg")
-        if decoder == "jpx":
-            output_shape = native_image_output_shape(dictionary, filter_name)
-            output = numpy.empty(output_shape, dtype=numpy.uint8) if output_shape else None
-            return DecodedImage(decode_jpx_image(source, out=output), "jpx")
+            return DecodedImage(array_decoder(source, out=output), decoder)
         if decoder == "ccitt":
             filter_params = (
                 params if type(params) is FilterParams else FilterParams.from_parms(params)
@@ -292,24 +300,13 @@ def native_image_output_shape(
         if color_space is None or isinstance(color_space, (list, tuple, dict))
         else normalize_pdf_name(color_space)
     )
-    if decoder == "jpeg":
-        if color_name == "DeviceGray":
-            return height, width
-        if color_name == "DeviceRGB":
-            return height, width, 3
-        if color_name == "DeviceCMYK":
-            return height, width, 4
-    if decoder == "jpx":
-        if color_name == "DeviceGray":
-            return height, width
-        if color_name == "DeviceRGB":
-            return height, width, 3
-    if decoder in {"flate", "lzw"}:
-        if color_name is None or color_name == "DeviceGray":
-            return height, width
-        if color_name == "DeviceRGB":
-            return height, width, 3
-    return None
+    spec = NATIVE_IMAGE_SPECS.get(decoder) if decoder is not None else None
+    if spec is None:
+        return None
+    components = spec.channels.get(color_name)
+    if components is None:
+        return None
+    return (height, width) if components == 1 else (height, width, components)
 
 
 def image_decode_is_identity(dictionary: object) -> bool:
@@ -345,15 +342,7 @@ def image_native_parameters_are_safe(dictionary: object, filter_name: str) -> bo
     else:
         color_name = normalize_pdf_name(color_space)
     bits = image_dictionary.get("BitsPerComponent")
-    if decoder == "jpeg":
-        return color_name in {None, "DeviceGray", "DeviceRGB", "DeviceCMYK"} and bits in {
-            None,
-            8,
-        }
-    if decoder == "jpx":
-        return color_name in {None, "DeviceGray", "DeviceRGB"}
-    if decoder == "ccitt":
-        return color_name in {None, "DeviceGray"} and bits in {None, 1}
-    if decoder in {"flate", "lzw"}:
-        return color_name in {None, "DeviceGray", "DeviceRGB"} and bits in {None, 8}
-    return False
+    spec = NATIVE_IMAGE_SPECS.get(decoder) if decoder is not None else None
+    if spec is None:
+        return False
+    return color_name in spec.color_names and (spec.bits is None or bits in spec.bits)

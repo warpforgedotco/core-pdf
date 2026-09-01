@@ -3,9 +3,10 @@
 
 from __future__ import annotations
 
+import dataclasses
 import typing
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 from math import ceil
 from typing import Any
@@ -448,115 +449,40 @@ DrawingItem = tuple[str, tuple[tuple[float, float], ...]]
 internal_EMPTY_DRAWING_ITEMS: tuple[DrawingItem, ...] = ()
 
 
+@dataclass(slots=True)
 class CapturedDrawing:
-    __slots__ = (
-        "seqno",
-        "fill",
-        "fill_pattern",
-        "fill_opacity",
-        "stroke_color",
-        "stroke_pattern",
-        "stroke_opacity",
-        "line_width",
-        "line_cap",
-        "line_join",
-        "dash_pattern",
-        "fill_rule",
-        "blend_mode",
-        "soft_mask_alpha",
-        "raw_data",
-        "dictionary",
-        "image_source",
-        "image_clip",
-        "items",
-        "path",
-        "bbox",
-        "internal_rect_cache",
-        "kind",
-        "stream_order",
-        "xobject_depth",
-    )
+    seqno: int
+    fill: tuple[float, ...] | None
+    fill_opacity: float | None
+    fill_pattern: Mapping[object, object] | None = None
+    stroke_color: tuple[float, ...] | None = None
+    stroke_pattern: Mapping[object, object] | None = None
+    stroke_opacity: float | None = None
+    line_width: float = 1.0
+    line_cap: int = 0
+    line_join: int = 0
+    dash_pattern: tuple[list[float], float] | None = None
+    fill_rule: str = "nonzero"
+    blend_mode: str | None = None
+    soft_mask_alpha: float | None = None
+    raw_data: bytes | memoryview | None = None
+    dictionary: dict[Any, Any] | None = None
+    image_source: ImageSource | None = None
+    image_clip: Rectangle | None = None
+    kind: str = "fill"
+    items: tuple[DrawingItem, ...] | list[DrawingItem] = internal_EMPTY_DRAWING_ITEMS
+    path: CapturedPath | None = None
+    bbox: RectBox | None = None
+    stream_order: int = 0
+    xobject_depth: int = 0
+    internal_rect_cache: RectBox | None = field(default=None, init=False, repr=False)
 
-    def __init__(
-        self,
-        seqno: int,
-        fill: tuple[float, ...] | None,
-        fill_opacity: float | None,
-        fill_pattern: Mapping[object, object] | None = None,
-        stroke_color: tuple[float, ...] | None = None,
-        stroke_pattern: Mapping[object, object] | None = None,
-        stroke_opacity: float | None = None,
-        line_width: float = 1.0,
-        line_cap: int = 0,
-        line_join: int = 0,
-        dash_pattern: tuple[list[float], float] | None = None,
-        fill_rule: str = "nonzero",
-        blend_mode: str | None = None,
-        soft_mask_alpha: float | None = None,
-        raw_data: bytes | memoryview | None = None,
-        dictionary: dict[Any, Any] | None = None,
-        image_source: ImageSource | None = None,
-        image_clip: Rectangle | None = None,
-        kind: str = "fill",
-        items: list[DrawingItem] | None = None,
-        path: CapturedPath | None = None,
-        bbox: RectBox | None = None,
-        stream_order: int = 0,
-        xobject_depth: int = 0,
-    ) -> None:
-        self.seqno = seqno
-        self.fill = fill
-        self.fill_pattern = fill_pattern
-        self.fill_opacity = fill_opacity
-        self.stroke_color = stroke_color
-        self.stroke_pattern = stroke_pattern
-        self.stroke_opacity = stroke_opacity
-        self.line_width = line_width
-        self.line_cap = line_cap
-        self.line_join = line_join
-        self.dash_pattern = dash_pattern
-        self.fill_rule = fill_rule
-        self.blend_mode = blend_mode
-        self.soft_mask_alpha = soft_mask_alpha
-        self.raw_data = raw_data
-        self.dictionary = dictionary
-        self.image_source = image_source
-        self.image_clip = image_clip
-        self.kind = kind
-        self.items = items if items else internal_EMPTY_DRAWING_ITEMS
-        self.path = path
-        self.bbox = bbox
-        self.internal_rect_cache: RectBox | None = None
-        self.stream_order = stream_order
-        self.xobject_depth = xobject_depth
+    def __post_init__(self) -> None:
+        if not self.items:
+            self.items = internal_EMPTY_DRAWING_ITEMS
 
     def replace(self, **kwargs: Any) -> CapturedDrawing:
-        return CapturedDrawing(
-            seqno=kwargs.get("seqno", self.seqno),
-            fill=kwargs.get("fill", self.fill),
-            fill_pattern=kwargs.get("fill_pattern", self.fill_pattern),
-            fill_opacity=kwargs.get("fill_opacity", self.fill_opacity),
-            stroke_color=kwargs.get("stroke_color", self.stroke_color),
-            stroke_pattern=kwargs.get("stroke_pattern", self.stroke_pattern),
-            stroke_opacity=kwargs.get("stroke_opacity", self.stroke_opacity),
-            line_width=kwargs.get("line_width", self.line_width),
-            line_cap=kwargs.get("line_cap", self.line_cap),
-            line_join=kwargs.get("line_join", self.line_join),
-            dash_pattern=kwargs.get("dash_pattern", self.dash_pattern),
-            fill_rule=kwargs.get("fill_rule", self.fill_rule),
-            blend_mode=kwargs.get("blend_mode", self.blend_mode),
-            soft_mask_alpha=kwargs.get("soft_mask_alpha", self.soft_mask_alpha),
-            raw_data=kwargs.get("raw_data", self.raw_data),
-            dictionary=kwargs.get("dictionary", self.dictionary),
-            image_source=kwargs.get("image_source", self.image_source),
-            image_clip=kwargs.get("image_clip", self.image_clip),
-            kind=kwargs.get("kind", self.kind),
-            items=kwargs.get("items", self.items),
-            path=kwargs.get("path", self.path),
-            bbox=kwargs.get("bbox", self.bbox),
-            stream_order=kwargs.get("stream_order", self.stream_order),
-            xobject_depth=kwargs.get("xobject_depth", self.xobject_depth),
-        )
+        return dataclasses.replace(self, **kwargs)
 
     @property
     def rect(self) -> RectBox | None:
