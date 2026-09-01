@@ -13,7 +13,7 @@ from typing import Any, TypeAlias, cast
 from core_pdf import PdfDocument
 from core_pdf.impl.spec.s_07_content.operations import validate_inline_images
 from core_pdf.impl.spec.s_07_filters.errors import FilterParseError
-from core_pdf.impl.writing.incremental import find_startxref
+from core_pdf.impl.spec.s_07_syntax.xref import XRefScanner
 
 from ..pypdf import internal_validate_pypdf_page_tree
 from ._operator_text import OperatorTextProjection
@@ -132,7 +132,8 @@ def load_data(
     source_data = source_path.read_bytes()
     if b"startxref" not in source_data or b"%%EOF" not in source_data:
         raise ValueError("incomplete PDF cross-reference terminator")
-    find_startxref(source_data)
+    if XRefScanner.find_startxref(source_data) is None:
+        raise ValueError("PDF does not contain a startxref marker")
     with PdfDocument.open(source_data) as pdf:
         internal_validate_pypdf_page_tree(pdf)
         for page in pdf.pages:

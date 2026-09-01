@@ -1,17 +1,20 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Standard Security (RC4/MD5) key-derivation rituals shared by the read and
-write paths (PDF 32000 §7.6.3.3-7.6.3.4)."""
+"""Standard Security (RC4/MD5) reader key derivation (PDF 32000 §7.6.3.3-7.6.3.4)."""
 
 from __future__ import annotations
 
 from hashlib import md5
 
-from core_pdf.impl.spec.s_07_security.crypto_constants import PDF_PADDING
-from core_pdf.impl.spec.s_07_security.rc4 import CryptRC4
+from core_pdf.impl.spec.s_07_security.ciphers import internal_rc4_crypt
+
+PDF_PASSWORD_PADDING: bytes = (
+    b"\x28\xbf\x4e\x5e\x4e\x75\x8a\x41\x64\x00\x4e\x56\xff\xfa\x01\x08"
+    b"\x2e\x2e\x00\xb6\xd0\x68\x3e\x80\x2f\x0c\xa9\xfe\x64\x53\x69\x7a"
+)
 
 
 def pad_password(password: bytes) -> bytes:
-    return (password + PDF_PADDING)[:32]
+    return (password + PDF_PASSWORD_PADDING)[:32]
 
 
 def md5_50_rounds(digest: bytes, keep: int = 16) -> bytes:
@@ -28,8 +31,8 @@ def rc4_xor_cascade(key: bytes, data: bytes, indexes: range) -> bytes:
     decrypts (descending indexes).
     """
     for index in indexes:
-        data = CryptRC4(bytes(byte ^ index for byte in key)).encrypt(data)
+        data = internal_rc4_crypt(bytes(byte ^ index for byte in key), data)
     return data
 
 
-__all__ = ("md5_50_rounds", "pad_password", "rc4_xor_cascade")
+__all__ = ()

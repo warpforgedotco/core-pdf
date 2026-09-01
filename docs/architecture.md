@@ -105,7 +105,6 @@ src/core_pdf/
     parse/               extraction pipeline (see section 2)
     render/              display lists, raster kernels, targets, and page composition
     structured/          document IR and markdown/HTML/JSON/CSV/TEI serialization
-    writing/             PDF objects, fonts, encryption, signatures, and output
     page.py              PdfPage
     document.py          PdfDocument
 ```
@@ -123,7 +122,7 @@ the code disagree. Upper layers may depend on lower layers; lower layers must no
 The principal derived-processing order is:
 
 ```text
-document → page → parse → render → writing → structured → layout → model
+document → page → parse → render → structured → layout → model
 ```
 
 Three packages form dependency floors:

@@ -12,46 +12,59 @@ import pytest
 from core_pdf.impl.document import PdfDocument
 from core_pdf.impl.parse import ParsedPage
 from core_pdf.impl.parse import pipeline as parse_pipeline
-from core_pdf.impl.primitives import PdfName, PdfReference
+from core_pdf.impl.primitives import PdfName
 from core_pdf.impl.runtime.execution import ExecutionRuntime, RuntimeConfig, TaskScope, WorkStage
-from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
-from core_pdf.impl.writing import serialize_pdf_file
 
 TESTS_DIR = Path(__file__).parent / "fixtures"
 SAMPLE_PDF = TESTS_DIR / "SCORE-Bench" / "src" / "global-AIDS-strategy-p74-75-p001.pdf"
 PAGE_OCR_PDF = TESTS_DIR / "SCORE-Bench" / "src" / "SFG-Content-Marketing-2021-p001.pdf"
 
 
-def internal_many_page_pdf(page_count: int) -> bytes:
-    objects: dict[int, object] = {
-        1: {PdfName.of("Type"): PdfName.of("Catalog"), PdfName.of("Pages"): PdfReference(2)},
-        3: {
-            PdfName.of("Type"): PdfName.of("Font"),
-            PdfName.of("Subtype"): PdfName.of("Type1"),
-            PdfName.of("BaseFont"): PdfName.of("Helvetica"),
-        },
-    }
-    kids: list[PdfReference] = []
-    for page_index in range(page_count):
-        page_object = 4 + page_index * 2
-        content_object = page_object + 1
-        kids.append(PdfReference(page_object))
-        objects[page_object] = {
-            PdfName.of("Type"): PdfName.of("Page"),
-            PdfName.of("Parent"): PdfReference(2),
-            PdfName.of("MediaBox"): [0, 0, 612, 792],
-            PdfName.of("Resources"): {PdfName.of("Font"): {PdfName.of("F1"): PdfReference(3)}},
-            PdfName.of("Contents"): PdfReference(content_object),
-        }
-        objects[content_object] = PdfStream(
-            {}, f"BT /F1 10 Tf 36 750 Tm (Page {page_index}) Tj ET".encode()
+def internal_assemble_pdf(objects: list[bytes]) -> bytes:
+    output = bytearray(b"%PDF-1.7\n%\xe2\xe3\xcf\xd3\n")
+    offsets: list[int] = []
+    for number, value in enumerate(objects, 1):
+        offsets.append(len(output))
+        output.extend(f"{number} 0 obj\n".encode())
+        output.extend(value)
+        output.extend(b"\nendobj\n")
+    xref_offset = len(output)
+    output.extend(f"xref\n0 {len(objects) + 1}\n".encode())
+    output.extend(b"0000000000 65535 f \n")
+    for offset in offsets:
+        output.extend(f"{offset:010d} 00000 n \n".encode())
+    output.extend(
+        f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\n"
+        f"startxref\n{xref_offset}\n%%EOF\n".encode()
+    )
+    return bytes(output)
+
+
+def internal_text_pages_pdf(texts: tuple[str, ...]) -> bytes:
+    kids = " ".join(f"{4 + page_index * 2} 0 R" for page_index in range(len(texts)))
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        f"<< /Type /Pages /Kids [{kids}] /Count {len(texts)} >>".encode(),
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    ]
+    for page_index, text in enumerate(texts):
+        content_object = 5 + page_index * 2
+        content = f"BT /F1 10 Tf 36 750 Td ({text}) Tj ET".encode()
+        objects.extend(
+            (
+                (
+                    b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+                    b"/Resources << /Font << /F1 3 0 R >> >> /Contents "
+                    + f"{content_object} 0 R >>".encode()
+                ),
+                f"<< /Length {len(content)} >>\nstream\n".encode() + content + b"\nendstream",
+            )
         )
-    objects[2] = {
-        PdfName.of("Type"): PdfName.of("Pages"),
-        PdfName.of("Kids"): kids,
-        PdfName.of("Count"): page_count,
-    }
-    return serialize_pdf_file(objects, trailer={PdfName.of("Root"): PdfReference(1)})
+    return internal_assemble_pdf(objects)
+
+
+def internal_many_page_pdf(page_count: int) -> bytes:
+    return internal_text_pages_pdf(tuple(f"Page {page_index}" for page_index in range(page_count)))
 
 
 @pytest.mark.parametrize(
@@ -571,27 +584,8 @@ def test_concurrent_document_extracts_share_the_emitted_document() -> None:
 
 
 def internal_multi_page_pdf() -> bytes:
-    from core_pdf import serialize_document_to_pdf
-    from core_pdf.impl.structured import Block, BlockKind, Document, Page, TextLine
-
-    return serialize_document_to_pdf(
-        Document(
-            pages=tuple(
-                Page(
-                    page_number=page_number,
-                    width=300.0,
-                    height=400.0,
-                    blocks=(
-                        Block(
-                            page_number,
-                            BlockKind.PARAGRAPH,
-                            (TextLine(f"page {page_number} payload"),),
-                        ),
-                    ),
-                )
-                for page_number in range(1, 4)
-            )
-        )
+    return internal_text_pages_pdf(
+        tuple(f"page {page_number} payload" for page_number in range(1, 4))
     )
 
 

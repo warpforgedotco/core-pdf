@@ -4,18 +4,12 @@
 from __future__ import annotations
 
 import threading
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable
 from concurrent.futures import Future
 from contextlib import AbstractContextManager
-from io import BytesIO
-from os import PathLike
-from pathlib import Path
-from typing import TYPE_CHECKING, Any, BinaryIO, cast
+from typing import TYPE_CHECKING, Any, cast
 
-from core_pdf.impl.exceptions import (
-    PdfDocumentClosedError,
-    PdfUnsupportedError,
-)
+from core_pdf.impl.exceptions import PdfDocumentClosedError
 from core_pdf.impl.models import (
     ImageRecord,
     PageScoped,
@@ -29,13 +23,6 @@ from core_pdf.impl.structured.model import (
     Document as StructuredDocument,
 )
 from core_pdf.impl.types import PdfSource
-from core_pdf.impl.writing.encryption import StandardPdfEncryptionContext
-from core_pdf.impl.writing.incremental import (
-    append_incremental_update,
-    find_startxref,
-    previous_object_count,
-)
-from core_pdf.impl.writing.semantic import serialize_document_to_pdf
 
 # Claim process signal ownership when the public document class is imported on
 # the application's main thread. Parse submodules remain side-effect free.
@@ -43,7 +30,6 @@ internal_prepare_ocr_signals()
 
 if TYPE_CHECKING:
     from core_pdf.impl.page import PdfPage as PdfPage
-    from core_pdf.impl.spec.s_07_syntax.types import PdfObject
     from core_pdf.impl.spec.s_09_fonts.fallback import RasterFontProviderLike
 
 
@@ -70,12 +56,6 @@ class DocumentOperation(AbstractContextManager["DocumentOperation"]):
 
 class PdfDocument(SpecPdfDocument["PdfPage"]):
     """A thread-native PDF document backed by the v2 parse pipeline."""
-
-    @classmethod
-    def from_structured(cls, document: StructuredDocument) -> "PdfDocument":
-        """Create an engine document from the canonical structured representation."""
-        data = serialize_document_to_pdf(document)
-        return cls.open(BytesIO(data))
 
     def __init__(
         self,
@@ -119,44 +99,6 @@ class PdfDocument(SpecPdfDocument["PdfPage"]):
     def outlines(self) -> tuple[Any, ...]:
         """Return resolved outline entries owned by the engine."""
         return tuple(self.iter_outlines())
-
-    def save_incremental(
-        self,
-        target: str | PathLike[str] | BinaryIO,
-        objects: Mapping[int, PdfObject],
-        *,
-        trailer: Mapping[object, object] | None = None,
-    ) -> bytes:
-        """Append an incremental update and write it to ``target``."""
-        if self.closed:
-            raise PdfDocumentClosedError("PDF document is closed")
-        original = bytes(self.raw_data)
-        objects_to_write = objects
-        if self.decipher is not None:
-            handler = getattr(self.decipher, "__self__", None)
-            if handler is None:
-                raise PdfUnsupportedError("encrypted PDF security handler is unavailable")
-            try:
-                context = StandardPdfEncryptionContext.from_security_handler(handler)
-            except ValueError as exc:
-                raise PdfUnsupportedError(str(exc)) from exc
-            objects_to_write = {
-                number: cast(Any, context.encrypt_object(value, number))
-                for number, value in objects.items()
-            }
-        base_trailer = cast(Mapping[object, object], self.trailer_dict)
-        updated = append_incremental_update(
-            original,
-            objects_to_write,
-            trailer={**base_trailer, **dict(trailer or {})},
-            previous_xref_offset=find_startxref(original),
-            previous_size=previous_object_count(self.xref, base_trailer),
-        )
-        if isinstance(target, (str, PathLike)):
-            Path(cast(str | PathLike[str], target)).write_bytes(updated)
-        else:
-            target.write(updated)
-        return updated
 
     def _scoped_records(
         self,

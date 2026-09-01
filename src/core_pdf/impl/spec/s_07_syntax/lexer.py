@@ -10,7 +10,7 @@ import re
 from collections.abc import Callable
 from typing import Any
 
-from core_pdf.impl.exceptions import PdfParseError
+from core_pdf.impl.exceptions import PdfParseError, internal_InvalidCipherPaddingError
 from core_pdf.impl.primitives import (
     PdfName,
     PdfReference,
@@ -408,10 +408,8 @@ class PdfLexer:
                 self.current_obj_num, self.current_gen_num or 0, value, dictionary
             )
             return deciphered.tobytes() if type(deciphered) is memoryview else deciphered
-        except ValueError as exc:
-            if str(exc) == "Invalid PKCS7 padding":
-                return value
-            raise
+        except internal_InvalidCipherPaddingError:
+            return value
 
     def parse_object(self) -> Any:
         self.pos = self.skip_ignored_at(self.pos)

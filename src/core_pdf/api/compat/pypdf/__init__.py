@@ -2,26 +2,22 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from io import BytesIO
 from os import PathLike
-from typing import Any, BinaryIO, cast
+from typing import Any, cast
 
 from core_pdf import PdfDocument
-from core_pdf.api.compat._shared import ClosingMixin, coerce_bbox, write_bytes
+from core_pdf.api.compat._shared import ClosingMixin, coerce_bbox
 from core_pdf.api.compat.pypdf._text import extract_legacy_text
 from core_pdf.impl.exceptions import PdfUnsupportedError
 from core_pdf.impl.primitives import PdfReference
 from core_pdf.impl.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 from core_pdf.impl.structured import (
-    Annotation,
     Document,
-    Link,
     Page,
 )
-from core_pdf.impl.writing.encryption import StandardPdfEncryption
-from core_pdf.impl.writing.semantic import serialize_document_to_pdf
 
 PdfInput = str | PathLike[str] | bytes | bytearray | BytesIO
 
@@ -63,7 +59,6 @@ class StructuredState(ClosingMixin):
     def __init__(self, pdf: PdfDocument | None, structured: Document | None = None) -> None:
         self.pdf = pdf
         self._structured = structured
-        self.internal_projection: PdfDocument | None = None
 
     @property
     def structured(self) -> Document:
@@ -83,11 +78,6 @@ class StructuredState(ClosingMixin):
             pdf.close()
             raise
         return cls(pdf)
-
-    @classmethod
-    def from_structured(cls, structured: Document) -> "StructuredState":
-        pdf = PdfDocument.from_structured(structured)
-        return cls(pdf, pdf.structured_document)
 
     @classmethod
     def synthetic(cls, structured: Document) -> "StructuredState":
@@ -112,11 +102,9 @@ class StructuredState(ClosingMixin):
         return tuple(field for page in self.pages for field in page.form_fields)
 
     def capability_document(self) -> PdfDocument:
-        if self.pdf is not None and self.structured is self.pdf.structured_document:
-            return self.pdf
-        if self.internal_projection is None:
-            self.internal_projection = PdfDocument.from_structured(self.structured)
-        return self.internal_projection
+        if self.pdf is None:
+            raise PdfUnsupportedError("synthetic snapshots do not have PDF capabilities")
+        return self.pdf
 
     def capability_page(self, page_number: int) -> Any:
         return self.capability_document().pages[page_number - 1]
@@ -164,24 +152,7 @@ class StructuredState(ClosingMixin):
             )
         )
 
-    def write_redacted(
-        self,
-        target: str | PathLike[str] | BinaryIO,
-        *,
-        outlines: Sequence[Sequence[object]] | None = None,
-        attachments: Mapping[str, bytes] | None = None,
-    ) -> bytes:
-        data = serialize_document_to_pdf(
-            self.apply_redactions().structured,
-            outlines=outlines,
-            attachments=attachments,
-        )
-        write_bytes(target, data)
-        return data
-
     def close(self) -> None:
-        if self.internal_projection is not None:
-            self.internal_projection.close()
         if self.pdf is not None:
             self.pdf.close()
 
@@ -490,274 +461,9 @@ class PdfReader(ClosingMixin):
         return True
 
 
-class PdfWriter:
-    """Writer for structured pages and pages copied from ``PdfReader``."""
-
-    def __init__(self) -> None:
-        self._pages: list[Page] = []
-        self.metadata: dict[str, Any] = {}
-        self.attachments: dict[str, bytes] = {}
-        self._outlines: list[list[object]] = []
-        self._encryption: StandardPdfEncryption | None = None
-
-    @property
-    def pages(self) -> tuple[PdfPageObject, ...]:
-        return tuple(
-            PdfPageObject(StructuredState.synthetic(Document(pages=(page,))), page)
-            for page in self._pages
-        )
-
-    def add_page(self, page: PdfPageObject | Page) -> PdfPageObject:
-        value = page._page if isinstance(page, PdfPageObject) else page
-        self._pages.append(value)
-        return PdfPageObject(StructuredState.synthetic(Document(pages=(value,))), value)
-
-    def add_blank_page(self, width: float = 612.0, height: float = 792.0) -> PdfPageObject:
-        page = Page(page_number=len(self._pages) + 1, width=width, height=height)
-        self._pages.append(page)
-        return PdfPageObject(StructuredState.synthetic(Document(pages=(page,))), page)
-
-    def append_pages_from_reader(self, reader: PdfReader) -> None:
-        self._pages.extend(reader_page._page for reader_page in reader.pages)
-
-    def clone_document_from_reader(self, reader: PdfReader) -> None:
-        self._pages.clear()
-        self.append_pages_from_reader(reader)
-        self.metadata.update(reader.metadata)
-        self._outlines = [
-            [destination.level + 1, destination.title, destination.page + 1]
-            for destination in reader.outline
-            if destination.page is not None
-        ]
-
-    def insert_page(self, page: PdfPageObject | Page, index: int = 0) -> None:
-        value = page._page if isinstance(page, PdfPageObject) else page
-        self._pages.insert(index, value)
-
-    def add_metadata(self, metadata: dict[str, Any]) -> None:
-        self.metadata.update(metadata)
-
-    def add_outline_item(
-        self,
-        title: str,
-        page_number: int | PdfPageObject = 0,
-        parent: Destination | None = None,
-        **kwargs: object,
-    ) -> Destination:
-        del kwargs
-        page = (
-            page_number._page.page_number - 1
-            if isinstance(page_number, PdfPageObject)
-            else page_number
-        )
-        if page < 0 or page >= len(self._pages):
-            raise IndexError("outline page is out of range")
-        level = parent.level + 2 if parent is not None else 1
-        destination = Destination(title, page, level - 1)
-        self._outlines.append([level, title, page + 1])
-        return destination
-
-    add_bookmark = add_outline_item
-
-    def add_attachment(self, filename: str, data: bytes) -> None:
-        self.attachments[filename] = bytes(data)
-
-    def add_uri(
-        self,
-        page_number: int,
-        uri: str,
-        rect: tuple[float, float, float, float],
-        border: object | None = None,
-    ) -> None:
-        del border
-        page = self._pages[page_number]
-        self._pages[page_number] = replace(
-            page,
-            links=(
-                *page.links,
-                Link(
-                    bbox=coerce_bbox(rect),
-                    url=uri,
-                    link_type="uri",
-                ),
-            ),
-        )
-
-    add_link = add_uri
-
-    def add_annotation(self, page_number: int, annotation: dict[str, object]) -> None:
-        def value(name: str, default: object = None) -> object:
-            return annotation.get(name, annotation.get(f"/{name}", default))
-
-        rect = cast(tuple[float, float, float, float], value("Rect", (0, 0, 0, 0)))
-        action = value("A")
-        if isinstance(action, dict):
-            uri = action.get("URI", action.get("/URI"))
-            if uri is not None:
-                self.add_uri(page_number, str(uri), rect)
-                return
-        subtype = str(value("Subtype", "Text")).lstrip("/")
-        page = self._pages[page_number]
-        self._pages[page_number] = replace(
-            page,
-            annotations=(
-                *page.annotations,
-                Annotation(subtype=subtype, bbox=rect, contents=str(value("Contents", ""))),
-            ),
-        )
-
-    def update_page_form_field_values(
-        self,
-        page: PdfPageObject | Page,
-        fields: dict[str, object],
-        auto_regenerate: bool = True,
-    ) -> None:
-        del auto_regenerate
-        value = page._page if isinstance(page, PdfPageObject) else page
-        updated_fields = tuple(
-            replace(field, value_text=str(fields[field.name])) if field.name in fields else field
-            for field in value.form_fields
-        )
-        updated_page = replace(value, form_fields=updated_fields)
-        try:
-            index = self._pages.index(value)
-        except ValueError as exc:
-            raise ValueError("page is not owned by this writer") from exc
-        self._pages[index] = updated_page
-
-    def encrypt(self, user_password: str, owner_password: str | None = None, **_: object) -> None:
-        self._encryption = StandardPdfEncryption(user_password, owner_password)
-
-    def write(self, stream: str | PathLike[str] | BinaryIO) -> bytes:
-        data = serialize_document_to_pdf(
-            Document(pages=tuple(self._pages), metadata=self.metadata),
-            outlines=self._outlines,
-            attachments=self.attachments,
-            encryption=self._encryption,
-        )
-        write_bytes(stream, data)
-        return data
-
-    def close(self) -> None:
-        return None
-
-
-class PdfMerger:
-    def __init__(self) -> None:
-        self._documents: list[StructuredState] = []
-        self.metadata: dict[str, Any] = {}
-        self.attachments: dict[str, bytes] = {}
-        self._outlines: list[list[object]] = []
-
-    def add_metadata(self, metadata: dict[str, Any]) -> None:
-        self.metadata.update(metadata)
-
-    def add_attachment(self, filename: str, data: bytes) -> None:
-        self.attachments[str(filename)] = bytes(data)
-
-    def _shift_outlines(self, start_page: int, delta: int) -> None:
-        for row in self._outlines:
-            if len(row) >= 3 and isinstance(row[2], int) and row[2] > start_page:
-                row[2] += delta
-
-    def _ingest(self, document: StructuredState, page_offset: int, *, outlines: bool) -> None:
-        """Merge one source's metadata, attachments, and optionally outlines."""
-        self.metadata.update(document.metadata)
-        raw_metadata = document.source_pdf.get_metadata().get("info", {})
-        if isinstance(raw_metadata, dict):
-            self.metadata.update(raw_metadata)
-        for embedded in document.source_pdf.embedded_files():
-            self.attachments[embedded.filename] = embedded.data
-        if outlines:
-            self._outlines.extend(
-                [item.level + 1, item.title, item.page_index + page_offset + 1]
-                for item in document.source_pdf.iter_outlines()
-                if item.page_index is not None
-            )
-
-    def append(self, fileobj: PdfInput, pages: Iterable[int] | None = None) -> None:
-        document = StructuredState.open(fileobj)
-        page_offset = sum(len(item.pages) for item in self._documents)
-        self._ingest(document, page_offset, outlines=pages is None)
-        if pages is not None:
-            selected = tuple(document.pages[index] for index in pages)
-            document = StructuredState(
-                document.pdf,
-                Document(pages=selected, metadata=document.structured.metadata),
-            )
-        self._documents.append(document)
-
-    def merge(self, page_number: int, fileobj: PdfInput) -> None:
-        document = StructuredState.open(fileobj)
-        total_pages = sum(len(item.pages) for item in self._documents)
-        page_offset = min(
-            max(page_number if page_number >= 0 else total_pages + page_number, 0), total_pages
-        )
-        self._shift_outlines(page_offset, len(document.pages))
-        self._ingest(document, page_offset, outlines=True)
-        merged: list[StructuredState] = []
-        pages_before = 0
-        inserted = False
-        for item in self._documents:
-            item_end = pages_before + len(item.pages)
-            if not inserted and page_offset <= item_end:
-                split_at = page_offset - pages_before
-                if split_at:
-                    merged.append(item.replace_pages(item.pages[:split_at]))
-                merged.append(document)
-                if split_at < len(item.pages):
-                    merged.append(item.replace_pages(item.pages[split_at:]))
-                inserted = True
-            else:
-                merged.append(item)
-            pages_before = item_end
-        if not inserted:
-            merged.append(document)
-        self._documents = merged
-
-    def write(self, stream: str | PathLike[str] | BinaryIO) -> bytes:
-        return PdfWriterFromDocuments(
-            self._documents,
-            metadata=self.metadata,
-            attachments=self.attachments,
-            outlines=self._outlines,
-        ).write(stream)
-
-    def close(self) -> None:
-        for document in self._documents:
-            document.close()
-
-
-class PdfWriterFromDocuments:
-    def __init__(
-        self,
-        documents: Iterable[StructuredState],
-        *,
-        metadata: dict[str, Any] | None = None,
-        attachments: dict[str, bytes] | None = None,
-        outlines: list[list[object]] | None = None,
-    ) -> None:
-        self.documents = tuple(documents)
-        self.metadata = metadata or {}
-        self.attachments = attachments or {}
-        self.outlines = outlines or []
-
-    def write(self, stream: str | PathLike[str] | BinaryIO) -> bytes:
-        pages = tuple(page for document in self.documents for page in document.pages)
-        data = serialize_document_to_pdf(
-            Document(pages=pages, metadata=self.metadata),
-            attachments=self.attachments,
-            outlines=self.outlines,
-        )
-        write_bytes(stream, data)
-        return data
-
-
 __all__ = (
     "Destination",
-    "PdfMerger",
     "PdfPageObject",
     "PdfReader",
-    "PdfWriter",
     "Rectangle",
 )

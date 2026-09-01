@@ -2,7 +2,7 @@
 
 Core-pdf is intended to be the all-in-one, local PDF engine: one composable system for
 opening, parsing, extracting, searching, rendering, analyzing, validating, transforming,
-writing, and inspecting PDF documents.
+and inspecting PDF documents.
 
 ## 1. Source-level secure transformations
 

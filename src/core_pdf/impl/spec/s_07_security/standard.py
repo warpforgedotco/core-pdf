@@ -3,20 +3,21 @@ from __future__ import annotations
 
 import struct
 from hashlib import md5
+from hmac import compare_digest
 from typing import Sequence
 
 from core_pdf.impl.primitives import MISSING
-from core_pdf.impl.spec.s_07_security.crypto_constants import PDF_PADDING
+from core_pdf.impl.spec.s_07_security.ciphers import internal_rc4_crypt
 from core_pdf.impl.spec.s_07_security.errors import (
     PDFEncryptionError,
     PDFPasswordIncorrect,
 )
 from core_pdf.impl.spec.s_07_security.key_derivation import (
+    PDF_PASSWORD_PADDING,
     md5_50_rounds,
     pad_password,
     rc4_xor_cascade,
 )
-from core_pdf.impl.spec.s_07_security.rc4 import CryptRC4
 from core_pdf.impl.spec.s_07_security.values import get_int, get_uint
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import coerce_to_bytes
@@ -76,6 +77,10 @@ class PdfStandardSecurityHandler:
             self.length = get_int(raw_length)
         else:
             self.length = 40
+        if self.v <= 3 and self.length not in (40, 128):
+            raise PDFEncryptionError(
+                f"unsupported legacy RC4 key length for the cryptography backend: {self.length}"
+            )
 
     def init_key(self) -> None:
         self.key = self.authenticate(self.password)
@@ -84,13 +89,13 @@ class PdfStandardSecurityHandler:
 
     def compute_u(self, key: bytes) -> bytes:
         if self.r == 2:
-            return CryptRC4(key).encrypt(PDF_PADDING)
+            return internal_rc4_crypt(key, PDF_PASSWORD_PADDING)
         else:
-            h = md5(PDF_PADDING)
+            h = md5(PDF_PASSWORD_PADDING)
             docid_list = self.docid
             first_id = coerce_to_bytes(docid_list[0]) if docid_list and len(docid_list) > 0 else b""
             h.update(first_id)
-            result = CryptRC4(key).encrypt(h.digest())
+            result = internal_rc4_crypt(key, h.digest())
             result = rc4_xor_cascade(key, result, range(1, 20))
             result += result
             return result
@@ -127,8 +132,8 @@ class PdfStandardSecurityHandler:
     def verify_encryption_key(self, key: bytes) -> bool:
         u = self.compute_u(key)
         if self.r == 2:
-            return u == self.u
-        return u[:16] == self.u[:16]
+            return compare_digest(u, self.u)
+        return compare_digest(u[:16], self.u[:16])
 
     def authenticate_owner_password(self, password: bytes) -> bytes | None:
         digest = md5(pad_password(password)).digest()
@@ -138,7 +143,7 @@ class PdfStandardSecurityHandler:
             n = self.length // 8
         key = digest[:n]
         if self.r == 2:
-            user_password = CryptRC4(key).decrypt(self.o)
+            user_password = internal_rc4_crypt(key, self.o)
         else:
             user_password = rc4_xor_cascade(key, self.o, range(19, -1, -1))
         return self.authenticate_user_password(user_password)
@@ -158,4 +163,4 @@ class PdfStandardSecurityHandler:
         return md5(key).digest()[: min(len(key), 16)]
 
     def decrypt_rc4(self, objid: int, genno: int, data: bytes) -> bytes:
-        return CryptRC4(self.object_key(objid, genno)).decrypt(data)
+        return internal_rc4_crypt(self.object_key(objid, genno), data)

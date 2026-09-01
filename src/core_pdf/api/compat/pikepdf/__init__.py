@@ -6,13 +6,12 @@ import re
 from collections.abc import Iterable, Iterator, MutableMapping, MutableSequence
 from decimal import Decimal
 from os import PathLike
-from typing import Any, BinaryIO, cast, overload
+from typing import Any, cast, overload
 
 from core_pdf import PdfDocument
 from core_pdf.api.compat.pypdf import (
     PdfPageObject,
     PdfReader,
-    PdfWriter,
     StructuredState,
 )
 from core_pdf.impl.exceptions import PdfParseError, PdfUnsupportedError
@@ -419,29 +418,6 @@ class Pdf(PdfReader):
     @property
     def is_linearized(self) -> bool:
         return False
-
-    def save(self, filename: object, **kwargs: object) -> bytes:
-        del kwargs
-        writer = PdfWriter()
-        for page in self.pages:
-            writer.add_page(page)
-        writer.add_metadata(self.metadata)
-        parents: dict[int, object] = {}
-        for row in self._outlines:
-            if len(row) < 3 or not isinstance(row[0], int) or not isinstance(row[2], int):
-                continue
-            level = max(1, row[0])
-            parent = parents.get(level - 1)
-            destination = writer.add_outline_item(
-                str(row[1]), row[2] - 1, parent=cast(Any, parent) if parent is not None else None
-            )
-            parents[level] = destination
-            for deeper in tuple(parents):
-                if deeper > level:
-                    del parents[deeper]
-        for attachment_name, data in self.attachments.items():
-            writer.add_attachment(attachment_name, data)
-        return writer.write(cast(str | PathLike[str] | BinaryIO, filename))
 
     @property
     def attachments(self) -> Attachments:

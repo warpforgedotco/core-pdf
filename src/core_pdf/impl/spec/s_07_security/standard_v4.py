@@ -6,7 +6,7 @@ from typing import Callable, cast
 from core_pdf.impl.exceptions import PdfParseError, PdfUnsupportedError
 from core_pdf.impl.primitives import MISSING
 from core_pdf.impl.spec.s_07_filters.decode_spec import normalize_stream_decode_spec
-from core_pdf.impl.spec.s_07_security.aes import AES
+from core_pdf.impl.spec.s_07_security.ciphers import internal_aes_cbc_decrypt
 from core_pdf.impl.spec.s_07_security.errors import PDFEncryptionError
 from core_pdf.impl.spec.s_07_security.standard import PdfStandardSecurityHandler
 from core_pdf.impl.spec.s_07_security.values import get_name
@@ -114,5 +114,9 @@ class PdfStandardSecurityHandlerV4(PdfStandardSecurityHandler):
         key = self.object_key(objid, genno, b"sAlT")
         initialization_vector = data[:16]
         ciphertext = data[16:]
-        cipher = AES(key)
-        return cipher.decrypt_cbc(initialization_vector, ciphertext, padding=True)
+        return internal_aes_cbc_decrypt(
+            key,
+            initialization_vector,
+            ciphertext,
+            use_padding=True,
+        )

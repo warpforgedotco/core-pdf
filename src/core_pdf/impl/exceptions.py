@@ -28,3 +28,7 @@ class PdfRasterTooLargeError(PdfError, ValueError):
 
 class PdfDocumentClosedError(PdfError, ValueError):
     """Raised when an operation is attempted on a closed document."""
+
+
+class internal_InvalidCipherPaddingError(ValueError):
+    pass

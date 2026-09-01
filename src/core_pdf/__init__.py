@@ -47,27 +47,10 @@ if TYPE_CHECKING:
         TextDiagnostics,
         TextView,
     )
-    from core_pdf.impl.writing.encryption import StandardPdfEncryption
-    from core_pdf.impl.writing.fonts import (
-        PdfFontProvider,
-        StandardType1FontProvider,
-        TrueTypeFontProvider,
-    )
-    from core_pdf.impl.writing.semantic import serialize_document_to_pdf
-    from core_pdf.impl.writing.signatures import (
-        PdfSignaturePlan,
-        PdfSignatureProvider,
-    )
-
 internal_EXPORTS = {
     "Document": ("core_pdf.impl.structured.model", "Document"),
     "PageSelection": ("core_pdf.impl.pages", "PageSelection"),
     "PdfDocument": ("core_pdf.impl.document", "PdfDocument"),
-    "serialize_document_to_pdf": (
-        "core_pdf.impl.writing.semantic",
-        "serialize_document_to_pdf",
-    ),
-    "PdfFontProvider": ("core_pdf.impl.writing.fonts", "PdfFontProvider"),
     "PdfRasterFontFace": (
         "core_pdf.impl.spec.s_09_fonts.fallback",
         "PdfRasterFontFace",
@@ -79,26 +62,6 @@ internal_EXPORTS = {
     "PdfRasterFontRequest": (
         "core_pdf.impl.spec.s_09_fonts.fallback",
         "PdfRasterFontRequest",
-    ),
-    "PdfSignaturePlan": (
-        "core_pdf.impl.writing.signatures",
-        "PdfSignaturePlan",
-    ),
-    "PdfSignatureProvider": (
-        "core_pdf.impl.writing.signatures",
-        "PdfSignatureProvider",
-    ),
-    "StandardPdfEncryption": (
-        "core_pdf.impl.writing.encryption",
-        "StandardPdfEncryption",
-    ),
-    "StandardType1FontProvider": (
-        "core_pdf.impl.writing.fonts",
-        "StandardType1FontProvider",
-    ),
-    "TrueTypeFontProvider": (
-        "core_pdf.impl.writing.fonts",
-        "TrueTypeFontProvider",
     ),
     "PdfError": ("core_pdf.impl.exceptions", "PdfError"),
     "PdfContractError": ("core_pdf.impl.exceptions", "PdfContractError"),
@@ -184,16 +147,9 @@ __all__ = (
     "PdfRasterTooLargeError",
     "PdfSourceError",
     "PdfUnsupportedError",
-    "serialize_document_to_pdf",
-    "PdfFontProvider",
     "PdfRasterFontFace",
     "PdfRasterFontProvider",
     "PdfRasterFontRequest",
-    "PdfSignaturePlan",
-    "PdfSignatureProvider",
-    "StandardPdfEncryption",
-    "StandardType1FontProvider",
-    "TrueTypeFontProvider",
     "configure_runtime",
     "RuntimeConfig",
     "RuntimeMetrics",

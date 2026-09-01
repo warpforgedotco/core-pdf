@@ -1,40 +1,97 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
-from core_pdf.impl.spec.s_07_security.aes import AES
-from core_pdf.impl.spec.s_07_security.rc4 import CryptRC4
+from core_pdf import PdfDocument
+from core_pdf.impl.exceptions import PdfUnsupportedError
+from core_pdf.impl.spec.s_07_security.ciphers import (
+    internal_aes_cbc_decrypt,
+    internal_aes_cbc_encrypt,
+    internal_rc4_crypt,
+)
 from core_pdf.impl.spec.s_07_security.saslprep import saslprep
 
-
-@pytest.mark.parametrize(
-    ("key", "expected"),
-    [
-        (
-            "000102030405060708090a0b0c0d0e0f",
-            "69c4e0d86a7b0430d8cdb78070b4c55a",
-        ),
-        (
-            "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
-            "8ea2b7ca516745bfeafc49904b496089",
-        ),
-    ],
+ENCRYPTION_FIXTURES = (
+    Path(__file__).parents[5] / "fixtures" / "pdfminer.six" / "samples" / "encryption"
 )
-def test_aes_block_known_vectors(key: str, expected: str) -> None:
-    cipher = AES(bytes.fromhex(key))
-    plaintext = bytes.fromhex("00112233445566778899aabbccddeeff")
-    encrypted = cipher.encrypt_block(plaintext)
 
-    assert encrypted.hex() == expected
-    assert cipher.decrypt_block(encrypted) == plaintext
+
+def test_aes_cbc_known_vector() -> None:
+    key = bytes.fromhex("2b7e151628aed2a6abf7158809cf4f3c")
+    initialization_vector = bytes.fromhex("000102030405060708090a0b0c0d0e0f")
+    plaintext = bytes.fromhex("6bc1bee22e409f96e93d7e117393172a")
+    expected = bytes.fromhex("7649abac8119b246cee98e9b12e9197d")
+
+    encrypted = internal_aes_cbc_encrypt(
+        key,
+        initialization_vector,
+        plaintext,
+        use_padding=False,
+    )
+
+    assert encrypted == expected
+    assert (
+        internal_aes_cbc_decrypt(
+            key,
+            initialization_vector,
+            encrypted,
+            use_padding=False,
+        )
+        == plaintext
+    )
+
+
+def test_aes_cbc_pkcs7_padding_round_trip() -> None:
+    key = bytes(32)
+    initialization_vector = bytes(range(16))
+    plaintext = b"not aligned to an AES block"
+    encrypted = internal_aes_cbc_encrypt(
+        key,
+        initialization_vector,
+        plaintext,
+        use_padding=True,
+    )
+
+    assert (
+        internal_aes_cbc_decrypt(
+            key,
+            initialization_vector,
+            encrypted,
+            use_padding=True,
+        )
+        == plaintext
+    )
 
 
 def test_rc4_known_vector() -> None:
-    cipher = CryptRC4(b"Key")
-    encrypted = cipher.encrypt(b"Plaintext")
+    key = bytes.fromhex("0102030405")
+    plaintext = bytes(16)
+    encrypted = internal_rc4_crypt(key, plaintext)
 
-    assert encrypted.hex() == "bbf316e8d940af0ad3"
-    assert cipher.decrypt(encrypted) == b"Plaintext"
+    assert encrypted.hex() == "b2396305f03dc027ccc3524a0a1118a8"
+    assert internal_rc4_crypt(key, encrypted) == plaintext
+
+
+@pytest.mark.parametrize(
+    ("filename", "password", "expected"),
+    [
+        ("rc4-40.pdf", "foo", "Secret!"),
+        ("rc4-128.pdf", "foo", "Secret!"),
+        ("aes-128.pdf", "foo", "Secret!"),
+        ("aes-256.pdf", "foo", "Secret!"),
+        ("aes-256-r6.pdf", "usersecret", "Hello World"),
+    ],
+)
+def test_encrypted_pdf_fixture_opens(filename: str, password: str, expected: str) -> None:
+    with PdfDocument.open(ENCRYPTION_FIXTURES / filename, password=password) as document:
+        assert document.pages[0].extract().text == expected
+
+
+def test_encrypted_pdf_rejects_incorrect_password() -> None:
+    with pytest.raises(PdfUnsupportedError, match="Incorrect password"):
+        PdfDocument.open(ENCRYPTION_FIXTURES / "aes-256-r6.pdf", password="wrong")
 
 
 @pytest.mark.parametrize(
