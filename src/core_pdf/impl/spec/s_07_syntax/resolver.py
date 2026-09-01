@@ -8,7 +8,7 @@ import mmap
 import threading
 from typing import cast
 
-from core_pdf.impl.exceptions import PdfParseError
+from core_pdf.impl.exceptions import PdfDecryptionError, PdfParseError
 from core_pdf.impl.primitives import MISSING, PdfName, PdfReference, PdfString
 from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.spec.s_07_syntax.objects import PdfObjectStream
@@ -444,6 +444,8 @@ class ObjectResolver:
                 lexer.rewind(entry.offset)
                 try:
                     resolved = lexer.parse_indirect_object()
+                except PdfDecryptionError:
+                    raise
                 except Exception:
                     resolved = self.recover_indirect_object(lexer, entry.offset)
                 finally:
@@ -516,6 +518,8 @@ class ObjectResolver:
             lexer.rewind(offset)
             try:
                 return lexer.parse_indirect_object()
+            except PdfDecryptionError:
+                raise
             except Exception:
                 continue
         return None

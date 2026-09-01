@@ -14,6 +14,10 @@ class PdfParseError(PdfError):
     pass
 
 
+class PdfDecryptionError(PdfError):
+    """Raised when encrypted PDF data fails format-mandated decryption validation."""
+
+
 class PdfUnsupportedError(PdfError):
     pass
 
@@ -28,7 +32,3 @@ class PdfRasterTooLargeError(PdfError, ValueError):
 
 class PdfDocumentClosedError(PdfError, ValueError):
     """Raised when an operation is attempted on a closed document."""
-
-
-class internal_InvalidCipherPaddingError(ValueError):
-    pass

@@ -13,12 +13,13 @@ from hmac import compare_digest
 from types import MappingProxyType
 from typing import Literal, cast
 
-from core_pdf.impl.exceptions import PdfParseError, PdfUnsupportedError
+from core_pdf.impl.exceptions import PdfDecryptionError, PdfParseError, PdfUnsupportedError
 from core_pdf.impl.primitives import MISSING
 from core_pdf.impl.spec.s_07_filters.decode_spec import normalize_stream_decode_spec
 from core_pdf.impl.spec.s_07_security.ciphers import (
     internal_aes_cbc_decrypt,
     internal_aes_cbc_encrypt,
+    internal_aes_ecb_decrypt,
     internal_rc4_crypt,
 )
 from core_pdf.impl.spec.s_07_syntax.types import Decipher, PdfDict
@@ -64,6 +65,7 @@ class internal_StandardSecurityConfig:
     crypt_filters: Mapping[str, internal_CryptMethod]
     owner_encrypted_key: bytes
     user_encrypted_key: bytes
+    encrypted_permissions: bytes
 
 
 @dataclass(frozen=True, slots=True)
@@ -159,6 +161,8 @@ def create_standard_decipher(
     file_key = internal_authenticate(config, password)
     if file_key is None:
         raise PdfUnsupportedError("Incorrect password")
+    if config.revision >= 5 and not internal_validate_permissions(config, file_key):
+        raise PdfDecryptionError("Invalid encryption permissions")
     return internal_StandardSecurityHandler(config, file_key).decrypt
 
 
@@ -176,11 +180,23 @@ def internal_parse_config(
     if raw_permissions is MISSING or raw_permissions is None:
         raise ValueError("missing encryption permissions")
     permissions = internal_parse_int(raw_permissions, "P")
+    # ISO 32000-1:2008, 7.6.3.2 and ISO 32000-2:2020, 7.6.4.2
+    # define P as an unsigned 32-bit flag word, even though PDF integer syntax
+    # commonly represents it as a negative signed value.
+    if not -(1 << 31) <= permissions <= (1 << 32) - 1:
+        raise ValueError("encryption permissions are outside the 32-bit range")
     if permissions < 0:
         permissions += 1 << 32
 
-    owner_entry = coerce_to_bytes(params.get("O"))
-    user_entry = coerce_to_bytes(params.get("U"))
+    # Entry sizes come from these version-specific definitions:
+    # - ISO 32000-1:2008, Table 21: O/U are 32 bytes through revision 4.
+    # - Adobe Supplement to ISO 32000, BaseVersion 1.7, ExtensionLevel 3,
+    #   June 2008, Table 3.19: R5 uses 48-byte O/U, 32-byte OE/UE, and
+    #   a 16-byte Perms entry.
+    # - ISO 32000-2:2020, Table 21 and 7.6.4.3.3: the same sizes apply to R6.
+    entry_length = 32 if revision <= 4 else 48
+    owner_entry = internal_required_bytes(params, "O", entry_length)
+    user_entry = internal_required_bytes(params, "U", entry_length)
     first_document_id = coerce_to_bytes(document_id[0]) if document_id else b""
 
     raw_length = params.get("Length", MISSING)
@@ -196,6 +212,7 @@ def internal_parse_config(
     crypt_filters: Mapping[str, internal_CryptMethod] = MappingProxyType({})
     owner_encrypted_key = b""
     user_encrypted_key = b""
+    encrypted_permissions = b""
 
     if version >= 4:
         length_bits = 128 if version == 4 else 256
@@ -203,8 +220,9 @@ def internal_parse_config(
             internal_parse_crypt_filters(params, version)
         )
     if version >= 5:
-        owner_encrypted_key = coerce_to_bytes(params.get("OE"))
-        user_encrypted_key = coerce_to_bytes(params.get("UE"))
+        owner_encrypted_key = internal_required_bytes(params, "OE", 32)
+        user_encrypted_key = internal_required_bytes(params, "UE", 32)
+        encrypted_permissions = internal_required_bytes(params, "Perms", 16)
 
     return internal_StandardSecurityConfig(
         version=version,
@@ -220,6 +238,7 @@ def internal_parse_config(
         crypt_filters=crypt_filters,
         owner_encrypted_key=owner_encrypted_key,
         user_encrypted_key=user_encrypted_key,
+        encrypted_permissions=encrypted_permissions,
     )
 
 
@@ -458,6 +477,22 @@ def internal_authenticate_modern(
     return None
 
 
+def internal_validate_permissions(
+    config: internal_StandardSecurityConfig,
+    file_key: bytes,
+) -> bool:
+    # The decrypted Perms block binds the file key to P (little-endian),
+    # EncryptMetadata, and the fixed markers FF FF FF FF and "adb"; its final
+    # four bytes are random. Sources: Adobe Supplement to ISO 32000,
+    # BaseVersion 1.7, ExtensionLevel 3, June 2008, Algorithms 3.10 and 3.13
+    # (R5); ISO 32000-2:2020, 7.6.4.4.9 Algorithm 10 and 7.6.4.4.12
+    # Algorithm 13 (R6).
+    decrypted = internal_aes_ecb_decrypt(file_key, config.encrypted_permissions)
+    metadata_flag = b"T" if config.encrypt_metadata else b"F"
+    expected = struct.pack("<L", config.permissions) + (b"\xff" * 4) + metadata_flag + b"adb"
+    return compare_digest(decrypted[:12], expected)
+
+
 def internal_normalize_password(password: str, revision: int) -> bytes:
     if revision == 6 and password:
         password = internal_saslprep(password)
@@ -552,6 +587,19 @@ def internal_required_int(params: PdfDict, key: str) -> int:
     if raw_value is None:
         raise ValueError(f"missing encryption dictionary value {key}")
     return internal_parse_int(raw_value, key)
+
+
+def internal_required_bytes(params: PdfDict, key: str, length: int) -> bytes:
+    raw_value = params.get(key, MISSING)
+    if raw_value is MISSING or raw_value is None:
+        raise ValueError(f"missing encryption dictionary value {key}")
+    try:
+        value = coerce_to_bytes(raw_value)
+    except TypeError as exc:
+        raise ValueError(f"invalid encryption dictionary value {key}") from exc
+    if len(value) != length:
+        raise ValueError(f"invalid encryption dictionary value {key}: expected {length} bytes")
+    return value
 
 
 def internal_parse_int(value: object, field_name: str) -> int:

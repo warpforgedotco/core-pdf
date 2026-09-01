@@ -7,7 +7,7 @@ from cryptography.hazmat.decrepit.ciphers.algorithms import ARC4
 from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
-from core_pdf.impl.exceptions import internal_InvalidCipherPaddingError
+from core_pdf.impl.exceptions import PdfDecryptionError
 
 
 def internal_aes_algorithm(key: bytes) -> algorithms.AES:
@@ -38,16 +38,39 @@ def internal_aes_cbc_decrypt(
     *,
     use_padding: bool,
 ) -> bytes:
+    # Object strings and streams use a 16-byte IV and PKCS#7-style padding:
+    # - ISO 32000-1:2008, 7.6.2 (AESV2 / revision 4)
+    # - Adobe Supplement to ISO 32000, BaseVersion 1.7, ExtensionLevel 3,
+    #   June 2008, 3.5.1, Algorithm 3.1a (AESV3 / revision 5)
+    # - ISO 32000-2:2020, 7.6.3.1 and 7.6.3.3 (AESV3 / revision 6)
+    # The R5/R6 password algorithms explicitly pass use_padding=False; see
+    # that Adobe supplement's 3.5.2, Algorithm 3.2a and ISO 32000-2:2020,
+    # 7.6.4.3.3, Algorithm 2.A.
     algorithm = internal_aes_algorithm(key)
-    decryptor = Cipher(algorithm, modes.CBC(initialization_vector)).decryptor()
-    plaintext = decryptor.update(ciphertext) + decryptor.finalize()
-    if use_padding:
-        unpadder = padding.PKCS7(algorithm.block_size).unpadder()
-        try:
+    try:
+        decryptor = Cipher(algorithm, modes.CBC(initialization_vector)).decryptor()
+        plaintext = decryptor.update(ciphertext) + decryptor.finalize()
+        if use_padding:
+            unpadder = padding.PKCS7(algorithm.block_size).unpadder()
             plaintext = unpadder.update(plaintext) + unpadder.finalize()
-        except ValueError as exc:
-            raise internal_InvalidCipherPaddingError from exc
+    except ValueError as exc:
+        raise PdfDecryptionError("Invalid encrypted object ciphertext") from exc
     return plaintext
+
+
+def internal_aes_ecb_decrypt(key: bytes, ciphertext: bytes) -> bytes:
+    """Decrypt the fixed permissions block required by R5 and R6.
+
+    Sources: Adobe Supplement to ISO 32000, BaseVersion 1.7,
+    ExtensionLevel 3, June 2008, 3.5.2, Algorithm 3.13; and
+    ISO 32000-2:2020, 7.6.4.4.12, Algorithm 13.
+    """
+    algorithm = internal_aes_algorithm(key)
+    try:
+        decryptor = Cipher(algorithm, modes.ECB()).decryptor()
+        return decryptor.update(ciphertext) + decryptor.finalize()
+    except ValueError as exc:
+        raise PdfDecryptionError("Invalid encrypted object ciphertext") from exc
 
 
 def internal_rc4_crypt(key: bytes, data: bytes) -> bytes:

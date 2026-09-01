@@ -10,7 +10,7 @@ import re
 from collections.abc import Callable
 from typing import Any
 
-from core_pdf.impl.exceptions import PdfParseError, internal_InvalidCipherPaddingError
+from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.primitives import (
     PdfName,
     PdfReference,
@@ -401,13 +401,10 @@ class PdfLexer:
             return value.tobytes() if type(value) is memoryview else value
         if type(value) is memoryview:
             value = value.tobytes()
-        try:
-            deciphered = self.decipher(
-                self.current_obj_num, self.current_gen_num or 0, value, dictionary
-            )
-            return deciphered.tobytes() if type(deciphered) is memoryview else deciphered
-        except internal_InvalidCipherPaddingError:
-            return value
+        deciphered = self.decipher(
+            self.current_obj_num, self.current_gen_num or 0, value, dictionary
+        )
+        return deciphered.tobytes() if type(deciphered) is memoryview else deciphered
 
     def parse_object(self) -> Any:
         self.pos = self.skip_ignored_at(self.pos)
@@ -816,6 +813,7 @@ class PdfLexer:
 
     def parse_dictionary(self) -> PdfDict:
         values: PdfDict = {}
+        contents_was_parsed_without_decipher = False
         self.advance(2)
         while True:
             self.pos = self.skip_ignored_at(self.pos)
@@ -827,7 +825,7 @@ class PdfLexer:
                 and self.raw_data[self.pos + 1] == 62
             ):
                 self.advance(2)
-                return values
+                break
             if self.raw_data[self.pos] != 47:
                 if (
                     self.recover_malformed_objects
@@ -842,7 +840,7 @@ class PdfLexer:
                         and self.raw_data[self.pos + 1] == 62
                     ):
                         self.advance(2)
-                        return values
+                        break
                 if self.raw_data[self.pos] != 47:
                     raise PdfParseError("dictionary keys must be names")
 
@@ -850,8 +848,30 @@ class PdfLexer:
 
             key = PdfName_of(key_bytes)
             value_start = self.pos
+            value_pos = self.skip_ignored_at(value_start)
+            value_is_hex_string = (
+                value_pos < self.data_len
+                and self.raw_data[value_pos] == 60
+                and (value_pos + 1 >= self.data_len or self.raw_data[value_pos + 1] != 60)
+            )
             try:
-                values[key] = self.parse_object()
+                if (
+                    key == "Contents"
+                    and value_is_hex_string
+                    and self.decipher is not None
+                    and self.current_obj_num is not None
+                ):
+                    # ISO 32000-2:2020, 7.6.2 excludes a Signature dictionary's
+                    # hexadecimal Contents value from encryption. Parse it raw
+                    # until the whole dictionary identifies its type; Type may
+                    # follow Contents and defaults to Sig under Table 255.
+                    self.pos = value_pos
+                    values[key] = PdfString(self.read_hex_string(), is_literal=False)
+                    contents_was_parsed_without_decipher = True
+                else:
+                    values[key] = self.parse_object()
+                    if key == "Contents":
+                        contents_was_parsed_without_decipher = False
             except PdfParseError:
                 self.pos = value_start
                 if (
@@ -860,6 +880,20 @@ class PdfLexer:
                     or not self.recover_dictionary_entry_position()
                 ):
                     raise
+
+        signature_type = values.get("Type")
+        is_signature_dictionary = signature_type in ("Sig", "DocTimeStamp") or (
+            signature_type is None and "ByteRange" in values
+        )
+        if contents_was_parsed_without_decipher and not is_signature_dictionary:
+            raw_contents = values.get("Contents")
+            if type(raw_contents) is PdfString:
+                values["Contents"] = PdfString(
+                    self.apply_decipher(raw_contents.data),
+                    is_literal=raw_contents.is_literal,
+                    compatibility_data=raw_contents.compatibility_data,
+                )
+        return values
 
     def recover_dictionary_key_position(self) -> bool:
         data = self.raw_data
