@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import contextlib
 import typing
-from collections.abc import Sequence
 from math import ceil, hypot
 from typing import TYPE_CHECKING, Any, TypeAlias, cast
 
@@ -18,7 +17,13 @@ if TYPE_CHECKING:
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.model.geometry import RectBox
 from core_pdf.impl.model.glyph_table import GlyphTableBuilder
-from core_pdf.impl.model.glyphs import GlyphCluster, GlyphObservation, GlyphSegment
+from core_pdf.impl.model.glyphs import (
+    GlyphCluster,
+    GlyphObservation,
+    GlyphSegment,
+    glyph_cluster_from_observations,
+    glyph_unicode_confidence,
+)
 from core_pdf.impl.model.runs import TextRun
 from core_pdf.impl.primitives import (
     MISSING,
@@ -32,14 +37,9 @@ from core_pdf.impl.spec.s_07_content.capture import (
     CapturedInlineImage,
     CapturedLine,
     CapturedPath,
-    can_merge_cross_font_word,
-    gap_separator,
     glyph_bitmap_dimensions,
-    glyph_cluster_from_observations,
     glyph_ink_rect,
     glyph_text_space_boxes,
-    glyph_unicode_confidence,
-    normalize_extracted_text,
     should_capture_glyph_bitmap,
     should_capture_suspicious_multi_glyph_bitmap,
     transformed_text_line,
@@ -75,8 +75,11 @@ from core_pdf.impl.spec.s_07_content.stream_state import (
 )
 from core_pdf.impl.spec.s_07_content.text_helpers import (
     cached_encode_latin1,
+    can_merge_cross_font_word,
     detect_ligature_overrides,
+    gap_separator,
     is_garbage_text,
+    normalize_extracted_text,
 )
 from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
@@ -176,56 +179,6 @@ def internal_quad_bounds(
     if c3_y > y1:
         y1 = c3_y
     return x0, y0, x1, y1
-
-
-def internal_decode_pending_run(
-    pending_data: bytes | bytearray,
-    table: Sequence[str],
-    widths: Sequence[float],
-    cs: float,
-    ws: float,
-) -> tuple[str, float]:
-    """Decode simple-font bytes to text plus total advance in glyph-space units.
-
-    The 1-, 2-, and 3-byte arms are hand-unrolled on purpose: they cover the
-    overwhelming majority of TJ elements, and skipping the loop and the join
-    is worth the repetition on this path.
-    """
-    n_data = len(pending_data)
-    if n_data == 1:
-        byte = pending_data[0]
-        total = widths[byte] + cs
-        if byte == 32:
-            total += ws
-        return table[byte], total
-    if n_data == 2:
-        b0 = pending_data[0]
-        b1 = pending_data[1]
-        total = widths[b0] + widths[b1] + (2 * cs)
-        if b0 == 32:
-            total += ws
-        if b1 == 32:
-            total += ws
-        return table[b0] + table[b1], total
-    if n_data == 3:
-        b0 = pending_data[0]
-        b1 = pending_data[1]
-        b2 = pending_data[2]
-        total = widths[b0] + widths[b1] + widths[b2] + (3 * cs)
-        if b0 == 32:
-            total += ws
-        if b1 == 32:
-            total += ws
-        if b2 == 32:
-            total += ws
-        return table[b0] + table[b1] + table[b2], total
-    total = 0.0
-    space_count = 0
-    for byte in pending_data:
-        total += widths[byte]
-        if byte == 32:
-            space_count += 1
-    return "".join(map(table.__getitem__, pending_data)), total + n_data * cs + space_count * ws
 
 
 class TextResolver(PdfValueResolver, typing.Protocol):
@@ -1870,9 +1823,8 @@ class TextState:
         """Record observations and return their (advance union, ink union, min
         confidence) aggregate, or ``None`` when nothing was recorded.
 
-        The aggregate replicates ``apply_glyph_geometry_to_run`` exactly —
-        same comparison operators over the same values in append order — so
-        the caller can skip re-scanning the appended slice.
+        The union is accumulated as observations are appended, in append
+        order, so the caller can skip re-scanning the appended slice.
         """
         if not self.capture_glyphs:
             return None
@@ -2033,8 +1985,8 @@ class TextState:
             group_alpha,
             text_object_id,
         )
-        # Running union of the appended observations' geometry, mirroring
-        # apply_glyph_geometry_to_run so the caller need not rescan the slice.
+        # Running union of the appended observations' geometry, accumulated
+        # during the append loop so the caller need not rescan the slice.
         run_geometry_started = False
         run_advance_x0 = run_advance_y0 = run_advance_x1 = run_advance_y1 = 0.0
         run_ink_x0 = run_ink_y0 = run_ink_x1 = run_ink_y1 = 0.0

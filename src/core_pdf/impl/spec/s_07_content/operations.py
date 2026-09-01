@@ -89,17 +89,6 @@ class ContentOperatorCounts:
             + self.unknown
         )
 
-    def add(self, other: "ContentOperatorCounts") -> "ContentOperatorCounts":
-        return ContentOperatorCounts(
-            text=self.text + other.text,
-            image=self.image + other.image,
-            vector_path=self.vector_path + other.vector_path,
-            vector_paint=self.vector_paint + other.vector_paint,
-            graphics_state=self.graphics_state + other.graphics_state,
-            unknown=self.unknown + other.unknown,
-            malformed=self.malformed + other.malformed,
-        )
-
 
 def _advance_past_lexical_markers(
     raw_bytes: bytes,

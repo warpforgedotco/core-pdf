@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import dataclasses
-import typing
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from functools import lru_cache
@@ -12,20 +11,6 @@ from math import ceil
 from typing import Any
 
 from core_pdf.impl.model.geometry import RectBox, bbox_union
-from core_pdf.impl.model.glyphs import (
-    GlyphCluster,
-    GlyphObservation,
-    glyph_cluster_from_observations,
-    glyph_unicode_confidence,
-)
-from core_pdf.impl.model.runs import TextRun
-from core_pdf.impl.spec.s_07_content.text_helpers import (
-    NO_SPACE_AFTER,
-    NO_SPACE_BEFORE,
-    can_merge_cross_font_word,
-    gap_separator,
-    normalize_extracted_text,
-)
 from core_pdf.impl.spec.s_08_graphics.image_decode import ImageSource
 from core_pdf.impl.spec.s_08_graphics.matrix import Matrix
 from core_pdf.impl.types import Rectangle
@@ -241,49 +226,6 @@ def type3_glyph_names(font: dict[Any, Any], decoder: Any) -> dict[int, str]:
         for code in range(256)
         if (name := decoder.internal_simple_glyph_name(code)) not in {"", ".notdef"}
     }
-
-
-def apply_glyph_geometry_to_run(
-    run: TextRun,
-    glyphs: typing.Iterable[GlyphObservation],
-    glyph_clusters: tuple[GlyphCluster, ...] = (),
-) -> None:
-    if glyph_clusters:
-        run.glyph_clusters = glyph_clusters
-    iterator = iter(glyphs)
-    first = next(iterator, None)
-    if first is None:
-        return
-    advance_x0, advance_y0, advance_x1, advance_y1 = first.advance_bbox
-    ink_x0, ink_y0, ink_x1, ink_y1 = first.ink_bbox
-    confidence = first.confidence
-    for glyph in iterator:
-        x0, y0, x1, y1 = glyph.advance_bbox
-        if x0 < advance_x0:
-            advance_x0 = x0
-        if y0 < advance_y0:
-            advance_y0 = y0
-        if x1 > advance_x1:
-            advance_x1 = x1
-        if y1 > advance_y1:
-            advance_y1 = y1
-        x0, y0, x1, y1 = glyph.ink_bbox
-        if x0 < ink_x0:
-            ink_x0 = x0
-        if y0 < ink_y0:
-            ink_y0 = y0
-        if x1 > ink_x1:
-            ink_x1 = x1
-        if y1 > ink_y1:
-            ink_y1 = y1
-        glyph_confidence = glyph.confidence
-        if glyph_confidence is not None and (confidence is None or glyph_confidence < confidence):
-            confidence = glyph_confidence
-
-    run.advance_bbox = (advance_x0, advance_y0, advance_x1, advance_y1)
-    run.ink_bbox = (ink_x0, ink_y0, ink_x1, ink_y1)
-    if confidence is not None:
-        run.confidence = confidence
 
 
 def type3_font_matrix(font: dict[str, Any]) -> Matrix:
@@ -518,11 +460,4 @@ __all__ = (
     "CapturedLine",
     "CapturedPath",
     "CapturedSubpath",
-    "NO_SPACE_AFTER",
-    "NO_SPACE_BEFORE",
-    "can_merge_cross_font_word",
-    "gap_separator",
-    "glyph_cluster_from_observations",
-    "glyph_unicode_confidence",
-    "normalize_extracted_text",
 )
