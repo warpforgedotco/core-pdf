@@ -102,8 +102,8 @@ def internal_compute_text_run_geometry_issues(run: TextRun) -> tuple[LayoutGeome
             )
         )
 
-    advance_bbox = numeric_bbox(run.advance_bbox)
-    ink_bbox = numeric_bbox(run.ink_bbox)
+    advance_bbox = finite_rect(run.advance_bbox, require_positive=False)
+    ink_bbox = finite_rect(run.ink_bbox, require_positive=False)
     if visible_text and (advance_bbox is None or not bbox_is_positive(advance_bbox)):
         issues.append(
             LayoutGeometryIssue(
@@ -149,7 +149,7 @@ def internal_compute_text_run_geometry_issues(run: TextRun) -> tuple[LayoutGeome
 
     cluster_bboxes: list[Rectangle] = []
     for cluster_index, cluster in enumerate(clusters):
-        cluster_bbox = numeric_bbox(cluster.advance_bbox)
+        cluster_bbox = finite_rect(cluster.advance_bbox, require_positive=False)
         if cluster_bbox is None or not bbox_is_positive(cluster_bbox):
             issues.append(
                 LayoutGeometryIssue(
@@ -370,12 +370,6 @@ def with_issue_detail(
         details=(*issue.details, (key, value)),
         repairable=issue.repairable,
     )
-
-
-def numeric_bbox(value: Any) -> Rectangle | None:
-    if not isinstance(value, (list, tuple)) or len(value) != 4:
-        return None
-    return finite_rect(value, require_positive=False)
 
 
 def bbox_is_positive(bbox: Rectangle | None) -> bool:

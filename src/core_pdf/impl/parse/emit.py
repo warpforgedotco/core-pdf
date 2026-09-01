@@ -9,6 +9,7 @@ import unicodedata
 from collections import Counter
 from dataclasses import replace
 from functools import lru_cache
+from statistics import fmean
 from typing import Any
 
 from core_pdf.impl.layout.spatial import (
@@ -16,6 +17,7 @@ from core_pdf.impl.layout.spatial import (
 )
 from core_pdf.impl.model.geometry import (
     horizontal_overlap_ratio,
+    interval_overlap,
     overlap_ratio_min,
     overlap_ratio_of,
     rect_tuple,
@@ -834,7 +836,7 @@ def internal_line_decoration_flags(
         height = dy1 - dy0
         if width < 2.0 or height > 2.5:
             continue
-        overlap = max(0.0, min(x1, dx1) - max(x0, dx0)) / width
+        overlap = interval_overlap(x0, x1, dx0, dx1) / width
         if overlap < 0.75:
             continue
         center_y = (dy0 + dy1) * 0.5
@@ -952,7 +954,7 @@ def internal_normalized_blocks(
                 bbox=parsed_block.bbox,
                 column_index=parsed_block.column_index,
                 rotation=(parsed_block.lines[0].rotation if parsed_block.lines else 0),
-                confidence=(sum(confidences) / len(confidences) if confidences else None),
+                confidence=(fmean(confidences) if confidences else None),
                 level=parsed_block.level,
                 provenance=sources,
             )

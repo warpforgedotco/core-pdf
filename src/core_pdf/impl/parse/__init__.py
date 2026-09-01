@@ -34,7 +34,6 @@ from core_pdf.impl.parse.pipeline import (
     extract_page,
     page_extraction,
     parse_document,
-    parse_page,
 )
 
 if TYPE_CHECKING:
@@ -78,6 +77,5 @@ __all__ = (
     "extract_page",
     "page_extraction",
     "parse_document",
-    "parse_page",
     "prewarm_runtime",
 )

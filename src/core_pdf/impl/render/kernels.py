@@ -268,6 +268,48 @@ def internal_blend_normal_solid_array_numpy(
     target[...] = destination_float.astype(numpy.uint8)
 
 
+def internal_blend_channels_f64(
+    src_r: numpy.ndarray | float,
+    src_g: numpy.ndarray | float,
+    src_b: numpy.ndarray | float,
+    src_a: numpy.ndarray | float,
+    dr: numpy.ndarray,
+    dg: numpy.ndarray,
+    db: numpy.ndarray,
+    da: numpy.ndarray,
+    mode: str | None,
+) -> tuple[numpy.ndarray, numpy.ndarray, numpy.ndarray, numpy.ndarray]:
+    """Multiply/screen/normal source-over in float64, shared by the solid and group paths.
+
+    Inputs are unit-scaled source channels (scalar or array) and 0-255 float64
+    destination channels; the result is rounded 0-255 channels with fully
+    transparent pixels zeroed, exactly as ``blend_px`` computes them. Operation
+    order is part of the contract: the golden-raster digests depend on it.
+    """
+    one_minus_src_a = 1.0 - src_a
+    dst_a = da / 255.0
+    if mode == "multiply":
+        src_r = src_r * (dr / 255.0)
+        src_g = src_g * (dg / 255.0)
+        src_b = src_b * (db / 255.0)
+    elif mode == "screen":
+        src_r = 1.0 - (1.0 - src_r) * (1.0 - dr / 255.0)
+        src_g = 1.0 - (1.0 - src_g) * (1.0 - dg / 255.0)
+        src_b = 1.0 - (1.0 - src_b) * (1.0 - db / 255.0)
+    out_a = src_a + dst_a * one_minus_src_a
+    safe_out_a = numpy.where(out_a > 0.0, out_a, 1.0)
+    out_r = numpy.round(((src_r * 255.0) * src_a + dr * dst_a * one_minus_src_a) / safe_out_a)
+    out_g = numpy.round(((src_g * 255.0) * src_a + dg * dst_a * one_minus_src_a) / safe_out_a)
+    out_b = numpy.round(((src_b * 255.0) * src_a + db * dst_a * one_minus_src_a) / safe_out_a)
+    out_a_i = numpy.round(out_a * 255.0)
+    transparent = out_a <= 0.0
+    out_r = numpy.where(transparent, 0.0, out_r)
+    out_g = numpy.where(transparent, 0.0, out_g)
+    out_b = numpy.where(transparent, 0.0, out_b)
+    out_a_i = numpy.where(transparent, 0.0, out_a_i)
+    return out_r, out_g, out_b, out_a_i
+
+
 def internal_blend_solid_array_numpy(
     target: numpy.ndarray[Any, numpy.dtype[numpy.uint8]],
     rgba: tuple[int, int, int, int],
@@ -304,31 +346,9 @@ def internal_blend_solid_array_numpy(
     dg = target[..., 1].astype(numpy.float64)
     db = target[..., 2].astype(numpy.float64)
     da = target[..., 3].astype(numpy.float64)
-    src_a = sa / 255.0
-    one_minus_src_a = 1.0 - src_a
-    dst_a = da / 255.0
-    src_r: numpy.ndarray | float = sr / 255.0
-    src_g: numpy.ndarray | float = sg / 255.0
-    src_b: numpy.ndarray | float = sb / 255.0
-    if mode == "multiply":
-        src_r = src_r * (dr / 255.0)
-        src_g = src_g * (dg / 255.0)
-        src_b = src_b * (db / 255.0)
-    elif mode == "screen":
-        src_r = 1.0 - (1.0 - src_r) * (1.0 - dr / 255.0)
-        src_g = 1.0 - (1.0 - src_g) * (1.0 - dg / 255.0)
-        src_b = 1.0 - (1.0 - src_b) * (1.0 - db / 255.0)
-    out_a = src_a + dst_a * one_minus_src_a
-    safe_out_a = numpy.where(out_a > 0.0, out_a, 1.0)
-    out_r = numpy.round(((src_r * 255.0) * src_a + dr * dst_a * one_minus_src_a) / safe_out_a)
-    out_g = numpy.round(((src_g * 255.0) * src_a + dg * dst_a * one_minus_src_a) / safe_out_a)
-    out_b = numpy.round(((src_b * 255.0) * src_a + db * dst_a * one_minus_src_a) / safe_out_a)
-    out_a_i = numpy.round(out_a * 255.0)
-    transparent = out_a <= 0.0
-    out_r = numpy.where(transparent, 0.0, out_r)
-    out_g = numpy.where(transparent, 0.0, out_g)
-    out_b = numpy.where(transparent, 0.0, out_b)
-    out_a_i = numpy.where(transparent, 0.0, out_a_i)
+    out_r, out_g, out_b, out_a_i = internal_blend_channels_f64(
+        sr / 255.0, sg / 255.0, sb / 255.0, sa / 255.0, dr, dg, db, da, mode
+    )
     target[..., 0] = numpy.clip(out_r, 0.0, 255.0).astype(numpy.uint8)
     target[..., 1] = numpy.clip(out_g, 0.0, 255.0).astype(numpy.uint8)
     target[..., 2] = numpy.clip(out_b, 0.0, 255.0).astype(numpy.uint8)
@@ -381,34 +401,18 @@ def internal_composite_blended_group_numpy(
     dg = destination[..., 1][visible].astype(numpy.float64)
     db = destination[..., 2][visible].astype(numpy.float64)
     da = destination[..., 3][visible].astype(numpy.float64)
-    src_a = source_alpha[visible] / 255.0
-    one_minus_src_a = 1.0 - src_a
-    dst_a = da / 255.0
-    src_r = source[..., 0][visible].astype(numpy.float64) / 255.0
-    src_g = source[..., 1][visible].astype(numpy.float64) / 255.0
-    src_b = source[..., 2][visible].astype(numpy.float64) / 255.0
     mode = blend_mode.lower() if isinstance(blend_mode, str) else None
-    if mode == "multiply":
-        src_r = src_r * (dr / 255.0)
-        src_g = src_g * (dg / 255.0)
-        src_b = src_b * (db / 255.0)
-    elif mode == "screen":
-        src_r = 1.0 - (1.0 - src_r) * (1.0 - dr / 255.0)
-        src_g = 1.0 - (1.0 - src_g) * (1.0 - dg / 255.0)
-        src_b = 1.0 - (1.0 - src_b) * (1.0 - db / 255.0)
-    out_a = src_a + dst_a * one_minus_src_a
-    safe_out_a = numpy.where(out_a > 0.0, out_a, 1.0)
-    out_r = numpy.round(((src_r * 255.0) * src_a + dr * dst_a * one_minus_src_a) / safe_out_a)
-    out_g = numpy.round(((src_g * 255.0) * src_a + dg * dst_a * one_minus_src_a) / safe_out_a)
-    out_b = numpy.round(((src_b * 255.0) * src_a + db * dst_a * one_minus_src_a) / safe_out_a)
-    out_a_i = numpy.round(out_a * 255.0)
-    # `out_a` can only reach zero where the source is invisible, which `visible`
-    # already excludes, but the scalar path zeroed the pixel there -- keep it.
-    transparent = out_a <= 0.0
-    out_r = numpy.where(transparent, 0.0, out_r)
-    out_g = numpy.where(transparent, 0.0, out_g)
-    out_b = numpy.where(transparent, 0.0, out_b)
-    out_a_i = numpy.where(transparent, 0.0, out_a_i)
+    out_r, out_g, out_b, out_a_i = internal_blend_channels_f64(
+        source[..., 0][visible].astype(numpy.float64) / 255.0,
+        source[..., 1][visible].astype(numpy.float64) / 255.0,
+        source[..., 2][visible].astype(numpy.float64) / 255.0,
+        source_alpha[visible] / 255.0,
+        dr,
+        dg,
+        db,
+        da,
+        mode,
+    )
     for channel, values in ((0, out_r), (1, out_g), (2, out_b), (3, out_a_i)):
         # `destination[..., channel]` is a basic-indexing view, so the masked
         # assignment writes through to `destination` itself.

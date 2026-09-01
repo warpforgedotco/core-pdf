@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from functools import lru_cache
 from math import ceil
@@ -360,15 +360,10 @@ class RunGeometry:
 
 
 def type3_font_matrix(font: dict[str, Any]) -> Matrix:
-    matrix = font.get("FontMatrix")
-    if not isinstance(matrix, (list, tuple)) or len(matrix) != 6:
+    try:
+        return Matrix.from_operand(font.get("FontMatrix"))
+    except ValueError:
         return Matrix(0.001, 0.0, 0.0, 0.001, 0.0, 0.0)
-    values: list[float] = []
-    for value in matrix:
-        if type(value) not in (int, float):
-            return Matrix(0.001, 0.0, 0.0, 0.001, 0.0, 0.0)
-        values.append(float(value))
-    return Matrix(*values)
 
 
 class CapturedLine:
@@ -407,7 +402,7 @@ class CapturedSubpath:
         self.points = points if points is not None else []
         self.closed = closed
 
-    def transformed(self, matrix: Matrix) -> CapturedSubpath:
+    def transformed(self, matrix: Matrix | Sequence[float]) -> CapturedSubpath:
         a, b, c, d, e, f = matrix
         return CapturedSubpath(
             [(x * a + y * c + e, x * b + y * d + f) for x, y in self.points],

@@ -26,6 +26,7 @@ from core_pdf.impl.model.geometry import (
     bbox_area,
     bbox_intersection_area,
     bbox_union,
+    interval_overlap,
     rect_tuple,
 )
 from core_pdf.impl.model.geometry import (
@@ -248,13 +249,13 @@ def internal_observation_coverage_grid(
         for row in range(row_start, row_end + 1):
             cell_y0 = y1 - (row + 1) * height / rows
             cell_y1 = y1 - row * height / rows
-            overlap_y = max(0.0, min(box_y1, cell_y1) - max(box_y0, cell_y0))
+            overlap_y = interval_overlap(box_y0, box_y1, cell_y0, cell_y1)
             if overlap_y <= 0.0:
                 continue
             for column in range(column_start, column_end + 1):
                 cell_x0 = x0 + column * width / columns
                 cell_x1 = x0 + (column + 1) * width / columns
-                overlap_x = max(0.0, min(box_x1, cell_x1) - max(box_x0, cell_x0))
+                overlap_x = interval_overlap(box_x0, box_x1, cell_x0, cell_x1)
                 if overlap_x > 0.0:
                     output[row, column] += utility * overlap_x * overlap_y / box_area
     return output.reshape(-1)

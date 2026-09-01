@@ -30,8 +30,8 @@ from core_pdf.impl.spec.s_07_syntax.xref import (
 )
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     normalize_pdf_name,
+    parse_box,
     parse_float,
-    parse_float_strict,
     parse_int,
 )
 from core_pdf.impl.spec.s_07_syntax_primitives.scanning import (
@@ -322,17 +322,10 @@ class ObjectResolver:
         resolved = self.deep_resolve(value)
         if resolved is None:
             return None
-        if isinstance(resolved, (list, tuple)) and len(resolved) == 4:
-            try:
-                return (
-                    parse_float_strict(resolved[0]),
-                    parse_float_strict(resolved[1]),
-                    parse_float_strict(resolved[2]),
-                    parse_float_strict(resolved[3]),
-                )
-            except ValueError as error:
-                raise ValueError("invalid box value") from error
-        raise ValueError("invalid box value")
+        box = parse_box(resolved)
+        if box is None:
+            raise ValueError("invalid box value")
+        return box
 
     def resolve_font_dict(self, font: PdfDict) -> PdfDict:
         resolved_font = self.deep_resolve(font)

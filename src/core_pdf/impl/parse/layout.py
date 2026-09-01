@@ -19,7 +19,7 @@ from core_pdf.impl.layout.lines import LayoutLine
 from core_pdf.impl.layout.spatial import (
     SpatialIndex,
 )
-from core_pdf.impl.model.geometry import horizontal_overlap_ratio
+from core_pdf.impl.model.geometry import horizontal_overlap_ratio, interval_overlap
 from core_pdf.impl.model.runs import TextRun
 from core_pdf.impl.models import (
     TextWord,
@@ -32,6 +32,7 @@ from core_pdf.impl.parse.model import (
     ParsedBlock,
     ParsedLine,
     ReadingOrderEvidence,
+    internal_bbox_tuple,
 )
 from core_pdf.impl.runtime.array_views import finite_median
 from core_pdf.impl.structured.model import (
@@ -45,6 +46,8 @@ internal_OCR_SOURCE = numpy.uint8(ObservationSource.OCR)
 internal_NATIVE_SOURCE = int(ObservationSource.NATIVE)
 
 internal_NATIVE_DOTTED_LEADER_RE = re.compile(r"\.{2,}")
+internal_CAPTION_RE = re.compile(r"^(?:figure|fig\.|table|chart|exhibit)\s+\d+\b")
+internal_LIST_MARKER_RE = re.compile(r"^(?:[-*•]|\d+[.)])\s+")
 internal_NATIVE_DASH_RULE_RE = re.compile(r"(?:\s*-\s*){2,}")
 
 
@@ -220,11 +223,7 @@ def internal_group_text_and_words(
         parts.append(text)
         tokens = internal_text_word_tokens(text)
         bbox = observations.bbox[index]
-        word_bbox = (
-            (float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3]))
-            if len(tokens) == 1
-            else None
-        )
+        word_bbox = internal_bbox_tuple(bbox) if len(tokens) == 1 else None
         candidate_words.extend(TextWord(token, bbox=word_bbox) for token in tokens)
     combined = "".join(parts)
     return combined, internal_reconcile_text_words(combined, tuple(candidate_words))
@@ -786,18 +785,8 @@ def internal_assign_row_bands(
 
 def internal_row_order_indexes(indexes: numpy.ndarray, boxes: numpy.ndarray) -> numpy.ndarray:
     """Order boxes into reading order: row bands top-to-bottom, then left-to-right."""
-    region = boxes[indexes]
-    if len(indexes) < 2:
-        return indexes
-    heights = numpy.maximum(1.0, region[:, 3] - region[:, 1])
-    tolerance = max(1.0, finite_median(heights) * 0.5)
-    if not math.isfinite(tolerance):
-        tolerance = 1.0
-    centers = (region[:, 1] + region[:, 3]) * 0.5
-    order = numpy.argsort(-centers, kind="stable")
-    row_ids = numpy.empty(len(indexes), dtype=numpy.int64)
-    internal_assign_row_bands(order, centers, tolerance, row_ids)
-    return indexes[numpy.lexsort((region[:, 0], row_ids))]
+    geometry = internal_LayoutGeometry.create(boxes)
+    return internal_row_order_region(geometry, geometry.region(indexes))
 
 
 def internal_row_order_region(
@@ -994,7 +983,7 @@ def internal_assign_columns(blocks: list[ParsedBlock]) -> list[ParsedBlock]:
         best_band: int | None = None
         best_overlap = 0.0
         for band_index, (band_x0, band_x1) in enumerate(bands):
-            overlap = max(0.0, min(x1, band_x1) - max(x0, band_x0))
+            overlap = interval_overlap(x0, x1, band_x0, band_x1)
             overlap_ratio = overlap / max(1.0, min(width, band_x1 - band_x0))
             if overlap_ratio > best_overlap:
                 best_overlap = overlap_ratio
@@ -1046,10 +1035,10 @@ def internal_classify_blocks(
         kind = "paragraph"
         level: int | None = None
         lowered = normalized.casefold()
-        if re.match(r"^(?:figure|fig\.|table|chart|exhibit)\s+\d+\b", lowered):
+        if internal_CAPTION_RE.match(lowered):
             kind = "caption"
         elif block.lines and all(
-            re.match(r"^(?:[-*•]|\d+[.)])\s+", line.text.strip()) for line in block.lines
+            internal_LIST_MARKER_RE.match(line.text.strip()) for line in block.lines
         ):
             kind = "list"
         elif (
@@ -1130,7 +1119,7 @@ def layout_blocks(
     )
     if obstacles:
         obstacles = tuple(
-            (float(box[0]), float(box[1]), float(box[2]), float(box[3]))
+            internal_bbox_tuple(box)
             for box in internal_display_boxes(
                 numpy.asarray(obstacles, dtype=numpy.float32),
                 rotation,
@@ -1338,11 +1327,11 @@ def internal_topological_block_order_from_pairs(
                 elif by0 >= ay1 - 2.0:
                     graph[j].append(i)
                     in_degree[i] += 1
-            elif ax1 <= bx0 + 2.0 and max(0.0, min(ay1, by1) - max(ay0, by0)) > 4.0:
+            elif ax1 <= bx0 + 2.0 and interval_overlap(ay0, ay1, by0, by1) > 4.0:
                 # Column A is strictly left of Column B with vertical overlap
                 graph[i].append(j)
                 in_degree[j] += 1
-            elif bx1 <= ax0 + 2.0 and max(0.0, min(ay1, by1) - max(ay0, by0)) > 4.0:
+            elif bx1 <= ax0 + 2.0 and interval_overlap(ay0, ay1, by0, by1) > 4.0:
                 # Column B is strictly left of Column A with vertical overlap
                 graph[j].append(i)
                 in_degree[i] += 1
@@ -1500,9 +1489,7 @@ def layout_element_order(
     # with its columns interleaved.
     span = max(1.0, float(values[:, 2].max() - values[:, 0].min()))
     obstacles = tuple(
-        (float(box[0]), float(box[1]), float(box[2]), float(box[3]))
-        for box in values
-        if (box[2] - box[0]) / span >= 0.70
+        internal_bbox_tuple(box) for box in values if (box[2] - box[0]) / span >= 0.70
     )
     regions = internal_xy_cut_regions(
         numpy.arange(len(boxes), dtype=numpy.int64),

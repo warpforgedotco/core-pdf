@@ -8,29 +8,10 @@ from typing import cast
 from core_pdf.impl.primitives import PdfName, PdfReference, PdfString
 from core_pdf.impl.spec.s_07_syntax.text_string import decode_pdf_text_string
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict, PdfValueResolver
-from core_pdf.impl.spec.s_07_syntax_primitives.coercion import parse_float_strict
+from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name, parse_box
 
-
-def pdf_name_direct(value: object) -> str | None:
-    if isinstance(value, PdfName):
-        return value.value
-    if isinstance(value, str):
-        return value.lstrip("/")
-    return None
-
-
-def pdf_box_direct(value: object) -> tuple[float, float, float, float] | None:
-    if not isinstance(value, (list, tuple)) or len(value) != 4:
-        return None
-    try:
-        return (
-            parse_float_strict(value[0]),
-            parse_float_strict(value[1]),
-            parse_float_strict(value[2]),
-            parse_float_strict(value[3]),
-        )
-    except ValueError:
-        return None
+pdf_name_direct = normalize_pdf_name
+pdf_box_direct = parse_box
 
 
 def pdf_string_direct(value: object) -> str | None:

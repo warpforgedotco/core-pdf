@@ -9,6 +9,7 @@ from typing import Any, TypedDict
 
 import numpy
 
+from core_pdf.impl.runtime.array_views import readonly
 from core_pdf.impl.spec.s_08_graphics.color_math import (
     d50_xyz_to_srgb,
     lab_to_xyz,
@@ -187,10 +188,8 @@ class IccTransform:
 def internal_curve_table_arrays(
     values: tuple[float, ...],
 ) -> tuple[numpy.ndarray[Any, Any], numpy.ndarray[Any, Any]]:
-    axis = numpy.linspace(0.0, 1.0, len(values), dtype=numpy.float32)
-    table = numpy.asarray(values, dtype=numpy.float32)
-    axis.flags.writeable = False
-    table.flags.writeable = False
+    axis = readonly(numpy.linspace(0.0, 1.0, len(values), dtype=numpy.float32))
+    table = readonly(numpy.asarray(values, dtype=numpy.float32))
     return axis, table
 
 
@@ -199,9 +198,7 @@ def internal_readonly_float32(
     values: tuple[tuple[float, ...], ...],
 ) -> numpy.ndarray[Any, Any]:
     """Cache one read-only float32 array per distinct matrix or CLUT."""
-    result = numpy.asarray(values, dtype=numpy.float32)
-    result.flags.writeable = False
-    return result
+    return readonly(numpy.asarray(values, dtype=numpy.float32))
 
 
 @lru_cache(maxsize=128)
@@ -415,9 +412,7 @@ def internal_byte_input_curves(
     curves: list[numpy.ndarray[Any, Any]] = []
     for table in input_tables:
         axis, values = internal_curve_table_arrays(table)
-        curve = numpy.interp(positions, axis, values).astype(numpy.float32)
-        curve.flags.writeable = False
-        curves.append(curve)
+        curves.append(readonly(numpy.interp(positions, axis, values).astype(numpy.float32)))
     return tuple(curves)
 
 

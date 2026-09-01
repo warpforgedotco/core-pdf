@@ -9,6 +9,7 @@ from typing import Any
 
 import numpy
 
+from core_pdf.impl.runtime.array_views import readonly
 from core_pdf.impl.spec.s_08_graphics.icc_profiles import (
     IccProfileError,
     IccSampleError,
@@ -59,8 +60,7 @@ def internal_naive_cmyk_channel_table() -> numpy.ndarray[Any, numpy.dtype[numpy.
     table = numpy.floor(255.0 * (1.0 - values[:, None]) * (1.0 - values[None, :])).astype(
         numpy.uint8
     )
-    table.flags.writeable = False
-    return table
+    return readonly(table)
 
 
 def cmyk_bytes_to_srgb(samples: ByteSamples) -> ByteSamples:

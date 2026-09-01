@@ -3,21 +3,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from core_pdf.impl.model.geometry import union_bbox
 from core_pdf.impl.model.runs import Provenance
 from core_pdf.impl.types import Rectangle
-
-
-def union_bbox(left: Rectangle | None, right: Rectangle | None) -> Rectangle | None:
-    if left is None:
-        return right
-    if right is None:
-        return left
-    return (
-        min(left[0], right[0]),
-        min(left[1], right[1]),
-        max(left[2], right[2]),
-        max(left[3], right[3]),
-    )
 
 
 def extend_baseline(left: Rectangle | None, right: Rectangle | None) -> Rectangle | None:

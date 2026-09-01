@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 import numpy
 
-from core_pdf.impl.model.geometry import RectBox
+from core_pdf.impl.model.geometry import RectBox, points_bbox, rect_tuple
 from core_pdf.impl.render.display import (
     ImagePaintItem,
     LineCap,
@@ -60,11 +60,9 @@ from core_pdf.impl.runtime.array_views import (
     unit_sample_positions,
 )
 from core_pdf.impl.spec.s_07_content.capture import CapturedPath
+from core_pdf.impl.spec.s_07_syntax_primitives.coercion import parse_int
 from core_pdf.impl.spec.s_08_graphics.image_decode import PreparedImage
-from core_pdf.impl.spec.s_08_graphics.image_metadata import (
-    pdf_int,
-    pdf_number,
-)
+from core_pdf.impl.spec.s_08_graphics.image_metadata import pdf_number
 from core_pdf.impl.spec.s_08_graphics.shading import (
     PreparedShading,
     prepare_shading,
@@ -709,8 +707,8 @@ class internal_RasterTarget:
         rows = [int(row) for row in bitmap if type(row) is int]
         if not rows:
             return
-        bitmap_h = pdf_int(bitmap_height, 0) or len(rows)
-        bitmap_w = pdf_int(bitmap_width, 0) or max((row.bit_length() for row in rows), default=0)
+        bitmap_h = parse_int(bitmap_height, 0) or len(rows)
+        bitmap_w = parse_int(bitmap_width, 0) or max((row.bit_length() for row in rows), default=0)
         if bitmap_w <= 0 or bitmap_h <= 0:
             return
         cell_w = (x1 - x0) / bitmap_w
@@ -1588,10 +1586,10 @@ class internal_RasterTarget:
         p00 = quad[0]
         p10 = quad[1]
         p01 = quad[2]
-        x0 = min(point[0] for point in quad)
-        y0 = min(point[1] for point in quad)
-        x1 = max(point[0] for point in quad)
-        y1 = max(point[1] for point in quad)
+        quad_box = points_bbox(quad)
+        if quad_box is None:
+            return False
+        x0, y0, x1, y1 = quad_box
         clip_box = current_clip()
         rectangular_clip = clip_box is not None and clip_paths_are_axis_aligned_rects()
         if clip_box is not None:
@@ -2382,19 +2380,7 @@ class internal_RasterTarget:
         width = self.width
         box = shading.bbox
         if box is None:
-            raw_box = data.get("bbox")
-            if isinstance(raw_box, RectBox):
-                box = (raw_box.x0, raw_box.y0, raw_box.x1, raw_box.y1)
-            elif isinstance(raw_box, (list, tuple)) and len(raw_box) == 4:
-                try:
-                    box = (
-                        float(raw_box[0]),
-                        float(raw_box[1]),
-                        float(raw_box[2]),
-                        float(raw_box[3]),
-                    )
-                except (TypeError, ValueError):
-                    box = None
+            box = rect_tuple(data.get("bbox"))
         if box is None:
             box = (crop_x0, crop_y0, crop_x0 + width / scale, crop_y1)
         x0, y0, x1, y1 = box
@@ -2865,6 +2851,10 @@ class internal_RasterTarget:
         path = item.path
         if type(path) is not CapturedPath:
             return
+        item_bbox = item.bbox
+        if item_bbox is not None:
+            # compose_page already computed ``path.bbox()`` for the item.
+            self.clip.path_bbox_cache.setdefault(id(path), item_bbox)
         blend_mode = item.blend_mode
         if blend_mode == "Normal":
             blend_mode = None
@@ -3407,7 +3397,6 @@ class internal_RasterTarget:
         # Captured target state hoisted into locals, as elsewhere in this class.
         crop_x0 = self.crop_x0
         crop_y1 = self.crop_y1
-        page_y_coordinates = self.page_y_coordinates
         pixel_view = self.pixel_view
         pixels = self.pixels
         raster_x_coordinate_cache = self.raster_x_coordinate_cache
@@ -3523,13 +3512,7 @@ class internal_RasterTarget:
                 return True
         target_region = pixel_view(pixels)[iy0:iy1, ix0:ix1]
         source_bytes = uint8_view(converted)
-        row_u = (page_y_coordinates(iy0, iy1) - p00[1]) * inv_uy
-        row_valid = (row_u >= 0.0) & (row_u <= 1.0)
-        src_x_rows = numpy.where(
-            row_valid,
-            numpy.clip((row_u * width_px).astype(numpy.intp), 0, width_px - 1),
-            0,
-        )
+        src_x_rows = numpy.maximum(src_x_rows, 0)
         src_y = numpy.maximum(src_y_map, 0)
         if comps == 1:
             source_index = src_y[None, :] * width_px + src_x_rows[:, None]
@@ -3537,8 +3520,8 @@ class internal_RasterTarget:
         else:
             source_index = (src_y[None, :] * width_px + src_x_rows[:, None]) * comps
             bounds_ok = source_index + 2 < converted_len
-        valid = row_valid[:, None] & (src_y_map >= 0)[None, :] & bounds_ok
-        target_region[row_valid] = 0
+        valid = valid_rows[:, None] & (src_y_map >= 0)[None, :] & bounds_ok
+        target_region[valid_rows] = 0
         if converted_len > 0:
             safe_index = numpy.where(valid, source_index, 0)
             internal_blit_indexed_channels(target_region, source_bytes, safe_index, valid, comps)

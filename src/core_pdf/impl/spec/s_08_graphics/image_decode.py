@@ -9,14 +9,15 @@ from typing import Any
 
 import numpy
 
+from core_pdf.impl.runtime.array_views import readonly
 from core_pdf.impl.runtime.image_cache import ImageCache, ImageCacheKey
 from core_pdf.impl.spec.s_07_filters.models import DecodedImage
 from core_pdf.impl.spec.s_07_filters.pipeline import (
     decode_stream_data,
     decode_stream_image_data,
 )
+from core_pdf.impl.spec.s_07_syntax_primitives.coercion import parse_int
 from core_pdf.impl.spec.s_08_graphics.color import ImageColorManager
-from core_pdf.impl.spec.s_08_graphics.image_metadata import pdf_int
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,9 +50,7 @@ class ImageRaster:
         expected_channels = 1 if self.color_model == "gray" else 3
         if array.shape[2] not in {expected_channels, expected_channels + 1}:
             raise ValueError("image raster channel layout does not match its color model")
-        array = numpy.ascontiguousarray(array)
-        array.flags.writeable = False
-        object.__setattr__(self, "array", array)
+        object.__setattr__(self, "array", readonly(numpy.ascontiguousarray(array)))
 
     @property
     def width(self) -> int:
@@ -182,8 +181,8 @@ class ImageSource:
         )
 
     def internal_decode_mask(self) -> DecodedRaster | None:
-        width = pdf_int(self.dictionary.get("Width"), 0)
-        height = pdf_int(self.dictionary.get("Height"), 0)
+        width = parse_int(self.dictionary.get("Width"), 0)
+        height = parse_int(self.dictionary.get("Height"), 0)
         if width <= 0 or height <= 0:
             return None
         try:
@@ -280,14 +279,14 @@ def decode_pdf_image_samples(
     raw: bytes | memoryview,
     dictionary: dict[Any, Any],
 ) -> tuple[bytes | memoryview | DecodedImage, dict[Any, Any]] | None:
-    width = pdf_int(dictionary.get("Width"), 0)
-    height = pdf_int(dictionary.get("Height"), 0)
+    width = parse_int(dictionary.get("Width"), 0)
+    height = parse_int(dictionary.get("Height"), 0)
     if width <= 0 or height <= 0:
         return None
     native = decode_stream_image_data(raw, dictionary)
     if native is not None and native.width == width and native.height == height:
         return native, dictionary
-    bits_per_component = pdf_int(dictionary.get("BitsPerComponent"), 8)
+    bits_per_component = parse_int(dictionary.get("BitsPerComponent"), 8)
     expected_gray = width * height
     expected_rgb = expected_gray * 3
     if len(raw) in {expected_gray, expected_rgb}:
@@ -306,8 +305,8 @@ def decode_pdf_image_samples(
 
 
 def decode_pdf_image(raw: bytes | memoryview, dictionary: dict[Any, Any]) -> DecodedRaster | None:
-    width = pdf_int(dictionary.get("Width"), 0)
-    height = pdf_int(dictionary.get("Height"), 0)
+    width = parse_int(dictionary.get("Width"), 0)
+    height = parse_int(dictionary.get("Height"), 0)
     if width <= 0 or height <= 0:
         return None
     result = decode_pdf_image_samples(raw, dictionary)

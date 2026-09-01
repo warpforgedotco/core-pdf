@@ -169,14 +169,17 @@ def unpack_subbyte_image_samples(
             samples_per_row,
             bits_per_component,
         )
-        samples = (
-            (unpacked * weights)
-            .sum(axis=2, dtype=numpy.uint16)
-            .astype(
-                numpy.uint8,
-                copy=False,
+        if bits_per_component == 1:
+            samples = unpacked
+        else:
+            samples = (
+                (unpacked * weights)
+                .sum(axis=2, dtype=numpy.uint16)
+                .astype(
+                    numpy.uint8,
+                    copy=False,
+                )
             )
-        )
         output_start = row_start * output_row_bytes
         output[output_start : output_start + row_count * output_row_bytes] = samples.reshape(-1)
     return output

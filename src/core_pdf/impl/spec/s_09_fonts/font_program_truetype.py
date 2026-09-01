@@ -12,7 +12,8 @@ from core_pdf._vendor.fontTools.pens.recordingPen import (
     DecomposingRecordingPen,
 )
 from core_pdf._vendor.fontTools.ttLib import TTFont
-from core_pdf.impl.spec.s_09_fonts.raster_kernel import Point, rasterize_contours
+from core_pdf.impl.model.geometry import transform_bbox
+from core_pdf.impl.spec.s_09_fonts.raster_kernel import Point, rasterize_contours, scale_contours
 
 # fontTools validates malformed tables with bare `assert` as well as by raising,
 # and it decompiles lazily, so a damaged table surfaces late and as almost any
@@ -125,7 +126,7 @@ class TrueTypeFontProgram:
             return ()
         bitmap = rasterize_contours(contours, width=width, height=height)
         if len(self.internal_glyph_bitmap_cache) >= 512:
-            self.internal_glyph_bitmap_cache.clear()
+            self.internal_glyph_bitmap_cache.pop(next(iter(self.internal_glyph_bitmap_cache)))
         self.internal_glyph_bitmap_cache[cache_key] = bitmap
         return bitmap
 
@@ -163,15 +164,11 @@ class TrueTypeFontProgram:
         if not contours:
             return ()
         scale = 1000.0 / self.units_per_em if self.units_per_em else 1.0
-        if scale == 1.0:
-            normalized = contours
-        else:
-            normalized = tuple(
-                tuple((point[0] * scale, point[1] * scale) for point in contour)
-                for contour in contours
-            )
+        normalized = contours if scale == 1.0 else scale_contours(contours, scale)
         if len(self.internal_normalized_contour_cache) >= 512:
-            self.internal_normalized_contour_cache.clear()
+            self.internal_normalized_contour_cache.pop(
+                next(iter(self.internal_normalized_contour_cache))
+            )
         self.internal_normalized_contour_cache[gid] = normalized
         return normalized
 
@@ -194,7 +191,7 @@ class TrueTypeFontProgram:
         except FONT_PROGRAM_ERRORS:
             contours = ()
         if len(self.internal_glyph_contour_cache) >= 512:
-            self.internal_glyph_contour_cache.clear()
+            self.internal_glyph_contour_cache.pop(next(iter(self.internal_glyph_contour_cache)))
         self.internal_glyph_contour_cache[gid] = contours
         return contours
 
@@ -214,7 +211,8 @@ class TrueTypeFontProgram:
                 bbox = internal_glyph_bbox(glyf, component_name)
                 if bbox is None:
                     continue
-                xmin, ymin, xmax, ymax = internal_transform_bbox(bbox, transform)
+                xx, xy, yx, yy, dx, dy = transform
+                xmin, ymin, xmax, ymax = transform_bbox(bbox, (xx, yx, xy, yy, dx, dy))
                 w, h = xmax - xmin, ymax - ymin
                 if h > 0 and h < 600 and 0.4 < w / h < 2.5 and ymin > 900:
                     has_dot = True
@@ -381,24 +379,6 @@ def internal_glyph_bbox(glyf: Any, glyph_name: str) -> tuple[float, float, float
         float(glyph.xMax),
         float(glyph.yMax),
     )
-
-
-def internal_transform_bbox(
-    bbox: tuple[float, float, float, float],
-    transform: tuple[float, float, float, float, float, float],
-) -> tuple[float, float, float, float]:
-    xmin, ymin, xmax, ymax = bbox
-    xx, xy, yx, yy, dx, dy = transform
-    corners = (
-        (xmin, ymin),
-        (xmin, ymax),
-        (xmax, ymin),
-        (xmax, ymax),
-    )
-    transformed = [(x * xx + y * xy + dx, x * yx + y * yy + dy) for x, y in corners]
-    xs = [point[0] for point in transformed]
-    ys = [point[1] for point in transformed]
-    return (min(xs), min(ys), max(xs), max(ys))
 
 
 def internal_recording_to_contours(

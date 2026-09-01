@@ -49,8 +49,6 @@ class TextRun:
         "text_is_space",
         "text_is_upper",
         "coords",
-        "mid_x_value",
-        "mid_y_value",
         "height_value",
         "font_name",
         "order",
@@ -105,8 +103,6 @@ class TextRun:
     # always carry the tuple form (see freeze_glyph_clusters).
     glyph_clusters: tuple[GlyphCluster, ...] | list[GlyphCluster]
     coords: list[float]
-    mid_x_value: float
-    mid_y_value: float
     height_value: float
     internal_revision: int
     internal_layout_reconstruction_cache: tuple[object, LayoutLineText] | None
@@ -120,7 +116,6 @@ class TextRun:
     @x0.setter
     def x0(self, v: float) -> None:
         self.coords[self.X0] = v
-        self.mid_x_value = (v + self.coords[self.X1]) * 0.5
         self.internal_sync_advance_bbox()
 
     @property
@@ -130,7 +125,6 @@ class TextRun:
     @y0.setter
     def y0(self, v: float) -> None:
         self.coords[self.Y0] = v
-        self.mid_y_value = (v + self.coords[self.Y1]) * 0.5
         self.height_value = self.coords[self.Y1] - v
         self.internal_sync_advance_bbox()
 
@@ -141,7 +135,6 @@ class TextRun:
     @x1.setter
     def x1(self, v: float) -> None:
         self.coords[self.X1] = v
-        self.mid_x_value = (self.coords[self.X0] + v) * 0.5
         self.internal_sync_advance_bbox()
 
     @property
@@ -151,7 +144,6 @@ class TextRun:
     @y1.setter
     def y1(self, v: float) -> None:
         self.coords[self.Y1] = v
-        self.mid_y_value = (self.coords[self.Y0] + v) * 0.5
         self.height_value = v - self.coords[self.Y0]
         self.internal_sync_advance_bbox()
 
@@ -192,10 +184,6 @@ class TextRun:
         self.internal_revision += 1
 
     @property
-    def mid_y(self) -> float:
-        return self.mid_y_value
-
-    @property
     def height(self) -> float:
         return self.height_value
 
@@ -234,16 +222,8 @@ class TextRun:
         self.internal_layout_words_cache = None
         self.internal_geometry_issues_cache = None
         self.coords = [x0, y0, x1, y1, tx, ty, font_size, space_width]
-        self.mid_x_value = (x0 + x1) * 0.5
-        self.mid_y_value = (y0 + y1) * 0.5
         self.height_value = y1 - y0
-        self.text = text
-        stripped_text = text.strip()
-        self.stripped_text = stripped_text
-        has_text = bool(stripped_text)
-        self.has_text = has_text
-        self.text_is_space = not has_text and text.isspace()
-        self.text_is_upper = has_text and stripped_text.isupper()
+        self.set_text(text)
         self.font_name = font_name
         self.order = order
         self.stream_order = stream_order
@@ -368,7 +348,6 @@ class TextRun:
             c[cls.TY] = ty
             c[cls.FONT_SIZE] = font_size
             c[cls.SPACE_WIDTH] = space_width
-            existing.text = text
             existing.font_name = font_name
             existing.order = order
             existing.stream_order = stream_order
@@ -386,57 +365,36 @@ class TextRun:
             existing.provenance = provenance
             existing.confidence = confidence
             existing.glyph_clusters = glyph_clusters
-            existing.mid_x_value = (x0 + x1) * 0.5
-            existing.mid_y_value = (y0 + y1) * 0.5
             existing.height_value = y1 - y0
-            if text and text[0] > " " and text[-1] > " ":
-                stripped_text = text
-            else:
-                stripped_text = text.strip()
-            existing.stripped_text = stripped_text
-            has_text = bool(stripped_text)
-            existing.has_text = has_text
-            existing.text_is_space = not has_text and text.isspace()
-            existing.text_is_upper = has_text and stripped_text.isupper()
+            existing.set_text(text)
             return existing
-        r = object.__new__(TextRun)
-        r.internal_revision = 0
-        r.internal_layout_reconstruction_cache = None
-        r.internal_layout_words_cache = None
-        r.internal_geometry_issues_cache = None
-        c = [x0, y0, x1, y1, tx, ty, font_size, space_width]
-        r.coords = c
-        r.mid_x_value = (x0 + x1) * 0.5
-        r.mid_y_value = (y0 + y1) * 0.5
-        r.height_value = y1 - y0
-        r.text = text
-        if text and text[0] > " " and text[-1] > " ":
-            stripped_text = text
-        else:
-            stripped_text = text.strip()
-        r.stripped_text = stripped_text
-        has_text = bool(stripped_text)
-        r.has_text = has_text
-        r.text_is_space = not has_text and text.isspace()
-        r.text_is_upper = has_text and stripped_text.isupper()
-        r.font_name = font_name
-        r.order = order
-        r.stream_order = stream_order
-        r.xobject_depth = xobject_depth
-        r.is_vertical = is_vertical
-        r.rotation_angle = rotation_angle
-        r.visible = visible
-        r.inside_active_clip = True
-        r.line_break_before = line_break_before
-        r.seqno = seqno
-        r.fill_color = fill_color
-        r.advance_bbox = resolved_advance_bbox
-        r.ink_bbox = resolved_ink_bbox
-        r.baseline = baseline
-        r.provenance = provenance
-        r.confidence = confidence
-        r.glyph_clusters = glyph_clusters
-        return r
+        return cls(
+            text,
+            x0,
+            y0,
+            x1,
+            y1,
+            tx,
+            ty,
+            font_size,
+            space_width,
+            order,
+            stream_order,
+            xobject_depth,
+            font_name=font_name,
+            is_vertical=is_vertical,
+            rotation_angle=rotation_angle,
+            visible=visible,
+            line_break_before=line_break_before,
+            seqno=seqno,
+            fill_color=fill_color,
+            advance_bbox=resolved_advance_bbox,
+            ink_bbox=resolved_ink_bbox,
+            baseline=baseline,
+            provenance=provenance,
+            confidence=confidence,
+            glyph_clusters=glyph_clusters,
+        )
 
     def replace(self, **kwargs: Any) -> TextRun:
         x0 = kwargs.get("x0", self.x0)

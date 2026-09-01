@@ -10,12 +10,14 @@ from core_pdf._vendor.fontTools.misc.psCharStrings import T1CharString
 from core_pdf._vendor.fontTools.pens.boundsPen import BoundsPen
 from core_pdf._vendor.fontTools.pens.recordingPen import RecordingPen
 from core_pdf._vendor.fontTools.pens.transformPen import TransformPen
-from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
-from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
 from core_pdf.impl.spec.s_09_fonts.font_program_truetype import (
     internal_recording_to_contours,
 )
-from core_pdf.impl.spec.s_09_fonts.raster_kernel import Point, rasterize_contours
+from core_pdf.impl.spec.s_09_fonts.raster_kernel import (
+    Point,
+    rasterize_contours,
+    transform_contours,
+)
 
 internal_LEN_IV_RE = re.compile(rb"/lenIV\s+(-?\d+)\s+def\b")
 internal_FONT_MATRIX_RE = re.compile(
@@ -256,21 +258,11 @@ class Type1FontProgram:
             pen = RecordingPen()
             charstring.draw(pen)
             contours = internal_recording_to_contours(pen.value)
-            a, b, c, d, e, f = self.font_matrix
-            result = tuple(
-                tuple(
-                    (
-                        (x * a + y * c + e) * 1000.0,
-                        (x * b + y * d + f) * 1000.0,
-                    )
-                    for x, y in contour
-                )
-                for contour in contours
-            )
+            result = transform_contours(contours, self.font_matrix)
         except Exception:
             result = ()
         if len(self.internal_contour_cache) >= 512:
-            self.internal_contour_cache.clear()
+            self.internal_contour_cache.pop(next(iter(self.internal_contour_cache)))
         self.internal_contour_cache[glyph_name] = result
         return result
 
@@ -280,21 +272,4 @@ def type1_font_for_data(data: bytes, length1: int | None = None) -> Type1FontPro
     return Type1FontProgram(data, length1=length1)
 
 
-def type1_font_for_pdf_font(font: dict[str, object]) -> Type1FontProgram | None:
-    if normalize_pdf_name(font.get("Subtype")) not in {"Type1", "MMType1"}:
-        return None
-    descriptor = font.get("FontDescriptor")
-    if not isinstance(descriptor, dict):
-        return None
-    font_file = descriptor.get("FontFile")
-    if not isinstance(font_file, PdfStream):
-        return None
-    length1_value = font_file.dictionary.get("Length1")
-    length1 = int(length1_value) if isinstance(length1_value, (int, float)) else None
-    try:
-        return type1_font_for_data(font_file.data, length1)
-    except (TypeError, ValueError):
-        return None
-
-
-__all__ = ["Type1FontProgram", "type1_font_for_data", "type1_font_for_pdf_font"]
+__all__ = ["Type1FontProgram", "type1_font_for_data"]

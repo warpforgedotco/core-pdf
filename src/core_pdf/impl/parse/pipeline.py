@@ -236,9 +236,14 @@ class internal_PageExtraction:
             )
 
     def layout(self, context: TaskScope) -> tuple[ParsedBlock, ...]:
+        return self.internal_layout_result(context)[0]
+
+    def internal_layout_result(
+        self, context: TaskScope
+    ) -> tuple[tuple[ParsedBlock, ...], str, ReadingOrderEvidence]:
         with self.page.internal_page_lock:
             if self.internal_layout is not None:
-                return self.internal_layout[0]
+                return self.internal_layout
             started = time.perf_counter()
             observations = self.observations(context)
             capture = self.capture()
@@ -258,12 +263,9 @@ class internal_PageExtraction:
                 page_height=float(capture.page.height),
             )
             self.internal_layout_seconds = time.perf_counter() - started
-            self.internal_layout = (
-                blocks,
-                "xy-cut" if use_xy_cut else "row-order",
-                order_evidence,
-            )
-            return blocks
+            result = (blocks, "xy-cut" if use_xy_cut else "row-order", order_evidence)
+            self.internal_layout = result
+            return result
 
     def parsed_page(self, context: TaskScope) -> ParsedPage:
         with self.page.internal_page_lock:
@@ -279,7 +281,7 @@ class internal_PageExtraction:
         recognition_report = recognition.report
         observations = self.observations(context)
         tables = self.tables(context)
-        blocks = self.layout(context)
+        blocks, layout_strategy, order_evidence = self.internal_layout_result(context)
         figures = (
             ()
             if capture.evidence.full_page_image
@@ -304,8 +306,6 @@ class internal_PageExtraction:
                 if isinstance(diagnostic, dict)
             )
         )
-        layout_strategy = self.internal_layout[1] if self.internal_layout is not None else "xy-cut"
-        order_evidence = self.internal_layout[2] if self.internal_layout is not None else None
         image_cache = getattr(self.page.document, "image_cache", None)
         image_cache_stats = image_cache.stats() if image_cache is not None else None
         decoder_cache = getattr(self.page.document, "decoder_cache", {})
@@ -353,30 +353,14 @@ class internal_PageExtraction:
             "type3_charproc_unsafe_fallbacks": type3_unsafe_fallbacks,
             "fused_observations": len(observations),
             "layout_strategy": layout_strategy,
-            "reading_order_strategy": (
-                order_evidence.strategy if order_evidence is not None else "source-stable"
-            ),
-            "reading_order_repaired": int(
-                order_evidence.repaired if order_evidence is not None else False
-            ),
-            "reading_order_ambiguous": int(
-                order_evidence.ambiguous if order_evidence is not None else False
-            ),
-            "reading_order_confidence": (
-                order_evidence.confidence if order_evidence is not None else 1.0
-            ),
-            "reading_order_source_inversions": (
-                order_evidence.source_inversions if order_evidence is not None else 0
-            ),
-            "reading_order_source_inversion_ratio": (
-                order_evidence.source_inversion_ratio if order_evidence is not None else 0.0
-            ),
-            "reading_order_columns": (
-                order_evidence.column_count if order_evidence is not None else 0
-            ),
-            "reading_order_rotations": (
-                order_evidence.rotation_count if order_evidence is not None else 0
-            ),
+            "reading_order_strategy": order_evidence.strategy,
+            "reading_order_repaired": int(order_evidence.repaired),
+            "reading_order_ambiguous": int(order_evidence.ambiguous),
+            "reading_order_confidence": order_evidence.confidence,
+            "reading_order_source_inversions": order_evidence.source_inversions,
+            "reading_order_source_inversion_ratio": order_evidence.source_inversion_ratio,
+            "reading_order_columns": order_evidence.column_count,
+            "reading_order_rotations": order_evidence.rotation_count,
             "text_coverage": capture.evidence.text_coverage,
             "painted_text_coverage": capture.evidence.painted_text_coverage or 0.0,
             "glyph_mapped_ratio": capture.evidence.glyphs.mapped_ratio,
@@ -439,11 +423,7 @@ class internal_PageExtraction:
             blocks=blocks,
             tables=tables,
             figures=figures,
-            diagnostics=(
-                ("reading-order-ambiguous",)
-                if order_evidence is not None and order_evidence.ambiguous
-                else ()
-            ),
+            diagnostics=(("reading-order-ambiguous",) if order_evidence.ambiguous else ()),
             full_page_image=capture.evidence.full_page_image,
             report=report,
         )
@@ -513,10 +493,6 @@ def page_extraction(page: Any) -> internal_PageExtraction:
         return extraction
 
 
-def parse_page(page: Any, context: TaskScope) -> ParsedPage:
-    return page_extraction(page).parsed_page(context)
-
-
 def extract_page(page: Any, context: TaskScope) -> Any:
     """Return the canonical emitted page, parsing and emitting at most once."""
     return page_extraction(page).assembled_page(context)
@@ -535,7 +511,6 @@ class internal_FontEnrichment:
 
     seed_indexes: tuple[int, ...] = ()
     learned_unicode: LearnedUnicodeMap = field(default_factory=lambda: MappingProxyType({}))
-    learned_characters: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -547,15 +522,6 @@ class internal_StrokedEnrichment:
     recognition_by_index: Mapping[int, RecognitionResult] = field(
         default_factory=lambda: MappingProxyType({})
     )
-
-
-@dataclass(frozen=True, slots=True)
-class internal_SelectionState:
-    """Page pipelines and enrichments owned by one exact document extraction."""
-
-    extractions: tuple[internal_PageExtraction, ...]
-    font: internal_FontEnrichment = internal_FontEnrichment()
-    stroked: internal_StrokedEnrichment = internal_StrokedEnrichment()
 
 
 def internal_unknown_decoder_counts(capture: CapturedPage) -> Counter[object]:
@@ -694,9 +660,8 @@ def internal_merge_font_mapping_votes(
 
 def internal_resolve_document_font_mappings(
     votes: dict[object, dict[bytes, Counter[str]]],
-) -> tuple[LearnedUnicodeMap, int]:
+) -> LearnedUnicodeMap:
     resolved: dict[object, Mapping[bytes, str]] = {}
-    learned_characters = 0
     for decoder, by_code in votes.items():
         mapping: dict[bytes, str] = {}
         for code_bytes, counts in by_code.items():
@@ -708,8 +673,7 @@ def internal_resolve_document_font_mappings(
                 mapping[code_bytes] = character
         if mapping:
             resolved[decoder] = MappingProxyType(mapping)
-            learned_characters += len(mapping)
-    return MappingProxyType(resolved), learned_characters
+    return MappingProxyType(resolved)
 
 
 def internal_prepare_document_font_mappings(
@@ -733,11 +697,9 @@ def internal_prepare_document_font_mappings(
             votes,
             internal_font_mapping_votes(captures[page_index], ocr),
         )
-    learned_unicode, learned_characters = internal_resolve_document_font_mappings(votes)
     return internal_FontEnrichment(
         seed_indexes=seed_indexes,
-        learned_unicode=learned_unicode,
-        learned_characters=learned_characters,
+        learned_unicode=internal_resolve_document_font_mappings(votes),
     )
 
 
@@ -1083,7 +1045,8 @@ def internal_prepare_selection_state(
     pages: tuple[Any, ...],
     captures: tuple[CapturedPage, ...],
     context: TaskScope,
-) -> internal_SelectionState:
+) -> tuple[internal_PageExtraction, ...]:
+    """Page pipelines enriched with everything learned across one exact selection."""
     font = internal_prepare_document_font_mappings(pages, captures, context)
     extractions = internal_apply_font_enrichment(pages, captures, font)
     stroked = internal_prepare_document_stroked_mappings(
@@ -1092,11 +1055,7 @@ def internal_prepare_selection_state(
         context,
         extractions,
     )
-    return internal_SelectionState(
-        extractions=internal_apply_stroked_enrichment(extractions, stroked),
-        font=font,
-        stroked=stroked,
-    )
+    return internal_apply_stroked_enrichment(extractions, stroked)
 
 
 def parse_document(
@@ -1113,8 +1072,7 @@ def parse_document(
     else:
         captures = internal_capture_document_pages(pages, context)
         if len(captures) == len(pages):
-            selection = internal_prepare_selection_state(pages, captures, context)
-            extractions = selection.extractions
+            extractions = internal_prepare_selection_state(pages, captures, context)
         else:
             extractions = tuple(page_extraction(page) for page in pages)
         parsed_pages = internal_parse_document_pages(extractions, context)

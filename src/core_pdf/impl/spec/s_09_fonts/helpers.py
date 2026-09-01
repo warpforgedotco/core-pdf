@@ -19,6 +19,12 @@ from core_pdf.impl.spec.s_09_fonts.data.base_encodings import (
 )
 from core_pdf.impl.spec.s_09_fonts.glyphs import glyph_name_to_unicode
 
+
+def strip_subset_tag(font_name: str) -> str:
+    """Drop the ``ABCDEF+`` subset prefix (9.6.4) from a base font name."""
+    return font_name.split("+", 1)[-1]
+
+
 LIGATURE_TEXT_OVERRIDES = {
     "\ufb00": "ff",
     "\ufb01": "fi",

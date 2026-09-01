@@ -6,6 +6,7 @@ from __future__ import annotations
 import contextlib
 from typing import Any
 
+from core_pdf.impl.spec.s_07_syntax_primitives.coercion import parse_float_strict
 from core_pdf.impl.spec.s_09_fonts.cmap_widths import (
     FontWidthMap,
     SparseFontWidthMap,
@@ -13,10 +14,7 @@ from core_pdf.impl.spec.s_09_fonts.cmap_widths import (
 )
 from core_pdf.impl.spec.s_09_fonts.data.core14 import FONT_DATA
 from core_pdf.impl.spec.s_09_fonts.helpers import LIGATURE_TEXT_OVERRIDES
-from core_pdf.impl.spec.s_09_fonts.widths import (
-    get_descendant,
-    require_font_float,
-)
+from core_pdf.impl.spec.s_09_fonts.widths import get_descendant
 
 LIGATURE_TEXT_TO_CHAR = {text: char for char, text in LIGATURE_TEXT_OVERRIDES.items()}
 
@@ -77,8 +75,8 @@ def parse_font_metrics(
         font_bbox = font_dict.get("FontBBox")
         if isinstance(font_bbox, (list, tuple)) and len(font_bbox) >= 4:
             with contextlib.suppress(ValueError):
-                bbox_descent = require_font_float(font_bbox[1], "invalid Type3 FontBBox")
-                bbox_ascent = require_font_float(font_bbox[3], "invalid Type3 FontBBox")
+                bbox_descent = parse_float_strict(font_bbox[1], "invalid Type3 FontBBox")
+                bbox_ascent = parse_float_strict(font_bbox[3], "invalid Type3 FontBBox")
                 descent, ascent = bbox_descent, bbox_ascent
     if subtype == "Type0":
         descendant = get_descendant(font_dict)
@@ -105,11 +103,11 @@ def parse_font_metrics(
         descriptor_ascent = descriptor.get("Ascent")
         if descriptor_ascent is not None:
             with contextlib.suppress(ValueError):
-                ascent = require_font_float(descriptor_ascent, "invalid font Ascent")
+                ascent = parse_float_strict(descriptor_ascent, "invalid font Ascent")
         descriptor_descent = descriptor.get("Descent")
         if descriptor_descent is not None:
             with contextlib.suppress(ValueError):
-                descent = require_font_float(descriptor_descent, "invalid font Descent")
+                descent = parse_float_strict(descriptor_descent, "invalid font Descent")
                 descriptor_descent_applied = True
     # ISO 32000 defines Descent below the baseline and therefore as non-positive.
     # Some PDF producers (notably PScript5.dll) serialize its magnitude instead.
@@ -124,7 +122,7 @@ def adjust_type3_widths(font_dict: dict[str, Any], widths: FontWidthMap) -> Font
     font_matrix = font_dict.get("FontMatrix")
     if isinstance(font_matrix, (list, tuple)) and len(font_matrix) >= 1:
         try:
-            fm_a = require_font_float(font_matrix[0], "invalid FontMatrix")
+            fm_a = parse_float_strict(font_matrix[0], "invalid FontMatrix")
         except ValueError:
             fm_a = 0.001
     else:

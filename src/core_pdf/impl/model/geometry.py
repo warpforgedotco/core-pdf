@@ -76,6 +76,53 @@ def finite_rect(box: object, *, require_positive: bool = True) -> Rectangle | No
     return (x0, y0, x1, y1)
 
 
+def union_bbox(left: Rectangle | None, right: Rectangle | None) -> Rectangle | None:
+    """Smallest rectangle containing both boxes; a missing side yields the other."""
+    if left is None:
+        return right
+    if right is None:
+        return left
+    return (
+        min(left[0], right[0]),
+        min(left[1], right[1]),
+        max(left[2], right[2]),
+        max(left[3], right[3]),
+    )
+
+
+def points_bbox(points: Iterable[tuple[float, float]]) -> Rectangle | None:
+    """Axis-aligned bounds of a point sequence, or None for no points."""
+    x0 = y0 = math.inf
+    x1 = y1 = -math.inf
+    for x, y in points:
+        if x < x0:
+            x0 = x
+        if x > x1:
+            x1 = x
+        if y < y0:
+            y0 = y
+        if y > y1:
+            y1 = y
+    if x0 > x1:
+        return None
+    return (x0, y0, x1, y1)
+
+
+def transform_bbox(bbox: Rectangle, matrix: Sequence[float]) -> Rectangle:
+    """Axis-aligned bounds of ``bbox`` after the PDF matrix ``(a, b, c, d, e, f)``."""
+    x0, y0, x1, y1 = bbox
+    a, b, c, d, e, f = matrix
+    xs = (x0 * a + y0 * c + e, x1 * a + y0 * c + e, x0 * a + y1 * c + e, x1 * a + y1 * c + e)
+    ys = (x0 * b + y0 * d + f, x1 * b + y0 * d + f, x0 * b + y1 * d + f, x1 * b + y1 * d + f)
+    return (min(xs), min(ys), max(xs), max(ys))
+
+
+def interval_overlap(a0: float, a1: float, b0: float, b1: float) -> float:
+    """Length of the overlap between the intervals ``[a0, a1]`` and ``[b0, b1]``."""
+    overlap = min(a1, b1) - max(a0, b0)
+    return overlap if overlap > 0.0 else 0.0
+
+
 def bbox_union(boxes: Iterable[Sequence[float]]) -> Rectangle | None:
     """Return the smallest rectangle containing every box, or None for no boxes."""
     result: Rectangle | None = None
@@ -126,7 +173,7 @@ def overlap_ratio_min_exact(left: Sequence[float], right: Sequence[float]) -> fl
 
 def horizontal_overlap_ratio(left: Sequence[float], right: Sequence[float]) -> float:
     """Horizontal intersection relative to the narrower box (denominator floored at 1.0)."""
-    intersection = max(0.0, min(left[2], right[2]) - max(left[0], right[0]))
+    intersection = interval_overlap(left[0], left[2], right[0], right[2])
     return intersection / max(1.0, min(left[2] - left[0], right[2] - right[0]))
 
 

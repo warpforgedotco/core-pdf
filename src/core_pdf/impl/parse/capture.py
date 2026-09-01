@@ -15,13 +15,19 @@ from typing import Any
 import numpy
 
 from core_pdf.impl.layout.spatial import SpatialIndex
-from core_pdf.impl.model.geometry import bbox_intersection_area, bbox_union, rect_tuple
+from core_pdf.impl.model.geometry import (
+    bbox_intersection_area,
+    bbox_union,
+    interval_overlap,
+    rect_tuple,
+)
 from core_pdf.impl.model.glyphs import (
     GlyphUnicodeSemantics,
     glyph_unicode_semantics,
 )
 from core_pdf.impl.model.runs import TextRun
 from core_pdf.impl.parse.model import (
+    FULL_PAGE_IMAGE_COVERAGE,
     VECTOR_PAINT_KINDS,
     CapturedPage,
     GlyphEvidence,
@@ -121,6 +127,9 @@ def internal_discard_duplicate_clipped_layers(runs: tuple[TextRun, ...]) -> tupl
     if len(primary_tokens) < DUPLICATE_LAYER_MIN_TOKENS:
         return runs
     duplicate_boxes: set[tuple[float, float, float, float]] = set()
+    primary_index = SpatialIndex.from_items(
+        primary_runs, bbox=lambda run: (run.x0, run.y0, run.x1, run.y1)
+    )
     for box in groups:
         if box == primary_box or len(tokens_by_box[box]) < DUPLICATE_LAYER_MIN_TOKENS:
             continue
@@ -128,12 +137,7 @@ def internal_discard_duplicate_clipped_layers(runs: tuple[TextRun, ...]) -> tupl
         # table cells legitimately have separate clipping boxes and repeat much
         # of the surrounding vocabulary; comparing each cell with every token
         # on the page deleted non-duplicate rows from ISO 32000-2:2020 Table 22.
-        local_primary = tuple(
-            run
-            for run in primary_runs
-            if bbox_intersection_area((run.x0, run.y0, run.x1, run.y1), box) > 0.0
-        )
-        local_tokens = internal_normalized_tokens(local_primary)
+        local_tokens = internal_normalized_tokens(primary_index.intersecting(box))
         if (
             len(local_tokens) >= DUPLICATE_LAYER_MIN_TOKENS
             and internal_token_overlap(tokens_by_box[box], local_tokens)
@@ -193,10 +197,10 @@ def internal_apply_structure_actual_text(
             continue
         replaced_mcids.add(mcid)
         output.append(
-            internal_copy_run(
-                run,
+            run.replace(
                 text=actual_text,
-                provenance=(("unicode_source", "structure_actual_text"),),
+                provenance=(*run.provenance, ("unicode_source", "structure_actual_text")),
+                glyph_clusters=run.glyph_clusters,
             )
         )
     return tuple(output)
@@ -329,43 +333,6 @@ def internal_hidden_text_needs_verification(evidence: PageEvidence) -> bool:
     )
 
 
-def internal_copy_run(
-    run: TextRun,
-    *,
-    text: str | None = None,
-    visible: bool | None = None,
-    provenance: tuple[tuple[str, object], ...] = (),
-) -> TextRun:
-    return TextRun(
-        text=run.text if text is None else text,
-        x0=run.x0,
-        y0=run.y0,
-        x1=run.x1,
-        y1=run.y1,
-        tx=run.tx,
-        ty=run.ty,
-        font_size=run.font_size,
-        space_width=run.space_width,
-        order=run.order,
-        stream_order=run.stream_order,
-        xobject_depth=run.xobject_depth,
-        font_name=run.font_name,
-        is_vertical=run.is_vertical,
-        rotation_angle=run.rotation_angle,
-        visible=run.visible if visible is None else visible,
-        inside_active_clip=run.inside_active_clip,
-        line_break_before=run.line_break_before,
-        seqno=run.seqno,
-        fill_color=run.fill_color,
-        advance_bbox=run.advance_bbox,
-        ink_bbox=run.ink_bbox,
-        baseline=run.baseline,
-        provenance=(*run.provenance, *provenance),
-        confidence=run.confidence,
-        glyph_clusters=run.glyph_clusters,
-    )
-
-
 def internal_layout_bbox_for_run(run: TextRun) -> tuple[float, float, float, float]:
     """Choose geometry that describes this occurrence rather than every font glyph."""
     bbox = (run.x0, run.y0, run.x1, run.y1)
@@ -402,10 +369,9 @@ def internal_layout_bbox_for_run(run: TextRun) -> tuple[float, float, float, flo
 
 def internal_promote_hidden_run(run: TextRun) -> TextRun:
     """Create an extraction-only view without changing PDF paint visibility."""
-    return internal_copy_run(
-        run,
+    return run.replace(
         visible=True,
-        provenance=(("extraction_visibility", "trusted-hidden-layer"),),
+        provenance=(*run.provenance, ("extraction_visibility", "trusted-hidden-layer")),
     )
 
 
@@ -502,10 +468,10 @@ def internal_apply_learned_unicode_to_run(
     if not changed:
         return run
     output.append(source[cursor:])
-    return internal_copy_run(
-        run,
+    return run.replace(
         text="".join(output),
-        provenance=(("unicode_source", "learned_ocr"),),
+        provenance=(*run.provenance, ("unicode_source", "learned_ocr")),
+        glyph_clusters=run.glyph_clusters,
     )
 
 
@@ -814,9 +780,7 @@ def internal_capture_from_program(
         if majority is None or majority == run.font_name:
             enriched_runs.append(run)
         else:
-            enriched = internal_copy_run(run)
-            enriched.font_name = majority
-            enriched_runs.append(enriched)
+            enriched_runs.append(run.replace(font_name=majority))
     structured_runs = internal_apply_structure_actual_text(page, tuple(enriched_runs))
     raw_runs = tuple(
         internal_apply_learned_unicode_to_run(run, learned_unicode)
@@ -909,8 +873,8 @@ def internal_capture_from_program(
         box = rect_tuple(getattr(drawing, "rect", None))
         if box is None:
             continue
-        width = max(0.0, min(page_width, box[2]) - max(0.0, box[0]))
-        height = max(0.0, min(page_height, box[3]) - max(0.0, box[1]))
+        width = interval_overlap(0.0, page_width, box[0], box[2])
+        height = interval_overlap(0.0, page_height, box[1], box[3])
         if width > 0.0 and height > 0.0:
             visible_image_areas.append(width * height)
             visible_image_boxes.append(
@@ -926,7 +890,8 @@ def internal_capture_from_program(
     )
     grid_lines = products.lines
     full_page_image = any(
-        width >= page_width * 0.90 and height >= page_height * 0.90
+        width >= page_width * FULL_PAGE_IMAGE_COVERAGE
+        and height >= page_height * FULL_PAGE_IMAGE_COVERAGE
         for width, height in (
             (
                 max(0.0, box[2] - box[0]),

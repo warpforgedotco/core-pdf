@@ -8,6 +8,7 @@ from bisect import bisect_right
 from collections import Counter, defaultdict
 from dataclasses import replace
 from itertools import combinations
+from statistics import fmean
 from typing import Any, cast
 
 import numpy
@@ -18,7 +19,9 @@ from core_pdf.impl.layout.spatial import (
 from core_pdf.impl.model.geometry import (
     bbox_union,
     horizontal_overlap_ratio,
+    interval_overlap,
     overlap_ratio_min,
+    union_bbox,
 )
 from core_pdf.impl.parse.grid_geometry import (
     AXIS_TOLERANCE,
@@ -445,10 +448,11 @@ def internal_text_rows(observations: ObservationBatch) -> list[list[int]]:
     return [sorted(row, key=lambda index: (all_lefts[index], sequences[index])) for row in rows]
 
 
-def internal_row_center(observations: ObservationBatch, row: list[int]) -> float:
-    return sum(
-        float((observations.bbox[index, 1] + observations.bbox[index, 3]) * 0.5) for index in row
-    ) / len(row)
+def internal_row_centers(observations: ObservationBatch, rows: list[list[int]]) -> list[float]:
+    """Mean vertical centre of each row, computed once per observation batch."""
+    bbox = observations.bbox
+    centers = ((bbox[:, 1] + bbox[:, 3]) * 0.5).tolist()
+    return [sum(centers[index] for index in row) / len(row) for row in rows]
 
 
 def internal_aligned_column_clusters(
@@ -499,9 +503,12 @@ def internal_split_support_rows(
     indexes: list[int],
     *,
     minimum_rows: int = 3,
+    row_centers: list[float] | None = None,
 ) -> list[list[int]]:
     if not indexes:
         return []
+    if row_centers is None:
+        row_centers = internal_row_centers(observations, rows)
     groups = [[indexes[0]]]
     for index in indexes[1:]:
         previous = groups[-1][-1]
@@ -513,11 +520,7 @@ def internal_split_support_rows(
             float(observations.bbox[item, 3] - observations.bbox[item, 1]) for item in rows[index]
         )
         allowed_gap = max(55.0, max(previous_height, current_height) * 4.0)
-        if (
-            internal_row_center(observations, rows[previous])
-            - internal_row_center(observations, rows[index])
-            > allowed_gap
-        ):
+        if row_centers[previous] - row_centers[index] > allowed_gap:
             groups.append([])
         groups[-1].append(index)
     return [group for group in groups if len(group) >= minimum_rows]
@@ -532,6 +535,7 @@ def internal_stream_table(
     *,
     minimum_rows: int = 3,
     cell_text_cache: internal_CellTextMemo | None = None,
+    row_centers: list[float] | None = None,
 ) -> Table | None:
     support_set = set(support)
     columns = [
@@ -561,10 +565,14 @@ def internal_stream_table(
     column_order = numpy.argsort(column_centers)
     column_centers = column_centers[column_order]
     columns = [columns[int(index)] for index in column_order]
-    top = internal_row_center(observations, rows[support[0]])
-    bottom = internal_row_center(observations, rows[support[-1]])
+    if row_centers is None:
+        row_centers = internal_row_centers(observations, rows)
+    top = row_centers[support[0]]
+    bottom = row_centers[support[-1]]
     selected = [
-        row for row in rows if bottom - 1.0 <= internal_row_center(observations, row) <= top + 1.0
+        row
+        for row, center in zip(rows, row_centers, strict=True)
+        if bottom - 1.0 <= center <= top + 1.0
     ]
     if len(selected) < minimum_rows:
         return None
@@ -599,7 +607,7 @@ def internal_stream_table(
                 best_col = 0
                 max_ov = -1.0
                 for c_idx in range(column_count):
-                    ov = max(0.0, min(x1, edge_list[c_idx + 1]) - max(x0, edge_list[c_idx]))
+                    ov = interval_overlap(x0, x1, edge_list[c_idx], edge_list[c_idx + 1])
                     if ov > max_ov:
                         max_ov = ov
                         best_col = c_idx
@@ -800,6 +808,7 @@ def internal_stream_tables(
     if horizontal_count >= 4 and horizontal_count * 5 >= visible_count * 2:
         observations = observations.select(horizontal & observations.visible)
     rows = internal_text_rows(observations)
+    row_centers = internal_row_centers(observations, rows)
     tables: list[Table] = []
     for minimum_rows in (3, 2):
         columns = internal_aligned_column_clusters(
@@ -839,6 +848,7 @@ def internal_stream_tables(
                 rows,
                 support,
                 minimum_rows=minimum_rows,
+                row_centers=row_centers,
             ):
                 table = internal_stream_table(
                     start_order + len(tables),
@@ -848,6 +858,7 @@ def internal_stream_tables(
                     [columns[index] for index in component],
                     minimum_rows=minimum_rows,
                     cell_text_cache=cell_text_cache,
+                    row_centers=row_centers,
                 )
                 if table is not None:
                     tables.append(table)
@@ -910,10 +921,10 @@ def internal_table_column_alignment(left: Table, right: Table) -> float:
     for (left_start, left_end), (right_start, right_end) in zip(
         left_bounds, right_bounds, strict=True
     ):
-        intersection = max(0.0, min(left_end, right_end) - max(left_start, right_start))
+        intersection = interval_overlap(left_start, left_end, right_start, right_end)
         union = max(left_end, right_end) - min(left_start, right_start)
         overlaps.append(intersection / max(1.0, union))
-    return sum(overlaps) / len(overlaps)
+    return fmean(overlaps)
 
 
 def internal_same_semantic_header(
@@ -983,12 +994,7 @@ def internal_merge_adjacent_tables(tables: list[Table]) -> list[Table]:
         merged[-1] = Table(
             order=previous.order,
             rows=tuple(combined_rows),
-            bbox=(
-                min(previous_bbox[0], table_bbox[0]),
-                min(previous_bbox[1], table_bbox[1]),
-                max(previous_bbox[2], table_bbox[2]),
-                max(previous_bbox[3], table_bbox[3]),
-            ),
+            bbox=union_bbox(previous_bbox, table_bbox),
             confidence=min(previous.confidence or 1.0, table.confidence or 1.0),
             title=previous.title or table.title,
             caption=table.caption or previous.caption,
@@ -1619,7 +1625,7 @@ def internal_annotate_table_associations(
         row_x0 = min(float(box[0]) for box in boxes)
         row_x1 = max(float(box[2]) for box in boxes)
         row_y0 = min(float(box[1]) for box in boxes)
-        overlap = max(0.0, min(x1, row_x1) - max(x0, row_x0))
+        overlap = interval_overlap(x0, x1, row_x0, row_x1)
         if overlap / max(1.0, min(x1 - x0, row_x1 - row_x0)) < 0.60:
             continue
         gap = row_y0 - y1

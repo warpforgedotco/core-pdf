@@ -74,7 +74,6 @@ class PdfLexer:
         "source_buffer",
         "data_len",
         "pos",
-        "exhausted",
         "reference_resolver",
         "decipher",
         "current_obj_num",
@@ -88,7 +87,6 @@ class PdfLexer:
     source_buffer: FindableSizedBuffer | None
     data_len: int
     pos: int
-    exhausted: bool
     reference_resolver: Callable[[PdfReference], object] | None
     decipher: Decipher | None
     current_obj_num: int | None
@@ -119,7 +117,6 @@ class PdfLexer:
         self.data_len = len(self.raw_data)
         self.source_buffer = full_source_buffer(self.raw_data, self.data_len)
         self.pos = 0
-        self.exhausted = False
         self.reference_resolver = reference_resolver
         self.decipher = decipher
         self.current_obj_num = None
@@ -150,11 +147,9 @@ class PdfLexer:
         self.raw_data = memoryview(b"")
         self.data_len = 0
         self.pos = 0
-        self.exhausted = True
 
     def rewind(self, position: int = 0) -> None:
         self.pos = max(0, min(position, self.data_len))
-        self.exhausted = False
         self.current_obj_num = None
         self.current_gen_num = None
 
@@ -959,65 +954,59 @@ class PdfLexer:
         data_start = self.pos
         raw_data: bytes | memoryview
         if type(length) is not int or length < 0:
-            endstream_pos = self.find_stream_end(data_start)
-            if endstream_pos < 0:
-                endobj_pos = self.find_object_end(data_start)
-                if endobj_pos < 0:
-                    raise PdfParseError("invalid stream length")
-                raw_data = self.raw_data[data_start:endobj_pos].tobytes().rstrip(WHITESPACE)
-                self.rewind(endobj_pos)
-            else:
-                raw_data = self.raw_data[data_start:endstream_pos]
-                self.rewind(endstream_pos + 9)
-            if should_decipher:
-                raw_data = self.apply_decipher(raw_data, dictionary)
-            return PdfStream(dictionary, raw_data, dictionary)
-
-        raw_data = self.read_bytes(length)
-        if len(raw_data) != length:
-            endstream_pos = self.find_stream_end(data_start)
-            if endstream_pos < 0:
-                endobj_pos = self.find_object_end(data_start)
-                if endobj_pos < 0:
+            recovered = self.internal_recover_stream_data(data_start)
+            if recovered is None:
+                raise PdfParseError("invalid stream length")
+            raw_data = recovered
+        else:
+            raw_data = self.read_bytes(length)
+            if len(raw_data) != length:
+                recovered = self.internal_recover_stream_data(data_start)
+                if recovered is None:
                     raw_data = bytes(raw_data)
                     self.rewind(self.data_len)
                 else:
-                    raw_data = self.raw_data[data_start:endobj_pos].tobytes().rstrip(WHITESPACE)
-                    self.rewind(endobj_pos)
+                    raw_data = recovered
             else:
-                raw_data = self.raw_data[data_start:endstream_pos]
-                self.rewind(endstream_pos + 9)
-        else:
-            self.pos = self.skip_ignored_at(self.pos)
-            if self.raw_data[
-                self.pos : self.pos + 9
-            ] == b"endstream" or matches_keyword_with_one_substitution(
-                self.raw_data, self.pos, b"endstream"
-            ):
-                self.advance(9)
-            else:
-                endstream_pos = self.find_stream_end(data_start, preferred=self.pos)
-                if endstream_pos >= 0:
-                    if endstream_pos != self.pos:
-                        raw_data = self.raw_data[data_start:endstream_pos]
-                    self.pos = endstream_pos
-                else:
-                    endobj_pos = self.find_object_end(data_start)
-                    if endobj_pos >= 0:
-                        raw_data = self.raw_data[data_start:endobj_pos].tobytes().rstrip(WHITESPACE)
-                        self.rewind(endobj_pos)
-                    else:
+                self.pos = self.skip_ignored_at(self.pos)
+                if not self.internal_at_endstream():
+                    recovered = self.internal_recover_stream_data(data_start, preferred=self.pos)
+                    if recovered is None:
                         self.rewind(self.data_len)
-            if self.raw_data[
-                self.pos : self.pos + 9
-            ] == b"endstream" or matches_keyword_with_one_substitution(
-                self.raw_data, self.pos, b"endstream"
-            ):
-                self.advance(9)
+                    else:
+                        raw_data = recovered
+        if self.internal_at_endstream():
+            self.advance(9)
 
         if should_decipher:
             raw_data = self.apply_decipher(raw_data, dictionary)
         return PdfStream(dictionary, raw_data, dictionary)
+
+    def internal_at_endstream(self) -> bool:
+        return self.raw_data[
+            self.pos : self.pos + 9
+        ] == b"endstream" or matches_keyword_with_one_substitution(
+            self.raw_data, self.pos, b"endstream"
+        )
+
+    def internal_recover_stream_data(
+        self, data_start: int, *, preferred: int | None = None
+    ) -> bytes | memoryview | None:
+        """Delimit stream data by ``endstream``, else ``endobj``; ``None`` if neither exists.
+
+        On success the lexer is positioned at the keyword found; the caller
+        consumes ``endstream`` itself, since a stream cut at ``endobj`` has
+        no ``endstream`` to skip.
+        """
+        endstream_pos = self.find_stream_end(data_start, preferred=preferred)
+        if endstream_pos >= 0:
+            self.rewind(endstream_pos)
+            return self.raw_data[data_start:endstream_pos]
+        endobj_pos = self.find_object_end(data_start)
+        if endobj_pos >= 0:
+            self.rewind(endobj_pos)
+            return self.raw_data[data_start:endobj_pos].tobytes().rstrip(WHITESPACE)
+        return None
 
     def internal_find_keyword_candidate(
         self,

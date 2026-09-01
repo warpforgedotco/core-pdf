@@ -10,7 +10,7 @@ from typing import Any, TypeAlias, cast
 
 import numpy
 
-from core_pdf.impl.runtime.array_views import ByteBuffer, uint8_view
+from core_pdf.impl.runtime.array_views import ByteBuffer, readonly, uint8_view
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     parse_float,
@@ -221,8 +221,7 @@ def internal_build_sampled_separation_rgb_lut(
         if rgb is None:
             raise ValueError("invalid Separation color space")
         table[value] = tuple(rgb)
-    table.flags.writeable = False
-    return table
+    return readonly(table)
 
 
 @lru_cache(maxsize=256)
@@ -230,10 +229,8 @@ def internal_calrgb_parameter_arrays(
     matrix: tuple[float, ...],
     black_point: tuple[float, ...],
 ) -> tuple[numpy.ndarray[Any, Any], numpy.ndarray[Any, Any]]:
-    matrix_array = numpy.asarray(matrix, dtype=numpy.float64).reshape(3, 3)
-    black_point_array = numpy.asarray(black_point, dtype=numpy.float64)
-    matrix_array.flags.writeable = False
-    black_point_array.flags.writeable = False
+    matrix_array = readonly(numpy.asarray(matrix, dtype=numpy.float64).reshape(3, 3))
+    black_point_array = readonly(numpy.asarray(black_point, dtype=numpy.float64))
     return matrix_array, black_point_array
 
 

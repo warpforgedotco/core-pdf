@@ -30,7 +30,6 @@ from core_pdf.impl.spec.s_07_document.document_pages import (
     LazyPageList,
     PageListItem,
 )
-from core_pdf.impl.spec.s_07_document.document_recovery import document_recovery_enabled
 from core_pdf.impl.spec.s_07_document.document_xref import DocumentXRefMixin
 from core_pdf.impl.spec.s_07_document.fields import (
     FieldTraversalEntry,
@@ -38,7 +37,7 @@ from core_pdf.impl.spec.s_07_document.fields import (
     field_widget_rect,
 )
 from core_pdf.impl.spec.s_07_document.metadata import MetadataRecord, resolve_metadata
-from core_pdf.impl.spec.s_07_document.page import PAGE_INHERITED_KEYS
+from core_pdf.impl.spec.s_07_document.page import PAGE_INHERITED_KEYS, document_recovery_enabled
 from core_pdf.impl.spec.s_07_document.records import (
     RawEmbeddedFile,
     RawFormField,
@@ -1158,6 +1157,18 @@ class PdfDocument(
                 return None
             raise ValueError("invalid AcroForm dictionary")
 
+    def internal_name_or_text(self, value: object, *, name_like: bool = False) -> str | None:
+        """A dictionary entry as a name, falling back to a text string.
+
+        ``name_like`` also accepts a non-name value whose text is a valid name,
+        which lenient readers allow for AcroForm field types.
+        """
+        resolver = self.resolver
+        text = resolver.resolve_name(value)
+        if text is None and name_like:
+            text = resolver.resolve_name_like_value(value)
+        return text or resolver.resolve_str(value)
+
     def collect_field_records(
         self,
         node: object,
@@ -1210,12 +1221,8 @@ class PdfDocument(
                 f"{parent_name}.{title}" if parent_name and title else title or parent_name
             )
 
-            type_value = current_node.get("FT")
             field_type = (
-                self.resolver.resolve_name(type_value)
-                or self.resolver.resolve_name_like_value(type_value)
-                or self.resolver.resolve_str(type_value)
-                or parent_type
+                self.internal_name_or_text(current_node.get("FT"), name_like=True) or parent_type
             )
 
             value = current_node.get("V")
@@ -1232,12 +1239,7 @@ class PdfDocument(
                 else:
                     raise ValueError("invalid AcroForm Kids array")
             kids = cast(list[PdfObject], kids)
-            subtype_value = current_node.get("Subtype")
-            subtype = (
-                self.resolver.resolve_name(subtype_value)
-                or self.resolver.resolve_str(subtype_value)
-                or ""
-            )
+            subtype = self.internal_name_or_text(current_node.get("Subtype")) or ""
             current_node = cast(PdfDict, current_node)
             records.append(
                 RawFormField(
@@ -1259,18 +1261,10 @@ class PdfDocument(
                         continue
                     raise ValueError("invalid AcroForm kid entry")
                 resolved_kid = cast(PdfDict, resolved_kid)
-                subtype_value = resolved_kid.get("Subtype")
-                subtype = (
-                    self.resolver.resolve_name(subtype_value)
-                    or self.resolver.resolve_str(subtype_value)
-                    or ""
-                )
+                subtype = self.internal_name_or_text(resolved_kid.get("Subtype")) or ""
                 if subtype == "Widget":
-                    widget_type_value = resolved_kid.get("FT")
                     widget_type = (
-                        self.resolver.resolve_name(widget_type_value)
-                        or self.resolver.resolve_name_like_value(widget_type_value)
-                        or self.resolver.resolve_str(widget_type_value)
+                        self.internal_name_or_text(resolved_kid.get("FT"), name_like=True)
                         or field_type
                     )
                     widget_title = self.resolver.resolve_str(resolved_kid.get("T"))
@@ -1412,11 +1406,7 @@ class PdfDocument(
                     continue
                 if id(annot) in seen_widgets:
                     continue
-                subtype = (
-                    self.resolver.resolve_name(annot.get("Subtype"))
-                    or self.resolver.resolve_str(annot.get("Subtype"))
-                    or ""
-                )
+                subtype = self.internal_name_or_text(annot.get("Subtype")) or ""
                 if subtype != "Widget":
                     continue
                 # A widget may be merged with its field or hang off one as a

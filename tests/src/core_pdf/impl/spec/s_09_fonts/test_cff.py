@@ -117,7 +117,6 @@ def test_cff_geometry_is_reused_across_bbox_feature_and_bitmap(
         *,
         local_subrs: tuple[bytes, ...],
         global_subrs: tuple[bytes, ...],
-        collect_contours: bool,
         seac_resolver: (
             Callable[
                 [int, int, float, float],
@@ -132,7 +131,6 @@ def test_cff_geometry_is_reused_across_bbox_feature_and_bitmap(
             value,
             local_subrs=local_subrs,
             global_subrs=global_subrs,
-            collect_contours=collect_contours,
             seac_resolver=seac_resolver,
         )
 
@@ -174,7 +172,6 @@ def internal_type2_geometry(
         internal_type2_program(*tokens),
         local_subrs=(),
         global_subrs=(),
-        collect_contours=True,
     )
 
 
@@ -210,7 +207,6 @@ def internal_type2_contour(
         charstring,
         local_subrs=(),
         global_subrs=(),
-        collect_contours=True,
     )
     assert len(contours) == 1
     return contours[0]
@@ -353,13 +349,11 @@ def test_type2_random_is_repeatable_and_in_the_specified_range() -> None:
         program,
         local_subrs=(),
         global_subrs=(),
-        collect_contours=True,
     )
     second = internal_type2_glyph_geometry_impl(
         program,
         local_subrs=(),
         global_subrs=(),
-        collect_contours=True,
     )
 
     assert first == second

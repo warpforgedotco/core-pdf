@@ -241,7 +241,6 @@ class GlyphLineBuilder:
         "suppress_tiny_page_footer",
         "tracked_word_gap",
         "explicit_spaces_control_glyph_gaps",
-        "has_large_column_gap",
         "next_non_space_texts",
         "next_non_space_x0s",
         "estimated_char_width",
@@ -279,7 +278,6 @@ class GlyphLineBuilder:
             non_space_runs,
             explicit_space_count=sum(1 for run in runs if run.text_is_space),
         )
-        self.has_large_column_gap = False
         self.next_non_space_texts: list[str] = []
         self.next_non_space_x0s: list[float] = []
         self.estimated_char_width = (
@@ -424,16 +422,6 @@ class GlyphLineBuilder:
             if run.has_text:
                 next_text = run.text
                 next_x0 = run.x0
-
-        previous_run: TextRun | None = None
-        for run in runs:
-            if previous_run is not None:
-                gap = run.x0 - previous_run.x1
-                gap_threshold = max(run.space_width * 8.0, run.height * 3.0, 40.0)
-                if gap > gap_threshold:
-                    self.has_large_column_gap = True
-                    break
-            previous_run = run
 
     def normalized_text(self, run: TextRun, index: int) -> str:
         text = run.text
@@ -1173,6 +1161,21 @@ def has_interleaved_horizontal_overlap(runs: list[TextRun]) -> bool:
     return False
 
 
+def positive_run_gaps(runs: list[TextRun]) -> list[float]:
+    """Positive horizontal gaps between consecutive text-bearing runs."""
+    gaps: list[float] = []
+    previous: TextRun | None = None
+    for run in runs:
+        if not run.has_text:
+            continue
+        if previous is not None:
+            gap = run.x0 - previous.x1
+            if gap > 0.0:
+                gaps.append(gap)
+        previous = run
+    return gaps
+
+
 def is_tracked_glyph_run_line(non_space_runs: list[TextRun]) -> bool:
     if len(non_space_runs) < 6:
         return False
@@ -1185,14 +1188,7 @@ def is_tracked_glyph_run_line(non_space_runs: list[TextRun]) -> bool:
     if text_chars > len(non_space_runs) * 1.5:
         return False
 
-    positive_gaps = []
-    previous = non_space_runs[0]
-    for run in non_space_runs[1:]:
-        gap = run.x0 - previous.x1
-        if gap > 0:
-            positive_gaps.append(gap)
-        previous = run
-
+    positive_gaps = positive_run_gaps(non_space_runs)
     if len(positive_gaps) < len(non_space_runs) * 0.45:
         return False
 
@@ -1217,16 +1213,7 @@ def explicit_spaces_should_control_glyph_gaps(
 
 
 def tracked_glyph_word_gap_threshold(runs: list[TextRun]) -> float | None:
-    gaps: list[float] = []
-    previous: TextRun | None = None
-    for run in runs:
-        if not run.has_text:
-            continue
-        if previous is not None:
-            gap = run.x0 - previous.x1
-            if gap > 0:
-                gaps.append(gap)
-        previous = run
+    gaps = positive_run_gaps(runs)
     if len(gaps) < 5:
         return None
     gaps.sort()
@@ -1245,14 +1232,7 @@ def column_gap_threshold_for_runs(runs: list[TextRun]) -> float:
     typical_height = median_low(heights) if heights else 0.0
     typical_space = median_low(spaces) if spaces else 0.0
 
-    gaps: list[float] = []
-    previous: TextRun | None = None
-    for run in non_space_runs:
-        if previous is not None:
-            gap = run.x0 - previous.x1
-            if gap > 0.0:
-                gaps.append(gap)
-        previous = run
+    gaps = positive_run_gaps(non_space_runs)
     typical_gap = median_low(gaps) if gaps else 0.0
     return max(
         typical_gap * 4.0,

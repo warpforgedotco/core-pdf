@@ -9,6 +9,7 @@ import re
 import time
 from collections import defaultdict
 from dataclasses import dataclass, replace
+from statistics import fmean
 from typing import Any
 
 import numpy
@@ -267,7 +268,7 @@ def internal_cluster_line_positions(
             clusters[-1].append(position)
         else:
             clusters.append([position])
-    return [int(round(sum(cluster) / len(cluster))) for cluster in clusters]
+    return [int(round(fmean(cluster))) for cluster in clusters]
 
 
 internal_GRID_STRIP_MIN_FRACTION = 0.5
@@ -814,6 +815,35 @@ def recognize_page(
     return RecognitionResult(observations, report)
 
 
+def internal_raster_tasks(
+    raster: internal_Raster | None,
+    page_box: tuple[float, float, float, float],
+    ocr_pass: OcrPass,
+    *,
+    compact_image: bool | str,
+) -> tuple[tuple[internal_OcrTask, ...], int]:
+    """Tile one optional raster into OCR tasks, paired with its pixel count for the report."""
+    if raster is None:
+        return (), 0
+    return (
+        internal_tile_tasks(raster, page_box, ocr_pass, compact_image=compact_image),
+        raster.width * raster.height,
+    )
+
+
+def internal_region_tasks(
+    region: internal_RasterRegion | None,
+    ocr_pass: OcrPass,
+    *,
+    compact_image: bool | str,
+) -> tuple[tuple[internal_OcrTask, ...], int]:
+    if region is None:
+        return (), 0
+    return internal_raster_tasks(
+        region.raster, region.page_box, ocr_pass, compact_image=compact_image
+    )
+
+
 def internal_recognize_page_with_reserved_raster(
     capture: CapturedPage,
     plan: WorkPlan,
@@ -891,26 +921,14 @@ def internal_recognize_page_with_reserved_raster(
             capture,
             max_pixels=HIDDEN_TEXT_VERIFY_PIXELS,
         )
-        verification_tasks = (
-            internal_tile_tasks(
-                verification_region.raster,
-                verification_region.page_box,
-                verification_pass,
-                compact_image=compact_image,
-            )
-            if verification_region is not None
-            else ()
+        verification_tasks, raster_pixels = internal_region_tasks(
+            verification_region, verification_pass, compact_image=compact_image
         )
         verification_candidates = recognize_tasks(verification_tasks)
         verification_candidate = internal_merge_candidate_batches(verification_candidates)
         verification = internal_hidden_text_verification(
             capture.observations,
             verification_candidate.observations,
-        )
-        raster_pixels = (
-            verification_region.raster.width * verification_region.raster.height
-            if verification_region is not None
-            else 0
         )
         verification_record: dict[str, object] = {
             "name": verification_pass.name,
@@ -1173,13 +1191,12 @@ def internal_recognize_page_with_reserved_raster(
                     if capture.evidence.stroked_vector_text.bbox is not None
                     else ()
                 )
-                tasks = internal_tile_tasks(
+                tasks, raster_pixels = internal_raster_tasks(
                     packed_stroked.raster,
                     packed_stroked.packed_box,
                     replace(ocr_pass, recognize_words=True, collect_symbols=True),
                     compact_image=compact_image,
                 )
-                raster_pixels = packed_stroked.raster.width * packed_stroked.raster.height
             else:
                 fallback_region = internal_full_stroked_vector_text_raster(
                     capture,
@@ -1189,20 +1206,8 @@ def internal_recognize_page_with_reserved_raster(
                 )
                 region_stage = "stroked-vector-text-fallback"
                 region_boxes = (fallback_region.page_box,) if fallback_region is not None else ()
-                tasks = (
-                    internal_tile_tasks(
-                        fallback_region.raster,
-                        fallback_region.page_box,
-                        ocr_pass,
-                        compact_image=compact_image,
-                    )
-                    if fallback_region is not None
-                    else ()
-                )
-                raster_pixels = (
-                    fallback_region.raster.width * fallback_region.raster.height
-                    if fallback_region is not None
-                    else 0
+                tasks, raster_pixels = internal_region_tasks(
+                    fallback_region, ocr_pass, compact_image=compact_image
                 )
                 report.stroked_vector_packed = {
                     "accepted": False,
@@ -1273,17 +1278,9 @@ def internal_recognize_page_with_reserved_raster(
                     report=report,
                 )
                 raster_page_box = image_crop or page_box
-                tasks = (
-                    internal_tile_tasks(
-                        raster,
-                        raster_page_box,
-                        ocr_pass,
-                        compact_image=compact_image,
-                    )
-                    if raster is not None
-                    else ()
+                tasks, raster_pixels = internal_raster_tasks(
+                    raster, raster_page_box, ocr_pass, compact_image=compact_image
                 )
-                raster_pixels = raster.width * raster.height if raster is not None else 0
         else:
             direct_region = (
                 dominant_image_region_cached(ocr_pass.pixel_budget)
@@ -1300,16 +1297,9 @@ def internal_recognize_page_with_reserved_raster(
                 if raster is not None and ocr_pass.name == "adaptive-page"
                 else raster
             )
-            tasks = (
-                internal_tile_tasks(
-                    task_raster,
-                    raster_page_box,
-                    ocr_pass,
-                    compact_image=compact_image,
-                )
-                if task_raster is not None
-                else ()
-            )
+            tasks = internal_raster_tasks(
+                task_raster, raster_page_box, ocr_pass, compact_image=compact_image
+            )[0]
             raster_pixels = raster.width * raster.height if raster is not None else 0
         if not tasks:
             if not image_text_preflight:
@@ -1351,8 +1341,8 @@ def internal_recognize_page_with_reserved_raster(
                     variant="isolated",
                     report=report,
                 )
-                isolated_tasks = (
-                    internal_tile_tasks(
+                isolated_tasks, isolated_pixels = (
+                    internal_raster_tasks(
                         isolated_packed.raster,
                         isolated_packed.packed_box,
                         replace(
@@ -1364,7 +1354,7 @@ def internal_recognize_page_with_reserved_raster(
                         compact_image=compact_image,
                     )
                     if isolated_packed is not None
-                    else ()
+                    else ((), 0)
                 )
                 if isolated_tasks and isolated_packed is not None:
                     isolated_remapped = tuple(
@@ -1384,7 +1374,7 @@ def internal_recognize_page_with_reserved_raster(
                     candidate_source_tasks = (*candidate_source_tasks, *isolated_tasks)
                     tasks = (*tasks, *isolated_tasks)
                     packed_candidate = internal_merge_candidate_batches(task_candidates)
-                    raster_pixels += isolated_packed.raster.width * isolated_packed.raster.height
+                    raster_pixels += isolated_pixels
                 pending_stroked_decode = (
                     id(packed_candidate.observations),
                     packed_decode,
@@ -1397,15 +1387,10 @@ def internal_recognize_page_with_reserved_raster(
                     max_pixels=ocr_pass.pixel_budget,
                     report=report,
                 )
-                fallback_tasks = (
-                    internal_tile_tasks(
-                        fallback_region.raster,
-                        fallback_region.page_box,
-                        replace(ocr_pass, recognize_words=False),
-                        compact_image=compact_image,
-                    )
-                    if fallback_region is not None
-                    else ()
+                fallback_tasks, fallback_pixels = internal_region_tasks(
+                    fallback_region,
+                    replace(ocr_pass, recognize_words=False),
+                    compact_image=compact_image,
                 )
                 if fallback_tasks:
                     fallback_used = True
@@ -1414,11 +1399,7 @@ def internal_recognize_page_with_reserved_raster(
                     candidate_source_tasks = (*candidate_source_tasks, *fallback_tasks)
                     tasks = (*tasks, *fallback_tasks)
                     packed_candidate = internal_merge_candidate_batches(fallback_candidates)
-                    raster_pixels += (
-                        fallback_region.raster.width * fallback_region.raster.height
-                        if fallback_region is not None
-                        else 0
-                    )
+                    raster_pixels += fallback_pixels
                     region_stage = "stroked-vector-text-fallback"
                     region_boxes = (
                         (fallback_region.page_box,) if fallback_region is not None else region_boxes
@@ -1488,18 +1469,8 @@ def internal_recognize_page_with_reserved_raster(
                     include_native_text=ocr_pass.include_native_text,
                     report=report,
                 )
-                retry_tasks = (
-                    internal_tile_tasks(
-                        retry_raster,
-                        page_box,
-                        retry_pass,
-                        compact_image=compact_image,
-                    )
-                    if retry_raster is not None
-                    else ()
-                )
-                rescue_pixels = (
-                    retry_raster.width * retry_raster.height if retry_raster is not None else 0
+                retry_tasks, rescue_pixels = internal_raster_tasks(
+                    retry_raster, page_box, retry_pass, compact_image=compact_image
                 )
             else:
                 retry_pass = replace(

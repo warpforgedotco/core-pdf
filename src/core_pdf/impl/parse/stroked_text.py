@@ -20,6 +20,7 @@ from core_pdf.impl.model.geometry import (
     bbox_area,
     bbox_intersection_area,
     bbox_union,
+    points_bbox,
     rect_tuple,
 )
 from core_pdf.impl.types import Rectangle
@@ -196,10 +197,7 @@ def internal_glyph_signature(
         if cache is not None:
             cache[cache_key] = None
         return None
-    x0 = min(point[0] for point in points)
-    y0 = min(point[1] for point in points)
-    x1 = max(point[0] for point in points)
-    y1 = max(point[1] for point in points)
+    x0, y0, x1, y1 = points_bbox(points) or (0.0, 0.0, 0.0, 0.0)
     x_scale = max(0.02, x1 - x0)
     y_scale = max(0.02, y1 - y0)
     quantization = STROKED_TEXT_SIGNATURE_QUANTIZATION

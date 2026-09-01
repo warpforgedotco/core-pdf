@@ -34,6 +34,7 @@ from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     is_pdf_null,
     normalize_pdf_name,
     parse_int,
+    parse_int_strict,
 )
 
 internal_CryptMethod = Literal["V2", "AESV2", "AESV3", "AESV4"]
@@ -824,10 +825,7 @@ def internal_required_bytes(params: PdfDict, key: str, length: int) -> bytes:
 
 
 def internal_parse_int(value: object, field_name: str) -> int:
-    parsed = parse_int(value, None)
-    if parsed is None:
-        raise ValueError(f"invalid encryption dictionary value {field_name}")
-    return parsed
+    return parse_int_strict(value, f"invalid encryption dictionary value {field_name}")
 
 
 def internal_name(value: object) -> str:

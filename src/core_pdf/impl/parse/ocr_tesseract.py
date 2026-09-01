@@ -216,6 +216,10 @@ def prewarm_runtime() -> None:
     internal_prepare_ocr()
 
 
+internal_HOCR_BBOX_RE = re.compile(r"bbox (\d+) (\d+) (\d+) (\d+)")
+internal_HOCR_CONFIDENCE_RE = re.compile(r"(?:x_conf|x_wconf) (-?\d+(?:\.\d+)?)")
+
+
 class internal_HocrCharacterParser(HTMLParser):
     """Extract line text after dropping low-confidence hOCR characters."""
 
@@ -233,11 +237,15 @@ class internal_HocrCharacterParser(HTMLParser):
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if tag != "span":
             return
-        attributes = dict(attrs)
-        classes = set((attributes.get("class") or "").split())
-        title = attributes.get("title") or ""
+        class_value = title = ""
+        for name, value in attrs:
+            if name == "class":
+                class_value = value or ""
+            elif name == "title":
+                title = value or ""
+        classes = class_value.split()
         if "ocr_line" in classes:
-            match = re.search(r"bbox (\d+) (\d+) (\d+) (\d+)", title)
+            match = internal_HOCR_BBOX_RE.search(title)
             self.internal_line_box = None
             if match:
                 left, top, right, bottom = (int(value) for value in match.groups())
@@ -247,7 +255,7 @@ class internal_HocrCharacterParser(HTMLParser):
             self.internal_in_word = True
             self.internal_chars = []
         elif "ocrx_cinfo" in classes and self.internal_in_word:
-            match = re.search(r"(?:x_conf|x_wconf) (-?\d+(?:\.\d+)?)", title)
+            match = internal_HOCR_CONFIDENCE_RE.search(title)
             self.internal_char_confidence = float(match.group(1)) if match else 0.0
             self.internal_in_char = True
 

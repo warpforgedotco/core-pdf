@@ -5,11 +5,9 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from functools import lru_cache
-from typing import TypeAlias, overload
+from typing import overload
 
 from core_pdf.impl.primitives import PdfName, PdfString
-
-CoercedContainer: TypeAlias = dict[object, object] | list[object]
 
 
 def is_pdf_null(value: object) -> bool:
@@ -29,6 +27,14 @@ def parse_name(value: object, default: str | None = None) -> str | None:
     if type(value) is bytes:
         return parse_name_bytes(value)
     return default
+
+
+@overload
+def parse_int(value: object, default: None = None) -> int | None: ...
+
+
+@overload
+def parse_int(value: object, default: int) -> int: ...
 
 
 def parse_int(value: object, default: int | None = None) -> int | None:
@@ -53,10 +59,10 @@ def parse_int(value: object, default: int | None = None) -> int | None:
         return default
 
 
-def parse_int_strict(value: object) -> int:
+def parse_int_strict(value: object, message: str | None = None) -> int:
     parsed = parse_int(value)
     if parsed is None:
-        raise ValueError(f"invalid integer {value!r}")
+        raise ValueError(message or f"invalid integer {value!r}")
     return parsed
 
 
@@ -95,11 +101,26 @@ def parse_float(value: object, default: float | None = 0.0) -> float | None:
         return default
 
 
-def parse_float_strict(value: object) -> float:
+def parse_float_strict(value: object, message: str | None = None) -> float:
     parsed = parse_float(value, default=None)
     if parsed is None:
-        raise ValueError(f"invalid float {value!r}")
+        raise ValueError(message or f"invalid float {value!r}")
     return parsed
+
+
+def parse_box(value: object) -> tuple[float, float, float, float] | None:
+    """Four strict numbers to a rectangle tuple, or None if ``value`` is not one."""
+    if not isinstance(value, (list, tuple)) or len(value) != 4:
+        return None
+    try:
+        return (
+            parse_float_strict(value[0]),
+            parse_float_strict(value[1]),
+            parse_float_strict(value[2]),
+            parse_float_strict(value[3]),
+        )
+    except ValueError:
+        return None
 
 
 def normalize_pdf_name(value: object, default: str | None = None) -> str | None:

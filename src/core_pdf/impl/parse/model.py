@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, fields
 from enum import IntEnum, StrEnum
 from typing import Any, NamedTuple, cast
@@ -48,12 +48,30 @@ internal_OCR_RESCUE_DENSE_MIN_CHARACTERS: int = 2_000
 internal_OCR_RESCUE_DENSE_MIN_CONFIDENCE: float = 92.0
 
 
+def internal_column(
+    values: Iterable[Any] | None,
+    dtype: Any,
+    default: Callable[[], numpy.ndarray[Any, Any]] | None = None,
+) -> numpy.ndarray[Any, Any]:
+    """Materialize one observation column, or its default when the column is absent."""
+    if values is None:
+        if default is None:
+            raise ValueError("observation column is required")
+        return default()
+    return numpy.asarray(
+        values if isinstance(values, (list, tuple, range)) else tuple(values), dtype=dtype
+    )
+
+
 def internal_bbox_tuple(row: object) -> tuple[float, float, float, float]:
     """Narrow one four-column NumPy bbox row without allocating an intermediate list."""
     values = cast(numpy.ndarray[Any, Any], row)
     return (float(values[0]), float(values[1]), float(values[2]), float(values[3]))
 
 
+# An image covering this fraction of the page is the page, for capture evidence and
+# for choosing the OCR raster crop alike.
+FULL_PAGE_IMAGE_COVERAGE = 0.90
 OCR_RESCUE_LARGE_TEXT_HEIGHT = 32.0
 OCR_PARALLEL_TILE_MIN_VECTOR_COMPLEXITY = 100_000
 HIDDEN_TEXT_VERIFY_MIN_CONFIDENCE = 80.0
@@ -70,7 +88,6 @@ class ObservationSource(IntEnum):
     NATIVE = 0
     OCR = 1
     STRUCTURE = 2
-    FORM = 3
 
 
 class PageRoute(StrEnum):
@@ -202,66 +219,25 @@ class ObservationBatch:
         size = len(texts)
         if size == 0:
             return cls.empty()
-        boxes = numpy.asarray(
-            bbox if isinstance(bbox, (list, tuple)) else tuple(bbox), dtype=numpy.float32
-        ).reshape((size, 4))
-        polygons = (
-            numpy.asarray(
-                polygon if isinstance(polygon, (list, tuple)) else tuple(polygon),
-                dtype=numpy.float32,
-            ).reshape((size, 8))
-            if polygon is not None
-            else numpy.full((size, 8), numpy.nan, dtype=numpy.float32)
+        boxes = internal_column(bbox, numpy.float32).reshape((size, 4))
+        polygons = internal_column(
+            polygon, numpy.float32, lambda: numpy.full((size, 8), numpy.nan, dtype=numpy.float32)
+        ).reshape((size, 8))
+        conf_arr = internal_column(
+            confidence, numpy.float32, lambda: numpy.full(size, numpy.nan, dtype=numpy.float32)
         )
-        conf_arr = (
-            numpy.asarray(
-                confidence if isinstance(confidence, (list, tuple)) else tuple(confidence),
-                dtype=numpy.float32,
-            )
-            if confidence is not None
-            else numpy.full(size, numpy.nan, dtype=numpy.float32)
+        seq_arr = internal_column(
+            sequence, numpy.int64, lambda: numpy.arange(size, dtype=numpy.int64)
         )
-        seq_arr = (
-            numpy.asarray(
-                sequence if isinstance(sequence, (list, tuple, range)) else tuple(sequence),
-                dtype=numpy.int64,
-            )
-            if sequence is not None
-            else numpy.arange(size, dtype=numpy.int64)
+        vis_arr = internal_column(visible, numpy.bool_, lambda: numpy.ones(size, dtype=numpy.bool_))
+        rot_arr = internal_column(
+            rotation, numpy.int64, lambda: numpy.zeros(size, dtype=numpy.int64)
         )
-        vis_arr = (
-            numpy.asarray(
-                visible if isinstance(visible, (list, tuple)) else tuple(visible),
-                dtype=numpy.bool_,
-            )
-            if visible is not None
-            else numpy.ones(size, dtype=numpy.bool_)
+        font_arr = internal_column(
+            font_size, numpy.float32, lambda: numpy.full(size, numpy.nan, dtype=numpy.float32)
         )
-        rot_arr = (
-            numpy.asarray(
-                rotation if isinstance(rotation, (list, tuple)) else tuple(rotation),
-                dtype=numpy.int64,
-            )
-            if rotation is not None
-            else numpy.zeros(size, dtype=numpy.int64)
-        )
-        font_arr = (
-            numpy.asarray(
-                font_size if isinstance(font_size, (list, tuple)) else tuple(font_size),
-                dtype=numpy.float32,
-            )
-            if font_size is not None
-            else numpy.full(size, numpy.nan, dtype=numpy.float32)
-        )
-        line_arr = (
-            numpy.asarray(
-                line_break_before
-                if isinstance(line_break_before, (list, tuple))
-                else tuple(line_break_before),
-                dtype=numpy.bool_,
-            )
-            if line_break_before is not None
-            else numpy.zeros(size, dtype=numpy.bool_)
+        line_arr = internal_column(
+            line_break_before, numpy.bool_, lambda: numpy.zeros(size, dtype=numpy.bool_)
         )
         ref_tuple = (
             (references if isinstance(references, tuple) else tuple(references))

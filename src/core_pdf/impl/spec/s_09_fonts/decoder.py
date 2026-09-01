@@ -7,17 +7,16 @@ import re
 import typing
 import unicodedata
 from collections.abc import Mapping
+from contextlib import suppress
 from dataclasses import dataclass
+from io import BytesIO
 from typing import Iterable
 
+from core_pdf._vendor.fontTools.ttLib import TTFont
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.primitives import PdfString
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
-from core_pdf.impl.spec.s_09_fonts.cff import (
-    build_cff_unicode_repair_index,
-    cff_font_for_pdf_font,
-)
 from core_pdf.impl.spec.s_09_fonts.cid_unicode import (
     CIDUnicodeMap,
     resolve_cid_unicode_map,
@@ -35,22 +34,24 @@ from core_pdf.impl.spec.s_09_fonts.cmap_resources import (
 )
 from core_pdf.impl.spec.s_09_fonts.cmap_tounicode import ToUnicodeCMap
 from core_pdf.impl.spec.s_09_fonts.cmap_widths import FontWidthMap
-from core_pdf.impl.spec.s_09_fonts.font_names import resolve_base_font_name
+from core_pdf.impl.spec.s_09_fonts.fallback import fallback_glyph_outline
 from core_pdf.impl.spec.s_09_fonts.font_program import (
     LEGITIMATE_MULTI_CHAR_GLYPHS,
     CFFFont,
     CFFUnicodeRepairIndex,
+    cff_font_for_data,
+    cff_unicode_repair_index_for_data,
+    is_repairable_to_unicode_label,
 )
-from core_pdf.impl.spec.s_09_fonts.font_program_opentype import (
-    OpenTypeFontProgram,
-    opentype_font_for_pdf_font,
-)
+from core_pdf.impl.spec.s_09_fonts.font_program_opentype import OpenTypeFontProgram
 from core_pdf.impl.spec.s_09_fonts.font_program_truetype import (
+    FONT_PROGRAM_ERRORS,
     TrueTypeFontProgram,
+    tt_font_for_data,
 )
 from core_pdf.impl.spec.s_09_fonts.font_program_type1 import (
     Type1FontProgram,
-    type1_font_for_pdf_font,
+    type1_font_for_data,
 )
 from core_pdf.impl.spec.s_09_fonts.glyph_decode import (
     build_glyph_decode_table,
@@ -71,7 +72,6 @@ from core_pdf.impl.spec.s_09_fonts.metrics import (
     parse_font_metrics,
     standard_14_widths,
 )
-from core_pdf.impl.spec.s_09_fonts.truetype import tt_font_for_pdf_font
 from core_pdf.impl.spec.s_09_fonts.widths import (
     get_descendant,
     parse_font_widths,
@@ -102,6 +102,188 @@ def parse_type1_font_program_encoding(font_program: bytes | memoryview) -> dict[
         if 0 <= code <= 255:
             differences[code] = match.group(2).decode("latin-1")
     return differences
+
+
+# Adapters from a PDF font dictionary (9.6-9.7) to an embedded font program.
+# The font_program_* modules parse raw program bytes; only this module reads
+# FontDescriptor / FontFile entries.
+
+
+def descriptor_font_name(font: dict[str, Any], subtype: str | None) -> str | None:
+    descriptor = font.get("FontDescriptor")
+    if subtype == "Type0":
+        descendant = get_descendant(font)
+        if isinstance(descendant, dict):
+            descendant_descriptor = descendant.get("FontDescriptor")
+            descriptor = descendant_descriptor or descriptor
+    if not isinstance(descriptor, dict):
+        return None
+    return normalize_pdf_name(descriptor.get("FontName"))
+
+
+def resolve_base_font_name(font: dict[str, Any], subtype: str | None) -> str | None:
+    base_font_name = normalize_pdf_name(font.get("BaseFont"))
+    if base_font_name is not None:
+        return base_font_name
+    return descriptor_font_name(font, subtype)
+
+
+def tt_font_for_pdf_font(font: dict[str, Any]) -> TrueTypeFontProgram | None:
+    descendant = get_descendant(font)
+    font_dict = descendant if descendant is not None else font
+    subtype = normalize_pdf_name(font_dict.get("Subtype"))
+    if subtype not in {"CIDFontType2", "TrueType"}:
+        return None
+    descriptor = font_dict.get("FontDescriptor")
+    if not isinstance(descriptor, dict):
+        return None
+    font_file = descriptor.get("FontFile2")
+    if not isinstance(font_file, PdfStream):
+        return None
+    cid_to_gid = None
+    if isinstance(descendant, dict):
+        cid_to_gid_obj = descendant.get("CIDToGIDMap")
+        if isinstance(cid_to_gid_obj, PdfStream):
+            cid_to_gid = cid_to_gid_obj.data
+    try:
+        return tt_font_for_data(font_file.data, cid_to_gid, use_cmap=descendant is None)
+    except ValueError:
+        return None
+
+
+def single_code_mapping(
+    to_unicode: ToUnicodeCMap, cmap: CMapDecoder | None, limit: int | None = None
+) -> dict[bytes, tuple[int, str]]:
+    mapping: dict[bytes, tuple[int, str]] = {}
+    for code_bytes, value in to_unicode.mappings.items():
+        if len(code_bytes) not in {1, 2}:
+            continue
+        cid = int.from_bytes(code_bytes, "big")
+        if cmap is not None:
+            decoded = cmap.decode_entries(code_bytes)
+            if len(decoded) == 1 and decoded[0][0] == code_bytes:
+                cid = decoded[0][1]
+        if limit is not None and cid >= limit:
+            continue
+        mapping.setdefault(code_bytes, (cid, value))
+    return mapping
+
+
+def cff_font_for_pdf_font(font: dict[str, Any]) -> CFFFont | None:
+    descendant = get_descendant(font)
+    font_dict = descendant if descendant is not None else font
+    font_subtype = normalize_pdf_name(font_dict.get("Subtype"))
+    if descendant is not None:
+        if font_subtype != "CIDFontType0":
+            return None
+    elif font_subtype not in {"Type1", "MMType1"}:
+        return None
+    descriptor = font_dict.get("FontDescriptor")
+    if not isinstance(descriptor, dict):
+        return None
+    font_file = descriptor.get("FontFile3")
+    if not isinstance(font_file, PdfStream):
+        return None
+    subtype = normalize_pdf_name(font_file.dictionary.get("Subtype"))
+    if descendant is None and subtype not in {"Type1C", "OpenType"}:
+        return None
+    font_data: bytes | None = font_file.data
+    if subtype == "OpenType":
+        if font_data is None:
+            return None
+        font_data = internal_extract_cff_table(font_data)
+        if font_data is None:
+            return None
+    try:
+        return cff_font_for_data(font_data)
+    except ValueError:
+        return None
+
+
+def build_cff_unicode_repair_index(
+    font: dict[str, Any], to_unicode: ToUnicodeCMap | None, cmap: CMapDecoder | None
+) -> CFFUnicodeRepairIndex | None:
+    if to_unicode is None:
+        return None
+    descendant = get_descendant(font)
+    if descendant is None:
+        return None
+    if normalize_pdf_name(descendant.get("Subtype")) != "CIDFontType0":
+        return None
+    descriptor = descendant.get("FontDescriptor")
+    if not isinstance(descriptor, dict):
+        return None
+    font_file = descriptor.get("FontFile3")
+    if not isinstance(font_file, PdfStream) or len(font_file.data) > 750_000:
+        return None
+    subtype = normalize_pdf_name(font_file.dictionary.get("Subtype"))
+    font_data: bytes | None = font_file.data
+    if subtype == "OpenType":
+        if font_data is None:
+            return None
+        font_data = internal_extract_cff_table(font_data)
+        if font_data is None:
+            return None
+    mapping = single_code_mapping(to_unicode, cmap)
+    if not any(is_repairable_to_unicode_label(value) for internal_cid, value in mapping.values()):
+        return None
+    try:
+        return cff_unicode_repair_index_for_data(
+            font_data, tuple(sorted((code, cid, value) for code, (cid, value) in mapping.items()))
+        )
+    except ValueError:
+        return None
+
+
+def internal_extract_cff_table(data: bytes) -> bytes | None:
+    font: TTFont | None = None
+    try:
+        font = TTFont(BytesIO(data), lazy=True, recalcBBoxes=False, recalcTimestamp=False)
+        reader = font.reader
+        if reader is None:
+            return None
+        table = reader.tables.get("CFF ")
+        return table.loadData(reader.file) if table is not None else None
+    except FONT_PROGRAM_ERRORS:
+        return None
+    finally:
+        if font is not None:
+            with suppress(AttributeError):
+                font.close()
+
+
+def type1_font_for_pdf_font(font: dict[str, object]) -> Type1FontProgram | None:
+    if normalize_pdf_name(font.get("Subtype")) not in {"Type1", "MMType1"}:
+        return None
+    descriptor = font.get("FontDescriptor")
+    if not isinstance(descriptor, dict):
+        return None
+    font_file = descriptor.get("FontFile")
+    if not isinstance(font_file, PdfStream):
+        return None
+    length1_value = font_file.dictionary.get("Length1")
+    length1 = int(length1_value) if isinstance(length1_value, (int, float)) else None
+    try:
+        return type1_font_for_data(font_file.data, length1)
+    except (TypeError, ValueError):
+        return None
+
+
+def opentype_font_for_pdf_font(font: dict[str, object]) -> OpenTypeFontProgram | None:
+    descendant = get_descendant(font)
+    font_dict = descendant if descendant is not None else font
+    descriptor = font_dict.get("FontDescriptor")
+    if not isinstance(descriptor, dict):
+        return None
+    font_file = descriptor.get("FontFile3")
+    if not isinstance(font_file, PdfStream):
+        return None
+    if normalize_pdf_name(font_file.dictionary.get("Subtype")) != "OpenType":
+        return None
+    try:
+        return OpenTypeFontProgram(font_file.data)
+    except ValueError:
+        return None
 
 
 def internal_font_program_for_pdf_font(font: dict[str, Any]) -> FontProgram | None:
@@ -933,7 +1115,7 @@ class FontDecoder:
             glyph_id = self.glyph_id_for_code(code)
             bbox = program.glyph_bbox_for_gid(glyph_id) if glyph_id is not None else None
         if len(cache) >= 4096:
-            cache.clear()
+            cache.pop(next(iter(cache)))
         cache[code] = bbox
         return bbox
 
@@ -968,7 +1150,7 @@ class FontDecoder:
             else ()
         )
         if len(self.glyph_bitmap_cache) >= 512:
-            self.glyph_bitmap_cache.clear()
+            self.glyph_bitmap_cache.pop(next(iter(self.glyph_bitmap_cache)))
         self.glyph_bitmap_cache[cache_key] = bitmap
         return bitmap
 
@@ -989,8 +1171,6 @@ class FontDecoder:
         program = self.font_program
         if program is not None:
             return program.normalized_glyph_contours(glyph_id)
-        from core_pdf.impl.spec.s_09_fonts.fallback import fallback_glyph_outline
-
         return fallback_glyph_outline(
             self.font_name,
             text,

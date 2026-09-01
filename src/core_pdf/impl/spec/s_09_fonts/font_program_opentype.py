@@ -9,14 +9,11 @@ from core_pdf._vendor.fontTools.pens.boundsPen import BoundsPen
 from core_pdf._vendor.fontTools.pens.recordingPen import DecomposingRecordingPen
 from core_pdf._vendor.fontTools.pens.transformPen import TransformPen
 from core_pdf._vendor.fontTools.ttLib import TTFont
-from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
-from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
 from core_pdf.impl.spec.s_09_fonts.font_program_truetype import (
     FONT_PROGRAM_ERRORS,
     internal_recording_to_contours,
 )
-from core_pdf.impl.spec.s_09_fonts.raster_kernel import Point, rasterize_contours
-from core_pdf.impl.spec.s_09_fonts.widths import get_descendant
+from core_pdf.impl.spec.s_09_fonts.raster_kernel import Point, rasterize_contours, scale_contours
 
 
 class OpenTypeFontProgram:
@@ -75,13 +72,11 @@ class OpenTypeFontProgram:
             glyph_set[glyph_name].draw(pen)
             contours = internal_recording_to_contours(pen.value)
             scale = 1000.0 / self.units_per_em if self.units_per_em else 1.0
-            result = tuple(
-                tuple((x * scale, y * scale) for x, y in contour) for contour in contours
-            )
+            result = scale_contours(contours, scale)
         except FONT_PROGRAM_ERRORS:
             result = ()
         if len(self.internal_contour_cache) >= 512:
-            self.internal_contour_cache.clear()
+            self.internal_contour_cache.pop(next(iter(self.internal_contour_cache)))
         self.internal_contour_cache[glyph_id] = result
         return result
 
@@ -111,21 +106,4 @@ class OpenTypeFontProgram:
         return rasterize_contours(contours, width=width, height=height) if contours else ()
 
 
-def opentype_font_for_pdf_font(font: dict[str, object]) -> OpenTypeFontProgram | None:
-    descendant = get_descendant(font)
-    font_dict = descendant if descendant is not None else font
-    descriptor = font_dict.get("FontDescriptor")
-    if not isinstance(descriptor, dict):
-        return None
-    font_file = descriptor.get("FontFile3")
-    if not isinstance(font_file, PdfStream):
-        return None
-    if normalize_pdf_name(font_file.dictionary.get("Subtype")) != "OpenType":
-        return None
-    try:
-        return OpenTypeFontProgram(font_file.data)
-    except ValueError:
-        return None
-
-
-__all__ = ["OpenTypeFontProgram", "opentype_font_for_pdf_font"]
+__all__ = ["OpenTypeFontProgram"]

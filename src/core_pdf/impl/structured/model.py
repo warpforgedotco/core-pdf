@@ -30,6 +30,10 @@ def internal_freeze(value: Any) -> Any:
     return value
 
 
+# Sentinel for a source, page class or route the pipeline could not determine.
+UNKNOWN = "unknown"
+
+
 class BlockKind(StrEnum):
     PARAGRAPH = "paragraph"
     HEADING = "heading"
@@ -181,7 +185,7 @@ class TextLine:
     advance_bbox: Rectangle | None = None
     ink_bbox: Rectangle | None = None
     kind: str = "text-line"
-    source: str = "unknown"
+    source: str = UNKNOWN
     confidence: float | None = None
     baseline: Rectangle | None = None
     contributing_sources: tuple[str, ...] = ()
@@ -307,7 +311,7 @@ class TextView:
                             word_index=word_index,
                             block_index=block_index,
                             page_number=self.page_number,
-                            source=line.source if word.source == "unknown" else word.source,
+                            source=line.source if word.source == UNKNOWN else word.source,
                         )
                     )
                 line_index += 1
@@ -446,8 +450,8 @@ class Page:
     height: float = 0.0
     rotation: int = 0
     blocks: tuple[Block, ...] = ()
-    page_class: str = "unknown"
-    base_route: str = "unknown"
+    page_class: str = UNKNOWN
+    base_route: str = UNKNOWN
     confidence: float | None = None
     tables: tuple[Table, ...] = ()
     figures: tuple[Figure, ...] = ()

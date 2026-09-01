@@ -11,16 +11,17 @@ import pytest
 
 from core_pdf.impl.primitives import PdfName
 from core_pdf.impl.spec.s_07_filters import pipeline, predictors
-from core_pdf.impl.spec.s_07_filters.codecs import apply_ascii85, apply_ascii_hex
+from core_pdf.impl.spec.s_07_filters.codecs import (
+    apply_ascii85,
+    apply_ascii_hex,
+    apply_flate,
+    looks_like_pdf_content_stream,
+)
 from core_pdf.impl.spec.s_07_filters.decode_spec import (
     FilterParams,
     normalize_stream_decode_spec,
 )
 from core_pdf.impl.spec.s_07_filters.errors import FilterParseError
-from core_pdf.impl.spec.s_07_filters.flate import (
-    apply_flate,
-    looks_like_pdf_content_stream,
-)
 from core_pdf.impl.spec.s_07_filters.pipeline import decode_stream_data
 from core_pdf.impl.spec.s_07_filters.predictors import (
     apply_png_predictor,
@@ -289,7 +290,7 @@ def test_subbyte_image_samples_match_expected_values(bits_per_component: int) ->
 def test_png_predictor_codec_path_matches_scalar_path(
     monkeypatch: pytest.MonkeyPatch, columns: int, colors: int, bits_per_component: int
 ) -> None:
-    from core_pdf.impl.spec.s_07_filters import predictor_impl
+    from core_pdf.impl.spec.s_07_filters import predictors as predictor_impl
 
     row_length = max(1, (columns * colors * bits_per_component + 7) // 8)
     rng = numpy.random.default_rng(columns * 31 + colors * 7 + bits_per_component)
@@ -313,7 +314,7 @@ def test_png_predictor_codec_path_matches_scalar_path(
 
 
 def test_png_predictor_codec_path_falls_back_on_damaged_filter_byte() -> None:
-    from core_pdf.impl.spec.s_07_filters import predictor_impl
+    from core_pdf.impl.spec.s_07_filters import predictors as predictor_impl
 
     columns, colors = 512, 1
     good_row = b"\x02" + bytes(columns)

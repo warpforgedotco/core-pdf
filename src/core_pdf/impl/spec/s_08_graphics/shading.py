@@ -7,14 +7,12 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
-from core_pdf.impl.spec.s_07_syntax_primitives.coercion import parse_float
+from core_pdf.impl.spec.s_07_syntax_primitives.coercion import parse_float, parse_int
 from core_pdf.impl.spec.s_08_graphics.color_kernels import (
     evaluate_sampled_tint_function,
 )
 from core_pdf.impl.spec.s_08_graphics.image_metadata import (
     image_color_space_name,
-    pdf_float,
-    pdf_int,
 )
 
 
@@ -44,7 +42,7 @@ def internal_evaluate_pdf_function(function: Any, value: float) -> tuple[float, 
             outputs.extend(internal_evaluate_pdf_function(entry, value))
         return tuple(outputs) if outputs else (value,)
     if isinstance(function, PdfStream):
-        function_type = pdf_int(function.dictionary.get("FunctionType"), -1)
+        function_type = parse_int(function.dictionary.get("FunctionType"), -1)
         if function_type == 0:
             try:
                 return tuple(evaluate_sampled_tint_function(function, value))
@@ -52,13 +50,13 @@ def internal_evaluate_pdf_function(function: Any, value: float) -> tuple[float, 
                 return (value,)
         dictionary = function.dictionary
     elif isinstance(function, dict):
-        function_type = pdf_int(function.get("FunctionType"), -1)
+        function_type = parse_int(function.get("FunctionType"), -1)
         dictionary = function
     else:
         return (value,)
 
     if function_type == 2:
-        exponent = pdf_float(dictionary.get("N"), 1.0)
+        exponent = parse_float(dictionary.get("N"), 1.0)
         c0 = list(internal_number_array(dictionary.get("C0")) or (0.0,))
         c1 = list(internal_number_array(dictionary.get("C1")) or (1.0,))
         count = max(len(c0), len(c1))
@@ -109,7 +107,7 @@ def prepare_shading(dictionary: object) -> PreparedShading | None:
     """Normalize one axial or radial PDF shading dictionary."""
     if not isinstance(dictionary, dict):
         return None
-    shading_type = pdf_int(dictionary.get("ShadingType"), 0)
+    shading_type = parse_int(dictionary.get("ShadingType"), 0)
     if shading_type not in {2, 3}:
         return None
     coords = internal_number_array(dictionary.get("Coords"))

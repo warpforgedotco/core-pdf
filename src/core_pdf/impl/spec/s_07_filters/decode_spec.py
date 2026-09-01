@@ -6,6 +6,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TypeAlias
 
+from core_pdf.impl.primitives import PdfReference
 from core_pdf.impl.spec.s_07_filters.errors import FilterParseError
 from core_pdf.impl.spec.s_07_filters.registry import (
     CCITT_FILTERS,
@@ -44,9 +45,7 @@ class FilterParams:
     @classmethod
     def from_parms(cls, parms: object) -> "FilterParams":
         if not isinstance(parms, dict):
-            if is_pdf_null(parms) or (
-                hasattr(parms, "object_number") and hasattr(parms, "generation_number")
-            ):
+            if is_pdf_null(parms) or isinstance(parms, PdfReference):
                 return cls()
             raise ValueError("invalid DecodeParms dictionary")
 

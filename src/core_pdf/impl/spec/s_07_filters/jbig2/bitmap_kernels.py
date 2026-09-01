@@ -6,10 +6,17 @@ from typing import Any
 
 import numpy
 
-from core_pdf.impl.spec.s_07_filters.jbig2.buffer_views import (
-    uint8_matrix_view,
-    uint8_view,
-)
+from core_pdf.impl.runtime.array_views import uint8_view
+
+
+def uint8_matrix_view(
+    buffer: bytes | bytearray | memoryview | numpy.ndarray[Any, Any],
+    rows: int,
+    columns: int,
+) -> numpy.ndarray[Any, numpy.dtype[numpy.uint8]]:
+    """Return a validated mutable/read-only matrix view over packed rows."""
+    return uint8_view(buffer, count=rows * columns).reshape(rows, columns)
+
 
 # NumPy's packed-bit path amortizes its view setup above a small region.  The
 # aligned case is already faster at 64 pixels, while scalar composition remains
@@ -176,4 +183,4 @@ def compose_packed_bitmap_data(
     )
 
 
-__all__ = ("compose_packed_bitmap_data",)
+__all__ = ("compose_packed_bitmap_data", "uint8_matrix_view", "uint8_view")

@@ -441,7 +441,7 @@ def page_to_markdown(page: Page) -> str:
             table=table_to_markdown,
             figure=lambda figure: f"> [Figure: {figure.kind}]",
         )
-        for element in internal_serialization_elements(page)
+        for element in page.elements
     ]
     return "\n\n".join(parts)
 
@@ -526,17 +526,10 @@ def page_to_html(page: Page) -> str:
             table=table_to_html,
             figure=lambda figure: f'<figure data-kind="{escape(figure.kind)}"></figure>',
         )
-        for element in internal_serialization_elements(page)
+        for element in page.elements
     ]
     rendered = "\n".join(parts)
     return f'<section data-page-number="{page.page_number}">{rendered}</section>'
-
-
-def internal_serialization_elements(page: Page) -> tuple[PageElement, ...]:
-    """Order canonical page elements for rendering."""
-    # Page.elements sorts the same blocks/tables/figures with the same key
-    # and memoizes the result.
-    return page.elements
 
 
 def block_to_html(block: Block) -> str:

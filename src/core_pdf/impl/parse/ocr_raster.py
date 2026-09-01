@@ -18,8 +18,9 @@ from typing import Any
 
 import numpy
 
-from core_pdf.impl.model.geometry import bbox_union
+from core_pdf.impl.model.geometry import bbox_union, points_bbox
 from core_pdf.impl.parse.model import (
+    FULL_PAGE_IMAGE_COVERAGE,
     MAX_OCR_PIXELS,
     CapturedPage,
     RecognitionReport,
@@ -466,10 +467,10 @@ def internal_direct_image_orientation(
         points = tuple((float(point[0]), float(point[1])) for point in quad)
     except (IndexError, TypeError, ValueError):
         return None
-    x0 = min(point[0] for point in points)
-    y0 = min(point[1] for point in points)
-    x1 = max(point[0] for point in points)
-    y1 = max(point[1] for point in points)
+    bounds = points_bbox(points)
+    if bounds is None:
+        return None
+    x0, y0, x1, y1 = bounds
     if x1 <= x0 or y1 <= y0:
         return None
     target_corners = ((x0, y0), (x1, y0), (x0, y1), (x1, y1))
@@ -627,6 +628,6 @@ def internal_safe_image_crop(capture: CapturedPage) -> tuple[float, float, float
     if crop[2] <= crop[0] or crop[3] <= crop[1]:
         return None
     crop_area = (crop[2] - crop[0]) * (crop[3] - crop[1])
-    if crop_area >= max(1.0, page_width * page_height * 0.90):
+    if crop_area >= max(1.0, page_width * page_height * FULL_PAGE_IMAGE_COVERAGE):
         return None
     return crop

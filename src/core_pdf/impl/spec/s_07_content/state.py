@@ -12,11 +12,13 @@ from functools import lru_cache
 from math import ceil, hypot
 from typing import TYPE_CHECKING, Any, TypeAlias, cast
 
+import numpy
+
 if TYPE_CHECKING:
     from core_pdf.impl.spec.s_07_content.inline_images import InlineImage
 
 from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.model.geometry import RectBox
+from core_pdf.impl.model.geometry import RectBox, transform_bbox
 from core_pdf.impl.model.glyph_table import GlyphTableBuilder
 from core_pdf.impl.model.glyphs import (
     GlyphCluster,
@@ -86,13 +88,14 @@ from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict, PdfValueResolver
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     normalize_pdf_name,
-    parse_float,
+    parse_float_strict,
     parse_int,
+    parse_int_strict,
 )
 from core_pdf.impl.spec.s_08_graphics.color import color_operands_to_srgb
 from core_pdf.impl.spec.s_08_graphics.color_spec import ImageColorSpec, color_spec_from_value
 from core_pdf.impl.spec.s_08_graphics.image_decode import ImageSource
-from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix, transform_bbox
+from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 from core_pdf.impl.spec.s_09_fonts.decoder import (
     DecodedGlyph,
     FontDecoder,
@@ -312,7 +315,7 @@ class TextState:
     color_normalization_cache: ObjectCache
     extgstate_cache: ObjectCache
     font_setting_cache: ObjectCache
-    operand_decode_cache: ObjectCache
+    text_scan_cache: dict[StreamKey, bool]
     decoder_cache: dict[tuple[int, int] | int, FontDecoder]
     decoder_memo: dict[tuple[int, str | None], FontDecoder]
     kw_cache: dict[bytes, object]
@@ -420,7 +423,7 @@ class TextState:
         "color_normalization_cache",
         "extgstate_cache",
         "font_setting_cache",
-        "operand_decode_cache",
+        "text_scan_cache",
         "decoder_cache",
         "decoder_memo",
         "kw_cache",
@@ -575,7 +578,7 @@ class TextState:
         self.color_normalization_cache = {}
         self.extgstate_cache = {}
         self.font_setting_cache = {}
-        self.operand_decode_cache = {}
+        self.text_scan_cache = {}
         self.decoder_cache = decoder_cache if decoder_cache is not None else {}
         self.decoder_memo = {}
         self.kw_cache = getattr(self.document.resolver, "kw_cache", {})
@@ -716,11 +719,7 @@ class TextState:
             flatness = max(0.1, float(self.flatness) if self.flatness else 0.25)
             segments = max(4, min(128, ceil(control_len * scale / (flatness * 8.0))))
         prev_x, prev_y = x0, y0
-        draw_path = (
-            self.capture_clipping
-            or (self.capture_graphics or self.capture_glyphs)
-            and self.is_graphics_visible()
-        )
+        draw_path = self.internal_records_path()
         path = self.current_path if draw_path else None
         segment_step = 1.0 / segments
         for i in range(1, segments + 1):
@@ -854,7 +853,7 @@ class TextState:
             if (
                 not self.capture_graphics
                 and not self.capture_glyphs
-                and not content_stream_may_show_text(stream.data_view)
+                and not self.internal_stream_may_show_text(frame)
             ):
                 self.flush_run()
             else:
@@ -1108,7 +1107,7 @@ class TextState:
                 if (
                     not self.capture_graphics
                     and not self.capture_glyphs
-                    and not content_stream_may_show_text(frame.stream.data_view)
+                    and not self.internal_stream_may_show_text(frame)
                 ):
                     self.flush_run()
                     self.exit_stream_frame(frame)
@@ -1281,6 +1280,23 @@ class TextState:
                 return False
         return True
 
+    def internal_stream_may_show_text(self, frame: ContentStreamFrame) -> bool:
+        """Memoised text scan of an entered frame's stream, keyed by its execution key."""
+        key = frame.stream_key
+        if key is None:
+            return content_stream_may_show_text(frame.stream.data_view)
+        cached = self.text_scan_cache.get(key)
+        if cached is None:
+            cached = content_stream_may_show_text(frame.stream.data_view)
+            self.text_scan_cache[key] = cached
+        return cached
+
+    def internal_records_path(self) -> bool:
+        """True when path construction operators must record geometry."""
+        return self.capture_clipping or (
+            (self.capture_graphics or self.capture_glyphs) and self.is_graphics_visible()
+        )
+
     def is_graphics_visible(self) -> bool:
         if self.marked_content_stack:
             for entry in self.marked_content_stack:
@@ -1425,8 +1441,15 @@ class TextState:
                         if width > 0 and height > 0 and smask_data:
                             total = min(len(smask_data), width * height)
                             if total > 0:
-                                smask_alpha = sum(smask_data[:total]) / (255.0 * total)
-                source_dictionary = dict(xobj_dict)
+                                smask_sum = numpy.frombuffer(
+                                    smask_data, numpy.uint8, count=total
+                                ).sum(dtype=numpy.uint64)
+                                smask_alpha = int(smask_sum) / (255.0 * total)
+                drawing_dictionary = dict(xobj_dict)
+                if soft_mask_raw_data is not None:
+                    drawing_dictionary["__soft_mask_raw_data__"] = soft_mask_raw_data
+                    drawing_dictionary["__soft_mask_dictionary__"] = soft_mask_dictionary or {}
+                source_dictionary = dict(drawing_dictionary)
                 # The colour manager reads the palette and base space straight
                 # off this dictionary, so an indirect /ColorSpace (or one whose
                 # Indexed lookup table is indirect) left it unable to convert
@@ -1437,9 +1460,6 @@ class TextState:
                     source_dictionary[PdfName.of("ColorSpace")] = (
                         self.document.resolver.deep_resolve(color_space)
                     )
-                if soft_mask_raw_data is not None:
-                    source_dictionary["__soft_mask_raw_data__"] = soft_mask_raw_data
-                    source_dictionary["__soft_mask_dictionary__"] = soft_mask_dictionary or {}
                 # A stencil mask carries no colour samples: PDF 8.9.6.2 paints its
                 # set bits in the current fill colour. Every other image ignores
                 # the fill, so recording it is only meaningful for the mask case,
@@ -1467,12 +1487,7 @@ class TextState:
                     )
                 )
                 self.drawings[-1].raw_data = getattr(xobj, "raw_data", b"")
-                self.drawings[-1].dictionary = dict(xobj_dict)
-                if soft_mask_raw_data is not None:
-                    self.drawings[-1].dictionary["__soft_mask_raw_data__"] = soft_mask_raw_data
-                    self.drawings[-1].dictionary["__soft_mask_dictionary__"] = (
-                        soft_mask_dictionary or {}
-                    )
+                self.drawings[-1].dictionary = drawing_dictionary
             return
         if subtype != "Form":
             return
@@ -2958,14 +2973,7 @@ class TextState:
         self.tm_f = self.lm_f = 0.0
         self.compat_tj_cursor_x = 0.0
         self.compat_tj_cursor_y = 0.0
-        self.combined_A = self.ca
-        self.combined_B = self.cb
-        self.combined_C = self.cc
-        self.combined_D = self.cd
-        if self.ca == 1.0 and self.cb == 0.0 and self.cc == 0.0 and self.cd == 1.0:
-            self.cached_rotation = 0
-        else:
-            self.cached_rotation = detect_rotation_from_linear(self.ca, self.cb, self.cc, self.cd)
+        self.update_combined()
 
     def op_ET(self, operands: OperandWindow, depth: int) -> None:
         self.flush_run()
@@ -3395,11 +3403,7 @@ class TextState:
 
     def op_m_values(self: Any, x: int | float, y: int | float) -> None:
         point = (self.as_float(x), self.as_float(y))
-        if (
-            self.capture_clipping
-            or (self.capture_graphics or self.capture_glyphs)
-            and self.is_graphics_visible()
-        ):
+        if self.internal_records_path():
             self.current_path.move_to(*point)
         self.current_point = point
         self.subpath_start = point
@@ -3416,11 +3420,7 @@ class TextState:
         if self.current_point is None:
             return
         point = (self.as_float(x), self.as_float(y))
-        if (
-            self.capture_clipping
-            or (self.capture_graphics or self.capture_glyphs)
-            and self.is_graphics_visible()
-        ):
+        if self.internal_records_path():
             self.current_path.line_to(*point)
         self.current_point = point
 
@@ -3438,22 +3438,14 @@ class TextState:
     ) -> None:
         x_float = float(x)
         y_float = float(y)
-        if (
-            self.capture_clipping
-            or (self.capture_graphics or self.capture_glyphs)
-            and self.is_graphics_visible()
-        ):
+        if self.internal_records_path():
             self.current_path.rect(x_float, y_float, float(width), float(height))
         self.current_point = (x_float, y_float)
         self.subpath_start = (x_float, y_float)
 
     def op_h(self, operands: OperandWindow, depth: int) -> None:
         if self.current_point is not None and self.subpath_start is not None:
-            if (
-                self.capture_clipping
-                or (self.capture_graphics or self.capture_glyphs)
-                and self.is_graphics_visible()
-            ):
+            if self.internal_records_path():
                 self.current_path.close()
             self.current_point = self.subpath_start
 
@@ -4072,21 +4064,13 @@ class TextState:
             return value
         if value_type is int:
             return float(value)
-        if value_type is bool:
-            raise ValueError("invalid numeric operand")
-        parsed = parse_float(value, None)
-        if parsed is None:
-            raise ValueError("invalid numeric operand")
-        return parsed
+        return parse_float_strict(value, "invalid numeric operand")
 
     @staticmethod
     def as_int(value: Any) -> int:
-        if type(value) is bool:
-            raise ValueError("invalid numeric operand")
-        parsed = parse_int(value, None)
-        if parsed is None:
-            raise ValueError("invalid numeric operand")
-        return parsed
+        if type(value) is int:
+            return value
+        return parse_int_strict(value, "invalid numeric operand")
 
     def resolve_extgstate(self: Any, name: str) -> dict[str, Any] | None:
         cache_key = (self.resources_id, name)

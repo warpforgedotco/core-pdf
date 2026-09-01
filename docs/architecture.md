@@ -48,7 +48,7 @@ bytes → │ capture_page│ → plan_page ────────────
                                                   │
                                 layout_blocks_with_evidence (layout)
                                                   │
-                                  ParsedPage + ParseReport (parse_page)
+                                  ParsedPage + ParseReport (parsed_page)
                                                   │
                                     assemble_page → Page (extract_page)
 ```

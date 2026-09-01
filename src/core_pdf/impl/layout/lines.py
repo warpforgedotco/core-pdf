@@ -68,7 +68,6 @@ class LayoutLine:
         "max_order",
         "max_depth",
         "min_order",
-        "mid_y",
         "height",
         "max_font_size",
         "is_all_caps_text",
@@ -84,7 +83,6 @@ class LayoutLine:
     max_order: int
     max_depth: int
     min_order: int
-    mid_y: float
     max_font_size: float
     is_all_caps_text: bool
 
@@ -99,7 +97,6 @@ class LayoutLine:
             self.max_order = -1
             self.max_depth = -1
             self.min_order = 999999
-            self.mid_y = 0.0
             self.height = 0.0
             self.max_font_size = 0.0
             self.is_all_caps_text = True
@@ -158,7 +155,6 @@ class LayoutLine:
         self.max_order = max_order
         self.max_depth = max_depth
         self.min_order = min_order
-        self.mid_y = (y0 + y1) * 0.5
         self.height = y1 - y0
         self.max_font_size = max_font_size
         self.is_all_caps_text = is_all_caps_text
