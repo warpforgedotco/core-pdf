@@ -23,9 +23,21 @@ from core_pdf.impl.spec.s_07_security.ciphers import (
     internal_AES_GCM_MAX_PLAINTEXT_BYTES,
     internal_AES_GCM_TAG_BYTES,
 )
+from core_pdf.impl.spec.s_07_security.pdf_mac import (
+    internal_AES_256_KEY_WRAP_OID,
+    internal_HMAC_SHA256_OID,
+    internal_PDF_MAC_HKDF_INFO,
+    internal_PDF_MAC_INTEGRITY_INFO_OID,
+    internal_PDF_MAC_KDF_SALT_BYTES,
+    internal_PDF_MAC_KEK_BYTES,
+    internal_PDF_MAC_KEY_BYTES,
+    internal_PDF_MAC_WRAP_KDF_OID,
+)
 from core_pdf.impl.spec.s_07_security.standard import (
     internal_parse_config,
     internal_parse_crypt_filters,
+    internal_PDF_MAC_PERMISSION_BIT,
+    internal_PDF_MAC_PERMISSION_MASK,
     internal_RESERVED_ONE_PERMISSION_BITS,
     internal_RESERVED_ONE_PERMISSION_MASK,
     internal_RESERVED_ZERO_PERMISSION_BITS,
@@ -253,16 +265,39 @@ def test_iso_ts_32004_standalone_pdf_mac_rules_and_fail_closed_behavior() -> Non
     assert "dataDigest field shall be obtained by digesting the bytes" in unsigned_digest
     assert "ByteRange entry of the AuthCode dictionary" in unsigned_digest
 
-    # ISO/TS 32004:2024, Table 3 makes bit 13 part of the security protocol.
-    # Until AuthCode validation exists, production code deliberately retains it
-    # in the reserved-one mask and therefore rejects MAC-protected documents.
+    assert internal_PDF_MAC_PERMISSION_BIT == 13
+    assert internal_PDF_MAC_PERMISSION_MASK == 1 << 12
     assert 13 in internal_RESERVED_ONE_PERMISSION_BITS
-    assert internal_RESERVED_ONE_PERMISSION_MASK & (1 << 12)
-    permissions_with_bit_13_clear = 0xFFFFFFFC & ~(1 << 12)
-    with pytest.raises(ValueError, match="reserved encryption permission bits must be one"):
-        internal_parse_config(
-            [b"document-id"],
-            {"R": 6, "P": permissions_with_bit_13_clear},
-            5,
-            (5, 6),
-        )
+    assert internal_RESERVED_ONE_PERMISSION_MASK & internal_PDF_MAC_PERMISSION_MASK
+    assert internal_PDF_MAC_KDF_SALT_BYTES == 32
+    assert internal_PDF_MAC_KEK_BYTES * 8 == 256
+    assert internal_PDF_MAC_KEY_BYTES * 8 == 256
+    assert internal_PDF_MAC_HKDF_INFO == b"PDFMAC"
+    assert internal_PDF_MAC_INTEGRITY_INFO_OID == "1.0.32004.1.0"
+    assert internal_PDF_MAC_WRAP_KDF_OID == "1.0.32004.1.1"
+    assert internal_AES_256_KEY_WRAP_OID == "2.16.840.1.101.3.4.1.45"
+    assert internal_HMAC_SHA256_OID == "1.2.840.113549.2.9"
+
+    params: PdfDict = {
+        "R": 6,
+        "P": -4100,
+        "O": b"o" * 48,
+        "U": b"u" * 48,
+        "OE": b"e" * 32,
+        "UE": b"d" * 32,
+        "Perms": b"p" * 16,
+        "KDFSalt": b"s" * 32,
+        "Length": 256,
+        "CF": {
+            "StdCF": {
+                "CFM": PdfName.of("AESV3"),
+                "AuthEvent": PdfName.of("DocOpen"),
+                "Length": 32,
+            }
+        },
+        "StmF": PdfName.of("StdCF"),
+        "StrF": PdfName.of("StdCF"),
+    }
+    config = internal_parse_config([b"document-id"], params, 5, (5, 6))
+    assert config.pdf_mac_required
+    assert config.kdf_salt == b"s" * 32

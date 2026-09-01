@@ -203,18 +203,34 @@ def test_pyhanko_aes_gcm_fixture_rejects_incorrect_password() -> None:
 
 
 @pytest.mark.parametrize(("filename", "password"), PDF_MAC_PASSWORD_CASES)
-def test_pyhanko_pdf_mac_fixture_fails_closed_until_validation_exists(
+def test_pyhanko_pdf_mac_fixture_opens_after_integrity_validation(
     filename: str,
     password: str,
 ) -> None:
-    # ISO/TS 32004:2024, Table 3 repurposes permission bit 13 to require a
-    # PDF MAC token. Valid fixtures must remain unreadable until core-pdf can
-    # validate AuthCode instead of exposing unauthenticated document content.
-    with pytest.raises(PdfUnsupportedError, match="Invalid encryption dictionary") as error:
-        PdfDocument.open(PDF_MAC_DIRECTORY / filename, password=password)
+    with PdfDocument.open(PDF_MAC_DIRECTORY / filename, password=password) as document:
+        assert document.pages[0].extract().text == EXPECTED_TEXT
+        assert document.metadata["info"] == EXPECTED_INFO
+        assert document.metadata["xmp"] == EXPECTED_XMP
 
-    assert isinstance(error.value.__cause__, ValueError)
-    assert str(error.value.__cause__) == "reserved encryption permission bits must be one"
+        extensions = cast(PdfDict, document.catalog()["Extensions"])
+        declarations = cast(list[object], extensions["ISO_"])
+        declared_revisions = {
+            (
+                cast(PdfDict, declaration)["ExtensionLevel"],
+                cast(PdfString, cast(PdfDict, declaration)["ExtensionRevision"]).data,
+            )
+            for declaration in declarations
+        }
+        expected_revisions = {(32004, b":2024")}
+        if "r7-gcm" in filename:
+            expected_revisions.add((32003, b":2023"))
+        assert declared_revisions == expected_revisions
+
+
+@pytest.mark.parametrize("filename", [fixture[0] for fixture in PDF_MAC_FIXTURES])
+def test_pyhanko_pdf_mac_fixture_rejects_incorrect_password(filename: str) -> None:
+    with pytest.raises(PdfUnsupportedError, match="Incorrect password"):
+        PdfDocument.open(PDF_MAC_DIRECTORY / filename, password="incorrect")
 
 
 @pytest.mark.parametrize(
@@ -231,8 +247,54 @@ def test_pyhanko_pdf_mac_tamper_cases_remain_fail_closed(
     tampered = internal_tamper_pdf_mac(pristine, tamper_name)
     assert tampered != pristine
 
-    with pytest.raises(PdfUnsupportedError, match="Invalid encryption dictionary"):
+    with pytest.raises(PdfDecryptionError, match="Invalid PDF MAC"):
         PdfDocument.open(tampered, password=password)
+
+
+@pytest.mark.parametrize(
+    ("filename", "password"),
+    [(fixture[0], fixture[1]) for fixture in PDF_MAC_FIXTURES],
+)
+def test_pyhanko_pdf_mac_permission_signal_is_bound_by_encrypted_permissions(
+    filename: str,
+    password: str,
+) -> None:
+    pristine = (PDF_MAC_DIRECTORY / filename).read_bytes()
+    # Keep the serialized width fixed so this mutation isolates permission bit
+    # 13. ISO/TS 32004:2024, Table 3 relies on ISO 32000-2:2020's encrypted
+    # Perms entry to make changing the signal from zero to one tamper-evident.
+    tampered = pristine.replace(b"/P -4100", b"/P -0004", 1)
+    assert tampered != pristine
+
+    with pytest.raises(PdfDecryptionError, match="Invalid encryption permissions"):
+        PdfDocument.open(tampered, password=password)
+
+
+@pytest.mark.parametrize(
+    ("entry", "replacement", "exception", "message"),
+    [
+        (b"/AuthCode", b"/BadCode ", PdfDecryptionError, "Invalid PDF MAC"),
+        (
+            b"/KDFSalt",
+            b"/BadSalt",
+            PdfUnsupportedError,
+            "Invalid encryption dictionary",
+        ),
+    ],
+)
+def test_pyhanko_pdf_mac_required_entries_cannot_be_removed(
+    entry: bytes,
+    replacement: bytes,
+    exception: type[Exception],
+    message: str,
+) -> None:
+    pristine = (PDF_MAC_DIRECTORY / "aes-256-r6-cbc-mac.pdf").read_bytes()
+    assert len(entry) == len(replacement)
+    tampered = pristine.replace(entry, replacement, 1)
+    assert tampered != pristine
+
+    with pytest.raises(exception, match=message):
+        PdfDocument.open(tampered, password="user-mac-cbc")
 
 
 @pytest.mark.parametrize(
