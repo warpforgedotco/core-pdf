@@ -29,9 +29,9 @@ uv run --with pyhanko==0.37.0 python scripts/generate_aes_gcm_interop_fixture.py
 
 `aes_gcm/manifest.json` pins pyHanko 0.37.0, its release commit and MIT license,
 the source and output hashes, passwords, and the exact ISO/TS 32003 security
-configuration. PDF MAC is disabled to isolate ISO/TS 32003 from the unsupported
-ISO/TS 32004:2024 AuthCode extension. Production code never uses deterministic
-cryptographic material.
+configuration. PDF MAC is disabled in that fixture to isolate ISO/TS 32003 from
+the separate ISO/TS 32004:2024 AuthCode mechanism. Production code never uses
+deterministic cryptographic material.
 
 The PDF MAC fixtures cover standalone AuthCode tokens with both AESV3/R6 and
 AESV4/R7 encryption. Regenerate them independently with:
@@ -47,9 +47,10 @@ independent oracle to reject changes to covered document bytes, the MAC value,
 KDFSalt, ByteRange, truncation, and trailing bytes. Those corruptions are
 constructed in memory instead of committed as redundant binary files.
 
-The fixtures intentionally remain fail-closed in `core-pdf` until AuthCode
-validation is implemented. Their deterministic keys, salts, and nonces exist
-only to make these public test artifacts reproducible.
+`core-pdf` validates these standalone AuthCode tokens before exposing decrypted
+objects. Attached-to-signature PDF MAC tokens remain explicitly unsupported.
+The fixtures' deterministic keys, salts, and nonces exist only to make these
+public test artifacts reproducible.
 
 The RC4 commands include `--allow-weak-crypto` because qpdf otherwise refuses
 to create those obsolete formats. R5 is also generated only to test historical

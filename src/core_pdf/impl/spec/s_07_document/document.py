@@ -45,7 +45,11 @@ from core_pdf.impl.spec.s_07_document.records import (
     RawNamedDestination,
     RawOutlineItem,
 )
-from core_pdf.impl.spec.s_07_security import create_standard_decipher
+from core_pdf.impl.spec.s_07_security import (
+    create_standard_security_handler,
+    validate_pdf_mac_extension,
+    validate_pdf_mac_if_present,
+)
 from core_pdf.impl.spec.s_07_syntax.inherited_values import collect_inherited_values
 from core_pdf.impl.spec.s_07_syntax.resolver import ObjectResolver
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
@@ -453,6 +457,10 @@ class PdfDocument(
     def init_security(self, password: str) -> None:
         encrypt_ref = self.trailer_dict.get("Encrypt")
         if encrypt_ref is None:
+            # ISO/TS 32004:2024, Table 5 defines AuthCode only for encrypted
+            # documents whose Encrypt dictionary has V >= 5.
+            if "AuthCode" in self.trailer_dict:
+                raise PdfUnsupportedError("AuthCode requires an encrypted document")
             return
 
         encrypt_dict = self.resolver.resolve_dict(encrypt_ref)
@@ -468,7 +476,29 @@ class PdfDocument(
             raise PdfUnsupportedError("Invalid trailer ID array")
         docid_list: Sequence[object] = docid
 
-        self.decipher = create_standard_decipher(docid_list, encrypt_dict, password)
+        security_handler = create_standard_security_handler(docid_list, encrypt_dict, password)
+        # ISO/TS 32004:2024 integrity validation authenticates the complete
+        # serialized file. Perform it before installing the object decipher so
+        # no decrypted string, stream, catalog, or page can be exposed first.
+        has_pdf_mac = validate_pdf_mac_if_present(
+            self.raw_data,
+            self.trailer_dict,
+            security_handler,
+        )
+        self.decipher = security_handler.decrypt
+        if has_pdf_mac:
+            # ISO/TS 32004:2024, clause 4 and Table 1 require this exact
+            # declaration. Its text-string fields are encrypted, so resolve it
+            # only after authenticating the complete file and installing the
+            # decipher, but still before returning the document to the caller.
+            self.resolver.decipher = self.decipher
+            extensions = self.resolve(self.catalog().get("Extensions"))
+            iso_declarations: object = None
+            if isinstance(extensions, dict):
+                iso_declarations = self.resolve(extensions.get("ISO_"))
+            if isinstance(iso_declarations, list):
+                iso_declarations = [self.resolve(value) for value in iso_declarations]
+            validate_pdf_mac_extension(iso_declarations)
 
     # Page tree and page labels
 

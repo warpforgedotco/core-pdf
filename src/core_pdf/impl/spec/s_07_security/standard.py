@@ -2,7 +2,8 @@
 """PDF Standard Security parsing, authentication, and object decryption.
 
 Implements ISO 32000-1:2008 revisions 2-4, the Adobe ExtensionLevel 3 revision
-5 supplement, ISO 32000-2:2020 revision 6, and ISO/TS 32003:2023 revision 7.
+5 supplement, ISO 32000-2:2020 revision 6, ISO/TS 32003:2023 revision 7,
+and the ISO/TS 32004:2024 PDF MAC signal and key-derivation salt.
 """
 
 from __future__ import annotations
@@ -62,6 +63,8 @@ internal_SASLPREP_PROHIBITED: tuple[Callable[[str], bool], ...] = (
 internal_RESERVED_ZERO_PERMISSION_BITS = (1, 2)
 internal_RESERVED_ONE_PERMISSION_BITS = (7, 8, *range(13, 33))
 internal_REVISION_3_PERMISSION_BITS = (9, 10, 11, 12)
+internal_PDF_MAC_PERMISSION_BIT = 13
+internal_PDF_MAC_PERMISSION_MASK = 1 << (internal_PDF_MAC_PERMISSION_BIT - 1)
 internal_RESERVED_ZERO_PERMISSION_MASK = sum(
     1 << (bit_position - 1) for bit_position in internal_RESERVED_ZERO_PERMISSION_BITS
 )
@@ -87,6 +90,8 @@ class internal_StandardSecurityConfig:
     owner_encrypted_key: bytes
     user_encrypted_key: bytes
     encrypted_permissions: bytes
+    kdf_salt: bytes | None = None
+    pdf_mac_required: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -172,6 +177,15 @@ def create_standard_decipher(
     password: str = "",
 ) -> Decipher:
     """Validate a Standard Security dictionary and return its object decipher."""
+    return create_standard_security_handler(document_id, params, password).decrypt
+
+
+def create_standard_security_handler(
+    document_id: Sequence[object],
+    params: PdfDict,
+    password: str = "",
+) -> internal_StandardSecurityHandler:
+    """Authenticate a Standard Security dictionary and retain its file key."""
     filter_name = normalize_pdf_name(params.get("Filter"))
     if filter_name is None:
         raise PdfUnsupportedError("Invalid encryption dictionary")
@@ -196,7 +210,7 @@ def create_standard_decipher(
         raise PdfUnsupportedError("Incorrect password")
     if config.revision >= 5 and not internal_validate_permissions(config, file_key):
         raise PdfDecryptionError("Invalid encryption permissions")
-    return internal_StandardSecurityHandler(config, file_key).decrypt
+    return internal_StandardSecurityHandler(config, file_key)
 
 
 def internal_parse_config(
@@ -221,13 +235,20 @@ def internal_parse_config(
     if permissions < 0:
         permissions += 1 << 32
 
-    # ISO/TS 32004:2024, Table 3 repurposes bit 13 to require a PDF MAC token.
-    # That extension is not supported yet, so keeping bit 13 in the reserved-one
-    # mask fails closed instead of accepting a document whose AuthCode integrity
-    # protection this handler cannot validate.
+    # ISO 32000-2:2020, Table 22 reserves bit 13 as one. ISO/TS 32004:2024,
+    # 5.1.2 and Table 3 supersede that rule for V >= 5: zero means that every
+    # revision requires a PDF MAC token located through the trailer AuthCode
+    # dictionary. Older encryption versions retain the reserved-one rule.
+    pdf_mac_supported_version = version in (5, 6)
+    pdf_mac_required = pdf_mac_supported_version and not (
+        permissions & internal_PDF_MAC_PERMISSION_MASK
+    )
+    reserved_one_mask = internal_RESERVED_ONE_PERMISSION_MASK
+    if pdf_mac_supported_version:
+        reserved_one_mask &= ~internal_PDF_MAC_PERMISSION_MASK
     if permissions & internal_RESERVED_ZERO_PERMISSION_MASK:
         raise ValueError("reserved encryption permission bits 1-2 must be zero")
-    if permissions & internal_RESERVED_ONE_PERMISSION_MASK != internal_RESERVED_ONE_PERMISSION_MASK:
+    if permissions & reserved_one_mask != reserved_one_mask:
         raise ValueError("reserved encryption permission bits must be one")
 
     if version == 1 and revision == 2:
@@ -306,6 +327,7 @@ def internal_parse_config(
     owner_encrypted_key = b""
     user_encrypted_key = b""
     encrypted_permissions = b""
+    kdf_salt: bytes | None = None
 
     if version in (4, 5, 6):
         (
@@ -319,6 +341,16 @@ def internal_parse_config(
         owner_encrypted_key = internal_required_bytes(params, "OE", 32)
         user_encrypted_key = internal_required_bytes(params, "UE", 32)
         encrypted_permissions = internal_required_bytes(params, "Perms", 16)
+
+        raw_kdf_salt = params.get("KDFSalt", MISSING)
+        if raw_kdf_salt is not MISSING:
+            kdf_salt = internal_required_bytes(params, "KDFSalt", 32)
+        if pdf_mac_required and kdf_salt is None:
+            raise ValueError("PDF MAC requires a 32-byte KDFSalt")
+    elif params.get("KDFSalt", MISSING) is not MISSING:
+        # ISO/TS 32004:2024, Table 5 requires V >= 5 when AuthCode is
+        # present; Table 2 defines KDFSalt only as part of that mechanism.
+        raise ValueError("KDFSalt requires encryption algorithm V >= 5")
 
     return internal_StandardSecurityConfig(
         version=version,
@@ -336,6 +368,8 @@ def internal_parse_config(
         owner_encrypted_key=owner_encrypted_key,
         user_encrypted_key=user_encrypted_key,
         encrypted_permissions=encrypted_permissions,
+        kdf_salt=kdf_salt,
+        pdf_mac_required=pdf_mac_required,
     )
 
 
@@ -785,4 +819,4 @@ def internal_name(value: object) -> str:
     return normalize_pdf_name(value, "") or ""
 
 
-__all__ = ("create_standard_decipher",)
+__all__ = ("create_standard_decipher", "create_standard_security_handler")
