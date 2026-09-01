@@ -3,8 +3,6 @@
 
 from __future__ import annotations
 
-from typing import cast
-
 from core_pdf.impl.parse.capture import (
     internal_hidden_text_needs_verification,
     internal_requires_high_resolution_vector_ocr,
@@ -24,6 +22,7 @@ from core_pdf.impl.parse.model import (
     PageRoute,
     WorkPlan,
 )
+from core_pdf.impl.spec.s_07_content.capture import CapturedPath
 
 # Precision-first extraction thresholds.  Raster text below these confidence
 # levels is more likely to be a layout artifact than a useful observation on
@@ -128,30 +127,7 @@ def internal_native_mapping_is_usable(evidence: PageEvidence) -> bool:
 
 def internal_drawing_is_simple_rectangle(drawing: object) -> bool:
     path = getattr(drawing, "path", None)
-    subpaths: object = getattr(path, "subpaths", None)
-    if not isinstance(subpaths, (list, tuple)) or len(subpaths) != 1:
-        return False
-    subpath = subpaths[0]
-    points: object = getattr(subpath, "points", None)
-    if (
-        not isinstance(points, (list, tuple))
-        or not getattr(subpath, "closed", False)
-        or len(points) != 4
-    ):
-        return False
-    rectangle_points = cast("list[tuple[float, float]] | tuple[tuple[float, float], ...]", points)
-    xs = {point[0] for point in rectangle_points}
-    ys = {point[1] for point in rectangle_points}
-    if len(xs) != 2 or len(ys) != 2:
-        return False
-    return all(
-        left[0] == right[0] or left[1] == right[1]
-        for left, right in zip(
-            rectangle_points,
-            (*rectangle_points[1:], rectangle_points[0]),
-            strict=True,
-        )
-    )
+    return isinstance(path, CapturedPath) and path.axis_aligned_rect() is not None
 
 
 def internal_has_only_simple_vector_rectangles(capture: CapturedPage) -> bool:

@@ -39,6 +39,7 @@ from core_pdf.impl.parse.model import (
     internal_analyze_text,
 )
 from core_pdf.impl.parse.newstroke import NewstrokeDecode, decode_newstroke_drawings
+from core_pdf.impl.spec.s_07_content.capture import CapturedDrawing
 from core_pdf.impl.spec.s_07_content.page_program import PageProgram
 from core_pdf.impl.spec.s_08_graphics.image_metadata import (
     image_filter_names,
@@ -497,46 +498,21 @@ STROKED_VECTOR_MIN_AXIS_COVERAGE = 0.35
 
 
 def internal_stroked_vector_style(drawing: Any) -> tuple[object, ...] | None:
-    """Return a stable paint-style key for an opaque, solid stroked path."""
+    """Return a stable paint-style key for an opaque, solid, thin stroked path."""
     if (
-        getattr(drawing, "kind", None) not in {"stroke", "fillstroke"}
-        or getattr(drawing, "path", None) is None
-        or getattr(drawing, "stroke_pattern", None) is not None
+        not isinstance(drawing, CapturedDrawing)
+        or drawing.kind not in {"stroke", "fillstroke"}
+        or drawing.path is None
+        or not drawing.stroke_color
     ):
         return None
-    raw_color = getattr(drawing, "stroke_color", None)
-    if not isinstance(raw_color, (list, tuple)) or not raw_color:
+    style = drawing.stroke_style_key()
+    if style is None:
         return None
-    try:
-        color = tuple(float(component) for component in raw_color)
-        raw_opacity = getattr(drawing, "stroke_opacity", None)
-        opacity = 1.0 if raw_opacity is None else float(raw_opacity)
-        line_width = float(getattr(drawing, "line_width", 0.0))
-    except (TypeError, ValueError):
+    opacity, line_width, dash = style[1], style[2], style[5]
+    if opacity <= 0.0 or not (0.0 < line_width <= 1.5) or (dash is not None and dash[0]):
         return None
-    if opacity <= 0.0 or not (0.0 < line_width <= 1.5):
-        return None
-    raw_dash = getattr(drawing, "dash_pattern", None)
-    if raw_dash:
-        try:
-            dash = (tuple(float(value) for value in raw_dash[0]), float(raw_dash[1]))
-        except (IndexError, TypeError, ValueError):
-            return None
-        if dash[0]:
-            return None
-    else:
-        dash = None
-    return (
-        getattr(drawing, "kind", None),
-        color,
-        opacity,
-        line_width,
-        int(getattr(drawing, "line_cap", 0) or 0),
-        int(getattr(drawing, "line_join", 0) or 0),
-        dash,
-        getattr(drawing, "blend_mode", None),
-        getattr(drawing, "soft_mask_alpha", None),
-    )
+    return (drawing.kind, *style)
 
 
 def internal_stroked_vector_text_evidence(

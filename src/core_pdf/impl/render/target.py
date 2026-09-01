@@ -3676,39 +3676,7 @@ class internal_ClipState:
         cache_key = id(path)
         if cache_key in path_rect_cache:
             return path_rect_cache[cache_key]
-        segment_subpaths = [subpath for subpath in path.subpaths if subpath.has_segments()]
-        if len(segment_subpaths) != 1 or path.subpaths[-1] is not segment_subpaths[0]:
-            path_rect_cache[cache_key] = None
-            return None
-        subpath = segment_subpaths[0]
-        points = list(subpath.points)
-        if len(points) >= 2 and points[0] == points[-1]:
-            points.pop()
-        if len(points) != 4:
-            path_rect_cache[cache_key] = None
-            return None
-        if not subpath.closed and subpath.points[0] != subpath.points[-1]:
-            path_rect_cache[cache_key] = None
-            return None
-        xs = {point[0] for point in points}
-        ys = {point[1] for point in points}
-        if len(xs) != 2 or len(ys) != 2:
-            path_rect_cache[cache_key] = None
-            return None
-        x0, x1 = min(xs), max(xs)
-        y0, y1 = min(ys), max(ys)
-        if x1 <= x0 or y1 <= y0:
-            path_rect_cache[cache_key] = None
-            return None
-        corners = {(x0, y0), (x0, y1), (x1, y0), (x1, y1)}
-        if set(points) != corners:
-            path_rect_cache[cache_key] = None
-            return None
-        for (px0, py0), (px1, py1) in zip(points, points[1:] + points[:1], strict=False):
-            if px0 != px1 and py0 != py1:
-                path_rect_cache[cache_key] = None
-                return None
-        rect = (x0, y0, x1, y1)
+        rect = path.axis_aligned_rect()
         path_rect_cache[cache_key] = rect
         return rect
 

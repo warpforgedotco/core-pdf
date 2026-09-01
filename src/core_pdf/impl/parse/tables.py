@@ -43,7 +43,12 @@ from core_pdf.impl.structured.model import (
     TableColumnBand,
     TableRowBand,
 )
-from core_pdf.impl.text import collapse_character_spaced, collapse_ws
+from core_pdf.impl.text import (
+    collapse_character_spaced,
+    collapse_ws,
+    is_leader_run,
+    strip_edge_leaders,
+)
 
 COLUMN_TOLERANCE = 14.0  # loosen tolerance for column edge alignment to reduce split tables
 TABLE_MERGE_GAP = 36.0  # further increased to allow modestly wider table merges (conservative)
@@ -220,17 +225,12 @@ def internal_cell_text(
     parts = []
     for position in ordered:
         part = collapse_ws(observations.text[indexes[position]])
-        if part and not (len(part) >= 4 and set(part) <= {".", "…"}):
+        if part and not is_leader_run(part):
             parts.append(part)
     result = " ".join(parts)
     if cache is not None:
         cache[cache_key] = result
     return result
-
-
-internal_TABLE_LEADER_CHARS = frozenset(".-–—~…")
-internal_TABLE_TRAILING_LEADER_RE = re.compile(r"(?<=\S)(?:[ \t]*[.\-–—~…]){3,}[ \t]*$")
-internal_TABLE_LEADING_LEADER_RE = re.compile(r"^(?:[.\-–—~…][ \t]+){2,}")
 
 
 def internal_clean_table_cell_leader_runs(text: str) -> str:
@@ -243,14 +243,11 @@ def internal_clean_table_cell_leader_runs(text: str) -> str:
     """
     if not text:
         return text
-    nonspace = [ch for ch in text if not ch.isspace()]
-    if len(nonspace) >= 2 and all(ch in internal_TABLE_LEADER_CHARS for ch in nonspace):
+    if is_leader_run(text):
         return ""
-    if all(ch in "\u25cf\u25e6" for ch in nonspace):
+    if all(ch in "\u25cf\u25e6" for ch in text if not ch.isspace()):
         return ""
-    text = internal_TABLE_TRAILING_LEADER_RE.sub("", text)
-    text = internal_TABLE_LEADING_LEADER_RE.sub("", text)
-    return collapse_ws(text)
+    return collapse_ws(strip_edge_leaders(text))
 
 
 internal_TABLE_SPACED_DIGIT_SEQUENCE_RE = re.compile(r"[\d/.,]+(?: +[\d/.,]+)+")

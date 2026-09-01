@@ -17,6 +17,22 @@ from core_pdf.impl.model.runs import (
     LayoutLineTextSegment,
     TextRun,
 )
+from core_pdf.impl.text import WORD_GAP_SIZE_FACTOR, word_gap_threshold
+
+# A digit is a superscript of the preceding text when it is clearly shorter and its
+# baseline sits clearly above; the run-level and atom-level passes share the rule.
+SUPERSCRIPT_HEIGHT_RATIO = 0.9
+SUPERSCRIPT_BASELINE_MIN = 0.45
+SUPERSCRIPT_BASELINE_RATIO = 0.05
+
+
+def is_superscript_metrics(previous_height: float, height: float, baseline_raise: float) -> bool:
+    if previous_height <= 0.0 or height >= previous_height * SUPERSCRIPT_HEIGHT_RATIO:
+        return False
+    return baseline_raise >= max(
+        SUPERSCRIPT_BASELINE_MIN, previous_height * SUPERSCRIPT_BASELINE_RATIO
+    )
+
 
 FOOTER_RE = re.compile(r"^\s*page\s*\d+\s*$", re.IGNORECASE)
 LEADER_START_CHARS = "._~-–—"
@@ -582,10 +598,8 @@ class GlyphLineBuilder:
         if previous_baseline is None:
             return False
         previous_height = previous.height_value
-        if previous_height <= 0.0 or run.height_value >= previous_height * 0.9:
-            return False
         baseline_drop = baseline_midpoint(previous_baseline, 0) - baseline_midpoint(run_baseline, 0)
-        if baseline_drop < max(0.45, previous_height * 0.05):
+        if not is_superscript_metrics(previous_height, run.height_value, baseline_drop):
             return False
         attach_gap = max(run.space_width * 0.5, previous_height * 0.2, 2.0)
         return run.x0 - previous.x1 <= attach_gap
@@ -946,10 +960,10 @@ class GlyphLineBuilder:
             return False
         previous_height = previous.advance_bbox[3] - previous.advance_bbox[1]
         height = atom.advance_bbox[3] - atom.advance_bbox[1]
-        if previous_height <= 0.0 or height >= previous_height * 0.9:
-            return False
         baseline_delta = self.atom_baseline_delta(previous, atom)
-        if baseline_delta is None or abs(baseline_delta) < max(0.45, previous_height * 0.04):
+        if baseline_delta is None or not is_superscript_metrics(
+            previous_height, height, baseline_delta
+        ):
             return False
         x_gap = atom.advance_bbox[0] - previous.advance_bbox[2]
         return x_gap <= max(2.0, previous_height * 0.25)
@@ -1036,9 +1050,9 @@ class GlyphLineBuilder:
         )
 
     def word_gap_threshold(self, run: TextRun, height: float) -> float:
-        threshold = max(run.space_width * 0.15, height * 0.08, 0.75)
+        threshold = word_gap_threshold(run.space_width, height)
         if run.baseline is not None:
-            threshold = max(threshold, run.font_size * 0.08)
+            threshold = max(threshold, run.font_size * WORD_GAP_SIZE_FACTOR)
         if self.estimated_char_width is not None:
             threshold = min(threshold, max(self.estimated_char_width * 0.32, 0.75))
         if self.is_all_caps_line:

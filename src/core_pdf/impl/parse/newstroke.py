@@ -12,7 +12,7 @@ import numpy
 
 from core_pdf.impl.model.runs import TextRun
 from core_pdf.impl.parse.newstroke_data import NEWSTROKE_ASCII, NEWSTROKE_ASCII_ALTERNATES
-from core_pdf.impl.spec.s_07_content.capture import CapturedPath
+from core_pdf.impl.spec.s_07_content.capture import CapturedDrawing, CapturedPath
 
 FIT_ERROR = 0.08
 FIXED_ERROR = 0.10
@@ -174,27 +174,11 @@ def internal_color(value: object) -> tuple[float, ...] | None:
     return tuple(float(cast(Any, component)) for component in value)
 
 
-def internal_drawing_style(drawing: Any) -> tuple[object, ...] | None:
-    if getattr(drawing, "stroke_pattern", None) is not None:
+def internal_drawing_style(drawing: CapturedDrawing) -> tuple[object, ...] | None:
+    style = drawing.stroke_style_key()
+    if style is None or style[1] <= 0.0 or style[2] <= 0.0:
         return None
-    dash = getattr(drawing, "dash_pattern", None)
-    normalized_dash = (tuple(float(value) for value in dash[0]), float(dash[1])) if dash else None
-    opacity = getattr(drawing, "stroke_opacity", None)
-    line_width = getattr(drawing, "line_width", None)
-    opacity_value = float(opacity) if opacity is not None else 1.0
-    line_width_value = float(line_width) if line_width is not None else 1.0
-    if opacity_value <= 0.0 or line_width_value <= 0.0:
-        return None
-    return (
-        internal_color(getattr(drawing, "stroke_color", None)),
-        opacity_value,
-        line_width_value,
-        int(getattr(drawing, "line_cap", 0) or 0),
-        int(getattr(drawing, "line_join", 0) or 0),
-        normalized_dash,
-        getattr(drawing, "blend_mode", None),
-        getattr(drawing, "soft_mask_alpha", None),
-    )
+    return style
 
 
 def internal_segments(
@@ -202,13 +186,13 @@ def internal_segments(
 ) -> tuple[tuple[internal_Segment | None, ...], tuple[tuple[object, ...], ...], int]:
     segments: list[internal_Segment | None] = []
     style_ids: dict[tuple[object, ...], int] = {}
-    style_cache: dict[tuple[object, ...], tuple[object, ...] | None] = {}
     styles: list[tuple[object, ...]] = []
     candidate_count = 0
     for drawing in drawings:
         path = getattr(drawing, "path", None)
         if (
-            getattr(drawing, "kind", None) != "stroke"
+            not isinstance(drawing, CapturedDrawing)
+            or drawing.kind != "stroke"
             or type(path) is not CapturedPath
             or len(path.subpaths) != 1
             or path.subpaths[0].closed
@@ -216,22 +200,7 @@ def internal_segments(
         ):
             segments.append(None)
             continue
-        dash = getattr(drawing, "dash_pattern", None)
-        color = getattr(drawing, "stroke_color", None)
-        style_key = (
-            getattr(drawing, "stroke_pattern", None),
-            (tuple(float(value) for value in dash[0]), float(dash[1])) if dash else None,
-            getattr(drawing, "stroke_opacity", None),
-            getattr(drawing, "line_width", None),
-            getattr(drawing, "line_cap", None),
-            getattr(drawing, "line_join", None),
-            color if isinstance(color, (list, tuple)) else repr(color),
-            getattr(drawing, "blend_mode", None),
-            getattr(drawing, "soft_mask_alpha", None),
-        )
-        if style_key not in style_cache:
-            style_cache[style_key] = internal_drawing_style(drawing)
-        style = style_cache[style_key]
+        style = internal_drawing_style(drawing)
         if style is None:
             segments.append(None)
             continue

@@ -9,6 +9,7 @@ from typing import cast
 
 import pytest
 
+from core_pdf.impl.model.geometry import RectBox
 from core_pdf.impl.model.runs import TextRun
 from core_pdf.impl.parse import (
     CapturedPage,
@@ -41,6 +42,7 @@ from core_pdf.impl.parse.stroked_text import (
 )
 from core_pdf.impl.render.raster_image import RasterImage
 from core_pdf.impl.runtime.execution import TaskScope
+from core_pdf.impl.spec.s_07_content.capture import CapturedDrawing, CapturedPath
 
 
 def patch_ocr_helper(monkeypatch: pytest.MonkeyPatch, name: str, value: object) -> None:
@@ -1790,19 +1792,20 @@ def test_candidate_regions_add_fine_vector_label_cells_for_schematics() -> None:
 
 def test_stroked_vector_text_evidence_requires_distributed_compact_paths() -> None:
     drawings = tuple(
-        SimpleNamespace(
+        CapturedDrawing(
+            seqno=row * 20 + column,
+            fill=None,
+            fill_opacity=None,
             kind="stroke",
-            path=object(),
-            rect=(20.0 + column * 45.0, 20.0 + row * 50.0, 22.0 + column * 45.0, 23.0 + row * 50.0),
+            path=CapturedPath(),
+            bbox=RectBox(
+                20.0 + column * 45.0, 20.0 + row * 50.0, 22.0 + column * 45.0, 23.0 + row * 50.0
+            ),
             stroke_color=(0.0, 0.0, 0.6),
             stroke_opacity=1.0,
-            stroke_pattern=None,
             line_width=0.5,
             line_cap=1,
             line_join=1,
-            dash_pattern=None,
-            blend_mode=None,
-            soft_mask_alpha=None,
         )
         for row in range(15)
         for column in range(20)
@@ -1814,10 +1817,7 @@ def test_stroked_vector_text_evidence_requires_distributed_compact_paths() -> No
         page_height=800.0,
     )
     clustered = parse_capture.internal_stroked_vector_text_evidence(
-        tuple(
-            SimpleNamespace(**(vars(drawing) | {"rect": (20.0, 20.0, 22.0, 23.0)}))
-            for drawing in drawings
-        ),
+        tuple(drawing.replace(bbox=RectBox(20.0, 20.0, 22.0, 23.0)) for drawing in drawings),
         page_width=1_000.0,
         page_height=800.0,
     )

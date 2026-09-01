@@ -476,6 +476,40 @@ class CapturedPath:
         if self.subpaths:
             self.subpaths[-1].close()
 
+    def axis_aligned_rect(self) -> Rectangle | None:
+        """The rectangle this path draws when it is exactly one axis-aligned box.
+
+        One segment-bearing subpath (empty ``m``-only subpaths are ignored), four
+        corners in either winding, closed explicitly or by repeating the first
+        point, and a positive area. Both the router's "simple vector rectangle"
+        test and the rasterizer's rect fast path rely on this one definition.
+        """
+        segment_subpaths = [subpath for subpath in self.subpaths if subpath.has_segments()]
+        if len(segment_subpaths) != 1 or self.subpaths[-1] is not segment_subpaths[0]:
+            return None
+        subpath = segment_subpaths[0]
+        points = list(subpath.points)
+        if len(points) >= 2 and points[0] == points[-1]:
+            points.pop()
+        if len(points) != 4:
+            return None
+        if not subpath.closed and subpath.points[0] != subpath.points[-1]:
+            return None
+        xs = {point[0] for point in points}
+        ys = {point[1] for point in points}
+        if len(xs) != 2 or len(ys) != 2:
+            return None
+        x0, x1 = min(xs), max(xs)
+        y0, y1 = min(ys), max(ys)
+        if x1 <= x0 or y1 <= y0:
+            return None
+        if set(points) != {(x0, y0), (x0, y1), (x1, y0), (x1, y1)}:
+            return None
+        for (px0, py0), (px1, py1) in zip(points, points[1:] + points[:1], strict=False):
+            if px0 != px1 and py0 != py1:
+                return None
+        return (x0, y0, x1, y1)
+
     def rect(self, x: float, y: float, w: float, h: float) -> None:
         self.subpaths.append(
             CapturedSubpath(
@@ -509,6 +543,18 @@ class CapturedPath:
 
 DrawingItem = tuple[str, tuple[tuple[float, float], ...]]
 internal_EMPTY_DRAWING_ITEMS: tuple[DrawingItem, ...] = ()
+
+
+StrokeStyleKey = tuple[
+    tuple[float, ...] | None,
+    float,
+    float,
+    int,
+    int,
+    tuple[tuple[float, ...], float] | None,
+    str | None,
+    float | None,
+]
 
 
 @dataclass(slots=True)
@@ -545,6 +591,28 @@ class CapturedDrawing:
 
     def replace(self, **kwargs: Any) -> CapturedDrawing:
         return dataclasses.replace(self, **kwargs)
+
+    def stroke_style_key(self) -> StrokeStyleKey | None:
+        """Hashable stroke paint style, or None when a pattern paints the stroke.
+
+        Colour, opacity (1.0 when unset), width, cap, join, normalised dash,
+        blend mode and soft-mask alpha, in that order. Consumers that group
+        strokes by style key off this tuple and layer their own filters on top.
+        """
+        if self.stroke_pattern is not None:
+            return None
+        color = self.stroke_color
+        dash = self.dash_pattern
+        return (
+            tuple(float(component) for component in color) if color is not None else None,
+            1.0 if self.stroke_opacity is None else float(self.stroke_opacity),
+            float(self.line_width),
+            int(self.line_cap or 0),
+            int(self.line_join or 0),
+            (tuple(float(value) for value in dash[0]), float(dash[1])) if dash else None,
+            self.blend_mode,
+            self.soft_mask_alpha,
+        )
 
     @property
     def rect(self) -> RectBox | None:

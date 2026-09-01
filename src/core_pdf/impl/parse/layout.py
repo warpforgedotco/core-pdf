@@ -38,17 +38,15 @@ from core_pdf.impl.runtime.array_views import finite_median
 from core_pdf.impl.structured.model import (
     TextSpan,
 )
-from core_pdf.impl.text import collapse_ws
+from core_pdf.impl.text import collapse_leader_runs, collapse_ws
 
 # ``ObservationBatch.source`` is a ``uint8`` column, so the OCR test is a vectorized
 # comparison against a preconverted scalar rather than a per-observation Python loop.
 internal_OCR_SOURCE = numpy.uint8(ObservationSource.OCR)
 internal_NATIVE_SOURCE = int(ObservationSource.NATIVE)
 
-internal_NATIVE_DOTTED_LEADER_RE = re.compile(r"\.{2,}")
 internal_CAPTION_RE = re.compile(r"^(?:figure|fig\.|table|chart|exhibit)\s+\d+\b")
 internal_LIST_MARKER_RE = re.compile(r"^(?:[-*•]|\d+[.)])\s+")
-internal_NATIVE_DASH_RULE_RE = re.compile(r"(?:\s*-\s*){2,}")
 
 
 @dataclass(frozen=True, slots=True)
@@ -276,9 +274,7 @@ def internal_is_repeated_native_label(text: str, repeated_tokens: frozenset[str]
 
 
 def internal_clean_native_punctuation_runs(text: str) -> str:
-    text = internal_NATIVE_DOTTED_LEADER_RE.sub(" ", text)
-    text = internal_NATIVE_DASH_RULE_RE.sub(" ", text)
-    return collapse_ws(text)
+    return collapse_leader_runs(text)
 
 
 def internal_color_is_emphasis(color: object) -> bool:

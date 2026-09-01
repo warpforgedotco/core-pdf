@@ -23,6 +23,7 @@ from core_pdf.impl.parse.capture import (
 )
 from core_pdf.impl.parse.pipeline import page_extraction
 from core_pdf.impl.parse.route import plan_page
+from core_pdf.impl.spec.s_07_content.capture import CapturedPath, CapturedSubpath
 
 
 def run(
@@ -355,13 +356,8 @@ def test_route_adds_region_recovery_for_uncovered_vector_text() -> None:
 def test_route_skips_ocr_for_native_text_over_simple_rectangles() -> None:
     rectangle = SimpleNamespace(
         kind="fill",
-        path=SimpleNamespace(
-            subpaths=(
-                SimpleNamespace(
-                    closed=True,
-                    points=((0.0, 0.0), (8.0, 0.0), (8.0, 8.0), (0.0, 8.0)),
-                ),
-            ),
+        path=CapturedPath(
+            [CapturedSubpath([(0.0, 0.0), (8.0, 0.0), (8.0, 8.0), (0.0, 8.0)], closed=True)]
         ),
     )
     capture = SimpleNamespace(
