@@ -106,10 +106,15 @@ def decode_ccitt_fax_image(
     array = numpy.asarray(decoded)
     if array.ndim != 2 or array.shape[1] != width or array.dtype != numpy.uint8:
         raise FilterUnsupportedError("CCITT decoder returned an unsupported image")
-    # imagecodecs uses zero for white and one for black; PDF samples use the
-    # inverse polarity. The decoder contract is binary uint8, so invert in place
-    # when an output buffer was supplied and avoid a second image allocation.
-    numpy.bitwise_xor(array, 1, out=array)
+    # imagecodecs uses zero for white and one for black. ISO 32000-1 Table 11:
+    # BlackIs1 is "a flag indicating whether 1 bits shall be interpreted as
+    # black pixels and 0 bits as white pixels, the reverse of the normal PDF
+    # convention for image data", default false. So the default needs the
+    # inversion and BlackIs1 already matches what the codec produced. The
+    # decoder contract is binary uint8, so invert in place when an output
+    # buffer was supplied and avoid a second image allocation.
+    if not parms.black_is_1:
+        numpy.bitwise_xor(array, 1, out=array)
     numpy.multiply(array, 255, out=array)
     return array
 
@@ -170,6 +175,14 @@ def decode_jbig2(data: bytes, parms: object) -> bytes:
     if is_pdf_null(globals_obj):
         globals_data = b""
     else:
+        # ISO 32000-1 Table 12 types JBIG2Globals as a *stream* -- "Global
+        # segments shall be placed in this stream" -- so once DecodeParms is
+        # resolved this is a stream object, not bytes. s_07_filters sits below
+        # s_07_syntax in the layer contract and so cannot name PdfStream;
+        # unwrap the decoded bytes structurally instead.
+        stream_data = getattr(globals_obj, "data", None)
+        if isinstance(stream_data, (bytes, bytearray, memoryview)):
+            globals_obj = stream_data
         try:
             globals_data = coerce_to_bytes(globals_obj)
         except TypeError as exc:

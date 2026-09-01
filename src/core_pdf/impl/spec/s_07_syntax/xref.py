@@ -476,7 +476,14 @@ class XRefScanner:
                     seen,
                     recover_malformed_objects=recover_malformed_objects,
                 )
-                entries.update(s_entries)
+                # ISO 32000-1 7.5.8.4: "if an entry is not found in any given
+                # standard cross-reference section, the search shall proceed to
+                # a cross-reference stream specified by the XRefStm entry before
+                # looking in the previous cross-reference section". The stream
+                # is the fallback, so the classic section overlays it.
+                combined = dict(s_entries)
+                combined.update(entries)
+                entries = combined
             sections.append(entries)
 
             if prev is None:
@@ -485,6 +492,17 @@ class XRefScanner:
 
         merged: XRefTable = {}
         for section in reversed(sections):
+            # ISO 32000-1 7.5.4: a free entry's generation is "the generation
+            # number to be used the next time an object with that object number
+            # is created" -- not the generation being freed. Keying the entry by
+            # it files the deletion under a key no lookup consults, so the body
+            # left in the file by 7.5.6 ("deleted objects shall be left
+            # unchanged in the file") stayed reachable. Drop every older entry
+            # for an object this revision frees, so it resolves to null.
+            freed = {key >> 16 for key, entry in section.items() if not entry.in_use}
+            if freed:
+                for key in [key for key in merged if (key >> 16) in freed]:
+                    del merged[key]
             merged.update(section)
         return merged, trailer if trailer is not None else {}
 
@@ -567,7 +585,11 @@ class XRefScanner:
                         0, 0, True, object_stream=val1, index_in_stream=val2
                     )
                 else:
-                    raise PdfParseError("invalid xref stream entry type")
+                    # ISO 32000-1 7.5.8.3: "Any other value shall be interpreted
+                    # as a reference to the null object, thus permitting new
+                    # entry types to be defined in the future." One forward-
+                    # compatible row must not reject the whole section.
+                    entries[key_for(obj_num, 0)] = PdfXRefEntry(0, 0, False)
 
         return entries, typing.cast(PdfDict, dict_obj)
 
