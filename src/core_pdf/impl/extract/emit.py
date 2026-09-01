@@ -19,7 +19,8 @@ from core_pdf.impl.extract.table_reconcile import (
     internal_project_text_and_tables,
     internal_wordlike_token,
 )
-from core_pdf.impl.layout.blocks import internal_has_repeated_block_columns, layout_element_order
+from core_pdf.impl.layout.blocks import layout_element_order
+from core_pdf.impl.layout.order import internal_has_repeated_block_columns
 from core_pdf.impl.layout.spatial import (
     SpatialIndex,
 )

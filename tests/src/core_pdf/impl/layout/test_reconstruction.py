@@ -1,5 +1,5 @@
-from core_pdf.impl.layout.reconstruction import (
-    GlyphLineBuilder,
+from core_pdf.impl.layout.reconstruction import GlyphLineBuilder
+from core_pdf.impl.layout.text_rules import (
     repair_table_split_word_boundaries,
     should_join_plausible_split_word,
 )

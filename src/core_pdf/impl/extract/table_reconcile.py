@@ -8,7 +8,7 @@ from collections import Counter
 from dataclasses import replace
 from functools import lru_cache
 
-from core_pdf.impl.extract.tables import (
+from core_pdf.impl.extract.table_cleanup import (
     internal_character_spaced_cell,
     internal_structured_stream_table,
     internal_table_has_grid_shape,

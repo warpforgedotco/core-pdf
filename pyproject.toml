@@ -134,7 +134,7 @@ line-length = 100
 # that is either a deliberate optimization pinned by docs/architecture.md or known
 # debt. Shrink this list rather than raising max-complexity.
 #   operations.py  dispatch_operations (162) — protected: hand-unrolled dispatch loop
-#   pipeline.py    internal_recognize_page_with_reserved_raster (66)
+#   pipeline.py    internal_recognize_page_with_reserved_raster (64)
 "src/core_pdf/impl/spec/s_07_content/operations.py" = ["C901"]
 "src/core_pdf/impl/extract/ocr/pipeline.py" = ["C901"]
 

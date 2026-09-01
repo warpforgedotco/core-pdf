@@ -9,6 +9,7 @@ from typing import cast
 import pytest
 
 from core_pdf.impl.extract import capture as parse_capture
+from core_pdf.impl.extract import contracts as ocr_contracts
 from core_pdf.impl.extract import pipeline as parse_pipeline
 from core_pdf.impl.extract.contracts import (
     CapturedPage,
@@ -22,6 +23,7 @@ from core_pdf.impl.extract.contracts import (
     StrokedVectorTextEvidence,
     WorkPlan,
 )
+from core_pdf.impl.extract.ocr import candidates as ocr_candidates
 from core_pdf.impl.extract.ocr import pipeline as ocr
 from core_pdf.impl.extract.ocr import pipeline as parse_ocr
 from core_pdf.impl.extract.ocr import raster as ocr_raster
@@ -507,9 +509,9 @@ def test_raster_text_signal_preserves_repeated_glyph_edges() -> None:
 
 
 def test_single_ocr_candidate_skips_merge_rescan() -> None:
-    candidate = ocr.internal_candidate(11, candidate_observations("text", 90.0))
+    candidate = ocr_contracts.internal_candidate(11, candidate_observations("text", 90.0))
 
-    assert ocr.internal_merge_candidate_batches((candidate,)) is candidate
+    assert ocr_candidates.internal_merge_candidate_batches((candidate,)) is candidate
 
 
 def test_raster_image_normalizes_to_read_only_zero_copy_view() -> None:
@@ -671,26 +673,28 @@ def test_recognize_does_not_reset_tesseract_rectangle_for_full_page(
 
 
 def test_candidate_merge_prefers_complete_overlapping_text() -> None:
-    complete = ocr.internal_candidate(3, candidate_observations("column transformation", 90.0))
-    clipped = ocr.internal_candidate(3, candidate_observations("transformation", 95.0))
+    complete = ocr_contracts.internal_candidate(
+        3, candidate_observations("column transformation", 90.0)
+    )
+    clipped = ocr_contracts.internal_candidate(3, candidate_observations("transformation", 95.0))
 
-    merged = ocr.internal_merge_candidate_batches((clipped, complete))
+    merged = ocr_candidates.internal_merge_candidate_batches((clipped, complete))
 
     assert merged.observations.text == ("column transformation",)
 
 
 def test_candidate_diagnostics_are_typed_and_identify_selection() -> None:
-    first = ocr.internal_candidate(
+    first = ocr_contracts.internal_candidate(
         3,
         candidate_observations("alpha + beta", 80.0),
     )
-    second = ocr.internal_candidate(
+    second = ocr_contracts.internal_candidate(
         11,
         candidate_observations("noise", 40.0),
     )
     report = RecognitionReport()
 
-    ocr.internal_record_candidates(
+    ocr_candidates.internal_record_candidates(
         (("primary", first), ("fallback", second)),
         "primary",
         report,
@@ -715,12 +719,12 @@ def test_hidden_text_verification_requires_semantic_and_spatial_agreement() -> N
     tokens = tuple(f"cell{index:02d}" for index in range(30))
     hidden = token_observations(tokens, source=ObservationSource.NATIVE)
 
-    aligned = ocr.internal_hidden_text_verification(hidden, token_observations(tokens))
-    displaced = ocr.internal_hidden_text_verification(
+    aligned = ocr_candidates.internal_hidden_text_verification(hidden, token_observations(tokens))
+    displaced = ocr_candidates.internal_hidden_text_verification(
         hidden,
         token_observations(tokens, offset_x=500.0),
     )
-    unrelated = ocr.internal_hidden_text_verification(
+    unrelated = ocr_candidates.internal_hidden_text_verification(
         hidden,
         token_observations(tuple(f"other{index:02d}" for index in range(30))),
     )
@@ -739,7 +743,7 @@ def test_hidden_text_verification_rejects_a_partial_semantic_match() -> None:
     preview_tokens = (*hidden_tokens[:24], *(f"other{index:02d}" for index in range(10)))
     hidden = token_observations(hidden_tokens, source=ObservationSource.NATIVE)
 
-    verification = ocr.internal_hidden_text_verification(
+    verification = ocr_candidates.internal_hidden_text_verification(
         hidden,
         token_observations(preview_tokens),
     )
@@ -781,7 +785,7 @@ def test_verified_hidden_text_bypasses_full_ocr(
         nonlocal recognized_word_passes
         assert task.recognize_words is True
         recognized_word_passes += 1
-        return ocr.internal_candidate(task.mode, token_observations(tokens))
+        return ocr_contracts.internal_candidate(task.mode, token_observations(tokens))
 
     monkeypatch.setattr(ocr_tesseract, "internal_recognize", recognize)
     patch_engine(monkeypatch)
@@ -816,21 +820,21 @@ def test_verified_hidden_text_bypasses_full_ocr(
 
 
 def test_candidate_utility_rejects_larger_low_confidence_symbol_noise() -> None:
-    readable = ocr.internal_candidate(3, candidate_observations("readable text", 92.0))
-    noisy = ocr.internal_candidate(6, candidate_observations("// :: -- == ~~ ###", 25.0))
+    readable = ocr_contracts.internal_candidate(3, candidate_observations("readable text", 92.0))
+    noisy = ocr_contracts.internal_candidate(6, candidate_observations("// :: -- == ~~ ###", 25.0))
 
     assert readable.metrics.utility > noisy.metrics.utility
 
 
 def test_character_filtered_candidate_preserves_recall_when_filtering_is_costly() -> None:
-    raw = ocr.internal_candidate(3, candidate_observations("schematic +5V R1", 80.0))
-    filtered = ocr.internal_candidate(3, candidate_observations("schematic +5V", 80.0))
+    raw = ocr_contracts.internal_candidate(3, candidate_observations("schematic +5V R1", 80.0))
+    filtered = ocr_contracts.internal_candidate(3, candidate_observations("schematic +5V", 80.0))
 
     assert ocr_tesseract.internal_select_character_filtered_candidate(raw, filtered) is raw
 
 
 def test_character_filtered_candidate_accepts_bounded_utility_gain() -> None:
-    raw = ocr.internal_candidate(3, candidate_observations("raw text", 80.0))
+    raw = ocr_contracts.internal_candidate(3, candidate_observations("raw text", 80.0))
     filtered = replace(
         raw,
         metrics=replace(raw.metrics, utility=raw.metrics.utility * 1.05),
@@ -886,7 +890,7 @@ def test_observation_coverage_spreads_line_utility_across_intersected_cells() ->
 
     assert coverage[0] == pytest.approx(coverage[1])
     assert float(coverage.sum()) == pytest.approx(
-        ocr.internal_text_utility_stats("long recognized line", 95.0).utility
+        ocr_contracts.internal_text_utility_stats("long recognized line", 95.0).utility
     )
 
 
@@ -904,7 +908,7 @@ def test_adaptive_rescue_skips_when_primary_covers_visual_ink() -> None:
         page_box=(0.0, 0.0, 60.0, 60.0),
         resolution=72,
     )
-    candidate = ocr.internal_candidate(
+    candidate = ocr_contracts.internal_candidate(
         3,
         ObservationBatch.from_columns(
             ("recognized" * 40,),
@@ -933,7 +937,7 @@ def test_adaptive_rescue_skips_saturated_ink_for_dense_reliable_text() -> None:
         page_box=(0.0, 0.0, 60.0, 60.0),
         resolution=72,
     )
-    candidate = ocr.internal_candidate(
+    candidate = ocr_contracts.internal_candidate(
         3,
         ObservationBatch.from_columns(
             ("x" * 2_000,),
@@ -977,8 +981,8 @@ def test_raster_rectangle_maps_top_left_pixels_to_pdf_page_space() -> None:
 
 
 def test_region_augmentation_keeps_only_confident_uncovered_text() -> None:
-    primary = ocr.internal_candidate(3, candidate_observations("known", 90.0))
-    supplement = ocr.internal_candidate(
+    primary = ocr_contracts.internal_candidate(3, candidate_observations("known", 90.0))
+    supplement = ocr_contracts.internal_candidate(
         6,
         ObservationBatch.from_columns(
             ("recovered", "duplicate", "uncertain"),
@@ -992,7 +996,9 @@ def test_region_augmentation_keeps_only_confident_uncovered_text() -> None:
         ),
     )
 
-    augmented, added = ocr.internal_augment_candidate(primary, supplement, minimum_confidence=20.0)
+    augmented, added = ocr_candidates.internal_augment_candidate(
+        primary, supplement, minimum_confidence=20.0
+    )
 
     assert added == 1
     assert augmented.observations.text == ("known", "recovered")
@@ -1008,7 +1014,7 @@ def test_explicit_fallback_pass_runs_only_for_weak_primary(
     def recognize(task: ocr.internal_OcrTask) -> ocr.internal_Candidate:
         executed_modes.append(task.mode)
         text = "x" if task.mode == 3 else "strong fallback"
-        return ocr.internal_candidate(
+        return ocr_contracts.internal_candidate(
             task.mode,
             candidate_observations(text, 90.0),
         )
@@ -1052,7 +1058,7 @@ def test_large_high_confidence_primary_skips_full_page_fallback(
         executed_modes.append(task.mode)
         if task.mode != 3:
             raise AssertionError("full-page fallback should not run")
-        return ocr.internal_candidate(
+        return ocr_contracts.internal_candidate(
             task.mode,
             candidate_observations("large heading", 96.0),
             median_text_height=40.0,
@@ -1095,8 +1101,8 @@ def test_weak_region_pass_augments_instead_of_replacing_primary(
 
     def recognize(task: ocr.internal_OcrTask) -> ocr.internal_Candidate:
         if task.mode == 3:
-            return ocr.internal_candidate(3, candidate_observations("x", 90.0))
-        return ocr.internal_candidate(
+            return ocr_contracts.internal_candidate(3, candidate_observations("x", 90.0))
+        return ocr_contracts.internal_candidate(
             6,
             ObservationBatch.from_columns(
                 ("recovered",),
@@ -1178,12 +1184,12 @@ def test_adaptive_rescue_uses_high_resolution_only_for_undersampled_regions(
         nonlocal calls
         calls += 1
         if calls == 1:
-            return ocr.internal_candidate(
+            return ocr_contracts.internal_candidate(
                 3,
                 candidate_observations("a" * 40, 95.0),
                 median_text_height=20.0,
             )
-        return ocr.internal_candidate(
+        return ocr_contracts.internal_candidate(
             3,
             ObservationBatch.from_columns(
                 ("recovered",),
@@ -1246,7 +1252,7 @@ def test_adaptive_rescue_skips_high_resolution_for_large_primary_text(
     monkeypatch.setattr(
         ocr_tesseract,
         "internal_recognize",
-        lambda task, **internal_kwargs: ocr.internal_candidate(
+        lambda task, **internal_kwargs: ocr_contracts.internal_candidate(
             task.mode,
             candidate_observations("heading", 96.0),
             median_text_height=40.0,
@@ -1298,7 +1304,7 @@ def test_adaptive_rescue_defers_to_scheduled_fallback_below_character_floor(
     def recognize(task: ocr.internal_OcrTask) -> ocr.internal_Candidate:
         executed_modes.append(task.mode)
         text = "orientation preview" if task.mode == 12 else "complete fallback text"
-        return ocr.internal_candidate(
+        return ocr_contracts.internal_candidate(
             task.mode,
             candidate_observations(text, 95.0),
             median_text_height=18.0,
@@ -1374,7 +1380,7 @@ def test_vector_preflight_skips_known_undersampled_primary_pass(
     monkeypatch.setattr(
         ocr_tesseract,
         "internal_recognize",
-        lambda task, **internal_kwargs: ocr.internal_candidate(
+        lambda task, **internal_kwargs: ocr_contracts.internal_candidate(
             task.mode,
             candidate_observations("schematic labels recovered", 95.0),
         ),
@@ -1609,7 +1615,7 @@ def test_packed_stroked_vector_candidate_maps_each_cell_back_to_page() -> None:
     )
 
     remapped, unmatched = ocr.internal_remap_stroked_vector_candidate(
-        ocr.internal_candidate(11, observations, symbols=symbols),
+        ocr_contracts.internal_candidate(11, observations, symbols=symbols),
         packed,
     )
 
@@ -1715,7 +1721,7 @@ def test_weak_packed_stroked_vector_seed_uses_full_layer_fallback(
     ) -> ocr.internal_Candidate:
         recognized.append(task.recognize_words)
         text = "packed" if task.recognize_words else "full fallback"
-        return ocr.internal_candidate(task.mode, candidate_observations(text, 95.0))
+        return ocr_contracts.internal_candidate(task.mode, candidate_observations(text, 95.0))
 
     monkeypatch.setattr(ocr_tesseract, "internal_recognize", recognize)
     patch_engine(monkeypatch)
@@ -2077,7 +2083,7 @@ def test_distributed_outline_text_uses_one_full_page_region(
     monkeypatch.setattr(
         ocr_tesseract,
         "internal_recognize",
-        lambda task, **internal_kwargs: ocr.internal_candidate(
+        lambda task, **internal_kwargs: ocr_contracts.internal_candidate(
             task.mode,
             candidate_observations("full page outline text", 95.0),
         ),
@@ -2199,23 +2205,24 @@ def test_recover_timed_out_tasks_only_reruns_empty_timeouts() -> None:
         resolution=400,
     )
     healthy = replace(timed_out, mode=6)
-    batch = ocr.ObservationBatch.from_columns(
+    batch = ObservationBatch.from_columns(
         ["recovered"],
         [(0.0, 0.0, 10.0, 10.0)],
-        source=ocr.ObservationSource.OCR,
+        source=ObservationSource.OCR,
         confidence=[90.0],
         sequence=range(1),
     )
     candidates = (
-        ocr.internal_candidate(3, ocr.ObservationBatch.empty(), recognition_status="timeout"),
-        ocr.internal_candidate(6, batch, recognition_status="ok"),
+        ocr_contracts.internal_candidate(3, ObservationBatch.empty(), recognition_status="timeout"),
+        ocr_contracts.internal_candidate(6, batch, recognition_status="ok"),
     )
     reruns: list[int] = []
 
     def recognize(tasks):
         reruns.append(len(tasks))
         return tuple(
-            ocr.internal_candidate(task.mode, batch, recognition_status="ok") for task in tasks
+            ocr_contracts.internal_candidate(task.mode, batch, recognition_status="ok")
+            for task in tasks
         )
 
     recovered = parse_ocr.internal_recover_timed_out_tasks(

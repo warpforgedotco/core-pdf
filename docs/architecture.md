@@ -59,18 +59,26 @@ bytes → │ capture_page│ → plan_page ────────────
 | `extract/contracts.py` | Shared evidence, plan, observation, result, and report records. |
 | `extract/capture.py` | Runs the page program once and produces a cached `CapturedPage`. |
 | `extract/observations.py` | Chooses native extraction, OCR, or both, then fuses observations. |
-| `extract/ocr/` | Owns recognition orchestration, rasters, regions, backends, and stroked text. |
-| `extract/tables.py` | Detects grids, stream tables, charts, cells, titles, and captions. |
+| `extract/ocr/` | Owns recognition orchestration, candidates, ruled grids, rasters, regions, backends, and stroked text. |
+| `extract/tables.py` | Orchestrates chart, ruled-grid, and whitespace-inferred table candidates. |
+| `extract/table_grid.py` | Builds tables from explicit ruling geometry. |
+| `extract/table_stream.py` | Infers tables from aligned text streams. |
+| `extract/table_cleanup.py` | Normalizes, filters, merges, annotates, and bands table candidates. |
 | `extract/table_reconcile.py` | Reconciles detected tables with emitted page elements. |
-| `layout/blocks.py` | Groups observations into lines and blocks and determines reading order. |
+| `layout/blocks.py` | Groups observations into lines and classifies the resulting blocks. |
+| `layout/regions.py` | Partitions pages with projection gaps, obstacles, and XY cuts. |
+| `layout/order.py` | Repairs and validates block-level reading order. |
+| `layout/reconstruction.py` | Builds line text from positioned glyph runs. |
+| `layout/text_rules.py` | Owns pure spacing, script, formula, and text-repair decisions. |
 | `layout/grids.py` | Supplies ruled-grid geometry to table and OCR stages. |
 | `extract/emit.py` | Normalizes text and assembles the canonical output `Page`. |
 | `extract/pipeline.py` | Orchestrates stages, locking, and product caching. |
 
-OCR is one feature namespace: `ocr/pipeline.py` orchestrates recognition; `raster.py`, `regions.py`,
-`tesseract.py`, `vector.py`, `strokes.py`, and `newstroke.py` own their respective mechanisms; and
-`types.py` holds their shared records. `internal_PageExtraction` remains the locked owner of
-page-local capture, recognition, fusion, layout, report, and assembly products.
+OCR is one feature namespace: `ocr/pipeline.py` orchestrates recognition; `candidates.py` verifies,
+merges, and ranks candidate batches; `grids.py` owns ruled-grid cell recognition; `raster.py`,
+`regions.py`, `tesseract.py`, `vector.py`, `strokes.py`, and `newstroke.py` own their respective
+mechanisms; and `types.py` holds their shared records. `internal_PageExtraction` remains the locked
+owner of page-local capture, recognition, fusion, layout, report, and assembly products.
 
 Document extraction creates an immutable enrichment snapshot for the selected pages. Learned font
 and stroked-glyph mappings apply to selection-local captures without mutating page caches or font
@@ -113,14 +121,16 @@ src/core_pdf/
 
 Rendering uses direct module owners rather than a barrel module: `render/model.py` owns display
 records, render options, plans, and the raster value object. `blend.py`, `images.py`, `paths.py`,
-and `patterns.py` own their pure raster operations. `kernels.py` retains only cross-cutting
-page-coordinate helpers; `clipping.py` owns clip-mask operations; `target.py` owns the mutable paint
-target; and `page.py` owns page composition.
+and `patterns.py` own both their pure raster operations and the corresponding target behaviors.
+`kernels.py` retains only cross-cutting page-coordinate helpers; `clipping.py` owns clip-mask
+operations; `target.py` composes those behaviors around the mutable buffer state; and `page.py`
+owns page composition.
 
-Layout follows the same ownership rule. `blocks.py` owns block segmentation and reading order,
-`reconstruction.py` owns text reconstruction, `diagnostics.py` owns geometry-quality reporting,
-`grids.py` owns ruled-grid geometry, `words.py` owns word-frequency data, and `lines.py` and
-`spatial.py` retain their focused line and spatial records.
+Layout follows the same ownership rule. `blocks.py` owns line grouping and block classification;
+`regions.py` owns geometric partitioning; `order.py` owns block ordering and its evidence;
+`reconstruction.py` owns the stateful line builder while `text_rules.py` owns its pure decisions.
+`diagnostics.py` owns geometry-quality reporting, `grids.py` owns ruled-grid geometry, `words.py`
+owns word-frequency data, and `lines.py` and `spatial.py` retain their focused records.
 
 ### Dependency direction
 

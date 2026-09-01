@@ -9,18 +9,22 @@ from core_pdf.impl.extract.contracts import (
     ParsedLine,
 )
 from core_pdf.impl.layout.blocks import (
-    internal_best_projection_gap,
-    internal_best_region_projection_gap,
-    internal_column_major_prose,
-    internal_interval_crossing_counts,
-    internal_LayoutGeometry,
-    internal_reading_order_evidence,
-    internal_row_order_indexes,
-    internal_row_order_region,
-    internal_topological_block_order,
-    internal_topological_block_order_quadratic,
     layout_blocks,
     layout_blocks_with_evidence,
+)
+from core_pdf.impl.layout.order import (
+    internal_column_major_prose,
+    internal_reading_order_evidence,
+    internal_topological_block_order,
+    internal_topological_block_order_quadratic,
+)
+from core_pdf.impl.layout.regions import (
+    internal_best_projection_gap,
+    internal_best_region_projection_gap,
+    internal_interval_crossing_counts,
+    internal_LayoutGeometry,
+    internal_row_order_indexes,
+    internal_row_order_region,
 )
 from tests.helpers import extract_fakes
 
