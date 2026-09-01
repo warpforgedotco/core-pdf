@@ -195,7 +195,12 @@ class ImageSource:
             return None
         packed = numpy.frombuffer(decoded, dtype=numpy.uint8)[: row_bytes * height]
         bits = numpy.unpackbits(packed).reshape(height, row_bytes * 8)[:, :width]
-        alpha = bits * 255
+        # ISO 32000-1 8.9.6.2: "If the Decode array is [ 0 1 ] (the default for
+        # an image mask), a sample value of 0 shall mark the page with the
+        # current colour, and a 1 shall leave the previous contents unchanged.
+        # If the Decode array is [ 1 0 ], these meanings shall be reversed."
+        # Alpha is the marking mask here, so sample 0 is the opaque one.
+        alpha = (1 - bits) * 255
         decode = self.dictionary.get("Decode")
         if isinstance(decode, (list, tuple)) and len(decode) >= 2:
             try:

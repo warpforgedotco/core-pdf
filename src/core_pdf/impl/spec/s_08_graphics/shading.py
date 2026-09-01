@@ -32,6 +32,17 @@ def internal_number_array(value: Any) -> tuple[float, ...]:
 
 def internal_evaluate_pdf_function(function: Any, value: float) -> tuple[float, ...]:
     """Evaluate the PDF Function forms supported by the rasterizer."""
+    if isinstance(function, (list, tuple)):
+        # ISO 32000-1 Table 78: Function is "A 1-in, n-out function or an array
+        # of n 1-in, 1-out functions (where n is the number of colour components
+        # in the shading dictionary's colour space)". An array matched no branch
+        # below and fell through to the scalar return, which the renderer then
+        # painted as a grey ramp -- silently, so nothing upstream could see the
+        # colour had been lost.
+        outputs: list[float] = []
+        for entry in function:
+            outputs.extend(internal_evaluate_pdf_function(entry, value))
+        return tuple(outputs) if outputs else (value,)
     if isinstance(function, PdfStream):
         function_type = pdf_int(function.dictionary.get("FunctionType"), -1)
         if function_type == 0:

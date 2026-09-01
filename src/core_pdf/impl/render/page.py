@@ -33,7 +33,10 @@ from core_pdf.impl.runtime.array_views import (
 from core_pdf.impl.runtime.image_cache import ImageCache, ImageCacheKey
 from core_pdf.impl.spec.s_07_content.capture import CapturedPath, CapturedSubpath
 from core_pdf.impl.spec.s_07_content.page_program import PageEventKind, PageProgram
-from core_pdf.impl.spec.s_07_content.state import TextState
+from core_pdf.impl.spec.s_07_content.state import (
+    TextState,
+    internal_NON_PAINTING_RENDER_MODES,
+)
 from core_pdf.impl.spec.s_07_document.annotation_appearance import (
     select_appearance_stream,
 )
@@ -448,7 +451,7 @@ def internal_append_glyph_paint(
     mode = int(getattr(glyph, "text_render_mode", 0))
     if mode >= 4:
         clipping_subpaths.extend(path.subpaths)
-    if mode in {3, 7}:
+    if mode in internal_NON_PAINTING_RENDER_MODES:
         return True
     paint_kind = "fill" if mode in {0, 4} else "stroke" if mode in {1, 5} else "fillstroke"
     display_list.append(
@@ -541,7 +544,7 @@ def compose_page(
             current_text_object_id = glyph_text_object_id
             if internal_append_glyph_paint(display_list, glyph, text_clipping_subpaths):
                 continue
-            if getattr(glyph, "text_render_mode", 0) in {3, 7}:
+            if getattr(glyph, "text_render_mode", 0) in internal_NON_PAINTING_RENDER_MODES:
                 continue
             bitmap = glyph.resolved_bitmap()
             if not bitmap:
