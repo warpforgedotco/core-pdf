@@ -3,13 +3,20 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+from typing import cast
 
 import pytest
 
 from core_pdf import PdfDecryptionError, PdfDocument
 from core_pdf.impl.exceptions import PdfUnsupportedError
+from core_pdf.impl.primitives import PdfName, PdfString
+from core_pdf.impl.spec.s_07_syntax.types import PdfDict
 
 FIXTURE_DIRECTORY = Path(__file__).parents[5] / "fixtures" / "security_interop"
+AES_GCM_DIRECTORY = FIXTURE_DIRECTORY / "aes_gcm"
+AES_GCM_FIXTURE = AES_GCM_DIRECTORY / "aes-256-r7-gcm.pdf"
+AES_GCM_USER_PASSWORD = "user-gcm"
+AES_GCM_OWNER_PASSWORD = "owner-gcm"
 EXPECTED_TEXT = "Security Interoperability"
 EXPECTED_INFO = {
     "Author": "core-pdf",
@@ -73,6 +80,25 @@ def internal_corrupt_page_stream_padding(data: bytes) -> bytes:
     return bytes(corrupted)
 
 
+def internal_corrupt_aes_gcm_page_stream(data: bytes, relative_index: int) -> bytes:
+    object_start = data.index(b"6 0 obj\n")
+    stream_marker = b">>\nstream\n"
+    stream_start = data.index(stream_marker, object_start) + len(stream_marker)
+    length_marker = b"/Length "
+    length_start = data.index(length_marker, object_start, stream_start) + len(length_marker)
+    length_end = data.index(b"\n", length_start, stream_start)
+    length = int(data[length_start:length_end])
+    assert length > 28
+    assert data[stream_start + length :].startswith(b"\nendstream")
+
+    corrupted = bytearray(data)
+    absolute_index = stream_start + (
+        length + relative_index if relative_index < 0 else relative_index
+    )
+    corrupted[absolute_index] ^= 1
+    return bytes(corrupted)
+
+
 @pytest.mark.parametrize(("filename", "password"), PASSWORD_CASES)
 def test_qpdf_encrypted_fixture_opens_with_user_or_owner_password(
     filename: str,
@@ -89,6 +115,42 @@ def test_qpdf_encrypted_fixture_opens_with_default_blank_password() -> None:
 
     with PdfDocument.open(fixture) as document:
         assert document.pages[0].extract().text == EXPECTED_TEXT
+
+
+@pytest.mark.parametrize("password", [AES_GCM_USER_PASSWORD, AES_GCM_OWNER_PASSWORD])
+def test_pyhanko_aes_gcm_fixture_opens_with_user_or_owner_password(password: str) -> None:
+    with PdfDocument.open(AES_GCM_FIXTURE, password=password) as document:
+        assert document.pages[0].extract().text == EXPECTED_TEXT
+        assert document.metadata["info"] == EXPECTED_INFO
+        assert document.metadata["xmp"] == EXPECTED_XMP
+
+        extensions = cast(PdfDict, document.catalog()["Extensions"])
+        declarations = cast(list[object], extensions["ISO_"])
+        extension = cast(PdfDict, declarations[0])
+        assert extension["BaseVersion"] == PdfName.of("2.0")
+        assert extension["ExtensionLevel"] == 32003
+        revision = extension["ExtensionRevision"]
+        assert isinstance(revision, PdfString)
+        assert revision.data == b":2023"
+
+
+def test_pyhanko_aes_gcm_fixture_rejects_incorrect_password() -> None:
+    with pytest.raises(PdfUnsupportedError, match="Incorrect password"):
+        PdfDocument.open(AES_GCM_FIXTURE, password="incorrect")
+
+
+@pytest.mark.parametrize(
+    "relative_index",
+    [0, 12, -1],
+    ids=["initialization-vector", "ciphertext", "authentication-tag"],
+)
+def test_pyhanko_aes_gcm_fixture_authenticates_page_stream(relative_index: int) -> None:
+    fixture_bytes = AES_GCM_FIXTURE.read_bytes()
+    corrupted = internal_corrupt_aes_gcm_page_stream(fixture_bytes, relative_index)
+
+    with PdfDocument.open(corrupted, password=AES_GCM_USER_PASSWORD) as document:
+        with pytest.raises(PdfDecryptionError, match="Invalid encrypted object ciphertext"):
+            document.pages[0].extract()
 
 
 @pytest.mark.parametrize(
@@ -148,7 +210,7 @@ def test_qpdf_modern_fixture_rejects_invalid_stream_padding() -> None:
 @pytest.mark.parametrize(
     ("original", "replacement", "message"),
     [
-        (b"/V 5", b"/V 6", "Unsupported standard encryption algorithm V=6"),
+        (b"/V 5", b"/V 6", "Invalid encryption dictionary"),
         (b"/R 6", b"/R 4", "Invalid encryption dictionary"),
         (b"/P -4", b"/P -1", "Invalid encryption dictionary"),
         (b"/P -4 ", b"/P -68", "Invalid encryption dictionary"),
@@ -237,3 +299,52 @@ def test_qpdf_fixture_manifest_covers_and_authenticates_committed_pdfs() -> None
     for record in [source, *fixture_records]:
         fixture_bytes = (FIXTURE_DIRECTORY / record["filename"]).read_bytes()
         assert hashlib.sha256(fixture_bytes).hexdigest() == record["sha256"]
+
+
+def test_pyhanko_aes_gcm_fixture_and_manifest_are_pinned() -> None:
+    manifest = json.loads((AES_GCM_DIRECTORY / "manifest.json").read_text(encoding="utf-8"))
+    fixture = manifest["fixture"]
+    source = manifest["source"]
+
+    assert manifest["specification"] == "ISO/TS 32003:2023"
+    assert manifest["generator"] == {
+        "commit": "00362ec2772b2d39e5d9ba2c0287efb4077421d8",
+        "license": "MIT",
+        "name": "pyHanko",
+        "version": "0.37.0",
+        "website": "https://github.com/MatthiasValvekens/pyHanko",
+    }
+    assert fixture == {
+        "algorithm": "AES-256-GCM",
+        "crypt_filter_method": "AESV4",
+        "filename": AES_GCM_FIXTURE.name,
+        "owner_password": AES_GCM_OWNER_PASSWORD,
+        "pdf_mac": False,
+        "revision": 7,
+        "sha256": hashlib.sha256(AES_GCM_FIXTURE.read_bytes()).hexdigest(),
+        "user_password": AES_GCM_USER_PASSWORD,
+        "version": 6,
+    }
+    assert source["filename"] == "../source.pdf"
+    source_bytes = (AES_GCM_DIRECTORY / source["filename"]).read_bytes()
+    assert hashlib.sha256(source_bytes).hexdigest() == source["sha256"]
+    assert {path.name for path in AES_GCM_DIRECTORY.glob("*.pdf")} == {AES_GCM_FIXTURE.name}
+
+
+def test_pyhanko_aes_gcm_fixture_has_expected_security_dictionary() -> None:
+    fixture_bytes = AES_GCM_FIXTURE.read_bytes()
+    markers = (
+        b"/V 6",
+        b"/R 7",
+        b"/CFM /AESV4",
+        b"/Length 256",
+        b"/Length 32",
+        b"/StmF /StdCF",
+        b"/StrF /StdCF",
+        b"/ExtensionLevel 32003",
+    )
+
+    assert all(marker in fixture_bytes for marker in markers)
+    assert b"/KDFSalt" not in fixture_bytes
+    assert b"/AuthCode" not in fixture_bytes
+    assert EXPECTED_TEXT.encode() not in fixture_bytes

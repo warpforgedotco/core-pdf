@@ -3,11 +3,18 @@
 
 from __future__ import annotations
 
+from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.decrepit.ciphers.algorithms import ARC4
 from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from core_pdf.impl.exceptions import PdfDecryptionError
+
+internal_AES_GCM_KEY_BYTES = 32
+internal_AES_GCM_IV_BYTES = 12
+internal_AES_GCM_TAG_BYTES = 16
+internal_AES_GCM_MAX_PLAINTEXT_BYTES = (1 << 39) - 256
 
 
 def internal_aes_algorithm(key: bytes) -> algorithms.AES:
@@ -70,6 +77,29 @@ def internal_aes_ecb_decrypt(key: bytes, ciphertext: bytes) -> bytes:
         decryptor = Cipher(algorithm, modes.ECB()).decryptor()
         return decryptor.update(ciphertext) + decryptor.finalize()
     except ValueError as exc:
+        raise PdfDecryptionError("Invalid encrypted object ciphertext") from exc
+
+
+def internal_aes_gcm_decrypt(key: bytes, data: bytes) -> bytes:
+    """Decrypt one AESV4 string or stream and authenticate it before returning.
+
+    ISO/TS 32003:2023, 5.2 specifies a 32-byte key, 12-byte IV, nil AAD,
+    16-byte authentication tag, no PDF-level padding, and the serialized form
+    ``<IV><ciphertext><tag>``. It limits each plaintext object to 2^39 - 256
+    bytes. AES-GCM itself is defined by NIST SP 800-38D (November 2007).
+    """
+    if len(key) != internal_AES_GCM_KEY_BYTES:
+        raise ValueError(f"AESV4 key must be {internal_AES_GCM_KEY_BYTES} bytes, got {len(key)}")
+    minimum_length = internal_AES_GCM_IV_BYTES + internal_AES_GCM_TAG_BYTES
+    maximum_length = internal_AES_GCM_MAX_PLAINTEXT_BYTES + minimum_length
+    if not minimum_length <= len(data) <= maximum_length:
+        raise PdfDecryptionError("Invalid encrypted object ciphertext")
+
+    initialization_vector = data[:internal_AES_GCM_IV_BYTES]
+    ciphertext_and_tag = data[internal_AES_GCM_IV_BYTES:]
+    try:
+        return AESGCM(key).decrypt(initialization_vector, ciphertext_and_tag, None)
+    except (InvalidTag, OverflowError, ValueError) as exc:
         raise PdfDecryptionError("Invalid encrypted object ciphertext") from exc
 
 

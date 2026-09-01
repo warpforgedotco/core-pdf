@@ -1,5 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""PDF Standard Security parsing, authentication, and object decryption."""
+"""PDF Standard Security parsing, authentication, and object decryption.
+
+Implements ISO 32000-1:2008 revisions 2-4, the Adobe ExtensionLevel 3 revision
+5 supplement, ISO 32000-2:2020 revision 6, and ISO/TS 32003:2023 revision 7.
+"""
 
 from __future__ import annotations
 
@@ -20,6 +24,7 @@ from core_pdf.impl.spec.s_07_security.ciphers import (
     internal_aes_cbc_decrypt,
     internal_aes_cbc_encrypt,
     internal_aes_ecb_decrypt,
+    internal_aes_gcm_decrypt,
     internal_rc4_crypt,
 )
 from core_pdf.impl.spec.s_07_syntax.types import Decipher, PdfDict
@@ -30,7 +35,7 @@ from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     parse_int,
 )
 
-internal_CryptMethod = Literal["V2", "AESV2", "AESV3"]
+internal_CryptMethod = Literal["V2", "AESV2", "AESV3", "AESV4"]
 
 internal_PASSWORD_PADDING = (
     b"\x28\xbf\x4e\x5e\x4e\x75\x8a\x41\x64\x00\x4e\x56\xff\xfa\x01\x08"
@@ -141,6 +146,10 @@ class internal_StandardSecurityHandler:
                     data[16:],
                     use_padding=True,
                 )
+            case "AESV4":
+                # ISO/TS 32003:2023, 5.2 uses the 32-byte crypt-filter key
+                # directly; unlike AESV2, it does not derive an object key.
+                return internal_aes_gcm_decrypt(self.file_key, data)
 
     def object_key(
         self,
@@ -243,6 +252,8 @@ def internal_parse_config(
     #   June 2008, Table 3.19: R5 uses 48-byte O/U, 32-byte OE/UE, and
     #   a 16-byte Perms entry.
     # - ISO 32000-2:2020, Table 21 and 7.6.4.3.3: the same sizes apply to R6.
+    # - ISO/TS 32003:2023, Table 3 and 5.2: R7 uses the R6 password
+    #   algorithms, so those same entry sizes apply.
     entry_length = 32 if revision <= 4 else 48
     owner_entry = internal_required_bytes(params, "O", entry_length)
     user_entry = internal_required_bytes(params, "U", entry_length)
@@ -255,7 +266,7 @@ def internal_parse_config(
                 length_bits = 40
             case 4:
                 length_bits = 128
-            case 5:
+            case 5 | 6:
                 length_bits = 256
             case _:
                 raise ValueError(f"encryption key length is not defined for V={version}")
@@ -267,9 +278,10 @@ def internal_parse_config(
     # the interoperable 40- and 128-bit RC4 forms only. ISO 32000-1:2008,
     # 7.6.3.1 fixes the revision-4 Standard handler at 128 bits; the Adobe
     # ExtensionLevel 3 supplement, 3.5 and Algorithm 3.1a, and
-    # ISO 32000-2:2020, 7.6.3.3 fix V=5 at 256 bits. qpdf redundantly emits
-    # Length for V=1, V=4, and V=5, so accept it only when it states that
-    # format-mandated size instead of silently replacing a contradictory value.
+    # ISO 32000-2:2020, 7.6.3.3 fix V=5 at 256 bits. ISO/TS 32003:2023,
+    # Tables 2 and 4 retain that 32-byte size for V=6/AESV4. qpdf redundantly
+    # emits Length for V=1, V=4, and V=5, so accept a declared length only when
+    # it states the format-mandated size instead of replacing a contradiction.
     match version:
         case 1:
             if length_bits != 40:
@@ -282,9 +294,9 @@ def internal_parse_config(
         case 4:
             if length_bits != 128:
                 raise ValueError(f"invalid V=4 encryption key length: {length_bits}")
-        case 5:
+        case 5 | 6:
             if length_bits != 256:
-                raise ValueError(f"invalid V=5 encryption key length: {length_bits}")
+                raise ValueError(f"invalid V={version} encryption key length: {length_bits}")
 
     encrypt_metadata = True
     stream_filter = "Identity"
@@ -295,7 +307,7 @@ def internal_parse_config(
     user_encrypted_key = b""
     encrypted_permissions = b""
 
-    if version in (4, 5):
+    if version in (4, 5, 6):
         (
             encrypt_metadata,
             stream_filter,
@@ -303,7 +315,7 @@ def internal_parse_config(
             embedded_file_filter,
             crypt_filters,
         ) = internal_parse_crypt_filters(params, version)
-    if version == 5:
+    if version in (5, 6):
         owner_encrypted_key = internal_required_bytes(params, "OE", 32)
         user_encrypted_key = internal_required_bytes(params, "UE", 32)
         encrypted_permissions = internal_required_bytes(params, "Perms", 16)
@@ -336,7 +348,9 @@ def internal_parse_crypt_filters(
     # R=4 to Identity and StdCF with V2/AESV2 plus AuthEvent=DocOpen. Adobe
     # Supplement to ISO 32000, BaseVersion 1.7, ExtensionLevel 3, June 2008,
     # 3.5.2 applies that rule to V=5 with AESV3. ISO 32000-2:2020, 7.6.4.1
-    # retains Identity/StdCF/DocOpen and requires AESV3 for R=6.
+    # retains Identity/StdCF/DocOpen and requires AESV3 for R=6. ISO/TS
+    # 32003:2023, Tables 2 and 4 extends the same model with AESV4 for V=6
+    # and requires at least one crypt filter using it.
     raw_filters = params.get("CF", MISSING)
     if raw_filters is MISSING:
         filters: PdfDict = {}
@@ -350,6 +364,8 @@ def internal_parse_crypt_filters(
             allowed_methods = {"V2", "AESV2"}
         case 5:
             allowed_methods = {"AESV3"}
+        case 6:
+            allowed_methods = {"AESV4"}
         case _:
             raise ValueError(f"crypt filters are not defined for V={version}")
     crypt_filters: dict[str, internal_CryptMethod] = {}
@@ -382,14 +398,19 @@ def internal_parse_crypt_filters(
         # ISO 32000-1:2008, Table 25 expresses Standard-handler Length in
         # bytes (16 means 128 bits). Adobe ExtensionLevel 3, Table 3.22 and
         # ISO 32000-2:2020, Table 25 use 32 for the 256-bit AESV3 form.
+        # ISO/TS 32003:2023, Table 4 specifies AESV4 Length in the same
+        # manner as AESV3.
         raw_filter_length = filter_config.get("Length", MISSING)
-        expected_filter_length = 32 if method_name == "AESV3" else 16
+        expected_filter_length = 32 if method_name in {"AESV3", "AESV4"} else 16
         if raw_filter_length is not MISSING:
             filter_length = internal_parse_int(raw_filter_length, "CF/Length")
             if filter_length != expected_filter_length:
                 raise ValueError(f"invalid {method_name} crypt filter length: {filter_length}")
 
         crypt_filters[filter_name] = cast(internal_CryptMethod, method_name)
+
+    if version == 6 and "AESV4" not in crypt_filters.values():
+        raise ValueError("V=6 requires at least one AESV4 crypt filter")
 
     raw_stream_filter = params.get("StmF", MISSING)
     stream_filter = internal_name("Identity" if raw_stream_filter is MISSING else raw_stream_filter)
@@ -470,7 +491,7 @@ def internal_authenticate(
     match config.revision:
         case 2 | 3 | 4:
             return internal_authenticate_legacy(config, password)
-        case 5 | 6:
+        case 5 | 6 | 7:
             return internal_authenticate_modern(config, password)
         case _:
             raise ValueError(f"unsupported Standard Security revision R={config.revision}")
@@ -623,7 +644,8 @@ def internal_validate_permissions(
     # four bytes are random. Sources: Adobe Supplement to ISO 32000,
     # BaseVersion 1.7, ExtensionLevel 3, June 2008, Algorithms 3.10 and 3.13
     # (R5); ISO 32000-2:2020, 7.6.4.4.9 Algorithm 10 and 7.6.4.4.12
-    # Algorithm 13 (R6).
+    # Algorithm 13 (R6). ISO/TS 32003:2023, Table 3 and 5.2 apply the R6
+    # password algorithms and entries unchanged to R7.
     decrypted = internal_aes_ecb_decrypt(file_key, config.encrypted_permissions)
     metadata_flag = b"T" if config.encrypt_metadata else b"F"
     expected = struct.pack("<L", config.permissions) + (b"\xff" * 4) + metadata_flag + b"adb"
@@ -631,7 +653,9 @@ def internal_validate_permissions(
 
 
 def internal_normalize_password(password: str, revision: int) -> bytes:
-    if revision == 6 and password:
+    # ISO/TS 32003:2023, 5.2 requires R7 to use the R6 password algorithms
+    # from ISO 32000-2:2020, 7.6.4.4, including SASLprep normalization.
+    if revision in (6, 7) and password:
         password = internal_saslprep(password)
     return password.encode("utf-8")[:127]
 
@@ -642,6 +666,7 @@ def internal_password_hash(
     salt: bytes,
     vector: bytes | None = None,
 ) -> bytes:
+    # ISO/TS 32003:2023, 5.2 uses ISO 32000-2:2020's R6 Algorithm 2.B for R7.
     if revision == 5:
         digest = sha256(password)
         digest.update(salt)
@@ -712,8 +737,8 @@ def internal_supported_revisions(version: int) -> tuple[int, ...] | None:
     # and V=4/R=4; they explicitly prohibit the unpublished V=3 algorithm.
     # Adobe Supplement to ISO 32000, BaseVersion 1.7, ExtensionLevel 3,
     # June 2008, Tables 3.18-3.19 add V=5/R=5. ISO 32000-2:2020,
-    # Tables 20-21 use V=5/R=6. ISO/TS 32003:2023, Tables 2-4 reserve
-    # V=6/R=7 for AESV4 (AES-GCM), which this AES-CBC handler does not support.
+    # Tables 20-21 use V=5/R=6. ISO/TS 32003:2023, Tables 2-4 add V=6/R=7
+    # for AESV4 (AES-GCM), retaining the revision-6 password algorithms.
     match version:
         case 1:
             return (2, 3)
@@ -723,6 +748,8 @@ def internal_supported_revisions(version: int) -> tuple[int, ...] | None:
             return (4,)
         case 5:
             return (5, 6)
+        case 6:
+            return (7,)
         case _:
             return None
 
