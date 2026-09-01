@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+from importlib import import_module
 from typing import Any, cast
 
 import core_pdf
-from core_pdf.impl.models import TextWord
-from core_pdf.impl.structured import (
+from core_pdf.impl.output import (
     Block,
     BlockKind,
     ContentNode,
@@ -21,6 +21,39 @@ from core_pdf.impl.structured import (
     TextLine,
     TextLineReference,
 )
+from core_pdf.impl.records import TextWord
+
+
+def test_public_exports_resolve_from_canonical_owners() -> None:
+    assert len(core_pdf.__all__) == len(set(core_pdf.__all__))
+    assert set(core_pdf.__all__) == set(core_pdf.internal_EXPORTS)
+
+    moved_owners = {
+        "PdfDocument": "core_pdf.impl.document",
+        "PdfPage": "core_pdf.impl.document",
+        "DrawingRecord": "core_pdf.impl.records",
+        "ImageMetadata": "core_pdf.impl.records",
+        "ImageRecord": "core_pdf.impl.records",
+        "PageScoped": "core_pdf.impl.records",
+        "TextWord": "core_pdf.impl.records",
+        "Document": "core_pdf.impl.output",
+        "ContentNode": "core_pdf.impl.output",
+        "DiagnosticTextRun": "core_pdf.impl.output",
+        "DocumentTableView": "core_pdf.impl.output",
+        "DocumentTextView": "core_pdf.impl.output",
+        "TableView": "core_pdf.impl.output",
+        "TableReference": "core_pdf.impl.output",
+        "TableAssociatedText": "core_pdf.impl.output",
+        "TableColumnBand": "core_pdf.impl.output",
+        "TableRowBand": "core_pdf.impl.output",
+        "TextView": "core_pdf.impl.output",
+        "TextDiagnostics": "core_pdf.impl.output",
+        "TextLineReference": "core_pdf.impl.output",
+    }
+    assert {name: core_pdf.internal_EXPORTS[name][0] for name in moved_owners} == moved_owners
+
+    for public_name, (module_name, owner_name) in core_pdf.internal_EXPORTS.items():
+        assert getattr(core_pdf, public_name) is getattr(import_module(module_name), owner_name)
 
 
 def test_public_text_records_have_one_canonical_name_and_owner() -> None:

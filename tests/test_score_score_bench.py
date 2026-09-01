@@ -8,13 +8,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from core_pdf.impl.parse import (
+from core_pdf.impl.extract.contracts import (
     PageRoute,
     ParseReport,
     RecognitionReport,
     WorkPlan,
-    ocr_tesseract,
 )
+from core_pdf.impl.extract.ocr import tesseract as ocr_tesseract
 from tests.helpers.paths import REPO_ROOT
 
 score_bench = run_path(

@@ -9,22 +9,22 @@ from typing import Any, cast
 from core_pdf.impl.exceptions import PdfRasterTooLargeError
 from core_pdf.impl.model.geometry import rect_tuple
 from core_pdf.impl.model.glyphs import GlyphObservation
-from core_pdf.impl.render.display import (
+from core_pdf.impl.render.blend import (
+    internal_color_rgba,
+    internal_scale_rgba_alpha,
+)
+from core_pdf.impl.render.clipping import internal_ClipState
+from core_pdf.impl.render.model import (
     CompiledRenderPlan,
     DisplayItem,
     DisplayList,
     DisplayListItem,
     ImagePaintItem,
     PathPaintItem,
+    RasterImage,
     RenderOptions,
 )
-from core_pdf.impl.render.kernels import (
-    internal_color_rgba,
-    internal_scale_rgba_alpha,
-)
-from core_pdf.impl.render.raster_image import RasterImage
 from core_pdf.impl.render.target import (
-    internal_ClipState,
     internal_RasterMetrics,
     internal_RasterTarget,
 )

@@ -5,8 +5,7 @@ import zlib
 import numpy
 
 from core_pdf import PdfDocument, PdfRasterFontFace, PdfRasterFontRequest
-from core_pdf.impl.render.display import RenderOptions
-from core_pdf.impl.render.raster_image import RasterImage
+from core_pdf.impl.render.model import RasterImage, RenderOptions
 from core_pdf.impl.spec.s_09_fonts.fallback import fallback_glyph_outline
 from tests.helpers.paths import FIXTURES, FONT_PROGRAMS
 

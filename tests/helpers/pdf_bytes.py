@@ -8,7 +8,7 @@ from collections.abc import Iterable, Iterator, Sequence
 from contextlib import contextmanager
 
 from core_pdf import PdfDocument
-from core_pdf.impl.structured.model import DiagnosticTextRun
+from core_pdf.impl.output import DiagnosticTextRun
 
 HELVETICA = b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"
 LETTER = (0, 0, 612, 792)

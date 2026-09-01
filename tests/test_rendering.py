@@ -7,26 +7,26 @@ import imagecodecs
 import numpy
 import pytest
 
+from core_pdf.impl.document import text_rotation_correction_for_runs
 from core_pdf.impl.exceptions import PdfRasterTooLargeError
 from core_pdf.impl.model.glyph_table import GlyphTable
 from core_pdf.impl.model.glyphs import GlyphObservation
 from core_pdf.impl.model.runs import TextRun
-from core_pdf.impl.page import text_rotation_correction_for_runs
-from core_pdf.impl.render.display import (
+from core_pdf.impl.render.model import (
     CompiledRenderPlan,
     DisplayList,
     ImagePaintItem,
     PathPaintItem,
     RenderOptions,
 )
-from core_pdf.impl.render.kernels import (
-    rasterize_packed_stroked_paths,
-    rasterize_unclipped_line_normal,
-)
 from core_pdf.impl.render.page import (
     RenderedPage,
     compose_page,
     internal_append_glyph_paint,
+)
+from core_pdf.impl.render.paths import (
+    rasterize_packed_stroked_paths,
+    rasterize_unclipped_line_normal,
 )
 from core_pdf.impl.runtime.image_cache import ImageCache
 from core_pdf.impl.spec.s_07_content.capture import (

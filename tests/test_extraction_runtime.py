@@ -9,8 +9,8 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 
 from core_pdf.impl.document import PdfDocument
-from core_pdf.impl.parse import ParsedPage
-from core_pdf.impl.parse import pipeline as parse_pipeline
+from core_pdf.impl.extract import pipeline as parse_pipeline
+from core_pdf.impl.extract.contracts import ParsedPage
 from core_pdf.impl.primitives import PdfName
 from core_pdf.impl.runtime.execution import ExecutionRuntime, RuntimeConfig, TaskScope, WorkStage
 from tests.helpers.paths import SCORE_BENCH

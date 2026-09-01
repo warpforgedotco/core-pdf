@@ -8,7 +8,7 @@ from core_pdf.impl.model.glyphs import (
     glyph_unicode_confidence,
     glyph_unicode_semantics,
 )
-from tests.helpers.parse_fakes import text_run
+from tests.helpers.extract_fakes import text_run
 
 
 def test_unicode_confidence_scores_authoritative_and_unsupported_glyphs() -> None:

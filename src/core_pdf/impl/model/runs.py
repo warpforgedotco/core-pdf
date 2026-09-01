@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar, TypeAlias
 
-from core_pdf.impl.models import TextWord
+from core_pdf.impl.records import TextWord
 
 if TYPE_CHECKING:
     from core_pdf.impl.model.glyphs import GlyphCluster

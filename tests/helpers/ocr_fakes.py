@@ -10,7 +10,7 @@ from typing import Any, cast
 
 import pytest
 
-from core_pdf.impl.parse import (
+from core_pdf.impl.extract.contracts import (
     CapturedPage,
     ObservationBatch,
     ObservationSource,
@@ -19,12 +19,12 @@ from core_pdf.impl.parse import (
     RecognitionReport,
     RecognitionResult,
     WorkPlan,
-    ocr,
-    ocr_raster,
-    ocr_regions,
-    ocr_stroked_vector,
-    ocr_tesseract,
 )
+from core_pdf.impl.extract.ocr import pipeline as ocr
+from core_pdf.impl.extract.ocr import raster as ocr_raster
+from core_pdf.impl.extract.ocr import regions as ocr_regions
+from core_pdf.impl.extract.ocr import tesseract as ocr_tesseract
+from core_pdf.impl.extract.ocr import vector as ocr_stroked_vector
 from core_pdf.impl.runtime.cache import ExtractionCache
 from core_pdf.impl.runtime.execution import TaskScope
 

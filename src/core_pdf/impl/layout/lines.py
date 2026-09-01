@@ -11,7 +11,7 @@ from itertools import islice
 from typing import TYPE_CHECKING, TypeAlias
 
 from core_pdf.impl.model.runs import TextRun, internal_track_text_run
-from core_pdf.impl.models import TextWord
+from core_pdf.impl.records import TextWord
 
 if TYPE_CHECKING:
     from core_pdf.impl.model.runs import (
@@ -33,7 +33,7 @@ def reconstruct_cached_layout_line_text(
     internal_key: LayoutLineReconstructionKey | None = None,
 ) -> LayoutLineText:
     """Reconstruct a line once for every revision of its constituent runs."""
-    from core_pdf.impl.layout.text_lines import reconstruct_layout_line_text
+    from core_pdf.impl.layout.reconstruction import reconstruct_layout_line_text
 
     key: LayoutLineReconstructionKey = (
         internal_key

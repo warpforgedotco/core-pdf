@@ -23,11 +23,22 @@ from types import FrameType
 from typing import Any
 
 from core_pdf import PdfDocument
-from core_pdf.impl.render import display, kernels, page, raster_image, target
+from core_pdf.impl.render import (
+    blend,
+    clipping,
+    images,
+    kernels,
+    model,
+    page,
+    paths,
+    patterns,
+    target,
+)
 
 CORPUS = pathlib.Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "SCORE-Bench" / "src"
 TARGET_FILES = frozenset(
-    module.__file__ for module in (display, kernels, page, raster_image, target)
+    module.__file__
+    for module in (blend, clipping, images, kernels, model, page, paths, patterns, target)
 )
 RenderLine = tuple[str, int]
 

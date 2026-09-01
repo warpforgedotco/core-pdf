@@ -4,8 +4,8 @@ import os
 
 import pytest
 
-from core_pdf.impl.parse import pipeline as parse_pipeline
-from core_pdf.impl.parse.model import PagePlanReason, PageRoute, WorkPlan
+from core_pdf.impl.extract import pipeline as parse_pipeline
+from core_pdf.impl.extract.contracts import PagePlanReason, PageRoute, WorkPlan
 
 from .support import FULL_ENV
 

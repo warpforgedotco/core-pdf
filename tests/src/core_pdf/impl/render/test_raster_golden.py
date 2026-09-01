@@ -10,7 +10,7 @@ import imagecodecs
 import numpy
 import pytest
 
-from core_pdf.impl.render.raster_image import RasterImage
+from core_pdf.impl.render.model import RasterImage
 from scripts import raster_golden
 from scripts.raster_golden import (
     CANONICAL_SOURCE,

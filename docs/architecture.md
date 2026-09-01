@@ -12,12 +12,12 @@ resolves it on first access with `install_lazy_module_exports`. This keeps `impo
 and makes the export table the authoritative public surface. Everything under `core_pdf.impl.*` is
 internal and may change without notice.
 
-The two central objects are:
+The two central objects share one public owner:
 
 - **`PdfDocument`** (`impl/document.py`) — opens documents, provides page access and structured
   extraction, and owns caches shared across pages. The CLI drives it through `process_pdf` in
   `cli.py`.
-- **`PdfPage`** (`impl/page.py`, extending the spec-level page in
+- **`PdfPage`** (`impl/document.py`, extending the spec-level page in
   `impl/spec/s_07_document/page.py`) — provides per-page extraction and rendering.
 
 Compatibility facades under `core_pdf.api.compat.*` project the engine's public objects into
@@ -28,8 +28,9 @@ structured JSON format, and compatibility behavior.
 
 ## 2. The extraction pipeline
 
-The `parse/` package owns extraction, with one module per stage. The stages run in roughly this
-order:
+The `extract/` package owns extraction. Its initializer exposes only `extract_page`,
+`extract_document`, and the lazy OCR prewarmer; stage internals are imported from their owning
+modules. The stages run in roughly this order:
 
 ```text
         ┌── capture ──┐
@@ -55,20 +56,21 @@ bytes → │ capture_page│ → plan_page ────────────
 
 | Module | Role |
 | --- | --- |
-| `parse/model.py` | Shared contracts for evidence, plans, observations, results, and reports. |
-| `parse/capture.py` | Runs the page program once and produces a cached `CapturedPage`. |
-| `parse/route.py` | Chooses native extraction, OCR, or both and returns a `WorkPlan`. |
-| `parse/fusion.py` | Merges native and recognized observations. |
-| `parse/tables.py` | Detects and reconciles grids, stream tables, charts, cells, titles, and captions. |
-| `parse/ocr*.py` | Recognizes raster and stroked-vector text; OCR backends remain isolated here. |
-| `parse/grid_geometry.py` | Supplies ruled-grid geometry to table and OCR stages. |
-| `parse/layout.py` | Groups runs into lines and blocks and determines reading order. |
-| `parse/emit.py` | Normalizes text and assembles the canonical structured `Page`. |
-| `parse/pipeline.py` | Orchestrates stages, locking, and product caching. |
+| `extract/contracts.py` | Shared evidence, plan, observation, result, and report records. |
+| `extract/capture.py` | Runs the page program once and produces a cached `CapturedPage`. |
+| `extract/observations.py` | Chooses native extraction, OCR, or both, then fuses observations. |
+| `extract/ocr/` | Owns recognition orchestration, rasters, regions, backends, and stroked text. |
+| `extract/tables.py` | Detects grids, stream tables, charts, cells, titles, and captions. |
+| `extract/table_reconcile.py` | Reconciles detected tables with emitted page elements. |
+| `layout/blocks.py` | Groups observations into lines and blocks and determines reading order. |
+| `layout/grids.py` | Supplies ruled-grid geometry to table and OCR stages. |
+| `extract/emit.py` | Normalizes text and assembles the canonical output `Page`. |
+| `extract/pipeline.py` | Orchestrates stages, locking, and product caching. |
 
-`parse/__init__.py` exports only pipeline entry points and shared stage models. Import stage helpers
-from their owning modules. `internal_PageExtraction` is the locked owner of page-local capture,
-recognition, fusion, layout, report, and assembly products.
+OCR is one feature namespace: `ocr/pipeline.py` orchestrates recognition; `raster.py`, `regions.py`,
+`tesseract.py`, `vector.py`, `strokes.py`, and `newstroke.py` own their respective mechanisms; and
+`types.py` holds their shared records. `internal_PageExtraction` remains the locked owner of
+page-local capture, recognition, fusion, layout, report, and assembly products.
 
 Document extraction creates an immutable enrichment snapshot for the selected pages. Learned font
 and stroked-glyph mappings apply to selection-local captures without mutating page caches or font
@@ -78,7 +80,7 @@ decoders, so direct page extraction does not depend on earlier document extracti
 
 Table extraction produces one canonical view. The table stage adds row and column bands and nearby
 titles or captions; emission reconciles those tables with text blocks and assigns page-wide order.
-`Page.tables`, `Document.table_view`, and the structured serializers consume the resulting tuple
+`Page.tables`, `Document.table_view`, and the serializers consume the resulting tuple
 without rerunning extraction heuristics.
 
 ---
@@ -94,7 +96,9 @@ src/core_pdf/
   impl/
     runtime/             engine-independent caching, arrays, and execution support
     exceptions.py        error hierarchy
-    models.py            public extraction records
+    records.py           public extraction records
+    output.py            immutable document/page output records and views
+    serialize.py         markdown/HTML/JSON/CSV/TEI serialization
     pages.py             page-selection normalization
     primitives.py        PDF primitives
     text.py              shared text normalization
@@ -102,28 +106,36 @@ src/core_pdf/
     model/               capture geometry, text runs, and glyph storage
     layout/              layout heuristics and spatial analysis
     spec/                PDF specification implementation (see below)
-    parse/               extraction pipeline (see section 2)
+    extract/             extraction pipeline and OCR feature namespace (see section 2)
     render/              display lists, raster kernels, targets, and page composition
-    structured/          document IR and markdown/HTML/JSON/CSV/TEI serialization
-    page.py              PdfPage
-    document.py          PdfDocument
+    document.py          PdfDocument, PdfPage, and their shared operation lifecycle
 ```
 
-Rendering uses direct module owners rather than a barrel module: `render/display.py` owns display
-records and options, `render/kernels.py` owns pure raster kernels, `render/target.py` owns the
-mutable paint target, `render/page.py` owns page composition, and `render/raster_image.py` owns the
-raster value object.
+Rendering uses direct module owners rather than a barrel module: `render/model.py` owns display
+records, render options, plans, and the raster value object. `blend.py`, `images.py`, `paths.py`,
+and `patterns.py` own their pure raster operations. `kernels.py` retains only cross-cutting
+page-coordinate helpers; `clipping.py` owns clip-mask operations; `target.py` owns the mutable paint
+target; and `page.py` owns page composition.
+
+Layout follows the same ownership rule. `blocks.py` owns block segmentation and reading order,
+`reconstruction.py` owns text reconstruction, `diagnostics.py` owns geometry-quality reporting,
+`grids.py` owns ruled-grid geometry, `words.py` owns word-frequency data, and `lines.py` and
+`spatial.py` retain their focused line and spatial records.
 
 ### Dependency direction
 
-There are no runtime import cycles between packages. Dependency direction is enforced by the
-import-linter contracts in `pyproject.toml`, which are the source of truth when this overview and
-the code disagree. Upper layers may depend on lower layers; lower layers must not import upward.
-The principal derived-processing order is:
+Dependency direction is enforced at stable boundaries by the import-linter contracts in
+`pyproject.toml`. The broad acyclic processing spine is:
 
 ```text
-document → page → parse → render → structured → layout → model
+document → extract → render → output → model
 ```
+
+This is deliberately not a total order over every implementation module. `extract/` and `layout/`
+collaborate through extraction contracts, while methods on `output.py` call `serialize.py` through
+function-local imports and serializers consume the output records. The former per-stage extraction
+and OCR layer contracts were retired when those feature namespaces were consolidated; the stable
+floors and specification boundaries remain enforced.
 
 Three packages form dependency floors:
 
@@ -137,19 +149,20 @@ Three packages form dependency floors:
 within the derived layers, the spec may depend only on the low-level capture model. Base modules
 under `impl/` never depend on the spec or derived packages.
 
-Public extraction records belong in `impl/models.py`. The `model/` package owns internal capture
-records and low-level records shared with layout, while `layout/` owns layout heuristics and their
-stage-specific results. Both packages avoid convenience re-exports: import a symbol from the module
-that owns it. Document-scoped caches and page locks live on the spec-level document, with no
-process-global fallback that could couple unrelated documents.
+Public extraction records belong in `impl/records.py`; immutable document/page output belongs in
+`impl/output.py`, and format conversion belongs in `impl/serialize.py`. The `model/` package owns
+internal capture records and low-level records shared with layout, while `layout/` owns layout
+heuristics and their stage-specific results. Both packages avoid convenience re-exports: import a
+symbol from the module that owns it. Document-scoped caches and page locks live on the spec-level
+document, with no process-global fallback that could couple unrelated documents.
 
 Two relationships sit outside the simple package ordering:
 
 - `s_14_structure/tree.py` uses type-only references to the spec-level document and page, while
   `s_07_document` imports the structure tree at runtime. Import-linter excludes those
   `TYPE_CHECKING` imports because it enforces the runtime graph.
-- Structured IR methods call serializers through function-local imports. This keeps serializer
-  entry points on the IR without creating a module-initialization cycle.
+- Output-record methods call serializers through function-local imports. This keeps serializer
+  entry points on the records without creating a module-initialization cycle.
 
 ### The `spec/s_NN_*` scheme
 
