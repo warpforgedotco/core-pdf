@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import pytest
 from asn1crypto import algos, cms, core
@@ -225,9 +225,11 @@ def test_pdf_mac_location_is_direct_and_supported(
     exception: type[Exception],
     message: str,
 ) -> None:
-    auth_code = dict(internal_auth_code(pdf_mac_material))
+    # Deliberately holds a value the format does not allow, so it is not a
+    # well-typed PdfDict at this point -- that is what the test is checking.
+    auth_code: dict[Any, Any] = dict(internal_auth_code(pdf_mac_material))
     auth_code["MACLocation"] = location
-    trailer = dict(pdf_mac_material.trailer)
+    trailer: dict[Any, Any] = dict(pdf_mac_material.trailer)
     trailer["AuthCode"] = auth_code
 
     with pytest.raises(exception, match=message):
@@ -293,9 +295,9 @@ def test_standalone_pdf_mac_requires_direct_hexadecimal_token(
     pdf_mac_material: internal_PdfMacMaterial,
     invalid_mac: object,
 ) -> None:
-    auth_code = dict(internal_auth_code(pdf_mac_material))
+    auth_code: dict[Any, Any] = dict(internal_auth_code(pdf_mac_material))
     auth_code["MAC"] = invalid_mac
-    trailer = dict(pdf_mac_material.trailer)
+    trailer: dict[Any, Any] = dict(pdf_mac_material.trailer)
     trailer["AuthCode"] = auth_code
 
     with pytest.raises(PdfDecryptionError, match="Invalid PDF MAC"):

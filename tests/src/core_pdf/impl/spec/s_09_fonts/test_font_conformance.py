@@ -6,18 +6,16 @@ Each test names the clause it pins.
 
 from __future__ import annotations
 
-import io
+from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
-from fontTools.fontBuilder import FontBuilder
-from fontTools.pens.ttGlyphPen import TTGlyphPen
-from fontTools.ttLib import newTable
-from fontTools.ttLib.tables._c_m_a_p import CmapSubtable
 
 from core_pdf.impl.spec.s_09_fonts.cmap_decoder import CMapDecoder
 from core_pdf.impl.spec.s_09_fonts.decoder import FontDecoder
-from core_pdf.impl.spec.s_09_fonts.font_program_truetype import TrueTypeFontProgram
+from core_pdf.impl.spec.s_09_fonts.font_program_truetype import (
+    internal_best_unicode_gid_cmap,
+)
 
 TWO_BYTE_CMAP = b"""
 2 begincodespacerange <0000> <D7FF> <E000> <FFFF> endcodespacerange
@@ -123,47 +121,50 @@ def test_cid_font_default_width_defaults_to_1000_without_dw() -> None:
     assert FontDecoder(font).default_width == 1000.0
 
 
-def internal_symbol_font() -> bytes:
-    """A TrueType program carrying only a (3, 0) subtable, as symbol fonts do."""
-    builder = FontBuilder(1000, isTTF=True)
-    builder.setupGlyphOrder([".notdef", "sq"])
-    pen = TTGlyphPen(None)
-    pen.moveTo((0, 0))
-    pen.lineTo((0, 700))
-    pen.lineTo((700, 700))
-    pen.lineTo((700, 0))
-    pen.closePath()
-    builder.setupGlyf({".notdef": TTGlyphPen(None).glyph(), "sq": pen.glyph()})
-    builder.setupHorizontalMetrics({".notdef": (600, 0), "sq": (700, 0)})
-    builder.setupHorizontalHeader(ascent=800, descent=-200)
-    builder.setupCharacterMap({0xF041: "sq"})
-    builder.setupNameTable({"familyName": "T", "styleName": "R", "psName": "T-R"})
-    builder.setupOS2()
-    builder.setupPost()
+class internal_SymbolFont:
+    """The same stand-in, as a class, so ``font["cmap"]`` subscripts properly."""
 
-    # newTable returns the untyped DefaultTable base, so the cmap-specific
-    # attributes are set through a cast.
-    table = cast(Any, newTable("cmap"))
-    table.tableVersion = 0
-    subtable = CmapSubtable.newSubtable(4)
-    subtable.platformID, subtable.platEncID, subtable.language = 3, 0, 0
-    subtable.cmap = {0xF041: "sq"}
-    table.tables = [subtable]
-    builder.font["cmap"] = table
+    def __init__(self, cmap: dict[int, str]) -> None:
+        self.cmap = cmap
+        self.reverse = {name: gid for gid, name in enumerate([".notdef", *sorted(cmap.values())])}
 
-    buffer = io.BytesIO()
-    builder.save(buffer)
-    return buffer.getvalue()
+    def __getitem__(self, key: str) -> Any:
+        assert key == "cmap"
+        return SimpleNamespace(
+            getBestCmap=lambda: None,
+            getcmap=lambda platform, encoding: (
+                SimpleNamespace(cmap=self.cmap) if (platform, encoding) == (3, 0) else None
+            ),
+        )
+
+    def getReverseGlyphMap(self) -> dict[str, int]:
+        return self.reverse
 
 
 @pytest.mark.parametrize("code", [0x41, 0xF041])
-def test_symbolic_truetype_resolves_through_the_3_0_subtable(code: int) -> None:
+def test_symbolic_truetype_registers_the_single_byte_code(code: int) -> None:
     """9.6.6.4: with a (3, 0) subtable "each byte from the string shall be
-    prepended with the high byte of the range".
+    prepended with the high byte of the range", the ranges being 0x0000-0x00FF,
+    0xF000-0xF0FF, 0xF100-0xF1FF and 0xF200-0xF2FF.
 
-    The subtable's 0xF0xx keys are not Unicode scalars, so treating them as
-    such made every code miss and resolve to GID 0 -- every glyph .notdef.
+    Those 0xF0xx keys are not Unicode scalars, but they pass a scalar test as
+    private-use codepoints and were stored as if they were, which suppressed
+    the fallback that registers the single-byte aliases. Every code then missed
+    and resolved to GID 0 -- every glyph .notdef.
     """
-    program = TrueTypeFontProgram(internal_symbol_font(), use_cmap=True)
+    mapping = internal_best_unicode_gid_cmap(cast(Any, internal_SymbolFont({0xF041: "sq"})))
 
-    assert program.glyph_id_for_code(code) == 1
+    assert mapping[code] == 1
+
+
+def test_unicode_cmap_gains_no_single_byte_aliases() -> None:
+    """The alias only applies to the (3, 0) symbol fallback, not to a real
+    Unicode subtable, where a 0xF0xx key genuinely is a private-use codepoint."""
+
+    class internal_UnicodeFont(internal_SymbolFont):
+        def __getitem__(self, key: str) -> Any:
+            return SimpleNamespace(getBestCmap=lambda: self.cmap, getcmap=lambda p, e: None)
+
+    mapping = internal_best_unicode_gid_cmap(cast(Any, internal_UnicodeFont({0xF041: "sq"})))
+
+    assert mapping == {0xF041: 1}
