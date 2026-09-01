@@ -15,7 +15,6 @@ from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     normalize_pdf_name,
     parse_int,
 )
-from core_pdf.impl.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 
 DecodeParam: TypeAlias = object
 
@@ -84,7 +83,7 @@ class FilterParams:
             raise ValueError("invalid DecodeParms dictionary")
 
         def require_int(name: str, default: int | None = None) -> int:
-            value = lookup_dict_key(parms, name)
+            value = parms.get(name)
             if is_pdf_null(value):
                 value = default
             parsed = parse_int(value, default)
@@ -115,7 +114,7 @@ class FilterParams:
             return value
 
         def require_bool(name: str, default: bool = False) -> bool:
-            value = lookup_dict_key(parms, name)
+            value = parms.get(name)
             if is_pdf_null(value):
                 value = default
             if type(value) is bool:
@@ -138,8 +137,8 @@ class FilterParams:
                 raise ValueError("invalid DecodeParms EarlyChange")
             return 0 if value == 0 else 1
 
-        columns_value = lookup_dict_key(parms, "Columns")
-        jbig2_globals = lookup_dict_key(parms, "JBIG2Globals")
+        columns_value = parms.get("Columns")
+        jbig2_globals = parms.get("JBIG2Globals")
         return cls(
             early_change=require_early_change(),
             predictor=require_predictor("Predictor"),
@@ -171,14 +170,14 @@ class StreamDecodeSpec:
 def with_ccitt_image_rows(parms: object, dictionary: object) -> object:
     if type(parms) is FilterParams:
         return parms
-    height = lookup_dict_key(dictionary, "Height")
+    height = dictionary.get("Height") if isinstance(dictionary, dict) else None
     if is_pdf_null(height):
         return parms
     if is_pdf_null(parms):
         return {"Rows": height}
     if not isinstance(parms, dict):
         return parms
-    if not is_pdf_null(lookup_dict_key(parms, "Rows")):
+    if not is_pdf_null(parms.get("Rows")):
         return parms
     updated = dict(parms)
     updated["Rows"] = height
@@ -188,20 +187,20 @@ def with_ccitt_image_rows(parms: object, dictionary: object) -> object:
 def normalize_stream_decode_spec(dictionary: object) -> StreamDecodeSpec:
     if not isinstance(dictionary, dict):
         raise FilterParseError("invalid stream dictionary")
-    raw_filters = lookup_dict_key(dictionary, "Filter")
+    raw_filters = dictionary.get("Filter")
     if is_pdf_null(raw_filters):
-        raw_filters = lookup_dict_key(dictionary, "F")
+        raw_filters = dictionary.get("F")
     if is_pdf_null(raw_filters):
-        raw_filters = lookup_dict_key(dictionary, "FFilter")
+        raw_filters = dictionary.get("FFilter")
     if is_pdf_null(raw_filters):
         filters: list[object] = []
     else:
         filters = list(raw_filters) if isinstance(raw_filters, (list, tuple)) else [raw_filters]
-    parms_raw = lookup_dict_key(dictionary, "DecodeParms")
+    parms_raw = dictionary.get("DecodeParms")
     if is_pdf_null(parms_raw):
-        parms_raw = lookup_dict_key(dictionary, "DP")
+        parms_raw = dictionary.get("DP")
     if is_pdf_null(parms_raw):
-        parms_raw = lookup_dict_key(dictionary, "FDecodeParms")
+        parms_raw = dictionary.get("FDecodeParms")
     raw_param_items = list(parms_raw) if isinstance(parms_raw, (list, tuple)) else None
 
     names: list[str] = []

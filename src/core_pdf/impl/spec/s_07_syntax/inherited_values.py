@@ -6,13 +6,12 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import cast
 
-from core_pdf.impl.spec.s_07_syntax.object_cache import (
+from core_pdf.impl.spec.s_07_syntax.types import (
     CachedPdfObject,
     InheritedValueMap,
     InheritedValuesCache,
+    PdfDict,
 )
-from core_pdf.impl.spec.s_07_syntax.types import PdfDict
-from core_pdf.impl.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 
 
 def collect_inherited_values(
@@ -43,11 +42,11 @@ def collect_inherited_values(
         ancestors.append((marker, current_dict))
         for key in keys:
             if key not in values:
-                inherited_value = lookup_dict_key(current_dict, key)
+                inherited_value = current_dict.get(key)
                 if inherited_value is not None:
                     values[key] = cast("CachedPdfObject", inherited_value)
 
-        parent = lookup_dict_key(current, "Parent")
+        parent = current.get("Parent")
         current = resolve_ref(parent) if parent is not None else None
         if not isinstance(current, dict):
             current = None
@@ -57,7 +56,7 @@ def collect_inherited_values(
         for marker, node_dict in reversed(ancestors):
             merged: InheritedValueMap = running_values.copy()
             for key in keys:
-                inherited_value = lookup_dict_key(node_dict, key)
+                inherited_value = node_dict.get(key)
                 if inherited_value is not None:
                     merged[key] = cast("CachedPdfObject", inherited_value)
             cache[marker] = merged

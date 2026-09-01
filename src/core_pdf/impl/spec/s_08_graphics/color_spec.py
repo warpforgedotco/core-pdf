@@ -13,10 +13,6 @@ from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     parse_float,
     parse_int,
 )
-from core_pdf.impl.spec.s_07_syntax_primitives.pdfdict import (
-    lookup_dict_key,
-    lookup_dict_key_default,
-)
 from core_pdf.impl.spec.s_08_graphics.icc_profiles import (
     IccProfileError,
     parse_icc_transform,
@@ -28,7 +24,7 @@ ColorNameList: TypeAlias = list[object] | tuple[object, ...]
 
 def cs_param(params: object, key: str, default: object = None) -> object:
     if isinstance(params, dict):
-        value = lookup_dict_key_default(params, key, MISSING)
+        value = params.get(key, MISSING)
         return default if value is MISSING else value
     return default
 
@@ -117,7 +113,7 @@ def normalize_indexed_base_color_space_name(value: object) -> str | None:
     if kind == "ICCBased" and len(value) >= 2 and isinstance(value[1], (dict, PdfStream)):
         icc_stream = value[1]
         icc_dict = icc_stream.dictionary if isinstance(icc_stream, PdfStream) else icc_stream
-        alt = normalize_color_space_name(lookup_dict_key(icc_dict, "Alternate"))
+        alt = normalize_color_space_name(icc_dict.get("Alternate"))
         if alt is not None:
             return alt
         n = cs_param(icc_dict, "N", 3)
@@ -134,7 +130,8 @@ def normalize_indexed_base_color_space_name(value: object) -> str | None:
 
 
 def normalize_image_color_spec(image_dict: object) -> ImageColorSpec:
-    raw_bpc = lookup_dict_key_default(image_dict, "BitsPerComponent", MISSING)
+    dictionary = image_dict if isinstance(image_dict, dict) else {}
+    raw_bpc = dictionary.get("BitsPerComponent", MISSING)
     if raw_bpc is not MISSING:
         if type(raw_bpc) is bool:
             raise ValueError("invalid image bits-per-component")
@@ -167,7 +164,7 @@ def normalize_image_color_spec(image_dict: object) -> ImageColorSpec:
             raise ValueError("invalid ICCBased color space")
         return parsed
 
-    color_space = lookup_dict_key(image_dict, "ColorSpace")
+    color_space = dictionary.get("ColorSpace")
     if isinstance(color_space, (list, tuple)) and color_space:
         kind = normalize_color_space_name(color_space[0])
         if kind == "Indexed" and len(color_space) >= 4:
@@ -197,7 +194,7 @@ def normalize_image_color_spec(image_dict: object) -> ImageColorSpec:
         ):
             icc_stream = color_space[1]
             icc_dict = icc_stream.dictionary if isinstance(icc_stream, PdfStream) else icc_stream
-            alt = normalize_color_space_name(lookup_dict_key(icc_dict, "Alternate"))
+            alt = normalize_color_space_name(icc_dict.get("Alternate"))
             n = cs_param(icc_dict, "N", 3)
             channels = parse_channel_count(n)
             icc_profile = icc_stream.data if isinstance(icc_stream, PdfStream) else None

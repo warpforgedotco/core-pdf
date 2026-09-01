@@ -6,13 +6,12 @@ import re
 from collections.abc import Iterable, Iterator, MutableMapping, MutableSequence
 from decimal import Decimal
 from os import PathLike
-from typing import Any, BinaryIO, cast, overload
+from typing import Any, cast, overload
 
 from core_pdf import PdfDocument
 from core_pdf.api.compat.pypdf import (
     PdfPageObject,
     PdfReader,
-    PdfWriter,
     StructuredState,
 )
 from core_pdf.impl.exceptions import PdfParseError, PdfUnsupportedError
@@ -21,7 +20,6 @@ from core_pdf.impl.spec.s_07_document.document_labels import resolve_page_tree_n
 from core_pdf.impl.spec.s_07_document.metadata import resolve_info_metadata
 from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict
-from core_pdf.impl.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 from core_pdf.impl.structured import Document
 from core_pdf.impl.structured import Page as StructuredPage
 
@@ -83,7 +81,7 @@ def _pike_value(value: object) -> object:
 
 
 def _pikepdf_info_metadata(pdf: PdfDocument) -> dict[str, Any]:
-    info = lookup_dict_key(pdf.trailer_dict, "Info")
+    info = pdf.trailer_dict.get("Info")
     if isinstance(info, PdfReference):
         entry = pdf.xref.get((info.object_number << 16) | info.generation_number)
         if entry is not None and entry.object_stream is None:
@@ -131,7 +129,7 @@ def _validate_pikepdf_object_graph(document: StructuredState) -> None:
             or (b"/Root" in trailer and re.search(rb"/Root\s+\d+\s+\d+\s+R\b", trailer) is None)
         ):
             raise PdfUnsupportedError("unable to find trailer dictionary")
-    pages = lookup_dict_key(pdf.catalog(), "Pages")
+    pages = pdf.catalog().get("Pages")
     if isinstance(pages, PdfReference) and internal_has_malformed_shadowed_definition(pdf, pages):
         raise PdfUnsupportedError("shadowed page tree root")
     if isinstance(pages, PdfReference) and pdf.xref_was_recovered:
@@ -165,7 +163,7 @@ def _validate_pikepdf_object_graph(document: StructuredState) -> None:
             return
         if resolve_page_tree_node_type(pdf.resolver, cast(PdfDict, resolved)) != "Pages":
             return
-        kids = pdf.resolver.resolve(lookup_dict_key(resolved, "Kids"))
+        kids = pdf.resolver.resolve(resolved.get("Kids"))
         if not isinstance(kids, list):
             return
         seen.add(marker)
@@ -239,12 +237,12 @@ def _pikepdf_page_boxes(
             return
         if node_type != "Pages":
             return
-        kids = pdf.resolver.resolve(lookup_dict_key(resolved, "Kids"))
+        kids = pdf.resolver.resolve(resolved.get("Kids"))
         if isinstance(kids, list):
             for kid in kids:
                 visit(kid, box)
 
-    visit(lookup_dict_key(pdf.catalog(), "Pages"))
+    visit(pdf.catalog().get("Pages"))
     return tuple(boxes)
 
 
@@ -419,29 +417,6 @@ class Pdf(PdfReader):
     @property
     def is_linearized(self) -> bool:
         return False
-
-    def save(self, filename: object, **kwargs: object) -> bytes:
-        del kwargs
-        writer = PdfWriter()
-        for page in self.pages:
-            writer.add_page(page)
-        writer.add_metadata(self.metadata)
-        parents: dict[int, object] = {}
-        for row in self._outlines:
-            if len(row) < 3 or not isinstance(row[0], int) or not isinstance(row[2], int):
-                continue
-            level = max(1, row[0])
-            parent = parents.get(level - 1)
-            destination = writer.add_outline_item(
-                str(row[1]), row[2] - 1, parent=cast(Any, parent) if parent is not None else None
-            )
-            parents[level] = destination
-            for deeper in tuple(parents):
-                if deeper > level:
-                    del parents[deeper]
-        for attachment_name, data in self.attachments.items():
-            writer.add_attachment(attachment_name, data)
-        return writer.write(cast(str | PathLike[str] | BinaryIO, filename))
 
     @property
     def attachments(self) -> Attachments:

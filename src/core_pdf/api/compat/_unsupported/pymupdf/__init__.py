@@ -919,28 +919,6 @@ class Document(PdfReader):
         self._document = self._document.replace_pages(pages)
         self._pending_redactions.clear()
 
-    def save(self, filename: object, **kwargs: object) -> bytes:
-        supported_options = {
-            "ascii",
-            "clean",
-            "deflate",
-            "deflate_fonts",
-            "deflate_images",
-            "encryption",
-            "expand",
-            "garbage",
-            "incremental",
-            "linear",
-            "pretty",
-        }
-        unsupported = set(kwargs) - supported_options
-        if unsupported:
-            raise TypeError(f"unsupported save options: {sorted(unsupported)[0]}")
-        self.apply_redactions()
-        return self._document.write_redacted(
-            cast(str, filename), outlines=self._toc_override, attachments=self._embedded_files
-        )
-
 
 class TextPage:
     """Reusable PyMuPDF text view backed by a local page facade."""

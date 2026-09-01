@@ -36,7 +36,6 @@ internal_EXPORTS = {
     },
     "Pdf": ("pikepdf", "Pdf"),
     "PdfReader": ("pypdf", "PdfReader"),
-    "PdfWriter": ("pypdf", "PdfWriter"),
     "get_nodes_from_documents": ("llamaindex", "get_nodes_from_documents"),
     "load_data": ("llamaindex", "load_data"),
     "partition_pdf": ("unstructured", "partition_pdf"),

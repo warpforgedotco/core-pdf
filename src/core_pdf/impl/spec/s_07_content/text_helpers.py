@@ -9,7 +9,6 @@ from typing import Any, Protocol, cast
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
-from core_pdf.impl.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 from core_pdf.impl.spec.s_09_fonts.font_program_truetype import TrueTypeFontProgram
 from core_pdf.impl.spec.s_09_fonts.widths import (
     require_font_float,
@@ -74,10 +73,12 @@ def normalize_extracted_text(text: str) -> str:
 
 
 def get_font_file(document: FontResourceDocument, font_obj: object) -> PdfStream | None:
-    descriptor = lookup_dict_key(font_obj, "FontDescriptor")
+    if not isinstance(font_obj, dict):
+        return None
+    descriptor = font_obj.get("FontDescriptor")
     if not isinstance(descriptor, dict):
         return None
-    font_file = document.resolve(lookup_dict_key(descriptor, "FontFile2"))
+    font_file = document.resolve(descriptor.get("FontFile2"))
     return font_file if isinstance(font_file, PdfStream) else None
 
 
@@ -94,7 +95,9 @@ def find_companion_font(
     base_name: str,
     ligature_starters: set[str],
 ) -> tuple[dict[int, float], dict[str, float], bytes | None]:
-    font_resources = lookup_dict_key(resources, "Font")
+    if not isinstance(resources, dict):
+        return {}, {}, None
+    font_resources = resources.get("Font")
     if not isinstance(font_resources, dict):
         return {}, {}, None
 
@@ -102,14 +105,14 @@ def find_companion_font(
         fobj = document.resolve(fref)
         if not isinstance(fobj, dict):
             continue
-        comp_base = normalize_pdf_name(lookup_dict_key(fobj, "BaseFont")) or ""
+        comp_base = normalize_pdf_name(fobj.get("BaseFont")) or ""
         if "+" in comp_base:
             comp_base = comp_base.split("+", 1)[1]
         if comp_base != base_name:
             continue
 
-        fc = lookup_dict_key(fobj, "FirstChar")
-        lc = lookup_dict_key(fobj, "LastChar")
+        fc = fobj.get("FirstChar")
+        lc = fobj.get("LastChar")
         try:
             fc_int = require_font_int(fc, "invalid font FirstChar")
             lc_int = require_font_int(lc, "invalid font LastChar")
@@ -118,7 +121,7 @@ def find_companion_font(
         if lc_int < fc_int:
             continue
 
-        widths_raw = lookup_dict_key(fobj, "Widths")
+        widths_raw = fobj.get("Widths")
         if widths_raw is None:
             continue
         widths_raw = document.resolve(widths_raw)
@@ -163,15 +166,17 @@ def detect_ligature_overrides(
     resources: object,
     font_obj: object,
 ) -> dict[int, str]:
-    first_char = lookup_dict_key(font_obj, "FirstChar")
-    last_char = lookup_dict_key(font_obj, "LastChar")
+    if not isinstance(font_obj, dict):
+        return {}
+    first_char = font_obj.get("FirstChar")
+    last_char = font_obj.get("LastChar")
     try:
         first_char_int = require_font_int(first_char, "invalid font FirstChar")
         last_char_int = require_font_int(last_char, "invalid font LastChar")
     except ValueError:
         return {}
 
-    base_font_raw = normalize_pdf_name(lookup_dict_key(font_obj, "BaseFont")) or ""
+    base_font_raw = normalize_pdf_name(font_obj.get("BaseFont")) or ""
     base_name = base_font_raw.split("+", 1)[1] if "+" in base_font_raw else base_font_raw
     if not base_name:
         return {}
@@ -205,7 +210,7 @@ def detect_ligature_overrides(
     except ValueError:
         return {}
 
-    lig_widths_raw = lookup_dict_key(font_obj, "Widths")
+    lig_widths_raw = font_obj.get("Widths")
     if lig_widths_raw is not None and not isinstance(lig_widths_raw, (list, tuple)):
         raise ValueError("invalid font widths array")
     overrides: dict[int, str] = {}

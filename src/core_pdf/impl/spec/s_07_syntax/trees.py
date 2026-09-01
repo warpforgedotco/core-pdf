@@ -6,8 +6,6 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator
 from typing import TypeVar
 
-from core_pdf.impl.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
-
 ResolveFn = Callable[[object], object]
 NameDecodeFn = Callable[[object], str | None]
 NumberDecodeFn = Callable[[object], int | None]
@@ -54,7 +52,7 @@ def internal_iter_tree_items(
             raise ValueError(f"{tree_name} tree cycle detected")
         seen.add(marker)
 
-        entries = resolve(lookup_dict_key(current, key_field))
+        entries = resolve(current.get(key_field))
         if entries is not None:
             if not isinstance(entries, list):
                 if recover:
@@ -72,7 +70,7 @@ def internal_iter_tree_items(
                 value = entries[index + 1]
                 yield key, resolve(value) if resolve_values else value
 
-        kids = resolve(lookup_dict_key(current, "Kids"))
+        kids = resolve(current.get("Kids"))
         if kids is None:
             continue
         if not isinstance(kids, list):

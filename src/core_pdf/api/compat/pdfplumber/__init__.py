@@ -21,7 +21,6 @@ from core_pdf.impl.model.geometry import (
 )
 from core_pdf.impl.primitives import PdfReference
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
-from core_pdf.impl.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 
 from .._shared import ClosingMixin, encode_png, png_chunk
 from .exceptions import PdfminerException
@@ -197,14 +196,14 @@ class EnginePageAdapter:
                 resolved = page.document.resolver.resolve(value)
                 if (
                     isinstance(resolved, dict)
-                    and normalize_pdf_name(lookup_dict_key(resolved, "Type")) == "Page"
+                    and normalize_pdf_name(resolved.get("Type")) == "Page"
                 ):
                     return value
                 return resolve_all(resolved, active | {key})
             if isinstance(value, (list, tuple)):
                 return type(value)(resolve_all(item, active) for item in value)
             if isinstance(value, dict):
-                is_annotation = normalize_pdf_name(lookup_dict_key(value, "Type")) == "Annot"
+                is_annotation = normalize_pdf_name(value.get("Type")) == "Annot"
                 return {
                     key: item
                     if is_annotation and normalize_pdf_name(key) == "Parent"
@@ -214,7 +213,7 @@ class EnginePageAdapter:
             return value
 
         try:
-            raw_box = lookup_dict_key(page.page_dict, "MediaBox")
+            raw_box = page.page_dict.get("MediaBox")
             if raw_box is None:
                 raw_box = page.inherited_values.get("MediaBox")
             raw_box = resolve_all(raw_box)

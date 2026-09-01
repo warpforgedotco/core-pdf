@@ -14,7 +14,6 @@ from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.primitives import PdfString
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
-from core_pdf.impl.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 from core_pdf.impl.spec.s_09_fonts.cff import (
     build_cff_unicode_repair_index,
     cff_font_for_pdf_font,
@@ -259,7 +258,7 @@ class FontDecoder:
 
     def internal_initialize(self) -> None:
         font = self.font
-        subtype = lookup_dict_key(font, "Subtype")
+        subtype = font.get("Subtype")
         if subtype is not None:
             subtype = normalize_pdf_name(subtype)
 
@@ -268,7 +267,7 @@ class FontDecoder:
         # PDF font dictionary's /Encoding.
         self.font_program = internal_font_program_for_pdf_font(font)
 
-        to_unicode_obj = lookup_dict_key(font, "ToUnicode")
+        to_unicode_obj = font.get("ToUnicode")
         to_unicode = None
         if isinstance(to_unicode_obj, PdfStream):
             try:
@@ -333,7 +332,7 @@ class FontDecoder:
                 widths = builtin
                 # Table 122 defaults MissingWidth to 0, and a code this font
                 # does not encode should not advance by a full em.
-                if lookup_dict_key(font, "MissingWidth") is None:
+                if font.get("MissingWidth") is None:
                     default_width = 0.0
 
         self.to_unicode = to_unicode
@@ -389,13 +388,13 @@ class FontDecoder:
         font: dict[str, Any],
     ) -> tuple[str | None, str | None]:
         descendant = get_descendant(font)
-        system_info = lookup_dict_key(descendant, "CIDSystemInfo") if descendant else None
+        system_info = descendant.get("CIDSystemInfo") if descendant else None
         if not isinstance(system_info, dict):
-            system_info = lookup_dict_key(font, "CIDSystemInfo")
+            system_info = font.get("CIDSystemInfo")
         if not isinstance(system_info, dict):
             return None, None
-        registry = cls.internal_cid_system_info_string(lookup_dict_key(system_info, "Registry"))
-        ordering = cls.internal_cid_system_info_string(lookup_dict_key(system_info, "Ordering"))
+        registry = cls.internal_cid_system_info_string(system_info.get("Registry"))
+        ordering = cls.internal_cid_system_info_string(system_info.get("Ordering"))
         return registry, ordering
 
     @classmethod
@@ -425,8 +424,8 @@ class FontDecoder:
         base_encoding = None
         base_encoding_explicit = False
         differences: dict[int, str] = {}
-        subtype = normalize_pdf_name(lookup_dict_key(font, "Subtype"))
-        encoding_obj = lookup_dict_key(font, "Encoding")
+        subtype = normalize_pdf_name(font.get("Subtype"))
+        encoding_obj = font.get("Encoding")
         match encoding_obj:
             case str():
                 base_encoding = normalize_pdf_name(encoding_obj)
@@ -441,14 +440,14 @@ class FontDecoder:
                 except (PdfParseError, ValueError):
                     cmap = None
             case dict():
-                base_encoding = normalize_pdf_name(lookup_dict_key(encoding_obj, "BaseEncoding"))
+                base_encoding = normalize_pdf_name(encoding_obj.get("BaseEncoding"))
                 if base_encoding is None:
                     base_encoding = (
                         "WinAnsiEncoding" if subtype == "TrueType" else "StandardEncoding"
                     )
                 else:
                     base_encoding_explicit = True
-                differences_obj = lookup_dict_key(encoding_obj, "Differences")
+                differences_obj = encoding_obj.get("Differences")
                 if differences_obj is not None and not isinstance(differences_obj, (list, tuple)):
                     differences_obj = None
                 differences = parse_differences(
@@ -494,10 +493,10 @@ class FontDecoder:
                     return {}, False
             case _:
                 pass
-        descriptor = lookup_dict_key(font, "FontDescriptor")
+        descriptor = font.get("FontDescriptor")
         if not isinstance(descriptor, dict):
             return {}, False
-        font_file = lookup_dict_key(descriptor, "FontFile")
+        font_file = descriptor.get("FontFile")
         if isinstance(font_file, PdfStream):
             try:
                 encoding = parse_type1_font_program_encoding(font_file.data)

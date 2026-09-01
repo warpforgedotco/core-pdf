@@ -9,7 +9,6 @@ from core_pdf.impl.primitives import PdfName, PdfReference, PdfString
 from core_pdf.impl.spec.s_07_document.records import RawFormField
 from core_pdf.impl.spec.s_07_syntax.text_string import decode_pdf_text_string
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict
-from core_pdf.impl.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 
 FieldTraversalNode: TypeAlias = tuple[Literal["node"], object, str, str, object, int]
 FieldTraversalRecord: TypeAlias = tuple[Literal["record"], RawFormField]
@@ -21,7 +20,7 @@ def field_widget_rect(
 ) -> tuple[float, float, float, float] | None:
     if widget is None:
         return None
-    return document.resolver.resolve_box(lookup_dict_key(widget, "Rect"))
+    return document.resolver.resolve_box(widget.get("Rect"))
 
 
 def field_value_text(document: Any, value: object) -> str:

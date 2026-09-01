@@ -34,7 +34,6 @@ from core_pdf.impl.parse.model import (
 )
 from core_pdf.impl.parse.newstroke import NewstrokeDecode, decode_newstroke_drawings
 from core_pdf.impl.spec.s_07_content.page_program import PageProgram
-from core_pdf.impl.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 from core_pdf.impl.spec.s_08_graphics.image_metadata import (
     image_filter_names,
 )
@@ -826,10 +825,9 @@ def internal_capture_from_program(
         filter_name
         for drawing in drawings
         if getattr(drawing, "kind", None) in {"image", "inline-image"}
-        and isinstance(getattr(drawing, "dictionary", None), dict)
-        for filter_name in image_filter_names(
-            lookup_dict_key(getattr(drawing, "dictionary", None), "Filter")
-        )
+        for dictionary in (getattr(drawing, "dictionary", None),)
+        if isinstance(dictionary, dict)
+        for filter_name in image_filter_names(dictionary.get("Filter"))
     )
     if inline_images:
         image_filters = (
@@ -837,7 +835,7 @@ def internal_capture_from_program(
             *(
                 filter_name
                 for image in inline_images
-                for filter_name in image_filter_names(lookup_dict_key(image.dictionary, "Filter"))
+                for filter_name in image_filter_names(image.dictionary.get("Filter"))
             ),
         )
     page_width = float(page.width)

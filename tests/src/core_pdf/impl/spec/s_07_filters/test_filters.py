@@ -5,12 +5,10 @@ import base64
 import binascii
 import zlib
 from itertools import product
-from typing import cast
 
 import numpy
 import pytest
 
-from core_pdf.impl.exceptions import PdfParseError, PdfUnsupportedError
 from core_pdf.impl.primitives import PdfName
 from core_pdf.impl.spec.s_07_filters import pipeline, predictors
 from core_pdf.impl.spec.s_07_filters.codecs import apply_ascii85, apply_ascii_hex
@@ -32,11 +30,7 @@ from core_pdf.impl.spec.s_07_filters.registry import (
     EXPENSIVE_DECODE_CACHE_FILTERS,
     PREDICTOR_FILTERS,
 )
-from core_pdf.impl.spec.s_07_security.standard_v4 import PdfStandardSecurityHandlerV4
-from core_pdf.impl.spec.s_07_syntax.types import PdfDict
-from core_pdf.impl.spec.s_07_syntax_primitives.content_operators import (
-    PDF_CONTENT_OPERATOR_BYTES,
-)
+from core_pdf.impl.spec.s_07_syntax_primitives.tokens import PDF_CONTENT_OPERATOR_BYTES
 from core_pdf.impl.spec.s_08_graphics.color_kernels import (
     unpack_subbyte_image_samples,
 )
@@ -383,50 +377,3 @@ def test_decode_stream_data_preserves_reversed_memoryview_order() -> None:
 
 def test_crypt_filter_without_params_is_identity_after_security_stage() -> None:
     assert decode_stream_data(b"plain", {"Filter": PdfName.of("Crypt")}) == b"plain"
-
-
-def make_v4_handler() -> PdfStandardSecurityHandlerV4:
-    handler = object.__new__(PdfStandardSecurityHandlerV4)
-    handler.encrypt_metadata = True
-    handler.stmf = "Default"
-    handler.strf = "Default"
-    handler.cfm = {
-        "Default": lambda internal_objid, internal_genno, data: b"default:" + data,
-        "Special": lambda internal_objid, internal_genno, data: b"special:" + data,
-    }
-    return handler
-
-
-def test_security_handler_uses_explicit_named_crypt_filter() -> None:
-    handler = make_v4_handler()
-    attrs = {
-        "Filter": [PdfName.of("Crypt"), PdfName.of("FlateDecode")],
-        "DecodeParms": [{"Name": PdfName.of("Special")}, None],
-    }
-
-    assert handler.decrypt(1, 0, b"ciphertext", cast(PdfDict, attrs)) == b"special:ciphertext"
-
-
-def test_security_handler_defaults_explicit_crypt_to_identity() -> None:
-    handler = make_v4_handler()
-
-    assert handler.decrypt(1, 0, b"plain", {"Filter": PdfName.of("Crypt")}) == b"plain"
-
-
-def test_security_handler_rejects_late_crypt_filter() -> None:
-    handler = make_v4_handler()
-    attrs = {"Filter": [PdfName.of("FlateDecode"), PdfName.of("Crypt")]}
-
-    with pytest.raises(PdfParseError, match="first"):
-        handler.decrypt(1, 0, b"ciphertext", cast(PdfDict, attrs))
-
-
-def test_security_handler_rejects_unknown_named_crypt_filter() -> None:
-    handler = make_v4_handler()
-    attrs = {
-        "Filter": PdfName.of("Crypt"),
-        "DecodeParms": {"Name": PdfName.of("Unknown")},
-    }
-
-    with pytest.raises(PdfUnsupportedError, match="Undefined crypt filter"):
-        handler.decrypt(1, 0, b"ciphertext", cast(PdfDict, attrs))

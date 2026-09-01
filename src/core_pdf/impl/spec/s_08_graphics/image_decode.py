@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import threading
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any
 
 import numpy
 
@@ -15,7 +15,6 @@ from core_pdf.impl.spec.s_07_filters.pipeline import (
     decode_stream_data,
     decode_stream_image_data,
 )
-from core_pdf.impl.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 from core_pdf.impl.spec.s_08_graphics.color import ImageColorManager
 from core_pdf.impl.spec.s_08_graphics.image_metadata import pdf_int
 
@@ -151,7 +150,7 @@ class ImageSource:
         return prepared.raster if prepared is not None else None
 
     def internal_prepare(self) -> PreparedImage | None:
-        is_stencil = lookup_dict_key(self.dictionary, "ImageMask") is True
+        is_stencil = self.dictionary.get("ImageMask") is True
         decoded = (
             self.internal_decode_mask()
             if is_stencil
@@ -183,8 +182,8 @@ class ImageSource:
         )
 
     def internal_decode_mask(self) -> DecodedRaster | None:
-        width = pdf_int(lookup_dict_key(self.dictionary, "Width"), 0)
-        height = pdf_int(lookup_dict_key(self.dictionary, "Height"), 0)
+        width = pdf_int(self.dictionary.get("Width"), 0)
+        height = pdf_int(self.dictionary.get("Height"), 0)
         if width <= 0 or height <= 0:
             return None
         try:
@@ -197,10 +196,10 @@ class ImageSource:
         packed = numpy.frombuffer(decoded, dtype=numpy.uint8)[: row_bytes * height]
         bits = numpy.unpackbits(packed).reshape(height, row_bytes * 8)[:, :width]
         alpha = bits * 255
-        decode = lookup_dict_key(self.dictionary, "Decode")
+        decode = self.dictionary.get("Decode")
         if isinstance(decode, (list, tuple)) and len(decode) >= 2:
             try:
-                if float(cast(Any, decode[0])) > float(cast(Any, decode[1])):
+                if float(decode[0]) > float(decode[1]):
                     alpha = 255 - alpha
             except (TypeError, ValueError):
                 pass
@@ -276,14 +275,14 @@ def decode_pdf_image_samples(
     raw: bytes | memoryview,
     dictionary: dict[Any, Any],
 ) -> tuple[bytes | memoryview | DecodedImage, dict[Any, Any]] | None:
-    width = pdf_int(lookup_dict_key(dictionary, "Width"), 0)
-    height = pdf_int(lookup_dict_key(dictionary, "Height"), 0)
+    width = pdf_int(dictionary.get("Width"), 0)
+    height = pdf_int(dictionary.get("Height"), 0)
     if width <= 0 or height <= 0:
         return None
     native = decode_stream_image_data(raw, dictionary)
     if native is not None and native.width == width and native.height == height:
         return native, dictionary
-    bits_per_component = pdf_int(lookup_dict_key(dictionary, "BitsPerComponent"), 8)
+    bits_per_component = pdf_int(dictionary.get("BitsPerComponent"), 8)
     expected_gray = width * height
     expected_rgb = expected_gray * 3
     if len(raw) in {expected_gray, expected_rgb}:
@@ -302,8 +301,8 @@ def decode_pdf_image_samples(
 
 
 def decode_pdf_image(raw: bytes | memoryview, dictionary: dict[Any, Any]) -> DecodedRaster | None:
-    width = pdf_int(lookup_dict_key(dictionary, "Width"), 0)
-    height = pdf_int(lookup_dict_key(dictionary, "Height"), 0)
+    width = pdf_int(dictionary.get("Width"), 0)
+    height = pdf_int(dictionary.get("Height"), 0)
     if width <= 0 or height <= 0:
         return None
     result = decode_pdf_image_samples(raw, dictionary)

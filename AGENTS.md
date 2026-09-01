@@ -6,7 +6,7 @@ This is a Python 3.13+ PDF parsing engine using the `src` layout. Production cod
 
 - `impl/spec/` implements the PDF specification, one subpackage per spec chapter (`s_07_syntax`, `s_08_graphics`, `s_09_fonts`, …).
 - `impl/parse/` is the extraction pipeline, one module per stage (capture → route → fusion → tables → OCR → layout → emit). `parse/__init__.py` re-exports only the pipeline entry points and shared stage models; import stage internals from the owning submodule.
-- `impl/render/` rasterizes; `impl/writing/` produces PDF output; `impl/structured/` serializes to markdown/HTML/JSON; `impl/model/` holds the capture records (geometry, text runs, glyphs) and `impl/layout/` holds the heuristics that consume them. `impl/runtime/` holds engine-independent infrastructure and must not import from `impl/spec/` or the derived-processing packages beside it.
+- `impl/render/` rasterizes; `impl/structured/` serializes to markdown/HTML/JSON; `impl/model/` holds the capture records (geometry, text runs, glyphs) and `impl/layout/` holds the heuristics that consume them. `impl/runtime/` holds engine-independent infrastructure and must not import from `impl/spec/` or the derived-processing packages beside it.
 - `src/core_pdf/_vendor/fontTools` is vendored third-party code, excluded from linting, typing, and formatting.
 
 Tests live under `tests/`: `tests/src` mirrors the package structure, while broader pipeline tests (`test_parse_*.py`, `test_rendering.py`, …) sit at the top level. Corpus fixtures are in `tests/fixtures`. `docs/` holds `architecture.md`, `api.md`, `roadmap.md`, and licensing material; maintenance scripts are in `scripts/`.

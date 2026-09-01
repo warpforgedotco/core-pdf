@@ -16,6 +16,7 @@ dependencies = [
     "numpy>=2.5.1",
     "tesserocr>=2.10.0",
     "imagecodecs>=2026.6.26",
+    "cryptography>=50.0.0",
 ]
 
 [project.scripts]
@@ -244,7 +245,6 @@ layers = [
     "page",
     "parse",
     "render",
-    "writing",
     "structured",
     "layout",
     "model",
@@ -278,7 +278,6 @@ forbidden_modules = [
     "core_pdf.impl.parse",
     "core_pdf.impl.render",
     "core_pdf.impl.structured",
-    "core_pdf.impl.writing",
 ]
 
 [[tool.importlinter.contracts]]
@@ -327,7 +326,6 @@ forbidden_modules = [
     "core_pdf.impl.render",
     "core_pdf.impl.spec",
     "core_pdf.impl.structured",
-    "core_pdf.impl.writing",
     "core_pdf.api",
 ]
 
@@ -343,7 +341,6 @@ forbidden_modules = [
     "core_pdf.impl.render",
     "core_pdf.impl.spec",
     "core_pdf.impl.structured",
-    "core_pdf.impl.writing",
     "core_pdf.api",
 ]
 
@@ -363,7 +360,6 @@ forbidden_modules = [
     "core_pdf.impl.parse",
     "core_pdf.impl.render",
     "core_pdf.impl.structured",
-    "core_pdf.impl.writing",
 ]
 
 [[tool.importlinter.contracts]]
@@ -384,7 +380,6 @@ forbidden_modules = [
     "core_pdf.impl.parse",
     "core_pdf.impl.render",
     "core_pdf.impl.structured",
-    "core_pdf.impl.writing",
 ]
 
 [[tool.importlinter.contracts]]
@@ -413,5 +408,4 @@ forbidden_modules = [
     "core_pdf.impl.render",
     "core_pdf.impl.spec",
     "core_pdf.impl.structured",
-    "core_pdf.impl.writing",
 ]

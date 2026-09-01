@@ -15,20 +15,20 @@ from core_pdf.impl.spec.s_07_document.document_labels import (
     resolve_page_tree_node_type,
 )
 from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
-from core_pdf.impl.spec.s_07_syntax.object_cache import (
-    CachedPdfObject,
-    ResolvedObjectCache,
-)
 from core_pdf.impl.spec.s_07_syntax.resolver import ObjectResolver
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
-from core_pdf.impl.spec.s_07_syntax.types import PdfDict, PdfObject
+from core_pdf.impl.spec.s_07_syntax.types import (
+    CachedPdfObject,
+    PdfDict,
+    PdfObject,
+    ResolvedObjectCache,
+)
 from core_pdf.impl.spec.s_07_syntax.xref import (
     PdfXRefEntry,
     XRefScanner,
     parse_object_marker_prefix,
 )
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
-from core_pdf.impl.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 from core_pdf.impl.types import PdfByteBuffer
 
 TRAILER_METADATA_KEYS = ("Info", "ID", "Encrypt")
@@ -89,7 +89,7 @@ class DocumentXRefMixin:
             self.xref, self.trailer_dict = XRefScanner.load_section_chain(data, start, set())
             self.repair_stale_xref_offsets()
             self.trailer_dict = self.merge_recovered_trailer_metadata(self.trailer_dict)
-            root_ref = lookup_dict_key(self.trailer_dict, "Root")
+            root_ref = self.trailer_dict.get("Root")
             if root_ref is None or not self.is_valid_catalog_root(root_ref):
                 self.xref.update(self.brute_force_xref())
                 self.xref_was_recovered = True
@@ -247,17 +247,17 @@ class DocumentXRefMixin:
             root = resolver.resolve(root_ref)
             if not isinstance(root, dict):
                 return False
-            if normalize_pdf_name(lookup_dict_key(root, "Type")) != "Catalog":
+            if normalize_pdf_name(root.get("Type")) != "Catalog":
                 return False
-            pages = resolver.resolve(lookup_dict_key(root, "Pages"))
+            pages = resolver.resolve(root.get("Pages"))
             if not isinstance(pages, dict):
                 return False
             pages = cast(PdfDict, pages)
             node_type = resolve_page_tree_node_type(resolver, pages)
             if node_type != "Pages":
                 return False
-            kids = resolver.resolve(lookup_dict_key(pages, "Kids"))
-            count = resolver.resolve(lookup_dict_key(pages, "Count"))
+            kids = resolver.resolve(pages.get("Kids"))
+            count = resolver.resolve(pages.get("Count"))
             return isinstance(kids, list) or (type(count) is int and count >= 0)
         except Exception:
             return False
@@ -318,22 +318,20 @@ class DocumentXRefMixin:
             if marker in seen:
                 return -100
             seen.add(marker)
-            node_type = normalize_pdf_name(
-                resolve_for_inference(lookup_dict_key(node, "Type"), depth + 1)
-            )
+            node_type = normalize_pdf_name(resolve_for_inference(node.get("Type"), depth + 1))
             if node_type is None:
                 node_type = infer_page_tree_node_type(cast(PdfDict, node))
             if node_type == "Page":
                 score = 10
-                if lookup_dict_key(node, "Contents") is not None:
+                if node.get("Contents") is not None:
                     score += 3
-                if lookup_dict_key(node, "MediaBox") is not None:
+                if node.get("MediaBox") is not None:
                     score += 2
                 return score
             if node_type != "Pages":
                 return -50
-            kids = resolve_for_inference(lookup_dict_key(node, "Kids"), depth + 1)
-            count = resolve_for_inference(lookup_dict_key(node, "Count"), depth + 1)
+            kids = resolve_for_inference(node.get("Kids"), depth + 1)
+            count = resolve_for_inference(node.get("Count"), depth + 1)
             score = 15
             if type(count) is int and count >= 0:
                 score += min(count, 20)
@@ -348,8 +346,8 @@ class DocumentXRefMixin:
         def catalog_score(obj: object) -> int:
             if not isinstance(obj, dict):
                 return -1000
-            type_name = normalize_pdf_name(lookup_dict_key(obj, "Type"))
-            pages = lookup_dict_key(obj, "Pages")
+            type_name = normalize_pdf_name(obj.get("Type"))
+            pages = obj.get("Pages")
             score = 0
             if type_name == "Catalog":
                 score += 100
@@ -364,7 +362,7 @@ class DocumentXRefMixin:
                 else:
                     score += pages_score
             for key in ("Outlines", "Names", "Dests", "AcroForm", "PageLabels"):
-                if lookup_dict_key(obj, key) is not None:
+                if obj.get(key) is not None:
                     score += 2
             return score
 
@@ -417,9 +415,7 @@ class DocumentXRefMixin:
             resolver.close()
 
     def merge_recovered_trailer_metadata(self, trailer: PdfDict) -> PdfDict:
-        missing_keys = [
-            key for key in TRAILER_METADATA_KEYS if lookup_dict_key(trailer, key) is None
-        ]
+        missing_keys = [key for key in TRAILER_METADATA_KEYS if trailer.get(key) is None]
         if not missing_keys:
             return trailer
         if not getattr(self, "xref_was_recovered", False) and not any(
@@ -435,7 +431,7 @@ class DocumentXRefMixin:
             return trailer
         merged = dict(trailer)
         for key, value in recovered.items():
-            if lookup_dict_key(merged, key) is None:
+            if merged.get(key) is None:
                 merged[key] = cast(PdfObject, value)
         return merged
 
@@ -444,7 +440,7 @@ class DocumentXRefMixin:
 
         for candidate in self.iter_literal_trailer_dictionaries():
             for key in TRAILER_METADATA_KEYS:
-                value = lookup_dict_key(candidate, key)
+                value = candidate.get(key)
                 if self.is_valid_trailer_metadata_value(key, value):
                     metadata[key] = value
 
@@ -456,7 +452,7 @@ class DocumentXRefMixin:
 
         for candidate in self.iter_recoverable_xref_stream_dictionaries():
             for key in missing_keys:
-                value = lookup_dict_key(candidate, key)
+                value = candidate.get(key)
                 if self.is_valid_trailer_metadata_value(key, value):
                     metadata[key] = value
         return metadata
@@ -497,9 +493,8 @@ class DocumentXRefMixin:
                 if not isinstance(obj, PdfStream):
                     continue
                 dictionary = obj.dictionary
-                if normalize_pdf_name(lookup_dict_key(dictionary, "Type")) == "XRef" or (
-                    lookup_dict_key(dictionary, "W") is not None
-                    and lookup_dict_key(dictionary, "Size") is not None
+                if normalize_pdf_name(dictionary.get("Type")) == "XRef" or (
+                    dictionary.get("W") is not None and dictionary.get("Size") is not None
                 ):
                     yield cast(PdfDict, dictionary)
         finally:

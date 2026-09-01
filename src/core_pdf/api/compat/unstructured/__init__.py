@@ -18,7 +18,6 @@ from core_pdf.api.compat.pdfminer import LAParams, LTChar, LTFigure, LTTextBox, 
 from core_pdf.impl.exceptions import PdfError, PdfSourceError, PdfUnsupportedError
 from core_pdf.impl.model.geometry import flip_rect_vertical
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
-from core_pdf.impl.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 
 PdfInput: TypeAlias = Any
 
@@ -216,15 +215,15 @@ def internal_pdf_too_complex(filename: object, password: str) -> bool:
         if document.xref_recovery_reason == "xref section loop detected":
             return True
         for page in document.pages:
-            fonts = lookup_dict_key(page.resolve_resources(), "Font")
+            fonts = page.resolve_resources().get("Font")
             if not isinstance(fonts, dict):
                 continue
             for raw_font in fonts.values():
                 font = document.resolver.resolve(raw_font)
                 if (
                     isinstance(font, dict)
-                    and normalize_pdf_name(lookup_dict_key(font, "Subtype")) == "Type0"
-                    and lookup_dict_key(font, "DescendantFonts") is None
+                    and normalize_pdf_name(font.get("Subtype")) == "Type0"
+                    and font.get("DescendantFonts") is None
                 ):
                     return True
         if len(document.raw_data) < 1_048_576:

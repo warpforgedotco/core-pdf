@@ -74,8 +74,7 @@ from core_pdf.impl.spec.s_07_filters.registry import (
     PREDICTOR_FILTERS,
 )
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
-from core_pdf.impl.spec.s_07_syntax_primitives.lexer_helpers import full_source_bytes
-from core_pdf.impl.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
+from core_pdf.impl.spec.s_07_syntax_primitives.scanning import full_source_bytes
 
 internal_FILTER_DECODERS: dict[str, FilterFn] = {
     "flate": apply_flate,
@@ -306,13 +305,15 @@ def native_image_output_shape(
     filter_name: str,
 ) -> tuple[int, ...] | None:
     """Return a safe preallocated shape for a native image decoder."""
+    if not isinstance(dictionary, dict):
+        return None
     descriptor = FILTER_DESCRIPTOR_BY_NAME.get(filter_name)
     decoder = descriptor.decoder if descriptor is not None else None
-    width = lookup_dict_key(dictionary, "Width")
-    height = lookup_dict_key(dictionary, "Height")
+    width = dictionary.get("Width")
+    height = dictionary.get("Height")
     if type(width) is not int or type(height) is not int or width <= 0 or height <= 0:
         return None
-    color_space = lookup_dict_key(dictionary, "ColorSpace")
+    color_space = dictionary.get("ColorSpace")
     color_name = (
         None
         if color_space is None or isinstance(color_space, (list, tuple, dict))
@@ -341,7 +342,7 @@ def native_image_output_shape(
 def image_decode_is_identity(dictionary: object) -> bool:
     """Return whether an image's PDF Decode array leaves samples unchanged."""
 
-    decode = lookup_dict_key(dictionary, "Decode")
+    decode = dictionary.get("Decode") if isinstance(dictionary, dict) else None
     if decode is None:
         return True
     if not isinstance(decode, (list, tuple)) or len(decode) == 0 or len(decode) % 2:
@@ -361,15 +362,16 @@ def image_native_parameters_are_safe(dictionary: object, filter_name: str) -> bo
 
     descriptor = FILTER_DESCRIPTOR_BY_NAME.get(filter_name)
     decoder = descriptor.decoder if descriptor is not None else None
+    image_dictionary = dictionary if isinstance(dictionary, dict) else {}
 
-    color_space = lookup_dict_key(dictionary, "ColorSpace")
+    color_space = image_dictionary.get("ColorSpace")
     if color_space is None:
         color_name = None
     elif isinstance(color_space, (list, tuple, dict)):
         return False
     else:
         color_name = normalize_pdf_name(color_space)
-    bits = lookup_dict_key(dictionary, "BitsPerComponent")
+    bits = image_dictionary.get("BitsPerComponent")
     if decoder == "jpeg":
         return color_name in {None, "DeviceGray", "DeviceRGB", "DeviceCMYK"} and bits in {
             None,

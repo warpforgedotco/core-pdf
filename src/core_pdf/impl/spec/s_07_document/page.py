@@ -29,13 +29,13 @@ from core_pdf.impl.spec.s_07_document.page_links import (
 )
 from core_pdf.impl.spec.s_07_document.records import RawAnnotation, RawLink
 from core_pdf.impl.spec.s_07_syntax.inherited_values import collect_inherited_values
-from core_pdf.impl.spec.s_07_syntax.object_cache import (
+from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
+from core_pdf.impl.spec.s_07_syntax.types import (
     CachedPdfObject,
     InheritedValueMap,
+    PdfDict,
+    PdfObject,
 )
-from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
-from core_pdf.impl.spec.s_07_syntax.types import PdfDict, PdfObject
-from core_pdf.impl.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 from core_pdf.impl.spec.s_14_structure.tree import PageStructure
 from core_pdf.impl.types import Rectangle
 
@@ -86,7 +86,7 @@ class PdfPage:
         self.page_number = page_number
         self.internal_page_lock = document.page_lock(page_number)
         self.inherited_values_cache = None
-        self.contents = cast(CachedPdfObject | None, lookup_dict_key(self.page_dict, "Contents"))
+        self.contents = cast(CachedPdfObject | None, self.page_dict.get("Contents"))
         self.content_streams_cache = None
         self.page_program_cache = None
         self.links = MISSING
@@ -128,9 +128,7 @@ class PdfPage:
 
     def _annotation_dicts(self, *, strict: bool) -> list[PdfDict]:
         recover_annotations = document_recovery_enabled(self.document)
-        raw_annots = self.document.resolver.resolve(
-            lookup_dict_key(self.inherited_values, "Annots")
-        )
+        raw_annots = self.document.resolver.resolve(self.inherited_values.get("Annots"))
         if raw_annots is None:
             return []
         if not isinstance(raw_annots, list):
@@ -154,23 +152,23 @@ class PdfPage:
         recover_annotations = document_recovery_enabled(self.document)
         results = []
         for annot in self._annotation_dicts(strict=True):
-            subtype = self.document.resolver.resolve_name(lookup_dict_key(annot, "Subtype"))
-            rect = self.document.resolver.resolve_box(lookup_dict_key(annot, "Rect"))
+            subtype = self.document.resolver.resolve_name(annot.get("Subtype"))
+            rect = self.document.resolver.resolve_box(annot.get("Rect"))
             if rect is None:
                 if recover_annotations:
                     continue
                 raise ValueError("invalid page annotation rectangle")
-            contents = self.document.resolver.resolve_str(lookup_dict_key(annot, "Contents")) or ""
-            dest = lookup_dict_key(annot, "Dest")
-            action = lookup_dict_key(annot, "A")
+            contents = self.document.resolver.resolve_str(annot.get("Contents")) or ""
+            dest = annot.get("Dest")
+            action: object = annot.get("A")
             if isinstance(action, PdfReference):
                 action = self.document.resolver.resolve(action)
             if (
                 dest is None
                 and isinstance(action, dict)
-                and self.document.resolver.resolve_name(lookup_dict_key(action, "S")) == "GoTo"
+                and self.document.resolver.resolve_name(action.get("S")) == "GoTo"
             ):
-                dest = lookup_dict_key(action, "D")
+                dest = action.get("D")
 
             results.append(
                 RawAnnotation(
@@ -197,26 +195,26 @@ class PdfPage:
         resolve = self.document.resolve
         records: list[RawLink] = []
         for annot in annots:
-            subtype = pdf_name_direct(lookup_dict_key(annot, "Subtype"))
+            subtype = pdf_name_direct(annot.get("Subtype"))
             if subtype is None:
-                subtype = resolver.resolve_name(lookup_dict_key(annot, "Subtype"))
+                subtype = resolver.resolve_name(annot.get("Subtype"))
             if subtype != "Link":
                 continue
 
-            rect = pdf_box_direct(lookup_dict_key(annot, "Rect"))
+            rect = pdf_box_direct(annot.get("Rect"))
             if rect is None:
-                rect = resolver.resolve_box(lookup_dict_key(annot, "Rect"))
+                rect = resolver.resolve_box(annot.get("Rect"))
             if rect is None:
                 continue
 
-            action = lookup_dict_key(annot, "A")
+            action: object = annot.get("A")
             if isinstance(action, PdfReference):
                 action = resolve(action)
             link_type = None
             url = None
             if isinstance(action, dict):
                 action = cast(PdfDict, action)
-                raw_type = lookup_dict_key(action, "S")
+                raw_type = action.get("S")
                 link_type = pdf_name_direct(raw_type) or resolver.resolve_name(raw_type)
                 url = link_target_direct(action, link_type)
                 if url is None:
@@ -357,7 +355,7 @@ class PdfPage:
 
     def resolve_box(self, key: str) -> tuple[float, float, float, float] | None:
         try:
-            return self.document.resolver.resolve_box(lookup_dict_key(self.inherited_values, key))
+            return self.document.resolver.resolve_box(self.inherited_values.get(key))
         except ValueError:
             return None
 
@@ -388,7 +386,7 @@ class PdfPage:
         return (x0, y0, x1, y1)
 
     def resolve_rotation(self) -> int:
-        rotate_ref = lookup_dict_key(self.inherited_values, "Rotate")
+        rotate_ref = self.inherited_values.get("Rotate")
         if rotate_ref is None:
             return 0
         rotate = self.document.resolver.resolve_int(rotate_ref)
@@ -400,7 +398,7 @@ class PdfPage:
         return rotate
 
     def resolve_resources(self) -> PdfDict:
-        resources = lookup_dict_key(self.inherited_values, "Resources")
+        resources = self.inherited_values.get("Resources")
         if resources is None:
             return {}
         if type(resources) is dict:
@@ -411,12 +409,12 @@ class PdfPage:
         return resolved
 
     def resolve_transparency_group_alpha(self) -> float | None:
-        group = self.document.resolver.resolve(lookup_dict_key(self.page_dict, "Group"))
+        group = self.document.resolver.resolve(self.page_dict.get("Group"))
         if not isinstance(group, dict):
             return None
-        if self.document.resolver.resolve_name(lookup_dict_key(group, "S")) != "Transparency":
+        if self.document.resolver.resolve_name(group.get("S")) != "Transparency":
             return None
-        ca = self.document.resolver.resolve_float(lookup_dict_key(group, "ca"), default=None)
+        ca = self.document.resolver.resolve_float(group.get("ca"), default=None)
         if ca is None:
             return None
         return max(0.0, min(1.0, ca))

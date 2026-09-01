@@ -8,15 +8,13 @@ from typing import TypeAlias, TypedDict, cast
 
 from core_pdf.impl.exceptions import PdfError
 from core_pdf.impl.primitives import PdfName, PdfReference, PdfString
-from core_pdf.impl.spec.s_07_syntax.resolver_values import PdfValueResolver
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax.text_string import decode_pdf_text_string
-from core_pdf.impl.spec.s_07_syntax.types import PdfDict
+from core_pdf.impl.spec.s_07_syntax.types import PdfDict, PdfValueResolver
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     coerce_value,
     normalize_pdf_name,
 )
-from core_pdf.impl.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 
 MetadataScalar: TypeAlias = (
     str
@@ -75,7 +73,7 @@ def local_name(tag: str) -> str:
 def resolve_info_metadata(
     resolver: PdfValueResolver, trailer: PdfDict, *, recover: bool = False
 ) -> InfoMetadataRecord:
-    info_ref = lookup_dict_key(trailer, "Info")
+    info_ref = trailer.get("Info")
     if info_ref is None:
         return {}
     try:
@@ -148,14 +146,14 @@ def parse_xmp_metadata(stream: object, *, recover: bool = False) -> XmpNodeRecor
 def resolve_metadata_stream(
     resolver: PdfValueResolver, trailer: PdfDict, *, recover: bool = False
 ) -> XmpNodeRecord | None:
-    root = resolver.resolve_dict(lookup_dict_key(trailer, "Root"))
+    root = resolver.resolve_dict(trailer.get("Root"))
     if root is None:
         return None
     if not isinstance(root, dict):
         if recover:
             return None
         raise ValueError("invalid trailer Root dictionary")
-    metadata = resolver.resolve(lookup_dict_key(root, "Metadata"))
+    metadata = resolver.resolve(root.get("Metadata"))
     if isinstance(metadata, PdfStream):
         return parse_xmp_metadata(metadata, recover=recover)
     if metadata is not None:

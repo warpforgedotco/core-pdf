@@ -5,7 +5,6 @@ from typing import Any
 
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
-from core_pdf.impl.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 from core_pdf.impl.spec.s_09_fonts.font_program_truetype import (
     Point,
     TrueTypeFontProgram,
@@ -18,18 +17,18 @@ from core_pdf.impl.spec.s_09_fonts.widths import get_descendant
 def tt_font_for_pdf_font(font: dict[str, Any]) -> TrueTypeFontProgram | None:
     descendant = get_descendant(font)
     font_dict = descendant if descendant is not None else font
-    subtype = normalize_pdf_name(lookup_dict_key(font_dict, "Subtype"))
+    subtype = normalize_pdf_name(font_dict.get("Subtype"))
     if subtype not in {"CIDFontType2", "TrueType"}:
         return None
-    descriptor = lookup_dict_key(font_dict, "FontDescriptor")
+    descriptor = font_dict.get("FontDescriptor")
     if not isinstance(descriptor, dict):
         return None
-    font_file = lookup_dict_key(descriptor, "FontFile2")
+    font_file = descriptor.get("FontFile2")
     if not isinstance(font_file, PdfStream):
         return None
     cid_to_gid = None
     if isinstance(descendant, dict):
-        cid_to_gid_obj = lookup_dict_key(descendant, "CIDToGIDMap")
+        cid_to_gid_obj = descendant.get("CIDToGIDMap")
         if isinstance(cid_to_gid_obj, PdfStream):
             cid_to_gid = cid_to_gid_obj.data
     try:

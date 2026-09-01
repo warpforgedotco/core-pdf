@@ -17,12 +17,19 @@ from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     is_pdf_null,
     normalize_pdf_name,
 )
-from core_pdf.impl.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
-from core_pdf.impl.spec.s_07_syntax_primitives.tokens import (
-    INLINE_IMAGE_KEY_MAP,
-    SEPARATOR_TABLE,
-    WHITESPACE,
-)
+from core_pdf.impl.spec.s_07_syntax_primitives.tokens import SEPARATOR_TABLE, WHITESPACE
+
+INLINE_IMAGE_KEY_MAP = {
+    "BPC": "BitsPerComponent",
+    "CS": "ColorSpace",
+    "D": "Decode",
+    "DP": "DecodeParms",
+    "F": "Filter",
+    "H": "Height",
+    "IM": "ImageMask",
+    "I": "Interpolate",
+    "W": "Width",
+}
 
 
 class InlineImage:
@@ -51,12 +58,12 @@ def normalize_inline_image_dictionary(dictionary: PdfDict) -> PdfDict:
 
 
 def inline_image_unfiltered_data_length(dictionary: PdfDict) -> int | None:
-    if not is_pdf_null(lookup_dict_key(dictionary, "Filter")):
+    if not is_pdf_null(dictionary.get("Filter")):
         return None
-    width = lookup_dict_key(dictionary, "Width")
-    height = lookup_dict_key(dictionary, "Height")
-    bits = lookup_dict_key(dictionary, "BitsPerComponent")
-    image_mask = lookup_dict_key(dictionary, "ImageMask")
+    width = dictionary.get("Width")
+    height = dictionary.get("Height")
+    bits = dictionary.get("BitsPerComponent")
+    image_mask = dictionary.get("ImageMask")
     if type(width) is not int or type(height) is not int:
         return None
     if width <= 0 or height <= 0:
@@ -67,7 +74,7 @@ def inline_image_unfiltered_data_length(dictionary: PdfDict) -> int | None:
     else:
         if type(bits) is not int or bits <= 0:
             return None
-        color_space = normalize_pdf_name(lookup_dict_key(dictionary, "ColorSpace"))
+        color_space = normalize_pdf_name(dictionary.get("ColorSpace"))
         if color_space in {None, "G", "DeviceGray"}:
             colors = 1
         elif color_space in {"RGB", "DeviceRGB"}:

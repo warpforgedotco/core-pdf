@@ -13,7 +13,6 @@ from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     coerce_value,
     normalize_pdf_name,
 )
-from core_pdf.impl.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 from core_pdf.impl.spec.s_14_structure.content import (
     StructureContentItem,
     StructureContentObject,
@@ -111,9 +110,7 @@ class StructureElement:
     @property
     def type(self) -> str | None:
         if self.type_value is MISSING:
-            self.type_value = self.document.resolver.resolve_name_like_value(
-                lookup_dict_key(self.props, "S")
-            )
+            self.type_value = self.document.resolver.resolve_name_like_value(self.props.get("S"))
         return self.type_value
 
     @property
@@ -127,7 +124,7 @@ class StructureElement:
 
     @property
     def page_index(self) -> int | None:
-        page_ref = lookup_dict_key(self.props, "Pg")
+        page_ref = self.props.get("Pg")
         if page_ref is None:
             return None
         page_obj = self.document.resolver.resolve(page_ref)
@@ -149,22 +146,20 @@ class StructureElement:
     @property
     def title(self) -> str | None:
         if self.title_value is MISSING:
-            self.title_value = self.document.resolver.resolve_str(lookup_dict_key(self.props, "T"))
+            self.title_value = self.document.resolver.resolve_str(self.props.get("T"))
         return self.title_value
 
     @property
     def language(self) -> str | None:
         if self.language_value is MISSING:
-            self.language_value = self.document.resolver.resolve_str(
-                lookup_dict_key(self.props, "Lang")
-            )
+            self.language_value = self.document.resolver.resolve_str(self.props.get("Lang"))
         return self.language_value
 
     @property
     def alternate_description(self) -> str | None:
         if self.alternate_description_value is MISSING:
             self.alternate_description_value = self.document.resolver.resolve_str(
-                lookup_dict_key(self.props, "Alt")
+                self.props.get("Alt")
             )
         return self.alternate_description_value
 
@@ -172,7 +167,7 @@ class StructureElement:
     def actual_text(self) -> str | None:
         if self.actual_text_value is MISSING:
             self.actual_text_value = self.document.resolver.resolve_str(
-                lookup_dict_key(self.props, "ActualText")
+                self.props.get("ActualText")
             )
         return self.actual_text_value
 
@@ -180,7 +175,7 @@ class StructureElement:
     def attributes(self) -> StructureAttributes | None:
         if self.attributes_value is not MISSING:
             return self.attributes_value
-        attrs = lookup_dict_key(self.props, "A")
+        attrs = self.props.get("A")
         if isinstance(attrs, dict):
             self.attributes_value = {
                 structure_key_name(key): coerce_value(val) for key, val in attrs.items()
@@ -212,7 +207,7 @@ class StructureElement:
     def class_name(self) -> str | None:
         if self.class_name_value is not MISSING:
             return self.class_name_value
-        classes = self.document.resolver.resolve(lookup_dict_key(self.props, "C"))
+        classes = self.document.resolver.resolve(self.props.get("C"))
         if isinstance(classes, list) and classes:
             latest = classes[-2] if len(classes) >= 2 else classes[-1]
             self.class_name_value = literal_name(latest)
@@ -231,13 +226,13 @@ class StructureElement:
     def parent(self) -> StructureElement | StructureTree | None:
         if self.parent_value is not MISSING:
             return self.parent_value
-        parent = self.document.resolver.resolve(lookup_dict_key(self.props, "P"))
+        parent = self.document.resolver.resolve(self.props.get("P"))
         if parent is None:
             self.parent_value = None
             return None
         if not isinstance(parent, dict):
             raise ValueError("invalid structure parent entry")
-        if self.document.resolver.resolve_name(lookup_dict_key(parent, "Type")) == "StructTreeRoot":
+        if self.document.resolver.resolve_name(parent.get("Type")) == "StructTreeRoot":
             tree = self.document.structure
             self.parent_value = tree
             return tree
@@ -248,9 +243,7 @@ class StructureElement:
         self,
     ) -> Iterator[StructureChild]:
         if self.kids_value is MISSING:
-            self.kids_value = tuple(
-                make_kids(lookup_dict_key(self.props, "K"), self.page, self.document)
-            )
+            self.kids_value = tuple(make_kids(self.props.get("K"), self.page, self.document))
         yield from self.kids_value
 
     def find_all(self, matcher: str | MatchFunc | None = None) -> Iterator["StructureElement"]:
@@ -297,7 +290,7 @@ class StructureTree(Iterable[StructureElement | StructureContentItem | Structure
     def role_map(self) -> dict[str, str]:
         if self.role_map_value is not None:
             return self.role_map_value
-        resolved = self.document.resolver.resolve(lookup_dict_key(self.props, "RoleMap"))
+        resolved = self.document.resolver.resolve(self.props.get("RoleMap"))
         role_map: dict[str, str] = {}
         if resolved is None:
             self.role_map_value = role_map
@@ -318,7 +311,7 @@ class StructureTree(Iterable[StructureElement | StructureContentItem | Structure
     def parent_tree(self) -> ParentTree:
         if self.parent_tree_value is not None:
             return self.parent_tree_value
-        resolved = self.document.resolver.resolve(lookup_dict_key(self.props, "ParentTree"))
+        resolved = self.document.resolver.resolve(self.props.get("ParentTree"))
         results: ParentTree = {}
         if resolved is None:
             self.parent_tree_value = results
@@ -347,9 +340,7 @@ class StructureTree(Iterable[StructureElement | StructureContentItem | Structure
         self,
     ) -> Iterator[StructureChild]:
         if self.kids_value is MISSING:
-            self.kids_value = tuple(
-                make_kids(lookup_dict_key(self.props, "K"), None, self.document)
-            )
+            self.kids_value = tuple(make_kids(self.props.get("K"), None, self.document))
         yield from self.kids_value
 
     def find_all(self, matcher: str | MatchFunc | None = None) -> Iterator[StructureElement]:
@@ -359,7 +350,7 @@ class StructureTree(Iterable[StructureElement | StructureContentItem | Structure
         return find_first(self.find_all(matcher))
 
     def page_structure(self, page: PdfPage) -> "PageStructure":
-        key = self.document.resolver.resolve_int(lookup_dict_key(page.page_dict, "StructParents"))
+        key = self.document.resolver.resolve_int(page.page_dict.get("StructParents"))
         if type(key) is not int:
             raise ValueError("invalid page StructParents value")
         parent_tree = self.parent_tree
@@ -447,7 +438,7 @@ StructureChild: TypeAlias = StructureElement | StructureContentItem | StructureC
 
 
 def get_kid_page_index(document: PdfDocument, page: PdfPage | None, kid: PdfDict) -> int | None:
-    pg = lookup_dict_key(kid, "Pg")
+    pg = kid.get("Pg")
     if pg is not None:
         page_obj = document.resolver.resolve(pg)
         index = document.page_index_for(page_obj)
@@ -497,12 +488,12 @@ def make_kids(
             stack.append((document.resolver.resolve(current), depth + 1))
             continue
         if isinstance(current, dict):
-            ktype_value = lookup_dict_key(current, "Type")
+            ktype_value = current.get("Type")
             ktype = document.resolver.resolve_name(ktype_value) or document.resolver.resolve_str(
                 ktype_value
             )
             if ktype == "MCR":
-                mcid = document.resolver.resolve_int(lookup_dict_key(current, "MCID"))
+                mcid = document.resolver.resolve_int(current.get("MCID"))
                 if mcid is None:
                     if recover_structure:
                         continue
@@ -510,11 +501,11 @@ def make_kids(
                 yield StructureContentItem(
                     page_index=get_kid_page_index(document, page, current),
                     mcid=mcid,
-                    stream=lookup_dict_key(current, "Stm"),
+                    stream=current.get("Stm"),
                 )
                 continue
             if ktype == "OBJR":
-                obj = lookup_dict_key(current, "Obj")
+                obj = current.get("Obj")
                 if obj is None:
                     if recover_structure:
                         continue

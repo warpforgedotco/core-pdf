@@ -45,17 +45,8 @@ from core_pdf.impl.spec.s_07_document.records import (
     RawNamedDestination,
     RawOutlineItem,
 )
-from core_pdf.impl.spec.s_07_security.crypto_handlers import SECURITY_HANDLER_REGISTRY
-from core_pdf.impl.spec.s_07_security.errors import (
-    PDFEncryptionError,
-    PDFPasswordIncorrect,
-)
+from core_pdf.impl.spec.s_07_security import create_standard_decipher
 from core_pdf.impl.spec.s_07_syntax.inherited_values import collect_inherited_values
-from core_pdf.impl.spec.s_07_syntax.object_cache import (
-    CachedPdfObject,
-    InheritedValueMap,
-    InheritedValuesCache,
-)
 from core_pdf.impl.spec.s_07_syntax.resolver import ObjectResolver
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax.trees import (
@@ -63,14 +54,16 @@ from core_pdf.impl.spec.s_07_syntax.trees import (
     iter_number_tree_items,
 )
 from core_pdf.impl.spec.s_07_syntax.types import (
+    CachedPdfObject,
     Decipher,
+    InheritedValueMap,
+    InheritedValuesCache,
     PdfArray,
     PdfDict,
     PdfObject,
 )
 from core_pdf.impl.spec.s_07_syntax.xref import PdfXRefEntry
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import normalize_pdf_name
-from core_pdf.impl.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 from core_pdf.impl.spec.s_14_structure.tree import StructureTree
 from core_pdf.impl.types import (
     PathSource,
@@ -298,7 +291,7 @@ class PdfDocument(
             cached = self.catalog_cache
             if cached is not None:
                 return cached
-            root_ref = lookup_dict_key(self.trailer_dict, "Root")
+            root_ref = self.trailer_dict.get("Root")
             if root_ref is None:
                 raise ValueError("missing catalog root")
             root = self.resolve(root_ref)
@@ -330,7 +323,7 @@ class PdfDocument(
             structure = self.structure_cache
             if structure is not MISSING:
                 return cast(StructureTree | None, structure)
-            resolved_root = self.resolver.resolve(lookup_dict_key(self.catalog(), "StructTreeRoot"))
+            resolved_root = self.resolver.resolve(self.catalog().get("StructTreeRoot"))
             if resolved_root is None:
                 self.structure_cache = None
                 return None
@@ -346,7 +339,7 @@ class PdfDocument(
             mark_info = self.mark_info_cache
             if mark_info is not MISSING:
                 return cast(PdfDict | None, mark_info)
-            resolved_mark_info = self.resolver.resolve(lookup_dict_key(self.catalog(), "MarkInfo"))
+            resolved_mark_info = self.resolver.resolve(self.catalog().get("MarkInfo"))
             if resolved_mark_info is None:
                 self.mark_info_cache = None
                 return None
@@ -458,7 +451,7 @@ class PdfDocument(
             return None
 
     def init_security(self, password: str) -> None:
-        encrypt_ref = lookup_dict_key(self.trailer_dict, "Encrypt")
+        encrypt_ref = self.trailer_dict.get("Encrypt")
         if encrypt_ref is None:
             return
 
@@ -466,25 +459,7 @@ class PdfDocument(
         if not isinstance(encrypt_dict, dict):
             raise PdfUnsupportedError("Invalid Encrypt dictionary")
 
-        filter_name = self.resolver.resolve_name(lookup_dict_key(encrypt_dict, "Filter"))
-        if filter_name is None:
-            raise PdfUnsupportedError("Invalid encryption dictionary")
-        if filter_name in {"Adobe.PubSec", "PubSec"}:
-            raise PdfUnsupportedError("Public-key encryption is not supported")
-        if filter_name != "Standard":
-            raise PdfUnsupportedError(f"Unsupported encryption filter: {filter_name}")
-
-        raw_v = lookup_dict_key(encrypt_dict, "V")
-        if raw_v is None:
-            raise PdfUnsupportedError("Invalid encryption dictionary")
-        v = self.resolver.resolve_int(raw_v)
-        if type(v) is not int:
-            raise PdfUnsupportedError("Invalid encryption dictionary")
-        handler_cls = SECURITY_HANDLER_REGISTRY.get(v)
-        if handler_cls is None:
-            raise PdfUnsupportedError(f"Unsupported standard encryption algorithm V={v}")
-
-        docid = lookup_dict_key(self.trailer_dict, "ID")
+        docid: object = self.trailer_dict.get("ID")
         if docid is None:
             docid = [b""]
         if isinstance(docid, PdfReference):
@@ -493,13 +468,7 @@ class PdfDocument(
             raise PdfUnsupportedError("Invalid trailer ID array")
         docid_list: Sequence[object] = docid
 
-        try:
-            handler = handler_cls(docid_list, encrypt_dict, password)
-        except PDFPasswordIncorrect as exc:
-            raise PdfUnsupportedError("Incorrect password") from exc
-        except PDFEncryptionError as exc:
-            raise PdfUnsupportedError("Invalid encryption dictionary") from exc
-        self.decipher = handler.decrypt
+        self.decipher = create_standard_decipher(docid_list, encrypt_dict, password)
 
     # Page tree and page labels
 
@@ -557,26 +526,22 @@ class PdfDocument(
         # A recovered leaf without an explicit /Type needs page content or an
         # annotation to distinguish it from outline destinations and other
         # dictionaries that happen to carry /Parent, /MediaBox, or /Resources.
-        explicit_type = normalize_pdf_name(lookup_dict_key(obj, "Type"))
-        if (
-            explicit_type != "Page"
-            and lookup_dict_key(obj, "Contents") is None
-            and lookup_dict_key(obj, "Annots") is None
-        ):
+        explicit_type = normalize_pdf_name(obj.get("Type"))
+        if explicit_type != "Page" and obj.get("Contents") is None and obj.get("Annots") is None:
             return -100
 
         score = 20 if node_type == "Page" else 0
-        if lookup_dict_key(obj, "Kids") is not None:
+        if obj.get("Kids") is not None:
             score -= 30
-        if lookup_dict_key(obj, "Contents") is not None:
+        if obj.get("Contents") is not None:
             score += 12
-        if lookup_dict_key(obj, "MediaBox") is not None:
+        if obj.get("MediaBox") is not None:
             score += 8
-        if lookup_dict_key(obj, "Resources") is not None:
+        if obj.get("Resources") is not None:
             score += 4
-        if lookup_dict_key(obj, "Parent") is not None:
+        if obj.get("Parent") is not None:
             score += 2
-        if lookup_dict_key(obj, "Annots") is not None:
+        if obj.get("Annots") is not None:
             score += 1
         return score if score >= 16 else -100
 
@@ -585,32 +550,32 @@ class PdfDocument(
             return -100
         score = 20
         try:
-            kids = self.resolver.resolve(lookup_dict_key(obj, "Kids"))
+            kids = self.resolver.resolve(obj.get("Kids"))
         except Exception:
             kids = None
         if isinstance(kids, list):
             score += min(len(kids), 20)
         try:
-            count = self.resolver.resolve(lookup_dict_key(obj, "Count"))
+            count = self.resolver.resolve(obj.get("Count"))
         except Exception:
             count = None
         if type(count) is int and count >= 0:
             score += min(count, 20)
-        if lookup_dict_key(obj, "Resources") is not None:
+        if obj.get("Resources") is not None:
             score += 5
-        if lookup_dict_key(obj, "MediaBox") is not None:
+        if obj.get("MediaBox") is not None:
             score += 5
         return score
 
     def repair_recovered_page_inherited_values(
         self, page_dict: PdfDict, pages_nodes: list[PdfDict]
     ) -> PdfDict:
-        missing = [key for key in PAGE_INHERITED_KEYS if lookup_dict_key(page_dict, key) is None]
+        missing = [key for key in PAGE_INHERITED_KEYS if page_dict.get(key) is None]
         if not missing:
             return page_dict
 
         sources: list[PdfDict] = []
-        parent = lookup_dict_key(page_dict, "Parent")
+        parent = page_dict.get("Parent")
         if parent is not None:
             try:
                 parent_obj = self.resolver.resolve(parent)
@@ -630,9 +595,9 @@ class PdfDocument(
             if repaired is None:
                 repaired = dict(page_dict)
             for key, value in source_values.items():
-                if lookup_dict_key(repaired, key) is None:
+                if repaired.get(key) is None:
                     repaired[key] = cast(PdfObject, value)
-            missing = [key for key in missing if lookup_dict_key(repaired, key) is None]
+            missing = [key for key in missing if repaired.get(key) is None]
             if not missing:
                 break
         return repaired if repaired is not None else page_dict
@@ -649,14 +614,14 @@ class PdfDocument(
         return collect_inherited_values(node, tuple(keys), resolve_ref)
 
     def recovered_page_signature(self, page_dict: PdfDict) -> tuple[object, ...]:
-        contents = lookup_dict_key(page_dict, "Contents")
+        contents = page_dict.get("Contents")
         normalized_contents = self.normalized_reference_signature(contents)
         if normalized_contents is not None:
             return ("Contents", normalized_contents)
         return (
             "Shape",
-            self.normalized_reference_signature(lookup_dict_key(page_dict, "MediaBox")),
-            self.normalized_reference_signature(lookup_dict_key(page_dict, "Resources")),
+            self.normalized_reference_signature(page_dict.get("MediaBox")),
+            self.normalized_reference_signature(page_dict.get("Resources")),
             id(page_dict),
         )
 
@@ -700,7 +665,7 @@ class PdfDocument(
         ) -> InheritedValueMap:
             values = dict(inherited or {})
             for key in PAGE_INHERITED_KEYS:
-                value = lookup_dict_key(node, key)
+                value = node.get(key)
                 if value is not None:
                     values[key] = cast(CachedPdfObject, value)
             return values
@@ -712,7 +677,7 @@ class PdfDocument(
                 return page_dict
             repaired: PdfDict | None = None
             for key, value in inherited.items():
-                if lookup_dict_key(page_dict, key) is not None:
+                if page_dict.get(key) is not None:
                     continue
                 if repaired is None:
                     repaired = dict(page_dict)
@@ -734,7 +699,7 @@ class PdfDocument(
             node = cast(PdfDict, node)
             node_type = resolve_page_tree_node_type(self.resolver, node)
             if node_type == "Pages":
-                kids = self.resolver.resolve(lookup_dict_key(node, "Kids"))
+                kids = self.resolver.resolve(node.get("Kids"))
                 if kids is None:
                     raise ValueError("invalid page tree Kids array")
                 if not isinstance(kids, list):
@@ -749,7 +714,7 @@ class PdfDocument(
 
         try:
             catalog = self.catalog()
-            pages_ref = lookup_dict_key(catalog, "Pages")
+            pages_ref = catalog.get("Pages")
             if pages_ref is None:
                 raise ValueError("missing page tree root")
             pages_node = self.resolver.resolve(pages_ref)
@@ -777,13 +742,13 @@ class PdfDocument(
             return len(self.build_page_dicts())
         try:
             catalog = self.catalog()
-            pages_ref = lookup_dict_key(catalog, "Pages")
+            pages_ref = catalog.get("Pages")
             if pages_ref is None:
                 raise ValueError("missing page tree root")
             pages_node = self.resolver.resolve(pages_ref)
             if not isinstance(pages_node, dict):
                 raise ValueError("invalid page tree root")
-            count = self.resolver.resolve(lookup_dict_key(pages_node, "Count"))
+            count = self.resolver.resolve(pages_node.get("Count"))
             if type(count) is int and count >= 0:
                 return count
         except (PdfParseError, ValueError):
@@ -819,7 +784,7 @@ class PdfDocument(
 
     def build_page_labels(self) -> list[str] | None:
         try:
-            labels_root = self.resolve(lookup_dict_key(self.catalog(), "PageLabels"))
+            labels_root = self.resolve(self.catalog().get("PageLabels"))
         except ValueError:
             if document_recovery_enabled(self):
                 return None
@@ -874,10 +839,10 @@ class PdfDocument(
             page_index = self.page_index_cache.get(id(page_obj))
             if page_index is not None:
                 return page_index
-            page_struct_parents = lookup_dict_key(page_obj, "StructParents")
+            page_struct_parents = page_obj.get("StructParents")
             if page_struct_parents is not None and self.page_dicts_cache is not None:
                 for index, cached_page in enumerate(self.page_dicts_cache):
-                    if lookup_dict_key(cached_page, "StructParents") == page_struct_parents:
+                    if cached_page.get("StructParents") == page_struct_parents:
                         self.page_index_cache[id(page_obj)] = index
                         return index
             if self.page_dicts_cache is None:
@@ -905,12 +870,12 @@ class PdfDocument(
     # Navigation
 
     def iter_outlines(self) -> list[RawOutlineItem]:
-        outlines = self.resolver.resolve(lookup_dict_key(self.catalog(), "Outlines"))
+        outlines = self.resolver.resolve(self.catalog().get("Outlines"))
         if outlines is None:
             return []
         if not isinstance(outlines, dict):
             raise ValueError("invalid Outlines dictionary")
-        first = self.resolver.resolve(lookup_dict_key(outlines, "First"))
+        first = self.resolver.resolve(outlines.get("First"))
         if first is None:
             return []
         return self.walk_outlines(first, 0)
@@ -938,17 +903,17 @@ class PdfDocument(
                     break
                 raise ValueError("outline cycle detected")
             seen.add(marker)
-            title = self.resolver.resolve_str(lookup_dict_key(current, "Title"))
-            dest = lookup_dict_key(current, "Dest")
+            title = self.resolver.resolve_str(current.get("Title"))
+            dest = current.get("Dest")
             if dest is None:
                 # /A is very often an indirect reference, so it has to be
                 # resolved before it can be recognised as an action dictionary.
-                action = self.resolver.resolve(lookup_dict_key(current, "A"))
+                action = self.resolver.resolve(current.get("A"))
                 if (
                     isinstance(action, dict)
-                    and self.resolver.resolve_name(lookup_dict_key(action, "S")) == "GoTo"
+                    and self.resolver.resolve_name(action.get("S")) == "GoTo"
                 ):
-                    dest = lookup_dict_key(action, "D")
+                    dest = action.get("D")
             try:
                 result.append(
                     RawOutlineItem(
@@ -962,16 +927,16 @@ class PdfDocument(
             except ValueError:
                 if not recover_outlines:
                     raise
-            first = lookup_dict_key(current, "First")
+            first = current.get("First")
             if first is not None:
                 first = self.resolver.resolve(first)
                 if not isinstance(first, dict):
                     if recover_outlines:
-                        current = lookup_dict_key(current, "Next")
+                        current = current.get("Next")
                         continue
                     raise ValueError("invalid outline child")
                 result.extend(self.walk_outlines(first, level + 1))
-            current = lookup_dict_key(current, "Next")
+            current = current.get("Next")
         return result
 
     @staticmethod
@@ -981,7 +946,7 @@ class PdfDocument(
         return value
 
     def extract_outline_count(self, current: PdfDict) -> int:
-        raw_count = lookup_dict_key(current, "Count")
+        raw_count = current.get("Count")
         if raw_count is None:
             return 0
         current_count = self.resolver.resolve_int(raw_count)
@@ -1058,7 +1023,7 @@ class PdfDocument(
             seen = set()
         resolved = self.resolver.resolve(val)
         if isinstance(resolved, dict):
-            dest_value = lookup_dict_key(resolved, "D")
+            dest_value = resolved.get("D")
             if dest_value is not None:
                 return self.normalize_destination_value(
                     dest_value,
@@ -1114,16 +1079,16 @@ class PdfDocument(
             if self.named_destinations_cache is not None:
                 return
             targets: dict[str, object] = {}
-            dests = self.resolver.resolve(lookup_dict_key(self.catalog(), "Dests"))
+            dests = self.resolver.resolve(self.catalog().get("Dests"))
             if isinstance(dests, dict):
                 for name, val in dests.items():
                     resolved_name = self.resolver.resolve_name(name)
                     if resolved_name is None:
                         raise ValueError("invalid named destination key")
                     targets[resolved_name] = self.resolver.resolve(val)
-            names = self.resolver.resolve(lookup_dict_key(self.catalog(), "Names"))
+            names = self.resolver.resolve(self.catalog().get("Names"))
             if isinstance(names, dict):
-                dests_tree = self.resolver.resolve(lookup_dict_key(names, "Dests"))
+                dests_tree = self.resolver.resolve(names.get("Dests"))
                 if isinstance(dests_tree, dict):
                     for name, value in iter_name_tree_items(
                         dests_tree,
@@ -1165,7 +1130,7 @@ class PdfDocument(
             cached = self.acroform_cache
             if cached is not MISSING:
                 return cast(PdfDict | None, cached)
-            acroform_val = self.resolver.resolve(lookup_dict_key(self.catalog(), "AcroForm"))
+            acroform_val = self.resolver.resolve(self.catalog().get("AcroForm"))
             if acroform_val is None:
                 self.acroform_cache = None
                 return None
@@ -1225,12 +1190,12 @@ class PdfDocument(
                 raise ValueError("invalid AcroForm field entry")
             seen.add(marker)
 
-            title = self.resolver.resolve_str(lookup_dict_key(current_node, "T"))
+            title = self.resolver.resolve_str(current_node.get("T"))
             current_name = (
                 f"{parent_name}.{title}" if parent_name and title else title or parent_name
             )
 
-            type_value = lookup_dict_key(current_node, "FT")
+            type_value = current_node.get("FT")
             field_type = (
                 self.resolver.resolve_name(type_value)
                 or self.resolver.resolve_name_like_value(type_value)
@@ -1238,12 +1203,12 @@ class PdfDocument(
                 or parent_type
             )
 
-            value = lookup_dict_key(current_node, "V")
+            value = current_node.get("V")
             if value is None:
                 value = parent_value
             value_text = field_value_text(self, value)
 
-            kids = lookup_dict_key(current_node, "Kids")
+            kids = current_node.get("Kids")
             if kids is None:
                 kids = []
             elif not isinstance(kids, list):
@@ -1252,7 +1217,7 @@ class PdfDocument(
                 else:
                     raise ValueError("invalid AcroForm Kids array")
             kids = cast(list[PdfObject], kids)
-            subtype_value = lookup_dict_key(current_node, "Subtype")
+            subtype_value = current_node.get("Subtype")
             subtype = (
                 self.resolver.resolve_name(subtype_value)
                 or self.resolver.resolve_str(subtype_value)
@@ -1279,27 +1244,27 @@ class PdfDocument(
                         continue
                     raise ValueError("invalid AcroForm kid entry")
                 resolved_kid = cast(PdfDict, resolved_kid)
-                subtype_value = lookup_dict_key(resolved_kid, "Subtype")
+                subtype_value = resolved_kid.get("Subtype")
                 subtype = (
                     self.resolver.resolve_name(subtype_value)
                     or self.resolver.resolve_str(subtype_value)
                     or ""
                 )
                 if subtype == "Widget":
-                    widget_type_value = lookup_dict_key(resolved_kid, "FT")
+                    widget_type_value = resolved_kid.get("FT")
                     widget_type = (
                         self.resolver.resolve_name(widget_type_value)
                         or self.resolver.resolve_name_like_value(widget_type_value)
                         or self.resolver.resolve_str(widget_type_value)
                         or field_type
                     )
-                    widget_title = self.resolver.resolve_str(lookup_dict_key(resolved_kid, "T"))
+                    widget_title = self.resolver.resolve_str(resolved_kid.get("T"))
                     widget_name = (
                         f"{current_name}.{widget_title}"
                         if current_name and widget_title
                         else widget_title or current_name
                     )
-                    widget_value = lookup_dict_key(resolved_kid, "V")
+                    widget_value: object = resolved_kid.get("V")
                     if widget_value is None:
                         widget_value = value
                     stack.append(
@@ -1337,7 +1302,7 @@ class PdfDocument(
             af = self.acroform
             records: list[RawFormField] = []
             if af is not None:
-                field_list = lookup_dict_key(af, "Fields")
+                field_list = af.get("Fields")
                 if field_list is None:
                     field_list = []
                 elif not isinstance(field_list, list):
@@ -1381,7 +1346,7 @@ class PdfDocument(
 
         def widget_page_index(widget: object) -> int | None:
             nonlocal annot_page_index
-            pg_ref = lookup_dict_key(widget, "P")
+            pg_ref = widget.get("P") if isinstance(widget, dict) else None
             if pg_ref is not None:
                 pg_obj = self.resolver.resolve(pg_ref)
                 return self.page_index_for(pg_obj) if isinstance(pg_obj, dict) else None
@@ -1409,7 +1374,7 @@ class PdfDocument(
                     kid = self.resolver.resolve(kid_ref)
                     if (
                         isinstance(kid, dict)
-                        and self.resolver.resolve_name(lookup_dict_key(kid, "Subtype")) == "Widget"
+                        and self.resolver.resolve_name(kid.get("Subtype")) == "Widget"
                     ):
                         page_index = widget_page_index(kid)
                         if page_index is not None:
@@ -1422,7 +1387,7 @@ class PdfDocument(
         seen_widgets = {id(record.widget) for record in existing if isinstance(record.widget, dict)}
         records: list[RawFormField] = []
         for page_dict in self.iter_page_dicts():
-            raw_annots = self.resolver.resolve(lookup_dict_key(page_dict, "Annots"))
+            raw_annots = self.resolver.resolve(page_dict.get("Annots"))
             if raw_annots is None:
                 continue
             annots = raw_annots if isinstance(raw_annots, list) else [raw_annots]
@@ -1433,8 +1398,8 @@ class PdfDocument(
                 if id(annot) in seen_widgets:
                     continue
                 subtype = (
-                    self.resolver.resolve_name(lookup_dict_key(annot, "Subtype"))
-                    or self.resolver.resolve_str(lookup_dict_key(annot, "Subtype"))
+                    self.resolver.resolve_name(annot.get("Subtype"))
+                    or self.resolver.resolve_str(annot.get("Subtype"))
                     or ""
                 )
                 if subtype != "Widget":
@@ -1455,7 +1420,7 @@ class PdfDocument(
         node = annot
         seen = {id(node)}
         for _ in range(50):
-            parent = self.resolver.resolve(lookup_dict_key(node, "Parent"))
+            parent = self.resolver.resolve(node.get("Parent"))
             if not isinstance(parent, dict) or id(parent) in seen:
                 break
             seen.add(id(parent))
@@ -1473,10 +1438,10 @@ class PdfDocument(
             return list(files)
 
     def build_embedded_files(self) -> list[RawEmbeddedFile]:
-        names = self.resolver.resolve(lookup_dict_key(self.catalog(), "Names"))
+        names = self.resolver.resolve(self.catalog().get("Names"))
         if not isinstance(names, dict):
             return []
-        embedded_tree = self.resolver.resolve(lookup_dict_key(names, "EmbeddedFiles"))
+        embedded_tree = self.resolver.resolve(names.get("EmbeddedFiles"))
         if embedded_tree is None:
             return []
         if not isinstance(embedded_tree, dict):
@@ -1505,16 +1470,16 @@ class PdfDocument(
         if not isinstance(filespec, dict):
             raise ValueError("invalid embedded file spec")
         filespec = cast(PdfDict, filespec)
-        ef = self.resolver.resolve(lookup_dict_key(filespec, "EF"))
+        ef = self.resolver.resolve(filespec.get("EF"))
         if not isinstance(ef, dict):
             raise ValueError("invalid embedded file stream")
         ef = cast(PdfDict, ef)
-        stream = self.resolver.resolve(lookup_dict_key(ef, "UF") or lookup_dict_key(ef, "F"))
+        stream = self.resolver.resolve(ef.get("UF") or ef.get("F"))
         if not isinstance(stream, PdfStream):
             raise ValueError("invalid embedded file stream")
         filename = (
-            self.resolver.resolve_str(lookup_dict_key(filespec, "UF"))
-            or self.resolver.resolve_str(lookup_dict_key(filespec, "F"))
+            self.resolver.resolve_str(filespec.get("UF"))
+            or self.resolver.resolve_str(filespec.get("F"))
             or name
         )
         return RawEmbeddedFile(name, filename, filespec, stream, stream.data)
@@ -1539,14 +1504,14 @@ class PdfDocument(
             catalog = self.catalog()
         except ValueError:
             return
-        oc = self.resolver.resolve(lookup_dict_key(catalog, "OCProperties"))
+        oc = self.resolver.resolve(catalog.get("OCProperties"))
         if oc is None:
             return
         if not isinstance(oc, dict):
             if recover:
                 return
             raise ValueError("invalid OCProperties dictionary")
-        ocgs = self.resolver.resolve(lookup_dict_key(oc, "OCGs"))
+        ocgs = self.resolver.resolve(oc.get("OCGs"))
         if ocgs is None:
             return
         if not isinstance(ocgs, list):
@@ -1555,14 +1520,14 @@ class PdfDocument(
             raise ValueError("invalid OCProperties OCGs array")
 
         on_layers: set[tuple[int, int] | int] = set()
-        default_config = self.resolver.resolve(lookup_dict_key(oc, "D"))
+        default_config = self.resolver.resolve(oc.get("D"))
         if default_config is not None and not isinstance(default_config, dict):
             if recover:
                 default_config = None
             else:
                 raise ValueError("invalid OCProperties D dictionary")
         if default_config is not None:
-            base_state_value = lookup_dict_key(default_config, "BaseState")
+            base_state_value = default_config.get("BaseState")
             base_state = (
                 self.resolver.resolve_name(base_state_value)
                 if base_state_value is not None
@@ -1582,7 +1547,7 @@ class PdfDocument(
                     if key is not None:
                         on_layers.add(key)
 
-            on_refs = lookup_dict_key(default_config, "ON")
+            on_refs = default_config.get("ON")
             if not isinstance(on_refs, list):
                 on_refs = []
             for on_ref in on_refs:
@@ -1595,7 +1560,7 @@ class PdfDocument(
                 if key is not None:
                     on_layers.add(key)
 
-            off_refs = lookup_dict_key(default_config, "OFF")
+            off_refs = default_config.get("OFF")
             if not isinstance(off_refs, list):
                 off_refs = []
             for off_ref in off_refs:
@@ -1614,7 +1579,7 @@ class PdfDocument(
                 if recover:
                     continue
                 raise ValueError("invalid OCProperties OCG entry")
-            name = self.resolver.resolve_str(lookup_dict_key(ocg_resolved, "Name"))
+            name = self.resolver.resolve_str(ocg_resolved.get("Name"))
             if not name:
                 if recover:
                     continue

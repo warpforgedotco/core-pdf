@@ -6,17 +6,15 @@ import zlib
 import imagecodecs
 
 from core_pdf.impl.spec.s_07_filters.errors import FilterParseError
-from core_pdf.impl.spec.s_07_syntax_primitives.content_operators import (
-    PDF_CONTENT_OPERATOR_BYTES,
-)
-from core_pdf.impl.spec.s_07_syntax_primitives.lexer_helpers import full_source_bytes
 from core_pdf.impl.spec.s_07_syntax_primitives.scanning import (
+    full_source_bytes,
     skip_comment,
     skip_hex_string,
     skip_literal_string,
 )
 from core_pdf.impl.spec.s_07_syntax_primitives.tokens import (
     DELIMITERS,
+    PDF_CONTENT_OPERATOR_BYTES,
     SEPARATOR_TABLE,
     WS_TABLE,
 )

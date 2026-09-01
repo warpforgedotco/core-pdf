@@ -1,7 +1,7 @@
 # Public API and compatibility facades
 
 The canonical public API is exported from `core_pdf`. `PdfDocument`, `PdfPage`, structured
-records, writers, runtime controls, and errors are lazy exports backed by their engine owners.
+records, runtime controls, and errors are lazy exports backed by their engine owners.
 There is no parallel capability or versioned API layer.
 
 ```python

@@ -471,6 +471,7 @@ name = "core-pdf"
 version = "0.0.5"
 source = { editable = "." }
 dependencies = [
+    { name = "cryptography" },
     { name = "imagecodecs" },
     { name = "numpy" },
     { name = "tesserocr" },
@@ -530,6 +531,7 @@ vendor-test = [
 
 [package.metadata]
 requires-dist = [
+    { name = "cryptography", specifier = ">=50.0.0" },
     { name = "imagecodecs", specifier = ">=2026.6.26" },
     { name = "numpy", specifier = ">=2.5.1" },
     { name = "tesserocr", specifier = ">=2.10.0" },

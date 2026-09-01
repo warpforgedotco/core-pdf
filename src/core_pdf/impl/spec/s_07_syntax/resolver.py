@@ -10,20 +10,19 @@ from typing import cast
 
 from core_pdf.impl.exceptions import PdfParseError
 from core_pdf.impl.primitives import MISSING, PdfName, PdfReference, PdfString
-from core_pdf.impl.spec.s_07_syntax.indirect_headers import (
-    find_indirect_object_header,
-)
 from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
-from core_pdf.impl.spec.s_07_syntax.object_cache import (
-    CachedPdfObject,
-    DeepObjectCache,
-    GenerationZeroObjectCache,
-    ObjectCache,
-)
 from core_pdf.impl.spec.s_07_syntax.objects import PdfObjectStream
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax.text_string import decode_pdf_text_string
-from core_pdf.impl.spec.s_07_syntax.types import Decipher, PdfDict, PdfObject
+from core_pdf.impl.spec.s_07_syntax.types import (
+    CachedPdfObject,
+    Decipher,
+    DeepObjectCache,
+    GenerationZeroObjectCache,
+    ObjectCache,
+    PdfDict,
+    PdfObject,
+)
 from core_pdf.impl.spec.s_07_syntax.xref import (
     PdfXRefEntry,
     key_for,
@@ -35,16 +34,9 @@ from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     parse_float_strict,
     parse_int,
 )
-from core_pdf.impl.spec.s_07_syntax_primitives.content_operators import (
-    CACHED_OPERATOR_KEYWORDS,
-)
-
-COMMON_KEYWORDS: tuple[bytes, ...] = (
-    *CACHED_OPERATOR_KEYWORDS,
-    b"true",
-    b"false",
-    b"null",
-    b"R",
+from core_pdf.impl.spec.s_07_syntax_primitives.scanning import (
+    FindableSizedBuffer,
+    full_source_buffer,
 )
 
 STREAM_DECODE_KEYS = frozenset(
@@ -62,6 +54,36 @@ internal_GEN0_CACHE_MAX_SIZE = 1_000_000
 internal_GEN0_CACHE_ALWAYS_ARRAY_SIZE = 4_096
 internal_GEN0_CACHE_DENSITY_FACTOR = 4
 TERMINAL_TYPES = {int, float, str, bool, type(None), PdfName, bytes}
+
+
+def internal_find_indirect_object_header(
+    data: memoryview,
+    search_start: int,
+    search_end: int,
+    source_buffer: FindableSizedBuffer | None = None,
+) -> int | None:
+    """Find a complete ``N G obj`` header within a recovery search window."""
+    data_len = len(data)
+    search_start = max(0, search_start)
+    search_end = min(data_len, search_end)
+    source = source_buffer if source_buffer is not None else full_source_buffer(data, data_len)
+    copied_region = data[search_start:search_end].tobytes() if source is None else None
+    pos = search_start
+    while pos < search_end:
+        if source is not None:
+            marker = source.find(b"obj", pos, search_end)
+        else:
+            assert copied_region is not None
+            marker = copied_region.find(b"obj", pos - search_start)
+        if marker < 0:
+            return None
+        if source is None:
+            marker += search_start
+        parsed = parse_object_marker_prefix(data, marker)
+        if parsed is not None and parsed[0] >= search_start:
+            return parsed[0]
+        pos = marker + 3
+    return None
 
 
 class ObjectResolver:
@@ -130,7 +152,7 @@ class ObjectResolver:
 
         self.object_streams: dict[int, PdfObjectStream] = {}
         self.deep_cache: DeepObjectCache = {}
-        self.kw_cache: dict[bytes, object] = {key: key.decode("latin-1") for key in COMMON_KEYWORDS}
+        self.kw_cache: dict[bytes, object] = {}
         self.lexer_stack: list[PdfLexer] = []
         self.lock = threading.RLock()
         self.thread_state = threading.local()
@@ -449,7 +471,7 @@ class ObjectResolver:
         data = lexer.raw_data
         search_start = max(0, offset - 128)
         search_end = min(len(data), offset + 128)
-        marker = find_indirect_object_header(
+        marker = internal_find_indirect_object_header(
             data,
             search_start,
             search_end,

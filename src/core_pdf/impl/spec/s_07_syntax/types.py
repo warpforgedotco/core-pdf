@@ -4,9 +4,9 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TypeAlias
+from typing import Protocol, TypeAlias
 
-from core_pdf.impl.primitives import PdfName, PdfReference, PdfString
+from core_pdf.impl.primitives import MissingObject, PdfName, PdfReference, PdfString
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 
 PdfNull: TypeAlias = None
@@ -25,8 +25,56 @@ PdfDirectObject: TypeAlias = PdfPrimitive | PdfArray | PdfDict | PdfStream
 PdfObject: TypeAlias = PdfDirectObject | PdfReference
 Decipher: TypeAlias = Callable[[int, int, bytes, PdfDict | None], bytes | memoryview]
 
+CachedPdfObject: TypeAlias = (
+    PdfPrimitive
+    | str
+    | PdfReference
+    | PdfStream
+    | list["CachedPdfObject"]
+    | tuple["CachedPdfObject", ...]
+    | dict[PdfKey, "CachedPdfObject"]
+)
+
+ObjectCache: TypeAlias = dict[int, CachedPdfObject]
+DeepObjectCache: TypeAlias = dict[int, tuple[object, CachedPdfObject]]
+ResolvedObjectCache: TypeAlias = dict[tuple[int, int], CachedPdfObject]
+GenerationZeroObjectCache: TypeAlias = list[CachedPdfObject | MissingObject]
+InheritedValueMap: TypeAlias = dict[str, CachedPdfObject]
+InheritedValuesCache: TypeAlias = dict[int, InheritedValueMap]
+
+
+class PdfValueResolver(Protocol):
+    """The resolution operations needed by higher-level PDF features."""
+
+    def resolve(self, ref: object) -> object: ...
+
+    def deep_resolve(self, value: object, seen: set[int] | None = None) -> object: ...
+
+    def resolve_dict(self, value: object) -> PdfDict | None: ...
+
+    def resolve_box(self, value: object) -> tuple[float, float, float, float] | None: ...
+
+    def resolve_font_dict(self, font: PdfDict) -> PdfDict: ...
+
+    def resolve_float(self, value: object, default: float | None = 0.0) -> float | None: ...
+
+    def resolve_name(self, value: object) -> str | None: ...
+
+    def resolve_name_like_value(self, resolved: object) -> str | None: ...
+
+    def resolve_int(self, value: object, default: int | None = None) -> int | None: ...
+
+    def resolve_str(self, value: object) -> str | None: ...
+
+
 __all__ = (
+    "CachedPdfObject",
     "Decipher",
+    "DeepObjectCache",
+    "GenerationZeroObjectCache",
+    "InheritedValueMap",
+    "InheritedValuesCache",
+    "ObjectCache",
     "PdfArray",
     "PdfBoolean",
     "PdfByteString",
@@ -41,4 +89,6 @@ __all__ = (
     "PdfReal",
     "PdfStringObject",
     "PdfTextString",
+    "PdfValueResolver",
+    "ResolvedObjectCache",
 )

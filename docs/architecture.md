@@ -105,7 +105,6 @@ src/core_pdf/
     parse/               extraction pipeline (see section 2)
     render/              display lists, raster kernels, targets, and page composition
     structured/          document IR and markdown/HTML/JSON/CSV/TEI serialization
-    writing/             PDF objects, fonts, encryption, signatures, and output
     page.py              PdfPage
     document.py          PdfDocument
 ```
@@ -123,7 +122,7 @@ the code disagree. Upper layers may depend on lower layers; lower layers must no
 The principal derived-processing order is:
 
 ```text
-document → page → parse → render → writing → structured → layout → model
+document → page → parse → render → structured → layout → model
 ```
 
 Three packages form dependency floors:
@@ -158,7 +157,7 @@ Subpackages under `spec/` mirror chapters of the PDF specification:
 
 | Package | PDF chapter |
 | --- | --- |
-| `s_07_syntax_primitives` | 7 — tokens, scanning, coercion, dictionary lookup, operators |
+| `s_07_syntax_primitives` | 7 — tokens, scanning, coercion |
 | `s_07_syntax` | 7 — lexer, streams, xref, object model, resolver, text strings |
 | `s_07_filters` | 7 — stream filters (Flate, LZW, CCITT, JBIG2, …) |
 | `s_07_content` | 7 — content streams, operators, text state |
@@ -173,7 +172,7 @@ shared by filters and the upper COS layer; `s_07_syntax` owns the mutually depen
 streams, object model, xref, and resolution machinery.
 
 Declarative metadata has one owner: content-operator behavior belongs in
-`s_07_syntax_primitives/content_operators.py`, and stream-filter behavior belongs in
+`s_07_content/operator_tables.py`, and stream-filter behavior belongs in
 `s_07_filters/registry.py`. Extend those registries instead of creating parallel tables.
 
 ---

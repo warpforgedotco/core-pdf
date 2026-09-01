@@ -10,7 +10,6 @@ import numpy
 from core_pdf.impl.runtime.array_views import ByteBuffer, uint8_view
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import parse_float, parse_int
-from core_pdf.impl.spec.s_07_syntax_primitives.pdfdict import lookup_dict_key
 from core_pdf.impl.spec.s_08_graphics.color_spec import ImageColorSpec
 
 ImageDict = dict[str, object]
@@ -83,7 +82,7 @@ def apply_decode_array_subbyte(
 def image_dimension(image_dict: ImageDict | ImageColorSpec, key: str) -> int:
     if not isinstance(image_dict, dict):
         return 0
-    value = lookup_dict_key(image_dict, key)
+    value = image_dict.get(key)
     if type(value) is bool:
         return 0
     return parse_int(value, 0) or 0
@@ -103,13 +102,13 @@ def image_component_count(spec: ImageColorSpec) -> int:
 
 def evaluate_sampled_tint_function(function: PdfStream, *inputs: float) -> list[float]:
     dictionary = function.dictionary
-    if parse_int(lookup_dict_key(dictionary, "FunctionType"), -1) != 0:
+    if parse_int(dictionary.get("FunctionType"), -1) != 0:
         raise ValueError("invalid sampled function")
-    if parse_int(lookup_dict_key(dictionary, "BitsPerSample"), 0) != 8:
+    if parse_int(dictionary.get("BitsPerSample"), 0) != 8:
         raise ValueError("unsupported sampled function bit depth")
-    size_obj = lookup_dict_key(dictionary, "Size")
-    domain_obj = lookup_dict_key(dictionary, "Domain")
-    range_obj = lookup_dict_key(dictionary, "Range")
+    size_obj = dictionary.get("Size")
+    domain_obj = dictionary.get("Domain")
+    range_obj = dictionary.get("Range")
     if not isinstance(size_obj, (list, tuple)):
         raise ValueError("invalid sampled function size")
     if not isinstance(domain_obj, (list, tuple)):
@@ -131,7 +130,7 @@ def evaluate_sampled_tint_function(function: PdfStream, *inputs: float) -> list[
     samples = function.data
     if len(samples) < sample_count * output_count:
         raise ValueError("invalid sampled function data")
-    encode_obj = lookup_dict_key(dictionary, "Encode")
+    encode_obj = dictionary.get("Encode")
     encoded_positions: list[int] = []
     for input_index, raw_input in enumerate(inputs):
         domain_min = parse_float(domain_obj[input_index * 2], None)
