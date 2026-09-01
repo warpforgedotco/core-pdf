@@ -143,6 +143,19 @@ def normalize_image_color_spec(image_dict: object) -> ImageColorSpec:
         bits_per_component = 8
     if bits_per_component <= 0:
         raise ValueError("invalid image bits-per-component")
+    return color_spec_from_value(
+        dictionary.get("ColorSpace"), bits_per_component=bits_per_component
+    )
+
+
+def color_spec_from_value(color_space: object, *, bits_per_component: int = 8) -> ImageColorSpec:
+    """Parse a colour-space name or array into its resolved description.
+
+    Split out of ``normalize_image_color_spec`` so the content-stream
+    interpreter can resolve the operand of ``cs``/``CS``. Nothing here is
+    image-specific: ISO 32000-1 8.6 gives one colour-space grammar, used by both
+    an image's /ColorSpace entry and a colour-space resource.
+    """
 
     def parse_indexed_hival(value: object) -> int:
         if type(value) is bool:
@@ -164,7 +177,6 @@ def normalize_image_color_spec(image_dict: object) -> ImageColorSpec:
             raise ValueError("invalid ICCBased color space")
         return parsed
 
-    color_space = dictionary.get("ColorSpace")
     if isinstance(color_space, (list, tuple)) and color_space:
         kind = normalize_color_space_name(color_space[0])
         if kind == "Indexed" and len(color_space) >= 4:

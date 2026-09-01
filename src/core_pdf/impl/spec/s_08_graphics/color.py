@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import typing
+from collections.abc import Sequence
 from functools import lru_cache
 from typing import Any, TypeAlias, cast
 
@@ -53,6 +54,96 @@ from core_pdf.impl.spec.s_08_graphics.icc_profiles import (
 ImageDict: TypeAlias = dict[str, object]
 ColorComponents: TypeAlias = list[float]
 ImageBuffer: TypeAlias = ByteBuffer
+
+
+def color_operands_to_srgb(
+    spec: ImageColorSpec, components: Sequence[float]
+) -> tuple[float, float, float] | None:
+    """Convert one colour's `sc`/`scn` operands, in ``spec``'s space, to sRGB.
+
+    Returns ``None`` for the device spaces, whose operands already carry their
+    own component count and are handled downstream.
+
+    ISO 32000-1 8.6.6.3 and 8.6.6.4: an Indexed operand is an index into the
+    palette, and a Separation/DeviceN operand is a tint that the tint transform
+    maps into the alternate space. Both were previously clamped to 0..1 and
+    painted as if they were device components, so a spot colour rendered as an
+    *inverted* grey ("a tint value of 0.0 denotes the lightest colour ... and
+    1.0 is the darkest") and an index painted black or white.
+    """
+    kind = spec.kind
+    if kind == "Indexed":
+        return internal_indexed_operand_to_srgb(spec, components)
+    if kind in {"Separation", "DeviceN"}:
+        return internal_tint_operands_to_srgb(spec, components)
+    return None
+
+
+def internal_indexed_operand_to_srgb(
+    spec: ImageColorSpec, components: Sequence[float]
+) -> tuple[float, float, float] | None:
+    lookup = spec.lookup
+    base = spec.base
+    if lookup is None or base is None or not components:
+        return None
+    try:
+        width = internal_alternate_color_component_count(base)
+    except ValueError:
+        return None
+    # 8.6.6.3: "If the value is a real number, it shall be rounded to the
+    # nearest integer; if it is outside the range 0 to hival, it shall be
+    # adjusted to the nearest value within that range."
+    index = max(0, min(spec.hival, int(round(float(components[0])))))
+    start = index * width
+    entry = lookup[start : start + width]
+    if len(entry) < width:
+        return None
+    return internal_srgb_bytes_to_floats(
+        ImageColorManager.apply_alt_color([byte / 255.0 for byte in entry], base)
+    )
+
+
+def internal_tint_operands_to_srgb(
+    spec: ImageColorSpec, components: Sequence[float]
+) -> tuple[float, float, float] | None:
+    if not components:
+        return None
+    alt = spec.alt
+    tints = [max(0.0, min(1.0, float(value))) for value in components]
+    if alt is not None and spec.tint_fn is not None:
+        try:
+            expected = internal_alternate_color_component_count(alt)
+            evaluated = internal_evaluate_tint(spec.tint_fn, tints)
+            if evaluated is not None and len(evaluated) == expected:
+                converted = internal_srgb_bytes_to_floats(
+                    ImageColorManager.apply_alt_color(list(evaluated), alt)
+                )
+                if converted is not None:
+                    return converted
+        except (ValueError, TypeError, ZeroDivisionError):
+            pass
+    # No usable tint transform. 8.6.6.4 still fixes the direction: "a tint value
+    # of 0.0 denotes the lightest colour that can be achieved with the given
+    # colorant, and 1.0 is the darkest", so the ink is subtractive.
+    ink = max(tints)
+    level = 1.0 - ink
+    return (level, level, level)
+
+
+def internal_evaluate_tint(tint_fn: object, tints: list[float]) -> tuple[float, ...] | None:
+    from core_pdf.impl.spec.s_08_graphics.shading import internal_evaluate_pdf_function
+
+    if len(tints) > 1:
+        if not isinstance(tint_fn, PdfStream):
+            return None
+        return tuple(internal_native_evaluate_sampled_tint_function(tint_fn, *tints))
+    return internal_evaluate_pdf_function(tint_fn, tints[0])
+
+
+def internal_srgb_bytes_to_floats(rgb: bytes | None) -> tuple[float, float, float] | None:
+    if rgb is None or len(rgb) < 3:
+        return None
+    return (rgb[0] / 255.0, rgb[1] / 255.0, rgb[2] / 255.0)
 
 
 def internal_alternate_color_component_count(alt_name: str) -> int:
