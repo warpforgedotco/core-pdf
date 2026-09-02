@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-from core_pdf.impl.spec.s_07_syntax.text_string import decode_pdf_text_string
+from core_pdf.impl.spec.s_07_syntax_primitives.text_string import decode_pdf_text_string
 
 
 def test_decode_pdfdoc_encoding_accent_and_quote_bytes() -> None:

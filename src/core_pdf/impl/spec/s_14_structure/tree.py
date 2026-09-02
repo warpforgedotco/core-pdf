@@ -332,9 +332,7 @@ class StructureTree(Iterable[StructureElement | StructureContentItem | Structure
         if not isinstance(resolved, dict):
             raise ValueError("invalid role map dictionary")
         for key, value in resolved.items():
-            mapped = self.document.resolver.resolve_name(
-                value
-            ) or self.document.resolver.resolve_str(value)
+            mapped = self.document.resolver.resolve_name_or_text(value)
             if mapped is None:
                 raise ValueError("invalid role map entry")
             role_map[structure_key_name(key)] = mapped
@@ -521,9 +519,7 @@ def make_kids(
             continue
         if isinstance(current, dict):
             ktype_value = current.get("Type")
-            ktype = document.resolver.resolve_name(ktype_value) or document.resolver.resolve_str(
-                ktype_value
-            )
+            ktype = document.resolver.resolve_name_or_text(ktype_value)
             if ktype == "MCR":
                 mcid = document.resolver.resolve_int(current.get("MCID"))
                 if mcid is None:

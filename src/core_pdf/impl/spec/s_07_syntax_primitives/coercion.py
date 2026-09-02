@@ -8,6 +8,7 @@ from functools import lru_cache
 from typing import overload
 
 from core_pdf.impl.primitives import PdfName, PdfString
+from core_pdf.impl.spec.s_07_syntax_primitives.text_string import decode_pdf_text_string
 
 
 def is_pdf_null(value: object) -> bool:
@@ -124,10 +125,29 @@ def parse_box(value: object) -> tuple[float, float, float, float] | None:
 
 
 def normalize_pdf_name(value: object, default: str | None = None) -> str | None:
-    name = parse_name(value, default)
+    # A PdfName already holds the decoded string, so read it directly rather
+    # than paying for the parse_name frame and the __str__ dunder dispatch.
+    # str is inlined for the same reason: these two cover nearly every caller.
+    if type(value) is PdfName:
+        name: str | None = value.str_value or ""
+    elif type(value) is str:
+        name = value
+    else:
+        name = parse_name(value, default)
     if name is not None and name.startswith("/"):
         return name[1:]
     return name
+
+
+def parse_text_string(value: object) -> str | None:
+    """A direct string object as text, or None if ``value`` is not one."""
+    if isinstance(value, PdfString):
+        return decode_pdf_text_string(value.data)
+    if isinstance(value, bytes):
+        return decode_pdf_text_string(value)
+    if isinstance(value, str):
+        return value
+    return None
 
 
 def coerce_to_bytes(value: object) -> bytes:
@@ -192,10 +212,12 @@ __all__ = (
     "coerce_value",
     "is_pdf_null",
     "normalize_pdf_name",
+    "parse_box",
     "parse_float",
     "parse_float_strict",
     "parse_int",
     "parse_int_strict",
     "parse_name",
     "parse_name_bytes",
+    "parse_text_string",
 )

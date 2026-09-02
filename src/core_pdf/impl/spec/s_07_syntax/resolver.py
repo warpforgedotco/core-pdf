@@ -13,7 +13,6 @@ from core_pdf.impl.primitives import MISSING, PdfName, PdfReference, PdfString
 from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.spec.s_07_syntax.objects import PdfObjectStream
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
-from core_pdf.impl.spec.s_07_syntax.text_string import decode_pdf_text_string
 from core_pdf.impl.spec.s_07_syntax.types import (
     CachedPdfObject,
     Decipher,
@@ -38,6 +37,7 @@ from core_pdf.impl.spec.s_07_syntax_primitives.scanning import (
     FindableSizedBuffer,
     full_source_buffer,
 )
+from core_pdf.impl.spec.s_07_syntax_primitives.text_string import decode_pdf_text_string
 
 STREAM_DECODE_KEYS = frozenset(
     {

@@ -6,13 +6,13 @@ from __future__ import annotations
 from typing import cast
 
 from core_pdf.impl.primitives import PdfName, PdfString
-from core_pdf.impl.spec.s_07_syntax.text_string import decode_pdf_text_string
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     normalize_pdf_name,
     parse_float,
     parse_int,
 )
+from core_pdf.impl.spec.s_07_syntax_primitives.text_string import decode_pdf_text_string
 
 
 class IdentityResolver:

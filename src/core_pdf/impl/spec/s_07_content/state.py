@@ -4008,12 +4008,9 @@ class TextState:
         if isinstance(resolved, dict):
             oc = resolved.get("OC")
             if oc is not None:
-                name = self.document.resolver.resolve_name(oc)
-                return name or self.document.resolver.resolve_str(oc)
+                return self.document.resolver.resolve_name_or_text(oc)
 
-        return self.document.resolver.resolve_name(value) or self.document.resolver.resolve_str(
-            value
-        )
+        return self.document.resolver.resolve_name_or_text(value)
 
     def op_BX(self, operands: OperandWindow, depth: int) -> None:
         self.compatibility_depth += 1

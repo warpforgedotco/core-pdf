@@ -4,7 +4,6 @@ from __future__ import annotations
 import pytest
 
 from core_pdf.impl.primitives import PdfName, PdfString
-from core_pdf.impl.spec.s_07_syntax.text_string import decode_pdf_text_string
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     coerce_to_bytes,
     coerce_value,
@@ -12,6 +11,7 @@ from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     parse_float,
     parse_int,
 )
+from core_pdf.impl.spec.s_07_syntax_primitives.text_string import decode_pdf_text_string
 
 
 class ConversionHook:

@@ -6,11 +6,14 @@ from __future__ import annotations
 import math
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass
-from typing import Any, Generic, TypeVar, cast
+from typing import TYPE_CHECKING, Any, Generic, TypeVar, cast
 
 import numpy
 
 from core_pdf.impl.types import Rectangle
+
+if TYPE_CHECKING:
+    from core_pdf.impl.model.runs import TextRun
 
 T = TypeVar("T")
 
@@ -450,6 +453,37 @@ def page_rotation_matrix(
             return (0.0, 1.0, -1.0, 0.0, page_height, 0.0)
         case _:
             return (1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
+
+
+def rotate_page_runs(
+    runs: list[TextRun],
+    *,
+    rotate: int,
+    page_width: float,
+    page_height: float,
+) -> list[TextRun]:
+    """Text runs mapped into the frame the page displays at ``rotate`` degrees."""
+    rotate %= 360
+    if rotate == 0:
+        return runs
+
+    matrix = page_rotation_matrix(rotate, page_width, page_height)
+    a, b, c, d, e, f = matrix
+    transformed: list[TextRun] = []
+    for run in runs:
+        x0, y0, x1, y1 = transform_bbox((run.x0, run.y0, run.x1, run.y1), matrix)
+        transformed.append(
+            run.replace(
+                x0=x0,
+                y0=y0,
+                x1=x1,
+                y1=y1,
+                tx=run.tx * a + run.ty * c + e,
+                ty=run.tx * b + run.ty * d + f,
+                rotation_angle=(run.rotation_angle - rotate) % 360,
+            )
+        )
+    return transformed
 
 
 def flip_rect_vertical(rect: Sequence[float], page_height: float) -> Rectangle:
