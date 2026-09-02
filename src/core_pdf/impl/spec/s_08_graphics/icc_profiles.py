@@ -427,8 +427,15 @@ def internal_distinct_byte_rows(
     for index in range(channels):
         keys <<= numpy.uint32(8)
         keys |= samples[:, index]
-    ignored_keys, first, inverse = numpy.unique(keys, return_index=True, return_inverse=True)
-    return numpy.ascontiguousarray(samples[first]), inverse
+    # The key holds the whole row, so the distinct rows unpack straight out of
+    # the unique keys. Asking for return_index instead forces numpy.unique onto
+    # a stable sort, which is materially slower for no extra information.
+    unique_keys, inverse = numpy.unique(keys, return_inverse=True)
+    distinct = numpy.empty((len(unique_keys), channels), dtype=numpy.uint8)
+    for index in range(channels):
+        shift = numpy.uint32(8 * (channels - 1 - index))
+        distinct[:, index] = ((unique_keys >> shift) & numpy.uint32(0xFF)).astype(numpy.uint8)
+    return distinct, inverse
 
 
 def internal_byte_input_curves(
