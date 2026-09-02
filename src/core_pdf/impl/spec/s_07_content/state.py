@@ -447,6 +447,7 @@ class TextState:
         "pending_line_break",
         "pending_run",
         "compat_tj_active",
+        "compat_tj_enabled",
         "compat_tj_cursor_x",
         "compat_tj_cursor_y",
         "compat_tj_origin_e",
@@ -538,6 +539,12 @@ class TextState:
         self.clip_scope_stack = []
         self.capture_glyphs = True
         self.capture_graphics = True
+        # The pdfminer cursor exists only so the pdfminer and pdfplumber
+        # facades can reproduce that library's per-glyph advance bookkeeping.
+        # Both open the document with legacy_pdfminer_text_operators, and they
+        # are the only readers of the provenance it emits, so native extraction
+        # does not need to pay for it on every glyph of every page.
+        self.compat_tj_enabled = document.legacy_pdfminer_text_operators
         self.capture_clipping = True
         self.runs = []
         self.glyphs = GlyphTableBuilder()
@@ -647,7 +654,7 @@ class TextState:
         previous_compat_origin = (self.compat_tj_origin_e, self.compat_tj_origin_f)
         previous_compat_decoder = self.compat_tj_decoder
         previous_compat_need_charspace = self.compat_tj_need_charspace
-        self.compat_tj_active = self.capture_glyphs
+        self.compat_tj_active = self.capture_glyphs and self.compat_tj_enabled
         self.compat_tj_origin_e = self.lm_e
         self.compat_tj_origin_f = self.lm_f
         self.compat_tj_decoder = effective_decoder
@@ -2698,7 +2705,7 @@ class TextState:
             self.compat_tj_decoder,
             self.compat_tj_need_charspace,
         )
-        self.compat_tj_active = self.capture_glyphs
+        self.compat_tj_active = self.capture_glyphs and self.compat_tj_enabled
         self.compat_tj_origin_e = self.lm_e
         self.compat_tj_origin_f = self.lm_f
         self.compat_tj_decoder = decoder

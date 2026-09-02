@@ -19,6 +19,7 @@ def internal_type3_state(program: PdfStream) -> tuple[TextState, FontDecoder]:
             resolver=IdentityResolver(),
             decoder_cache={},
             internal_cache_lock=threading.RLock(),
+            legacy_pdfminer_text_operators=False,
         ),
     )
     state = TextState(document, {})
@@ -73,6 +74,7 @@ def test_type3_win_ansi_euro_char_proc_is_rendered() -> None:
             resolver=IdentityResolver(),
             decoder_cache={},
             internal_cache_lock=threading.RLock(),
+            legacy_pdfminer_text_operators=False,
         ),
     )
     state = TextState(document, {})

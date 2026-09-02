@@ -20,7 +20,11 @@ def test_distinct_stream_slices_with_equal_lengths_have_distinct_execution_keys(
 def internal_consume(content: bytes) -> TextState:
     document = cast(
         Any,
-        SimpleNamespace(resolver=IdentityResolver(), internal_cache_lock=threading.RLock()),
+        SimpleNamespace(
+            resolver=IdentityResolver(),
+            internal_cache_lock=threading.RLock(),
+            legacy_pdfminer_text_operators=False,
+        ),
     )
     state = TextState(document, {})
     state.consume_stream(PdfStream(raw_data=content), {}, IDENTITY_MATRIX, 0)
