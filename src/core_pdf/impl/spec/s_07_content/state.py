@@ -30,6 +30,7 @@ from core_pdf.impl.model.glyphs import (
 from core_pdf.impl.model.runs import TextRun
 from core_pdf.impl.primitives import (
     MISSING,
+    MissingObject,
     PdfName,
     PdfReference,
     PdfString,
@@ -105,7 +106,14 @@ from core_pdf.impl.spec.s_09_fonts.ligatures import detect_ligature_overrides
 from core_pdf.impl.types import Rectangle
 
 OperationHandler: TypeAlias = StateOperationHandler
-ObjectCache: TypeAlias = dict[object, object]
+# Each resource cache stores MISSING for "not yet computed", so its value type
+# carries the sentinel and readers cast it away after the identity check --
+# the same idiom the page-box caches use in s_07_document/page.py.
+ColorSpaceCache: TypeAlias = dict[object, str | None | MissingObject]
+ColorSpecCache: TypeAlias = dict[object, "ImageColorSpec | None | MissingObject"]
+ColorNormalizationCache: TypeAlias = dict[object, tuple[float, ...] | None | MissingObject]
+ExtGStateCache: TypeAlias = dict[object, "dict[str, Any] | None | MissingObject"]
+FontSettingCache: TypeAlias = dict[object, tuple[str | None, float] | MissingObject]
 DecodedGlyphs: TypeAlias = tuple[DecodedGlyph, ...] | None
 internal_GraphicsState: TypeAlias = tuple[
     float,
@@ -116,10 +124,10 @@ internal_GraphicsState: TypeAlias = tuple[
     float,
     tuple[float, ...] | None,
     PdfDict | None,
-    float | None,
+    float,
     tuple[float, ...] | None,
     PdfDict | None,
-    float | None,
+    float,
     str,
     str,
     ImageColorSpec | None,
@@ -277,10 +285,12 @@ class TextState:
     clip_scope_stack: list[bool]
     fill_color: tuple[float, ...] | None
     fill_pattern: PdfDict | None
-    fill_opacity: float | None
+    # Always a real number: __init__ seeds 1.0, `gs` clamps into [0, 1], and a
+    # restore only ever copies a value that came from here.
+    fill_opacity: float
     stroke_color: tuple[float, ...] | None
     stroke_pattern: PdfDict | None
-    stroke_opacity: float | None
+    stroke_opacity: float
     blend_mode: str | None
     group_alpha: float | None
     flatness: int
@@ -310,11 +320,11 @@ class TextState:
     resources: PdfDict
     resolved_resource_categories: ResolvedResourceCache
     resource_cache: ResourceCache
-    color_space_cache: ObjectCache
-    color_spec_cache: ObjectCache
-    color_normalization_cache: ObjectCache
-    extgstate_cache: ObjectCache
-    font_setting_cache: ObjectCache
+    color_space_cache: ColorSpaceCache
+    color_spec_cache: ColorSpecCache
+    color_normalization_cache: ColorNormalizationCache
+    extgstate_cache: ExtGStateCache
+    font_setting_cache: FontSettingCache
     text_scan_cache: dict[StreamKey, bool]
     decoder_cache: dict[tuple[int, int] | int, FontDecoder]
     decoder_memo: dict[tuple[int, str | None], FontDecoder]
@@ -1381,7 +1391,7 @@ class TextState:
             return
         self.append_xobject(operands[0], depth)
 
-    def append_xobject(self: Any, name_obj: Any, depth: int) -> None:
+    def append_xobject(self, name_obj: Any, depth: int) -> None:
         name = self.document.resolver.resolve_name(name_obj)
         if not name:
             return
@@ -1514,11 +1524,15 @@ class TextState:
                 if self.fill_opacity < 1.0 or (blend is not None and blend != "Normal"):
                     group_alpha = max(0.0, min(1.0, self.fill_opacity))
         raw_resources = xobj_dict.get("Resources")
-        resources = (
-            raw_resources
-            if isinstance(raw_resources, dict)
-            else self.document.resolver.resolve_dict(raw_resources)
-        ) or self.resources
+        resources = cast(
+            PdfDict,
+            (
+                raw_resources
+                if isinstance(raw_resources, dict)
+                else self.document.resolver.resolve_dict(raw_resources)
+            )
+            or self.resources,
+        )
         xobj_matrix = xobj_dict.get("Matrix")
         if isinstance(xobj_matrix, (list, tuple)) and len(xobj_matrix) > 6:
             xobj_matrix = xobj_matrix[:6]
@@ -1570,19 +1584,19 @@ class TextState:
             swallow_parse_errors=True,
         )
 
-    def flush_run(self: Any) -> None:
+    def flush_run(self) -> None:
         if self.pending_run:
             self.pending_run.freeze_glyph_clusters()
             self.runs.append(self.pending_run)
             self.pending_run = None
 
-    def transform_point(self: Any, x: float, y: float) -> tuple[float, float]:
+    def transform_point(self, x: float, y: float) -> tuple[float, float]:
         return (
             x * self.ca + y * self.cc + self.ce,
             x * self.cb + y * self.cd + self.cf,
         )
 
-    def graphics_scale(self: Any) -> float:
+    def graphics_scale(self) -> float:
         x_scale = hypot(self.ca, self.cb)
         y_scale = hypot(self.cc, self.cd)
         if x_scale == 0 and y_scale == 0:
@@ -1593,13 +1607,13 @@ class TextState:
             return x_scale
         return (x_scale + y_scale) * 0.5
 
-    def transformed_line_width(self: Any) -> float:
+    def transformed_line_width(self) -> float:
         line_width = max(0.0, self.line_width)
         if line_width == 0:
             return 0.0
         return line_width * self.graphics_scale()
 
-    def transformed_dash_pattern(self: Any) -> tuple[list[float], float] | None:
+    def transformed_dash_pattern(self) -> tuple[list[float], float] | None:
         dash_pattern = self.dash_pattern
         if not dash_pattern:
             return None
@@ -1607,7 +1621,7 @@ class TextState:
         scale = self.graphics_scale()
         return [max(0.0, float(value) * scale) for value in dash_array], float(phase) * scale
 
-    def flush_drawing(self: Any, kind: str, fill_rule: str = "nonzero") -> None:
+    def flush_drawing(self, kind: str, fill_rule: str = "nonzero") -> None:
         if not self.capture_graphics or not self.is_graphics_visible():
             self.current_path.clear()
             return
@@ -1663,64 +1677,7 @@ class TextState:
             self.sequence += 1
 
     def alloc_run(
-        self: Any,
-        text: str,
-        x0: float,
-        y0: float,
-        x1: float,
-        y1: float,
-        tx: float,
-        ty: float,
-        font_size: float,
-        space_width: float,
-        order: int,
-        stream_order: int,
-        xobject_depth: int,
-        font_name: str | None,
-        is_vertical: bool,
-        rotation_angle: int,
-        visible: bool,
-        line_break_before: bool,
-        seqno: int,
-        fill_color: tuple[float, ...] | None,
-        advance_bbox: Rectangle | None = None,
-        ink_bbox: Rectangle | None = None,
-        baseline: tuple[float, float, float, float] | None = None,
-        provenance: tuple[tuple[str, object], ...] = (),
-        confidence: float | None = None,
-        glyph_clusters: tuple[GlyphCluster, ...] = (),
-    ) -> TextRun:
-        text = normalize_extracted_text(text)
-        return self.alloc_prepared_run(
-            text,
-            x0,
-            y0,
-            x1,
-            y1,
-            tx,
-            ty,
-            font_size,
-            space_width,
-            order,
-            stream_order,
-            xobject_depth,
-            font_name,
-            is_vertical,
-            rotation_angle,
-            visible,
-            line_break_before,
-            seqno,
-            fill_color,
-            advance_bbox,
-            ink_bbox,
-            baseline,
-            provenance,
-            confidence,
-            glyph_clusters,
-        )
-
-    def alloc_prepared_run(
-        self: Any,
+        self,
         text: str,
         x0: float,
         y0: float,
@@ -1748,9 +1705,9 @@ class TextState:
         glyph_clusters: tuple[GlyphCluster, ...] = (),
     ) -> TextRun:
         existing = self.run_pool.pop() if self.capture_glyphs and self.run_pool else None
-        r = TextRun.reinit(
+        return TextRun.reinit(
             existing,
-            text,
+            normalize_extracted_text(text),
             x0,
             y0,
             x1,
@@ -1776,9 +1733,8 @@ class TextState:
             confidence,
             glyph_clusters,
         )
-        return r
 
-    def internal_is_clipped_away(self: Any, x0: float, y0: float, x1: float, y1: float) -> bool:
+    def internal_is_clipped_away(self, x0: float, y0: float, x1: float, y1: float) -> bool:
         """Report whether a box falls entirely outside the active clip.
 
         Text only survives if it overlaps the clip, so a form XObject's /BBox,
@@ -1793,7 +1749,7 @@ class TextState:
                 return True
         return False
 
-    def update_pending_run(self: Any, new_run: TextRun) -> None:
+    def update_pending_run(self, new_run: TextRun) -> None:
         nc = new_run.coords
         if self.internal_is_clipped_away(
             nc[TextRun.X0], nc[TextRun.Y0], nc[TextRun.X1], nc[TextRun.Y1]
@@ -1896,7 +1852,7 @@ class TextState:
                 self.run_pool.append(new_run)
 
     def record_glyph_observations(
-        self: Any,
+        self,
         text: str,
         data: bytes | bytearray | memoryview,
         decoder: FontDecoder,
@@ -2428,7 +2384,7 @@ class TextState:
         return run_geometry.advance, run_geometry.ink, run_geometry.confidence
 
     def _append_text_impl(
-        self: Any,
+        self,
         operand: Any = None,
         *,
         data: bytes | memoryview | None = None,
@@ -2719,7 +2675,7 @@ class TextState:
         self.tm_f = tf + adv_x * tb + adv_y * td
         self.pending_line_break = False
 
-    def _render_type3_glyphs_impl(self: Any, data: bytes, decoder: FontDecoder) -> None:
+    def _render_type3_glyphs_impl(self, data: bytes | memoryview, decoder: FontDecoder) -> None:
         # ISO 32000-1 9.3.6: "Only a value of 3 for text rendering mode shall
         # have any effect on text displayed in a Type 3 font", and Table 106
         # makes mode 3 invisible. Mode 7 deliberately still paints here -- for a
@@ -2806,7 +2762,7 @@ class TextState:
                 self.tm_e += advance * self.tm_a
                 self.tm_f += advance * self.tm_b
 
-    def append_tj_array(self: Any, array: Any) -> None:
+    def append_tj_array(self, array: Any) -> None:
         if not isinstance(array, (list, tuple)):
             return
         if not array:
@@ -2889,20 +2845,20 @@ class TextState:
         self.compat_tj_cursor_x = compat_cursor_x
         self.compat_tj_cursor_y = compat_cursor_y
 
-    def current_actual_text_span(self: Any) -> Any | None:
+    def current_actual_text_span(self) -> Any | None:
         for entry in reversed(self.marked_content_stack):
             if getattr(entry, "actual_text", None) is not None:
                 return entry
         return None
 
-    def current_marked_content_mcid(self: Any) -> int | None:
+    def current_marked_content_mcid(self) -> int | None:
         for entry in reversed(self.marked_content_stack):
             mcid = getattr(entry, "mcid", None)
             if type(mcid) is int:
                 return mcid
         return None
 
-    def emit_actual_text_span(self: Any, entry: Any) -> None:
+    def emit_actual_text_span(self, entry: Any) -> None:
         actual_text = getattr(entry, "actual_text", None)
         if actual_text is None or not getattr(entry, "has_text_extents", False):
             return
@@ -3018,7 +2974,7 @@ class TextState:
             return
         self.op_Td_values(tx, ty)
 
-    def op_Td_values(self: Any, tx: float, ty: float) -> None:
+    def op_Td_values(self, tx: float, ty: float) -> None:
         self.internal_move_text(tx, ty)
 
     def op_TD(self, operands: OperandWindow, depth: int) -> None:
@@ -3031,7 +2987,7 @@ class TextState:
             return
         self.op_TD_values(tx, ty)
 
-    def op_TD_values(self: Any, tx: float, ty: float) -> None:
+    def op_TD_values(self, tx: float, ty: float) -> None:
         self.leading = -ty
         self.internal_move_text(tx, ty)
 
@@ -3062,9 +3018,7 @@ class TextState:
             return
         self.op_Tm_values(a, b, c, d_, e, f)
 
-    def op_Tm_values(
-        self: Any, a: float, b: float, c: float, d_: float, e: float, f: float
-    ) -> None:
+    def op_Tm_values(self, a: float, b: float, c: float, d_: float, e: float, f: float) -> None:
         self.flush_run()
         self.tm_a = self.lm_a = a
         self.tm_b = self.lm_b = b
@@ -3083,7 +3037,7 @@ class TextState:
         font_size_operand = operands[1]
         self.op_Tf_values(font_operand, font_size_operand)
 
-    def op_Tf_values(self: Any, font_operand: Any, font_size_operand: Any) -> None:
+    def op_Tf_values(self, font_operand: Any, font_size_operand: Any) -> None:
         decoder_matches_resources = self.current_decoder_resources_id == self.resources_id
         if (
             self.current_decoder is not None
@@ -3117,7 +3071,7 @@ class TextState:
                 return
             self.font_setting_cache[cache_key] = (font_name, font_size)
         else:
-            font_name, font_size = cached
+            font_name, font_size = cast(tuple[str | None, float], cached)
         if (
             self.current_font == font_name
             and self.current_decoder is not None
@@ -3156,7 +3110,7 @@ class TextState:
             return
         self.op_Tc_values(char_space)
 
-    def op_Tc_values(self: Any, char_space: float) -> None:
+    def op_Tc_values(self, char_space: float) -> None:
         self.char_space = char_space
         self.update_char_space_scale()
 
@@ -3169,7 +3123,7 @@ class TextState:
             return
         self.op_Tw_values(word_space)
 
-    def op_Tw_values(self: Any, word_space: float) -> None:
+    def op_Tw_values(self, word_space: float) -> None:
         if self.word_space == word_space:
             return
         self.word_space = word_space
@@ -3321,13 +3275,13 @@ class TextState:
             self.stroke_color_space = "DeviceRGB"
             self.set_stroke_color(operands[0], operands[1], operands[2])
 
-    def op_RG_values(self: Any, red: int | float, green: int | float, blue: int | float) -> None:
+    def op_RG_values(self, red: int | float, green: int | float, blue: int | float) -> None:
         if self.type3_uncolored:
             return
         self.stroke_color_space = "DeviceRGB"
         self.set_stroke_color(red, green, blue)
 
-    def op_rg_values(self: Any, red: int | float, green: int | float, blue: int | float) -> None:
+    def op_rg_values(self, red: int | float, green: int | float, blue: int | float) -> None:
         if self.type3_uncolored:
             return
         self.fill_color_space = "DeviceRGB"
@@ -3345,7 +3299,7 @@ class TextState:
             except (TypeError, ValueError):
                 return
 
-    def op_w_value(self: Any, line_width: int | float) -> None:
+    def op_w_value(self, line_width: int | float) -> None:
         self.line_width = max(0.0, self.as_float(line_width))
 
     def op_J(self, operands: OperandWindow, depth: int) -> None:
@@ -3355,7 +3309,7 @@ class TextState:
             except (TypeError, ValueError):
                 return
 
-    def op_J_value(self: Any, line_cap: int | float) -> None:
+    def op_J_value(self, line_cap: int | float) -> None:
         self.line_cap = self.as_int(line_cap)
 
     def op_j(self, operands: OperandWindow, depth: int) -> None:
@@ -3365,7 +3319,7 @@ class TextState:
             except (TypeError, ValueError):
                 return
 
-    def op_j_value(self: Any, line_join: int | float) -> None:
+    def op_j_value(self, line_join: int | float) -> None:
         self.line_join = self.as_int(line_join)
 
     def op_M(self, operands: OperandWindow, depth: int) -> None:
@@ -3375,7 +3329,7 @@ class TextState:
             except (TypeError, ValueError):
                 return
 
-    def op_M_value(self: Any, miter_limit: int | float) -> None:
+    def op_M_value(self, miter_limit: int | float) -> None:
         self.miter_limit = max(1.0, self.as_float(miter_limit))
 
     def op_d(self, operands: OperandWindow, depth: int) -> None:
@@ -3401,7 +3355,7 @@ class TextState:
             except (TypeError, ValueError):
                 return
 
-    def op_m_values(self: Any, x: int | float, y: int | float) -> None:
+    def op_m_values(self, x: int | float, y: int | float) -> None:
         point = (self.as_float(x), self.as_float(y))
         if self.internal_records_path():
             self.current_path.move_to(*point)
@@ -3416,7 +3370,7 @@ class TextState:
             except (TypeError, ValueError):
                 return
 
-    def op_l_values(self: Any, x: int | float, y: int | float) -> None:
+    def op_l_values(self, x: int | float, y: int | float) -> None:
         if self.current_point is None:
             return
         point = (self.as_float(x), self.as_float(y))
@@ -3434,7 +3388,7 @@ class TextState:
             self.op_re_values(x, y, w, h)
 
     def op_re_values(
-        self: Any, x: int | float, y: int | float, width: int | float, height: int | float
+        self, x: int | float, y: int | float, width: int | float, height: int | float
     ) -> None:
         x_float = float(x)
         y_float = float(y)
@@ -3487,7 +3441,7 @@ class TextState:
             # which uses the current point as the first one.
             self.append_cubic_curve(x1, y1, x3, y3, x3, y3)
 
-    def internal_close_current_subpath(self: Any) -> None:
+    def internal_close_current_subpath(self) -> None:
         if (
             self.capture_graphics
             and self.is_graphics_visible()
@@ -3540,7 +3494,7 @@ class TextState:
         self.current_path.clear()
         self.internal_end_path()
 
-    def internal_emit_clip_scope_push(self: Any) -> None:
+    def internal_emit_clip_scope_push(self) -> None:
         if not self.clip_scope_stack or self.clip_scope_stack[-1]:
             return
         self.clip_scope_stack[-1] = True
@@ -3556,7 +3510,7 @@ class TextState:
     def op_W(self, operands: OperandWindow, depth: int) -> None:
         self.internal_record_clip("nonzero")
 
-    def internal_record_clip(self: Any, fill_rule: str) -> None:
+    def internal_record_clip(self, fill_rule: str) -> None:
         path = self.current_path.transformed(self.ctm)
         if not path.has_segments():
             return
@@ -3592,11 +3546,11 @@ class TextState:
     def op_W_star(self, operands: OperandWindow, depth: int) -> None:
         self.internal_record_clip("evenodd")
 
-    def normalize_colors(self: Any, *components: Any) -> tuple[float, ...] | None:
+    def normalize_colors(self, *components: Any) -> tuple[float, ...] | None:
         cache_key = components
         cached = self.color_normalization_cache.get(cache_key, MISSING)
         if cached is not MISSING:
-            return cached
+            return cast(tuple[float, ...] | None, cached)
         values: list[float] = []
         for component in components:
             try:
@@ -3611,7 +3565,7 @@ class TextState:
         self.color_normalization_cache[cache_key] = normalized
         return normalized
 
-    def set_stroke_color(self: Any, *components: Any) -> None:
+    def set_stroke_color(self, *components: Any) -> None:
         if self.type3_uncolored:
             return
         normalized = self.normalize_colors(*components)
@@ -3619,7 +3573,7 @@ class TextState:
             self.stroke_color = normalized
             self.stroke_pattern = None
 
-    def set_fill_color(self: Any, *components: Any) -> None:
+    def set_fill_color(self, *components: Any) -> None:
         if self.type3_uncolored:
             return
         normalized = self.normalize_colors(*components)
@@ -3628,15 +3582,15 @@ class TextState:
             self.fill_pattern = None
 
     # `o` is an OperandWindow on the hot path and a plain list elsewhere, holding
-    # raw PDF operands; `Any` matches the deliberate looseness of `self: Any` here.
-    def normalize_color_operands(self: Any, o: Any) -> tuple[float, ...] | None:
+    # raw PDF operands, so `Any` is the honest annotation for it.
+    def normalize_color_operands(self, o: Any) -> tuple[float, ...] | None:
         # Plain numeric operands (the overwhelming majority) clamp directly;
         # anything else -- strings, names, nulls -- goes through the resolver.
         if o and all(type(c) is float or type(c) is int for c in o):
             return tuple(max(0.0, min(1.0, float(c))) for c in o)
         return self.normalize_colors(*o)
 
-    def internal_color_space_value(self: Any, name_obj: Any) -> object:
+    def internal_color_space_value(self, name_obj: Any) -> object:
         """The colour-space resource behind a `cs`/`CS` operand, indirects resolved.
 
         A colour-space array carries the tint function and the Indexed palette
@@ -3656,7 +3610,7 @@ class TextState:
             return [resolve(entry) for entry in value]
         return value
 
-    def internal_resolve_color_spec(self: Any, name_obj: Any) -> ImageColorSpec | None:
+    def internal_resolve_color_spec(self, name_obj: Any) -> ImageColorSpec | None:
         """Resolve a `cs`/`CS` operand to its full colour space, not just a name.
 
         Cached per resource dictionary like the name is: the parse walks the
@@ -3679,7 +3633,7 @@ class TextState:
         return spec
 
     def internal_color_from_operands(
-        self: Any, operands: Any, spec: ImageColorSpec | None
+        self, operands: Any, spec: ImageColorSpec | None
     ) -> tuple[float, ...] | None:
         """Turn `sc`/`scn` operands into the colour they select.
 
@@ -3697,7 +3651,7 @@ class TextState:
                     return converted
         return self.normalize_color_operands(operands)
 
-    def internal_numeric_operands(self: Any, operands: Any) -> list[float] | None:
+    def internal_numeric_operands(self, operands: Any) -> list[float] | None:
         values: list[float] = []
         for operand in operands:
             if type(operand) is float or type(operand) is int:
@@ -3706,14 +3660,12 @@ class TextState:
                 return None
         return values or None
 
-    def resolve_color_space(
-        self: Any, name_obj: Any, *, default_fallback: bool = False
-    ) -> str | None:
+    def resolve_color_space(self, name_obj: Any, *, default_fallback: bool = False) -> str | None:
         try:
             cache_key = (self.resources_id, name_obj, default_fallback)
             cached = self.color_space_cache.get(cache_key, MISSING)
             if cached is not MISSING:
-                return cached
+                return cast(str | None, cached)
         except TypeError:
             cache_key = None
 
@@ -3754,9 +3706,7 @@ class TextState:
             self.color_space_cache[cache_key] = resolved
         return resolved
 
-    def resolve_pattern_color(
-        self: Any, operands: tuple[Any, ...] | OperandWindow
-    ) -> PdfDict | None:
+    def resolve_pattern_color(self, operands: tuple[Any, ...] | OperandWindow) -> PdfDict | None:
         if not operands:
             return None
         pattern_name = self.document.resolver.resolve_name(operands[-1])
@@ -3773,7 +3723,7 @@ class TextState:
             return None
         pattern_type = parse_int(pattern_dict.get("PatternType"), None)
         if pattern_type == 2:
-            shading = pattern_dict.get("Shading")
+            shading: object = pattern_dict.get("Shading")
             shading = self.document.resolver.resolve(shading)
             shading_dict = (
                 self.document.resolver.resolve_dict(shading) if shading is not None else None
@@ -3988,19 +3938,19 @@ class TextState:
         # A property-bearing marked-content point likewise has no lasting state.
         return
 
-    def resolve_marked_content_properties(self: Any, value: Any) -> dict[str, Any] | None:
+    def resolve_marked_content_properties(self, value: Any) -> dict[str, Any] | None:
         if value is None:
             return None
         resolved = self.document.resolver.resolve(value)
         if isinstance(resolved, dict):
-            return resolved
+            return cast("dict[str, Any]", resolved)
         name = self.document.resolver.resolve_name(value)
         if not name:
             return None
         props = self.lookup_page_resource("Properties", name)
-        return props if isinstance(props, dict) else None
+        return cast("dict[str, Any]", props) if isinstance(props, dict) else None
 
-    def resolve_marked_content_layer(self: Any, value: Any) -> str | None:
+    def resolve_marked_content_layer(self, value: Any) -> str | None:
         if value is None:
             return None
 
@@ -4069,17 +4019,18 @@ class TextState:
             return value
         return parse_int_strict(value, "invalid numeric operand")
 
-    def resolve_extgstate(self: Any, name: str) -> dict[str, Any] | None:
+    def resolve_extgstate(self, name: str) -> dict[str, Any] | None:
         cache_key = (self.resources_id, name)
         cached = self.extgstate_cache.get(cache_key, MISSING)
         if cached is not MISSING:
-            return cached
+            return cast("dict[str, Any] | None", cached)
         resolved = self.lookup_page_resource("ExtGState", name)
         if not isinstance(resolved, dict):
             self.extgstate_cache[cache_key] = None
             return None
-        self.extgstate_cache[cache_key] = resolved
-        return resolved
+        extgstate = cast("dict[str, Any]", resolved)
+        self.extgstate_cache[cache_key] = extgstate
+        return extgstate
 
     def op_q(self, operands: OperandWindow, depth: int) -> None:
         self.clip_scope_stack.append(False)
@@ -4204,7 +4155,7 @@ class TextState:
         self.op_cm_values(m_a, m_b, m_c, m_d, m_e, m_f)
 
     def op_cm_values(
-        self: Any,
+        self,
         m_a: float,
         m_b: float,
         m_c: float,

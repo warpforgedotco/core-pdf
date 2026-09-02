@@ -256,7 +256,9 @@ class TextRun:
             by1 if by1 > y1 else y1,
         )
 
-    def extend_glyph_clusters(self, clusters: tuple[GlyphCluster, ...]) -> None:
+    def extend_glyph_clusters(
+        self, clusters: tuple[GlyphCluster, ...] | list[GlyphCluster]
+    ) -> None:
         # While a run is pending, accumulate clusters in a list so repeated
         # merges stay linear; freeze_glyph_clusters restores the tuple form
         # (and a fresh identity for id()-keyed caches) at finalization.

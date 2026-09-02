@@ -562,9 +562,9 @@ class CapturedDrawing:
     seqno: int
     fill: tuple[float, ...] | None
     fill_opacity: float | None
-    fill_pattern: Mapping[object, object] | None = None
+    fill_pattern: Mapping[Any, object] | None = None
     stroke_color: tuple[float, ...] | None = None
-    stroke_pattern: Mapping[object, object] | None = None
+    stroke_pattern: Mapping[Any, object] | None = None
     stroke_opacity: float | None = None
     line_width: float = 1.0
     line_cap: int = 0
