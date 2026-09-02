@@ -26,8 +26,6 @@ class internal_PathTargetMixin(
     __slots__ = ()
 
     def paint_typed_path(self: Any, item: PathPaintItem) -> None:
-        # Captured frame values hoisted into locals so the body below runs on
-        # LOAD_FAST exactly as it did when this was a closure.
         color_cache = self.color_cache
         fill_path = self.fill_path
         stroke_path = self.stroke_path
